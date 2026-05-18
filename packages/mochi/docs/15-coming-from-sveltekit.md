@@ -688,26 +688,33 @@ No equivalent. Mochi does not support sub-path deployments via configuration —
 
 ### Server-only modules
 
-SvelteKit's `$lib/server` directory and `.server.ts` suffix have no formal equivalent. Mochi statically scans imports and lifts server-only code out of client bundles; pair this with the `mochi` virtual module to branch at the call site.
+SvelteKit's `.server.ts` suffix carries over — Mochi uses the same convention. There is no `$lib/server` directory equivalent; the suffix is the entire mechanism, applied per-file anywhere in your source tree. Every named and default export of a `*.server.ts` file is replaced with a throwing `Proxy` on the client, so the real module body is only compiled for SSR.
 
 ```ts
-// file (SvelteKit): src/routes/+page.server.ts
-// $lib/server/* is only importable from server modules
-import { db } from '$lib/server/db';
-export const load = async () => ({ rows: await db.query('select 1') });
+// file (SvelteKit): src/lib/server/db.ts
+import { Database } from 'better-sqlite3';
+export const db = new Database(':memory:');
+```
+
+```ts
+// file (Mochi): src/lib/db.server.ts
+import { Database } from 'bun:sqlite';
+export const db = new Database(':memory:');
 ```
 
 ```svelte
-<!-- file (Mochi): src/Some.svelte -->
+<!-- file (Mochi): src/FactCard.svelte — hydratable island -->
 <script>
-  import { isServer } from 'mochi';
-  import { db } from './lib/db';
+  import { hydratable } from 'svelte';
+  import { db } from './lib/db.server.ts';
 
-  let rows = isServer ? await db.query('select 1') : [];
+  const version = await hydratable('app:sqlite-version', () => db.query('SELECT sqlite_version() as v').get().v);
 </script>
+
+<p>SQLite {version}</p>
 ```
 
-For data that must reach a hydrated component without running its async source twice, use Svelte 5's `hydratable()` — Mochi wires up the SSR→client lookup automatically. See `Hydratable values` and `Server-only imports`.
+Do **NOT** call a `.server.ts` export from client-running code (`onclick`, `$effect`); instead, read the value once on the server and ship it through `hydratable()` or a prop — the stub throws on access in the browser. See `Server-only imports` and `Hydratable values`.
 
 ### `$lib`
 
