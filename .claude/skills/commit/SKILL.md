@@ -26,4 +26,4 @@ Stage everything in the working tree (modified + untracked) and create one commi
 5. Commit with `git commit -m "<title>"` — one `-m`, no second `-m`, no heredoc body.
 6. Report the resulting commit's short SHA and title. Do not push.
 
-If you are asked to additionally create a PR, write a PR title in release-please style. Write a very short, bullet-point description.
+If you are asked to additionally create a PR, write a PR title in release-please style. Write a very short, bullet-point description!
