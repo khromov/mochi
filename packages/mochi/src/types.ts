@@ -30,11 +30,16 @@ export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' | 'OPTIONS'
 
 /**
  * The event object passed to API route handlers.
- * Extends MochiEvent with the HTTP method for convenience.
+ * Extends MochiEvent with the HTTP method, the resolved route params, and the
+ * request's cookie jar.
  */
 export interface MochiApiEvent extends MochiEvent {
   /** The HTTP method of the request (GET, POST, PUT, DELETE, etc.). */
   method: HttpMethod;
+  /** Resolved route params (e.g. `:id` from `/api/users/:id`). */
+  params: Record<string, string>;
+  /** The request's cookie jar — read or write cookies on the response. */
+  cookies: MochiCookieJar;
 }
 
 /**
