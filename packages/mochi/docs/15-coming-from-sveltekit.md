@@ -127,7 +127,7 @@ export async function load({ params }) {
 <h1>{post.title}</h1>
 ```
 
-The main component used with Mochi.page() renders on the server, so you can also call data helpers directly inside the component instead of threading every value through props. Client-side interactivity is opt-in per child component via `mochi:hydrate`, `mochi:hydrate:visible`, or `mochi:defer`.
+The main component used with Mochi.page() renders on the server, so you can also call data helpers directly inside the component instead of threading every value through props. Client-side interactivity is opt-in per child component via `mochi:hydrate`, `mochi:hydrate:visible`, `mochi:defer`, or `mochi:defer:visible`.
 
 You don't need to thread `params` through `serverProps`; instead, you can call `getRequestContext().params` directly anywhere on the server.
 
@@ -740,7 +740,7 @@ No virtual `$lib` alias. Add the path to `tsconfig.json` if you want the same er
 
 ### Page options (`ssr`, `csr`, `prerender`)
 
-Not configurable per page. Mochi always renders on the server; client-side JavaScript is opt-in per component via `mochi:hydrate`, `mochi:hydrate:visible`, `mochi:defer`. There is no prerender / SSG mode — every request renders fresh.
+Not configurable per page. Mochi always renders on the server; client-side JavaScript is opt-in per component via `mochi:hydrate`, `mochi:hydrate:visible`, `mochi:defer`, or `mochi:defer:visible`. There is no prerender / SSG mode — every request renders fresh.
 
 Trailing-slash policy is global, not per-page: set `trailingSlash: 'never' | 'always'` on `Mochi.serve()` and Mochi registers both forms and redirects to the canonical one. See `Trailing slash`.
 
