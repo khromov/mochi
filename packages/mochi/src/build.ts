@@ -1,0 +1,242 @@
+import { checkEnvironment } from './checkEnvironment';
+import { ComponentRegistry, formatCompileErrors } from './ComponentRegistry';
+import { isMochiPage, isMochiApi, isMochiWs, isMochiSse } from './types';
+import type { MarkdownConfig, MochiRouteValue } from './types';
+import { rmSync, mkdirSync } from 'node:fs';
+import path from 'node:path';
+import { scanPublicDir } from './publicDir';
+import { loadSvelteConfig } from './svelteConfig';
+import { logger, setLogLevel } from './log';
+import { consoleLogger } from './consoleLogger';
+import { mochiEvents } from './events';
+import pc from 'picocolors';
+import prettyBytes from './lib/prettyBytes';
+
+export interface MochiBuildOptions {
+  routes: Record<string, MochiRouteValue>;
+  development?: boolean;
+  /** Directory for build output (cwd-relative). Default: `./.mochi`. */
+  outDir?: string;
+  /** Static assets directory (cwd-relative). Default: `./public`. */
+  publicDir?: string;
+  /**
+   * URL prefix under which framework client assets and the server island
+   * endpoint are served. Baked into the prebuilt manifest so the runtime
+   * server uses the same value. Default: `/_mochi`.
+   */
+  assetPrefix?: string;
+  /**
+   * Path to a Svelte config file (cwd-relative or absolute). Default:
+   * `./svelte.config.js`. The file's `compilerOptions` are merged into
+   * Mochi's defaults; missing file → defaults only.
+   */
+  svelteConfigPath?: string;
+  /**
+   * Dependency-injected markdown (`.md` / `.svx`) support. Mirror the value
+   * passed to `Mochi.serve({ markdown })` so the prebuild and the runtime
+   * use the same pipeline. Omit to leave markdown unhandled.
+   */
+  markdown?: MarkdownConfig;
+}
+
+type RouteKind = 'page' | 'api' | 'ws' | 'sse';
+
+interface RouteEntry {
+  pattern: string;
+  kind: RouteKind;
+  componentPath?: string;
+}
+
+export async function build(options: MochiBuildOptions): Promise<void> {
+  await checkEnvironment();
+  setLogLevel('info');
+  consoleLogger({ compile: false });
+  printHeader();
+  const version = await readMochiVersion();
+  console.log(pc.dim(`Mochi v${version}`));
+  console.log('Starting build...\n');
+  const development = options.development ?? false;
+  const outDir = options.outDir ?? './.mochi';
+  const publicDir = options.publicDir ?? './public';
+
+  // Clean previous build artifacts
+  rmSync(outDir, { recursive: true, force: true });
+  mkdirSync(path.join(outDir, 'svelte-compile'), { recursive: true });
+  mkdirSync(path.join(outDir, 'svelte-client'), { recursive: true });
+  mkdirSync(path.join(outDir, 'svelte-css'), { recursive: true });
+
+  const svelteConfig = await loadSvelteConfig(options.svelteConfigPath);
+  const registry = new ComponentRegistry({
+    development,
+    outDir,
+    assetPrefix: options.assetPrefix,
+    svelteConfig,
+    markdown: options.markdown,
+  });
+
+  // Compile all Mochi.page() handlers in one Bun.build so transitive deps
+  // (devalue, picocolors, mochi-framework internals) emit as shared chunks
+  // alongside the per-page `.server.js` files instead of being inlined into
+  // every page.
+  const compiledPages: string[] = [];
+  const ssrEntrypoints: string[] = [];
+  const allRoutes: RouteEntry[] = [];
+
+  const compileStats = new Map<string, { ssrSizeBytes: number; hydratableCount: number }>();
+  mochiEvents.on('compile:complete', ({ path: p, ssrSizeBytes, hydratableCount }) => {
+    compileStats.set(p, { ssrSizeBytes, hydratableCount });
+  });
+
+  for (const [pattern, handler] of Object.entries(options.routes)) {
+    if (isMochiPage(handler)) {
+      allRoutes.push({ pattern, kind: 'page', componentPath: handler.componentPath });
+      ssrEntrypoints.push(handler.componentPath);
+      compiledPages.push(pattern);
+    } else if (isMochiApi(handler)) {
+      allRoutes.push({ pattern, kind: 'api' });
+    } else if (isMochiWs(handler)) {
+      allRoutes.push({ pattern, kind: 'ws' });
+    } else if (isMochiSse(handler)) {
+      allRoutes.push({ pattern, kind: 'sse' });
+    }
+  }
+
+  if (ssrEntrypoints.length > 0) {
+    await registry.compileAll(ssrEntrypoints);
+  }
+
+  const compileErrors = registry.getErrors();
+  if (compileErrors.length > 0) {
+    throw new Error(`[mochi:build] ${formatCompileErrors(compileErrors)}`);
+  }
+
+  allRoutes.sort((a, b) => a.pattern.localeCompare(b.pattern, undefined, { numeric: true }));
+  printRouteTree(allRoutes, compileStats);
+
+  // Clean up intermediate .raw.css files
+  const cssDir = path.join(outDir, 'svelte-css');
+  const glob = new Bun.Glob('*.raw.css');
+  for (const raw of glob.scanSync(cssDir)) {
+    rmSync(path.join(cssDir, raw));
+  }
+
+  // Copy publicDir into <outDir>/public and record URL→disk map on the registry.
+  // First ensure no public file collides with a user-declared route, so
+  // deploying never silently drops assets.
+  const publicSrc = await scanPublicDir(publicDir);
+  const conflicts: string[] = [];
+  for (const urlPath of publicSrc.keys()) {
+    if (urlPath in options.routes) {
+      conflicts.push(urlPath);
+    }
+  }
+  if (conflicts.length > 0) {
+    throw new Error(
+      `[mochi:build] ${publicDir} files collide with registered routes:\n` +
+        conflicts.map((u) => `  - ${u}`).join('\n') +
+        `\nRemove the file from ${publicDir} or rename the route.`,
+    );
+  }
+
+  const publicFiles = new Map<string, string>();
+  for (const [urlPath, srcPath] of publicSrc) {
+    const destPath = path.join(outDir, 'public', urlPath);
+    await Bun.write(destPath, Bun.file(srcPath));
+    publicFiles.set(urlPath, destPath);
+  }
+  registry.setPublicFiles(publicFiles);
+
+  // Write manifest
+  const manifestPath = path.join(outDir, 'manifest.json');
+  const manifest = registry.toManifest();
+  await Bun.write(manifestPath, JSON.stringify(manifest, null, 2));
+
+  const clientFileCount = Object.keys(manifest.clientFiles).length;
+  const publicFileCount = publicFiles.size;
+  logger.info(`build: done. ${compiledPages.length} page(s), ${clientFileCount} client file(s), ${publicFileCount} public file(s). Manifest written to ${manifestPath}`);
+}
+
+async function readMochiVersion(): Promise<string> {
+  const pkgPath = path.join(import.meta.dir, '..', 'package.json');
+  const pkg = (await Bun.file(pkgPath).json()) as { version: string };
+  return pkg.version;
+}
+
+function printHeader(): void {
+  const art = ['         ', '(_)      ', '  (_)    ', '    (_)  ', '      \\  '];
+  const wordmark = [
+    ' __  __            _     _ ',
+    '|  \\/  | ___   ___| |__ (_)',
+    "| |\\/| |/ _ \\ / __| '_ \\| |",
+    '| |  | | (_) | (__| | | | |',
+    '|_|  |_|\\___/ \\___|_| |_|_|',
+  ];
+  console.log('');
+  for (let i = 0; i < wordmark.length; i++) {
+    console.log(pc.cyan(art[i]!) + pc.bold(wordmark[i]!));
+  }
+  console.log('');
+}
+
+function pageSymbol(hyd: number | null): string {
+  return hyd != null && hyd > 0 ? pc.green('●') : pc.cyan('○');
+}
+
+function kindSymbol(kind: Exclude<RouteKind, 'page'>): string {
+  switch (kind) {
+    case 'api':
+      return pc.magenta('λ');
+    case 'ws':
+      return pc.blue('⇄');
+    case 'sse':
+      return pc.green('→');
+  }
+}
+
+function printRouteTree(routes: RouteEntry[], stats: Map<string, { ssrSizeBytes: number; hydratableCount: number }>): void {
+  if (routes.length === 0) {
+    return;
+  }
+
+  const rows = routes.map(({ pattern, kind, componentPath }) => {
+    const s = componentPath ? stats.get(componentPath) : undefined;
+    return { pattern, kind, hyd: s?.hydratableCount ?? null, ssr: s ? prettyBytes(s.ssrSizeBytes) : null };
+  });
+
+  const patternWidth = Math.max('Route'.length, ...rows.map((r) => r.pattern.length));
+  const islandsWidth = 'islands'.length;
+  const bundleWidth = Math.max('bundle'.length, ...rows.map((r) => r.ssr?.length ?? 0));
+
+  // "  ┌ ● " = 6 chars — header indent matches
+  console.log(pc.dim(`      ${'Route'.padEnd(patternWidth + 2)}  ${'islands'.padStart(islandsWidth)}  ${'bundle'.padStart(bundleWidth)}`));
+
+  const n = routes.length;
+  for (let i = 0; i < n; i++) {
+    const { pattern, kind, hyd, ssr } = rows[i]!;
+    const char = pc.dim(n === 1 ? '─' : i === 0 ? '┌' : i === n - 1 ? '└' : '├');
+    const symbol = kind === 'page' ? pageSymbol(hyd) : kindSymbol(kind);
+    const coloredPattern = pattern.padEnd(patternWidth + 2).replace(/:[^/\s]+/g, (s: string) => pc.cyan(s));
+    const isPage = kind === 'page';
+    const hydStr = isPage && hyd != null ? pc.green(String(hyd).padStart(islandsWidth)) : pc.dim('-'.padStart(islandsWidth));
+    const ssrStr = isPage && ssr != null ? pc.dim(ssr.padStart(bundleWidth)) : pc.dim('-'.padStart(bundleWidth));
+    console.log(`  ${char} ${symbol} ${coloredPattern}  ${hydStr}  ${ssrStr}`);
+  }
+
+  const legendEntries: string[] = [];
+  if (rows.some((r) => r.kind === 'page' && r.hyd != null && r.hyd > 0)) {
+    legendEntries.push(`${pc.green('●')} page with islands`);
+  }
+  if (rows.some((r) => r.kind === 'page' && (r.hyd === null || r.hyd === 0))) {
+    legendEntries.push(`${pc.cyan('○')} ssr-only page`);
+  }
+  if (rows.some((r) => r.kind === 'api')) {
+    legendEntries.push(`${pc.magenta('λ')} api`);
+  }
+  if (rows.some((r) => r.kind === 'ws')) {
+    legendEntries.push(`${pc.blue('⇄')} websocket`);
+  }
+  if (rows.some((r) => r.kind === 'sse')) {
+    legendEntries.push(`${pc.green('→')} sse`);
+  }
+  console.log(`\n  ${legendEntries.join(pc.dim('  ·  '))}`);
+}

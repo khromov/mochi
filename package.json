@@ -1,0 +1,56 @@
+{
+  "name": "mochi-monorepo",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "engines": {
+    "bun": "^1.0"
+  },
+  "scripts": {
+    "build": "bun --filter='*' run build",
+    "build:site": "bun --cwd=packages/site run build",
+    "build:demos": "bun --cwd=packages/demos run build",
+    "start": "bun --cwd=packages/site run start",
+    "start:site": "bun --cwd=packages/site run start",
+    "start:demos": "bun --cwd=packages/demos run start",
+    "start:all": "bun --filter='*' run start",
+    "dev": "bun scripts/dev.ts",
+    "dev:site": "bun --cwd=packages/site run dev",
+    "dev:demos": "bun --cwd=packages/demos run dev",
+    "test": "bun --filter='*' run test",
+    "test:leak": "bun packages/mochi/scripts/leak/runLeakTest.ts",
+    "typecheck": "bun --filter='*' run typecheck",
+    "tsc": "bun run typecheck",
+    "clean": "bun --filter='*' run clean",
+    "format:check": "prettier --check .",
+    "format": "prettier --write .",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "checks": "bun run lint:fix && bun run format && bun run typecheck && bun run test",
+    "syncpack": "syncpack lint",
+    "syncpack:fix": "syncpack fix",
+    "loc": "bun .github/scripts/loc-report.ts",
+    "flamegraph": "bun scripts/flamegraph.ts",
+    "update": "bun update --interactive --recursive",
+    "deps": "bun packages/mochi/scripts/dep-report.ts"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/bun": "1.3.14",
+    "eslint": "^10.3.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-svelte": "^3.17.1",
+    "picocolors": "^1.1.1",
+    "prettier": "^3.8.3",
+    "prettier-plugin-svelte": "^3.5.2",
+    "rimraf": "^6.1.3",
+    "syncpack": "^15.1.2",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.59.3"
+  },
+  "patchedDependencies": {
+    "svelte-check@4.4.7": "patches/svelte-check@4.4.7.patch"
+  }
+}

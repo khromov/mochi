@@ -1,0 +1,16 @@
+/* Tailwind v4 input. Theme is layered, utilities stay unlayered so they win
+   over any unlayered rules in the wrapper's scoped reset. Preflight is
+   intentionally omitted — TodoWrapper.svelte ships a small reset scoped to
+   .todo-app, and the demos shell.html no longer ships a global reset, so
+   nothing leaks either way. */
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/utilities.css';
+
+/* Override Tailwind's default `--font-serif` so the `font-serif` utility
+   resolves to Fraunces (loaded by demos/shell.html) — matches the typography
+   used by the HN and Admin demos. */
+@theme {
+  --font-serif: 'Fraunces Variable', Georgia, 'Times New Roman', serif;
+}
+
+@source './*.svelte';

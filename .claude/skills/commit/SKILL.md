@@ -1,0 +1,27 @@
+---
+name: commit
+description: Stage and commit the current working changes with a short release-please-style commit title. Does not push. Use when the user says "commit", "commit my changes", or "/commit". Optional args list paths to skip (e.g. "/commit ignore IMPROVEMENTS.md").
+user-invocable: true
+model: sonnet
+---
+
+# Commit working changes
+
+Stage everything in the working tree (modified + untracked) and create one commit with a short Conventional Commits title.
+
+## Rules
+
+- **Never push.** Just commit locally.
+- **Never write a commit body / description.** Title only.
+- **Title must follow release-please semantics:** `feat:`, `fix:`, `perf:`, `chore:`, `docs:`, `refactor:`, `test:`, `ci:`, `build:`. Use `feat!:` only if the user explicitly says it's a breaking change.
+- **Keep the title short** — aim for under 60 characters, present tense, lowercase after the colon, no trailing period.
+- **Skip whatever the user names** in the skill args (filenames or paths). Also skip anything that looks like a secret (`.env*`, `credentials*`, key files).
+
+## Steps
+
+1. Run `git status` and `git diff` (and `git diff --staged`) in parallel to see what would be committed.
+2. Stage files explicitly by name with `git add <path> ...` — do NOT use `git add -A` or `git add .`. Exclude any paths the user told you to ignore.
+3. If nothing is left to stage, report that and stop. Do not make an empty commit.
+4. Pick the single best Conventional Commits type for the diff and write a terse title.
+5. Commit with `git commit -m "<title>"` — one `-m`, no second `-m`, no heredoc body.
+6. Report the resulting commit's short SHA and title. Do not push.

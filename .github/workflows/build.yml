@@ -1,0 +1,77 @@
+name: build + publish
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Main demo site.
+          - name: site
+            dockerfile: Dockerfile.production
+            image: ghcr.io/khromov/mochi
+            caprover_app: mochi
+            caprover_token_secret: APP_TOKEN
+          # Standalone demos site. Requires repo secret
+          # APP_TOKEN_DEMOS — the per-app deploy token from the mochi-demos
+          # CapRover app's "Deployment" tab.
+          - name: demos
+            dockerfile: packages/demos/Dockerfile.production
+            image: ghcr.io/khromov/mochi-demos
+            caprover_app: mochi-demos
+            caprover_token_secret: APP_TOKEN_DEMOS
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ matrix.image }}
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and Push Docker Image
+        uses: docker/build-push-action@v3
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            PUBLIC_DISABLE_OPFS=false
+
+      - name: Deploy on CapRover
+        uses: caprover/deploy-from-github@v1.1.2
+        with:
+          server: '${{ secrets.APP_SERVER }}'
+          app: ${{ matrix.caprover_app }}
+          token: '${{ secrets[matrix.caprover_token_secret] }}'
+          image: '${{ matrix.image }}:main'

@@ -1,0 +1,253 @@
+import Negotiator from 'negotiator';
+import type { MochiCompileErrorLog } from './events';
+
+/**
+ * Given an Accept header value and a list of candidate content types, return
+ * the best match according to q-value content negotiation, or `undefined` if
+ * none of the candidates is acceptable. Thin wrapper around `negotiator` that
+ * pins the call shape and lets us guard the behaviour with our own tests.
+ */
+export function negotiate(accept: string, types: string[]): string | undefined {
+  return new Negotiator({ headers: { accept } }).mediaType(types);
+}
+
+export type CompressionMethod = 'gzip' | 'brotli';
+
+export const COMPRESSION_TOKEN: Record<CompressionMethod, 'gzip' | 'br'> = { gzip: 'gzip', brotli: 'br' };
+
+// `methods` is the server's allowlist (and tiebreak order for `*`); the client's
+// header preference (order + q-values) decides among configured methods.
+export function negotiateEncoding(acceptEncoding: string, methods: CompressionMethod[]): CompressionMethod | null {
+  const tokens = methods.map((m) => COMPRESSION_TOKEN[m]);
+  const best = new Negotiator({ headers: { 'accept-encoding': acceptEncoding } }).encodings(tokens)[0];
+  return methods.find((m) => COMPRESSION_TOKEN[m] === best) ?? null;
+}
+
+/**
+ * Create a JSON response. Convenience helper similar to SvelteKit's `json()`.
+ */
+export function json(
+  data: unknown,
+  init?: {
+    status?: number;
+    statusText?: string;
+    headers?: Record<string, string>;
+  },
+): Response {
+  const body = JSON.stringify(data);
+  const headers: Record<string, string> = {
+    ...init?.headers,
+    'Content-Type': 'application/json',
+  };
+  return new Response(body, {
+    status: init?.status,
+    statusText: init?.statusText,
+    headers,
+  });
+}
+
+/**
+ * Create an error response. Throws an error that the framework catches and
+ * returns as a JSON error response.
+ */
+export function error(status: number, message: string): never {
+  throw new MochiHttpError(status, message);
+}
+
+export class MochiHttpError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
+
+/**
+ * Build a JSON error `Response` with the canonical Mochi envelope
+ * `{ error: { message, status } }`. Use this inside `Mochi.api()` handlers to
+ * return a typed error without throwing.
+ */
+export function apiError(status: number, message: string): Response {
+  return new Response(JSON.stringify({ error: { message, status } }), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+/**
+ * Snapshot the outgoing response headers as `[name, value]` pairs. Multiple
+ * `Set-Cookie` headers are emitted as separate entries via `getSetCookie()`
+ * instead of being comma-merged.
+ */
+export function collectHeaderPairs(headers: Headers): Array<[string, string]> {
+  const out: Array<[string, string]> = [];
+  for (const [k, v] of headers) {
+    if (k.toLowerCase() === 'set-cookie') {
+      continue;
+    }
+    out.push([k, v]);
+  }
+  for (const c of headers.getSetCookie()) {
+    out.push(['set-cookie', c]);
+  }
+  return out;
+}
+
+export function isHtmlResponse(response: Response): boolean {
+  return response.headers.get('Content-Type')?.startsWith('text/html') ?? false;
+}
+
+export function appendVary(headers: Headers, value: string): void {
+  const existing = headers.get('Vary');
+  if (!existing) {
+    headers.set('Vary', value);
+    return;
+  }
+  if (existing.trim() === '*') {
+    return;
+  }
+  const tokens = existing.split(',').map((t) => t.trim().toLowerCase());
+  if (tokens.includes(value.toLowerCase())) {
+    return;
+  }
+  headers.set('Vary', `${existing}, ${value}`);
+}
+
+/** Extract Bun's route params from a Request object. */
+export function extractParams(req: Request): Record<string, string> {
+  return ((req as unknown as Record<string, unknown>).params as Record<string, string>) ?? {};
+}
+
+export const DEFAULT_ASSET_PREFIX = '/_mochi';
+
+/**
+ * Normalize a user-supplied asset prefix. Returns the default when undefined,
+ * throws on invalid input (missing leading slash, root `/`, trailing slash,
+ * whitespace, `..` segments).
+ */
+export function normalizeAssetPrefix(input: string | undefined): string {
+  if (input === undefined) {
+    return DEFAULT_ASSET_PREFIX;
+  }
+  if (typeof input !== 'string' || input.length === 0) {
+    throw new Error(`[mochi] assetPrefix must be a non-empty string, got ${JSON.stringify(input)}`);
+  }
+  if (!input.startsWith('/')) {
+    throw new Error(`[mochi] assetPrefix must start with "/", got ${JSON.stringify(input)}`);
+  }
+  if (input === '/') {
+    throw new Error(`[mochi] assetPrefix must not be the root "/" — pick a sub-path like "/_mochi"`);
+  }
+  if (input.endsWith('/')) {
+    throw new Error(`[mochi] assetPrefix must not end with "/", got ${JSON.stringify(input)}`);
+  }
+  if (/\s/.test(input)) {
+    throw new Error(`[mochi] assetPrefix must not contain whitespace, got ${JSON.stringify(input)}`);
+  }
+  if (input.split('/').includes('..')) {
+    throw new Error(`[mochi] assetPrefix must not contain ".." segments, got ${JSON.stringify(input)}`);
+  }
+  return input;
+}
+
+/**
+ * Test whether an HTML comment's text is a Svelte SSR hydration marker.
+ *
+ * `text` must be the *inner* text of an HTML comment (i.e. the bytes between
+ * `<!--` and `-->`), not arbitrary HTML — the patterns below assume the
+ * surrounding `<!-- -->` has already been stripped by the caller.
+ */
+function isSvelteMarker(text: string): boolean {
+  // Svelte emits:
+  //   <!--[-->, <!--]-->          block open/close (HYDRATION_START / HYDRATION_END)
+  //   <!--[!-->                   pending boundary (HYDRATION_START_ELSE)
+  //   <!--[?<json>-->             failed boundary (HYDRATION_START_FAILED)
+  //   <!--[0-->, <!--[1-->, ...   {#if} branch index (0 = consequent,
+  //   <!--[-1-->                   N = nth :else if, -1 = final :else)
+  //   <!---->, <!--s8967g-->      empty / component hash
+  return text === '[' || text === ']' || text === '[!' || text.startsWith('[?') || /^\[-?\d+$/.test(text) || /^\w*$/.test(text);
+}
+
+/**
+ * Strip Svelte SSR hydration markers from HTML, but preserve them inside
+ * `<mochi-hydratable-island>` and `<mochi-server-island>` blocks.
+ *
+ * Uses Bun's HTMLRewriter (based on Cloudflare's lol-html) to properly parse
+ * HTML and track element nesting instead of fragile regex/manual scanning.
+ */
+export function stripHydrationMarkers(html: string): string {
+  return stripPageMarkers(html);
+}
+
+/**
+ * Collapse the doubled-marker pattern that Svelte SSR emits for some component
+ * shapes (`$state` arrays + `{@attach}` — see `/demos/reload-form-data/`).
+ *
+ * The bug: Svelte's inner `<svelte:boundary>` emits TWO `<!--[-->`/`<!--]-->`
+ * pairs at the wrapper edges instead of one. The client `hydrate()` walker
+ * advances past only the first pair, then chokes when it expects an Element
+ * but finds another marker → `HierarchyRequestError`.
+ *
+ * We match the pattern as a UNIT (doubled open AND doubled close, both
+ * immediately adjacent to the wrapper edges) so that the regex only fires on
+ * the bug case. Components with `{#if}`/`{:else}` blocks naturally emit
+ * `<!--]--><!--]-->` at their close (close-branch + close-block) but don't
+ * have `<!--[--><!--[-->` at their open — the second open marker is a branch
+ * index like `<!--[0-->` or `<!--[-1-->`. Matching open+close as a single
+ * pattern avoids touching those.
+ */
+export function normalizeIslandHydrationMarkers(html: string): string {
+  return html.replace(/(<mochi-hydratable-island\b[^>]*>)<!--\[--><!--\[-->(.*?)<!--\]--><!--\]-->(<\/mochi-hydratable-island>)/gs, '$1<!--[-->$2<!--]-->$3');
+}
+
+function stripPageMarkers(html: string): string {
+  let islandDepth = 0;
+
+  const trackIsland = {
+    element(el: HTMLRewriterTypes.Element) {
+      islandDepth++;
+      el.onEndTag(() => {
+        islandDepth--;
+      });
+    },
+  };
+
+  return new HTMLRewriter()
+    .on('mochi-hydratable-island', trackIsland)
+    .on('mochi-server-island', trackIsland)
+    .onDocument({
+      comments(comment) {
+        if (islandDepth === 0 && isSvelteMarker(comment.text)) {
+          comment.remove();
+        }
+      },
+    })
+    .transform(html);
+}
+
+/**
+ * Project a `Bun.build()` failure's `logs` array to the structured shape the
+ * `compile:error` event ships. Position fields are elided when missing so the
+ * payload stays minimal for handlers that just want `{ file, message }`.
+ */
+export function toCompileErrorLogs(
+  logs: ReadonlyArray<{
+    message: string;
+    position?: { file: string; line: number; column: number } | null;
+  }>,
+): MochiCompileErrorLog[] {
+  return logs.map((l) => {
+    const entry: MochiCompileErrorLog = { message: l.message };
+    const pos = l.position;
+    if (pos?.file) {
+      entry.file = pos.file;
+    }
+    if (typeof pos?.line === 'number') {
+      entry.line = pos.line;
+    }
+    if (typeof pos?.column === 'number') {
+      entry.column = pos.column;
+    }
+    return entry;
+  });
+}

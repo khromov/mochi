@@ -1,0 +1,105 @@
+import { describe, expect, test } from 'bun:test';
+import { resolveMochiVersionRange, transformPackageJson, transformTsconfig, validatePackageName } from './utils.ts';
+
+describe('validatePackageName', () => {
+  test('accepts simple names', () => {
+    expect(validatePackageName('my-app')).toBeNull();
+    expect(validatePackageName('hello_world')).toBeNull();
+    expect(validatePackageName('a')).toBeNull();
+  });
+
+  test('accepts scoped names', () => {
+    expect(validatePackageName('@scope/pkg')).toBeNull();
+    expect(validatePackageName('@my-org/my-app')).toBeNull();
+  });
+
+  test('rejects invalid names', () => {
+    expect(validatePackageName('')).not.toBeNull();
+    expect(validatePackageName('My-App')).not.toBeNull();
+    expect(validatePackageName('.hidden')).not.toBeNull();
+    expect(validatePackageName('a/b')).not.toBeNull();
+    expect(validatePackageName('a'.repeat(215))).not.toBeNull();
+  });
+});
+
+describe('resolveMochiVersionRange', () => {
+  test('caret-prefixes a real version', () => {
+    expect(resolveMochiVersionRange('0.2.0')).toBe('^0.2.0');
+    expect(resolveMochiVersionRange('1.0.0')).toBe('^1.0.0');
+  });
+
+  test('falls back to "latest" when version is null', () => {
+    expect(resolveMochiVersionRange(null)).toBe('latest');
+  });
+});
+
+describe('transformPackageJson', () => {
+  test('replaces name and workspace deps', () => {
+    const input = JSON.stringify({
+      name: 'mochi-minimal',
+      private: true,
+      dependencies: {
+        'mochi-framework': 'workspace:*',
+        svelte: '^5.55.1',
+      },
+      devDependencies: {
+        '@types/bun': '1.3.13',
+      },
+    });
+
+    const out = JSON.parse(transformPackageJson(input, { name: 'my-app', mochiVersion: '^0.2.5' }));
+    expect(out.name).toBe('my-app');
+    expect(out.private).toBe(true);
+    expect(out.dependencies['mochi-framework']).toBe('^0.2.5');
+    expect(out.dependencies.svelte).toBe('^5.55.1');
+    expect(out.devDependencies['@types/bun']).toBe('1.3.13');
+  });
+
+  test('replaces workspace:* deps for non-mochi packages with "latest"', () => {
+    const input = JSON.stringify({
+      name: 'pkg',
+      dependencies: { 'some-internal-lib': 'workspace:*' },
+    });
+    const out = JSON.parse(transformPackageJson(input, { name: 'p', mochiVersion: '^0.1.0' }));
+    expect(out.dependencies['some-internal-lib']).toBe('latest');
+  });
+
+  test('handles missing dependency fields', () => {
+    const input = JSON.stringify({ name: 'pkg' });
+    const out = JSON.parse(transformPackageJson(input, { name: 'my-app', mochiVersion: '^0.1.0' }));
+    expect(out.name).toBe('my-app');
+  });
+
+  test('output ends with a newline', () => {
+    const input = JSON.stringify({ name: 'x' });
+    expect(transformPackageJson(input, { name: 'y', mochiVersion: '^0.1.0' }).endsWith('\n')).toBe(true);
+  });
+});
+
+describe('transformTsconfig', () => {
+  test('inlines base tsconfig when extending it', () => {
+    const input = JSON.stringify({
+      extends: '../../tsconfig.base.json',
+      compilerOptions: { types: ['bun'] },
+      include: ['src/**/*'],
+    });
+    const out = JSON.parse(transformTsconfig(input));
+    expect(out.extends).toBeUndefined();
+    expect(out.compilerOptions.target).toBe('ESNext');
+    expect(out.compilerOptions.types).toEqual(['bun']);
+    expect(out.compilerOptions.strict).toBe(true);
+    expect(out.include).toEqual(['src/**/*']);
+  });
+
+  test('leaves unrelated tsconfigs untouched', () => {
+    const input = JSON.stringify({ compilerOptions: { strict: true } });
+    const out = JSON.parse(transformTsconfig(input));
+    expect(out.compilerOptions.strict).toBe(true);
+  });
+
+  test('drops only the base extends, not other extensions', () => {
+    const input = JSON.stringify({ extends: 'some-other-config' });
+    const out = JSON.parse(transformTsconfig(input));
+    expect(out.extends).toBe('some-other-config');
+  });
+});

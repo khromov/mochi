@@ -1,0 +1,7 @@
+@font-face {
+  font-family: 'Lobster';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./lobster.woff2') format('woff2');
+}

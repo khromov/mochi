@@ -1,0 +1,63 @@
+    # Production image for the standalone demos site (HN clone today).
+# Modeled on the root Dockerfile.production but scoped to packages/demos.
+
+FROM oven/bun:1.3.14 AS base
+WORKDIR /usr/src/app
+
+# install dependencies into a temp directory
+FROM base AS install
+COPY package.json bun.lock /temp/prod/
+COPY patches /temp/prod/patches
+# Copy every workspace wholesale so bun install can reconcile the lockfile
+# topology AND the workspace:* bin shims (e.g. mochi-framework -> src/cli.js)
+# resolve correctly. Trades a bit of layer-cache granularity for robustness.
+COPY packages /temp/prod/packages
+# --production drops devDeps. Don't omit peers — mochi-framework's peer
+# (svelte) must resolve from packages/mochi/src/ at build time, and dropping
+# peers causes Bun to skip hoisting it to a place mochi can find.
+RUN cd /temp/prod && bun install --frozen-lockfile --production --omit=dev
+
+# build stage — prebuild Svelte SSR + client bundles via the demos workspace
+FROM base AS build
+COPY --from=install /temp/prod/node_modules node_modules
+COPY --from=install /temp/prod/packages/demos/node_modules packages/demos/node_modules
+COPY --from=install /temp/prod/packages/mochi/node_modules packages/mochi/node_modules
+COPY package.json tsconfig.json tsconfig.base.json ./
+COPY packages/mochi packages/mochi
+COPY packages/demos packages/demos
+RUN bun --cwd=packages/demos run build
+
+# minimal alpine-glibc release image
+FROM frolvlad/alpine-glibc:latest AS release
+WORKDIR /usr/src/app
+
+# create non-root user
+RUN addgroup -g 1000 bun && adduser -u 1000 -G bun -s /bin/sh -D bun
+
+# copy bun binary
+COPY --from=base /usr/local/bin/bun /usr/local/bin/bun
+
+# source
+COPY package.json tsconfig.json tsconfig.base.json ./
+COPY packages/mochi packages/mochi
+COPY packages/demos/package.json packages/demos/tsconfig.json packages/demos/svelte.config.js packages/demos/
+COPY packages/demos/src packages/demos/src
+
+# resolved node_modules trees from the install stage
+COPY --from=install /temp/prod/node_modules node_modules
+COPY --from=install /temp/prod/packages/demos/node_modules packages/demos/node_modules
+COPY --from=install /temp/prod/packages/mochi/node_modules packages/mochi/node_modules
+
+# prebuilt manifest, SSR/client bundles
+COPY --from=build /usr/src/app/packages/demos/.mochi packages/demos/.mochi
+
+# libgcc is required by @tailwindcss/oxide's musl native binding (libgcc_s.so.1)
+RUN apk add --no-cache libgcc ncdu
+
+# ensure the prebuilt cache and src dir are owned by the runtime user
+# (tailwind.ts writes app.generated.css into src/ at startup)
+RUN chown -R bun:bun packages/demos/.mochi packages/demos/src
+
+USER bun
+EXPOSE 3334/tcp
+ENTRYPOINT [ "bun", "--cwd=packages/demos", "run", "start" ]

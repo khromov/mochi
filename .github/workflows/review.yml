@@ -1,0 +1,63 @@
+name: Review
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  loc:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+
+      - name: Count LOC on PR branch
+        run: bun .github/scripts/loc-report.ts --json > pr.json
+
+      - name: Count LOC on main
+        run: |
+          git fetch origin main:refs/remotes/origin/main
+          git worktree add ../main-tree origin/main
+          (cd ../main-tree && bun .github/scripts/loc-report.ts --json) > main.json
+          git worktree remove --force ../main-tree
+
+      - name: Render comment
+        run: bun .github/scripts/loc-comment.ts main.json pr.json > comment.md
+
+      - name: Post or update sticky comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync('comment.md', 'utf8');
+            const marker = '<!-- mochi-review-bot -->';
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find((c) => c.body && c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }

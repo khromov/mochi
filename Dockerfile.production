@@ -1,0 +1,61 @@
+# use the official Bun image for building
+FROM oven/bun:1.3.14 AS base
+WORKDIR /usr/src/app
+
+# install dependencies into a temp directory — copying every workspace's
+# package.json so bun install can resolve the workspace topology
+FROM base AS install
+COPY package.json bun.lock /temp/prod/
+COPY patches /temp/prod/patches
+# Copy every workspace wholesale so bun install can reconcile the lockfile
+# topology AND the workspace:* bin shims (e.g. mochi-framework -> src/cli.js)
+# resolve correctly. Trades a bit of layer-cache granularity for robustness.
+COPY packages /temp/prod/packages
+# --production drops devDeps. Don't omit peers — mochi-framework's peer
+# (svelte) must resolve from packages/mochi/src/ at build time, and dropping
+# peers causes Bun to skip hoisting it to a place mochi can find.
+RUN cd /temp/prod && bun install --frozen-lockfile --production --omit=dev
+
+# build stage — prebuild Svelte SSR + client bundles via the site workspace
+FROM base AS build
+COPY --from=install /temp/prod/node_modules node_modules
+COPY --from=install /temp/prod/packages/site/node_modules packages/site/node_modules
+COPY --from=install /temp/prod/packages/mochi/node_modules packages/mochi/node_modules
+COPY package.json tsconfig.json tsconfig.base.json ./
+COPY packages packages
+RUN bun --cwd=packages/site run build
+
+# minimal alpine-glibc release image
+FROM frolvlad/alpine-glibc:latest AS release
+WORKDIR /usr/src/app
+
+# create non-root user
+RUN addgroup -g 1000 bun && adduser -u 1000 -G bun -s /bin/sh -D bun
+
+# copy bun binary
+COPY --from=base /usr/local/bin/bun /usr/local/bin/bun
+
+# source — release doesn't need packages/site/public (already baked into packages/site/.mochi/public)
+COPY package.json tsconfig.json tsconfig.base.json ./
+COPY packages/mochi packages/mochi
+COPY packages/site/package.json packages/site/tsconfig.json packages/site/global.d.ts packages/site/svelte.config.js packages/site/
+COPY packages/site/src packages/site/src
+
+# production deps + workspace symlinks
+COPY --from=install /temp/prod/node_modules node_modules
+COPY --from=install /temp/prod/packages/site/node_modules packages/site/node_modules
+COPY --from=install /temp/prod/packages/mochi/node_modules packages/mochi/node_modules
+
+# prebuilt manifest, SSR/client bundles, and copied public assets
+COPY --from=build /usr/src/app/packages/site/.mochi packages/site/.mochi
+
+# install ncdu for disk usage analysis
+RUN apk add --no-cache ncdu
+
+# ensure the prebuilt cache is owned by the runtime user
+RUN chown -R bun:bun packages/site/.mochi
+
+# run the app
+USER bun
+EXPOSE 3333/tcp
+ENTRYPOINT [ "bun", "run", "start" ]

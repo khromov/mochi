@@ -1,0 +1,19 @@
+<script>
+  let { items = [] } = $props();
+</script>
+
+### A `.svx` file
+
+Same compile pipeline as `.md` — mdsvex accepts both extensions. This snippet
+shows a fenced code block (run through the framework's syntax highlighter)
+plus a Svelte `{#each}` loop driven by a prop:
+
+```ts
+const items = ['Hydration', 'CSS imports', 'MdSvex'];
+```
+
+<ol>
+  {#each items as item}
+    <li>{item}</li>
+  {/each}
+</ol>

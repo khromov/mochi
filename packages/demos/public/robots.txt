@@ -1,0 +1,5 @@
+User-agent: GPTBot
+Disallow: /hn
+
+User-agent: *
+Disallow: /hn

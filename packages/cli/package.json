@@ -1,0 +1,65 @@
+{
+  "name": "create-mochi",
+  "version": "0.0.1",
+  "type": "module",
+  "license": "MIT",
+  "description": "Scaffold a new Mochi project. Run with `npm create mochi@latest`.",
+  "keywords": [
+    "mochi",
+    "mochi-framework",
+    "scaffold",
+    "create",
+    "template",
+    "svelte",
+    "bun"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/khromov/mochi.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/khromov/mochi/tree/main/packages/cli#readme",
+  "bugs": {
+    "url": "https://github.com/khromov/mochi/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "engines": {
+    "bun": ">=1.3.13"
+  },
+  "bin": {
+    "create-mochi": "src/cli.js"
+  },
+  "files": [
+    "src",
+    "!src/**/*.test.ts",
+    "!src/**/*.isolated.test.ts",
+    "!src/__fixtures__",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "bun": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@bluwy/giget-core": "^0.1.7",
+    "@clack/prompts": "^1.3.0",
+    "commander": "^14.0.3",
+    "picocolors": "^1.1.1"
+  },
+  "devDependencies": {
+    "@types/bun": "1.3.14",
+    "typescript": "^6.0.3"
+  }
+}

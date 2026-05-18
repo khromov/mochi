@@ -1,0 +1,5 @@
+@import './nonexistent-bad-target.css';
+
+.bad-css-fixture {
+  color: red;
+}

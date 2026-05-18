@@ -1,0 +1,16 @@
+node_modules
+**/node_modules
+Dockerfile*
+docker-compose*
+.dockerignore
+.git
+.gitignore
+.env*
+README.md
+LICENSE
+.vscode
+.idea
+.vercel
+coverage*
+.mochi
+packages/**/.mochi

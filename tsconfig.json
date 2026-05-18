@@ -1,0 +1,4 @@
+{
+  "files": [],
+  "references": [{ "path": "./packages/mochi" }, { "path": "./packages/site" }, { "path": "./packages/demos" }, { "path": "./packages/cli" }]
+}

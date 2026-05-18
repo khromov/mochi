@@ -1,0 +1,7 @@
+@font-face {
+  font-family: 'Test Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url('data:font/woff2;base64,d09GMg==') format('woff2-variations');
+}

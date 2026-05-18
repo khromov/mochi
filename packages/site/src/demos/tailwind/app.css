@@ -1,0 +1,27 @@
+/* Tailwind v4 input. Two notes:
+   - Preflight is skipped: this stylesheet is loaded only on /demos/tailwind via
+     the framework's CSS-import bundler, but the site's own DemoPage chrome
+     around it would still get reset.
+   - Utilities are imported WITHOUT `layer(utilities)`. The site's shell.html
+     ships an unlayered universal reset (`*, *::before, *::after { margin: 0;
+     padding: 0; … }`). In CSS cascade layers, unlayered styles always beat
+     layered ones, so wrapping utilities in `layer(utilities)` would let the
+     reset clobber `.p-6`, `.mt-2`, etc. Unlayered utilities win by selector
+     specificity instead. */
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/utilities.css';
+
+@source './*.svelte';
+
+/* Tiny element reset. Without preflight, native `<button>` rendering leaks
+   through (macOS pill shape, default gray background) and clobbers
+   `rounded-lg`, `bg-transparent`, etc. Scoped to this stylesheet, which is
+   loaded only on /demos/tailwind. */
+button {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
