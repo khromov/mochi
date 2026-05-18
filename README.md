@@ -4,6 +4,24 @@ An SSR framework for [Svelte 5](https://svelte.dev/) + [Bun](https://bun.sh/) wi
 
 > **Early prototype.** Only use in production if you are brave!
 
+## Setting up the development environment
+
+```sh
+curl -fsSL https://bun.com/install | bash # install bun if you don't have it already
+bun i
+bun dev
+```
+
+_Bun must be v1.3.13 or newer!_
+
+#### Available sites
+
+- Documentation site - http://localhost:3334/
+- Admin demo: http://localhost:3334/admin/
+- Hacker News demo: http://localhost:3334/hn/front/
+- Tailwind + Todo demo: http://localhost:3334/todo/
+- Hello world minimal template: http://localhost:3335/
+
 ## Goals
 
 - Partial hydration — non-hydrated components aren't added to bundles
