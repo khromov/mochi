@@ -4,7 +4,7 @@ import { Command, Option } from 'commander';
 import * as p from '@clack/prompts';
 import pc from 'picocolors';
 import pkg from '../package.json' with { type: 'json' };
-import { create } from './create.ts';
+import { create, SCAFFOLDED_PORT } from './create.ts';
 import { TEMPLATES, TEMPLATE_IDS, type TemplateId } from './templates.ts';
 import { isDirEmpty, validatePackageName } from './utils.ts';
 
@@ -81,7 +81,7 @@ async function runCreate(rawPath: string | undefined, opts: CliOptions): Promise
       `   ${pc.italic('Mochi blooms in code')}`,
       '',
       `   ${pc.dim('Docs:')}  ${pc.cyan('https://mochi.fast/')}`,
-      `   ${pc.dim('Local:')} ${pc.cyan(localUrlFor(template))}`,
+      `   ${pc.dim('Local:')} ${pc.cyan(`http://localhost:${SCAFFOLDED_PORT}/`)}`,
     ].join('\n'),
   );
 }
@@ -89,11 +89,6 @@ async function runCreate(rawPath: string | undefined, opts: CliOptions): Promise
 function defaultNameFor(dir: string): string {
   const base = path.basename(path.resolve(dir));
   return validatePackageName(base) === null ? base : 'mochi-app';
-}
-
-function localUrlFor(template: TemplateId): string {
-  const port = template === 'demos' ? 3334 : 3335;
-  return `http://localhost:${port}/`;
 }
 
 async function promptDirectory(provided: string | undefined): Promise<string> {
