@@ -66,7 +66,15 @@ async function runCreate(rawPath: string | undefined, opts: CliOptions): Promise
     [`${pc.dim('1.')} cd ${rel}`, `${pc.dim('2.')} bun install`, `${pc.dim('3.')} bun run dev`, '', pc.dim(`mochi-framework pinned to ${result.mochiVersion}`)].join('\n'),
     "You're all set!",
   );
-  p.outro(`Happy hacking! ${pc.dim('https://github.com/khromov/mochi')}`);
+  p.outro(
+    [
+      pc.italic('Server renders calm'),
+      pc.italic("Islands wake to user's touch"),
+      pc.italic('Mochi blooms in code'),
+      '',
+      `${pc.dim('Docs:')} ${pc.cyan('https://mochi.fast/')}`,
+    ].join('\n'),
+  );
 }
 
 function defaultNameFor(dir: string): string {
