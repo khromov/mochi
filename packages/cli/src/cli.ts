@@ -63,7 +63,15 @@ async function runCreate(rawPath: string | undefined, opts: CliOptions): Promise
 
   const rel = path.relative(process.cwd(), result.dir) || '.';
   p.note(
-    [`${pc.dim('1.')} cd ${rel}`, `${pc.dim('2.')} bun install`, `${pc.dim('3.')} bun run dev`, '', pc.dim(`mochi-framework pinned to ${result.mochiVersion}`)].join('\n'),
+    [
+      pc.dim('Run this to get started:'),
+      '',
+      `${pc.dim('1.')} cd ${rel}`,
+      `${pc.dim('2.')} bun install`,
+      `${pc.dim('3.')} bun run dev`,
+      '',
+      pc.dim(`mochi-framework pinned to ${result.mochiVersion}`),
+    ].join('\n'),
     "You're all set!",
   );
   p.outro(
@@ -72,7 +80,8 @@ async function runCreate(rawPath: string | undefined, opts: CliOptions): Promise
       `   ${pc.italic("Islands wake to user's touch")}`,
       `   ${pc.italic('Mochi blooms in code')}`,
       '',
-      `   ${pc.dim('Docs:')} ${pc.cyan('https://mochi.fast/')}`,
+      `   ${pc.dim('Docs:')}  ${pc.cyan('https://mochi.fast/')}`,
+      `   ${pc.dim('Local:')} ${pc.cyan(localUrlFor(template))}`,
     ].join('\n'),
   );
 }
@@ -80,6 +89,11 @@ async function runCreate(rawPath: string | undefined, opts: CliOptions): Promise
 function defaultNameFor(dir: string): string {
   const base = path.basename(path.resolve(dir));
   return validatePackageName(base) === null ? base : 'mochi-app';
+}
+
+function localUrlFor(template: TemplateId): string {
+  const port = template === 'demos' ? 3334 : 3335;
+  return `http://localhost:${port}/`;
 }
 
 async function promptDirectory(provided: string | undefined): Promise<string> {
