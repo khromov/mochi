@@ -69,10 +69,10 @@ async function runCreate(rawPath: string | undefined, opts: CliOptions): Promise
   p.outro(
     [
       pc.italic('Server renders calm'),
-      pc.italic("Islands wake to user's touch"),
-      pc.italic('Mochi blooms in code'),
+      `   ${pc.italic("Islands wake to user's touch")}`,
+      `   ${pc.italic('Mochi blooms in code')}`,
       '',
-      `${pc.dim('Docs:')} ${pc.cyan('https://mochi.fast/')}`,
+      `   ${pc.dim('Docs:')} ${pc.cyan('https://mochi.fast/')}`,
     ].join('\n'),
   );
 }
