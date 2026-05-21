@@ -12,7 +12,7 @@ const program = new Command('create-mochi')
   .description('Scaffold a new Mochi project.')
   .argument('[path]', 'where the project should be created')
   .addOption(new Option('--template <name>', 'starter template').choices([...TEMPLATE_IDS]))
-  .addOption(new Option('--name <name>', "package.json `name` field (defaults to the directory's basename)"))
+  .addOption(new Option('--name <name>', 'package.json `name` field (defaults to the directory name)'))
   .addOption(new Option('--force', 'overwrite existing directory contents'))
   .version(pkg.version, '-v, --version')
   .configureHelp({

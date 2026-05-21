@@ -106,6 +106,10 @@ export function transformTsconfig(contents: string): string {
   return JSON.stringify(cfg, null, 2) + '\n';
 }
 
+export function setDefaultPort(contents: string, port: number): string {
+  return contents.replace(/(const PORT = Number\(process\.env\.PORT\) \|\| )\d+(;)/, `$1${port}$2`);
+}
+
 const DEFAULT_GITIGNORE = `node_modules
 .mochi
 .mochi-*
