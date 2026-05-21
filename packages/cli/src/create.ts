@@ -2,7 +2,9 @@ import path from 'node:path';
 import fs from 'node:fs/promises';
 import { downloadTemplate } from '@bluwy/giget-core';
 import { getTemplate, type TemplateId } from './templates.ts';
-import { ensureGitignore, fetchLatestMochiVersion, resolveMochiVersionRange, transformPackageJson, transformTsconfig, validatePackageName } from './utils.ts';
+import { ensureGitignore, fetchLatestMochiVersion, resolveMochiVersionRange, setDefaultPort, transformPackageJson, transformTsconfig, validatePackageName } from './utils.ts';
+
+const SCAFFOLDED_PORT = 3333;
 
 export interface CreateOptions {
   /** Destination directory (absolute or cwd-relative). */
@@ -51,15 +53,16 @@ export async function create(opts: CreateOptions): Promise<CreateResult> {
 
   const mochiVersion = opts.mochiVersion ?? resolveMochiVersionRange(await fetchLatestMochiVersion());
 
-  await rewriteJson(path.join(dir, 'package.json'), (raw) => transformPackageJson(raw, { name: opts.name, mochiVersion }));
-  await rewriteJson(path.join(dir, 'tsconfig.json'), transformTsconfig);
+  await rewriteFile(path.join(dir, 'package.json'), (raw) => transformPackageJson(raw, { name: opts.name, mochiVersion }));
+  await rewriteFile(path.join(dir, 'tsconfig.json'), transformTsconfig);
+  await rewriteFile(path.join(dir, 'src/index.ts'), (raw) => setDefaultPort(raw, SCAFFOLDED_PORT));
 
   ensureGitignore(dir);
 
   return { dir, template: template.id, mochiVersion };
 }
 
-async function rewriteJson(file: string, transform: (raw: string) => string): Promise<void> {
+async function rewriteFile(file: string, transform: (raw: string) => string): Promise<void> {
   let raw: string;
   try {
     raw = await fs.readFile(file, 'utf8');

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { resolveMochiVersionRange, transformPackageJson, transformTsconfig, validatePackageName } from './utils.ts';
+import { resolveMochiVersionRange, setDefaultPort, transformPackageJson, transformTsconfig, validatePackageName } from './utils.ts';
 
 describe('validatePackageName', () => {
   test('accepts simple names', () => {
@@ -101,5 +101,26 @@ describe('transformTsconfig', () => {
     const input = JSON.stringify({ extends: 'some-other-config' });
     const out = JSON.parse(transformTsconfig(input));
     expect(out.extends).toBe('some-other-config');
+  });
+});
+
+describe('setDefaultPort', () => {
+  test('replaces a non-3333 port and preserves surrounding context', () => {
+    const input = `import { Mochi } from 'mochi-framework';\n\nconst PORT = Number(process.env.PORT) || 3335;\n\nawait Mochi.serve({ port: PORT });\n`;
+    const out = setDefaultPort(input, 3333);
+    expect(out).toContain('const PORT = Number(process.env.PORT) || 3333;');
+    expect(out).not.toContain('3335');
+    expect(out).toContain("import { Mochi } from 'mochi-framework';");
+    expect(out).toContain('await Mochi.serve({ port: PORT });');
+  });
+
+  test('is idempotent when the port already matches', () => {
+    const input = `const PORT = Number(process.env.PORT) || 3333;\n`;
+    expect(setDefaultPort(input, 3333)).toBe(input);
+  });
+
+  test('returns input unchanged when the pattern is absent', () => {
+    const input = `const port = 4000;\nconsole.log(port);\n`;
+    expect(setDefaultPort(input, 3333)).toBe(input);
   });
 });
