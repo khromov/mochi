@@ -3,6 +3,12 @@ name: release
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to re-publish (e.g. mochi-framework-v0.1.0 or create-mochi-v0.0.2)'
+        required: true
+        type: string
 
 concurrency:
   group: release-${{ github.ref }}
@@ -15,6 +21,7 @@ permissions:
 
 jobs:
   release-please:
+    if: ${{ github.event_name == 'push' }}
     runs-on: ubuntu-latest
     outputs:
       mochi_release_created: ${{ steps.release.outputs['packages/mochi--release_created'] }}
@@ -73,7 +80,7 @@ jobs:
       - run: bun install --frozen-lockfile
 
       - run: bun run typecheck
-      - run: bun test
+      - run: bun run test
 
       - name: Publish mochi-framework to npm
         working-directory: packages/mochi
@@ -100,8 +107,44 @@ jobs:
       - run: bun install --frozen-lockfile
 
       - run: bun --cwd=packages/cli run typecheck
-      - run: bun --cwd=packages/cli test
+      - run: bun --cwd=packages/cli run test
 
       - name: Publish create-mochi to npm
         working-directory: packages/cli
+        run: npm publish --provenance --access public
+
+  republish:
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: 'https://registry.npmjs.org'
+
+      - run: bun install --frozen-lockfile
+
+      - name: Resolve package directory from tag
+        id: pkg
+        run: |
+          tag='${{ inputs.tag }}'
+          case "$tag" in
+            mochi-framework-v*) echo "dir=packages/mochi" >> "$GITHUB_OUTPUT" ;;
+            create-mochi-v*) echo "dir=packages/cli" >> "$GITHUB_OUTPUT" ;;
+            *) echo "::error::Unrecognized tag: $tag (expected mochi-framework-v* or create-mochi-v*)"; exit 1 ;;
+          esac
+
+      - run: bun --cwd="${{ steps.pkg.outputs.dir }}" run typecheck
+      - run: bun --cwd="${{ steps.pkg.outputs.dir }}" run test
+
+      - name: Publish to npm
+        working-directory: ${{ steps.pkg.outputs.dir }}
         run: npm publish --provenance --access public
