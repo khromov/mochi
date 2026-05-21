@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/khromov/mochi/compare/create-mochi-v0.1.0...create-mochi-v0.2.0) (2026-05-21)
+
+
+### Features
+
+* **cli:** haiku outro with docs + local URL, and a setup intro line ([#8](https://github.com/khromov/mochi/issues/8)) ([c7b3310](https://github.com/khromov/mochi/commit/c7b33108669e39e3dffd19dc03d9bc08d2817a37))
+
 ## [0.1.0](https://github.com/khromov/mochi/compare/create-mochi-v0.0.1...create-mochi-v0.1.0) (2026-05-21)
 
 
