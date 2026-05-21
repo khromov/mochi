@@ -4,7 +4,7 @@ import { downloadTemplate } from '@bluwy/giget-core';
 import { getTemplate, type TemplateId } from './templates.ts';
 import { ensureGitignore, fetchLatestMochiVersion, resolveMochiVersionRange, setDefaultPort, transformPackageJson, transformTsconfig, validatePackageName } from './utils.ts';
 
-const SCAFFOLDED_PORT = 3333;
+export const SCAFFOLDED_PORT = 3333;
 
 export interface CreateOptions {
   /** Destination directory (absolute or cwd-relative). */

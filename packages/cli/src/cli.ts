@@ -4,7 +4,7 @@ import { Command, Option } from 'commander';
 import * as p from '@clack/prompts';
 import pc from 'picocolors';
 import pkg from '../package.json' with { type: 'json' };
-import { create } from './create.ts';
+import { create, SCAFFOLDED_PORT } from './create.ts';
 import { TEMPLATES, TEMPLATE_IDS, type TemplateId } from './templates.ts';
 import { isDirEmpty, validatePackageName } from './utils.ts';
 
@@ -63,10 +63,27 @@ async function runCreate(rawPath: string | undefined, opts: CliOptions): Promise
 
   const rel = path.relative(process.cwd(), result.dir) || '.';
   p.note(
-    [`${pc.dim('1.')} cd ${rel}`, `${pc.dim('2.')} bun install`, `${pc.dim('3.')} bun run dev`, '', pc.dim(`mochi-framework pinned to ${result.mochiVersion}`)].join('\n'),
+    [
+      pc.dim('Run this to get started:'),
+      '',
+      `${pc.dim('1.')} cd ${rel}`,
+      `${pc.dim('2.')} bun install`,
+      `${pc.dim('3.')} bun run dev`,
+      '',
+      pc.dim(`mochi-framework pinned to ${result.mochiVersion}`),
+    ].join('\n'),
     "You're all set!",
   );
-  p.outro(`Happy hacking! ${pc.dim('https://github.com/khromov/mochi')}`);
+  p.outro(
+    [
+      pc.italic('Server renders calm'),
+      `   ${pc.italic("Islands wake to user's touch")}`,
+      `   ${pc.italic('Mochi blooms in code')}`,
+      '',
+      `   ${pc.dim('Docs:')}  ${pc.cyan('https://mochi.fast/')}`,
+      `   ${pc.dim('Local:')} ${pc.cyan(`http://localhost:${SCAFFOLDED_PORT}/`)}`,
+    ].join('\n'),
+  );
 }
 
 function defaultNameFor(dir: string): string {
