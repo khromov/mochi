@@ -51,6 +51,6 @@
     "typescript-eslint": "^8.59.3"
   },
   "patchedDependencies": {
-    "svelte-check@4.4.7": "patches/svelte-check@4.4.7.patch"
+    "svelte-check@4.4.7": "packages/mochi/patches/svelte-check@4.4.7.patch"
   }
 }
