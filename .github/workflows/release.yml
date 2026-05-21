@@ -78,8 +78,6 @@ jobs:
       - name: Publish mochi-framework to npm
         working-directory: packages/mochi
         run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   publish-cli:
     needs: release-please
@@ -107,5 +105,3 @@ jobs:
       - name: Publish create-mochi to npm
         working-directory: packages/cli
         run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
