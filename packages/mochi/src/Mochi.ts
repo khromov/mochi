@@ -627,6 +627,8 @@ export class Mochi {
                 const apiEvent = {
                   ...event,
                   method: event.request.method as HttpMethod,
+                  params: ctx.params,
+                  cookies: ctx.cookies,
                 };
                 try {
                   const response = await apiHandler(apiEvent);

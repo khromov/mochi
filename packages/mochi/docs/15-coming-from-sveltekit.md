@@ -212,7 +212,7 @@ Do **NOT** call `enhance()` outside a hydrated island; instead, mark the surroun
 
 ### API routes (`+server.ts`)
 
-SvelteKit's `+server.ts` with `GET` / `POST` exports becomes `Mochi.api(handler)` — one handler per route, branch on `method` inside. The handler receives `{ request, url, server, locals, kind, method }`; pull `params`, `cookies`, and other request-scoped values from `getRequestContext()`.
+SvelteKit's `+server.ts` with `GET` / `POST` exports becomes `Mochi.api(handler)` — one handler per route, branch on `method` inside. The handler receives `{ request, url, server, locals, kind, method, params, cookies }`.
 
 ```ts
 // file (SvelteKit): src/routes/api/users/[id]/+server.ts
@@ -227,11 +227,10 @@ export async function POST({ params, request }) {
 
 ```ts
 // file (Mochi): src/routes.ts
-import { Mochi, error, getRequestContext } from 'mochi-framework';
+import { Mochi, error } from 'mochi-framework';
 
 export const routes = {
-  '/api/users/:id': Mochi.api(async ({ method, request }) => {
-    const { params } = getRequestContext();
+  '/api/users/:id': Mochi.api(async ({ method, request, params }) => {
     if (method === 'GET') return Response.json(await loadUser(params.id));
     if (method === 'POST') return Response.json(await createUser(params.id, await request.json()));
     error(405, 'Method not allowed');

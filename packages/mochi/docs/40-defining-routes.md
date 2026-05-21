@@ -96,7 +96,7 @@ Do **NOT** return a prop named `form` from `serverProps` when `actions` is decla
 
 ### `Mochi.api`
 
-Register a JSON endpoint via `Mochi.api(handler)`. The handler receives a `MochiApiEvent` (`method`, `request`, `url`, `server`, `locals`) and returns a `Response`.
+Register a JSON endpoint via `Mochi.api(handler)`. The handler receives a `MochiApiEvent` (`method`, `request`, `url`, `server`, `locals`, `params`, `cookies`) and returns a `Response`.
 
 ```ts
 // file: src/routes.ts

@@ -5,7 +5,7 @@ slug: api-routes
 
 ## API routes
 
-`Mochi.api(handler)` registers a JSON endpoint. The handler receives a `MochiApiEvent` (`method`, `request`, `url`, `server`, `locals`) and **must** return a `Response` (or a `Promise<Response>`).
+`Mochi.api(handler)` registers a JSON endpoint. The handler receives a `MochiApiEvent` (`method`, `request`, `url`, `server`, `locals`, `params`, `cookies`) and **must** return a `Response` (or a `Promise<Response>`).
 
 ```ts
 // file: src/routes.ts
@@ -20,21 +20,18 @@ Do **NOT** return a plain object or string from a `Mochi.api` handler; instead, 
 
 ### `MochiApiEvent`
 
-The handler's argument carries only what the request needs — no params, no cookies. Pull request-scoped values from `getRequestContext()`:
+Destructure `params` and `cookies` directly off the event — they mirror what `Mochi.page` form-action handlers receive:
 
 ```ts
 // file: src/routes.ts
-import { getRequestContext } from 'mochi-framework';
-
-'/items/:id': Mochi.api(async () => {
-  const { params, url, cookies } = getRequestContext();
+'/items/:id': Mochi.api(({ url, params, cookies }) => {
   const tab = url.searchParams.get('tab') ?? 'overview';
   const session = cookies.get('session');
   return Response.json({ id: params.id, tab, session });
 }),
 ```
 
-Do **NOT** thread `params` through a custom argument; instead, read them from `getRequestContext().params` — the context is request-scoped via `AsyncLocalStorage`.
+`getRequestContext()` still works and exposes the same values plus `requestId`, `islandProps`, `getClientAddress()`, etc. — reach for it from helper functions that aren't passed the event.
 
 ### Reading the request body
 
