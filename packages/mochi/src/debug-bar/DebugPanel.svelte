@@ -64,7 +64,6 @@
     align-items: baseline;
     justify-content: space-between;
     padding: 4px 6px 10px;
-    border-bottom: 1px solid #3d4137;
     margin-bottom: 6px;
   }
   .panel-title {
