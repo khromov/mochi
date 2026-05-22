@@ -57,11 +57,7 @@
   </header>
 
   <main class="body">
-    <section class="quickstart" aria-labelledby="quickstart-title">
-      <header class="quickstart-head">
-        <h2 id="quickstart-title">Quick start</h2>
-        <p class="quickstart-hint">Scaffold a new Mochi project in seconds. Requires <a href="https://bun.sh" target="_blank" rel="noopener noreferrer">Bun</a>.</p>
-      </header>
+    <section class="quickstart" aria-label="Quick start">
       <div class="terminal" role="figure" aria-label="Terminal command">
         <div class="terminal-bar" aria-hidden="true">
           <span class="terminal-dot terminal-dot-red"></span>
@@ -86,6 +82,9 @@
           </button>
         </div>
       </div>
+      <p class="quickstart-note">
+        Requires <a href="https://bun.sh" target="_blank" rel="noopener noreferrer">Bun</a> <code>&gt;= 1.3.13</code>.
+      </p>
     </section>
 
     <section class="docs-cta">
@@ -244,27 +243,26 @@
     margin-bottom: 1.75rem;
   }
 
-  .quickstart-head {
-    margin-bottom: 0.85rem;
+  .quickstart-note {
+    margin-top: 0.6rem;
+    padding-left: 0.15rem;
+    font-size: 0.78rem;
+    line-height: 1.4;
+    color: var(--text-subtle);
   }
 
-  .quickstart-head h2 {
-    font-family: var(--font-serif);
-    font-size: 1.35rem;
-    font-weight: 500;
-    color: var(--text);
-    letter-spacing: -0.01em;
-    margin-bottom: 0.35rem;
-  }
-
-  .quickstart-hint {
+  .quickstart-note code {
+    font-family: var(--font-mono);
+    font-size: 0.95em;
+    padding: 0.05rem 0.3rem;
+    background: var(--surface-muted, var(--surface));
+    border: 1px solid var(--border);
+    border-radius: 4px;
     color: var(--text-muted);
-    font-size: 0.95rem;
-    line-height: 1.5;
   }
 
-  .quickstart-hint a {
-    color: var(--accent);
+  .quickstart-note a {
+    color: var(--text-muted);
     text-decoration: none;
     border-bottom: 1px solid transparent;
     transition:
@@ -272,7 +270,8 @@
       border-color 0.12s ease;
   }
 
-  .quickstart-hint a:hover {
+  .quickstart-note a:hover {
+    color: var(--accent);
     border-bottom-color: var(--accent);
   }
 
