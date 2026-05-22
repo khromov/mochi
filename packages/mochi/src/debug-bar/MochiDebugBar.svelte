@@ -149,14 +149,13 @@
     transition:
       gap 220ms ease,
       border-radius 220ms ease,
-      padding 220ms ease,
-      width 220ms ease;
+      padding 220ms ease;
   }
   .bar.is-collapsed {
     gap: 0;
     border-radius: 999px;
     padding: 0;
-    width: 3em;
+    cursor: pointer;
   }
   .brand-toggle {
     background: transparent;
@@ -191,12 +190,9 @@
     outline-offset: 1px;
   }
   .is-collapsed .brand-toggle {
-    flex: 1;
-    height: 100%;
     gap: 0;
-    padding: 0;
+    padding: 1.14em;
     border-radius: 999px;
-    justify-content: center;
   }
   .is-collapsed .brand-toggle:hover {
     border-color: transparent;
