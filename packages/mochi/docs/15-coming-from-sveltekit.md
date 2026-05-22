@@ -3,6 +3,10 @@ title: 'Coming from SvelteKit'
 slug: coming-from-sveltekit
 ---
 
+<script>
+  import Callout from './_components/Callout.svelte';
+</script>
+
 ## Coming from SvelteKit
 
 You have likely already been using SvelteKit as your main framework for Svelte. Here is a quick list of most of the SvelteKit features and how they map to equivalent concepts in Mochi, so you can be up and running quickly.
@@ -56,7 +60,11 @@ export const routes = {
 };
 ```
 
-Tip: register the most specific patterns first — Bun matches in declaration order, not by file-name sort.
+<Callout type="info">
+
+Register the most specific patterns first — Bun matches in declaration order, not by file-name sort.
+
+</Callout>
 
 ### Layouts
 
@@ -176,7 +184,11 @@ export const routes = {
 {#if form?.error}<p>{form.error}</p>{/if}
 ```
 
-Tip: when `actions` is declared, leave `form` reserved for the action result — don't return it from `serverProps`. See [Defining routes](/docs/defining-routes/).
+<Callout type="info">
+
+When `actions` is declared, leave `form` reserved for the action result — don't return it from `serverProps`. See [Defining routes](/docs/defining-routes/).
+
+</Callout>
 
 ### `use:enhance`
 
@@ -206,7 +218,11 @@ SvelteKit's `use:enhance` action becomes Mochi's `enhance` attachment from `moch
 </form>
 ```
 
-Tip: mark the surrounding component with `mochi:hydrate*` so the attachment can attach in the browser — attachments can only run when Svelte hydrates a component. See [Progressively enhancing forms with enhance](/docs/progressively-enhancing-forms-with-enhance/).
+<Callout type="info">
+
+Mark the surrounding component with `mochi:hydrate*` so the attachment can attach in the browser — attachments can only run when Svelte hydrates a component. See [Progressively enhancing forms with enhance](/docs/progressively-enhancing-forms-with-enhance/).
+
+</Callout>
 
 ### API routes (`+server.ts`)
 
@@ -236,7 +252,11 @@ export const routes = {
 };
 ```
 
-Tip: use `Mochi.page` for normal HTML routes — `Mochi.api` never goes through the error page or `handleError`. See [API routes](/docs/api-routes/).
+<Callout type="info">
+
+Use `Mochi.page` for normal HTML routes — `Mochi.api` never goes through the error page or `handleError`. See [API routes](/docs/api-routes/).
+
+</Callout>
 
 ### `error()`, `redirect()`, `fail()`
 
@@ -252,7 +272,11 @@ import { error, redirect, fail } from '@sveltejs/kit';
 import { error, redirect, fail, success } from 'mochi-framework';
 ```
 
-Tip: call `error(status, message)` to signal an HTTP status — a bare `throw new Error()` becomes a 500.
+<Callout type="info">
+
+Call `error(status, message)` to signal an HTTP status — a bare `throw new Error()` becomes a 500.
+
+</Callout>
 
 ### Error pages (`+error.svelte`)
 
@@ -320,7 +344,11 @@ import { auth } from './handle';
 await Mochi.serve({ handle: sequence(auth), routes });
 ```
 
-Tip: wrap multiple handles in `sequence()` — `handle` takes a single function. See [Middleware (hooks)](/docs/middleware/).
+<Callout type="info">
+
+Wrap multiple handles in `sequence()` — `handle` takes a single function. See [Middleware (hooks)](/docs/middleware/).
+
+</Callout>
 
 ### `resolve` options
 
@@ -371,7 +399,11 @@ const handleError: HandleError = ({ error, event }) => {
 await Mochi.serve({ handleError, routes });
 ```
 
-Tip: `handleError` is never called for `Mochi.api` failures — return an error envelope inside the handler instead.
+<Callout type="info">
+
+`handleError` is never called for `Mochi.api` failures — return an error envelope inside the handler instead.
+
+</Callout>
 
 ### `event.locals`
 
@@ -426,7 +458,11 @@ import { getRequestContext } from 'mochi-framework';
 const ip = getRequestContext().getClientAddress();
 ```
 
-Tip: set `proxy.xffDepth` so `getClientAddress()` picks the correct hop, instead of parsing `X-Forwarded-For` yourself.
+<Callout type="info">
+
+Set `proxy.xffDepth` so `getClientAddress()` picks the correct hop, instead of parsing `X-Forwarded-For` yourself.
+
+</Callout>
 
 ### CSRF protection
 
@@ -447,7 +483,11 @@ await Mochi.serve({
 });
 ```
 
-Tip: pin trusted origins via `csrf.trustedOrigins` or the `csrf:trustedOrigins` filter instead of disabling CSRF on a state-mutating endpoint.
+<Callout type="info">
+
+Pin trusted origins via `csrf.trustedOrigins` or the `csrf:trustedOrigins` filter instead of disabling CSRF on a state-mutating endpoint.
+
+</Callout>
 
 ### Cookies
 
@@ -493,7 +533,11 @@ There is no reactive `page` store. Server-side, `getRequestContext()` returns `{
 <p>{url.pathname} — {params.slug}</p>
 ```
 
-Tip: call `getRequestContext()` on the server and use `location` / `window` on the client — there is no `$app/state` or `$app/stores` like in SvelteKit.
+<Callout type="info">
+
+Call `getRequestContext()` on the server and use `location` / `window` on the client — there is no `$app/state` or `$app/stores` like in SvelteKit.
+
+</Callout>
 
 ### `$app/navigation` (`goto`, `invalidate`, `preloadData`)
 
@@ -514,7 +558,11 @@ No equivalent. Mochi has no client-side router, so there is nothing to `goto` in
 <button onclick={() => (window.location.href = '/dashboard')}>Go</button>
 ```
 
-Tip: listen for `beforeunload` or `popstate` directly — there is no `beforeNavigate` / `afterNavigate` / `onNavigate`.
+<Callout type="info">
+
+Listen for `beforeunload` or `popstate` directly — there is no `beforeNavigate` / `afterNavigate` / `onNavigate`.
+
+</Callout>
 
 ### Link options (`data-sveltekit-preload-*`)
 
@@ -638,7 +686,11 @@ const apiKey = process.env.API_KEY;
 const publicApiUrl = process.env.PUBLIC_API_URL;
 ```
 
-Tip: rely on Bun's built-in `.env` loading — no need for `dotenv`. If you need to beam an environment variable to the client, pass it as a prop to a hydrated island.
+<Callout type="info">
+
+Rely on Bun's built-in `.env` loading — no need for `dotenv`. If you need to beam an environment variable to the client, pass it as a prop to a hydrated island.
+
+</Callout>
 
 ### `$app/paths` (`asset`, `base`, `resolve`)
 
@@ -727,7 +779,11 @@ await Mochi.serve({ trailingSlash: 'always', routes });
 // hydration is per-component: <Counter mochi:hydrate /> in the page
 ```
 
-Tip: control hydration with the `mochi:hydrate*` directives at each call site — there is no per-page `ssr` / `csr` / `prerender` export.
+<Callout type="info">
+
+Control hydration with the `mochi:hydrate*` directives at each call site — there is no per-page `ssr` / `csr` / `prerender` export.
+
+</Callout>
 
 ### Streaming / deferred data
 
