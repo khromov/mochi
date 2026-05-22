@@ -28,8 +28,8 @@ describe('resolveMochiVersionRange', () => {
     expect(resolveMochiVersionRange('1.0.0')).toBe('^1.0.0');
   });
 
-  test('falls back to "latest" when version is null', () => {
-    expect(resolveMochiVersionRange(null)).toBe('latest');
+  test('falls back to the pinned floor when version is null', () => {
+    expect(resolveMochiVersionRange(null)).toBe('^0.1.1');
   });
 });
 
