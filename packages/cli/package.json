@@ -1,6 +1,6 @@
 {
   "name": "create-mochi",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "type": "module",
   "license": "MIT",
   "description": "Scaffold a new Mochi project. Run with `npm create mochi@latest`.",
