@@ -221,7 +221,7 @@
     background: #181b13;
     color: #e8e6dd;
     border: 1px solid #353930;
-    border-top: none;
+    border-top: 1px solid #2e3228;
     border-radius: 0 0 6px 6px;
     margin: 0;
     padding: 8px 10px;
@@ -231,7 +231,6 @@
     overflow-y: auto;
     white-space: pre-wrap;
     word-break: break-all;
-    border-top: 1px solid #2e3228;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   }
   .island-row.open .island-props {

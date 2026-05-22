@@ -826,7 +826,7 @@ There is no adapter abstraction in Mochi. Instead, Mochi uses the bun standard `
 
 ### `vite.config.ts`
 
-Mochi does not use Bun. It compiles `.svelte` via Buns own bundler using Svelte 5's compiler internally. Pass preprocessors through the `compile:preprocessors` filter; tweak the compiler via a `svelte.config.js` (Mochi auto-loads `./svelte.config.js`, override with the `svelteConfigPath` option). See [Svelte config](/docs/svelte-config/).
+Mochi does not use Vite. It compiles `.svelte` via Bun's own bundler using Svelte 5's compiler internally. Pass preprocessors through the `compile:preprocessors` filter; tweak the compiler via a `svelte.config.js` (Mochi auto-loads `./svelte.config.js`, override with the `svelteConfigPath` option). See [Svelte config](/docs/svelte-config/).
 
 ```ts
 // file (SvelteKit): vite.config.ts

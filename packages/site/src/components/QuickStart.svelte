@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import Copy from '@lucide/svelte/icons/copy';
   import Check from '@lucide/svelte/icons/check';
   import toast from 'svelte-french-toast';
@@ -7,6 +8,12 @@
 
   let copied = $state(false);
   let copyTimer: ReturnType<typeof setTimeout> | null = null;
+
+  onMount(() => {
+    return () => {
+      if (copyTimer) clearTimeout(copyTimer);
+    };
+  });
 
   function copyCommand() {
     if (!navigator.clipboard) {

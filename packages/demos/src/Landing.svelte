@@ -20,7 +20,7 @@
     {
       href: '/hn/',
       title: 'Hacker News',
-      hook: 'A faithful clone of news.ycombinator.com — uses hydrated islands to load comment.',
+      hook: 'A faithful clone of news.ycombinator.com — uses hydrated islands to load comments.',
       accent: '#ff6600',
       accentSoft: '#ffe6d2',
       icon: Newspaper,
