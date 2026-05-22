@@ -9,18 +9,43 @@ slug: your-first-mochi-app
 
 ## Your first Mochi app
 
-Let's build a small app that exercises every server/client boundary you'll touch in real code. We'll put together a single `/hello` page in four steps, picking up one pillar at a time:
-
-- [`serverProps`](/docs/defining-routes/) — load data on every request and pass it into the page component
-- [Passing props to islands](/docs/island-props/) — a server-rendered parent handing a value to a hydrated child
-- [`mochi:hydrate`](/docs/selective-hydration/) — one interactive island so the rest stays zero-JS
-- [`mochi:defer`](/docs/server-islands/) — a server island that renders separately from the main request
+Let's build a small app that exercises every server/client boundary you'll touch in real code. We'll put together a single `/hello` page in four steps, picking up one pillar at a time: [`serverProps`](/docs/defining-routes/) for loading data on every request, [passing props to islands](/docs/island-props/) so a server-rendered parent can hand values to a hydrated child, [`mochi:hydrate`](/docs/selective-hydration/) for one interactive island while the rest stays zero-JS, and [`mochi:defer`](/docs/server-islands/) for a server island that renders separately from the main request.
 
 By the end we'll have a greeting card with a live like button and a personalized welcome that streams in after the page loads.
 
+### Set up
+
+Scaffold a new project with the official CLI and pick the **minimal** template when prompted:
+
+```sh
+bun create mochi@latest my-app
+# choose: minimal
+cd my-app
+bun install
+bun run dev
+```
+
+The scaffold gives you a working app on `http://localhost:3333`. Its entry point is `src/index.ts`, which just boots the server with the routes we'll define in the next step:
+
+```ts
+// file: src/index.ts (scaffolded — we won't change this)
+import { Mochi } from 'mochi-framework';
+import { routes } from './routes';
+
+const PORT = Number(process.env.PORT) || 3333;
+
+await Mochi.serve({
+  port: PORT,
+  development: process.env.MODE === 'development',
+  routes,
+});
+```
+
+You won't need to touch `index.ts` again in this walkthrough — everything else lives in `routes.ts` and the Svelte components we're about to build.
+
 ### Step 1 — Register the route
 
-We'll start by pointing `/hello` at a Svelte page and giving it some data to render. `serverProps` is either a plain object or a `(req, params) => props` resolver — whatever it returns becomes the page component's `$props`.
+Now let's point `/hello` at a Svelte page and give it some data to render. Open `src/routes.ts` and replace the scaffolded route with this one. `serverProps` is either a plain object or a `(req, params) => props` resolver — whatever it returns becomes the page component's `$props`.
 
 ```ts
 // file: src/routes.ts
@@ -37,11 +62,11 @@ export const routes: Record<string, MochiRouteValue> = {
 };
 ```
 
-The resolver runs on every request, so each reload produces a fresh `renderedAt`. Wire `routes` into `Mochi.serve({ routes })` from `src/index.ts` if you haven't already — see [Defining routes](/docs/defining-routes/).
+The resolver runs on every request, so each reload produces a fresh `renderedAt`. See [Defining routes](/docs/defining-routes/) for the full `serverProps` contract and the other `Mochi.*` route helpers.
 
 ### Step 2 — The page component
 
-Next, let's write the page itself. `Hello.svelte` stays server-only — it consumes the `serverProps`, renders a static layout, and mounts the two child islands we'll build next. Notice that even though it imports two components that ship JavaScript, this file itself ships zero: the directives at the call site decide what hydrates.
+Next, let's write the page itself. `Hello.svelte` stays server-only (all `Mochi.page()` entry components are server-only) — it consumes the `serverProps`, renders a static layout, and mounts the two child islands we'll build next. Notice that even though it imports two components that ship JavaScript, this file itself ships zero: the `mochi:` directives where we render the components decide what hydrates.
 
 ```svelte
 <!-- file: src/Hello.svelte -->
@@ -64,9 +89,15 @@ Next, let's write the page itself. `Hello.svelte` stays server-only — it consu
 
 The `initialLikes={42}` value crosses the server→client boundary. Mochi serializes island props with [`devalue`](/docs/island-props/), so `Date`, `Map`, `Set`, `BigInt`, and cyclic references all survive the trip — not just JSON-safe values.
 
+<Callout type="warning">
+
+Island props end up serialized into the HTML payload, so they're **visible to the client**. Never pass secrets, API keys, or session tokens this way.
+
+</Callout>
+
 ### Step 3 — A hydrated island
 
-Now let's give the page something to click. `LikeButton.svelte` is a normal Svelte 5 component — we accept `initialLikes` as a prop, keep a `$state` counter, and bump it on click.
+Now let's give the user something to click! `LikeButton.svelte` is a normal Svelte 5 component — we accept `initialLikes` as a prop, keep a `$state` counter, and bump it on click.
 
 ```svelte
 <!-- file: src/LikeButton.svelte -->
@@ -80,13 +111,13 @@ Now let's give the page something to click. `LikeButton.svelte` is a normal Svel
 
 <Callout type="tip">
 
-The `mochi:hydrate` directive lives at the **call site** in `Hello.svelte`, not inside the island itself. The same component can be mounted statically elsewhere — only the call site with the directive ships JavaScript.
+The `mochi:hydrate` directive lives **where we render the component** in `Hello.svelte`, not inside the island itself. The same component can be mounted statically elsewhere.
 
 </Callout>
 
 ### Step 4 — A server island
 
-Finally, let's add a personalized greeting that doesn't block the rest of the page. We marked `Visitor.svelte` with `mochi:defer` back in Step 2, so it skips the initial SSR pass — the page ships with a `<mochi-server-island>` placeholder containing our `<p>Loading…</p>` fallback. The browser then fetches `/_mochi/island/Visitor`, the server renders the component, and the resulting HTML swaps in.
+Finally, let's add a personalized greeting that doesn't block the rest of the page. We marked `Visitor.svelte` with `mochi:defer` back in Step 2, so it skips the initial SSR pass — the page ships with our `<p>Loading…</p>` fallback in its place. The browser then fetches the component _in a separate request_, the server renders it, and the result swaps in.
 
 Because it still runs on the server, the component has full access to the request via `getRequestContext()` — including cookies:
 
