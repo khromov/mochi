@@ -3,12 +3,13 @@
   import TriangleAlert from '../../src/icons/triangle-alert.svelte';
   import Info from '../../src/icons/info.svelte';
   import OctagonX from '../../src/icons/octagon-x.svelte';
+  import Lightbulb from '../../src/icons/lightbulb.svelte';
 
-  type CalloutType = 'info' | 'warning' | 'danger';
+  type CalloutType = 'info' | 'warning' | 'danger' | 'tip';
 
   let { type = 'warning', children }: { type?: CalloutType; children: Snippet } = $props();
 
-  const Icon = $derived(type === 'info' ? Info : type === 'danger' ? OctagonX : TriangleAlert);
+  const Icon = $derived(type === 'tip' ? Lightbulb : type === 'info' ? Info : type === 'danger' ? OctagonX : TriangleAlert);
 </script>
 
 <aside class="callout callout-{type}" role="note">
@@ -70,5 +71,11 @@
     background: var(--badge-danger-bg);
     color: var(--badge-danger-text);
     border-left-color: var(--badge-danger-text);
+  }
+
+  .callout-tip {
+    background: var(--badge-tip-bg);
+    color: var(--badge-tip-text);
+    border-left-color: var(--badge-tip-text);
   }
 </style>

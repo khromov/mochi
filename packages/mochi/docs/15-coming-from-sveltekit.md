@@ -60,7 +60,7 @@ export const routes = {
 };
 ```
 
-<Callout type="info">
+<Callout type="tip">
 
 Register the most specific patterns first — Bun matches in declaration order, not by file-name sort.
 
@@ -184,7 +184,7 @@ export const routes = {
 {#if form?.error}<p>{form.error}</p>{/if}
 ```
 
-<Callout type="info">
+<Callout type="tip">
 
 When `actions` is declared, leave `form` reserved for the action result — don't return it from `serverProps`. See [Defining routes](/docs/defining-routes/).
 
@@ -218,7 +218,7 @@ SvelteKit's `use:enhance` action becomes Mochi's `enhance` attachment from `moch
 </form>
 ```
 
-<Callout type="info">
+<Callout type="tip">
 
 Mark the surrounding component with `mochi:hydrate*` so the attachment can attach in the browser — attachments can only run when Svelte hydrates a component. See [Progressively enhancing forms with enhance](/docs/progressively-enhancing-forms-with-enhance/).
 
@@ -252,7 +252,7 @@ export const routes = {
 };
 ```
 
-<Callout type="info">
+<Callout type="tip">
 
 Use `Mochi.page` for normal HTML routes — `Mochi.api` never goes through the error page or `handleError`. See [API routes](/docs/api-routes/).
 
@@ -272,7 +272,7 @@ import { error, redirect, fail } from '@sveltejs/kit';
 import { error, redirect, fail, success } from 'mochi-framework';
 ```
 
-<Callout type="info">
+<Callout type="tip">
 
 Call `error(status, message)` to signal an HTTP status — a bare `throw new Error()` becomes a 500.
 
@@ -344,7 +344,7 @@ import { auth } from './handle';
 await Mochi.serve({ handle: sequence(auth), routes });
 ```
 
-<Callout type="info">
+<Callout type="tip">
 
 Wrap multiple handles in `sequence()` — `handle` takes a single function. See [Middleware (hooks)](/docs/middleware/).
 
@@ -399,7 +399,7 @@ const handleError: HandleError = ({ error, event }) => {
 await Mochi.serve({ handleError, routes });
 ```
 
-<Callout type="info">
+<Callout type="tip">
 
 `handleError` is never called for `Mochi.api` failures — return an error envelope inside the handler instead.
 
@@ -458,7 +458,7 @@ import { getRequestContext } from 'mochi-framework';
 const ip = getRequestContext().getClientAddress();
 ```
 
-<Callout type="info">
+<Callout type="tip">
 
 Set `proxy.xffDepth` so `getClientAddress()` picks the correct hop, instead of parsing `X-Forwarded-For` yourself.
 
@@ -483,7 +483,7 @@ await Mochi.serve({
 });
 ```
 
-<Callout type="info">
+<Callout type="tip">
 
 Pin trusted origins via `csrf.trustedOrigins` or the `csrf:trustedOrigins` filter instead of disabling CSRF on a state-mutating endpoint.
 
@@ -533,7 +533,7 @@ There is no reactive `page` store. Server-side, `getRequestContext()` returns `{
 <p>{url.pathname} — {params.slug}</p>
 ```
 
-<Callout type="info">
+<Callout type="tip">
 
 Call `getRequestContext()` on the server and use `location` / `window` on the client — there is no `$app/state` or `$app/stores` like in SvelteKit.
 
@@ -558,7 +558,7 @@ No equivalent. Mochi has no client-side router, so there is nothing to `goto` in
 <button onclick={() => (window.location.href = '/dashboard')}>Go</button>
 ```
 
-<Callout type="info">
+<Callout type="tip">
 
 Listen for `beforeunload` or `popstate` directly — there is no `beforeNavigate` / `afterNavigate` / `onNavigate`.
 
@@ -686,7 +686,7 @@ const apiKey = process.env.API_KEY;
 const publicApiUrl = process.env.PUBLIC_API_URL;
 ```
 
-<Callout type="info">
+<Callout type="tip">
 
 Rely on Bun's built-in `.env` loading — no need for `dotenv`. If you need to beam an environment variable to the client, pass it as a prop to a hydrated island.
 
@@ -779,7 +779,7 @@ await Mochi.serve({ trailingSlash: 'always', routes });
 // hydration is per-component: <Counter mochi:hydrate /> in the page
 ```
 
-<Callout type="info">
+<Callout type="tip">
 
 Control hydration with the `mochi:hydrate*` directives at each call site — there is no per-page `ssr` / `csr` / `prerender` export.
 
