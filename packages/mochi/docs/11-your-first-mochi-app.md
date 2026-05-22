@@ -119,19 +119,21 @@ The `mochi:hydrate` directive lives **where we render the component** in `Hello.
 
 Finally, let's add a personalized greeting that doesn't block the rest of the page. We marked `Visitor.svelte` with `mochi:defer` back in Step 2, so it skips the initial SSR pass — the page ships with our `<p>Loading…</p>` fallback in its place. The browser then fetches the component _in a separate request_, the server renders it, and the result swaps in.
 
-Because it still runs on the server, the component has full access to the request via `getRequestContext()` — including cookies:
+Because it still runs on the server, the component has full access to the request via `getRequestContext()` — URL, cookies, headers, route params, everything:
 
 ```svelte
 <!-- file: src/Visitor.svelte -->
 <script lang="ts">
   import { getRequestContext } from 'mochi-framework';
 
-  const { cookies } = getRequestContext();
-  const name = cookies.get('visitor_name') ?? 'friend';
+  const { url } = getRequestContext();
+  const name = url.searchParams.get('name') ?? 'friend';
 </script>
 
 <p>Welcome back, {name}!</p>
 ```
+
+Try `http://localhost:3333/hello?name=Alice` — the main page stays identical, but the deferred fragment picks up the query param and personalizes the greeting.
 
 That's the trick for keeping an HTML page cacheable while still personalizing parts of it: the outer `Hello.svelte` is identical for every visitor, but the deferred `Visitor` fragment can read per-request state on its own.
 
