@@ -11,7 +11,9 @@
 
   onMount(() => {
     return () => {
-      if (copyTimer) clearTimeout(copyTimer);
+      if (copyTimer) {
+        clearTimeout(copyTimer);
+      }
     };
   });
 
