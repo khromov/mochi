@@ -15,7 +15,6 @@
   let activePanel: Panel = $state(null);
 
   let hasDebugInfo = $state(false);
-  let pageCacheEnabled = $state(false);
   let collapsed = $state(false);
 
   function toggle(panel: Panel) {
@@ -47,11 +46,9 @@
   // The debug bar mounts client-only via mount() and only runs in dev mode,
   // where Mochi.ts unconditionally seeds window.__mochi_asset_prefix.
   const statsHref = `${window.__mochi_asset_prefix}/client/stats`;
-  const pageCacheHref = '/__mochi/admin/page-cache';
 
   onMount(() => {
     hasDebugInfo = !!window.__mochi_debug;
-    pageCacheEnabled = !!window.__mochi_debug?.pageCacheEnabled;
     try {
       collapsed = localStorage.getItem(STORAGE_KEY) === '1';
     } catch {
@@ -102,11 +99,6 @@
         <button class="btn warn-btn" onclick={() => toggle('warnings')} tabindex={collapsed ? -1 : 0}>
           Warnings <span class="badge">{debugBarState.warningCount}</span>
         </button>
-      {/if}
-      {#if pageCacheEnabled}
-        <a href={pageCacheHref} target="_blank" rel="noopener" class="btn stats-btn" tabindex={collapsed ? -1 : 0}>
-          Cache <ArrowUpRight size={12} />
-        </a>
       {/if}
       <a href={statsHref} target="_blank" rel="noopener" class="btn stats-btn" tabindex={collapsed ? -1 : 0}>
         Bundles <ArrowUpRight size={12} />
@@ -301,14 +293,14 @@
     border-color: #e9a89a;
   }
   .request-btn {
-    background: #2a2e25;
-    color: #d4d8c8;
-    border-color: #4a5040;
+    background: #2c343a;
+    color: #b8cad4;
+    border-color: #4a5560;
   }
   .request-btn:hover {
-    background: #34382e;
-    color: #ffffff;
-    border-color: #6a705c;
+    background: #353f47;
+    color: #d4e0e8;
+    border-color: #6a7a86;
   }
   .stats-btn {
     background: transparent;
