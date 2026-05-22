@@ -21,11 +21,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Main demo site. Deployed in dev mode so the debug toolbar and
-          # dev overlays are visible — the prod variant lives at
-          # Dockerfile.production if we ever need to flip back.
+          # Main demo site. Deployed in dev mode (shared root Dockerfile,
+          # workspace selected via the WORKSPACE build arg) so the debug
+          # toolbar and dev overlays are visible. Prebuilt prod variants
+          # live at Dockerfile.production / packages/demos/Dockerfile.production.
           - name: site
-            dockerfile: Dockerfile
+            workspace: site
+            port: 3333
             image: ghcr.io/khromov/mochi
             caprover_app: mochi
             caprover_token_secret: APP_TOKEN
@@ -33,7 +35,8 @@ jobs:
           # secret APP_TOKEN_DEMOS — the per-app deploy token from the
           # mochi-demos CapRover app's "Deployment" tab.
           - name: demos
-            dockerfile: packages/demos/Dockerfile
+            workspace: demos
+            port: 3334
             image: ghcr.io/khromov/mochi-demos
             caprover_app: mochi-demos
             caprover_token_secret: APP_TOKEN_DEMOS
@@ -62,13 +65,15 @@ jobs:
         uses: docker/build-push-action@v3
         with:
           context: .
-          file: ${{ matrix.dockerfile }}
+          file: Dockerfile
           platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             PUBLIC_DISABLE_OPFS=false
+            WORKSPACE=${{ matrix.workspace }}
+            PORT=${{ matrix.port }}
 
       - name: Deploy on CapRover
         uses: caprover/deploy-from-github@v1.1.2
