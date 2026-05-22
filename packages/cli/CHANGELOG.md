@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2](https://github.com/khromov/mochi/compare/create-mochi-v0.2.1...create-mochi-v0.2.2) (2026-05-22)
+
+
+### Bug Fixes
+
+* **cli:** pin mochi-framework version fallback to `^0.1.1` ([#13](https://github.com/khromov/mochi/issues/13)) ([7a3e35e](https://github.com/khromov/mochi/commit/7a3e35e339b2f89219c18edffa923c9144714039))
+
 ## [0.2.1](https://github.com/khromov/mochi/compare/create-mochi-v0.2.0...create-mochi-v0.2.1) (2026-05-22)
 
 
