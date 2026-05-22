@@ -1,7 +1,7 @@
 import path from 'node:path';
 import fs from 'node:fs';
 
-const MOCHI_FRAMEWORK_FALLBACK = 'latest';
+const MOCHI_FRAMEWORK_FALLBACK = '^0.1.1';
 
 export function validatePackageName(name: string): string | null {
   if (!name) {
