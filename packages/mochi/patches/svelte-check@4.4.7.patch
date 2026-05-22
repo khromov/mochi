@@ -1,0 +1,17 @@
+diff --git a/dist/src/index.js b/dist/src/index.js
+--- a/dist/src/index.js
++++ b/dist/src/index.js
+@@ -96867,6 +96867,13 @@
+                 }
+                 value.push('})');
+             }
++            else if (attr.name.startsWith('mochi:')) {
++                name.unshift('...__sveltets_2_empty({');
++                if (!value) {
++                    value = ['__sveltets_2_any()'];
++                }
++                value.push('})');
++            }
+             element.addProp(name, value);
+         };
+     const transformAttributeCase = (name) => {
