@@ -185,11 +185,7 @@
     text-transform: uppercase;
     letter-spacing: 0.1em;
     padding: 8px 6px 4px;
-    font-family:
-      'Public Sans',
-      -apple-system,
-      BlinkMacSystemFont,
-      sans-serif;
+    font-family: inherit;
   }
   .island-empty {
     color: #72786c;

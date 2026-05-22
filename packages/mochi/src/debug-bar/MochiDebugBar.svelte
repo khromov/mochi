@@ -9,20 +9,42 @@
   import { debugBarState } from './state.svelte';
   import { getPropsWarnLevel } from './utils';
 
+  const STORAGE_KEY = 'mochi-debug-bar-collapsed';
+
   type Panel = 'warnings' | 'islands' | 'request' | null;
   let activePanel: Panel = $state(null);
 
   let hasDebugInfo = $state(false);
   let pageCacheEnabled = $state(false);
+  let collapsed = $state(false);
 
   function toggle(panel: Panel) {
     activePanel = activePanel === panel ? null : panel;
   }
 
-  let barEl: HTMLElement;
+  function collapse() {
+    collapsed = true;
+    activePanel = null;
+    try {
+      localStorage.setItem(STORAGE_KEY, '1');
+    } catch {
+      /* storage blocked */
+    }
+  }
+
+  function expand() {
+    collapsed = false;
+    try {
+      localStorage.setItem(STORAGE_KEY, '0');
+    } catch {
+      /* storage blocked */
+    }
+  }
+
+  let rootEl: HTMLElement;
 
   function handleDocumentClick(e: MouseEvent) {
-    if (barEl && !barEl.contains(e.target as Node)) {
+    if (rootEl && !rootEl.contains(e.target as Node)) {
       activePanel = null;
     }
   }
@@ -37,6 +59,11 @@
   onMount(() => {
     hasDebugInfo = !!window.__mochi_debug;
     pageCacheEnabled = !!window.__mochi_debug?.pageCacheEnabled;
+    try {
+      collapsed = localStorage.getItem(STORAGE_KEY) === '1';
+    } catch {
+      /* storage blocked */
+    }
     document.addEventListener('click', handleDocumentClick);
 
     return () => {
@@ -49,34 +76,42 @@
   });
 </script>
 
-<div class="mochi-debug-bar-root" bind:this={barEl}>
-  <WarningsPanel open={activePanel === 'warnings'} onclose={() => (activePanel = null)} />
-  <IslandsPanel open={activePanel === 'islands'} onclose={() => (activePanel = null)} />
-  <RequestPanel open={activePanel === 'request'} onclose={() => (activePanel = null)} />
-
-  <div class="bar">
-    <StatusDot />
-    <span class="logo">{'\u{1F361}'} mochi</span>
-    {#if hasDebugInfo}
-      <button class="btn request-btn" onclick={() => toggle('request')}>Request</button>
-    {/if}
-    <button class="btn island-btn" class:warn-yellow={warnLevel === 'yellow'} class:warn-red={warnLevel === 'red'} onclick={() => toggle('islands')}>
-      Islands <span class="badge" class:badge-yellow={warnLevel === 'yellow'} class:badge-red={warnLevel === 'red'}>{debugBarState.islandCount}</span>
+<div class="mochi-debug-bar-root" bind:this={rootEl}>
+  {#if collapsed}
+    <button class="collapsed-toggle" onclick={expand} type="button" aria-label="Expand Mochi debug bar" title="Expand Mochi debug bar">
+      <StatusDot />
     </button>
-    {#if debugBarState.warningCount > 0}
-      <button class="btn warn-btn" onclick={() => toggle('warnings')}>
-        Warnings <span class="badge">{debugBarState.warningCount}</span>
+  {:else}
+    <WarningsPanel open={activePanel === 'warnings'} onclose={() => (activePanel = null)} />
+    <IslandsPanel open={activePanel === 'islands'} onclose={() => (activePanel = null)} />
+    <RequestPanel open={activePanel === 'request'} onclose={() => (activePanel = null)} />
+
+    <div class="bar">
+      <button class="brand-toggle" onclick={collapse} type="button" aria-label="Collapse Mochi debug bar" title="Collapse">
+        <StatusDot />
+        <span class="logo">{'\u{1F361}'} mochi</span>
       </button>
-    {/if}
-    {#if pageCacheEnabled}
-      <a href={pageCacheHref} target="_blank" rel="noopener" class="btn stats-btn">
-        Cache <ArrowUpRight size={12} />
+      {#if hasDebugInfo}
+        <button class="btn request-btn" onclick={() => toggle('request')}>Request</button>
+      {/if}
+      <button class="btn island-btn" class:warn-yellow={warnLevel === 'yellow'} class:warn-red={warnLevel === 'red'} onclick={() => toggle('islands')}>
+        Islands <span class="badge" class:badge-yellow={warnLevel === 'yellow'} class:badge-red={warnLevel === 'red'}>{debugBarState.islandCount}</span>
+      </button>
+      {#if debugBarState.warningCount > 0}
+        <button class="btn warn-btn" onclick={() => toggle('warnings')}>
+          Warnings <span class="badge">{debugBarState.warningCount}</span>
+        </button>
+      {/if}
+      {#if pageCacheEnabled}
+        <a href={pageCacheHref} target="_blank" rel="noopener" class="btn stats-btn">
+          Cache <ArrowUpRight size={12} />
+        </a>
+      {/if}
+      <a href={statsHref} target="_blank" rel="noopener" class="btn stats-btn">
+        Bundles <ArrowUpRight size={12} />
       </a>
-    {/if}
-    <a href={statsHref} target="_blank" rel="noopener" class="btn stats-btn">
-      Bundles <ArrowUpRight size={12} />
-    </a>
-  </div>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -87,12 +122,7 @@
     right: 12px;
     max-width: calc(100vw - 24px);
     z-index: 99999;
-    font-family:
-      'Public Sans',
-      -apple-system,
-      BlinkMacSystemFont,
-      'Segoe UI',
-      sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     /* Root font-size scales with viewport width so the whole bar shrinks
        together (everything else is sized in em). */
     font-size: clamp(9px, 2.6vw, 12px);
@@ -104,7 +134,7 @@
     gap: 0.55em;
     background: #1f221c;
     color: #e8e6dd;
-    padding: 0.45em 0.85em 0.45em 0.7em;
+    padding: 0.4em 0.85em 0.4em 0.55em;
     border-radius: 12px;
     box-shadow:
       0 10px 32px rgba(0, 0, 0, 0.4),
@@ -114,18 +144,66 @@
     white-space: nowrap;
     font-size: 1em;
   }
-  .logo {
-    font-family: 'Fraunces Variable', Georgia, 'Times New Roman', serif;
-    font-variation-settings:
-      'opsz' 14,
-      'SOFT' 50;
-    font-weight: 500;
-    font-size: 1.05em;
+  .brand-toggle {
+    background: transparent;
+    border: none;
+    padding: 0.2em 0.45em 0.2em 0.4em;
+    margin: 0;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45em;
     color: #e8e6dd;
-    padding-right: 0.25em;
+    font: inherit;
+    border-radius: 6px;
+    transition:
+      background 120ms ease,
+      opacity 120ms ease;
+  }
+  .brand-toggle:hover {
+    background: #2a2e25;
+  }
+  .brand-toggle:focus-visible {
+    outline: 1px solid #8ab79a;
+    outline-offset: 1px;
+  }
+  .logo {
+    font-weight: 600;
+    font-size: 1em;
+    color: #e8e6dd;
+    letter-spacing: 0.02em;
     display: inline-flex;
     align-items: baseline;
     gap: 0.35em;
+  }
+  .collapsed-toggle {
+    background: #1f221c;
+    border: 1px solid #2e3228;
+    border-radius: 999px;
+    padding: 0.55em;
+    margin: 0;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow:
+      0 6px 18px rgba(0, 0, 0, 0.35),
+      0 0 0 1px rgba(255, 253, 240, 0.04) inset;
+    transition:
+      transform 120ms ease,
+      background 120ms ease,
+      border-color 120ms ease;
+    font: inherit;
+    font-size: 1em;
+  }
+  .collapsed-toggle:hover {
+    background: #252820;
+    border-color: #434836;
+    transform: scale(1.08);
+  }
+  .collapsed-toggle:focus-visible {
+    outline: 1px solid #8ab79a;
+    outline-offset: 2px;
   }
   .btn {
     color: #c7e0cd;

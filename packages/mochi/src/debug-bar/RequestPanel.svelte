@@ -229,11 +229,7 @@
     padding: 10px 6px 4px;
     text-transform: uppercase;
     letter-spacing: 0.1em;
-    font-family:
-      'Public Sans',
-      -apple-system,
-      BlinkMacSystemFont,
-      sans-serif;
+    font-family: inherit;
   }
   .cookies-label {
     color: #d5b982;

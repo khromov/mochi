@@ -21,7 +21,7 @@
 
 <div class="panel" class:open>
   <div class="panel-header">
-    <div class="panel-title" style:--panel-title-color={color}>
+    <div class="panel-title" style:color>
       {title}{#if titleExtra}{@render titleExtra()}{/if}
     </div>
     <button class="close-btn" onclick={onclose} aria-label="Close"><X size={12} /></button>
@@ -51,12 +51,8 @@
     transition:
       opacity 120ms ease,
       transform 120ms ease;
-    font-family:
-      'Public Sans',
-      -apple-system,
-      BlinkMacSystemFont,
-      'Segoe UI',
-      sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    color: #e8e6dd;
   }
   .panel.open {
     opacity: 1;
@@ -72,15 +68,11 @@
     margin-bottom: 6px;
   }
   .panel-title {
-    font-family: 'Fraunces Variable', Georgia, 'Times New Roman', serif;
-    font-variation-settings:
-      'opsz' 14,
-      'SOFT' 50;
-    font-weight: 500;
-    font-size: 13px;
-    color: var(--panel-title-color);
-    font-variant-caps: all-small-caps;
-    letter-spacing: 0.06em;
+    font-family: inherit;
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
   }
   .close-btn {
     background: none;
