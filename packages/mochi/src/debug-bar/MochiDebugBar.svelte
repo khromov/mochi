@@ -79,8 +79,8 @@
       class="brand-toggle"
       onclick={toggleCollapsed}
       type="button"
-      aria-label={collapsed ? 'Expand Mochi debug bar' : 'Collapse Mochi debug bar'}
-      title={collapsed ? 'Expand' : 'Collapse'}
+      aria-label={collapsed ? 'Expand debug bar' : 'Collapse debug bar'}
+      title={collapsed ? 'Expand debug bar' : 'Collapse debug bar'}
     >
       <StatusDot />
       <span class="logo">{'\u{1F361}'} mochi</span>
@@ -136,6 +136,8 @@
     background: #1f221c;
     color: #e8e6dd;
     padding: 0.4em 0.55em;
+    height: 3em;
+    box-sizing: border-box;
     border-radius: 12px;
     box-shadow:
       0 10px 32px rgba(0, 0, 0, 0.4),
@@ -146,11 +148,15 @@
     font-size: 1em;
     transition:
       gap 220ms ease,
-      border-radius 220ms ease;
+      border-radius 220ms ease,
+      padding 220ms ease,
+      width 220ms ease;
   }
   .bar.is-collapsed {
     gap: 0;
     border-radius: 999px;
+    padding: 0;
+    width: 3em;
   }
   .brand-toggle {
     background: transparent;
@@ -170,6 +176,12 @@
       padding 220ms ease,
       border-color 120ms ease;
   }
+  .bar:not(.is-collapsed) .brand-toggle {
+    cursor:
+      url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'><circle cx='12' cy='12' r='9' fill='%231f221c' stroke='%23e8e6dd' stroke-width='1.5' opacity='0.95'/><line x1='8.5' y1='12' x2='15.5' y2='12' stroke='%23e8e6dd' stroke-width='2' stroke-linecap='round'/></svg>")
+        12 12,
+      pointer;
+  }
   .brand-toggle:hover {
     background: #2a2e25;
     border-color: #5a604d;
@@ -179,9 +191,15 @@
     outline-offset: 1px;
   }
   .is-collapsed .brand-toggle {
+    flex: 1;
+    height: 100%;
     gap: 0;
-    padding: 0.3em 0.4em;
+    padding: 0;
     border-radius: 999px;
+    justify-content: center;
+  }
+  .is-collapsed .brand-toggle:hover {
+    border-color: transparent;
   }
   .logo {
     font-weight: 600;
@@ -192,15 +210,18 @@
     align-items: baseline;
     gap: 0.35em;
     max-width: 8em;
+    line-height: 1.2;
     overflow: hidden;
     opacity: 1;
     transition:
       max-width 240ms ease,
-      opacity 180ms ease;
+      opacity 180ms ease,
+      line-height 240ms ease;
   }
   .is-collapsed .logo {
     max-width: 0;
     opacity: 0;
+    line-height: 0;
   }
   .bar-actions {
     display: inline-flex;

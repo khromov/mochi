@@ -166,7 +166,7 @@
 <style>
   .panel-title-meta {
     margin-left: 6px;
-    color: #c8ccbf;
+    color: #bdc2b4;
     font-weight: 400;
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     font-size: 11px;
@@ -193,11 +193,11 @@
     color: #a8ada0;
   }
   .request-item {
-    background: #2e3228;
-    color: #f0eee5;
+    background: #272a22;
+    color: #e8e6dd;
     padding: 6px 10px;
     border-radius: 6px;
-    border: 1px solid #434836;
+    border: 1px solid #353930;
     font-size: 11px;
     line-height: 1.5;
     margin-bottom: 3px;
@@ -205,7 +205,7 @@
     gap: 8px;
   }
   .request-key {
-    color: #aab09f;
+    color: #9aa094;
     flex-shrink: 0;
     min-width: 80px;
     font-size: 10px;
@@ -214,13 +214,13 @@
     padding-top: 1px;
   }
   .request-val {
-    color: #f0eee5;
+    color: #e8e6dd;
     word-break: break-all;
     font-weight: 500;
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   }
   .request-val.muted {
-    color: #9aa094;
+    color: #8c9286;
     font-weight: 400;
     font-style: italic;
   }
@@ -262,11 +262,11 @@
     vertical-align: 1px;
   }
   .header-item {
-    background: #2e3228;
-    color: #f0eee5;
+    background: #272a22;
+    color: #e8e6dd;
     padding: 6px 10px;
     border-radius: 6px;
-    border: 1px solid #434836;
+    border: 1px solid #353930;
     font-size: 11px;
     line-height: 1.5;
     margin-bottom: 3px;
@@ -284,11 +284,11 @@
       border-color 120ms ease;
   }
   .header-row:hover {
-    background: #353a2f;
-    border-color: #5a604d;
+    background: #2d3128;
+    border-color: #434836;
   }
   .header-key {
-    color: #aab09f;
+    color: #9aa094;
     flex-shrink: 0;
     min-width: 100px;
     word-break: break-all;
@@ -296,7 +296,7 @@
     font-size: 10px;
   }
   .header-val {
-    color: #f0eee5;
+    color: #e8e6dd;
     word-break: break-all;
     font-weight: 500;
     flex: 1;

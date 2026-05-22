@@ -30,16 +30,16 @@
 
 <style>
   .warn-item {
-    background: #2e3228;
-    color: #f0eee5;
+    background: #272a22;
+    color: #e8e6dd;
     padding: 8px 10px;
     border-radius: 6px;
     font-size: 11px;
     line-height: 1.5;
     margin-bottom: 4px;
     word-break: break-word;
-    border: 1px solid #434836;
-    border-left: 3px solid #d5b982;
+    border: 1px solid #353930;
+    border-left: 3px solid #b89d6e;
   }
   .warn-item:last-child {
     margin-bottom: 0;

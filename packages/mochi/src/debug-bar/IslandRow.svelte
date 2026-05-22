@@ -87,11 +87,11 @@
     margin-bottom: 0;
   }
   .island-item {
-    background: #2e3228;
-    color: #f0eee5;
+    background: #272a22;
+    color: #e8e6dd;
     padding: 6px 10px;
     border-radius: 6px;
-    border: 1px solid #434836;
+    border: 1px solid #353930;
     font-size: 11px;
     line-height: 1.5;
     display: flex;
@@ -103,13 +103,13 @@
       border-color 120ms ease;
   }
   .island-item:hover {
-    background: #353a2f;
-    border-color: #5a604d;
+    background: #2d3128;
+    border-color: #434836;
   }
   .island-row.open .island-item {
     border-bottom-left-radius: 0;
     border-bottom-right-radius: 0;
-    background: #353a2f;
+    background: #2d3128;
     border-bottom-color: transparent;
   }
   .island-header {
@@ -166,19 +166,19 @@
   .lock-icon {
     display: inline-flex;
     align-items: center;
-    color: #c7e0cd;
+    color: #c4a3a8;
     cursor: help;
   }
   .tag-eager {
-    background: rgba(138, 183, 154, 0.18);
+    background: rgba(167, 201, 168, 0.16);
     color: #a7c9a8;
   }
   .tag-visible {
-    background: rgba(199, 224, 205, 0.12);
-    color: #b8d5be;
+    background: rgba(184, 163, 196, 0.16);
+    color: #b8a3c4;
   }
   .tag-server {
-    background: rgba(213, 185, 130, 0.15);
+    background: rgba(213, 185, 130, 0.16);
     color: #d5b982;
   }
   .island-size {
@@ -191,8 +191,8 @@
     border-radius: 3px;
     font-size: 9px;
     font-weight: 500;
-    background: rgba(138, 183, 154, 0.15);
-    color: #a7c9a8;
+    background: rgba(163, 184, 196, 0.18);
+    color: #a3b8c4;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     cursor: help;
   }
@@ -218,9 +218,9 @@
   }
   .island-props {
     display: none;
-    background: #15170f;
-    color: #f0eee5;
-    border: 1px solid #434836;
+    background: #181b13;
+    color: #e8e6dd;
+    border: 1px solid #353930;
     border-top: none;
     border-radius: 0 0 6px 6px;
     margin: 0;
