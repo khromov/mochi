@@ -51,11 +51,11 @@
       <span class="terminal-title">~ terminal</span>
     </div>
     <div class="terminal-body">
-      <div class="terminal-line">
+      <button class="terminal-line" type="button" onclick={copyCommand} aria-label="Copy command" title="Click to copy">
         <span class="terminal-prompt" aria-hidden="true">$</span>
         <span class="terminal-cmd">{QUICK_START_CMD}</span>
         <span class="terminal-caret" aria-hidden="true"></span>
-      </div>
+      </button>
       <button class="terminal-copy" type="button" onclick={copyCommand} aria-label={copied ? 'Copied to clipboard' : 'Copy command'} title={copied ? 'Copied' : 'Copy command'}>
         {#if copied}
           <Check size={13} strokeWidth={2.2} />
@@ -187,6 +187,20 @@
     gap: 0.55rem;
     overflow-x: auto;
     white-space: nowrap;
+    background: none;
+    border: none;
+    padding: 0;
+    margin: 0;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .terminal-line:focus-visible {
+    outline: 2px solid #8ab79a;
+    outline-offset: 2px;
+    border-radius: 2px;
   }
 
   .terminal-prompt {
@@ -197,7 +211,6 @@
 
   .terminal-cmd {
     color: #e8e6dd;
-    user-select: text;
   }
 
   .terminal-caret {
