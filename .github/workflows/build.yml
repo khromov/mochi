@@ -21,17 +21,19 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Main demo site.
+          # Main demo site. Deployed in dev mode so the debug toolbar and
+          # dev overlays are visible — the prod variant lives at
+          # Dockerfile.production if we ever need to flip back.
           - name: site
-            dockerfile: Dockerfile.production
+            dockerfile: Dockerfile
             image: ghcr.io/khromov/mochi
             caprover_app: mochi
             caprover_token_secret: APP_TOKEN
-          # Standalone demos site. Requires repo secret
-          # APP_TOKEN_DEMOS — the per-app deploy token from the mochi-demos
-          # CapRover app's "Deployment" tab.
+          # Standalone demos site, also deployed in dev mode. Requires repo
+          # secret APP_TOKEN_DEMOS — the per-app deploy token from the
+          # mochi-demos CapRover app's "Deployment" tab.
           - name: demos
-            dockerfile: packages/demos/Dockerfile.production
+            dockerfile: packages/demos/Dockerfile
             image: ghcr.io/khromov/mochi-demos
             caprover_app: mochi-demos
             caprover_token_secret: APP_TOKEN_DEMOS
