@@ -1,6 +1,7 @@
 <script lang="ts">
   import PageShell from './components/PageShell.svelte';
   import Footer from './components/Footer.svelte';
+  import QuickStart from './components/QuickStart.svelte';
   import { demos, categoryLabels, categoryOrder, type DemoCategory, type Demo } from './lib/demos';
   import { demoIconFor } from './lib/demoIcons';
   import { isExternal } from './lib/isExternal';
@@ -35,6 +36,8 @@
   </header>
 
   <main class="body">
+    <QuickStart mochi:hydrate />
+
     <section class="docs-cta">
       <h2 class="docs-cta-title">Documentation</h2>
       <p class="docs-cta-blurb">Setup, hydration modes, routes, hooks, forms, cookies — everything in one place.</p>

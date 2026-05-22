@@ -33,4 +33,6 @@ There are many things that aren't implemented yet. You'll find a non-exhaustive 
 - No SCSS/SASS support
 - No HTTP streaming (see <a href="/docs/http-streaming/">this page</a> for why you probably don't need it)
 
+Hit something rough? Ask in the <a href="https://discord.com/invite/QCGfks4gg8" target="_blank" rel="noopener noreferrer">Mochi Discord</a> — the framework is moving fast and someone has likely already worked around it.
+
 </Callout>

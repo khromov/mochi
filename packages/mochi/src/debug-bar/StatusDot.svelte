@@ -40,14 +40,14 @@
 <style>
   .status-dot {
     position: relative;
-    width: 0.7em;
-    height: 0.7em;
+    width: 0.55em;
+    height: 0.55em;
     border-radius: 50%;
-    background: #64748b;
+    background: #72786c;
     flex-shrink: 0;
     transition:
-      background 150ms ease,
-      box-shadow 150ms ease;
+      background 120ms ease,
+      box-shadow 120ms ease;
   }
   .status-dot::after {
     content: '';
@@ -58,27 +58,27 @@
     opacity: 0;
   }
   .status-dot.connected {
-    background: #22c55e;
-    box-shadow: 0 0 6px rgba(34, 197, 94, 0.6);
+    background: #8ab79a;
+    box-shadow: 0 0 6px rgba(138, 183, 154, 0.55);
   }
   .status-dot.connected::after {
-    animation: mochi-reload-pulse 1.8s ease-out infinite;
+    animation: mochi-reload-pulse 2s ease-out infinite;
   }
   .status-dot.disconnected {
-    background: #ef4444;
-    box-shadow: 0 0 6px rgba(239, 68, 68, 0.6);
+    background: #e9a89a;
+    box-shadow: 0 0 6px rgba(233, 168, 154, 0.5);
   }
   @keyframes mochi-reload-pulse {
     0% {
-      box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.55);
+      box-shadow: 0 0 0 0 rgba(138, 183, 154, 0.5);
       opacity: 1;
     }
     80% {
-      box-shadow: 0 0 0 9px rgba(34, 197, 94, 0);
+      box-shadow: 0 0 0 9px rgba(138, 183, 154, 0);
       opacity: 0;
     }
     100% {
-      box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
+      box-shadow: 0 0 0 0 rgba(138, 183, 154, 0);
       opacity: 0;
     }
   }

@@ -126,7 +126,7 @@
   });
 </script>
 
-<DebugPanel title="Islands" color="#22d3ee" {open} {onclose}>
+<DebugPanel title="Islands" color="#8ab79a" {open} {onclose}>
   <div class="island-body">
     {#if islands.length === 0}
       <div class="island-empty">No islands found on this page.</div>
@@ -166,47 +166,51 @@
 
 <style>
   .island-summary {
-    background: #2a2a3e;
-    color: #94a3b8;
+    background: #272a22;
+    color: #bdc2b4;
     padding: 8px 10px;
     border-radius: 6px;
+    border: 1px solid #353930;
     font-size: 11px;
     line-height: 1.6;
     margin-bottom: 6px;
   }
   .island-summary :global(strong) {
-    color: #e2e8f0;
+    color: #e8e6dd;
+    font-weight: 700;
   }
   .island-group-label {
-    color: #64748b;
+    color: #8c9286;
     font-size: 10px;
     font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.08em;
-    padding: 6px 6px 4px;
+    letter-spacing: 0.12em;
+    padding: 8px 6px 4px;
+    font-family: inherit;
   }
   .island-empty {
-    color: #64748b;
+    color: #72786c;
     font-size: 11px;
-    padding: 12px 10px;
+    padding: 16px 10px;
     text-align: center;
+    font-style: italic;
   }
   .props-warn {
     display: inline-block;
     font-size: 9px;
     font-weight: 700;
-    padding: 1px 5px;
+    padding: 1px 6px;
     border-radius: 3px;
     vertical-align: 1px;
     margin-left: 2px;
     cursor: help;
   }
   .props-warn-yellow {
-    background: #78350f;
-    color: #fbbf24;
+    background: #2f281a;
+    color: #d5b982;
   }
   .props-warn-red {
-    background: #7f1d1d;
-    color: #fca5a5;
+    background: #351f1a;
+    color: #e9a89a;
   }
 </style>

@@ -9,20 +9,34 @@
   import { debugBarState } from './state.svelte';
   import { getPropsWarnLevel } from './utils';
 
+  const STORAGE_KEY = 'mochi-debug-bar-collapsed';
+
   type Panel = 'warnings' | 'islands' | 'request' | null;
   let activePanel: Panel = $state(null);
 
   let hasDebugInfo = $state(false);
-  let pageCacheEnabled = $state(false);
+  let collapsed = $state(false);
 
   function toggle(panel: Panel) {
     activePanel = activePanel === panel ? null : panel;
   }
 
-  let barEl: HTMLElement;
+  function toggleCollapsed() {
+    collapsed = !collapsed;
+    if (collapsed) {
+      activePanel = null;
+    }
+    try {
+      localStorage.setItem(STORAGE_KEY, collapsed ? '1' : '0');
+    } catch {
+      /* storage blocked */
+    }
+  }
+
+  let rootEl: HTMLElement;
 
   function handleDocumentClick(e: MouseEvent) {
-    if (barEl && !barEl.contains(e.target as Node)) {
+    if (rootEl && !rootEl.contains(e.target as Node)) {
       activePanel = null;
     }
   }
@@ -32,11 +46,14 @@
   // The debug bar mounts client-only via mount() and only runs in dev mode,
   // where Mochi.ts unconditionally seeds window.__mochi_asset_prefix.
   const statsHref = `${window.__mochi_asset_prefix}/client/stats`;
-  const pageCacheHref = '/__mochi/admin/page-cache';
 
   onMount(() => {
     hasDebugInfo = !!window.__mochi_debug;
-    pageCacheEnabled = !!window.__mochi_debug?.pageCacheEnabled;
+    try {
+      collapsed = localStorage.getItem(STORAGE_KEY) === '1';
+    } catch {
+      /* storage blocked */
+    }
     document.addEventListener('click', handleDocumentClick);
 
     return () => {
@@ -49,33 +66,44 @@
   });
 </script>
 
-<div class="mochi-debug-bar-root" bind:this={barEl}>
+<div class="mochi-debug-bar-root" bind:this={rootEl}>
   <WarningsPanel open={activePanel === 'warnings'} onclose={() => (activePanel = null)} />
   <IslandsPanel open={activePanel === 'islands'} onclose={() => (activePanel = null)} />
   <RequestPanel open={activePanel === 'request'} onclose={() => (activePanel = null)} />
 
-  <div class="bar">
-    <StatusDot />
-    <span class="logo">{'\u{1F361}'} mochi</span>
-    {#if hasDebugInfo}
-      <button class="btn request-btn" onclick={() => toggle('request')}>Request</button>
-    {/if}
-    <button class="btn island-btn" class:warn-yellow={warnLevel === 'yellow'} class:warn-red={warnLevel === 'red'} onclick={() => toggle('islands')}>
-      Islands <span class="badge" class:badge-yellow={warnLevel === 'yellow'} class:badge-red={warnLevel === 'red'}>{debugBarState.islandCount}</span>
+  <div class="bar" class:is-collapsed={collapsed}>
+    <button
+      class="brand-toggle"
+      onclick={toggleCollapsed}
+      type="button"
+      aria-label={collapsed ? 'Expand debug bar' : 'Collapse debug bar'}
+      title={collapsed ? 'Expand debug bar' : 'Collapse debug bar'}
+    >
+      <StatusDot />
+      <span class="logo">{'\u{1F361}'} mochi</span>
     </button>
-    {#if debugBarState.warningCount > 0}
-      <button class="btn warn-btn" onclick={() => toggle('warnings')}>
-        Warnings <span class="badge">{debugBarState.warningCount}</span>
+    <div class="bar-actions" aria-hidden={collapsed}>
+      {#if hasDebugInfo}
+        <button class="btn request-btn" onclick={() => toggle('request')} tabindex={collapsed ? -1 : 0}>Request</button>
+      {/if}
+      <button
+        class="btn island-btn"
+        class:warn-yellow={warnLevel === 'yellow'}
+        class:warn-red={warnLevel === 'red'}
+        onclick={() => toggle('islands')}
+        tabindex={collapsed ? -1 : 0}
+      >
+        Islands <span class="badge" class:badge-yellow={warnLevel === 'yellow'} class:badge-red={warnLevel === 'red'}>{debugBarState.islandCount}</span>
       </button>
-    {/if}
-    {#if pageCacheEnabled}
-      <a href={pageCacheHref} target="_blank" rel="noopener" class="btn stats-btn">
-        Cache <ArrowUpRight size={12} />
+      {#if debugBarState.warningCount > 0}
+        <button class="btn warn-btn" onclick={() => toggle('warnings')} tabindex={collapsed ? -1 : 0}>
+          Warnings <span class="badge">{debugBarState.warningCount}</span>
+        </button>
+      {/if}
+      <a href={statsHref} target="_blank" rel="noopener" class="btn stats-btn" tabindex={collapsed ? -1 : 0}>
+        Bundles <ArrowUpRight size={12} />
       </a>
-    {/if}
-    <a href={statsHref} target="_blank" rel="noopener" class="btn stats-btn">
-      Bundles <ArrowUpRight size={12} />
-    </a>
+    </div>
   </div>
 </div>
 
@@ -87,103 +115,228 @@
     right: 12px;
     max-width: calc(100vw - 24px);
     z-index: 99999;
-    font-family: monospace, system-ui, sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     /* Root font-size scales with viewport width so the whole bar shrinks
        together (everything else is sized in em). */
     font-size: clamp(9px, 2.6vw, 12px);
   }
   .bar {
-    display: flex;
+    display: inline-flex;
     align-items: center;
     flex-wrap: nowrap;
-    gap: 0.7em;
-    background: #000;
-    color: #fff;
-    padding: 0.5em 1em;
-    border-radius: 0.7em;
-    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.5);
-    border: 1px solid #333;
-    letter-spacing: 0.02em;
+    gap: 0.55em;
+    background: #1f221c;
+    color: #e8e6dd;
+    padding: 0.4em 0.55em;
+    height: 3em;
+    box-sizing: border-box;
+    border-radius: 12px;
+    box-shadow:
+      0 10px 32px rgba(0, 0, 0, 0.4),
+      0 0 0 1px rgba(255, 253, 240, 0.04) inset;
+    border: 1px solid #434836;
+    letter-spacing: 0.01em;
     white-space: nowrap;
     font-size: 1em;
+    transition:
+      gap 220ms ease,
+      border-radius 220ms ease,
+      padding 220ms ease;
+  }
+  .bar.is-collapsed {
+    gap: 0;
+    border-radius: 999px;
+    padding: 0;
+    cursor: pointer;
+  }
+  .brand-toggle {
+    background: transparent;
+    border: 1px solid transparent;
+    padding: 0.3em 0.55em 0.3em 0.4em;
+    margin: 0;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45em;
+    color: #e8e6dd;
+    font: inherit;
+    border-radius: 6px;
+    transition:
+      background 120ms ease,
+      gap 220ms ease,
+      padding 220ms ease,
+      border-color 120ms ease;
+  }
+  .bar:not(.is-collapsed) .brand-toggle {
+    cursor:
+      url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'><circle cx='12' cy='12' r='9' fill='%231f221c' stroke='%23e8e6dd' stroke-width='1.5' opacity='0.95'/><line x1='8.5' y1='12' x2='15.5' y2='12' stroke='%23e8e6dd' stroke-width='2' stroke-linecap='round'/></svg>")
+        12 12,
+      pointer;
+  }
+  .brand-toggle:hover {
+    background: #2a2e25;
+    border-color: #5a604d;
+  }
+  .brand-toggle:focus-visible {
+    outline: 1px solid #8ab79a;
+    outline-offset: 1px;
+  }
+  .is-collapsed .brand-toggle {
+    gap: 0;
+    padding: 1.14em;
+    border-radius: 999px;
+  }
+  .is-collapsed .brand-toggle:hover {
+    border-color: transparent;
   }
   .logo {
-    font-weight: 700;
-    opacity: 0.85;
+    font-weight: 600;
+    font-size: 1em;
+    color: #e8e6dd;
+    letter-spacing: 0.02em;
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.35em;
+    max-width: 8em;
+    line-height: 1.2;
+    overflow: hidden;
+    opacity: 1;
+    transition:
+      max-width 240ms ease,
+      opacity 180ms ease,
+      line-height 240ms ease;
+  }
+  .is-collapsed .logo {
+    max-width: 0;
+    opacity: 0;
+    line-height: 0;
+  }
+  .bar-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55em;
+    max-width: 60em;
+    overflow: hidden;
+    opacity: 1;
+    transition:
+      max-width 260ms ease,
+      opacity 180ms ease;
+  }
+  .is-collapsed .bar-actions {
+    max-width: 0;
+    opacity: 0;
+    pointer-events: none;
   }
   .btn {
-    color: #000;
-    background: #fff;
-    padding: 0.25em 0.85em;
-    border-radius: 0.45em;
+    color: #e8e6dd;
+    background: #2a3a2f;
+    padding: 0.3em 0.75em;
+    border-radius: 6px;
     text-decoration: none;
-    font-size: 0.92em;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    border: none;
+    font-size: 0.88em;
+    font-weight: 500;
+    letter-spacing: 0.05em;
+    border: 1px solid #4a5040;
     cursor: pointer;
     white-space: nowrap;
     flex: 0 0 auto;
+    font-family: inherit;
+    transition:
+      background 120ms ease,
+      color 120ms ease,
+      border-color 120ms ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4em;
+  }
+  .btn:hover {
+    background: #34463a;
+    color: #ffffff;
+    border-color: #8ab79a;
   }
   .warn-btn {
-    background: #fbbf24;
-    color: #78350f;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35em;
+    background: #3a3120;
+    color: #f0d398;
+    border-color: #6a5530;
+  }
+  .warn-btn:hover {
+    background: #45381f;
+    color: #fdde9d;
+    border-color: #d5b982;
   }
   .island-btn {
-    background: #22d3ee;
-    color: #083344;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35em;
-    transition:
-      background 150ms ease,
-      color 150ms ease;
+    background: #2a3a2f;
+    color: #c7e0cd;
+    border-color: #4a6354;
+  }
+  .island-btn:hover {
+    background: #34463a;
+    color: #e8e6dd;
+    border-color: #8ab79a;
   }
   .island-btn.warn-yellow {
-    background: #fbbf24;
-    color: #78350f;
+    background: #3a3120;
+    color: #f0d398;
+    border-color: #6a5530;
+  }
+  .island-btn.warn-yellow:hover {
+    background: #45381f;
+    border-color: #d5b982;
   }
   .island-btn.warn-red {
-    background: #ef4444;
-    color: #fff;
+    background: #432821;
+    color: #f4b6a7;
+    border-color: #7a3a2a;
+  }
+  .island-btn.warn-red:hover {
+    background: #4f2f27;
+    border-color: #e9a89a;
   }
   .request-btn {
-    background: #a78bfa;
-    color: #1e1b4b;
-    display: inline-flex;
-    align-items: center;
+    background: #2c343a;
+    color: #b8cad4;
+    border-color: #4a5560;
+  }
+  .request-btn:hover {
+    background: #353f47;
+    color: #d4e0e8;
+    border-color: #6a7a86;
   }
   .stats-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3em;
+    background: transparent;
+    color: #a8ada0;
+    border-color: #4a5040;
+  }
+  .stats-btn:hover {
+    color: #ffffff;
+    border-color: #8ab79a;
+    background: #2a2e25;
   }
   .badge {
     border-radius: 999px;
-    min-width: 1.5em;
-    height: 1.5em;
+    min-width: 1.4em;
+    height: 1.4em;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 0.83em;
-    font-weight: 700;
-    padding: 0 0.4em;
-    background: #083344;
-    color: #22d3ee;
+    font-size: 0.82em;
+    font-weight: 600;
+    padding: 0 0.45em;
+    background: rgba(138, 183, 154, 0.28);
+    color: #e8f0e0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    letter-spacing: 0;
   }
   .warn-btn .badge {
-    background: #78350f;
-    color: #fbbf24;
+    background: rgba(213, 185, 130, 0.3);
+    color: #fdde9d;
   }
   .badge-yellow {
-    background: #78350f;
-    color: #fbbf24;
+    background: rgba(213, 185, 130, 0.3);
+    color: #fdde9d;
   }
   .badge-red {
-    background: #7f1d1d;
-    color: #fca5a5;
+    background: rgba(233, 168, 154, 0.3);
+    color: #f4b6a7;
   }
 </style>

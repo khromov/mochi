@@ -121,7 +121,7 @@ Default to Bun instead of Node.js:
 ## Conventions
 
 - When moving components or other files, use `git mv` to preserve history.
-- After completing your work, run `bun run checks` (which runs lint:fix + format + typecheck + test) instead of running those steps individually. Delegate this to a separate agent (e.g. via the `Agent` tool) that runs the command and reports back only the failures — this keeps the main context free of multi-thousand-line lint/typecheck/test output.
+- After completing your work, run `bun run checks` (which runs lint:fix + format + typecheck + test) instead of running those steps individually. **Always delegate this to a sub-agent** (e.g. via the `Agent` tool) that runs the command and reports back only the pass/fail status plus any failures — never run `bun run checks` directly in the main context, since its multi-thousand-line lint/typecheck/test output will pollute your conversation window.
 - Before adding a new dependency, look up its latest version with `bun info <pkg> version` and pin to that — don't guess from training data, which is often months stale.
 - For every new framework feature, add a short, to-the-point section (or sub-section in an existing page) under `packages/mochi/docs/`. Match the terse, code-first style of the existing pages. For warnings/notes/danger boxes inside docs, use `packages/mochi/docs/_components/Callout.svelte` (`type="info" | "warning" | "danger"`) — import it via a `<script>` block at the top of the markdown file. See `145-cache.md` for an example.
 - Every demo in `packages/site/src/demos/` must have its own distinct icon. When you add a demo, also add a `demoIconFor` entry in `packages/site/src/lib/demoIcons.ts` — pick a Lucide icon that hasn't been used yet and that visually evokes the demo's concept.
@@ -144,4 +144,4 @@ Use code comments sparingly, this is important. Comments should explain WHY some
 
 ## After every change
 
-Run "bun run format"
+Run `bun run format` — but **delegate it to a sub-agent**, same rule as `bun run checks` above. The agent runs the command and reports back only the status (pass / fail + any errors); the main context should never see the per-file "unchanged / formatted" listing.

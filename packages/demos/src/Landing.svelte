@@ -20,7 +20,7 @@
     {
       href: '/hn/',
       title: 'Hacker News',
-      hook: 'A faithful clone of news.ycombinator.com — pure SSR, no client JavaScript.',
+      hook: 'A faithful clone of news.ycombinator.com — uses hydrated islands to load comments.',
       accent: '#ff6600',
       accentSoft: '#ffe6d2',
       icon: Newspaper,
@@ -51,8 +51,7 @@
 
 <main class="landing">
   <header class="hero">
-    <span class="eyebrow">Mochi</span>
-    <h1>Demos</h1>
+    <h1>Mochi Demos</h1>
     <p class="lede">A small collection of real apps built on the Mochi framework — server-rendered Svelte with islands of hydration.</p>
   </header>
 
@@ -132,16 +131,6 @@
 
   .hero {
     margin-bottom: clamp(2.5rem, 6vw, 4rem);
-  }
-
-  .eyebrow {
-    display: inline-block;
-    font-size: 0.72rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.14em;
-    color: var(--l-accent);
-    margin-bottom: 0.9rem;
   }
 
   .hero h1 {

@@ -12,12 +12,12 @@
   let expanded = $state(false);
 
   const highlightColors = {
-    keyColor: '#7dd3fc',
-    numberColor: '#fbbf24',
-    stringColor: '#86efac',
-    trueColor: '#c4b5fd',
-    falseColor: '#c4b5fd',
-    nullColor: '#94a3b8',
+    keyColor: '#b8d5be',
+    numberColor: '#e9a89a',
+    stringColor: '#d5b982',
+    trueColor: '#a7c9a8',
+    falseColor: '#a7c9a8',
+    nullColor: '#72786c',
   };
 
   let propsDisplay = $derived.by((): { html: string } | { text: string } => {
@@ -87,20 +87,30 @@
     margin-bottom: 0;
   }
   .island-item {
-    background: #2a2a3e;
-    color: #e2e8f0;
+    background: #272a22;
+    color: #e8e6dd;
     padding: 6px 10px;
     border-radius: 6px;
+    border: 1px solid #353930;
     font-size: 11px;
     line-height: 1.5;
     display: flex;
     justify-content: space-between;
     align-items: center;
     gap: 8px;
+    transition:
+      background 120ms ease,
+      border-color 120ms ease;
+  }
+  .island-item:hover {
+    background: #2d3128;
+    border-color: #434836;
   }
   .island-row.open .island-item {
     border-bottom-left-radius: 0;
     border-bottom-right-radius: 0;
+    background: #2d3128;
+    border-bottom-color: transparent;
   }
   .island-header {
     display: flex;
@@ -117,94 +127,111 @@
     min-width: 0;
   }
   .chevron {
-    color: #64748b;
+    color: #8e9488;
     display: inline-flex;
     align-items: center;
-    transition: transform 150ms ease;
+    transition:
+      transform 120ms ease,
+      color 120ms ease;
+  }
+  .island-header:hover .chevron {
+    color: #8ab79a;
   }
   .island-row.open .chevron {
     transform: rotate(90deg);
+    color: #8ab79a;
   }
   .island-name {
-    font-weight: 600;
+    font-weight: 500;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   }
   .island-meta {
     display: flex;
     gap: 8px;
     align-items: center;
-    color: #94a3b8;
+    color: #a8ada0;
     flex-shrink: 0;
   }
   .island-tag {
     font-size: 9px;
-    padding: 1px 5px;
+    padding: 2px 6px;
     border-radius: 3px;
-    font-weight: 600;
+    font-weight: 500;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    letter-spacing: 0.02em;
   }
   .lock-icon {
     display: inline-flex;
     align-items: center;
-    color: #c4b5fd;
+    color: #c4a3a8;
     cursor: help;
   }
   .tag-eager {
-    background: #065f46;
-    color: #6ee7b7;
+    background: rgba(167, 201, 168, 0.16);
+    color: #a7c9a8;
   }
   .tag-visible {
-    background: #1e3a5f;
-    color: #7dd3fc;
+    background: rgba(184, 163, 196, 0.16);
+    color: #b8a3c4;
   }
   .tag-server {
-    background: #4c1d95;
-    color: #c4b5fd;
+    background: rgba(213, 185, 130, 0.16);
+    color: #d5b982;
   }
   .island-size {
     font-size: 10px;
-    color: #64748b;
+    color: #8e9488;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   }
   .shared-badge {
-    padding: 1px 5px;
+    padding: 2px 6px;
     border-radius: 3px;
     font-size: 9px;
-    font-weight: 600;
-    background: #1e3a5f;
-    color: #7dd3fc;
+    font-weight: 500;
+    background: rgba(163, 184, 196, 0.18);
+    color: #a3b8c4;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     cursor: help;
   }
   .locate-btn {
     background: none;
-    border: 1px solid #444;
-    color: #94a3b8;
+    border: 1px solid #2e3228;
+    color: #8e9488;
     cursor: pointer;
-    padding: 1px 5px;
+    padding: 2px 5px;
     border-radius: 3px;
     line-height: 1;
     display: inline-flex;
     align-items: center;
+    transition:
+      color 120ms ease,
+      border-color 120ms ease,
+      background 120ms ease;
   }
   .locate-btn:hover {
-    color: #fff;
-    border-color: #22d3ee;
+    color: #8ab79a;
+    border-color: #8ab79a;
+    background: rgba(138, 183, 154, 0.1);
   }
   .island-props {
     display: none;
-    background: #0f172a;
-    color: #cbd5e1;
+    background: #181b13;
+    color: #e8e6dd;
+    border: 1px solid #353930;
+    border-top: 1px solid #2e3228;
     border-radius: 0 0 6px 6px;
     margin: 0;
     padding: 8px 10px;
     font-size: 10px;
-    line-height: 1.4;
+    line-height: 1.5;
     max-height: 200px;
     overflow-y: auto;
     white-space: pre-wrap;
     word-break: break-all;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   }
   .island-row.open .island-props {
     display: block;
