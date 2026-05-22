@@ -20,3 +20,7 @@ Live admin dashboard with WebSocket updates and server-driven state.
 ### <a href="https://demos.mochi.fast/todo" target="_blank" rel="noopener noreferrer">Tailwind Todo App</a>
 
 Classic todo app styled with Tailwind CSS.
+
+---
+
+Built something with Mochi? Share it in the <a href="https://discord.com/invite/QCGfks4gg8" target="_blank" rel="noopener noreferrer">Mochi Discord</a> — we are happy to feature it!
