@@ -101,7 +101,7 @@
   }
 </script>
 
-<DebugPanel title="Request" color="#a78bfa" {open} {onclose}>
+<DebugPanel title="Request" color="#8ab79a" {open} {onclose}>
   {#snippet titleExtra()}
     {#if htmlSizeLabel}<span class="panel-title-meta"
         ><span class="panel-title-sep">·</span>{htmlSizeLabel}{#if gzipDisabledHint}<span class="gzip-info" title={gzipDisabledHint} aria-label={gzipDisabledHint}
@@ -166,12 +166,15 @@
 <style>
   .panel-title-meta {
     margin-left: 6px;
-    color: #94a3b8;
+    color: #a8ada0;
     font-weight: 400;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 11px;
+    letter-spacing: 0;
   }
   .panel-title-sep {
     margin-right: 6px;
-    color: #475569;
+    color: #434836;
     font-size: 1.25em;
     line-height: 1;
   }
@@ -179,18 +182,18 @@
     display: inline-flex;
     align-items: center;
     margin-left: 4px;
-    color: #64748b;
+    color: #72786c;
     cursor: help;
     line-height: 0;
     position: relative;
     top: 1px;
   }
   .gzip-info:hover {
-    color: #94a3b8;
+    color: #a8ada0;
   }
   .request-item {
-    background: #2a2a3e;
-    color: #e2e8f0;
+    background: #252820;
+    color: #e8e6dd;
     padding: 6px 10px;
     border-radius: 6px;
     font-size: 11px;
@@ -200,53 +203,69 @@
     gap: 8px;
   }
   .request-key {
-    color: #94a3b8;
+    color: #8e9488;
     flex-shrink: 0;
     min-width: 80px;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding-top: 1px;
   }
   .request-val {
-    color: #e2e8f0;
+    color: #e8e6dd;
     word-break: break-all;
-    font-weight: 600;
+    font-weight: 500;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   }
   .request-val.muted {
-    color: #64748b;
+    color: #72786c;
     font-weight: 400;
+    font-style: italic;
   }
   .section-label {
-    color: #5eead4;
-    font-size: 11px;
-    font-weight: 700;
-    padding: 8px 6px 4px;
+    color: #e8e6dd;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 10px 6px 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-family:
+      'Public Sans',
+      -apple-system,
+      BlinkMacSystemFont,
+      sans-serif;
   }
   .cookies-label {
-    color: #fbbf24;
+    color: #d5b982;
   }
   .section-meta {
-    color: #94a3b8;
+    color: #8e9488;
     font-weight: 400;
     margin-left: 4px;
+    text-transform: none;
+    letter-spacing: 0;
+    font-size: 11px;
   }
   .varies-cache {
-    border-left: 2px solid #5eead4;
+    border-left: 2px solid #8ab79a;
     padding-left: 8px;
   }
   .varies-chip {
     display: inline-block;
     margin-left: 6px;
-    padding: 1px 5px;
-    background: rgba(94, 234, 212, 0.12);
-    color: #5eead4;
+    padding: 1px 6px;
+    background: rgba(138, 183, 154, 0.15);
+    color: #8ab79a;
     border-radius: 3px;
     font-size: 9px;
     font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.06em;
     vertical-align: 1px;
   }
   .header-item {
-    background: #2a2a3e;
-    color: #e2e8f0;
+    background: #252820;
+    color: #e8e6dd;
     padding: 6px 10px;
     border-radius: 6px;
     font-size: 11px;
@@ -262,20 +281,24 @@
   }
   .header-row {
     cursor: pointer;
+    transition: background 120ms ease;
   }
   .header-row:hover {
-    background: #303048;
+    background: #2e3228;
   }
   .header-key {
-    color: #94a3b8;
+    color: #8e9488;
     flex-shrink: 0;
     min-width: 100px;
     word-break: break-all;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 10px;
   }
   .header-val {
-    color: #e2e8f0;
+    color: #e8e6dd;
     word-break: break-all;
-    font-weight: 600;
+    font-weight: 500;
     flex: 1;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   }
 </style>

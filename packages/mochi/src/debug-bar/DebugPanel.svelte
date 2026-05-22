@@ -38,17 +38,25 @@
     box-sizing: border-box;
     max-height: 400px;
     overflow-y: auto;
-    background: #1a1a2e;
-    border: 1px solid #333;
-    border-radius: 8px;
-    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
+    background: #1f221c;
+    border: 1px solid #2e3228;
+    border-radius: 10px;
+    box-shadow:
+      0 12px 36px rgba(0, 0, 0, 0.45),
+      0 0 0 1px rgba(255, 253, 240, 0.03) inset;
     padding: 8px;
     opacity: 0;
     pointer-events: none;
     transform: translateY(4px);
     transition:
-      opacity 150ms ease,
-      transform 150ms ease;
+      opacity 120ms ease,
+      transform 120ms ease;
+    font-family:
+      'Public Sans',
+      -apple-system,
+      BlinkMacSystemFont,
+      'Segoe UI',
+      sans-serif;
   }
   .panel.open {
     opacity: 1;
@@ -57,26 +65,39 @@
   }
   .panel-header {
     display: flex;
-    align-items: center;
+    align-items: baseline;
     justify-content: space-between;
-    padding: 4px 6px 8px;
+    padding: 4px 6px 10px;
+    border-bottom: 1px solid rgba(46, 50, 40, 0.6);
+    margin-bottom: 6px;
   }
   .panel-title {
-    font-weight: 700;
-    font-size: 11px;
+    font-family: 'Fraunces Variable', Georgia, 'Times New Roman', serif;
+    font-variation-settings:
+      'opsz' 14,
+      'SOFT' 50;
+    font-weight: 500;
+    font-size: 13px;
     color: var(--panel-title-color);
+    font-variant-caps: all-small-caps;
+    letter-spacing: 0.06em;
   }
   .close-btn {
     background: none;
     border: none;
-    color: #888;
+    color: #72786c;
     cursor: pointer;
-    padding: 0 2px;
+    padding: 2px 4px;
     line-height: 1;
     display: inline-flex;
     align-items: center;
+    border-radius: 4px;
+    transition:
+      color 120ms ease,
+      background 120ms ease;
   }
   .close-btn:hover {
-    color: #fff;
+    color: #8ab79a;
+    background: rgba(138, 183, 154, 0.12);
   }
 </style>

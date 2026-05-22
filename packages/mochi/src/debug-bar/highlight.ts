@@ -55,7 +55,7 @@ export function locateIsland(id: string) {
   const overlay = document.createElement('div');
   const pad = 2;
   overlay.style.cssText =
-    'position:fixed;pointer-events:none;border:3px solid #22d3ee;border-radius:8px;z-index:99998;box-sizing:border-box;transition:opacity 300ms ease;opacity:1';
+    'position:fixed;pointer-events:none;border:2px solid #8ab79a;border-radius:8px;z-index:99998;box-sizing:border-box;transition:opacity 300ms ease;opacity:1;box-shadow:0 0 0 4px rgba(138,183,154,0.18),0 0 24px rgba(138,183,154,0.35)';
   document.body.appendChild(overlay);
   highlightOverlay = overlay;
 

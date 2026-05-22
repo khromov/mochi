@@ -87,7 +87,12 @@
     right: 12px;
     max-width: calc(100vw - 24px);
     z-index: 99999;
-    font-family: monospace, system-ui, sans-serif;
+    font-family:
+      'Public Sans',
+      -apple-system,
+      BlinkMacSystemFont,
+      'Segoe UI',
+      sans-serif;
     /* Root font-size scales with viewport width so the whole bar shrinks
        together (everything else is sized in em). */
     font-size: clamp(9px, 2.6vw, 12px);
@@ -96,94 +101,131 @@
     display: flex;
     align-items: center;
     flex-wrap: nowrap;
-    gap: 0.7em;
-    background: #000;
-    color: #fff;
-    padding: 0.5em 1em;
-    border-radius: 0.7em;
-    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.5);
-    border: 1px solid #333;
-    letter-spacing: 0.02em;
+    gap: 0.55em;
+    background: #1f221c;
+    color: #e8e6dd;
+    padding: 0.45em 0.85em 0.45em 0.7em;
+    border-radius: 12px;
+    box-shadow:
+      0 10px 32px rgba(0, 0, 0, 0.4),
+      0 0 0 1px rgba(255, 253, 240, 0.04) inset;
+    border: 1px solid #2e3228;
+    letter-spacing: 0.01em;
     white-space: nowrap;
     font-size: 1em;
   }
   .logo {
-    font-weight: 700;
-    opacity: 0.85;
+    font-family: 'Fraunces Variable', Georgia, 'Times New Roman', serif;
+    font-variation-settings:
+      'opsz' 14,
+      'SOFT' 50;
+    font-weight: 500;
+    font-size: 1.05em;
+    color: #e8e6dd;
+    padding-right: 0.25em;
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.35em;
   }
   .btn {
-    color: #000;
-    background: #fff;
-    padding: 0.25em 0.85em;
-    border-radius: 0.45em;
+    color: #c7e0cd;
+    background: #2a3a2f;
+    padding: 0.3em 0.75em;
+    border-radius: 6px;
     text-decoration: none;
-    font-size: 0.92em;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    border: none;
+    font-size: 0.88em;
+    font-weight: 500;
+    letter-spacing: 0.05em;
+    border: 1px solid transparent;
     cursor: pointer;
     white-space: nowrap;
     flex: 0 0 auto;
+    font-family: inherit;
+    transition:
+      background 120ms ease,
+      color 120ms ease,
+      border-color 120ms ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4em;
+  }
+  .btn:hover {
+    background: #34463a;
+    color: #e8e6dd;
   }
   .warn-btn {
-    background: #fbbf24;
-    color: #78350f;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35em;
+    background: #2f281a;
+    color: #d5b982;
+  }
+  .warn-btn:hover {
+    background: #3a3120;
+    color: #e8c79a;
   }
   .island-btn {
-    background: #22d3ee;
-    color: #083344;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35em;
-    transition:
-      background 150ms ease,
-      color 150ms ease;
+    background: #2a3a2f;
+    color: #c7e0cd;
+  }
+  .island-btn:hover {
+    background: #34463a;
+    color: #e8e6dd;
   }
   .island-btn.warn-yellow {
-    background: #fbbf24;
-    color: #78350f;
+    background: #2f281a;
+    color: #d5b982;
+  }
+  .island-btn.warn-yellow:hover {
+    background: #3a3120;
   }
   .island-btn.warn-red {
-    background: #ef4444;
-    color: #fff;
+    background: #351f1a;
+    color: #e9a89a;
+  }
+  .island-btn.warn-red:hover {
+    background: #432821;
   }
   .request-btn {
-    background: #a78bfa;
-    color: #1e1b4b;
-    display: inline-flex;
-    align-items: center;
+    background: #24281f;
+    color: #b5baa9;
+  }
+  .request-btn:hover {
+    background: #2e3228;
+    color: #e8e6dd;
   }
   .stats-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3em;
+    background: transparent;
+    color: #8e9488;
+    border-color: #2e3228;
+  }
+  .stats-btn:hover {
+    color: #c7e0cd;
+    border-color: #434836;
+    background: #24281f;
   }
   .badge {
     border-radius: 999px;
-    min-width: 1.5em;
-    height: 1.5em;
+    min-width: 1.4em;
+    height: 1.4em;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 0.83em;
-    font-weight: 700;
-    padding: 0 0.4em;
-    background: #083344;
-    color: #22d3ee;
+    font-size: 0.82em;
+    font-weight: 600;
+    padding: 0 0.45em;
+    background: rgba(138, 183, 154, 0.18);
+    color: #c7e0cd;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    letter-spacing: 0;
   }
   .warn-btn .badge {
-    background: #78350f;
-    color: #fbbf24;
+    background: rgba(213, 185, 130, 0.18);
+    color: #d5b982;
   }
   .badge-yellow {
-    background: #78350f;
-    color: #fbbf24;
+    background: rgba(213, 185, 130, 0.2);
+    color: #d5b982;
   }
   .badge-red {
-    background: #7f1d1d;
-    color: #fca5a5;
+    background: rgba(233, 168, 154, 0.2);
+    color: #e9a89a;
   }
 </style>

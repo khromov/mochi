@@ -22,7 +22,7 @@
   });
 </script>
 
-<DebugPanel title="Warnings" color="#fbbf24" {open} {onclose}>
+<DebugPanel title="Warnings" color="#d5b982" {open} {onclose}>
   {#each warnings as msg, i (i)}
     <div class="warn-item">{msg}</div>
   {/each}
@@ -30,14 +30,15 @@
 
 <style>
   .warn-item {
-    background: #2a2a3e;
-    color: #e2e8f0;
+    background: #252820;
+    color: #e8e6dd;
     padding: 8px 10px;
     border-radius: 6px;
     font-size: 11px;
     line-height: 1.5;
     margin-bottom: 4px;
     word-break: break-word;
+    border-left: 2px solid #d5b982;
   }
   .warn-item:last-child {
     margin-bottom: 0;
