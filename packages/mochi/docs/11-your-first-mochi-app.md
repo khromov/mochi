@@ -9,18 +9,18 @@ slug: your-first-mochi-app
 
 ## Your first Mochi app
 
-The smallest app that exercises every server/client boundary you'll touch in real code. We'll build a single `/hello` page in four steps, each one introducing one of the pillars you'll reach for daily:
+Let's build a small app that exercises every server/client boundary you'll touch in real code. We'll put together a single `/hello` page in four steps, picking up one pillar at a time:
 
 - [`serverProps`](/docs/defining-routes/) — load data on every request and pass it into the page component
 - [Passing props to islands](/docs/island-props/) — a server-rendered parent handing a value to a hydrated child
 - [`mochi:hydrate`](/docs/selective-hydration/) — one interactive island so the rest stays zero-JS
-- [`mochi:defer`](/docs/server-islands/) — a server island that renders out-of-band and can read per-request state
+- [`mochi:defer`](/docs/server-islands/) — a server island that renders separately from the main request
 
-By the end you'll have a greeting card with a live like button and a personalized welcome that streams in after the page loads.
+By the end we'll have a greeting card with a live like button and a personalized welcome that streams in after the page loads.
 
 ### Step 1 — Register the route
 
-`serverProps` is either a plain object or a `(req, params) => props` resolver — its return value becomes the page component's `$props`.
+We'll start by pointing `/hello` at a Svelte page and giving it some data to render. `serverProps` is either a plain object or a `(req, params) => props` resolver — whatever it returns becomes the page component's `$props`.
 
 ```ts
 // file: src/routes.ts
@@ -41,7 +41,7 @@ The resolver runs on every request, so each reload produces a fresh `renderedAt`
 
 ### Step 2 — The page component
 
-`Hello.svelte` is server-only. It consumes the `serverProps`, renders a static layout, and mounts the two child islands. Even though it imports two components that ship JavaScript, this file itself ships zero — the directives at the call site decide what hydrates.
+Next, let's write the page itself. `Hello.svelte` stays server-only — it consumes the `serverProps`, renders a static layout, and mounts the two child islands we'll build next. Notice that even though it imports two components that ship JavaScript, this file itself ships zero: the directives at the call site decide what hydrates.
 
 ```svelte
 <!-- file: src/Hello.svelte -->
@@ -66,7 +66,7 @@ The `initialLikes={42}` value crosses the server→client boundary. Mochi serial
 
 ### Step 3 — A hydrated island
 
-`LikeButton.svelte` is a normal Svelte 5 component. It accepts `initialLikes` as a prop and keeps a `$state` counter; clicking the button updates the count on the client.
+Now let's give the page something to click. `LikeButton.svelte` is a normal Svelte 5 component — we accept `initialLikes` as a prop, keep a `$state` counter, and bump it on click.
 
 ```svelte
 <!-- file: src/LikeButton.svelte -->
@@ -86,9 +86,9 @@ The `mochi:hydrate` directive lives at the **call site** in `Hello.svelte`, not 
 
 ### Step 4 — A server island
 
-`Visitor.svelte` is marked `mochi:defer` in the parent, so it isn't rendered during the initial SSR pass. Instead, the page ships with a `<mochi-server-island>` placeholder containing the `<p>Loading…</p>` fallback; the browser then fetches `/_mochi/island/Visitor`, the server renders this component, and the resulting HTML swaps in.
+Finally, let's add a personalized greeting that doesn't block the rest of the page. We marked `Visitor.svelte` with `mochi:defer` back in Step 2, so it skips the initial SSR pass — the page ships with a `<mochi-server-island>` placeholder containing our `<p>Loading…</p>` fallback. The browser then fetches `/_mochi/island/Visitor`, the server renders the component, and the resulting HTML swaps in.
 
-Because it runs on the server, it has full access to the request via `getRequestContext()` — including cookies:
+Because it still runs on the server, the component has full access to the request via `getRequestContext()` — including cookies:
 
 ```svelte
 <!-- file: src/Visitor.svelte -->
@@ -102,7 +102,7 @@ Because it runs on the server, it has full access to the request via `getRequest
 <p>Welcome back, {name}!</p>
 ```
 
-This pattern is how you keep an HTML page cacheable while still personalizing parts of it: the outer `Hello.svelte` is identical for every visitor, but the deferred `Visitor` fragment can read per-request state.
+That's the trick for keeping an HTML page cacheable while still personalizing parts of it: the outer `Hello.svelte` is identical for every visitor, but the deferred `Visitor` fragment can read per-request state on its own.
 
 ### What's next
 
