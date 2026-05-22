@@ -22,20 +22,13 @@
     activePanel = activePanel === panel ? null : panel;
   }
 
-  function collapse() {
-    collapsed = true;
-    activePanel = null;
-    try {
-      localStorage.setItem(STORAGE_KEY, '1');
-    } catch {
-      /* storage blocked */
+  function toggleCollapsed() {
+    collapsed = !collapsed;
+    if (collapsed) {
+      activePanel = null;
     }
-  }
-
-  function expand() {
-    collapsed = false;
     try {
-      localStorage.setItem(STORAGE_KEY, '0');
+      localStorage.setItem(STORAGE_KEY, collapsed ? '1' : '0');
     } catch {
       /* storage blocked */
     }
@@ -77,41 +70,49 @@
 </script>
 
 <div class="mochi-debug-bar-root" bind:this={rootEl}>
-  {#if collapsed}
-    <button class="collapsed-toggle" onclick={expand} type="button" aria-label="Expand Mochi debug bar" title="Expand Mochi debug bar">
-      <StatusDot />
-    </button>
-  {:else}
-    <WarningsPanel open={activePanel === 'warnings'} onclose={() => (activePanel = null)} />
-    <IslandsPanel open={activePanel === 'islands'} onclose={() => (activePanel = null)} />
-    <RequestPanel open={activePanel === 'request'} onclose={() => (activePanel = null)} />
+  <WarningsPanel open={activePanel === 'warnings'} onclose={() => (activePanel = null)} />
+  <IslandsPanel open={activePanel === 'islands'} onclose={() => (activePanel = null)} />
+  <RequestPanel open={activePanel === 'request'} onclose={() => (activePanel = null)} />
 
-    <div class="bar">
-      <button class="brand-toggle" onclick={collapse} type="button" aria-label="Collapse Mochi debug bar" title="Collapse">
-        <StatusDot />
-        <span class="logo">{'\u{1F361}'} mochi</span>
-      </button>
+  <div class="bar" class:is-collapsed={collapsed}>
+    <button
+      class="brand-toggle"
+      onclick={toggleCollapsed}
+      type="button"
+      aria-label={collapsed ? 'Expand Mochi debug bar' : 'Collapse Mochi debug bar'}
+      title={collapsed ? 'Expand' : 'Collapse'}
+    >
+      <StatusDot />
+      <span class="logo">{'\u{1F361}'} mochi</span>
+    </button>
+    <div class="bar-actions" aria-hidden={collapsed}>
       {#if hasDebugInfo}
-        <button class="btn request-btn" onclick={() => toggle('request')}>Request</button>
+        <button class="btn request-btn" onclick={() => toggle('request')} tabindex={collapsed ? -1 : 0}>Request</button>
       {/if}
-      <button class="btn island-btn" class:warn-yellow={warnLevel === 'yellow'} class:warn-red={warnLevel === 'red'} onclick={() => toggle('islands')}>
+      <button
+        class="btn island-btn"
+        class:warn-yellow={warnLevel === 'yellow'}
+        class:warn-red={warnLevel === 'red'}
+        onclick={() => toggle('islands')}
+        tabindex={collapsed ? -1 : 0}
+      >
         Islands <span class="badge" class:badge-yellow={warnLevel === 'yellow'} class:badge-red={warnLevel === 'red'}>{debugBarState.islandCount}</span>
       </button>
       {#if debugBarState.warningCount > 0}
-        <button class="btn warn-btn" onclick={() => toggle('warnings')}>
+        <button class="btn warn-btn" onclick={() => toggle('warnings')} tabindex={collapsed ? -1 : 0}>
           Warnings <span class="badge">{debugBarState.warningCount}</span>
         </button>
       {/if}
       {#if pageCacheEnabled}
-        <a href={pageCacheHref} target="_blank" rel="noopener" class="btn stats-btn">
+        <a href={pageCacheHref} target="_blank" rel="noopener" class="btn stats-btn" tabindex={collapsed ? -1 : 0}>
           Cache <ArrowUpRight size={12} />
         </a>
       {/if}
-      <a href={statsHref} target="_blank" rel="noopener" class="btn stats-btn">
+      <a href={statsHref} target="_blank" rel="noopener" class="btn stats-btn" tabindex={collapsed ? -1 : 0}>
         Bundles <ArrowUpRight size={12} />
       </a>
     </div>
-  {/if}
+  </div>
 </div>
 
 <style>
@@ -128,26 +129,33 @@
     font-size: clamp(9px, 2.6vw, 12px);
   }
   .bar {
-    display: flex;
+    display: inline-flex;
     align-items: center;
     flex-wrap: nowrap;
     gap: 0.55em;
     background: #1f221c;
     color: #e8e6dd;
-    padding: 0.4em 0.85em 0.4em 0.55em;
+    padding: 0.4em 0.55em;
     border-radius: 12px;
     box-shadow:
       0 10px 32px rgba(0, 0, 0, 0.4),
       0 0 0 1px rgba(255, 253, 240, 0.04) inset;
-    border: 1px solid #2e3228;
+    border: 1px solid #434836;
     letter-spacing: 0.01em;
     white-space: nowrap;
     font-size: 1em;
+    transition:
+      gap 220ms ease,
+      border-radius 220ms ease;
+  }
+  .bar.is-collapsed {
+    gap: 0;
+    border-radius: 999px;
   }
   .brand-toggle {
     background: transparent;
-    border: none;
-    padding: 0.2em 0.45em 0.2em 0.4em;
+    border: 1px solid transparent;
+    padding: 0.3em 0.55em 0.3em 0.4em;
     margin: 0;
     cursor: pointer;
     display: inline-flex;
@@ -158,14 +166,22 @@
     border-radius: 6px;
     transition:
       background 120ms ease,
-      opacity 120ms ease;
+      gap 220ms ease,
+      padding 220ms ease,
+      border-color 120ms ease;
   }
   .brand-toggle:hover {
     background: #2a2e25;
+    border-color: #5a604d;
   }
   .brand-toggle:focus-visible {
     outline: 1px solid #8ab79a;
     outline-offset: 1px;
+  }
+  .is-collapsed .brand-toggle {
+    gap: 0;
+    padding: 0.3em 0.4em;
+    border-radius: 999px;
   }
   .logo {
     font-weight: 600;
@@ -175,38 +191,35 @@
     display: inline-flex;
     align-items: baseline;
     gap: 0.35em;
+    max-width: 8em;
+    overflow: hidden;
+    opacity: 1;
+    transition:
+      max-width 240ms ease,
+      opacity 180ms ease;
   }
-  .collapsed-toggle {
-    background: #1f221c;
-    border: 1px solid #2e3228;
-    border-radius: 999px;
-    padding: 0.55em;
-    margin: 0;
-    cursor: pointer;
+  .is-collapsed .logo {
+    max-width: 0;
+    opacity: 0;
+  }
+  .bar-actions {
     display: inline-flex;
     align-items: center;
-    justify-content: center;
-    box-shadow:
-      0 6px 18px rgba(0, 0, 0, 0.35),
-      0 0 0 1px rgba(255, 253, 240, 0.04) inset;
+    gap: 0.55em;
+    max-width: 60em;
+    overflow: hidden;
+    opacity: 1;
     transition:
-      transform 120ms ease,
-      background 120ms ease,
-      border-color 120ms ease;
-    font: inherit;
-    font-size: 1em;
+      max-width 260ms ease,
+      opacity 180ms ease;
   }
-  .collapsed-toggle:hover {
-    background: #252820;
-    border-color: #434836;
-    transform: scale(1.08);
-  }
-  .collapsed-toggle:focus-visible {
-    outline: 1px solid #8ab79a;
-    outline-offset: 2px;
+  .is-collapsed .bar-actions {
+    max-width: 0;
+    opacity: 0;
+    pointer-events: none;
   }
   .btn {
-    color: #c7e0cd;
+    color: #e8e6dd;
     background: #2a3a2f;
     padding: 0.3em 0.75em;
     border-radius: 6px;
@@ -214,7 +227,7 @@
     font-size: 0.88em;
     font-weight: 500;
     letter-spacing: 0.05em;
-    border: 1px solid transparent;
+    border: 1px solid #4a5040;
     cursor: pointer;
     white-space: nowrap;
     flex: 0 0 auto;
@@ -229,55 +242,66 @@
   }
   .btn:hover {
     background: #34463a;
-    color: #e8e6dd;
+    color: #ffffff;
+    border-color: #8ab79a;
   }
   .warn-btn {
-    background: #2f281a;
-    color: #d5b982;
+    background: #3a3120;
+    color: #f0d398;
+    border-color: #6a5530;
   }
   .warn-btn:hover {
-    background: #3a3120;
-    color: #e8c79a;
+    background: #45381f;
+    color: #fdde9d;
+    border-color: #d5b982;
   }
   .island-btn {
     background: #2a3a2f;
     color: #c7e0cd;
+    border-color: #4a6354;
   }
   .island-btn:hover {
     background: #34463a;
     color: #e8e6dd;
+    border-color: #8ab79a;
   }
   .island-btn.warn-yellow {
-    background: #2f281a;
-    color: #d5b982;
+    background: #3a3120;
+    color: #f0d398;
+    border-color: #6a5530;
   }
   .island-btn.warn-yellow:hover {
-    background: #3a3120;
+    background: #45381f;
+    border-color: #d5b982;
   }
   .island-btn.warn-red {
-    background: #351f1a;
-    color: #e9a89a;
+    background: #432821;
+    color: #f4b6a7;
+    border-color: #7a3a2a;
   }
   .island-btn.warn-red:hover {
-    background: #432821;
+    background: #4f2f27;
+    border-color: #e9a89a;
   }
   .request-btn {
-    background: #24281f;
-    color: #b5baa9;
+    background: #2a2e25;
+    color: #d4d8c8;
+    border-color: #4a5040;
   }
   .request-btn:hover {
-    background: #2e3228;
-    color: #e8e6dd;
+    background: #34382e;
+    color: #ffffff;
+    border-color: #6a705c;
   }
   .stats-btn {
     background: transparent;
-    color: #8e9488;
-    border-color: #2e3228;
+    color: #a8ada0;
+    border-color: #4a5040;
   }
   .stats-btn:hover {
-    color: #c7e0cd;
-    border-color: #434836;
-    background: #24281f;
+    color: #ffffff;
+    border-color: #8ab79a;
+    background: #2a2e25;
   }
   .badge {
     border-radius: 999px;
@@ -289,21 +313,21 @@
     font-size: 0.82em;
     font-weight: 600;
     padding: 0 0.45em;
-    background: rgba(138, 183, 154, 0.18);
-    color: #c7e0cd;
+    background: rgba(138, 183, 154, 0.28);
+    color: #e8f0e0;
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     letter-spacing: 0;
   }
   .warn-btn .badge {
-    background: rgba(213, 185, 130, 0.18);
-    color: #d5b982;
+    background: rgba(213, 185, 130, 0.3);
+    color: #fdde9d;
   }
   .badge-yellow {
-    background: rgba(213, 185, 130, 0.2);
-    color: #d5b982;
+    background: rgba(213, 185, 130, 0.3);
+    color: #fdde9d;
   }
   .badge-red {
-    background: rgba(233, 168, 154, 0.2);
-    color: #e9a89a;
+    background: rgba(233, 168, 154, 0.3);
+    color: #f4b6a7;
   }
 </style>

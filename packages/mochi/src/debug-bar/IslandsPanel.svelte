@@ -166,24 +166,25 @@
 
 <style>
   .island-summary {
-    background: #252820;
-    color: #a8ada0;
+    background: #2e3228;
+    color: #c8ccbf;
     padding: 8px 10px;
     border-radius: 6px;
+    border: 1px solid #434836;
     font-size: 11px;
     line-height: 1.6;
     margin-bottom: 6px;
   }
   .island-summary :global(strong) {
-    color: #e8e6dd;
-    font-weight: 600;
+    color: #f0eee5;
+    font-weight: 700;
   }
   .island-group-label {
-    color: #72786c;
+    color: #9aa094;
     font-size: 10px;
-    font-weight: 600;
+    font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.1em;
+    letter-spacing: 0.12em;
     padding: 8px 6px 4px;
     font-family: inherit;
   }

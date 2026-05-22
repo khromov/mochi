@@ -38,12 +38,12 @@
     box-sizing: border-box;
     max-height: 400px;
     overflow-y: auto;
-    background: #1f221c;
-    border: 1px solid #2e3228;
+    background: #15170f;
+    border: 1px solid #434836;
     border-radius: 10px;
     box-shadow:
-      0 12px 36px rgba(0, 0, 0, 0.45),
-      0 0 0 1px rgba(255, 253, 240, 0.03) inset;
+      0 14px 40px rgba(0, 0, 0, 0.55),
+      0 0 0 1px rgba(255, 253, 240, 0.04) inset;
     padding: 8px;
     opacity: 0;
     pointer-events: none;
@@ -64,7 +64,7 @@
     align-items: baseline;
     justify-content: space-between;
     padding: 4px 6px 10px;
-    border-bottom: 1px solid rgba(46, 50, 40, 0.6);
+    border-bottom: 1px solid #434836;
     margin-bottom: 6px;
   }
   .panel-title {

@@ -87,25 +87,30 @@
     margin-bottom: 0;
   }
   .island-item {
-    background: #252820;
-    color: #e8e6dd;
+    background: #2e3228;
+    color: #f0eee5;
     padding: 6px 10px;
     border-radius: 6px;
+    border: 1px solid #434836;
     font-size: 11px;
     line-height: 1.5;
     display: flex;
     justify-content: space-between;
     align-items: center;
     gap: 8px;
-    transition: background 120ms ease;
+    transition:
+      background 120ms ease,
+      border-color 120ms ease;
   }
   .island-item:hover {
-    background: #2a2e25;
+    background: #353a2f;
+    border-color: #5a604d;
   }
   .island-row.open .island-item {
     border-bottom-left-radius: 0;
     border-bottom-right-radius: 0;
-    background: #2a2e25;
+    background: #353a2f;
+    border-bottom-color: transparent;
   }
   .island-header {
     display: flex;
@@ -213,8 +218,10 @@
   }
   .island-props {
     display: none;
-    background: #171914;
-    color: #e8e6dd;
+    background: #15170f;
+    color: #f0eee5;
+    border: 1px solid #434836;
+    border-top: none;
     border-radius: 0 0 6px 6px;
     margin: 0;
     padding: 8px 10px;

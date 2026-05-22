@@ -166,11 +166,12 @@
 <style>
   .panel-title-meta {
     margin-left: 6px;
-    color: #a8ada0;
+    color: #c8ccbf;
     font-weight: 400;
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     font-size: 11px;
     letter-spacing: 0;
+    text-transform: none;
   }
   .panel-title-sep {
     margin-right: 6px;
@@ -192,10 +193,11 @@
     color: #a8ada0;
   }
   .request-item {
-    background: #252820;
-    color: #e8e6dd;
+    background: #2e3228;
+    color: #f0eee5;
     padding: 6px 10px;
     border-radius: 6px;
+    border: 1px solid #434836;
     font-size: 11px;
     line-height: 1.5;
     margin-bottom: 3px;
@@ -203,7 +205,7 @@
     gap: 8px;
   }
   .request-key {
-    color: #8e9488;
+    color: #aab09f;
     flex-shrink: 0;
     min-width: 80px;
     font-size: 10px;
@@ -212,13 +214,13 @@
     padding-top: 1px;
   }
   .request-val {
-    color: #e8e6dd;
+    color: #f0eee5;
     word-break: break-all;
     font-weight: 500;
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   }
   .request-val.muted {
-    color: #72786c;
+    color: #9aa094;
     font-weight: 400;
     font-style: italic;
   }
@@ -260,30 +262,33 @@
     vertical-align: 1px;
   }
   .header-item {
-    background: #252820;
-    color: #e8e6dd;
+    background: #2e3228;
+    color: #f0eee5;
     padding: 6px 10px;
     border-radius: 6px;
+    border: 1px solid #434836;
     font-size: 11px;
     line-height: 1.5;
     margin-bottom: 3px;
     display: flex;
     gap: 8px;
     text-align: left;
-    border: none;
     width: 100%;
     box-sizing: border-box;
     font-family: inherit;
   }
   .header-row {
     cursor: pointer;
-    transition: background 120ms ease;
+    transition:
+      background 120ms ease,
+      border-color 120ms ease;
   }
   .header-row:hover {
-    background: #2e3228;
+    background: #353a2f;
+    border-color: #5a604d;
   }
   .header-key {
-    color: #8e9488;
+    color: #aab09f;
     flex-shrink: 0;
     min-width: 100px;
     word-break: break-all;
@@ -291,7 +296,7 @@
     font-size: 10px;
   }
   .header-val {
-    color: #e8e6dd;
+    color: #f0eee5;
     word-break: break-all;
     font-weight: 500;
     flex: 1;
