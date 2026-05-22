@@ -7,10 +7,11 @@ WORKDIR /usr/src/app
 # install dependencies into a temp directory
 FROM base AS install
 COPY package.json bun.lock /temp/prod/
-COPY patches /temp/prod/patches
 # Copy every workspace wholesale so bun install can reconcile the lockfile
 # topology AND the workspace:* bin shims (e.g. mochi-framework -> src/cli.js)
 # resolve correctly. Trades a bit of layer-cache granularity for robustness.
+# packages/ also carries packages/mochi/patches/, which the root package.json's
+# patchedDependencies field references.
 COPY packages /temp/prod/packages
 # --production drops devDeps. Don't omit peers — mochi-framework's peer
 # (svelte) must resolve from packages/mochi/src/ at build time, and dropping
