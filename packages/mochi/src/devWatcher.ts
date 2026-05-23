@@ -155,7 +155,7 @@ export function startDevWatcher(deps: DevWatcherDeps): void {
   };
   const watcher = chokidar.watch(finalWatchPaths, {
     ignoreInitial: true,
-    ignored: [/node_modules\/\.cache/, isInsideOutDir],
+    ignored: [/(^|[/\\])node_modules([/\\]|$)/, isInsideOutDir],
     cwd: process.cwd(),
   });
 

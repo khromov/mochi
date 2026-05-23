@@ -56,6 +56,14 @@
         "typescript": "^6.0.3",
       },
     },
+    "packages/docs": {
+      "name": "mochi-docs",
+      "version": "0.2.0",
+      "dependencies": {
+        "@lucide/svelte": "^1.16.0",
+        "svelte": "^5.55.7",
+      },
+    },
     "packages/minimal": {
       "name": "mochi-minimal",
       "dependencies": {
@@ -466,6 +474,8 @@
     "mitt": ["mitt@3.0.1", "", {}, "sha512-vKivATfr97l2/QBCYAkXYDbrIWPM2IIKEl7YPhjCvKlG3kE2gm+uBo6nEXK3M5/Ffh/FLpKExzOQ3JJoJGFKBw=="],
 
     "mochi-demos": ["mochi-demos@workspace:packages/demos"],
+
+    "mochi-docs": ["mochi-docs@workspace:packages/docs"],
 
     "mochi-framework": ["mochi-framework@workspace:packages/mochi"],
 
