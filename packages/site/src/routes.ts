@@ -3,6 +3,7 @@ import rehypeSlug from 'rehype-slug';
 import { Mochi, error, getRequestContext } from 'mochi-framework';
 import type { MochiBuildOptions, MarkdownConfig, MochiRouteValue } from 'mochi-framework';
 import { highlightCode } from './lib/highlightCode';
+import { ogPngRoute } from './og/ogImage';
 import { buildDocsNav, buildLlmsTxt, buildLlmsFullTxt, getDoc, getDocLlmsTxt, getDocNeighbors, loadDocs } from './lib/docs';
 import { profilerEnabled, startProfiler, stopProfiler } from './lib/profiler';
 import { routes as apiRoutes } from './demos/api/routes';
@@ -88,6 +89,7 @@ export const routes: Record<string, MochiRouteValue> = {
     },
   }),
   '/og': Mochi.page('./src/og/OgPage.svelte'),
+  '/og.png': ogPngRoute,
   '/llms.txt': Mochi.api(async () => {
     return new Response(await buildLlmsTxt(), {
       headers: { 'Content-Type': 'text/plain; charset=utf-8' },
