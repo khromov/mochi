@@ -123,12 +123,20 @@ snippets outside the markdown pipeline.
 For a different engine (shiki, prism), skip `createHighlighter` and pass
 your own `(code, lang) => string` straight into `markdown.highlight`.
 
-<Callout type="warning">
-A `.md` file is rendered SSR-only — `mochi:hydrate` directives inside markdown
-are not preprocessed and won't create islands. For interactivity, render the
-markdown from a `.svelte` page that wraps the parts you want hydrated, or use
-a `.svelte` route and import the `.md` content as a child component.
-</Callout>
+### Islands in markdown
+
+`mochi:hydrate`, `mochi:hydrate:visible`, `mochi:defer`, and `mochi:defer:visible` all work on
+components instantiated inside a `.md` / `.svx` file. Import the component
+as a default import from the markdown's top-level `<script>` block, then
+apply the directive on the tag:
+
+```svelte
+<script>
+  import Counter from './Counter.svelte';
+</script>
+
+<Counter mochi:hydrate count={3} />
+```
 
 <Callout type="info">
 Omitting the `markdown` config disables `.md`/`.svx` handling entirely —

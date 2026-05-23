@@ -1,13 +1,8 @@
 <script lang="ts">
-  // CSS-only progressive-enhancement demo: a hidden checkbox + a <label>
-  // styled as a button. `:checked ~ ...` flips the islands' appearance.
-  // No JS is shipped, no hydration is required — the demo's own behaviour
-  // is the lesson the surrounding copy teaches.
+  let hydrated = $state(false);
 </script>
 
-<div class="islands-demo">
-  <input id="islands-demo-hydrate" class="toggle" type="checkbox" aria-label="Hydrate islands" />
-
+<div class="islands-demo" class:hydrated>
   <div class="page">
     <div class="row row-header">
       <div class="box box-header">header</div>
@@ -25,10 +20,9 @@
   </div>
 
   <div class="controls">
-    <label class="button" for="islands-demo-hydrate">
-      <span class="button-off">Hydrate islands →</span>
-      <span class="button-on">↺ Reset</span>
-    </label>
+    <button type="button" class="button" onclick={() => (hydrated = !hydrated)}>
+      {#if hydrated}↺ Reset{:else}Hydrate islands →{/if}
+    </button>
     <ul class="legend">
       <li><span class="swatch swatch-ssr"></span> ssr</li>
       <li><span class="swatch swatch-island"></span> island</li>
@@ -37,14 +31,6 @@
 </div>
 
 <style>
-  .toggle {
-    position: absolute;
-    opacity: 0;
-    pointer-events: none;
-    width: 0;
-    height: 0;
-  }
-
   .islands-demo {
     margin: 1.5rem 0;
     font-family: var(--font-sans);
@@ -111,7 +97,7 @@
   }
 
   /* After click: non-island boxes turn green (SSR'd, no JS). */
-  .toggle:checked ~ .page .box {
+  .islands-demo.hydrated .box {
     border-style: solid;
     border-color: var(--demo-green);
     background: var(--demo-green-soft);
@@ -120,7 +106,7 @@
 
   /* After click: island boxes turn orange (hydrated). Must come after the
      non-island rule above so its same-specificity selector wins by order. */
-  .toggle:checked ~ .page .box-island {
+  .islands-demo.hydrated .box-island {
     border-color: var(--demo-accent);
     background: var(--demo-accent-soft);
     color: var(--demo-accent-text);
@@ -141,8 +127,10 @@
     padding: 0.5rem 0.95rem;
     background: var(--demo-accent);
     color: white;
+    border: none;
     border-radius: var(--radius-sm);
     cursor: pointer;
+    font-family: inherit;
     font-size: 0.85rem;
     font-weight: 500;
     user-select: none;
@@ -151,17 +139,8 @@
   .button:hover {
     background: var(--demo-accent-hover);
   }
-  .button-on {
-    display: none;
-  }
-  .toggle:checked ~ .controls .button-off {
-    display: none;
-  }
-  .toggle:checked ~ .controls .button-on {
-    display: inline;
-  }
-
-  .toggle:focus-visible ~ .controls .button {
+  .button:focus-visible {
+    outline: none;
     box-shadow: 0 0 0 3px rgb(234 124 44 / 0.3);
   }
 
