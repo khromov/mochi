@@ -1,6 +1,7 @@
 ---
 title: 'Trailing slash'
 slug: trailing-slash
+description: 'Enforce a consistent trailing-slash policy across all routes with automatic redirects.'
 ---
 
 ## Trailing slash

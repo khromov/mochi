@@ -1,6 +1,7 @@
 ---
 title: 'Selective hydration with mochi:hydrate'
 slug: selective-hydration
+description: 'Mark components with mochi:hydrate to ship client-side JavaScript only where interactivity is needed.'
 ---
 
 <script>

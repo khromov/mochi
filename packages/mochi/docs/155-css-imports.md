@@ -1,6 +1,7 @@
 ---
 title: 'CSS imports'
 slug: css-imports
+description: 'Import CSS from Svelte, TypeScript, or JavaScript files and have it bundled and injected automatically.'
 ---
 
 <script>

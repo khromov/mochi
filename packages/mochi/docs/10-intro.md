@@ -1,6 +1,7 @@
 ---
 title: 'Welcome'
 slug: intro
+description: 'A lightweight, server-first Svelte 5 framework on Bun that ships JavaScript only for interactive islands.'
 ---
 
 <script>

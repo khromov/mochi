@@ -1,6 +1,7 @@
 ---
 title: 'Defining routes'
 slug: defining-routes
+description: 'Register pages, APIs, WebSockets, and SSE endpoints using the programmatic routes record.'
 ---
 
 ## Defining routes

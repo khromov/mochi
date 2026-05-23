@@ -1,6 +1,7 @@
 ---
 title: 'Development mode'
 slug: development-mode
+description: 'What the development flag enables: live reload, file watcher, debug bar, and error overlay.'
 ---
 
 <script>

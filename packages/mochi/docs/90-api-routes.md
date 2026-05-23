@@ -1,6 +1,7 @@
 ---
 title: 'API routes'
 slug: api-routes
+description: 'Register JSON endpoints with Mochi.api() that receive a request event and return a Response.'
 ---
 
 ## API routes
