@@ -18,6 +18,7 @@
   let headers: Array<[string, string]> = $state([]);
   let expanded: Record<number, boolean> = $state({});
 
+  let ssrDurationMs: number | null = $state(null);
   let requestCookies: Array<[string, string]> = $state([]);
   let varyOnCookies: Set<string> = $state(new Set());
 
@@ -25,6 +26,9 @@
     const info = window.__mochi_debug;
     if (info) {
       debugInfo = { route: info.route, pathname: info.pathname, params: info.params };
+      if (typeof info.ssrDurationMs === 'number') {
+        ssrDurationMs = info.ssrDurationMs;
+      }
       if (info.headers) {
         headers = info.headers;
       }
@@ -103,6 +107,7 @@
 
 <DebugPanel title="Request" color="#8ab79a" {open} {onclose}>
   {#snippet titleExtra()}
+    {#if ssrDurationMs !== null}<span class="panel-title-meta"><span class="panel-title-sep">·</span>{ssrDurationMs < 1 ? '<1' : Math.round(ssrDurationMs)}ms</span>{/if}
     {#if htmlSizeLabel}<span class="panel-title-meta"
         ><span class="panel-title-sep">·</span>{htmlSizeLabel}{#if gzipDisabledHint}<span class="gzip-info" title={gzipDisabledHint} aria-label={gzipDisabledHint}
             ><Info size={11} /></span
