@@ -1,0 +1,208 @@
+<script lang="ts">
+  // CSS-only progressive-enhancement demo: a hidden checkbox + a <label>
+  // styled as a button. `:checked ~ ...` flips the islands' appearance.
+  // No JS is shipped, no hydration is required — the demo's own behaviour
+  // is the lesson the surrounding copy teaches.
+</script>
+
+<div class="islands-demo">
+  <input id="islands-demo-hydrate" class="toggle" type="checkbox" aria-label="Hydrate islands" />
+
+  <div class="page">
+    <div class="row row-header">
+      <div class="box box-header">header</div>
+      <div class="box box-island box-badge">user<br />profile</div>
+    </div>
+
+    <div class="row row-body">
+      <div class="box box-island box-sidebar">sidebar</div>
+      <div class="box box-main">main</div>
+    </div>
+
+    <div class="row row-footer">
+      <div class="box box-footer">footer</div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <label class="button" for="islands-demo-hydrate">
+      <span class="button-off">Hydrate islands →</span>
+      <span class="button-on">↺ Reset</span>
+    </label>
+    <ul class="legend">
+      <li><span class="swatch swatch-island"></span> island</li>
+    </ul>
+  </div>
+</div>
+
+<style>
+  .toggle {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+    width: 0;
+    height: 0;
+  }
+
+  .islands-demo {
+    margin: 1.5rem 0;
+    font-family: var(--font-sans);
+  }
+
+  .page {
+    background: var(--surface-muted);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 0.5rem;
+    display: grid;
+    gap: 0.5rem;
+  }
+
+  .row {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .row-header .box-header {
+    flex: 1;
+  }
+  .row-header .box-badge {
+    width: 72px;
+    height: 72px;
+    min-height: 0;
+    flex-shrink: 0;
+    line-height: 1.15;
+    text-align: center;
+  }
+  .row-body .box-sidebar {
+    width: 140px;
+    flex-shrink: 0;
+  }
+  .row-body .box-main {
+    flex: 1;
+  }
+  .row-footer .box-footer {
+    flex: 1;
+  }
+
+  .box {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 48px;
+    padding: 0.5rem;
+    border: 1.5px dashed var(--border-strong);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    text-transform: lowercase;
+    letter-spacing: 0.04em;
+  }
+
+  .box-sidebar {
+    min-height: 110px;
+  }
+
+  /* Islands: same shape as static, plus a colour change on :checked. */
+  .box-island {
+    transition:
+      border-color 150ms,
+      background-color 150ms,
+      color 150ms;
+  }
+
+  .toggle:checked ~ .page .box-island {
+    border-style: solid;
+    border-color: var(--demo-accent);
+    background: var(--demo-accent-soft);
+    color: var(--demo-accent-text);
+  }
+
+  .controls {
+    display: flex;
+    align-items: center;
+    gap: 1.25rem;
+    margin-top: 0.85rem;
+    flex-wrap: wrap;
+  }
+
+  .button {
+    display: inline-block;
+    padding: 0.5rem 0.95rem;
+    background: var(--demo-accent);
+    color: white;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 500;
+    user-select: none;
+    transition: background-color 150ms;
+  }
+  .button:hover {
+    background: var(--demo-accent-hover);
+  }
+  .button-on {
+    display: none;
+  }
+  .toggle:checked ~ .controls .button-off {
+    display: none;
+  }
+  .toggle:checked ~ .controls .button-on {
+    display: inline;
+  }
+
+  .toggle:focus-visible ~ .controls .button {
+    box-shadow: 0 0 0 3px rgb(234 124 44 / 0.3);
+  }
+
+  .legend {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    gap: 1.25rem;
+    font-size: 0.8rem;
+    color: var(--text-subtle);
+    flex-wrap: wrap;
+  }
+  .legend li {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .swatch {
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+    display: inline-block;
+  }
+  .swatch-island {
+    border: 1.5px solid var(--demo-accent);
+    background: var(--demo-accent-soft);
+  }
+
+  /* Orange theme — scoped to this demo so it doesn't leak into doc styles. */
+  .islands-demo {
+    --demo-accent: #ea7c2c;
+    --demo-accent-hover: #d56a1f;
+    --demo-accent-soft: #fbe9d6;
+    --demo-accent-text: #8a4516;
+  }
+
+  :global(html.dark) .islands-demo,
+  :global(html[data-theme='dark']) .islands-demo {
+    --demo-accent: #f49654;
+    --demo-accent-hover: #f7a872;
+    --demo-accent-soft: #3a2615;
+    --demo-accent-text: #f7c79b;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .box-island,
+    .button {
+      transition: none;
+    }
+  }
+</style>
