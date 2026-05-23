@@ -11,7 +11,8 @@ import type { DebugBarData } from './requestContext';
 import { logger } from './log';
 import { mochiEvents } from './events';
 import type { MarkdownConfig, MochiManifest } from './types';
-import { preprocessHydratable, type HydratableComponent, type ServerIslandComponent } from './svelteAstPreprocess';
+import { type HydratableComponent, type ServerIslandComponent } from './svelteAstPreprocess';
+import { cachedPreprocessHydratable } from './preprocessCache';
 import { mergeCompilerOptions, type MochiSvelteConfig } from './svelteConfig';
 import { applyFilter } from './extensions';
 import { buildServerOnlyStubModule, scanServerOnlyExports } from './serverOnlyScan';
@@ -300,6 +301,7 @@ export class ComponentRegistry {
     const development = this.development;
     const userCompilerOptions = this.svelteConfig.compilerOptions ?? {};
     const markdown = this.markdown;
+    const preprocessCacheDir = path.resolve(this.outDir, 'preprocess-cache');
 
     const sveltePlugin: BunPlugin = {
       name: 'svelte-ssr',
@@ -401,7 +403,11 @@ export class ComponentRegistry {
         build.onLoad({ filter: /\.svelte$/ }, async (args) => {
           const raw = await Bun.file(args.path).text();
           const preprocessed = await applyUserPreprocessors(raw, args.path, 'server', development);
-          const { transformed, hydratables, serverIslands } = preprocessHydratable(preprocessed, args.path);
+          // Vendored .svelte from node_modules can never carry `mochi:*` directives
+          const isVendored = args.path.includes(`${path.sep}node_modules${path.sep}`);
+          const { transformed, hydratables, serverIslands } = isVendored
+            ? { transformed: preprocessed, hydratables: [] as HydratableComponent[], serverIslands: [] as ServerIslandComponent[] }
+            : cachedPreprocessHydratable(preprocessed, args.path, preprocessCacheDir);
           fileHydratables.set(args.path, hydratables);
           allHydratables.push(...hydratables);
           allServerIslands.push(...serverIslands);
