@@ -1,6 +1,7 @@
 ---
 title: 'Scripts'
 slug: scripts
+description: 'Reference for the root package.json scripts that run dev, build, test, lint, and format across the monorepo.'
 ---
 
 ## Scripts

@@ -1,6 +1,7 @@
 ---
 title: 'Lazy hydration with mochi:hydrate:visible'
 slug: lazy-hydration
+description: 'Defer island hydration until the component scrolls into view with mochi:hydrate:visible.'
 ---
 
 ## Lazy hydration with `mochi:hydrate:visible`

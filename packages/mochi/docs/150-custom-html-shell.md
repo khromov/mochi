@@ -1,6 +1,7 @@
 ---
 title: 'Custom HTML shell'
 slug: custom-html-shell
+description: 'Replace the default HTML wrapper with a custom shell template containing Mochi placeholders.'
 ---
 
 <script>

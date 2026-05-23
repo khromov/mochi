@@ -140,9 +140,9 @@ export class Mochi {
       logLevel: LogLevel;
       /**
        * Absolute path of the page entry that rendered this HTML. Inlined as
-       * `window.__mochi_page_entry` in dev so the live-reload WS can scope
-       * `reload` signals to tabs whose entry was actually affected by a change.
-       * Omitted in production.
+       * `window.__mochi_page_entry` when live-reload is enabled so the WS can
+       * scope `reload` signals to tabs whose entry was actually affected by a
+       * change. Omitted when live-reload is off.
        */
       pageEntry?: string;
     },
@@ -151,7 +151,7 @@ export class Mochi {
     const cssLinks = result.cssUrls.map((url) => `<link rel="stylesheet" href="${url}">`).join('\n');
     const serverIslandScript = result.hasServerIslands ? `<script>(()=>{${opts.serverIslandClientJs}})()</script>` : '';
     const debugInfoScript = registry.debugBarEnabled && opts.debugInfo ? `<script>window.__mochi_debug=${jsonForHtml(opts.debugInfo)}</script>` : '';
-    const pageEntryScript = registry.development && opts.pageEntry ? `<script>window.__mochi_page_entry=${jsonForHtml(opts.pageEntry)}</script>` : '';
+    const pageEntryScript = opts.liveReloadClientJs && opts.pageEntry ? `<script>window.__mochi_page_entry=${jsonForHtml(opts.pageEntry)}</script>` : '';
     const logLevelScript = opts.logLevel === DEFAULT_LOG_LEVEL ? '' : `<script>window.__mochi_log_level=${JSON.stringify(opts.logLevel)}</script>`;
     // Feeds the debug bar's Warnings panel. When the debug bar is off the
     // single `window.__mochi_warn?.(...)` call site no-ops via optional chaining.
@@ -177,7 +177,7 @@ export class Mochi {
           (bootstrapUrl ? `<script type="module" src="${bootstrapUrl}"></script>` : '') +
           serverIslandScript +
           (opts.debugBarUrl ? `<script type="module" src="${opts.debugBarUrl}"></script>` : '') +
-          (registry.development
+          (opts.liveReloadClientJs
             ? `<script>window.__mochi_asset_prefix=${JSON.stringify(registry.assetPrefix)};${opts.liveReloadClientJs}</script><mochi-live-reload></mochi-live-reload>`
             : ''),
       );
@@ -200,6 +200,7 @@ export class Mochi {
 
     const development = options.development ?? true;
     const debugBarEnabled = development && (options.debugBar ?? true);
+    const liveReloadEnabled = options.liveReload ?? development;
     const middleware = options.handle;
     const outDir = options.outDir ?? './.mochi';
     const publicDir = options.publicDir ?? './public';
@@ -304,7 +305,7 @@ export class Mochi {
     await registry.compileAll(ssrEntrypoints);
 
     const serverIslandClientJs = await buildInlineWebComponent('./web-components/ServerIsland.ts');
-    const liveReloadClientJs = development ? await buildInlineWebComponent('./web-components/LiveReload.ts') : '';
+    const liveReloadClientJs = liveReloadEnabled ? await buildInlineWebComponent('./web-components/LiveReload.ts') : '';
 
     const { renderErrorResponse, routeErrorResponse } = createErrorResponder({
       handleError: options.handleError,
@@ -396,7 +397,7 @@ export class Mochi {
               debugBarUrl: registry.getDebugBarUrl(),
               debugInfo: result.debugBarData,
               logLevel: resolvedLogLevel,
-              pageEntry: development ? path.resolve(componentPath) : undefined,
+              pageEntry: liveReloadEnabled ? path.resolve(componentPath) : undefined,
             });
             const response = new Response(html, {
               status: statusOverride,
@@ -1052,7 +1053,7 @@ export class Mochi {
     // routes, and so `wsHandlersMap.size > 0` is true even when the user has
     // no WebSocket routes of their own.
     const liveReloadClients = new Set<ServerWebSocket<MochiWsData>>();
-    if (development) {
+    if (liveReloadEnabled) {
       wsHandlersMap.set('/__mochi_live_reload', {
         open(ws) {
           liveReloadClients.add(ws as ServerWebSocket<MochiWsData>);

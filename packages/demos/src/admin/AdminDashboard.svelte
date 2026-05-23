@@ -8,7 +8,7 @@
   const renderedAt = new Date().toLocaleTimeString('en-GB');
 </script>
 
-<AdminLayout activeNav="dashboard">
+<AdminLayout activeNav="dashboard" metaTags={{ title: 'Dashboard | Mochi Admin' }}>
   <div class="dash">
     <header class="dash-head">
       <div>

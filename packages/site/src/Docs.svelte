@@ -11,6 +11,7 @@
   let {
     slug,
     title,
+    description,
     docsNav,
     toc,
     prev,
@@ -18,6 +19,7 @@
   }: {
     slug: string;
     title: string;
+    description?: string;
     docsNav: TocEntry[];
     toc: TocEntry[];
     prev: DocNeighbor | null;
@@ -28,11 +30,18 @@
 </script>
 
 <svelte:head>
-  <title>{title} — Mochi</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 </svelte:head>
 
-<PageShell {docsNav} currentSlug={slug}>
+<PageShell
+  {docsNav}
+  currentSlug={slug}
+  metaTags={{
+    title,
+    description,
+    canonical: `https://mochi.fast/docs/${slug}`,
+  }}
+>
   <header class="hero">
     <div class="hero-inner">
       <a class="logo" href="/">🍡 mochi</a>

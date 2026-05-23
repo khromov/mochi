@@ -1,6 +1,7 @@
 ---
 title: 'Setup'
 slug: setup
+description: 'Install Bun, scaffold a project, and start the dev server.'
 ---
 
 <script>

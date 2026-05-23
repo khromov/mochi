@@ -1,6 +1,7 @@
 ---
 title: 'Why Bun?'
 slug: why-bun
+description: 'Why Mochi chose Bun as its runtime and which Bun APIs the framework relies on.'
 ---
 
 ## Why Bun?

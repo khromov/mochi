@@ -4,6 +4,8 @@
 #   docker build --build-arg WORKSPACE=demos -f Dockerfile .   # mochi-demos
 # Running in dev mode (`bun run dev:<workspace>` sets MODE=development) so
 # the debug bar and dev overlays are visible in the deployed environment.
+# MOCHI_LIVE_RELOAD=false strips the live-reload WS — the socket is flaky
+# behind the deploy proxy and dropped connections trigger a page reload.
 # Prebuilt production variants live at Dockerfile.production and
 # packages/demos/Dockerfile.production if we ever need to flip back.
 #
@@ -51,6 +53,7 @@ RUN apk add --no-cache ncdu
 RUN mkdir -p packages/${WORKSPACE}/.mochi && chown -R bun:bun packages/${WORKSPACE}/.mochi packages/${WORKSPACE}/src
 
 ENV WORKSPACE=${WORKSPACE}
+ENV MOCHI_LIVE_RELOAD=false
 USER bun
 EXPOSE ${PORT}/tcp
 ENTRYPOINT [ "sh", "-c", "exec bun run dev:${WORKSPACE}" ]

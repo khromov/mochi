@@ -1,6 +1,7 @@
 ---
 title: 'Passing props to islands'
 slug: island-props
+description: 'How props are serialized and passed to hydratable islands, including supported types and auto-injected framework props.'
 ---
 
 ## Passing props to islands

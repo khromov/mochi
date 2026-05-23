@@ -1,6 +1,7 @@
 ---
 title: 'HTTP streaming'
 slug: http-streaming
+description: 'Mochi renders pages to completion before sending; SSE and WebSocket are the streaming alternatives.'
 ---
 
 <script>

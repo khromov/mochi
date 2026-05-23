@@ -1,6 +1,7 @@
 ---
 title: 'Middleware (hooks)'
 slug: middleware
+description: 'Intercept and transform requests and responses using SvelteKit-style handle functions.'
 ---
 
 ## Middleware (hooks)

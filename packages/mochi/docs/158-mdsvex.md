@@ -1,6 +1,7 @@
 ---
 title: 'MdSvex'
 slug: mdsvex
+description: 'Enable Markdown support in Mochi pages with mdsvex and rehype/remark plugins.'
 ---
 
 <script>

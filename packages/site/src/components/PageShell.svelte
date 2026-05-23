@@ -1,23 +1,31 @@
 <script lang="ts">
   import '@fontsource/public-sans';
   import '@fontsource-variable/fraunces/full.css';
+  import { MetaTags, type MetaTagsProps } from 'svelte-meta-tags';
   import Sidebar from './Sidebar.svelte';
   import MobileNav from './MobileNav.svelte';
   import Banner from './Banner.svelte';
   import CodeBlockCopy from './CodeBlockCopy.svelte';
   import { demos } from '../lib/demos';
+  import { mergeMetaTags } from '../lib/baseMetaTags';
   import type { TocEntry } from '../lib/toc';
 
   let {
     docsNav,
     currentSlug,
+    metaTags = {},
     children,
   }: {
     docsNav: TocEntry[];
     currentSlug?: string;
+    metaTags?: MetaTagsProps;
     children: import('svelte').Snippet;
   } = $props();
+
+  const mergedMetaTags = $derived(mergeMetaTags(metaTags));
 </script>
+
+<MetaTags {...mergedMetaTags} />
 
 <Banner />
 <MobileNav mochi:hydrate {docsNav} {demos} {currentSlug} />
