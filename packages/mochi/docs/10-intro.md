@@ -16,6 +16,8 @@ Mochi is a lightweight, server-first framework for [Svelte 5](https://svelte.dev
 
 The websites we visit on the web are mostly static — text, images and links. Only a handful of elements on any given page actually need to be interactive: a search box, a logged-in badge, a comments widget. Mochi reflects this at the core of its design. Mochi sites renders server-side as plain HTML; the interactive pieces are marked with the `mochi:hydrate` directive and ship JS as interactive islands embedded in that HTML.
 
+Go ahead, try hydrating the page below and see which components will load JavaScript.
+
 <IslandsDemo />
 
 The header text, the main column, and the footer ship as HTML and stay that way. The badge and the sidebar nav are wrapped as islands — same SSR HTML on first paint, with JS attached on top. Everything else is zero-JS forever.

@@ -30,6 +30,7 @@
       <span class="button-on">↺ Reset</span>
     </label>
     <ul class="legend">
+      <li><span class="swatch swatch-ssr"></span> ssr</li>
       <li><span class="swatch swatch-island"></span> island</li>
     </ul>
   </div>
@@ -91,30 +92,35 @@
     justify-content: center;
     min-height: 48px;
     padding: 0.5rem;
-    border: 1.5px dashed var(--border-strong);
+    border: 1.5px dashed var(--demo-gray);
     border-radius: var(--radius-sm);
-    background: var(--surface);
-    color: var(--text-muted);
+    background: var(--demo-gray-soft);
+    color: var(--demo-gray-text);
     font-family: var(--font-mono);
     font-size: 0.78rem;
     text-transform: lowercase;
     letter-spacing: 0.04em;
-  }
-
-  .box-sidebar {
-    min-height: 110px;
-  }
-
-  /* Islands: same shape as static, plus a colour change on :checked. */
-  .box-island {
     transition:
       border-color 150ms,
       background-color 150ms,
       color 150ms;
   }
 
-  .toggle:checked ~ .page .box-island {
+  .box-sidebar {
+    min-height: 110px;
+  }
+
+  /* After click: non-island boxes turn green (SSR'd, no JS). */
+  .toggle:checked ~ .page .box {
     border-style: solid;
+    border-color: var(--demo-green);
+    background: var(--demo-green-soft);
+    color: var(--demo-green-text);
+  }
+
+  /* After click: island boxes turn orange (hydrated). Must come after the
+     non-island rule above so its same-specificity selector wins by order. */
+  .toggle:checked ~ .page .box-island {
     border-color: var(--demo-accent);
     background: var(--demo-accent-soft);
     color: var(--demo-accent-text);
@@ -180,13 +186,26 @@
     border-radius: 3px;
     display: inline-block;
   }
+  .swatch-ssr {
+    border: 1.5px solid var(--demo-green);
+    background: var(--demo-green-soft);
+  }
   .swatch-island {
     border: 1.5px solid var(--demo-accent);
     background: var(--demo-accent-soft);
   }
 
-  /* Orange theme — scoped to this demo so it doesn't leak into doc styles. */
+  /* Three-colour theme — scoped to this demo so it doesn't leak into doc
+     styles. Gray = initial, green = SSR'd / non-hydrated, orange = hydrated. */
   .islands-demo {
+    --demo-gray: #cbd0d3;
+    --demo-gray-soft: #f3f4f5;
+    --demo-gray-text: #6b7280;
+
+    --demo-green: #5d9a73;
+    --demo-green-soft: #dcefe3;
+    --demo-green-text: #2e5b3f;
+
     --demo-accent: #ea7c2c;
     --demo-accent-hover: #d56a1f;
     --demo-accent-soft: #fbe9d6;
@@ -195,6 +214,14 @@
 
   :global(html.dark) .islands-demo,
   :global(html[data-theme='dark']) .islands-demo {
+    --demo-gray: #3d4146;
+    --demo-gray-soft: #22262a;
+    --demo-gray-text: #9aa0a6;
+
+    --demo-green: #7ab48e;
+    --demo-green-soft: #1f2e25;
+    --demo-green-text: #a4d2b3;
+
     --demo-accent: #f49654;
     --demo-accent-hover: #f7a872;
     --demo-accent-soft: #3a2615;
@@ -202,7 +229,7 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .box-island,
+    .box,
     .button {
       transition: none;
     }
