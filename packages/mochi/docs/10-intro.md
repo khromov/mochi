@@ -22,13 +22,11 @@ The header text, the main column, and the footer ship as HTML and stay that way.
 
 ## Why would I consider Mochi over SvelteKit?
 
-- **Zero client JS by default.** Only components marked `mochi:hydrate`, `mochi:hydrate:visible`, or `mochi:defer` ship JS. SvelteKit hydrates every page.
-- **Three hydration modes.** Eager, on-visible (`IntersectionObserver`), and deferred server islands. SvelteKit ships eager hydration only.
-- **No client-side router.** Every navigation is a full HTML request. No `goto`, no `invalidate`, no prefetch graph to reason about.
-- **Bun-only runtime.** No adapter ecosystem. Builds on `Bun.serve`, `bun:sqlite`, and Bun's native WebSocket / SSE.
-- **Real-time built in.** `Mochi.ws()` and `Mochi.sse()` are first-class route types — no extra packages.
-
-If you want full hydration, file-based routes, and a broad deploy-target matrix, reach for SvelteKit. If you want a content-shaped, low-JS framework that runs on one runtime — try Mochi.
+- **Faster sites.** Mochi ships zero client JavaScript by default. And even when you do decide to ship interactive components, your bundles will still be smaller than SvelteKit which always ships your whole application to the client.
+- **Performant hydration.** Avoid hydrating islands until the users scrolls into them with `mochi:hydrate:visible`. Or avoid hydrating at all if the user never scrolls down to that component. Your users will thank you for the faster experience.
+- **Uses the platform.** Mochi ships with first-class support for View Transitions. No client side router, no state to keep track of between requests.
+- **No heavy bundler (no Vite).** Uses the lighting-fast Bun bundler, which builds sites with hundreds of routes in seconds.
+- **Real-time built in.** WebSockets and Server Sent Events are first-class route types — no extra packages or services required.
 
 <Callout type="info">
 
