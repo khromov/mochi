@@ -121,7 +121,13 @@ Reload the page in dev mode and you'll see Mochi's [debug bar](/docs/debug-bar/)
 
 Finally, let's add a personalized greeting that doesn't block the rest of the page. We marked `Visitor.svelte` with `mochi:defer` back in Step 2, so it skips the initial SSR pass — the page ships with our `<p>Loading…</p>` fallback in its place. The browser then fetches the component _in a separate request_, the server renders it, and the result swaps in.
 
-That "separate request" is the catch: inside `Visitor.svelte`, `getRequestContext()` returns the context of the island fetch (`/_mochi/island/Visitor?…`), not the original page. Anything page-specific — like a URL query param — has to be read in the parent and forwarded as a prop. So we update `Hello.svelte` to read `?name=` and hand it through:
+<Callout type="tip">
+
+The deferred island fetch is its own request, so `getRequestContext()` inside the island sees the island URL — not the page URL. Read page-specific state in the parent and forward it as a prop.
+
+</Callout>
+
+`Hello.svelte` reads `?name=` and passes it through to `Visitor`:
 
 ```svelte
 <!-- file: src/Hello.svelte (updated) -->
