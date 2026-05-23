@@ -12,7 +12,7 @@ import { logger } from './log';
 import { mochiEvents } from './events';
 import type { MarkdownConfig, MochiManifest } from './types';
 import { type HydratableComponent, type ServerIslandComponent } from './svelteAstPreprocess';
-import { cachedPreprocessHydratable, consumePreprocessCacheStats } from './preprocessCache';
+import { cachedPreprocessHydratable, createPreprocessCacheStats } from './preprocessCache';
 import { mergeCompilerOptions, type MochiSvelteConfig } from './svelteConfig';
 import { applyFilter } from './extensions';
 import { buildServerOnlyStubModule, scanServerOnlyExports } from './serverOnlyScan';
@@ -297,6 +297,7 @@ export class ComponentRegistry {
     const importedCssPaths = new Set<string>();
     const allHydratables: HydratableComponent[] = [];
     const allServerIslands: ServerIslandComponent[] = [];
+    const preprocessCacheStats = createPreprocessCacheStats();
     const fileHydratables = new Map<string, HydratableComponent[]>();
     const development = this.development;
     const userCompilerOptions = this.svelteConfig.compilerOptions ?? {};
@@ -406,7 +407,7 @@ export class ComponentRegistry {
           const isVendored = args.path.includes(`${path.sep}node_modules${path.sep}`);
           const { transformed, hydratables, serverIslands } = isVendored
             ? { transformed: preprocessed, hydratables: [] as HydratableComponent[], serverIslands: [] as ServerIslandComponent[] }
-            : cachedPreprocessHydratable(preprocessed, args.path);
+            : cachedPreprocessHydratable(preprocessed, args.path, preprocessCacheStats);
           fileHydratables.set(args.path, hydratables);
           allHydratables.push(...hydratables);
           allServerIslands.push(...serverIslands);
@@ -596,10 +597,13 @@ export class ComponentRegistry {
       durationMs: performance.now() - compileStart,
     });
 
-    const stats = consumePreprocessCacheStats();
-    const files = stats.hits + stats.misses;
+    const files = preprocessCacheStats.hits + preprocessCacheStats.misses;
     if (files > 0) {
-      mochiEvents.emit('preprocess-cache:summary', { hits: stats.hits, misses: stats.misses, files });
+      mochiEvents.emit('preprocess-cache:summary', {
+        hits: preprocessCacheStats.hits,
+        misses: preprocessCacheStats.misses,
+        files,
+      });
     }
 
     // Write per-component CSS files to disk (minified) and track their URLs

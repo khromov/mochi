@@ -8,6 +8,7 @@ import { applyFilter } from './extensions';
 import { mochiEvents } from './events';
 import type { MochiFileChangeType } from './events';
 import { logger } from './log';
+import { evictPreprocessCacheEntry } from './preprocessCache';
 import { buildPublicUrl } from './proxy';
 import { scanPublicDir } from './publicDir';
 import { loadSvelteConfig } from './svelteConfig';
@@ -192,6 +193,9 @@ export function startDevWatcher(deps: DevWatcherDeps): void {
           path: path.resolve(filePath),
           type: event as MochiFileChangeType,
         });
+      }
+      if (event === 'unlink' && filePath.endsWith('.svelte')) {
+        evictPreprocessCacheEntry(path.resolve(filePath));
       }
       if (reloadPublic && filePath.startsWith(publicDirRel + path.sep)) {
         reloadPublic(filePath);

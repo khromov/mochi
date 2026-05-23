@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import path from 'node:path';
-import { __resetPreprocessMemCache, cachedPreprocessHydratable, consumePreprocessCacheStats } from './preprocessCache';
+import { __resetPreprocessMemCache, cachedPreprocessHydratable, createPreprocessCacheStats, evictPreprocessCacheEntry } from './preprocessCache';
 import { mochiEvents } from './events';
 import type { MochiEventMap } from './events';
 
@@ -57,14 +57,40 @@ describe('cachedPreprocessHydratable', () => {
     expect(b.hydratables).toEqual(a.hydratables);
   });
 
-  test('consumePreprocessCacheStats reports counts and resets them', () => {
-    cachedPreprocessHydratable(ISLAND_SOURCE, '/test/A.svelte'); // miss
-    cachedPreprocessHydratable(ISLAND_SOURCE, '/test/A.svelte'); // hit
-    cachedPreprocessHydratable(ISLAND_SOURCE, '/test/A.svelte'); // hit
-    const first = consumePreprocessCacheStats();
-    expect(first).toEqual({ hits: 2, misses: 1 });
-    // Second consume is post-reset.
-    expect(consumePreprocessCacheStats()).toEqual({ hits: 0, misses: 0 });
+  test('evictPreprocessCacheEntry drops a single entry without touching others', () => {
+    const a = cachedPreprocessHydratable(ISLAND_SOURCE, '/test/A.svelte');
+    const b = cachedPreprocessHydratable(ISLAND_SOURCE, '/test/B.svelte');
+    expect(evictPreprocessCacheEntry('/test/A.svelte')).toBe(true);
+    // A re-runs (new object), B is still cached (same reference).
+    expect(cachedPreprocessHydratable(ISLAND_SOURCE, '/test/A.svelte')).not.toBe(a);
+    expect(cachedPreprocessHydratable(ISLAND_SOURCE, '/test/B.svelte')).toBe(b);
+  });
+
+  test('evictPreprocessCacheEntry returns false for an unknown path', () => {
+    expect(evictPreprocessCacheEntry('/never/seen.svelte')).toBe(false);
+  });
+
+  test('threaded stats accumulator counts hits and misses per batch', () => {
+    const stats = createPreprocessCacheStats();
+    cachedPreprocessHydratable(ISLAND_SOURCE, '/test/A.svelte', stats); // miss
+    cachedPreprocessHydratable(ISLAND_SOURCE, '/test/A.svelte', stats); // hit
+    cachedPreprocessHydratable(ISLAND_SOURCE, '/test/A.svelte', stats); // hit
+    expect(stats).toEqual({ hits: 2, misses: 1 });
+  });
+
+  test('separate stats objects from concurrent batches do not interfere', () => {
+    const batchA = createPreprocessCacheStats();
+    const batchB = createPreprocessCacheStats();
+    cachedPreprocessHydratable(ISLAND_SOURCE, '/test/A.svelte', batchA); // miss → A
+    cachedPreprocessHydratable(ISLAND_SOURCE, '/test/A.svelte', batchB); // hit → B
+    expect(batchA).toEqual({ hits: 0, misses: 1 });
+    expect(batchB).toEqual({ hits: 1, misses: 0 });
+  });
+
+  test('omitting the stats accumulator is allowed', () => {
+    // The bundler's `onLoad` is the only required caller; the parameter is
+    // optional so callers (and test setups) can skip it without crashing.
+    expect(() => cachedPreprocessHydratable(ISLAND_SOURCE, '/test/A.svelte')).not.toThrow();
   });
 });
 
@@ -97,5 +123,15 @@ describe('preprocess-cache event emission', () => {
       { type: 'miss', payload: { filePath: '/test/A.svelte' } },
       { type: 'hit', payload: { filePath: '/test/A.svelte' } },
     ]);
+  });
+
+  test('no event fires when there are no subscribers', () => {
+    // Detach the listeners attached by the outer beforeEach — emission must
+    // be gated on subscriber presence.
+    mochiEvents.off('preprocess-cache:hit', onHit);
+    mochiEvents.off('preprocess-cache:miss', onMiss);
+    cachedPreprocessHydratable(ISLAND_SOURCE, '/test/A.svelte');
+    cachedPreprocessHydratable(ISLAND_SOURCE, '/test/A.svelte');
+    expect(received).toEqual([]);
   });
 });
