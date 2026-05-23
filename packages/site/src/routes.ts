@@ -79,6 +79,7 @@ export const routes: Record<string, MochiRouteValue> = {
       return {
         slug: doc.slug,
         title: doc.title,
+        description: doc.description,
         docsNav: await buildDocsNav(),
         toc: doc.toc,
         prev,

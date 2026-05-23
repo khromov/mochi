@@ -11,6 +11,7 @@
   let {
     slug,
     title,
+    description,
     docsNav,
     toc,
     prev,
@@ -18,6 +19,7 @@
   }: {
     slug: string;
     title: string;
+    description?: string;
     docsNav: TocEntry[];
     toc: TocEntry[];
     prev: DocNeighbor | null;
@@ -36,6 +38,7 @@
   currentSlug={slug}
   metaTags={{
     title,
+    description,
     canonical: `https://mochi.fast/docs/${slug}`,
   }}
 >
