@@ -36,19 +36,19 @@ jobs:
           manifest-file: .release-please-manifest.json
 
       - name: Check out release PR branch
-        if: ${{ steps.release.outputs.prs_created == 'true' }}
+        if: ${{ steps.release.outputs.prs_created == 'true' || steps.release.outputs.prs_updated == 'true' }}
         uses: actions/checkout@v6
         with:
           ref: release-please--branches--main
 
       - name: Set up Bun
-        if: ${{ steps.release.outputs.prs_created == 'true' }}
+        if: ${{ steps.release.outputs.prs_created == 'true' || steps.release.outputs.prs_updated == 'true' }}
         uses: oven-sh/setup-bun@v2
         with:
           bun-version-file: .bun-version
 
       - name: Sync bun.lock
-        if: ${{ steps.release.outputs.prs_created == 'true' }}
+        if: ${{ steps.release.outputs.prs_created == 'true' || steps.release.outputs.prs_updated == 'true' }}
         run: |
           bun install
           if ! git diff --quiet bun.lock; then
