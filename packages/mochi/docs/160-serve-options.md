@@ -41,6 +41,7 @@ Do **NOT** call `Mochi.serve()` more than once per process; instead, run a secon
 - `port`: TCP port to listen on. No default — set it explicitly.
 - `hostname`: Interface to bind. Defaults to Bun's default (`0.0.0.0`).
 - `development`: Enables live reload, debug bar, and the dev error overlay. Default: `true`.
+- `liveReload`: Enable the dev-mode live-reload WebSocket (`/__mochi_live_reload` + the `mochi-live-reload` web component). Default: matches `development`. Set to `false` to keep the debug bar but skip the WS — useful behind a proxy where the socket is flaky.
 - `routes`: `Record<string, MochiRouteValue>` of route paths to `Mochi.page` / `Mochi.api` / `Mochi.ws` / `Mochi.sse` registrations.
 - `fetch`: `(req, server) => Response` fallback handler invoked when no route matches. Default: built-in 404.
 - `manifest`: Path to a prebuilt manifest JSON. Default: `<outDir>/manifest.json`.

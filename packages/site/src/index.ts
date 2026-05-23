@@ -77,6 +77,7 @@ const DEVELOPMENT = process.env.MODE === 'development';
 await Mochi.serve({
   port: PORT,
   development: DEVELOPMENT,
+  liveReload: process.env.MOCHI_LIVE_RELOAD === 'false' ? false : undefined,
   htmlShell: './src/shell.html',
   trailingSlash: 'always',
   handle: sequence(compress(), helloWorld, asciiDog, noCache, cookieVaryTestHandle),

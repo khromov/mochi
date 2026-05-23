@@ -57,6 +57,23 @@ await Mochi.serve({
 
 `MODE` is a user-space convention — Mochi reads only `options.development`. Do **NOT** read `process.env.NODE_ENV` to drive the flag; instead, pass `development` explicitly so test runners and one-off scripts get the same behaviour.
 
+### Live reload
+
+Set `liveReload: false` to keep the debug bar and file watcher but skip the `/__mochi_live_reload` WebSocket and the `mochi-live-reload` web component. Defaults to whatever `development` is set to.
+
+```ts
+// file: src/index.ts
+await Mochi.serve({
+  development: true,
+  liveReload: false, // debug bar stays, WS does not
+  routes,
+});
+```
+
+Use this when shipping the debug bar in a production-like deployment (e.g. a hosted Docker demo). The dev WS is fine on localhost but flaky behind a proxy — dropped connections trigger a `location.reload()` on reconnect, which surfaces as unexplained page reloads for visitors.
+
+Do **NOT** pair `liveReload: true` with `development: false` for normal use — the WS endpoint is registered but the file watcher that pushes `reload` messages is gated on `development`, so the socket stays silent.
+
 ### File watcher
 
 The watcher always covers `src/` and `public/`. Extend it with `additionalWatchPaths`:
