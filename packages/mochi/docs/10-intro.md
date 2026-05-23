@@ -20,7 +20,7 @@ The websites we visit on the web are mostly static — text, images and links. O
 
 The header text, the main column, and the footer ship as HTML and stay that way. The badge and the sidebar nav are wrapped as islands — same SSR HTML on first paint, with JS attached on top. Everything else is zero-JS forever.
 
-## Why Mochi over SvelteKit
+## Why would I consider Mochi over SvelteKit?
 
 - **Zero client JS by default.** Only components marked `mochi:hydrate`, `mochi:hydrate:visible`, or `mochi:defer` ship JS. SvelteKit hydrates every page.
 - **Three hydration modes.** Eager, on-visible (`IntersectionObserver`), and deferred server islands. SvelteKit ships eager hydration only.
