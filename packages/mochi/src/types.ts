@@ -379,6 +379,14 @@ export interface MochiServeOptions {
    * NOT enable it.
    */
   debugBar?: boolean;
+  /**
+   * Enable the dev-mode live-reload WebSocket that reloads the browser on
+   * source changes. Default: matches `development`. Set to `false` to keep
+   * the debug bar but skip the WS — useful when shipping the debug bar in
+   * a production-like deployment (e.g. Docker demo sites) where the
+   * `/__mochi_live_reload` socket is flaky behind a proxy.
+   */
+  liveReload?: boolean;
   /** Path to a prebuilt manifest JSON. Defaults to `.mochi/manifest.json`. */
   manifest?: string;
   routes?: Record<string, MochiRouteValue>;
