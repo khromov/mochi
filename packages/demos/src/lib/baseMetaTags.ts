@@ -1,7 +1,7 @@
 import { deepMerge, type MetaTagsProps } from 'svelte-meta-tags';
 
 const SITE_URL = 'https://demos.mochi.fast';
-const DEFAULT_OG_IMAGE = `${SITE_URL}/og-default.png`;
+const DEFAULT_OG_IMAGE = `${SITE_URL}/og-default.jpg`;
 const DEFAULT_DESCRIPTION = 'A small collection of real apps built on the Mochi framework — server-rendered Svelte with islands of hydration.';
 
 // No `titleTemplate` — each demo (HN, Admin, Todo) sets its own full title
