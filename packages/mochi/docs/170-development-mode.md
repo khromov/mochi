@@ -71,10 +71,6 @@ await Mochi.serve({
 });
 ```
 
-Use this when shipping the debug bar in a production-like deployment (e.g. a hosted Docker demo). The dev WS is fine on localhost but flaky behind a proxy — dropped connections trigger a `location.reload()` on reconnect, which surfaces as unexplained page reloads for visitors.
-
-Do **NOT** pair `liveReload: true` with `development: false` for normal use — the WS endpoint is registered but the file watcher that pushes `reload` messages is gated on `development`, so the socket stays silent.
-
 ### File watcher
 
 The watcher always covers `src/` and `public/`. Extend it with `additionalWatchPaths`:
