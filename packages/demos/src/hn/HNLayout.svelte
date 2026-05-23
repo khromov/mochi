@@ -4,7 +4,11 @@
   import { mergeMetaTags } from '../lib/baseMetaTags';
   import MochiBanner from './MochiBanner.svelte';
 
-  let { activeNav, metaTags = {}, children } = $props<{
+  let {
+    activeNav,
+    metaTags = {},
+    children,
+  } = $props<{
     activeNav?: string;
     metaTags?: MetaTagsProps;
     children: () => unknown;
