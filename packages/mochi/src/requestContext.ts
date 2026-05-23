@@ -84,6 +84,8 @@ export interface DebugBarData {
    * this to flag cookie rows.
    */
   varyOnCookies?: string[];
+  /** Whether live-reload is enabled for this server instance. */
+  liveReloadEnabled?: boolean;
 }
 
 /**
