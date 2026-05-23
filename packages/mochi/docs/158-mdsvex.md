@@ -125,7 +125,7 @@ your own `(code, lang) => string` straight into `markdown.highlight`.
 
 ### Islands in markdown
 
-`mochi:hydrate`, `mochi:hydrate:visible`, and `mochi:defer` all work on
+`mochi:hydrate`, `mochi:hydrate:visible`, `mochi:defer`, and `mochi:defer:visible` all work on
 components instantiated inside a `.md` / `.svx` file. Import the component
 as a default import from the markdown's top-level `<script>` block, then
 apply the directive on the tag:
