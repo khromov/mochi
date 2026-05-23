@@ -157,6 +157,28 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
     note: pc.cyan('revalidate'),
   }));
 
+  subscribe('preprocess-cache:hit', ({ filePath }) => ({
+    label: 'PCACHE',
+    path: relPath(filePath),
+    note: pc.green('hit'),
+    level: 'debug',
+  }));
+  subscribe('preprocess-cache:miss', ({ filePath }) => ({
+    label: 'PCACHE',
+    path: relPath(filePath),
+    note: pc.yellow('miss'),
+    level: 'debug',
+  }));
+  subscribe('preprocess-cache:summary', ({ hits, misses, files }) => {
+    const rate = files === 0 ? '0.0' : ((hits / files) * 100).toFixed(1);
+    return {
+      label: 'PCACHE',
+      path: '-',
+      note: pc.dim(`${hits} hit / ${misses} miss across ${files} files (${rate}%)`),
+      level: 'log',
+    };
+  });
+
   if (options.compile ?? true) {
     subscribe('compile:complete', ({ path, ssrSizeBytes, hydratableCount, serverIslandCount }) => ({
       label: 'BUILD',

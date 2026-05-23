@@ -182,6 +182,18 @@ export interface MochiCompileBatchCompleteEvent {
   durationMs: number;
 }
 
+export interface MochiPreprocessCacheEvent {
+  /** Absolute path of the `.svelte` file the cache wrapper was invoked for. */
+  filePath: string;
+}
+
+export interface MochiPreprocessCacheSummaryEvent {
+  hits: number;
+  misses: number;
+  /** Total file lookups during the batch (`hits + misses`). */
+  files: number;
+}
+
 export interface MochiCompileErrorLog {
   file?: string;
   line?: number;
@@ -217,6 +229,9 @@ export type MochiEventMap = {
   'compile:complete': MochiCompileCompleteEvent;
   'compile:batch-complete': MochiCompileBatchCompleteEvent;
   'compile:error': MochiCompileErrorEvent;
+  'preprocess-cache:hit': MochiPreprocessCacheEvent;
+  'preprocess-cache:miss': MochiPreprocessCacheEvent;
+  'preprocess-cache:summary': MochiPreprocessCacheSummaryEvent;
   'recompile:start': MochiRecompileStartEvent;
   'recompile:complete': MochiRecompileCompleteEvent;
   'client-bundle:complete': MochiClientBundleEvent;

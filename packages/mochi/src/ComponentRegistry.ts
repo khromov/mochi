@@ -11,7 +11,8 @@ import type { DebugBarData } from './requestContext';
 import { logger } from './log';
 import { mochiEvents } from './events';
 import type { MarkdownConfig, MochiManifest } from './types';
-import { preprocessHydratable, type HydratableComponent, type ServerIslandComponent } from './svelteAstPreprocess';
+import { type HydratableComponent, type ServerIslandComponent } from './svelteAstPreprocess';
+import { cachedPreprocessHydratable, createPreprocessCacheStats } from './preprocessCache';
 import { mergeCompilerOptions, type MochiSvelteConfig } from './svelteConfig';
 import { applyFilter } from './extensions';
 import { buildServerOnlyStubModule, scanServerOnlyExports } from './serverOnlyScan';
@@ -296,6 +297,7 @@ export class ComponentRegistry {
     const importedCssPaths = new Set<string>();
     const allHydratables: HydratableComponent[] = [];
     const allServerIslands: ServerIslandComponent[] = [];
+    const preprocessCacheStats = createPreprocessCacheStats();
     const fileHydratables = new Map<string, HydratableComponent[]>();
     const development = this.development;
     const userCompilerOptions = this.svelteConfig.compilerOptions ?? {};
@@ -401,7 +403,11 @@ export class ComponentRegistry {
         build.onLoad({ filter: /\.svelte$/ }, async (args) => {
           const raw = await Bun.file(args.path).text();
           const preprocessed = await applyUserPreprocessors(raw, args.path, 'server', development);
-          const { transformed, hydratables, serverIslands } = preprocessHydratable(preprocessed, args.path);
+          // Vendored .svelte from node_modules can never carry `mochi:*` directives
+          const isVendored = args.path.includes(`${path.sep}node_modules${path.sep}`);
+          const { transformed, hydratables, serverIslands } = isVendored
+            ? { transformed: preprocessed, hydratables: [] as HydratableComponent[], serverIslands: [] as ServerIslandComponent[] }
+            : cachedPreprocessHydratable(preprocessed, args.path, preprocessCacheStats);
           fileHydratables.set(args.path, hydratables);
           allHydratables.push(...hydratables);
           allServerIslands.push(...serverIslands);
@@ -590,6 +596,15 @@ export class ComponentRegistry {
       count: todo.length,
       durationMs: performance.now() - compileStart,
     });
+
+    const files = preprocessCacheStats.hits + preprocessCacheStats.misses;
+    if (files > 0) {
+      mochiEvents.emit('preprocess-cache:summary', {
+        hits: preprocessCacheStats.hits,
+        misses: preprocessCacheStats.misses,
+        files,
+      });
+    }
 
     // Write per-component CSS files to disk (minified) and track their URLs
     const cssOutDir = `${this.outDir}/svelte-css`;
