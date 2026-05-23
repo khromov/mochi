@@ -1,6 +1,7 @@
 ---
 title: 'Debug bar'
 slug: debug-bar
+description: 'A floating dev toolbar showing hydration metrics, request data, island breakdown, and bundle stats.'
 ---
 
 ## Debug bar

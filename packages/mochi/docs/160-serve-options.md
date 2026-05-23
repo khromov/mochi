@@ -1,6 +1,7 @@
 ---
 title: 'Serve options'
 slug: serve-options
+description: 'Reference for every configuration option available on Mochi.serve().'
 ---
 
 <script>

@@ -16,11 +16,10 @@
 </script>
 
 <svelte:head>
-  <title>{title ?? 'Item'} | HN Clone</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 </svelte:head>
 
-<HNLayout>
+<HNLayout metaTags={{ title: `${title ?? 'Item'} | HN Clone` }}>
   {#if item}
     <div class="item-header">
       <div class="item-title">

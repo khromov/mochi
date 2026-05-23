@@ -1,6 +1,7 @@
 ---
 title: 'Your first Mochi app'
 slug: your-first-mochi-app
+description: 'Build your first page with serverProps, selective hydration, and server islands in four steps.'
 ---
 
 <script>

@@ -1,6 +1,7 @@
 ---
 title: 'Coming from SvelteKit'
 slug: coming-from-sveltekit
+description: 'A mapping of SvelteKit concepts to their Mochi equivalents for developers switching frameworks.'
 ---
 
 <script>

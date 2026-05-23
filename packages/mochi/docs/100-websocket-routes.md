@@ -1,6 +1,7 @@
 ---
 title: 'WebSocket routes'
 slug: websocket-routes
+description: 'Register WebSocket endpoints with Mochi.ws() and handle upgrade, open, message, close, and drain events.'
 ---
 
 ## WebSocket routes

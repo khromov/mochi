@@ -1,6 +1,7 @@
 ---
 title: 'Error boundaries'
 slug: error-boundaries
+description: 'Hydratable islands are automatically wrapped in svelte:boundary so a single island failure cannot crash the page.'
 ---
 
 ## Error boundaries

@@ -1,6 +1,7 @@
 ---
 title: 'Logging'
 slug: logging
+description: 'An isomorphic, level-gated logger that works in server, SSR, and client contexts.'
 ---
 
 <script>

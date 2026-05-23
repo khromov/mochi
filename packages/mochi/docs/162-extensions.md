@@ -1,6 +1,7 @@
 ---
 title: 'Extensions (hooks & filters)'
 slug: extensions
+description: 'Observe or transform framework behavior at lifecycle moments using hooks and filters.'
 ---
 
 ## Extensions (hooks & filters)

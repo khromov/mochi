@@ -1,6 +1,7 @@
 ---
 title: 'Server-only imports'
 slug: server-only-imports
+description: 'Keep server-only modules like bun:sqlite out of client bundles using the .server.ts convention.'
 ---
 
 <script>

@@ -1,6 +1,7 @@
 ---
 title: 'Utility helpers'
 slug: utility-helpers
+description: 'Small helper functions for building JSON responses, error responses, and form-action results.'
 ---
 
 ## Utility helpers

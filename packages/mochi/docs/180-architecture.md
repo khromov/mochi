@@ -1,6 +1,7 @@
 ---
 title: 'Architecture'
 slug: architecture
+description: 'Overview of the framework directory structure and key source files.'
 ---
 
 ## Architecture
