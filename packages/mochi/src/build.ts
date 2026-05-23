@@ -155,11 +155,15 @@ export async function build(options: MochiBuildOptions): Promise<void> {
   const clientFileCount = Object.keys(manifest.clientFiles).length;
   const publicFileCount = publicFiles.size;
   const elapsed = formatDuration(performance.now() - startedAt);
-  logger.info(`build: done in ${elapsed}. ${compiledPages.length} page(s), ${clientFileCount} client file(s), ${publicFileCount} public file(s). Manifest written to ${manifestPath}`);
+  logger.info(
+    `build: done in ${elapsed}. ${compiledPages.length} page(s), ${clientFileCount} client file(s), ${publicFileCount} public file(s). Manifest written to ${manifestPath}`,
+  );
 }
 
 function formatDuration(ms: number): string {
-  if (ms < 1000) return `${Math.round(ms)}ms`;
+  if (ms < 1000) {
+    return `${Math.round(ms)}ms`;
+  }
   return `${(ms / 1000).toFixed(2)}s`;
 }
 
