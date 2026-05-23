@@ -116,6 +116,17 @@ function extractMochiVersion(scaffoldStdout: string, scaffoldDir: string): strin
   return m ? m[1]! : 'unknown';
 }
 
+function extractInstalledMochiVersion(scaffoldDir: string): string {
+  try {
+    const pkg = JSON.parse(readFileSync(join(scaffoldDir, 'node_modules', 'mochi-framework', 'package.json'), 'utf8')) as {
+      version?: string;
+    };
+    return pkg.version ?? 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
+
 function renderReport(args: {
   id: string;
   when: string;
@@ -123,6 +134,7 @@ function renderReport(args: {
   scaffoldDir: string;
   cliVersion: string;
   mochiVersion: string;
+  mochiInstalledVersion: string;
   bunVersion: string;
   nodeVersion: string;
   platform: string;
@@ -139,6 +151,7 @@ function renderReport(args: {
   lines.push('## Versions');
   lines.push(`- create-mochi (CLI): ${args.cliVersion}`);
   lines.push(`- mochi-framework (pinned by scaffold): ${args.mochiVersion}`);
+  lines.push(`- mochi-framework (installed): ${args.mochiInstalledVersion}`);
   lines.push(`- Bun: ${args.bunVersion}`);
   lines.push(`- Node API: ${args.nodeVersion}`);
   lines.push(`- Platform: ${args.platform}`);
@@ -170,7 +183,7 @@ function renderReport(args: {
 }
 
 async function main() {
-  const id = crypto.randomUUID().slice(0, 8);
+  const id = String(Math.floor(Date.now() / 1000));
   const name = `mochi-test-${id}`;
   const scaffoldDir = join(TESTS_DIR, name);
   const scaffoldDirRel = `./cli-tests/${name}`;
@@ -200,6 +213,7 @@ async function main() {
   console.log(`  ${statusCell(steps.scaffold.status)} (${fmtDuration(steps.scaffold.durationMs)})`);
 
   let mochiVersion = 'unknown';
+  let mochiInstalledVersion = 'unknown';
 
   if (steps.scaffold.status === 'pass') {
     mochiVersion = extractMochiVersion(scaffold.stdout, scaffoldDir);
@@ -210,6 +224,8 @@ async function main() {
     console.log(`  ${statusCell(steps.install.status)} (${fmtDuration(steps.install.durationMs)})`);
 
     if (steps.install.status === 'pass') {
+      mochiInstalledVersion = extractInstalledMochiVersion(scaffoldDir);
+
       console.log('• test…');
       const test = await runCmd(['bun', 'run', 'test'], scaffoldDir);
       steps.test = toStep('test', test);
@@ -236,6 +252,7 @@ async function main() {
     scaffoldDir: scaffoldDirRel,
     cliVersion,
     mochiVersion,
+    mochiInstalledVersion,
     bunVersion,
     nodeVersion,
     platform,
