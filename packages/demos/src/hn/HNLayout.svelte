@@ -1,8 +1,15 @@
 <script>
+  import { url } from 'mochi-framework';
+  import { MetaTags } from 'svelte-meta-tags';
+  import { mergeMetaTags } from '../lib/baseMetaTags';
   import MochiBanner from './MochiBanner.svelte';
 
-  let { activeNav, children } = $props();
+  let { activeNav, metaTags = {}, children } = $props();
+
+  const mergedMetaTags = $derived(mergeMetaTags({ canonical: `https://demos.mochi.fast${url.pathname}`, ...metaTags }));
 </script>
+
+<MetaTags {...mergedMetaTags} />
 
 <div class="hn-page">
   <MochiBanner />

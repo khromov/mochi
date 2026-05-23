@@ -28,11 +28,17 @@
 </script>
 
 <svelte:head>
-  <title>{title} — Mochi</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 </svelte:head>
 
-<PageShell {docsNav} currentSlug={slug}>
+<PageShell
+  {docsNav}
+  currentSlug={slug}
+  metaTags={{
+    title,
+    canonical: `https://mochi.fast/docs/${slug}`,
+  }}
+>
   <header class="hero">
     <div class="hero-inner">
       <a class="logo" href="/">🍡 mochi</a>
