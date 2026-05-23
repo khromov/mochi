@@ -5,6 +5,7 @@ node_modules
 out
 .mochi
 *.tgz
+cli-tests
 packages/site/src/lib/docComponents.generated.ts
 packages/demos/src/todo/app.generated.css
 

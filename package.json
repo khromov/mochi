@@ -32,6 +32,7 @@
     "syncpack": "syncpack lint",
     "syncpack:fix": "syncpack fix",
     "loc": "bun .github/scripts/loc-report.ts",
+    "cli-test": "bun .github/scripts/cli-regression-test.ts",
     "flamegraph": "bun scripts/flamegraph.ts",
     "update": "bun update --interactive --recursive",
     "deps": "bun packages/mochi/scripts/dep-report.ts"
