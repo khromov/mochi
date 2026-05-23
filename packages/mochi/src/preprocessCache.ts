@@ -16,7 +16,9 @@ export function cachedPreprocessHydratable(source: string, filePath: string, sta
   const entry = memCache.get(filePath);
   // String `===` is a value compare, so any byte change in the source invalidates the entry.
   if (entry && entry.source === source) {
-    if (stats) {stats.hits++;}
+    if (stats) {
+      stats.hits++;
+    }
     if (hasSubscribers('preprocess-cache:hit')) {
       mochiEvents.emit('preprocess-cache:hit', { filePath });
     }
@@ -24,7 +26,9 @@ export function cachedPreprocessHydratable(source: string, filePath: string, sta
   }
   const result = preprocessHydratable(source, filePath);
   memCache.set(filePath, { source, result });
-  if (stats) {stats.misses++;}
+  if (stats) {
+    stats.misses++;
+  }
   if (hasSubscribers('preprocess-cache:miss')) {
     mochiEvents.emit('preprocess-cache:miss', { filePath });
   }
