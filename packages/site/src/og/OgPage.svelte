@@ -78,7 +78,7 @@
   .og-logo {
     display: block;
     font-family: 'Fraunces Variable', Georgia, 'Times New Roman', serif;
-    font-size: 6.5rem;
+    font-size: 8rem;
     font-weight: 400;
     font-variation-settings:
       'opsz' 144,
@@ -94,7 +94,7 @@
     font-family: 'Fraunces Variable', Georgia, 'Times New Roman', serif;
     font-weight: 400;
     color: #fff;
-    font-size: 2.5rem;
+    font-size: 3rem;
     line-height: 1.25;
     letter-spacing: -0.003em;
     margin-bottom: 0.85rem;
@@ -106,7 +106,7 @@
     font-style: italic;
     font-weight: 300;
     color: #e0e8e2;
-    font-size: 1.6rem;
+    font-size: 1.85rem;
     line-height: 1.4;
     letter-spacing: 0.003em;
     text-wrap: balance;
@@ -116,7 +116,7 @@
     display: inline-block;
     margin-top: 2rem;
     font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
-    font-size: 1.2rem;
+    font-size: 1.4rem;
     color: rgba(224, 232, 226, 0.7);
     letter-spacing: 0.04em;
   }
