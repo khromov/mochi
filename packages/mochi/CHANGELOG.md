@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.3.0](https://github.com/khromov/mochi/compare/mochi-framework-v0.2.0...mochi-framework-v0.3.0) (2026-05-23)
+
+
+### Features
+
+* add liveReload option to disable dev WS ([#23](https://github.com/khromov/mochi/issues/23)) ([616ab7a](https://github.com/khromov/mochi/commit/616ab7ac95a8553b47ee7daed473b9745770a7b0))
+* **mdsvex:** preprocess mochi:hydrate inside markdown files ([#22](https://github.com/khromov/mochi/issues/22)) ([bcf08e4](https://github.com/khromov/mochi/commit/bcf08e46f369255706e64164df67d04c1dad5e80))
+
+
+### Bug Fixes
+
+* **debug-bar:** show green status dot when liveReload is disabled ([#27](https://github.com/khromov/mochi/issues/27)) ([f8896f5](https://github.com/khromov/mochi/commit/f8896f53bc8fc3553efd5277e52e8421e468768f))
+
 ## [0.2.0](https://github.com/khromov/mochi/compare/mochi-framework-v0.1.1...mochi-framework-v0.2.0) (2026-05-23)
 
 
