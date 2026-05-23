@@ -82,6 +82,15 @@ function createMarkdownLoader(opts: {
   development: boolean;
   cssMap?: Map<string, string>;
   userCompilerOptions: CompileOptions;
+  // Server-only: when present, the post-mdsvex Svelte source is run through
+  // the same hydration preprocessor as `.svelte` files, so `mochi:hydrate` /
+  // `mochi:defer` directives in markdown become real islands.
+  hydration?: {
+    fileHydratables: Map<string, HydratableComponent[]>;
+    allHydratables: HydratableComponent[];
+    allServerIslands: ServerIslandComponent[];
+    preprocessCacheStats: ReturnType<typeof createPreprocessCacheStats>;
+  };
 }) {
   const highlight = opts.markdown.highlight;
   return async (args: { path: string }) => {
@@ -99,8 +108,16 @@ function createMarkdownLoader(opts: {
     if (!compiled || typeof compiled.code !== 'string') {
       throw new Error(`markdown.compile returned no output for ${args.path}`);
     }
+    let svelteSource = compiled.code;
+    if (opts.hydration) {
+      const { transformed, hydratables, serverIslands } = cachedPreprocessHydratable(svelteSource, args.path, opts.hydration.preprocessCacheStats);
+      opts.hydration.fileHydratables.set(args.path, hydratables);
+      opts.hydration.allHydratables.push(...hydratables);
+      opts.hydration.allServerIslands.push(...serverIslands);
+      svelteSource = transformed;
+    }
     const { js, css } = svelteCompile(
-      compiled.code,
+      svelteSource,
       mergeCompilerOptions(opts.userCompilerOptions, {
         generate: opts.target,
         filename: args.path,
@@ -425,7 +442,17 @@ export class ComponentRegistry {
           return { contents: js.code, loader: 'js' };
         });
         if (markdown) {
-          build.onLoad({ filter: MARKDOWN_FILE_FILTER }, createMarkdownLoader({ markdown, target: 'server', development, cssMap, userCompilerOptions }));
+          build.onLoad(
+            { filter: MARKDOWN_FILE_FILTER },
+            createMarkdownLoader({
+              markdown,
+              target: 'server',
+              development,
+              cssMap,
+              userCompilerOptions,
+              hydration: { fileHydratables, allHydratables, allServerIslands, preprocessCacheStats },
+            }),
+          );
         }
       },
     };
