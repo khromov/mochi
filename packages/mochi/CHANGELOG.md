@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.1](https://github.com/khromov/mochi/compare/mochi-framework-v0.3.0...mochi-framework-v0.3.1) (2026-05-23)
+
+
+### Bug Fixes
+
+* debug bar Bundles link points to undefined in production ([#30](https://github.com/khromov/mochi/issues/30)) ([2c77825](https://github.com/khromov/mochi/commit/2c778256858254e617b3c1d7e3cadeddbe4827f4))
+* immutable asset caching + feat: SSR duration in debug bar ([#32](https://github.com/khromov/mochi/issues/32)) ([0f8bb68](https://github.com/khromov/mochi/commit/0f8bb6804ccd8b150ba70c93941f38b7724fad84))
+
 ## [0.3.0](https://github.com/khromov/mochi/compare/mochi-framework-v0.2.0...mochi-framework-v0.3.0) (2026-05-23)
 
 
