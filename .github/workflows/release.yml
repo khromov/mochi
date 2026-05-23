@@ -37,7 +37,7 @@ jobs:
 
       - name: Check out release PR branch
         if: ${{ steps.release.outputs.prs_created == 'true' }}
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: release-please--branches--main
 
@@ -64,7 +64,7 @@ jobs:
     if: ${{ needs.release-please.outputs.mochi_release_created == 'true' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ needs.release-please.outputs.mochi_tag_name }}
 
@@ -72,7 +72,7 @@ jobs:
         with:
           bun-version-file: .bun-version
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 24
           registry-url: 'https://registry.npmjs.org'
@@ -91,7 +91,7 @@ jobs:
     if: ${{ needs.release-please.outputs.cli_release_created == 'true' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ needs.release-please.outputs.cli_tag_name }}
 
@@ -99,7 +99,7 @@ jobs:
         with:
           bun-version-file: .bun-version
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 24
           registry-url: 'https://registry.npmjs.org'
@@ -117,7 +117,7 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ inputs.tag }}
 
@@ -125,7 +125,7 @@ jobs:
         with:
           bun-version-file: .bun-version
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 24
           registry-url: 'https://registry.npmjs.org'
