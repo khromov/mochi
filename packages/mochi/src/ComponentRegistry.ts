@@ -9,10 +9,10 @@ import { buildIslandPropsScripts } from './islandPropsRegistry';
 import { requestContext } from './requestContext';
 import type { DebugBarData } from './requestContext';
 import { logger } from './log';
-import { mochiEvents } from './events';
+import { hasSubscribers, mochiEvents } from './events';
 import type { MarkdownConfig, MochiManifest } from './types';
 import { type HydratableComponent, type ServerIslandComponent } from './svelteAstPreprocess';
-import { cachedPreprocessHydratable } from './preprocessCache';
+import { cachedPreprocessHydratable, consumePreprocessCacheStats } from './preprocessCache';
 import { mergeCompilerOptions, type MochiSvelteConfig } from './svelteConfig';
 import { applyFilter } from './extensions';
 import { buildServerOnlyStubModule, scanServerOnlyExports } from './serverOnlyScan';
@@ -595,6 +595,14 @@ export class ComponentRegistry {
       count: todo.length,
       durationMs: performance.now() - compileStart,
     });
+
+    if (hasSubscribers('preprocess-cache:summary')) {
+      const stats = consumePreprocessCacheStats();
+      const files = stats.hits + stats.misses;
+      if (files > 0) {
+        mochiEvents.emit('preprocess-cache:summary', { hits: stats.hits, misses: stats.misses, files });
+      }
+    }
 
     // Write per-component CSS files to disk (minified) and track their URLs
     const cssOutDir = `${this.outDir}/svelte-css`;

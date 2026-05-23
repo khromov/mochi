@@ -1,6 +1,8 @@
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import path from 'node:path';
-import { __resetPreprocessMemCache, cachedPreprocessHydratable } from './preprocessCache';
+import { __resetPreprocessMemCache, cachedPreprocessHydratable, consumePreprocessCacheStats } from './preprocessCache';
+import { mochiEvents } from './events';
+import type { MochiEventMap } from './events';
 
 const SCRIPT = (imports: string) => `<script>\n${imports}\n</script>\n`;
 const ISLAND_SOURCE = `${SCRIPT('import Foo from "./Foo.svelte";')}<Foo mochi:hydrate />`;
@@ -53,5 +55,53 @@ describe('cachedPreprocessHydratable', () => {
     // strings differ — but the deterministic hydratables array stays equal.
     expect(b).not.toBe(a);
     expect(b.hydratables).toEqual(a.hydratables);
+  });
+
+  test('consumePreprocessCacheStats reports counts and resets them', () => {
+    cachedPreprocessHydratable(ISLAND_SOURCE, '/test/A.svelte'); // miss
+    cachedPreprocessHydratable(ISLAND_SOURCE, '/test/A.svelte'); // hit
+    cachedPreprocessHydratable(ISLAND_SOURCE, '/test/A.svelte'); // hit
+    const first = consumePreprocessCacheStats();
+    expect(first).toEqual({ hits: 2, misses: 1 });
+    // Second consume is post-reset.
+    expect(consumePreprocessCacheStats()).toEqual({ hits: 0, misses: 0 });
+  });
+});
+
+describe('preprocess-cache event emission', () => {
+  const received: Array<{ type: string; payload: unknown }> = [];
+  const onHit = (p: MochiEventMap['preprocess-cache:hit']) => received.push({ type: 'hit', payload: p });
+  const onMiss = (p: MochiEventMap['preprocess-cache:miss']) => received.push({ type: 'miss', payload: p });
+
+  beforeEach(() => {
+    received.length = 0;
+    __resetPreprocessMemCache();
+  });
+
+  afterEach(() => {
+    mochiEvents.off('preprocess-cache:hit', onHit);
+    mochiEvents.off('preprocess-cache:miss', onMiss);
+  });
+
+  test('does NOT emit events when no subscribers are attached', () => {
+    cachedPreprocessHydratable(ISLAND_SOURCE, '/test/A.svelte');
+    cachedPreprocessHydratable(ISLAND_SOURCE, '/test/A.svelte');
+    expect(received).toHaveLength(0);
+    // Stats still tick even without subscribers — they're free integer increments
+    // and the summary path needs them.
+    expect(consumePreprocessCacheStats()).toEqual({ hits: 1, misses: 1 });
+  });
+
+  test('emits hit + miss events when subscribers are attached', () => {
+    mochiEvents.on('preprocess-cache:hit', onHit);
+    mochiEvents.on('preprocess-cache:miss', onMiss);
+
+    cachedPreprocessHydratable(ISLAND_SOURCE, '/test/A.svelte');
+    cachedPreprocessHydratable(ISLAND_SOURCE, '/test/A.svelte');
+
+    expect(received).toEqual([
+      { type: 'miss', payload: { filePath: '/test/A.svelte' } },
+      { type: 'hit', payload: { filePath: '/test/A.svelte' } },
+    ]);
   });
 });

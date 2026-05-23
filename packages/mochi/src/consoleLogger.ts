@@ -16,6 +16,12 @@ export interface ConsoleLoggerOptions {
    * - `false` — silence compile/HMR events entirely.
    */
   compile?: boolean;
+  /**
+   * Preprocess-cache verbosity:
+   * - `'silent'` (default) — no preprocess-cache lines. No events are emitted by the wrapper either.
+   * - `'verbose'` — per-file `PCACHE hit` / `PCACHE miss` lines plus a one-line summary at the end of each `compileAll`.
+   */
+  preprocessCache?: 'silent' | 'verbose';
 }
 
 const DEFAULT_SLOW = 500;
@@ -156,6 +162,29 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
     path: payload.key,
     note: pc.cyan('revalidate'),
   }));
+
+  if (options.preprocessCache === 'verbose') {
+    subscribe('preprocess-cache:hit', ({ filePath }) => ({
+      label: 'PCACHE',
+      path: relPath(filePath),
+      note: pc.green('hit'),
+      level: 'debug',
+    }));
+    subscribe('preprocess-cache:miss', ({ filePath }) => ({
+      label: 'PCACHE',
+      path: relPath(filePath),
+      note: pc.yellow('miss'),
+      level: 'debug',
+    }));
+    subscribe('preprocess-cache:summary', ({ hits, misses, files }) => {
+      const rate = files === 0 ? '0.0' : ((hits / files) * 100).toFixed(1);
+      return {
+        label: 'PCACHE',
+        path: '-',
+        note: pc.dim(`${hits} hit / ${misses} miss across ${files} files (${rate}%)`),
+      };
+    });
+  }
 
   if (options.compile ?? true) {
     subscribe('compile:complete', ({ path, ssrSizeBytes, hydratableCount, serverIslandCount }) => ({
