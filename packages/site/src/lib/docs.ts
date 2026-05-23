@@ -6,7 +6,7 @@ import type { TocEntry } from './toc';
 
 type MdsvexRehypePlugin = NonNullable<NonNullable<Parameters<typeof mdsvexCompile>[1]>['rehypePlugins']>[number];
 
-export const DOCS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../mochi/docs');
+export const DOCS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../docs');
 const DEMOS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../demos');
 
 /** Parses the leading numeric prefix of a filename (e.g. `"01-intro.md"` → `1`). */
