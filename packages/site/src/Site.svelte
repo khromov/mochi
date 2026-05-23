@@ -19,11 +19,17 @@
 </script>
 
 <svelte:head>
-  <title>Mochi — SSR Framework for Svelte 5 + Bun</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 </svelte:head>
 
-<PageShell {docsNav}>
+<PageShell
+  {docsNav}
+  metaTags={{
+    title: 'Mochi — SSR Framework for Svelte 5 + Bun',
+    titleTemplate: '%s',
+    canonical: 'https://mochi.fast/',
+  }}
+>
   <header class="hero">
     <div class="hero-inner">
       <h1 class="logo">🍡 mochi</h1>

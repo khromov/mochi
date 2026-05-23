@@ -1,6 +1,7 @@
 ---
 title: 'Svelte config'
 slug: svelte-config
+description: 'Customize the Svelte compiler via svelte.config.js with compiler options and framework defaults.'
 ---
 
 ## Svelte config

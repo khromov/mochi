@@ -8,7 +8,7 @@
   onMount(() => {
     const ws = window.__mochi_reload_ws;
     if (!ws) {
-      status = 'disconnected';
+      status = window.__mochi_debug?.liveReloadEnabled === false ? 'connected' : 'disconnected';
       return;
     }
     if (ws.readyState === WebSocket.OPEN) {

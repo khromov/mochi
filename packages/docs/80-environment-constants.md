@@ -1,6 +1,7 @@
 ---
 title: 'Environment constants'
 slug: environment-constants
+description: 'Build-time constants for branching on render target (isServer, isBrowser) and development mode (isDev).'
 ---
 
 <script>

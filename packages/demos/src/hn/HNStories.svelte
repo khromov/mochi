@@ -14,11 +14,10 @@
 </script>
 
 <svelte:head>
-  <title>{meta.label} | HN Clone</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 </svelte:head>
 
-<HNLayout activeNav={type}>
+<HNLayout activeNav={type} metaTags={{ title: `${meta.label} | HN Clone` }}>
   <ol class="story-list" start={page * PAGE_SIZE + 1}>
     {#each items as item, i (item.id)}
       <HNStoryRow {item} rank={page * PAGE_SIZE + i + 1} />

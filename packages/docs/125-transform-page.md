@@ -1,6 +1,7 @@
 ---
 title: 'Transforming HTML with transformPage'
 slug: transform-page
+description: 'Rewrite rendered HTML before it is sent to the client using the transformPage callback.'
 ---
 
 <script>

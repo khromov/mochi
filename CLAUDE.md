@@ -52,7 +52,7 @@ Mochi is an experimental SSR framework for Svelte 5 + Bun with islands-based sel
   - `Mochi.api(handler)` — JSON API route with automatic `MochiHttpError` handling.
   - `Mochi.ws(handlers)` — WebSocket route (`upgrade`/`open`/`message`/`close`/`drain`).
   - `Mochi.sse(handler)` — Server-Sent Events stream (`send`/`close`/`onClose`).
-- **`ComponentRegistry.ts`** — SSR compilation of `.svelte` via Svelte 5; preprocesses `mochi:hydrate`, `mochi:hydrate:visible`, `mochi:defer`; builds client bundles only for hydratable components; exposes the virtual `mochi` module (`isServer`, `isBrowser`, `isDev`).
+- **`ComponentRegistry.ts`** — SSR compilation of `.svelte` via Svelte 5; preprocesses `mochi:hydrate`, `mochi:hydrate:visible`, `mochi:defer`, `mochi:defer:visible`; builds client bundles only for hydratable components; exposes the virtual `mochi` module (`isServer`, `isBrowser`, `isDev`).
 - **`hooks.ts`** — SvelteKit-style middleware. `Handle` receives `{ event, resolve }`. `sequence(...)` composes handles. `resolve(event, opts)` accepts `transformPage` / `filterResponseHeaders`.
 - **`requestContext.ts`** — `getRequestContext()` returns `{ request, url, params, locals, cookies, form? }` via `AsyncLocalStorage`. Available in any server-side code (components, API handlers, server islands). The `AsyncLocalStorage` instance is pinned on `globalThis` so multiple bundled copies share state.
 - **`forms.ts`** — `fail(status, data)`, `redirect(status, location)`, `success(data?)` return values from a `Mochi.page` action. `fail`/`success` re-render the page with a `form` prop; `redirect` issues the redirect response. A page route may not return its own `form` prop if it declares actions (reserved name).
@@ -115,8 +115,8 @@ Default to Bun instead of Node.js:
 ## Hydration notes
 
 - Hydration is all-or-nothing per island: `mochi:hydrate` hydrates the entire subtree together, no per-child opt-in.
-- All island components (`mochi:hydrate`, `mochi:hydrate:visible`, `mochi:defer`) implicitly receive an `islandId` prop matching the wrapper's `island-id` attribute. Accept it with `let { islandId } = $props()` if needed.
-- Hydratable invocations (`mochi:hydrate`, `mochi:hydrate:visible`, `mochi:defer mochi:hydrate`) also implicitly receive `isHydratable: true` as a prop; pure SSR-only invocations leave it undefined. Use it to branch SSR-only fallback logic at the same call site that hydrates client-side: `let { isHydratable } = $props<{ isHydratable?: boolean }>()`.
+- All island components (`mochi:hydrate`, `mochi:hydrate:visible`, `mochi:defer`, `mochi:defer:visible`) implicitly receive an `islandId` prop matching the wrapper's `island-id` attribute. Accept it with `let { islandId } = $props()` if needed.
+- Hydratable invocations (`mochi:hydrate`, `mochi:hydrate:visible`, `mochi:defer`, `mochi:defer:visible`, `mochi:defer mochi:hydrate`) also implicitly receive `isHydratable: true` as a prop; pure SSR-only invocations leave it undefined. Use it to branch SSR-only fallback logic at the same call site that hydrates client-side: `let { isHydratable } = $props<{ isHydratable?: boolean }>()`.
 
 ## Conventions
 

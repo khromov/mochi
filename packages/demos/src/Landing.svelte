@@ -1,6 +1,8 @@
 <script lang="ts">
   import '@fontsource-variable/fraunces/full.css';
   import '@fontsource-variable/public-sans';
+  import { MetaTags } from 'svelte-meta-tags';
+  import { mergeMetaTags } from './lib/baseMetaTags';
   import Newspaper from '@lucide/svelte/icons/newspaper';
   import LayoutDashboard from '@lucide/svelte/icons/layout-dashboard';
   import ListChecks from '@lucide/svelte/icons/list-checks';
@@ -42,12 +44,11 @@
       icon: ListChecks,
     },
   ];
+
+  const metaTags = mergeMetaTags({ title: 'Mochi Demos' });
 </script>
 
-<svelte:head>
-  <title>Mochi Demos</title>
-  <meta name="description" content="A small collection of real apps built on the Mochi framework." />
-</svelte:head>
+<MetaTags {...metaTags} />
 
 <main class="landing">
   <header class="hero">

@@ -1,12 +1,18 @@
 <script lang="ts">
   import './app.generated.css';
+  import { url } from 'mochi-framework';
+  import { MetaTags } from 'svelte-meta-tags';
   import TodoApp from './TodoApp.svelte';
+  import { mergeMetaTags } from '../lib/baseMetaTags';
+
+  const metaTags = mergeMetaTags({
+    title: 'Today — a Mochi + Tailwind demo',
+    description: 'A small Tailwind v4 todo app on Mochi. Server-rendered, hydrated, persists to localStorage.',
+    canonical: `https://demos.mochi.fast${url.pathname}`,
+  });
 </script>
 
-<svelte:head>
-  <title>Today — a Mochi + Tailwind demo</title>
-  <meta name="description" content="A small Tailwind v4 todo app on Mochi. Server-rendered, hydrated, persists to localStorage." />
-</svelte:head>
+<MetaTags {...metaTags} />
 
 <div class="todo-app">
   <TodoApp mochi:hydrate />

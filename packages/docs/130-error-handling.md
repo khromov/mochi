@@ -1,6 +1,7 @@
 ---
 title: 'Error handling'
 slug: error-handling
+description: 'Configure a custom error page and control how uncaught errors are rendered to the client.'
 ---
 
 ## Error handling

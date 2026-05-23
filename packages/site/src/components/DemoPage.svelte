@@ -1,4 +1,5 @@
 <script>
+  import { url } from 'mochi-framework';
   import CodeViewer from './CodeViewer.svelte';
   import PageShell from './PageShell.svelte';
   import { demoIconFor } from '../lib/demoIcons';
@@ -16,11 +17,17 @@
 </script>
 
 <svelte:head>
-  <title>{title} — Mochi</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 </svelte:head>
 
-<PageShell {docsNav}>
+<PageShell
+  {docsNav}
+  metaTags={{
+    title,
+    description,
+    canonical: `https://mochi.fast${url.pathname}`,
+  }}
+>
   <header class="hero">
     <div class="hero-inner">
       <nav class="crumbs" aria-label="Breadcrumb">

@@ -18,12 +18,14 @@ function leadingFileNumber(filename: string, fallback = Number.NaN): number {
 export interface DocMetadata {
   title: string;
   slug: string;
+  description?: string;
   order?: number;
 }
 
 export interface DocEntry {
   slug: string;
   title: string;
+  description?: string;
   order: number;
   filename: string;
   toc: TocEntry[];
@@ -82,6 +84,7 @@ export async function loadDocs(): Promise<DocEntry[]> {
     entries.push({
       slug,
       title,
+      description: metadata.description,
       order,
       filename,
       toc,
