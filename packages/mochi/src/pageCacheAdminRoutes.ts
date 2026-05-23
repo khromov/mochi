@@ -34,28 +34,32 @@ const STUB_ENTRIES: StubEntry[] = [
 // `Mochi.page()` / `Mochi.api()` because Mochi.ts already imports from this
 // module, and going through the helpers would create a circular import.
 export function buildPageCacheAdminRoutes(): Record<string, MochiPageConfig | MochiApiConfig> {
-  return {
-    [PAGE_CACHE_ADMIN_PATH]: {
-      __mochiPage: true,
-      componentPath: PAGE_CACHE_ADMIN_COMPONENT,
-      serverProps: () => ({ stats: STUB_STATS, entries: STUB_ENTRIES }),
-      actions: {
-        purgeAll: () => undefined,
-        purge: ({ formData }) => {
-          // Keep the formData lookup so the front-end form contract is unchanged
-          // for when the real cache returns; right now it's a no-op.
-          formData.get('path');
-          return undefined;
-        },
+  const pageConfig: MochiPageConfig = {
+    __mochiPage: true,
+    componentPath: PAGE_CACHE_ADMIN_COMPONENT,
+    serverProps: () => ({ stats: STUB_STATS, entries: STUB_ENTRIES }),
+    actions: {
+      purgeAll: () => undefined,
+      purge: ({ formData }) => {
+        formData.get('path');
+        return undefined;
       },
     },
-    [`${PAGE_CACHE_ADMIN_PATH}/stats`]: {
-      __mochiApi: true,
-      handler: () => Response.json(STUB_STATS, { headers: { 'Cache-Control': 'no-store' } }),
-    },
-    [`${PAGE_CACHE_ADMIN_PATH}/entries`]: {
-      __mochiApi: true,
-      handler: () => Response.json(STUB_ENTRIES, { headers: { 'Cache-Control': 'no-store' } }),
-    },
+  };
+  const statsApi: MochiApiConfig = {
+    __mochiApi: true,
+    handler: () => Response.json(STUB_STATS, { headers: { 'Cache-Control': 'no-store' } }),
+  };
+  const entriesApi: MochiApiConfig = {
+    __mochiApi: true,
+    handler: () => Response.json(STUB_ENTRIES, { headers: { 'Cache-Control': 'no-store' } }),
+  };
+  return {
+    [PAGE_CACHE_ADMIN_PATH]: pageConfig,
+    [`${PAGE_CACHE_ADMIN_PATH}/`]: pageConfig,
+    [`${PAGE_CACHE_ADMIN_PATH}/stats`]: statsApi,
+    [`${PAGE_CACHE_ADMIN_PATH}/stats/`]: statsApi,
+    [`${PAGE_CACHE_ADMIN_PATH}/entries`]: entriesApi,
+    [`${PAGE_CACHE_ADMIN_PATH}/entries/`]: entriesApi,
   };
 }
