@@ -97,6 +97,8 @@ Scaffold a new app with [`create-mochi`](./packages/cli#readme):
 bun create mochi@latest my-app
 ```
 
+Then follow the [**Your first Mochi app**](https://mochi.fast/docs/your-first-mochi-app/) walkthrough for a four-step tour of routes, islands, and server islands.
+
 Or add the framework to an existing project:
 
 ```sh

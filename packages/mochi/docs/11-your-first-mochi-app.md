@@ -15,7 +15,7 @@ By the end we'll have a greeting card with a live like button and a personalized
 
 ### Set up
 
-Scaffold a new project with the official CLI and pick the **minimal** template when prompted:
+You'll need [Bun installed](https://bun.com/docs/installation) (>=1.3.13). Scaffold a new project with the official CLI and pick the **minimal** template when prompted:
 
 ```sh
 bun create mochi@latest my-app
