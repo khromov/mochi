@@ -1,3 +1,7 @@
+<script>
+  import '@fontsource-variable/fraunces/full.css';
+</script>
+
 <svelte:head>
   <title>OG Image Generator — Mochi</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -24,8 +28,6 @@
 </div>
 
 <style>
-  @import '@fontsource-variable/fraunces/full.css';
-
   .og-page {
     margin: 0;
     padding: 2rem;
