@@ -86,6 +86,8 @@ export interface DebugBarData {
   varyOnCookies?: string[];
   /** Whether live-reload is enabled for this server instance. */
   liveReloadEnabled?: boolean;
+  /** Time in milliseconds the SSR render took (compile check + Svelte render + HTML processing). */
+  ssrDurationMs?: number;
 }
 
 /**

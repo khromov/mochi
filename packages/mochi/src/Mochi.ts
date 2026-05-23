@@ -390,7 +390,11 @@ export class Mochi {
             }
             const formProp = ctx.form ?? null;
             const resolvedProps = formProp === null ? baseProps : { ...baseProps, form: formProp };
+            const ssrStart = performance.now();
             const result = await registry.renderComponent(componentPath, resolvedProps);
+            if (result.debugBarData) {
+              result.debugBarData.ssrDurationMs = Math.round((performance.now() - ssrStart) * 100) / 100;
+            }
             const html = Mochi.resolveHtmlShell(shellTemplate, result, registry, {
               serverIslandClientJs,
               liveReloadClientJs,
