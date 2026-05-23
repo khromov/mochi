@@ -1,6 +1,7 @@
 ---
 title: 'Server-Sent Events'
 slug: server-sent-events
+description: 'Push real-time updates to clients over a single HTTP connection with Mochi.sse().'
 ---
 
 ## Server-Sent Events

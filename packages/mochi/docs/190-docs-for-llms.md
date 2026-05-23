@@ -1,6 +1,7 @@
 ---
 title: 'Docs for LLMs'
 slug: docs-for-llms
+description: 'Access plain-text documentation at /llms.txt and /llms-full.txt for pasting into LLM contexts.'
 ---
 
 <script>

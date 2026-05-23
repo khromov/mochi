@@ -1,6 +1,7 @@
 ---
 title: 'Hydratable values'
 slug: hydratable
+description: 'Serialize computed server values into the page so the client can reuse them without re-running the work.'
 ---
 
 <script>

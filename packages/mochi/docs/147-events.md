@@ -1,6 +1,7 @@
 ---
 title: 'Events'
 slug: events
+description: 'Subscribe to framework lifecycle events like requests, WebSocket activity, and builds via a mitt emitter.'
 ---
 
 ## Events

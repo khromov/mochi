@@ -11,11 +11,10 @@
 </script>
 
 <svelte:head>
-  <title>{params.id} | HN Clone</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 </svelte:head>
 
-<HNLayout>
+<HNLayout metaTags={{ title: `${params.id} | HN Clone` }}>
   {#if user}
     <div class="user-profile">
       <h1 class="user-name">{user.id}</h1>

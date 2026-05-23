@@ -1,6 +1,7 @@
 ---
 title: 'Progressively enhancing forms with enhance'
 slug: progressively-enhancing-forms-with-enhance
+description: 'Progressively enhance HTML forms to submit via fetch when JavaScript is available.'
 ---
 
 <script>
