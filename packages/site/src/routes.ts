@@ -86,6 +86,7 @@ export const routes: Record<string, MochiRouteValue> = {
       };
     },
   }),
+  '/og': Mochi.page('./src/og/OgPage.svelte'),
   '/llms.txt': Mochi.api(async () => {
     return new Response(await buildLlmsTxt(), {
       headers: { 'Content-Type': 'text/plain; charset=utf-8' },
