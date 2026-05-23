@@ -1,0 +1,11 @@
+{
+  "name": "mochi-docs",
+  "version": "0.2.0",
+  "type": "module",
+  "private": true,
+  "description": "Documentation for the Mochi framework.",
+  "dependencies": {
+    "@lucide/svelte": "^1.16.0",
+    "svelte": "^5.55.7"
+  }
+}

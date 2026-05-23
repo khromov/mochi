@@ -61,7 +61,12 @@ const PACKAGES: Package[] = [
       'src/debug-bar/**',
       'src/templates/**',
     ],
-    docsGlob: 'docs/**/*.md',
+  },
+  {
+    name: 'packages/docs',
+    root: join(REPO_ROOT, 'packages', 'docs'),
+    categories: [],
+    docsGlob: '*.md',
   },
   {
     name: 'packages/site',

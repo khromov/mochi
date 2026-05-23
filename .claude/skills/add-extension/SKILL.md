@@ -66,7 +66,7 @@ If the existing call site is sync, **do not convert it to async** to fit an asyn
    - One case proving the user fn receives the expected context.
    - For async kinds, one case proving the framework awaits the user fn.
 
-6. **Document it** in `packages/mochi/docs/162-extensions.md`. Add a short section with the name, when it fires, and one realistic code example. Match the existing terse style.
+6. **Document it** in `packages/docs/162-extensions.md`. Add a short section with the name, when it fires, and one realistic code example. Match the existing terse style.
 
 ## Steps — adding a filter
 
@@ -103,7 +103,7 @@ If the existing call site is sync, **do not convert it to async** to fit an asyn
 
    Also add a behavioural test where the filter changes real framework behaviour (e.g. the csrf tests verify that an extended `formContentTypes` Set actually changes `csrfCheck`'s decision).
 
-8. **Document it** in `packages/mochi/docs/162-extensions.md`.
+8. **Document it** in `packages/docs/162-extensions.md`.
 
 ## Verification
 
