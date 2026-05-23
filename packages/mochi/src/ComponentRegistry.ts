@@ -82,9 +82,6 @@ function createMarkdownLoader(opts: {
   development: boolean;
   cssMap?: Map<string, string>;
   userCompilerOptions: CompileOptions;
-  // Server-only: when present, the post-mdsvex Svelte source is run through
-  // the same hydration preprocessor as `.svelte` files, so `mochi:hydrate` /
-  // `mochi:defer` directives in markdown become real islands.
   hydration?: {
     fileHydratables: Map<string, HydratableComponent[]>;
     allHydratables: HydratableComponent[];
