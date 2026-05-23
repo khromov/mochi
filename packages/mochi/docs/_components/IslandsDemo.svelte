@@ -123,8 +123,10 @@
   .controls {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 1.25rem;
     margin-top: 0.85rem;
+    width: 100%;
     flex-wrap: wrap;
   }
 
@@ -160,7 +162,7 @@
   .legend {
     list-style: none;
     padding: 0;
-    margin: 0;
+    margin: 0 0 0 auto;
     display: flex;
     gap: 1.25rem;
     font-size: 0.8rem;
