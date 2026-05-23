@@ -29,16 +29,18 @@ export const baseMetaTags: MetaTagsProps = {
 // them into `openGraph` and `twitter` so social cards reflect the page, not
 // the site-wide brand defaults.
 export function mergeMetaTags(overrides: MetaTagsProps = {}): MetaTagsProps {
+  const ogTitle = overrides.title && overrides.titleTemplate !== '%s' ? `${overrides.title} — Mochi` : overrides.title;
+
   const propagated: MetaTagsProps = {
     ...overrides,
     openGraph: {
-      ...(overrides.title ? { title: overrides.title } : {}),
+      ...(ogTitle ? { title: ogTitle } : {}),
       ...(overrides.description ? { description: overrides.description } : {}),
       ...(overrides.canonical ? { url: overrides.canonical } : {}),
       ...overrides.openGraph,
     },
     twitter: {
-      ...(overrides.title ? { title: overrides.title } : {}),
+      ...(ogTitle ? { title: ogTitle } : {}),
       ...(overrides.description ? { description: overrides.description } : {}),
       ...overrides.twitter,
     },
