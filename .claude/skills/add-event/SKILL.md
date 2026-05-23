@@ -13,7 +13,7 @@ Mochi emits lifecycle events through `mochiEvents` — a typed [`mitt`](https://
 3. Public re-exports in `packages/mochi/src/index.ts`.
 4. (Optional) a log line in `packages/mochi/src/consoleLogger.ts` if `consoleLogger()` should print it.
 5. A test in `packages/mochi/src/events.test.ts` (and a behavioural test alongside the consumer if the emission has non-trivial logic).
-6. Docs in `packages/mochi/docs/147-events.md`.
+6. Docs in `packages/docs/147-events.md`.
 
 ## Naming
 
@@ -94,7 +94,7 @@ Events are fire-and-forget observability. Handlers return `void`, run after the 
 
    If the emission site has logic worth verifying (correct `duration`, `kind`, etc.), add a test alongside the consumer (e.g. `cache.test.ts`, the relevant `Mochi.ts` test file) that drives the real path and asserts on the emitted payload.
 
-7. **Document** in `packages/mochi/docs/147-events.md`:
+7. **Document** in `packages/docs/147-events.md`:
    - Add a bullet to the `Events:` index near the top with a `[#anchor]` link. Markdown auto-slugs `thing:happened` to `thinghappened` (colons stripped) — match that.
    - Add a section under `### Event reference` titled with the event name as a level-4 heading:
 

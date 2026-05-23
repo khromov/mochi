@@ -1,12 +1,12 @@
 ---
 name: write-docs
-description: Author or revise a docs page in `packages/mochi/docs/` in the project's terse, code-first, Svelte-idiomatic style. Use when the user says "write docs for X", "document X", "/write-docs <topic>", or asks to revise an existing page in that folder.
+description: Author or revise a docs page in `packages/docs/` in the project's terse, code-first, Svelte-idiomatic style. Use when the user says "write docs for X", "document X", "/write-docs <topic>", or asks to revise an existing page in that folder.
 user-invocable: true
 ---
 
 # Write a docs page
 
-Target is `packages/mochi/docs/<NN>-<slug>.md`. Audience is a developer skimming for how something works. Voice mimics Svelte's official docs: short prose, one realistic example up front, tables for reference data, minimal heading nesting.
+Target is `packages/docs/<NN>-<slug>.md`. Audience is a developer skimming for how something works. Voice mimics Svelte's official docs: short prose, one realistic example up front, tables for reference data, minimal heading nesting.
 
 ## Style rules
 
@@ -23,14 +23,14 @@ Target is `packages/mochi/docs/<NN>-<slug>.md`. Audience is a developer skimming
 
 ## Picking the filename
 
-- The numeric prefix groups pages by section. Read existing filenames in `packages/mochi/docs/` first to find the right neighbourhood (routing → 40s, hydration → 80s, errors → 130s, etc.).
+- The numeric prefix groups pages by section. Read existing filenames in `packages/docs/` first to find the right neighbourhood (routing → 40s, hydration → 80s, errors → 130s, etc.).
 - Use the next free number ending in 5 (`45-…`) to slot between existing pages without renumbering. Only renumber a whole block if the user asks.
 - Slug = filename minus the numeric prefix and `.md`. Frontmatter `slug` must match.
 
 ## Steps
 
 1. **Identify the target.** If args name a topic, propose `<NN>-<slug>.md` and a title. If args reference an existing file, read it before editing.
-2. **Read 2–3 nearby pages** in `packages/mochi/docs/` to absorb tone, length, and any cross-links you should reuse. The style is enforced by example, not by config — don't skip this.
+2. **Read 2–3 nearby pages** in `packages/docs/` to absorb tone, length, and any cross-links you should reuse. The style is enforced by example, not by config — don't skip this.
 3. **Verify the API.** Read the relevant source under `packages/mochi/src/` so symbol names, import paths, and option shapes are real. If the API doesn't exist yet or is mid-refactor, ask the user before writing.
 4. **Draft the page.** Follow the style rules. Aim to fit on one screen (≤ ~60 lines) unless the topic genuinely needs more.
 5. **Format.** Run `bun run format` on the file (CLAUDE.md requires this after any change).

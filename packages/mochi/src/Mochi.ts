@@ -395,7 +395,7 @@ export class Mochi {
               serverIslandClientJs,
               liveReloadClientJs,
               debugBarUrl: registry.getDebugBarUrl(),
-              debugInfo: result.debugBarData,
+              debugInfo: result.debugBarData ? { ...result.debugBarData, liveReloadEnabled } : undefined,
               logLevel: resolvedLogLevel,
               pageEntry: liveReloadEnabled ? path.resolve(componentPath) : undefined,
             });

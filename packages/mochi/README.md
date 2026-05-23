@@ -38,7 +38,7 @@ bun run src/index.ts
 
 ## Docs
 
-Full documentation lives at [`packages/mochi/docs/`](https://github.com/khromov/mochi/tree/main/packages/mochi/docs) — intro, routes, selective hydration, server islands, forms, middleware, caching, events, and more. Served at `/docs/<section>` when you run the demo site (`bun run dev` in the monorepo).
+Full documentation lives at [`packages/docs/`](https://github.com/khromov/mochi/tree/main/packages/docs) — intro, routes, selective hydration, server islands, forms, middleware, caching, events, and more. Served at `/docs/<section>` when you run the demo site (`bun run dev` in the monorepo).
 
 ## License
 

@@ -1,9 +1,9 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
-  import TriangleAlert from '../../src/icons/triangle-alert.svelte';
-  import Info from '../../src/icons/info.svelte';
-  import OctagonX from '../../src/icons/octagon-x.svelte';
-  import Lightbulb from '../../src/icons/lightbulb.svelte';
+  import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
+  import Info from '@lucide/svelte/icons/info';
+  import OctagonX from '@lucide/svelte/icons/octagon-x';
+  import Lightbulb from '@lucide/svelte/icons/lightbulb';
 
   type CalloutType = 'info' | 'warning' | 'danger' | 'tip';
 
