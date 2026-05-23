@@ -118,16 +118,25 @@ function buildMarkup() {
 }
 
 function injectNoise(svg: string): string {
-  const noiseDefs = `<defs>
-    <filter id="noise" x="0" y="0" width="100%" height="100%" filterUnits="objectBoundingBox">
-      <feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" stitchTiles="stitch" result="noise"/>
+  const filterDef = `
+    <filter id="bg-noise" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="4" stitchTiles="stitch" result="noise"/>
       <feColorMatrix type="saturate" values="0" in="noise" result="mono"/>
-    </filter>
-  </defs>`;
+      <feComponentTransfer in="mono" result="faded">
+        <feFuncA type="linear" slope="0.15"/>
+      </feComponentTransfer>
+      <feBlend mode="overlay" in="SourceGraphic" in2="faded"/>
+    </filter>`;
 
-  const noiseRect = `<rect x="0" y="0" width="1200" height="630" filter="url(#noise)" opacity="0.12"/>`;
+  if (svg.includes('</defs>')) {
+    svg = svg.replace('</defs>', `${filterDef}</defs>`);
+  } else {
+    svg = svg.replace(/(<svg[^>]*>)/, `$1<defs>${filterDef}</defs>`);
+  }
 
-  return svg.replace(/(<svg[^>]*>)/, `$1${noiseDefs}${noiseRect}`);
+  svg = svg.replace(/<rect /, '<rect filter="url(#bg-noise)" ');
+
+  return svg;
 }
 
 async function generateOgPng(): Promise<Uint8Array> {
