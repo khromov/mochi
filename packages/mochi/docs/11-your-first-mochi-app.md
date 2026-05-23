@@ -9,9 +9,9 @@ slug: your-first-mochi-app
 
 ## Your first Mochi app
 
-Let's build a small app that exercises every server/client boundary you'll touch in real code. We'll put together a single `/hello` page in four steps, picking up one pillar at a time: [`serverProps`](/docs/defining-routes/) for loading data on every request, [passing props to islands](/docs/island-props/) so a server-rendered parent can hand values to a hydrated child, [`mochi:hydrate`](/docs/selective-hydration/) for one interactive island while the rest stays zero-JS, and [`mochi:defer`](/docs/server-islands/) for a server island that renders separately from the main request.
+Let's build a small app that exercises every server/client boundary you'll touch in real code. We'll put together a single `/hello` page in four steps, picking up one pillar at a time: [`serverProps`](/docs/defining-routes/) for loading data on every request, and [passing props to islands](/docs/island-props/) so a server-rendered parent can hand values to a hydrated child. Then we'll add [`mochi:hydrate`](/docs/selective-hydration/) for one interactive island while the rest stays zero-JS, and [`mochi:defer`](/docs/server-islands/) for a server island that renders separately from the main request.
 
-By the end we'll have a greeting card with a live like button and a personalized welcome that streams in after the page loads.
+By the end we'll have a greeting card with a live like button and a personalized welcome that loads in after the page renders.
 
 ### Set up
 
@@ -62,7 +62,7 @@ export const routes: Record<string, MochiRouteValue> = {
 };
 ```
 
-The resolver runs on every request, so each reload produces a fresh `renderedAt`. See [Defining routes](/docs/defining-routes/) for the full `serverProps` contract and the other `Mochi.*` route helpers.
+The resolver runs on every request, so each reload produces a fresh `renderedAt`. See [Defining routes](/docs/defining-routes/) for the full `serverProps` contract and the other `Mochi.*` route helpers. (The scaffolded `src/HelloWorld.svelte` is now unused — feel free to delete it.)
 
 ### Step 2 — The page component
 
@@ -127,7 +127,7 @@ The deferred island fetch is its own request, so `getRequestContext()` inside th
 
 </Callout>
 
-`Hello.svelte` reads `?name=` and passes it through to `Visitor`:
+Update `Hello.svelte` to read `?name=` and pass it through to `Visitor`:
 
 ```svelte
 <!-- file: src/Hello.svelte (updated) -->

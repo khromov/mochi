@@ -55,6 +55,7 @@ export async function build(options: MochiBuildOptions): Promise<void> {
   const version = await readMochiVersion();
   console.log(pc.dim(`Mochi v${version}`));
   console.log('Starting build...\n');
+  const startedAt = performance.now();
   const development = options.development ?? false;
   const outDir = options.outDir ?? './.mochi';
   const publicDir = options.publicDir ?? './public';
@@ -153,7 +154,13 @@ export async function build(options: MochiBuildOptions): Promise<void> {
 
   const clientFileCount = Object.keys(manifest.clientFiles).length;
   const publicFileCount = publicFiles.size;
-  logger.info(`build: done. ${compiledPages.length} page(s), ${clientFileCount} client file(s), ${publicFileCount} public file(s). Manifest written to ${manifestPath}`);
+  const elapsed = formatDuration(performance.now() - startedAt);
+  logger.info(`build: done in ${elapsed}. ${compiledPages.length} page(s), ${clientFileCount} client file(s), ${publicFileCount} public file(s). Manifest written to ${manifestPath}`);
+}
+
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  return `${(ms / 1000).toFixed(2)}s`;
 }
 
 async function readMochiVersion(): Promise<string> {
