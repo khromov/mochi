@@ -76,6 +76,8 @@ describe('preprocess-cache event emission', () => {
   beforeEach(() => {
     received.length = 0;
     __resetPreprocessMemCache();
+    mochiEvents.on('preprocess-cache:hit', onHit);
+    mochiEvents.on('preprocess-cache:miss', onMiss);
   });
 
   afterEach(() => {
@@ -83,22 +85,14 @@ describe('preprocess-cache event emission', () => {
     mochiEvents.off('preprocess-cache:miss', onMiss);
   });
 
-  test('does NOT emit events when no subscribers are attached', () => {
+  test('emits one miss for a cold lookup', () => {
     cachedPreprocessHydratable(ISLAND_SOURCE, '/test/A.svelte');
-    cachedPreprocessHydratable(ISLAND_SOURCE, '/test/A.svelte');
-    expect(received).toHaveLength(0);
-    // Stats still tick even without subscribers — they're free integer increments
-    // and the summary path needs them.
-    expect(consumePreprocessCacheStats()).toEqual({ hits: 1, misses: 1 });
+    expect(received).toEqual([{ type: 'miss', payload: { filePath: '/test/A.svelte' } }]);
   });
 
-  test('emits hit + miss events when subscribers are attached', () => {
-    mochiEvents.on('preprocess-cache:hit', onHit);
-    mochiEvents.on('preprocess-cache:miss', onMiss);
-
+  test('emits a hit on the second lookup with the same source+path', () => {
     cachedPreprocessHydratable(ISLAND_SOURCE, '/test/A.svelte');
     cachedPreprocessHydratable(ISLAND_SOURCE, '/test/A.svelte');
-
     expect(received).toEqual([
       { type: 'miss', payload: { filePath: '/test/A.svelte' } },
       { type: 'hit', payload: { filePath: '/test/A.svelte' } },

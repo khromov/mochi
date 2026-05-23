@@ -9,7 +9,7 @@ import { buildIslandPropsScripts } from './islandPropsRegistry';
 import { requestContext } from './requestContext';
 import type { DebugBarData } from './requestContext';
 import { logger } from './log';
-import { hasSubscribers, mochiEvents } from './events';
+import { mochiEvents } from './events';
 import type { MarkdownConfig, MochiManifest } from './types';
 import { type HydratableComponent, type ServerIslandComponent } from './svelteAstPreprocess';
 import { cachedPreprocessHydratable, consumePreprocessCacheStats } from './preprocessCache';
@@ -596,12 +596,10 @@ export class ComponentRegistry {
       durationMs: performance.now() - compileStart,
     });
 
-    if (hasSubscribers('preprocess-cache:summary')) {
-      const stats = consumePreprocessCacheStats();
-      const files = stats.hits + stats.misses;
-      if (files > 0) {
-        mochiEvents.emit('preprocess-cache:summary', { hits: stats.hits, misses: stats.misses, files });
-      }
+    const stats = consumePreprocessCacheStats();
+    const files = stats.hits + stats.misses;
+    if (files > 0) {
+      mochiEvents.emit('preprocess-cache:summary', { hits: stats.hits, misses: stats.misses, files });
     }
 
     // Write per-component CSS files to disk (minified) and track their URLs
