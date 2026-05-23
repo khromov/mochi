@@ -115,27 +115,57 @@ The `mochi:hydrate` directive lives **where we render the component** in `Hello.
 
 </Callout>
 
+Reload the page in dev mode and you'll see Mochi's [debug bar](/docs/debug-bar/) pinned to the bottom-right of the page. Open the **Islands** panel — `LikeButton` shows up tagged `mochi:hydrate` with the byte size of its serialized props (the `initialLikes` value), and the crosshair icon next to each row scrolls to and outlines the island on the page.
+
 ### Step 4 — A server island
 
 Finally, let's add a personalized greeting that doesn't block the rest of the page. We marked `Visitor.svelte` with `mochi:defer` back in Step 2, so it skips the initial SSR pass — the page ships with our `<p>Loading…</p>` fallback in its place. The browser then fetches the component _in a separate request_, the server renders it, and the result swaps in.
 
-Because it still runs on the server, the component has full access to the request via `getRequestContext()` — URL, cookies, headers, route params, everything:
+That "separate request" is the catch: inside `Visitor.svelte`, `getRequestContext()` returns the context of the island fetch (`/_mochi/island/Visitor?…`), not the original page. Anything page-specific — like a URL query param — has to be read in the parent and forwarded as a prop. So we update `Hello.svelte` to read `?name=` and hand it through:
+
+```svelte
+<!-- file: src/Hello.svelte (updated) -->
+<script lang="ts">
+  import { getRequestContext } from 'mochi-framework';
+  import LikeButton from './LikeButton.svelte';
+  import Visitor from './Visitor.svelte';
+
+  let { siteName, renderedAt } = $props<{ siteName: string; renderedAt: string }>();
+
+  const { url } = getRequestContext();
+  const visitorName = url.searchParams.get('name') ?? 'friend';
+</script>
+
+<h1>Welcome to {siteName}</h1>
+<p>Rendered at <code>{renderedAt}</code></p>
+
+<LikeButton mochi:hydrate initialLikes={42} />
+
+<Visitor mochi:defer name={visitorName}>
+  <p>Loading…</p>
+</Visitor>
+```
 
 ```svelte
 <!-- file: src/Visitor.svelte -->
 <script lang="ts">
-  import { getRequestContext } from 'mochi-framework';
-
-  const { url } = getRequestContext();
-  const name = url.searchParams.get('name') ?? 'friend';
+  let { name } = $props<{ name: string }>();
 </script>
 
 <p>Welcome back, {name}!</p>
 ```
 
-Try `http://localhost:3333/hello?name=Alice` — the main page stays identical, but the deferred fragment picks up the query param and personalizes the greeting.
+The `name` prop rides through the same `devalue` round-trip as `initialLikes`. Try [`/docs/your-first-mochi-app/hello?name=Alice`](/docs/your-first-mochi-app/hello?name=Alice) — the main page is identical for every visitor, but the deferred fragment swaps in a personalized greeting.
 
-That's the trick for keeping an HTML page cacheable while still personalizing parts of it: the outer `Hello.svelte` is identical for every visitor, but the deferred `Visitor` fragment can read per-request state on its own.
+<Callout type="tip">
+
+Cookies are an exception worth knowing: the browser sends them along with the island fetch automatically, so `getRequestContext().cookies` inside a server island reads the visitor's cookies without needing the parent to forward them.
+
+</Callout>
+
+### See it live
+
+The finished app is running on this site at [**/docs/your-first-mochi-app/hello**](/docs/your-first-mochi-app/hello). Click the heart, then try [`/docs/your-first-mochi-app/hello?name=Alice`](/docs/your-first-mochi-app/hello?name=Alice) to watch the deferred fragment swap in a personalized greeting. The [debug bar](/docs/debug-bar/)'s **Islands** panel groups the two islands separately: `LikeButton` under hydrated islands as `mochi:hydrate`, and `Visitor` under server islands as `mochi:defer` with a lock icon (server-island props are HMAC-signed before being sent to the client).
 
 ### What's next
 
