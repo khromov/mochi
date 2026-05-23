@@ -43,8 +43,7 @@
 
   let warnLevel = $derived(getPropsWarnLevel(debugBarState.totalPropsSize));
 
-  // The debug bar mounts client-only via mount() and only runs in dev mode,
-  // where Mochi.ts unconditionally seeds window.__mochi_asset_prefix.
+  // Mochi.ts seeds window.__mochi_asset_prefix whenever the debug bar is enabled.
   const statsHref = `${window.__mochi_asset_prefix}/client/stats`;
 
   onMount(() => {
