@@ -11,7 +11,8 @@ import type { DebugBarData } from './requestContext';
 import { logger } from './log';
 import { mochiEvents } from './events';
 import type { MarkdownConfig, MochiManifest } from './types';
-import { preprocessHydratable, type HydratableComponent, type ServerIslandComponent } from './svelteAstPreprocess';
+import { type HydratableComponent, type ServerIslandComponent } from './svelteAstPreprocess';
+import { cachedPreprocessHydratable, createPreprocessCacheStats } from './preprocessCache';
 import { mergeCompilerOptions, type MochiSvelteConfig } from './svelteConfig';
 import { applyFilter } from './extensions';
 import { buildServerOnlyStubModule, scanServerOnlyExports } from './serverOnlyScan';
@@ -81,6 +82,12 @@ function createMarkdownLoader(opts: {
   development: boolean;
   cssMap?: Map<string, string>;
   userCompilerOptions: CompileOptions;
+  hydration?: {
+    fileHydratables: Map<string, HydratableComponent[]>;
+    allHydratables: HydratableComponent[];
+    allServerIslands: ServerIslandComponent[];
+    preprocessCacheStats: ReturnType<typeof createPreprocessCacheStats>;
+  };
 }) {
   const highlight = opts.markdown.highlight;
   return async (args: { path: string }) => {
@@ -98,8 +105,16 @@ function createMarkdownLoader(opts: {
     if (!compiled || typeof compiled.code !== 'string') {
       throw new Error(`markdown.compile returned no output for ${args.path}`);
     }
+    let svelteSource = compiled.code;
+    if (opts.hydration) {
+      const { transformed, hydratables, serverIslands } = cachedPreprocessHydratable(svelteSource, args.path, opts.hydration.preprocessCacheStats);
+      opts.hydration.fileHydratables.set(args.path, hydratables);
+      opts.hydration.allHydratables.push(...hydratables);
+      opts.hydration.allServerIslands.push(...serverIslands);
+      svelteSource = transformed;
+    }
     const { js, css } = svelteCompile(
-      compiled.code,
+      svelteSource,
       mergeCompilerOptions(opts.userCompilerOptions, {
         generate: opts.target,
         filename: args.path,
@@ -296,6 +311,7 @@ export class ComponentRegistry {
     const importedCssPaths = new Set<string>();
     const allHydratables: HydratableComponent[] = [];
     const allServerIslands: ServerIslandComponent[] = [];
+    const preprocessCacheStats = createPreprocessCacheStats();
     const fileHydratables = new Map<string, HydratableComponent[]>();
     const development = this.development;
     const userCompilerOptions = this.svelteConfig.compilerOptions ?? {};
@@ -401,7 +417,11 @@ export class ComponentRegistry {
         build.onLoad({ filter: /\.svelte$/ }, async (args) => {
           const raw = await Bun.file(args.path).text();
           const preprocessed = await applyUserPreprocessors(raw, args.path, 'server', development);
-          const { transformed, hydratables, serverIslands } = preprocessHydratable(preprocessed, args.path);
+          // Vendored .svelte from node_modules can never carry `mochi:*` directives
+          const isVendored = args.path.includes(`${path.sep}node_modules${path.sep}`);
+          const { transformed, hydratables, serverIslands } = isVendored
+            ? { transformed: preprocessed, hydratables: [] as HydratableComponent[], serverIslands: [] as ServerIslandComponent[] }
+            : cachedPreprocessHydratable(preprocessed, args.path, preprocessCacheStats);
           fileHydratables.set(args.path, hydratables);
           allHydratables.push(...hydratables);
           allServerIslands.push(...serverIslands);
@@ -419,7 +439,17 @@ export class ComponentRegistry {
           return { contents: js.code, loader: 'js' };
         });
         if (markdown) {
-          build.onLoad({ filter: MARKDOWN_FILE_FILTER }, createMarkdownLoader({ markdown, target: 'server', development, cssMap, userCompilerOptions }));
+          build.onLoad(
+            { filter: MARKDOWN_FILE_FILTER },
+            createMarkdownLoader({
+              markdown,
+              target: 'server',
+              development,
+              cssMap,
+              userCompilerOptions,
+              hydration: { fileHydratables, allHydratables, allServerIslands, preprocessCacheStats },
+            }),
+          );
         }
       },
     };
@@ -590,6 +620,15 @@ export class ComponentRegistry {
       count: todo.length,
       durationMs: performance.now() - compileStart,
     });
+
+    const files = preprocessCacheStats.hits + preprocessCacheStats.misses;
+    if (files > 0) {
+      mochiEvents.emit('preprocess-cache:summary', {
+        hits: preprocessCacheStats.hits,
+        misses: preprocessCacheStats.misses,
+        files,
+      });
+    }
 
     // Write per-component CSS files to disk (minified) and track their URLs
     const cssOutDir = `${this.outDir}/svelte-css`;

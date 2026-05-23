@@ -45,6 +45,9 @@ export interface PreprocessResult {
  *   attribute, registered in both lists
  */
 export function preprocessHydratable(source: string, filePath: string): PreprocessResult {
+  if (!source.includes('mochi:hydrate') && !source.includes('mochi:defer')) {
+    return { transformed: source, hydratables: [], serverIslands: [] };
+  }
   const ast = parse(source, { modern: true });
   const s = new MagicString(source);
 

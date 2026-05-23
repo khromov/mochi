@@ -138,6 +138,17 @@ describe('preprocessHydratable', () => {
     expect(transformed).toBe(source);
   });
 
+  test('fast-path skips Svelte parse for sources without mochi markers', () => {
+    // Syntactically invalid Svelte that would crash `parse()` — if the fast-path
+    // didn't fire, this would throw. With the early-exit it returns the source
+    // unchanged because no `mochi:hydrate` / `mochi:defer` substring is present.
+    const source = 'this is not valid svelte {{{{ <<<<';
+    const result = preprocessHydratable(source, '/test/Garbage.svelte');
+    expect(result.transformed).toBe(source);
+    expect(result.hydratables).toHaveLength(0);
+    expect(result.serverIslands).toHaveLength(0);
+  });
+
   test('component without matching import is skipped', () => {
     const source = `${SCRIPT('')}<Unknown mochi:hydrate />`;
     const { transformed, hydratables } = preprocessHydratable(source, '/test/File.svelte');

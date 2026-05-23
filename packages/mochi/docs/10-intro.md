@@ -1,6 +1,7 @@
 ---
 title: 'Welcome'
 slug: intro
+description: 'A lightweight, server-first Svelte 5 framework on Bun that ships JavaScript only for interactive islands.'
 ---
 
 <script>
@@ -18,7 +19,7 @@ The websites we visit on the web are mostly static — text, images and links. O
 
 Go ahead, try hydrating the page below and see which components will load JavaScript.
 
-<IslandsDemo />
+<IslandsDemo mochi:hydrate />
 
 The header text, the main column, and the footer ship as HTML and stay that way. The badge and the sidebar nav are wrapped as islands — same SSR HTML on first paint, with JS attached on top. Everything else is zero-JS forever.
 

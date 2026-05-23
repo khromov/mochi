@@ -1,6 +1,7 @@
 ---
 title: 'Building a Dockerfile'
 slug: docker
+description: 'A minimal production Dockerfile template for deploying Mochi apps with Bun.'
 ---
 
 <script>

@@ -1,6 +1,8 @@
 <script lang="ts">
   import '@fontsource-variable/fraunces/full.css';
   import '@fontsource-variable/public-sans';
+  import { url } from 'mochi-framework';
+  import { MetaTags, type MetaTagsProps } from 'svelte-meta-tags';
   import LayoutDashboard from '@lucide/svelte/icons/layout-dashboard';
   import Users from '@lucide/svelte/icons/users';
   import ShoppingCart from '@lucide/svelte/icons/shopping-cart';
@@ -8,6 +10,7 @@
   import Activity from '@lucide/svelte/icons/activity';
   import Settings from '@lucide/svelte/icons/settings';
   import AdminThemeToggle from './AdminThemeToggle.svelte';
+  import { mergeMetaTags } from '../lib/baseMetaTags';
   import type { Component } from 'svelte';
 
   type Section = {
@@ -17,10 +20,17 @@
     live: boolean;
   };
 
-  let { activeNav, children } = $props<{
+  let {
+    activeNav,
+    metaTags = {},
+    children,
+  } = $props<{
     activeNav?: string;
+    metaTags?: MetaTagsProps;
     children: () => unknown;
   }>();
+
+  const mergedMetaTags = $derived(mergeMetaTags({ canonical: `https://demos.mochi.fast${url.pathname}`, ...metaTags }));
 
   const sections: Section[] = [
     { key: 'dashboard', title: 'Dashboard', icon: LayoutDashboard, live: true },
@@ -31,6 +41,8 @@
     { key: 'settings', title: 'Settings', icon: Settings, live: false },
   ];
 </script>
+
+<MetaTags {...mergedMetaTags} />
 
 <div class="admin-shell">
   <aside class="admin-sidebar">

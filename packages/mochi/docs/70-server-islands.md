@@ -1,6 +1,7 @@
 ---
 title: 'Server islands with mochi:defer'
 slug: server-islands
+description: 'Render components after initial page load by fetching their HTML from the server with mochi:defer.'
 ---
 
 <script>

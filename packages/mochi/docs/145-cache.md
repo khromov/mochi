@@ -1,6 +1,7 @@
 ---
 title: 'Cache'
 slug: cache
+description: 'Cache server-side data with stale-while-revalidate semantics using MochiCache.'
 ---
 
 <script>
