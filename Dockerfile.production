@@ -26,8 +26,9 @@ WORKDIR /usr/src/app
 FROM base AS install
 ARG WORKSPACE
 COPY packages/mochi /temp/prod/packages/mochi
+COPY packages/docs /temp/prod/packages/docs
 COPY packages/${WORKSPACE} /temp/prod/packages/${WORKSPACE}
-RUN printf '{\n  "name": "mochi-monorepo",\n  "private": true,\n  "type": "module",\n  "workspaces": ["packages/mochi", "packages/%s"]\n}\n' "${WORKSPACE}" > /temp/prod/package.json
+RUN printf '{\n  "name": "mochi-monorepo",\n  "private": true,\n  "type": "module",\n  "workspaces": ["packages/mochi", "packages/docs", "packages/%s"]\n}\n' "${WORKSPACE}" > /temp/prod/package.json
 RUN cd /temp/prod && bun install --production --omit=dev
 # Tailwind/lightningcss are demos-only. Mochi-framework declares them as
 # optional peers + transitive paths still pull them in; prune for everyone
@@ -47,8 +48,10 @@ ARG WORKSPACE
 COPY --from=install /temp/prod/node_modules node_modules
 COPY --from=install /temp/prod/packages/${WORKSPACE}/node_modules packages/${WORKSPACE}/node_modules
 COPY --from=install /temp/prod/packages/mochi/node_modules packages/mochi/node_modules
+COPY --from=install /temp/prod/packages/docs/node_modules packages/docs/node_modules
 COPY --from=install /temp/prod/package.json ./
 COPY packages/mochi packages/mochi
+COPY packages/docs packages/docs
 COPY packages/${WORKSPACE} packages/${WORKSPACE}
 RUN bun --cwd=packages/${WORKSPACE} run build
 
@@ -60,11 +63,13 @@ ENV WORKSPACE=${WORKSPACE}
 
 COPY --from=install /temp/prod/package.json ./
 COPY packages/mochi packages/mochi
+COPY packages/docs packages/docs
 COPY packages/${WORKSPACE} packages/${WORKSPACE}
 
 COPY --from=install /temp/prod/node_modules node_modules
 COPY --from=install /temp/prod/packages/${WORKSPACE}/node_modules packages/${WORKSPACE}/node_modules
 COPY --from=install /temp/prod/packages/mochi/node_modules packages/mochi/node_modules
+COPY --from=install /temp/prod/packages/docs/node_modules packages/docs/node_modules
 
 COPY --from=build /usr/src/app/packages/${WORKSPACE}/.mochi packages/${WORKSPACE}/.mochi
 

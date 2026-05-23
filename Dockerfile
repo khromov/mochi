@@ -44,6 +44,7 @@ COPY --from=install /temp/dev/node_modules node_modules
 COPY --from=install /temp/dev/packages/mochi/node_modules packages/mochi/node_modules
 COPY --from=install /temp/dev/packages/site/node_modules packages/site/node_modules
 COPY --from=install /temp/dev/packages/demos/node_modules packages/demos/node_modules
+COPY --from=install /temp/dev/packages/docs/node_modules packages/docs/node_modules
 
 # ncdu for disk usage analysis. libgcc is already present in oven/bun:alpine.
 RUN apk add --no-cache ncdu
@@ -51,6 +52,8 @@ RUN apk add --no-cache ncdu
 # .mochi for runtime build cache; src/ must be writable too because demos'
 # tailwind step writes app.generated.css into src/ at startup (no-op for site).
 RUN mkdir -p packages/${WORKSPACE}/.mochi && chown -R bun:bun packages/${WORKSPACE}/.mochi packages/${WORKSPACE}/src
+
+RUN bun packages/site/src/lib/generateDocsBarrel.ts
 
 ENV WORKSPACE=${WORKSPACE}
 ENV MOCHI_LIVE_RELOAD=false
