@@ -176,10 +176,10 @@ export class Mochi {
         () =>
           (bootstrapUrl ? `<script type="module" src="${bootstrapUrl}"></script>` : '') +
           serverIslandScript +
-          (opts.debugBarUrl ? `<script type="module" src="${opts.debugBarUrl}"></script>` : '') +
-          (opts.liveReloadClientJs
-            ? `<script>window.__mochi_asset_prefix=${JSON.stringify(registry.assetPrefix)};${opts.liveReloadClientJs}</script><mochi-live-reload></mochi-live-reload>`
-            : ''),
+          (opts.debugBarUrl
+            ? `<script type="module" src="${opts.debugBarUrl}"></script><script>window.__mochi_asset_prefix=${JSON.stringify(registry.assetPrefix)}</script>`
+            : '') +
+          (opts.liveReloadClientJs ? `<script>${opts.liveReloadClientJs}</script><mochi-live-reload></mochi-live-reload>` : ''),
       );
   }
 
