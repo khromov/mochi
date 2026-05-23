@@ -301,7 +301,6 @@ export class ComponentRegistry {
     const development = this.development;
     const userCompilerOptions = this.svelteConfig.compilerOptions ?? {};
     const markdown = this.markdown;
-    const preprocessCacheDir = path.resolve(this.outDir, 'preprocess-cache');
 
     const sveltePlugin: BunPlugin = {
       name: 'svelte-ssr',
@@ -407,7 +406,7 @@ export class ComponentRegistry {
           const isVendored = args.path.includes(`${path.sep}node_modules${path.sep}`);
           const { transformed, hydratables, serverIslands } = isVendored
             ? { transformed: preprocessed, hydratables: [] as HydratableComponent[], serverIslands: [] as ServerIslandComponent[] }
-            : cachedPreprocessHydratable(preprocessed, args.path, preprocessCacheDir);
+            : cachedPreprocessHydratable(preprocessed, args.path);
           fileHydratables.set(args.path, hydratables);
           allHydratables.push(...hydratables);
           allServerIslands.push(...serverIslands);

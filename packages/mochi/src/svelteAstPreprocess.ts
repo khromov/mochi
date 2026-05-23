@@ -3,24 +3,7 @@ import type { AST } from 'svelte/compiler';
 import MagicString from 'magic-string';
 import { customAlphabet } from 'nanoid';
 import path from 'node:path';
-import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { walk } from 'zimmerframe';
-
-// Hash of this file's own source, computed once at module load. The disk cache
-// in `preprocessCache.ts` mixes this into its key so any edit to the
-// preprocessor logic invalidates every cache entry. The `unknown` fallback only
-// fires under exotic bundling where the runtime can't read its own source;
-// `bun run clean` is the recovery path for that case.
-export const PREPROCESS_LOGIC_VERSION: string = (() => {
-  try {
-    const selfPath = fileURLToPath(import.meta.url);
-    return createHash('sha256').update(readFileSync(selfPath)).digest('hex');
-  } catch {
-    return 'unknown';
-  }
-})();
 
 // Dash-free alphabet: island IDs are embedded as `mochi-<id>-<uid>`, so an id
 // containing `-` breaks that delimiter and (historically) made tests flaky
