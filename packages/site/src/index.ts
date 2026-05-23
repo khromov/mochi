@@ -6,6 +6,15 @@ import { clearDocsCaches, DOCS_DIR } from './lib/docs';
 import { markdownConfig, routes } from './routes';
 import { handle as cookieVaryTestHandle } from './demos/cookie-vary-test/routes';
 
+const IS_DOCKER = process.env.MOCHI_DOCKER === 'true';
+const immutableAssets: Handle = async ({ event, resolve }) => {
+  const response = await resolve(event);
+  if (IS_DOCKER && event.kind === 'asset') {
+    response.headers.set('Cache-Control', 'public, max-age=31536000, immutable');
+  }
+  return response;
+};
+
 if (process.env.MODE === 'development') {
   await generateDocsBarrel();
 
@@ -80,7 +89,7 @@ await Mochi.serve({
   liveReload: process.env.MOCHI_LIVE_RELOAD === 'false' ? false : undefined,
   htmlShell: './src/shell.html',
   trailingSlash: 'always',
-  handle: sequence(compress(), helloWorld, asciiDog, noCache, cookieVaryTestHandle),
+  handle: sequence(compress(), immutableAssets, helloWorld, asciiDog, noCache, cookieVaryTestHandle),
   handleError,
   idleTimeout: 60,
   compressServerIslandProps: true,

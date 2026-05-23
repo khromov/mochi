@@ -57,6 +57,7 @@ RUN bun packages/site/src/lib/generateDocsBarrel.ts
 
 ENV WORKSPACE=${WORKSPACE}
 ENV MOCHI_LIVE_RELOAD=false
+ENV MOCHI_DOCKER=true
 USER bun
 EXPOSE ${PORT}/tcp
 ENTRYPOINT [ "sh", "-c", "exec bun run dev:${WORKSPACE}" ]
