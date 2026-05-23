@@ -3,6 +3,10 @@ title: 'Docs for LLMs'
 slug: docs-for-llms
 ---
 
+<script>
+  import Callout from './_components/Callout.svelte';
+</script>
+
 ## Docs for LLMs
 
 The Mochi documentation is published as plain-text bundles you can paste into an LLM context.
@@ -24,3 +28,7 @@ Each individual doc is reachable as plain text at `/docs/<slug>/llms.txt`:
 - [`/docs/api-routes/llms.txt`](/docs/api-routes/llms.txt)
 
 The "Copy as llms.txt" button on each doc page emits just that page — use it to give the model focused context without the rest of the framework.
+
+<Callout type="info">
+  An MCP server is coming soon.
+</Callout>
