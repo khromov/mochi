@@ -155,11 +155,15 @@ Update `Hello.svelte` to read `?name=` and pass it through to `Visitor`:
 ```svelte
 <!-- file: src/Visitor.svelte -->
 <script lang="ts">
-  let { name } = $props<{ name: string }>();
+  import type { Snippet } from 'svelte';
+
+  let { name }: { name: string; children?: Snippet } = $props();
 </script>
 
 <p>Welcome back, {name}!</p>
 ```
+
+`mochi:defer` lets the call site pass fallback children (our `<p>Loading…</p>`) that render in place of the island until the deferred fetch resolves. The framework handles the swap — `Visitor` itself never renders `children`, but we declare it in the prop type so TypeScript accepts the fallback at the call site.
 
 The `name` prop rides through the same `devalue` round-trip as `initialLikes`. Try [`/docs/your-first-mochi-app/hello?name=Alice`](/docs/your-first-mochi-app/hello?name=Alice) — the main page is identical for every visitor, but the deferred fragment swaps in a personalized greeting.
 
