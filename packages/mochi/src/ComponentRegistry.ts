@@ -1000,34 +1000,30 @@ export class ComponentRegistry {
     }
     const { body, head } = await render(mod.default, renderOptions);
 
-    // O(1) lookup maps — replace O(n) .find() scans on every placeholder match
     const hydratablesByName = new Map(hydratables.map((h) => [h.name, h]));
     const hydratablesByPath = new Map(hydratables.map((h) => [h.resolvedPath, h]));
     const islandPaths = new Set(hydratables.map((h) => h.resolvedPath));
 
-    // Single regex pass resolves all three URL placeholder types and tracks
-    // which islands are lazy (have CSS_URL placeholders) as a side effect.
+    let output = body;
+
+    output = output.replace(/__MOCHI_COMPONENT_URL__(\w+)__/g, (_, name: string) => this.componentEntryUrls.get(name) ?? '');
+
+    // Track which islands are lazy (have CSS_URL placeholders) during replacement
     const lazyIslandPaths = new Set<string>();
-    let output = body.replace(/__MOCHI_(COMPONENT_URL|CSS_URL|SERVER_CSS_URL)__(\w+)__/g, (_, kind: string, name: string) => {
-      switch (kind) {
-        case 'COMPONENT_URL':
-          return this.componentEntryUrls.get(name) ?? '';
-        case 'CSS_URL': {
-          const h = hydratablesByName.get(name);
-          if (h) {
-            lazyIslandPaths.add(h.resolvedPath);
-            return this.cssFileUrls.get(h.resolvedPath) ?? '';
-          }
-          return '';
-        }
-        case 'SERVER_CSS_URL': {
-          const resolvedPath = this.serverIslandPaths.get(name);
-          return resolvedPath ? (this.cssFileUrls.get(resolvedPath) ?? '') : '';
-        }
-        default:
-          return '';
+    output = output.replace(/__MOCHI_CSS_URL__(\w+)__/g, (_, name: string) => {
+      const h = hydratablesByName.get(name);
+      if (h) {
+        lazyIslandPaths.add(h.resolvedPath);
+        return this.cssFileUrls.get(h.resolvedPath) ?? '';
       }
+      return '';
     });
+
+    output = output.replace(/__MOCHI_SERVER_CSS_URL__(\w+)__/g, (_, name: string) => {
+      const resolvedPath = this.serverIslandPaths.get(name);
+      return resolvedPath ? (this.cssFileUrls.get(resolvedPath) ?? '') : '';
+    });
+
     output = output.replaceAll('__MOCHI_ASSET_PREFIX__', this.assetPrefix);
 
     const shouldStrip = opts?.stripMarkers !== false && hydratables.length === 0;
