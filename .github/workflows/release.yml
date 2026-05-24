@@ -51,6 +51,12 @@ jobs:
         if: ${{ steps.release.outputs.prs_created == 'true' || steps.release.outputs.prs_updated == 'true' }}
         run: |
           bun install
+          for dir in packages/*/; do
+            [ -f "${dir}package.json" ] || continue
+            ver=$(jq -r .version "${dir}package.json")
+            key=$(echo "${dir%/}" | sed 's/\//\\\//g')
+            sed -i "/\"${key}\"/,/\"version\"/ s/\"version\": \"[^\"]*\"/\"version\": \"$ver\"/" bun.lock
+          done
           if ! git diff --quiet bun.lock; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"

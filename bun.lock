@@ -78,7 +78,7 @@
     },
     "packages/mochi": {
       "name": "mochi-framework",
-      "version": "0.2.0",
+      "version": "0.3.2",
       "bin": {
         "mochi-framework": "src/cli.js",
       },
