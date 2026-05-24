@@ -4,7 +4,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { BunPlugin } from 'bun';
-import { normalizeAssetPrefix, normalizeIslandHydrationMarkers, stripHydrationMarkers, toCompileErrorLogs } from './utils';
+import { isSvelteMarker, normalizeAssetPrefix, normalizeIslandHydrationMarkers, stripHydrationMarkers, toCompileErrorLogs } from './utils';
 import { buildIslandPropsScripts } from './islandPropsRegistry';
 import { requestContext } from './requestContext';
 import type { DebugBarData } from './requestContext';
@@ -1000,50 +1000,88 @@ export class ComponentRegistry {
     }
     const { body, head } = await render(mod.default, renderOptions);
 
-    let output = body;
-
-    // Replace component URL placeholders with actual hashed URLs
-    output = output.replace(/__MOCHI_COMPONENT_URL__(\w+)__/g, (_, name: string) => this.componentEntryUrls.get(name) ?? '');
-
-    // Identify lazy islands (have __MOCHI_CSS_URL__ placeholder) before resolving
+    // O(1) lookup maps — replace O(n) .find() scans on every placeholder match
+    const hydratablesByName = new Map(hydratables.map((h) => [h.name, h]));
+    const hydratablesByPath = new Map(hydratables.map((h) => [h.resolvedPath, h]));
     const islandPaths = new Set(hydratables.map((h) => h.resolvedPath));
-    const lazyIslandPaths = new Set(hydratables.filter((h) => output.includes(`__MOCHI_CSS_URL__${h.name}__`)).map((h) => h.resolvedPath));
 
-    // Resolve CSS URL placeholders for lazy islands
-    output = output.replace(/__MOCHI_CSS_URL__(\w+)__/g, (_, name: string) => {
-      const h = hydratables.find((c) => c.name === name);
-      return h ? (this.cssFileUrls.get(h.resolvedPath) ?? '') : '';
+    // Single regex pass resolves all three URL placeholder types and tracks
+    // which islands are lazy (have CSS_URL placeholders) as a side effect.
+    const lazyIslandPaths = new Set<string>();
+    let output = body.replace(/__MOCHI_(COMPONENT_URL|CSS_URL|SERVER_CSS_URL)__(\w+)__/g, (_, kind: string, name: string) => {
+      switch (kind) {
+        case 'COMPONENT_URL':
+          return this.componentEntryUrls.get(name) ?? '';
+        case 'CSS_URL': {
+          const h = hydratablesByName.get(name);
+          if (h) {
+            lazyIslandPaths.add(h.resolvedPath);
+            return this.cssFileUrls.get(h.resolvedPath) ?? '';
+          }
+          return '';
+        }
+        case 'SERVER_CSS_URL': {
+          const resolvedPath = this.serverIslandPaths.get(name);
+          return resolvedPath ? (this.cssFileUrls.get(resolvedPath) ?? '') : '';
+        }
+        default:
+          return '';
+      }
     });
-
-    // Resolve CSS URL placeholders for server islands
-    output = output.replace(/__MOCHI_SERVER_CSS_URL__(\w+)__/g, (_, name: string) => {
-      const resolvedPath = this.serverIslandPaths.get(name);
-      return resolvedPath ? (this.cssFileUrls.get(resolvedPath) ?? '') : '';
-    });
-
-    // Resolve asset-prefix placeholders (used by server-island wrappers so the
-    // client-side fetcher can build the /<prefix>/island/... URL).
     output = output.replaceAll('__MOCHI_ASSET_PREFIX__', this.assetPrefix);
 
-    // Collect CSS URLs: skip lazy islands (loaded on demand) and unrendered islands
-    const cssUrls: string[] = [];
+    const shouldStrip = opts?.stripMarkers !== false && hydratables.length === 0;
+    const hasIslandsOrServerIslands = hydratables.length > 0 || output.includes('<mochi-server-island');
+
+    // Single HTMLRewriter pass: collect rendered island names, detect server
+    // islands, and conditionally strip page-level hydration markers.
     const renderedIslandNames = new Set<string>();
     let hasServerIslands = false;
-    new HTMLRewriter()
-      .on('mochi-hydratable-island', {
-        element(el) {
-          const raw = el.getAttribute('component-name');
-          if (raw) {
-            renderedIslandNames.add(raw);
-          }
+    if (hasIslandsOrServerIslands || shouldStrip) {
+      let islandDepth = 0;
+      const trackIsland = {
+        element(el: HTMLRewriterTypes.Element) {
+          islandDepth++;
+          el.onEndTag(() => {
+            islandDepth--;
+          });
         },
-      })
-      .on('mochi-server-island', {
-        element() {
-          hasServerIslands = true;
-        },
-      })
-      .transform(output);
+      };
+      const rewriter = new HTMLRewriter();
+      if (hasIslandsOrServerIslands) {
+        rewriter
+          .on('mochi-hydratable-island', {
+            element(el) {
+              islandDepth++;
+              el.onEndTag(() => {
+                islandDepth--;
+              });
+              const raw = el.getAttribute('component-name');
+              if (raw) {
+                renderedIslandNames.add(raw);
+              }
+            },
+          })
+          .on('mochi-server-island', {
+            element(el) {
+              hasServerIslands = true;
+              trackIsland.element(el);
+            },
+          });
+      } else if (shouldStrip) {
+        rewriter.on('mochi-hydratable-island', trackIsland).on('mochi-server-island', trackIsland);
+      }
+      if (shouldStrip) {
+        rewriter.onDocument({
+          comments(comment) {
+            if (islandDepth === 0 && isSvelteMarker(comment.text)) {
+              comment.remove();
+            }
+          },
+        });
+      }
+      output = rewriter.transform(output);
+    }
 
     // Hoist the per-request island props registry into <script type="application/json">
     // blocks. Each unique payload was assigned a ref id by `emitIslandProps()` during
@@ -1065,6 +1103,7 @@ export class ComponentRegistry {
       }
     }
 
+    const cssUrls: string[] = [];
     for (const componentPath of cssComponents) {
       const cssUrl = this.cssFileUrls.get(componentPath);
       if (!cssUrl) {
@@ -1074,7 +1113,7 @@ export class ComponentRegistry {
         continue;
       }
       if (islandPaths.has(componentPath)) {
-        const h = hydratables.find((c) => c.resolvedPath === componentPath);
+        const h = hydratablesByPath.get(componentPath);
         if (h && !renderedIslandNames.has(h.name)) {
           continue;
         }
@@ -1094,21 +1133,14 @@ export class ComponentRegistry {
       }
     }
 
-    // TODO: Tighten this case
-    // Strip page-level Svelte hydration markers only when the page has no
-    // hydratable islands — preserving them is necessary for `hydrate()` to
-    // align with the SSR DOM, and HTMLRewriter's strip pass disrupts that
-    // alignment even for markers outside the wrapper. Pages with no islands
-    // can safely strip for cleaner HTML. The server-island endpoint also
-    // opts out explicitly via `opts.stripMarkers: false`.
-    const shouldStrip = opts?.stripMarkers !== false && hydratables.length === 0;
     // Always collapse the doubled-marker pattern (Svelte SSR bug for
     // `$state` arrays + `{@attach}`). Strictly matched open+close so it only
     // fires on the actual bug; no-op otherwise.
     const normalized = normalizeIslandHydrationMarkers(output);
+    const headStr = head ?? '';
     return {
-      body: shouldStrip ? stripHydrationMarkers(normalized) : normalized,
-      head: shouldStrip ? stripHydrationMarkers(head ?? '') : (head ?? ''),
+      body: normalized,
+      head: shouldStrip ? stripHydrationMarkers(headStr) : headStr,
       cssUrls,
       bootstrapUrl: hydratables.length > 0 ? this.islandBootstrapUrl : null,
       hasServerIslands,
