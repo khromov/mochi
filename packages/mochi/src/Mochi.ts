@@ -1,5 +1,5 @@
 import type { Server, ServerWebSocket } from 'bun';
-import { checkEnvironment } from './checkEnvironment';
+import { checkEnvironment, ensureBunfigPreload } from './checkEnvironment';
 import { existsSync, rmSync, mkdirSync } from 'fs';
 import path from 'node:path';
 import { ComponentRegistry, formatCompileErrors } from './ComponentRegistry';
@@ -203,6 +203,7 @@ export class Mochi {
 
   static async serve(options: MochiServeOptions): Promise<Server<undefined>> {
     await checkEnvironment();
+    await ensureBunfigPreload();
     initExtensions(options);
     await runHook('mochi:init', { options });
     await initMochiConfig(options);
