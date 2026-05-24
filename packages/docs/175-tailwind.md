@@ -50,8 +50,10 @@ await setupTailwind({
   minify: process.env.MODE !== 'development',
 });
 
+import Home from './Home.svelte';
+
 export const routes: Record<string, MochiRouteValue> = {
-  '/': Mochi.page('./src/Home.svelte'),
+  '/': Mochi.page(Home),
 };
 ```
 

@@ -26,10 +26,12 @@ src/routes/health/+server.ts      → /health
 ```ts
 // file (Mochi): src/routes.ts
 import { Mochi } from 'mochi-framework';
+import Home from './Home.svelte';
+import Post from './Post.svelte';
 
 export const routes = {
-  '/': Mochi.page('./src/Home.svelte'),
-  '/posts/:slug': Mochi.page('./src/Post.svelte'),
+  '/': Mochi.page(Home),
+  '/posts/:slug': Mochi.page(Post),
   '/health': Mochi.api(() => Response.json({ status: 'ok' })),
 };
 ```
@@ -49,15 +51,17 @@ export function match(param: string): param is 'apple' | 'orange' {
 ```ts
 // file (Mochi): src/routes.ts
 import { Mochi, error } from 'mochi-framework';
+import Fruit from './Fruit.svelte';
+import Files from './Files.svelte';
 
 export const routes = {
-  '/fruits/:name': Mochi.page('./src/Fruit.svelte', {
+  '/fruits/:name': Mochi.page(Fruit, {
     serverProps: ({ params }) => {
       if (params.name !== 'apple' && params.name !== 'orange') error(404, 'Unknown fruit');
       return { name: params.name };
     },
   }),
-  '/files/*': Mochi.page('./src/Files.svelte'),
+  '/files/*': Mochi.page(Files),
 };
 ```
 
@@ -98,10 +102,11 @@ export async function baseProps() {
 ```ts
 // file (Mochi): src/routes.ts
 import { Mochi } from 'mochi-framework';
+import Home from './Home.svelte';
 import { baseProps } from './lib/baseProps';
 
 export const routes = {
-  '/': Mochi.page('./src/Home.svelte', {
+  '/': Mochi.page(Home, {
     serverProps: async () => ({ ...(await baseProps()), posts: await loadPosts() }),
   }),
 };
@@ -120,7 +125,9 @@ export async function load({ params }) {
 
 ```ts
 // file (Mochi): src/routes.ts
-'/posts/:slug': Mochi.page('./src/Post.svelte', {
+import Post from './Post.svelte';
+
+'/posts/:slug': Mochi.page(Post, {
   serverProps: async (_req, params) => ({ post: await loadPost(params.slug) }),
 }),
 ```
@@ -134,7 +141,7 @@ export async function load({ params }) {
 <h1>{post.title}</h1>
 ```
 
-The main component used with Mochi.page() renders on the server, so you can also call data helpers directly inside the component instead of threading every value through props. Client-side interactivity is opt-in per child component via `mochi:hydrate`, `mochi:hydrate:visible`, `mochi:defer`, or `mochi:defer:visible`.
+The page component passed to Mochi.page() renders on the server, so you can also call data helpers directly inside the component instead of threading every value through props. Client-side interactivity is opt-in per child component via `mochi:hydrate`, `mochi:hydrate:visible`, `mochi:defer`, or `mochi:defer:visible`.
 
 You don't need to thread `params` through `serverProps`; instead, you can call `getRequestContext().params` directly anywhere on the server.
 
@@ -160,9 +167,10 @@ export const actions = {
 ```ts
 // file (Mochi): src/routes.ts
 import { Mochi, fail, success, redirect } from 'mochi-framework';
+import Login from './Login.svelte';
 
 export const routes = {
-  '/login': Mochi.page('./src/Login.svelte', {
+  '/login': Mochi.page(Login, {
     actions: {
       default: ({ formData, cookies }) => {
         const username = String(formData.get('username') ?? '');

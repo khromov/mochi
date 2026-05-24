@@ -52,9 +52,10 @@ Now let's point `/hello` at a Svelte page and give it some data to render. Open 
 // file: src/routes.ts
 import { Mochi } from 'mochi-framework';
 import type { MochiRouteValue } from 'mochi-framework';
+import Hello from './Hello.svelte';
 
 export const routes: Record<string, MochiRouteValue> = {
-  '/hello': Mochi.page('./src/Hello.svelte', {
+  '/hello': Mochi.page(Hello, {
     serverProps: () => ({
       siteName: 'Mochi',
       renderedAt: new Date().toISOString(),

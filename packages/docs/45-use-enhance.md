@@ -147,14 +147,15 @@ The `submit` callback receives `cancel` and `controller`:
 
 ### Server-side
 
-No server changes are needed beyond declaring the action. The same `Mochi.page(path, { actions })` definition serves both the no-JS HTML POST flow and the enhanced JSON flow:
+No server changes are needed beyond declaring the action. The same `Mochi.page(Component, { actions })` definition serves both the no-JS HTML POST flow and the enhanced JSON flow:
 
 ```ts
 // file: src/routes.ts
 import { Mochi, fail, success } from 'mochi-framework';
+import Login from './Login.svelte';
 
 export const routes = {
-  '/login': Mochi.page('./src/Login.svelte', {
+  '/login': Mochi.page(Login, {
     actions: {
       default: ({ formData }) => {
         const username = String(formData.get('username') ?? '');

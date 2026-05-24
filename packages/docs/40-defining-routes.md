@@ -11,10 +11,12 @@ Routes are a `Record<string, MochiRouteValue>` passed to `Mochi.serve({ routes }
 ```ts
 // file: src/routes.ts
 import { Mochi } from 'mochi-framework';
+import Home from './Home.svelte';
+import About from './About.svelte';
 
 export const routes = {
-  '/': Mochi.page('./src/Home.svelte'),
-  '/about': Mochi.page('./src/About.svelte', { serverProps: { title: 'About' } }),
+  '/': Mochi.page(Home),
+  '/about': Mochi.page(About, { serverProps: { title: 'About' } }),
   '/health': Mochi.api(() => Response.json({ status: 'ok' })),
   '/ws/chat': Mochi.ws({
     message(ws, msg) {
@@ -45,7 +47,9 @@ Patterns use Bun's router syntax: `:name` for a single segment, `*` for a wildca
 
 ```ts
 // file: src/routes.ts
-'/posts/:slug': Mochi.page('./src/Post.svelte'),
+import Post from './Post.svelte';
+
+'/posts/:slug': Mochi.page(Post),
 ```
 
 ```svelte
@@ -62,11 +66,13 @@ Do **NOT** thread `params` through props from `serverProps`; instead, call `getR
 
 ### `Mochi.page`
 
-Register an SSR Svelte page via `Mochi.page(componentPath, { serverProps?, actions? })`. `componentPath` is resolved relative to the project root.
+Register an SSR Svelte page via `Mochi.page(component, { serverProps?, actions? })`. Pass an imported Svelte component (recommended) or a string path resolved relative to the project root.
 
 ```ts
 // file: src/routes.ts
-'/about': Mochi.page('./src/About.svelte', {
+import About from './About.svelte';
+
+'/about': Mochi.page(About, {
   serverProps: { title: 'About' },
 }),
 ```
@@ -75,7 +81,9 @@ Register an SSR Svelte page via `Mochi.page(componentPath, { serverProps?, actio
 
 ```ts
 // file: src/routes.ts
-'/posts/:slug': Mochi.page('./src/Post.svelte', {
+import Post from './Post.svelte';
+
+'/posts/:slug': Mochi.page(Post, {
   serverProps: async (_req, params) => ({
     post: await loadPost(params.slug),
   }),

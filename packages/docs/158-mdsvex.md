@@ -49,9 +49,10 @@ as a `Mochi.page()` route target:
 ```ts
 // src/routes.ts
 import { Mochi } from 'mochi-framework';
+import About from './about.md';
 
 export const routes = {
-  '/about': Mochi.page('./src/about.md'),
+  '/about': Mochi.page(About),
 };
 ```
 
