@@ -1,12 +1,10 @@
 import { Mochi, logger } from 'mochi-framework';
-import HelloWorld from './HelloWorld.svelte';
+import { routes } from './routes';
 
 await Mochi.serve({
   port: 3333,
   development: process.env.MODE === 'development',
-  routes: {
-    '/': Mochi.page(HelloWorld),
-  },
+  routes,
 });
 
 logger.info('Server running at http://localhost:3333');
