@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.2](https://github.com/khromov/mochi/compare/mochi-framework-v0.3.1...mochi-framework-v0.3.2) (2026-05-24)
+
+
+### Bug Fixes
+
+* register trailing-slash alternates for internal framework routes ([#33](https://github.com/khromov/mochi/issues/33)) ([453eac5](https://github.com/khromov/mochi/commit/453eac5358e39abba036dcede1e19e99b889f503))
+
 ## [0.3.1](https://github.com/khromov/mochi/compare/mochi-framework-v0.3.0...mochi-framework-v0.3.1) (2026-05-23)
 
 
