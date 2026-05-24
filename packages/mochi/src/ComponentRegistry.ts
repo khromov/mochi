@@ -1048,10 +1048,7 @@ export class ComponentRegistry {
         rewriter
           .on('mochi-hydratable-island', {
             element(el) {
-              islandDepth++;
-              el.onEndTag(() => {
-                islandDepth--;
-              });
+              trackIsland.element(el);
               const raw = el.getAttribute('component-name');
               if (raw) {
                 renderedIslandNames.add(raw);
@@ -1064,8 +1061,6 @@ export class ComponentRegistry {
               trackIsland.element(el);
             },
           });
-      } else if (shouldStrip) {
-        rewriter.on('mochi-hydratable-island', trackIsland).on('mochi-server-island', trackIsland);
       }
       if (shouldStrip) {
         rewriter.onDocument({
