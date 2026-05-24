@@ -39,4 +39,9 @@ describe('trailingSlash: unset (no policy)', () => {
     const res = await fetch(`${base}/about/`, { redirect: 'manual' });
     expect(res.status).toBe(404);
   });
+
+  test('internal /_mochi/client/stats/ (trailing slash) serves 200', async () => {
+    const res = await fetch(`${base}/_mochi/client/stats/`, { redirect: 'manual' });
+    expect(res.status).toBe(200);
+  });
 });

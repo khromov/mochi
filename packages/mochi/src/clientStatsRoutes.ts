@@ -8,13 +8,15 @@ export const CLIENT_STATS_COMPONENT = new URL('./templates/ClientStats/ClientSta
 // create a circular import. Same dodge as `pageCacheAdminRoutes.ts`.
 export function buildClientStatsRoutes(registry: ComponentRegistry): Record<string, MochiPageConfig> {
   const path = `${registry.assetPrefix}/client/stats`;
+  const config: MochiPageConfig = {
+    __mochiPage: true,
+    componentPath: CLIENT_STATS_COMPONENT,
+    serverProps: () => ({
+      stats: registry.getClientStats() ?? { outputs: [] },
+    }),
+  };
   return {
-    [path]: {
-      __mochiPage: true,
-      componentPath: CLIENT_STATS_COMPONENT,
-      serverProps: () => ({
-        stats: registry.getClientStats() ?? { outputs: [] },
-      }),
-    },
+    [path]: config,
+    [`${path}/`]: config,
   };
 }
