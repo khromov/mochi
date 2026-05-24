@@ -14,6 +14,8 @@ if (process.env.MODE === 'development') {
   });
 }
 
+import TodoPage from './TodoPage.svelte';
+
 export const routes: Record<string, MochiRouteValue> = {
-  '/todo': Mochi.page('./src/todo/TodoPage.svelte'),
+  '/todo': Mochi.page(TodoPage),
 };

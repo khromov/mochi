@@ -60,6 +60,10 @@
       "bun": "./src/tailwind.ts",
       "default": "./src/tailwind.ts"
     },
+    "./plugin": {
+      "bun": "./src/svelteImportPlugin.ts",
+      "default": "./src/svelteImportPlugin.ts"
+    },
     "./ambient": {
       "types": "./src/mochi-ambient.d.ts"
     },

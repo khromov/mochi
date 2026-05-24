@@ -1,8 +1,9 @@
 import { Mochi } from 'mochi-framework';
 import type { MochiRouteValue } from 'mochi-framework';
+import Chat from './Chat.svelte';
 
 export const routes: Record<string, MochiRouteValue> = {
-  '/demos/chat': Mochi.page('./src/demos/chat/Chat.svelte'),
+  '/demos/chat': Mochi.page(Chat),
   '/ws/chat': (() => {
     const history: string[] = [];
     const TOPIC = 'chat';

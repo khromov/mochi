@@ -1,5 +1,6 @@
 import { Mochi, fail, success } from 'mochi-framework';
 import type { MochiRouteValue } from 'mochi-framework';
+import ReloadFormData from './ReloadFormData.svelte';
 
 type GuestbookEntry = { id: string; name: string; at: number };
 const guestbook: GuestbookEntry[] = [];
@@ -11,7 +12,7 @@ export const routes: Record<string, MochiRouteValue> = {
     }
     return Response.json({ entries: [...guestbook].reverse() });
   }),
-  '/demos/reload-form-data': Mochi.page('./src/demos/reload-form-data/ReloadFormData.svelte', {
+  '/demos/reload-form-data': Mochi.page(ReloadFormData, {
     serverProps: () => ({ guestbook: [...guestbook].reverse() }),
     actions: {
       guestbookSign: ({ formData }) => {

@@ -1,5 +1,6 @@
 import { Mochi } from 'mochi-framework';
 import type { MochiRouteValue } from 'mochi-framework';
+import AdminDashboard from './AdminDashboard.svelte';
 
 const TOP_PRODUCTS = [
   { name: 'Mochi Pro Subscription', sku: 'MOCH-PRO', sales: 1284, revenue: 38_400 },
@@ -23,7 +24,7 @@ function nextStockPrice(): { price: number; change: number; timestamp: string } 
 }
 
 export const routes: Record<string, MochiRouteValue> = {
-  '/admin': Mochi.page('./src/admin/AdminDashboard.svelte'),
+  '/admin': Mochi.page(AdminDashboard),
 
   // SSE: streams a synthetic stock price every ~1.5s.
   '/sse/admin/stock': Mochi.sse((stream) => {

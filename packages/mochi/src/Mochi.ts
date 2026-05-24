@@ -97,9 +97,27 @@ async function appendDebugTail(response: Response, ctx: MochiRequestContext, dev
   });
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type SvelteComponent = import('svelte').Component<any>;
+
+function resolveComponentPath(component: string | SvelteComponent, label: string): string {
+  if (typeof component === 'string') {
+    return component;
+  }
+  const source = (component as unknown as { __source?: string }).__source;
+  if (!source) {
+    throw new Error(`[mochi] ${label} component has no __source. ` + 'Add preload = ["mochi-framework/plugin"] to bunfig.toml, ' + 'or use a string path instead.');
+  }
+  let rel = path.relative(process.cwd(), source);
+  if (!rel.startsWith('.')) {
+    rel = './' + rel;
+  }
+  return rel;
+}
+
 export class Mochi {
   static page(
-    componentPath: string,
+    component: string | SvelteComponent,
     config?: {
       serverProps?: Record<string, unknown> | MochiServerPropsResolver;
       actions?: MochiFormActions;
@@ -107,7 +125,7 @@ export class Mochi {
   ): MochiPageConfig {
     return {
       __mochiPage: true,
-      componentPath,
+      componentPath: resolveComponentPath(component, 'Mochi.page()'),
       serverProps: config?.serverProps,
       actions: config?.actions,
     };
@@ -282,7 +300,7 @@ export class Mochi {
     }
     shellTemplate = applyFilter('html:shell', shellTemplate, { options, development });
 
-    const errorPagePath = options.errorPage ?? DEFAULT_ERROR_PAGE_PATH;
+    const errorPagePath = options.errorPage != null ? resolveComponentPath(options.errorPage, 'errorPage') : DEFAULT_ERROR_PAGE_PATH;
 
     // Collect every page entrypoint (error page + every Mochi.page route) so
     // we can compile them in one Bun.build below. Splitting deduplicates

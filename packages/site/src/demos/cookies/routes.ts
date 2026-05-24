@@ -1,8 +1,9 @@
 import { Mochi, error, getRequestContext } from 'mochi-framework';
 import type { MochiRouteValue } from 'mochi-framework';
+import Cookies from './Cookies.svelte';
 
 export const routes: Record<string, MochiRouteValue> = {
-  '/demos/cookies': Mochi.page('./src/demos/cookies/Cookies.svelte'),
+  '/demos/cookies': Mochi.page(Cookies),
   '/api/cookie': Mochi.api(async ({ method, request }) => {
     if (method !== 'POST') {
       error(405, 'Method Not Allowed');

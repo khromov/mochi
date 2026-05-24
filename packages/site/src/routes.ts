@@ -2,6 +2,9 @@ import { compile as mdsvexCompile } from 'mdsvex';
 import rehypeSlug from 'rehype-slug';
 import { Mochi, error, getRequestContext } from 'mochi-framework';
 import type { MochiBuildOptions, MarkdownConfig, MochiRouteValue } from 'mochi-framework';
+import Site from './Site.svelte';
+import Docs from './Docs.svelte';
+import OgPage from './og/OgPage.svelte';
 import { highlightCode } from './lib/highlightCode';
 import { buildDocsNav, buildLlmsTxt, buildLlmsFullTxt, getDoc, getDocLlmsTxt, getDocNeighbors, loadDocs } from './lib/docs';
 import { profilerEnabled, startProfiler, stopProfiler } from './lib/profiler';
@@ -58,7 +61,7 @@ export const routes: Record<string, MochiRouteValue> = {
         }),
       }
     : {}),
-  '/': Mochi.page('./src/Site.svelte', {
+  '/': Mochi.page(Site, {
     serverProps: async () => {
       const docs = await loadDocs();
       return {
@@ -67,7 +70,7 @@ export const routes: Record<string, MochiRouteValue> = {
       };
     },
   }),
-  '/docs/:slug': Mochi.page('./src/Docs.svelte', {
+  '/docs/:slug': Mochi.page(Docs, {
     serverProps: async () => {
       const { params } = getRequestContext();
       const slug = params.slug ?? '';
@@ -87,7 +90,7 @@ export const routes: Record<string, MochiRouteValue> = {
       };
     },
   }),
-  '/og': Mochi.page('./src/og/OgPage.svelte'),
+  '/og': Mochi.page(OgPage),
   '/llms.txt': Mochi.api(async () => {
     return new Response(await buildLlmsTxt(), {
       headers: { 'Content-Type': 'text/plain; charset=utf-8' },

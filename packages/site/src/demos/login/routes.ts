@@ -1,11 +1,12 @@
 import { Mochi, fail, redirect, success, getRequestContext } from 'mochi-framework';
 import type { MochiRouteValue } from 'mochi-framework';
+import Login from './Login.svelte';
 import { createSessionToken, verifySessionToken } from './session';
 
 const SESSION_COOKIE = 'mochi_login_session';
 
 export const routes: Record<string, MochiRouteValue> = {
-  '/demos/login': Mochi.page('./src/demos/login/Login.svelte', {
+  '/demos/login': Mochi.page(Login, {
     serverProps: () => {
       const { cookies } = getRequestContext();
       const session = verifySessionToken(cookies.get(SESSION_COOKIE));
