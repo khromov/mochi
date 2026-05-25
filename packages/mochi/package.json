@@ -85,7 +85,7 @@
   },
   "dependencies": {
     "@types/negotiator": "^0.6.4",
-    "chokidar": "^5.0.0",
+    "chokidar": "^4.0.3",
     "cookie": "^1.1.1",
     "debounce": "^3.0.0",
     "deepmerge": "^4.3.1",
