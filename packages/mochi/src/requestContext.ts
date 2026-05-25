@@ -88,6 +88,13 @@ export interface DebugBarData {
   liveReloadEnabled?: boolean;
   /** Time in milliseconds the SSR render took (compile check + Svelte render + HTML processing). */
   ssrDurationMs?: number;
+  /** Framework JS bundles injected for this page (bootstrap, island entries, shared chunks). */
+  bundles?: Array<{
+    url: string;
+    label: string;
+    sizeBytes: number;
+    kind: 'bootstrap' | 'island' | 'chunk';
+  }>;
 }
 
 /**

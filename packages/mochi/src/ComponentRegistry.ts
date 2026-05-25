@@ -1063,6 +1063,41 @@ export class ComponentRegistry {
       for (const k of Object.keys(ctx.debugBarData.islandProps)) {
         delete ctx.debugBarData.islandProps[k];
       }
+
+      if (this.debugBarEnabled && this.clientStats) {
+        const urlToComponent = new Map<string, string>();
+        for (const [name, url] of this.componentEntryUrls) {
+          urlToComponent.set(url, name);
+        }
+        const pageHasIslands = hydratables.length > 0;
+        const bundles: NonNullable<typeof debugBarData.bundles> = [];
+        for (const output of this.clientStats.outputs) {
+          const url = `${this.assetPrefix}/client/${output.name}`;
+          if (url === this.debugBarUrl) {
+            continue;
+          }
+          if (url === this.islandBootstrapUrl) {
+            if (!pageHasIslands) {
+              continue;
+            }
+            bundles.push({ url, label: 'Island runtime', sizeBytes: output.size, kind: 'bootstrap' });
+          } else {
+            const compName = urlToComponent.get(url);
+            if (compName) {
+              if (!renderedIslandNames.has(compName)) {
+                continue;
+              }
+              bundles.push({ url, label: compName, sizeBytes: output.size, kind: 'island' });
+            } else {
+              if (!pageHasIslands) {
+                continue;
+              }
+              bundles.push({ url, label: output.name, sizeBytes: output.size, kind: 'chunk' });
+            }
+          }
+        }
+        debugBarData.bundles = bundles;
+      }
     }
 
     for (const componentPath of cssComponents) {

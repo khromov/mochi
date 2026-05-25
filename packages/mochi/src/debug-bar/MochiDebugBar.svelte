@@ -1,17 +1,17 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import ArrowUpRight from '../icons/arrow-up-right.svelte';
   import StatusDot from './StatusDot.svelte';
   import RequestPanel from './RequestPanel.svelte';
   import IslandsPanel from './IslandsPanel.svelte';
   import WarningsPanel from './WarningsPanel.svelte';
+  import BundlesPanel from './BundlesPanel.svelte';
   import { cleanupHighlight } from './highlight';
   import { debugBarState } from './state.svelte';
-  import { getPropsWarnLevel } from './utils';
+  import { getPropsWarnLevel, formatSize } from './utils';
 
   const STORAGE_KEY = 'mochi-debug-bar-collapsed';
 
-  type Panel = 'warnings' | 'islands' | 'request' | null;
+  type Panel = 'warnings' | 'islands' | 'request' | 'bundles' | null;
   let activePanel: Panel = $state(null);
 
   let hasDebugInfo = $state(false);
@@ -43,8 +43,7 @@
 
   let warnLevel = $derived(getPropsWarnLevel(debugBarState.totalPropsSize));
 
-  // Mochi.ts seeds window.__mochi_asset_prefix whenever the debug bar is enabled.
-  const statsHref = `${window.__mochi_asset_prefix}/client/stats`;
+  let bundleSizeLabel = $derived(debugBarState.totalBundleSize > 0 ? formatSize(debugBarState.totalBundleSize) : 'JS');
 
   onMount(() => {
     hasDebugInfo = !!window.__mochi_debug;
@@ -68,6 +67,7 @@
 <div class="mochi-debug-bar-root" bind:this={rootEl}>
   <WarningsPanel open={activePanel === 'warnings'} onclose={() => (activePanel = null)} />
   <IslandsPanel open={activePanel === 'islands'} onclose={() => (activePanel = null)} />
+  <BundlesPanel open={activePanel === 'bundles'} onclose={() => (activePanel = null)} />
   <RequestPanel open={activePanel === 'request'} onclose={() => (activePanel = null)} />
 
   <div class="bar" class:is-collapsed={collapsed}>
@@ -99,9 +99,9 @@
           Warnings <span class="badge">{debugBarState.warningCount}</span>
         </button>
       {/if}
-      <a href={statsHref} target="_blank" rel="noopener" class="btn stats-btn" tabindex={collapsed ? -1 : 0}>
-        Bundles <ArrowUpRight size={12} />
-      </a>
+      <button class="btn bundles-btn" onclick={() => toggle('bundles')} tabindex={collapsed ? -1 : 0}>
+        JS <span class="bundle-badge">{bundleSizeLabel}</span>
+      </button>
     </div>
   </div>
 </div>
@@ -301,15 +301,30 @@
     color: #d4e0e8;
     border-color: #6a7a86;
   }
-  .stats-btn {
-    background: transparent;
-    color: #a8ada0;
-    border-color: #4a5040;
+  .bundles-btn {
+    background: #2e2a38;
+    color: #c4b8d4;
+    border-color: #4a4060;
   }
-  .stats-btn:hover {
-    color: #ffffff;
-    border-color: #8ab79a;
-    background: #2a2e25;
+  .bundles-btn:hover {
+    background: #383248;
+    color: #e0d8ee;
+    border-color: #b8a3c4;
+  }
+  .bundle-badge {
+    border-radius: 999px;
+    min-width: 1.4em;
+    height: 1.4em;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.82em;
+    font-weight: 600;
+    padding: 0 0.45em;
+    background: rgba(184, 163, 196, 0.28);
+    color: #e0d8ee;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    letter-spacing: 0;
   }
   .badge {
     border-radius: 999px;
