@@ -89,7 +89,12 @@
 <DebugPanel title="JS Bundles" color="#b8a3c4" {open} {onclose}>
   <div class="bundle-body">
     {#if bundles.length === 0}
-      <div class="bundle-empty">No framework bundles on this page.</div>
+      <div class="bundle-empty">
+        <div class="empty-blob">
+          <span class="empty-emoji">{'\u{1F973}'}</span>
+        </div>
+        <div class="empty-text">No framework bundles on this page!</div>
+      </div>
     {:else}
       <div class="bundle-summary">
         <strong>{formatSize(totalSize)}</strong> total &middot; {bundles.length} bundle{bundles.length !== 1 ? 's' : ''}
@@ -322,11 +327,65 @@
     }
   }
   .bundle-empty {
-    color: #72786c;
-    font-size: 11px;
-    padding: 16px 10px;
+    padding: 20px 10px 16px;
     text-align: center;
-    font-style: italic;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+  }
+  .empty-blob {
+    position: relative;
+    width: 76px;
+    height: 76px;
+    background: rgba(138, 183, 154, 0.22);
+    border-radius: 42% 58% 64% 36% / 47% 34% 66% 53%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: blob-morph 6s ease-in-out infinite, blob-rotate 12s linear infinite;
+  }
+  .empty-emoji {
+    font-size: 54px;
+    line-height: 1;
+    margin-top: -6px;
+    margin-left: 2px;
+    filter: saturate(0.85);
+    animation: counter-rotate 12s linear infinite;
+  }
+  @keyframes counter-rotate {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(-360deg);
+    }
+  }
+  .empty-text {
+    color: #a8ada0;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+  }
+  @keyframes blob-morph {
+    0%,
+    100% {
+      border-radius: 42% 58% 64% 36% / 47% 34% 66% 53%;
+    }
+    33% {
+      border-radius: 58% 42% 36% 64% / 34% 66% 34% 66%;
+    }
+    66% {
+      border-radius: 36% 64% 52% 48% / 66% 42% 58% 42%;
+    }
+  }
+  @keyframes blob-rotate {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
   }
   .stats-link {
     display: flex;

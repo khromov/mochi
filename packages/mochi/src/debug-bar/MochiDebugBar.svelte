@@ -357,19 +357,19 @@
     0%,
     100% {
       opacity: 0;
-      transform: scale(0.5);
+      transform: scale(0.5) rotate(0deg);
     }
     20% {
       opacity: 1;
-      transform: scale(1.2);
+      transform: scale(1.2) rotate(72deg);
     }
     50% {
       opacity: 0.6;
-      transform: scale(0.8);
+      transform: scale(0.8) rotate(144deg);
     }
     70% {
       opacity: 0;
-      transform: scale(0.4);
+      transform: scale(0.4) rotate(216deg);
     }
   }
   .badge {
