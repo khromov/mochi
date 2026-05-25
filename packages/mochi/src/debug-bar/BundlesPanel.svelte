@@ -34,6 +34,17 @@
     expanded[url] = !expanded[url];
   }
 
+  let selectedInput: string | null = $state(null);
+
+  function selectInput(path: string) {
+    if (selectedInput === path) {
+      selectedInput = null;
+      return;
+    }
+    selectedInput = path;
+    navigator.clipboard?.writeText(path);
+  }
+
   const statsHref = `${window.__mochi_asset_prefix}/client/stats`;
 
   onMount(() => {
@@ -52,10 +63,10 @@
     </div>
     <div class="bundle-inputs">
       {#each bundle.inputs as input (input.path)}
-        <div class="input-row">
+        <button class="input-row" class:selected={selectedInput === input.path} type="button" onclick={() => selectInput(input.path)}>
           <span class="input-path">{input.path}</span>
           <span class="input-size">{formatSize(input.size)}</span>
-        </div>
+        </button>
       {/each}
     </div>
   </div>
@@ -230,10 +241,27 @@
     padding: 2px 4px;
     font-size: 10px;
     line-height: 1.5;
+    width: 100%;
+    background: none;
+    border: none;
+    cursor: pointer;
+    text-align: left;
+    font: inherit;
+    color: inherit;
+    border-radius: 3px;
+    transition: background 120ms ease;
   }
   .input-row:hover {
     background: rgba(184, 163, 196, 0.06);
-    border-radius: 3px;
+  }
+  .input-row.selected {
+    background: rgba(184, 163, 196, 0.14);
+  }
+  .input-row.selected .input-path {
+    white-space: normal;
+    word-break: break-all;
+    direction: ltr;
+    color: #d4cce0;
   }
   .input-path {
     color: #a8ada0;
@@ -243,6 +271,7 @@
     white-space: nowrap;
     direction: rtl;
     text-align: left;
+    transition: color 120ms ease;
   }
   .input-size {
     color: #8c9286;
