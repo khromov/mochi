@@ -11,8 +11,14 @@
 
   let bundles: BundleInfo[] = $state([]);
   let expanded: Record<string, boolean> = $state({});
+  let filterSvelte = $state(false);
+
+  function svelteSizeOf(b: BundleInfo): number {
+    return (b.effectiveInputs ?? b.inputs).filter((i) => i.path.startsWith('svelte/')).reduce((s, i) => s + i.size, 0);
+  }
 
   let totalSize = $derived(bundles.reduce((sum, b) => sum + b.sizeBytes, 0));
+  let displayTotal = $derived(filterSvelte ? bundles.reduce((sum, b) => sum + b.sizeBytes - svelteSizeOf(b), 0) : totalSize);
   let bootstrapBundles = $derived(bundles.filter((b) => b.kind === 'bootstrap'));
   let islandBundles = $derived(bundles.filter((b) => b.kind === 'island'));
   let chunkBundles = $derived(bundles.filter((b) => b.kind === 'chunk'));
@@ -55,8 +61,9 @@
 </script>
 
 {#snippet bundleRow(bundle: BundleInfo)}
-  {@const displaySize = bundle.effectiveSize ?? bundle.sizeBytes}
-  {@const displayInputs = bundle.effectiveInputs ?? bundle.inputs}
+  {@const allInputs = bundle.effectiveInputs ?? bundle.inputs}
+  {@const displayInputs = filterSvelte ? allInputs.filter((i) => !i.path.startsWith('svelte/')) : allInputs}
+  {@const displaySize = (bundle.effectiveSize ?? bundle.sizeBytes) - (filterSvelte ? svelteSizeOf(bundle) : 0)}
   <div class="bundle-entry" class:open={expanded[bundle.url]}>
     <div class="bundle-row">
       <button class="bundle-header" type="button" onclick={() => toggleExpand(bundle.url)}>
@@ -75,7 +82,7 @@
           {/if}
         </button>
       {/each}
-      {#if displayInputs.length === 0 && bundle.kind === 'bootstrap'}
+      {#if allInputs.length === 0 && bundle.kind === 'bootstrap'}
         <div class="bundle-note">Islands may pull in additional bundles not calculated here.</div>
       {/if}
     </div>
@@ -94,7 +101,11 @@
       </div>
     {:else}
       <div class="bundle-summary">
-        <strong>{formatSize(totalSize)}</strong> total &middot; {bundles.length} bundle{bundles.length !== 1 ? 's' : ''}
+        <strong>{formatSize(displayTotal)}</strong> total &middot; {bundles.length} bundle{bundles.length !== 1 ? 's' : ''}
+        <label class="filter-toggle">
+          <input type="checkbox" bind:checked={filterSvelte} />
+          Filter Svelte
+        </label>
       </div>
 
       {#if bootstrapBundles.length > 0}
@@ -138,6 +149,24 @@
   .bundle-summary :global(strong) {
     color: #e8e6dd;
     font-weight: 700;
+  }
+  .filter-toggle {
+    float: right;
+    font-size: 10px;
+    color: #8c9286;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    user-select: none;
+  }
+  .filter-toggle:hover {
+    color: #b8a3c4;
+  }
+  .filter-toggle input {
+    accent-color: #b8a3c4;
+    cursor: pointer;
+    margin: 0;
   }
   .bundle-group-label {
     color: #8c9286;
