@@ -90,7 +90,8 @@
   <div class="bundle-body">
     {#if bundles.length === 0}
       <div class="bundle-empty">
-        <div class="empty-blob">
+        <div class="empty-celebration">
+          <div class="empty-blob"></div>
           <span class="empty-emoji">{'\u{1F973}'}</span>
         </div>
         <div class="empty-text">No framework bundles on this page!</div>
@@ -334,32 +335,27 @@
     align-items: center;
     gap: 10px;
   }
-  .empty-blob {
+  .empty-celebration {
     position: relative;
     width: 76px;
     height: 76px;
+  }
+  .empty-blob {
+    position: absolute;
+    inset: 0;
     background: rgba(138, 183, 154, 0.22);
     border-radius: 42% 58% 64% 36% / 47% 34% 66% 53%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
     animation: blob-morph 6s ease-in-out infinite, blob-rotate 12s linear infinite;
   }
   .empty-emoji {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     font-size: 54px;
     line-height: 1;
-    margin-top: -6px;
-    margin-left: 2px;
     filter: saturate(0.85);
-    animation: counter-rotate 12s linear infinite;
-  }
-  @keyframes counter-rotate {
-    from {
-      transform: rotate(0deg);
-    }
-    to {
-      transform: rotate(-360deg);
-    }
   }
   .empty-text {
     color: #a8ada0;
