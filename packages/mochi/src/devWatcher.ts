@@ -12,7 +12,20 @@ import { evictPreprocessCacheEntry } from './preprocessCache';
 import { buildPublicUrl } from './proxy';
 import { scanPublicDir } from './publicDir';
 import { loadSvelteConfig } from './svelteConfig';
-import type { BunRouteValue, MochiServeOptions, MochiWsData } from './types';
+import {
+  isMochiApi,
+  isMochiPage,
+  isMochiSse,
+  isMochiWs,
+  type BunRouteValue,
+  type MochiApiHandler,
+  type MochiFormActions,
+  type MochiServeOptions,
+  type MochiServerPropsResolver,
+  type MochiSseHandler,
+  type MochiWsData,
+  type MochiWsHandlers,
+} from './types';
 
 const FILE_CHANGE_EVENTS = new Set<string>(['add', 'change', 'unlink', 'addDir', 'unlinkDir']);
 
@@ -28,6 +41,11 @@ export interface DevWatcherDeps {
   publicDir: string;
   watchPaths: string[];
   development: boolean;
+  routeModule?: string;
+  apiHandlerMap?: Map<string, MochiApiHandler>;
+  sseHandlerMap?: Map<string, MochiSseHandler>;
+  wsHandlersMap?: Map<string, MochiWsHandlers<unknown>>;
+  pageConfigMap?: Map<string, { serverProps?: Record<string, unknown> | MochiServerPropsResolver; actions?: MochiFormActions }>;
 }
 
 /**
@@ -38,7 +56,24 @@ export interface DevWatcherDeps {
  * without an SSR recompile; public-dir edits rescan and reload the route map.
  */
 export function startDevWatcher(deps: DevWatcherDeps): void {
-  const { registry, server, options, liveReloadClients, composedFetch, baseBunRoutes, bunRoutes, outDir, publicDir, watchPaths, development } = deps;
+  const {
+    registry,
+    server,
+    options,
+    liveReloadClients,
+    composedFetch,
+    baseBunRoutes,
+    bunRoutes,
+    outDir,
+    publicDir,
+    watchPaths,
+    development,
+    routeModule,
+    apiHandlerMap,
+    sseHandlerMap,
+    wsHandlersMap,
+    pageConfigMap,
+  } = deps;
 
   const liveReloadHandler = (req: Request, srv: Server<undefined>): Response => {
     const url = buildPublicUrl(req, options.proxy);
@@ -147,6 +182,99 @@ export function startDevWatcher(deps: DevWatcherDeps): void {
     });
   }, 100);
 
+  let routeModuleDeps: Set<string> = new Set();
+  const routeModuleOutDir = path.resolve(`${outDir}/route-module`);
+
+  async function buildRouteModule(): Promise<Record<string, unknown> | null> {
+    if (!routeModule) {
+      return null;
+    }
+    const result = await Bun.build({
+      entrypoints: [path.resolve(routeModule)],
+      packages: 'external',
+      target: 'bun',
+      outdir: routeModuleOutDir,
+      naming: { entry: 'routes.js' },
+      metafile: true,
+      throw: false,
+    });
+    if (!result.success) {
+      const msgs = result.logs.map((l) => l.message || String(l)).join('\n');
+      logger.warn(`Route module build failed:\n${msgs}`);
+      return null;
+    }
+    const newDeps = new Set<string>();
+    if (result.metafile) {
+      for (const output of Object.values(result.metafile.outputs)) {
+        for (const inputPath of Object.keys(output.inputs)) {
+          newDeps.add(path.resolve(inputPath));
+        }
+      }
+    }
+    routeModuleDeps = newDeps;
+    const outFile = path.resolve(routeModuleOutDir, 'routes.js');
+    const mod = await import(outFile + `?t=${Date.now()}`);
+    return mod.routes ?? null;
+  }
+
+  function updateHandlerMaps(freshRoutes: Record<string, unknown>): number {
+    let updated = 0;
+    for (const [pattern, handler] of Object.entries(freshRoutes)) {
+      if (isMochiApi(handler) && apiHandlerMap?.has(pattern)) {
+        apiHandlerMap.set(pattern, handler.handler);
+        updated++;
+      } else if (isMochiWs(handler) && wsHandlersMap?.has(pattern)) {
+        wsHandlersMap.set(pattern, handler.handlers as MochiWsHandlers<unknown>);
+        updated++;
+      } else if (isMochiSse(handler) && sseHandlerMap?.has(pattern)) {
+        sseHandlerMap.set(pattern, handler.handler);
+        updated++;
+      } else if (isMochiPage(handler) && pageConfigMap?.has(pattern)) {
+        pageConfigMap.set(pattern, { serverProps: handler.serverProps, actions: handler.actions });
+        updated++;
+      }
+    }
+    return updated;
+  }
+
+  const triggerRouteReload = routeModule
+    ? debounce((filename: string) => {
+        reloadChain = reloadChain.then(async () => {
+          mochiEvents.emit('recompile:start', { trigger: 'route-module', path: filename, pageCount: 0 });
+          const start = performance.now();
+          let updated = 0;
+          try {
+            const freshRoutes = await buildRouteModule();
+            if (freshRoutes) {
+              updated = updateHandlerMaps(freshRoutes);
+              if (updated > 0) {
+                logger.info(`Route module rebuilt — ${updated} handler(s) updated`);
+              }
+            }
+          } catch (e) {
+            logger.warn(`Route module rebuild failed: ${e instanceof Error ? e.message : e}`);
+          }
+          mochiEvents.emit('recompile:complete', {
+            trigger: 'route-module',
+            path: filename,
+            pageCount: 0,
+            pages: [],
+            clientBundleCount: 0,
+            durationMs: performance.now() - start,
+          });
+          if (updated > 0) {
+            notifyClients();
+          }
+        });
+      }, 100)
+    : undefined;
+
+  if (routeModule) {
+    buildRouteModule().catch((e) => {
+      logger.warn(`Initial route module build failed: ${e instanceof Error ? e.message : e}`);
+    });
+  }
+
   const finalWatchPaths = watchPaths.filter((p) => existsSync(p));
   const outDirAbs = path.resolve(outDir);
   const isInsideOutDir = (filePath: string): boolean => {
@@ -203,6 +331,9 @@ export function startDevWatcher(deps: DevWatcherDeps): void {
         triggerCssReload(filePath);
       } else {
         triggerReload(filePath);
+        if (triggerRouteReload && routeModuleDeps.has(path.resolve(filePath))) {
+          triggerRouteReload(filePath);
+        }
       }
     })
     .on('error', (err: unknown) => {

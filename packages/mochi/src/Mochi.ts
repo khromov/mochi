@@ -347,6 +347,10 @@ export class Mochi {
     // Pre-compile Mochi.page() handlers so SSR is ready at startup
     const mochiPageMap = new Map<string, MochiPageConfig>();
     const wsHandlersMap = new Map<string, MochiWsHandlers<unknown>>();
+    const routeHmr = development && !!options.routeModule;
+    const apiHandlerMap = routeHmr ? new Map<string, MochiApiHandler>() : undefined;
+    const sseHandlerMap = routeHmr ? new Map<string, MochiSseHandler>() : undefined;
+    const pageConfigMap = routeHmr ? new Map<string, { serverProps?: Record<string, unknown> | MochiServerPropsResolver; actions?: MochiFormActions }>() : undefined;
     const bunRoutes: Record<string, BunRouteValue> = {};
     const routeCounts = { page: 0, api: 0, ws: 0, sse: 0 };
     const trailingSlashPolicy = options.trailingSlash;
@@ -376,14 +380,19 @@ export class Mochi {
           routeCounts.page += 1;
           mochiPageMap.set(pattern, handler);
           const { componentPath, serverProps, actions } = handler;
+          if (pageConfigMap) {
+            pageConfigMap.set(pattern, { serverProps, actions });
+          }
 
           const renderComponent = async (req: Request, ctx: MochiRequestContext, resolveOpts: MochiResolveOptions | undefined, statusOverride?: number): Promise<Response> => {
             const compileErrors = registry.getErrors();
             if (compileErrors.length > 0) {
               throw new MochiHttpError(500, formatCompileErrors(compileErrors));
             }
-            const baseProps = isServerPropsResolver(serverProps) ? ((await serverProps(req, ctx.params)) ?? {}) : (serverProps ?? {});
-            if (actions && 'form' in baseProps) {
+            const liveServerProps = pageConfigMap ? pageConfigMap.get(pattern)?.serverProps : serverProps;
+            const baseProps = isServerPropsResolver(liveServerProps) ? ((await liveServerProps(req, ctx.params)) ?? {}) : (liveServerProps ?? {});
+            const liveActions = pageConfigMap ? pageConfigMap.get(pattern)?.actions : actions;
+            if (liveActions && 'form' in baseProps) {
               throw new Error(
                 `[mochi] Route "${pattern}" has form actions and also returns a prop named "form". ` + `"form" is reserved for the form action result — rename your prop.`,
               );
@@ -457,7 +466,7 @@ export class Mochi {
               }
             });
 
-          if (actions) {
+          if (actions || pageConfigMap) {
             const postHandler = (req: Request, server: Server<undefined>): Promise<Response> =>
               wrapRequest(req, server, async (ctx, event, resolveOpts) => {
                 const path = ctx.url.pathname + ctx.url.search;
@@ -476,6 +485,11 @@ export class Mochi {
                   mochiEvents.emit('action:complete', payload);
                 };
 
+                const livePostActions = pageConfigMap ? pageConfigMap.get(pattern)?.actions : actions;
+                if (!livePostActions) {
+                  return new Response('Method Not Allowed', { status: 405 });
+                }
+
                 let actionName = 'default';
                 for (const key of ctx.url.searchParams.keys()) {
                   if (key.startsWith('/')) {
@@ -483,7 +497,7 @@ export class Mochi {
                     break;
                   }
                 }
-                const actionHandler = actions[actionName];
+                const actionHandler = livePostActions[actionName];
                 if (!actionHandler) {
                   const unknownErr = new Error(`Unknown form action: ${actionName}`);
                   const response = enhanced
@@ -617,7 +631,10 @@ export class Mochi {
           }
         } else if (isMochiApi(handler)) {
           routeCounts.api += 1;
-          const { handler: apiHandler } = handler;
+          if (apiHandlerMap) {
+            apiHandlerMap.set(pattern, handler.handler);
+          }
+          const capturedApiHandler = handler.handler;
 
           bunRoutes[pattern] = async (req: Request, server: Server<undefined>): Promise<Response> => {
             const setup = buildRequestContext(req, server, { kind: 'api', pattern });
@@ -636,6 +653,7 @@ export class Mochi {
                   cookies: ctx.cookies,
                 };
                 try {
+                  const apiHandler = apiHandlerMap ? apiHandlerMap.get(pattern)! : capturedApiHandler;
                   const response = await apiHandler(apiEvent);
                   return applyResolveOptions(response, resolveOpts);
                 } catch (err) {
@@ -725,7 +743,10 @@ export class Mochi {
           }) as unknown as BunRouteValue;
         } else if (isMochiSse(handler)) {
           routeCounts.sse += 1;
-          const sseHandler = handler.handler;
+          if (sseHandlerMap) {
+            sseHandlerMap.set(pattern, handler.handler);
+          }
+          const capturedSseHandler = handler.handler;
 
           bunRoutes[pattern] = async (req: Request, server: Server<undefined>): Promise<Response> => {
             // Bun closes idle connections after 10s by default — a quiet
@@ -794,7 +815,8 @@ export class Mochi {
                     closeCallbacks.push(cb);
                   },
                 };
-                sseHandler(stream, req);
+                const liveSseHandler = sseHandlerMap ? sseHandlerMap.get(pattern)! : capturedSseHandler;
+                liveSseHandler(stream, req);
               },
               cancel() {
                 for (const cb of closeCallbacks) {
@@ -1133,6 +1155,11 @@ export class Mochi {
         publicDir,
         watchPaths,
         development,
+        routeModule: options.routeModule,
+        apiHandlerMap,
+        sseHandlerMap,
+        wsHandlersMap,
+        pageConfigMap,
       });
     }
 

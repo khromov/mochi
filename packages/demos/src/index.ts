@@ -25,6 +25,7 @@ await Mochi.serve({
   filters: {
     'consoleLogger:line': silenceInternalRoutes,
   },
+  routeModule: './src/routes.ts',
   routes,
 });
 

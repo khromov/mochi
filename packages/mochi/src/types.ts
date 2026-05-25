@@ -442,6 +442,12 @@ export interface MochiServeOptions {
    * flag) so dev and prod stay in sync.
    */
   assetPrefix?: string;
+  /**
+   * Path to a module that exports `routes: Record<string, MochiRouteValue>`.
+   * In dev mode, changes to this module or its transitive dependencies
+   * hot-swap the handler configs for existing route patterns without a restart.
+   */
+  routeModule?: string;
   /** Extra paths the dev-mode file watcher monitors, in addition to the defaults `src` and `public`. */
   additionalWatchPaths?: string[];
   /**

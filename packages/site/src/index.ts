@@ -96,6 +96,7 @@ await Mochi.serve({
   additionalWatchPaths: ['../docs'],
   logger: { level: 'log' },
   proxy: { origin }, // TODO: This is a bit of an awkward way to set the allowed csrf domain...
+  routeModule: './src/routes.ts',
   markdown: markdownConfig,
   eventHooks: {
     'mochi:init': ({ options }) => {
