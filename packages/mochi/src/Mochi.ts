@@ -105,6 +105,12 @@ export class Mochi {
       actions?: MochiFormActions;
     },
   ): MochiPageConfig {
+    if (config?.actions && config.serverProps && !isServerPropsResolver(config.serverProps) && 'form' in config.serverProps) {
+      throw new Error(
+        `[mochi] Mochi.page("${componentPath}") declares form actions and a serverProps object containing "form". ` +
+          `"form" is reserved for the form action result — rename your prop.`,
+      );
+    }
     return {
       __mochiPage: true,
       componentPath,
@@ -385,7 +391,8 @@ export class Mochi {
             const baseProps = isServerPropsResolver(serverProps) ? ((await serverProps(req, ctx.params)) ?? {}) : (serverProps ?? {});
             if (actions && 'form' in baseProps) {
               throw new Error(
-                `[mochi] Route "${pattern}" has form actions and also returns a prop named "form". ` + `"form" is reserved for the form action result — rename your prop.`,
+                `[mochi] Route "${pattern}" serverProps resolver returned a prop named "form", but this route declares form actions. ` +
+                  `"form" is reserved for the form action result — rename your prop.`,
               );
             }
             const formProp = ctx.form ?? null;
