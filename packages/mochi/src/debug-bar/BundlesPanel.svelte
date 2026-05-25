@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
+  import type { BundleInfo } from '../requestContext';
   import ChevronRight from '../icons/chevron-right.svelte';
   import ArrowUpRight from '../icons/arrow-up-right.svelte';
   import DebugPanel from './DebugPanel.svelte';
@@ -7,16 +8,6 @@
   import { formatSize } from './utils';
 
   let { open, onclose }: { open: boolean; onclose: () => void } = $props();
-
-  type BundleInfo = {
-    url: string;
-    label: string;
-    sizeBytes: number;
-    kind: 'bootstrap' | 'island' | 'chunk';
-    inputs: Array<{ path: string; size: number }>;
-    effectiveSize?: number;
-    effectiveInputs?: Array<{ path: string; size: number }>;
-  };
 
   let bundles: BundleInfo[] = $state([]);
   let expanded: Record<string, boolean> = $state({});
@@ -61,19 +52,25 @@
   onMount(() => {
     bundles = (window.__mochi_debug?.bundles as BundleInfo[] | undefined) ?? [];
   });
+
+  onDestroy(() => {
+    clearTimeout(copiedTimer);
+  });
 </script>
 
 {#snippet bundleRow(bundle: BundleInfo)}
+  {@const displaySize = bundle.effectiveSize ?? bundle.sizeBytes}
+  {@const displayInputs = bundle.effectiveInputs ?? bundle.inputs}
   <div class="bundle-entry" class:open={expanded[bundle.url]}>
     <div class="bundle-row">
       <button class="bundle-header" type="button" onclick={() => toggleExpand(bundle.url)}>
         <span class="chevron"><ChevronRight size={12} /></span>
         <span class="bundle-name">{bundle.label}</span>
       </button>
-      <span class="bundle-size">{formatSize(bundle.sizeBytes)}</span>
+      <span class="bundle-size">{formatSize(displaySize)}</span>
     </div>
     <div class="bundle-inputs">
-      {#each bundle.inputs as input (input.path)}
+      {#each displayInputs as input (input.path)}
         <button class="input-row" class:selected={selectedInput === input.path} type="button" onclick={() => selectInput(input.path)}>
           <span class="input-path">{displayPath(input.path)}</span>
           <span class="input-size">{formatSize(input.size)}</span>
@@ -82,6 +79,9 @@
           {/if}
         </button>
       {/each}
+      {#if displayInputs.length === 0 && bundle.kind === 'bootstrap'}
+        <div class="bundle-note">Islands may pull in additional bundles not calculated here.</div>
+      {/if}
     </div>
   </div>
 {/snippet}
@@ -101,32 +101,12 @@
         <strong>{formatSize(totalSize)}</strong> total &middot; {bundles.length} bundle{bundles.length !== 1 ? 's' : ''}
       </div>
 
-      {#each bootstrapBundles.slice(0, 1) as bootstrap (bootstrap.url)}
+      {#if bootstrapBundles.length > 0}
         <div class="bundle-group-label">Runtime</div>
-        <div class="bundle-entry" class:open={expanded[bootstrap.url]}>
-          <div class="bundle-row">
-            <button class="bundle-header" type="button" onclick={() => toggleExpand(bootstrap.url)}>
-              <span class="chevron"><ChevronRight size={12} /></span>
-              <span class="bundle-name">{bootstrap.label}</span>
-            </button>
-            <span class="bundle-size">{formatSize(bootstrap.effectiveSize ?? bootstrap.sizeBytes)}</span>
-          </div>
-          <div class="bundle-inputs">
-            {#each bootstrap.effectiveInputs ?? bootstrap.inputs as input (input.path)}
-              <button class="input-row" class:selected={selectedInput === input.path} type="button" onclick={() => selectInput(input.path)}>
-                <span class="input-path">{displayPath(input.path)}</span>
-                <span class="input-size">{formatSize(input.size)}</span>
-                {#if copiedPath === input.path}
-                  <span class="copied-toast">Copied</span>
-                {/if}
-              </button>
-            {/each}
-            {#if (bootstrap.effectiveInputs ?? bootstrap.inputs).length === 0}
-              <div class="bundle-note">Islands may pull in additional bundles not calculated here.</div>
-            {/if}
-          </div>
-        </div>
-      {/each}
+        {#each bootstrapBundles as bundle (bundle.url)}
+          {@render bundleRow(bundle)}
+        {/each}
+      {/if}
 
       {#if islandBundles.length > 0}
         <div class="bundle-group-label">Islands</div>
