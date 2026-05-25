@@ -107,10 +107,13 @@
           </div>
           <div class="bundle-inputs">
             {#each bootstrap.effectiveInputs ?? bootstrap.inputs as input (input.path)}
-              <div class="input-row">
+              <button class="input-row" class:selected={selectedInput === input.path} type="button" onclick={() => selectInput(input.path)}>
                 <span class="input-path">{displayPath(input.path)}</span>
                 <span class="input-size">{formatSize(input.size)}</span>
-              </div>
+                {#if copiedPath === input.path}
+                  <span class="copied-toast">Copied</span>
+                {/if}
+              </button>
             {/each}
           </div>
         </div>
@@ -248,6 +251,7 @@
     display: block;
   }
   .input-row {
+    position: relative;
     display: flex;
     justify-content: space-between;
     align-items: baseline;
@@ -291,24 +295,35 @@
     flex-shrink: 0;
   }
   .copied-toast {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     font-size: 9px;
-    font-weight: 600;
-    color: #b8a3c4;
-    flex-shrink: 0;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: #1c1f17;
+    pointer-events: none;
     animation: copied-fade 1.2s ease forwards;
+  }
+  .copied-toast::before {
+    content: '';
+    position: absolute;
+    inset: 1px 0;
+    background: #b8a3c4;
+    border-radius: 3px;
+    z-index: -1;
   }
   @keyframes copied-fade {
     0% {
       opacity: 1;
-      transform: translateY(0);
     }
     70% {
       opacity: 1;
-      transform: translateY(-4px);
     }
     100% {
       opacity: 0;
-      transform: translateY(-8px);
     }
   }
   .bundle-empty {
