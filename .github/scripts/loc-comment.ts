@@ -25,7 +25,7 @@ function renderRow(name: string, mainLines: number, prLines: number, bold = fals
   return `| ${wrap(name)} | ${wrap(mainLines)} | ${wrap(prLines)} | ${wrap(delta(prLines - mainLines))} |`;
 }
 
-function renderPackageSection(name: string, mainReport: Report | undefined, prReport: Report | undefined): string[] {
+function renderPackageSection(name: string, mainReport: Report | undefined, prReport: Report | undefined, collapsible: boolean): string[] {
   const main = mainReport?.byCategory ?? {};
   const pr = prReport?.byCategory ?? {};
   const allCategories = new Set([...Object.keys(main), ...Object.keys(pr)]);
@@ -46,20 +46,25 @@ function renderPackageSection(name: string, mainReport: Report | undefined, prRe
   }
   changedRows.push(renderRow('Total', mainReport?.totals.lines ?? 0, prReport?.totals.lines ?? 0, true));
 
-  const lines: string[] = [`#### ${name}`, '', '| Category | main | PR | Δ |', '|---|---:|---:|---:|', ...changedRows];
+  const table = ['| Category | main | PR | Δ |', '|---|---:|---:|---:|', ...changedRows];
   if (unchanged.length > 0) {
-    lines.push('');
-    lines.push(`_Unchanged: ${unchanged.map((c) => `\`${c.name}\` (${c.lines})`).join(', ')}._`);
+    table.push('');
+    table.push(`_Unchanged: ${unchanged.map((c) => `\`${c.name}\` (${c.lines})`).join(', ')}._`);
   }
-  return lines;
+
+  if (collapsible) {
+    return ['<details>', `<summary><strong>${name}</strong></summary>`, '', ...table, '', '</details>'];
+  }
+  return [`#### ${name}`, '', ...table];
 }
 
 function renderInstallSection(repo: string, runId: string): string[] {
   const runUrl = `https://github.com/${repo}/actions/runs/${runId}`;
   return [
-    '---',
+    '#### Try this PR',
+    '',
     '<details>',
-    '<summary>Try this PR</summary>',
+    '<summary>Expand instructions</summary>',
     '',
     '```sh',
     `gh run download -R ${repo} ${runId} -n mochi-framework-pr -D /tmp/mochi-pr && bun i /tmp/mochi-pr/mochi-framework-pr.tgz`,
@@ -101,7 +106,7 @@ function main() {
   for (const pkgName of allPackages) {
     const m = mainDoc.packages.find((p) => p.name === pkgName);
     const p = prDoc.packages.find((pp) => pp.name === pkgName);
-    lines.push(...renderPackageSection(pkgName, m, p));
+    lines.push(...renderPackageSection(pkgName, m, p, pkgName !== 'packages/mochi'));
     lines.push('');
   }
 
