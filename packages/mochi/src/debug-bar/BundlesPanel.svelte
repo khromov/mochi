@@ -264,7 +264,6 @@
   .input-row.selected .input-path {
     white-space: normal;
     word-break: break-all;
-    direction: ltr;
     color: #d4cce0;
   }
   .input-path {
@@ -273,7 +272,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    direction: rtl;
     text-align: left;
     transition: color 120ms ease;
   }
