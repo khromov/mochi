@@ -2,6 +2,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { compile as mdsvexCompile } from 'mdsvex';
 import rehypeSlug from 'rehype-slug';
+import { demos } from './demos';
 import type { TocEntry } from './toc';
 
 type MdsvexRehypePlugin = NonNullable<NonNullable<Parameters<typeof mdsvexCompile>[1]>['rehypePlugins']>[number];
@@ -37,6 +38,7 @@ let cachedBySlug: Map<string, DocEntry> | null = null;
 let cachedNav: TocEntry[] | null = null;
 let cachedLlmsTxt: string | null = null;
 let cachedLlmsFullTxt: string | null = null;
+let cachedSitemapXml: string | null = null;
 
 export function clearDocsCaches(): void {
   cachedDocs = null;
@@ -44,6 +46,7 @@ export function clearDocsCaches(): void {
   cachedNav = null;
   cachedLlmsTxt = null;
   cachedLlmsFullTxt = null;
+  cachedSitemapXml = null;
 }
 
 export async function loadDocs(): Promise<DocEntry[]> {
@@ -198,6 +201,25 @@ export async function buildLlmsFullTxt(): Promise<string> {
   const [docs, demos] = await Promise.all([loadDocs(), buildDemosTxt()]);
   cachedLlmsFullTxt = docs.map((d) => d.raw.trimEnd()).join('\n\n') + '\n\n' + demos;
   return cachedLlmsFullTxt;
+}
+
+const SITE_BASE = 'https://mochi.fast';
+
+export async function buildSitemapXml(): Promise<string> {
+  if (cachedSitemapXml) {
+    return cachedSitemapXml;
+  }
+  const docs = await loadDocs();
+  const internalDemos = demos.filter((d) => d.href.startsWith('/'));
+
+  const urls: string[] = [
+    `  <url><loc>${SITE_BASE}/</loc></url>`,
+    ...docs.map((d) => `  <url><loc>${SITE_BASE}/docs/${d.slug}</loc></url>`),
+    ...internalDemos.map((d) => `  <url><loc>${SITE_BASE}${d.href}</loc></url>`),
+  ];
+
+  cachedSitemapXml = ['<?xml version="1.0" encoding="UTF-8"?>', '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">', ...urls, '</urlset>', ''].join('\n');
+  return cachedSitemapXml;
 }
 
 export async function getDocLlmsTxt(slug: string): Promise<string | null> {
