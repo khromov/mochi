@@ -11,7 +11,8 @@
 
   let bundles: BundleInfo[] = $state([]);
   let expanded: Record<string, boolean> = $state({});
-  let filterSvelte = $state(false);
+  const HIDE_SVELTE_KEY = 'mochi-debug-hide-svelte';
+  let filterSvelte = $state(localStorage.getItem(HIDE_SVELTE_KEY) === '1');
 
   function svelteSizeOf(b: BundleInfo): number {
     return b.inputs.filter((i) => i.path.startsWith('svelte/')).reduce((s, i) => s + i.size, 0);
@@ -25,6 +26,12 @@
 
   $effect(() => {
     debugBarState.totalBundleSize = totalSize;
+    debugBarState.displayBundleSize = displayTotal;
+    debugBarState.bundleFiltered = filterSvelte;
+  });
+
+  $effect(() => {
+    localStorage.setItem(HIDE_SVELTE_KEY, filterSvelte ? '1' : '0');
   });
 
   function toggleExpand(url: string) {
@@ -63,9 +70,10 @@
 {#snippet bundleRow(bundle: BundleInfo)}
   {@const displayInputs = filterSvelte ? bundle.inputs.filter((i) => !i.path.startsWith('svelte/')) : bundle.inputs}
   {@const displaySize = bundle.sizeBytes - (filterSvelte ? svelteSizeOf(bundle) : 0)}
-  <div class="bundle-entry" class:open={expanded[bundle.url]}>
+  {@const empty = displayInputs.length === 0 && bundle.kind !== 'bootstrap'}
+  <div class="bundle-entry" class:open={!empty && expanded[bundle.url]} class:dimmed={empty}>
     <div class="bundle-row">
-      <button class="bundle-header" type="button" onclick={() => toggleExpand(bundle.url)}>
+      <button class="bundle-header" type="button" disabled={empty} onclick={() => toggleExpand(bundle.url)}>
         <span class="chevron"><ChevronRight size={12} /></span>
         <span class="bundle-name">{bundle.label}</span>
       </button>
@@ -103,7 +111,7 @@
         <strong>{formatSize(displayTotal)}</strong> total &middot; {bundles.length} bundle{bundles.length !== 1 ? 's' : ''}
         <label class="filter-toggle">
           <input type="checkbox" bind:checked={filterSvelte} />
-          Filter Svelte
+          Hide Svelte
         </label>
       </div>
 
@@ -178,6 +186,12 @@
   }
   .bundle-entry {
     margin-bottom: 3px;
+  }
+  .bundle-entry.dimmed {
+    opacity: 0.4;
+  }
+  .bundle-entry.dimmed .bundle-header {
+    cursor: default;
   }
   .bundle-entry:last-child {
     margin-bottom: 0;

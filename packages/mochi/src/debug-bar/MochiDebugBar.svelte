@@ -43,8 +43,9 @@
 
   let warnLevel = $derived(getPropsWarnLevel(debugBarState.totalPropsSize));
 
-  let bundleSizeLabel = $derived(debugBarState.totalBundleSize > 0 ? formatSize(debugBarState.totalBundleSize) : '0');
+  let bundleSizeLabel = $derived(debugBarState.displayBundleSize > 0 ? formatSize(debugBarState.displayBundleSize) : '0');
   let noJs = $derived(debugBarState.totalBundleSize === 0);
+  let bundleFiltered = $derived(debugBarState.bundleFiltered);
 
   onMount(() => {
     hasDebugInfo = !!window.__mochi_debug;
@@ -102,6 +103,7 @@
       {/if}
       <button class="btn bundles-btn" class:no-js={noJs} onclick={() => toggle('bundles')} tabindex={collapsed ? -1 : 0}>
         JS <span class="bundle-badge" class:sparkle={noJs}>{bundleSizeLabel}</span>
+        {#if bundleFiltered}<span class="filter-dot"></span>{/if}
       </button>
     </div>
   </div>
@@ -303,6 +305,7 @@
     border-color: #6a7a86;
   }
   .bundles-btn {
+    position: relative;
     background: #2e2a38;
     color: #c4b8d4;
     border-color: #4a4060;
@@ -311,6 +314,16 @@
     background: #383248;
     color: #e0d8ee;
     border-color: #b8a3c4;
+  }
+  .filter-dot {
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #e85454;
+    pointer-events: none;
   }
   .bundle-badge {
     border-radius: 999px;

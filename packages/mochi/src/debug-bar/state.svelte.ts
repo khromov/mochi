@@ -3,4 +3,6 @@ export const debugBarState = $state({
   islandCount: 0,
   totalPropsSize: 0,
   totalBundleSize: 0,
+  displayBundleSize: 0,
+  bundleFiltered: false,
 });
