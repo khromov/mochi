@@ -255,7 +255,7 @@ A `Mochi.page` / `Mochi.api` route on the same URL still wins — the filter onl
 
 #### `consoleLogger:line`
 
-Mutate or drop a formatted line right before `consoleLogger()` writes it. The first argument is the fully-rendered string (timestamp, label, kind, path, status, duration — with picocolors codes already applied). The second is a structured context with the underlying values, so you can filter without grepping ANSI-coloured strings. Return the string to log it, a rewritten string to substitute, or `null` to drop the line entirely. Sync.
+Mutate or drop a formatted line right before `consoleLogger()` writes it. The first argument is the fully-rendered string (timestamp, label, kind, path, status, duration — with ANSI colour codes already applied). The second is a structured context with the underlying values, so you can filter without grepping ANSI-coloured strings. Return the string to log it, a rewritten string to substitute, or `null` to drop the line entirely. Sync.
 
 Mochi ships `silenceInternalRoutes`, a built-in filter that drops two routinely-noisy paths from the console: Chrome's `/.well-known/appspecific/com.chrome.devtools.json` probe and the framework admin routes under `/__mochi/admin/*`.
 

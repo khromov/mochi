@@ -1,4 +1,4 @@
-import pc from 'picocolors';
+import { styleText } from 'node:util';
 import prettyBytes from './lib/prettyBytes';
 import { mochiEvents } from './events';
 import type { MochiEventMap, MochiRequestKind } from './events';
@@ -82,7 +82,7 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
   subscribe('ws:open', (payload) => ({
     label: 'WS  ',
     path: payload.path,
-    note: pc.cyan('open'),
+    note: styleText('cyan', 'open'),
     duration: payload.duration,
     slow,
     verySlow,
@@ -91,13 +91,13 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
   subscribe('ws:message', (payload) => ({
     label: 'WS  ',
     path: payload.path,
-    note: `${pc.cyan('recv')} ${prettyBytes(payload.size)} ${pc.dim(payload.type)}`,
+    note: `${styleText('cyan', 'recv')} ${prettyBytes(payload.size)} ${styleText('dim', payload.type)}`,
   }));
 
   subscribe('ws:close', (payload) => ({
     label: 'WS  ',
     path: payload.path,
-    note: pc.dim(`close ${payload.code}`),
+    note: styleText('dim', `close ${payload.code}`),
     duration: payload.duration,
     neutral: true,
   }));
@@ -105,13 +105,13 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
   subscribe('sse:open', (payload) => ({
     label: 'SSE ',
     path: payload.path,
-    note: pc.cyan('open'),
+    note: styleText('cyan', 'open'),
   }));
 
   subscribe('sse:message', (payload) => {
-    const parts = [pc.cyan('send'), prettyBytes(payload.size)];
+    const parts = [styleText('cyan', 'send'), prettyBytes(payload.size)];
     if (payload.event) {
-      parts.push(pc.dim(`[${payload.event}]`));
+      parts.push(styleText('dim', `[${payload.event}]`));
     }
     return { label: 'SSE ', path: payload.path, note: parts.join(' ') };
   });
@@ -119,28 +119,28 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
   subscribe('sse:close', (payload) => ({
     label: 'SSE ',
     path: payload.path,
-    note: pc.dim('close'),
+    note: styleText('dim', 'close'),
     duration: payload.duration,
     neutral: true,
   }));
 
   subscribe('server:start', ({ port, hostname, development, routes }) => {
     const where = `${hostname ?? 'localhost'}:${port}`;
-    const mode = pc.dim(development ? 'dev' : 'prod');
-    const counts = pc.dim(`page=${routes.page} api=${routes.api} ws=${routes.ws} sse=${routes.sse}`);
+    const mode = styleText('dim', development ? 'dev' : 'prod');
+    const counts = styleText('dim', `page=${routes.page} api=${routes.api} ws=${routes.ws} sse=${routes.sse}`);
     return { label: 'BOOT', path: where, note: `${mode} ${counts}` };
   });
 
   subscribe('server:stop', ({ reason, signal }) => {
     const tag = signal ? `${reason} ${signal.toLowerCase()}` : reason;
-    return { label: 'STOP', path: '-', note: pc.dim(tag) };
+    return { label: 'STOP', path: '-', note: styleText('dim', tag) };
   });
 
   subscribe('error', ({ kind, method, path, status, message }) => ({
     label: 'ERR ',
     path,
     status,
-    note: `${pc.dim(`${method} ${kind}`)} ${pc.red(message)}`,
+    note: `${styleText('dim', `${method} ${kind}`)} ${styleText('red', message)}`,
   }));
 
   // Per-read cache lookups are high-volume; route them through `logger.debug`
@@ -154,19 +154,19 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
   subscribe('cache:revalidate', (payload) => ({
     label: 'CACHE',
     path: payload.key,
-    note: pc.cyan('revalidate'),
+    note: styleText('cyan', 'revalidate'),
   }));
 
   subscribe('preprocess-cache:hit', ({ filePath }) => ({
     label: 'PCACHE',
     path: relPath(filePath),
-    note: pc.green('hit'),
+    note: styleText('green', 'hit'),
     level: 'debug',
   }));
   subscribe('preprocess-cache:miss', ({ filePath }) => ({
     label: 'PCACHE',
     path: relPath(filePath),
-    note: pc.yellow('miss'),
+    note: styleText('yellow', 'miss'),
     level: 'debug',
   }));
   subscribe('preprocess-cache:summary', ({ hits, misses, files }) => {
@@ -174,7 +174,7 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
     return {
       label: 'PCACHE',
       path: '-',
-      note: pc.dim(`${hits} hit / ${misses} miss across ${files} files (${rate}%)`),
+      note: styleText('dim', `${hits} hit / ${misses} miss across ${files} files (${rate}%)`),
       level: 'log',
     };
   });
@@ -183,7 +183,7 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
     subscribe('compile:complete', ({ path, ssrSizeBytes, hydratableCount, serverIslandCount }) => ({
       label: 'BUILD',
       path: relPath(path),
-      note: pc.dim(`hyd=${hydratableCount} srv=${serverIslandCount} ssr=${prettyBytes(ssrSizeBytes)}`),
+      note: styleText('dim', `hyd=${hydratableCount} srv=${serverIslandCount} ssr=${prettyBytes(ssrSizeBytes)}`),
     }));
     subscribe('compile:batch-complete', ({ count, durationMs }) => ({
       label: 'BUILD',
@@ -195,7 +195,7 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
     subscribe('client-bundle:complete', ({ entryCount, outputBytes, durationMs }) => ({
       label: 'BNDL',
       path: '-',
-      note: pc.dim(`entries=${entryCount} ${prettyBytes(outputBytes)}`),
+      note: styleText('dim', `entries=${entryCount} ${prettyBytes(outputBytes)}`),
       duration: durationMs,
       slow,
       verySlow,
@@ -211,7 +211,7 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
       } else {
         action = `rebuilt ${pages}, ${bundles}`;
       }
-      return { label: 'HMR ', path: relPath(path), note: pc.dim(action), duration: durationMs, slow, verySlow };
+      return { label: 'HMR ', path: relPath(path), note: styleText('dim', action), duration: durationMs, slow, verySlow };
     });
   }
 }
@@ -252,13 +252,13 @@ function relPath(p: string): string {
 function colorCacheStatus(status: 'fresh' | 'stale' | 'expired' | 'miss'): string {
   switch (status) {
     case 'fresh':
-      return pc.green(status);
+      return styleText('green', status);
     case 'stale':
-      return pc.yellow(status);
+      return styleText('yellow', status);
     case 'expired':
-      return pc.red(status);
+      return styleText('red', status);
     case 'miss':
-      return pc.dim(status);
+      return styleText('dim', status);
   }
 }
 
@@ -293,27 +293,27 @@ const KIND_WIDTH = 'fallback'.length;
 function colorKind(kind: MochiRequestKind): string {
   switch (kind) {
     case 'page':
-      return pc.cyan(kind.padEnd(KIND_WIDTH));
+      return styleText('cyan', kind.padEnd(KIND_WIDTH));
     case 'api':
-      return pc.magenta(kind.padEnd(KIND_WIDTH));
+      return styleText('magenta', kind.padEnd(KIND_WIDTH));
     case 'asset':
-      return pc.dim(kind.padEnd(KIND_WIDTH));
+      return styleText('dim', kind.padEnd(KIND_WIDTH));
     case 'fallback':
-      return pc.yellow(kind.padEnd(KIND_WIDTH));
+      return styleText('yellow', kind.padEnd(KIND_WIDTH));
     case 'error':
-      return pc.red(kind.padEnd(KIND_WIDTH));
+      return styleText('red', kind.padEnd(KIND_WIDTH));
   }
 }
 
 function emit({ label, kind, path, status, note, duration, neutral = false, slow = DEFAULT_SLOW, verySlow = DEFAULT_VERY_SLOW, level = 'info', source }: EmitInput): void {
-  const ts = pc.dim(formatTimestamp(new Date()));
-  const labelStr = pc.cyan(label);
+  const ts = styleText('dim', formatTimestamp(new Date()));
+  const labelStr = styleText('cyan', label);
   const kindStr = kind ? ' ' + colorKind(kind) : '';
-  const pathStr = pc.dim(path);
+  const pathStr = styleText('dim', path);
   const statusPart = status != null ? colorStatus(status) : '';
   const notePart = note ?? '';
   const middle = [statusPart, notePart].filter(Boolean).join(' ');
-  const durationStr = duration != null ? ' ' + (neutral ? pc.dim(formatMs(duration)) : colorDuration(duration, slow, verySlow)) : '';
+  const durationStr = duration != null ? ' ' + (neutral ? styleText('dim', formatMs(duration)) : colorDuration(duration, slow, verySlow)) : '';
 
   const line = `${ts} ${labelStr}${kindStr} ${pathStr} ${middle}${durationStr}`;
 
@@ -348,18 +348,18 @@ function formatTimestamp(date: Date): string {
 function colorStatus(status: number): string {
   const s = String(status);
   if (status >= 500) {
-    return pc.red(s);
+    return styleText('red', s);
   }
   if (status >= 400) {
-    return pc.yellow(s);
+    return styleText('yellow', s);
   }
   if (status >= 300) {
-    return pc.cyan(s);
+    return styleText('cyan', s);
   }
   if (status >= 200) {
-    return pc.green(s);
+    return styleText('green', s);
   }
-  return pc.dim(s);
+  return styleText('dim', s);
 }
 
 function formatMs(duration: number): string {
@@ -369,10 +369,10 @@ function formatMs(duration: number): string {
 function colorDuration(duration: number, slow: number, verySlow: number): string {
   const ms = formatMs(duration);
   if (duration >= verySlow) {
-    return pc.red(ms);
+    return styleText('red', ms);
   }
   if (duration >= slow) {
-    return pc.yellow(ms);
+    return styleText('yellow', ms);
   }
-  return pc.green(ms);
+  return styleText('green', ms);
 }

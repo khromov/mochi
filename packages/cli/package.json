@@ -55,8 +55,7 @@
   "dependencies": {
     "@bluwy/giget-core": "^0.1.7",
     "@clack/prompts": "^1.3.0",
-    "commander": "^14.0.3",
-    "picocolors": "^1.1.1"
+    "commander": "^14.0.3"
   },
   "devDependencies": {
     "@types/bun": "1.3.14",

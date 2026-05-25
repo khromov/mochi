@@ -1,7 +1,7 @@
 import { spawn, type Subprocess } from 'bun';
 import { readdirSync } from 'node:fs';
 import path from 'node:path';
-import pc from 'picocolors';
+import { styleText } from 'node:util';
 
 const packagesDir = path.resolve(import.meta.dir, '..', 'packages');
 
@@ -24,7 +24,14 @@ if (targets.length === 0) {
   process.exit(1);
 }
 
-const palette = [pc.cyan, pc.magenta, pc.yellow, pc.green, pc.blue, pc.red];
+const palette = [
+  (s: string) => styleText('cyan', s),
+  (s: string) => styleText('magenta', s),
+  (s: string) => styleText('yellow', s),
+  (s: string) => styleText('green', s),
+  (s: string) => styleText('blue', s),
+  (s: string) => styleText('red', s),
+];
 
 const pipePrefixed = async (src: ReadableStream<Uint8Array>, dst: NodeJS.WriteStream, prefix: string): Promise<void> => {
   const decoder = new TextDecoder();

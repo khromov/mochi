@@ -284,7 +284,7 @@ export class ComponentRegistry {
    *
    * Boot-time and dev-watcher paths should call `compileAll` directly with
    * the full set of entrypoints — that produces a single shared SSR bundle
-   * (deduplicates `picocolors`/`devalue`/etc. via Bun's `splitting: true`)
+   * (deduplicates `devalue`/etc. via Bun's `splitting: true`)
    * and avoids the second-`Bun.build`-in-one-process EISDIR bug.
    */
   async compile(filename: string, opts: { force?: boolean } = {}): Promise<void> {
@@ -463,8 +463,8 @@ export class ComponentRegistry {
       target: 'bun',
       conditions: ['svelte'],
       // Svelte stays external because it's a peer dep the consumer already
-      // provides. Everything else (devalue, cookie, nanoid, picocolors, etc.)
-      // gets bundled — but with `splitting: true` Bun emits shared transitive
+      // provides. Everything else (devalue, cookie, nanoid, etc.) gets bundled
+      // — but with `splitting: true` Bun emits shared transitive
       // deps into separate chunk files alongside each entry's `.server.js`,
       // so they're written exactly once across the cohort. Two
       // `Bun.build` calls that touch the same transitive deps in one process
