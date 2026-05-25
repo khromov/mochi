@@ -25,7 +25,7 @@ function renderRow(name: string, mainLines: number, prLines: number, bold = fals
   return `| ${wrap(name)} | ${wrap(mainLines)} | ${wrap(prLines)} | ${wrap(delta(prLines - mainLines))} |`;
 }
 
-function renderPackageSection(name: string, mainReport: Report | undefined, prReport: Report | undefined, collapsible: boolean): string[] {
+function renderPackageSection(name: string, mainReport: Report | undefined, prReport: Report | undefined, openByDefault: boolean): string[] {
   const main = mainReport?.byCategory ?? {};
   const pr = prReport?.byCategory ?? {};
   const allCategories = new Set([...Object.keys(main), ...Object.keys(pr)]);
@@ -52,10 +52,8 @@ function renderPackageSection(name: string, mainReport: Report | undefined, prRe
     table.push(`_Unchanged: ${unchanged.map((c) => `\`${c.name}\` (${c.lines})`).join(', ')}._`);
   }
 
-  if (collapsible) {
-    return ['<details>', `<summary><strong>${name}</strong></summary>`, '', ...table, '', '</details>'];
-  }
-  return [`#### ${name}`, '', ...table];
+  const detailsTag = openByDefault ? '<details open>' : '<details>';
+  return [detailsTag, `<summary><strong>${name}</strong></summary>`, '', ...table, '', '</details>'];
 }
 
 function renderInstallSection(repo: string, runId: string): string[] {
@@ -106,7 +104,7 @@ function main() {
   for (const pkgName of allPackages) {
     const m = mainDoc.packages.find((p) => p.name === pkgName);
     const p = prDoc.packages.find((pp) => pp.name === pkgName);
-    lines.push(...renderPackageSection(pkgName, m, p, pkgName !== 'packages/mochi'));
+    lines.push(...renderPackageSection(pkgName, m, p, pkgName === 'packages/mochi'));
     lines.push('');
   }
 
