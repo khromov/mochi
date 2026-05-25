@@ -75,6 +75,15 @@ Hello from Mochi! Inserted via transformPage
   });
 };
 
+const ANALYTICS_SCRIPT = `<script defer src="https://u.khromov.se/u.js" data-website-id="8dceb8f5-6533-4c03-9cd6-1ce74accd63a"></script>`;
+const analytics: Handle = async ({ event, resolve }) => {
+  return resolve(event, {
+    transformPage({ html }) {
+      return html.replace('{{mochi.analytics}}', process.env.MODE === 'development' ? '' : ANALYTICS_SCRIPT);
+    },
+  });
+};
+
 const PORT = Number(process.env.PORT) || 3333;
 const CSRF_PORT = Number(process.env.MOCHI_PORT) || 3333;
 const CSRF_DOMAIN = process.env.MOCHI_DOMAIN ?? 'localhost';
@@ -89,7 +98,7 @@ await Mochi.serve({
   liveReload: process.env.MOCHI_LIVE_RELOAD === 'false' ? false : undefined,
   htmlShell: './src/shell.html',
   trailingSlash: 'always',
-  handle: sequence(compress(), immutableAssets, helloWorld, asciiDog, noCache, cookieVaryTestHandle),
+  handle: sequence(compress(), immutableAssets, helloWorld, asciiDog, analytics, noCache, cookieVaryTestHandle),
   handleError,
   idleTimeout: 60,
   compressServerIslandProps: true,
