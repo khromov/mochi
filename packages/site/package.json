@@ -24,7 +24,7 @@
     "mochi-framework": "workspace:*",
     "rehype-slug": "^6.0.0",
     "slugify": "^1.6.9",
-    "svelte": "^5.55.7",
+    "svelte": "^5.55.9",
     "svelte-french-toast": "2.0.0-alpha.0",
     "svelte-meta-tags": "^4.7.0"
   },
