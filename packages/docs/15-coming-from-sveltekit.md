@@ -550,7 +550,7 @@ cookies.set('session', token, { httpOnly: true, sameSite: 'Lax', path: '/' });
 
 ### `$app/state` and the `page` store
 
-There is no reactive `page` store. Server-side, `getRequestContext()` returns `{ requestId, request, url, params, locals, cookies, islandProps, getClientAddress, form?, debugBarData? }`. Client-side, hydrated islands receive `islandId` and (where applicable) `isHydratable` as implicit props; if you need the current URL after hydration, read `location` directly.
+There is no reactive `page` store. Instead, import `url`, `params`, `cookies`, and `locals` directly from `mochi-framework`. `url` is isomorphic — it reads from the request context on the server and from `window.location` on the client. `params` and `locals` are server-only.
 
 ```svelte
 <!-- file (SvelteKit): src/routes/+page.svelte -->
@@ -564,8 +564,7 @@ There is no reactive `page` store. Server-side, `getRequestContext()` returns `{
 ```svelte
 <!-- file (Mochi): src/Some.svelte -->
 <script>
-  import { getRequestContext } from 'mochi-framework';
-  const { url, params } = getRequestContext();
+  import { url, params } from 'mochi-framework';
 </script>
 
 <p>{url.pathname} — {params.slug}</p>
@@ -573,7 +572,7 @@ There is no reactive `page` store. Server-side, `getRequestContext()` returns `{
 
 <Callout type="tip">
 
-Call `getRequestContext()` on the server and use `location` / `window` on the client — there is no `$app/state` or `$app/stores` like in SvelteKit.
+`url` works on both server and client — no need to branch on environment. `params` and `locals` are server-only; guard them with `isServer` if needed. See [Request context](/docs/request-context/).
 
 </Callout>
 

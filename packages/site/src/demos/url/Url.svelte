@@ -1,0 +1,38 @@
+<script>
+  import DemoPage from '../../components/DemoPage.svelte';
+  import UrlInfo from './UrlInfo.svelte';
+  import { loadSources } from '../../components/utils.ts';
+
+  const sources = await loadSources([
+    { label: 'Url.svelte', path: './src/demos/url/Url.svelte' },
+    { label: 'UrlInfo.svelte', path: './src/demos/url/UrlInfo.svelte' },
+    { label: 'routes.ts', path: './src/demos/url/routes.ts' },
+    { label: 'index.ts', path: './src/demoIndex.ts' },
+  ]);
+</script>
+
+<DemoPage
+  title="Isomorphic URL"
+  description={"import { url } from 'mochi-framework' returns the current URL on both server and client. On the server it reads from the request context; on the client it reads from window.location. Try adding ?name=mochi to the URL."}
+  {sources}
+>
+  <div class="sections">
+    <UrlInfo label="SSR snapshot" />
+    <hr />
+    <UrlInfo label="Hydrated island" mochi:hydrate />
+  </div>
+</DemoPage>
+
+<style>
+  .sections {
+    display: flex;
+    flex-direction: column;
+    gap: 1.2rem;
+  }
+
+  hr {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 0;
+  }
+</style>
