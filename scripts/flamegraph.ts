@@ -1,6 +1,6 @@
 import { spawn, type Subprocess } from 'bun';
 import path from 'node:path';
-import pc from 'picocolors';
+import { styleText } from 'node:util';
 
 type Args = {
   url: string;
@@ -134,7 +134,7 @@ const main = async (): Promise<void> => {
   const env = { ...process.env, PORT: String(args.port), MOCHI_PROFILER: '1', FORCE_COLOR: '1' };
   delete env.MODE;
 
-  console.log(pc.cyan(`[flamegraph] spawning site on port ${args.port} (production mode, MOCHI_PROFILER=1)`));
+  console.log(styleText('cyan', `[flamegraph] spawning site on port ${args.port} (production mode, MOCHI_PROFILER=1)`));
   const proc = spawn({
     cmd: ['bun', 'src/index.ts'],
     cwd: siteCwd,
@@ -143,12 +143,12 @@ const main = async (): Promise<void> => {
     stderr: 'pipe',
     stdin: 'ignore',
   });
-  const prefix = pc.gray('[server] ');
+  const prefix = styleText('gray', '[server] ');
   void pipePrefixed(proc.stdout as ReadableStream<Uint8Array>, process.stdout, prefix);
   void pipePrefixed(proc.stderr as ReadableStream<Uint8Array>, process.stderr, prefix);
 
   const onExit = async (signal: NodeJS.Signals): Promise<never> => {
-    console.log(pc.yellow(`[flamegraph] received ${signal}, tearing down server`));
+    console.log(styleText('yellow', `[flamegraph] received ${signal}, tearing down server`));
     await killGracefully(proc);
     process.exit(1);
   };
@@ -157,28 +157,28 @@ const main = async (): Promise<void> => {
 
   try {
     await waitForReady(altOrigin);
-    console.log(pc.cyan(`[flamegraph] server ready, warming up (${args.warmup} requests)`));
+    console.log(styleText('cyan', `[flamegraph] server ready, warming up (${args.warmup} requests)`));
 
     for (let i = 0; i < args.warmup; i++) {
       const res = await fetch(targetUrl, { redirect: 'manual' });
       await drainResponse(res);
     }
 
-    console.log(pc.cyan(`[flamegraph] starting profiler`));
+    console.log(styleText('cyan', `[flamegraph] starting profiler`));
     const startRes = await fetch(`${altOrigin}/_profiler/start`);
     if (!startRes.ok) {
       throw new Error(`/_profiler/start returned ${startRes.status}`);
     }
     await drainResponse(startRes);
 
-    console.log(pc.cyan(`[flamegraph] sampling ${args.samples} request(s) to ${target.pathname}`));
+    console.log(styleText('cyan', `[flamegraph] sampling ${args.samples} request(s) to ${target.pathname}`));
     const tStart = performance.now();
     for (let i = 0; i < args.samples; i++) {
       const res = await fetch(targetUrl, { redirect: 'manual' });
       await drainResponse(res);
     }
     const tEnd = performance.now();
-    console.log(pc.cyan(`[flamegraph] sampling complete in ${(tEnd - tStart).toFixed(0)}ms`));
+    console.log(styleText('cyan', `[flamegraph] sampling complete in ${(tEnd - tStart).toFixed(0)}ms`));
 
     const stopRes = await fetch(`${altOrigin}/_profiler/stop`);
     if (!stopRes.ok) {
@@ -191,12 +191,12 @@ const main = async (): Promise<void> => {
 
     const rel = path.relative(process.cwd(), outPath);
     const profileMs = (profile.endTime - profile.startTime) / 1000;
-    console.log(pc.green(`[flamegraph] profile: ${profile.samples.length} samples, ${profile.nodes.length} nodes, ${profileMs.toFixed(1)}ms captured`));
+    console.log(styleText('green', `[flamegraph] profile: ${profile.samples.length} samples, ${profile.nodes.length} nodes, ${profileMs.toFixed(1)}ms captured`));
     if (profile.samples.length < 50) {
-      console.log(pc.yellow(`[flamegraph] few samples — bump --samples for better resolution (e.g. --samples 500)`));
+      console.log(styleText('yellow', `[flamegraph] few samples — bump --samples for better resolution (e.g. --samples 500)`));
     }
-    console.log(pc.green(`[flamegraph] wrote ${rel}`));
-    console.log(pc.green(`[flamegraph] open in Chrome DevTools: Performance panel → drag-and-drop, or ⋮ → More tools → JavaScript Profiler → Load`));
+    console.log(styleText('green', `[flamegraph] wrote ${rel}`));
+    console.log(styleText('green', `[flamegraph] open in Chrome DevTools: Performance panel → drag-and-drop, or ⋮ → More tools → JavaScript Profiler → Load`));
   } finally {
     await killGracefully(proc);
   }

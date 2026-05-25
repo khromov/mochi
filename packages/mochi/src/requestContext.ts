@@ -56,6 +56,14 @@ export interface MochiRequestContext {
   getClientAddress: () => string | null;
 }
 
+export interface BundleInfo {
+  url: string;
+  label: string;
+  sizeBytes: number;
+  kind: 'bootstrap' | 'island' | 'chunk';
+  inputs: Array<{ path: string; size: number }>;
+}
+
 /**
  * SSR-side debug-bar payload. These fields are emitted into the cached HTML
  * body and stay stable across cache hits. The dynamic per-request fields
@@ -88,6 +96,8 @@ export interface DebugBarData {
   liveReloadEnabled?: boolean;
   /** Time in milliseconds the SSR render took (compile check + Svelte render + HTML processing). */
   ssrDurationMs?: number;
+  /** Framework JS bundles injected for this page (bootstrap, island entries, shared chunks). */
+  bundles?: BundleInfo[];
 }
 
 /**

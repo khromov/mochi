@@ -301,6 +301,7 @@ export interface MochiManifest {
       name: string;
       size: number;
       inputs: { path: string; size: number }[];
+      imports: string[];
     }[];
   } | null;
   /** Maps server island component name → resolved file path */

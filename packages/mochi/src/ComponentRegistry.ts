@@ -223,6 +223,7 @@ export class ComponentRegistry {
       name: string;
       size: number;
       inputs: { path: string; size: number }[];
+      imports: string[];
     }[];
   } | null = null;
   /** Stats for side-effect CSS bundles, merged into clientStats at read time. */
@@ -230,6 +231,7 @@ export class ComponentRegistry {
     name: string;
     size: number;
     inputs: { path: string; size: number }[];
+    imports: string[];
   }[] = [];
   /** Maps server island component name → resolved file path */
   private serverIslandPaths: Map<string, string> = new Map();
@@ -282,7 +284,7 @@ export class ComponentRegistry {
    *
    * Boot-time and dev-watcher paths should call `compileAll` directly with
    * the full set of entrypoints — that produces a single shared SSR bundle
-   * (deduplicates `picocolors`/`devalue`/etc. via Bun's `splitting: true`)
+   * (deduplicates `devalue`/etc. via Bun's `splitting: true`)
    * and avoids the second-`Bun.build`-in-one-process EISDIR bug.
    */
   async compile(filename: string, opts: { force?: boolean } = {}): Promise<void> {
@@ -461,8 +463,8 @@ export class ComponentRegistry {
       target: 'bun',
       conditions: ['svelte'],
       // Svelte stays external because it's a peer dep the consumer already
-      // provides. Everything else (devalue, cookie, nanoid, picocolors, etc.)
-      // gets bundled — but with `splitting: true` Bun emits shared transitive
+      // provides. Everything else (devalue, cookie, nanoid, etc.) gets bundled
+      // — but with `splitting: true` Bun emits shared transitive
       // deps into separate chunk files alongside each entry's `.server.js`,
       // so they're written exactly once across the cohort. Two
       // `Bun.build` calls that touch the same transitive deps in one process
@@ -927,10 +929,12 @@ export class ComponentRegistry {
           size: inputMeta.bytesInOutput,
         }));
         inputs.sort((a, b) => b.size - a.size);
+        const imports = (outMeta.imports ?? []).filter((i) => i.kind === 'import-statement').map((i) => path.basename(i.path));
         return {
           name: path.basename(outPath),
           size: outMeta.bytes,
           inputs,
+          imports,
         };
       });
       outputStats.sort((a, b) => b.size - a.size);
@@ -1063,6 +1067,53 @@ export class ComponentRegistry {
       for (const k of Object.keys(ctx.debugBarData.islandProps)) {
         delete ctx.debugBarData.islandProps[k];
       }
+
+      if (this.debugBarEnabled && this.clientStats) {
+        const urlToComponent = new Map<string, string>();
+        for (const [name, url] of this.componentEntryUrls) {
+          urlToComponent.set(url, name);
+        }
+        const pageHasIslands = hydratables.length > 0;
+        const bundles: NonNullable<typeof debugBarData.bundles> = [];
+        const outputByName = new Map(this.clientStats.outputs.map((o) => [o.name, o]));
+        for (const output of this.clientStats.outputs) {
+          const url = `${this.assetPrefix}/client/${output.name}`;
+          if (url === this.debugBarUrl) {
+            continue;
+          }
+          if (url === this.islandBootstrapUrl) {
+            if (!pageHasIslands) {
+              continue;
+            }
+            const wcInputs = this.collectWebComponentInputs(output, outputByName);
+            const wcSize = wcInputs.reduce((sum, i) => sum + i.size, 0);
+            bundles.push({
+              url,
+              label: 'Island runtime',
+              sizeBytes: wcSize,
+              kind: 'bootstrap',
+              inputs: ComponentRegistry.cleanInputs(wcInputs),
+            });
+          } else {
+            const compName = urlToComponent.get(url);
+            const cleaned = ComponentRegistry.cleanInputs(output.inputs);
+            const nonWc = cleaned.filter((i) => !i.path.includes('web-components/'));
+            const wcDeduct = cleaned.reduce((s, i) => s + (i.path.includes('web-components/') ? i.size : 0), 0);
+            if (compName) {
+              if (!renderedIslandNames.has(compName)) {
+                continue;
+              }
+              bundles.push({ url, label: compName, sizeBytes: output.size - wcDeduct, kind: 'island', inputs: nonWc });
+            } else {
+              if (!pageHasIslands) {
+                continue;
+              }
+              bundles.push({ url, label: output.name, sizeBytes: output.size - wcDeduct, kind: 'chunk', inputs: nonWc });
+            }
+          }
+        }
+        debugBarData.bundles = bundles;
+      }
     }
 
     for (const componentPath of cssComponents) {
@@ -1114,6 +1165,44 @@ export class ComponentRegistry {
       hasServerIslands,
       debugBarData,
     };
+  }
+
+  private static cleanInputPath(p: string): string {
+    return p.replace(/^(?:\.\.\/)*node_modules\/(?:\.bun\/[^/]+\/node_modules\/)?/, '');
+  }
+
+  private static cleanInputs(inputs: { path: string; size: number }[]): { path: string; size: number }[] {
+    return inputs.map((i) => ({ path: ComponentRegistry.cleanInputPath(i.path), size: i.size }));
+  }
+
+  private collectWebComponentInputs(
+    entry: { inputs: { path: string; size: number }[]; imports: string[] },
+    outputByName: Map<string, { inputs: { path: string; size: number }[]; imports: string[] }>,
+  ): { path: string; size: number }[] {
+    const merged = new Map<string, number>();
+    const addInputs = (inputs: { path: string; size: number }[]) => {
+      for (const i of inputs) {
+        if (i.path.includes('web-components/')) {
+          merged.set(i.path, (merged.get(i.path) ?? 0) + i.size);
+        }
+      }
+    };
+    addInputs(entry.inputs);
+    const visited = new Set<string>();
+    const queue = [...entry.imports];
+    while (queue.length > 0) {
+      const name = queue.pop()!;
+      if (visited.has(name)) {
+        continue;
+      }
+      visited.add(name);
+      const dep = outputByName.get(name);
+      if (dep) {
+        addInputs(dep.inputs);
+        queue.push(...dep.imports);
+      }
+    }
+    return [...merged.entries()].map(([p, s]) => ({ path: p, size: s })).sort((a, b) => b.size - a.size);
   }
 
   /** Get the client entry URL for a hydratable component by name. */
@@ -1223,6 +1312,7 @@ export class ComponentRegistry {
           name: path.basename(out.path),
           size: cssText.length,
           inputs: [{ path: path.relative(process.cwd(), cssPath), size: cssText.length }],
+          imports: [],
         });
       }),
     );

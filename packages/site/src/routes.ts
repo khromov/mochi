@@ -3,7 +3,7 @@ import rehypeSlug from 'rehype-slug';
 import { Mochi, error, getRequestContext } from 'mochi-framework';
 import type { MochiBuildOptions, MarkdownConfig, MochiRouteValue } from 'mochi-framework';
 import { highlightCode } from './lib/highlightCode';
-import { buildDocsNav, buildLlmsTxt, buildLlmsFullTxt, getDoc, getDocLlmsTxt, getDocNeighbors, loadDocs } from './lib/docs';
+import { buildDocsNav, buildLlmsTxt, buildLlmsFullTxt, buildSitemapXml, getDoc, getDocLlmsTxt, getDocNeighbors, loadDocs } from './lib/docs';
 import { profilerEnabled, startProfiler, stopProfiler } from './lib/profiler';
 import { routes as apiRoutes } from './demos/api/routes';
 import { routes as cacheEventsRoutes } from './demos/cache-events/routes';
@@ -88,6 +88,11 @@ export const routes: Record<string, MochiRouteValue> = {
     },
   }),
   '/og': Mochi.page('./src/og/OgPage.svelte'),
+  '/sitemap.xml': Mochi.api(async () => {
+    return new Response(await buildSitemapXml(), {
+      headers: { 'Content-Type': 'application/xml; charset=utf-8' },
+    });
+  }),
   '/llms.txt': Mochi.api(async () => {
     return new Response(await buildLlmsTxt(), {
       headers: { 'Content-Type': 'text/plain; charset=utf-8' },
