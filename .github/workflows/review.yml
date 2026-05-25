@@ -30,8 +30,20 @@ jobs:
           (cd ../main-tree && bun .github/scripts/loc-report.ts --json) > main.json
           git worktree remove --force ../main-tree
 
+      - name: Pack mochi-framework
+        run: |
+          cd packages/mochi
+          TARBALL=$(bun pack)
+          mv "$TARBALL" ../../mochi-framework-pr.tgz
+
+      - name: Upload tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: mochi-framework-pr
+          path: mochi-framework-pr.tgz
+
       - name: Render comment
-        run: bun .github/scripts/loc-comment.ts main.json pr.json > comment.md
+        run: bun .github/scripts/loc-comment.ts main.json pr.json --run-url "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" > comment.md
 
       - name: Post or update sticky comment
         uses: actions/github-script@v9

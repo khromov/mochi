@@ -1,7 +1,8 @@
 #!/usr/bin/env bun
 /**
  * Renders the markdown body for the review-bot PR comment by diffing two
- * loc-report.ts JSON outputs. Usage: bun loc-comment.ts <main.json> <pr.json>
+ * loc-report.ts JSON outputs.
+ * Usage: bun loc-comment.ts <main.json> <pr.json> [--run-url <url>]
  */
 
 import { readFileSync } from 'node:fs';
@@ -53,10 +54,31 @@ function renderPackageSection(name: string, mainReport: Report | undefined, prRe
   return lines;
 }
 
+function renderInstallSection(runUrl: string): string[] {
+  return [
+    '---',
+    '<details>',
+    '<summary>Try this PR</summary>',
+    '',
+    `Download [\`mochi-framework-pr.tgz\`](${runUrl}#artifacts) from the workflow artifacts, then:`,
+    '',
+    '```sh',
+    'bun i ./mochi-framework-pr.tgz',
+    '```',
+    '',
+    '</details>',
+  ];
+}
+
 function main() {
-  const [mainPath, prPath] = process.argv.slice(2);
+  const args = process.argv.slice(2);
+  const mainPath = args[0];
+  const prPath = args[1];
+  const runUrlIdx = args.indexOf('--run-url');
+  const runUrl = runUrlIdx !== -1 ? args[runUrlIdx + 1] : undefined;
+
   if (!mainPath || !prPath) {
-    console.error('Usage: bun loc-comment.ts <main.json> <pr.json>');
+    console.error('Usage: bun loc-comment.ts <main.json> <pr.json> [--run-url <url>]');
     process.exit(1);
   }
 
@@ -70,6 +92,11 @@ function main() {
     const m = mainDoc.packages.find((p) => p.name === pkgName);
     const p = prDoc.packages.find((pp) => pp.name === pkgName);
     lines.push(...renderPackageSection(pkgName, m, p));
+    lines.push('');
+  }
+
+  if (runUrl) {
+    lines.push(...renderInstallSection(runUrl));
     lines.push('');
   }
 
