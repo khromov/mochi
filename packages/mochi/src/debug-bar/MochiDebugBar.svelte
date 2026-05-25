@@ -43,7 +43,8 @@
 
   let warnLevel = $derived(getPropsWarnLevel(debugBarState.totalPropsSize));
 
-  let bundleSizeLabel = $derived(debugBarState.totalBundleSize > 0 ? formatSize(debugBarState.totalBundleSize) : 'JS');
+  let bundleSizeLabel = $derived(debugBarState.totalBundleSize > 0 ? formatSize(debugBarState.totalBundleSize) : '0');
+  let noJs = $derived(debugBarState.totalBundleSize === 0);
 
   onMount(() => {
     hasDebugInfo = !!window.__mochi_debug;
@@ -99,8 +100,8 @@
           Warnings <span class="badge">{debugBarState.warningCount}</span>
         </button>
       {/if}
-      <button class="btn bundles-btn" onclick={() => toggle('bundles')} tabindex={collapsed ? -1 : 0}>
-        JS <span class="bundle-badge">{bundleSizeLabel}</span>
+      <button class="btn bundles-btn" class:no-js={noJs} onclick={() => toggle('bundles')} tabindex={collapsed ? -1 : 0}>
+        JS <span class="bundle-badge" class:sparkle={noJs}>{bundleSizeLabel}</span>
       </button>
     </div>
   </div>
@@ -325,6 +326,51 @@
     color: #e0d8ee;
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     letter-spacing: 0;
+  }
+  .bundles-btn.no-js {
+    background: #1f2a20;
+    color: #a8c9a8;
+    border-color: #3a5040;
+  }
+  .bundles-btn.no-js:hover {
+    background: #263228;
+    color: #c8e8c8;
+    border-color: #8ab79a;
+  }
+  .bundle-badge.sparkle {
+    position: relative;
+    overflow: visible;
+    background: rgba(138, 183, 154, 0.28);
+    color: #c8e8c8;
+  }
+  .bundle-badge.sparkle::after {
+    content: '✦';
+    position: absolute;
+    top: -3px;
+    right: -2px;
+    font-size: 0.9em;
+    color: #ffffff;
+    animation: sparkle-pulse 2s ease-in-out infinite;
+    pointer-events: none;
+  }
+  @keyframes sparkle-pulse {
+    0%,
+    100% {
+      opacity: 0;
+      transform: scale(0.5);
+    }
+    20% {
+      opacity: 1;
+      transform: scale(1.2);
+    }
+    50% {
+      opacity: 0.6;
+      transform: scale(0.8);
+    }
+    70% {
+      opacity: 0;
+      transform: scale(0.4);
+    }
   }
   .badge {
     border-radius: 999px;
