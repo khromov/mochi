@@ -121,6 +121,9 @@
                 {/if}
               </button>
             {/each}
+            {#if (bootstrap.effectiveInputs ?? bootstrap.inputs).length === 0}
+              <div class="bundle-note">Islands may pull in additional bundles not calculated here.</div>
+            {/if}
           </div>
         </div>
       {/each}
@@ -326,6 +329,12 @@
       opacity: 0;
       transform: translateY(-8px);
     }
+  }
+  .bundle-note {
+    color: #72786c;
+    font-size: 10px;
+    font-style: italic;
+    padding: 6px 4px;
   }
   .bundle-empty {
     padding: 20px 10px 16px;
