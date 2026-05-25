@@ -71,7 +71,7 @@
   </div>
   <p class="quickstart-note">
     Requires <a href="https://bun.sh" target="_blank" rel="noopener noreferrer">Bun</a> <code>&gt;= 1.3.13</code>.
-    <a href="/docs/why-bun" class="why-bun-link">Why Bun?</a>
+    <a href="/docs/why-bun" class="why-bun-link" style="border-bottom-color: currentColor;">Why Bun?</a>
   </p>
 </section>
 
