@@ -348,7 +348,9 @@
     animation: none;
   }
   .empty-blob.animate {
-    animation: blob-morph 6s ease-in-out infinite, blob-rotate 12s linear infinite;
+    animation:
+      blob-morph 6s ease-in-out infinite,
+      blob-rotate 12s linear infinite;
   }
   .empty-emoji {
     position: absolute;
