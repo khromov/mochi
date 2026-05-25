@@ -672,7 +672,7 @@ export class Mochi {
                   cookies: ctx.cookies,
                 };
                 try {
-                  const apiHandler = apiHandlerMap ? apiHandlerMap.get(pattern)! : capturedApiHandler;
+                  const apiHandler = (apiHandlerMap ? apiHandlerMap.get(pattern) : undefined) ?? capturedApiHandler;
                   const response = await apiHandler(apiEvent);
                   return applyResolveOptions(response, resolveOpts);
                 } catch (err) {
@@ -834,7 +834,7 @@ export class Mochi {
                     closeCallbacks.push(cb);
                   },
                 };
-                const liveSseHandler = sseHandlerMap ? sseHandlerMap.get(pattern)! : capturedSseHandler;
+                const liveSseHandler = (sseHandlerMap ? sseHandlerMap.get(pattern) : undefined) ?? capturedSseHandler;
                 liveSseHandler(stream, req);
               },
               cancel() {

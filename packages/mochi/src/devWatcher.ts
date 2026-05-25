@@ -270,8 +270,10 @@ export function startDevWatcher(deps: DevWatcherDeps): void {
     : undefined;
 
   if (routeModule) {
-    buildRouteModule().catch((e) => {
-      logger.warn(`Initial route module build failed: ${e instanceof Error ? e.message : e}`);
+    reloadChain = reloadChain.then(async () => {
+      await buildRouteModule().catch((e) => {
+        logger.warn(`Initial route module build failed: ${e instanceof Error ? e.message : e}`);
+      });
     });
   }
 
