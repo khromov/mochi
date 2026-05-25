@@ -2,7 +2,7 @@
 /**
  * Renders the markdown body for the review-bot PR comment by diffing two
  * loc-report.ts JSON outputs.
- * Usage: bun loc-comment.ts <main.json> <pr.json> [--run-url <url>]
+ * Usage: bun loc-comment.ts <main.json> <pr.json> [--repo <owner/repo> --run-id <id>]
  */
 
 import { readFileSync } from 'node:fs';
@@ -54,17 +54,18 @@ function renderPackageSection(name: string, mainReport: Report | undefined, prRe
   return lines;
 }
 
-function renderInstallSection(runUrl: string): string[] {
+function renderInstallSection(repo: string, runId: string): string[] {
+  const runUrl = `https://github.com/${repo}/actions/runs/${runId}`;
   return [
     '---',
     '<details>',
     '<summary>Try this PR</summary>',
     '',
-    `Download [\`mochi-framework-pr.tgz\`](${runUrl}#artifacts) from the workflow artifacts, then:`,
-    '',
     '```sh',
-    'bun i ./mochi-framework-pr.tgz',
+    `gh run download -R ${repo} ${runId} -n mochi-framework-pr -D /tmp/mochi-pr && bun i /tmp/mochi-pr/mochi-framework-pr.tgz`,
     '```',
+    '',
+    `<sub><a href="${runUrl}#artifacts">Download manually</a></sub>`,
     '',
     '</details>',
   ];
@@ -74,11 +75,13 @@ function main() {
   const args = process.argv.slice(2);
   const mainPath = args[0];
   const prPath = args[1];
-  const runUrlIdx = args.indexOf('--run-url');
-  const runUrl = runUrlIdx !== -1 ? args[runUrlIdx + 1] : undefined;
+  const repoIdx = args.indexOf('--repo');
+  const repo = repoIdx !== -1 ? args[repoIdx + 1] : undefined;
+  const runIdIdx = args.indexOf('--run-id');
+  const runId = runIdIdx !== -1 ? args[runIdIdx + 1] : undefined;
 
   if (!mainPath || !prPath) {
-    console.error('Usage: bun loc-comment.ts <main.json> <pr.json> [--run-url <url>]');
+    console.error('Usage: bun loc-comment.ts <main.json> <pr.json> [--repo <owner/repo> --run-id <id>]');
     process.exit(1);
   }
 
@@ -95,8 +98,8 @@ function main() {
     lines.push('');
   }
 
-  if (runUrl) {
-    lines.push(...renderInstallSection(runUrl));
+  if (repo && runId) {
+    lines.push(...renderInstallSection(repo, runId));
     lines.push('');
   }
 

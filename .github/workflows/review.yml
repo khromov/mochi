@@ -43,7 +43,7 @@ jobs:
           path: mochi-framework-pr.tgz
 
       - name: Render comment
-        run: bun .github/scripts/loc-comment.ts main.json pr.json --run-url "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" > comment.md
+        run: bun .github/scripts/loc-comment.ts main.json pr.json --repo ${{ github.repository }} --run-id ${{ github.run_id }} > comment.md
 
       - name: Post or update sticky comment
         uses: actions/github-script@v9
