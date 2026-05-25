@@ -394,6 +394,16 @@ export class Mochi {
             const result = await registry.renderComponent(componentPath, resolvedProps);
             if (result.debugBarData) {
               result.debugBarData.ssrDurationMs = Math.round((performance.now() - ssrStart) * 100) / 100;
+              if (result.hasServerIslands) {
+                const serverIslandSize = new TextEncoder().encode(serverIslandClientJs).length;
+                (result.debugBarData.bundles ??= []).push({
+                  url: '(inline)',
+                  label: 'Server island runtime',
+                  sizeBytes: serverIslandSize,
+                  kind: 'bootstrap',
+                  inputs: [],
+                });
+              }
             }
             const html = Mochi.resolveHtmlShell(shellTemplate, result, registry, {
               serverIslandClientJs,
