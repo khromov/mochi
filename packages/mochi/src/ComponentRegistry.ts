@@ -1087,19 +1087,27 @@ export class ComponentRegistry {
             }
             const wcInputs = this.collectWebComponentInputs(output, outputByName);
             const wcSize = wcInputs.reduce((sum, i) => sum + i.size, 0);
-            bundles.push({ url, label: 'Island runtime', sizeBytes: output.size, kind: 'bootstrap', inputs: output.inputs, effectiveSize: wcSize, effectiveInputs: wcInputs });
+            bundles.push({
+              url,
+              label: 'Island runtime',
+              sizeBytes: output.size,
+              kind: 'bootstrap',
+              inputs: ComponentRegistry.cleanInputs(output.inputs),
+              effectiveSize: wcSize,
+              effectiveInputs: ComponentRegistry.cleanInputs(wcInputs),
+            });
           } else {
             const compName = urlToComponent.get(url);
             if (compName) {
               if (!renderedIslandNames.has(compName)) {
                 continue;
               }
-              bundles.push({ url, label: compName, sizeBytes: output.size, kind: 'island', inputs: output.inputs });
+              bundles.push({ url, label: compName, sizeBytes: output.size, kind: 'island', inputs: ComponentRegistry.cleanInputs(output.inputs) });
             } else {
               if (!pageHasIslands) {
                 continue;
               }
-              bundles.push({ url, label: output.name, sizeBytes: output.size, kind: 'chunk', inputs: output.inputs });
+              bundles.push({ url, label: output.name, sizeBytes: output.size, kind: 'chunk', inputs: ComponentRegistry.cleanInputs(output.inputs) });
             }
           }
         }
@@ -1156,6 +1164,14 @@ export class ComponentRegistry {
       hasServerIslands,
       debugBarData,
     };
+  }
+
+  private static cleanInputPath(p: string): string {
+    return p.replace(/^(?:\.\.\/)*node_modules\/(?:\.bun\/[^/]+\/node_modules\/)?/, '');
+  }
+
+  private static cleanInputs(inputs: { path: string; size: number }[]): { path: string; size: number }[] {
+    return inputs.map((i) => ({ path: ComponentRegistry.cleanInputPath(i.path), size: i.size }));
   }
 
   private collectWebComponentInputs(

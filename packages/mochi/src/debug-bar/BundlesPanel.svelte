@@ -29,10 +29,6 @@
   let copiedPath: string | null = $state(null);
   let copiedTimer: ReturnType<typeof setTimeout> | undefined;
 
-  function displayPath(p: string): string {
-    return p.replace(/^(?:\.\.\/)*node_modules\/(?:\.bun\/[^/]+\/node_modules\/)?/, '');
-  }
-
   function selectInput(path: string) {
     if (selectedInput === path) {
       selectedInput = null;
@@ -72,7 +68,7 @@
     <div class="bundle-inputs">
       {#each displayInputs as input (input.path)}
         <button class="input-row" class:selected={selectedInput === input.path} type="button" onclick={() => selectInput(input.path)}>
-          <span class="input-path">{displayPath(input.path)}</span>
+          <span class="input-path">{input.path}</span>
           <span class="input-size">{formatSize(input.size)}</span>
           {#if copiedPath === input.path}
             <span class="copied-toast">Copied</span>
