@@ -6,9 +6,7 @@
   const env = isServer ? 'server' : 'client';
 
   function getParams(): [string, string][] {
-    const entries: [string, string][] = [];
-    url.searchParams.forEach((v, k) => entries.push([k, v]));
-    return entries;
+    return [...url.searchParams] as [string, string][];
   }
 </script>
 
