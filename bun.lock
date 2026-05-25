@@ -126,7 +126,7 @@
         "@fontsource/public-sans": "^5.2.7",
         "@lucide/svelte": "^1.16.0",
         "highlight.js": "^11.11.1",
-        "mdsvex": "^0.12.3",
+        "mdsvex": "^0.12.7",
         "mochi-framework": "workspace:*",
         "rehype-slug": "^6.0.0",
         "slugify": "^1.6.9",
