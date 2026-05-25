@@ -2,7 +2,7 @@
 import path from 'node:path';
 import { Command, Option } from 'commander';
 import * as p from '@clack/prompts';
-import pc from 'picocolors';
+import { styleText } from 'node:util';
 import pkg from '../package.json' with { type: 'json' };
 import { create, SCAFFOLDED_PORT } from './create.ts';
 import { TEMPLATES, TEMPLATE_IDS, type TemplateId } from './templates.ts';
@@ -40,7 +40,7 @@ interface CliOptions {
 }
 
 async function runCreate(rawPath: string | undefined, opts: CliOptions): Promise<void> {
-  p.intro(`${pc.bgMagenta(pc.black(' create-mochi '))} ${pc.dim(`v${pkg.version}`)}`);
+  p.intro(`${styleText(['bgMagenta', 'black'], ' create-mochi ')} ${styleText('dim', `v${pkg.version}`)}`);
 
   const dir = await promptDirectory(rawPath);
   const force = await maybePromptForce(dir, opts.force === true);
@@ -48,38 +48,38 @@ async function runCreate(rawPath: string | undefined, opts: CliOptions): Promise
   const name = defaultNameFor(dir);
 
   const spinner = p.spinner();
-  spinner.start(`Downloading ${pc.cyan(template)} template`);
+  spinner.start(`Downloading ${styleText('cyan', template)} template`);
   let result;
   try {
     result = await create({ dir, template, name, force });
   } catch (err) {
-    spinner.stop(pc.red('Failed to download template.'));
+    spinner.stop(styleText('red', 'Failed to download template.'));
     p.cancel(err instanceof Error ? err.message : String(err));
     process.exit(1);
   }
-  spinner.stop(`Downloaded ${pc.cyan(template)} template`);
+  spinner.stop(`Downloaded ${styleText('cyan', template)} template`);
 
   const rel = path.relative(process.cwd(), result.dir) || '.';
   p.note(
     [
-      pc.dim('Run this to get started:'),
+      styleText('dim', 'Run this to get started:'),
       '',
-      `${pc.dim('1.')} cd ${rel}`,
-      `${pc.dim('2.')} bun install`,
-      `${pc.dim('3.')} bun run dev`,
+      `${styleText('dim', '1.')} cd ${rel}`,
+      `${styleText('dim', '2.')} bun install`,
+      `${styleText('dim', '3.')} bun run dev`,
       '',
-      pc.dim(`mochi-framework pinned to ${result.mochiVersion}`),
+      styleText('dim', `mochi-framework pinned to ${result.mochiVersion}`),
     ].join('\n'),
     "You're all set!",
   );
   p.outro(
     [
-      pc.italic('Server renders calm'),
-      `   ${pc.italic("Islands wake to user's touch")}`,
-      `   ${pc.italic('Mochi blooms in code')}`,
+      styleText('italic', 'Server renders calm'),
+      `   ${styleText('italic', "Islands wake to user's touch")}`,
+      `   ${styleText('italic', 'Mochi blooms in code')}`,
       '',
-      `   ${pc.dim('Docs:')}  ${pc.cyan('https://mochi.fast/')}`,
-      `   ${pc.dim('Local:')} ${pc.cyan(`http://localhost:${SCAFFOLDED_PORT}/`)}`,
+      `   ${styleText('dim', 'Docs:')}  ${styleText('cyan', 'https://mochi.fast/')}`,
+      `   ${styleText('dim', 'Local:')} ${styleText('cyan', `http://localhost:${SCAFFOLDED_PORT}/`)}`,
     ].join('\n'),
   );
 }
@@ -120,7 +120,7 @@ async function maybePromptForce(dir: string, alreadyForced: boolean): Promise<bo
     return true;
   }
   const confirm = await p.confirm({
-    message: `${pc.cyan(dir)} is not empty. Continue and overwrite conflicting files?`,
+    message: `${styleText('cyan', dir)} is not empty. Continue and overwrite conflicting files?`,
     initialValue: false,
   });
   if (p.isCancel(confirm) || confirm !== true) {

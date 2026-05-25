@@ -9,7 +9,7 @@ import { loadSvelteConfig } from './svelteConfig';
 import { logger, setLogLevel } from './log';
 import { consoleLogger } from './consoleLogger';
 import { mochiEvents } from './events';
-import pc from 'picocolors';
+import { styleText } from 'node:util';
 import prettyBytes from './lib/prettyBytes';
 
 export interface MochiBuildOptions {
@@ -53,7 +53,7 @@ export async function build(options: MochiBuildOptions): Promise<void> {
   consoleLogger({ compile: false });
   printHeader();
   const version = await readMochiVersion();
-  console.log(pc.dim(`Mochi v${version}`));
+  console.log(styleText('dim', `Mochi v${version}`));
   console.log('Starting build...\n');
   const startedAt = performance.now();
   const development = options.development ?? false;
@@ -76,9 +76,8 @@ export async function build(options: MochiBuildOptions): Promise<void> {
   });
 
   // Compile all Mochi.page() handlers in one Bun.build so transitive deps
-  // (devalue, picocolors, mochi-framework internals) emit as shared chunks
-  // alongside the per-page `.server.js` files instead of being inlined into
-  // every page.
+  // (devalue, mochi-framework internals) emit as shared chunks alongside the
+  // per-page `.server.js` files instead of being inlined into every page.
   const compiledPages: string[] = [];
   const ssrEntrypoints: string[] = [];
   const allRoutes: RouteEntry[] = [];
@@ -184,23 +183,23 @@ function printHeader(): void {
   ];
   console.log('');
   for (let i = 0; i < wordmark.length; i++) {
-    console.log(pc.cyan(art[i]!) + pc.bold(wordmark[i]!));
+    console.log(styleText('cyan', art[i]!) + styleText('bold', wordmark[i]!));
   }
   console.log('');
 }
 
 function pageSymbol(hyd: number | null): string {
-  return hyd != null && hyd > 0 ? pc.green('●') : pc.cyan('○');
+  return hyd != null && hyd > 0 ? styleText('green', '●') : styleText('cyan', '○');
 }
 
 function kindSymbol(kind: Exclude<RouteKind, 'page'>): string {
   switch (kind) {
     case 'api':
-      return pc.magenta('λ');
+      return styleText('magenta', 'λ');
     case 'ws':
-      return pc.blue('⇄');
+      return styleText('blue', '⇄');
     case 'sse':
-      return pc.green('→');
+      return styleText('green', '→');
   }
 }
 
@@ -219,35 +218,35 @@ function printRouteTree(routes: RouteEntry[], stats: Map<string, { ssrSizeBytes:
   const bundleWidth = Math.max('bundle'.length, ...rows.map((r) => r.ssr?.length ?? 0));
 
   // "  ┌ ● " = 6 chars — header indent matches
-  console.log(pc.dim(`      ${'Route'.padEnd(patternWidth + 2)}  ${'islands'.padStart(islandsWidth)}  ${'bundle'.padStart(bundleWidth)}`));
+  console.log(styleText('dim', `      ${'Route'.padEnd(patternWidth + 2)}  ${'islands'.padStart(islandsWidth)}  ${'bundle'.padStart(bundleWidth)}`));
 
   const n = routes.length;
   for (let i = 0; i < n; i++) {
     const { pattern, kind, hyd, ssr } = rows[i]!;
-    const char = pc.dim(n === 1 ? '─' : i === 0 ? '┌' : i === n - 1 ? '└' : '├');
+    const char = styleText('dim', n === 1 ? '─' : i === 0 ? '┌' : i === n - 1 ? '└' : '├');
     const symbol = kind === 'page' ? pageSymbol(hyd) : kindSymbol(kind);
-    const coloredPattern = pattern.padEnd(patternWidth + 2).replace(/:[^/\s]+/g, (s: string) => pc.cyan(s));
+    const coloredPattern = pattern.padEnd(patternWidth + 2).replace(/:[^/\s]+/g, (s: string) => styleText('cyan', s));
     const isPage = kind === 'page';
-    const hydStr = isPage && hyd != null ? pc.green(String(hyd).padStart(islandsWidth)) : pc.dim('-'.padStart(islandsWidth));
-    const ssrStr = isPage && ssr != null ? pc.dim(ssr.padStart(bundleWidth)) : pc.dim('-'.padStart(bundleWidth));
+    const hydStr = isPage && hyd != null ? styleText('green', String(hyd).padStart(islandsWidth)) : styleText('dim', '-'.padStart(islandsWidth));
+    const ssrStr = isPage && ssr != null ? styleText('dim', ssr.padStart(bundleWidth)) : styleText('dim', '-'.padStart(bundleWidth));
     console.log(`  ${char} ${symbol} ${coloredPattern}  ${hydStr}  ${ssrStr}`);
   }
 
   const legendEntries: string[] = [];
   if (rows.some((r) => r.kind === 'page' && r.hyd != null && r.hyd > 0)) {
-    legendEntries.push(`${pc.green('●')} page with islands`);
+    legendEntries.push(`${styleText('green', '●')} page with islands`);
   }
   if (rows.some((r) => r.kind === 'page' && (r.hyd === null || r.hyd === 0))) {
-    legendEntries.push(`${pc.cyan('○')} ssr-only page`);
+    legendEntries.push(`${styleText('cyan', '○')} ssr-only page`);
   }
   if (rows.some((r) => r.kind === 'api')) {
-    legendEntries.push(`${pc.magenta('λ')} api`);
+    legendEntries.push(`${styleText('magenta', 'λ')} api`);
   }
   if (rows.some((r) => r.kind === 'ws')) {
-    legendEntries.push(`${pc.blue('⇄')} websocket`);
+    legendEntries.push(`${styleText('blue', '⇄')} websocket`);
   }
   if (rows.some((r) => r.kind === 'sse')) {
-    legendEntries.push(`${pc.green('→')} sse`);
+    legendEntries.push(`${styleText('green', '→')} sse`);
   }
-  console.log(`\n  ${legendEntries.join(pc.dim('  ·  '))}`);
+  console.log(`\n  ${legendEntries.join(styleText('dim', '  ·  '))}`);
 }
