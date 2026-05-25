@@ -36,6 +36,10 @@
 
   let selectedInput: string | null = $state(null);
 
+  function displayPath(p: string): string {
+    return p.replace(/^(?:\.\.\/)*node_modules\/(?:\.bun\/[^/]+\/node_modules\/)?/, '');
+  }
+
   function selectInput(path: string) {
     if (selectedInput === path) {
       selectedInput = null;
@@ -64,7 +68,7 @@
     <div class="bundle-inputs">
       {#each bundle.inputs as input (input.path)}
         <button class="input-row" class:selected={selectedInput === input.path} type="button" onclick={() => selectInput(input.path)}>
-          <span class="input-path">{input.path}</span>
+          <span class="input-path">{displayPath(input.path)}</span>
           <span class="input-size">{formatSize(input.size)}</span>
         </button>
       {/each}
@@ -94,7 +98,7 @@
           <div class="bundle-inputs">
             {#each bootstrap.effectiveInputs ?? bootstrap.inputs as input (input.path)}
               <div class="input-row">
-                <span class="input-path">{input.path}</span>
+                <span class="input-path">{displayPath(input.path)}</span>
                 <span class="input-size">{formatSize(input.size)}</span>
               </div>
             {/each}
