@@ -90,16 +90,18 @@ function main() {
 
   const allPackages = new Set([...mainDoc.packages.map((p) => p.name), ...prDoc.packages.map((p) => p.name)]);
 
-  const lines: string[] = [MARKER, '### Mochi review report', '', '**Lines of code** (non-blank lines)', ''];
+  const lines: string[] = [MARKER, '### Mochi review report', ''];
+
+  if (repo && runId) {
+    lines.push(...renderInstallSection(repo, runId));
+    lines.push('');
+  }
+
+  lines.push('**Lines of code** (non-blank lines)', '');
   for (const pkgName of allPackages) {
     const m = mainDoc.packages.find((p) => p.name === pkgName);
     const p = prDoc.packages.find((pp) => pp.name === pkgName);
     lines.push(...renderPackageSection(pkgName, m, p));
-    lines.push('');
-  }
-
-  if (repo && runId) {
-    lines.push(...renderInstallSection(repo, runId));
     lines.push('');
   }
 
