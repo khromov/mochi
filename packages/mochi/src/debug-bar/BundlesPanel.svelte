@@ -35,6 +35,8 @@
   }
 
   let selectedInput: string | null = $state(null);
+  let copiedPath: string | null = $state(null);
+  let copiedTimer: ReturnType<typeof setTimeout> | undefined;
 
   function displayPath(p: string): string {
     return p.replace(/^(?:\.\.\/)*node_modules\/(?:\.bun\/[^/]+\/node_modules\/)?/, '');
@@ -47,6 +49,11 @@
     }
     selectedInput = path;
     navigator.clipboard?.writeText(path);
+    clearTimeout(copiedTimer);
+    copiedPath = path;
+    copiedTimer = setTimeout(() => {
+      copiedPath = null;
+    }, 1200);
   }
 
   const statsHref = `${window.__mochi_asset_prefix}/client/stats`;
@@ -70,6 +77,9 @@
         <button class="input-row" class:selected={selectedInput === input.path} type="button" onclick={() => selectInput(input.path)}>
           <span class="input-path">{displayPath(input.path)}</span>
           <span class="input-size">{formatSize(input.size)}</span>
+          {#if copiedPath === input.path}
+            <span class="copied-toast">Copied</span>
+          {/if}
         </button>
       {/each}
     </div>
@@ -279,6 +289,27 @@
     color: #8c9286;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     flex-shrink: 0;
+  }
+  .copied-toast {
+    font-size: 9px;
+    font-weight: 600;
+    color: #b8a3c4;
+    flex-shrink: 0;
+    animation: copied-fade 1.2s ease forwards;
+  }
+  @keyframes copied-fade {
+    0% {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    70% {
+      opacity: 1;
+      transform: translateY(-4px);
+    }
+    100% {
+      opacity: 0;
+      transform: translateY(-8px);
+    }
   }
   .bundle-empty {
     color: #72786c;
