@@ -94,6 +94,7 @@ export interface DebugBarData {
     label: string;
     sizeBytes: number;
     kind: 'bootstrap' | 'island' | 'chunk';
+    inputs: Array<{ path: string; size: number }>;
   }>;
 }
 

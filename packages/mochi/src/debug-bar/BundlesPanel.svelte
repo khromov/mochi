@@ -1,9 +1,10 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import ChevronRight from '../icons/chevron-right.svelte';
+  import ArrowUpRight from '../icons/arrow-up-right.svelte';
   import DebugPanel from './DebugPanel.svelte';
   import { debugBarState } from './state.svelte';
   import { formatSize } from './utils';
-  import ArrowUpRight from '../icons/arrow-up-right.svelte';
 
   let { open, onclose }: { open: boolean; onclose: () => void } = $props();
 
@@ -12,9 +13,11 @@
     label: string;
     sizeBytes: number;
     kind: 'bootstrap' | 'island' | 'chunk';
+    inputs: Array<{ path: string; size: number }>;
   };
 
   let bundles: BundleInfo[] = $state([]);
+  let expanded: Record<string, boolean> = $state({});
 
   let totalSize = $derived(bundles.reduce((sum, b) => sum + b.sizeBytes, 0));
   let bootstrapBundles = $derived(bundles.filter((b) => b.kind === 'bootstrap'));
@@ -25,12 +28,38 @@
     debugBarState.totalBundleSize = totalSize;
   });
 
+  function toggleExpand(url: string) {
+    expanded[url] = !expanded[url];
+  }
+
   const statsHref = `${window.__mochi_asset_prefix}/client/stats`;
 
   onMount(() => {
     bundles = (window.__mochi_debug?.bundles as BundleInfo[] | undefined) ?? [];
   });
 </script>
+
+{#snippet bundleRow(bundle: BundleInfo)}
+  <div class="bundle-entry" class:open={expanded[bundle.url]}>
+    <div class="bundle-row">
+      <button class="bundle-header" type="button" onclick={() => toggleExpand(bundle.url)}>
+        <span class="chevron"><ChevronRight size={12} /></span>
+        <span class="bundle-name">{bundle.label}</span>
+      </button>
+      <span class="bundle-size">{formatSize(bundle.sizeBytes)}</span>
+    </div>
+    {#if bundle.inputs.length > 0}
+      <div class="bundle-inputs">
+        {#each bundle.inputs as input (input.path)}
+          <div class="input-row">
+            <span class="input-path">{input.path}</span>
+            <span class="input-size">{formatSize(input.size)}</span>
+          </div>
+        {/each}
+      </div>
+    {/if}
+  </div>
+{/snippet}
 
 <DebugPanel title="JS Bundles" color="#b8a3c4" {open} {onclose}>
   <div class="bundle-body">
@@ -44,30 +73,21 @@
       {#if bootstrapBundles.length > 0}
         <div class="bundle-group-label">Runtime</div>
         {#each bootstrapBundles as bundle (bundle.url)}
-          <div class="bundle-row">
-            <span class="bundle-name">{bundle.label}</span>
-            <span class="bundle-size">{formatSize(bundle.sizeBytes)}</span>
-          </div>
+          {@render bundleRow(bundle)}
         {/each}
       {/if}
 
       {#if islandBundles.length > 0}
         <div class="bundle-group-label">Islands</div>
         {#each islandBundles as bundle (bundle.url)}
-          <div class="bundle-row">
-            <span class="bundle-name">{bundle.label}</span>
-            <span class="bundle-size">{formatSize(bundle.sizeBytes)}</span>
-          </div>
+          {@render bundleRow(bundle)}
         {/each}
       {/if}
 
       {#if chunkBundles.length > 0}
         <div class="bundle-group-label">Shared Chunks</div>
         {#each chunkBundles as bundle (bundle.url)}
-          <div class="bundle-row">
-            <span class="bundle-name">{bundle.label}</span>
-            <span class="bundle-size">{formatSize(bundle.sizeBytes)}</span>
-          </div>
+          {@render bundleRow(bundle)}
         {/each}
       {/if}
     {/if}
@@ -101,6 +121,12 @@
     padding: 8px 6px 4px;
     font-family: inherit;
   }
+  .bundle-entry {
+    margin-bottom: 3px;
+  }
+  .bundle-entry:last-child {
+    margin-bottom: 0;
+  }
   .bundle-row {
     background: #272a22;
     color: #e8e6dd;
@@ -113,10 +139,48 @@
     justify-content: space-between;
     align-items: center;
     gap: 8px;
-    margin-bottom: 3px;
+    transition:
+      background 120ms ease,
+      border-color 120ms ease;
   }
-  .bundle-row:last-child {
-    margin-bottom: 0;
+  .bundle-row:hover {
+    background: #2d3128;
+    border-color: #434836;
+  }
+  .bundle-entry.open .bundle-row {
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+    background: #2d3128;
+    border-bottom-color: transparent;
+  }
+  .bundle-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: none;
+    border: none;
+    color: inherit;
+    font: inherit;
+    padding: 0;
+    cursor: pointer;
+    text-align: left;
+    flex: 1;
+    min-width: 0;
+  }
+  .chevron {
+    color: #8e9488;
+    display: inline-flex;
+    align-items: center;
+    transition:
+      transform 120ms ease,
+      color 120ms ease;
+  }
+  .bundle-header:hover .chevron {
+    color: #b8a3c4;
+  }
+  .bundle-entry.open .chevron {
+    transform: rotate(90deg);
+    color: #b8a3c4;
   }
   .bundle-name {
     font-weight: 500;
@@ -128,6 +192,46 @@
   .bundle-size {
     font-size: 10px;
     color: #b8a3c4;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    flex-shrink: 0;
+  }
+  .bundle-inputs {
+    display: none;
+    background: #181b13;
+    border: 1px solid #353930;
+    border-top: 1px solid #2e3228;
+    border-radius: 0 0 6px 6px;
+    padding: 6px 8px;
+    max-height: 200px;
+    overflow-y: auto;
+  }
+  .bundle-entry.open .bundle-inputs {
+    display: block;
+  }
+  .input-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 8px;
+    padding: 2px 4px;
+    font-size: 10px;
+    line-height: 1.5;
+  }
+  .input-row:hover {
+    background: rgba(184, 163, 196, 0.06);
+    border-radius: 3px;
+  }
+  .input-path {
+    color: #a8ada0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    direction: rtl;
+    text-align: left;
+  }
+  .input-size {
+    color: #8c9286;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     flex-shrink: 0;
   }

@@ -1080,19 +1080,19 @@ export class ComponentRegistry {
             if (!pageHasIslands) {
               continue;
             }
-            bundles.push({ url, label: 'Island runtime', sizeBytes: output.size, kind: 'bootstrap' });
+            bundles.push({ url, label: 'Island runtime', sizeBytes: output.size, kind: 'bootstrap', inputs: output.inputs });
           } else {
             const compName = urlToComponent.get(url);
             if (compName) {
               if (!renderedIslandNames.has(compName)) {
                 continue;
               }
-              bundles.push({ url, label: compName, sizeBytes: output.size, kind: 'island' });
+              bundles.push({ url, label: compName, sizeBytes: output.size, kind: 'island', inputs: output.inputs });
             } else {
               if (!pageHasIslands) {
                 continue;
               }
-              bundles.push({ url, label: output.name, sizeBytes: output.size, kind: 'chunk' });
+              bundles.push({ url, label: output.name, sizeBytes: output.size, kind: 'chunk', inputs: output.inputs });
             }
           }
         }
