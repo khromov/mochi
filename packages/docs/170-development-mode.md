@@ -1,7 +1,7 @@
 ---
 title: 'Development mode'
 slug: development-mode
-description: 'What the development flag enables: live reload, file watcher, debug bar, and error overlay.'
+description: 'What the development flag enables: live reload, file watcher, route handler HMR, debug bar, and error overlay.'
 ---
 
 <script>
@@ -84,6 +84,28 @@ await Mochi.serve({
 ```
 
 Defaults are always included — `additionalWatchPaths` is additive. Paths that don't exist on disk are skipped silently.
+
+### Route handler HMR
+
+Svelte component changes are picked up automatically via the SSR compile cache. **Route handler code** — `Mochi.api` handlers, `serverProps` resolvers, form `actions`, `Mochi.ws` handlers, `Mochi.sse` handlers — is also hot-swapped when the route module or any of its transitive dependencies changes.
+
+By convention Mochi looks for `./src/routes.ts` (then `.js`) at startup. Override with `routeModule`:
+
+```ts
+// file: src/index.ts
+await Mochi.serve({
+  routeModule: './src/my-routes.ts', // default: auto-discovered
+  routes,
+});
+```
+
+When a dependency of the route module changes the framework re-bundles it, reimports the fresh handlers, and updates the running server — no restart, no lost WebSocket connections. The browser is notified to reload so pages pick up updated `serverProps`.
+
+<Callout type="info">
+Adding or removing route **patterns** (not just editing handlers) still requires a server restart. The hot-swap updates handler implementations for existing patterns only.
+</Callout>
+
+Do **NOT** rely on module-scoped mutable state surviving a route HMR cycle; instead, move shared state into a separate module that the route module imports (e.g. an in-memory store or database) — each rebuild re-evaluates the route module and resets any `let` / `const` declared at module scope.
 
 ### `file:change` event
 
