@@ -345,7 +345,9 @@
     inset: 0;
     background: rgba(138, 183, 154, 0.22);
     border-radius: 42% 58% 64% 36% / 47% 34% 66% 53%;
-    animation: blob-morph 6s ease-in-out infinite, blob-rotate 12s linear infinite;
+    animation:
+      blob-morph 6s ease-in-out infinite,
+      blob-rotate 12s linear infinite;
   }
   .empty-emoji {
     position: absolute;
