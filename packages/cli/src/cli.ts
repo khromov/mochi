@@ -12,7 +12,6 @@ const program = new Command('create-mochi')
   .description('Scaffold a new Mochi project.')
   .argument('[path]', 'where the project should be created')
   .addOption(new Option('--template <name>', 'starter template').choices([...TEMPLATE_IDS]))
-  .addOption(new Option('--name <name>', 'package.json `name` field (defaults to the directory name)'))
   .addOption(new Option('--force', 'overwrite existing directory contents'))
   .version(pkg.version, '-v, --version')
   .configureHelp({
@@ -37,7 +36,6 @@ await program.parseAsync().catch((err) => {
 
 interface CliOptions {
   template?: TemplateId;
-  name?: string;
   force?: boolean;
 }
 
@@ -47,7 +45,7 @@ async function runCreate(rawPath: string | undefined, opts: CliOptions): Promise
   const dir = await promptDirectory(rawPath);
   const force = await maybePromptForce(dir, opts.force === true);
   const template = await promptTemplate(opts.template);
-  const name = await promptName(opts.name, defaultNameFor(dir));
+  const name = defaultNameFor(dir);
 
   const spinner = p.spinner();
   spinner.start(`Downloading ${pc.cyan(template)} template`);
@@ -146,26 +144,4 @@ async function promptTemplate(provided: string | undefined): Promise<TemplateId>
     process.exit(0);
   }
   return result;
-}
-
-async function promptName(provided: string | undefined, suggested: string): Promise<string> {
-  if (provided) {
-    const err = validatePackageName(provided);
-    if (err) {
-      p.cancel(err);
-      process.exit(1);
-    }
-    return provided;
-  }
-  const result = await p.text({
-    message: 'What should the package be named?',
-    placeholder: suggested,
-    defaultValue: suggested,
-    validate: (value) => validatePackageName(value || suggested) ?? undefined,
-  });
-  if (p.isCancel(result)) {
-    p.cancel('Operation cancelled.');
-    process.exit(0);
-  }
-  return result.trim() || suggested;
 }
