@@ -62,8 +62,6 @@ export interface BundleInfo {
   sizeBytes: number;
   kind: 'bootstrap' | 'island' | 'chunk';
   inputs: Array<{ path: string; size: number }>;
-  effectiveSize?: number;
-  effectiveInputs?: Array<{ path: string; size: number }>;
 }
 
 /**

@@ -14,7 +14,7 @@
   let filterSvelte = $state(false);
 
   function svelteSizeOf(b: BundleInfo): number {
-    return (b.effectiveInputs ?? b.inputs).filter((i) => i.path.startsWith('svelte/')).reduce((s, i) => s + i.size, 0);
+    return b.inputs.filter((i) => i.path.startsWith('svelte/')).reduce((s, i) => s + i.size, 0);
   }
 
   let totalSize = $derived(bundles.reduce((sum, b) => sum + b.sizeBytes, 0));
@@ -61,9 +61,8 @@
 </script>
 
 {#snippet bundleRow(bundle: BundleInfo)}
-  {@const allInputs = bundle.effectiveInputs ?? bundle.inputs}
-  {@const displayInputs = filterSvelte ? allInputs.filter((i) => !i.path.startsWith('svelte/')) : allInputs}
-  {@const displaySize = (bundle.effectiveSize ?? bundle.sizeBytes) - (filterSvelte ? svelteSizeOf(bundle) : 0)}
+  {@const displayInputs = filterSvelte ? bundle.inputs.filter((i) => !i.path.startsWith('svelte/')) : bundle.inputs}
+  {@const displaySize = bundle.sizeBytes - (filterSvelte ? svelteSizeOf(bundle) : 0)}
   <div class="bundle-entry" class:open={expanded[bundle.url]}>
     <div class="bundle-row">
       <button class="bundle-header" type="button" onclick={() => toggleExpand(bundle.url)}>
@@ -82,7 +81,7 @@
           {/if}
         </button>
       {/each}
-      {#if allInputs.length === 0 && bundle.kind === 'bootstrap'}
+      {#if bundle.inputs.length === 0 && bundle.kind === 'bootstrap'}
         <div class="bundle-note">Islands may pull in additional bundles not calculated here.</div>
       {/if}
     </div>

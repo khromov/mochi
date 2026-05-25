@@ -1090,24 +1090,25 @@ export class ComponentRegistry {
             bundles.push({
               url,
               label: 'Island runtime',
-              sizeBytes: output.size,
+              sizeBytes: wcSize,
               kind: 'bootstrap',
-              inputs: ComponentRegistry.cleanInputs(output.inputs),
-              effectiveSize: wcSize,
-              effectiveInputs: ComponentRegistry.cleanInputs(wcInputs),
+              inputs: ComponentRegistry.cleanInputs(wcInputs),
             });
           } else {
             const compName = urlToComponent.get(url);
+            const cleaned = ComponentRegistry.cleanInputs(output.inputs);
+            const nonWc = cleaned.filter((i) => !i.path.includes('web-components/'));
+            const wcDeduct = cleaned.reduce((s, i) => s + (i.path.includes('web-components/') ? i.size : 0), 0);
             if (compName) {
               if (!renderedIslandNames.has(compName)) {
                 continue;
               }
-              bundles.push({ url, label: compName, sizeBytes: output.size, kind: 'island', inputs: ComponentRegistry.cleanInputs(output.inputs) });
+              bundles.push({ url, label: compName, sizeBytes: output.size - wcDeduct, kind: 'island', inputs: nonWc });
             } else {
               if (!pageHasIslands) {
                 continue;
               }
-              bundles.push({ url, label: output.name, sizeBytes: output.size, kind: 'chunk', inputs: ComponentRegistry.cleanInputs(output.inputs) });
+              bundles.push({ url, label: output.name, sizeBytes: output.size - wcDeduct, kind: 'chunk', inputs: nonWc });
             }
           }
         }
