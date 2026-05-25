@@ -11,7 +11,7 @@
 
   let bundles: BundleInfo[] = $state([]);
   let expanded: Record<string, boolean> = $state({});
-  const HIDE_SVELTE_KEY = 'mochi-debug-hide-svelte';
+  const HIDE_SVELTE_KEY = 'mochi:debug:hide-svelte';
   let filterSvelte = $state(localStorage.getItem(HIDE_SVELTE_KEY) === '1');
 
   function svelteSizeOf(b: BundleInfo): number {

@@ -9,7 +9,7 @@
   import { debugBarState } from './state.svelte';
   import { getPropsWarnLevel, formatSize } from './utils';
 
-  const STORAGE_KEY = 'mochi-debug-bar-collapsed';
+  const STORAGE_KEY = 'mochi:debug:collapsed';
 
   type Panel = 'warnings' | 'islands' | 'request' | 'bundles' | null;
   let activePanel: Panel = $state(null);
