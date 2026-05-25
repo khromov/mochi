@@ -95,6 +95,9 @@ export interface DebugBarData {
     sizeBytes: number;
     kind: 'bootstrap' | 'island' | 'chunk';
     inputs: Array<{ path: string; size: number }>;
+    /** Pre-computed web-component inputs and size (bootstrap only). */
+    effectiveSize?: number;
+    effectiveInputs?: Array<{ path: string; size: number }>;
   }>;
 }
 

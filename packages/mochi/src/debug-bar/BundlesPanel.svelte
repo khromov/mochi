@@ -14,6 +14,8 @@
     sizeBytes: number;
     kind: 'bootstrap' | 'island' | 'chunk';
     inputs: Array<{ path: string; size: number }>;
+    effectiveSize?: number;
+    effectiveInputs?: Array<{ path: string; size: number }>;
   };
 
   let bundles: BundleInfo[] = $state([]);
@@ -48,16 +50,14 @@
       </button>
       <span class="bundle-size">{formatSize(bundle.sizeBytes)}</span>
     </div>
-    {#if bundle.inputs.length > 0}
-      <div class="bundle-inputs">
-        {#each bundle.inputs as input (input.path)}
-          <div class="input-row">
-            <span class="input-path">{input.path}</span>
-            <span class="input-size">{formatSize(input.size)}</span>
-          </div>
-        {/each}
-      </div>
-    {/if}
+    <div class="bundle-inputs">
+      {#each bundle.inputs as input (input.path)}
+        <div class="input-row">
+          <span class="input-path">{input.path}</span>
+          <span class="input-size">{formatSize(input.size)}</span>
+        </div>
+      {/each}
+    </div>
   </div>
 {/snippet}
 
@@ -70,12 +70,26 @@
         <strong>{formatSize(totalSize)}</strong> total &middot; {bundles.length} bundle{bundles.length !== 1 ? 's' : ''}
       </div>
 
-      {#if bootstrapBundles.length > 0}
+      {#each bootstrapBundles.slice(0, 1) as bootstrap (bootstrap.url)}
         <div class="bundle-group-label">Runtime</div>
-        {#each bootstrapBundles as bundle (bundle.url)}
-          {@render bundleRow(bundle)}
-        {/each}
-      {/if}
+        <div class="bundle-entry" class:open={expanded[bootstrap.url]}>
+          <div class="bundle-row">
+            <button class="bundle-header" type="button" onclick={() => toggleExpand(bootstrap.url)}>
+              <span class="chevron"><ChevronRight size={12} /></span>
+              <span class="bundle-name">{bootstrap.label}</span>
+            </button>
+            <span class="bundle-size">{formatSize(bootstrap.effectiveSize ?? bootstrap.sizeBytes)}</span>
+          </div>
+          <div class="bundle-inputs">
+            {#each bootstrap.effectiveInputs ?? bootstrap.inputs as input (input.path)}
+              <div class="input-row">
+                <span class="input-path">{input.path}</span>
+                <span class="input-size">{formatSize(input.size)}</span>
+              </div>
+            {/each}
+          </div>
+        </div>
+      {/each}
 
       {#if islandBundles.length > 0}
         <div class="bundle-group-label">Islands</div>
