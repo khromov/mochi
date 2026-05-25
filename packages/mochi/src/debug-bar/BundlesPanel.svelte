@@ -91,7 +91,7 @@
     {#if bundles.length === 0}
       <div class="bundle-empty">
         <div class="empty-celebration">
-          <div class="empty-blob"></div>
+          <div class="empty-blob" class:animate={open}></div>
           <span class="empty-emoji">{'\u{1F973}'}</span>
         </div>
         <div class="empty-text">No framework bundles on this page!</div>
@@ -345,9 +345,10 @@
     inset: 0;
     background: rgba(138, 183, 154, 0.22);
     border-radius: 42% 58% 64% 36% / 47% 34% 66% 53%;
-    animation:
-      blob-morph 6s ease-in-out infinite,
-      blob-rotate 12s linear infinite;
+    animation: none;
+  }
+  .empty-blob.animate {
+    animation: blob-morph 6s ease-in-out infinite, blob-rotate 12s linear infinite;
   }
   .empty-emoji {
     position: absolute;
