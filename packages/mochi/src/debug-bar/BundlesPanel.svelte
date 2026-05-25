@@ -296,34 +296,29 @@
   }
   .copied-toast {
     position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    top: 1px;
+    right: 4px;
     font-size: 9px;
-    font-weight: 700;
-    letter-spacing: 0.06em;
+    font-weight: 600;
     color: #1c1f17;
+    background: #b8a3c4;
+    padding: 1px 6px;
+    border-radius: 3px;
     pointer-events: none;
     animation: copied-fade 1.2s ease forwards;
-  }
-  .copied-toast::before {
-    content: '';
-    position: absolute;
-    inset: 1px 0;
-    background: #b8a3c4;
-    border-radius: 3px;
-    z-index: -1;
   }
   @keyframes copied-fade {
     0% {
       opacity: 1;
+      transform: translateY(0);
     }
     70% {
       opacity: 1;
+      transform: translateY(-4px);
     }
     100% {
       opacity: 0;
+      transform: translateY(-8px);
     }
   }
   .bundle-empty {
