@@ -79,7 +79,7 @@ const ANALYTICS_SCRIPT = `<script defer src="https://u.khromov.se/u.js" data-web
 const analytics: Handle = async ({ event, resolve }) => {
   return resolve(event, {
     transformPage({ html }) {
-      return html.replace('{{mochi.analytics}}', process.env.MODE === 'development' ? '' : ANALYTICS_SCRIPT);
+      return html.replace('{{mochi.analytics}}', IS_DOCKER ? ANALYTICS_SCRIPT : '');
     },
   });
 };
