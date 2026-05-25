@@ -1,17 +1,17 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import ArrowUpRight from '../icons/arrow-up-right.svelte';
   import StatusDot from './StatusDot.svelte';
   import RequestPanel from './RequestPanel.svelte';
   import IslandsPanel from './IslandsPanel.svelte';
   import WarningsPanel from './WarningsPanel.svelte';
+  import BundlesPanel from './BundlesPanel.svelte';
   import { cleanupHighlight } from './highlight';
   import { debugBarState } from './state.svelte';
-  import { getPropsWarnLevel } from './utils';
+  import { getPropsWarnLevel, formatSize } from './utils';
 
-  const STORAGE_KEY = 'mochi-debug-bar-collapsed';
+  const STORAGE_KEY = 'mochi:debug:collapsed';
 
-  type Panel = 'warnings' | 'islands' | 'request' | null;
+  type Panel = 'warnings' | 'islands' | 'request' | 'bundles' | null;
   let activePanel: Panel = $state(null);
 
   let hasDebugInfo = $state(false);
@@ -43,8 +43,9 @@
 
   let warnLevel = $derived(getPropsWarnLevel(debugBarState.totalPropsSize));
 
-  // Mochi.ts seeds window.__mochi_asset_prefix whenever the debug bar is enabled.
-  const statsHref = `${window.__mochi_asset_prefix}/client/stats`;
+  let bundleSizeLabel = $derived(debugBarState.displayBundleSize > 0 ? formatSize(debugBarState.displayBundleSize) : '0');
+  let noJs = $derived(debugBarState.totalBundleSize === 0);
+  let bundleFiltered = $derived(debugBarState.bundleFiltered);
 
   onMount(() => {
     hasDebugInfo = !!window.__mochi_debug;
@@ -68,6 +69,7 @@
 <div class="mochi-debug-bar-root" bind:this={rootEl}>
   <WarningsPanel open={activePanel === 'warnings'} onclose={() => (activePanel = null)} />
   <IslandsPanel open={activePanel === 'islands'} onclose={() => (activePanel = null)} />
+  <BundlesPanel open={activePanel === 'bundles'} onclose={() => (activePanel = null)} />
   <RequestPanel open={activePanel === 'request'} onclose={() => (activePanel = null)} />
 
   <div class="bar" class:is-collapsed={collapsed}>
@@ -99,9 +101,10 @@
           Warnings <span class="badge">{debugBarState.warningCount}</span>
         </button>
       {/if}
-      <a href={statsHref} target="_blank" rel="noopener" class="btn stats-btn" tabindex={collapsed ? -1 : 0}>
-        Bundles <ArrowUpRight size={12} />
-      </a>
+      <button class="btn bundles-btn" class:no-js={noJs} onclick={() => toggle('bundles')} tabindex={collapsed ? -1 : 0}>
+        JS <span class="bundle-badge" class:sparkle={noJs}>{bundleSizeLabel}</span>
+        {#if bundleFiltered}<span class="filter-dot"></span>{/if}
+      </button>
     </div>
   </div>
 </div>
@@ -301,15 +304,86 @@
     color: #d4e0e8;
     border-color: #6a7a86;
   }
-  .stats-btn {
-    background: transparent;
-    color: #a8ada0;
-    border-color: #4a5040;
+  .bundles-btn {
+    position: relative;
+    background: #2e2a38;
+    color: #c4b8d4;
+    border-color: #4a4060;
   }
-  .stats-btn:hover {
-    color: #ffffff;
+  .bundles-btn:hover {
+    background: #383248;
+    color: #e0d8ee;
+    border-color: #b8a3c4;
+  }
+  .filter-dot {
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #e85454;
+    pointer-events: none;
+  }
+  .bundle-badge {
+    border-radius: 999px;
+    min-width: 1.4em;
+    height: 1.4em;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.82em;
+    font-weight: 600;
+    padding: 0 0.45em;
+    background: rgba(184, 163, 196, 0.28);
+    color: #e0d8ee;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    letter-spacing: 0;
+  }
+  .bundles-btn.no-js {
+    background: #1f2a20;
+    color: #a8c9a8;
+    border-color: #3a5040;
+  }
+  .bundles-btn.no-js:hover {
+    background: #263228;
+    color: #c8e8c8;
     border-color: #8ab79a;
-    background: #2a2e25;
+  }
+  .bundle-badge.sparkle {
+    position: relative;
+    overflow: visible;
+    background: rgba(138, 183, 154, 0.28);
+    color: #c8e8c8;
+  }
+  .bundle-badge.sparkle::after {
+    content: '✦';
+    position: absolute;
+    top: -3px;
+    right: -2px;
+    font-size: 0.9em;
+    color: #ffffff;
+    animation: sparkle-pulse 2s ease-in-out infinite;
+    pointer-events: none;
+  }
+  @keyframes sparkle-pulse {
+    0%,
+    100% {
+      opacity: 0;
+      transform: scale(0.5) rotate(0deg);
+    }
+    20% {
+      opacity: 1;
+      transform: scale(1.2) rotate(72deg);
+    }
+    50% {
+      opacity: 0.6;
+      transform: scale(0.8) rotate(144deg);
+    }
+    70% {
+      opacity: 0;
+      transform: scale(0.4) rotate(216deg);
+    }
   }
   .badge {
     border-radius: 999px;

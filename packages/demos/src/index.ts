@@ -1,4 +1,4 @@
-import { Mochi, silenceInternalRoutes } from 'mochi-framework';
+import { Mochi, sequence, silenceInternalRoutes } from 'mochi-framework';
 import type { Handle } from 'mochi-framework';
 import { routes } from './routes';
 
@@ -11,6 +11,15 @@ const immutableAssets: Handle = async ({ event, resolve }) => {
   return response;
 };
 
+const ANALYTICS_SCRIPT = `<script defer src="https://u.khromov.se/u.js" data-website-id="8dceb8f5-6533-4c03-9cd6-1ce74accd63a"></script>`;
+const analytics: Handle = async ({ event, resolve }) => {
+  return resolve(event, {
+    transformPage({ html }) {
+      return html.replace('{{mochi.analytics}}', process.env.MODE === 'development' ? '' : ANALYTICS_SCRIPT);
+    },
+  });
+};
+
 const PORT = Number(process.env.PORT) || 3334;
 
 await Mochi.serve({
@@ -21,7 +30,7 @@ await Mochi.serve({
   trailingSlash: 'always',
   idleTimeout: 60,
   compressServerIslandProps: true,
-  handle: immutableAssets,
+  handle: sequence(immutableAssets, analytics),
   filters: {
     'consoleLogger:line': silenceInternalRoutes,
   },
