@@ -485,6 +485,8 @@ export class Mochi {
               }
             });
 
+          // In HMR mode (pageConfigMap set), register POST for all pages so actions
+          // can be added via hot-swap without restart. Returns 405 if none exist.
           if (actions || pageConfigMap) {
             const postHandler = (req: Request, server: Server<undefined>): Promise<Response> =>
               wrapRequest(req, server, async (ctx, event, resolveOpts) => {

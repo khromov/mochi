@@ -213,28 +213,35 @@ export function startDevWatcher(deps: DevWatcherDeps): void {
     }
     routeModuleDeps = newDeps;
     const outFile = path.resolve(routeModuleOutDir, 'routes.js');
+    // Cache-bust via query string — each import creates a new module entry in Bun's
+    // module cache that is never evicted. Acceptable for a dev-only path; would need
+    // Loader.registry cleanup if Bun exposes it in the future.
     const mod = await import(outFile + `?t=${Date.now()}`);
     return mod.routes ?? null;
   }
 
-  function updateHandlerMaps(freshRoutes: Record<string, unknown>): number {
-    let updated = 0;
+  function updateHandlerMaps(freshRoutes: Record<string, unknown>): { total: number; api: number; ws: number; sse: number; page: number } {
+    const counts = { total: 0, api: 0, ws: 0, sse: 0, page: 0 };
     for (const [pattern, handler] of Object.entries(freshRoutes)) {
       if (isMochiApi(handler) && apiHandlerMap?.has(pattern)) {
         apiHandlerMap.set(pattern, handler.handler);
-        updated++;
+        counts.api++;
+        counts.total++;
       } else if (isMochiWs(handler) && wsHandlersMap?.has(pattern)) {
         wsHandlersMap.set(pattern, handler.handlers as MochiWsHandlers<unknown>);
-        updated++;
+        counts.ws++;
+        counts.total++;
       } else if (isMochiSse(handler) && sseHandlerMap?.has(pattern)) {
         sseHandlerMap.set(pattern, handler.handler);
-        updated++;
+        counts.sse++;
+        counts.total++;
       } else if (isMochiPage(handler) && pageConfigMap?.has(pattern)) {
         pageConfigMap.set(pattern, { serverProps: handler.serverProps, actions: handler.actions });
-        updated++;
+        counts.page++;
+        counts.total++;
       }
     }
-    return updated;
+    return counts;
   }
 
   const triggerRouteReload = routeModule
@@ -242,13 +249,26 @@ export function startDevWatcher(deps: DevWatcherDeps): void {
         reloadChain = reloadChain.then(async () => {
           mochiEvents.emit('recompile:start', { trigger: 'route-module', path: filename, pageCount: 0 });
           const start = performance.now();
-          let updated = 0;
+          let counts = { total: 0, api: 0, ws: 0, sse: 0, page: 0 };
           try {
             const freshRoutes = await buildRouteModule();
             if (freshRoutes) {
-              updated = updateHandlerMaps(freshRoutes);
-              if (updated > 0) {
-                logger.info(`Route module rebuilt — ${updated} handler(s) updated`);
+              counts = updateHandlerMaps(freshRoutes);
+              if (counts.total > 0) {
+                const parts: string[] = [];
+                if (counts.api) {
+                  parts.push(`${counts.api} api`);
+                }
+                if (counts.ws) {
+                  parts.push(`${counts.ws} ws`);
+                }
+                if (counts.sse) {
+                  parts.push(`${counts.sse} sse`);
+                }
+                if (counts.page) {
+                  parts.push(`${counts.page} page`);
+                }
+                logger.info(`Route module rebuilt — ${parts.join(', ')}`);
               }
             }
           } catch (e) {
@@ -262,13 +282,16 @@ export function startDevWatcher(deps: DevWatcherDeps): void {
             clientBundleCount: 0,
             durationMs: performance.now() - start,
           });
-          if (updated > 0) {
+          if (counts.total > 0) {
             notifyClients();
           }
         });
       }, 100)
     : undefined;
 
+  // Build the route module before the watcher starts so routeModuleDeps is populated
+  // before any file-change events arrive. The watcher uses `ignoreInitial: true` and
+  // real FS events arrive on a later tick, so the microtask-queued build always wins.
   if (routeModule) {
     reloadChain = reloadChain.then(async () => {
       await buildRouteModule().catch((e) => {
@@ -331,11 +354,12 @@ export function startDevWatcher(deps: DevWatcherDeps): void {
         reloadPublic(filePath);
       } else if (filePath.endsWith('.css')) {
         triggerCssReload(filePath);
+      } else if (triggerRouteReload && routeModuleDeps.has(path.resolve(filePath))) {
+        // Route module deps are handler .ts/.js files not in the Svelte graph —
+        // skip SSR recompile and only rebuild the route module.
+        triggerRouteReload(filePath);
       } else {
         triggerReload(filePath);
-        if (triggerRouteReload && routeModuleDeps.has(path.resolve(filePath))) {
-          triggerRouteReload(filePath);
-        }
       }
     })
     .on('error', (err: unknown) => {
