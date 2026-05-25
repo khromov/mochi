@@ -347,7 +347,16 @@ export class Mochi {
     // Pre-compile Mochi.page() handlers so SSR is ready at startup
     const mochiPageMap = new Map<string, MochiPageConfig>();
     const wsHandlersMap = new Map<string, MochiWsHandlers<unknown>>();
-    const routeHmr = development && !!options.routeModule;
+    let resolvedRouteModule = options.routeModule;
+    if (development && !resolvedRouteModule) {
+      for (const candidate of ['./src/routes.ts', './src/routes.js']) {
+        if (existsSync(candidate)) {
+          resolvedRouteModule = candidate;
+          break;
+        }
+      }
+    }
+    const routeHmr = development && !!resolvedRouteModule;
     const apiHandlerMap = routeHmr ? new Map<string, MochiApiHandler>() : undefined;
     const sseHandlerMap = routeHmr ? new Map<string, MochiSseHandler>() : undefined;
     const pageConfigMap = routeHmr ? new Map<string, { serverProps?: Record<string, unknown> | MochiServerPropsResolver; actions?: MochiFormActions }>() : undefined;
@@ -1155,7 +1164,7 @@ export class Mochi {
         publicDir,
         watchPaths,
         development,
-        routeModule: options.routeModule,
+        routeModule: resolvedRouteModule,
         apiHandlerMap,
         sseHandlerMap,
         wsHandlersMap,
