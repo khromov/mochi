@@ -21,7 +21,7 @@
     "@tailwindcss/oxide": "4.3.0",
     "html-entities": "^2.6.0",
     "mochi-framework": "workspace:*",
-    "svelte": "^5.55.7",
+    "svelte": "^5.55.9",
     "svelte-meta-tags": "^4.7.0",
     "tailwindcss": "4.3.0"
   },
