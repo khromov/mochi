@@ -214,8 +214,8 @@ export async function buildSitemapXml(): Promise<string> {
 
   const urls: string[] = [
     `  <url><loc>${SITE_BASE}/</loc></url>`,
-    ...docs.map((d) => `  <url><loc>${SITE_BASE}/docs/${d.slug}</loc></url>`),
-    ...internalDemos.map((d) => `  <url><loc>${SITE_BASE}${d.href}</loc></url>`),
+    ...docs.map((d) => `  <url><loc>${SITE_BASE}/docs/${d.slug}/</loc></url>`),
+    ...internalDemos.map((d) => `  <url><loc>${SITE_BASE}${d.href}/</loc></url>`),
   ];
 
   cachedSitemapXml = ['<?xml version="1.0" encoding="UTF-8"?>', '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">', ...urls, '</urlset>', ''].join('\n');
