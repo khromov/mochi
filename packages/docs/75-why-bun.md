@@ -10,32 +10,16 @@ Mochi was built to be performant and simple. We do this by "outsourcing" subsyst
 
 The result: a full-featured SSR framework with just ~15 runtime dependencies. This isn't about minimizing dependencies for the sake of it — external deps are fine when they earn their place. The point is to use Buns extensive standard library and provide a toolkit that makes it possible to build complex web apps with just a few well-chosen dependencies.
 
-### The hard-to-replace APIs
+### What does Mochi actually use from Bun?
 
-Two Bun APIs that would require significant external packages to replicate:
-
-**`Bun.build()` / `Bun.Transpiler`** — Mochi's bundler. Bundles client islands and transpiles `.ts` / `.svelte` on demand during SSR. Without Bun you'd pull in Vite, Rolldown, or esbuild.
-
-**`HTMLRewriter`** — Bun ships Cloudflare's lol-html as a built-in global. Mochi uses it for:
-
-- **Islands discovery** — after SSR, scans the output HTML to find which `<mochi-hydratable-island>` and `<mochi-server-island>` elements were actually rendered, so only their JS/CSS ships to the client.
-- **Hydration marker stripping** — removes Svelte SSR comment markers from page-level HTML while preserving them inside island boundaries where hydration needs them.
-
-Without it you'd need `htmlparser2`, `cheerio`, or similar.
-
-### Everything else
-
-Convenient APIs that could individually be replaced with npm packages or Node built-ins, but together they keep the dep tree flat:
-
-- `Bun.serve()` — backs the HTTP and WebSocket server in `Mochi.serve()`.
-- `Bun.file()` and `Bun.write()` — read the HTML shell and component sources, write built assets, serve static files.
-- `Bun.Glob` — discovers routes, docs, and raw CSS files.
-- `Bun.hash` — generates content-hashed filenames for cache-busted bundles and CSS.
-- `Bun.gzipSync` and `Bun.deflateSync` / `Bun.inflateSync` — compress HTTP responses and pack signed server-island prop payloads into URLs.
-- `Bun.resolveSync` — resolves `devalue` and `mitt` injected into generated client code.
-- `bun:sqlite` — zero-dep SQLite for app data.
-- Native `.ts` execution and auto-loaded `.env` — sources run directly under `bun run`.
+- `Bun.build()` and `Bun.Transpiler` — Mochi's bundler. Replaces Vite and other build tools.
+- `HTMLRewriter` — Mochi uses it for islands discovery and HTML rewriting. Replaces `htmlparser2`, `cheerio`, and similar libraries.
+- `Bun.serve()` — backs the HTTP and WebSocket server in `Mochi.serve()`. Replaces `express`, `fastify`, or `hono`.
+- `Bun.Glob` — discovers routes, docs, and raw CSS files. Replaces `fast-glob` or `globby`.
+- `Bun.gzipSync` and `Bun.deflateSync` / `Bun.inflateSync` — compress HTTP responses and pack signed server-island prop payloads into URLs. Replaces `node:zlib`.
+- `bun:sqlite` and `bun:sql` — zero-dep SQLite and PostgreSQL for app data. Replaces `better-sqlite3` and `pg`.
+- Native `.ts` execution and auto-loaded `.env` — TypeScript runs directly under `bun run`. Replaces `ts-node` and `dotenv`.
 
 ### On the horizon
 
-`Bun.Image()` — on-the-fly image resizing (like `next/image` without pulling in `sharp`). Same pattern: use the runtime, skip the dep.
+As Bun gets new features, we get new abilities to extend Mochi — for example `Bun.Image()` for on-the-fly image resizing (like `next/image` without pulling in `sharp`).
