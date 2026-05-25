@@ -25,7 +25,7 @@ The header text, the main column, and the footer ship as HTML and stay that way.
 
 ## Why would I consider Mochi over SvelteKit?
 
-- **Faster sites.** Mochi ships zero client JavaScript by default. And even when you do decide to ship interactive components, your bundles will still be smaller than SvelteKit which always ships your whole application to the client.
+- **Faster sites.** Mochi ships zero client JavaScript by default. SvelteKit code-splits per route but still hydrates the entire page — even purely static content. Mochi only hydrates the components you explicitly mark as islands, which means less JS on first load, better bfcache behavior, and a natural fit for any site.
 - **Performant hydration.** Avoid hydrating islands until the users scrolls into them with `mochi:hydrate:visible`. Or avoid hydrating at all if the user never scrolls down to that component. Your users will thank you for the faster experience.
 - **Uses the platform.** Mochi ships with first-class support for View Transitions. No client side router, no state to keep track of between requests.
 - **No heavy bundler (no Vite).** Uses the lighting-fast Bun bundler, which builds sites with hundreds of routes in seconds.
