@@ -43,15 +43,17 @@ class ServerIsland extends HTMLElement {
   }
 
   async _fetchContent(options: Record<string, unknown> = {}) {
-    const componentName = this.getAttribute('component-name');
+    const g = (k: string) => this.getAttribute(k);
+    const componentName = g('component-name');
     if (!componentName) {
       return;
     }
 
     const tag = `[mochi] Server island "${componentName}"`;
-    const signedProps = this.getAttribute('signed-props');
-    const alsoHydrate = this.getAttribute('also-hydrate') || '';
-    const assetPrefix = this.getAttribute('data-asset-prefix');
+    const ll = window.__mochi_log_level;
+    const signedProps = g('signed-props');
+    const alsoHydrate = g('also-hydrate') || '';
+    const assetPrefix = g('data-asset-prefix');
     let url = `${assetPrefix}/island/${encodeURIComponent(componentName)}`;
     const params = new URLSearchParams();
     if (signedProps) {
@@ -74,7 +76,7 @@ class ServerIsland extends HTMLElement {
     let lastErr: unknown;
     for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
       try {
-        const response = await fetch(url, { credentials: 'same-origin' });
+        const response = await fetch(url);
         if (!response.ok) {
           if (response.status >= 400 && response.status < 500) {
             throw Object.assign(new Error(`HTTP ${response.status}`), { abort: true });
@@ -83,11 +85,11 @@ class ServerIsland extends HTMLElement {
         }
         const html = await response.text();
 
-        if (window.__mochi_log_level === 'log' || window.__mochi_log_level === 'debug') {
+        if (ll === 'log' || ll === 'debug') {
           console.log(`${tag} loaded (attempt ${attempt}, ${(html.length / 1024).toFixed(1)}kB, alsoHydrate=${alsoHydrate || 'none'})`);
         }
 
-        const cssUrl = this.getAttribute('css-url');
+        const cssUrl = g('css-url');
         if (cssUrl && !_css.has(cssUrl)) {
           _css.add(cssUrl);
           const link = document.createElement('link');
@@ -105,7 +107,7 @@ class ServerIsland extends HTMLElement {
           throw err;
         }
         lastErr = err;
-        if (window.__mochi_log_level !== 'silent' && window.__mochi_log_level !== 'error') {
+        if (ll !== 'silent' && ll !== 'error') {
           console.warn(`${tag} failed (attempt ${attempt}/${maxRetries + 1}): ${err}`);
         }
         if (attempt <= maxRetries) {
@@ -116,7 +118,7 @@ class ServerIsland extends HTMLElement {
     }
 
     const msg = `${tag} failed after ${maxRetries + 1} attempts: ${lastErr}`;
-    if (window.__mochi_log_level !== 'silent') {
+    if (ll !== 'silent') {
       console.error(msg);
     }
     window.__mochi_warn?.(msg);
