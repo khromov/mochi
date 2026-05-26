@@ -40,5 +40,8 @@ db
 reports
 .claude/*
 !.claude/skills/
+!.claude/commands/
+!.claude/autofixer-report.ts
 IMPROVEMENTS.md
 flamegraphs
+REPORT.md

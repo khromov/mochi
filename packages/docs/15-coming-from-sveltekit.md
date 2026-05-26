@@ -69,14 +69,9 @@ Register the most specific patterns first — Bun matches in declaration order, 
 
 ### Layouts
 
-SvelteKit's `+layout.svelte` / `+layout.server.ts` have no Mochi equivalent. Compose Svelte components yourself — each page imports the shell it needs, and shared `serverProps` resolvers can call a common helper.
+SvelteKit's `+layout.svelte` / `+layout.server.ts` have no Mochi equivalent. In SvelteKit, layouts persist across navigations — the client-side router keeps the layout component mounted and only swaps the page slot, which also lets `+layout.server.ts` skip refetching data that hasn't been invalidated. Mochi has no client-side router, so every navigation is a full page load; there is no component tree to persist and no data to selectively revalidate.
 
-```ts
-// file (SvelteKit): src/routes/+layout.server.ts
-export async function load() {
-  return { user: await loadCurrentUser() };
-}
-```
+Instead, create a wrapper component that accepts `children`, and import it from each page.
 
 ```svelte
 <!-- file (SvelteKit): src/routes/+layout.svelte -->
@@ -86,6 +81,42 @@ export async function load() {
 
 <nav>Hi {data.user.name}</nav>
 {@render children()}
+```
+
+```svelte
+<!-- file (Mochi): src/lib/Layout.svelte -->
+<script>
+  let { user, children } = $props();
+</script>
+
+<nav>Hi {user.name}</nav>
+{@render children()}
+```
+
+In SvelteKit, `+layout.svelte` wraps `+page.svelte` automatically. In Mochi, the page must import and wrap itself:
+
+```svelte
+<!-- file (Mochi): src/Home.svelte -->
+<script>
+  import Layout from './lib/Layout.svelte';
+  let { user, posts } = $props();
+</script>
+
+<Layout {user}>
+  <h1>Posts</h1>
+  {#each posts as post}
+    <a href="/posts/{post.slug}">{post.title}</a>
+  {/each}
+</Layout>
+```
+
+Share data that SvelteKit's `+layout.server.ts` would have loaded via a common helper, and spread the result into each route's `serverProps`:
+
+```ts
+// file (SvelteKit): src/routes/+layout.server.ts
+export async function load() {
+  return { user: await loadCurrentUser() };
+}
 ```
 
 ```ts
@@ -106,6 +137,12 @@ export const routes = {
   }),
 };
 ```
+
+<Callout type="tip">
+
+Every page that shares a shell imports the layout component explicitly — there is no automatic nesting. This is more verbose than SvelteKit, but makes the component tree visible at each call site.
+
+</Callout>
 
 ### Load functions
 
@@ -513,7 +550,7 @@ cookies.set('session', token, { httpOnly: true, sameSite: 'Lax', path: '/' });
 
 ### `$app/state` and the `page` store
 
-There is no reactive `page` store. Server-side, `getRequestContext()` returns `{ requestId, request, url, params, locals, cookies, islandProps, getClientAddress, form?, debugBarData? }`. Client-side, hydrated islands receive `islandId` and (where applicable) `isHydratable` as implicit props; if you need the current URL after hydration, read `location` directly.
+There is no reactive `page` store. Instead, import `url`, `params`, `cookies`, and `locals` directly from `mochi-framework`. `url` is isomorphic — it reads from the request context on the server and from `window.location` on the client. `params` and `locals` are server-only.
 
 ```svelte
 <!-- file (SvelteKit): src/routes/+page.svelte -->
@@ -527,8 +564,7 @@ There is no reactive `page` store. Server-side, `getRequestContext()` returns `{
 ```svelte
 <!-- file (Mochi): src/Some.svelte -->
 <script>
-  import { getRequestContext } from 'mochi-framework';
-  const { url, params } = getRequestContext();
+  import { url, params } from 'mochi-framework';
 </script>
 
 <p>{url.pathname} — {params.slug}</p>
@@ -536,7 +572,7 @@ There is no reactive `page` store. Server-side, `getRequestContext()` returns `{
 
 <Callout type="tip">
 
-Call `getRequestContext()` on the server and use `location` / `window` on the client — there is no `$app/state` or `$app/stores` like in SvelteKit.
+`url` works on both server and client — no need to branch on environment. `params` and `locals` are server-only; guard them with `isServer` if needed. See [Request context](/docs/request-context/).
 
 </Callout>
 

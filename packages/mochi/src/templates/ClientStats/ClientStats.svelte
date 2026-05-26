@@ -6,7 +6,7 @@
 
   let { stats }: { stats: { outputs: Output[] } } = $props();
 
-  const totalSize = stats.outputs.reduce((sum, o) => sum + o.size, 0);
+  const totalSize = $derived(stats.outputs.reduce((sum, o) => sum + o.size, 0));
 </script>
 
 <svelte:head>

@@ -3,7 +3,7 @@ import rehypeSlug from 'rehype-slug';
 import { Mochi, error, getRequestContext } from 'mochi-framework';
 import type { MochiBuildOptions, MarkdownConfig, MochiRouteValue } from 'mochi-framework';
 import { highlightCode } from './lib/highlightCode';
-import { buildDocsNav, buildLlmsTxt, buildLlmsFullTxt, getDoc, getDocLlmsTxt, getDocNeighbors, loadDocs } from './lib/docs';
+import { buildDocsNav, buildLlmsTxt, buildLlmsFullTxt, buildSitemapXml, getDoc, getDocLlmsTxt, getDocNeighbors, loadDocs } from './lib/docs';
 import { profilerEnabled, startProfiler, stopProfiler } from './lib/profiler';
 import { routes as apiRoutes } from './demos/api/routes';
 import { routes as cacheEventsRoutes } from './demos/cache-events/routes';
@@ -35,6 +35,7 @@ import { routes as serverIslandRoutes } from './demos/server-island/routes';
 import { routes as serverPropsRoutes } from './demos/server-props/routes';
 import { routes as sharedStateRoutes } from './demos/shared-state/routes';
 import { routes as streamsRoutes } from './demos/streams/routes';
+import { routes as urlRoutes } from './demos/url/routes';
 import { routes as yourFirstMochiAppRoutes } from './demos/your-first-mochi-app/routes';
 
 const dev = process.env.MODE === 'development';
@@ -88,6 +89,11 @@ export const routes: Record<string, MochiRouteValue> = {
     },
   }),
   '/og': Mochi.page('./src/og/OgPage.svelte'),
+  '/sitemap.xml': Mochi.api(async () => {
+    return new Response(await buildSitemapXml(), {
+      headers: { 'Content-Type': 'application/xml; charset=utf-8' },
+    });
+  }),
   '/llms.txt': Mochi.api(async () => {
     return new Response(await buildLlmsTxt(), {
       headers: { 'Content-Type': 'text/plain; charset=utf-8' },
@@ -139,6 +145,7 @@ export const routes: Record<string, MochiRouteValue> = {
   ...serverPropsRoutes,
   ...sharedStateRoutes,
   ...streamsRoutes,
+  ...urlRoutes,
   ...yourFirstMochiAppRoutes,
 };
 
