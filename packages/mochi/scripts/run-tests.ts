@@ -14,7 +14,7 @@ let idx = 0;
 
 async function next(): Promise<void> {
   while (idx < parallel.length) {
-    const file = parallel[idx++];
+    const file = parallel[idx++]!;
     const proc = Bun.spawn(['bun', 'test', file], {
       stdin: 'ignore',
       stdout: 'pipe',
