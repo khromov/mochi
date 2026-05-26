@@ -7,6 +7,8 @@ const all = (await Array.fromAsync(new Glob('src/**/*.test.ts').scan('.'))).sort
 const parallel = all.filter((f) => !sequential.has(f));
 
 const concurrency = navigator.hardwareConcurrency;
+console.log(`Running ${all.length} test files (${parallel.length} parallel × ${concurrency} workers, ${sequential.size} sequential)`);
+
 const results: { file: string; ok: boolean }[] = [];
 let idx = 0;
 
