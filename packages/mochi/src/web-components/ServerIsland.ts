@@ -83,8 +83,6 @@ class ServerIsland extends HTMLElement {
         }
         const html = await response.text();
 
-        // SAFETY: HTML comes from our own same-origin server-island endpoint with HMAC-signed props.
-        // If the island endpoint ever returns user-controlled content, this must be sanitized.
         logger.log(`Server island "${componentName}" loaded (attempt ${attempt}, ${prettyBytes(html.length)}, alsoHydrate=${alsoHydrate || 'none'})`);
 
         const cssUrl = this.getAttribute('css-url');
@@ -96,6 +94,8 @@ class ServerIsland extends HTMLElement {
           document.head.appendChild(link);
         }
 
+        // SAFETY: HTML comes from our own same-origin server-island endpoint with HMAC-signed props.
+        // If the island endpoint ever returns user-controlled content, this must be sanitized.
         this.innerHTML = html;
         return;
       } catch (err) {
