@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.4.0](https://github.com/khromov/mochi/compare/mochi-framework-v0.3.2...mochi-framework-v0.4.0) (2026-05-26)
+
+
+### Features
+
+* make url export isomorphic (server + client) ([#47](https://github.com/khromov/mochi/issues/47)) ([11bbbe6](https://github.com/khromov/mochi/commit/11bbbe6b4d500a7efa17ba7ebc053783a1dd7f5e))
+* per-page JS bundle panel in debug bar ([#42](https://github.com/khromov/mochi/issues/42)) ([7eba984](https://github.com/khromov/mochi/commit/7eba9847727f9685566044c1c28ea84bb48704f9))
+
+
+### Bug Fixes
+
+* resolve Svelte 5 state warnings and add autofixer tooling ([#49](https://github.com/khromov/mochi/issues/49)) ([3d949a5](https://github.com/khromov/mochi/commit/3d949a5cd52592de268a57ae22de9d58a33d8163))
+
+
+### Performance
+
+* consolidate per-request HTML passes in renderComponent ([#36](https://github.com/khromov/mochi/issues/36)) ([285a87f](https://github.com/khromov/mochi/commit/285a87f3ea117d0b7147a1ec50d46be19dabd514))
+* reduce server island runtime by ~80% (8.59kB → 1.91kB ) ([#50](https://github.com/khromov/mochi/issues/50)) ([d570bc8](https://github.com/khromov/mochi/commit/d570bc83e2e5f202b37f96e4c02f6f1267d86292))
+
 ## [0.3.2](https://github.com/khromov/mochi/compare/mochi-framework-v0.3.1...mochi-framework-v0.3.2) (2026-05-24)
 
 

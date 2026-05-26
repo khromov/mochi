@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.3](https://github.com/khromov/mochi/compare/create-mochi-v0.2.2...create-mochi-v0.2.3) (2026-05-26)
+
+
+### Bug Fixes
+
+* remove redundant project name prompt from create-mochi ([#44](https://github.com/khromov/mochi/issues/44)) ([dfa3c95](https://github.com/khromov/mochi/commit/dfa3c958a138b64243a9b977d9a671012ac04e0a))
+
 ## [0.2.2](https://github.com/khromov/mochi/compare/create-mochi-v0.2.1...create-mochi-v0.2.2) (2026-05-22)
 
 
