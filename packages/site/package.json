@@ -8,7 +8,7 @@
   "scripts": {
     "build": "bun src/lib/generateDocsBarrel.ts && mochi-framework build",
     "start": "bun src/index.ts",
-    "dev": "MODE=development bun src/index.ts",
+    "dev": "MODE=development bun --hot src/index.ts",
     "typecheck": "bun src/lib/generateDocsBarrel.ts && svelte-check --tsconfig ./tsconfig.json --compiler-warnings 'attribute_illegal_colon:ignore' && tsc -p tsconfig.json --noEmit",
     "test": "bun test",
     "clean": "rimraf .mochi"

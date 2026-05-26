@@ -20,7 +20,7 @@
     },
     "packages/cli": {
       "name": "create-mochi",
-      "version": "0.2.2",
+      "version": "0.2.3",
       "bin": {
         "create-mochi": "src/cli.js",
       },
@@ -76,7 +76,7 @@
     },
     "packages/mochi": {
       "name": "mochi-framework",
-      "version": "0.3.2",
+      "version": "0.4.0",
       "bin": {
         "mochi-framework": "src/cli.js",
       },
@@ -115,6 +115,14 @@
         "@tailwindcss/node",
         "@tailwindcss/oxide",
       ],
+    },
+    "packages/repro": {
+      "name": "bun-hot-eisdir-repro",
+      "dependencies": {
+        "highlight.js": "11.11.1",
+        "mochi-framework": "workspace:*",
+        "svelte": "5.55.9",
+      },
     },
     "packages/site": {
       "name": "mochi-site",
@@ -290,6 +298,8 @@
     "balanced-match": ["balanced-match@4.0.4", "", {}, "sha512-BLrgEcRTwX2o6gGxGOCNyMvGSp35YofuYzw9h1IMTRmKqttAZZVU67bdb9Pr2vUHA8+j3i2tJfjO6C6+4myGTA=="],
 
     "brace-expansion": ["brace-expansion@5.0.6", "", { "dependencies": { "balanced-match": "^4.0.2" } }, "sha512-kLpxurY4Z4r9sgMsyG0Z9uzsBlgiU/EFKhj/h91/8yHu0edo7XuixOIH3VcJ8kkxs6/jPzoI6U9Vj3WqbMQ94g=="],
+
+    "bun-hot-eisdir-repro": ["bun-hot-eisdir-repro@workspace:packages/repro"],
 
     "bun-types": ["bun-types@1.3.14", "", { "dependencies": { "@types/node": "*" } }, "sha512-4N0ig0fEomHt5R0KCFWjovxow98rIoRwKolrYdCcknNwMekCXRnWEUvgu5soYV8QXtVsrUD8B95MBOZGPvr6KQ=="],
 
