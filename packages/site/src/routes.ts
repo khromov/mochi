@@ -1,5 +1,6 @@
 import { compile as mdsvexCompile } from 'mdsvex';
 import rehypeSlug from 'rehype-slug';
+import rehypeExternalLinks from './lib/rehypeExternalLinks';
 import { Mochi, error, getRequestContext } from 'mochi-framework';
 import type { MochiBuildOptions, MarkdownConfig, MochiRouteValue } from 'mochi-framework';
 import { highlightCode } from './lib/highlightCode';
@@ -151,7 +152,7 @@ export const routes: Record<string, MochiRouteValue> = {
 
 export const markdownConfig: MarkdownConfig = {
   compile: mdsvexCompile,
-  rehypePlugins: [rehypeSlug],
+  rehypePlugins: [rehypeSlug, rehypeExternalLinks],
   highlight: { highlighter: (code, lang) => highlightCode(code, lang) },
 };
 
