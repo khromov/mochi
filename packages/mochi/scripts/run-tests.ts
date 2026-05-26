@@ -24,8 +24,12 @@ async function next(): Promise<void> {
     const ok = exitCode === 0;
     results.push({ file, ok });
     console.log(`\n${ok ? '✓' : '✗'} ${file}`);
-    if (stdout) process.stdout.write(stdout);
-    if (stderr) process.stderr.write(stderr);
+    if (stdout) {
+      process.stdout.write(stdout);
+    }
+    if (stderr) {
+      process.stderr.write(stderr);
+    }
   }
 }
 
