@@ -10,7 +10,9 @@ import Callout from './_components/Callout.svelte';
 
 # Deployment options
 
-Mochi is at its heart a _serverful_ application. That means it doesn't run on _some_ serverless hosts. While this can seem like a limitation, it is actually what enabled Bun and Mochis superpowers - features like built-in SQLite support, in-memory cache,
+Mochi is at its heart a _serverful_ application. That means it doesn't run on _some_ serverless hosts. While this can seem like a limitation, it is actually what gives Mochi its superpowers - features like built-in SQLite support, in-memory cache and built-in support for WebSockets and Server-Sent Events. You can easily build complex, data-driven realtime applications with Mochi without any additional external cloud services or npm dependencies. It's both leaner _and_ cheaper.
+
+You can host Bun and Mochi at hundreds of different hosts. We list some of the most popular options below.
 
 <Callout type="info">
 None of the links below are affiliate links.
