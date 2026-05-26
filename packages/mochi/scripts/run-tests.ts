@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { Glob } from 'bun';
 
-const concurrency = navigator.hardwareConcurrency;
+const concurrency = 4;
 const files = (await Array.fromAsync(new Glob('src/**/*.test.ts').scan('.'))).sort();
 const results: { file: string; ok: boolean }[] = [];
 let idx = 0;

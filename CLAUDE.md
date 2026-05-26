@@ -37,7 +37,7 @@ Run a single test file: `bun test packages/mochi/src/forms.test.ts` (or pass `-t
 
 ### Testing: per-file isolation
 
-Every test file runs in its own `bun test` process, up to `navigator.hardwareConcurrency` files in parallel. `packages/mochi/scripts/run-tests.ts` globs `src/**/*.test.ts`, spawns each file individually, and aggregates exit codes. This avoids Bun bundler EISDIR bugs when compiling the same Svelte entrypoint twice, `globalThis.__mochi_config__` conflicts from multiple `Mochi.serve()` calls, and `GlobalRegistrator` pollution. Parallelism is safe because every test uses unique temp dirs (`mkdtempSync`) and `port: 0`.
+Every test file runs in its own `bun test` process, up to 4 files in parallel. `packages/mochi/scripts/run-tests.ts` globs `src/**/*.test.ts`, spawns each file individually, and aggregates exit codes. This avoids Bun bundler EISDIR bugs when compiling the same Svelte entrypoint twice, `globalThis.__mochi_config__` conflicts from multiple `Mochi.serve()` calls, and `GlobalRegistrator` pollution. Parallelism is safe because every test uses unique temp dirs (`mkdtempSync`) and `port: 0`.
 
 ## Architecture
 
