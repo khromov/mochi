@@ -6,7 +6,6 @@ import { logger, setLogLevel } from '../log';
 import '../debug-bar/types';
 import { observeVisible } from './sharedVisibilityObserver';
 import { isLoadedCss, markLoadedCss } from './sharedCssTracker';
-import prettyBytes from '../lib/prettyBytes';
 
 // Inline-bundled separately from the main client bundle, so `setLogLevel` here
 // is a fresh module instance — seed it from the global the server injected.
@@ -83,7 +82,7 @@ class ServerIsland extends HTMLElement {
         }
         const html = await response.text();
 
-        logger.log(`Server island "${componentName}" loaded (attempt ${attempt}, ${prettyBytes(html.length)}, alsoHydrate=${alsoHydrate || 'none'})`);
+        logger.log(`Server island "${componentName}" loaded (attempt ${attempt}, ${(html.length / 1024).toFixed(1)}kB, alsoHydrate=${alsoHydrate || 'none'})`);
 
         const cssUrl = this.getAttribute('css-url');
         if (cssUrl && !isLoadedCss(cssUrl)) {
