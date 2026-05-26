@@ -6,7 +6,7 @@ const sequential = new Set(['src/liveReloadFilter.test.ts']);
 const all = (await Array.fromAsync(new Glob('src/**/*.test.ts').scan('.'))).sort();
 const parallel = all.filter((f) => !sequential.has(f));
 
-const concurrency = 4;
+const concurrency = navigator.hardwareConcurrency;
 const results: { file: string; ok: boolean }[] = [];
 let idx = 0;
 
