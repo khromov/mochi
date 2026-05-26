@@ -1038,7 +1038,9 @@ export class ComponentRegistry {
       return '';
     });
 
+    let hasServerCssPlaceholders = false;
     output = output.replace(/__MOCHI_SERVER_CSS_URL__(\w+)__/g, (_, name: string) => {
+      hasServerCssPlaceholders = true;
       const resolvedPath = this.serverIslandPaths.get(name);
       return resolvedPath ? (this.cssFileUrls.get(resolvedPath) ?? '') : '';
     });
@@ -1046,7 +1048,7 @@ export class ComponentRegistry {
     output = output.replaceAll('__MOCHI_ASSET_PREFIX__', this.assetPrefix);
 
     const shouldStrip = opts?.stripMarkers !== false && hydratables.length === 0;
-    const hasIslandsOrServerIslands = hydratables.length > 0 || output.includes('<mochi-server-island');
+    const hasIslandsOrServerIslands = hydratables.length > 0 || hasServerCssPlaceholders;
 
     // Single HTMLRewriter pass: collect rendered island names, detect server
     // islands, and conditionally strip page-level hydration markers.
