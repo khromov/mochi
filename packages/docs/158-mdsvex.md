@@ -85,26 +85,26 @@ markdown: {
 ### Syntax highlighting
 
 Fenced code blocks are passed through unchanged unless you supply
-`markdown.highlight.highlighter`. Install `highlight.js` (or any other
-engine), register the languages you need, and build a highlighter with the
-framework's `createHighlighter` factory — it adds the code-block wrapper,
-copy button, and Svelte-brace escape around the engine's output.
+`markdown.highlight.highlighter`. Install a highlighting engine (Shiki,
+highlight.js, Prism, etc.) and build a highlighter with the framework's
+`createHighlighter` factory — it adds the code-block wrapper, copy button,
+and Svelte-brace escape around the engine's output.
 
 ```sh
-bun add highlight.js@^11
+bun add shiki
 ```
 
 ```ts
 // src/lib/highlightCode.ts
-import hljs from 'highlight.js/lib/core';
-import typescript from 'highlight.js/lib/languages/typescript';
-import bash from 'highlight.js/lib/languages/bash';
+import { createHighlighter as createShiki } from 'shiki';
 import { createHighlighter } from 'mochi-framework/highlight';
 
-hljs.registerLanguage('typescript', typescript);
-hljs.registerLanguage('bash', bash);
+const shiki = await createShiki({
+  themes: ['vitesse-dark'],
+  langs: ['typescript', 'bash'],
+});
 
-export const highlightCode = createHighlighter(hljs);
+export const highlightCode = createHighlighter((code, lang) => shiki.codeToHtml(code, { lang, theme: 'vitesse-dark' }));
 ```
 
 ```ts
@@ -120,8 +120,9 @@ markdown: {
 `highlightCode` is also usable directly in pages and components for
 snippets outside the markdown pipeline.
 
-For a different engine (shiki, prism), skip `createHighlighter` and pass
-your own `(code, lang) => string` straight into `markdown.highlight`.
+`createHighlighter` accepts any `(code, lang) => string | Promise<string>`
+function, so you can plug in highlight.js, Prism, or a custom engine the
+same way.
 
 ### Islands in markdown
 
