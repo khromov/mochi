@@ -35,11 +35,9 @@ Multi-package scripts (`build`, `test`, `typecheck`, `clean`, `dev`, `start:all`
 
 Run a single test file: `bun test packages/mochi/src/forms.test.ts` (or pass `-t <pattern>` to filter).
 
-### Testing: split bun-test invocations
+### Testing: per-file isolation
 
-Compiling the same Svelte entrypoint via `Bun.build` twice in one `bun:test` process trips a Bun bundler bug (spurious EISDIR errors against transitive deps like `stale-while-revalidate-cache`) once the SSR plugin pulls in the `mochi-framework` virtual module. `Mochi.serve()` pre-compiles `DefaultError.svelte` at startup, so any test that boots the server already does one compile. Separately, `Mochi.serve()` pins state on `globalThis.__mochi_config__` and throws on a second call in the same process, and `enhance.client.test.ts` uses `GlobalRegistrator` which pollutes process globals.
-
-Tests that need isolation use the `*.isolated.test.ts` suffix. `packages/mochi/scripts/run-tests.ts` globs `src/**/*.test.ts`, runs everything that doesn't match the suffix in one `bun test` batch, then runs each `.isolated.test.ts` file in its own `bun test` invocation sequentially, aggregating exit codes. To isolate a new test: name (or `git mv`) it to `*.isolated.test.ts` and add a header comment noting why (which conflict it dodges).
+Every test file runs in its own `bun test` process. `packages/mochi/scripts/run-tests.ts` globs `src/**/*.test.ts` and runs each file individually, aggregating exit codes. This avoids Bun bundler EISDIR bugs when compiling the same Svelte entrypoint twice, `globalThis.__mochi_config__` conflicts from multiple `Mochi.serve()` calls, and `GlobalRegistrator` pollution.
 
 ## Architecture
 

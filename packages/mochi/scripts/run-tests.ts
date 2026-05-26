@@ -1,36 +1,25 @@
 #!/usr/bin/env bun
 import { Glob } from 'bun';
 
-const all = await Array.fromAsync(new Glob('src/**/*.test.ts').scan('.'));
-const isolated = all.filter((p) => p.endsWith('.isolated.test.ts')).sort();
-const batch = all.filter((p) => !p.endsWith('.isolated.test.ts')).sort();
+const files = (await Array.fromAsync(new Glob('src/**/*.test.ts').scan('.'))).sort();
+const results: { file: string; ok: boolean }[] = [];
 
-const results: { label: string; ok: boolean }[] = [];
-
-function run(label: string, args: string[]): void {
-  console.log(`\n→ ${label}`);
+for (const file of files) {
+  console.log(`\n→ ${file}`);
   const proc = Bun.spawnSync({
-    cmd: ['bun', 'test', ...args],
+    cmd: ['bun', 'test', file],
     stdio: ['inherit', 'inherit', 'inherit'],
   });
-  results.push({ label, ok: proc.exitCode === 0 });
-}
-
-run(`batch (${batch.length} files)`, batch);
-// Sequential — each spawnSync blocks until the previous test finishes.
-// Required: isolated files conflict if they share a process (Mochi.serve
-// pins on globalThis, Bun bundler EISDIR on repeat .svelte compiles, etc.).
-for (const file of isolated) {
-  run(file, [file]);
+  results.push({ file, ok: proc.exitCode === 0 });
 }
 
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${'='.repeat(60)}`);
-console.log(`${results.length - failed.length}/${results.length} invocations passed`);
+console.log(`${results.length - failed.length}/${results.length} tests passed`);
 if (failed.length > 0) {
   console.log('Failed:');
   for (const r of failed) {
-    console.log(`  ✗ ${r.label}`);
+    console.log(`  ✗ ${r.file}`);
   }
   process.exit(1);
 }

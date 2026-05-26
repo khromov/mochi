@@ -33,7 +33,6 @@
   "files": [
     "src",
     "!src/**/*.test.ts",
-    "!src/**/*.isolated.test.ts",
     "!src/__fixtures__",
     "README.md",
     "CHANGELOG.md",

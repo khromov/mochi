@@ -1,14 +1,10 @@
+// Previously .isolated.test.ts — all tests now run in isolated processes.
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 
 GlobalRegistrator.register({ url: 'http://localhost/' });
 
 import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 import { enhance } from './enhance.client';
-
-// `*.isolated.test.ts` runs in its own `bun test` invocation:
-// GlobalRegistrator pollutes process globals (document, window, fetch,
-// HTMLFormElement…) which could affect server-side tests sharing the same
-// worker. Each test below restores `globalThis.fetch` and clears the DOM.
 
 const originalFetch = globalThis.fetch;
 
