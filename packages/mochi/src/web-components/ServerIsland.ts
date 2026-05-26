@@ -2,16 +2,10 @@
 /// <reference lib="dom.iterable" />
 
 import './IslandFailure';
-import { logger, setLogLevel } from '../log';
 import '../debug-bar/types';
 import { observeVisible } from './sharedVisibilityObserver';
 import { isLoadedCss, markLoadedCss } from './sharedCssTracker';
 
-// Inline-bundled separately from the main client bundle, so `setLogLevel` here
-// is a fresh module instance — seed it from the global the server injected.
-if (typeof window !== 'undefined' && window.__mochi_log_level) {
-  setLogLevel(window.__mochi_log_level);
-}
 
 class ServerIsland extends HTMLElement {
   _loaded = false;
@@ -82,7 +76,9 @@ class ServerIsland extends HTMLElement {
         }
         const html = await response.text();
 
-        logger.log(`Server island "${componentName}" loaded (attempt ${attempt}, ${(html.length / 1024).toFixed(1)}kB, alsoHydrate=${alsoHydrate || 'none'})`);
+        if (window.__mochi_log_level === 'log' || window.__mochi_log_level === 'debug') {
+          console.log(`Server island "${componentName}" loaded (attempt ${attempt}, ${(html.length / 1024).toFixed(1)}kB, alsoHydrate=${alsoHydrate || 'none'})`);
+        }
 
         const cssUrl = this.getAttribute('css-url');
         if (cssUrl && !isLoadedCss(cssUrl)) {
@@ -102,7 +98,9 @@ class ServerIsland extends HTMLElement {
           throw err;
         }
         lastErr = err;
-        logger.warn(`Server island "${componentName}" failed (attempt ${attempt}/${maxRetries + 1}): ${err}`);
+        if (window.__mochi_log_level !== 'silent' && window.__mochi_log_level !== 'error') {
+          console.warn(`Server island "${componentName}" failed (attempt ${attempt}/${maxRetries + 1}): ${err}`);
+        }
         if (attempt <= maxRetries) {
           const delay = attempt <= 3 ? 1000 : attempt <= 6 ? 3000 : 5000;
           await new Promise((r) => setTimeout(r, delay));
@@ -111,7 +109,9 @@ class ServerIsland extends HTMLElement {
     }
 
     const msg = `Server island "${componentName}" failed after ${maxRetries + 1} attempts: ${lastErr}`;
-    logger.error(msg);
+    if (window.__mochi_log_level !== 'silent') {
+      console.error(msg);
+    }
     window.__mochi_warn?.(msg);
   }
 }
