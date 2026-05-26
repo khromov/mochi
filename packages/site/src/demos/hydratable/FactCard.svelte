@@ -31,6 +31,7 @@
     border-radius: var(--radius-sm);
     border: 1px solid var(--border);
     background: var(--surface-2, var(--surface));
+    color: var(--text);
     cursor: pointer;
   }
   code {
