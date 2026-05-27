@@ -85,7 +85,6 @@
   "dependencies": {
     "@types/negotiator": "^0.6.4",
     "chokidar": "^4.0.3",
-    "debounce": "^3.0.0",
     "deepmerge": "^4.3.1",
     "devalue": "^5.8.1",
     "js-cookie": "^3.0.7",

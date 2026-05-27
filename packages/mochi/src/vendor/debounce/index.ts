@@ -1,5 +1,20 @@
-// Vendored from https://github.com/luyilin/json-format-highlight/tree/master 3.0.0
-export default function debounce(function_, wait = 100, options = {}) {
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-this-alias */
+// Vendored from https://github.com/sindresorhus/debounce 3.0.0
+type AnyFunction = (...arguments_: readonly any[]) => unknown;
+
+export type Options = {
+  readonly immediate?: boolean;
+};
+
+export type DebouncedFunction<F extends AnyFunction> = {
+  (...arguments_: Parameters<F>): ReturnType<F> | undefined;
+  readonly isPending: boolean;
+  clear(): void;
+  flush(): void;
+  trigger(): void;
+};
+
+export default function debounce<F extends AnyFunction>(function_: F, wait = 100, options: Options = {}): DebouncedFunction<F> {
   if (typeof function_ !== 'function') {
     throw new TypeError(`Expected the first parameter to be a function, got \`${typeof function_}\`.`);
   }
@@ -14,22 +29,22 @@ export default function debounce(function_, wait = 100, options = {}) {
 
   const { immediate } = options;
 
-  let storedContext;
-  let storedArguments;
-  let timeoutId;
-  let timestamp;
-  let result;
+  let storedContext: unknown;
+  let storedArguments: Parameters<F> | undefined;
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  let timestamp: number;
+  let result: ReturnType<F> | undefined;
 
-  function run() {
+  function run(): ReturnType<F> {
     const callContext = storedContext;
-    const callArguments = storedArguments;
+    const callArguments = storedArguments!;
     storedContext = undefined;
     storedArguments = undefined;
-    result = function_.apply(callContext, callArguments);
+    result = function_.apply(callContext, callArguments) as ReturnType<F>;
     return result;
   }
 
-  function later() {
+  function later(): void {
     const last = Date.now() - timestamp;
 
     if (last < wait && last >= 0) {
@@ -43,12 +58,12 @@ export default function debounce(function_, wait = 100, options = {}) {
     }
   }
 
-  const debounced = function (...arguments_) {
+  const debounced = function (this: unknown, ...arguments_: Parameters<F>): ReturnType<F> | undefined {
     if (storedContext && this !== storedContext && Object.getPrototypeOf(this) === Object.getPrototypeOf(storedContext)) {
       throw new Error('Debounced method called with different contexts of the same prototype.');
     }
 
-    storedContext = this; // eslint-disable-line unicorn/no-this-assignment
+    storedContext = this;
     storedArguments = arguments_;
     timestamp = Date.now();
 
@@ -97,5 +112,5 @@ export default function debounce(function_, wait = 100, options = {}) {
     debounced.clear();
   };
 
-  return debounced;
+  return debounced as DebouncedFunction<F>;
 }
