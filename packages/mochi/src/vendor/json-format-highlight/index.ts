@@ -32,7 +32,7 @@ export default function (json: unknown, colorOptions = {}) {
   } else {
     str = json as string;
   }
-  let colors = Object.assign({}, defaultColors, colorOptions);
+  const colors = Object.assign({}, defaultColors, colorOptions);
   str = str.replace(/&/g, '&').replace(/</g, '<').replace(/>/g, '>');
   return str.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+]?\d+)?)/g, (match: string) => {
     let color = colors.numberColor;

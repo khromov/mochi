@@ -87,7 +87,6 @@
         "deepmerge": "^4.3.1",
         "devalue": "^5.8.1",
         "js-cookie": "^3.0.7",
-        "json-format-highlight": "^1.0.4",
         "magic-string": "^0.30.21",
         "mitt": "^3.0.1",
         "nanoid": "^5.1.11",
@@ -441,8 +440,6 @@
     "js-cookie": ["js-cookie@3.0.7", "", {}, "sha512-z/wZZgDrkNV1eA0ULjM/F9/50Ya8fbzgKneSpoPsXSGd0KnpdtHfOZWK+GcwLk+EZbS4F9RBhU+K2RgzuDaItw=="],
 
     "json-buffer": ["json-buffer@3.0.1", "", {}, "sha512-4bV5BfR2mqfQTJm+V5tPPdf+ZpuhiIvTuAB5g8kcrXOZpTT/QwwVRWBywX1ozr6lEuPdbHxwaJlm9G6mI2sfSQ=="],
-
-    "json-format-highlight": ["json-format-highlight@1.0.4", "", {}, "sha512-RqenIjKr1I99XfXPAml9G7YlEZg/GnsH7emWyWJh2yuGXqHW8spN7qx6/ME+MoIBb35/fxrMC9Jauj6nvGe4Mg=="],
 
     "json-schema-traverse": ["json-schema-traverse@0.4.1", "", {}, "sha512-xbbCH5dCYU5T8LcEhhuh7HJ88HXuW3qsI3Y0zOZFKfZEHcpWiHU/Jxzk629Brsab/mMiHQti9wMP+845RPe3Vg=="],
 
