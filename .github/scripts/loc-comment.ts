@@ -2,7 +2,7 @@
 /**
  * Renders the markdown body for the review-bot PR comment by diffing two
  * loc-report.ts JSON outputs.
- * Usage: bun loc-comment.ts <main.json> <pr.json> [--repo <owner/repo> --run-id <id>]
+ * Usage: bun loc-comment.ts <main.json> <pr.json> [--repo <owner/repo> --run-id <id> --dep-report <dep-report.txt>]
  */
 
 import { readFileSync } from 'node:fs';
@@ -56,10 +56,14 @@ function renderPackageSection(name: string, mainReport: Report | undefined, prRe
   return [detailsTag, `<summary><strong>${name}</strong></summary>`, '', ...table, '', '</details>'];
 }
 
+function renderDepReportSection(content: string): string[] {
+  return ['### Dependency report', '', '<details>', '<summary>Expand report</summary>', '', '```', content.trimEnd(), '```', '', '</details>'];
+}
+
 function renderInstallSection(repo: string, runId: string): string[] {
   const runUrl = `https://github.com/${repo}/actions/runs/${runId}`;
   return [
-    '#### Try this PR',
+    '### Try this PR',
     '',
     '<details>',
     '<summary>Expand instructions</summary>',
@@ -82,6 +86,8 @@ function main() {
   const repo = repoIdx !== -1 ? args[repoIdx + 1] : undefined;
   const runIdIdx = args.indexOf('--run-id');
   const runId = runIdIdx !== -1 ? args[runIdIdx + 1] : undefined;
+  const depIdx = args.indexOf('--dep-report');
+  const depReportPath = depIdx !== -1 ? args[depIdx + 1] : undefined;
 
   if (!mainPath || !prPath) {
     console.error('Usage: bun loc-comment.ts <main.json> <pr.json> [--repo <owner/repo> --run-id <id>]');
@@ -93,14 +99,24 @@ function main() {
 
   const allPackages = new Set([...mainDoc.packages.map((p) => p.name), ...prDoc.packages.map((p) => p.name)]);
 
-  const lines: string[] = [MARKER, '### Mochi review report', ''];
+  const lines: string[] = [MARKER, '## Mochi review report', ''];
 
   if (repo && runId) {
     lines.push(...renderInstallSection(repo, runId));
     lines.push('');
   }
 
-  lines.push('**Lines of code** (non-blank lines)', '');
+  if (depReportPath) {
+    try {
+      const depContent = readFileSync(depReportPath, 'utf8');
+      lines.push(...renderDepReportSection(depContent));
+      lines.push('');
+    } catch {
+      // dep-report is optional — skip if the file is missing or unreadable
+    }
+  }
+
+  lines.push('### Lines of code', '');
   for (const pkgName of allPackages) {
     const m = mainDoc.packages.find((p) => p.name === pkgName);
     const p = prDoc.packages.find((pp) => pp.name === pkgName);
