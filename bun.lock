@@ -83,7 +83,6 @@
       "dependencies": {
         "@types/negotiator": "^0.6.4",
         "chokidar": "^4.0.3",
-        "cookie": "^1.1.1",
         "debounce": "^3.0.0",
         "deepmerge": "^4.3.1",
         "devalue": "^5.8.1",
@@ -324,8 +323,6 @@
     "comma-separated-tokens": ["comma-separated-tokens@2.0.3", "", {}, "sha512-Fu4hJdvzeylCfQPp9SGWidpzrMs7tTrlu6Vb8XGaRGck8QSNZJJp538Wrb60Lax4fPwR64ViY468OIUTbRlGZg=="],
 
     "commander": ["commander@14.0.3", "", {}, "sha512-H+y0Jo/T1RZ9qPP4Eh1pkcQcLRglraJaSLoyOtHxu6AapkjWVCy2Sit1QQ4x3Dng8qDlSsZEet7g5Pq06MvTgw=="],
-
-    "cookie": ["cookie@1.1.1", "", {}, "sha512-ei8Aos7ja0weRpFzJnEA9UHJ/7XQmqglbRwnf2ATjcB9Wq874VKH9kfjjirM6UhU2/E5fFYadylyhFldcqSidQ=="],
 
     "create-mochi": ["create-mochi@workspace:packages/cli"],
 
