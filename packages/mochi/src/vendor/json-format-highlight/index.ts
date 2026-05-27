@@ -18,20 +18,23 @@ const entityMap = {
   '=': '&#x3D;',
 };
 
-function escapeHtml(html) {
+function escapeHtml(html: string) {
   return String(html).replace(/[&<>"'`=]/g, function (s) {
-    return entityMap[s];
+    return entityMap[s as keyof typeof entityMap];
   });
 }
 
-export default function (json, colorOptions = {}) {
+export default function (json: unknown, colorOptions = {}) {
   const valueType = typeof json;
+  let str: string;
   if (valueType !== 'string') {
-    json = JSON.stringify(json, null, 2) || valueType;
+    str = JSON.stringify(json, null, 2) || valueType;
+  } else {
+    str = json as string;
   }
   let colors = Object.assign({}, defaultColors, colorOptions);
-  json = json.replace(/&/g, '&').replace(/</g, '<').replace(/>/g, '>');
-  return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+]?\d+)?)/g, (match) => {
+  str = str.replace(/&/g, '&').replace(/</g, '<').replace(/>/g, '>');
+  return str.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+]?\d+)?)/g, (match: string) => {
     let color = colors.numberColor;
     let style = '';
     if (/^"/.test(match)) {
