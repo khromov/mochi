@@ -1,4 +1,4 @@
-import { parse, serialize } from 'cookie';
+import type { CookieInit, CookieSameSite } from 'bun';
 import { appendVary } from './utils';
 
 export interface CookieSerializeOptions {
@@ -23,21 +23,20 @@ function parseCookieHeader(header: string | null): Map<string, string> {
   if (!header) {
     return map;
   }
-  const parsed = parse(header);
-  for (const [name, value] of Object.entries(parsed)) {
-    if (value !== undefined) {
-      map.set(name, value);
-    }
+  for (const [name, value] of new Bun.CookieMap(header)) {
+    map.set(name, value);
   }
   return map;
 }
 
 function serializeCookie(name: string, value: string, options?: CookieSerializeOptions): string {
   if (!options) {
-    return serialize(name, value);
+    return new Bun.Cookie(name, value).serialize();
   }
 
-  const cookieOpts: import('cookie').SerializeOptions = {
+  const init: CookieInit = {
+    name,
+    value,
     path: options.path,
     domain: options.domain,
     maxAge: options.maxAge,
@@ -47,18 +46,20 @@ function serializeCookie(name: string, value: string, options?: CookieSerializeO
   };
 
   if (options.expires != null) {
-    cookieOpts.expires = typeof options.expires === 'number' ? new Date(Date.now() + options.expires * 864e5) : options.expires;
+    init.expires = typeof options.expires === 'number' ? new Date(Date.now() + options.expires * 864e5) : options.expires;
   }
 
   if (options.sameSite) {
-    cookieOpts.sameSite = options.sameSite.toLowerCase() as 'lax' | 'strict' | 'none';
+    init.sameSite = options.sameSite.toLowerCase() as CookieSameSite;
   }
+
+  let serialized = new Bun.Cookie(init).serialize();
 
   if (options.priority) {
-    cookieOpts.priority = options.priority.toLowerCase() as 'low' | 'medium' | 'high';
+    serialized += `; Priority=${options.priority}`;
   }
 
-  return serialize(name, value, cookieOpts);
+  return serialized;
 }
 
 export class MochiCookieJar {

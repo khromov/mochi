@@ -85,12 +85,10 @@
   "dependencies": {
     "@types/negotiator": "^0.6.4",
     "chokidar": "^4.0.3",
-    "cookie": "^1.1.1",
     "debounce": "^3.0.0",
     "deepmerge": "^4.3.1",
     "devalue": "^5.8.1",
     "js-cookie": "^3.0.7",
-    "json-format-highlight": "^1.0.4",
     "magic-string": "^0.30.21",
     "mitt": "^3.0.1",
     "nanoid": "^5.1.11",

@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { type Dirent, readdirSync, readFileSync, statSync } from 'node:fs';
+import { type Dirent, existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 interface PkgJson {
@@ -31,16 +31,18 @@ async function indexPackages(): Promise<Map<string, IndexEntry>> {
     new Bun.Glob('*/node_modules/*/package.json'), // unscoped
     new Bun.Glob('*/node_modules/@*/*/package.json'), // scoped
   ];
-  for (const glob of globs) {
-    for await (const rel of glob.scan({ cwd: BUN_STORE })) {
-      const full = join(BUN_STORE, rel);
-      try {
-        const pkg = JSON.parse(readFileSync(full, 'utf8')) as PkgJson;
-        if (pkg.name && !index.has(pkg.name)) {
-          index.set(pkg.name, { pkg, dir: dirname(full) });
+  if (existsSync(BUN_STORE)) {
+    for (const glob of globs) {
+      for await (const rel of glob.scan({ cwd: BUN_STORE })) {
+        const full = join(BUN_STORE, rel);
+        try {
+          const pkg = JSON.parse(readFileSync(full, 'utf8')) as PkgJson;
+          if (pkg.name && !index.has(pkg.name)) {
+            index.set(pkg.name, { pkg, dir: dirname(full) });
+          }
+        } catch {
+          // Skip unreadable/invalid package.json files
         }
-      } catch {
-        // Skip unreadable/invalid package.json files
       }
     }
   }
@@ -49,16 +51,19 @@ async function indexPackages(): Promise<Map<string, IndexEntry>> {
     new Bun.Glob('*/package.json'), // unscoped
     new Bun.Glob('@*/*/package.json'), // scoped
   ];
-  for (const glob of topGlobs) {
-    for await (const rel of glob.scan({ cwd: join(REPO_ROOT, 'node_modules') })) {
-      const full = join(REPO_ROOT, 'node_modules', rel);
-      try {
-        const pkg = JSON.parse(readFileSync(full, 'utf8')) as PkgJson;
-        if (pkg.name && !index.has(pkg.name)) {
-          index.set(pkg.name, { pkg, dir: dirname(full) });
+  const topNodeModules = join(REPO_ROOT, 'node_modules');
+  if (existsSync(topNodeModules)) {
+    for (const glob of topGlobs) {
+      for await (const rel of glob.scan({ cwd: topNodeModules })) {
+        const full = join(topNodeModules, rel);
+        try {
+          const pkg = JSON.parse(readFileSync(full, 'utf8')) as PkgJson;
+          if (pkg.name && !index.has(pkg.name)) {
+            index.set(pkg.name, { pkg, dir: dirname(full) });
+          }
+        } catch {
+          // skip
         }
-      } catch {
-        // skip
       }
     }
   }
