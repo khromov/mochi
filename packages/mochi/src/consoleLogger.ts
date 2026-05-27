@@ -219,8 +219,8 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
 /**
  * Built-in `consoleLogger:line` filter that silences framework-internal noise:
  * Chrome's `/.well-known/appspecific/com.chrome.devtools.json` probe,
- * framework admin routes (`/__mochi/admin/*`), framework asset/client routes
- * (`/_mochi/*`), and the dev WebSocket live-reload endpoint (`/__mochi_live_reload`).
+ * framework admin routes (`/__mochi/admin/*`), and framework asset/client routes
+ * (`/_mochi/*`).
  */
 export const silenceInternalRoutes = (line: string, { path }: MochiFilterContext['consoleLogger:line']): MochiFilterReturn['consoleLogger:line'] => {
   if (path === '/.well-known/appspecific/com.chrome.devtools.json') {
@@ -230,9 +230,6 @@ export const silenceInternalRoutes = (line: string, { path }: MochiFilterContext
     return null;
   }
   if (path.startsWith('/_mochi/')) {
-    return null;
-  }
-  if (path.startsWith('/__mochi_live_reload')) {
     return null;
   }
   return line;

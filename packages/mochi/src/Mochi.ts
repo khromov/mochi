@@ -1,7 +1,7 @@
 import type { Server, ServerWebSocket } from 'bun';
 import { checkEnvironment } from './checkEnvironment';
 import { existsSync, rmSync, mkdirSync } from 'fs';
-import path from 'node:path';
+
 import { ComponentRegistry, formatCompileErrors } from './ComponentRegistry';
 import type { RenderResult } from './ComponentRegistry';
 import { loadSvelteConfig } from './svelteConfig';
@@ -50,7 +50,7 @@ import { consoleLogger } from './consoleLogger';
 import { parse as devalueParse, stringify as devalueStringify } from 'devalue';
 import { ISLAND_FAILURE_CSS, ISLAND_FAILURE_DEV_CSS, islandFailureStub } from './web-components/islandFailureStub';
 import { scanPublicDir } from './publicDir';
-import { startDevWatcher } from './devWatcher';
+
 import { buildPageCacheAdminRoutes, PAGE_CACHE_ADMIN_COMPONENT } from './pageCacheAdminRoutes';
 
 const DEFAULT_HTML_SHELL = await Bun.file(new URL('./templates/default-shell.html', import.meta.url)).text();
@@ -134,24 +134,15 @@ export class Mochi {
     registry: ComponentRegistry,
     opts: {
       serverIslandClientJs: string;
-      liveReloadClientJs: string;
       debugBarUrl?: string | null;
       debugInfo?: DebugBarData;
       logLevel: LogLevel;
-      /**
-       * Absolute path of the page entry that rendered this HTML. Inlined as
-       * `window.__mochi_page_entry` when live-reload is enabled so the WS can
-       * scope `reload` signals to tabs whose entry was actually affected by a
-       * change. Omitted when live-reload is off.
-       */
-      pageEntry?: string;
     },
   ): string {
     const bootstrapUrl = result.bootstrapUrl;
     const cssLinks = result.cssUrls.map((url) => `<link rel="stylesheet" href="${url}">`).join('\n');
     const serverIslandScript = result.hasServerIslands ? `<script>(()=>{${opts.serverIslandClientJs}})()</script>` : '';
     const debugInfoScript = registry.debugBarEnabled && opts.debugInfo ? `<script>window.__mochi_debug=${jsonForHtml(opts.debugInfo)}</script>` : '';
-    const pageEntryScript = opts.liveReloadClientJs && opts.pageEntry ? `<script>window.__mochi_page_entry=${jsonForHtml(opts.pageEntry)}</script>` : '';
     const logLevelScript = opts.logLevel === DEFAULT_LOG_LEVEL ? '' : `<script>window.__mochi_log_level=${JSON.stringify(opts.logLevel)}</script>`;
     // Feeds the debug bar's Warnings panel. When the debug bar is off the
     // single `window.__mochi_warn?.(...)` call site no-ops via optional chaining.
@@ -170,16 +161,13 @@ export class Mochi {
             registry.development ? ISLAND_FAILURE_DEV_CSS : ''
           }</style>\n${cssLinks}`,
       )
-      .replace('{{mochi.body}}', () => result.body + debugInfoScript + pageEntryScript + (registry.debugBarEnabled ? '<div id="mochi-dev-toolbar"></div>' : ''))
+      .replace('{{mochi.body}}', () => result.body + debugInfoScript + (registry.debugBarEnabled ? '<div id="mochi-dev-toolbar"></div>' : ''))
       .replace(
         '{{mochi.script}}',
         () =>
           (bootstrapUrl ? `<script type="module" src="${bootstrapUrl}"></script>` : '') +
           serverIslandScript +
-          (opts.debugBarUrl
-            ? `<script type="module" src="${opts.debugBarUrl}"></script><script>window.__mochi_asset_prefix=${JSON.stringify(registry.assetPrefix)}</script>`
-            : '') +
-          (opts.liveReloadClientJs ? `<script>${opts.liveReloadClientJs}</script><mochi-live-reload></mochi-live-reload>` : ''),
+          (opts.debugBarUrl ? `<script type="module" src="${opts.debugBarUrl}"></script><script>window.__mochi_asset_prefix=${JSON.stringify(registry.assetPrefix)}</script>` : ''),
       );
   }
 
@@ -200,11 +188,9 @@ export class Mochi {
 
     const development = options.development ?? true;
     const debugBarEnabled = development && (options.debugBar ?? true);
-    const liveReloadEnabled = options.liveReload ?? development;
     const middleware = options.handle;
     const outDir = options.outDir ?? './.mochi';
     const publicDir = options.publicDir ?? './public';
-    const watchPaths = Array.from(new Set(['src', 'public', ...(options.additionalWatchPaths ?? [])]));
 
     const emitError = (kind: MochiErrorKind, requestId: string, req: Request, url: URL, status: number, err: unknown, actionName?: string): void => {
       const message = err instanceof Error ? err.message : err == null ? 'Unknown error' : String(err);
@@ -305,7 +291,6 @@ export class Mochi {
     await registry.compileAll(ssrEntrypoints);
 
     const serverIslandClientJs = await buildInlineWebComponent('./web-components/ServerIsland.ts');
-    const liveReloadClientJs = liveReloadEnabled ? await buildInlineWebComponent('./web-components/LiveReload.ts') : '';
 
     const { renderErrorResponse, routeErrorResponse } = createErrorResponder({
       handleError: options.handleError,
@@ -315,7 +300,6 @@ export class Mochi {
       renderShell: (result) =>
         Mochi.resolveHtmlShell(shellTemplate, result, registry, {
           serverIslandClientJs,
-          liveReloadClientJs,
           debugBarUrl: registry.getDebugBarUrl(),
           logLevel: resolvedLogLevel,
         }),
@@ -407,11 +391,9 @@ export class Mochi {
             }
             const html = Mochi.resolveHtmlShell(shellTemplate, result, registry, {
               serverIslandClientJs,
-              liveReloadClientJs,
               debugBarUrl: registry.getDebugBarUrl(),
-              debugInfo: result.debugBarData ? { ...result.debugBarData, liveReloadEnabled } : undefined,
+              debugInfo: result.debugBarData ? { ...result.debugBarData } : undefined,
               logLevel: resolvedLogLevel,
-              pageEntry: liveReloadEnabled ? path.resolve(componentPath) : undefined,
             });
             const response = new Response(html, {
               status: statusOverride,
@@ -960,10 +942,6 @@ export class Mochi {
       };
     }
 
-    // Snapshot the non-public route set so the dev-mode public watcher can
-    // rebuild cleanly when files are added/removed/renamed.
-    const baseBunRoutes: Record<string, BunRouteValue> = { ...bunRoutes };
-
     // Register static public files. Dev mode reads from `./public` directly;
     // production reads the prebuilt map from the manifest. User-defined routes
     // always win — we only add a public route when no user route claims the path.
@@ -1062,23 +1040,6 @@ export class Mochi {
       ...bunOptions
     } = options as Record<string, unknown>;
 
-    // Internal HMR live-reload socket. Registered before the dispatcher is
-    // built so it shares the same Bun WebSocket option as user `Mochi.ws()`
-    // routes, and so `wsHandlersMap.size > 0` is true even when the user has
-    // no WebSocket routes of their own.
-    const liveReloadClients = new Set<ServerWebSocket<MochiWsData>>();
-    if (liveReloadEnabled) {
-      wsHandlersMap.set('/__mochi_live_reload', {
-        open(ws) {
-          liveReloadClients.add(ws as ServerWebSocket<MochiWsData>);
-        },
-        message() {},
-        close(ws) {
-          liveReloadClients.delete(ws as ServerWebSocket<MochiWsData>);
-        },
-      });
-    }
-
     const websocketOption =
       wsHandlersMap.size > 0
         ? {
@@ -1128,22 +1089,6 @@ export class Mochi {
         startEvent.hostname = server.hostname;
       }
       mochiEvents.emit('server:start', startEvent);
-    }
-
-    if (development) {
-      startDevWatcher({
-        registry,
-        server,
-        options,
-        liveReloadClients,
-        composedFetch,
-        baseBunRoutes,
-        bunRoutes,
-        outDir,
-        publicDir,
-        watchPaths,
-        development,
-      });
     }
 
     Mochi.installShutdownHandlers(options, server);

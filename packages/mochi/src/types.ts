@@ -221,14 +221,6 @@ export interface MochiWsData<T = unknown> {
   __mochiRoutePattern: string;
   __mochiOpenedAt: number;
   __mochiPath: string;
-  /**
-   * Absolute path of the page entry that rendered the tab on the other end of
-   * this socket — used by the dev live-reload to scope `reload` signals to
-   * tabs whose entry was actually affected. Set only on the internal
-   * `/__mochi_live_reload` socket; user-defined `Mochi.ws()` routes leave it
-   * undefined.
-   */
-  __mochiEntry?: string;
   user: T;
 }
 
@@ -380,14 +372,6 @@ export interface MochiServeOptions {
    * NOT enable it.
    */
   debugBar?: boolean;
-  /**
-   * Enable the dev-mode live-reload WebSocket that reloads the browser on
-   * source changes. Default: matches `development`. Set to `false` to keep
-   * the debug bar but skip the WS — useful when shipping the debug bar in
-   * a production-like deployment (e.g. Docker demo sites) where the
-   * `/__mochi_live_reload` socket is flaky behind a proxy.
-   */
-  liveReload?: boolean;
   /** Path to a prebuilt manifest JSON. Defaults to `.mochi/manifest.json`. */
   manifest?: string;
   routes?: Record<string, MochiRouteValue>;
@@ -443,8 +427,6 @@ export interface MochiServeOptions {
    * flag) so dev and prod stay in sync.
    */
   assetPrefix?: string;
-  /** Extra paths the dev-mode file watcher monitors, in addition to the defaults `src` and `public`. */
-  additionalWatchPaths?: string[];
   /**
    * Path to a Svelte config file (cwd-relative or absolute). Default:
    * `./svelte.config.js`. The file's `compilerOptions` are merged into

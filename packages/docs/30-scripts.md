@@ -10,7 +10,7 @@ Root `package.json` exposes a set of `bun run` scripts that fan out into the wor
 
 ```sh
 bun install
-bun run dev       # development mode, live reload
+bun run dev       # development mode
 bun run start     # production mode
 ```
 

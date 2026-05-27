@@ -34,7 +34,7 @@ A custom shell must contain four placeholders. Each is replaced once per request
 | `{{mochi.head}}`   | `<svelte:head>` output plus the warning-collector bootstrap script.                                    |
 | `{{mochi.css}}`    | Island-display rules, island-failure styles, and `<link rel="stylesheet">` tags for compiled CSS.      |
 | `{{mochi.body}}`   | Rendered component HTML, debug-info script, dev toolbar mount, dev error overlay, error-report script. |
-| `{{mochi.script}}` | Hydration bootstrap `<script type="module">`, server-island loader, debug bar, and dev live-reload.    |
+| `{{mochi.script}}` | Hydration bootstrap `<script type="module">`, server-island loader, and debug bar.                     |
 
 _Example:_ minimal shell.
 
@@ -53,7 +53,7 @@ _Example:_ minimal shell.
 </html>
 ```
 
-Do **NOT** omit a placeholder — every required asset for that slot is silently dropped. Skip `{{mochi.script}}` and hydration, server islands, the debug bar, and dev live-reload all stop working; skip `{{mochi.css}}` and component styles never load; skip `{{mochi.body}}` and the page renders blank.
+Do **NOT** omit a placeholder — every required asset for that slot is silently dropped. Skip `{{mochi.script}}` and hydration, server islands, and the debug bar all stop working; skip `{{mochi.css}}` and component styles never load; skip `{{mochi.body}}` and the page renders blank.
 
 ### When to customize
 

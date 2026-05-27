@@ -7,9 +7,7 @@ declare global {
     __mochi_warnings?: string[];
     __mochi_debug?: DebugBarRuntimeData;
     __mochi_asset_prefix?: string;
-    __mochi_reload_ws?: WebSocket;
     __mochi_log_level?: LogLevel;
-    __mochi_page_entry?: string;
   }
 }
 

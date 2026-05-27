@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { Glob } from 'bun';
 
-const sequential = new Set(['src/liveReloadFilter.test.ts']);
+const sequential = new Set<string>([]);
 
 const all = (await Array.fromAsync(new Glob('src/**/*.test.ts').scan('.'))).sort();
 const parallel = all.filter((f) => !sequential.has(f));

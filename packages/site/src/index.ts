@@ -95,14 +95,12 @@ const DEVELOPMENT = process.env.MODE === 'development';
 await Mochi.serve({
   port: PORT,
   development: DEVELOPMENT,
-  liveReload: process.env.MOCHI_LIVE_RELOAD === 'false' ? false : undefined,
   htmlShell: './src/shell.html',
   trailingSlash: 'always',
   handle: sequence(compress(), immutableAssets, helloWorld, asciiDog, analytics, noCache, cookieVaryTestHandle),
   handleError,
   idleTimeout: 60,
   compressServerIslandProps: true,
-  additionalWatchPaths: ['../docs'],
   logger: { level: 'log' },
   proxy: { origin }, // TODO: This is a bit of an awkward way to set the allowed csrf domain...
   markdown: markdownConfig,

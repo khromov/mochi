@@ -55,7 +55,7 @@ Mochi is an experimental SSR framework for Svelte 5 + Bun with islands-based sel
 - **`requestContext.ts`** — `getRequestContext()` returns `{ request, url, params, locals, cookies, form? }` via `AsyncLocalStorage`. Available in any server-side code (components, API handlers, server islands). The `AsyncLocalStorage` instance is pinned on `globalThis` so multiple bundled copies share state.
 - **`forms.ts`** — `fail(status, data)`, `redirect(status, location)`, `success(data?)` return values from a `Mochi.page` action. `fail`/`success` re-render the page with a `form` prop; `redirect` issues the redirect response. A page route may not return its own `form` prop if it declares actions (reserved name).
 - **`cookies.ts`** — `MochiCookieJar` on the request context. `cookies.get/set/delete` with `CookieSerializeOptions`.
-- **`web-components/`** — `HydratableIsland.ts` (client bootstrap custom element) and `ServerIsland.ts` (defer-fetch loader).
+- **`web-components/`** — `HydratableIsland.ts` (client bootstrap custom element), `ServerIsland.ts` (defer-fetch loader).
 - **`debug-bar/`** — Dev-only bottom toolbar (`<div id="mochi-dev-toolbar">` + a script); reads `window.__mochi_debug` seeded in the HTML shell.
 
 ### Entry point for the demo site
@@ -67,7 +67,7 @@ Mochi is an experimental SSR framework for Svelte 5 + Bun with islands-based sel
 
 ### HTML shell
 
-Routes use a template (`packages/site/src/shell.html` or `packages/mochi/src/templates/default-shell.html`) with placeholders `{{mochi.head}}`, `{{mochi.css}}`, `{{mochi.body}}`, `{{mochi.script}}`. `Mochi.resolveHtmlShell()` injects compiled CSS/JS links, dev error overlay, live-reload, and the debug bar.
+Routes use a template (`packages/site/src/shell.html` or `packages/mochi/src/templates/default-shell.html`) with placeholders `{{mochi.head}}`, `{{mochi.css}}`, `{{mochi.body}}`, `{{mochi.script}}`. `Mochi.resolveHtmlShell()` injects compiled CSS/JS links, dev error overlay, and the debug bar.
 
 ### Event bus and `consoleLogger()` (new pattern)
 

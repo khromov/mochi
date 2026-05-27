@@ -6,32 +6,7 @@
   let title = $derived(status === 'connected' ? 'Live reload connected' : status === 'disconnected' ? 'Live reload disconnected' : 'Live reload status');
 
   onMount(() => {
-    const ws = window.__mochi_reload_ws;
-    if (!ws) {
-      status = window.__mochi_debug?.liveReloadEnabled === false ? 'connected' : 'disconnected';
-      return;
-    }
-    if (ws.readyState === WebSocket.OPEN) {
-      status = 'connected';
-    } else if (ws.readyState === WebSocket.CLOSING || ws.readyState === WebSocket.CLOSED) {
-      status = 'disconnected';
-    }
-
-    const onOpen = () => {
-      status = 'connected';
-    };
-    const onClose = () => {
-      status = 'disconnected';
-    };
-    ws.addEventListener('open', onOpen);
-    ws.addEventListener('close', onClose);
-    ws.addEventListener('error', onClose);
-
-    return () => {
-      ws.removeEventListener('open', onOpen);
-      ws.removeEventListener('close', onClose);
-      ws.removeEventListener('error', onClose);
-    };
+    status = 'connected';
   });
 </script>
 

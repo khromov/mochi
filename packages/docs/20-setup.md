@@ -13,7 +13,7 @@ description: 'Install Bun, scaffold a project, and start the dev server.'
 Mochi runs on [Bun](https://bun.sh/). Install dependencies, then start the dev server:
 
 1. Install dependencies with `bun install`.
-2. Run `bun run dev` for development mode (live reload).
+2. Run `bun run dev` for development mode.
 3. Run `bun run start` for production mode.
 
 ```sh

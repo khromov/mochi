@@ -27,7 +27,7 @@ Response compression is opt-in via the [`compress()` middleware](/docs/middlewar
 
 ### Asset caching
 
-In production (`development: false`), prebuilt JS/CSS bundles served from `assetPrefix` (default `/_mochi`) get `Cache-Control: public, max-age=31536000, immutable` automatically. Filenames are content-hashed, so any change yields a new URL — there's nothing to invalidate. In development the header is omitted so live-reload edits aren't pinned in the browser cache. Public-dir files (`./public/...`) keep Bun's default static-route headers; their URLs are stable, so don't mark them immutable. To override, mutate `response.headers` in a `handle` middleware.
+In production (`development: false`), prebuilt JS/CSS bundles served from `assetPrefix` (default `/_mochi`) get `Cache-Control: public, max-age=31536000, immutable` automatically. Filenames are content-hashed, so any change yields a new URL — there's nothing to invalidate. In development the header is omitted so edits aren't pinned in the browser cache. Public-dir files (`./public/...`) keep Bun's default static-route headers; their URLs are stable, so don't mark them immutable. To override, mutate `response.headers` in a `handle` middleware.
 
 Do **NOT** call `Mochi.serve()` more than once per process; instead, run a second site as a separate process on a different port. A second call throws `Mochi.serve() has already been called. Only one instance is allowed.`
 
@@ -41,8 +41,7 @@ Do **NOT** call `Mochi.serve()` more than once per process; instead, run a secon
 
 - `port`: TCP port to listen on. No default — set it explicitly.
 - `hostname`: Interface to bind. Defaults to Bun's default (`0.0.0.0`).
-- `development`: Enables live reload, debug bar, and the dev error overlay. Default: `true`.
-- `liveReload`: Enable the dev-mode live-reload WebSocket (`/__mochi_live_reload` + the `mochi-live-reload` web component). Default: matches `development`. Set to `false` to keep the debug bar but skip the WS — useful behind a proxy where the socket is flaky.
+- `development`: Enables the debug bar and the dev error overlay. Default: `true`.
 - `routes`: `Record<string, MochiRouteValue>` of route paths to `Mochi.page` / `Mochi.api` / `Mochi.ws` / `Mochi.sse` registrations.
 - `fetch`: `(req, server) => Response` fallback handler invoked when no route matches. Default: built-in 404.
 - `manifest`: Path to a prebuilt manifest JSON. Default: `<outDir>/manifest.json`.
@@ -55,7 +54,6 @@ Do **NOT** call `Mochi.serve()` more than once per process; instead, run a secon
 - `publicDir`: Directory served as static assets (cwd-relative). Default: `./public`.
 - `outDir`: Directory for build artifacts and dev cache (cwd-relative). Default: `./.mochi`.
 - `assetPrefix`: URL prefix for framework client assets and the server-island endpoint. Must start with `/`, must not be `/`, must not end with `/`, must not contain whitespace or `..`. Default: `/_mochi`.
-- `additionalWatchPaths`: Extra dev-mode watcher paths added to the defaults `src` and `public`. Default: `[]`.
 - `svelteConfigPath`: Path to a Svelte config file. Default: `./svelte.config.js`. See `Svelte config`.
 - `csrf`: `MochiCsrfOptions` controlling the origin-header check. See `CSRF` below.
 - `proxy`: `MochiProxyOptions` describing trusted reverse-proxy headers. See `Proxy` below.

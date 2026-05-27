@@ -317,7 +317,7 @@ Fires when an island fails — server-island render, hydratable SSR render, or c
 
 #### `file:change`
 
-Fires from the dev file watcher (chokidar). Production builds do not run the watcher, so this event never emits there.
+Fires from the dev file watcher. Production builds do not run the watcher, so this event never emits there.
 
 | Field  | Type                  | Notes                                                      |
 | ------ | --------------------- | ---------------------------------------------------------- |

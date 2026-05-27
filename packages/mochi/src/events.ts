@@ -57,7 +57,6 @@ export type MochiFileChangeType = 'add' | 'change' | 'unlink' | 'addDir' | 'unli
 export interface MochiFileChangeEvent {
   /** Absolute path of the changed file, as reported by the dev watcher. */
   path: string;
-  /** Kind of change, mirroring chokidar event names. */
   type: MochiFileChangeType;
 }
 
