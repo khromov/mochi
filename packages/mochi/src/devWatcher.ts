@@ -26,14 +26,10 @@ import {
   type MochiSseHandler,
   type MochiWsData,
   type MochiWsHandlers,
+  type RouteRegistrationResult,
 } from './types';
 
 const FILE_CHANGE_EVENTS = new Set<string>(['add', 'change', 'unlink', 'addDir', 'unlinkDir']);
-
-export interface RouteRegistrationResult {
-  bunRouteValue: BunRouteValue;
-  type: 'page' | 'api' | 'ws' | 'sse';
-}
 
 export interface DevWatcherDeps {
   registry: ComponentRegistry;
@@ -254,6 +250,22 @@ export function startDevWatcher(deps: DevWatcherDeps): void {
     return null;
   }
 
+  function currentRouteType(pattern: string): 'api' | 'ws' | 'sse' | 'page' | null {
+    if (apiHandlerMap?.has(pattern)) {
+      return 'api';
+    }
+    if (wsHandlersMap?.has(pattern)) {
+      return 'ws';
+    }
+    if (sseHandlerMap?.has(pattern)) {
+      return 'sse';
+    }
+    if (pageConfigMap?.has(pattern)) {
+      return 'page';
+    }
+    return null;
+  }
+
   function addBunRoute(pattern: string, value: BunRouteValue): void {
     bunRoutes[pattern] = value;
     baseBunRoutes[pattern] = value;
@@ -291,13 +303,7 @@ export function startDevWatcher(deps: DevWatcherDeps): void {
       }
 
       if (knownRouteModulePatterns.has(pattern)) {
-        // Existing pattern — check if type changed
-        const currentType =
-          (apiHandlerMap?.has(pattern) && 'api') ||
-          (wsHandlersMap?.has(pattern) && 'ws') ||
-          (sseHandlerMap?.has(pattern) && 'sse') ||
-          (pageConfigMap?.has(pattern) && 'page') ||
-          null;
+        const currentType = currentRouteType(pattern);
 
         if (currentType && currentType !== type && registerRoutePattern && unregisterRoutePattern) {
           unregisterRoutePattern(pattern);

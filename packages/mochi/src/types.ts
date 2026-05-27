@@ -77,6 +77,11 @@ export type BunRouteValue =
   | ((req: Request, server: Server<undefined>) => Response | Promise<Response>)
   | Record<string, (req: Request, server: Server<undefined>) => Response | Promise<Response>>;
 
+export interface RouteRegistrationResult {
+  bunRouteValue: BunRouteValue;
+  type: 'page' | 'api' | 'ws' | 'sse';
+}
+
 // ---------------------------------------------------------------------------
 // Form actions (attached to Mochi.page() handlers)
 // ---------------------------------------------------------------------------

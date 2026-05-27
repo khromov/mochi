@@ -20,6 +20,7 @@ import type {
   MochiRouteValue,
   MochiServerPropsResolver,
   MochiServeOptions,
+  RouteRegistrationResult,
   MochiSseConfig,
   MochiSseHandler,
   MochiSseStream,
@@ -384,11 +385,6 @@ export class Mochi {
       ...(debugBarEnabled ? buildPageCacheAdminRoutes() : {}),
     };
     const allRoutes = Object.keys(internalRoutes).length > 0 ? { ...internalRoutes, ...(options.routes ?? {}) } : options.routes;
-
-    type RouteRegistrationResult = {
-      bunRouteValue: BunRouteValue;
-      type: 'page' | 'api' | 'ws' | 'sse';
-    };
 
     async function registerRoutePattern(pattern: string, handler: MochiRouteValue): Promise<RouteRegistrationResult | null> {
       if (isMochiPage(handler)) {
