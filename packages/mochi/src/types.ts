@@ -11,6 +11,11 @@ export function isServerPropsResolver(serverProps: Record<string, unknown> | Moc
   return typeof serverProps === 'function';
 }
 
+export interface MochiPageHandlerConfig {
+  serverProps?: Record<string, unknown> | MochiServerPropsResolver;
+  actions?: MochiFormActions;
+}
+
 export interface MochiPageConfig {
   readonly __mochiPage: true;
   readonly componentPath: string;

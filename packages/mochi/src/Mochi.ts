@@ -14,8 +14,10 @@ import type {
   MochiApiConfig,
   MochiApiHandler,
   MochiPageConfig,
+  MochiPageHandlerConfig,
   MochiFormActionResult,
   MochiFormActions,
+  MochiRouteValue,
   MochiServerPropsResolver,
   MochiServeOptions,
   MochiSseConfig,
@@ -359,7 +361,7 @@ export class Mochi {
     const routeHmr = development && !!resolvedRouteModule;
     const apiHandlerMap = routeHmr ? new Map<string, MochiApiHandler>() : undefined;
     const sseHandlerMap = routeHmr ? new Map<string, MochiSseHandler>() : undefined;
-    const pageConfigMap = routeHmr ? new Map<string, { serverProps?: Record<string, unknown> | MochiServerPropsResolver; actions?: MochiFormActions }>() : undefined;
+    const pageConfigMap = routeHmr ? new Map<string, MochiPageHandlerConfig>() : undefined;
     const bunRoutes: Record<string, BunRouteValue> = {};
     const routeCounts = { page: 0, api: 0, ws: 0, sse: 0 };
     const trailingSlashPolicy = options.trailingSlash;
@@ -383,479 +385,496 @@ export class Mochi {
     };
     const allRoutes = Object.keys(internalRoutes).length > 0 ? { ...internalRoutes, ...(options.routes ?? {}) } : options.routes;
 
-    if (allRoutes) {
-      for (const [pattern, handler] of Object.entries(allRoutes)) {
-        if (isMochiPage(handler)) {
-          routeCounts.page += 1;
-          mochiPageMap.set(pattern, handler);
-          const { componentPath, serverProps, actions } = handler;
-          if (pageConfigMap) {
-            pageConfigMap.set(pattern, { serverProps, actions });
+    type RouteRegistrationResult = {
+      bunRouteValue: BunRouteValue;
+      type: 'page' | 'api' | 'ws' | 'sse';
+    };
+
+    async function registerRoutePattern(pattern: string, handler: MochiRouteValue): Promise<RouteRegistrationResult | null> {
+      if (isMochiPage(handler)) {
+        mochiPageMap.set(pattern, handler);
+        const { componentPath, serverProps, actions } = handler;
+        if (pageConfigMap) {
+          pageConfigMap.set(pattern, { serverProps, actions });
+        }
+        await registry.compile(componentPath);
+
+        const renderComponent = async (req: Request, ctx: MochiRequestContext, resolveOpts: MochiResolveOptions | undefined, statusOverride?: number): Promise<Response> => {
+          const compileErrors = registry.getErrors();
+          if (compileErrors.length > 0) {
+            throw new MochiHttpError(500, formatCompileErrors(compileErrors));
           }
-
-          const renderComponent = async (req: Request, ctx: MochiRequestContext, resolveOpts: MochiResolveOptions | undefined, statusOverride?: number): Promise<Response> => {
-            const compileErrors = registry.getErrors();
-            if (compileErrors.length > 0) {
-              throw new MochiHttpError(500, formatCompileErrors(compileErrors));
-            }
-            const liveServerProps = pageConfigMap ? pageConfigMap.get(pattern)?.serverProps : serverProps;
-            const baseProps = isServerPropsResolver(liveServerProps) ? ((await liveServerProps(req, ctx.params)) ?? {}) : (liveServerProps ?? {});
-            const liveActions = pageConfigMap ? pageConfigMap.get(pattern)?.actions : actions;
-            if (liveActions && 'form' in baseProps) {
-              throw new Error(
-                `[mochi] Route "${pattern}" has form actions and also returns a prop named "form". ` + `"form" is reserved for the form action result — rename your prop.`,
-              );
-            }
-            const formProp = ctx.form ?? null;
-            const resolvedProps = formProp === null ? baseProps : { ...baseProps, form: formProp };
-            const ssrStart = performance.now();
-            const result = await registry.renderComponent(componentPath, resolvedProps);
-            if (result.debugBarData) {
-              result.debugBarData.ssrDurationMs = Math.round((performance.now() - ssrStart) * 100) / 100;
-              if (result.hasServerIslands) {
-                const serverIslandSize = new TextEncoder().encode(serverIslandClientJs).length;
-                (result.debugBarData.bundles ??= []).push({
-                  url: '(inline)',
-                  label: 'Server island runtime',
-                  sizeBytes: serverIslandSize,
-                  kind: 'bootstrap',
-                  inputs: [],
-                });
-              }
-            }
-            const html = Mochi.resolveHtmlShell(shellTemplate, result, registry, {
-              serverIslandClientJs,
-              liveReloadClientJs,
-              debugBarUrl: registry.getDebugBarUrl(),
-              debugInfo: result.debugBarData ? { ...result.debugBarData, liveReloadEnabled } : undefined,
-              logLevel: resolvedLogLevel,
-              pageEntry: liveReloadEnabled ? path.resolve(componentPath) : undefined,
-            });
-            const response = new Response(html, {
-              status: statusOverride,
-              headers: { 'Content-Type': 'text/html; charset=utf-8' },
-            });
-            return applyResolveOptions(response, resolveOpts);
-          };
-
-          const wrapRequest = async (
-            req: Request,
-            server: Server<undefined>,
-            inner: (ctx: MochiRequestContext, event: MochiEvent, resolveOpts: MochiResolveOptions | undefined) => Promise<Response>,
-          ): Promise<Response> => {
-            const setup = buildRequestContext(req, server, {
-              kind: 'page',
-              pattern,
-              csrfErrorTransform: (resp) => (isEnhanceRequest(req) ? jsonError(resp.status, 'Cross-site form submission forbidden') : resp),
-            });
-            if ('earlyResponse' in setup) {
-              return setup.earlyResponse;
-            }
-            const { ctx, start, requestId, url, params } = setup;
-            const event: MochiEvent = { request: req, url, server, locals: ctx.locals, kind: 'page' };
-
-            return requestContext.run(ctx, async () => {
-              runHook('route:matched', { pattern, request: req, url, params, kind: 'page' });
-              const innerResolve = async (_event: MochiEvent, resolveOpts?: MochiResolveOptions): Promise<Response> => inner(ctx, event, resolveOpts);
-
-              const response = middleware ? await middleware({ event, resolve: innerResolve }) : await innerResolve(event);
-
-              const final = finalizeCookieHeaders(response, ctx.cookies);
-              const shipped = await appendDebugTail(final, ctx, development);
-              mochiEvents.emit('request', {
-                requestId,
-                kind: 'page',
-                method: req.method,
-                path: url.pathname + url.search,
-                status: shipped.status,
-                duration: performance.now() - start,
+          const liveServerProps = pageConfigMap ? pageConfigMap.get(pattern)?.serverProps : serverProps;
+          const baseProps = isServerPropsResolver(liveServerProps) ? ((await liveServerProps(req, ctx.params)) ?? {}) : (liveServerProps ?? {});
+          const liveActions = pageConfigMap ? pageConfigMap.get(pattern)?.actions : actions;
+          if (liveActions && 'form' in baseProps) {
+            throw new Error(
+              `[mochi] Route "${pattern}" has form actions and also returns a prop named "form". ` + `"form" is reserved for the form action result — rename your prop.`,
+            );
+          }
+          const formProp = ctx.form ?? null;
+          const resolvedProps = formProp === null ? baseProps : { ...baseProps, form: formProp };
+          const ssrStart = performance.now();
+          const result = await registry.renderComponent(componentPath, resolvedProps);
+          if (result.debugBarData) {
+            result.debugBarData.ssrDurationMs = Math.round((performance.now() - ssrStart) * 100) / 100;
+            if (result.hasServerIslands) {
+              const serverIslandSize = new TextEncoder().encode(serverIslandClientJs).length;
+              (result.debugBarData.bundles ??= []).push({
+                url: '(inline)',
+                label: 'Server island runtime',
+                sizeBytes: serverIslandSize,
+                kind: 'bootstrap',
+                inputs: [],
               });
-              return shipped;
-            });
-          };
+            }
+          }
+          const html = Mochi.resolveHtmlShell(shellTemplate, result, registry, {
+            serverIslandClientJs,
+            liveReloadClientJs,
+            debugBarUrl: registry.getDebugBarUrl(),
+            debugInfo: result.debugBarData ? { ...result.debugBarData, liveReloadEnabled } : undefined,
+            logLevel: resolvedLogLevel,
+            pageEntry: liveReloadEnabled ? path.resolve(componentPath) : undefined,
+          });
+          const response = new Response(html, {
+            status: statusOverride,
+            headers: { 'Content-Type': 'text/html; charset=utf-8' },
+          });
+          return applyResolveOptions(response, resolveOpts);
+        };
 
-          const getHandler = (req: Request, server: Server<undefined>): Promise<Response> =>
+        const wrapRequest = async (
+          req: Request,
+          server: Server<undefined>,
+          inner: (ctx: MochiRequestContext, event: MochiEvent, resolveOpts: MochiResolveOptions | undefined) => Promise<Response>,
+        ): Promise<Response> => {
+          const setup = buildRequestContext(req, server, {
+            kind: 'page',
+            pattern,
+            csrfErrorTransform: (resp) => (isEnhanceRequest(req) ? jsonError(resp.status, 'Cross-site form submission forbidden') : resp),
+          });
+          if ('earlyResponse' in setup) {
+            return setup.earlyResponse;
+          }
+          const { ctx, start, requestId, url, params } = setup;
+          const event: MochiEvent = { request: req, url, server, locals: ctx.locals, kind: 'page' };
+
+          return requestContext.run(ctx, async () => {
+            runHook('route:matched', { pattern, request: req, url, params, kind: 'page' });
+            const innerResolve = async (_event: MochiEvent, resolveOpts?: MochiResolveOptions): Promise<Response> => inner(ctx, event, resolveOpts);
+
+            const response = middleware ? await middleware({ event, resolve: innerResolve }) : await innerResolve(event);
+
+            const final = finalizeCookieHeaders(response, ctx.cookies);
+            const shipped = await appendDebugTail(final, ctx, development);
+            mochiEvents.emit('request', {
+              requestId,
+              kind: 'page',
+              method: req.method,
+              path: url.pathname + url.search,
+              status: shipped.status,
+              duration: performance.now() - start,
+            });
+            return shipped;
+          });
+        };
+
+        const getHandler = (req: Request, server: Server<undefined>): Promise<Response> =>
+          wrapRequest(req, server, async (ctx, event, resolveOpts) => {
+            try {
+              return await renderComponent(req, ctx, resolveOpts);
+            } catch (err) {
+              const response = await routeErrorResponse(req, event, resolveOpts, err);
+              emitError('page', ctx.requestId, req, ctx.url, response.status, err);
+              return response;
+            }
+          });
+
+        // In HMR mode (pageConfigMap set), register POST for all pages so actions
+        // can be added via hot-swap without restart. Returns 405 if none exist.
+        if (actions || pageConfigMap) {
+          const postHandler = (req: Request, server: Server<undefined>): Promise<Response> =>
             wrapRequest(req, server, async (ctx, event, resolveOpts) => {
+              const path = ctx.url.pathname + ctx.url.search;
+              const enhanced = isEnhanceRequest(req);
+              const emitActionComplete = (actionName: string, result: MochiActionResult, status?: number): void => {
+                const payload: {
+                  requestId: string;
+                  path: string;
+                  actionName: string;
+                  result: MochiActionResult;
+                  status?: number;
+                } = { requestId: ctx.requestId, path, actionName, result };
+                if (status !== undefined) {
+                  payload.status = status;
+                }
+                mochiEvents.emit('action:complete', payload);
+              };
+
+              const livePostActions = pageConfigMap ? pageConfigMap.get(pattern)?.actions : actions;
+              if (!livePostActions) {
+                return new Response('Method Not Allowed', { status: 405 });
+              }
+
+              let actionName = 'default';
+              for (const key of ctx.url.searchParams.keys()) {
+                if (key.startsWith('/')) {
+                  actionName = key.slice(1);
+                  break;
+                }
+              }
+              const actionHandler = livePostActions[actionName];
+              if (!actionHandler) {
+                const unknownErr = new Error(`Unknown form action: ${actionName}`);
+                const response = enhanced
+                  ? jsonError(404, `Unknown form action: ${actionName}`)
+                  : await renderErrorResponse({
+                      req,
+                      event,
+                      resolveOpts,
+                      status: 404,
+                      message: `Unknown form action: ${actionName}`,
+                      thrown: null,
+                    });
+                emitError('action', ctx.requestId, req, ctx.url, response.status, unknownErr, actionName);
+                emitActionComplete(actionName, 'error', response.status);
+                return response;
+              }
+
+              let formData: FormData;
               try {
+                formData = await req.formData();
+              } catch (err) {
+                const response = enhanced
+                  ? jsonError(400, 'Invalid form body')
+                  : await renderErrorResponse({
+                      req,
+                      event,
+                      resolveOpts,
+                      status: 400,
+                      message: 'Invalid form body',
+                      thrown: err,
+                    });
+                emitError('action', ctx.requestId, req, ctx.url, response.status, err, actionName);
+                emitActionComplete(actionName, 'error', response.status);
+                return response;
+              }
+
+              mochiEvents.emit('action:invoke', {
+                requestId: ctx.requestId,
+                path,
+                actionName,
+              });
+
+              let result: MochiFormActionResult;
+              try {
+                result = await actionHandler({
+                  request: req,
+                  url: ctx.url,
+                  server,
+                  locals: ctx.locals,
+                  kind: 'page',
+                  method: 'POST' as HttpMethod,
+                  formData,
+                  actionName,
+                  cookies: ctx.cookies,
+                  params: ctx.params,
+                });
+              } catch (err) {
+                if (enhanced) {
+                  const response = await handleEnhancedError(err, event);
+                  emitError('action', ctx.requestId, req, ctx.url, response.status, err, actionName);
+                  emitActionComplete(actionName, 'error', response.status);
+                  return response;
+                }
+                const response = await routeErrorResponse(req, event, resolveOpts, err);
+                emitError('action', ctx.requestId, req, ctx.url, response.status, err, actionName);
+                emitActionComplete(actionName, 'error', response.status);
+                return response;
+              }
+
+              if (result instanceof Response) {
+                emitActionComplete(actionName, 'success', result.status);
+                return applyResolveOptions(result, resolveOpts);
+              }
+              if (isFormRedirect(result)) {
+                emitActionComplete(actionName, 'redirect', result.status);
+                if (enhanced) {
+                  return jsonRedirect(result.status, result.location);
+                }
+                const redirectResponse = new Response(null, {
+                  status: result.status,
+                  headers: { Location: result.location },
+                });
+                return applyResolveOptions(redirectResponse, resolveOpts);
+              }
+              try {
+                if (isFormFail(result)) {
+                  if (enhanced) {
+                    emitActionComplete(actionName, 'fail', result.status);
+                    return jsonFailure(result.status, result.data);
+                  }
+                  ctx.form = {
+                    ok: false,
+                    action: actionName,
+                    status: result.status,
+                    data: result.data,
+                  };
+                  emitActionComplete(actionName, 'fail', result.status);
+                  return await renderComponent(req, ctx, resolveOpts, result.status);
+                }
+                if (enhanced) {
+                  emitActionComplete(actionName, 'success');
+                  if (result === undefined || result === null) {
+                    return jsonSuccess(undefined, { emptyResult: true });
+                  }
+                  return jsonSuccess(isFormSuccess(result) ? result.data : {});
+                }
+                const data = isFormSuccess(result) ? result.data : {};
+                ctx.form = { ok: true, action: actionName, data };
+                emitActionComplete(actionName, 'success');
                 return await renderComponent(req, ctx, resolveOpts);
               } catch (err) {
+                if (enhanced) {
+                  const response = await handleEnhancedError(err, event);
+                  emitError('action', ctx.requestId, req, ctx.url, response.status, err, actionName);
+                  return response;
+                }
                 const response = await routeErrorResponse(req, event, resolveOpts, err);
-                emitError('page', ctx.requestId, req, ctx.url, response.status, err);
+                emitError('action', ctx.requestId, req, ctx.url, response.status, err, actionName);
                 return response;
               }
             });
 
-          // In HMR mode (pageConfigMap set), register POST for all pages so actions
-          // can be added via hot-swap without restart. Returns 405 if none exist.
-          if (actions || pageConfigMap) {
-            const postHandler = (req: Request, server: Server<undefined>): Promise<Response> =>
-              wrapRequest(req, server, async (ctx, event, resolveOpts) => {
-                const path = ctx.url.pathname + ctx.url.search;
-                const enhanced = isEnhanceRequest(req);
-                const emitActionComplete = (actionName: string, result: MochiActionResult, status?: number): void => {
-                  const payload: {
-                    requestId: string;
-                    path: string;
-                    actionName: string;
-                    result: MochiActionResult;
-                    status?: number;
-                  } = { requestId: ctx.requestId, path, actionName, result };
-                  if (status !== undefined) {
-                    payload.status = status;
-                  }
-                  mochiEvents.emit('action:complete', payload);
-                };
-
-                const livePostActions = pageConfigMap ? pageConfigMap.get(pattern)?.actions : actions;
-                if (!livePostActions) {
-                  return new Response('Method Not Allowed', { status: 405 });
-                }
-
-                let actionName = 'default';
-                for (const key of ctx.url.searchParams.keys()) {
-                  if (key.startsWith('/')) {
-                    actionName = key.slice(1);
-                    break;
-                  }
-                }
-                const actionHandler = livePostActions[actionName];
-                if (!actionHandler) {
-                  const unknownErr = new Error(`Unknown form action: ${actionName}`);
-                  const response = enhanced
-                    ? jsonError(404, `Unknown form action: ${actionName}`)
-                    : await renderErrorResponse({
-                        req,
-                        event,
-                        resolveOpts,
-                        status: 404,
-                        message: `Unknown form action: ${actionName}`,
-                        thrown: null,
-                      });
-                  emitError('action', ctx.requestId, req, ctx.url, response.status, unknownErr, actionName);
-                  emitActionComplete(actionName, 'error', response.status);
-                  return response;
-                }
-
-                let formData: FormData;
-                try {
-                  formData = await req.formData();
-                } catch (err) {
-                  const response = enhanced
-                    ? jsonError(400, 'Invalid form body')
-                    : await renderErrorResponse({
-                        req,
-                        event,
-                        resolveOpts,
-                        status: 400,
-                        message: 'Invalid form body',
-                        thrown: err,
-                      });
-                  emitError('action', ctx.requestId, req, ctx.url, response.status, err, actionName);
-                  emitActionComplete(actionName, 'error', response.status);
-                  return response;
-                }
-
-                mochiEvents.emit('action:invoke', {
-                  requestId: ctx.requestId,
-                  path,
-                  actionName,
-                });
-
-                let result: MochiFormActionResult;
-                try {
-                  result = await actionHandler({
-                    request: req,
-                    url: ctx.url,
-                    server,
-                    locals: ctx.locals,
-                    kind: 'page',
-                    method: 'POST' as HttpMethod,
-                    formData,
-                    actionName,
-                    cookies: ctx.cookies,
-                    params: ctx.params,
-                  });
-                } catch (err) {
-                  if (enhanced) {
-                    const response = await handleEnhancedError(err, event);
-                    emitError('action', ctx.requestId, req, ctx.url, response.status, err, actionName);
-                    emitActionComplete(actionName, 'error', response.status);
-                    return response;
-                  }
-                  const response = await routeErrorResponse(req, event, resolveOpts, err);
-                  emitError('action', ctx.requestId, req, ctx.url, response.status, err, actionName);
-                  emitActionComplete(actionName, 'error', response.status);
-                  return response;
-                }
-
-                if (result instanceof Response) {
-                  // Escape hatch: a hand-rolled Response bypasses the JSON envelope
-                  // even on enhanced requests. Document this in the enhance docs.
-                  emitActionComplete(actionName, 'success', result.status);
-                  return applyResolveOptions(result, resolveOpts);
-                }
-                if (isFormRedirect(result)) {
-                  emitActionComplete(actionName, 'redirect', result.status);
-                  if (enhanced) {
-                    return jsonRedirect(result.status, result.location);
-                  }
-                  const redirectResponse = new Response(null, {
-                    status: result.status,
-                    headers: { Location: result.location },
-                  });
-                  return applyResolveOptions(redirectResponse, resolveOpts);
-                }
-                try {
-                  if (isFormFail(result)) {
-                    if (enhanced) {
-                      emitActionComplete(actionName, 'fail', result.status);
-                      return jsonFailure(result.status, result.data);
-                    }
-                    ctx.form = {
-                      ok: false,
-                      action: actionName,
-                      status: result.status,
-                      data: result.data,
-                    };
-                    emitActionComplete(actionName, 'fail', result.status);
-                    return await renderComponent(req, ctx, resolveOpts, result.status);
-                  }
-                  if (enhanced) {
-                    emitActionComplete(actionName, 'success');
-                    if (result === undefined || result === null) {
-                      return jsonSuccess(undefined, { emptyResult: true });
-                    }
-                    return jsonSuccess(isFormSuccess(result) ? result.data : {});
-                  }
-                  const data = isFormSuccess(result) ? result.data : {};
-                  ctx.form = { ok: true, action: actionName, data };
-                  emitActionComplete(actionName, 'success');
-                  return await renderComponent(req, ctx, resolveOpts);
-                } catch (err) {
-                  if (enhanced) {
-                    const response = await handleEnhancedError(err, event);
-                    emitError('action', ctx.requestId, req, ctx.url, response.status, err, actionName);
-                    return response;
-                  }
-                  const response = await routeErrorResponse(req, event, resolveOpts, err);
-                  emitError('action', ctx.requestId, req, ctx.url, response.status, err, actionName);
-                  return response;
-                }
-              });
-
-            bunRoutes[pattern] = {
+          return {
+            bunRouteValue: {
               GET: getHandler,
               POST: postHandler,
-            } as unknown as BunRouteValue;
-          } else {
-            bunRoutes[pattern] = getHandler;
-          }
-        } else if (isMochiApi(handler)) {
-          routeCounts.api += 1;
-          if (apiHandlerMap) {
-            apiHandlerMap.set(pattern, handler.handler);
-          }
-          const capturedApiHandler = handler.handler;
-
-          bunRoutes[pattern] = async (req: Request, server: Server<undefined>): Promise<Response> => {
-            const setup = buildRequestContext(req, server, { kind: 'api', pattern });
-            if ('earlyResponse' in setup) {
-              return setup.earlyResponse;
-            }
-            const { ctx, start, requestId, url, params } = setup;
-
-            return requestContext.run(ctx, async () => {
-              runHook('route:matched', { pattern, request: req, url, params, kind: 'api' });
-              const innerResolve = async (event: MochiEvent, resolveOpts?: MochiResolveOptions): Promise<Response> => {
-                const apiEvent = {
-                  ...event,
-                  method: event.request.method as HttpMethod,
-                  params: ctx.params,
-                  cookies: ctx.cookies,
-                };
-                try {
-                  const apiHandler = (apiHandlerMap ? apiHandlerMap.get(pattern) : undefined) ?? capturedApiHandler;
-                  const response = await apiHandler(apiEvent);
-                  return applyResolveOptions(response, resolveOpts);
-                } catch (err) {
-                  if (err instanceof MochiHttpError) {
-                    logger.error(`${event.request.method} ${event.url.pathname} → ${err.status}: ${err.message}`);
-                    emitError('api', requestId, req, event.url, err.status, err);
-                    return apiError(err.status, err.message);
-                  }
-                  logger.error(`${event.request.method} ${event.url.pathname} → 500:`, err);
-                  emitError('api', requestId, req, event.url, 500, err);
-                  return apiError(500, 'Internal Server Error');
-                }
-              };
-
-              const event: MochiEvent = { request: req, url, server, locals: ctx.locals, kind: 'api' };
-              const response = middleware ? await middleware({ event, resolve: innerResolve }) : await innerResolve(event);
-
-              const final = finalizeCookieHeaders(response, ctx.cookies);
-              mochiEvents.emit('request', {
-                requestId,
-                kind: 'api',
-                method: req.method,
-                path: url.pathname + url.search,
-                status: final.status,
-                duration: performance.now() - start,
-              });
-              return final;
-            });
+            } as unknown as BunRouteValue,
+            type: 'page',
           };
-        } else if (isMochiWs(handler)) {
-          routeCounts.ws += 1;
-          const wsHandlers = handler.handlers;
-          wsHandlersMap.set(pattern, wsHandlers);
+        }
+        return { bunRouteValue: getHandler, type: 'page' };
+      } else if (isMochiApi(handler)) {
+        if (apiHandlerMap) {
+          apiHandlerMap.set(pattern, handler.handler);
+        }
+        const capturedApiHandler = handler.handler;
 
-          bunRoutes[pattern] = (async (req: Request, server: Server<undefined>) => {
-            // Trailing-slash redirects don't apply to WS upgrades — browsers can't
-            // follow HTTP redirects on a WebSocket handshake, so a redirect just
-            // breaks the connection. Both `/ws/foo` and `/ws/foo/` are registered
-            // (see alt-pattern loop below) so either form upgrades cleanly.
-            const setup = buildRequestContext(req, server, { kind: 'ws', pattern });
-            if ('earlyResponse' in setup) {
-              return setup.earlyResponse;
-            }
-            const { ctx: wsHookCtx, start, url: wsUrl, params: wsParams } = setup;
-            requestContext.run(wsHookCtx, () => {
-              runHook('route:matched', {
-                pattern,
-                request: req,
-                url: wsUrl,
-                params: wsParams,
-                kind: 'ws',
-              });
-            });
-            let userData: unknown = undefined;
-
-            if (wsHandlers.upgrade) {
-              const result = await wsHandlers.upgrade(req, wsParams);
-              if (result === false) {
-                return new Response('WebSocket upgrade rejected', {
-                  status: 400,
-                });
-              }
-              userData = result;
-            }
-
-            const success = (
-              server as unknown as {
-                upgrade: (req: Request, opts: Record<string, unknown>) => boolean;
-              }
-            ).upgrade(req, {
-              data: {
-                __mochiRoutePattern: pattern,
-                __mochiOpenedAt: performance.now(),
-                __mochiPath: wsUrl.pathname + wsUrl.search,
-                user: userData,
-              } satisfies MochiWsData,
-            });
-
-            if (!success) {
-              return new Response('WebSocket upgrade failed', { status: 500 });
-            }
-            mochiEvents.emit('ws:open', {
-              path: wsUrl.pathname + wsUrl.search,
-              duration: performance.now() - start,
-            });
-            return undefined;
-          }) as unknown as BunRouteValue;
-        } else if (isMochiSse(handler)) {
-          routeCounts.sse += 1;
-          if (sseHandlerMap) {
-            sseHandlerMap.set(pattern, handler.handler);
+        const bunRouteValue: BunRouteValue = async (req: Request, server: Server<undefined>): Promise<Response> => {
+          const setup = buildRequestContext(req, server, { kind: 'api', pattern });
+          if ('earlyResponse' in setup) {
+            return setup.earlyResponse;
           }
-          const capturedSseHandler = handler.handler;
+          const { ctx, start, requestId, url, params } = setup;
 
-          bunRoutes[pattern] = async (req: Request, server: Server<undefined>): Promise<Response> => {
-            // Bun closes idle connections after 10s by default — a quiet
-            // SSE stream counts as idle, so disable the timeout entirely.
-            const setup = buildRequestContext(req, server, { kind: 'sse', pattern });
-            if ('earlyResponse' in setup) {
-              return setup.earlyResponse;
-            }
-            const { ctx: sseHookCtx, url, params: sseParams } = setup;
-            const path = url.pathname + url.search;
-            requestContext.run(sseHookCtx, () => {
-              runHook('route:matched', {
-                pattern,
-                request: req,
-                url,
-                params: sseParams,
-                kind: 'sse',
-              });
-            });
-            let closed = false;
-            let openedAt = 0;
-            const emitClose = () => {
-              if (closed) {
-                return;
+          return requestContext.run(ctx, async () => {
+            runHook('route:matched', { pattern, request: req, url, params, kind: 'api' });
+            const innerResolve = async (event: MochiEvent, resolveOpts?: MochiResolveOptions): Promise<Response> => {
+              const apiEvent = {
+                ...event,
+                method: event.request.method as HttpMethod,
+                params: ctx.params,
+                cookies: ctx.cookies,
+              };
+              try {
+                const apiHandler = (apiHandlerMap ? apiHandlerMap.get(pattern) : undefined) ?? capturedApiHandler;
+                const response = await apiHandler(apiEvent);
+                return applyResolveOptions(response, resolveOpts);
+              } catch (err) {
+                if (err instanceof MochiHttpError) {
+                  logger.error(`${event.request.method} ${event.url.pathname} → ${err.status}: ${err.message}`);
+                  emitError('api', requestId, req, event.url, err.status, err);
+                  return apiError(err.status, err.message);
+                }
+                logger.error(`${event.request.method} ${event.url.pathname} → 500:`, err);
+                emitError('api', requestId, req, event.url, 500, err);
+                return apiError(500, 'Internal Server Error');
               }
-              closed = true;
-              mochiEvents.emit('sse:close', {
-                path,
-                duration: performance.now() - openedAt,
-              });
             };
 
-            let closeCallbacks: Array<() => void> = [];
-            let controller: ReadableStreamDefaultController<string>;
+            const event: MochiEvent = { request: req, url, server, locals: ctx.locals, kind: 'api' };
+            const response = middleware ? await middleware({ event, resolve: innerResolve }) : await innerResolve(event);
 
-            const body = new ReadableStream<string>({
-              start(ctrl) {
-                controller = ctrl;
-                openedAt = performance.now();
-                mochiEvents.emit('sse:open', { path });
-                const stream: MochiSseStream = {
-                  send(data, opts) {
-                    let frame = '';
-                    if (opts?.id) {
-                      frame += `id: ${opts.id}\n`;
-                    }
-                    if (opts?.event) {
-                      frame += `event: ${opts.event}\n`;
-                    }
-                    for (const line of data.split('\n')) {
-                      frame += `data: ${line}\n`;
-                    }
-                    frame += '\n';
-                    controller.enqueue(frame);
-                    mochiEvents.emit('sse:message', {
-                      path,
-                      size: Buffer.byteLength(data, 'utf8'),
-                      event: opts?.event,
-                    });
-                  },
-                  close() {
-                    controller.close();
-                    emitClose();
-                  },
-                  onClose(cb) {
-                    closeCallbacks.push(cb);
-                  },
-                };
-                const liveSseHandler = (sseHandlerMap ? sseHandlerMap.get(pattern) : undefined) ?? capturedSseHandler;
-                liveSseHandler(stream, req);
-              },
-              cancel() {
-                for (const cb of closeCallbacks) {
-                  cb();
-                }
-                closeCallbacks = [];
-                emitClose();
-              },
+            const final = finalizeCookieHeaders(response, ctx.cookies);
+            mochiEvents.emit('request', {
+              requestId,
+              kind: 'api',
+              method: req.method,
+              path: url.pathname + url.search,
+              status: final.status,
+              duration: performance.now() - start,
             });
+            return final;
+          });
+        };
+        return { bunRouteValue, type: 'api' };
+      } else if (isMochiWs(handler)) {
+        const wsHandlers = handler.handlers;
+        wsHandlersMap.set(pattern, wsHandlers);
 
-            return new Response(body, {
-              headers: {
-                'Content-Type': 'text/event-stream',
-                'Cache-Control': 'no-cache',
-                Connection: 'keep-alive',
-              },
+        const bunRouteValue = (async (req: Request, server: Server<undefined>) => {
+          const setup = buildRequestContext(req, server, { kind: 'ws', pattern });
+          if ('earlyResponse' in setup) {
+            return setup.earlyResponse;
+          }
+          const { ctx: wsHookCtx, start, url: wsUrl, params: wsParams } = setup;
+          requestContext.run(wsHookCtx, () => {
+            runHook('route:matched', {
+              pattern,
+              request: req,
+              url: wsUrl,
+              params: wsParams,
+              kind: 'ws',
+            });
+          });
+          let userData: unknown = undefined;
+
+          const liveWsHandlers = wsHandlersMap.get(pattern) ?? wsHandlers;
+          if (liveWsHandlers.upgrade) {
+            const result = await liveWsHandlers.upgrade(req, wsParams);
+            if (result === false) {
+              return new Response('WebSocket upgrade rejected', {
+                status: 400,
+              });
+            }
+            userData = result;
+          }
+
+          const success = (
+            server as unknown as {
+              upgrade: (req: Request, opts: Record<string, unknown>) => boolean;
+            }
+          ).upgrade(req, {
+            data: {
+              __mochiRoutePattern: pattern,
+              __mochiOpenedAt: performance.now(),
+              __mochiPath: wsUrl.pathname + wsUrl.search,
+              user: userData,
+            } satisfies MochiWsData,
+          });
+
+          if (!success) {
+            return new Response('WebSocket upgrade failed', { status: 500 });
+          }
+          mochiEvents.emit('ws:open', {
+            path: wsUrl.pathname + wsUrl.search,
+            duration: performance.now() - start,
+          });
+          return undefined;
+        }) as unknown as BunRouteValue;
+        return { bunRouteValue, type: 'ws' };
+      } else if (isMochiSse(handler)) {
+        if (sseHandlerMap) {
+          sseHandlerMap.set(pattern, handler.handler);
+        }
+        const capturedSseHandler = handler.handler;
+
+        const bunRouteValue: BunRouteValue = async (req: Request, server: Server<undefined>): Promise<Response> => {
+          const setup = buildRequestContext(req, server, { kind: 'sse', pattern });
+          if ('earlyResponse' in setup) {
+            return setup.earlyResponse;
+          }
+          const { ctx: sseHookCtx, url, params: sseParams } = setup;
+          const path = url.pathname + url.search;
+          requestContext.run(sseHookCtx, () => {
+            runHook('route:matched', {
+              pattern,
+              request: req,
+              url,
+              params: sseParams,
+              kind: 'sse',
+            });
+          });
+          let closed = false;
+          let openedAt = 0;
+          const emitClose = () => {
+            if (closed) {
+              return;
+            }
+            closed = true;
+            mochiEvents.emit('sse:close', {
+              path,
+              duration: performance.now() - openedAt,
             });
           };
+
+          let closeCallbacks: Array<() => void> = [];
+          let controller: ReadableStreamDefaultController<string>;
+
+          const body = new ReadableStream<string>({
+            start(ctrl) {
+              controller = ctrl;
+              openedAt = performance.now();
+              mochiEvents.emit('sse:open', { path });
+              const stream: MochiSseStream = {
+                send(data, opts) {
+                  let frame = '';
+                  if (opts?.id) {
+                    frame += `id: ${opts.id}\n`;
+                  }
+                  if (opts?.event) {
+                    frame += `event: ${opts.event}\n`;
+                  }
+                  for (const line of data.split('\n')) {
+                    frame += `data: ${line}\n`;
+                  }
+                  frame += '\n';
+                  controller.enqueue(frame);
+                  mochiEvents.emit('sse:message', {
+                    path,
+                    size: Buffer.byteLength(data, 'utf8'),
+                    event: opts?.event,
+                  });
+                },
+                close() {
+                  controller.close();
+                  emitClose();
+                },
+                onClose(cb) {
+                  closeCallbacks.push(cb);
+                },
+              };
+              const liveSseHandler = (sseHandlerMap ? sseHandlerMap.get(pattern) : undefined) ?? capturedSseHandler;
+              liveSseHandler(stream, req);
+            },
+            cancel() {
+              for (const cb of closeCallbacks) {
+                cb();
+              }
+              closeCallbacks = [];
+              emitClose();
+            },
+          });
+
+          return new Response(body, {
+            headers: {
+              'Content-Type': 'text/event-stream',
+              'Cache-Control': 'no-cache',
+              Connection: 'keep-alive',
+            },
+          });
+        };
+        return { bunRouteValue, type: 'sse' };
+      }
+      return null;
+    }
+
+    function unregisterRoutePattern(pattern: string): void {
+      mochiPageMap.delete(pattern);
+      apiHandlerMap?.delete(pattern);
+      sseHandlerMap?.delete(pattern);
+      wsHandlersMap?.delete(pattern);
+      pageConfigMap?.delete(pattern);
+    }
+
+    if (allRoutes) {
+      for (const [pattern, handler] of Object.entries(allRoutes)) {
+        const result = await registerRoutePattern(pattern, handler);
+        if (result) {
+          bunRoutes[pattern] = result.bunRouteValue;
+          routeCounts[result.type] += 1;
         } else {
           bunRoutes[pattern] = handler as BunRouteValue;
         }
@@ -1181,6 +1200,9 @@ export class Mochi {
         sseHandlerMap,
         wsHandlersMap,
         pageConfigMap,
+        registerRoutePattern: routeHmr ? registerRoutePattern : undefined,
+        unregisterRoutePattern: routeHmr ? unregisterRoutePattern : undefined,
+        trailingSlashPolicy,
       });
     }
 

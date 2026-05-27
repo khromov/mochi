@@ -101,9 +101,7 @@ await Mochi.serve({
 
 When a dependency of the route module changes the framework re-bundles it, reimports the fresh handlers, and updates the running server — no restart, no lost WebSocket connections. The browser is notified to reload so pages pick up updated `serverProps`.
 
-<Callout type="info">
-Adding or removing route **patterns** (not just editing handlers) still requires a server restart. The hot-swap updates handler implementations for existing patterns only.
-</Callout>
+Adding, removing, and editing route patterns all work without a restart. New routes are registered and removed routes are cleaned up automatically; the server's route table is reloaded on the fly.
 
 Do **NOT** rely on module-scoped mutable state surviving a route HMR cycle; instead, move shared state into a separate module that the route module imports (e.g. an in-memory store or database) — each rebuild re-evaluates the route module and resets any `let` / `const` declared at module scope.
 

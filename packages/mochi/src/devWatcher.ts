@@ -12,6 +12,7 @@ import { evictPreprocessCacheEntry } from './preprocessCache';
 import { buildPublicUrl } from './proxy';
 import { scanPublicDir } from './publicDir';
 import { loadSvelteConfig } from './svelteConfig';
+import { alternateSlashPattern } from './trailingSlash';
 import {
   isMochiApi,
   isMochiPage,
@@ -19,15 +20,20 @@ import {
   isMochiWs,
   type BunRouteValue,
   type MochiApiHandler,
-  type MochiFormActions,
+  type MochiPageHandlerConfig,
+  type MochiRouteValue,
   type MochiServeOptions,
-  type MochiServerPropsResolver,
   type MochiSseHandler,
   type MochiWsData,
   type MochiWsHandlers,
 } from './types';
 
 const FILE_CHANGE_EVENTS = new Set<string>(['add', 'change', 'unlink', 'addDir', 'unlinkDir']);
+
+export interface RouteRegistrationResult {
+  bunRouteValue: BunRouteValue;
+  type: 'page' | 'api' | 'ws' | 'sse';
+}
 
 export interface DevWatcherDeps {
   registry: ComponentRegistry;
@@ -45,7 +51,10 @@ export interface DevWatcherDeps {
   apiHandlerMap?: Map<string, MochiApiHandler>;
   sseHandlerMap?: Map<string, MochiSseHandler>;
   wsHandlersMap?: Map<string, MochiWsHandlers<unknown>>;
-  pageConfigMap?: Map<string, { serverProps?: Record<string, unknown> | MochiServerPropsResolver; actions?: MochiFormActions }>;
+  pageConfigMap?: Map<string, MochiPageHandlerConfig>;
+  registerRoutePattern?: (pattern: string, handler: MochiRouteValue) => Promise<RouteRegistrationResult | null>;
+  unregisterRoutePattern?: (pattern: string) => void;
+  trailingSlashPolicy?: 'never' | 'always';
 }
 
 /**
@@ -73,6 +82,9 @@ export function startDevWatcher(deps: DevWatcherDeps): void {
     sseHandlerMap,
     wsHandlersMap,
     pageConfigMap,
+    registerRoutePattern,
+    unregisterRoutePattern,
+    trailingSlashPolicy,
   } = deps;
 
   const liveReloadHandler = (req: Request, srv: Server<undefined>): Response => {
@@ -217,30 +229,128 @@ export function startDevWatcher(deps: DevWatcherDeps): void {
     // module cache that is never evicted. Acceptable for a dev-only path; would need
     // Loader.registry cleanup if Bun exposes it in the future.
     const mod = await import(outFile + `?t=${Date.now()}`);
-    return mod.routes ?? null;
+    if (!mod.routes) {
+      logger.warn('Route module does not export "routes" — skipping update');
+      return null;
+    }
+    return mod.routes;
   }
 
-  function updateHandlerMaps(freshRoutes: Record<string, unknown>): { total: number; api: number; ws: number; sse: number; page: number } {
-    const counts = { total: 0, api: 0, ws: 0, sse: 0, page: 0 };
-    for (const [pattern, handler] of Object.entries(freshRoutes)) {
-      if (isMochiApi(handler) && apiHandlerMap?.has(pattern)) {
-        apiHandlerMap.set(pattern, handler.handler);
-        counts.api++;
-        counts.total++;
-      } else if (isMochiWs(handler) && wsHandlersMap?.has(pattern)) {
-        wsHandlersMap.set(pattern, handler.handlers as MochiWsHandlers<unknown>);
-        counts.ws++;
-        counts.total++;
-      } else if (isMochiSse(handler) && sseHandlerMap?.has(pattern)) {
-        sseHandlerMap.set(pattern, handler.handler);
-        counts.sse++;
-        counts.total++;
-      } else if (isMochiPage(handler) && pageConfigMap?.has(pattern)) {
-        pageConfigMap.set(pattern, { serverProps: handler.serverProps, actions: handler.actions });
-        counts.page++;
-        counts.total++;
+  let knownRouteModulePatterns = new Set<string>();
+
+  function routeType(handler: unknown): 'api' | 'ws' | 'sse' | 'page' | null {
+    if (isMochiApi(handler)) {
+      return 'api';
+    }
+    if (isMochiWs(handler)) {
+      return 'ws';
+    }
+    if (isMochiSse(handler)) {
+      return 'sse';
+    }
+    if (isMochiPage(handler)) {
+      return 'page';
+    }
+    return null;
+  }
+
+  function addBunRoute(pattern: string, value: BunRouteValue): void {
+    bunRoutes[pattern] = value;
+    baseBunRoutes[pattern] = value;
+    if (trailingSlashPolicy) {
+      const alt = alternateSlashPattern(pattern);
+      if (alt && !(alt in bunRoutes)) {
+        bunRoutes[alt] = value;
+        baseBunRoutes[alt] = value;
       }
     }
+  }
+
+  function removeBunRoute(pattern: string): void {
+    if (trailingSlashPolicy) {
+      const alt = alternateSlashPattern(pattern);
+      if (alt) {
+        delete bunRoutes[alt];
+        delete baseBunRoutes[alt];
+      }
+    }
+    delete bunRoutes[pattern];
+    delete baseBunRoutes[pattern];
+  }
+
+  async function applyRouteChanges(
+    freshRoutes: Record<string, unknown>,
+  ): Promise<{ updated: number; added: string[]; removed: string[]; api: number; ws: number; sse: number; page: number }> {
+    const counts = { updated: 0, added: [] as string[], removed: [] as string[], api: 0, ws: 0, sse: 0, page: 0 };
+    const freshPatterns = new Set(Object.keys(freshRoutes));
+
+    for (const [pattern, handler] of Object.entries(freshRoutes)) {
+      const type = routeType(handler);
+      if (!type) {
+        continue;
+      }
+
+      if (knownRouteModulePatterns.has(pattern)) {
+        // Existing pattern — check if type changed
+        const currentType =
+          (apiHandlerMap?.has(pattern) && 'api') ||
+          (wsHandlersMap?.has(pattern) && 'ws') ||
+          (sseHandlerMap?.has(pattern) && 'sse') ||
+          (pageConfigMap?.has(pattern) && 'page') ||
+          null;
+
+        if (currentType && currentType !== type && registerRoutePattern && unregisterRoutePattern) {
+          unregisterRoutePattern(pattern);
+          removeBunRoute(pattern);
+          const result = await registerRoutePattern(pattern, handler as MochiRouteValue);
+          if (result) {
+            addBunRoute(pattern, result.bunRouteValue);
+            counts.added.push(pattern);
+            counts.removed.push(pattern);
+          }
+        } else {
+          // Same type — update the map in place
+          if (isMochiApi(handler) && apiHandlerMap?.has(pattern)) {
+            apiHandlerMap.set(pattern, handler.handler);
+            counts.api++;
+            counts.updated++;
+          } else if (isMochiWs(handler) && wsHandlersMap?.has(pattern)) {
+            wsHandlersMap.set(pattern, handler.handlers as MochiWsHandlers<unknown>);
+            counts.ws++;
+            counts.updated++;
+          } else if (isMochiSse(handler) && sseHandlerMap?.has(pattern)) {
+            sseHandlerMap.set(pattern, handler.handler);
+            counts.sse++;
+            counts.updated++;
+          } else if (isMochiPage(handler) && pageConfigMap?.has(pattern)) {
+            pageConfigMap.set(pattern, { serverProps: handler.serverProps, actions: handler.actions });
+            counts.page++;
+            counts.updated++;
+          }
+        }
+      } else if (registerRoutePattern) {
+        // New pattern
+        const result = await registerRoutePattern(pattern, handler as MochiRouteValue);
+        if (result) {
+          addBunRoute(pattern, result.bunRouteValue);
+          counts[result.type]++;
+          counts.added.push(pattern);
+        }
+      }
+    }
+
+    // Removed patterns
+    if (unregisterRoutePattern) {
+      for (const pattern of knownRouteModulePatterns) {
+        if (!freshPatterns.has(pattern)) {
+          unregisterRoutePattern(pattern);
+          removeBunRoute(pattern);
+          counts.removed.push(pattern);
+        }
+      }
+    }
+
+    knownRouteModulePatterns = freshPatterns;
     return counts;
   }
 
@@ -249,12 +359,21 @@ export function startDevWatcher(deps: DevWatcherDeps): void {
         reloadChain = reloadChain.then(async () => {
           mochiEvents.emit('recompile:start', { trigger: 'route-module', path: filename, pageCount: 0 });
           const start = performance.now();
-          let counts = { total: 0, api: 0, ws: 0, sse: 0, page: 0 };
+          let counts: { updated: number; added: string[]; removed: string[]; api: number; ws: number; sse: number; page: number } = {
+            updated: 0,
+            added: [],
+            removed: [],
+            api: 0,
+            ws: 0,
+            sse: 0,
+            page: 0,
+          };
           try {
             const freshRoutes = await buildRouteModule();
             if (freshRoutes) {
-              counts = updateHandlerMaps(freshRoutes);
-              if (counts.total > 0) {
+              counts = await applyRouteChanges(freshRoutes);
+              const hasChanges = counts.updated > 0 || counts.added.length > 0 || counts.removed.length > 0;
+              if (hasChanges) {
                 const parts: string[] = [];
                 if (counts.api) {
                   parts.push(`${counts.api} api`);
@@ -268,7 +387,22 @@ export function startDevWatcher(deps: DevWatcherDeps): void {
                 if (counts.page) {
                   parts.push(`${counts.page} page`);
                 }
+                if (counts.added.length) {
+                  parts.push(`+${counts.added.length} new`);
+                }
+                if (counts.removed.length) {
+                  parts.push(`-${counts.removed.length} removed`);
+                }
                 logger.info(`Route module rebuilt — ${parts.join(', ')}`);
+              }
+              if (counts.added.length > 0 || counts.removed.length > 0) {
+                server.reload({
+                  routes: {
+                    ...bunRoutes,
+                    '/__mochi_live_reload': liveReloadHandler,
+                  },
+                  fetch: composedFetch,
+                } as Parameters<typeof server.reload>[0]);
               }
             }
           } catch (e) {
@@ -282,21 +416,28 @@ export function startDevWatcher(deps: DevWatcherDeps): void {
             clientBundleCount: 0,
             durationMs: performance.now() - start,
           });
-          if (counts.total > 0) {
+          const hasChanges = counts.updated > 0 || counts.added.length > 0 || counts.removed.length > 0;
+          if (hasChanges) {
             notifyClients();
           }
         });
       }, 100)
     : undefined;
 
-  // Build the route module before the watcher starts so routeModuleDeps is populated
-  // before any file-change events arrive. The watcher uses `ignoreInitial: true` and
-  // real FS events arrive on a later tick, so the microtask-queued build always wins.
+  // Build the route module before the watcher starts so routeModuleDeps and
+  // knownRouteModulePatterns are populated before any file-change events arrive.
+  // The watcher uses `ignoreInitial: true` and real FS events arrive on a later
+  // tick, so the microtask-queued build always wins.
   if (routeModule) {
     reloadChain = reloadChain.then(async () => {
-      await buildRouteModule().catch((e) => {
+      try {
+        const freshRoutes = await buildRouteModule();
+        if (freshRoutes) {
+          knownRouteModulePatterns = new Set(Object.keys(freshRoutes));
+        }
+      } catch (e) {
         logger.warn(`Initial route module build failed: ${e instanceof Error ? e.message : e}`);
-      });
+      }
     });
   }
 

@@ -87,6 +87,7 @@ export type {
   MarkdownHighlighter,
   MochiErrorProps,
   MochiPageConfig,
+  MochiPageHandlerConfig,
   MochiApiConfig,
   MochiApiEvent,
   MochiApiHandler,
