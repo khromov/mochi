@@ -1,13 +1,10 @@
+// Previously .isolated.test.ts — all tests now run in isolated processes.
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import type { Server } from 'bun';
 import { Mochi } from './Mochi';
 import type { Handle, MochiEventKind } from './hooks';
-
-// `*.isolated.test.ts` runs in its own `bun test` invocation:
-// `initMochiConfig()` pins state on `globalThis.__mochi_config__` and throws if
-// `Mochi.serve()` is called twice in one process.
 
 // Fixture has a `mochi:hydrate` child so the page renders with a
 // `/_mochi/client/...js` bundle script — the asset test below scrapes it.

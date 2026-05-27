@@ -1,15 +1,10 @@
+// Previously .isolated.test.ts — all tests now run in isolated processes.
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { ComponentRegistry } from './ComponentRegistry';
 import { mochiEvents } from './events';
 import type { HydratableComponent } from './svelteAstPreprocess';
-
-// Real Svelte SSR Bun.build calls trip a documented bun-test EISDIR bug when
-// more than one entrypoint is compiled in a single process (see CLAUDE.md
-// "Testing: split bun-test invocations"). This test stubs the SSR compile
-// pipeline (`compileAll`) and `buildClientBundle` so it can verify the
-// recompile contracts without actually invoking Bun.build's Svelte pipeline.
 
 interface RegistryInternals {
   compiledComponents: Map<

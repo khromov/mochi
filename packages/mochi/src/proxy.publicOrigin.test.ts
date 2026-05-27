@@ -1,3 +1,4 @@
+// Previously .isolated.test.ts — all tests now run in isolated processes.
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
@@ -5,11 +6,6 @@ import type { Server } from 'bun';
 import { Mochi } from './Mochi';
 import { getRequestContext } from './requestContext';
 import { json } from './utils';
-
-// Runs in its own `bun test` invocation: only one Mochi.serve() per process.
-// Verifies that proxy.origin overrides the loopback origin baked into `req.url`,
-// so application code (and internal URL builders) see the public HTTPS origin
-// when the framework sits behind a TLS-terminating reverse proxy.
 
 describe('proxy.origin → event.url.origin', () => {
   let server: Server<undefined>;
