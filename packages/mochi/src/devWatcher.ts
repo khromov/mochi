@@ -490,6 +490,7 @@ export function startDevWatcher(deps: DevWatcherDeps): void {
       }
       if (event === 'unlink' && filePath.endsWith('.svelte')) {
         evictPreprocessCacheEntry(path.resolve(filePath));
+        registry.evict(path.resolve(filePath));
       }
       if (reloadPublic && filePath.startsWith(publicDirRel + path.sep)) {
         reloadPublic(filePath);

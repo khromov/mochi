@@ -291,6 +291,15 @@ export class ComponentRegistry {
     await this.compileAll([filename], opts);
   }
 
+  evict(absolutePath: string): void {
+    const key = this.compiledComponents.has(absolutePath) ? absolutePath : [...this.compiledComponents.keys()].find((k) => path.resolve(k) === absolutePath);
+    if (key) {
+      this.compiledComponents.delete(key);
+      this.entryDeps.delete(key);
+      this.entryImportedCss.delete(key);
+    }
+  }
+
   /**
    * Compile a cohort of page entrypoints in one `Bun.build` invocation with
    * `splitting: true`. Shared transitive deps (npm packages and the
