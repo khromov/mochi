@@ -1,4 +1,4 @@
-import { highlightCode } from '../lib/highlightCode';
+import { highlightCode } from '../lib/highlight.server';
 
 export function delay(minMs: number, maxMs: number = minMs): Promise<void> {
   const ms = minMs + Math.random() * (maxMs - minMs);

@@ -1,9 +1,6 @@
-import type { ThemeRegistrationRaw } from 'shiki';
-
-export const mochiTheme: ThemeRegistrationRaw = {
+export const mochiTheme = {
   name: 'mochi',
-  type: 'dark',
-  settings: [],
+  type: 'dark' as const,
   colors: {
     'editor.background': '#10140f',
     'editor.foreground': '#e8e6dd',
