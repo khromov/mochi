@@ -157,7 +157,7 @@ export function normalizeAssetPrefix(input: string | undefined): string {
  * `<!--` and `-->`), not arbitrary HTML — the patterns below assume the
  * surrounding `<!-- -->` has already been stripped by the caller.
  */
-function isSvelteMarker(text: string): boolean {
+export function isSvelteMarker(text: string): boolean {
   // Svelte emits:
   //   <!--[-->, <!--]-->          block open/close (HYDRATION_START / HYDRATION_END)
   //   <!--[!-->                   pending boundary (HYDRATION_START_ELSE)

@@ -1,13 +1,10 @@
+// Previously .isolated.test.ts — all tests now run in isolated processes.
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { ComponentRegistry } from './ComponentRegistry';
 import { requestContext } from './requestContext';
 import { MochiCookieJar } from './cookies';
-
-// `*.isolated.test.ts` runs in its own `bun test` invocation: booting a
-// ComponentRegistry that compiles a Svelte entrypoint conflicts with other
-// suites in the same process (see CLAUDE.md "Testing").
 
 const FIXTURE_DIR = path.join(import.meta.dir, '__fixtures__', 'server-only');
 const FIXTURE_PAGE = path.join(FIXTURE_DIR, 'Page.svelte');

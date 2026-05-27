@@ -1,6 +1,6 @@
 {
   "name": "mochi-framework",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "type": "module",
   "license": "MIT",
   "keywords": [
@@ -33,7 +33,6 @@
   "files": [
     "src",
     "!src/**/*.test.ts",
-    "!src/**/*.isolated.test.ts",
     "!src/__fixtures__",
     "README.md",
     "CHANGELOG.md",
@@ -96,7 +95,6 @@
     "mitt": "^3.0.1",
     "nanoid": "^5.1.11",
     "negotiator": "^1.0.0",
-    "p-retry": "^8.0.0",
     "stale-while-revalidate-cache": "^3.4.1",
     "zimmerframe": "^1.1.4"
   },

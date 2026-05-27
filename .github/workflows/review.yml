@@ -37,10 +37,12 @@ jobs:
           mv mochi-framework-*.tgz ../../mochi-framework-pr.tgz
 
       - name: Upload tarball
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: mochi-framework-pr
           path: mochi-framework-pr.tgz
+          retention-days: 30
+          if-no-files-found: warn
 
       - name: Render comment
         run: bun .github/scripts/loc-comment.ts main.json pr.json --repo ${{ github.repository }} --run-id ${{ github.run_id }} > comment.md

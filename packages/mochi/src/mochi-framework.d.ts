@@ -51,7 +51,13 @@ declare module 'mochi-framework' {
   /** Route parameters for the current request. Server-only; accessing on the client throws. */
   export const params: Readonly<Record<string, string>>;
 
-  /** Parsed URL of the current request. Server-only; accessing on the client throws. */
+  /**
+   * URL of the current page.
+   *
+   * - **Server:** proxies `getRequestContext().url` (the parsed request URL).
+   * - **Client:** proxies `new URL(window.location.href)`, constructed fresh on
+   *   each property access so it always reflects the current browser URL.
+   */
   export const url: URL;
 
   /** Per-request data set by middleware. Server-only; accessing on the client throws. */

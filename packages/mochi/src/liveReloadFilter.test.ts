@@ -1,3 +1,4 @@
+// Previously .isolated.test.ts — all tests now run in isolated processes.
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { copyFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -5,11 +6,6 @@ import type { Server } from 'bun';
 import { Mochi } from './Mochi';
 import { mochiEvents } from './events';
 import type { MochiRecompileCompleteEvent } from './events';
-
-// Per CLAUDE.md "Testing: split bun-test invocations" the watcher-triggered
-// recompile path runs Bun.build a second time on a registered entry, which
-// can trip the documented EISDIR bug. Isolating this test keeps that risk
-// confined to its own bun:test invocation.
 
 const FIXTURE_DIR = path.join(import.meta.dir, '__fixtures__', 'live-reload-filter');
 

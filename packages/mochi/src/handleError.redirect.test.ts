@@ -5,10 +5,7 @@ import type { Server } from 'bun';
 import { Mochi } from './Mochi';
 import type { HandleError } from './hooks';
 
-// `*.isolated.test.ts` runs in its own `bun test` invocation:
-// `initMochiConfig()` pins state on `globalThis.__mochi_config__` and throws if
-// `Mochi.serve()` is called twice in one process. Any test in the default batch
-// that already boots a server (e.g. csrf.integration.test.ts) would trip that guard.
+// Previously .isolated.test.ts — all tests now run in isolated processes.
 //
 // Regression: with `trailingSlash: 'always'`, a handleError that compares
 // `event.url.pathname` against a no-slash literal silently misses, the override

@@ -5,10 +5,9 @@ import type { Server } from 'bun';
 import { Mochi } from './Mochi';
 import type { Handle, MochiEventKind } from './hooks';
 
-// Separate `bun test` invocation because `Mochi.serve()` pins on
-// globalThis and rejects a second call. Sister file `middleware.kind.isolated.test.ts`
-// covers page/api/asset/fallback; this one covers `'error'` (the
-// no-userFetch branch of the same composedFetch ternary).
+// Previously .isolated.test.ts — all tests now run in isolated processes.
+// Sister file `middleware.kind.test.ts` covers page/api/asset/fallback;
+// this one covers `'error'` (the no-userFetch branch).
 
 describe("event.kind for unmatched URL without userFetch → 'error'", () => {
   let server: Server<undefined>;

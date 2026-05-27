@@ -1,19 +1,10 @@
 /// <reference lib="dom" />
 /// <reference lib="dom.iterable" />
 
-import pRetry, { AbortError } from 'p-retry';
-import './IslandFailure';
-import { logger, setLogLevel } from '../log';
 import '../debug-bar/types';
-import { observeVisible } from './sharedVisibilityObserver';
-import { isLoadedCss, markLoadedCss } from './sharedCssTracker';
-import prettyBytes from '../lib/prettyBytes';
 
-// Inline-bundled separately from the main client bundle, so `setLogLevel` here
-// is a fresh module instance — seed it from the global the server injected.
-if (typeof window !== 'undefined' && window.__mochi_log_level) {
-  setLogLevel(window.__mochi_log_level);
-}
+// Key must match sharedCssTracker.ts for cross-bundle dedup with HydratableIsland.
+const _css: Set<string> = ((globalThis as unknown as Record<string, unknown>).__mochi_loaded_css__ ??= new Set()) as Set<string>;
 
 class ServerIsland extends HTMLElement {
   _loaded = false;
@@ -24,33 +15,45 @@ class ServerIsland extends HTMLElement {
     }
     this._loaded = true;
 
+    const optionsRaw = this.getAttribute('server-options');
+    const options = optionsRaw ? JSON.parse(optionsRaw) : {};
+
     if (this.getAttribute('defer-on') === 'visible') {
-      const optionsRaw = this.getAttribute('server-options');
-      const options = optionsRaw ? JSON.parse(optionsRaw) : {};
       // Observe firstElementChild because display:contents gives this element
       // no layout box. When no fallback children are provided, the global
       // `:empty { min-height: 1px }` rule on visible-deferred islands keeps
       // the wrapper itself observable.
       const target = this.firstElementChild || this;
-      observeVisible(target, options.rootMargin || '0px', () => this._fetchContent());
+      new IntersectionObserver(
+        (entries, obs) => {
+          for (const e of entries) {
+            if (e.isIntersecting) {
+              obs.disconnect();
+              this._fetchContent(options);
+              return;
+            }
+          }
+        },
+        { rootMargin: options.rootMargin || '0px' },
+      ).observe(target);
       return;
     }
 
-    this._fetchContent();
+    this._fetchContent(options);
   }
 
-  async _fetchContent() {
-    const componentName = this.getAttribute('component-name');
+  async _fetchContent(options: Record<string, unknown> = {}) {
+    const g = (k: string) => this.getAttribute(k);
+    const componentName = g('component-name');
     if (!componentName) {
       return;
     }
 
-    const signedProps = this.getAttribute('signed-props');
-    const alsoHydrate = this.getAttribute('also-hydrate') || '';
-    // The SSR side stamps `data-asset-prefix` onto every <mochi-server-island>
-    // element (via the __MOCHI_ASSET_PREFIX__ placeholder substitution in
-    // ComponentRegistry) so the client can rebuild the /<prefix>/island/... URL.
-    const assetPrefix = this.getAttribute('data-asset-prefix');
+    const tag = `[mochi] Server island "${componentName}"`;
+    const ll = window.__mochi_log_level;
+    const signedProps = g('signed-props');
+    const alsoHydrate = g('also-hydrate') || '';
+    const assetPrefix = g('data-asset-prefix');
     let url = `${assetPrefix}/island/${encodeURIComponent(componentName)}`;
     const params = new URLSearchParams();
     if (signedProps) {
@@ -65,47 +68,60 @@ class ServerIsland extends HTMLElement {
     }
 
     if (url.length > 1800) {
-      window.__mochi_warn?.(`Server island "${componentName}" URL is ${url.length} chars. Consider reducing prop size.`);
+      window.__mochi_warn?.(`${tag} URL is ${url.length} chars. Consider reducing prop size.`);
     }
 
-    const optionsRaw = this.getAttribute('server-options');
-    const options = optionsRaw ? JSON.parse(optionsRaw) : {};
-    const maxRetries = typeof options.retries === 'number' ? options.retries : 5;
+    const maxRetries = typeof options.retries === 'number' ? options.retries : 9;
 
-    try {
-      const result = await pRetry(
-        async (attemptNumber) => {
-          const response = await fetch(url, { credentials: 'same-origin' });
-          if (!response.ok) {
-            if (response.status >= 400 && response.status < 500) {
-              throw new AbortError(`HTTP ${response.status}`);
-            }
-            throw new Error(`HTTP ${response.status}`);
+    let lastErr: unknown;
+    for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
+      try {
+        const response = await fetch(url);
+        if (!response.ok) {
+          if (response.status >= 400 && response.status < 500) {
+            throw Object.assign(new Error(`HTTP ${response.status}`), { abort: true });
           }
-          return { html: await response.text(), attemptNumber };
-        },
-        { retries: maxRetries, minTimeout: 1000, factor: 2, maxTimeout: 10_000 },
-      );
+          throw new Error(`HTTP ${response.status}`);
+        }
+        const html = await response.text();
 
-      // SAFETY: HTML comes from our own same-origin server-island endpoint with HMAC-signed props.
-      // If the island endpoint ever returns user-controlled content, this must be sanitized.
-      logger.log(`Server island "${componentName}" loaded (attempt ${result.attemptNumber}, ${prettyBytes(result.html.length)}, alsoHydrate=${alsoHydrate || 'none'})`);
+        if (ll === 'log' || ll === 'debug') {
+          console.log(`${tag} loaded (attempt ${attempt}, ${(html.length / 1024).toFixed(1)}kB, alsoHydrate=${alsoHydrate || 'none'})`);
+        }
 
-      const cssUrl = this.getAttribute('css-url');
-      if (cssUrl && !isLoadedCss(cssUrl)) {
-        markLoadedCss(cssUrl);
-        const link = document.createElement('link');
-        link.rel = 'stylesheet';
-        link.href = cssUrl;
-        document.head.appendChild(link);
+        const cssUrl = g('css-url');
+        if (cssUrl && !_css.has(cssUrl)) {
+          _css.add(cssUrl);
+          const link = document.createElement('link');
+          link.rel = 'stylesheet';
+          link.href = cssUrl;
+          document.head.appendChild(link);
+        }
+
+        // SAFETY: HTML comes from our own same-origin server-island endpoint with HMAC-signed props.
+        // If the island endpoint ever returns user-controlled content, this must be sanitized.
+        this.innerHTML = html;
+        return;
+      } catch (err) {
+        if (err instanceof Error && 'abort' in err) {
+          throw err;
+        }
+        lastErr = err;
+        if (ll !== 'silent' && ll !== 'error') {
+          console.warn(`${tag} failed (attempt ${attempt}/${maxRetries + 1}): ${err}`);
+        }
+        if (attempt <= maxRetries) {
+          const delay = attempt <= 3 ? 1000 : attempt <= 6 ? 3000 : 5000;
+          await new Promise((r) => setTimeout(r, delay));
+        }
       }
-
-      this.innerHTML = result.html;
-    } catch (err) {
-      const msg = `Server island "${componentName}" failed after ${maxRetries + 1} attempts: ${err}`;
-      logger.error(msg);
-      window.__mochi_warn?.(msg);
     }
+
+    const msg = `${tag} failed after ${maxRetries + 1} attempts: ${lastErr}`;
+    if (ll !== 'silent') {
+      console.error(msg);
+    }
+    window.__mochi_warn?.(msg);
   }
 }
 

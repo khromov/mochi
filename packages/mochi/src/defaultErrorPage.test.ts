@@ -1,12 +1,8 @@
+// Previously .isolated.test.ts — all tests now run in isolated processes.
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { ComponentRegistry } from './ComponentRegistry';
-
-// `*.isolated.test.ts` runs in its own `bun test` invocation:
-// any other test that boots `Mochi.serve()` already pre-compiles
-// DefaultError.svelte, and compiling it a second time in the same bun:test
-// process trips a Bun bundler EISDIR bug. See CLAUDE.md "Testing" for details.
 
 const DEFAULT_ERROR_PAGE_PATH = new URL('./templates/DefaultError.svelte', import.meta.url).pathname;
 

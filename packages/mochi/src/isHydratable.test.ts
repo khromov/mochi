@@ -1,3 +1,4 @@
+// Previously .isolated.test.ts — all tests now run in isolated processes.
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
@@ -5,10 +6,6 @@ import { ComponentRegistry } from './ComponentRegistry';
 import { requestContext } from './requestContext';
 import type { MochiRequestContext } from './requestContext';
 import { MochiCookieJar } from './cookies';
-
-// `*.isolated.test.ts` runs in its own `bun test` invocation:
-// bypasses Mochi.serve to avoid the bundler EISDIR bug that fires when too many
-// hydratable .svelte entrypoints get compiled in the same bun:test process.
 
 const FIXTURE_PAGE = path.join(import.meta.dir, '__fixtures__', 'island-context', 'Page.svelte');
 

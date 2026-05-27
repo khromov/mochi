@@ -59,7 +59,7 @@
         --badge-tip-bg: #dde7ec;
         --badge-tip-text: #2c4d61;
 
-        --code-bg: #1f2a24;
+        --code-bg: #10140f;
         --code-chrome-bg: #18201b;
         --code-chrome-border: #0f1511;
         --code-muted: rgba(232, 230, 221, 0.58);
@@ -178,72 +178,6 @@
         text-rendering: optimizeLegibility;
       }
 
-      /* Warm syntax theme. Used by <pre><code class="hljs"> output from svelte-highlight
-         (both CodeViewer.svelte tabs and Docs.svelte markdown blocks). */
-      .hljs {
-        color: var(--code-text);
-      }
-      .hljs-comment,
-      .hljs-quote {
-        color: #72786c;
-        font-style: italic;
-      }
-      .hljs-keyword,
-      .hljs-selector-tag,
-      .hljs-literal,
-      .hljs-type {
-        color: #a7c9a8;
-      }
-      .hljs-string,
-      .hljs-regexp,
-      .hljs-addition {
-        color: #d5b982;
-      }
-      .hljs-number,
-      .hljs-meta {
-        color: #e9a89a;
-      }
-      .hljs-built_in,
-      .hljs-class .hljs-title,
-      .hljs-title.class_,
-      .hljs-title.class_.inherited__,
-      .hljs-symbol {
-        color: #c7e0cd;
-      }
-      .hljs-function,
-      .hljs-title.function_,
-      .hljs-title {
-        color: #e8e6dd;
-      }
-      .hljs-attr,
-      .hljs-variable,
-      .hljs-template-variable {
-        color: #b8d5be;
-      }
-      .hljs-tag,
-      .hljs-name,
-      .hljs-selector-id,
-      .hljs-selector-class {
-        color: #8fb097;
-      }
-      .hljs-attribute,
-      .hljs-property {
-        color: #b8d5be;
-      }
-      .hljs-params,
-      .hljs-punctuation {
-        color: var(--code-text);
-      }
-      .hljs-deletion {
-        color: #e9a89a;
-      }
-      .hljs-emphasis {
-        font-style: italic;
-      }
-      .hljs-strong {
-        font-weight: 700;
-      }
-
       /* Shared code-block markup. Produced by `highlightCode()` in src/lib/highlightCode.ts
          (used by both mdsvex doc pages and the demo source viewer), so the visual
          treatment lives globally rather than inside any one prose surface. */
@@ -299,8 +233,7 @@
         border-color: var(--accent-hover);
       }
 
-      pre code,
-      pre code.hljs {
+      pre code {
         display: block;
         padding: 0;
         background: transparent;

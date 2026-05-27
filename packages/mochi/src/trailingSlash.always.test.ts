@@ -1,13 +1,10 @@
+// Previously .isolated.test.ts — all tests now run in isolated processes.
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import type { Server } from 'bun';
 import { Mochi } from './Mochi';
 import { json } from './utils';
-
-// Each Mochi.serve() pins instance state on globalThis, so only one server
-// can run per process. Each `trailingSlash` policy lives in its own
-// `*.isolated.test.ts` file (always / never / none).
 
 const FIXTURE_PAGE = path.join(import.meta.dir, '__fixtures__', 'css-imports', 'Page.svelte');
 

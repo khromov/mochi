@@ -1,12 +1,9 @@
+// Previously .isolated.test.ts — all tests now run in isolated processes.
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import type { Server } from 'bun';
 import { Mochi } from './Mochi';
-
-// `*.isolated.test.ts` runs in its own `bun test` invocation:
-// `initMochiConfig()` pins state on `globalThis.__mochi_config__` and throws if
-// `Mochi.serve()` is called twice in one process.
 
 describe('Mochi.api event surface', () => {
   let server: Server<undefined>;

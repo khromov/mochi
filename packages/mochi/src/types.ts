@@ -358,9 +358,9 @@ export interface MarkdownConfig {
   remarkPlugins?: unknown[];
   /**
    * Syntax highlighter for fenced code blocks. Omit to leave fenced blocks
-   * un-highlighted (mdsvex's bare `<pre><code>` output). Plug in `highlight.js`,
-   * shiki, or any other library by wrapping it in a `(code, lang) => string`
-   * function.
+   * un-highlighted (mdsvex's bare `<pre><code>` output). Plug in Shiki,
+   * highlight.js, or any other library by wrapping it in a
+   * `(code, lang) => string | Promise<string>` function.
    */
   highlight?: { highlighter: MarkdownHighlighter };
 }

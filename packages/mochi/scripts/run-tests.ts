@@ -1,36 +1,56 @@
 #!/usr/bin/env bun
 import { Glob } from 'bun';
 
-const all = await Array.fromAsync(new Glob('src/**/*.test.ts').scan('.'));
-const isolated = all.filter((p) => p.endsWith('.isolated.test.ts')).sort();
-const batch = all.filter((p) => !p.endsWith('.isolated.test.ts')).sort();
+const sequential = new Set(['src/liveReloadFilter.test.ts']);
 
-const results: { label: string; ok: boolean }[] = [];
+const all = (await Array.fromAsync(new Glob('src/**/*.test.ts').scan('.'))).sort();
+const parallel = all.filter((f) => !sequential.has(f));
 
-function run(label: string, args: string[]): void {
-  console.log(`\n→ ${label}`);
-  const proc = Bun.spawnSync({
-    cmd: ['bun', 'test', ...args],
-    stdio: ['inherit', 'inherit', 'inherit'],
-  });
-  results.push({ label, ok: proc.exitCode === 0 });
+const concurrency = navigator.hardwareConcurrency;
+console.log(`Running ${all.length} test files (${parallel.length} parallel × ${concurrency} workers, ${sequential.size} sequential)`);
+
+const results: { file: string; ok: boolean }[] = [];
+let idx = 0;
+
+async function next(): Promise<void> {
+  while (idx < parallel.length) {
+    const file = parallel[idx++]!;
+    const proc = Bun.spawn(['bun', 'test', file], {
+      stdin: 'ignore',
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+    const [exitCode, stdout, stderr] = await Promise.all([proc.exited, new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+    const ok = exitCode === 0;
+    results.push({ file, ok });
+    console.log(`\n${ok ? '✓' : '✗'} ${file}`);
+    if (stdout) {
+      process.stdout.write(stdout);
+    }
+    if (stderr) {
+      process.stderr.write(stderr);
+    }
+  }
 }
 
-run(`batch (${batch.length} files)`, batch);
-// Sequential — each spawnSync blocks until the previous test finishes.
-// Required: isolated files conflict if they share a process (Mochi.serve
-// pins on globalThis, Bun bundler EISDIR on repeat .svelte compiles, etc.).
-for (const file of isolated) {
-  run(file, [file]);
+await Promise.all(Array.from({ length: concurrency }, () => next()));
+
+for (const file of sequential) {
+  console.log(`\n→ ${file} (sequential)`);
+  const proc = Bun.spawnSync({
+    cmd: ['bun', 'test', file],
+    stdio: ['inherit', 'inherit', 'inherit'],
+  });
+  results.push({ file, ok: proc.exitCode === 0 });
 }
 
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${'='.repeat(60)}`);
-console.log(`${results.length - failed.length}/${results.length} invocations passed`);
+console.log(`${results.length - failed.length}/${results.length} tests passed (concurrency: ${concurrency})`);
 if (failed.length > 0) {
   console.log('Failed:');
   for (const r of failed) {
-    console.log(`  ✗ ${r.label}`);
+    console.log(`  ✗ ${r.file}`);
   }
   process.exit(1);
 }

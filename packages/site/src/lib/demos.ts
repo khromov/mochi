@@ -56,6 +56,12 @@ export const demos: Demo[] = [
     category: 'data',
   },
   {
+    href: '/demos/url',
+    title: 'Isomorphic URL',
+    hook: 'One import for the current URL — reads from the request on the server, window.location on the client.',
+    category: 'data',
+  },
+  {
     href: '/demos/cache-events',
     title: 'Cache Events',
     hook: 'Subscribe to MochiCache lifecycle events through mochiEvents and log them to the server console.',
