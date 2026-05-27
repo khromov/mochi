@@ -1,11 +1,8 @@
+// Previously .isolated.test.ts — all tests now run in isolated processes.
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { ComponentRegistry } from './ComponentRegistry';
-
-// `*.isolated.test.ts` runs in its own `bun test` invocation: this test boots
-// a ComponentRegistry, and compiling the same Svelte entrypoint twice in one
-// bun:test process trips a Bun bundler EISDIR bug. See CLAUDE.md "Testing".
 
 const FIXTURE_PAGE = path.join(import.meta.dir, '__fixtures__', 'hydratable', 'Page.svelte');
 

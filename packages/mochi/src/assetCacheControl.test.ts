@@ -1,28 +1,24 @@
+// Previously .isolated.test.ts — all tests now run in isolated processes.
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import type { Server } from 'bun';
 import { Mochi } from './Mochi';
 
-// Sibling of assetCacheControl.isolated.test.ts running in dev mode.
-// `*.isolated.test.ts` runs in its own `bun test` invocation:
-// `initMochiConfig()` only allows one `Mochi.serve()` per process.
-// Pins the conditional in Mochi.ts:1071 so a future change that
-// hard-codes the immutable header would fail here.
-
 const PAGE = path.join(import.meta.dir, '__fixtures__', 'asset-cache', 'Page.svelte');
+const IMMUTABLE = 'public, max-age=31536000, immutable';
 
-describe('Cache-Control on prebuilt framework assets (dev mode)', () => {
+describe('Cache-Control on prebuilt framework assets', () => {
   let server: Server<undefined>;
   let outDir: string;
   let base: string;
   let pageHtml: string;
 
   beforeAll(async () => {
-    outDir = mkdtempSync(path.join(import.meta.dir, '..', '.mochi-asset-cache-dev-'));
+    outDir = mkdtempSync(path.join(import.meta.dir, '..', '.mochi-asset-cache-'));
     server = await Mochi.serve({
       port: 0,
-      development: true,
+      development: false,
       logger: { enabled: false },
       outDir,
       routes: {
@@ -40,7 +36,7 @@ describe('Cache-Control on prebuilt framework assets (dev mode)', () => {
     rmSync(outDir, { recursive: true, force: true });
   });
 
-  test('CSS bundle is served without Cache-Control so live-reload edits are not pinned', async () => {
+  test('CSS bundle is served with immutable Cache-Control', async () => {
     const match = pageHtml.match(/\/_mochi\/[^"'\s]+\.css/);
     if (!match) {
       throw new Error(`No CSS asset URL found in page HTML:\n${pageHtml}`);
@@ -48,6 +44,6 @@ describe('Cache-Control on prebuilt framework assets (dev mode)', () => {
     const res = await fetch(`${base}${match[0]}`);
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toBe('text/css');
-    expect(res.headers.get('cache-control')).toBeNull();
+    expect(res.headers.get('cache-control')).toBe(IMMUTABLE);
   });
 });

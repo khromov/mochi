@@ -1,14 +1,10 @@
+// Previously .isolated.test.ts — all tests now run in isolated processes.
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import type { Server } from 'bun';
 import { Mochi } from './Mochi';
 import { success } from './forms';
-
-// `*.isolated.test.ts` runs in its own `bun test` invocation:
-// `Mochi.serve()` pre-compiles DefaultError.svelte, and a known Bun bundler
-// quirk makes a second compile of that file in the same bun:test process fail
-// with a spurious EISDIR. See CLAUDE.md "Testing" for the full story.
 
 // Probe: when a cross-origin POST sneaks past the CSRF gate by sending a
 // non-form Content-Type (or none at all), does the action HANDLER actually
