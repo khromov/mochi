@@ -30,6 +30,9 @@ jobs:
           (cd ../main-tree && bun .github/scripts/loc-report.ts --json) > main.json
           git worktree remove --force ../main-tree
 
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
       - name: Dependency report
         run: bun packages/mochi/scripts/dep-report.ts > dep-report.txt
 
