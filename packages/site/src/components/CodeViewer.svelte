@@ -76,10 +76,8 @@
     box-shadow: var(--focus-ring);
   }
 
-  /* The panel renders the same `<div class="code-block"><pre class="hljs">…</pre></div>`
-     markup that mdsvex emits, so the global rules in shell.html handle padding,
-     radius, and background. Zero the prose-flow bottom margin and tighten the
-     font for the demo viewer specifically. */
+  /* The global rules in shell.html handle padding, radius, and background.
+     Zero the prose-flow bottom margin and tighten the font for the demo viewer. */
   .cv-panel :global(pre),
   .cv-style :global(pre) {
     margin: 0;
