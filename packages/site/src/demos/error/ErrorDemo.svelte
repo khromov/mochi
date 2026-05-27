@@ -1,5 +1,5 @@
 <script>
-  import { highlightCode } from '../../lib/highlightCode';
+  import { highlightCode } from '../../lib/highlight.server';
   import DemoPage from '../../components/DemoPage.svelte';
   import { loadSources } from '../../components/utils.ts';
 
