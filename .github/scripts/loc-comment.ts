@@ -57,13 +57,13 @@ function renderPackageSection(name: string, mainReport: Report | undefined, prRe
 }
 
 function renderDepReportSection(content: string): string[] {
-  return ['#### Dependency report', '', '<details>', '<summary>Expand report</summary>', '', '```', content.trimEnd(), '```', '', '</details>'];
+  return ['### Dependency report', '', '<details>', '<summary>Expand report</summary>', '', '```', content.trimEnd(), '```', '', '</details>'];
 }
 
 function renderInstallSection(repo: string, runId: string): string[] {
   const runUrl = `https://github.com/${repo}/actions/runs/${runId}`;
   return [
-    '#### Try this PR',
+    '### Try this PR',
     '',
     '<details>',
     '<summary>Expand instructions</summary>',
@@ -99,7 +99,7 @@ function main() {
 
   const allPackages = new Set([...mainDoc.packages.map((p) => p.name), ...prDoc.packages.map((p) => p.name)]);
 
-  const lines: string[] = [MARKER, '### Mochi review report', ''];
+  const lines: string[] = [MARKER, '## Mochi review report', ''];
 
   if (repo && runId) {
     lines.push(...renderInstallSection(repo, runId));
@@ -116,7 +116,7 @@ function main() {
     }
   }
 
-  lines.push('**Lines of code** (non-blank lines)', '');
+  lines.push('### Lines of code', '');
   for (const pkgName of allPackages) {
     const m = mainDoc.packages.find((p) => p.name === pkgName);
     const p = prDoc.packages.find((pp) => pp.name === pkgName);
