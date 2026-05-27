@@ -30,6 +30,9 @@ jobs:
           (cd ../main-tree && bun .github/scripts/loc-report.ts --json) > main.json
           git worktree remove --force ../main-tree
 
+      - name: Dependency report
+        run: bun packages/mochi/scripts/dep-report.ts > dep-report.txt
+
       - name: Pack mochi-framework
         run: |
           cd packages/mochi
@@ -45,7 +48,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Render comment
-        run: bun .github/scripts/loc-comment.ts main.json pr.json --repo ${{ github.repository }} --run-id ${{ github.run_id }} > comment.md
+        run: bun .github/scripts/loc-comment.ts main.json pr.json --repo ${{ github.repository }} --run-id ${{ github.run_id }} --dep-report dep-report.txt > comment.md
 
       - name: Post or update sticky comment
         uses: actions/github-script@v9
