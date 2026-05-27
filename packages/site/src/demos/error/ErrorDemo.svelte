@@ -23,7 +23,7 @@
     return Response.redirect(new URL('/demos/error', event.url), 302);
   }
 };`;
-  const handleErrorHtml = highlightCode(handleErrorSnippet, 'ts');
+  const handleErrorHtml = await highlightCode(handleErrorSnippet, 'ts');
 </script>
 
 <DemoPage title="Error Handling" description="You can route render errors and unmatched routes through Mochi.serve()'s errorPage option and the handleError hook." {sources}>

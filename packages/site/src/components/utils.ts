@@ -30,14 +30,14 @@ export async function loadSources(specs: SourceSpec[]): Promise<Source[]> {
         return {
           label,
           lang: resolvedLang,
-          html: highlightCode(body, resolvedLang),
-          ...(style ? { styleHtml: highlightCode(style, resolvedLang) } : {}),
+          html: await highlightCode(body, resolvedLang),
+          ...(style ? { styleHtml: await highlightCode(style, resolvedLang) } : {}),
         };
       }
       return {
         label,
         lang: resolvedLang,
-        html: highlightCode(code, resolvedLang),
+        html: await highlightCode(code, resolvedLang),
       };
     }),
   );
