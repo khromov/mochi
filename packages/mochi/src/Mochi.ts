@@ -5,6 +5,7 @@ import path from 'node:path';
 import { ComponentRegistry, formatCompileErrors } from './ComponentRegistry';
 import type { RenderResult } from './ComponentRegistry';
 import { loadSvelteConfig } from './svelteConfig';
+import { loadMarkdownConfig } from './loadMarkdownConfig';
 import { buildInlineWebComponent } from './buildInlineWebComponent';
 import { buildClientStatsRoutes, CLIENT_STATS_COMPONENT } from './clientStatsRoutes';
 import { isMochiPage, isMochiApi, isMochiWs, isMochiSse, isServerPropsResolver } from './types';
@@ -257,14 +258,22 @@ export class Mochi {
         );
       }
     } else {
+      if (options.markdown && !options.markdownConfigPath) {
+        throw new Error(
+          "The inline `markdown` option has been removed. Create a config file (e.g. `mdsvex.config.ts`) that default-exports your MarkdownConfig and pass `markdownConfigPath: './mdsvex.config.ts'` instead.",
+        );
+      }
       const svelteConfig = await loadSvelteConfig(options.svelteConfigPath);
+      const markdown = options.markdownConfigPath ? await loadMarkdownConfig(options.markdownConfigPath) : undefined;
       registry = new ComponentRegistry({
         development,
         debugBar: options.debugBar,
         outDir,
         assetPrefix: options.assetPrefix,
         svelteConfig,
-        markdown: options.markdown,
+        svelteConfigPath: options.svelteConfigPath,
+        markdown,
+        markdownConfigPath: options.markdownConfigPath,
       });
       if (development) {
         for (const dir of [`${outDir}/svelte-client`, `${outDir}/svelte-compile`, `${outDir}/svelte-css`]) {

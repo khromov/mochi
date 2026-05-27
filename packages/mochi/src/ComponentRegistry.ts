@@ -1,4 +1,4 @@
-import { compile as svelteCompile, compileModule as svelteCompileModule, preprocess as sveltePreprocess, type CompileOptions, type PreprocessorGroup } from 'svelte/compiler';
+import { compile as svelteCompile, compileModule as svelteCompileModule } from 'svelte/compiler';
 import { render } from 'svelte/server';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -14,26 +14,7 @@ import type { MarkdownConfig, MochiManifest } from './types';
 import { type HydratableComponent, type ServerIslandComponent } from './svelteAstPreprocess';
 import { cachedPreprocessHydratable, createPreprocessCacheStats } from './preprocessCache';
 import { mergeCompilerOptions, type MochiSvelteConfig } from './svelteConfig';
-import { applyFilter } from './extensions';
-import { buildServerOnlyStubModule, scanServerOnlyExports } from './serverOnlyScan';
-
-/**
- * Run user-supplied Svelte preprocessors via the `compile:preprocessors`
- * filter. Returns the (possibly transformed) source. The filter is sync — only
- * the application of those preprocessors is async (Svelte's `preprocess()`).
- */
-async function applyUserPreprocessors(source: string, filename: string, target: 'server' | 'client', development: boolean): Promise<string> {
-  const preprocessors: PreprocessorGroup[] = applyFilter('compile:preprocessors', [], {
-    filename,
-    target,
-    development,
-  });
-  if (preprocessors.length === 0) {
-    return source;
-  }
-  const result = await sveltePreprocess(source, preprocessors, { filename });
-  return result.code;
-}
+import { applyUserPreprocessors, createMarkdownLoader, formatBuildMessages, MARKDOWN_FILE_FILTER } from './svelteCompileHelpers';
 
 /** Directory containing the framework's own .ts/.svelte source files. */
 const FRAMEWORK_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -46,86 +27,6 @@ const FRAMEWORK_DIR = path.dirname(fileURLToPath(import.meta.url));
 const VARIATION_FORMAT_RE = /\bformat\((woff2-variations|woff-variations|truetype-variations|opentype-variations)\)/g;
 function restoreVariationsFormat(css: string): string {
   return css.replace(VARIATION_FORMAT_RE, "format('$1')");
-}
-
-/**
- * Format a `Bun.build()` failure's `logs` array as a multi-line string with
- * `file:line:column — message` per entry. Bun 1.2+ throws a generic
- * `AggregateError("Bundle failed")` with `stack === undefined` on its own,
- * which loses the per-message position info — we always pass `throw: false`
- * to recover the structured logs and run them through this helper instead.
- */
-function formatBuildMessages(
-  logs: ReadonlyArray<{
-    message: string;
-    position?: { file: string; line: number; column: number } | null;
-  }>,
-): string {
-  if (logs.length === 0) {
-    return '  <no diagnostic messages>';
-  }
-  return logs
-    .map((l) => {
-      const p = l.position;
-      const where = p ? `${path.relative(process.cwd(), p.file)}:${p.line}:${p.column}` : '<unknown>';
-      return `  ${where} — ${l.message}`;
-    })
-    .join('\n');
-}
-
-const MARKDOWN_EXTENSIONS = ['.md', '.svx'];
-const MARKDOWN_FILE_FILTER = /\.(md|svx)$/;
-
-function createMarkdownLoader(opts: {
-  markdown: MarkdownConfig;
-  target: 'server' | 'client';
-  development: boolean;
-  cssMap?: Map<string, string>;
-  userCompilerOptions: CompileOptions;
-  hydration?: {
-    fileHydratables: Map<string, HydratableComponent[]>;
-    allHydratables: HydratableComponent[];
-    allServerIslands: ServerIslandComponent[];
-    preprocessCacheStats: ReturnType<typeof createPreprocessCacheStats>;
-  };
-}) {
-  const highlight = opts.markdown.highlight;
-  return async (args: { path: string }) => {
-    const raw = await Bun.file(args.path).text();
-    // mdsvex's `compile` declares a nested-Promise return type, so we accept
-    // `unknown` at the type level and await + validate at runtime. `await`
-    // flattens any thenable chain to the eventual `{ code; … } | undefined`.
-    const compiled = (await opts.markdown.compile(raw, {
-      filename: args.path,
-      extensions: MARKDOWN_EXTENSIONS,
-      rehypePlugins: opts.markdown.rehypePlugins,
-      remarkPlugins: opts.markdown.remarkPlugins,
-      highlight,
-    })) as { code?: unknown } | undefined;
-    if (!compiled || typeof compiled.code !== 'string') {
-      throw new Error(`markdown.compile returned no output for ${args.path}`);
-    }
-    let svelteSource = compiled.code;
-    if (opts.hydration) {
-      const { transformed, hydratables, serverIslands } = cachedPreprocessHydratable(svelteSource, args.path, opts.hydration.preprocessCacheStats);
-      opts.hydration.fileHydratables.set(args.path, hydratables);
-      opts.hydration.allHydratables.push(...hydratables);
-      opts.hydration.allServerIslands.push(...serverIslands);
-      svelteSource = transformed;
-    }
-    const { js, css } = svelteCompile(
-      svelteSource,
-      mergeCompilerOptions(opts.userCompilerOptions, {
-        generate: opts.target,
-        filename: args.path,
-        ...(opts.target === 'client' ? { dev: opts.development } : {}),
-      }),
-    );
-    if (opts.target === 'server' && css?.code && opts.cssMap) {
-      opts.cssMap.set(args.path, css.code);
-    }
-    return { contents: js.code, loader: 'js' as const };
-  };
 }
 
 export type MochiCompileError =
@@ -176,8 +77,12 @@ export interface ComponentRegistryOptions {
   assetPrefix?: string;
   /** User Svelte config (loaded from `svelte.config.js`). Its `compilerOptions` are merged into the framework's defaults. */
   svelteConfig?: MochiSvelteConfig;
+  /** Path to svelte.config.js (passed through to client build subprocess). */
+  svelteConfigPath?: string;
   /** User-injected markdown integration. When unset, `.md`/`.svx` imports are not handled. */
   markdown?: MarkdownConfig;
+  /** Path to markdown config module (passed through to client build subprocess). */
+  markdownConfigPath?: string;
 }
 
 export class ComponentRegistry {
@@ -242,7 +147,9 @@ export class ComponentRegistry {
   readonly outDir: string;
   readonly assetPrefix: string;
   svelteConfig: MochiSvelteConfig;
+  readonly svelteConfigPath: string | undefined;
   readonly markdown: MarkdownConfig | undefined;
+  readonly markdownConfigPath: string | undefined;
   private errors: MochiCompileError[] = [];
   /** Bumped each time `buildClientBundle()` runs; read+reset by `recompileAll()`. */
   private clientBundleCallCount = 0;
@@ -253,7 +160,9 @@ export class ComponentRegistry {
     this.outDir = opts.outDir ?? './.mochi';
     this.assetPrefix = normalizeAssetPrefix(opts.assetPrefix);
     this.svelteConfig = opts.svelteConfig ?? {};
+    this.svelteConfigPath = opts.svelteConfigPath;
     this.markdown = opts.markdown;
+    this.markdownConfigPath = opts.markdownConfigPath;
   }
 
   getServerIslandPath(name: string): string | undefined {
@@ -677,8 +586,6 @@ export class ComponentRegistry {
     const bundleStart = performance.now();
     const development = this.development;
     const debugBarEnabled = this.debugBarEnabled;
-    const userCompilerOptions = this.svelteConfig.compilerOptions ?? {};
-    const markdown = this.markdown;
     // Deduplicate by resolved path
     const unique = new Map<string, HydratableComponent>();
     for (const c of this.hydratableComponents) {
@@ -716,203 +623,61 @@ export class ComponentRegistry {
       filesMap[entryPath] = entrySource;
     }
 
-    const cookiesClientPath = path.join(frameworkDir, 'cookies.client.ts');
-    const enhanceClientPath = path.join(frameworkDir, 'enhance.client.ts');
+    const clientOutdir = path.resolve(`${this.outDir}/svelte-client`);
+    const configFile = path.join(clientOutdir, '_build-config.json');
+    const resultFile = path.join(clientOutdir, '_build-result.json');
+    const workerPath = path.join(FRAMEWORK_DIR, 'buildClientWorker.ts');
 
-    const clientPlugin: BunPlugin = {
-      name: 'svelte-client',
-      setup(build) {
-        // Mirror the SSR side-effect-CSS strip. The bundle is already linked
-        // from the SSR-rendered <head> via entryImportedCss → importedCssUrls,
-        // so the browser has it. Without this, Bun's default CSS handling
-        // would either inline as JS-injected styles or fail the build for any
-        // hydratable component that imports a stylesheet.
-        build.onLoad({ filter: /\.css$/ }, () => ({ contents: '', loader: 'js' }));
-        // `.server.ts` / `.server.js` files are stripped from the client graph.
-        // Resolve them into a virtual `mochi-server-only` namespace whose
-        // onLoad emits a throwing-Proxy stub per discovered export. The real
-        // file (with its bun:* / node:* deps) is only compiled for SSR.
-        // Matches both extensioned (`./x.server.ts`) and extensionless
-        // (`./x.server`) imports; the extensionless form falls back to disk
-        // probing for the real .ts/.js sibling so the stub still names a
-        // canonical path.
-        build.onResolve({ filter: /\.server(?:\.[jt]s)?$/ }, (args) => {
-          const base = args.resolveDir ? path.resolve(args.resolveDir, args.path) : path.resolve(args.path);
-          let resolved = base;
-          if (!/\.[jt]s$/.test(base)) {
-            const tsPath = `${base}.ts`;
-            const jsPath = `${base}.js`;
-            if (fs.existsSync(tsPath)) {
-              resolved = tsPath;
-            } else if (fs.existsSync(jsPath)) {
-              resolved = jsPath;
-            } else {
-              resolved = tsPath;
-            }
-          }
-          return { path: resolved, namespace: 'mochi-server-only' };
-        });
-        build.onLoad({ filter: /.*/, namespace: 'mochi-server-only' }, async (args) => {
-          const source = await Bun.file(args.path).text();
-          const scan = scanServerOnlyExports(source);
-          for (const w of scan.warnings) {
-            logger.warn(`[mochi] ${path.relative(process.cwd(), args.path)}: ${w}`);
-          }
-          return { contents: buildServerOnlyStubModule(args.path, scan), loader: 'js' };
-        });
-        build.onResolve({ filter: /^mochi-framework$/ }, () => ({
-          path: 'mochi-framework',
-          namespace: 'mochi-env',
-        }));
-        build.onLoad({ filter: /.*/, namespace: 'mochi-env' }, () => ({
-          contents: [
-            `export const isServer = false; export const isBrowser = true; export const DEV = ${development}; export const isDev = ${development};`,
-            `export function getRequestContext() { throw new Error("getRequestContext() is only available on the server"); }`,
-            `import { createClientCookies as __cc } from "${cookiesClientPath}";`,
-            `const __clientCookies = __cc();`,
-            `export const cookies = new Proxy({}, {`,
-            `  get(_, p) {`,
-            `    const r = __clientCookies[p];`,
-            `    return typeof r === "function" ? r.bind(__clientCookies) : r;`,
-            `  },`,
-            `});`,
-            `const __mochiServerOnly = (n) => new Proxy({}, {`,
-            `  get() { throw new Error(n + " is only available on the server"); },`,
-            `});`,
-            `export const params = __mochiServerOnly("params");`,
-            `const __loc = () => new URL(window.location.href);`,
-            `export const url = new Proxy({}, {`,
-            `  get(_, p) {`,
-            `    const v = __loc();`,
-            `    const r = v[p];`,
-            `    return typeof r === "function" ? r.bind(v) : r;`,
-            `  },`,
-            `  set() { return false; },`,
-            `  has(_, p) { return p in __loc(); },`,
-            `  ownKeys() { return Reflect.ownKeys(__loc()); },`,
-            `  getOwnPropertyDescriptor(_, p) {`,
-            `    const d = Object.getOwnPropertyDescriptor(__loc(), p);`,
-            `    if (d) d.configurable = true;`,
-            `    return d;`,
-            `  },`,
-            `});`,
-            `export const locals = __mochiServerOnly("locals");`,
-            // Re-export the isomorphic logger and apply the level seeded by the
-            // server in window.__mochi_log_level (set by Mochi.serve via the HTML
-            // shell). devWarn keeps routing through window.__mochi_warn so the
-            // debug-bar's warnings panel still receives entries.
-            `import { logger as __mochi_logger, setLogLevel, getLogLevel } from "${path.join(FRAMEWORK_DIR, 'log.ts')}";`,
-            `export { setLogLevel, getLogLevel };`,
-            `export const logger = __mochi_logger;`,
-            `if (typeof window !== "undefined" && window.__mochi_log_level) setLogLevel(window.__mochi_log_level);`,
-            `export function devWarn(msg) { if (typeof window !== "undefined" && window.__mochi_warn) window.__mochi_warn(msg); else __mochi_logger.warn(msg); }`,
-            `export { stringify, parse } from "${Bun.resolveSync('devalue', FRAMEWORK_DIR)}";`,
-            // Server-only; the preprocessor never injects __mochi_emit_props__
-            // into client bundles, but this stub keeps the module surface
-            // symmetric and produces a clear error if anyone imports it.
-            `export function emitIslandProps() { throw new Error("emitIslandProps() is only available on the server"); }`,
-            // mochiEvents is a server-side bus. On the client we ship a stub so
-            // bundles don't pull in mitt and accidental emits surface in the
-            // console instead of silently misbehaving. Subscribers registered
-            // client-side never fire — nothing emits here.
-            `export const mochiEvents = {`,
-            `  all: new Map(),`,
-            `  on() {},`,
-            `  off() {},`,
-            `  setHandler() {},`,
-            `  emit(type) {`,
-            `    __mochi_logger.warn(`,
-            `      "mochiEvents.emit(" + JSON.stringify(type) + ") was called in the browser. " +`,
-            `      "mochiEvents is server-only; client-side emits are no-ops."`,
-            `    );`,
-            `  },`,
-            `};`,
-            // MochiCache is server-only; ship a stub that throws so accidental
-            // client imports surface clearly instead of failing the bundle.
-            `export class MochiCache { constructor() { throw new Error("MochiCache is only available on the server"); } }`,
-            `export { enhance, deserialize } from "${enhanceClientPath}";`,
-          ].join('\n'),
-          loader: 'js',
-        }));
-        // Strip esm-env imports so DEV/BROWSER/NODE become free variables,
-        // then Bun's `define` option replaces them with literal booleans.
-        // This enables dead code elimination of if(DEV) blocks. Needed because
-        // Bun can't propagate constants through esm-env's conditional exports.
-        build.onLoad({ filter: /node_modules\/svelte\/src\/.*\.js$/ }, async (args) => {
-          let source = await Bun.file(args.path).text();
-          source = source.replace(/import\s*\{[^}]*\}\s*from\s*['"]esm-env['"]\s*;?/g, '');
-          return { contents: source, loader: 'js' };
-        });
-        build.onLoad({ filter: /\.svelte\.[jt]s$/ }, async (args) => {
-          let source = await Bun.file(args.path).text();
-          if (args.path.endsWith('.ts')) {
-            const transpiler = new Bun.Transpiler({ loader: 'ts' });
-            source = transpiler.transformSync(source);
-          }
-          const { js } = svelteCompileModule(
-            source,
-            mergeCompilerOptions(userCompilerOptions, {
-              generate: 'client',
-              filename: args.path,
-              dev: development,
-            }),
-          );
-          return { contents: js.code, loader: 'js' };
-        });
-        build.onLoad({ filter: /\.svelte$/ }, async (args) => {
-          const source = await Bun.file(args.path).text();
-          const preprocessed = await applyUserPreprocessors(source, args.path, 'client', development);
-          const { js } = svelteCompile(
-            preprocessed,
-            mergeCompilerOptions(userCompilerOptions, {
-              generate: 'client',
-              filename: args.path,
-              // TODO: Verify that this still works after node_modules migration
-              css: args.path.startsWith(debugBarDir) ? 'injected' : undefined,
-              dev: development,
-            }),
-          );
-          return { contents: js.code, loader: 'js' };
-        });
-        if (markdown) {
-          build.onLoad({ filter: MARKDOWN_FILE_FILTER }, createMarkdownLoader({ markdown, target: 'client', development, userCompilerOptions }));
-        }
-      },
-    };
+    await Bun.write(
+      configFile,
+      JSON.stringify({
+        entrypoints,
+        files: filesMap,
+        outdir: clientOutdir,
+        publicPath: `${this.assetPrefix}/client/`,
+        development,
+        debugBarEnabled,
+        conditions: ['svelte', ...(development ? ['development'] : ['production'])],
+        define: { DEV: String(development), BROWSER: 'true', NODE: 'false' },
+        svelteConfigPath: this.svelteConfigPath,
+        markdownConfigPath: this.markdownConfigPath,
+      }),
+    );
 
-    const result = await Bun.build({
-      entrypoints,
-      files: filesMap,
-      plugins: [clientPlugin],
-      target: 'browser',
-      conditions: ['svelte', ...(development ? ['development'] : ['production'])],
-      define: {
-        DEV: String(development),
-        BROWSER: 'true',
-        NODE: 'false',
-      },
-      minify: true,
-      splitting: true,
-      naming: '[name]-[hash].[ext]',
-      publicPath: `${this.assetPrefix}/client/`,
-      outdir: path.resolve(`${this.outDir}/svelte-client`),
-      metafile: true,
-      throw: false,
+    const proc = Bun.spawn(['bun', 'run', workerPath, configFile, resultFile], {
+      stdout: 'pipe',
+      stderr: 'pipe',
     });
+    const [, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+    const exitCode = await proc.exited;
 
-    if (!result.success) {
-      throw new Error(`Svelte client build failed:\n${formatBuildMessages(result.logs)}`);
+    if (exitCode !== 0 && !fs.existsSync(resultFile)) {
+      throw new Error(`Client build subprocess crashed (exit ${exitCode}):\n${stderr}`);
     }
 
-    for (const output of result.outputs) {
-      const filename = path.basename(output.path);
-      this.clientFiles.set(`${this.assetPrefix}/client/${filename}`, await output.text());
+    const buildResult = (await Bun.file(resultFile).json()) as
+      | {
+          success: true;
+          metafile: {
+            outputs: Record<string, { entryPoint?: string; bytes: number; inputs: Record<string, { bytesInOutput: number }>; imports?: Array<{ kind: string; path: string }> }>;
+          };
+          outputs: Array<{ path: string; basename: string }>;
+        }
+      | { success: false; error: string };
+
+    // Clean up temp files
+    fs.unlinkSync(configFile);
+    fs.unlinkSync(resultFile);
+
+    if (!buildResult.success) {
+      throw new Error(`Svelte client build failed:\n${buildResult.error}`);
     }
 
-    // Map entry-point outputs back to components using metafile.entryPoint
-    // This avoids fragile filename matching.
-    if (result.metafile) {
-      // Build reverse lookup: entryPath -> component name (null = bootstrap)
+    for (const { path: outPath, basename } of buildResult.outputs) {
+      this.clientFiles.set(`${this.assetPrefix}/client/${basename}`, await Bun.file(outPath).text());
+    }
+
+    if (buildResult.metafile) {
       const entryToComponent = new Map<string, string | null>();
       entryToComponent.set(hydratableIslandPath, null);
       if (debugBarEnabled) {
@@ -923,7 +688,7 @@ export class ComponentRegistry {
         entryToComponent.set(entryPath, comp.name);
       }
 
-      for (const [outPath, outMeta] of Object.entries(result.metafile.outputs)) {
+      for (const [outPath, outMeta] of Object.entries(buildResult.metafile.outputs)) {
         if (!outMeta.entryPoint) {
           continue;
         }
@@ -938,7 +703,7 @@ export class ComponentRegistry {
           this.componentEntryUrls.set(compName, url);
         }
       }
-      const outputStats = Object.entries(result.metafile.outputs).map(([outPath, outMeta]) => {
+      const outputStats = Object.entries(buildResult.metafile.outputs).map(([outPath, outMeta]) => {
         const inputs = Object.entries(outMeta.inputs).map(([inputPath, inputMeta]) => ({
           path: inputPath.replace(path.resolve('.') + '/', ''),
           size: inputMeta.bytesInOutput,

@@ -6,6 +6,7 @@ import { rmSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { scanPublicDir } from './publicDir';
 import { loadSvelteConfig } from './svelteConfig';
+import { loadMarkdownConfig } from './loadMarkdownConfig';
 import { logger, setLogLevel } from './log';
 import { consoleLogger } from './consoleLogger';
 import { mochiEvents } from './events';
@@ -32,10 +33,11 @@ export interface MochiBuildOptions {
    */
   svelteConfigPath?: string;
   /**
-   * Dependency-injected markdown (`.md` / `.svx`) support. Mirror the value
-   * passed to `Mochi.serve({ markdown })` so the prebuild and the runtime
-   * use the same pipeline. Omit to leave markdown unhandled.
+   * Path to a module that default-exports a `MarkdownConfig` object.
+   * Mirror the value passed to `Mochi.serve({ markdownConfigPath })`.
    */
+  markdownConfigPath?: string;
+  /** @deprecated Use `markdownConfigPath` instead. */
   markdown?: MarkdownConfig;
 }
 
@@ -66,13 +68,21 @@ export async function build(options: MochiBuildOptions): Promise<void> {
   mkdirSync(path.join(outDir, 'svelte-client'), { recursive: true });
   mkdirSync(path.join(outDir, 'svelte-css'), { recursive: true });
 
+  if (options.markdown && !options.markdownConfigPath) {
+    throw new Error(
+      "The inline `markdown` option has been removed. Create a config file (e.g. `mdsvex.config.ts`) that default-exports your MarkdownConfig and pass `markdownConfigPath: './mdsvex.config.ts'` instead.",
+    );
+  }
   const svelteConfig = await loadSvelteConfig(options.svelteConfigPath);
+  const markdown = options.markdownConfigPath ? await loadMarkdownConfig(options.markdownConfigPath) : undefined;
   const registry = new ComponentRegistry({
     development,
     outDir,
     assetPrefix: options.assetPrefix,
     svelteConfig,
-    markdown: options.markdown,
+    svelteConfigPath: options.svelteConfigPath,
+    markdown,
+    markdownConfigPath: options.markdownConfigPath,
   });
 
   // Compile all Mochi.page() handlers in one Bun.build so transitive deps

@@ -1,26 +1,19 @@
-/**
- * Bundle a web component entry into a minified browser script string for
- * inlining into the HTML shell as `<script>...</script>`. The path is
- * resolved relative to this file, so callers pass paths like
- * `./web-components/ServerIsland.ts`.
- */
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const FRAMEWORK_DIR = path.dirname(fileURLToPath(import.meta.url));
+const WORKER_PATH = path.join(FRAMEWORK_DIR, 'buildInlineWorker.ts');
+
 export async function buildInlineWebComponent(relPath: string): Promise<string> {
   const entry = new URL(relPath, import.meta.url).pathname;
-  const result = await Bun.build({
-    entrypoints: [entry],
-    target: 'browser',
-    minify: true,
-    throw: false,
+  const proc = Bun.spawn(['bun', 'run', WORKER_PATH, entry], {
+    stdout: 'pipe',
+    stderr: 'pipe',
   });
-  if (!result.success) {
-    const lines = result.logs
-      .map((l) => {
-        const p = (l as { position?: { file: string; line: number; column: number } | null }).position;
-        const where = p ? `${p.file}:${p.line}:${p.column}` : '<unknown>';
-        return `  ${where} — ${l.message}`;
-      })
-      .join('\n');
-    throw new Error(`buildInlineWebComponent failed for ${entry}:\n${lines}`);
+  const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+  const exitCode = await proc.exited;
+  if (exitCode !== 0) {
+    throw new Error(`buildInlineWebComponent failed for ${entry}:\n${stderr || stdout}`);
   }
-  return result.outputs[0]!.text();
+  return stdout;
 }
