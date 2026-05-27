@@ -12,7 +12,22 @@ import { evictPreprocessCacheEntry } from './preprocessCache';
 import { buildPublicUrl } from './proxy';
 import { scanPublicDir } from './publicDir';
 import { loadSvelteConfig } from './svelteConfig';
-import type { BunRouteValue, MochiServeOptions, MochiWsData } from './types';
+import { alternateSlashPattern } from './trailingSlash';
+import {
+  isMochiApi,
+  isMochiPage,
+  isMochiSse,
+  isMochiWs,
+  type BunRouteValue,
+  type MochiApiHandler,
+  type MochiPageHandlerConfig,
+  type MochiRouteValue,
+  type MochiServeOptions,
+  type MochiSseHandler,
+  type MochiWsData,
+  type MochiWsHandlers,
+  type RouteRegistrationResult,
+} from './types';
 
 const FILE_CHANGE_EVENTS = new Set<string>(['add', 'change', 'unlink', 'addDir', 'unlinkDir']);
 
@@ -28,6 +43,14 @@ export interface DevWatcherDeps {
   publicDir: string;
   watchPaths: string[];
   development: boolean;
+  routeModule?: string;
+  apiHandlerMap?: Map<string, MochiApiHandler>;
+  sseHandlerMap?: Map<string, MochiSseHandler>;
+  wsHandlersMap?: Map<string, MochiWsHandlers<unknown>>;
+  pageConfigMap?: Map<string, MochiPageHandlerConfig>;
+  registerRoutePattern?: (pattern: string, handler: MochiRouteValue) => Promise<RouteRegistrationResult | null>;
+  unregisterRoutePattern?: (pattern: string) => void;
+  trailingSlashPolicy?: 'never' | 'always';
 }
 
 /**
@@ -38,7 +61,27 @@ export interface DevWatcherDeps {
  * without an SSR recompile; public-dir edits rescan and reload the route map.
  */
 export function startDevWatcher(deps: DevWatcherDeps): void {
-  const { registry, server, options, liveReloadClients, composedFetch, baseBunRoutes, bunRoutes, outDir, publicDir, watchPaths, development } = deps;
+  const {
+    registry,
+    server,
+    options,
+    liveReloadClients,
+    composedFetch,
+    baseBunRoutes,
+    bunRoutes,
+    outDir,
+    publicDir,
+    watchPaths,
+    development,
+    routeModule,
+    apiHandlerMap,
+    sseHandlerMap,
+    wsHandlersMap,
+    pageConfigMap,
+    registerRoutePattern,
+    unregisterRoutePattern,
+    trailingSlashPolicy,
+  } = deps;
 
   const liveReloadHandler = (req: Request, srv: Server<undefined>): Response => {
     const url = buildPublicUrl(req, options.proxy);
@@ -147,6 +190,263 @@ export function startDevWatcher(deps: DevWatcherDeps): void {
     });
   }, 100);
 
+  let routeModuleDeps: Set<string> = new Set();
+  const routeModuleOutDir = path.resolve(`${outDir}/route-module`);
+
+  async function buildRouteModule(): Promise<Record<string, unknown> | null> {
+    if (!routeModule) {
+      return null;
+    }
+    const result = await Bun.build({
+      entrypoints: [path.resolve(routeModule)],
+      packages: 'external',
+      target: 'bun',
+      outdir: routeModuleOutDir,
+      naming: { entry: 'routes.js' },
+      metafile: true,
+      throw: false,
+    });
+    if (!result.success) {
+      const msgs = result.logs.map((l) => l.message || String(l)).join('\n');
+      logger.warn(`Route module build failed:\n${msgs}`);
+      return null;
+    }
+    const newDeps = new Set<string>();
+    if (result.metafile) {
+      for (const output of Object.values(result.metafile.outputs)) {
+        for (const inputPath of Object.keys(output.inputs)) {
+          newDeps.add(path.resolve(inputPath));
+        }
+      }
+    }
+    routeModuleDeps = newDeps;
+    const outFile = path.resolve(routeModuleOutDir, 'routes.js');
+    // Cache-bust via query string — each import creates a new module entry in Bun's
+    // module cache that is never evicted. Acceptable for a dev-only path; would need
+    // Loader.registry cleanup if Bun exposes it in the future.
+    const mod = await import(outFile + `?t=${Date.now()}`);
+    if (!mod.routes) {
+      logger.warn('Route module does not export "routes" — skipping update');
+      return null;
+    }
+    return mod.routes;
+  }
+
+  let knownRouteModulePatterns = new Set<string>();
+
+  function routeType(handler: unknown): 'api' | 'ws' | 'sse' | 'page' | null {
+    if (isMochiApi(handler)) {
+      return 'api';
+    }
+    if (isMochiWs(handler)) {
+      return 'ws';
+    }
+    if (isMochiSse(handler)) {
+      return 'sse';
+    }
+    if (isMochiPage(handler)) {
+      return 'page';
+    }
+    return null;
+  }
+
+  function currentRouteType(pattern: string): 'api' | 'ws' | 'sse' | 'page' | null {
+    if (apiHandlerMap?.has(pattern)) {
+      return 'api';
+    }
+    if (wsHandlersMap?.has(pattern)) {
+      return 'ws';
+    }
+    if (sseHandlerMap?.has(pattern)) {
+      return 'sse';
+    }
+    if (pageConfigMap?.has(pattern)) {
+      return 'page';
+    }
+    return null;
+  }
+
+  function addBunRoute(pattern: string, value: BunRouteValue): void {
+    bunRoutes[pattern] = value;
+    baseBunRoutes[pattern] = value;
+    if (trailingSlashPolicy) {
+      const alt = alternateSlashPattern(pattern);
+      if (alt && !(alt in bunRoutes)) {
+        bunRoutes[alt] = value;
+        baseBunRoutes[alt] = value;
+      }
+    }
+  }
+
+  function removeBunRoute(pattern: string): void {
+    if (trailingSlashPolicy) {
+      const alt = alternateSlashPattern(pattern);
+      if (alt) {
+        delete bunRoutes[alt];
+        delete baseBunRoutes[alt];
+      }
+    }
+    delete bunRoutes[pattern];
+    delete baseBunRoutes[pattern];
+  }
+
+  async function applyRouteChanges(
+    freshRoutes: Record<string, unknown>,
+  ): Promise<{ updated: number; added: string[]; removed: string[]; api: number; ws: number; sse: number; page: number }> {
+    const counts = { updated: 0, added: [] as string[], removed: [] as string[], api: 0, ws: 0, sse: 0, page: 0 };
+    const freshPatterns = new Set(Object.keys(freshRoutes));
+
+    for (const [pattern, handler] of Object.entries(freshRoutes)) {
+      const type = routeType(handler);
+      if (!type) {
+        continue;
+      }
+
+      if (knownRouteModulePatterns.has(pattern)) {
+        const currentType = currentRouteType(pattern);
+
+        if (currentType && currentType !== type && registerRoutePattern && unregisterRoutePattern) {
+          unregisterRoutePattern(pattern);
+          removeBunRoute(pattern);
+          const result = await registerRoutePattern(pattern, handler as MochiRouteValue);
+          if (result) {
+            addBunRoute(pattern, result.bunRouteValue);
+            counts.added.push(pattern);
+            counts.removed.push(pattern);
+          }
+        } else {
+          // Same type — update the map in place
+          if (isMochiApi(handler) && apiHandlerMap?.has(pattern)) {
+            apiHandlerMap.set(pattern, handler.handler);
+            counts.api++;
+            counts.updated++;
+          } else if (isMochiWs(handler) && wsHandlersMap?.has(pattern)) {
+            wsHandlersMap.set(pattern, handler.handlers as MochiWsHandlers<unknown>);
+            counts.ws++;
+            counts.updated++;
+          } else if (isMochiSse(handler) && sseHandlerMap?.has(pattern)) {
+            sseHandlerMap.set(pattern, handler.handler);
+            counts.sse++;
+            counts.updated++;
+          } else if (isMochiPage(handler) && pageConfigMap?.has(pattern)) {
+            pageConfigMap.set(pattern, { serverProps: handler.serverProps, actions: handler.actions });
+            counts.page++;
+            counts.updated++;
+          }
+        }
+      } else if (registerRoutePattern) {
+        // New pattern
+        const result = await registerRoutePattern(pattern, handler as MochiRouteValue);
+        if (result) {
+          addBunRoute(pattern, result.bunRouteValue);
+          counts[result.type]++;
+          counts.added.push(pattern);
+        }
+      }
+    }
+
+    // Removed patterns
+    if (unregisterRoutePattern) {
+      for (const pattern of knownRouteModulePatterns) {
+        if (!freshPatterns.has(pattern)) {
+          unregisterRoutePattern(pattern);
+          removeBunRoute(pattern);
+          counts.removed.push(pattern);
+        }
+      }
+    }
+
+    knownRouteModulePatterns = freshPatterns;
+    return counts;
+  }
+
+  const triggerRouteReload = routeModule
+    ? debounce((filename: string) => {
+        reloadChain = reloadChain.then(async () => {
+          mochiEvents.emit('recompile:start', { trigger: 'route-module', path: filename, pageCount: 0 });
+          const start = performance.now();
+          let counts: { updated: number; added: string[]; removed: string[]; api: number; ws: number; sse: number; page: number } = {
+            updated: 0,
+            added: [],
+            removed: [],
+            api: 0,
+            ws: 0,
+            sse: 0,
+            page: 0,
+          };
+          try {
+            const freshRoutes = await buildRouteModule();
+            if (freshRoutes) {
+              counts = await applyRouteChanges(freshRoutes);
+              const hasChanges = counts.updated > 0 || counts.added.length > 0 || counts.removed.length > 0;
+              if (hasChanges) {
+                const parts: string[] = [];
+                if (counts.api) {
+                  parts.push(`${counts.api} api`);
+                }
+                if (counts.ws) {
+                  parts.push(`${counts.ws} ws`);
+                }
+                if (counts.sse) {
+                  parts.push(`${counts.sse} sse`);
+                }
+                if (counts.page) {
+                  parts.push(`${counts.page} page`);
+                }
+                if (counts.added.length) {
+                  parts.push(`+${counts.added.length} new`);
+                }
+                if (counts.removed.length) {
+                  parts.push(`-${counts.removed.length} removed`);
+                }
+                logger.info(`Route module rebuilt — ${parts.join(', ')}`);
+              }
+              if (counts.added.length > 0 || counts.removed.length > 0) {
+                server.reload({
+                  routes: {
+                    ...bunRoutes,
+                    '/__mochi_live_reload': liveReloadHandler,
+                  },
+                  fetch: composedFetch,
+                } as Parameters<typeof server.reload>[0]);
+              }
+            }
+          } catch (e) {
+            logger.warn(`Route module rebuild failed: ${e instanceof Error ? e.message : e}`);
+          }
+          mochiEvents.emit('recompile:complete', {
+            trigger: 'route-module',
+            path: filename,
+            pageCount: 0,
+            pages: [],
+            clientBundleCount: 0,
+            durationMs: performance.now() - start,
+          });
+          const hasChanges = counts.updated > 0 || counts.added.length > 0 || counts.removed.length > 0;
+          if (hasChanges) {
+            notifyClients();
+          }
+        });
+      }, 100)
+    : undefined;
+
+  // Build the route module before the watcher starts so routeModuleDeps and
+  // knownRouteModulePatterns are populated before any file-change events arrive.
+  // The watcher uses `ignoreInitial: true` and real FS events arrive on a later
+  // tick, so the microtask-queued build always wins.
+  if (routeModule) {
+    reloadChain = reloadChain.then(async () => {
+      try {
+        const freshRoutes = await buildRouteModule();
+        if (freshRoutes) {
+          knownRouteModulePatterns = new Set(Object.keys(freshRoutes));
+        }
+      } catch (e) {
+        logger.warn(`Initial route module build failed: ${e instanceof Error ? e.message : e}`);
+      }
+    });
+  }
+
   const finalWatchPaths = watchPaths.filter((p) => existsSync(p));
   const outDirAbs = path.resolve(outDir);
   const isInsideOutDir = (filePath: string): boolean => {
@@ -196,11 +496,16 @@ export function startDevWatcher(deps: DevWatcherDeps): void {
       }
       if (event === 'unlink' && filePath.endsWith('.svelte')) {
         evictPreprocessCacheEntry(path.resolve(filePath));
+        registry.evict(path.resolve(filePath));
       }
       if (reloadPublic && filePath.startsWith(publicDirRel + path.sep)) {
         reloadPublic(filePath);
       } else if (filePath.endsWith('.css')) {
         triggerCssReload(filePath);
+      } else if (triggerRouteReload && routeModuleDeps.has(path.resolve(filePath))) {
+        // Route module deps are handler .ts/.js files not in the Svelte graph —
+        // skip SSR recompile and only rebuild the route module.
+        triggerRouteReload(filePath);
       } else {
         triggerReload(filePath);
       }

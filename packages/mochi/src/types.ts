@@ -11,6 +11,11 @@ export function isServerPropsResolver(serverProps: Record<string, unknown> | Moc
   return typeof serverProps === 'function';
 }
 
+export interface MochiPageHandlerConfig {
+  serverProps?: Record<string, unknown> | MochiServerPropsResolver;
+  actions?: MochiFormActions;
+}
+
 export interface MochiPageConfig {
   readonly __mochiPage: true;
   readonly componentPath: string;
@@ -71,6 +76,11 @@ export type BunRouteValue =
   | BunFile
   | ((req: Request, server: Server<undefined>) => Response | Promise<Response>)
   | Record<string, (req: Request, server: Server<undefined>) => Response | Promise<Response>>;
+
+export interface RouteRegistrationResult {
+  bunRouteValue: BunRouteValue;
+  type: 'page' | 'api' | 'ws' | 'sse';
+}
 
 // ---------------------------------------------------------------------------
 // Form actions (attached to Mochi.page() handlers)
@@ -443,6 +453,13 @@ export interface MochiServeOptions {
    * flag) so dev and prod stay in sync.
    */
   assetPrefix?: string;
+  /**
+   * Path to a module that exports `routes: Record<string, MochiRouteValue>`.
+   * In dev mode, changes to this module or its transitive dependencies
+   * hot-swap the handler configs for existing route patterns without a restart.
+   * Default: auto-discovered from `./src/routes.ts` or `./src/routes.js`.
+   */
+  routeModule?: string;
   /** Extra paths the dev-mode file watcher monitors, in addition to the defaults `src` and `public`. */
   additionalWatchPaths?: string[];
   /**

@@ -146,7 +146,7 @@ export interface MochiCompileCompleteEvent {
   durationMs: number;
 }
 
-export type MochiRecompileTrigger = 'file' | 'css' | 'svelte-config';
+export type MochiRecompileTrigger = 'file' | 'css' | 'svelte-config' | 'route-module';
 
 export interface MochiRecompileStartEvent {
   trigger: MochiRecompileTrigger;
