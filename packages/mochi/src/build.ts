@@ -1,7 +1,7 @@
 import { checkEnvironment } from './checkEnvironment';
 import { ComponentRegistry, formatCompileErrors } from './ComponentRegistry';
 import { isMochiPage, isMochiApi, isMochiWs, isMochiSse } from './types';
-import type { MarkdownConfig, MochiRouteValue } from './types';
+import type { MochiRouteValue } from './types';
 import { rmSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { scanPublicDir } from './publicDir';
@@ -11,6 +11,7 @@ import { consoleLogger } from './consoleLogger';
 import { mochiEvents } from './events';
 import { styleText } from 'node:util';
 import prettyBytes from './lib/prettyBytes';
+import { discoverMarkdownConfig } from './discoverMarkdownConfig';
 
 export interface MochiBuildOptions {
   routes: Record<string, MochiRouteValue>;
@@ -31,12 +32,10 @@ export interface MochiBuildOptions {
    * Mochi's defaults; missing file → defaults only.
    */
   svelteConfigPath?: string;
-  /**
-   * Dependency-injected markdown (`.md` / `.svx`) support. Mirror the value
-   * passed to `Mochi.serve({ markdown })` so the prebuild and the runtime
-   * use the same pipeline. Omit to leave markdown unhandled.
-   */
-  markdown?: MarkdownConfig;
+  /** @deprecated Use an `mdsvex.config.ts` file at the project root instead. */
+  markdown?: never;
+  /** Absolute path to an `mdsvex.config.ts` module. Auto-discovered when omitted. */
+  markdownConfigPath?: string;
 }
 
 type RouteKind = 'page' | 'api' | 'ws' | 'sse';
@@ -66,13 +65,20 @@ export async function build(options: MochiBuildOptions): Promise<void> {
   mkdirSync(path.join(outDir, 'svelte-client'), { recursive: true });
   mkdirSync(path.join(outDir, 'svelte-css'), { recursive: true });
 
+  if ((options as unknown as Record<string, unknown>).markdown !== undefined) {
+    throw new Error(
+      '[mochi] `markdown` option removed. Create an `mdsvex.config.ts` at your project root that default-exports the MarkdownConfig.\n' +
+        'See: https://mochi.khromov.se/docs/mdsvex',
+    );
+  }
+  const markdownConfigPath = options.markdownConfigPath ?? discoverMarkdownConfig();
   const svelteConfig = await loadSvelteConfig(options.svelteConfigPath);
   const registry = new ComponentRegistry({
     development,
     outDir,
     assetPrefix: options.assetPrefix,
     svelteConfig,
-    markdown: options.markdown,
+    markdownConfigPath,
   });
 
   // Compile all Mochi.page() handlers in one Bun.build so transitive deps

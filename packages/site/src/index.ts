@@ -3,7 +3,7 @@ import { Mochi, mochiEvents, sequence, logger, noCache, compress, silenceInterna
 import type { Handle, HandleError } from 'mochi-framework';
 import { generateDocsBarrel } from './lib/generateDocsBarrel';
 import { clearDocsCaches, DOCS_DIR } from './lib/docs';
-import { markdownConfig, routes } from './routes';
+import { routes } from './routes';
 import { handle as cookieVaryTestHandle } from './demos/cookie-vary-test/routes';
 
 const IS_DOCKER = process.env.MOCHI_DOCKER === 'true';
@@ -105,7 +105,6 @@ await Mochi.serve({
   additionalWatchPaths: ['../docs'],
   logger: { level: 'log' },
   proxy: { origin }, // TODO: This is a bit of an awkward way to set the allowed csrf domain...
-  markdown: markdownConfig,
   eventHooks: {
     'mochi:init': ({ options }) => {
       logger.info(`init: starting on port ${options.port}`);

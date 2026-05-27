@@ -17,7 +17,7 @@ Options for "build":
   --dev                    Build with development: true.
 
 The routes file may also export \`buildOptions\` (a \`MochiBuildOptions\`
-object) for options that can't be expressed as flags, e.g. \`markdown\`.
+object) for options that can't be expressed as flags.
 
 Global:
   -h, --help           Show this help.

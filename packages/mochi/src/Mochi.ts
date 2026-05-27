@@ -5,6 +5,7 @@ import path from 'node:path';
 import { ComponentRegistry, formatCompileErrors } from './ComponentRegistry';
 import type { RenderResult } from './ComponentRegistry';
 import { loadSvelteConfig } from './svelteConfig';
+import { discoverMarkdownConfig } from './discoverMarkdownConfig';
 import { buildInlineWebComponent } from './buildInlineWebComponent';
 import { buildClientStatsRoutes, CLIENT_STATS_COMPONENT } from './clientStatsRoutes';
 import { isMochiPage, isMochiApi, isMochiWs, isMochiSse, isServerPropsResolver } from './types';
@@ -257,6 +258,13 @@ export class Mochi {
         );
       }
     } else {
+      if ((options as Record<string, unknown>).markdown !== undefined) {
+        throw new Error(
+          '[mochi] `markdown` option removed. Create an `mdsvex.config.ts` at your project root that default-exports the MarkdownConfig.\n' +
+            'See: https://mochi.khromov.se/docs/mdsvex',
+        );
+      }
+      const markdownConfigPath = options.markdownConfigPath ?? discoverMarkdownConfig();
       const svelteConfig = await loadSvelteConfig(options.svelteConfigPath);
       registry = new ComponentRegistry({
         development,
@@ -264,7 +272,7 @@ export class Mochi {
         outDir,
         assetPrefix: options.assetPrefix,
         svelteConfig,
-        markdown: options.markdown,
+        markdownConfigPath,
       });
       if (development) {
         for (const dir of [`${outDir}/svelte-client`, `${outDir}/svelte-compile`, `${outDir}/svelte-css`]) {
@@ -1058,6 +1066,7 @@ export class Mochi {
       htmlShell: _htmlShell,
       handle: _handle,
       markdown: _markdown,
+      markdownConfigPath: _markdownConfigPath,
       websocket: userWebSocketOptions,
       ...bunOptions
     } = options as Record<string, unknown>;

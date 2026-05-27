@@ -1,39 +1,16 @@
-import { compile as svelteCompile, compileModule as svelteCompileModule, preprocess as sveltePreprocess, type CompileOptions, type PreprocessorGroup } from 'svelte/compiler';
 import { render } from 'svelte/server';
 import path from 'node:path';
-import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import type { BunPlugin } from 'bun';
 import { isSvelteMarker, normalizeAssetPrefix, normalizeIslandHydrationMarkers, stripHydrationMarkers, toCompileErrorLogs } from './utils';
 import { buildIslandPropsScripts } from './islandPropsRegistry';
 import { requestContext } from './requestContext';
 import type { DebugBarData } from './requestContext';
 import { logger } from './log';
 import { mochiEvents } from './events';
-import type { MarkdownConfig, MochiManifest } from './types';
+import type { MochiManifest } from './types';
 import { type HydratableComponent, type ServerIslandComponent } from './svelteAstPreprocess';
-import { cachedPreprocessHydratable, createPreprocessCacheStats } from './preprocessCache';
-import { mergeCompilerOptions, type MochiSvelteConfig } from './svelteConfig';
-import { applyFilter } from './extensions';
-import { buildServerOnlyStubModule, scanServerOnlyExports } from './serverOnlyScan';
-
-/**
- * Run user-supplied Svelte preprocessors via the `compile:preprocessors`
- * filter. Returns the (possibly transformed) source. The filter is sync — only
- * the application of those preprocessors is async (Svelte's `preprocess()`).
- */
-async function applyUserPreprocessors(source: string, filename: string, target: 'server' | 'client', development: boolean): Promise<string> {
-  const preprocessors: PreprocessorGroup[] = applyFilter('compile:preprocessors', [], {
-    filename,
-    target,
-    development,
-  });
-  if (preprocessors.length === 0) {
-    return source;
-  }
-  const result = await sveltePreprocess(source, preprocessors, { filename });
-  return result.code;
-}
+import { type MochiSvelteConfig } from './svelteConfig';
+import { runBuildInWorker, type SsrPluginConfig, type ClientPluginConfig } from './runBuildInWorker';
 
 /** Directory containing the framework's own .ts/.svelte source files. */
 const FRAMEWORK_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -71,61 +48,6 @@ function formatBuildMessages(
       return `  ${where} — ${l.message}`;
     })
     .join('\n');
-}
-
-const MARKDOWN_EXTENSIONS = ['.md', '.svx'];
-const MARKDOWN_FILE_FILTER = /\.(md|svx)$/;
-
-function createMarkdownLoader(opts: {
-  markdown: MarkdownConfig;
-  target: 'server' | 'client';
-  development: boolean;
-  cssMap?: Map<string, string>;
-  userCompilerOptions: CompileOptions;
-  hydration?: {
-    fileHydratables: Map<string, HydratableComponent[]>;
-    allHydratables: HydratableComponent[];
-    allServerIslands: ServerIslandComponent[];
-    preprocessCacheStats: ReturnType<typeof createPreprocessCacheStats>;
-  };
-}) {
-  const highlight = opts.markdown.highlight;
-  return async (args: { path: string }) => {
-    const raw = await Bun.file(args.path).text();
-    // mdsvex's `compile` declares a nested-Promise return type, so we accept
-    // `unknown` at the type level and await + validate at runtime. `await`
-    // flattens any thenable chain to the eventual `{ code; … } | undefined`.
-    const compiled = (await opts.markdown.compile(raw, {
-      filename: args.path,
-      extensions: MARKDOWN_EXTENSIONS,
-      rehypePlugins: opts.markdown.rehypePlugins,
-      remarkPlugins: opts.markdown.remarkPlugins,
-      highlight,
-    })) as { code?: unknown } | undefined;
-    if (!compiled || typeof compiled.code !== 'string') {
-      throw new Error(`markdown.compile returned no output for ${args.path}`);
-    }
-    let svelteSource = compiled.code;
-    if (opts.hydration) {
-      const { transformed, hydratables, serverIslands } = cachedPreprocessHydratable(svelteSource, args.path, opts.hydration.preprocessCacheStats);
-      opts.hydration.fileHydratables.set(args.path, hydratables);
-      opts.hydration.allHydratables.push(...hydratables);
-      opts.hydration.allServerIslands.push(...serverIslands);
-      svelteSource = transformed;
-    }
-    const { js, css } = svelteCompile(
-      svelteSource,
-      mergeCompilerOptions(opts.userCompilerOptions, {
-        generate: opts.target,
-        filename: args.path,
-        ...(opts.target === 'client' ? { dev: opts.development } : {}),
-      }),
-    );
-    if (opts.target === 'server' && css?.code && opts.cssMap) {
-      opts.cssMap.set(args.path, css.code);
-    }
-    return { contents: js.code, loader: 'js' as const };
-  };
 }
 
 export type MochiCompileError =
@@ -176,8 +98,8 @@ export interface ComponentRegistryOptions {
   assetPrefix?: string;
   /** User Svelte config (loaded from `svelte.config.js`). Its `compilerOptions` are merged into the framework's defaults. */
   svelteConfig?: MochiSvelteConfig;
-  /** User-injected markdown integration. When unset, `.md`/`.svx` imports are not handled. */
-  markdown?: MarkdownConfig;
+  /** Absolute path to an `mdsvex.config.ts` module that default-exports a `MarkdownConfig`. Workers import this directly. */
+  markdownConfigPath?: string;
 }
 
 export class ComponentRegistry {
@@ -242,7 +164,7 @@ export class ComponentRegistry {
   readonly outDir: string;
   readonly assetPrefix: string;
   svelteConfig: MochiSvelteConfig;
-  readonly markdown: MarkdownConfig | undefined;
+  readonly markdownConfigPath: string | undefined;
   private errors: MochiCompileError[] = [];
   /** Bumped each time `buildClientBundle()` runs; read+reset by `recompileAll()`. */
   private clientBundleCallCount = 0;
@@ -253,7 +175,7 @@ export class ComponentRegistry {
     this.outDir = opts.outDir ?? './.mochi';
     this.assetPrefix = normalizeAssetPrefix(opts.assetPrefix);
     this.svelteConfig = opts.svelteConfig ?? {};
-    this.markdown = opts.markdown;
+    this.markdownConfigPath = opts.markdownConfigPath;
   }
 
   getServerIslandPath(name: string): string | undefined {
@@ -309,190 +231,60 @@ export class ComponentRegistry {
     }
     const compileStart = performance.now();
 
-    const cssMap = new Map<string, string>();
-    const importedCssPaths = new Set<string>();
-    const allHydratables: HydratableComponent[] = [];
-    const allServerIslands: ServerIslandComponent[] = [];
-    const preprocessCacheStats = createPreprocessCacheStats();
-    const fileHydratables = new Map<string, HydratableComponent[]>();
     const development = this.development;
     const userCompilerOptions = this.svelteConfig.compilerOptions ?? {};
-    const markdown = this.markdown;
+    const compileOutDir = path.resolve(`${this.outDir}/svelte-compile`);
 
-    const sveltePlugin: BunPlugin = {
-      name: 'svelte-ssr',
-      setup(build) {
-        // Side-effect CSS imports (e.g. `import '@fontsource-variable/inter'`).
-        // Bun resolves bare specifiers via package.json#main to the real .css file,
-        // so filtering on the resolved path catches both direct and package imports.
-        // We record the path and strip the import from the SSR JS bundle — the CSS
-        // is bundled out-of-band below and served as /import-css/*.
-        build.onLoad({ filter: /\.css$/ }, (args) => {
-          importedCssPaths.add(args.path);
-          return { contents: '', loader: 'js' };
-        });
-        build.onResolve({ filter: /^mochi-framework$/ }, () => ({
-          path: 'mochi-framework',
-          namespace: 'mochi-env',
-        }));
-        build.onLoad({ filter: /.*/, namespace: 'mochi-env' }, () => ({
-          contents: [
-            `export const isServer = true; export const isBrowser = false; export const DEV = ${development}; export const isDev = ${development};`,
-            `export function getRequestContext() {`,
-            `  const ctx = globalThis.__mochi_request_context__?.getStore();`,
-            `  if (!ctx) throw new Error("getRequestContext() called outside of a request.");`,
-            `  return ctx;`,
-            `}`,
-            `function __mochiCtxProxy(key) {`,
-            `  return new Proxy({}, {`,
-            `    get(_, p) {`,
-            `      const v = getRequestContext()[key];`,
-            `      const r = v[p];`,
-            `      return typeof r === "function" ? r.bind(v) : r;`,
-            `    },`,
-            `    has(_, p) { return p in getRequestContext()[key]; },`,
-            `    ownKeys() { return Reflect.ownKeys(getRequestContext()[key]); },`,
-            `    getOwnPropertyDescriptor(_, p) {`,
-            `      const d = Object.getOwnPropertyDescriptor(getRequestContext()[key], p);`,
-            `      if (d) d.configurable = true;`,
-            `      return d;`,
-            `    },`,
-            `  });`,
-            `}`,
-            `export const cookies = __mochiCtxProxy("cookies");`,
-            `export const params  = __mochiCtxProxy("params");`,
-            `export const url     = __mochiCtxProxy("url");`,
-            `export const locals  = __mochiCtxProxy("locals");`,
-            // Single source of truth for `logger` lives in log.ts. Re-export here
-            // (and on the client) so user code does `import { logger } from
-            // 'mochi-framework'` and gets the level-gated, isomorphic logger.
-            `import { logger as __mochi_logger, setLogLevel, getLogLevel } from "${path.join(FRAMEWORK_DIR, 'log.ts')}";`,
-            `export { setLogLevel, getLogLevel };`,
-            `export const logger = __mochi_logger;`,
-            `export function devWarn(msg) { __mochi_logger.warn(msg); }`,
-            // Re-export devalue so .svelte files (and the preprocessor's
-            // injected hydration-prop import) can use stringify/parse without
-            // a separate install. Resolved from the framework's own deps.
-            `export { stringify, parse } from "${Bun.resolveSync('devalue', FRAMEWORK_DIR)}";`,
-            // Per-request hydratable-island props dedup helper. Used by the
-            // preprocessor's injected `__mochi_emit_props__` import.
-            `export { emitIslandProps } from "${path.join(FRAMEWORK_DIR, 'islandPropsRegistry.ts')}";`,
-            // Expose the event bus. Pinned on globalThis under the same key as
-            // `events.ts` so the bundled copy and the real server runtime share
-            // one emitter instance.
-            `import __mochi_mitt__ from "${Bun.resolveSync('mitt', FRAMEWORK_DIR)}";`,
-            `if (!globalThis.__mochi_events__) globalThis.__mochi_events__ = __mochi_mitt__();`,
-            `export const mochiEvents = globalThis.__mochi_events__;`,
-            // Server-side cache class. Re-exported through the virtual module so .svelte
-            // files can `import { MochiCache } from 'mochi-framework'` directly.
-            `export { MochiCache } from "${path.join(FRAMEWORK_DIR, 'cache.ts')}";`,
-            // `enhance` / `deserialize` are browser-only Svelte action helpers.
-            // Svelte never invokes actions during SSR, so these stubs only fire
-            // if user code calls them on the server — which is a usage error.
-            `export { enhance, deserialize } from "${path.join(FRAMEWORK_DIR, 'enhance.ssr.ts')}";`,
-          ].join('\n'),
-          loader: 'js',
-        }));
-        build.onResolve({ filter: /^mochi-server-island-runtime$/ }, () => ({
-          path: 'mochi-server-island-runtime',
-          namespace: 'mochi-server-island',
-        }));
-        build.onLoad({ filter: /.*/, namespace: 'mochi-server-island' }, () => ({
-          contents: [`import { signProps } from "${path.join(FRAMEWORK_DIR, 'serverIslandCrypto.ts')}";`, `export { signProps };`].join('\n'),
-          loader: 'js',
-        }));
-        build.onLoad({ filter: /\.svelte\.[jt]s$/ }, async (args) => {
-          let source = await Bun.file(args.path).text();
-          if (args.path.endsWith('.ts')) {
-            const transpiler = new Bun.Transpiler({ loader: 'ts' });
-            source = transpiler.transformSync(source);
-          }
-          const { js } = svelteCompileModule(
-            source,
-            mergeCompilerOptions(userCompilerOptions, {
-              generate: 'server',
-              filename: args.path,
-            }),
-          );
-          return { contents: js.code, loader: 'js' };
-        });
-        build.onLoad({ filter: /\.svelte$/ }, async (args) => {
-          const raw = await Bun.file(args.path).text();
-          const preprocessed = await applyUserPreprocessors(raw, args.path, 'server', development);
-          // Vendored .svelte from node_modules can never carry `mochi:*` directives
-          const isVendored = args.path.includes(`${path.sep}node_modules${path.sep}`);
-          const { transformed, hydratables, serverIslands } = isVendored
-            ? { transformed: preprocessed, hydratables: [] as HydratableComponent[], serverIslands: [] as ServerIslandComponent[] }
-            : cachedPreprocessHydratable(preprocessed, args.path, preprocessCacheStats);
-          fileHydratables.set(args.path, hydratables);
-          allHydratables.push(...hydratables);
-          allServerIslands.push(...serverIslands);
-
-          const { js, css } = svelteCompile(
-            transformed,
-            mergeCompilerOptions(userCompilerOptions, {
-              generate: 'server',
-              filename: args.path,
-            }),
-          );
-          if (css?.code) {
-            cssMap.set(args.path, css.code);
-          }
-          return { contents: js.code, loader: 'js' };
-        });
-        if (markdown) {
-          build.onLoad(
-            { filter: MARKDOWN_FILE_FILTER },
-            createMarkdownLoader({
-              markdown,
-              target: 'server',
-              development,
-              cssMap,
-              userCompilerOptions,
-              hydration: { fileHydratables, allHydratables, allServerIslands, preprocessCacheStats },
-            }),
-          );
-        }
-      },
+    const ssrPluginConfig: SsrPluginConfig = {
+      development,
+      userCompilerOptions: userCompilerOptions as Record<string, unknown>,
+      frameworkDir: FRAMEWORK_DIR,
+      markdownConfigPath: this.markdownConfigPath,
     };
 
-    const compileOutDir = path.resolve(`${this.outDir}/svelte-compile`);
-    const result = await Bun.build({
-      entrypoints: todo.map((f) => path.resolve(f)),
-      plugins: [sveltePlugin],
-      target: 'bun',
-      conditions: ['svelte'],
-      // Svelte stays external because it's a peer dep the consumer already
-      // provides. Everything else (devalue, cookie, nanoid, etc.) gets bundled
-      // — but with `splitting: true` Bun emits shared transitive
-      // deps into separate chunk files alongside each entry's `.server.js`,
-      // so they're written exactly once across the cohort. Two
-      // `Bun.build` calls that touch the same transitive deps in one process
-      // trip a Bun bundler EISDIR bug; batching all entrypoints into a single
-      // call sidesteps it.
-      external: ['svelte', 'svelte/*'],
-      splitting: true,
-      outdir: compileOutDir,
-      naming: {
-        entry: '[name].server.js',
-        chunk: 'chunk-[hash].js',
-        asset: '[name]-[hash].[ext]',
+    const response = await runBuildInWorker({
+      kind: 'ssr',
+      buildOptions: {
+        entrypoints: todo.map((f) => path.resolve(f)),
+        target: 'bun',
+        conditions: ['svelte'],
+        external: ['svelte', 'svelte/*'],
+        splitting: true,
+        outdir: compileOutDir,
+        naming: {
+          entry: '[name].server.js',
+          chunk: 'chunk-[hash].js',
+          asset: '[name]-[hash].[ext]',
+        },
+        metafile: true,
       },
-      metafile: true,
-      throw: false,
+      pluginConfig: ssrPluginConfig,
     });
 
-    if (!result.success) {
-      const message = `Svelte SSR build failed:\n${formatBuildMessages(result.logs)}`;
+    if (!response.success) {
+      const message = `Svelte SSR build failed:\n${formatBuildMessages(response.logs)}`;
       for (const f of todo) {
         mochiEvents.emit('compile:error', {
           path: f,
           message,
-          logs: toCompileErrorLogs(result.logs),
+          logs: toCompileErrorLogs(response.logs),
         });
       }
       throw new Error(message);
     }
+
+    const result = {
+      metafile: response.metafile as {
+        outputs: Record<string, { entryPoint?: string; bytes: number; inputs: Record<string, { bytesInOutput: number }>; imports?: { path: string }[] }>;
+      },
+    };
+    const sideEffects = response.sideEffects!;
+    const cssMap = new Map<string, string>(sideEffects.cssMap);
+    const importedCssPaths = new Set<string>(sideEffects.importedCssPaths);
+    const fileHydratables = new Map<string, HydratableComponent[]>(sideEffects.fileHydratables);
+    const allHydratables: HydratableComponent[] = sideEffects.allHydratables;
+    const allServerIslands: ServerIslandComponent[] = sideEffects.allServerIslands;
+    const preprocessCacheStats = sideEffects.preprocessCacheStats;
 
     // Detect nested hydration — a hydratable component must not itself contain mochi:hydrate or mochi:hydrate:visible children
     const hydratablePaths = new Set(allHydratables.map((h) => h.resolvedPath));
@@ -632,30 +424,33 @@ export class ComponentRegistry {
       });
     }
 
-    // Write per-component CSS files to disk (minified) and track their URLs
     const cssOutDir = `${this.outDir}/svelte-css`;
+    const cssTodo: { componentPath: string; cssCode: string; compName: string; rawPath: string }[] = [];
     for (const [componentPath, cssCode] of cssMap) {
       if (this.cssRawByPath.get(componentPath) === cssCode) {
         continue;
       }
       const compName = path.basename(componentPath, '.svelte');
-      // Write raw CSS so Bun.build can read it as an entrypoint
       const rawPath = `${cssOutDir}/${compName}.raw.css`;
-      await Bun.write(rawPath, cssCode);
-      const cssResult = await Bun.build({
-        entrypoints: [rawPath],
-        minify: true,
-        throw: false,
-      });
-      const minified = cssResult.success && cssResult.outputs[0] ? await cssResult.outputs[0].text() : cssCode;
-      const hash = Bun.hash(minified).toString(36);
-      const cssFilename = `${compName}-${hash}.css`;
-      const cssUrl = `${this.assetPrefix}/css/${cssFilename}`;
-      await Bun.write(`${cssOutDir}/${cssFilename}`, minified);
-      this.clientFiles.set(cssUrl, minified);
-      this.cssFileUrls.set(componentPath, cssUrl);
-      this.cssRawByPath.set(componentPath, cssCode);
+      cssTodo.push({ componentPath, cssCode, compName, rawPath });
     }
+    await Promise.all(
+      cssTodo.map(async ({ componentPath, cssCode, compName, rawPath }) => {
+        await Bun.write(rawPath, cssCode);
+        const cssResponse = await runBuildInWorker({
+          kind: 'simple',
+          buildOptions: { entrypoints: [rawPath], minify: true },
+        });
+        const minified = cssResponse.success && cssResponse.outputs[0] ? cssResponse.outputs[0].text : cssCode;
+        const hash = Bun.hash(minified).toString(36);
+        const cssFilename = `${compName}-${hash}.css`;
+        const cssUrl = `${this.assetPrefix}/css/${cssFilename}`;
+        await Bun.write(`${cssOutDir}/${cssFilename}`, minified);
+        this.clientFiles.set(cssUrl, minified);
+        this.cssFileUrls.set(componentPath, cssUrl);
+        this.cssRawByPath.set(componentPath, cssCode);
+      }),
+    );
 
     if (importedCssPaths.size > 0) {
       await this.bundleImportedCss(importedCssPaths);
@@ -678,14 +473,11 @@ export class ComponentRegistry {
     const development = this.development;
     const debugBarEnabled = this.debugBarEnabled;
     const userCompilerOptions = this.svelteConfig.compilerOptions ?? {};
-    const markdown = this.markdown;
-    // Deduplicate by resolved path
     const unique = new Map<string, HydratableComponent>();
     for (const c of this.hydratableComponents) {
       unique.set(c.resolvedPath, c);
     }
 
-    // Clear previous client JS entries (CSS entries are kept — they're per-component and stable)
     const clientPrefix = `${this.assetPrefix}/client/`;
     for (const key of [...this.clientFiles.keys()]) {
       if (key.startsWith(clientPrefix)) {
@@ -701,7 +493,6 @@ export class ComponentRegistry {
     const debugBarDir = path.join(frameworkDir, 'debug-bar') + path.sep;
     const debugBarEntryPath = path.join(debugBarDir, 'debugbar-entry.ts');
 
-    // Generate per-component virtual entry points
     const entrypoints: string[] = [hydratableIslandPath];
     if (debugBarEnabled) {
       entrypoints.push(debugBarEntryPath);
@@ -716,203 +507,52 @@ export class ComponentRegistry {
       filesMap[entryPath] = entrySource;
     }
 
-    const cookiesClientPath = path.join(frameworkDir, 'cookies.client.ts');
-    const enhanceClientPath = path.join(frameworkDir, 'enhance.client.ts');
-
-    const clientPlugin: BunPlugin = {
-      name: 'svelte-client',
-      setup(build) {
-        // Mirror the SSR side-effect-CSS strip. The bundle is already linked
-        // from the SSR-rendered <head> via entryImportedCss → importedCssUrls,
-        // so the browser has it. Without this, Bun's default CSS handling
-        // would either inline as JS-injected styles or fail the build for any
-        // hydratable component that imports a stylesheet.
-        build.onLoad({ filter: /\.css$/ }, () => ({ contents: '', loader: 'js' }));
-        // `.server.ts` / `.server.js` files are stripped from the client graph.
-        // Resolve them into a virtual `mochi-server-only` namespace whose
-        // onLoad emits a throwing-Proxy stub per discovered export. The real
-        // file (with its bun:* / node:* deps) is only compiled for SSR.
-        // Matches both extensioned (`./x.server.ts`) and extensionless
-        // (`./x.server`) imports; the extensionless form falls back to disk
-        // probing for the real .ts/.js sibling so the stub still names a
-        // canonical path.
-        build.onResolve({ filter: /\.server(?:\.[jt]s)?$/ }, (args) => {
-          const base = args.resolveDir ? path.resolve(args.resolveDir, args.path) : path.resolve(args.path);
-          let resolved = base;
-          if (!/\.[jt]s$/.test(base)) {
-            const tsPath = `${base}.ts`;
-            const jsPath = `${base}.js`;
-            if (fs.existsSync(tsPath)) {
-              resolved = tsPath;
-            } else if (fs.existsSync(jsPath)) {
-              resolved = jsPath;
-            } else {
-              resolved = tsPath;
-            }
-          }
-          return { path: resolved, namespace: 'mochi-server-only' };
-        });
-        build.onLoad({ filter: /.*/, namespace: 'mochi-server-only' }, async (args) => {
-          const source = await Bun.file(args.path).text();
-          const scan = scanServerOnlyExports(source);
-          for (const w of scan.warnings) {
-            logger.warn(`[mochi] ${path.relative(process.cwd(), args.path)}: ${w}`);
-          }
-          return { contents: buildServerOnlyStubModule(args.path, scan), loader: 'js' };
-        });
-        build.onResolve({ filter: /^mochi-framework$/ }, () => ({
-          path: 'mochi-framework',
-          namespace: 'mochi-env',
-        }));
-        build.onLoad({ filter: /.*/, namespace: 'mochi-env' }, () => ({
-          contents: [
-            `export const isServer = false; export const isBrowser = true; export const DEV = ${development}; export const isDev = ${development};`,
-            `export function getRequestContext() { throw new Error("getRequestContext() is only available on the server"); }`,
-            `import { createClientCookies as __cc } from "${cookiesClientPath}";`,
-            `const __clientCookies = __cc();`,
-            `export const cookies = new Proxy({}, {`,
-            `  get(_, p) {`,
-            `    const r = __clientCookies[p];`,
-            `    return typeof r === "function" ? r.bind(__clientCookies) : r;`,
-            `  },`,
-            `});`,
-            `const __mochiServerOnly = (n) => new Proxy({}, {`,
-            `  get() { throw new Error(n + " is only available on the server"); },`,
-            `});`,
-            `export const params = __mochiServerOnly("params");`,
-            `const __loc = () => new URL(window.location.href);`,
-            `export const url = new Proxy({}, {`,
-            `  get(_, p) {`,
-            `    const v = __loc();`,
-            `    const r = v[p];`,
-            `    return typeof r === "function" ? r.bind(v) : r;`,
-            `  },`,
-            `  set() { return false; },`,
-            `  has(_, p) { return p in __loc(); },`,
-            `  ownKeys() { return Reflect.ownKeys(__loc()); },`,
-            `  getOwnPropertyDescriptor(_, p) {`,
-            `    const d = Object.getOwnPropertyDescriptor(__loc(), p);`,
-            `    if (d) d.configurable = true;`,
-            `    return d;`,
-            `  },`,
-            `});`,
-            `export const locals = __mochiServerOnly("locals");`,
-            // Re-export the isomorphic logger and apply the level seeded by the
-            // server in window.__mochi_log_level (set by Mochi.serve via the HTML
-            // shell). devWarn keeps routing through window.__mochi_warn so the
-            // debug-bar's warnings panel still receives entries.
-            `import { logger as __mochi_logger, setLogLevel, getLogLevel } from "${path.join(FRAMEWORK_DIR, 'log.ts')}";`,
-            `export { setLogLevel, getLogLevel };`,
-            `export const logger = __mochi_logger;`,
-            `if (typeof window !== "undefined" && window.__mochi_log_level) setLogLevel(window.__mochi_log_level);`,
-            `export function devWarn(msg) { if (typeof window !== "undefined" && window.__mochi_warn) window.__mochi_warn(msg); else __mochi_logger.warn(msg); }`,
-            `export { stringify, parse } from "${Bun.resolveSync('devalue', FRAMEWORK_DIR)}";`,
-            // Server-only; the preprocessor never injects __mochi_emit_props__
-            // into client bundles, but this stub keeps the module surface
-            // symmetric and produces a clear error if anyone imports it.
-            `export function emitIslandProps() { throw new Error("emitIslandProps() is only available on the server"); }`,
-            // mochiEvents is a server-side bus. On the client we ship a stub so
-            // bundles don't pull in mitt and accidental emits surface in the
-            // console instead of silently misbehaving. Subscribers registered
-            // client-side never fire — nothing emits here.
-            `export const mochiEvents = {`,
-            `  all: new Map(),`,
-            `  on() {},`,
-            `  off() {},`,
-            `  setHandler() {},`,
-            `  emit(type) {`,
-            `    __mochi_logger.warn(`,
-            `      "mochiEvents.emit(" + JSON.stringify(type) + ") was called in the browser. " +`,
-            `      "mochiEvents is server-only; client-side emits are no-ops."`,
-            `    );`,
-            `  },`,
-            `};`,
-            // MochiCache is server-only; ship a stub that throws so accidental
-            // client imports surface clearly instead of failing the bundle.
-            `export class MochiCache { constructor() { throw new Error("MochiCache is only available on the server"); } }`,
-            `export { enhance, deserialize } from "${enhanceClientPath}";`,
-          ].join('\n'),
-          loader: 'js',
-        }));
-        // Strip esm-env imports so DEV/BROWSER/NODE become free variables,
-        // then Bun's `define` option replaces them with literal booleans.
-        // This enables dead code elimination of if(DEV) blocks. Needed because
-        // Bun can't propagate constants through esm-env's conditional exports.
-        build.onLoad({ filter: /node_modules\/svelte\/src\/.*\.js$/ }, async (args) => {
-          let source = await Bun.file(args.path).text();
-          source = source.replace(/import\s*\{[^}]*\}\s*from\s*['"]esm-env['"]\s*;?/g, '');
-          return { contents: source, loader: 'js' };
-        });
-        build.onLoad({ filter: /\.svelte\.[jt]s$/ }, async (args) => {
-          let source = await Bun.file(args.path).text();
-          if (args.path.endsWith('.ts')) {
-            const transpiler = new Bun.Transpiler({ loader: 'ts' });
-            source = transpiler.transformSync(source);
-          }
-          const { js } = svelteCompileModule(
-            source,
-            mergeCompilerOptions(userCompilerOptions, {
-              generate: 'client',
-              filename: args.path,
-              dev: development,
-            }),
-          );
-          return { contents: js.code, loader: 'js' };
-        });
-        build.onLoad({ filter: /\.svelte$/ }, async (args) => {
-          const source = await Bun.file(args.path).text();
-          const preprocessed = await applyUserPreprocessors(source, args.path, 'client', development);
-          const { js } = svelteCompile(
-            preprocessed,
-            mergeCompilerOptions(userCompilerOptions, {
-              generate: 'client',
-              filename: args.path,
-              // TODO: Verify that this still works after node_modules migration
-              css: args.path.startsWith(debugBarDir) ? 'injected' : undefined,
-              dev: development,
-            }),
-          );
-          return { contents: js.code, loader: 'js' };
-        });
-        if (markdown) {
-          build.onLoad({ filter: MARKDOWN_FILE_FILTER }, createMarkdownLoader({ markdown, target: 'client', development, userCompilerOptions }));
-        }
-      },
+    const clientPluginConfig: ClientPluginConfig = {
+      development,
+      userCompilerOptions: userCompilerOptions as Record<string, unknown>,
+      frameworkDir,
+      debugBarEnabled,
+      debugBarDir,
+      cookiesClientPath: path.join(frameworkDir, 'cookies.client.ts'),
+      enhanceClientPath: path.join(frameworkDir, 'enhance.client.ts'),
+      hydratableIslandPath,
+      markdownConfigPath: this.markdownConfigPath,
     };
 
-    const result = await Bun.build({
-      entrypoints,
-      files: filesMap,
-      plugins: [clientPlugin],
-      target: 'browser',
-      conditions: ['svelte', ...(development ? ['development'] : ['production'])],
-      define: {
-        DEV: String(development),
-        BROWSER: 'true',
-        NODE: 'false',
+    const response = await runBuildInWorker({
+      kind: 'client',
+      buildOptions: {
+        entrypoints,
+        files: filesMap,
+        target: 'browser',
+        conditions: ['svelte', ...(development ? ['development'] : ['production'])],
+        define: {
+          DEV: String(development),
+          BROWSER: 'true',
+          NODE: 'false',
+        },
+        minify: true,
+        splitting: true,
+        naming: '[name]-[hash].[ext]',
+        publicPath: `${this.assetPrefix}/client/`,
+        outdir: path.resolve(`${this.outDir}/svelte-client`),
+        metafile: true,
       },
-      minify: true,
-      splitting: true,
-      naming: '[name]-[hash].[ext]',
-      publicPath: `${this.assetPrefix}/client/`,
-      outdir: path.resolve(`${this.outDir}/svelte-client`),
-      metafile: true,
-      throw: false,
+      pluginConfig: clientPluginConfig,
     });
 
-    if (!result.success) {
-      throw new Error(`Svelte client build failed:\n${formatBuildMessages(result.logs)}`);
+    if (!response.success) {
+      throw new Error(`Svelte client build failed:\n${formatBuildMessages(response.logs)}`);
     }
 
-    for (const output of result.outputs) {
+    for (const output of response.outputs) {
       const filename = path.basename(output.path);
-      this.clientFiles.set(`${this.assetPrefix}/client/${filename}`, await output.text());
+      this.clientFiles.set(`${this.assetPrefix}/client/${filename}`, output.text);
     }
 
-    // Map entry-point outputs back to components using metafile.entryPoint
-    // This avoids fragile filename matching.
-    if (result.metafile) {
-      // Build reverse lookup: entryPath -> component name (null = bootstrap)
+    type MetafileOutputs = Record<string, { entryPoint?: string; bytes: number; inputs: Record<string, { bytesInOutput: number }>; imports?: { path: string; kind: string }[] }>;
+    const metafile = response.metafile as { outputs: MetafileOutputs } | undefined;
+    if (metafile) {
       const entryToComponent = new Map<string, string | null>();
       entryToComponent.set(hydratableIslandPath, null);
       if (debugBarEnabled) {
@@ -923,7 +563,7 @@ export class ComponentRegistry {
         entryToComponent.set(entryPath, comp.name);
       }
 
-      for (const [outPath, outMeta] of Object.entries(result.metafile.outputs)) {
+      for (const [outPath, outMeta] of Object.entries(metafile.outputs)) {
         if (!outMeta.entryPoint) {
           continue;
         }
@@ -938,7 +578,7 @@ export class ComponentRegistry {
           this.componentEntryUrls.set(compName, url);
         }
       }
-      const outputStats = Object.entries(result.metafile.outputs).map(([outPath, outMeta]) => {
+      const outputStats = Object.entries(metafile.outputs).map(([outPath, outMeta]) => {
         const inputs = Object.entries(outMeta.inputs).map(([inputPath, inputMeta]) => ({
           path: inputPath.replace(path.resolve('.') + '/', ''),
           size: inputMeta.bytesInOutput,
@@ -1319,19 +959,21 @@ export class ComponentRegistry {
 
     await Promise.all(
       todo.map(async (cssPath) => {
-        const cssResult = await Bun.build({
-          entrypoints: [cssPath],
-          outdir: importCssOutDir,
-          naming: { entry: '[name]-[hash].[ext]' },
-          throw: false,
+        const cssResponse = await runBuildInWorker({
+          kind: 'simple',
+          buildOptions: {
+            entrypoints: [cssPath],
+            outdir: importCssOutDir,
+            naming: { entry: '[name]-[hash].[ext]' },
+          },
         });
-        if (!cssResult.success) {
-          const message = `\n${formatBuildMessages(cssResult.logs)}`;
+        if (!cssResponse.success) {
+          const message = `\n${formatBuildMessages(cssResponse.logs)}`;
           logger.error(`Failed to bundle CSS import ${cssPath}:${message}`);
           this.errors.push({ kind: 'css-bundle-failed', cssPath, message });
           return;
         }
-        const out = cssResult.outputs.find((o) => o.path.endsWith('.css'));
+        const out = cssResponse.outputs.find((o) => o.path.endsWith('.css'));
         if (!out) {
           const message = 'bundle produced no .css output';
           logger.error(`CSS bundle for ${cssPath}: ${message}`);
@@ -1339,8 +981,7 @@ export class ComponentRegistry {
           return;
         }
         const urlPath = `${this.assetPrefix}/import-css/${path.basename(out.path)}`;
-        // Read from disk: when Bun.build writes via `outdir`, the output's
-        // .text() may return empty — the file on disk is the source of truth.
+        // Worker writes to outdir; read from disk as the source of truth.
         const rawCss = await Bun.file(out.path).text();
         const cssText = restoreVariationsFormat(rawCss);
         if (cssText !== rawCss) {

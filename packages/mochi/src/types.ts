@@ -452,21 +452,16 @@ export interface MochiServeOptions {
    */
   svelteConfigPath?: string;
   /**
-   * Dependency-injected markdown (`.md` / `.svx`) support. Pass the `compile`
-   * function from `mdsvex` plus any rehype/remark plugins to enable; omit to
-   * leave markdown unhandled.
-   *
-   * ```ts
-   * import { compile as mdsvexCompile } from 'mdsvex';
-   * import rehypeSlug from 'rehype-slug';
-   *
-   * await Mochi.serve({
-   *   markdown: { compile: mdsvexCompile, rehypePlugins: [rehypeSlug] },
-   *   routes,
-   * });
-   * ```
+   * @deprecated Use an `mdsvex.config.ts` file at the project root instead.
+   * Passing `markdown` directly is no longer supported — the config must live
+   * in a separate module so Worker-based builds can import it.
    */
-  markdown?: MarkdownConfig;
+  markdown?: never;
+  /**
+   * Absolute path to an `mdsvex.config.ts` module that default-exports a
+   * `MarkdownConfig`. Auto-discovered at the project root when omitted.
+   */
+  markdownConfigPath?: string;
   /**
    * Origin-header CSRF protection for form-style POST/PUT/PATCH/DELETE
    * requests. Enabled by default — pass `{ checkOrigin: false }` to disable

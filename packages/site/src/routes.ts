@@ -1,9 +1,5 @@
-import { compile as mdsvexCompile } from 'mdsvex';
-import rehypeSlug from 'rehype-slug';
-import rehypeExternalLinks from './lib/rehypeExternalLinks';
 import { Mochi, error, getRequestContext } from 'mochi-framework';
-import type { MochiBuildOptions, MarkdownConfig, MochiRouteValue } from 'mochi-framework';
-import { highlightCode } from './lib/highlight.server';
+import type { MochiRouteValue } from 'mochi-framework';
 import { buildDocsNav, buildLlmsTxt, buildLlmsFullTxt, buildSitemapXml, getDoc, getDocLlmsTxt, getDocNeighbors, loadDocs } from './lib/docs';
 import { profilerEnabled, startProfiler, stopProfiler } from './lib/profiler';
 import { routes as apiRoutes } from './demos/api/routes';
@@ -148,14 +144,4 @@ export const routes: Record<string, MochiRouteValue> = {
   ...streamsRoutes,
   ...urlRoutes,
   ...yourFirstMochiAppRoutes,
-};
-
-export const markdownConfig: MarkdownConfig = {
-  compile: mdsvexCompile,
-  rehypePlugins: [rehypeSlug, rehypeExternalLinks],
-  highlight: { highlighter: (code, lang) => highlightCode(code, lang) },
-};
-
-export const buildOptions: Pick<MochiBuildOptions, 'markdown'> = {
-  markdown: markdownConfig,
 };
