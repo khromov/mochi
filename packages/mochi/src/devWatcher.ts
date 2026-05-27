@@ -2,7 +2,7 @@ import type { Server, ServerWebSocket } from 'bun';
 import { existsSync } from 'fs';
 import path from 'node:path';
 import chokidar from 'chokidar';
-import debounce from 'debounce';
+import debounce from './vendor/debounce/index';
 import type { ComponentRegistry } from './ComponentRegistry';
 import { applyFilter } from './extensions';
 import { mochiEvents } from './events';
