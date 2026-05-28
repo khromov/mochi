@@ -30,16 +30,18 @@ Add `placeholder` to render a [ThumbHash](https://evanw.github.io/thumbhash/) bl
 <Image src="https://example.com/photo.jpg" width={640} height={400} alt="A photo" placeholder />
 ```
 
-| Prop                   | Default    | Notes                                           |
-| ---------------------- | ---------- | ----------------------------------------------- |
-| `src`                  | —          | http/https source URL (required)                |
-| `width` / `height`     | —          | Target size; height-only derives width by ratio |
-| `alt`                  | `''`       | Always set this                                 |
-| `format`               | `webp`     | `webp` \| `jpeg` \| `png` \| `avif`             |
-| `quality`              | `80`       | 1–100 (ignored for `png`)                       |
-| `fit`                  | `inside`   | `inside` \| `fill`                              |
-| `placeholder`          | `false`    | Blur-up via a tiny hydrated island              |
-| `loading` / `decoding` | lazy/async | Passed through to `<img>`                       |
+| Prop                   | Default    | Notes                                                                  |
+| ---------------------- | ---------- | ---------------------------------------------------------------------- |
+| `src`                  | —          | http/https source URL (required)                                       |
+| `width` / `height`     | —          | Target size; height-only derives width by ratio                        |
+| `alt`                  | `''`       | Always set this                                                        |
+| `format`               | `webp`     | `webp` \| `jpeg` \| `png` \| `avif`                                    |
+| `quality`              | `80`       | 1–100 (ignored for `png`)                                              |
+| `fit`                  | `inside`   | `inside` keeps aspect & fits within W×H; `fill` stretches to exact W×H |
+| `placeholder`          | `false`    | Blur-up via a tiny hydrated island                                     |
+| `loading` / `decoding` | lazy/async | Passed through to `<img>`                                              |
+
+> `Bun.Image` supports only `fit: 'inside'` and `fit: 'fill'` — there is no crop/"cover" mode. To get an exact square from a non-square source you must use `fill` (which stretches); otherwise `inside` keeps the aspect ratio and the output won't fill both dimensions.
 
 ### Programmatic
 

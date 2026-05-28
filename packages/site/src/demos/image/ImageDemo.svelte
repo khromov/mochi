@@ -8,7 +8,10 @@
 
   // The programmatic helper returns a signed, cacheable URL — no fetch happens
   // until the browser requests it.
-  const directUrl = getResizedImage(remote, { width: 200, height: 200, format: 'jpeg', quality: 60 });
+  // Default fit: 'inside' preserves aspect ratio and fits within the 200x200
+  // box, so this 3:2 photo comes out 200x133 (no distortion). Pass fit: 'fill'
+  // to force an exact square by stretching — Bun.Image has no crop/cover mode.
+  const directUrl = getResizedImage(remote, { width: 200, height: 200, fit: 'inside', format: 'jpeg', quality: 60 });
 
   const sources = await loadSources([
     { label: 'ImageDemo.svelte', path: './src/demos/image/ImageDemo.svelte' },
@@ -33,7 +36,12 @@
   <h3>Programmatic</h3>
   <p><code>getResizedImage()</code> returns a signed URL you can use anywhere:</p>
   <pre class="url">{directUrl}</pre>
-  <img src={directUrl} width={200} height={200} alt="Resized via getResizedImage()" />
+  <img src={directUrl} width={200} alt="Resized via getResizedImage()" />
+  <p class="note">
+    This uses the default <code>fit: 'inside'</code>, which preserves aspect ratio and fits <em>within</em> the 200&times;200 box — so this 3:2 photo becomes 200&times;133. Pass
+    <code>fit: 'fill'</code>
+    to force an exact square (stretching); <code>Bun.Image</code> has no crop/cover mode.
+  </p>
 
   <p class="credit">
     Photo by
@@ -61,6 +69,11 @@
   }
   img {
     border-radius: var(--radius-md);
+  }
+  .note {
+    margin-top: 0.5rem;
+    font-size: 0.85rem;
+    color: var(--text-muted, #888);
   }
   .credit {
     margin-top: 2rem;
