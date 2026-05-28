@@ -35,7 +35,7 @@
     <div class="frame blur-compare">
       <span class="blur-compare__placeholder" style:background-image="url({blur})" role="img" aria-label="ThumbHash blur placeholder"></span>
       <span class="blur-compare__arrow"><ArrowDown size={28} aria-hidden="true" /></span>
-      <Image src={remote} width={480} height={320} alt="A resized random photo with blur-up" />
+      <Image src={remote} width={480} height={320} placeholder alt="A resized random photo with blur-up" />
     </div>
   {:else}
     <div class="frame">
