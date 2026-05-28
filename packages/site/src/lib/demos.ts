@@ -68,6 +68,12 @@ export const demos: Demo[] = [
     category: 'data',
   },
   {
+    href: '/demos/image/',
+    title: 'Image Resizing',
+    hook: 'On-the-fly image resizing on Bun.Image, served from a signed, stale-while-revalidate disk cache.',
+    category: 'data',
+  },
+  {
     href: '/cookie-vary-test/',
     title: 'Cookie Vary Test',
     hook: 'A page that sets Vary: Cookie on its response — useful for testing cookie-partitioned cache keys.',
