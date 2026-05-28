@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.5.0](https://github.com/khromov/mochi/compare/mochi-framework-v0.4.0...mochi-framework-v0.5.0) (2026-05-28)
+
+
+### Features
+
+* hot-swap route handlers in dev mode ([#41](https://github.com/khromov/mochi/issues/41)) ([106a4a2](https://github.com/khromov/mochi/commit/106a4a2b4c2a763c6e571cfb13a9ae3d4a61d616))
+* opt-in route warmup to pre-warm static pages at startup ([#64](https://github.com/khromov/mochi/issues/64)) ([9f28ede](https://github.com/khromov/mochi/commit/9f28ede42e606f55a78535673a863a779e3db0dd))
+* replace highlight.js with Shiki ([#54](https://github.com/khromov/mochi/issues/54)) ([3d2dc6a](https://github.com/khromov/mochi/commit/3d2dc6ae3092f72fd74224770fdcc414bed1922c))
+
+
+### Code Refactoring
+
+* replace `cookie` npm package with Bun native cookie APIs ([#60](https://github.com/khromov/mochi/issues/60)) ([4e0d953](https://github.com/khromov/mochi/commit/4e0d953c9594eadec8eb047c4373186ed1779456))
+* run all tests in per-file isolation, drop .isolated.test.ts suffix ([#55](https://github.com/khromov/mochi/issues/55)) ([68cdc06](https://github.com/khromov/mochi/commit/68cdc065f1ec901131dde40c7da677fefc35c849))
+* vendor debounce, drop npm dependency ([#63](https://github.com/khromov/mochi/issues/63)) ([d465fea](https://github.com/khromov/mochi/commit/d465feafbd3bda4ae7657ae4ea6168d0af17cc5f))
+* vendor json-format-highlight, drop npm dependency ([#61](https://github.com/khromov/mochi/issues/61)) ([0b88399](https://github.com/khromov/mochi/commit/0b883994a089b8beedfb2e0c703a544b495ce07c))
+
 ## [0.4.0](https://github.com/khromov/mochi/compare/mochi-framework-v0.3.2...mochi-framework-v0.4.0) (2026-05-26)
 
 
