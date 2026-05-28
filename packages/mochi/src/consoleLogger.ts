@@ -69,7 +69,7 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
   }
 
   subscribe('request', (payload) => ({
-    label: payload.method.padEnd(4),
+    label: payload.warmup ? 'WARM' : payload.method.padEnd(4),
     kind: payload.kind,
     path: payload.path,
     status: payload.status,

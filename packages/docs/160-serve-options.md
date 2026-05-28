@@ -86,7 +86,7 @@ await Mochi.serve({
 });
 ```
 
-Warmup is fire-and-forget — the server accepts real traffic immediately, and a [`warmup:complete`](/docs/events/) event fires once the batch finishes. Routes are warmed one at a time so each [`request`](/docs/events/#request) event reports its own render duration rather than a cumulative figure. Each warmed route runs through its real handler (middleware included) as an anonymous `GET`; failures are swallowed, and the SSR module stays warm regardless.
+Warmup is fire-and-forget — the server accepts real traffic immediately, and a [`warmup:complete`](/docs/events/) event fires once the batch finishes. Routes are warmed one at a time so each [`request`](/docs/events/#request) event reports its own render duration rather than a cumulative figure. Warmup requests carry `warmup: true` on their `request` event and log under a `WARM` label instead of `GET`, so they're easy to tell apart from real traffic. Each warmed route runs through its real handler (middleware included) as an anonymous `GET`; failures are swallowed, and the SSR module stays warm regardless.
 
 Routes with parameters (e.g. `/docs/:slug`) are **skipped** — their `:param` values can't be inferred.
 

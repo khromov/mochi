@@ -107,6 +107,7 @@ Fires once per HTTP response, including CSRF rejects. Covers both `Mochi.page` a
 | `path`      | `string`          | URL pathname                |
 | `status`    | `number`          | response status code        |
 | `duration`  | `number`          | wall-clock ms, end-to-end   |
+| `warmup`    | `boolean \| undefined` | `true` when issued by [route warmup](/docs/serve-options/#route-warmup), not a real client |
 
 ```ts
 mochiEvents.on('request', ({ kind, method, path, status, duration }) => {

@@ -17,6 +17,8 @@ export interface MochiRequestEvent {
   path: string;
   status: number;
   duration: number;
+  /** True when the request was issued by route warmup, not a real client. */
+  warmup?: boolean;
 }
 
 export interface MochiWsOpenEvent {
