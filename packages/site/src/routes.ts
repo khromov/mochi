@@ -22,6 +22,7 @@ import { routes as formRedirectsRoutes } from './demos/form-redirects/routes';
 import { routes as formReturnDataRoutes } from './demos/form-return-data/routes';
 import { routes as helloWorldRoutes } from './demos/hello-world/routes';
 import { routes as hydratableRoutes } from './demos/hydratable/routes';
+import { routes as imageRoutes } from './demos/image/routes';
 import { routes as hydrationRoutes } from './demos/hydration/routes';
 import { routes as islandPropsRoutes } from './demos/island-props/routes';
 import { routes as lazyRoutes } from './demos/lazy/routes';
@@ -132,6 +133,7 @@ export const routes: Record<string, MochiRouteValue> = {
   ...formReturnDataRoutes,
   ...helloWorldRoutes,
   ...hydratableRoutes,
+  ...imageRoutes,
   ...hydrationRoutes,
   ...islandPropsRoutes,
   ...lazyRoutes,

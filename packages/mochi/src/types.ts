@@ -4,6 +4,7 @@ import type { MochiCookieJar } from './cookies';
 import type { MochiCsrfOptions } from './csrf';
 import type { MochiFilters, MochiHooks } from './extensions';
 import type { MochiProxyOptions } from './proxy';
+import type { MochiImageOptions } from './image/types';
 
 export type MochiServerPropsResolver = (req: Request, params: Record<string, string>) => Record<string, unknown> | Promise<Record<string, unknown>>;
 
@@ -559,5 +560,13 @@ export interface MochiServeOptions {
    * Default: `false`.
    */
   warmup?: boolean | MochiWarmupOptions;
+  /**
+   * On-the-fly image resizing. Mounts a signed `/_mochi/image/*` endpoint and
+   * powers `getResizedImage()` / the `<Image>` component. Every served URL is
+   * HMAC-signed so attackers cannot request arbitrary sources. Default: enabled
+   * with sensible defaults; pass `{ enabled: false }` to turn it off. See
+   * `MochiImageOptions`.
+   */
+  image?: MochiImageOptions;
   [key: string]: unknown;
 }

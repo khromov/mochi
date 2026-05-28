@@ -396,6 +396,9 @@ export class ComponentRegistry {
             // Server-side cache class. Re-exported through the virtual module so .svelte
             // files can `import { MochiCache } from 'mochi-framework'` directly.
             `export { MochiCache } from "${path.join(FRAMEWORK_DIR, 'cache.ts')}";`,
+            // Image helpers. Server-only (signing needs the secret key); re-exported
+            // so .svelte files can `import { getResizedImage } from 'mochi-framework'`.
+            `export { getResizedImage, getImagePlaceholder, invalidateImage } from "${path.join(FRAMEWORK_DIR, 'image/getResizedImage.ts')}";`,
             // `enhance` / `deserialize` are browser-only Svelte action helpers.
             // Svelte never invokes actions during SSR, so these stubs only fire
             // if user code calls them on the server — which is a usage error.
@@ -841,6 +844,10 @@ export class ComponentRegistry {
             // MochiCache is server-only; ship a stub that throws so accidental
             // client imports surface clearly instead of failing the bundle.
             `export class MochiCache { constructor() { throw new Error("MochiCache is only available on the server"); } }`,
+            // Image helpers are server-only (signing/fetch/disk-cache); ship throwing stubs.
+            `export function getResizedImage() { throw new Error("getResizedImage() is only available on the server"); }`,
+            `export function getImagePlaceholder() { throw new Error("getImagePlaceholder() is only available on the server"); }`,
+            `export function invalidateImage() { throw new Error("invalidateImage() is only available on the server"); }`,
             `export { enhance, deserialize } from "${enhanceClientPath}";`,
           ].join('\n'),
           loader: 'js',

@@ -59,6 +59,12 @@
       "bun": "./src/tailwind.ts",
       "default": "./src/tailwind.ts"
     },
+    "./components": {
+      "types": "./src/components/index.ts",
+      "svelte": "./src/components/index.ts",
+      "bun": "./src/components/index.ts",
+      "default": "./src/components/index.ts"
+    },
     "./ambient": {
       "types": "./src/mochi-ambient.d.ts"
     },

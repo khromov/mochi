@@ -44,6 +44,7 @@ import type { MochiRequestContext } from './requestContext';
 import { finalizeCookieHeaders } from './cookies';
 import { makeRequestContextBuilder } from './requestSetup';
 import { verifyAndDecodeProps } from './serverIslandCrypto';
+import { createImageHandler } from './image/imageEndpoint';
 import { initMochiConfig } from './mochiConfig';
 import { logger, setLogLevel, DEFAULT_LOG_LEVEL, type LogLevel } from './log';
 import { mochiEvents } from './events';
@@ -1006,6 +1007,11 @@ export class Mochi {
         });
       });
     };
+
+    // Register the signed image-resize endpoint (enabled unless explicitly off).
+    if (options.image?.enabled !== false) {
+      bunRoutes[`${registry.assetPrefix}/image/:descriptor`] = createImageHandler();
+    }
 
     if (process.env.MOCHI_MEMORY_PROBE === '1') {
       bunRoutes['/__mochi/health/memory'] = (): Response => {
