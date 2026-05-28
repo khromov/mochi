@@ -36,8 +36,14 @@
   <img src={directUrl} width={200} height={200} alt="Resized via getResizedImage()" />
 
   <p class="credit">
-    Photo by <a href="https://unsplash.com/@mingmeap?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText">Minh Anh Nguyen</a>
-    on <a href="https://unsplash.com/photos/white-and-pink-stone-on-brown-wooden-chopping-board-ndnNP_luXvU?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText">Unsplash</a>
+    Photo by
+    <a href="https://unsplash.com/@mingmeap?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText" target="_blank" rel="noopener">Minh Anh Nguyen</a>
+    on
+    <a
+      href="https://unsplash.com/photos/white-and-pink-stone-on-brown-wooden-chopping-board-ndnNP_luXvU?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText"
+      target="_blank"
+      rel="noopener">Unsplash</a
+    >
   </p>
 </DemoPage>
 
