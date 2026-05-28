@@ -6,11 +6,6 @@
 
   const remote = 'https://sta-public.fra1.cdn.digitaloceanspaces.com/mochi/mochi-1.jpg';
 
-  // The programmatic helper returns a signed, cacheable URL — no fetch happens
-  // until the browser requests it.
-  // Default fit: 'inside' preserves aspect ratio and fits within the 200x200
-  // box, so this 3:2 photo comes out 200x133 (no distortion). Pass fit: 'fill'
-  // to force an exact square by stretching — Bun.Image has no crop/cover mode.
   const directUrl = getResizedImage(remote, { width: 200, height: 200, fit: 'inside', format: 'jpeg', quality: 60 });
 
   const sources = await loadSources([
