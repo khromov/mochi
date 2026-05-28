@@ -46,3 +46,24 @@ Query parameters are preserved in the redirect target:
 GET /search/?q=mochi  →  301  Location: /search?q=mochi   (policy: 'never')
 GET /search?q=mochi   →  301  Location: /search/?q=mochi  (policy: 'always')
 ```
+
+### Generating canonical links
+
+`trailingSlashIt(path)` appends a trailing slash, first stripping any the string already ends with so you never double-slash. Build hrefs with it under `trailingSlash: 'always'` so links point straight at the canonical URL and skip the redirect hop.
+
+```ts
+import { trailingSlashIt } from 'mochi-framework';
+
+trailingSlashIt('/docs/intro'); // '/docs/intro/'
+trailingSlashIt('/docs/intro/'); // '/docs/intro/'
+trailingSlashIt('/'); // '/'
+```
+
+It is isomorphic — import it in SSR pages, hydrated islands, and plain `.ts` modules alike.
+
+Do **NOT** pass a URL that carries a query string or `#fragment` — the slash lands at the very end, after the fragment. Instead, slash the path segment alone and re-attach the rest:
+
+```ts
+const [path, hash] = slug.split('#');
+const href = hash ? `${trailingSlashIt(path)}#${hash}` : trailingSlashIt(path);
+```
