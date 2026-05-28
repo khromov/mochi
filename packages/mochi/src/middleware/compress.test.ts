@@ -11,6 +11,7 @@ function makeEvent(req: Request): MochiEvent {
     server: {} as Server<undefined>,
     locals: {},
     kind: 'page',
+    isWarmup: false,
   };
 }
 

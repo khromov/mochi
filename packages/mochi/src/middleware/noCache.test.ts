@@ -10,6 +10,7 @@ function makeEvent(req: Request, kind: MochiEventKind): MochiEvent {
     server: {} as Server<undefined>,
     locals: {},
     kind,
+    isWarmup: false,
   };
 }
 

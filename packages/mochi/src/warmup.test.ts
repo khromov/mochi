@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { resolveWarmupEnabled, markWarmupRequest, isWarmupRequest } from './warmup';
+import { resolveWarmupEnabled, markWarmupRequest, isWarmupRequest, isWarmablePattern } from './warmup';
 
 describe('resolveWarmupEnabled', () => {
   test('undefined is disabled in both modes', () => {
@@ -47,5 +47,24 @@ describe('warmup request tagging', () => {
     const other = new Request('http://localhost/a');
     expect(isWarmupRequest(warmed)).toBe(true);
     expect(isWarmupRequest(other)).toBe(false);
+  });
+});
+
+describe('isWarmablePattern', () => {
+  test('static patterns are warmable', () => {
+    expect(isWarmablePattern('/')).toBe(true);
+    expect(isWarmablePattern('/about')).toBe(true);
+    expect(isWarmablePattern('/docs/intro')).toBe(true);
+    expect(isWarmablePattern('/sitemap.xml')).toBe(true);
+  });
+
+  test('parameterized patterns are skipped', () => {
+    expect(isWarmablePattern('/docs/:slug')).toBe(false);
+    expect(isWarmablePattern('/users/:id/posts')).toBe(false);
+  });
+
+  test('wildcard catch-all patterns are skipped', () => {
+    expect(isWarmablePattern('/*')).toBe(false);
+    expect(isWarmablePattern('/assets/*')).toBe(false);
   });
 });

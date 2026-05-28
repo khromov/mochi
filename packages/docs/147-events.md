@@ -207,7 +207,7 @@ Fires once after the [route warmup](/docs/serve-options/#route-warmup) batch fin
 | Field        | Type     | Notes                                    |
 | ------------ | -------- | ---------------------------------------- |
 | `routeCount` | `number` | static page routes warmed                |
-| `errorCount` | `number` | warmup invocations that threw            |
+| `errorCount` | `number` | warmup invocations that threw or 5xx'd   |
 | `durationMs` | `number` | wall-clock ms for the whole warmup batch |
 
 #### `error`

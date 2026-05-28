@@ -37,7 +37,7 @@ import { apiError, collectHeaderPairs, isHtmlResponse, MochiHttpError } from './
 import type { MochiEvent, MochiEventKind, MochiResolveOptions } from './hooks';
 import { applyResolveOptions } from './hooks';
 import { alternateSlashPattern, trailingSlashRedirect } from './trailingSlash';
-import { resolveWarmupEnabled, markWarmupRequest, isWarmupRequest } from './warmup';
+import { resolveWarmupEnabled, markWarmupRequest, isWarmablePattern } from './warmup';
 import { createErrorResponder, DEFAULT_ERROR_PAGE_PATH } from './errors';
 import { requestContext } from './requestContext';
 import type { MochiRequestContext } from './requestContext';
@@ -457,7 +457,7 @@ export class Mochi {
             return setup.earlyResponse;
           }
           const { ctx, start, requestId, url, params } = setup;
-          const event: MochiEvent = { request: req, url, server, locals: ctx.locals, kind: 'page' };
+          const event: MochiEvent = { request: req, url, server, locals: ctx.locals, kind: 'page', isWarmup: ctx.isWarmup };
 
           return requestContext.run(ctx, async () => {
             runHook('route:matched', { pattern, request: req, url, params, kind: 'page' });
@@ -474,7 +474,7 @@ export class Mochi {
               path: url.pathname + url.search,
               status: shipped.status,
               duration: performance.now() - start,
-              ...(isWarmupRequest(req) ? { warmup: true } : {}),
+              ...(ctx.isWarmup ? { warmup: true } : {}),
             });
             return shipped;
           });
@@ -491,7 +491,7 @@ export class Mochi {
             }
           });
 
-        if (warmupEnabled && !pattern.includes(':')) {
+        if (warmupEnabled && isWarmablePattern(pattern)) {
           warmupHandlers.push({ pattern, handler: getHandler });
         }
 
@@ -579,6 +579,7 @@ export class Mochi {
                   server,
                   locals: ctx.locals,
                   kind: 'page',
+                  isWarmup: ctx.isWarmup,
                   method: 'POST' as HttpMethod,
                   formData,
                   actionName,
@@ -698,7 +699,7 @@ export class Mochi {
               }
             };
 
-            const event: MochiEvent = { request: req, url, server, locals: ctx.locals, kind: 'api' };
+            const event: MochiEvent = { request: req, url, server, locals: ctx.locals, kind: 'api', isWarmup: ctx.isWarmup };
             const response = middleware ? await middleware({ event, resolve: innerResolve }) : await innerResolve(event);
 
             const final = finalizeCookieHeaders(response, ctx.cookies);
@@ -1061,7 +1062,7 @@ export class Mochi {
       const assetContent = registry.getClientFile(url.pathname);
       const kind: MochiEventKind = assetContent !== undefined ? 'asset' : userFetch ? 'fallback' : 'error';
 
-      const event: MochiEvent = { request: req, url, server, locals: {}, kind };
+      const event: MochiEvent = { request: req, url, server, locals: {}, kind, isWarmup: false };
 
       // `_event` is unused — `MochiResolveFn`'s signature requires it for parity
       // with route resolvers, but `url`, `req`, and `assetContent` are already
@@ -1202,7 +1203,14 @@ export class Mochi {
           const redirect = trailingSlashPolicy ? trailingSlashRedirect('GET', url, trailingSlashPolicy) : null;
           const href = redirect ? new URL(redirect.headers.get('Location') ?? pattern, url).href : url.href;
           try {
-            await handler(markWarmupRequest(new Request(href)), server);
+            // The handler swallows render errors internally and returns a 5xx
+            // error page, so a throw is rare — count 5xx as "didn't warm
+            // cleanly" too. 4xx (e.g. an auth-gated route seeing the anonymous
+            // warmup visitor) is expected, not a failure.
+            const response = await handler(markWarmupRequest(new Request(href)), server);
+            if (response.status >= 500) {
+              errorCount += 1;
+            }
           } catch {
             errorCount += 1;
           }

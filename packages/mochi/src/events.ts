@@ -99,14 +99,14 @@ export interface MochiServerStopEvent {
 }
 
 export interface MochiWarmupStartEvent {
-  /** Static page routes about to be warmed (those without `:param` segments). */
+  /** Static page routes about to be warmed (no `:param` or `*` segments). */
   routeCount: number;
 }
 
 export interface MochiWarmupCompleteEvent {
-  /** Static page routes that were warmed (those without `:param` segments). */
+  /** Static page routes that were warmed (no `:param` or `*` segments). */
   routeCount: number;
-  /** How many warmup invocations threw. */
+  /** How many warmup invocations threw or returned a 5xx response. */
   errorCount: number;
   /** Wall-clock time for the whole warmup batch (ms). */
   durationMs: number;

@@ -20,6 +20,13 @@ export interface MochiRequestContext {
   params: Record<string, string>;
   /** Per-request data set by middleware. */
   locals: Record<string, unknown>;
+  /**
+   * `true` when this request was issued by route warmup at startup rather than
+   * a real client. Use it to skip side effects (server-side counters,
+   * analytics, rate-limit priming) in `serverProps` or components that
+   * shouldn't fire for synthetic warmup hits.
+   */
+  isWarmup: boolean;
   /** Cookie jar for reading/writing cookies within this request. */
   cookies: MochiCookieJar;
   /**

@@ -5,6 +5,7 @@ import { extractParams } from './utils';
 import { trailingSlashRedirect, type TrailingSlashPolicy } from './trailingSlash';
 import { MochiCookieJar, type CookieSerializeOptions } from './cookies';
 import { mochiEvents } from './events';
+import { isWarmupRequest } from './warmup';
 import type { MochiRequestContext } from './requestContext';
 
 // RouteKind covers user-route shapes; MochiRequestKind in events.ts covers the
@@ -108,6 +109,7 @@ export function makeRequestContextBuilder(cfg: RequestSetupConfig): RequestConte
       url,
       params: opts.paramsOverride ?? params,
       locals: {},
+      isWarmup: isWarmupRequest(req),
       cookies,
       islandProps: new Map(),
       getClientAddress: () => getClientAddress(req, server.requestIP(req)?.address ?? null, cfg.proxy),

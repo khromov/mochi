@@ -105,3 +105,13 @@ const { url, params, cookies, locals, request, requestId } = getRequestContext()
 ```
 
 Do **NOT** call `getRequestContext()` or access `params` / `locals` on the client; they throw. Use `isServer` to guard server-only branches. `url` and `cookies` work on both sides.
+
+The context also carries `isWarmup` — `true` when the request was issued by [route warmup](/docs/serve-options/#route-warmup) at startup, not a real client. Guard side effects in `serverProps` that shouldn't fire for synthetic warmup hits:
+
+```ts
+serverProps: async () => {
+  const ctx = getRequestContext();
+  if (!ctx.isWarmup) await recordVisit(ctx.url.pathname); // skip warmup
+  return { posts: await loadPosts() };
+};
+```

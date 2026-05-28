@@ -1,3 +1,4 @@
+import { trailingSlashIt } from 'mochi-framework';
 import type { Demo } from './demos';
 
 export interface TocEntry {
@@ -47,7 +48,9 @@ export function filterDemos(demos: Demo[], query: string): Demo[] {
 }
 
 export function docHref(slug: string): string {
-  return `/docs/${slug}/`;
+  const [path, hash] = slug.split('#');
+  const href = trailingSlashIt(`/docs/${path}`);
+  return hash ? `${href}#${hash}` : href;
 }
 
 export function isActive(entrySlug: string, activeSlug?: string): boolean {

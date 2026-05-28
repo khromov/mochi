@@ -383,6 +383,7 @@ export class ComponentRegistry {
             // injected hydration-prop import) can use stringify/parse without
             // a separate install. Resolved from the framework's own deps.
             `export { stringify, parse } from "${Bun.resolveSync('devalue', FRAMEWORK_DIR)}";`,
+            `export { trailingSlashIt } from "${path.join(FRAMEWORK_DIR, 'trailingSlash.ts')}";`,
             // Per-request hydratable-island props dedup helper. Used by the
             // preprocessor's injected `__mochi_emit_props__` import.
             `export { emitIslandProps } from "${path.join(FRAMEWORK_DIR, 'islandPropsRegistry.ts')}";`,
@@ -816,6 +817,7 @@ export class ComponentRegistry {
             `if (typeof window !== "undefined" && window.__mochi_log_level) setLogLevel(window.__mochi_log_level);`,
             `export function devWarn(msg) { if (typeof window !== "undefined" && window.__mochi_warn) window.__mochi_warn(msg); else __mochi_logger.warn(msg); }`,
             `export { stringify, parse } from "${Bun.resolveSync('devalue', FRAMEWORK_DIR)}";`,
+            `export { trailingSlashIt } from "${path.join(FRAMEWORK_DIR, 'trailingSlash.ts')}";`,
             // Server-only; the preprocessor never injects __mochi_emit_props__
             // into client bundles, but this stub keeps the module surface
             // symmetric and produces a clear error if anyone imports it.

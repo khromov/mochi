@@ -86,13 +86,22 @@ await Mochi.serve({
 });
 ```
 
-Warmup is fire-and-forget — the server accepts real traffic immediately, and a [`warmup:complete`](/docs/events/) event fires once the batch finishes. Routes are warmed one at a time so each [`request`](/docs/events/#request) event reports its own render duration rather than a cumulative figure. Warmup requests carry `warmup: true` on their `request` event and log under a `WARM` label instead of `GET`, so they're easy to tell apart from real traffic. Each warmed route runs through its real handler (middleware included) as an anonymous `GET`; failures are swallowed, and the SSR module stays warm regardless.
+Warmup is fire-and-forget — the server accepts real traffic immediately, and a [`warmup:complete`](/docs/events/) event fires once the batch finishes. Routes are warmed one at a time so each [`request`](/docs/events/#request) event reports its own render duration rather than a cumulative figure. Warmup requests carry `warmup: true` on their `request` event and log under a `WARM` label instead of `GET`, so they're easy to tell apart from real traffic. Each warmed route runs through its real handler (middleware included) as an anonymous `GET`; a route that throws or returns a `5xx` is counted in `warmup:complete`'s `errorCount`, but the SSR module stays warm regardless.
 
-Routes with parameters (e.g. `/docs/:slug`) are **skipped** — their `:param` values can't be inferred.
+Routes that aren't fully static — parameter segments (`/docs/:slug`) and `*` catch-alls — are **skipped**, since they have no single canonical URL to warm.
+
+Detect warmup hits from your own code to skip side effects that shouldn't fire for synthetic traffic. Both `event.isWarmup` (in [middleware](/docs/middleware/)) and [`getRequestContext().isWarmup`](/docs/request-context/) (in `serverProps`, components, API handlers) are `true` during warmup:
+
+```ts
+const analytics: Handle = async ({ event, resolve }) => {
+  if (!event.isWarmup) track(event.url.pathname); // skip warmup hits
+  return resolve(event);
+};
+```
 
 <Callout type="info">
 
-Warmup requests run the full handler, so any side effects in `serverProps` (logging, cache priming, counters) fire once at startup. The request carries no cookies or session, so auth-gated `serverProps` will see an anonymous visitor.
+Warmup requests run the full handler, so any side effects in `serverProps` (logging, cache priming, counters) fire once at startup unless you guard them with `getRequestContext().isWarmup`. The request carries no cookies or session, so auth-gated `serverProps` will see an anonymous visitor.
 
 </Callout>
 

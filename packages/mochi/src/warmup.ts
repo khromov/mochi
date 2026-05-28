@@ -18,6 +18,15 @@ export function isWarmupRequest(req: Request): boolean {
 }
 
 /**
+ * Whether a route pattern can be warmed. Only fully static patterns qualify:
+ * `:param` segments and `*` catch-alls have no single canonical URL to warm,
+ * so they're skipped.
+ */
+export function isWarmablePattern(pattern: string): boolean {
+  return !pattern.includes(':') && !pattern.includes('*');
+}
+
+/**
  * Resolve whether route warmup should run for the current mode.
  *
  * Boolean `true` warms in production only — dev restarts are frequent and the

@@ -18,6 +18,29 @@ export function trailingSlashRedirect(method: string, url: URL, policy: Trailing
   return null;
 }
 
+/**
+ * Removes trailing forward slashes if they exist.
+ *
+ * If the string doesn't end with a slash, we simply return it.
+ */
+function unTrailingSlashIt(str: string): string {
+  if (str.endsWith('/') || str.endsWith('\\')) {
+    return unTrailingSlashIt(str.slice(0, -1));
+  }
+
+  return str;
+}
+
+/**
+ * Appends a trailing slash.
+ *
+ * Will remove a trailing forward slash if it exists already, before adding a
+ * trailing forward slash. This prevents double slashing a string or path.
+ */
+export function trailingSlashIt(str: string): string {
+  return unTrailingSlashIt(str) + '/';
+}
+
 export function alternateSlashPattern(pattern: string): string | null {
   if (pattern === '/') {
     return null;
