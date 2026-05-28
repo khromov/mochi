@@ -16,6 +16,7 @@ Event names use a `namespace:action` convention. Every key is in the typed `Moch
 - [`ws:open`](#wsopen), [`ws:message`](#wsmessage), [`ws:close`](#wsclose) — WebSocket lifecycle
 - [`sse:open`](#sseopen), [`sse:message`](#ssemessage), [`sse:close`](#sseclose) — Server-Sent Events lifecycle
 - [`server:start`](#serverstart), [`server:stop`](#serverstop) — server lifecycle
+- [`warmup:start`](#warmupstart), [`warmup:complete`](#warmupcomplete) — route warmup batch lifecycle (only with `warmup: true`)
 - [`error`](#error) — page/api/action handler threw, response was an error page or `apiError`
 - [`action:invoke`](#actioninvoke), [`action:complete`](#actioncomplete) — form action lifecycle
 - [`compile:start`](#compilestart), [`compile:complete`](#compilecomplete), [`compile:error`](#compileerror) — Svelte SSR build
@@ -189,6 +190,24 @@ Fires when the server is shutting down via `SIGTERM`/`SIGINT`, after the `mochi:
 | -------- | ------------------------------------ | --------------------------- |
 | `reason` | `'signal'`                           | what initiated the shutdown |
 | `signal` | `'SIGTERM' \| 'SIGINT' \| undefined` | the signal received         |
+
+#### `warmup:start`
+
+Fires once when the [route warmup](/docs/serve-options/#route-warmup) batch begins, right after the server starts listening. Only emitted when `warmup: true` is set on `Mochi.serve()`.
+
+| Field        | Type     | Notes                                 |
+| ------------ | -------- | ------------------------------------- |
+| `routeCount` | `number` | static page routes about to be warmed |
+
+#### `warmup:complete`
+
+Fires once after the [route warmup](/docs/serve-options/#route-warmup) batch finishes. Only emitted when `warmup: true` is set on `Mochi.serve()`.
+
+| Field        | Type     | Notes                                    |
+| ------------ | -------- | ---------------------------------------- |
+| `routeCount` | `number` | static page routes warmed                |
+| `errorCount` | `number` | warmup invocations that threw            |
+| `durationMs` | `number` | wall-clock ms for the whole warmup batch |
 
 #### `error`
 

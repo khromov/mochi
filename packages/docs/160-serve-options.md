@@ -62,8 +62,30 @@ Do **NOT** call `Mochi.serve()` more than once per process; instead, run a secon
 - `proxy`: `MochiProxyOptions` describing trusted reverse-proxy headers. See `Proxy` below.
 - `hooks`: `MochiHooks` map of named lifecycle hooks. See `Extensions (hooks & filters)`.
 - `filters`: `MochiFilters` map of named value-replacement filters. See `Extensions (hooks & filters)`.
+- `warmup`: Warm the SSR pipeline at startup by invoking every static page route once. Default: `false`. See `Route warmup` below.
 
 Do **NOT** set `assetPrefix` only at runtime when running against a prebuilt manifest; instead, also pass it to the `build()` call (or `--asset-prefix`) so the manifest's baked-in URLs match. The manifest value wins at runtime when the two disagree.
+
+### Route warmup
+
+Components are compiled at startup, but the render pipeline — `serverProps`, Svelte SSR, HTML shell assembly — stays cold until a route is first visited, so the first request to each page pays a one-time penalty. Set `warmup: true` to invoke every static page route once, in the background, immediately after the server starts listening:
+
+```ts
+await Mochi.serve({
+  warmup: true,
+  routes,
+});
+```
+
+Warmup is fire-and-forget — the server accepts real traffic immediately, and a [`warmup:complete`](/docs/events/) event fires once the batch finishes. Each warmed route runs through its real handler (middleware included) as an anonymous `GET`; failures are swallowed, and the SSR module stays warm regardless.
+
+Routes with parameters (e.g. `/docs/:slug`) are **skipped** — their `:param` values can't be inferred.
+
+<Callout type="info">
+
+Warmup requests run the full handler, so any side effects in `serverProps` (logging, cache priming, counters) fire once at startup. The request carries no cookies or session, so auth-gated `serverProps` will see an anonymous visitor.
+
+</Callout>
 
 ### CSRF
 

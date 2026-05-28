@@ -30,6 +30,7 @@ await Mochi.serve({
   trailingSlash: 'always',
   idleTimeout: 60,
   compressServerIslandProps: true,
+  warmup: true,
   handle: sequence(immutableAssets, analytics),
   filters: {
     'consoleLogger:line': silenceInternalRoutes,

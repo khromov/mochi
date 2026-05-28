@@ -136,6 +136,24 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
     return { label: 'STOP', path: '-', note: styleText('dim', tag) };
   });
 
+  subscribe('warmup:start', ({ routeCount }) => ({
+    label: 'WARM',
+    path: `${routeCount} ${routeCount === 1 ? 'route' : 'routes'}`,
+    note: styleText('cyan', 'start'),
+  }));
+
+  subscribe('warmup:complete', ({ routeCount, errorCount, durationMs }) => {
+    const errors = errorCount > 0 ? styleText('yellow', ` ${errorCount} failed`) : '';
+    return {
+      label: 'WARM',
+      path: `${routeCount} ${routeCount === 1 ? 'route' : 'routes'}`,
+      note: styleText('dim', `warmed${errors}`),
+      duration: durationMs,
+      slow,
+      verySlow,
+    };
+  });
+
   subscribe('error', ({ kind, method, path, status, message }) => ({
     label: 'ERR ',
     path,

@@ -48,6 +48,8 @@ export type {
   MochiCacheRevalidateEvent,
   MochiServerStartEvent,
   MochiServerStopEvent,
+  MochiWarmupStartEvent,
+  MochiWarmupCompleteEvent,
   MochiErrorEvent,
   MochiErrorKind,
   MochiActionInvokeEvent,

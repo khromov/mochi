@@ -96,6 +96,20 @@ export interface MochiServerStopEvent {
   signal?: 'SIGTERM' | 'SIGINT';
 }
 
+export interface MochiWarmupStartEvent {
+  /** Static page routes about to be warmed (those without `:param` segments). */
+  routeCount: number;
+}
+
+export interface MochiWarmupCompleteEvent {
+  /** Static page routes that were warmed (those without `:param` segments). */
+  routeCount: number;
+  /** How many warmup invocations threw. */
+  errorCount: number;
+  /** Wall-clock time for the whole warmup batch (ms). */
+  durationMs: number;
+}
+
 export type MochiErrorKind = 'page' | 'api' | 'action';
 
 export interface MochiErrorEvent {
@@ -222,6 +236,8 @@ export type MochiEventMap = {
   'cache:revalidate': MochiCacheRevalidateEvent;
   'server:start': MochiServerStartEvent;
   'server:stop': MochiServerStopEvent;
+  'warmup:start': MochiWarmupStartEvent;
+  'warmup:complete': MochiWarmupCompleteEvent;
   error: MochiErrorEvent;
   'action:invoke': MochiActionInvokeEvent;
   'action:complete': MochiActionCompleteEvent;

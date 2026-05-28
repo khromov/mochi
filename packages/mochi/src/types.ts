@@ -531,5 +531,18 @@ export interface MochiServeOptions {
    * available names.
    */
   filters?: MochiFilters;
+  /**
+   * Warm the SSR render pipeline at startup. When `true`, every static page
+   * route (those without `:param` segments) is invoked once via its real
+   * handler immediately after the server starts listening — running
+   * `serverProps`, Svelte SSR, and HTML shell assembly so the first real
+   * request to each route avoids a cold-start penalty.
+   *
+   * Warmup is fire-and-forget: the server accepts traffic immediately and a
+   * `warmup:complete` event fires once the batch finishes. Routes with
+   * parameters are skipped (their `:param` values can't be inferred).
+   * Default: `false`.
+   */
+  warmup?: boolean;
   [key: string]: unknown;
 }

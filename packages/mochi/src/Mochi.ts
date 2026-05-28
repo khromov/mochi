@@ -349,6 +349,7 @@ export class Mochi {
 
     // Pre-compile Mochi.page() handlers so SSR is ready at startup
     const mochiPageMap = new Map<string, MochiPageConfig>();
+    const warmupHandlers: { pattern: string; handler: (req: Request, server: Server<undefined>) => Promise<Response> }[] = [];
     const wsHandlersMap = new Map<string, MochiWsHandlers<unknown>>();
     let resolvedRouteModule = options.routeModule;
     if (development && !resolvedRouteModule) {
@@ -486,6 +487,10 @@ export class Mochi {
               return response;
             }
           });
+
+        if (options.warmup && !pattern.includes(':')) {
+          warmupHandlers.push({ pattern, handler: getHandler });
+        }
 
         // In HMR mode (pageConfigMap set), register POST for all pages so actions
         // can be added via hot-swap without restart. Returns 405 if none exist.
@@ -1176,6 +1181,27 @@ export class Mochi {
         startEvent.hostname = server.hostname;
       }
       mochiEvents.emit('server:start', startEvent);
+    }
+
+    if (warmupHandlers.length > 0) {
+      mochiEvents.emit('warmup:start', { routeCount: warmupHandlers.length });
+      const t0 = performance.now();
+      void Promise.allSettled(
+        warmupHandlers.map(({ pattern, handler }) => {
+          // Request the canonical path so the trailing-slash policy redirects
+          // early instead of running the render we're trying to warm.
+          const url = new URL(`http://localhost${pattern}`);
+          const redirect = trailingSlashPolicy ? trailingSlashRedirect('GET', url, trailingSlashPolicy) : null;
+          const href = redirect ? new URL(redirect.headers.get('Location') ?? pattern, url).href : url.href;
+          return handler(new Request(href), server);
+        }),
+      ).then((results) => {
+        mochiEvents.emit('warmup:complete', {
+          routeCount: warmupHandlers.length,
+          errorCount: results.filter((r) => r.status === 'rejected').length,
+          durationMs: performance.now() - t0,
+        });
+      });
     }
 
     if (development) {
