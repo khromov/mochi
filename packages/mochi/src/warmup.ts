@@ -1,11 +1,21 @@
 import type { MochiWarmupOptions } from './types';
 
-/**
- * Header set on synthetic warmup requests so the page handler can tag the
- * emitted `request` event (and its log line) as warmup rather than real
- * traffic. Internal — stripped from nothing, never sent to clients.
- */
-export const WARMUP_REQUEST_HEADER = 'x-mochi-warmup';
+// Warmup requests are tagged by object identity, not a header — a header would
+// be forgeable by real clients (who'd then get their traffic mislabelled as
+// warmup), and there's no choke point to strip it since real and warmup traffic
+// share the same page handler. A network request can never be in this set.
+const warmupRequests = new WeakSet<Request>();
+
+/** Tag a synthetic warmup request so its `request` event is flagged as warmup. */
+export function markWarmupRequest(req: Request): Request {
+  warmupRequests.add(req);
+  return req;
+}
+
+/** Whether `req` was issued by route warmup (vs. a real client). */
+export function isWarmupRequest(req: Request): boolean {
+  return warmupRequests.has(req);
+}
 
 /**
  * Resolve whether route warmup should run for the current mode.

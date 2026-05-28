@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { resolveWarmupEnabled } from './warmup';
+import { resolveWarmupEnabled, markWarmupRequest, isWarmupRequest } from './warmup';
 
 describe('resolveWarmupEnabled', () => {
   test('undefined is disabled in both modes', () => {
@@ -27,5 +27,25 @@ describe('resolveWarmupEnabled', () => {
     const opts = { enabledInProd: false, enabledInDev: true };
     expect(resolveWarmupEnabled(opts, true)).toBe(true);
     expect(resolveWarmupEnabled(opts, false)).toBe(false);
+  });
+});
+
+describe('warmup request tagging', () => {
+  test('marked request is recognised as warmup', () => {
+    const req = new Request('http://localhost/');
+    expect(markWarmupRequest(req)).toBe(req);
+    expect(isWarmupRequest(req)).toBe(true);
+  });
+
+  test('an unmarked request is never warmup, even if it sets the old header', () => {
+    const real = new Request('http://localhost/', { headers: { 'x-mochi-warmup': '1' } });
+    expect(isWarmupRequest(real)).toBe(false);
+  });
+
+  test('tagging is per-object — a different request is not warmup', () => {
+    const warmed = markWarmupRequest(new Request('http://localhost/a'));
+    const other = new Request('http://localhost/a');
+    expect(isWarmupRequest(warmed)).toBe(true);
+    expect(isWarmupRequest(other)).toBe(false);
   });
 });

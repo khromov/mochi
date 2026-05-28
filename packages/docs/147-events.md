@@ -99,14 +99,14 @@ Each event ships a typed payload. The fields below match `MochiEventMap` in `eve
 
 Fires once per HTTP response, including CSRF rejects. Covers both `Mochi.page` and `Mochi.api` routes.
 
-| Field       | Type              | Notes                       |
-| ----------- | ----------------- | --------------------------- |
-| `requestId` | `string`          | correlation id              |
-| `kind`      | `'page' \| 'api'` | which route type handled it |
-| `method`    | `string`          | HTTP method                 |
-| `path`      | `string`          | URL pathname                |
-| `status`    | `number`          | response status code        |
-| `duration`  | `number`          | wall-clock ms, end-to-end   |
+| Field       | Type                   | Notes                                                                                      |
+| ----------- | ---------------------- | ------------------------------------------------------------------------------------------ |
+| `requestId` | `string`               | correlation id                                                                             |
+| `kind`      | `'page' \| 'api'`      | which route type handled it                                                                |
+| `method`    | `string`               | HTTP method                                                                                |
+| `path`      | `string`               | URL pathname                                                                               |
+| `status`    | `number`               | response status code                                                                       |
+| `duration`  | `number`               | wall-clock ms, end-to-end                                                                  |
 | `warmup`    | `boolean \| undefined` | `true` when issued by [route warmup](/docs/serve-options/#route-warmup), not a real client |
 
 ```ts

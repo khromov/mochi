@@ -37,7 +37,7 @@ import { apiError, collectHeaderPairs, isHtmlResponse, MochiHttpError } from './
 import type { MochiEvent, MochiEventKind, MochiResolveOptions } from './hooks';
 import { applyResolveOptions } from './hooks';
 import { alternateSlashPattern, trailingSlashRedirect } from './trailingSlash';
-import { resolveWarmupEnabled, WARMUP_REQUEST_HEADER } from './warmup';
+import { resolveWarmupEnabled, markWarmupRequest, isWarmupRequest } from './warmup';
 import { createErrorResponder, DEFAULT_ERROR_PAGE_PATH } from './errors';
 import { requestContext } from './requestContext';
 import type { MochiRequestContext } from './requestContext';
@@ -474,7 +474,7 @@ export class Mochi {
               path: url.pathname + url.search,
               status: shipped.status,
               duration: performance.now() - start,
-              ...(req.headers.has(WARMUP_REQUEST_HEADER) ? { warmup: true } : {}),
+              ...(isWarmupRequest(req) ? { warmup: true } : {}),
             });
             return shipped;
           });
@@ -1202,7 +1202,7 @@ export class Mochi {
           const redirect = trailingSlashPolicy ? trailingSlashRedirect('GET', url, trailingSlashPolicy) : null;
           const href = redirect ? new URL(redirect.headers.get('Location') ?? pattern, url).href : url.href;
           try {
-            await handler(new Request(href, { headers: { [WARMUP_REQUEST_HEADER]: '1' } }), server);
+            await handler(markWarmupRequest(new Request(href)), server);
           } catch {
             errorCount += 1;
           }
