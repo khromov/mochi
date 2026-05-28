@@ -37,6 +37,12 @@ export interface MochiEvent {
   locals: Record<string, unknown>;
   /** What the framework is about to do with this request. */
   readonly kind: MochiEventKind;
+  /**
+   * `true` when this request was issued by route warmup at startup rather than
+   * a real client. Branch on it to skip middleware side effects (analytics,
+   * rate-limit priming, counters) for synthetic warmup hits.
+   */
+  readonly isWarmup: boolean;
 }
 
 /**

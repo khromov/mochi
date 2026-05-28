@@ -379,6 +379,18 @@ export interface MarkdownConfig {
 // Serve options
 // ---------------------------------------------------------------------------
 
+/**
+ * Per-mode route warmup control. Use this object form instead of a plain
+ * `boolean` when warmup should differ between dev and prod — e.g. skip the
+ * extra startup work while developing but warm every route in production.
+ */
+export interface MochiWarmupOptions {
+  /** Warm routes when running in production (`development: false`). */
+  enabledInProd: boolean;
+  /** Warm routes when running in development (`development: true`). */
+  enabledInDev: boolean;
+}
+
 export interface MochiServeOptions {
   port?: number;
   hostname?: string;
@@ -531,5 +543,21 @@ export interface MochiServeOptions {
    * available names.
    */
   filters?: MochiFilters;
+  /**
+   * Warm the SSR render pipeline at startup. When enabled, every static page
+   * route (no `:param` or `*` segments) is invoked once via its real handler
+   * immediately after the server starts listening — running `serverProps`,
+   * Svelte SSR, and HTML shell assembly so the first real request to each
+   * route avoids a cold-start penalty.
+   *
+   * Pass `true` to warm in **production only** (dev restarts are frequent and
+   * the extra render burst isn't worth it), or a `MochiWarmupOptions` object
+   * for explicit per-mode control (e.g. `{ enabledInProd: true, enabledInDev:
+   * false }`). Warmup is fire-and-forget: the server accepts traffic
+   * immediately and a `warmup:complete` event fires once the batch finishes.
+   * Non-static routes are skipped (their concrete URLs can't be inferred).
+   * Default: `false`.
+   */
+  warmup?: boolean | MochiWarmupOptions;
   [key: string]: unknown;
 }

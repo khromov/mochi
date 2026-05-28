@@ -44,6 +44,7 @@ describe('metafile walk — transitive attribution at depth 2', () => {
       url: new URL('http://localhost/'),
       params: {},
       locals: {},
+      isWarmup: false,
       cookies: new MochiCookieJar(null),
       islandProps: new Map(),
       getClientAddress: () => null,

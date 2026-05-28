@@ -17,6 +17,8 @@ export interface MochiRequestEvent {
   path: string;
   status: number;
   duration: number;
+  /** True when the request was issued by route warmup, not a real client. */
+  warmup?: boolean;
 }
 
 export interface MochiWsOpenEvent {
@@ -94,6 +96,20 @@ export interface MochiServerStartEvent {
 export interface MochiServerStopEvent {
   reason: 'signal';
   signal?: 'SIGTERM' | 'SIGINT';
+}
+
+export interface MochiWarmupStartEvent {
+  /** Static page routes about to be warmed (no `:param` or `*` segments). */
+  routeCount: number;
+}
+
+export interface MochiWarmupCompleteEvent {
+  /** Static page routes that were warmed (no `:param` or `*` segments). */
+  routeCount: number;
+  /** How many warmup invocations threw or returned a 5xx response. */
+  errorCount: number;
+  /** Wall-clock time for the whole warmup batch (ms). */
+  durationMs: number;
 }
 
 export type MochiErrorKind = 'page' | 'api' | 'action';
@@ -222,6 +238,8 @@ export type MochiEventMap = {
   'cache:revalidate': MochiCacheRevalidateEvent;
   'server:start': MochiServerStartEvent;
   'server:stop': MochiServerStopEvent;
+  'warmup:start': MochiWarmupStartEvent;
+  'warmup:complete': MochiWarmupCompleteEvent;
   error: MochiErrorEvent;
   'action:invoke': MochiActionInvokeEvent;
   'action:complete': MochiActionCompleteEvent;

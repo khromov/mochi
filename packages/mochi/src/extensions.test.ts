@@ -436,6 +436,7 @@ describe('new extension points', () => {
       url,
       params: { id: '42' },
       locals: {},
+      isWarmup: false,
       cookies: new MochiCookieJar(null),
       islandProps: new Map<string, string>(),
       getClientAddress: () => null,

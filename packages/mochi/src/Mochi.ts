@@ -37,6 +37,7 @@ import { apiError, collectHeaderPairs, isHtmlResponse, MochiHttpError } from './
 import type { MochiEvent, MochiEventKind, MochiResolveOptions } from './hooks';
 import { applyResolveOptions } from './hooks';
 import { alternateSlashPattern, trailingSlashRedirect } from './trailingSlash';
+import { resolveWarmupEnabled, markWarmupRequest, isWarmablePattern } from './warmup';
 import { createErrorResponder, DEFAULT_ERROR_PAGE_PATH } from './errors';
 import { requestContext } from './requestContext';
 import type { MochiRequestContext } from './requestContext';
@@ -202,6 +203,7 @@ export class Mochi {
     const cookieDefaults = applyFilter('cookie:defaults', {}, { options });
 
     const development = options.development ?? true;
+    const warmupEnabled = resolveWarmupEnabled(options.warmup, development);
     const debugBarEnabled = development && (options.debugBar ?? true);
     const liveReloadEnabled = options.liveReload ?? development;
     const middleware = options.handle;
@@ -349,6 +351,7 @@ export class Mochi {
 
     // Pre-compile Mochi.page() handlers so SSR is ready at startup
     const mochiPageMap = new Map<string, MochiPageConfig>();
+    const warmupHandlers: { pattern: string; handler: (req: Request, server: Server<undefined>) => Promise<Response> }[] = [];
     const wsHandlersMap = new Map<string, MochiWsHandlers<unknown>>();
     let resolvedRouteModule = options.routeModule;
     if (development && !resolvedRouteModule) {
@@ -454,7 +457,7 @@ export class Mochi {
             return setup.earlyResponse;
           }
           const { ctx, start, requestId, url, params } = setup;
-          const event: MochiEvent = { request: req, url, server, locals: ctx.locals, kind: 'page' };
+          const event: MochiEvent = { request: req, url, server, locals: ctx.locals, kind: 'page', isWarmup: ctx.isWarmup };
 
           return requestContext.run(ctx, async () => {
             runHook('route:matched', { pattern, request: req, url, params, kind: 'page' });
@@ -471,6 +474,7 @@ export class Mochi {
               path: url.pathname + url.search,
               status: shipped.status,
               duration: performance.now() - start,
+              ...(ctx.isWarmup ? { warmup: true } : {}),
             });
             return shipped;
           });
@@ -486,6 +490,10 @@ export class Mochi {
               return response;
             }
           });
+
+        if (warmupEnabled && isWarmablePattern(pattern)) {
+          warmupHandlers.push({ pattern, handler: getHandler });
+        }
 
         // In HMR mode (pageConfigMap set), register POST for all pages so actions
         // can be added via hot-swap without restart. Returns 405 if none exist.
@@ -571,6 +579,7 @@ export class Mochi {
                   server,
                   locals: ctx.locals,
                   kind: 'page',
+                  isWarmup: ctx.isWarmup,
                   method: 'POST' as HttpMethod,
                   formData,
                   actionName,
@@ -690,7 +699,7 @@ export class Mochi {
               }
             };
 
-            const event: MochiEvent = { request: req, url, server, locals: ctx.locals, kind: 'api' };
+            const event: MochiEvent = { request: req, url, server, locals: ctx.locals, kind: 'api', isWarmup: ctx.isWarmup };
             const response = middleware ? await middleware({ event, resolve: innerResolve }) : await innerResolve(event);
 
             const final = finalizeCookieHeaders(response, ctx.cookies);
@@ -1053,7 +1062,7 @@ export class Mochi {
       const assetContent = registry.getClientFile(url.pathname);
       const kind: MochiEventKind = assetContent !== undefined ? 'asset' : userFetch ? 'fallback' : 'error';
 
-      const event: MochiEvent = { request: req, url, server, locals: {}, kind };
+      const event: MochiEvent = { request: req, url, server, locals: {}, kind, isWarmup: false };
 
       // `_event` is unused — `MochiResolveFn`'s signature requires it for parity
       // with route resolvers, but `url`, `req`, and `assetContent` are already
@@ -1176,6 +1185,42 @@ export class Mochi {
         startEvent.hostname = server.hostname;
       }
       mochiEvents.emit('server:start', startEvent);
+    }
+
+    if (warmupHandlers.length > 0) {
+      mochiEvents.emit('warmup:start', { routeCount: warmupHandlers.length });
+      const t0 = performance.now();
+      // Warm sequentially: SSR is CPU-bound and serializes on the single
+      // thread, so firing in parallel wouldn't render any faster — it would
+      // only smear every route's `request` duration into the batch total and
+      // thrash startup. One at a time keeps per-route timings honest.
+      void (async () => {
+        let errorCount = 0;
+        for (const { pattern, handler } of warmupHandlers) {
+          // Request the canonical path so the trailing-slash policy doesn't
+          // redirect early instead of running the render we're warming.
+          const url = new URL(`http://localhost${pattern}`);
+          const redirect = trailingSlashPolicy ? trailingSlashRedirect('GET', url, trailingSlashPolicy) : null;
+          const href = redirect ? new URL(redirect.headers.get('Location') ?? pattern, url).href : url.href;
+          try {
+            // The handler swallows render errors internally and returns a 5xx
+            // error page, so a throw is rare — count 5xx as "didn't warm
+            // cleanly" too. 4xx (e.g. an auth-gated route seeing the anonymous
+            // warmup visitor) is expected, not a failure.
+            const response = await handler(markWarmupRequest(new Request(href)), server);
+            if (response.status >= 500) {
+              errorCount += 1;
+            }
+          } catch {
+            errorCount += 1;
+          }
+        }
+        mochiEvents.emit('warmup:complete', {
+          routeCount: warmupHandlers.length,
+          errorCount,
+          durationMs: performance.now() - t0,
+        });
+      })();
     }
 
     if (development) {

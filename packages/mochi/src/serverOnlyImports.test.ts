@@ -31,6 +31,7 @@ describe('.server.ts imports', () => {
       url: new URL('http://localhost/'),
       params: {},
       locals: {},
+      isWarmup: false,
       cookies: new MochiCookieJar(null),
       islandProps: new Map(),
       getClientAddress: () => null,

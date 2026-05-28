@@ -62,8 +62,48 @@ Do **NOT** call `Mochi.serve()` more than once per process; instead, run a secon
 - `proxy`: `MochiProxyOptions` describing trusted reverse-proxy headers. See `Proxy` below.
 - `hooks`: `MochiHooks` map of named lifecycle hooks. See `Extensions (hooks & filters)`.
 - `filters`: `MochiFilters` map of named value-replacement filters. See `Extensions (hooks & filters)`.
+- `warmup`: Warm the SSR pipeline at startup by invoking every static page route once. `boolean | { enabledInProd: boolean; enabledInDev: boolean }`. `true` warms in **production only**; pass the object form for per-mode control. Default: `false`. See `Route warmup` below.
 
 Do **NOT** set `assetPrefix` only at runtime when running against a prebuilt manifest; instead, also pass it to the `build()` call (or `--asset-prefix`) so the manifest's baked-in URLs match. The manifest value wins at runtime when the two disagree.
+
+### Route warmup
+
+Components are compiled at startup, but the render pipeline — `serverProps`, Svelte SSR, HTML shell assembly — stays cold until a route is first visited, so the first request to each page pays a one-time penalty. Set `warmup: true` to invoke every static page route once, in the background, immediately after the server starts listening:
+
+```ts
+await Mochi.serve({
+  warmup: true, // warms in production only
+  routes,
+});
+```
+
+`warmup: true` warms in **production only** — dev restarts are frequent, and the extra render burst on every reload isn't worth it. For per-mode control, pass an object:
+
+```ts
+await Mochi.serve({
+  warmup: { enabledInProd: true, enabledInDev: false },
+  routes,
+});
+```
+
+Warmup is fire-and-forget — the server accepts real traffic immediately, and a [`warmup:complete`](/docs/events/) event fires once the batch finishes. Routes are warmed one at a time so each [`request`](/docs/events/#request) event reports its own render duration rather than a cumulative figure. Warmup requests carry `warmup: true` on their `request` event and log under a `WARM` label instead of `GET`, so they're easy to tell apart from real traffic. Each warmed route runs through its real handler (middleware included) as an anonymous `GET`; a route that throws or returns a `5xx` is counted in `warmup:complete`'s `errorCount`, but the SSR module stays warm regardless.
+
+Routes that aren't fully static — parameter segments (`/docs/:slug`) and `*` catch-alls — are **skipped**, since they have no single canonical URL to warm.
+
+Detect warmup hits from your own code to skip side effects that shouldn't fire for synthetic traffic. Both `event.isWarmup` (in [middleware](/docs/middleware/)) and [`getRequestContext().isWarmup`](/docs/request-context/) (in `serverProps`, components, API handlers) are `true` during warmup:
+
+```ts
+const analytics: Handle = async ({ event, resolve }) => {
+  if (!event.isWarmup) track(event.url.pathname); // skip warmup hits
+  return resolve(event);
+};
+```
+
+<Callout type="info">
+
+Warmup requests run the full handler, so any side effects in `serverProps` (logging, cache priming, counters) fire once at startup unless you guard them with `getRequestContext().isWarmup`. The request carries no cookies or session, so auth-gated `serverProps` will see an anonymous visitor.
+
+</Callout>
 
 ### CSRF
 

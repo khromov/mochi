@@ -69,7 +69,7 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
   }
 
   subscribe('request', (payload) => ({
-    label: payload.method.padEnd(4),
+    label: payload.warmup ? 'WARM' : payload.method.padEnd(4),
     kind: payload.kind,
     path: payload.path,
     status: payload.status,
@@ -134,6 +134,24 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
   subscribe('server:stop', ({ reason, signal }) => {
     const tag = signal ? `${reason} ${signal.toLowerCase()}` : reason;
     return { label: 'STOP', path: '-', note: styleText('dim', tag) };
+  });
+
+  subscribe('warmup:start', ({ routeCount }) => ({
+    label: 'WARM',
+    path: `${routeCount} ${routeCount === 1 ? 'route' : 'routes'}`,
+    note: styleText('cyan', 'start'),
+  }));
+
+  subscribe('warmup:complete', ({ routeCount, errorCount, durationMs }) => {
+    const errors = errorCount > 0 ? styleText('yellow', ` ${errorCount} failed`) : '';
+    return {
+      label: 'WARM',
+      path: `${routeCount} ${routeCount === 1 ? 'route' : 'routes'}`,
+      note: styleText('dim', `warmed${errors}`),
+      duration: durationMs,
+      slow,
+      verySlow,
+    };
   });
 
   subscribe('error', ({ kind, method, path, status, message }) => ({

@@ -48,6 +48,8 @@ export type {
   MochiCacheRevalidateEvent,
   MochiServerStartEvent,
   MochiServerStopEvent,
+  MochiWarmupStartEvent,
+  MochiWarmupCompleteEvent,
   MochiErrorEvent,
   MochiErrorKind,
   MochiActionInvokeEvent,
@@ -64,6 +66,7 @@ export type {
   MochiClientBundleEvent,
 } from './events';
 export { json, error, apiError } from './utils';
+export { trailingSlashIt } from './trailingSlash';
 export { fail, redirect, success } from './forms';
 export { enhance, deserialize } from './enhance.ssr';
 export { isFormContentType, DEFAULT_FORM_CONTENT_TYPES, DEFAULT_PROTECTED_METHODS } from './csrf';
@@ -101,6 +104,7 @@ export type {
   MochiSubmitCallback,
   HttpMethod,
   MochiServeOptions,
+  MochiWarmupOptions,
   MochiRouteValue,
   MochiWsConfig,
   MochiWsHandlers,
