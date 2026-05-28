@@ -1186,22 +1186,30 @@ export class Mochi {
     if (warmupHandlers.length > 0) {
       mochiEvents.emit('warmup:start', { routeCount: warmupHandlers.length });
       const t0 = performance.now();
-      void Promise.allSettled(
-        warmupHandlers.map(({ pattern, handler }) => {
-          // Request the canonical path so the trailing-slash policy redirects
-          // early instead of running the render we're trying to warm.
+      // Warm sequentially: SSR is CPU-bound and serializes on the single
+      // thread, so firing in parallel wouldn't render any faster — it would
+      // only smear every route's `request` duration into the batch total and
+      // thrash startup. One at a time keeps per-route timings honest.
+      void (async () => {
+        let errorCount = 0;
+        for (const { pattern, handler } of warmupHandlers) {
+          // Request the canonical path so the trailing-slash policy doesn't
+          // redirect early instead of running the render we're warming.
           const url = new URL(`http://localhost${pattern}`);
           const redirect = trailingSlashPolicy ? trailingSlashRedirect('GET', url, trailingSlashPolicy) : null;
           const href = redirect ? new URL(redirect.headers.get('Location') ?? pattern, url).href : url.href;
-          return handler(new Request(href), server);
-        }),
-      ).then((results) => {
+          try {
+            await handler(new Request(href), server);
+          } catch {
+            errorCount += 1;
+          }
+        }
         mochiEvents.emit('warmup:complete', {
           routeCount: warmupHandlers.length,
-          errorCount: results.filter((r) => r.status === 'rejected').length,
+          errorCount,
           durationMs: performance.now() - t0,
         });
-      });
+      })();
     }
 
     if (development) {
