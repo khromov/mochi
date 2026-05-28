@@ -47,7 +47,7 @@ export function filterDemos(demos: Demo[], query: string): Demo[] {
 }
 
 export function docHref(slug: string): string {
-  return `/docs/${slug}`;
+  return `/docs/${slug}/`;
 }
 
 export function isActive(entrySlug: string, activeSlug?: string): boolean {
