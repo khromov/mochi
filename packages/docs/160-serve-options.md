@@ -62,7 +62,7 @@ Do **NOT** call `Mochi.serve()` more than once per process; instead, run a secon
 - `proxy`: `MochiProxyOptions` describing trusted reverse-proxy headers. See `Proxy` below.
 - `hooks`: `MochiHooks` map of named lifecycle hooks. See `Extensions (hooks & filters)`.
 - `filters`: `MochiFilters` map of named value-replacement filters. See `Extensions (hooks & filters)`.
-- `warmup`: Warm the SSR pipeline at startup by invoking every static page route once. Default: `false`. See `Route warmup` below.
+- `warmup`: Warm the SSR pipeline at startup by invoking every static page route once. `boolean | { enabledInProd: boolean; enabledInDev: boolean }`. `true` warms in **production only**; pass the object form for per-mode control. Default: `false`. See `Route warmup` below.
 
 Do **NOT** set `assetPrefix` only at runtime when running against a prebuilt manifest; instead, also pass it to the `build()` call (or `--asset-prefix`) so the manifest's baked-in URLs match. The manifest value wins at runtime when the two disagree.
 
@@ -72,12 +72,21 @@ Components are compiled at startup, but the render pipeline — `serverProps`, S
 
 ```ts
 await Mochi.serve({
-  warmup: true,
+  warmup: true, // warms in production only
   routes,
 });
 ```
 
-Warmup is fire-and-forget — the server accepts real traffic immediately, and a [`warmup:complete`](/docs/events/) event fires once the batch finishes. Each warmed route runs through its real handler (middleware included) as an anonymous `GET`; failures are swallowed, and the SSR module stays warm regardless.
+`warmup: true` warms in **production only** — dev restarts are frequent, and the extra render burst on every reload isn't worth it. For per-mode control, pass an object:
+
+```ts
+await Mochi.serve({
+  warmup: { enabledInProd: true, enabledInDev: false },
+  routes,
+});
+```
+
+Warmup is fire-and-forget — the server accepts real traffic immediately, and a [`warmup:complete`](/docs/events/) event fires once the batch finishes. Routes are warmed one at a time so each [`request`](/docs/events/#request) event reports its own render duration rather than a cumulative figure. Each warmed route runs through its real handler (middleware included) as an anonymous `GET`; failures are swallowed, and the SSR module stays warm regardless.
 
 Routes with parameters (e.g. `/docs/:slug`) are **skipped** — their `:param` values can't be inferred.
 

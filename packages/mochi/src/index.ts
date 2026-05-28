@@ -103,6 +103,7 @@ export type {
   MochiSubmitCallback,
   HttpMethod,
   MochiServeOptions,
+  MochiWarmupOptions,
   MochiRouteValue,
   MochiWsConfig,
   MochiWsHandlers,

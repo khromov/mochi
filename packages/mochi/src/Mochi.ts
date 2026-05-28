@@ -37,6 +37,7 @@ import { apiError, collectHeaderPairs, isHtmlResponse, MochiHttpError } from './
 import type { MochiEvent, MochiEventKind, MochiResolveOptions } from './hooks';
 import { applyResolveOptions } from './hooks';
 import { alternateSlashPattern, trailingSlashRedirect } from './trailingSlash';
+import { resolveWarmupEnabled } from './warmup';
 import { createErrorResponder, DEFAULT_ERROR_PAGE_PATH } from './errors';
 import { requestContext } from './requestContext';
 import type { MochiRequestContext } from './requestContext';
@@ -202,6 +203,7 @@ export class Mochi {
     const cookieDefaults = applyFilter('cookie:defaults', {}, { options });
 
     const development = options.development ?? true;
+    const warmupEnabled = resolveWarmupEnabled(options.warmup, development);
     const debugBarEnabled = development && (options.debugBar ?? true);
     const liveReloadEnabled = options.liveReload ?? development;
     const middleware = options.handle;
@@ -488,7 +490,7 @@ export class Mochi {
             }
           });
 
-        if (options.warmup && !pattern.includes(':')) {
+        if (warmupEnabled && !pattern.includes(':')) {
           warmupHandlers.push({ pattern, handler: getHandler });
         }
 
