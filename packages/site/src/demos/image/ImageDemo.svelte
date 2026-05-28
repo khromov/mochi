@@ -8,7 +8,7 @@
 
   // The programmatic helper returns a signed, cacheable URL — no fetch happens
   // until the browser requests it.
-  const directUrl = getResizedImage(remote, { width: 320, height: 200, format: 'webp' });
+  const directUrl = getResizedImage(remote, { width: 200, height: 200, format: 'jpeg', quality: 60 });
 
   const sources = await loadSources([
     { label: 'ImageDemo.svelte', path: './src/demos/image/ImageDemo.svelte' },
@@ -28,12 +28,12 @@
 
   <h3>With a blur placeholder</h3>
   <p>Add <code>placeholder</code> to show a ThumbHash blur that fades out once the image loads:</p>
-  <Image src={remote} width={320} height={200} alt="A resized random photo with blur-up" placeholder />
+  <Image src={remote} width={480} height={320} alt="A resized random photo with blur-up" placeholder />
 
   <h3>Programmatic</h3>
   <p><code>getResizedImage()</code> returns a signed URL you can use anywhere:</p>
   <pre class="url">{directUrl}</pre>
-  <img src={directUrl} width={320} height={200} alt="Resized via getResizedImage()" />
+  <img src={directUrl} width={200} height={200} alt="Resized via getResizedImage()" />
 </DemoPage>
 
 <style>

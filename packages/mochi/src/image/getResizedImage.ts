@@ -3,6 +3,7 @@ import { fetchImageSource } from './fetchSource';
 import { signImageToken } from './imageCrypto';
 import { computePlaceholder } from './resize';
 import { buildImageFilename } from './slug';
+import { requestContext } from '../requestContext';
 import { logger } from '../log';
 import type { ImageFormat, ImageRequest, ResizeImageOptions, ResolvedImageOptions } from './types';
 
@@ -45,7 +46,22 @@ export function getResizedImage(src: string, opts: ResizeImageOptions = {}): str
   const req = buildRequest(src, opts, options);
   const filename = buildImageFilename(req);
   const { token, sig } = signImageToken(req, filename);
-  return `${getImageAssetPrefix()}/image/${filename}?payload=${token}&sig=${sig}`;
+  const url = `${getImageAssetPrefix()}/image/${filename}?payload=${token}&sig=${sig}`;
+  recordForDebugBar(url, filename, req);
+  return url;
+}
+
+/** Best-effort: record the decoded request for the dev debug bar (no-op in production). */
+function recordForDebugBar(url: string, filename: string, req: ImageRequest): void {
+  try {
+    const ctx = requestContext.getStore();
+    const images = ctx?.debugBarData?.images;
+    if (images && !images.some((i) => i.url === url)) {
+      images.push({ url, filename, params: { ...req } });
+    }
+  } catch {
+    // Debug recording is best-effort; ignore failures.
+  }
 }
 
 /**

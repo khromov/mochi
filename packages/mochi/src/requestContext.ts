@@ -71,6 +71,16 @@ export interface BundleInfo {
   inputs: Array<{ path: string; size: number }>;
 }
 
+/** One image produced by `getResizedImage()` during the request (dev debug bar only). */
+export interface ImageDebugEntry {
+  /** The signed image URL. */
+  url: string;
+  /** The cosmetic filename portion of the URL. */
+  filename: string;
+  /** Decoded (unsigned) request params — src, dimensions, format, quality, fit, TTL, … */
+  params: Record<string, unknown>;
+}
+
 /**
  * SSR-side debug-bar payload. These fields are emitted into the cached HTML
  * body and stay stable across cache hits. The dynamic per-request fields
@@ -105,6 +115,8 @@ export interface DebugBarData {
   ssrDurationMs?: number;
   /** Framework JS bundles injected for this page (bootstrap, island entries, shared chunks). */
   bundles?: BundleInfo[];
+  /** Images produced via `getResizedImage()` during this request, with decoded params. */
+  images?: ImageDebugEntry[];
 }
 
 /**

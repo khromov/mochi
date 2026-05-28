@@ -3,6 +3,7 @@
   import StatusDot from './StatusDot.svelte';
   import RequestPanel from './RequestPanel.svelte';
   import IslandsPanel from './IslandsPanel.svelte';
+  import ImagesPanel from './ImagesPanel.svelte';
   import WarningsPanel from './WarningsPanel.svelte';
   import BundlesPanel from './BundlesPanel.svelte';
   import { cleanupHighlight } from './highlight';
@@ -11,7 +12,7 @@
 
   const STORAGE_KEY = 'mochi:debug:collapsed';
 
-  type Panel = 'warnings' | 'islands' | 'request' | 'bundles' | null;
+  type Panel = 'warnings' | 'islands' | 'images' | 'request' | 'bundles' | null;
   let activePanel: Panel = $state(null);
 
   let hasDebugInfo = $state(false);
@@ -69,6 +70,7 @@
 <div class="mochi-debug-bar-root" bind:this={rootEl}>
   <WarningsPanel open={activePanel === 'warnings'} onclose={() => (activePanel = null)} />
   <IslandsPanel open={activePanel === 'islands'} onclose={() => (activePanel = null)} />
+  <ImagesPanel open={activePanel === 'images'} onclose={() => (activePanel = null)} />
   <BundlesPanel open={activePanel === 'bundles'} onclose={() => (activePanel = null)} />
   <RequestPanel open={activePanel === 'request'} onclose={() => (activePanel = null)} />
 
@@ -96,6 +98,11 @@
       >
         Islands <span class="badge" class:badge-yellow={warnLevel === 'yellow'} class:badge-red={warnLevel === 'red'}>{debugBarState.islandCount}</span>
       </button>
+      {#if debugBarState.imageCount > 0}
+        <button class="btn image-btn" onclick={() => toggle('images')} tabindex={collapsed ? -1 : 0}>
+          Images <span class="badge">{debugBarState.imageCount}</span>
+        </button>
+      {/if}
       {#if debugBarState.warningCount > 0}
         <button class="btn warn-btn" onclick={() => toggle('warnings')} tabindex={collapsed ? -1 : 0}>
           Warnings <span class="badge">{debugBarState.warningCount}</span>
@@ -293,6 +300,16 @@
   .island-btn.warn-red:hover {
     background: #4f2f27;
     border-color: #e9a89a;
+  }
+  .image-btn {
+    background: #382a32;
+    color: #d4b8c8;
+    border-color: #5a4050;
+  }
+  .image-btn:hover {
+    background: #43323c;
+    color: #ecd2e0;
+    border-color: #c4a3b8;
   }
   .request-btn {
     background: #2c343a;

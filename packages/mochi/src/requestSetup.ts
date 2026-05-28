@@ -123,6 +123,7 @@ export function makeRequestContextBuilder(cfg: RequestSetupConfig): RequestConte
         islandProps: {},
         pageCacheEnabled: true,
         varyOnCookies: [],
+        images: [],
       };
     }
 
