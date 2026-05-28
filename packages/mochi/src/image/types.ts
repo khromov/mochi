@@ -4,9 +4,9 @@ export type ImageFormat = 'webp' | 'jpeg' | 'png' | 'avif';
 export type ImageFit = 'inside' | 'fill';
 
 /**
- * The signed request payload baked into every image URL. Compact keys keep the
- * URL short. Every field an attacker could tamper with lives here and is
- * covered by the HMAC signature.
+ * The request payload baked (encrypted) into every image URL. Compact keys keep
+ * the URL short. The whole object is sealed with AES-256-GCM, so the source URL
+ * and params are neither readable nor tamperable.
  */
 export interface ImageRequest {
   /** Source URL (http/https). */

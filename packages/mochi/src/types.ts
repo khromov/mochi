@@ -562,8 +562,8 @@ export interface MochiServeOptions {
   warmup?: boolean | MochiWarmupOptions;
   /**
    * On-the-fly image resizing. Mounts a signed `/_mochi/image/*` endpoint and
-   * powers `getResizedImage()` / the `<Image>` component. Every served URL is
-   * HMAC-signed so attackers cannot request arbitrary sources. Default: enabled
+   * powers `getResizedImage()` / the `<Image>` component. Every served URL's
+   * payload is encrypted so attackers cannot request arbitrary sources. Default: enabled
    * with sensible defaults; pass `{ enabled: false }` to turn it off. See
    * `MochiImageOptions`.
    */

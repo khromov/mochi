@@ -44,7 +44,7 @@
     <span class="island-meta">
       {#if fmt}<span class="island-tag tag-fmt">{fmt}</span>{/if}
       <span class="island-size">{dims}</span>
-      <span class="lock-icon" title="Image params are HMAC-signed in production to prevent tampering. Decoded params are shown only in dev mode.">
+      <span class="lock-icon" title="Image params are AES-256-GCM encrypted in production. Decoded params are shown only in dev mode.">
         <Lock size={10} />
       </span>
     </span>

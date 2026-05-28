@@ -98,7 +98,7 @@ class ServerIsland extends HTMLElement {
           document.head.appendChild(link);
         }
 
-        // SAFETY: HTML comes from our own same-origin server-island endpoint with HMAC-signed props.
+        // SAFETY: HTML comes from our own same-origin server-island endpoint with encrypted props.
         // If the island endpoint ever returns user-controlled content, this must be sanitized.
         this.innerHTML = html;
         return;

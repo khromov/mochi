@@ -39,7 +39,7 @@ export interface PreprocessResult {
  *
  * - `mochi:hydrate` / `mochi:hydrate:visible` → wraps in `<mochi-hydratable-island>`
  * - `mochi:defer` / `mochi:defer:visible` → wraps in `<mochi-server-island>` with
- *   signed props; the `:visible` variant adds `defer-on="visible"` so the client
+ *   encrypted props; the `:visible` variant adds `defer-on="visible"` so the client
  *   waits for IntersectionObserver before fetching
  * - Combined `mochi:defer*` + `mochi:hydrate*` → server island with `also-hydrate`
  *   attribute, registered in both lists

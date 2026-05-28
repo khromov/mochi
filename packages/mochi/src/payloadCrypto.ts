@@ -8,7 +8,7 @@
  * `MOCHI_KEY` length works and the existing secret (and its `serverIsland:secretKey`
  * filter) is reused without being mutated.
  *
- * The IV is **deterministic** — `HMAC-SHA256(key, aad ‖ data)[:12]` — so identical
+ * The IV is **deterministic** — `HMAC-SHA256(key, aad ‖ inner)[:12]` — so identical
  * inputs produce identical ciphertext. That keeps image URLs stable/cacheable;
  * the trade-off is that equal plaintexts are observably equal (acceptable here,
  * and already true under the previous signing scheme).

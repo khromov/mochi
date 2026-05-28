@@ -3,11 +3,11 @@ import { lookup } from 'node:dns/promises';
 import { ImageError } from './types';
 
 /**
- * Defense-in-depth beyond the URL signature: validate the source host against
- * an optional allowlist and reject sources that resolve to private/loopback/
- * link-local addresses. Note this does not fully close DNS-rebinding (the IP is
- * resolved here, then re-resolved by `fetch`) — the signature remains the
- * primary protection.
+ * Defense-in-depth beyond the encrypted URL payload: validate the source host
+ * against an optional allowlist and reject sources that resolve to private/
+ * loopback/link-local addresses. Note this does not fully close DNS-rebinding
+ * (the IP is resolved here, then re-resolved by `fetch`) — the encrypted,
+ * authenticated payload remains the primary protection.
  */
 export interface SsrfGuardOptions {
   allowedHosts: string[] | undefined;

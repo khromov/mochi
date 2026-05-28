@@ -918,7 +918,7 @@ export class Mochi {
       const signedProps = url.searchParams.get('props') ?? '';
       const hydrateMode = url.searchParams.get('hydrate');
 
-      // Verify signature and decode props (empty means no props)
+      // Decrypt props (empty means no props)
       let props: Record<string, unknown>;
       if (signedProps) {
         const propsJson = decryptProps(signedProps);
