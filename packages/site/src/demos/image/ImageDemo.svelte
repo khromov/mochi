@@ -4,7 +4,7 @@
   import { Image } from 'mochi-framework/components';
   import { getResizedImage } from 'mochi-framework';
 
-  const remote = 'https://picsum.photos/seed/mochi/1200/800';
+  const remote = 'https://sta-public.fra1.cdn.digitaloceanspaces.com/mochi/mochi-1.jpg';
 
   // The programmatic helper returns a signed, cacheable URL — no fetch happens
   // until the browser requests it.
@@ -34,6 +34,11 @@
   <p><code>getResizedImage()</code> returns a signed URL you can use anywhere:</p>
   <pre class="url">{directUrl}</pre>
   <img src={directUrl} width={200} height={200} alt="Resized via getResizedImage()" />
+
+  <p class="credit">
+    Photo by <a href="https://unsplash.com/@mingmeap?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText">Minh Anh Nguyen</a>
+    on <a href="https://unsplash.com/photos/white-and-pink-stone-on-brown-wooden-chopping-board-ndnNP_luXvU?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText">Unsplash</a>
+  </p>
 </DemoPage>
 
 <style>
@@ -50,5 +55,10 @@
   }
   img {
     border-radius: var(--radius-md);
+  }
+  .credit {
+    margin-top: 2rem;
+    font-size: 0.8rem;
+    color: var(--text-muted, #888);
   }
 </style>
