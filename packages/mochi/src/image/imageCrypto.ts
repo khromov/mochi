@@ -1,7 +1,8 @@
 /**
  * HMAC-SHA256 signing for image URLs, mirroring `serverIslandCrypto.ts`. The
  * full request payload is signed so an attacker cannot mint a URL for an
- * arbitrary source — the signature is the primary SSRF gate.
+ * arbitrary source — the signature is the primary SSRF gate. The payload rides
+ * in the `?payload=` query param; the path filename is cosmetic.
  */
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { getMochiConfig } from '../mochiConfig';
@@ -16,9 +17,16 @@ function hmac(payloadJson: string): string {
   return createHmac('sha256', secretKey).update(payloadJson).digest().subarray(0, 16).toString('base64url');
 }
 
-export function signImageToken(req: ImageRequest): { token: string; sig: string } {
+// The signature covers both the request JSON and the cosmetic path filename, so
+// the visible `/my-image-500x500.webp` part can't be altered without
+// invalidating the URL. NUL can't appear in either input, so it's a safe joiner.
+function signingInput(json: string, filename: string): string {
+  return `${json}\0${filename}`;
+}
+
+export function signImageToken(req: ImageRequest, filename: string): { token: string; sig: string } {
   const json = JSON.stringify(req);
-  const sig = hmac(json);
+  const sig = hmac(signingInput(json, filename));
 
   const uncompressed = Buffer.from(json, 'utf-8').toString('base64url');
   if (json.length >= 64) {
@@ -30,7 +38,7 @@ export function signImageToken(req: ImageRequest): { token: string; sig: string 
   return { token: uncompressed, sig };
 }
 
-export function verifyImageToken(token: string, sig: string): ImageRequest | null {
+export function verifyImageToken(token: string, sig: string, filename: string): ImageRequest | null {
   let json: string;
   try {
     if (token.startsWith(COMPRESSED_PREFIX)) {
@@ -42,7 +50,7 @@ export function verifyImageToken(token: string, sig: string): ImageRequest | nul
     return null;
   }
 
-  const expected = hmac(json);
+  const expected = hmac(signingInput(json, filename));
   if (sig.length !== expected.length) {
     return null;
   }

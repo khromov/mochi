@@ -1010,7 +1010,7 @@ export class Mochi {
 
     // Register the signed image-resize endpoint (enabled unless explicitly off).
     if (options.image?.enabled !== false) {
-      bunRoutes[`${registry.assetPrefix}/image/:descriptor`] = createImageHandler();
+      bunRoutes[`${registry.assetPrefix}/image/:filename`] = createImageHandler();
     }
 
     if (process.env.MOCHI_MEMORY_PROBE === '1') {

@@ -1,0 +1,49 @@
+import { extForFormat } from './resize';
+import type { ImageRequest } from './types';
+
+function slugifyStem(stem: string): string {
+  const s = stem
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 64)
+    .replace(/-+$/g, '');
+  return s || 'image';
+}
+
+function baseName(src: string): string {
+  let last: string;
+  try {
+    last = new URL(src).pathname.split('/').filter(Boolean).pop() ?? '';
+  } catch {
+    last = src.split(/[?#]/)[0]?.split('/').filter(Boolean).pop() ?? '';
+  }
+  const dot = last.lastIndexOf('.');
+  const stem = dot > 0 ? last.slice(0, dot) : last;
+  return slugifyStem(stem);
+}
+
+function dimsLabel(w?: number, h?: number): string {
+  if (w && h) {
+    return `${w}x${h}`;
+  }
+  if (w) {
+    return `${w}w`;
+  }
+  if (h) {
+    return `${h}h`;
+  }
+  return '';
+}
+
+/**
+ * Cosmetic, human-readable filename for an image URL — `<basename>-<dims>.<ext>`,
+ * e.g. `my-image-500x500.webp`. Purely for readability / download names; the
+ * authoritative request travels in the `payload` + `sig` query params.
+ */
+export function buildImageFilename(req: ImageRequest): string {
+  const base = baseName(req.src);
+  const dims = dimsLabel(req.w, req.h);
+  const name = dims ? `${base}-${dims}` : base;
+  return `${name}.${extForFormat(req.fmt)}`;
+}

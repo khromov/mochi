@@ -18,25 +18,26 @@ function cacheControl(options: ResolvedImageOptions): string {
 }
 
 /**
- * The `/_mochi/image/<token>.<ext>?sig=…` endpoint: verify the signature, then
- * serve from the stale-while-revalidate disk cache, regenerating on miss by
- * fetching + resizing the source.
+ * The `/_mochi/image/<filename>?payload=…&sig=…` endpoint: verify the signature,
+ * then serve from the stale-while-revalidate disk cache, regenerating on miss
+ * by fetching + resizing the source. The path filename is cosmetic.
  */
 export function createImageHandler(): (req: Request) => Promise<Response> {
   return async (req: Request): Promise<Response> => {
     const { options, cache } = getImageRuntime();
 
     const url = new URL(req.url);
-    const segment = url.pathname.split('/').pop() ?? '';
-    const dot = segment.lastIndexOf('.');
-    const token = dot === -1 ? segment : segment.slice(0, dot);
+    const filename = url.pathname.split('/').pop() ?? '';
+    const token = url.searchParams.get('payload') ?? '';
     const sig = url.searchParams.get('sig') ?? '';
 
     if (!token || !sig) {
       return textResponse(403, 'Missing signature');
     }
 
-    const request = verifyImageToken(token, sig);
+    // The signature binds both the payload and the cosmetic filename, so a
+    // tampered path (e.g. swapped /my-image.webp) fails verification.
+    const request = verifyImageToken(token, sig, filename);
     if (!request) {
       return textResponse(403, 'Invalid signature');
     }

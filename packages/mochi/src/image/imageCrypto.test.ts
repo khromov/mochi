@@ -21,33 +21,41 @@ function req(over: Partial<ImageRequest> = {}): ImageRequest {
   return { src: 'https://example.com/a.png', w: 200, h: 200, fit: 'inside', fmt: 'webp', q: 80, ao: true, ts: 60_000, te: 86_400_000, ...over };
 }
 
+const NAME = 'a-200x200.webp';
+
 describe('signImageToken + verifyImageToken', () => {
   test('round-trips the request', () => {
     installConfig();
     const r = req();
-    const { token, sig } = signImageToken(r);
-    expect(verifyImageToken(token, sig)).toEqual(r);
+    const { token, sig } = signImageToken(r, NAME);
+    expect(verifyImageToken(token, sig, NAME)).toEqual(r);
   });
 
   test('rejects a tampered signature', () => {
     installConfig();
-    const { token, sig } = signImageToken(req());
+    const { token, sig } = signImageToken(req(), NAME);
     const tampered = (sig[0] === 'A' ? 'B' : 'A') + sig.slice(1);
-    expect(verifyImageToken(token, tampered)).toBeNull();
+    expect(verifyImageToken(token, tampered, NAME)).toBeNull();
   });
 
   test('rejects a tampered token (different src, same sig)', () => {
     installConfig();
-    const { sig } = signImageToken(req({ src: 'https://example.com/a.png' }));
-    const evil = signImageToken(req({ src: 'https://internal.evil/secret' })).token;
-    expect(verifyImageToken(evil, sig)).toBeNull();
+    const { sig } = signImageToken(req({ src: 'https://example.com/a.png' }), NAME);
+    const evil = signImageToken(req({ src: 'https://internal.evil/secret' }), NAME).token;
+    expect(verifyImageToken(evil, sig, NAME)).toBeNull();
+  });
+
+  test('rejects a tampered filename (same payload + sig)', () => {
+    installConfig();
+    const { token, sig } = signImageToken(req(), NAME);
+    expect(verifyImageToken(token, sig, 'evil-200x200.webp')).toBeNull();
   });
 
   test('round-trips a long src via the compressed path', () => {
     installConfig();
     const r = req({ src: 'https://example.com/' + 'segment/'.repeat(40) + 'image.png' });
-    const { token, sig } = signImageToken(r);
+    const { token, sig } = signImageToken(r, NAME);
     expect(token.startsWith('~')).toBe(true);
-    expect(verifyImageToken(token, sig)).toEqual(r);
+    expect(verifyImageToken(token, sig, NAME)).toEqual(r);
   });
 });

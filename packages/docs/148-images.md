@@ -54,7 +54,7 @@ const url = getResizedImage('https://example.com/photo.jpg', {
   format: 'webp',
   quality: 80,
 });
-// → /_mochi/image/<token>.webp?sig=<sig>
+// → /_mochi/image/photo-500x500.webp?payload=<token>&sig=<sig>
 ```
 
 ### Caching & TTL
