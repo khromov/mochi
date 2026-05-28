@@ -2,11 +2,14 @@
   import DemoPage from '../../components/DemoPage.svelte';
   import { loadSources } from '../../components/utils.ts';
   import { Image } from 'mochi-framework/components';
-  import { getResizedImage } from 'mochi-framework';
+  import { getResizedImage, getImagePlaceholder } from 'mochi-framework';
+  import ArrowDown from '@lucide/svelte/icons/arrow-down';
 
   const remote = 'https://sta-public.fra1.cdn.digitaloceanspaces.com/mochi/mochi-1.jpg';
 
   const directUrl = getResizedImage(remote, { width: 200, height: 200, fit: 'inside', format: 'jpeg', quality: 60 });
+
+  const blur = await getImagePlaceholder(remote);
 
   const sources = await loadSources([
     { label: 'ImageDemo.svelte', path: './src/demos/image/ImageDemo.svelte' },
@@ -17,21 +20,35 @@
 
 <DemoPage
   title="Image Resizing"
-  description="On-the-fly image resizing on Bun.Image, served from a signed, stale-while-revalidate disk cache. Every URL is HMAC-signed, so sources can't be tampered with."
+  description="On-the-fly image resizing on Bun.Image, served from an encrypted, stale-while-revalidate disk cache. Every URL's payload is AES-256-GCM encrypted, so the source and params stay hidden and can't be tampered with."
   {sources}
 >
   <h3>Component</h3>
   <p>A plain <code>&lt;Image&gt;</code> renders a single resized <code>&lt;img&gt;</code> with no client JS:</p>
-  <Image src={remote} width={320} height={200} alt="A resized random photo" />
+  <div class="frame">
+    <Image src={remote} width={320} height={200} alt="A resized random photo" />
+  </div>
 
   <h3>With a blur placeholder</h3>
-  <p>Add <code>placeholder</code> to show a ThumbHash blur that fades out once the image loads:</p>
-  <Image src={remote} width={480} height={320} alt="A resized random photo with blur-up" placeholder />
+  <p>Add <code>placeholder</code> to show a ThumbHash blur that fades out once the image loads. The placeholder shows first, then the loaded image it fades into:</p>
+  {#if blur}
+    <div class="frame blur-compare">
+      <span class="blur-compare__placeholder" style:background-image="url({blur})" role="img" aria-label="ThumbHash blur placeholder"></span>
+      <span class="blur-compare__arrow"><ArrowDown size={28} aria-hidden="true" /></span>
+      <Image src={remote} width={480} height={320} alt="A resized random photo with blur-up" />
+    </div>
+  {:else}
+    <div class="frame">
+      <Image src={remote} width={480} height={320} alt="A resized random photo with blur-up" placeholder />
+    </div>
+  {/if}
 
   <h3>Programmatic</h3>
   <p><code>getResizedImage()</code> returns a signed URL you can use anywhere:</p>
   <pre class="url">{directUrl}</pre>
-  <img src={directUrl} width={200} alt="Resized via getResizedImage()" />
+  <div class="frame">
+    <img src={directUrl} width={200} alt="Resized via getResizedImage()" />
+  </div>
   <p class="note">
     This uses the default <code>fit: 'inside'</code>, which preserves aspect ratio and fits <em>within</em> the 200&times;200 box — so this 3:2 photo becomes 200&times;133. Pass
     <code>fit: 'fill'</code>
@@ -54,6 +71,33 @@
   h3 {
     margin-top: 1.5rem;
   }
+  .frame {
+    display: flex;
+    justify-content: center;
+    margin: 1rem 0;
+  }
+  .frame :global(img) {
+    max-width: 100%;
+    height: auto;
+    border-radius: var(--radius-md);
+  }
+  .blur-compare {
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .blur-compare__placeholder {
+    width: 480px;
+    max-width: 100%;
+    aspect-ratio: 480 / 320;
+    background-size: cover;
+    background-position: center;
+    border-radius: var(--radius-md);
+  }
+  .blur-compare__arrow {
+    color: var(--text-muted, #888);
+    line-height: 0;
+  }
   .url {
     overflow-x: auto;
     padding: 0.75rem 1rem;
@@ -61,9 +105,6 @@
     border-radius: var(--radius-sm);
     background: var(--surface);
     font-size: 0.8rem;
-  }
-  img {
-    border-radius: var(--radius-md);
   }
   .note {
     margin-top: 0.5rem;
