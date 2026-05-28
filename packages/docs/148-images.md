@@ -10,7 +10,7 @@ description: 'On-the-fly image resizing on Bun.Image with signed URLs and a stal
 
 ## Images
 
-Mochi resizes images on the fly with [`Bun.Image`](https://bun.com/docs/runtime/image), serving them from a signed, stale-while-revalidate disk cache. Every URL is HMAC-signed, so an attacker can't request arbitrary sources through your server.
+Mochi resizes images on the fly with [`Bun.Image`](https://bun.com/docs/runtime/image), serving them from an encrypted, stale-while-revalidate disk cache. Every URL's payload is AES-256-GCM encrypted, so the source URL and params aren't readable and an attacker can't request arbitrary sources through your server.
 
 ### Component
 
@@ -56,7 +56,7 @@ const url = getResizedImage('https://example.com/photo.jpg', {
   format: 'webp',
   quality: 80,
 });
-// → /_mochi/image/photo-500x500.webp?payload=<token>&sig=<sig>
+// → /_mochi/image/photo-500x500.webp?payload=<encrypted token>
 ```
 
 ### Caching & TTL
@@ -116,7 +116,7 @@ await Mochi.serve({
 
 <Callout type="danger">
 
-**The signature is the security boundary.** Because URLs are HMAC-signed with your `MOCHI_KEY`, only your server can mint them. Still, if you pass a **user-controlled** `src` into `getResizedImage()`, keep `blockPrivateNetworks` on (the default) and prefer an `allowedHosts` allowlist so a user can't proxy requests to internal services. SVG is never decoded.
+**Encryption is the security boundary.** The payload is AES-256-GCM encrypted with a key derived from your `MOCHI_KEY`, so only your server can mint URLs and the source URL/params stay hidden; the cosmetic filename is bound as authenticated data (tampering it fails decryption). Still, if you pass a **user-controlled** `src` into `getResizedImage()`, keep `blockPrivateNetworks` on (the default) and prefer an `allowedHosts` allowlist so a user can't proxy requests to internal services. SVG is never decoded.
 
 </Callout>
 

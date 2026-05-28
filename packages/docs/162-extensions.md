@@ -201,7 +201,7 @@ Do **NOT** use `html:shell` for full template ownership; instead, set `htmlShell
 
 #### `serverIsland:secretKey`
 
-Override the HMAC key used to sign server-island props. The default value is the `MOCHI_KEY` env var (or a fresh random key if unset). Use this to source the key from KMS / Vault / a secret manager. Async.
+Override the secret key used to encrypt server-island props and image payloads. The default value is the `MOCHI_KEY` env var (or a fresh random key if unset). Use this to source the key from KMS / Vault / a secret manager. Async.
 
 ```ts
 await Mochi.serve({

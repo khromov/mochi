@@ -104,9 +104,9 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
         const autoEntries = directives.hydrate ? [`islandId: __mochi_iid`, `isHydratable: true`] : [`islandId: __mochi_iid`];
         const propsExpr = buildPropsFromAst(source, comp.attributes, autoEntries);
         // Always emit signed-props for server islands (no empty-props optimization)
-        // because islandId is always injected, and all props must be HMAC-signed
-        // to prevent client-side tampering via query parameters.
-        let attrs = `island-id={__mochi_iid} component-name="${comp.name}" signed-props={__mochi_sign_props__(__mochi_stringify__(${propsExpr}))} css-url="__MOCHI_SERVER_CSS_URL__${comp.name}__" data-asset-prefix="__MOCHI_ASSET_PREFIX__"`;
+        // because islandId is always injected, and all props must be encrypted
+        // to prevent reading/tampering via query parameters.
+        let attrs = `island-id={__mochi_iid} component-name="${comp.name}" signed-props={__mochi_encrypt_props__(__mochi_stringify__(${propsExpr}))} css-url="__MOCHI_SERVER_CSS_URL__${comp.name}__" data-asset-prefix="__MOCHI_ASSET_PREFIX__"`;
 
         // `mochi:defer:visible` defers the fetch until the wrapper enters the
         // viewport. `rootMargin` rides inside the existing `server-options`
@@ -262,7 +262,7 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
       imports += '\nlet __mochi_uid__ = 0;';
     }
     if (needsSignProps) {
-      imports += '\nimport { signProps as __mochi_sign_props__ } from "mochi-server-island-runtime";';
+      imports += '\nimport { encryptProps as __mochi_encrypt_props__ } from "mochi-server-island-runtime";';
     }
     s.appendRight(contentStart, imports);
   }

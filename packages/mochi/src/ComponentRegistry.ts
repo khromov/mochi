@@ -411,7 +411,7 @@ export class ComponentRegistry {
           namespace: 'mochi-server-island',
         }));
         build.onLoad({ filter: /.*/, namespace: 'mochi-server-island' }, () => ({
-          contents: [`import { signProps } from "${path.join(FRAMEWORK_DIR, 'serverIslandCrypto.ts')}";`, `export { signProps };`].join('\n'),
+          contents: [`import { encryptProps } from "${path.join(FRAMEWORK_DIR, 'serverIslandCrypto.ts')}";`, `export { encryptProps };`].join('\n'),
           loader: 'js',
         }));
         build.onLoad({ filter: /\.svelte\.[jt]s$/ }, async (args) => {

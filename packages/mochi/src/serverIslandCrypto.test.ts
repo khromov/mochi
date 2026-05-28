@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { stringify as devalueStringify } from 'devalue';
-import { signProps, verifyAndDecodeProps } from './serverIslandCrypto';
+import { encryptProps, decryptProps } from './serverIslandCrypto';
 import { requestContext, type MochiRequestContext } from './requestContext';
 import { MochiCookieJar } from './cookies';
 
@@ -41,36 +41,47 @@ afterEach(() => {
   removeConfig();
 });
 
-describe('signProps + verifyAndDecodeProps', () => {
-  test('round-trips: verify decodes what sign produces', () => {
+describe('encryptProps + decryptProps', () => {
+  test('round-trips: decrypt returns what encrypt sealed', () => {
     installConfig();
     const json = devalueStringify({ islandId: 'mochi-abc-0', name: 'World' });
-    const token = signProps(json);
-    const decoded = verifyAndDecodeProps(token);
-    expect(decoded).toBe(json);
+    const token = encryptProps(json);
+    expect(decryptProps(token)).toBe(json);
+  });
+
+  test('token is opaque ciphertext, not readable JSON', () => {
+    installConfig();
+    const json = devalueStringify({ islandId: 'mochi-abc-0', secret: 'do-not-leak' });
+    const token = encryptProps(json);
+    const decoded = Buffer.from(token, 'base64url').toString('utf-8');
+    expect(decoded).not.toContain('do-not-leak');
+    expect(decoded).not.toContain('islandId');
   });
 
   test('rejects a tampered token', () => {
     installConfig();
     const json = devalueStringify({ islandId: 'mochi-abc-0' });
-    const token = signProps(json);
-    const tampered = 'X' + token.slice(1);
-    expect(verifyAndDecodeProps(tampered)).toBeNull();
+    const token = encryptProps(json);
+    const mid = Math.floor(token.length / 2);
+    const tampered = token.slice(0, mid) + (token[mid] === 'A' ? 'B' : 'A') + token.slice(mid + 1);
+    expect(decryptProps(tampered)).toBeNull();
   });
 
-  test('rejects a token with no dot separator', () => {
-    expect(verifyAndDecodeProps('nodothere')).toBeNull();
+  test('rejects garbage input', () => {
+    installConfig();
+    expect(decryptProps('not-a-valid-token')).toBeNull();
+    expect(decryptProps('')).toBeNull();
   });
 });
 
-describe('signProps debug bar recording', () => {
+describe('encryptProps debug bar recording', () => {
   test('records decoded props in debugBarData when in dev mode', () => {
     installConfig();
     withCtx(
       (ctx) => {
         const props = { islandId: 'mochi-test-0', greeting: 'Hello', count: 42 };
         const json = devalueStringify(props);
-        signProps(json);
+        encryptProps(json);
 
         const recorded = ctx.debugBarData!.islandProps['mochi-test-0'];
         expect(recorded).toBeDefined();
@@ -88,9 +99,9 @@ describe('signProps debug bar recording', () => {
     installConfig();
     withCtx((ctx) => {
       const json = devalueStringify({ islandId: 'mochi-test-0', x: 1 });
-      const token = signProps(json);
+      const token = encryptProps(json);
       expect(ctx.debugBarData).toBeUndefined();
-      expect(verifyAndDecodeProps(token)).toBe(json);
+      expect(decryptProps(token)).toBe(json);
     });
   });
 
@@ -99,19 +110,19 @@ describe('signProps debug bar recording', () => {
     const json = devalueStringify({ islandId: 'mochi-test-0' });
     let token: string | undefined;
     expect(() => {
-      token = signProps(json);
+      token = encryptProps(json);
     }).not.toThrow();
     expect(token).toBeDefined();
-    expect(verifyAndDecodeProps(token!)).toBe(json);
+    expect(decryptProps(token!)).toBe(json);
   });
 
-  test('signing still works even if debug recording fails', () => {
+  test('encryption still works even if debug recording fails', () => {
     installConfig();
     withCtx(
       (ctx) => {
         // Pass invalid devalue JSON — debug recording should fail silently
         const badJson = '{not valid devalue}';
-        const token = signProps(badJson);
+        const token = encryptProps(badJson);
         expect(token).toBeDefined();
         expect(Object.keys(ctx.debugBarData!.islandProps)).toHaveLength(0);
       },

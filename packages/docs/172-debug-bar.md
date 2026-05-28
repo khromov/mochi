@@ -37,7 +37,7 @@ When two or more islands ship the exact same props payload, Mochi hoists it into
 
 ### Server islands
 
-Server-island rows display a lock icon next to the mode tag. Their props are HMAC-signed before being sent to the client so the deferred fetch can't be tampered with — the raw, unsigned JSON shown in the panel comes from a dev-only sidecar copy. In production no plaintext props leave the server.
+Server-island rows display a lock icon next to the mode tag. Their props are AES-256-GCM encrypted before being sent to the client (opaque on the wire and tamper-proof) — the decoded JSON shown in the panel comes from a dev-only sidecar copy. In production no plaintext props leave the server.
 
 ### Warnings
 

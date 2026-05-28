@@ -1,6 +1,6 @@
 import { getImageAssetPrefix, getImageRuntime } from './config';
 import { fetchImageSource } from './fetchSource';
-import { signImageToken } from './imageCrypto';
+import { encryptImageRequest } from './imageCrypto';
 import { computePlaceholder } from './resize';
 import { buildImageFilename } from './slug';
 import { requestContext } from '../requestContext';
@@ -38,15 +38,15 @@ function buildRequest(src: string, opts: ResizeImageOptions, resolved: ResolvedI
  * Build a signed, cacheable URL for a resized image. Server-side only (it reads
  * the signing secret from the Mochi config). The path is a cosmetic,
  * human-readable filename derived from the source name + dimensions; the
- * authoritative signed request travels in the `payload` and `sig` query params:
- * `/_mochi/image/my-image-500x500.webp?payload=<token>&sig=<sig>`.
+ * authoritative encrypted request travels in the `payload` query param (the
+ * filename is bound as AAD): `/_mochi/image/my-image-500x500.webp?payload=<token>`.
  */
 export function getResizedImage(src: string, opts: ResizeImageOptions = {}): string {
   const { options } = getImageRuntime();
   const req = buildRequest(src, opts, options);
   const filename = buildImageFilename(req);
-  const { token, sig } = signImageToken(req, filename);
-  const url = `${getImageAssetPrefix()}/image/${filename}?payload=${token}&sig=${sig}`;
+  const token = encryptImageRequest(req, filename);
+  const url = `${getImageAssetPrefix()}/image/${filename}?payload=${token}`;
   recordForDebugBar(url, filename, req);
   return url;
 }

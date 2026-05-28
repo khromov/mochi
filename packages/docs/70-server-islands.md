@@ -41,9 +41,9 @@ Server island components are normal Svelte components with full access to the re
 ### Fetch flow
 
 1. SSR emits a `<mochi-server-island>` custom element holding the fallback content; the component itself is **not** rendered.
-2. Props are serialized with `devalue`, HMAC-signed, and stamped onto the element as `signed-props`.
-3. On `connectedCallback`, the element fetches `/_mochi/island/{ComponentName}?props={signedProps}` (the `/_mochi` prefix follows `assetPrefix`).
-4. The server verifies the signature, decodes the props, renders the component, and returns the HTML.
+2. Props are serialized with `devalue`, AES-256-GCM encrypted, and stamped onto the element as `signed-props`.
+3. On `connectedCallback`, the element fetches `/_mochi/island/{ComponentName}?props={token}` (the `/_mochi` prefix follows `assetPrefix`).
+4. The server decrypts the props, renders the component, and returns the HTML.
 5. The HTML replaces the fallback inside the custom element.
 
 Failed fetches are retried with exponential backoff (default 5 retries, 1s–10s); pass `mochi:defer={{ retries: 10 }}` to override.
@@ -74,13 +74,13 @@ Provide fallback children when using `:visible` so the user has something to scr
 
 ### Props
 
-Props are serialized with `devalue` — see [Passing props to islands](island-props/) for the full list of supported types. Server islands additionally HMAC-sign the payload and pass it as a query parameter; if the signed props exceed URL length limits (~1800 bytes), a warning is emitted.
+Props are serialized with `devalue` — see [Passing props to islands](island-props/) for the full list of supported types. Server islands additionally encrypt the payload (AES-256-GCM) and pass it as a query parameter; if the encrypted props exceed URL length limits (~1800 bytes), a warning is emitted.
 
-Do **NOT** ship large blobs through server-island props; instead, fetch the data inside the component using `getRequestContext()`. Signed-prop URLs over 1800 chars trigger a runtime warning.
+Do **NOT** ship large blobs through server-island props; instead, fetch the data inside the component using `getRequestContext()`. Prop URLs over 1800 chars trigger a runtime warning.
 
-### Signing key
+### Encryption key
 
-Props are signed with a 32-byte key resolved at startup from `process.env.MOCHI_KEY` (base64url-encoded). If `MOCHI_KEY` is unset, Mochi generates a random key and logs a warning — fine for local dev, broken across restarts and multi-instance deploys.
+Props are encrypted with a key derived (SHA-256) from `process.env.MOCHI_KEY` (base64url-encoded, any length). If `MOCHI_KEY` is unset, Mochi generates a random key and logs a warning — fine for local dev, broken across restarts and multi-instance deploys.
 
 ```sh
 # .env
@@ -89,7 +89,7 @@ MOCHI_KEY=<base64url-encoded 32-byte secret>
 
 <Callout type="warning">
 
-**Set `MOCHI_KEY` for any deployment that runs more than one process or survives restarts.** Without a shared key, signatures minted by one instance won't verify on another and deferred islands will fail to load after a restart or rolling deploy.
+**Set `MOCHI_KEY` for any deployment that runs more than one process or survives restarts.** Without a shared key, tokens minted by one instance won't decrypt on another and deferred islands will fail to load after a restart or rolling deploy.
 
 </Callout>
 

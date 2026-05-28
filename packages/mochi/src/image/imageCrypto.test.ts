@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { signImageToken, verifyImageToken } from './imageCrypto';
+import { encryptImageRequest, decryptImageRequest } from './imageCrypto';
 import type { ImageRequest } from './types';
 
 const GLOBAL_CONFIG_KEY = '__mochi_config__';
@@ -23,39 +23,36 @@ function req(over: Partial<ImageRequest> = {}): ImageRequest {
 
 const NAME = 'a-200x200.webp';
 
-describe('signImageToken + verifyImageToken', () => {
+describe('encryptImageRequest + decryptImageRequest', () => {
   test('round-trips the request', () => {
     installConfig();
     const r = req();
-    const { token, sig } = signImageToken(r, NAME);
-    expect(verifyImageToken(token, sig, NAME)).toEqual(r);
+    expect(decryptImageRequest(encryptImageRequest(r, NAME), NAME)).toEqual(r);
   });
 
-  test('rejects a tampered signature', () => {
+  test('token is opaque ciphertext — src not readable', () => {
     installConfig();
-    const { token, sig } = signImageToken(req(), NAME);
-    const tampered = (sig[0] === 'A' ? 'B' : 'A') + sig.slice(1);
-    expect(verifyImageToken(token, tampered, NAME)).toBeNull();
+    const token = encryptImageRequest(req({ src: 'https://internal.evil/secret' }), NAME);
+    expect(Buffer.from(token, 'base64url').toString('utf-8')).not.toContain('internal.evil');
   });
 
-  test('rejects a tampered token (different src, same sig)', () => {
+  test('rejects a tampered payload', () => {
     installConfig();
-    const { sig } = signImageToken(req({ src: 'https://example.com/a.png' }), NAME);
-    const evil = signImageToken(req({ src: 'https://internal.evil/secret' }), NAME).token;
-    expect(verifyImageToken(evil, sig, NAME)).toBeNull();
+    const token = encryptImageRequest(req(), NAME);
+    const mid = Math.floor(token.length / 2);
+    const tampered = token.slice(0, mid) + (token[mid] === 'A' ? 'B' : 'A') + token.slice(mid + 1);
+    expect(decryptImageRequest(tampered, NAME)).toBeNull();
   });
 
-  test('rejects a tampered filename (same payload + sig)', () => {
+  test('rejects a tampered filename (AAD mismatch)', () => {
     installConfig();
-    const { token, sig } = signImageToken(req(), NAME);
-    expect(verifyImageToken(token, sig, 'evil-200x200.webp')).toBeNull();
+    const token = encryptImageRequest(req(), NAME);
+    expect(decryptImageRequest(token, 'evil-200x200.webp')).toBeNull();
   });
 
-  test('round-trips a long src via the compressed path', () => {
+  test('round-trips a long src (compressed path)', () => {
     installConfig();
     const r = req({ src: 'https://example.com/' + 'segment/'.repeat(40) + 'image.png' });
-    const { token, sig } = signImageToken(r, NAME);
-    expect(token.startsWith('~')).toBe(true);
-    expect(verifyImageToken(token, sig, NAME)).toEqual(r);
+    expect(decryptImageRequest(encryptImageRequest(r, NAME), NAME)).toEqual(r);
   });
 });

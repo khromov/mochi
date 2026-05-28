@@ -1,6 +1,6 @@
 import { getImageRuntime } from './config';
 import { fetchImageSource } from './fetchSource';
-import { verifyImageToken } from './imageCrypto';
+import { decryptImageRequest } from './imageCrypto';
 import { variantId } from './imageCache';
 import { resizeImage } from './resize';
 import { ImageError } from './types';
@@ -18,9 +18,9 @@ function cacheControl(options: ResolvedImageOptions): string {
 }
 
 /**
- * The `/_mochi/image/<filename>?payload=…&sig=…` endpoint: verify the signature,
- * then serve from the stale-while-revalidate disk cache, regenerating on miss
- * by fetching + resizing the source. The path filename is cosmetic.
+ * The `/_mochi/image/<filename>?payload=…` endpoint: decrypt the payload (the
+ * filename is bound as AAD), then serve from the stale-while-revalidate disk
+ * cache, regenerating on miss by fetching + resizing the source.
  */
 export function createImageHandler(): (req: Request) => Promise<Response> {
   return async (req: Request): Promise<Response> => {
@@ -29,17 +29,16 @@ export function createImageHandler(): (req: Request) => Promise<Response> {
     const url = new URL(req.url);
     const filename = url.pathname.split('/').pop() ?? '';
     const token = url.searchParams.get('payload') ?? '';
-    const sig = url.searchParams.get('sig') ?? '';
 
-    if (!token || !sig) {
-      return textResponse(403, 'Missing signature');
+    if (!token) {
+      return textResponse(403, 'Missing payload');
     }
 
-    // The signature binds both the payload and the cosmetic filename, so a
-    // tampered path (e.g. swapped /my-image.webp) fails verification.
-    const request = verifyImageToken(token, sig, filename);
+    // The filename is bound as GCM AAD, so a tampered path (e.g. swapped
+    // /my-image.webp) or payload fails decryption.
+    const request = decryptImageRequest(token, filename);
     if (!request) {
-      return textResponse(403, 'Invalid signature');
+      return textResponse(403, 'Invalid payload');
     }
 
     if (!options.outputFormats.includes(request.fmt)) {

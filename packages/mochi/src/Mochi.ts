@@ -43,7 +43,7 @@ import { requestContext } from './requestContext';
 import type { MochiRequestContext } from './requestContext';
 import { finalizeCookieHeaders } from './cookies';
 import { makeRequestContextBuilder } from './requestSetup';
-import { verifyAndDecodeProps } from './serverIslandCrypto';
+import { decryptProps } from './serverIslandCrypto';
 import { createImageHandler } from './image/imageEndpoint';
 import { initMochiConfig } from './mochiConfig';
 import { logger, setLogLevel, DEFAULT_LOG_LEVEL, type LogLevel } from './log';
@@ -921,9 +921,9 @@ export class Mochi {
       // Verify signature and decode props (empty means no props)
       let props: Record<string, unknown>;
       if (signedProps) {
-        const propsJson = verifyAndDecodeProps(signedProps);
+        const propsJson = decryptProps(signedProps);
         if (propsJson === null) {
-          return new Response('Invalid props signature', { status: 403 });
+          return new Response('Invalid props', { status: 403 });
         }
         props = devalueParse(propsJson) as Record<string, unknown>;
       } else {

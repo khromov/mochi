@@ -200,7 +200,7 @@ describe('preprocessHydratable', () => {
     expect(hydratables).toHaveLength(0);
     expect(transformed).toContain('<mochi-server-island');
     expect(transformed).toContain('component-name="Greeting"');
-    expect(transformed).toContain('__mochi_sign_props__');
+    expect(transformed).toContain('__mochi_encrypt_props__');
     expect(transformed).toContain('__mochi_stringify__');
     expect(transformed).toContain('name: "World"');
     expect(transformed).toContain('__MOCHI_SERVER_CSS_URL__Greeting__');
@@ -226,7 +226,7 @@ describe('preprocessHydratable', () => {
     expect(transformed).toContain('<mochi-server-island');
     expect(transformed).toContain('also-hydrate="eager"');
     expect(transformed).toContain('__MOCHI_COMPONENT_URL__Widget__');
-    expect(transformed).toContain('__mochi_sign_props__');
+    expect(transformed).toContain('__mochi_encrypt_props__');
   });
 
   test('mochi:defer + mochi:hydrate:visible combination', () => {
@@ -256,11 +256,11 @@ describe('preprocessHydratable', () => {
     expect(transformed).not.toContain('server-options');
   });
 
-  test('mochi:defer injects signProps import', () => {
+  test('mochi:defer injects encryptProps import', () => {
     const source = `<script lang="ts">\nimport Srv from "./Srv.svelte";\n</script>\n<Srv mochi:defer />`;
     const { transformed } = preprocessHydratable(source, '/test/File.svelte');
 
-    expect(transformed).toContain('import { signProps as __mochi_sign_props__ } from "mochi-server-island-runtime"');
+    expect(transformed).toContain('import { encryptProps as __mochi_encrypt_props__ } from "mochi-server-island-runtime"');
     expect(transformed).toContain('import { stringify as __mochi_stringify__ } from "mochi-framework"');
   });
 

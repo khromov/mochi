@@ -176,12 +176,12 @@ Cookies are an exception worth knowing: the browser sends them along with the is
 
 ### See it live
 
-The finished app is running on this site at [**/docs/your-first-mochi-app/hello**](/docs/your-first-mochi-app/hello). Click the heart, then try [`/docs/your-first-mochi-app/hello?name=Alice`](/docs/your-first-mochi-app/hello?name=Alice) to watch the deferred fragment swap in a personalized greeting. The [debug bar](/docs/debug-bar/)'s **Islands** panel groups the two islands separately: `LikeButton` under hydrated islands as `mochi:hydrate`, and `Visitor` under server islands as `mochi:defer` with a lock icon (server-island props are HMAC-signed before being sent to the client).
+The finished app is running on this site at [**/docs/your-first-mochi-app/hello**](/docs/your-first-mochi-app/hello). Click the heart, then try [`/docs/your-first-mochi-app/hello?name=Alice`](/docs/your-first-mochi-app/hello?name=Alice) to watch the deferred fragment swap in a personalized greeting. The [debug bar](/docs/debug-bar/)'s **Islands** panel groups the two islands separately: `LikeButton` under hydrated islands as `mochi:hydrate`, and `Visitor` under server islands as `mochi:defer` with a lock icon (server-island props are encrypted before being sent to the client).
 
 ### What's next
 
 - [Defining routes](/docs/defining-routes/) — `Mochi.page`, `Mochi.api`, `Mochi.ws`, `Mochi.sse`, and the full `serverProps` contract
 - [Selective hydration](/docs/selective-hydration/) — `mochi:hydrate`, `islandId`, `isHydratable`
 - [Lazy hydration](/docs/lazy-hydration/) — `mochi:hydrate:visible` for below-the-fold islands
-- [Server islands](/docs/server-islands/) — `mochi:defer`, signed props, and `MOCHI_KEY`
+- [Server islands](/docs/server-islands/) — `mochi:defer`, encrypted props, and `MOCHI_KEY`
 - [Passing props to islands](/docs/island-props/) — every type `devalue` can round-trip
