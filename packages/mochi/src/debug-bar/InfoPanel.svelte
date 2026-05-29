@@ -60,6 +60,15 @@
     ];
     return rows;
   });
+
+  function matches(row: { key: string; value: string }, q: string): boolean {
+    return row.key.toLowerCase().includes(q) || row.value.toLowerCase().includes(q);
+  }
+
+  let normalizedQuery = $derived(query.trim().toLowerCase());
+  let filteredVersionRows = $derived(normalizedQuery ? versionRows.filter((r) => matches(r, normalizedQuery)) : versionRows);
+  let filteredConfigRows = $derived(normalizedQuery ? configRows.filter((r) => matches(r, normalizedQuery)) : configRows);
+  let noMatches = $derived(normalizedQuery !== '' && filteredVersionRows.length === 0 && filteredConfigRows.length === 0);
 </script>
 
 <DebugPanel title="Info" color="#9ab8c8" {open} {onclose}>
@@ -67,9 +76,11 @@
     {#if versionRows.length === 0 && configRows.length === 0}
       <div class="info-empty">No info available</div>
     {:else}
-      {#if versionRows.length > 0}
+      <input class="info-search" type="search" placeholder="Filter by key or value…" bind:value={query} aria-label="Filter info" />
+
+      {#if filteredVersionRows.length > 0}
         <div class="section-label">Versions</div>
-        {#each versionRows as row (row.key)}
+        {#each filteredVersionRows as row (row.key)}
           <div class="info-item">
             <span class="info-key">{row.key}</span>
             <span class="info-val">{row.value}</span>
@@ -77,20 +88,64 @@
         {/each}
       {/if}
 
-      {#if configRows.length > 0}
+      {#if filteredConfigRows.length > 0}
         <div class="section-label">Config</div>
-        {#each configRows as row (row.key)}
+        {#each filteredConfigRows as row (row.key)}
           <div class="info-item">
             <span class="info-key">{row.key}</span>
             <span class="info-val" class:muted={row.muted}>{row.value}</span>
           </div>
         {/each}
       {/if}
+
+      {#if noMatches}
+        <div class="info-empty">No matches for "{query.trim()}"</div>
+      {/if}
     {/if}
   </div>
 </DebugPanel>
 
 <style>
+  .info-search {
+    width: 100%;
+    box-sizing: border-box;
+    background: #272a22;
+    color: #e8e6dd;
+    border: 1px solid #353930;
+    border-radius: 6px;
+    padding: 6px 10px;
+    margin-bottom: 6px;
+    font-size: 11px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    line-height: 1.5;
+    outline: none;
+    transition:
+      border-color 120ms ease,
+      box-shadow 120ms ease;
+  }
+  .info-search::placeholder {
+    color: #72786c;
+    font-style: italic;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+  .info-search:focus {
+    border-color: #9ab8c8;
+    box-shadow: 0 0 0 1px rgba(154, 184, 200, 0.25);
+  }
+  .info-search::-webkit-search-cancel-button {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 12px;
+    width: 12px;
+    background: #72786c;
+    border-radius: 50%;
+    cursor: pointer;
+    mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M6 6l12 12M18 6L6 18' stroke='black' stroke-width='3' stroke-linecap='round'/></svg>")
+      center / 10px 10px no-repeat;
+  }
+  .info-search::-webkit-search-cancel-button:hover {
+    background: #9ab8c8;
+  }
   .info-empty {
     color: #72786c;
     font-size: 11px;
@@ -106,9 +161,6 @@
     text-transform: uppercase;
     letter-spacing: 0.1em;
     font-family: inherit;
-  }
-  .section-label:first-child {
-    padding-top: 0;
   }
   .info-item {
     background: #272a22;
@@ -127,7 +179,6 @@
     flex-shrink: 0;
     min-width: 140px;
     font-size: 10px;
-    text-transform: uppercase;
     letter-spacing: 0.06em;
     padding-top: 1px;
   }
