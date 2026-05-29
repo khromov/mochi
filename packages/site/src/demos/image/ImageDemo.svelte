@@ -26,20 +26,23 @@
   <h3>Component</h3>
   <p>A plain <code>&lt;Image&gt;</code> renders a single resized <code>&lt;img&gt;</code> with no client JS:</p>
   <div class="frame">
-    <Image src={remote} width={320} height={200} alt="A resized random photo" />
+    <Image src={remote} width={640} height={400} alt="A resized random photo" />
   </div>
 
   <h3>With a blur placeholder</h3>
-  <p>Add <code>placeholder</code> to show a ThumbHash blur that fades out once the image loads. The placeholder shows first, then the loaded image it fades into:</p>
+  <p>
+    Add <code>placeholder</code> to show a ThumbHash blur until the image loads — it's the <code>&lt;img&gt;</code>'s own <code>background-image</code>, so no client JS is needed.
+    The placeholder shows first, then the loaded image that paints over it:
+  </p>
   {#if blur}
     <div class="frame blur-compare">
       <span class="blur-compare__placeholder" style:background-image="url({blur})" role="img" aria-label="ThumbHash blur placeholder"></span>
       <span class="blur-compare__arrow"><ArrowDown size={28} aria-hidden="true" /></span>
-      <Image src={remote} width={480} height={320} placeholder alt="A resized random photo with blur-up" />
+      <Image src={remote} width={600} height={400} placeholder alt="A resized random photo with blur-up" />
     </div>
   {:else}
     <div class="frame">
-      <Image src={remote} width={480} height={320} alt="A resized random photo with blur-up" placeholder />
+      <Image src={remote} width={600} height={400} alt="A resized random photo with blur-up" placeholder />
     </div>
   {/if}
 
@@ -87,9 +90,9 @@
     gap: 0.5rem;
   }
   .blur-compare__placeholder {
-    width: 480px;
+    width: 600px;
     max-width: 100%;
-    aspect-ratio: 480 / 320;
+    aspect-ratio: 3 / 2;
     background-size: cover;
     background-position: center;
     border-radius: var(--radius-md);

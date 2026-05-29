@@ -45,7 +45,31 @@
   {loading}
   {decoding}
   class={className}
+  class:mochi-blur-up={!!blur}
   style:background-image={blur ? `url(${blur})` : undefined}
   style:background-size={blur ? 'cover' : undefined}
   style:background-position={blur ? 'center' : undefined}
 />
+
+<style>
+  /* Blur-up with zero JS: the resized image paints over its ThumbHash
+     background and sharpens in. Pure CSS can't hook the image's load event, so
+     this animates on first paint rather than on load — fine for small resized
+     images, and it degrades to an instant swap under reduced-motion. */
+  .mochi-blur-up {
+    animation: mochi-blur-up 0.2s ease-out both;
+  }
+  @keyframes mochi-blur-up {
+    from {
+      filter: blur(12px);
+    }
+    to {
+      filter: blur(0);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .mochi-blur-up {
+      animation: none;
+    }
+  }
+</style>

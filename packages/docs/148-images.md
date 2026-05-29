@@ -24,7 +24,7 @@ Import `Image` and point it at a source. It renders a single `<img>` with a sign
 <Image src="https://example.com/photo.jpg" width={640} height={400} alt="A photo" />
 ```
 
-Add `placeholder` to render a [ThumbHash](https://evanw.github.io/thumbhash/) blur that shows until the image loads. It's set as the `<img>`'s own `background-image`, so it needs no client JS — the loaded image simply paints over it:
+Add `placeholder` to render a [ThumbHash](https://evanw.github.io/thumbhash/) blur that shows until the image loads. It's set as the `<img>`'s own `background-image`, so it needs no client JS — the loaded image paints over it and sharpens in via a CSS blur-up animation (disabled under `prefers-reduced-motion`):
 
 ```svelte
 <Image src="https://example.com/photo.jpg" width={640} height={400} alt="A photo" placeholder />
