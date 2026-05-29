@@ -24,7 +24,7 @@ Import `Image` and point it at a source. It renders a single `<img>` with a sign
 <Image src="https://example.com/photo.jpg" width={640} height={400} alt="A photo" />
 ```
 
-Add `placeholder` to render a [ThumbHash](https://evanw.github.io/thumbhash/) blur that fades out once the image loads:
+Add `placeholder` to render a [ThumbHash](https://evanw.github.io/thumbhash/) blur that shows until the image loads. It's set as the `<img>`'s own `background-image`, so it needs no client JS — the loaded image simply paints over it:
 
 ```svelte
 <Image src="https://example.com/photo.jpg" width={640} height={400} alt="A photo" placeholder />
@@ -38,7 +38,7 @@ Add `placeholder` to render a [ThumbHash](https://evanw.github.io/thumbhash/) bl
 | `format`               | `webp`     | `webp` \| `jpeg` \| `png` \| `avif`                                    |
 | `quality`              | `80`       | 1–100 (ignored for `png`)                                              |
 | `fit`                  | `inside`   | `inside` keeps aspect & fits within W×H; `fill` stretches to exact W×H |
-| `placeholder`          | `false`    | Blur-up via a tiny hydrated island                                     |
+| `placeholder`          | `false`    | Blur-up via an inline `background-image`; pure SSR, no client JS       |
 | `loading` / `decoding` | lazy/async | Passed through to `<img>`                                              |
 
 > `Bun.Image` supports only `fit: 'inside'` and `fit: 'fill'` — there is no crop/"cover" mode. To get an exact square from a non-square source you must use `fill` (which stretches); otherwise `inside` keeps the aspect ratio and the output won't fill both dimensions.
