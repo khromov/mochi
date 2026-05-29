@@ -19,13 +19,14 @@ In production (`development: false`) the toolbar mount point, its entry script, 
 
 ### Buttons
 
-| Button           | Opens                                                                            |
-| ---------------- | -------------------------------------------------------------------------------- |
-| Status dot       | Live-reload connection state — green pulse when connected, red when dropped.     |
-| `Request`        | Matched route pattern, pathname, params, response size, `Set-Cookie`s, headers.  |
-| `Islands`        | Per-island breakdown with mode tag, props size, and a locate-on-page button.     |
-| `Warnings`       | Anything pushed through `window.__mochi_warn(msg)`. Hidden when the queue empty. |
-| `Bundle Stats ↗` | Opens the bundle stats page (`/_mochi/client/stats`) in a new tab.               |
+| Button           | Opens                                                                              |
+| ---------------- | ---------------------------------------------------------------------------------- |
+| Status dot       | Live-reload connection state — green pulse when connected, red when dropped.       |
+| `Request`        | Matched route pattern, pathname, params, response size, `Set-Cookie`s, headers.    |
+| `Info`           | Mochi / Svelte / Bun versions and a snapshot of the active `Mochi.serve()` config. |
+| `Islands`        | Per-island breakdown with mode tag, props size, and a locate-on-page button.       |
+| `Warnings`       | Anything pushed through `window.__mochi_warn(msg)`. Hidden when the queue empty.   |
+| `Bundle Stats ↗` | Opens the bundle stats page (`/_mochi/client/stats`) in a new tab.                 |
 
 ### Islands panel
 
@@ -46,3 +47,7 @@ Any code can queue a warning into the toolbar by calling `window.__mochi_warn('m
 ### Request panel
 
 Reads its data from `window.__mochi_debug`, which the framework seeds once per response. The HTML size shown in the title is taken from `PerformanceNavigationTiming` — when the response was compressed, both decoded and over-the-wire sizes are shown side by side.
+
+### Info panel
+
+Shows the running **Mochi**, **Svelte**, and **Bun** versions, plus a serializable snapshot of the resolved `Mochi.serve()` config — mode, port, trailing-slash policy, log level, route count, and whether warmup, live-reload, CSRF, proxy, middleware, etc. are active. These values are constant for the server's lifetime, so they're captured once at startup rather than per request. Handy when reporting an issue or confirming which options actually took effect.

@@ -188,7 +188,8 @@ export class Mochi {
   }
 
   static async serve(options: MochiServeOptions): Promise<Server<undefined>> {
-    await checkEnvironment();
+    const { svelteVersion } = await checkEnvironment();
+    const mochiVersion = ((await Bun.file(path.join(import.meta.dir, '..', 'package.json')).json()) as { version: string }).version;
     initExtensions(options);
     await runHook('mochi:init', { options });
     await initMochiConfig(options);
@@ -244,6 +245,31 @@ export class Mochi {
     const { enabled: loggerEnabled = true, level: configuredLevel, ...loggerOptions } = options.logger ?? {};
     const resolvedLogLevel: LogLevel = configuredLevel ?? (development ? 'info' : DEFAULT_LOG_LEVEL);
     setLogLevel(resolvedLogLevel);
+
+    // Versions + config are constant for the server's lifetime, so snapshot them
+    // once here and merge into every page's debug payload rather than recomputing.
+    const serverDebugInfo: Partial<DebugBarData> = {
+      mochiVersion,
+      svelteVersion,
+      bunVersion: Bun.version,
+      config: {
+        mode: development ? 'development' : 'production',
+        port: options.port,
+        hostname: options.hostname,
+        debugBar: debugBarEnabled,
+        liveReload: liveReloadEnabled,
+        warmup: warmupEnabled,
+        compressServerIslandProps: options.compressServerIslandProps ?? false,
+        trailingSlash: options.trailingSlash ?? 'never',
+        assetPrefix: options.assetPrefix,
+        logLevel: resolvedLogLevel,
+        middleware: !!middleware,
+        csrf: !!options.csrf,
+        proxy: !!options.proxy,
+        markdown: !!options.markdown,
+        routeCount: Object.keys(options.routes ?? {}).length,
+      },
+    };
     if (loggerEnabled) {
       consoleLogger(loggerOptions);
     }
@@ -432,7 +458,7 @@ export class Mochi {
             serverIslandClientJs,
             liveReloadClientJs,
             debugBarUrl: registry.getDebugBarUrl(),
-            debugInfo: result.debugBarData ? { ...result.debugBarData, liveReloadEnabled } : undefined,
+            debugInfo: result.debugBarData ? { ...result.debugBarData, liveReloadEnabled, ...serverDebugInfo } : undefined,
             logLevel: resolvedLogLevel,
             pageEntry: liveReloadEnabled ? path.resolve(componentPath) : undefined,
           });
