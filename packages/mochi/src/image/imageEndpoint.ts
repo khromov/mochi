@@ -13,7 +13,7 @@ function textResponse(status: number, message: string): Response {
 }
 
 /**
- * The `/_mochi/image/<filename>?payload=…` endpoint: decrypt the payload (the
+ * The `/_mochi/image/<filename>?p=…` endpoint: decrypt the payload (the
  * filename is bound as AAD), then serve from the stale-while-revalidate disk
  * cache, regenerating on miss by fetching + resizing the source.
  */
@@ -23,7 +23,7 @@ export function createImageHandler(): (req: Request) => Promise<Response> {
 
     const url = new URL(req.url);
     const filename = url.pathname.split('/').pop() ?? '';
-    const token = url.searchParams.get('payload') ?? '';
+    const token = url.searchParams.get('p') ?? '';
 
     if (!token) {
       return textResponse(403, 'Missing payload');

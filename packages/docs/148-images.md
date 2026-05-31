@@ -145,6 +145,7 @@ await Mochi.serve({
 | `maxPixels`            | `50_000_000`           | Decompression-bomb guard                     |
 | `timeToStale`          | `60_000`               | Cache time-to-stale (ms); variants follow it |
 | `timeToEvict`          | `86_400_000`           | Cache time-to-evict (ms); variants follow it |
+| `compressPayload`      | `true`                 | Deflate the encrypted URL payload            |
 
 <Callout type="warning">
 

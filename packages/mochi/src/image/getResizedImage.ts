@@ -41,15 +41,15 @@ function buildRequest(src: string, opts: ResizeImageOptions, resolved: ResolvedI
  * Build a signed, cacheable URL for a resized image. Server-side only (it reads
  * the signing secret from the Mochi config). The path is a cosmetic,
  * human-readable filename derived from the source name + dimensions; the
- * authoritative encrypted request travels in the `payload` query param (the
- * filename is bound as AAD): `/_mochi/image/my-image-500x500.webp?payload=<token>`.
+ * authoritative encrypted request travels in the `p` query param (the
+ * filename is bound as AAD): `/_mochi/image/my-image-500x500.webp?p=<token>`.
  */
 export function getResizedImage(src: string, opts: ResizeImageOptions = {}): string {
   const { options } = getImageRuntime();
   const req = buildRequest(src, opts, options);
   const filename = buildImageFilename(req);
-  const token = encryptImageRequest(req, filename);
-  const url = `${getImageAssetPrefix()}/image/${filename}?payload=${token}`;
+  const token = encryptImageRequest(req, filename, options.compressPayload);
+  const url = `${getImageAssetPrefix()}/image/${filename}?p=${token}`;
   recordForDebugBar(url, filename, req);
   return url;
 }
@@ -77,8 +77,8 @@ export function getImage(src: string, opts: OriginalImageOptions = {}): string {
   const { options } = getImageRuntime();
   const req = buildOriginalRequest(src, opts, options);
   const filename = buildOriginalFilename(req);
-  const token = encryptImageRequest(req, filename);
-  const url = `${getImageAssetPrefix()}/image/${filename}?payload=${token}`;
+  const token = encryptImageRequest(req, filename, options.compressPayload);
+  const url = `${getImageAssetPrefix()}/image/${filename}?p=${token}`;
   recordForDebugBar(url, filename, req);
   return url;
 }
