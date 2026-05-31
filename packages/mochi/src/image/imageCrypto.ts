@@ -8,8 +8,8 @@
 import { encryptPayload, decryptPayload } from '../payloadCrypto';
 import type { ImageRequest } from './types';
 
-export function encryptImageRequest(req: ImageRequest, filename: string): string {
-  return encryptPayload(JSON.stringify(req), { aad: filename });
+export function encryptImageRequest(req: ImageRequest, filename: string, compress = true): string {
+  return encryptPayload(JSON.stringify(req), { aad: filename, compress });
 }
 
 export function decryptImageRequest(token: string, filename: string): ImageRequest | null {

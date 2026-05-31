@@ -287,3 +287,16 @@ Context fields:
   return line;
 }
 ```
+
+#### `image:maxRedirects`
+
+Override how many upstream redirects the image fetcher will follow when resolving a source. Each hop is re-validated against `allowedHosts` / `blockPrivateNetworks` (an allowed host can't redirect into a private network), so this caps how long that chain may be. The default is `5`; return a smaller number to tighten it, `0` to reject any redirect, or a larger number for sources behind several hops. The `src` being fetched is in the context, so you can decide per-host. Sync.
+
+```ts
+await Mochi.serve({
+  filters: {
+    'image:maxRedirects': (max, { src }) => (new URL(src).hostname === 'cdn.example.com' ? 10 : max),
+  },
+  routes,
+});
+```

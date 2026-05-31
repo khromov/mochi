@@ -56,6 +56,15 @@ describe('encryptImageRequest + decryptImageRequest', () => {
     expect(decryptImageRequest(encryptImageRequest(r, NAME), NAME)).toEqual(r);
   });
 
+  test('compress=false skips compression but still round-trips', () => {
+    installConfig();
+    const r = req({ src: 'https://example.com/' + 'segment/'.repeat(40) + 'image.png' });
+    const compressed = encryptImageRequest(r, NAME, true);
+    const raw = encryptImageRequest(r, NAME, false);
+    expect(raw.length).toBeGreaterThan(compressed.length);
+    expect(decryptImageRequest(raw, NAME)).toEqual(r);
+  });
+
   test('round-trips a full-size original request', () => {
     installConfig();
     const r = req({ orig: true });

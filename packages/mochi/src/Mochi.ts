@@ -921,7 +921,7 @@ export class Mochi {
       // Decrypt props (empty means no props)
       let props: Record<string, unknown>;
       if (signedProps) {
-        const propsJson = decryptProps(signedProps);
+        const propsJson = decryptProps(signedProps, componentName);
         if (propsJson === null) {
           return new Response('Invalid props', { status: 403 });
         }

@@ -77,6 +77,7 @@ export interface MochiFilterValue {
   'compile:preprocessors': PreprocessorGroup[];
   'publicDir:scan': Map<string, string>;
   'consoleLogger:line': string;
+  'image:maxRedirects': number;
 }
 
 // Optional per-filter override for the *return* type when it differs from the
@@ -115,6 +116,7 @@ export interface MochiFilterContext {
     /** The originating `mochiEvents` event. Narrow on `source.name` for typed access to per-event fields. */
     source: ConsoleLoggerSource;
   };
+  'image:maxRedirects': { src: string };
 }
 
 export interface MochiFilterKindMap {
@@ -128,6 +130,7 @@ export interface MochiFilterKindMap {
   'compile:preprocessors': 'sync';
   'publicDir:scan': 'async';
   'consoleLogger:line': 'sync';
+  'image:maxRedirects': 'sync';
 }
 
 type FilterReturn<K extends keyof MochiFilterValue> = K extends keyof MochiFilterReturn ? MochiFilterReturn[K] : MochiFilterValue[K];
@@ -165,6 +168,7 @@ const FILTER_KINDS: { [K in keyof MochiFilterValue]: MochiKind } = {
   'compile:preprocessors': 'sync',
   'publicDir:scan': 'async',
   'consoleLogger:line': 'sync',
+  'image:maxRedirects': 'sync',
 };
 
 // Pinned on globalThis so duplicate bundled copies of mochi-framework share one

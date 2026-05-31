@@ -56,7 +56,7 @@ const url = getResizedImage('https://example.com/photo.jpg', {
   format: 'webp',
   quality: 80,
 });
-// → /_mochi/image/photo-500x500.webp?payload=<encrypted token>
+// → /_mochi/image/photo-500x500.webp?p=<encrypted token>
 ```
 
 ### Full-size originals
@@ -67,7 +67,7 @@ const url = getResizedImage('https://example.com/photo.jpg', {
 import { getImage, getImageBytes } from 'mochi-framework';
 
 const url = getImage('https://example.com/photo.jpg');
-// → /_mochi/image/photo-original.jpg?payload=<token>   — use in <img src>
+// → /_mochi/image/photo-original.jpg?p=<token>   — use in <img src>
 
 const orig = await getImageBytes('https://example.com/photo.jpg');
 // → { bytes, contentType } | null
@@ -100,6 +100,8 @@ await Mochi.serve({
 - **Expired** (past `timeToEvict`): re-fetched synchronously.
 
 When the original is re-fetched, any existing variants are served stale once more and regenerated from the new original in the background; when the original is evicted, its variants are dropped with it.
+
+Served images carry an `ETag` (tied to the cache generation) but **no** `Cache-Control` — browsers revalidate against the endpoint, getting a fast `304` while the content is unchanged and fresh bytes once it changes. That keeps the URL stable while letting `invalidateImage()` actually reach browsers on their next request.
 
 ### Invalidation
 
@@ -146,7 +148,7 @@ await Mochi.serve({
 
 <Callout type="warning">
 
-**Encryption is the security boundary.** The payload is AES-256-GCM encrypted with a key derived from your `MOCHI_KEY`, so only your server can mint URLs and the source URL/params stay hidden; the cosmetic filename is bound as authenticated data (tampering it fails decryption). Still, if you pass a **user-controlled** `src` into `getResizedImage()`, keep `blockPrivateNetworks` on (the default) and prefer an `allowedHosts` allowlist so a user can't proxy requests to internal services. SVG is never decoded.
+**Encryption is the security boundary.** The payload is AES-256-GCM encrypted with a key derived from your `MOCHI_KEY`, so only your server can mint URLs and the source URL/params stay hidden; the cosmetic filename is bound as authenticated data (tampering it fails decryption). Still, if you pass a **user-controlled** `src` into `getResizedImage()`, keep `blockPrivateNetworks` on (the default) and prefer an `allowedHosts` allowlist so a user can't proxy requests to internal services. Upstream redirects are followed but **every hop is re-validated** against those same checks, so an allowed host can't `302` you into a private network; cap the hop count with the [`image:maxRedirects`](/docs/extensions/#imagemaxredirects) filter. SVG is never decoded.
 
 </Callout>
 

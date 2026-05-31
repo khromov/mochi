@@ -1,4 +1,5 @@
 import { assertAllowedSource } from './ssrfGuard';
+import { applyFilter } from '../extensions';
 import { ImageError } from './types';
 import type { ResolvedImageOptions } from './types';
 
@@ -7,11 +8,14 @@ export interface FetchedSource {
   contentType: string | null;
 }
 
-const MAX_REDIRECTS = 5;
+const DEFAULT_MAX_REDIRECTS = 5;
 
 export async function fetchImageSource(src: string, opts: ResolvedImageOptions): Promise<FetchedSource> {
   // One timeout bounds the whole chain (all redirect hops), not each hop.
   const signal = AbortSignal.timeout(opts.fetchTimeoutMs);
+
+  // Cap re-validated redirect hops; overridable per-source via the filter.
+  const maxRedirects = applyFilter('image:maxRedirects', DEFAULT_MAX_REDIRECTS, { src });
 
   // Follow redirects manually so the SSRF guard re-validates EVERY hop: an
   // allowed/public host must not be able to 302 us into a private network.
@@ -35,7 +39,7 @@ export async function fetchImageSource(src: string, opts: ResolvedImageOptions):
 
     const location = res.headers.get('location');
     if (res.status >= 300 && res.status < 400 && location) {
-      if (hop >= MAX_REDIRECTS) {
+      if (hop >= maxRedirects) {
         throw new ImageError(502, 'Too many redirects');
       }
       await res.body?.cancel();

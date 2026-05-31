@@ -37,6 +37,8 @@ function withCtx<T>(fn: (ctx: MochiRequestContext) => T, opts?: { dev?: boolean 
   return requestContext.run(ctx, () => fn(ctx));
 }
 
+const COMP = 'Counter';
+
 afterEach(() => {
   removeConfig();
 });
@@ -45,14 +47,14 @@ describe('encryptProps + decryptProps', () => {
   test('round-trips: decrypt returns what encrypt sealed', () => {
     installConfig();
     const json = devalueStringify({ islandId: 'mochi-abc-0', name: 'World' });
-    const token = encryptProps(json);
-    expect(decryptProps(token)).toBe(json);
+    const token = encryptProps(json, COMP);
+    expect(decryptProps(token, COMP)).toBe(json);
   });
 
   test('token is opaque ciphertext, not readable JSON', () => {
     installConfig();
     const json = devalueStringify({ islandId: 'mochi-abc-0', secret: 'do-not-leak' });
-    const token = encryptProps(json);
+    const token = encryptProps(json, COMP);
     const decoded = Buffer.from(token, 'base64url').toString('utf-8');
     expect(decoded).not.toContain('do-not-leak');
     expect(decoded).not.toContain('islandId');
@@ -61,16 +63,23 @@ describe('encryptProps + decryptProps', () => {
   test('rejects a tampered token', () => {
     installConfig();
     const json = devalueStringify({ islandId: 'mochi-abc-0' });
-    const token = encryptProps(json);
+    const token = encryptProps(json, COMP);
     const mid = Math.floor(token.length / 2);
     const tampered = token.slice(0, mid) + (token[mid] === 'A' ? 'B' : 'A') + token.slice(mid + 1);
-    expect(decryptProps(tampered)).toBeNull();
+    expect(decryptProps(tampered, COMP)).toBeNull();
+  });
+
+  test('rejects a token replayed against a different component (AAD mismatch)', () => {
+    installConfig();
+    const json = devalueStringify({ islandId: 'mochi-abc-0', name: 'World' });
+    const token = encryptProps(json, COMP);
+    expect(decryptProps(token, 'OtherIsland')).toBeNull();
   });
 
   test('rejects garbage input', () => {
     installConfig();
-    expect(decryptProps('not-a-valid-token')).toBeNull();
-    expect(decryptProps('')).toBeNull();
+    expect(decryptProps('not-a-valid-token', COMP)).toBeNull();
+    expect(decryptProps('', COMP)).toBeNull();
   });
 });
 
@@ -81,7 +90,7 @@ describe('encryptProps debug bar recording', () => {
       (ctx) => {
         const props = { islandId: 'mochi-test-0', greeting: 'Hello', count: 42 };
         const json = devalueStringify(props);
-        encryptProps(json);
+        encryptProps(json, COMP);
 
         const recorded = ctx.debugBarData!.islandProps['mochi-test-0'];
         expect(recorded).toBeDefined();
@@ -99,9 +108,9 @@ describe('encryptProps debug bar recording', () => {
     installConfig();
     withCtx((ctx) => {
       const json = devalueStringify({ islandId: 'mochi-test-0', x: 1 });
-      const token = encryptProps(json);
+      const token = encryptProps(json, COMP);
       expect(ctx.debugBarData).toBeUndefined();
-      expect(decryptProps(token)).toBe(json);
+      expect(decryptProps(token, COMP)).toBe(json);
     });
   });
 
@@ -110,10 +119,10 @@ describe('encryptProps debug bar recording', () => {
     const json = devalueStringify({ islandId: 'mochi-test-0' });
     let token: string | undefined;
     expect(() => {
-      token = encryptProps(json);
+      token = encryptProps(json, COMP);
     }).not.toThrow();
     expect(token).toBeDefined();
-    expect(decryptProps(token!)).toBe(json);
+    expect(decryptProps(token!, COMP)).toBe(json);
   });
 
   test('encryption still works even if debug recording fails', () => {
@@ -122,7 +131,7 @@ describe('encryptProps debug bar recording', () => {
       (ctx) => {
         // Pass invalid devalue JSON — debug recording should fail silently
         const badJson = '{not valid devalue}';
-        const token = encryptProps(badJson);
+        const token = encryptProps(badJson, COMP);
         expect(token).toBeDefined();
         expect(Object.keys(ctx.debugBarData!.islandProps)).toHaveLength(0);
       },
