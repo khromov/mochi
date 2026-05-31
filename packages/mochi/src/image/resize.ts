@@ -44,10 +44,6 @@ const EXT: Record<ImageFormat, string> = {
   avif: 'avif',
 };
 
-export function mimeForFormat(fmt: ImageFormat): string {
-  return MIME[fmt];
-}
-
 export function extForFormat(fmt: ImageFormat): string {
   return EXT[fmt];
 }

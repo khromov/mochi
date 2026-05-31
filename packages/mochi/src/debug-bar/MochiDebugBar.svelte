@@ -429,4 +429,101 @@
     background: rgba(233, 168, 154, 0.3);
     color: #f4b6a7;
   }
+
+  /* Shared expandable-row chrome for IslandRow + ImageRow. Bounded to the debug
+     bar so the generic class names never leak into the host page. */
+  :global(.mochi-debug-bar-root .island-row) {
+    margin-bottom: 3px;
+  }
+  :global(.mochi-debug-bar-root .island-row:last-child) {
+    margin-bottom: 0;
+  }
+  :global(.mochi-debug-bar-root .island-item) {
+    background: #272a22;
+    color: #e8e6dd;
+    padding: 6px 10px;
+    border-radius: 6px;
+    border: 1px solid #353930;
+    font-size: 11px;
+    line-height: 1.5;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    transition:
+      background 120ms ease,
+      border-color 120ms ease;
+  }
+  :global(.mochi-debug-bar-root .island-item:hover) {
+    background: #2d3128;
+    border-color: #434836;
+  }
+  :global(.mochi-debug-bar-root .island-row.open .island-item) {
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+    background: #2d3128;
+    border-bottom-color: transparent;
+  }
+  :global(.mochi-debug-bar-root .island-header) {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: none;
+    border: none;
+    color: inherit;
+    font: inherit;
+    padding: 0;
+    cursor: pointer;
+    text-align: left;
+    flex: 1;
+    min-width: 0;
+  }
+  :global(.mochi-debug-bar-root .chevron) {
+    color: #8e9488;
+    display: inline-flex;
+    align-items: center;
+    transition:
+      transform 120ms ease,
+      color 120ms ease;
+  }
+  :global(.mochi-debug-bar-root .island-header:hover .chevron) {
+    color: #8ab79a;
+  }
+  :global(.mochi-debug-bar-root .island-row.open .chevron) {
+    transform: rotate(90deg);
+    color: #8ab79a;
+  }
+  :global(.mochi-debug-bar-root .island-name) {
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  :global(.mochi-debug-bar-root .island-meta) {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    color: #a8ada0;
+    flex-shrink: 0;
+  }
+  :global(.mochi-debug-bar-root .island-tag) {
+    font-size: 9px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-weight: 500;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    letter-spacing: 0.02em;
+  }
+  :global(.mochi-debug-bar-root .lock-icon) {
+    display: inline-flex;
+    align-items: center;
+    color: #c4a3a8;
+    cursor: help;
+  }
+  :global(.mochi-debug-bar-root .island-size) {
+    font-size: 10px;
+    color: #8e9488;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
 </style>

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { computePlaceholder, extForFormat, mimeForFormat, resizeImage } from './resize';
+import { computePlaceholder, extForFormat, resizeImage } from './resize';
 import { ImageError } from './types';
 import type { ResolvedImageOptions } from './types';
 import type { ImageRequest } from './types';
@@ -58,7 +58,6 @@ describe('resizeImage', () => {
   });
 
   test('format helpers', () => {
-    expect(mimeForFormat('jpeg')).toBe('image/jpeg');
     expect(extForFormat('jpeg')).toBe('jpg');
     expect(extForFormat('webp')).toBe('webp');
   });

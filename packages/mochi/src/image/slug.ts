@@ -11,13 +11,16 @@ function slugifyStem(stem: string): string {
   return s || 'image';
 }
 
-function baseName(src: string): string {
-  let last: string;
+function lastSegment(src: string): string {
   try {
-    last = new URL(src).pathname.split('/').filter(Boolean).pop() ?? '';
+    return new URL(src).pathname.split('/').filter(Boolean).pop() ?? '';
   } catch {
-    last = src.split(/[?#]/)[0]?.split('/').filter(Boolean).pop() ?? '';
+    return src.split(/[?#]/)[0]?.split('/').filter(Boolean).pop() ?? '';
   }
+}
+
+function baseName(src: string): string {
+  const last = lastSegment(src);
   const dot = last.lastIndexOf('.');
   const stem = dot > 0 ? last.slice(0, dot) : last;
   return slugifyStem(stem);
@@ -45,12 +48,7 @@ export function buildImageFilename(req: ImageRequest): string {
 }
 
 function extFromSrc(src: string): string {
-  let last: string;
-  try {
-    last = new URL(src).pathname.split('/').filter(Boolean).pop() ?? '';
-  } catch {
-    last = src.split(/[?#]/)[0]?.split('/').filter(Boolean).pop() ?? '';
-  }
+  const last = lastSegment(src);
   const ext = last.slice(last.lastIndexOf('.') + 1).toLowerCase();
   return /^[a-z0-9]{1,5}$/.test(ext) && last.includes('.') ? ext : 'img';
 }
