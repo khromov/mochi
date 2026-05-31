@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import DebugPanel from './DebugPanel.svelte';
+  import X from '../icons/x.svelte';
   import type { DebugBarConfig } from '../requestContext';
 
   let { open, onclose }: { open: boolean; onclose: () => void } = $props();
@@ -76,7 +77,12 @@
     {#if versionRows.length === 0 && configRows.length === 0}
       <div class="info-empty">No info available</div>
     {:else}
-      <input class="info-search" type="search" placeholder="Filter by key or value…" bind:value={query} aria-label="Filter info" />
+      <div class="info-search-wrap">
+        <input class="info-search" type="text" placeholder="Filter by key or value…" bind:value={query} aria-label="Filter info" />
+        {#if query}
+          <button class="info-search-clear" type="button" onclick={() => (query = '')} aria-label="Clear filter"><X size={12} /></button>
+        {/if}
+      </div>
 
       {#if filteredVersionRows.length > 0}
         <div class="section-label">Versions</div>
@@ -106,6 +112,10 @@
 </DebugPanel>
 
 <style>
+  .info-search-wrap {
+    position: relative;
+    margin-bottom: 6px;
+  }
   .info-search {
     width: 100%;
     box-sizing: border-box;
@@ -113,8 +123,7 @@
     color: #e8e6dd;
     border: 1px solid #353930;
     border-radius: 6px;
-    padding: 6px 10px;
-    margin-bottom: 6px;
+    padding: 6px 28px 6px 10px;
     font-size: 11px;
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     line-height: 1.5;
@@ -132,19 +141,28 @@
     border-color: #9ab8c8;
     box-shadow: 0 0 0 1px rgba(154, 184, 200, 0.25);
   }
-  .info-search::-webkit-search-cancel-button {
-    -webkit-appearance: none;
-    appearance: none;
-    height: 12px;
-    width: 12px;
-    background: #72786c;
-    border-radius: 50%;
+  .info-search-clear {
+    position: absolute;
+    top: 50%;
+    right: 6px;
+    transform: translateY(-50%);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    padding: 2px;
+    color: #72786c;
     cursor: pointer;
-    mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M6 6l12 12M18 6L6 18' stroke='black' stroke-width='3' stroke-linecap='round'/></svg>")
-      center / 10px 10px no-repeat;
+    border-radius: 4px;
+    line-height: 0;
+    transition:
+      color 120ms ease,
+      background 120ms ease;
   }
-  .info-search::-webkit-search-cancel-button:hover {
-    background: #9ab8c8;
+  .info-search-clear:hover {
+    color: #9ab8c8;
+    background: rgba(154, 184, 200, 0.12);
   }
   .info-empty {
     color: #72786c;
