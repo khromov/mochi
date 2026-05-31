@@ -71,98 +71,20 @@
   </p>
 
   <p class="credit">
-    Photo by
-    <a href="https://unsplash.com/@mingmeap?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText" target="_blank" rel="noopener">Minh Anh Nguyen</a>
+    Photos by
+    <a href="https://unsplash.com/@mingmeap?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText" target="_blank" rel="noopener">Minh Anh Nguyen</a>,
+    <a href="https://unsplash.com/@andreas_haubold?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText" target="_blank" rel="noopener">Andreas Haubold</a>,
+    <a href="https://unsplash.com/@blackieshoot?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText" target="_blank" rel="noopener">blackieshoot</a>,
+    <a href="https://unsplash.com/@mandimelanie?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText" target="_blank" rel="noopener">Amanda Lim</a>,
+    <a href="https://unsplash.com/@negar_mz?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText" target="_blank" rel="noopener">Negar Mz</a>,
+    <a href="https://unsplash.com/@kanbi95?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText" target="_blank" rel="noopener">Vi Tran</a>,
+    <a href="https://unsplash.com/@hamadaxyz?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText" target="_blank" rel="noopener">Hamada</a>,
+    <a href="https://unsplash.com/@lea_ren?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText" target="_blank" rel="noopener">Lea Ren</a>
+    and
+    <a href="https://unsplash.com/@granatlime?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText" target="_blank" rel="noopener">Yuliia Kucherenko</a>
     on
-    <a
-      href="https://unsplash.com/photos/white-and-pink-stone-on-brown-wooden-chopping-board-ndnNP_luXvU?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText"
-      target="_blank"
-      rel="noopener">Unsplash</a
-    >
+    <a href="https://unsplash.com/?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText" target="_blank" rel="noopener">Unsplash</a>.
   </p>
-
-  <div class="credits">
-    <p>
-      Photo by
-      <a href="https://unsplash.com/@andreas_haubold?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText" target="_blank" rel="noopener">Andreas Haubold</a>
-      on
-      <a
-        href="https://unsplash.com/photos/a-blue-plate-topped-with-three-different-types-of-food-OTmHU9HdkHo?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText"
-        target="_blank"
-        rel="noopener">Unsplash</a
-      >
-    </p>
-    <p>
-      Photo by
-      <a href="https://unsplash.com/@blackieshoot?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText" target="_blank" rel="noopener">blackieshoot</a>
-      on
-      <a
-        href="https://unsplash.com/photos/a-couple-of-doughnuts-sitting-on-top-of-wooden-sticks-lIvUMz8Wq-I?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText"
-        target="_blank"
-        rel="noopener">Unsplash</a
-      >
-    </p>
-    <p>
-      Photo by
-      <a href="https://unsplash.com/@mandimelanie?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText" target="_blank" rel="noopener">Amanda Lim</a>
-      on
-      <a
-        href="https://unsplash.com/photos/a-person-wearing-gloves-and-holding-a-piece-of-food-28vJ-QrlvHQ?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText"
-        target="_blank"
-        rel="noopener">Unsplash</a
-      >
-    </p>
-    <p>
-      Photo by
-      <a href="https://unsplash.com/@negar_mz?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText" target="_blank" rel="noopener">Negar Mz</a>
-      on
-      <a
-        href="https://unsplash.com/photos/a-plate-with-eggs-and-a-couple-of-sticks-on-it-6mNhcd4fr_g?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText"
-        target="_blank"
-        rel="noopener">Unsplash</a
-      >
-    </p>
-    <p>
-      Photo by
-      <a href="https://unsplash.com/@kanbi95?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText" target="_blank" rel="noopener">Vi Tran</a>
-      on
-      <a
-        href="https://unsplash.com/photos/a-white-plate-topped-with-eggs-next-to-a-book-J9FAvf1-1ww?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText"
-        target="_blank"
-        rel="noopener">Unsplash</a
-      >
-    </p>
-    <p>
-      Photo by
-      <a href="https://unsplash.com/@hamadaxyz?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText" target="_blank" rel="noopener">Hamada</a>
-      on
-      <a
-        href="https://unsplash.com/photos/brown-wooden-chopsticks-on-brown-wooden-chopping-board-I-1zlzFd-sQ?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText"
-        target="_blank"
-        rel="noopener">Unsplash</a
-      >
-    </p>
-    <p>
-      Photo by
-      <a href="https://unsplash.com/@lea_ren?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText" target="_blank" rel="noopener">Lea Ren</a>
-      on
-      <a
-        href="https://unsplash.com/photos/a-close-up-of-a-bunch-of-cookies-with-faces-on-them-YGmhc3RZSc0?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText"
-        target="_blank"
-        rel="noopener">Unsplash</a
-      >
-    </p>
-    <p>
-      Photo by
-      <a href="https://unsplash.com/@granatlime?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText" target="_blank" rel="noopener">Yuliia Kucherenko</a>
-      on
-      <a
-        href="https://unsplash.com/photos/a-small-dessert-with-a-leaf-on-top-of-it-hcss8y8qHSI?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText"
-        target="_blank"
-        rel="noopener">Unsplash</a
-      >
-    </p>
-  </div>
 </DemoPage>
 
 <style>
@@ -228,21 +150,11 @@
     font-size: 0.8rem;
     color: var(--text-muted, #888);
   }
-  .credits {
-    margin-top: 1rem;
-    font-size: 0.8rem;
-    color: var(--text-muted, #888);
-  }
-  .credits p {
-    margin: 0.25rem 0;
-  }
-  .credit a,
-  .credits a {
+  .credit a {
     color: var(--accent);
     text-decoration: none;
   }
-  .credit a:hover,
-  .credits a:hover {
+  .credit a:hover {
     color: var(--accent-hover);
     text-decoration: underline;
   }
