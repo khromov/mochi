@@ -75,5 +75,5 @@ export const demoIconFor: Record<string, DemoIconMeta> = {
   'Cookie Vary Test': { icon: Fingerprint, label: 'Response-driven Vary: Cookie' },
   'Isomorphic URL': { icon: Link, label: 'Same url import on server and client' },
   'Image Resizing': { icon: ImageIcon, label: 'Signed, cached image resizing on Bun.Image' },
-  'Image Pipeline': { icon: WandSparkles, label: 'Full Bun.Image transform pipeline' },
+  'Advanced Image use': { icon: WandSparkles, label: 'Full Bun.Image transform pipeline' },
 };

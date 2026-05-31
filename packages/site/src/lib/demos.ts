@@ -75,7 +75,7 @@ export const demos: Demo[] = [
   },
   {
     href: '/demos/image-pipeline/',
-    title: 'Image Pipeline',
+    title: 'Advanced Image use',
     hook: 'Decode, resize, rotate, flip, modulate, and re-encode with the raw Bun.Image pipeline — every option, server-rendered to inline data URLs.',
     category: 'data',
   },

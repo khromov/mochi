@@ -1,6 +1,9 @@
 <script>
   import DemoPage from '../../components/DemoPage.svelte';
+  import CodeSnippet from '../../components/CodeSnippet.svelte';
+  import ImageCredits from '../../components/ImageCredits.svelte';
   import { loadSources } from '../../components/utils.ts';
+  import { highlightCode } from '../../lib/highlight.server';
 
   const CDN = 'https://sta-public.fra1.cdn.digitaloceanspaces.com/mochi';
   const srcUrl = (n) => `${CDN}/mochi-${n}.jpg`;
@@ -29,77 +32,87 @@
     return { url: toDataUrl(bytes, mime), size: bytes.length };
   }
 
-  // AVIF/HEIC encode is gated to the OS backend (Apple Silicon M3+, updated Windows);
-  // everywhere else the terminal rejects with ERR_IMAGE_FORMAT_UNSUPPORTED.
-  async function tryRender(n, build, mime) {
-    try {
-      return await render(n, build, mime);
-    } catch (e) {
-      if (e?.code === 'ERR_IMAGE_FORMAT_UNSUPPORTED') {
-        return null;
-      }
-      throw e;
-    }
-  }
-
   async function du(n, build, mime = 'image/webp') {
     return (await render(n, build, mime)).url;
   }
 
   const kb = (bytes) => `${(bytes / 1024).toFixed(1)} KB`;
+  const snippet = (code) => highlightCode(code, 'typescript');
+
+  // 0 — how `img` is set up; every example below reuses it
+  const codeSetup = await snippet(
+    [
+      '// fetch the bytes, then decode — Bun.Image takes a path, Buffer, or Blob',
+      "const url = 'https://sta-public.fra1.cdn.digitaloceanspaces.com/mochi/mochi-1.jpg';",
+      'const bytes = await fetch(url).then((r) => r.bytes());',
+      'const img = new Bun.Image(bytes);',
+    ].join('\n'),
+  );
 
   // 1 — metadata (no pixels decoded)
   const meta = await (await image(1)).metadata();
   const metaImg = await du(1, (im) => im.resize(260, 260, { fit: 'inside' }).webp());
+  const codeMeta = await snippet('await img.metadata();\n// { width, height, format }');
 
   // 2 — fit
   const fitFill = await du(2, (im) => im.resize(240, 240, { fit: 'fill' }).webp());
   const fitInside = await du(2, (im) => im.resize(240, 240, { fit: 'inside' }).webp());
+  const codeFit = await snippet("img.resize(240, 240, { fit: 'inside' });");
 
   // 3 — resample filter (downscale then upscale to make the kernel visible)
   const filterNearest = await du(3, (im) => im.resize(56, 56, { fit: 'inside' }).resize(240, 240, { fit: 'fill', filter: 'nearest' }).webp());
   const filterLanczos = await du(3, (im) => im.resize(56, 56, { fit: 'inside' }).resize(240, 240, { fit: 'fill', filter: 'lanczos3' }).webp());
+  const codeFilter = await snippet("img.resize(240, 240, { filter: 'nearest' });");
 
   // 4 — rotate
   const rotate90 = await du(4, (im) => im.resize(200, 200, { fit: 'inside' }).rotate(90).webp());
   const rotate180 = await du(4, (im) => im.resize(200, 200, { fit: 'inside' }).rotate(180).webp());
   const rotate270 = await du(4, (im) => im.resize(200, 200, { fit: 'inside' }).rotate(270).webp());
+  const codeRotate = await snippet('img.rotate(90);');
 
   // 5 — flip / flop
   const flipOriginal = await du(5, (im) => im.resize(200, 200, { fit: 'inside' }).webp());
   const flipped = await du(5, (im) => im.resize(200, 200, { fit: 'inside' }).flip().webp());
   const flopped = await du(5, (im) => im.resize(200, 200, { fit: 'inside' }).flop().webp());
+  const codeFlip = await snippet('img.flip(); // or img.flop()');
 
   // 6 — modulate
   const modGrey = await du(7, (im) => im.resize(200, 200, { fit: 'inside' }).modulate({ saturation: 0 }).webp());
   const modBright = await du(7, (im) => im.resize(200, 200, { fit: 'inside' }).modulate({ brightness: 1.5 }).webp());
   const modSaturate = await du(7, (im) => im.resize(200, 200, { fit: 'inside' }).modulate({ saturation: 2 }).webp());
+  const codeModulate = await snippet('img.modulate({ saturation: 0 });');
 
   // 7 — output formats + size, same source/size for a fair comparison
   const FMT_SRC = 9;
   const fmt = (build, mime) => render(FMT_SRC, (im) => build(im.resize(300, 300, { fit: 'inside' })), mime);
-  const tryFmt = (build, mime) => tryRender(FMT_SRC, (im) => build(im.resize(300, 300, { fit: 'inside' })), mime);
   const formats = [
     { label: 'jpeg({ quality: 85 })', out: await fmt((im) => im.jpeg({ quality: 85 }), 'image/jpeg') },
     { label: 'png()', out: await fmt((im) => im.png(), 'image/png') },
     { label: 'webp({ quality: 80 })', out: await fmt((im) => im.webp({ quality: 80 }), 'image/webp') },
-    { label: 'avif({ quality: 50 })', out: await tryFmt((im) => im.avif({ quality: 50 }), 'image/avif') },
-    { label: 'heic({ quality: 50 })', out: await tryFmt((im) => im.heic({ quality: 50 }), 'image/heic') },
   ];
+  const codeFormat = await snippet('img.webp({ quality: 80 });');
 
   // 8 — indexed-palette PNG
   const pngTruecolor = await render(11, (im) => im.resize(300, 300, { fit: 'inside' }).png(), 'image/png');
-  const pngPalette = await render(11, (im) => im.resize(300, 300, { fit: 'inside' }).png({ palette: true, colors: 64, dither: true }), 'image/png');
+  const pngPalette = await render(11, (im) => im.resize(300, 300, { fit: 'inside' }).png({ palette: true, colors: 32, dither: true }), 'image/png');
+  const codePalette = await snippet('img.png({ palette: true, colors: 32, dither: true });');
 
   // 9 — quality
   const qLow = await render(6, (im) => im.resize(300, 300, { fit: 'inside' }).jpeg({ quality: 20 }), 'image/jpeg');
   const qHigh = await render(6, (im) => im.resize(300, 300, { fit: 'inside' }).jpeg({ quality: 85 }), 'image/jpeg');
+  const codeQuality = await snippet('img.jpeg({ quality: 20 });');
 
   // 10 — ThumbHash placeholder (returns a data URL directly)
-  const placeholder = await (await image(8)).placeholder();
+  const PH_SRC = 8;
+  const phMeta = await (await image(PH_SRC)).metadata();
+  const phRatio = `${phMeta.width} / ${phMeta.height}`;
+  const placeholder = await (await image(PH_SRC)).placeholder();
+  const placeholderReal = await du(PH_SRC, (im) => im.resize(200, 200, { fit: 'inside' }).webp());
+  const codePlaceholder = await snippet('await img.placeholder();\n// "data:image/png;base64,..."');
 
   // 11 — progressive JPEG
   const progressive = await render(10, (im) => im.resize(300, 300, { fit: 'inside' }).jpeg({ progressive: true }), 'image/jpeg');
+  const codeProgressive = await snippet('img.jpeg({ progressive: true });');
 
   const sources = await loadSources([
     { label: 'ImagePipelineDemo.svelte', path: './src/demos/image-pipeline/ImagePipelineDemo.svelte' },
@@ -109,12 +122,19 @@
 </script>
 
 <DemoPage
-  title="Image Pipeline"
+  title="Advanced Image use"
   description="Every Bun.Image option in one place — decode, resize, rotate, flip, modulate, and re-encode with the raw native pipeline. Each transform runs server-side at request time and is inlined as a data: URL, so the page ships zero client JS."
   {sources}
 >
+  <p>
+    Each example starts from a single decoded source. We fetch one of the demo photos from the CDN and decode the bytes — every snippet below reuses this <code>img</code>. (Pass
+    downloaded bytes, not a URL: <code>Bun.Image</code> treats a string as a filesystem path, so handing it untrusted input is an arbitrary-file-read.)
+  </p>
+  <CodeSnippet html={codeSetup} />
+
   <h3>Metadata</h3>
   <p><code>.metadata()</code> reads dimensions and format from the header without decoding pixels:</p>
+  <CodeSnippet html={codeMeta} />
   <div class="row">
     <div class="cell">
       <img src={metaImg} alt="Source photo" />
@@ -124,6 +144,7 @@
 
   <h3>Resize · fit</h3>
   <p>The same source into a 240×240 box. <code>fit: 'fill'</code> stretches to the exact box; <code>fit: 'inside'</code> preserves aspect ratio and fits within it:</p>
+  <CodeSnippet html={codeFit} />
   <div class="row">
     <div class="cell"><img src={fitFill} alt="fit fill" /><span class="cap"><code>fit: 'fill'</code></span></div>
     <div class="cell"><img src={fitInside} alt="fit inside" /><span class="cap"><code>fit: 'inside'</code></span></div>
@@ -134,6 +155,7 @@
     <code>filter</code> picks the resampling kernel. To make it visible, each image is shrunk to 56px then enlarged to 240px — <code>'nearest'</code> keeps hard pixels, the default
     <code>'lanczos3'</code> interpolates smoothly:
   </p>
+  <CodeSnippet html={codeFilter} />
   <div class="row">
     <div class="cell"><img src={filterNearest} alt="nearest filter" /><span class="cap"><code>filter: 'nearest'</code></span></div>
     <div class="cell"><img src={filterLanczos} alt="lanczos3 filter" /><span class="cap"><code>filter: 'lanczos3'</code></span></div>
@@ -141,6 +163,7 @@
 
   <h3>Rotate</h3>
   <p><code>.rotate(deg)</code> turns the image clockwise in multiples of 90:</p>
+  <CodeSnippet html={codeRotate} />
   <div class="row">
     <div class="cell"><img src={rotate90} alt="rotated 90 degrees" /><span class="cap"><code>rotate(90)</code></span></div>
     <div class="cell"><img src={rotate180} alt="rotated 180 degrees" /><span class="cap"><code>rotate(180)</code></span></div>
@@ -149,6 +172,7 @@
 
   <h3>Flip · flop</h3>
   <p><code>.flip()</code> mirrors vertically (about the x-axis); <code>.flop()</code> mirrors horizontally:</p>
+  <CodeSnippet html={codeFlip} />
   <div class="row">
     <div class="cell"><img src={flipOriginal} alt="original" /><span class="cap">original</span></div>
     <div class="cell"><img src={flipped} alt="flipped" /><span class="cap"><code>flip()</code></span></div>
@@ -157,6 +181,7 @@
 
   <h3>Modulate</h3>
   <p><code>.modulate()</code> adjusts brightness and saturation (<code>1</code> = unchanged):</p>
+  <CodeSnippet html={codeModulate} />
   <div class="row">
     <div class="cell"><img src={modGrey} alt="greyscale" /><span class="cap"><code>saturation: 0</code></span></div>
     <div class="cell"><img src={modBright} alt="brightened" /><span class="cap"><code>brightness: 1.5</code></span></div>
@@ -164,33 +189,34 @@
   </div>
 
   <h3>Output formats</h3>
-  <p>The same 300px image encoded five ways. AVIF and HEIC use the OS backend, so they fall back where the platform can't encode them:</p>
+  <p>
+    The same 300px image encoded three ways, with byte sizes. <code>Bun.Image</code> can also encode <code>avif()</code> and <code>heic()</code>, but those go through the OS
+    backend and are only available on macOS and Windows:
+  </p>
+  <CodeSnippet html={codeFormat} />
   <div class="row">
     {#each formats as { label, out } (label)}
       <div class="cell">
-        {#if out}
-          <img src={out.url} alt={label} />
-          <span class="cap"><code>{label}</code> · {kb(out.size)}</span>
-        {:else}
-          <div class="missing">unsupported<br />on this platform</div>
-          <span class="cap"><code>{label}</code></span>
-        {/if}
+        <img src={out.url} alt={label} />
+        <span class="cap"><code>{label}</code> · {kb(out.size)}</span>
       </div>
     {/each}
   </div>
 
   <h3>Indexed-palette PNG</h3>
   <p><code>png({'{'} palette: true })</code> quantizes to a ≤256-colour indexed PNG — typically several times smaller than truecolor:</p>
+  <CodeSnippet html={codePalette} />
   <div class="row">
     <div class="cell"><img src={pngTruecolor.url} alt="truecolor png" /><span class="cap">truecolor · {kb(pngTruecolor.size)}</span></div>
     <div class="cell">
       <img src={pngPalette.url} alt="palette png" />
-      <span class="cap"><code>palette: true, colors: 64, dither: true</code> · {kb(pngPalette.size)}</span>
+      <span class="cap"><code>palette: true, colors: 32, dither: true</code> · {kb(pngPalette.size)}</span>
     </div>
   </div>
 
   <h3>Quality</h3>
   <p>The same JPEG at two quality levels — the trade-off between artefacts and bytes:</p>
+  <CodeSnippet html={codeQuality} />
   <div class="row">
     <div class="cell"><img src={qLow.url} alt="low quality jpeg" /><span class="cap"><code>quality: 20</code> · {kb(qLow.size)}</span></div>
     <div class="cell"><img src={qHigh.url} alt="high quality jpeg" /><span class="cap"><code>quality: 85</code> · {kb(qHigh.size)}</span></div>
@@ -201,8 +227,12 @@
     <code>.placeholder()</code> returns a ThumbHash-rendered blur as a <code>data:</code> URL (~400–700 bytes, no client decoder) — inline it as an instant low-quality preview before
     the real image loads:
   </p>
+  <CodeSnippet html={codePlaceholder} />
   <div class="row">
-    <div class="cell"><img class="placeholder" src={placeholder} alt="ThumbHash blur placeholder" /><span class="cap"><code>placeholder()</code></span></div>
+    <div class="cell">
+      <img class="placeholder" style:aspect-ratio={phRatio} src={placeholder} alt="ThumbHash blur placeholder" /><span class="cap"><code>placeholder()</code></span>
+    </div>
+    <div class="cell"><img class="placeholder" src={placeholderReal} alt="The full-resolution image" /><span class="cap">full image</span></div>
   </div>
 
   <h3>Progressive JPEG</h3>
@@ -210,11 +240,12 @@
     <code>jpeg({'{'} progressive: true })</code> encodes a progressive JPEG that paints coarse-to-fine as it downloads — visually identical once loaded, but it appears sooner over a
     slow connection:
   </p>
+  <CodeSnippet html={codeProgressive} />
   <div class="row">
     <div class="cell"><img src={progressive.url} alt="progressive jpeg" /><span class="cap"><code>progressive: true</code> · {kb(progressive.size)}</span></div>
   </div>
 
-  <p class="credit">Photos from Unsplash, served from the Mochi demo CDN.</p>
+  <ImageCredits />
 </DemoPage>
 
 <style>
@@ -244,7 +275,7 @@
   }
   .cell img.placeholder {
     width: 200px;
-    aspect-ratio: 2 / 3;
+    height: auto;
   }
   .cap {
     font-size: 0.8rem;
@@ -253,23 +284,5 @@
   }
   .cap code {
     font-size: 0.78rem;
-  }
-  .missing {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 200px;
-    height: 200px;
-    text-align: center;
-    font-size: 0.8rem;
-    color: var(--text-muted, #888);
-    border: 1px dashed var(--border);
-    border-radius: var(--radius-md);
-    background: var(--surface);
-  }
-  .credit {
-    margin-top: 2rem;
-    font-size: 0.8rem;
-    color: var(--text-muted, #888);
   }
 </style>
