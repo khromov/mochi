@@ -208,7 +208,7 @@ async function main() {
   };
 
   console.log('• scaffold…');
-  const scaffold = await runCmd(['bun', 'create', 'mochi@latest', scaffoldDirRel, '--template', 'minimal', '--name', name, '--force'], REPO_ROOT);
+  const scaffold = await runCmd(['bun', 'create', 'mochi@latest', scaffoldDirRel, '--template', 'minimal', '--force'], REPO_ROOT);
   steps.scaffold = toStep('scaffold', scaffold);
   console.log(`  ${statusCell(steps.scaffold.status)} (${fmtDuration(steps.scaffold.durationMs)})`);
 
