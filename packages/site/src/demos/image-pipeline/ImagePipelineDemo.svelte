@@ -39,7 +39,6 @@
   const kb = (bytes) => `${(bytes / 1024).toFixed(1)} KB`;
   const snippet = (code) => highlightCode(code, 'typescript');
 
-  // 0 — how `img` is set up; every example below reuses it
   const codeSetup = await snippet(
     [
       '// fetch the bytes, then decode — Bun.Image takes a path, Buffer, or Blob',
@@ -49,40 +48,35 @@
     ].join('\n'),
   );
 
-  // 1 — metadata (no pixels decoded)
   const meta = await (await image(1)).metadata();
   const metaImg = await du(1, (im) => im.resize(260, 260, { fit: 'inside' }).webp());
   const codeMeta = await snippet('await img.metadata();\n// { width, height, format }');
 
-  // 2 — fit
   const fitFill = await du(2, (im) => im.resize(240, 240, { fit: 'fill' }).webp());
   const fitInside = await du(2, (im) => im.resize(240, 240, { fit: 'inside' }).webp());
   const codeFit = await snippet("img.resize(240, 240, { fit: 'inside' });");
 
-  // 3 — resample filter (downscale then upscale to make the kernel visible)
+  // downscale then upscale to make the resampling kernel visible
   const filterNearest = await du(3, (im) => im.resize(56, 56, { fit: 'inside' }).resize(240, 240, { fit: 'fill', filter: 'nearest' }).webp());
   const filterLanczos = await du(3, (im) => im.resize(56, 56, { fit: 'inside' }).resize(240, 240, { fit: 'fill', filter: 'lanczos3' }).webp());
   const codeFilter = await snippet("img.resize(240, 240, { filter: 'nearest' });");
 
-  // 4 — rotate
   const rotate90 = await du(4, (im) => im.resize(200, 200, { fit: 'inside' }).rotate(90).webp());
   const rotate180 = await du(4, (im) => im.resize(200, 200, { fit: 'inside' }).rotate(180).webp());
   const rotate270 = await du(4, (im) => im.resize(200, 200, { fit: 'inside' }).rotate(270).webp());
   const codeRotate = await snippet('img.rotate(90);');
 
-  // 5 — flip / flop
   const flipOriginal = await du(5, (im) => im.resize(200, 200, { fit: 'inside' }).webp());
   const flipped = await du(5, (im) => im.resize(200, 200, { fit: 'inside' }).flip().webp());
   const flopped = await du(5, (im) => im.resize(200, 200, { fit: 'inside' }).flop().webp());
   const codeFlip = await snippet('img.flip(); // or img.flop()');
 
-  // 6 — modulate
   const modGrey = await du(7, (im) => im.resize(200, 200, { fit: 'inside' }).modulate({ saturation: 0 }).webp());
   const modBright = await du(7, (im) => im.resize(200, 200, { fit: 'inside' }).modulate({ brightness: 1.5 }).webp());
   const modSaturate = await du(7, (im) => im.resize(200, 200, { fit: 'inside' }).modulate({ saturation: 2 }).webp());
   const codeModulate = await snippet('img.modulate({ saturation: 0 });');
 
-  // 7 — output formats + size, same source/size for a fair comparison
+  // same source/size across all three formats for a fair byte-size comparison
   const FMT_SRC = 9;
   const fmt = (build, mime) => render(FMT_SRC, (im) => build(im.resize(300, 300, { fit: 'inside' })), mime);
   const formats = [
@@ -92,17 +86,14 @@
   ];
   const codeFormat = await snippet('img.webp({ quality: 80 });');
 
-  // 8 — indexed-palette PNG
   const pngTruecolor = await render(11, (im) => im.resize(300, 300, { fit: 'inside' }).png(), 'image/png');
   const pngPalette = await render(11, (im) => im.resize(300, 300, { fit: 'inside' }).png({ palette: true, colors: 32, dither: true }), 'image/png');
   const codePalette = await snippet('img.png({ palette: true, colors: 32, dither: true });');
 
-  // 9 — quality
   const qLow = await render(6, (im) => im.resize(300, 300, { fit: 'inside' }).jpeg({ quality: 20 }), 'image/jpeg');
   const qHigh = await render(6, (im) => im.resize(300, 300, { fit: 'inside' }).jpeg({ quality: 85 }), 'image/jpeg');
   const codeQuality = await snippet('img.jpeg({ quality: 20 });');
 
-  // 10 — ThumbHash placeholder (returns a data URL directly)
   const PH_SRC = 8;
   const phMeta = await (await image(PH_SRC)).metadata();
   const phRatio = `${phMeta.width} / ${phMeta.height}`;
@@ -110,7 +101,6 @@
   const placeholderReal = await du(PH_SRC, (im) => im.resize(200, 200, { fit: 'inside' }).webp());
   const codePlaceholder = await snippet('await img.placeholder();\n// "data:image/png;base64,..."');
 
-  // 11 — progressive JPEG
   const progressive = await render(10, (im) => im.resize(300, 300, { fit: 'inside' }).jpeg({ progressive: true }), 'image/jpeg');
   const codeProgressive = await snippet('img.jpeg({ progressive: true });');
 
