@@ -7,7 +7,9 @@
 
   const remote = 'https://sta-public.fra1.cdn.digitaloceanspaces.com/mochi/mochi-1.jpg';
 
-  const directUrl = getResizedImage(remote, { width: 200, height: 200, fit: 'inside', format: 'jpeg', quality: 60 });
+  const gallery = Array.from({ length: 14 }, (_, i) => `https://sta-public.fra1.cdn.digitaloceanspaces.com/mochi/mochi-${i + 1}.jpg`);
+
+  const directUrl = getResizedImage(remote, { width: 400, height: 400, fit: 'inside', format: 'jpeg', quality: 60 });
 
   const blur = await getImagePlaceholder(remote);
 
@@ -23,6 +25,16 @@
   description="On-the-fly image resizing on Bun.Image, served from an encrypted, stale-while-revalidate disk cache. Every URL's payload is AES-256-GCM encrypted, so the source and params stay hidden and can't be tampered with."
   {sources}
 >
+  <h3>Gallery</h3>
+  <p>
+    Fourteen source photos, each resized to a square <code>&lt;img&gt;</code> on the fly with a <code>placeholder</code> blur-up — all server-rendered, zero client JS:
+  </p>
+  <div class="grid">
+    {#each gallery as src, i (src)}
+      <Image {src} width={400} height={400} fit="inside" placeholder alt="Gallery photo {i + 1}" class="grid__img" />
+    {/each}
+  </div>
+
   <h3>Component</h3>
   <p>A plain <code>&lt;Image&gt;</code> renders a single resized <code>&lt;img&gt;</code> with no client JS:</p>
   <div class="frame">
@@ -50,10 +62,10 @@
   <p><code>getResizedImage()</code> returns a signed URL you can use anywhere:</p>
   <pre class="url">{directUrl}</pre>
   <div class="frame">
-    <img src={directUrl} width={200} alt="Resized via getResizedImage()" />
+    <img src={directUrl} width={400} alt="Resized via getResizedImage()" />
   </div>
   <p class="note">
-    This uses the default <code>fit: 'inside'</code>, which preserves aspect ratio and fits <em>within</em> the 200&times;200 box — so this 3:2 photo becomes 200&times;133. Pass
+    This uses the default <code>fit: 'inside'</code>, which preserves aspect ratio and fits <em>within</em> the 400&times;400 box — so this 3:2 photo becomes 400&times;267. Pass
     <code>fit: 'fill'</code>
     to force an exact square (stretching); <code>Bun.Image</code> has no crop/cover mode.
   </p>
@@ -167,6 +179,20 @@
     height: auto;
     border-radius: var(--radius-md);
   }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 0.5rem;
+    margin: 1rem 0;
+  }
+  .grid :global(.grid__img) {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    height: auto;
+    object-fit: cover;
+    display: block;
+    border-radius: var(--radius-md);
+  }
   .blur-compare {
     flex-direction: column;
     align-items: center;
@@ -209,5 +235,15 @@
   }
   .credits p {
     margin: 0.25rem 0;
+  }
+  .credit a,
+  .credits a {
+    color: var(--accent);
+    text-decoration: none;
+  }
+  .credit a:hover,
+  .credits a:hover {
+    color: var(--accent-hover);
+    text-decoration: underline;
   }
 </style>
