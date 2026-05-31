@@ -150,4 +150,4 @@ await Mochi.serve({
 
 </Callout>
 
-See the [Image Resizing demo](/demos/image/) for a worked example.
+See the [Image Resizing demo](/demos/image/) for a working example.

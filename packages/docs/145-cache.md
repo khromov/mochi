@@ -99,7 +99,7 @@ import { consoleLogger } from 'mochi-framework';
 consoleLogger({ cache: 'verbose' });
 ```
 
-See the [Cache Events demo](/demos/cache-events/) for a worked example that pipes events into an in-memory ring buffer and renders them on the page.
+See the [Cache Events demo](/demos/cache-events/) for a working example that pipes events into an in-memory ring buffer and renders them on the page.
 
 ### Server-only
 
