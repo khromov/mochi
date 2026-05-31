@@ -26,6 +26,8 @@ export async function initMochiConfig(options: MochiServeOptions): Promise<void>
     logger.warn(
       'MOCHI_KEY is not set. A random key will be generated. ' +
         'Server island props will not survive restarts or work across multiple instances. ' +
+        'Image URLs are signed with this key too, so previously-served image links will ' +
+        'stop working after a restart — empty your image cache after restarting. ' +
         'Set MOCHI_KEY in your .env to a base64url-encoded 32-byte secret.',
     );
   }

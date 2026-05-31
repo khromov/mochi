@@ -26,16 +26,6 @@
   description="On-the-fly image resizing on Bun.Image, served from an encrypted, stale-while-revalidate disk cache. Every URL's payload is AES-256-GCM encrypted, so the source and params stay hidden and can't be tampered with."
   {sources}
 >
-  <h3>Gallery</h3>
-  <p>
-    Fourteen source photos, each resized to a square <code>&lt;img&gt;</code> on the fly with a <code>placeholder</code> blur-up — all server-rendered, zero client JS:
-  </p>
-  <div class="grid">
-    {#each gallery as src, i (src)}
-      <Image {src} width={400} height={400} fit="inside" placeholder alt="Gallery photo {i + 1}" class="grid__img" />
-    {/each}
-  </div>
-
   <h3>Component</h3>
   <p>A plain <code>&lt;Image&gt;</code> renders a single resized <code>&lt;img&gt;</code> with no client JS:</p>
   <div class="frame">
@@ -70,6 +60,16 @@
     <code>fit: 'fill'</code>
     to force an exact square (stretching); <code>Bun.Image</code> has no crop/cover mode.
   </p>
+
+  <h3>Gallery</h3>
+  <p>
+    Fourteen source photos, each resized to a square <code>&lt;img&gt;</code> on the fly with a <code>placeholder</code> blur-up — all server-rendered, zero client JS:
+  </p>
+  <div class="grid">
+    {#each gallery as src, i (src)}
+      <Image {src} width={400} height={400} fit="inside" placeholder alt="Gallery photo {i + 1}" class="grid__img" />
+    {/each}
+  </div>
 
   <ImageCredits />
 </DemoPage>
