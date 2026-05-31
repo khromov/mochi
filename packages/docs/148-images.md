@@ -144,7 +144,7 @@ await Mochi.serve({
 | `timeToStale`          | `60_000`               | Cache time-to-stale (ms); variants follow it |
 | `timeToEvict`          | `86_400_000`           | Cache time-to-evict (ms); variants follow it |
 
-<Callout type="danger">
+<Callout type="warning">
 
 **Encryption is the security boundary.** The payload is AES-256-GCM encrypted with a key derived from your `MOCHI_KEY`, so only your server can mint URLs and the source URL/params stay hidden; the cosmetic filename is bound as authenticated data (tampering it fails decryption). Still, if you pass a **user-controlled** `src` into `getResizedImage()`, keep `blockPrivateNetworks` on (the default) and prefer an `allowedHosts` allowlist so a user can't proxy requests to internal services. SVG is never decoded.
 
