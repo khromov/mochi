@@ -74,6 +74,12 @@ export const demos: Demo[] = [
     category: 'data',
   },
   {
+    href: '/demos/image-pipeline/',
+    title: 'Image Pipeline',
+    hook: 'Decode, resize, rotate, flip, modulate, and re-encode with the raw Bun.Image pipeline — every option, server-rendered to inline data URLs.',
+    category: 'data',
+  },
+  {
     href: '/cookie-vary-test/',
     title: 'Cookie Vary Test',
     hook: 'A page that sets Vary: Cookie on its response — useful for testing cookie-partitioned cache keys.',
