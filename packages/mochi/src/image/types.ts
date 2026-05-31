@@ -9,7 +9,6 @@ export type ImageFit = 'inside' | 'fill';
  * and params are neither readable nor tamperable.
  */
 export interface ImageRequest {
-  /** Source URL (http/https). */
   src: string;
   /** Target width in px. */
   w?: number;
@@ -43,6 +42,12 @@ export interface ResizeImageOptions {
   format?: ImageFormat;
   quality?: number;
   autoOrient?: boolean;
+}
+
+/** Options for `invalidateImage(src, opts)`. */
+export interface InvalidateImageOptions {
+  /** Also mark the entry expired (next request re-fetches synchronously), not just stale. */
+  hard?: boolean;
 }
 
 /**

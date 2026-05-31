@@ -48,7 +48,6 @@ export function getImageRuntime(): ImageRuntime {
   return runtime;
 }
 
-/** The URL prefix the image endpoint is mounted under. Mirrors the server island endpoint. */
 export function getImageAssetPrefix(): string {
   const { options } = getMochiConfig();
   return (options.assetPrefix as string | undefined) ?? '/_mochi';

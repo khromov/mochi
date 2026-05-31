@@ -63,7 +63,6 @@ export function variantId(req: ImageRequest): string {
   return hash(canonical);
 }
 
-/** Identifies the full-size original entry for a source (the shared, un-resized cache). */
 export function originalId(src: string): string {
   return hash(`original:${src}`);
 }
@@ -154,9 +153,8 @@ export class ImageCache {
 
     const promise = (async (): Promise<CacheEntry> => {
       const r = await regenerate();
-      // The regenerate callback resizes from the (now established/refreshed)
-      // original, so its sidecar reflects the generation these bytes came from.
-      // The variant inherits the original's window and records its generation.
+      // The variant inherits the original's SWR window and records which
+      // original generation it was resized from.
       const om = await this.readOriginalMeta(req.src);
       const now = Date.now();
       const meta: SidecarMeta = {
@@ -338,12 +336,29 @@ export class ImageCache {
     return promise;
   }
 
-  /** Remove every cached variant of a source — including the shared `original.*` entry. */
   async invalidateSrc(src: string): Promise<void> {
     await rm(this.srcDir(src), { recursive: true, force: true });
   }
 
-  /** Remove a single variant (bytes + sidecar). */
+  /**
+   * Immediately invalidate a source by rewriting the shared original's SWR
+   * timers; every variant follows the original, so this cascades. `hard: false`
+   * marks it stale (served stale-while-revalidate); `hard: true` also marks it
+   * expired (the next request re-fetches synchronously). No-op if nothing is cached.
+   */
+  async invalidateOriginal(src: string, hard: boolean): Promise<void> {
+    const meta = await this.readOriginalMeta(src);
+    if (!meta) {
+      return;
+    }
+    const now = Date.now();
+    await this.writeMeta(this.originalMetaPath(src), {
+      ...meta,
+      staleAt: Math.min(meta.staleAt, now),
+      evictAt: hard ? Math.min(meta.evictAt, now) : meta.evictAt,
+    });
+  }
+
   async invalidateVariant(req: ImageRequest): Promise<void> {
     const base = this.basePath(req);
     await Promise.all([

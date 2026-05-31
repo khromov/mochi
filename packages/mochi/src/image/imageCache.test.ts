@@ -72,7 +72,7 @@ describe('ImageCache variant (lifetime follows the original)', () => {
     expect(result.status).toBe('stale');
     expect(new TextDecoder().decode(result.entry.bytes)).toBe('v1'); // stale value served immediately
     await new Promise((r) => setTimeout(r, 20));
-    expect(revalidated).toBe(1); // background revalidation ran
+    expect(revalidated).toBe(1);
   });
 
   test('misses once the original is past its evict window', async () => {
@@ -130,11 +130,11 @@ describe('ImageCache variant (lifetime follows the original)', () => {
     await cache.get(png, regen('p'));
 
     await cache.invalidateVariant(webp);
-    expect((await cache.get(webp, regen('w2'))).status).toBe('miss'); // gone
-    expect((await cache.get(png, regen('p2'))).status).toBe('fresh'); // untouched
+    expect((await cache.get(webp, regen('w2'))).status).toBe('miss');
+    expect((await cache.get(png, regen('p2'))).status).toBe('fresh');
 
     await cache.invalidateSrc(SRC);
-    expect((await cache.get(png, regen('p3'))).status).toBe('miss'); // variant + original gone
+    expect((await cache.get(png, regen('p3'))).status).toBe('miss');
   });
 
   test('placeholder round-trips', async () => {
@@ -156,7 +156,7 @@ describe('ImageCache.getOriginal', () => {
 
     const second = await cache.getOriginal(SRC, 60_000, 86_400_000, origFn('orig', 'image/gif', counter));
     expect(second.status).toBe('fresh');
-    expect(counter.n).toBe(1); // not re-fetched
+    expect(counter.n).toBe(1);
     expect(new TextDecoder().decode(second.entry.bytes)).toBe('orig');
   });
 
@@ -239,5 +239,36 @@ describe('ImageCache.getOriginal', () => {
     await cache.getOriginal(SRC, 60_000, 86_400_000, origFn('o'));
     await cache.invalidateSrc(SRC);
     expect((await cache.getOriginal(SRC, 60_000, 86_400_000, origFn('o'))).status).toBe('miss');
+  });
+});
+
+describe('ImageCache.invalidateOriginal', () => {
+  test('soft marks the original stale — variants serve stale and revalidate', async () => {
+    const cache = new ImageCache(tmp());
+    await cache.getOriginal(SRC, 60_000, 86_400_000, origFn('o'));
+    await cache.get(req(), regen('v'));
+    expect((await cache.get(req(), regen('v'))).status).toBe('fresh');
+
+    await cache.invalidateOriginal(SRC, false);
+
+    expect((await cache.get(req(), regen('v'))).status).toBe('stale');
+    expect((await cache.getOriginal(SRC, 60_000, 86_400_000, origFn('o'))).status).toBe('stale');
+  });
+
+  test('hard marks the original expired — variants miss and re-fetch', async () => {
+    const cache = new ImageCache(tmp());
+    await cache.getOriginal(SRC, 60_000, 86_400_000, origFn('o'));
+    await cache.get(req(), regen('v'));
+    expect((await cache.get(req(), regen('v'))).status).toBe('fresh');
+
+    await cache.invalidateOriginal(SRC, true);
+
+    expect((await cache.get(req(), regen('v'))).status).toBe('miss');
+    expect((await cache.getOriginal(SRC, 60_000, 86_400_000, origFn('o2'))).status).toBe('miss');
+  });
+
+  test('is a no-op when nothing is cached', async () => {
+    const cache = new ImageCache(tmp());
+    await cache.invalidateOriginal('https://example.com/missing.png', true);
   });
 });

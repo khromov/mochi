@@ -36,11 +36,7 @@ function dimsLabel(w?: number, h?: number): string {
   return '';
 }
 
-/**
- * Cosmetic, human-readable filename for an image URL — `<basename>-<dims>.<ext>`,
- * e.g. `my-image-500x500.webp`. Purely for readability / download names; the
- * authoritative request travels in the `payload` + `sig` query params.
- */
+/** Cosmetic filename only (`my-image-500x500.webp`); the authoritative request travels encrypted in the `payload` query param. */
 export function buildImageFilename(req: ImageRequest): string {
   const base = baseName(req.src);
   const dims = dimsLabel(req.w, req.h);
@@ -48,7 +44,6 @@ export function buildImageFilename(req: ImageRequest): string {
   return `${name}.${extForFormat(req.fmt)}`;
 }
 
-/** The source URL's own extension (cosmetic), falling back to `img` when absent. */
 function extFromSrc(src: string): string {
   let last: string;
   try {
@@ -60,11 +55,7 @@ function extFromSrc(src: string): string {
   return /^[a-z0-9]{1,5}$/.test(ext) && last.includes('.') ? ext : 'img';
 }
 
-/**
- * Cosmetic filename for a full-size original — `<basename>-original.<ext>`,
- * where `<ext>` comes from the source URL (the served Content-Type is
- * authoritative). Purely for readability / download names.
- */
+/** Cosmetic filename for an original; the served Content-Type, not this extension, is authoritative. */
 export function buildOriginalFilename(req: ImageRequest): string {
   return `${baseName(req.src)}-original.${extFromSrc(req.src)}`;
 }

@@ -7,7 +7,6 @@ export interface FetchedSource {
   contentType: string | null;
 }
 
-/** Fetch a remote image with SSRF guard, timeout, and a hard response-size cap. */
 export async function fetchImageSource(src: string, opts: ResolvedImageOptions): Promise<FetchedSource> {
   const url = await assertAllowedSource(src, {
     allowedHosts: opts.allowedHosts,

@@ -18,7 +18,7 @@ export type { CookieSerializeOptions, Cookie } from './cookies';
 export { MochiCache } from './cache';
 export type { MochiCacheOptions, CacheResult, CacheStatus } from './cache';
 export { getResizedImage, getImage, getImageBytes, getImagePlaceholder, invalidateImage } from './image/getResizedImage';
-export type { MochiImageOptions, ResizeImageOptions, OriginalImageOptions, ImageFormat, ImageFit } from './image/types';
+export type { MochiImageOptions, ResizeImageOptions, OriginalImageOptions, InvalidateImageOptions, ImageFormat, ImageFit } from './image/types';
 export { sequence } from './hooks';
 export { compress } from './middleware/compress';
 export type { CompressOptions } from './middleware/compress';

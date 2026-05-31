@@ -146,7 +146,6 @@ export async function resizeImage(input: Uint8Array, req: ImageRequest, opts: Re
   };
 }
 
-/** Compute a tiny ThumbHash blur placeholder (data URL) from source bytes. */
 export async function computePlaceholder(input: Uint8Array, opts: ResolvedImageOptions): Promise<string> {
   const Image = imageCtor();
   try {

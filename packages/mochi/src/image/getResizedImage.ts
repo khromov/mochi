@@ -6,7 +6,7 @@ import { buildImageFilename, buildOriginalFilename } from './slug';
 import { requestContext } from '../requestContext';
 import { logger } from '../log';
 import type { ImageCache, ImageCacheStatus } from './imageCache';
-import type { ImageFormat, ImageRequest, OriginalImageOptions, ResizeImageOptions, ResolvedImageOptions } from './types';
+import type { ImageFormat, ImageRequest, InvalidateImageOptions, OriginalImageOptions, ResizeImageOptions, ResolvedImageOptions } from './types';
 
 function clampQuality(q: number): number {
   if (!Number.isFinite(q)) {
@@ -116,7 +116,6 @@ export async function getImageBytes(src: string, opts: OriginalImageOptions = {}
   }
 }
 
-/** Best-effort: record the decoded request for the dev debug bar (no-op in production). */
 function recordForDebugBar(url: string, filename: string, req: ImageRequest): void {
   try {
     const ctx = requestContext.getStore();
@@ -152,14 +151,12 @@ export async function getImagePlaceholder(src: string): Promise<string | null> {
 }
 
 /**
- * Invalidate cached images. With `opts`, removes the single matching variant;
- * without, removes every cached variant (and placeholder) of `src`.
+ * Immediately invalidate a source. Operates on the shared original, so it
+ * cascades to every resized variant. `hard: false` (default) marks it stale —
+ * the next request serves the cached bytes and re-fetches in the background;
+ * `hard: true` marks it expired — the next request blocks for a fresh re-fetch.
  */
-export async function invalidateImage(src: string, opts?: ResizeImageOptions): Promise<void> {
-  const { options, cache } = getImageRuntime();
-  if (opts) {
-    await cache.invalidateVariant(buildRequest(src, opts, options));
-  } else {
-    await cache.invalidateSrc(src);
-  }
+export async function invalidateImage(src: string, opts: InvalidateImageOptions = {}): Promise<void> {
+  const { cache } = getImageRuntime();
+  await cache.invalidateOriginal(src, opts.hard ?? false);
 }

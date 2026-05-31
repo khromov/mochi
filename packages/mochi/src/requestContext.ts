@@ -73,9 +73,7 @@ export interface BundleInfo {
 
 /** One image produced by `getResizedImage()` during the request (dev debug bar only). */
 export interface ImageDebugEntry {
-  /** The signed image URL. */
   url: string;
-  /** The cosmetic filename portion of the URL. */
   filename: string;
   /** Decoded (unsigned) request params — src, dimensions, format, quality, fit, TTL, … */
   params: Record<string, unknown>;

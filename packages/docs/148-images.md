@@ -103,11 +103,13 @@ When the original is re-fetched, any existing variants are served stale once mor
 
 ### Invalidation
 
+Invalidate a source immediately. It operates on the shared original, so it cascades to every resized variant:
+
 ```ts
 import { invalidateImage } from 'mochi-framework';
 
-await invalidateImage(src); // every variant + placeholder of this source
-await invalidateImage(src, { width: 500, height: 500 }); // just that variant
+await invalidateImage(src); // mark stale: next request serves cached bytes, re-fetches in the background
+await invalidateImage(src, { hard: true }); // mark expired: next request blocks for a fresh re-fetch
 ```
 
 ### Configuration
