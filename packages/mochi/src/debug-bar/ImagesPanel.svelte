@@ -24,7 +24,7 @@
       <div class="image-empty">No resized images on this page.</div>
     {:else}
       <div class="image-summary">
-        <strong>{images.length}</strong> image{images.length !== 1 ? 's' : ''} &middot; resized via <code>getResizedImage()</code>
+        <strong>{images.length}</strong> image{images.length !== 1 ? 's' : ''}
       </div>
       {#each images as image (image.url)}
         <ImageRow {image} />
