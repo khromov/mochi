@@ -59,6 +59,28 @@ const url = getResizedImage('https://example.com/photo.jpg', {
 // → /_mochi/image/photo-500x500.webp?payload=<encrypted token>
 ```
 
+### Full-size originals
+
+`getImage()` returns a signed URL for the **un-resized** original (original bytes and content-type), and `getImageBytes()` returns the cached bytes for server-side use:
+
+```ts
+import { getImage, getImageBytes } from 'mochi-framework';
+
+const url = getImage('https://example.com/photo.jpg');
+// → /_mochi/image/photo-original.jpg?payload=<token>   — use in <img src>
+
+const orig = await getImageBytes('https://example.com/photo.jpg');
+// → { bytes, contentType } | null
+```
+
+The original is fetched once and **shared**: every resized variant of a source reads from this one cached download instead of re-fetching the origin per size/format. Originals are served verbatim, so any format works (including `gif`) — they aren't restricted to `outputFormats`.
+
+Originals have their own TTLs (`originalTimeToStale` / `originalTimeToEvict`, same defaults as resized variants), overridable per call. Because many callers share one entry, the **shortest** requested window wins:
+
+```ts
+getImage(src, { timeToStale: 30_000, timeToEvict: 3_600_000 });
+```
+
 ### Caching & TTL
 
 Resized bytes and their stale-while-revalidate timers are stored on disk (`cacheDir`), so the cache survives restarts. Pass per-image TTLs:
@@ -113,6 +135,8 @@ await Mochi.serve({
 | `fetchTimeoutMs`       | `10_000`               | Upstream fetch timeout                       |
 | `maxResponseBytes`     | `20 MB`                | Hard source-size cap                         |
 | `maxPixels`            | `50_000_000`           | Decompression-bomb guard                     |
+| `originalTimeToStale`  | `60_000`               | Original-cache time-to-stale (ms)            |
+| `originalTimeToEvict`  | `86_400_000`           | Original-cache time-to-evict (ms)            |
 
 <Callout type="danger">
 

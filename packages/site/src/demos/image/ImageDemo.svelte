@@ -3,7 +3,7 @@
   import ImageCredits from '../../components/ImageCredits.svelte';
   import { loadSources } from '../../components/utils.ts';
   import { Image } from 'mochi-framework/components';
-  import { getResizedImage, getImagePlaceholder } from 'mochi-framework';
+  import { getResizedImage, getImage, getImagePlaceholder } from 'mochi-framework';
   import ArrowDown from '@lucide/svelte/icons/arrow-down';
 
   const remote = 'https://sta-public.fra1.cdn.digitaloceanspaces.com/mochi/mochi-1.jpg';
@@ -11,6 +11,8 @@
   const gallery = Array.from({ length: 14 }, (_, i) => `https://sta-public.fra1.cdn.digitaloceanspaces.com/mochi/mochi-${i + 1}.jpg`);
 
   const directUrl = getResizedImage(remote, { width: 400, height: 400, fit: 'inside', format: 'jpeg', quality: 60 });
+
+  const originalUrl = getImage(remote);
 
   const blur = await getImagePlaceholder(remote);
 
@@ -60,6 +62,15 @@
     <code>fit: 'fill'</code>
     to force an exact square (stretching); <code>Bun.Image</code> has no crop/cover mode.
   </p>
+
+  <h3>Full-size original</h3>
+  <p>
+    <code>getImage()</code> returns a signed URL for the un-resized original — fetched once and shared, so every resized variant above reuses this one cached download:
+  </p>
+  <pre class="url">{originalUrl}</pre>
+  <div class="frame">
+    <img src={originalUrl} width={400} alt="Full-size original via getImage()" />
+  </div>
 
   <h3>Gallery</h3>
   <p>

@@ -2,10 +2,11 @@ import { getImageAssetPrefix, getImageRuntime } from './config';
 import { fetchImageSource } from './fetchSource';
 import { encryptImageRequest } from './imageCrypto';
 import { computePlaceholder } from './resize';
-import { buildImageFilename } from './slug';
+import { buildImageFilename, buildOriginalFilename } from './slug';
 import { requestContext } from '../requestContext';
 import { logger } from '../log';
-import type { ImageFormat, ImageRequest, ResizeImageOptions, ResolvedImageOptions } from './types';
+import type { ImageCache, ImageCacheStatus } from './imageCache';
+import type { ImageFormat, ImageRequest, OriginalImageOptions, ResizeImageOptions, ResolvedImageOptions } from './types';
 
 function clampQuality(q: number): number {
   if (!Number.isFinite(q)) {
@@ -51,6 +52,68 @@ export function getResizedImage(src: string, opts: ResizeImageOptions = {}): str
   return url;
 }
 
+function buildOriginalRequest(src: string, opts: OriginalImageOptions, resolved: ResolvedImageOptions): ImageRequest {
+  // fit/fmt/q/ao satisfy the non-optional fields but are ignored for originals.
+  return {
+    src,
+    fit: 'inside',
+    fmt: resolved.defaultFormat,
+    q: resolved.defaultQuality,
+    ao: resolved.autoOrient,
+    orig: true,
+    ts: opts.timeToStale ?? resolved.originalTimeToStale,
+    te: opts.timeToEvict ?? resolved.originalTimeToEvict,
+  };
+}
+
+/**
+ * Build a signed URL that serves the cached, full-size original (no resize,
+ * original bytes + content-type). Sibling of `getResizedImage` — usable
+ * directly in `<img src>`. Server-side only.
+ */
+export function getImage(src: string, opts: OriginalImageOptions = {}): string {
+  const { options } = getImageRuntime();
+  const req = buildOriginalRequest(src, opts, options);
+  const filename = buildOriginalFilename(req);
+  const token = encryptImageRequest(req, filename);
+  const url = `${getImageAssetPrefix()}/image/${filename}?payload=${token}`;
+  recordForDebugBar(url, filename, req);
+  return url;
+}
+
+/**
+ * Fetch-or-serve the cached full-size original for `src`, applying the
+ * shortest-wins TTL. Backs both the resize pipeline (so every variant reuses
+ * one origin download) and `getImage`/`getImageBytes`.
+ */
+export async function getCachedOriginal(
+  src: string,
+  opts: OriginalImageOptions,
+  resolved: ResolvedImageOptions,
+  cache: ImageCache,
+): Promise<{ bytes: Uint8Array; contentType: string; status: ImageCacheStatus }> {
+  const ts = opts.timeToStale ?? resolved.originalTimeToStale;
+  const te = opts.timeToEvict ?? resolved.originalTimeToEvict;
+  const { entry, status } = await cache.getOriginal(src, ts, te, () => fetchImageSource(src, resolved));
+  return { bytes: entry.bytes, contentType: entry.meta.contentType, status };
+}
+
+/**
+ * Return the cached full-size original bytes (+ content-type) for server-side
+ * use. Returns `null` if the source can't be fetched, mirroring
+ * `getImagePlaceholder`'s degrade-gracefully contract.
+ */
+export async function getImageBytes(src: string, opts: OriginalImageOptions = {}): Promise<{ bytes: Uint8Array; contentType: string } | null> {
+  const { options, cache } = getImageRuntime();
+  try {
+    const { bytes, contentType } = await getCachedOriginal(src, opts, options, cache);
+    return { bytes, contentType };
+  } catch (err) {
+    logger.warn(`Could not load image bytes for ${src}: ${err instanceof Error ? err.message : String(err)}`);
+    return null;
+  }
+}
+
 /** Best-effort: record the decoded request for the dev debug bar (no-op in production). */
 function recordForDebugBar(url: string, filename: string, req: ImageRequest): void {
   try {
@@ -76,7 +139,7 @@ export async function getImagePlaceholder(src: string): Promise<string | null> {
     return cached;
   }
   try {
-    const { bytes } = await fetchImageSource(src, options);
+    const { bytes } = await getCachedOriginal(src, {}, options, cache);
     const dataUrl = await computePlaceholder(bytes, options);
     await cache.setPlaceholder(src, dataUrl);
     return dataUrl;

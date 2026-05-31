@@ -29,6 +29,8 @@ export interface ImageRequest {
   ts: number;
   /** Time-to-evict in ms. */
   te: number;
+  /** Full-size original request: serve the cached origin bytes verbatim, no resize. Resize fields above are ignored. */
+  orig?: true;
 }
 
 /** Per-call options accepted by `getResizedImage(src, opts)` and `<Image>`. */
@@ -44,6 +46,14 @@ export interface ResizeImageOptions {
   /** Override the configured default time-to-stale (ms). */
   timeToStale?: number;
   /** Override the configured default time-to-evict (ms). */
+  timeToEvict?: number;
+}
+
+/** Per-call options accepted by `getImage(src, opts)` and `getImageBytes(src, opts)`. */
+export interface OriginalImageOptions {
+  /** Override the configured default original time-to-stale (ms). */
+  timeToStale?: number;
+  /** Override the configured default original time-to-evict (ms). */
   timeToEvict?: number;
 }
 
@@ -80,6 +90,10 @@ export interface MochiImageOptions {
   defaultTimeToStale?: number;
   /** Default time-to-evict in ms. Default: `86_400_000` (1 day). */
   defaultTimeToEvict?: number;
+  /** Default original-cache time-to-stale in ms. Default: `60_000`. */
+  originalTimeToStale?: number;
+  /** Default original-cache time-to-evict in ms. Default: `86_400_000` (1 day). */
+  originalTimeToEvict?: number;
   /** `Cache-Control: max-age` in seconds for the served image. Default: `31536000`. */
   browserMaxAge?: number;
 }
@@ -100,6 +114,8 @@ export interface ResolvedImageOptions {
   maxResponseBytes: number;
   defaultTimeToStale: number;
   defaultTimeToEvict: number;
+  originalTimeToStale: number;
+  originalTimeToEvict: number;
   browserMaxAge: number;
 }
 

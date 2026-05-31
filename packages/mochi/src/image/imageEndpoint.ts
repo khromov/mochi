@@ -1,7 +1,7 @@
 import { getImageRuntime } from './config';
-import { fetchImageSource } from './fetchSource';
+import { getCachedOriginal } from './getResizedImage';
 import { decryptImageRequest } from './imageCrypto';
-import { variantId } from './imageCache';
+import { originalId, variantId } from './imageCache';
 import { resizeImage } from './resize';
 import { ImageError } from './types';
 import type { ResolvedImageOptions } from './types';
@@ -41,6 +41,33 @@ export function createImageHandler(): (req: Request) => Promise<Response> {
       return textResponse(403, 'Invalid payload');
     }
 
+    // Full-size original: serve the shared cached bytes verbatim. The resize
+    // format/fit guards below don't apply (originals may be gif/svg/etc.).
+    if (request.orig) {
+      const etag = `"${originalId(request.src)}"`;
+      if (req.headers.get('if-none-match') === etag) {
+        return new Response(null, { status: 304, headers: { ETag: etag, 'Cache-Control': cacheControl(options) } });
+      }
+      try {
+        const { bytes, contentType, status } = await getCachedOriginal(request.src, { timeToStale: request.ts, timeToEvict: request.te }, options, cache);
+        return new Response(bytes as unknown as BodyInit, {
+          status: 200,
+          headers: {
+            'Content-Type': contentType,
+            'Content-Length': String(bytes.byteLength),
+            ETag: etag,
+            'Cache-Control': cacheControl(options),
+            'X-Mochi-Cache': status,
+          },
+        });
+      } catch (err) {
+        if (err instanceof ImageError) {
+          return textResponse(err.status, err.message);
+        }
+        return textResponse(500, 'Image processing failed');
+      }
+    }
+
     if (!options.outputFormats.includes(request.fmt)) {
       return textResponse(415, 'Output format not allowed');
     }
@@ -55,7 +82,7 @@ export function createImageHandler(): (req: Request) => Promise<Response> {
 
     try {
       const { entry, status } = await cache.get(request, async () => {
-        const { bytes } = await fetchImageSource(request.src, options);
+        const { bytes } = await getCachedOriginal(request.src, { timeToStale: request.ts, timeToEvict: request.te }, options, cache);
         const result = await resizeImage(bytes, request, options);
         return {
           bytes: result.bytes,

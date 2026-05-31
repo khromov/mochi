@@ -55,4 +55,11 @@ describe('encryptImageRequest + decryptImageRequest', () => {
     const r = req({ src: 'https://example.com/' + 'segment/'.repeat(40) + 'image.png' });
     expect(decryptImageRequest(encryptImageRequest(r, NAME), NAME)).toEqual(r);
   });
+
+  test('round-trips a full-size original request', () => {
+    installConfig();
+    const r = req({ orig: true });
+    const name = 'a-original.png';
+    expect(decryptImageRequest(encryptImageRequest(r, name), name)).toEqual(r);
+  });
 });

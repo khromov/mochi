@@ -47,3 +47,24 @@ export function buildImageFilename(req: ImageRequest): string {
   const name = dims ? `${base}-${dims}` : base;
   return `${name}.${extForFormat(req.fmt)}`;
 }
+
+/** The source URL's own extension (cosmetic), falling back to `img` when absent. */
+function extFromSrc(src: string): string {
+  let last: string;
+  try {
+    last = new URL(src).pathname.split('/').filter(Boolean).pop() ?? '';
+  } catch {
+    last = src.split(/[?#]/)[0]?.split('/').filter(Boolean).pop() ?? '';
+  }
+  const ext = last.slice(last.lastIndexOf('.') + 1).toLowerCase();
+  return /^[a-z0-9]{1,5}$/.test(ext) && last.includes('.') ? ext : 'img';
+}
+
+/**
+ * Cosmetic filename for a full-size original — `<basename>-original.<ext>`,
+ * where `<ext>` comes from the source URL (the served Content-Type is
+ * authoritative). Purely for readability / download names.
+ */
+export function buildOriginalFilename(req: ImageRequest): string {
+  return `${baseName(req.src)}-original.${extFromSrc(req.src)}`;
+}

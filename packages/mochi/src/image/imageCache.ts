@@ -1,10 +1,12 @@
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, rename, rm, unlink, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { mochiEvents } from '../events';
 import { extForFormat } from './resize';
 import type { ImageFormat, ImageRequest } from './types';
 
+// For the shared full-size original entry, `width`/`height` are 0 and `format`
+// is '' (we don't decode originals); `contentType` is the authoritative type.
 export interface SidecarMeta {
   v: 1;
   contentType: string;
@@ -57,6 +59,25 @@ export function variantId(req: ImageRequest): string {
   return hash(canonical);
 }
 
+/** Identifies the full-size original entry for a source (the shared, un-resized cache). */
+export function originalId(src: string): string {
+  return hash(`original:${src}`);
+}
+
+const EXT_FOR_CONTENT_TYPE: Record<string, string> = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+  'image/avif': 'avif',
+  'image/gif': 'gif',
+  'image/svg+xml': 'svg',
+};
+
+/** Cosmetic on-disk extension for an original's content-type; the sidecar holds the authoritative type. */
+function extForContentType(ct: string): string {
+  return EXT_FOR_CONTENT_TYPE[ct.split(';')[0]!.trim().toLowerCase()] ?? 'bin';
+}
+
 function isMissingFileError(err: unknown): boolean {
   return Boolean(err && typeof err === 'object' && (err as { code?: string }).code === 'ENOENT');
 }
@@ -99,13 +120,21 @@ export class ImageCache {
   }
 
   private async write(req: ImageRequest, bytes: Uint8Array, meta: SidecarMeta): Promise<void> {
-    await mkdir(this.srcDir(req.src), { recursive: true });
     const base = this.basePath(req);
-    // Write bytes first, sidecar last: the sidecar's presence marks the entry valid.
-    await writeFile(`${base}.tmp`, bytes);
-    await rename(`${base}.tmp`, base);
-    await writeFile(`${base}.json.tmp`, JSON.stringify(meta));
-    await rename(`${base}.json.tmp`, `${base}.json`);
+    await this.writeBytesAndMeta(base, `${base}.json`, bytes, meta);
+  }
+
+  // Write bytes first, sidecar last: the sidecar's presence marks the entry valid.
+  private async writeBytesAndMeta(bytesPath: string, metaPath: string, bytes: Uint8Array, meta: SidecarMeta): Promise<void> {
+    await mkdir(dirname(bytesPath), { recursive: true });
+    await writeFile(`${bytesPath}.tmp`, bytes);
+    await rename(`${bytesPath}.tmp`, bytesPath);
+    await this.writeMeta(metaPath, meta);
+  }
+
+  private async writeMeta(metaPath: string, meta: SidecarMeta): Promise<void> {
+    await writeFile(`${metaPath}.tmp`, JSON.stringify(meta));
+    await rename(`${metaPath}.tmp`, metaPath);
   }
 
   private emitRead(req: ImageRequest, status: ImageCacheStatus): void {
@@ -169,7 +198,127 @@ export class ImageCache {
     return { entry, status: 'miss' };
   }
 
-  /** Remove every cached variant of a source. */
+  private originalMetaPath(src: string): string {
+    return join(this.srcDir(src), 'original.json');
+  }
+
+  private originalBytesPath(src: string, contentType: string): string {
+    return join(this.srcDir(src), `original.${extForContentType(contentType)}`);
+  }
+
+  private async readOriginalMeta(src: string): Promise<SidecarMeta | null> {
+    try {
+      return JSON.parse(await readFile(this.originalMetaPath(src), 'utf-8')) as SidecarMeta;
+    } catch {
+      return null;
+    }
+  }
+
+  private async readOriginalBytes(src: string, contentType: string): Promise<Uint8Array | null> {
+    try {
+      return new Uint8Array(await readFile(this.originalBytesPath(src, contentType)));
+    } catch {
+      return null;
+    }
+  }
+
+  private emitOriginalRead(src: string, status: ImageCacheStatus): void {
+    mochiEvents.emit('cache:read', { key: `image:${originalId(src)}`, status });
+  }
+
+  /**
+   * Get-or-fetch the full-size original bytes for a source, shared across every
+   * variant. Same SWR semantics as `get()`, but keyed by `src` alone. `ts`/`te`
+   * are the caller's desired window; because many callers share one entry the
+   * SHORTEST requested window wins (see `shortenOriginalWindow`).
+   */
+  async getOriginal(
+    src: string,
+    ts: number,
+    te: number,
+    fetchFn: () => Promise<{ bytes: Uint8Array; contentType: string | null }>,
+  ): Promise<{ entry: CacheEntry; status: ImageCacheStatus }> {
+    const meta = await this.readOriginalMeta(src);
+    const now = Date.now();
+
+    if (meta) {
+      if (now < meta.staleAt) {
+        const bytes = await this.readOriginalBytes(src, meta.contentType);
+        if (bytes) {
+          this.emitOriginalRead(src, 'fresh');
+          return { entry: { bytes, meta: await this.shortenOriginalWindow(src, meta, ts, te, now) }, status: 'fresh' };
+        }
+      } else if (now < meta.evictAt) {
+        const bytes = await this.readOriginalBytes(src, meta.contentType);
+        if (bytes) {
+          this.emitOriginalRead(src, 'stale');
+          mochiEvents.emit('cache:revalidate', { key: `image:${originalId(src)}` });
+          void this.revalidateOriginal(src, ts, te, fetchFn).catch(() => {});
+          return { entry: { bytes, meta: await this.shortenOriginalWindow(src, meta, ts, te, now) }, status: 'stale' };
+        }
+      }
+    }
+
+    this.emitOriginalRead(src, 'miss');
+    const entry = await this.revalidateOriginal(src, ts, te, fetchFn);
+    return { entry, status: 'miss' };
+  }
+
+  /**
+   * Shorten the shared original entry's window to honour the strictest caller:
+   * persist `min(existing, now + requested)`. Only writes the sidecar when a
+   * value actually decreases, so the common case (everyone on the same default
+   * window) stays a pure read.
+   */
+  private async shortenOriginalWindow(src: string, meta: SidecarMeta, ts: number, te: number, now: number): Promise<SidecarMeta> {
+    const wantStaleAt = now + ts;
+    const wantEvictAt = now + te;
+    if (wantStaleAt >= meta.staleAt && wantEvictAt >= meta.evictAt) {
+      return meta;
+    }
+    const next: SidecarMeta = {
+      ...meta,
+      staleAt: Math.min(meta.staleAt, wantStaleAt),
+      evictAt: Math.min(meta.evictAt, wantEvictAt),
+    };
+    await this.writeMeta(this.originalMetaPath(src), next);
+    return next;
+  }
+
+  private revalidateOriginal(src: string, ts: number, te: number, fetchFn: () => Promise<{ bytes: Uint8Array; contentType: string | null }>): Promise<CacheEntry> {
+    // `o:`-prefixed key: a colon can't appear in a base64url variantId, so this
+    // never collides with the resize-variant inflight entries.
+    const key = `o:${originalId(src)}`;
+    const existing = this.inflight.get(key);
+    if (existing) {
+      return existing;
+    }
+
+    const promise = (async (): Promise<CacheEntry> => {
+      const fetched = await fetchFn();
+      const contentType = fetched.contentType ?? 'application/octet-stream';
+      const now = Date.now();
+      const meta: SidecarMeta = {
+        v: 1,
+        contentType,
+        etag: originalId(src),
+        width: 0,
+        height: 0,
+        format: '',
+        createdAt: now,
+        staleAt: now + ts,
+        evictAt: now + te,
+        src,
+      };
+      await this.writeBytesAndMeta(this.originalBytesPath(src, contentType), this.originalMetaPath(src), fetched.bytes, meta);
+      return { bytes: fetched.bytes, meta };
+    })().finally(() => this.inflight.delete(key));
+
+    this.inflight.set(key, promise);
+    return promise;
+  }
+
+  /** Remove every cached variant of a source — including the shared `original.*` entry. */
   async invalidateSrc(src: string): Promise<void> {
     await rm(this.srcDir(src), { recursive: true, force: true });
   }
