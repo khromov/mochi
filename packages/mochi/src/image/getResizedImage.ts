@@ -30,8 +30,10 @@ function buildRequest(src: string, opts: ResizeImageOptions, resolved: ResolvedI
     fmt,
     q: clampQuality(opts.quality ?? resolved.defaultQuality),
     ao: opts.autoOrient ?? resolved.autoOrient,
-    ts: opts.timeToStale ?? resolved.defaultTimeToStale,
-    te: opts.timeToEvict ?? resolved.defaultTimeToEvict,
+    // The variant has no window of its own — it follows the original. ts/te here
+    // just establish the original's window when a variant is the first access.
+    ts: resolved.timeToStale,
+    te: resolved.timeToEvict,
   };
 }
 
@@ -61,8 +63,8 @@ function buildOriginalRequest(src: string, opts: OriginalImageOptions, resolved:
     q: resolved.defaultQuality,
     ao: resolved.autoOrient,
     orig: true,
-    ts: opts.timeToStale ?? resolved.originalTimeToStale,
-    te: opts.timeToEvict ?? resolved.originalTimeToEvict,
+    ts: opts.timeToStale ?? resolved.timeToStale,
+    te: opts.timeToEvict ?? resolved.timeToEvict,
   };
 }
 
@@ -92,8 +94,8 @@ export async function getCachedOriginal(
   resolved: ResolvedImageOptions,
   cache: ImageCache,
 ): Promise<{ bytes: Uint8Array; contentType: string; status: ImageCacheStatus }> {
-  const ts = opts.timeToStale ?? resolved.originalTimeToStale;
-  const te = opts.timeToEvict ?? resolved.originalTimeToEvict;
+  const ts = opts.timeToStale ?? resolved.timeToStale;
+  const te = opts.timeToEvict ?? resolved.timeToEvict;
   const { entry, status } = await cache.getOriginal(src, ts, te, () => fetchImageSource(src, resolved));
   return { bytes: entry.bytes, contentType: entry.meta.contentType, status };
 }

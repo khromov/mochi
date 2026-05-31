@@ -75,7 +75,7 @@ const orig = await getImageBytes('https://example.com/photo.jpg');
 
 The original is fetched once and **shared**: every resized variant of a source reads from this one cached download instead of re-fetching the origin per size/format. Originals are served verbatim, so any format works (including `gif`) — they aren't restricted to `outputFormats`.
 
-Originals have their own TTLs (`originalTimeToStale` / `originalTimeToEvict`, same defaults as resized variants), overridable per call. Because many callers share one entry, the **shortest** requested window wins:
+The original's cache window comes from `timeToStale` / `timeToEvict`, overridable per call. Because many callers share one entry, the **shortest** requested window wins:
 
 ```ts
 getImage(src, { timeToStale: 30_000, timeToEvict: 3_600_000 });
@@ -83,19 +83,23 @@ getImage(src, { timeToStale: 30_000, timeToEvict: 3_600_000 });
 
 ### Caching & TTL
 
-Resized bytes and their stale-while-revalidate timers are stored on disk (`cacheDir`), so the cache survives restarts. Pass per-image TTLs:
+The original's encoded bytes and its stale-while-revalidate timers are stored on disk (`cacheDir`), so the cache survives restarts. There is one TTL — the original's — and resized variants follow it; a variant never expires independently of the source it was resized from.
 
 ```ts
-getResizedImage(src, {
-  width: 800,
-  timeToStale: 60_000, // serve fresh for 1 min
-  timeToEvict: 86_400_000, // re-fetch source after 1 day
+await Mochi.serve({
+  image: {
+    timeToStale: 60_000, // serve fresh for 1 min
+    timeToEvict: 86_400_000, // re-fetch source after 1 day
+  },
+  routes,
 });
 ```
 
 - **Fresh** (within `timeToStale`): served from disk.
 - **Stale** (between `timeToStale` and `timeToEvict`): served immediately, source re-fetched in the background.
 - **Expired** (past `timeToEvict`): re-fetched synchronously.
+
+When the original is re-fetched, any existing variants are served stale once more and regenerated from the new original in the background; when the original is evicted, its variants are dropped with it.
 
 ### Invalidation
 
@@ -135,8 +139,8 @@ await Mochi.serve({
 | `fetchTimeoutMs`       | `10_000`               | Upstream fetch timeout                       |
 | `maxResponseBytes`     | `20 MB`                | Hard source-size cap                         |
 | `maxPixels`            | `50_000_000`           | Decompression-bomb guard                     |
-| `originalTimeToStale`  | `60_000`               | Original-cache time-to-stale (ms)            |
-| `originalTimeToEvict`  | `86_400_000`           | Original-cache time-to-evict (ms)            |
+| `timeToStale`          | `60_000`               | Cache time-to-stale (ms); variants follow it |
+| `timeToEvict`          | `86_400_000`           | Cache time-to-evict (ms); variants follow it |
 
 <Callout type="danger">
 

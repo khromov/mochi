@@ -43,17 +43,16 @@ export interface ResizeImageOptions {
   format?: ImageFormat;
   quality?: number;
   autoOrient?: boolean;
-  /** Override the configured default time-to-stale (ms). */
-  timeToStale?: number;
-  /** Override the configured default time-to-evict (ms). */
-  timeToEvict?: number;
 }
 
-/** Per-call options accepted by `getImage(src, opts)` and `getImageBytes(src, opts)`. */
+/**
+ * Per-call options accepted by `getImage(src, opts)` and `getImageBytes(src, opts)`.
+ * These set the shared original's cache window (shortest requested wins).
+ */
 export interface OriginalImageOptions {
-  /** Override the configured default original time-to-stale (ms). */
+  /** Override the configured time-to-stale (ms). */
   timeToStale?: number;
-  /** Override the configured default original time-to-evict (ms). */
+  /** Override the configured time-to-evict (ms). */
   timeToEvict?: number;
 }
 
@@ -86,14 +85,10 @@ export interface MochiImageOptions {
   fetchTimeoutMs?: number;
   /** Max upstream response body in bytes. Default: `20 * 1024 * 1024`. */
   maxResponseBytes?: number;
-  /** Default time-to-stale in ms. Default: `60_000`. */
-  defaultTimeToStale?: number;
-  /** Default time-to-evict in ms. Default: `86_400_000` (1 day). */
-  defaultTimeToEvict?: number;
-  /** Default original-cache time-to-stale in ms. Default: `60_000`. */
-  originalTimeToStale?: number;
-  /** Default original-cache time-to-evict in ms. Default: `86_400_000` (1 day). */
-  originalTimeToEvict?: number;
+  /** Cache time-to-stale in ms — governs the original; resized variants follow it. Default: `60_000`. */
+  timeToStale?: number;
+  /** Cache time-to-evict in ms — governs the original; resized variants follow it. Default: `86_400_000` (1 day). */
+  timeToEvict?: number;
   /** `Cache-Control: max-age` in seconds for the served image. Default: `31536000`. */
   browserMaxAge?: number;
 }
@@ -112,10 +107,8 @@ export interface ResolvedImageOptions {
   blockPrivateNetworks: boolean;
   fetchTimeoutMs: number;
   maxResponseBytes: number;
-  defaultTimeToStale: number;
-  defaultTimeToEvict: number;
-  originalTimeToStale: number;
-  originalTimeToEvict: number;
+  timeToStale: number;
+  timeToEvict: number;
   browserMaxAge: number;
 }
 

@@ -20,10 +20,8 @@ const opts: ResolvedImageOptions = {
   blockPrivateNetworks: true,
   fetchTimeoutMs: 10_000,
   maxResponseBytes: 20 * 1024 * 1024,
-  defaultTimeToStale: 60_000,
-  defaultTimeToEvict: 86_400_000,
-  originalTimeToStale: 60_000,
-  originalTimeToEvict: 86_400_000,
+  timeToStale: 60_000,
+  timeToEvict: 86_400_000,
   browserMaxAge: 31_536_000,
 };
 

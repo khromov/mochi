@@ -18,6 +18,10 @@ export interface SidecarMeta {
   staleAt: number;
   evictAt: number;
   src: string;
+  // Variants only: the original's `createdAt` this variant was resized from. A
+  // variant's freshness/eviction is read from the original's sidecar at request
+  // time; this marks which original generation produced these bytes.
+  origCreatedAt?: number;
 }
 
 export interface CacheEntry {
@@ -150,6 +154,10 @@ export class ImageCache {
 
     const promise = (async (): Promise<CacheEntry> => {
       const r = await regenerate();
+      // The regenerate callback resizes from the (now established/refreshed)
+      // original, so its sidecar reflects the generation these bytes came from.
+      // The variant inherits the original's window and records its generation.
+      const om = await this.readOriginalMeta(req.src);
       const now = Date.now();
       const meta: SidecarMeta = {
         v: 1,
@@ -159,9 +167,10 @@ export class ImageCache {
         height: r.height,
         format: r.format,
         createdAt: now,
-        staleAt: now + req.ts,
-        evictAt: now + req.te,
+        staleAt: om?.staleAt ?? now + req.ts,
+        evictAt: om?.evictAt ?? now + req.te,
         src: req.src,
+        origCreatedAt: om?.createdAt,
       };
       await this.write(req, r.bytes, meta);
       return { bytes: r.bytes, meta };
@@ -171,18 +180,29 @@ export class ImageCache {
     return promise;
   }
 
+  /**
+   * Read a resized variant. A variant has no window of its own — its
+   * fresh/stale/evicted state is derived from the shared original's sidecar.
+   * `origCreatedAt` marks which original generation produced these bytes, so a
+   * refreshed original (bumped `createdAt`) serves the old variant stale while
+   * it regenerates. The variant disappears when the original is evicted.
+   */
   async get(req: ImageRequest, regenerate: () => Promise<RegenResult>): Promise<{ entry: CacheEntry; status: ImageCacheStatus }> {
     const meta = await this.readMeta(req);
+    const orig = await this.readOriginalMeta(req.src);
     const now = Date.now();
 
-    if (meta) {
-      if (now < meta.staleAt) {
+    if (meta && orig) {
+      const sameGen = meta.origCreatedAt === orig.createdAt;
+      if (sameGen && now < orig.staleAt) {
         const bytes = await this.readBytes(req);
         if (bytes) {
           this.emitRead(req, 'fresh');
           return { entry: { bytes, meta }, status: 'fresh' };
         }
-      } else if (now < meta.evictAt) {
+      } else if (now < orig.evictAt) {
+        // Stale window, or the original was refreshed to a newer generation:
+        // serve the existing variant immediately and regenerate in the background.
         const bytes = await this.readBytes(req);
         if (bytes) {
           this.emitRead(req, 'stale');

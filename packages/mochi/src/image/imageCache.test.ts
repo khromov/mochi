@@ -26,9 +26,25 @@ function regen(tag: string): () => Promise<RegenResult> {
   return async () => ({ bytes: new TextEncoder().encode(tag), contentType: 'image/webp', width: 100, height: 100, format: 'webp' });
 }
 
-describe('ImageCache', () => {
-  test('miss regenerates and writes; subsequent read is fresh without regen', async () => {
+const SRC = 'https://example.com/a.png';
+
+function origFn(tag: string, ct: string | null = 'image/jpeg', counter?: { n: number }) {
+  return async (): Promise<{ bytes: Uint8Array; contentType: string | null }> => {
+    if (counter) {
+      counter.n++;
+    }
+    return { bytes: new TextEncoder().encode(tag), contentType: ct };
+  };
+}
+
+function readOrigMeta(dir: string, src = SRC): SidecarMeta {
+  return JSON.parse(readFileSync(join(dir, srcHash(src), 'original.json'), 'utf-8')) as SidecarMeta;
+}
+
+describe('ImageCache variant (lifetime follows the original)', () => {
+  test('miss regenerates; subsequent read is fresh while the original is fresh', async () => {
     const cache = new ImageCache(tmp());
+    await cache.getOriginal(SRC, 60_000, 86_400_000, origFn('o'));
     let calls = 0;
     const fn = async (): Promise<RegenResult> => {
       calls++;
@@ -44,11 +60,12 @@ describe('ImageCache', () => {
     expect(Array.from(second.entry.bytes)).toEqual([1, 2, 3]);
   });
 
-  test('serves stale and triggers background revalidation', async () => {
+  test('inherits the original stale window and revalidates in the background', async () => {
     const cache = new ImageCache(tmp());
-    await cache.get(req({ ts: 0, te: 86_400_000 }), regen('v1'));
+    await cache.getOriginal(SRC, 0, 86_400_000, origFn('o')); // original immediately stale
+    await cache.get(req(), regen('v1'));
     let revalidated = 0;
-    const result = await cache.get(req({ ts: 0, te: 86_400_000 }), async () => {
+    const result = await cache.get(req(), async () => {
       revalidated++;
       return { bytes: new TextEncoder().encode('v2'), contentType: 'image/webp', width: 100, height: 100, format: 'webp' };
     });
@@ -58,21 +75,55 @@ describe('ImageCache', () => {
     expect(revalidated).toBe(1); // background revalidation ran
   });
 
-  test('regenerates after evict', async () => {
+  test('misses once the original is past its evict window', async () => {
     const cache = new ImageCache(tmp());
+    await cache.getOriginal(SRC, 0, 0, origFn('o')); // original immediately evicted
     let calls = 0;
     const fn = async (): Promise<RegenResult> => {
       calls++;
       return { bytes: new Uint8Array([calls]), contentType: 'image/webp', width: 100, height: 100, format: 'webp' };
     };
-    await cache.get(req({ ts: 0, te: 0 }), fn);
-    const second = await cache.get(req({ ts: 0, te: 0 }), fn);
+    await cache.get(req(), fn);
+    const second = await cache.get(req(), fn);
     expect(second.status).toBe('miss');
     expect(calls).toBe(2);
   });
 
+  test('a refreshed original (new generation) serves the variant stale and regenerates', async () => {
+    const cache = new ImageCache(tmp());
+    await cache.getOriginal(SRC, 60_000, 86_400_000, origFn('o1'));
+    await cache.get(req(), regen('v1'));
+    expect((await cache.get(req(), regen('v1'))).status).toBe('fresh');
+
+    // Evict + re-fetch the original so its createdAt (generation) bumps.
+    await cache.getOriginal(SRC, 0, 0, origFn('o2'));
+    await new Promise((r) => setTimeout(r, 5));
+    await cache.getOriginal(SRC, 60_000, 86_400_000, origFn('o3'));
+
+    let calls = 0;
+    const result = await cache.get(req(), async () => {
+      calls++;
+      return { bytes: new TextEncoder().encode('v2'), contentType: 'image/webp', width: 100, height: 100, format: 'webp' };
+    });
+    expect(result.status).toBe('stale'); // generation mismatch → stale, not fresh
+    await new Promise((r) => setTimeout(r, 20));
+    expect(calls).toBe(1);
+  });
+
+  test('misses once the original entry is removed', async () => {
+    const dir = tmp();
+    const cache = new ImageCache(dir);
+    await cache.getOriginal(SRC, 60_000, 86_400_000, origFn('o'));
+    await cache.get(req(), regen('v1'));
+    expect((await cache.get(req(), regen('v1'))).status).toBe('fresh');
+
+    rmSync(join(dir, srcHash(SRC), 'original.json'));
+    expect((await cache.get(req(), regen('v2'))).status).toBe('miss');
+  });
+
   test('invalidateVariant removes one variant; invalidateSrc removes all', async () => {
     const cache = new ImageCache(tmp());
+    await cache.getOriginal(SRC, 60_000, 86_400_000, origFn('o'));
     const webp = req({ fmt: 'webp' });
     const png = req({ fmt: 'png' });
     await cache.get(webp, regen('w'));
@@ -82,8 +133,8 @@ describe('ImageCache', () => {
     expect((await cache.get(webp, regen('w2'))).status).toBe('miss'); // gone
     expect((await cache.get(png, regen('p2'))).status).toBe('fresh'); // untouched
 
-    await cache.invalidateSrc(req().src);
-    expect((await cache.get(png, regen('p3'))).status).toBe('miss'); // all gone
+    await cache.invalidateSrc(SRC);
+    expect((await cache.get(png, regen('p3'))).status).toBe('miss'); // variant + original gone
   });
 
   test('placeholder round-trips', async () => {
@@ -93,21 +144,6 @@ describe('ImageCache', () => {
     expect(await cache.getPlaceholder('https://example.com/a.png')).toBe('data:image/png;base64,AAAA');
   });
 });
-
-const SRC = 'https://example.com/a.png';
-
-function origFn(tag: string, ct: string | null = 'image/jpeg', counter?: { n: number }) {
-  return async (): Promise<{ bytes: Uint8Array; contentType: string | null }> => {
-    if (counter) {
-      counter.n++;
-    }
-    return { bytes: new TextEncoder().encode(tag), contentType: ct };
-  };
-}
-
-function readOrigMeta(dir: string, src = SRC): SidecarMeta {
-  return JSON.parse(readFileSync(join(dir, srcHash(src), 'original.json'), 'utf-8')) as SidecarMeta;
-}
 
 describe('ImageCache.getOriginal', () => {
   test('miss regenerates, preserves content-type; subsequent read is fresh', async () => {

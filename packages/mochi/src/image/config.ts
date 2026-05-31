@@ -20,10 +20,8 @@ export function resolveImageOptions(opts: MochiImageOptions | undefined): Resolv
     blockPrivateNetworks: o.blockPrivateNetworks ?? true,
     fetchTimeoutMs: o.fetchTimeoutMs ?? 10_000,
     maxResponseBytes: o.maxResponseBytes ?? 20 * 1024 * 1024,
-    defaultTimeToStale: o.defaultTimeToStale ?? 60_000,
-    defaultTimeToEvict: o.defaultTimeToEvict ?? 86_400_000,
-    originalTimeToStale: o.originalTimeToStale ?? 60_000,
-    originalTimeToEvict: o.originalTimeToEvict ?? 86_400_000,
+    timeToStale: o.timeToStale ?? 60_000,
+    timeToEvict: o.timeToEvict ?? 86_400_000,
     browserMaxAge: o.browserMaxAge ?? 31_536_000,
   };
 }
