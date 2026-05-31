@@ -22,7 +22,6 @@ export function resolveImageOptions(opts: MochiImageOptions | undefined): Resolv
     maxResponseBytes: o.maxResponseBytes ?? 20 * 1024 * 1024,
     timeToStale: o.timeToStale ?? 60_000,
     timeToEvict: o.timeToEvict ?? 86_400_000,
-    browserMaxAge: o.browserMaxAge ?? 31_536_000,
   };
 }
 

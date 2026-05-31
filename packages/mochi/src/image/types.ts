@@ -94,8 +94,8 @@ export interface MochiImageOptions {
   timeToStale?: number;
   /** Cache time-to-evict in ms — governs the original; resized variants follow it. Default: `86_400_000` (1 day). */
   timeToEvict?: number;
-  /** `Cache-Control: max-age` in seconds for the served image. Default: `31536000`. */
-  browserMaxAge?: number;
+  /** Deflate-compress the encrypted URL payload when it shrinks it. Default: `true`. */
+  compressPayload?: boolean;
 }
 
 /** Fully-resolved options with every field present. */
@@ -114,7 +114,7 @@ export interface ResolvedImageOptions {
   maxResponseBytes: number;
   timeToStale: number;
   timeToEvict: number;
-  browserMaxAge: number;
+  compressPayload: boolean;
 }
 
 /** Error carrying the HTTP status the endpoint should return. */

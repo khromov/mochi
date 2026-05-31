@@ -7,21 +7,42 @@ export interface FetchedSource {
   contentType: string | null;
 }
 
-export async function fetchImageSource(src: string, opts: ResolvedImageOptions): Promise<FetchedSource> {
-  const url = await assertAllowedSource(src, {
-    allowedHosts: opts.allowedHosts,
-    blockPrivateNetworks: opts.blockPrivateNetworks,
-  });
+const MAX_REDIRECTS = 5;
 
+export async function fetchImageSource(src: string, opts: ResolvedImageOptions): Promise<FetchedSource> {
+  // One timeout bounds the whole chain (all redirect hops), not each hop.
+  const signal = AbortSignal.timeout(opts.fetchTimeoutMs);
+
+  // Follow redirects manually so the SSRF guard re-validates EVERY hop: an
+  // allowed/public host must not be able to 302 us into a private network.
+  let target = src;
   let res: Response;
-  try {
-    res = await fetch(url, {
-      signal: AbortSignal.timeout(opts.fetchTimeoutMs),
-      redirect: 'follow',
-      headers: { Accept: 'image/*' },
+  for (let hop = 0; ; hop++) {
+    const url = await assertAllowedSource(target, {
+      allowedHosts: opts.allowedHosts,
+      blockPrivateNetworks: opts.blockPrivateNetworks,
     });
-  } catch {
-    throw new ImageError(502, 'Failed to fetch source image');
+
+    try {
+      res = await fetch(url, {
+        signal,
+        redirect: 'manual',
+        headers: { Accept: 'image/*' },
+      });
+    } catch {
+      throw new ImageError(502, 'Failed to fetch source image');
+    }
+
+    const location = res.headers.get('location');
+    if (res.status >= 300 && res.status < 400 && location) {
+      if (hop >= MAX_REDIRECTS) {
+        throw new ImageError(502, 'Too many redirects');
+      }
+      await res.body?.cancel();
+      target = new URL(location, url).href; // resolve relative redirects
+      continue;
+    }
+    break;
   }
 
   if (!res.ok) {

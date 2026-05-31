@@ -22,7 +22,7 @@ const opts: ResolvedImageOptions = {
   maxResponseBytes: 20 * 1024 * 1024,
   timeToStale: 60_000,
   timeToEvict: 86_400_000,
-  browserMaxAge: 31_536_000,
+  compressPayload: true,
 };
 
 function req(over: Partial<ImageRequest> = {}): ImageRequest {

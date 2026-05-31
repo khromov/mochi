@@ -93,11 +93,11 @@ export async function getCachedOriginal(
   opts: OriginalImageOptions,
   resolved: ResolvedImageOptions,
   cache: ImageCache,
-): Promise<{ bytes: Uint8Array; contentType: string; status: ImageCacheStatus }> {
+): Promise<{ bytes: Uint8Array; contentType: string; status: ImageCacheStatus; createdAt: number }> {
   const ts = opts.timeToStale ?? resolved.timeToStale;
   const te = opts.timeToEvict ?? resolved.timeToEvict;
   const { entry, status } = await cache.getOriginal(src, ts, te, () => fetchImageSource(src, resolved));
-  return { bytes: entry.bytes, contentType: entry.meta.contentType, status };
+  return { bytes: entry.bytes, contentType: entry.meta.contentType, status, createdAt: entry.meta.createdAt };
 }
 
 /**

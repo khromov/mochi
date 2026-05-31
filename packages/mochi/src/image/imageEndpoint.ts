@@ -4,17 +4,12 @@ import { decryptImageRequest } from './imageCrypto';
 import { originalId, variantId } from './imageCache';
 import { resizeImage } from './resize';
 import { ImageError } from './types';
-import type { ResolvedImageOptions } from './types';
 
 function textResponse(status: number, message: string): Response {
   return new Response(message, {
     status,
     headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' },
   });
-}
-
-function cacheControl(options: ResolvedImageOptions): string {
-  return `public, max-age=${options.browserMaxAge}, immutable`;
 }
 
 /**
@@ -44,19 +39,20 @@ export function createImageHandler(): (req: Request) => Promise<Response> {
     // Full-size original: serve the shared cached bytes verbatim. The resize
     // format/fit guards below don't apply (originals may be gif/svg/etc.).
     if (request.orig) {
-      const etag = `"${originalId(request.src)}"`;
-      if (req.headers.get('if-none-match') === etag) {
-        return new Response(null, { status: 304, headers: { ETag: etag, 'Cache-Control': cacheControl(options) } });
-      }
       try {
-        const { bytes, contentType, status } = await getCachedOriginal(request.src, { timeToStale: request.ts, timeToEvict: request.te }, options, cache);
+        const { bytes, contentType, status, createdAt } = await getCachedOriginal(request.src, { timeToStale: request.ts, timeToEvict: request.te }, options, cache);
+        // ETag carries the cache generation, so a re-fetched/invalidated source
+        // yields a new ETag and a stale conditional request gets fresh bytes.
+        const etag = `"${originalId(request.src)}-${createdAt}"`;
+        if (req.headers.get('if-none-match') === etag) {
+          return new Response(null, { status: 304, headers: { ETag: etag } });
+        }
         return new Response(bytes as unknown as BodyInit, {
           status: 200,
           headers: {
             'Content-Type': contentType,
             'Content-Length': String(bytes.byteLength),
             ETag: etag,
-            'Cache-Control': cacheControl(options),
             'X-Mochi-Cache': status,
           },
         });
@@ -75,11 +71,6 @@ export function createImageHandler(): (req: Request) => Promise<Response> {
       return textResponse(415, 'Invalid fit');
     }
 
-    const etag = `"${variantId(request)}"`;
-    if (req.headers.get('if-none-match') === etag) {
-      return new Response(null, { status: 304, headers: { ETag: etag, 'Cache-Control': cacheControl(options) } });
-    }
-
     try {
       const { entry, status } = await cache.get(request, async () => {
         const { bytes } = await getCachedOriginal(request.src, { timeToStale: request.ts, timeToEvict: request.te }, options, cache);
@@ -93,6 +84,13 @@ export function createImageHandler(): (req: Request) => Promise<Response> {
         };
       });
 
+      // ETag carries the served bytes' generation (bumped on regeneration), so
+      // revalidation reflects the current content rather than the stable id.
+      const etag = `"${variantId(request)}-${entry.meta.createdAt}"`;
+      if (req.headers.get('if-none-match') === etag) {
+        return new Response(null, { status: 304, headers: { ETag: etag } });
+      }
+
       // Uint8Array is a valid BodyInit at runtime; the cast bridges the
       // ArrayBufferLike/ArrayBuffer generic mismatch in the DOM lib types.
       return new Response(entry.bytes as unknown as BodyInit, {
@@ -101,7 +99,6 @@ export function createImageHandler(): (req: Request) => Promise<Response> {
           'Content-Type': entry.meta.contentType,
           'Content-Length': String(entry.bytes.byteLength),
           ETag: etag,
-          'Cache-Control': cacheControl(options),
           'X-Mochi-Cache': status,
         },
       });
