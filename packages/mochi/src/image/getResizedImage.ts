@@ -5,6 +5,7 @@ import { packImageRequest } from './imageCodec';
 import { computePlaceholder } from './resize';
 import { buildImageFilename, buildOriginalFilename } from './slug';
 import { requestContext } from '../requestContext';
+import { applyFilter } from '../extensions';
 import { logger } from '../log';
 import type { ImageCache, ImageCacheStatus } from './imageCache';
 import type { ImageFormat, ImageRequest, InvalidateImageOptions, OriginalImageOptions, ResizeImageOptions, ResolvedImageOptions } from './types';
@@ -48,9 +49,16 @@ function buildRequest(src: string, opts: ResizeImageOptions, resolved: ResolvedI
 export function getResizedImage(src: string, opts: ResizeImageOptions = {}): string {
   const { options } = getImageRuntime();
   const req = buildRequest(src, opts, options);
-  const filename = buildImageFilename(req);
+  return mintImageUrl(req, buildImageFilename(req), options);
+}
+
+// Mint the signed URL and let the `image:url` filter rewrite it (e.g. prepend a
+// CDN origin) before it's recorded/returned — so the debug bar logs what the
+// caller actually gets.
+function mintImageUrl(req: ImageRequest, filename: string, options: ResolvedImageOptions): string {
   const token = encryptImageRequest(req, filename, options, options.compressPayload);
-  const url = `${getImageAssetPrefix()}/image/${filename}?p=${token}`;
+  const raw = `${getImageAssetPrefix()}/image/${filename}?p=${token}`;
+  const url = applyFilter('image:url', raw, { src: req.src, filename, original: req.orig === true });
   recordForDebugBar(url, filename, req, options);
   return url;
 }
@@ -77,11 +85,7 @@ function buildOriginalRequest(src: string, opts: OriginalImageOptions, resolved:
 export function getImage(src: string, opts: OriginalImageOptions = {}): string {
   const { options } = getImageRuntime();
   const req = buildOriginalRequest(src, opts, options);
-  const filename = buildOriginalFilename(req);
-  const token = encryptImageRequest(req, filename, options, options.compressPayload);
-  const url = `${getImageAssetPrefix()}/image/${filename}?p=${token}`;
-  recordForDebugBar(url, filename, req, options);
-  return url;
+  return mintImageUrl(req, buildOriginalFilename(req), options);
 }
 
 /**

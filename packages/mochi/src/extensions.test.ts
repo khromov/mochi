@@ -408,6 +408,41 @@ describe('new extension points', () => {
     expect(result).toBe(blocking);
   });
 
+  test('image:url returns the input URL unchanged when no filter registered', () => {
+    const input = '/_mochi/image/photo-500x500.webp?p=tok';
+    const result = applyFilter('image:url', input, {
+      src: 'https://example.com/photo.jpg',
+      filename: 'photo-500x500.webp',
+      original: false,
+    });
+    expect(result).toBe(input);
+  });
+
+  test('image:url rewrites the returned URL (e.g. prepend a CDN origin)', () => {
+    initExtensions({
+      filters: {
+        'image:url': (url) => `https://cdn.example.com${url}`,
+      },
+    });
+    const result = applyFilter('image:url', '/_mochi/image/photo-500x500.webp?p=tok', {
+      src: 'https://example.com/photo.jpg',
+      filename: 'photo-500x500.webp',
+      original: false,
+    });
+    expect(result).toBe('https://cdn.example.com/_mochi/image/photo-500x500.webp?p=tok');
+  });
+
+  test('image:url can branch on the original flag and src in context', () => {
+    initExtensions({
+      filters: {
+        'image:url': (url, { original, src }) => (original && src.endsWith('.jpg') ? `https://originals.example.com${url}` : url),
+      },
+    });
+    const ctx = { src: 'https://example.com/photo.jpg', filename: 'photo-original.jpg' };
+    expect(applyFilter('image:url', '/a?p=t', { ...ctx, original: true })).toBe('https://originals.example.com/a?p=t');
+    expect(applyFilter('image:url', '/a?p=t', { ...ctx, original: false })).toBe('/a?p=t');
+  });
+
   // The runtime fires `route:matched` from inside `requestContext.run(...)`
   // for all four kinds (page, api, ws, sse). Drive the same shape here to lock
   // the contract that `getRequestContext()` works inside the hook regardless

@@ -300,3 +300,16 @@ await Mochi.serve({
   routes,
 });
 ```
+
+#### `image:url`
+
+Rewrite the signed URL returned by `getResizedImage()` / `getImage()` (and the `<Image>` component) before it reaches your markup — typically to prepend a CDN origin in front of the relative `/_mochi/image/…?p=<token>` path. The context carries the source `src`, the cosmetic `filename`, and `original` (`true` for `getImage`, `false` for resized variants), so you can route originals and variants differently. Return the URL unchanged to opt out per call. Sync.
+
+```ts
+await Mochi.serve({
+  filters: {
+    'image:url': (url, { original }) => `https://cdn.example.com${url}`,
+  },
+  routes,
+});
+```

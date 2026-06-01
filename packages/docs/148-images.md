@@ -59,6 +59,8 @@ const url = getResizedImage('https://example.com/photo.jpg', {
 // → /_mochi/image/photo-500x500.webp?p=<encrypted token>
 ```
 
+The returned URL is relative by default. To serve images from a CDN — or otherwise rewrite the host/prefix — register the [`image:url`](/docs/extensions/#imageurl) filter; it runs on the URL from both `getResizedImage()` and `getImage()` (and the `<Image>` component).
+
 ### Full-size originals
 
 `getImage()` returns a signed URL for the **un-resized** original (original bytes and content-type), and `getImageBytes()` returns the cached bytes for server-side use:

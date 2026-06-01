@@ -1,0 +1,67 @@
+import { afterEach, describe, expect, test } from 'bun:test';
+import { getResizedImage, getImage } from './getResizedImage';
+import { initExtensions } from '../extensions';
+
+const GLOBAL_CONFIG_KEY = '__mochi_config__';
+const GLOBAL_RUNTIME_KEY = '__mochi_image_runtime__';
+
+function installConfig() {
+  (globalThis as unknown as Record<string, unknown>)[GLOBAL_CONFIG_KEY] = {
+    options: {},
+    secretKey: Buffer.from('test-key-for-unit-tests-32bytes!'),
+  };
+}
+
+afterEach(() => {
+  delete (globalThis as unknown as Record<string, unknown>)[GLOBAL_CONFIG_KEY];
+  delete (globalThis as unknown as Record<string, unknown>)[GLOBAL_RUNTIME_KEY];
+  initExtensions({});
+});
+
+describe('image:url filter', () => {
+  test('getResizedImage returns the bare /_mochi URL when no filter is registered', () => {
+    installConfig();
+    initExtensions({});
+    expect(getResizedImage('https://example.com/photo.jpg', { width: 500, height: 500 })).toStartWith('/_mochi/image/photo-500x500.webp?p=');
+  });
+
+  test('getResizedImage runs its URL through the image:url filter', () => {
+    installConfig();
+    initExtensions({ filters: { 'image:url': (url) => `https://cdn.example.com${url}` } });
+    const url = getResizedImage('https://example.com/photo.jpg', { width: 500, height: 500 });
+    expect(url).toStartWith('https://cdn.example.com/_mochi/image/photo-500x500.webp?p=');
+  });
+
+  test('the filter receives src/filename and original=false for resized variants', () => {
+    installConfig();
+    const seen: { src?: string; filename?: string; original?: boolean } = {};
+    initExtensions({
+      filters: {
+        'image:url': (url, ctx) => {
+          Object.assign(seen, ctx);
+          return url;
+        },
+      },
+    });
+    getResizedImage('https://example.com/photo.jpg', { width: 500, height: 500 });
+    expect(seen.src).toBe('https://example.com/photo.jpg');
+    expect(seen.filename).toBe('photo-500x500.webp');
+    expect(seen.original).toBe(false);
+  });
+
+  test('getImage runs through the same filter with original=true', () => {
+    installConfig();
+    const seen: { original?: boolean } = {};
+    initExtensions({
+      filters: {
+        'image:url': (url, ctx) => {
+          seen.original = ctx.original;
+          return `https://cdn.example.com${url}`;
+        },
+      },
+    });
+    const url = getImage('https://example.com/photo.jpg');
+    expect(seen.original).toBe(true);
+    expect(url).toStartWith('https://cdn.example.com/_mochi/image/photo-original.jpg?p=');
+  });
+});

@@ -78,6 +78,7 @@ export interface MochiFilterValue {
   'publicDir:scan': Map<string, string>;
   'consoleLogger:line': string;
   'image:maxRedirects': number;
+  'image:url': string;
 }
 
 // Optional per-filter override for the *return* type when it differs from the
@@ -117,6 +118,7 @@ export interface MochiFilterContext {
     source: ConsoleLoggerSource;
   };
   'image:maxRedirects': { src: string };
+  'image:url': { src: string; filename: string; original: boolean };
 }
 
 export interface MochiFilterKindMap {
@@ -131,6 +133,7 @@ export interface MochiFilterKindMap {
   'publicDir:scan': 'async';
   'consoleLogger:line': 'sync';
   'image:maxRedirects': 'sync';
+  'image:url': 'sync';
 }
 
 type FilterReturn<K extends keyof MochiFilterValue> = K extends keyof MochiFilterReturn ? MochiFilterReturn[K] : MochiFilterValue[K];
@@ -169,6 +172,7 @@ const FILTER_KINDS: { [K in keyof MochiFilterValue]: MochiKind } = {
   'publicDir:scan': 'async',
   'consoleLogger:line': 'sync',
   'image:maxRedirects': 'sync',
+  'image:url': 'sync',
 };
 
 // Pinned on globalThis so duplicate bundled copies of mochi-framework share one
