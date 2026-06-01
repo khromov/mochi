@@ -37,9 +37,13 @@ export interface EncryptOptions {
 }
 
 export function encryptPayload(plaintext: string, opts: EncryptOptions = {}): string {
+  return encryptPayloadBytes(Buffer.from(plaintext, 'utf-8'), opts);
+}
+
+export function encryptPayloadBytes(input: Uint8Array, opts: EncryptOptions = {}): string {
   const key = aesKey();
 
-  let payload = Buffer.from(plaintext, 'utf-8');
+  let payload = Buffer.from(input);
   let flags = 0;
   if ((opts.compress ?? true) && payload.length >= 64) {
     const deflated = Buffer.from(Bun.deflateSync(payload));
@@ -69,6 +73,11 @@ export function encryptPayload(plaintext: string, opts: EncryptOptions = {}): st
 }
 
 export function decryptPayload(token: string, opts: { aad?: string } = {}): string | null {
+  const buf = decryptPayloadBytes(token, opts);
+  return buf === null ? null : buf.toString('utf-8');
+}
+
+export function decryptPayloadBytes(token: string, opts: { aad?: string } = {}): Buffer | null {
   try {
     const buf = Buffer.from(token, 'base64url');
     if (buf.length < IV_LEN + TAG_LEN + 1) {
@@ -90,7 +99,7 @@ export function decryptPayload(token: string, opts: { aad?: string } = {}): stri
     if (flags & FLAG_COMPRESSED) {
       payload = Buffer.from(Bun.inflateSync(payload));
     }
-    return payload.toString('utf-8');
+    return payload;
   } catch {
     return null;
   }

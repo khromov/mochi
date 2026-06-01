@@ -48,7 +48,7 @@ export function getResizedImage(src: string, opts: ResizeImageOptions = {}): str
   const { options } = getImageRuntime();
   const req = buildRequest(src, opts, options);
   const filename = buildImageFilename(req);
-  const token = encryptImageRequest(req, filename, options.compressPayload);
+  const token = encryptImageRequest(req, filename, options, options.compressPayload);
   const url = `${getImageAssetPrefix()}/image/${filename}?p=${token}`;
   recordForDebugBar(url, filename, req);
   return url;
@@ -77,7 +77,7 @@ export function getImage(src: string, opts: OriginalImageOptions = {}): string {
   const { options } = getImageRuntime();
   const req = buildOriginalRequest(src, opts, options);
   const filename = buildOriginalFilename(req);
-  const token = encryptImageRequest(req, filename, options.compressPayload);
+  const token = encryptImageRequest(req, filename, options, options.compressPayload);
   const url = `${getImageAssetPrefix()}/image/${filename}?p=${token}`;
   recordForDebugBar(url, filename, req);
   return url;

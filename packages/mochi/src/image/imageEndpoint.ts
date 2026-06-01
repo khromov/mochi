@@ -31,7 +31,7 @@ export function createImageHandler(): (req: Request) => Promise<Response> {
 
     // The filename is bound as GCM AAD, so a tampered path (e.g. swapped
     // /my-image.webp) or payload fails decryption.
-    const request = decryptImageRequest(token, filename);
+    const request = decryptImageRequest(token, filename, options);
     if (!request) {
       return textResponse(403, 'Invalid payload');
     }
