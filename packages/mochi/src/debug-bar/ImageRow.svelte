@@ -47,6 +47,15 @@
     </a>
     <!-- eslint-disable-next-line svelte/no-at-html-tags -- sanitized JSON highlight output -->
     <pre class="island-props">{@html paramsHtml}</pre>
+    {#if image.wire}
+      <div class="wire">
+        <div class="wire-head">
+          <span class="wire-title">Wire format</span>
+          <span class="wire-sub">binary, before AES-256-GCM</span>
+        </div>
+        <pre class="wire-bytes">{image.wire.headerHex}<span class="wire-tail"> + {image.wire.srcBytes} B utf-8 src</span></pre>
+      </div>
+    {/if}
   </div>
 </div>
 
@@ -101,5 +110,39 @@
     white-space: pre-wrap;
     word-break: break-all;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .wire {
+    border-top: 1px solid #2e3228;
+    padding-top: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .wire-head {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+  }
+  .wire-title {
+    font-size: 10px;
+    font-weight: 600;
+    color: #b8a3c4;
+  }
+  .wire-sub {
+    font-size: 9px;
+    color: #8e9488;
+  }
+  .wire-bytes {
+    margin: 0;
+    padding: 0;
+    font-size: 10px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-all;
+    color: #d4b8c8;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .wire-tail {
+    color: #8e9488;
   }
 </style>

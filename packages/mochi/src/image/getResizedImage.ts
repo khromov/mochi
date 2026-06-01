@@ -1,6 +1,7 @@
 import { getImageAssetPrefix, getImageRuntime } from './config';
 import { fetchImageSource } from './fetchSource';
 import { encryptImageRequest } from './imageCrypto';
+import { packImageRequest } from './imageCodec';
 import { computePlaceholder } from './resize';
 import { buildImageFilename, buildOriginalFilename } from './slug';
 import { requestContext } from '../requestContext';
@@ -50,7 +51,7 @@ export function getResizedImage(src: string, opts: ResizeImageOptions = {}): str
   const filename = buildImageFilename(req);
   const token = encryptImageRequest(req, filename, options, options.compressPayload);
   const url = `${getImageAssetPrefix()}/image/${filename}?p=${token}`;
-  recordForDebugBar(url, filename, req);
+  recordForDebugBar(url, filename, req, options);
   return url;
 }
 
@@ -79,7 +80,7 @@ export function getImage(src: string, opts: OriginalImageOptions = {}): string {
   const filename = buildOriginalFilename(req);
   const token = encryptImageRequest(req, filename, options, options.compressPayload);
   const url = `${getImageAssetPrefix()}/image/${filename}?p=${token}`;
-  recordForDebugBar(url, filename, req);
+  recordForDebugBar(url, filename, req, options);
   return url;
 }
 
@@ -116,12 +117,15 @@ export async function getImageBytes(src: string, opts: OriginalImageOptions = {}
   }
 }
 
-function recordForDebugBar(url: string, filename: string, req: ImageRequest): void {
+function recordForDebugBar(url: string, filename: string, req: ImageRequest, resolved: ResolvedImageOptions): void {
   try {
     const ctx = requestContext.getStore();
     const images = ctx?.debugBarData?.images;
     if (images && !images.some((i) => i.url === url)) {
-      images.push({ url, filename, params: { ...req } });
+      const packed = packImageRequest(req, resolved);
+      const srcBytes = Buffer.byteLength(req.src, 'utf-8');
+      const headerHex = Array.from(packed.subarray(0, packed.length - srcBytes), (b) => b.toString(16).padStart(2, '0')).join(' ');
+      images.push({ url, filename, params: { ...req }, wire: { headerHex, bytes: packed.length, srcBytes } });
     }
   } catch {
     // Debug recording is best-effort; ignore failures.
