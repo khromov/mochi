@@ -1,0 +1,16 @@
+{
+  "name": "bun-hot-eisdir-repro",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "repro": "bun --cwd=../site --hot src/_repro.ts",
+    "repro:watch": "bun --cwd=../site --watch src/_repro.ts",
+    "repro:ok": "bun --cwd=../site src/_repro.ts",
+    "clean": "rm -rf ../site/.repro-out"
+  },
+  "dependencies": {
+    "highlight.js": "11.11.1",
+    "mochi-framework": "workspace:*",
+    "svelte": "5.55.9"
+  }
+}
