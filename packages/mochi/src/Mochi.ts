@@ -162,11 +162,7 @@ export class Mochi {
     const warnShim = registry.debugBarEnabled
       ? `<script>window.__mochi_warnings=[];window.__mochi_warn=function(m){console.warn("[mochi] "+m);window.__mochi_warnings.push(m)}</script>`
       : '';
-    // Single global-regex pass, not four sequential string-form `.replace`s.
-    // `.replace` never re-scans its own replacement output, so body content
-    // spliced in mid-pass is never searched for further placeholders — docs
-    // pages can show literal `{{mochi.script}}` text without it colliding with
-    // the real shell placeholder. The function-form replacer is also required
+    // Single global-regex pass. The function-form replacer is also required
     // for safety: string-form replacements interpret `$&`, `$'`, `` $` ``, `$$`
     // as special patterns, which minified JS and serialized props can contain.
     const slots: Record<'head' | 'css' | 'body' | 'script', () => string> = {
