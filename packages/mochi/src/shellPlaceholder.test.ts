@@ -47,4 +47,16 @@ describe('shell placeholders do not collide with placeholder-looking body text',
     // The genuine shell placeholder before </body> is gone (filled, not printed).
     expect(html).not.toMatch(/\{\{mochi\.script\}\}\s*<\/body>/);
   });
+
+  // `$&`, `` $` ``, `$'`, `$$` are special-pattern sequences that string-form
+  // `.replace(str, replacement)` would interpret. The function-form replacer
+  // must emit slot content (minified JS, serialized props, plain body text)
+  // verbatim — this guards against a regression that swaps it for string form.
+  test('special replacement sequences in body text are emitted verbatim', async () => {
+    const html = await (await fetch(`http://localhost:${port}/`)).text();
+    // The `&` is HTML-escaped to `&amp;` (orthogonal to the replace concern);
+    // every `$`-sequence is otherwise untouched. A string-form replacement
+    // would expand `$&`/`` $` ``/`$'`/`$$` against the matched placeholder.
+    expect(html).toContain("a$&amp;b$`c$'d$$e");
+  });
 });
