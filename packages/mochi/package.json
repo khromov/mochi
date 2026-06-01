@@ -49,6 +49,11 @@
       "bun": "./src/build.ts",
       "default": "./src/build.ts"
     },
+    "./components": {
+      "types": "./src/components/index.ts",
+      "svelte": "./src/components/index.ts",
+      "default": "./src/components/index.ts"
+    },
     "./highlight": {
       "types": "./src/highlight.ts",
       "bun": "./src/highlight.ts",

@@ -62,6 +62,12 @@ export const demos: Demo[] = [
     category: 'data',
   },
   {
+    href: '/demos/view-transitions/',
+    title: 'View Transitions',
+    hook: 'Drop <ViewTransitions /> into a shared layout to animate full-page navigations with zero JavaScript.',
+    category: 'hydration',
+  },
+  {
     href: '/demos/cache-events/',
     title: 'Cache Events',
     hook: 'Subscribe to MochiCache lifecycle events through mochiEvents and log them to the server console.',

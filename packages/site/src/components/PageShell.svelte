@@ -2,6 +2,7 @@
   import '@fontsource/public-sans';
   import '@fontsource-variable/fraunces/full.css';
   import { MetaTags, type MetaTagsProps } from 'svelte-meta-tags';
+  import { ViewTransitions } from 'mochi-framework/components';
   import Sidebar from './Sidebar.svelte';
   import MobileNav from './MobileNav.svelte';
   import Banner from './Banner.svelte';
@@ -26,6 +27,7 @@
 </script>
 
 <MetaTags {...mergedMetaTags} />
+<ViewTransitions type="fade" />
 
 <Banner />
 <MobileNav mochi:hydrate {docsNav} {demos} {currentSlug} />
