@@ -125,7 +125,7 @@ function recordForDebugBar(url: string, filename: string, req: ImageRequest, res
       const packed = packImageRequest(req, resolved);
       const srcBytes = Buffer.byteLength(req.src, 'utf-8');
       const headerHex = Array.from(packed.subarray(0, packed.length - srcBytes), (b) => b.toString(16).padStart(2, '0')).join(' ');
-      images.push({ url, filename, params: { ...req }, wire: { headerHex, bytes: packed.length, srcBytes } });
+      images.push({ url, filename, params: { ...req }, wire: { headerHex, srcBytes } });
     }
   } catch {
     // Debug recording is best-effort; ignore failures.

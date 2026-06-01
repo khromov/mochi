@@ -81,8 +81,6 @@ export interface ImageDebugEntry {
   wire?: {
     /** Space-separated hex of the packed header (control bytes + varints), before the UTF-8 src tail. */
     headerHex: string;
-    /** Total packed size in bytes (header + UTF-8 src). */
-    bytes: number;
     /** Byte length of the UTF-8 src tail. */
     srcBytes: number;
   };
