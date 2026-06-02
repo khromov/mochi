@@ -56,29 +56,29 @@ function readVarint(buf: Uint8Array, cursor: { i: number }): number {
 }
 
 export function packImageRequest(req: ImageRequest, resolved: ResolvedImageOptions): Uint8Array {
-  const fmtIndex = Math.max(0, FORMATS.indexOf(req.fmt));
+  const fmtIndex = Math.max(0, FORMATS.indexOf(req.format));
 
-  const hasQ = req.q !== resolved.defaultQuality;
-  const hasTs = req.ts !== resolved.timeToStale;
-  const hasTe = req.te !== resolved.timeToEvict;
+  const hasQ = req.quality !== resolved.defaultQuality;
+  const hasTs = req.timeToStale !== resolved.timeToStale;
+  const hasTe = req.timeToEvict !== resolved.timeToEvict;
 
   let control = fmtIndex & 0b11;
   if (req.fit === 'fill') {
     control |= FIT_FILL;
   }
-  if (req.ao) {
+  if (req.autoOrient) {
     control |= AO;
   }
-  if (req.noUp) {
+  if (req.withoutEnlargement) {
     control |= NO_UP;
   }
-  if (req.orig) {
+  if (req.original) {
     control |= ORIG;
   }
-  if (req.w !== undefined) {
+  if (req.width !== undefined) {
     control |= HAS_W;
   }
-  if (req.h !== undefined) {
+  if (req.height !== undefined) {
     control |= HAS_H;
   }
 
@@ -94,20 +94,20 @@ export function packImageRequest(req: ImageRequest, resolved: ResolvedImageOptio
   }
 
   const head: number[] = [control, control2];
-  if (req.w !== undefined) {
-    writeVarint(head, req.w);
+  if (req.width !== undefined) {
+    writeVarint(head, req.width);
   }
-  if (req.h !== undefined) {
-    writeVarint(head, req.h);
+  if (req.height !== undefined) {
+    writeVarint(head, req.height);
   }
   if (hasQ) {
-    head.push(req.q & 0xff);
+    head.push(req.quality & 0xff);
   }
   if (hasTs) {
-    writeVarint(head, req.ts);
+    writeVarint(head, req.timeToStale);
   }
   if (hasTe) {
-    writeVarint(head, req.te);
+    writeVarint(head, req.timeToEvict);
   }
 
   const src = Buffer.from(req.src, 'utf-8');
@@ -126,32 +126,32 @@ export function unpackImageRequest(buf: Uint8Array, resolved: ResolvedImageOptio
     const control2 = buf[1]!;
     const cursor = { i: 2 };
 
-    const fmt = FORMATS[control & 0b11]!;
+    const format = FORMATS[control & 0b11]!;
     const fit: ImageFit = control & FIT_FILL ? 'fill' : 'inside';
 
-    const w = control & HAS_W ? readVarint(buf, cursor) : undefined;
-    const h = control & HAS_H ? readVarint(buf, cursor) : undefined;
-    const q = control2 & HAS_Q ? buf[cursor.i++]! : resolved.defaultQuality;
-    const ts = control2 & HAS_TS ? readVarint(buf, cursor) : resolved.timeToStale;
-    const te = control2 & HAS_TE ? readVarint(buf, cursor) : resolved.timeToEvict;
+    const width = control & HAS_W ? readVarint(buf, cursor) : undefined;
+    const height = control & HAS_H ? readVarint(buf, cursor) : undefined;
+    const quality = control2 & HAS_Q ? buf[cursor.i++]! : resolved.defaultQuality;
+    const timeToStale = control2 & HAS_TS ? readVarint(buf, cursor) : resolved.timeToStale;
+    const timeToEvict = control2 & HAS_TE ? readVarint(buf, cursor) : resolved.timeToEvict;
 
     if (cursor.i > buf.length) {
       return null;
     }
     const src = Buffer.from(buf.buffer, buf.byteOffset + cursor.i, buf.length - cursor.i).toString('utf-8');
 
-    const req: ImageRequest = { src, fit, fmt, q, ao: (control & AO) !== 0, ts, te };
-    if (w !== undefined) {
-      req.w = w;
+    const req: ImageRequest = { src, fit, format, quality, autoOrient: (control & AO) !== 0, timeToStale, timeToEvict };
+    if (width !== undefined) {
+      req.width = width;
     }
-    if (h !== undefined) {
-      req.h = h;
+    if (height !== undefined) {
+      req.height = height;
     }
     if (control & NO_UP) {
-      req.noUp = true;
+      req.withoutEnlargement = true;
     }
     if (control & ORIG) {
-      req.orig = true;
+      req.original = true;
     }
     return req;
   } catch {

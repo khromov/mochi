@@ -4,32 +4,34 @@ export type ImageFormat = 'webp' | 'jpeg' | 'png' | 'avif';
 export type ImageFit = 'inside' | 'fill';
 
 /**
- * The request payload baked (encrypted) into every image URL. Compact keys keep
- * the URL short. The whole object is sealed with AES-256-GCM, so the source URL
- * and params are neither readable nor tamperable.
+ * The request payload baked (encrypted) into every image URL. Field names mirror
+ * the Bun `Image` API where one exists. The payload is packed positionally into a
+ * compact binary token (see `imageCodec.ts`) — the property names never appear on
+ * the wire — then sealed with AES-256-GCM, so the source URL and params are
+ * neither readable nor tamperable.
  */
 export interface ImageRequest {
   src: string;
   /** Target width in px. */
-  w?: number;
+  width?: number;
   /** Target height in px. */
-  h?: number;
+  height?: number;
   /** Resize fit (defaults applied at sign time). */
   fit: ImageFit;
   /** Never upscale beyond the source's intrinsic size. */
-  noUp?: boolean;
+  withoutEnlargement?: boolean;
   /** Output format. */
-  fmt: ImageFormat;
+  format: ImageFormat;
   /** Quality 1-100 (ignored for png). */
-  q: number;
+  quality: number;
   /** Apply EXIF orientation. */
-  ao: boolean;
+  autoOrient: boolean;
   /** Time-to-stale in ms. */
-  ts: number;
+  timeToStale: number;
   /** Time-to-evict in ms. */
-  te: number;
+  timeToEvict: number;
   /** Full-size original request: serve the cached origin bytes verbatim, no resize. Resize fields above are ignored. */
-  orig?: true;
+  original?: true;
 }
 
 /** Per-call options accepted by `getResizedImage(src, opts)` and `<Image>`. */

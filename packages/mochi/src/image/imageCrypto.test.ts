@@ -22,7 +22,18 @@ function removeConfig() {
 afterEach(removeConfig);
 
 function req(over: Partial<ImageRequest> = {}): ImageRequest {
-  return { src: 'https://example.com/a.png', w: 200, h: 200, fit: 'inside', fmt: 'webp', q: 80, ao: true, ts: 60_000, te: 86_400_000, ...over };
+  return {
+    src: 'https://example.com/a.png',
+    width: 200,
+    height: 200,
+    fit: 'inside',
+    format: 'webp',
+    quality: 80,
+    autoOrient: true,
+    timeToStale: 60_000,
+    timeToEvict: 86_400_000,
+    ...over,
+  };
 }
 
 const NAME = 'a-200x200.webp';
@@ -71,14 +82,14 @@ describe('encryptImageRequest + decryptImageRequest', () => {
 
   test('round-trips a full-size original request', () => {
     installConfig();
-    const r = req({ orig: true });
+    const r = req({ original: true });
     const name = 'a-original.png';
     expect(decryptImageRequest(encryptImageRequest(r, name, RESOLVED), name, RESOLVED)).toEqual(r);
   });
 
   test('binary token is shorter than the equivalent JSON-based token', () => {
     installConfig();
-    const r = req({ fmt: 'jpeg', q: 60, w: 400, h: 400 });
+    const r = req({ format: 'jpeg', quality: 60, width: 400, height: 400 });
     const token = encryptImageRequest(r, NAME, RESOLVED);
     // Reproduce the old scheme: JSON.stringify → same envelope (compression on).
     const jsonToken = encryptPayload(JSON.stringify(r), { aad: NAME });
@@ -98,16 +109,16 @@ describe('wire-format snapshots (fixed MOCHI_KEY)', () => {
     expect(decryptImageRequest(encryptImageRequest(r, 'a-200x200.webp', RESOLVED), 'a-200x200.webp', RESOLVED)).toEqual(r);
   });
 
-  test('resize with non-default fmt/quality/fit/noUp', () => {
+  test('resize with non-default format/quality/fit/withoutEnlargement', () => {
     installConfig();
-    const r = req({ w: 400, h: 400, fit: 'fill', fmt: 'jpeg', q: 60, noUp: true });
+    const r = req({ width: 400, height: 400, fit: 'fill', format: 'jpeg', quality: 60, withoutEnlargement: true });
     expect(encryptImageRequest(r, 'a-400x400.jpg', RESOLVED)).toBe('DfbDfIQQxa2gHPizcMs9CcQLAM82h5E1N9PgvtPJHKvq__eFo93oDTYr_Y_fyfUaWzk1pByclc9CfxMnXQ');
     expect(decryptImageRequest(encryptImageRequest(r, 'a-400x400.jpg', RESOLVED), 'a-400x400.jpg', RESOLVED)).toEqual(r);
   });
 
   test('full-size original', () => {
     installConfig();
-    const r = req({ w: undefined, h: undefined, orig: true });
+    const r = req({ width: undefined, height: undefined, original: true });
     expect(encryptImageRequest(r, 'a-original.png', RESOLVED)).toBe('iZXreQxJWJZMIT1hF4pzeM5CuMYBrY4TsGTd5KlICpcWJmb6H0v-XfCOJyxkgQa3Hd1cofYQeKA');
     expect(decryptImageRequest(encryptImageRequest(r, 'a-original.png', RESOLVED), 'a-original.png', RESOLVED)).toEqual(r);
   });

@@ -26,19 +26,19 @@ const opts: ResolvedImageOptions = {
 };
 
 function req(over: Partial<ImageRequest> = {}): ImageRequest {
-  return { src: 'https://example.com/a.png', w: 4, h: 4, fit: 'inside', fmt: 'webp', q: 80, ao: true, ts: 1, te: 1, ...over };
+  return { src: 'https://example.com/a.png', width: 4, height: 4, fit: 'inside', format: 'webp', quality: 80, autoOrient: true, timeToStale: 1, timeToEvict: 1, ...over };
 }
 
 describe('resizeImage', () => {
   test('resizes and transcodes to the requested format', async () => {
-    const result = await resizeImage(new Uint8Array(PNG), req({ fmt: 'webp' }), opts);
+    const result = await resizeImage(new Uint8Array(PNG), req({ format: 'webp' }), opts);
     expect(result.contentType).toBe('image/webp');
     expect(result.format).toBe('webp');
     expect(result.bytes.byteLength).toBeGreaterThan(0);
   });
 
   test('derives width from aspect ratio for height-only requests', async () => {
-    const result = await resizeImage(new Uint8Array(PNG), req({ w: undefined, h: 3, fmt: 'png' }), opts);
+    const result = await resizeImage(new Uint8Array(PNG), req({ width: undefined, height: 3, format: 'png' }), opts);
     expect(result.height).toBe(3);
   });
 

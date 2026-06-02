@@ -38,9 +38,14 @@ export function createImageHandler(): (req: Request) => Promise<Response> {
 
     // Full-size original: serve the shared cached bytes verbatim. The resize
     // format/fit guards below don't apply (originals may be gif/svg/etc.).
-    if (request.orig) {
+    if (request.original) {
       try {
-        const { bytes, contentType, status, createdAt } = await getCachedOriginal(request.src, { timeToStale: request.ts, timeToEvict: request.te }, options, cache);
+        const { bytes, contentType, status, createdAt } = await getCachedOriginal(
+          request.src,
+          { timeToStale: request.timeToStale, timeToEvict: request.timeToEvict },
+          options,
+          cache,
+        );
         // ETag carries the cache generation, so a re-fetched/invalidated source
         // yields a new ETag and a stale conditional request gets fresh bytes.
         const etag = `"${originalId(request.src)}-${createdAt}"`;
@@ -64,7 +69,7 @@ export function createImageHandler(): (req: Request) => Promise<Response> {
       }
     }
 
-    if (!options.outputFormats.includes(request.fmt)) {
+    if (!options.outputFormats.includes(request.format)) {
       return textResponse(415, 'Output format not allowed');
     }
     if (request.fit !== 'inside' && request.fit !== 'fill') {
@@ -73,7 +78,7 @@ export function createImageHandler(): (req: Request) => Promise<Response> {
 
     try {
       const { entry, status } = await cache.get(request, async () => {
-        const { bytes } = await getCachedOriginal(request.src, { timeToStale: request.ts, timeToEvict: request.te }, options, cache);
+        const { bytes } = await getCachedOriginal(request.src, { timeToStale: request.timeToStale, timeToEvict: request.timeToEvict }, options, cache);
         const result = await resizeImage(bytes, request, options);
         return {
           bytes: result.bytes,

@@ -65,7 +65,7 @@ export async function resizeImage(input: Uint8Array, req: ImageRequest, opts: Re
 
   let img: BunImageInstance;
   try {
-    img = new Image(input, { maxPixels: opts.maxPixels, autoOrient: req.ao });
+    img = new Image(input, { maxPixels: opts.maxPixels, autoOrient: req.autoOrient });
   } catch (err) {
     if (isUnsupportedFormatError(err)) {
       throw new ImageError(415, 'Unsupported image format');
@@ -86,8 +86,8 @@ export async function resizeImage(input: Uint8Array, req: ImageRequest, opts: Re
 
   // Bun.Image#resize requires width first; derive it from the aspect ratio for
   // height-only requests.
-  let w = req.w;
-  const h = req.h;
+  let w = req.width;
+  const h = req.height;
   if (!w && h && meta.height > 0) {
     w = Math.max(1, Math.round(meta.width * (h / meta.height)));
   }
@@ -95,21 +95,21 @@ export async function resizeImage(input: Uint8Array, req: ImageRequest, opts: Re
   let pipe = img;
   if (w) {
     const resizeOpts: { fit?: string; withoutEnlargement?: boolean } = { fit: req.fit };
-    if (req.noUp) {
+    if (req.withoutEnlargement) {
       resizeOpts.withoutEnlargement = true;
     }
     pipe = h ? img.resize(w, h, resizeOpts) : img.resize(w, undefined, resizeOpts);
   }
 
-  switch (req.fmt) {
+  switch (req.format) {
     case 'webp':
-      pipe = pipe.webp({ quality: req.q });
+      pipe = pipe.webp({ quality: req.quality });
       break;
     case 'jpeg':
-      pipe = pipe.jpeg({ quality: req.q });
+      pipe = pipe.jpeg({ quality: req.quality });
       break;
     case 'avif':
-      pipe = pipe.avif({ quality: req.q });
+      pipe = pipe.avif({ quality: req.quality });
       break;
     case 'png':
       pipe = pipe.png();
@@ -130,15 +130,15 @@ export async function resizeImage(input: Uint8Array, req: ImageRequest, opts: Re
   try {
     outMeta = await new Image(out).metadata();
   } catch {
-    outMeta = { width: w ?? meta.width, height: h ?? meta.height, format: req.fmt };
+    outMeta = { width: w ?? meta.width, height: h ?? meta.height, format: req.format };
   }
 
   return {
     bytes: out,
-    contentType: MIME[req.fmt],
+    contentType: MIME[req.format],
     width: outMeta.width,
     height: outMeta.height,
-    format: req.fmt,
+    format: req.format,
   };
 }
 

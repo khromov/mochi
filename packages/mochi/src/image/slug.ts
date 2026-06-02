@@ -42,9 +42,9 @@ function dimsLabel(w?: number, h?: number): string {
 /** Cosmetic filename only (`my-image-500x500.webp`); the authoritative request travels encrypted in the `payload` query param. */
 export function buildImageFilename(req: ImageRequest): string {
   const base = baseName(req.src);
-  const dims = dimsLabel(req.w, req.h);
+  const dims = dimsLabel(req.width, req.height);
   const name = dims ? `${base}-${dims}` : base;
-  return `${name}.${extForFormat(req.fmt)}`;
+  return `${name}.${extForFormat(req.format)}`;
 }
 
 function extFromSrc(src: string): string {

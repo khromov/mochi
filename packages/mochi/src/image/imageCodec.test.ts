@@ -6,7 +6,18 @@ import type { ImageFit, ImageFormat, ImageRequest } from './types';
 const RESOLVED = resolveImageOptions({});
 
 function req(over: Partial<ImageRequest> = {}): ImageRequest {
-  return { src: 'https://example.com/a.png', w: 200, h: 200, fit: 'inside', fmt: 'webp', q: 80, ao: true, ts: 60_000, te: 86_400_000, ...over };
+  return {
+    src: 'https://example.com/a.png',
+    width: 200,
+    height: 200,
+    fit: 'inside',
+    format: 'webp',
+    quality: 80,
+    autoOrient: true,
+    timeToStale: 60_000,
+    timeToEvict: 86_400_000,
+    ...over,
+  };
 }
 
 function roundTrip(r: ImageRequest): ImageRequest | null {
@@ -15,7 +26,7 @@ function roundTrip(r: ImageRequest): ImageRequest | null {
 
 describe('packImageRequest + unpackImageRequest', () => {
   test('round-trips a full resize request', () => {
-    const r = req({ fmt: 'jpeg', q: 60, fit: 'fill', ao: false, noUp: true });
+    const r = req({ format: 'jpeg', quality: 60, fit: 'fill', autoOrient: false, withoutEnlargement: true });
     expect(roundTrip(r)).toEqual(r);
   });
 
@@ -28,33 +39,33 @@ describe('packImageRequest + unpackImageRequest', () => {
   });
 
   test('round-trips a request with no width/height', () => {
-    const r: ImageRequest = { src: 'https://example.com/a.png', fit: 'inside', fmt: 'webp', q: 80, ao: true, ts: 60_000, te: 86_400_000 };
+    const r: ImageRequest = { src: 'https://example.com/a.png', fit: 'inside', format: 'webp', quality: 80, autoOrient: true, timeToStale: 60_000, timeToEvict: 86_400_000 };
     expect(roundTrip(r)).toEqual(r);
   });
 
   test('round-trips a full-size original request', () => {
-    const r = req({ orig: true });
+    const r = req({ original: true });
     expect(roundTrip(r)).toEqual(r);
   });
 
-  test('round-trips overridden ts/te', () => {
-    const r = req({ ts: 5_000, te: 7 * 86_400_000 });
+  test('round-trips overridden timeToStale/timeToEvict', () => {
+    const r = req({ timeToStale: 5_000, timeToEvict: 7 * 86_400_000 });
     expect(roundTrip(r)).toEqual(r);
   });
 
-  test('round-trips every fmt and fit', () => {
-    const fmts: ImageFormat[] = ['webp', 'jpeg', 'png', 'avif'];
+  test('round-trips every format and fit', () => {
+    const formats: ImageFormat[] = ['webp', 'jpeg', 'png', 'avif'];
     const fits: ImageFit[] = ['inside', 'fill'];
-    for (const fmt of fmts) {
+    for (const format of formats) {
       for (const fit of fits) {
-        const r = req({ fmt, fit });
+        const r = req({ format, fit });
         expect(roundTrip(r)).toEqual(r);
       }
     }
   });
 
   test('round-trips large varint values', () => {
-    const r = req({ w: 16_383, h: 2_000_000, ts: 1, te: 10 * 86_400_000 });
+    const r = req({ width: 16_383, height: 2_000_000, timeToStale: 1, timeToEvict: 10 * 86_400_000 });
     expect(roundTrip(r)).toEqual(r);
   });
 

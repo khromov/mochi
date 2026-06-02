@@ -25,17 +25,15 @@ function buildRequest(src: string, opts: ResizeImageOptions, resolved: ResolvedI
   }
   return {
     src,
-    w: opts.width,
-    h: opts.height,
+    width: opts.width,
+    height: opts.height,
     fit: opts.fit ?? 'inside',
-    noUp: opts.withoutEnlargement ? true : undefined,
-    fmt,
-    q: clampQuality(opts.quality ?? resolved.defaultQuality),
-    ao: opts.autoOrient ?? resolved.autoOrient,
-    // The variant has no window of its own — it follows the original. ts/te here
-    // just establish the original's window when a variant is the first access.
-    ts: resolved.timeToStale,
-    te: resolved.timeToEvict,
+    withoutEnlargement: opts.withoutEnlargement ? true : undefined,
+    format: fmt,
+    quality: clampQuality(opts.quality ?? resolved.defaultQuality),
+    autoOrient: opts.autoOrient ?? resolved.autoOrient,
+    timeToStale: resolved.timeToStale,
+    timeToEvict: resolved.timeToEvict,
   };
 }
 
@@ -58,22 +56,22 @@ export function getResizedImage(src: string, opts: ResizeImageOptions = {}): str
 function mintImageUrl(req: ImageRequest, filename: string, options: ResolvedImageOptions): string {
   const token = encryptImageRequest(req, filename, options, options.compressPayload);
   const raw = `${getImageAssetPrefix()}/image/${filename}?p=${token}`;
-  const url = applyFilter('image:url', raw, { src: req.src, filename, original: req.orig === true });
+  const url = applyFilter('image:url', raw, { src: req.src, filename, original: req.original === true });
   recordForDebugBar(url, filename, req, options);
   return url;
 }
 
 function buildOriginalRequest(src: string, opts: OriginalImageOptions, resolved: ResolvedImageOptions): ImageRequest {
-  // fit/fmt/q/ao satisfy the non-optional fields but are ignored for originals.
+  // fit/format/quality/autoOrient satisfy the non-optional fields but are ignored for originals.
   return {
     src,
     fit: 'inside',
-    fmt: resolved.defaultFormat,
-    q: resolved.defaultQuality,
-    ao: resolved.autoOrient,
-    orig: true,
-    ts: opts.timeToStale ?? resolved.timeToStale,
-    te: opts.timeToEvict ?? resolved.timeToEvict,
+    format: resolved.defaultFormat,
+    quality: resolved.defaultQuality,
+    autoOrient: resolved.autoOrient,
+    original: true,
+    timeToStale: opts.timeToStale ?? resolved.timeToStale,
+    timeToEvict: opts.timeToEvict ?? resolved.timeToEvict,
   };
 }
 

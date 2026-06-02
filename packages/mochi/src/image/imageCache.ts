@@ -52,13 +52,13 @@ export function srcHash(src: string): string {
 export function variantId(req: ImageRequest): string {
   const canonical = JSON.stringify({
     src: req.src,
-    w: req.w ?? null,
-    h: req.h ?? null,
+    width: req.width ?? null,
+    height: req.height ?? null,
     fit: req.fit,
-    noUp: req.noUp ?? false,
-    fmt: req.fmt,
-    q: req.q,
-    ao: req.ao,
+    withoutEnlargement: req.withoutEnlargement ?? false,
+    format: req.format,
+    quality: req.quality,
+    autoOrient: req.autoOrient,
   });
   return hash(canonical);
 }
@@ -101,7 +101,7 @@ export class ImageCache {
   }
 
   private basePath(req: ImageRequest): string {
-    return join(this.srcDir(req.src), `${variantId(req)}.${extForFormat(req.fmt)}`);
+    return join(this.srcDir(req.src), `${variantId(req)}.${extForFormat(req.format)}`);
   }
 
   private async readMeta(req: ImageRequest): Promise<SidecarMeta | null> {
@@ -165,8 +165,8 @@ export class ImageCache {
         height: r.height,
         format: r.format,
         createdAt: now,
-        staleAt: om?.staleAt ?? now + req.ts,
-        evictAt: om?.evictAt ?? now + req.te,
+        staleAt: om?.staleAt ?? now + req.timeToStale,
+        evictAt: om?.evictAt ?? now + req.timeToEvict,
         src: req.src,
         origCreatedAt: om?.createdAt,
       };

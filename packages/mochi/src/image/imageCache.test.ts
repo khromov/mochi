@@ -19,7 +19,7 @@ afterEach(() => {
 });
 
 function req(over: Partial<ImageRequest> = {}): ImageRequest {
-  return { src: 'https://example.com/a.png', w: 100, fit: 'inside', fmt: 'webp', q: 80, ao: true, ts: 60_000, te: 86_400_000, ...over };
+  return { src: 'https://example.com/a.png', width: 100, fit: 'inside', format: 'webp', quality: 80, autoOrient: true, timeToStale: 60_000, timeToEvict: 86_400_000, ...over };
 }
 
 function regen(tag: string): () => Promise<RegenResult> {
@@ -124,8 +124,8 @@ describe('ImageCache variant (lifetime follows the original)', () => {
   test('invalidateVariant removes one variant; invalidateSrc removes all', async () => {
     const cache = new ImageCache(tmp());
     await cache.getOriginal(SRC, 60_000, 86_400_000, origFn('o'));
-    const webp = req({ fmt: 'webp' });
-    const png = req({ fmt: 'png' });
+    const webp = req({ format: 'webp' });
+    const png = req({ format: 'png' });
     await cache.get(webp, regen('w'));
     await cache.get(png, regen('p'));
 
