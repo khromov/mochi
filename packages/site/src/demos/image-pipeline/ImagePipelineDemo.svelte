@@ -127,7 +127,7 @@
   <CodeSnippet html={codeMeta} />
   <div class="row">
     <div class="cell">
-      <img src={metaImg} alt="Source photo" />
+      <img src={metaImg} alt="Decoded source" />
       <span class="cap"><code>{meta.width} × {meta.height}</code> · <code>{meta.format}</code></span>
     </div>
   </div>
@@ -222,7 +222,7 @@
     <div class="cell">
       <img class="placeholder" style:aspect-ratio={phRatio} src={placeholder} alt="ThumbHash blur placeholder" /><span class="cap"><code>placeholder()</code></span>
     </div>
-    <div class="cell"><img class="placeholder" src={placeholderReal} alt="The full-resolution image" /><span class="cap">full image</span></div>
+    <div class="cell"><img class="placeholder" src={placeholderReal} alt="Full-resolution render" /><span class="cap">full image</span></div>
   </div>
 
   <h3>Progressive JPEG</h3>

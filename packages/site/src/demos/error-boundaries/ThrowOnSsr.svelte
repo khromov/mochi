@@ -1,10 +1,10 @@
 <script lang="ts">
   import { isBrowser } from 'mochi-framework';
 
-  const props = $props<{ label?: string }>();
+  const { label } = $props<{ label?: string }>();
 
   if (!isBrowser) {
-    throw new Error(`SSR throw from <${props.label ?? 'ThrowOnSsr'}>`);
+    throw new Error(`SSR throw from <${label ?? 'ThrowOnSsr'}>`);
   }
 </script>
 

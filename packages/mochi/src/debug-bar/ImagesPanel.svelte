@@ -49,8 +49,4 @@
     font-size: 10px;
     padding: 2px 6px 8px;
   }
-  .image-summary code {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    color: #d4b8c8;
-  }
 </style>
