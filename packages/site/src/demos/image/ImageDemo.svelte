@@ -2,7 +2,7 @@
   import DemoPage from '../../components/DemoPage.svelte';
   import ImageCredits from '../../components/ImageCredits.svelte';
   import { loadSources } from '../../components/utils.ts';
-  import { Image } from 'mochi-framework/components';
+  import { Image } from 'mochi-framework/image';
   import { getResizedImage, getImage, getImagePlaceholder } from 'mochi-framework';
   import ArrowDown from '@lucide/svelte/icons/arrow-down';
 

@@ -18,7 +18,7 @@ Import `Image` and point it at a source. It renders a single `<img>` with a sign
 
 ```svelte
 <script>
-  import { Image } from 'mochi-framework/components';
+  import { Image } from 'mochi-framework/image';
 </script>
 
 <Image src="https://example.com/photo.jpg" width={640} height={400} alt="A photo" />

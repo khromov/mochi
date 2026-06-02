@@ -59,11 +59,11 @@
       "bun": "./src/tailwind.ts",
       "default": "./src/tailwind.ts"
     },
-    "./components": {
-      "types": "./src/components/index.ts",
-      "svelte": "./src/components/index.ts",
-      "bun": "./src/components/index.ts",
-      "default": "./src/components/index.ts"
+    "./image": {
+      "types": "./src/image/index.ts",
+      "svelte": "./src/image/index.ts",
+      "bun": "./src/image/index.ts",
+      "default": "./src/image/index.ts"
     },
     "./ambient": {
       "types": "./src/mochi-ambient.d.ts"
