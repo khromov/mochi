@@ -22,6 +22,10 @@ const server = Bun.serve({
     if (pathname === '/redirect-bad') {
       return new Response(null, { status: 302, headers: { Location: 'http://10.0.0.1/x.png' } });
     }
+    if (pathname === '/redirect-chain') {
+      // Same-host (allowed) hop that itself redirects off-allowlist on the next hop.
+      return new Response(null, { status: 302, headers: { Location: '/redirect-bad' } });
+    }
     if (pathname.startsWith('/loop/')) {
       const n = Number(pathname.slice('/loop/'.length));
       return new Response(null, { status: 302, headers: { Location: `/loop/${n + 1}` } });
@@ -80,6 +84,42 @@ describe('fetchImageSource redirect re-validation', () => {
     await expect(fetchImageSource(base('/loop/0'), opts())).rejects.toMatchObject({
       status: 502,
       message: 'Too many redirects',
+    });
+  });
+
+  test('blockPrivateNetworks rejects a redirect that targets a private address', async () => {
+    // The headline SSRF threat: a public host 302s us into a private network.
+    // A loopback test server can't be the initial hop here (blockPrivateNetworks
+    // would reject 127.0.0.1 before any redirect), so fetch is stubbed to start
+    // the chain at a public IP literal. The private redirect target must be
+    // rejected by the guard BEFORE it is ever fetched.
+    const realFetch = globalThis.fetch;
+    const fetched: string[] = [];
+    globalThis.fetch = (async (input: string | URL | Request) => {
+      const u = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      fetched.push(u);
+      return new Response(null, { status: 302, headers: { Location: 'http://10.0.0.1/x.png' } });
+    }) as typeof fetch;
+    try {
+      await expect(fetchImageSource('http://93.184.216.34/start', opts({ blockPrivateNetworks: true, allowedHosts: undefined }))).rejects.toMatchObject({
+        status: 400,
+        message: 'Source host resolves to a private address',
+      });
+      // Only the public initial hop was contacted; the private target never was.
+      expect(fetched).toEqual(['http://93.184.216.34/start']);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
+  test('re-validates an intermediate hop, not just the first', async () => {
+    // hop 0 (/redirect-chain) and hop 1 (/redirect-bad) are both on the allowed
+    // host; hop 1's target is off-allowlist. A loop that only validated hop 0
+    // would follow the chain and fail fetching the blocked host (502) instead
+    // of rejecting it with the allowlist error.
+    await expect(fetchImageSource(base('/redirect-chain'), opts())).rejects.toMatchObject({
+      status: 400,
+      message: 'Source host is not in the allowlist',
     });
   });
 

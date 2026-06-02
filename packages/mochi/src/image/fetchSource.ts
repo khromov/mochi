@@ -58,11 +58,11 @@ export async function fetchImageSource(src: string, opts: ResolvedImageOptions):
     throw new ImageError(413, 'Source image exceeds the maximum size');
   }
 
-  const bytes = await readCapped(res, opts.maxResponseBytes);
+  const bytes = await readWithMaxSize(res, opts.maxResponseBytes);
   return { bytes, contentType: res.headers.get('content-type') };
 }
 
-async function readCapped(res: Response, max: number): Promise<Uint8Array> {
+async function readWithMaxSize(res: Response, max: number): Promise<Uint8Array> {
   if (!res.body) {
     const buf = new Uint8Array(await res.arrayBuffer());
     if (buf.byteLength > max) {
