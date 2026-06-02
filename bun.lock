@@ -76,7 +76,7 @@
     },
     "packages/mochi": {
       "name": "mochi-framework",
-      "version": "0.4.0",
+      "version": "0.5.0",
       "bin": {
         "mochi-framework": "src/cli.js",
       },
@@ -86,6 +86,7 @@
         "deepmerge": "^4.3.1",
         "devalue": "^5.8.1",
         "js-cookie": "^3.0.7",
+        "leb": "1.0.0",
         "magic-string": "^0.30.21",
         "mitt": "^3.0.1",
         "nanoid": "^5.1.11",
@@ -445,6 +446,8 @@
     "keyv": ["keyv@4.5.4", "", { "dependencies": { "json-buffer": "3.0.1" } }, "sha512-oxVHkHR/EJf2CNXnWxRLW6mg7JyCCUcG0DtEGmL2ctUo1PNTin1PUil+r/+4r5MpVgC/fn1kjsx7mjSujKqIpw=="],
 
     "known-css-properties": ["known-css-properties@0.37.0", "", {}, "sha512-JCDrsP4Z1Sb9JwG0aJ8Eo2r7k4Ou5MwmThS/6lcIe1ICyb7UBJKGRIUUdqc2ASdE/42lgz6zFUnzAIhtXnBVrQ=="],
+
+    "leb": ["leb@1.0.0", "", {}, "sha512-Y3c3QZfvKWHX60BVOQPhLCvVGmDYWyJEiINE3drOog6KCyN2AOwvuQQzlS3uJg1J85kzpILXIUwRXULWavir+w=="],
 
     "levn": ["levn@0.4.1", "", { "dependencies": { "prelude-ls": "^1.2.1", "type-check": "~0.4.0" } }, "sha512-+bT2uH4E5LGE7h/n3evcS/sQlJXCpIp6ym8OWJ5eV6+67Dsql/LaaT7qJBAt2rzfoa/5QBGBhxDix1dMt2kQKQ=="],
 

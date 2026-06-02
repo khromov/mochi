@@ -19,3 +19,10 @@ declare module '*.md' {
   const component: import('svelte').Component;
   export default component;
 }
+
+// `leb` (LEB128 varint codec used by the image-request wire format) ships no
+// types and has no `@types/leb`; declare only what `image/imageCodec.ts` uses.
+declare module 'leb' {
+  export function encodeUInt64(value: number): Buffer;
+  export function decodeUInt64(buffer: Uint8Array, index?: number): { value: number; nextIndex: number; lossy: boolean };
+}
