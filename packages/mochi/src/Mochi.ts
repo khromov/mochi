@@ -273,7 +273,7 @@ export class Mochi {
         markdown: options.markdown,
       });
       if (development) {
-        for (const dir of [`${outDir}/svelte-client`, `${outDir}/svelte-compile`, `${outDir}/svelte-css`]) {
+        for (const dir of [`${outDir}/svelte-client`, `${outDir}/svelte-compile`, `${outDir}/svelte-css`, `${outDir}/svelte-assets`]) {
           rmSync(dir, { recursive: true, force: true });
           mkdirSync(dir, { recursive: true });
         }
@@ -1066,7 +1066,8 @@ export class Mochi {
       // other response. Kind is precomputed so middleware can branch (e.g.
       // skip auth for assets).
       const assetContent = registry.getClientFile(url.pathname);
-      const kind: MochiEventKind = assetContent !== undefined ? 'asset' : userFetch ? 'fallback' : 'error';
+      const assetDiskPath = assetContent === undefined ? registry.getAssetFile(url.pathname) : undefined;
+      const kind: MochiEventKind = assetContent !== undefined || assetDiskPath !== undefined ? 'asset' : userFetch ? 'fallback' : 'error';
 
       const event: MochiEvent = { request: req, url, server, locals: {}, kind, isWarmup: false };
 
@@ -1086,6 +1087,15 @@ export class Mochi {
             headers['Cache-Control'] = 'public, max-age=31536000, immutable';
           }
           return applyResolveOptions(new Response(assetContent, { headers }), resolveOpts);
+        }
+        if (assetDiskPath !== undefined) {
+          // Bun.file sets Content-Type from the extension (incl. image/svg+xml).
+          // Filenames are content-hashed, so the bytes are safe to pin in prod.
+          const headers: Record<string, string> = {};
+          if (!development) {
+            headers['Cache-Control'] = 'public, max-age=31536000, immutable';
+          }
+          return applyResolveOptions(new Response(Bun.file(assetDiskPath), { headers }), resolveOpts);
         }
         if (userFetch) {
           const response = await userFetch(req, server);

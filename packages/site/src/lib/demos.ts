@@ -74,6 +74,12 @@ export const demos: Demo[] = [
     category: 'data',
   },
   {
+    href: '/demos/image-import/',
+    title: 'Image Imports',
+    hook: 'Import any image straight into a component — Bun hashes it, serves it from /_mochi/asset/, and resolves the import to that URL on both server and client.',
+    category: 'data',
+  },
+  {
     href: '/demos/image-pipeline/',
     title: 'Advanced Image use',
     hook: 'Decode, resize, rotate, flip, modulate, and re-encode with the raw Bun.Image pipeline — every option, server-rendered to inline data URLs.',

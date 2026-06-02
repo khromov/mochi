@@ -10,6 +10,30 @@ description: 'On-the-fly image resizing on Bun.Image with signed URLs and a stal
 
 ## Images
 
+### Importing a local image
+
+Import an image file straight into a component. Mochi's bundler hashes the file, copies it to a served location, and resolves the import to a `/_mochi/asset/<name>-<hash>.<ext>` URL string — the same URL on the server and in a hydrated island:
+
+```svelte
+<script>
+  import logo from './logo.png'; // → "/_mochi/asset/logo-3k9f2a.png"
+</script>
+
+<img src={logo} alt="Logo" />
+```
+
+The file is content-addressed, so the URL only changes when the bytes change — assets are served with a long-lived `immutable` `Cache-Control` in production. Supported extensions: `png`, `jpg`/`jpeg`, `gif`, `webp`, `avif`, `svg`, `ico`, `bmp`.
+
+<Callout type="info">
+
+This serves the **original** bytes untouched — there's no resizing or format conversion. For on-the-fly resizing, ThumbHash placeholders, and a caching layer, use the [`<Image>` component](#component) or [`getResizedImage()`](#programmatic) below. To serve static files at a fixed URL (e.g. `favicon.ico`), drop them in `publicDir` instead.
+
+</Callout>
+
+See the [Image Import demo](/demos/image-import/) for a working example.
+
+### On-the-fly resizing
+
 Mochi resizes images on the fly with [`Bun.Image`](https://bun.com/docs/runtime/image), serving them from an encrypted, stale-while-revalidate disk cache. Every URL's payload is AES-256-GCM encrypted, so the source URL and params aren't readable and an attacker can't request arbitrary sources through your server.
 
 ### Component

@@ -16,6 +16,7 @@ import { cachedPreprocessHydratable, createPreprocessCacheStats } from './prepro
 import { mergeCompilerOptions, type MochiSvelteConfig } from './svelteConfig';
 import { applyFilter } from './extensions';
 import { buildServerOnlyStubModule, scanServerOnlyExports } from './serverOnlyScan';
+import { IMAGE_FILE_FILTER, createImageAssetLoader } from './imageAssets';
 
 /**
  * Run user-supplied Svelte preprocessors via the `compile:preprocessors`
@@ -197,6 +198,8 @@ export class ComponentRegistry {
   private clientFiles: Map<string, string> = new Map();
   /** Framework-level client files that persist across cache clears */
   private frameworkFiles: Map<string, string> = new Map();
+  /** Maps `/_mochi/asset/*` URL → on-disk path for imported image assets */
+  private assetFiles: Map<string, string> = new Map();
   /** Maps component file path → CSS URL */
   private cssFileUrls: Map<string, string> = new Map();
   /**
@@ -327,6 +330,11 @@ export class ComponentRegistry {
     const development = this.development;
     const userCompilerOptions = this.svelteConfig.compilerOptions ?? {};
     const markdown = this.markdown;
+    const imageAssetLoader = createImageAssetLoader({
+      assetPrefix: this.assetPrefix,
+      assetOutDir: path.resolve(`${this.outDir}/svelte-assets`),
+      assetFiles: this.assetFiles,
+    });
 
     const sveltePlugin: BunPlugin = {
       name: 'svelte-ssr',
@@ -340,6 +348,7 @@ export class ComponentRegistry {
           importedCssPaths.add(args.path);
           return { contents: '', loader: 'js' };
         });
+        build.onLoad({ filter: IMAGE_FILE_FILTER }, imageAssetLoader);
         build.onResolve({ filter: /^mochi-framework$/ }, () => ({
           path: 'mochi-framework',
           namespace: 'mochi-env',
@@ -692,6 +701,11 @@ export class ComponentRegistry {
     const debugBarEnabled = this.debugBarEnabled;
     const userCompilerOptions = this.svelteConfig.compilerOptions ?? {};
     const markdown = this.markdown;
+    const imageAssetLoader = createImageAssetLoader({
+      assetPrefix: this.assetPrefix,
+      assetOutDir: path.resolve(`${this.outDir}/svelte-assets`),
+      assetFiles: this.assetFiles,
+    });
     // Deduplicate by resolved path
     const unique = new Map<string, HydratableComponent>();
     for (const c of this.hydratableComponents) {
@@ -741,6 +755,7 @@ export class ComponentRegistry {
         // would either inline as JS-injected styles or fail the build for any
         // hydratable component that imports a stylesheet.
         build.onLoad({ filter: /\.css$/ }, () => ({ contents: '', loader: 'js' }));
+        build.onLoad({ filter: IMAGE_FILE_FILTER }, imageAssetLoader);
         // `.server.ts` / `.server.js` files are stripped from the client graph.
         // Resolve them into a virtual `mochi-server-only` namespace whose
         // onLoad emits a throwing-Proxy stub per discovered export. The real
@@ -1286,6 +1301,11 @@ export class ComponentRegistry {
     return this.clientFiles.get(urlPath) ?? this.frameworkFiles.get(urlPath);
   }
 
+  /** Disk path for an imported image asset URL (`/_mochi/asset/*`), or undefined. */
+  getAssetFile(urlPath: string): string | undefined {
+    return this.assetFiles.get(urlPath);
+  }
+
   getClientFiles(): Map<string, string> {
     return this.clientFiles;
   }
@@ -1562,6 +1582,15 @@ export class ComponentRegistry {
     if (this.publicFiles.size > 0) {
       manifest.publicFiles = Object.fromEntries(this.publicFiles);
     }
+    if (this.assetFiles.size > 0) {
+      // Rewrite to outDir-relative paths (like clientFiles) so the manifest is
+      // portable — the build host's absolute path must not leak into prod.
+      const assets: Record<string, string> = {};
+      for (const [urlPath] of this.assetFiles) {
+        assets[urlPath] = path.join(this.outDir, 'svelte-assets', path.basename(urlPath));
+      }
+      manifest.assets = assets;
+    }
     if (this.importedCssUrls.size > 0) {
       manifest.importedCssUrls = Object.fromEntries(this.importedCssUrls);
     }
@@ -1634,6 +1663,13 @@ export class ComponentRegistry {
     if (manifest.publicFiles) {
       for (const [urlPath, diskPath] of Object.entries(manifest.publicFiles)) {
         registry.publicFiles.set(urlPath, diskPath);
+      }
+    }
+    // Image assets are served from disk via Bun.file — keep the URL→path map only,
+    // don't read bytes into memory like clientFiles.
+    if (manifest.assets) {
+      for (const [urlPath, diskPath] of Object.entries(manifest.assets)) {
+        registry.assetFiles.set(urlPath, diskPath);
       }
     }
 

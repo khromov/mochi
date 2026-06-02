@@ -34,6 +34,7 @@ import Fingerprint from '@lucide/svelte/icons/fingerprint';
 import Link from '@lucide/svelte/icons/link';
 import ImageIcon from '@lucide/svelte/icons/image';
 import WandSparkles from '@lucide/svelte/icons/wand-sparkles';
+import FileImage from '@lucide/svelte/icons/file-image';
 
 export interface DemoIconMeta {
   icon: Component;
@@ -75,5 +76,6 @@ export const demoIconFor: Record<string, DemoIconMeta> = {
   'Cookie Vary Test': { icon: Fingerprint, label: 'Response-driven Vary: Cookie' },
   'Isomorphic URL': { icon: Link, label: 'Same url import on server and client' },
   'Image Resizing': { icon: ImageIcon, label: 'Signed, cached image resizing on Bun.Image' },
+  'Image Import': { icon: FileImage, label: 'What a direct .jpg import resolves to under Bun' },
   'Advanced Image use': { icon: WandSparkles, label: 'Full Bun.Image transform pipeline' },
 };

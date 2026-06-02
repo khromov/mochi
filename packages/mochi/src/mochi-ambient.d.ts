@@ -19,3 +19,42 @@ declare module '*.md' {
   const component: import('svelte').Component;
   export default component;
 }
+
+// Mochi's image asset loader rewrites image imports to their served URL string.
+// Keep in sync with IMAGE_FILE_FILTER in imageAssets.ts.
+declare module '*.png' {
+  const src: string;
+  export default src;
+}
+declare module '*.jpg' {
+  const src: string;
+  export default src;
+}
+declare module '*.jpeg' {
+  const src: string;
+  export default src;
+}
+declare module '*.gif' {
+  const src: string;
+  export default src;
+}
+declare module '*.webp' {
+  const src: string;
+  export default src;
+}
+declare module '*.avif' {
+  const src: string;
+  export default src;
+}
+declare module '*.svg' {
+  const src: string;
+  export default src;
+}
+declare module '*.ico' {
+  const src: string;
+  export default src;
+}
+declare module '*.bmp' {
+  const src: string;
+  export default src;
+}
