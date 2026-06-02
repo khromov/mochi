@@ -63,37 +63,14 @@ export async function fetchImageSource(src: string, opts: ResolvedImageOptions):
 }
 
 async function readWithMaxSize(res: Response, maxSizeInBytes: number): Promise<Uint8Array> {
-  if (!res.body) {
-    const buf = new Uint8Array(await res.arrayBuffer());
-    if (buf.byteLength > maxSizeInBytes) {
-      throw new ImageError(413, 'Source image exceeds the maximum size');
-    }
-    return buf;
-  }
-
-  const reader = res.body.getReader();
+  // Stream the body so we can abort the moment the running total crosses the cap
   const chunks: Uint8Array[] = [];
   let total = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) {
-      break;
+  for await (const chunk of res.body ?? []) {
+    if ((total += chunk.byteLength) > maxSizeInBytes) {
+      throw new ImageError(413, 'Source image exceeds the maximum size');
     }
-    if (value) {
-      total += value.byteLength;
-      if (total > maxSizeInBytes) {
-        await reader.cancel();
-        throw new ImageError(413, 'Source image exceeds the maximum size');
-      }
-      chunks.push(value);
-    }
+    chunks.push(chunk);
   }
-
-  const out = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    out.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return out;
+  return Buffer.concat(chunks);
 }
