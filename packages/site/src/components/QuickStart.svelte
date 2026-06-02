@@ -70,7 +70,7 @@
     </div>
   </div>
   <p class="quickstart-note">
-    Requires <a href="https://bun.sh" target="_blank" rel="noopener noreferrer">Bun</a> <code>&gt;= 1.3.13</code>.
+    Requires <a href="https://bun.sh" target="_blank" rel="noopener noreferrer">Bun</a> <code>&gt;= 1.3.14</code>.
     <a href="/docs/why-bun/" class="why-bun-link" style="border-bottom-color: currentColor;">Why Bun?</a>
   </p>
 </section>
