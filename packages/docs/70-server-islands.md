@@ -76,6 +76,12 @@ Provide fallback children when using `:visible` so the user has something to scr
 
 Props are serialized with `devalue` — see [Passing props to islands](island-props/) for the full list of supported types. Server islands additionally encrypt the payload (AES-256-GCM) and pass it as a query parameter; if the encrypted props exceed URL length limits (~1800 bytes), a warning is emitted. The island's component name is bound as authenticated data, so a props token sealed for one island can't be replayed against another.
 
+<Callout type="warning">
+
+**Treat server-island rendering as idempotent — never trigger mutable actions from it.** Tokens are encrypted, not single-use: once a client has seen a given prop permutation, it can re-fetch that island any number of times. Encryption stops clients from _forging_ new permutations, not from _replaying_ ones they've already received. So a side effect inside the component (incrementing a counter, charging an account, sending an email) will fire again on every replay.
+
+</Callout>
+
 Do **NOT** ship large blobs through server-island props; instead, fetch the data inside the component using `getRequestContext()`. Prop URLs over 1800 chars trigger a runtime warning.
 
 ### Encryption key
