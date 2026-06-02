@@ -8,7 +8,7 @@ description: 'Why Mochi chose Bun as its runtime and which Bun APIs the framewor
 
 Mochi was built to be performant and simple. We do this by "outsourcing" subsystem complexity to the Bun runtime. Instead of writing or managing a bundler, an HTML parser, a router, database drivers, compression, and hashing as separate npm packages, the framework delegates to Bun's standard library. Bun maintains those components; Mochi just calls them.
 
-The result: a full-featured SSR framework with just ~15 runtime dependencies. This isn't about minimizing dependencies for the sake of it — external deps are fine when they earn their place. The point is to use Buns extensive standard library and provide a toolkit that makes it possible to build complex web apps with just a few well-chosen dependencies.
+Mochi is backed by just ~10 runtime dependencies. We don't minimize dependencies for the sake of it — external depenendencies are fine when they earn their place and genuinely improve the developer experience. The point is to use Buns extensive standard library and provide an opinionated toolkit that makes it possible to build complex web apps with "batteries included" included out of the box.
 
 ### What does Mochi actually use from Bun?
 

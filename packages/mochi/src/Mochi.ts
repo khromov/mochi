@@ -163,29 +163,23 @@ export class Mochi {
     const warnShim = registry.debugBarEnabled
       ? `<script>window.__mochi_warnings=[];window.__mochi_warn=function(m){console.warn("[mochi] "+m);window.__mochi_warnings.push(m)}</script>`
       : '';
-    // Use function-form replacements: string-form `.replace` interprets `$&`,
-    // `$'`, `` $` ``, `$$` in the replacement as special patterns. Minified JS
-    // and user-serialized props can legitimately contain those sequences.
-    return template
-      .replace('{{mochi.head}}', () => logLevelScript + warnShim + result.head)
-      .replace(
-        '{{mochi.css}}',
-        () =>
-          `<style>mochi-hydratable-island, mochi-server-island { display: contents; } mochi-server-island[defer-on="visible"]:empty { display: block; min-height: 1px; }${ISLAND_FAILURE_CSS}${
-            registry.development ? ISLAND_FAILURE_DEV_CSS : ''
-          }</style>\n${cssLinks}`,
-      )
-      .replace('{{mochi.body}}', () => result.body + debugInfoScript + pageEntryScript + (registry.debugBarEnabled ? '<div id="mochi-dev-toolbar"></div>' : ''))
-      .replace(
-        '{{mochi.script}}',
-        () =>
-          (bootstrapUrl ? `<script type="module" src="${bootstrapUrl}"></script>` : '') +
-          serverIslandScript +
-          (opts.debugBarUrl
-            ? `<script type="module" src="${opts.debugBarUrl}"></script><script>window.__mochi_asset_prefix=${JSON.stringify(registry.assetPrefix)}</script>`
-            : '') +
-          (opts.liveReloadClientJs ? `<script>${opts.liveReloadClientJs}</script><mochi-live-reload></mochi-live-reload>` : ''),
-      );
+    // Single global-regex pass. The function-form replacer is also required
+    // for safety: string-form replacements interpret `$&`, `$'`, `` $` ``, `$$`
+    // as special patterns, which minified JS and serialized props can contain.
+    const slots: Record<'head' | 'css' | 'body' | 'script', () => string> = {
+      head: () => logLevelScript + warnShim + result.head,
+      css: () =>
+        `<style>mochi-hydratable-island, mochi-server-island { display: contents; } mochi-server-island[defer-on="visible"]:empty { display: block; min-height: 1px; }${ISLAND_FAILURE_CSS}${
+          registry.development ? ISLAND_FAILURE_DEV_CSS : ''
+        }</style>\n${cssLinks}`,
+      body: () => result.body + debugInfoScript + pageEntryScript + (registry.debugBarEnabled ? '<div id="mochi-dev-toolbar"></div>' : ''),
+      script: () =>
+        (bootstrapUrl ? `<script type="module" src="${bootstrapUrl}"></script>` : '') +
+        serverIslandScript +
+        (opts.debugBarUrl ? `<script type="module" src="${opts.debugBarUrl}"></script><script>window.__mochi_asset_prefix=${JSON.stringify(registry.assetPrefix)}</script>` : '') +
+        (opts.liveReloadClientJs ? `<script>${opts.liveReloadClientJs}</script><mochi-live-reload></mochi-live-reload>` : ''),
+    };
+    return template.replace(/\{\{mochi\.(head|css|body|script)\}\}/g, (_match, key: keyof typeof slots) => slots[key]());
   }
 
   static async serve(options: MochiServeOptions): Promise<Server<undefined>> {
