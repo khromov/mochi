@@ -81,7 +81,7 @@ async function readWithMaxSize(res: Response, maxSizeInBytes: number): Promise<U
     }
     if (value) {
       total += value.byteLength;
-      if (total > max) {
+      if (total > maxSizeInBytes) {
         await reader.cancel();
         throw new ImageError(413, 'Source image exceeds the maximum size');
       }
