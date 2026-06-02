@@ -82,7 +82,7 @@ Props are serialized with `devalue` — see [Passing props to islands](island-pr
 
 </Callout>
 
-Do **NOT** ship large blobs through server-island props; instead, fetch the data inside the component using `getRequestContext()`. Prop URLs over 1800 chars trigger a runtime warning.
+Do **NOT** ship large blobs through server-island props; instead, fetch the data inside the component using `getRequestContext()`. Instead, fetch any data you need inside the island and send only identifiers such as ids as props to minimize the payload over the network. Prop URLs over 1800 chars trigger a runtime warning.
 
 ### Encryption key
 
