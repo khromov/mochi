@@ -15,6 +15,7 @@ import { cachedPreprocessHydratable, createPreprocessCacheStats } from './prepro
 import { mergeCompilerOptions, type MochiSvelteConfig } from './svelteConfig';
 import { applyFilter } from './extensions';
 import { buildServerOnlyStubModule, scanServerOnlyExports } from './serverOnlyScan';
+import { freshImport } from './freshImport';
 
 /**
  * Run user-supplied Svelte preprocessors via the `compile:preprocessors`
@@ -564,7 +565,6 @@ export class ComponentRegistry {
     };
 
     const compileDuration = performance.now() - compileStart;
-    const cacheBust = Date.now();
     for (const filename of todo) {
       const resolvedFilename = path.resolve(filename);
       const outKey = entryToOutKey.get(resolvedFilename);
@@ -578,7 +578,11 @@ export class ComponentRegistry {
       const entryBasename = path.basename(filename, path.extname(filename));
       const outPath = path.join(compileOutDir, `${entryBasename}.server.js`);
 
-      const mod = await import(Bun.pathToFileURL(outPath).href + `?t=${cacheBust}`);
+      // Dev rebuilds re-import the same on-disk entry, so we can't rely on Bun's
+      // query-string cache-busting (unreliable on Windows — returns the stale module).
+      // `freshImport` copies the entry to a unique path so the re-import is a guaranteed
+      // cache miss. Production compiles each entry once, so a direct import is fine.
+      const mod = this.development ? await freshImport(outPath) : await import(Bun.pathToFileURL(outPath).href);
 
       const entryInputs = transitiveInputs(outKey);
 

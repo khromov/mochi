@@ -9,6 +9,7 @@ import { mochiEvents } from './events';
 import type { MochiFileChangeType } from './events';
 import { logger } from './log';
 import { evictPreprocessCacheEntry } from './preprocessCache';
+import { freshImport } from './freshImport';
 import { buildPublicUrl } from './proxy';
 import { scanPublicDir } from './publicDir';
 import { loadSvelteConfig } from './svelteConfig';
@@ -221,10 +222,9 @@ export function startDevWatcher(deps: DevWatcherDeps): void {
     }
     routeModuleDeps = newDeps;
     const outFile = path.resolve(routeModuleOutDir, 'routes.js');
-    // Cache-bust via query string — each import creates a new module entry in Bun's
-    // module cache that is never evicted. Acceptable for a dev-only path; would need
-    // Loader.registry cleanup if Bun exposes it in the future.
-    const mod = await import(Bun.pathToFileURL(outFile).href + `?t=${Date.now()}`);
+    // Re-import the freshly built route module. Query-string cache-busting is unreliable
+    // on Windows (returns the stale module), so `freshImport` copies to a unique path.
+    const mod = await freshImport(outFile);
     if (!mod.routes) {
       logger.warn('Route module does not export "routes" — skipping update');
       return null;
