@@ -90,7 +90,7 @@ The original's encoded bytes and its stale-while-revalidate timers are stored on
 ```ts
 await Mochi.serve({
   image: {
-    timeToStale: 60_000, // serve fresh for 1 min
+    timeToStale: 14_400_000, // serve fresh for 4 h
     timeToEvict: 86_400_000, // re-fetch source after 1 day
   },
   routes,
@@ -147,7 +147,7 @@ await Mochi.serve({
 | `fetchTimeoutMs`       | `10_000`               | Upstream fetch timeout                          |
 | `maxResponseBytes`     | `20 MB`                | Hard source-size cap                            |
 | `maxPixels`            | `50_000_000`           | Decompression-bomb guard                        |
-| `timeToStale`          | `60_000`               | Cache time-to-stale (ms); variants follow it    |
+| `timeToStale`          | `14_400_000`           | Cache time-to-stale (ms); variants follow it    |
 | `timeToEvict`          | `86_400_000`           | Cache time-to-evict (ms); variants follow it    |
 | `sweepIntervalMs`      | `3_600_000`            | Background cache-janitor interval; `0` disables |
 | `compressPayload`      | `true`                 | Deflate the encrypted URL payload               |
