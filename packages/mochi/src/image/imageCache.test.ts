@@ -19,7 +19,7 @@ afterEach(() => {
 });
 
 function req(over: Partial<ImageRequest> = {}): ImageRequest {
-  return { src: 'https://example.com/a.png', width: 100, fit: 'inside', format: 'webp', quality: 80, autoOrient: true, timeToStale: 60_000, timeToEvict: 86_400_000, ...over };
+  return { src: 'https://example.com/a.png', width: 100, fit: 'inside', format: 'webp', quality: 80, autoOrient: true, ...over };
 }
 
 function regen(tag: string): () => Promise<RegenResult> {

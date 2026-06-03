@@ -3,7 +3,7 @@ import { buildImageFilename } from './slug';
 import type { ImageRequest } from './types';
 
 function req(over: Partial<ImageRequest> = {}): ImageRequest {
-  return { src: 'https://example.com/photos/My-Cat.PNG', fit: 'inside', format: 'webp', quality: 80, autoOrient: true, timeToStale: 1, timeToEvict: 1, ...over };
+  return { src: 'https://example.com/photos/My-Cat.PNG', fit: 'inside', format: 'webp', quality: 80, autoOrient: true, ...over };
 }
 
 describe('buildImageFilename', () => {

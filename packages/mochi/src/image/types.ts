@@ -26,10 +26,10 @@ export interface ImageRequest {
   quality: number;
   /** Apply EXIF orientation. */
   autoOrient: boolean;
-  /** Time-to-stale in ms. */
-  timeToStale: number;
-  /** Time-to-evict in ms. */
-  timeToEvict: number;
+  /** Original-window override (ms). Set only by `getImage`; thumbnails inherit the parent original's window. */
+  timeToStale?: number;
+  /** Original-window override (ms). Set only by `getImage`; thumbnails inherit the parent original's window. */
+  timeToEvict?: number;
   /** Full-size original request: serve the cached origin bytes verbatim, no resize. Resize fields above are ignored. */
   original?: true;
 }

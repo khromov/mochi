@@ -14,8 +14,6 @@ function req(over: Partial<ImageRequest> = {}): ImageRequest {
     format: 'webp',
     quality: 80,
     autoOrient: true,
-    timeToStale: 60_000,
-    timeToEvict: 86_400_000,
     ...over,
   };
 }
@@ -31,7 +29,7 @@ describe('packImageRequest + unpackImageRequest', () => {
   });
 
   test('omits default fields and refills them on decode', () => {
-    const r = req(); // q/ts/te/fmt/ao all equal the resolved defaults
+    const r = req(); // q/fmt/ao equal the resolved defaults; ts/te absent
     const packed = packImageRequest(r, RESOLVED);
     // flags(2) + u24 w + u24 h — no q/ts/te fields — u16 srcLen + the URL.
     expect(packed.length).toBe(2 + 3 + 3 + 2 + Buffer.byteLength(r.src));
@@ -39,7 +37,7 @@ describe('packImageRequest + unpackImageRequest', () => {
   });
 
   test('round-trips a request with no width/height', () => {
-    const r: ImageRequest = { src: 'https://example.com/a.png', fit: 'inside', format: 'webp', quality: 80, autoOrient: true, timeToStale: 60_000, timeToEvict: 86_400_000 };
+    const r: ImageRequest = { src: 'https://example.com/a.png', fit: 'inside', format: 'webp', quality: 80, autoOrient: true };
     expect(roundTrip(r)).toEqual(r);
   });
 

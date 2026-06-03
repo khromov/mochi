@@ -165,8 +165,8 @@ export class ImageCache {
         height: r.height,
         format: r.format,
         createdAt: now,
-        staleAt: om?.staleAt ?? now + req.timeToStale,
-        evictAt: om?.evictAt ?? now + req.timeToEvict,
+        staleAt: om?.staleAt ?? now,
+        evictAt: om?.evictAt ?? now,
         src: req.src,
         origCreatedAt: om?.createdAt,
       };

@@ -30,8 +30,6 @@ function req(over: Partial<ImageRequest> = {}): ImageRequest {
     format: 'webp',
     quality: 80,
     autoOrient: true,
-    timeToStale: 60_000,
-    timeToEvict: 86_400_000,
     ...over,
   };
 }

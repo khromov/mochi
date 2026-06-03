@@ -57,8 +57,8 @@ export function packImageRequest(req: ImageRequest, resolved: ResolvedImageOptio
   el.hasW = req.width !== undefined;
   el.hasH = req.height !== undefined;
   el.hasQ = req.quality !== resolved.defaultQuality;
-  el.hasTs = req.timeToStale !== resolved.timeToStale;
-  el.hasTe = req.timeToEvict !== resolved.timeToEvict;
+  el.hasTs = req.timeToStale !== undefined && req.timeToStale !== resolved.timeToStale;
+  el.hasTe = req.timeToEvict !== undefined && req.timeToEvict !== resolved.timeToEvict;
 
   if (el.hasW) {
     el.width = req.width!;
@@ -70,10 +70,10 @@ export function packImageRequest(req: ImageRequest, resolved: ResolvedImageOptio
     el.quality = req.quality;
   }
   if (el.hasTs) {
-    el.timeToStale = req.timeToStale;
+    el.timeToStale = req.timeToStale!;
   }
   if (el.hasTe) {
-    el.timeToEvict = req.timeToEvict;
+    el.timeToEvict = req.timeToEvict!;
   }
 
   el.src = req.src;
@@ -91,14 +91,18 @@ export function unpackImageRequest(buf: Uint8Array, resolved: ResolvedImageOptio
       format: FORMATS[el.format]!,
       quality: el.hasQ ? el.quality : resolved.defaultQuality,
       autoOrient: el.autoOrient,
-      timeToStale: el.hasTs ? el.timeToStale : resolved.timeToStale,
-      timeToEvict: el.hasTe ? el.timeToEvict : resolved.timeToEvict,
     };
     if (el.hasW) {
       req.width = el.width;
     }
     if (el.hasH) {
       req.height = el.height;
+    }
+    if (el.hasTs) {
+      req.timeToStale = el.timeToStale;
+    }
+    if (el.hasTe) {
+      req.timeToEvict = el.timeToEvict;
     }
     if (el.withoutEnlargement) {
       req.withoutEnlargement = true;

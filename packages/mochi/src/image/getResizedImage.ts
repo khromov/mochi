@@ -32,8 +32,6 @@ function buildRequest(src: string, opts: ResizeImageOptions, resolved: ResolvedI
     format: fmt,
     quality: clampQuality(opts.quality ?? resolved.defaultQuality),
     autoOrient: opts.autoOrient ?? resolved.autoOrient,
-    timeToStale: resolved.timeToStale,
-    timeToEvict: resolved.timeToEvict,
   };
 }
 
@@ -70,8 +68,8 @@ function buildOriginalRequest(src: string, opts: OriginalImageOptions, resolved:
     quality: resolved.defaultQuality,
     autoOrient: resolved.autoOrient,
     original: true,
-    timeToStale: opts.timeToStale ?? resolved.timeToStale,
-    timeToEvict: opts.timeToEvict ?? resolved.timeToEvict,
+    timeToStale: opts.timeToStale,
+    timeToEvict: opts.timeToEvict,
   };
 }
 

@@ -26,7 +26,7 @@ const opts: ResolvedImageOptions = {
 };
 
 function req(over: Partial<ImageRequest> = {}): ImageRequest {
-  return { src: 'https://example.com/a.png', width: 4, height: 4, fit: 'inside', format: 'webp', quality: 80, autoOrient: true, timeToStale: 1, timeToEvict: 1, ...over };
+  return { src: 'https://example.com/a.png', width: 4, height: 4, fit: 'inside', format: 'webp', quality: 80, autoOrient: true, ...over };
 }
 
 describe('resizeImage', () => {
