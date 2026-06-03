@@ -1006,10 +1006,11 @@ export class Mochi {
 
     // Register the signed image-resize endpoint (enabled unless explicitly off)
     // and start the background cache janitor.
+    let stopImageSweeper: (() => void) | undefined;
     if (options.image?.enabled !== false) {
       bunRoutes[`${registry.assetPrefix}/image/:filename`] = createImageHandler();
       const { options: imageOptions, cache } = getImageRuntime();
-      startImageCacheSweeper(cache, imageOptions.sweepIntervalMs);
+      stopImageSweeper = startImageCacheSweeper(cache, imageOptions.sweepIntervalMs);
     }
 
     if (process.env.MOCHI_MEMORY_PROBE === '1') {
@@ -1177,6 +1178,19 @@ export class Mochi {
       fetch: composedFetch,
       ...(websocketOption ? { websocket: websocketOption } : {}),
     } as Parameters<typeof Bun.serve>[0]);
+
+    // Tie the image-cache janitor's lifetime to the server: any stop path
+    // (tests calling server.stop(), or the signal handler below) clears the
+    // sweep timers instead of leaking them. Wrapping stop covers both, since the
+    // signal handler calls server.stop() too.
+    if (stopImageSweeper) {
+      const sweeperStop = stopImageSweeper;
+      const stopServer = server.stop.bind(server);
+      server.stop = ((closeActiveConnections?: boolean) => {
+        sweeperStop();
+        return stopServer(closeActiveConnections);
+      }) as typeof server.stop;
+    }
 
     {
       const startEvent: MochiServerStartEvent = {

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ImageCache, srcHash } from './imageCache';
@@ -234,6 +234,20 @@ describe('ImageCache.getOriginal', () => {
     expect(new TextDecoder().decode((await cache.getOriginal(SRC, 60_000, 86_400_000, origFn('x'))).entry.bytes)).toBe('original');
   });
 
+  test('reclaims the previous generation bytes when the source content-type changes', async () => {
+    const dir = tmp();
+    const cache = new ImageCache(dir);
+    const srcDir = join(dir, srcHash(SRC));
+
+    await cache.getOriginal(SRC, 0, 0, origFn('jpg-bytes', 'image/jpeg')); // immediately evicted
+    expect(existsSync(join(srcDir, 'original.jpg'))).toBe(true);
+
+    // Evicted, so the next read re-fetches — now the origin serves webp.
+    await cache.getOriginal(SRC, 60_000, 86_400_000, origFn('webp-bytes', 'image/webp'));
+    expect(existsSync(join(srcDir, 'original.webp'))).toBe(true);
+    expect(existsSync(join(srcDir, 'original.jpg'))).toBe(false); // stale-format bytes reclaimed
+  });
+
   test('invalidateSrc drops the original entry', async () => {
     const cache = new ImageCache(tmp());
     await cache.getOriginal(SRC, 60_000, 86_400_000, origFn('o'));
@@ -331,6 +345,19 @@ describe('ImageCache.sweep', () => {
     expect(swept.removedVariants).toBe(1);
     expect(await cache.getPlaceholder(SRC)).toBe('data:image/png;base64,AAAA');
     expect(existsSync(join(dir, srcHash(SRC)))).toBe(true);
+  });
+
+  test('removes a stray-format original leftover when the original is evicted', async () => {
+    const dir = tmp();
+    const cache = new ImageCache(dir);
+    const srcDir = join(dir, srcHash(SRC));
+    await cache.getOriginal(SRC, 0, 0, origFn('o', 'image/jpeg')); // original.jpg, immediately evicted
+    writeFileSync(join(srcDir, 'original.png'), 'leftover from a prior format'); // simulate a crash-time orphan
+
+    await cache.sweep(Date.now() + 1000);
+    expect(existsSync(join(srcDir, 'original.jpg'))).toBe(false);
+    expect(existsSync(join(srcDir, 'original.png'))).toBe(false); // stray sibling reclaimed too
+    expect(existsSync(srcDir)).toBe(false); // dir emptied and removed
   });
 
   test('is a no-op when the cache dir does not exist', async () => {

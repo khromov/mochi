@@ -246,6 +246,20 @@ export class ImageCache {
     }
   }
 
+  // Best-effort delete of `original.<ext>` bytes whose extension isn't `keepExt`
+  // (and never the `original.json` sidecar) — used to reclaim a previous
+  // generation's bytes when the source's content-type changed.
+  private async removeStaleOriginalBytes(src: string, keepExt: string): Promise<void> {
+    const dir = this.srcDir(src);
+    let files: string[];
+    try {
+      files = await readdir(dir);
+    } catch {
+      return;
+    }
+    await Promise.all(files.filter((f) => f.startsWith('original.') && f !== 'original.json' && f !== `original.${keepExt}`).map((f) => unlink(join(dir, f)).catch(() => {})));
+  }
+
   private async readOriginalBytes(src: string, contentType: string): Promise<Uint8Array | null> {
     try {
       return new Uint8Array(await readFile(this.originalBytesPath(src, contentType)));
@@ -349,6 +363,10 @@ export class ImageCache {
         src,
       };
       await this.writeBytesAndMeta(this.originalBytesPath(src, contentType), this.originalMetaPath(src), fetched.bytes, meta);
+      // The origin may switch formats between generations (png → webp), which
+      // changes the `original.<ext>` filename; drop any bytes left under the old
+      // extension so they don't linger until the next sweep.
+      await this.removeStaleOriginalBytes(src, extForContentType(contentType));
       return { bytes: fetched.bytes, meta };
     })().finally(() => this.inflight.delete(key));
 
@@ -445,8 +463,13 @@ export class ImageCache {
       }
 
       if (orig !== null && origDead) {
-        freedBytes += await this.removeFile(join(dir, `original.${extForContentType(orig.contentType)}`));
-        freedBytes += await this.removeFile(join(dir, 'original.json'));
+        // Remove every `original.*` (bytes of any extension + the sidecar) so a
+        // stale-format leftover from a content-type change is reclaimed too.
+        for (const f of files) {
+          if (f.startsWith('original.')) {
+            freedBytes += await this.removeFile(join(dir, f));
+          }
+        }
         removedOriginals++;
       }
 
