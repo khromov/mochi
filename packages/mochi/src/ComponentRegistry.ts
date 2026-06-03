@@ -578,7 +578,7 @@ export class ComponentRegistry {
       const entryBasename = path.basename(filename, path.extname(filename));
       const outPath = path.join(compileOutDir, `${entryBasename}.server.js`);
 
-      const mod = await import(outPath + `?t=${cacheBust}`);
+      const mod = await import(Bun.pathToFileURL(outPath).href + `?t=${cacheBust}`);
 
       const entryInputs = transitiveInputs(outKey);
 
@@ -927,13 +927,19 @@ export class ComponentRegistry {
     // This avoids fragile filename matching.
     if (result.metafile) {
       // Build reverse lookup: entryPath -> component name (null = bootstrap)
+      // Keys and the lookup below are canonicalized through the same
+      // toPosixPath(path.resolve(...)) transform. The entrypoints are a mix of
+      // POSIX (toPosixPath) and native (path.join) paths, while Bun's metafile
+      // entryPoint is native — on Windows the formats diverge and the bootstrap
+      // lookup silently misses, dropping the hydration <script>. Canonicalizing
+      // both sides keeps them comparable on every platform.
       const entryToComponent = new Map<string, string | null>();
-      entryToComponent.set(hydratableIslandPath, null);
+      entryToComponent.set(toPosixPath(path.resolve(hydratableIslandPath)), null);
       if (debugBarEnabled) {
-        entryToComponent.set(debugBarEntryPath, '__debugbar__');
+        entryToComponent.set(toPosixPath(path.resolve(debugBarEntryPath)), '__debugbar__');
       }
       for (const [, comp] of unique) {
-        const entryPath = path.join(frameworkDir, `_hydrate-${comp.name}.js`);
+        const entryPath = toPosixPath(path.resolve(path.join(frameworkDir, `_hydrate-${comp.name}.js`)));
         entryToComponent.set(entryPath, comp.name);
       }
 
@@ -941,7 +947,7 @@ export class ComponentRegistry {
         if (!outMeta.entryPoint) {
           continue;
         }
-        const resolvedEntry = path.resolve(outMeta.entryPoint);
+        const resolvedEntry = toPosixPath(path.resolve(outMeta.entryPoint));
         const compName = entryToComponent.get(resolvedEntry);
         const url = `${this.assetPrefix}/client/${path.basename(outPath)}`;
         if (compName === null) {
@@ -954,7 +960,7 @@ export class ComponentRegistry {
       }
       const outputStats = Object.entries(result.metafile.outputs).map(([outPath, outMeta]) => {
         const inputs = Object.entries(outMeta.inputs).map(([inputPath, inputMeta]) => ({
-          path: inputPath.replace(path.resolve('.') + '/', ''),
+          path: toPosixPath(inputPath).replace(toPosixPath(path.resolve('.')) + '/', ''),
           size: inputMeta.bytesInOutput,
         }));
         inputs.sort((a, b) => b.size - a.size);
@@ -1608,7 +1614,7 @@ export class ComponentRegistry {
     // Load SSR modules and populate compiledComponents
     for (const [filename, entry] of Object.entries(manifest.components)) {
       const modulePath = path.resolve(entry.ssrModule);
-      const mod = await import(modulePath);
+      const mod = await import(Bun.pathToFileURL(modulePath).href);
       registry.compiledComponents.set(filename, {
         module: mod,
         cssComponents: new Set(entry.cssComponents),

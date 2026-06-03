@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs';
+import path from 'node:path';
 
 // `.well-known` is the IETF-standard discovery path (RFC 8615) used for
 // `security.txt`, ACME HTTP-01 challenges, etc., so it is served even though
@@ -31,14 +32,15 @@ export async function scanPublicDir(dir: string): Promise<Map<string, string>> {
   if (!existsSync(dir)) {
     return new Map();
   }
-  const base = dir.replace(/\/+$/, '');
   const result = new Map<string, string>();
   const glob = new Bun.Glob('**/*');
+  // `relative` is always forward-slash (Bun.Glob), so it's a valid URL suffix
+  // as-is; the disk value goes through path.join to pick up native separators.
   for await (const relative of glob.scan({ cwd: dir, dot: true })) {
     if (isExcludedDotPath(relative)) {
       continue;
     }
-    result.set('/' + relative, `${base}/${relative}`);
+    result.set('/' + relative, path.join(dir, relative));
   }
   return result;
 }

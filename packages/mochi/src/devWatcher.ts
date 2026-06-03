@@ -224,7 +224,7 @@ export function startDevWatcher(deps: DevWatcherDeps): void {
     // Cache-bust via query string — each import creates a new module entry in Bun's
     // module cache that is never evicted. Acceptable for a dev-only path; would need
     // Loader.registry cleanup if Bun exposes it in the future.
-    const mod = await import(outFile + `?t=${Date.now()}`);
+    const mod = await import(Bun.pathToFileURL(outFile).href + `?t=${Date.now()}`);
     if (!mod.routes) {
       logger.warn('Route module does not export "routes" — skipping update');
       return null;

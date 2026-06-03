@@ -67,7 +67,7 @@ async function main() {
     process.exit(1);
   }
 
-  const mod = (await import(routesPath)) as { routes?: unknown; buildOptions?: unknown };
+  const mod = (await import(Bun.pathToFileURL(routesPath).href)) as { routes?: unknown; buildOptions?: unknown };
   if (!mod.routes || typeof mod.routes !== 'object') {
     process.stderr.write(`[mochi] ${routesPath} does not export a \`routes\` object.\n` + `Add: export const routes = { ... };\n`);
     process.exit(1);
