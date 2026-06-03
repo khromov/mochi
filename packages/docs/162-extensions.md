@@ -217,6 +217,23 @@ await Mochi.serve({
 
 The `envKeyPresent` field on the filter context tells you whether `MOCHI_KEY` was set, in case you want to fall back to the env-derived default.
 
+#### `payload:compressMinBytes`
+
+The minimum size (bytes) a server-island-prop or image payload must reach before the framework attempts to deflate it ahead of encryption. Below the threshold, zlib framing outweighs any saving, so the deflate call is skipped. Resolved once at startup. Sync.
+
+```ts
+import { DEFAULT_COMPRESS_MIN_BYTES } from 'mochi-framework';
+
+await Mochi.serve({
+  filters: {
+    'payload:compressMinBytes': () => 128, // only bother deflating larger payloads
+  },
+  routes,
+});
+```
+
+Default is `DEFAULT_COMPRESS_MIN_BYTES` (80), derived empirically — re-run `bun packages/mochi/scripts/compression-threshold.ts` to reproduce. The inner "use only if smaller" check still discards any payload that fails to shrink, so raising the threshold only trades a bit of CPU against missed wins.
+
 #### `compile:preprocessors`
 
 A list of Svelte `PreprocessorGroup` to run on every `.svelte` source file before compilation. Applies to both server and client targets — branch on `target` in the filter context if you only want one. Sync.

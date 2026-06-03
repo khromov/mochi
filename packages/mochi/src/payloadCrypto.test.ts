@@ -3,10 +3,11 @@ import { encryptPayload, decryptPayload } from './payloadCrypto';
 
 const GLOBAL_CONFIG_KEY = '__mochi_config__';
 
-function installConfig(secret = 'test-key-for-unit-tests-32bytes!') {
+function installConfig(secret = 'test-key-for-unit-tests-32bytes!', compressMinBytes?: number) {
   (globalThis as unknown as Record<string, unknown>)[GLOBAL_CONFIG_KEY] = {
     options: {},
     secretKey: Buffer.from(secret),
+    compressMinBytes,
   };
 }
 
@@ -27,6 +28,18 @@ describe('encryptPayload + decryptPayload', () => {
     const token = encryptPayload(plaintext);
     expect(token.length).toBeLessThan(plaintext.length); // compression shrank it
     expect(decryptPayload(token)).toBe(plaintext);
+  });
+
+  test('honors the resolved compressMinBytes threshold', () => {
+    const plaintext = 'x'.repeat(500);
+    // Threshold above the payload size → deflate skipped → token larger than input.
+    installConfig('test-key-for-unit-tests-32bytes!', 10_000);
+    expect(encryptPayload(plaintext).length).toBeGreaterThan(plaintext.length);
+    // Threshold below it → deflate applied → token shrinks, still round-trips.
+    installConfig('test-key-for-unit-tests-32bytes!', 64);
+    const compressed = encryptPayload(plaintext);
+    expect(compressed.length).toBeLessThan(plaintext.length);
+    expect(decryptPayload(compressed)).toBe(plaintext);
   });
 
   test('is deterministic for identical input (stable URLs)', () => {

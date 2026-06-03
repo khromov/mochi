@@ -73,6 +73,7 @@ export { trailingSlashIt } from './trailingSlash';
 export { fail, redirect, success } from './forms';
 export { enhance, deserialize } from './enhance.ssr';
 export { isFormContentType, DEFAULT_FORM_CONTENT_TYPES, DEFAULT_PROTECTED_METHODS } from './csrf';
+export { DEFAULT_COMPRESS_MIN_BYTES } from './payloadCrypto';
 export type { MochiCsrfOptions } from './csrf';
 export type {
   MochiHooks,

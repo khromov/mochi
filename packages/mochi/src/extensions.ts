@@ -74,6 +74,7 @@ export interface MochiFilterValue {
   'cookie:defaults': CookieSerializeOptions;
   'html:shell': string;
   'serverIsland:secretKey': Buffer;
+  'payload:compressMinBytes': number;
   'compile:preprocessors': PreprocessorGroup[];
   'publicDir:scan': Map<string, string>;
   'consoleLogger:line': string;
@@ -97,6 +98,7 @@ export interface MochiFilterContext {
   'cookie:defaults': { options: MochiServeOptions };
   'html:shell': { options: MochiServeOptions; development: boolean };
   'serverIsland:secretKey': { options: MochiServeOptions; envKeyPresent: boolean };
+  'payload:compressMinBytes': { options: MochiServeOptions };
   'compile:preprocessors': {
     filename: string;
     target: 'server' | 'client';
@@ -129,6 +131,7 @@ export interface MochiFilterKindMap {
   'cookie:defaults': 'sync';
   'html:shell': 'sync';
   'serverIsland:secretKey': 'async';
+  'payload:compressMinBytes': 'sync';
   'compile:preprocessors': 'sync';
   'publicDir:scan': 'async';
   'consoleLogger:line': 'sync';
@@ -168,6 +171,7 @@ const FILTER_KINDS: { [K in keyof MochiFilterValue]: MochiKind } = {
   'cookie:defaults': 'sync',
   'html:shell': 'sync',
   'serverIsland:secretKey': 'async',
+  'payload:compressMinBytes': 'sync',
   'compile:preprocessors': 'sync',
   'publicDir:scan': 'async',
   'consoleLogger:line': 'sync',

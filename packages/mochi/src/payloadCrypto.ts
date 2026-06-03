@@ -33,12 +33,17 @@ import { getMochiConfig } from './mochiConfig';
 const SIV_LEN = 16;
 const FLAG_COMPRESSED = 1;
 
-// Below this size deflate's zlib framing outweighs any saving for the two real
-// payload shapes (packed image requests, devalue island props), so attempting it
-// is wasted work — the inner "use only if smaller" check still guards larger
-// low-redundancy payloads. Empirically derived; re-derive with:
-//   bun packages/mochi/scripts/compression-threshold.ts
-const COMPRESS_MIN_BYTES = 80;
+/**
+ * Default minimum payload size (bytes) before `encryptPayloadBytes` attempts
+ * deflate. Below this, zlib framing outweighs any saving for the two real
+ * payload shapes (packed image requests, devalue island props), so the deflate
+ * call is wasted — the inner "use only if smaller" check still guards larger
+ * low-redundancy payloads. Empirically derived; re-derive with:
+ *   bun packages/mochi/scripts/compression-threshold.ts
+ *
+ * Override per app via the `payload:compressMinBytes` filter.
+ */
+export const DEFAULT_COMPRESS_MIN_BYTES = 80;
 
 // 64-byte AES-256-SIV key derived from the root secret. SHA-512's 64-byte output
 // maps directly to noble's expected key length (split internally into the S2V
@@ -65,7 +70,8 @@ export function encryptPayload(plaintext: string, opts: EncryptOptions = {}): st
 export function encryptPayloadBytes(input: Uint8Array, opts: EncryptOptions = {}): string {
   let payload = Buffer.from(input);
   let flags = 0;
-  if ((opts.compress ?? true) && payload.length >= COMPRESS_MIN_BYTES) {
+  const minBytes = getMochiConfig().compressMinBytes ?? DEFAULT_COMPRESS_MIN_BYTES;
+  if ((opts.compress ?? true) && payload.length >= minBytes) {
     const deflated = Buffer.from(Bun.deflateSync(payload));
     if (deflated.length < payload.length) {
       payload = deflated;

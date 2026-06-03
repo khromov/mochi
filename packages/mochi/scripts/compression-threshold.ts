@@ -2,7 +2,8 @@
  * Empirically derive the deflate threshold for `encryptPayloadBytes`.
  *
  * `encryptPayloadBytes` only *attempts* `Bun.deflateSync` when the payload is
- * `>= COMPRESS_MIN_BYTES` (currently 80). The inner "use it only if smaller" check already
+ * `>= DEFAULT_COMPRESS_MIN_BYTES` (currently 80, overridable via the
+ * `payload:compressMinBytes` filter). The inner "use it only if smaller" check already
  * prevents a larger result from ever being used, so this guard is purely a CPU
  * optimization: the size below which it's not worth calling deflate at all.
  *
@@ -226,7 +227,7 @@ function main(): void {
   console.log('\n' + '═'.repeat(76));
   console.log('  RECOMMENDATION');
   console.log('═'.repeat(76));
-  console.log(`  Current guard:      payload.length >= 80 (COMPRESS_MIN_BYTES)`);
+  console.log(`  Current guard:      payload.length >= 80 (DEFAULT_COMPRESS_MIN_BYTES)`);
   console.log(`  Smallest payload that saves ≥${MEANINGFUL} B once deflated: ${firstMeaningful === null ? 'none' : `${firstMeaningful} B`}`);
   console.log(`  Largest payload that still does NOT save ≥${MEANINGFUL} B:    ${maxLoseSize(all, MEANINGFUL) ?? 'n/a'} B`);
   console.log(`\n  → Suggested threshold: payload.length >= ${recommended}`);

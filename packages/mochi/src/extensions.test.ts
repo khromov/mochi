@@ -185,6 +185,21 @@ describe('new extension points', () => {
     expect(result).toBe(input);
   });
 
+  test('payload:compressMinBytes returns the default unchanged when no filter registered', () => {
+    const result = applyFilter('payload:compressMinBytes', 80, { options: fakeOptions });
+    expect(result).toBe(80);
+  });
+
+  test('payload:compressMinBytes returns the user-supplied threshold', () => {
+    initExtensions({
+      filters: {
+        'payload:compressMinBytes': () => 256,
+      },
+    });
+    const result = applyFilter('payload:compressMinBytes', 80, { options: fakeOptions });
+    expect(result).toBe(256);
+  });
+
   test('compile:preprocessors returns the user-supplied list', () => {
     const fakePreprocessor = { name: 'fake', markup: () => ({ code: '' }) };
     initExtensions({
