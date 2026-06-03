@@ -86,7 +86,7 @@ Do **NOT** ship large blobs through server-island props; instead, fetch the data
 
 ### Encryption key
 
-Props are encrypted with a key derived (SHA-256) from `process.env.MOCHI_KEY` (base64url-encoded, any length). If `MOCHI_KEY` is unset, Mochi generates a random key and logs a warning — fine for local dev, broken across restarts and multi-instance deploys.
+Props are encrypted with a key derived (HMAC-SHA512) from `process.env.MOCHI_KEY` (base64url-encoded, any length). If `MOCHI_KEY` is unset, Mochi generates a random key and logs a warning — fine for local dev, broken across restarts and multi-instance deploys.
 
 ```sh
 # .env

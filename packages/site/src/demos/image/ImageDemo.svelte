@@ -25,7 +25,7 @@
 
 <DemoPage
   title="Image Resizing"
-  description="On-the-fly image resizing on Bun.Image, served from an encrypted, stale-while-revalidate disk cache. Every URL's payload is AES-256-GCM encrypted, so the source and params stay hidden and can't be tampered with."
+  description="On-the-fly image resizing on Bun.Image, served from an encrypted, stale-while-revalidate disk cache. Every URL's payload is AES-256-SIV encrypted, so the source and params stay hidden and can't be tampered with."
   {sources}
 >
   <h3>Component</h3>
