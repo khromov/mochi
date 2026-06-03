@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { compile, optimize } from '@tailwindcss/node';
+import { compile, optimize, type Resolver } from '@tailwindcss/node';
 import { Scanner, type SourceEntry } from '@tailwindcss/oxide';
 import { mochiEvents } from './events';
 import { logger } from './log';
@@ -27,10 +27,23 @@ export async function compileTailwind(opts: TailwindOptions): Promise<void> {
   const base = opts.base ? path.resolve(opts.base) : path.dirname(inputAbs);
   const inputCss = await Bun.file(inputAbs).text();
 
+  // enhanced-resolve (Tailwind's default CSS/JS resolver) escapes `#`/`?` in
+  // paths as `\0#` and fails to unescape before readFile, so any install path
+  // containing those chars crashes. Bun's resolver returns clean paths.
+  const bunResolver: Resolver = async (id, resolveBase) => {
+    try {
+      return Bun.resolveSync(id, resolveBase);
+    } catch {
+      return undefined; // let Tailwind's default resolver handle anything Bun can't
+    }
+  };
+
   const compiled = await compile(inputCss, {
     base,
     from: inputAbs,
     onDependency: () => {},
+    customCssResolver: bunResolver,
+    customJsResolver: bunResolver,
   });
 
   const scanner = new Scanner({ sources: compiled.sources as SourceEntry[] });
