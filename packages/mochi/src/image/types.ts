@@ -92,7 +92,7 @@ export interface MochiImageOptions {
   fetchTimeoutMs?: number;
   /** Max upstream response body in bytes. Default: `20 * 1024 * 1024`. */
   maxResponseBytes?: number;
-  /** Cache time-to-stale in ms — governs the original; resized variants follow it. Default: `60_000`. */
+  /** Cache time-to-stale in ms — governs the original; resized variants follow it. Default: `14_400_000` (4 h). */
   timeToStale?: number;
   /** Cache time-to-evict in ms — governs the original; resized variants follow it. Default: `86_400_000` (1 day). */
   timeToEvict?: number;
