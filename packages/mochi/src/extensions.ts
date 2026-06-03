@@ -98,7 +98,7 @@ export interface MochiFilterContext {
   'cookie:defaults': { options: MochiServeOptions };
   'html:shell': { options: MochiServeOptions; development: boolean };
   'serverIsland:secretKey': { options: MochiServeOptions; envKeyPresent: boolean };
-  'payload:compressMinBytes': { options: MochiServeOptions };
+  'payload:compressMinBytes': { options: MochiServeOptions; payload: Uint8Array };
   'compile:preprocessors': {
     filename: string;
     target: 'server' | 'client';

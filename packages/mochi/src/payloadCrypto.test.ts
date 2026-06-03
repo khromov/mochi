@@ -1,18 +1,19 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { encryptPayload, decryptPayload } from './payloadCrypto';
+import { initExtensions } from './extensions';
 
 const GLOBAL_CONFIG_KEY = '__mochi_config__';
 
-function installConfig(secret = 'test-key-for-unit-tests-32bytes!', compressMinBytes?: number) {
+function installConfig(secret = 'test-key-for-unit-tests-32bytes!') {
   (globalThis as unknown as Record<string, unknown>)[GLOBAL_CONFIG_KEY] = {
     options: {},
     secretKey: Buffer.from(secret),
-    compressMinBytes,
   };
 }
 
 afterEach(() => {
   delete (globalThis as unknown as Record<string, unknown>)[GLOBAL_CONFIG_KEY];
+  initExtensions({}); // clear any filters registered by a test
 });
 
 describe('encryptPayload + decryptPayload', () => {
@@ -30,13 +31,25 @@ describe('encryptPayload + decryptPayload', () => {
     expect(decryptPayload(token)).toBe(plaintext);
   });
 
-  test('honors the resolved compressMinBytes threshold', () => {
+  test('the payload:compressMinBytes filter gates deflate and receives the payload', () => {
+    installConfig();
     const plaintext = 'x'.repeat(500);
-    // Threshold above the payload size → deflate skipped → token larger than input.
-    installConfig('test-key-for-unit-tests-32bytes!', 10_000);
+
+    let seenLength = -1;
+    // Raise the threshold above the payload size → deflate skipped → token larger than input.
+    initExtensions({
+      filters: {
+        'payload:compressMinBytes': (def, { payload }) => {
+          seenLength = payload.length;
+          return 10_000;
+        },
+      },
+    });
     expect(encryptPayload(plaintext).length).toBeGreaterThan(plaintext.length);
-    // Threshold below it → deflate applied → token shrinks, still round-trips.
-    installConfig('test-key-for-unit-tests-32bytes!', 64);
+    expect(seenLength).toBe(500); // the filter saw the real payload bytes
+
+    // Lower the threshold below it → deflate applied → token shrinks, still round-trips.
+    initExtensions({ filters: { 'payload:compressMinBytes': () => 64 } });
     const compressed = encryptPayload(plaintext);
     expect(compressed.length).toBeLessThan(plaintext.length);
     expect(decryptPayload(compressed)).toBe(plaintext);

@@ -219,20 +219,21 @@ The `envKeyPresent` field on the filter context tells you whether `MOCHI_KEY` wa
 
 #### `payload:compressMinBytes`
 
-The minimum size (bytes) a server-island-prop or image payload must reach before the framework attempts to deflate it ahead of encryption. Below the threshold, zlib framing outweighs any saving, so the deflate call is skipped. Resolved once at startup. Sync.
+The minimum size (bytes) a server-island-prop or image payload must reach before the framework attempts to deflate it ahead of encryption. Below the threshold, zlib framing outweighs any saving, so the deflate call is skipped. Evaluated per payload — the filter receives the (pre-encryption) `payload` bytes in its context, so the threshold can be decided per payload. Sync.
 
 ```ts
 import { DEFAULT_COMPRESS_MIN_BYTES } from 'mochi-framework';
 
 await Mochi.serve({
   filters: {
-    'payload:compressMinBytes': () => 128, // only bother deflating larger payloads
+    // Raise the bar to 128 B, but never bother deflating payloads that already look binary.
+    'payload:compressMinBytes': (def, { payload }) => (payload[0] === 0x89 ? Infinity : 128),
   },
   routes,
 });
 ```
 
-Default is `DEFAULT_COMPRESS_MIN_BYTES` (80), derived empirically — re-run `bun packages/mochi/scripts/compression-threshold.ts` to reproduce. The inner "use only if smaller" check still discards any payload that fails to shrink, so raising the threshold only trades a bit of CPU against missed wins.
+Default is `DEFAULT_COMPRESS_MIN_BYTES` (80), derived empirically — re-run `bun packages/mochi/scripts/compression-threshold.ts` to reproduce. The `payload` is read-only context (mutating it corrupts the ciphertext). The inner "use only if smaller" check still discards any payload that fails to shrink, so raising the threshold only trades a bit of CPU against missed wins; returning `Infinity` disables compression for that payload entirely.
 
 #### `compile:preprocessors`
 

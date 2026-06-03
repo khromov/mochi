@@ -186,18 +186,19 @@ describe('new extension points', () => {
   });
 
   test('payload:compressMinBytes returns the default unchanged when no filter registered', () => {
-    const result = applyFilter('payload:compressMinBytes', 80, { options: fakeOptions });
+    const result = applyFilter('payload:compressMinBytes', 80, { options: fakeOptions, payload: new Uint8Array(120) });
     expect(result).toBe(80);
   });
 
-  test('payload:compressMinBytes returns the user-supplied threshold', () => {
+  test('payload:compressMinBytes can decide per-payload from the bytes in context', () => {
     initExtensions({
       filters: {
-        'payload:compressMinBytes': () => 256,
+        // Never compress payloads whose first byte is 0xff, otherwise use the default.
+        'payload:compressMinBytes': (def, { payload }) => (payload[0] === 0xff ? Infinity : def),
       },
     });
-    const result = applyFilter('payload:compressMinBytes', 80, { options: fakeOptions });
-    expect(result).toBe(256);
+    expect(applyFilter('payload:compressMinBytes', 80, { options: fakeOptions, payload: Uint8Array.of(0xff, 1, 2) })).toBe(Infinity);
+    expect(applyFilter('payload:compressMinBytes', 80, { options: fakeOptions, payload: Uint8Array.of(0x01, 1, 2) })).toBe(80);
   });
 
   test('compile:preprocessors returns the user-supplied list', () => {

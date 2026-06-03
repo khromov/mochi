@@ -29,6 +29,7 @@
 import { aessiv } from '@noble/ciphers/aes.js';
 import { createHmac } from 'node:crypto';
 import { getMochiConfig } from './mochiConfig';
+import { applyFilter } from './extensions';
 
 const SIV_LEN = 16;
 const FLAG_COMPRESSED = 1;
@@ -70,7 +71,7 @@ export function encryptPayload(plaintext: string, opts: EncryptOptions = {}): st
 export function encryptPayloadBytes(input: Uint8Array, opts: EncryptOptions = {}): string {
   let payload = Buffer.from(input);
   let flags = 0;
-  const minBytes = getMochiConfig().compressMinBytes ?? DEFAULT_COMPRESS_MIN_BYTES;
+  const minBytes = applyFilter('payload:compressMinBytes', DEFAULT_COMPRESS_MIN_BYTES, { options: getMochiConfig().options, payload });
   if ((opts.compress ?? true) && payload.length >= minBytes) {
     const deflated = Buffer.from(Bun.deflateSync(payload));
     if (deflated.length < payload.length) {

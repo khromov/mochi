@@ -1,14 +1,11 @@
 import { randomBytes } from 'node:crypto';
 import type { MochiServeOptions } from './types';
 import { applyFilter } from './extensions';
-import { DEFAULT_COMPRESS_MIN_BYTES } from './payloadCrypto';
 import { logger } from './log';
 
 export interface MochiContext {
   options: MochiServeOptions;
   secretKey: Buffer;
-  /** Resolved `payload:compressMinBytes` filter — min payload size before deflate is attempted. */
-  compressMinBytes: number;
 }
 
 // TODO: Review this for cross-request security
@@ -40,9 +37,7 @@ export async function initMochiConfig(options: MochiServeOptions): Promise<void>
     envKeyPresent,
   });
 
-  const compressMinBytes = applyFilter('payload:compressMinBytes', DEFAULT_COMPRESS_MIN_BYTES, { options });
-
-  const ctx: MochiContext = { options, secretKey, compressMinBytes };
+  const ctx: MochiContext = { options, secretKey };
   (globalThis as unknown as Record<string, unknown>)[GLOBAL_KEY] = ctx;
 }
 
