@@ -9,10 +9,10 @@
 
   let expanded = $state(false);
 
-  const fmt = $derived(String(image.params.fmt ?? ''));
+  const fmt = $derived(String(image.params.format ?? ''));
   const dims = $derived.by(() => {
-    const w = image.params.w;
-    const h = image.params.h;
+    const w = image.params.width;
+    const h = image.params.height;
     if (w && h) {
       return `${w}×${h}`;
     }
