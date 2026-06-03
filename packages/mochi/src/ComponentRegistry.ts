@@ -2,7 +2,6 @@ import { compile as svelteCompile, compileModule as svelteCompileModule, preproc
 import { render } from 'svelte/server';
 import path from 'node:path';
 import fs from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import type { BunPlugin } from 'bun';
 import { isSvelteMarker, normalizeAssetPrefix, normalizeIslandHydrationMarkers, stripHydrationMarkers, toCompileErrorLogs, toPosixPath } from './utils';
 import { buildIslandPropsScripts } from './islandPropsRegistry';
@@ -36,7 +35,7 @@ async function applyUserPreprocessors(source: string, filename: string, target: 
 }
 
 /** Directory containing the framework's own .ts/.svelte source files. */
-const FRAMEWORK_DIR = path.dirname(fileURLToPath(import.meta.url));
+const FRAMEWORK_DIR = path.dirname(Bun.fileURLToPath(import.meta.url));
 
 // TODO
 // Bun's CSS bundler unquotes `format('woff2-variations')` to `format(woff2-variations)`,
