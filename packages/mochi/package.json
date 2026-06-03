@@ -89,6 +89,7 @@
     }
   },
   "dependencies": {
+    "@noble/ciphers": "2.2.0",
     "@types/negotiator": "^0.6.4",
     "chokidar": "^4.0.3",
     "deepmerge": "^4.3.1",

@@ -102,28 +102,28 @@ describe('wire-format snapshots (fixed MOCHI_KEY)', () => {
   test('resize with all defaults', () => {
     installConfig();
     const r = req();
-    expect(encryptImageRequest(r, 'a-200x200.webp', RESOLVED)).toBe('_3oxyEMK3CViYVznsp-1F_ZBsgKvPHKjlz6XeObKTUXauf7BYkfZ9dS4MwGV-1qY');
+    expect(encryptImageRequest(r, 'a-200x200.webp', RESOLVED)).toBe('EdVTtzw_Z4DaPuSxmghJY1kpV6Ub7g70Hx7-PbCmGSWySMCm2nNom-TDB73mN4nz');
     expect(decryptImageRequest(encryptImageRequest(r, 'a-200x200.webp', RESOLVED), 'a-200x200.webp', RESOLVED)).toEqual(r);
   });
 
   test('resize with non-default format/quality/fit/withoutEnlargement', () => {
     installConfig();
     const r = req({ width: 400, height: 400, fit: 'fill', format: 'jpeg', quality: 60, withoutEnlargement: true });
-    expect(encryptImageRequest(r, 'a-400x400.jpg', RESOLVED)).toBe('rq-ZJoihR66i7qd2I8vIxXZEXoIQ62omBZNYWkTEHm77ImTYu0YHexwPrJECaLbgqA');
+    expect(encryptImageRequest(r, 'a-400x400.jpg', RESOLVED)).toBe('dRS2gS0oBXb_kz2ASp3WEZPtlixmT5zDoKR5l1x5NqH3-MZEVHC0sRzsV0j5gEZEVg');
     expect(decryptImageRequest(encryptImageRequest(r, 'a-400x400.jpg', RESOLVED), 'a-400x400.jpg', RESOLVED)).toEqual(r);
   });
 
   test('full-size original', () => {
     installConfig();
     const r = req({ width: undefined, height: undefined, original: true });
-    expect(encryptImageRequest(r, 'a-original.png', RESOLVED)).toBe('pau1D_eFJt6hHjMWJ4t32vqgAxrQPpQ5dfaFDjfhvQazZ11jwQtkzAEckyQ');
+    expect(encryptImageRequest(r, 'a-original.png', RESOLVED)).toBe('uPauTzXa_G33yy6NKYv3xwfiC1k_D5OE4hFYoe8-okCREQQ7bogHS2zMBog');
     expect(decryptImageRequest(encryptImageRequest(r, 'a-original.png', RESOLVED), 'a-original.png', RESOLVED)).toEqual(r);
   });
 
   test('long src exercises the compressed path', () => {
     installConfig();
     const r = req({ src: 'https://example.com/' + 'segment/'.repeat(40) + 'image.png' });
-    expect(encryptImageRequest(r, 'a-200x200.webp', RESOLVED)).toBe('vM4k955CqJO3tfeyIfR8YZRxSGt7zwIbnX5mmW3VuOawNf62HaUmI_fowAuAD8IuFUZxZiE1U1A69zuZlxp3WqQNAw');
+    expect(encryptImageRequest(r, 'a-200x200.webp', RESOLVED)).toBe('Kl4mm058MWQUNWkczDt0BCg0PMgNAZ1jLgaHArr5Wl3vTGUFXWARVCib5S4U56PoYcBgwIX30VK3Kbg8BQMexldflw');
     expect(decryptImageRequest(encryptImageRequest(r, 'a-200x200.webp', RESOLVED), 'a-200x200.webp', RESOLVED)).toEqual(r);
   });
 });
