@@ -89,7 +89,6 @@ describe('encryptImageRequest + decryptImageRequest', () => {
     installConfig();
     const r = req({ format: 'jpeg', quality: 60, width: 400, height: 400 });
     const token = encryptImageRequest(r, NAME, RESOLVED);
-    // Reproduce the old scheme: JSON.stringify → same envelope (compression on).
     const jsonToken = encryptPayload(JSON.stringify(r), { aad: NAME });
     expect(token.length).toBeLessThan(jsonToken.length);
   });
