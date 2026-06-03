@@ -73,8 +73,11 @@ describe('recompile* batches into one compileAll + one buildClientBundle per cyc
         const seeded = seededDeps.get(filename);
         // Mirror the real compileAll(): record the entry's own path in its
         // dep set so changedPath===entry hits both code paths in
-        // recompileChanged().
-        internals.entryDeps.set(filename, new Set([filename, ...(seeded ?? [])]));
+        // recompileChanged(). The real method stores path.resolve'd inputs, and
+        // recompileChanged() resolves its query, so resolve here too — otherwise
+        // on Windows path.resolve('/fake/x') → 'C:\fake\x' never matches a raw
+        // '/fake/x' seed.
+        internals.entryDeps.set(filename, new Set([path.resolve(filename), ...[...(seeded ?? [])].map((d) => path.resolve(d))]));
       }
       internals.hydratableComponents.push(...newHydratables);
       if (newHydratables.length > 0) {

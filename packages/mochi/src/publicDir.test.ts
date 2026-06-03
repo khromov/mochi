@@ -28,9 +28,9 @@ describe('scanPublicDir', () => {
 
   test('returns common top-level files keyed by URL path', async () => {
     const files = await scanPublicDir(dir);
-    expect(files.get('/favicon.ico')).toBe(`${dir}/favicon.ico`);
-    expect(files.get('/robots.txt')).toBe(`${dir}/robots.txt`);
-    expect(files.get('/img/logo.png')).toBe(`${dir}/img/logo.png`);
+    expect(files.get('/favicon.ico')).toBe(path.join(dir, 'favicon.ico'));
+    expect(files.get('/robots.txt')).toBe(path.join(dir, 'robots.txt'));
+    expect(files.get('/img/logo.png')).toBe(path.join(dir, 'img', 'logo.png'));
   });
 
   test('skips dotfiles at the root (including secrets like .env)', async () => {
@@ -46,8 +46,8 @@ describe('scanPublicDir', () => {
 
   test('serves /.well-known/ files (RFC 8615)', async () => {
     const files = await scanPublicDir(dir);
-    expect(files.get('/.well-known/security.txt')).toBe(`${dir}/.well-known/security.txt`);
-    expect(files.get('/.well-known/acme-challenge/token123')).toBe(`${dir}/.well-known/acme-challenge/token123`);
+    expect(files.get('/.well-known/security.txt')).toBe(path.join(dir, '.well-known', 'security.txt'));
+    expect(files.get('/.well-known/acme-challenge/token123')).toBe(path.join(dir, '.well-known', 'acme-challenge', 'token123'));
   });
 
   test('still skips dotfiles nested inside /.well-known/ (e.g. .env)', async () => {
@@ -62,6 +62,6 @@ describe('scanPublicDir', () => {
 
   test('strips a trailing slash from the base directory', async () => {
     const files = await scanPublicDir(`${dir}/`);
-    expect(files.get('/favicon.ico')).toBe(`${dir}/favicon.ico`);
+    expect(files.get('/favicon.ico')).toBe(path.join(dir, 'favicon.ico'));
   });
 });

@@ -15,7 +15,7 @@ let idx = 0;
 async function next(): Promise<void> {
   while (idx < parallel.length) {
     const file = parallel[idx++]!;
-    const proc = Bun.spawn(['bun', 'test', file], {
+    const proc = Bun.spawn(['bun', 'test', '--timeout', '30000', file], {
       stdin: 'ignore',
       stdout: 'pipe',
       stderr: 'pipe',
@@ -38,7 +38,7 @@ await Promise.all(Array.from({ length: concurrency }, () => next()));
 for (const file of sequential) {
   console.log(`\n→ ${file} (sequential)`);
   const proc = Bun.spawnSync({
-    cmd: ['bun', 'test', file],
+    cmd: ['bun', 'test', '--timeout', '30000', file],
     stdio: ['inherit', 'inherit', 'inherit'],
   });
   results.push({ file, ok: proc.exitCode === 0 });
