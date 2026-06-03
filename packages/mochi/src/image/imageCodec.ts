@@ -1,136 +1,109 @@
 /**
  * Compact binary encoding for the image-request payload that travels (encrypted)
  * in the `?p=` query param. Replaces `JSON.stringify(req)` to keep the token
- * short: enums/booleans collapse into two control bytes, numbers become LEB128
- * varints (via the `leb` package), and the source URL is the trailing bytes.
- * Fields that equal the resolved server defaults are omitted and refilled on
- * decode — the encoder (`getResizedImage`/`getImage`) and decoder
+ * short. The layout is described declaratively as a `@astronautlabs/bitstream`
+ * element rather than hand-packed: enums/booleans collapse into individual
+ * bit-fields, presence flags drive `presentWhen` so fields equal to the resolved
+ * server defaults are omitted, and the source URL is a length-prefixed trailing
+ * string. The encoder (`getResizedImage`/`getImage`) and decoder
  * (`imageEndpoint`) share one process and config, so the reconstruction is
  * lossless.
  *
- * Layout (before encryption):
- *   byte 0  fmt(0-1) | fit(2) | ao(3) | noUp(4) | orig(5) | hasW(6) | hasH(7)
- *   byte 1  hasQ(0) | hasTs(1) | hasTe(2) | reserved(3-7)
- *   [varint w] [varint h] [byte q] [varint ts] [varint te]   (present per the bits)
- *   [utf-8 src ...]                                           (rest of buffer)
+ * Layout (before encryption), big-endian, bit-packed:
+ *   fmt(2) | fitFill(1) | ao(1) | noUp(1) | orig(1) | hasW(1) | hasH(1)   (byte 0)
+ *   hasQ(1) | hasTs(1) | hasTe(1) | reserved(5)                           (byte 1)
+ *   [u24 w] [u24 h] [u8 q] [u40 ts] [u40 te]   (present per the flags above)
+ *   [u16 srcLen] [utf-8 src …]
  */
-import { decodeUInt64, encodeUInt64 } from 'leb';
-import type { ImageFit, ImageFormat, ImageRequest, ResolvedImageOptions } from './types';
+import 'reflect-metadata'; // must load before the element class below is defined
+import { BitstreamElement, Field, Reserved } from '@astronautlabs/bitstream';
+import type { ImageFormat, ImageRequest, ResolvedImageOptions } from './types';
 
 const FORMATS: ImageFormat[] = ['webp', 'jpeg', 'png', 'avif'];
 
-const FIT_FILL = 1 << 2;
-const AO = 1 << 3;
-const NO_UP = 1 << 4;
-const ORIG = 1 << 5;
-const HAS_W = 1 << 6;
-const HAS_H = 1 << 7;
+class ImageRequestElement extends BitstreamElement {
+  @Field(2) format!: number;
+  @Field(1) fitFill!: boolean;
+  @Field(1) autoOrient!: boolean;
+  @Field(1) withoutEnlargement!: boolean;
+  @Field(1) original!: boolean;
+  @Field(1) hasW!: boolean;
+  @Field(1) hasH!: boolean;
 
-const HAS_Q = 1 << 0;
-const HAS_TS = 1 << 1;
-const HAS_TE = 1 << 2;
+  @Field(1) hasQ!: boolean;
+  @Field(1) hasTs!: boolean;
+  @Field(1) hasTe!: boolean;
+  @Reserved(5) $reserved!: number;
+
+  @Field(24, { presentWhen: (i: ImageRequestElement) => i.hasW }) width!: number;
+  @Field(24, { presentWhen: (i: ImageRequestElement) => i.hasH }) height!: number;
+  @Field(8, { presentWhen: (i: ImageRequestElement) => i.hasQ }) quality!: number;
+  @Field(40, { presentWhen: (i: ImageRequestElement) => i.hasTs }) timeToStale!: number;
+  @Field(40, { presentWhen: (i: ImageRequestElement) => i.hasTe }) timeToEvict!: number;
+
+  @Field(16) srcLen!: number;
+  @Field((i: ImageRequestElement) => i.srcLen, { string: { encoding: 'utf-8', nullTerminated: false } })
+  src!: string;
+}
 
 export function packImageRequest(req: ImageRequest, resolved: ResolvedImageOptions): Uint8Array {
-  const fmtIndex = Math.max(0, FORMATS.indexOf(req.format));
+  const el = new ImageRequestElement();
+  el.format = Math.max(0, FORMATS.indexOf(req.format));
+  el.fitFill = req.fit === 'fill';
+  el.autoOrient = req.autoOrient;
+  el.withoutEnlargement = req.withoutEnlargement ?? false;
+  el.original = req.original ?? false;
 
-  const hasQ = req.quality !== resolved.defaultQuality;
-  const hasTs = req.timeToStale !== resolved.timeToStale;
-  const hasTe = req.timeToEvict !== resolved.timeToEvict;
+  el.hasW = req.width !== undefined;
+  el.hasH = req.height !== undefined;
+  el.hasQ = req.quality !== resolved.defaultQuality;
+  el.hasTs = req.timeToStale !== resolved.timeToStale;
+  el.hasTe = req.timeToEvict !== resolved.timeToEvict;
 
-  let control = fmtIndex & 0b11;
-  if (req.fit === 'fill') {
-    control |= FIT_FILL;
+  if (el.hasW) {
+    el.width = req.width!;
   }
-  if (req.autoOrient) {
-    control |= AO;
+  if (el.hasH) {
+    el.height = req.height!;
   }
-  if (req.withoutEnlargement) {
-    control |= NO_UP;
+  if (el.hasQ) {
+    el.quality = req.quality;
   }
-  if (req.original) {
-    control |= ORIG;
+  if (el.hasTs) {
+    el.timeToStale = req.timeToStale;
   }
-  if (req.width !== undefined) {
-    control |= HAS_W;
-  }
-  if (req.height !== undefined) {
-    control |= HAS_H;
-  }
-
-  let control2 = 0;
-  if (hasQ) {
-    control2 |= HAS_Q;
-  }
-  if (hasTs) {
-    control2 |= HAS_TS;
-  }
-  if (hasTe) {
-    control2 |= HAS_TE;
+  if (el.hasTe) {
+    el.timeToEvict = req.timeToEvict;
   }
 
-  const head: number[] = [control, control2];
-  if (req.width !== undefined) {
-    head.push(...encodeUInt64(req.width));
-  }
-  if (req.height !== undefined) {
-    head.push(...encodeUInt64(req.height));
-  }
-  if (hasQ) {
-    head.push(req.quality & 0xff);
-  }
-  if (hasTs) {
-    head.push(...encodeUInt64(req.timeToStale));
-  }
-  if (hasTe) {
-    head.push(...encodeUInt64(req.timeToEvict));
-  }
-
-  const src = Buffer.from(req.src, 'utf-8');
-  const out = new Uint8Array(head.length + src.length);
-  out.set(head, 0);
-  out.set(src, head.length);
-  return out;
+  el.src = req.src;
+  el.srcLen = Buffer.byteLength(req.src, 'utf-8');
+  return el.serialize();
 }
 
 export function unpackImageRequest(buf: Uint8Array, resolved: ResolvedImageOptions): ImageRequest | null {
   try {
-    if (buf.length < 2) {
-      return null;
-    }
-    const control = buf[0]!;
-    const control2 = buf[1]!;
-    const cursor = { i: 2 };
-    const readUint = (): number => {
-      const { value, nextIndex } = decodeUInt64(buf, cursor.i);
-      cursor.i = nextIndex;
-      return value;
+    const el = ImageRequestElement.deserialize(buf);
+
+    const req: ImageRequest = {
+      src: el.src,
+      fit: el.fitFill ? 'fill' : 'inside',
+      format: FORMATS[el.format]!,
+      quality: el.hasQ ? el.quality : resolved.defaultQuality,
+      autoOrient: el.autoOrient,
+      timeToStale: el.hasTs ? el.timeToStale : resolved.timeToStale,
+      timeToEvict: el.hasTe ? el.timeToEvict : resolved.timeToEvict,
     };
-
-    const format = FORMATS[control & 0b11]!;
-    const fit: ImageFit = control & FIT_FILL ? 'fill' : 'inside';
-
-    const width = control & HAS_W ? readUint() : undefined;
-    const height = control & HAS_H ? readUint() : undefined;
-    const quality = control2 & HAS_Q ? buf[cursor.i++]! : resolved.defaultQuality;
-    const timeToStale = control2 & HAS_TS ? readUint() : resolved.timeToStale;
-    const timeToEvict = control2 & HAS_TE ? readUint() : resolved.timeToEvict;
-
-    if (cursor.i > buf.length) {
-      return null;
+    if (el.hasW) {
+      req.width = el.width;
     }
-    const src = Buffer.from(buf.buffer, buf.byteOffset + cursor.i, buf.length - cursor.i).toString('utf-8');
-
-    const req: ImageRequest = { src, fit, format, quality, autoOrient: (control & AO) !== 0, timeToStale, timeToEvict };
-    if (width !== undefined) {
-      req.width = width;
+    if (el.hasH) {
+      req.height = el.height;
     }
-    if (height !== undefined) {
-      req.height = height;
-    }
-    if (control & NO_UP) {
+    if (el.withoutEnlargement) {
       req.withoutEnlargement = true;
     }
-    if (control & ORIG) {
+    if (el.original) {
       req.original = true;
     }
     return req;

@@ -33,8 +33,8 @@ describe('packImageRequest + unpackImageRequest', () => {
   test('omits default fields and refills them on decode', () => {
     const r = req(); // q/ts/te/fmt/ao all equal the resolved defaults
     const packed = packImageRequest(r, RESOLVED);
-    // Only control(2) + varint w + varint h — no q/ts/te bytes — plus the URL.
-    expect(packed.length).toBe(2 + 2 + 2 + Buffer.byteLength(r.src));
+    // flags(2) + u24 w + u24 h — no q/ts/te fields — u16 srcLen + the URL.
+    expect(packed.length).toBe(2 + 3 + 3 + 2 + Buffer.byteLength(r.src));
     expect(unpackImageRequest(packed, RESOLVED)).toEqual(r);
   });
 

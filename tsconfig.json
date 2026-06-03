@@ -1,4 +1,12 @@
 {
   "files": [],
+  // Solution-style config (no own sources). compilerOptions here are not used by
+  // tsc -b (each referenced project uses its own), but Bun's runtime transpiler
+  // reads this root tsconfig from the cwd — and @astronautlabs/bitstream's
+  // decorators require these flags at runtime. Keep in sync with tsconfig.base.json.
+  "compilerOptions": {
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true
+  },
   "references": [{ "path": "./packages/mochi" }, { "path": "./packages/site" }, { "path": "./packages/demos" }, { "path": "./packages/cli" }]
 }
