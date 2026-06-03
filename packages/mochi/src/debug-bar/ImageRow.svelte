@@ -9,18 +9,18 @@
 
   let expanded = $state(false);
 
-  const fmt = $derived(String(image.params.format ?? ''));
+  const format = $derived(String(image.params.format ?? ''));
   const dims = $derived.by(() => {
-    const w = image.params.width;
-    const h = image.params.height;
-    if (w && h) {
-      return `${w}×${h}`;
+    const width = image.params.width;
+    const height = image.params.height;
+    if (width && height) {
+      return `${width}×${height}`;
     }
-    if (w) {
-      return `${w}w`;
+    if (width) {
+      return `${width}w`;
     }
-    if (h) {
-      return `${h}h`;
+    if (height) {
+      return `${height}h`;
     }
     return 'original';
   });
@@ -34,7 +34,7 @@
       <span class="island-name">{image.filename}</span>
     </button>
     <span class="island-meta">
-      {#if fmt}<span class="island-tag tag-fmt">{fmt}</span>{/if}
+      {#if format}<span class="island-tag tag-fmt">{format}</span>{/if}
       <span class="island-size">{dims}</span>
       <span class="lock-icon" title="Image params are AES-256-GCM encrypted in production. Decoded params are shown only in dev mode.">
         <Lock size={10} />
@@ -53,7 +53,7 @@
           <span class="wire-title">Wire format</span>
           <span class="wire-sub">binary, before AES-256-GCM</span>
         </div>
-        <pre class="wire-bytes">{image.wire.headerHex}<span class="wire-tail"> + {image.wire.srcBytes} B utf-8 src</span></pre>
+        <pre class="wire-bytes">{image.wire.headerHex}<span class="wire-tail"> + {image.wire.srcByteLength} B utf-8 src</span></pre>
       </div>
     {/if}
   </div>

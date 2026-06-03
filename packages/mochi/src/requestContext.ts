@@ -82,7 +82,7 @@ export interface ImageDebugEntry {
     /** Space-separated hex of the packed header (control bytes + varints), before the UTF-8 src tail. */
     headerHex: string;
     /** Byte length of the UTF-8 src tail. */
-    srcBytes: number;
+    srcByteLength: number;
   };
 }
 

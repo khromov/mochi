@@ -8,7 +8,7 @@ import type { ImageFormat, ImageRequest } from './types';
 // For the shared full-size original entry, `width`/`height` are 0 and `format`
 // is '' (we don't decode originals); `contentType` is the authoritative type.
 export interface SidecarMeta {
-  v: 1;
+  version: 1;
   contentType: string;
   etag: string;
   width: number;
@@ -21,7 +21,7 @@ export interface SidecarMeta {
   // Variants only: the original's `createdAt` this variant was resized from. A
   // variant's freshness/eviction is read from the original's sidecar at request
   // time; this marks which original generation produced these bytes.
-  origCreatedAt?: number;
+  originalCreatedAt?: number;
 }
 
 export interface CacheEntry {
@@ -158,7 +158,7 @@ export class ImageCache {
       const om = await this.readOriginalMeta(req.src);
       const now = Date.now();
       const meta: SidecarMeta = {
-        v: 1,
+        version: 1,
         contentType: r.contentType,
         etag: id,
         width: r.width,
@@ -168,7 +168,7 @@ export class ImageCache {
         staleAt: om?.staleAt ?? now,
         evictAt: om?.evictAt ?? now,
         src: req.src,
-        origCreatedAt: om?.createdAt,
+        originalCreatedAt: om?.createdAt,
       };
       await this.write(req, r.bytes, meta);
       return { bytes: r.bytes, meta };
@@ -181,7 +181,7 @@ export class ImageCache {
   /**
    * Read a resized variant. A variant has no window of its own — its
    * fresh/stale/evicted state is derived from the shared original's sidecar.
-   * `origCreatedAt` marks which original generation produced these bytes, so a
+   * `originalCreatedAt` marks which original generation produced these bytes, so a
    * refreshed original (bumped `createdAt`) serves the old variant stale while
    * it regenerates. The variant disappears when the original is evicted.
    */
@@ -191,7 +191,7 @@ export class ImageCache {
     const now = Date.now();
 
     if (meta && orig) {
-      const sameGen = meta.origCreatedAt === orig.createdAt;
+      const sameGen = meta.originalCreatedAt === orig.createdAt;
       if (sameGen && now < orig.staleAt) {
         const bytes = await this.readBytes(req);
         if (bytes) {
@@ -260,14 +260,15 @@ export class ImageCache {
 
   /**
    * Get-or-fetch the full-size original bytes for a source, shared across every
-   * variant. Same SWR semantics as `get()`, but keyed by `src` alone. `ts`/`te`
-   * are the caller's desired window; because many callers share one entry the
-   * SHORTEST requested window wins (see `shortenOriginalWindow`).
+   * variant. Same SWR semantics as `get()`, but keyed by `src` alone.
+   * `timeToStale`/`timeToEvict` are the caller's desired window; because many
+   * callers share one entry the SHORTEST requested window wins (see
+   * `shortenOriginalWindow`).
    */
   async getOriginal(
     src: string,
-    ts: number,
-    te: number,
+    timeToStale: number,
+    timeToEvict: number,
     fetchFn: () => Promise<{ bytes: Uint8Array; contentType: string | null }>,
   ): Promise<{ entry: CacheEntry; status: ImageCacheStatus }> {
     const meta = await this.readOriginalMeta(src);
@@ -278,21 +279,21 @@ export class ImageCache {
         const bytes = await this.readOriginalBytes(src, meta.contentType);
         if (bytes) {
           this.emitOriginalRead(src, 'fresh');
-          return { entry: { bytes, meta: await this.shortenOriginalWindow(src, meta, ts, te, now) }, status: 'fresh' };
+          return { entry: { bytes, meta: await this.shortenOriginalWindow(src, meta, timeToStale, timeToEvict, now) }, status: 'fresh' };
         }
       } else if (now < meta.evictAt) {
         const bytes = await this.readOriginalBytes(src, meta.contentType);
         if (bytes) {
           this.emitOriginalRead(src, 'stale');
           mochiEvents.emit('cache:revalidate', { key: `image:${originalId(src)}` });
-          void this.revalidateOriginal(src, ts, te, fetchFn).catch(() => {});
-          return { entry: { bytes, meta: await this.shortenOriginalWindow(src, meta, ts, te, now) }, status: 'stale' };
+          void this.revalidateOriginal(src, timeToStale, timeToEvict, fetchFn).catch(() => {});
+          return { entry: { bytes, meta: await this.shortenOriginalWindow(src, meta, timeToStale, timeToEvict, now) }, status: 'stale' };
         }
       }
     }
 
     this.emitOriginalRead(src, 'miss');
-    const entry = await this.revalidateOriginal(src, ts, te, fetchFn);
+    const entry = await this.revalidateOriginal(src, timeToStale, timeToEvict, fetchFn);
     return { entry, status: 'miss' };
   }
 
@@ -302,9 +303,9 @@ export class ImageCache {
    * value actually decreases, so the common case (everyone on the same default
    * window) stays a pure read.
    */
-  private async shortenOriginalWindow(src: string, meta: SidecarMeta, ts: number, te: number, now: number): Promise<SidecarMeta> {
-    const wantStaleAt = now + ts;
-    const wantEvictAt = now + te;
+  private async shortenOriginalWindow(src: string, meta: SidecarMeta, timeToStale: number, timeToEvict: number, now: number): Promise<SidecarMeta> {
+    const wantStaleAt = now + timeToStale;
+    const wantEvictAt = now + timeToEvict;
     if (wantStaleAt >= meta.staleAt && wantEvictAt >= meta.evictAt) {
       return meta;
     }
@@ -317,7 +318,12 @@ export class ImageCache {
     return next;
   }
 
-  private revalidateOriginal(src: string, ts: number, te: number, fetchFn: () => Promise<{ bytes: Uint8Array; contentType: string | null }>): Promise<CacheEntry> {
+  private revalidateOriginal(
+    src: string,
+    timeToStale: number,
+    timeToEvict: number,
+    fetchFn: () => Promise<{ bytes: Uint8Array; contentType: string | null }>,
+  ): Promise<CacheEntry> {
     // `o:`-prefixed key: a colon can't appear in a base64url variantId, so this
     // never collides with the resize-variant inflight entries.
     const key = `o:${originalId(src)}`;
@@ -331,15 +337,15 @@ export class ImageCache {
       const contentType = fetched.contentType ?? 'application/octet-stream';
       const now = Date.now();
       const meta: SidecarMeta = {
-        v: 1,
+        version: 1,
         contentType,
         etag: originalId(src),
         width: 0,
         height: 0,
         format: '',
         createdAt: now,
-        staleAt: now + ts,
-        evictAt: now + te,
+        staleAt: now + timeToStale,
+        evictAt: now + timeToEvict,
         src,
       };
       await this.writeBytesAndMeta(this.originalBytesPath(src, contentType), this.originalMetaPath(src), fetched.bytes, meta);
@@ -430,7 +436,7 @@ export class ImageCache {
           continue;
         }
         const meta = await this.readMetaAt(join(dir, f));
-        const superseded = orig !== null && meta !== null && meta.origCreatedAt !== orig.createdAt;
+        const superseded = orig !== null && meta !== null && meta.originalCreatedAt !== orig.createdAt;
         if (origDead || superseded) {
           freedBytes += await this.removeFile(join(dir, f.slice(0, -'.json'.length))); // bytes
           freedBytes += await this.removeFile(join(dir, f)); // sidecar

@@ -2,13 +2,13 @@ import { extForFormat } from './resize';
 import type { ImageRequest } from './types';
 
 function slugifyStem(stem: string): string {
-  const s = stem
+  const slug = stem
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 64)
     .replace(/-+$/g, '');
-  return s || 'image';
+  return slug || 'image';
 }
 
 function lastSegment(src: string): string {
@@ -26,15 +26,15 @@ function baseName(src: string): string {
   return slugifyStem(stem);
 }
 
-function dimsLabel(w?: number, h?: number): string {
-  if (w && h) {
-    return `${w}x${h}`;
+function dimsLabel(width?: number, height?: number): string {
+  if (width && height) {
+    return `${width}x${height}`;
   }
-  if (w) {
-    return `${w}w`;
+  if (width) {
+    return `${width}w`;
   }
-  if (h) {
-    return `${h}h`;
+  if (height) {
+    return `${height}h`;
   }
   return '';
 }

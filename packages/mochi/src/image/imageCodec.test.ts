@@ -29,9 +29,9 @@ describe('packImageRequest + unpackImageRequest', () => {
   });
 
   test('omits default fields and refills them on decode', () => {
-    const r = req(); // q/fmt/ao equal the resolved defaults; ts/te absent
+    const r = req(); // quality/format/autoOrient equal the resolved defaults; timeToStale/timeToEvict absent
     const packed = packImageRequest(r, RESOLVED);
-    // flags(2) + u24 w + u24 h — no q/ts/te fields — u16 srcLen + the URL.
+    // flags(2) + u24 width + u24 height — no quality/timeToStale/timeToEvict fields — u16 srcByteLength + the URL.
     expect(packed.length).toBe(2 + 3 + 3 + 2 + Buffer.byteLength(r.src));
     expect(unpackImageRequest(packed, RESOLVED)).toEqual(r);
   });
@@ -68,7 +68,7 @@ describe('packImageRequest + unpackImageRequest', () => {
   });
 
   test('returns null for a truncated buffer', () => {
-    expect(unpackImageRequest(new Uint8Array([0xc0]), RESOLVED)).toBeNull(); // hasW set, no varint bytes
+    expect(unpackImageRequest(new Uint8Array([0xc0]), RESOLVED)).toBeNull(); // hasWidth set, no varint bytes
     expect(unpackImageRequest(new Uint8Array([]), RESOLVED)).toBeNull();
   });
 });

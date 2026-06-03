@@ -44,8 +44,8 @@ const EXT: Record<ImageFormat, string> = {
   avif: 'avif',
 };
 
-export function extForFormat(fmt: ImageFormat): string {
-  return EXT[fmt];
+export function extForFormat(format: ImageFormat): string {
+  return EXT[format];
 }
 
 function isUnsupportedFormatError(err: unknown): boolean {
@@ -86,19 +86,19 @@ export async function resizeImage(input: Uint8Array, req: ImageRequest, opts: Re
 
   // Bun.Image#resize requires width first; derive it from the aspect ratio for
   // height-only requests.
-  let w = req.width;
-  const h = req.height;
-  if (!w && h && meta.height > 0) {
-    w = Math.max(1, Math.round(meta.width * (h / meta.height)));
+  let width = req.width;
+  const height = req.height;
+  if (!width && height && meta.height > 0) {
+    width = Math.max(1, Math.round(meta.width * (height / meta.height)));
   }
 
   let pipe = img;
-  if (w) {
+  if (width) {
     const resizeOpts: { fit?: string; withoutEnlargement?: boolean } = { fit: req.fit };
     if (req.withoutEnlargement) {
       resizeOpts.withoutEnlargement = true;
     }
-    pipe = h ? img.resize(w, h, resizeOpts) : img.resize(w, undefined, resizeOpts);
+    pipe = height ? img.resize(width, height, resizeOpts) : img.resize(width, undefined, resizeOpts);
   }
 
   switch (req.format) {
@@ -130,7 +130,7 @@ export async function resizeImage(input: Uint8Array, req: ImageRequest, opts: Re
   try {
     outMeta = await new Image(out).metadata();
   } catch {
-    outMeta = { width: w ?? meta.width, height: h ?? meta.height, format: req.format };
+    outMeta = { width: width ?? meta.width, height: height ?? meta.height, format: req.format };
   }
 
   return {

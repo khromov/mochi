@@ -10,18 +10,18 @@ import { logger } from '../log';
 import type { ImageCache, ImageCacheStatus } from './imageCache';
 import type { ImageFormat, ImageRequest, InvalidateImageOptions, OriginalImageOptions, ResizeImageOptions, ResolvedImageOptions } from './types';
 
-function clampQuality(q: number): number {
-  if (!Number.isFinite(q)) {
+function clampQuality(quality: number): number {
+  if (!Number.isFinite(quality)) {
     return 80;
   }
-  return Math.min(100, Math.max(1, Math.round(q)));
+  return Math.min(100, Math.max(1, Math.round(quality)));
 }
 
 function buildRequest(src: string, opts: ResizeImageOptions, resolved: ResolvedImageOptions): ImageRequest {
-  let fmt: ImageFormat = opts.format ?? resolved.defaultFormat;
-  if (!resolved.outputFormats.includes(fmt)) {
-    logger.warn(`Image format "${fmt}" is not in outputFormats; falling back to "${resolved.defaultFormat}".`);
-    fmt = resolved.defaultFormat;
+  let format: ImageFormat = opts.format ?? resolved.defaultFormat;
+  if (!resolved.outputFormats.includes(format)) {
+    logger.warn(`Image format "${format}" is not in outputFormats; falling back to "${resolved.defaultFormat}".`);
+    format = resolved.defaultFormat;
   }
   return {
     src,
@@ -29,7 +29,7 @@ function buildRequest(src: string, opts: ResizeImageOptions, resolved: ResolvedI
     height: opts.height,
     fit: opts.fit ?? 'inside',
     withoutEnlargement: opts.withoutEnlargement ? true : undefined,
-    format: fmt,
+    format,
     quality: clampQuality(opts.quality ?? resolved.defaultQuality),
     autoOrient: opts.autoOrient ?? resolved.autoOrient,
   };
@@ -95,9 +95,9 @@ export async function getCachedOriginal(
   resolved: ResolvedImageOptions,
   cache: ImageCache,
 ): Promise<{ bytes: Uint8Array; contentType: string; status: ImageCacheStatus; createdAt: number }> {
-  const ts = opts.timeToStale ?? resolved.timeToStale;
-  const te = opts.timeToEvict ?? resolved.timeToEvict;
-  const { entry, status } = await cache.getOriginal(src, ts, te, () => fetchImageSource(src, resolved));
+  const timeToStale = opts.timeToStale ?? resolved.timeToStale;
+  const timeToEvict = opts.timeToEvict ?? resolved.timeToEvict;
+  const { entry, status } = await cache.getOriginal(src, timeToStale, timeToEvict, () => fetchImageSource(src, resolved));
   return { bytes: entry.bytes, contentType: entry.meta.contentType, status, createdAt: entry.meta.createdAt };
 }
 
@@ -123,9 +123,9 @@ function recordForDebugBar(url: string, filename: string, req: ImageRequest, res
     const images = ctx?.debugBarData?.images;
     if (images && !images.some((i) => i.url === url)) {
       const packed = packImageRequest(req, resolved);
-      const srcBytes = Buffer.byteLength(req.src, 'utf-8');
-      const headerHex = Array.from(packed.subarray(0, packed.length - srcBytes), (b) => b.toString(16).padStart(2, '0')).join(' ');
-      images.push({ url, filename, params: { ...req }, wire: { headerHex, srcBytes } });
+      const srcByteLength = Buffer.byteLength(req.src, 'utf-8');
+      const headerHex = Array.from(packed.subarray(0, packed.length - srcByteLength), (b) => b.toString(16).padStart(2, '0')).join(' ');
+      images.push({ url, filename, params: { ...req }, wire: { headerHex, srcByteLength } });
     }
   } catch {
     // Debug recording is best-effort; ignore failures.
