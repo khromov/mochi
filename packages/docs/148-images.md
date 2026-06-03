@@ -105,7 +105,9 @@ When the original is re-fetched, any existing variants are served stale once mor
 
 Eviction is lazy — dead bytes linger on disk until the next request overwrites them. A background janitor reclaims them: every `sweepIntervalMs` (default 1 h, plus once shortly after boot) it deletes evicted originals and orphaned/superseded variants, logging one `CACHE image:sweep` line per run. Set `sweepIntervalMs: 0` to disable it.
 
-Served images carry an `ETag` (tied to the cache generation) but **no** `Cache-Control` — browsers revalidate against the endpoint, getting a fast `304` while the content is unchanged and fresh bytes once it changes. That keeps the URL stable while letting `invalidateImage()` actually reach browsers on their next request.
+Served images carry both an `ETag` (tied to the cache generation) and a `Cache-Control` derived from the cache window — `public, max-age=<timeToStale>, stale-while-revalidate=<timeToEvict − timeToStale>`. Within `max-age` the browser serves from its own cache with no round-trip; after it, the `stale-while-revalidate` window lets it paint the cached copy instantly while revalidating in the background. The URL is stable per `(src, params)`, so once `max-age` lapses, correctness across a source refresh rides on the generation-aware `ETag`: a changed source yields a new `ETag` and the conditional request gets fresh bytes (a `304` while unchanged).
+
+The trade-off of a non-zero `max-age` is that `invalidateImage()` only reaches an **already-cached browser** once its `max-age` expires — server-side revalidation still picks it up on the next miss. To tighten that, lower `timeToStale`: a smaller `max-age` revalidates sooner (and `timeToStale: 0` makes every request revalidate, falling back to background `stale-while-revalidate` so it stays a fast `304` rather than a blocking fetch).
 
 ### Invalidation
 

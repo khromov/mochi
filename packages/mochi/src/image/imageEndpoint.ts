@@ -13,6 +13,20 @@ function textResponse(status: number, message: string): Response {
 }
 
 /**
+ * Browser/CDN cache policy for a successful image response, derived from the
+ * entry's SWR window: cache without revalidating for `timeToStale`, then serve
+ * stale while revalidating in the background for the rest of the evict window.
+ * The URL is stable per (src, params), so correctness across a refresh rides on
+ * the generation-aware ETag once `max-age` lapses. Trade-off: `invalidateImage()`
+ * reaches an already-cached browser only after its `max-age` expires.
+ */
+export function imageCacheControl(timeToStaleMs: number, timeToEvictMs: number): string {
+  const maxAge = Math.max(0, Math.floor(timeToStaleMs / 1000));
+  const swr = Math.max(0, Math.floor((timeToEvictMs - timeToStaleMs) / 1000));
+  return swr > 0 ? `public, max-age=${maxAge}, stale-while-revalidate=${swr}` : `public, max-age=${maxAge}`;
+}
+
+/**
  * The `/_mochi/image/<filename>?p=…` endpoint: decrypt the payload (the
  * filename is bound as AAD), then serve from the stale-while-revalidate disk
  * cache, regenerating on miss by fetching + resizing the source.
@@ -49,8 +63,9 @@ export function createImageHandler(): (req: Request) => Promise<Response> {
         // ETag carries the cache generation, so a re-fetched/invalidated source
         // yields a new ETag and a stale conditional request gets fresh bytes.
         const etag = `"${originalId(request.src)}-${createdAt}"`;
+        const cacheControl = imageCacheControl(request.timeToStale ?? options.timeToStale, request.timeToEvict ?? options.timeToEvict);
         if (req.headers.get('if-none-match') === etag) {
-          return new Response(null, { status: 304, headers: { ETag: etag } });
+          return new Response(null, { status: 304, headers: { ETag: etag, 'Cache-Control': cacheControl } });
         }
         return new Response(bytes as unknown as BodyInit, {
           status: 200,
@@ -58,6 +73,7 @@ export function createImageHandler(): (req: Request) => Promise<Response> {
             'Content-Type': contentType,
             'Content-Length': String(bytes.byteLength),
             ETag: etag,
+            'Cache-Control': cacheControl,
             'X-Mochi-Cache': status,
           },
         });
@@ -92,8 +108,11 @@ export function createImageHandler(): (req: Request) => Promise<Response> {
       // ETag carries the served bytes' generation (bumped on regeneration), so
       // revalidation reflects the current content rather than the stable id.
       const etag = `"${variantId(request)}-${entry.meta.createdAt}"`;
+      // Variants follow the original's default window (they never carry their own
+      // TTL override), so the browser policy derives from the resolved defaults.
+      const cacheControl = imageCacheControl(options.timeToStale, options.timeToEvict);
       if (req.headers.get('if-none-match') === etag) {
-        return new Response(null, { status: 304, headers: { ETag: etag } });
+        return new Response(null, { status: 304, headers: { ETag: etag, 'Cache-Control': cacheControl } });
       }
 
       // Uint8Array is a valid BodyInit at runtime; the cast bridges the
@@ -104,6 +123,7 @@ export function createImageHandler(): (req: Request) => Promise<Response> {
           'Content-Type': entry.meta.contentType,
           'Content-Length': String(entry.bytes.byteLength),
           ETag: etag,
+          'Cache-Control': cacheControl,
           'X-Mochi-Cache': status,
         },
       });
