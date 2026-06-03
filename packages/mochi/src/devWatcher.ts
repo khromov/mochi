@@ -523,7 +523,7 @@ export function startDevWatcher(deps: DevWatcherDeps): void {
       const start = performance.now();
       let summary: { pages: Set<string>; clientBundleCount: number } = { pages: new Set(), clientBundleCount: 0 };
       try {
-        registry.svelteConfig = await loadSvelteConfig();
+        registry.svelteConfig = await loadSvelteConfig(undefined, { reload: true, tempDir: outDir });
         summary = await registry.recompileAll();
       } catch (e) {
         logger.warn(`Svelte config reload failed: ${e instanceof Error ? e.message : e}`);

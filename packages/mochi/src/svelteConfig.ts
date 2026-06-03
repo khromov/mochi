@@ -4,6 +4,7 @@ import { pathToFileURL } from 'node:url';
 import deepmerge from 'deepmerge';
 import type { CompileOptions } from 'svelte/compiler';
 import { logger } from './log';
+import { freshImport } from './freshImport';
 
 export interface MochiSvelteConfig {
   compilerOptions?: CompileOptions;
@@ -14,18 +15,22 @@ export interface MochiSvelteConfig {
  * if relative, used as-is if absolute, and defaults to `./svelte.config.js`.
  * Returns `{}` if the file is missing. Supports both ESM (`export default`)
  * and CJS (`module.exports`).
+ *
+ * Pass `{ reload: true }` for the dev-watcher path so edits are re-evaluated:
+ * Bun's query-string cache-busting is unreliable on some platforms (Windows),
+ * so `freshImport` re-imports a uniquely-named copy instead. Startup/build loads
+ * happen once, so they import the file directly and leave no copy behind.
  */
-export async function loadSvelteConfig(configPath?: string): Promise<MochiSvelteConfig> {
+export async function loadSvelteConfig(
+  configPath?: string,
+  opts: { reload?: boolean; tempDir?: string } = {},
+): Promise<MochiSvelteConfig> {
   const resolved = path.resolve(configPath ?? 'svelte.config.js');
   if (!existsSync(resolved)) {
     logger.warn(`No Svelte config found at ${resolved} — using framework defaults.`);
     return {};
   }
-  // Cache-bust the dynamic import so dev-mode reloads see fresh content. Without
-  // pathToFileURL, raw absolute paths can't carry a query string reliably across
-  // platforms.
-  const url = `${pathToFileURL(resolved).href}?t=${Date.now()}`;
-  const mod = await import(url);
+  const mod = opts.reload ? await freshImport(resolved, { tempDir: opts.tempDir }) : await import(pathToFileURL(resolved).href);
   return (mod.default ?? mod) as MochiSvelteConfig;
 }
 
