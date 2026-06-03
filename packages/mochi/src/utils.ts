@@ -11,6 +11,17 @@ export function negotiate(accept: string, types: string[]): string | undefined {
   return new Negotiator({ headers: { accept } }).mediaType(types);
 }
 
+/**
+ * Convert a native filesystem path to forward-slash form. Backslash separators
+ * (Windows) corrupt when embedded in generated module source — they are eaten
+ * as JS string escapes — and `C:\dir` resolves the same as `C:/dir` for Bun's
+ * importer, so POSIX-ifying is safe and what we want everywhere we splice a
+ * path into a generated `import`/`export` specifier.
+ */
+export function toPosixPath(p: string): string {
+  return p.replace(/\\/g, '/');
+}
+
 export type CompressionMethod = 'gzip' | 'brotli';
 
 export const COMPRESSION_TOKEN: Record<CompressionMethod, 'gzip' | 'br'> = { gzip: 'gzip', brotli: 'br' };
