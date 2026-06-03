@@ -114,7 +114,7 @@
 
   .os-icons {
     margin-left: auto;
-    margin-right: 0.35rem;
+    margin-right: 0.85rem;
     display: inline-flex;
     align-items: center;
     gap: 0.6rem;
