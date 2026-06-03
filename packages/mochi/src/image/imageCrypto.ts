@@ -1,6 +1,6 @@
 /**
  * Authenticated encryption for image URL payloads, via the shared `payloadCrypto`
- * module (AES-256-CTR keyed by an HMAC-derived synthetic IV — see `payloadCrypto`).
+ * module (AES-256-SIV, keyed by an HMAC-SHA512-derived 64-byte key — see `payloadCrypto`).
  * The request (src + transform params) is encrypted — opaque ciphertext on the
  * wire, not readable JSON — and the cosmetic path filename is bound as additional
  * authenticated data (**AAD**), so altering the visible `/my-image-500x500.webp`
