@@ -23,6 +23,7 @@ export function resolveImageOptions(opts: MochiImageOptions | undefined): Resolv
     timeToStale: o.timeToStale ?? 60_000,
     timeToEvict: o.timeToEvict ?? 86_400_000,
     compressPayload: o.compressPayload ?? true,
+    sweepIntervalMs: o.sweepIntervalMs ?? 3_600_000,
   };
 }
 

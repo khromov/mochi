@@ -174,6 +174,11 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
     path: payload.key,
     note: styleText('cyan', 'revalidate'),
   }));
+  subscribe('image:cache-sweep', ({ removedVariants, removedOriginals, freedBytes, durationMs }) => {
+    const removed = removedVariants + removedOriginals;
+    const detail = removed === 0 ? 'nothing stale' : `${removed} stale (${removedVariants}v/${removedOriginals}o), freed ${prettyBytes(freedBytes)}`;
+    return { label: 'CACHE', path: 'image:sweep', note: styleText('dim', detail), duration: durationMs, slow, verySlow, level: 'info' };
+  });
 
   subscribe('preprocess-cache:hit', ({ filePath }) => ({
     label: 'PCACHE',

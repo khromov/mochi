@@ -85,6 +85,17 @@ export interface MochiCacheRevalidateEvent {
   key: string;
 }
 
+export interface MochiImageCacheSweepEvent {
+  /** Resized variants deleted (original evicted, missing, or superseded by a newer generation). */
+  removedVariants: number;
+  /** Full-size originals deleted (past their evict window). */
+  removedOriginals: number;
+  /** Bytes reclaimed from disk. */
+  freedBytes: number;
+  /** Sweep wall-clock duration in ms. */
+  durationMs: number;
+}
+
 export interface MochiServerStartEvent {
   /** Bound TCP port; absent when serving over a Unix socket. */
   port?: number;
@@ -236,6 +247,7 @@ export type MochiEventMap = {
   'island:error': MochiIslandErrorEvent;
   'cache:read': MochiCacheReadEvent;
   'cache:revalidate': MochiCacheRevalidateEvent;
+  'image:cache-sweep': MochiImageCacheSweepEvent;
   'server:start': MochiServerStartEvent;
   'server:stop': MochiServerStopEvent;
   'warmup:start': MochiWarmupStartEvent;

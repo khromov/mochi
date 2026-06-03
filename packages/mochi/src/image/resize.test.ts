@@ -23,6 +23,7 @@ const opts: ResolvedImageOptions = {
   timeToStale: 60_000,
   timeToEvict: 86_400_000,
   compressPayload: true,
+  sweepIntervalMs: 0,
 };
 
 function req(over: Partial<ImageRequest> = {}): ImageRequest {

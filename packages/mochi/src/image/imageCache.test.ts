@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ImageCache, srcHash } from './imageCache';
@@ -270,5 +270,71 @@ describe('ImageCache.invalidateOriginal', () => {
   test('is a no-op when nothing is cached', async () => {
     const cache = new ImageCache(tmp());
     await cache.invalidateOriginal('https://example.com/missing.png', true);
+  });
+});
+
+describe('ImageCache.sweep', () => {
+  test('leaves fresh entries untouched', async () => {
+    const cache = new ImageCache(tmp());
+    await cache.getOriginal(SRC, 60_000, 86_400_000, origFn('o'));
+    await cache.get(req(), regen('v'));
+
+    expect(await cache.sweep(Date.now())).toEqual({ removedVariants: 0, removedOriginals: 0, freedBytes: 0 });
+    expect((await cache.get(req(), regen('v'))).status).toBe('fresh');
+  });
+
+  test('removes an evicted original and its variants, reclaiming the dir', async () => {
+    const dir = tmp();
+    const cache = new ImageCache(dir);
+    await cache.getOriginal(SRC, 60_000, 86_400_000, origFn('o'));
+    await cache.get(req(), regen('v'));
+
+    const swept = await cache.sweep(Date.now() + 2 * 86_400_000); // jump past the evict window
+    expect(swept.removedOriginals).toBe(1);
+    expect(swept.removedVariants).toBe(1);
+    expect(swept.freedBytes).toBeGreaterThan(0);
+    expect(existsSync(join(dir, srcHash(SRC)))).toBe(false);
+  });
+
+  test('removes a variant orphaned from a missing original', async () => {
+    const cache = new ImageCache(tmp());
+    await cache.get(req(), regen('v')); // variant written with no original present
+
+    const swept = await cache.sweep(Date.now());
+    expect(swept).toMatchObject({ removedVariants: 1, removedOriginals: 0 });
+  });
+
+  test('removes a variant superseded by a newer original generation', async () => {
+    const cache = new ImageCache(tmp());
+    await cache.getOriginal(SRC, 60_000, 86_400_000, origFn('o1'));
+    await cache.get(req(), regen('v1')); // tied to the o1 generation
+
+    // Evict + re-fetch so the original's createdAt (generation) bumps.
+    await cache.getOriginal(SRC, 0, 0, origFn('o2'));
+    await new Promise((r) => setTimeout(r, 5));
+    await cache.getOriginal(SRC, 60_000, 86_400_000, origFn('o3'));
+
+    const swept = await cache.sweep(Date.now());
+    expect(swept.removedVariants).toBe(1); // old-generation variant
+    expect(swept.removedOriginals).toBe(0); // fresh original kept
+  });
+
+  test('preserves the placeholder and keeps the dir', async () => {
+    const dir = tmp();
+    const cache = new ImageCache(dir);
+    await cache.setPlaceholder(SRC, 'data:image/png;base64,AAAA');
+    await cache.getOriginal(SRC, 0, 0, origFn('o')); // immediately evicted
+    await cache.get(req(), regen('v'));
+
+    const swept = await cache.sweep(Date.now() + 1000);
+    expect(swept.removedOriginals).toBe(1);
+    expect(swept.removedVariants).toBe(1);
+    expect(await cache.getPlaceholder(SRC)).toBe('data:image/png;base64,AAAA');
+    expect(existsSync(join(dir, srcHash(SRC)))).toBe(true);
+  });
+
+  test('is a no-op when the cache dir does not exist', async () => {
+    const cache = new ImageCache(join(tmp(), 'not-created-yet'));
+    expect(await cache.sweep(Date.now())).toEqual({ removedVariants: 0, removedOriginals: 0, freedBytes: 0 });
   });
 });

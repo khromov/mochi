@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, rename, rm, unlink, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rename, rm, rmdir, stat, unlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { mochiEvents } from '../events';
 import { extForFormat } from './resize';
@@ -225,10 +225,24 @@ export class ImageCache {
   }
 
   private async readOriginalMeta(src: string): Promise<SidecarMeta | null> {
+    return this.readMetaAt(this.originalMetaPath(src));
+  }
+
+  private async readMetaAt(path: string): Promise<SidecarMeta | null> {
     try {
-      return JSON.parse(await readFile(this.originalMetaPath(src), 'utf-8')) as SidecarMeta;
+      return JSON.parse(await readFile(path, 'utf-8')) as SidecarMeta;
     } catch {
       return null;
+    }
+  }
+
+  private async removeFile(path: string): Promise<number> {
+    try {
+      const { size } = await stat(path);
+      await unlink(path);
+      return size;
+    } catch {
+      return 0;
     }
   }
 
@@ -373,6 +387,75 @@ export class ImageCache {
         }
       }),
     ]);
+  }
+
+  /**
+   * Janitor sweep: walk the cache root and delete entries that can no longer be
+   * served — full-size originals past their evict window, and variants whose
+   * original is gone, evicted, or superseded by a newer generation. Fresh
+   * entries and the (TTL-less) placeholder are left untouched. Variant freshness
+   * already derives from the original at request time, so this only reclaims dead
+   * disk; it never changes what a live request would see.
+   */
+  async sweep(now: number = Date.now()): Promise<{ removedVariants: number; removedOriginals: number; freedBytes: number }> {
+    let removedVariants = 0;
+    let removedOriginals = 0;
+    let freedBytes = 0;
+
+    let dirs;
+    try {
+      dirs = await readdir(this.root, { withFileTypes: true });
+    } catch {
+      return { removedVariants, removedOriginals, freedBytes }; // cache dir not created yet
+    }
+
+    for (const d of dirs) {
+      if (!d.isDirectory()) {
+        continue;
+      }
+      const dir = join(this.root, d.name);
+      const orig = await this.readMetaAt(join(dir, 'original.json'));
+      const origDead = orig === null || now >= orig.evictAt;
+
+      let files: string[];
+      try {
+        files = await readdir(dir);
+      } catch {
+        continue;
+      }
+
+      for (const f of files) {
+        // Variants are decided by their sidecar; originals and the placeholder are handled separately.
+        if (!f.endsWith('.json') || f === 'original.json') {
+          continue;
+        }
+        const meta = await this.readMetaAt(join(dir, f));
+        const superseded = orig !== null && meta !== null && meta.origCreatedAt !== orig.createdAt;
+        if (origDead || superseded) {
+          freedBytes += await this.removeFile(join(dir, f.slice(0, -'.json'.length))); // bytes
+          freedBytes += await this.removeFile(join(dir, f)); // sidecar
+          removedVariants++;
+        }
+      }
+
+      if (orig !== null && origDead) {
+        freedBytes += await this.removeFile(join(dir, `original.${extForContentType(orig.contentType)}`));
+        freedBytes += await this.removeFile(join(dir, 'original.json'));
+        removedOriginals++;
+      }
+
+      // Reclaim the src directory once the sweep has emptied it (no variants,
+      // original, or placeholder remain).
+      try {
+        if ((await readdir(dir)).length === 0) {
+          await rmdir(dir);
+        }
+      } catch {
+        // best-effort
+      }
+    }
+
+    return { removedVariants, removedOriginals, freedBytes };
   }
 
   private placeholderPath(src: string): string {

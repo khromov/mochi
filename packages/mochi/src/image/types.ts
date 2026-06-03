@@ -98,6 +98,8 @@ export interface MochiImageOptions {
   timeToEvict?: number;
   /** Deflate-compress the encrypted URL payload when it shrinks it. Default: `true`. */
   compressPayload?: boolean;
+  /** Interval (ms) for the background janitor that deletes evicted/orphaned cache entries. `0` disables it. Default: `3_600_000` (1h). */
+  sweepIntervalMs?: number;
 }
 
 /** Fully-resolved options with every field present. */
@@ -117,6 +119,7 @@ export interface ResolvedImageOptions {
   timeToStale: number;
   timeToEvict: number;
   compressPayload: boolean;
+  sweepIntervalMs: number;
 }
 
 /** Error carrying the HTTP status the endpoint should return. */

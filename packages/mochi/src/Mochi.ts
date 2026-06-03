@@ -45,6 +45,8 @@ import { finalizeCookieHeaders } from './cookies';
 import { makeRequestContextBuilder } from './requestSetup';
 import { decryptProps } from './serverIslandCrypto';
 import { createImageHandler } from './image/imageEndpoint';
+import { getImageRuntime } from './image/config';
+import { startImageCacheSweeper } from './image/sweeper';
 import { initMochiConfig } from './mochiConfig';
 import { logger, setLogLevel, DEFAULT_LOG_LEVEL, type LogLevel } from './log';
 import { mochiEvents } from './events';
@@ -1002,9 +1004,12 @@ export class Mochi {
       });
     };
 
-    // Register the signed image-resize endpoint (enabled unless explicitly off).
+    // Register the signed image-resize endpoint (enabled unless explicitly off)
+    // and start the background cache janitor.
     if (options.image?.enabled !== false) {
       bunRoutes[`${registry.assetPrefix}/image/:filename`] = createImageHandler();
+      const { options: imageOptions, cache } = getImageRuntime();
+      startImageCacheSweeper(cache, imageOptions.sweepIntervalMs);
     }
 
     if (process.env.MOCHI_MEMORY_PROBE === '1') {

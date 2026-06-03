@@ -103,6 +103,8 @@ await Mochi.serve({
 
 When the original is re-fetched, any existing variants are served stale once more and regenerated from the new original in the background; when the original is evicted, its variants are dropped with it.
 
+Eviction is lazy — dead bytes linger on disk until the next request overwrites them. A background janitor reclaims them: every `sweepIntervalMs` (default 1 h, plus once shortly after boot) it deletes evicted originals and orphaned/superseded variants, logging one `CACHE image:sweep` line per run. Set `sweepIntervalMs: 0` to disable it.
+
 Served images carry an `ETag` (tied to the cache generation) but **no** `Cache-Control` — browsers revalidate against the endpoint, getting a fast `304` while the content is unchanged and fresh bytes once it changes. That keeps the URL stable while letting `invalidateImage()` actually reach browsers on their next request.
 
 ### Invalidation
@@ -134,20 +136,21 @@ await Mochi.serve({
 });
 ```
 
-| Option                 | Default                | Notes                                        |
-| ---------------------- | ---------------------- | -------------------------------------------- |
-| `enabled`              | `true`                 | Set `false` to unmount the endpoint          |
-| `cacheDir`             | `./.mochi/image-cache` | Must not be under `publicDir`                |
-| `defaultFormat`        | `webp`                 | Used when the caller omits `format`          |
-| `outputFormats`        | all four               | Allowed output formats                       |
-| `allowedHosts`         | any public host        | Exact host or `*.example.com`                |
-| `blockPrivateNetworks` | `true`                 | Reject private/loopback/link-local addresses |
-| `fetchTimeoutMs`       | `10_000`               | Upstream fetch timeout                       |
-| `maxResponseBytes`     | `20 MB`                | Hard source-size cap                         |
-| `maxPixels`            | `50_000_000`           | Decompression-bomb guard                     |
-| `timeToStale`          | `60_000`               | Cache time-to-stale (ms); variants follow it |
-| `timeToEvict`          | `86_400_000`           | Cache time-to-evict (ms); variants follow it |
-| `compressPayload`      | `true`                 | Deflate the encrypted URL payload            |
+| Option                 | Default                | Notes                                           |
+| ---------------------- | ---------------------- | ----------------------------------------------- |
+| `enabled`              | `true`                 | Set `false` to unmount the endpoint             |
+| `cacheDir`             | `./.mochi/image-cache` | Must not be under `publicDir`                   |
+| `defaultFormat`        | `webp`                 | Used when the caller omits `format`             |
+| `outputFormats`        | all four               | Allowed output formats                          |
+| `allowedHosts`         | any public host        | Exact host or `*.example.com`                   |
+| `blockPrivateNetworks` | `true`                 | Reject private/loopback/link-local addresses    |
+| `fetchTimeoutMs`       | `10_000`               | Upstream fetch timeout                          |
+| `maxResponseBytes`     | `20 MB`                | Hard source-size cap                            |
+| `maxPixels`            | `50_000_000`           | Decompression-bomb guard                        |
+| `timeToStale`          | `60_000`               | Cache time-to-stale (ms); variants follow it    |
+| `timeToEvict`          | `86_400_000`           | Cache time-to-evict (ms); variants follow it    |
+| `sweepIntervalMs`      | `3_600_000`            | Background cache-janitor interval; `0` disables |
+| `compressPayload`      | `true`                 | Deflate the encrypted URL payload               |
 
 <Callout type="warning">
 
