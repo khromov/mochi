@@ -109,6 +109,8 @@ Served images carry both an `ETag` (tied to the cache generation) and a `Cache-C
 
 The trade-off of a non-zero `max-age` is that `invalidateImage()` only reaches an **already-cached browser** once its `max-age` expires — server-side revalidation still picks it up on the next miss. To tighten that, lower `timeToStale`: a smaller `max-age` revalidates sooner (and `timeToStale: 0` makes every request revalidate, falling back to background `stale-while-revalidate` so it stays a fast `304` rather than a blocking fetch).
 
+In **development** mode no `Cache-Control` is sent at all, so edits and `invalidateImage()` calls always show up on the next request without a browser cache to fight.
+
 ### Invalidation
 
 Invalidate a source immediately. It operates on the shared original, so it cascades to every resized variant:

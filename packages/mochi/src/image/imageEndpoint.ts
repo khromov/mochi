@@ -2,6 +2,7 @@ import { getImageRuntime } from './config';
 import { getCachedOriginal } from './getResizedImage';
 import { decryptImageRequest } from './imageCrypto';
 import { originalId, variantId } from './imageCache';
+import { getMochiConfig } from '../mochiConfig';
 import { resizeImage } from './resize';
 import { ImageError } from './types';
 
@@ -32,6 +33,9 @@ export function imageCacheControl(timeToStaleMs: number, timeToEvictMs: number):
  * cache, regenerating on miss by fetching + resizing the source.
  */
 export function createImageHandler(): (req: Request) => Promise<Response> {
+  // In dev, omit Cache-Control entirely so edits/invalidations show up on the
+  // next request without fighting a browser cache.
+  const development = getMochiConfig().options.development ?? true;
   return async (req: Request): Promise<Response> => {
     const { options, cache } = getImageRuntime();
 
@@ -63,9 +67,9 @@ export function createImageHandler(): (req: Request) => Promise<Response> {
         // ETag carries the cache generation, so a re-fetched/invalidated source
         // yields a new ETag and a stale conditional request gets fresh bytes.
         const etag = `"${originalId(request.src)}-${createdAt}"`;
-        const cacheControl = imageCacheControl(request.timeToStale ?? options.timeToStale, request.timeToEvict ?? options.timeToEvict);
+        const cacheControl = development ? undefined : imageCacheControl(request.timeToStale ?? options.timeToStale, request.timeToEvict ?? options.timeToEvict);
         if (req.headers.get('if-none-match') === etag) {
-          return new Response(null, { status: 304, headers: { ETag: etag, 'Cache-Control': cacheControl } });
+          return new Response(null, { status: 304, headers: { ETag: etag, ...(cacheControl ? { 'Cache-Control': cacheControl } : {}) } });
         }
         return new Response(bytes as unknown as BodyInit, {
           status: 200,
@@ -73,7 +77,7 @@ export function createImageHandler(): (req: Request) => Promise<Response> {
             'Content-Type': contentType,
             'Content-Length': String(bytes.byteLength),
             ETag: etag,
-            'Cache-Control': cacheControl,
+            ...(cacheControl ? { 'Cache-Control': cacheControl } : {}),
             'X-Mochi-Cache': status,
           },
         });
@@ -110,9 +114,9 @@ export function createImageHandler(): (req: Request) => Promise<Response> {
       const etag = `"${variantId(request)}-${entry.meta.createdAt}"`;
       // Variants follow the original's default window (they never carry their own
       // TTL override), so the browser policy derives from the resolved defaults.
-      const cacheControl = imageCacheControl(options.timeToStale, options.timeToEvict);
+      const cacheControl = development ? undefined : imageCacheControl(options.timeToStale, options.timeToEvict);
       if (req.headers.get('if-none-match') === etag) {
-        return new Response(null, { status: 304, headers: { ETag: etag, 'Cache-Control': cacheControl } });
+        return new Response(null, { status: 304, headers: { ETag: etag, ...(cacheControl ? { 'Cache-Control': cacheControl } : {}) } });
       }
 
       // Uint8Array is a valid BodyInit at runtime; the cast bridges the
@@ -123,7 +127,7 @@ export function createImageHandler(): (req: Request) => Promise<Response> {
           'Content-Type': entry.meta.contentType,
           'Content-Length': String(entry.bytes.byteLength),
           ETag: etag,
-          'Cache-Control': cacheControl,
+          ...(cacheControl ? { 'Cache-Control': cacheControl } : {}),
           'X-Mochi-Cache': status,
         },
       });
