@@ -46,7 +46,7 @@
         {island.mode}
       </span>
       {#if island.type === 'server'}
-        <span class="lock-icon" title="Props are AES-256-GCM encrypted in production. Decoded props are shown only in dev mode.">
+        <span class="lock-icon" title="Props are encrypted (authenticated AES-256) in production. Decoded props are shown only in dev mode.">
           <Lock size={10} />
         </span>
       {/if}

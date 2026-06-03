@@ -18,5 +18,5 @@ Framework source lives in `packages/mochi/src/`; the demo site that consumes it 
 - `packages/mochi/src/middleware/noCache.ts` — optional `noCache` middleware that defaults `Cache-Control: no-cache`.
 - `packages/mochi/src/web-components/HydratableIsland.ts` — client-side custom element for island hydration.
 - `packages/mochi/src/web-components/ServerIsland.ts` — client-side custom element for server island fetching.
-- `packages/mochi/src/serverIslandCrypto.ts` — AES-256-GCM encryption/decryption for server island props (via the shared `payloadCrypto.ts`).
+- `packages/mochi/src/serverIslandCrypto.ts` — authenticated encryption/decryption for server island props (via the shared `payloadCrypto.ts`, an SIV construction over AES-256-CTR).
 - `packages/mochi/src/types.ts` — shared TypeScript types.

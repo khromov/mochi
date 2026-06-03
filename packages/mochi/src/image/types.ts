@@ -7,8 +7,8 @@ export type ImageFit = 'inside' | 'fill';
  * The request payload baked (encrypted) into every image URL. Field names mirror
  * the Bun `Image` API where one exists. The payload is packed positionally into a
  * compact binary token (see `imageCodec.ts`) — the property names never appear on
- * the wire — then sealed with AES-256-GCM, so the source URL and params are
- * neither readable nor tamperable.
+ * the wire — then sealed with authenticated encryption (see `payloadCrypto.ts`),
+ * so the source URL and params are neither readable nor tamperable.
  */
 export interface ImageRequest {
   src: string;

@@ -23,7 +23,7 @@ Do **NOT** pass functions, class instances, or `Symbol` values as props; instead
 
 ### Wire format
 
-For `mochi:defer` server islands the flow is similar, except props are AES-256-GCM encrypted (opaque on the wire) and passed as a query parameter to a per-island endpoint — see [Server islands](server-islands/).
+For `mochi:defer` server islands the flow is similar, except props are encrypted (opaque on the wire) and passed as a query parameter to a per-island endpoint — see [Server islands](server-islands/).
 
 ### Supported types
 

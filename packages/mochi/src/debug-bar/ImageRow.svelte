@@ -36,7 +36,7 @@
     <span class="island-meta">
       {#if format}<span class="island-tag tag-fmt">{format}</span>{/if}
       <span class="island-size">{dims}</span>
-      <span class="lock-icon" title="Image params are AES-256-GCM encrypted in production. Decoded params are shown only in dev mode.">
+      <span class="lock-icon" title="Image params are encrypted (authenticated AES-256) in production. Decoded params are shown only in dev mode.">
         <Lock size={10} />
       </span>
     </span>
@@ -51,7 +51,7 @@
       <div class="wire">
         <div class="wire-head">
           <span class="wire-title">Wire format</span>
-          <span class="wire-sub">binary, before AES-256-GCM</span>
+          <span class="wire-sub">binary, before encryption</span>
         </div>
         <pre class="wire-bytes">{image.wire.headerHex}<span class="wire-tail"> + {image.wire.srcByteLength} B utf-8 src</span></pre>
       </div>

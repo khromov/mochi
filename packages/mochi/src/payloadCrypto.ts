@@ -1,32 +1,54 @@
 /**
- * Reusable AES-256-GCM payload encryption for the framework — used to seal
- * server-island props and image-request payloads so they're opaque on the wire
- * (confidentiality), with GCM's auth tag providing integrity (replacing the old
- * HMAC signing).
+ * Reusable deterministic authenticated encryption for the framework — used to
+ * seal server-island props and image-request payloads so they're opaque on the
+ * wire (confidentiality) and tamper-proof (integrity).
  *
- * The AES-256 key is derived as `sha256(getMochiConfig().secretKey)` so any
- * `MOCHI_KEY` length works and the existing secret (and its `serverIsland:secretKey`
- * filter) is reused without being mutated.
+ * This is an SIV-style (synthetic-IV) construction: a single 16-byte value
+ * serves as **both** the encryption nonce and the authenticator, so the envelope
+ * carries one value instead of a separate IV *and* MAC tag. That keeps tokens as
+ * short as possible (12 bytes shorter than the previous AES-GCM envelope) while
+ * remaining misuse-resistant.
  *
- * The IV is **deterministic** — `HMAC-SHA256(key, aad ‖ inner)[:12]` — so identical
- * inputs produce identical ciphertext. That keeps image URLs stable/cacheable;
- * the trade-off is that equal plaintexts are observably equal (acceptable here,
- * and already true under the previous signing scheme).
+ *   siv        = HMAC-SHA256(macKey, aad ‖ inner)[:16]      (authenticator + nonce)
+ *   ciphertext = AES-256-CTR(encKey, iv = siv).encrypt(inner)
+ *   envelope   = base64url( siv(16) ‖ ciphertext )
  *
- * Envelope: `base64url( iv(12) ‖ tag(16) ‖ ciphertext )`, where the plaintext
- * sealed inside is `flags(1) ‖ payload` so the flags byte is authenticated too
- * (tampering any byte but a benign IV change fails the GCM tag).
- * `flags` bit 0 = payload was deflate-compressed before encryption.
+ * `encKey`/`macKey` are independent subkeys derived from `getMochiConfig().secretKey`
+ * (so any `MOCHI_KEY` length works and the existing secret — and its
+ * `serverIsland:secretKey` filter — is reused). The `siv` is a deterministic PRF
+ * of `(macKey, aad, inner)`, so identical inputs produce identical ciphertext —
+ * which keeps image URLs stable/cacheable; the trade-off is that equal plaintexts
+ * are observably equal (acceptable here, and already true under the prior scheme).
+ *
+ * On decrypt the `siv` recovers the keystream, then the authenticator is
+ * recomputed over the recovered `inner` and compared in constant time — any
+ * tampering (ciphertext, siv, or aad) fails the comparison. The plaintext sealed
+ * inside is `flags(1) ‖ payload`; `flags` bit 0 = payload was deflate-compressed
+ * before encryption (so the flags byte is authenticated alongside the payload).
  */
-import { createCipheriv, createDecipheriv, createHash, createHmac } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHmac, timingSafeEqual } from 'node:crypto';
 import { getMochiConfig } from './mochiConfig';
 
-const IV_LEN = 12;
-const TAG_LEN = 16;
+const SIV_LEN = 16;
 const FLAG_COMPRESSED = 1;
 
-function aesKey(): Buffer {
-  return createHash('sha256').update(getMochiConfig().secretKey).digest();
+// Independent CTR-encryption and authentication subkeys derived from the root
+// secret via labelled HMACs (a simple KDF: root secret as the HMAC key, a fixed
+// label as the message).
+function subKeys(): { encKey: Buffer; macKey: Buffer } {
+  const root = getMochiConfig().secretKey;
+  return {
+    encKey: createHmac('sha256', root).update('mochi-payload-siv-enc').digest(),
+    macKey: createHmac('sha256', root).update('mochi-payload-siv-mac').digest(),
+  };
+}
+
+function syntheticIv(macKey: Buffer, aad: string | undefined, inner: Buffer): Buffer {
+  return createHmac('sha256', macKey)
+    .update(aad ?? '')
+    .update(inner)
+    .digest()
+    .subarray(0, SIV_LEN);
 }
 
 export interface EncryptOptions {
@@ -41,7 +63,7 @@ export function encryptPayload(plaintext: string, opts: EncryptOptions = {}): st
 }
 
 export function encryptPayloadBytes(input: Uint8Array, opts: EncryptOptions = {}): string {
-  const key = aesKey();
+  const { encKey, macKey } = subKeys();
 
   let payload = Buffer.from(input);
   let flags = 0;
@@ -52,24 +74,14 @@ export function encryptPayloadBytes(input: Uint8Array, opts: EncryptOptions = {}
       flags |= FLAG_COMPRESSED;
     }
   }
-  // Seal the flags byte alongside the payload so it's authenticated by GCM.
+  // Seal the flags byte alongside the payload so it's authenticated too.
   const inner = Buffer.concat([Buffer.from([flags]), payload]);
 
-  // Deterministic IV derived from the (aad, inner) being sealed.
-  const iv = createHmac('sha256', key)
-    .update(opts.aad ?? '')
-    .update(inner)
-    .digest()
-    .subarray(0, IV_LEN);
-
-  const cipher = createCipheriv('aes-256-gcm', key, iv);
-  if (opts.aad) {
-    cipher.setAAD(Buffer.from(opts.aad, 'utf-8'));
-  }
+  const siv = syntheticIv(macKey, opts.aad, inner);
+  const cipher = createCipheriv('aes-256-ctr', encKey, siv);
   const ciphertext = Buffer.concat([cipher.update(inner), cipher.final()]);
-  const tag = cipher.getAuthTag();
 
-  return Buffer.concat([iv, tag, ciphertext]).toString('base64url');
+  return Buffer.concat([siv, ciphertext]).toString('base64url');
 }
 
 export function decryptPayload(token: string, opts: { aad?: string } = {}): string | null {
@@ -80,20 +92,22 @@ export function decryptPayload(token: string, opts: { aad?: string } = {}): stri
 export function decryptPayloadBytes(token: string, opts: { aad?: string } = {}): Buffer | null {
   try {
     const buf = Buffer.from(token, 'base64url');
-    if (buf.length < IV_LEN + TAG_LEN + 1) {
+    if (buf.length < SIV_LEN + 1) {
+      return null; // too short to hold the siv + at least the flags byte
+    }
+    const { encKey, macKey } = subKeys();
+    const siv = buf.subarray(0, SIV_LEN);
+    const ciphertext = buf.subarray(SIV_LEN);
+
+    const decipher = createDecipheriv('aes-256-ctr', encKey, siv);
+    const inner = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+
+    // Authenticate: the siv must be the PRF of exactly this (aad, inner).
+    const expected = syntheticIv(macKey, opts.aad, inner);
+    if (!timingSafeEqual(expected, siv)) {
       return null;
     }
-    const iv = buf.subarray(0, IV_LEN);
-    const tag = buf.subarray(IV_LEN, IV_LEN + TAG_LEN);
-    const ciphertext = buf.subarray(IV_LEN + TAG_LEN);
 
-    const decipher = createDecipheriv('aes-256-gcm', aesKey(), iv);
-    if (opts.aad) {
-      decipher.setAAD(Buffer.from(opts.aad, 'utf-8'));
-    }
-    decipher.setAuthTag(tag);
-
-    const inner = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
     const flags = inner[0]!;
     let payload = inner.subarray(1);
     if (flags & FLAG_COMPRESSED) {

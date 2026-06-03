@@ -10,7 +10,7 @@ description: 'On-the-fly image resizing on Bun.Image with signed URLs and a stal
 
 ## Images
 
-Mochi resizes images on the fly with [`Bun.Image`](https://bun.com/docs/runtime/image), serving them from an encrypted, stale-while-revalidate disk cache. Every URL's payload is AES-256-GCM encrypted, so the source URL and params aren't readable and an attacker can't request arbitrary sources through your server.
+Mochi resizes images on the fly with [`Bun.Image`](https://bun.com/docs/runtime/image), serving them from an encrypted, stale-while-revalidate disk cache. Every URL's payload is encrypted (authenticated encryption keyed off your `MOCHI_KEY`), so the source URL and params aren't readable and an attacker can't request arbitrary sources through your server.
 
 ### Component
 
@@ -158,7 +158,7 @@ await Mochi.serve({
 
 <Callout type="warning">
 
-**Encryption is the security boundary.** The payload is AES-256-GCM encrypted with a key derived from your `MOCHI_KEY`, so only your server can mint URLs and the source URL/params stay hidden; the cosmetic filename is bound as authenticated data (tampering it fails decryption). Still, if you pass a **user-controlled** `src` into `getResizedImage()`, keep `blockPrivateNetworks` on (the default) and prefer an `allowedHosts` allowlist so a user can't proxy requests to internal services. Upstream redirects are followed but **every hop is re-validated** against those same checks, so an allowed host can't `302` you into a private network; cap the hop count with the [`image:maxRedirects`](/docs/extensions/#imagemaxredirects) filter. SVG is never decoded for resizing, and a full-size original that is SVG (or any non-raster type) is served as a download rather than inline, so it can't execute script in your origin.
+**Encryption is the security boundary.** The payload is encrypted (authenticated encryption) with a key derived from your `MOCHI_KEY`, so only your server can mint URLs and the source URL/params stay hidden; the cosmetic filename is bound as authenticated data (tampering it fails decryption). Still, if you pass a **user-controlled** `src` into `getResizedImage()`, keep `blockPrivateNetworks` on (the default) and prefer an `allowedHosts` allowlist so a user can't proxy requests to internal services. Upstream redirects are followed but **every hop is re-validated** against those same checks, so an allowed host can't `302` you into a private network; cap the hop count with the [`image:maxRedirects`](/docs/extensions/#imagemaxredirects) filter. SVG is never decoded for resizing, and a full-size original that is SVG (or any non-raster type) is served as a download rather than inline, so it can't execute script in your origin.
 
 </Callout>
 

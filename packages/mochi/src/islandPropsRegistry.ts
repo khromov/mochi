@@ -18,7 +18,7 @@ import { getRequestContext } from './requestContext';
  * HTML scan.
  *
  * Server islands intentionally do NOT use this path. Their `signed-props`
- * payloads are AES-256-GCM encrypted and travel through URL query strings, so
+ * payloads are encrypted and travel through URL query strings, so
  * they keep using `stringify` directly via the preprocessor's server-island branch.
  */
 export function emitIslandProps(value: unknown, islandId?: string): string {

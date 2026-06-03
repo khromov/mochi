@@ -41,7 +41,7 @@ Server island components are normal Svelte components with full access to the re
 ### Fetch flow
 
 1. SSR emits a `<mochi-server-island>` custom element holding the fallback content; the component itself is **not** rendered.
-2. Props are serialized with `devalue`, AES-256-GCM encrypted, and stamped onto the element as `signed-props`.
+2. Props are serialized with `devalue`, encrypted, and stamped onto the element as `signed-props`.
 3. On `connectedCallback`, the element fetches `/_mochi/island/{ComponentName}?props={token}` (the `/_mochi` prefix follows `assetPrefix`).
 4. The server decrypts the props, renders the component, and returns the HTML.
 5. The HTML replaces the fallback inside the custom element.
@@ -74,7 +74,7 @@ Provide fallback children when using `:visible` so the user has something to scr
 
 ### Props
 
-Props are serialized with `devalue` — see [Passing props to islands](island-props/) for the full list of supported types. Server islands additionally encrypt the payload (AES-256-GCM) and pass it as a query parameter; if the encrypted props exceed URL length limits (~1800 bytes), a warning is emitted. The island's component name is bound as authenticated data, so a props token sealed for one island can't be replayed against another.
+Props are serialized with `devalue` — see [Passing props to islands](island-props/) for the full list of supported types. Server islands additionally encrypt the payload (authenticated encryption) and pass it as a query parameter; if the encrypted props exceed URL length limits (~1800 bytes), a warning is emitted. The island's component name is bound as authenticated data, so a props token sealed for one island can't be replayed against another.
 
 <Callout type="warning">
 

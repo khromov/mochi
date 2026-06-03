@@ -1,12 +1,12 @@
 /**
- * AES-256-GCM encryption for server island props.
+ * Authenticated encryption for server island props.
  *
  * Props are **encrypted** (confidentiality + integrity) via the shared
  * `payloadCrypto` module — the token on the wire is opaque ciphertext, not
  * readable JSON. The secret key and compression setting come from the shared
  * Mochi config (initialized by `Mochi.serve()`).
  *
- * The component name is bound as GCM **AAD** — the only request-identifying part
+ * The component name is bound as **AAD** — the only request-identifying part
  * of the island URL (`/_mochi/island/<componentName>?props=…`). This prevents
  * replaying a props token sealed for one component against a different one.
  */

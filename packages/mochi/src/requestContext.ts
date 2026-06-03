@@ -77,7 +77,7 @@ export interface ImageDebugEntry {
   filename: string;
   /** Decoded (unsigned) request params — src, dimensions, format, quality, fit, TTL, … */
   params: Record<string, unknown>;
-  /** The compact binary wire encoding (before AES-GCM), so the bar can show the on-wire format next to the JSON. */
+  /** The compact binary wire encoding (before encryption), so the bar can show the on-wire format next to the JSON. */
   wire?: {
     /** Space-separated hex of the packed header (control bytes + varints), before the UTF-8 src tail. */
     headerHex: string;
