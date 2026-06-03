@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { imageCacheControl } from './imageEndpoint';
+import { imageCacheControl, safeOriginalContentType } from './imageEndpoint';
 
 describe('imageCacheControl', () => {
   test('derives max-age (s) from time-to-stale and SWR from the rest of the evict window', () => {
@@ -17,5 +17,27 @@ describe('imageCacheControl', () => {
 
   test('floors sub-second windows to whole seconds', () => {
     expect(imageCacheControl(1_500, 2_900)).toBe('public, max-age=1, stale-while-revalidate=1');
+  });
+});
+
+describe('safeOriginalContentType', () => {
+  test('serves raster image types inline, verbatim', () => {
+    for (const ct of ['image/jpeg', 'image/png', 'image/webp', 'image/avif', 'image/gif']) {
+      expect(safeOriginalContentType(ct)).toEqual({ contentType: ct, attachment: false });
+    }
+  });
+
+  test('forces SVG to a non-rendering download (the sharpest XSS edge)', () => {
+    expect(safeOriginalContentType('image/svg+xml')).toEqual({ contentType: 'application/octet-stream', attachment: true });
+  });
+
+  test('forces HTML and other non-image types to a download', () => {
+    expect(safeOriginalContentType('text/html')).toEqual({ contentType: 'application/octet-stream', attachment: true });
+    expect(safeOriginalContentType('application/json')).toEqual({ contentType: 'application/octet-stream', attachment: true });
+  });
+
+  test('matches on the base type, ignoring charset params and case', () => {
+    expect(safeOriginalContentType('IMAGE/PNG; charset=binary')).toEqual({ contentType: 'IMAGE/PNG; charset=binary', attachment: false });
+    expect(safeOriginalContentType('image/svg+xml; charset=utf-8')).toEqual({ contentType: 'application/octet-stream', attachment: true });
   });
 });

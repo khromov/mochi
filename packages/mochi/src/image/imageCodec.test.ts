@@ -31,8 +31,8 @@ describe('packImageRequest + unpackImageRequest', () => {
   test('omits default fields and refills them on decode', () => {
     const r = req(); // quality/format/autoOrient equal the resolved defaults; timeToStale/timeToEvict absent
     const packed = packImageRequest(r, RESOLVED);
-    // flags(2) + u24 width + u24 height — no quality/timeToStale/timeToEvict fields — u16 srcByteLength + the URL.
-    expect(packed.length).toBe(2 + 3 + 3 + 2 + Buffer.byteLength(r.src));
+    // 2 control bytes + width varint(2) + height varint(2) — no quality/timeToStale/timeToEvict — then the trailing utf-8 src.
+    expect(packed.length).toBe(2 + 2 + 2 + Buffer.byteLength(r.src));
     expect(unpackImageRequest(packed, RESOLVED)).toEqual(r);
   });
 
@@ -68,7 +68,8 @@ describe('packImageRequest + unpackImageRequest', () => {
   });
 
   test('returns null for a truncated buffer', () => {
-    expect(unpackImageRequest(new Uint8Array([0xc0]), RESOLVED)).toBeNull(); // hasWidth set, no varint bytes
-    expect(unpackImageRequest(new Uint8Array([]), RESOLVED)).toBeNull();
+    expect(unpackImageRequest(new Uint8Array([]), RESOLVED)).toBeNull(); // shorter than the 2 control bytes
+    expect(unpackImageRequest(new Uint8Array([0x40]), RESOLVED)).toBeNull(); // hasWidth set but only 1 byte
+    expect(unpackImageRequest(new Uint8Array([0x40, 0x00]), RESOLVED)).toBeNull(); // hasWidth set, no width varint follows
   });
 });

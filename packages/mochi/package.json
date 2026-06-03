@@ -89,7 +89,6 @@
     }
   },
   "dependencies": {
-    "@astronautlabs/bitstream": "4.2.2",
     "@types/negotiator": "^0.6.4",
     "chokidar": "^4.0.3",
     "deepmerge": "^4.3.1",
@@ -99,7 +98,6 @@
     "mitt": "^3.0.1",
     "nanoid": "^5.1.11",
     "negotiator": "^1.0.0",
-    "reflect-metadata": "0.1.14",
     "stale-while-revalidate-cache": "^3.4.1",
     "zimmerframe": "^1.1.4"
   },

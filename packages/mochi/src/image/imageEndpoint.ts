@@ -13,6 +13,23 @@ function textResponse(status: number, message: string): Response {
   });
 }
 
+const INLINE_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/avif', 'image/gif']);
+
+/**
+ * Originals are served verbatim from an upstream we don't fully control. Only
+ * raster image types are safe to render inline in our origin; anything else
+ * (`image/svg+xml`, `text/html`, …) is forced to a non-rendering download to
+ * prevent same-origin XSS — `nosniff` alone wouldn't stop a directly-navigated
+ * SVG from executing, so the Content-Type is rewritten rather than just labelled.
+ */
+export function safeOriginalContentType(contentType: string): { contentType: string; attachment: boolean } {
+  const base = contentType.split(';')[0]!.trim().toLowerCase();
+  if (INLINE_IMAGE_TYPES.has(base)) {
+    return { contentType, attachment: false };
+  }
+  return { contentType: 'application/octet-stream', attachment: true };
+}
+
 /**
  * Browser/CDN cache policy for a successful image response, derived from the
  * entry's SWR window: cache without revalidating for `timeToStale`, then serve
@@ -69,13 +86,16 @@ export function createImageHandler(): (req: Request) => Promise<Response> {
         const etag = `"${originalId(request.src)}-${createdAt}"`;
         const cacheControl = development ? undefined : imageCacheControl(request.timeToStale ?? options.timeToStale, request.timeToEvict ?? options.timeToEvict);
         if (req.headers.get('if-none-match') === etag) {
-          return new Response(null, { status: 304, headers: { ETag: etag, ...(cacheControl ? { 'Cache-Control': cacheControl } : {}) } });
+          return new Response(null, { status: 304, headers: { ETag: etag, 'X-Content-Type-Options': 'nosniff', ...(cacheControl ? { 'Cache-Control': cacheControl } : {}) } });
         }
+        const safe = safeOriginalContentType(contentType);
         return new Response(bytes as unknown as BodyInit, {
           status: 200,
           headers: {
-            'Content-Type': contentType,
+            'Content-Type': safe.contentType,
             'Content-Length': String(bytes.byteLength),
+            'X-Content-Type-Options': 'nosniff',
+            ...(safe.attachment ? { 'Content-Disposition': 'attachment' } : {}),
             ETag: etag,
             ...(cacheControl ? { 'Cache-Control': cacheControl } : {}),
             'X-Mochi-Cache': status,
@@ -116,7 +136,7 @@ export function createImageHandler(): (req: Request) => Promise<Response> {
       // TTL override), so the browser policy derives from the resolved defaults.
       const cacheControl = development ? undefined : imageCacheControl(options.timeToStale, options.timeToEvict);
       if (req.headers.get('if-none-match') === etag) {
-        return new Response(null, { status: 304, headers: { ETag: etag, ...(cacheControl ? { 'Cache-Control': cacheControl } : {}) } });
+        return new Response(null, { status: 304, headers: { ETag: etag, 'X-Content-Type-Options': 'nosniff', ...(cacheControl ? { 'Cache-Control': cacheControl } : {}) } });
       }
 
       // Uint8Array is a valid BodyInit at runtime; the cast bridges the
@@ -126,6 +146,7 @@ export function createImageHandler(): (req: Request) => Promise<Response> {
         headers: {
           'Content-Type': entry.meta.contentType,
           'Content-Length': String(entry.bytes.byteLength),
+          'X-Content-Type-Options': 'nosniff',
           ETag: etag,
           ...(cacheControl ? { 'Cache-Control': cacheControl } : {}),
           'X-Mochi-Cache': status,

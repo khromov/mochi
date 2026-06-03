@@ -75,7 +75,7 @@ const orig = await getImageBytes('https://example.com/photo.jpg');
 // → { bytes, contentType } | null
 ```
 
-The original is fetched once and **shared**: every resized variant of a source reads from this one cached download instead of re-fetching the origin per size/format. Originals are served verbatim, so any format works (including `gif`) — they aren't restricted to `outputFormats`.
+The original is fetched once and **shared**: every resized variant of a source reads from this one cached download instead of re-fetching the origin per size/format. Originals aren't restricted to `outputFormats`, but the response is hardened against same-origin XSS: raster image types (`jpeg`, `png`, `webp`, `avif`, `gif`) are served inline with their original content-type, while `image/svg+xml` and any non-image type are served as a download (`Content-Type: application/octet-stream`, `Content-Disposition: attachment`) rather than rendered. All image responses also carry `X-Content-Type-Options: nosniff`.
 
 The original's cache window comes from `timeToStale` / `timeToEvict`, overridable per call. Because many callers share one entry, the **shortest** requested window wins:
 
@@ -158,7 +158,7 @@ await Mochi.serve({
 
 <Callout type="warning">
 
-**Encryption is the security boundary.** The payload is AES-256-GCM encrypted with a key derived from your `MOCHI_KEY`, so only your server can mint URLs and the source URL/params stay hidden; the cosmetic filename is bound as authenticated data (tampering it fails decryption). Still, if you pass a **user-controlled** `src` into `getResizedImage()`, keep `blockPrivateNetworks` on (the default) and prefer an `allowedHosts` allowlist so a user can't proxy requests to internal services. Upstream redirects are followed but **every hop is re-validated** against those same checks, so an allowed host can't `302` you into a private network; cap the hop count with the [`image:maxRedirects`](/docs/extensions/#imagemaxredirects) filter. SVG is never decoded.
+**Encryption is the security boundary.** The payload is AES-256-GCM encrypted with a key derived from your `MOCHI_KEY`, so only your server can mint URLs and the source URL/params stay hidden; the cosmetic filename is bound as authenticated data (tampering it fails decryption). Still, if you pass a **user-controlled** `src` into `getResizedImage()`, keep `blockPrivateNetworks` on (the default) and prefer an `allowedHosts` allowlist so a user can't proxy requests to internal services. Upstream redirects are followed but **every hop is re-validated** against those same checks, so an allowed host can't `302` you into a private network; cap the hop count with the [`image:maxRedirects`](/docs/extensions/#imagemaxredirects) filter. SVG is never decoded for resizing, and a full-size original that is SVG (or any non-raster type) is served as a download rather than inline, so it can't execute script in your origin.
 
 </Callout>
 

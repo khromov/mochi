@@ -102,30 +102,28 @@ describe('wire-format snapshots (fixed MOCHI_KEY)', () => {
   test('resize with all defaults', () => {
     installConfig();
     const r = req();
-    expect(encryptImageRequest(r, 'a-200x200.webp', RESOLVED)).toBe('USdP81cqDPXzm-MmhXj0NbhLAGeYGCeukIKFcpxasuai-8gkD7pMcCjIgrlFYh8Jp5nI50HwXSXtGT5sQ5_BmA');
+    expect(encryptImageRequest(r, 'a-200x200.webp', RESOLVED)).toBe('EFlJSxbuG-GJFfITFBM8FgRSH6HSvdSR5kSyxyvUeI26j-wrf_8hfIPCsM9rHhP3zBs9WOhTDCk1Xx3d');
     expect(decryptImageRequest(encryptImageRequest(r, 'a-200x200.webp', RESOLVED), 'a-200x200.webp', RESOLVED)).toEqual(r);
   });
 
   test('resize with non-default format/quality/fit/withoutEnlargement', () => {
     installConfig();
     const r = req({ width: 400, height: 400, fit: 'fill', format: 'jpeg', quality: 60, withoutEnlargement: true });
-    expect(encryptImageRequest(r, 'a-400x400.jpg', RESOLVED)).toBe('TvioQ5sKF0WUjTb7j-HLfCmeHYBKT7uAJMCyJ-gsyFcqCbommzwQv7jak6D1sheVEj_iB_4P9QlNSZ7ne2wKrUo');
+    expect(encryptImageRequest(r, 'a-400x400.jpg', RESOLVED)).toBe('DfbDfIQQxa2gHPizcMs9CcQLAM82h5E1N9PgvtPJHKvq__eFo93oDTYr_Y_fyfUaWzk1pByclc9CfxMnXQ');
     expect(decryptImageRequest(encryptImageRequest(r, 'a-400x400.jpg', RESOLVED), 'a-400x400.jpg', RESOLVED)).toEqual(r);
   });
 
   test('full-size original', () => {
     installConfig();
     const r = req({ width: undefined, height: undefined, original: true });
-    expect(encryptImageRequest(r, 'a-original.png', RESOLVED)).toBe('k2CTNhm9ndH9jj6Po0MoaRUanRiIKowkAQh-_oxYbcb-0KSQKobDUD-dr6n2poJC8699pH0fp8l9dQ');
+    expect(encryptImageRequest(r, 'a-original.png', RESOLVED)).toBe('iZXreQxJWJZMIT1hF4pzeM5CuMYBrY4TsGTd5KlICpcWJmb6H0v-XfCOJyxkgQa3Hd1cofYQeKA');
     expect(decryptImageRequest(encryptImageRequest(r, 'a-original.png', RESOLVED), 'a-original.png', RESOLVED)).toEqual(r);
   });
 
   test('long src exercises the compressed path', () => {
     installConfig();
     const r = req({ src: 'https://example.com/' + 'segment/'.repeat(40) + 'image.png' });
-    expect(encryptImageRequest(r, 'a-200x200.webp', RESOLVED)).toBe(
-      '-vbKKXrLyN-X5n8fJKv0h0z21g_y4pVPA80MUo7dD-iU90AWTbWYR4CDTJcsw2WiAxfgKoyVpjVhFl8eVJXQdHXu_V_dJTu1ry4zToPa7zdNsw',
-    );
+    expect(encryptImageRequest(r, 'a-200x200.webp', RESOLVED)).toBe('yQ4TTIkcuyhOKQaNkC5rs3V7zzT-652lDIIfWo3yePTA-5fh-OpU45E5Z1eRGyzYhOXwUbdMOALweDsULbFamXMHUsYXvGEZEjAi5Son8Q');
     expect(decryptImageRequest(encryptImageRequest(r, 'a-200x200.webp', RESOLVED), 'a-200x200.webp', RESOLVED)).toEqual(r);
   });
 });
