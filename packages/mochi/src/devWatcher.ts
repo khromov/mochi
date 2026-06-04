@@ -61,7 +61,7 @@ export interface DevWatcherDeps {
  * chunks are ready. CSS edits take a fast-path that re-bundles imported CSS
  * without an SSR recompile; public-dir edits rescan and reload the route map.
  */
-export function startDevWatcher(deps: DevWatcherDeps): void {
+export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
   const {
     registry,
     server,
@@ -459,6 +459,36 @@ export function startDevWatcher(deps: DevWatcherDeps): void {
     cwd: process.cwd(),
   });
 
+  const watcherReady =
+    finalWatchPaths.length === 0
+      ? // chokidar never emits 'ready' for an empty watch set, so don't wait on
+        // it — there's nothing being watched, hence no startup race to guard.
+        Promise.resolve()
+      : new Promise<void>((resolve) => {
+          let settled = false;
+          const done = () => {
+            if (settled) {
+              return;
+            }
+            settled = true;
+            resolve();
+          };
+          watcher.once('ready', done);
+          // Safety net so serve() can't hang indefinitely if 'ready' never
+          // arrives. unref so it can't keep the process alive. Reaching this
+          // means chokidar never signalled ready for a non-empty watch set
+          setTimeout(() => {
+            if (settled) {
+              return;
+            }
+            logger.error(
+              `File watcher never became ready within 10s for ${finalWatchPaths.length} path(s): ${finalWatchPaths.join(', ')}. ` +
+                `Live reload may not work — please report this at https://github.com/khromov/mochi/issues`,
+            );
+            done();
+          }, 10000).unref?.();
+        });
+
   const publicDirRel = path.relative(process.cwd(), path.resolve(publicDir));
   let reloadPublic: ((filePath: string) => void) | undefined;
   if (existsSync(publicDir)) {
@@ -555,4 +585,6 @@ export function startDevWatcher(deps: DevWatcherDeps): void {
     },
     fetch: composedFetch,
   } as Parameters<typeof server.reload>[0]);
+
+  return watcherReady;
 }

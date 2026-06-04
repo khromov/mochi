@@ -21,10 +21,7 @@ export interface MochiSvelteConfig {
  * so `freshImport` re-imports a uniquely-named copy instead. Startup/build loads
  * happen once, so they import the file directly and leave no copy behind.
  */
-export async function loadSvelteConfig(
-  configPath?: string,
-  opts: { reload?: boolean; tempDir?: string } = {},
-): Promise<MochiSvelteConfig> {
+export async function loadSvelteConfig(configPath?: string, opts: { reload?: boolean; tempDir?: string } = {}): Promise<MochiSvelteConfig> {
   const resolved = path.resolve(configPath ?? 'svelte.config.js');
   if (!existsSync(resolved)) {
     logger.warn(`No Svelte config found at ${resolved} — using framework defaults.`);

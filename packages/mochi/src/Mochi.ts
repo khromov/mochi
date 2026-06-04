@@ -1218,7 +1218,7 @@ export class Mochi {
     }
 
     if (development) {
-      startDevWatcher({
+      await startDevWatcher({
         registry,
         server,
         options,
