@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url';
 import deepmerge from 'deepmerge';
 import type { CompileOptions } from 'svelte/compiler';
 import { logger } from './log';
-import { freshImport } from './freshImport';
+import { freshImportBundled } from './freshImport';
 
 export interface MochiSvelteConfig {
   compilerOptions?: CompileOptions;
@@ -18,8 +18,10 @@ export interface MochiSvelteConfig {
  *
  * Pass `{ reload: true }` for the dev-watcher path so edits are re-evaluated:
  * Bun's query-string cache-busting is unreliable on some platforms (Windows),
- * so `freshImport` re-imports a uniquely-named copy instead. Startup/build loads
- * happen once, so they import the file directly and leave no copy behind.
+ * so `freshImportBundled` re-imports a uniquely-named bundle instead. Bundling
+ * (rather than copying) keeps the config's relative imports working from the
+ * `tempDir` copy. Startup/build loads happen once, so they import the file
+ * directly and leave nothing behind.
  */
 export async function loadSvelteConfig(configPath?: string, opts: { reload?: boolean; tempDir?: string } = {}): Promise<MochiSvelteConfig> {
   const resolved = path.resolve(configPath ?? 'svelte.config.js');
@@ -27,7 +29,7 @@ export async function loadSvelteConfig(configPath?: string, opts: { reload?: boo
     logger.warn(`No Svelte config found at ${resolved} — using framework defaults.`);
     return {};
   }
-  const mod = opts.reload ? await freshImport(resolved, { tempDir: opts.tempDir }) : await import(pathToFileURL(resolved).href);
+  const mod = opts.reload ? await freshImportBundled(resolved, opts.tempDir ?? path.join(path.dirname(resolved), '.mochi')) : await import(pathToFileURL(resolved).href);
   return (mod.default ?? mod) as MochiSvelteConfig;
 }
 
