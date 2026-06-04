@@ -140,7 +140,7 @@ export async function build(options: MochiBuildOptions): Promise<void> {
 
   const publicFiles = new Map<string, string>();
   for (const [urlPath, srcPath] of publicSrc) {
-    const destPath = path.join(outDir, 'public', urlPath);
+    const destPath = path.join(outDir, 'public', ...urlPath.split('/').filter(Boolean));
     await Bun.write(destPath, Bun.file(srcPath));
     publicFiles.set(urlPath, destPath);
   }

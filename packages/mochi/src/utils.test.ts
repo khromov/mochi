@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { DEFAULT_ASSET_PREFIX, negotiate, normalizeAssetPrefix, normalizeIslandHydrationMarkers, stripHydrationMarkers } from './utils';
+import { DEFAULT_ASSET_PREFIX, negotiate, normalizeAssetPrefix, normalizeIslandHydrationMarkers, stripHydrationMarkers, toPosixPath } from './utils';
 
 describe('negotiate', () => {
   const types = ['application/json', 'text/html'];
@@ -118,5 +118,21 @@ describe('normalizeIslandHydrationMarkers', () => {
       '<mochi-hydratable-island b><!--[--><p>single</p><!--]--></mochi-hydratable-island>\n' +
       '<mochi-hydratable-island c><!--[--><!--[-1--><p>else</p><!--]--><!--]--></mochi-hydratable-island>';
     expect(normalizeIslandHydrationMarkers(html)).toBe(expected);
+  });
+});
+
+describe('toPosixPath', () => {
+  test('converts Windows backslash separators to forward slashes', () => {
+    expect(toPosixPath('C:\\dev\\app\\node_modules\\mochi-framework\\src\\log.ts')).toBe('C:/dev/app/node_modules/mochi-framework/src/log.ts');
+  });
+
+  test('is a no-op on already-POSIX paths', () => {
+    const p = '/Users/x/app/src/log.ts';
+    expect(toPosixPath(p)).toBe(p);
+  });
+
+  test('is idempotent', () => {
+    const once = toPosixPath('C:\\a\\b');
+    expect(toPosixPath(once)).toBe(once);
   });
 });

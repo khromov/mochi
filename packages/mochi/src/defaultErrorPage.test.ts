@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { ComponentRegistry } from './ComponentRegistry';
 
-const DEFAULT_ERROR_PAGE_PATH = new URL('./templates/DefaultError.svelte', import.meta.url).pathname;
+const DEFAULT_ERROR_PAGE_PATH = Bun.fileURLToPath(new URL('./templates/DefaultError.svelte', import.meta.url));
 
 describe('default error page', () => {
   let outDir: string;
