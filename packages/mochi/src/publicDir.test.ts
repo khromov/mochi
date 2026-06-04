@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { scanPublicDir } from './publicDir';
+import { scanPublicDir, publicRouteKey } from './publicDir';
 
 describe('scanPublicDir', () => {
   let dir: string;
@@ -28,9 +28,9 @@ describe('scanPublicDir', () => {
 
   test('returns common top-level files keyed by URL path', async () => {
     const files = await scanPublicDir(dir);
-    expect(files.get('/favicon.ico')).toBe(`${dir}/favicon.ico`);
-    expect(files.get('/robots.txt')).toBe(`${dir}/robots.txt`);
-    expect(files.get('/img/logo.png')).toBe(`${dir}/img/logo.png`);
+    expect(files.get('/favicon.ico')).toBe(path.join(dir, 'favicon.ico'));
+    expect(files.get('/robots.txt')).toBe(path.join(dir, 'robots.txt'));
+    expect(files.get('/img/logo.png')).toBe(path.join(dir, 'img', 'logo.png'));
   });
 
   test('skips dotfiles at the root (including secrets like .env)', async () => {
@@ -46,8 +46,8 @@ describe('scanPublicDir', () => {
 
   test('serves /.well-known/ files (RFC 8615)', async () => {
     const files = await scanPublicDir(dir);
-    expect(files.get('/.well-known/security.txt')).toBe(`${dir}/.well-known/security.txt`);
-    expect(files.get('/.well-known/acme-challenge/token123')).toBe(`${dir}/.well-known/acme-challenge/token123`);
+    expect(files.get('/.well-known/security.txt')).toBe(path.join(dir, '.well-known', 'security.txt'));
+    expect(files.get('/.well-known/acme-challenge/token123')).toBe(path.join(dir, '.well-known', 'acme-challenge', 'token123'));
   });
 
   test('still skips dotfiles nested inside /.well-known/ (e.g. .env)', async () => {
@@ -62,6 +62,22 @@ describe('scanPublicDir', () => {
 
   test('strips a trailing slash from the base directory', async () => {
     const files = await scanPublicDir(`${dir}/`);
-    expect(files.get('/favicon.ico')).toBe(`${dir}/favicon.ico`);
+    expect(files.get('/favicon.ico')).toBe(path.join(dir, 'favicon.ico'));
+  });
+});
+
+describe('publicRouteKey', () => {
+  test('leaves an already-legal path untouched', () => {
+    expect(publicRouteKey('/img/logo.png')).toBe('/img/logo.png');
+  });
+
+  test('encodes spaces to %20 (the form the browser sends), preserving slashes', () => {
+    expect(publicRouteKey('/my dir/log o.txt')).toBe('/my%20dir/log%20o.txt');
+  });
+
+  // Guards against switching to encodeURIComponent: it would escape these to
+  // %2C / %28 / %29, breaking filenames the browser sends with the chars raw.
+  test('does not over-encode path-legal characters like , ( )', () => {
+    expect(publicRouteKey('/a,b(c).png')).toBe('/a,b(c).png');
   });
 });

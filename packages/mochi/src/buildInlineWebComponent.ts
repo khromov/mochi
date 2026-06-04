@@ -5,7 +5,7 @@
  * `./web-components/ServerIsland.ts`.
  */
 export async function buildInlineWebComponent(relPath: string): Promise<string> {
-  const entry = new URL(relPath, import.meta.url).pathname;
+  const entry = Bun.fileURLToPath(new URL(relPath, import.meta.url));
   const result = await Bun.build({
     entrypoints: [entry],
     target: 'browser',

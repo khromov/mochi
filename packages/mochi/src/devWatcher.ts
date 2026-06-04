@@ -4,13 +4,13 @@ import path from 'node:path';
 import chokidar from 'chokidar';
 import debounce from './vendor/debounce/index';
 import type { ComponentRegistry } from './ComponentRegistry';
-import { applyFilter } from './extensions';
 import { mochiEvents } from './events';
 import type { MochiFileChangeType } from './events';
 import { logger } from './log';
 import { evictPreprocessCacheEntry } from './preprocessCache';
+import { freshImport } from './freshImport';
 import { buildPublicUrl } from './proxy';
-import { scanPublicDir } from './publicDir';
+import { resolvePublicFiles, registerPublicRoutes } from './publicDir';
 import { loadSvelteConfig } from './svelteConfig';
 import { alternateSlashPattern } from './trailingSlash';
 import {
@@ -30,6 +30,18 @@ import {
 } from './types';
 
 const FILE_CHANGE_EVENTS = new Set<string>(['add', 'change', 'unlink', 'addDir', 'unlinkDir']);
+
+// Chokidar reports a rename as unlink-old + add-new, so logging the verb per
+// event surfaces both the old and new filename instead of just "changed".
+function publicChangeVerb(event: string): string {
+  if (event === 'add' || event === 'addDir') {
+    return 'added';
+  }
+  if (event === 'unlink' || event === 'unlinkDir') {
+    return 'removed';
+  }
+  return 'changed';
+}
 
 export interface DevWatcherDeps {
   registry: ComponentRegistry;
@@ -60,7 +72,7 @@ export interface DevWatcherDeps {
  * chunks are ready. CSS edits take a fast-path that re-bundles imported CSS
  * without an SSR recompile; public-dir edits rescan and reload the route map.
  */
-export function startDevWatcher(deps: DevWatcherDeps): void {
+export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
   const {
     registry,
     server,
@@ -221,10 +233,9 @@ export function startDevWatcher(deps: DevWatcherDeps): void {
     }
     routeModuleDeps = newDeps;
     const outFile = path.resolve(routeModuleOutDir, 'routes.js');
-    // Cache-bust via query string — each import creates a new module entry in Bun's
-    // module cache that is never evicted. Acceptable for a dev-only path; would need
-    // Loader.registry cleanup if Bun exposes it in the future.
-    const mod = await import(outFile + `?t=${Date.now()}`);
+    // Re-import the freshly built route module. Query-string cache-busting is unreliable
+    // on Windows (returns the stale module), so `freshImport` copies to a unique path.
+    const mod = await freshImport(outFile);
     if (!mod.routes) {
       logger.warn('Route module does not export "routes" — skipping update');
       return null;
@@ -459,24 +470,47 @@ export function startDevWatcher(deps: DevWatcherDeps): void {
     cwd: process.cwd(),
   });
 
+  const watcherReady =
+    finalWatchPaths.length === 0
+      ? // chokidar never emits 'ready' for an empty watch set, so don't wait on
+        // it — there's nothing being watched, hence no startup race to guard.
+        Promise.resolve()
+      : new Promise<void>((resolve) => {
+          let settled = false;
+          const done = () => {
+            if (settled) {
+              return;
+            }
+            settled = true;
+            resolve();
+          };
+          watcher.once('ready', done);
+          // Safety net so serve() can't hang indefinitely if 'ready' never
+          // arrives. unref so it can't keep the process alive. Reaching this
+          // means chokidar never signalled ready for a non-empty watch set
+          setTimeout(() => {
+            if (settled) {
+              return;
+            }
+            logger.error(
+              `File watcher never became ready within 10s for ${finalWatchPaths.length} path(s): ${finalWatchPaths.join(', ')}. ` +
+                `Live reload may not work — please report this at https://github.com/khromov/mochi/issues`,
+            );
+            done();
+          }, 10000).unref?.();
+        });
+
   const publicDirRel = path.relative(process.cwd(), path.resolve(publicDir));
-  let reloadPublic: ((filePath: string) => void) | undefined;
+  // Rebuild from the same helpers the startup path uses, so the encoding and
+  // conflict rules can't diverge between the two. The reload always rescans the
+  // whole dir, so it doesn't need the changed path — logging happens per-event
+  // in the watcher handler below (a rename surfaces as remove-old + add-new).
+  let reloadPublic: (() => void) | undefined;
   if (existsSync(publicDir)) {
-    reloadPublic = debounce(async (filePath: string) => {
-      logger.info(`Public file changed: ${filePath} — reloading routes`);
-      const rescanned = await scanPublicDir(publicDir);
-      const freshPublic = await applyFilter('publicDir:scan', rescanned, {
-        publicDir,
-        development,
-      });
+    reloadPublic = debounce(async () => {
+      const freshPublic = await resolvePublicFiles({ publicDir, development });
       const nextRoutes: Record<string, BunRouteValue> = { ...baseBunRoutes };
-      for (const [urlPath, diskPath] of freshPublic) {
-        if (!(urlPath in nextRoutes)) {
-          nextRoutes[urlPath] = Bun.file(diskPath);
-        } else {
-          logger.warn(`Public file "${diskPath}" skipped: URL "${urlPath}" is already registered as a route.`);
-        }
-      }
+      registerPublicRoutes(nextRoutes, freshPublic);
       nextRoutes['/__mochi_live_reload'] = liveReloadHandler;
       server.reload({
         routes: nextRoutes,
@@ -499,7 +533,8 @@ export function startDevWatcher(deps: DevWatcherDeps): void {
         registry.evict(path.resolve(filePath));
       }
       if (reloadPublic && filePath.startsWith(publicDirRel + path.sep)) {
-        reloadPublic(filePath);
+        logger.info(`Public file ${publicChangeVerb(event)}: ${filePath} — reloading routes`);
+        reloadPublic();
       } else if (filePath.endsWith('.css')) {
         triggerCssReload(filePath);
       } else if (triggerRouteReload && routeModuleDeps.has(path.resolve(filePath))) {
@@ -523,7 +558,7 @@ export function startDevWatcher(deps: DevWatcherDeps): void {
       const start = performance.now();
       let summary: { pages: Set<string>; clientBundleCount: number } = { pages: new Set(), clientBundleCount: 0 };
       try {
-        registry.svelteConfig = await loadSvelteConfig();
+        registry.svelteConfig = await loadSvelteConfig(undefined, { reload: true, tempDir: outDir });
         summary = await registry.recompileAll();
       } catch (e) {
         logger.warn(`Svelte config reload failed: ${e instanceof Error ? e.message : e}`);
@@ -555,4 +590,6 @@ export function startDevWatcher(deps: DevWatcherDeps): void {
     },
     fetch: composedFetch,
   } as Parameters<typeof server.reload>[0]);
+
+  return watcherReady;
 }

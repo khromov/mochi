@@ -53,7 +53,7 @@ import type { DebugBarData, DebugBarRuntimeData } from './requestContext';
 import { consoleLogger } from './consoleLogger';
 import { parse as devalueParse, stringify as devalueStringify } from 'devalue';
 import { ISLAND_FAILURE_CSS, ISLAND_FAILURE_DEV_CSS, islandFailureStub } from './web-components/islandFailureStub';
-import { scanPublicDir } from './publicDir';
+import { resolvePublicFiles, registerPublicRoutes } from './publicDir';
 import { startDevWatcher } from './devWatcher';
 import { buildPageCacheAdminRoutes, PAGE_CACHE_ADMIN_COMPONENT } from './pageCacheAdminRoutes';
 
@@ -162,29 +162,23 @@ export class Mochi {
     const warnShim = registry.debugBarEnabled
       ? `<script>window.__mochi_warnings=[];window.__mochi_warn=function(m){console.warn("[mochi] "+m);window.__mochi_warnings.push(m)}</script>`
       : '';
-    // Use function-form replacements: string-form `.replace` interprets `$&`,
-    // `$'`, `` $` ``, `$$` in the replacement as special patterns. Minified JS
-    // and user-serialized props can legitimately contain those sequences.
-    return template
-      .replace('{{mochi.head}}', () => logLevelScript + warnShim + result.head)
-      .replace(
-        '{{mochi.css}}',
-        () =>
-          `<style>mochi-hydratable-island, mochi-server-island { display: contents; } mochi-server-island[defer-on="visible"]:empty { display: block; min-height: 1px; }${ISLAND_FAILURE_CSS}${
-            registry.development ? ISLAND_FAILURE_DEV_CSS : ''
-          }</style>\n${cssLinks}`,
-      )
-      .replace('{{mochi.body}}', () => result.body + debugInfoScript + pageEntryScript + (registry.debugBarEnabled ? '<div id="mochi-dev-toolbar"></div>' : ''))
-      .replace(
-        '{{mochi.script}}',
-        () =>
-          (bootstrapUrl ? `<script type="module" src="${bootstrapUrl}"></script>` : '') +
-          serverIslandScript +
-          (opts.debugBarUrl
-            ? `<script type="module" src="${opts.debugBarUrl}"></script><script>window.__mochi_asset_prefix=${JSON.stringify(registry.assetPrefix)}</script>`
-            : '') +
-          (opts.liveReloadClientJs ? `<script>${opts.liveReloadClientJs}</script><mochi-live-reload></mochi-live-reload>` : ''),
-      );
+    // Single global-regex pass. The function-form replacer is also required
+    // for safety: string-form replacements interpret `$&`, `$'`, `` $` ``, `$$`
+    // as special patterns, which minified JS and serialized props can contain.
+    const slots: Record<'head' | 'css' | 'body' | 'script', () => string> = {
+      head: () => logLevelScript + warnShim + result.head,
+      css: () =>
+        `<style>mochi-hydratable-island, mochi-server-island { display: contents; } mochi-server-island[defer-on="visible"]:empty { display: block; min-height: 1px; }${ISLAND_FAILURE_CSS}${
+          registry.development ? ISLAND_FAILURE_DEV_CSS : ''
+        }</style>\n${cssLinks}`,
+      body: () => result.body + debugInfoScript + pageEntryScript + (registry.debugBarEnabled ? '<div id="mochi-dev-toolbar"></div>' : ''),
+      script: () =>
+        (bootstrapUrl ? `<script type="module" src="${bootstrapUrl}"></script>` : '') +
+        serverIslandScript +
+        (opts.debugBarUrl ? `<script type="module" src="${opts.debugBarUrl}"></script><script>window.__mochi_asset_prefix=${JSON.stringify(registry.assetPrefix)}</script>` : '') +
+        (opts.liveReloadClientJs ? `<script>${opts.liveReloadClientJs}</script><mochi-live-reload></mochi-live-reload>` : ''),
+    };
+    return template.replace(/\{\{mochi\.(head|css|body|script)\}\}/g, (_match, key: keyof typeof slots) => slots[key]());
   }
 
   static async serve(options: MochiServeOptions): Promise<Server<undefined>> {
@@ -1047,23 +1041,12 @@ export class Mochi {
     // rebuild cleanly when files are added/removed/renamed.
     const baseBunRoutes: Record<string, BunRouteValue> = { ...bunRoutes };
 
-    // Register static public files. Dev mode reads from `./public` directly;
-    // production reads the prebuilt map from the manifest. User-defined routes
-    // always win — we only add a public route when no user route claims the path.
-    // A fresh Map is passed to the `publicDir:scan` filter so user mutation
-    // can't poison the registry's copy in production.
-    const scannedPublicFiles = development ? await scanPublicDir(publicDir) : new Map(registry.getPublicFiles());
-    const initialPublicFiles = await applyFilter('publicDir:scan', scannedPublicFiles, {
-      publicDir,
-      development,
-    });
-    for (const [urlPath, diskPath] of initialPublicFiles) {
-      if (!(urlPath in bunRoutes)) {
-        bunRoutes[urlPath] = Bun.file(diskPath);
-      } else {
-        logger.warn(`Public file "${diskPath}" skipped: URL "${urlPath}" is already registered as a route.`);
-      }
-    }
+    // Register static public files. Dev scans the public dir live, production
+    // reads the prebuilt manifest map; either way user-defined routes win, so a
+    // public route is only added when no user route claims the path. The
+    // dev-watcher reload rebuilds these the same way via the same helpers.
+    const initialPublicFiles = await resolvePublicFiles({ publicDir, development, prebuilt: registry.getPublicFiles() });
+    registerPublicRoutes(bunRoutes, initialPublicFiles);
 
     const userFetch = options.fetch;
 
@@ -1250,7 +1233,7 @@ export class Mochi {
     }
 
     if (development) {
-      startDevWatcher({
+      await startDevWatcher({
         registry,
         server,
         options,

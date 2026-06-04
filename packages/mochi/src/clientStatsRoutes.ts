@@ -1,7 +1,7 @@
 import type { ComponentRegistry } from './ComponentRegistry';
 import type { MochiPageConfig } from './types';
 
-export const CLIENT_STATS_COMPONENT = new URL('./templates/ClientStats/ClientStats.svelte', import.meta.url).pathname;
+export const CLIENT_STATS_COMPONENT = Bun.fileURLToPath(new URL('./templates/ClientStats/ClientStats.svelte', import.meta.url));
 
 // Built as a `__mochiPage` literal rather than via `Mochi.page()` because
 // Mochi.ts already imports from this module — going through the helper would
