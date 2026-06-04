@@ -4,14 +4,13 @@ import path from 'node:path';
 import chokidar from 'chokidar';
 import debounce from './vendor/debounce/index';
 import type { ComponentRegistry } from './ComponentRegistry';
-import { applyFilter } from './extensions';
 import { mochiEvents } from './events';
 import type { MochiFileChangeType } from './events';
 import { logger } from './log';
 import { evictPreprocessCacheEntry } from './preprocessCache';
 import { freshImport } from './freshImport';
 import { buildPublicUrl } from './proxy';
-import { scanPublicDir, publicRouteKey } from './publicDir';
+import { resolvePublicFiles, registerPublicRoutes } from './publicDir';
 import { loadSvelteConfig } from './svelteConfig';
 import { alternateSlashPattern } from './trailingSlash';
 import {
@@ -31,6 +30,18 @@ import {
 } from './types';
 
 const FILE_CHANGE_EVENTS = new Set<string>(['add', 'change', 'unlink', 'addDir', 'unlinkDir']);
+
+// Chokidar reports a rename as unlink-old + add-new, so logging the verb per
+// event surfaces both the old and new filename instead of just "changed".
+function publicChangeVerb(event: string): string {
+  if (event === 'add' || event === 'addDir') {
+    return 'added';
+  }
+  if (event === 'unlink' || event === 'unlinkDir') {
+    return 'removed';
+  }
+  return 'changed';
+}
 
 export interface DevWatcherDeps {
   registry: ComponentRegistry;
@@ -490,24 +501,16 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
         });
 
   const publicDirRel = path.relative(process.cwd(), path.resolve(publicDir));
-  let reloadPublic: ((filePath: string) => void) | undefined;
+  // Rebuild from the same helpers the startup path uses, so the encoding and
+  // conflict rules can't diverge between the two. The reload always rescans the
+  // whole dir, so it doesn't need the changed path — logging happens per-event
+  // in the watcher handler below (a rename surfaces as remove-old + add-new).
+  let reloadPublic: (() => void) | undefined;
   if (existsSync(publicDir)) {
-    reloadPublic = debounce(async (filePath: string) => {
-      logger.info(`Public file changed: ${filePath} — reloading routes`);
-      const rescanned = await scanPublicDir(publicDir);
-      const freshPublic = await applyFilter('publicDir:scan', rescanned, {
-        publicDir,
-        development,
-      });
+    reloadPublic = debounce(async () => {
+      const freshPublic = await resolvePublicFiles({ publicDir, development });
       const nextRoutes: Record<string, BunRouteValue> = { ...baseBunRoutes };
-      for (const [urlPath, diskPath] of freshPublic) {
-        const routeKey = publicRouteKey(urlPath);
-        if (!(routeKey in nextRoutes)) {
-          nextRoutes[routeKey] = Bun.file(diskPath);
-        } else {
-          logger.warn(`Public file "${diskPath}" skipped: URL "${urlPath}" is already registered as a route.`);
-        }
-      }
+      registerPublicRoutes(nextRoutes, freshPublic);
       nextRoutes['/__mochi_live_reload'] = liveReloadHandler;
       server.reload({
         routes: nextRoutes,
@@ -530,7 +533,8 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
         registry.evict(path.resolve(filePath));
       }
       if (reloadPublic && filePath.startsWith(publicDirRel + path.sep)) {
-        reloadPublic(filePath);
+        logger.info(`Public file ${publicChangeVerb(event)}: ${filePath} — reloading routes`);
+        reloadPublic();
       } else if (filePath.endsWith('.css')) {
         triggerCssReload(filePath);
       } else if (triggerRouteReload && routeModuleDeps.has(path.resolve(filePath))) {

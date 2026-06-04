@@ -1,6 +1,9 @@
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { toPosixPath } from './utils';
+import { logger } from './log';
+import { applyFilter } from './extensions';
+import type { BunRouteValue } from './types';
 
 // `.well-known` is the IETF-standard discovery path (RFC 8615) used for
 // `security.txt`, ACME HTTP-01 challenges, etc., so it is served even though
@@ -61,4 +64,34 @@ export async function scanPublicDir(dir: string): Promise<Map<string, string>> {
     result.set('/' + rel, path.join(dir, rel));
   }
   return result;
+}
+
+/**
+ * Resolve the public files to serve, identically for the startup and
+ * dev-watcher-reload paths so they can't drift. Dev mode scans the public dir
+ * live; production reads the prebuilt manifest map (copied so the
+ * `publicDir:scan` filter can't mutate the registry's own copy). Both run the
+ * filter so user-registered virtual entries appear the same way every time.
+ */
+export async function resolvePublicFiles(opts: { publicDir: string; development: boolean; prebuilt?: Map<string, string> }): Promise<Map<string, string>> {
+  const source = opts.development ? await scanPublicDir(opts.publicDir) : new Map(opts.prebuilt ?? []);
+  return applyFilter('publicDir:scan', source, { publicDir: opts.publicDir, development: opts.development });
+}
+
+/**
+ * Register public files as Bun routes under their encoded keys, skipping any
+ * URL already claimed by a user route (user routes always win). Shared by the
+ * startup and dev-watcher-reload paths so the encoding and conflict rules stay
+ * in lockstep — registering under a raw key here is what made spaced filenames
+ * 404 until this was centralized.
+ */
+export function registerPublicRoutes(routes: Record<string, BunRouteValue>, files: Map<string, string>): void {
+  for (const [urlPath, diskPath] of files) {
+    const routeKey = publicRouteKey(urlPath);
+    if (routeKey in routes) {
+      logger.warn(`Public file "${diskPath}" skipped: URL "${urlPath}" is already registered as a route.`);
+      continue;
+    }
+    routes[routeKey] = Bun.file(diskPath);
+  }
 }
