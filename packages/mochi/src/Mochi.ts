@@ -53,7 +53,7 @@ import type { DebugBarData, DebugBarRuntimeData } from './requestContext';
 import { consoleLogger } from './consoleLogger';
 import { parse as devalueParse, stringify as devalueStringify } from 'devalue';
 import { ISLAND_FAILURE_CSS, ISLAND_FAILURE_DEV_CSS, islandFailureStub } from './web-components/islandFailureStub';
-import { scanPublicDir } from './publicDir';
+import { scanPublicDir, publicRouteKey } from './publicDir';
 import { startDevWatcher } from './devWatcher';
 import { buildPageCacheAdminRoutes, PAGE_CACHE_ADMIN_COMPONENT } from './pageCacheAdminRoutes';
 
@@ -1026,8 +1026,9 @@ export class Mochi {
       development,
     });
     for (const [urlPath, diskPath] of initialPublicFiles) {
-      if (!(urlPath in bunRoutes)) {
-        bunRoutes[urlPath] = Bun.file(diskPath);
+      const routeKey = publicRouteKey(urlPath);
+      if (!(routeKey in bunRoutes)) {
+        bunRoutes[routeKey] = Bun.file(diskPath);
       } else {
         logger.warn(`Public file "${diskPath}" skipped: URL "${urlPath}" is already registered as a route.`);
       }

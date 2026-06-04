@@ -23,6 +23,20 @@ function isExcludedDotPath(relative: string): boolean {
 }
 
 /**
+ * Map a public file's URL path (the human-readable map key, e.g. `/a b.txt`)
+ * to the route key it must be registered under. Bun's router matches against
+ * the percent-encoded request pathname, so `/a b.txt` would match nothing —
+ * the browser sends `/a%20b.txt`. encodeURI mirrors that path-encoding (space →
+ * %20, while `/` and path-legal chars like `,`/`()` are preserved), so the key
+ * matches the incoming request without regressing already-legal names. Every
+ * site that registers public files as Bun routes MUST go through this so the
+ * encoding can't drift between the startup and dev-watcher-reload paths.
+ */
+export function publicRouteKey(urlPath: string): string {
+  return encodeURI(urlPath);
+}
+
+/**
  * Scan a directory for static public assets. Returns a map of
  * URL path (e.g. `/img/logo.png`) → disk path, using forward slashes on all
  * platforms. Dotfiles and files inside dot-directories are skipped, except

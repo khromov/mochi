@@ -11,7 +11,7 @@ import { logger } from './log';
 import { evictPreprocessCacheEntry } from './preprocessCache';
 import { freshImport } from './freshImport';
 import { buildPublicUrl } from './proxy';
-import { scanPublicDir } from './publicDir';
+import { scanPublicDir, publicRouteKey } from './publicDir';
 import { loadSvelteConfig } from './svelteConfig';
 import { alternateSlashPattern } from './trailingSlash';
 import {
@@ -501,8 +501,9 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
       });
       const nextRoutes: Record<string, BunRouteValue> = { ...baseBunRoutes };
       for (const [urlPath, diskPath] of freshPublic) {
-        if (!(urlPath in nextRoutes)) {
-          nextRoutes[urlPath] = Bun.file(diskPath);
+        const routeKey = publicRouteKey(urlPath);
+        if (!(routeKey in nextRoutes)) {
+          nextRoutes[routeKey] = Bun.file(diskPath);
         } else {
           logger.warn(`Public file "${diskPath}" skipped: URL "${urlPath}" is already registered as a route.`);
         }

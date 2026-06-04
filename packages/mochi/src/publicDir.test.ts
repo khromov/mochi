@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { scanPublicDir } from './publicDir';
+import { scanPublicDir, publicRouteKey } from './publicDir';
 
 describe('scanPublicDir', () => {
   let dir: string;
@@ -63,5 +63,21 @@ describe('scanPublicDir', () => {
   test('strips a trailing slash from the base directory', async () => {
     const files = await scanPublicDir(`${dir}/`);
     expect(files.get('/favicon.ico')).toBe(path.join(dir, 'favicon.ico'));
+  });
+});
+
+describe('publicRouteKey', () => {
+  test('leaves an already-legal path untouched', () => {
+    expect(publicRouteKey('/img/logo.png')).toBe('/img/logo.png');
+  });
+
+  test('encodes spaces to %20 (the form the browser sends), preserving slashes', () => {
+    expect(publicRouteKey('/my dir/log o.txt')).toBe('/my%20dir/log%20o.txt');
+  });
+
+  // Guards against switching to encodeURIComponent: it would escape these to
+  // %2C / %28 / %29, breaking filenames the browser sends with the chars raw.
+  test('does not over-encode path-legal characters like , ( )', () => {
+    expect(publicRouteKey('/a,b(c).png')).toBe('/a,b(c).png');
   });
 });
