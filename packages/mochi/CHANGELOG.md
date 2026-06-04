@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.1](https://github.com/khromov/mochi/compare/mochi-framework-v0.5.0...mochi-framework-v0.5.1) (2026-06-04)
+
+
+### Bug Fixes
+
+* stray {{mochi.script}} text rendered on pages that mention the placeholder ([#67](https://github.com/khromov/mochi/issues/67)) ([38d3ee4](https://github.com/khromov/mochi/commit/38d3ee4a88660c8db728196b43abc74e02c42546))
+* windows support ([8547194](https://github.com/khromov/mochi/commit/854719458680d306910eac12c3aa43feaf3e1f96))
+
 ## [0.5.0](https://github.com/khromov/mochi/compare/mochi-framework-v0.4.0...mochi-framework-v0.5.0) (2026-05-28)
 
 
