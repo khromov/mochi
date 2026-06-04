@@ -132,7 +132,7 @@
           <ul class="toc-list">
             {#each filteredDemos as demo (demo.href)}
               {@const external = isExternal(demo.href)}
-              <li class="toc-item level-2" class:active={!external && (activePathname === demo.href || activePathname.startsWith(demo.href + '/'))}>
+              <li class="toc-item level-2" class:active={!external && activePathname.startsWith(demo.href)}>
                 <a href={demo.href} target={external ? '_blank' : undefined} onclick={close}>{demo.title}</a>
               </li>
             {/each}

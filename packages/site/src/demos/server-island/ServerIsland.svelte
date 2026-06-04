@@ -18,6 +18,7 @@
   description="You can mark components with mochi:defer to render them on the server after the initial page is delivered. Server islands can read cookies and show personalized content and since they are a separate request, you can also cache them differently than the main page. The first island also pairs mochi:defer with a nested mochi:hydrate component so it hydrates once it loads. The downside with server islands is that they require JavaScript and have no SSR representation on the initial page load."
   {sources}
 >
+  <p class="delay-note">The islands below are delayed on purpose to show the loading state.</p>
   <ServerGreeting
     mochi:defer
     mochi:hydrate
@@ -33,6 +34,12 @@
 </DemoPage>
 
 <style>
+  .delay-note {
+    margin-bottom: 0.75rem;
+    color: var(--text-subtle);
+    font-size: 0.9rem;
+  }
+
   .spacer {
     height: 0.75rem;
   }

@@ -203,7 +203,10 @@ export class Mochi {
     const middleware = options.handle;
     const outDir = options.outDir ?? './.mochi';
     const publicDir = options.publicDir ?? './public';
-    const watchPaths = Array.from(new Set(['src', 'public', ...(options.additionalWatchPaths ?? [])]));
+    // Only a file-based shell can be watched/re-read; an inline-string shell
+    // has no source file, and the built-in default is bundled, not a runtime file.
+    const shellPath = options.htmlShell?.endsWith('.html') ? path.resolve(options.htmlShell) : undefined;
+    const watchPaths = Array.from(new Set(['src', 'public', ...(shellPath ? [shellPath] : []), ...(options.additionalWatchPaths ?? [])]));
 
     const emitError = (kind: MochiErrorKind, requestId: string, req: Request, url: URL, status: number, err: unknown, actionName?: string): void => {
       const message = err instanceof Error ? err.message : err == null ? 'Unknown error' : String(err);
@@ -275,11 +278,20 @@ export class Mochi {
 
     let shellTemplate: string;
     if (options.htmlShell) {
-      shellTemplate = options.htmlShell.endsWith('.html') ? await Bun.file(options.htmlShell).text() : options.htmlShell;
+      shellTemplate = shellPath ? await Bun.file(shellPath).text() : options.htmlShell;
     } else {
       shellTemplate = DEFAULT_HTML_SHELL;
     }
     shellTemplate = applyFilter('html:shell', shellTemplate, { options, development });
+
+    // Re-read the shell on change so dev edits to styling/head/scripts take
+    // effect. Both render closures below capture `shellTemplate` by reference,
+    // so reassigning it is picked up on the next request.
+    const reloadShell = shellPath
+      ? async () => {
+          shellTemplate = applyFilter('html:shell', await Bun.file(shellPath).text(), { options, development });
+        }
+      : undefined;
 
     const errorPagePath = options.errorPage ?? DEFAULT_ERROR_PAGE_PATH;
 
@@ -1227,6 +1239,8 @@ export class Mochi {
         registerRoutePattern: routeHmr ? registerRoutePattern : undefined,
         unregisterRoutePattern: routeHmr ? unregisterRoutePattern : undefined,
         trailingSlashPolicy,
+        shellPath,
+        reloadShell,
       });
     }
 
