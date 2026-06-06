@@ -183,7 +183,12 @@ export class Mochi {
 
   static async serve(options: MochiServeOptions): Promise<Server<undefined>> {
     const { svelteVersion } = await checkEnvironment();
-    const mochiVersion = ((await Bun.file(path.join(import.meta.dir, '..', 'package.json')).json()) as { version: string }).version;
+    let mochiVersion: string | null = null;
+    try {
+      mochiVersion = ((await Bun.file(path.join(import.meta.dir, '..', 'package.json')).json()) as { version: string }).version;
+    } catch {
+      // mochiVersion remains null if package.json cannot be read
+    }
     initExtensions(options);
     await runHook('mochi:init', { options });
     await initMochiConfig(options);
@@ -243,30 +248,6 @@ export class Mochi {
     const resolvedLogLevel: LogLevel = configuredLevel ?? (development ? 'info' : DEFAULT_LOG_LEVEL);
     setLogLevel(resolvedLogLevel);
 
-    // Versions + config are constant for the server's lifetime, so snapshot them
-    // once here and merge into every page's debug payload rather than recomputing.
-    const serverDebugInfo: Partial<DebugBarData> = {
-      mochiVersion,
-      svelteVersion,
-      bunVersion: Bun.version,
-      config: {
-        mode: development ? 'development' : 'production',
-        port: options.port,
-        hostname: options.hostname,
-        debugBar: debugBarEnabled,
-        liveReload: liveReloadEnabled,
-        warmup: warmupEnabled,
-        compressServerIslandProps: options.compressServerIslandProps ?? false,
-        trailingSlash: options.trailingSlash ?? 'never',
-        assetPrefix: options.assetPrefix,
-        logLevel: resolvedLogLevel,
-        middleware: !!middleware,
-        csrf: !!options.csrf,
-        proxy: !!options.proxy,
-        markdown: !!options.markdown,
-        routeCount: Object.keys(options.routes ?? {}).length,
-      },
-    };
     if (loggerEnabled) {
       consoleLogger(loggerOptions);
     }
@@ -301,6 +282,29 @@ export class Mochi {
         }
       }
     }
+
+    const serverDebugInfo: Partial<DebugBarData> = {
+      mochiVersion: mochiVersion ?? undefined,
+      svelteVersion,
+      bunVersion: Bun.version,
+      config: {
+        mode: development ? 'development' : 'production',
+        port: options.port,
+        hostname: options.hostname,
+        debugBar: debugBarEnabled,
+        liveReload: liveReloadEnabled,
+        warmup: warmupEnabled,
+        compressServerIslandProps: options.compressServerIslandProps ?? false,
+        trailingSlash: options.trailingSlash ?? 'never',
+        assetPrefix: registry.assetPrefix || undefined,
+        logLevel: resolvedLogLevel,
+        middleware: !!middleware,
+        csrf: !!options.csrf,
+        proxy: !!options.proxy,
+        markdown: !!options.markdown,
+        routeCount: Object.keys(options.routes ?? {}).length,
+      },
+    };
 
     let shellTemplate: string;
     if (options.htmlShell) {
