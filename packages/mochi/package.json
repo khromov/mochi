@@ -93,7 +93,7 @@
     "nanoid": "^5.1.11",
     "negotiator": "^1.0.0",
     "stale-while-revalidate-cache": "^3.4.1",
-    "svelte-shaker": "^0.2.0",
+    "svelte-shaker": "0.2.0",
     "zimmerframe": "^1.1.4"
   },
   "devDependencies": {

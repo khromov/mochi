@@ -32,7 +32,7 @@ describe('shakeApp', () => {
 <Child label="world" />`,
     );
 
-    const shaken = await shakeApp(dir);
+    const { shaken } = await shakeApp(dir);
 
     // Keyed by absolute path, matching the compiler's onLoad args.path.
     const slimmed = shaken.get(child);
@@ -45,7 +45,7 @@ describe('shakeApp', () => {
 
   test('returns an empty map for a directory with no .svelte files', async () => {
     dir = mkdtempSync(path.join(tmpdir(), 'shake-app-empty-'));
-    const shaken = await shakeApp(dir);
+    const { shaken } = await shakeApp(dir);
     expect(shaken.size).toBe(0);
   });
 });

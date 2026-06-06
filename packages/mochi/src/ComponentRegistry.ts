@@ -276,13 +276,20 @@ export class ComponentRegistry {
     if (!opt || this.development) {
       return;
     }
+    if (!fs.existsSync(appRoot)) {
+      logger.warn(`svelte-shaker: no source directory at ${appRoot}; nothing to shake`);
+      return;
+    }
     try {
-      const shaken = await shakeApp(appRoot);
+      const { shaken, originals } = await shakeApp(appRoot);
+      if (shaken.size === 0) {
+        logger.warn(`svelte-shaker: no .svelte components found under ${appRoot}; nothing to shake`);
+      }
+      const cwd = process.cwd();
       const exclude = typeof opt === 'object' ? (opt.exclude ?? []) : [];
       let excluded = 0;
       if (exclude.length > 0) {
         const globs = exclude.map((p) => new Bun.Glob(p));
-        const cwd = process.cwd();
         for (const id of [...shaken.keys()]) {
           const rel = path.relative(cwd, id);
           // Excluded files compile from original source. Safe regardless: the
@@ -297,11 +304,11 @@ export class ComponentRegistry {
 
       // The shake map holds *every* in-scope component — untouched ones are
       // returned verbatim — so its size is the scan count, not the number
-      // changed. Diff against disk to find what the shaker actually slimmed.
-      const cwd = process.cwd();
+      // changed. Diff against the originals the engine already read (no second
+      // disk pass) to find what the shaker actually slimmed.
       const changed: { name: string; before: number; after: number }[] = [];
       for (const [id, out] of shaken) {
-        const original = await Bun.file(id).text();
+        const original = originals.get(id) ?? out;
         if (original !== out) {
           changed.push({ name: path.relative(cwd, id), before: Buffer.byteLength(original, 'utf8'), after: Buffer.byteLength(out, 'utf8') });
         }
