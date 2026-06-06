@@ -82,6 +82,41 @@ svelte-shaker: source size before → after
 
 The whole-app scan must cover every component for soundness, so the map includes untouched ones too — `slimmed N of M` reports how many the shaker actually changed (`M`) versus the total scanned (the rest are returned verbatim).
 
+### L2 monomorphization
+
+By default the shaker folds a prop only when it's the _same_ constant across the whole app. **L2** goes further: it gives an individual call site its own specialized copy ("variant") of a child when doing so makes a whole module drop out of the bundle.
+
+The canonical win — `Heavy` survives normal shaking but vanishes under L2:
+
+```svelte
+<!-- Child.svelte -->
+{#if a === 1 && b === 1}<Heavy />{/if}
+<p>base</p>
+
+<!-- the only call sites, app-wide -->
+<Child a={0} b={1} />
+<!-- and -->
+<Child a={1} b={0} />
+```
+
+`a` and `b` are each narrowed independently, so plain shaking can't prove `a && b` is never both `1` — `<Heavy />` stays. L2 specializes each site (freezing `a`/`b`), the guard folds to `false` in every variant, and `Heavy` becomes unreferenced and is tree-shaken away.
+
+Enable it with `mono` (off by default):
+
+```ts
+await Mochi.serve({
+  optimizeWithSvelteShaker: { mono: true },
+  routes,
+});
+// or tune: { mono: { maxVariants: 8, minSavings: 0.15 } }
+```
+
+`maxVariants` (default 8) caps the distinct residuals per child; `minSavings` (default 0) is the minimum byte-fraction a specialization must save.
+
+<Callout type="info">
+L2 is <strong>measured and never bloats</strong>: a child is specialized only when <em>every</em> live call site folds to a non-base variant <em>and</em> the total reachable bytes strictly shrink — otherwise it keeps the base. Variants are <strong>virtual modules</strong> served from memory during the build; nothing is written to your source tree. Like the rest of the shaker, it runs in production only.
+</Callout>
+
 ### Scope
 
 Only components under `./src` are scanned. Prop folding is sound only when every call site of a component is in scope, so components imported from outside `./src` (e.g. a shared package) are left untouched. If shaking fails for any reason, Mochi logs a warning and falls back to the original, unshaken source.

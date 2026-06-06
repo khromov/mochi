@@ -591,4 +591,16 @@ export interface MochiSvelteShakerOptions {
    * saved) after shaking, instead of just the one-line summary. Default: `false`.
    */
   report?: boolean;
+  /**
+   * Enable L2 per-call-site monomorphization: give a call site its own
+   * specialized copy of a child when that lets a whole module drop from the
+   * bundle. Measured and **never bloats** — a child is specialized only when
+   * every live call site folds to a non-base variant *and* total reachable
+   * bytes strictly shrink. Production-only, like the rest of the shaker.
+   *
+   * Pass `true` for defaults, or `{ maxVariants, minSavings }` to tune:
+   * `maxVariants` (default 8) caps distinct residuals per child; `minSavings`
+   * (default 0) is the minimum byte-fraction reduction required. Default: `false`.
+   */
+  mono?: boolean | { maxVariants?: number; minSavings?: number };
 }

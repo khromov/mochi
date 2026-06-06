@@ -277,38 +277,54 @@ export class ComponentRegistry {
       return;
     }
     try {
-      const shaken = await shakeApp(appRoot);
+      const monoOpt = typeof opt === 'object' ? opt.mono : undefined;
+      const mono = monoOpt ? (monoOpt === true ? {} : monoOpt) : undefined;
+      const { sources, variants, bindings } = await shakeApp(appRoot, mono ? { mono } : {});
+
+      const cwd = process.cwd();
       const exclude = typeof opt === 'object' ? (opt.exclude ?? []) : [];
       let excluded = 0;
       if (exclude.length > 0) {
         const globs = exclude.map((p) => new Bun.Glob(p));
-        const cwd = process.cwd();
-        for (const id of [...shaken.keys()]) {
+        const isExcluded = (id: string): boolean => {
           const rel = path.relative(cwd, id);
-          // Excluded files compile from original source. Safe regardless: the
-          // whole-app scan still covered them as call sites of other components.
-          if (globs.some((g) => g.match(rel) || g.match(id))) {
-            shaken.delete(id);
+          return globs.some((g) => g.match(rel) || g.match(id));
+        };
+        // Revert the L2 subgraph for excluded children: drop the variant and the
+        // owner that imports it, so the owner compiles from its original source
+        // (un-rewritten, importing the real — also excluded — child).
+        for (const b of bindings) {
+          if (isExcluded(b.childId)) {
+            sources.delete(b.owner);
+            variants.delete(b.variantPath);
+          }
+        }
+        // Excluded files compile from original source. Safe regardless: the
+        // whole-app scan still covered them as call sites of other components.
+        for (const id of [...sources.keys()]) {
+          if (isExcluded(id)) {
+            sources.delete(id);
             excluded++;
           }
         }
       }
-      this.shakenSources = shaken;
+      this.shakenSources = new Map([...sources, ...variants]);
 
       // The shake map holds *every* in-scope component — untouched ones are
       // returned verbatim — so its size is the scan count, not the number
       // changed. Diff against disk to find what the shaker actually slimmed.
-      const cwd = process.cwd();
+      // Variants are new modules with no on-disk original, so report separately.
       const changed: { name: string; before: number; after: number }[] = [];
-      for (const [id, out] of shaken) {
+      for (const [id, out] of sources) {
         const original = await Bun.file(id).text();
         if (original !== out) {
           changed.push({ name: path.relative(cwd, id), before: Buffer.byteLength(original, 'utf8'), after: Buffer.byteLength(out, 'utf8') });
         }
       }
-      logger.info(`svelte-shaker: slimmed ${changed.length} of ${shaken.size} component(s)${excluded > 0 ? `, ${excluded} excluded` : ''}`);
+      const variantParts = variants.size > 0 ? `, ${variants.size} variant(s)` : '';
+      logger.info(`svelte-shaker: slimmed ${changed.length} of ${sources.size} component(s)${excluded > 0 ? `, ${excluded} excluded` : ''}${variantParts}`);
       if (typeof opt === 'object' && opt.report) {
-        this.reportShake(changed);
+        this.reportShake(changed, variants);
       }
     } catch (e) {
       logger.warn(`svelte-shaker: skipped (${e instanceof Error ? e.message : e})`);
@@ -316,21 +332,27 @@ export class ComponentRegistry {
     }
   }
 
-  /** Log a per-component before→after source-byte breakdown for the changed components. */
-  private reportShake(rows: { name: string; before: number; after: number }[]): void {
-    if (rows.length === 0) {
-      return;
-    }
-    rows.sort((a, b) => b.before - b.after - (a.before - a.after));
-    const nameWidth = Math.max(...rows.map((r) => r.name.length));
+  /** Log a per-component before→after source-byte breakdown plus any L2 variants. */
+  private reportShake(rows: { name: string; before: number; after: number }[], variants: Map<string, string>): void {
+    const cwd = process.cwd();
     const pct = (before: number, after: number): string => `${(((after - before) / before) * 100).toFixed(1)}%`;
-    logger.info('svelte-shaker: source size before → after');
-    for (const r of rows) {
-      logger.info(`  ${r.name.padEnd(nameWidth)}  ${prettyBytes(r.before)} → ${prettyBytes(r.after)}  (${pct(r.before, r.after)})`);
+    if (rows.length > 0) {
+      rows.sort((a, b) => b.before - b.after - (a.before - a.after));
+      const nameWidth = Math.max(...rows.map((r) => r.name.length));
+      logger.info('svelte-shaker: source size before → after');
+      for (const r of rows) {
+        logger.info(`  ${r.name.padEnd(nameWidth)}  ${prettyBytes(r.before)} → ${prettyBytes(r.after)}  (${pct(r.before, r.after)})`);
+      }
+      const totalBefore = rows.reduce((s, r) => s + r.before, 0);
+      const totalAfter = rows.reduce((s, r) => s + r.after, 0);
+      logger.info(`  ${`total (${rows.length} changed)`.padEnd(nameWidth)}  ${prettyBytes(totalBefore)} → ${prettyBytes(totalAfter)}  (${pct(totalBefore, totalAfter)})`);
     }
-    const totalBefore = rows.reduce((s, r) => s + r.before, 0);
-    const totalAfter = rows.reduce((s, r) => s + r.after, 0);
-    logger.info(`  ${`total (${rows.length} changed)`.padEnd(nameWidth)}  ${prettyBytes(totalBefore)} → ${prettyBytes(totalAfter)}  (${pct(totalBefore, totalAfter)})`);
+    if (variants.size > 0) {
+      logger.info('svelte-shaker: L2 variants (virtual modules)');
+      for (const [vpath, code] of variants) {
+        logger.info(`  ${path.relative(cwd, vpath)}  ${prettyBytes(Buffer.byteLength(code, 'utf8'))}`);
+      }
+    }
   }
 
   getServerIslandPath(name: string): string | undefined {
@@ -409,6 +431,12 @@ export class ComponentRegistry {
     const sveltePlugin: BunPlugin = {
       name: 'svelte-ssr',
       setup(build) {
+        // L2 variants are virtual sibling modules (never on disk). Resolve them
+        // to their absolute path so Bun skips the filesystem stat; the `.svelte`
+        // onLoad below then serves their source from `shakenSources`.
+        build.onResolve({ filter: /\.shaker_v\d+\.svelte$/ }, (args) => ({
+          path: path.isAbsolute(args.path) ? args.path : path.resolve(path.dirname(args.importer), args.path),
+        }));
         // Side-effect CSS imports (e.g. `import '@fontsource-variable/inter'`).
         // Bun resolves bare specifiers via package.json#main to the real .css file,
         // so filtering on the resolved path catches both direct and package imports.
@@ -818,6 +846,11 @@ export class ComponentRegistry {
     const clientPlugin: BunPlugin = {
       name: 'svelte-client',
       setup(build) {
+        // L2 variants are virtual sibling modules (never on disk); resolve to
+        // their absolute path so the `.svelte` onLoad serves them from memory.
+        build.onResolve({ filter: /\.shaker_v\d+\.svelte$/ }, (args) => ({
+          path: path.isAbsolute(args.path) ? args.path : path.resolve(path.dirname(args.importer), args.path),
+        }));
         // Mirror the SSR side-effect-CSS strip. The bundle is already linked
         // from the SSR-rendered <head> via entryImportedCss → importedCssUrls,
         // so the browser has it. Without this, Bun's default CSS handling
