@@ -9,13 +9,14 @@ import { requestContext } from './requestContext';
 import type { DebugBarData } from './requestContext';
 import { logger } from './log';
 import { mochiEvents } from './events';
-import type { MarkdownConfig, MochiManifest } from './types';
+import type { MarkdownConfig, MochiManifest, MochiSvelteShakerOptions } from './types';
 import { type HydratableComponent, type ServerIslandComponent } from './svelteAstPreprocess';
 import { cachedPreprocessHydratable, createPreprocessCacheStats } from './preprocessCache';
 import { mergeCompilerOptions, type MochiSvelteConfig } from './svelteConfig';
 import { applyFilter } from './extensions';
 import { buildServerOnlyStubModule, scanServerOnlyExports } from './serverOnlyScan';
 import { freshImport } from './freshImport';
+import { shakeApp } from './svelteShaker';
 
 /**
  * Run user-supplied Svelte preprocessors via the `compile:preprocessors`
@@ -178,6 +179,8 @@ export interface ComponentRegistryOptions {
   svelteConfig?: MochiSvelteConfig;
   /** User-injected markdown integration. When unset, `.md`/`.svx` imports are not handled. */
   markdown?: MarkdownConfig;
+  /** Run the whole-program svelte-shaker pass before compiling. Production only — `prepareShake()` is a no-op in dev. */
+  optimizeWithSvelteShaker?: boolean | MochiSvelteShakerOptions;
 }
 
 export class ComponentRegistry {
@@ -243,6 +246,9 @@ export class ComponentRegistry {
   readonly assetPrefix: string;
   svelteConfig: MochiSvelteConfig;
   readonly markdown: MarkdownConfig | undefined;
+  readonly optimizeWithSvelteShaker: boolean | MochiSvelteShakerOptions;
+  /** absPath → slimmed `.svelte` source from the last `prepareShake()`; empty when shaking is off. */
+  private shakenSources: Map<string, string> = new Map();
   private errors: MochiCompileError[] = [];
   /** Bumped each time `buildClientBundle()` runs; read+reset by `recompileAll()`. */
   private clientBundleCallCount = 0;
@@ -254,6 +260,44 @@ export class ComponentRegistry {
     this.assetPrefix = normalizeAssetPrefix(opts.assetPrefix);
     this.svelteConfig = opts.svelteConfig ?? {};
     this.markdown = opts.markdown;
+    this.optimizeWithSvelteShaker = opts.optimizeWithSvelteShaker ?? false;
+  }
+
+  /**
+   * Run the whole-program svelte-shaker pass over the app and cache the slimmed
+   * source so the compile `onLoad` handlers feed it to the Svelte compiler
+   * instead of the raw file. No-op in dev (shaking is whole-program, so per-file
+   * HMR can't safely reuse a one-time shake) or when the option is off. On any
+   * failure we fall back to unshaken disk reads rather than break the build.
+   */
+  async prepareShake(appRoot = path.resolve('src')): Promise<void> {
+    const opt = this.optimizeWithSvelteShaker;
+    if (!opt || this.development) {
+      return;
+    }
+    try {
+      const shaken = await shakeApp(appRoot);
+      const exclude = typeof opt === 'object' ? (opt.exclude ?? []) : [];
+      let excluded = 0;
+      if (exclude.length > 0) {
+        const globs = exclude.map((p) => new Bun.Glob(p));
+        const cwd = process.cwd();
+        for (const id of [...shaken.keys()]) {
+          const rel = path.relative(cwd, id);
+          // Excluded files compile from original source. Safe regardless: the
+          // whole-app scan still covered them as call sites of other components.
+          if (globs.some((g) => g.match(rel) || g.match(id))) {
+            shaken.delete(id);
+            excluded++;
+          }
+        }
+      }
+      this.shakenSources = shaken;
+      logger.info(`svelte-shaker: optimized ${shaken.size} component(s)${excluded > 0 ? `, ${excluded} excluded` : ''}`);
+    } catch (e) {
+      logger.warn(`svelte-shaker: skipped (${e instanceof Error ? e.message : e})`);
+      this.shakenSources = new Map();
+    }
   }
 
   getServerIslandPath(name: string): string | undefined {
@@ -327,6 +371,7 @@ export class ComponentRegistry {
     const development = this.development;
     const userCompilerOptions = this.svelteConfig.compilerOptions ?? {};
     const markdown = this.markdown;
+    const shakenSources = this.shakenSources;
 
     const sveltePlugin: BunPlugin = {
       name: 'svelte-ssr',
@@ -427,7 +472,7 @@ export class ComponentRegistry {
           return { contents: js.code, loader: 'js' };
         });
         build.onLoad({ filter: /\.svelte$/ }, async (args) => {
-          const raw = await Bun.file(args.path).text();
+          const raw = shakenSources.get(args.path) ?? (await Bun.file(args.path).text());
           const preprocessed = await applyUserPreprocessors(raw, args.path, 'server', development);
           // Vendored .svelte from node_modules can never carry `mochi:*` directives
           const isVendored = args.path.includes(`${path.sep}node_modules${path.sep}`);
@@ -692,6 +737,7 @@ export class ComponentRegistry {
     const debugBarEnabled = this.debugBarEnabled;
     const userCompilerOptions = this.svelteConfig.compilerOptions ?? {};
     const markdown = this.markdown;
+    const shakenSources = this.shakenSources;
     // Deduplicate by resolved path
     const unique = new Map<string, HydratableComponent>();
     for (const c of this.hydratableComponents) {
@@ -878,7 +924,7 @@ export class ComponentRegistry {
           return { contents: js.code, loader: 'js' };
         });
         build.onLoad({ filter: /\.svelte$/ }, async (args) => {
-          const source = await Bun.file(args.path).text();
+          const source = shakenSources.get(args.path) ?? (await Bun.file(args.path).text());
           const preprocessed = await applyUserPreprocessors(source, args.path, 'client', development);
           const { js } = svelteCompile(
             preprocessed,

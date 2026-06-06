@@ -559,5 +559,31 @@ export interface MochiServeOptions {
    * Default: `false`.
    */
   warmup?: boolean | MochiWarmupOptions;
+  /**
+   * Run the whole-program [svelte-shaker](https://github.com/baseballyama/svelte-shaker)
+   * pass before compiling, slimming `.svelte` source (prop folding, dead-branch
+   * removal, CSS narrowing) so the Svelte compiler emits less code.
+   *
+   * **Production only** — ignored in dev, since shaking is whole-program and
+   * per-file HMR can't safely reuse a one-time shake. Only components under
+   * `./src` are scanned. To shake the prebuilt manifest as well, mirror this
+   * value in the `buildOptions` consumed by `mochi-framework build`.
+   *
+   * Pass `true` to shake everything, or `{ exclude }` to compile specific
+   * components from their original source (the whole-app scan still covers them
+   * as call sites, so excluding is always safe). Default: `false`.
+   */
+  optimizeWithSvelteShaker?: boolean | MochiSvelteShakerOptions;
   [key: string]: unknown;
+}
+
+export interface MochiSvelteShakerOptions {
+  /**
+   * Glob patterns (cwd-relative) of `.svelte` files to leave unshaken — they
+   * compile from their original source instead of svelte-shaker's slimmed
+   * output. Use to dodge a component the shaker mis-transforms (e.g. a `class:`
+   * shorthand on a folded prop). Excluding never affects how *other* components
+   * are shaken. Example: `['src/components/ThemeToggle.svelte', 'src/legacy/**']`.
+   */
+  exclude?: string[];
 }

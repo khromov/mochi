@@ -274,7 +274,11 @@ export class Mochi {
         assetPrefix: options.assetPrefix,
         svelteConfig,
         markdown: options.markdown,
+        optimizeWithSvelteShaker: options.optimizeWithSvelteShaker,
       });
+      // No-op in dev or when the option is off; production-without-manifest
+      // compiles at startup, so the shake must run before the first compile.
+      await registry.prepareShake();
       if (development) {
         for (const dir of [`${outDir}/svelte-client`, `${outDir}/svelte-compile`, `${outDir}/svelte-css`]) {
           rmSync(dir, { recursive: true, force: true });

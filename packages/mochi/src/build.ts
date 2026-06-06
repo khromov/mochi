@@ -1,7 +1,7 @@
 import { checkEnvironment } from './checkEnvironment';
 import { ComponentRegistry, formatCompileErrors } from './ComponentRegistry';
 import { isMochiPage, isMochiApi, isMochiWs, isMochiSse } from './types';
-import type { MarkdownConfig, MochiRouteValue } from './types';
+import type { MarkdownConfig, MochiRouteValue, MochiSvelteShakerOptions } from './types';
 import { rmSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { scanPublicDir } from './publicDir';
@@ -37,6 +37,12 @@ export interface MochiBuildOptions {
    * use the same pipeline. Omit to leave markdown unhandled.
    */
   markdown?: MarkdownConfig;
+  /**
+   * Run the whole-program svelte-shaker pass before compiling. Mirror the value
+   * passed to `Mochi.serve({ optimizeWithSvelteShaker })` so the prebuilt
+   * manifest and the runtime agree. Default: `false`.
+   */
+  optimizeWithSvelteShaker?: boolean | MochiSvelteShakerOptions;
 }
 
 type RouteKind = 'page' | 'api' | 'ws' | 'sse';
@@ -73,7 +79,9 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     assetPrefix: options.assetPrefix,
     svelteConfig,
     markdown: options.markdown,
+    optimizeWithSvelteShaker: options.optimizeWithSvelteShaker,
   });
+  await registry.prepareShake();
 
   // Compile all Mochi.page() handlers in one Bun.build so transitive deps
   // (devalue, mochi-framework internals) emit as shared chunks alongside the
