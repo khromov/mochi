@@ -58,7 +58,7 @@ await Mochi.serve({
 ```
 
 <Callout type="info">
-svelte-shaker <code>0.2.0</code> mis-handles a <code>class:</code> directive <em>shorthand</em> on a prop it folds (e.g. <code>class:compact</code> when <code>compact</code> never varies) — exclude such a component, or write the class with an explicit expression (<code>class={compact ? 'compact' : ''}</code>).
+svelte-shaker <code>0.2.0</code> mis-handles a <code>class:</code> directive <em>shorthand</em> on a prop it folds (e.g. <code>class:compact</code> when <code>compact</code> never varies) — exclude such a component, or write the class with an explicit expression (<code>class=&#123;compact ? 'compact' : ''&#125;</code>).
 </Callout>
 
 ### Size report
