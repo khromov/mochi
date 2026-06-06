@@ -294,9 +294,21 @@ export class ComponentRegistry {
         }
       }
       this.shakenSources = shaken;
-      logger.info(`svelte-shaker: optimized ${shaken.size} component(s)${excluded > 0 ? `, ${excluded} excluded` : ''}`);
+
+      // The shake map holds *every* in-scope component — untouched ones are
+      // returned verbatim — so its size is the scan count, not the number
+      // changed. Diff against disk to find what the shaker actually slimmed.
+      const cwd = process.cwd();
+      const changed: { name: string; before: number; after: number }[] = [];
+      for (const [id, out] of shaken) {
+        const original = await Bun.file(id).text();
+        if (original !== out) {
+          changed.push({ name: path.relative(cwd, id), before: Buffer.byteLength(original, 'utf8'), after: Buffer.byteLength(out, 'utf8') });
+        }
+      }
+      logger.info(`svelte-shaker: slimmed ${changed.length} of ${shaken.size} component(s)${excluded > 0 ? `, ${excluded} excluded` : ''}`);
       if (typeof opt === 'object' && opt.report) {
-        await this.reportShake(shaken);
+        this.reportShake(changed);
       }
     } catch (e) {
       logger.warn(`svelte-shaker: skipped (${e instanceof Error ? e.message : e})`);
@@ -304,19 +316,9 @@ export class ComponentRegistry {
     }
   }
 
-  /** Log a per-component before→after source-byte breakdown for a shaken map. */
-  private async reportShake(shaken: Map<string, string>): Promise<void> {
-    const cwd = process.cwd();
-    const rows: { name: string; before: number; after: number }[] = [];
-    for (const [id, slimmed] of shaken) {
-      const before = Buffer.byteLength(await Bun.file(id).text(), 'utf8');
-      const after = Buffer.byteLength(slimmed, 'utf8');
-      if (before !== after) {
-        rows.push({ name: path.relative(cwd, id), before, after });
-      }
-    }
+  /** Log a per-component before→after source-byte breakdown for the changed components. */
+  private reportShake(rows: { name: string; before: number; after: number }[]): void {
     if (rows.length === 0) {
-      logger.info('svelte-shaker: no component changed in size');
       return;
     }
     rows.sort((a, b) => b.before - b.after - (a.before - a.after));

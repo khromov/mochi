@@ -73,12 +73,14 @@ await Mochi.serve({
 ```
 
 ```
-svelte-shaker: optimized 86 component(s), 1 excluded
+svelte-shaker: slimmed 15 of 86 component(s), 1 excluded
 svelte-shaker: source size before → after
   src/components/Sidebar.svelte   3.21 kB → 2.74 kB  (-14.6%)
   …
-  total (24 changed)              48.9 kB → 41.2 kB  (-15.7%)
+  total (15 changed)              48.9 kB → 41.2 kB  (-15.7%)
 ```
+
+The whole-app scan must cover every component for soundness, so the map includes untouched ones too — `slimmed N of M` reports how many the shaker actually changed (`M`) versus the total scanned (the rest are returned verbatim).
 
 ### Scope
 
