@@ -63,6 +63,8 @@ export interface DevWatcherDeps {
   registerRoutePattern?: (pattern: string, handler: MochiRouteValue) => Promise<RouteRegistrationResult | null>;
   unregisterRoutePattern?: (pattern: string) => void;
   trailingSlashPolicy?: 'never' | 'always';
+  shellPath?: string;
+  reloadShell?: () => Promise<void>;
 }
 
 /**
@@ -93,6 +95,8 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
     registerRoutePattern,
     unregisterRoutePattern,
     trailingSlashPolicy,
+    shellPath,
+    reloadShell,
   } = deps;
 
   const liveReloadHandler = (req: Request, srv: Server<undefined>): Response => {
@@ -201,6 +205,33 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
       notifyClients();
     });
   }, 100);
+
+  // The HTML shell is read once at startup and isn't part of any page's Svelte
+  // dependency graph, so a generic recompile would report 0 affected pages and
+  // skip the reload. Re-read it and broadcast — every page may depend on the
+  // shell's styling/head/scripts, so all tabs reload.
+  const triggerShellReload = reloadShell
+    ? debounce((filename: string) => {
+        reloadChain = reloadChain.then(async () => {
+          mochiEvents.emit('recompile:start', { trigger: 'html-shell', path: filename, pageCount: 0 });
+          const start = performance.now();
+          try {
+            await reloadShell();
+          } catch (e) {
+            logger.warn(`Shell reload failed: ${e instanceof Error ? e.message : e}`);
+          }
+          mochiEvents.emit('recompile:complete', {
+            trigger: 'html-shell',
+            path: filename,
+            pageCount: 0,
+            pages: [],
+            clientBundleCount: 0,
+            durationMs: performance.now() - start,
+          });
+          notifyClients();
+        });
+      }, 250)
+    : undefined;
 
   let routeModuleDeps: Set<string> = new Set();
   const routeModuleOutDir = path.resolve(`${outDir}/route-module`);
@@ -532,7 +563,9 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
         evictPreprocessCacheEntry(path.resolve(filePath));
         registry.evict(path.resolve(filePath));
       }
-      if (reloadPublic && filePath.startsWith(publicDirRel + path.sep)) {
+      if (triggerShellReload && shellPath && path.resolve(filePath) === shellPath) {
+        triggerShellReload(filePath);
+      } else if (reloadPublic && filePath.startsWith(publicDirRel + path.sep)) {
         logger.info(`Public file ${publicChangeVerb(event)}: ${filePath} — reloading routes`);
         reloadPublic();
       } else if (filePath.endsWith('.css')) {

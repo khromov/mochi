@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  test:
+  test-matrix:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -41,3 +41,12 @@ jobs:
 
       - name: Run tests
         run: bun run test
+
+  test:
+    if: always()
+    needs: test-matrix
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify all matrix jobs passed
+        if: needs.test-matrix.result != 'success'
+        run: exit 1

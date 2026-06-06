@@ -107,7 +107,7 @@
     margin: 0;
     padding: 0.75rem;
     background: var(--code-bg);
-    color: var(--text);
+    color: var(--code-text);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     font-family: var(--font-mono);

@@ -85,21 +85,26 @@
   }
 
   .status-fresh {
-    color: #4ade80;
-    border-color: rgba(74, 222, 128, 0.35);
+    background: var(--badge-success-bg);
+    color: var(--badge-success-text);
+    border-color: transparent;
   }
 
   .status-stale {
-    color: #facc15;
-    border-color: rgba(250, 204, 21, 0.35);
+    background: var(--badge-warning-bg);
+    color: var(--badge-warning-text);
+    border-color: transparent;
   }
 
   .status-expired {
-    color: #f87171;
-    border-color: rgba(248, 113, 113, 0.4);
+    background: var(--badge-danger-bg);
+    color: var(--badge-danger-text);
+    border-color: transparent;
   }
 
   .status-miss {
-    color: var(--text-muted);
+    background: var(--badge-default-bg);
+    color: var(--badge-default-text);
+    border-color: transparent;
   }
 </style>

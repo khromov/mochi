@@ -225,6 +225,8 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
       let action: string;
       if (trigger === 'css') {
         action = 'rebundled CSS';
+      } else if (trigger === 'html-shell') {
+        action = 'shell changed → reloading all tabs';
       } else if (trigger === 'svelte-config') {
         action = `config reload → rebuilt ${pages}, ${bundles}`;
       } else {

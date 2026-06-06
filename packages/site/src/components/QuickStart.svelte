@@ -327,4 +327,14 @@
       padding: 0.4rem 0.5rem;
     }
   }
+
+  @media (max-width: 400px) {
+    .quickstart-note {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+    .os-icons {
+      margin-left: 0;
+    }
+  }
 </style>
