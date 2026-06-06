@@ -586,4 +586,9 @@ export interface MochiSvelteShakerOptions {
    * are shaken. Example: `['src/components/ThemeToggle.svelte', 'src/legacy/**']`.
    */
   exclude?: string[];
+  /**
+   * Log a per-component before→after source-byte breakdown (sorted by bytes
+   * saved) after shaking, instead of just the one-line summary. Default: `false`.
+   */
+  report?: boolean;
 }

@@ -17,6 +17,7 @@ import { applyFilter } from './extensions';
 import { buildServerOnlyStubModule, scanServerOnlyExports } from './serverOnlyScan';
 import { freshImport } from './freshImport';
 import { shakeApp } from './svelteShaker';
+import prettyBytes from './lib/prettyBytes';
 
 /**
  * Run user-supplied Svelte preprocessors via the `compile:preprocessors`
@@ -294,10 +295,40 @@ export class ComponentRegistry {
       }
       this.shakenSources = shaken;
       logger.info(`svelte-shaker: optimized ${shaken.size} component(s)${excluded > 0 ? `, ${excluded} excluded` : ''}`);
+      if (typeof opt === 'object' && opt.report) {
+        await this.reportShake(shaken);
+      }
     } catch (e) {
       logger.warn(`svelte-shaker: skipped (${e instanceof Error ? e.message : e})`);
       this.shakenSources = new Map();
     }
+  }
+
+  /** Log a per-component before→after source-byte breakdown for a shaken map. */
+  private async reportShake(shaken: Map<string, string>): Promise<void> {
+    const cwd = process.cwd();
+    const rows: { name: string; before: number; after: number }[] = [];
+    for (const [id, slimmed] of shaken) {
+      const before = Buffer.byteLength(await Bun.file(id).text(), 'utf8');
+      const after = Buffer.byteLength(slimmed, 'utf8');
+      if (before !== after) {
+        rows.push({ name: path.relative(cwd, id), before, after });
+      }
+    }
+    if (rows.length === 0) {
+      logger.info('svelte-shaker: no component changed in size');
+      return;
+    }
+    rows.sort((a, b) => b.before - b.after - (a.before - a.after));
+    const nameWidth = Math.max(...rows.map((r) => r.name.length));
+    const pct = (before: number, after: number): string => `${(((after - before) / before) * 100).toFixed(1)}%`;
+    logger.info('svelte-shaker: source size before → after');
+    for (const r of rows) {
+      logger.info(`  ${r.name.padEnd(nameWidth)}  ${prettyBytes(r.before)} → ${prettyBytes(r.after)}  (${pct(r.before, r.after)})`);
+    }
+    const totalBefore = rows.reduce((s, r) => s + r.before, 0);
+    const totalAfter = rows.reduce((s, r) => s + r.after, 0);
+    logger.info(`  ${`total (${rows.length} changed)`.padEnd(nameWidth)}  ${prettyBytes(totalBefore)} → ${prettyBytes(totalAfter)}  (${pct(totalBefore, totalAfter)})`);
   }
 
   getServerIslandPath(name: string): string | undefined {

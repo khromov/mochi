@@ -61,6 +61,25 @@ await Mochi.serve({
 svelte-shaker <code>0.2.0</code> mis-handles a <code>class:</code> directive <em>shorthand</em> on a prop it folds (e.g. <code>class:compact</code> when <code>compact</code> never varies) — exclude such a component, or write the class with an explicit expression (<code>class={compact ? 'compact' : ''}</code>).
 </Callout>
 
+### Size report
+
+Pass `report: true` to log a per-component before→after source-byte breakdown (sorted by bytes saved) instead of just the one-line summary:
+
+```ts
+await Mochi.serve({
+  optimizeWithSvelteShaker: { report: true },
+  routes,
+});
+```
+
+```
+svelte-shaker: optimized 86 component(s), 1 excluded
+svelte-shaker: source size before → after
+  src/components/Sidebar.svelte   3.21 kB → 2.74 kB  (-14.6%)
+  …
+  total (24 changed)              48.9 kB → 41.2 kB  (-15.7%)
+```
+
 ### Scope
 
 Only components under `./src` are scanned. Prop folding is sound only when every call site of a component is in scope, so components imported from outside `./src` (e.g. a shared package) are left untouched. If shaking fails for any reason, Mochi logs a warning and falls back to the original, unshaken source.
