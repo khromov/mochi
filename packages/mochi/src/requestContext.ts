@@ -105,6 +105,38 @@ export interface DebugBarData {
   ssrDurationMs?: number;
   /** Framework JS bundles injected for this page (bootstrap, island entries, shared chunks). */
   bundles?: BundleInfo[];
+  /** Mochi framework version (constant per server). */
+  mochiVersion?: string;
+  /** Resolved Svelte version (constant per server). */
+  svelteVersion?: string;
+  /** Bun runtime version (constant per server). */
+  bunVersion?: string;
+  /** Curated snapshot of the `Mochi.serve()` configuration (constant per server). */
+  config?: DebugBarConfig;
+}
+
+/**
+ * Serializable, descriptive subset of `MochiServeOptions` surfaced in the debug
+ * bar's Info panel. Functions (handle, routes, fetch) are reduced to booleans or
+ * counts so the whole shape survives `JSON.stringify` into the HTML.
+ */
+export interface DebugBarConfig {
+  mode: 'development' | 'production';
+  port?: number;
+  hostname?: string;
+  debugBar: boolean;
+  liveReload: boolean;
+  warmup: boolean;
+  compressServerIslandProps: boolean;
+  trailingSlash: 'never' | 'always';
+  assetPrefix?: string;
+  logLevel: string;
+  /** Whether an `options.handle` middleware is configured. */
+  middleware: boolean;
+  csrf: boolean;
+  proxy: boolean;
+  markdown: boolean;
+  routeCount: number;
 }
 
 /**
