@@ -280,8 +280,8 @@ export class Mochi {
       // compiles at startup, so the shake must run before the first compile.
       await registry.prepareShake();
       if (development) {
+        rmSync(outDir, { recursive: true, force: true });
         for (const dir of [`${outDir}/svelte-client`, `${outDir}/svelte-compile`, `${outDir}/svelte-css`]) {
-          rmSync(dir, { recursive: true, force: true });
           mkdirSync(dir, { recursive: true });
         }
       }
