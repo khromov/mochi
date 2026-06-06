@@ -104,7 +104,7 @@ await Mochi.serve({
   compressServerIslandProps: true,
   // ThemeToggle uses a `class:compact` shorthand on a folded prop, which
   // svelte-shaker v0.2.0 mis-transforms — exclude it so it compiles unshaken.
-  optimizeWithSvelteShaker: { exclude: ['src/components/ThemeToggle.svelte'] },
+  optimizeWithSvelteShaker: { exclude: ['src/components/ThemeToggle.svelte'], mono: true },
   warmup: true,
   additionalWatchPaths: ['../docs'],
   logger: { level: 'log' },

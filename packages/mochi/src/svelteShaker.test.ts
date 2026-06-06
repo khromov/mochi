@@ -2,7 +2,46 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { shakeApp } from './svelteShaker';
+import { shakeApp, stripUnusedImports } from './svelteShaker';
+
+describe('stripUnusedImports', () => {
+  test('removes an import whose binding is never referenced', () => {
+    const src = `<script>import Heavy from './Heavy.svelte';</script>\n<p>base</p>`;
+    expect(stripUnusedImports(src)).not.toContain('Heavy');
+  });
+
+  test('keeps an import that is used in the template', () => {
+    const src = `<script>import Heavy from './Heavy.svelte';</script>\n<Heavy />`;
+    expect(stripUnusedImports(src)).toContain("import Heavy from './Heavy.svelte'");
+  });
+
+  test('keeps the whole import when at least one named binding is used', () => {
+    const src = `<script>import { used, dead } from './x';</script>\n{used}`;
+    expect(stripUnusedImports(src)).toContain('used, dead');
+  });
+
+  test('removes a named import group when none are used', () => {
+    const src = `<script>import { a, b as c } from './x';</script>\n<p>none</p>`;
+    expect(stripUnusedImports(src)).not.toContain("from './x'");
+  });
+
+  test('never strips side-effect imports', () => {
+    const src = `<script>import './styles.css';</script>\n<p>x</p>`;
+    expect(stripUnusedImports(src)).toContain("import './styles.css'");
+  });
+
+  test('keeps a used namespace import and drops an unused one', () => {
+    const used = `<script>import * as ns from './x';</script>\n{ns.value}`;
+    expect(stripUnusedImports(used)).toContain('* as ns');
+    const unused = `<script>import * as ns from './x';</script>\n<p>none</p>`;
+    expect(stripUnusedImports(unused)).not.toContain('* as ns');
+  });
+
+  test('removes an unused `import type`', () => {
+    const src = `<script lang="ts">import type { Foo } from './types';\n  let x = 1;</script>\n{x}`;
+    expect(stripUnusedImports(src)).not.toContain('Foo');
+  });
+});
 
 describe('shakeApp', () => {
   let dir: string | undefined;

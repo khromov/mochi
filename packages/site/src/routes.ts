@@ -160,5 +160,5 @@ export const buildOptions: Pick<MochiBuildOptions, 'markdown' | 'optimizeWithSve
   markdown: markdownConfig,
   // Mirror src/index.ts — exclude the component svelte-shaker mis-transforms.
   // `report` logs the per-component before→after source-size breakdown at build.
-  optimizeWithSvelteShaker: { exclude: ['src/components/ThemeToggle.svelte'], report: true },
+  optimizeWithSvelteShaker: { exclude: ['src/components/ThemeToggle.svelte'], report: true, mono: true },
 };

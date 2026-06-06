@@ -321,8 +321,10 @@ export class ComponentRegistry {
           changed.push({ name: path.relative(cwd, id), before: Buffer.byteLength(original, 'utf8'), after: Buffer.byteLength(out, 'utf8') });
         }
       }
-      const variantParts = variants.size > 0 ? `, ${variants.size} variant(s)` : '';
-      logger.info(`svelte-shaker: slimmed ${changed.length} of ${sources.size} component(s)${excluded > 0 ? `, ${excluded} excluded` : ''}${variantParts}`);
+      // Always surface L2 status when enabled — including "0 variant(s)" — so an
+      // enabled-but-no-qualifying-sites run is distinguishable from L2 being off.
+      const monoParts = mono ? `, L2 mono on: ${variants.size} variant(s)` : '';
+      logger.info(`svelte-shaker: slimmed ${changed.length} of ${sources.size} component(s)${excluded > 0 ? `, ${excluded} excluded` : ''}${monoParts}`);
       if (typeof opt === 'object' && opt.report) {
         this.reportShake(changed, variants);
       }
@@ -426,17 +428,10 @@ export class ComponentRegistry {
     const development = this.development;
     const userCompilerOptions = this.svelteConfig.compilerOptions ?? {};
     const markdown = this.markdown;
-    const shakenSources = this.shakenSources;
 
     const sveltePlugin: BunPlugin = {
       name: 'svelte-ssr',
       setup(build) {
-        // L2 variants are virtual sibling modules (never on disk). Resolve them
-        // to their absolute path so Bun skips the filesystem stat; the `.svelte`
-        // onLoad below then serves their source from `shakenSources`.
-        build.onResolve({ filter: /\.shaker_v\d+\.svelte$/ }, (args) => ({
-          path: path.isAbsolute(args.path) ? args.path : path.resolve(path.dirname(args.importer), args.path),
-        }));
         // Side-effect CSS imports (e.g. `import '@fontsource-variable/inter'`).
         // Bun resolves bare specifiers via package.json#main to the real .css file,
         // so filtering on the resolved path catches both direct and package imports.
@@ -533,7 +528,10 @@ export class ComponentRegistry {
           return { contents: js.code, loader: 'js' };
         });
         build.onLoad({ filter: /\.svelte$/ }, async (args) => {
-          const raw = shakenSources.get(args.path) ?? (await Bun.file(args.path).text());
+          // SSR compiles original source: the server bundle isn't shipped to the
+          // browser, so shaking it has no payoff. svelte-shaker (and its L2
+          // variants) only feed the client build below.
+          const raw = await Bun.file(args.path).text();
           const preprocessed = await applyUserPreprocessors(raw, args.path, 'server', development);
           // Vendored .svelte from node_modules can never carry `mochi:*` directives
           const isVendored = args.path.includes(`${path.sep}node_modules${path.sep}`);

@@ -24,7 +24,7 @@ await Mochi.serve({
 ```
 
 <Callout type="info">
-Shaking runs in <strong>production only</strong>. It is a whole-program pass — folding in one component can change when an unrelated component's call site changes — so it can't be reused per-file across hot reloads. In development the flag is ignored and components compile from their original source.
+Shaking runs in <strong>production only</strong>, and only on the <strong>client (browser) build</strong> — the server/SSR bundle always compiles original source, since it isn't shipped to the browser so slimming it has no payoff. It is a whole-program pass — folding in one component can change when an unrelated component's call site changes — so it can't be reused per-file across hot reloads. In development the flag is ignored and components compile from their original source.
 </Callout>
 
 ### Prebuilt manifests
@@ -99,7 +99,7 @@ The canonical win — `Heavy` survives normal shaking but vanishes under L2:
 <Child a={1} b={0} />
 ```
 
-`a` and `b` are each narrowed independently, so plain shaking can't prove `a && b` is never both `1` — `<Heavy />` stays. L2 specializes each site (freezing `a`/`b`), the guard folds to `false` in every variant, and `Heavy` becomes unreferenced and is tree-shaken away.
+`a` and `b` are each narrowed independently, so plain shaking can't prove `a && b` is never both `1` — `<Heavy />` stays. L2 specializes each site (freezing `a`/`b`), the guard folds to `false` in every variant, and `Heavy` becomes unreferenced. Mochi then drops the now-orphaned `import Heavy` (and the base `Child`) from the slimmed source so Bun's bundler removes the modules from the client bundle.
 
 Enable it with `mono` (off by default):
 
