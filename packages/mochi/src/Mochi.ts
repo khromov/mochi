@@ -393,19 +393,9 @@ export class Mochi {
     const mochiPageMap = new Map<string, MochiPageConfig>();
     const warmupHandlers: { pattern: string; handler: (req: Request, server: Server<undefined>) => Promise<Response> }[] = [];
     const wsHandlersMap = new Map<string, MochiWsHandlers<unknown>>();
-    let resolvedRouteModule = options.routeModule;
-    if (development && !resolvedRouteModule) {
-      for (const candidate of ['./src/routes.ts', './src/routes.js']) {
-        if (existsSync(candidate)) {
-          resolvedRouteModule = candidate;
-          break;
-        }
-      }
-    }
-    const routeHmr = development && !!resolvedRouteModule;
-    const apiHandlerMap = routeHmr ? new Map<string, MochiApiHandler>() : undefined;
-    const sseHandlerMap = routeHmr ? new Map<string, MochiSseHandler>() : undefined;
-    const pageConfigMap = routeHmr ? new Map<string, MochiPageHandlerConfig>() : undefined;
+    const apiHandlerMap = development ? new Map<string, MochiApiHandler>() : undefined;
+    const sseHandlerMap = development ? new Map<string, MochiSseHandler>() : undefined;
+    const pageConfigMap = development ? new Map<string, MochiPageHandlerConfig>() : undefined;
     const bunRoutes: Record<string, BunRouteValue> = {};
     const routeCounts = { page: 0, api: 0, ws: 0, sse: 0 };
     const trailingSlashPolicy = options.trailingSlash;
@@ -535,8 +525,6 @@ export class Mochi {
           warmupHandlers.push({ pattern, handler: getHandler });
         }
 
-        // In HMR mode (pageConfigMap set), register POST for all pages so actions
-        // can be added via hot-swap without restart. Returns 405 if none exist.
         if (actions || pageConfigMap) {
           const postHandler = (req: Request, server: Server<undefined>): Promise<Response> =>
             wrapRequest(req, server, async (ctx, event, resolveOpts) => {
@@ -1265,13 +1253,13 @@ export class Mochi {
         publicDir,
         watchPaths,
         development,
-        routeModule: resolvedRouteModule,
+        entryPath: Bun.main,
         apiHandlerMap,
         sseHandlerMap,
         wsHandlersMap,
         pageConfigMap,
-        registerRoutePattern: routeHmr ? registerRoutePattern : undefined,
-        unregisterRoutePattern: routeHmr ? unregisterRoutePattern : undefined,
+        registerRoutePattern,
+        unregisterRoutePattern,
         trailingSlashPolicy,
         shellPath,
         reloadShell,

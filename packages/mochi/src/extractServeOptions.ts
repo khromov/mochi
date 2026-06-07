@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { freshImport } from './freshImport';
 import type { MochiServeOptions } from './types';
 
 // Thrown by the capturing serve() stub to unwind the entry module's top-level
@@ -26,7 +27,7 @@ let captured: Partial<MochiServeOptions> | null = null;
  *
  * Returns the captured options, or `null` if the entry never called `serve()`.
  */
-export async function extractServeOptions(entryPath: string): Promise<Partial<MochiServeOptions> | null> {
+export async function extractServeOptions(entryPath: string, opts?: { fresh?: boolean }): Promise<Partial<MochiServeOptions> | null> {
   // The real framework entry, by absolute path — NOT the bare specifier, so the
   // plugin below does not intercept this import (no recursion).
   const realMod = (await import(path.join(import.meta.dir, 'index.ts'))) as Record<string, unknown> & {
@@ -73,7 +74,11 @@ export async function extractServeOptions(entryPath: string): Promise<Partial<Mo
 
   captured = null;
   try {
-    await import(Bun.pathToFileURL(entryPath).href);
+    if (opts?.fresh) {
+      await freshImport(entryPath);
+    } else {
+      await import(Bun.pathToFileURL(entryPath).href);
+    }
   } catch (err) {
     if (!isHalt(err)) {
       throw err;
