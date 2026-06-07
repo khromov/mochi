@@ -1,11 +1,6 @@
 import { Mochi, silenceInternalRoutes } from 'mochi-framework';
-import type { MochiRouteValue } from 'mochi-framework';
 
 const PORT = Number(process.env.PORT) || 3335;
-
-const routes: Record<string, MochiRouteValue> = {
-  '/': Mochi.page('./src/HelloWorld.svelte'),
-};
 
 await Mochi.serve({
   port: PORT,
@@ -15,7 +10,9 @@ await Mochi.serve({
   filters: {
     'consoleLogger:line': silenceInternalRoutes,
   },
-  routes,
+  routes: {
+    '/': Mochi.page('./src/HelloWorld.svelte'),
+  },
 });
 
 console.log('Server running at http://localhost:' + PORT);
