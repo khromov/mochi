@@ -527,6 +527,14 @@ export class Mochi {
             }
           });
 
+        const headHandler = (req: Request, server: Server<undefined>): Promise<Response> =>
+          wrapRequest(req, server, async () => {
+            return new Response(null, {
+              status: 200,
+              headers: { 'Content-Type': 'text/html; charset=utf-8' },
+            });
+          });
+
         if (warmupEnabled && isWarmablePattern(pattern)) {
           warmupHandlers.push({ pattern, handler: getHandler });
         }
@@ -689,12 +697,16 @@ export class Mochi {
           return {
             bunRouteValue: {
               GET: getHandler,
+              HEAD: headHandler,
               POST: postHandler,
             } as unknown as BunRouteValue,
             type: 'page',
           };
         }
-        return { bunRouteValue: getHandler, type: 'page' };
+        return {
+          bunRouteValue: { GET: getHandler, HEAD: headHandler } as unknown as BunRouteValue,
+          type: 'page',
+        };
       } else if (isMochiApi(handler)) {
         if (apiHandlerMap) {
           apiHandlerMap.set(pattern, handler.handler);
@@ -737,15 +749,16 @@ export class Mochi {
             const response = middleware ? await middleware({ event, resolve: innerResolve }) : await innerResolve(event);
 
             const final = finalizeCookieHeaders(response, ctx.cookies);
+            const shipped = req.method === 'HEAD' ? new Response(null, { status: final.status, statusText: final.statusText, headers: final.headers }) : final;
             mochiEvents.emit('request', {
               requestId,
               kind: 'api',
               method: req.method,
               path: url.pathname + url.search,
-              status: final.status,
+              status: shipped.status,
               duration: performance.now() - start,
             });
-            return final;
+            return shipped;
           });
         };
         return { bunRouteValue, type: 'api' };
@@ -754,6 +767,9 @@ export class Mochi {
         wsHandlersMap.set(pattern, wsHandlers);
 
         const bunRouteValue = (async (req: Request, server: Server<undefined>) => {
+          if (req.method !== 'GET') {
+            return new Response('Method Not Allowed', { status: 405 });
+          }
           const setup = buildRequestContext(req, server, { kind: 'ws', pattern });
           if ('earlyResponse' in setup) {
             return setup.earlyResponse;
@@ -811,6 +827,12 @@ export class Mochi {
         const capturedSseHandler = handler.handler;
 
         const bunRouteValue: BunRouteValue = async (req: Request, server: Server<undefined>): Promise<Response> => {
+          if (req.method === 'HEAD') {
+            return new Response(null, {
+              status: 200,
+              headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' },
+            });
+          }
           const setup = buildRequestContext(req, server, { kind: 'sse', pattern });
           if ('earlyResponse' in setup) {
             return setup.earlyResponse;
