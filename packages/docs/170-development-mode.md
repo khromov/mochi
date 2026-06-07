@@ -89,6 +89,16 @@ Defaults are always included — `additionalWatchPaths` is additive. Paths that 
 
 Svelte component changes are picked up automatically via the SSR compile cache — edit a `.svelte` file and the browser will refresh.
 
+### Route handler HMR
+
+**Route handler code** — `Mochi.api` handlers, `serverProps` resolvers, form `actions`, `Mochi.ws` handlers, `Mochi.sse` handlers — is hot-swapped without a restart. The watcher builds your entry (`src/index.ts`) to discover its transitive dependencies; when any of them changes it rebuilds the entry, re-reads the `routes` from its `Mochi.serve()` call, and updates the running server in place.
+
+Adding, removing, and editing route patterns all work without a restart — new routes are registered, removed routes are cleaned up, and the route table is reloaded on the fly. WebSocket connections stay open; the browser is notified to reload so pages pick up updated `serverProps`.
+
+<Callout type="warning">
+Do <strong>NOT</strong> rely on module-scoped mutable state surviving a route HMR cycle. Each reload re-evaluates the <em>entire entry dependency graph</em>, resetting any <code>let</code> / <code>const</code> declared at module scope. Move shared state into a module the entry imports (an in-memory store or database), and keep top-level side effects (e.g. cache priming) idempotent — they re-run on every reload.
+</Callout>
+
 ### `file:change` event
 
 Every watcher event is re-emitted on `mochiEvents` as `file:change`. Use it to invalidate your own caches without restarting:
