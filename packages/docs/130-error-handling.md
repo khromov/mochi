@@ -13,11 +13,12 @@ Configure the page via `errorPage` on `Mochi.serve()`. Omit it to use the built-
 ```ts
 // file: src/index.ts
 import { Mochi } from 'mochi-framework';
-import { routes } from './routes';
 
 await Mochi.serve({
   errorPage: './src/Error.svelte',
-  routes,
+  routes: {
+    '/': Mochi.page('./src/Home.svelte'),
+  },
 });
 ```
 
@@ -65,7 +66,13 @@ const handleError: HandleError = ({ error, event, status, message }) => {
   if (status >= 500) return { status, message: 'Something went wrong.' };
 };
 
-await Mochi.serve({ errorPage: './src/Error.svelte', handleError, routes });
+await Mochi.serve({
+  errorPage: './src/Error.svelte',
+  handleError,
+  routes: {
+    '/': Mochi.page('./src/Home.svelte'),
+  },
+});
 ```
 
 Return one of:
@@ -85,21 +92,23 @@ If the hook itself throws, Mochi logs the secondary error and renders the error 
 `Mochi.api` routes never render the HTML error page. Failures return `{ "error": { "message", "status" } }` with the matching status code. Use `MochiHttpError` (typed throw via `error()`) or `apiError()` (typed return) to produce the envelope.
 
 ```ts
-// file: src/routes.ts
+// file: src/index.ts
 import { Mochi, error, apiError } from 'mochi-framework';
 
-export const routes = {
-  '/users/:id': Mochi.api(async () => {
-    const user = await loadUser();
-    if (!user) error(404, 'Not found');
-    return Response.json(user);
-  }),
-  '/parse': Mochi.api(async ({ request }) => {
-    const body = await request.json().catch(() => null);
-    if (!body) return apiError(400, 'Invalid JSON');
-    return Response.json({ ok: true });
-  }),
-};
+await Mochi.serve({
+  routes: {
+    '/users/:id': Mochi.api(async () => {
+      const user = await loadUser();
+      if (!user) error(404, 'Not found');
+      return Response.json(user);
+    }),
+    '/parse': Mochi.api(async ({ request }) => {
+      const body = await request.json().catch(() => null);
+      if (!body) return apiError(400, 'Invalid JSON');
+      return Response.json({ ok: true });
+    }),
+  },
+});
 ```
 
 Uncaught throws inside a `Mochi.api` handler are coerced to `500 Internal Server Error` with a generic message; the original error and stack are logged via `log.error` and never leaked to the client. See `API routes` for the full contract.

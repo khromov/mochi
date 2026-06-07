@@ -36,12 +36,11 @@ bun add tailwindcss @tailwindcss/node @tailwindcss/oxide
 @source './*.svelte';
 ```
 
-3. Call `setupTailwind` at module scope in your routes file, before `Mochi.serve()` runs. Top-level `await` ensures the generated CSS exists for both the build CLI and the dev server:
+3. Call `setupTailwind` at module scope in your `src/index.ts`, before `Mochi.serve()` runs. Top-level `await` ensures the generated CSS exists for both the build CLI and the dev server:
 
 ```ts
-// file: src/routes.ts
+// file: src/index.ts
 import { Mochi } from 'mochi-framework';
-import type { MochiRouteValue } from 'mochi-framework';
 import { setupTailwind } from 'mochi-framework/tailwind';
 
 await setupTailwind({
@@ -50,9 +49,11 @@ await setupTailwind({
   minify: process.env.MODE !== 'development',
 });
 
-export const routes: Record<string, MochiRouteValue> = {
-  '/': Mochi.page('./src/Home.svelte'),
-};
+await Mochi.serve({
+  routes: {
+    '/': Mochi.page('./src/Home.svelte'),
+  },
+});
 ```
 
 4. `import` the generated file from any `.svelte` that uses Tailwind classes:
@@ -98,7 +99,7 @@ The watcher only attaches when `process.env.MODE === 'development'`.
 If you generate the CSS at build time, dynamic-import the helper so production never loads oxide:
 
 ```ts
-// file: src/routes.ts
+// file: src/index.ts
 if (process.env.MODE === 'development') {
   const { setupTailwind } = await import('mochi-framework/tailwind');
   await setupTailwind({
