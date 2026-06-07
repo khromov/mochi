@@ -290,6 +290,7 @@ type RouteFn = (req: Request, server: Server<undefined>) => Response | Promise<R
  * is stripped only when the method is HEAD; a method-keyed object gains a `HEAD`
  * entry that runs `GET` (Bun would otherwise 405 an unlisted HEAD). Other shapes
  * (`Response`, `BunFile`) are returned untouched — Bun serves their HEAD itself.
+ * `BunFile` is detected via `instanceof Blob` (Bun's file handle subclasses it).
  */
 export function withHead(value: BunRouteValue): BunRouteValue {
   if (typeof value === 'function') {
@@ -299,7 +300,7 @@ export function withHead(value: BunRouteValue): BunRouteValue {
       return req.method === 'HEAD' ? headResponse(res) : res;
     };
   }
-  if (value && typeof value === 'object' && !(value instanceof Response) && !('size' in value)) {
+  if (value && typeof value === 'object' && !(value instanceof Response) && !(value instanceof Blob)) {
     const rec = value as Record<string, RouteFn>;
     const get = rec.GET;
     if (get && !rec.HEAD) {

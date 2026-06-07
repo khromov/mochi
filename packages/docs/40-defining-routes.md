@@ -172,7 +172,7 @@ Do **NOT** forget `onClose` cleanup when you allocate per-connection resources; 
 
 Every `Mochi.page` and `Mochi.api` route answers `HEAD` automatically by running its `GET`/handler logic and stripping the response body. Status and headers match the equivalent `GET`, and `Content-Length` is set to the byte length the `GET` body would have had. No per-route opt-in is needed — this also covers static assets and the `404` fallback.
 
-`Mochi.sse` answers `HEAD` with the event-stream headers and an empty body **without** opening a stream or invoking your handler, so uptime checks can probe the endpoint cheaply. `Mochi.ws` routes are upgrade-only and do not handle `HEAD`.
+`Mochi.sse` is GET-only: a `HEAD` is answered with `405 Method Not Allowed` (`Allow: GET`) without opening a stream, since a body-less probe of a stream endpoint can't reflect the real headers or run the same auth/observability path. `Mochi.ws` routes are upgrade-only and likewise do not handle `HEAD`.
 
 ```sh
 curl -sI http://localhost:3333/        # 200, Content-Type + Content-Length, no body

@@ -78,7 +78,7 @@ describe('HEAD requests', () => {
     expect(await head.text()).toBe('');
   });
 
-  test('sse: HEAD returns event-stream headers, empty body, and does not open a stream', async () => {
+  test('sse: HEAD is not supported — returns 405 Allow: GET without opening a stream', async () => {
     let opened = false;
     const onOpen = (): void => {
       opened = true;
@@ -86,8 +86,8 @@ describe('HEAD requests', () => {
     mochiEvents.on('sse:open', onOpen);
     try {
       const head = await fetch(`${base}/sse`, { method: 'HEAD' });
-      expect(head.status).toBe(200);
-      expect(head.headers.get('Content-Type')).toBe('text/event-stream');
+      expect(head.status).toBe(405);
+      expect(head.headers.get('Allow')).toBe('GET');
       expect(await head.text()).toBe('');
     } finally {
       mochiEvents.off('sse:open', onOpen);

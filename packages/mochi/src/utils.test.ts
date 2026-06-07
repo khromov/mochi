@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { Server } from 'bun';
+import type { BunRouteValue } from './types';
 import { DEFAULT_ASSET_PREFIX, headResponse, negotiate, normalizeAssetPrefix, normalizeIslandHydrationMarkers, stripHydrationMarkers, toPosixPath, withHead } from './utils';
 
 describe('negotiate', () => {
@@ -213,5 +214,15 @@ describe('withHead', () => {
     const HEAD = () => new Response(null);
     const wrapped = withHead({ GET, HEAD }) as Record<string, unknown>;
     expect(wrapped.HEAD).toBe(HEAD);
+  });
+
+  test('BunFile arm: returned untouched (Bun serves its HEAD natively)', () => {
+    const file = Bun.file('package.json');
+    expect(withHead(file as unknown as BunRouteValue)).toBe(file);
+  });
+
+  test('Response arm: returned untouched', () => {
+    const res = new Response('static');
+    expect(withHead(res as unknown as BunRouteValue)).toBe(res);
   });
 });

@@ -811,21 +811,16 @@ export class Mochi {
         const capturedSseHandler = handler.handler;
 
         const bunRouteValue: BunRouteValue = async (req: Request, server: Server<undefined>): Promise<Response> => {
+          // SSE streams are GET-only. HEAD is not supported: answering it would
+          // mean either opening a stream (defeats the point of a body-less probe)
+          // or hand-rolling headers/auth/observability that diverge from the real
+          // GET path. Reject it cleanly instead so none of that drifts.
+          if (req.method === 'HEAD') {
+            return new Response(null, { status: 405, headers: { Allow: 'GET' } });
+          }
           const setup = buildRequestContext(req, server, { kind: 'sse', pattern });
           if ('earlyResponse' in setup) {
             return setup.earlyResponse;
-          }
-          // HEAD probes the endpoint without opening a stream: return the
-          // event-stream headers with no body, and crucially skip the handler
-          // (no sse:open, no user callback).
-          if (req.method === 'HEAD') {
-            return new Response(null, {
-              headers: {
-                'Content-Type': 'text/event-stream',
-                'Cache-Control': 'no-cache',
-                Connection: 'keep-alive',
-              },
-            });
           }
           const { ctx: sseHookCtx, url, params: sseParams } = setup;
           const path = url.pathname + url.search;
