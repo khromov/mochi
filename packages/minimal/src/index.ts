@@ -1,7 +1,11 @@
 import { Mochi, silenceInternalRoutes } from 'mochi-framework';
-import { routes } from './routes';
+import type { MochiRouteValue } from 'mochi-framework';
 
 const PORT = Number(process.env.PORT) || 3335;
+
+const routes: Record<string, MochiRouteValue> = {
+  '/': Mochi.page('./src/HelloWorld.svelte'),
+};
 
 await Mochi.serve({
   port: PORT,

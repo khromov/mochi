@@ -1,6 +1,8 @@
 import { Mochi, sequence, silenceInternalRoutes } from 'mochi-framework';
-import type { Handle } from 'mochi-framework';
-import { routes } from './routes';
+import type { Handle, MochiRouteValue } from 'mochi-framework';
+import { routes as adminRoutes } from './admin/routes';
+import { routes as hnRoutes } from './hn/routes';
+import { routes as todoRoutes } from './todo/routes';
 
 const IS_DOCKER = process.env.MOCHI_DOCKER === 'true';
 const immutableAssets: Handle = async ({ event, resolve }) => {
@@ -21,6 +23,13 @@ const analytics: Handle = async ({ event, resolve }) => {
 };
 
 const PORT = Number(process.env.PORT) || 3334;
+
+const routes: Record<string, MochiRouteValue> = {
+  '/': Mochi.page('./src/Landing.svelte'),
+  ...adminRoutes,
+  ...hnRoutes,
+  ...todoRoutes,
+};
 
 await Mochi.serve({
   port: PORT,
