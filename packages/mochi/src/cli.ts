@@ -3,6 +3,7 @@ import { parseArgs } from 'node:util';
 import path from 'node:path';
 import { existsSync } from 'node:fs';
 import { build } from './build';
+import { extractServeOptions } from './extractServeOptions';
 
 const HELP = `Usage: mochi-framework <command> [options]
 
@@ -11,6 +12,8 @@ Commands:
 
 Options for "build":
   --routes <path>          Path to the file exporting \`routes\`. Default: ./src/routes.ts
+  --entry <path>           Runtime entry whose \`Mochi.serve()\` call is read for
+                           \`optimizeWithSvelteShaker\`. Default: ./src/index.ts
   --out-dir <path>         Build output directory. Default: ./.mochi
   --public-dir <path>      Static assets directory. Default: ./public
   --asset-prefix <path>    URL prefix for framework client assets. Default: /_mochi
@@ -18,6 +21,8 @@ Options for "build":
 
 The routes file may also export \`buildOptions\` (a \`MochiBuildOptions\`
 object) for options that can't be expressed as flags, e.g. \`markdown\`.
+\`optimizeWithSvelteShaker\` is read from the entry's \`Mochi.serve()\` call
+instead, so it stays single-sourced with the runtime.
 
 Global:
   -h, --help           Show this help.
@@ -32,6 +37,7 @@ async function main() {
       help: { type: 'boolean', short: 'h' },
       version: { type: 'boolean', short: 'v' },
       routes: { type: 'string' },
+      entry: { type: 'string' },
       'out-dir': { type: 'string' },
       'public-dir': { type: 'string' },
       'asset-prefix': { type: 'string' },
@@ -75,8 +81,29 @@ async function main() {
 
   const userBuildOptions = (mod.buildOptions && typeof mod.buildOptions === 'object' ? mod.buildOptions : {}) as Partial<Parameters<typeof build>[0]>;
 
+  // `optimizeWithSvelteShaker` is authored once, in the runtime entry's
+  // `Mochi.serve()` call. Read it from there so the prebuilt manifest can't
+  // drift from runtime. Falls back to `buildOptions` if the entry is missing or
+  // never calls serve().
+  let shaker = userBuildOptions.optimizeWithSvelteShaker;
+  const entryPath = path.resolve(process.cwd(), values.entry ?? './src/index.ts');
+  if (existsSync(entryPath)) {
+    try {
+      const serveOptions = await extractServeOptions(entryPath);
+      if (serveOptions && 'optimizeWithSvelteShaker' in serveOptions) {
+        shaker = serveOptions.optimizeWithSvelteShaker;
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`[mochi] Could not read optimizeWithSvelteShaker from ${entryPath}: ${msg}\n` + `Falling back to buildOptions.optimizeWithSvelteShaker.\n`);
+    }
+  } else {
+    process.stderr.write(`[mochi] Entry not found: ${entryPath}; using buildOptions.optimizeWithSvelteShaker (if any). Pass --entry <path> to override.\n`);
+  }
+
   await build({
     ...userBuildOptions,
+    optimizeWithSvelteShaker: shaker,
     routes: mod.routes as Parameters<typeof build>[0]['routes'],
     development: values.dev,
     outDir: values['out-dir'],

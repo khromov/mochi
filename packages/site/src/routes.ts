@@ -156,9 +156,9 @@ export const markdownConfig: MarkdownConfig = {
   highlight: { highlighter: (code, lang) => highlightCode(code, lang) },
 };
 
-export const buildOptions: Pick<MochiBuildOptions, 'markdown' | 'optimizeWithSvelteShaker'> = {
+export const buildOptions: Pick<MochiBuildOptions, 'markdown'> = {
+  // The svelte-shaker option lives in src/index.ts (the Mochi.serve call) and is
+  // read from there by `mochi-framework build` (see --entry). Only the markdown
+  // pipeline, a function config, is mirrored here for the build.
   markdown: markdownConfig,
-  // Mirror src/index.ts — exclude the component svelte-shaker mis-transforms.
-  // `report` logs the per-component before→after source-size breakdown at build.
-  optimizeWithSvelteShaker: { exclude: ['src/components/ThemeToggle.svelte'], report: true },
 };

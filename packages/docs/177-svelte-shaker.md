@@ -29,19 +29,10 @@ Shaking runs in <strong>production only</strong>. It is a whole-program pass —
 
 ### Prebuilt manifests
 
-If you prebuild with `mochi-framework build` (see [Deployment](./deployment)), mirror the flag in the `buildOptions` your routes file exports so the manifest is built from shaken source:
+If you prebuild with `mochi-framework build` (see [Deployment](./deployment)), nothing to mirror: the build reads `optimizeWithSvelteShaker` straight from the `Mochi.serve()` call in your entry (`src/index.ts` by default, override with `--entry <path>`), so the prebuilt manifest and the runtime can't disagree.
 
-```ts
-// src/routes.ts
-import type { MochiBuildOptions } from 'mochi-framework/build';
-
-export const buildOptions: Pick<MochiBuildOptions, 'optimizeWithSvelteShaker'> = {
-  optimizeWithSvelteShaker: true,
-};
-```
-
-<Callout type="warning">
-Keep the two values in sync. The build step reads <code>buildOptions</code>, not your <code>Mochi.serve()</code> call, so a flag set in only one place leaves the prebuilt manifest and the runtime disagreeing.
+<Callout type="info">
+The build extracts the option by importing your entry with <code>Mochi.serve()</code> intercepted — it never actually starts the server. Other build-only settings still come from the <code>buildOptions</code> your routes file exports (e.g. <code>markdown</code>).
 </Callout>
 
 ### Excluding components
@@ -81,6 +72,10 @@ svelte-shaker: source size before → after
 ```
 
 The whole-app scan must cover every component for soundness, so the map includes untouched ones too — `slimmed N of M` reports how many the shaker actually changed (`M`) versus the total scanned (the rest are returned verbatim).
+
+<Callout type="info">
+<code>report</code> is read from the same <code>Mochi.serve()</code> option as everything else, so <code>mochi-framework build</code> logs the breakdown when your entry sets <code>report: true</code>. It only fires while shaking runs (production builds, and no-manifest production starts), so leaving it on is inert in development.
+</Callout>
 
 ### Scope
 
