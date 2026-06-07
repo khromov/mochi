@@ -566,8 +566,9 @@ export interface MochiServeOptions {
    *
    * **Production only** — ignored in dev, since shaking is whole-program and
    * per-file HMR can't safely reuse a one-time shake. Only components under
-   * `./src` are scanned. To shake the prebuilt manifest as well, mirror this
-   * value in the `buildOptions` consumed by `mochi-framework build`.
+   * `./src` are scanned. `mochi-framework build` reads this value straight from
+   * your entry's `Mochi.serve()` call, so the prebuilt manifest stays in sync
+   * with no mirroring needed.
    *
    * Pass `true` to shake everything, or `{ exclude }` to compile specific
    * components from their original source (the whole-app scan still covers them

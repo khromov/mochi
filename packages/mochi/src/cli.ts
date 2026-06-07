@@ -11,18 +11,20 @@ Commands:
   build    Produce a production bundle in the output directory.
 
 Options for "build":
-  --routes <path>          Path to the file exporting \`routes\`. Default: ./src/routes.ts
-  --entry <path>           Runtime entry whose \`Mochi.serve()\` call is read for
-                           \`optimizeWithSvelteShaker\`. Default: ./src/index.ts
+  --entry <path>           Runtime entry whose \`Mochi.serve()\` call supplies
+                           \`routes\`, \`markdown\`, and \`optimizeWithSvelteShaker\`.
+                           Default: ./src/index.ts
+  --routes <path>          Legacy fallback: a module exporting \`routes\` (+ an
+                           optional \`buildOptions\`), used when the entry yields
+                           no routes. Default: ./src/routes.ts
   --out-dir <path>         Build output directory. Default: ./.mochi
   --public-dir <path>      Static assets directory. Default: ./public
   --asset-prefix <path>    URL prefix for framework client assets. Default: /_mochi
   --dev                    Build with development: true.
 
-The routes file may also export \`buildOptions\` (a \`MochiBuildOptions\`
-object) for options that can't be expressed as flags, e.g. \`markdown\`.
-\`optimizeWithSvelteShaker\` is read from the entry's \`Mochi.serve()\` call
-instead, so it stays single-sourced with the runtime.
+The build reads its config straight from the entry's \`Mochi.serve()\` call, so
+the prebuilt manifest stays single-sourced with the runtime. The \`--routes\`
+module (with its \`buildOptions\` export) is only consulted as a fallback.
 
 Global:
   -h, --help           Show this help.
@@ -67,44 +69,54 @@ async function main() {
     process.exit(1);
   }
 
-  const routesPath = path.resolve(process.cwd(), values.routes ?? './src/routes.ts');
-  if (!existsSync(routesPath)) {
-    process.stderr.write(`[mochi] Routes file not found: ${routesPath}\n` + `Pass --routes <path> or create ./src/routes.ts with a \`routes\` named export.\n`);
-    process.exit(1);
-  }
+  type BuildOptions = Parameters<typeof build>[0];
 
-  const mod = (await import(Bun.pathToFileURL(routesPath).href)) as { routes?: unknown; buildOptions?: unknown };
-  if (!mod.routes || typeof mod.routes !== 'object') {
-    process.stderr.write(`[mochi] ${routesPath} does not export a \`routes\` object.\n` + `Add: export const routes = { ... };\n`);
-    process.exit(1);
-  }
-
-  const userBuildOptions = (mod.buildOptions && typeof mod.buildOptions === 'object' ? mod.buildOptions : {}) as Partial<Parameters<typeof build>[0]>;
-
-  // `optimizeWithSvelteShaker` is authored once, in the runtime entry's
-  // `Mochi.serve()` call. Read it from there so the prebuilt manifest can't
-  // drift from runtime. Falls back to `buildOptions` if the entry is missing or
-  // never calls serve().
-  let shaker = userBuildOptions.optimizeWithSvelteShaker;
+  // Primary source: the runtime entry. Importing it with `Mochi.serve`
+  // intercepted yields the exact options object the server would run with —
+  // `routes`, `markdown`, and `optimizeWithSvelteShaker` — so the prebuilt
+  // manifest can't drift from runtime, and there's nothing to mirror.
+  let serveOptions: Awaited<ReturnType<typeof extractServeOptions>> = null;
   const entryPath = path.resolve(process.cwd(), values.entry ?? './src/index.ts');
   if (existsSync(entryPath)) {
     try {
-      const serveOptions = await extractServeOptions(entryPath);
-      if (serveOptions && 'optimizeWithSvelteShaker' in serveOptions) {
-        shaker = serveOptions.optimizeWithSvelteShaker;
-      }
+      serveOptions = await extractServeOptions(entryPath);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      process.stderr.write(`[mochi] Could not read optimizeWithSvelteShaker from ${entryPath}: ${msg}\n` + `Falling back to buildOptions.optimizeWithSvelteShaker.\n`);
+      process.stderr.write(`[mochi] Could not read ${entryPath}: ${msg}\n` + `Falling back to a routes module.\n`);
     }
-  } else {
-    process.stderr.write(`[mochi] Entry not found: ${entryPath}; using buildOptions.optimizeWithSvelteShaker (if any). Pass --entry <path> to override.\n`);
+  }
+
+  // Legacy fallback: a module exporting `routes` (+ optional `buildOptions`).
+  // Loaded when the entry yielded no routes, or when --routes is passed.
+  let userBuildOptions: Partial<BuildOptions> = {};
+  let moduleRoutes: BuildOptions['routes'] | undefined;
+  if (values.routes !== undefined || !serveOptions?.routes) {
+    const routesPath = path.resolve(process.cwd(), values.routes ?? './src/routes.ts');
+    if (existsSync(routesPath)) {
+      const mod = (await import(Bun.pathToFileURL(routesPath).href)) as { routes?: unknown; buildOptions?: unknown };
+      if (mod.routes && typeof mod.routes === 'object') {
+        moduleRoutes = mod.routes as BuildOptions['routes'];
+      }
+      if (mod.buildOptions && typeof mod.buildOptions === 'object') {
+        userBuildOptions = mod.buildOptions as Partial<BuildOptions>;
+      }
+    } else if (values.routes !== undefined) {
+      process.stderr.write(`[mochi] Routes file not found: ${routesPath}\n`);
+      process.exit(1);
+    }
+  }
+
+  const routes = serveOptions?.routes ?? moduleRoutes;
+  if (!routes || typeof routes !== 'object') {
+    process.stderr.write(`[mochi] No \`routes\` found. Ensure ${entryPath} calls Mochi.serve({ routes }), or pass --routes <path> to a module exporting \`routes\`.\n`);
+    process.exit(1);
   }
 
   await build({
     ...userBuildOptions,
-    optimizeWithSvelteShaker: shaker,
-    routes: mod.routes as Parameters<typeof build>[0]['routes'],
+    routes,
+    markdown: serveOptions?.markdown ?? userBuildOptions.markdown,
+    optimizeWithSvelteShaker: serveOptions && 'optimizeWithSvelteShaker' in serveOptions ? serveOptions.optimizeWithSvelteShaker : userBuildOptions.optimizeWithSvelteShaker,
     development: values.dev,
     outDir: values['out-dir'],
     publicDir: values['public-dir'],

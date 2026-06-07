@@ -31,10 +31,6 @@ Shaking runs in <strong>production only</strong>. It is a whole-program pass —
 
 If you prebuild with `mochi-framework build` (see [Deployment](./deployment)), nothing to mirror: the build reads `optimizeWithSvelteShaker` straight from the `Mochi.serve()` call in your entry (`src/index.ts` by default, override with `--entry <path>`), so the prebuilt manifest and the runtime can't disagree.
 
-<Callout type="info">
-The build extracts the option by importing your entry with <code>Mochi.serve()</code> intercepted — it never actually starts the server. Other build-only settings still come from the <code>buildOptions</code> your routes file exports (e.g. <code>markdown</code>).
-</Callout>
-
 ### Excluding components
 
 If the shaker mis-transforms a component, pass `{ exclude }` with cwd-relative globs to compile those files from their original source. Excluding is always safe — the whole-app scan still covers an excluded file as a _call site_ of the components that import it; only its own output is left unshaken.
