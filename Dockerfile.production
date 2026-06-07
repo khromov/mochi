@@ -71,13 +71,12 @@ COPY --from=install /temp/prod/packages/${WORKSPACE}/node_modules packages/${WOR
 COPY --from=install /temp/prod/packages/mochi/node_modules packages/mochi/node_modules
 COPY --from=install /temp/prod/packages/docs/node_modules packages/docs/node_modules
 
-COPY --from=build /usr/src/app/packages/${WORKSPACE}/.mochi packages/${WORKSPACE}/.mochi
+# --chown bakes runtime-user ownership into the COPY layer; a separate
+# `RUN chown -R` would rewrite every file and duplicate the whole .mochi layer.
+COPY --chown=bun:bun --from=build /usr/src/app/packages/${WORKSPACE}/.mochi packages/${WORKSPACE}/.mochi
 
 # ncdu for disk usage analysis
 RUN apk add --no-cache ncdu
-
-# ensure the prebuilt cache is owned by the runtime user
-RUN chown -R bun:bun packages/${WORKSPACE}/.mochi
 
 USER bun
 EXPOSE ${PORT}/tcp
