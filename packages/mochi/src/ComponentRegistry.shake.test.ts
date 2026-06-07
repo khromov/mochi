@@ -77,11 +77,11 @@ describe('ComponentRegistry.prepareShake', () => {
     expect(cache.has(app.parent)).toBe(true);
   });
 
-  test('report logs a per-component before → after breakdown', async () => {
+  test('logs a per-component before → after breakdown', async () => {
     const app = writeFoldableApp();
     dir = app.dir;
     const info = spyOn(logger, 'info');
-    const registry = makeRegistry({ enabled: true, report: true });
+    const registry = makeRegistry({ enabled: true });
 
     await registry.prepareShake(app.dir);
 
@@ -94,7 +94,7 @@ describe('ComponentRegistry.prepareShake', () => {
   test('enabled: false skips shaking even when options object is present', async () => {
     const app = writeFoldableApp();
     dir = app.dir;
-    const registry = makeRegistry({ enabled: false, report: true });
+    const registry = makeRegistry({ enabled: false });
 
     await registry.prepareShake(app.dir);
 

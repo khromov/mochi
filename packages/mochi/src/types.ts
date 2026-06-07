@@ -564,8 +564,8 @@ export interface MochiServeOptions {
    * with no mirroring needed.
    *
    * Pass `true` to shake everything, or an object with `enabled: true` and
-   * additional options (`exclude`, `report`). Set `enabled: false` to disable
-   * shaking while keeping other config visible. Default: `false`.
+   * additional options (`exclude`). Set `enabled: false` to disable shaking
+   * while keeping other config visible. Default: `false`.
    */
   optimize?: boolean | MochiSvelteShakerOptions;
   [key: string]: unknown;
@@ -586,9 +586,4 @@ export interface MochiSvelteShakerOptions {
    * are shaken. Example: `['src/components/ThemeToggle.svelte', 'src/legacy/**']`.
    */
   exclude?: string[];
-  /**
-   * Log a per-component before→after source-byte breakdown (sorted by bytes
-   * saved) after shaking, instead of just the one-line summary. Default: `false`.
-   */
-  report?: boolean;
 }

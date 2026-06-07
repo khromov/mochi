@@ -315,9 +315,7 @@ export class ComponentRegistry {
         }
       }
       logger.info(`svelte-shaker: slimmed ${changed.length} of ${shaken.size} component(s)${excluded > 0 ? `, ${excluded} excluded` : ''}`);
-      if (typeof opt === 'object' && opt.report) {
-        this.reportShake(changed);
-      }
+      this.reportShake(changed);
     } catch (e) {
       logger.warn(`svelte-shaker: skipped (${e instanceof Error ? e.message : e})`);
       this.shakenSources = new Map();

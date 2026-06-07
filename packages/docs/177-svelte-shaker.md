@@ -58,7 +58,6 @@ await Mochi.serve({
   optimize: {
     enabled: false,
     exclude: ['src/components/ThemeToggle.svelte'],
-    report: true,
   },
   routes,
 });
@@ -68,14 +67,7 @@ This is equivalent to `optimize: false` but preserves the options so you can re-
 
 ### Size report
 
-Pass `report: true` to log a per-component before→after source-byte breakdown (sorted by bytes saved) instead of just the one-line summary:
-
-```ts
-await Mochi.serve({
-  optimize: { enabled: true, report: true },
-  routes,
-});
-```
+When shaking runs, a per-component before→after source-byte breakdown is logged automatically:
 
 ```
 svelte-shaker: slimmed 15 of 86 component(s), 1 excluded
@@ -86,10 +78,6 @@ svelte-shaker: source size before → after
 ```
 
 The whole-app scan must cover every component for soundness, so the map includes untouched ones too — `slimmed N of M` reports how many the shaker actually changed (`M`) versus the total scanned (the rest are returned verbatim).
-
-<Callout type="info">
-<code>report</code> is read from the same <code>Mochi.serve()</code> option as everything else, so <code>mochi-framework build</code> logs the breakdown when your entry sets <code>report: true</code>. It only fires while shaking runs (production builds, and no-manifest production starts), so leaving it on is inert in development.
-</Callout>
 
 ### Scope
 
