@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.4](https://github.com/khromov/mochi/compare/create-mochi-v0.2.3...create-mochi-v0.2.4) (2026-06-07)
+
+
+### Bug Fixes
+
+* **mochi-framework:** various hmr edge case fixes ([ecb627d](https://github.com/khromov/mochi/commit/ecb627daaf75df8f8b39599b7889abc66a624876))
+* various hmr edge case fixes ([79048e3](https://github.com/khromov/mochi/commit/79048e3cad8447882feac1362584c63becef75fb))
+
 ## [0.2.3](https://github.com/khromov/mochi/compare/create-mochi-v0.2.2...create-mochi-v0.2.3) (2026-05-26)
 
 
