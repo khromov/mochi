@@ -85,25 +85,19 @@ await Mochi.serve({
 
 Defaults are always included — `additionalWatchPaths` is additive. Paths that don't exist on disk are skipped silently.
 
+### Component hot-reload
+
+Svelte component changes are picked up automatically via the SSR compile cache — edit a `.svelte` file and the browser will refresh.
+
 ### Route handler HMR
 
-Svelte component changes are picked up automatically via the SSR compile cache. **Route handler code** — `Mochi.api` handlers, `serverProps` resolvers, form `actions`, `Mochi.ws` handlers, `Mochi.sse` handlers — is also hot-swapped when the route module or any of its transitive dependencies changes.
+**Route handler code** — `Mochi.api` handlers, `serverProps` resolvers, form `actions`, `Mochi.ws` handlers, `Mochi.sse` handlers — is hot-swapped without a restart. The watcher builds your entry (`src/index.ts`) to discover its transitive dependencies; when any of them changes it rebuilds the entry, re-reads the `routes` from its `Mochi.serve()` call, and updates the running server in place.
 
-By convention Mochi looks for `./src/routes.ts` (then `.js`) at startup. Override with `routeModule`:
+Adding, removing, and editing route patterns all work without a restart — new routes are registered, removed routes are cleaned up, and the route table is reloaded on the fly. WebSocket connections stay open; the browser is notified to reload so pages pick up updated `serverProps`.
 
-```ts
-// file: src/index.ts
-await Mochi.serve({
-  routeModule: './src/my-routes.ts', // default: auto-discovered
-  routes,
-});
-```
-
-When a dependency of the route module changes the framework re-bundles it, reimports the fresh handlers, and updates the running server — no restart, no lost WebSocket connections. The browser is notified to reload so pages pick up updated `serverProps`.
-
-Adding, removing, and editing route patterns all work without a restart. New routes are registered and removed routes are cleaned up automatically; the server's route table is reloaded on the fly.
-
-Do **NOT** rely on module-scoped mutable state surviving a route HMR cycle; instead, move shared state into a separate module that the route module imports (e.g. an in-memory store or database) — each rebuild re-evaluates the route module and resets any `let` / `const` declared at module scope.
+<Callout type="warning">
+Do <strong>NOT</strong> rely on module-scoped mutable state surviving a route HMR cycle. Each reload re-evaluates the <em>entire entry dependency graph</em>, resetting any <code>let</code> / <code>const</code> declared at module scope. Move shared state into a module the entry imports (an in-memory store or database), and keep top-level side effects (e.g. cache priming) idempotent — they re-run on every reload.
+</Callout>
 
 ### `file:change` event
 

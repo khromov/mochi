@@ -1,11 +1,16 @@
 import path from 'node:path';
+import { compile as mdsvexCompile } from 'mdsvex';
+import rehypeSlug from 'rehype-slug';
+import rehypeExternalLinks from './lib/rehypeExternalLinks';
 import { Mochi, mochiEvents, sequence, logger, noCache, compress, silenceInternalRoutes } from 'mochi-framework';
-import type { Handle, HandleError } from 'mochi-framework';
+import type { Handle, HandleError, MarkdownConfig } from 'mochi-framework';
 import { generateDocsBarrel } from './lib/generateDocsBarrel';
 import { clearDocsCaches, DOCS_DIR } from './lib/docs';
-import { markdownConfig, routes } from './routes';
+import { highlightCode } from './lib/highlight.server';
 import { handle as cookieVaryTestHandle } from './demos/cookie-vary-test/routes';
+import { routes } from './routes';
 
+const DEVELOPMENT = process.env.MODE === 'development';
 const IS_DOCKER = process.env.MOCHI_DOCKER === 'true';
 const immutableAssets: Handle = async ({ event, resolve }) => {
   const response = await resolve(event);
@@ -90,7 +95,11 @@ const CSRF_DOMAIN = process.env.MOCHI_DOMAIN ?? 'localhost';
 const CSRF_PROTOCOL = CSRF_PORT === 443 ? 'https' : 'http';
 const origin = CSRF_DOMAIN.includes('://') ? CSRF_DOMAIN : `${CSRF_PROTOCOL}://${CSRF_DOMAIN}:${CSRF_PORT}`;
 
-const DEVELOPMENT = process.env.MODE === 'development';
+const markdownConfig: MarkdownConfig = {
+  compile: mdsvexCompile,
+  rehypePlugins: [rehypeSlug, rehypeExternalLinks],
+  highlight: { highlighter: (code, lang) => highlightCode(code, lang) },
+};
 
 await Mochi.serve({
   port: PORT,
@@ -102,6 +111,7 @@ await Mochi.serve({
   handleError,
   idleTimeout: 60,
   compressServerIslandProps: true,
+  optimize: { enabled: true, exclude: [] },
   warmup: true,
   additionalWatchPaths: ['../docs'],
   logger: { level: 'log' },

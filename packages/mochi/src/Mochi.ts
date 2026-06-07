@@ -274,7 +274,11 @@ export class Mochi {
         assetPrefix: options.assetPrefix,
         svelteConfig,
         markdown: options.markdown,
+        optimize: options.optimize,
       });
+      // No-op in dev or when the option is off; production-without-manifest
+      // compiles at startup, so the shake must run before the first compile.
+      await registry.prepareShake();
       if (development) {
         for (const dir of [`${outDir}/svelte-client`, `${outDir}/svelte-compile`, `${outDir}/svelte-css`]) {
           rmSync(dir, { recursive: true, force: true });
@@ -339,7 +343,11 @@ export class Mochi {
     if (options.routes) {
       for (const handler of Object.values(options.routes)) {
         if (isMochiPage(handler)) {
-          ssrEntrypoints.push(handler.componentPath);
+          if (existsSync(handler.componentPath)) {
+            ssrEntrypoints.push(handler.componentPath);
+          } else if (development) {
+            logger.warn(`Route component not found: ${handler.componentPath} — will compile when created`);
+          }
         }
       }
     }
@@ -389,19 +397,9 @@ export class Mochi {
     const mochiPageMap = new Map<string, MochiPageConfig>();
     const warmupHandlers: { pattern: string; handler: (req: Request, server: Server<undefined>) => Promise<Response> }[] = [];
     const wsHandlersMap = new Map<string, MochiWsHandlers<unknown>>();
-    let resolvedRouteModule = options.routeModule;
-    if (development && !resolvedRouteModule) {
-      for (const candidate of ['./src/routes.ts', './src/routes.js']) {
-        if (existsSync(candidate)) {
-          resolvedRouteModule = candidate;
-          break;
-        }
-      }
-    }
-    const routeHmr = development && !!resolvedRouteModule;
-    const apiHandlerMap = routeHmr ? new Map<string, MochiApiHandler>() : undefined;
-    const sseHandlerMap = routeHmr ? new Map<string, MochiSseHandler>() : undefined;
-    const pageConfigMap = routeHmr ? new Map<string, MochiPageHandlerConfig>() : undefined;
+    const apiHandlerMap = development ? new Map<string, MochiApiHandler>() : undefined;
+    const sseHandlerMap = development ? new Map<string, MochiSseHandler>() : undefined;
+    const pageConfigMap = development ? new Map<string, MochiPageHandlerConfig>() : undefined;
     const bunRoutes: Record<string, BunRouteValue> = {};
     const routeCounts = { page: 0, api: 0, ws: 0, sse: 0 };
     const trailingSlashPolicy = options.trailingSlash;
@@ -432,7 +430,9 @@ export class Mochi {
         if (pageConfigMap) {
           pageConfigMap.set(pattern, { serverProps, actions });
         }
-        await registry.compile(componentPath);
+        if (existsSync(componentPath)) {
+          await registry.compile(componentPath);
+        }
 
         const renderComponent = async (req: Request, ctx: MochiRequestContext, resolveOpts: MochiResolveOptions | undefined, statusOverride?: number): Promise<Response> => {
           const compileErrors = registry.getErrors();
@@ -531,8 +531,6 @@ export class Mochi {
           warmupHandlers.push({ pattern, handler: getHandler });
         }
 
-        // In HMR mode (pageConfigMap set), register POST for all pages so actions
-        // can be added via hot-swap without restart. Returns 405 if none exist.
         if (actions || pageConfigMap) {
           const postHandler = (req: Request, server: Server<undefined>): Promise<Response> =>
             wrapRequest(req, server, async (ctx, event, resolveOpts) => {
@@ -1261,13 +1259,13 @@ export class Mochi {
         publicDir,
         watchPaths,
         development,
-        routeModule: resolvedRouteModule,
+        entryPath: Bun.main,
         apiHandlerMap,
         sseHandlerMap,
         wsHandlersMap,
         pageConfigMap,
-        registerRoutePattern: routeHmr ? registerRoutePattern : undefined,
-        unregisterRoutePattern: routeHmr ? unregisterRoutePattern : undefined,
+        registerRoutePattern,
+        unregisterRoutePattern,
         trailingSlashPolicy,
         shellPath,
         reloadShell,

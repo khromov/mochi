@@ -1,6 +1,8 @@
 import { Mochi, sequence, silenceInternalRoutes } from 'mochi-framework';
 import type { Handle } from 'mochi-framework';
-import { routes } from './routes';
+import { routes as adminRoutes } from './admin/routes';
+import { routes as hnRoutes } from './hn/routes';
+import { routes as todoRoutes } from './todo/routes';
 
 const IS_DOCKER = process.env.MOCHI_DOCKER === 'true';
 const immutableAssets: Handle = async ({ event, resolve }) => {
@@ -35,7 +37,12 @@ await Mochi.serve({
   filters: {
     'consoleLogger:line': silenceInternalRoutes,
   },
-  routes,
+  routes: {
+    '/': Mochi.page('./src/Landing.svelte'),
+    ...adminRoutes,
+    ...hnRoutes,
+    ...todoRoutes,
+  },
 });
 
 console.log('Server running at http://localhost:' + PORT);

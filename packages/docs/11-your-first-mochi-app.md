@@ -26,41 +26,45 @@ bun install
 bun run dev
 ```
 
-The scaffold gives you a working app on `http://localhost:3333`. Its entry point is `src/index.ts`, which just boots the server with the routes we'll define in the next step:
+The scaffold gives you a working app on `http://localhost:3333`. Its entry point is `src/index.ts`, which boots the server and declares your routes inline in the `Mochi.serve()` call:
 
 ```ts
-// file: src/index.ts (scaffolded — we won't change this)
+// file: src/index.ts (scaffolded)
 import { Mochi } from 'mochi-framework';
-import { routes } from './routes';
 
 const PORT = Number(process.env.PORT) || 3333;
 
 await Mochi.serve({
   port: PORT,
   development: process.env.MODE === 'development',
-  routes,
+  routes: {
+    '/': Mochi.page('./src/HelloWorld.svelte'),
+  },
 });
 ```
 
-You won't need to touch `index.ts` again in this walkthrough — everything else lives in `routes.ts` and the Svelte components we're about to build.
+`src/index.ts` is the single bootstrap file — you'll edit its `routes` object next, then build the Svelte components it points at.
 
 ### Step 1 — Register the route
 
-Now let's point `/hello` at a Svelte page and give it some data to render. Open `src/routes.ts` and replace the scaffolded route with this one. `serverProps` is either a plain object or a `(req, params) => props` resolver — whatever it returns becomes the page component's `$props`.
+Now let's point `/hello` at a Svelte page and give it some data to render. Open `src/index.ts` and replace the scaffolded route inside `routes` with this one. `serverProps` is either a plain object or a `(req, params) => props` resolver — whatever it returns becomes the page component's `$props`.
 
 ```ts
-// file: src/routes.ts
+// file: src/index.ts
 import { Mochi } from 'mochi-framework';
-import type { MochiRouteValue } from 'mochi-framework';
 
-export const routes: Record<string, MochiRouteValue> = {
-  '/hello': Mochi.page('./src/Hello.svelte', {
-    serverProps: () => ({
-      siteName: 'Mochi',
-      renderedAt: new Date().toISOString(),
+await Mochi.serve({
+  port: Number(process.env.PORT) || 3333,
+  development: process.env.MODE === 'development',
+  routes: {
+    '/hello': Mochi.page('./src/Hello.svelte', {
+      serverProps: () => ({
+        siteName: 'Mochi',
+        renderedAt: new Date().toISOString(),
+      }),
     }),
-  }),
-};
+  },
+});
 ```
 
 The resolver runs on every request, so each reload produces a fresh `renderedAt`. See [Defining routes](/docs/defining-routes/) for the full `serverProps` contract and the other `Mochi.*` route helpers. (The scaffolded `src/HelloWorld.svelte` is now unused — feel free to delete it.)

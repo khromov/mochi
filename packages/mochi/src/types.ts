@@ -465,13 +465,6 @@ export interface MochiServeOptions {
    * flag) so dev and prod stay in sync.
    */
   assetPrefix?: string;
-  /**
-   * Path to a module that exports `routes: Record<string, MochiRouteValue>`.
-   * In dev mode, changes to this module or its transitive dependencies
-   * hot-swap the handler configs for existing route patterns without a restart.
-   * Default: auto-discovered from `./src/routes.ts` or `./src/routes.js`.
-   */
-  routeModule?: string;
   /** Extra paths the dev-mode file watcher monitors, in addition to the defaults `src` and `public`. */
   additionalWatchPaths?: string[];
   /**
@@ -559,5 +552,38 @@ export interface MochiServeOptions {
    * Default: `false`.
    */
   warmup?: boolean | MochiWarmupOptions;
+  /**
+   * Run the whole-program [svelte-shaker](https://github.com/baseballyama/svelte-shaker)
+   * pass before compiling, slimming `.svelte` source (prop folding, dead-branch
+   * removal, CSS narrowing) so the Svelte compiler emits less code.
+   *
+   * **Production only** — ignored in dev, since shaking is whole-program and
+   * per-file HMR can't safely reuse a one-time shake. Only components under
+   * `./src` are scanned. `mochi-framework build` reads this value straight from
+   * your entry's `Mochi.serve()` call, so the prebuilt manifest stays in sync
+   * with no mirroring needed.
+   *
+   * Pass `true` to shake everything, or an object with `enabled: true` and
+   * additional options (`exclude`). Set `enabled: false` to disable shaking
+   * while keeping other config visible. Default: `false`.
+   */
+  optimize?: boolean | MochiSvelteShakerOptions;
   [key: string]: unknown;
+}
+
+export interface MochiSvelteShakerOptions {
+  /**
+   * Whether the optimizer is active. When `false`, shaking is skipped even
+   * though an options object is present — useful to keep `exclude` / `report`
+   * config visible while temporarily disabling the pass.
+   */
+  enabled: boolean;
+  /**
+   * Glob patterns (cwd-relative) of `.svelte` files to leave unshaken — they
+   * compile from their original source instead of svelte-shaker's slimmed
+   * output. Use to dodge a component the shaker mis-transforms (e.g. a `class:`
+   * shorthand on a folded prop). Excluding never affects how *other* components
+   * are shaken. Example: `['src/components/ThemeToggle.svelte', 'src/legacy/**']`.
+   */
+  exclude?: string[];
 }

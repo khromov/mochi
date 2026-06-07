@@ -9,23 +9,25 @@ description: 'Register WebSocket endpoints with Mochi.ws() and handle upgrade, o
 `Mochi.ws(handlers)` registers a WebSocket endpoint backed by Bun's `ServerWebSocket`. The handler map carries five callbacks — `upgrade`, `open`, `message`, `close`, `drain` — and exposes Bun's pub/sub primitives (`ws.subscribe`, `ws.publish`, `ws.unsubscribe`) on the socket.
 
 ```ts
-// file: src/routes.ts
+// file: src/index.ts
 import { Mochi } from 'mochi-framework';
 
-export const routes = {
-  '/ws/chat': Mochi.ws({
-    open(ws) {
-      ws.subscribe('chat');
-    },
-    message(ws, message) {
-      ws.publish('chat', String(message));
-      ws.send(String(message));
-    },
-    close(ws) {
-      ws.unsubscribe('chat');
-    },
-  }),
-};
+await Mochi.serve({
+  routes: {
+    '/ws/chat': Mochi.ws({
+      open(ws) {
+        ws.subscribe('chat');
+      },
+      message(ws, message) {
+        ws.publish('chat', String(message));
+        ws.send(String(message));
+      },
+      close(ws) {
+        ws.unsubscribe('chat');
+      },
+    }),
+  },
+});
 ```
 
 Only `message` is required; the rest are optional.
@@ -35,17 +37,23 @@ Only `message` is required; the rest are optional.
 Runs once per HTTP upgrade request. Return a value to attach to `ws.data.user`, or return `false` to reject the connection. The route's URL params are passed as the second argument.
 
 ```ts
-// file: src/routes.ts
-'/ws/:room': Mochi.ws<{ userId: string; room: string }>({
-  upgrade(req, params) {
-    const userId = req.headers.get('x-user-id');
-    if (!userId) return false; // reject the upgrade
-    return { userId, room: params.room };
+// file: src/index.ts
+import { Mochi } from 'mochi-framework';
+
+await Mochi.serve({
+  routes: {
+    '/ws/:room': Mochi.ws<{ userId: string; room: string }>({
+      upgrade(req, params) {
+        const userId = req.headers.get('x-user-id');
+        if (!userId) return false; // reject the upgrade
+        return { userId, room: params.room };
+      },
+      message(ws, msg) {
+        console.log(ws.data.user.userId, ws.data.user.room, msg);
+      },
+    }),
   },
-  message(ws, msg) {
-    console.log(ws.data.user.userId, ws.data.user.room, msg);
-  },
-}),
+});
 ```
 
 Do **NOT** authenticate inside `message` and silently drop messages from unauthenticated sockets; instead, reject the upgrade in `upgrade` so the client never establishes the connection.

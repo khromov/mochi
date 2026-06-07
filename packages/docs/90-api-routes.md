@@ -9,12 +9,14 @@ description: 'Register JSON endpoints with Mochi.api() that receive a request ev
 `Mochi.api(handler)` registers a JSON endpoint. The handler receives a `MochiApiEvent` (`method`, `request`, `url`, `server`, `locals`, `params`, `cookies`) and **must** return a `Response` (or a `Promise<Response>`).
 
 ```ts
-// file: src/routes.ts
+// file: src/index.ts
 import { Mochi } from 'mochi-framework';
 
-export const routes = {
-  '/health': Mochi.api(({ method }) => Response.json({ status: 'ok', method })),
-};
+await Mochi.serve({
+  routes: {
+    '/health': Mochi.api(({ method }) => Response.json({ status: 'ok', method })),
+  },
+});
 ```
 
 Do **NOT** return a plain object or string from a `Mochi.api` handler; instead, wrap the value in `Response.json(...)` or the `json()` helper — anything else fails type-checking and the runtime won't serialize it for you.
@@ -24,12 +26,18 @@ Do **NOT** return a plain object or string from a `Mochi.api` handler; instead, 
 Destructure `params` and `cookies` directly off the event — they mirror what `Mochi.page` form-action handlers receive:
 
 ```ts
-// file: src/routes.ts
-'/items/:id': Mochi.api(({ url, params, cookies }) => {
-  const tab = url.searchParams.get('tab') ?? 'overview';
-  const session = cookies.get('session');
-  return Response.json({ id: params.id, tab, session });
-}),
+// file: src/index.ts
+import { Mochi } from 'mochi-framework';
+
+await Mochi.serve({
+  routes: {
+    '/items/:id': Mochi.api(({ url, params, cookies }) => {
+      const tab = url.searchParams.get('tab') ?? 'overview';
+      const session = cookies.get('session');
+      return Response.json({ id: params.id, tab, session });
+    }),
+  },
+});
 ```
 
 `getRequestContext()` still works and exposes the same values plus `requestId`, `islandProps`, `getClientAddress()`, etc. — reach for it from helper functions that aren't passed the event.
@@ -39,12 +47,18 @@ Destructure `params` and `cookies` directly off the event — they mirror what `
 Use the standard `Request` body methods (`json()`, `text()`, `formData()`, `arrayBuffer()`). The body stream can only be consumed once.
 
 ```ts
-// file: src/routes.ts
-'/add': Mochi.api(async ({ method, request }) => {
-  if (method !== 'POST') error(405, 'Method Not Allowed');
-  const { a, b } = await request.json();
-  return Response.json({ result: a + b });
-}),
+// file: src/index.ts
+import { Mochi, error } from 'mochi-framework';
+
+await Mochi.serve({
+  routes: {
+    '/add': Mochi.api(async ({ method, request }) => {
+      if (method !== 'POST') error(405, 'Method Not Allowed');
+      const { a, b } = await request.json();
+      return Response.json({ result: a + b });
+    }),
+  },
+});
 ```
 
 Do **NOT** call `request.json()` (or any other body method) more than once on the same request; instead, await it once, store the result, and reuse the value — a second read throws `TypeError: Body already used`.
