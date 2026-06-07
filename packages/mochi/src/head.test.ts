@@ -33,6 +33,7 @@ describe('HEAD requests', () => {
         '/sse': Mochi.sse((stream) => {
           stream.send('hello');
         }),
+        '/ws': Mochi.ws({ message() {} }),
       },
     });
     base = `http://localhost:${server.port}`;
@@ -78,12 +79,17 @@ describe('HEAD requests', () => {
     expect(await head.text()).toBe('');
   });
 
-  test('sse: HEAD is not supported — returns 405 Allow: GET without opening a stream', async () => {
+  test('sse: HEAD is not supported — returns 405 Allow: GET, emits a request event, and does not open a stream', async () => {
     let opened = false;
     const onOpen = (): void => {
       opened = true;
     };
+    const requests: Array<{ method: string; path: string; status: number }> = [];
+    const onRequest = (e: { method: string; path: string; status: number }): void => {
+      requests.push(e);
+    };
     mochiEvents.on('sse:open', onOpen);
+    mochiEvents.on('request', onRequest);
     try {
       const head = await fetch(`${base}/sse`, { method: 'HEAD' });
       expect(head.status).toBe(405);
@@ -91,7 +97,24 @@ describe('HEAD requests', () => {
       expect(await head.text()).toBe('');
     } finally {
       mochiEvents.off('sse:open', onOpen);
+      mochiEvents.off('request', onRequest);
     }
     expect(opened).toBe(false);
+    expect(requests).toContainEqual(expect.objectContaining({ method: 'HEAD', path: '/sse', status: 405 }));
+  });
+
+  test('ws: a non-upgrade request fails the upgrade (500) and emits a request event', async () => {
+    const requests: Array<{ method: string; path: string; status: number }> = [];
+    const onRequest = (e: { method: string; path: string; status: number }): void => {
+      requests.push(e);
+    };
+    mochiEvents.on('request', onRequest);
+    try {
+      const res = await fetch(`${base}/ws`);
+      expect(res.status).toBe(500);
+    } finally {
+      mochiEvents.off('request', onRequest);
+    }
+    expect(requests).toContainEqual(expect.objectContaining({ method: 'GET', path: '/ws', status: 500 }));
   });
 });

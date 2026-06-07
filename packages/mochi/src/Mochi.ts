@@ -758,7 +758,20 @@ export class Mochi {
           if ('earlyResponse' in setup) {
             return setup.earlyResponse;
           }
-          const { ctx: wsHookCtx, start, url: wsUrl, params: wsParams } = setup;
+          const { ctx: wsHookCtx, start, requestId: wsRequestId, url: wsUrl, params: wsParams } = setup;
+          const wsPath = wsUrl.pathname + wsUrl.search;
+          // A non-upgrade request (e.g. a HEAD probe or plain GET) never becomes
+          // a socket, so it never emits `ws:open`.
+          const emitWsReject = (status: number): void => {
+            mochiEvents.emit('request', {
+              requestId: wsRequestId,
+              kind: 'error',
+              method: req.method,
+              path: wsPath,
+              status,
+              duration: performance.now() - start,
+            });
+          };
           requestContext.run(wsHookCtx, () => {
             runHook('route:matched', {
               pattern,
@@ -774,6 +787,7 @@ export class Mochi {
           if (liveWsHandlers.upgrade) {
             const result = await liveWsHandlers.upgrade(req, wsParams);
             if (result === false) {
+              emitWsReject(400);
               return new Response('WebSocket upgrade rejected', {
                 status: 400,
               });
@@ -789,16 +803,17 @@ export class Mochi {
             data: {
               __mochiRoutePattern: pattern,
               __mochiOpenedAt: performance.now(),
-              __mochiPath: wsUrl.pathname + wsUrl.search,
+              __mochiPath: wsPath,
               user: userData,
             } satisfies MochiWsData,
           });
 
           if (!success) {
+            emitWsReject(500);
             return new Response('WebSocket upgrade failed', { status: 500 });
           }
           mochiEvents.emit('ws:open', {
-            path: wsUrl.pathname + wsUrl.search,
+            path: wsPath,
             duration: performance.now() - start,
           });
           return undefined;
@@ -811,19 +826,25 @@ export class Mochi {
         const capturedSseHandler = handler.handler;
 
         const bunRouteValue: BunRouteValue = async (req: Request, server: Server<undefined>): Promise<Response> => {
-          // SSE streams are GET-only. HEAD is not supported: answering it would
-          // mean either opening a stream (defeats the point of a body-less probe)
-          // or hand-rolling headers/auth/observability that diverge from the real
-          // GET path. Reject it cleanly instead so none of that drifts.
-          if (req.method === 'HEAD') {
-            return new Response(null, { status: 405, headers: { Allow: 'GET' } });
-          }
           const setup = buildRequestContext(req, server, { kind: 'sse', pattern });
           if ('earlyResponse' in setup) {
             return setup.earlyResponse;
           }
-          const { ctx: sseHookCtx, url, params: sseParams } = setup;
+          const { ctx: sseHookCtx, start: sseStart, requestId: sseRequestId, url, params: sseParams } = setup;
           const path = url.pathname + url.search;
+          // SSE streams are GET-only. HEAD is not supported: answering it would
+          // mean either opening a stream (defeats the point of a body-less probe)
+          if (req.method === 'HEAD') {
+            mochiEvents.emit('request', {
+              requestId: sseRequestId,
+              kind: 'error',
+              method: req.method,
+              path,
+              status: 405,
+              duration: performance.now() - sseStart,
+            });
+            return new Response(null, { status: 405, headers: { Allow: 'GET' } });
+          }
           requestContext.run(sseHookCtx, () => {
             runHook('route:matched', {
               pattern,
