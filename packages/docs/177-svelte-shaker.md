@@ -10,7 +10,7 @@ description: 'Optimize and slim down .svelte sources before compilation with the
 
 ## Svelte Shaker
 
-[svelte-shaker](https://github.com/baseballyama/svelte-shaker) is a whole-program optimizer that slims `.svelte` _source_ before the Svelte compiler runs — folding props that never vary, removing the dead branches that fold opens up, and narrowing unused CSS. The result is less generated code per component.
+[svelte-shaker](https://github.com/baseballyama/svelte-shaker) is a whole-program optimizer that slims `.svelte` _source_ before the Svelte compiler runs — folding props that never vary, removing the dead branches that fold opens up, and narrowing unused CSS. The result is less generated code per component and smaller bundles.
 
 Enable it by passing `optimize: true` to `Mochi.serve()`:
 
