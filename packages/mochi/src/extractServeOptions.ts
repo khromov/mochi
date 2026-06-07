@@ -11,7 +11,7 @@ function isHalt(err: unknown): err is HaltSignal {
   return typeof err === 'object' && err !== null && (err as Record<symbol, unknown>)[HALT] === true;
 }
 
-let pluginRegistered = false;
+let pluginRegistrationDone = false;
 let captured: Partial<MochiServeOptions> | null = null;
 
 /**
@@ -34,12 +34,8 @@ export async function extractServeOptions(entryPath: string, opts?: { fresh?: bo
     Mochi: object;
   };
 
-  // Bun.plugin registrations are process-global and not unregisterable. Leaving
-  // it in place is harmless: `build()` and all framework internals import
-  // relatively, never the bare `mochi-framework` specifier — only site files do,
-  // and none are imported after extraction.
-  if (!pluginRegistered) {
-    // A Proxy (not a spread) preserves Mochi's non-enumerable static methods
+  if (!pluginRegistrationDone) {
+    // A Proxy preserves Mochi's non-enumerable static methods
     // (page/api/ws/sse) so route modules still build during extraction; only
     // `serve` is swapped for the capturing stub.
     const mochiProxy = new Proxy(realMod.Mochi, {
@@ -48,6 +44,15 @@ export async function extractServeOptions(entryPath: string, opts?: { fresh?: bo
           // Synchronous capture + throw, before serve()'s first await, so the
           // sentinel rejects the entry's top-level await and unwinds cleanly.
           return (options: Partial<MochiServeOptions>) => {
+            // A second call within one extraction means the entry swallowed our
+            // halt sentinel (e.g. `try { await Mochi.serve(...) } catch {}`) and
+            // kept running. Throw a real error so the extractor surfaces it
+            // instead of silently capturing duplicate/stale options.
+            if (captured !== null) {
+              throw new Error(
+                'Mochi.serve() was called more than once while extracting build options. Do not wrap the top-level Mochi.serve() call in try/catch — it must be allowed to throw during extraction.',
+              );
+            }
             captured = options;
             throw { [HALT]: true } as HaltSignal;
           };
@@ -69,7 +74,7 @@ export async function extractServeOptions(entryPath: string, opts?: { fresh?: bo
         }));
       },
     });
-    pluginRegistered = true;
+    pluginRegistrationDone = true;
   }
 
   captured = null;

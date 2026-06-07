@@ -49,4 +49,12 @@ const _ = Mochi;`);
 
     await expect(extractServeOptions(entry)).rejects.toThrow('boom');
   });
+
+  test('throws when the entry swallows the halt sentinel and calls serve() again', async () => {
+    const entry = writeEntry(`import { Mochi } from 'mochi-framework';
+try { await Mochi.serve({ routes: {} }); } catch {}
+await Mochi.serve({ routes: {} });`);
+
+    await expect(extractServeOptions(entry)).rejects.toThrow('called more than once');
+  });
 });
