@@ -1,7 +1,7 @@
 ---
-title: 'Svelte Shaker'
+title: 'Svelte Shaker optimization'
 slug: svelte-shaker
-description: 'Slim .svelte source before compilation with the whole-program svelte-shaker optimizer.'
+description: 'Optimize and slim down .svelte sources before compilation with the whole-program svelte-shaker optimizer.'
 ---
 
 <script>
