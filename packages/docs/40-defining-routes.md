@@ -168,6 +168,32 @@ await Mochi.serve({
 
 Do **NOT** forget `onClose` cleanup when you allocate per-connection resources; instead, register a teardown so timers/subscriptions don't leak when the client disconnects.
 
+### `Mochi.file`
+
+Serve a single file from disk via `Mochi.file(source)`. `source` is either a string path or a resolver `(req, params) => string` (sync or async) that returns the path. The `Content-Type` is inferred from the file extension; `HEAD` is handled automatically (headers only, empty body). Paths are resolved relative to the working directory, or pass an absolute path.
+
+```ts
+// file: src/index.ts
+import { Mochi, error } from 'mochi-framework';
+
+await Mochi.serve({
+  routes: {
+    // Static path.
+    '/report': Mochi.file('./files/report.pdf'),
+
+    // Resolver — pick the file per request from the route param.
+    '/files/:name': Mochi.file((req, params) => {
+      if (!/^[a-z0-9-]+$/.test(params.name)) {
+        error(404, 'Not found');
+      }
+      return `./files/${params.name}.pdf`;
+    }),
+  },
+});
+```
+
+A missing file returns a plain-text `404`; a resolver may also `error(404, …)` to force one. `Mochi.file` does **not** support `Range` requests, caching headers (`ETag`/`Cache-Control`), or middleware — reach for `Mochi.api` if you need full control over the response.
+
 ### Static files
 
 Files under `./public` are served automatically; no route entry is needed. A user-defined route always wins over a same-path public file. See `Serve options` for `publicDir`.

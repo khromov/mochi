@@ -1,0 +1,5 @@
+Hello from Mochi.file()!
+
+This plain-text file lives on disk at src/demos/file/sample.txt and is
+served straight from the filesystem by a Mochi.file() route — no Svelte
+component, no JSON wrapper, just the bytes with an inferred Content-Type.

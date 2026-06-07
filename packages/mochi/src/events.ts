@@ -90,7 +90,7 @@ export interface MochiServerStartEvent {
   port?: number;
   hostname?: string;
   development: boolean;
-  routes: { page: number; api: number; ws: number; sse: number };
+  routes: { page: number; api: number; ws: number; sse: number; file: number };
 }
 
 export interface MochiServerStopEvent {
@@ -112,7 +112,7 @@ export interface MochiWarmupCompleteEvent {
   durationMs: number;
 }
 
-export type MochiErrorKind = 'page' | 'api' | 'action';
+export type MochiErrorKind = 'page' | 'api' | 'action' | 'file';
 
 export interface MochiErrorEvent {
   /** Same `requestId` as the surrounding `request` event. */

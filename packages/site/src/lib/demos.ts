@@ -86,6 +86,12 @@ export const demos: Demo[] = [
     category: 'realtime',
   },
   {
+    href: '/demos/file/',
+    title: 'File Routes',
+    hook: 'Serve a file from disk with Mochi.file() — static path or a per-request resolver.',
+    category: 'realtime',
+  },
+  {
     href: '/demos/shared-state/',
     title: 'Shared State',
     hook: 'Two separate islands sharing the same reactive $state.',

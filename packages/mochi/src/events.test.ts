@@ -119,13 +119,13 @@ describe('new event payloads round-trip', () => {
       port: 3333,
       hostname: 'localhost',
       development: true,
-      routes: { page: 2, api: 1, ws: 0, sse: 0 },
+      routes: { page: 2, api: 1, ws: 0, sse: 0, file: 0 },
     });
     expect(received).toEqual({
       port: 3333,
       hostname: 'localhost',
       development: true,
-      routes: { page: 2, api: 1, ws: 0, sse: 0 },
+      routes: { page: 2, api: 1, ws: 0, sse: 0, file: 0 },
     });
   });
 

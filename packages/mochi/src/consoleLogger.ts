@@ -128,7 +128,7 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
   subscribe('server:start', ({ port, hostname, development, routes }) => {
     const where = `${hostname ?? 'localhost'}:${port}`;
     const mode = styleText('dim', development ? 'dev' : 'prod');
-    const counts = styleText('dim', `page=${routes.page} api=${routes.api} ws=${routes.ws} sse=${routes.sse}`);
+    const counts = styleText('dim', `page=${routes.page} api=${routes.api} ws=${routes.ws} sse=${routes.sse} file=${routes.file}`);
     return { label: 'BOOT', path: where, note: `${mode} ${counts}` };
   });
 
