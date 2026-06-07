@@ -563,15 +563,21 @@ export interface MochiServeOptions {
    * your entry's `Mochi.serve()` call, so the prebuilt manifest stays in sync
    * with no mirroring needed.
    *
-   * Pass `true` to shake everything, or `{ exclude }` to compile specific
-   * components from their original source (the whole-app scan still covers them
-   * as call sites, so excluding is always safe). Default: `false`.
+   * Pass `true` to shake everything, or an object with `enabled: true` and
+   * additional options (`exclude`, `report`). Set `enabled: false` to disable
+   * shaking while keeping other config visible. Default: `false`.
    */
-  optimizeWithSvelteShaker?: boolean | MochiSvelteShakerOptions;
+  optimize?: boolean | MochiSvelteShakerOptions;
   [key: string]: unknown;
 }
 
 export interface MochiSvelteShakerOptions {
+  /**
+   * Whether the optimizer is active. When `false`, shaking is skipped even
+   * though an options object is present — useful to keep `exclude` / `report`
+   * config visible while temporarily disabling the pass.
+   */
+  enabled: boolean;
   /**
    * Glob patterns (cwd-relative) of `.svelte` files to leave unshaken — they
    * compile from their original source instead of svelte-shaker's slimmed

@@ -39,10 +39,10 @@ export interface MochiBuildOptions {
   markdown?: MarkdownConfig;
   /**
    * Run the whole-program svelte-shaker pass before compiling. Mirror the value
-   * passed to `Mochi.serve({ optimizeWithSvelteShaker })` so the prebuilt
-   * manifest and the runtime agree. Default: `false`.
+   * passed to `Mochi.serve({ optimize })` so the prebuilt manifest and the
+   * runtime agree. Default: `false`.
    */
-  optimizeWithSvelteShaker?: boolean | MochiSvelteShakerOptions;
+  optimize?: boolean | MochiSvelteShakerOptions;
 }
 
 type RouteKind = 'page' | 'api' | 'ws' | 'sse';
@@ -79,7 +79,7 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     assetPrefix: options.assetPrefix,
     svelteConfig,
     markdown: options.markdown,
-    optimizeWithSvelteShaker: options.optimizeWithSvelteShaker,
+    optimize: options.optimize,
   });
   await registry.prepareShake();
 

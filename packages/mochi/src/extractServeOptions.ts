@@ -23,7 +23,7 @@ let captured: Partial<MochiServeOptions> | null = null;
  * plugin doesn't intercept itself) but replaces `Mochi.serve` with a stub that
  * records its argument and throws a sentinel to halt the entry's top-level
  * `await Mochi.serve(...)`. The captured object is fully evaluated, so options
- * like `optimizeWithSvelteShaker` are exactly what the runtime would use.
+ * like `optimize` are exactly what the runtime would use.
  *
  * Returns the captured options, or `null` if the entry never called `serve()`.
  */

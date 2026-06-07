@@ -12,7 +12,7 @@ Commands:
 
 Options for "build":
   --entry <path>           Runtime entry whose \`Mochi.serve()\` call supplies
-                           \`routes\`, \`markdown\`, and \`optimizeWithSvelteShaker\`.
+                           \`routes\`, \`markdown\`, and \`optimize\`.
                            Default: ./src/index.ts
   --out-dir <path>         Build output directory. Default: ./.mochi
   --public-dir <path>      Static assets directory. Default: ./public
@@ -84,7 +84,7 @@ async function main() {
   await build({
     routes,
     markdown: serveOptions?.markdown,
-    optimizeWithSvelteShaker: serveOptions && 'optimizeWithSvelteShaker' in serveOptions ? serveOptions.optimizeWithSvelteShaker : undefined,
+    optimize: serveOptions && 'optimize' in serveOptions ? serveOptions.optimize : undefined,
     development: values.dev,
     outDir: values['out-dir'],
     publicDir: values['public-dir'],

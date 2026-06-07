@@ -274,7 +274,7 @@ export class Mochi {
         assetPrefix: options.assetPrefix,
         svelteConfig,
         markdown: options.markdown,
-        optimizeWithSvelteShaker: options.optimizeWithSvelteShaker,
+        optimize: options.optimize,
       });
       // No-op in dev or when the option is off; production-without-manifest
       // compiles at startup, so the shake must run before the first compile.

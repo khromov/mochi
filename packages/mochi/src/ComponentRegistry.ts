@@ -181,7 +181,7 @@ export interface ComponentRegistryOptions {
   /** User-injected markdown integration. When unset, `.md`/`.svx` imports are not handled. */
   markdown?: MarkdownConfig;
   /** Run the whole-program svelte-shaker pass before compiling. Production only — `prepareShake()` is a no-op in dev. */
-  optimizeWithSvelteShaker?: boolean | MochiSvelteShakerOptions;
+  optimize?: boolean | MochiSvelteShakerOptions;
 }
 
 export class ComponentRegistry {
@@ -247,7 +247,7 @@ export class ComponentRegistry {
   readonly assetPrefix: string;
   svelteConfig: MochiSvelteConfig;
   readonly markdown: MarkdownConfig | undefined;
-  readonly optimizeWithSvelteShaker: boolean | MochiSvelteShakerOptions;
+  readonly optimize: boolean | MochiSvelteShakerOptions;
   /** absPath → slimmed `.svelte` source from the last `prepareShake()`; empty when shaking is off. */
   private shakenSources: Map<string, string> = new Map();
   private errors: MochiCompileError[] = [];
@@ -261,7 +261,7 @@ export class ComponentRegistry {
     this.assetPrefix = normalizeAssetPrefix(opts.assetPrefix);
     this.svelteConfig = opts.svelteConfig ?? {};
     this.markdown = opts.markdown;
-    this.optimizeWithSvelteShaker = opts.optimizeWithSvelteShaker ?? false;
+    this.optimize = opts.optimize ?? false;
   }
 
   /**
@@ -272,8 +272,9 @@ export class ComponentRegistry {
    * failure we fall back to unshaken disk reads rather than break the build.
    */
   async prepareShake(appRoot = path.resolve('src')): Promise<void> {
-    const opt = this.optimizeWithSvelteShaker;
-    if (!opt || this.development) {
+    const opt = this.optimize;
+    const enabled = typeof opt === 'object' ? opt.enabled : !!opt;
+    if (!enabled || this.development) {
       return;
     }
     if (!fs.existsSync(appRoot)) {

@@ -27,14 +27,14 @@ describe('extractServeOptions', () => {
   test('captures Mochi.serve options without binding a port', async () => {
     const entry = writeEntry(
       `import { Mochi } from 'mochi-framework';
-await Mochi.serve({ optimizeWithSvelteShaker: { exclude: ['x.svelte'], report: true }, routes: {} });
+await Mochi.serve({ optimize: { enabled: true, exclude: ['x.svelte'], report: true }, routes: {} });
 throw new Error('serve should have halted execution before this line');`,
     );
 
     const options = await extractServeOptions(entry);
 
     expect(options).not.toBeNull();
-    expect(options?.optimizeWithSvelteShaker).toEqual({ exclude: ['x.svelte'], report: true });
+    expect(options?.optimize).toEqual({ enabled: true, exclude: ['x.svelte'], report: true });
   });
 
   test('returns null when the entry never calls serve()', async () => {

@@ -12,7 +12,7 @@ function shakenSources(registry: ComponentRegistry): Map<string, string> {
 }
 
 function makeRegistry(opt: boolean | MochiSvelteShakerOptions): ComponentRegistry {
-  return new ComponentRegistry({ development: false, optimizeWithSvelteShaker: opt });
+  return new ComponentRegistry({ development: false, optimize: opt });
 }
 
 /** A two-component app where `Child`'s `showBadge` prop never varies (foldable). */
@@ -66,7 +66,7 @@ describe('ComponentRegistry.prepareShake', () => {
   test('exclude leaves the matched component out of the cache (compiles from disk)', async () => {
     const app = writeFoldableApp();
     dir = app.dir;
-    const registry = makeRegistry({ exclude: ['**/Child.svelte'] });
+    const registry = makeRegistry({ enabled: true, exclude: ['**/Child.svelte'] });
 
     await registry.prepareShake(app.dir);
 
@@ -81,7 +81,7 @@ describe('ComponentRegistry.prepareShake', () => {
     const app = writeFoldableApp();
     dir = app.dir;
     const info = spyOn(logger, 'info');
-    const registry = makeRegistry({ report: true });
+    const registry = makeRegistry({ enabled: true, report: true });
 
     await registry.prepareShake(app.dir);
 
@@ -89,6 +89,16 @@ describe('ComponentRegistry.prepareShake', () => {
     expect(lines.some((l) => /slimmed \d+ of \d+ component/.test(l))).toBe(true);
     expect(lines.some((l) => l.includes('→'))).toBe(true);
     info.mockRestore();
+  });
+
+  test('enabled: false skips shaking even when options object is present', async () => {
+    const app = writeFoldableApp();
+    dir = app.dir;
+    const registry = makeRegistry({ enabled: false, report: true });
+
+    await registry.prepareShake(app.dir);
+
+    expect(shakenSources(registry).size).toBe(0);
   });
 
   test('warns and stays empty when the source directory is missing', async () => {

@@ -12,13 +12,13 @@ description: 'Slim .svelte source before compilation with the whole-program svel
 
 [svelte-shaker](https://github.com/baseballyama/svelte-shaker) is a whole-program optimizer that slims `.svelte` _source_ before the Svelte compiler runs — folding props that never vary, removing the dead branches that fold opens up, and narrowing unused CSS. The result is less generated code per component.
 
-Enable it by passing `optimizeWithSvelteShaker: true` to `Mochi.serve()`:
+Enable it by passing `optimize: true` to `Mochi.serve()`:
 
 ```ts
 // src/index.ts
 await Mochi.serve({
   port: 3000,
-  optimizeWithSvelteShaker: true,
+  optimize: true,
   routes,
 });
 ```
@@ -29,7 +29,7 @@ Shaking runs in <strong>production only</strong>. It is a whole-program pass —
 
 ### Prebuilt manifests
 
-If you prebuild with `mochi-framework build` (see [Deployment](./deployment)), nothing to mirror: the build reads `optimizeWithSvelteShaker` straight from the `Mochi.serve()` call in your entry (`src/index.ts` by default, override with `--entry <path>`), so the prebuilt manifest and the runtime can't disagree.
+If you prebuild with `mochi-framework build` (see [Deployment](./deployment)), nothing to mirror: the build reads `optimize` straight from the `Mochi.serve()` call in your entry (`src/index.ts` by default, override with `--entry <path>`), so the prebuilt manifest and the runtime can't disagree.
 
 ### Excluding components
 
@@ -37,7 +37,8 @@ If the shaker mis-transforms a component, pass `{ exclude }` with cwd-relative g
 
 ```ts
 await Mochi.serve({
-  optimizeWithSvelteShaker: {
+  optimize: {
+    enabled: true,
     exclude: ['src/components/ThemeToggle.svelte', 'src/legacy/**'],
   },
   routes,
@@ -48,13 +49,30 @@ await Mochi.serve({
 svelte-shaker <code>0.2.0</code> mis-handles a <code>class:</code> directive <em>shorthand</em> on a prop it folds (e.g. <code>class:compact</code> when <code>compact</code> never varies) — exclude such a component, or write the class with an explicit expression (<code>class=&#123;compact ? 'compact' : ''&#125;</code>).
 </Callout>
 
+### Disabling temporarily
+
+Pass `enabled: false` inside the options object to skip shaking while keeping the rest of your config visible:
+
+```ts
+await Mochi.serve({
+  optimize: {
+    enabled: false,
+    exclude: ['src/components/ThemeToggle.svelte'],
+    report: true,
+  },
+  routes,
+});
+```
+
+This is equivalent to `optimize: false` but preserves the options so you can re-enable with a single toggle.
+
 ### Size report
 
 Pass `report: true` to log a per-component before→after source-byte breakdown (sorted by bytes saved) instead of just the one-line summary:
 
 ```ts
 await Mochi.serve({
-  optimizeWithSvelteShaker: { report: true },
+  optimize: { enabled: true, report: true },
   routes,
 });
 ```

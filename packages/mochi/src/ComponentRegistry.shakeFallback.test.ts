@@ -18,7 +18,7 @@ function shakenSources(registry: InstanceType<typeof ComponentRegistry>): Map<st
 describe('ComponentRegistry.prepareShake (failure fallback)', () => {
   test('falls back to an empty cache and warns when the shake throws', async () => {
     const warn = spyOn(logger, 'warn');
-    const registry = new ComponentRegistry({ development: false, optimizeWithSvelteShaker: true });
+    const registry = new ComponentRegistry({ development: false, optimize: true });
     // Pre-seed so we can prove the catch resets it rather than leaving stale source.
     shakenSources(registry).set('/stale.svelte', 'stale');
 
