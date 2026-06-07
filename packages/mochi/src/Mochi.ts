@@ -33,7 +33,7 @@ import { isEnhanceRequest, jsonError, jsonFailure, jsonRedirect, jsonSuccess } f
 import { csrfCheck, DEFAULT_FORM_CONTENT_TYPES, DEFAULT_PROTECTED_METHODS } from './csrf';
 import { applyFilter, initExtensions, runHook } from './extensions';
 import { buildPublicUrl } from './proxy';
-import { apiError, collectHeaderPairs, isHtmlResponse, MochiHttpError } from './utils';
+import { apiError, collectHeaderPairs, headResponse, isHtmlResponse, MochiHttpError, withHead } from './utils';
 import type { MochiEvent, MochiEventKind, MochiResolveOptions } from './hooks';
 import { applyResolveOptions } from './hooks';
 import { alternateSlashPattern, trailingSlashRedirect } from './trailingSlash';
@@ -687,14 +687,14 @@ export class Mochi {
             });
 
           return {
-            bunRouteValue: {
+            bunRouteValue: withHead({
               GET: getHandler,
               POST: postHandler,
-            } as unknown as BunRouteValue,
+            } as unknown as BunRouteValue),
             type: 'page',
           };
         }
-        return { bunRouteValue: getHandler, type: 'page' };
+        return { bunRouteValue: withHead(getHandler), type: 'page' };
       } else if (isMochiApi(handler)) {
         if (apiHandlerMap) {
           apiHandlerMap.set(pattern, handler.handler);
@@ -748,7 +748,7 @@ export class Mochi {
             return final;
           });
         };
-        return { bunRouteValue, type: 'api' };
+        return { bunRouteValue: withHead(bunRouteValue), type: 'api' };
       } else if (isMochiWs(handler)) {
         const wsHandlers = handler.handlers;
         wsHandlersMap.set(pattern, wsHandlers);
@@ -814,6 +814,18 @@ export class Mochi {
           const setup = buildRequestContext(req, server, { kind: 'sse', pattern });
           if ('earlyResponse' in setup) {
             return setup.earlyResponse;
+          }
+          // HEAD probes the endpoint without opening a stream: return the
+          // event-stream headers with no body, and crucially skip the handler
+          // (no sse:open, no user callback).
+          if (req.method === 'HEAD') {
+            return new Response(null, {
+              headers: {
+                'Content-Type': 'text/event-stream',
+                'Cache-Control': 'no-cache',
+                Connection: 'keep-alive',
+              },
+            });
           }
           const { ctx: sseHookCtx, url, params: sseParams } = setup;
           const path = url.pathname + url.search;
@@ -933,7 +945,7 @@ export class Mochi {
     }
 
     // Register server island endpoint
-    bunRoutes[`${registry.assetPrefix}/island/:componentName`] = async (req: Request, server: Server<undefined>): Promise<Response> => {
+    bunRoutes[`${registry.assetPrefix}/island/:componentName`] = withHead(async (req: Request, server: Server<undefined>): Promise<Response> => {
       const setup = buildRequestContext(req, server, {
         kind: 'island',
         pattern: `${registry.assetPrefix}/island/:componentName`,
@@ -1039,7 +1051,7 @@ export class Mochi {
           },
         });
       });
-    };
+    });
 
     if (process.env.MOCHI_MEMORY_PROBE === '1') {
       bunRoutes['/__mochi/health/memory'] = (): Response => {
@@ -1129,6 +1141,9 @@ export class Mochi {
         status: response.status,
         duration: performance.now() - start,
       });
+      if (req.method === 'HEAD') {
+        return headResponse(response);
+      }
       return response;
     };
 

@@ -60,4 +60,11 @@ describe('trailingSlash: "never"', () => {
     const res = await fetch(`${base}/`, { redirect: 'manual' });
     expect(res.status).toBe(200);
   });
+
+  test('HEAD trailing-slash form 301s to canonical with an empty body', async () => {
+    const res = await fetch(`${base}/about/`, { method: 'HEAD', redirect: 'manual' });
+    expect(res.status).toBe(301);
+    expect(res.headers.get('Location')).toBe('/about');
+    expect(await res.text()).toBe('');
+  });
 });

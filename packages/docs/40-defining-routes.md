@@ -168,6 +168,16 @@ await Mochi.serve({
 
 Do **NOT** forget `onClose` cleanup when you allocate per-connection resources; instead, register a teardown so timers/subscriptions don't leak when the client disconnects.
 
+### HEAD requests
+
+Every `Mochi.page` and `Mochi.api` route answers `HEAD` automatically by running its `GET`/handler logic and stripping the response body. Status and headers match the equivalent `GET`, and `Content-Length` is set to the byte length the `GET` body would have had. No per-route opt-in is needed — this also covers static assets and the `404` fallback.
+
+`Mochi.sse` answers `HEAD` with the event-stream headers and an empty body **without** opening a stream or invoking your handler, so uptime checks can probe the endpoint cheaply. `Mochi.ws` routes are upgrade-only and do not handle `HEAD`.
+
+```sh
+curl -sI http://localhost:3333/        # 200, Content-Type + Content-Length, no body
+```
+
 ### Static files
 
 Files under `./public` are served automatically; no route entry is needed. A user-defined route always wins over a same-path public file. See `Serve options` for `publicDir`.
