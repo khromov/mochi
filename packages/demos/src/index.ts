@@ -24,13 +24,6 @@ const analytics: Handle = async ({ event, resolve }) => {
 
 const PORT = Number(process.env.PORT) || 3334;
 
-const routes: Record<string, MochiRouteValue> = {
-  '/': Mochi.page('./src/Landing.svelte'),
-  ...adminRoutes,
-  ...hnRoutes,
-  ...todoRoutes,
-};
-
 await Mochi.serve({
   port: PORT,
   development: process.env.MODE === 'development',
@@ -44,7 +37,12 @@ await Mochi.serve({
   filters: {
     'consoleLogger:line': silenceInternalRoutes,
   },
-  routes,
+  routes: {
+    '/': Mochi.page('./src/Landing.svelte'),
+    ...adminRoutes,
+    ...hnRoutes,
+    ...todoRoutes,
+  },
 });
 
 console.log('Server running at http://localhost:' + PORT);

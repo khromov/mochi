@@ -155,6 +155,14 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
       let failed = false;
       try {
         summary = await registry.recompileChanged(filename);
+        if (summary.pages.size === 0) {
+          const resolved = path.resolve(filename);
+          const componentPath = routeComponentPaths.get(resolved);
+          if (componentPath) {
+            await registry.compile(componentPath, { force: true });
+            summary = { pages: new Set([resolved]), clientBundleCount: 0 };
+          }
+        }
       } catch (e) {
         failed = true;
         logger.warn(`Rebuild failed: ${e instanceof Error ? e.message : e}`);
@@ -271,10 +279,21 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
       logger.warn('Entry rebuild produced no routes — skipping update');
       return null;
     }
-    return serveOptions.routes as Record<string, unknown>;
+    const freshRoutes = serveOptions.routes as Record<string, unknown>;
+
+    const newComponentPaths = new Map<string, string>();
+    for (const handler of Object.values(freshRoutes)) {
+      if (isMochiPage(handler)) {
+        newComponentPaths.set(path.resolve(handler.componentPath), handler.componentPath);
+      }
+    }
+    routeComponentPaths = newComponentPaths;
+
+    return freshRoutes;
   }
 
   let knownEntryPatterns = new Set<string>();
+  let routeComponentPaths: Map<string, string> = new Map();
 
   function routeType(handler: unknown): 'api' | 'ws' | 'sse' | 'page' | null {
     if (isMochiApi(handler)) {
@@ -376,10 +395,14 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
           }
         }
       } else if (registerRoutePattern) {
-        const result = await registerRoutePattern(pattern, handler as MochiRouteValue);
-        if (result) {
-          addBunRoute(pattern, result.bunRouteValue);
-          counts[result.type]++;
+        try {
+          const result = await registerRoutePattern(pattern, handler as MochiRouteValue);
+          if (result) {
+            addBunRoute(pattern, result.bunRouteValue);
+            counts[result.type]++;
+            counts.added.push(pattern);
+          }
+        } catch {
           counts.added.push(pattern);
         }
       }

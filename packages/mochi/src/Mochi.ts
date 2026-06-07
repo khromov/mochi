@@ -343,7 +343,11 @@ export class Mochi {
     if (options.routes) {
       for (const handler of Object.values(options.routes)) {
         if (isMochiPage(handler)) {
-          ssrEntrypoints.push(handler.componentPath);
+          if (existsSync(handler.componentPath)) {
+            ssrEntrypoints.push(handler.componentPath);
+          } else if (development) {
+            logger.warn(`Route component not found: ${handler.componentPath} — will compile when created`);
+          }
         }
       }
     }
@@ -426,7 +430,9 @@ export class Mochi {
         if (pageConfigMap) {
           pageConfigMap.set(pattern, { serverProps, actions });
         }
-        await registry.compile(componentPath);
+        if (existsSync(componentPath)) {
+          await registry.compile(componentPath);
+        }
 
         const renderComponent = async (req: Request, ctx: MochiRequestContext, resolveOpts: MochiResolveOptions | undefined, statusOverride?: number): Promise<Response> => {
           const compileErrors = registry.getErrors();
