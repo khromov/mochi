@@ -30,7 +30,7 @@ export async function extractServeOptions(entryPath: string): Promise<Partial<Mo
   // The real framework entry, by absolute path — NOT the bare specifier, so the
   // plugin below does not intercept this import (no recursion).
   const realMod = (await import(path.join(import.meta.dir, 'index.ts'))) as Record<string, unknown> & {
-    Mochi: Record<string, unknown>;
+    Mochi: object;
   };
 
   // Bun.plugin registrations are process-global and not unregisterable. Leaving
@@ -38,6 +38,23 @@ export async function extractServeOptions(entryPath: string): Promise<Partial<Mo
   // relatively, never the bare `mochi-framework` specifier — only site files do,
   // and none are imported after extraction.
   if (!pluginRegistered) {
+    // A Proxy (not a spread) preserves Mochi's non-enumerable static methods
+    // (page/api/ws/sse) so route modules still build during extraction; only
+    // `serve` is swapped for the capturing stub.
+    const mochiProxy = new Proxy(realMod.Mochi, {
+      get(target, prop, receiver) {
+        if (prop === 'serve') {
+          // Synchronous capture + throw, before serve()'s first await, so the
+          // sentinel rejects the entry's top-level await and unwinds cleanly.
+          return (options: Partial<MochiServeOptions>) => {
+            captured = options;
+            throw { [HALT]: true } as HaltSignal;
+          };
+        }
+        const value = Reflect.get(target, prop, receiver);
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
     Bun.plugin({
       name: 'mochi-extract-serve-options',
       setup(build) {
@@ -46,15 +63,7 @@ export async function extractServeOptions(entryPath: string): Promise<Partial<Mo
           exports: {
             ...realMod,
             default: (realMod as { default?: unknown }).default ?? realMod,
-            Mochi: {
-              ...realMod.Mochi,
-              // Synchronous capture + throw, before serve()'s first await, so the
-              // sentinel rejects the entry's top-level await and unwinds cleanly.
-              serve: (options: Partial<MochiServeOptions>) => {
-                captured = options;
-                throw { [HALT]: true } as HaltSignal;
-              },
-            },
+            Mochi: mochiProxy,
           },
         }));
       },
