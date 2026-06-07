@@ -45,6 +45,10 @@ await Mochi.serve({
 });
 ```
 
+<Callout type="warning">
+The svelte-shaker package only supports Svelte 5 Runes-based syntax, not Svelte 4 legacy syntax.
+</Callout>
+
 ### Disabling temporarily
 
 Pass `enabled: false` inside the options object to skip shaking while keeping the rest of your config visible:
