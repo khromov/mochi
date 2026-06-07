@@ -402,7 +402,8 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
             counts[result.type]++;
             counts.added.push(pattern);
           }
-        } catch {
+        } catch (e) {
+          logger.warn(`Failed to register route ${pattern}: ${e instanceof Error ? e.message : e}`);
           counts.added.push(pattern);
         }
       }

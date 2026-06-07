@@ -19,7 +19,9 @@ Enable it by passing `optimize: true` to `Mochi.serve()`:
 await Mochi.serve({
   port: 3000,
   optimize: true,
-  routes,
+  routes: {
+    '/': Mochi.page('./src/Home.svelte'),
+  },
 });
 ```
 
@@ -41,7 +43,9 @@ await Mochi.serve({
     enabled: true,
     exclude: ['src/components/ThemeToggle.svelte', 'src/legacy/**'],
   },
-  routes,
+  routes: {
+    '/': Mochi.page('./src/Home.svelte'),
+  },
 });
 ```
 
@@ -59,7 +63,9 @@ await Mochi.serve({
     enabled: false,
     exclude: ['src/components/ThemeToggle.svelte'],
   },
-  routes,
+  routes: {
+    '/': Mochi.page('./src/Home.svelte'),
+  },
 });
 ```
 
