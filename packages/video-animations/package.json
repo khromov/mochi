@@ -1,0 +1,27 @@
+{
+  "name": "mochi-video-animations",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "bun": ">=1.3.13"
+  },
+  "scripts": {
+    "animate": "bun src/generate.ts",
+    "probe": "bun src/probe.ts",
+    "prepare-fonts": "bun src/prepare-fonts.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "clean": "rimraf out"
+  },
+  "dependencies": {
+    "@fontsource-variable/fraunces": "5.2.9",
+    "@fontsource/jetbrains-mono": "5.2.8",
+    "@resvg/resvg-js": "2.6.2",
+    "satori": "0.26.0",
+    "subset-font": "2.5.0"
+  },
+  "devDependencies": {
+    "@types/bun": "1.3.14",
+    "rimraf": "^6.1.3",
+    "typescript": "^6.0.3"
+  }
+}

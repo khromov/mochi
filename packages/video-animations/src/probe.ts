@@ -4,7 +4,7 @@ import { mkdirSync } from 'node:fs';
 import { prepareFonts } from './prepare-fonts';
 import { loadFonts, renderFramePng } from './render';
 
-const PROBE_DIR = resolve(import.meta.dir, '../..', 'out/probe');
+const PROBE_DIR = resolve(import.meta.dir, '..', 'out/probe');
 
 await prepareFonts();
 const fonts = await loadFonts();

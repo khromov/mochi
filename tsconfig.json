@@ -1,4 +1,10 @@
 {
   "files": [],
-  "references": [{ "path": "./packages/mochi" }, { "path": "./packages/site" }, { "path": "./packages/demos" }, { "path": "./packages/cli" }]
+  "references": [
+    { "path": "./packages/mochi" },
+    { "path": "./packages/site" },
+    { "path": "./packages/demos" },
+    { "path": "./packages/cli" },
+    { "path": "./packages/video-animations" }
+  ]
 }

@@ -1,13 +1,12 @@
 // Mochi brand animation: renders 900 satori frames -> PNG (resvg) -> MP4 (ffmpeg).
-// Run: bun run mochi:animate   (or: bun scripts/mochi-animation/generate.ts)
+// Run: bun run animate   (from packages/video-animations), or `bun run animate` at the repo root.
 import { resolve } from 'node:path';
 import { rmSync, mkdirSync, existsSync } from 'node:fs';
 import { prepareFonts } from './prepare-fonts';
 import { loadFonts, renderFramePng } from './render';
 import { CANVAS, FPS, TOTAL_FRAMES, DURATION_S } from './theme';
 
-const ROOT = resolve(import.meta.dir, '../..');
-const OUT_DIR = resolve(ROOT, 'out');
+const OUT_DIR = resolve(import.meta.dir, '..', 'out');
 const FRAMES_DIR = resolve(OUT_DIR, 'frames');
 const VIDEO_PATH = resolve(OUT_DIR, 'mochi.mp4');
 

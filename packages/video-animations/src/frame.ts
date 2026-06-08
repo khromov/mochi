@@ -36,11 +36,11 @@ function dango(ball: number): Node {
     }),
   );
   return h({ position: 'relative', width: ball, height: totalH, alignItems: 'center', justifyContent: 'center' }, [
-    // wooden skewer poking out the top
+    // wooden skewer poking out the bottom (you hold it by the stick)
     h({
       position: 'absolute',
       left: ball / 2 - stickW / 2,
-      top: -ball * 0.55,
+      top: 0,
       width: stickW,
       height: totalH + ball * 0.55,
       borderRadius: RADIUS.pill,
@@ -56,11 +56,11 @@ function sceneLogo(t: number): Node {
   if (op <= 0) {
     return null;
   }
-  const enter = easeOutBack(clamp(norm(t, 0.1, 1.4)));
+  const dangoOp = clamp(norm(t, 0.15, 1.2));
   const wordY = lerp(34, 0, easeOutCubic(clamp(norm(t, 0.5, 1.7))));
   const wordOp = clamp(norm(t, 0.5, 1.5));
   return layer(op, [
-    h({ transform: `scale(${0.72 + 0.28 * enter})`, transformOrigin: '50% 50%', marginBottom: 18 }, dango(96)),
+    h({ opacity: dangoOp, marginBottom: 18 }, dango(96)),
     text('mochi', {
       fontFamily: FONT.display,
       fontSize: 168,
@@ -243,7 +243,7 @@ function sceneClose(t: number): Node {
   }
   const enter = easeOutCubic(clamp(norm(t, 24.9, 26.0)));
   return layer(op, [
-    h({ marginBottom: 16, transform: `scale(${lerp(0.85, 1, enter)})`, transformOrigin: '50% 50%' }, dango(78)),
+    h({ marginBottom: 16, opacity: enter }, dango(78)),
     text('mochi', {
       fontFamily: FONT.display,
       fontSize: 148,

@@ -1,15 +1,18 @@
-# mochi-animation
+# mochi-video-animations
 
-A programmatic 30-second, 16:9 brand animation for Mochi.
+Programmatic, 16:9 brand animations for Mochi, rendered to MP4.
 
 ```sh
-bun run mochi:animate
-# → out/mochi.mp4  (1920×1080, 30 fps, ~30s, silent)
+bun run mochi:animate                      # from the repo root, or:
+bun --cwd=packages/video-animations run animate
+# → packages/video-animations/out/mochi.mp4  (1920×1080, 30 fps, 30s, silent)
+
+bun --cwd=packages/video-animations run probe   # render one PNG per scene to out/probe/
 ```
 
 ## How it works
 
-Each frame is built as **satori** markup (`frame.ts`), parametrised by time `t`, then:
+Each frame is built as **satori** markup (`src/frame.ts`), parametrised by time `t`, then:
 
 1. `satori` lays it out and emits an SVG with text already converted to vector paths.
 2. A monochrome `feTurbulence` grain filter is injected over the gradient backdrop (the Mochi hero look).
@@ -20,14 +23,14 @@ The local `ffmpeg` is built without `libfreetype`, so text can't be drawn by ffm
 
 ## Look & feel
 
-Tokens in `theme.ts` are lifted from `packages/site/src/shell.html` and `Site.svelte`:
+Tokens in `src/theme.ts` are lifted from `packages/site/src/shell.html` and `Site.svelte`:
 hero gradient `#2b3d33 → #4a7c59`, accent green `#4a7c59`, **Fraunces** display/serif + **JetBrains Mono**.
-The 🍡 mascot is drawn as a vector dango (`dango()` in `frame.ts`) so it stays offline and animatable.
+The 🍡 mascot is drawn as a vector dango (`dango()` in `src/frame.ts`) so it stays offline and animatable.
 
 Fonts are re-instanced from the Fraunces variable font with the brand axes pinned
-(`opsz 144 / SOFT 50 / WONK 1` for display) over a full ASCII charset — see `prepare-fonts.ts`
+(`opsz 144 / SOFT 50 / WONK 1` for display) over a full ASCII charset — see `src/prepare-fonts.ts`
 (mirrors `packages/site/scripts/instance-fraunces.ts` on the `og-rendering` branch).
-The generated `fonts/*.otf` are committed so the animation builds without the instancing step.
+The generated `src/fonts/*.otf` are committed so the animation builds without the instancing step.
 
 ## Scenes
 
@@ -39,4 +42,4 @@ The generated `fonts/*.otf` are committed so the animation builds without the in
 | 19–25s | capability chips                   |
 | 25–30s | close (mochi.fast)                 |
 
-Output lands in `out/` (gitignored).
+Output lands in `packages/video-animations/out/` (gitignored).

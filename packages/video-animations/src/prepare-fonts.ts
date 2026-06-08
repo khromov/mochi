@@ -6,7 +6,7 @@ import subsetFont from 'subset-font';
 import { resolve } from 'node:path';
 import { existsSync } from 'node:fs';
 
-const ROOT = resolve(import.meta.dir, '../..');
+const ROOT = resolve(import.meta.dir, '../../..');
 const FONTS_DIR = import.meta.dir + '/fonts';
 
 const SRC = {
