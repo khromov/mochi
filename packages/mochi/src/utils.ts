@@ -1,5 +1,7 @@
+import type { Server } from 'bun';
 import Negotiator from 'negotiator';
 import type { MochiCompileErrorLog } from './events';
+import type { BunRouteValue } from './types';
 
 /**
  * Given an Accept header value and a list of candidate content types, return
@@ -261,4 +263,49 @@ export function toCompileErrorLogs(
     }
     return entry;
   });
+}
+
+/**
+ * Body-less clone of a `Response` for answering a HEAD request: same status,
+ * statusText, and headers, but no body. Finite bodies are buffered once so the
+ * `Content-Length` matches what the equivalent GET would have sent. Streaming
+ * bodies (`text/event-stream`) are never consumed — they would never end — so
+ * their length is left unset.
+ */
+export async function headResponse(res: Response): Promise<Response> {
+  const headers = new Headers(res.headers);
+  const isStream = (headers.get('content-type') ?? '').includes('text/event-stream');
+  if (!isStream && res.body) {
+    const buf = await res.arrayBuffer();
+    headers.set('Content-Length', String(buf.byteLength));
+  }
+  return new Response(null, { status: res.status, statusText: res.statusText, headers });
+}
+
+type RouteFn = (req: Request, server: Server<undefined>) => Response | Promise<Response>;
+
+/**
+ * Wrap a page/api `BunRouteValue` so HEAD reuses the GET/handler logic but
+ * returns no body. A single function is invoked for every method and its result
+ * is stripped only when the method is HEAD; a method-keyed object gains a `HEAD`
+ * entry that runs `GET` (Bun would otherwise 405 an unlisted HEAD). Other shapes
+ * (`Response`, `BunFile`) are returned untouched — Bun serves their HEAD itself.
+ * `BunFile` is detected via `instanceof Blob` (Bun's file handle subclasses it).
+ */
+export function withHead(value: BunRouteValue): BunRouteValue {
+  if (typeof value === 'function') {
+    const fn = value as RouteFn;
+    return async (req, server) => {
+      const res = await fn(req, server);
+      return req.method === 'HEAD' ? headResponse(res) : res;
+    };
+  }
+  if (value && typeof value === 'object' && !(value instanceof Response) && !(value instanceof Blob)) {
+    const rec = value as Record<string, RouteFn>;
+    const get = rec.GET;
+    if (get && !rec.HEAD) {
+      return { ...rec, HEAD: async (req, server) => headResponse(await get(req, server)) };
+    }
+  }
+  return value;
 }
