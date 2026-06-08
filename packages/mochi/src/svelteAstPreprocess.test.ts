@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import path from 'node:path';
 import { preprocessHydratable } from './svelteAstPreprocess';
 
 const SCRIPT = (imports: string) => `<script>\n${imports}\n</script>\n`;
@@ -405,7 +406,7 @@ describe('preprocessHydratable', () => {
 
     expect(hydratables).toHaveLength(1);
     expect(hydratables[0]!.name).toBe('Readme');
-    expect(hydratables[0]!.resolvedPath).toBe('/test/Readme.md');
+    expect(hydratables[0]!.resolvedPath).toBe(path.resolve('/test', 'Readme.md'));
     expect(transformed).toContain('<mochi-hydratable-island');
     expect(transformed).toContain('component-name="Readme"');
   });
@@ -415,7 +416,7 @@ describe('preprocessHydratable', () => {
     const { transformed, hydratables } = preprocessHydratable(source, '/test/File.svelte');
 
     expect(hydratables).toHaveLength(1);
-    expect(hydratables[0]!.resolvedPath).toBe('/test/Post.svx');
+    expect(hydratables[0]!.resolvedPath).toBe(path.resolve('/test', 'Post.svx'));
     expect(transformed).toContain('hydrate-on="visible"');
   });
 
@@ -424,7 +425,7 @@ describe('preprocessHydratable', () => {
     const { transformed, serverIslands } = preprocessHydratable(source, '/test/File.svelte');
 
     expect(serverIslands).toHaveLength(1);
-    expect(serverIslands[0]!.resolvedPath).toBe('/test/Readme.md');
+    expect(serverIslands[0]!.resolvedPath).toBe(path.resolve('/test', 'Readme.md'));
     expect(transformed).toContain('<mochi-server-island');
   });
 

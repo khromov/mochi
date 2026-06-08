@@ -33,7 +33,7 @@ import { isEnhanceRequest, jsonError, jsonFailure, jsonRedirect, jsonSuccess } f
 import { csrfCheck, DEFAULT_FORM_CONTENT_TYPES, DEFAULT_PROTECTED_METHODS } from './csrf';
 import { applyFilter, initExtensions, runHook } from './extensions';
 import { buildPublicUrl } from './proxy';
-import { apiError, collectHeaderPairs, isHtmlResponse, MochiHttpError } from './utils';
+import { apiError, collectHeaderPairs, headResponse, isHtmlResponse, MochiHttpError, withHead } from './utils';
 import type { MochiEvent, MochiEventKind, MochiResolveOptions } from './hooks';
 import { applyResolveOptions } from './hooks';
 import { alternateSlashPattern, trailingSlashRedirect } from './trailingSlash';
@@ -53,7 +53,7 @@ import type { DebugBarData, DebugBarRuntimeData } from './requestContext';
 import { consoleLogger } from './consoleLogger';
 import { parse as devalueParse, stringify as devalueStringify } from 'devalue';
 import { ISLAND_FAILURE_CSS, ISLAND_FAILURE_DEV_CSS, islandFailureStub } from './web-components/islandFailureStub';
-import { scanPublicDir } from './publicDir';
+import { resolvePublicFiles, registerPublicRoutes } from './publicDir';
 import { startDevWatcher } from './devWatcher';
 import { buildPageCacheAdminRoutes, PAGE_CACHE_ADMIN_COMPONENT } from './pageCacheAdminRoutes';
 
@@ -162,33 +162,33 @@ export class Mochi {
     const warnShim = registry.debugBarEnabled
       ? `<script>window.__mochi_warnings=[];window.__mochi_warn=function(m){console.warn("[mochi] "+m);window.__mochi_warnings.push(m)}</script>`
       : '';
-    // Use function-form replacements: string-form `.replace` interprets `$&`,
-    // `$'`, `` $` ``, `$$` in the replacement as special patterns. Minified JS
-    // and user-serialized props can legitimately contain those sequences.
-    return template
-      .replace('{{mochi.head}}', () => logLevelScript + warnShim + result.head)
-      .replace(
-        '{{mochi.css}}',
-        () =>
-          `<style>mochi-hydratable-island, mochi-server-island { display: contents; } mochi-server-island[defer-on="visible"]:empty { display: block; min-height: 1px; }${ISLAND_FAILURE_CSS}${
-            registry.development ? ISLAND_FAILURE_DEV_CSS : ''
-          }</style>\n${cssLinks}`,
-      )
-      .replace('{{mochi.body}}', () => result.body + debugInfoScript + pageEntryScript + (registry.debugBarEnabled ? '<div id="mochi-dev-toolbar"></div>' : ''))
-      .replace(
-        '{{mochi.script}}',
-        () =>
-          (bootstrapUrl ? `<script type="module" src="${bootstrapUrl}"></script>` : '') +
-          serverIslandScript +
-          (opts.debugBarUrl
-            ? `<script type="module" src="${opts.debugBarUrl}"></script><script>window.__mochi_asset_prefix=${JSON.stringify(registry.assetPrefix)}</script>`
-            : '') +
-          (opts.liveReloadClientJs ? `<script>${opts.liveReloadClientJs}</script><mochi-live-reload></mochi-live-reload>` : ''),
-      );
+    // Single global-regex pass. The function-form replacer is also required
+    // for safety: string-form replacements interpret `$&`, `$'`, `` $` ``, `$$`
+    // as special patterns, which minified JS and serialized props can contain.
+    const slots: Record<'head' | 'css' | 'body' | 'script', () => string> = {
+      head: () => logLevelScript + warnShim + result.head,
+      css: () =>
+        `<style>mochi-hydratable-island, mochi-server-island { display: contents; } mochi-server-island[defer-on="visible"]:empty { display: block; min-height: 1px; }${ISLAND_FAILURE_CSS}${
+          registry.development ? ISLAND_FAILURE_DEV_CSS : ''
+        }</style>\n${cssLinks}`,
+      body: () => result.body + debugInfoScript + pageEntryScript + (registry.debugBarEnabled ? '<div id="mochi-dev-toolbar"></div>' : ''),
+      script: () =>
+        (bootstrapUrl ? `<script type="module" src="${bootstrapUrl}"></script>` : '') +
+        serverIslandScript +
+        (opts.debugBarUrl ? `<script type="module" src="${opts.debugBarUrl}"></script><script>window.__mochi_asset_prefix=${JSON.stringify(registry.assetPrefix)}</script>` : '') +
+        (opts.liveReloadClientJs ? `<script>${opts.liveReloadClientJs}</script><mochi-live-reload></mochi-live-reload>` : ''),
+    };
+    return template.replace(/\{\{mochi\.(head|css|body|script)\}\}/g, (_match, key: keyof typeof slots) => slots[key]());
   }
 
   static async serve(options: MochiServeOptions): Promise<Server<undefined>> {
-    await checkEnvironment();
+    const { svelteVersion } = await checkEnvironment();
+    let mochiVersion: string | null = null;
+    try {
+      mochiVersion = ((await Bun.file(path.join(import.meta.dir, '..', 'package.json')).json()) as { version: string }).version;
+    } catch {
+      // mochiVersion remains null if package.json cannot be read
+    }
     initExtensions(options);
     await runHook('mochi:init', { options });
     await initMochiConfig(options);
@@ -209,7 +209,10 @@ export class Mochi {
     const middleware = options.handle;
     const outDir = options.outDir ?? './.mochi';
     const publicDir = options.publicDir ?? './public';
-    const watchPaths = Array.from(new Set(['src', 'public', ...(options.additionalWatchPaths ?? [])]));
+    // Only a file-based shell can be watched/re-read; an inline-string shell
+    // has no source file, and the built-in default is bundled, not a runtime file.
+    const shellPath = options.htmlShell?.endsWith('.html') ? path.resolve(options.htmlShell) : undefined;
+    const watchPaths = Array.from(new Set(['src', 'public', ...(shellPath ? [shellPath] : []), ...(options.additionalWatchPaths ?? [])]));
 
     const emitError = (kind: MochiErrorKind, requestId: string, req: Request, url: URL, status: number, err: unknown, actionName?: string): void => {
       const message = err instanceof Error ? err.message : err == null ? 'Unknown error' : String(err);
@@ -244,6 +247,7 @@ export class Mochi {
     const { enabled: loggerEnabled = true, level: configuredLevel, ...loggerOptions } = options.logger ?? {};
     const resolvedLogLevel: LogLevel = configuredLevel ?? (development ? 'info' : DEFAULT_LOG_LEVEL);
     setLogLevel(resolvedLogLevel);
+
     if (loggerEnabled) {
       consoleLogger(loggerOptions);
     }
@@ -270,7 +274,11 @@ export class Mochi {
         assetPrefix: options.assetPrefix,
         svelteConfig,
         markdown: options.markdown,
+        optimize: options.optimize,
       });
+      // No-op in dev or when the option is off; production-without-manifest
+      // compiles at startup, so the shake must run before the first compile.
+      await registry.prepareShake();
       if (development) {
         for (const dir of [`${outDir}/svelte-client`, `${outDir}/svelte-compile`, `${outDir}/svelte-css`]) {
           rmSync(dir, { recursive: true, force: true });
@@ -279,13 +287,45 @@ export class Mochi {
       }
     }
 
+    const serverDebugInfo: Partial<DebugBarData> = {
+      mochiVersion: mochiVersion ?? undefined,
+      svelteVersion,
+      bunVersion: Bun.version,
+      config: {
+        mode: development ? 'development' : 'production',
+        port: options.port,
+        hostname: options.hostname,
+        debugBar: debugBarEnabled,
+        liveReload: liveReloadEnabled,
+        warmup: warmupEnabled,
+        compressServerIslandProps: options.compressServerIslandProps ?? false,
+        trailingSlash: options.trailingSlash ?? 'never',
+        assetPrefix: registry.assetPrefix || undefined,
+        logLevel: resolvedLogLevel,
+        middleware: !!middleware,
+        csrf: !!options.csrf,
+        proxy: !!options.proxy,
+        markdown: !!options.markdown,
+        routeCount: Object.keys(options.routes ?? {}).length,
+      },
+    };
+
     let shellTemplate: string;
     if (options.htmlShell) {
-      shellTemplate = options.htmlShell.endsWith('.html') ? await Bun.file(options.htmlShell).text() : options.htmlShell;
+      shellTemplate = shellPath ? await Bun.file(shellPath).text() : options.htmlShell;
     } else {
       shellTemplate = DEFAULT_HTML_SHELL;
     }
     shellTemplate = applyFilter('html:shell', shellTemplate, { options, development });
+
+    // Re-read the shell on change so dev edits to styling/head/scripts take
+    // effect. Both render closures below capture `shellTemplate` by reference,
+    // so reassigning it is picked up on the next request.
+    const reloadShell = shellPath
+      ? async () => {
+          shellTemplate = applyFilter('html:shell', await Bun.file(shellPath).text(), { options, development });
+        }
+      : undefined;
 
     const errorPagePath = options.errorPage ?? DEFAULT_ERROR_PAGE_PATH;
 
@@ -303,7 +343,11 @@ export class Mochi {
     if (options.routes) {
       for (const handler of Object.values(options.routes)) {
         if (isMochiPage(handler)) {
-          ssrEntrypoints.push(handler.componentPath);
+          if (existsSync(handler.componentPath)) {
+            ssrEntrypoints.push(handler.componentPath);
+          } else if (development) {
+            logger.warn(`Route component not found: ${handler.componentPath} — will compile when created`);
+          }
         }
       }
     }
@@ -353,19 +397,9 @@ export class Mochi {
     const mochiPageMap = new Map<string, MochiPageConfig>();
     const warmupHandlers: { pattern: string; handler: (req: Request, server: Server<undefined>) => Promise<Response> }[] = [];
     const wsHandlersMap = new Map<string, MochiWsHandlers<unknown>>();
-    let resolvedRouteModule = options.routeModule;
-    if (development && !resolvedRouteModule) {
-      for (const candidate of ['./src/routes.ts', './src/routes.js']) {
-        if (existsSync(candidate)) {
-          resolvedRouteModule = candidate;
-          break;
-        }
-      }
-    }
-    const routeHmr = development && !!resolvedRouteModule;
-    const apiHandlerMap = routeHmr ? new Map<string, MochiApiHandler>() : undefined;
-    const sseHandlerMap = routeHmr ? new Map<string, MochiSseHandler>() : undefined;
-    const pageConfigMap = routeHmr ? new Map<string, MochiPageHandlerConfig>() : undefined;
+    const apiHandlerMap = development ? new Map<string, MochiApiHandler>() : undefined;
+    const sseHandlerMap = development ? new Map<string, MochiSseHandler>() : undefined;
+    const pageConfigMap = development ? new Map<string, MochiPageHandlerConfig>() : undefined;
     const bunRoutes: Record<string, BunRouteValue> = {};
     const routeCounts = { page: 0, api: 0, ws: 0, sse: 0 };
     const trailingSlashPolicy = options.trailingSlash;
@@ -396,7 +430,9 @@ export class Mochi {
         if (pageConfigMap) {
           pageConfigMap.set(pattern, { serverProps, actions });
         }
-        await registry.compile(componentPath);
+        if (existsSync(componentPath)) {
+          await registry.compile(componentPath);
+        }
 
         const renderComponent = async (req: Request, ctx: MochiRequestContext, resolveOpts: MochiResolveOptions | undefined, statusOverride?: number): Promise<Response> => {
           const compileErrors = registry.getErrors();
@@ -432,7 +468,7 @@ export class Mochi {
             serverIslandClientJs,
             liveReloadClientJs,
             debugBarUrl: registry.getDebugBarUrl(),
-            debugInfo: result.debugBarData ? { ...result.debugBarData, liveReloadEnabled } : undefined,
+            debugInfo: result.debugBarData ? { ...result.debugBarData, liveReloadEnabled, ...serverDebugInfo } : undefined,
             logLevel: resolvedLogLevel,
             pageEntry: liveReloadEnabled ? path.resolve(componentPath) : undefined,
           });
@@ -495,8 +531,6 @@ export class Mochi {
           warmupHandlers.push({ pattern, handler: getHandler });
         }
 
-        // In HMR mode (pageConfigMap set), register POST for all pages so actions
-        // can be added via hot-swap without restart. Returns 405 if none exist.
         if (actions || pageConfigMap) {
           const postHandler = (req: Request, server: Server<undefined>): Promise<Response> =>
             wrapRequest(req, server, async (ctx, event, resolveOpts) => {
@@ -653,14 +687,14 @@ export class Mochi {
             });
 
           return {
-            bunRouteValue: {
+            bunRouteValue: withHead({
               GET: getHandler,
               POST: postHandler,
-            } as unknown as BunRouteValue,
+            } as unknown as BunRouteValue),
             type: 'page',
           };
         }
-        return { bunRouteValue: getHandler, type: 'page' };
+        return { bunRouteValue: withHead(getHandler), type: 'page' };
       } else if (isMochiApi(handler)) {
         if (apiHandlerMap) {
           apiHandlerMap.set(pattern, handler.handler);
@@ -714,7 +748,7 @@ export class Mochi {
             return final;
           });
         };
-        return { bunRouteValue, type: 'api' };
+        return { bunRouteValue: withHead(bunRouteValue), type: 'api' };
       } else if (isMochiWs(handler)) {
         const wsHandlers = handler.handlers;
         wsHandlersMap.set(pattern, wsHandlers);
@@ -724,7 +758,20 @@ export class Mochi {
           if ('earlyResponse' in setup) {
             return setup.earlyResponse;
           }
-          const { ctx: wsHookCtx, start, url: wsUrl, params: wsParams } = setup;
+          const { ctx: wsHookCtx, start, requestId: wsRequestId, url: wsUrl, params: wsParams } = setup;
+          const wsPath = wsUrl.pathname + wsUrl.search;
+          // A non-upgrade request (e.g. a HEAD probe or plain GET) never becomes
+          // a socket, so it never emits `ws:open`.
+          const emitWsReject = (status: number): void => {
+            mochiEvents.emit('request', {
+              requestId: wsRequestId,
+              kind: 'error',
+              method: req.method,
+              path: wsPath,
+              status,
+              duration: performance.now() - start,
+            });
+          };
           requestContext.run(wsHookCtx, () => {
             runHook('route:matched', {
               pattern,
@@ -740,6 +787,7 @@ export class Mochi {
           if (liveWsHandlers.upgrade) {
             const result = await liveWsHandlers.upgrade(req, wsParams);
             if (result === false) {
+              emitWsReject(400);
               return new Response('WebSocket upgrade rejected', {
                 status: 400,
               });
@@ -755,16 +803,17 @@ export class Mochi {
             data: {
               __mochiRoutePattern: pattern,
               __mochiOpenedAt: performance.now(),
-              __mochiPath: wsUrl.pathname + wsUrl.search,
+              __mochiPath: wsPath,
               user: userData,
             } satisfies MochiWsData,
           });
 
           if (!success) {
+            emitWsReject(500);
             return new Response('WebSocket upgrade failed', { status: 500 });
           }
           mochiEvents.emit('ws:open', {
-            path: wsUrl.pathname + wsUrl.search,
+            path: wsPath,
             duration: performance.now() - start,
           });
           return undefined;
@@ -781,8 +830,21 @@ export class Mochi {
           if ('earlyResponse' in setup) {
             return setup.earlyResponse;
           }
-          const { ctx: sseHookCtx, url, params: sseParams } = setup;
+          const { ctx: sseHookCtx, start: sseStart, requestId: sseRequestId, url, params: sseParams } = setup;
           const path = url.pathname + url.search;
+          // SSE streams are GET-only. HEAD is not supported: answering it would
+          // mean either opening a stream (defeats the point of a body-less probe)
+          if (req.method === 'HEAD') {
+            mochiEvents.emit('request', {
+              requestId: sseRequestId,
+              kind: 'error',
+              method: req.method,
+              path,
+              status: 405,
+              duration: performance.now() - sseStart,
+            });
+            return new Response(null, { status: 405, headers: { Allow: 'GET' } });
+          }
           requestContext.run(sseHookCtx, () => {
             runHook('route:matched', {
               pattern,
@@ -899,7 +961,7 @@ export class Mochi {
     }
 
     // Register server island endpoint
-    bunRoutes[`${registry.assetPrefix}/island/:componentName`] = async (req: Request, server: Server<undefined>): Promise<Response> => {
+    bunRoutes[`${registry.assetPrefix}/island/:componentName`] = withHead(async (req: Request, server: Server<undefined>): Promise<Response> => {
       const setup = buildRequestContext(req, server, {
         kind: 'island',
         pattern: `${registry.assetPrefix}/island/:componentName`,
@@ -1005,7 +1067,7 @@ export class Mochi {
           },
         });
       });
-    };
+    });
 
     if (process.env.MOCHI_MEMORY_PROBE === '1') {
       bunRoutes['/__mochi/health/memory'] = (): Response => {
@@ -1021,23 +1083,12 @@ export class Mochi {
     // rebuild cleanly when files are added/removed/renamed.
     const baseBunRoutes: Record<string, BunRouteValue> = { ...bunRoutes };
 
-    // Register static public files. Dev mode reads from `./public` directly;
-    // production reads the prebuilt map from the manifest. User-defined routes
-    // always win — we only add a public route when no user route claims the path.
-    // A fresh Map is passed to the `publicDir:scan` filter so user mutation
-    // can't poison the registry's copy in production.
-    const scannedPublicFiles = development ? await scanPublicDir(publicDir) : new Map(registry.getPublicFiles());
-    const initialPublicFiles = await applyFilter('publicDir:scan', scannedPublicFiles, {
-      publicDir,
-      development,
-    });
-    for (const [urlPath, diskPath] of initialPublicFiles) {
-      if (!(urlPath in bunRoutes)) {
-        bunRoutes[urlPath] = Bun.file(diskPath);
-      } else {
-        logger.warn(`Public file "${diskPath}" skipped: URL "${urlPath}" is already registered as a route.`);
-      }
-    }
+    // Register static public files. Dev scans the public dir live, production
+    // reads the prebuilt manifest map; either way user-defined routes win, so a
+    // public route is only added when no user route claims the path. The
+    // dev-watcher reload rebuilds these the same way via the same helpers.
+    const initialPublicFiles = await resolvePublicFiles({ publicDir, development, prebuilt: registry.getPublicFiles() });
+    registerPublicRoutes(bunRoutes, initialPublicFiles);
 
     const userFetch = options.fetch;
 
@@ -1106,6 +1157,9 @@ export class Mochi {
         status: response.status,
         duration: performance.now() - start,
       });
+      if (req.method === 'HEAD') {
+        return headResponse(response);
+      }
       return response;
     };
 
@@ -1224,7 +1278,7 @@ export class Mochi {
     }
 
     if (development) {
-      startDevWatcher({
+      await startDevWatcher({
         registry,
         server,
         options,
@@ -1236,14 +1290,16 @@ export class Mochi {
         publicDir,
         watchPaths,
         development,
-        routeModule: resolvedRouteModule,
+        entryPath: Bun.main,
         apiHandlerMap,
         sseHandlerMap,
         wsHandlersMap,
         pageConfigMap,
-        registerRoutePattern: routeHmr ? registerRoutePattern : undefined,
-        unregisterRoutePattern: routeHmr ? unregisterRoutePattern : undefined,
+        registerRoutePattern,
+        unregisterRoutePattern,
         trailingSlashPolicy,
+        shellPath,
+        reloadShell,
       });
     }
 

@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.6.0](https://github.com/khromov/mochi/compare/mochi-framework-v0.5.1...mochi-framework-v0.6.0) (2026-06-07)
+
+
+### Features
+
+* add svelte-shaker support and remove routes.ts convention in favor of single index.ts ([#74](https://github.com/khromov/mochi/issues/74)) ([ec4487f](https://github.com/khromov/mochi/commit/ec4487f4dedd75fd5e72be2b38054a4445342178))
+* added a new "info" tab to debug bar showing runtime versions and mochi configuration ([a6a1792](https://github.com/khromov/mochi/commit/a6a1792252fd3ec2a063c7e834a9709be9cc26ff))
+
+
+### Bug Fixes
+
+* **mochi-framework:** various hmr edge case fixes ([ecb627d](https://github.com/khromov/mochi/commit/ecb627daaf75df8f8b39599b7889abc66a624876))
+* trigger hmr when shell.html is edited ([#72](https://github.com/khromov/mochi/issues/72)) ([d519b89](https://github.com/khromov/mochi/commit/d519b891ca8d2dc39b4ce7e1e6c3970497f3ce22))
+* various hmr edge case fixes ([79048e3](https://github.com/khromov/mochi/commit/79048e3cad8447882feac1362584c63becef75fb))
+
+## [0.5.1](https://github.com/khromov/mochi/compare/mochi-framework-v0.5.0...mochi-framework-v0.5.1) (2026-06-04)
+
+
+### Bug Fixes
+
+* stray {{mochi.script}} text rendered on pages that mention the placeholder ([#67](https://github.com/khromov/mochi/issues/67)) ([38d3ee4](https://github.com/khromov/mochi/commit/38d3ee4a88660c8db728196b43abc74e02c42546))
+* windows support ([8547194](https://github.com/khromov/mochi/commit/854719458680d306910eac12c3aa43feaf3e1f96))
+
 ## [0.5.0](https://github.com/khromov/mochi/compare/mochi-framework-v0.4.0...mochi-framework-v0.5.0) (2026-05-28)
 
 

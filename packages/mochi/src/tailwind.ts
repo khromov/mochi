@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { compile, optimize } from '@tailwindcss/node';
+import { compile, optimize, type Resolver } from '@tailwindcss/node';
 import { Scanner, type SourceEntry } from '@tailwindcss/oxide';
 import { mochiEvents } from './events';
 import { logger } from './log';
@@ -16,6 +16,26 @@ export interface TailwindOptions {
 }
 
 /**
+ * Bun-backed resolver passed to Tailwind as both `customCssResolver` and
+ * `customJsResolver`. enhanced-resolve (Tailwind's default resolver) escapes
+ * `#`/`?` in paths as `\0#` and fails to unescape before readFile, so any
+ * install path containing those chars crashes; Bun's resolver returns clean
+ * paths. Returning `undefined` for ids Bun can't resolve is intentional:
+ * Tailwind treats a falsy return as "defer to the default resolver" (it only
+ * uses a custom resolver's result when truthy), so this only *replaces* the
+ * default for the paths Bun handles and never narrows what's resolvable.
+ */
+export function createBunResolver(): Resolver {
+  return async (id, resolveBase) => {
+    try {
+      return Bun.resolveSync(id, resolveBase);
+    } catch {
+      return undefined;
+    }
+  };
+}
+
+/**
  * Run Tailwind once: compile the input CSS, scan configured sources for
  * candidate classes, build the final CSS, and write it to `output` only when
  * the bytes actually differ. The skip-on-equal write avoids ping-ponging the
@@ -27,10 +47,14 @@ export async function compileTailwind(opts: TailwindOptions): Promise<void> {
   const base = opts.base ? path.resolve(opts.base) : path.dirname(inputAbs);
   const inputCss = await Bun.file(inputAbs).text();
 
+  const bunResolver = createBunResolver();
+
   const compiled = await compile(inputCss, {
     base,
     from: inputAbs,
     onDependency: () => {},
+    customCssResolver: bunResolver,
+    customJsResolver: bunResolver,
   });
 
   const scanner = new Scanner({ sources: compiled.sources as SourceEntry[] });

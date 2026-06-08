@@ -15,11 +15,12 @@ description: 'Replace the default HTML wrapper with a custom shell template cont
 ```ts
 // file: src/index.ts
 import { Mochi } from 'mochi-framework';
-import { routes } from './routes';
 
 await Mochi.serve({
   htmlShell: './src/shell.html',
-  routes,
+  routes: {
+    '/': Mochi.page('./src/Home.svelte'),
+  },
 });
 ```
 

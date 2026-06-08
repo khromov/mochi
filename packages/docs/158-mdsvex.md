@@ -26,33 +26,25 @@ bun add mdsvex@^0.12 rehype-slug@^6
 Mochi is tested against `mdsvex ^0.12` and `rehype-slug ^6`. Other rehype/remark
 plugins follow their own version ranges — install whichever your pipeline needs.
 
+With `markdown` configured, `.md` and `.svx` files compile through the supplied
+pipeline and can be used anywhere a `.svelte` component is accepted — including
+as a `Mochi.page()` route target:
+
 ```ts
 // src/index.ts
 import { Mochi } from 'mochi-framework';
 import { compile as mdsvexCompile } from 'mdsvex';
 import rehypeSlug from 'rehype-slug';
-import { routes } from './routes';
 
 await Mochi.serve({
   markdown: {
     compile: mdsvexCompile,
     rehypePlugins: [rehypeSlug],
   },
-  routes,
+  routes: {
+    '/about': Mochi.page('./src/about.md'),
+  },
 });
-```
-
-With `markdown` configured, `.md` and `.svx` files compile through the supplied
-pipeline and can be used anywhere a `.svelte` component is accepted — including
-as a `Mochi.page()` route target:
-
-```ts
-// src/routes.ts
-import { Mochi } from 'mochi-framework';
-
-export const routes = {
-  '/about': Mochi.page('./src/about.md'),
-};
 ```
 
 Markdown can embed Svelte syntax — a top-level `<script>` block, `$props`, and

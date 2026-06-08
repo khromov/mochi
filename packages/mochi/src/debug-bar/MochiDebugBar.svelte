@@ -5,13 +5,14 @@
   import IslandsPanel from './IslandsPanel.svelte';
   import WarningsPanel from './WarningsPanel.svelte';
   import BundlesPanel from './BundlesPanel.svelte';
+  import InfoPanel from './InfoPanel.svelte';
   import { cleanupHighlight } from './highlight';
   import { debugBarState } from './state.svelte';
   import { getPropsWarnLevel, formatSize } from './utils';
 
   const STORAGE_KEY = 'mochi:debug:collapsed';
 
-  type Panel = 'warnings' | 'islands' | 'request' | 'bundles' | null;
+  type Panel = 'warnings' | 'islands' | 'request' | 'bundles' | 'info' | null;
   let activePanel: Panel = $state(null);
 
   let hasDebugInfo = $state(false);
@@ -71,6 +72,7 @@
   <IslandsPanel open={activePanel === 'islands'} onclose={() => (activePanel = null)} />
   <BundlesPanel open={activePanel === 'bundles'} onclose={() => (activePanel = null)} />
   <RequestPanel open={activePanel === 'request'} onclose={() => (activePanel = null)} />
+  <InfoPanel open={activePanel === 'info'} onclose={() => (activePanel = null)} />
 
   <div class="bar" class:is-collapsed={collapsed}>
     <button
@@ -85,6 +87,7 @@
     </button>
     <div class="bar-actions" aria-hidden={collapsed}>
       {#if hasDebugInfo}
+        <button class="btn info-btn" onclick={() => toggle('info')} tabindex={collapsed ? -1 : 0}>Info</button>
         <button class="btn request-btn" onclick={() => toggle('request')} tabindex={collapsed ? -1 : 0}>Request</button>
       {/if}
       <button
@@ -303,6 +306,16 @@
     background: #353f47;
     color: #d4e0e8;
     border-color: #6a7a86;
+  }
+  .info-btn {
+    background: #243038;
+    color: #b8cdd4;
+    border-color: #455560;
+  }
+  .info-btn:hover {
+    background: #2d3b44;
+    color: #d4e4ec;
+    border-color: #7a96a4;
   }
   .bundles-btn {
     position: relative;

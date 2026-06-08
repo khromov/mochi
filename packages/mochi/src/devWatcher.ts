@@ -4,13 +4,13 @@ import path from 'node:path';
 import chokidar from 'chokidar';
 import debounce from './vendor/debounce/index';
 import type { ComponentRegistry } from './ComponentRegistry';
-import { applyFilter } from './extensions';
 import { mochiEvents } from './events';
 import type { MochiFileChangeType } from './events';
 import { logger } from './log';
 import { evictPreprocessCacheEntry } from './preprocessCache';
+import { extractServeOptions } from './extractServeOptions';
 import { buildPublicUrl } from './proxy';
-import { scanPublicDir } from './publicDir';
+import { resolvePublicFiles, registerPublicRoutes } from './publicDir';
 import { loadSvelteConfig } from './svelteConfig';
 import { alternateSlashPattern } from './trailingSlash';
 import {
@@ -31,6 +31,18 @@ import {
 
 const FILE_CHANGE_EVENTS = new Set<string>(['add', 'change', 'unlink', 'addDir', 'unlinkDir']);
 
+// Chokidar reports a rename as unlink-old + add-new, so logging the verb per
+// event surfaces both the old and new filename instead of just "changed".
+function publicChangeVerb(event: string): string {
+  if (event === 'add' || event === 'addDir') {
+    return 'added';
+  }
+  if (event === 'unlink' || event === 'unlinkDir') {
+    return 'removed';
+  }
+  return 'changed';
+}
+
 export interface DevWatcherDeps {
   registry: ComponentRegistry;
   server: Server<undefined>;
@@ -43,7 +55,7 @@ export interface DevWatcherDeps {
   publicDir: string;
   watchPaths: string[];
   development: boolean;
-  routeModule?: string;
+  entryPath: string;
   apiHandlerMap?: Map<string, MochiApiHandler>;
   sseHandlerMap?: Map<string, MochiSseHandler>;
   wsHandlersMap?: Map<string, MochiWsHandlers<unknown>>;
@@ -51,6 +63,8 @@ export interface DevWatcherDeps {
   registerRoutePattern?: (pattern: string, handler: MochiRouteValue) => Promise<RouteRegistrationResult | null>;
   unregisterRoutePattern?: (pattern: string) => void;
   trailingSlashPolicy?: 'never' | 'always';
+  shellPath?: string;
+  reloadShell?: () => Promise<void>;
 }
 
 /**
@@ -60,7 +74,7 @@ export interface DevWatcherDeps {
  * chunks are ready. CSS edits take a fast-path that re-bundles imported CSS
  * without an SSR recompile; public-dir edits rescan and reload the route map.
  */
-export function startDevWatcher(deps: DevWatcherDeps): void {
+export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
   const {
     registry,
     server,
@@ -73,7 +87,7 @@ export function startDevWatcher(deps: DevWatcherDeps): void {
     publicDir,
     watchPaths,
     development,
-    routeModule,
+    entryPath,
     apiHandlerMap,
     sseHandlerMap,
     wsHandlersMap,
@@ -81,6 +95,8 @@ export function startDevWatcher(deps: DevWatcherDeps): void {
     registerRoutePattern,
     unregisterRoutePattern,
     trailingSlashPolicy,
+    shellPath,
+    reloadShell,
   } = deps;
 
   const liveReloadHandler = (req: Request, srv: Server<undefined>): Response => {
@@ -139,6 +155,14 @@ export function startDevWatcher(deps: DevWatcherDeps): void {
       let failed = false;
       try {
         summary = await registry.recompileChanged(filename);
+        if (summary.pages.size === 0) {
+          const resolved = path.resolve(filename);
+          const componentPath = routeComponentPaths.get(resolved);
+          if (componentPath) {
+            await registry.compile(componentPath, { force: true });
+            summary = { pages: new Set([resolved]), clientBundleCount: 0 };
+          }
+        }
       } catch (e) {
         failed = true;
         logger.warn(`Rebuild failed: ${e instanceof Error ? e.message : e}`);
@@ -190,25 +214,54 @@ export function startDevWatcher(deps: DevWatcherDeps): void {
     });
   }, 100);
 
-  let routeModuleDeps: Set<string> = new Set();
-  const routeModuleOutDir = path.resolve(`${outDir}/route-module`);
+  // The HTML shell is read once at startup and isn't part of any page's Svelte
+  // dependency graph, so a generic recompile would report 0 affected pages and
+  // skip the reload. Re-read it and broadcast — every page may depend on the
+  // shell's styling/head/scripts, so all tabs reload.
+  const triggerShellReload = reloadShell
+    ? debounce((filename: string) => {
+        reloadChain = reloadChain.then(async () => {
+          mochiEvents.emit('recompile:start', { trigger: 'html-shell', path: filename, pageCount: 0 });
+          const start = performance.now();
+          try {
+            await reloadShell();
+          } catch (e) {
+            logger.warn(`Shell reload failed: ${e instanceof Error ? e.message : e}`);
+          }
+          mochiEvents.emit('recompile:complete', {
+            trigger: 'html-shell',
+            path: filename,
+            pageCount: 0,
+            pages: [],
+            clientBundleCount: 0,
+            durationMs: performance.now() - start,
+          });
+          notifyClients();
+        });
+      }, 250)
+    : undefined;
 
-  async function buildRouteModule(): Promise<Record<string, unknown> | null> {
-    if (!routeModule) {
-      return null;
-    }
+  // --- Entry-based route HMR ---
+  // Build the entry module to discover its transitive deps. When a dep changes,
+  // rebuild and re-extract routes via extractServeOptions, then hot-swap
+  // handlers in place so the running server picks up route changes without a
+  // restart.
+  let entryDeps: Set<string> = new Set();
+  const entryBuildOutDir = path.resolve(`${outDir}/entry-hmr`);
+
+  async function buildEntry(): Promise<Record<string, unknown> | null> {
     const result = await Bun.build({
-      entrypoints: [path.resolve(routeModule)],
+      entrypoints: [path.resolve(entryPath)],
       packages: 'external',
       target: 'bun',
-      outdir: routeModuleOutDir,
-      naming: { entry: 'routes.js' },
+      outdir: entryBuildOutDir,
+      naming: { entry: 'entry.js' },
       metafile: true,
       throw: false,
     });
     if (!result.success) {
       const msgs = result.logs.map((l) => l.message || String(l)).join('\n');
-      logger.warn(`Route module build failed:\n${msgs}`);
+      logger.warn(`Entry rebuild failed:\n${msgs}`);
       return null;
     }
     const newDeps = new Set<string>();
@@ -219,20 +272,28 @@ export function startDevWatcher(deps: DevWatcherDeps): void {
         }
       }
     }
-    routeModuleDeps = newDeps;
-    const outFile = path.resolve(routeModuleOutDir, 'routes.js');
-    // Cache-bust via query string — each import creates a new module entry in Bun's
-    // module cache that is never evicted. Acceptable for a dev-only path; would need
-    // Loader.registry cleanup if Bun exposes it in the future.
-    const mod = await import(outFile + `?t=${Date.now()}`);
-    if (!mod.routes) {
-      logger.warn('Route module does not export "routes" — skipping update');
+    entryDeps = newDeps;
+    const outFile = path.resolve(entryBuildOutDir, 'entry.js');
+    const serveOptions = await extractServeOptions(outFile, { fresh: true });
+    if (!serveOptions?.routes) {
+      logger.warn('Entry rebuild produced no routes — skipping update');
       return null;
     }
-    return mod.routes;
+    const freshRoutes = serveOptions.routes as Record<string, unknown>;
+
+    const newComponentPaths = new Map<string, string>();
+    for (const handler of Object.values(freshRoutes)) {
+      if (isMochiPage(handler)) {
+        newComponentPaths.set(path.resolve(handler.componentPath), handler.componentPath);
+      }
+    }
+    routeComponentPaths = newComponentPaths;
+
+    return freshRoutes;
   }
 
-  let knownRouteModulePatterns = new Set<string>();
+  let knownEntryPatterns = new Set<string>();
+  let routeComponentPaths: Map<string, string> = new Map();
 
   function routeType(handler: unknown): 'api' | 'ws' | 'sse' | 'page' | null {
     if (isMochiApi(handler)) {
@@ -302,7 +363,7 @@ export function startDevWatcher(deps: DevWatcherDeps): void {
         continue;
       }
 
-      if (knownRouteModulePatterns.has(pattern)) {
+      if (knownEntryPatterns.has(pattern)) {
         const currentType = currentRouteType(pattern);
 
         if (currentType && currentType !== type && registerRoutePattern && unregisterRoutePattern) {
@@ -315,7 +376,6 @@ export function startDevWatcher(deps: DevWatcherDeps): void {
             counts.removed.push(pattern);
           }
         } else {
-          // Same type — update the map in place
           if (isMochiApi(handler) && apiHandlerMap?.has(pattern)) {
             apiHandlerMap.set(pattern, handler.handler);
             counts.api++;
@@ -335,19 +395,22 @@ export function startDevWatcher(deps: DevWatcherDeps): void {
           }
         }
       } else if (registerRoutePattern) {
-        // New pattern
-        const result = await registerRoutePattern(pattern, handler as MochiRouteValue);
-        if (result) {
-          addBunRoute(pattern, result.bunRouteValue);
-          counts[result.type]++;
+        try {
+          const result = await registerRoutePattern(pattern, handler as MochiRouteValue);
+          if (result) {
+            addBunRoute(pattern, result.bunRouteValue);
+            counts[result.type]++;
+            counts.added.push(pattern);
+          }
+        } catch (e) {
+          logger.warn(`Failed to register route ${pattern}: ${e instanceof Error ? e.message : e}`);
           counts.added.push(pattern);
         }
       }
     }
 
-    // Removed patterns
     if (unregisterRoutePattern) {
-      for (const pattern of knownRouteModulePatterns) {
+      for (const pattern of knownEntryPatterns) {
         if (!freshPatterns.has(pattern)) {
           unregisterRoutePattern(pattern);
           removeBunRoute(pattern);
@@ -356,96 +419,90 @@ export function startDevWatcher(deps: DevWatcherDeps): void {
       }
     }
 
-    knownRouteModulePatterns = freshPatterns;
+    knownEntryPatterns = freshPatterns;
     return counts;
   }
 
-  const triggerRouteReload = routeModule
-    ? debounce((filename: string) => {
-        reloadChain = reloadChain.then(async () => {
-          mochiEvents.emit('recompile:start', { trigger: 'route-module', path: filename, pageCount: 0 });
-          const start = performance.now();
-          let counts: { updated: number; added: string[]; removed: string[]; api: number; ws: number; sse: number; page: number } = {
-            updated: 0,
-            added: [],
-            removed: [],
-            api: 0,
-            ws: 0,
-            sse: 0,
-            page: 0,
-          };
-          try {
-            const freshRoutes = await buildRouteModule();
-            if (freshRoutes) {
-              counts = await applyRouteChanges(freshRoutes);
-              const hasChanges = counts.updated > 0 || counts.added.length > 0 || counts.removed.length > 0;
-              if (hasChanges) {
-                const parts: string[] = [];
-                if (counts.api) {
-                  parts.push(`${counts.api} api`);
-                }
-                if (counts.ws) {
-                  parts.push(`${counts.ws} ws`);
-                }
-                if (counts.sse) {
-                  parts.push(`${counts.sse} sse`);
-                }
-                if (counts.page) {
-                  parts.push(`${counts.page} page`);
-                }
-                if (counts.added.length) {
-                  parts.push(`+${counts.added.length} new`);
-                }
-                if (counts.removed.length) {
-                  parts.push(`-${counts.removed.length} removed`);
-                }
-                logger.info(`Route module rebuilt — ${parts.join(', ')}`);
-              }
-              if (counts.added.length > 0 || counts.removed.length > 0) {
-                server.reload({
-                  routes: {
-                    ...bunRoutes,
-                    '/__mochi_live_reload': liveReloadHandler,
-                  },
-                  fetch: composedFetch,
-                } as Parameters<typeof server.reload>[0]);
-              }
-            }
-          } catch (e) {
-            logger.warn(`Route module rebuild failed: ${e instanceof Error ? e.message : e}`);
-          }
-          mochiEvents.emit('recompile:complete', {
-            trigger: 'route-module',
-            path: filename,
-            pageCount: 0,
-            pages: [],
-            clientBundleCount: 0,
-            durationMs: performance.now() - start,
-          });
+  const triggerEntryReload = debounce((filename: string) => {
+    reloadChain = reloadChain.then(async () => {
+      mochiEvents.emit('recompile:start', { trigger: 'entry', path: filename, pageCount: 0 });
+      const start = performance.now();
+      let counts: { updated: number; added: string[]; removed: string[]; api: number; ws: number; sse: number; page: number } = {
+        updated: 0,
+        added: [],
+        removed: [],
+        api: 0,
+        ws: 0,
+        sse: 0,
+        page: 0,
+      };
+      try {
+        const freshRoutes = await buildEntry();
+        if (freshRoutes) {
+          counts = await applyRouteChanges(freshRoutes);
           const hasChanges = counts.updated > 0 || counts.added.length > 0 || counts.removed.length > 0;
           if (hasChanges) {
-            notifyClients();
+            const parts: string[] = [];
+            if (counts.api) {
+              parts.push(`${counts.api} api`);
+            }
+            if (counts.ws) {
+              parts.push(`${counts.ws} ws`);
+            }
+            if (counts.sse) {
+              parts.push(`${counts.sse} sse`);
+            }
+            if (counts.page) {
+              parts.push(`${counts.page} page`);
+            }
+            if (counts.added.length) {
+              parts.push(`+${counts.added.length} new`);
+            }
+            if (counts.removed.length) {
+              parts.push(`-${counts.removed.length} removed`);
+            }
+            logger.info(`Entry rebuilt — ${parts.join(', ')}`);
           }
-        });
-      }, 100)
-    : undefined;
-
-  // Build the route module before the watcher starts so routeModuleDeps and
-  // knownRouteModulePatterns are populated before any file-change events arrive.
-  // The watcher uses `ignoreInitial: true` and real FS events arrive on a later
-  // tick, so the microtask-queued build always wins.
-  if (routeModule) {
-    reloadChain = reloadChain.then(async () => {
-      try {
-        const freshRoutes = await buildRouteModule();
-        if (freshRoutes) {
-          knownRouteModulePatterns = new Set(Object.keys(freshRoutes));
+          if (counts.added.length > 0 || counts.removed.length > 0) {
+            server.reload({
+              routes: {
+                ...bunRoutes,
+                '/__mochi_live_reload': liveReloadHandler,
+              },
+              fetch: composedFetch,
+            } as Parameters<typeof server.reload>[0]);
+          }
         }
       } catch (e) {
-        logger.warn(`Initial route module build failed: ${e instanceof Error ? e.message : e}`);
+        logger.warn(`Entry rebuild failed: ${e instanceof Error ? e.message : e}`);
+      }
+      mochiEvents.emit('recompile:complete', {
+        trigger: 'entry',
+        path: filename,
+        pageCount: 0,
+        pages: [],
+        clientBundleCount: 0,
+        durationMs: performance.now() - start,
+      });
+      const hasChanges = counts.updated > 0 || counts.added.length > 0 || counts.removed.length > 0;
+      if (hasChanges) {
+        notifyClients();
       }
     });
-  }
+  }, 100);
+
+  // Build once at startup so entryDeps and knownEntryPatterns are populated
+  // before any file-change events arrive.
+  reloadChain = reloadChain.then(async () => {
+    try {
+      const freshRoutes = await buildEntry();
+      if (freshRoutes) {
+        knownEntryPatterns = new Set(Object.keys(freshRoutes));
+      }
+    } catch (e) {
+      logger.warn(`Initial entry build failed: ${e instanceof Error ? e.message : e}`);
+    }
+  });
 
   const finalWatchPaths = watchPaths.filter((p) => existsSync(p));
   const outDirAbs = path.resolve(outDir);
@@ -459,24 +516,47 @@ export function startDevWatcher(deps: DevWatcherDeps): void {
     cwd: process.cwd(),
   });
 
+  const watcherReady =
+    finalWatchPaths.length === 0
+      ? // chokidar never emits 'ready' for an empty watch set, so don't wait on
+        // it — there's nothing being watched, hence no startup race to guard.
+        Promise.resolve()
+      : new Promise<void>((resolve) => {
+          let settled = false;
+          const done = () => {
+            if (settled) {
+              return;
+            }
+            settled = true;
+            resolve();
+          };
+          watcher.once('ready', done);
+          // Safety net so serve() can't hang indefinitely if 'ready' never
+          // arrives. unref so it can't keep the process alive. Reaching this
+          // means chokidar never signalled ready for a non-empty watch set
+          setTimeout(() => {
+            if (settled) {
+              return;
+            }
+            logger.error(
+              `File watcher never became ready within 10s for ${finalWatchPaths.length} path(s): ${finalWatchPaths.join(', ')}. ` +
+                `Live reload may not work — please report this at https://github.com/khromov/mochi/issues`,
+            );
+            done();
+          }, 10000).unref?.();
+        });
+
   const publicDirRel = path.relative(process.cwd(), path.resolve(publicDir));
-  let reloadPublic: ((filePath: string) => void) | undefined;
+  // Rebuild from the same helpers the startup path uses, so the encoding and
+  // conflict rules can't diverge between the two. The reload always rescans the
+  // whole dir, so it doesn't need the changed path — logging happens per-event
+  // in the watcher handler below (a rename surfaces as remove-old + add-new).
+  let reloadPublic: (() => void) | undefined;
   if (existsSync(publicDir)) {
-    reloadPublic = debounce(async (filePath: string) => {
-      logger.info(`Public file changed: ${filePath} — reloading routes`);
-      const rescanned = await scanPublicDir(publicDir);
-      const freshPublic = await applyFilter('publicDir:scan', rescanned, {
-        publicDir,
-        development,
-      });
+    reloadPublic = debounce(async () => {
+      const freshPublic = await resolvePublicFiles({ publicDir, development });
       const nextRoutes: Record<string, BunRouteValue> = { ...baseBunRoutes };
-      for (const [urlPath, diskPath] of freshPublic) {
-        if (!(urlPath in nextRoutes)) {
-          nextRoutes[urlPath] = Bun.file(diskPath);
-        } else {
-          logger.warn(`Public file "${diskPath}" skipped: URL "${urlPath}" is already registered as a route.`);
-        }
-      }
+      registerPublicRoutes(nextRoutes, freshPublic);
       nextRoutes['/__mochi_live_reload'] = liveReloadHandler;
       server.reload({
         routes: nextRoutes,
@@ -498,14 +578,15 @@ export function startDevWatcher(deps: DevWatcherDeps): void {
         evictPreprocessCacheEntry(path.resolve(filePath));
         registry.evict(path.resolve(filePath));
       }
-      if (reloadPublic && filePath.startsWith(publicDirRel + path.sep)) {
-        reloadPublic(filePath);
+      if (triggerShellReload && shellPath && path.resolve(filePath) === shellPath) {
+        triggerShellReload(filePath);
+      } else if (reloadPublic && filePath.startsWith(publicDirRel + path.sep)) {
+        logger.info(`Public file ${publicChangeVerb(event)}: ${filePath} — reloading routes`);
+        reloadPublic();
       } else if (filePath.endsWith('.css')) {
         triggerCssReload(filePath);
-      } else if (triggerRouteReload && routeModuleDeps.has(path.resolve(filePath))) {
-        // Route module deps are handler .ts/.js files not in the Svelte graph —
-        // skip SSR recompile and only rebuild the route module.
-        triggerRouteReload(filePath);
+      } else if (!filePath.endsWith('.svelte') && entryDeps.has(path.resolve(filePath))) {
+        triggerEntryReload(filePath);
       } else {
         triggerReload(filePath);
       }
@@ -523,7 +604,7 @@ export function startDevWatcher(deps: DevWatcherDeps): void {
       const start = performance.now();
       let summary: { pages: Set<string>; clientBundleCount: number } = { pages: new Set(), clientBundleCount: 0 };
       try {
-        registry.svelteConfig = await loadSvelteConfig();
+        registry.svelteConfig = await loadSvelteConfig(undefined, { reload: true, tempDir: outDir });
         summary = await registry.recompileAll();
       } catch (e) {
         logger.warn(`Svelte config reload failed: ${e instanceof Error ? e.message : e}`);
@@ -555,4 +636,6 @@ export function startDevWatcher(deps: DevWatcherDeps): void {
     },
     fetch: composedFetch,
   } as Parameters<typeof server.reload>[0]);
+
+  return watcherReady;
 }

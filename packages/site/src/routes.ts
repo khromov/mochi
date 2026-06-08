@@ -1,9 +1,5 @@
-import { compile as mdsvexCompile } from 'mdsvex';
-import rehypeSlug from 'rehype-slug';
-import rehypeExternalLinks from './lib/rehypeExternalLinks';
 import { Mochi, error, getRequestContext } from 'mochi-framework';
-import type { MochiBuildOptions, MarkdownConfig, MochiRouteValue } from 'mochi-framework';
-import { highlightCode } from './lib/highlight.server';
+import type { MochiRouteValue } from 'mochi-framework';
 import { buildDocsNav, buildLlmsTxt, buildLlmsFullTxt, buildSitemapXml, getDoc, getDocLlmsTxt, getDocNeighbors, loadDocs } from './lib/docs';
 import { profilerEnabled, startProfiler, stopProfiler } from './lib/profiler';
 import { routes as apiRoutes } from './demos/api/routes';
@@ -40,10 +36,10 @@ import { routes as urlRoutes } from './demos/url/routes';
 import { routes as viewTransitionsRoutes } from './demos/view-transitions/routes';
 import { routes as yourFirstMochiAppRoutes } from './demos/your-first-mochi-app/routes';
 
-const dev = process.env.MODE === 'development';
+const DEVELOPMENT = process.env.MODE === 'development';
 
 export const routes: Record<string, MochiRouteValue> = {
-  ...(dev
+  ...(DEVELOPMENT
     ? {
         '/_profiler/start': Mochi.api(async () => {
           if (!profilerEnabled()) {
@@ -137,7 +133,7 @@ export const routes: Record<string, MochiRouteValue> = {
   ...islandPropsRoutes,
   ...lazyRoutes,
   ...lazyServerIslandRoutes,
-  ...(dev ? leakTestRoutes : {}),
+  ...(DEVELOPMENT ? leakTestRoutes : {}),
   ...loginRoutes,
   ...mdsvexRoutes,
   ...nestedComponentsRoutes,
@@ -150,14 +146,4 @@ export const routes: Record<string, MochiRouteValue> = {
   ...urlRoutes,
   ...viewTransitionsRoutes,
   ...yourFirstMochiAppRoutes,
-};
-
-export const markdownConfig: MarkdownConfig = {
-  compile: mdsvexCompile,
-  rehypePlugins: [rehypeSlug, rehypeExternalLinks],
-  highlight: { highlighter: (code, lang) => highlightCode(code, lang) },
-};
-
-export const buildOptions: Pick<MochiBuildOptions, 'markdown'> = {
-  markdown: markdownConfig,
 };

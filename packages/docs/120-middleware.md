@@ -79,11 +79,12 @@ Compose multiple handles into one with `sequence(...handlers)`. Handles run in o
 // file: src/index.ts
 import { Mochi, sequence } from 'mochi-framework';
 import { auth, logging, rateLimit } from './handle';
-import { routes } from './routes';
 
 await Mochi.serve({
   handle: sequence(auth, logging, rateLimit),
-  routes,
+  routes: {
+    '/': Mochi.page('./src/Home.svelte'),
+  },
 });
 ```
 

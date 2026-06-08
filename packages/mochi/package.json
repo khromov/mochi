@@ -1,6 +1,6 @@
 {
   "name": "mochi-framework",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "type": "module",
   "license": "MIT",
   "keywords": [
@@ -98,6 +98,7 @@
     "nanoid": "^5.1.11",
     "negotiator": "^1.0.0",
     "stale-while-revalidate-cache": "^3.4.1",
+    "svelte-shaker": "0.4.0",
     "zimmerframe": "^1.1.4"
   },
   "devDependencies": {

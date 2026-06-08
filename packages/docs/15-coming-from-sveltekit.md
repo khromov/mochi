@@ -24,14 +24,16 @@ src/routes/health/+server.ts      â†’ /health
 ```
 
 ```ts
-// file (Mochi): src/routes.ts
+// file (Mochi): src/index.ts
 import { Mochi } from 'mochi-framework';
 
-export const routes = {
-  '/': Mochi.page('./src/Home.svelte'),
-  '/posts/:slug': Mochi.page('./src/Post.svelte'),
-  '/health': Mochi.api(() => Response.json({ status: 'ok' })),
-};
+await Mochi.serve({
+  routes: {
+    '/': Mochi.page('./src/Home.svelte'),
+    '/posts/:slug': Mochi.page('./src/Post.svelte'),
+    '/health': Mochi.api(() => Response.json({ status: 'ok' })),
+  },
+});
 ```
 
 ### Advanced routing
@@ -47,18 +49,20 @@ export function match(param: string): param is 'apple' | 'orange' {
 ```
 
 ```ts
-// file (Mochi): src/routes.ts
+// file (Mochi): src/index.ts
 import { Mochi, error } from 'mochi-framework';
 
-export const routes = {
-  '/fruits/:name': Mochi.page('./src/Fruit.svelte', {
-    serverProps: ({ params }) => {
-      if (params.name !== 'apple' && params.name !== 'orange') error(404, 'Unknown fruit');
-      return { name: params.name };
-    },
-  }),
-  '/files/*': Mochi.page('./src/Files.svelte'),
-};
+await Mochi.serve({
+  routes: {
+    '/fruits/:name': Mochi.page('./src/Fruit.svelte', {
+      serverProps: ({ params }) => {
+        if (params.name !== 'apple' && params.name !== 'orange') error(404, 'Unknown fruit');
+        return { name: params.name };
+      },
+    }),
+    '/files/*': Mochi.page('./src/Files.svelte'),
+  },
+});
 ```
 
 <Callout type="tip">
@@ -127,15 +131,17 @@ export async function baseProps() {
 ```
 
 ```ts
-// file (Mochi): src/routes.ts
+// file (Mochi): src/index.ts
 import { Mochi } from 'mochi-framework';
 import { baseProps } from './lib/baseProps';
 
-export const routes = {
-  '/': Mochi.page('./src/Home.svelte', {
-    serverProps: async () => ({ ...(await baseProps()), posts: await loadPosts() }),
-  }),
-};
+await Mochi.serve({
+  routes: {
+    '/': Mochi.page('./src/Home.svelte', {
+      serverProps: async () => ({ ...(await baseProps()), posts: await loadPosts() }),
+    }),
+  },
+});
 ```
 
 <Callout type="tip">
@@ -156,10 +162,16 @@ export async function load({ params }) {
 ```
 
 ```ts
-// file (Mochi): src/routes.ts
-'/posts/:slug': Mochi.page('./src/Post.svelte', {
-  serverProps: async (_req, params) => ({ post: await loadPost(params.slug) }),
-}),
+// file (Mochi): src/index.ts
+import { Mochi } from 'mochi-framework';
+
+await Mochi.serve({
+  routes: {
+    '/posts/:slug': Mochi.page('./src/Post.svelte', {
+      serverProps: async (_req, params) => ({ post: await loadPost(params.slug) }),
+    }),
+  },
+});
 ```
 
 ```svelte
@@ -195,22 +207,24 @@ export const actions = {
 ```
 
 ```ts
-// file (Mochi): src/routes.ts
+// file (Mochi): src/index.ts
 import { Mochi, fail, success, redirect } from 'mochi-framework';
 
-export const routes = {
-  '/login': Mochi.page('./src/Login.svelte', {
-    actions: {
-      default: ({ formData, cookies }) => {
-        const username = String(formData.get('username') ?? '');
-        if (!username) return fail(400, { error: 'Username required' });
-        cookies.set('user', username, { httpOnly: true, path: '/' });
-        return success({ username });
+await Mochi.serve({
+  routes: {
+    '/login': Mochi.page('./src/Login.svelte', {
+      actions: {
+        default: ({ formData, cookies }) => {
+          const username = String(formData.get('username') ?? '');
+          if (!username) return fail(400, { error: 'Username required' });
+          cookies.set('user', username, { httpOnly: true, path: '/' });
+          return success({ username });
+        },
+        logout: () => redirect(303, '/'),
       },
-      logout: () => redirect(303, '/'),
-    },
-  }),
-};
+    }),
+  },
+});
 ```
 
 ```svelte
@@ -278,16 +292,18 @@ export async function POST({ params, request }) {
 ```
 
 ```ts
-// file (Mochi): src/routes.ts
+// file (Mochi): src/index.ts
 import { Mochi, error } from 'mochi-framework';
 
-export const routes = {
-  '/api/users/:id': Mochi.api(async ({ method, request, params }) => {
-    if (method === 'GET') return Response.json(await loadUser(params.id));
-    if (method === 'POST') return Response.json(await createUser(params.id, await request.json()));
-    error(405, 'Method not allowed');
-  }),
-};
+await Mochi.serve({
+  routes: {
+    '/api/users/:id': Mochi.api(async ({ method, request, params }) => {
+      if (method === 'GET') return Response.json(await loadUser(params.id));
+      if (method === 'POST') return Response.json(await createUser(params.id, await request.json()));
+      error(405, 'Method not allowed');
+    }),
+  },
+});
 ```
 
 <Callout type="tip">
@@ -332,9 +348,13 @@ SvelteKit's `+error.svelte` becomes the `errorPage` option on `Mochi.serve()` â€
 ```ts
 // file (Mochi): src/index.ts
 import { Mochi } from 'mochi-framework';
-import { routes } from './routes';
 
-await Mochi.serve({ errorPage: './src/Error.svelte', routes });
+await Mochi.serve({
+  errorPage: './src/Error.svelte',
+  routes: {
+    '/': Mochi.page('./src/Home.svelte'),
+  },
+});
 ```
 
 ```svelte
@@ -698,12 +718,18 @@ export const addLike = command(v.string(), async (id) => {
 ```
 
 ```ts
-// file (Mochi): src/routes.ts
-'/api/like/:id': Mochi.api(async ({ method, params }) => {
-  if (method !== 'POST') error(405, 'POST only');
-  await db.sql`UPDATE item SET likes = likes + 1 WHERE id = ${params.id}`;
-  return Response.json({ ok: true });
-}),
+// file (Mochi): src/index.ts
+import { Mochi, error } from 'mochi-framework';
+
+await Mochi.serve({
+  routes: {
+    '/api/like/:id': Mochi.api(async ({ method, params }) => {
+      if (method !== 'POST') error(405, 'POST only');
+      await db.sql`UPDATE item SET likes = likes + 1 WHERE id = ${params.id}`;
+      return Response.json({ ok: true });
+    }),
+  },
+});
 // then on the client: await fetch(`/api/like/${id}`, { method: 'POST' })
 ```
 

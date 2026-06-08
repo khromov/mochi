@@ -1,3 +1,4 @@
+import nodePath from 'node:path';
 import { styleText } from 'node:util';
 import prettyBytes from './lib/prettyBytes';
 import { mochiEvents } from './events';
@@ -224,6 +225,8 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
       let action: string;
       if (trigger === 'css') {
         action = 'rebundled CSS';
+      } else if (trigger === 'html-shell') {
+        action = 'shell changed → reloading all tabs';
       } else if (trigger === 'svelte-config') {
         action = `config reload → rebuilt ${pages}, ${bundles}`;
       } else {
@@ -260,11 +263,8 @@ function relPath(p: string): string {
   if (!p) {
     return p;
   }
-  const cwd = process.cwd();
-  if (p.startsWith(cwd + '/')) {
-    return p.slice(cwd.length + 1);
-  }
-  return p;
+  const rel = nodePath.relative(process.cwd(), p);
+  return rel && !rel.startsWith('..') && !nodePath.isAbsolute(rel) ? rel : p;
 }
 
 function colorCacheStatus(status: 'fresh' | 'stale' | 'expired' | 'miss'): string {

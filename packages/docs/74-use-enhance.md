@@ -150,20 +150,22 @@ The `submit` callback receives `cancel` and `controller`:
 No server changes are needed beyond declaring the action. The same `Mochi.page(path, { actions })` definition serves both the no-JS HTML POST flow and the enhanced JSON flow:
 
 ```ts
-// file: src/routes.ts
+// file: src/index.ts
 import { Mochi, fail, success } from 'mochi-framework';
 
-export const routes = {
-  '/login': Mochi.page('./src/Login.svelte', {
-    actions: {
-      default: ({ formData }) => {
-        const username = String(formData.get('username') ?? '');
-        if (!username) return fail(400, { error: 'Username required' });
-        return success({ username });
+await Mochi.serve({
+  routes: {
+    '/login': Mochi.page('./src/Login.svelte', {
+      actions: {
+        default: ({ formData }) => {
+          const username = String(formData.get('username') ?? '');
+          if (!username) return fail(400, { error: 'Username required' });
+          return success({ username });
+        },
       },
-    },
-  }),
-};
+    }),
+  },
+});
 ```
 
 Returning a `Response` directly from an action bypasses the JSON envelope on enhanced submissions — treat that path as an escape hatch.

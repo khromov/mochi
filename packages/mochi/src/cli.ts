@@ -3,6 +3,7 @@ import { parseArgs } from 'node:util';
 import path from 'node:path';
 import { existsSync } from 'node:fs';
 import { build } from './build';
+import { extractServeOptions } from './extractServeOptions';
 
 const HELP = `Usage: mochi-framework <command> [options]
 
@@ -10,14 +11,16 @@ Commands:
   build    Produce a production bundle in the output directory.
 
 Options for "build":
-  --routes <path>          Path to the file exporting \`routes\`. Default: ./src/routes.ts
+  --entry <path>           Runtime entry whose \`Mochi.serve()\` call supplies
+                           \`routes\`, \`markdown\`, and \`optimize\`.
+                           Default: ./src/index.ts
   --out-dir <path>         Build output directory. Default: ./.mochi
   --public-dir <path>      Static assets directory. Default: ./public
   --asset-prefix <path>    URL prefix for framework client assets. Default: /_mochi
   --dev                    Build with development: true.
 
-The routes file may also export \`buildOptions\` (a \`MochiBuildOptions\`
-object) for options that can't be expressed as flags, e.g. \`markdown\`.
+The build reads its config straight from the entry's \`Mochi.serve()\` call, so
+the prebuilt manifest stays single-sourced with the runtime.
 
 Global:
   -h, --help           Show this help.
@@ -31,7 +34,7 @@ async function main() {
     options: {
       help: { type: 'boolean', short: 'h' },
       version: { type: 'boolean', short: 'v' },
-      routes: { type: 'string' },
+      entry: { type: 'string' },
       'out-dir': { type: 'string' },
       'public-dir': { type: 'string' },
       'asset-prefix': { type: 'string' },
@@ -61,23 +64,27 @@ async function main() {
     process.exit(1);
   }
 
-  const routesPath = path.resolve(process.cwd(), values.routes ?? './src/routes.ts');
-  if (!existsSync(routesPath)) {
-    process.stderr.write(`[mochi] Routes file not found: ${routesPath}\n` + `Pass --routes <path> or create ./src/routes.ts with a \`routes\` named export.\n`);
-    process.exit(1);
+  const entryPath = path.resolve(process.cwd(), values.entry ?? './src/index.ts');
+  let serveOptions: Awaited<ReturnType<typeof extractServeOptions>> = null;
+  if (existsSync(entryPath)) {
+    try {
+      serveOptions = await extractServeOptions(entryPath);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`[mochi] Could not read ${entryPath}: ${msg}\n`);
+    }
   }
 
-  const mod = (await import(routesPath)) as { routes?: unknown; buildOptions?: unknown };
-  if (!mod.routes || typeof mod.routes !== 'object') {
-    process.stderr.write(`[mochi] ${routesPath} does not export a \`routes\` object.\n` + `Add: export const routes = { ... };\n`);
+  const routes = serveOptions?.routes;
+  if (!routes || typeof routes !== 'object') {
+    process.stderr.write(`[mochi] No \`routes\` found. Ensure ${entryPath} calls Mochi.serve({ routes }).\n`);
     process.exit(1);
   }
-
-  const userBuildOptions = (mod.buildOptions && typeof mod.buildOptions === 'object' ? mod.buildOptions : {}) as Partial<Parameters<typeof build>[0]>;
 
   await build({
-    ...userBuildOptions,
-    routes: mod.routes as Parameters<typeof build>[0]['routes'],
+    routes,
+    markdown: serveOptions?.markdown,
+    optimize: serveOptions && 'optimize' in serveOptions ? serveOptions.optimize : undefined,
     development: values.dev,
     outDir: values['out-dir'],
     publicDir: values['public-dir'],

@@ -15,11 +15,12 @@ description: 'Reference for every configuration option available on Mochi.serve(
 ```ts
 // file: src/index.ts
 import { Mochi } from 'mochi-framework';
-import { routes } from './routes';
 
 await Mochi.serve({
   port: 3333,
-  routes,
+  routes: {
+    '/': Mochi.page('./src/Home.svelte'),
+  },
 });
 ```
 
@@ -55,7 +56,6 @@ Do **NOT** call `Mochi.serve()` more than once per process; instead, run a secon
 - `publicDir`: Directory served as static assets (cwd-relative). Default: `./public`.
 - `outDir`: Directory for build artifacts and dev cache (cwd-relative). Default: `./.mochi`.
 - `assetPrefix`: URL prefix for framework client assets and the server-island endpoint. Must start with `/`, must not be `/`, must not end with `/`, must not contain whitespace or `..`. Default: `/_mochi`.
-- `routeModule`: Path to the module that exports `routes`. In dev mode, changes to this file or its transitive dependencies hot-swap route handlers without a restart. Default: auto-discovered from `./src/routes.ts` or `./src/routes.js`.
 - `additionalWatchPaths`: Extra dev-mode watcher paths added to the defaults `src` and `public`. Default: `[]`.
 - `svelteConfigPath`: Path to a Svelte config file. Default: `./svelte.config.js`. See `Svelte config`.
 - `csrf`: `MochiCsrfOptions` controlling the origin-header check. See `CSRF` below.

@@ -9,18 +9,20 @@ description: 'Push real-time updates to clients over a single HTTP connection wi
 Register an SSE stream with `Mochi.sse(handler)`; the handler receives a `MochiSseStream` and the underlying `Request`, and runs once per client connection.
 
 ```ts
-// file: src/routes.ts
+// file: src/index.ts
 import { Mochi } from 'mochi-framework';
 
-export const routes = {
-  '/sse/time': Mochi.sse((stream) => {
-    stream.send(new Date().toISOString());
-    const interval = setInterval(() => {
+await Mochi.serve({
+  routes: {
+    '/sse/time': Mochi.sse((stream) => {
       stream.send(new Date().toISOString());
-    }, 1000);
-    stream.onClose(() => clearInterval(interval));
-  }),
-};
+      const interval = setInterval(() => {
+        stream.send(new Date().toISOString());
+      }, 1000);
+      stream.onClose(() => clearInterval(interval));
+    }),
+  },
+});
 ```
 
 ### `stream.send(data, options?)`

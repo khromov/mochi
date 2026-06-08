@@ -1,8 +1,26 @@
-# Mochi (monorepo)
+# Mochi
 
 An SSR framework for [Svelte 5](https://svelte.dev/) + [Bun](https://bun.sh/) with islands-based selective hydration.
 
 > **Early prototype.** Only use in production if you are brave!
+
+## Quick start
+
+```sh
+bun create mochi@latest
+```
+
+(Requires `Bun >= 1.3.13`, [Why Bun?](https://mochi.fast/docs/why-bun/))
+
+## Documentation
+
+https://mochi.fast/
+
+## Live demos
+
+Example sites built with Mochi:
+
+https://demos.mochi.fast/
 
 ## Setting up the development environment
 

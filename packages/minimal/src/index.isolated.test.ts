@@ -3,7 +3,10 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import type { Server } from 'bun';
 import { Mochi } from 'mochi-framework';
-import { routes } from './routes';
+
+const routes = {
+  '/': Mochi.page('./src/HelloWorld.svelte'),
+};
 
 describe('minimal app', () => {
   let server: Server<undefined>;
