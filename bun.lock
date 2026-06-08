@@ -91,7 +91,7 @@
         "nanoid": "^5.1.11",
         "negotiator": "^1.0.0",
         "stale-while-revalidate-cache": "^3.4.1",
-        "svelte-shaker": "0.3.0",
+        "svelte-shaker": "0.4.0",
         "zimmerframe": "^1.1.4",
       },
       "devDependencies": {
@@ -620,7 +620,7 @@
 
     "svelte-meta-tags": ["svelte-meta-tags@4.7.0", "", { "dependencies": { "schema-dts": "^1.1.5" }, "peerDependencies": { "svelte": "^5.0.0" } }, "sha512-H65QB8UAeS8eSt9CIa0jMoVbT7igtuCQP6itC+tqGoybxITl1Xb9m2nLNCwaS53UTeGyGtT7MGgwgsuhAJpfnQ=="],
 
-    "svelte-shaker": ["svelte-shaker@0.3.0", "", { "dependencies": { "magic-string": "0.30.10", "zimmerframe": "1.1.2" }, "peerDependencies": { "svelte": "^5" } }, "sha512-VY4kl0ML0FVU6p8jvwvuvqHgLONZEHUBkay0EVyWY0U+o4r3yZ88AJ2H/KYsQRYH6bsath83WO+siLS+BXkVZw=="],
+    "svelte-shaker": ["svelte-shaker@0.4.0", "", { "dependencies": { "magic-string": "0.30.10", "zimmerframe": "1.1.2" }, "peerDependencies": { "svelte": "^5" } }, "sha512-rAXL2H1nWld+6r8dBuGHMKoMcA2ZW60selQl9f4VmtwKKZJBngZ0ZkIYIAHMZEInISUmFySEnQc/nv+RxNWgTw=="],
 
     "svelte-writable-derived": ["svelte-writable-derived@3.1.1", "", { "peerDependencies": { "svelte": "^3.2.1 || ^4.0.0-next.1 || ^5.0.0-next.94" } }, "sha512-w4LR6/bYZEuCs7SGr+M54oipk/UQKtiMadyOhW0PTwAtJ/Ai12QS77sLngEcfBx2q4H8ZBQucc9ktSA5sUGZWw=="],
 
