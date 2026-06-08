@@ -39,7 +39,7 @@ function leaf(i: number, t: number): Node {
   // the top always lands off-screen and never reads as a flicker. Fast enough that the fall
   // is clearly the leading motion within the clip (1200–2400px over 30s).
   const span = CANVAS.height + size * 2;
-  const fall = lerp(70, 120, rand(seed + 1.1));
+  const fall = lerp(50, 90, rand(seed + 1.1));
   const yRaw = (rand(seed + 2.2) * span + t * fall) % span;
   const y = yRaw - size;
 
