@@ -116,6 +116,10 @@ async function main() {
 
   console.log('encoding mp4 with ffmpeg…');
   await encode();
+
+  // The frames are only an intermediate for ffmpeg; drop them once the mp4 exists.
+  rmSync(FRAMES_DIR, { recursive: true, force: true });
+
   console.log(`\n✓ ${DURATION_S}s video → ${VIDEO_PATH}`);
 }
 

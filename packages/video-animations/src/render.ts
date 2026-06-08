@@ -3,8 +3,7 @@ import satori from 'satori';
 import { Resvg } from '@resvg/resvg-js';
 import { buildFrame } from './frame';
 import { CANVAS } from './theme';
-
-const FONTS_DIR = import.meta.dir + '/fonts';
+import { FONTS_DIR } from './fonts-dir';
 
 export type Font = { name: string; data: ArrayBuffer; weight: 400 | 300; style: 'normal' | 'italic' };
 

@@ -42,7 +42,9 @@ The 🍡 mascot is drawn as a vector dango (`dango()` in `src/frame.ts`) so it s
 Fonts are re-instanced from the Fraunces variable font with the brand axes pinned
 (`opsz 144 / SOFT 50 / WONK 1` for display) over a full ASCII charset — see `src/prepare-fonts.ts`
 (mirrors `packages/site/scripts/instance-fraunces.ts` on the `og-rendering` branch).
-The generated `src/fonts/*.otf` are committed so the animation builds without the instancing step.
+The source fonts come from the `@fontsource` packages in `node_modules`; the instanced
+`.otf` files are generated (not committed) into a gitignored `.fonts/` cache on first run.
+`animate`/`probe` call `prepareFonts()` automatically, or run `bun run prepare-fonts` to force a rebuild.
 
 ## Scenes
 

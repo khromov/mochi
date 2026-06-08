@@ -3,16 +3,22 @@
 // the OG card's narrow glyph subset. Mirrors packages/site/scripts/instance-fraunces.ts
 // (on the og-rendering branch) but with a complete character set.
 import subsetFont from 'subset-font';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import { existsSync } from 'node:fs';
+import { FONTS_DIR } from './fonts-dir';
 
-const ROOT = resolve(import.meta.dir, '../../..');
-const FONTS_DIR = import.meta.dir + '/fonts';
+// Resolve a file inside an installed @fontsource package (the woff2/woff source
+// fonts aren't in the package's `exports`, so locate the package via its
+// package.json and reach into `files/`). Version-agnostic, unlike a .bun path.
+function fontSource(pkg: string, file: string): string {
+  const pkgJson = Bun.resolveSync(`${pkg}/package.json`, import.meta.dir);
+  return resolve(dirname(pkgJson), 'files', file);
+}
 
 const SRC = {
-  frauncesNormal: resolve(ROOT, 'node_modules/.bun/@fontsource-variable+fraunces@5.2.9/node_modules/@fontsource-variable/fraunces/files/fraunces-latin-full-normal.woff2'),
-  frauncesItalic: resolve(ROOT, 'node_modules/.bun/@fontsource-variable+fraunces@5.2.9/node_modules/@fontsource-variable/fraunces/files/fraunces-latin-full-italic.woff2'),
-  jetbrainsMono: resolve(ROOT, 'node_modules/.bun/@fontsource+jetbrains-mono@5.2.8/node_modules/@fontsource/jetbrains-mono/files/jetbrains-mono-latin-400-normal.woff'),
+  frauncesNormal: fontSource('@fontsource-variable/fraunces', 'fraunces-latin-full-normal.woff2'),
+  frauncesItalic: fontSource('@fontsource-variable/fraunces', 'fraunces-latin-full-italic.woff2'),
+  jetbrainsMono: fontSource('@fontsource/jetbrains-mono', 'jetbrains-mono-latin-400-normal.woff'),
 };
 
 // Printable ASCII plus the typographic glyphs the brand copy uses (· em dash, curly quotes).
