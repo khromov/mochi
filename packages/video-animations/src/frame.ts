@@ -39,13 +39,15 @@ function leaf(i: number, t: number): Node {
   // the top always lands off-screen and never reads as a flicker. Fast enough that the fall
   // is clearly the leading motion within the clip (1200–2400px over 30s).
   const span = CANVAS.height + size * 2;
-  const fall = lerp(40, 80, rand(seed + 1.1));
+  const fall = lerp(70, 120, rand(seed + 1.1));
   const yRaw = (rand(seed + 2.2) * span + t * fall) % span;
   const y = yRaw - size;
 
-  // Gentle flutter, kept small relative to the fall so the path reads as a coherent drift.
-  const x = rand(seed + 3.3) * CANVAS.width + Math.sin(t * lerp(0.25, 0.5, rand(seed + 4.4)) + seed) * lerp(12, 28, rand(seed + 5.5));
-  const rot = lerp(0, 360, rand(seed + 6.6)) + t * lerp(-6, 6, rand(seed + 7.7));
+  // Gentle lateral drift, slow and small so the steady fall stays clearly the dominant motion.
+  const x = rand(seed + 3.3) * CANVAS.width + Math.sin(t * lerp(0.15, 0.3, rand(seed + 4.4)) + seed) * lerp(10, 22, rand(seed + 5.5));
+  // Each leaf holds a fixed orientation: a spinning asymmetric petal reads as wobble, so rotation
+  // is barely-there and the downward fall carries the motion.
+  const rot = lerp(0, 360, rand(seed + 6.6)) + t * lerp(-2, 2, rand(seed + 7.7));
 
   // Hold a constant soft peak across the screen, fading only within a band of each off-screen
   // edge so leaves enter and leave without any in-place opacity pulse.
@@ -54,10 +56,13 @@ function leaf(i: number, t: number): Node {
   const op = peak * Math.min(clamp(yRaw / fadeBand), clamp((span - yRaw) / fadeBand));
 
   // Classic leaf/petal: two opposite corners fully rounded, the other two sharp.
+  // Position via transform, not left/top: satori rounds layout positions to the integer pixel
+  // grid, which turns the sub-pixel-per-frame drift into a visible stair-step/back-and-forth
+  // jitter. A transform matrix is applied after layout at full float precision, so motion stays smooth.
   return h({
     position: 'absolute',
-    left: x,
-    top: y,
+    left: 0,
+    top: 0,
     width: size,
     height: size,
     background: 'white',
@@ -66,7 +71,7 @@ function leaf(i: number, t: number): Node {
     borderBottomRightRadius: size,
     borderTopRightRadius: 0,
     borderBottomLeftRadius: 0,
-    transform: `rotate(${rot}deg)`,
+    transform: `translate(${x}px, ${y}px) rotate(${rot}deg)`,
   });
 }
 

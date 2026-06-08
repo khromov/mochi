@@ -14,7 +14,7 @@
   <a class="next" href={`${other}${query}`}>Go to page {page === 1 ? 2 : 1} →</a>
 </div>
 
-<PersistentVideo mochi:hydrate />
+<PersistentVideo />
 
 <div class="picker">
   <span>Transition:</span>
