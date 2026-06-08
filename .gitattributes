@@ -1,0 +1,16 @@
+# Normalize known code/text formats to LF; leave everything else untouched.
+# A path-level eol=lf overrides core.autocrlf (the Git for Windows default),
+# so `bun run format` does not rewrite line endings on Windows.
+
+*.ts      text eol=lf
+*.js      text eol=lf
+*.svelte  text eol=lf
+*.css     text eol=lf
+*.html    text eol=lf
+*.svg     text eol=lf
+*.md      text eol=lf
+*.svx     text eol=lf
+*.txt     text eol=lf
+*.json    text eol=lf
+*.yml     text eol=lf
+*.sh      text eol=lf
