@@ -10,6 +10,10 @@ import { CANVAS, FPS, TOTAL_FRAMES, DURATION_S } from './theme';
 const OUT_DIR = resolve(import.meta.dir, '..', 'out');
 const FRAMES_DIR = resolve(OUT_DIR, 'frames');
 const VIDEO_PATH = resolve(OUT_DIR, 'mochi.mp4');
+const AUDIO_PATH = resolve(import.meta.dir, '..', 'audio', 'bounce-bay-records-traditional-japanese-2-437931.mp3');
+
+// Fade the soundtrack out over the final stretch so the video ends on silence.
+const AUDIO_FADE_S = 3;
 
 const WORKERS = Math.max(1, Number(process.env.VIDEO_WORKERS ?? 4));
 
@@ -77,6 +81,10 @@ async function encode() {
       String(FPS),
       '-i',
       `${FRAMES_DIR}/frame_%04d.png`,
+      '-i',
+      AUDIO_PATH,
+      '-af',
+      `afade=t=out:st=${DURATION_S - AUDIO_FADE_S}:d=${AUDIO_FADE_S}`,
       '-c:v',
       'libx264',
       '-pix_fmt',
@@ -85,6 +93,12 @@ async function encode() {
       '18',
       '-preset',
       'slow',
+      '-c:a',
+      'aac',
+      '-b:a',
+      '192k',
+      // Audio runs longer than the frame sequence; clip the muxed output to the video.
+      '-shortest',
       '-movflags',
       '+faststart',
       VIDEO_PATH,

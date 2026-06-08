@@ -87,7 +87,10 @@ describe('ViewTransitions', () => {
   test('keep still animates the page root by default', async () => {
     const { head } = await registry.renderComponent(COMPONENT_PATH, { keep: '.banner' });
     expect(head).toContain('::view-transition-old(root) { animation: mochi-vt-out');
-    expect(head).not.toContain('::view-transition-old(root), ::view-transition-new(root) { animation: none; }');
+    // The reduced-motion fallback always freezes root, so scope the check to the
+    // base rules: outside that media block, root must still animate (no `regions` freeze).
+    const baseRules = head.slice(0, head.indexOf('@media (prefers-reduced-motion'));
+    expect(baseRules).not.toContain('::view-transition-old(root), ::view-transition-new(root) { animation: none; }');
   });
 
   test('keep composes with regions: root frozen, region animates, chrome held', async () => {

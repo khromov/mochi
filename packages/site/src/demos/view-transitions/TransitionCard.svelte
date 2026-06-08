@@ -1,4 +1,6 @@
 <script lang="ts">
+  import PersistentVideo from './PersistentVideo.svelte';
+
   let { page, type }: { page: 1 | 2; type: 'fade' | 'slide' } = $props();
 
   const self = $derived(page === 1 ? '/demos/view-transitions' : '/demos/view-transitions/two');
@@ -11,6 +13,8 @@
   <p>Each navigation is a full page load — the browser animates it with a <code>{type}</code> transition.</p>
   <a class="next" href={`${other}${query}`}>Go to page {page === 1 ? 2 : 1} →</a>
 </div>
+
+<PersistentVideo mochi:hydrate />
 
 <div class="picker">
   <span>Transition:</span>
