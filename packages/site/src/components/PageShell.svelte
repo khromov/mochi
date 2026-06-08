@@ -2,6 +2,7 @@
   import '@fontsource/public-sans';
   import '@fontsource-variable/fraunces/full.css';
   import { MetaTags, type MetaTagsProps } from 'svelte-meta-tags';
+  import { url } from 'mochi-framework';
   import { ViewTransitions } from 'mochi-framework/components';
   import Sidebar from './Sidebar.svelte';
   import MobileNav from './MobileNav.svelte';
@@ -24,10 +25,16 @@
   } = $props();
 
   const mergedMetaTags = $derived(mergeMetaTags(metaTags));
+
+  // The view-transitions demo renders its own <ViewTransitions>
+  const isViewTransitionsDemo = $derived(url.pathname.startsWith('/demos/view-transitions'));
 </script>
 
 <MetaTags {...mergedMetaTags} />
-<ViewTransitions type="fade" />
+
+{#if !isViewTransitionsDemo}
+  <ViewTransitions type="fade" />
+{/if}
 
 <Banner />
 <MobileNav mochi:hydrate {docsNav} {demos} {currentSlug} />

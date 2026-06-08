@@ -26,6 +26,7 @@
     padding: 2.5rem;
     border-radius: 12px;
     background: var(--code-bg);
+    color: var(--code-text);
     border: 1px solid var(--border);
   }
 
