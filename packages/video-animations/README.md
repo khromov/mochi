@@ -19,6 +19,18 @@ Each frame is built as **satori** markup (`src/frame.ts`), parametrised by time 
 3. `@resvg/resvg-js` rasterises each SVG → PNG (`out/frames/frame_NNNN.png`).
 4. `ffmpeg` encodes the PNG sequence → `out/mochi.mp4` (libx264, yuv420p, crf 18).
 
+### Parallel rendering
+
+Frame rendering (the CPU-bound step) is split across worker threads (`src/render-worker.ts`).
+Worker `id` of `N` renders frames `id, id+N, id+2N, …` — a round-robin split so the heavier
+scenes (e.g. the island grid) spread evenly across threads. The main thread waits for all workers,
+then encodes once. Defaults to 4 workers; override with `VIDEO_WORKERS`:
+
+```sh
+VIDEO_WORKERS=8 bun run mochi:animate   # more threads
+VIDEO_WORKERS=1 bun run mochi:animate   # single-threaded (inline, no workers)
+```
+
 The local `ffmpeg` is built without `libfreetype`, so text can't be drawn by ffmpeg — it's rendered upstream by satori/resvg instead. ffmpeg only assembles frames.
 
 ## Look & feel
