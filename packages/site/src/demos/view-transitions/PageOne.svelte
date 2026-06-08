@@ -22,6 +22,6 @@
   description="Add <ViewTransitions /> to a shared layout to animate full-page navigations via the browser's cross-document View Transitions API — no client router. The card animates while the video below is held still and keeps playing across the navigation, resuming at the same timestamp."
   {sources}
 >
-  <ViewTransitions {type} regions="card" keep=".vt-video" />
+  <ViewTransitions {type} regions="card" />
   <TransitionCard page={1} {type} />
 </DemoPage>

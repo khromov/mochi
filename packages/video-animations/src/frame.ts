@@ -17,6 +17,67 @@ const text = (content: string, style: Record<string, any>): Node => ({
   props: { style: { display: 'flex', ...style }, children: content },
 });
 
+// Deterministic hash in 0..1 — frames must be reproducible across render workers, so no Math.random().
+const rand = (seed: number) => {
+  const x = Math.sin(seed * 127.1 + 311.7) * 43758.5453;
+  return x - Math.floor(x);
+};
+
+// ---- Ambient background: soft white leaves that bloom in and out for continuous gentle motion ----
+const LEAF_COUNT = 18;
+
+// One leaf: every property is a continuous function of `t`, so motion is smooth frame to
+// frame. A steady downward drift is the dominant motion; a small flutter sway and slow
+// rotation ride on top. Opacity is tied to vertical position so leaves fade in at the top
+// edge and out at the bottom — never pulsing mid-screen. Per-leaf seeds and phases keep the
+// field varied and several leaves visible at any moment.
+function leaf(i: number, t: number): Node {
+  const seed = i + 1;
+  const size = lerp(30, 84, rand(seed));
+
+  // Steady descent that wraps through a span taller than the canvas, so the jump back to
+  // the top always lands off-screen and never reads as a flicker. Fast enough that the fall
+  // is clearly the leading motion within the clip (1200–2400px over 30s).
+  const span = CANVAS.height + size * 2;
+  const fall = lerp(40, 80, rand(seed + 1.1));
+  const yRaw = (rand(seed + 2.2) * span + t * fall) % span;
+  const y = yRaw - size;
+
+  // Gentle flutter, kept small relative to the fall so the path reads as a coherent drift.
+  const x = rand(seed + 3.3) * CANVAS.width + Math.sin(t * lerp(0.25, 0.5, rand(seed + 4.4)) + seed) * lerp(12, 28, rand(seed + 5.5));
+  const rot = lerp(0, 360, rand(seed + 6.6)) + t * lerp(-6, 6, rand(seed + 7.7));
+
+  // Hold a constant soft peak across the screen, fading only within a band of each off-screen
+  // edge so leaves enter and leave without any in-place opacity pulse.
+  const peak = lerp(0.06, 0.12, rand(seed + 8.8));
+  const fadeBand = size * 2;
+  const op = peak * Math.min(clamp(yRaw / fadeBand), clamp((span - yRaw) / fadeBand));
+
+  // Classic leaf/petal: two opposite corners fully rounded, the other two sharp.
+  return h({
+    position: 'absolute',
+    left: x,
+    top: y,
+    width: size,
+    height: size,
+    background: 'white',
+    opacity: op,
+    borderTopLeftRadius: size,
+    borderBottomRightRadius: size,
+    borderTopRightRadius: 0,
+    borderBottomLeftRadius: 0,
+    transform: `rotate(${rot}deg)`,
+  });
+}
+
+function backgroundLeaves(t: number): Node {
+  const leaves: Node[] = [];
+  for (let i = 0; i < LEAF_COUNT; i++) {
+    leaves.push(leaf(i, t));
+  }
+  return h({ position: 'absolute', top: 0, left: 0, width: CANVAS.width, height: CANVAS.height, overflow: 'hidden' }, leaves);
+}
+
 // ---- Mochi dango mascot (three soft balls on a skewer) ----
 function dango(ball: number): Node {
   const stickW = ball * 0.16;
@@ -316,7 +377,7 @@ export function buildFrame(t: number): Node {
         backgroundImage: `linear-gradient(135deg, ${COLORS.heroFrom} 0%, ${COLORS.heroTo} 100%)`,
         overflow: 'hidden',
       },
-      children: [...scenes, progressBar(t)],
+      children: [backgroundLeaves(t), ...scenes, progressBar(t)],
     },
   };
 }
