@@ -28,6 +28,9 @@
     background: var(--code-bg);
     color: var(--code-text);
     border: 1px solid var(--border);
+    /* The page passes regions="card" to <ViewTransitions>, confining the
+       animation to this element while the rest of the page swaps instantly. */
+    view-transition-name: card;
   }
 
   .card.two {

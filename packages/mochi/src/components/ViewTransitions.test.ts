@@ -47,4 +47,19 @@ describe('ViewTransitions', () => {
     const { head } = await registry.renderComponent(COMPONENT_PATH);
     expect(head).toContain('prefers-reduced-motion: reduce');
   });
+
+  test('regions confine the animation to the named element and freeze root', async () => {
+    const { head } = await registry.renderComponent(COMPONENT_PATH, { regions: 'card' });
+    expect(head).toContain('::view-transition-old(card) { animation: mochi-vt-out');
+    expect(head).toContain('::view-transition-new(card) { animation: mochi-vt-in');
+    // root is held still rather than cross-faded.
+    expect(head).toContain('::view-transition-old(root), ::view-transition-new(root) { animation: none; }');
+    expect(head).not.toContain('::view-transition-old(root) { animation: mochi-vt-out');
+  });
+
+  test('regions accepts a list of names', async () => {
+    const { head } = await registry.renderComponent(COMPONENT_PATH, { regions: ['card', 'hero'] });
+    expect(head).toContain('::view-transition-old(card) { animation: mochi-vt-out');
+    expect(head).toContain('::view-transition-new(hero) { animation: mochi-vt-in');
+  });
 });

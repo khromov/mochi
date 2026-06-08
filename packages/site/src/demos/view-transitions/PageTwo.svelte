@@ -21,6 +21,6 @@
   description="Add <ViewTransitions /> to a shared layout to animate full-page navigations with zero JavaScript via the browser's cross-document View Transitions API. Click between the two pages to see it."
   {sources}
 >
-  <ViewTransitions {type} />
+  <ViewTransitions {type} regions="card" />
   <TransitionCard page={2} {type} />
 </DemoPage>

@@ -28,16 +28,38 @@ Navigate between pages and they crossfade. That's the whole setup.
 
 ### Props
 
-| Prop       | Type                | Default  | Description            |
-| ---------- | ------------------- | -------- | ---------------------- |
-| `type`     | `'fade' \| 'slide'` | `'fade'` | The transition preset. |
-| `duration` | `number` (ms)       | `250`    | Animation duration.    |
+| Prop       | Type                 | Default  | Description                                                           |
+| ---------- | -------------------- | -------- | --------------------------------------------------------------------- |
+| `type`     | `'fade' \| 'slide'`  | `'fade'` | The transition preset.                                                |
+| `duration` | `number` (ms)        | `250`    | Animation duration.                                                   |
+| `regions`  | `string \| string[]` | —        | Confine the animation to elements with these `view-transition-name`s. |
 
 ```svelte
 <ViewTransitions type="slide" duration={400} />
 ```
 
 Both presets animate the page root, so they apply to any page with no per-element setup, and reduced-motion users get no animation automatically.
+
+### Animating only part of the page
+
+The View Transitions API always snapshots the **whole viewport** — you can't restrict the capture to a subtree. What you can scope is _which parts animate_. Pass `regions` to confine the transition to elements you've given a [`view-transition-name`](https://developer.mozilla.org/en-US/docs/Web/CSS/view-transition-name); everything else swaps instantly instead of cross-fading.
+
+```svelte
+<ViewTransitions type="slide" regions="card" />
+
+<section style="view-transition-name: card">…</section>
+```
+
+```svelte
+<!-- multiple named regions -->
+<ViewTransitions regions={['card', 'hero']} />
+```
+
+<Callout type="info">
+
+Each `view-transition-name` must be **unique per document** — don't reuse one name across several elements on the same page.
+
+</Callout>
 
 <Callout type="info">
 

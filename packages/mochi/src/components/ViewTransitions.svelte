@@ -12,9 +12,15 @@
   let {
     type = 'fade',
     duration = 250,
+    regions,
   }: {
     type?: 'fade' | 'slide';
     duration?: number;
+    // Confine the animation to elements carrying these `view-transition-name`s.
+    // Omit to animate the whole page (the `root` snapshot). When given, the
+    // unnamed remainder swaps instantly so only the named regions animate —
+    // the caller is responsible for setting `view-transition-name` on them.
+    regions?: string | string[];
   } = $props();
 
   const keyframes = {
@@ -26,16 +32,33 @@
       @keyframes mochi-vt-in { from { transform: translateX(30px); opacity: 0; } }`,
   } as const;
 
+  const targets = $derived(regions == null ? ['root'] : Array.isArray(regions) ? regions : [regions]);
+
+  const animationRules = $derived(
+    targets
+      .map(
+        (name) =>
+          `::view-transition-old(${name}) { animation: mochi-vt-out ${duration}ms ease both; }
+    ::view-transition-new(${name}) { animation: mochi-vt-in ${duration}ms ease both; }`,
+      )
+      .join('\n    '),
+  );
+
+  // When confining to named regions, the unnamed remainder lives in `root`;
+  // stop it cross-fading so only the regions animate.
+  const rootReset = $derived(regions == null ? '' : `\n    ::view-transition-old(root), ::view-transition-new(root) { animation: none; }`);
+
+  const reducedTargets = $derived([...new Set([...targets, 'root'])].map((name) => `::view-transition-old(${name}), ::view-transition-new(${name})`).join(', '));
+
   // Build the full <style> tag here rather than in the markup: svelte2tsx
   // (svelte-check) mis-parses a literal `</style>` inside a markup `{@html}`
   // expression, but in the script it's just string data.
   const styleTag = $derived(
-    `<style>@view-transition { navigation: auto; }
-    ::view-transition-old(root) { animation: mochi-vt-out ${duration}ms ease both; }
-    ::view-transition-new(root) { animation: mochi-vt-in ${duration}ms ease both; }
+    `<style>@view-transition { navigation: auto; }${rootReset}
+    ${animationRules}
     ${keyframes[type]}
     @media (prefers-reduced-motion: reduce) {
-      ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
+      ${reducedTargets} { animation: none; }
     }</style>`,
   );
 </script>
