@@ -317,7 +317,11 @@ export class ComponentRegistry {
       logger.info(`svelte-shaker: slimmed ${changed.length} of ${shaken.size} component(s)${excluded > 0 ? `, ${excluded} excluded` : ''}`);
       this.reportShake(changed);
     } catch (e) {
-      logger.warn(`svelte-shaker: skipped (${e instanceof Error ? e.message : e})`);
+      // Empty cache -> every onLoad reads the original source, so a failed shake
+      // never breaks the build (`shakenSources.get(path) ?? Bun.file(path)`).
+      logger.warn('svelte-shaker: optimization skipped; building from original sources (output is unaffected).');
+      logger.warn('svelte-shaker: this looks like a svelte-shaker bug — please report it with the error below at https://github.com/baseballyama/svelte-shaker/issues');
+      logger.error(e);
       this.shakenSources = new Map();
     }
   }
