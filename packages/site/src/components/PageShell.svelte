@@ -33,7 +33,7 @@
 <MetaTags {...mergedMetaTags} />
 
 {#if !isViewTransitionsDemo}
-  <ViewTransitions type="fade" />
+  <ViewTransitions type="fade" keep={['.banner', '.sidebar', '.hero', '.gh-corner']} />
 {/if}
 
 <Banner />

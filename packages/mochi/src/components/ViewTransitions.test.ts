@@ -62,4 +62,43 @@ describe('ViewTransitions', () => {
     expect(head).toContain('::view-transition-old(card) { animation: mochi-vt-out');
     expect(head).toContain('::view-transition-new(hero) { animation: mochi-vt-in');
   });
+
+  test('keep names a selector and freezes its group + snapshots', async () => {
+    const { head } = await registry.renderComponent(COMPONENT_PATH, { keep: '.banner' });
+    expect(head).toContain('.banner { view-transition-name: mochi-vt-keep-banner; }');
+    expect(head).toContain('::view-transition-group(mochi-vt-keep-banner)');
+    expect(head).toContain('::view-transition-old(mochi-vt-keep-banner)');
+    expect(head).toContain('::view-transition-new(mochi-vt-keep-banner) { animation: none; }');
+  });
+
+  test('keep accepts a list and sanitizes each selector into a readable ident', async () => {
+    const { head } = await registry.renderComponent(COMPONENT_PATH, { keep: ['.banner', '.gh-corner'] });
+    expect(head).toContain('view-transition-name: mochi-vt-keep-banner;');
+    expect(head).toContain('view-transition-name: mochi-vt-keep-gh-corner;');
+  });
+
+  test('keep names are order-independent', async () => {
+    const a = await registry.renderComponent(COMPONENT_PATH, { keep: ['.banner', '.hero'] });
+    const b = await registry.renderComponent(COMPONENT_PATH, { keep: ['.hero', '.banner'] });
+    expect(a.head).toContain('.banner { view-transition-name: mochi-vt-keep-banner; }');
+    expect(b.head).toContain('.banner { view-transition-name: mochi-vt-keep-banner; }');
+  });
+
+  test('keep still animates the page root by default', async () => {
+    const { head } = await registry.renderComponent(COMPONENT_PATH, { keep: '.banner' });
+    expect(head).toContain('::view-transition-old(root) { animation: mochi-vt-out');
+    expect(head).not.toContain('::view-transition-old(root), ::view-transition-new(root) { animation: none; }');
+  });
+
+  test('keep composes with regions: root frozen, region animates, chrome held', async () => {
+    const { head } = await registry.renderComponent(COMPONENT_PATH, { regions: 'card', keep: '.banner' });
+    expect(head).toContain('::view-transition-old(card) { animation: mochi-vt-out');
+    expect(head).toContain('::view-transition-old(root), ::view-transition-new(root) { animation: none; }');
+    expect(head).toContain('::view-transition-group(mochi-vt-keep-banner)');
+  });
+
+  test('without keep, no keep rules are emitted', async () => {
+    const { head } = await registry.renderComponent(COMPONENT_PATH);
+    expect(head).not.toContain('mochi-vt-keep-');
+  });
 });

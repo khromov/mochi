@@ -33,6 +33,7 @@ Navigate between pages and they crossfade. That's the whole setup.
 | `type`     | `'fade' \| 'slide'`  | `'fade'` | The transition preset.                                                |
 | `duration` | `number` (ms)        | `250`    | Animation duration.                                                   |
 | `regions`  | `string \| string[]` | —        | Confine the animation to elements with these `view-transition-name`s. |
+| `keep`     | `string \| string[]` | —        | CSS selectors for persistent chrome to hold still across navigations. |
 
 ```svelte
 <ViewTransitions type="slide" duration={400} />
@@ -69,13 +70,27 @@ Cross-document view transitions are supported in current Chromium browsers. Wher
 
 ### Keeping elements still
 
-By default the whole page crossfades. To hold a persistent element — a header or sidebar — in place, give it a [`view-transition-name`](https://developer.mozilla.org/en-US/docs/Web/CSS/view-transition-name) in your own CSS. That lifts it out of the page crossfade:
+By default the whole page crossfades. To hold persistent chrome — a banner, sidebar, or header — still instead, pass `keep` a list of CSS selectors. Each matched element is lifted out of the page crossfade and frozen (both its position and its snapshots) while the rest of the page transitions:
+
+```svelte
+<ViewTransitions type="fade" keep={['.banner', '.sidebar']} />
+```
+
+`keep` assigns each selector a unique `view-transition-name` and emits the freeze CSS for you, so there's nothing to hand-write. Render the same list on every page — i.e. from your shared layout — so the page you leave and the page you land on agree.
+
+<Callout type="warning">
+
+Each selector must match **exactly one** element per page. `view-transition-name`s are unique per document, so a selector that matches several elements breaks the transition.
+
+</Callout>
+
+If you'd rather wire it by hand — or need finer control — give the element a [`view-transition-name`](https://developer.mozilla.org/en-US/docs/Web/CSS/view-transition-name) in your own CSS and zero its animations; that's exactly what `keep` generates:
 
 ```css
 .sidebar {
   view-transition-name: sidebar;
 }
-/* hold it completely still instead of crossfading its snapshots */
+::view-transition-group(sidebar),
 ::view-transition-old(sidebar),
 ::view-transition-new(sidebar) {
   animation: none;

@@ -257,35 +257,6 @@
         overflow: hidden;
       }
 
-      /* Lift the persistent chrome — banner, left menu, and page hero — out of
-         the cross-document root snapshot (<ViewTransitions /> in PageShell) and
-         hold it still: naming each keeps it off the root crossfade, and zeroing
-         the group + snapshot animations stops it moving or fading. Only the
-         page body transitions. */
-      .banner {
-        view-transition-name: site-banner;
-      }
-      .sidebar {
-        view-transition-name: site-sidebar;
-      }
-      .hero {
-        view-transition-name: site-hero;
-      }
-      ::view-transition-group(site-banner),
-      ::view-transition-group(site-sidebar),
-      ::view-transition-group(site-hero),
-      ::view-transition-group(site-gh-corner),
-      ::view-transition-old(site-banner),
-      ::view-transition-new(site-banner),
-      ::view-transition-old(site-sidebar),
-      ::view-transition-new(site-sidebar),
-      ::view-transition-old(site-hero),
-      ::view-transition-new(site-hero),
-      ::view-transition-old(site-gh-corner),
-      ::view-transition-new(site-gh-corner) {
-        animation: none;
-      }
-
       .gh-corner {
         position: absolute;
         top: 0;
@@ -293,7 +264,6 @@
         z-index: 9999;
         border: 0;
         color: #fff;
-        view-transition-name: site-gh-corner;
       }
       .gh-corner svg {
         width: 60px;
