@@ -27,6 +27,10 @@
 </script>
 
 <video bind:this={video} class="vt-video" src="/mochi.mp4" autoplay muted loop playsinline></video>
+<p class="vt-credit">
+  Music:
+  <a href="https://pixabay.com/music/world-traditional-japanese-2-437931/" target="_blank" rel="noopener noreferrer">Traditional Japanese 2 — Bounce-Bay-Records</a>
+</p>
 
 <style>
   .vt-video {
@@ -38,5 +42,17 @@
     object-fit: cover;
     background: #000;
     border: 1px solid var(--border);
+  }
+
+  .vt-credit {
+    margin: 0.5rem 0 0;
+    font-size: 0.8rem;
+    color: var(--text-muted, #888);
+    text-align: center;
+  }
+
+  .vt-credit a {
+    color: inherit;
+    text-decoration: underline;
   }
 </style>
