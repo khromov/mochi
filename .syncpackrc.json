@@ -15,6 +15,11 @@
       "label": "Peer dependencies are intentionally wide — don't sync them",
       "dependencyTypes": ["peer"],
       "isIgnored": true
+    },
+    {
+      "label": "Private workspace packages are unversioned — don't require a version",
+      "dependencyTypes": ["local"],
+      "isIgnored": true
     }
   ]
 }
