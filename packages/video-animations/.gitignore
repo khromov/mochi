@@ -1,0 +1,5 @@
+# Rendered output (frames + mp4)
+out/
+
+# Instanced .otf fonts, regenerated from @fontsource sources by prepare-fonts.ts
+.fonts/
