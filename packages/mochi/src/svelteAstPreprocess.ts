@@ -34,8 +34,8 @@ export interface PreprocessResult {
 
 /**
  * Preprocess a Svelte source file to detect `mochi:hydrate`, `mochi:hydrate:visible`,
- * `mochi:defer`, and `mochi:defer:visible` on child components. Uses Svelte's own
- * parser for robust AST-based matching instead of fragile regexes.
+ * `mochi:defer`, `mochi:defer:visible`, and `mochi:clientOnly` on child components.
+ * Uses Svelte's own parser for robust AST-based matching instead of fragile regexes.
  *
  * - `mochi:hydrate` / `mochi:hydrate:visible` → wraps in `<mochi-hydratable-island>`
  * - `mochi:defer` / `mochi:defer:visible` → wraps in `<mochi-server-island>` with
@@ -43,9 +43,12 @@ export interface PreprocessResult {
  *   waits for IntersectionObserver before fetching
  * - Combined `mochi:defer*` + `mochi:hydrate*` → server island with `also-hydrate`
  *   attribute, registered in both lists
+ * - `mochi:clientOnly` → wraps in `<mochi-hydratable-island client-only>`; the
+ *   component is never invoked server-side, children become SSR placeholder
+ *   content, and the client mounts (not hydrates) the component
  */
 export function preprocessHydratable(source: string, filePath: string): PreprocessResult {
-  if (!source.includes('mochi:hydrate') && !source.includes('mochi:defer')) {
+  if (!source.includes('mochi:hydrate') && !source.includes('mochi:defer') && !source.includes('mochi:clientOnly')) {
     return { transformed: source, hydratables: [], serverIslands: [] };
   }
   const ast = parse(source, { modern: true });
@@ -77,7 +80,7 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
   walk(ast.fragment as AST.SvelteNode, null, {
     Component(comp, { next }) {
       const directives = findMochiDirectives(comp.attributes);
-      if (!directives.server && !directives.hydrate) {
+      if (!directives.server && !directives.hydrate && !directives.clientOnly) {
         next();
         return;
       }
@@ -90,7 +93,38 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
 
       const resolved = path.resolve(path.dirname(filePath), importPath);
 
-      if (directives.server) {
+      if (directives.clientOnly) {
+        // --- CLIENT ONLY ---
+        if (!seen.has(resolved)) {
+          seen.add(resolved);
+          hydratables.push({ name: comp.name, resolvedPath: resolved });
+        }
+
+        const baseId = `mochi-${nanoid(8)}`;
+        // No islandId/isHydratable in the serialized payload: the client
+        // bootstrap injects both from the wrapper's attributes, and keeping
+        // them out preserves the props-ref dedup across islands.
+        const propsExpr = buildPropsFromAst(source, comp.attributes);
+        let attrs = `island-id={__mochi_iid} component-name="${comp.name}" component-url="__MOCHI_COMPONENT_URL__${comp.name}__" client-only`;
+        if (propsExpr !== '{}') {
+          attrs += ` props-ref={__mochi_emit_props__(${propsExpr}, __mochi_iid)}`;
+        }
+
+        // The component invocation is never emitted server-side — SSR renders
+        // only the wrapper (plus optional fallback children, removed when the
+        // client mounts the component). No <svelte:boundary> needed: there is
+        // no SSR render to protect and no hydration marker to force.
+        const constDecl = `{#if true}{@const __mochi_iid = \`${baseId}-\${__mochi_uid__++}\`}`;
+        let replacement: string;
+        if (comp.fragment.nodes.length > 0) {
+          const childrenSource = comp.fragment.nodes.map((n) => source.slice(n.start, n.end)).join('');
+          replacement = `${constDecl}<mochi-hydratable-island ${attrs}>${childrenSource}</mochi-hydratable-island>{/if}`;
+        } else {
+          replacement = `${constDecl}<mochi-hydratable-island ${attrs}></mochi-hydratable-island>{/if}`;
+        }
+
+        s.overwrite(comp.start, comp.end, replacement);
+      } else if (directives.server) {
         // --- SERVER ISLAND ---
         if (!seenServer.has(resolved)) {
           seenServer.add(resolved);
@@ -273,12 +307,14 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
 interface MochiDirectives {
   server: AST.Attribute | null;
   hydrate: AST.Attribute | null;
+  clientOnly: AST.Attribute | null;
 }
 
-/** Find `mochi:defer*` and `mochi:hydrate*` attributes on a component. */
+/** Find `mochi:defer*`, `mochi:hydrate*`, and `mochi:clientOnly` attributes on a component. */
 function findMochiDirectives(attributes: Array<AST.Attribute | AST.SpreadAttribute | AST.Directive | AST.AttachTag>): MochiDirectives {
   let server: AST.Attribute | null = null;
   let hydrate: AST.Attribute | null = null;
+  let clientOnly: AST.Attribute | null = null;
   for (const attr of attributes) {
     if (attr.type === 'Attribute') {
       if (attr.name === 'mochi:defer' || attr.name === 'mochi:defer:visible') {
@@ -288,10 +324,15 @@ function findMochiDirectives(attributes: Array<AST.Attribute | AST.SpreadAttribu
         server = attr;
       } else if (attr.name === 'mochi:hydrate' || attr.name === 'mochi:hydrate:visible') {
         hydrate = attr;
+      } else if (attr.name === 'mochi:clientOnly') {
+        clientOnly = attr;
       }
     }
   }
-  return { server, hydrate };
+  if (clientOnly && (server || hydrate)) {
+    throw new Error(`Cannot combine \`mochi:clientOnly\` with \`${(server ?? hydrate)!.name}\` — a client-only component is never server-rendered.`);
+  }
+  return { server, hydrate, clientOnly };
 }
 
 /** Build a JS object expression from AST attributes, skipping mochi:* attrs. */

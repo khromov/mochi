@@ -1,6 +1,6 @@
 /// <reference lib="dom" />
 /// <reference lib="dom.iterable" />
-import { hydrate } from 'svelte';
+import { hydrate, mount } from 'svelte';
 import type { Component } from 'svelte';
 import { parse as devalueParse } from 'devalue';
 import { isDev, logger } from 'mochi-framework';
@@ -134,23 +134,28 @@ class HydratableIsland extends HTMLElement {
     // Error instance — same shape as the SSR transformError — so user-written
     // `failed` snippets can rely on `error instanceof Error`. `message` is
     // made enumerable to match SSR (see ComponentRegistry transformError).
-    hydrate(Component, {
-      target: this,
-      props,
-      transformError: (err: unknown): Error => {
-        const e = err instanceof Error ? err : new Error(String(err));
-        logger.error(`Island "${name}" runtime error:`, e);
-        const out = isDev ? e : new Error('Island error');
-        Object.defineProperty(out, 'message', {
-          value: out.message,
-          enumerable: true,
-          writable: true,
-          configurable: true,
-        });
-        return out;
-      },
-    });
-    logger.log('Hydrated', name);
+    const transformError = (err: unknown): Error => {
+      const e = err instanceof Error ? err : new Error(String(err));
+      logger.error(`Island "${name}" runtime error:`, e);
+      const out = isDev ? e : new Error('Island error');
+      Object.defineProperty(out, 'message', {
+        value: out.message,
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
+      return out;
+    };
+    const clientOnly = this.hasAttribute('client-only');
+    if (clientOnly) {
+      // mochi:clientOnly islands have no SSR HTML — the wrapper holds optional
+      // fallback content. Remove it exactly when the real component mounts.
+      this.innerHTML = '';
+      mount(Component, { target: this, props, transformError });
+    } else {
+      hydrate(Component, { target: this, props, transformError });
+    }
+    logger.log(clientOnly ? 'Mounted' : 'Hydrated', name);
   }
 }
 

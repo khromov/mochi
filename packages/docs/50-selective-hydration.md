@@ -27,7 +27,7 @@ Do **NOT** nest `mochi:hydrate` (or `mochi:hydrate:visible`) inside another hydr
 Every island invocation receives two implicit props from the framework:
 
 - `islandId` — string matching the wrapper's `island-id` attribute, available on `mochi:hydrate`, `mochi:hydrate:visible`, and `mochi:defer`.
-- `isHydratable` — `true` when the call site uses `mochi:hydrate`, `mochi:hydrate:visible`, or `mochi:defer mochi:hydrate`. Undefined for pure SSR-only invocations.
+- `isHydratable` — `true` when the call site uses `mochi:hydrate`, `mochi:hydrate:visible`, `mochi:clientOnly`, or `mochi:defer mochi:hydrate`. Undefined for pure SSR-only invocations.
 
 Accept them in the component's `$props()` to branch on hydration state at the same call site that opts in:
 
@@ -70,6 +70,15 @@ Pass `rootMargin` to start loading before the component enters the viewport. See
 Islands that use `:visible` require JS to apply their styles — per-component CSS is loaded alongside the bundle on intersection, not in the initial page `<head>`. If you need the island to look correcft on initial SSR load, do not use `:visible`.
 
 </Callout>
+
+### `mochi:clientOnly`
+
+Use `mochi:clientOnly` to skip SSR entirely — the component is mounted in the browser only, with optional fallback children as the SSR placeholder. See `Client-only components with mochi:clientOnly`.
+
+```svelte
+<!-- Never server-rendered; mounts in the browser -->
+<AudioVisualizer mochi:clientOnly />
+```
 
 ### `mochi:defer`
 

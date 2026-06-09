@@ -5,6 +5,7 @@ import { profilerEnabled, startProfiler, stopProfiler } from './lib/profiler';
 import { routes as apiRoutes } from './demos/api/routes';
 import { routes as cacheEventsRoutes } from './demos/cache-events/routes';
 import { routes as chatRoutes } from './demos/chat/routes';
+import { routes as clientOnlyRoutes } from './demos/client-only/routes';
 import { routes as cookieVaryTestRoutes } from './demos/cookie-vary-test/routes';
 import { routes as cookiesRoutes } from './demos/cookies/routes';
 import { routes as dataLoadingRoutes } from './demos/data-loading/routes';
@@ -115,6 +116,7 @@ export const routes: Record<string, MochiRouteValue> = {
   ...apiRoutes,
   ...cacheEventsRoutes,
   ...chatRoutes,
+  ...clientOnlyRoutes,
   ...cookieVaryTestRoutes,
   ...cookiesRoutes,
   ...dataLoadingRoutes,

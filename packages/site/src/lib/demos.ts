@@ -110,6 +110,12 @@ export const demos: Demo[] = [
     category: 'hydration',
   },
   {
+    href: '/demos/client-only/',
+    title: 'Client-only Islands',
+    hook: 'Components marked mochi:clientOnly skip SSR entirely and mount in the browser — fallback children fill in until then.',
+    category: 'hydration',
+  },
+  {
     href: '/demos/lazy/',
     title: 'Lazy Islands',
     hook: 'Islands marked mochi:hydrate:visible hydrate and load their CSS only when scrolled into view.',

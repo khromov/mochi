@@ -508,3 +508,80 @@ describe('preprocessHydratable', () => {
     expect(transformed).toContain('<svelte:boundary>');
   });
 });
+
+describe('mochi:clientOnly', () => {
+  test('basic self-closing', () => {
+    const source = `${SCRIPT('import Foo from "./Foo.svelte";')}<Foo mochi:clientOnly />`;
+    const { transformed, hydratables, serverIslands } = preprocessHydratable(source, '/test/File.svelte');
+
+    expect(hydratables).toHaveLength(1);
+    expect(hydratables[0]!.name).toBe('Foo');
+    expect(serverIslands).toHaveLength(0);
+    expect(transformed).toContain('<mochi-hydratable-island');
+    expect(transformed).toContain('client-only');
+    expect(transformed).toContain('component-name="Foo"');
+    expect(transformed).toContain('__MOCHI_COMPONENT_URL__Foo__');
+    // The component invocation is never emitted server-side
+    expect(transformed).not.toContain('<Foo');
+    expect(transformed).not.toContain('mochi:clientOnly');
+    expect(transformed).not.toContain('<svelte:boundary>');
+    expect(transformed).not.toContain('hydrate-on');
+    expect(transformed).not.toContain('__MOCHI_CSS_URL__');
+    // No props → no props-ref (empty-props optimization)
+    expect(transformed).not.toContain('props-ref');
+  });
+
+  test('props are serialized without islandId/isHydratable', () => {
+    const source = `${SCRIPT('import Foo from "./Foo.svelte";')}<Foo mochi:clientOnly count={n} />`;
+    const { transformed } = preprocessHydratable(source, '/test/File.svelte');
+
+    expect(transformed).toContain('props-ref={__mochi_emit_props__({count: n}, __mochi_iid)}');
+    expect(transformed).not.toContain('islandId:');
+    expect(transformed).not.toContain('isHydratable');
+  });
+
+  test('children become SSR fallback content inside the wrapper', () => {
+    const source = `${SCRIPT('import Foo from "./Foo.svelte";')}<Foo mochi:clientOnly><span>loading…</span></Foo>`;
+    const { transformed } = preprocessHydratable(source, '/test/File.svelte');
+
+    expect(transformed).toMatch(/<mochi-hydratable-island [^>]*><span>loading…<\/span><\/mochi-hydratable-island>/);
+    expect(transformed).not.toContain('<Foo');
+  });
+
+  test('combining with mochi:hydrate throws', () => {
+    const source = `${SCRIPT('import Foo from "./Foo.svelte";')}<Foo mochi:clientOnly mochi:hydrate />`;
+    expect(() => preprocessHydratable(source, '/test/File.svelte')).toThrow('Cannot combine `mochi:clientOnly` with `mochi:hydrate`');
+  });
+
+  test('combining with mochi:defer throws', () => {
+    const source = `${SCRIPT('import Foo from "./Foo.svelte";')}<Foo mochi:defer mochi:clientOnly />`;
+    expect(() => preprocessHydratable(source, '/test/File.svelte')).toThrow('Cannot combine `mochi:clientOnly` with `mochi:defer`');
+  });
+
+  test('duplicate instances dedupe in hydratables but both get wrappers', () => {
+    const source = `${SCRIPT('import Foo from "./Foo.svelte";')}<Foo mochi:clientOnly />\n<Foo mochi:clientOnly />`;
+    const { transformed, hydratables } = preprocessHydratable(source, '/test/File.svelte');
+
+    expect(hydratables).toHaveLength(1);
+    expect(transformed.match(/<mochi-hydratable-island/g)).toHaveLength(2);
+  });
+
+  test('mixed mochi:hydrate and mochi:clientOnly for the same component', () => {
+    const source = `${SCRIPT('import Foo from "./Foo.svelte";')}<Foo mochi:hydrate />\n<Foo mochi:clientOnly />`;
+    const { transformed, hydratables } = preprocessHydratable(source, '/test/File.svelte');
+
+    expect(hydratables).toHaveLength(1);
+    // Only the hydrate instance keeps an inner component invocation
+    expect(transformed.match(/<Foo /g)).toHaveLength(1);
+    expect(transformed.match(/<mochi-hydratable-island/g)).toHaveLength(2);
+    expect(transformed.match(/client-only/g)).toHaveLength(1);
+  });
+
+  test('imports are injected when only clientOnly directives exist', () => {
+    const source = `${SCRIPT('import Foo from "./Foo.svelte";')}<Foo mochi:clientOnly value={1} />`;
+    const { transformed } = preprocessHydratable(source, '/test/File.svelte');
+
+    expect(transformed).toContain('import { emitIslandProps as __mochi_emit_props__ } from "mochi-framework";');
+    expect(transformed).toContain('let __mochi_uid__ = 0;');
+  });
+});

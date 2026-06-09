@@ -22,6 +22,7 @@ declare module 'svelte/elements' {
     'mochi:hydrate:visible'?: boolean | MochiHydrateVisibleOptions;
     'mochi:defer'?: boolean | MochiDeferOptions;
     'mochi:defer:visible'?: boolean | MochiDeferVisibleOptions;
+    'mochi:clientOnly'?: boolean;
   }
 }
 
