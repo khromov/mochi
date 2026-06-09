@@ -4,7 +4,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import type { BunPlugin } from 'bun';
 import { isSvelteMarker, normalizeAssetPrefix, normalizeIslandHydrationMarkers, stripHydrationMarkers, toCompileErrorLogs, toPosixPath } from './utils';
-import { buildIslandPropsScripts } from './islandPropsRegistry';
+import { buildIslandPropsScripts, inlineSingleUseProps } from './islandPropsRegistry';
 import { requestContext } from './requestContext';
 import type { DebugBarData } from './requestContext';
 import { logger } from './log';
@@ -1208,13 +1208,18 @@ export class ComponentRegistry {
       output = rewriter.transform(output);
     }
 
-    // Hoist the per-request island props registry into <script type="application/json">
-    // blocks. Each unique payload was assigned a ref id by `emitIslandProps()` during
-    // SSR; the matching `props-ref="<id>"` lives on each <mochi-hydratable-island>.
+    // Resolve the per-request island props registry: payloads emitted by a
+    // single island are inlined onto their `props` attribute; payloads shared
+    // by two or more islands keep their `props-ref="<id>"` and get hoisted
+    // into <script type="application/json"> blocks.
     const ctx = requestContext.getStore();
     let debugBarData: RenderResult['debugBarData'];
     if (ctx && ctx.islandProps.size > 0) {
-      output = buildIslandPropsScripts(ctx.islandProps) + output;
+      output = inlineSingleUseProps(output, ctx.islandProps);
+      const scripts = buildIslandPropsScripts(ctx.islandProps);
+      if (scripts) {
+        output = scripts + output;
+      }
       // Clear so a second render within the same request doesn't re-emit the
       // same blocks (e.g. an error page rendering after the original page).
       ctx.islandProps.clear();

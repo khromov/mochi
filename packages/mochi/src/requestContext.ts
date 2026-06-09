@@ -31,12 +31,14 @@ export interface MochiRequestContext {
   cookies: MochiCookieJar;
   /**
    * Per-request hydratable-island props dedup registry, keyed by serialized
-   * JSON payload, valued by ref id (e.g. "mochi-props-3"). Populated by
-   * `emitIslandProps()` during SSR; consumed by `ComponentRegistry` to hoist
-   * shared `<script type="application/json">` blocks into the rendered HTML.
+   * JSON payload, valued by ref id (e.g. "mochi-props-3") plus the number of
+   * islands that emitted that exact payload. Populated by `emitIslandProps()`
+   * during SSR; consumed by `ComponentRegistry`, which inlines single-use
+   * payloads onto the island element and hoists shared (count >= 2) payloads
+   * into `<script type="application/json">` blocks in the rendered HTML.
    * Internal — not for application use.
    */
-  islandProps: Map<string, string>;
+  islandProps: Map<string, { id: string; count: number }>;
   /**
    * Dev-only debug-bar data bag. Populated during routing (route/pathname/
    * params) and SSR (e.g. `emitIslandProps()` fills `islandProps`).

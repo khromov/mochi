@@ -63,8 +63,8 @@
   <p class="hint">
     Each group below renders the same component three times with the same props. In the SSR: you'll find <strong>three</strong>
     <code>&lt;script type="application/json"&gt;</code>
-    blocks (one per group) and nine <code>&lt;mochi-hydratable-island props-ref="…"&gt;</code> tags pointing at them. Note that you'll also find an extra script block for the source
-    code viewer component.
+    blocks (one per group) and nine <code>&lt;mochi-hydratable-island props-ref="…"&gt;</code> tags pointing at them. Islands whose props no other island shares (like the source
+    code viewer on this page) carry their payload inline on a <code>props="…"</code> attribute instead.
   </p>
 
   {#each groups as group (group.heading)}

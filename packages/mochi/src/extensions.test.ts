@@ -438,7 +438,7 @@ describe('new extension points', () => {
       locals: {},
       isWarmup: false,
       cookies: new MochiCookieJar(null),
-      islandProps: new Map<string, string>(),
+      islandProps: new Map<string, { id: string; count: number }>(),
       getClientAddress: () => null,
     };
     requestContext.run(ctx, () => {

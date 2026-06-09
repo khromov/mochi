@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { parse as devalueParse, stringify as devalueStringify } from 'devalue';
-import { buildIslandPropsScripts, emitIslandProps } from './islandPropsRegistry';
+import { buildIslandPropsScripts, emitIslandProps, inlineSingleUseProps } from './islandPropsRegistry';
 import { requestContext, type MochiRequestContext } from './requestContext';
 import { MochiCookieJar } from './cookies';
 
@@ -54,6 +54,7 @@ describe('emitIslandProps', () => {
       const id2 = emitIslandProps({ count: 5, title: 'Hello' });
       expect(id1).toBe(id2);
       expect(ctx.islandProps.size).toBe(1);
+      expect([...ctx.islandProps.values()][0]!.count).toBe(2);
     });
   });
 
@@ -66,6 +67,7 @@ describe('emitIslandProps', () => {
       expect(b).toBe('mochi-props-1');
       expect(c).toBe('mochi-props-2');
       expect(ctx.islandProps.size).toBe(3);
+      expect([...ctx.islandProps.values()].map((e) => e.count)).toEqual([1, 1, 1]);
     });
   });
 
@@ -79,6 +81,7 @@ describe('emitIslandProps', () => {
       expect(b).toBe('mochi-props-1');
       expect(c).toBe('mochi-props-0');
       expect(ctx.islandProps.size).toBe(2);
+      expect([...ctx.islandProps.values()].map((e) => e.count)).toEqual([2, 1]);
     });
   });
 
@@ -145,22 +148,48 @@ describe('emitIslandProps', () => {
   });
 });
 
+type Registry = Map<string, { id: string; count: number }>;
+
+// Inverse of the framework's escapeHtmlAttr — what the browser's attribute
+// parser does. `&amp;` must decode last so escaped ampersands round-trip.
+function unescapeHtmlAttr(s: string): string {
+  return s
+    .replace(/&lt;/g, '<')
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, '&');
+}
+
 describe('buildIslandPropsScripts', () => {
   test('empty registry yields the empty string', () => {
     expect(buildIslandPropsScripts(new Map())).toBe('');
   });
 
-  test('emits one <script> block per registry entry, in insertion order', () => {
-    const reg = new Map<string, string>([
-      ['{"a":1}', 'mochi-props-0'],
-      ['{"b":2}', 'mochi-props-1'],
+  test('emits one <script> block per shared registry entry, in insertion order', () => {
+    const reg: Registry = new Map([
+      ['{"a":1}', { id: 'mochi-props-0', count: 2 }],
+      ['{"b":2}', { id: 'mochi-props-1', count: 3 }],
     ]);
     const out = buildIslandPropsScripts(reg);
     expect(out).toBe('<script type="application/json" id="mochi-props-0">{"a":1}</script>' + '<script type="application/json" id="mochi-props-1">{"b":2}</script>');
   });
 
+  test('skips single-use entries (they are inlined instead)', () => {
+    const reg: Registry = new Map([
+      ['{"a":1}', { id: 'mochi-props-0', count: 1 }],
+      ['{"b":2}', { id: 'mochi-props-1', count: 2 }],
+      ['{"c":3}', { id: 'mochi-props-2', count: 1 }],
+    ]);
+    const out = buildIslandPropsScripts(reg);
+    expect(out).toBe('<script type="application/json" id="mochi-props-1">{"b":2}</script>');
+  });
+
+  test('all-single-use registry yields the empty string', () => {
+    const reg: Registry = new Map([['{"a":1}', { id: 'mochi-props-0', count: 1 }]]);
+    expect(buildIslandPropsScripts(reg)).toBe('');
+  });
+
   test('escapes `<` characters inside the JSON payload', () => {
-    const reg = new Map<string, string>([['{"html":"</script><img src=x>"}', 'mochi-props-0']]);
+    const reg: Registry = new Map([['{"html":"</script><img src=x>"}', { id: 'mochi-props-0', count: 2 }]]);
     const out = buildIslandPropsScripts(reg);
     // Every `<` in the payload becomes the `<` JSON unicode escape …
     const block = out.match(/<script type="application\/json" id="mochi-props-0">([\s\S]*?)<\/script>/);
@@ -172,17 +201,81 @@ describe('buildIslandPropsScripts', () => {
   });
 });
 
-describe('emitIslandProps + buildIslandPropsScripts (integration)', () => {
-  test('full flow: register two islands sharing a payload, hoist one script block', () => {
+describe('inlineSingleUseProps', () => {
+  test('rewrites a single-use props-ref to an inline props attribute that round-trips', () => {
+    const value = { s: '</script><img src=x>', q: 'he said "hi"', amp: '&amp; & &quot;' };
+    const json = devalueStringify(value);
+    const reg: Registry = new Map([[json, { id: 'mochi-props-0', count: 1 }]]);
+    const html =
+      '<mochi-hydratable-island island-id="mochi-a-0" component-name="Demo" component-url="/c/Demo.js" props-ref="mochi-props-0"><div>hi</div></mochi-hydratable-island>';
+
+    const out = inlineSingleUseProps(html, reg);
+    expect(out).not.toContain('props-ref');
+    const attr = out.match(/ props="([^"]*)"/);
+    expect(attr).not.toBeNull();
+    expect(devalueParse(unescapeHtmlAttr(attr![1]!))).toEqual(value);
+    // No raw `<` or `"` from the payload may leak into the attribute value.
+    expect(attr![1]).not.toMatch(/[<"]/);
+  });
+
+  test('leaves shared entries untouched', () => {
+    const reg: Registry = new Map([['{"a":1}', { id: 'mochi-props-0', count: 2 }]]);
+    const html = '<mochi-hydratable-island component-name="Demo" props-ref="mochi-props-0"></mochi-hydratable-island>';
+    expect(inlineSingleUseProps(html, reg)).toBe(html);
+  });
+
+  test('full-id match: mochi-props-1 (shared) does not capture mochi-props-10 (single)', () => {
+    const reg: Registry = new Map([
+      ['{"a":1}', { id: 'mochi-props-1', count: 2 }],
+      ['{"b":2}', { id: 'mochi-props-10', count: 1 }],
+    ]);
+    const html =
+      '<mochi-hydratable-island component-name="A" props-ref="mochi-props-1"></mochi-hydratable-island>' +
+      '<mochi-hydratable-island component-name="B" props-ref="mochi-props-10"></mochi-hydratable-island>';
+    const out = inlineSingleUseProps(html, reg);
+    expect(out).toContain('props-ref="mochi-props-1"');
+    expect(out).not.toContain('props-ref="mochi-props-10"');
+    expect(out).toContain('props="{&quot;b&quot;:2}"');
+  });
+
+  test('does not rewrite a literal props-ref string in page text outside an island tag', () => {
+    const reg: Registry = new Map([['{"a":1}', { id: 'mochi-props-0', count: 1 }]]);
+    const html = '<p>each island gets props-ref="mochi-props-0" pointing at a block</p>';
+    expect(inlineSingleUseProps(html, reg)).toBe(html);
+  });
+
+  test('returns the html unchanged when nothing is single-use', () => {
+    const reg: Registry = new Map([['{"a":1}', { id: 'mochi-props-0', count: 2 }]]);
+    const html = '<div>no islands</div>';
+    expect(inlineSingleUseProps(html, reg)).toBe(html);
+  });
+});
+
+describe('emitIslandProps + buildIslandPropsScripts + inlineSingleUseProps (integration)', () => {
+  test('full flow: shared payload keeps its block, unique payload is inlined', () => {
     withCtx((ctx) => {
       const a = emitIslandProps({ readmeToc: [{ level: 1, text: 'hi', slug: 'hi' }], demos: [] });
       const b = emitIslandProps({ readmeToc: [{ level: 1, text: 'hi', slug: 'hi' }], demos: [] });
+      const solo = emitIslandProps({ defaultUsername: 'mochi_fan' });
       expect(a).toBe(b);
+      expect(solo).not.toBe(a);
+
+      const html =
+        `<mochi-hydratable-island component-name="A" props-ref="${a}"></mochi-hydratable-island>` +
+        `<mochi-hydratable-island component-name="B" props-ref="${b}"></mochi-hydratable-island>` +
+        `<mochi-hydratable-island component-name="C" props-ref="${solo}"></mochi-hydratable-island>`;
+      const inlined = inlineSingleUseProps(html, ctx.islandProps);
+      expect(inlined.match(new RegExp(`props-ref="${a}"`, 'g'))).toHaveLength(2);
+      expect(inlined).not.toContain(`props-ref="${solo}"`);
+      const attr = inlined.match(/ props="([^"]*)"/);
+      expect(attr).not.toBeNull();
+      expect(devalueParse(unescapeHtmlAttr(attr![1]!))).toEqual({ defaultUsername: 'mochi_fan' });
 
       const scripts = buildIslandPropsScripts(ctx.islandProps);
       const blockMatches = scripts.match(/<script type="application\/json" id="mochi-props-\d+">/g);
       expect(blockMatches).toHaveLength(1);
       expect(scripts).toContain(`id="${a}"`);
+      expect(scripts).not.toContain(`id="${solo}"`);
     });
   });
 });
