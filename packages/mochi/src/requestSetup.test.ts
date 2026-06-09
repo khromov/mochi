@@ -27,6 +27,7 @@ function makeConfig(overrides: Partial<RequestSetupConfig> = {}): RequestSetupCo
     csrf: undefined,
     trailingSlashPolicy: undefined,
     cookieDefaults: {},
+    csp: false,
     development: false,
     debugBarEnabled: false,
     formContentTypes: DEFAULT_FORM_CONTENT_TYPES,

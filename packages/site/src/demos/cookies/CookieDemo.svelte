@@ -1,5 +1,6 @@
 <script lang="ts">
   import { isServer, isBrowser, cookies } from 'mochi-framework';
+  import { hydratable } from 'svelte';
 
   let { defaultUsername = 'mochi_fan' } = $props();
 
@@ -9,22 +10,30 @@
   let theme = $state(cookies.get('mochi_theme') || 'auto');
   let message = $state('');
 
-  // SSR snapshot — what the server saw in the request headers
-  const ssrUsername = cookies.get('mochi_username') ?? '(not set)';
-  const ssrTheme = cookies.get('mochi_theme') ?? '(not set)';
+  // SSR snapshot — what the server saw in the request Cookie header. Wrapped in
+  // hydratable() so the value the server computed is serialized into the page and
+  // reused on hydration; without it the client would re-run cookies.get() against
+  // document.cookie, which can't see HttpOnly cookies and would flip these to
+  // "(not set)".
+  const ssr = await hydratable<{ username: string; theme: string }>('mochi-demo:cookies-ssr', () => ({
+    username: cookies.get('mochi_username') ?? '(not set)',
+    theme: cookies.get('mochi_theme') ?? '(not set)',
+  }));
 
-  async function setCookieViaApi() {
+  async function setCookieViaApi(httpOnly: boolean) {
     if (!isBrowser) {
       return;
     }
     const res = await fetch('/api/cookie', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, theme }),
+      body: JSON.stringify({ username, theme, httpOnly }),
     });
     const json = (await res.json()) as { ok: boolean };
     if (json.ok) {
-      message = 'Cookies set via API! Reload to see SSR pick them up.';
+      message = httpOnly
+        ? 'Set via API as HttpOnly — the server (SSR Read) will see it on reload, but client JS (Client Read) never will.'
+        : 'Set via API without HttpOnly — visible to both SSR and client JS. Reload to confirm.';
     }
   }
 
@@ -54,15 +63,16 @@
     <h3>SSR Read <span class="env">(server)</span></h3>
     <p class="desc">These values were read from the Cookie header during SSR:</p>
     <div class="values">
-      <div class="val"><span class="label">mochi_username</span> <code>{ssrUsername}</code></div>
-      <div class="val"><span class="label">mochi_theme</span> <code>{ssrTheme}</code></div>
+      <div class="val"><span class="label">mochi_username</span> <code>{ssr.username}</code></div>
+      <div class="val"><span class="label">mochi_theme</span> <code>{ssr.theme}</code></div>
     </div>
   </div>
 
   <div class="section">
     <h3>Client Read <span class="env">(browser)</span></h3>
     <p class="desc">
-      Live values from <code>cookies.get()</code> on the {isServer ? 'server' : 'client'}:
+      Live values from <code>cookies.get()</code> on the {isServer ? 'server' : 'client'}. Cookies set <strong>via API</strong> are
+      <code>HttpOnly</code> by default, so <code>document.cookie</code> (and this read) can't see them — only the server can.
     </p>
     <div class="values">
       <div class="val">
@@ -95,7 +105,8 @@
     </div>
     <div class="actions">
       <button onclick={setCookieOnClient}>Set via Client</button>
-      <button onclick={setCookieViaApi}>Set via API</button>
+      <button onclick={() => setCookieViaApi(true)}>Set via API (HttpOnly)</button>
+      <button onclick={() => setCookieViaApi(false)}>Set via API (readable)</button>
       <button class="danger" onclick={clearCookies}>Clear</button>
     </div>
     {#if message}

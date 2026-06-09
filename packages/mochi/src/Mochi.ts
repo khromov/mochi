@@ -30,7 +30,8 @@ import type {
 } from './types';
 import { isFormFail, isFormRedirect, isFormSuccess } from './forms';
 import { isEnhanceRequest, jsonError, jsonFailure, jsonRedirect, jsonSuccess } from './formsJson';
-import { csrfCheck, DEFAULT_FORM_CONTENT_TYPES, DEFAULT_PROTECTED_METHODS } from './csrf';
+import { checkWsOrigin, csrfCheck, DEFAULT_FORM_CONTENT_TYPES, DEFAULT_PROTECTED_METHODS } from './csrf';
+import { applyDefaultSecurityHeaders, resolveSecurityHeaders } from './security';
 import { applyFilter, initExtensions, runHook } from './extensions';
 import { buildPublicUrl } from './proxy';
 import { apiError, collectHeaderPairs, headResponse, isHtmlResponse, MochiHttpError, withHead } from './utils';
@@ -41,7 +42,7 @@ import { resolveWarmupEnabled, markWarmupRequest, isWarmablePattern } from './wa
 import { createErrorResponder, DEFAULT_ERROR_PAGE_PATH } from './errors';
 import { requestContext } from './requestContext';
 import type { MochiRequestContext } from './requestContext';
-import { finalizeCookieHeaders } from './cookies';
+import { finalizeCookieHeaders, type CookieSerializeOptions } from './cookies';
 import { makeRequestContextBuilder } from './requestSetup';
 import { verifyAndDecodeProps } from './serverIslandCrypto';
 import { initMochiConfig } from './mochiConfig';
@@ -78,6 +79,43 @@ function jsonForHtml(value: unknown): string {
   return JSON.stringify(value).replace(/</g, '\\u003c');
 }
 
+/** Default request body cap (5 MB), well below Bun's 128 MB default. */
+const DEFAULT_MAX_REQUEST_BODY_SIZE = 5 * 1024 * 1024;
+
+/**
+ * Guard against open redirects from form actions. `redirect()` writes its
+ * `location` straight into a `Location` header (and the enhanced client calls
+ * `window.location.assign` with it), so a value influenced by request data —
+ * a `?next=` param echoed back, say — could bounce visitors to a phishing site.
+ * Only same-origin destinations (relative paths or absolute URLs whose origin
+ * matches the request's own) and explicitly trusted origins are allowed.
+ */
+function isSafeRedirectLocation(location: string, expectedOrigin: string, trustedOrigins: ReadonlySet<string>): boolean {
+  // Control chars / newlines can split headers or trick URL parsers.
+  for (let i = 0; i < location.length; i++) {
+    const code = location.charCodeAt(i);
+    if (code <= 0x1f || code === 0x7f) {
+      return false;
+    }
+  }
+  let resolved: URL;
+  try {
+    resolved = new URL(location, expectedOrigin);
+  } catch {
+    return false;
+  }
+  if (resolved.origin === expectedOrigin) {
+    return true;
+  }
+  return [...trustedOrigins].some((trusted) => {
+    try {
+      return new URL(trusted).origin === resolved.origin;
+    } catch {
+      return false;
+    }
+  });
+}
+
 async function appendDebugTail(response: Response, ctx: MochiRequestContext, development: boolean): Promise<Response> {
   if (!development) {
     return response;
@@ -93,7 +131,8 @@ async function appendDebugTail(response: Response, ctx: MochiRequestContext, dev
     requestCookies: ctx.cookies.peekAll().map(({ name, value }) => [name, value]),
   };
   const body = await response.text();
-  const tail = `<script>Object.assign((window.__mochi_debug||={}),${jsonForHtml(dynamic)})</script>`;
+  const tailNonce = ctx.cspNonce ? ` nonce="${ctx.cspNonce}"` : '';
+  const tail = `<script${tailNonce}>Object.assign((window.__mochi_debug||={}),${jsonForHtml(dynamic)})</script>`;
   return new Response(body + tail, {
     status: response.status,
     statusText: response.statusText,
@@ -153,14 +192,19 @@ export class Mochi {
   ): string {
     const bootstrapUrl = result.bootstrapUrl;
     const cssLinks = result.cssUrls.map((url) => `<link rel="stylesheet" href="${url}">`).join('\n');
-    const serverIslandScript = result.hasServerIslands ? `<script>(()=>{${opts.serverIslandClientJs}})()</script>` : '';
-    const debugInfoScript = registry.debugBarEnabled && opts.debugInfo ? `<script>window.__mochi_debug=${jsonForHtml(opts.debugInfo)}</script>` : '';
-    const pageEntryScript = opts.liveReloadClientJs && opts.pageEntry ? `<script>window.__mochi_page_entry=${jsonForHtml(opts.pageEntry)}</script>` : '';
-    const logLevelScript = opts.logLevel === DEFAULT_LOG_LEVEL ? '' : `<script>window.__mochi_log_level=${JSON.stringify(opts.logLevel)}</script>`;
+    // When `csp` is enabled the request carries a nonce; stamp it on every
+    // executable framework script so a `script-src 'nonce-...'` policy lets them
+    // run. Empty (and rendered HTML unchanged) when CSP is off.
+    const nonce = requestContext.getStore()?.cspNonce;
+    const n = nonce ? ` nonce="${nonce}"` : '';
+    const serverIslandScript = result.hasServerIslands ? `<script${n}>(()=>{${opts.serverIslandClientJs}})()</script>` : '';
+    const debugInfoScript = registry.debugBarEnabled && opts.debugInfo ? `<script${n}>window.__mochi_debug=${jsonForHtml(opts.debugInfo)}</script>` : '';
+    const pageEntryScript = opts.liveReloadClientJs && opts.pageEntry ? `<script${n}>window.__mochi_page_entry=${jsonForHtml(opts.pageEntry)}</script>` : '';
+    const logLevelScript = opts.logLevel === DEFAULT_LOG_LEVEL ? '' : `<script${n}>window.__mochi_log_level=${JSON.stringify(opts.logLevel)}</script>`;
     // Feeds the debug bar's Warnings panel. When the debug bar is off the
     // single `window.__mochi_warn?.(...)` call site no-ops via optional chaining.
     const warnShim = registry.debugBarEnabled
-      ? `<script>window.__mochi_warnings=[];window.__mochi_warn=function(m){console.warn("[mochi] "+m);window.__mochi_warnings.push(m)}</script>`
+      ? `<script${n}>window.__mochi_warnings=[];window.__mochi_warn=function(m){console.warn("[mochi] "+m);window.__mochi_warnings.push(m)}</script>`
       : '';
     // Single global-regex pass. The function-form replacer is also required
     // for safety: string-form replacements interpret `$&`, `$'`, `` $` ``, `$$`
@@ -173,10 +217,12 @@ export class Mochi {
         }</style>\n${cssLinks}`,
       body: () => result.body + debugInfoScript + pageEntryScript + (registry.debugBarEnabled ? '<div id="mochi-dev-toolbar"></div>' : ''),
       script: () =>
-        (bootstrapUrl ? `<script type="module" src="${bootstrapUrl}"></script>` : '') +
+        (bootstrapUrl ? `<script type="module"${n} src="${bootstrapUrl}"></script>` : '') +
         serverIslandScript +
-        (opts.debugBarUrl ? `<script type="module" src="${opts.debugBarUrl}"></script><script>window.__mochi_asset_prefix=${JSON.stringify(registry.assetPrefix)}</script>` : '') +
-        (opts.liveReloadClientJs ? `<script>${opts.liveReloadClientJs}</script><mochi-live-reload></mochi-live-reload>` : ''),
+        (opts.debugBarUrl
+          ? `<script type="module"${n} src="${opts.debugBarUrl}"></script><script${n}>window.__mochi_asset_prefix=${JSON.stringify(registry.assetPrefix)}</script>`
+          : '') +
+        (opts.liveReloadClientJs ? `<script${n}>${opts.liveReloadClientJs}</script><mochi-live-reload></mochi-live-reload>` : ''),
     };
     return template.replace(/\{\{mochi\.(head|css|body|script)\}\}/g, (_match, key: keyof typeof slots) => slots[key]());
   }
@@ -200,9 +246,18 @@ export class Mochi {
     const formContentTypes: ReadonlySet<string> = applyFilter('csrf:formContentTypes', new Set(DEFAULT_FORM_CONTENT_TYPES), { options });
     const protectedMethods: ReadonlySet<string> = applyFilter('csrf:protectedMethods', new Set(DEFAULT_PROTECTED_METHODS), { options });
     const trustedOrigins: ReadonlySet<string> = applyFilter('csrf:trustedOrigins', new Set(options.csrf?.trustedOrigins ?? []), { options });
-    const cookieDefaults = applyFilter('cookie:defaults', {}, { options });
+    // Secure-by-default baseline for every cookie set through the jar. HttpOnly
+    // keeps session cookies out of reach of XSS; SameSite=Lax blocks the common
+    // CSRF vectors; Secure is gated to production so http://localhost dev still
+    // works. Apps override per-cookie via set(name, value, opts) or globally via
+    // the cookie:defaults filter (e.g. set httpOnly:false for a client-read cookie).
+    const secureCookieDefaults: CookieSerializeOptions = { httpOnly: true, sameSite: 'lax', secure: !(options.development ?? true) };
+    const cookieDefaults = applyFilter('cookie:defaults', secureCookieDefaults, { options });
 
     const development = options.development ?? true;
+    const maxRequestBodySize = options.maxRequestBodySize ?? DEFAULT_MAX_REQUEST_BODY_SIZE;
+    const cspEnabled = options.csp ?? false;
+    const securityHeaderDefaults = resolveSecurityHeaders(options);
     const warmupEnabled = resolveWarmupEnabled(options.warmup, development);
     const debugBarEnabled = development && (options.debugBar ?? true);
     const liveReloadEnabled = options.liveReload ?? development;
@@ -409,6 +464,7 @@ export class Mochi {
       csrf: options.csrf,
       trailingSlashPolicy,
       cookieDefaults,
+      csp: cspEnabled,
       development,
       debugBarEnabled,
       formContentTypes,
@@ -416,6 +472,41 @@ export class Mochi {
       trustedOrigins,
       newRequestId,
     });
+
+    // Stamp the baseline security headers on a response, leaving any the handler
+    // already set untouched. Applied as the outermost wrapper so middleware's
+    // `filterResponseHeaders` (which runs inside the handler) can't strip them.
+    const addSecurityHeaders = (res: Response): Response => {
+      if (Object.keys(securityHeaderDefaults).length === 0) {
+        return res;
+      }
+      try {
+        applyDefaultSecurityHeaders(res.headers, securityHeaderDefaults);
+      } catch {
+        // An immutable response (e.g. one returned verbatim by user code) rejects
+        // header mutation — skip rather than crash the request.
+      }
+      return res;
+    };
+
+    const withSecurityHeaders = (value: BunRouteValue): BunRouteValue => {
+      if (Object.keys(securityHeaderDefaults).length === 0) {
+        return value;
+      }
+      if (typeof value === 'function') {
+        return async (req, server) => addSecurityHeaders(await value(req, server));
+      }
+      if (value && typeof value === 'object' && !(value instanceof Response) && !(value instanceof Blob)) {
+        const rec = value as Record<string, (req: Request, server: Server<undefined>) => Response | Promise<Response>>;
+        const wrapped: typeof rec = {};
+        for (const method in rec) {
+          const handler = rec[method]!;
+          wrapped[method] = async (req, server) => addSecurityHeaders(await handler(req, server));
+        }
+        return wrapped;
+      }
+      return value;
+    };
 
     const internalRoutes: Record<string, MochiPageConfig | MochiApiConfig> = {
       ...buildClientStatsRoutes(registry),
@@ -580,6 +671,17 @@ export class Mochi {
                 return response;
               }
 
+              const contentLength = Number(req.headers.get('content-length'));
+              if (Number.isFinite(contentLength) && contentLength > maxRequestBodySize) {
+                const tooLargeErr = new Error(`Request body ${contentLength} exceeds maxRequestBodySize ${maxRequestBodySize}`);
+                const response = enhanced
+                  ? jsonError(413, 'Payload too large')
+                  : await renderErrorResponse({ req, event, resolveOpts, status: 413, message: 'Payload too large', thrown: null });
+                emitError('action', ctx.requestId, req, ctx.url, response.status, tooLargeErr, actionName);
+                emitActionComplete(actionName, 'error', response.status);
+                return response;
+              }
+
               let formData: FormData;
               try {
                 formData = await req.formData();
@@ -639,6 +741,23 @@ export class Mochi {
               }
               if (isFormRedirect(result)) {
                 emitActionComplete(actionName, 'redirect', result.status);
+                if (!isSafeRedirectLocation(result.location, ctx.url.origin, trustedOrigins)) {
+                  if (development) {
+                    logger.warn(
+                      `redirect(): off-origin location "${result.location}" would be blocked in production (allowed origin: ${ctx.url.origin}). Add the origin to csrf.trustedOrigins if intentional.`,
+                    );
+                  } else {
+                    const unsafeErr = new Error(`Unsafe redirect location: ${result.location}`);
+                    logger.warn(
+                      `redirect(): blocking off-origin location "${result.location}" (allowed origin: ${ctx.url.origin}). Add the origin to csrf.trustedOrigins if intentional.`,
+                    );
+                    const response = enhanced
+                      ? jsonError(500, 'Unsafe redirect location')
+                      : await renderErrorResponse({ req, event, resolveOpts, status: 500, message: 'Unsafe redirect location', thrown: null });
+                    emitError('action', ctx.requestId, req, ctx.url, response.status, unsafeErr, actionName);
+                    return response;
+                  }
+                }
                 if (enhanced) {
                   return jsonRedirect(result.status, result.location);
                 }
@@ -687,14 +806,16 @@ export class Mochi {
             });
 
           return {
-            bunRouteValue: withHead({
-              GET: getHandler,
-              POST: postHandler,
-            } as unknown as BunRouteValue),
+            bunRouteValue: withHead(
+              withSecurityHeaders({
+                GET: getHandler,
+                POST: postHandler,
+              } as unknown as BunRouteValue),
+            ),
             type: 'page',
           };
         }
-        return { bunRouteValue: withHead(getHandler), type: 'page' };
+        return { bunRouteValue: withHead(withSecurityHeaders(getHandler)), type: 'page' };
       } else if (isMochiApi(handler)) {
         if (apiHandlerMap) {
           apiHandlerMap.set(pattern, handler.handler);
@@ -748,7 +869,7 @@ export class Mochi {
             return final;
           });
         };
-        return { bunRouteValue: withHead(bunRouteValue), type: 'api' };
+        return { bunRouteValue: withHead(withSecurityHeaders(bunRouteValue)), type: 'api' };
       } else if (isMochiWs(handler)) {
         const wsHandlers = handler.handlers;
         wsHandlersMap.set(pattern, wsHandlers);
@@ -781,6 +902,17 @@ export class Mochi {
               kind: 'ws',
             });
           });
+          // Only real upgrade requests can hijack a socket; a non-upgrade probe
+          // (no `Upgrade: websocket`) just fails the upgrade below. Gating here
+          // keeps the origin check scoped to the actual CSWSH vector.
+          if (req.headers.get('upgrade')?.toLowerCase() === 'websocket') {
+            const wsOriginBlock = checkWsOrigin(req, wsUrl, options.csrf, options.proxy, development, trustedOrigins);
+            if (wsOriginBlock) {
+              emitWsReject(wsOriginBlock.status);
+              return wsOriginBlock;
+            }
+          }
+
           let userData: unknown = undefined;
 
           const liveWsHandlers = wsHandlersMap.get(pattern) ?? wsHandlers;
@@ -961,113 +1093,116 @@ export class Mochi {
     }
 
     // Register server island endpoint
-    bunRoutes[`${registry.assetPrefix}/island/:componentName`] = withHead(async (req: Request, server: Server<undefined>): Promise<Response> => {
-      const setup = buildRequestContext(req, server, {
-        kind: 'island',
-        pattern: `${registry.assetPrefix}/island/:componentName`,
-        paramsOverride: {},
-      });
-      if ('earlyResponse' in setup) {
-        return setup.earlyResponse;
-      }
-      const { ctx, url, params } = setup;
-      const componentName = params.componentName;
-      if (!componentName) {
-        return new Response('Missing component name', { status: 400 });
-      }
-
-      const signedProps = url.searchParams.get('props') ?? '';
-      const hydrateMode = url.searchParams.get('hydrate');
-
-      // Verify signature and decode props (empty means no props)
-      let props: Record<string, unknown>;
-      if (signedProps) {
-        const propsJson = verifyAndDecodeProps(signedProps);
-        if (propsJson === null) {
-          return new Response('Invalid props signature', { status: 403 });
+    bunRoutes[`${registry.assetPrefix}/island/:componentName`] = withHead(
+      withSecurityHeaders(async (req: Request, server: Server<undefined>): Promise<Response> => {
+        const setup = buildRequestContext(req, server, {
+          kind: 'island',
+          pattern: `${registry.assetPrefix}/island/:componentName`,
+          paramsOverride: {},
+        });
+        if ('earlyResponse' in setup) {
+          return setup.earlyResponse;
         }
-        props = devalueParse(propsJson) as Record<string, unknown>;
-      } else {
-        props = {};
-      }
+        const { ctx, url, params } = setup;
+        const componentName = params.componentName;
+        if (!componentName) {
+          return new Response('Missing component name', { status: 400 });
+        }
 
-      // Look up the component path
-      const componentPath = registry.getServerIslandPath(componentName);
-      if (!componentPath) {
-        return new Response('Unknown server island component', { status: 404 });
-      }
+        const signedProps = url.searchParams.get('props') ?? '';
+        const hydrateMode = url.searchParams.get('hydrate');
 
-      return requestContext.run(ctx, async () => {
-        // Compile the server island component directly
-        await registry.compile(componentPath);
-        let result: RenderResult;
-        try {
-          result = await registry.renderComponent(componentPath, props as Record<string, unknown>, {
-            stripMarkers: false,
-          });
-        } catch (err) {
-          const e = err instanceof Error ? err : new Error(String(err));
-          logger.error(`Server island "${componentName}" failed: ${e.message}`);
-          mochiEvents.emit('island:error', {
-            componentName,
-            islandId: (props as Record<string, unknown>).islandId as string | undefined,
-            kind: 'server',
-            message: e.message,
-            stack: registry.development ? e.stack : undefined,
-          });
-          // 200 + a known stub so `ServerIsland.ts` doesn't burn its retry budget
-          // on a deterministic failure. Visibility is CSS-controlled: dev shows
-          // the message, prod hides the element entirely.
-          const stub = islandFailureStub(componentName, registry.development ? e.message : undefined);
-          return new Response(stub, {
-            status: 200,
+        // Verify signature and decode props (empty means no props)
+        let props: Record<string, unknown>;
+        if (signedProps) {
+          const propsJson = verifyAndDecodeProps(signedProps);
+          if (propsJson === null) {
+            return new Response('Invalid props signature', { status: 403 });
+          }
+          props = devalueParse(propsJson) as Record<string, unknown>;
+        } else {
+          props = {};
+        }
+
+        // Look up the component path
+        const componentPath = registry.getServerIslandPath(componentName);
+        if (!componentPath) {
+          return new Response('Unknown server island component', { status: 404 });
+        }
+
+        return requestContext.run(ctx, async () => {
+          // Compile the server island component directly
+          await registry.compile(componentPath);
+          let result: RenderResult;
+          try {
+            result = await registry.renderComponent(componentPath, props as Record<string, unknown>, {
+              stripMarkers: false,
+            });
+          } catch (err) {
+            const e = err instanceof Error ? err : new Error(String(err));
+            logger.error(`Server island "${componentName}" failed: ${e.message}`);
+            mochiEvents.emit('island:error', {
+              componentName,
+              islandId: (props as Record<string, unknown>).islandId as string | undefined,
+              kind: 'server',
+              message: e.message,
+              stack: registry.development ? e.stack : undefined,
+            });
+            // 200 + a known stub so `ServerIsland.ts` doesn't burn its retry budget
+            // on a deterministic failure. Visibility is CSS-controlled: dev shows
+            // the message, prod hides the element entirely.
+            const stub = islandFailureStub(componentName, registry.development ? e.message : undefined);
+            return new Response(stub, {
+              status: 200,
+              headers: {
+                'Content-Type': 'text/html; charset=utf-8',
+                'Cache-Control': 'private, no-store',
+              },
+            });
+          }
+
+          let body = result.body;
+
+          // If also-hydrate is requested, wrap in hydratable island
+          if (hydrateMode === 'eager' || hydrateMode === 'visible') {
+            const componentUrl = registry.getComponentEntryUrl(componentName);
+            const serializedProps = devalueStringify(props);
+            const bootstrapUrl = registry.getIslandBootstrapUrl();
+
+            const islandId = props.islandId as string | undefined;
+            if (!islandId) {
+              logger.warn(`Server island "${componentName}" missing islandId in props`);
+            }
+            let hydrateAttrs = `component-name="${componentName}"`;
+            if (islandId) {
+              hydrateAttrs += ` island-id="${islandId}"`;
+            }
+            if (Object.keys(props as Record<string, unknown>).length > 0) {
+              const escapedProps = serializedProps.replace(/"/g, '&quot;');
+              hydrateAttrs += ` props="${escapedProps}"`;
+            }
+            if (componentUrl) {
+              hydrateAttrs += ` component-url="${componentUrl}"`;
+            }
+
+            body = `<mochi-hydratable-island ${hydrateAttrs}>${body}</mochi-hydratable-island>`;
+
+            // Include bootstrap script so the hydratable island can hydrate
+            if (bootstrapUrl) {
+              const islandNonce = ctx.cspNonce ? ` nonce="${ctx.cspNonce}"` : '';
+              body += `<script type="module"${islandNonce} src="${bootstrapUrl}"></script>`;
+            }
+          }
+
+          return new Response(body, {
             headers: {
               'Content-Type': 'text/html; charset=utf-8',
               'Cache-Control': 'private, no-store',
             },
           });
-        }
-
-        let body = result.body;
-
-        // If also-hydrate is requested, wrap in hydratable island
-        if (hydrateMode === 'eager' || hydrateMode === 'visible') {
-          const componentUrl = registry.getComponentEntryUrl(componentName);
-          const serializedProps = devalueStringify(props);
-          const bootstrapUrl = registry.getIslandBootstrapUrl();
-
-          const islandId = props.islandId as string | undefined;
-          if (!islandId) {
-            logger.warn(`Server island "${componentName}" missing islandId in props`);
-          }
-          let hydrateAttrs = `component-name="${componentName}"`;
-          if (islandId) {
-            hydrateAttrs += ` island-id="${islandId}"`;
-          }
-          if (Object.keys(props as Record<string, unknown>).length > 0) {
-            const escapedProps = serializedProps.replace(/"/g, '&quot;');
-            hydrateAttrs += ` props="${escapedProps}"`;
-          }
-          if (componentUrl) {
-            hydrateAttrs += ` component-url="${componentUrl}"`;
-          }
-
-          body = `<mochi-hydratable-island ${hydrateAttrs}>${body}</mochi-hydratable-island>`;
-
-          // Include bootstrap script so the hydratable island can hydrate
-          if (bootstrapUrl) {
-            body += `<script type="module" src="${bootstrapUrl}"></script>`;
-          }
-        }
-
-        return new Response(body, {
-          headers: {
-            'Content-Type': 'text/html; charset=utf-8',
-            'Cache-Control': 'private, no-store',
-          },
         });
-      });
-    });
+      }),
+    );
 
     if (process.env.MOCHI_MEMORY_PROBE === '1') {
       bunRoutes['/__mochi/health/memory'] = (): Response => {
@@ -1158,9 +1293,9 @@ export class Mochi {
         duration: performance.now() - start,
       });
       if (req.method === 'HEAD') {
-        return headResponse(response);
+        return addSecurityHeaders(await headResponse(response));
       }
-      return response;
+      return addSecurityHeaders(response);
     };
 
     const {
@@ -1170,6 +1305,7 @@ export class Mochi {
       handle: _handle,
       markdown: _markdown,
       websocket: userWebSocketOptions,
+      maxRequestBodySize: _maxRequestBodySize,
       ...bunOptions
     } = options as Record<string, unknown>;
 
@@ -1222,6 +1358,7 @@ export class Mochi {
 
     const server = Bun.serve({
       ...bunOptions,
+      maxRequestBodySize,
       routes: bunRoutes,
       fetch: composedFetch,
       ...(websocketOption ? { websocket: websocketOption } : {}),

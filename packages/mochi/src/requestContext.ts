@@ -52,6 +52,12 @@ export interface MochiRequestContext {
    */
   form?: MochiFormResult;
   /**
+   * Per-request CSP nonce. Present only when `Mochi.serve({ csp: true })` is set;
+   * the framework stamps it on its own executable `<script>` tags. Read it with
+   * `getCspNonce()` to build a matching `Content-Security-Policy` header.
+   */
+  cspNonce?: string;
+  /**
    * Returns the client's IP address, or `null` when no source is available.
    *
    * By default this is Bun's connecting `remoteAddress`. Behind a reverse
@@ -174,4 +180,15 @@ export function getRequestContext(): MochiRequestContext {
     throw new Error('getRequestContext() called outside of a request. ' + 'It is only available in server-side code running within a Mochi request handler.');
   }
   return ctx;
+}
+
+/**
+ * The current request's CSP nonce, or `undefined` when `csp` is not enabled on
+ * `Mochi.serve()`. Use it to build a `Content-Security-Policy` header that
+ * matches the nonce stamped on framework-emitted `<script>` tags, e.g. in
+ * middleware: `response.headers.set('Content-Security-Policy', \`script-src
+ * 'nonce-${getCspNonce()}' 'strict-dynamic'\`)`.
+ */
+export function getCspNonce(): string | undefined {
+  return requestContext.getStore()?.cspNonce;
 }

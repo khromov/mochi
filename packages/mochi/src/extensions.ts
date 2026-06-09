@@ -72,6 +72,7 @@ export interface MochiFilterValue {
   'csrf:trustedOrigins': Set<string>;
   'csrf:check': Response | null;
   'cookie:defaults': CookieSerializeOptions;
+  'security:headers': Record<string, string>;
   'html:shell': string;
   'serverIsland:secretKey': Buffer;
   'compile:preprocessors': PreprocessorGroup[];
@@ -93,6 +94,7 @@ export interface MochiFilterContext {
   'csrf:trustedOrigins': { options: MochiServeOptions };
   'csrf:check': { request: Request; url: URL };
   'cookie:defaults': { options: MochiServeOptions };
+  'security:headers': { options: MochiServeOptions };
   'html:shell': { options: MochiServeOptions; development: boolean };
   'serverIsland:secretKey': { options: MochiServeOptions; envKeyPresent: boolean };
   'compile:preprocessors': {
@@ -123,6 +125,7 @@ export interface MochiFilterKindMap {
   'csrf:trustedOrigins': 'sync';
   'csrf:check': 'sync';
   'cookie:defaults': 'sync';
+  'security:headers': 'sync';
   'html:shell': 'sync';
   'serverIsland:secretKey': 'async';
   'compile:preprocessors': 'sync';
@@ -160,6 +163,7 @@ const FILTER_KINDS: { [K in keyof MochiFilterValue]: MochiKind } = {
   'csrf:trustedOrigins': 'sync',
   'csrf:check': 'sync',
   'cookie:defaults': 'sync',
+  'security:headers': 'sync',
   'html:shell': 'sync',
   'serverIsland:secretKey': 'async',
   'compile:preprocessors': 'sync',

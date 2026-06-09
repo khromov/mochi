@@ -60,6 +60,10 @@ Do **NOT** call `Mochi.serve()` more than once per process; instead, run a secon
 - `svelteConfigPath`: Path to a Svelte config file. Default: `./svelte.config.js`. See `Svelte config`.
 - `csrf`: `MochiCsrfOptions` controlling the origin-header check. See `CSRF` below.
 - `proxy`: `MochiProxyOptions` describing trusted reverse-proxy headers. See `Proxy` below.
+- `maxRequestBodySize`: Max request body in bytes. Default: `5_242_880` (5 MB). Form actions over the limit get `413`. See `Security`.
+- `securityHeaders`: Baseline response security headers (`nosniff`, `Referrer-Policy`, `X-Frame-Options`). `boolean | MochiSecurityHeadersOptions`. Default: on. See `Security`.
+- `csp`: Generate a per-request CSP nonce and stamp it on framework scripts; read it with `getCspNonce()`. Default: `false`. See `Security`.
+- `websocket`: Bun WebSocket tuning shared by all `Mochi.ws` routes (`maxPayloadLength`, `backpressureLimit`, `idleTimeout`, …); lifecycle callbacks are framework-owned. See `Security`.
 - `hooks`: `MochiHooks` map of named lifecycle hooks. See `Extensions (hooks & filters)`.
 - `filters`: `MochiFilters` map of named value-replacement filters. See `Extensions (hooks & filters)`.
 - `warmup`: Warm the SSR pipeline at startup by invoking every static page route once. `boolean | { enabledInProd: boolean; enabledInDev: boolean }`. `true` warms in **production only**; pass the object form for per-mode control. Default: `false`. See `Route warmup` below.

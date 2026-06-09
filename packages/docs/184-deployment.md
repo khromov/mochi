@@ -14,6 +14,10 @@ Mochi is at its heart a _serverful_ application. That means it doesn't run on _s
 
 You can host Bun and Mochi at hundreds of different hosts. We list some of the most popular options below.
 
+<Callout type="warning">
+Before deploying, set <code>proxy.origin</code> (or <code>proxy.hostHeader</code>) so the CSRF and WebSocket origin checks know which origin to trust — otherwise they block every cross-origin state-changing request in production. See <a href="/docs/security">Security</a> for the full production checklist.
+</Callout>
+
 <Callout type="info">
 None of the links below are affiliate links, nor should any of the links be seen as endorsements.
 </Callout>

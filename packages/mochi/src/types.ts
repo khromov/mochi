@@ -1,9 +1,10 @@
-import type { BunFile, Server, ServerWebSocket } from 'bun';
+import type { BunFile, Server, ServerWebSocket, WebSocketHandler } from 'bun';
 import type { Handle, HandleError, MochiEvent } from './hooks';
 import type { MochiCookieJar } from './cookies';
 import type { MochiCsrfOptions } from './csrf';
 import type { MochiFilters, MochiHooks } from './extensions';
 import type { MochiProxyOptions } from './proxy';
+import type { MochiSecurityHeadersOptions } from './security';
 
 export type MochiServerPropsResolver = (req: Request, params: Record<string, string>) => Record<string, unknown> | Promise<Record<string, unknown>>;
 
@@ -412,6 +413,37 @@ export interface MochiServeOptions {
   liveReload?: boolean;
   /** Path to a prebuilt manifest JSON. Defaults to `.mochi/manifest.json`. */
   manifest?: string;
+  /**
+   * Maximum request body size in bytes. Enforced by Bun at the socket layer for
+   * every route, and by a fast Content-Length pre-check on form-action POSTs
+   * (which return `413 Payload Too Large`). Defaults to 5 MB — far below Bun's
+   * own 128 MB default — so a single large upload can't exhaust memory. Raise it
+   * for routes that accept big multipart uploads.
+   */
+  maxRequestBodySize?: number;
+  /**
+   * Baseline security response headers (`X-Content-Type-Options`,
+   * `Referrer-Policy`, `X-Frame-Options`). On by default. Pass an object to tune
+   * individual values, or `false` to disable the framework defaults entirely.
+   * Add HSTS/CSP via the `security:headers` filter or middleware.
+   */
+  securityHeaders?: boolean | MochiSecurityHeadersOptions;
+  /**
+   * Generate a per-request CSP nonce and stamp it on every framework-emitted
+   * executable `<script>` tag. Off by default; when off, rendered HTML is
+   * unchanged. Turn it on, read the value with `getCspNonce()`, and emit your
+   * own `Content-Security-Policy` header (e.g. in middleware) — the framework
+   * does not set the CSP header itself, since directives are app-specific.
+   */
+  csp?: boolean;
+  /**
+   * Bun WebSocket tuning shared by every `Mochi.ws` route. The lifecycle
+   * callbacks (`open`/`message`/`close`/`drain`) are owned by the framework and
+   * cannot be set here — use these to cap resource use:
+   * `maxPayloadLength` (reject oversized frames), `backpressureLimit` +
+   * `closeOnBackpressureLimit` (drop slow clients), and `idleTimeout`.
+   */
+  websocket?: Omit<WebSocketHandler<unknown>, 'open' | 'message' | 'close' | 'drain' | 'ping' | 'pong'>;
   routes?: Record<string, MochiRouteValue>;
   fetch?: (req: Request, server: Server<undefined>) => Response | Promise<Response>;
   htmlShell?: string;
