@@ -1,7 +1,7 @@
 import type { Server, ServerWebSocket } from 'bun';
 import { existsSync } from 'fs';
 import path from 'node:path';
-import chokidar from 'chokidar';
+import { createWatcher } from './lib/fileWatcher';
 import debounce from './vendor/debounce/index';
 import type { ComponentRegistry } from './ComponentRegistry';
 import { mochiEvents } from './events';
@@ -31,8 +31,8 @@ import {
 
 const FILE_CHANGE_EVENTS = new Set<string>(['add', 'change', 'unlink', 'addDir', 'unlinkDir']);
 
-// Chokidar reports a rename as unlink-old + add-new, so logging the verb per
-// event surfaces both the old and new filename instead of just "changed".
+// A rename surfaces as unlink-old + add-new, so logging the verb per event
+// surfaces both the old and new filename instead of just "changed".
 function publicChangeVerb(event: string): string {
   if (event === 'add' || event === 'addDir') {
     return 'added';
@@ -68,8 +68,8 @@ export interface DevWatcherDeps {
 }
 
 /**
- * Wire up the dev-mode file watcher: chokidar over the source tree, public
- * dir, and `svelte.config.js`. Saves are debounced (100 ms) and serialized
+ * Wire up the dev-mode file watcher over the source tree, public dir, and
+ * `svelte.config.js`. Saves are debounced (100 ms) and serialized
  * through a Promise chain so the live-reload signal only fires after client
  * chunks are ready. CSS edits take a fast-path that re-bundles imported CSS
  * without an SSR recompile; public-dir edits rescan and reload the route map.
@@ -511,16 +511,15 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
     const abs = path.resolve(filePath);
     return abs === outDirAbs || abs.startsWith(outDirAbs + path.sep);
   };
-  const watcher = chokidar.watch(finalWatchPaths, {
-    ignoreInitial: true,
+  const watcher = createWatcher(finalWatchPaths, {
     ignored: [/(^|[/\\])node_modules([/\\]|$)/, isInsideOutDir],
     cwd: process.cwd(),
   });
 
   const watcherReady =
     finalWatchPaths.length === 0
-      ? // chokidar never emits 'ready' for an empty watch set, so don't wait on
-        // it — there's nothing being watched, hence no startup race to guard.
+      ? // The watcher never emits 'ready' for an empty watch set, so don't wait
+        // on it — there's nothing being watched, hence no startup race to guard.
         Promise.resolve()
       : new Promise<void>((resolve) => {
           let settled = false;
@@ -534,7 +533,7 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
           watcher.once('ready', done);
           // Safety net so serve() can't hang indefinitely if 'ready' never
           // arrives. unref so it can't keep the process alive. Reaching this
-          // means chokidar never signalled ready for a non-empty watch set
+          // means the watcher never signalled ready for a non-empty watch set
           setTimeout(() => {
             if (settled) {
               return;
@@ -622,7 +621,7 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
       notifyClients();
     });
   }, 100);
-  const svelteConfigWatcher = chokidar.watch(svelteConfigPath, { ignoreInitial: true });
+  const svelteConfigWatcher = createWatcher([svelteConfigPath]);
   svelteConfigWatcher
     .on('add', reloadSvelteConfig)
     .on('change', reloadSvelteConfig)

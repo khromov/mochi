@@ -5,7 +5,7 @@ import type { Server } from 'bun';
 import { Mochi } from './Mochi';
 
 // Poll a URL until it returns the expected status or the deadline passes. The
-// dev watcher debounces public-dir changes (~100ms) and chokidar's event
+// dev watcher debounces public-dir changes (~100ms) and fs.watch event
 // latency varies by platform, so the live-add assertion can't fetch immediately.
 async function fetchUntil(url: string, status: number, timeoutMs = 8000): Promise<Response> {
   const deadline = performance.now() + timeoutMs;

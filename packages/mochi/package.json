@@ -83,7 +83,6 @@
     }
   },
   "dependencies": {
-    "chokidar": "^4.0.3",
     "deepmerge": "^4.3.1",
     "devalue": "^5.8.1",
     "js-cookie": "^3.0.7",
