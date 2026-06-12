@@ -110,6 +110,19 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
           serverIslands.push({ name: comp.name, resolvedPath: resolved });
         }
 
+        // `islandId` is the framework's transport key inside the signed
+        // envelope — the island endpoint strips it before rendering, so a
+        // user prop by that name would never reach the component. Reject it
+        // loudly instead of silently dropping it.
+        for (const attr of comp.attributes) {
+          if (attr.type === 'Attribute' && attr.name === 'islandId') {
+            throw new Error(
+              `\`islandId\` is a reserved transport key on \`${directives.server.name}\` islands and cannot be passed as a prop. ` +
+                `For a unique id inside ${comp.name}, use Svelte's \`$props.id()\`.`,
+            );
+          }
+        }
+
         // Server islands only get `isHydratable: true` when also-hydrate is set
         // (i.e. `mochi:defer mochi:hydrate`); a pure `mochi:defer` is
         // SSR-only-via-fetch and never hydrates.
@@ -312,9 +325,14 @@ function findMochiDirectives(attributes: Array<AST.Attribute | AST.SpreadAttribu
   return { server, hydrate };
 }
 
-/** Build a JS object expression from AST attributes, skipping mochi:* attrs. */
+/**
+ * Build a JS object expression from AST attributes, skipping mochi:* attrs.
+ * `extraEntries` are framework-owned keys appended LAST so they win over
+ * user-supplied spreads (last key wins in an object literal) — a `{...rest}`
+ * carrying `islandId` must not override the transport id.
+ */
 function buildPropsFromAst(source: string, attributes: Array<AST.Attribute | AST.SpreadAttribute | AST.Directive | AST.AttachTag>, extraEntries: string[] = []): string {
-  const entries: string[] = [...extraEntries];
+  const entries: string[] = [];
   for (const attr of attributes) {
     if (attr.type === 'SpreadAttribute') {
       const expr = attr.expression as unknown as Positioned;
@@ -345,5 +363,6 @@ function buildPropsFromAst(source: string, attributes: Array<AST.Attribute | AST
     }
     // Skip Directive and AttachTag types — they're not props
   }
+  entries.push(...extraEntries);
   return `{${entries.join(', ')}}`;
 }

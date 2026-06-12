@@ -396,6 +396,29 @@ describe('preprocessHydratable', () => {
     expect(transformed).toContain('island-id={__mochi_iid}');
   });
 
+  test('literal islandId prop on a server island is rejected', () => {
+    const source = `${SCRIPT('import Srv from "./Srv.svelte";')}<Srv mochi:defer islandId="mine" />`;
+    expect(() => preprocessHydratable(source, '/test/File.svelte')).toThrow(/reserved transport key/);
+  });
+
+  test('framework islandId wins over a user spread on server islands', () => {
+    const source = `${SCRIPT('import Srv from "./Srv.svelte";\nconst rest = { islandId: "mine" };')}<Srv mochi:defer {...rest} />`;
+    const { transformed } = preprocessHydratable(source, '/test/File.svelte');
+
+    // Framework entries come last in the object literal, so the spread cannot
+    // override the transport id (last key wins).
+    expect(transformed).toContain('{...rest, islandId: __mochi_iid}');
+  });
+
+  test('islandId on a plain hydrate island stays an ordinary user prop', () => {
+    const source = `${SCRIPT('import Foo from "./Foo.svelte";')}<Foo mochi:hydrate islandId="mine" />`;
+    const { transformed } = preprocessHydratable(source, '/test/File.svelte');
+
+    // The framework no longer owns the name outside `mochi:defer` transport —
+    // it passes through like any other prop.
+    expect(transformed).toContain('<Foo islandId="mine" isHydratable={true} />');
+  });
+
   test('hydrate island serialized props do not contain islandId', () => {
     const source = `${SCRIPT('import Foo from "./Foo.svelte";')}<Foo mochi:hydrate name="test" />`;
     const { transformed } = preprocessHydratable(source, '/test/File.svelte');

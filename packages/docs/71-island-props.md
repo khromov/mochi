@@ -118,3 +118,5 @@ The framework appends one read-only prop to every island invocation. Destructure
 - `isHydratable` — `true` when the call site uses `mochi:hydrate`, `mochi:hydrate:visible`, or `mochi:defer mochi:hydrate`. Undefined for pure SSR-only invocations and for bare `mochi:defer`.
 
 Do **NOT** declare `isHydratable` as a user-controlled prop; instead, treat it as an input the framework owns. See `Selective hydration with mochi:hydrate` for the branching pattern. For a unique per-instance id, use Svelte's native `$props.id()` instead of a prop.
+
+On `mochi:defer` islands, `islandId` is additionally a reserved name — it is the framework's transport key inside the signed envelope and is stripped server-side before the component renders. Passing it as a literal prop is a compile error; a spread carrying it is silently overridden by the framework value. On plain `mochi:hydrate` islands the name is not reserved.
