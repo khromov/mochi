@@ -1,6 +1,17 @@
 import { stringify } from 'devalue';
+import { escapeHtmlAttr } from './htmlEscape';
 import { logger } from './log';
 import { getRequestContext } from './requestContext';
+
+/**
+ * One entry in the per-request island props dedup registry
+ * (`ctx.islandProps`): the ref id assigned to a unique serialized payload and
+ * the number of islands that emitted that exact payload.
+ */
+export interface IslandPropsEntry {
+  id: string;
+  count: number;
+}
 
 /**
  * Serialize a hydratable island's props via devalue and register them in the
@@ -65,7 +76,7 @@ export function emitIslandProps(value: unknown, islandId?: string): string {
  * script-data tokenizer (which ignores `type="application/json"`) cannot see a
  * `</script` sequence and terminate the block early.
  */
-export function buildIslandPropsScripts(registry: Map<string, { id: string; count: number }>): string {
+export function buildIslandPropsScripts(registry: Map<string, IslandPropsEntry>): string {
   let out = '';
   for (const [json, entry] of registry) {
     if (entry.count < 2) {
@@ -75,10 +86,6 @@ export function buildIslandPropsScripts(registry: Map<string, { id: string; coun
     out += `<script type="application/json" id="${entry.id}">${safe}</script>`;
   }
   return out;
-}
-
-function escapeHtmlAttr(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 }
 
 /**
@@ -92,7 +99,7 @@ function escapeHtmlAttr(s: string): string {
  * `props-ref` before `hydrate-options`, the only island attribute whose value
  * can contain `>`.
  */
-export function inlineSingleUseProps(html: string, registry: Map<string, { id: string; count: number }>): string {
+export function inlineSingleUseProps(html: string, registry: Map<string, IslandPropsEntry>): string {
   const inline = new Map<string, string>();
   for (const [json, entry] of registry) {
     if (entry.count === 1) {

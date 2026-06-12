@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { MochiCookieJar } from './cookies';
+import type { IslandPropsEntry } from './islandPropsRegistry';
 import type { MochiFormResult } from './types';
 import { pinGlobal } from './globalState';
 
@@ -38,7 +39,7 @@ export interface MochiRequestContext {
    * into `<script type="application/json">` blocks in the rendered HTML.
    * Internal — not for application use.
    */
-  islandProps: Map<string, { id: string; count: number }>;
+  islandProps: Map<string, IslandPropsEntry>;
   /**
    * Dev-only debug-bar data bag. Populated during routing (route/pathname/
    * params) and SSR (e.g. `emitIslandProps()` fills `islandProps`).

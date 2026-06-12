@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { parse as devalueParse, stringify as devalueStringify } from 'devalue';
-import { buildIslandPropsScripts, emitIslandProps, inlineSingleUseProps } from './islandPropsRegistry';
+import { buildIslandPropsScripts, emitIslandProps, inlineSingleUseProps, type IslandPropsEntry } from './islandPropsRegistry';
+import { unescapeHtmlAttr } from './htmlEscape';
 import { requestContext, type MochiRequestContext } from './requestContext';
 import { MochiCookieJar } from './cookies';
 
@@ -148,16 +149,7 @@ describe('emitIslandProps', () => {
   });
 });
 
-type Registry = Map<string, { id: string; count: number }>;
-
-// Inverse of the framework's escapeHtmlAttr — what the browser's attribute
-// parser does. `&amp;` must decode last so escaped ampersands round-trip.
-function unescapeHtmlAttr(s: string): string {
-  return s
-    .replace(/&lt;/g, '<')
-    .replace(/&quot;/g, '"')
-    .replace(/&amp;/g, '&');
-}
+type Registry = Map<string, IslandPropsEntry>;
 
 describe('buildIslandPropsScripts', () => {
   test('empty registry yields the empty string', () => {

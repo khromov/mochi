@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import type { MochiServeOptions } from './types';
 import { applyFilter, initExtensions, runHook, type MochiFilterContext } from './extensions';
+import type { IslandPropsEntry } from './islandPropsRegistry';
 
 const fakeOptions = {} as MochiServeOptions;
 
@@ -438,7 +439,7 @@ describe('new extension points', () => {
       locals: {},
       isWarmup: false,
       cookies: new MochiCookieJar(null),
-      islandProps: new Map<string, { id: string; count: number }>(),
+      islandProps: new Map<string, IslandPropsEntry>(),
       getClientAddress: () => null,
     };
     requestContext.run(ctx, () => {
