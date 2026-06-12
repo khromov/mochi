@@ -203,4 +203,80 @@ describe('MochiCache concurrency', () => {
     expect(results).toEqual([1, 1, 1]);
     expect(calls).toBe(1);
   });
+
+  test('with no cached value, later reads block on the in-flight request', async () => {
+    const cache = new MochiCache({ minTimeToStale: 1_000, maxTimeToLive: 5_000 });
+    let calls = 0;
+    let release!: (value: string) => void;
+    const fn = () => {
+      calls++;
+      return new Promise<string>((resolve) => {
+        release = resolve;
+      });
+    };
+
+    const first = cache.fetch('k', fn);
+    const second = cache.fetch('k', fn);
+
+    let secondSettled = false;
+    void second.then(() => {
+      secondSettled = true;
+    });
+
+    await wait(20);
+    // fn ran once; the second read is still parked on the in-flight request.
+    expect(calls).toBe(1);
+    expect(secondSettled).toBe(false);
+
+    release('value');
+    expect(await first).toBe('value');
+    expect(await second).toBe('value');
+    expect(calls).toBe(1);
+  });
+});
+
+describe('MochiCache stale-while-revalidate', () => {
+  test('a stale read returns the cached value immediately, without awaiting revalidation', async () => {
+    const cache = new MochiCache({ minTimeToStale: 10, maxTimeToLive: 5_000 });
+    let calls = 0;
+    let releaseRevalidate!: (value: number) => void;
+    const fn = () => {
+      calls++;
+      // The first compute resolves; the background revalidation hangs until released.
+      if (calls === 1) return Promise.resolve(1);
+      return new Promise<number>((resolve) => {
+        releaseRevalidate = resolve;
+      });
+    };
+
+    expect(await cache.fetch('k', fn)).toBe(1);
+    await wait(30); // now stale
+
+    // Even though the revalidation never settles during this call, the read returns at once.
+    const stale = await cache.fetchWithStatus('k', fn);
+    expect(stale.value).toBe(1);
+    expect(stale.status).toBe('stale');
+    expect(calls).toBe(2); // background revalidation was kicked off
+
+    releaseRevalidate(2); // let the dangling revalidation settle
+  });
+
+  test('concurrent stale reads trigger a single revalidation', async () => {
+    const cache = new MochiCache({ minTimeToStale: 10, maxTimeToLive: 5_000 });
+    let calls = 0;
+    const fn = async () => {
+      calls++;
+      await wait(20);
+      return calls;
+    };
+
+    expect(await cache.fetch('k', fn)).toBe(1);
+    await wait(30); // now stale
+
+    const reads = await Promise.all([cache.fetchWithStatus('k', fn), cache.fetchWithStatus('k', fn), cache.fetchWithStatus('k', fn)]);
+
+    expect(reads.map((r) => r.status)).toEqual(['stale', 'stale', 'stale']);
+    expect(reads.map((r) => r.value)).toEqual([1, 1, 1]);
+    expect(calls).toBe(2); // one initial compute + exactly one revalidation across all three reads
+  });
 });
