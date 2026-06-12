@@ -1,3 +1,5 @@
+// eslint-disable-next-line @typescript-eslint/triple-slash-reference
+/// <reference path="./negotiator.d.ts" />
 import type { Server } from 'bun';
 import Negotiator from 'negotiator';
 import type { MochiCompileErrorLog } from './events';
