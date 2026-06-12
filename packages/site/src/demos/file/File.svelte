@@ -13,7 +13,7 @@
 
 <DemoPage
   title="File Routes"
-  description="You can serve a file straight from disk with Mochi.file() — pass a static path, or a resolver that picks the file per request from the route params. Missing files (or a resolver that throws error(404)) come back as a plain-text 404."
+  description="You can serve a file straight from disk with Mochi.file() — pass a static path, or a resolver that picks the file per request from the route params. The file is read fresh on every request, so files written or deleted at runtime are picked up immediately. Missing files (or a resolver that throws error(404)) come back as a plain-text 404."
   {sources}
 >
   <FileViewer mochi:hydrate />
