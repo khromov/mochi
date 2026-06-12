@@ -53,6 +53,7 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
   const LEVEL_BY_KIND: Record<MochiRequestKind, 'info' | 'log' | 'debug'> = {
     page: 'info',
     api: 'info',
+    file: 'info',
     asset: 'debug',
     fallback: 'debug',
     error: 'log',
@@ -314,6 +315,8 @@ function colorKind(kind: MochiRequestKind): string {
       return styleText('cyan', kind.padEnd(KIND_WIDTH));
     case 'api':
       return styleText('magenta', kind.padEnd(KIND_WIDTH));
+    case 'file':
+      return styleText('green', kind.padEnd(KIND_WIDTH));
     case 'asset':
       return styleText('dim', kind.padEnd(KIND_WIDTH));
     case 'fallback':

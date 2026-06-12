@@ -947,7 +947,7 @@ export class Mochi {
               const final = finalizeCookieHeaders(response, ctx.cookies);
               mochiEvents.emit('request', {
                 requestId,
-                kind: 'asset',
+                kind: 'file',
                 method: req.method,
                 path: url.pathname + url.search,
                 status: final.status,
@@ -958,7 +958,16 @@ export class Mochi {
 
             try {
               const filePath = typeof source === 'function' ? await source(req, ctx.params) : source;
-              const file = Bun.file(filePath);
+              // Route params are URL-decoded and may contain `../`; confine every
+              // resolved path to the app root so a resolver can't be tricked into
+              // serving files outside the project.
+              const resolvedPath = path.resolve(filePath);
+              const appRoot = process.cwd();
+              if (!resolvedPath.startsWith(appRoot + path.sep)) {
+                emitError('file', requestId, req, url, 404, new Error(`Path escapes the app root: ${filePath}`));
+                return finish(new Response('Not Found', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } }));
+              }
+              const file = Bun.file(resolvedPath);
               if (!(await file.exists())) {
                 emitError('file', requestId, req, url, 404, new Error(`File not found: ${filePath}`));
                 return finish(new Response('Not Found', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } }));

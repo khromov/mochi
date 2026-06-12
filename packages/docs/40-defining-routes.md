@@ -1,7 +1,7 @@
 ---
 title: 'Defining routes'
 slug: defining-routes
-description: 'Register pages, APIs, WebSockets, and SSE endpoints using the programmatic routes record.'
+description: 'Register pages, APIs, WebSockets, SSE endpoints, and file routes using the programmatic routes record.'
 ---
 
 <script>
@@ -10,7 +10,7 @@ description: 'Register pages, APIs, WebSockets, and SSE endpoints using the prog
 
 ## Defining routes
 
-Routes are a `Record<string, MochiRouteValue>` passed to `Mochi.serve({ routes })`. Each key is a Bun router pattern; each value is built from one of the four `Mochi.*` helpers.
+Routes are a `Record<string, MochiRouteValue>` passed to `Mochi.serve({ routes })`. Each key is a Bun router pattern; each value is built from one of the five `Mochi.*` helpers.
 
 ```ts
 // file: src/index.ts
@@ -174,7 +174,7 @@ Do **NOT** forget `onClose` cleanup when you allocate per-connection resources; 
 
 ### `Mochi.file`
 
-Serve a single file from disk via `Mochi.file(source)`. `source` is either a string path or a resolver `(req, params) => string` (sync or async) that returns the path. The `Content-Type` is inferred from the file extension; `HEAD` is handled automatically (headers only, empty body). Paths are resolved relative to the working directory, or pass an absolute path.
+Serve a single file from disk via `Mochi.file(source)`. `source` is either a string path or a resolver `(req, params) => string` (sync or async) that returns the path. The `Content-Type` is inferred from the file extension; `HEAD` is handled automatically (headers only, empty body). Paths are resolved relative to the working directory; absolute paths work too, but every resolved path must stay inside the app root (the working directory) — anything outside returns a `404`.
 
 ```ts
 // file: src/index.ts
@@ -197,6 +197,12 @@ await Mochi.serve({
 ```
 
 A missing file returns a plain-text `404`; a resolver may also `error(404, …)` to force one. `Mochi.file` does **not** support `Range` requests, caching headers (`ETag`/`Cache-Control`), or middleware — reach for `Mochi.api` if you need full control over the response.
+
+<Callout type="danger">
+
+Route params are URL-decoded before they reach your resolver, so `params.name` can contain `../` (e.g. from `/files/..%2f..%2fsecret`). Mochi refuses to serve any path that resolves outside the app root, but that guard doesn't know which files _inside_ the root are private — `.env`, source files, and config are all fair game for a traversal that stays within the project. Always validate params against an allow-list or strict pattern, as above.
+
+</Callout>
 
 ### HEAD requests
 

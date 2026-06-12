@@ -276,7 +276,7 @@ Context fields:
 - `label` — event tag (`'GET '`, `'WS  '`, `'BUILD'`, `'CACHE'`, …).
 - `path` — URL path for requests; cache key for `CACHE`/`PAGECACHE`; source file for `BUILD`/`HMR`; `localhost:port` for `BOOT`.
 - `status` — HTTP status (request lines only).
-- `kind` — `'page' | 'api' | 'asset' | 'fallback' | 'error'` (request lines only).
+- `kind` — `'page' | 'api' | 'file' | 'asset' | 'fallback' | 'error'` (request lines only).
 - `source` — `{ name, payload }` for the originating `mochiEvents` event. Narrow on `source.name` to access typed per-event fields (e.g. `requestId` on `'request'`, `size` on `'ws:message'`, `hydratableCount` on `'compile:complete'`).
 
 ```ts

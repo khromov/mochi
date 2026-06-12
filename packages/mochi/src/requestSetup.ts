@@ -9,7 +9,7 @@ import { isWarmupRequest } from './warmup';
 import type { MochiRequestContext } from './requestContext';
 
 // RouteKind covers user-route shapes; MochiRequestKind in events.ts covers the
-// broader event taxonomy (asset, fallback, error). They overlap on page|api.
+// broader event taxonomy (asset, fallback, error). They overlap on page|api|file.
 export type RouteKind = 'page' | 'api' | 'ws' | 'sse' | 'island' | 'file';
 
 export interface RequestSetupConfig {
@@ -74,8 +74,8 @@ export function makeRequestContextBuilder(cfg: RequestSetupConfig): RequestConte
     const url = buildPublicUrl(req, cfg.proxy);
 
     const reportEarlyExit = (status: number): void => {
-      // 'request' event accepts only page|api kinds; see MochiRequestKind in events.ts
-      if (opts.kind !== 'page' && opts.kind !== 'api') {
+      // 'request' event accepts only page|api|file kinds; see MochiRequestKind in events.ts
+      if (opts.kind !== 'page' && opts.kind !== 'api' && opts.kind !== 'file') {
         return;
       }
       mochiEvents.emit('request', {
