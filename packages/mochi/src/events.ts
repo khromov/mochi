@@ -94,7 +94,7 @@ export interface MochiCacheRevalidateFailedEvent {
 export interface MochiCacheErrorEvent {
   key: string;
   /** Which storage operation threw. */
-  operation: 'get' | 'set' | 'remove';
+  operation: 'get' | 'set' | 'remove' | 'clear';
   error: unknown;
 }
 

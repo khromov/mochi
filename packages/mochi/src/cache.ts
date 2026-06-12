@@ -1,3 +1,4 @@
+import { MemoryStorage } from './cache-storage';
 import { mochiEvents } from './events';
 
 export type CacheStatus = 'fresh' | 'stale' | 'expired' | 'miss';
@@ -13,6 +14,8 @@ export interface Storage {
   getItem(key: string): unknown | Promise<unknown>;
   setItem(key: string, value: unknown): void | Promise<void>;
   removeItem(key: string): void | Promise<void>;
+  /** Remove every entry from the backend. */
+  clear(): void | Promise<void>;
 }
 
 export interface MochiCacheOptions {
@@ -37,22 +40,6 @@ export interface CacheResult<T> {
 interface CacheEntry {
   value: unknown;
   createdAt: number;
-}
-
-class MemoryStorage implements Storage {
-  private store = new Map<string, unknown>();
-
-  getItem(key: string): unknown {
-    return this.store.get(key) ?? null;
-  }
-
-  setItem(key: string, value: unknown): void {
-    this.store.set(key, value);
-  }
-
-  removeItem(key: string): void {
-    this.store.delete(key);
-  }
 }
 
 const identity = (value: unknown) => value;
@@ -118,6 +105,18 @@ export class MochiCache {
       await this.storage.removeItem(key);
     } catch (error) {
       mochiEvents.emit('cache:error', { key, operation: 'remove', error });
+      throw error;
+    }
+  }
+
+  async clearItems(): Promise<void> {
+    // Drop in-flight runs first so a pending revalidation can't repopulate a key
+    // after the storage is cleared.
+    this.inflight.clear();
+    try {
+      await this.storage.clear();
+    } catch (error) {
+      mochiEvents.emit('cache:error', { key: '*', operation: 'clear', error });
       throw error;
     }
   }
