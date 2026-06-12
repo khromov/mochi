@@ -87,6 +87,7 @@
   // the rare case where two selectors sanitize to the same slug.
   const keepRules = $derived.by(() => {
     const selectors = keep == null ? [] : Array.isArray(keep) ? keep : [keep];
+    // eslint-disable-next-line svelte/prefer-svelte-reactivity -- local scratch state rebuilt on every evaluation of this derived; nothing reactive escapes it
     const seen = new Map<string, number>();
     return selectors
       .map((selector) => {
