@@ -106,18 +106,17 @@ The framework appends two read-only props to every island invocation. Destructur
 <!-- file: src/lib/UserCard.svelte -->
 <script lang="ts">
   let {
-    islandId,
     isHydratable,
     user,
   }: {
-    islandId?: string;
     isHydratable?: boolean;
     user: { name: string; id: number };
   } = $props();
 </script>
 ```
 
-- `islandId` — string matching the wrapper's `island-id` attribute. Always present on `mochi:hydrate`, `mochi:hydrate:visible`, and `mochi:defer`.
 - `isHydratable` — `true` when the call site uses `mochi:hydrate`, `mochi:hydrate:visible`, or `mochi:defer mochi:hydrate`. Undefined for pure SSR-only invocations and for bare `mochi:defer`.
 
-Do **NOT** declare `islandId` or `isHydratable` as user-controlled props; instead, treat them as inputs the framework owns. See `Selective hydration with mochi:hydrate` for the branching pattern.
+Do **NOT** declare `isHydratable` as a user-controlled prop; instead, treat it as an input the framework owns. See `Selective hydration with mochi:hydrate` for the branching pattern.
+
+If you need a unique ID to link DOM elements (e.g. for `<label for>` attributes), use Svelte's native [`$props.id()`](https://svelte.dev/docs/svelte/$props#$props.id). It generates a stable ID for the component instance that matches between server and client during hydration.

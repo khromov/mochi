@@ -185,7 +185,7 @@ The finished app is running on this site at [**/docs/your-first-mochi-app/hello*
 ### What's next
 
 - [Defining routes](/docs/defining-routes/) — `Mochi.page`, `Mochi.api`, `Mochi.ws`, `Mochi.sse`, and the full `serverProps` contract
-- [Selective hydration](/docs/selective-hydration/) — `mochi:hydrate`, `islandId`, `isHydratable`
+- [Selective hydration](/docs/selective-hydration/) — `mochi:hydrate`, `isHydratable`
 - [Lazy hydration](/docs/lazy-hydration/) — `mochi:hydrate:visible` for below-the-fold islands
 - [Server islands](/docs/server-islands/) — `mochi:defer`, signed props, and `MOCHI_KEY`
 - [Passing props to islands](/docs/island-props/) — every type `devalue` can round-trip

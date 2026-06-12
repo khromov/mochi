@@ -116,6 +116,12 @@ export const demos: Demo[] = [
     category: 'hydration',
   },
   {
+    href: '/demos/props-id/',
+    title: 'Svelte 5 $props.id()',
+    hook: 'Use Svelte 5’s native $props.id() to generate stable, unique IDs across server and client renders.',
+    category: 'hydration',
+  },
+  {
     href: '/demos/lazy/',
     title: 'Lazy Islands',
     hook: 'Islands marked mochi:hydrate:visible hydrate and load their CSS only when scrolled into view.',

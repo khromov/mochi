@@ -1047,12 +1047,16 @@ export class Mochi {
 
       // Verify signature and decode props (empty means no props)
       let props: Record<string, unknown>;
+      let islandId: string | undefined;
+
       if (signedProps) {
         const propsJson = verifyAndDecodeProps(signedProps);
         if (propsJson === null) {
           return new Response('Invalid props signature', { status: 403 });
         }
         props = devalueParse(propsJson) as Record<string, unknown>;
+        islandId = props.islandId as string | undefined;
+        delete props.islandId;
       } else {
         props = {};
       }
@@ -1076,7 +1080,7 @@ export class Mochi {
           logger.error(`Server island "${componentName}" failed: ${e.message}`);
           mochiEvents.emit('island:error', {
             componentName,
-            islandId: (props as Record<string, unknown>).islandId as string | undefined,
+            islandId,
             kind: 'server',
             message: e.message,
             stack: registry.development ? e.stack : undefined,
@@ -1102,7 +1106,6 @@ export class Mochi {
           const serializedProps = devalueStringify(props);
           const bootstrapUrl = registry.getIslandBootstrapUrl();
 
-          const islandId = props.islandId as string | undefined;
           if (!islandId) {
             logger.warn(`Server island "${componentName}" missing islandId in props`);
           }

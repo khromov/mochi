@@ -200,7 +200,7 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
         // is a `true` boolean that lets components branch SSR-only behavior
         // off the same auto-injection pipeline (no Svelte context needed).
         let innerTag: string;
-        const autoProps = `islandId={__mochi_iid} isHydratable={true}`;
+        const autoProps = `isHydratable={true}`;
         if (comp.fragment.nodes.length > 0) {
           const childrenSource = comp.fragment.nodes.map((n) => source.slice(n.start, n.end)).join('');
           innerTag = `<${comp.name}${propsSource ? ' ' + propsSource : ''} ${autoProps}>${childrenSource}</${comp.name}>`;

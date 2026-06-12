@@ -65,9 +65,8 @@ export function trace(msg: string) {
 
 ## Auto-injected island props
 
-The preprocessor injects two extra props on every component invoked with `mochi:hydrate`, `mochi:hydrate:visible`, or `mochi:defer mochi:hydrate`:
+The preprocessor injects an extra prop on every component invoked with `mochi:hydrate`, `mochi:hydrate:visible`, or `mochi:defer mochi:hydrate`:
 
-- `islandId` (`string`): stable id matching the wrapping `<mochi-hydratable-island island-id>` attribute.
 - `isHydratable` (`true | undefined`): `true` for hydratable invocations, absent on plain SSR-only invocations.
 
 Accept them with `$props`:
@@ -75,7 +74,7 @@ Accept them with `$props`:
 ```svelte
 <!-- file: src/lib/Counter.svelte -->
 <script lang="ts">
-  let { islandId, isHydratable }: { islandId?: string; isHydratable?: boolean } = $props();
+  let { isHydratable }: { isHydratable?: boolean } = $props();
 </script>
 ```
 

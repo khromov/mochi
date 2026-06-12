@@ -64,13 +64,13 @@ mochiEvents.on('island:error', ({ componentName, kind, message, stack }) => {
 });
 ```
 
-| Field           | Description                                                                                                     |
-| --------------- | --------------------------------------------------------------------------------------------------------------- |
-| `componentName` | Island component name.                                                                                          |
-| `islandId`      | Per-island id (matches the `island-id` attribute); set for `'server'` failures, `undefined` for `'hydratable'`. |
-| `kind`          | `'hydratable'` (SSR throw inside a hydratable island) or `'server'` (server-island endpoint render).            |
-| `message`       | Error message — safe to forward.                                                                                |
-| `stack`         | Stack trace; populated only when `development: true`.                                                           |
+| Field           | Description                                                                                                        |
+| --------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `componentName` | Island component name.                                                                                             |
+| `islandId`      | Internal framework identifier for the island wrapper; set for `'server'` failures, `undefined` for `'hydratable'`. |
+| `kind`          | `'hydratable'` (SSR throw inside a hydratable island) or `'server'` (server-island endpoint render).               |
+| `message`       | Error message — safe to forward.                                                                                   |
+| `stack`         | Stack trace; populated only when `development: true`.                                                              |
 
 The `MochiIslandErrorKind` type also reserves `'client-hydrate'`, but client-side errors are not currently emitted to the event bus.
 

@@ -33,6 +33,7 @@ import Snowflake from '@lucide/svelte/icons/snowflake';
 import Fingerprint from '@lucide/svelte/icons/fingerprint';
 import Link from '@lucide/svelte/icons/link';
 import FileDown from '@lucide/svelte/icons/file-down';
+import Hash from '@lucide/svelte/icons/hash';
 
 export interface DemoIconMeta {
   icon: Component;
@@ -74,4 +75,5 @@ export const demoIconFor: Record<string, DemoIconMeta> = {
   'Cookie Vary Test': { icon: Fingerprint, label: 'Response-driven Vary: Cookie' },
   'Isomorphic URL': { icon: Link, label: 'Same url import on server and client' },
   'File Routes': { icon: FileDown, label: 'Serve a file from disk with Mochi.file()' },
+  'Svelte 5 $props.id()': { icon: Hash, label: 'Stable component IDs' },
 };

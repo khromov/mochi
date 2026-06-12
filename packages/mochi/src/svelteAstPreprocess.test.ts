@@ -14,7 +14,7 @@ describe('preprocessHydratable', () => {
     expect(transformed).toContain('<mochi-hydratable-island');
     expect(transformed).toContain('component-name="Foo"');
     expect(transformed).toContain('__MOCHI_COMPONENT_URL__Foo__');
-    expect(transformed).toContain('<Foo islandId={__mochi_iid} isHydratable={true} />');
+    expect(transformed).toContain('<Foo isHydratable={true} />');
     expect(transformed).not.toContain('MochiIslandCtx');
     expect(transformed).not.toContain('mochi:hydrate');
     expect(transformed).toContain('__mochi_emit_props__');
@@ -94,7 +94,7 @@ describe('preprocessHydratable', () => {
 
     expect(hydratables).toHaveLength(1);
     expect(transformed).toContain('<mochi-hydratable-island');
-    expect(transformed).toContain('<Wrapper islandId={__mochi_iid} isHydratable={true}><span>child content</span></Wrapper>');
+    expect(transformed).toContain('<Wrapper isHydratable={true}><span>child content</span></Wrapper>');
   });
 
   test('duplicate component instances', () => {
@@ -346,7 +346,7 @@ describe('preprocessHydratable', () => {
 
     // Both wrapper and inner component use the same __mochi_iid variable
     expect(transformed).toContain('island-id={__mochi_iid}');
-    expect(transformed).toContain('<Foo count={1} islandId={__mochi_iid} isHydratable={true} />');
+    expect(transformed).toContain('<Foo count={1} isHydratable={true} />');
 
     // No MochiIslandContext wrapper
     expect(transformed).not.toContain('MochiIslandCtx');
@@ -375,7 +375,6 @@ describe('preprocessHydratable', () => {
 
     // islandId should be on wrapper attribute and inner component prop
     expect(transformed).toContain('island-id={__mochi_iid}');
-    expect(transformed).toContain('islandId={__mochi_iid}');
 
     // But NOT inside the serialized props expression
     const propsMatch = transformed.match(/__mochi_emit_props__\((\{[^}]+\}), __mochi_iid\)/);
@@ -504,7 +503,7 @@ describe('preprocessHydratable', () => {
     const { transformed } = preprocessHydratable(source, '/test/File.svelte');
 
     // The inner tag is unchanged — boundary just wraps it
-    expect(transformed).toContain('<Foo name="test" count={42} islandId={__mochi_iid} isHydratable={true} />');
+    expect(transformed).toContain('<Foo name="test" count={42} isHydratable={true} />');
     expect(transformed).toContain('<svelte:boundary>');
   });
 });
