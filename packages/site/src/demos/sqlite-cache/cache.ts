@@ -12,7 +12,7 @@ export const dbPath = join(tmpdir(), 'mochi-sqlite-cache-demo.sqlite');
 export const reportCache = new MochiCache({
   storage: new SqliteStorage(dbPath),
   serialize: JSON.stringify,
-  deserialize: JSON.parse,
+  deserialize: (raw) => JSON.parse(raw as string),
   minTimeToStale: 15_000,
   maxTimeToLive: 60_000,
 });
