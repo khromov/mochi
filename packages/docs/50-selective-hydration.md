@@ -38,11 +38,11 @@ Accept them in the component's `$props()` to branch on hydration state at the sa
     islandId,
     isHydratable,
     count = 0,
-  } = $props<{
+  }: {
     islandId?: string;
     isHydratable?: boolean;
     count?: number;
-  }>();
+  } = $props();
 </script>
 
 {#if isHydratable}

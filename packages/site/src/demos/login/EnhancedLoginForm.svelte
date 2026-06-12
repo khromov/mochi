@@ -2,7 +2,7 @@
   import { enhance, isServer, getRequestContext } from 'mochi-framework';
   import type { MochiEnhanceOptions, MochiSubmitFunction } from 'mochi-framework';
 
-  let { initialUser, isHydratable } = $props<{ initialUser: string | null; isHydratable?: boolean }>();
+  let { initialUser, isHydratable }: { initialUser: string | null; isHydratable?: boolean } = $props();
 
   // For SSR-only (plain HTML) renders, read the form action result so errors
   // and the prefilled username survive the re-render after a failed POST.

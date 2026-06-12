@@ -3,7 +3,7 @@
   // passes it in as a prop. Mochi devalue-serialises island props into the
   // HTML and re-hydrates them on the client, so the data still crosses the
   // wire without re-running the SSR work — just via a different channel.
-  let { fact } = $props<{ fact: { sqliteVersion: string; computedAt: string } }>();
+  let { fact }: { fact: { sqliteVersion: string; computedAt: string } } = $props();
 
   let clicks = $state(0);
 </script>

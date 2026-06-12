@@ -74,8 +74,8 @@ Accept them with `$props`:
 
 ```svelte
 <!-- file: src/lib/Counter.svelte -->
-<script>
-  let { islandId, isHydratable } = $props<{ islandId?: string; isHydratable?: boolean }>();
+<script lang="ts">
+  let { islandId, isHydratable }: { islandId?: string; isHydratable?: boolean } = $props();
 </script>
 ```
 
@@ -85,10 +85,10 @@ Use `isHydratable` to peek request-scoped state only when the client won't take 
 
 ```svelte
 <!-- file: src/lib/RandomRoll.svelte -->
-<script>
+<script lang="ts">
   import { isServer, getRequestContext } from 'mochi-framework';
 
-  let { isHydratable } = $props<{ isHydratable?: boolean }>();
+  let { isHydratable }: { isHydratable?: boolean } = $props();
 
   const initial = isHydratable || !isServer ? null : peekForm();
 

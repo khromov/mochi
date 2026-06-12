@@ -53,6 +53,7 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
   const LEVEL_BY_KIND: Record<MochiRequestKind, 'info' | 'log' | 'debug'> = {
     page: 'info',
     api: 'info',
+    file: 'info',
     asset: 'debug',
     fallback: 'debug',
     error: 'log',
@@ -128,7 +129,7 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
   subscribe('server:start', ({ port, hostname, development, routes }) => {
     const where = `${hostname ?? 'localhost'}:${port}`;
     const mode = styleText('dim', development ? 'dev' : 'prod');
-    const counts = styleText('dim', `page=${routes.page} api=${routes.api} ws=${routes.ws} sse=${routes.sse}`);
+    const counts = styleText('dim', `page=${routes.page} api=${routes.api} ws=${routes.ws} sse=${routes.sse} file=${routes.file}`);
     return { label: 'BOOT', path: where, note: `${mode} ${counts}` };
   });
 
@@ -174,6 +175,18 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
     label: 'CACHE',
     path: payload.key,
     note: styleText('cyan', 'revalidate'),
+  }));
+  subscribe('cache:revalidate:failed', (payload) => ({
+    label: 'CACHE',
+    path: payload.key,
+    note: `${styleText('red', 'revalidate failed')} ${styleText('dim', errorMessage(payload.error))}`,
+    level: 'warn',
+  }));
+  subscribe('cache:error', (payload) => ({
+    label: 'CACHE',
+    path: payload.key,
+    note: `${styleText('red', `storage ${payload.operation} failed`)} ${styleText('dim', errorMessage(payload.error))}`,
+    level: 'warn',
   }));
 
   subscribe('preprocess-cache:hit', ({ filePath }) => ({
@@ -259,6 +272,10 @@ export const silenceInternalRoutes = (line: string, { path }: MochiFilterContext
   return line;
 };
 
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 function relPath(p: string): string {
   if (!p) {
     return p;
@@ -300,10 +317,11 @@ interface EmitInput {
   /**
    * Default log level for the line. `'debug'` keeps high-volume request lines
    * (asset/fallback) hidden unless the user opts into the most verbose level;
-   * `'log'` is for moderately verbose lines. Always escalated to `warn` for
-   * 5xx or slow responses.
+   * `'log'` is for moderately verbose lines. `'warn'` is for degradations that
+   * always warrant attention. Always escalated to `warn` for 5xx or slow
+   * responses regardless of this value.
    */
-  level?: 'info' | 'log' | 'debug';
+  level?: 'info' | 'log' | 'debug' | 'warn';
 }
 
 const KIND_WIDTH = 'fallback'.length;
@@ -314,6 +332,8 @@ function colorKind(kind: MochiRequestKind): string {
       return styleText('cyan', kind.padEnd(KIND_WIDTH));
     case 'api':
       return styleText('magenta', kind.padEnd(KIND_WIDTH));
+    case 'file':
+      return styleText('green', kind.padEnd(KIND_WIDTH));
     case 'asset':
       return styleText('dim', kind.padEnd(KIND_WIDTH));
     case 'fallback':

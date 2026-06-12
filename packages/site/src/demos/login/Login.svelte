@@ -11,7 +11,7 @@
     { label: 'index.ts', path: './src/demoIndex.ts' },
   ]);
 
-  let { currentUser } = $props<{ currentUser: string | null }>();
+  let { currentUser }: { currentUser: string | null } = $props();
 </script>
 
 <DemoPage
