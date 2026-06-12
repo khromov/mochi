@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import type { Storage } from 'stale-while-revalidate-cache/types';
-import { MochiCache } from './cache';
+import { MochiCache, type Storage } from './cache';
 import { mochiEvents } from './events';
 
 const wait = Bun.sleep;
