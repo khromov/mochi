@@ -53,6 +53,7 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
   const LEVEL_BY_KIND: Record<MochiRequestKind, 'info' | 'log' | 'debug'> = {
     page: 'info',
     api: 'info',
+    file: 'info',
     asset: 'debug',
     fallback: 'debug',
     error: 'log',
@@ -128,7 +129,7 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
   subscribe('server:start', ({ port, hostname, development, routes }) => {
     const where = `${hostname ?? 'localhost'}:${port}`;
     const mode = styleText('dim', development ? 'dev' : 'prod');
-    const counts = styleText('dim', `page=${routes.page} api=${routes.api} ws=${routes.ws} sse=${routes.sse}`);
+    const counts = styleText('dim', `page=${routes.page} api=${routes.api} ws=${routes.ws} sse=${routes.sse} file=${routes.file}`);
     return { label: 'BOOT', path: where, note: `${mode} ${counts}` };
   });
 
@@ -314,6 +315,8 @@ function colorKind(kind: MochiRequestKind): string {
       return styleText('cyan', kind.padEnd(KIND_WIDTH));
     case 'api':
       return styleText('magenta', kind.padEnd(KIND_WIDTH));
+    case 'file':
+      return styleText('green', kind.padEnd(KIND_WIDTH));
     case 'asset':
       return styleText('dim', kind.padEnd(KIND_WIDTH));
     case 'fallback':

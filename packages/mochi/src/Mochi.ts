@@ -7,12 +7,14 @@ import type { RenderResult } from './ComponentRegistry';
 import { loadSvelteConfig } from './svelteConfig';
 import { buildInlineWebComponent } from './buildInlineWebComponent';
 import { buildClientStatsRoutes, CLIENT_STATS_COMPONENT } from './clientStatsRoutes';
-import { isMochiPage, isMochiApi, isMochiWs, isMochiSse, isServerPropsResolver } from './types';
+import { isMochiPage, isMochiApi, isMochiWs, isMochiSse, isMochiFile, isServerPropsResolver } from './types';
 import type {
   BunRouteValue,
   HttpMethod,
   MochiApiConfig,
   MochiApiHandler,
+  MochiFileConfig,
+  MochiFileResolver,
   MochiPageConfig,
   MochiPageHandlerConfig,
   MochiFormActionResult,
@@ -169,6 +171,10 @@ export class Mochi {
 
   static sse(handler: MochiSseHandler): MochiSseConfig {
     return { __mochiSse: true, handler };
+  }
+
+  static file(source: string | MochiFileResolver): MochiFileConfig {
+    return { __mochiFile: true, source };
   }
 
   private static resolveHtmlShell(
@@ -456,7 +462,7 @@ export class Mochi {
     const sseHandlerMap = development ? new Map<string, MochiSseHandler>() : undefined;
     const pageConfigMap = development ? new Map<string, MochiPageHandlerConfig>() : undefined;
     const bunRoutes: Record<string, BunRouteValue> = {};
-    const routeCounts = { page: 0, api: 0, ws: 0, sse: 0 };
+    const routeCounts = { page: 0, api: 0, ws: 0, sse: 0, file: 0 };
     const trailingSlashPolicy = options.trailingSlash;
 
     const buildRequestContext = makeRequestContextBuilder({
@@ -1056,6 +1062,66 @@ export class Mochi {
           });
         };
         return { bunRouteValue, type: 'sse' };
+      } else if (isMochiFile(handler)) {
+        const source = handler.source;
+
+        const bunRouteValue: BunRouteValue = async (req: Request, server: Server<undefined>): Promise<Response> => {
+          const setup = buildRequestContext(req, server, { kind: 'file', pattern });
+          if ('earlyResponse' in setup) {
+            return setup.earlyResponse;
+          }
+          const { ctx, start, requestId, url, params } = setup;
+
+          return requestContext.run(ctx, async () => {
+            runHook('route:matched', { pattern, request: req, url, params, kind: 'file' });
+
+            const finish = (response: Response): Response => {
+              const final = finalizeCookieHeaders(response, ctx.cookies);
+              mochiEvents.emit('request', {
+                requestId,
+                kind: 'file',
+                method: req.method,
+                path: url.pathname + url.search,
+                status: final.status,
+                duration: performance.now() - start,
+              });
+              return final;
+            };
+
+            try {
+              const filePath = typeof source === 'function' ? await source(req, ctx.params) : source;
+              // Route params are URL-decoded and may contain `../`; confine every
+              // resolved path to the app root so a resolver can't be tricked into
+              // serving files outside the project.
+              const resolvedPath = path.resolve(filePath);
+              const appRoot = process.cwd();
+              if (!resolvedPath.startsWith(appRoot + path.sep)) {
+                emitError('file', requestId, req, url, 404, new Error(`Path escapes the app root: ${filePath}`));
+                return finish(new Response('Not Found', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } }));
+              }
+              const file = Bun.file(resolvedPath);
+              if (!(await file.exists())) {
+                emitError('file', requestId, req, url, 404, new Error(`File not found: ${filePath}`));
+                return finish(new Response('Not Found', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } }));
+              }
+              if (req.method === 'HEAD') {
+                return finish(new Response(null, { status: 200, headers: { 'Content-Type': file.type || 'application/octet-stream', 'Content-Length': String(file.size) } }));
+              }
+              // new Response(Bun.file) sets Content-Type and Content-Length automatically.
+              return finish(new Response(file));
+            } catch (err) {
+              if (err instanceof MochiHttpError) {
+                logger.error(`${req.method} ${url.pathname} → ${err.status}: ${err.message}`);
+                emitError('file', requestId, req, url, err.status, err);
+                return finish(new Response(err.message, { status: err.status, headers: { 'Content-Type': 'text/plain; charset=utf-8' } }));
+              }
+              logger.error(`${req.method} ${url.pathname} → 500:`, err);
+              emitError('file', requestId, req, url, 500, err);
+              return finish(new Response('Internal Server Error', { status: 500, headers: { 'Content-Type': 'text/plain; charset=utf-8' } }));
+            }
+          });
+        };
+        return { bunRouteValue, type: 'file' };
       }
       return null;
     }

@@ -113,6 +113,8 @@ export type {
   MochiSseConfig,
   MochiSseHandler,
   MochiSseStream,
+  MochiFileConfig,
+  MochiFileResolver,
   BunRouteValue,
   MochiSvelteShakerOptions,
 } from './types';

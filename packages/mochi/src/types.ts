@@ -72,6 +72,25 @@ export function isMochiApi(value: unknown): value is MochiApiConfig {
   return typeof value === 'object' && value !== null && (value as MochiApiConfig).__mochiApi === true;
 }
 
+// ---------------------------------------------------------------------------
+// File routes
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolves the disk path of the file to serve for a `Mochi.file()` route.
+ * Receives the request and the resolved route params (e.g. `:name`).
+ */
+export type MochiFileResolver = (req: Request, params: Record<string, string>) => string | Promise<string>;
+
+export interface MochiFileConfig {
+  readonly __mochiFile: true;
+  readonly source: string | MochiFileResolver;
+}
+
+export function isMochiFile(value: unknown): value is MochiFileConfig {
+  return typeof value === 'object' && value !== null && (value as MochiFileConfig).__mochiFile === true;
+}
+
 export type BunRouteValue =
   | Response
   | BunFile
@@ -80,7 +99,7 @@ export type BunRouteValue =
 
 export interface RouteRegistrationResult {
   bunRouteValue: BunRouteValue;
-  type: 'page' | 'api' | 'ws' | 'sse';
+  type: 'page' | 'api' | 'ws' | 'sse' | 'file';
 }
 
 // ---------------------------------------------------------------------------
@@ -276,7 +295,7 @@ export function isMochiSse(value: unknown): value is MochiSseConfig {
   return typeof value === 'object' && value !== null && (value as MochiSseConfig).__mochiSse === true;
 }
 
-export type MochiRouteValue = MochiPageConfig | MochiApiConfig | MochiWsConfig | MochiSseConfig | BunRouteValue;
+export type MochiRouteValue = MochiPageConfig | MochiApiConfig | MochiWsConfig | MochiSseConfig | MochiFileConfig | BunRouteValue;
 
 /** `stack` is only populated when the server runs with `development: true`. */
 export interface MochiErrorProps {
