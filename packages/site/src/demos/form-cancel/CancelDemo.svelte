@@ -2,7 +2,7 @@
   import { enhance } from 'mochi-framework';
   import type { MochiEnhanceOptions, MochiSubmitFunction } from 'mochi-framework';
 
-  let { label } = $props<{ label: string }>();
+  let { label }: { label: string } = $props();
 
   let pending = $state(false);
   let result = $state<string | null>(null);

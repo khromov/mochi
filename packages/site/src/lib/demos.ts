@@ -1,4 +1,4 @@
-export type DemoCategory = 'hydration' | 'data' | 'realtime' | 'forms' | 'errors' | 'sites';
+export type DemoCategory = 'hydration' | 'data' | 'endpoints' | 'forms' | 'errors' | 'sites';
 
 export interface Demo {
   href: string;
@@ -10,13 +10,13 @@ export interface Demo {
 export const categoryLabels: Record<DemoCategory, string> = {
   hydration: 'Basic',
   data: 'Data & serialization',
-  realtime: 'Realtime and APIs',
+  endpoints: 'Endpoints & realtime',
   forms: 'Forms',
   errors: 'Errors',
   sites: 'Demo sites',
 };
 
-export const categoryOrder: DemoCategory[] = ['hydration', 'data', 'realtime', 'forms', 'errors', 'sites'];
+export const categoryOrder: DemoCategory[] = ['hydration', 'data', 'endpoints', 'forms', 'errors', 'sites'];
 
 export const demos: Demo[] = [
   {
@@ -77,13 +77,19 @@ export const demos: Demo[] = [
     href: '/demos/chat/',
     title: 'Real-time Chat',
     hook: 'A hydrated island over a Mochi.ws() route, with pub/sub broadcast and in-memory history.',
-    category: 'realtime',
+    category: 'endpoints',
   },
   {
     href: '/demos/api/',
     title: 'API Endpoints',
     hook: 'JSON routes defined with Mochi.api(), tested live against the running server.',
-    category: 'realtime',
+    category: 'endpoints',
+  },
+  {
+    href: '/demos/file/',
+    title: 'File Routes',
+    hook: 'Serve a file from disk with Mochi.file() — static path or a per-request resolver.',
+    category: 'endpoints',
   },
   {
     href: '/demos/shared-state/',
@@ -95,7 +101,7 @@ export const demos: Demo[] = [
     href: '/demos/streams/',
     title: 'Real-time Streams',
     hook: 'WebSocket and SSE clocks, lazily hydrated via mochi:hydrate:visible.',
-    category: 'realtime',
+    category: 'endpoints',
   },
   {
     href: '/demos/server-island/',

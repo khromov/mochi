@@ -1,0 +1,9 @@
+Resolver notes
+==============
+
+This file was selected by the resolver form of Mochi.file():
+
+    Mochi.file((_req, params) => `./src/demos/file/${params.name}.txt`)
+
+The :name route param decides which file to serve. Names outside the
+allow-list throw error(404, ...), which Mochi returns as a plain-text 404.
