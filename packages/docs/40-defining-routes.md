@@ -4,6 +4,10 @@ slug: defining-routes
 description: 'Register pages, APIs, WebSockets, and SSE endpoints using the programmatic routes record.'
 ---
 
+<script>
+  import Callout from './_components/Callout.svelte';
+</script>
+
 ## Defining routes
 
 Routes are a `Record<string, MochiRouteValue>` passed to `Mochi.serve({ routes })`. Each key is a Bun router pattern; each value is built from one of the four `Mochi.*` helpers.
@@ -193,6 +197,14 @@ await Mochi.serve({
 ```
 
 A missing file returns a plain-text `404`; a resolver may also `error(404, …)` to force one. `Mochi.file` does **not** support `Range` requests, caching headers (`ETag`/`Cache-Control`), or middleware — reach for `Mochi.api` if you need full control over the response.
+
+### HEAD requests
+
+Every `Mochi.page` and `Mochi.api` route answers `HEAD` automatically by running its `GET`/handler logic and stripping the response body. Status and headers match the equivalent `GET`, and `Content-Length` is set to the byte length the `GET` body would have had. No per-route opt-in is needed — this also covers static assets and the `404` fallback.
+
+<Callout type="info">
+  `Mochi.sse` is GET-only: a `HEAD` is answered with `405 Method Not Allowed` (`Allow: GET`) without opening a stream, since a body-less probe of a stream endpoint can't reflect the real headers or run the same auth/observability path. `Mochi.ws` routes are upgrade-only and likewise do not handle `HEAD`.
+</Callout>
 
 ### Static files
 

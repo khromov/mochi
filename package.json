@@ -36,7 +36,8 @@
     "flamegraph": "bun scripts/flamegraph.ts",
     "update": "bun update --interactive --recursive",
     "deps": "bun packages/mochi/scripts/dep-report.ts",
-    "e18e": "bash scripts/e18e.sh"
+    "e18e": "bash scripts/e18e.sh",
+    "mochi:animate": "bun --cwd=packages/video-animations run animate"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
