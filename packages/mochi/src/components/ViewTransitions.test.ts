@@ -122,6 +122,11 @@ describe('ViewTransitions', () => {
     await expect(registry.renderComponent(COMPONENT_PATH, { keep: '</style><script>' })).rejects.toThrow('must not contain "<"');
   });
 
+  test('throws when invoked as an island (isHydratable)', async () => {
+    // The framework injects isHydratable: true on mochi:hydrate*/defer* invocations.
+    await expect(registry.renderComponent(COMPONENT_PATH, { isHydratable: true })).rejects.toThrow('must not be hydrated');
+  });
+
   test('throws on a non-finite or negative duration', async () => {
     await expect(registry.renderComponent(COMPONENT_PATH, { duration: NaN })).rejects.toThrow('duration must be a non-negative number');
     await expect(registry.renderComponent(COMPONENT_PATH, { duration: -100 })).rejects.toThrow('duration must be a non-negative number');

@@ -16,6 +16,7 @@
     duration = 250,
     regions,
     keep,
+    isHydratable,
   }: {
     type?: 'fade' | 'slide';
     duration?: number;
@@ -31,7 +32,15 @@
     // fades. Render the same list on every page (i.e. from a shared layout) so
     // the outgoing and incoming pages agree on the names.
     keep?: string | string[];
+    // Injected by the framework on island invocations (mochi:hydrate*/defer*).
+    isHydratable?: boolean;
   } = $props();
+
+  // The component emits static CSS into <head> and renders no markup — there
+  // is nothing to hydrate, so shipping it as an island only costs bytes.
+  if (isHydratable) {
+    throw new Error('<ViewTransitions /> must not be hydrated — it emits static CSS only. Remove the mochi: directives.');
+  }
 
   // Interpolated straight into CSS, so a bad value would emit a silently
   // broken stylesheet — fail loudly instead.
