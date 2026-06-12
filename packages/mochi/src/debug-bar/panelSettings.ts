@@ -27,7 +27,7 @@ export function parseHiddenPanels(raw: string | null): ConfigurablePanel[] {
   }
   const hidden = [...new Set(parsed)].filter((p): p is ConfigurablePanel => CONFIGURABLE_PANELS.includes(p as ConfigurablePanel));
   // At least one panel must stay enabled — an all-hidden value is treated as corrupt and reset.
-  return hidden.length >= CONFIGURABLE_PANELS.length ? [] : hidden;
+  return hidden.length === CONFIGURABLE_PANELS.length ? [] : hidden;
 }
 
 export function canToggle(hidden: ConfigurablePanel[], panel: ConfigurablePanel): boolean {

@@ -11,7 +11,7 @@
   import { cleanupHighlight } from './highlight';
   import { debugBarState } from './state.svelte';
   import { getPropsWarnLevel, formatSize } from './utils';
-  import { HIDDEN_PANELS_KEY, canToggle, parseHiddenPanels, type ConfigurablePanel } from './panelSettings';
+  import { HIDDEN_PANELS_KEY, parseHiddenPanels, type ConfigurablePanel } from './panelSettings';
 
   const STORAGE_KEY = 'mochi:debug:collapsed';
 
@@ -39,10 +39,12 @@
     }
   });
 
+  // The last-visible-panel invariant is enforced by SettingsPanel disabling the
+  // checkbox (via canToggle) — a disabled input never fires onchange.
   function togglePanelVisibility(panel: ConfigurablePanel) {
     if (hiddenPanels.includes(panel)) {
       hiddenPanels = hiddenPanels.filter((p) => p !== panel);
-    } else if (canToggle(hiddenPanels, panel)) {
+    } else {
       hiddenPanels = [...hiddenPanels, panel];
       if (activePanel === panel) {
         activePanel = null;
