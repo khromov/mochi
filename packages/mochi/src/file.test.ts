@@ -40,7 +40,7 @@ describe('Mochi.file', () => {
       routes: {
         '/files/report': Mochi.file(reportPath),
         '/files/dynamic/:name': Mochi.file((_req, params) => path.join(fixturesDir, `${params.name}.txt`)),
-        '/files/escape/:name': Mochi.file((_req, params) => path.join(fixturesDir, params.name)),
+        '/files/escape/:name': Mochi.file((_req, params) => path.join(fixturesDir, params.name ?? '')),
         '/files/missing': Mochi.file(path.join(fixturesDir, 'does-not-exist.txt')),
         '/files/forced': Mochi.file(() => error(404, 'nope')),
         '/files/dir': Mochi.file(fixturesDir),

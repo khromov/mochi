@@ -90,7 +90,7 @@
   }
 
   .route-btn.active {
-    border-color: var(--accent, #d6336c);
+    border-color: var(--accent);
   }
 
   .route-btn code {
@@ -114,8 +114,12 @@
     margin-bottom: 0.5rem;
   }
 
+  /* The shell styles `pre` globally as a dark code block; this one is plain
+     file output inside an already-tinted surface, so undo that treatment. */
   .output pre {
     margin: 0;
+    padding: 0;
+    background: transparent;
     white-space: pre-wrap;
     word-break: break-word;
     font-size: 0.85rem;
@@ -126,6 +130,6 @@
     align-self: flex-start;
     font-size: 0.85rem;
     font-weight: 600;
-    color: var(--accent, #d6336c);
+    color: var(--accent);
   }
 </style>
