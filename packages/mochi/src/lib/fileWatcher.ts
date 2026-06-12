@@ -25,6 +25,12 @@ export interface CreateWatcherOptions {
  * recovered by `statSync` + a seen-path map. Directory targets are watched
  * recursively; file targets are watched via their parent directory so atomic
  * saves (rename-over) and create-when-absent are still caught.
+ *
+ * Like chokidar, this inherits `fs.watch`'s OS-level event coalescing: events
+ * fired in very rapid succession on the same path can be collapsed (e.g. on
+ * Linux inotify, a delete landing within milliseconds of a preceding write may
+ * be dropped). Harmless for a dev watcher — human-paced saves are spaced out,
+ * and a missed `unlink` only leaves a stale cache entry corrected on next edit.
  */
 class FileWatcher extends EventEmitter {
   private watchers: FSWatcher[] = [];

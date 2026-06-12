@@ -76,15 +76,19 @@ test("classifies a modification of an existing file as 'change'", async () => {
 
 test("classifies a deletion as 'unlink'", async () => {
   const target = path.join(dir, 'c.txt');
-  writeFileSync(target, 'one');
   watcher = createWatcher([dir], { cwd: dir });
-  // Touch first so the file becomes 'seen', then delete.
-  await new Promise((r) => setTimeout(r, 50));
-  writeFileSync(target, 'two');
-  await nextEvent(watcher, (kind, rel) => rel === 'c.txt');
-  const p = nextEvent(watcher, (kind, rel) => rel === 'c.txt' && kind === 'unlink');
+  await settle();
+  // Create under the watcher and wait for 'add' — this seeds the seen-map so the
+  // delete can be classified. Then settle again before deleting: a delete fired
+  // immediately after a preceding write to the same path gets coalesced away by
+  // the OS watch layer (observed on Linux inotify), dropping the 'unlink'.
+  const added = nextEvent(watcher, (kind, rel) => rel === 'c.txt' && kind === 'add');
+  writeFileSync(target, 'one');
+  await added;
+  await settle();
+  const removed = nextEvent(watcher, (kind, rel) => rel === 'c.txt' && kind === 'unlink');
   rmSync(target);
-  await p;
+  await removed;
 });
 
 test('detects a file added in a nested subdirectory', async () => {
