@@ -196,7 +196,7 @@ await Mochi.serve({
 });
 ```
 
-A missing file returns a plain-text `404`; a resolver may also `error(404, …)` to force one. `Mochi.file` does **not** support `Range` requests, caching headers (`ETag`/`Cache-Control`), or middleware — reach for `Mochi.api` if you need full control over the response.
+A missing file returns a plain-text `404`; a resolver may also `error(404, …)` to force one. The file is read from disk on every request, so files written or deleted at runtime are picked up immediately. `Mochi.file` does **not** support `Range` requests, caching headers (`ETag`/`Cache-Control`), or middleware — reach for `Mochi.api` if you need full control over the response.
 
 <Callout type="danger">
 
