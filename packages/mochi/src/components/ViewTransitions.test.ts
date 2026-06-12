@@ -112,6 +112,22 @@ describe('ViewTransitions', () => {
     expect(head).toContain('#banner { view-transition-name: mochi-vt-keep-banner-1; }');
   });
 
+  test('keep falls back to the `el` slug for selectors with no alphanumerics', async () => {
+    const { head } = await registry.renderComponent(COMPONENT_PATH, { keep: ['*', ':root > *'] });
+    expect(head).toContain('* { view-transition-name: mochi-vt-keep-el; }');
+    expect(head).toContain(':root > * { view-transition-name: mochi-vt-keep-root; }');
+  });
+
+  test('keep rejects selectors containing "<"', async () => {
+    await expect(registry.renderComponent(COMPONENT_PATH, { keep: '</style><script>' })).rejects.toThrow('must not contain "<"');
+  });
+
+  test('throws on a non-finite or negative duration', async () => {
+    await expect(registry.renderComponent(COMPONENT_PATH, { duration: NaN })).rejects.toThrow('duration must be a non-negative number');
+    await expect(registry.renderComponent(COMPONENT_PATH, { duration: -100 })).rejects.toThrow('duration must be a non-negative number');
+    await expect(registry.renderComponent(COMPONENT_PATH, { duration: Infinity })).rejects.toThrow('duration must be a non-negative number');
+  });
+
   // The duplicate-instance guard is request-scoped: render within the real
   // requestContext ALS (shared with the compiled component via globalThis).
   const renderInRequest = <T>(fn: () => Promise<T>) => requestContext.run({ locals: {}, islandProps: new Map() } as unknown as MochiRequestContext, fn);

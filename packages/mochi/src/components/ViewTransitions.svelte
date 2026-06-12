@@ -33,6 +33,12 @@
     keep?: string | string[];
   } = $props();
 
+  // Interpolated straight into CSS, so a bad value would emit a silently
+  // broken stylesheet — fail loudly instead.
+  if (!Number.isFinite(duration) || duration < 0) {
+    throw new Error(`<ViewTransitions /> duration must be a non-negative number of milliseconds, got ${JSON.stringify(duration)}.`);
+  }
+
   // Only one instance may own the page's transition CSS: a second one would
   // emit the same global `@keyframes mochi-vt-*` names and competing root
   // rules, leaving the winner to cascade order. The first instance rendered
@@ -91,10 +97,18 @@
     const seen = new Map<string, number>();
     return selectors
       .map((selector) => {
-        const slug = selector
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, '-')
-          .replace(/^-+|-+$/g, '');
+        // Selectors are interpolated into a raw <style> tag; a `<` could close
+        // it and inject markup. Always developer-authored, so just refuse.
+        if (selector.includes('<')) {
+          throw new Error(`<ViewTransitions /> keep selectors must not contain "<", got ${JSON.stringify(selector)}.`);
+        }
+        // `|| 'el'` covers selectors with no alphanumerics at all (e.g. `*`),
+        // which would otherwise slug to an empty string.
+        const slug =
+          selector
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-+|-+$/g, '') || 'el';
         const n = seen.get(slug) ?? 0;
         seen.set(slug, n + 1);
         const name = `mochi-vt-keep-${slug}${n ? `-${n}` : ''}`;
