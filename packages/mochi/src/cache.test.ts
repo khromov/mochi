@@ -96,6 +96,9 @@ describe('MochiCache custom storage', () => {
         calls.push({ method: 'remove', key });
         store.delete(key);
       },
+      clear() {
+        store.clear();
+      },
     };
 
     const cache = new MochiCache({ storage, minTimeToStale: 1_000, maxTimeToLive: 5_000 });
@@ -154,6 +157,9 @@ describe('MochiCacheOptions passthrough', () => {
       },
       removeItem(key) {
         store.delete(key);
+      },
+      clear() {
+        store.clear();
       },
     };
 
@@ -337,6 +343,10 @@ describe('MochiCache async storage', () => {
         await wait(1);
         store.delete(key);
       },
+      async clear() {
+        await wait(1);
+        store.clear();
+      },
     };
 
     const cache = new MochiCache({ storage, minTimeToStale: 1_000, maxTimeToLive: 5_000 });
@@ -374,6 +384,9 @@ describe('MochiCache storage-error resilience', () => {
       removeItem(key) {
         store.delete(key);
       },
+      clear() {
+        store.clear();
+      },
     };
 
     const cache = new MochiCache({ storage, minTimeToStale: 1_000, maxTimeToLive: 5_000 });
@@ -401,6 +414,7 @@ describe('MochiCache storage-error resilience', () => {
         throw new Error('set boom');
       },
       removeItem() {},
+      clear() {},
     };
 
     const cache = new MochiCache({ storage, minTimeToStale: 1_000, maxTimeToLive: 5_000 });
