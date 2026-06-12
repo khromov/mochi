@@ -2,6 +2,8 @@
   import Widget from './Widget.svelte';
 </script>
 
+{#snippet fallback()}<p data-fallback>loading</p>{/snippet}
+
 <main>
-  <Widget mochi:clientOnly label="hi"><p data-fallback>loading</p></Widget>
+  <Widget mochi:clientOnly={fallback} label="hi" />
 </main>

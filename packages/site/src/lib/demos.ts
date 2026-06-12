@@ -112,7 +112,7 @@ export const demos: Demo[] = [
   {
     href: '/demos/client-only/',
     title: 'Client-only Islands',
-    hook: 'Components marked mochi:clientOnly skip SSR entirely and mount in the browser — fallback children fill in until then.',
+    hook: 'Components marked mochi:clientOnly skip SSR entirely and mount in the browser — a fallback snippet fills in until then.',
     category: 'hydration',
   },
   {

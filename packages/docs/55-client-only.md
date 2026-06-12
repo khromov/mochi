@@ -25,19 +25,21 @@ Props work exactly like `mochi:hydrate` — serialized with `devalue` and embedd
 
 ### Fallback content
 
-Children of the invocation render server-side as placeholder content and are removed the moment the component mounts:
+Pass a snippet as the directive value — it renders server-side as placeholder content and is removed the moment the component mounts:
 
 ```svelte
-<ChartCanvas mochi:clientOnly data={points}>
+{#snippet chartSkeleton()}
   <div class="chart-skeleton">Loading chart…</div>
-</ChartCanvas>
+{/snippet}
+
+<ChartCanvas mochi:clientOnly={chartSkeleton} data={points} />
 ```
 
 <Callout type="warning">
 
-Fallback children are an SSR placeholder only — they are **not** passed to the component as a `children` snippet (snippets can't be serialized across the network boundary). Do **NOT** put `mochi:*` directives inside fallback children; instead, keep the fallback to static markup.
+The fallback snippet is an SSR placeholder only — it is **not** passed to the component (snippets can't be serialized across the network boundary). Keep it to static markup: do **NOT** put `mochi:*` islands inside it, since the fallback is wiped from the DOM when the component mounts.
 
-If the component types its props, the invocation still type-checks against them — declare `children?: Snippet` in the props type to satisfy `svelte-check`, even though it is never passed at runtime.
+Children of a `mochi:clientOnly` invocation are a compile error — they would force the component to declare a phantom `children` prop just to satisfy `svelte-check`. The snippet form has no such requirement.
 
 </Callout>
 

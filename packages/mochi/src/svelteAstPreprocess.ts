@@ -44,8 +44,9 @@ export interface PreprocessResult {
  * - Combined `mochi:defer*` + `mochi:hydrate*` → server island with `also-hydrate`
  *   attribute, registered in both lists
  * - `mochi:clientOnly` → wraps in `<mochi-hydratable-island client-only>`; the
- *   component is never invoked server-side, children become SSR placeholder
- *   content, and the client mounts (not hydrates) the component
+ *   component is never invoked server-side, an optional fallback snippet passed
+ *   as the directive value becomes SSR placeholder content, and the client
+ *   mounts (not hydrates) the component
  */
 export function preprocessHydratable(source: string, filePath: string): PreprocessResult {
   if (!source.includes('mochi:hydrate') && !source.includes('mochi:defer') && !source.includes('mochi:clientOnly')) {
@@ -95,9 +96,35 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
 
       if (directives.clientOnly) {
         // --- CLIENT ONLY ---
+        // Children are rejected rather than treated as fallback content: the
+        // original invocation type-checks against the component's props, so
+        // children would force a phantom `children?: Snippet` prop on every
+        // client-only component. A snippet in the directive value rides the
+        // mochi:* attribute, which is type-erased for components.
+        const hasRealChildren = comp.fragment.nodes.some((n) => !(n.type === 'Text' && n.data.trim() === ''));
+        if (hasRealChildren) {
+          throw new Error(
+            `\`mochi:clientOnly\` does not take children — pass the SSR fallback as a snippet in the directive value instead:\n` +
+              `  {#snippet fallback()}…{/snippet}\n` +
+              `  <${comp.name} mochi:clientOnly={fallback} />`,
+          );
+        }
+
         if (!seen.has(resolved)) {
           seen.add(resolved);
           hydratables.push({ name: comp.name, resolvedPath: resolved });
+        }
+
+        // Optional fallback snippet: `mochi:clientOnly={someSnippet}`. A bare
+        // `mochi:clientOnly` (or a boolean literal value) means no fallback.
+        let fallbackExpr: string | null = null;
+        const clientOnlyValue = directives.clientOnly.value;
+        if (clientOnlyValue !== true && !Array.isArray(clientOnlyValue)) {
+          const exprNode = clientOnlyValue.expression;
+          if (!(exprNode.type === 'Literal' && typeof exprNode.value === 'boolean')) {
+            const expr = exprNode as unknown as Positioned;
+            fallbackExpr = source.slice(expr.start, expr.end);
+          }
         }
 
         const baseId = `mochi-${nanoid(8)}`;
@@ -111,17 +138,12 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
         }
 
         // The component invocation is never emitted server-side — SSR renders
-        // only the wrapper (plus optional fallback children, removed when the
-        // client mounts the component). No <svelte:boundary> needed: there is
-        // no SSR render to protect and no hydration marker to force.
+        // only the wrapper (plus the optional fallback snippet, removed when
+        // the client mounts the component). No <svelte:boundary> needed: there
+        // is no SSR render to protect and no hydration marker to force.
         const constDecl = `{#if true}{@const __mochi_iid = \`${baseId}-\${__mochi_uid__++}\`}`;
-        let replacement: string;
-        if (comp.fragment.nodes.length > 0) {
-          const childrenSource = comp.fragment.nodes.map((n) => source.slice(n.start, n.end)).join('');
-          replacement = `${constDecl}<mochi-hydratable-island ${attrs}>${childrenSource}</mochi-hydratable-island>{/if}`;
-        } else {
-          replacement = `${constDecl}<mochi-hydratable-island ${attrs}></mochi-hydratable-island>{/if}`;
-        }
+        const fallback = fallbackExpr ? `{@render (${fallbackExpr})()}` : '';
+        const replacement = `${constDecl}<mochi-hydratable-island ${attrs}>${fallback}</mochi-hydratable-island>{/if}`;
 
         s.overwrite(comp.start, comp.end, replacement);
       } else if (directives.server) {

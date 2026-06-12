@@ -1,9 +1,5 @@
 <script lang="ts">
-  import type { Snippet } from 'svelte';
-
-  // `children` is never passed at runtime — fallback children are an SSR-only
-  // placeholder — but the invocation type-checks against the props type.
-  let { waves = 3 } = $props<{ waves?: number; children?: Snippet }>();
+  let { waves = 3 } = $props<{ waves?: number }>();
 
   // These top-level browser reads would crash an SSR render — safe here
   // because mochi:clientOnly components never run on the server.
@@ -20,11 +16,20 @@
       return;
     }
 
-    const width = canvas.clientWidth;
-    const height = canvas.clientHeight;
-    canvas.width = width * dpr;
-    canvas.height = height * dpr;
-    ctx.scale(dpr, dpr);
+    let width = 0;
+    let height = 0;
+    const resize = () => {
+      width = canvas.clientWidth;
+      height = canvas.clientHeight;
+      canvas.width = width * dpr;
+      canvas.height = height * dpr;
+      // Re-setting canvas.width wipes the context state, so re-apply the
+      // dpr scale absolutely instead of accumulating ctx.scale() calls.
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    };
+    resize();
+    const observer = new ResizeObserver(resize);
+    observer.observe(canvas);
 
     let frame: number;
     let frames = 0;
@@ -62,7 +67,10 @@
       frame = requestAnimationFrame(draw);
     };
     frame = requestAnimationFrame(draw);
-    return () => cancelAnimationFrame(frame);
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
   });
 </script>
 

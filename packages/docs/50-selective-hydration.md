@@ -73,7 +73,7 @@ Islands that use `:visible` require JS to apply their styles — per-component C
 
 ### `mochi:clientOnly`
 
-Use `mochi:clientOnly` to skip SSR entirely — the component is mounted in the browser only, with optional fallback children as the SSR placeholder. See `Client-only components with mochi:clientOnly`.
+Use `mochi:clientOnly` to skip SSR entirely — the component is mounted in the browser only, with an optional fallback snippet as the SSR placeholder. See `Client-only components with mochi:clientOnly`.
 
 ```svelte
 <!-- Never server-rendered; mounts in the browser -->

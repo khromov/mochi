@@ -2,6 +2,8 @@
 // on every Svelte HTML element so editor IntelliSense and `svelte-check`
 // don't flag them. Pulled in transitively via `mochi-framework/ambient`.
 
+import type { Snippet } from 'svelte';
+
 declare module 'svelte/elements' {
   interface MochiHydrateVisibleOptions {
     rootMargin?: string;
@@ -22,7 +24,7 @@ declare module 'svelte/elements' {
     'mochi:hydrate:visible'?: boolean | MochiHydrateVisibleOptions;
     'mochi:defer'?: boolean | MochiDeferOptions;
     'mochi:defer:visible'?: boolean | MochiDeferVisibleOptions;
-    'mochi:clientOnly'?: boolean;
+    'mochi:clientOnly'?: boolean | Snippet;
   }
 }
 
