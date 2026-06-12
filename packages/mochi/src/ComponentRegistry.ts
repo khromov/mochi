@@ -481,9 +481,12 @@ export class ComponentRegistry {
             `import __mochi_mitt__ from "${toPosixPath(Bun.resolveSync('mitt', FRAMEWORK_DIR))}";`,
             `if (!globalThis.__mochi_events__) globalThis.__mochi_events__ = __mochi_mitt__();`,
             `export const mochiEvents = globalThis.__mochi_events__;`,
-            // Server-side cache class. Re-exported through the virtual module so .svelte
-            // files can `import { MochiCache } from 'mochi-framework'` directly.
+            // Server-side cache class + storage backends. Re-exported through the
+            // virtual module so .svelte-graph files can `import { MochiCache,
+            // SqliteStorage } from 'mochi-framework'` directly. The client build
+            // stubs these instead (see serverOnlyFrameworkModules).
             `export { MochiCache } from "${toPosixPath(path.join(FRAMEWORK_DIR, 'cache.ts'))}";`,
+            `export { MemoryStorage, SqliteStorage } from "${toPosixPath(path.join(FRAMEWORK_DIR, 'cache-storage/index.ts'))}";`,
             // `enhance` / `deserialize` are browser-only Svelte action helpers.
             // Svelte never invokes actions during SSR, so these stubs only fire
             // if user code calls them on the server — which is a usage error.

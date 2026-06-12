@@ -68,6 +68,12 @@ export const demos: Demo[] = [
     category: 'data',
   },
   {
+    href: '/demos/sqlite-cache/',
+    title: 'SQLite Cache',
+    hook: 'Persist MochiCache entries to disk with the built-in SqliteStorage backend — cached values survive a server restart.',
+    category: 'data',
+  },
+  {
     href: '/cookie-vary-test/',
     title: 'Cookie Vary Test',
     hook: 'A page that sets Vary: Cookie on its response — useful for testing cookie-partitioned cache keys.',

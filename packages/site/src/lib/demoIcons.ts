@@ -18,6 +18,7 @@ import ShieldAlert from '@lucide/svelte/icons/shield-alert';
 import Flame from '@lucide/svelte/icons/flame';
 import LayoutDashboard from '@lucide/svelte/icons/layout-dashboard';
 import DatabaseZap from '@lucide/svelte/icons/database-zap';
+import Database from '@lucide/svelte/icons/database';
 import Type from '@lucide/svelte/icons/type';
 import ListTodo from '@lucide/svelte/icons/list-todo';
 import Dices from '@lucide/svelte/icons/dices';
@@ -48,6 +49,7 @@ export const demoIconFor: Record<string, DemoIconMeta> = {
   Hydratable: { icon: Snowflake, label: 'Server-computed value reused on hydration' },
   Cookies: { icon: Cookie, label: 'Server + client cookies' },
   'Cache Events': { icon: DatabaseZap, label: 'Custom cache event subscriber' },
+  'SQLite Cache': { icon: Database, label: 'Disk-persistent cache backend' },
   'Real-time Chat': { icon: MessageCircle, label: 'WebSocket chat' },
   'API Endpoints': { icon: Webhook, label: 'JSON API routes' },
   'Shared State': { icon: Share2, label: 'Shared $state across islands' },
