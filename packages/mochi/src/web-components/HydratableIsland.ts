@@ -124,10 +124,6 @@ class HydratableIsland extends HTMLElement {
       }
       throw err;
     }
-    const islandId = this.getAttribute('island-id');
-    if (islandId) {
-      props.islandId = islandId;
-    }
     props.isHydratable = true;
     // `transformError` makes <svelte:boundary> work for client-side errors
     // (e.g. throws inside $effect / $derived after hydration). Returns an

@@ -152,6 +152,12 @@ export const demos: Demo[] = [
     category: 'hydration',
   },
   {
+    href: '/demos/props-id/',
+    title: 'Unique IDs',
+    hook: "Svelte's native $props.id() inside islands — SSR-consistent, unique per instance, namespaced in server islands.",
+    category: 'hydration',
+  },
+  {
     href: '/demos/login/',
     title: 'Form Actions',
     hook: 'A login form rendered twice — plain HTML POST and intercepted with {@attach enhance(...)}.',

@@ -22,24 +22,21 @@ Props are serialized with `devalue` and embedded into the HTML so the same value
 
 Do **NOT** nest `mochi:hydrate` (or `mochi:hydrate:visible`) inside another hydratable component; instead, remove the inner directive and let the outer island hydrate the whole subtree. Hydration is all-or-nothing per island — the framework rejects nested directives at compile time.
 
-### `islandId` and `isHydratable` props
+### The `isHydratable` prop
 
-Every island invocation receives two implicit props from the framework:
+Every island invocation receives one implicit prop from the framework:
 
-- `islandId` — string matching the wrapper's `island-id` attribute, available on `mochi:hydrate`, `mochi:hydrate:visible`, and `mochi:defer`.
 - `isHydratable` — `true` when the call site uses `mochi:hydrate`, `mochi:hydrate:visible`, or `mochi:defer mochi:hydrate`. Undefined for pure SSR-only invocations.
 
-Accept them in the component's `$props()` to branch on hydration state at the same call site that opts in:
+Accept it in the component's `$props()` to branch on hydration state at the same call site that opts in:
 
 ```svelte
 <!-- file: src/lib/Counter.svelte -->
 <script lang="ts">
   let {
-    islandId,
     isHydratable,
     count = 0,
   }: {
-    islandId?: string;
     isHydratable?: boolean;
     count?: number;
   } = $props();
@@ -52,7 +49,23 @@ Accept them in the component's `$props()` to branch on hydration state at the sa
 {/if}
 ```
 
-Do **NOT** declare `islandId` or `isHydratable` as user-controlled props; instead, treat them as read-only inputs from the framework.
+Do **NOT** declare `isHydratable` as a user-controlled prop; instead, treat it as a read-only input from the framework.
+
+### Unique ids with `$props.id()`
+
+For a unique, SSR-stable id inside an island, use Svelte's native [`$props.id()`](<https://svelte.dev/docs/svelte/$props#$props.id()>) — the value generated during the server render is reused on hydration:
+
+```svelte
+<!-- file: src/lib/SignupField.svelte -->
+<script lang="ts">
+  const uid = $props.id();
+</script>
+
+<label for="{uid}-email">Email</label>
+<input id="{uid}-email" type="email" />
+```
+
+Each component instance gets its own id, so repeating the same island on a page never produces duplicate DOM ids. It also works inside server islands: their standalone renders are namespaced with the wrapper's `island-id` (via render's `idPrefix`), so ids from a deferred fragment cannot collide with ids already on the page.
 
 ### `mochi:hydrate:visible`
 

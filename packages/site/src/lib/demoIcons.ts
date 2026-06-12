@@ -33,6 +33,7 @@ import Snowflake from '@lucide/svelte/icons/snowflake';
 import Fingerprint from '@lucide/svelte/icons/fingerprint';
 import Link from '@lucide/svelte/icons/link';
 import FileDown from '@lucide/svelte/icons/file-down';
+import Hash from '@lucide/svelte/icons/hash';
 
 export interface DemoIconMeta {
   icon: Component;
@@ -59,6 +60,7 @@ export const demoIconFor: Record<string, DemoIconMeta> = {
   'Crossing the server-client boundary with props': { icon: Package2, label: 'Props serialized into the island — every devalue type' },
   'Nested Components': { icon: ListTree, label: 'Five-level deep tree under one island' },
   'Shared Props': { icon: Boxes, label: 'Auto-deduplicated island props' },
+  'Unique IDs': { icon: Hash, label: 'Native $props.id() in islands' },
   Forms: { icon: ClipboardPen, label: 'Forms with action handlers' },
   'Using form return data': { icon: Dices, label: 'success({ value }) round-trip via {@attach enhance(...)}' },
   'Form Errors': { icon: OctagonAlert, label: 'Thrown server errors, inline or full-page' },

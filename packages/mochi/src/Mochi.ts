@@ -1057,6 +1057,12 @@ export class Mochi {
         props = {};
       }
 
+      // `islandId` rides inside the signed envelope as transport only — it
+      // identifies the wrapper for debug/error reporting and must not reach
+      // the component as a prop (components use `$props.id()` for ids).
+      const islandId = typeof props.islandId === 'string' ? props.islandId : undefined;
+      delete props.islandId;
+
       // Look up the component path
       const componentPath = registry.getServerIslandPath(componentName);
       if (!componentPath) {
@@ -1068,15 +1074,21 @@ export class Mochi {
         await registry.compile(componentPath);
         let result: RenderResult;
         try {
+          // Namespacing via `idPrefix` keeps `$props.id()` values from this
+          // standalone render from colliding with ids the host page already
+          // emitted (both renders otherwise start their uid counter at `s1`).
+          // Svelte rejects prefixes containing `--`, so guard against tokens
+          // signed by an older deploy carrying an incompatible id.
           result = await registry.renderComponent(componentPath, props as Record<string, unknown>, {
             stripMarkers: false,
+            ...(islandId && !islandId.includes('--') ? { idPrefix: islandId } : {}),
           });
         } catch (err) {
           const e = err instanceof Error ? err : new Error(String(err));
           logger.error(`Server island "${componentName}" failed: ${e.message}`);
           mochiEvents.emit('island:error', {
             componentName,
-            islandId: (props as Record<string, unknown>).islandId as string | undefined,
+            islandId,
             kind: 'server',
             message: e.message,
             stack: registry.development ? e.stack : undefined,
@@ -1102,7 +1114,6 @@ export class Mochi {
           const serializedProps = devalueStringify(props);
           const bootstrapUrl = registry.getIslandBootstrapUrl();
 
-          const islandId = props.islandId as string | undefined;
           if (!islandId) {
             logger.warn(`Server island "${componentName}" missing islandId in props`);
           }

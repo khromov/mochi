@@ -1077,7 +1077,7 @@ export class ComponentRegistry {
     });
   }
 
-  async renderComponent(filename: string, props?: Record<string, unknown>, opts?: { stripMarkers?: boolean }): Promise<RenderResult> {
+  async renderComponent(filename: string, props?: Record<string, unknown>, opts?: { stripMarkers?: boolean; idPrefix?: string }): Promise<RenderResult> {
     await this.compile(filename);
     const { module: mod, cssComponents, hydratables } = this.compiledComponents.get(filename)!;
 
@@ -1124,11 +1124,15 @@ export class ComponentRegistry {
     const renderOptions: {
       props?: Record<string, unknown>;
       transformError: typeof transformError;
+      idPrefix?: string;
     } = {
       transformError,
     };
     if (props) {
       renderOptions.props = props;
+    }
+    if (opts?.idPrefix) {
+      renderOptions.idPrefix = opts.idPrefix;
     }
     const { body, head } = await render(mod.default, renderOptions);
 

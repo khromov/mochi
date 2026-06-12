@@ -1,14 +1,8 @@
 import { parse } from 'svelte/compiler';
 import type { AST } from 'svelte/compiler';
 import MagicString from 'magic-string';
-import { customAlphabet } from 'nanoid';
 import path from 'node:path';
 import { walk } from 'zimmerframe';
-
-// Dash-free alphabet: island IDs are embedded as `mochi-<id>-<uid>`, so an id
-// containing `-` breaks that delimiter and (historically) made tests flaky
-// when a generated id happened to start with `-`.
-const nanoid = customAlphabet('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_');
 
 /** Svelte's AST nodes all have start/end, but estree types don't declare them. */
 interface Positioned {
@@ -51,8 +45,12 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
   const ast = parse(source, { modern: true });
   const s = new MagicString(source);
 
-  // Build import map from AST: component name → relative import path
+  // Build import map from AST: component name → relative import path.
+  // Also detect an existing `const x = $props.id()` declaration — Svelte
+  // allows only one per component (`props_duplicate`), so when the author
+  // already has one we must reuse its identifier instead of injecting ours.
   const importMap = new Map<string, string>();
+  let pidVar: string | null = null;
   if (ast.instance) {
     for (const node of ast.instance.content.body) {
       if (
@@ -64,9 +62,24 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
         node.specifiers[0]!.type === 'ImportDefaultSpecifier'
       ) {
         importMap.set(node.specifiers[0]!.local.name, node.source.value);
+      } else if (node.type === 'VariableDeclaration') {
+        for (const decl of node.declarations) {
+          if (
+            decl.id.type === 'Identifier' &&
+            decl.init?.type === 'CallExpression' &&
+            decl.init.callee.type === 'MemberExpression' &&
+            decl.init.callee.object.type === 'Identifier' &&
+            decl.init.callee.object.name === '$props' &&
+            decl.init.callee.property.type === 'Identifier' &&
+            decl.init.callee.property.name === 'id'
+          ) {
+            pidVar = decl.id.name;
+          }
+        }
       }
     }
   }
+  const pid = pidVar ?? '__mochi_pid__';
 
   const hydratables: HydratableComponent[] = [];
   const serverIslands: ServerIslandComponent[] = [];
@@ -97,7 +110,6 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
           serverIslands.push({ name: comp.name, resolvedPath: resolved });
         }
 
-        const baseId = `mochi-${nanoid(8)}`;
         // Server islands only get `isHydratable: true` when also-hydrate is set
         // (i.e. `mochi:defer mochi:hydrate`); a pure `mochi:defer` is
         // SSR-only-via-fetch and never hydrates.
@@ -141,7 +153,7 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
         }
 
         // Children become fallback content
-        const constDecl = `{#if true}{@const __mochi_iid = \`${baseId}-\${__mochi_uid__++}\`}`;
+        const constDecl = `{#if true}{@const __mochi_iid = \`\${${pid}}-\${__mochi_uid__++}\`}`;
         let replacement: string;
         if (comp.fragment.nodes.length > 0) {
           const childrenSource = comp.fragment.nodes.map((n) => source.slice(n.start, n.end)).join('');
@@ -176,7 +188,6 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
         }
 
         // Build wrapper attributes
-        const baseId = `mochi-${nanoid(8)}`;
         const propsExpr = buildPropsFromAst(source, comp.attributes);
         let attrs = `island-id={__mochi_iid} component-name="${comp.name}" component-url="__MOCHI_COMPONENT_URL__${comp.name}__"`;
         // Skip props when component has no props to avoid serializing empty objects in HTML.
@@ -194,13 +205,12 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
           }
         }
 
-        // Build inner component with the auto-injected `islandId` and
-        // `isHydratable` props. Both are framework conventions: `islandId`
-        // identifies the wrapping `<mochi-hydratable-island>`, `isHydratable`
-        // is a `true` boolean that lets components branch SSR-only behavior
-        // off the same auto-injection pipeline (no Svelte context needed).
+        // Build inner component with the auto-injected `isHydratable` prop —
+        // a `true` boolean that lets components branch SSR-only behavior off
+        // the auto-injection pipeline (no Svelte context needed). Components
+        // needing a unique id use Svelte's native `$props.id()` instead.
         let innerTag: string;
-        const autoProps = `islandId={__mochi_iid} isHydratable={true}`;
+        const autoProps = `isHydratable={true}`;
         if (comp.fragment.nodes.length > 0) {
           const childrenSource = comp.fragment.nodes.map((n) => source.slice(n.start, n.end)).join('');
           innerTag = `<${comp.name}${propsSource ? ' ' + propsSource : ''} ${autoProps}>${childrenSource}</${comp.name}>`;
@@ -208,7 +218,7 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
           innerTag = `<${comp.name}${propsSource ? ' ' + propsSource : ''} ${autoProps} />`;
         }
 
-        const constDecl = `{#if true}{@const __mochi_iid = \`${baseId}-\${__mochi_uid__++}\`}`;
+        const constDecl = `{#if true}{@const __mochi_iid = \`\${${pid}}-\${__mochi_uid__++}\`}`;
         // Wrap the island in <svelte:boundary> so an SSR throw inside the
         // component doesn't take down the parent page render. The boundary sits
         // OUTSIDE <mochi-hydratable-island> so its <!--[-->…<!--]--> markers
@@ -260,6 +270,14 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
     }
     if (needsUid) {
       imports += '\nlet __mochi_uid__ = 0;';
+      // Island ids are `${$props.id()}-${counter}`: the rune is unique per
+      // component instance per render, the counter disambiguates multiple
+      // islands within one instance — unique page-wide, and SSR-stable on
+      // hydration because Svelte reads the id back from its `<!--$...-->`
+      // comment marker.
+      if (!pidVar) {
+        imports += '\nconst __mochi_pid__ = $props.id();';
+      }
     }
     if (needsSignProps) {
       imports += '\nimport { signProps as __mochi_sign_props__ } from "mochi-server-island-runtime";';

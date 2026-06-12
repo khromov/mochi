@@ -14,7 +14,7 @@ describe('preprocessHydratable', () => {
     expect(transformed).toContain('<mochi-hydratable-island');
     expect(transformed).toContain('component-name="Foo"');
     expect(transformed).toContain('__MOCHI_COMPONENT_URL__Foo__');
-    expect(transformed).toContain('<Foo islandId={__mochi_iid} isHydratable={true} />');
+    expect(transformed).toContain('<Foo isHydratable={true} />');
     expect(transformed).not.toContain('MochiIslandCtx');
     expect(transformed).not.toContain('mochi:hydrate');
     expect(transformed).toContain('__mochi_emit_props__');
@@ -94,7 +94,7 @@ describe('preprocessHydratable', () => {
 
     expect(hydratables).toHaveLength(1);
     expect(transformed).toContain('<mochi-hydratable-island');
-    expect(transformed).toContain('<Wrapper islandId={__mochi_iid} isHydratable={true}><span>child content</span></Wrapper>');
+    expect(transformed).toContain('<Wrapper isHydratable={true}><span>child content</span></Wrapper>');
   });
 
   test('duplicate component instances', () => {
@@ -340,26 +340,53 @@ describe('preprocessHydratable', () => {
     expect(transformed).not.toContain('defer-on');
   });
 
-  test('islandId is passed as prop to inner component', () => {
+  test('islandId is NOT passed as prop to inner component', () => {
     const source = `${SCRIPT('import Foo from "./Foo.svelte";')}<Foo mochi:hydrate count={1} />`;
     const { transformed } = preprocessHydratable(source, '/test/File.svelte');
 
-    // Both wrapper and inner component use the same __mochi_iid variable
+    // The wrapper carries the id; the inner component only gets isHydratable —
+    // components needing an id use Svelte's native $props.id().
     expect(transformed).toContain('island-id={__mochi_iid}');
-    expect(transformed).toContain('<Foo count={1} islandId={__mochi_iid} isHydratable={true} />');
+    expect(transformed).toContain('<Foo count={1} isHydratable={true} />');
+    expect(transformed).not.toContain('islandId={__mochi_iid}');
 
     // No MochiIslandContext wrapper
     expect(transformed).not.toContain('MochiIslandCtx');
   });
 
-  test('island-id is unique per island instance', () => {
+  test('island-id derives from $props.id() plus a per-instance counter', () => {
     const source = `${SCRIPT('import Foo from "./Foo.svelte";\nimport Bar from "./Bar.svelte";')}<Foo mochi:hydrate />\n<Foo mochi:hydrate />\n<Bar mochi:hydrate />`;
     const { transformed } = preprocessHydratable(source, '/test/File.svelte');
 
-    // Each island site gets a unique nanoid base in its {@const} declaration
-    const bases = [...transformed.matchAll(/@const __mochi_iid = `(mochi-[^-]+-)/g)].map((m) => m[1]);
-    expect(bases).toHaveLength(3);
-    expect(new Set(bases).size).toBe(3);
+    // Every island site emits the same deterministic {@const}; uniqueness is
+    // runtime — $props.id() per parent instance, counter per island within it.
+    const decls = transformed.match(/\{@const __mochi_iid = `\$\{__mochi_pid__\}-\$\{__mochi_uid__\+\+\}`\}/g);
+    expect(decls).toHaveLength(3);
+  });
+
+  test('$props.id() declaration is injected for hydratable islands', () => {
+    const source = `${SCRIPT('import Foo from "./Foo.svelte";')}<Foo mochi:hydrate />`;
+    const { transformed } = preprocessHydratable(source, '/test/File.svelte');
+
+    const scriptMatch = transformed.match(/<script[^>]*>([\s\S]*?)<\/script>/);
+    expect(scriptMatch![1]).toContain('const __mochi_pid__ = $props.id();');
+    expect(scriptMatch![1]).toContain('let __mochi_uid__ = 0;');
+  });
+
+  test('$props.id() declaration is injected for server islands', () => {
+    const source = `${SCRIPT('import Srv from "./Srv.svelte";')}<Srv mochi:defer />`;
+    const { transformed } = preprocessHydratable(source, '/test/File.svelte');
+
+    expect(transformed).toContain('const __mochi_pid__ = $props.id();');
+  });
+
+  test('existing $props.id() declaration is reused instead of injecting a second one', () => {
+    // Svelte allows only one $props.id() per component (props_duplicate)
+    const source = `${SCRIPT('import Foo from "./Foo.svelte";\nconst myId = $props.id();')}<Foo mochi:hydrate />`;
+    const { transformed } = preprocessHydratable(source, '/test/File.svelte');
+
+    expect(transformed).not.toContain('__mochi_pid__');
+    expect(transformed).toContain('{@const __mochi_iid = `${myId}-${__mochi_uid__++}`}');
   });
 
   test('island-id is present on server islands', () => {
@@ -373,11 +400,10 @@ describe('preprocessHydratable', () => {
     const source = `${SCRIPT('import Foo from "./Foo.svelte";')}<Foo mochi:hydrate name="test" />`;
     const { transformed } = preprocessHydratable(source, '/test/File.svelte');
 
-    // islandId should be on wrapper attribute and inner component prop
+    // islandId should be on the wrapper attribute only
     expect(transformed).toContain('island-id={__mochi_iid}');
-    expect(transformed).toContain('islandId={__mochi_iid}');
 
-    // But NOT inside the serialized props expression
+    // and NOT inside the serialized props expression
     const propsMatch = transformed.match(/__mochi_emit_props__\((\{[^}]+\}), __mochi_iid\)/);
     expect(propsMatch).not.toBeNull();
     expect(propsMatch![1]).not.toContain('islandId');
@@ -504,7 +530,7 @@ describe('preprocessHydratable', () => {
     const { transformed } = preprocessHydratable(source, '/test/File.svelte');
 
     // The inner tag is unchanged — boundary just wraps it
-    expect(transformed).toContain('<Foo name="test" count={42} islandId={__mochi_iid} isHydratable={true} />');
+    expect(transformed).toContain('<Foo name="test" count={42} isHydratable={true} />');
     expect(transformed).toContain('<svelte:boundary>');
   });
 });

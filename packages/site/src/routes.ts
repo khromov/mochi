@@ -28,6 +28,7 @@ import { routes as loginRoutes } from './demos/login/routes';
 import { routes as mdsvexRoutes } from './demos/mdsvex/routes';
 import { routes as nestedComponentsRoutes } from './demos/nested-components/routes';
 import { routes as propDedupRoutes } from './demos/prop-dedup/routes';
+import { routes as propsIdRoutes } from './demos/props-id/routes';
 import { routes as reloadFormDataRoutes } from './demos/reload-form-data/routes';
 import { routes as serverIslandRoutes } from './demos/server-island/routes';
 import { routes as serverPropsRoutes } from './demos/server-props/routes';
@@ -139,6 +140,7 @@ export const routes: Record<string, MochiRouteValue> = {
   ...mdsvexRoutes,
   ...nestedComponentsRoutes,
   ...propDedupRoutes,
+  ...propsIdRoutes,
   ...reloadFormDataRoutes,
   ...serverIslandRoutes,
   ...serverPropsRoutes,

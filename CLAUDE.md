@@ -113,7 +113,7 @@ Default to Bun instead of Node.js:
 ## Hydration notes
 
 - Hydration is all-or-nothing per island: `mochi:hydrate` hydrates the entire subtree together, no per-child opt-in.
-- All island components (`mochi:hydrate`, `mochi:hydrate:visible`, `mochi:defer`, `mochi:defer:visible`) implicitly receive an `islandId` prop matching the wrapper's `island-id` attribute. Accept it with `let { islandId } = $props()` if needed.
+- Islands do not receive an id prop. For a unique, SSR-stable id inside any component (e.g. for `<label for>`), use Svelte's native `const uid = $props.id();`. Server-island renders are namespaced via render's `idPrefix` (derived from the wrapper's `island-id`), so their ids never collide with the host page.
 - Hydratable invocations (`mochi:hydrate`, `mochi:hydrate:visible`, `mochi:defer`, `mochi:defer:visible`, `mochi:defer mochi:hydrate`) also implicitly receive `isHydratable: true` as a prop; pure SSR-only invocations leave it undefined. Use it to branch SSR-only fallback logic at the same call site that hydrates client-side: `let { isHydratable }: { isHydratable?: boolean } = $props()`.
 
 ## Conventions
