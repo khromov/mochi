@@ -825,6 +825,21 @@ export class ComponentRegistry {
     const cookiesClientPath = toPosixPath(path.join(frameworkDir, 'cookies.client.ts'));
     const enhanceClientPath = toPosixPath(path.join(frameworkDir, 'enhance.client.ts'));
 
+    // Framework modules whose entire export surface is server-only. Their real
+    // exports are scanned and replaced with throwing stubs in the client
+    // `mochi-framework` module below, so a new server-only export (e.g. another
+    // cache backend) needs no hand-written client stub. Reading the source works
+    // both in this monorepo and when Mochi is an installed dependency, since the
+    // framework ships its `.ts` next to this file (same as the paths above).
+    const serverOnlyFrameworkModules = ['cache.ts', 'cache-storage/index.ts'];
+    const serverOnlyStubLines = serverOnlyFrameworkModules.flatMap((rel) => {
+      const scan = scanServerOnlyExports(fs.readFileSync(path.join(frameworkDir, rel), 'utf8'));
+      for (const w of scan.warnings) {
+        logger.warn(`[mochi] ${rel}: ${w}`);
+      }
+      return buildServerOnlyStubModule(`mochi-framework/${rel}`, scan);
+    });
+
     const clientPlugin: BunPlugin = {
       name: 'svelte-client',
       setup(build) {
@@ -934,13 +949,9 @@ export class ComponentRegistry {
             `    );`,
             `  },`,
             `};`,
-            // MochiCache is server-only; ship a stub that throws so accidental
-            // client imports surface clearly instead of failing the bundle.
-            `export class MochiCache { constructor() { throw new Error("MochiCache is only available on the server"); } }`,
-            // Cache storage backends are server-only too; stub them so client
-            // imports fail loudly instead of resolving to undefined.
-            `export class MemoryStorage { constructor() { throw new Error("MemoryStorage is only available on the server"); } }`,
-            `export class SqliteStorage { constructor() { throw new Error("SqliteStorage is only available on the server"); } }`,
+            // Server-only exports (MochiCache + cache storage backends) are
+            // auto-stubbed from their real source — see serverOnlyFrameworkModules.
+            ...serverOnlyStubLines,
             `export { enhance, deserialize } from "${enhanceClientPath}";`,
           ].join('\n'),
           loader: 'js',
