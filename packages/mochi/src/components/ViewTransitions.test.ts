@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { ComponentRegistry } from '../ComponentRegistry';
 
-const COMPONENT_PATH = new URL('./ViewTransitions.svelte', import.meta.url).pathname;
+const COMPONENT_PATH = path.join(import.meta.dir, 'ViewTransitions.svelte');
 
 describe('ViewTransitions', () => {
   let outDir: string;
