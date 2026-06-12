@@ -89,7 +89,7 @@ Mochi.serve({
 });
 ```
 
-Do **NOT** enable `proxy.requestIdHeader` for traffic you do not control; instead, leave it unset so the framework generates an id with `nanoid` — clients can spoof any header, smearing log lines for unrelated requests together.
+Do **NOT** enable `proxy.requestIdHeader` for traffic you do not control; instead, leave it unset so the framework generates an id with `Bun.randomUUIDv7()` — clients can spoof any header, smearing log lines for unrelated requests together.
 
 ### Event reference
 

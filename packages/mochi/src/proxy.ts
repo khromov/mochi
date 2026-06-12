@@ -58,7 +58,7 @@ export interface MochiProxyOptions {
    * proxy (typically `'x-request-id'`). When set and present on the inbound
    * request, the value seeds `getRequestContext().requestId` and rides on
    * every lifecycle event for that request. When absent (or unset here),
-   * the framework generates its own id with `nanoid(12)`.
+   * the framework generates its own id with `Bun.randomUUIDv7()`.
    *
    * Leave unset on the public internet — clients can spoof any header, and
    * a colliding id will smear log lines for unrelated requests together.
