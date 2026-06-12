@@ -8,7 +8,7 @@ description: 'Register WebSocket endpoints with Mochi.ws() and handle upgrade, o
 
 `Mochi.ws(handlers)` registers a WebSocket endpoint backed by Bun's `ServerWebSocket`. The handler map carries five callbacks — `upgrade`, `open`, `message`, `close`, `drain` — and exposes Bun's pub/sub primitives (`ws.subscribe`, `ws.publish`, `ws.unsubscribe`) on the socket.
 
-Upgrades are origin-checked by default (cross-origin upgrades are rejected in production once `proxy.origin` is set), and per-socket resource limits are configured via the `websocket` serve option. See [Security](/docs/security).
+Upgrades are origin-checked by default (cross-origin upgrades are rejected in production once `proxy.origin` is set; upgrades without an `Origin` header — non-browser clients — are always allowed), and per-socket resource limits are configured via the `websocket` serve option. See [Security](/docs/security).
 
 ```ts
 // file: src/index.ts

@@ -32,7 +32,7 @@ import type {
 } from './types';
 import { isFormFail, isFormRedirect, isFormSuccess } from './forms';
 import { isEnhanceRequest, jsonError, jsonFailure, jsonRedirect, jsonSuccess } from './formsJson';
-import { checkWsOrigin, csrfCheck, DEFAULT_FORM_CONTENT_TYPES, DEFAULT_PROTECTED_METHODS } from './csrf';
+import { checkWsOrigin, csrfCheck, matchesAllowedOrigin, DEFAULT_FORM_CONTENT_TYPES, DEFAULT_PROTECTED_METHODS } from './csrf';
 import { applyDefaultSecurityHeaders, resolveSecurityHeaders } from './security';
 import { applyFilter, initExtensions, runHook } from './extensions';
 import { buildPublicUrl } from './proxy';
@@ -106,16 +106,7 @@ function isSafeRedirectLocation(location: string, expectedOrigin: string, truste
   } catch {
     return false;
   }
-  if (resolved.origin === expectedOrigin) {
-    return true;
-  }
-  return [...trustedOrigins].some((trusted) => {
-    try {
-      return new URL(trusted).origin === resolved.origin;
-    } catch {
-      return false;
-    }
-  });
+  return matchesAllowedOrigin(resolved.origin, expectedOrigin, trustedOrigins);
 }
 
 async function appendDebugTail(response: Response, ctx: MochiRequestContext, development: boolean): Promise<Response> {
@@ -746,7 +737,6 @@ export class Mochi {
                 return applyResolveOptions(result, resolveOpts);
               }
               if (isFormRedirect(result)) {
-                emitActionComplete(actionName, 'redirect', result.status);
                 if (!isSafeRedirectLocation(result.location, ctx.url.origin, trustedOrigins)) {
                   if (development) {
                     logger.warn(
@@ -761,9 +751,11 @@ export class Mochi {
                       ? jsonError(500, 'Unsafe redirect location')
                       : await renderErrorResponse({ req, event, resolveOpts, status: 500, message: 'Unsafe redirect location', thrown: null });
                     emitError('action', ctx.requestId, req, ctx.url, response.status, unsafeErr, actionName);
+                    emitActionComplete(actionName, 'error', response.status);
                     return response;
                   }
                 }
+                emitActionComplete(actionName, 'redirect', result.status);
                 if (enhanced) {
                   return jsonRedirect(result.status, result.location);
                 }
@@ -1061,7 +1053,7 @@ export class Mochi {
             },
           });
         };
-        return { bunRouteValue, type: 'sse' };
+        return { bunRouteValue: withSecurityHeaders(bunRouteValue), type: 'sse' };
       } else if (isMochiFile(handler)) {
         const source = handler.source;
 
@@ -1121,7 +1113,7 @@ export class Mochi {
             }
           });
         };
-        return { bunRouteValue, type: 'file' };
+        return { bunRouteValue: withSecurityHeaders(bunRouteValue), type: 'file' };
       }
       return null;
     }

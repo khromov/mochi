@@ -52,6 +52,11 @@ in production once `proxy.origin`/`proxy.hostHeader` is configured; in
 development a mismatch is logged but allowed. The same `csrf.trustedOrigins` and
 `csrf.checkOrigin: false` escape hatches apply.
 
+Upgrades **without** an `Origin` header are always allowed. Browsers always send
+`Origin` on upgrade requests and are the only clients that attach ambient
+credentials, so a missing header means a non-browser client — server-to-server
+connections, native apps, CLIs like `wscat` — that CSWSH can't exploit.
+
 ### Cookies are secure by default
 
 Cookies set through the request `cookies` jar get `HttpOnly`, `SameSite=Lax`, and
@@ -91,7 +96,8 @@ await Mochi.serve({ maxRequestBodySize: 25 * 1024 * 1024, routes }); // 25 MB
 
 ### Security response headers
 
-These baseline headers are sent on every page/API response by default:
+These baseline headers are sent on every framework response (pages, APIs, server
+islands, SSE streams, and `Mochi.file` routes) by default:
 
 | Header                   | Value                             |
 | ------------------------ | --------------------------------- |
@@ -140,6 +146,16 @@ await Mochi.serve({ csp: true, handle: csp, routes });
 
 With `csp: true`, Mochi stamps the nonce on every executable `<script>` it
 renders. When `csp` is off, rendered HTML is byte-for-byte unchanged.
+
+<Callout type="warning">
+
+Keep <code>'strict-dynamic'</code> in a nonce-based policy if you use server
+islands. Deferred island fragments are fetched in separate requests, so their
+scripts carry a <em>different</em> nonce than the page's CSP header —
+<code>'strict-dynamic'</code> lets the already-trusted bootstrap load them
+anyway, while a nonce-only policy silently blocks island hydration.
+
+</Callout>
 
 ### WebSocket resource limits
 

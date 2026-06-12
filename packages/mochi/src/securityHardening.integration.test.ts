@@ -32,6 +32,10 @@ beforeAll(async () => {
         return new Response('ok');
       }),
       '/api/ok': Mochi.api(() => new Response('ok')),
+      '/sse/tick': Mochi.sse((stream) => {
+        stream.send('tick');
+        stream.close();
+      }),
       '/page': Mochi.page(FIXTURE_PAGE, {
         actions: {
           default: () => success(),
@@ -109,5 +113,12 @@ describe('default security headers', () => {
     expect(res.headers.get('x-content-type-options')).toBe('nosniff');
     expect(res.headers.get('referrer-policy')).toBe('strict-origin-when-cross-origin');
     expect(res.headers.get('x-frame-options')).toBe('SAMEORIGIN');
+  });
+
+  test('SSE responses carry the baseline headers', async () => {
+    const res = await fetch(`${base}/sse/tick`);
+    expect(res.headers.get('content-type')).toBe('text/event-stream');
+    expect(res.headers.get('x-content-type-options')).toBe('nosniff');
+    await res.body?.cancel();
   });
 });

@@ -27,9 +27,12 @@ describe('checkWsOrigin (production)', () => {
     expect(res!.status).toBe(403);
   });
 
-  test('blocks an upgrade with no Origin header', () => {
-    const res = checkWsOrigin(req(null), url, undefined, PROD_PROXY, false);
-    expect(res!.status).toBe(403);
+  test('allows an upgrade with no Origin header (non-browser client, no CSWSH risk)', () => {
+    expect(checkWsOrigin(req(null), url, undefined, PROD_PROXY, false)).toBeNull();
+  });
+
+  test('allows an upgrade with no Origin header even when no expected origin is configured', () => {
+    expect(checkWsOrigin(req(null), url, undefined, undefined, false)).toBeNull();
   });
 
   test('allows a cross-origin upgrade listed in trustedOrigins', () => {
@@ -40,7 +43,7 @@ describe('checkWsOrigin (production)', () => {
     expect(checkWsOrigin(req('http://evil.example'), url, { checkOrigin: false }, PROD_PROXY, false)).toBeNull();
   });
 
-  test('blocks every upgrade when no expected origin is configured (safe by default)', () => {
+  test('blocks an Origin-bearing upgrade when no expected origin is configured (safe by default)', () => {
     const res = checkWsOrigin(req(SAME), url, undefined, undefined, false);
     expect(res!.status).toBe(403);
   });

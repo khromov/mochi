@@ -99,6 +99,21 @@ export function isFormContentType(contentType: string | null, formContentTypes: 
 export type OriginBlock = { kind: 'unconfigured'; origin: string | null } | { kind: 'mismatch'; origin: string | null; expectedOrigin: string };
 
 /**
+ * Single comparison rule for every origin allowlist in the framework (CSRF,
+ * WebSocket upgrades, the redirect guard): an origin is allowed when it matches
+ * the expected origin or any `csrf.trustedOrigins` entry, all compared with
+ * default ports stripped. Keeping one helper means a trusted-origins entry
+ * behaves identically everywhere.
+ */
+export function matchesAllowedOrigin(origin: string, expectedOrigin: string, trustedOrigins: ReadonlySet<string>): boolean {
+  const normalized = normalizeOrigin(origin);
+  if (normalized === normalizeOrigin(expectedOrigin)) {
+    return true;
+  }
+  return [...trustedOrigins].some((t) => normalizeOrigin(t) === normalized);
+}
+
+/**
  * Shared Origin-comparison core for both the CSRF check (form POSTs) and the
  * WebSocket upgrade check. Returns `null` when the request's `Origin` is trusted
  * (allow), or an `OriginBlock` describing why it should be rejected. The two
@@ -113,12 +128,7 @@ export function evaluateOrigin(request: Request, url: URL, proxy: MochiProxyOpti
 
   const expectedOrigin = resolveExpectedOrigin(request, url, proxy);
   const origin = request.headers.get('origin');
-  const expectedNormalized = normalizeOrigin(expectedOrigin);
-  const originNormalized = origin ? normalizeOrigin(origin) : null;
-  if (originNormalized && originNormalized === expectedNormalized) {
-    return null;
-  }
-  if (originNormalized && [...trustedOrigins].some((t) => normalizeOrigin(t) === originNormalized)) {
+  if (origin && matchesAllowedOrigin(origin, expectedOrigin, trustedOrigins)) {
     return null;
   }
   return { kind: 'mismatch', origin, expectedOrigin };
@@ -133,6 +143,11 @@ export function evaluateOrigin(request: Request, url: URL, proxy: MochiProxyOpti
  * until `proxy.origin`/`proxy.hostHeader` is configured), warns and allows in
  * development. Bypass with `csrf.checkOrigin === false` or `csrf.trustedOrigins`.
  *
+ * An upgrade with no `Origin` header is always allowed: only browsers attach
+ * ambient credentials, and browsers always send `Origin` on upgrade requests,
+ * so a missing header means a non-browser client (server-to-server, native
+ * apps, CLIs) that CSWSH can't exploit — blocking it would only break them.
+ *
  * Returns a 403 `Response` to reject the upgrade, or `null` to allow it.
  */
 export function checkWsOrigin(
@@ -144,6 +159,10 @@ export function checkWsOrigin(
   trustedOrigins: ReadonlySet<string> = new Set(csrf?.trustedOrigins ?? []),
 ): Response | null {
   if (csrf?.checkOrigin === false) {
+    return null;
+  }
+
+  if (!request.headers.get('origin')) {
     return null;
   }
 

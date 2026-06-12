@@ -60,3 +60,12 @@ Do **NOT** start timers, intervals, or external subscriptions inside an SSE hand
 ### Events
 
 `Mochi.sse` emits `sse:open`, `sse:message`, and `sse:close` on `mochiEvents`. `logger()` prints them by default.
+
+### Security headers
+
+SSE responses carry the framework's baseline [security headers](/docs/security)
+(`X-Content-Type-Options: nosniff`, `Referrer-Policy`, `X-Frame-Options`), like
+every other route type. `nosniff` keeps the stream from ever being reinterpreted
+as another content type; the others are inert on an event stream but harmless.
+Headers your handler or middleware already set are never overwritten, and
+`securityHeaders: false` drops them here too.
