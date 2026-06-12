@@ -18,7 +18,12 @@ export const persistentVideoScript =
     document.querySelector('video.vt-video');
   if (!video) return;
 
-  var saved = sessionStorage.getItem(KEY);
+  // sessionStorage can throw in some privacy modes; the video then simply
+  // restarts on each navigation instead of resuming.
+  var saved = null;
+  try {
+    saved = sessionStorage.getItem(KEY);
+  } catch {}
   if (saved) {
     var t = parseFloat(saved);
     var restore = function () {
@@ -29,6 +34,8 @@ export const persistentVideoScript =
   }
 
   window.addEventListener('pagehide', function () {
-    sessionStorage.setItem(KEY, String(video.currentTime));
+    try {
+      sessionStorage.setItem(KEY, String(video.currentTime));
+    } catch {}
   });
 })();</scr` + `ipt>`;

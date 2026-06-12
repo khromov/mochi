@@ -74,6 +74,9 @@ function stripDemoWrapper(code: string): string {
   out = out.replace(/^[^\S\n]*import\s+DemoPage\s+from\s+['"][^'"]+['"];?[^\S\n]*\n?/m, '');
   out = out.replace(/^[^\S\n]*import\s*\{\s*loadSources\s*\}\s*from\s+['"][^'"]+['"];?[^\S\n]*\n?/m, '');
   out = out.replace(/^[^\S\n]*const\s+sources\s*=\s*await\s+loadSources\s*\(\s*\[[\s\S]*?\]\s*\)\s*;?[^\S\n]*\n?/m, '');
+  // Multi-page demos hoist their description/sources plumbing into ./shared —
+  // hide that import like the inline loadSources call it replaces.
+  out = out.replace(/^[^\S\n]*import\s*\{[^}]*\}\s*from\s+['"]\.\/shared['"];?[^\S\n]*\n?/m, '');
   out = out.replace(/<DemoPage\b(?:"[^"]*"|'[^']*'|[^>])*>([\s\S]*?)<\/DemoPage>/, (_, inner) => dedent(inner).trim());
   out = out.replace(/<script(?:\s[^>]*)?>\s*<\/script>\s*\n?/, '');
   out = out.replace(/(<script(?:\s[^>]*)?>)\n[ \t]*\n+/g, '$1\n');

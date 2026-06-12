@@ -1,7 +1,8 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, spyOn, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { ComponentRegistry } from '../ComponentRegistry';
+import { requestContext, type MochiRequestContext } from '../requestContext';
 
 const COMPONENT_PATH = path.join(import.meta.dir, 'ViewTransitions.svelte');
 
@@ -103,5 +104,34 @@ describe('ViewTransitions', () => {
   test('without keep, no keep rules are emitted', async () => {
     const { head } = await registry.renderComponent(COMPONENT_PATH);
     expect(head).not.toContain('mochi-vt-keep-');
+  });
+
+  test('keep disambiguates selectors that sanitize to the same slug', async () => {
+    const { head } = await registry.renderComponent(COMPONENT_PATH, { keep: ['.banner', '#banner'] });
+    expect(head).toContain('.banner { view-transition-name: mochi-vt-keep-banner; }');
+    expect(head).toContain('#banner { view-transition-name: mochi-vt-keep-banner-1; }');
+  });
+
+  // The duplicate-instance guard is request-scoped: render within the real
+  // requestContext ALS (shared with the compiled component via globalThis).
+  const renderInRequest = <T>(fn: () => Promise<T>) => requestContext.run({ locals: {}, islandProps: new Map() } as unknown as MochiRequestContext, fn);
+
+  test('second instance in the same request warns and emits nothing', async () => {
+    const warn = spyOn(console, 'warn');
+    try {
+      const [first, second] = await renderInRequest(async () => [await registry.renderComponent(COMPONENT_PATH), await registry.renderComponent(COMPONENT_PATH)]);
+      expect(first.head).toContain('@view-transition');
+      expect(second.head).not.toContain('@view-transition');
+      expect(warn.mock.calls.flat().join(' ')).toContain('rendered more than once');
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  test('a new request gets a fresh claim', async () => {
+    const a = await renderInRequest(() => registry.renderComponent(COMPONENT_PATH));
+    const b = await renderInRequest(() => registry.renderComponent(COMPONENT_PATH));
+    expect(a.head).toContain('@view-transition');
+    expect(b.head).toContain('@view-transition');
   });
 });

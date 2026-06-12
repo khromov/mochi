@@ -26,6 +26,12 @@ Render it from a component that appears on **every** page (both the page you lea
 
 Navigate between pages and they crossfade. That's the whole setup.
 
+<Callout type="warning">
+
+Render exactly **one** `<ViewTransitions />` per page — two instances would emit the same global `@keyframes` names and competing rules. If a second one renders anyway (say, one from a layout and one from a page), it logs a warning and emits nothing; the first instance wins.
+
+</Callout>
+
 ### Props
 
 | Prop       | Type                 | Default  | Description                                                           |
@@ -55,6 +61,8 @@ The View Transitions API always snapshots the **whole viewport** — you can't r
 <!-- multiple named regions -->
 <ViewTransitions regions={['card', 'hero']} />
 ```
+
+An empty array (`regions={[]}`) disables the animation entirely — everything swaps instantly.
 
 <Callout type="info">
 

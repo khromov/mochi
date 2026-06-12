@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { SvelteMap } from 'svelte/reactivity';
+  import { getRequestContext, devWarn } from 'mochi-framework';
 
   // Zero-JS cross-document view transitions: opting into `@view-transition`
   // makes the browser animate full-page navigations for us. Mochi is an MPA, so
@@ -32,6 +32,27 @@
     // the outgoing and incoming pages agree on the names.
     keep?: string | string[];
   } = $props();
+
+  // Only one instance may own the page's transition CSS: a second one would
+  // emit the same global `@keyframes mochi-vt-*` names and competing root
+  // rules, leaving the winner to cascade order. The first instance rendered
+  // in a request claims the page via `locals`; later instances warn and emit
+  // nothing. Outside a request (e.g. rendering a component directly in tests)
+  // getRequestContext() throws — there is no page to claim, so render.
+  const isFirst = (() => {
+    let locals: Record<string, unknown>;
+    try {
+      locals = getRequestContext().locals;
+    } catch {
+      return true;
+    }
+    if (locals.__mochi_view_transitions__) {
+      devWarn('<ViewTransitions /> was rendered more than once on this page — ignoring this instance. Render exactly one, typically from a shared layout.');
+      return false;
+    }
+    locals.__mochi_view_transitions__ = true;
+    return true;
+  })();
 
   const keyframes = {
     fade: `
@@ -66,7 +87,7 @@
   // the rare case where two selectors sanitize to the same slug.
   const keepRules = $derived.by(() => {
     const selectors = keep == null ? [] : Array.isArray(keep) ? keep : [keep];
-    const seen = new SvelteMap<string, number>();
+    const seen = new Map<string, number>();
     return selectors
       .map((selector) => {
         const slug = selector
@@ -101,5 +122,5 @@
 
 <svelte:head>
   <!-- eslint-disable-next-line svelte/no-at-html-tags -- framework-generated CSS from a fixed enum, numeric duration, and developer-authored selectors/names (layout props, never end-user input) -->
-  {@html styleTag}
+  {@html isFirst ? styleTag : ''}
 </svelte:head>

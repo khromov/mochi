@@ -26,8 +26,10 @@
 
   const mergedMetaTags = $derived(mergeMetaTags(metaTags));
 
-  // The view-transitions demo renders its own <ViewTransitions>
-  const isViewTransitionsDemo = $derived(url.pathname.startsWith('/demos/view-transitions'));
+  // The view-transitions demo renders its own <ViewTransitions>. Match the
+  // route and its subpaths exactly so an unrelated future demo sharing the
+  // prefix (e.g. /demos/view-transitions-foo) doesn't lose the site instance.
+  const isViewTransitionsDemo = $derived(url.pathname === '/demos/view-transitions' || url.pathname.startsWith('/demos/view-transitions/'));
 </script>
 
 <MetaTags {...mergedMetaTags} />
