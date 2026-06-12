@@ -27,6 +27,11 @@ In production (`development: false`) the toolbar mount point, its entry script, 
 | `Islands`        | Per-island breakdown with mode tag, props size, and a locate-on-page button.       |
 | `Warnings`       | Anything pushed through `window.__mochi_warn(msg)`. Hidden when the queue empty.   |
 | `Bundle Stats ↗` | Opens the bundle stats page (`/_mochi/client/stats`) in a new tab.                 |
+| `⚙`              | Configure which panel buttons appear in the bar (see below).                       |
+
+### Configuring panels
+
+The cogwheel at the right edge of the bar opens a checklist of the five panels. Unchecked panels disappear from the bar; the choice persists across reloads in `localStorage` under `mochi:debug:hidden-panels`. At least one panel always stays enabled — the last checked box is disabled. Conditional buttons still respect their availability: re-enabling `Warnings` only shows the button once something is queued.
 
 ### Islands panel
 
