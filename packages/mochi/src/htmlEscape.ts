@@ -25,5 +25,9 @@ export function escapeHtmlAttr(value: string): string {
  * against the same contract.
  */
 export function unescapeHtmlAttr(value: string): string {
-  return value.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+  return value
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, '&');
 }
