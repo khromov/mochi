@@ -34,6 +34,7 @@ import Fingerprint from '@lucide/svelte/icons/fingerprint';
 import Link from '@lucide/svelte/icons/link';
 import FileDown from '@lucide/svelte/icons/file-down';
 import Hash from '@lucide/svelte/icons/hash';
+import Barcode from '@lucide/svelte/icons/barcode';
 
 export interface DemoIconMeta {
   icon: Component;
@@ -49,6 +50,7 @@ export const demoIconFor: Record<string, DemoIconMeta> = {
   Hydratable: { icon: Snowflake, label: 'Server-computed value reused on hydration' },
   Cookies: { icon: Cookie, label: 'Server + client cookies' },
   'Cache Events': { icon: DatabaseZap, label: 'Custom cache event subscriber' },
+  'Request ID': { icon: Barcode, label: 'Per-request correlation id' },
   'Real-time Chat': { icon: MessageCircle, label: 'WebSocket chat' },
   'API Endpoints': { icon: Webhook, label: 'JSON API routes' },
   'Shared State': { icon: Share2, label: 'Shared $state across islands' },

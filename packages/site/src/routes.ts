@@ -30,6 +30,7 @@ import { routes as nestedComponentsRoutes } from './demos/nested-components/rout
 import { routes as propDedupRoutes } from './demos/prop-dedup/routes';
 import { routes as propsIdRoutes } from './demos/props-id/routes';
 import { routes as reloadFormDataRoutes } from './demos/reload-form-data/routes';
+import { routes as requestIdRoutes } from './demos/request-id/routes';
 import { routes as serverIslandRoutes } from './demos/server-island/routes';
 import { routes as serverPropsRoutes } from './demos/server-props/routes';
 import { routes as sharedStateRoutes } from './demos/shared-state/routes';
@@ -142,6 +143,7 @@ export const routes: Record<string, MochiRouteValue> = {
   ...propDedupRoutes,
   ...propsIdRoutes,
   ...reloadFormDataRoutes,
+  ...requestIdRoutes,
   ...serverIslandRoutes,
   ...serverPropsRoutes,
   ...sharedStateRoutes,

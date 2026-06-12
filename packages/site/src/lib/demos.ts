@@ -68,6 +68,12 @@ export const demos: Demo[] = [
     category: 'data',
   },
   {
+    href: '/demos/request-id/',
+    title: 'Request ID',
+    hook: 'Every request gets a UUID v7 — read it server-side via getRequestContext().requestId; the same id rides every lifecycle event for correlation.',
+    category: 'data',
+  },
+  {
     href: '/cookie-vary-test/',
     title: 'Cookie Vary Test',
     hook: 'A page that sets Vary: Cookie on its response — useful for testing cookie-partitioned cache keys.',
