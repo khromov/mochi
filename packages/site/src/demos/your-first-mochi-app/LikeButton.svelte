@@ -1,6 +1,6 @@
 <script lang="ts">
-  const props: { initialLikes: number } = $props();
-  let likes = $state(props.initialLikes);
+  let { initialLikes }: { initialLikes: number } = $props();
+  let likes = $state(initialLikes);
 </script>
 
 <button onclick={() => likes++}>♥ {likes}</button>

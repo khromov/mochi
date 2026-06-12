@@ -51,7 +51,7 @@ For larger or reused shapes, pull it out into a `Props` interface:
 
 <Callout type="warning">
 
-Avoid `$props<{ … }>()`. The `<…>` type-argument form isn't the recommended convention — type the `let { … }` declaration instead, e.g. `let { adjective }: { adjective: string } = $props()`.
+Avoid the `$props<{ … }>()` type-argument form — always annotate the `let { … }` declaration as shown above.
 
 </Callout>
 
