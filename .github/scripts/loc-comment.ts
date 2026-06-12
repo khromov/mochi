@@ -8,7 +8,7 @@
 import { readFileSync } from 'node:fs';
 
 type Counts = { files: number; lines: number };
-type Report = { name: string; totals: Counts; byCategory: Record<string, Counts> };
+type Report = { name: string; totals: Counts; nonTestTotals: Counts; byCategory: Record<string, Counts> };
 type Doc = { packages: Report[] };
 
 const MARKER = '<!-- mochi-review-bot -->';
@@ -45,6 +45,7 @@ function renderPackageSection(name: string, mainReport: Report | undefined, prRe
     changedRows.push(renderRow(`\`${category}\``, mainLines, prLines));
   }
   changedRows.push(renderRow('Total', mainReport?.totals.lines ?? 0, prReport?.totals.lines ?? 0, true));
+  changedRows.push(renderRow('Total (non-test)', mainReport?.nonTestTotals.lines ?? 0, prReport?.nonTestTotals.lines ?? 0, true));
 
   const table = ['| Category | main | PR | Δ |', '|---|---:|---:|---:|', ...changedRows];
   if (unchanged.length > 0) {
