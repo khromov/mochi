@@ -85,6 +85,19 @@ export interface MochiCacheRevalidateEvent {
   key: string;
 }
 
+export interface MochiCacheRevalidateFailedEvent {
+  key: string;
+  /** The error thrown by the background revalidation function. */
+  error: unknown;
+}
+
+export interface MochiCacheErrorEvent {
+  key: string;
+  /** Which storage operation threw. */
+  operation: 'get' | 'set' | 'remove';
+  error: unknown;
+}
+
 export interface MochiServerStartEvent {
   /** Bound TCP port; absent when serving over a Unix socket. */
   port?: number;
@@ -236,6 +249,8 @@ export type MochiEventMap = {
   'island:error': MochiIslandErrorEvent;
   'cache:read': MochiCacheReadEvent;
   'cache:revalidate': MochiCacheRevalidateEvent;
+  'cache:revalidate:failed': MochiCacheRevalidateFailedEvent;
+  'cache:error': MochiCacheErrorEvent;
   'server:start': MochiServerStartEvent;
   'server:stop': MochiServerStopEvent;
   'warmup:start': MochiWarmupStartEvent;

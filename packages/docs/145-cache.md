@@ -70,16 +70,22 @@ Use it from a page or API route:
 | `serialize`      | identity          |
 | `deserialize`    | identity          |
 
-For multi-process or persistent caching, pass a custom `storage` that implements `getItem` / `setItem` / `removeItem` (e.g. Redis, SQLite via `bun:sqlite`). Each key holds a single entry (the value plus its write time). When a backend needs a string or buffer — like Redis — supply `serialize` / `deserialize` to encode and decode that entry, e.g. `serialize: JSON.stringify, deserialize: JSON.parse`.
+For multi-process or persistent caching, pass a custom `storage` that implements `getItem` / `setItem` / `removeItem` (e.g. Redis, SQLite via `bun:sqlite`). These methods may be synchronous (in-memory `Map`, `bun:sqlite`) or `async` / Promise-returning (Redis, network stores) — the cache awaits every call. Each key holds a single entry (the value plus its write time). When a backend needs a string or buffer — like Redis — supply `serialize` / `deserialize` to encode and decode that entry, e.g. `serialize: JSON.stringify, deserialize: JSON.parse`.
+
+If a `storage` call throws, the cache degrades instead of failing the request: a read error recomputes via `fn` (reported as a `miss`), a write error returns the freshly computed value uncached, and a `delete` error is re-thrown to the caller. Every case also emits a `cache:error` event.
 
 ### Subscribing to cache events
 
-`MochiCache` emits two events on `mochiEvents`:
+`MochiCache` emits these events on `mochiEvents`:
 
-| Event              | Payload           | When                                                |
-| ------------------ | ----------------- | --------------------------------------------------- |
-| `cache:read`       | `{ key, status }` | Every cache lookup, regardless of which method ran. |
-| `cache:revalidate` | `{ key }`         | A background refetch starts (stale read).           |
+| Event                     | Payload                     | When                                                         |
+| ------------------------- | --------------------------- | ------------------------------------------------------------ |
+| `cache:read`              | `{ key, status }`           | Every cache lookup, regardless of which method ran.          |
+| `cache:revalidate`        | `{ key }`                   | A background refetch starts (stale read).                    |
+| `cache:revalidate:failed` | `{ key, error }`            | A background refetch threw; the stale value is still served. |
+| `cache:error`             | `{ key, operation, error }` | A `storage` `get` / `set` / `remove` call threw.             |
+
+`consoleLogger()` surfaces `cache:revalidate:failed` and `cache:error` as warnings — a silently degrading upstream or storage backend is otherwise invisible.
 
 `status` is `'fresh' \| 'stale' \| 'expired' \| 'miss'`. Use `mochiEvents.setHandler` to attach a custom subscriber — it replaces a prior handler under the same name, so dev re-imports don't pile up listeners:
 

@@ -243,7 +243,9 @@ describe('MochiCache stale-while-revalidate', () => {
     const fn = () => {
       calls++;
       // The first compute resolves; the background revalidation hangs until released.
-      if (calls === 1) return Promise.resolve(1);
+      if (calls === 1) {
+        return Promise.resolve(1);
+      }
       return new Promise<number>((resolve) => {
         releaseRevalidate = resolve;
       });
@@ -278,5 +280,150 @@ describe('MochiCache stale-while-revalidate', () => {
     expect(reads.map((r) => r.status)).toEqual(['stale', 'stale', 'stale']);
     expect(reads.map((r) => r.value)).toEqual([1, 1, 1]);
     expect(calls).toBe(2); // one initial compute + exactly one revalidation across all three reads
+  });
+
+  test('a failing background revalidation emits cache:revalidate:failed and keeps serving stale', async () => {
+    const cache = new MochiCache({ minTimeToStale: 10, maxTimeToLive: 5_000 });
+    const failures: Array<{ key: string; error: unknown }> = [];
+    mochiEvents.on('cache:revalidate:failed', (e) => failures.push(e));
+
+    let calls = 0;
+    const fn = async () => {
+      calls++;
+      if (calls === 1) {
+        return 1;
+      }
+      throw new Error('upstream down');
+    };
+
+    expect(await cache.fetch('k', fn)).toBe(1);
+    await wait(30); // now stale
+
+    const stale = await cache.fetchWithStatus('k', fn);
+    expect(stale.value).toBe(1);
+    expect(stale.status).toBe('stale');
+
+    // Let the rejected background revalidation settle and emit.
+    await wait(10);
+    expect(failures).toHaveLength(1);
+    expect(failures[0]!.key).toBe('k');
+    expect((failures[0]!.error as Error).message).toBe('upstream down');
+
+    // Stale value is still served — the failed refresh did not poison the cache.
+    expect((await cache.fetchWithStatus('k', fn)).value).toBe(1);
+  });
+});
+
+describe('MochiCache config validation', () => {
+  test('throws when minTimeToStale is not less than maxTimeToLive', () => {
+    expect(() => new MochiCache({ minTimeToStale: 5_000, maxTimeToLive: 5_000 })).toThrow(/must be less than/);
+    expect(() => new MochiCache({ minTimeToStale: 10_000, maxTimeToLive: 5_000 })).toThrow(/must be less than/);
+  });
+});
+
+describe('MochiCache async storage', () => {
+  test('awaits a Promise-returning backend on read and write', async () => {
+    const store = new Map<string, unknown>();
+    const storage: Storage = {
+      async getItem(key) {
+        await wait(1);
+        return store.get(key) ?? null;
+      },
+      async setItem(key, value) {
+        await wait(1);
+        store.set(key, value);
+      },
+      async removeItem(key) {
+        await wait(1);
+        store.delete(key);
+      },
+    };
+
+    const cache = new MochiCache({ storage, minTimeToStale: 1_000, maxTimeToLive: 5_000 });
+    let calls = 0;
+    const fn = async () => ++calls;
+
+    expect(await cache.fetch('k', fn)).toBe(1);
+    expect((await cache.fetchWithStatus('k', fn)).status).toBe('fresh');
+    expect(calls).toBe(1);
+
+    await cache.delete('k');
+    expect((await cache.fetchWithStatus('k', fn)).status).toBe('miss');
+    expect(calls).toBe(2);
+  });
+});
+
+describe('MochiCache storage-error resilience', () => {
+  test('a read failure degrades to a recompute and emits cache:error', async () => {
+    const errors: Array<{ key: string; operation: string; error: unknown }> = [];
+    mochiEvents.on('cache:error', (e) => errors.push(e));
+
+    const store = new Map<string, unknown>();
+    let failNextGet = false;
+    const storage: Storage = {
+      getItem(key) {
+        if (failNextGet) {
+          failNextGet = false;
+          throw new Error('get boom');
+        }
+        return store.get(key) ?? null;
+      },
+      setItem(key, value) {
+        store.set(key, value);
+      },
+      removeItem(key) {
+        store.delete(key);
+      },
+    };
+
+    const cache = new MochiCache({ storage, minTimeToStale: 1_000, maxTimeToLive: 5_000 });
+    let calls = 0;
+    const fn = async () => ++calls;
+
+    expect(await cache.fetch('k', fn)).toBe(1);
+
+    failNextGet = true;
+    const result = await cache.fetchWithStatus('k', fn);
+    expect(result.status).toBe('miss'); // degraded, not a 500
+    expect(result.value).toBe(2);
+    expect(errors).toEqual([{ key: 'k', operation: 'get', error: expect.any(Error) }]);
+  });
+
+  test('a write failure still returns the computed value and emits cache:error', async () => {
+    const errors: Array<{ key: string; operation: string; error: unknown }> = [];
+    mochiEvents.on('cache:error', (e) => errors.push(e));
+
+    const storage: Storage = {
+      getItem() {
+        return null;
+      },
+      setItem() {
+        throw new Error('set boom');
+      },
+      removeItem() {},
+    };
+
+    const cache = new MochiCache({ storage, minTimeToStale: 1_000, maxTimeToLive: 5_000 });
+    expect(await cache.fetch('k', async () => 42)).toBe(42);
+    expect(errors).toEqual([{ key: 'k', operation: 'set', error: expect.any(Error) }]);
+  });
+
+  test('a removeItem failure emits cache:error and rejects delete', async () => {
+    const errors: Array<{ key: string; operation: string; error: unknown }> = [];
+    mochiEvents.on('cache:error', (e) => errors.push(e));
+
+    const storage: Storage = {
+      getItem() {
+        return null;
+      },
+      setItem() {},
+      removeItem() {
+        throw new Error('remove boom');
+      },
+    };
+
+    const cache = new MochiCache({ storage, minTimeToStale: 1_000, maxTimeToLive: 5_000 });
+    await expect(cache.delete('k')).rejects.toThrow('remove boom');
+    expect(errors).toEqual([{ key: 'k', operation: 'remove', error: expect.any(Error) }]);
   });
 });

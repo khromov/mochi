@@ -46,6 +46,8 @@ export type {
   MochiCacheStatus,
   MochiCacheReadEvent,
   MochiCacheRevalidateEvent,
+  MochiCacheRevalidateFailedEvent,
+  MochiCacheErrorEvent,
   MochiServerStartEvent,
   MochiServerStopEvent,
   MochiWarmupStartEvent,

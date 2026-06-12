@@ -2,11 +2,17 @@ import { mochiEvents } from './events';
 
 export type CacheStatus = 'fresh' | 'stale' | 'expired' | 'miss';
 
-/** Pluggable key/value backend. Defaults to an in-memory Map. */
+/**
+ * Pluggable key/value backend. Defaults to an in-memory Map.
+ *
+ * Methods may be synchronous (in-memory `Map`, `bun:sqlite`) or asynchronous
+ * (Redis, network-backed stores) — the cache awaits every call, so returning a
+ * `Promise` is fully supported.
+ */
 export interface Storage {
-  getItem(key: string): unknown;
-  setItem(key: string, value: unknown): void;
-  removeItem(key: string): void;
+  getItem(key: string): unknown | Promise<unknown>;
+  setItem(key: string, value: unknown): void | Promise<void>;
+  removeItem(key: string): void | Promise<void>;
 }
 
 export interface MochiCacheOptions {
@@ -65,6 +71,10 @@ export class MochiCache {
     this.maxTimeToLive = options.maxTimeToLive ?? 600_000;
     this.serialize = options.serialize ?? identity;
     this.deserialize = options.deserialize ?? identity;
+
+    if (this.minTimeToStale >= this.maxTimeToLive) {
+      throw new Error(`MochiCache: minTimeToStale (${this.minTimeToStale}) must be less than maxTimeToLive (${this.maxTimeToLive}).`);
+    }
   }
 
   async fetch<T>(key: string, fn: () => T | Promise<T>): Promise<T> {
@@ -73,8 +83,7 @@ export class MochiCache {
   }
 
   async fetchWithStatus<T>(key: string, fn: () => T | Promise<T>): Promise<CacheResult<T>> {
-    const raw = this.storage.getItem(key);
-    const entry = raw == null ? null : (this.deserialize(raw) as CacheEntry);
+    const entry = await this.read(key);
 
     if (entry == null) {
       const value = await this.run(key, fn);
@@ -89,9 +98,13 @@ export class MochiCache {
     }
 
     if (age < this.maxTimeToLive) {
-      // Serve the stale value immediately and refresh in the background.
+      // Serve the stale value immediately and refresh in the background. A
+      // failing upstream would otherwise keep us serving stale silently until
+      // maxTimeToLive — surface it so logging/metrics can see the degradation.
       mochiEvents.emit('cache:revalidate', { key });
-      void this.run(key, fn).catch(() => {});
+      void this.run(key, fn).catch((error) => {
+        mochiEvents.emit('cache:revalidate:failed', { key, error });
+      });
       return this.emitRead(key, cached, 'stale');
     }
 
@@ -100,8 +113,26 @@ export class MochiCache {
   }
 
   async delete(key: string): Promise<void> {
-    this.storage.removeItem(key);
     this.inflight.delete(key);
+    try {
+      await this.storage.removeItem(key);
+    } catch (error) {
+      mochiEvents.emit('cache:error', { key, operation: 'remove', error });
+      throw error;
+    }
+  }
+
+  // Read and deserialize a cache entry. A storage read failure degrades to a
+  // miss (recompute) rather than propagating to the request as a 500.
+  private async read(key: string): Promise<CacheEntry | null> {
+    let raw: unknown;
+    try {
+      raw = await this.storage.getItem(key);
+    } catch (error) {
+      mochiEvents.emit('cache:error', { key, operation: 'get', error });
+      return null;
+    }
+    return raw == null ? null : (this.deserialize(raw) as CacheEntry);
   }
 
   // Run `fn` once per key even under concurrent callers, then persist the result.
@@ -118,7 +149,13 @@ export class MochiCache {
       // Skip the write if this run was deleted/superseded while `fn` was pending,
       // so a late revalidation can't resurrect a key the caller already removed.
       if (this.inflight.get(key) === ref.current) {
-        this.storage.setItem(key, serialized);
+        // A storage write failure must not discard the freshly computed value the
+        // caller is waiting on — emit and continue, the next read recomputes.
+        try {
+          await this.storage.setItem(key, serialized);
+        } catch (error) {
+          mochiEvents.emit('cache:error', { key, operation: 'set', error });
+        }
       }
       // Round-trip through (de)serialize so a fresh compute returns the same shape
       // a later cache hit would, even with non-identity transforms.
