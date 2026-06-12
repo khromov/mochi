@@ -12,7 +12,7 @@
     { label: 'index.ts', path: './src/demoIndex.ts' },
   ]);
 
-  let { guestbook } = $props<{ guestbook: GuestbookEntry[] }>();
+  let { guestbook }: { guestbook: GuestbookEntry[] } = $props();
 </script>
 
 <DemoPage

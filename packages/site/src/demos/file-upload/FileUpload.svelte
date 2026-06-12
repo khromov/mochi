@@ -5,7 +5,7 @@
 
   type UploadResult = { filename: string; content: string; size: number };
 
-  let { label, isHydratable } = $props<{ label: string; isHydratable?: boolean }>();
+  let { label, isHydratable }: { label: string; isHydratable?: boolean } = $props();
 
   // svelte-ignore state_referenced_locally
   const _form = !isHydratable && isServer ? getRequestContext().form : null;

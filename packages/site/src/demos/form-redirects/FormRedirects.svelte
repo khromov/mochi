@@ -10,7 +10,7 @@
     { label: 'index.ts', path: './src/demoIndex.ts' },
   ]);
 
-  let { redirected } = $props<{ redirected: boolean }>();
+  let { redirected }: { redirected: boolean } = $props();
 </script>
 
 <DemoPage

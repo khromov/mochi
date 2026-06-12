@@ -1,18 +1,17 @@
 <script lang="ts">
+  import type { Snippet } from 'svelte';
   import { url } from 'mochi-framework';
   import { MetaTags, type MetaTagsProps } from 'svelte-meta-tags';
   import { mergeMetaTags } from '../lib/baseMetaTags';
   import MochiBanner from './MochiBanner.svelte';
 
-  let {
-    activeNav,
-    metaTags = {},
-    children,
-  } = $props<{
+  interface Props {
     activeNav?: string;
     metaTags?: MetaTagsProps;
-    children: () => unknown;
-  }>();
+    children: Snippet;
+  }
+
+  let { activeNav, metaTags = {}, children }: Props = $props();
 
   const mergedMetaTags = $derived(mergeMetaTags({ canonical: `https://demos.mochi.fast${url.pathname}`, ...metaTags }));
 </script>
