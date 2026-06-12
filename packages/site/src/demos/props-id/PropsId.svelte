@@ -1,11 +1,13 @@
 <script lang="ts">
   import DemoPage from '../../components/DemoPage.svelte';
   import { loadSources } from '../../components/utils.ts';
+  import StaticField from './StaticField.svelte';
   import LabeledField from './LabeledField.svelte';
   import ServerStamp from './ServerStamp.svelte';
 
   const sources = await loadSources([
     { label: 'PropsId.svelte', path: './src/demos/props-id/PropsId.svelte' },
+    { label: 'StaticField.svelte', path: './src/demos/props-id/StaticField.svelte' },
     { label: 'LabeledField.svelte', path: './src/demos/props-id/LabeledField.svelte' },
     { label: 'ServerStamp.svelte', path: './src/demos/props-id/ServerStamp.svelte' },
     { label: 'routes.ts', path: './src/demos/props-id/routes.ts' },
@@ -18,6 +20,12 @@
   description="Svelte's native $props.id() generates an id unique to each component instance, consistent between server render and hydration — use it for label/for and aria links inside islands."
   {sources}
 >
+  <h3>Static component (no hydration)</h3>
+  <p class="hint">
+    $props.id() works with zero JavaScript shipped — the id is minted during SSR and the native label/for link works on its own. Click the label to focus the input.
+  </p>
+  <StaticField />
+
   <h3>Two hydrated islands, two ids</h3>
   <p class="hint">Each instance gets its own id, so the label/for pairs never collide. Hydration reuses the server-generated value — the id you see was minted during SSR.</p>
   <LabeledField mochi:hydrate />
