@@ -79,7 +79,7 @@ Next, let's write the page itself. `Hello.svelte` stays server-only (all `Mochi.
   import LikeButton from './LikeButton.svelte';
   import Visitor from './Visitor.svelte';
 
-  let { siteName, renderedAt } = $props<{ siteName: string; renderedAt: string }>();
+  let { siteName, renderedAt }: { siteName: string; renderedAt: string } = $props();
 </script>
 
 <h1>Welcome to {siteName}</h1>
@@ -107,7 +107,7 @@ Now let's give the user something to click! `LikeButton.svelte` is a normal Svel
 ```svelte
 <!-- file: src/LikeButton.svelte -->
 <script lang="ts">
-  let { initialLikes } = $props<{ initialLikes: number }>();
+  let { initialLikes }: { initialLikes: number } = $props();
   let likes = $state(initialLikes);
 </script>
 
@@ -141,7 +141,7 @@ Update `Hello.svelte` to read `?name=` and pass it through to `Visitor`:
   import LikeButton from './LikeButton.svelte';
   import Visitor from './Visitor.svelte';
 
-  let { siteName, renderedAt } = $props<{ siteName: string; renderedAt: string }>();
+  let { siteName, renderedAt }: { siteName: string; renderedAt: string } = $props();
 
   const { url } = getRequestContext();
   const visitorName = url.searchParams.get('name') ?? 'friend';

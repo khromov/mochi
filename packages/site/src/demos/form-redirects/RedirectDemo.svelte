@@ -2,7 +2,7 @@
   import { enhance } from 'mochi-framework';
   import type { MochiSubmitFunction, MochiEnhanceResult } from 'mochi-framework';
 
-  let { label } = $props<{ label: string }>();
+  let { label }: { label: string } = $props();
 
   let redirectResult = $state<{ status: number; location: string } | null>(null);
   let pending = $state(false);
