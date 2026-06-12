@@ -937,6 +937,10 @@ export class ComponentRegistry {
             // MochiCache is server-only; ship a stub that throws so accidental
             // client imports surface clearly instead of failing the bundle.
             `export class MochiCache { constructor() { throw new Error("MochiCache is only available on the server"); } }`,
+            // Cache storage backends are server-only too; stub them so client
+            // imports fail loudly instead of resolving to undefined.
+            `export class MemoryStorage { constructor() { throw new Error("MemoryStorage is only available on the server"); } }`,
+            `export class SqliteStorage { constructor() { throw new Error("SqliteStorage is only available on the server"); } }`,
             `export { enhance, deserialize } from "${enhanceClientPath}";`,
           ].join('\n'),
           loader: 'js',

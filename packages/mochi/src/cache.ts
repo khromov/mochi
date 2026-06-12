@@ -1,4 +1,4 @@
-import { MemoryStorage } from './cache-storage';
+import { MemoryStorage } from './cache-storage/memory';
 import { mochiEvents } from './events';
 
 export type CacheStatus = 'fresh' | 'stale' | 'expired' | 'miss';

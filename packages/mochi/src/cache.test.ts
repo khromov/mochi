@@ -1,5 +1,7 @@
+import { Database } from 'bun:sqlite';
 import { afterEach, describe, expect, test } from 'bun:test';
 import { MochiCache, type Storage } from './cache';
+import { SqliteStorage } from './cache-storage';
 import { mochiEvents } from './events';
 
 const wait = Bun.sleep;
@@ -456,5 +458,50 @@ describe('MochiCache storage-error resilience', () => {
     const cache = new MochiCache({ storage, minTimeToStale: 1_000, maxTimeToLive: 5_000 });
     await expect(cache.delete('k')).rejects.toThrow('remove boom');
     expect(errors).toEqual([{ key: 'k', operation: 'remove', error: expect.any(Error) }]);
+  });
+});
+
+describe('SqliteStorage', () => {
+  const jsonCodec = { serialize: (v: unknown) => JSON.stringify(v), deserialize: (v: unknown) => JSON.parse(v as string) };
+
+  test('round-trips values, deletes, and clears through the table', async () => {
+    const storage = new SqliteStorage(':memory:');
+    const cache = new MochiCache({ storage, minTimeToStale: 1_000, maxTimeToLive: 5_000, ...jsonCodec });
+    let calls = 0;
+    const fn = async () => ({ n: ++calls });
+
+    expect(await cache.fetch('a', fn)).toEqual({ n: 1 });
+    expect((await cache.fetchWithStatus('a', fn)).status).toBe('fresh');
+    expect(calls).toBe(1);
+
+    await cache.delete('a');
+    expect((await cache.fetchWithStatus('a', fn)).status).toBe('miss');
+    expect(calls).toBe(2);
+
+    await cache.fetch('b', fn);
+    await cache.clearItems();
+    expect((await cache.fetchWithStatus('a', fn)).status).toBe('miss');
+    expect((await cache.fetchWithStatus('b', fn)).status).toBe('miss');
+  });
+
+  test('persists entries across cache instances sharing one database', async () => {
+    const db = new Database(':memory:');
+    let calls = 0;
+    const fn = async () => ++calls;
+
+    const first = new MochiCache({ storage: new SqliteStorage(db), minTimeToStale: 1_000, maxTimeToLive: 5_000, ...jsonCodec });
+    expect(await first.fetch('k', fn)).toBe(1);
+
+    // A fresh cache over the same backing store reads the persisted entry
+    // rather than recomputing.
+    const second = new MochiCache({ storage: new SqliteStorage(db), minTimeToStale: 1_000, maxTimeToLive: 5_000, ...jsonCodec });
+    const result = await second.fetchWithStatus('k', fn);
+    expect(result.value).toBe(1);
+    expect(result.status).toBe('fresh');
+    expect(calls).toBe(1);
+  });
+
+  test('rejects an invalid table name', () => {
+    expect(() => new SqliteStorage(':memory:', { table: 'bad name;' })).toThrow(/invalid table name/);
   });
 });

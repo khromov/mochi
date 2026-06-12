@@ -75,6 +75,33 @@ Use it from a page or API route:
 
 For multi-process or persistent caching, pass a custom `storage` that implements `getItem` / `setItem` / `removeItem` / `clear` (e.g. Redis, SQLite via `bun:sqlite`). These methods may be synchronous (in-memory `Map`, `bun:sqlite`) or `async` / Promise-returning (Redis, network stores) — the cache awaits every call. Each key holds a single entry (the value plus its write time). When a backend needs a string or buffer — like Redis — supply `serialize` / `deserialize` to encode and decode that entry, e.g. `serialize: JSON.stringify, deserialize: JSON.parse`.
 
+### Persisting with SQLite
+
+`SqliteStorage` is a built-in `bun:sqlite` backend. It survives restarts and lets multiple processes share one cache file. SQLite stores text/blobs rather than objects, so pair it with `serialize` / `deserialize` so each entry is written as a single string:
+
+```ts
+// src/lib/cache.ts
+import { MochiCache, SqliteStorage } from 'mochi-framework';
+
+export const pokemonCache = new MochiCache({
+  storage: new SqliteStorage('cache.sqlite'),
+  serialize: JSON.stringify,
+  deserialize: JSON.parse,
+  minTimeToStale: 10_000,
+  maxTimeToLive: 300_000,
+});
+```
+
+The constructor takes a file path, a `bun:sqlite` `Database` instance, or nothing (defaults to an in-memory database). Pass `{ table }` to override the table name (`mochi_cache` by default); the table is created on first use.
+
+```ts
+import { Database } from 'bun:sqlite';
+
+new SqliteStorage(); // in-memory
+new SqliteStorage('cache.sqlite'); // file-backed
+new SqliteStorage(new Database('cache.sqlite'), { table: 'pokemon_cache' });
+```
+
 <Callout type="warning">
 
 **In-flight de-duplication is per-server.** Concurrent calls for the same key on one instance share a single `fn` invocation, but that coordination lives in process memory. With multiple instances behind a shared backend (`bun:sqlite`, Redis), each instance de-duplicates only its own requests — so on a cold key, every instance may run `fn` once and race to write the same entry. The shared store keeps results consistent; it does not collapse the concurrent fetches into one.
@@ -92,7 +119,7 @@ If a `storage` call throws, the cache degrades instead of failing the request: a
 | `cache:read`              | `{ key, status }`           | Every cache lookup, regardless of which method ran.          |
 | `cache:revalidate`        | `{ key }`                   | A background refetch starts (stale read).                    |
 | `cache:revalidate:failed` | `{ key, error }`            | A background refetch threw; the stale value is still served. |
-| `cache:error`             | `{ key, operation, error }` | A `storage` `get` / `set` / `remove` call threw.             |
+| `cache:error`             | `{ key, operation, error }` | A `storage` `get` / `set` / `remove` / `clear` call threw.   |
 
 `consoleLogger()` surfaces `cache:revalidate:failed` and `cache:error` as warnings — a silently degrading upstream or storage backend is otherwise invisible.
 

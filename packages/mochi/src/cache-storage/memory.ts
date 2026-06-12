@@ -1,4 +1,4 @@
-import type { Storage } from './cache';
+import type { Storage } from '../cache';
 
 export class MemoryStorage implements Storage {
   private store = new Map<string, unknown>();
