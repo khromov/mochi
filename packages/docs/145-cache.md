@@ -10,7 +10,7 @@ description: 'Cache server-side data with stale-while-revalidate semantics using
 
 ## Cache
 
-`MochiCache` wraps [`stale-while-revalidate-cache`](https://www.npmjs.com/package/stale-while-revalidate-cache) for caching server-side data — typically slow upstream API calls. Construct once at module scope and share the instance across requests.
+`MochiCache` caches server-side data — typically slow upstream API calls — with stale-while-revalidate semantics. Construct once at module scope and share the instance across requests.
 
 ```ts
 // src/lib/cache.ts
@@ -62,15 +62,15 @@ Use it from a page or API route:
 
 ### Options
 
-`MochiCacheOptions` extends the upstream `Config` (so `retry`, `retryDelay`, `serialize`, `deserialize` and any future options pass through). Mochi-specific defaults:
-
 | Option           | Default           |
 | ---------------- | ----------------- |
 | `minTimeToStale` | `5_000` (5s)      |
 | `maxTimeToLive`  | `600_000` (10min) |
 | `storage`        | in-memory `Map`   |
+| `serialize`      | identity          |
+| `deserialize`    | identity          |
 
-For multi-process or persistent caching, pass a custom `storage` that implements `getItem` / `setItem` / `removeItem` (e.g. Redis, SQLite via `bun:sqlite`).
+For multi-process or persistent caching, pass a custom `storage` that implements `getItem` / `setItem` / `removeItem` (e.g. Redis, SQLite via `bun:sqlite`). Each key holds a single entry (the value plus its write time). When a backend needs a string or buffer — like Redis — supply `serialize` / `deserialize` to encode and decode that entry, e.g. `serialize: JSON.stringify, deserialize: JSON.parse`.
 
 ### Subscribing to cache events
 

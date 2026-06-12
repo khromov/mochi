@@ -167,8 +167,40 @@ describe('MochiCacheOptions passthrough', () => {
 
     const value = await cache.fetch('k', async () => ({ a: 1 }));
     expect(value).toEqual({ a: 1 });
-    // Upstream writes both the value and a timestamp; one of the writes must be
-    // the serialized payload prefixed by our wrapper.
+    // The serialized entry is written as a single wrapper-prefixed payload.
     expect(writes.some((w) => typeof w.value === 'string' && w.value.startsWith('wrapped:'))).toBe(true);
+  });
+});
+
+describe('MochiCache nullish values', () => {
+  test.each([null, undefined])('caches a value of %p as a hit instead of re-running fn', async (returned) => {
+    const cache = new MochiCache({ minTimeToStale: 1_000, maxTimeToLive: 5_000 });
+    let calls = 0;
+    const fn = async () => {
+      calls++;
+      return returned;
+    };
+
+    expect(await cache.fetch('k', fn)).toBe(returned);
+    const second = await cache.fetchWithStatus('k', fn);
+    expect(second.value).toBe(returned);
+    expect(second.status).toBe('fresh');
+    expect(calls).toBe(1);
+  });
+});
+
+describe('MochiCache concurrency', () => {
+  test('concurrent misses on the same key run fn once', async () => {
+    const cache = new MochiCache({ minTimeToStale: 1_000, maxTimeToLive: 5_000 });
+    let calls = 0;
+    const fn = async () => {
+      calls++;
+      await wait(20);
+      return calls;
+    };
+
+    const results = await Promise.all([cache.fetch('k', fn), cache.fetch('k', fn), cache.fetch('k', fn)]);
+    expect(results).toEqual([1, 1, 1]);
+    expect(calls).toBe(1);
   });
 });

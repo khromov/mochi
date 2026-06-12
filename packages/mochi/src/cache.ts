@@ -4,7 +4,7 @@ export type CacheStatus = 'fresh' | 'stale' | 'expired' | 'miss';
 
 /** Pluggable key/value backend. Defaults to an in-memory Map. */
 export interface Storage {
-  getItem(key: string): unknown | null;
+  getItem(key: string): unknown;
   setItem(key: string, value: unknown): void;
   removeItem(key: string): void;
 }
@@ -16,10 +16,10 @@ export interface MochiCacheOptions {
   maxTimeToLive?: number;
   /** Custom storage backend. Defaults to in-memory Map-based storage. */
   storage?: Storage;
-  /** Serialize a value before it is written to storage. Defaults to identity. */
-  serialize?: (value: unknown) => unknown;
-  /** Deserialize a value read back from storage. Defaults to identity. */
-  deserialize?: (value: unknown) => unknown;
+  /** Serialize a cache entry before it is written to storage. Defaults to identity. */
+  serialize?: (entry: unknown) => unknown;
+  /** Deserialize a cache entry read back from storage. Defaults to identity. */
+  deserialize?: (raw: unknown) => unknown;
 }
 
 export interface CacheResult<T> {
@@ -27,10 +27,16 @@ export interface CacheResult<T> {
   status: CacheStatus;
 }
 
+/** What we persist per key: the value plus the time it was written. */
+interface CacheEntry {
+  value: unknown;
+  createdAt: number;
+}
+
 class MemoryStorage implements Storage {
   private store = new Map<string, unknown>();
 
-  getItem(key: string): unknown | null {
+  getItem(key: string): unknown {
     return this.store.get(key) ?? null;
   }
 
@@ -49,8 +55,8 @@ export class MochiCache {
   private storage: Storage;
   private minTimeToStale: number;
   private maxTimeToLive: number;
-  private serialize: (value: unknown) => unknown;
-  private deserialize: (value: unknown) => unknown;
+  private serialize: (entry: unknown) => unknown;
+  private deserialize: (raw: unknown) => unknown;
   private inflight = new Map<string, Promise<unknown>>();
 
   constructor(options: MochiCacheOptions = {}) {
@@ -67,16 +73,16 @@ export class MochiCache {
   }
 
   async fetchWithStatus<T>(key: string, fn: () => T | Promise<T>): Promise<CacheResult<T>> {
-    const stored = this.storage.getItem(key);
-    const createdAt = this.readTime(key);
+    const raw = this.storage.getItem(key);
+    const entry = raw == null ? null : (this.deserialize(raw) as CacheEntry);
 
-    if (stored == null || createdAt == null) {
+    if (entry == null) {
       const value = await this.run(key, fn);
       return this.emitRead(key, value, 'miss');
     }
 
-    const cached = this.deserialize(stored) as T;
-    const age = this.now() - createdAt;
+    const cached = entry.value as T;
+    const age = this.now() - entry.createdAt;
 
     if (age < this.minTimeToStale) {
       return this.emitRead(key, cached, 'fresh');
@@ -95,7 +101,6 @@ export class MochiCache {
 
   async delete(key: string): Promise<void> {
     this.storage.removeItem(key);
-    this.storage.removeItem(this.timeKey(key));
     this.inflight.delete(key);
   }
 
@@ -106,15 +111,25 @@ export class MochiCache {
       return existing;
     }
 
+    const ref: { current: Promise<T> | null } = { current: null };
     const promise = (async () => {
       const value = await fn();
-      this.storage.setItem(key, this.serialize(value));
-      this.storage.setItem(this.timeKey(key), this.now());
-      return value;
+      const serialized = this.serialize({ value, createdAt: this.now() } satisfies CacheEntry);
+      // Skip the write if this run was deleted/superseded while `fn` was pending,
+      // so a late revalidation can't resurrect a key the caller already removed.
+      if (this.inflight.get(key) === ref.current) {
+        this.storage.setItem(key, serialized);
+      }
+      // Round-trip through (de)serialize so a fresh compute returns the same shape
+      // a later cache hit would, even with non-identity transforms.
+      return (this.deserialize(serialized) as CacheEntry).value as T;
     })().finally(() => {
-      this.inflight.delete(key);
+      if (this.inflight.get(key) === ref.current) {
+        this.inflight.delete(key);
+      }
     });
 
+    ref.current = promise;
     this.inflight.set(key, promise);
     return promise;
   }
@@ -122,15 +137,6 @@ export class MochiCache {
   private emitRead<T>(key: string, value: T, status: CacheStatus): CacheResult<T> {
     mochiEvents.emit('cache:read', { key, status });
     return { value, status };
-  }
-
-  private readTime(key: string): number | null {
-    const raw = this.storage.getItem(this.timeKey(key));
-    return typeof raw === 'number' ? raw : null;
-  }
-
-  private timeKey(key: string): string {
-    return `${key}__t`;
   }
 
   private now(): number {
