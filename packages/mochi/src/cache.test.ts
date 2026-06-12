@@ -77,6 +77,22 @@ describe('MochiCache.fetch', () => {
     expect(second.status).toBe('miss');
     expect(calls).toBe(2);
   });
+
+  test('clearItems empties every key so the next read recomputes', async () => {
+    const cache = new MochiCache({ minTimeToStale: 1_000, maxTimeToLive: 5_000 });
+    let calls = 0;
+    const fn = async () => ++calls;
+
+    await cache.fetch('a', fn);
+    await cache.fetch('b', fn);
+    expect(calls).toBe(2);
+
+    await cache.clearItems();
+
+    expect((await cache.fetchWithStatus('a', fn)).status).toBe('miss');
+    expect((await cache.fetchWithStatus('b', fn)).status).toBe('miss');
+    expect(calls).toBe(4);
+  });
 });
 
 describe('MochiCache custom storage', () => {
@@ -434,6 +450,7 @@ describe('MochiCache storage-error resilience', () => {
       removeItem() {
         throw new Error('remove boom');
       },
+      clear() {},
     };
 
     const cache = new MochiCache({ storage, minTimeToStale: 1_000, maxTimeToLive: 5_000 });

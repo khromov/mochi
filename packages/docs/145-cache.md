@@ -57,6 +57,9 @@ Use it from a page or API route:
 | `fetch(key, fn)`           | `Promise<T>`                 |
 | `fetchWithStatus(key, fn)` | `Promise<{ value, status }>` |
 | `delete(key)`              | `Promise<void>`              |
+| `clearItems()`             | `Promise<void>`              |
+
+`clearItems()` empties the whole cache in one call.
 
 `status` is `'fresh' \| 'stale' \| 'expired' \| 'miss'`.
 
@@ -70,7 +73,7 @@ Use it from a page or API route:
 | `serialize`      | identity          |
 | `deserialize`    | identity          |
 
-For multi-process or persistent caching, pass a custom `storage` that implements `getItem` / `setItem` / `removeItem` (e.g. Redis, SQLite via `bun:sqlite`). These methods may be synchronous (in-memory `Map`, `bun:sqlite`) or `async` / Promise-returning (Redis, network stores) — the cache awaits every call. Each key holds a single entry (the value plus its write time). When a backend needs a string or buffer — like Redis — supply `serialize` / `deserialize` to encode and decode that entry, e.g. `serialize: JSON.stringify, deserialize: JSON.parse`.
+For multi-process or persistent caching, pass a custom `storage` that implements `getItem` / `setItem` / `removeItem` / `clear` (e.g. Redis, SQLite via `bun:sqlite`). These methods may be synchronous (in-memory `Map`, `bun:sqlite`) or `async` / Promise-returning (Redis, network stores) — the cache awaits every call. Each key holds a single entry (the value plus its write time). When a backend needs a string or buffer — like Redis — supply `serialize` / `deserialize` to encode and decode that entry, e.g. `serialize: JSON.stringify, deserialize: JSON.parse`.
 
 If a `storage` call throws, the cache degrades instead of failing the request: a read error recomputes via `fn` (reported as a `miss`), a write error returns the freshly computed value uncached, and a `delete` error is re-thrown to the caller. Every case also emits a `cache:error` event.
 
