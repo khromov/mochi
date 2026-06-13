@@ -9,7 +9,7 @@
     keepElementSelectors,
     isHydratable,
   }: {
-    type?: 'fade' | 'slide';
+    type?: 'fade' | 'slide' | 'scale' | 'blur' | 'flip' | 'wipe';
     duration?: number;
     // Confine the animation to elements carrying these `view-transition-name`s.
     // Omit to animate the whole page (the `root` snapshot). When given, the
@@ -48,6 +48,18 @@
     slide: `
       @keyframes mochi-vt-out { to { transform: translateX(-30px); opacity: 0; } }
       @keyframes mochi-vt-in { from { transform: translateX(30px); opacity: 0; } }`,
+    scale: `
+      @keyframes mochi-vt-out { to { transform: scale(0.92); opacity: 0; } }
+      @keyframes mochi-vt-in { from { transform: scale(1.08); opacity: 0; } }`,
+    blur: `
+      @keyframes mochi-vt-out { to { filter: blur(6px); opacity: 0; } }
+      @keyframes mochi-vt-in { from { filter: blur(6px); opacity: 0; } }`,
+    flip: `
+      @keyframes mochi-vt-out { to { transform: perspective(1200px) rotateY(-90deg); opacity: 0; } }
+      @keyframes mochi-vt-in { from { transform: perspective(1200px) rotateY(90deg); opacity: 0; } }`,
+    wipe: `
+      @keyframes mochi-vt-out { to { clip-path: inset(0 100% 0 0); } }
+      @keyframes mochi-vt-in { from { clip-path: inset(0 0 0 100%); } }`,
   } as const;
 
   const targets = $derived(regions == null ? ['root'] : Array.isArray(regions) ? regions : [regions]);

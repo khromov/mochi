@@ -3,9 +3,9 @@
   import { ViewTransitions } from 'mochi-framework/components';
   import DemoPage from '../../components/DemoPage.svelte';
   import TransitionCard from './TransitionCard.svelte';
-  import { description, sources } from './shared';
+  import { description, sources, parseTransition } from './shared';
 
-  const type = url.searchParams.get('type') === 'slide' ? 'slide' : 'fade';
+  const type = parseTransition(url.searchParams.get('type'));
 </script>
 
 <DemoPage title="View Transitions" {description} {sources}>

@@ -1,7 +1,8 @@
 <script lang="ts">
   import PersistentVideo from './PersistentVideo.svelte';
+  import { TRANSITIONS, type TransitionType } from './shared';
 
-  let { page, type }: { page: 1 | 2; type: 'fade' | 'slide' } = $props();
+  let { page, type }: { page: 1 | 2; type: TransitionType } = $props();
 
   const self = $derived(page === 1 ? '/demos/view-transitions' : '/demos/view-transitions/two');
   const other = $derived(page === 1 ? '/demos/view-transitions/two' : '/demos/view-transitions');
@@ -14,13 +15,14 @@
   <a class="next" href={`${other}${query}`}>Go to page {page === 1 ? 2 : 1} →</a>
 </div>
 
-<PersistentVideo />
-
 <div class="picker">
   <span>Transition:</span>
-  <a class="opt" class:active={type === 'fade'} href={self}>fade</a>
-  <a class="opt" class:active={type === 'slide'} href={`${self}?type=slide`}>slide</a>
+  {#each TRANSITIONS as opt (opt)}
+    <a class="opt" class:active={type === opt} href={opt === 'fade' ? self : `${self}?type=${opt}`}>{opt}</a>
+  {/each}
 </div>
+
+<PersistentVideo />
 
 <style>
   .card {

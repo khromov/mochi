@@ -39,6 +39,17 @@ describe('ViewTransitions', () => {
     expect(head).not.toContain('{ to { opacity: 0; } }');
   });
 
+  test.each([
+    ['scale', 'scale(0.92)'],
+    ['blur', 'blur(6px)'],
+    ['flip', 'rotateY(-90deg)'],
+    ['wipe', 'clip-path: inset(0 100% 0 0)'],
+  ])('%s emits its own keyframes, not the fade ones', async (type, marker) => {
+    const { head } = await registry.renderComponent(COMPONENT_PATH, { type });
+    expect(head).toContain(marker);
+    expect(head).not.toContain('{ to { opacity: 0; } }');
+  });
+
   test('duration is interpolated into the animation', async () => {
     const { head } = await registry.renderComponent(COMPONENT_PATH, { duration: 500 });
     expect(head).toContain('500ms');
