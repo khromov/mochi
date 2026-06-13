@@ -113,13 +113,13 @@ Default to Bun instead of Node.js:
 ## Hydration notes
 
 - Hydration is all-or-nothing per island: `mochi:hydrate` hydrates the entire subtree together, no per-child opt-in.
-- All island components (`mochi:hydrate`, `mochi:hydrate:visible`, `mochi:defer`, `mochi:defer:visible`) implicitly receive an `islandId` prop matching the wrapper's `island-id` attribute. Accept it with `let { islandId } = $props()` if needed.
+- Islands do not receive an id prop. For a unique, SSR-stable id inside any component (e.g. for `<label for>`), use Svelte's native `const uid = $props.id();`. Server-island renders are namespaced via render's `idPrefix` (derived from the wrapper's `island-id`), so their ids never collide with the host page.
 - Hydratable invocations (`mochi:hydrate`, `mochi:hydrate:visible`, `mochi:defer`, `mochi:defer:visible`, `mochi:defer mochi:hydrate`) also implicitly receive `isHydratable: true` as a prop; pure SSR-only invocations leave it undefined. Use it to branch SSR-only fallback logic at the same call site that hydrates client-side: `let { isHydratable }: { isHydratable?: boolean } = $props()`.
 
 ## Conventions
 
 - When moving components or other files, use `git mv` to preserve history.
-- After completing your work, run `bun run checks` (which runs lint:fix + format + typecheck + test) instead of running those steps individually. **Always delegate this to a sub-agent** (e.g. via the `Agent` tool) that runs the command and reports back only the pass/fail status plus any failures — never run `bun run checks` directly in the main context, since its multi-thousand-line lint/typecheck/test output will pollute your conversation window.
+- After completing your work, run `bun run checks` (which runs lint:fix + format + typecheck + test) instead of running those steps individually. **Always delegate this to a sub-agent using Sonnet 4.6** (e.g. via the `Agent` tool) that runs the command and reports back only the pass/fail status plus any failures — never run `bun run checks` directly in the main context, since its multi-thousand-line lint/typecheck/test output will pollute your conversation window.
 - Before adding a new dependency, look up its latest version with `bun info <pkg> version` and pin to that — don't guess from training data, which is often months stale.
 - For every new framework feature, add a short, to-the-point section (or sub-section in an existing page) under `packages/docs/`. Match the terse, code-first style of the existing pages. For warnings/notes/danger boxes inside docs, use `packages/docs/_components/Callout.svelte` (`type="info" | "warning" | "danger"`) — import it via a `<script>` block at the top of the markdown file. See `145-cache.md` for an example.
 - Every demo in `packages/site/src/demos/` must have its own distinct icon. When you add a demo, also add a `demoIconFor` entry in `packages/site/src/lib/demoIcons.ts` — pick a Lucide icon that hasn't been used yet and that visually evokes the demo's concept.

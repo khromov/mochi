@@ -50,7 +50,6 @@ import { initMochiConfig } from './mochiConfig';
 import { logger, setLogLevel, DEFAULT_LOG_LEVEL, type LogLevel } from './log';
 import { mochiEvents } from './events';
 import type { MochiActionResult, MochiErrorEvent, MochiErrorKind, MochiServerStartEvent, MochiServerStopEvent } from './events';
-import { nanoid } from 'nanoid';
 import type { DebugBarData, DebugBarRuntimeData } from './requestContext';
 import { consoleLogger } from './consoleLogger';
 import { parse as devalueParse, stringify as devalueStringify } from 'devalue';
@@ -64,7 +63,7 @@ const DEFAULT_HTML_SHELL = await Bun.file(new URL('./templates/default-shell.htm
 /**
  * Dev-only: append a trailing `<script>` after the response body that mixes
  * the current request's response headers and inbound cookies into
- * `window.__mochi_debug`. The static fields (route, params, islandProps, …)
+ * `window.__mochi_debug`. The static fields (route, params, …)
  * are baked into the body in `resolveHtmlShell` and cached with it; the
  * dynamic fields written here always reflect *this* request, so cache hits
  * still see the correct headers and cookies.
@@ -247,7 +246,7 @@ export class Mochi {
           return inbound;
         }
       }
-      return nanoid(32);
+      return Bun.randomUUIDv7();
     };
 
     const { enabled: loggerEnabled = true, level: configuredLevel, ...loggerOptions } = options.logger ?? {};
@@ -1046,16 +1045,23 @@ export class Mochi {
       const hydrateMode = url.searchParams.get('hydrate');
 
       // Verify signature and decode props (empty means no props)
-      let props: Record<string, unknown>;
+      let decodedProps: Record<string, unknown>;
       if (signedProps) {
         const propsJson = verifyAndDecodeProps(signedProps);
         if (propsJson === null) {
           return new Response('Invalid props signature', { status: 403 });
         }
-        props = devalueParse(propsJson) as Record<string, unknown>;
+        decodedProps = devalueParse(propsJson) as Record<string, unknown>;
       } else {
-        props = {};
+        decodedProps = {};
       }
+
+      // `islandId` rides inside the signed envelope as transport only — it
+      // identifies the wrapper for debug/error reporting and must not reach
+      // the component as a prop (components use `$props.id()` for ids). Split it
+      // off into a fresh object rather than deleting in place.
+      const { islandId: rawIslandId, ...props } = decodedProps;
+      const islandId = typeof rawIslandId === 'string' ? rawIslandId : undefined;
 
       // Look up the component path
       const componentPath = registry.getServerIslandPath(componentName);
@@ -1068,15 +1074,21 @@ export class Mochi {
         await registry.compile(componentPath);
         let result: RenderResult;
         try {
+          // Namespacing via `idPrefix` keeps `$props.id()` values from this
+          // standalone render from colliding with ids the host page already
+          // emitted (both renders otherwise start their uid counter at `s1`).
+          // Svelte rejects prefixes containing `--`, so guard against tokens
+          // signed by an older deploy carrying an incompatible id.
           result = await registry.renderComponent(componentPath, props as Record<string, unknown>, {
             stripMarkers: false,
+            ...(islandId && !islandId.includes('--') ? { idPrefix: islandId } : {}),
           });
         } catch (err) {
           const e = err instanceof Error ? err : new Error(String(err));
           logger.error(`Server island "${componentName}" failed: ${e.message}`);
           mochiEvents.emit('island:error', {
             componentName,
-            islandId: (props as Record<string, unknown>).islandId as string | undefined,
+            islandId,
             kind: 'server',
             message: e.message,
             stack: registry.development ? e.stack : undefined,
@@ -1102,14 +1114,7 @@ export class Mochi {
           const serializedProps = devalueStringify(props);
           const bootstrapUrl = registry.getIslandBootstrapUrl();
 
-          const islandId = props.islandId as string | undefined;
-          if (!islandId) {
-            logger.warn(`Server island "${componentName}" missing islandId in props`);
-          }
           let hydrateAttrs = `component-name="${componentName}"`;
-          if (islandId) {
-            hydrateAttrs += ` island-id="${islandId}"`;
-          }
           if (Object.keys(props as Record<string, unknown>).length > 0) {
             const escapedProps = serializedProps.replace(/"/g, '&quot;');
             hydrateAttrs += ` props="${escapedProps}"`;

@@ -2,7 +2,8 @@
   import { cookies, isServer } from 'mochi-framework';
   import { delay } from '../../components/utils.ts';
 
-  let { name = 'World', islandId, bigProp = '' } = $props();
+  let { name = 'World', bigProp = '' } = $props();
+  const islandId = $props.id();
 
   await (isServer ? delay(1000, 3000) : Promise.resolve());
 
@@ -27,7 +28,7 @@
   <p class="timestamp">Rendered at {renderedAt}</p>
   <p class="timestamp">Mouse position: {mouseX}, {mouseY}</p>
 
-  <p class="timestamp">island-id: {islandId}</p>
+  <p class="timestamp">$props.id(): {islandId}</p>
   <p class="timestamp">bigProp: {bigProp}</p>
   <p class="timestamp">bigProp length: {bigProp.length}</p>
 </div>

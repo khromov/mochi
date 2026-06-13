@@ -1,5 +1,4 @@
 import { stringify } from 'devalue';
-import { logger } from './log';
 import { getRequestContext } from './requestContext';
 
 /**
@@ -12,43 +11,17 @@ import { getRequestContext } from './requestContext';
  * Two islands whose serialized JSON is byte-identical share the same ref id;
  * that's the entire dedup mechanism — no post-render HTML scan required.
  *
- * If `islandId` is supplied and `ctx.debugBarData` is initialized (dev mode),
- * the pretty-printed JSON is also recorded under `debugBarData.islandProps`
- * keyed by islandId so the dev toolbar can render it without a post-render
- * HTML scan.
- *
  * Server islands intentionally do NOT use this path. Their `signed-props`
  * payloads are HMAC-signed and travel through URL query strings, so they keep
  * using `stringify` directly via the preprocessor's server-island branch.
  */
-export function emitIslandProps(value: unknown, islandId?: string): string {
+export function emitIslandProps(value: unknown): string {
   const json = stringify(value);
   const ctx = getRequestContext();
   let id = ctx.islandProps.get(json);
   if (!id) {
     id = `mochi-props-${ctx.islandProps.size}`;
     ctx.islandProps.set(json, id);
-  }
-  if (islandId && ctx.debugBarData) {
-    let pretty = json;
-    try {
-      pretty = JSON.stringify(JSON.parse(json), null, 2);
-    } catch (err) {
-      if (err instanceof SyntaxError) {
-        const m = err.message.match(/position (\d+)/);
-        const pos = m ? Number(m[1]) : -1;
-        if (pos >= 0) {
-          const ch = json.charCodeAt(pos);
-          const around = json.slice(Math.max(0, pos - 20), pos + 20);
-          logger.warn(`Island "${islandId}" props unparseable at position ${pos} (char U+${ch.toString(16).padStart(4, '0')}, len=${json.length}): ${JSON.stringify(around)}`);
-        } else {
-          logger.warn(`Island "${islandId}" props unparseable: ${err.message}`);
-        }
-      } else {
-        logger.warn(`Island "${islandId}" props pretty-print failed: ${err}`);
-      }
-    }
-    ctx.debugBarData.islandProps[islandId] = pretty;
   }
   return id;
 }
