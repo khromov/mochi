@@ -1,3 +1,5 @@
+import { escapeHtmlAttr } from '../htmlEscape';
+
 /**
  * Always-shipped: hides the element entirely in production. The dev rule below
  * piggy-backs on `[data-message]` attribute presence, so it harmlessly does
@@ -28,17 +30,6 @@ mochi-island-failure[data-message]::before {
 }
 `;
 
-const ATTR_REPLACEMENTS: Record<string, string> = {
-  '&': '&amp;',
-  '"': '&quot;',
-  '<': '&lt;',
-  '>': '&gt;',
-};
-
-function escapeAttr(value: string): string {
-  return value.replace(/[&"<>]/g, (ch) => ATTR_REPLACEMENTS[ch]!);
-}
-
 /**
  * Build the `<mochi-island-failure>` stub HTML for a crashed island. Visibility is
  * controlled by `ISLAND_FAILURE_CSS` / `ISLAND_FAILURE_DEV_CSS` above.
@@ -52,9 +43,9 @@ function escapeAttr(value: string): string {
  * custom-element registration needs.
  */
 export function islandFailureStub(componentName: string, message?: string): string {
-  const name = escapeAttr(componentName);
+  const name = escapeHtmlAttr(componentName);
   if (message === undefined) {
     return `<mochi-island-failure data-component="${name}"></mochi-island-failure>`;
   }
-  return `<mochi-island-failure data-component="${name}" data-message="${escapeAttr(message)}"></mochi-island-failure>`;
+  return `<mochi-island-failure data-component="${name}" data-message="${escapeHtmlAttr(message)}"></mochi-island-failure>`;
 }

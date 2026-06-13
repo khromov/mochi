@@ -81,7 +81,9 @@ When a component wraps a native element and forwards the rest of its attributes,
 
 ### Wire format
 
-For `mochi:defer` server islands the flow is similar, except props are HMAC-signed and passed as a query parameter to a per-island endpoint — see [Server islands](server-islands/).
+For `mochi:hydrate*` islands, props are emitted as a `<script type="application/json" id="mochi-props-N">` block placed just before the island. When several islands on a page share the exact same payload, the block is emitted once before the first of them and the rest reference it by id — so identical props ship over the wire only once.
+
+For `mochi:defer` server islands the flow differs: props are HMAC-signed and passed as a query parameter to a per-island endpoint — see [Server islands](server-islands/).
 
 ### Supported types
 

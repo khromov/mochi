@@ -34,6 +34,7 @@ import { isFormFail, isFormRedirect, isFormSuccess } from './forms';
 import { isEnhanceRequest, jsonError, jsonFailure, jsonRedirect, jsonSuccess } from './formsJson';
 import { csrfCheck, DEFAULT_FORM_CONTENT_TYPES, DEFAULT_PROTECTED_METHODS } from './csrf';
 import { applyFilter, initExtensions, runHook } from './extensions';
+import { escapeHtmlAttr } from './htmlEscape';
 import { buildPublicUrl } from './proxy';
 import { apiError, collectHeaderPairs, headResponse, isHtmlResponse, MochiHttpError, withHead } from './utils';
 import type { MochiEvent, MochiEventKind, MochiResolveOptions } from './hooks';
@@ -1116,8 +1117,7 @@ export class Mochi {
 
           let hydrateAttrs = `component-name="${componentName}"`;
           if (Object.keys(props as Record<string, unknown>).length > 0) {
-            const escapedProps = serializedProps.replace(/"/g, '&quot;');
-            hydrateAttrs += ` props="${escapedProps}"`;
+            hydrateAttrs += ` props="${escapeHtmlAttr(serializedProps)}"`;
           }
           if (componentUrl) {
             hydrateAttrs += ` component-url="${componentUrl}"`;

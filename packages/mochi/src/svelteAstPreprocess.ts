@@ -214,8 +214,8 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
         let attrs = `component-name="${comp.name}" component-url="__MOCHI_COMPONENT_URL__${comp.name}__"`;
         // Skip props when component has no props to avoid serializing empty objects in HTML.
         // `__mochi_emit_props__` registers the payload in the per-request dedup map and
-        // returns a ref id; the matching <script type="application/json"> block is
-        // hoisted into the body by ComponentRegistry after render.
+        // returns a ref id; after render ComponentRegistry's HTMLRewriter pass emits each
+        // payload as a <script type="application/json"> block just before its first island.
         if (propsExpr !== '{}') {
           attrs += ` props-ref={__mochi_emit_props__(${propsExpr})}`;
         }
