@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { parse as devalueParse, stringify as devalueStringify } from 'devalue';
-import { emitIslandProps, injectIslandPropsScripts, type IslandPropsEntry } from './islandPropsRegistry';
+import { emitIslandProps, renderIslandPropsScript } from './islandPropsRegistry';
 import { requestContext, type MochiRequestContext } from './requestContext';
 import { MochiCookieJar } from './cookies';
 
@@ -98,108 +98,20 @@ describe('emitIslandProps', () => {
   });
 });
 
-type Registry = Map<string, IslandPropsEntry>;
-
-describe('injectIslandPropsScripts', () => {
-  test('empty registry leaves the html unchanged', () => {
-    const html = '<div>no islands</div>';
-    expect(injectIslandPropsScripts(html, new Map())).toBe(html);
+describe('renderIslandPropsScript', () => {
+  test('stamps data-shared only when two or more islands share the payload', () => {
+    expect(renderIslandPropsScript('mochi-props-0', '{"a":1}', 1)).toBe('<script type="application/json" id="mochi-props-0">{"a":1}</script>');
+    expect(renderIslandPropsScript('mochi-props-0', '{"a":1}', 2)).toBe('<script type="application/json" id="mochi-props-0" data-shared>{"a":1}</script>');
   });
 
-  test('emits an UNMARKED block immediately before a single-use island, keeping props-ref', () => {
-    const value = { s: '</script><img src=x>', q: 'he said "hi"', amp: '&amp; & &quot;' };
-    const json = devalueStringify(value);
-    const reg: Registry = new Map([[json, { id: 'mochi-props-0', count: 1 }]]);
-    const html = '<mochi-hydratable-island component-name="Demo" component-url="/c/Demo.js" props-ref="mochi-props-0"><div>hi</div></mochi-hydratable-island>';
-
-    const out = injectIslandPropsScripts(html, reg);
-    // The block sits directly before the island and the island keeps its ref —
-    // no inline `props=` attribute is produced.
-    const block = out.match(/<script type="application\/json" id="mochi-props-0">([\s\S]*?)<\/script>/);
-    expect(block).not.toBeNull();
-    expect(out.indexOf('</script>')).toBeLessThan(out.indexOf('<mochi-hydratable-island'));
-    expect(out).toContain('props-ref="mochi-props-0"');
-    expect(out).not.toContain(' props="');
-    // A lone island's block must NOT be flagged shared.
-    expect(out).not.toContain('data-shared');
-    // The script text round-trips back to the original value, with `<` escaped.
-    expect(devalueParse(block![1]!.replace(/\\u003C/g, '<'))).toEqual(value);
-    expect(block![1]).not.toMatch(/</);
-  });
-
-  test('shared payload: one data-shared block before the FIRST island, later islands keep their ref', () => {
-    const reg: Registry = new Map([['{"a":1}', { id: 'mochi-props-0', count: 2 }]]);
-    const html =
-      '<mochi-hydratable-island component-name="A" props-ref="mochi-props-0"></mochi-hydratable-island>' +
-      '<mochi-hydratable-island component-name="B" props-ref="mochi-props-0"></mochi-hydratable-island>';
-    const out = injectIslandPropsScripts(html, reg);
-    const blocks = out.match(/<script type="application\/json" id="mochi-props-0" data-shared>/g);
-    expect(blocks).toHaveLength(1);
-    // Block precedes the first island; both islands retain props-ref.
-    expect(out.indexOf('<script')).toBeLessThan(out.indexOf('component-name="A"'));
-    expect(out.match(/props-ref="mochi-props-0"/g)).toHaveLength(2);
-  });
-
-  test('full-id match: mochi-props-1 does not capture mochi-props-10', () => {
-    const reg: Registry = new Map([
-      ['{"a":1}', { id: 'mochi-props-1', count: 1 }],
-      ['{"b":2}', { id: 'mochi-props-10', count: 1 }],
-    ]);
-    const html =
-      '<mochi-hydratable-island component-name="A" props-ref="mochi-props-1"></mochi-hydratable-island>' +
-      '<mochi-hydratable-island component-name="B" props-ref="mochi-props-10"></mochi-hydratable-island>';
-    const out = injectIslandPropsScripts(html, reg);
-    expect(out).toContain('<script type="application/json" id="mochi-props-1">{"a":1}</script>');
-    expect(out).toContain('<script type="application/json" id="mochi-props-10">{"b":2}</script>');
-  });
-
-  test('does not match a literal props-ref string in page text outside an island tag', () => {
-    const reg: Registry = new Map([['{"a":1}', { id: 'mochi-props-0', count: 1 }]]);
-    const html = '<p>each island gets props-ref="mochi-props-0" pointing at a block</p>';
-    expect(injectIslandPropsScripts(html, reg)).toBe(html);
-  });
-
-  test('escapes `<` inside the payload so the block cannot terminate early', () => {
-    const reg: Registry = new Map([['{"html":"</script><img src=x>"}', { id: 'mochi-props-0', count: 1 }]]);
-    const html = '<mochi-hydratable-island component-name="X" props-ref="mochi-props-0"></mochi-hydratable-island>';
-    const out = injectIslandPropsScripts(html, reg);
-    const block = out.match(/<script type="application\/json" id="mochi-props-0">([\s\S]*?)<\/script>/);
-    expect(block).not.toBeNull();
-    expect(block![1]).toContain('\\u003C/script>');
-    expect(block![1]).toContain('\\u003Cimg src=x>');
-    expect(block![1]).not.toMatch(/</);
-  });
-});
-
-describe('emitIslandProps + injectIslandPropsScripts (integration)', () => {
-  test('full flow: shared payload gets one data-shared block, single-use gets its own unmarked block', () => {
-    withCtx((ctx) => {
-      const a = emitIslandProps({ readmeToc: [{ level: 1, text: 'hi', slug: 'hi' }], demos: [] });
-      const b = emitIslandProps({ readmeToc: [{ level: 1, text: 'hi', slug: 'hi' }], demos: [] });
-      const solo = emitIslandProps({ defaultUsername: 'mochi_fan' });
-      expect(a).toBe(b);
-      expect(solo).not.toBe(a);
-
-      const html =
-        `<mochi-hydratable-island component-name="A" props-ref="${a}"></mochi-hydratable-island>` +
-        `<mochi-hydratable-island component-name="B" props-ref="${b}"></mochi-hydratable-island>` +
-        `<mochi-hydratable-island component-name="C" props-ref="${solo}"></mochi-hydratable-island>`;
-      const out = injectIslandPropsScripts(html, ctx.islandProps);
-
-      // No inline props attributes; every island keeps its ref.
-      expect(out).not.toContain(' props="');
-      expect(out.match(new RegExp(`props-ref="${a}"`, 'g'))).toHaveLength(2);
-      expect(out).toContain(`props-ref="${solo}"`);
-
-      // One block per unique payload (shared one emitted once, before the first island).
-      expect(out.match(new RegExp(`id="${a}"`, 'g'))).toHaveLength(1);
-      expect(out.match(new RegExp(`id="${solo}"`, 'g'))).toHaveLength(1);
-      expect(out.indexOf(`id="${a}"`)).toBeLessThan(out.indexOf('component-name="A"'));
-      expect(out.indexOf(`id="${solo}"`)).toBeLessThan(out.indexOf('component-name="C"'));
-
-      // The reused payload is flagged shared; the lone one is not.
-      expect(out).toContain(`<script type="application/json" id="${a}" data-shared>`);
-      expect(out).toContain(`<script type="application/json" id="${solo}">`);
-    });
+  test('escapes `<` inside the payload so the block cannot terminate early, and round-trips', () => {
+    const value = { html: '</script><img src=x>' };
+    const out = renderIslandPropsScript('mochi-props-0', devalueStringify(value), 1);
+    const body = out.match(/<script type="application\/json" id="mochi-props-0">([\s\S]*?)<\/script>/)![1]!;
+    expect(body).toContain('\\u003C/script>');
+    expect(body).toContain('\\u003Cimg src=x>');
+    expect(body).not.toMatch(/</);
+    // Reversing the `<` escape yields the original devalue payload.
+    expect(devalueParse(body.replace(/\\u003C/g, '<'))).toEqual(value);
   });
 });
