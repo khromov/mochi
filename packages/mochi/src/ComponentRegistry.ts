@@ -4,7 +4,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import type { BunPlugin } from 'bun';
 import { isSvelteMarker, normalizeAssetPrefix, normalizeIslandHydrationMarkers, stripHydrationMarkers, toCompileErrorLogs, toPosixPath } from './utils';
-import { buildIslandPropsScripts, inlineSingleUseProps } from './islandPropsRegistry';
+import { injectIslandPropsScripts } from './islandPropsRegistry';
 import { requestContext } from './requestContext';
 import type { DebugBarData } from './requestContext';
 import { logger } from './log';
@@ -1212,18 +1212,14 @@ export class ComponentRegistry {
       output = rewriter.transform(output);
     }
 
-    // Resolve the per-request island props registry: payloads emitted by a
-    // single island are inlined onto their `props` attribute; payloads shared
-    // by two or more islands keep their `props-ref="<id>"` and get hoisted
-    // into <script type="application/json"> blocks.
+    // Resolve the per-request island props registry: each payload is emitted as
+    // a <script type="application/json" id="<id>"> block placed just before the
+    // first island that references it (islands sharing a payload reuse the same
+    // block by id).
     const ctx = requestContext.getStore();
     let debugBarData: RenderResult['debugBarData'];
     if (ctx && ctx.islandProps.size > 0) {
-      output = inlineSingleUseProps(output, ctx.islandProps);
-      const scripts = buildIslandPropsScripts(ctx.islandProps);
-      if (scripts) {
-        output = scripts + output;
-      }
+      output = injectIslandPropsScripts(output, ctx.islandProps);
       // Clear so a second render within the same request doesn't re-emit the
       // same blocks (e.g. an error page rendering after the original page).
       ctx.islandProps.clear();

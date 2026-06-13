@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { parse as devalueParse, stringify as devalueStringify } from 'devalue';
-import { buildIslandPropsScripts, emitIslandProps, inlineSingleUseProps, type IslandPropsEntry } from './islandPropsRegistry';
-import { unescapeHtmlAttr } from './htmlEscape';
+import { emitIslandProps, injectIslandPropsScripts, type IslandPropsEntry } from './islandPropsRegistry';
 import { requestContext, type MochiRequestContext } from './requestContext';
 import { MochiCookieJar } from './cookies';
 
@@ -101,100 +100,77 @@ describe('emitIslandProps', () => {
 
 type Registry = Map<string, IslandPropsEntry>;
 
-describe('buildIslandPropsScripts', () => {
-  test('empty registry yields the empty string', () => {
-    expect(buildIslandPropsScripts(new Map())).toBe('');
+describe('injectIslandPropsScripts', () => {
+  test('empty registry leaves the html unchanged', () => {
+    const html = '<div>no islands</div>';
+    expect(injectIslandPropsScripts(html, new Map())).toBe(html);
   });
 
-  test('emits one <script> block per shared registry entry, in insertion order', () => {
-    const reg: Registry = new Map([
-      ['{"a":1}', { id: 'mochi-props-0', count: 2 }],
-      ['{"b":2}', { id: 'mochi-props-1', count: 3 }],
-    ]);
-    const out = buildIslandPropsScripts(reg);
-    expect(out).toBe('<script type="application/json" id="mochi-props-0">{"a":1}</script>' + '<script type="application/json" id="mochi-props-1">{"b":2}</script>');
-  });
-
-  test('skips single-use entries (they are inlined instead)', () => {
-    const reg: Registry = new Map([
-      ['{"a":1}', { id: 'mochi-props-0', count: 1 }],
-      ['{"b":2}', { id: 'mochi-props-1', count: 2 }],
-      ['{"c":3}', { id: 'mochi-props-2', count: 1 }],
-    ]);
-    const out = buildIslandPropsScripts(reg);
-    expect(out).toBe('<script type="application/json" id="mochi-props-1">{"b":2}</script>');
-  });
-
-  test('all-single-use registry yields the empty string', () => {
-    const reg: Registry = new Map([['{"a":1}', { id: 'mochi-props-0', count: 1 }]]);
-    expect(buildIslandPropsScripts(reg)).toBe('');
-  });
-
-  test('escapes `<` characters inside the JSON payload', () => {
-    const reg: Registry = new Map([['{"html":"</script><img src=x>"}', { id: 'mochi-props-0', count: 2 }]]);
-    const out = buildIslandPropsScripts(reg);
-    // Every `<` in the payload becomes the `<` JSON unicode escape …
-    const block = out.match(/<script type="application\/json" id="mochi-props-0">([\s\S]*?)<\/script>/);
-    expect(block).not.toBeNull();
-    expect(block![1]).toContain('\\u003C/script>');
-    expect(block![1]).toContain('\\u003Cimg src=x>');
-    // … so no raw `<` (and therefore no `</script`) survives inside the block.
-    expect(block![1]).not.toMatch(/</);
-  });
-});
-
-describe('inlineSingleUseProps', () => {
-  test('rewrites a single-use props-ref to an inline props attribute that round-trips', () => {
+  test('emits a <script> block immediately before a single-use island, keeping props-ref', () => {
     const value = { s: '</script><img src=x>', q: 'he said "hi"', amp: '&amp; & &quot;' };
     const json = devalueStringify(value);
     const reg: Registry = new Map([[json, { id: 'mochi-props-0', count: 1 }]]);
-    const html =
-      '<mochi-hydratable-island island-id="mochi-a-0" component-name="Demo" component-url="/c/Demo.js" props-ref="mochi-props-0"><div>hi</div></mochi-hydratable-island>';
+    const html = '<mochi-hydratable-island component-name="Demo" component-url="/c/Demo.js" props-ref="mochi-props-0"><div>hi</div></mochi-hydratable-island>';
 
-    const out = inlineSingleUseProps(html, reg);
-    expect(out).not.toContain('props-ref');
-    const attr = out.match(/ props="([^"]*)"/);
-    expect(attr).not.toBeNull();
-    expect(devalueParse(unescapeHtmlAttr(attr![1]!))).toEqual(value);
-    // No raw `<` or `"` from the payload may leak into the attribute value.
-    expect(attr![1]).not.toMatch(/[<"]/);
+    const out = injectIslandPropsScripts(html, reg);
+    // The block sits directly before the island and the island keeps its ref —
+    // no inline `props=` attribute is produced.
+    const block = out.match(/<script type="application\/json" id="mochi-props-0">([\s\S]*?)<\/script>/);
+    expect(block).not.toBeNull();
+    expect(out.indexOf('</script>')).toBeLessThan(out.indexOf('<mochi-hydratable-island'));
+    expect(out).toContain('props-ref="mochi-props-0"');
+    expect(out).not.toContain(' props="');
+    // The script text round-trips back to the original value, with `<` escaped.
+    expect(devalueParse(block![1]!.replace(/\\u003C/g, '<'))).toEqual(value);
+    expect(block![1]).not.toMatch(/</);
   });
 
-  test('leaves shared entries untouched', () => {
+  test('shared payload: one block before the FIRST island, later islands keep their ref', () => {
     const reg: Registry = new Map([['{"a":1}', { id: 'mochi-props-0', count: 2 }]]);
-    const html = '<mochi-hydratable-island component-name="Demo" props-ref="mochi-props-0"></mochi-hydratable-island>';
-    expect(inlineSingleUseProps(html, reg)).toBe(html);
+    const html =
+      '<mochi-hydratable-island component-name="A" props-ref="mochi-props-0"></mochi-hydratable-island>' +
+      '<mochi-hydratable-island component-name="B" props-ref="mochi-props-0"></mochi-hydratable-island>';
+    const out = injectIslandPropsScripts(html, reg);
+    const blocks = out.match(/<script type="application\/json" id="mochi-props-0">/g);
+    expect(blocks).toHaveLength(1);
+    // Block precedes the first island; both islands retain props-ref.
+    expect(out.indexOf('<script')).toBeLessThan(out.indexOf('component-name="A"'));
+    expect(out.match(/props-ref="mochi-props-0"/g)).toHaveLength(2);
   });
 
-  test('full-id match: mochi-props-1 (shared) does not capture mochi-props-10 (single)', () => {
+  test('full-id match: mochi-props-1 does not capture mochi-props-10', () => {
     const reg: Registry = new Map([
-      ['{"a":1}', { id: 'mochi-props-1', count: 2 }],
+      ['{"a":1}', { id: 'mochi-props-1', count: 1 }],
       ['{"b":2}', { id: 'mochi-props-10', count: 1 }],
     ]);
     const html =
       '<mochi-hydratable-island component-name="A" props-ref="mochi-props-1"></mochi-hydratable-island>' +
       '<mochi-hydratable-island component-name="B" props-ref="mochi-props-10"></mochi-hydratable-island>';
-    const out = inlineSingleUseProps(html, reg);
-    expect(out).toContain('props-ref="mochi-props-1"');
-    expect(out).not.toContain('props-ref="mochi-props-10"');
-    expect(out).toContain('props="{&quot;b&quot;:2}"');
+    const out = injectIslandPropsScripts(html, reg);
+    expect(out).toContain('<script type="application/json" id="mochi-props-1">{"a":1}</script>');
+    expect(out).toContain('<script type="application/json" id="mochi-props-10">{"b":2}</script>');
   });
 
-  test('does not rewrite a literal props-ref string in page text outside an island tag', () => {
+  test('does not match a literal props-ref string in page text outside an island tag', () => {
     const reg: Registry = new Map([['{"a":1}', { id: 'mochi-props-0', count: 1 }]]);
     const html = '<p>each island gets props-ref="mochi-props-0" pointing at a block</p>';
-    expect(inlineSingleUseProps(html, reg)).toBe(html);
+    expect(injectIslandPropsScripts(html, reg)).toBe(html);
   });
 
-  test('returns the html unchanged when nothing is single-use', () => {
-    const reg: Registry = new Map([['{"a":1}', { id: 'mochi-props-0', count: 2 }]]);
-    const html = '<div>no islands</div>';
-    expect(inlineSingleUseProps(html, reg)).toBe(html);
+  test('escapes `<` inside the payload so the block cannot terminate early', () => {
+    const reg: Registry = new Map([['{"html":"</script><img src=x>"}', { id: 'mochi-props-0', count: 1 }]]);
+    const html = '<mochi-hydratable-island component-name="X" props-ref="mochi-props-0"></mochi-hydratable-island>';
+    const out = injectIslandPropsScripts(html, reg);
+    const block = out.match(/<script type="application\/json" id="mochi-props-0">([\s\S]*?)<\/script>/);
+    expect(block).not.toBeNull();
+    expect(block![1]).toContain('\\u003C/script>');
+    expect(block![1]).toContain('\\u003Cimg src=x>');
+    expect(block![1]).not.toMatch(/</);
   });
 });
 
-describe('emitIslandProps + buildIslandPropsScripts + inlineSingleUseProps (integration)', () => {
-  test('full flow: shared payload keeps its block, unique payload is inlined', () => {
+describe('emitIslandProps + injectIslandPropsScripts (integration)', () => {
+  test('full flow: shared payload gets one block before its first island, single-use gets its own', () => {
     withCtx((ctx) => {
       const a = emitIslandProps({ readmeToc: [{ level: 1, text: 'hi', slug: 'hi' }], demos: [] });
       const b = emitIslandProps({ readmeToc: [{ level: 1, text: 'hi', slug: 'hi' }], demos: [] });
@@ -206,18 +182,18 @@ describe('emitIslandProps + buildIslandPropsScripts + inlineSingleUseProps (inte
         `<mochi-hydratable-island component-name="A" props-ref="${a}"></mochi-hydratable-island>` +
         `<mochi-hydratable-island component-name="B" props-ref="${b}"></mochi-hydratable-island>` +
         `<mochi-hydratable-island component-name="C" props-ref="${solo}"></mochi-hydratable-island>`;
-      const inlined = inlineSingleUseProps(html, ctx.islandProps);
-      expect(inlined.match(new RegExp(`props-ref="${a}"`, 'g'))).toHaveLength(2);
-      expect(inlined).not.toContain(`props-ref="${solo}"`);
-      const attr = inlined.match(/ props="([^"]*)"/);
-      expect(attr).not.toBeNull();
-      expect(devalueParse(unescapeHtmlAttr(attr![1]!))).toEqual({ defaultUsername: 'mochi_fan' });
+      const out = injectIslandPropsScripts(html, ctx.islandProps);
 
-      const scripts = buildIslandPropsScripts(ctx.islandProps);
-      const blockMatches = scripts.match(/<script type="application\/json" id="mochi-props-\d+">/g);
-      expect(blockMatches).toHaveLength(1);
-      expect(scripts).toContain(`id="${a}"`);
-      expect(scripts).not.toContain(`id="${solo}"`);
+      // No inline props attributes; every island keeps its ref.
+      expect(out).not.toContain(' props="');
+      expect(out.match(new RegExp(`props-ref="${a}"`, 'g'))).toHaveLength(2);
+      expect(out).toContain(`props-ref="${solo}"`);
+
+      // One block per unique payload (shared one emitted once, before the first island).
+      expect(out.match(new RegExp(`id="${a}"`, 'g'))).toHaveLength(1);
+      expect(out.match(new RegExp(`id="${solo}"`, 'g'))).toHaveLength(1);
+      expect(out.indexOf(`id="${a}"`)).toBeLessThan(out.indexOf('component-name="A"'));
+      expect(out.indexOf(`id="${solo}"`)).toBeLessThan(out.indexOf('component-name="C"'));
     });
   });
 });

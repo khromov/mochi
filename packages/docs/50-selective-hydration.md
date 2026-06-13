@@ -18,7 +18,7 @@ Components render server-side by default and ship zero JavaScript. Add `mochi:hy
 <StaticHeader />
 ```
 
-Props are serialized with `devalue` and embedded into the HTML so the same values are available during hydration. See `Passing props to islands` for the supported types.
+Props are serialized with `devalue` into a `<script type="application/json">` block emitted just before the island, so the same values are available during hydration. See `Passing props to islands` for the supported types.
 
 Do **NOT** nest `mochi:hydrate` (or `mochi:hydrate:visible`) inside another hydratable component; instead, remove the inner directive and let the outer island hydrate the whole subtree. Hydration is all-or-nothing per island — the framework rejects nested directives at compile time.
 

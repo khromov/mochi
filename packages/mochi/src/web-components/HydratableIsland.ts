@@ -63,9 +63,10 @@ class HydratableIsland extends HTMLElement {
     if (!name) {
       return;
     }
-    // Props may live inline on `props=...` or — when deduplicated server-side
-    // because another island on the page shares the exact same payload — in a
-    // shared <script type="application/json" id="<propsRef>"> block.
+    // Page islands carry a `props-ref` pointing at a
+    // <script type="application/json" id="<propsRef>"> block emitted just before
+    // them. The server-island also-hydrate path instead inlines `props=...`
+    // directly, so fall back to that attribute when no ref is present.
     const propsRef = this.getAttribute('props-ref');
     let propsRaw: string | null;
     if (propsRef) {
