@@ -114,8 +114,6 @@ export interface DebugBarData {
   bunVersion?: string;
   /** Curated snapshot of the `Mochi.serve()` configuration (constant per server). */
   config?: DebugBarConfig;
-  /** Pretty-printed JSON props keyed by island id, populated during SSR for the dev toolbar. */
-  islandProps?: Record<string, string>;
 }
 
 /**

@@ -17,17 +17,3 @@ const ATTR_REPLACEMENTS: Record<string, string> = {
 export function escapeHtmlAttr(value: string): string {
   return value.replace(/[&"<>]/g, (ch) => ATTR_REPLACEMENTS[ch]!);
 }
-
-/**
- * Inverse of `escapeHtmlAttr` — what the browser's attribute parser does on
- * read. `&amp;` must decode last so escaped ampersands round-trip. Server code
- * never decodes attributes; this exists so tests can verify round-trips
- * against the same contract.
- */
-export function unescapeHtmlAttr(value: string): string {
-  return value
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&amp;/g, '&');
-}
