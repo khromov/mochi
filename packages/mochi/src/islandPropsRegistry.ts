@@ -23,6 +23,12 @@ export interface IslandPropsEntry {
  * that's the entire dedup mechanism. The per-id use count lets the render pass
  * flag blocks that more than one island actually shares.
  *
+ * `count` is an *emit* count, not a count of surviving DOM tags. It holds today
+ * because each call corresponds 1:1 to a `<mochi-hydratable-island>` tag written
+ * into the output. If conditional island stripping is ever added (emit a tag,
+ * then remove it post-SSR), this could over-count and stamp `data-shared` on a
+ * block only one surviving tag references — a dev-toolbar cosmetic edge.
+ *
  * Server islands intentionally do NOT use this path. Their `signed-props`
  * payloads are HMAC-signed and travel through URL query strings, so they keep
  * using `stringify` directly via the preprocessor's server-island branch.
