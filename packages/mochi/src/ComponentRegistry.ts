@@ -1215,7 +1215,7 @@ export class ComponentRegistry {
     // Resolve the per-request island props registry: each payload is emitted as
     // a <script type="application/json" id="<id>"> block placed just before the
     // first island that references it (islands sharing a payload reuse the same
-    // block by id).
+    // block by id; blocks reused by >=2 islands are marked `data-shared`).
     const ctx = requestContext.getStore();
     let debugBarData: RenderResult['debugBarData'];
     if (ctx && ctx.islandProps.size > 0) {

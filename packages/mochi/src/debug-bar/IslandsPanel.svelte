@@ -57,13 +57,16 @@
       const name = element.getAttribute('component-name') ?? 'unknown';
       const mode = element.getAttribute('hydrate-on') === 'visible' ? 'mochi:hydrate:visible' : 'mochi:hydrate';
       // Props ride in a <script type="application/json" id="<propsRef>"> block
-      // emitted just before the island (shared by ref id when several islands
-      // use the same payload). The server-island also-hydrate path inlines
-      // `props=...` directly, so fall back to that attribute.
+      // emitted just before the island. The block carries `data-shared` only
+      // when >=2 islands reuse the same payload. The server-island also-hydrate
+      // path inlines `props=...` directly, so fall back to that attribute.
       const propsRef = element.getAttribute('props-ref');
       let rawProps: string | null;
+      let shared = false;
       if (propsRef) {
-        rawProps = document.getElementById(propsRef)?.textContent ?? null;
+        const block = document.getElementById(propsRef);
+        rawProps = block?.textContent ?? null;
+        shared = block?.hasAttribute('data-shared') ?? false;
       } else {
         rawProps = element.getAttribute('props');
       }
@@ -77,6 +80,7 @@
         rawProps,
         signedProps: null,
         propsRef,
+        shared,
         serverOptions: null,
       });
     });
@@ -95,6 +99,7 @@
         rawProps: null,
         signedProps,
         propsRef: null,
+        shared: false,
         serverOptions: element.getAttribute('server-options'),
       });
     });

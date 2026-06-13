@@ -86,7 +86,7 @@
           <Lock size={10} />
         </span>
       {/if}
-      {#if island.propsRef}
+      {#if island.shared}
         <span class="shared-badge" title={`Props deduplicated into shared <script id="${island.propsRef}"> — payload counted once on the wire.`}>
           shared &middot; {formatSize(island.propsSize)}
         </span>

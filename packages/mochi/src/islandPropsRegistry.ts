@@ -1,5 +1,4 @@
 import { stringify } from 'devalue';
-import { logger } from './log';
 import { getRequestContext } from './requestContext';
 
 /**
@@ -21,18 +20,14 @@ export interface IslandPropsEntry {
  * before the first island that references it.
  *
  * Two islands whose serialized JSON is byte-identical share the same ref id;
- * that's the entire dedup mechanism.
- *
- * If `islandId` is supplied and `ctx.debugBarData` is initialized (dev mode),
- * the pretty-printed JSON is also recorded under `debugBarData.islandProps`
- * keyed by islandId so the dev toolbar can render it without a post-render
- * HTML scan.
+ * that's the entire dedup mechanism. The per-id use count lets the post-render
+ * pass flag blocks that more than one island actually shares.
  *
  * Server islands intentionally do NOT use this path. Their `signed-props`
  * payloads are HMAC-signed and travel through URL query strings, so they keep
  * using `stringify` directly via the preprocessor's server-island branch.
  */
-export function emitIslandProps(value: unknown, islandId?: string): string {
+export function emitIslandProps(value: unknown): string {
   const json = stringify(value);
   const ctx = getRequestContext();
   let entry = ctx.islandProps.get(json);
@@ -41,27 +36,6 @@ export function emitIslandProps(value: unknown, islandId?: string): string {
     ctx.islandProps.set(json, entry);
   }
   entry.count++;
-  if (islandId && ctx.debugBarData) {
-    let pretty = json;
-    try {
-      pretty = JSON.stringify(JSON.parse(json), null, 2);
-    } catch (err) {
-      if (err instanceof SyntaxError) {
-        const m = err.message.match(/position (\d+)/);
-        const pos = m ? Number(m[1]) : -1;
-        if (pos >= 0) {
-          const ch = json.charCodeAt(pos);
-          const around = json.slice(Math.max(0, pos - 20), pos + 20);
-          logger.warn(`Island "${islandId}" props unparseable at position ${pos} (char U+${ch.toString(16).padStart(4, '0')}, len=${json.length}): ${JSON.stringify(around)}`);
-        } else {
-          logger.warn(`Island "${islandId}" props unparseable: ${err.message}`);
-        }
-      } else {
-        logger.warn(`Island "${islandId}" props pretty-print failed: ${err}`);
-      }
-    }
-    ctx.debugBarData.islandProps[islandId] = pretty;
-  }
   return entry.id;
 }
 
@@ -70,7 +44,10 @@ export function emitIslandProps(value: unknown, islandId?: string): string {
  * id="mochi-props-N">` block placed immediately before the first
  * `<mochi-hydratable-island>` that references it. Islands sharing a payload
  * (byte-identical serialized JSON) collapse to a single ref id, so only the
- * first one gets a block; the rest read it by id at hydration time.
+ * first one gets a block; the rest read it by id at hydration time. Blocks
+ * reused by two or more islands carry a `data-shared` marker so the dev
+ * toolbar can flag genuinely deduplicated props without re-counting refs
+ * across the DOM — a lone island's block stays unmarked.
  *
  * The match is anchored to the `<mochi-hydratable-island` start tag because
  * Svelte does not escape `"` in text nodes — page prose could otherwise
@@ -87,21 +64,22 @@ export function injectIslandPropsScripts(html: string, registry: Map<string, Isl
   if (registry.size === 0) {
     return html;
   }
-  const byId = new Map<string, string>();
+  const byId = new Map<string, IslandPropsEntry & { json: string }>();
   for (const [json, entry] of registry) {
-    byId.set(entry.id, json);
+    byId.set(entry.id, { ...entry, json });
   }
   const emitted = new Set<string>();
   return html.replace(/<mochi-hydratable-island\b[^>]*? props-ref="(mochi-props-\d+)"/g, (m, id: string) => {
     if (emitted.has(id)) {
       return m;
     }
-    const json = byId.get(id);
-    if (json === undefined) {
+    const entry = byId.get(id);
+    if (entry === undefined) {
       return m;
     }
     emitted.add(id);
-    const safe = json.replace(/</g, '\\u003C');
-    return `<script type="application/json" id="${id}">${safe}</script>${m}`;
+    const safe = entry.json.replace(/</g, '\\u003C');
+    const shared = entry.count >= 2 ? ' data-shared' : '';
+    return `<script type="application/json" id="${id}"${shared}>${safe}</script>${m}`;
   });
 }

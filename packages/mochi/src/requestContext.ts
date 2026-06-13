@@ -34,9 +34,9 @@ export interface MochiRequestContext {
    * Per-request hydratable-island props dedup registry, keyed by serialized
    * JSON payload, valued by ref id (e.g. "mochi-props-3") plus the number of
    * islands that emitted that exact payload. Populated by `emitIslandProps()`
-   * during SSR; consumed by `ComponentRegistry`, which inlines single-use
-   * payloads onto the island element and hoists shared (count >= 2) payloads
-   * into `<script type="application/json">` blocks in the rendered HTML.
+   * during SSR; consumed by `ComponentRegistry`, which emits each payload as a
+   * `<script type="application/json">` block before its first island and marks
+   * blocks reused by >=2 islands with `data-shared` in the rendered HTML.
    * Internal — not for application use.
    */
   islandProps: Map<string, IslandPropsEntry>;
@@ -114,6 +114,8 @@ export interface DebugBarData {
   bunVersion?: string;
   /** Curated snapshot of the `Mochi.serve()` configuration (constant per server). */
   config?: DebugBarConfig;
+  /** Pretty-printed JSON props keyed by island id, populated during SSR for the dev toolbar. */
+  islandProps?: Record<string, string>;
 }
 
 /**

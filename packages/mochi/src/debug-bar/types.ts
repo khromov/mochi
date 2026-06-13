@@ -24,7 +24,9 @@ export interface IslandInfo {
   rawProps: string | null;
   /** Server islands: the HMAC-signed props token, decoded client-side on demand. */
   signedProps: string | null;
-  /** If set, props were deduplicated server-side into a shared <script> block. */
+  /** If set, props live in a <script type="application/json" id="<propsRef>"> block. */
   propsRef: string | null;
+  /** True when that block is reused by >=2 islands (server-stamped `data-shared`). */
+  shared: boolean;
   serverOptions: string | null;
 }
