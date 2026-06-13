@@ -15,7 +15,7 @@ declare global {
 
 export interface IslandInfo {
   /** The wrapper element itself — the stable identity for keying and locating. */
-  el: HTMLElement;
+  element: HTMLElement;
   name: string;
   type: 'hydrated' | 'server';
   mode: string;

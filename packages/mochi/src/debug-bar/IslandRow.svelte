@@ -62,7 +62,7 @@
 
   function handleLocate(e: MouseEvent) {
     e.stopPropagation();
-    locateIsland(island.el);
+    locateIsland(island.element);
   }
 </script>
 

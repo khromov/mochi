@@ -53,22 +53,22 @@
     const hydratable = document.querySelectorAll('mochi-hydratable-island');
     const server = document.querySelectorAll('mochi-server-island');
 
-    hydratable.forEach((el) => {
-      const name = el.getAttribute('component-name') ?? 'unknown';
-      const mode = el.getAttribute('hydrate-on') === 'visible' ? 'mochi:hydrate:visible' : 'mochi:hydrate';
+    hydratable.forEach((element) => {
+      const name = element.getAttribute('component-name') ?? 'unknown';
+      const mode = element.getAttribute('hydrate-on') === 'visible' ? 'mochi:hydrate:visible' : 'mochi:hydrate';
       // Props may be inline (`props=...`) or hoisted into a shared
       // <script type="application/json" id="<propsRef>"> block when multiple
       // islands on the page share the exact same payload.
-      const propsRef = el.getAttribute('props-ref');
+      const propsRef = element.getAttribute('props-ref');
       let rawProps: string | null;
       if (propsRef) {
         rawProps = document.getElementById(propsRef)?.textContent ?? null;
       } else {
-        rawProps = el.getAttribute('props');
+        rawProps = element.getAttribute('props');
       }
       const propsSize = rawProps?.length ?? 0;
       result.push({
-        el: el as HTMLElement,
+        element: element as HTMLElement,
         name,
         type: 'hydrated',
         mode,
@@ -80,13 +80,13 @@
       });
     });
 
-    server.forEach((el) => {
-      const name = el.getAttribute('component-name') ?? 'unknown';
-      const mode = describeServerIslandMode(el.getAttribute('defer-on'), el.getAttribute('also-hydrate'));
-      const signedProps = el.getAttribute('signed-props');
+    server.forEach((element) => {
+      const name = element.getAttribute('component-name') ?? 'unknown';
+      const mode = describeServerIslandMode(element.getAttribute('defer-on'), element.getAttribute('also-hydrate'));
+      const signedProps = element.getAttribute('signed-props');
       const propsSize = signedProps?.length ?? 0;
       result.push({
-        el: el as HTMLElement,
+        element: element as HTMLElement,
         name,
         type: 'server',
         mode,
@@ -94,7 +94,7 @@
         rawProps: null,
         signedProps,
         propsRef: null,
-        serverOptions: el.getAttribute('server-options'),
+        serverOptions: element.getAttribute('server-options'),
       });
     });
 
@@ -141,14 +141,14 @@
 
       {#if hydratedIslands.length > 0}
         <div class="island-group-label">Hydrated Islands</div>
-        {#each hydratedIslands as island (island.el)}
+        {#each hydratedIslands as island (island.element)}
           <IslandRow {island} />
         {/each}
       {/if}
 
       {#if serverIslands.length > 0}
         <div class="island-group-label">Server Islands</div>
-        {#each serverIslands as island (island.el)}
+        {#each serverIslands as island (island.element)}
           <IslandRow {island} />
         {/each}
       {/if}
