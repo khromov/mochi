@@ -33,6 +33,19 @@ describe('RawScript', () => {
     expect(body).toContain('console.log("hello from raw");');
   });
 
+  test('inlines a literal `string` instead of reading a file', async () => {
+    const { body } = await registry.renderComponent(COMPONENT_PATH, { string: 'console.log("inline literal");' });
+    expect(body).toContain('console.log("inline literal");');
+  });
+
+  test('throws when neither src nor string is given', async () => {
+    await expect(registry.renderComponent(COMPONENT_PATH, {})).rejects.toThrow('exactly one of');
+  });
+
+  test('throws when both src and string are given', async () => {
+    await expect(registry.renderComponent(COMPONENT_PATH, { src: scriptFile, string: 'x' })).rejects.toThrow('exactly one of');
+  });
+
   test('throws a clear error when the file does not exist', async () => {
     await expect(registry.renderComponent(COMPONENT_PATH, { src: path.join(outDir, 'missing.js') })).rejects.toThrow('could not read');
   });

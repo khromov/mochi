@@ -10,6 +10,12 @@ description: 'Inline the raw contents of a file into the page at SSR time, addre
 
 ## RawScript
 
+<Callout type="warning">
+
+**Experimental.** This API is new and may change in a future release.
+
+</Callout>
+
 `<RawScript />` reads a file at SSR time and prints its contents verbatim with `{@html}`. The `src` is resolved relative to the **working directory** — the same convention as the paths you pass to `Mochi.page('./src/...')`:
 
 ```svelte
@@ -29,6 +35,12 @@ Reach for it when you have a chunk of pre-authored JS, JSON, or CSS on disk that
 <!-- relative to the working dir -->
 <RawScript src={absolutePath} />
 <!-- absolute paths work too -->
+```
+
+To inline content you already have as a string instead of a file, pass `string`. Provide exactly one of `src` or `string` — passing both (or neither) throws:
+
+```svelte
+<RawScript string={`window.__BUILD__ = ${JSON.stringify(buildInfo)};`} />
 ```
 
 <Callout type="info">

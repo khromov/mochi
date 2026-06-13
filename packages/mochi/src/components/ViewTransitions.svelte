@@ -1,5 +1,6 @@
 <script lang="ts">
   import { getRequestContext, devWarn } from 'mochi-framework';
+  import RawScript from './RawScript.svelte';
 
   let {
     type = 'fade',
@@ -26,24 +27,14 @@
     isHydratable?: boolean;
   } = $props();
 
-  // The component emits static CSS into <head> and renders no markup — there
-  // is nothing to hydrate, so shipping it as an island only costs bytes.
   if (isHydratable) {
     throw new Error('<ViewTransitions /> must not be hydrated — it emits static CSS only. Remove the mochi: directives.');
   }
 
-  // Interpolated straight into CSS, so a bad value would emit a silently
-  // broken stylesheet — fail loudly instead.
   if (!Number.isFinite(duration) || duration < 0) {
     throw new Error(`<ViewTransitions /> duration must be a non-negative number of milliseconds, got ${JSON.stringify(duration)}.`);
   }
 
-  // Only one instance may own the page's transition CSS: a second one would
-  // emit the same global `@keyframes mochi-vt-*` names and competing root
-  // rules, leaving the winner to cascade order. The first instance rendered
-  // in a request claims the page via `locals`; later instances warn and emit
-  // nothing. Outside a request (e.g. rendering a component directly in tests)
-  // getRequestContext() throws — there is no page to claim, so render.
   const isFirst = (() => {
     let locals: Record<string, unknown>;
     try {
@@ -121,9 +112,9 @@
       .join('\n    ');
   });
 
-  // Build the full <style> tag here rather than in the markup: svelte2tsx
-  // (svelte-check) mis-parses a literal `</style>` inside a markup `{@html}`
-  // expression, but in the script it's just string data.
+  // Assemble the full <style> tag as a string and hand it to <RawScript /> to
+  // inline. Building it here (not in markup) keeps the literal `</style>` out of
+  // the template, which svelte2tsx (svelte-check) mis-parses in markup.
   const styleTag = $derived(
     `<style>@view-transition { navigation: auto; }${rootReset}
     ${animationRules}
@@ -135,6 +126,7 @@
 </script>
 
 <svelte:head>
-  <!-- eslint-disable-next-line svelte/no-at-html-tags -- framework-generated CSS from a fixed enum, numeric duration, and developer-authored selectors/names (layout props, never end-user input) -->
-  {@html isFirst ? styleTag : ''}
+  {#if isFirst}
+    <RawScript string={styleTag} />
+  {/if}
 </svelte:head>
