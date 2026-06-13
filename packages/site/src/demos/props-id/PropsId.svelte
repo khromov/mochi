@@ -23,9 +23,7 @@
   {sources}
 >
   <h3>Static component (no hydration)</h3>
-  <p class="hint">
-    $props.id() works with zero JavaScript shipped — the id is minted during SSR and the native label/for link works on its own. Click the label to focus the input.
-  </p>
+  <p class="hint">$props.id() works with zero JavaScript shipped — the id is minted during SSR, no hydration required.</p>
   <StaticField />
 
   <h3>Two hydrated islands, two ids</h3>
