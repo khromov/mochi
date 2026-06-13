@@ -140,7 +140,7 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
         // Always emit signed-props for server islands (no empty-props optimization)
         // because islandId is always injected, and all props must be HMAC-signed
         // to prevent client-side tampering via query parameters.
-        let attrs = `island-id={__mochi_iid} component-name="${comp.name}" signed-props={__mochi_sign_props__(__mochi_stringify__(${propsExpr}))} css-url="__MOCHI_SERVER_CSS_URL__${comp.name}__" data-asset-prefix="__MOCHI_ASSET_PREFIX__"`;
+        let attrs = `component-name="${comp.name}" signed-props={__mochi_sign_props__(__mochi_stringify__(${propsExpr}))} css-url="__MOCHI_SERVER_CSS_URL__${comp.name}__" data-asset-prefix="__MOCHI_ASSET_PREFIX__"`;
 
         // `mochi:defer:visible` defers the fetch until the wrapper enters the
         // viewport. `rootMargin` rides inside the existing `server-options`
@@ -211,13 +211,13 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
 
         // Build wrapper attributes
         const propsExpr = buildPropsFromAst(source, comp.attributes);
-        let attrs = `island-id={__mochi_iid} component-name="${comp.name}" component-url="__MOCHI_COMPONENT_URL__${comp.name}__"`;
+        let attrs = `component-name="${comp.name}" component-url="__MOCHI_COMPONENT_URL__${comp.name}__"`;
         // Skip props when component has no props to avoid serializing empty objects in HTML.
         // `__mochi_emit_props__` registers the payload in the per-request dedup map and
         // returns a ref id; the matching <script type="application/json"> block is
         // hoisted into the body by ComponentRegistry after render.
         if (propsExpr !== '{}') {
-          attrs += ` props-ref={__mochi_emit_props__(${propsExpr}, __mochi_iid)}`;
+          attrs += ` props-ref={__mochi_emit_props__(${propsExpr})}`;
         }
         if (isVisible) {
           attrs += ` hydrate-on="visible"`;
@@ -240,7 +240,6 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
           innerTag = `<${comp.name}${propsSource ? ' ' + propsSource : ''} ${autoProps} />`;
         }
 
-        const constDecl = `{#if true}{@const __mochi_iid = \`\${${pid}}-\${__mochi_uid__++}\`}`;
         // Wrap the island in <svelte:boundary> so an SSR throw inside the
         // component doesn't take down the parent page render. The boundary sits
         // OUTSIDE <mochi-hydratable-island> so its <!--[-->…<!--]--> markers
@@ -264,8 +263,14 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
         // through the mount fallback).
         const failedSnippet =
           `{#snippet failed(error)}` + `<mochi-island-failure data-component=${JSON.stringify(comp.name)} data-message={error.message}></mochi-island-failure>` + `{/snippet}`;
+        // The `{#if true}` wrapper gives each island its own scope: every island
+        // declares a `{#snippet failed}` under the same name, and without a
+        // per-island block Svelte collapses them to one shared snippet so a
+        // throwing island renders a sibling island's failure stub. The block
+        // adds page-level `<!--[-->…<!--]-->` markers, stripped by the existing
+        // stripPageMarkers pass.
         const replacement =
-          `${constDecl}<svelte:boundary>${failedSnippet}` +
+          `{#if true}<svelte:boundary>${failedSnippet}` +
           `<mochi-hydratable-island ${attrs}><svelte:boundary>${innerTag}</svelte:boundary></mochi-hydratable-island>` +
           `</svelte:boundary>{/if}`;
         s.overwrite(comp.start, comp.end, replacement);
@@ -279,7 +284,11 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
   const needsEmitProps = hydratables.length > 0;
   const needsStringify = serverIslands.length > 0;
   const needsSignProps = serverIslands.length > 0;
-  const needsUid = hydratables.length > 0 || serverIslands.length > 0;
+  // Only server islands need the `__mochi_iid` transport id (it rides inside
+  // their signed envelope as `idPrefix` for the standalone render). Hydratable
+  // islands no longer carry an id — Svelte recovers `$props.id()` from its own
+  // `<!--$...-->` comment markers on hydration.
+  const needsUid = serverIslands.length > 0;
 
   if ((needsEmitProps || needsStringify || needsSignProps) && ast.instance) {
     const contentStart = (ast.instance.content as unknown as Positioned).start;

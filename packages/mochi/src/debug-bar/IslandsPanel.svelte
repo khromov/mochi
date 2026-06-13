@@ -1,7 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { SvelteSet } from 'svelte/reactivity';
-  import { logger } from 'mochi-framework';
   import type { IslandInfo } from './types';
   import { formatSize, getPropsWarnLevel, PROPS_WARN_RED_BYTES, PROPS_WARN_YELLOW_BYTES } from './utils';
   import IslandRow from './IslandRow.svelte';
@@ -55,11 +54,6 @@
     const server = document.querySelectorAll('mochi-server-island');
 
     hydratable.forEach((el) => {
-      const id = el.getAttribute('island-id');
-      if (!id) {
-        logger.warn('[debug] Hydratable island missing island-id:', el);
-        return;
-      }
       const name = el.getAttribute('component-name') ?? 'unknown';
       const mode = el.getAttribute('hydrate-on') === 'visible' ? 'mochi:hydrate:visible' : 'mochi:hydrate';
       // Props may be inline (`props=...`) or hoisted into a shared
@@ -74,33 +68,31 @@
       }
       const propsSize = rawProps?.length ?? 0;
       result.push({
-        id,
+        el: el as HTMLElement,
         name,
         type: 'hydrated',
         mode,
         propsSize,
         rawProps,
+        signedProps: null,
         propsRef,
         serverOptions: null,
       });
     });
 
     server.forEach((el) => {
-      const id = el.getAttribute('island-id');
-      if (!id) {
-        logger.warn('[debug] Server island missing island-id:', el);
-        return;
-      }
       const name = el.getAttribute('component-name') ?? 'unknown';
       const mode = describeServerIslandMode(el.getAttribute('defer-on'), el.getAttribute('also-hydrate'));
-      const propsSize = el.getAttribute('signed-props')?.length ?? 0;
+      const signedProps = el.getAttribute('signed-props');
+      const propsSize = signedProps?.length ?? 0;
       result.push({
-        id,
+        el: el as HTMLElement,
         name,
         type: 'server',
         mode,
         propsSize,
         rawProps: null,
+        signedProps,
         propsRef: null,
         serverOptions: el.getAttribute('server-options'),
       });
@@ -149,14 +141,14 @@
 
       {#if hydratedIslands.length > 0}
         <div class="island-group-label">Hydrated Islands</div>
-        {#each hydratedIslands as island (island.id)}
+        {#each hydratedIslands as island (island.el)}
           <IslandRow {island} />
         {/each}
       {/if}
 
       {#if serverIslands.length > 0}
         <div class="island-group-label">Server Islands</div>
-        {#each serverIslands as island (island.id)}
+        {#each serverIslands as island (island.el)}
           <IslandRow {island} />
         {/each}
       {/if}

@@ -85,8 +85,6 @@ export interface DebugBarData {
   pathname: string;
   /** Route params extracted from the pattern. */
   params: Record<string, string>;
-  /** islandId → pretty-printed props JSON. */
-  islandProps: Record<string, string>;
   /**
    * Always `true` in dev while the page-cache feature is being rebuilt; the
    * `/__mochi/admin/page-cache` route serves placeholder data. The debug bar

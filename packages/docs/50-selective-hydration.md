@@ -65,7 +65,7 @@ For a unique, SSR-stable id inside an island, use Svelte's native [`$props.id()`
 <input id="{uid}-email" type="email" />
 ```
 
-Each component instance gets its own id, so repeating the same island on a page never produces duplicate DOM ids. It also works inside server islands: their standalone renders are namespaced with the wrapper's `island-id` (via render's `idPrefix`), so ids from a deferred fragment cannot collide with ids already on the page.
+Each component instance gets its own id, so repeating the same island on a page never produces duplicate DOM ids. It also works inside server islands: their standalone renders are namespaced with the island id carried inside the signed props envelope (via render's `idPrefix`), so ids from a deferred fragment cannot collide with ids already on the page.
 
 ### `mochi:hydrate:visible`
 

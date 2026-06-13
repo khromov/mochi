@@ -123,7 +123,6 @@ export function makeRequestContextBuilder(cfg: RequestSetupConfig): RequestConte
         route: opts.pattern,
         pathname: url.pathname,
         params,
-        islandProps: {},
         pageCacheEnabled: true,
         varyOnCookies: [],
       };

@@ -327,13 +327,13 @@ Fires whenever the registry rebuilds the hydratable client bundle (one Bun.build
 
 Fires when an island fails — server-island render, hydratable SSR render, or client-side hydration. The framework still ships an error placeholder; this event lets you observe it.
 
-| Field           | Type                                           | Notes                              |
-| --------------- | ---------------------------------------------- | ---------------------------------- |
-| `componentName` | `string`                                       | island component identifier        |
-| `islandId`      | `string \| undefined`                          | DOM `island-id` if known           |
-| `kind`          | `'hydratable' \| 'server' \| 'client-hydrate'` | which lifecycle stage failed       |
-| `message`       | `string`                                       | error message                      |
-| `stack`         | `string \| undefined`                          | stack trace, populated in dev only |
+| Field           | Type                                           | Notes                                             |
+| --------------- | ---------------------------------------------- | ------------------------------------------------- |
+| `componentName` | `string`                                       | island component identifier                       |
+| `islandId`      | `string \| undefined`                          | envelope id; set for `'server'`, else `undefined` |
+| `kind`          | `'hydratable' \| 'server' \| 'client-hydrate'` | which lifecycle stage failed                      |
+| `message`       | `string`                                       | error message                                     |
+| `stack`         | `string \| undefined`                          | stack trace, populated in dev only                |
 
 #### `file:change`
 

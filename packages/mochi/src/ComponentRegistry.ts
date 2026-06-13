@@ -1224,12 +1224,7 @@ export class ComponentRegistry {
       ctx.islandProps.clear();
     }
     if (ctx?.debugBarData) {
-      debugBarData = { ...ctx.debugBarData, islandProps: { ...ctx.debugBarData.islandProps } };
-      // Clear only the dynamic SSR-collected entries; route/pathname/params
-      // were set at request start and stay valid across a same-request rerender.
-      for (const k of Object.keys(ctx.debugBarData.islandProps)) {
-        delete ctx.debugBarData.islandProps[k];
-      }
+      debugBarData = { ...ctx.debugBarData };
 
       if (this.debugBarEnabled && this.clientStats) {
         const urlToComponent = new Map<string, string>();

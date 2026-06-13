@@ -63,7 +63,7 @@ const DEFAULT_HTML_SHELL = await Bun.file(new URL('./templates/default-shell.htm
 /**
  * Dev-only: append a trailing `<script>` after the response body that mixes
  * the current request's response headers and inbound cookies into
- * `window.__mochi_debug`. The static fields (route, params, islandProps, …)
+ * `window.__mochi_debug`. The static fields (route, params, …)
  * are baked into the body in `resolveHtmlShell` and cached with it; the
  * dynamic fields written here always reflect *this* request, so cache hits
  * still see the correct headers and cookies.
@@ -1113,13 +1113,7 @@ export class Mochi {
           const serializedProps = devalueStringify(props);
           const bootstrapUrl = registry.getIslandBootstrapUrl();
 
-          if (!islandId) {
-            logger.warn(`Server island "${componentName}" missing islandId in props`);
-          }
           let hydrateAttrs = `component-name="${componentName}"`;
-          if (islandId) {
-            hydrateAttrs += ` island-id="${islandId}"`;
-          }
           if (Object.keys(props as Record<string, unknown>).length > 0) {
             const escapedProps = serializedProps.replace(/"/g, '&quot;');
             hydrateAttrs += ` props="${escapedProps}"`;

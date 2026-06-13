@@ -14,12 +14,16 @@ declare global {
 }
 
 export interface IslandInfo {
-  id: string;
+  /** The wrapper element itself — the stable identity for keying and locating. */
+  el: HTMLElement;
   name: string;
   type: 'hydrated' | 'server';
   mode: string;
   propsSize: number;
+  /** Hydratable islands: devalue JSON from the inline `props` attr or shared block. */
   rawProps: string | null;
+  /** Server islands: the HMAC-signed props token, decoded client-side on demand. */
+  signedProps: string | null;
   /** If set, props were deduplicated server-side into a shared <script> block. */
   propsRef: string | null;
   serverOptions: string | null;

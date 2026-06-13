@@ -14,7 +14,7 @@ function makeCtx(opts?: { dev?: boolean }): MochiRequestContext {
     isWarmup: false,
     cookies: new MochiCookieJar(null),
     islandProps: new Map(),
-    debugBarData: opts?.dev ? { route: '/', pathname: '/', params: {}, islandProps: {} } : undefined,
+    debugBarData: opts?.dev ? { route: '/', pathname: '/', params: {} } : undefined,
     getClientAddress: () => null,
   };
 }
@@ -92,56 +92,6 @@ describe('emitIslandProps', () => {
     // Same payload, but each request started fresh — both should get id 0.
     expect(id1).toBe('mochi-props-0');
     expect(id2).toBe('mochi-props-0');
-  });
-
-  test('records pretty-printed JSON in debugBarData.islandProps when islandId given (dev)', () => {
-    withCtx(
-      (ctx) => {
-        emitIslandProps({ count: 5, title: 'Hello' }, 'mochi-abc-0');
-        const pretty = ctx.debugBarData!.islandProps['mochi-abc-0'];
-        expect(pretty).toBeDefined();
-        // Pretty-printed: contains newlines and indentation, parses back to original.
-        expect(pretty!).toContain('\n');
-        expect(pretty!).toContain('  ');
-        // The recorded form is JSON of the devalue stringification — parsing it
-        // yields the devalue array form, not the original object.
-        expect(() => JSON.parse(pretty!)).not.toThrow();
-      },
-      { dev: true },
-    );
-  });
-
-  test('does not touch debugBarData.islandProps when no islandId is supplied (dev)', () => {
-    withCtx(
-      (ctx) => {
-        emitIslandProps({ x: 1 });
-        expect(Object.keys(ctx.debugBarData!.islandProps)).toHaveLength(0);
-      },
-      { dev: true },
-    );
-  });
-
-  test('is a no-op for debug recording when debugBarData is undefined (prod)', () => {
-    withCtx((ctx) => {
-      const id = emitIslandProps({ x: 1 }, 'mochi-abc-0');
-      expect(id).toBe('mochi-props-0');
-      expect(ctx.debugBarData).toBeUndefined();
-    });
-  });
-
-  test('two islands with identical payloads share a ref id but record separate debug entries', () => {
-    withCtx(
-      (ctx) => {
-        const a = emitIslandProps({ count: 5 }, 'mochi-abc-0');
-        const b = emitIslandProps({ count: 5 }, 'mochi-abc-1');
-        expect(a).toBe(b);
-        expect(ctx.islandProps.size).toBe(1);
-        const debugIslands = ctx.debugBarData!.islandProps;
-        expect(Object.keys(debugIslands).sort()).toEqual(['mochi-abc-0', 'mochi-abc-1']);
-        expect(debugIslands['mochi-abc-0']).toBe(debugIslands['mochi-abc-1']);
-      },
-      { dev: true },
-    );
   });
 });
 

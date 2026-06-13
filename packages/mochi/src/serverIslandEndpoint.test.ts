@@ -1,17 +1,17 @@
 // Boots a real Mochi.serve() and exercises the server-island endpoint
-// end-to-end: `islandId` is transport-only (stripped before the component
-// renders), `idPrefix` namespaces the standalone render's `$props.id()` off
-// the wrapper's island-id, incompatible legacy ids (containing `--`, which
-// Svelte rejects as an idPrefix) skip namespacing instead of failing, and the
-// `mochi:defer mochi:hydrate` path carries the namespaced id into the
-// hydratable wrapper the client re-fetches.
+// end-to-end: `islandId` is transport-only (it rides inside the signed props
+// envelope, stripped before the component renders), `idPrefix` namespaces the
+// standalone render's `$props.id()` off that envelope id, incompatible legacy
+// ids (containing `--`, which Svelte rejects as an idPrefix) skip namespacing
+// instead of failing, and the `mochi:defer mochi:hydrate` path carries the
+// namespaced id into the hydratable wrapper the client re-fetches.
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import type { Server } from 'bun';
-import { stringify as devalueStringify } from 'devalue';
+import { parse as devalueParse, stringify as devalueStringify } from 'devalue';
 import { Mochi } from './Mochi';
-import { signProps } from './serverIslandCrypto';
+import { signProps, verifyAndDecodeProps } from './serverIslandCrypto';
 
 const FIXTURE_PAGE = path.join(import.meta.dir, '__fixtures__', 'server-island-endpoint', 'Page.svelte');
 
@@ -21,6 +21,7 @@ describe('server island endpoint', () => {
   let base: string;
   let islandId: string;
   let token: string;
+  let pageWrapper: string;
 
   beforeAll(async () => {
     outDir = mkdtempSync(path.join(import.meta.dir, '..', '.mochi-island-endpoint-'));
@@ -36,14 +37,21 @@ describe('server island endpoint', () => {
     base = `http://localhost:${server.port}`;
 
     // Drive the endpoint exactly like the ServerIsland web component would:
-    // pull island-id and the signed-props token off the page's wrapper element.
+    // the only thing on the wrapper is the signed-props token. The island id is
+    // no longer a separate attribute — it lives inside the signed envelope, so
+    // recover it the same way the endpoint does (verify + devalue-parse).
     const html = await (await fetch(`${base}/`)).text();
     const wrapper = html.match(/<mochi-server-island\b[^>]*>/)?.[0];
     if (!wrapper) {
       throw new Error('fixture page did not render a <mochi-server-island> wrapper');
     }
-    islandId = wrapper.match(/island-id="([^"]+)"/)![1]!;
+    pageWrapper = wrapper;
     token = wrapper.match(/signed-props="([^"]+)"/)![1]!;
+    const decoded = verifyAndDecodeProps(token);
+    if (!decoded) {
+      throw new Error('could not verify the page wrapper signed-props token');
+    }
+    islandId = (devalueParse(decoded) as { islandId: string }).islandId;
   });
 
   afterAll(() => {
@@ -51,7 +59,12 @@ describe('server island endpoint', () => {
     rmSync(outDir, { recursive: true, force: true });
   });
 
-  test('strips islandId from props and namespaces $props.id() with the wrapper id', async () => {
+  test('the page wrapper carries no island-id attribute', () => {
+    expect(pageWrapper).not.toContain('island-id=');
+    expect(pageWrapper).toContain('signed-props=');
+  });
+
+  test('strips islandId from props and namespaces $props.id() with the envelope id', async () => {
     const res = await fetch(`${base}/_mochi/island/Echo?props=${encodeURIComponent(token)}`);
     expect(res.status).toBe(200);
     const body = await res.text();
@@ -101,11 +114,12 @@ describe('server island endpoint', () => {
     expect(res.status).toBe(200);
     const body = await res.text();
 
-    // Wrapped for client hydration and tagged with the wrapper's island-id.
+    // Wrapped for client hydration — but with no redundant island-id attribute;
+    // the id lives in the SSR `<!--$…-->` markers the client hydrates against.
     expect(body).toContain('<mochi-hydratable-island');
-    expect(body).toContain(`island-id="${islandId}"`);
+    expect(body).not.toContain('island-id=');
 
-    // The id the client will hydrate against is still prefixed.
+    // The id the client will hydrate against is still prefixed by the envelope id.
     const uid = body.match(/data-uid="([^"]+)"/)![1]!;
     expect(uid.startsWith(`${islandId}-`)).toBe(true);
   });
