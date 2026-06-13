@@ -4,7 +4,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import type { BunPlugin } from 'bun';
 import { isSvelteMarker, normalizeAssetPrefix, normalizeIslandHydrationMarkers, stripHydrationMarkers, toCompileErrorLogs, toPosixPath } from './utils';
-import { renderIslandPropsScript } from './islandPropsRegistry';
+import { injectIslandPropsBlock } from './islandPropsRegistry';
 import { requestContext } from './requestContext';
 import type { DebugBarData } from './requestContext';
 import { logger } from './log';
@@ -1208,14 +1208,7 @@ export class ComponentRegistry {
               if (raw) {
                 renderedIslandNames.add(raw);
               }
-              const ref = el.getAttribute('props-ref');
-              if (ref && !emittedProps.has(ref)) {
-                const entry = propsById.get(ref);
-                if (entry) {
-                  emittedProps.add(ref);
-                  el.before(renderIslandPropsScript(ref, entry.json, entry.count), { html: true });
-                }
-              }
+              injectIslandPropsBlock(el, propsById, emittedProps);
             },
           })
           .on('mochi-server-island', {

@@ -57,3 +57,26 @@ export function renderIslandPropsScript(id: string, json: string, count: number)
   const shared = count >= 2 ? ' data-shared' : '';
   return `<script type="application/json" id="${id}"${shared}>${safe}</script>`;
 }
+
+/**
+ * Insert one island's props block immediately before `el` — the first
+ * `<mochi-hydratable-island>` that references it. `ComponentRegistry`'s
+ * HTMLRewriter pass calls this for every island in document order: `propsById`
+ * maps a ref id to its payload + use count, and `emitted` records ids already
+ * written so islands sharing a byte-identical payload reuse the single block
+ * emitted before the first of them. Islands with no `props-ref` — or a ref
+ * absent from the registry, e.g. the server-island also-hydrate path that
+ * inlines `props=` — are left untouched.
+ */
+export function injectIslandPropsBlock(el: HTMLRewriterTypes.Element, propsById: Map<string, { json: string; count: number }>, emitted: Set<string>): void {
+  const ref = el.getAttribute('props-ref');
+  if (!ref || emitted.has(ref)) {
+    return;
+  }
+  const entry = propsById.get(ref);
+  if (!entry) {
+    return;
+  }
+  emitted.add(ref);
+  el.before(renderIslandPropsScript(ref, entry.json, entry.count), { html: true });
+}
