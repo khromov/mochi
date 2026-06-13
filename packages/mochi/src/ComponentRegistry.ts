@@ -561,7 +561,7 @@ export class ComponentRegistry {
       target: 'bun',
       conditions: ['svelte'],
       // Svelte stays external because it's a peer dep the consumer already
-      // provides. Everything else (devalue, cookie, nanoid, etc.) gets bundled
+      // provides. Everything else (devalue, cookie, etc.) gets bundled
       // — but with `splitting: true` Bun emits shared transitive
       // deps into separate chunk files alongside each entry's `.server.js`,
       // so they're written exactly once across the cohort. Two
@@ -1077,7 +1077,7 @@ export class ComponentRegistry {
     });
   }
 
-  async renderComponent(filename: string, props?: Record<string, unknown>, opts?: { stripMarkers?: boolean }): Promise<RenderResult> {
+  async renderComponent(filename: string, props?: Record<string, unknown>, opts?: { stripMarkers?: boolean; idPrefix?: string }): Promise<RenderResult> {
     await this.compile(filename);
     const { module: mod, cssComponents, hydratables } = this.compiledComponents.get(filename)!;
 
@@ -1124,11 +1124,15 @@ export class ComponentRegistry {
     const renderOptions: {
       props?: Record<string, unknown>;
       transformError: typeof transformError;
+      idPrefix?: string;
     } = {
       transformError,
     };
     if (props) {
       renderOptions.props = props;
+    }
+    if (opts?.idPrefix) {
+      renderOptions.idPrefix = opts.idPrefix;
     }
     const { body, head } = await render(mod.default, renderOptions);
 
@@ -1225,12 +1229,7 @@ export class ComponentRegistry {
       ctx.islandProps.clear();
     }
     if (ctx?.debugBarData) {
-      debugBarData = { ...ctx.debugBarData, islandProps: { ...ctx.debugBarData.islandProps } };
-      // Clear only the dynamic SSR-collected entries; route/pathname/params
-      // were set at request start and stay valid across a same-request rerender.
-      for (const k of Object.keys(ctx.debugBarData.islandProps)) {
-        delete ctx.debugBarData.islandProps[k];
-      }
+      debugBarData = { ...ctx.debugBarData };
 
       if (this.debugBarEnabled && this.clientStats) {
         const urlToComponent = new Map<string, string>();

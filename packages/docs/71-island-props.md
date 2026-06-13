@@ -100,24 +100,23 @@ For `mochi:defer` server islands the flow is similar, except props are HMAC-sign
 
 ### Auto-injected props
 
-The framework appends two read-only props to every island invocation. Destructure them in `$props()` to use them:
+The framework appends one read-only prop to every island invocation. Destructure it in `$props()` to use it:
 
 ```svelte
 <!-- file: src/lib/UserCard.svelte -->
 <script lang="ts">
   let {
-    islandId,
     isHydratable,
     user,
   }: {
-    islandId?: string;
     isHydratable?: boolean;
     user: { name: string; id: number };
   } = $props();
 </script>
 ```
 
-- `islandId` — string matching the wrapper's `island-id` attribute. Always present on `mochi:hydrate`, `mochi:hydrate:visible`, and `mochi:defer`.
 - `isHydratable` — `true` when the call site uses `mochi:hydrate`, `mochi:hydrate:visible`, or `mochi:defer mochi:hydrate`. Undefined for pure SSR-only invocations and for bare `mochi:defer`.
 
-Do **NOT** declare `islandId` or `isHydratable` as user-controlled props; instead, treat them as inputs the framework owns. See `Selective hydration with mochi:hydrate` for the branching pattern.
+Do **NOT** declare `isHydratable` as a user-controlled prop; instead, treat it as an input the framework owns. See `Selective hydration with mochi:hydrate` for the branching pattern. For a unique per-instance id, use Svelte's native `$props.id()` instead of a prop.
+
+`islandId` is a reserved name on every island (`mochi:hydrate` and `mochi:defer` alike) — passing it as a literal prop is a compile error, so a component can move between directives without the name silently changing meaning. On `mochi:defer` it is also the framework's transport key inside the signed envelope, stripped server-side before the component renders; a spread carrying it there is overridden by the framework value (last key wins). For a unique id inside the component, use `$props.id()`.

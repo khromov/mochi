@@ -1,4 +1,6 @@
 .mochi
+.mochi*
+.mochi-*
 reports
 .claude
 *.tsbuildinfo
@@ -8,4 +10,5 @@ docs
 CHANGELOG.md
 README.md
 scripts/leak
-.mochi-*
+LICENSE*
+scripts/

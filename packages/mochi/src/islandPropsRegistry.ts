@@ -1,5 +1,4 @@
 import { stringify } from 'devalue';
-import { escapeHtmlAttr } from './htmlEscape';
 import { logger } from './log';
 import { getRequestContext } from './requestContext';
 
@@ -17,10 +16,9 @@ export interface IslandPropsEntry {
  * Serialize a hydratable island's props via devalue and register them in the
  * per-request dedup registry. Returns a stable ref id (e.g. "mochi-props-3")
  * that the preprocessor emits as the `props-ref` attribute. After SSR,
- * `ComponentRegistry` rewrites single-use payloads to an inline `props`
- * attribute (via `inlineSingleUseProps`) and hoists payloads shared by two or
- * more islands into `<script type="application/json" id="mochi-props-N">`
- * blocks.
+ * `injectIslandPropsScripts` emits each payload as a
+ * `<script type="application/json" id="mochi-props-N">` block placed just
+ * before the first island that references it.
  *
  * Two islands whose serialized JSON is byte-identical share the same ref id;
  * that's the entire dedup mechanism.
@@ -68,49 +66,42 @@ export function emitIslandProps(value: unknown, islandId?: string): string {
 }
 
 /**
- * Build the `<script type="application/json">` blocks that carry props shared
- * by two or more islands on a single rendered page; single-use payloads are
- * inlined by `inlineSingleUseProps` instead and get no block. Caller is
- * responsible for prepending the result to the rendered body. Every `<` inside
- * the JSON is escaped to its `<` JSON unicode escape so the HTML
- * script-data tokenizer (which ignores `type="application/json"`) cannot see a
- * `</script` sequence and terminate the block early.
+ * Emit each registered props payload as a `<script type="application/json"
+ * id="mochi-props-N">` block placed immediately before the first
+ * `<mochi-hydratable-island>` that references it. Islands sharing a payload
+ * (byte-identical serialized JSON) collapse to a single ref id, so only the
+ * first one gets a block; the rest read it by id at hydration time.
+ *
+ * The match is anchored to the `<mochi-hydratable-island` start tag because
+ * Svelte does not escape `"` in text nodes — page prose could otherwise
+ * contain a literal `props-ref="mochi-props-0"` — while a raw `<` can never
+ * appear in Svelte-escaped text. `[^>]*?` is safe because the preprocessor
+ * emits `props-ref` before `hydrate-options`, the only island attribute whose
+ * value can contain `>`.
+ *
+ * Every `<` inside the JSON is escaped to its `<` JSON unicode escape so
+ * the HTML script-data tokenizer (which ignores `type="application/json"`)
+ * cannot see a `</script` sequence and terminate the block early.
  */
-export function buildIslandPropsScripts(registry: Map<string, IslandPropsEntry>): string {
-  let out = '';
-  for (const [json, entry] of registry) {
-    if (entry.count < 2) {
-      continue;
-    }
-    const safe = json.replace(/</g, '\\u003C');
-    out += `<script type="application/json" id="${entry.id}">${safe}</script>`;
-  }
-  return out;
-}
-
-/**
- * Rewrite `props-ref="mochi-props-N"` to an inline `props="…"` attribute for
- * every payload emitted by exactly one island, so the shared-block indirection
- * only exists when something is actually shared. The match is anchored to the
- * `<mochi-hydratable-island` start tag because Svelte does not escape `"` in
- * text nodes — page prose could otherwise contain a literal
- * `props-ref="mochi-props-0"` — while a raw `<` can never appear in
- * Svelte-escaped text. `[^>]*?` is safe because the preprocessor emits
- * `props-ref` before `hydrate-options`, the only island attribute whose value
- * can contain `>`.
- */
-export function inlineSingleUseProps(html: string, registry: Map<string, IslandPropsEntry>): string {
-  const inline = new Map<string, string>();
-  for (const [json, entry] of registry) {
-    if (entry.count === 1) {
-      inline.set(entry.id, json);
-    }
-  }
-  if (inline.size === 0) {
+export function injectIslandPropsScripts(html: string, registry: Map<string, IslandPropsEntry>): string {
+  if (registry.size === 0) {
     return html;
   }
-  return html.replace(/(<mochi-hydratable-island\b[^>]*?) props-ref="(mochi-props-\d+)"/g, (m, prefix: string, id: string) => {
-    const json = inline.get(id);
-    return json === undefined ? m : `${prefix} props="${escapeHtmlAttr(json)}"`;
+  const byId = new Map<string, string>();
+  for (const [json, entry] of registry) {
+    byId.set(entry.id, json);
+  }
+  const emitted = new Set<string>();
+  return html.replace(/<mochi-hydratable-island\b[^>]*? props-ref="(mochi-props-\d+)"/g, (m, id: string) => {
+    if (emitted.has(id)) {
+      return m;
+    }
+    const json = byId.get(id);
+    if (json === undefined) {
+      return m;
+    }
+    emitted.add(id);
+    const safe = json.replace(/</g, '\\u003C');
+    return `<script type="application/json" id="${id}">${safe}</script>${m}`;
   });
 }

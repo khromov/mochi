@@ -10,27 +10,12 @@
  * payloads are prefixed with '~' (not in base64url alphabet).
  */
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { parse as devalParse } from 'devalue';
 import { getMochiConfig } from './mochiConfig';
-import { requestContext } from './requestContext';
 
 /** '~' is not in the base64url alphabet [A-Za-z0-9_-], so it unambiguously marks compressed payloads. */
 const COMPRESSED_PREFIX = '~';
 
 export function signProps(propsJson: string): string {
-  try {
-    const ctx = requestContext.getStore();
-    if (ctx?.debugBarData) {
-      const obj = devalParse(propsJson);
-      const id = obj?.islandId;
-      if (id) {
-        ctx.debugBarData.islandProps[id] = JSON.stringify(obj, null, 2);
-      }
-    }
-  } catch {
-    // Debug recording is best-effort; ignore failures.
-  }
-
   const { secretKey, options } = getMochiConfig();
   // Truncate HMAC-SHA256 to 128 bits (16 bytes / 22 base64url chars).
   // 128-bit HMAC is secure per NIST SP 800-107 and saves 21 chars per token.

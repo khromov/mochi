@@ -50,9 +50,8 @@ describe('cachedPreprocessHydratable', () => {
     const a = cachedPreprocessHydratable(ISLAND_SOURCE, '/test/A.svelte');
     __resetPreprocessMemCache();
     const b = cachedPreprocessHydratable(ISLAND_SOURCE, '/test/A.svelte');
-    // Different object identity proves a re-run happened. The `nanoid(8)` baseId
-    // baked into the transformed source regenerates per call, so the transformed
-    // strings differ — but the deterministic hydratables array stays equal.
+    // Different object identity proves a re-run happened (the preprocess
+    // output itself is deterministic, so only identity can tell them apart).
     expect(b).not.toBe(a);
     expect(b.hydratables).toEqual(a.hydratables);
   });
