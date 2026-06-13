@@ -32,8 +32,3 @@ export async function decodeSignedProps(token: string): Promise<Record<string, u
   }
   return devalueParse(json) as Record<string, unknown>;
 }
-
-/** Parse a hydratable island's devalue-serialized props (inline or shared block). */
-export function parseHydratableProps(json: string): unknown {
-  return devalueParse(json);
-}

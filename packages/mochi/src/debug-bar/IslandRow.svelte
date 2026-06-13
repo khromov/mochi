@@ -5,7 +5,8 @@
   import type { IslandInfo } from './types';
   import { formatSize } from './utils';
   import { locateIsland } from './highlight';
-  import { decodeSignedProps, parseHydratableProps } from './decodeProps';
+  import { parse as devalueParse } from 'devalue';
+  import { decodeSignedProps } from './decodeProps';
   import formatHighlight from '../vendor/json-format-highlight/index.ts';
 
   let { island }: { island: IslandInfo } = $props();
@@ -46,7 +47,7 @@
       return { text: '(no props)' };
     }
     try {
-      return { html: formatHighlight(parseHydratableProps(island.rawProps), highlightColors) };
+      return { html: formatHighlight(devalueParse(island.rawProps), highlightColors) };
     } catch {
       return { text: island.rawProps };
     }

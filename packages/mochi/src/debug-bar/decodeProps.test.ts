@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { stringify as devalueStringify } from 'devalue';
+import { parse as devalueParse, stringify as devalueStringify } from 'devalue';
 import { signProps } from '../serverIslandCrypto';
-import { decodeSignedProps, parseHydratableProps } from './decodeProps';
+import { decodeSignedProps } from './decodeProps';
 
 const GLOBAL_CONFIG_KEY = '__mochi_config__';
 
@@ -39,9 +39,9 @@ describe('decodeSignedProps', () => {
   });
 });
 
-describe('parseHydratableProps', () => {
+describe('hydratable props (devalue round-trip)', () => {
   test('parses devalue-serialized props back to the original object graph', () => {
     const props = { items: [1, 2, 3], nested: { x: 0 } };
-    expect(parseHydratableProps(devalueStringify(props))).toEqual(props);
+    expect(devalueParse(devalueStringify(props))).toEqual(props);
   });
 });
