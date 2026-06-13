@@ -1,8 +1,10 @@
 // Boots a real Mochi.serve() and exercises the server-island endpoint
 // end-to-end: `islandId` is transport-only (stripped before the component
 // renders), `idPrefix` namespaces the standalone render's `$props.id()` off
-// the wrapper's island-id, and incompatible legacy ids (containing `--`,
-// which Svelte rejects as an idPrefix) skip namespacing instead of failing.
+// the wrapper's island-id, incompatible legacy ids (containing `--`, which
+// Svelte rejects as an idPrefix) skip namespacing instead of failing, and the
+// `mochi:defer mochi:hydrate` path carries the namespaced id into the
+// hydratable wrapper the client re-fetches.
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
@@ -87,5 +89,24 @@ describe('server island endpoint', () => {
     expect(body).not.toContain('mochi-island-failure');
     expect(body).toContain('>Bare<');
     expect(body.match(/data-uid="([^"]+)"/)![1]!).toMatch(/^s\d+$/);
+  });
+
+  // `mochi:defer mochi:hydrate`: the client (ServerIsland.ts) re-fetches with
+  // `hydrate=eager`, so the endpoint wraps the render in a hydratable island.
+  // The namespaced `$props.id()` must survive into that wrapper — the client's
+  // `hydrate()` reads the id back from the SSR `<!--$…-->` marker, so a prefixed
+  // server id is exactly what hydrates, keeping it collision-free with the host.
+  test('also-hydrate wraps the namespaced render in a hydratable island', async () => {
+    const res = await fetch(`${base}/_mochi/island/Echo?props=${encodeURIComponent(token)}&hydrate=eager`);
+    expect(res.status).toBe(200);
+    const body = await res.text();
+
+    // Wrapped for client hydration and tagged with the wrapper's island-id.
+    expect(body).toContain('<mochi-hydratable-island');
+    expect(body).toContain(`island-id="${islandId}"`);
+
+    // The id the client will hydrate against is still prefixed.
+    const uid = body.match(/data-uid="([^"]+)"/)![1]!;
+    expect(uid.startsWith(`${islandId}-`)).toBe(true);
   });
 });

@@ -398,7 +398,7 @@ describe('preprocessHydratable', () => {
 
   test('literal islandId prop on a server island is rejected', () => {
     const source = `${SCRIPT('import Srv from "./Srv.svelte";')}<Srv mochi:defer islandId="mine" />`;
-    expect(() => preprocessHydratable(source, '/test/File.svelte')).toThrow(/reserved transport key/);
+    expect(() => preprocessHydratable(source, '/test/File.svelte')).toThrow(/reserved framework name/);
   });
 
   test('framework islandId wins over a user spread on server islands', () => {
@@ -410,13 +410,11 @@ describe('preprocessHydratable', () => {
     expect(transformed).toContain('{...rest, islandId: __mochi_iid}');
   });
 
-  test('islandId on a plain hydrate island stays an ordinary user prop', () => {
+  test('literal islandId prop on a plain hydrate island is rejected too', () => {
     const source = `${SCRIPT('import Foo from "./Foo.svelte";')}<Foo mochi:hydrate islandId="mine" />`;
-    const { transformed } = preprocessHydratable(source, '/test/File.svelte');
-
-    // The framework no longer owns the name outside `mochi:defer` transport —
-    // it passes through like any other prop.
-    expect(transformed).toContain('<Foo islandId="mine" isHydratable={true} />');
+    // `islandId` is reserved on every island, not just `mochi:defer`, so a
+    // component can move between directives without the prop changing meaning.
+    expect(() => preprocessHydratable(source, '/test/File.svelte')).toThrow(/reserved framework name/);
   });
 
   test('hydrate island serialized props do not contain islandId', () => {

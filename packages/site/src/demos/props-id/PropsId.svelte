@@ -4,12 +4,14 @@
   import StaticField from './StaticField.svelte';
   import LabeledField from './LabeledField.svelte';
   import ServerStamp from './ServerStamp.svelte';
+  import ServerHydratedStamp from './ServerHydratedStamp.svelte';
 
   const sources = await loadSources([
     { label: 'PropsId.svelte', path: './src/demos/props-id/PropsId.svelte' },
     { label: 'StaticField.svelte', path: './src/demos/props-id/StaticField.svelte' },
     { label: 'LabeledField.svelte', path: './src/demos/props-id/LabeledField.svelte' },
     { label: 'ServerStamp.svelte', path: './src/demos/props-id/ServerStamp.svelte' },
+    { label: 'ServerHydratedStamp.svelte', path: './src/demos/props-id/ServerHydratedStamp.svelte' },
     { label: 'routes.ts', path: './src/demos/props-id/routes.ts' },
     { label: 'index.ts', path: './src/demoIndex.ts' },
   ]);
@@ -36,6 +38,13 @@
     Deferred islands render in a separate request; Mochi namespaces their ids with the island's own id (via render's idPrefix) so they cannot collide with ids already on the page.
   </p>
   <ServerStamp mochi:defer />
+
+  <h3>Server island that also hydrates</h3>
+  <p class="hint">
+    With <code>mochi:defer mochi:hydrate</code> the namespaced id is read back from the SSR markers when the fragment hydrates — click the button and the id stays exactly the same, proving
+    the value survived from the deferred render into the hydrated client.
+  </p>
+  <ServerHydratedStamp mochi:defer mochi:hydrate />
 </DemoPage>
 
 <style>

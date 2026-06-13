@@ -49,6 +49,12 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
   // Also detect an existing `const x = $props.id()` declaration — Svelte
   // allows only one per component (`props_duplicate`), so when the author
   // already has one we must reuse its identifier instead of injecting ours.
+  //
+  // Limitation: this only scans top-level instance-script variable
+  // declarations (the idiomatic `const id = $props.id()`). A `$props.id()`
+  // call nested in a function/snippet, or otherwise not bound to a top-level
+  // identifier, won't be detected — we'd inject our own and Svelte would then
+  // fail with `props_duplicate`. Not worth handling until someone hits it.
   const importMap = new Map<string, string>();
   let pidVar: string | null = null;
   if (ast.instance) {
@@ -103,24 +109,27 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
 
       const resolved = path.resolve(path.dirname(filePath), importPath);
 
+      // `islandId` is a reserved framework name on every island, rejected on
+      // both `mochi:defer` and `mochi:hydrate` so the two directives behave
+      // the same. On `mochi:defer` it's the transport key inside the signed
+      // envelope (stripped before the component renders); erroring everywhere
+      // means a component can move between directives without a prop silently
+      // changing meaning. For a unique id, use Svelte's `$props.id()`.
+      const islandDirective = directives.server ?? directives.hydrate!;
+      for (const attr of comp.attributes) {
+        if (attr.type === 'Attribute' && attr.name === 'islandId') {
+          throw new Error(
+            `\`islandId\` is a reserved framework name and cannot be passed as a prop to a \`${islandDirective.name}\` island. ` +
+              `For a unique id inside ${comp.name}, use Svelte's \`$props.id()\`.`,
+          );
+        }
+      }
+
       if (directives.server) {
         // --- SERVER ISLAND ---
         if (!seenServer.has(resolved)) {
           seenServer.add(resolved);
           serverIslands.push({ name: comp.name, resolvedPath: resolved });
-        }
-
-        // `islandId` is the framework's transport key inside the signed
-        // envelope — the island endpoint strips it before rendering, so a
-        // user prop by that name would never reach the component. Reject it
-        // loudly instead of silently dropping it.
-        for (const attr of comp.attributes) {
-          if (attr.type === 'Attribute' && attr.name === 'islandId') {
-            throw new Error(
-              `\`islandId\` is a reserved transport key on \`${directives.server.name}\` islands and cannot be passed as a prop. ` +
-                `For a unique id inside ${comp.name}, use Svelte's \`$props.id()\`.`,
-            );
-          }
         }
 
         // Server islands only get `isHydratable: true` when also-hydrate is set
