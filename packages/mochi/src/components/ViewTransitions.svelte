@@ -17,11 +17,7 @@
     // the caller is responsible for setting `view-transition-name` on them.
     regions?: string | string[];
     // CSS selectors for persistent chrome (banner, sidebar, …) to hold STILL
-    // across navigations. Unlike `regions`, which takes names you've already
-    // assigned, `keepElementSelectors` takes selectors and assigns each a
-    // stable name itself, then freezes its group + snapshots so the element
-    // neither moves nor fades. Render the same list on every page (i.e. from a
-    // shared layout) so the outgoing and incoming pages agree on the names.
+    // across navigations.
     keepElementSelectors?: string | string[];
     // Injected by the framework on island invocations (mochi:hydrate*/defer*).
     isHydratable?: boolean;
@@ -35,20 +31,14 @@
     throw new Error(`<ViewTransitions /> duration must be a non-negative number of milliseconds, got ${JSON.stringify(duration)}.`);
   }
 
-  const isFirst = (() => {
-    let locals: Record<string, unknown>;
-    try {
-      locals = getRequestContext().locals;
-    } catch {
-      return true;
-    }
-    if (locals.__mochi_view_transitions__) {
-      devWarn('<ViewTransitions /> was rendered more than once on this page — ignoring this instance. Render exactly one, typically from a shared layout.');
-      return false;
-    }
+  let isFirst = true;
+  const locals = getRequestContext().locals;
+  if (locals.__mochi_view_transitions__) {
+    devWarn('<ViewTransitions /> was rendered more than once on this page — ignoring this instance. Render exactly one, typically from a shared layout.');
+    isFirst = false;
+  } else {
     locals.__mochi_view_transitions__ = true;
-    return true;
-  })();
+  }
 
   const keyframes = {
     fade: `
