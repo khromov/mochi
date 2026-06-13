@@ -1,14 +1,14 @@
 <script lang="ts">
   import DemoPage from '../../components/DemoPage.svelte';
   import { loadSources } from '../../components/utils.ts';
-  import StaticField from './StaticField.svelte';
+  import Field from './Field.svelte';
   import LabeledField from './LabeledField.svelte';
   import ServerStamp from './ServerStamp.svelte';
   import ServerHydratedStamp from './ServerHydratedStamp.svelte';
 
   const sources = await loadSources([
     { label: 'PropsId.svelte', path: './src/demos/props-id/PropsId.svelte' },
-    { label: 'StaticField.svelte', path: './src/demos/props-id/StaticField.svelte' },
+    { label: 'Field.svelte', path: './src/demos/props-id/Field.svelte' },
     { label: 'LabeledField.svelte', path: './src/demos/props-id/LabeledField.svelte' },
     { label: 'ServerStamp.svelte', path: './src/demos/props-id/ServerStamp.svelte' },
     { label: 'ServerHydratedStamp.svelte', path: './src/demos/props-id/ServerHydratedStamp.svelte' },
@@ -24,7 +24,7 @@
 >
   <h3>Static component (no hydration)</h3>
   <p class="hint">$props.id() works with zero JavaScript shipped — the id is minted during SSR, no hydration required.</p>
-  <StaticField />
+  <Field />
 
   <h3>Two hydrated islands, two ids</h3>
   <p class="hint">Each instance gets its own id, so the label/for pairs never collide. Hydration reuses the server-generated value — the id you see was minted during SSR.</p>
