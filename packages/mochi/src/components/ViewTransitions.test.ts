@@ -43,7 +43,6 @@ describe('ViewTransitions', () => {
     ['scale', 'scale(0.92)'],
     ['blur', 'blur(6px)'],
     ['flip', 'rotateY(-90deg)'],
-    ['wipe', 'clip-path: inset(0 100% 0 0)'],
   ])('%s emits its own keyframes, not the fade ones', async (type, marker) => {
     const { head } = await registry.renderComponent(COMPONENT_PATH, { type });
     expect(head).toContain(marker);

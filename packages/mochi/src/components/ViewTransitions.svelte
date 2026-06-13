@@ -9,7 +9,7 @@
     keepElementSelectors,
     isHydratable,
   }: {
-    type?: 'fade' | 'slide' | 'scale' | 'blur' | 'flip' | 'wipe';
+    type?: 'fade' | 'slide' | 'scale' | 'blur' | 'flip';
     duration?: number;
     // Confine the animation to elements carrying these `view-transition-name`s.
     // Omit to animate the whole page (the `root` snapshot). When given, the
@@ -57,9 +57,6 @@
     flip: `
       @keyframes mochi-vt-out { to { transform: perspective(1200px) rotateY(-90deg); opacity: 0; } }
       @keyframes mochi-vt-in { from { transform: perspective(1200px) rotateY(90deg); opacity: 0; } }`,
-    wipe: `
-      @keyframes mochi-vt-out { to { clip-path: inset(0 100% 0 0); } }
-      @keyframes mochi-vt-in { from { clip-path: inset(0 0 0 100%); } }`,
   } as const;
 
   const targets = $derived(regions == null ? ['root'] : Array.isArray(regions) ? regions : [regions]);

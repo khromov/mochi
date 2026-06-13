@@ -3,7 +3,7 @@
 // stripDemoWrapper, like the inline loadSources call it replaces.
 import { loadSources } from '../../components/utils.ts';
 
-export const TRANSITIONS = ['fade', 'slide', 'scale', 'blur', 'flip', 'wipe'] as const;
+export const TRANSITIONS = ['fade', 'slide', 'scale', 'blur', 'flip'] as const;
 export type TransitionType = (typeof TRANSITIONS)[number];
 
 export function parseTransition(value: string | null): TransitionType {

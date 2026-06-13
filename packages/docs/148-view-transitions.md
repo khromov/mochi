@@ -38,7 +38,7 @@ Don't hydrate it: the component emits static CSS and no markup, so there's nothi
 
 | Prop                   | Type                                                         | Default  | Description                                                           |
 | ---------------------- | ------------------------------------------------------------ | -------- | --------------------------------------------------------------------- |
-| `type`                 | `'fade' \| 'slide' \| 'scale' \| 'blur' \| 'flip' \| 'wipe'` | `'fade'` | The transition preset.                                                |
+| `type`                 | `'fade' \| 'slide' \| 'scale' \| 'blur' \| 'flip'`          | `'fade'` | The transition preset.                                                |
 | `duration`             | `number` (ms)                                                | `250`    | Animation duration.                                                   |
 | `regions`              | `string \| string[]`                                         | —        | Confine the animation to elements with these `view-transition-name`s. |
 | `keepElementSelectors` | `string \| string[]`                                         | —        | CSS selectors for persistent chrome to hold still across navigations. |
@@ -47,7 +47,7 @@ Don't hydrate it: the component emits static CSS and no markup, so there's nothi
 <ViewTransitions type="slide" duration={400} />
 ```
 
-Six presets ship built in: `fade` (crossfade), `slide` (horizontal translate), `scale` (zoom in/out), `blur` (focus pull), `flip` (3D Y-axis rotation), and `wipe` (directional `clip-path` reveal). They all animate the page root, so they apply to any page with no per-element setup, and reduced-motion users get no animation automatically.
+Five presets ship built in: `fade` (crossfade), `slide` (horizontal translate), `scale` (zoom in/out), `blur` (focus pull), and `flip` (3D Y-axis rotation). They all animate the page root, so they apply to any page with no per-element setup, and reduced-motion users get no animation automatically.
 
 ### Animating only part of the page
 
