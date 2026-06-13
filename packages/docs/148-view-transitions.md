@@ -36,12 +36,12 @@ Don't hydrate it: the component emits static CSS and no markup, so there's nothi
 
 ### Props
 
-| Prop                   | Type                                                         | Default  | Description                                                           |
-| ---------------------- | ------------------------------------------------------------ | -------- | --------------------------------------------------------------------- |
-| `type`                 | `'fade' \| 'slide' \| 'scale' \| 'blur' \| 'flip'`          | `'fade'` | The transition preset.                                                |
-| `duration`             | `number` (ms)                                                | `250`    | Animation duration.                                                   |
-| `regions`              | `string \| string[]`                                         | —        | Confine the animation to elements with these `view-transition-name`s. |
-| `keepElementSelectors` | `string \| string[]`                                         | —        | CSS selectors for persistent chrome to hold still across navigations. |
+| Prop                   | Type                                               | Default  | Description                                                           |
+| ---------------------- | -------------------------------------------------- | -------- | --------------------------------------------------------------------- |
+| `type`                 | `'fade' \| 'slide' \| 'scale' \| 'blur' \| 'flip'` | `'fade'` | The transition preset.                                                |
+| `duration`             | `number` (ms)                                      | `250`    | Animation duration.                                                   |
+| `regions`              | `string \| string[]`                               | —        | Confine the animation to elements with these `view-transition-name`s. |
+| `keepElementSelectors` | `string \| string[]`                               | —        | CSS selectors for persistent chrome to hold still across navigations. |
 
 ```svelte
 <ViewTransitions type="slide" duration={400} />
