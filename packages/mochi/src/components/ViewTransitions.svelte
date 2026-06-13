@@ -33,6 +33,7 @@
 
   let isFirst = true;
   const locals = getRequestContext().locals;
+  // __mochi_view_transitions__ is the internal key we use to track whether we've already rendered a <ViewTransitions /> for this page.
   if (locals.__mochi_view_transitions__) {
     devWarn('<ViewTransitions /> was rendered more than once on this page — ignoring this instance. Render exactly one, typically from a shared layout.');
     isFirst = false;
