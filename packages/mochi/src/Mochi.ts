@@ -1045,22 +1045,23 @@ export class Mochi {
       const hydrateMode = url.searchParams.get('hydrate');
 
       // Verify signature and decode props (empty means no props)
-      let props: Record<string, unknown>;
+      let decodedProps: Record<string, unknown>;
       if (signedProps) {
         const propsJson = verifyAndDecodeProps(signedProps);
         if (propsJson === null) {
           return new Response('Invalid props signature', { status: 403 });
         }
-        props = devalueParse(propsJson) as Record<string, unknown>;
+        decodedProps = devalueParse(propsJson) as Record<string, unknown>;
       } else {
-        props = {};
+        decodedProps = {};
       }
 
       // `islandId` rides inside the signed envelope as transport only — it
       // identifies the wrapper for debug/error reporting and must not reach
-      // the component as a prop (components use `$props.id()` for ids).
-      const islandId = typeof props.islandId === 'string' ? props.islandId : undefined;
-      delete props.islandId;
+      // the component as a prop (components use `$props.id()` for ids). Split it
+      // off into a fresh object rather than deleting in place.
+      const { islandId: rawIslandId, ...props } = decodedProps;
+      const islandId = typeof rawIslandId === 'string' ? rawIslandId : undefined;
 
       // Look up the component path
       const componentPath = registry.getServerIslandPath(componentName);
