@@ -65,7 +65,7 @@ describe('ViewTransitions', () => {
   });
 
   test('keep names a selector and freezes its group + snapshots', async () => {
-    const { head } = await registry.renderComponent(COMPONENT_PATH, { keep: '.banner' });
+    const { head } = await registry.renderComponent(COMPONENT_PATH, { keepElementSelectors: '.banner' });
     expect(head).toContain('.banner { view-transition-name: mochi-vt-keep-banner; }');
     expect(head).toContain('::view-transition-group(mochi-vt-keep-banner)');
     expect(head).toContain('::view-transition-old(mochi-vt-keep-banner)');
@@ -73,20 +73,20 @@ describe('ViewTransitions', () => {
   });
 
   test('keep accepts a list and sanitizes each selector into a readable ident', async () => {
-    const { head } = await registry.renderComponent(COMPONENT_PATH, { keep: ['.banner', '.gh-corner'] });
+    const { head } = await registry.renderComponent(COMPONENT_PATH, { keepElementSelectors: ['.banner', '.gh-corner'] });
     expect(head).toContain('view-transition-name: mochi-vt-keep-banner;');
     expect(head).toContain('view-transition-name: mochi-vt-keep-gh-corner;');
   });
 
   test('keep names are order-independent', async () => {
-    const a = await registry.renderComponent(COMPONENT_PATH, { keep: ['.banner', '.hero'] });
-    const b = await registry.renderComponent(COMPONENT_PATH, { keep: ['.hero', '.banner'] });
+    const a = await registry.renderComponent(COMPONENT_PATH, { keepElementSelectors: ['.banner', '.hero'] });
+    const b = await registry.renderComponent(COMPONENT_PATH, { keepElementSelectors: ['.hero', '.banner'] });
     expect(a.head).toContain('.banner { view-transition-name: mochi-vt-keep-banner; }');
     expect(b.head).toContain('.banner { view-transition-name: mochi-vt-keep-banner; }');
   });
 
   test('keep still animates the page root by default', async () => {
-    const { head } = await registry.renderComponent(COMPONENT_PATH, { keep: '.banner' });
+    const { head } = await registry.renderComponent(COMPONENT_PATH, { keepElementSelectors: '.banner' });
     expect(head).toContain('::view-transition-old(root) { animation: mochi-vt-out');
     // The reduced-motion fallback always freezes root, so scope the check to the
     // base rules: outside that media block, root must still animate (no `regions` freeze).
@@ -95,7 +95,7 @@ describe('ViewTransitions', () => {
   });
 
   test('keep composes with regions: root frozen, region animates, chrome held', async () => {
-    const { head } = await registry.renderComponent(COMPONENT_PATH, { regions: 'card', keep: '.banner' });
+    const { head } = await registry.renderComponent(COMPONENT_PATH, { regions: 'card', keepElementSelectors: '.banner' });
     expect(head).toContain('::view-transition-old(card) { animation: mochi-vt-out');
     expect(head).toContain('::view-transition-old(root), ::view-transition-new(root) { animation: none; }');
     expect(head).toContain('::view-transition-group(mochi-vt-keep-banner)');
@@ -107,19 +107,19 @@ describe('ViewTransitions', () => {
   });
 
   test('keep disambiguates selectors that sanitize to the same slug', async () => {
-    const { head } = await registry.renderComponent(COMPONENT_PATH, { keep: ['.banner', '#banner'] });
+    const { head } = await registry.renderComponent(COMPONENT_PATH, { keepElementSelectors: ['.banner', '#banner'] });
     expect(head).toContain('.banner { view-transition-name: mochi-vt-keep-banner; }');
     expect(head).toContain('#banner { view-transition-name: mochi-vt-keep-banner-1; }');
   });
 
   test('keep falls back to the `el` slug for selectors with no alphanumerics', async () => {
-    const { head } = await registry.renderComponent(COMPONENT_PATH, { keep: ['*', ':root > *'] });
+    const { head } = await registry.renderComponent(COMPONENT_PATH, { keepElementSelectors: ['*', ':root > *'] });
     expect(head).toContain('* { view-transition-name: mochi-vt-keep-el; }');
     expect(head).toContain(':root > * { view-transition-name: mochi-vt-keep-root; }');
   });
 
   test('keep rejects selectors containing "<"', async () => {
-    await expect(registry.renderComponent(COMPONENT_PATH, { keep: '</style><script>' })).rejects.toThrow('must not contain "<"');
+    await expect(registry.renderComponent(COMPONENT_PATH, { keepElementSelectors: '</style><script>' })).rejects.toThrow('must not contain "<"');
   });
 
   test('throws when invoked as an island (isHydratable)', async () => {

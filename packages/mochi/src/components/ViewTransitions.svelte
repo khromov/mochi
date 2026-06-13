@@ -1,21 +1,11 @@
 <script lang="ts">
   import { getRequestContext, devWarn } from 'mochi-framework';
 
-  // Zero-JS cross-document view transitions: opting into `@view-transition`
-  // makes the browser animate full-page navigations for us. Mochi is an MPA, so
-  // there's no client router to hook — both the page you leave and the page you
-  // land on just need this rule in their <head>, which is why this belongs in a
-  // shared layout rendered on every page. Animations target the `root` snapshot
-  // so they apply to any page with no per-element `view-transition-name` setup.
-  // The CSS is emitted as a raw <style> string rather than a scoped component
-  // <style> block: the `::view-transition-*` pseudo-elements are document-global
-  // and bound to no element here, so Svelte's CSS scoper would prune them.
-
   let {
     type = 'fade',
     duration = 250,
     regions,
-    keep,
+    keepElementSelectors,
     isHydratable,
   }: {
     type?: 'fade' | 'slide';
@@ -27,11 +17,11 @@
     regions?: string | string[];
     // CSS selectors for persistent chrome (banner, sidebar, …) to hold STILL
     // across navigations. Unlike `regions`, which takes names you've already
-    // assigned, `keep` takes selectors and assigns each a stable name itself,
-    // then freezes its group + snapshots so the element neither moves nor
-    // fades. Render the same list on every page (i.e. from a shared layout) so
-    // the outgoing and incoming pages agree on the names.
-    keep?: string | string[];
+    // assigned, `keepElementSelectors` takes selectors and assigns each a
+    // stable name itself, then freezes its group + snapshots so the element
+    // neither moves nor fades. Render the same list on every page (i.e. from a
+    // shared layout) so the outgoing and incoming pages agree on the names.
+    keepElementSelectors?: string | string[];
     // Injected by the framework on island invocations (mochi:hydrate*/defer*).
     isHydratable?: boolean;
   } = $props();
@@ -101,7 +91,7 @@
   // reordered and read cleanly in devtools; a per-slug counter disambiguates
   // the rare case where two selectors sanitize to the same slug.
   const keepRules = $derived.by(() => {
-    const selectors = keep == null ? [] : Array.isArray(keep) ? keep : [keep];
+    const selectors = keepElementSelectors == null ? [] : Array.isArray(keepElementSelectors) ? keepElementSelectors : [keepElementSelectors];
     // eslint-disable-next-line svelte/prefer-svelte-reactivity -- local scratch state rebuilt on every evaluation of this derived; nothing reactive escapes it
     const seen = new Map<string, number>();
     return selectors
@@ -109,7 +99,7 @@
         // Selectors are interpolated into a raw <style> tag; a `<` could close
         // it and inject markup. Always developer-authored, so just refuse.
         if (selector.includes('<')) {
-          throw new Error(`<ViewTransitions /> keep selectors must not contain "<", got ${JSON.stringify(selector)}.`);
+          throw new Error(`<ViewTransitions /> keepElementSelectors must not contain "<", got ${JSON.stringify(selector)}.`);
         }
         // `|| 'el'` covers selectors with no alphanumerics at all (e.g. `*`),
         // which would otherwise slug to an empty string.

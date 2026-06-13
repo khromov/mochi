@@ -36,12 +36,12 @@ Don't hydrate it: the component emits static CSS and no markup, so there's nothi
 
 ### Props
 
-| Prop       | Type                 | Default  | Description                                                           |
-| ---------- | -------------------- | -------- | --------------------------------------------------------------------- |
-| `type`     | `'fade' \| 'slide'`  | `'fade'` | The transition preset.                                                |
-| `duration` | `number` (ms)        | `250`    | Animation duration.                                                   |
-| `regions`  | `string \| string[]` | —        | Confine the animation to elements with these `view-transition-name`s. |
-| `keep`     | `string \| string[]` | —        | CSS selectors for persistent chrome to hold still across navigations. |
+| Prop                   | Type                 | Default  | Description                                                           |
+| ---------------------- | -------------------- | -------- | --------------------------------------------------------------------- |
+| `type`                 | `'fade' \| 'slide'`  | `'fade'` | The transition preset.                                                |
+| `duration`             | `number` (ms)        | `250`    | Animation duration.                                                   |
+| `regions`              | `string \| string[]` | —        | Confine the animation to elements with these `view-transition-name`s. |
+| `keepElementSelectors` | `string \| string[]` | —        | CSS selectors for persistent chrome to hold still across navigations. |
 
 ```svelte
 <ViewTransitions type="slide" duration={400} />
@@ -80,13 +80,13 @@ Cross-document view transitions are supported in current Chromium browsers. Wher
 
 ### Keeping elements still
 
-By default the whole page crossfades. To hold persistent chrome — a banner, sidebar, or header — still instead, pass `keep` a list of CSS selectors. Each matched element is lifted out of the page crossfade and frozen (both its position and its snapshots) while the rest of the page transitions:
+By default the whole page crossfades. To hold persistent chrome — a banner, sidebar, or header — still instead, pass `keepElementSelectors` a list of CSS selectors. Each matched element is lifted out of the page crossfade and frozen (both its position and its snapshots) while the rest of the page transitions:
 
 ```svelte
-<ViewTransitions type="fade" keep={['.banner', '.sidebar']} />
+<ViewTransitions type="fade" keepElementSelectors={['.banner', '.sidebar']} />
 ```
 
-`keep` assigns each selector a unique `view-transition-name` and emits the freeze CSS for you, so there's nothing to hand-write. Render the same list on every page — i.e. from your shared layout — so the page you leave and the page you land on agree.
+`keepElementSelectors` assigns each selector a unique `view-transition-name` and emits the freeze CSS for you, so there's nothing to hand-write. Render the same list on every page — i.e. from your shared layout — so the page you leave and the page you land on agree.
 
 <Callout type="warning">
 
@@ -94,7 +94,7 @@ Each selector must match **exactly one** element per page. `view-transition-name
 
 </Callout>
 
-If you'd rather wire it by hand — or need finer control — give the element a [`view-transition-name`](https://developer.mozilla.org/en-US/docs/Web/CSS/view-transition-name) in your own CSS and zero its animations; that's exactly what `keep` generates:
+If you'd rather wire it by hand — or need finer control — give the element a [`view-transition-name`](https://developer.mozilla.org/en-US/docs/Web/CSS/view-transition-name) in your own CSS and zero its animations; that's exactly what `keepElementSelectors` generates:
 
 ```css
 .sidebar {

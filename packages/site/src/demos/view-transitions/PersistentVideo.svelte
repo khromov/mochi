@@ -21,7 +21,7 @@
     background: linear-gradient(135deg, #2b3d33 0%, #4a7c59 100%);
     border: 1px solid var(--border);
     /* The video owns its cross-document view transition rather than going
-       through <ViewTransitions keep>: a stable name lets the outgoing and
+       through <ViewTransitions keepElementSelectors>: a stable name lets the outgoing and
        incoming pages pair the element up. */
     view-transition-name: mochi-vt-video;
   }
