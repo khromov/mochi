@@ -1,0 +1,30 @@
+{
+  "spinnerVerbs": {
+    "mode": "append",
+    "verbs": [
+      "Hydrating",
+      "Pre-rendering",
+      "Compiling",
+      "Bundling",
+      "Preprocessing",
+      "Tree-shaking",
+      "Serializing",
+      "Devaluing",
+      "Resolving",
+      "Mounting",
+      "Reconciling",
+      "Deferring",
+      "Streaming",
+      "Upgrading",
+      "Emitting",
+      "Island-hopping",
+      "Bun-warming",
+      "Pounding",
+      "Kneading",
+      "Steaming",
+      "Squishing",
+      "Jiggling",
+      "Mochifying"
+    ]
+  }
+}
