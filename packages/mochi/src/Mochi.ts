@@ -7,12 +7,14 @@ import type { RenderResult } from './ComponentRegistry';
 import { loadSvelteConfig } from './svelteConfig';
 import { buildInlineWebComponent } from './buildInlineWebComponent';
 import { buildClientStatsRoutes, CLIENT_STATS_COMPONENT } from './clientStatsRoutes';
-import { isMochiPage, isMochiApi, isMochiWs, isMochiSse, isServerPropsResolver } from './types';
+import { isMochiPage, isMochiApi, isMochiWs, isMochiSse, isMochiFile, isServerPropsResolver } from './types';
 import type {
   BunRouteValue,
   HttpMethod,
   MochiApiConfig,
   MochiApiHandler,
+  MochiFileConfig,
+  MochiFileResolver,
   MochiPageConfig,
   MochiPageHandlerConfig,
   MochiFormActionResult,
@@ -32,6 +34,7 @@ import { isFormFail, isFormRedirect, isFormSuccess } from './forms';
 import { isEnhanceRequest, jsonError, jsonFailure, jsonRedirect, jsonSuccess } from './formsJson';
 import { csrfCheck, DEFAULT_FORM_CONTENT_TYPES, DEFAULT_PROTECTED_METHODS } from './csrf';
 import { applyFilter, initExtensions, runHook } from './extensions';
+import { escapeHtmlAttr } from './htmlEscape';
 import { buildPublicUrl } from './proxy';
 import { apiError, collectHeaderPairs, headResponse, isHtmlResponse, MochiHttpError, withHead } from './utils';
 import type { MochiEvent, MochiEventKind, MochiResolveOptions } from './hooks';
@@ -48,7 +51,6 @@ import { initMochiConfig } from './mochiConfig';
 import { logger, setLogLevel, DEFAULT_LOG_LEVEL, type LogLevel } from './log';
 import { mochiEvents } from './events';
 import type { MochiActionResult, MochiErrorEvent, MochiErrorKind, MochiServerStartEvent, MochiServerStopEvent } from './events';
-import { nanoid } from 'nanoid';
 import type { DebugBarData, DebugBarRuntimeData } from './requestContext';
 import { consoleLogger } from './consoleLogger';
 import { parse as devalueParse, stringify as devalueStringify } from 'devalue';
@@ -62,7 +64,7 @@ const DEFAULT_HTML_SHELL = await Bun.file(new URL('./templates/default-shell.htm
 /**
  * Dev-only: append a trailing `<script>` after the response body that mixes
  * the current request's response headers and inbound cookies into
- * `window.__mochi_debug`. The static fields (route, params, islandProps, …)
+ * `window.__mochi_debug`. The static fields (route, params, …)
  * are baked into the body in `resolveHtmlShell` and cached with it; the
  * dynamic fields written here always reflect *this* request, so cache hits
  * still see the correct headers and cookies.
@@ -130,6 +132,10 @@ export class Mochi {
 
   static sse(handler: MochiSseHandler): MochiSseConfig {
     return { __mochiSse: true, handler };
+  }
+
+  static file(source: string | MochiFileResolver): MochiFileConfig {
+    return { __mochiFile: true, source };
   }
 
   private static resolveHtmlShell(
@@ -241,7 +247,7 @@ export class Mochi {
           return inbound;
         }
       }
-      return nanoid(32);
+      return Bun.randomUUIDv7();
     };
 
     const { enabled: loggerEnabled = true, level: configuredLevel, ...loggerOptions } = options.logger ?? {};
@@ -401,7 +407,7 @@ export class Mochi {
     const sseHandlerMap = development ? new Map<string, MochiSseHandler>() : undefined;
     const pageConfigMap = development ? new Map<string, MochiPageHandlerConfig>() : undefined;
     const bunRoutes: Record<string, BunRouteValue> = {};
-    const routeCounts = { page: 0, api: 0, ws: 0, sse: 0 };
+    const routeCounts = { page: 0, api: 0, ws: 0, sse: 0, file: 0 };
     const trailingSlashPolicy = options.trailingSlash;
 
     const buildRequestContext = makeRequestContextBuilder({
@@ -924,6 +930,66 @@ export class Mochi {
           });
         };
         return { bunRouteValue, type: 'sse' };
+      } else if (isMochiFile(handler)) {
+        const source = handler.source;
+
+        const bunRouteValue: BunRouteValue = async (req: Request, server: Server<undefined>): Promise<Response> => {
+          const setup = buildRequestContext(req, server, { kind: 'file', pattern });
+          if ('earlyResponse' in setup) {
+            return setup.earlyResponse;
+          }
+          const { ctx, start, requestId, url, params } = setup;
+
+          return requestContext.run(ctx, async () => {
+            runHook('route:matched', { pattern, request: req, url, params, kind: 'file' });
+
+            const finish = (response: Response): Response => {
+              const final = finalizeCookieHeaders(response, ctx.cookies);
+              mochiEvents.emit('request', {
+                requestId,
+                kind: 'file',
+                method: req.method,
+                path: url.pathname + url.search,
+                status: final.status,
+                duration: performance.now() - start,
+              });
+              return final;
+            };
+
+            try {
+              const filePath = typeof source === 'function' ? await source(req, ctx.params) : source;
+              // Route params are URL-decoded and may contain `../`; confine every
+              // resolved path to the app root so a resolver can't be tricked into
+              // serving files outside the project.
+              const resolvedPath = path.resolve(filePath);
+              const appRoot = process.cwd();
+              if (!resolvedPath.startsWith(appRoot + path.sep)) {
+                emitError('file', requestId, req, url, 404, new Error(`Path escapes the app root: ${filePath}`));
+                return finish(new Response('Not Found', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } }));
+              }
+              const file = Bun.file(resolvedPath);
+              if (!(await file.exists())) {
+                emitError('file', requestId, req, url, 404, new Error(`File not found: ${filePath}`));
+                return finish(new Response('Not Found', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } }));
+              }
+              if (req.method === 'HEAD') {
+                return finish(new Response(null, { status: 200, headers: { 'Content-Type': file.type || 'application/octet-stream', 'Content-Length': String(file.size) } }));
+              }
+              // new Response(Bun.file) sets Content-Type and Content-Length automatically.
+              return finish(new Response(file));
+            } catch (err) {
+              if (err instanceof MochiHttpError) {
+                logger.error(`${req.method} ${url.pathname} → ${err.status}: ${err.message}`);
+                emitError('file', requestId, req, url, err.status, err);
+                return finish(new Response(err.message, { status: err.status, headers: { 'Content-Type': 'text/plain; charset=utf-8' } }));
+              }
+              logger.error(`${req.method} ${url.pathname} → 500:`, err);
+              emitError('file', requestId, req, url, 500, err);
+              return finish(new Response('Internal Server Error', { status: 500, headers: { 'Content-Type': 'text/plain; charset=utf-8' } }));
+            }
+          });
+        };
+        return { bunRouteValue, type: 'file' };
       }
       return null;
     }
@@ -980,16 +1046,23 @@ export class Mochi {
       const hydrateMode = url.searchParams.get('hydrate');
 
       // Verify signature and decode props (empty means no props)
-      let props: Record<string, unknown>;
+      let decodedProps: Record<string, unknown>;
       if (signedProps) {
         const propsJson = verifyAndDecodeProps(signedProps);
         if (propsJson === null) {
           return new Response('Invalid props signature', { status: 403 });
         }
-        props = devalueParse(propsJson) as Record<string, unknown>;
+        decodedProps = devalueParse(propsJson) as Record<string, unknown>;
       } else {
-        props = {};
+        decodedProps = {};
       }
+
+      // `islandId` rides inside the signed envelope as transport only — it
+      // identifies the wrapper for debug/error reporting and must not reach
+      // the component as a prop (components use `$props.id()` for ids). Split it
+      // off into a fresh object rather than deleting in place.
+      const { islandId: rawIslandId, ...props } = decodedProps;
+      const islandId = typeof rawIslandId === 'string' ? rawIslandId : undefined;
 
       // Look up the component path
       const componentPath = registry.getServerIslandPath(componentName);
@@ -1002,15 +1075,21 @@ export class Mochi {
         await registry.compile(componentPath);
         let result: RenderResult;
         try {
+          // Namespacing via `idPrefix` keeps `$props.id()` values from this
+          // standalone render from colliding with ids the host page already
+          // emitted (both renders otherwise start their uid counter at `s1`).
+          // Svelte rejects prefixes containing `--`, so guard against tokens
+          // signed by an older deploy carrying an incompatible id.
           result = await registry.renderComponent(componentPath, props as Record<string, unknown>, {
             stripMarkers: false,
+            ...(islandId && !islandId.includes('--') ? { idPrefix: islandId } : {}),
           });
         } catch (err) {
           const e = err instanceof Error ? err : new Error(String(err));
           logger.error(`Server island "${componentName}" failed: ${e.message}`);
           mochiEvents.emit('island:error', {
             componentName,
-            islandId: (props as Record<string, unknown>).islandId as string | undefined,
+            islandId,
             kind: 'server',
             message: e.message,
             stack: registry.development ? e.stack : undefined,
@@ -1036,17 +1115,9 @@ export class Mochi {
           const serializedProps = devalueStringify(props);
           const bootstrapUrl = registry.getIslandBootstrapUrl();
 
-          const islandId = props.islandId as string | undefined;
-          if (!islandId) {
-            logger.warn(`Server island "${componentName}" missing islandId in props`);
-          }
           let hydrateAttrs = `component-name="${componentName}"`;
-          if (islandId) {
-            hydrateAttrs += ` island-id="${islandId}"`;
-          }
           if (Object.keys(props as Record<string, unknown>).length > 0) {
-            const escapedProps = serializedProps.replace(/"/g, '&quot;');
-            hydrateAttrs += ` props="${escapedProps}"`;
+            hydrateAttrs += ` props="${escapeHtmlAttr(serializedProps)}"`;
           }
           if (componentUrl) {
             hydrateAttrs += ` component-url="${componentUrl}"`;

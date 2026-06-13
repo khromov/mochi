@@ -65,19 +65,20 @@ export function trace(msg: string) {
 
 ## Auto-injected island props
 
-The preprocessor injects two extra props on every component invoked with `mochi:hydrate`, `mochi:hydrate:visible`, or `mochi:defer mochi:hydrate`:
+The preprocessor injects one extra prop on every component invoked with `mochi:hydrate`, `mochi:hydrate:visible`, or `mochi:defer mochi:hydrate`:
 
-- `islandId` (`string`): stable id matching the wrapping `<mochi-hydratable-island island-id>` attribute.
 - `isHydratable` (`true | undefined`): `true` for hydratable invocations, absent on plain SSR-only invocations.
 
-Accept them with `$props`:
+Accept it with `$props`:
 
 ```svelte
 <!-- file: src/lib/Counter.svelte -->
-<script>
-  let { islandId, isHydratable } = $props<{ islandId?: string; isHydratable?: boolean }>();
+<script lang="ts">
+  let { isHydratable }: { isHydratable?: boolean } = $props();
 </script>
 ```
+
+For a unique per-instance id (e.g. `<label for>`), use Svelte's native `$props.id()` — see [Selective hydration](/docs/selective-hydration/).
 
 ### Branching SSR-only behavior with `isHydratable`
 
@@ -85,10 +86,10 @@ Use `isHydratable` to peek request-scoped state only when the client won't take 
 
 ```svelte
 <!-- file: src/lib/RandomRoll.svelte -->
-<script>
+<script lang="ts">
   import { isServer, getRequestContext } from 'mochi-framework';
 
-  let { isHydratable } = $props<{ isHydratable?: boolean }>();
+  let { isHydratable }: { isHydratable?: boolean } = $props();
 
   const initial = isHydratable || !isServer ? null : peekForm();
 

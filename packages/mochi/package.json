@@ -88,16 +88,13 @@
     }
   },
   "dependencies": {
-    "@types/negotiator": "^0.6.4",
     "chokidar": "^4.0.3",
     "deepmerge": "^4.3.1",
     "devalue": "^5.8.1",
     "js-cookie": "^3.0.7",
     "magic-string": "^0.30.21",
     "mitt": "^3.0.1",
-    "nanoid": "^5.1.11",
     "negotiator": "^1.0.0",
-    "stale-while-revalidate-cache": "^3.4.1",
     "svelte-shaker": "0.4.0",
     "zimmerframe": "^1.1.4"
   },

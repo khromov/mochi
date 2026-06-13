@@ -33,6 +33,9 @@ import Snowflake from '@lucide/svelte/icons/snowflake';
 import Fingerprint from '@lucide/svelte/icons/fingerprint';
 import Link from '@lucide/svelte/icons/link';
 import Blend from '@lucide/svelte/icons/blend';
+import FileDown from '@lucide/svelte/icons/file-down';
+import Hash from '@lucide/svelte/icons/hash';
+import Barcode from '@lucide/svelte/icons/barcode';
 
 export interface DemoIconMeta {
   icon: Component;
@@ -48,6 +51,7 @@ export const demoIconFor: Record<string, DemoIconMeta> = {
   Hydratable: { icon: Snowflake, label: 'Server-computed value reused on hydration' },
   Cookies: { icon: Cookie, label: 'Server + client cookies' },
   'Cache Events': { icon: DatabaseZap, label: 'Custom cache event subscriber' },
+  'Request ID': { icon: Barcode, label: 'Per-request correlation id' },
   'Real-time Chat': { icon: MessageCircle, label: 'WebSocket chat' },
   'API Endpoints': { icon: Webhook, label: 'JSON API routes' },
   'Shared State': { icon: Share2, label: 'Shared $state across islands' },
@@ -59,6 +63,7 @@ export const demoIconFor: Record<string, DemoIconMeta> = {
   'Crossing the server-client boundary with props': { icon: Package2, label: 'Props serialized into the island — every devalue type' },
   'Nested Components': { icon: ListTree, label: 'Five-level deep tree under one island' },
   'Shared Props': { icon: Boxes, label: 'Auto-deduplicated island props' },
+  'Unique IDs': { icon: Hash, label: 'Native $props.id() in islands' },
   Forms: { icon: ClipboardPen, label: 'Forms with action handlers' },
   'Using form return data': { icon: Dices, label: 'success({ value }) round-trip via {@attach enhance(...)}' },
   'Form Errors': { icon: OctagonAlert, label: 'Thrown server errors, inline or full-page' },
@@ -74,4 +79,5 @@ export const demoIconFor: Record<string, DemoIconMeta> = {
   'Cookie Vary Test': { icon: Fingerprint, label: 'Response-driven Vary: Cookie' },
   'Isomorphic URL': { icon: Link, label: 'Same url import on server and client' },
   'View Transitions': { icon: Blend, label: 'Animated cross-document navigations' },
+  'File Routes': { icon: FileDown, label: 'Serve a file from disk with Mochi.file()' },
 };

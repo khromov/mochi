@@ -2,7 +2,7 @@
   import { isServer } from 'mochi-framework';
   import { delay } from '../../components/utils.ts';
 
-  let { islandId } = $props();
+  const islandId = $props.id();
 
   await (isServer ? delay(1000, 3000) : Promise.resolve());
 
@@ -12,7 +12,7 @@
 <div class="server-no-props">
   <p>Server island without props</p>
   <p class="number">Random number generated on server: <strong>{randomNumber}</strong></p>
-  <p class="island-id">Island ID: <strong>{islandId}</strong></p>
+  <p class="island-id">$props.id(): <strong>{islandId}</strong></p>
 </div>
 
 <style>

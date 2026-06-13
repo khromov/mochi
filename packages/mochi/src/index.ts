@@ -46,6 +46,8 @@ export type {
   MochiCacheStatus,
   MochiCacheReadEvent,
   MochiCacheRevalidateEvent,
+  MochiCacheRevalidateFailedEvent,
+  MochiCacheErrorEvent,
   MochiServerStartEvent,
   MochiServerStopEvent,
   MochiWarmupStartEvent,
@@ -112,6 +114,8 @@ export type {
   MochiSseConfig,
   MochiSseHandler,
   MochiSseStream,
+  MochiFileConfig,
+  MochiFileResolver,
   BunRouteValue,
   MochiSvelteShakerOptions,
 } from './types';

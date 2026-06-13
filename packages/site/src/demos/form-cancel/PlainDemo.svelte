@@ -1,7 +1,7 @@
 <script lang="ts">
   import { isServer, getRequestContext } from 'mochi-framework';
 
-  let { label } = $props<{ label: string }>();
+  let { label }: { label: string } = $props();
 
   const _form = isServer ? getRequestContext().form : null;
   const initialResult: string | null = _form?.ok && _form.action === 'lookup' ? String(_form.data.result ?? '') : null;

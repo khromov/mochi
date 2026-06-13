@@ -14,12 +14,7 @@ export function cleanupHighlight() {
   }
 }
 
-export function locateIsland(id: string) {
-  const el = document.querySelector(`[island-id="${CSS.escape(id)}"]`) as HTMLElement | null;
-  if (!el) {
-    return;
-  }
-
+export function locateIsland(el: HTMLElement) {
   cleanupHighlight();
 
   const isContents = getComputedStyle(el).display === 'contents';

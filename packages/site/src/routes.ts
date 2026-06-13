@@ -10,6 +10,7 @@ import { routes as cookiesRoutes } from './demos/cookies/routes';
 import { routes as dataLoadingRoutes } from './demos/data-loading/routes';
 import { routes as errorRoutes } from './demos/error/routes';
 import { routes as errorBoundariesRoutes } from './demos/error-boundaries/routes';
+import { routes as fileRoutes } from './demos/file/routes';
 import { routes as fileUploadRoutes } from './demos/file-upload/routes';
 import { routes as fontLoadingRoutes } from './demos/font-loading/routes';
 import { routes as formCancelRoutes } from './demos/form-cancel/routes';
@@ -27,7 +28,9 @@ import { routes as loginRoutes } from './demos/login/routes';
 import { routes as mdsvexRoutes } from './demos/mdsvex/routes';
 import { routes as nestedComponentsRoutes } from './demos/nested-components/routes';
 import { routes as propDedupRoutes } from './demos/prop-dedup/routes';
+import { routes as propsIdRoutes } from './demos/props-id/routes';
 import { routes as reloadFormDataRoutes } from './demos/reload-form-data/routes';
+import { routes as requestIdRoutes } from './demos/request-id/routes';
 import { routes as serverIslandRoutes } from './demos/server-island/routes';
 import { routes as serverPropsRoutes } from './demos/server-props/routes';
 import { routes as sharedStateRoutes } from './demos/shared-state/routes';
@@ -121,6 +124,7 @@ export const routes: Record<string, MochiRouteValue> = {
   ...dataLoadingRoutes,
   ...errorRoutes,
   ...errorBoundariesRoutes,
+  ...fileRoutes,
   ...fileUploadRoutes,
   ...fontLoadingRoutes,
   ...formCancelRoutes,
@@ -138,7 +142,9 @@ export const routes: Record<string, MochiRouteValue> = {
   ...mdsvexRoutes,
   ...nestedComponentsRoutes,
   ...propDedupRoutes,
+  ...propsIdRoutes,
   ...reloadFormDataRoutes,
+  ...requestIdRoutes,
   ...serverIslandRoutes,
   ...serverPropsRoutes,
   ...sharedStateRoutes,

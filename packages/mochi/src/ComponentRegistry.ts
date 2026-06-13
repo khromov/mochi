@@ -4,7 +4,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import type { BunPlugin } from 'bun';
 import { isSvelteMarker, normalizeAssetPrefix, normalizeIslandHydrationMarkers, stripHydrationMarkers, toCompileErrorLogs, toPosixPath } from './utils';
-import { buildIslandPropsScripts } from './islandPropsRegistry';
+import { injectIslandPropsBlock } from './islandPropsRegistry';
 import { requestContext } from './requestContext';
 import type { DebugBarData } from './requestContext';
 import { logger } from './log';
@@ -561,7 +561,7 @@ export class ComponentRegistry {
       target: 'bun',
       conditions: ['svelte'],
       // Svelte stays external because it's a peer dep the consumer already
-      // provides. Everything else (devalue, cookie, nanoid, etc.) gets bundled
+      // provides. Everything else (devalue, cookie, etc.) gets bundled
       // — but with `splitting: true` Bun emits shared transitive
       // deps into separate chunk files alongside each entry's `.server.js`,
       // so they're written exactly once across the cohort. Two
@@ -1077,7 +1077,7 @@ export class ComponentRegistry {
     });
   }
 
-  async renderComponent(filename: string, props?: Record<string, unknown>, opts?: { stripMarkers?: boolean }): Promise<RenderResult> {
+  async renderComponent(filename: string, props?: Record<string, unknown>, opts?: { stripMarkers?: boolean; idPrefix?: string }): Promise<RenderResult> {
     await this.compile(filename);
     const { module: mod, cssComponents, hydratables } = this.compiledComponents.get(filename)!;
 
@@ -1124,11 +1124,15 @@ export class ComponentRegistry {
     const renderOptions: {
       props?: Record<string, unknown>;
       transformError: typeof transformError;
+      idPrefix?: string;
     } = {
       transformError,
     };
     if (props) {
       renderOptions.props = props;
+    }
+    if (opts?.idPrefix) {
+      renderOptions.idPrefix = opts.idPrefix;
     }
     const { body, head } = await render(mod.default, renderOptions);
 
@@ -1163,8 +1167,25 @@ export class ComponentRegistry {
     const shouldStrip = opts?.stripMarkers !== false && hydratables.length === 0;
     const hasIslandsOrServerIslands = hydratables.length > 0 || hasServerCssPlaceholders;
 
-    // Single HTMLRewriter pass: collect rendered island names, detect server
-    // islands, and conditionally strip page-level hydration markers.
+    const ctx = requestContext.getStore();
+
+    // Index the per-request island props registry by ref id so the rewriter
+    // pass below can emit each payload as a <script type="application/json">
+    // block immediately before the first island that references it. HTMLRewriter
+    // visits elements in document order, so the first callback for a given
+    // `props-ref` is that payload's first island; islands sharing a byte-identical
+    // payload reuse one block, and blocks reused by >=2 islands get `data-shared`.
+    const propsById = new Map<string, { json: string; emitCount: number }>();
+    if (ctx) {
+      for (const [json, entry] of ctx.islandProps) {
+        propsById.set(entry.id, { json, emitCount: entry.emitCount });
+      }
+    }
+    const emittedProps = new Set<string>();
+
+    // Single HTMLRewriter pass: inject island props blocks, collect rendered
+    // island names, detect server islands, and conditionally strip page-level
+    // hydration markers.
     const renderedIslandNames = new Set<string>();
     let hasServerIslands = false;
     if (hasIslandsOrServerIslands || shouldStrip) {
@@ -1187,6 +1208,7 @@ export class ComponentRegistry {
               if (raw) {
                 renderedIslandNames.add(raw);
               }
+              injectIslandPropsBlock(el, propsById, emittedProps);
             },
           })
           .on('mochi-server-island', {
@@ -1207,25 +1229,13 @@ export class ComponentRegistry {
       }
       output = rewriter.transform(output);
     }
+    // Clear so a second render within the same request doesn't re-emit the same
+    // blocks (e.g. an error page rendering after the original page).
+    ctx?.islandProps.clear();
 
-    // Hoist the per-request island props registry into <script type="application/json">
-    // blocks. Each unique payload was assigned a ref id by `emitIslandProps()` during
-    // SSR; the matching `props-ref="<id>"` lives on each <mochi-hydratable-island>.
-    const ctx = requestContext.getStore();
     let debugBarData: RenderResult['debugBarData'];
-    if (ctx && ctx.islandProps.size > 0) {
-      output = buildIslandPropsScripts(ctx.islandProps) + output;
-      // Clear so a second render within the same request doesn't re-emit the
-      // same blocks (e.g. an error page rendering after the original page).
-      ctx.islandProps.clear();
-    }
     if (ctx?.debugBarData) {
-      debugBarData = { ...ctx.debugBarData, islandProps: { ...ctx.debugBarData.islandProps } };
-      // Clear only the dynamic SSR-collected entries; route/pathname/params
-      // were set at request start and stay valid across a same-request rerender.
-      for (const k of Object.keys(ctx.debugBarData.islandProps)) {
-        delete ctx.debugBarData.islandProps[k];
-      }
+      debugBarData = { ...ctx.debugBarData };
 
       if (this.debugBarEnabled && this.clientStats) {
         const urlToComponent = new Map<string, string>();
