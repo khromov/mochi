@@ -1175,10 +1175,10 @@ export class ComponentRegistry {
     // visits elements in document order, so the first callback for a given
     // `props-ref` is that payload's first island; islands sharing a byte-identical
     // payload reuse one block, and blocks reused by >=2 islands get `data-shared`.
-    const propsById = new Map<string, { json: string; count: number }>();
+    const propsById = new Map<string, { json: string; emitCount: number }>();
     if (ctx) {
       for (const [json, entry] of ctx.islandProps) {
-        propsById.set(entry.id, { json, count: entry.count });
+        propsById.set(entry.id, { json, emitCount: entry.emitCount });
       }
     }
     const emittedProps = new Set<string>();

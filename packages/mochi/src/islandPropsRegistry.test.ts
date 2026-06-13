@@ -54,7 +54,7 @@ describe('emitIslandProps', () => {
       const id2 = emitIslandProps({ count: 5, title: 'Hello' });
       expect(id1).toBe(id2);
       expect(ctx.islandProps.size).toBe(1);
-      expect([...ctx.islandProps.values()][0]!.count).toBe(2);
+      expect([...ctx.islandProps.values()][0]!.emitCount).toBe(2);
     });
   });
 
@@ -67,7 +67,7 @@ describe('emitIslandProps', () => {
       expect(b).toBe('mochi-props-1');
       expect(c).toBe('mochi-props-2');
       expect(ctx.islandProps.size).toBe(3);
-      expect([...ctx.islandProps.values()].map((e) => e.count)).toEqual([1, 1, 1]);
+      expect([...ctx.islandProps.values()].map((e) => e.emitCount)).toEqual([1, 1, 1]);
     });
   });
 
@@ -81,7 +81,7 @@ describe('emitIslandProps', () => {
       expect(b).toBe('mochi-props-1');
       expect(c).toBe('mochi-props-0');
       expect(ctx.islandProps.size).toBe(2);
-      expect([...ctx.islandProps.values()].map((e) => e.count)).toEqual([2, 1]);
+      expect([...ctx.islandProps.values()].map((e) => e.emitCount)).toEqual([2, 1]);
     });
   });
 
@@ -119,7 +119,7 @@ describe('renderIslandPropsScript', () => {
 // Drive the real injection through an HTMLRewriter, exactly as ComponentRegistry
 // does, so block placement (before the first referencing island, in document
 // order) and the single-block-per-shared-payload dedup are covered end to end.
-function inject(html: string, propsById: Map<string, { json: string; count: number }>): string {
+function inject(html: string, propsById: Map<string, { json: string; emitCount: number }>): string {
   const emitted = new Set<string>();
   return new HTMLRewriter()
     .on('mochi-hydratable-island', {
@@ -132,7 +132,7 @@ function inject(html: string, propsById: Map<string, { json: string; count: numb
 
 describe('injectIslandPropsBlock (HTMLRewriter pass)', () => {
   test('single-use payload: one UNMARKED block placed immediately before its island', () => {
-    const propsById = new Map([['mochi-props-0', { json: '{"a":1}', count: 1 }]]);
+    const propsById = new Map([['mochi-props-0', { json: '{"a":1}', emitCount: 1 }]]);
     const html = '<mochi-hydratable-island component-name="Solo" component-url="/c/Solo.js" props-ref="mochi-props-0"></mochi-hydratable-island>';
     const out = inject(html, propsById);
 
@@ -145,7 +145,7 @@ describe('injectIslandPropsBlock (HTMLRewriter pass)', () => {
   });
 
   test('shared payload: one data-shared block before the FIRST island, both keep their ref', () => {
-    const propsById = new Map([['mochi-props-0', { json: '{"a":1}', count: 2 }]]);
+    const propsById = new Map([['mochi-props-0', { json: '{"a":1}', emitCount: 2 }]]);
     const html =
       '<mochi-hydratable-island component-name="A" props-ref="mochi-props-0"></mochi-hydratable-island>' +
       '<mochi-hydratable-island component-name="B" props-ref="mochi-props-0"></mochi-hydratable-island>';
@@ -158,7 +158,7 @@ describe('injectIslandPropsBlock (HTMLRewriter pass)', () => {
   });
 
   test('ignores a literal props-ref string in page text — only real island tags match', () => {
-    const propsById = new Map([['mochi-props-0', { json: '{"a":1}', count: 1 }]]);
+    const propsById = new Map([['mochi-props-0', { json: '{"a":1}', emitCount: 1 }]]);
     const html = '<p>each island gets props-ref="mochi-props-0" pointing at a block</p>';
     expect(inject(html, propsById)).toBe(html);
   });
@@ -171,9 +171,9 @@ describe('injectIslandPropsBlock (HTMLRewriter pass)', () => {
       expect(a).toBe(b);
       expect(solo).not.toBe(a);
 
-      const propsById = new Map<string, { json: string; count: number }>();
+      const propsById = new Map<string, { json: string; emitCount: number }>();
       for (const [json, entry] of ctx.islandProps) {
-        propsById.set(entry.id, { json, count: entry.count });
+        propsById.set(entry.id, { json, emitCount: entry.emitCount });
       }
 
       const html =

@@ -8,7 +8,7 @@ import { getRequestContext } from './requestContext';
  */
 export interface IslandPropsEntry {
   id: string;
-  count: number;
+  emitCount: number;
 }
 
 /**
@@ -20,14 +20,8 @@ export interface IslandPropsEntry {
  * before the first island that references it.
  *
  * Two islands whose serialized JSON is byte-identical share the same ref id;
- * that's the entire dedup mechanism. The per-id use count lets the render pass
+ * that's the entire dedup mechanism. The per-id emit count lets the render pass
  * flag blocks that more than one island actually shares.
- *
- * `count` is an *emit* count, not a count of surviving DOM tags. It holds today
- * because each call corresponds 1:1 to a `<mochi-hydratable-island>` tag written
- * into the output. If conditional island stripping is ever added (emit a tag,
- * then remove it post-SSR), this could over-count and stamp `data-shared` on a
- * block only one surviving tag references — a dev-toolbar cosmetic edge.
  *
  * Server islands intentionally do NOT use this path. Their `signed-props`
  * payloads are HMAC-signed and travel through URL query strings, so they keep
@@ -38,10 +32,10 @@ export function emitIslandProps(value: unknown): string {
   const ctx = getRequestContext();
   let entry = ctx.islandProps.get(json);
   if (!entry) {
-    entry = { id: `mochi-props-${ctx.islandProps.size}`, count: 0 };
+    entry = { id: `mochi-props-${ctx.islandProps.size}`, emitCount: 0 };
     ctx.islandProps.set(json, entry);
   }
-  entry.count++;
+  entry.emitCount++;
   return entry.id;
 }
 
@@ -58,9 +52,9 @@ export function emitIslandProps(value: unknown): string {
  * the HTML script-data tokenizer (which ignores `type="application/json"`)
  * cannot see a `</script` sequence and terminate the block early.
  */
-export function renderIslandPropsScript(id: string, json: string, count: number): string {
+export function renderIslandPropsScript(id: string, json: string, emitCount: number): string {
   const safe = json.replace(/</g, '\\u003C');
-  const shared = count >= 2 ? ' data-shared' : '';
+  const shared = emitCount >= 2 ? ' data-shared' : '';
   return `<script type="application/json" id="${id}"${shared}>${safe}</script>`;
 }
 
@@ -68,13 +62,13 @@ export function renderIslandPropsScript(id: string, json: string, count: number)
  * Insert one island's props block immediately before `el` — the first
  * `<mochi-hydratable-island>` that references it. `ComponentRegistry`'s
  * HTMLRewriter pass calls this for every island in document order: `propsById`
- * maps a ref id to its payload + use count, and `emitted` records ids already
+ * maps a ref id to its payload + emit count, and `emitted` records ids already
  * written so islands sharing a byte-identical payload reuse the single block
  * emitted before the first of them. Islands with no `props-ref` — or a ref
  * absent from the registry, e.g. the server-island also-hydrate path that
  * inlines `props=` — are left untouched.
  */
-export function injectIslandPropsBlock(el: HTMLRewriterTypes.Element, propsById: Map<string, { json: string; count: number }>, emitted: Set<string>): void {
+export function injectIslandPropsBlock(el: HTMLRewriterTypes.Element, propsById: Map<string, { json: string; emitCount: number }>, emitted: Set<string>): void {
   const ref = el.getAttribute('props-ref');
   if (!ref || emitted.has(ref)) {
     return;
@@ -84,5 +78,5 @@ export function injectIslandPropsBlock(el: HTMLRewriterTypes.Element, propsById:
     return;
   }
   emitted.add(ref);
-  el.before(renderIslandPropsScript(ref, entry.json, entry.count), { html: true });
+  el.before(renderIslandPropsScript(ref, entry.json, entry.emitCount), { html: true });
 }
