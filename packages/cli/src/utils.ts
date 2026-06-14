@@ -97,7 +97,7 @@ export function transformPackageJson(contents: string, opts: PackageJsonTransfor
   // Templates ship the patch *file* under `patches/`; we wire it up here so the
   // scaffolded standalone project picks it up on first `bun install`.
   pkg.patchedDependencies = {
-    'svelte-check@4.4.7': 'patches/svelte-check@4.4.7.patch',
+    'svelte-check@4.6.0': 'patches/svelte-check@4.6.0.patch',
   };
 
   return JSON.stringify(pkg, null, 2) + '\n';
