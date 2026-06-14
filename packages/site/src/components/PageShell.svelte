@@ -26,15 +26,17 @@
 
   const mergedMetaTags = $derived(mergeMetaTags(metaTags));
 
-  // The view-transitions demo renders its own <ViewTransitions>. Match the
-  // route and its subpaths exactly so an unrelated future demo sharing the
-  // prefix (e.g. /demos/view-transitions-foo) doesn't lose the site instance.
-  const isViewTransitionsDemo = $derived(url.pathname === '/demos/view-transitions' || url.pathname.startsWith('/demos/view-transitions/'));
+  // These demos render their own <ViewTransitions>. Match each route and its
+  // subpaths exactly so an unrelated future demo sharing the prefix (e.g.
+  // /demos/view-transitions-foo) doesn't lose the site instance.
+  const ownsViewTransitions = $derived(
+    ['/demos/view-transitions', '/demos/custom-transitions'].some((base) => url.pathname === base || url.pathname.startsWith(`${base}/`)),
+  );
 </script>
 
 <MetaTags {...mergedMetaTags} />
 
-{#if !isViewTransitionsDemo}
+{#if !ownsViewTransitions}
   <ViewTransitions type="scale" keepElementSelectors={['.banner', '.sidebar', '.hero', '.gh-corner']} />
 {/if}
 

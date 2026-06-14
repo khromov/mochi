@@ -63,6 +63,48 @@ describe('ViewTransitions', () => {
     expect(head).toContain('500ms');
   });
 
+  test('custom wraps the supplied bodies in keyframes and the rules still reference them', async () => {
+    const { head } = await render({ custom: { out: 'to { transform: rotate(8deg) }', in: 'from { transform: rotate(-8deg) }' } });
+    expect(head).toContain('@keyframes mochi-vt-out { to { transform: rotate(8deg) } }');
+    expect(head).toContain('@keyframes mochi-vt-in { from { transform: rotate(-8deg) } }');
+    expect(head).toContain('::view-transition-old(root) { animation: mochi-vt-out');
+    expect(head).toContain('::view-transition-new(root) { animation: mochi-vt-in');
+  });
+
+  test('custom overrides the type preset', async () => {
+    const { head } = await render({ type: 'slide', custom: { out: 'to { opacity: 0 }', in: 'from { opacity: 0 }' } });
+    expect(head).toContain('@keyframes mochi-vt-out { to { opacity: 0 } }');
+    expect(head).not.toContain('translateX');
+  });
+
+  test('custom accepts a single side and emits an empty keyframes block for the other', async () => {
+    const { head } = await render({ custom: { in: 'from { opacity: 0 }' } });
+    expect(head).toContain('@keyframes mochi-vt-in { from { opacity: 0 } }');
+    expect(head).toContain('@keyframes mochi-vt-out {  }');
+  });
+
+  test('custom with neither side throws', async () => {
+    await expect(render({ custom: {} })).rejects.toThrow('requires at least an `out` or `in`');
+  });
+
+  test('custom rejects a body containing "<"', async () => {
+    await expect(render({ custom: { out: 'to {}</style><script>' } })).rejects.toThrow('must not contain "<"');
+  });
+
+  test('easing is interpolated into the animation rules', async () => {
+    const { head } = await render({ easing: 'linear' });
+    expect(head).toContain('mochi-vt-out 250ms linear both');
+  });
+
+  test('easing defaults to ease', async () => {
+    const { head } = await render();
+    expect(head).toContain('mochi-vt-out 250ms ease both');
+  });
+
+  test('easing rejects a value containing "<"', async () => {
+    await expect(render({ easing: '</style><script>' })).rejects.toThrow('easing must not contain "<"');
+  });
+
   test('respects prefers-reduced-motion', async () => {
     const { head } = await render();
     expect(head).toContain('prefers-reduced-motion: reduce');

@@ -68,6 +68,12 @@ export const demos: Demo[] = [
     category: 'hydration',
   },
   {
+    href: '/demos/custom-transitions/',
+    title: 'Custom Transitions',
+    hook: 'Bring your own @keyframes to <ViewTransitions /> via custom={{ in, out }} — here, a funky 3D spin.',
+    category: 'hydration',
+  },
+  {
     href: '/demos/cache-events/',
     title: 'Cache Events',
     hook: 'Subscribe to MochiCache lifecycle events through mochiEvents and log them to the server console.',

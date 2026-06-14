@@ -37,6 +37,7 @@ import { routes as sharedStateRoutes } from './demos/shared-state/routes';
 import { routes as streamsRoutes } from './demos/streams/routes';
 import { routes as urlRoutes } from './demos/url/routes';
 import { routes as viewTransitionsRoutes } from './demos/view-transitions/routes';
+import { routes as customTransitionsRoutes } from './demos/custom-transitions/routes';
 import { routes as yourFirstMochiAppRoutes } from './demos/your-first-mochi-app/routes';
 
 const DEVELOPMENT = process.env.MODE === 'development';
@@ -151,5 +152,6 @@ export const routes: Record<string, MochiRouteValue> = {
   ...streamsRoutes,
   ...urlRoutes,
   ...viewTransitionsRoutes,
+  ...customTransitionsRoutes,
   ...yourFirstMochiAppRoutes,
 };

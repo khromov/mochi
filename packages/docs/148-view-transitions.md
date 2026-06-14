@@ -36,18 +36,42 @@ Don't hydrate it: the component emits static CSS and no markup, so there's nothi
 
 ### Props
 
-| Prop                   | Type                                               | Default  | Description                                                           |
-| ---------------------- | -------------------------------------------------- | -------- | --------------------------------------------------------------------- |
-| `type`                 | `'fade' \| 'slide' \| 'scale' \| 'blur' \| 'flip'` | `'fade'` | The transition preset.                                                |
-| `duration`             | `number` (ms)                                      | `250`    | Animation duration.                                                   |
-| `regions`              | `string \| string[]`                               | —        | Confine the animation to elements with these `view-transition-name`s. |
-| `keepElementSelectors` | `string \| string[]`                               | —        | CSS selectors for persistent chrome to hold still across navigations. |
+| Prop                   | Type                                               | Default  | Description                                                             |
+| ---------------------- | -------------------------------------------------- | -------- | ----------------------------------------------------------------------- |
+| `type`                 | `'fade' \| 'slide' \| 'scale' \| 'blur' \| 'flip'` | `'fade'` | The transition preset.                                                  |
+| `custom`               | `{ out?: string; in?: string }`                    | —        | Custom keyframe bodies for the leaving/entering page. Overrides `type`. |
+| `duration`             | `number` (ms)                                      | `250`    | Animation duration.                                                     |
+| `easing`               | `string`                                           | `'ease'` | The animation timing function.                                          |
+| `regions`              | `string \| string[]`                               | —        | Confine the animation to elements with these `view-transition-name`s.   |
+| `keepElementSelectors` | `string \| string[]`                               | —        | CSS selectors for persistent chrome to hold still across navigations.   |
 
 ```svelte
-<ViewTransitions type="slide" duration={400} />
+<ViewTransitions type="slide" duration={400} easing="cubic-bezier(0.22, 1, 0.36, 1)" />
 ```
 
-Five presets ship built in: `fade` (crossfade), `slide` (horizontal translate), `scale` (zoom in/out), `blur` (focus pull), and `flip` (3D Y-axis rotation). They all animate the page root, so they apply to any page with no per-element setup, and reduced-motion users get no animation automatically.
+Five presets ship built in: `fade` (crossfade), `slide` (horizontal translate), `scale` (zoom in/out), `blur` (focus pull), and `flip` (3D Y-axis rotation). They all animate the page root, so they apply to any page with no per-element setup, and reduced-motion users get no animation automatically. Need a motion none of the presets cover? Reach for `custom` (below).
+
+### Custom transitions
+
+Pass `custom` to bring your own animation. `out` and `in` are the **body** of each keyframe — the `from` / `to` / `%` rules — for the page you leave and the page you land on; Mochi wraps each into an `@keyframes` for you:
+
+```svelte
+<ViewTransitions
+  custom={{
+    out: 'to { opacity: 0; transform: rotate(8deg) }',
+    in: 'from { opacity: 0; transform: rotate(-8deg) }',
+  }}
+  easing="cubic-bezier(0.22, 1, 0.36, 1)"
+/>
+```
+
+Either side is optional — supply just `in` or just `out` and the other direction won't animate. `custom` composes with `duration`, `easing`, `regions`, `keepElementSelectors`, and reduced-motion exactly like the presets do.
+
+<Callout type="info">
+
+When `custom` is set it **overrides** `type` — the preset is ignored, so you don't need to omit `type`.
+
+</Callout>
 
 ### Animating only part of the page
 

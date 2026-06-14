@@ -4,13 +4,21 @@
 
   let {
     type = 'fade',
+    custom,
     duration = 250,
+    easing = 'ease',
     regions,
     keepElementSelectors,
     isHydratable,
   }: {
     type?: 'fade' | 'slide' | 'scale' | 'blur' | 'flip';
+    // Bring your own animation. `out`/`in` are the BODY of each keyframe (the
+    // `from`/`to`/`%` rules); they're wrapped into `@keyframes` for you and
+    // drive the leaving/entering snapshots. When set, this overrides `type`.
+    custom?: { out?: string; in?: string };
     duration?: number;
+    // The animation timing function applied to every transitioning snapshot.
+    easing?: string;
     // Confine the animation to elements carrying these `view-transition-name`s.
     // Omit to animate the whole page (the `root` snapshot). When given, the
     // unnamed remainder swaps instantly so only the named regions animate —
@@ -29,6 +37,12 @@
 
   if (!Number.isFinite(duration) || duration < 0) {
     throw new Error(`<ViewTransitions /> duration must be a non-negative number of milliseconds, got ${JSON.stringify(duration)}.`);
+  }
+
+  // `easing` is interpolated into a raw <style> tag; a `<` could close it and
+  // inject markup. Always developer-authored, so just refuse.
+  if (easing.includes('<')) {
+    throw new Error(`<ViewTransitions /> easing must not contain "<", got ${JSON.stringify(easing)}.`);
   }
 
   let isFirst = true;
@@ -59,14 +73,38 @@
       @keyframes mochi-vt-in { from { transform: perspective(1200px) rotateY(90deg); opacity: 0; } }`,
   } as const;
 
+  // A custom `out`/`in` body overrides the chosen preset. Both sides are
+  // optional, but at least one must be supplied; a missing side emits an empty
+  // @keyframes so that direction simply doesn't animate.
+  const keyframeCss = $derived.by(() => {
+    if (custom == null) {
+      return keyframes[type];
+    }
+    if (custom.out == null && custom.in == null) {
+      throw new Error('<ViewTransitions /> custom requires at least an `out` or `in` keyframe body.');
+    }
+    for (const [side, body] of [
+      ['out', custom.out],
+      ['in', custom.in],
+    ] as const) {
+      // Bodies are interpolated into a raw <style> tag; a `<` could close it
+      // and inject markup. Always developer-authored, so just refuse.
+      if (body?.includes('<')) {
+        throw new Error(`<ViewTransitions /> custom.${side} must not contain "<", got ${JSON.stringify(body)}.`);
+      }
+    }
+    return `@keyframes mochi-vt-out { ${custom.out ?? ''} }
+      @keyframes mochi-vt-in { ${custom.in ?? ''} }`;
+  });
+
   const targets = $derived(regions == null ? ['root'] : Array.isArray(regions) ? regions : [regions]);
 
   const animationRules = $derived(
     targets
       .map(
         (name) =>
-          `::view-transition-old(${name}) { animation: mochi-vt-out ${duration}ms ease both; }
-    ::view-transition-new(${name}) { animation: mochi-vt-in ${duration}ms ease both; }`,
+          `::view-transition-old(${name}) { animation: mochi-vt-out ${duration}ms ${easing} both; }
+    ::view-transition-new(${name}) { animation: mochi-vt-in ${duration}ms ${easing} both; }`,
       )
       .join('\n    '),
   );
@@ -118,7 +156,7 @@
   const styleTag = $derived(
     `<style>@view-transition { navigation: auto; }${rootReset}
     ${animationRules}
-    ${keepRules ? keepRules + '\n    ' : ''}${keyframes[type]}
+    ${keepRules ? keepRules + '\n    ' : ''}${keyframeCss}
     @media (prefers-reduced-motion: reduce) {
       ${reducedTargets} { animation: none; }
     }</style>`,
