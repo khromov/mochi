@@ -58,7 +58,7 @@
       "name": "mochi-docs",
       "version": "0.2.0",
       "dependencies": {
-        "@lucide/svelte": "^1.16.0",
+        "@lucide/svelte": "^1.18.0",
         "svelte": "^5.56.3",
       },
     },
