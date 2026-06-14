@@ -321,6 +321,8 @@ export interface MochiManifest {
   assetPrefix: string;
   bootstrapUrl: string | null;
   componentEntryUrls: Record<string, string>;
+  /** Maps `<Script>` entry key (hash of resolved path) → bundled client URL. */
+  scriptEntryUrls?: Record<string, string>;
   cssFileUrls: Record<string, string>;
   /** Maps URL path → disk path relative to project root */
   clientFiles: Record<string, string>;

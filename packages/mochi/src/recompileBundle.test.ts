@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { ComponentRegistry } from './ComponentRegistry';
 import { mochiEvents } from './events';
-import type { HydratableComponent } from './svelteAstPreprocess';
+import type { HydratableComponent, ScriptEntry } from './svelteAstPreprocess';
 
 interface RegistryInternals {
   compiledComponents: Map<
@@ -13,6 +13,7 @@ interface RegistryInternals {
       module: { default: unknown };
       cssComponents: Set<string>;
       hydratables: HydratableComponent[];
+      scriptEntries: ScriptEntry[];
     }
   >;
   hydratableComponents: HydratableComponent[];
@@ -68,6 +69,7 @@ describe('recompile* batches into one compileAll + one buildClientBundle per cyc
           module: { default: () => '' },
           cssComponents: new Set(),
           hydratables: [stub],
+          scriptEntries: [],
         });
         newHydratables.push(stub);
         const seeded = seededDeps.get(filename);
@@ -277,6 +279,7 @@ describe('recompile* batches into one compileAll + one buildClientBundle per cyc
           module: { default: () => '' },
           cssComponents: new Set(),
           hydratables: [],
+          scriptEntries: [],
         });
       }
     };

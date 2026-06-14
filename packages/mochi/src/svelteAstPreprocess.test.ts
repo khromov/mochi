@@ -1,4 +1,5 @@
-import { describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { preprocessHydratable } from './svelteAstPreprocess';
 
@@ -562,5 +563,71 @@ describe('preprocessHydratable', () => {
     // The inner tag is unchanged — boundary just wraps it
     expect(transformed).toContain('<Foo name="test" count={42} isHydratable={true} />');
     expect(transformed).toContain('<svelte:boundary>');
+  });
+});
+
+describe('preprocessHydratable - <Script>', () => {
+  let dir: string;
+  let filePath: string;
+
+  beforeAll(() => {
+    dir = mkdtempSync(path.join(import.meta.dir, '..', '.mochi-script-preprocess-test-'));
+    filePath = path.join(dir, 'Page.svelte');
+    writeFileSync(path.join(dir, 'a.ts'), 'console.log("a");');
+    writeFileSync(path.join(dir, 'b.ts'), 'console.log("b");');
+  });
+
+  afterAll(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  const IMPORT = "import { Script } from 'mochi-framework/components';";
+
+  test('single src → one entry + placeholder token', () => {
+    const source = `${SCRIPT(IMPORT)}<Script src="./a.ts" />`;
+    const { transformed, scriptEntries } = preprocessHydratable(source, filePath);
+
+    expect(scriptEntries).toHaveLength(1);
+    expect(scriptEntries[0]!.resolvedPath).toBe(path.join(dir, 'a.ts'));
+    const key = scriptEntries[0]!.key;
+    expect(transformed).toContain(`__mochiScriptUrls={["__MOCHI_SCRIPT_URL__${key}__"]}`);
+    expect(transformed).not.toContain('src="./a.ts"');
+  });
+
+  test('scripts array → multiple entries', () => {
+    const source = `${SCRIPT(IMPORT)}<Script scripts={['./a.ts', './b.ts']} />`;
+    const { transformed, scriptEntries } = preprocessHydratable(source, filePath);
+
+    expect(scriptEntries).toHaveLength(2);
+    expect(transformed).toMatch(/__mochiScriptUrls=\{\["__MOCHI_SCRIPT_URL__\w+__", "__MOCHI_SCRIPT_URL__\w+__"\]\}/);
+  });
+
+  test('aliased import is detected', () => {
+    const source = `${SCRIPT("import { Script as S } from 'mochi-framework/components';")}<S src="./a.ts" />`;
+    const { scriptEntries } = preprocessHydratable(source, filePath);
+    expect(scriptEntries).toHaveLength(1);
+  });
+
+  test('dedupes the same path referenced twice', () => {
+    const source = `${SCRIPT(IMPORT)}<Script src="./a.ts" /><Script src="./a.ts" />`;
+    const { scriptEntries } = preprocessHydratable(source, filePath);
+    expect(scriptEntries).toHaveLength(1);
+  });
+
+  test('throws on a non-literal src expression', () => {
+    const source = `${SCRIPT(IMPORT)}<Script src={dynamic} />`;
+    expect(() => preprocessHydratable(source, filePath)).toThrow('static string literal');
+  });
+
+  test('throws when the referenced file does not exist', () => {
+    const source = `${SCRIPT(IMPORT)}<Script src="./missing.ts" />`;
+    expect(() => preprocessHydratable(source, filePath)).toThrow('cannot resolve script');
+  });
+
+  test('a Script-like component not imported from the framework is left alone', () => {
+    const source = `${SCRIPT('import Script from "./Script.svelte";')}<Script src="./a.ts" />`;
+    const { scriptEntries, transformed } = preprocessHydratable(source, filePath);
+    expect(scriptEntries).toHaveLength(0);
+    expect(transformed).not.toContain('__mochiScriptUrls');
   });
 });

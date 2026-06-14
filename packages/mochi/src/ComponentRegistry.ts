@@ -10,7 +10,7 @@ import type { DebugBarData } from './requestContext';
 import { logger } from './log';
 import { mochiEvents } from './events';
 import type { MarkdownConfig, MochiManifest, MochiSvelteShakerOptions } from './types';
-import { type HydratableComponent, type ServerIslandComponent } from './svelteAstPreprocess';
+import { type HydratableComponent, type ServerIslandComponent, type ScriptEntry } from './svelteAstPreprocess';
 import { cachedPreprocessHydratable, createPreprocessCacheStats } from './preprocessCache';
 import { mergeCompilerOptions, type MochiSvelteConfig } from './svelteConfig';
 import { applyFilter } from './extensions';
@@ -88,6 +88,8 @@ function createMarkdownLoader(opts: {
     fileHydratables: Map<string, HydratableComponent[]>;
     allHydratables: HydratableComponent[];
     allServerIslands: ServerIslandComponent[];
+    fileScriptEntries: Map<string, ScriptEntry[]>;
+    allScriptEntries: ScriptEntry[];
     preprocessCacheStats: ReturnType<typeof createPreprocessCacheStats>;
   };
 }) {
@@ -109,10 +111,12 @@ function createMarkdownLoader(opts: {
     }
     let svelteSource = compiled.code;
     if (opts.hydration) {
-      const { transformed, hydratables, serverIslands } = cachedPreprocessHydratable(svelteSource, args.path, opts.hydration.preprocessCacheStats);
+      const { transformed, hydratables, serverIslands, scriptEntries } = cachedPreprocessHydratable(svelteSource, args.path, opts.hydration.preprocessCacheStats);
       opts.hydration.fileHydratables.set(args.path, hydratables);
       opts.hydration.allHydratables.push(...hydratables);
       opts.hydration.allServerIslands.push(...serverIslands);
+      opts.hydration.fileScriptEntries.set(args.path, scriptEntries);
+      opts.hydration.allScriptEntries.push(...scriptEntries);
       svelteSource = transformed;
     }
     const { js, css } = svelteCompile(
@@ -192,6 +196,7 @@ export class ComponentRegistry {
       module: { default: any };
       cssComponents: Set<string>;
       hydratables: HydratableComponent[];
+      scriptEntries: ScriptEntry[];
       // Absolute path to the compiled `.server.js` on disk. Recorded from the
       // build's metafile (not reconstructed from the source basename) so two
       // entrypoints sharing a basename — e.g. PageOne.svelte in two demo
@@ -200,7 +205,11 @@ export class ComponentRegistry {
     }
   > = new Map();
   private hydratableComponents: HydratableComponent[] = [];
+  /** Flat union of `<Script>` entries across all compiled pages (rebuilt in `rebuildHydratables`). */
+  private scriptEntries: ScriptEntry[] = [];
   private componentEntryUrls: Map<string, string> = new Map();
+  /** Maps a `ScriptEntry.key` → bundled, content-hashed client URL. */
+  private scriptEntryUrls: Map<string, string> = new Map();
   private islandBootstrapUrl: string | null = null;
   private debugBarUrl: string | null = null;
   private clientFiles: Map<string, string> = new Map();
@@ -414,8 +423,10 @@ export class ComponentRegistry {
     const importedCssPaths = new Set<string>();
     const allHydratables: HydratableComponent[] = [];
     const allServerIslands: ServerIslandComponent[] = [];
+    const allScriptEntries: ScriptEntry[] = [];
     const preprocessCacheStats = createPreprocessCacheStats();
     const fileHydratables = new Map<string, HydratableComponent[]>();
+    const fileScriptEntries = new Map<string, ScriptEntry[]>();
     const development = this.development;
     const userCompilerOptions = this.svelteConfig.compilerOptions ?? {};
     const markdown = this.markdown;
@@ -524,12 +535,14 @@ export class ComponentRegistry {
           const preprocessed = await applyUserPreprocessors(raw, args.path, 'server', development);
           // Vendored .svelte from node_modules can never carry `mochi:*` directives
           const isVendored = args.path.includes(`${path.sep}node_modules${path.sep}`);
-          const { transformed, hydratables, serverIslands } = isVendored
-            ? { transformed: preprocessed, hydratables: [] as HydratableComponent[], serverIslands: [] as ServerIslandComponent[] }
+          const { transformed, hydratables, serverIslands, scriptEntries } = isVendored
+            ? { transformed: preprocessed, hydratables: [] as HydratableComponent[], serverIslands: [] as ServerIslandComponent[], scriptEntries: [] as ScriptEntry[] }
             : cachedPreprocessHydratable(preprocessed, args.path, preprocessCacheStats);
           fileHydratables.set(args.path, hydratables);
           allHydratables.push(...hydratables);
           allServerIslands.push(...serverIslands);
+          fileScriptEntries.set(args.path, scriptEntries);
+          allScriptEntries.push(...scriptEntries);
 
           const { js, css } = svelteCompile(
             transformed,
@@ -552,7 +565,7 @@ export class ComponentRegistry {
               development,
               cssMap,
               userCompilerOptions,
-              hydration: { fileHydratables, allHydratables, allServerIslands, preprocessCacheStats },
+              hydration: { fileHydratables, allHydratables, allServerIslands, fileScriptEntries, allScriptEntries, preprocessCacheStats },
             }),
           );
         }
@@ -701,11 +714,16 @@ export class ComponentRegistry {
       // from this entry. With one batched build, plugin closures see every
       // entry's files; we narrow back per-entry via the metafile graph.
       const entryHydratables: HydratableComponent[] = [];
+      const entryScriptEntries: ScriptEntry[] = [];
       const entryCssComponents = new Set<string>();
       for (const inp of entryInputs) {
         const h = fileHydratables.get(inp);
         if (h) {
           entryHydratables.push(...h);
+        }
+        const se = fileScriptEntries.get(inp);
+        if (se) {
+          entryScriptEntries.push(...se);
         }
         if (cssMap.has(inp)) {
           entryCssComponents.add(inp);
@@ -716,6 +734,7 @@ export class ComponentRegistry {
         module: mod,
         cssComponents: entryCssComponents,
         hydratables: entryHydratables,
+        scriptEntries: entryScriptEntries,
         ssrPath: outPath,
       });
 
@@ -777,7 +796,8 @@ export class ComponentRegistry {
     }
 
     this.hydratableComponents.push(...allHydratables);
-    if (allHydratables.length > 0) {
+    this.scriptEntries.push(...allScriptEntries);
+    if (allHydratables.length > 0 || allScriptEntries.length > 0) {
       await this.buildClientBundle();
     }
   }
@@ -804,8 +824,16 @@ export class ComponentRegistry {
       }
     }
     this.componentEntryUrls.clear();
+    this.scriptEntryUrls.clear();
     this.islandBootstrapUrl = null;
     this.debugBarUrl = null;
+
+    // Dedup `<Script>` entries by resolved path (one bundle per file, even when
+    // referenced from several pages or twice on one page).
+    const uniqueScripts = new Map<string, ScriptEntry>();
+    for (const se of this.scriptEntries) {
+      uniqueScripts.set(se.resolvedPath, se);
+    }
 
     const frameworkDir = FRAMEWORK_DIR;
     // POSIX-ify every path that becomes a Bun.build entrypoint, a `filesMap`
@@ -829,6 +857,12 @@ export class ComponentRegistry {
       const entrySource = `import { registerComponent } from "${hydratableIslandPath}";\nimport ${comp.name} from "${toPosixPath(comp.resolvedPath)}";\nregisterComponent("${comp.name}", ${comp.name});\n`;
       entrypoints.push(entryPath);
       filesMap[entryPath] = entrySource;
+    }
+
+    // `<Script>` sources are bundled as real-file entrypoints (TS transpiled,
+    // imports resolved, code-split, content-hashed) alongside the islands.
+    for (const { resolvedPath } of uniqueScripts.values()) {
+      entrypoints.push(toPosixPath(resolvedPath));
     }
 
     const cookiesClientPath = toPosixPath(path.join(frameworkDir, 'cookies.client.ts'));
@@ -1044,14 +1078,24 @@ export class ComponentRegistry {
         const entryPath = toPosixPath(path.resolve(path.join(frameworkDir, `_hydrate-${comp.name}.js`)));
         entryToComponent.set(entryPath, comp.name);
       }
+      // Reverse lookup for `<Script>` entrypoints: canonical resolved path → key.
+      const entryToScriptKey = new Map<string, string>();
+      for (const { resolvedPath, key } of uniqueScripts.values()) {
+        entryToScriptKey.set(toPosixPath(path.resolve(resolvedPath)), key);
+      }
 
       for (const [outPath, outMeta] of Object.entries(result.metafile.outputs)) {
         if (!outMeta.entryPoint) {
           continue;
         }
         const resolvedEntry = toPosixPath(path.resolve(outMeta.entryPoint));
-        const compName = entryToComponent.get(resolvedEntry);
         const url = `${this.assetPrefix}/client/${path.basename(outPath)}`;
+        const scriptKey = entryToScriptKey.get(resolvedEntry);
+        if (scriptKey !== undefined) {
+          this.scriptEntryUrls.set(scriptKey, url);
+          continue;
+        }
+        const compName = entryToComponent.get(resolvedEntry);
         if (compName === null) {
           this.islandBootstrapUrl = url;
         } else if (compName === '__debugbar__') {
@@ -1152,6 +1196,8 @@ export class ComponentRegistry {
     let output = body;
 
     output = output.replace(/__MOCHI_COMPONENT_URL__(\w+)__/g, (_, name: string) => this.componentEntryUrls.get(name) ?? '');
+
+    output = output.replace(/__MOCHI_SCRIPT_URL__(\w+)__/g, (_, key: string) => this.scriptEntryUrls.get(key) ?? '');
 
     // Track which islands are lazy (have CSS_URL placeholders) during replacement
     const lazyIslandPaths = new Set<string>();
@@ -1421,7 +1467,9 @@ export class ComponentRegistry {
   clearCompileCache(): void {
     this.compiledComponents.clear();
     this.hydratableComponents = [];
+    this.scriptEntries = [];
     this.componentEntryUrls.clear();
+    this.scriptEntryUrls.clear();
     this.islandBootstrapUrl = null;
     this.debugBarUrl = null;
     this.clientFiles.clear();
@@ -1540,8 +1588,10 @@ export class ComponentRegistry {
   // that survived; cheap enough that we redo it whole rather than splicing.
   private rebuildHydratables(): void {
     this.hydratableComponents = [];
+    this.scriptEntries = [];
     for (const e of this.compiledComponents.values()) {
       this.hydratableComponents.push(...e.hydratables);
+      this.scriptEntries.push(...e.scriptEntries);
     }
   }
 
@@ -1596,7 +1646,7 @@ export class ComponentRegistry {
     // recompile *removed* the cohort's hydratables but the registry still
     // has hydratables from other cached pages — the client bundle then
     // needs to drop the stale entries.
-    if (this.hydratableComponents.length > 0 && this.clientBundleCallCount === 0) {
+    if ((this.hydratableComponents.length > 0 || this.scriptEntries.length > 0) && this.clientBundleCallCount === 0) {
       await this.buildClientBundle();
     }
     const pages = new Set([...affected].map((p) => path.resolve(p)));
@@ -1625,7 +1675,7 @@ export class ComponentRegistry {
     }
     await this.safeBatchCompile(pageFiles, 'Rebuild failed');
     this.rebuildHydratables();
-    if (this.hydratableComponents.length > 0 && this.clientBundleCallCount === 0) {
+    if ((this.hydratableComponents.length > 0 || this.scriptEntries.length > 0) && this.clientBundleCallCount === 0) {
       await this.buildClientBundle();
     }
     return { pages: new Set(pageFiles.map((f) => path.resolve(f))), clientBundleCount: this.clientBundleCallCount };
@@ -1673,6 +1723,9 @@ export class ComponentRegistry {
     if (this.publicFiles.size > 0) {
       manifest.publicFiles = Object.fromEntries(this.publicFiles);
     }
+    if (this.scriptEntryUrls.size > 0) {
+      manifest.scriptEntryUrls = Object.fromEntries(this.scriptEntryUrls);
+    }
     if (this.importedCssUrls.size > 0) {
       manifest.importedCssUrls = Object.fromEntries(this.importedCssUrls);
     }
@@ -1698,6 +1751,12 @@ export class ComponentRegistry {
 
     for (const [name, url] of Object.entries(manifest.componentEntryUrls)) {
       registry.componentEntryUrls.set(name, url);
+    }
+
+    if (manifest.scriptEntryUrls) {
+      for (const [key, url] of Object.entries(manifest.scriptEntryUrls)) {
+        registry.scriptEntryUrls.set(key, url);
+      }
     }
 
     for (const [componentPath, cssUrl] of Object.entries(manifest.cssFileUrls)) {
@@ -1730,6 +1789,9 @@ export class ComponentRegistry {
         module: mod,
         cssComponents: new Set(entry.cssComponents),
         hydratables: entry.hydratables,
+        // Per-page `<Script>` entries aren't persisted (HMR-only state); the
+        // resolved URLs live in the top-level `scriptEntryUrls` map above.
+        scriptEntries: [],
         ssrPath: modulePath,
       });
       registry.hydratableComponents.push(...entry.hydratables);
