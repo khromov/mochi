@@ -13,7 +13,8 @@ export interface Spin {
   easing: string;
 }
 
-export const SPINS: Spin[] = [
+// A non-empty tuple so SPINS[0] is a guaranteed default, not Spin | undefined.
+export const SPINS: [Spin, ...Spin[]] = [
   {
     key: 'spin',
     label: 'spin',
@@ -45,7 +46,8 @@ export const description =
   'Bring your own animation to <ViewTransitions /> with custom={{ in, out }} — raw @keyframes bodies that drive the page you leave and the page you land on. Here the card does a funky 3D spin on every navigation; pick a flavour below.';
 
 export const sources = await loadSources([
-  { label: 'CustomTransitions.svelte', path: './src/demos/custom-transitions/CustomTransitions.svelte' },
+  { label: 'PageOne.svelte', path: './src/demos/custom-transitions/PageOne.svelte' },
+  { label: 'PageTwo.svelte', path: './src/demos/custom-transitions/PageTwo.svelte' },
   { label: 'SpinCard.svelte', path: './src/demos/custom-transitions/SpinCard.svelte' },
   { label: 'shared.ts', path: './src/demos/custom-transitions/shared.ts' },
   { label: 'routes.ts', path: './src/demos/custom-transitions/routes.ts' },

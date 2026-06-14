@@ -6,10 +6,9 @@
   import { description, sources, parseSpin } from './shared';
 
   const spin = parseSpin(url.searchParams.get('spin'));
-  const page: 1 | 2 = url.pathname.endsWith('/two') ? 2 : 1;
 </script>
 
 <DemoPage title="Custom Transitions" {description} {sources}>
   <ViewTransitions custom={{ out: spin.out, in: spin.in }} easing={spin.easing} duration={600} regions="card" />
-  <SpinCard {page} {spin} />
+  <SpinCard page={1} {spin} />
 </DemoPage>

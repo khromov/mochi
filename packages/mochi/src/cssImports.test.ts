@@ -24,7 +24,9 @@ describe('CSS imports — happy path', () => {
   });
 
   test('strips the CSS import from the SSR JS bundle', () => {
-    const ssrModulePath = path.join(outDir, 'svelte-compile', 'Page.server.js');
+    // SSR outputs are hashed, so resolve the on-disk path via the manifest
+    // rather than reconstructing it from the source basename.
+    const ssrModulePath = registry.toManifest().components[FIXTURE_PAGE]!.ssrModule;
     const ssrSource = readFileSync(ssrModulePath, 'utf8');
     expect(ssrSource).not.toContain('color: red');
     expect(ssrSource).not.toContain('styles.css');
