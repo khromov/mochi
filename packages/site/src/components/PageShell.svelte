@@ -35,7 +35,7 @@
 <MetaTags {...mergedMetaTags} />
 
 {#if !ownsViewTransitions}
-  <ViewTransitions type="scale" keepElementSelectors={['.banner', '.sidebar', '.hero', '.gh-corner']} />
+  <ViewTransitions type="scale" keepElementSelectors={['.banner', '.sidebar', '.hero', '.hero-minimal', '.gh-corner']} />
 {/if}
 
 <Banner />

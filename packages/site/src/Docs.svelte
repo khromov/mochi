@@ -42,7 +42,7 @@
     canonical: `https://mochi.fast/docs/${slug}`,
   }}
 >
-  <header class="hero">
+  <header class="hero-minimal">
     <div class="hero-inner">
       <a class="logo" href="/">🍡 mochi</a>
       <p class="tagline">SSR framework for Svelte 5 + Bun with islands-based selective hydration</p>
@@ -82,7 +82,7 @@
 </PageShell>
 
 <style>
-  .hero {
+  .hero-minimal {
     padding: 3rem 1.5rem;
   }
 
@@ -318,7 +318,7 @@
   }
 
   @media (max-width: 768px) {
-    .hero {
+    .hero-minimal {
       padding: 1.5rem 1.25rem;
     }
 
