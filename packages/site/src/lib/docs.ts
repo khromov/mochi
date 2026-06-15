@@ -19,8 +19,11 @@ const SITE_ROOT = path.resolve(DEMOS_DIR, '../..');
 // list — the single source of truth shared by the demo page, the per-demo llms.txt
 // route, and the /llms-full.txt bundle.
 type InternalDemo = Demo & { slug: string; files: SourceSpec[] };
+// `demos` is a static module import, so the filtered list never changes at
+// runtime — compute it once and reuse it across every llms.txt/json request.
+let cachedInternalDemos: InternalDemo[] | null = null;
 function internalDemos(): InternalDemo[] {
-  return demos.filter((d): d is InternalDemo => d.href.startsWith('/') && !!d.slug && !!d.files);
+  return (cachedInternalDemos ??= demos.filter((d): d is InternalDemo => d.href.startsWith('/') && !!d.slug && !!d.files));
 }
 function filesForDemo(slug: string): SourceSpec[] | undefined {
   return internalDemos().find((d) => d.slug === slug)?.files;
