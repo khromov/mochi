@@ -8,6 +8,7 @@ import { generateDocsBarrel } from './lib/generateDocsBarrel';
 import { clearDocsCaches, DOCS_DIR } from './lib/docs';
 import { highlightCode } from './lib/highlight.server';
 import { handle as cookieVaryTestHandle } from './demos/cookie-vary-test/routes';
+import { encodeDebugBarGlobals } from './lib/debugBarEncode';
 import { routes } from './routes';
 
 const DEVELOPMENT = process.env.MODE === 'development';
@@ -89,6 +90,26 @@ const analytics: Handle = async ({ event, resolve }) => {
   });
 };
 
+// Re-encodes the debug bar's inlined file paths so crawlers can't mine them as phantom URLs.
+// See packages/site/src/lib/debugBarEncode.ts for the why; debugBarEncode.test.ts guards the match.
+const encodeDebugBarPaths: Handle = async ({ event, resolve }) => {
+  if (!DEVELOPMENT) {
+    return resolve(event);
+  }
+  return resolve(event, {
+    transformPage({ html }) {
+      const { html: out, matched } = encodeDebugBarGlobals(html);
+      // The match is coupled to the framework's exact `<script>window.X=…` emission. If a debug
+      // global is present but nothing matched, the format drifted and phantom URLs are leaking
+      // again — surface it loudly rather than silently regressing.
+      if (matched === 0 && html.includes('__mochi_debug')) {
+        logger.warn('encodeDebugBarPaths: debug globals present but none matched — phantom-URL guard is no longer effective');
+      }
+      return out;
+    },
+  });
+};
+
 const PORT = Number(process.env.PORT) || 3333;
 const CSRF_PORT = Number(process.env.MOCHI_PORT) || 3333;
 const CSRF_DOMAIN = process.env.MOCHI_DOMAIN ?? 'localhost';
@@ -107,7 +128,7 @@ await Mochi.serve({
   liveReload: process.env.MOCHI_LIVE_RELOAD === 'false' ? false : undefined,
   htmlShell: './src/shell.html',
   trailingSlash: 'always',
-  handle: sequence(compress(), immutableAssets, helloWorld, asciiDog, analytics, noCache, cookieVaryTestHandle),
+  handle: sequence(compress(), immutableAssets, helloWorld, asciiDog, analytics, encodeDebugBarPaths, noCache, cookieVaryTestHandle),
   handleError,
   idleTimeout: 60,
   compressServerIslandProps: true,
