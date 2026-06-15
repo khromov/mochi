@@ -29,8 +29,7 @@
   // These demos render their own <ViewTransitions>. Match each route and its
   // subpaths exactly so an unrelated future demo sharing the prefix (e.g.
   // /demos/view-transitions-foo) doesn't lose the site instance.
-  const ownsViewTransitions = $derived(['/demos/view-transitions', '/demos/custom-transitions'].some((base) => url.pathname === base)); //  || url.pathname.startsWith(`${base}/`)
-  console.log('hasViewTransitions', !ownsViewTransitions);
+  const ownsViewTransitions = $derived(['/demos/view-transitions', '/demos/custom-transitions'].some((base) => url.pathname === base || url.pathname.startsWith(`${base}/`)));
 </script>
 
 <MetaTags {...mergedMetaTags} />
