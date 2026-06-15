@@ -293,23 +293,17 @@ export async function buildLlmsJson(origin: string): Promise<{ docs: LlmsIndexEn
 }
 
 const SITE_NAME = 'Mochi';
-// The doc whose frontmatter `description` doubles as the site's one-line summary in
-// the llms.txt index. Keyed by slug (not list position) so reordering docs can't
-// silently swap the summary out.
-const SITE_SUMMARY_DOC_SLUG = 'intro';
-const SITE_SUMMARY_FALLBACK = 'An SSR framework for Svelte 5 on Bun with islands-based selective hydration.';
+const SITE_SUMMARY = 'Mochi is an SSR-first framework for Svelte 5 on Bun with islands-based selective hydration.';
 
 // Standard llms.txt index: title + summary + linked sections, rendered from the same
 // data as /llms.json. Per-request (origin-dependent), so not cached.
 export async function buildLlmsIndexTxt(origin: string): Promise<string> {
   const { docs, demos } = await buildLlmsJson(origin);
-  const summaryDoc = docs.find((d) => d.url.endsWith(`/docs/${SITE_SUMMARY_DOC_SLUG}/llms.txt`));
-  const summary = summaryDoc?.description || SITE_SUMMARY_FALLBACK;
   const link = (e: LlmsIndexEntry) => `- [${e.title}](${e.url}): ${e.description}`;
   const lines = [
     `# ${SITE_NAME}`,
     '',
-    `> ${summary}`,
+    `> ${SITE_SUMMARY}`,
     '',
     '## Docs',
     '',
