@@ -5,7 +5,7 @@ const DEFAULT_SKILL_URL = 'https://mochi.fast/SKILL.md';
 
 // Where each agent looks for skills. antigravity and codex share the same
 // `.agents/` convention, so they resolve to the same destination.
-const SKILL_DESTS = {
+export const SKILL_DESTS = {
   'claude-code': path.join('.claude', 'skills', 'mochi', 'SKILL.md'),
   opencode: path.join('.opencode', 'skills', 'mochi', 'SKILL.md'),
   antigravity: path.join('.agents', 'skills', 'mochi', 'SKILL.md'),
