@@ -4,11 +4,30 @@ import path from 'node:path';
 import { existsSync } from 'node:fs';
 import { build } from './build';
 import { extractServeOptions } from './extractServeOptions';
+import { updateSkill, SKILL_TARGETS, SKILL_DESTS, DEFAULT_SKILL_TARGET, type SkillTarget } from './updateSkill';
+
+const TARGET_ALIASES: Record<string, SkillTarget> = { agy: 'antigravity' };
+
+// Inverse of TARGET_ALIASES: maps a canonical target to the aliases pointing at it,
+// so help/error text stays in sync with the alias map instead of hardcoding names.
+const ALIASES_BY_TARGET: Partial<Record<SkillTarget, string[]>> = {};
+for (const [alias, target] of Object.entries(TARGET_ALIASES)) {
+  (ALIASES_BY_TARGET[target] ??= []).push(alias);
+}
+
+const ALL_ALIASES = Object.keys(TARGET_ALIASES);
 
 const HELP = `Usage: mochi-framework <command> [options]
 
 Commands:
-  build    Produce a production bundle in the output directory.
+  build                  Produce a production bundle in the output directory.
+  update-skill [agent]   Fetch the latest SKILL.md and write it into the current
+                         project for the given agent. Default: ${DEFAULT_SKILL_TARGET}.
+                         Agents:
+${SKILL_TARGETS.map((t) => {
+  const aliasNote = ALIASES_BY_TARGET[t]?.length ? ` (alias: ${ALIASES_BY_TARGET[t]!.join(', ')})` : '';
+  return `                           ${t.padEnd(12)} -> ${SKILL_DESTS[t]}${aliasNote}`;
+}).join('\n')}
 
 Options for "build":
   --entry <path>           Runtime entry whose \`Mochi.serve()\` call supplies
@@ -26,6 +45,33 @@ Global:
   -h, --help           Show this help.
   -v, --version        Show version.
 `;
+
+function resolveTarget(name: string): SkillTarget | null {
+  if ((SKILL_TARGETS as string[]).includes(name)) {
+    return name as SkillTarget;
+  }
+  return TARGET_ALIASES[name] ?? null;
+}
+
+async function runUpdateSkill(args: string[]) {
+  const requested = args[0] ?? DEFAULT_SKILL_TARGET;
+  const target = resolveTarget(requested);
+  if (!target) {
+    const aliasNote = ALL_ALIASES.length ? ` (aliases: ${ALL_ALIASES.join(', ')})` : '';
+    process.stderr.write(`[mochi] Unknown agent: ${requested}\n\nValid agents: ${SKILL_TARGETS.join(', ')}${aliasNote}\n`);
+    process.exit(1);
+  }
+
+  try {
+    const { path: dest, created } = await updateSkill({ target });
+    const rel = path.relative(process.cwd(), dest) || dest;
+    process.stdout.write(`[mochi] ${created ? 'Created' : 'Updated'} ${rel}\n`);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    process.stderr.write(`[mochi] ${msg}\n`);
+    process.exit(1);
+  }
+}
 
 async function main() {
   const { values, positionals } = parseArgs({
@@ -59,6 +105,12 @@ async function main() {
     process.stderr.write(HELP);
     process.exit(1);
   }
+
+  if (cmd === 'update-skill') {
+    await runUpdateSkill(positionals.slice(1));
+    return;
+  }
+
   if (cmd !== 'build') {
     process.stderr.write(`[mochi] Unknown command: ${cmd}\n\n${HELP}`);
     process.exit(1);

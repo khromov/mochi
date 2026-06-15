@@ -2,13 +2,9 @@
   import DemoPage from '../../components/DemoPage.svelte';
   import FileUpload from './FileUpload.svelte';
   import { loadSources } from '../../components/utils.ts';
+  import { files } from './files.ts';
 
-  const sources = await loadSources([
-    { label: 'FileUploadDemo.svelte', path: './src/demos/file-upload/FileUploadDemo.svelte' },
-    { label: 'FileUpload.svelte', path: './src/demos/file-upload/FileUpload.svelte' },
-    { label: 'routes.ts', path: './src/demos/file-upload/routes.ts' },
-    { label: 'index.ts', path: './src/demoIndex.ts' },
-  ]);
+  const sources = await loadSources(files);
 </script>
 
 <DemoPage

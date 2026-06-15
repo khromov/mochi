@@ -5,7 +5,7 @@ export function delay(minMs: number, maxMs: number = minMs): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-type SourceSpec = { label: string; path: string; lang?: string };
+export type SourceSpec = { label: string; path: string; lang?: string };
 type Source = { label: string; lang: string; html: string; styleHtml?: string };
 
 const cache = new Map<string, string>();

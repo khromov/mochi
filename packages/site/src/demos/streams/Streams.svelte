@@ -2,13 +2,9 @@
   import DemoPage from '../../components/DemoPage.svelte';
   import RealtimeClocks from './RealtimeClocks.svelte';
   import { loadSources } from '../../components/utils.ts';
+  import { files } from './files.ts';
 
-  const sources = await loadSources([
-    { label: 'Streams.svelte', path: './src/demos/streams/Streams.svelte' },
-    { label: 'RealtimeClocks.svelte', path: './src/demos/streams/RealtimeClocks.svelte' },
-    { label: 'routes.ts', path: './src/demos/streams/routes.ts' },
-    { label: 'index.ts', path: './src/demoIndex.ts' },
-  ]);
+  const sources = await loadSources(files);
 </script>
 
 <DemoPage

@@ -2,13 +2,9 @@
   import DemoPage from '../../components/DemoPage.svelte';
   import Fetcher from './Fetcher.svelte';
   import { loadSources } from '../../components/utils.ts';
+  import { files } from './files.ts';
 
-  const sources = await loadSources([
-    { label: 'RequestId.svelte', path: './src/demos/request-id/RequestId.svelte' },
-    { label: 'Fetcher.svelte', path: './src/demos/request-id/Fetcher.svelte' },
-    { label: 'routes.ts', path: './src/demos/request-id/routes.ts' },
-    { label: 'index.ts', path: './src/demoIndex.ts' },
-  ]);
+  const sources = await loadSources(files);
 
   let { requestId }: { requestId: string } = $props();
 </script>

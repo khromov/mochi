@@ -2,13 +2,9 @@
   import DemoPage from '../../components/DemoPage.svelte';
   import SharedPropsCard from './SharedPropsCard.svelte';
   import { loadSources } from '../../components/utils.ts';
+  import { files } from './files.ts';
 
-  const sources = await loadSources([
-    { label: 'PropDedup.svelte', path: './src/demos/prop-dedup/PropDedup.svelte' },
-    { label: 'SharedPropsCard.svelte', path: './src/demos/prop-dedup/SharedPropsCard.svelte' },
-    { label: 'routes.ts', path: './src/demos/prop-dedup/routes.ts' },
-    { label: 'index.ts', path: './src/demoIndex.ts' },
-  ]);
+  const sources = await loadSources(files);
 
   // Three distinct prop payloads. Each is reused across three cards in its
   // group, so the page renders nine hydratable islands but only three unique

@@ -1,6 +1,19 @@
 import { Mochi, error, getRequestContext } from 'mochi-framework';
 import type { MochiRouteValue } from 'mochi-framework';
-import { buildDocsNav, buildLlmsTxt, buildLlmsFullTxt, buildSitemapXml, getDoc, getDocLlmsTxt, getDocNeighbors, loadDocs } from './lib/docs';
+import {
+  buildDocsNav,
+  buildLlmsJson,
+  buildLlmsIndexTxt,
+  buildLlmsRecommendedTxt,
+  buildLlmsFullTxt,
+  buildSitemapXml,
+  getDemoLlmsTxt,
+  getDoc,
+  getDocLlmsTxt,
+  getDocNeighbors,
+  internalDemoLlmsRoutes,
+  loadDocs,
+} from './lib/docs';
 import { profilerEnabled, startProfiler, stopProfiler } from './lib/profiler';
 import { routes as apiRoutes } from './demos/api/routes';
 import { routes as cacheEventsRoutes } from './demos/cache-events/routes';
@@ -41,6 +54,25 @@ import { routes as customTransitionsRoutes } from './demos/custom-transitions/ro
 import { routes as yourFirstMochiAppRoutes } from './demos/your-first-mochi-app/routes';
 
 const DEVELOPMENT = process.env.MODE === 'development';
+
+// Static per-demo source routes, sitting alongside each demo page (e.g.
+// /demos/chat/llms.txt, /cookie-vary-test/llms.txt). Static (not a param) so they
+// outrank demo param routes such as /demos/data-loading/:id, which would otherwise
+// capture "llms.txt".
+const demoLlmsRoutes: Record<string, MochiRouteValue> = Object.fromEntries(
+  internalDemoLlmsRoutes().map(({ path, slug }) => [
+    path,
+    Mochi.api(async () => {
+      const text = await getDemoLlmsTxt(slug);
+      if (text === null) {
+        error(404, `No demo '${slug}'`);
+      }
+      return new Response(text, {
+        headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+      });
+    }),
+  ]),
+);
 
 export const routes: Record<string, MochiRouteValue> = {
   ...(DEVELOPMENT
@@ -97,7 +129,13 @@ export const routes: Record<string, MochiRouteValue> = {
     });
   }),
   '/llms.txt': Mochi.api(async () => {
-    return new Response(await buildLlmsTxt(), {
+    const { url } = getRequestContext();
+    return new Response(await buildLlmsIndexTxt(url.origin), {
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+    });
+  }),
+  '/llms-recommended.txt': Mochi.api(async () => {
+    return new Response(await buildLlmsRecommendedTxt(), {
       headers: { 'Content-Type': 'text/plain; charset=utf-8' },
     });
   }),
@@ -117,6 +155,12 @@ export const routes: Record<string, MochiRouteValue> = {
       headers: { 'Content-Type': 'text/plain; charset=utf-8' },
     });
   }),
+  '/llms.json': Mochi.api(async () => {
+    const { url } = getRequestContext();
+    return Response.json(await buildLlmsJson(url.origin));
+  }),
+  '/SKILL.md': Mochi.file('./src/SKILL.md'),
+  ...demoLlmsRoutes,
   ...apiRoutes,
   ...cacheEventsRoutes,
   ...chatRoutes,

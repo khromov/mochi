@@ -1,12 +1,9 @@
 <script>
   import DemoPage from '../../components/DemoPage.svelte';
   import { loadSources } from '../../components/utils.ts';
+  import { files } from './files.ts';
 
-  const sources = await loadSources([
-    { label: 'CookieVaryTest.svelte', path: './src/demos/cookie-vary-test/CookieVaryTest.svelte' },
-    { label: 'routes.ts', path: './src/demos/cookie-vary-test/routes.ts' },
-    { label: 'index.ts', path: './src/demoIndex.ts' },
-  ]);
+  const sources = await loadSources(files);
 </script>
 
 <DemoPage

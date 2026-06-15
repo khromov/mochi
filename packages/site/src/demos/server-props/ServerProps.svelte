@@ -1,12 +1,9 @@
 <script lang="ts">
   import DemoPage from '../../components/DemoPage.svelte';
   import { loadSources } from '../../components/utils.ts';
+  import { files } from './files.ts';
 
-  const sources = await loadSources([
-    { label: 'ServerProps.svelte', path: './src/demos/server-props/ServerProps.svelte' },
-    { label: 'routes.ts', path: './src/demos/server-props/routes.ts' },
-    { label: 'index.ts', path: './src/demoIndex.ts' },
-  ]);
+  const sources = await loadSources(files);
 
   let { renderedAt, userAgent, random }: { renderedAt: string; userAgent: string; random: number } = $props();
 </script>
