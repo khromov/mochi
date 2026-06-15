@@ -107,7 +107,7 @@
   :global(.hero-minimal) {
     view-transition-name: mochi-vt-keep-hero-minimal;
   }
-  
+
   :global(::view-transition-group(mochi-vt-keep-hero)),
   :global(::view-transition-old(mochi-vt-keep-hero)),
   :global(::view-transition-new(mochi-vt-keep-hero)),
