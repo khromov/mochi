@@ -33,6 +33,12 @@
   .code-viewer {
     margin-top: 1rem;
     max-width: 100%;
+    /* Persist the viewer across cross-document view transitions instead of
+       letting the root snapshot cross-fade it — otherwise it blinks on nav.
+       view-transition-names must be unique per document, so this assumes at
+       most one CodeViewer per page (DemoPage renders exactly one); a second
+       instance would silently break the page's whole transition. */
+    view-transition-name: code-viewer;
   }
 
   .cv-tabs {

@@ -4,6 +4,7 @@
   import { isExternal } from '../lib/isExternal';
   import { getLocationHash, getLocationPathname } from '../stores/hash.svelte';
   import ThemeToggle from './ThemeToggle.svelte';
+  import GitHubButton from './GitHubButton.svelte';
   import ChevronDown from '@lucide/svelte/icons/chevron-down';
 
   const MAX_VISIBLE_CHILDREN = 4;
@@ -74,17 +75,13 @@
   <!-- Backdrop is a pointer-only convenience; keyboard close is handled by svelte:window above. -->
   <div class="drawer-backdrop" onclick={close} aria-hidden="true"></div>
   <div class="drawer">
-    <a href="https://github.com/khromov/mochi" target="_blank" rel="noopener noreferrer" class="gh-corner-mobile" aria-label="View source on GitHub" onclick={close}>
-      <svg width="52" height="52" viewBox="0 0 250 250" aria-hidden="true">
-        <use href="/gh-corner.svg#gh-corner-bg"></use>
-        <use class="octo-arm" href="/gh-corner.svg#gh-corner-arm"></use>
-        <use href="/gh-corner.svg#gh-corner-body"></use>
-      </svg>
-    </a>
     <div class="drawer-inner">
       <div class="drawer-head">
-        <span class="drawer-label">Appearance</span>
-        <ThemeToggle />
+        <span class="drawer-label">🍡 mochi</span>
+        <div class="head-actions">
+          <GitHubButton onNavigate={close} />
+          <ThemeToggle />
+        </div>
       </div>
 
       <div class="search">
@@ -240,7 +237,7 @@
   }
 
   .drawer-inner {
-    padding: 4rem 1rem 2rem;
+    padding: 1.5rem 1rem 2rem;
     display: flex;
     flex-direction: column;
     gap: 1.25rem;
@@ -254,14 +251,18 @@
     gap: 0.75rem;
   }
 
+  .head-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
   .drawer-label {
     font-family: var(--font-serif);
-    font-variant-caps: all-small-caps;
-    font-feature-settings: 'smcp';
-    font-size: 0.95rem;
+    font-size: 1.25rem;
     font-weight: 500;
-    color: var(--text-subtle);
-    letter-spacing: 0.08em;
+    color: var(--text);
+    letter-spacing: -0.01em;
   }
 
   .search input {
@@ -388,43 +389,5 @@
     .mobile-bar {
       display: flex;
     }
-  }
-
-  /* GitHub corner pinned to the top-right of the drawer (the fixed page corner is
-     hidden on mobile — see shell.html). `octocat-wave` keyframes are global. */
-  .gh-corner-mobile {
-    position: absolute;
-    top: 0;
-    right: 0;
-    z-index: 1;
-    border: 0;
-    color: #fff;
-  }
-
-  .gh-corner-mobile svg {
-    display: block;
-    fill: #151513;
-    color: #fff;
-  }
-
-  .gh-corner-mobile .octo-arm {
-    transform-box: view-box;
-    transform-origin: 130px 106px;
-  }
-
-  .gh-corner-mobile:hover .octo-arm {
-    animation: octocat-wave 560ms ease-in-out;
-  }
-
-  @media (prefers-color-scheme: dark) {
-    :global(:root:not([data-theme='light'])) .gh-corner-mobile svg {
-      fill: #fff;
-      color: #151513;
-    }
-  }
-
-  :global([data-theme='dark']) .gh-corner-mobile svg {
-    fill: #fff;
-    color: #151513;
   }
 </style>

@@ -34,7 +34,7 @@
     canonical: `https://mochi.fast${url.pathname}`,
   }}
 >
-  <header class="hero">
+  <header class="hero-minimal">
     <div class="hero-inner">
       <nav class="crumbs" aria-label="Breadcrumb">
         <a class="brand" href="/">🍡 mochi</a>
@@ -102,8 +102,8 @@
 </PageShell>
 
 <style>
-  .hero {
-    padding: 1rem 1.25rem;
+  .hero-minimal {
+    padding: 0.6rem 1.25rem;
     text-align: left;
   }
 

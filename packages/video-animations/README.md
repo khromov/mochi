@@ -5,7 +5,7 @@ Programmatic, 16:9 brand animations for Mochi, rendered to MP4.
 ```sh
 bun run mochi:animate                      # from the repo root, or:
 bun --cwd=packages/video-animations run animate
-# → packages/video-animations/out/mochi.mp4  (1920×1080, 30 fps, 30s, silent)
+# → packages/video-animations/out/mochi.mp4  (1920×1080, 30 fps, 30s, with soundtrack)
 
 bun --cwd=packages/video-animations run probe   # render one PNG per scene to out/probe/
 ```
@@ -17,7 +17,7 @@ Each frame is built as **satori** markup (`src/frame.ts`), parametrised by time 
 1. `satori` lays it out and emits an SVG with text already converted to vector paths.
 2. A monochrome `feTurbulence` grain filter is injected over the gradient backdrop (the Mochi hero look).
 3. `@resvg/resvg-js` rasterises each SVG → PNG (`out/frames/frame_NNNN.png`).
-4. `ffmpeg` encodes the PNG sequence → `out/mochi.mp4` (libx264, yuv420p, crf 18).
+4. `ffmpeg` encodes the PNG sequence → `out/mochi.mp4` (libx264, yuv420p, crf 18), muxing in the `audio/` soundtrack (AAC) with a 3s fade-out at the end and `-shortest` to clip the track to the video length.
 
 ### Parallel rendering
 

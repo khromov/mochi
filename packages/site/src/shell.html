@@ -243,7 +243,8 @@
         font-size: inherit;
       }
 
-      .hero {
+      .hero,
+      .hero-minimal {
         position: relative;
         background-color: #2b3d33;
         background-image:
@@ -256,80 +257,10 @@
         text-align: center;
         overflow: hidden;
       }
-
-      .gh-corner {
-        position: absolute;
-        top: 0;
-        right: 0;
-        z-index: 9999;
-        border: 0;
-        color: #fff;
-      }
-      .gh-corner svg {
-        width: 60px;
-        height: 60px;
-        fill: #151513;
-        color: #fff;
-      }
-      .gh-corner .octo-arm {
-        transform-box: view-box;
-        transform-origin: 130px 106px;
-      }
-      /* Hide the fixed corner on mobile; a corner is rendered inside the mobile menu instead (MobileNav.svelte). */
-      @media (max-width: 768px) {
-        .gh-corner {
-          display: none;
-        }
-      }
-      .gh-corner:hover .octo-arm {
-        animation: octocat-wave 560ms ease-in-out;
-      }
-      @keyframes octocat-wave {
-        0%,
-        100% {
-          transform: rotate(0);
-        }
-        20%,
-        60% {
-          transform: rotate(-25deg);
-        }
-        40%,
-        80% {
-          transform: rotate(10deg);
-        }
-      }
-      @media (max-width: 500px) {
-        .gh-corner:hover .octo-arm {
-          animation: none;
-        }
-        .gh-corner .octo-arm {
-          animation: octocat-wave 560ms ease-in-out;
-        }
-      }
-
-      /* Invert the octocat in dark mode (same two triggers as the token blocks above). */
-      @media (prefers-color-scheme: dark) {
-        :root:not([data-theme='light']) .gh-corner svg {
-          fill: #fff;
-          color: #151513;
-        }
-      }
-      :root[data-theme='dark'] .gh-corner svg {
-        fill: #fff;
-        color: #151513;
-      }
     </style>
     {{mochi.css}}
   </head>
   <body>
-    {{mochi.body}}
-    <a href="https://github.com/khromov/mochi" target="_blank" rel="noopener noreferrer" class="gh-corner" aria-label="View source on GitHub">
-      <svg width="60" height="60" viewBox="0 0 250 250" aria-hidden="true">
-        <use href="/gh-corner.svg#gh-corner-bg"></use>
-        <use class="octo-arm" href="/gh-corner.svg#gh-corner-arm"></use>
-        <use href="/gh-corner.svg#gh-corner-body"></use>
-      </svg>
-    </a>
-    {{mochi.script}} {{mochi.analytics}}
+    {{mochi.body}} {{mochi.script}} {{mochi.analytics}}
   </body>
 </html>

@@ -5,6 +5,7 @@
   import { isExternal } from '../lib/isExternal';
   import { getLocationHash, getLocationPathname } from '../stores/hash.svelte';
   import ThemeToggle from './ThemeToggle.svelte';
+  import GitHubButton from './GitHubButton.svelte';
   import Slash from '@lucide/svelte/icons/slash';
   import ChevronDown from '@lucide/svelte/icons/chevron-down';
 
@@ -113,7 +114,10 @@
   <div class="sidebar-inner" bind:this={sidebarInner}>
     <div class="sidebar-head">
       <a class="sidebar-brand" href="/">🍡 mochi</a>
-      <ThemeToggle />
+      <div class="head-actions">
+        <GitHubButton />
+        <ThemeToggle />
+      </div>
     </div>
 
     <div class="search">
@@ -220,6 +224,12 @@
     align-items: center;
     justify-content: space-between;
     gap: 0.5rem;
+  }
+
+  .head-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
   }
 
   .sidebar-brand {

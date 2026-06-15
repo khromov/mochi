@@ -192,6 +192,11 @@ export class ComponentRegistry {
       module: { default: any };
       cssComponents: Set<string>;
       hydratables: HydratableComponent[];
+      // Absolute path to the compiled `.server.js` on disk. Recorded from the
+      // build's metafile (not reconstructed from the source basename) so two
+      // entrypoints sharing a basename — e.g. PageOne.svelte in two demo
+      // folders — resolve to their own distinct, hashed outputs.
+      ssrPath: string;
     }
   > = new Map();
   private hydratableComponents: HydratableComponent[] = [];
@@ -572,7 +577,10 @@ export class ComponentRegistry {
       splitting: true,
       outdir: compileOutDir,
       naming: {
-        entry: '[name].server.js',
+        // Hash the entry name so entrypoints that share a basename (e.g.
+        // PageOne.svelte in two different demo folders) don't collide on one
+        // output path. The real on-disk name is read back from the metafile.
+        entry: '[name]-[hash].server.js',
         chunk: 'chunk-[hash].js',
         asset: '[name]-[hash].[ext]',
       },
@@ -660,11 +668,11 @@ export class ComponentRegistry {
         throw new Error(`Svelte SSR build produced no output for ${filename}`);
       }
 
-      // `naming.entry` is `[name].server.js`, so the on-disk filename mirrors
-      // the entry's basename. Use that directly instead of relying on the
-      // metafile's path representation (which Bun emits relative to cwd).
-      const entryBasename = path.basename(filename, path.extname(filename));
-      const outPath = path.join(compileOutDir, `${entryBasename}.server.js`);
+      // Entry names are hashed, so the on-disk filename isn't derivable from the
+      // source basename. Read the actual output filename from the metafile key
+      // (Bun emits it relative to cwd, but only its basename matters here) and
+      // join it to the compile dir — same approach as the client build.
+      const outPath = path.join(compileOutDir, path.basename(outKey));
 
       // Dev rebuilds re-import the same on-disk entry, so we can't rely on Bun's
       // query-string cache-busting (unreliable on Windows — returns the stale module).
@@ -708,6 +716,7 @@ export class ComponentRegistry {
         module: mod,
         cssComponents: entryCssComponents,
         hydratables: entryHydratables,
+        ssrPath: outPath,
       });
 
       mochiEvents.emit('compile:complete', {
@@ -1626,9 +1635,8 @@ export class ComponentRegistry {
   toManifest(): MochiManifest {
     const components: MochiManifest['components'] = {};
     for (const [filename, entry] of this.compiledComponents) {
-      const basename = path.basename(filename, '.svelte');
       components[filename] = {
-        ssrModule: path.join(this.outDir, 'svelte-compile', `${basename}.server.js`),
+        ssrModule: entry.ssrPath,
         hydratables: entry.hydratables.map((h) => ({
           name: h.name,
           resolvedPath: h.resolvedPath,
@@ -1722,6 +1730,7 @@ export class ComponentRegistry {
         module: mod,
         cssComponents: new Set(entry.cssComponents),
         hydratables: entry.hydratables,
+        ssrPath: modulePath,
       });
       registry.hydratableComponents.push(...entry.hydratables);
     }

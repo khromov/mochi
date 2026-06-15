@@ -32,9 +32,11 @@ import Eye from '@lucide/svelte/icons/eye';
 import Snowflake from '@lucide/svelte/icons/snowflake';
 import Fingerprint from '@lucide/svelte/icons/fingerprint';
 import Link from '@lucide/svelte/icons/link';
+import Blend from '@lucide/svelte/icons/blend';
 import FileDown from '@lucide/svelte/icons/file-down';
 import Hash from '@lucide/svelte/icons/hash';
 import Barcode from '@lucide/svelte/icons/barcode';
+import Tornado from '@lucide/svelte/icons/tornado';
 
 export interface DemoIconMeta {
   icon: Component;
@@ -77,5 +79,7 @@ export const demoIconFor: Record<string, DemoIconMeta> = {
   'Tailwind Todo App': { icon: ListTodo, label: 'Todo app on Tailwind' },
   'Cookie Vary Test': { icon: Fingerprint, label: 'Response-driven Vary: Cookie' },
   'Isomorphic URL': { icon: Link, label: 'Same url import on server and client' },
+  'View Transitions': { icon: Blend, label: 'Animated cross-document navigations' },
+  'Custom Transitions': { icon: Tornado, label: 'Custom @keyframes spin via custom={{ in, out }}' },
   'File Routes': { icon: FileDown, label: 'Serve a file from disk with Mochi.file()' },
 };
