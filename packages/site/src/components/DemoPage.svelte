@@ -103,7 +103,7 @@
 
 <style>
   .hero-minimal {
-    padding: 1rem 1.25rem;
+    padding: 0.6rem 1.25rem;
     text-align: left;
   }
 

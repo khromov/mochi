@@ -83,7 +83,7 @@
 
 <style>
   .hero-minimal {
-    padding: 3rem 1.5rem;
+    padding: 1.5rem 1.5rem;
   }
 
   .hero-inner {
@@ -319,7 +319,7 @@
 
   @media (max-width: 768px) {
     .hero-minimal {
-      padding: 1.5rem 1.25rem;
+      padding: 1rem 1.25rem;
     }
 
     .logo {
