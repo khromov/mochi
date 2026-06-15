@@ -1,7 +1,7 @@
 ---
 title: 'Docs for LLMs'
 slug: docs-for-llms
-description: 'Access plain-text documentation at /llms.txt and /llms-full.txt for pasting into LLM contexts.'
+description: 'An llms.txt index at /llms.txt, plus concatenated bundles for pasting into LLM contexts.'
 ---
 
 <script>
@@ -10,15 +10,19 @@ description: 'Access plain-text documentation at /llms.txt and /llms-full.txt fo
 
 ## Docs for LLMs
 
-The Mochi documentation is published as plain-text bundles you can paste into an LLM context.
+The Mochi documentation is published in the [llms.txt](https://llmstxt.org/) format so models can discover and fetch exactly what they need.
 
-### Full documentation
+### Index
 
-The full set of docs, concatenated in reading order, is served at [`/llms.txt`](/llms.txt). Use this when you want the model to have the complete picture of the framework API.
+[`/llms.txt`](/llms.txt) is the index: a title, a one-line summary, and a linked list of every doc (`## Docs`) and demo (`## Examples`), each pointing at its own plain-text file. The concatenated bundles below are linked under `## Optional`. Start here.
+
+### All docs concatenated
+
+The full set of docs, concatenated in reading order, is served at [`/llms-recommended.txt`](/llms-recommended.txt). Use this when you want the model to have the complete picture of the framework API in one paste.
 
 ### Docs + demo source
 
-[`/llms-full.txt`](/llms-full.txt) includes everything in `/llms.txt` plus the source of every demo (`.svelte` and `.ts` files), grouped by demo name. Use this when the model needs both the API and real working examples.
+[`/llms-full.txt`](/llms-full.txt) includes everything in `/llms-recommended.txt` plus the source of every demo (`.svelte` and `.ts` files), grouped by demo name. Use this when the model needs both the API and real working examples.
 
 ### Per-document text
 

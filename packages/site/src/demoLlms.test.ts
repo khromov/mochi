@@ -71,4 +71,32 @@ describe('per-demo llms.txt routes', () => {
     expect(text).toContain('### index.ts');
     expect(text).toContain('### SharedState.svelte');
   });
+
+  test('/llms.txt is a standard llms.txt index, not the concatenated bundle', async () => {
+    const res = await fetch(`${base}/llms.txt`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('text/plain');
+    const text = await res.text();
+    expect(text.startsWith('# Mochi')).toBe(true);
+    expect(text).toContain('\n> ');
+    expect(text).toContain('## Docs');
+    expect(text).toContain('## Examples');
+    expect(text).toContain('## Optional');
+    expect(text).toMatch(/\]\([^)]*\/docs\/[^/]+\/llms\.txt\):/);
+    expect(text).toMatch(/\]\([^)]*\/demos\/[^/]+\/llms\.txt\):/);
+    expect(text).toContain('/llms-recommended.txt');
+    expect(text).toContain('/llms-full.txt');
+    // The index is just links — not the raw docs with their fenced code blocks.
+    expect(text).not.toContain('```');
+  });
+
+  test('/llms-recommended.txt serves the concatenated docs', async () => {
+    const res = await fetch(`${base}/llms-recommended.txt`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('text/plain');
+    const text = await res.text();
+    // Full docs in reading order — substantial, and not the index format.
+    expect(text.length).toBeGreaterThan(5000);
+    expect(text.startsWith('# Mochi\n')).toBe(false);
+  });
 });

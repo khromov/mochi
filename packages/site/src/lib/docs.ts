@@ -40,7 +40,7 @@ export interface DocEntry {
 let cachedDocs: DocEntry[] | null = null;
 let cachedBySlug: Map<string, DocEntry> | null = null;
 let cachedNav: TocEntry[] | null = null;
-let cachedLlmsTxt: string | null = null;
+let cachedLlmsRecommendedTxt: string | null = null;
 let cachedLlmsFullTxt: string | null = null;
 let cachedSitemapXml: string | null = null;
 
@@ -48,7 +48,7 @@ export function clearDocsCaches(): void {
   cachedDocs = null;
   cachedBySlug = null;
   cachedNav = null;
-  cachedLlmsTxt = null;
+  cachedLlmsRecommendedTxt = null;
   cachedLlmsFullTxt = null;
   cachedSitemapXml = null;
 }
@@ -226,13 +226,13 @@ export async function getDemoLlmsTxt(slug: string): Promise<string | null> {
   return parts.join('\n').trimEnd() + '\n';
 }
 
-export async function buildLlmsTxt(): Promise<string> {
-  if (cachedLlmsTxt) {
-    return cachedLlmsTxt;
+export async function buildLlmsRecommendedTxt(): Promise<string> {
+  if (cachedLlmsRecommendedTxt) {
+    return cachedLlmsRecommendedTxt;
   }
   const docs = await loadDocs();
-  cachedLlmsTxt = docs.map((d) => d.raw.trimEnd()).join('\n\n') + '\n';
-  return cachedLlmsTxt;
+  cachedLlmsRecommendedTxt = docs.map((d) => d.raw.trimEnd()).join('\n\n') + '\n';
+  return cachedLlmsRecommendedTxt;
 }
 
 export async function buildLlmsFullTxt(): Promise<string> {
@@ -302,6 +302,36 @@ export async function buildLlmsJson(origin: string): Promise<{ docs: LlmsIndexEn
       return { title: d.title, description: d.hook, url: `${origin}/demos/${slug}/llms.txt` };
     });
   return { docs, demos: demoEntries };
+}
+
+const SITE_NAME = 'Mochi';
+
+// Standard llms.txt index: title + summary + linked sections, rendered from the same
+// data as /llms.json. Per-request (origin-dependent), so not cached.
+export async function buildLlmsIndexTxt(origin: string): Promise<string> {
+  const { docs, demos } = await buildLlmsJson(origin);
+  const summary = docs[0]?.description || 'An SSR framework for Svelte 5 on Bun with islands-based selective hydration.';
+  const link = (e: LlmsIndexEntry) => `- [${e.title}](${e.url}): ${e.description}`;
+  const lines = [
+    `# ${SITE_NAME}`,
+    '',
+    `> ${summary}`,
+    '',
+    '## Docs',
+    '',
+    ...docs.map(link),
+    '',
+    '## Examples',
+    '',
+    ...demos.map(link),
+    '',
+    '## Optional',
+    '',
+    `- [All docs concatenated](${origin}/llms-recommended.txt): The full documentation in reading order.`,
+    `- [Docs + every demo's source](${origin}/llms-full.txt): Everything, for maximum context.`,
+    '',
+  ];
+  return lines.join('\n');
 }
 
 type HastNode = {

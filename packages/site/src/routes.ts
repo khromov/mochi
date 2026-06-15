@@ -3,7 +3,8 @@ import type { MochiRouteValue } from 'mochi-framework';
 import {
   buildDocsNav,
   buildLlmsJson,
-  buildLlmsTxt,
+  buildLlmsIndexTxt,
+  buildLlmsRecommendedTxt,
   buildLlmsFullTxt,
   buildSitemapXml,
   getDemoLlmsTxt,
@@ -124,7 +125,13 @@ export const routes: Record<string, MochiRouteValue> = {
     });
   }),
   '/llms.txt': Mochi.api(async () => {
-    return new Response(await buildLlmsTxt(), {
+    const { url } = getRequestContext();
+    return new Response(await buildLlmsIndexTxt(url.origin), {
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+    });
+  }),
+  '/llms-recommended.txt': Mochi.api(async () => {
+    return new Response(await buildLlmsRecommendedTxt(), {
       headers: { 'Content-Type': 'text/plain; charset=utf-8' },
     });
   }),
