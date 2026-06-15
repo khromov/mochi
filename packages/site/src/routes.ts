@@ -157,6 +157,7 @@ export const routes: Record<string, MochiRouteValue> = {
     const { url } = getRequestContext();
     return Response.json(await buildLlmsJson(url.origin));
   }),
+  '/SKILL.md': Mochi.file('./src/SKILL.md'),
   ...demoLlmsRoutes,
   ...apiRoutes,
   ...cacheEventsRoutes,
