@@ -35,7 +35,7 @@
 <MetaTags {...mergedMetaTags} />
 
 {#if !ownsViewTransitions}
-  <ViewTransitions type="scale" keepElementSelectors={['.banner', '.sidebar', '.mochi-debug-bar-root']} />
+  <ViewTransitions type="scale" keepElementSelectors={['.banner', '.sidebar', '.mochi-debug-bar-root', '.hero', '.hero-minimal']} />
 {/if}
 
 <Banner />
@@ -71,48 +71,5 @@
     :global(.sidebar) {
       display: none;
     }
-  }
-
-  @keyframes hero-fade-out {
-    from {
-      opacity: 1;
-    }
-    to {
-      opacity: 0;
-    }
-  }
-  @keyframes hero-fade-in {
-    from {
-      opacity: 0;
-    }
-    to {
-      opacity: 1;
-    }
-  }
-
-  :global(::view-transition-old(mochi-vt-keep-hero):only-child),
-  :global(::view-transition-old(mochi-vt-keep-hero-minimal):only-child) {
-    animation: hero-fade-out 250ms ease both !important;
-  }
-
-  :global(::view-transition-new(mochi-vt-keep-hero):only-child),
-  :global(::view-transition-new(mochi-vt-keep-hero-minimal):only-child) {
-    animation: hero-fade-in 250ms ease both !important;
-  }
-
-  :global(.hero) {
-    view-transition-name: mochi-vt-keep-hero;
-  }
-  :global(.hero-minimal) {
-    view-transition-name: mochi-vt-keep-hero-minimal;
-  }
-
-  :global(::view-transition-group(mochi-vt-keep-hero)),
-  :global(::view-transition-old(mochi-vt-keep-hero)),
-  :global(::view-transition-new(mochi-vt-keep-hero)),
-  :global(::view-transition-group(mochi-vt-keep-hero-minimal)),
-  :global(::view-transition-old(mochi-vt-keep-hero-minimal)),
-  :global(::view-transition-new(mochi-vt-keep-hero-minimal)) {
-    animation: none;
   }
 </style>
