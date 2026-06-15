@@ -72,4 +72,25 @@
       display: none;
     }
   }
+
+  @keyframes hero-fade-out {
+    to {
+      opacity: 0;
+    }
+  }
+  @keyframes hero-fade-in {
+    from {
+      opacity: 0;
+    }
+  }
+
+  :global(::view-transition-old(mochi-vt-keep-hero):only-child),
+  :global(::view-transition-old(mochi-vt-keep-hero-minimal):only-child) {
+    animation: hero-fade-out 250ms ease both !important;
+  }
+
+  :global(::view-transition-new(mochi-vt-keep-hero):only-child),
+  :global(::view-transition-new(mochi-vt-keep-hero-minimal):only-child) {
+    animation: hero-fade-in 250ms ease both !important;
+  }
 </style>
