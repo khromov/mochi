@@ -31,28 +31,13 @@
     isHydratable?: boolean;
   } = $props();
 
-  if (isHydratable) {
-    throw new Error('<ViewTransitions /> must not be hydrated — it emits static CSS only. Remove the mochi: directives.');
-  }
-
-  if (!Number.isFinite(duration) || duration < 0) {
-    throw new Error(`<ViewTransitions /> duration must be a non-negative number of milliseconds, got ${JSON.stringify(duration)}.`);
-  }
-
-  // `easing` is interpolated into a raw <style> tag; a `<` could close it and
-  // inject markup. Always developer-authored, so just refuse.
-  if (easing.includes('<')) {
-    throw new Error(`<ViewTransitions /> easing must not contain "<", got ${JSON.stringify(easing)}.`);
-  }
-
-  let isFirst = true;
   const locals = getRequestContext().locals;
   // __mochi_view_transitions__ is the internal key we use to track whether we've already rendered a <ViewTransitions /> for this page.
-  if (locals.__mochi_view_transitions__) {
-    devWarn('<ViewTransitions /> was rendered more than once on this page — ignoring this instance. Render exactly one, typically from a shared layout.');
-    isFirst = false;
-  } else {
+  const isFirst = !locals.__mochi_view_transitions__;
+  if (isFirst) {
     locals.__mochi_view_transitions__ = true;
+  } else {
+    devWarn('<ViewTransitions /> was rendered more than once on this page — ignoring this instance. Render exactly one, typically from a shared layout.');
   }
 
   const keyframes = {
@@ -72,7 +57,6 @@
       @keyframes mochi-vt-out { to { transform: perspective(1200px) rotateY(-90deg); opacity: 0; } }
       @keyframes mochi-vt-in { from { transform: perspective(1200px) rotateY(90deg); opacity: 0; } }`,
   } as const;
-
   // A custom `out`/`in` body overrides the chosen preset. Both sides are
   // optional, but at least one must be supplied; a missing side emits an empty
   // @keyframes so that direction simply doesn't animate.
@@ -152,15 +136,27 @@
 
   // Assemble the full <style> tag as a string and hand it to <RawScript /> to
   // inline. Building it here (not in markup) keeps the literal `</style>` out of
-  // the template, which svelte2tsx (svelte-check) mis-parses in markup.
-  const styleTag = $derived(
-    `<style>@view-transition { navigation: auto; }${rootReset}
+  // the template, which svelte2tsx (svelte-check) mis-parses in markup. The
+  // prop guards live here too so their reads sit inside a reactive closure.
+  const styleTag = $derived.by(() => {
+    if (isHydratable) {
+      throw new Error('<ViewTransitions /> must not be hydrated — it emits static CSS only. Remove the mochi: directives.');
+    }
+    if (!Number.isFinite(duration) || duration < 0) {
+      throw new Error(`<ViewTransitions /> duration must be a non-negative number of milliseconds, got ${JSON.stringify(duration)}.`);
+    }
+    // `easing` is interpolated into a raw <style> tag; a `<` could close it and
+    // inject markup. Always developer-authored, so just refuse.
+    if (easing.includes('<')) {
+      throw new Error(`<ViewTransitions /> easing must not contain "<", got ${JSON.stringify(easing)}.`);
+    }
+    return `<style>@view-transition { navigation: auto; }${rootReset}
     ${animationRules}
     ${keepRules ? keepRules + '\n    ' : ''}${keyframeCss}
     @media (prefers-reduced-motion: reduce) {
       ${reducedTargets} { animation: none; }
-    }</style>`,
-  );
+    }</style>`;
+  });
 </script>
 
 <svelte:head>
