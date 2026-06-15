@@ -215,12 +215,20 @@ export async function buildLlmsRecommendedTxt(): Promise<string> {
   return cachedLlmsRecommendedTxt;
 }
 
+// Component <style> blocks in demo source are presentation noise for an LLM
+// consuming /llms-full.txt — replace each with an empty placeholder so the
+// component still reads as complete, without shipping the CSS.
+const SVELTE_STYLE_BLOCK_RE = /<style\b[^>]*>[\s\S]*?<\/style>/g;
+function stripSvelteStyleBlocks(text: string): string {
+  return text.replace(SVELTE_STYLE_BLOCK_RE, '<style>\n  /* Styles omitted */\n</style>');
+}
+
 export async function buildLlmsFullTxt(): Promise<string> {
   if (cachedLlmsFullTxt) {
     return cachedLlmsFullTxt;
   }
   const [docs, demos] = await Promise.all([loadDocs(), buildDemosTxt()]);
-  cachedLlmsFullTxt = docs.map((d) => d.raw.trimEnd()).join('\n\n') + '\n\n' + demos;
+  cachedLlmsFullTxt = docs.map((d) => d.raw.trimEnd()).join('\n\n') + '\n\n' + stripSvelteStyleBlocks(demos);
   return cachedLlmsFullTxt;
 }
 

@@ -86,6 +86,21 @@ describe('per-demo llms.txt routes', () => {
     expect(full).toContain(perDemo.trimEnd());
   });
 
+  test('/llms-full.txt strips demo <style> blocks but keeps docs styles and per-demo styles', async () => {
+    // .chat-input button:hover lives only in the chat demo's ChatWidget.svelte <style>.
+    const demoCss = '.chat-input button:hover';
+    const [full, perDemo] = await Promise.all([fetch(`${base}/llms-full.txt`).then((r) => r.text()), fetch(`${base}/demos/chat/llms.txt`).then((r) => r.text())]);
+    // Per-demo route keeps the demo's real styles.
+    expect(perDemo).toContain(demoCss);
+    // The chat demo is bundled into the full output, but its <style> block is
+    // replaced with an empty placeholder rather than shipping the CSS.
+    expect(full).toContain('## Demo: chat');
+    expect(full).not.toContain(demoCss);
+    expect(full).toContain('<style>\n  /* Styles omitted */\n</style>');
+    // Docs <style> examples (e.g. the Card example in 155-css-imports.md) are preserved.
+    expect(full).toContain('color: tomato;');
+  });
+
   test('hello-world demo source matches snapshot', async () => {
     const text = await fetch(`${base}/demos/hello-world/llms.txt`).then((r) => r.text());
     expect(text).toMatchSnapshot();
