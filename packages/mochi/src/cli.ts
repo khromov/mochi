@@ -4,14 +4,21 @@ import path from 'node:path';
 import { existsSync } from 'node:fs';
 import { build } from './build';
 import { extractServeOptions } from './extractServeOptions';
-import { updateSkill } from './updateSkill';
+import { updateSkill, SKILL_TARGETS, DEFAULT_SKILL_TARGET, type SkillTarget } from './updateSkill';
+
+const TARGET_ALIASES: Record<string, SkillTarget> = { agy: 'antigravity' };
 
 const HELP = `Usage: mochi-framework <command> [options]
 
 Commands:
-  build          Produce a production bundle in the output directory.
-  update-skill   Fetch the latest SKILL.md and write it to
-                 .claude/skills/mochi/SKILL.md in the current project.
+  build                  Produce a production bundle in the output directory.
+  update-skill [agent]   Fetch the latest SKILL.md and write it into the current
+                         project for the given agent. Default: ${DEFAULT_SKILL_TARGET}.
+                         Agents:
+                           claude-code  -> .claude/skills/mochi/SKILL.md
+                           opencode     -> .opencode/skills/mochi/SKILL.md
+                           antigravity  -> .agents/skills/mochi/SKILL.md (alias: agy)
+                           codex        -> .agents/skills/mochi/SKILL.md
 
 Options for "build":
   --entry <path>           Runtime entry whose \`Mochi.serve()\` call supplies
@@ -30,9 +37,23 @@ Global:
   -v, --version        Show version.
 `;
 
-async function runUpdateSkill() {
+function resolveTarget(name: string): SkillTarget | null {
+  if ((SKILL_TARGETS as string[]).includes(name)) {
+    return name as SkillTarget;
+  }
+  return TARGET_ALIASES[name] ?? null;
+}
+
+async function runUpdateSkill(args: string[]) {
+  const requested = args[0] ?? DEFAULT_SKILL_TARGET;
+  const target = resolveTarget(requested);
+  if (!target) {
+    process.stderr.write(`[mochi] Unknown agent: ${requested}\n\nValid agents: ${SKILL_TARGETS.join(', ')} (alias: agy)\n`);
+    process.exit(1);
+  }
+
   try {
-    const { path: dest, created } = await updateSkill();
+    const { path: dest, created } = await updateSkill({ target });
     const rel = path.relative(process.cwd(), dest) || dest;
     process.stdout.write(`[mochi] ${created ? 'Created' : 'Updated'} ${rel}\n`);
   } catch (err) {
@@ -76,7 +97,7 @@ async function main() {
   }
 
   if (cmd === 'update-skill') {
-    await runUpdateSkill();
+    await runUpdateSkill(positionals.slice(1));
     return;
   }
 

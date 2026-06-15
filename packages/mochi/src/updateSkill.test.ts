@@ -11,7 +11,7 @@ function freshCwd() {
 }
 
 describe('updateSkill', () => {
-  it('creates the skill file (and parent dirs) when it does not exist', async () => {
+  it('defaults to the claude-code path and creates parent dirs when missing', async () => {
     const cwd = freshCwd();
     const fetchImpl = async () => new Response('# Hosted skill', { status: 200 });
 
@@ -21,6 +21,22 @@ describe('updateSkill', () => {
     expect(res.path).toBe(path.join(cwd, SKILL_DEST));
     expect(existsSync(res.path)).toBe(true);
     expect(await Bun.file(res.path).text()).toBe('# Hosted skill');
+  });
+
+  it('writes to the right path per target', async () => {
+    const cases = [
+      ['opencode', path.join('.opencode', 'skills', 'mochi', 'SKILL.md')],
+      ['antigravity', path.join('.agents', 'skills', 'mochi', 'SKILL.md')],
+      ['codex', path.join('.agents', 'skills', 'mochi', 'SKILL.md')],
+    ] as const;
+
+    for (const [target, expected] of cases) {
+      const cwd = freshCwd();
+      const fetchImpl = async () => new Response('body', { status: 200 });
+      const res = await updateSkill({ cwd, target, fetchImpl });
+      expect(res.path).toBe(path.join(cwd, expected));
+      expect(await Bun.file(res.path).text()).toBe('body');
+    }
   });
 
   it('overwrites an existing skill file', async () => {
