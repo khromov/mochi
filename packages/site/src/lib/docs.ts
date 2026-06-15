@@ -4,16 +4,27 @@ import { fileURLToPath } from 'node:url';
 import { compile as mdsvexCompile } from 'mdsvex';
 import { logger } from 'mochi-framework';
 import rehypeSlug from 'rehype-slug';
-import { demos } from './demos';
-import { demoFiles } from './demoFiles';
+import { demos, type Demo } from './demos';
+import type { SourceSpec } from '../components/utils.ts';
 import type { TocEntry } from './toc';
 
 type MdsvexRehypePlugin = NonNullable<NonNullable<Parameters<typeof mdsvexCompile>[1]>['rehypePlugins']>[number];
 
 export const DOCS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../docs');
 const DEMOS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../demos');
-// Demo source paths in demoFiles are written relative to the site package root (e.g. './src/...').
+// Demo source paths in each demo's `files` are written relative to the site package root (e.g. './src/...').
 const SITE_ROOT = path.resolve(DEMOS_DIR, '../..');
+
+// Internal demos are keyed by their folder name (`slug`) and carry their own `files`
+// list — the single source of truth shared by the demo page, the per-demo llms.txt
+// route, and the /llms-full.txt bundle.
+type InternalDemo = Demo & { slug: string; files: SourceSpec[] };
+function internalDemos(): InternalDemo[] {
+  return demos.filter((d): d is InternalDemo => d.href.startsWith('/') && !!d.slug && !!d.files);
+}
+function filesForDemo(slug: string): SourceSpec[] | undefined {
+  return internalDemos().find((d) => d.slug === slug)?.files;
+}
 
 /** Parses the leading numeric prefix of a filename (e.g. `"01-intro.md"` → `1`). */
 function leadingFileNumber(filename: string, fallback = Number.NaN): number {
@@ -156,11 +167,15 @@ export async function buildDocsNav(): Promise<TocEntry[]> {
   return entries;
 }
 
-async function buildDemosTxt(): Promise<string> {
-  const slugs = Object.keys(demoFiles).sort();
+async function buildDemosTxt(stripStyles = false): Promise<string> {
+  const slugs = internalDemos()
+    .map((d) => d.slug)
+    .sort();
   const parts: string[] = ['# Demo Source Files\n'];
   for (const slug of slugs) {
-    const section = await getDemoLlmsTxt(slug);
+    // The cached getDemoLlmsTxt serves the per-demo route (styles intact); the
+    // /llms-full.txt bundle wants them stripped, so build that variant directly.
+    const section = stripStyles ? await buildDemoLlmsTxt(slug, true) : await getDemoLlmsTxt(slug);
     if (section !== null) {
       parts.push(section);
     }
@@ -168,9 +183,9 @@ async function buildDemosTxt(): Promise<string> {
   return parts.join('\n');
 }
 
-// Per-demo source bundle built from the demo's declared file list (demoFiles) — the
-// same list the demo page renders via loadSources — so cross-folder files (e.g. shared
-// stores, the demoIndex.ts example) are included, not just files in the demo folder.
+// Per-demo source bundle built from the demo's declared `files` list — the same list
+// the demo page renders via loadSources — so cross-folder files (e.g. shared stores,
+// the demoIndex.ts example) are included, not just files in the demo folder.
 export async function getDemoLlmsTxt(slug: string): Promise<string | null> {
   if (cachedDemoLlmsTxt.has(slug)) {
     return cachedDemoLlmsTxt.get(slug)!;
@@ -182,8 +197,8 @@ export async function getDemoLlmsTxt(slug: string): Promise<string | null> {
   return result;
 }
 
-async function buildDemoLlmsTxt(slug: string): Promise<string | null> {
-  const specs = demoFiles[slug];
+async function buildDemoLlmsTxt(slug: string, stripStyles = false): Promise<string | null> {
+  const specs = filesForDemo(slug);
   if (!specs || specs.length === 0) {
     return null;
   }
@@ -196,9 +211,14 @@ async function buildDemoLlmsTxt(slug: string): Promise<string | null> {
       logger.warn(`[llms] demo '${slug}': source file not found, skipping: ${rel}`);
       continue;
     }
-    const content = await Bun.file(abs).text();
+    let content = (await Bun.file(abs).text()).trimEnd();
     const fence = lang ?? (label.endsWith('.svelte') ? 'svelte' : 'ts');
-    parts.push(`### ${label}\n\`\`\`${fence}\n${content.trimEnd()}\n\`\`\`\n`);
+    // Strip <style> blocks only from Svelte-fenced sources — never from .ts, where a
+    // literal "<style>" would just be code/text, not markup to elide.
+    if (stripStyles && fence === 'svelte') {
+      content = stripSvelteStyleBlocks(content);
+    }
+    parts.push(`### ${label}\n\`\`\`${fence}\n${content}\n\`\`\`\n`);
   }
   if (parts.length === 1) {
     return null;
@@ -227,8 +247,8 @@ export async function buildLlmsFullTxt(): Promise<string> {
   if (cachedLlmsFullTxt) {
     return cachedLlmsFullTxt;
   }
-  const [docs, demos] = await Promise.all([loadDocs(), buildDemosTxt()]);
-  cachedLlmsFullTxt = docs.map((d) => d.raw.trimEnd()).join('\n\n') + '\n\n' + stripSvelteStyleBlocks(demos);
+  const [docs, demos] = await Promise.all([loadDocs(), buildDemosTxt(true)]);
+  cachedLlmsFullTxt = docs.map((d) => d.raw.trimEnd()).join('\n\n') + '\n\n' + demos;
   return cachedLlmsFullTxt;
 }
 
@@ -262,11 +282,6 @@ export interface LlmsIndexEntry {
   url: string;
 }
 
-function lastSegment(href: string): string {
-  const segs = href.split('/').filter(Boolean);
-  return segs[segs.length - 1] ?? '';
-}
-
 /** The plain-text source URL for a demo, derived from its page href (which ends in '/'). */
 function demoLlmsPath(href: string): string {
   return href.endsWith('/') ? `${href}llms.txt` : `${href}/llms.txt`;
@@ -275,18 +290,18 @@ function demoLlmsPath(href: string): string {
 export interface DemoLlmsRoute {
   /** Route path, sitting alongside the demo page (e.g. /demos/chat/llms.txt, /cookie-vary-test/llms.txt). */
   path: string;
-  /** demoFiles registry key (the demo folder name) used to look up the source. */
+  /** Demo folder name (the demo's `slug`) used to look up its source. */
   slug: string;
 }
 
 /**
- * Demos with local source (internal hrefs), each as the static llms.txt route to
- * register and the demoFiles key behind it. The route is static (not a param) so it
- * outranks demo param routes like /demos/data-loading/:id, and its path tracks the
- * demo's own page href so source and page share a prefix.
+ * Demos with local source, each as the static llms.txt route to register and the
+ * `slug` (folder name) behind it. The route is static (not a param) so it outranks
+ * demo param routes like /demos/data-loading/:id, and its path tracks the demo's own
+ * page href so source and page share a prefix.
  */
 export function internalDemoLlmsRoutes(): DemoLlmsRoute[] {
-  return demos.filter((d) => d.href.startsWith('/')).map((d) => ({ path: demoLlmsPath(d.href), slug: lastSegment(d.href) }));
+  return internalDemos().map((d) => ({ path: demoLlmsPath(d.href), slug: d.slug }));
 }
 
 export async function buildLlmsJson(origin: string): Promise<{ docs: LlmsIndexEntry[]; demos: LlmsIndexEntry[] }> {
@@ -296,7 +311,7 @@ export async function buildLlmsJson(origin: string): Promise<{ docs: LlmsIndexEn
     description: d.description ?? '',
     url: `${origin}/docs/${d.slug}/llms.txt`,
   }));
-  const demoEntries: LlmsIndexEntry[] = demos.filter((d) => d.href.startsWith('/')).map((d) => ({ title: d.title, description: d.hook, url: `${origin}${demoLlmsPath(d.href)}` }));
+  const demoEntries: LlmsIndexEntry[] = internalDemos().map((d) => ({ title: d.title, description: d.hook, url: `${origin}${demoLlmsPath(d.href)}` }));
   return { docs, demos: demoEntries };
 }
 

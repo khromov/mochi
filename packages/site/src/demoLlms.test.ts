@@ -79,7 +79,7 @@ describe('per-demo llms.txt routes', () => {
   test('/llms-full.txt bundles the same per-demo source as the per-demo route', async () => {
     const [full, perDemo] = await Promise.all([fetch(`${base}/llms-full.txt`).then((r) => r.text()), fetch(`${base}/cookie-vary-test/llms.txt`).then((r) => r.text())]);
     // Cross-folder files (index.ts from the shared demoIndex example) must appear in the
-    // full bundle too, proving both paths read from the same demoFiles registry.
+    // full bundle too, proving both paths read from the same per-demo files registry.
     expect(full).toContain('## Demo: cookie-vary-test');
     expect(full).toContain('### index.ts');
     // The per-demo section is embedded verbatim in the full bundle.
