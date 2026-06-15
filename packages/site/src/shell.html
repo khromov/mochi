@@ -257,6 +257,21 @@
         text-align: center;
         overflow: hidden;
       }
+
+      /* Only one of .hero / .hero-minimal exists per page, so this name is never
+         duplicated. Sharing it lets the cross-document view transition morph the
+         dark header box between its tall (home) and short (docs/demo) forms; the
+         logo carries its own name so it glides instead of ghost-cross-fading. */
+      .hero,
+      .hero-minimal {
+        view-transition-name: mochi-hero;
+      }
+
+      .hero .logo,
+      .hero-minimal .logo,
+      .hero-minimal .brand {
+        view-transition-name: mochi-hero-logo;
+      }
     </style>
     {{mochi.css}}
   </head>

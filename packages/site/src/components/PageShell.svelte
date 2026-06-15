@@ -35,7 +35,7 @@
 <MetaTags {...mergedMetaTags} />
 
 {#if !ownsViewTransitions}
-  <ViewTransitions type="scale" keepElementSelectors={['.banner', '.sidebar', '.mochi-debug-bar-root', '.hero', '.hero-minimal']} />
+  <ViewTransitions type="scale" keepElementSelectors={['.banner', '.sidebar', '.mochi-debug-bar-root']} />
 {/if}
 
 <Banner />
