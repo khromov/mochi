@@ -1,6 +1,7 @@
 <script lang="ts">
   import { getRequestContext, devWarn } from 'mochi-framework';
   import RawScript from './RawScript.svelte';
+  import slugify from '../vendor/slugify/index.ts';
 
   let {
     type = 'fade',
@@ -116,11 +117,7 @@
         }
         // `|| 'el'` covers selectors with no alphanumerics at all (e.g. `*`),
         // which would otherwise slug to an empty string.
-        const slug =
-          selector
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, '-')
-            .replace(/^-+|-+$/g, '') || 'el';
+        const slug = slugify(selector, { lower: true, strict: true }) || 'el';
         const n = seen.get(slug) ?? 0;
         seen.set(slug, n + 1);
         const name = `mochi-vt-keep-${slug}${n ? `-${n}` : ''}`;
