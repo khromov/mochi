@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { compile as mdsvexCompile } from 'mdsvex';
@@ -149,40 +150,58 @@ export async function buildDocsNav(): Promise<TocEntry[]> {
   return entries;
 }
 
-async function buildDemosTxt(): Promise<string> {
-  const tsGlob = new Bun.Glob('*/*.ts');
-  const svelteGlob = new Bun.Glob('*/*.svelte');
+async function listDemoFiles(dir: string): Promise<string[]> {
+  const dirAbs = path.join(DEMOS_DIR, dir);
+  if (!existsSync(dirAbs)) {
+    return [];
+  }
   const files: string[] = [];
-  for await (const f of tsGlob.scan(DEMOS_DIR)) {
+  for await (const f of new Bun.Glob('*.ts').scan(dirAbs)) {
     files.push(f);
   }
-  for await (const f of svelteGlob.scan(DEMOS_DIR)) {
+  for await (const f of new Bun.Glob('*.svelte').scan(dirAbs)) {
     files.push(f);
   }
   files.sort();
+  return files;
+}
 
-  const demoMap = new Map<string, string[]>();
-  for (const file of files) {
-    const slash = file.indexOf('/');
-    const dir = file.slice(0, slash);
-    const filename = file.slice(slash + 1);
-    if (!demoMap.has(dir)) {
-      demoMap.set(dir, []);
-    }
-    demoMap.get(dir)!.push(filename);
+async function buildDemoTxt(dir: string): Promise<string | null> {
+  const filenames = await listDemoFiles(dir);
+  if (filenames.length === 0) {
+    return null;
   }
+  const parts: string[] = [`## Demo: ${dir}\n`];
+  for (const filename of filenames) {
+    const abs = path.join(DEMOS_DIR, dir, filename);
+    const content = await Bun.file(abs).text();
+    const lang = filename.endsWith('.svelte') ? 'svelte' : 'ts';
+    parts.push(`### ${dir}/${filename}\n\`\`\`${lang}\n${content.trimEnd()}\n\`\`\`\n`);
+  }
+  return parts.join('\n');
+}
+
+async function buildDemosTxt(): Promise<string> {
+  const glob = new Bun.Glob('*/');
+  const dirs: string[] = [];
+  for await (const d of glob.scan({ cwd: DEMOS_DIR, onlyFiles: false })) {
+    dirs.push(d.replace(/\/$/, ''));
+  }
+  dirs.sort();
 
   const parts: string[] = ['# Demo Source Files\n'];
-  for (const [demo, filenames] of demoMap) {
-    parts.push(`## Demo: ${demo}\n`);
-    for (const filename of filenames) {
-      const abs = path.join(DEMOS_DIR, demo, filename);
-      const content = await Bun.file(abs).text();
-      const lang = filename.endsWith('.svelte') ? 'svelte' : 'ts';
-      parts.push(`### ${demo}/${filename}\n\`\`\`${lang}\n${content.trimEnd()}\n\`\`\`\n`);
+  for (const dir of dirs) {
+    const section = await buildDemoTxt(dir);
+    if (section !== null) {
+      parts.push(section);
     }
   }
   return parts.join('\n');
+}
+
+export async function getDemoLlmsTxt(slug: string): Promise<string | null> {
+  const text = await buildDemoTxt(slug);
+  return text ? text.trimEnd() + '\n' : null;
 }
 
 export async function buildLlmsTxt(): Promise<string> {
@@ -225,6 +244,33 @@ export async function buildSitemapXml(): Promise<string> {
 export async function getDocLlmsTxt(slug: string): Promise<string | null> {
   const doc = await getDoc(slug);
   return doc ? doc.raw.trimEnd() + '\n' : null;
+}
+
+export interface LlmsIndexEntry {
+  title: string;
+  description: string;
+  url: string;
+}
+
+function lastSegment(href: string): string {
+  const segs = href.split('/').filter(Boolean);
+  return segs[segs.length - 1] ?? '';
+}
+
+export async function buildLlmsJson(origin: string): Promise<{ docs: LlmsIndexEntry[]; demos: LlmsIndexEntry[] }> {
+  const docList = await loadDocs();
+  const docs: LlmsIndexEntry[] = docList.map((d) => ({
+    title: d.title,
+    description: d.description ?? '',
+    url: `${origin}/docs/${d.slug}/llms.txt`,
+  }));
+  const demoEntries: LlmsIndexEntry[] = demos
+    .filter((d) => d.href.startsWith('/'))
+    .map((d) => {
+      const slug = lastSegment(d.href);
+      return { title: d.title, description: d.hook, url: `${origin}/demos/${slug}/llms.txt` };
+    });
+  return { docs, demos: demoEntries };
 }
 
 type HastNode = {

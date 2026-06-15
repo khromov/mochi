@@ -30,6 +30,24 @@ Each individual doc is reachable as plain text at `/docs/<slug>/llms.txt`:
 
 The "Copy as llms.txt" button on each doc page emits just that page — use it to give the model focused context without the rest of the framework.
 
+### Per-demo source
+
+Each demo's source is reachable as plain text at `/demos/<slug>/llms.txt` — the same per-demo bundle `/llms-full.txt` groups together, scoped to one demo:
+
+- [`/demos/hello-world/llms.txt`](/demos/hello-world/llms.txt)
+- [`/demos/chat/llms.txt`](/demos/chat/llms.txt)
+
+### Machine-readable index
+
+[`/llms.json`](/llms.json) returns a JSON index of every doc and demo — each with its `title`, `description`, and an absolute `url` to its `llms.txt`. Use it to discover what's available and fetch each piece on demand:
+
+```json
+{
+  "docs": [{ "title": "Welcome", "description": "…", "url": "https://mochi.fast/docs/intro/llms.txt" }],
+  "demos": [{ "title": "Hello World", "description": "…", "url": "https://mochi.fast/demos/hello-world/llms.txt" }]
+}
+```
+
 <Callout type="info">
   An MCP server is coming soon.
 </Callout>
