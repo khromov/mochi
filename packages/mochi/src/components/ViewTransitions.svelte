@@ -115,9 +115,11 @@
         if (selector.includes('<')) {
           throw new Error(`<ViewTransitions /> keepElementSelectors must not contain "<", got ${JSON.stringify(selector)}.`);
         }
-        // `|| 'el'` covers selectors with no alphanumerics at all (e.g. `*`),
-        // which would otherwise slug to an empty string.
-        const slug = slugify(selector, { lower: true, strict: true }) || 'el';
+        // Collapse non-alphanumeric runs to spaces first so slugify treats CSS
+        // symbols (`>`, `.`) as separators rather than transliterating them
+        // (e.g. `>` → `greater`). `|| 'el'` covers selectors with no
+        // alphanumerics at all (e.g. `*`), which would otherwise slug to empty.
+        const slug = slugify(selector.replace(/[^a-z0-9]+/gi, ' '), { lower: true, strict: true }) || 'el';
         const n = seen.get(slug) ?? 0;
         seen.set(slug, n + 1);
         const name = `mochi-vt-keep-${slug}${n ? `-${n}` : ''}`;
