@@ -8,6 +8,7 @@ import { generateDocsBarrel } from './lib/generateDocsBarrel';
 import { clearDocsCaches, DOCS_DIR } from './lib/docs';
 import { highlightCode } from './lib/highlight.server';
 import { handle as cookieVaryTestHandle } from './demos/cookie-vary-test/routes';
+import { encodeDebugBarGlobals } from './lib/debugBarEncode';
 import { routes } from './routes';
 
 const DEVELOPMENT = process.env.MODE === 'development';
@@ -89,29 +90,20 @@ const analytics: Handle = async ({ event, resolve }) => {
   });
 };
 
-// We run this site in dev mode in production to show off the debug bar. The debug bar inlines
-// build-time file paths (e.g. "../mochi/src/cookies.client.ts") as raw JSON in executable
-// <script>s; crawlers mine those slash-shaped strings as relative URLs and resolve them against
-// the page, producing phantom Search Console URLs like /mochi/src/cookies.client.ts. Base64 the
-// payload so it's opaque to static link extraction — the client decodes back to the same value,
-// leaving the debug bar fully functional. jsonForHtml escapes `<`, so the JSON never contains a
-// literal `</script>`, making the non-greedy match safe.
-const DEBUG_GLOBALS = ['__mochi_debug', '__mochi_page_entry'];
+// Re-encodes the debug bar's inlined file paths so crawlers can't mine them as phantom URLs.
+// See packages/site/src/lib/debugBarEncode.ts for the why; debugBarEncode.test.ts guards the match.
 const encodeDebugBarPaths: Handle = async ({ event, resolve }) => {
   if (!DEVELOPMENT) {
     return resolve(event);
   }
   return resolve(event, {
     transformPage({ html }) {
-      let out = html;
-      for (const name of DEBUG_GLOBALS) {
-        out = out.replace(
-          new RegExp(`<script>window\\.${name}=(.+?)</script>`),
-          (_m, json) =>
-            `<script>window.${name}=JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(${JSON.stringify(
-              Buffer.from(json, 'utf8').toString('base64'),
-            )}),(c)=>c.charCodeAt(0))))</script>`,
-        );
+      const { html: out, matched } = encodeDebugBarGlobals(html);
+      // The match is coupled to the framework's exact `<script>window.X=…` emission. If a debug
+      // global is present but nothing matched, the format drifted and phantom URLs are leaking
+      // again — surface it loudly rather than silently regressing.
+      if (matched === 0 && html.includes('__mochi_debug')) {
+        logger.warn('encodeDebugBarPaths: debug globals present but none matched — phantom-URL guard is no longer effective');
       }
       return out;
     },
