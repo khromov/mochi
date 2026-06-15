@@ -1,16 +1,11 @@
 <script>
   import DemoPage from '../../components/DemoPage.svelte';
   import { loadSources } from '../../components/utils.ts';
+  import { files } from './files.ts';
   import Greeting from './Greeting.md';
   import Snippet from './Snippet.svx';
 
-  const sources = await loadSources([
-    { label: 'Greeting.md', path: './src/demos/mdsvex/Greeting.md', lang: 'svelte' },
-    { label: 'Snippet.svx', path: './src/demos/mdsvex/Snippet.svx', lang: 'svelte' },
-    { label: 'MdsvexDemo.svelte', path: './src/demos/mdsvex/MdsvexDemo.svelte' },
-    { label: 'routes.ts', path: './src/demos/mdsvex/routes.ts' },
-    { label: 'index.ts', path: './src/demoIndex.ts' },
-  ]);
+  const sources = await loadSources(files);
 </script>
 
 <DemoPage

@@ -2,14 +2,9 @@
   import './app.generated.css';
   import DemoPage from '../../components/DemoPage.svelte';
   import { loadSources } from '../../components/utils.ts';
+  import { files } from './files.ts';
 
-  const sources = await loadSources([
-    { label: 'Tailwind.svelte', path: './src/demos/tailwind/Tailwind.svelte' },
-    { label: 'app.css', path: './src/demos/tailwind/app.css' },
-    { label: 'routes.ts', path: './src/demos/tailwind/routes.ts' },
-    { label: 'tailwind.ts (mochi-framework/tailwind)', path: '../mochi/src/tailwind.ts' },
-    { label: 'index.ts', path: './src/demoIndex.ts' },
-  ]);
+  const sources = await loadSources(files);
 
   const palette = [
     { name: 'emerald', bg: 'bg-emerald-500', ring: 'ring-emerald-600/20' },

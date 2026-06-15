@@ -4,12 +4,15 @@ import { fileURLToPath } from 'node:url';
 import { compile as mdsvexCompile } from 'mdsvex';
 import rehypeSlug from 'rehype-slug';
 import { demos } from './demos';
+import { demoFiles } from './demoFiles';
 import type { TocEntry } from './toc';
 
 type MdsvexRehypePlugin = NonNullable<NonNullable<Parameters<typeof mdsvexCompile>[1]>['rehypePlugins']>[number];
 
 export const DOCS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../docs');
 const DEMOS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../demos');
+// Demo source paths in demoFiles are written relative to the site package root (e.g. './src/...').
+const SITE_ROOT = path.resolve(DEMOS_DIR, '../..');
 
 /** Parses the leading numeric prefix of a filename (e.g. `"01-intro.md"` → `1`). */
 function leadingFileNumber(filename: string, fallback = Number.NaN): number {
@@ -199,9 +202,28 @@ async function buildDemosTxt(): Promise<string> {
   return parts.join('\n');
 }
 
+// Per-demo source bundle built from the demo's declared file list (demoFiles) — the
+// same list the demo page renders via loadSources — so cross-folder files (e.g. shared
+// stores, the demoIndex.ts example) are included, not just files in the demo folder.
 export async function getDemoLlmsTxt(slug: string): Promise<string | null> {
-  const text = await buildDemoTxt(slug);
-  return text ? text.trimEnd() + '\n' : null;
+  const specs = demoFiles[slug];
+  if (!specs || specs.length === 0) {
+    return null;
+  }
+  const parts: string[] = [`## Demo: ${slug}\n`];
+  for (const { label, path: rel, lang } of specs) {
+    const abs = path.resolve(SITE_ROOT, rel);
+    if (!existsSync(abs)) {
+      continue;
+    }
+    const content = await Bun.file(abs).text();
+    const fence = lang ?? (label.endsWith('.svelte') ? 'svelte' : 'ts');
+    parts.push(`### ${label}\n\`\`\`${fence}\n${content.trimEnd()}\n\`\`\`\n`);
+  }
+  if (parts.length === 1) {
+    return null;
+  }
+  return parts.join('\n').trimEnd() + '\n';
 }
 
 export async function buildLlmsTxt(): Promise<string> {

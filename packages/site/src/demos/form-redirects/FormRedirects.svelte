@@ -2,13 +2,9 @@
   import DemoPage from '../../components/DemoPage.svelte';
   import RedirectDemo from './RedirectDemo.svelte';
   import { loadSources } from '../../components/utils.ts';
+  import { files } from './files.ts';
 
-  const sources = await loadSources([
-    { label: 'FormRedirects.svelte', path: './src/demos/form-redirects/FormRedirects.svelte' },
-    { label: 'RedirectDemo.svelte', path: './src/demos/form-redirects/RedirectDemo.svelte' },
-    { label: 'routes.ts', path: './src/demos/form-redirects/routes.ts' },
-    { label: 'index.ts', path: './src/demoIndex.ts' },
-  ]);
+  const sources = await loadSources(files);
 
   let { redirected }: { redirected: boolean } = $props();
 </script>

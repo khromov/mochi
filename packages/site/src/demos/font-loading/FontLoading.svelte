@@ -3,13 +3,9 @@
   import './lobster.css';
   import DemoPage from '../../components/DemoPage.svelte';
   import { loadSources } from '../../components/utils.ts';
+  import { files } from './files.ts';
 
-  const sources = await loadSources([
-    { label: 'FontLoading.svelte', path: './src/demos/font-loading/FontLoading.svelte' },
-    { label: 'lobster.css', path: './src/demos/font-loading/lobster.css' },
-    { label: 'routes.ts', path: './src/demos/font-loading/routes.ts' },
-    { label: 'index.ts', path: './src/demoIndex.ts' },
-  ]);
+  const sources = await loadSources(files);
 </script>
 
 <DemoPage

@@ -2,13 +2,9 @@
   import DemoPage from '../../components/DemoPage.svelte';
   import ChatWidget from './ChatWidget.svelte';
   import { loadSources } from '../../components/utils.ts';
+  import { files } from './files.ts';
 
-  const sources = await loadSources([
-    { label: 'Chat.svelte', path: './src/demos/chat/Chat.svelte' },
-    { label: 'ChatWidget.svelte', path: './src/demos/chat/ChatWidget.svelte' },
-    { label: 'routes.ts', path: './src/demos/chat/routes.ts' },
-    { label: 'index.ts', path: './src/demoIndex.ts' },
-  ]);
+  const sources = await loadSources(files);
 </script>
 
 <DemoPage

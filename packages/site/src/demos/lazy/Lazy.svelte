@@ -2,13 +2,9 @@
   import DemoPage from '../../components/DemoPage.svelte';
   import LazyDemo from './LazyDemo.svelte';
   import { loadSources } from '../../components/utils.ts';
+  import { files } from './files.ts';
 
-  const sources = await loadSources([
-    { label: 'Lazy.svelte', path: './src/demos/lazy/Lazy.svelte' },
-    { label: 'LazyDemo.svelte', path: './src/demos/lazy/LazyDemo.svelte' },
-    { label: 'routes.ts', path: './src/demos/lazy/routes.ts' },
-    { label: 'index.ts', path: './src/demoIndex.ts' },
-  ]);
+  const sources = await loadSources(files);
 </script>
 
 <DemoPage

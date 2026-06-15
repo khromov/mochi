@@ -62,4 +62,13 @@ describe('per-demo llms.txt routes', () => {
     const res = await fetch(`${base}/demos/does-not-exist/llms.txt`);
     expect(res.status).toBe(404);
   });
+
+  test('includes cross-folder files declared via loadSources (not just the demo folder)', async () => {
+    const res = await fetch(`${base}/demos/shared-state/llms.txt`);
+    const text = await res.text();
+    // likes.svelte.ts lives in src/stores, outside the shared-state folder.
+    expect(text).toContain('### likes.svelte.ts');
+    expect(text).toContain('### index.ts');
+    expect(text).toContain('### SharedState.svelte');
+  });
 });
