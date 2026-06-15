@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { compile as mdsvexCompile } from 'mdsvex';
-import { logger } from 'mochi-framework';
+import { logger, trailingSlashIt } from 'mochi-framework';
 import rehypeSlug from 'rehype-slug';
 import { demos, type Demo } from './demos';
 import type { SourceSpec } from '../components/utils.ts';
@@ -267,7 +267,9 @@ export async function buildSitemapXml(): Promise<string> {
   const urls: string[] = [
     `  <url><loc>${SITE_BASE}/</loc></url>`,
     ...docs.map((d) => `  <url><loc>${SITE_BASE}/docs/${d.slug}/</loc></url>`),
-    ...internalDemos.map((d) => `  <url><loc>${SITE_BASE}${d.href}/</loc></url>`),
+    // Demo hrefs already carry a trailing slash; trailingSlashIt normalizes to
+    // exactly one rather than appending unconditionally (which produced `…/request-id//`).
+    ...internalDemos.map((d) => `  <url><loc>${trailingSlashIt(`${SITE_BASE}${d.href}`)}</loc></url>`),
   ];
 
   cachedSitemapXml = ['<?xml version="1.0" encoding="UTF-8"?>', '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">', ...urls, '</urlset>', ''].join('\n');
