@@ -52,6 +52,20 @@ describe('mochi-framework update-skill (subprocess)', () => {
     }
   });
 
+  // The canonical name and its `agy` alias must both resolve to the .agents path.
+  it.each(['antigravity', 'agy'])('accepts %s and writes to the .agents path', async (agent) => {
+    const server = Bun.serve({ port: 0, fetch: () => new Response('body', { status: 200 }) });
+    const cwd = freshCwd();
+    try {
+      const { exitCode } = await runUpdateSkill(cwd, server.url.href, agent);
+
+      expect(exitCode).toBe(0);
+      expect(existsSync(path.join(cwd, '.agents', 'skills', 'mochi', 'SKILL.md'))).toBe(true);
+    } finally {
+      server.stop(true);
+    }
+  });
+
   // Mirrors the current live behavior: the hosted SKILL.md is not published yet,
   // so the CLI must fail cleanly without writing anything.
   it('exits non-zero and writes nothing when the source 404s', async () => {
