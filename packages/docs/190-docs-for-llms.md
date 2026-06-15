@@ -36,7 +36,7 @@ The "Copy as llms.txt" button on each doc page emits just that page — use it t
 
 ### Per-demo source
 
-Each demo's source is reachable as plain text at `/demos/<slug>/llms.txt` — the same per-demo bundle `/llms-full.txt` groups together, scoped to one demo:
+Each demo's source is reachable as plain text alongside its demo page — usually `/demos/<slug>/llms.txt`. It's the exact source `/llms-full.txt` bundles for that demo, scoped to one demo:
 
 - [`/demos/hello-world/llms.txt`](/demos/hello-world/llms.txt)
 - [`/demos/chat/llms.txt`](/demos/chat/llms.txt)

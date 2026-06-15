@@ -31,11 +31,10 @@ import { files as serverIsland } from '../demos/server-island/files.ts';
 import { files as serverProps } from '../demos/server-props/files.ts';
 import { files as sharedState } from '../demos/shared-state/files.ts';
 import { files as streams } from '../demos/streams/files.ts';
-import { files as tailwind } from '../demos/tailwind/files.ts';
 import { files as url } from '../demos/url/files.ts';
 
 // Single source of truth for each demo's source files, shared by the demo page
-// (via loadSources) and the per-demo /demos/<slug>/llms.txt route.
+// (via loadSources), the per-demo llms.txt route, and the /llms-full.txt bundle.
 export const demoFiles: Record<string, SourceSpec[]> = {
   api: api,
   'cache-events': cacheEvents,
@@ -69,6 +68,5 @@ export const demoFiles: Record<string, SourceSpec[]> = {
   'server-props': serverProps,
   'shared-state': sharedState,
   streams: streams,
-  tailwind: tailwind,
   url: url,
 };

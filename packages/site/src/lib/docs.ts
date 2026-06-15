@@ -153,48 +153,11 @@ export async function buildDocsNav(): Promise<TocEntry[]> {
   return entries;
 }
 
-async function listDemoFiles(dir: string): Promise<string[]> {
-  const dirAbs = path.join(DEMOS_DIR, dir);
-  if (!existsSync(dirAbs)) {
-    return [];
-  }
-  const files: string[] = [];
-  for await (const f of new Bun.Glob('*.ts').scan(dirAbs)) {
-    files.push(f);
-  }
-  for await (const f of new Bun.Glob('*.svelte').scan(dirAbs)) {
-    files.push(f);
-  }
-  files.sort();
-  return files;
-}
-
-async function buildDemoTxt(dir: string): Promise<string | null> {
-  const filenames = await listDemoFiles(dir);
-  if (filenames.length === 0) {
-    return null;
-  }
-  const parts: string[] = [`## Demo: ${dir}\n`];
-  for (const filename of filenames) {
-    const abs = path.join(DEMOS_DIR, dir, filename);
-    const content = await Bun.file(abs).text();
-    const lang = filename.endsWith('.svelte') ? 'svelte' : 'ts';
-    parts.push(`### ${dir}/${filename}\n\`\`\`${lang}\n${content.trimEnd()}\n\`\`\`\n`);
-  }
-  return parts.join('\n');
-}
-
 async function buildDemosTxt(): Promise<string> {
-  const glob = new Bun.Glob('*/');
-  const dirs: string[] = [];
-  for await (const d of glob.scan({ cwd: DEMOS_DIR, onlyFiles: false })) {
-    dirs.push(d.replace(/\/$/, ''));
-  }
-  dirs.sort();
-
+  const slugs = Object.keys(demoFiles).sort();
   const parts: string[] = ['# Demo Source Files\n'];
-  for (const dir of dirs) {
-    const section = await buildDemoTxt(dir);
+  for (const slug of slugs) {
+    const section = await getDemoLlmsTxt(slug);
     if (section !== null) {
       parts.push(section);
     }
@@ -279,13 +242,26 @@ function lastSegment(href: string): string {
   return segs[segs.length - 1] ?? '';
 }
 
+/** The plain-text source URL for a demo, derived from its page href (which ends in '/'). */
+function demoLlmsPath(href: string): string {
+  return href.endsWith('/') ? `${href}llms.txt` : `${href}/llms.txt`;
+}
+
+export interface DemoLlmsRoute {
+  /** Route path, sitting alongside the demo page (e.g. /demos/chat/llms.txt, /cookie-vary-test/llms.txt). */
+  path: string;
+  /** demoFiles registry key (the demo folder name) used to look up the source. */
+  slug: string;
+}
+
 /**
- * Slugs of demos with local source (internal hrefs). Each maps to a demo folder
- * under src/demos and is used to register static /demos/<slug>/llms.txt routes —
- * static so they outrank demo param routes like /demos/data-loading/:id.
+ * Demos with local source (internal hrefs), each as the static llms.txt route to
+ * register and the demoFiles key behind it. The route is static (not a param) so it
+ * outranks demo param routes like /demos/data-loading/:id, and its path tracks the
+ * demo's own page href so source and page share a prefix.
  */
-export function internalDemoSlugs(): string[] {
-  return demos.filter((d) => d.href.startsWith('/')).map((d) => lastSegment(d.href));
+export function internalDemoLlmsRoutes(): DemoLlmsRoute[] {
+  return demos.filter((d) => d.href.startsWith('/')).map((d) => ({ path: demoLlmsPath(d.href), slug: lastSegment(d.href) }));
 }
 
 export async function buildLlmsJson(origin: string): Promise<{ docs: LlmsIndexEntry[]; demos: LlmsIndexEntry[] }> {
@@ -295,12 +271,7 @@ export async function buildLlmsJson(origin: string): Promise<{ docs: LlmsIndexEn
     description: d.description ?? '',
     url: `${origin}/docs/${d.slug}/llms.txt`,
   }));
-  const demoEntries: LlmsIndexEntry[] = demos
-    .filter((d) => d.href.startsWith('/'))
-    .map((d) => {
-      const slug = lastSegment(d.href);
-      return { title: d.title, description: d.hook, url: `${origin}/demos/${slug}/llms.txt` };
-    });
+  const demoEntries: LlmsIndexEntry[] = demos.filter((d) => d.href.startsWith('/')).map((d) => ({ title: d.title, description: d.hook, url: `${origin}${demoLlmsPath(d.href)}` }));
   return { docs, demos: demoEntries };
 }
 

@@ -11,7 +11,7 @@ import {
   getDoc,
   getDocLlmsTxt,
   getDocNeighbors,
-  internalDemoSlugs,
+  internalDemoLlmsRoutes,
   loadDocs,
 } from './lib/docs';
 import { profilerEnabled, startProfiler, stopProfiler } from './lib/profiler';
@@ -53,11 +53,13 @@ import { routes as yourFirstMochiAppRoutes } from './demos/your-first-mochi-app/
 
 const DEVELOPMENT = process.env.MODE === 'development';
 
-// Static per-demo source routes. Static (not /demos/:slug/llms.txt) so they outrank
-// demo param routes such as /demos/data-loading/:id, which would otherwise capture "llms.txt".
+// Static per-demo source routes, sitting alongside each demo page (e.g.
+// /demos/chat/llms.txt, /cookie-vary-test/llms.txt). Static (not a param) so they
+// outrank demo param routes such as /demos/data-loading/:id, which would otherwise
+// capture "llms.txt".
 const demoLlmsRoutes: Record<string, MochiRouteValue> = Object.fromEntries(
-  internalDemoSlugs().map((slug) => [
-    `/demos/${slug}/llms.txt`,
+  internalDemoLlmsRoutes().map(({ path, slug }) => [
+    path,
     Mochi.api(async () => {
       const text = await getDemoLlmsTxt(slug);
       if (text === null) {

@@ -11,10 +11,10 @@
 
   const docsNav = await buildDocsNav();
 
-  // Internal demos expose their source at /demos/<slug>/llms.txt, where <slug> is the
-  // last segment of the demo's href — matching the /llms.json index derivation.
+  // Internal demos expose their source next to the demo page at `${href}llms.txt`,
+  // matching the /llms.json index derivation.
   const current = demos.find((d) => d.title === title);
-  const demoSlug = current?.href.startsWith('/') ? current.href.split('/').filter(Boolean).pop() : undefined;
+  const demoHref = current?.href.startsWith('/') ? current.href : undefined;
 
   const moreDemos = demos
     .filter((d) => d.title !== title)
@@ -49,8 +49,8 @@
 
   <main class="body">
     <div class="demo-card">
-      {#if demoSlug}
-        <ReadmeCopy mochi:hydrate slug={demoSlug} kind="demos" />
+      {#if demoHref}
+        <ReadmeCopy mochi:hydrate href={demoHref} kind="demos" />
       {/if}
       <div class="card-header">
         {#if demoIconFor[title]}

@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import type { Server } from 'bun';
 import { Mochi } from 'mochi-framework';
-import { internalDemoSlugs } from './lib/docs';
+import { internalDemoLlmsRoutes } from './lib/docs';
 import { routes } from './routes';
 
 // Boots the real site routes so the per-demo llms.txt routes are exercised against
@@ -31,14 +31,14 @@ describe('per-demo llms.txt routes', () => {
     rmSync(outDir, { recursive: true, force: true });
   });
 
-  const slugs = internalDemoSlugs();
+  const demoRoutes = internalDemoLlmsRoutes();
 
   test('there is at least one internal demo', () => {
-    expect(slugs.length).toBeGreaterThan(0);
+    expect(demoRoutes.length).toBeGreaterThan(0);
   });
 
-  test.each(slugs)('/demos/%s/llms.txt serves the demo source as text/plain', async (slug) => {
-    const res = await fetch(`${base}/demos/${slug}/llms.txt`);
+  test.each(demoRoutes.map((r) => [r.path, r.slug] as const))('%s serves the demo source as text/plain', async (path, slug) => {
+    const res = await fetch(`${base}${path}`);
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toContain('text/plain');
     const text = await res.text();
@@ -48,19 +48,52 @@ describe('per-demo llms.txt routes', () => {
     expect(text).not.toContain('<!doctype html>');
   });
 
-  test('/llms.json lists every internal demo with a working llms.txt url', async () => {
+  test('/llms.json lists every internal demo, and each url is a registered route', async () => {
     const res = await fetch(`${base}/llms.json`);
     expect(res.status).toBe(200);
     const body = (await res.json()) as { docs: { url: string }[]; demos: { title: string; url: string }[] };
-    expect(body.demos.length).toBe(slugs.length);
+    expect(body.demos.length).toBe(demoRoutes.length);
+    const registeredPaths = new Set(demoRoutes.map((r) => r.path));
     for (const demo of body.demos) {
-      expect(demo.url).toMatch(/\/demos\/[^/]+\/llms\.txt$/);
+      expect(demo.url).toMatch(/\/llms\.txt$/);
+      expect(registeredPaths.has(new URL(demo.url).pathname)).toBe(true);
     }
+  });
+
+  test('per-demo source path tracks the demo page path, not a fixed /demos/ prefix', async () => {
+    // The Cookie Vary demo lives at /cookie-vary-test/ (top-level), so its source must
+    // sit next to it — not under /demos/.
+    const aligned = await fetch(`${base}/cookie-vary-test/llms.txt`);
+    expect(aligned.status).toBe(200);
+    expect(await aligned.text()).toContain('## Demo: cookie-vary-test');
+
+    const stale = await fetch(`${base}/demos/cookie-vary-test/llms.txt`);
+    expect(stale.status).toBe(404);
   });
 
   test('unknown demo llms.txt 404s', async () => {
     const res = await fetch(`${base}/demos/does-not-exist/llms.txt`);
     expect(res.status).toBe(404);
+  });
+
+  test('/llms-full.txt bundles the same per-demo source as the per-demo route', async () => {
+    const [full, perDemo] = await Promise.all([fetch(`${base}/llms-full.txt`).then((r) => r.text()), fetch(`${base}/cookie-vary-test/llms.txt`).then((r) => r.text())]);
+    // Cross-folder files (index.ts from the shared demoIndex example) must appear in the
+    // full bundle too, proving both paths read from the same demoFiles registry.
+    expect(full).toContain('## Demo: cookie-vary-test');
+    expect(full).toContain('### index.ts');
+    // The per-demo section is embedded verbatim in the full bundle.
+    expect(full).toContain(perDemo.trimEnd());
+  });
+
+  test('hello-world demo source matches snapshot', async () => {
+    const text = await fetch(`${base}/demos/hello-world/llms.txt`).then((r) => r.text());
+    expect(text).toMatchSnapshot();
+  });
+
+  test('cookie-vary-test demo source matches snapshot', async () => {
+    const text = await fetch(`${base}/cookie-vary-test/llms.txt`).then((r) => r.text());
+    expect(text).toMatchSnapshot();
   });
 
   test('includes cross-folder files declared via loadSources (not just the demo folder)', async () => {
