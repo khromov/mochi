@@ -17,20 +17,14 @@ This project is a Mochi app — a server-first Svelte 5 framework on Bun with is
 
 ## Picking sections
 
-The live `/llms.txt` index is the source of truth; this map is just a starting point:
+Match the request to the descriptions in the live `/llms.txt` index — that index is the source of truth. A few examples of the kind of mapping to make:
 
-| User wants…                               | Docs                                                   | Demos                                                        |
-| ----------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------ |
-| Interactivity / client-side JS            | `selective-hydration`                                  | `hydration`                                                  |
-| Hydrate on scroll into view               | `lazy-hydration`                                       | `lazy`                                                       |
-| Deferred / server islands                 | `server-islands`                                       | `server-island`, `lazy-server-island`                        |
-| Per-request data on a page                | `request-context`, `serve-options` (`serverProps`)     | `server-props`                                               |
-| Forms & progressive enhancement           | `progressively-enhancing-forms-with-enhance`           | `login`, `form-return-data`, `form-errors`, `form-redirects` |
-| JSON / WebSocket / SSE endpoints          | `api-routes`, `websocket-routes`, `server-sent-events` | `api`, `chat`, `streams`                                     |
-| Caching server data                       | `cache`                                                | `data-loading`                                               |
-| Cookies                                   | `request-context`                                      | `cookies`                                                    |
-| Reuse a computed server value client-side | `hydratable`                                           | `hydratable`                                                 |
-| Defining / registering routes             | `defining-routes`                                      | —                                                            |
+- _"Add a counter button"_ → interactivity, so fetch the `selective-hydration` doc and the `hydration` demo.
+- _"Load data per request"_ → fetch the `request-context` doc and the `server-props` demo.
+- _"Build a login form"_ → fetch the `progressively-enhancing-forms-with-enhance` doc and the `login` demo.
+- _"Add a JSON endpoint"_ → fetch the `api-routes` doc and the `api` demo.
+
+When a request spans several concerns (e.g. a cached API that feeds a hydrated island), fetch one or two sections per concern rather than a single best guess.
 
 ## Notes
 
