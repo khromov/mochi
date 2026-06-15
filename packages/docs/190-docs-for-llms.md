@@ -12,6 +12,31 @@ description: 'An llms.txt index at /llms.txt, plus concatenated bundles for past
 
 The Mochi documentation is published in the [llms.txt](https://llmstxt.org/) format so models can discover and fetch exactly what they need.
 
+### Agent skill (recommended)
+
+Mochi publishes a `SKILL.md` — agent guidance that tells a coding assistant to fetch the relevant docs and demos from `/llms.txt` before writing framework code. Pull the latest copy into your project with the CLI:
+
+```sh
+bunx mochi-framework update-skill [agent]
+```
+
+This fetches `https://mochi.fast/SKILL.md` and writes it into your project, creating the file if it does not exist or overwriting it if it does. Run it again whenever you upgrade the framework to keep the guidance in sync.
+
+The optional `agent` argument controls where the skill is written (default: `claude-code`):
+
+| Agent                 | Destination                       |
+| --------------------- | --------------------------------- |
+| `claude-code`         | `.claude/skills/mochi/SKILL.md`   |
+| `opencode`            | `.opencode/skills/mochi/SKILL.md` |
+| `antigravity` (`agy`) | `.agents/skills/mochi/SKILL.md`   |
+| `codex`               | `.agents/skills/mochi/SKILL.md`   |
+
+### MCP Server
+
+<Callout type="info">
+  An MCP server is coming soon.
+</Callout>
+
 ### Index
 
 [`/llms.txt`](/llms.txt) is the index: a title, a one-line summary, and a linked list of every doc (`## Docs`) and demo (`## Examples`), each pointing at its own plain-text file. The concatenated bundles below are linked under `## Optional`. Start here.
@@ -51,26 +76,3 @@ Each demo's source is reachable as plain text alongside its demo page — usuall
   "demos": [{ "title": "Hello World", "description": "…", "url": "https://mochi.fast/demos/hello-world/llms.txt" }]
 }
 ```
-
-### Agent skill
-
-Mochi publishes a `SKILL.md` — agent guidance that tells a coding assistant to fetch the relevant docs and demos from `/llms.txt` before writing framework code. Pull the latest copy into your project with the CLI:
-
-```sh
-bunx mochi-framework update-skill [agent]
-```
-
-This fetches `https://mochi.fast/SKILL.md` and writes it into your project, creating the file if it does not exist or overwriting it if it does. Run it again whenever you upgrade the framework to keep the guidance in sync.
-
-The optional `agent` argument controls where the skill is written (default: `claude-code`):
-
-| Agent                 | Destination                       |
-| --------------------- | --------------------------------- |
-| `claude-code`         | `.claude/skills/mochi/SKILL.md`   |
-| `opencode`            | `.opencode/skills/mochi/SKILL.md` |
-| `antigravity` (`agy`) | `.agents/skills/mochi/SKILL.md`   |
-| `codex`               | `.agents/skills/mochi/SKILL.md`   |
-
-<Callout type="info">
-  An MCP server is coming soon.
-</Callout>
