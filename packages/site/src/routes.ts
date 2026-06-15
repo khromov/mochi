@@ -1,6 +1,18 @@
 import { Mochi, error, getRequestContext } from 'mochi-framework';
 import type { MochiRouteValue } from 'mochi-framework';
-import { buildDocsNav, buildLlmsJson, buildLlmsTxt, buildLlmsFullTxt, buildSitemapXml, getDemoLlmsTxt, getDoc, getDocLlmsTxt, getDocNeighbors, loadDocs } from './lib/docs';
+import {
+  buildDocsNav,
+  buildLlmsJson,
+  buildLlmsTxt,
+  buildLlmsFullTxt,
+  buildSitemapXml,
+  getDemoLlmsTxt,
+  getDoc,
+  getDocLlmsTxt,
+  getDocNeighbors,
+  internalDemoSlugs,
+  loadDocs,
+} from './lib/docs';
 import { profilerEnabled, startProfiler, stopProfiler } from './lib/profiler';
 import { routes as apiRoutes } from './demos/api/routes';
 import { routes as cacheEventsRoutes } from './demos/cache-events/routes';
@@ -39,6 +51,23 @@ import { routes as urlRoutes } from './demos/url/routes';
 import { routes as yourFirstMochiAppRoutes } from './demos/your-first-mochi-app/routes';
 
 const DEVELOPMENT = process.env.MODE === 'development';
+
+// Static per-demo source routes. Static (not /demos/:slug/llms.txt) so they outrank
+// demo param routes such as /demos/data-loading/:id, which would otherwise capture "llms.txt".
+const demoLlmsRoutes: Record<string, MochiRouteValue> = Object.fromEntries(
+  internalDemoSlugs().map((slug) => [
+    `/demos/${slug}/llms.txt`,
+    Mochi.api(async () => {
+      const text = await getDemoLlmsTxt(slug);
+      if (text === null) {
+        error(404, `No demo '${slug}'`);
+      }
+      return new Response(text, {
+        headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+      });
+    }),
+  ]),
+);
 
 export const routes: Record<string, MochiRouteValue> = {
   ...(DEVELOPMENT
@@ -119,17 +148,7 @@ export const routes: Record<string, MochiRouteValue> = {
     const { url } = getRequestContext();
     return Response.json(await buildLlmsJson(url.origin));
   }),
-  '/demos/:slug/llms.txt': Mochi.api(async () => {
-    const { params } = getRequestContext();
-    const slug = params.slug ?? '';
-    const text = await getDemoLlmsTxt(slug);
-    if (text === null) {
-      error(404, `No demo '${slug}'`);
-    }
-    return new Response(text, {
-      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
-    });
-  }),
+  ...demoLlmsRoutes,
   ...apiRoutes,
   ...cacheEventsRoutes,
   ...chatRoutes,

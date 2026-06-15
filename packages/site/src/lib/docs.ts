@@ -257,6 +257,15 @@ function lastSegment(href: string): string {
   return segs[segs.length - 1] ?? '';
 }
 
+/**
+ * Slugs of demos with local source (internal hrefs). Each maps to a demo folder
+ * under src/demos and is used to register static /demos/<slug>/llms.txt routes —
+ * static so they outrank demo param routes like /demos/data-loading/:id.
+ */
+export function internalDemoSlugs(): string[] {
+  return demos.filter((d) => d.href.startsWith('/')).map((d) => lastSegment(d.href));
+}
+
 export async function buildLlmsJson(origin: string): Promise<{ docs: LlmsIndexEntry[]; demos: LlmsIndexEntry[] }> {
   const docList = await loadDocs();
   const docs: LlmsIndexEntry[] = docList.map((d) => ({

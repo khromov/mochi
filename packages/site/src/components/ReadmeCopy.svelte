@@ -3,9 +3,9 @@
   import ExternalLink from '@lucide/svelte/icons/external-link';
   import Copy from '@lucide/svelte/icons/copy';
 
-  let { slug }: { slug?: string } = $props();
+  let { slug, kind = 'docs' }: { slug?: string; kind?: 'docs' | 'demos' } = $props();
 
-  const url = $derived(slug ? `/docs/${slug}/llms.txt` : '/llms.txt');
+  const url = $derived(kind === 'demos' ? `/demos/${slug}/llms.txt` : slug ? `/docs/${slug}/llms.txt` : '/llms.txt');
   let busy = $state(false);
 
   async function copy() {
