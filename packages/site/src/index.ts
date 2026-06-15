@@ -89,6 +89,35 @@ const analytics: Handle = async ({ event, resolve }) => {
   });
 };
 
+// We run this site in dev mode in production to show off the debug bar. The debug bar inlines
+// build-time file paths (e.g. "../mochi/src/cookies.client.ts") as raw JSON in executable
+// <script>s; crawlers mine those slash-shaped strings as relative URLs and resolve them against
+// the page, producing phantom Search Console URLs like /mochi/src/cookies.client.ts. Base64 the
+// payload so it's opaque to static link extraction — the client decodes back to the same value,
+// leaving the debug bar fully functional. jsonForHtml escapes `<`, so the JSON never contains a
+// literal `</script>`, making the non-greedy match safe.
+const DEBUG_GLOBALS = ['__mochi_debug', '__mochi_page_entry'];
+const encodeDebugBarPaths: Handle = async ({ event, resolve }) => {
+  if (!DEVELOPMENT) {
+    return resolve(event);
+  }
+  return resolve(event, {
+    transformPage({ html }) {
+      let out = html;
+      for (const name of DEBUG_GLOBALS) {
+        out = out.replace(
+          new RegExp(`<script>window\\.${name}=(.+?)</script>`),
+          (_m, json) =>
+            `<script>window.${name}=JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(${JSON.stringify(
+              Buffer.from(json, 'utf8').toString('base64'),
+            )}),(c)=>c.charCodeAt(0))))</script>`,
+        );
+      }
+      return out;
+    },
+  });
+};
+
 const PORT = Number(process.env.PORT) || 3333;
 const CSRF_PORT = Number(process.env.MOCHI_PORT) || 3333;
 const CSRF_DOMAIN = process.env.MOCHI_DOMAIN ?? 'localhost';
@@ -107,7 +136,7 @@ await Mochi.serve({
   liveReload: process.env.MOCHI_LIVE_RELOAD === 'false' ? false : undefined,
   htmlShell: './src/shell.html',
   trailingSlash: 'always',
-  handle: sequence(compress(), immutableAssets, helloWorld, asciiDog, analytics, noCache, cookieVaryTestHandle),
+  handle: sequence(compress(), immutableAssets, helloWorld, asciiDog, analytics, encodeDebugBarPaths, noCache, cookieVaryTestHandle),
   handleError,
   idleTimeout: 60,
   compressServerIslandProps: true,

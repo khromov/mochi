@@ -80,16 +80,6 @@ function jsonForHtml(value: unknown): string {
   return JSON.stringify(value).replace(/</g, '\\u003c');
 }
 
-// Debug payloads carry build-time file paths (e.g. "../mochi/src/cookies.client.ts").
-// Inlined as raw JSON in an executable <script>, crawlers mine those slash-shaped strings
-// as relative URLs and resolve them against the page (phantom Search Console URLs). Base64
-// hides them from static link extraction; the client decodes back to the same value, so
-// debug-bar readers are unchanged.
-function encodedDebugJson(value: unknown): string {
-  const b64 = Buffer.from(JSON.stringify(value), 'utf8').toString('base64');
-  return `JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(${JSON.stringify(b64)}),(c)=>c.charCodeAt(0))))`;
-}
-
 async function appendDebugTail(response: Response, ctx: MochiRequestContext, development: boolean): Promise<Response> {
   if (!development) {
     return response;
@@ -105,7 +95,7 @@ async function appendDebugTail(response: Response, ctx: MochiRequestContext, dev
     requestCookies: ctx.cookies.peekAll().map(({ name, value }) => [name, value]),
   };
   const body = await response.text();
-  const tail = `<script>Object.assign((window.__mochi_debug||={}),${encodedDebugJson(dynamic)})</script>`;
+  const tail = `<script>Object.assign((window.__mochi_debug||={}),${jsonForHtml(dynamic)})</script>`;
   return new Response(body + tail, {
     status: response.status,
     statusText: response.statusText,
@@ -170,8 +160,8 @@ export class Mochi {
     const bootstrapUrl = result.bootstrapUrl;
     const cssLinks = result.cssUrls.map((url) => `<link rel="stylesheet" href="${url}">`).join('\n');
     const serverIslandScript = result.hasServerIslands ? `<script>(()=>{${opts.serverIslandClientJs}})()</script>` : '';
-    const debugInfoScript = registry.debugBarEnabled && opts.debugInfo ? `<script>window.__mochi_debug=${encodedDebugJson(opts.debugInfo)}</script>` : '';
-    const pageEntryScript = opts.liveReloadClientJs && opts.pageEntry ? `<script>window.__mochi_page_entry=${encodedDebugJson(opts.pageEntry)}</script>` : '';
+    const debugInfoScript = registry.debugBarEnabled && opts.debugInfo ? `<script>window.__mochi_debug=${jsonForHtml(opts.debugInfo)}</script>` : '';
+    const pageEntryScript = opts.liveReloadClientJs && opts.pageEntry ? `<script>window.__mochi_page_entry=${jsonForHtml(opts.pageEntry)}</script>` : '';
     const logLevelScript = opts.logLevel === DEFAULT_LOG_LEVEL ? '' : `<script>window.__mochi_log_level=${JSON.stringify(opts.logLevel)}</script>`;
     // Feeds the debug bar's Warnings panel. When the debug bar is off the
     // single `window.__mochi_warn?.(...)` call site no-ops via optional chaining.
