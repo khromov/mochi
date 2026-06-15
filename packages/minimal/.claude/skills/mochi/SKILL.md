@@ -10,7 +10,7 @@ This project is a Mochi app — a server-first Svelte 5 framework on Bun with is
 
 ## Workflow
 
-1. **Discover.** Fetch the index: `http://localhost:3333/llms.txt`. It lists every doc under `## Docs` and every demo under `## Examples` — each a one-line description plus a link to that section's own `llms.txt`.
+1. **Discover.** Fetch the index: `https://mochi.fast/llms.txt`. It lists every doc under `## Docs` and every demo under `## Examples` — each a one-line description plus a link to that section's own `llms.txt`.
 2. **Select.** Read the user's request and pick a set of docs and demos URLs whose descriptions match the task — usually 3–6 sections. Always include the relevant demo(s): they are working examples.
 3. **Fetch.** Fetch each selected `.../llms.txt` URL and read it carefully before writing any code.
 4. **Implement.** Carry out the request using the patterns from the fetched docs/demos, following the conventions already present in this app's `src/` files.
@@ -30,4 +30,4 @@ When a request spans several concerns (e.g. a cached API that feeds a hydrated i
 
 - Under `## Optional` the index links `/llms-recommended.txt` (all docs concatenated) and `/llms-full.txt` (all docs + every demo's source). Reach for these only when the task is broad; otherwise fetch targeted sections to keep context tight.
 - `/llms.json` is a machine-readable variant of the index — `{ title, description, url }` per doc and demo — if structured selection is easier than parsing the text index.
-- The docs live on **`:3333`** (the Mochi docs site). This app itself runs on **`:3335`**. Always fetch docs from `:3333`, regardless of where this app is running.
+- The docs live at **`https://mochi.fast`** (the Mochi docs site), independent of where this app runs. Always fetch docs from there.
