@@ -10,7 +10,7 @@
     "start": "bun src/index.ts",
     "dev": "MODE=development bun src/index.ts",
     "typecheck": "bun src/lib/generateDocsBarrel.ts && svelte-check --tsconfig ./tsconfig.json --compiler-warnings 'attribute_illegal_colon:ignore' && tsc -p tsconfig.json --noEmit",
-    "test": "bun test",
+    "test": "bun scripts/run-tests.ts",
     "clean": "rimraf .mochi"
   },
   "dependencies": {

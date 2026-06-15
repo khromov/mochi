@@ -2,13 +2,9 @@
   import DemoPage from '../../components/DemoPage.svelte';
   import ErrorDemo from './ErrorDemo.svelte';
   import { loadSources } from '../../components/utils.ts';
+  import { files } from './files.ts';
 
-  const sources = await loadSources([
-    { label: 'FormErrors.svelte', path: './src/demos/form-errors/FormErrors.svelte' },
-    { label: 'ErrorDemo.svelte', path: './src/demos/form-errors/ErrorDemo.svelte' },
-    { label: 'routes.ts', path: './src/demos/form-errors/routes.ts' },
-    { label: 'index.ts', path: './src/demoIndex.ts' },
-  ]);
+  const sources = await loadSources(files);
 </script>
 
 <DemoPage

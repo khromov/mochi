@@ -10,6 +10,8 @@
 export { Mochi } from './Mochi';
 export { build } from './build';
 export type { MochiBuildOptions } from './build';
+export { runTests } from './testing';
+export type { RunTestsOptions } from './testing';
 export type { MochiSvelteConfig } from './svelteConfig';
 export { getRequestContext } from './requestContext';
 export type { MochiRequestContext } from './requestContext';

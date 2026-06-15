@@ -2,6 +2,7 @@
   import { url } from 'mochi-framework';
   import CodeViewer from './CodeViewer.svelte';
   import PageShell from './PageShell.svelte';
+  import ReadmeCopy from './ReadmeCopy.svelte';
   import { demoIconFor } from '../lib/demoIcons';
   import { buildDocsNav } from '../lib/docs';
   import { demos } from '../lib/demos';
@@ -9,6 +10,11 @@
   let { title, description, sources, children } = $props();
 
   const docsNav = await buildDocsNav();
+
+  // Internal demos expose their source next to the demo page at `${href}llms.txt`,
+  // matching the /llms.json index derivation.
+  const current = demos.find((d) => d.title === title);
+  const demoHref = current?.href.startsWith('/') ? current.href : undefined;
 
   const moreDemos = demos
     .filter((d) => d.title !== title)
@@ -43,8 +49,10 @@
 
   <main class="body">
     <div class="demo-card">
+      {#if demoHref}
+        <ReadmeCopy mochi:hydrate href={demoHref} kind="demos" />
+      {/if}
       <div class="card-header">
-        <h1>{title}</h1>
         {#if demoIconFor[title]}
           {@const meta = demoIconFor[title]}
           {@const Icon = meta.icon}
@@ -52,6 +60,7 @@
             <Icon size={16} strokeWidth={1.6} />
           </span>
         {/if}
+        <h1>{title}</h1>
       </div>
       <p class="card-desc">{description}</p>
       <div class="demo-body">
@@ -181,6 +190,7 @@
   }
 
   .demo-card {
+    position: relative;
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
@@ -202,7 +212,9 @@
   .card-header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    gap: 0.6rem;
+    /* Reserve room at the top-right for the absolutely-positioned llms.txt pill. */
+    padding-right: 6rem;
   }
 
   .demo-icon {

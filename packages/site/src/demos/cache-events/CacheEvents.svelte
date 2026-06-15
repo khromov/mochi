@@ -1,14 +1,10 @@
 <script>
   import DemoPage from '../../components/DemoPage.svelte';
   import { loadSources } from '../../components/utils';
+  import { files } from './files.ts';
   import { getSlowTime } from './log';
 
-  const sources = await loadSources([
-    { label: 'CacheEvents.svelte', path: './src/demos/cache-events/CacheEvents.svelte' },
-    { label: 'log.ts', path: './src/demos/cache-events/log.ts' },
-    { label: 'routes.ts', path: './src/demos/cache-events/routes.ts' },
-    { label: 'index.ts', path: './src/demoIndex.ts' },
-  ]);
+  const sources = await loadSources(files);
 
   const { value: time, status } = await getSlowTime();
 </script>

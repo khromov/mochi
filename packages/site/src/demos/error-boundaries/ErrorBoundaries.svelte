@@ -5,25 +5,9 @@
   import ThrowOnServerIsland from './ThrowOnServerIsland.svelte';
   import HealthyServerIsland from './HealthyServerIsland.svelte';
   import { loadSources } from '../../components/utils.ts';
+  import { files } from './files.ts';
 
-  const sources = await loadSources([
-    {
-      label: 'ErrorBoundaries.svelte',
-      path: './src/demos/error-boundaries/ErrorBoundaries.svelte',
-    },
-    { label: 'ThrowOnSsr.svelte', path: './src/demos/error-boundaries/ThrowOnSsr.svelte' },
-    { label: 'ThrowOnClient.svelte', path: './src/demos/error-boundaries/ThrowOnClient.svelte' },
-    {
-      label: 'ThrowOnServerIsland.svelte',
-      path: './src/demos/error-boundaries/ThrowOnServerIsland.svelte',
-    },
-    {
-      label: 'HealthyServerIsland.svelte',
-      path: './src/demos/error-boundaries/HealthyServerIsland.svelte',
-    },
-    { label: 'routes.ts', path: './src/demos/error-boundaries/routes.ts' },
-    { label: 'index.ts', path: './src/demoIndex.ts' },
-  ]);
+  const sources = await loadSources(files);
 </script>
 
 {#snippet caughtFallback(error: unknown)}
