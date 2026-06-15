@@ -42,4 +42,15 @@ describe('updateSkill', () => {
     await expect(updateSkill({ cwd, fetchImpl })).rejects.toThrow(/HTTP 404/);
     expect(existsSync(path.join(cwd, SKILL_DEST))).toBe(false);
   });
+
+  it('wraps a network error with the unreachable-URL message', async () => {
+    const cwd = freshCwd();
+    const url = 'https://mochi.fast/SKILL.md';
+    const fetchImpl = async () => {
+      throw new Error('getaddrinfo ENOTFOUND');
+    };
+
+    await expect(updateSkill({ cwd, url, fetchImpl })).rejects.toThrow(/Could not reach https:\/\/mochi\.fast\/SKILL\.md/);
+    expect(existsSync(path.join(cwd, SKILL_DEST))).toBe(false);
+  });
 });

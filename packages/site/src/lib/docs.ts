@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { compile as mdsvexCompile } from 'mdsvex';
+import { logger } from 'mochi-framework';
 import rehypeSlug from 'rehype-slug';
 import { demos } from './demos';
 import { demoFiles } from './demoFiles';
@@ -43,6 +44,7 @@ let cachedNav: TocEntry[] | null = null;
 let cachedLlmsRecommendedTxt: string | null = null;
 let cachedLlmsFullTxt: string | null = null;
 let cachedSitemapXml: string | null = null;
+const cachedDemoLlmsTxt = new Map<string, string | null>();
 
 export function clearDocsCaches(): void {
   cachedDocs = null;
@@ -51,6 +53,7 @@ export function clearDocsCaches(): void {
   cachedLlmsRecommendedTxt = null;
   cachedLlmsFullTxt = null;
   cachedSitemapXml = null;
+  cachedDemoLlmsTxt.clear();
 }
 
 export async function loadDocs(): Promise<DocEntry[]> {
@@ -169,6 +172,17 @@ async function buildDemosTxt(): Promise<string> {
 // same list the demo page renders via loadSources — so cross-folder files (e.g. shared
 // stores, the demoIndex.ts example) are included, not just files in the demo folder.
 export async function getDemoLlmsTxt(slug: string): Promise<string | null> {
+  if (cachedDemoLlmsTxt.has(slug)) {
+    return cachedDemoLlmsTxt.get(slug)!;
+  }
+  const result = await buildDemoLlmsTxt(slug);
+  // Source files never change at runtime, so cache the rendered bundle (including
+  // the null "no such demo" result) to avoid re-reading every file on each request.
+  cachedDemoLlmsTxt.set(slug, result);
+  return result;
+}
+
+async function buildDemoLlmsTxt(slug: string): Promise<string | null> {
   const specs = demoFiles[slug];
   if (!specs || specs.length === 0) {
     return null;
@@ -177,6 +191,9 @@ export async function getDemoLlmsTxt(slug: string): Promise<string | null> {
   for (const { label, path: rel, lang } of specs) {
     const abs = path.resolve(SITE_ROOT, rel);
     if (!existsSync(abs)) {
+      // A declared source file that isn't on disk is almost always a typo'd path
+      // in the demo's files.ts — surface it instead of silently dropping the file.
+      logger.warn(`[llms] demo '${slug}': source file not found, skipping: ${rel}`);
       continue;
     }
     const content = await Bun.file(abs).text();
@@ -276,12 +293,18 @@ export async function buildLlmsJson(origin: string): Promise<{ docs: LlmsIndexEn
 }
 
 const SITE_NAME = 'Mochi';
+// The doc whose frontmatter `description` doubles as the site's one-line summary in
+// the llms.txt index. Keyed by slug (not list position) so reordering docs can't
+// silently swap the summary out.
+const SITE_SUMMARY_DOC_SLUG = 'intro';
+const SITE_SUMMARY_FALLBACK = 'An SSR framework for Svelte 5 on Bun with islands-based selective hydration.';
 
 // Standard llms.txt index: title + summary + linked sections, rendered from the same
 // data as /llms.json. Per-request (origin-dependent), so not cached.
 export async function buildLlmsIndexTxt(origin: string): Promise<string> {
   const { docs, demos } = await buildLlmsJson(origin);
-  const summary = docs[0]?.description || 'An SSR framework for Svelte 5 on Bun with islands-based selective hydration.';
+  const summaryDoc = docs.find((d) => d.url.endsWith(`/docs/${SITE_SUMMARY_DOC_SLUG}/llms.txt`));
+  const summary = summaryDoc?.description || SITE_SUMMARY_FALLBACK;
   const link = (e: LlmsIndexEntry) => `- [${e.title}](${e.url}): ${e.description}`;
   const lines = [
     `# ${SITE_NAME}`,
