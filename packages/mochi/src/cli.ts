@@ -4,11 +4,14 @@ import path from 'node:path';
 import { existsSync } from 'node:fs';
 import { build } from './build';
 import { extractServeOptions } from './extractServeOptions';
+import { updateSkill } from './updateSkill';
 
 const HELP = `Usage: mochi-framework <command> [options]
 
 Commands:
-  build    Produce a production bundle in the output directory.
+  build          Produce a production bundle in the output directory.
+  update-skill   Fetch the latest SKILL.md and write it to
+                 .claude/skills/mochi/SKILL.md in the current project.
 
 Options for "build":
   --entry <path>           Runtime entry whose \`Mochi.serve()\` call supplies
@@ -26,6 +29,18 @@ Global:
   -h, --help           Show this help.
   -v, --version        Show version.
 `;
+
+async function runUpdateSkill() {
+  try {
+    const { path: dest, created } = await updateSkill();
+    const rel = path.relative(process.cwd(), dest) || dest;
+    process.stdout.write(`[mochi] ${created ? 'Created' : 'Updated'} ${rel}\n`);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    process.stderr.write(`[mochi] ${msg}\n`);
+    process.exit(1);
+  }
+}
 
 async function main() {
   const { values, positionals } = parseArgs({
@@ -59,6 +74,12 @@ async function main() {
     process.stderr.write(HELP);
     process.exit(1);
   }
+
+  if (cmd === 'update-skill') {
+    await runUpdateSkill();
+    return;
+  }
+
   if (cmd !== 'build') {
     process.stderr.write(`[mochi] Unknown command: ${cmd}\n\n${HELP}`);
     process.exit(1);

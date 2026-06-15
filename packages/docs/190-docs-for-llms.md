@@ -52,6 +52,16 @@ Each demo's source is reachable as plain text alongside its demo page — usuall
 }
 ```
 
+### Agent skill
+
+Mochi publishes a `SKILL.md` — agent guidance that tells a coding assistant to fetch the relevant docs and demos from `/llms.txt` before writing framework code. Pull the latest copy into your project with the CLI:
+
+```sh
+bunx mochi-framework update-skill
+```
+
+This fetches `https://mochi.fast/SKILL.md` and writes it to `.claude/skills/mochi/SKILL.md`, creating the file if it does not exist or overwriting it if it does. Run it again whenever you upgrade the framework to keep the guidance in sync.
+
 <Callout type="info">
   An MCP server is coming soon.
 </Callout>
