@@ -25,10 +25,13 @@ const Leaf = ({ i, t }: { i: number; t: number }) => {
   const yRaw = (rand(seed + 2.2) * span + t * fall) % span;
   const y = yRaw - size;
 
-  // Gentle lateral drift, slow and small so the steady fall stays the dominant motion.
-  const x = rand(seed + 3.3) * CANVAS.width + Math.sin(t * lerp(0.15, 0.3, rand(seed + 4.4)) + seed) * lerp(10, 22, rand(seed + 5.5));
-  // Barely-there rotation; the downward fall carries the motion.
-  const rot = lerp(0, 360, rand(seed + 6.6)) + t * lerp(-2, 2, rand(seed + 7.7));
+  // Pendulum sway: a real falling leaf swings side to side as it descends. One slow sine on a
+  // per-leaf phase gives a wide, graceful left/right swing while the steady fall stays dominant.
+  const swayPhase = t * lerp(0.5, 0.9, rand(seed + 4.4)) + seed;
+  const x = rand(seed + 3.3) * CANVAS.width + Math.sin(swayPhase) * lerp(50, 110, rand(seed + 5.5));
+  // Tilt rocks in sync with the swing (cos leads the sine), so the leaf rotates into each sweep
+  // rather than spinning — riding on a fixed base orientation so the field stays varied.
+  const rot = lerp(0, 360, rand(seed + 6.6)) + Math.cos(swayPhase) * lerp(12, 26, rand(seed + 7.7));
 
   // Constant soft peak across the screen, fading only within a band of each off-screen edge.
   const peak = lerp(0.06, 0.12, rand(seed + 8.8));
