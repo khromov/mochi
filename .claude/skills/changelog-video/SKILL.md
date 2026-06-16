@@ -1,12 +1,12 @@
 ---
 name: changelog-video
-description: Generate a reusable, on-brand Remotion changelog video (square 4K, x265, silent, 20-30s) from a release changelog. Use when the user says "make a changelog video", "create a release video", "changelog video", or "/changelog-video". Distinct from mochi-changelog, which writes the text changelog.
+description: Generate a reusable, on-brand Remotion changelog video (square 4K, x264, silent, 20-30s) from a release changelog. Use when the user says "make a changelog video", "create a release video", "changelog video", or "/changelog-video". Distinct from mochi-changelog, which writes the text changelog.
 user-invocable: true
 ---
 
 # Changelog video
 
-Turn a release changelog into a short, on-brand promo video. Output is **square 2160×2160, 30fps, x265/HEVC, silent, 20–30s total**. Videos are data-driven: a per-release module feeds the reusable `ChangelogVideo` composition in `packages/remotion`.
+Turn a release changelog into a short, on-brand promo video. Output is **square 2160×2160, 30fps, x264/H.264, silent, 20–30s total**. Type sizes are deliberately large so it stays legible on a phone. Videos are data-driven: a per-release module feeds the reusable `ChangelogVideo` composition in `packages/remotion`.
 
 ## 0. First: load Remotion domain knowledge
 
@@ -83,13 +83,13 @@ If the user provides one:
 
 - **Studio:** `bun run mochi:studio` (alias for `bun --cwd=packages/remotion run studio`), open the composition — confirm the shell/leaves, cross-fades, total in 20–30s, demo in the green frame, and **no audio**.
 - **Stills** (optional sanity check): `bun --cwd=packages/remotion x remotion still src/index.ts <id> out/check.png --scale=0.25 --frame=N`.
-- **Final render (x265/HEVC, silent):** CLI `--codec` overrides `remotion.config.ts` (which stays h264 for the brand video); `--muted` drops the audio track Remotion otherwise adds (these videos have no sound):
+- **Final render (x264/H.264, silent):** `--muted` drops the audio track Remotion otherwise adds (these videos have no sound). h264 is the project default in `remotion.config.ts`, so no `--codec` flag is needed:
 
   ```sh
-  bun --cwd=packages/remotion x remotion render src/index.ts <id> out/changelog-<version>.mp4 --codec=h265 --crf=18 --muted
+  bun --cwd=packages/remotion x remotion render src/index.ts <id> out/changelog-<version>.mp4 --crf=18 --muted
   ```
 
-- Spot-check the output: `ffprobe out/changelog-<version>.mp4` — expect 2160×2160, `hevc`, no audio stream, 20–30s.
+- Spot-check the output: `ffprobe out/changelog-<version>.mp4` — expect 2160×2160, `h264`, no audio stream, 20–30s.
 
 ## 7. After your changes
 

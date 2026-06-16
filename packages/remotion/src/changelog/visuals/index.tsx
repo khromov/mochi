@@ -7,18 +7,18 @@ import { Box, fontDisplay, fontMono, fontSerif } from '../../ui';
 
 // Pill badges that pop in one after another (the SceneCaps feel).
 export const BadgeRow = ({ t, labels }: { t: number; labels: string[] }) => (
-  <Box style={{ maxWidth: 1500, flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center' }}>
+  <Box style={{ maxWidth: 1860, flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center' }}>
     {labels.map((label, i) => {
       const a = clamp(norm(t, 0.2 + i * 0.18, 0.9 + i * 0.18));
       return (
         <Box
           key={label}
           style={{
-            margin: 14,
-            paddingLeft: 40,
-            paddingRight: 40,
-            paddingTop: 22,
-            paddingBottom: 22,
+            margin: 18,
+            paddingLeft: 54,
+            paddingRight: 54,
+            paddingTop: 30,
+            paddingBottom: 30,
             borderRadius: RADIUS.pill,
             background: COLORS.badgeBg,
             border: `1px solid ${COLORS.badgeBorder}`,
@@ -27,7 +27,7 @@ export const BadgeRow = ({ t, labels }: { t: number; labels: string[] }) => (
             transformOrigin: '50% 50%',
           }}
         >
-          <Box style={{ ...fontSerif, fontSize: 52, color: COLORS.badgeText }}>{label}</Box>
+          <Box style={{ ...fontSerif, fontSize: 72, color: COLORS.badgeText }}>{label}</Box>
         </Box>
       );
     })}
@@ -41,12 +41,12 @@ export const CodeChip = ({ t, text }: { t: number; text: string }) => {
     <Box
       style={{
         ...fontMono,
-        fontSize: 44,
+        fontSize: 62,
         color: COLORS.badgeText,
-        paddingLeft: 44,
-        paddingRight: 44,
-        paddingTop: 26,
-        paddingBottom: 26,
+        paddingLeft: 56,
+        paddingRight: 56,
+        paddingTop: 36,
+        paddingBottom: 36,
         borderRadius: RADIUS.md,
         background: 'rgba(23,25,20,0.55)',
         border: `1px solid ${COLORS.badgeBorder}`,
@@ -65,11 +65,11 @@ export const Stat = ({ t, value, suffix = '', label }: { t: number; value: numbe
   const shown = Math.round(value * p);
   return (
     <Box style={{ flexDirection: 'column', alignItems: 'center', opacity: clamp(norm(t, 0.1, 0.6)) }}>
-      <Box style={{ ...fontDisplay, fontSize: 220, lineHeight: 1, color: COLORS.accentGlow, letterSpacing: '-0.02em' }}>
+      <Box style={{ ...fontDisplay, fontSize: 320, lineHeight: 1, color: COLORS.accentGlow, letterSpacing: '-0.02em' }}>
         {shown}
         {suffix}
       </Box>
-      <Box style={{ ...fontMono, fontSize: 30, letterSpacing: '0.28em', textTransform: 'uppercase', color: COLORS.textOnHeroSubtle, marginTop: 18 }}>{label}</Box>
+      <Box style={{ ...fontMono, fontSize: 44, letterSpacing: '0.28em', textTransform: 'uppercase', color: COLORS.textOnHeroSubtle, marginTop: 24 }}>{label}</Box>
     </Box>
   );
 };

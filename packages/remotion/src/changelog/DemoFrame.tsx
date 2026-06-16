@@ -11,8 +11,8 @@ export const DemoFrame = ({
   src,
   label,
   startFrame,
-  width = 1320,
-  height = 742,
+  width = 1640,
+  height = 922,
 }: {
   src: string;
   label?: string;
@@ -35,6 +35,6 @@ export const DemoFrame = ({
         <Video src={staticFile(src)} style={{ width, height, objectFit: 'contain', borderRadius: RADIUS.md, display: 'block' }} />
       </Sequence>
     </Box>
-    {label ? <Box style={{ ...fontMono, fontSize: 26, letterSpacing: '0.18em', textTransform: 'uppercase', color: COLORS.textOnHeroSubtle, marginTop: 26 }}>{label}</Box> : null}
+    {label ? <Box style={{ ...fontMono, fontSize: 38, letterSpacing: '0.18em', textTransform: 'uppercase', color: COLORS.textOnHeroSubtle, marginTop: 32 }}>{label}</Box> : null}
   </Box>
 );

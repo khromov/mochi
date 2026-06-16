@@ -18,7 +18,7 @@ export const Layer = ({ opacity, children }: { opacity: number; children: ReactN
       flexDirection: 'column',
       alignItems: 'center',
       justifyContent: 'center',
-      padding: 160,
+      padding: 130,
       opacity,
     }}
   >
@@ -50,11 +50,11 @@ export const ChangelogScene = ({
         <Box
           style={{
             ...fontMono,
-            fontSize: 30,
+            fontSize: 42,
             letterSpacing: '0.32em',
             textTransform: 'uppercase',
             color: COLORS.textOnHeroSubtle,
-            marginBottom: 28,
+            marginBottom: 36,
             opacity: clamp(norm(t, 0, 0.9)),
           }}
         >
@@ -64,7 +64,7 @@ export const ChangelogScene = ({
       <Box
         style={{
           ...fontDisplay,
-          fontSize: 116,
+          fontSize: 176,
           color: COLORS.textOnHero,
           letterSpacing: '-0.018em',
           lineHeight: 1.04,
@@ -76,9 +76,9 @@ export const ChangelogScene = ({
         {title}
       </Box>
       {blurb ? (
-        <Box style={{ ...fontSerifItalic, fontSize: 46, color: COLORS.textOnHeroMuted, textAlign: 'center', maxWidth: 1500, marginTop: 30, opacity: blurbP }}>{blurb}</Box>
+        <Box style={{ ...fontSerifItalic, fontSize: 66, color: COLORS.textOnHeroMuted, textAlign: 'center', maxWidth: 1820, marginTop: 40, opacity: blurbP }}>{blurb}</Box>
       ) : null}
-      {children ? <Box style={{ marginTop: 56, flexDirection: 'column', alignItems: 'center' }}>{children}</Box> : null}
+      {children ? <Box style={{ marginTop: 76, flexDirection: 'column', alignItems: 'center' }}>{children}</Box> : null}
     </Layer>
   );
 };
