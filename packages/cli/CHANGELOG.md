@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.5](https://github.com/khromov/mochi/compare/create-mochi-v0.2.4...create-mochi-v0.2.5) (2026-06-16)
+
+
+### Bug Fixes
+
+* **cli:** reference both svelte-check patch versions in scaffolded projects ([#106](https://github.com/khromov/mochi/issues/106)) ([b7c8aed](https://github.com/khromov/mochi/commit/b7c8aedcd9648c0cf9cf5275da233567c3fa872c))
+
 ## [0.2.4](https://github.com/khromov/mochi/compare/create-mochi-v0.2.3...create-mochi-v0.2.4) (2026-06-07)
 
 
