@@ -1166,7 +1166,7 @@ export class Mochi {
     const composedFetch = async (req: Request, server: Server<undefined>): Promise<Response> => {
       const url = buildPublicUrl(req, options.proxy);
       if (trailingSlashPolicy) {
-        const redirect = trailingSlashRedirect(req.method, url, trailingSlashPolicy);
+        const redirect = applyFilter('trailingSlash:redirect', trailingSlashRedirect(req.method, url, trailingSlashPolicy), { request: req, url, policy: trailingSlashPolicy });
         if (redirect) {
           return redirect;
         }

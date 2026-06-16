@@ -2,6 +2,7 @@ import type { Server } from 'bun';
 import { csrfCheck, type MochiCsrfOptions } from './csrf';
 import { buildPublicUrl, getClientAddress, type MochiProxyOptions } from './proxy';
 import { extractParams } from './utils';
+import { applyFilter } from './extensions';
 import { trailingSlashRedirect, type TrailingSlashPolicy } from './trailingSlash';
 import { MochiCookieJar, type CookieSerializeOptions } from './cookies';
 import { mochiEvents } from './events';
@@ -89,7 +90,7 @@ export function makeRequestContextBuilder(cfg: RequestSetupConfig): RequestConte
     };
 
     if (policy.trailingSlash && cfg.trailingSlashPolicy) {
-      const redirect = trailingSlashRedirect(req.method, url, cfg.trailingSlashPolicy);
+      const redirect = applyFilter('trailingSlash:redirect', trailingSlashRedirect(req.method, url, cfg.trailingSlashPolicy), { request: req, url, policy: cfg.trailingSlashPolicy });
       if (redirect) {
         reportEarlyExit(redirect.status);
         return { earlyResponse: redirect };

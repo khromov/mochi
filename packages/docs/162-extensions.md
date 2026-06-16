@@ -171,6 +171,20 @@ await Mochi.serve({
 
 Do **NOT** bypass CSRF on a state-mutating endpoint; instead, prefer the narrower `csrf:trustedOrigins` filter or `csrf.checkOrigin: false` on `Mochi.serve()`.
 
+#### `trailingSlash:redirect`
+
+Override the `trailingSlash` policy for the current request. The filter receives the redirect the framework computed — a `Response` (301/308) when the path isn't canonical, or `null` when no redirect applies. Return the input unchanged to delegate, or `null` to skip the redirect and let the request reach its handler as-is. Sync. Useful for endpoints that must answer at an exact path regardless of the site-wide policy — e.g. an MCP endpoint at `/mcp` under `trailingSlash: 'always'`.
+
+```ts
+await Mochi.serve({
+  trailingSlash: 'always',
+  filters: {
+    'trailingSlash:redirect': (redirect, { url }) => (url.pathname === '/mcp' ? null : redirect),
+  },
+  routes,
+});
+```
+
 #### `cookie:defaults`
 
 Default `CookieSerializeOptions` merged into every `cookies.set()` call. Per-call options win on a per-field basis. `path` and `domain` from defaults also apply to `cookies.delete()` so the browser still matches the original `Set-Cookie`. Resolved once at startup. Sync.

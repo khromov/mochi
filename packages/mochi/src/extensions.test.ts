@@ -409,6 +409,38 @@ describe('new extension points', () => {
     expect(result).toBe(blocking);
   });
 
+  test('trailingSlash:redirect can suppress the redirect for a specific path', () => {
+    const redirect = new Response(null, { status: 308, headers: { Location: '/mcp/' } });
+    initExtensions({
+      filters: {
+        'trailingSlash:redirect': (computed, { url }) => (url.pathname === '/mcp' ? null : computed),
+      },
+    });
+    const exempt = applyFilter('trailingSlash:redirect', redirect, {
+      request: new Request('http://localhost/mcp'),
+      url: new URL('http://localhost/mcp'),
+      policy: 'always',
+    });
+    expect(exempt).toBeNull();
+    const other = applyFilter('trailingSlash:redirect', redirect, {
+      request: new Request('http://localhost/docs'),
+      url: new URL('http://localhost/docs'),
+      policy: 'always',
+    });
+    expect(other).toBe(redirect);
+  });
+
+  test('trailingSlash:redirect leaves the computed redirect untouched with no filter', () => {
+    const redirect = new Response(null, { status: 308, headers: { Location: '/foo/' } });
+    initExtensions({ filters: {} });
+    const result = applyFilter('trailingSlash:redirect', redirect, {
+      request: new Request('http://localhost/foo'),
+      url: new URL('http://localhost/foo'),
+      policy: 'always',
+    });
+    expect(result).toBe(redirect);
+  });
+
   // The runtime fires `route:matched` from inside `requestContext.run(...)`
   // for all four kinds (page, api, ws, sse). Drive the same shape here to lock
   // the contract that `getRequestContext()` works inside the hook regardless
