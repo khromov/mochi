@@ -4,7 +4,7 @@
       "type": "http",
       "url": "https://mcp.svelte.dev/mcp"
     },
-    "mochi-mcp": {
+    "mochi": {
       "type": "http",
       "url": "https://mochi.fast/mcp"
     }
