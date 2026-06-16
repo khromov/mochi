@@ -24,15 +24,15 @@ Replace `my-video` with a suitable project name.
 Animate properties using `useCurrentFrame()` and `interpolate()`. Use Easing to customize the timing of the animation.
 
 ```tsx
-import { useCurrentFrame, Easing } from "remotion";
+import { useCurrentFrame, Easing } from 'remotion';
 
 export const FadeIn = () => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
 
   const opacity = interpolate(frame, [0, 2 * fps], [0, 1], {
-    extrapolateRight: "clamp",
-    extrapolateLeft: "clamp",
+    extrapolateRight: 'clamp',
+    extrapolateLeft: 'clamp',
     easing: Easing.bezier(0.16, 1, 0.3, 1),
   });
 
@@ -50,42 +50,42 @@ Use `staticFile()` to reference files from the `public/` folder.
 Add images using the `<Img>` component:
 
 ```tsx
-import { Img, staticFile } from "remotion";
+import { Img, staticFile } from 'remotion';
 
 export const MyComposition = () => {
-  return <Img src={staticFile("logo.png")} style={{ width: 100, height: 100 }} />;
+  return <Img src={staticFile('logo.png')} style={{ width: 100, height: 100 }} />;
 };
 ```
 
 Add videos using the `<Video>` component from `@remotion/media`:
 
 ```tsx
-import { Video } from "@remotion/media";
-import { staticFile } from "remotion";
+import { Video } from '@remotion/media';
+import { staticFile } from 'remotion';
 
 export const MyComposition = () => {
-  return <Video src={staticFile("video.mp4")} style={{ opacity: 0.5 }} />;
+  return <Video src={staticFile('video.mp4')} style={{ opacity: 0.5 }} />;
 };
 ```
 
 Add audio using the `<Audio>` component from `@remotion/media`:
 
 ```tsx
-import { Audio } from "@remotion/media";
-import { staticFile } from "remotion";
+import { Audio } from '@remotion/media';
+import { staticFile } from 'remotion';
 
 export const MyComposition = () => {
-  return <Audio src={staticFile("audio.mp3")} />;
+  return <Audio src={staticFile('audio.mp3')} />;
 };
 ```
 
 Assets can be also referenced as remote URLs:
 
 ```tsx
-import { Video } from "@remotion/media";
+import { Video } from '@remotion/media';
 
 export const MyComposition = () => {
-  return <Video src="https://remotion.media/video.mp4" />
+  return <Video src="https://remotion.media/video.mp4" />;
 };
 ```
 
@@ -94,15 +94,15 @@ To limit the duration of an element, use `durationInFrames` of `<Sequence>`.
 `<Sequence>` by default is an absolute fill. For inline content, use `layout="none"`.
 
 ```tsx
-import { Sequence } from "remotion";
+import { Sequence } from 'remotion';
 
 export const Title = () => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
 
   const opacity = interpolate(frame, [0, 2 * fps], [0, 1], {
-    extrapolateRight: "clamp",
-    extrapolateLeft: "clamp",
+    extrapolateRight: 'clamp',
+    extrapolateLeft: 'clamp',
     easing: Easing.bezier(0.16, 1, 0.3, 1),
   });
 
@@ -114,7 +114,7 @@ export const Subtitle = () => {
 };
 
 const Main = () => {
-  const {fps} = useVideoConfig();
+  const { fps } = useVideoConfig();
 
   return (
     <AbsoluteFill>
@@ -129,38 +129,27 @@ const Main = () => {
       </Sequence>
     </AbsoluteFill>
   );
-}
+};
 ```
 
 The width, height, fps, and duration of a video is defined in `src/Root.tsx`:
 
 ```tsx
-import { Composition } from "remotion";
-import { MyComposition } from "./MyComposition";
+import { Composition } from 'remotion';
+import { MyComposition } from './MyComposition';
 
 export const RemotionRoot = () => {
-  return (
-    <Composition
-      id="MyComposition"
-      component={MyComposition}
-      durationInFrames={100}
-      fps={30}
-      width={1080}
-      height={1080}
-    />
-  );
+  return <Composition id="MyComposition" component={MyComposition} durationInFrames={100} fps={30} width={1080} height={1080} />;
 };
 ```
 
 Metadata can also be calculated dynamically:
 
 ```tsx
-import { Composition, CalculateMetadataFunction } from "remotion";
-import { MyComposition, MyCompositionProps } from "./MyComposition";
+import { Composition, CalculateMetadataFunction } from 'remotion';
+import { MyComposition, MyCompositionProps } from './MyComposition';
 
-const calculateMetadata: CalculateMetadataFunction<
-  MyCompositionProps
-> = async ({ props, abortSignal }) => {
+const calculateMetadata: CalculateMetadataFunction<MyCompositionProps> = async ({ props, abortSignal }) => {
   const data = await fetch(`https://api.example.com/video/${props.videoId}`, {
     signal: abortSignal,
   }).then((res) => res.json());
@@ -178,15 +167,7 @@ const calculateMetadata: CalculateMetadataFunction<
 
 export const RemotionRoot = () => {
   return (
-    <Composition
-      id="MyComposition"
-      component={MyComposition}
-      fps={30}
-      width={1080}
-      height={1080}
-      defaultProps={{ videoId: "abc123" }}
-      calculateMetadata={calculateMetadata}
-    />
+    <Composition id="MyComposition" component={MyComposition} fps={30} width={1080} height={1080} defaultProps={{ videoId: 'abc123' }} calculateMetadata={calculateMetadata} />
   );
 };
 ```

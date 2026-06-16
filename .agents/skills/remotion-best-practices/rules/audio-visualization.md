@@ -18,14 +18,14 @@ npx remotion add @remotion/media-utils
 Use `useWindowedAudioData()` (https://www.remotion.dev/docs/use-windowed-audio-data) to load audio data:
 
 ```tsx
-import { useWindowedAudioData } from "@remotion/media-utils";
-import { staticFile, useCurrentFrame, useVideoConfig } from "remotion";
+import { useWindowedAudioData } from '@remotion/media-utils';
+import { staticFile, useCurrentFrame, useVideoConfig } from 'remotion';
 
 const frame = useCurrentFrame();
 const { fps } = useVideoConfig();
 
 const { audioData, dataOffsetInSeconds } = useWindowedAudioData({
-  src: staticFile("podcast.wav"),
+  src: staticFile('podcast.wav'),
   frame,
   fps,
   windowInSeconds: 30,
@@ -37,14 +37,14 @@ const { audioData, dataOffsetInSeconds } = useWindowedAudioData({
 Use `visualizeAudio()` (https://www.remotion.dev/docs/visualize-audio) to get frequency data for bar charts:
 
 ```tsx
-import { useWindowedAudioData, visualizeAudio } from "@remotion/media-utils";
-import { staticFile, useCurrentFrame, useVideoConfig } from "remotion";
+import { useWindowedAudioData, visualizeAudio } from '@remotion/media-utils';
+import { staticFile, useCurrentFrame, useVideoConfig } from 'remotion';
 
 const frame = useCurrentFrame();
 const { fps } = useVideoConfig();
 
 const { audioData, dataOffsetInSeconds } = useWindowedAudioData({
-  src: staticFile("music.mp3"),
+  src: staticFile('music.mp3'),
   frame,
   fps,
   windowInSeconds: 30,
@@ -59,20 +59,20 @@ const frequencies = visualizeAudio({
   frame,
   audioData,
   numberOfSamples: 256,
-  optimizeFor: "speed",
+  optimizeFor: 'speed',
   dataOffsetInSeconds,
 });
 
 return (
-  <div style={{ display: "flex", alignItems: "flex-end", height: 200 }}>
+  <div style={{ display: 'flex', alignItems: 'flex-end', height: 200 }}>
     {frequencies.map((v, i) => (
       <div
         key={i}
         style={{
           flex: 1,
           height: `${v * 100}%`,
-          backgroundColor: "#0b84f3",
-          margin: "0 1px",
+          backgroundColor: '#0b84f3',
+          margin: '0 1px',
         }}
       />
     ))}
@@ -91,19 +91,15 @@ return (
 Use `visualizeAudioWaveform()` (https://www.remotion.dev/docs/media-utils/visualize-audio-waveform) with `createSmoothSvgPath()` (https://www.remotion.dev/docs/media-utils/create-smooth-svg-path) for oscilloscope-style displays:
 
 ```tsx
-import {
-  createSmoothSvgPath,
-  useWindowedAudioData,
-  visualizeAudioWaveform,
-} from "@remotion/media-utils";
-import { staticFile, useCurrentFrame, useVideoConfig } from "remotion";
+import { createSmoothSvgPath, useWindowedAudioData, visualizeAudioWaveform } from '@remotion/media-utils';
+import { staticFile, useCurrentFrame, useVideoConfig } from 'remotion';
 
 const frame = useCurrentFrame();
 const { width, fps } = useVideoConfig();
 const HEIGHT = 200;
 
 const { audioData, dataOffsetInSeconds } = useWindowedAudioData({
-  src: staticFile("voice.wav"),
+  src: staticFile('voice.wav'),
   frame,
   fps,
   windowInSeconds: 30,
@@ -146,13 +142,12 @@ const frequencies = visualizeAudio({
   frame,
   audioData,
   numberOfSamples: 128,
-  optimizeFor: "speed",
+  optimizeFor: 'speed',
   dataOffsetInSeconds,
 });
 
 const lowFrequencies = frequencies.slice(0, 32);
-const bassIntensity =
-  lowFrequencies.reduce((sum, v) => sum + v, 0) / lowFrequencies.length;
+const bassIntensity = lowFrequencies.reduce((sum, v) => sum + v, 0) / lowFrequencies.length;
 
 const scale = 1 + bassIntensity * 0.5;
 const opacity = Math.min(0.6, bassIntensity * 0.8);
@@ -163,8 +158,8 @@ const opacity = Math.min(0.6, bassIntensity * 0.8);
 Use `getWaveformPortion()` (https://www.remotion.dev/docs/get-waveform-portion) when you need simplified volume data instead of frequency spectrum:
 
 ```tsx
-import { getWaveformPortion } from "@remotion/media-utils";
-import { useCurrentFrame, useVideoConfig } from "remotion";
+import { getWaveformPortion } from '@remotion/media-utils';
+import { useCurrentFrame, useVideoConfig } from 'remotion';
 
 const frame = useCurrentFrame();
 const { fps } = useVideoConfig();
@@ -178,9 +173,7 @@ const waveform = getWaveformPortion({
 });
 
 // Returns array of { index, amplitude } objects (amplitude: 0-1)
-waveform.map((bar) => (
-  <div key={bar.index} style={{ height: bar.amplitude * 100 }} />
-));
+waveform.map((bar) => <div key={bar.index} style={{ height: bar.amplitude * 100 }} />);
 ```
 
 ## Postprocessing

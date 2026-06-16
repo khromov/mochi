@@ -24,7 +24,7 @@ pnpm exec remotion add @remotion/google-fonts # If project uses pnpm
 ```
 
 ```tsx
-import { loadFont } from "@remotion/google-fonts/Lobster";
+import { loadFont } from '@remotion/google-fonts/Lobster';
 
 const { fontFamily } = loadFont();
 
@@ -36,11 +36,11 @@ export const MyComposition = () => {
 Preferrably, specify only needed weights and subsets to reduce file size:
 
 ```tsx
-import { loadFont } from "@remotion/google-fonts/Roboto";
+import { loadFont } from '@remotion/google-fonts/Roboto';
 
-const { fontFamily } = loadFont("normal", {
-  weights: ["400", "700"],
-  subsets: ["latin"],
+const { fontFamily } = loadFont('normal', {
+  weights: ['400', '700'],
+  subsets: ['latin'],
 });
 ```
 
@@ -49,11 +49,11 @@ const { fontFamily } = loadFont("normal", {
 Call `loadFont()` at the top level of your component or in a separate file that's imported early:
 
 ```tsx
-import { loadFont } from "@remotion/google-fonts/Montserrat";
+import { loadFont } from '@remotion/google-fonts/Montserrat';
 
-const { fontFamily } = loadFont("normal", {
-  weights: ["400", "700"],
-  subsets: ["latin"],
+const { fontFamily } = loadFont('normal', {
+  weights: ['400', '700'],
+  subsets: ['latin'],
 });
 
 export const Title: React.FC<{ text: string }> = ({ text }) => {
@@ -62,7 +62,7 @@ export const Title: React.FC<{ text: string }> = ({ text }) => {
       style={{
         fontFamily,
         fontSize: 80,
-        fontWeight: "bold",
+        fontWeight: 'bold',
       }}
     >
       {text}

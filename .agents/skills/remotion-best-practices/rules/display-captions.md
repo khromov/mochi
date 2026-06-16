@@ -25,9 +25,9 @@ npx remotion add @remotion/captions
 First, fetch your captions JSON file. Use [`useDelayRender()`](https://www.remotion.dev/docs/use-delay-render) to hold the render until the captions are loaded:
 
 ```tsx
-import { useState, useEffect, useCallback } from "react";
-import { AbsoluteFill, staticFile, useDelayRender } from "remotion";
-import type { Caption } from "@remotion/captions";
+import { useState, useEffect, useCallback } from 'react';
+import { AbsoluteFill, staticFile, useDelayRender } from 'remotion';
+import type { Caption } from '@remotion/captions';
 
 export const MyComponent: React.FC = () => {
   const [captions, setCaptions] = useState<Caption[] | null>(null);
@@ -37,7 +37,7 @@ export const MyComponent: React.FC = () => {
   const fetchCaptions = useCallback(async () => {
     try {
       // Assuming captions.json is in the public/ folder.
-      const response = await fetch(staticFile("captions123.json"));
+      const response = await fetch(staticFile('captions123.json'));
       const data = await response.json();
       setCaptions(data);
       continueRender(handle);
@@ -63,9 +63,9 @@ export const MyComponent: React.FC = () => {
 Use `createTikTokStyleCaptions()` to group captions into pages. The `combineTokensWithinMilliseconds` option controls how many words appear at once:
 
 ```tsx
-import { useMemo } from "react";
-import { createTikTokStyleCaptions } from "@remotion/captions";
-import type { Caption } from "@remotion/captions";
+import { useMemo } from 'react';
+import { createTikTokStyleCaptions } from '@remotion/captions';
+import type { Caption } from '@remotion/captions';
 
 // How often captions should switch (in milliseconds)
 // Higher values = more words per page
@@ -85,8 +85,8 @@ const { pages } = useMemo(() => {
 Map over the pages and render each one in a `<Sequence>`. Calculate the start frame and duration from the page timing:
 
 ```tsx
-import { Sequence, useVideoConfig, AbsoluteFill } from "remotion";
-import type { TikTokPage } from "@remotion/captions";
+import { Sequence, useVideoConfig, AbsoluteFill } from 'remotion';
+import type { TikTokPage } from '@remotion/captions';
 
 const CaptionedContent: React.FC = () => {
   const { fps } = useVideoConfig();
@@ -96,10 +96,7 @@ const CaptionedContent: React.FC = () => {
       {pages.map((page, index) => {
         const nextPage = pages[index + 1] ?? null;
         const startFrame = (page.startMs / 1000) * fps;
-        const endFrame = Math.min(
-          nextPage ? (nextPage.startMs / 1000) * fps : Infinity,
-          startFrame + (SWITCH_CAPTIONS_EVERY_MS / 1000) * fps,
-        );
+        const endFrame = Math.min(nextPage ? (nextPage.startMs / 1000) * fps : Infinity, startFrame + (SWITCH_CAPTIONS_EVERY_MS / 1000) * fps);
         const durationInFrames = endFrame - startFrame;
 
         if (durationInFrames <= 0) {
@@ -107,11 +104,7 @@ const CaptionedContent: React.FC = () => {
         }
 
         return (
-          <Sequence
-            key={index}
-            from={startFrame}
-            durationInFrames={durationInFrames}
-          >
+          <Sequence key={index} from={startFrame} durationInFrames={durationInFrames}>
             <CaptionPage page={page} />
           </Sequence>
         );
@@ -135,10 +128,10 @@ Make a new file for it.
 A caption page contains `tokens` which you can use to highlight the currently spoken word:
 
 ```tsx
-import { AbsoluteFill, useCurrentFrame, useVideoConfig } from "remotion";
-import type { TikTokPage } from "@remotion/captions";
+import { AbsoluteFill, useCurrentFrame, useVideoConfig } from 'remotion';
+import type { TikTokPage } from '@remotion/captions';
 
-const HIGHLIGHT_COLOR = "#39E508";
+const HIGHLIGHT_COLOR = '#39E508';
 
 const CaptionPage: React.FC<{ page: TikTokPage }> = ({ page }) => {
   const frame = useCurrentFrame();
@@ -150,17 +143,13 @@ const CaptionPage: React.FC<{ page: TikTokPage }> = ({ page }) => {
   const absoluteTimeMs = page.startMs + currentTimeMs;
 
   return (
-    <AbsoluteFill style={{ justifyContent: "center", alignItems: "center" }}>
-      <div style={{ fontSize: 80, fontWeight: "bold", whiteSpace: "pre" }}>
+    <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'center' }}>
+      <div style={{ fontSize: 80, fontWeight: 'bold', whiteSpace: 'pre' }}>
         {page.tokens.map((token) => {
-          const isActive =
-            token.fromMs <= absoluteTimeMs && token.toMs > absoluteTimeMs;
+          const isActive = token.fromMs <= absoluteTimeMs && token.toMs > absoluteTimeMs;
 
           return (
-            <span
-              key={token.fromMs}
-              style={{ color: isActive ? HIGHLIGHT_COLOR : "white" }}
-            >
+            <span key={token.fromMs} style={{ color: isActive ? HIGHLIGHT_COLOR : 'white' }}>
               {token.text}
             </span>
           );
@@ -178,7 +167,7 @@ For each video, make a new captions JSON file.
 
 ```tsx
 <AbsoluteFill>
-  <Video src={staticFile("video.mp4")} />
+  <Video src={staticFile('video.mp4')} />
   <CaptionPage page={page} />
 </AbsoluteFill>
 ```

@@ -8,15 +8,15 @@ metadata:
 Use `<Sequence>` to delay when an element appears in the timeline.
 
 ```tsx
-import { Sequence } from "remotion";
+import { Sequence } from 'remotion';
 
 export const Title = () => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
 
   const opacity = interpolate(frame, [0, 2 * fps], [0, 1], {
-    extrapolateRight: "clamp",
-    extrapolateLeft: "clamp",
+    extrapolateRight: 'clamp',
+    extrapolateLeft: 'clamp',
     easing: Easing.bezier(0.16, 1, 0.3, 1),
   });
 
@@ -28,7 +28,7 @@ export const Subtitle = () => {
 };
 
 const Main = () => {
-  const {fps} = useVideoConfig();
+  const { fps } = useVideoConfig();
 
   return (
     <AbsoluteFill>
@@ -43,7 +43,7 @@ const Main = () => {
       </Sequence>
     </AbsoluteFill>
   );
-}
+};
 ```
 
 This will by default wrap the component in an absolute fill element.  
@@ -71,7 +71,7 @@ Always premount any `<Sequence>`!
 Use `<Series>` when elements should play one after another without overlap.
 
 ```tsx
-import { Series } from "remotion";
+import { Series } from 'remotion';
 
 <Series>
   <Series.Sequence durationInFrames={45}>

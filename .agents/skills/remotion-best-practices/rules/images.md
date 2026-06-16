@@ -4,14 +4,14 @@ Use the `style` prop to control size and position:
 
 ```tsx
 <Img
-  src={staticFile("photo.png")}
+  src={staticFile('photo.png')}
   style={{
     width: 500,
     height: 300,
-    position: "absolute",
+    position: 'absolute',
     top: 100,
     left: 50,
-    objectFit: "cover",
+    objectFit: 'cover',
   }}
 />
 ```
@@ -47,22 +47,18 @@ This pattern is useful for:
 Use `getImageDimensions()` to get the dimensions of an image:
 
 ```tsx
-import { getImageDimensions, staticFile } from "remotion";
+import { getImageDimensions, staticFile } from 'remotion';
 
-const { width, height } = await getImageDimensions(staticFile("photo.png"));
+const { width, height } = await getImageDimensions(staticFile('photo.png'));
 ```
 
 This is useful for calculating aspect ratios or sizing compositions:
 
 ```tsx
-import {
-  getImageDimensions,
-  staticFile,
-  CalculateMetadataFunction,
-} from "remotion";
+import { getImageDimensions, staticFile, CalculateMetadataFunction } from 'remotion';
 
 const calculateMetadata: CalculateMetadataFunction = async () => {
-  const { width, height } = await getImageDimensions(staticFile("photo.png"));
+  const { width, height } = await getImageDimensions(staticFile('photo.png'));
   return {
     width,
     height,

@@ -21,7 +21,7 @@ You have 2 options for trimming videos:
 1. **Preferred**: Use the `trimBefore` and `trimAfter` props of the `<Video>` component. This is non-destructive, requires no re-encoding, and you can change the trim at any time.
 
 ```tsx
-import {Video} from '@remotion/media';
+import { Video } from '@remotion/media';
 
 <Video src={staticFile('video.mp4')} trimBefore={5 * fps} trimAfter={10 * fps} />;
 ```

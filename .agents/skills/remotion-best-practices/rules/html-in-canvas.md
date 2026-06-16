@@ -26,9 +26,9 @@ npx remotion render --gl=angle
 Set it as the default for Studio and CLI (advised):
 
 ```ts
-import { Config } from "@remotion/cli/config";
+import { Config } from '@remotion/cli/config';
 
-Config.setChromiumOpenGlRenderer("angle");
+Config.setChromiumOpenGlRenderer('angle');
 ```
 
 ## Basic usage
@@ -36,7 +36,7 @@ Config.setChromiumOpenGlRenderer("angle");
 By default, draws to canvas with no effect applied:
 
 ```tsx
-import { HtmlInCanvas } from "remotion";
+import { HtmlInCanvas } from 'remotion';
 
 export const MyComp = () => {
   return (
@@ -52,14 +52,8 @@ export const MyComp = () => {
 `onPaint` runs whenever the content updates. Call `ctx.drawElementImage(elementImage, 0, 0)` to draw the captured DOM, and assign the returned transform to `element.style.transform` so DOM selection still aligns with the painted output.
 
 ```tsx
-import {
-  AbsoluteFill,
-  HtmlInCanvas,
-  type HtmlInCanvasOnPaint,
-  useCurrentFrame,
-  useVideoConfig,
-} from "remotion";
-import { useCallback } from "react";
+import { AbsoluteFill, HtmlInCanvas, type HtmlInCanvasOnPaint, useCurrentFrame, useVideoConfig } from 'remotion';
+import { useCallback } from 'react';
 
 export const Blur = () => {
   const frame = useCurrentFrame();
@@ -67,8 +61,8 @@ export const Blur = () => {
 
   const onPaint: HtmlInCanvasOnPaint = useCallback(
     ({ canvas, element, elementImage }) => {
-      const ctx = canvas.getContext("2d");
-      if (!ctx) throw new Error("Failed to acquire 2D context");
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Failed to acquire 2D context');
 
       const blurPx = 4 + 18 * (0.5 + 0.5 * Math.sin((frame / fps) * Math.PI));
 
@@ -82,7 +76,7 @@ export const Blur = () => {
 
   return (
     <HtmlInCanvas width={width} height={height} onPaint={onPaint}>
-      <AbsoluteFill style={{ justifyContent: "center", alignItems: "center", fontSize: 120 }}>
+      <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'center', fontSize: 120 }}>
         <h1>Hello</h1>
       </AbsoluteFill>
     </HtmlInCanvas>
@@ -96,11 +90,9 @@ For WebGL, set up the context, program, and texture in `onInit` and return a cle
 
 ```tsx
 const onInit: HtmlInCanvasOnInit = useCallback(({ canvas }) => {
-  const gl = canvas.getContext("webgl2", { alpha: true, premultipliedAlpha: true });
+  const gl = canvas.getContext('webgl2', { alpha: true, premultipliedAlpha: true });
   if (!gl) {
-    throw new Error(
-      "WebGL2 unavailable. Try rendering with the --gl=angle option. See https://remotion.dev/docs/gl-options.",
-    );
+    throw new Error('WebGL2 unavailable. Try rendering with the --gl=angle option. See https://remotion.dev/docs/gl-options.');
   }
   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
   // compile program, create texture, set up VAO...

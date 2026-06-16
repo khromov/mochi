@@ -12,7 +12,7 @@ Use `<Sequence>` with a negative `from` value to trim the start of an animation.
 A negative `from` value shifts time backwards, making the animation start partway through:
 
 ```tsx
-import { Sequence, useVideoConfig } from "remotion";
+import { Sequence, useVideoConfig } from 'remotion';
 
 const fps = useVideoConfig();
 

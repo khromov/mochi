@@ -16,16 +16,16 @@ pnpm exec remotion add @remotion/fonts # If project uses pnpm
 Place your font file in the `public/` folder and use `loadFont()`:
 
 ```tsx
-import { loadFont } from "@remotion/fonts";
-import { staticFile } from "remotion";
+import { loadFont } from '@remotion/fonts';
+import { staticFile } from 'remotion';
 
 await loadFont({
-  family: "MyFont",
-  url: staticFile("MyFont-Regular.woff2"),
+  family: 'MyFont',
+  url: staticFile('MyFont-Regular.woff2'),
 });
 
 export const MyComposition = () => {
-  return <div style={{ fontFamily: "MyFont" }}>Hello World</div>;
+  return <div style={{ fontFamily: 'MyFont' }}>Hello World</div>;
 };
 ```
 
@@ -34,19 +34,19 @@ export const MyComposition = () => {
 Load each weight separately with the same family name:
 
 ```tsx
-import { loadFont } from "@remotion/fonts";
-import { staticFile } from "remotion";
+import { loadFont } from '@remotion/fonts';
+import { staticFile } from 'remotion';
 
 await Promise.all([
   loadFont({
-    family: "Inter",
-    url: staticFile("Inter-Regular.woff2"),
-    weight: "400",
+    family: 'Inter',
+    url: staticFile('Inter-Regular.woff2'),
+    weight: '400',
   }),
   loadFont({
-    family: "Inter",
-    url: staticFile("Inter-Bold.woff2"),
-    weight: "700",
+    family: 'Inter',
+    url: staticFile('Inter-Bold.woff2'),
+    weight: '700',
   }),
 ]);
 ```
@@ -55,11 +55,11 @@ await Promise.all([
 
 ```tsx
 loadFont({
-  family: "MyFont", // Required: name to use in CSS
-  url: staticFile("font.woff2"), // Required: font file URL
-  format: "woff2", // Optional: auto-detected from extension
-  weight: "400", // Optional: font weight
-  style: "normal", // Optional: normal or italic
-  display: "block", // Optional: font-display behavior
+  family: 'MyFont', // Required: name to use in CSS
+  url: staticFile('font.woff2'), // Required: font file URL
+  format: 'woff2', // Optional: auto-detected from extension
+  weight: '400', // Optional: font weight
+  style: 'normal', // Optional: normal or italic
+  display: 'block', // Optional: font-display behavior
 });
 ```

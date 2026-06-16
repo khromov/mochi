@@ -23,17 +23,14 @@ npx remotion add @remotion/transitions
 ## Transition example
 
 ```tsx
-import { TransitionSeries, linearTiming } from "@remotion/transitions";
-import { fade } from "@remotion/transitions/fade";
+import { TransitionSeries, linearTiming } from '@remotion/transitions';
+import { fade } from '@remotion/transitions/fade';
 
 <TransitionSeries>
   <TransitionSeries.Sequence durationInFrames={60}>
     <SceneA />
   </TransitionSeries.Sequence>
-  <TransitionSeries.Transition
-    presentation={fade()}
-    timing={linearTiming({ durationInFrames: 15 })}
-  />
+  <TransitionSeries.Transition presentation={fade()} timing={linearTiming({ durationInFrames: 15 })} />
   <TransitionSeries.Sequence durationInFrames={60}>
     <SceneB />
   </TransitionSeries.Sequence>
@@ -45,8 +42,8 @@ import { fade } from "@remotion/transitions/fade";
 Any React component can be used as an overlay. For a ready-made effect, see the **light-leaks** rule.
 
 ```tsx
-import { TransitionSeries } from "@remotion/transitions";
-import { LightLeak } from "@remotion/light-leaks";
+import { TransitionSeries } from '@remotion/transitions';
+import { LightLeak } from '@remotion/light-leaks';
 
 <TransitionSeries>
   <TransitionSeries.Sequence durationInFrames={60}>
@@ -66,9 +63,9 @@ import { LightLeak } from "@remotion/light-leaks";
 Transitions and overlays can coexist in the same `<TransitionSeries>`, but an overlay cannot be adjacent to a transition or another overlay.
 
 ```tsx
-import { TransitionSeries, linearTiming } from "@remotion/transitions";
-import { fade } from "@remotion/transitions/fade";
-import { LightLeak } from "@remotion/light-leaks";
+import { TransitionSeries, linearTiming } from '@remotion/transitions';
+import { fade } from '@remotion/transitions/fade';
+import { LightLeak } from '@remotion/light-leaks';
 
 <TransitionSeries>
   <TransitionSeries.Sequence durationInFrames={60}>
@@ -80,10 +77,7 @@ import { LightLeak } from "@remotion/light-leaks";
   <TransitionSeries.Sequence durationInFrames={60}>
     <SceneB />
   </TransitionSeries.Sequence>
-  <TransitionSeries.Transition
-    presentation={fade()}
-    timing={linearTiming({ durationInFrames: 15 })}
-  />
+  <TransitionSeries.Transition presentation={fade()} timing={linearTiming({ durationInFrames: 15 })} />
   <TransitionSeries.Sequence durationInFrames={60}>
     <SceneC />
   </TransitionSeries.Sequence>
@@ -109,22 +103,19 @@ import { LightLeak } from "@remotion/light-leaks";
 Import transitions from their respective modules:
 
 ```tsx
-import { fade } from "@remotion/transitions/fade";
-import { slide } from "@remotion/transitions/slide";
-import { wipe } from "@remotion/transitions/wipe";
-import { flip } from "@remotion/transitions/flip";
-import { clockWipe } from "@remotion/transitions/clock-wipe";
+import { fade } from '@remotion/transitions/fade';
+import { slide } from '@remotion/transitions/slide';
+import { wipe } from '@remotion/transitions/wipe';
+import { flip } from '@remotion/transitions/flip';
+import { clockWipe } from '@remotion/transitions/clock-wipe';
 ```
 
 ## Slide transition with direction
 
 ```tsx
-import { slide } from "@remotion/transitions/slide";
+import { slide } from '@remotion/transitions/slide';
 
-<TransitionSeries.Transition
-  presentation={slide({ direction: "from-left" })}
-  timing={linearTiming({ durationInFrames: 20 })}
-/>;
+<TransitionSeries.Transition presentation={slide({ direction: 'from-left' })} timing={linearTiming({ durationInFrames: 20 })} />;
 ```
 
 Directions: `"from-left"`, `"from-right"`, `"from-top"`, `"from-bottom"`
@@ -132,7 +123,7 @@ Directions: `"from-left"`, `"from-right"`, `"from-top"`, `"from-bottom"`
 ## Timing options
 
 ```tsx
-import { linearTiming, springTiming } from "@remotion/transitions";
+import { linearTiming, springTiming } from '@remotion/transitions';
 
 // Linear timing - constant speed
 linearTiming({ durationInFrames: 20 });
@@ -157,7 +148,7 @@ Adding an overlay between two other sequences does not change the total.
 Use the `getDurationInFrames()` method on the timing object:
 
 ```tsx
-import { linearTiming, springTiming } from "@remotion/transitions";
+import { linearTiming, springTiming } from '@remotion/transitions';
 
 const linearDuration = linearTiming({
   durationInFrames: 20,
@@ -175,7 +166,7 @@ For `springTiming` without an explicit `durationInFrames`, the duration depends 
 ### Calculating total composition duration
 
 ```tsx
-import { linearTiming } from "@remotion/transitions";
+import { linearTiming } from '@remotion/transitions';
 
 const scene1Duration = 60;
 const scene2Duration = 60;
@@ -187,11 +178,6 @@ const timing2 = linearTiming({ durationInFrames: 20 });
 const transition1Duration = timing1.getDurationInFrames({ fps: 30 });
 const transition2Duration = timing2.getDurationInFrames({ fps: 30 });
 
-const totalDuration =
-  scene1Duration +
-  scene2Duration +
-  scene3Duration -
-  transition1Duration -
-  transition2Duration;
+const totalDuration = scene1Duration + scene2Duration + scene3Duration - transition1Duration - transition2Duration;
 // 60 + 60 + 60 - 15 - 20 = 145 frames
 ```

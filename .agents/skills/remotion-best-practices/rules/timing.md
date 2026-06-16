@@ -10,7 +10,7 @@ Drive motion with `interpolate()` over explicit frame range. To customize timing
 A simple linear interpolation is done using the `interpolate` function.
 
 ```ts title="Going from 0 to 1 over 100 frames"
-import { interpolate } from "remotion";
+import { interpolate } from 'remotion';
 
 const opacity = interpolate(frame, [0, 100], [0, 1]);
 ```
@@ -20,8 +20,8 @@ Here is how they can be clamped:
 
 ```ts title="Going from 0 to 1 over 100 frames with extrapolation"
 const opacity = interpolate(frame, [0, 100], [0, 1], {
-  extrapolateRight: "clamp",
-  extrapolateLeft: "clamp",
+  extrapolateRight: 'clamp',
+  extrapolateLeft: 'clamp',
 });
 ```
 
@@ -30,12 +30,12 @@ const opacity = interpolate(frame, [0, 100], [0, 1], {
 Use `Easing.bezier(x1, y1, x2, y2)` inside the `interpolate` options object. The curve is identical in spirit to CSS animations and transitions, which helps when you are stealing timing from the web or from a designer’s spec.
 
 ```ts
-import { interpolate, Easing } from "remotion";
+import { interpolate, Easing } from 'remotion';
 
 const opacity = interpolate(frame, [0, 60], [0, 1], {
   easing: Easing.bezier(0.16, 1, 0.3, 1),
-  extrapolateLeft: "clamp",
-  extrapolateRight: "clamp",
+  extrapolateLeft: 'clamp',
+  extrapolateRight: 'clamp',
 });
 ```
 
@@ -46,8 +46,8 @@ const opacity = interpolate(frame, [0, 60], [0, 1], {
 ```tsx
 const enter = interpolate(frame, [0, 45], [0, 1], {
   easing: Easing.bezier(0.16, 1, 0.3, 1),
-  extrapolateLeft: "clamp",
-  extrapolateRight: "clamp",
+  extrapolateLeft: 'clamp',
+  extrapolateRight: 'clamp',
 });
 ```
 
@@ -56,8 +56,8 @@ const enter = interpolate(frame, [0, 45], [0, 1], {
 ```tsx
 const progress = interpolate(frame, [0, 90], [0, 1], {
   easing: Easing.bezier(0.45, 0, 0.55, 1),
-  extrapolateLeft: "clamp",
-  extrapolateRight: "clamp",
+  extrapolateLeft: 'clamp',
+  extrapolateRight: 'clamp',
 });
 ```
 
@@ -66,8 +66,8 @@ const progress = interpolate(frame, [0, 90], [0, 1], {
 ```tsx
 const pop = interpolate(frame, [0, 30], [0, 1], {
   easing: Easing.bezier(0.34, 1.56, 0.64, 1),
-  extrapolateLeft: "clamp",
-  extrapolateRight: "clamp",
+  extrapolateLeft: 'clamp',
+  extrapolateRight: 'clamp',
 });
 ```
 
@@ -76,12 +76,12 @@ const pop = interpolate(frame, [0, 30], [0, 1], {
 Easing can be added to the `interpolate` function without a custom cubic:
 
 ```ts
-import { interpolate, Easing } from "remotion";
+import { interpolate, Easing } from 'remotion';
 
 const value1 = interpolate(frame, [0, 100], [0, 1], {
   easing: Easing.inOut(Easing.cubic),
-  extrapolateLeft: "clamp",
-  extrapolateRight: "clamp",
+  extrapolateLeft: 'clamp',
+  extrapolateRight: 'clamp',
 });
 ```
 
@@ -109,22 +109,16 @@ Use `Easing.out` for enter animations (starts fast, decelerates into place) and 
 When multiple properties share the same timing (e.g. a slide-in panel and a video shift), avoid duplicating the full interpolation for each property. Instead, create a single normalized progress value (0 to 1) and derive each property from it:
 
 ```tsx
-const slideIn = interpolate(
-  frame,
-  [slideInStart, slideInStart + slideInDuration],
-  [0, 1],
-  {
-    easing: Easing.bezier(0.22, 1, 0.36, 1),
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-  },
-);
-const slideOut = interpolate(
-  frame,
-  [slideOutStart, slideOutStart + slideOutDuration],
-  [0, 1],
-  { easing: Easing.in(Easing.cubic), extrapolateLeft: "clamp", extrapolateRight: "clamp" },
-);
+const slideIn = interpolate(frame, [slideInStart, slideInStart + slideInDuration], [0, 1], {
+  easing: Easing.bezier(0.22, 1, 0.36, 1),
+  extrapolateLeft: 'clamp',
+  extrapolateRight: 'clamp',
+});
+const slideOut = interpolate(frame, [slideOutStart, slideOutStart + slideOutDuration], [0, 1], {
+  easing: Easing.in(Easing.cubic),
+  extrapolateLeft: 'clamp',
+  extrapolateRight: 'clamp',
+});
 const progress = slideIn - slideOut;
 
 // Derive multiple properties from the same progress
