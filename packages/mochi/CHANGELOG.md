@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.7.0](https://github.com/khromov/mochi/compare/mochi-framework-v0.6.0...mochi-framework-v0.7.0) (2026-06-16)
+
+
+### Features
+
+* add automatic HEAD request support for all route types ([#76](https://github.com/khromov/mochi/issues/76)) ([925ba6c](https://github.com/khromov/mochi/commit/925ba6cca27d92f8c007c251f0f2ebb0ea72953b))
+* add official mcp server ([47acc11](https://github.com/khromov/mochi/commit/47acc11e7483ca3b81e3fe6d615d50931589b45c))
+* add ViewTransitions and RawScript components (+ view-transitions & custom-transitions demos) ([#66](https://github.com/khromov/mochi/issues/66)) ([7402c28](https://github.com/khromov/mochi/commit/7402c281099feee8c659fd4a6946d0ab45e7af7e))
+* configurable debug bar panels via cogwheel setting ([#87](https://github.com/khromov/mochi/issues/87)) ([b36e224](https://github.com/khromov/mochi/commit/b36e2248b7fde216f058945cc0fb23f8a216d6e1))
+* Mochi skill ([#100](https://github.com/khromov/mochi/issues/100)) ([ae8fea5](https://github.com/khromov/mochi/commit/ae8fea510d7b900a71d26c15ebe6d5132148bd6d))
+* replace islandId auto-prop with native $props.id(), remove nanoid dependency ([#96](https://github.com/khromov/mochi/issues/96)) ([e1236a5](https://github.com/khromov/mochi/commit/e1236a5bc31c5d1edf351c6f0d27bd4ae5e8ec60))
+
+
+### Bug Fixes
+
+* drop @types/negotiator runtime dep via local ambient declaration ([#88](https://github.com/khromov/mochi/issues/88)) ([773d2d0](https://github.com/khromov/mochi/commit/773d2d05cb0532755c20a98aa7221ea13e452ff6))
+* mark shared island props blocks correctly, show actual prop content in debug bar instead of devalue format ([3cda6da](https://github.com/khromov/mochi/commit/3cda6da298b100274254795f4a0a517c82e71373))
+* surface svelte-shaker failures and point users at its tracker ([#80](https://github.com/khromov/mochi/issues/80)) ([41fb9eb](https://github.com/khromov/mochi/commit/41fb9ebf6716e3563a0cfa9ce32c7a42ecd85d02))
+
+
+### Code Refactoring
+
+* replace $props&lt;T&gt;() with annotated let destructuring ([#91](https://github.com/khromov/mochi/issues/91)) ([0304446](https://github.com/khromov/mochi/commit/0304446271e48137b8f136200959fc0be2c8bdeb))
+* replace stale-while-revalidate-cache with inline helper (remove 2 deps) ([#92](https://github.com/khromov/mochi/issues/92)) ([dd33f82](https://github.com/khromov/mochi/commit/dd33f820458556e6aecead8b48451d1ff0efbf00))
+
 ## [0.6.0](https://github.com/khromov/mochi/compare/mochi-framework-v0.5.1...mochi-framework-v0.6.0) (2026-06-07)
 
 
