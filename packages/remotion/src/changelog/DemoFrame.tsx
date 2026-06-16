@@ -35,6 +35,6 @@ export const DemoFrame = ({
         <Video src={staticFile(src)} style={{ width, height, objectFit: 'contain', borderRadius: RADIUS.md, display: 'block' }} />
       </Sequence>
     </Box>
-    {label ? <Box style={{ ...fontMono, fontSize: 38, letterSpacing: '0.18em', textTransform: 'uppercase', color: COLORS.textOnHeroSubtle, marginTop: 32 }}>{label}</Box> : null}
+    {label ? <Box style={{ ...fontMono, fontSize: 52, letterSpacing: '0.18em', textTransform: 'uppercase', color: COLORS.textOnHeroSubtle, marginTop: 40 }}>{label}</Box> : null}
   </Box>
 );

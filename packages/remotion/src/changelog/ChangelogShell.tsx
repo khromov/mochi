@@ -3,10 +3,12 @@
 import { Background } from '../Background';
 import { Leaves } from '../Leaves';
 import { CANVAS_SQUARE } from '../theme';
+import { Grain } from './Grain';
 
 export const ChangelogShell = ({ t }: { t: number }) => (
   <>
     <Background />
     <Leaves t={t} width={CANVAS_SQUARE.width} height={CANVAS_SQUARE.height} />
+    <Grain />
   </>
 );

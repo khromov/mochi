@@ -14,11 +14,11 @@ export const BadgeRow = ({ t, labels }: { t: number; labels: string[] }) => (
         <Box
           key={label}
           style={{
-            margin: 18,
-            paddingLeft: 54,
-            paddingRight: 54,
-            paddingTop: 30,
-            paddingBottom: 30,
+            margin: 22,
+            paddingLeft: 66,
+            paddingRight: 66,
+            paddingTop: 40,
+            paddingBottom: 40,
             borderRadius: RADIUS.pill,
             background: COLORS.badgeBg,
             border: `1px solid ${COLORS.badgeBorder}`,
@@ -27,7 +27,7 @@ export const BadgeRow = ({ t, labels }: { t: number; labels: string[] }) => (
             transformOrigin: '50% 50%',
           }}
         >
-          <Box style={{ ...fontSerif, fontSize: 72, color: COLORS.badgeText }}>{label}</Box>
+          <Box style={{ ...fontSerif, fontSize: 100, color: COLORS.badgeText }}>{label}</Box>
         </Box>
       );
     })}
@@ -41,12 +41,12 @@ export const CodeChip = ({ t, text }: { t: number; text: string }) => {
     <Box
       style={{
         ...fontMono,
-        fontSize: 62,
+        fontSize: 86,
         color: COLORS.badgeText,
-        paddingLeft: 56,
-        paddingRight: 56,
-        paddingTop: 36,
-        paddingBottom: 36,
+        paddingLeft: 68,
+        paddingRight: 68,
+        paddingTop: 44,
+        paddingBottom: 44,
         borderRadius: RADIUS.md,
         background: 'rgba(23,25,20,0.55)',
         border: `1px solid ${COLORS.badgeBorder}`,
@@ -65,11 +65,11 @@ export const Stat = ({ t, value, suffix = '', label }: { t: number; value: numbe
   const shown = Math.round(value * p);
   return (
     <Box style={{ flexDirection: 'column', alignItems: 'center', opacity: clamp(norm(t, 0.1, 0.6)) }}>
-      <Box style={{ ...fontDisplay, fontSize: 320, lineHeight: 1, color: COLORS.accentGlow, letterSpacing: '-0.02em' }}>
+      <Box style={{ ...fontDisplay, fontSize: 448, lineHeight: 1, color: COLORS.accentGlow, letterSpacing: '-0.02em' }}>
         {shown}
         {suffix}
       </Box>
-      <Box style={{ ...fontMono, fontSize: 44, letterSpacing: '0.28em', textTransform: 'uppercase', color: COLORS.textOnHeroSubtle, marginTop: 24 }}>{label}</Box>
+      <Box style={{ ...fontMono, fontSize: 60, letterSpacing: '0.28em', textTransform: 'uppercase', color: COLORS.textOnHeroSubtle, marginTop: 28 }}>{label}</Box>
     </Box>
   );
 };
