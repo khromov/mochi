@@ -62,7 +62,12 @@ describe('mcp docs server', () => {
     // `hydratable` exists as both a doc page and a demo; only the type tells them apart.
     const res = await call('tools/call', {
       name: 'get_section',
-      arguments: { sections: [{ type: 'doc', slug: 'hydratable' }, { type: 'demo', slug: 'hydratable' }] },
+      arguments: {
+        sections: [
+          { type: 'doc', slug: 'hydratable' },
+          { type: 'demo', slug: 'hydratable' },
+        ],
+      },
     });
     const text = toolText(res);
     expect(text).toContain('==== doc:hydratable ====');
@@ -75,7 +80,12 @@ describe('mcp docs server', () => {
   test('multiple sections are returned in the requested order', async () => {
     const res = await call('tools/call', {
       name: 'get_section',
-      arguments: { sections: [{ type: 'doc', slug: 'intro' }, { type: 'demo', slug: 'hello-world' }] },
+      arguments: {
+        sections: [
+          { type: 'doc', slug: 'intro' },
+          { type: 'demo', slug: 'hello-world' },
+        ],
+      },
     });
     const text = toolText(res);
     expect(text.indexOf('==== doc:intro ====')).toBeLessThan(text.indexOf('==== demo:hello-world ===='));
@@ -84,7 +94,12 @@ describe('mcp docs server', () => {
   test('missing slugs appear inline as (not found) but found sections still return as text', async () => {
     const res = await call('tools/call', {
       name: 'get_section',
-      arguments: { sections: [{ type: 'doc', slug: 'intro' }, { type: 'doc', slug: 'no-such-slug' }] },
+      arguments: {
+        sections: [
+          { type: 'doc', slug: 'intro' },
+          { type: 'doc', slug: 'no-such-slug' },
+        ],
+      },
     });
     expect(res.result?.isError).toBeUndefined();
     const text = toolText(res);
@@ -96,7 +111,12 @@ describe('mcp docs server', () => {
   test('returns a tool error only when every requested slug is missing', async () => {
     const res = await call('tools/call', {
       name: 'get_section',
-      arguments: { sections: [{ type: 'doc', slug: 'nope-1' }, { type: 'demo', slug: 'nope-2' }] },
+      arguments: {
+        sections: [
+          { type: 'doc', slug: 'nope-1' },
+          { type: 'demo', slug: 'nope-2' },
+        ],
+      },
     });
     expect(res.result?.isError).toBe(true);
   });

@@ -90,7 +90,11 @@ export function makeRequestContextBuilder(cfg: RequestSetupConfig): RequestConte
     };
 
     if (policy.trailingSlash && cfg.trailingSlashPolicy) {
-      const redirect = applyFilter('trailingSlash:redirect', trailingSlashRedirect(req.method, url, cfg.trailingSlashPolicy), { request: req, url, policy: cfg.trailingSlashPolicy });
+      const redirect = applyFilter('trailingSlash:redirect', trailingSlashRedirect(req.method, url, cfg.trailingSlashPolicy), {
+        request: req,
+        url,
+        policy: cfg.trailingSlashPolicy,
+      });
       if (redirect) {
         reportEarlyExit(redirect.status);
         return { earlyResponse: redirect };
