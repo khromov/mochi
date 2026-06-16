@@ -11,7 +11,7 @@ description: 'An llms.txt index at /llms.txt, plus concatenated bundles for past
 
 ## LLM integrations
 
-Mochi provides several different ways of integrating LLMs to improve your development experience. We primarily recommend to use _either_ the **Agent skill** or the **MCP server**. Both will augment your development experience with up-to-date documentation and how-to's on how to do various tasks in Mochi.
+Mochi provides several different ways of integrating LLMs to improve your development experience. We primarily recommend to use _either_ the [**Agent skill**](#agent-skill-recommended) or the [**MCP server**](#mcp-server-recommended). Both will augment your development experience with up-to-date documentation and how-to's on how to do various tasks in Mochi. You can also use the older [llms.txt format](#llmstxt).
 
 ## Agent skill (recommended)
 
@@ -41,10 +41,10 @@ Mochi runs an official remote MCP server at `https://mochi.fast/mcp` (HTTP trans
 Run:
 
 ```sh
-claude mcp add -t http -s [scope] mochi https://mochi.fast/mcp
+claude mcp add -t http -s project mochi https://mochi.fast/mcp
 ```
 
-`[scope]` must be `user`, `project`, or `local`. (For the skill-based alternative, see [Agent skill](#agent-skill-recommended) above.)
+This adds the server at `project` scope (shared via `.mcp.json`); pass `-s user` or `-s local` instead to change that. (For the skill-based alternative, see [Agent skill](#agent-skill-recommended) above.)
 
 </Disclosure>
 
@@ -80,13 +80,23 @@ Run `/mcp add`, or edit `~/.copilot/mcp-config.json`:
 
 </Disclosure>
 
-<Disclosure title="Gemini CLI">
+<Disclosure title="Antigravity Editor">
 
-```sh
-gemini mcp add -t http -s [scope] mochi https://mochi.fast/mcp
+Open the MCP store via the **"..."** dropdown at the top of the editor's agent panel, click **Manage MCP Servers**, then **View raw config**, and add the server to the config:
+
+```json
+{ "mcpServers": { "mochi": { "type": "http", "serverUrl": "https://mochi.fast/mcp" } } }
 ```
 
-`[scope]` must be `user` or `project`.
+</Disclosure>
+
+<Disclosure title="Antigravity CLI (previously Gemini)">
+
+Edit `~/.gemini/config/mcp_config.json` and add the server:
+
+```json
+{ "mcpServers": { "mochi": { "type": "http", "serverUrl": "https://mochi.fast/mcp" } } }
+```
 
 </Disclosure>
 

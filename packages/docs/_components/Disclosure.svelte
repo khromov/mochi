@@ -41,7 +41,7 @@
   }
 
   .disclosure-body {
-    padding: 0 0.9rem 0.75rem;
+    padding: 0.6rem 0.9rem 0.75rem;
     border-top: 1px solid var(--border);
   }
 </style>
