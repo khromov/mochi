@@ -85,10 +85,7 @@ mcpServer.tool(
 );
 
 // A `trailingSlash:redirect` filter in index.ts exempts /mcp from the site's `trailingSlash: 'always'`
-// policy so the endpoint answers at /mcp directly. The Mochi route already scopes this transport to
-// that path, so let it respond regardless of pathname (`path: null`) — that also keeps the /mcp/ form
-// working for clients that still send it. This server only answers request/response tool calls and
-// pushes nothing back, so the long-lived SSE stream is disabled (GET returns 405).
+// policy so the endpoint answers at /mcp directly.
 const transport = new HttpTransport(mcpServer, { path: null, disableSse: true });
 
 export async function respondMcp(request: Request): Promise<Response> {

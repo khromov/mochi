@@ -324,7 +324,7 @@ export async function buildSectionIndex(): Promise<SectionIndexEntry[]> {
     title: d.title,
     description: d.description ?? '',
   }));
-  const demoEntries: SectionIndexEntry[] = internalDemos().map((d) => ({ type: 'demo', slug: d.slug!, title: d.title, description: d.hook }));
+  const demoEntries: SectionIndexEntry[] = internalDemos().map((d) => ({ type: 'demo', slug: d.slug, title: d.title, description: d.hook }));
   return [...docs, ...demoEntries];
 }
 
