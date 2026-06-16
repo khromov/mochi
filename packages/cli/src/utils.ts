@@ -96,7 +96,13 @@ export function transformPackageJson(contents: string, opts: PackageJsonTransfor
   // path against the repo root, which breaks for a workspace-relative path.
   // Templates ship the patch *file* under `patches/`; we wire it up here so the
   // scaffolded standalone project picks it up on first `bun install`.
+  //
+  // We reference both the current and the previous svelte-check versions so the
+  // generated project survives drift between a published CLI and the live-served
+  // template (they bump independently). Bun applies only the entry whose version
+  // actually resolves and ignores the other, as long as both patch files exist.
   pkg.patchedDependencies = {
+    'svelte-check@4.4.7': 'patches/svelte-check@4.4.7.patch',
     'svelte-check@4.6.0': 'patches/svelte-check@4.6.0.patch',
   };
 
