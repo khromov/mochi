@@ -125,6 +125,7 @@ export interface MochiFilterKindMap {
   'csrf:protectedMethods': 'sync';
   'csrf:trustedOrigins': 'sync';
   'csrf:check': 'sync';
+  'trailingSlash:redirect': 'sync';
   'cookie:defaults': 'sync';
   'html:shell': 'sync';
   'serverIsland:secretKey': 'async';
