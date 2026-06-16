@@ -65,12 +65,21 @@ mcpServer.tool(
     for (const { type, slug, content } of results) {
       const id = `${type}:${slug}`;
       parts.push(`==== ${id} ====\n\n${content !== null ? content.trimEnd() : '(not found)'}`);
-      if (content !== null) found.push(id);
-      else missing.push(id);
+      if (content !== null) {
+        found.push(id);
+      } else {
+        missing.push(id);
+      }
     }
-    if (found.length) logger.log(`[mcp] get_section [${found.join(', ')}] → ${found.length} found`);
-    if (missing.length) logger.warn(`[mcp] get_section not found: ${missing.join(', ')}`);
-    if (!found.length) return tool.error(`None of the requested sections were found. Call get_documentation_sections to list valid slugs.`);
+    if (found.length) {
+      logger.log(`[mcp] get_section [${found.join(', ')}] → ${found.length} found`);
+    }
+    if (missing.length) {
+      logger.warn(`[mcp] get_section not found: ${missing.join(', ')}`);
+    }
+    if (!found.length) {
+      return tool.error(`None of the requested sections were found. Call get_documentation_sections to list valid slugs.`);
+    }
     return tool.text(parts.join('\n\n'));
   },
 );
