@@ -29,6 +29,8 @@ export const COLORS = {
 export const RADIUS = { sm: 6, md: 8, lg: 16, pill: 999 } as const;
 
 export const CANVAS = { width: 1920, height: 1080 } as const;
+// Square 4K canvas for changelog videos (see changelog/ + the changelog-video skill).
+export const CANVAS_SQUARE = { width: 2160, height: 2160 } as const;
 export const FPS = 30;
 export const DURATION_S = 30;
 export const TOTAL_FRAMES = FPS * DURATION_S;

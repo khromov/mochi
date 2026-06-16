@@ -14,13 +14,13 @@ const rand = (seed: number) => {
   return x - Math.floor(x);
 };
 
-const Leaf = ({ i, t }: { i: number; t: number }) => {
+const Leaf = ({ i, t, width, height }: { i: number; t: number; width: number; height: number }) => {
   const seed = i + 1;
   const size = lerp(30, 84, rand(seed));
 
   // Steady descent wrapping through a span taller than the canvas, so the jump back to the top
   // always lands off-screen and never reads as a flicker (1200–2400px over 30s).
-  const span = CANVAS.height + size * 2;
+  const span = height + size * 2;
   const fall = lerp(50, 90, rand(seed + 1.1));
   const yRaw = (rand(seed + 2.2) * span + t * fall) % span;
   const y = yRaw - size;
@@ -28,7 +28,7 @@ const Leaf = ({ i, t }: { i: number; t: number }) => {
   // Pendulum sway: a real falling leaf swings side to side as it descends. One slow sine on a
   // per-leaf phase gives a wide, graceful left/right swing while the steady fall stays dominant.
   const swayPhase = t * lerp(0.5, 0.9, rand(seed + 4.4)) + seed;
-  const x = rand(seed + 3.3) * CANVAS.width + Math.sin(swayPhase) * lerp(50, 110, rand(seed + 5.5));
+  const x = rand(seed + 3.3) * width + Math.sin(swayPhase) * lerp(50, 110, rand(seed + 5.5));
   // Tilt rocks in sync with the swing (cos leads the sine), so the leaf rotates into each sweep
   // rather than spinning — riding on a fixed base orientation so the field stays varied.
   const rot = lerp(0, 360, rand(seed + 6.6)) + Math.cos(swayPhase) * lerp(12, 26, rand(seed + 7.7));
@@ -59,10 +59,12 @@ const Leaf = ({ i, t }: { i: number; t: number }) => {
   );
 };
 
-export const Leaves = ({ t }: { t: number }) => (
-  <Box style={{ position: 'absolute', top: 0, left: 0, width: CANVAS.width, height: CANVAS.height, overflow: 'hidden' }}>
+// Dimensions default to the brand canvas; changelog videos pass the square canvas so the
+// field fills the whole 2160² frame instead of just the top-left 1920×1080.
+export const Leaves = ({ t, width = CANVAS.width, height = CANVAS.height }: { t: number; width?: number; height?: number }) => (
+  <Box style={{ position: 'absolute', top: 0, left: 0, width, height, overflow: 'hidden' }}>
     {Array.from({ length: LEAF_COUNT }, (_, i) => (
-      <Leaf key={i} i={i} t={t} />
+      <Leaf key={i} i={i} t={t} width={width} height={height} />
     ))}
   </Box>
 );

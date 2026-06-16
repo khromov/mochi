@@ -114,9 +114,10 @@
     "packages/remotion": {
       "name": "mochi-remotion",
       "dependencies": {
-        "@fontsource-variable/fraunces": "5.2.9",
-        "@fontsource/jetbrains-mono": "5.2.8",
+        "@fontsource-variable/fraunces": "^5.2.9",
+        "@fontsource/jetbrains-mono": "^5.2.8",
         "@remotion/cli": "4.0.478",
+        "@remotion/media": "4.0.478",
         "react": "19.2.7",
         "react-dom": "19.2.7",
         "remotion": "4.0.478",
@@ -330,6 +331,8 @@
     "@remotion/compositor-win32-x64-msvc": ["@remotion/compositor-win32-x64-msvc@4.0.478", "", { "os": "win32", "cpu": "x64" }, "sha512-AiVnP+I1xcltyh0LSsoZixyCYhciG4lcEmmWKqDD/BCKCNCWdO3owEP05qLGAkiMSU/3vJRvWtS3mKZjrEp67w=="],
 
     "@remotion/licensing": ["@remotion/licensing@4.0.478", "", {}, "sha512-vFfOFbyZUHPCmSftKcNEGfgPgJimlQHNDmO7aYP4gx3jE7+YP4R8K9wp1j+tremOqIfabnVIpckA2SPnff/iRQ=="],
+
+    "@remotion/media": ["@remotion/media@4.0.478", "", { "dependencies": { "mediabunny": "1.45.0", "remotion": "4.0.478", "zod": "4.3.6" }, "peerDependencies": { "react": ">=16.8.0", "react-dom": ">=16.8.0" } }, "sha512-KIj03LbAqdh6Qz4Q0sfefxolRx+yS/zOvqxEfcpRbDRHGH8xJTsJCxTIV583hY2hSaq3VfOexMco73DYRDdedQ=="],
 
     "@remotion/media-parser": ["@remotion/media-parser@4.0.478", "", {}, "sha512-1xmAgoGrDn5Fr5kL52Mpk9Xkpq3CkcJYYuOoBSA7I5JnKdBm3mTdYKJTVzh22d4+5HTUFyfB+Yg1rPeFMr293A=="],
 
