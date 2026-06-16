@@ -6,7 +6,7 @@
     },
     "mochi-mcp": {
       "type": "http",
-      "url": "http://localhost:3333/mcp"
+      "url": "https://mochi.fast/mcp"
     }
   }
 }
