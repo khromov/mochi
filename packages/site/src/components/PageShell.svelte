@@ -35,7 +35,7 @@
 <MetaTags {...mergedMetaTags} />
 
 {#if !ownsViewTransitions}
-  <ViewTransitions type="scale" keepElementSelectors={['.banner', '.sidebar', '.mochi-debug-bar-root', '.hero', '.hero-minimal']} />
+  <ViewTransitions type="scale" regions="mochi-body" />
 {/if}
 
 <Banner />
@@ -45,7 +45,11 @@
 <div class="page">
   <Sidebar mochi:hydrate {docsNav} {demos} {currentSlug} />
 
-  <div class="main-col">
+  <!-- Naming `.body` (rendered by the page component) confines the transition to
+       it; everything else (banner, sidebar, debug bar) is part of `root` and
+       frozen by ViewTransitions. Gate the name off on demo pages so their own
+       transitions own the whole subtree. -->
+  <div class="main-col" class:scope-view-transition={!ownsViewTransitions}>
     {@render children()}
   </div>
 </div>
@@ -61,6 +65,10 @@
     display: flex;
     flex-direction: column;
     min-width: 0;
+  }
+
+  .main-col.scope-view-transition :global(.body) {
+    view-transition-name: mochi-body;
   }
 
   @media (max-width: 768px) {
