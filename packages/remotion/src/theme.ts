@@ -28,13 +28,6 @@ export const COLORS = {
 
 export const RADIUS = { sm: 6, md: 8, lg: 16, pill: 999 } as const;
 
-// Font family names as referenced in satori markup (assigned in generate.ts font config).
-export const FONT = {
-  display: 'Fraunces Display',
-  serif: 'Fraunces',
-  mono: 'JetBrains Mono',
-} as const;
-
 export const CANVAS = { width: 1920, height: 1080 } as const;
 export const FPS = 30;
 export const DURATION_S = 30;

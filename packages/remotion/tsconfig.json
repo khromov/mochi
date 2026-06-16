@@ -1,0 +1,7 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["bun", "react", "react-dom"]
+  },
+  "include": ["src/**/*", "remotion.config.ts"]
+}
