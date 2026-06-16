@@ -1,8 +1,6 @@
 import { beforeAll, describe, expect, test } from 'bun:test';
 import { mcpServer } from './mcp';
 
-// Drive the MCP server through receive() directly — no HTTP transport needed — to prove the two tools
-// list, return the right content, and disambiguate the slugs that exist as both a doc and a demo.
 type JsonRpcResult = { result?: { content?: { text: string }[]; isError?: boolean; tools?: { name: string }[]; serverInfo?: { name: string } } };
 
 async function call(method: string, params?: unknown, id = 1): Promise<JsonRpcResult> {
