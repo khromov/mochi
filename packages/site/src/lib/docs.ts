@@ -316,9 +316,6 @@ export interface SectionIndexEntry {
   description: string;
 }
 
-// Flat, type-qualified catalog of every doc and demo — the same data behind /llms.json, but keyed by
-// {type, slug} instead of URLs so the MCP server can hand an agent a stable id to fetch with get_section.
-// The type qualifier disambiguates the slugs (e.g. view-transitions) that exist as both a doc and a demo.
 export async function buildSectionIndex(): Promise<SectionIndexEntry[]> {
   const docList = await loadDocs();
   const docs: SectionIndexEntry[] = docList.map((d) => ({
