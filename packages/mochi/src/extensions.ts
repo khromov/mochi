@@ -19,6 +19,7 @@ import type { PreprocessorGroup } from 'svelte/compiler';
 import type { CookieSerializeOptions } from './cookies';
 import type { MochiServeOptions } from './types';
 import type { MochiEventMap, MochiRequestKind } from './events';
+import type { TrailingSlashPolicy } from './trailingSlash';
 import { pinGlobal } from './globalState';
 
 /**
@@ -71,6 +72,7 @@ export interface MochiFilterValue {
   'csrf:protectedMethods': Set<string>;
   'csrf:trustedOrigins': Set<string>;
   'csrf:check': Response | null;
+  'trailingSlash:redirect': Response | null;
   'cookie:defaults': CookieSerializeOptions;
   'html:shell': string;
   'serverIsland:secretKey': Buffer;
@@ -92,6 +94,7 @@ export interface MochiFilterContext {
   'csrf:protectedMethods': { options: MochiServeOptions };
   'csrf:trustedOrigins': { options: MochiServeOptions };
   'csrf:check': { request: Request; url: URL };
+  'trailingSlash:redirect': { request: Request; url: URL; policy: TrailingSlashPolicy };
   'cookie:defaults': { options: MochiServeOptions };
   'html:shell': { options: MochiServeOptions; development: boolean };
   'serverIsland:secretKey': { options: MochiServeOptions; envKeyPresent: boolean };
@@ -122,6 +125,7 @@ export interface MochiFilterKindMap {
   'csrf:protectedMethods': 'sync';
   'csrf:trustedOrigins': 'sync';
   'csrf:check': 'sync';
+  'trailingSlash:redirect': 'sync';
   'cookie:defaults': 'sync';
   'html:shell': 'sync';
   'serverIsland:secretKey': 'async';
@@ -159,6 +163,7 @@ const FILTER_KINDS: { [K in keyof MochiFilterValue]: MochiKind } = {
   'csrf:protectedMethods': 'sync',
   'csrf:trustedOrigins': 'sync',
   'csrf:check': 'sync',
+  'trailingSlash:redirect': 'sync',
   'cookie:defaults': 'sync',
   'html:shell': 'sync',
   'serverIsland:secretKey': 'async',

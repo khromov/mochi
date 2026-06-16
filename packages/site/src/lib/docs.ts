@@ -309,6 +309,25 @@ export function internalDemoLlmsRoutes(): DemoLlmsRoute[] {
   return internalDemos().map((d) => ({ path: demoLlmsPath(d.href), slug: d.slug }));
 }
 
+export interface SectionIndexEntry {
+  type: 'doc' | 'demo';
+  slug: string;
+  title: string;
+  description: string;
+}
+
+export async function buildSectionIndex(): Promise<SectionIndexEntry[]> {
+  const docList = await loadDocs();
+  const docs: SectionIndexEntry[] = docList.map((d) => ({
+    type: 'doc',
+    slug: d.slug,
+    title: d.title,
+    description: d.description ?? '',
+  }));
+  const demoEntries: SectionIndexEntry[] = internalDemos().map((d) => ({ type: 'demo', slug: d.slug, title: d.title, description: d.hook }));
+  return [...docs, ...demoEntries];
+}
+
 export async function buildLlmsJson(origin: string): Promise<{ docs: LlmsIndexEntry[]; demos: LlmsIndexEntry[] }> {
   const docList = await loadDocs();
   const docs: LlmsIndexEntry[] = docList.map((d) => ({

@@ -14,6 +14,7 @@ import {
   internalDemoLlmsRoutes,
   loadDocs,
 } from './lib/docs';
+import { respondMcp } from './lib/mcp';
 import { profilerEnabled, startProfiler, stopProfiler } from './lib/profiler';
 import { routes as apiRoutes } from './demos/api/routes';
 import { routes as cacheEventsRoutes } from './demos/cache-events/routes';
@@ -160,6 +161,7 @@ export const routes: Record<string, MochiRouteValue> = {
     return Response.json(await buildLlmsJson(url.origin));
   }),
   '/SKILL.md': Mochi.file('./src/SKILL.md'),
+  '/mcp': Mochi.api(({ request }) => respondMcp(request)),
   ...demoLlmsRoutes,
   ...apiRoutes,
   ...cacheEventsRoutes,
