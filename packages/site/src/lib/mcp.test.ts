@@ -45,29 +45,59 @@ describe('mcp docs server', () => {
   });
 
   test('get_section returns the raw markdown for a doc', async () => {
-    const res = await call('tools/call', { name: 'get_section', arguments: { type: 'doc', slug: 'intro' } });
-    expect(toolText(res)).toContain('slug: intro');
+    const res = await call('tools/call', { name: 'get_section', arguments: { sections: [{ type: 'doc', slug: 'intro' }] } });
+    const text = toolText(res);
+    expect(text).toContain('==== doc:intro ====');
+    expect(text).toContain('slug: intro');
   });
 
   test('get_section returns the source bundle for a demo', async () => {
-    const res = await call('tools/call', { name: 'get_section', arguments: { type: 'demo', slug: 'hello-world' } });
-    expect(toolText(res)).toContain('## Demo: hello-world');
+    const res = await call('tools/call', { name: 'get_section', arguments: { sections: [{ type: 'demo', slug: 'hello-world' }] } });
+    const text = toolText(res);
+    expect(text).toContain('==== demo:hello-world ====');
+    expect(text).toContain('## Demo: hello-world');
   });
 
   test('the type qualifier disambiguates a slug that is both a doc and a demo', async () => {
     // `hydratable` exists as both a doc page and a demo; only the type tells them apart.
-    const doc = await call('tools/call', { name: 'get_section', arguments: { type: 'doc', slug: 'hydratable' } });
-    const demo = await call('tools/call', { name: 'get_section', arguments: { type: 'demo', slug: 'hydratable' } });
-    const docText = toolText(doc);
-    const demoText = toolText(demo);
-    expect(docText).not.toBe(demoText);
-    expect(demoText).toContain('## Demo: hydratable');
-    expect(docText).not.toContain('## Demo: hydratable');
+    const res = await call('tools/call', {
+      name: 'get_section',
+      arguments: { sections: [{ type: 'doc', slug: 'hydratable' }, { type: 'demo', slug: 'hydratable' }] },
+    });
+    const text = toolText(res);
+    expect(text).toContain('==== doc:hydratable ====');
+    expect(text).toContain('==== demo:hydratable ====');
+    // doc comes before demo (requested order preserved)
+    expect(text.indexOf('==== doc:hydratable ====')).toBeLessThan(text.indexOf('==== demo:hydratable ===='));
+    expect(text).toContain('## Demo: hydratable');
   });
 
-  test('an unknown slug returns a tool error, not a crash', async () => {
-    const res = await call('tools/call', { name: 'get_section', arguments: { type: 'doc', slug: 'does-not-exist' } });
+  test('multiple sections are returned in the requested order', async () => {
+    const res = await call('tools/call', {
+      name: 'get_section',
+      arguments: { sections: [{ type: 'doc', slug: 'intro' }, { type: 'demo', slug: 'hello-world' }] },
+    });
+    const text = toolText(res);
+    expect(text.indexOf('==== doc:intro ====')).toBeLessThan(text.indexOf('==== demo:hello-world ===='));
+  });
+
+  test('missing slugs appear inline as (not found) but found sections still return as text', async () => {
+    const res = await call('tools/call', {
+      name: 'get_section',
+      arguments: { sections: [{ type: 'doc', slug: 'intro' }, { type: 'doc', slug: 'no-such-slug' }] },
+    });
+    expect(res.result?.isError).toBeUndefined();
+    const text = toolText(res);
+    expect(text).toContain('==== doc:intro ====');
+    expect(text).toContain('==== doc:no-such-slug ====');
+    expect(text).toContain('(not found)');
+  });
+
+  test('returns a tool error only when every requested slug is missing', async () => {
+    const res = await call('tools/call', {
+      name: 'get_section',
+      arguments: { sections: [{ type: 'doc', slug: 'nope-1' }, { type: 'demo', slug: 'nope-2' }] },
+    });
     expect(res.result?.isError).toBe(true);
-    expect(toolText(res)).toContain('does-not-exist');
   });
 });

@@ -44,21 +44,34 @@ mcpServer.tool(
 mcpServer.tool(
   {
     name: 'get_section',
-    description: 'Fetch the full text of one documentation section (a doc page or a demo) by its type and slug, as returned by get_documentation_sections.',
+    description:
+      'Fetch the full text of one or more documentation sections (doc pages or demos). Pass an array of { type, slug } objects as returned by get_documentation_sections. Sections are returned in the requested order, each preceded by an ==== type:slug ==== marker.',
     annotations: readOnlyHints,
     schema: v.object({
-      type: v.picklist(['doc', 'demo']),
-      slug: v.string(),
+      sections: v.array(v.object({ type: v.picklist(['doc', 'demo']), slug: v.string() })),
     }),
   },
-  async ({ type, slug }) => {
-    const content = type === 'doc' ? await getDocLlmsTxt(slug) : await getDemoLlmsTxt(slug);
-    if (content === null) {
-      logger.warn(`[mcp] get_section ${type}:${slug} → not found`);
-      return tool.error(`No ${type} found with slug '${slug}'. Call get_documentation_sections to list valid slugs.`);
+  async ({ sections }) => {
+    const results = await Promise.all(
+      sections.map(async ({ type, slug }) => {
+        const content = type === 'doc' ? await getDocLlmsTxt(slug) : await getDemoLlmsTxt(slug);
+        return { type, slug, content };
+      }),
+    );
+
+    const parts: string[] = [];
+    const found: string[] = [];
+    const missing: string[] = [];
+    for (const { type, slug, content } of results) {
+      const id = `${type}:${slug}`;
+      parts.push(`==== ${id} ====\n\n${content !== null ? content.trimEnd() : '(not found)'}`);
+      if (content !== null) found.push(id);
+      else missing.push(id);
     }
-    logger.log(`[mcp] get_section ${type}:${slug} → ${content.length} chars`);
-    return tool.text(content);
+    if (found.length) logger.log(`[mcp] get_section [${found.join(', ')}] → ${found.length} found`);
+    if (missing.length) logger.warn(`[mcp] get_section not found: ${missing.join(', ')}`);
+    if (!found.length) return tool.error(`None of the requested sections were found. Call get_documentation_sections to list valid slugs.`);
+    return tool.text(parts.join('\n\n'));
   },
 );
 
