@@ -48,7 +48,6 @@ import { finalizeCookieHeaders } from './cookies';
 import { makeRequestContextBuilder } from './requestSetup';
 import { verifyAndDecodeProps } from './serverIslandCrypto';
 import { initMochiConfig } from './mochiConfig';
-import { installCustomElementsShim } from './customElementsShim';
 import { logger, setLogLevel, DEFAULT_LOG_LEVEL, type LogLevel } from './log';
 import { mochiEvents } from './events';
 import type { MochiActionResult, MochiErrorEvent, MochiErrorKind, MochiServerStartEvent, MochiServerStopEvent } from './events';
@@ -199,13 +198,6 @@ export class Mochi {
     initExtensions(options);
     await runHook('mochi:init', { options });
     await initMochiConfig(options);
-
-    // Install before any server component module is evaluated (dev compiles
-    // eagerly in compileAll; prod imports lazily at first render) so web-component
-    // definition modules referencing HTMLElement/customElements don't crash SSR.
-    if (options.webComponents !== false) {
-      installCustomElementsShim();
-    }
 
     // Resolve filterable defaults once at startup; the resolved Sets are
     // captured in the per-request closures below. A fresh copy of each

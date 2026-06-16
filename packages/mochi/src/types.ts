@@ -429,14 +429,6 @@ export interface MochiServeOptions {
    * `/__mochi_live_reload` socket is flaky behind a proxy.
    */
   liveReload?: boolean;
-  /**
-   * Install minimal server-side shims for custom-element globals (`HTMLElement`,
-   * `customElements`, …) so web-component definition modules — local or from npm —
-   * can be imported with a plain `import` during SSR without crashing. Default:
-   * `true`. Set to `false` to skip the shims (e.g. if an isomorphic dependency
-   * misbehaves when `customElements` is defined on the server).
-   */
-  webComponents?: boolean;
   /** Path to a prebuilt manifest JSON. Defaults to `.mochi/manifest.json`. */
   manifest?: string;
   routes?: Record<string, MochiRouteValue>;

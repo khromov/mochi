@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import type { BunPlugin } from 'bun';
 import { isSvelteMarker, normalizeAssetPrefix, normalizeIslandHydrationMarkers, stripHydrationMarkers, toCompileErrorLogs, toPosixPath } from './utils';
 import { injectIslandPropsBlock } from './islandPropsRegistry';
+import { transformImportWebComponent } from './importWebComponent';
 import { requestContext } from './requestContext';
 import type { DebugBarData } from './requestContext';
 import { logger } from './log';
@@ -477,6 +478,10 @@ export class ComponentRegistry {
             // a separate install. Resolved from the framework's own deps.
             `export { stringify, parse } from "${toPosixPath(Bun.resolveSync('devalue', FRAMEWORK_DIR))}";`,
             `export { trailingSlashIt } from "${toPosixPath(path.join(FRAMEWORK_DIR, 'trailingSlash.ts'))}";`,
+            // Web-component registration. Call sites are rewritten at build time
+            // (server → no-op, client → dynamic import); this export is the binding
+            // they resolve against plus the SSR-safe runtime fallback.
+            `export { importWebComponent } from "${toPosixPath(path.join(FRAMEWORK_DIR, 'importWebComponent.ts'))}";`,
             // Per-request hydratable-island props dedup helper. Used by the
             // preprocessor's injected `__mochi_emit_props__` import.
             `export { emitIslandProps } from "${toPosixPath(path.join(FRAMEWORK_DIR, 'islandPropsRegistry.ts'))}";`,
@@ -532,7 +537,7 @@ export class ComponentRegistry {
           allServerIslands.push(...serverIslands);
 
           const { js, css } = svelteCompile(
-            transformed,
+            transformImportWebComponent(transformed, 'server'),
             mergeCompilerOptions(userCompilerOptions, {
               generate: 'server',
               filename: args.path,
@@ -923,6 +928,10 @@ export class ComponentRegistry {
             `export function devWarn(msg) { if (typeof window !== "undefined" && window.__mochi_warn) window.__mochi_warn(msg); else __mochi_logger.warn(msg); }`,
             `export { stringify, parse } from "${toPosixPath(Bun.resolveSync('devalue', FRAMEWORK_DIR))}";`,
             `export { trailingSlashIt } from "${toPosixPath(path.join(FRAMEWORK_DIR, 'trailingSlash.ts'))}";`,
+            // Web-component registration. Client call sites are rewritten to a
+            // dynamic import at build time; this export is the binding they
+            // resolve against (tree-shaken once the calls are rewritten).
+            `export { importWebComponent } from "${toPosixPath(path.join(FRAMEWORK_DIR, 'importWebComponent.ts'))}";`,
             // Server-only; the preprocessor never injects __mochi_emit_props__
             // into client bundles, but this stub keeps the module surface
             // symmetric and produces a clear error if anyone imports it.
@@ -979,7 +988,7 @@ export class ComponentRegistry {
           const source = shakenSources.get(args.path) ?? (await Bun.file(args.path).text());
           const preprocessed = await applyUserPreprocessors(source, args.path, 'client', development);
           const { js } = svelteCompile(
-            preprocessed,
+            transformImportWebComponent(preprocessed, 'client'),
             mergeCompilerOptions(userCompilerOptions, {
               generate: 'client',
               filename: args.path,

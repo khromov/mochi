@@ -1,10 +1,12 @@
 <script lang="ts">
-  // Plain side-effect imports register each custom element. Mochi's server-side
-  // custom-element shims (on by default) let these modules import during SSR
-  // without crashing; on the client they call customElements.define() and the
-  // server-rendered tags upgrade in place.
-  import './click-counter.ts'; // local custom element
-  import '@github/relative-time-element'; // external custom element from npm
+  import { importWebComponent } from 'mochi-framework';
+
+  // Mochi rewrites these at build time: a no-op on the server (so the modules,
+  // which reference browser-only HTMLElement at eval time, never load during SSR)
+  // and a dynamic import on the client (so customElements.define() runs on
+  // hydration and the server-rendered tags upgrade in place).
+  await importWebComponent('./click-counter.ts'); // local custom element
+  await importWebComponent('@github/relative-time-element'); // external, from npm
 </script>
 
 <div class="grid">

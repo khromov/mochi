@@ -52,7 +52,6 @@ Do **NOT** call `Mochi.serve()` more than once per process; instead, run a secon
 - `errorPage`: Path to a Svelte component rendered for uncaught page errors and unmatched routes. Default: built-in minimal error page. See `Error handling`.
 - `handleError`: `HandleError` hook invoked before the error page renders; may override status/message or return a `Response`. See `Error handling`.
 - `compressServerIslandProps`: Deflate-compress server-island props when it reduces size. Default: `true`.
-- `webComponents`: Install minimal server-side shims for custom-element globals (`HTMLElement`, `customElements`, …) so web-component definition modules — local or from npm — can be imported during SSR without crashing. Default: `true`. Set to `false` to skip them (e.g. if an isomorphic dependency misbehaves when `customElements` is defined on the server). See `Web Components`.
 - `logger`: Built-in request logger. Default: `{ enabled: true }`. Pass `{ enabled: false }` to disable, or override `slowThreshold` / `verySlowThreshold`.
 - `publicDir`: Directory served as static assets (cwd-relative). Default: `./public`.
 - `outDir`: Directory for build artifacts and dev cache (cwd-relative). Default: `./.mochi`.
