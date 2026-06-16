@@ -1,6 +1,7 @@
 import { ValibotJsonSchemaAdapter } from '@tmcp/adapter-valibot';
 import { HttpTransport } from '@tmcp/transport-http';
 import mochiPkg from 'mochi-framework/package.json' with { type: 'json' };
+import { logger } from 'mochi-framework';
 import { McpServer } from 'tmcp';
 import { tool } from 'tmcp/utils';
 import * as v from 'valibot';
@@ -33,7 +34,11 @@ mcpServer.tool(
       'List every Mochi documentation section and demo. Returns a JSON array of { type, slug, title, description }. Call this first, then pass a { type, slug } to get_section to read one.',
     annotations: readOnlyHints,
   },
-  async () => tool.text(JSON.stringify(await buildSectionIndex())),
+  async () => {
+    const sections = await buildSectionIndex();
+    logger.log('[mcp] get_documentation_sections →', sections.length, 'sections');
+    return tool.text(JSON.stringify(sections));
+  },
 );
 
 mcpServer.tool(
@@ -49,8 +54,10 @@ mcpServer.tool(
   async ({ type, slug }) => {
     const content = type === 'doc' ? await getDocLlmsTxt(slug) : await getDemoLlmsTxt(slug);
     if (content === null) {
+      logger.warn(`[mcp] get_section ${type}:${slug} → not found`);
       return tool.error(`No ${type} found with slug '${slug}'. Call get_documentation_sections to list valid slugs.`);
     }
+    logger.log(`[mcp] get_section ${type}:${slug} → ${content.length} chars`);
     return tool.text(content);
   },
 );

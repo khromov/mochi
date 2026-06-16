@@ -4,7 +4,7 @@
       "type": "http",
       "url": "https://mcp.svelte.dev/mcp"
     },
-    "yt-subsor-mcp": {
+    "mochi-mcp": {
       "type": "http",
       "url": "http://localhost:3333/mcp"
     }
