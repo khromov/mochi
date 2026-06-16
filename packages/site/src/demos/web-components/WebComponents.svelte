@@ -9,7 +9,7 @@
 
 <DemoPage
   title="Web Components"
-  description="Custom elements work in Mochi. They need client-side JS to register, so import them inside a hydratable island — both local elements and ones from npm. The island's bundle runs customElements.define() on hydration, and the tags (server-rendered with fallback text) upgrade in place. Registration is global, so the elements would upgrade anywhere on the page once defined."
+  description="Custom elements work in Mochi. Import them inside a hydratable island with plain imports — both local elements and ones from npm. Mochi's server-side shims let the definition modules import during SSR, so the tags render server-side (with fallback text) and upgrade in place once the island's bundle runs customElements.define() on hydration. Registration is global, so the elements would upgrade anywhere on the page once defined."
   {sources}
 >
   <WebComponentsIsland mochi:hydrate />

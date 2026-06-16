@@ -28,16 +28,12 @@ if (!customElements.get('click-counter')) {
 }
 ```
 
-Custom elements reference `HTMLElement` and `customElements` at module-eval time, so they must not load during SSR. Gate the imports on [`isBrowser`](/docs/environment-constants/) and use dynamic `import()` so they stay out of the server path:
+Import it — and any element from npm — for its side effect inside the island, then use the tags in markup:
 
 ```svelte
 <script>
-  import { isBrowser } from 'mochi-framework';
-
-  if (isBrowser) {
-    import('./click-counter.ts'); // local
-    import('@github/relative-time-element'); // from npm
-  }
+  import './click-counter.ts'; // local
+  import '@github/relative-time-element'; // from npm
 </script>
 
 <click-counter></click-counter>
@@ -50,6 +46,12 @@ See the [Web Components demo](/demos/web-components/).
 
 <Callout type="info">
 
-Give custom elements meaningful fallback content (e.g. `<relative-time …>Jan 1, 2026</relative-time>`). It's what renders during SSR, before the island hydrates and the element upgrades.
+Custom-element modules reference `HTMLElement` and call `customElements.define()` when they load. Mochi installs minimal server-side shims for those globals so the modules import cleanly during SSR — no `isBrowser` gate or dynamic `import()` needed. The shims are on by default; opt out with [`Mochi.serve({ webComponents: false })`](/docs/serve-options/). They deliberately don't define `window`/`document`, so SSR feature detection elsewhere stays correct.
+
+</Callout>
+
+<Callout type="info">
+
+The shims only let the definition module **import** server-side — they don't render shadow DOM. So give custom elements meaningful light-DOM fallback content (e.g. `<relative-time …>Jan 1, 2026</relative-time>`). That's what renders during SSR, before the island hydrates and the element upgrades.
 
 </Callout>

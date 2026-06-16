@@ -1,5 +1,6 @@
 import { checkEnvironment } from './checkEnvironment';
 import { ComponentRegistry, formatCompileErrors } from './ComponentRegistry';
+import { installCustomElementsShim } from './customElementsShim';
 import { isMochiPage, isMochiApi, isMochiWs, isMochiSse } from './types';
 import type { MarkdownConfig, MochiRouteValue, MochiSvelteShakerOptions } from './types';
 import { rmSync, mkdirSync } from 'node:fs';
@@ -43,6 +44,12 @@ export interface MochiBuildOptions {
    * runtime agree. Default: `false`.
    */
   optimize?: boolean | MochiSvelteShakerOptions;
+  /**
+   * Install server-side custom-element shims before compiling, so pages that
+   * statically import web-component modules don't crash during the build's SSR
+   * pass. Mirror the value passed to `Mochi.serve({ webComponents })`. Default: `true`.
+   */
+  webComponents?: boolean;
 }
 
 type RouteKind = 'page' | 'api' | 'ws' | 'sse';
@@ -65,6 +72,12 @@ export async function build(options: MochiBuildOptions): Promise<void> {
   const development = options.development ?? false;
   const outDir = options.outDir ?? './.mochi';
   const publicDir = options.publicDir ?? './public';
+
+  // Install before compileAll: the SSR pass evaluates each page's server module
+  // (and its transitive web-component imports), which reference HTMLElement.
+  if (options.webComponents !== false) {
+    installCustomElementsShim();
+  }
 
   // Clean previous build artifacts
   rmSync(outDir, { recursive: true, force: true });

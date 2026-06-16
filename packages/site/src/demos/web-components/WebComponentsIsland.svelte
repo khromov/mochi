@@ -1,14 +1,10 @@
 <script lang="ts">
-  import { isBrowser } from 'mochi-framework';
-
-  // Custom elements reference browser-only globals (HTMLElement, customElements)
-  // at module-eval time, so they must never load during SSR. Gating dynamic
-  // imports on isBrowser keeps them out of the server path entirely; on the
-  // client they load after hydration and call customElements.define() for each tag.
-  if (isBrowser) {
-    import('./click-counter.ts'); // local custom element
-    import('@github/relative-time-element'); // external custom element from npm
-  }
+  // Plain side-effect imports register each custom element. Mochi's server-side
+  // custom-element shims (on by default) let these modules import during SSR
+  // without crashing; on the client they call customElements.define() and the
+  // server-rendered tags upgrade in place.
+  import './click-counter.ts'; // local custom element
+  import '@github/relative-time-element'; // external custom element from npm
 </script>
 
 <div class="grid">
