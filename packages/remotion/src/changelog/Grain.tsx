@@ -4,11 +4,11 @@
 // gradient/leaves but below the text, so it textures the backdrop without muddying the type.
 import { AbsoluteFill } from 'remotion';
 
-export const Grain = ({ opacity = 0.1 }: { opacity?: number }) => (
+export const Grain = ({ opacity = 0.16 }: { opacity?: number }) => (
   <AbsoluteFill style={{ mixBlendMode: 'overlay' }}>
     <svg width="100%" height="100%">
       <filter id="changelog-grain" x="0" y="0" width="100%" height="100%">
-        <feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves={2} stitchTiles="stitch" result="n" />
+        <feTurbulence type="fractalNoise" baseFrequency="0.6" numOctaves={2} stitchTiles="stitch" result="n" />
         <feColorMatrix in="n" type="saturate" values="0" result="m" />
         <feComponentTransfer in="m">
           <feFuncA type="linear" slope={opacity} />
