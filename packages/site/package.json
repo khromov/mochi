@@ -18,6 +18,7 @@
     "@fontsource/jetbrains-mono": "^5.2.8",
     "@fontsource/lobster-two": "^5.2.8",
     "@fontsource/public-sans": "^5.2.7",
+    "@github/relative-time-element": "5.2.0",
     "@lucide/svelte": "^1.18.0",
     "@mdi/js": "7.4.47",
     "mdsvex": "^0.12.7",

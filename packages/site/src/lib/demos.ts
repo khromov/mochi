@@ -32,6 +32,7 @@ import { files as serverProps } from '../demos/server-props/files.ts';
 import { files as sharedState } from '../demos/shared-state/files.ts';
 import { files as streams } from '../demos/streams/files.ts';
 import { files as url } from '../demos/url/files.ts';
+import { files as webComponents } from '../demos/web-components/files.ts';
 
 export type DemoCategory = 'hydration' | 'data' | 'endpoints' | 'forms' | 'errors' | 'sites';
 
@@ -180,6 +181,14 @@ export const demos: Demo[] = [
     files: sharedState,
     title: 'Shared State',
     hook: 'Two separate islands sharing the same reactive $state.',
+    category: 'hydration',
+  },
+  {
+    href: '/demos/web-components/',
+    slug: 'web-components',
+    files: webComponents,
+    title: 'Web Components',
+    hook: 'Custom elements — both local and from an npm package — registered inside a hydratable island and upgraded on the client.',
     category: 'hydration',
   },
   {

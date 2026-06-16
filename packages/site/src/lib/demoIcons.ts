@@ -37,6 +37,7 @@ import FileDown from '@lucide/svelte/icons/file-down';
 import Hash from '@lucide/svelte/icons/hash';
 import Barcode from '@lucide/svelte/icons/barcode';
 import Tornado from '@lucide/svelte/icons/tornado';
+import Blocks from '@lucide/svelte/icons/blocks';
 
 export interface DemoIconMeta {
   icon: Component;
@@ -56,6 +57,7 @@ export const demoIconFor: Record<string, DemoIconMeta> = {
   'Real-time Chat': { icon: MessageCircle, label: 'WebSocket chat' },
   'API Endpoints': { icon: Webhook, label: 'JSON API routes' },
   'Shared State': { icon: Share2, label: 'Shared $state across islands' },
+  'Web Components': { icon: Blocks, label: 'Custom elements, local + npm' },
   'Real-time Streams': { icon: AudioWaveform, label: 'WebSocket + SSE streams' },
   'Server Islands': { icon: ComponentIcon, label: 'Deferred server island' },
   'Lazy Islands': { icon: Telescope, label: 'Hydrate when visible' },
