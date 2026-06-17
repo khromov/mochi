@@ -91,20 +91,10 @@ export function transformPackageJson(contents: string, opts: PackageJsonTransfor
     }
   }
 
-  // The svelte-check patch can't live in the committed template `package.json`:
-  // inside the monorepo, bun resolves every workspace's `patchedDependencies`
-  // path against the repo root, which breaks for a workspace-relative path.
-  // Templates ship the patch *file* under `patches/`; we wire it up here so the
-  // scaffolded standalone project picks it up on first `bun install`.
-  //
-  // We reference both the current and the previous svelte-check versions so the
-  // generated project survives drift between a published CLI and the live-served
-  // template (they bump independently). Bun applies only the entry whose version
-  // actually resolves and ignores the other, as long as both patch files exist.
-  pkg.patchedDependencies = {
-    'svelte-check@4.4.7': 'patches/svelte-check@4.4.7.patch',
-    'svelte-check@4.6.0': 'patches/svelte-check@4.6.0.patch',
-  };
+  // svelte-check is patched at runtime by `mochi-framework prepare` (and on dev
+  // startup), not via bun's version-pinned `patchedDependencies` — so scaffolded
+  // projects stay decoupled from the exact svelte-check version and never need a
+  // committed patch file. See `packages/mochi/src/svelteCheckPatch.ts`.
 
   return JSON.stringify(pkg, null, 2) + '\n';
 }

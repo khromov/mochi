@@ -52,8 +52,5 @@
     "syncpack": "^15.3.1",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.61.0"
-  },
-  "patchedDependencies": {
-    "svelte-check@4.6.0": "packages/mochi/patches/svelte-check@4.6.0.patch"
   }
 }

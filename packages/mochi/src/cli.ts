@@ -3,6 +3,7 @@ import { parseArgs } from 'node:util';
 import path from 'node:path';
 import { existsSync } from 'node:fs';
 import { build } from './build';
+import { ensureSvelteCheckPatched } from './svelteCheckPatch';
 import { extractServeOptions } from './extractServeOptions';
 import { updateSkill, SKILL_TARGETS, SKILL_DESTS, DEFAULT_SKILL_TARGET, type SkillTarget } from './updateSkill';
 
@@ -21,6 +22,9 @@ const HELP = `Usage: mochi-framework <command> [options]
 
 Commands:
   build                  Produce a production bundle in the output directory.
+  prepare                Patch the installed svelte-check so mochi: attributes
+                         don't report type errors. Run before "svelte-check"
+                         (the scaffolded "typecheck" script does this for you).
   update-skill [agent]   Fetch the latest SKILL.md and write it into the current
                          project for the given agent. Default: ${DEFAULT_SKILL_TARGET}.
                          Agents:
@@ -108,6 +112,19 @@ async function main() {
 
   if (cmd === 'update-skill') {
     await runUpdateSkill(positionals.slice(1));
+    return;
+  }
+
+  if (cmd === 'prepare') {
+    const result = ensureSvelteCheckPatched();
+    if (result.patched) {
+      process.stdout.write('[mochi] Patched svelte-check for mochi: attributes.\n');
+    } else if (result.reason === 'already patched') {
+      process.stdout.write('[mochi] svelte-check already patched for mochi: attributes.\n');
+    } else if (result.reason === 'svelte-check not installed') {
+      process.stdout.write('[mochi] svelte-check not installed; nothing to patch.\n');
+    }
+    // Other reasons already emit a warning via the logger inside the routine.
     return;
   }
 

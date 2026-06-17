@@ -75,13 +75,10 @@ describe('transformPackageJson', () => {
     expect(transformPackageJson(input, { name: 'y', mochiVersion: '^0.1.0' }).endsWith('\n')).toBe(true);
   });
 
-  test('wires up the svelte-check patch', () => {
+  test('does not wire up bun patchedDependencies', () => {
     const input = JSON.stringify({ name: 'mochi-minimal' });
     const out = JSON.parse(transformPackageJson(input, { name: 'my-app', mochiVersion: '^0.1.0' }));
-    expect(out.patchedDependencies).toEqual({
-      'svelte-check@4.4.7': 'patches/svelte-check@4.4.7.patch',
-      'svelte-check@4.6.0': 'patches/svelte-check@4.6.0.patch',
-    });
+    expect(out.patchedDependencies).toBeUndefined();
   });
 });
 

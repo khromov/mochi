@@ -71,7 +71,7 @@
   },
   "scripts": {
     "test": "bun scripts/run-tests.ts",
-    "typecheck": "svelte-check --tsconfig ./tsconfig.json --compiler-warnings 'attribute_illegal_colon:ignore' && tsc -p tsconfig.json --noEmit",
+    "typecheck": "bun src/cli.ts prepare && svelte-check --tsconfig ./tsconfig.json --compiler-warnings 'attribute_illegal_colon:ignore' && tsc -p tsconfig.json --noEmit",
     "deps:report": "bun scripts/dep-report.ts"
   },
   "peerDependencies": {

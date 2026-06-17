@@ -20,9 +20,8 @@ WORKDIR /usr/src/app
 # install dependencies into a temp directory. We copy the whole packages/
 # tree (rather than only the workspace package.json files) so bun install
 # can reconcile the lockfile topology AND resolve workspace:* bin shims
-# (e.g. mochi-framework -> src/cli.js). packages/ also carries
-# packages/mochi/patches/ which the root package.json's patchedDependencies
-# field references. Trades a bit of layer-cache granularity for robustness.
+# (e.g. mochi-framework -> src/cli.js). Trades a bit of layer-cache
+# granularity for robustness.
 FROM base AS install
 COPY package.json bun.lock /temp/dev/
 COPY packages /temp/dev/packages

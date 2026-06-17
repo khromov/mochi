@@ -58,6 +58,7 @@ import { ISLAND_FAILURE_CSS, ISLAND_FAILURE_DEV_CSS, islandFailureStub } from '.
 import { resolvePublicFiles, registerPublicRoutes } from './publicDir';
 import { startDevWatcher } from './devWatcher';
 import { buildPageCacheAdminRoutes, PAGE_CACHE_ADMIN_COMPONENT } from './pageCacheAdminRoutes';
+import { ensureSvelteCheckPatched } from './svelteCheckPatch';
 
 const DEFAULT_HTML_SHELL = await Bun.file(new URL('./templates/default-shell.html', import.meta.url)).text();
 
@@ -290,6 +291,10 @@ export class Mochi {
           rmSync(dir, { recursive: true, force: true });
           mkdirSync(dir, { recursive: true });
         }
+        // svelte-check can't see mochi: attributes without a patch to its
+        // bundled svelte2tsx; self-heal the installed copy so `typecheck`
+        // passes. Dev-only — production never runs the type checker.
+        ensureSvelteCheckPatched();
       }
     }
 
