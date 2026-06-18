@@ -24,6 +24,7 @@ msgid "Try opening this page in another language using the menu, then copy the a
 msgstr "Prova att öppna den här sidan på ett annat språk via menyn och kopiera sedan adressfältet."
 
 #: src/i18n/About.svelte
+#: src/i18n/Demos.svelte
 #: src/i18n/Home.svelte
 msgid "Pagination"
 msgstr "Sidnavigering"
@@ -86,3 +87,47 @@ msgstr "Välj språk"
 #: src/i18n/Nav.svelte
 msgid "Demos"
 msgstr "Demos"
+
+#: src/i18n/About.svelte
+msgid "Next page: Demos →"
+msgstr "Nästa sida: Demos →"
+
+#: src/i18n/Demos.svelte
+msgid "Mochi · Demos"
+msgstr "Mochi · Demos"
+
+#~ msgid "Explore the other demos"
+#~ msgstr "Utforska våra andra demos"
+
+#~ msgid "Each of these is a standalone Mochi app running on this same site. They are not translated — this internationalization demo is the only multilingual one."
+#~ msgstr "Var och en av dessa är en fristående Mochi-app som körs på samma webbplats. De är inte översatta — den här internationaliseringsdemon är den enda flerspråkiga."
+
+#~ msgid "Hacker News"
+#~ msgstr "Hacker News"
+
+#~ msgid "A faithful clone with hydrated islands for comments."
+#~ msgstr "En trogen klon med hydrerade öar för kommentarer."
+
+#~ msgid "Admin dashboard"
+#~ msgstr "Adminpanel"
+
+#~ msgid "A server-rendered dashboard with live, hydrated widgets."
+#~ msgstr "En serverrenderad panel med live-uppdaterade, hydrerade widgetar."
+
+#~ msgid "Todo app"
+#~ msgstr "Att göra-app"
+
+#~ msgid "Form actions and optimistic updates over plain HTTP."
+#~ msgstr "Formuläråtgärder och optimistiska uppdateringar över vanlig HTTP."
+
+#: src/i18n/Demos.svelte
+msgid "← Previous page: About"
+msgstr "← Föregående sida: Om"
+
+#: src/i18n/Demos.svelte
+msgid "More demos"
+msgstr "Fler demos"
+
+#: src/i18n/Demos.svelte
+msgid "This is just another translated page, here to show the menu can grow. Find all the other Mochi demos on the <0>home page</0>."
+msgstr "Det här är bara ännu en översatt sida, för att visa att menyn kan växa. Hitta alla andra Mochi-demos på <0>startsidan</0>."

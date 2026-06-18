@@ -24,6 +24,7 @@ msgid "Try opening this page in another language using the menu, then copy the a
 msgstr "Спробуйте відкрити цю сторінку іншою мовою через меню, а потім скопіюйте адресний рядок."
 
 #: src/i18n/About.svelte
+#: src/i18n/Demos.svelte
 #: src/i18n/Home.svelte
 msgid "Pagination"
 msgstr "Нумерація сторінок"
@@ -86,3 +87,47 @@ msgstr "Виберіть мову"
 #: src/i18n/Nav.svelte
 msgid "Demos"
 msgstr "Демо"
+
+#: src/i18n/About.svelte
+msgid "Next page: Demos →"
+msgstr "Наступна сторінка: Демо →"
+
+#: src/i18n/Demos.svelte
+msgid "Mochi · Demos"
+msgstr "Mochi · Демо"
+
+#~ msgid "Explore the other demos"
+#~ msgstr "Перегляньте інші демо"
+
+#~ msgid "Each of these is a standalone Mochi app running on this same site. They are not translated — this internationalization demo is the only multilingual one."
+#~ msgstr "Кожне з них — окремий застосунок Mochi, що працює на цьому ж сайті. Вони не перекладені — ця демонстрація інтернаціоналізації єдина багатомовна."
+
+#~ msgid "Hacker News"
+#~ msgstr "Hacker News"
+
+#~ msgid "A faithful clone with hydrated islands for comments."
+#~ msgstr "Точна копія з гідратованими островами для коментарів."
+
+#~ msgid "Admin dashboard"
+#~ msgstr "Адмінпанель"
+
+#~ msgid "A server-rendered dashboard with live, hydrated widgets."
+#~ msgstr "Серверний дашборд із живими, гідратованими віджетами."
+
+#~ msgid "Todo app"
+#~ msgstr "Застосунок завдань"
+
+#~ msgid "Form actions and optimistic updates over plain HTTP."
+#~ msgstr "Дії форм та оптимістичні оновлення через звичайний HTTP."
+
+#: src/i18n/Demos.svelte
+msgid "← Previous page: About"
+msgstr "← Попередня сторінка: Про демо"
+
+#: src/i18n/Demos.svelte
+msgid "More demos"
+msgstr "Більше демо"
+
+#: src/i18n/Demos.svelte
+msgid "This is just another translated page, here to show the menu can grow. Find all the other Mochi demos on the <0>home page</0>."
+msgstr "Це просто ще одна перекладена сторінка, щоб показати, що меню може зростати. Усі інші демо Mochi — на <0>головній сторінці</0>."

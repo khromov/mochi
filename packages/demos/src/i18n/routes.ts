@@ -7,6 +7,8 @@ import type { MochiRouteValue } from 'mochi-framework';
 export const routes: Record<string, MochiRouteValue> = {
   '/i18n': Mochi.page('./src/i18n/Home.svelte'),
   '/i18n/about': Mochi.page('./src/i18n/About.svelte'),
+  '/i18n/demos': Mochi.page('./src/i18n/Demos.svelte'),
   '/i18n/:lang': Mochi.page('./src/i18n/Home.svelte'),
   '/i18n/:lang/about': Mochi.page('./src/i18n/About.svelte'),
+  '/i18n/:lang/demos': Mochi.page('./src/i18n/Demos.svelte'),
 };

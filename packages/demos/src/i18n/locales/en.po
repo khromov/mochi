@@ -24,6 +24,7 @@ msgid "Try opening this page in another language using the menu, then copy the a
 msgstr "Try opening this page in another language using the menu, then copy the address bar."
 
 #: src/i18n/About.svelte
+#: src/i18n/Demos.svelte
 #: src/i18n/Home.svelte
 msgid "Pagination"
 msgstr "Pagination"
@@ -86,3 +87,47 @@ msgstr "Choose language"
 #: src/i18n/Nav.svelte
 msgid "Demos"
 msgstr "Demos"
+
+#: src/i18n/About.svelte
+msgid "Next page: Demos →"
+msgstr "Next page: Demos →"
+
+#: src/i18n/Demos.svelte
+msgid "Mochi · Demos"
+msgstr "Mochi · Demos"
+
+#~ msgid "Explore the other demos"
+#~ msgstr "Explore the other demos"
+
+#~ msgid "Each of these is a standalone Mochi app running on this same site. They are not translated — this internationalization demo is the only multilingual one."
+#~ msgstr "Each of these is a standalone Mochi app running on this same site. They are not translated — this internationalization demo is the only multilingual one."
+
+#~ msgid "Hacker News"
+#~ msgstr "Hacker News"
+
+#~ msgid "A faithful clone with hydrated islands for comments."
+#~ msgstr "A faithful clone with hydrated islands for comments."
+
+#~ msgid "Admin dashboard"
+#~ msgstr "Admin dashboard"
+
+#~ msgid "A server-rendered dashboard with live, hydrated widgets."
+#~ msgstr "A server-rendered dashboard with live, hydrated widgets."
+
+#~ msgid "Todo app"
+#~ msgstr "Todo app"
+
+#~ msgid "Form actions and optimistic updates over plain HTTP."
+#~ msgstr "Form actions and optimistic updates over plain HTTP."
+
+#: src/i18n/Demos.svelte
+msgid "← Previous page: About"
+msgstr "← Previous page: About"
+
+#: src/i18n/Demos.svelte
+msgid "More demos"
+msgstr "More demos"
+
+#: src/i18n/Demos.svelte
+msgid "This is just another translated page, here to show the menu can grow. Find all the other Mochi demos on the <0>home page</0>."
+msgstr "This is just another translated page, here to show the menu can grow. Find all the other Mochi demos on the <0>home page</0>."

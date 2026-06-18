@@ -4,7 +4,7 @@
 
   $effect(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved !== null) count = Number(saved);
+    if (saved !== null) {count = Number(saved);}
   });
 
   $effect(() => {

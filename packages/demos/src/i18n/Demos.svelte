@@ -8,23 +8,19 @@
 </script>
 
 <svelte:head>
-  <title>Mochi · About internationalization</title>
+  <title>Mochi · Demos</title>
 </svelte:head>
 
-<Nav {locale} page="about" />
+<Nav {locale} page="demos" />
 
 <main class="stage">
   <section class="card">
-    <h1 class="greeting">About this demo</h1>
-    <p class="subhead">
-      Strings are extracted at build time and compiled into compact catalogs — no string keys ship to the browser. The active language comes from the URL, so every translated page
-      has its own address and can be shared or indexed.
-    </p>
-    <p class="subhead">Try opening this page in another language using the menu, then copy the address bar.</p>
+    <h1 class="greeting">More demos</h1>
+    <p class="subhead">This is just another translated page, here to show the menu can grow. Find all the other Mochi demos on the <a href="/">home page</a>.</p>
 
     <nav class="pager" aria-label="Pagination">
-      <a class="prev" href={localePath(locale, 'home')}>← Previous page: Home</a>
-      <a class="next" href={localePath(locale, 'demos')}>Next page: Demos →</a>
+      <a class="prev" href={localePath(locale, 'about')}>← Previous page: About</a>
+      <span></span>
     </nav>
   </section>
 </main>
@@ -78,7 +74,11 @@
   .subhead {
     font-size: 16px;
     color: var(--ink-soft);
-    margin: 0 0 12px;
+    margin: 0;
+  }
+  .subhead a {
+    color: var(--green-700);
+    font-weight: 600;
   }
   .pager {
     display: flex;

@@ -18,7 +18,7 @@
   <nav class="menu" aria-label="Main">
     <a href={localePath(locale, 'home')} class="pill" class:active={page === 'home'}>Home</a>
     <a href={localePath(locale, 'about')} class="pill" class:active={page === 'about'}>About</a>
-    <a class="pill" href="/">Demos</a>
+    <a href={localePath(locale, 'demos')} class="pill" class:active={page === 'demos'}>Demos</a>
   </nav>
 
   <details class="langs">
