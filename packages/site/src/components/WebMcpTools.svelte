@@ -10,6 +10,7 @@
     name: string;
     description: string;
     inputSchema: { type: 'object'; properties: Record<string, unknown>; required?: string[] };
+    annotations?: { readOnlyHint?: boolean };
     execute: (input: Record<string, unknown>) => Promise<ToolResult> | ToolResult;
   };
   type ModelContext = {
@@ -24,10 +25,16 @@
     {
       name: 'search_docs',
       description: 'Search the Mochi documentation and demos by keyword. Returns matching pages with their titles, descriptions, and URLs.',
+      annotations: { readOnlyHint: true },
       inputSchema: {
         type: 'object',
         properties: {
-          query: { type: 'string', description: 'Keywords to search for across docs and demo titles/descriptions.' },
+          query: {
+            type: 'string',
+            description: 'Keywords to search for across docs and demo titles/descriptions.',
+            minLength: 1,
+            maxLength: 100,
+          },
         },
         required: ['query'],
       },
@@ -51,10 +58,17 @@
     {
       name: 'open_section',
       description: 'Navigate the browser to a section of this site. Only same-origin relative paths are allowed (e.g. "/docs/quick-start").',
+      annotations: { readOnlyHint: false },
       inputSchema: {
         type: 'object',
         properties: {
-          url: { type: 'string', description: 'A same-origin path on this site to navigate to, e.g. "/docs".' },
+          url: {
+            type: 'string',
+            description: 'A same-origin path on this site to navigate to, e.g. "/docs".',
+            pattern: '^/[A-Za-z0-9._~/?#@!$&()*+,;=%-]*$',
+            minLength: 1,
+            maxLength: 2048,
+          },
         },
         required: ['url'],
       },
@@ -73,6 +87,8 @@
       // obtain the scaffold command instead of only being able to read it.
       name: 'get_create_command',
       description: 'Get the shell command to scaffold a new Mochi project (`bun create mochi@latest`), copying it to the clipboard when available.',
+      // Read-only: returns a fixed command and never changes site or server state (the clipboard copy is a best-effort convenience).
+      annotations: { readOnlyHint: true },
       inputSchema: { type: 'object', properties: {} },
       execute: async () => {
         const command = 'bun create mochi@latest';
