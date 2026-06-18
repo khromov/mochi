@@ -84,7 +84,12 @@ export async function loadDocs(): Promise<DocEntry[]> {
   filenames.sort((a, b) => {
     const na = leadingFileNumber(a);
     const nb = leadingFileNumber(b);
-    if (Number.isFinite(na) && Number.isFinite(nb)) {
+    // Only let the numeric prefix decide when the two numbers differ. Two docs
+    // sharing a prefix must fall back to a total order, else stable-sort
+    // preserves Bun.Glob.scan's filesystem order, which differs between the
+    // image-build and runtime container filesystems and makes the generated
+    // docs barrel non-reproducible.
+    if (Number.isFinite(na) && Number.isFinite(nb) && na !== nb) {
       return na - nb;
     }
     return a.localeCompare(b);
