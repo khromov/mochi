@@ -6,6 +6,7 @@
   "description": "Documentation for the Mochi framework.",
   "dependencies": {
     "@lucide/svelte": "^1.18.0",
-    "svelte": "^5.56.3"
+    "svelte": "^5.56.3",
+    "uqr": "^0.1.3"
   }
 }
