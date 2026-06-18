@@ -1,7 +1,8 @@
 import { checkEnvironment } from './checkEnvironment';
 import { ComponentRegistry, formatCompileErrors } from './ComponentRegistry';
 import { isMochiPage, isMochiApi, isMochiWs, isMochiSse } from './types';
-import type { MarkdownConfig, MochiRouteValue, MochiSvelteShakerOptions } from './types';
+import type { MarkdownConfig, MochiI18nOptions, MochiRouteValue, MochiSvelteShakerOptions } from './types';
+import { setupWuchaleI18n } from './i18n/wuchale';
 import { rmSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { scanPublicDir } from './publicDir';
@@ -43,6 +44,12 @@ export interface MochiBuildOptions {
    * runtime agree. Default: `false`.
    */
   optimize?: boolean | MochiSvelteShakerOptions;
+  /**
+   * Internationalization via Wuchale. Mirror the value passed to
+   * `Mochi.serve({ i18n })` so the prebuild applies the same compile-time
+   * transform (and regenerates the catalogs/loaders) that the runtime expects.
+   */
+  i18n?: MochiI18nOptions;
 }
 
 type RouteKind = 'page' | 'api' | 'ws' | 'sse';
@@ -71,6 +78,12 @@ export async function build(options: MochiBuildOptions): Promise<void> {
   mkdirSync(path.join(outDir, 'svelte-compile'), { recursive: true });
   mkdirSync(path.join(outDir, 'svelte-client'), { recursive: true });
   mkdirSync(path.join(outDir, 'svelte-css'), { recursive: true });
+
+  // Register the i18n transform (and regenerate loaders/catalogs) before
+  // compiling, so the prebuilt components carry the Wuchale runtime calls.
+  if (options.i18n) {
+    await setupWuchaleI18n(options.i18n, { development, projectRoot: process.cwd() });
+  }
 
   const svelteConfig = await loadSvelteConfig(options.svelteConfigPath);
   const registry = new ComponentRegistry({
