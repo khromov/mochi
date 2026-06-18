@@ -1,5 +1,3 @@
-import { logger } from '../log';
-
 class MochiLiveReload extends HTMLElement {
   private ws!: WebSocket;
   private navigating = false;
@@ -80,7 +78,6 @@ class MochiLiveReload extends HTMLElement {
       clearTimeout(this.connectTimer);
       this.broadcast('disconnected');
       if (!this.navigating) {
-        logger.warn('live reload disconnected — retrying in 950ms');
         this.reconnectTimer = setTimeout(() => this.connect(), 950);
       }
     };
