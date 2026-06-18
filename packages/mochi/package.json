@@ -77,13 +77,17 @@
   "peerDependencies": {
     "svelte": "^5.56.3",
     "@tailwindcss/node": "^4.3.0",
-    "@tailwindcss/oxide": "^4.3.0"
+    "@tailwindcss/oxide": "^4.3.0",
+    "wuchale": "^0.24.1"
   },
   "peerDependenciesMeta": {
     "@tailwindcss/node": {
       "optional": true
     },
     "@tailwindcss/oxide": {
+      "optional": true
+    },
+    "wuchale": {
       "optional": true
     }
   },
@@ -106,6 +110,7 @@
     "@types/js-cookie": "^3.0.6",
     "svelte": "^5.56.3",
     "svelte-check": "4.6.0",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "wuchale": "^0.24.1"
   }
 }

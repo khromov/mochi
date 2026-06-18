@@ -183,6 +183,16 @@ export function initExtensions(opts: Pick<MochiServeOptions, 'eventHooks' | 'fil
   registry.filters = opts.filters ?? {};
 }
 
+// Read/replace a single registered filter. Used by built-in integrations
+// (e.g. i18n) that need to compose with — rather than clobber — a user filter.
+export function getFilter<K extends keyof MochiFilterValue>(name: K): Filter<K> | undefined {
+  return registry.filters[name] as Filter<K> | undefined;
+}
+
+export function setFilter<K extends keyof MochiFilterValue>(name: K, fn: Filter<K>): void {
+  registry.filters[name] = fn as MochiFilters[K];
+}
+
 // `runHook` returns Promise<void> for async-kind names, void for sync-kind.
 // The runtime dispatches on the runtime kind table to guarantee the actual
 // return matches the type — including when no user fn is registered.
