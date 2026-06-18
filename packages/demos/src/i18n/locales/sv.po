@@ -73,14 +73,16 @@ msgstr "Hem"
 msgid "About"
 msgstr "Om"
 
-#: src/i18n/Nav.svelte
-msgid "Documentation"
-msgstr "Dokumentation"
+#~ msgid "Documentation"
+#~ msgstr "Dokumentation"
 
 #: src/i18n/Nav.svelte
 msgid "Choose language"
 msgstr "Välj språk"
 
+#~ msgid "Language"
+#~ msgstr "Språk"
+
 #: src/i18n/Nav.svelte
-msgid "Language"
-msgstr "Språk"
+msgid "Demos"
+msgstr "Demos"

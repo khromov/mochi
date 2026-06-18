@@ -73,14 +73,16 @@ msgstr "Головна"
 msgid "About"
 msgstr "Про демо"
 
-#: src/i18n/Nav.svelte
-msgid "Documentation"
-msgstr "Документація"
+#~ msgid "Documentation"
+#~ msgstr "Документація"
 
 #: src/i18n/Nav.svelte
 msgid "Choose language"
 msgstr "Виберіть мову"
 
+#~ msgid "Language"
+#~ msgstr "Мова"
+
 #: src/i18n/Nav.svelte
-msgid "Language"
-msgstr "Мова"
+msgid "Demos"
+msgstr "Демо"
