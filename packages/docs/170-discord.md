@@ -15,6 +15,6 @@ Join the community: **[mochi.fast/discord](/discord/)**.
 
 The short link redirects to the current invite, so it never goes stale.
 
-### Scan to join
+### Scan to join on your mobile
 
 <QrCode url="https://mochi.fast/discord/" />

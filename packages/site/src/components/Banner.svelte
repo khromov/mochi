@@ -8,7 +8,7 @@
     <Megaphone class="banner-icon" size={18} aria-hidden="true" />
     <p class="banner-text">
       <strong>Mochi is currently in alpha</strong> — be the first to
-      <a class="banner-link" href="/discord/">
+      <a class="banner-link" href="/discord/" target="_blank" rel="noopener noreferrer">
         join our Discord<ArrowUpRight class="banner-link-icon" size={14} aria-hidden="true" />
       </a>
       to shape the future of the framework.
