@@ -87,13 +87,11 @@ Props are signed with a 32-byte key resolved at startup from `process.env.MOCHI_
 MOCHI_KEY=<base64url-encoded 32-byte secret>
 ```
 
-Generate one and write it to `.env` with:
+Generate one and write it to `.env` with [`mochi-framework generate-key`](/docs/cli#generate-key):
 
 ```sh
 bunx mochi-framework generate-key
 ```
-
-It creates `.env` if missing, appends `MOCHI_KEY` if absent, and prompts before overwriting an existing key (pass `--force` to skip the prompt).
 
 <Callout type="warning">
 

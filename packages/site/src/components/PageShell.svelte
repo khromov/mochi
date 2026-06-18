@@ -35,7 +35,7 @@
 <MetaTags {...mergedMetaTags} />
 
 {#if !ownsViewTransitions}
-  <ViewTransitions type="scale" regions="mochi-body" />
+  <ViewTransitions type="fade" regions="mochi-body" />
 {/if}
 
 <Banner />
