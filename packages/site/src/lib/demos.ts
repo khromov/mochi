@@ -361,4 +361,10 @@ export const demos: Demo[] = [
     hook: 'Classic todo app styled with Tailwind CSS.',
     category: 'sites',
   },
+  {
+    href: 'https://demos.mochi.fast/i18n',
+    title: 'Internationalization',
+    hook: 'URL-based locales (English, Swedish, Ukrainian) with Wuchale — translated SSR plus a hydrated island.',
+    category: 'sites',
+  },
 ];

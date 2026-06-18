@@ -38,6 +38,7 @@ import Hash from '@lucide/svelte/icons/hash';
 import Barcode from '@lucide/svelte/icons/barcode';
 import Tornado from '@lucide/svelte/icons/tornado';
 import Languages from '@lucide/svelte/icons/languages';
+import Earth from '@lucide/svelte/icons/earth';
 
 export interface DemoIconMeta {
   icon: Component;
@@ -79,6 +80,7 @@ export const demoIconFor: Record<string, DemoIconMeta> = {
   'Hacker News Clone': { icon: Flame, label: 'Hacker News reader (WIP)' },
   'Realtime Admin Panel': { icon: LayoutDashboard, label: 'Live admin dashboard' },
   'Tailwind Todo App': { icon: ListTodo, label: 'Todo app on Tailwind' },
+  Internationalization: { icon: Earth, label: 'URL-based locales with Wuchale' },
   'Cookie Vary Test': { icon: Fingerprint, label: 'Response-driven Vary: Cookie' },
   'Isomorphic URL': { icon: Link, label: 'Same url import on server and client' },
   'View Transitions': { icon: Blend, label: 'Animated cross-document navigations' },
