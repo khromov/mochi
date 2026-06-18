@@ -12,7 +12,8 @@ export interface GenerateKeyOptions {
   force?: boolean;
   // Called when a MOCHI_KEY already exists and `force` is not set. Returning
   // false aborts without touching the file; kept injectable so tests don't need
-  // an interactive TTY.
+  // an interactive TTY. Omitting it (with an existing key and no `force`) is
+  // treated as a decline, so the conflict aborts.
   confirmOverwrite?: () => boolean | Promise<boolean>;
 }
 
@@ -48,7 +49,7 @@ export async function generateKey(options: GenerateKeyOptions = {}): Promise<Gen
     }
   }
 
-  // Function replacer so a `$` in the generated key isn't read as a backreference.
+  // Function replacer avoids `$`-sequence interpretation in the replacement string.
   await Bun.write(
     envPath,
     content.replace(KEY_LINE, () => line),
