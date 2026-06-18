@@ -6,31 +6,28 @@
   let title = $derived(status === 'connected' ? 'Live reload connected' : status === 'disconnected' ? 'Live reload disconnected' : 'Live reload status');
 
   onMount(() => {
-    const ws = window.__mochi_reload_ws;
-    if (!ws) {
-      status = window.__mochi_debug?.liveReloadEnabled === false ? 'connected' : 'disconnected';
+    if (window.__mochi_debug?.liveReloadEnabled === false) {
+      status = 'connected';
       return;
     }
-    if (ws.readyState === WebSocket.OPEN) {
+
+    // Snapshot the current socket, then follow window-level status events.
+    // LiveReload swaps the socket on every reconnect, so binding to a single
+    // instance here would miss later reconnects — the window event does not.
+    const ws = window.__mochi_reload_ws;
+    if (ws?.readyState === WebSocket.OPEN) {
       status = 'connected';
-    } else if (ws.readyState === WebSocket.CLOSING || ws.readyState === WebSocket.CLOSED) {
+    } else if (ws && (ws.readyState === WebSocket.CLOSING || ws.readyState === WebSocket.CLOSED)) {
       status = 'disconnected';
     }
 
-    const onOpen = () => {
-      status = 'connected';
+    const onStatus = (e: Event) => {
+      status = (e as CustomEvent<'connected' | 'disconnected'>).detail;
     };
-    const onClose = () => {
-      status = 'disconnected';
-    };
-    ws.addEventListener('open', onOpen);
-    ws.addEventListener('close', onClose);
-    ws.addEventListener('error', onClose);
+    window.addEventListener('mochi:reload-status', onStatus);
 
     return () => {
-      ws.removeEventListener('open', onOpen);
-      ws.removeEventListener('close', onClose);
-      ws.removeEventListener('error', onClose);
+      window.removeEventListener('mochi:reload-status', onStatus);
     };
   });
 </script>

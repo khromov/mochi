@@ -1,7 +1,11 @@
+import { logger } from '../log';
+
 class MochiLiveReload extends HTMLElement {
   private ws!: WebSocket;
   private navigating = false;
   private first = true;
+  private connectTimer: ReturnType<typeof setTimeout> | undefined;
+  private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 
   connectedCallback() {
     this.connect();
@@ -11,11 +15,17 @@ class MochiLiveReload extends HTMLElement {
   disconnectedCallback() {
     this.navigating = true;
     removeEventListener('pagehide', this.handlePageHide);
+    this.clearTimers();
     try {
       this.ws.close(1000, 'disconnected');
     } catch {
       /* connection already closed */
     }
+  }
+
+  private clearTimers() {
+    clearTimeout(this.connectTimer);
+    clearTimeout(this.reconnectTimer);
   }
 
   private connect() {
@@ -27,21 +37,38 @@ class MochiLiveReload extends HTMLElement {
     // tively reload on every change.
     const entry = window.__mochi_page_entry;
     const query = entry ? '?entry=' + encodeURIComponent(entry) : '';
-    this.ws = new WebSocket(proto + '//' + location.host + '/__mochi_live_reload' + query);
-    window.__mochi_reload_ws = this.ws;
+    const ws = new WebSocket(proto + '//' + location.host + '/__mochi_live_reload' + query);
+    this.ws = ws;
+    window.__mochi_reload_ws = ws;
 
-    this.ws.onopen = () => {
+    // A CONNECTING socket against a down/unreachable server can hang for the
+    // browser's full TCP timeout without ever firing close/error, which stalls
+    // the reconnect loop. Force it closed after 2s so onclose schedules a retry.
+    this.connectTimer = setTimeout(() => {
+      if (ws.readyState !== WebSocket.OPEN) {
+        try {
+          ws.close();
+        } catch {
+          /* already closed */
+        }
+      }
+    }, 2000);
+
+    ws.onopen = () => {
+      clearTimeout(this.connectTimer);
+      this.broadcast('connected');
       if (!this.first) {
         location.reload();
       }
       this.first = false;
     };
 
-    this.ws.onmessage = (e) => {
+    ws.onmessage = (e) => {
       if (e.data === 'reload') {
         this.navigating = true;
+        this.clearTimers();
         try {
-          this.ws.close(1000, 'navigating');
+          ws.close(1000, 'navigating');
         } catch {
           /* connection already closed */
         }
@@ -49,19 +76,33 @@ class MochiLiveReload extends HTMLElement {
       }
     };
 
-    this.ws.onclose = () => {
+    ws.onclose = () => {
+      clearTimeout(this.connectTimer);
+      this.broadcast('disconnected');
       if (!this.navigating) {
-        setTimeout(() => this.connect(), 950);
+        logger.warn('live reload disconnected — retrying in 950ms');
+        this.reconnectTimer = setTimeout(() => this.connect(), 950);
       }
     };
 
-    this.ws.onerror = () => {
-      this.ws.close();
+    ws.onerror = () => {
+      try {
+        ws.close();
+      } catch {
+        /* already closed */
+      }
     };
+  }
+
+  // Broadcast on window (not on a single socket instance) so the debug bar's
+  // status dot follows the live connection across reconnects.
+  private broadcast(status: 'connected' | 'disconnected') {
+    dispatchEvent(new CustomEvent('mochi:reload-status', { detail: status }));
   }
 
   private handlePageHide = () => {
     this.navigating = true;
+    this.clearTimers();
     try {
       this.ws.close(1000, 'navigating');
     } catch {
