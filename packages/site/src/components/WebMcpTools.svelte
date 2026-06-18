@@ -68,6 +68,22 @@
         return { content: [{ type: 'text', text: `Navigating to ${resolved.pathname}.` }] };
       },
     },
+    {
+      // Mirrors the "Quick start" copy button on the homepage so an agent can
+      // obtain the scaffold command instead of only being able to read it.
+      name: 'get_create_command',
+      description: 'Get the shell command to scaffold a new Mochi project (`bun create mochi@latest`), copying it to the clipboard when available.',
+      inputSchema: { type: 'object', properties: {} },
+      execute: async () => {
+        const command = 'bun create mochi@latest';
+        try {
+          await navigator.clipboard?.writeText(command);
+        } catch {
+          // Clipboard may be unavailable (no permission / insecure context); returning the text still satisfies the agent.
+        }
+        return { content: [{ type: 'text', text: command }] };
+      },
+    },
   ];
 
   // Register on load so in-browser agents discover the site's capabilities.
