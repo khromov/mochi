@@ -86,12 +86,48 @@
       // Mirrors the "Quick start" copy button on the homepage so an agent can
       // obtain the scaffold command instead of only being able to read it.
       name: 'get_create_command',
-      description: 'Get the shell command to scaffold a new Mochi project (`bun create mochi@latest`), copying it to the clipboard when available.',
-      // Read-only: returns a fixed command and never changes site or server state (the clipboard copy is a best-effort convenience).
+      description:
+        'Build the shell command to scaffold a new Mochi project with `bun create mochi@latest`, copying it to the clipboard when available. Provide both `directory` and `template` for a fully non-interactive command (otherwise the scaffolder prompts for the missing values).',
+      // Read-only: returns a command string and never changes site or server state (the clipboard copy is a best-effort convenience).
       annotations: { readOnlyHint: true },
-      inputSchema: { type: 'object', properties: {} },
-      execute: async () => {
-        const command = 'bun create mochi@latest';
+      inputSchema: {
+        type: 'object',
+        properties: {
+          directory: {
+            type: 'string',
+            description: 'Target directory (positional path) for the new project, e.g. "my-app" or "./apps/web". Omit to let the scaffolder prompt for it.',
+            pattern: '^[A-Za-z0-9._/-]+$',
+            minLength: 1,
+            maxLength: 214,
+          },
+          template: {
+            type: 'string',
+            description: 'Starter template: "minimal" (single-page bare-bones app) or "demos" (larger reference app). Maps to `--template`.',
+            enum: ['minimal', 'demos'],
+          },
+          force: {
+            type: 'boolean',
+            description: 'Overwrite conflicting files when the target directory is not empty. Maps to `--force`.',
+          },
+        },
+      },
+      execute: async (input) => {
+        const directory = String(input.directory ?? '').trim();
+        const template = String(input.template ?? '').trim();
+        const dir = /^[A-Za-z0-9._/-]+$/.test(directory) ? directory : '';
+        const tpl = template === 'minimal' || template === 'demos' ? template : '';
+
+        let command = 'bun create mochi@latest';
+        if (dir) {
+          command += ` ${dir}`;
+        }
+        if (tpl) {
+          command += ` --template ${tpl}`;
+        }
+        if (input.force === true) {
+          command += ' --force';
+        }
+
         try {
           await navigator.clipboard?.writeText(command);
         } catch {
