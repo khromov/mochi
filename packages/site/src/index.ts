@@ -53,6 +53,18 @@ const helloWorld: Handle = async ({ event, resolve }) => {
   return response;
 };
 
+// RFC 8288 Link headers point agents from the homepage to the machine-readable
+// discovery surfaces (API catalog + human docs). Only on '/' so it doesn't
+// pollute every asset/API response.
+const AGENT_DISCOVERY_LINK = '</.well-known/api-catalog>; rel="api-catalog", </llms.txt>; rel="service-doc"';
+const agentDiscoveryLinks: Handle = async ({ event, resolve }) => {
+  const response = await resolve(event);
+  if (event.url.pathname === '/') {
+    response.headers.set('Link', AGENT_DISCOVERY_LINK);
+  }
+  return response;
+};
+
 const asciiDog: Handle = async ({ event, resolve }) => {
   return resolve(event, {
     transformPage({ html }) {
@@ -128,7 +140,7 @@ await Mochi.serve({
   liveReload: process.env.MOCHI_LIVE_RELOAD === 'false' ? false : undefined,
   htmlShell: './src/shell.html',
   trailingSlash: 'always',
-  handle: sequence(compress(), immutableAssets, helloWorld, asciiDog, analytics, encodeDebugBarPaths, noCache, cookieVaryTestHandle),
+  handle: sequence(compress(), immutableAssets, helloWorld, agentDiscoveryLinks, asciiDog, analytics, encodeDebugBarPaths, noCache, cookieVaryTestHandle),
   handleError,
   idleTimeout: 60,
   compressServerIslandProps: true,
@@ -145,9 +157,11 @@ await Mochi.serve({
   },
   filters: {
     'consoleLogger:line': silenceInternalRoutes,
-    // The MCP endpoint must answer at exactly /mcp; the site-wide trailingSlash: 'always'
-    // policy would otherwise 308 it to /mcp/ and some MCP clients don't follow the redirect.
-    'trailingSlash:redirect': (redirect, { url }) => (url.pathname === '/mcp' ? null : redirect),
+    // The MCP endpoint must answer at exactly /mcp, and the extensionless API
+    // catalog at /.well-known/api-catalog; the site-wide trailingSlash: 'always'
+    // policy would otherwise 308 them to a trailing-slash form that breaks
+    // discovery (and which some MCP clients don't follow).
+    'trailingSlash:redirect': (redirect, { url }) => (url.pathname === '/mcp' || url.pathname === '/.well-known/api-catalog' ? null : redirect),
   },
   routes,
 });

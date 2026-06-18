@@ -1,3 +1,11 @@
+# The Content Signal directive in this file uses syntax and
+# vocabulary from a proposed IETF standard drafted by the
+# AI Preferences (aipref) working group and has the meanings
+# set forth in that standard. To learn more, please see
+# https://contentsignals.org/ and
+# https://datatracker.ietf.org/doc/draft-romm-aipref-contentsignals/.
+
 User-Agent: *
+Content-Signal: ai-train=yes, search=yes, ai-input=yes
 Allow: /
 Disallow: /og

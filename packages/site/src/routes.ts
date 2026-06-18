@@ -15,6 +15,10 @@ import {
   loadDocs,
 } from './lib/docs';
 import { respondMcp } from './lib/mcp';
+import { routes as apiCatalogRoutes } from './lib/wellKnown/apiCatalog';
+import { routes as mcpCardRoutes } from './lib/wellKnown/mcpCard';
+import { routes as agentCardRoutes } from './lib/wellKnown/agentCard';
+import { routes as agentSkillsRoutes } from './lib/wellKnown/agentSkills';
 import { profilerEnabled, startProfiler, stopProfiler } from './lib/profiler';
 import { routes as apiRoutes } from './demos/api/routes';
 import { routes as cacheEventsRoutes } from './demos/cache-events/routes';
@@ -163,6 +167,10 @@ export const routes: Record<string, MochiRouteValue> = {
   }),
   '/SKILL.md': Mochi.file('./src/SKILL.md'),
   '/mcp': Mochi.api(({ request }) => respondMcp(request)),
+  ...apiCatalogRoutes,
+  ...mcpCardRoutes,
+  ...agentCardRoutes,
+  ...agentSkillsRoutes,
   ...demoLlmsRoutes,
   ...apiRoutes,
   ...cacheEventsRoutes,

@@ -2,6 +2,7 @@
   import PageShell from './components/PageShell.svelte';
   import Footer from './components/Footer.svelte';
   import QuickStart from './components/QuickStart.svelte';
+  import WebMcpTools from './components/WebMcpTools.svelte';
   import { demos, categoryLabels, categoryOrder, type DemoCategory, type Demo } from './lib/demos';
   import { demoIconFor } from './lib/demoIcons';
   import { isExternal } from './lib/isExternal';
@@ -43,6 +44,7 @@
 
   <main class="body">
     <QuickStart mochi:hydrate />
+    <WebMcpTools mochi:hydrate />
 
     <section class="docs-cta">
       <h2 class="docs-cta-title">Documentation</h2>
