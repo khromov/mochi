@@ -17,6 +17,7 @@ import { files as formReturnData } from '../demos/form-return-data/files.ts';
 import { files as helloWorld } from '../demos/hello-world/files.ts';
 import { files as hydratable } from '../demos/hydratable/files.ts';
 import { files as hydration } from '../demos/hydration/files.ts';
+import { files as i18nCookie } from '../demos/i18n-cookie/files.ts';
 import { files as islandProps } from '../demos/island-props/files.ts';
 import { files as lazy } from '../demos/lazy/files.ts';
 import { files as lazyServerIsland } from '../demos/lazy-server-island/files.ts';
@@ -104,6 +105,14 @@ export const demos: Demo[] = [
     files: cookies,
     title: 'Cookies',
     hook: 'Read and write cookies on the server and the client through one MochiCookieJar API.',
+    category: 'data',
+  },
+  {
+    href: '/demos/i18n-cookie/',
+    slug: 'i18n-cookie',
+    files: i18nCookie,
+    title: 'Internationalization (cookies)',
+    hook: 'Store the visitor’s language in a cookie — read during SSR, switched in place on the client with Wuchale.',
     category: 'data',
   },
   {

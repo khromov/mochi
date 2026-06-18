@@ -410,6 +410,31 @@ export interface MochiWarmupOptions {
   enabledInDev: boolean;
 }
 
+/**
+ * Internationalization options for `Mochi.serve({ i18n })`, powered by
+ * [Wuchale](https://wuchale.dev). Mochi instantiates one Wuchale adapter
+ * handler per adapter declared in your `wuchale.config.js`, generates the
+ * Mochi-aware loaders, and runs Wuchale's compile-time transform during both
+ * the SSR and client Svelte builds. The active locale is resolved per request
+ * via `resolveLocale` and exposed to server-rendered components through
+ * `getRequestContext().locals.locale`; it is also seeded to the client as
+ * `window.__mochi_locale__` so hydrated islands render the matching strings.
+ */
+export interface MochiI18nOptions {
+  /**
+   * Resolve the active locale for a request. Return a locale id present in
+   * `locales`, or `undefined` to fall back to `sourceLocale`. Runs inside the
+   * request context, so `getRequestContext()` (cookies, url, …) is available.
+   */
+  resolveLocale: (event: MochiEvent) => string | undefined;
+  /** All supported locale ids, source locale first. E.g. `['en', 'sv', 'uk']`. */
+  locales: string[];
+  /** The source/default locale. Default: the first entry in `locales`. */
+  sourceLocale?: string;
+  /** Path to the Wuchale config file. Default: `./wuchale.config.js`. */
+  config?: string;
+}
+
 export interface MochiServeOptions {
   port?: number;
   hostname?: string;
@@ -555,6 +580,13 @@ export interface MochiServeOptions {
    * available names.
    */
   filters?: MochiFilters;
+  /**
+   * Internationalization via [Wuchale](https://wuchale.dev). When set, Mochi
+   * loads the Wuchale config, hooks its compile-time transform into the Svelte
+   * build (server + client), and resolves the active locale per request. See
+   * `MochiI18nOptions`.
+   */
+  i18n?: MochiI18nOptions;
   /**
    * Warm the SSR render pipeline at startup. When enabled, every static page
    * route (no `:param` or `*` segments) is invoked once via its real handler

@@ -38,7 +38,8 @@ import { escapeHtmlAttr } from './htmlEscape';
 import { buildPublicUrl } from './proxy';
 import { apiError, collectHeaderPairs, headResponse, isHtmlResponse, MochiHttpError, withHead } from './utils';
 import type { MochiEvent, MochiEventKind, MochiResolveOptions } from './hooks';
-import { applyResolveOptions } from './hooks';
+import { applyResolveOptions, sequence } from './hooks';
+import { setupWuchaleI18n } from './i18n/wuchale';
 import { alternateSlashPattern, trailingSlashRedirect } from './trailingSlash';
 import { resolveWarmupEnabled, markWarmupRequest, isWarmablePattern } from './warmup';
 import { createErrorResponder, DEFAULT_ERROR_PAGE_PATH } from './errors';
@@ -212,7 +213,14 @@ export class Mochi {
     const warmupEnabled = resolveWarmupEnabled(options.warmup, development);
     const debugBarEnabled = development && (options.debugBar ?? true);
     const liveReloadEnabled = options.liveReload ?? development;
-    const middleware = options.handle;
+    // i18n (Wuchale) wiring runs before component compilation so its transform
+    // is registered as a `compile:preprocessors` filter; its locale middleware
+    // is composed to the front of the user's handle chain.
+    let middleware = options.handle;
+    if (options.i18n) {
+      const i18nHandle = await setupWuchaleI18n(options.i18n, { development, projectRoot: process.cwd() });
+      middleware = middleware ? sequence(i18nHandle, middleware) : i18nHandle;
+    }
     const outDir = options.outDir ?? './.mochi';
     const publicDir = options.publicDir ?? './public';
     // Only a file-based shell can be watched/re-read; an inline-string shell

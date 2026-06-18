@@ -1,0 +1,52 @@
+msgid ""
+msgstr ""
+"Plural-Forms: nplurals=2; plural=n == 1 ? 0 : 1;\n"
+"Source-Language: en\n"
+"Language: en\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: src/demos/i18n-cookie/I18nForm.svelte
+msgid "English"
+msgstr "English"
+
+#: src/demos/i18n-cookie/I18nForm.svelte
+msgid "Svenska"
+msgstr "Svenska"
+
+#: src/demos/i18n-cookie/I18nForm.svelte
+msgid "Українська"
+msgstr "Українська"
+
+#: src/demos/i18n-cookie/I18nForm.svelte
+msgid "Good day, and welcome to Mochi!"
+msgstr "Good day, and welcome to Mochi!"
+
+#: src/demos/i18n-cookie/I18nForm.svelte
+msgid "This panel re-translates itself instantly when you switch languages — no page reload."
+msgstr "This panel re-translates itself instantly when you switch languages — no page reload."
+
+#: src/demos/i18n-cookie/I18nForm.svelte
+msgid "Your choice is stored in a cookie, so the server renders this page in your language next time you visit."
+msgstr "Your choice is stored in a cookie, so the server renders this page in your language next time you visit."
+
+#: src/demos/i18n-cookie/I18nForm.svelte
+msgid "Choose your language"
+msgstr "Choose your language"
+
+#: src/demos/i18n-cookie/I18nForm.svelte
+msgid "Language"
+msgstr "Language"
+
+#: src/demos/i18n-cookie/I18nForm.svelte
+msgid "Active language code: <0/>"
+msgstr "Active language code: <0/>"
+
+#: src/demos/i18n-cookie/I18nCookie.svelte
+msgid "Internationalization (cookies)"
+msgstr "Internationalization (cookies)"
+
+#: src/demos/i18n-cookie/I18nCookie.svelte
+msgid "A cookie holds the visitor's language. Mochi reads it during SSR so the page renders translated, and the hydrated island switches language in place — then writes the cookie so the choice sticks on the next request."
+msgstr "A cookie holds the visitor's language. Mochi reads it during SSR so the page renders translated, and the hydrated island switches language in place — then writes the cookie so the choice sticks on the next request."
