@@ -3,6 +3,7 @@
   import '@fontsource-variable/public-sans';
   import { localePath, LOCALES, type PageId } from './nav.ts';
   import GitHubButton from '../components/GitHubButton.svelte';
+  import Globe from '@lucide/svelte/icons/globe';
 
   let { locale, page }: { locale: string; page: PageId } = $props();
 
@@ -17,12 +18,12 @@
   <nav class="menu" aria-label="Main">
     <a href={localePath(locale, 'home')} class="pill" class:active={page === 'home'}>Home</a>
     <a href={localePath(locale, 'about')} class="pill" class:active={page === 'about'}>About</a>
-    <a class="pill" href="https://mochi.fast" target="_blank" rel="noopener noreferrer">Documentation</a>
+    <a class="pill" href="/">Demos</a>
   </nav>
 
   <details class="langs">
     <summary aria-label="Choose language">
-      <span class="globe" aria-hidden="true">🌐</span>
+      <Globe class="globe" size={16} aria-hidden="true" />
       <span class="langs-current">{current.name}</span>
       <span class="caret" aria-hidden="true">▾</span>
     </summary>
@@ -82,22 +83,19 @@
     border-radius: 999px;
     border: 1px solid var(--rule, #e6e0d2);
     background: transparent;
-    color: var(--ink-soft, #6b665e);
+    color: var(--ink, #2a2825);
     text-decoration: none;
     box-shadow: 0 1px 2px rgba(42, 40, 37, 0.05);
     transition:
-      color 0.12s ease,
       border-color 0.12s ease,
       box-shadow 0.12s ease;
   }
   .pill:hover {
-    color: var(--green-700, #385c47);
     border-color: var(--ink-faint, #a39e94);
     box-shadow: 0 1px 3px rgba(42, 40, 37, 0.08);
   }
   .pill.active {
-    color: var(--green-700, #385c47);
-    border-color: var(--green-600, #4a7159);
+    border-color: var(--ink, #2a2825);
     box-shadow: 0 1px 3px rgba(42, 40, 37, 0.08);
     font-weight: 600;
   }
@@ -112,26 +110,26 @@
     padding: 7px 12px;
     border-radius: 999px;
     border: 1px solid var(--rule, #e6e0d2);
-    background: var(--bg-card, #fbf8f1);
-    color: var(--ink-soft, #6b665e);
+    background: transparent;
+    color: var(--ink, #2a2825);
     font-size: 13px;
     cursor: pointer;
     list-style: none;
     user-select: none;
+    box-shadow: 0 1px 2px rgba(42, 40, 37, 0.05);
     transition:
-      color 0.12s ease,
-      border-color 0.12s ease;
+      border-color 0.12s ease,
+      box-shadow 0.12s ease;
   }
   .langs summary::-webkit-details-marker {
     display: none;
   }
   .langs summary:hover {
-    color: var(--green-700, #385c47);
-    border-color: var(--green-200, #d6e4d8);
+    border-color: var(--ink-faint, #a39e94);
+    box-shadow: 0 1px 3px rgba(42, 40, 37, 0.08);
   }
   .globe {
-    font-size: 13px;
-    line-height: 1;
+    flex-shrink: 0;
   }
   .langs-current {
     font-weight: 600;
@@ -161,17 +159,16 @@
   .langs-menu a {
     padding: 8px 10px;
     border-radius: 8px;
-    color: var(--ink-soft, #6b665e);
+    color: var(--ink, #2a2825);
     text-decoration: none;
     font-size: 14px;
   }
   .langs-menu a:hover {
-    background: var(--green-100, #e8efe5);
-    color: var(--green-700, #385c47);
+    background: rgba(42, 40, 37, 0.06);
   }
   .langs-menu a.current {
-    color: var(--green-700, #385c47);
     font-weight: 600;
+    background: rgba(42, 40, 37, 0.06);
   }
 
   .gh-slot {
@@ -185,12 +182,20 @@
       grid-template-areas:
         'lang brand gh'
         'menu menu menu';
-      gap: 16px 12px;
-      padding: 16px 18px;
+      gap: 12px;
+      padding: 10px 14px;
     }
     .langs {
       grid-area: lang;
       justify-self: start;
+    }
+    .langs summary {
+      gap: 0;
+      padding: 8px;
+    }
+    .langs-current,
+    .caret {
+      display: none;
     }
     .brand {
       grid-area: brand;

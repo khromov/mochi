@@ -59,6 +59,7 @@
     padding: 40px 24px 64px;
   }
   .card {
+    box-sizing: border-box;
     width: min(620px, 100%);
     background: var(--bg-card);
     border: 1px solid var(--rule);
@@ -91,5 +92,18 @@
   }
   .pager a:hover {
     text-decoration: underline;
+  }
+
+  @media (max-width: 640px) {
+    .stage {
+      padding: 16px 14px 40px;
+    }
+    .card {
+      padding: 24px 20px;
+      border-radius: 12px;
+    }
+    .greeting {
+      font-size: 27px;
+    }
   }
 </style>

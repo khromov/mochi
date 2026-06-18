@@ -6,7 +6,6 @@ import { build } from './build';
 import { extractServeOptions } from './extractServeOptions';
 import { updateSkill, SKILL_TARGETS, SKILL_DESTS, DEFAULT_SKILL_TARGET, type SkillTarget } from './updateSkill';
 import { generateKey } from './generateKey';
-import { setupWuchaleI18n } from './i18n/wuchale';
 
 const TARGET_ALIASES: Record<string, SkillTarget> = { agy: 'antigravity' };
 
@@ -35,13 +34,6 @@ ${SKILL_TARGETS.map((t) => {
                          before overwriting an existing key.
                          Options:
                            -f, --force  Overwrite an existing MOCHI_KEY without prompting.
-  prepare-i18n           Generate the Wuchale i18n loaders and catalogs without a
-                         full build, so \`tsc\`/\`svelte-check\` can resolve the
-                         generated (gitignored) loader modules. No-op when the
-                         entry declares no \`i18n\` config.
-                         Options:
-                           --entry <path>  Entry whose \`Mochi.serve({ i18n })\`
-                                           supplies the config. Default: ./src/index.ts
 
 Options for "build":
   --entry <path>           Runtime entry whose \`Mochi.serve()\` call supplies
@@ -107,31 +99,6 @@ async function runGenerateKey(force: boolean) {
   }
 }
 
-async function runPrepareI18n(entry?: string) {
-  const entryPath = path.resolve(process.cwd(), entry ?? './src/index.ts');
-  if (!existsSync(entryPath)) {
-    process.stderr.write(`[mochi] Entry not found: ${entryPath}\n`);
-    process.exit(1);
-  }
-
-  let serveOptions: Awaited<ReturnType<typeof extractServeOptions>>;
-  try {
-    serveOptions = await extractServeOptions(entryPath);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    process.stderr.write(`[mochi] Could not read ${entryPath}: ${msg}\n`);
-    process.exit(1);
-  }
-
-  if (!serveOptions?.i18n) {
-    process.stdout.write('[mochi] No `i18n` config found — nothing to generate.\n');
-    return;
-  }
-
-  await setupWuchaleI18n(serveOptions.i18n, { development: false, projectRoot: process.cwd() });
-  process.stdout.write('[mochi] i18n loaders and catalogs generated.\n');
-}
-
 async function main() {
   const { values, positionals } = parseArgs({
     args: Bun.argv.slice(2),
@@ -173,11 +140,6 @@ async function main() {
 
   if (cmd === 'generate-key') {
     await runGenerateKey(Boolean(values.force));
-    return;
-  }
-
-  if (cmd === 'prepare-i18n') {
-    await runPrepareI18n(values.entry);
     return;
   }
 

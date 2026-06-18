@@ -44,10 +44,11 @@
 
 <style>
   .i18n-cookie {
-    border: 1px solid var(--rule, #e3ded2);
+    border: 1px solid var(--border, #e3ded2);
     border-radius: 12px;
     padding: 22px 24px;
-    background: var(--bg-card, #fff);
+    background: var(--surface, #fff);
+    color: var(--text, #2a2825);
   }
   .hi {
     margin: 0 0 8px;
@@ -58,7 +59,7 @@
   }
   .note {
     margin: 0 0 18px;
-    color: var(--ink-soft, #6b665e);
+    color: var(--text-muted, #6b665e);
     font-size: 14px;
   }
   .switcher {
@@ -72,27 +73,27 @@
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.08em;
-    color: var(--ink-faint, #a39e94);
+    color: var(--text-subtle, #a39e94);
     margin-right: 4px;
   }
   .switcher button {
     font: inherit;
     padding: 6px 14px;
     border-radius: 999px;
-    border: 1px solid var(--rule, #d8d2c4);
+    border: 1px solid var(--border-strong, #d8d2c4);
     background: transparent;
-    color: var(--ink, #2a2825);
+    color: var(--text, #2a2825);
     cursor: pointer;
   }
   .switcher button.active {
     border-color: var(--accent, #4a7159);
     background: var(--accent, #4a7159);
-    color: #fff;
+    color: var(--accent-text, #fff);
     font-weight: 600;
   }
   .current {
     margin: 16px 0 0;
     font-size: 13px;
-    color: var(--ink-soft, #6b665e);
+    color: var(--text-muted, #6b665e);
   }
 </style>

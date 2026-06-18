@@ -1,5 +1,15 @@
 <script lang="ts">
+  const STORAGE_KEY = 'mochi-i18n-clicks';
   let count = $state(0);
+
+  $effect(() => {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved !== null) count = Number(saved);
+  });
+
+  $effect(() => {
+    localStorage.setItem(STORAGE_KEY, String(count));
+  });
 </script>
 
 <div class="greeter">

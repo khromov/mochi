@@ -24,27 +24,27 @@
     width: 36px;
     height: 36px;
     padding: 0;
-    background: var(--bg-card, #fbf8f1);
+    background: transparent;
     border: 1px solid var(--rule, #e6e0d2);
     border-radius: 999px;
-    color: var(--ink-soft, #6b665e);
+    color: var(--ink, #2a2825);
     cursor: pointer;
     flex-shrink: 0;
+    box-shadow: 0 1px 2px rgba(42, 40, 37, 0.05);
     transition:
       color 0.12s ease,
-      background 0.12s ease,
-      border-color 0.12s ease;
+      border-color 0.12s ease,
+      box-shadow 0.12s ease;
   }
 
   .gh-button:hover {
-    background: var(--green-100, #e8efe5);
-    color: var(--green-700, #385c47);
-    border-color: var(--green-200, #d6e4d8);
+    border-color: var(--ink-faint, #a39e94);
+    box-shadow: 0 1px 3px rgba(42, 40, 37, 0.08);
   }
 
   .gh-button:focus-visible {
     outline: none;
-    box-shadow: 0 0 0 3px var(--green-100, #e8efe5);
+    box-shadow: 0 0 0 3px rgba(42, 40, 37, 0.12);
   }
 
   .gh-button svg {
