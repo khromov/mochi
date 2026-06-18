@@ -39,4 +39,4 @@ The header text, the main column, and the footer ship as HTML and stay that way.
 
 ## Community
 
-Questions, bug reports, ideas, or just want to see what others are building? Join the [Mochi Discord](https://discord.com/invite/QCGfks4gg8).
+Questions, bug reports, ideas, or just want to see what others are building? Join the [Mochi Discord](/discord/).

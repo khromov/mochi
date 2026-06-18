@@ -5,6 +5,7 @@ import { existsSync } from 'node:fs';
 import { build } from './build';
 import { extractServeOptions } from './extractServeOptions';
 import { updateSkill, SKILL_TARGETS, SKILL_DESTS, DEFAULT_SKILL_TARGET, type SkillTarget } from './updateSkill';
+import { generateKey } from './generateKey';
 
 const TARGET_ALIASES: Record<string, SkillTarget> = { agy: 'antigravity' };
 
@@ -28,6 +29,11 @@ ${SKILL_TARGETS.map((t) => {
   const aliasNote = ALIASES_BY_TARGET[t]?.length ? ` (alias: ${ALIASES_BY_TARGET[t]!.join(', ')})` : '';
   return `                           ${t.padEnd(12)} -> ${SKILL_DESTS[t]}${aliasNote}`;
 }).join('\n')}
+  generate-key           Generate a MOCHI_KEY (base64url-encoded 32-byte secret)
+                         and write it to .env in the current directory. Prompts
+                         before overwriting an existing key.
+                         Options:
+                           -f, --force  Overwrite an existing MOCHI_KEY without prompting.
 
 Options for "build":
   --entry <path>           Runtime entry whose \`Mochi.serve()\` call supplies
@@ -73,6 +79,26 @@ async function runUpdateSkill(args: string[]) {
   }
 }
 
+async function runGenerateKey(force: boolean) {
+  try {
+    const { path: dest, action } = await generateKey({
+      force,
+      confirmOverwrite: () => confirm('[mochi] MOCHI_KEY already exists in .env. Overwrite?'),
+    });
+    const rel = path.relative(process.cwd(), dest) || dest;
+    if (action === 'aborted') {
+      process.stdout.write(`[mochi] Aborted. Existing MOCHI_KEY in ${rel} left unchanged.\n`);
+      return;
+    }
+    const verb = action === 'created' ? 'Created' : action === 'appended' ? 'Added MOCHI_KEY to' : 'Replaced MOCHI_KEY in';
+    process.stdout.write(`[mochi] ${verb} ${rel}\n`);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    process.stderr.write(`[mochi] ${msg}\n`);
+    process.exit(1);
+  }
+}
+
 async function main() {
   const { values, positionals } = parseArgs({
     args: Bun.argv.slice(2),
@@ -85,6 +111,7 @@ async function main() {
       'public-dir': { type: 'string' },
       'asset-prefix': { type: 'string' },
       dev: { type: 'boolean' },
+      force: { type: 'boolean', short: 'f' },
     },
   });
 
@@ -108,6 +135,11 @@ async function main() {
 
   if (cmd === 'update-skill') {
     await runUpdateSkill(positionals.slice(1));
+    return;
+  }
+
+  if (cmd === 'generate-key') {
+    await runGenerateKey(Boolean(values.force));
     return;
   }
 

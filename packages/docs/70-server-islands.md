@@ -87,6 +87,12 @@ Props are signed with a 32-byte key resolved at startup from `process.env.MOCHI_
 MOCHI_KEY=<base64url-encoded 32-byte secret>
 ```
 
+Generate one and write it to `.env` with [`mochi-framework generate-key`](/docs/cli#generate-key):
+
+```sh
+bunx mochi-framework generate-key
+```
+
 <Callout type="warning">
 
 **Set `MOCHI_KEY` for any deployment that runs more than one process or survives restarts.** Without a shared key, signatures minted by one instance won't verify on another and deferred islands will fail to load after a restart or rolling deploy.
