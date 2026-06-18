@@ -94,7 +94,7 @@ export const routes: Record<string, MochiRouteValue> = {
         }),
       }
     : {}),
-  '/discord': () => Response.redirect('https://discord.com/invite/QCGfks4gg8', 302),
+  '/discord': Mochi.api(() => Response.redirect('https://discord.com/invite/QCGfks4gg8', 302)),
   '/': Mochi.page('./src/Site.svelte', {
     serverProps: async () => {
       const docs = await loadDocs();
