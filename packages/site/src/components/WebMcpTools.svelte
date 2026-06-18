@@ -88,8 +88,8 @@
       name: 'get_create_command',
       description:
         'Build the shell command to scaffold a new Mochi project with `bun create mochi@latest`, copying it to the clipboard when available. Provide both `directory` and `template` for a fully non-interactive command (otherwise the scaffolder prompts for the missing values).',
-      // Read-only: returns a command string and never changes site or server state (the clipboard copy is a best-effort convenience).
-      annotations: { readOnlyHint: true },
+      // Not read-only: the best-effort clipboard write is an observable side effect, even though no site or server state changes.
+      annotations: { readOnlyHint: false },
       inputSchema: {
         type: 'object',
         properties: {

@@ -9,6 +9,7 @@ import { clearDocsCaches, DOCS_DIR } from './lib/docs';
 import { highlightCode } from './lib/highlight.server';
 import { handle as cookieVaryTestHandle } from './demos/cookie-vary-test/routes';
 import { encodeDebugBarGlobals } from './lib/debugBarEncode';
+import { agentDiscoveryLinks } from './lib/wellKnown/agentDiscoveryLinks';
 import { routes } from './routes';
 
 const DEVELOPMENT = process.env.MODE === 'development';
@@ -50,18 +51,6 @@ const handleError: HandleError = ({ error, event, status, message }) => {
 const helloWorld: Handle = async ({ event, resolve }) => {
   const response = await resolve(event);
   response.headers.set('X-Mochi', 'Hello World! :)');
-  return response;
-};
-
-// RFC 8288 Link headers point agents from the homepage to the machine-readable
-// discovery surfaces (API catalog + human docs). Only on '/' so it doesn't
-// pollute every asset/API response.
-const AGENT_DISCOVERY_LINK = '</.well-known/api-catalog>; rel="api-catalog", </llms.txt>; rel="service-doc"';
-const agentDiscoveryLinks: Handle = async ({ event, resolve }) => {
-  const response = await resolve(event);
-  if (event.url.pathname === '/') {
-    response.headers.set('Link', AGENT_DISCOVERY_LINK);
-  }
   return response;
 };
 
