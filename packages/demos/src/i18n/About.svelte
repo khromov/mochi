@@ -41,7 +41,7 @@
     --green-600: #4a7159;
     --green-200: #d6e4d8;
     --green-100: #e8efe5;
-    --font-serif: 'Fraunces', serif;
+    --font-serif: 'Fraunces Variable', Georgia, serif;
   }
   :global(body) {
     margin: 0;
