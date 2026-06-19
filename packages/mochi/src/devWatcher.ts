@@ -8,6 +8,7 @@ import { mochiEvents } from './events';
 import type { MochiFileChangeType } from './events';
 import { logger } from './log';
 import { evictPreprocessCacheEntry } from './preprocessCache';
+import type { MochiI18nWatchHook } from './i18n/wuchale';
 import { extractServeOptions } from './extractServeOptions';
 import { buildPublicUrl } from './proxy';
 import { resolvePublicFiles, registerPublicRoutes } from './publicDir';
@@ -66,6 +67,7 @@ export interface DevWatcherDeps {
   trailingSlashPolicy?: 'never' | 'always';
   shellPath?: string;
   reloadShell?: () => Promise<void>;
+  i18n?: MochiI18nWatchHook;
 }
 
 /**
@@ -98,6 +100,7 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
     trailingSlashPolicy,
     shellPath,
     reloadShell,
+    i18n,
   } = deps;
 
   const liveReloadHandler = (req: Request, srv: Server<undefined>): Response => {
@@ -214,6 +217,56 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
       notifyClients();
     });
   }, 100);
+
+  // i18n catalog edits (`.po`) and watched i18n components live outside the
+  // entry dependency graph, so a generic recompile reports 0 affected pages.
+  // Drive Wuchale to recompile/extract the catalogs to disk, then rebuild every
+  // bundle (catalogs are embedded in both the SSR page modules and the client
+  // islands) and reload every tab.
+  //
+  // Extracting from a component rewrites the `.po` catalogs, which echoes back
+  // as a `'catalog'` change. Wuchale's own source-write guard has a 1s window
+  // that the serialized rebuild can outlast, so we suppress catalog echoes for
+  // a short window *after* a source-driven rebuild finishes — duration
+  // independent, since the echo is processed immediately after.
+  let suppressCatalogEchoUntil = 0;
+  const triggerCatalogReload =
+    i18n &&
+    debounce((filename: string, kind: 'catalog' | 'source') => {
+      const filePath = path.resolve(filename);
+      reloadChain = reloadChain.then(async () => {
+        if (kind === 'catalog' && performance.now() < suppressCatalogEchoUntil) {
+          return; // echo of our own extraction write — already rebuilt
+        }
+        const pageCount = registry.getPageCount();
+        mochiEvents.emit('recompile:start', { trigger: 'i18n', path: filePath, pageCount });
+        const start = performance.now();
+        let summary: { pages: Set<string>; clientBundleCount: number } = { pages: new Set(), clientBundleCount: 0 };
+        let rebuilt = false;
+        try {
+          rebuilt = await i18n.handleChange(filePath);
+          if (rebuilt) {
+            summary = await registry.recompileAll();
+            if (kind === 'source') {
+              suppressCatalogEchoUntil = performance.now() + 1500;
+            }
+          }
+        } catch (e) {
+          logger.warn(`i18n catalog reload failed: ${e instanceof Error ? e.message : e}`);
+        }
+        mochiEvents.emit('recompile:complete', {
+          trigger: 'i18n',
+          path: filePath,
+          pageCount: summary.pages.size,
+          pages: [...summary.pages],
+          clientBundleCount: summary.clientBundleCount,
+          durationMs: performance.now() - start,
+        });
+        if (rebuilt) {
+          notifyClients();
+        }
+      });
+    }, 100);
 
   // The HTML shell is read once at startup and isn't part of any page's Svelte
   // dependency graph, so a generic recompile would report 0 affected pages and
@@ -607,7 +660,12 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
         evictPreprocessCacheEntry(path.resolve(filePath));
         registry.evict(path.resolve(filePath));
       }
-      if (triggerShellReload && shellPath && path.resolve(filePath) === shellPath) {
+      const i18nKind = i18n?.kind(path.resolve(filePath));
+      if (i18nKind && triggerCatalogReload) {
+        // Catalog files and watched i18n components recompile through Wuchale
+        // before the bundle rebuild, instead of the generic recompile path.
+        triggerCatalogReload(filePath, i18nKind);
+      } else if (triggerShellReload && shellPath && path.resolve(filePath) === shellPath) {
         triggerShellReload(filePath);
       } else if (reloadPublic && filePath.startsWith(publicDirRel + path.sep)) {
         logger.info(`Public file ${publicChangeVerb(event)}: ${filePath} — reloading routes`);

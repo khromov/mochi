@@ -39,7 +39,7 @@ import { buildPublicUrl } from './proxy';
 import { apiError, collectHeaderPairs, headResponse, isHtmlResponse, MochiHttpError, withHead } from './utils';
 import type { MochiEvent, MochiEventKind, MochiResolveOptions } from './hooks';
 import { applyResolveOptions, sequence } from './hooks';
-import { setupWuchaleI18n } from './i18n/wuchale';
+import { setupWuchaleI18n, type MochiI18nWatchHook } from './i18n/wuchale';
 import { alternateSlashPattern, trailingSlashRedirect } from './trailingSlash';
 import { resolveWarmupEnabled, markWarmupRequest, isWarmablePattern } from './warmup';
 import { createErrorResponder, DEFAULT_ERROR_PAGE_PATH } from './errors';
@@ -217,8 +217,10 @@ export class Mochi {
     // is registered as a `compile:preprocessors` filter; its locale middleware
     // is composed to the front of the user's handle chain.
     let middleware = options.handle;
+    let i18nWatch: MochiI18nWatchHook | undefined;
     if (options.i18n) {
-      const i18nHandle = await setupWuchaleI18n(options.i18n, { development, projectRoot: process.cwd() });
+      const { handle: i18nHandle, i18n } = await setupWuchaleI18n(options.i18n, { development, projectRoot: process.cwd() });
+      i18nWatch = i18n;
       middleware = middleware ? sequence(i18nHandle, middleware) : i18nHandle;
     }
     const outDir = options.outDir ?? './.mochi';
@@ -1379,6 +1381,7 @@ export class Mochi {
         trailingSlashPolicy,
         shellPath,
         reloadShell,
+        i18n: i18nWatch,
       });
     }
 

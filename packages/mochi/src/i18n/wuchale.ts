@@ -74,13 +74,33 @@ function seedLocale(html: string, locale: string): string {
 }
 
 /**
+ * The dev-mode hook the file watcher uses to keep catalogs hot. `kind()` tells
+ * the watcher which paths to route here — `'catalog'` for files under
+ * `localesDir` (the `.po` sources and generated artifacts) and `'source'` for
+ * the adapters' watched components, or `null` for everything else.
+ * `handleChange()` recompiles/extracts the affected catalogs to disk and
+ * reports whether the SSR/client bundles need rebuilding.
+ */
+export type MochiI18nChangeKind = 'catalog' | 'source';
+
+export interface MochiI18nWatchHook {
+  kind(absPath: string): MochiI18nChangeKind | null;
+  handleChange(absPath: string): Promise<boolean>;
+}
+
+export interface SetupWuchaleI18nResult {
+  handle: Handle;
+  i18n: MochiI18nWatchHook;
+}
+
+/**
  * Wire Wuchale into Mochi. Loads the Wuchale config, generates the Mochi-aware
  * loaders, creates a Wuchale `Hub` (one adapter handler per adapter, shared
  * message index), composes the compile-time transform into the
  * `compile:preprocessors` filter, and returns the per-request locale
- * middleware.
+ * middleware plus a dev-mode catalog-watch hook.
  */
-export async function setupWuchaleI18n(options: MochiI18nOptions, ctx: { development: boolean; projectRoot: string }): Promise<Handle> {
+export async function setupWuchaleI18n(options: MochiI18nOptions, ctx: { development: boolean; projectRoot: string }): Promise<SetupWuchaleI18nResult> {
   const sourceLocale = options.sourceLocale ?? options.locales[0] ?? 'en';
   const configPath = path.resolve(ctx.projectRoot, options.config ?? './wuchale.config.js');
 
@@ -104,9 +124,18 @@ export async function setupWuchaleI18n(options: MochiI18nOptions, ctx: { develop
   }
 
   // 'build' mode: the per-file transform is always active and transform-only,
-  // using the message index seeded from the committed catalogs. Run the
-  // `wuchale` CLI (or `bun run extract`) to (re)extract after adding strings.
+  // using the message index seeded from the committed catalogs. (Wuchale's
+  // 'dev' mode versions its compiled artifacts for Vite HMR, which desyncs
+  // Mochi's own SSR module cache — so we stay on 'build' and drive extraction
+  // ourselves through `extractHub` below.)
   const hub = await Hub.create('build', () => config, ctx.projectRoot);
+
+  // A second handler used only to (re)extract strings from changed components
+  // in dev. 'cli' mode runs the extracting transform and `directVisit` persists
+  // the updated `.po` catalogs; `hub` (build mode) then re-reads them so its
+  // message index — and the compiled catalogs it writes — stay consistent with
+  // what the SSR/client bundles reference.
+  const extractHub = ctx.development ? await Hub.create('cli', () => config, ctx.projectRoot) : null;
 
   // Compose the Wuchale transform into the compile:preprocessors filter,
   // preserving any user-provided filter. The Hub routes each file to the
@@ -127,7 +156,7 @@ export async function setupWuchaleI18n(options: MochiI18nOptions, ctx: { develop
 
   logger.info(`i18n: wuchale ready — locales [${options.locales.join(', ')}], source '${sourceLocale}'`);
 
-  return async ({ event, resolve }) => {
+  const handle: Handle = async ({ event, resolve }) => {
     // Locale resolution is only meaningful for page/api requests, which run
     // inside the request context. Assets, fallback and error responses run
     // outside it (so `getRequestContext()` would throw) and never need a locale.
@@ -138,4 +167,85 @@ export async function setupWuchaleI18n(options: MochiI18nOptions, ctx: { develop
     event.locals.locale = locale;
     return resolve(event, { transformPage: ({ html }) => seedLocale(html, locale) });
   };
+
+  // Watched source globs (the adapters' `files`), normalized the same way
+  // Wuchale's own `globConfToArgs` does, so `owns()` matches the exact set of
+  // components Wuchale extracts from. Matched relative to the project root.
+  const sourcePatterns: string[] = [];
+  for (const adapter of Object.values(config.adapters) as { files?: unknown }[]) {
+    const files = adapter.files;
+    if (typeof files === 'string') {
+      sourcePatterns.push(files);
+    } else if (Array.isArray(files)) {
+      sourcePatterns.push(...files.filter((f): f is string => typeof f === 'string'));
+    } else if (files && typeof files === 'object') {
+      const include = (files as { include?: unknown }).include;
+      if (typeof include === 'string') {
+        sourcePatterns.push(include);
+      } else if (Array.isArray(include)) {
+        sourcePatterns.push(...include.filter((f): f is string => typeof f === 'string'));
+      }
+    }
+  }
+  const sourceGlobs = sourcePatterns.map((p) => new Bun.Glob(p));
+
+  // The source-locale catalog; re-reading it pulls every locale back into `hub`
+  // (the owner's `loadStorage` loads all locales) after an extraction.
+  const sourcePoPath = path.join(localesDir, `${sourceLocale}.po`);
+
+  const isCatalogPath = (absPath: string): boolean => {
+    const abs = path.resolve(absPath);
+    return abs === localesDir || abs.startsWith(localesDir + path.sep);
+  };
+  const isSourcePath = (absPath: string): boolean => {
+    const rel = path.relative(ctx.projectRoot, path.resolve(absPath));
+    if (rel.startsWith('..')) {
+      return false;
+    }
+    const relPosix = rel.split(path.sep).join('/');
+    return sourceGlobs.some((g) => g.match(relPosix));
+  };
+
+  const i18n: MochiI18nWatchHook = {
+    kind(absPath) {
+      // Source globs win over `localesDir` so a watched component that happens
+      // to live under the locales dir still extracts; in practice they're
+      // disjoint (components vs `.po`/generated artifacts).
+      if (isSourcePath(absPath)) {
+        return 'source';
+      }
+      return isCatalogPath(absPath) ? 'catalog' : null;
+    },
+    async handleChange(absPath) {
+      const abs = path.resolve(absPath);
+      const read = () => Bun.file(abs).text();
+      if (isSourcePath(abs)) {
+        // A watched i18n component changed. Re-extract across the adapters'
+        // source files and persist the updated `.po` catalogs (`directVisit`
+        // saves + compiles). Then re-read them into the build-mode `hub` so its
+        // message index matches the catalogs the SSR/client bundles will embed
+        // when we rebuild below. Without an extract hub (production) there is
+        // nothing to do here.
+        if (!extractHub) {
+          return false;
+        }
+        await extractHub.directVisit(false, false, true);
+        await hub.onFileChange(sourcePoPath, () => Bun.file(sourcePoPath).text());
+        return true;
+      }
+      // A catalog file (`.po`) or generated artifact changed. `onFileChange`
+      // re-reads the catalog and recompiles it to disk, returning the set of
+      // invalidated compiled modules.
+      const info = await hub.onFileChange(abs, read);
+      // `undefined` → `config.dev` is off; `sourceTriggered` → this write came
+      // from our own extraction (avoid a reload loop); empty `invalidate` →
+      // a confUpdate / compiled-catalog self-write that needs no page reload.
+      if (!info || info.sourceTriggered || info.invalidate.size === 0) {
+        return false;
+      }
+      return true;
+    },
+  };
+
+  return { handle, i18n };
 }
