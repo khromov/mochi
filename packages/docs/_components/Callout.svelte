@@ -27,10 +27,11 @@
     padding: 0.6rem 0.9rem;
     border-left: 3px solid;
     border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    color: var(--text);
   }
 
   .callout :global(.callout-icon) {
-    margin-top: 0.15rem;
+    margin-top: 0.35rem;
     flex-shrink: 0;
   }
 
@@ -66,26 +67,35 @@
   }
 
   .callout-warning {
-    background: var(--badge-warning-bg);
-    color: var(--badge-warning-text);
+    background: color-mix(in srgb, var(--badge-warning-bg) 45%, var(--surface));
     border-left-color: var(--badge-warning-text);
+  }
+  .callout-warning :global(.callout-icon) {
+    color: var(--badge-warning-text);
+    margin-top: 0.38rem;
   }
 
   .callout-info {
-    background: var(--badge-info-bg);
-    color: var(--badge-info-text);
+    background: color-mix(in srgb, var(--badge-info-bg) 45%, var(--surface));
     border-left-color: var(--badge-info-text);
+  }
+  .callout-info :global(.callout-icon) {
+    color: var(--badge-info-text);
   }
 
   .callout-danger {
-    background: var(--badge-danger-bg);
-    color: var(--badge-danger-text);
+    background: color-mix(in srgb, var(--badge-danger-bg) 45%, var(--surface));
     border-left-color: var(--badge-danger-text);
+  }
+  .callout-danger :global(.callout-icon) {
+    color: var(--badge-danger-text);
   }
 
   .callout-tip {
-    background: var(--badge-tip-bg);
-    color: var(--badge-tip-text);
+    background: color-mix(in srgb, var(--badge-tip-bg) 45%, var(--surface));
     border-left-color: var(--badge-tip-text);
+  }
+  .callout-tip :global(.callout-icon) {
+    color: var(--badge-tip-text);
   }
 </style>
