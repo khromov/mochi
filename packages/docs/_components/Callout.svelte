@@ -43,15 +43,25 @@
     margin-bottom: 0;
   }
 
-  .callout-body :global(code) {
+  /* Inline code only — `:not(pre) > code` excludes fenced code blocks, whose
+     `pre` already carries the dark `--code-bg`; tinting their `<code>` here
+     would paint a grey overlay on top of it. */
+  .callout-body :global(:not(pre) > code) {
     background: rgb(0 0 0 / 0.06);
     padding: 0.05rem 0.3rem;
     border-radius: 4px;
     font-size: 0.92em;
   }
 
-  :global(html.dark) .callout-body :global(code),
-  :global(html[data-theme='dark']) .callout-body :global(code) {
+  /* Mirror the dark tint into both dark paths: the `prefers-color-scheme`
+     (auto) media query and the explicit `data-theme='dark'` opt-in. */
+  @media (prefers-color-scheme: dark) {
+    :global(html:not([data-theme='light'])) .callout-body :global(:not(pre) > code) {
+      background: rgb(255 255 255 / 0.08);
+    }
+  }
+
+  :global(html[data-theme='dark']) .callout-body :global(:not(pre) > code) {
     background: rgb(255 255 255 / 0.08);
   }
 

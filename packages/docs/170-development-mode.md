@@ -118,6 +118,14 @@ mochiEvents.setHandler('docs:cache-clear', 'file:change', ({ path }) => {
 
 **Use `setHandler` here, not `.on()`.** In dev, the module holding this handler can be re-run when Mochi recompiles — and each `.on()` call would leave behind another duplicate listener firing on every event. `setHandler` registers by name, so re-running just replaces the previous one.
 
+```ts
+// Wrong — piles up a new listener on every recompile
+mochiEvents.on('file:change', ({ path }) => { /* … */ });
+
+// Right — keyed by name, so re-running replaces the old handler
+mochiEvents.setHandler('docs:cache-clear', 'file:change', ({ path }) => { /* … */ });
+```
+
 </Callout>
 
 In production (`development: false`) the watcher never starts and `file:change` never emits. See `events` for the full payload reference.
