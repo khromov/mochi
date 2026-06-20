@@ -30,5 +30,3 @@ Use these for realtime UI on top of an already-rendered page; do **NOT** reach f
 - **Server islands** (`mochi:defer`) load slow or personalized fragments out-of-band after the shell ships. The rest of the page renders immediately; the island fetches itself once the browser sees the placeholder.
 - **Visible hydration** (`mochi:hydrate:visible`) keeps the initial JS payload small without progressive HTML.
 - **Shared HTTP cache** (Cloudflare, CloudFront, Fastly, Varnish, nginx) in front of the origin makes render time irrelevant for the cacheable common case. Server islands can stay uncached behind a cached shell — see `Cache`.
-
-Do **NOT** add an artificial loading screen to mask slow `serverProps`; instead, move the slow fetch into a `mochi:defer` island so the rest of the page paints immediately.

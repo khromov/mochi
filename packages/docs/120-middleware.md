@@ -4,6 +4,10 @@ slug: middleware
 description: 'Intercept and transform requests and responses using SvelteKit-style handle functions.'
 ---
 
+<script>
+  import Callout from './_components/Callout.svelte';
+</script>
+
 ## Middleware (hooks)
 
 Middleware uses SvelteKit-style `Handle` functions registered via `Mochi.serve({ handle })`. Each handle receives `{ event, resolve }`, mutates `event` as needed, calls `resolve(event)` to continue the chain, and returns the resulting `Response`.
@@ -24,9 +28,11 @@ export const auth: Handle = async ({ event, resolve }) => {
 };
 ```
 
-Do **NOT** return without calling `resolve(event)` when you intend the request to continue; instead, always either short-circuit with your own `Response` or `return resolve(event)`.
+<Callout type="warning">
 
-Do **NOT** call `resolve(event)` without `await` (or `return`) when you need to inspect or post-process the response; instead, `const response = await resolve(event)` and return `response`.
+**Await `resolve()` to post-process responses.** When you need to inspect or modify the response, use `const response = await resolve(event)` and return the response explicitly. Without `await`, your function completes before post-processing finishes, causing silent data loss and race conditions.
+
+</Callout>
 
 ### `event.locals`
 
@@ -88,8 +94,6 @@ await Mochi.serve({
 });
 ```
 
-Do **NOT** assign multiple handles to `handle` directly; instead, wrap them in `sequence()`.
-
 ### `resolve(event, opts)`
 
 `resolve` accepts an options bag for post-processing the response:
@@ -138,7 +142,11 @@ sequence(auth, compress({ methods: ['gzip'] }));
 
 `compress()` is a no-op in development so the debug bar can render the uncompressed HTML response. In production it always adds `Vary: Accept-Encoding`, and compresses when the response carries a compressible `Content-Type` (`text/*`, `application/json`, `application/javascript`, `application/xml`, `application/manifest+json`, `application/ld+json`, `image/svg+xml`). Responses that already declare a `Content-Encoding` pass through untouched. Static framework assets (JS/CSS bundles) and the framework error page also flow through `handle`, so the same `compress()` covers them — that's why other body-touching middleware (auth, etc.) should branch on `event.kind === 'asset'` if they need to skip framework bundles.
 
-Do **NOT** keep `compress()` in front of your CDN if it already brotli/gzips at the edge; instead, drop it or pass `methods: ['gzip']` to skip the per-request brotli cost.
+<Callout type="warning">
+
+**Verify CDN compression headers reach your server.** If your CDN compresses at the edge but strips the `Content-Encoding` header before forwarding to the origin, `compress()` will compress again—wasting CPU and bandwidth. Either disable `compress()` when the CDN is in front, or use `methods: ['gzip']` to skip expensive per-request brotli.
+
+</Callout>
 
 ### `noCache`
 

@@ -18,8 +18,6 @@ import { isServer, isBrowser, isDev } from 'mochi-framework';
 
 `mochi-framework` resolves to one of two virtual modules at compile time — server builds export `isServer = true`, client bundles export `isBrowser = true`. The values are literal booleans, so `if (isBrowser) { … }` blocks dead-code-eliminate out of the opposite bundle.
 
-Do **NOT** read `process.env.NODE_ENV` or `typeof window` to detect environment; instead, import these constants — they survive bundling intact.
-
 ### `isServer`
 
 `true` during server-side rendering, `false` in the browser.

@@ -4,6 +4,10 @@ slug: events
 description: 'Subscribe to framework lifecycle events like requests, WebSocket activity, and builds via a mitt emitter.'
 ---
 
+<script>
+  import Callout from './_components/Callout.svelte';
+</script>
+
 ## Events
 
 Mochi exposes a process-wide [`mitt`](https://www.npmjs.com/package/mitt) emitter named `mochiEvents`. Subscribe from application code to feed metrics, audit logs, custom log destinations, or anything else that needs a structured view of server activity.
@@ -38,7 +42,11 @@ mochiEvents.on('request', ({ method, path, status, duration }) => {
 });
 ```
 
-Handlers run synchronously. Do **NOT** `await` long-running work inside a handler; instead, fire-and-forget to your metrics or log client so the next emission is not stalled.
+<Callout type="warning">
+
+**Keep async work out of handlers.** Handlers run synchronously and block the event emission chain; offload metrics, logging, and other I/O to a fire-and-forget async task so downstream handlers are not delayed.
+
+</Callout>
 
 ### `mochiEvents.setHandler`
 
@@ -54,8 +62,6 @@ mochiEvents.setHandler('metrics:request', 'request', ({ status, duration }) => {
 
 Namespace `name` (`metrics:request`, not `request`) so unrelated subsystems do not silently evict each other.
 
-Do **NOT** mix `setHandler` with `mochiEvents.off()` for the same name; instead, call `setHandler(name, type, noop)` or rely on a fresh `setHandler(name, …)` to swap the handler — the name table is maintained only by `setHandler`.
-
 ### `hasSubscribers`
 
 Use `hasSubscribers(name)` to skip payload construction when nobody is listening:
@@ -67,8 +73,6 @@ if (hasSubscribers('compile:error')) {
   mochiEvents.emit('compile:error', expensivePayload());
 }
 ```
-
-Do **NOT** wrap every emission in `hasSubscribers`; instead, reach for it only when the payload involves loops, allocations, or stack capture. The built-in events emit unconditionally — their object literals are below noise.
 
 ### `requestId` correlation
 
@@ -89,7 +93,11 @@ Mochi.serve({
 });
 ```
 
-Do **NOT** enable `proxy.requestIdHeader` for traffic you do not control; instead, leave it unset so the framework generates an id with `Bun.randomUUIDv7()` — clients can spoof any header, smearing log lines for unrelated requests together.
+<Callout type="danger">
+
+**Only set `proxy.requestIdHeader` for traffic you fully control.** Clients can spoof headers; if you trust untrusted traffic, attacker-controlled ids will correlate unrelated requests together in logs, breaking trace correlation.
+
+</Callout>
 
 ### Event reference
 
@@ -351,8 +359,6 @@ Emitted by `MochiCache` — see [Subscribing to cache events](/docs/cache#subscr
 ### Custom events
 
 `mochiEvents` is a plain mitt emitter — `emit` your own keys on it for quick experiments. Custom keys are absent from `MochiEventMap`, so handlers and emit sites lose typing.
-
-Do **NOT** use `mochiEvents` for application events you own; instead, construct a separate emitter you control so the typed map stays accurate to the framework's surface.
 
 ### Built-in subscribers
 

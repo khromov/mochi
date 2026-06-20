@@ -27,8 +27,6 @@ description: 'Progressively enhance HTML forms to submit via fetch when JavaScri
 
 Place the form inside a hydrated island (`mochi:hydrate`, `mochi:hydrate:visible`, or `mochi:defer mochi:hydrate`). When hydration is skipped the attachment never runs and the form falls back to a native HTML POST — that is the progressive-enhancement contract.
 
-Do **NOT** call `enhance()` outside a hydrated island; instead, mark the surrounding component with `mochi:hydrate*` so the attachment can attach in the browser.
-
 `enhance` is a factory: call it as `{@attach enhance()}` even with no options. Attachments require Svelte 5.29+.
 
 ### Wire format
@@ -175,8 +173,6 @@ Returning a `Response` directly from an action bypasses the JSON envelope on enh
 **Wrap data in `success()` to round-trip it to the client.** A plain return like `return { username }` strips the data on the enhanced path and the result handler receives an empty `data` object. This matches the non-enhanced behavior. Always use `success()` when the client needs the returned data.
 
 </Callout>
-
-Do **NOT** return a plain object from an action when the enhanced client needs `data`; instead, wrap it with `success()` (or `fail()` for errors).
 
 ### deserialize
 

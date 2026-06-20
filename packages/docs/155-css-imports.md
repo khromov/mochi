@@ -37,8 +37,6 @@ A failed CSS import (missing package, malformed file) surfaces as a `css-bundle-
 
 </Callout>
 
-Do **NOT** load third-party stylesheets via runtime `<link>` tags in the shell when the asset ships with an npm package; instead, import it side-effect-style so it goes through the bundler with the rest of your CSS.
-
 ### Component-scoped `<style>` blocks
 
 `<style>` inside a `.svelte` file is handled by the Svelte compiler — Mochi extracts the compiled CSS, hashes it, and serves it from `/_mochi/css/<component>-<hash>.css`. This path is independent of side-effect CSS imports and applies to every component the page renders.
@@ -54,7 +52,11 @@ Do **NOT** load third-party stylesheets via runtime `<link>` tags in the shell w
 </style>
 ```
 
-Do **NOT** import the same stylesheet from both a `<style>` block and a side-effect `import`; instead, pick one — `<style>` for component-local rules, `import './foo.css'` for shared/global stylesheets.
+<Callout type="warning">
+
+**Load each stylesheet through one mechanism.** Importing the same CSS from both a `<style>` block and a side-effect `import` ships it twice. Use `<style>` for component-local rules and `import './foo.css'` for shared/global stylesheets.
+
+</Callout>
 
 ### Variable fonts
 

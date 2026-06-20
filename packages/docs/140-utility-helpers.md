@@ -34,8 +34,6 @@ import { apiError } from 'mochi-framework';
 return apiError(400, 'Missing id');
 ```
 
-Do **NOT** call `error()` from inside `Mochi.api()` to return a 4xx; instead, return `apiError(status, message)` so the handler stays a normal function.
-
 ### Form-action helpers
 
 Used as return values from a `Mochi.page` action. See [Defining routes](defining-routes) and [Progressive enhancement](use-enhance) for the full action lifecycle.
@@ -63,5 +61,3 @@ import { redirect } from 'mochi-framework';
 
 return redirect(303, '/dashboard');
 ```
-
-Do **NOT** return a plain object from an action when the enhanced client needs `data`; instead, wrap it with `success()` (or `fail()` for errors) so the result round-trips through `devalue`.

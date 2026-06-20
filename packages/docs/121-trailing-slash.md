@@ -4,6 +4,10 @@ slug: trailing-slash
 description: 'Enforce a consistent trailing-slash policy across all routes with automatic redirects.'
 ---
 
+<script>
+  import Callout from './_components/Callout.svelte';
+</script>
+
 ## Trailing slash
 
 The `trailingSlash` option on `Mochi.serve()` enforces a consistent trailing-slash policy across every user route. The framework registers each route under both `/foo` and `/foo/`, then redirects requests to the non-canonical form.
@@ -61,7 +65,11 @@ trailingSlashIt('/'); // '/'
 
 It is isomorphic — import it in SSR pages, hydrated islands, and plain `.ts` modules alike.
 
-Do **NOT** pass a URL that carries a query string or `#fragment` — the slash lands at the very end, after the fragment. Instead, slash the path segment alone and re-attach the rest:
+<Callout type="warning">
+
+**Separate path from query and fragment.** `trailingSlashIt()` appends the slash at the string's end, not before query parameters or fragments. Always split on `?` and `#`, apply `trailingSlashIt()` to the path alone, then re-attach the rest.
+
+</Callout>
 
 ```ts
 const [path, hash] = slug.split('#');

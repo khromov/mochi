@@ -60,8 +60,6 @@ await Mochi.serve({
 <h1>{params.slug}</h1>
 ```
 
-Do **NOT** thread `params` through props from `serverProps`; instead, call `getRequestContext()` directly in the component or any helper it imports — the context is request-scoped via `AsyncLocalStorage`.
-
 ### `Mochi.page`
 
 Register an SSR Svelte page via `Mochi.page(componentPath, { serverProps?, actions? })`. `componentPath` is resolved relative to the project root.
@@ -107,7 +105,11 @@ await Mochi.serve({
 
 `actions` is a `MochiFormActions` map handling POST submissions to the route. See `Mochi.page actions` for the action contract.
 
-Do **NOT** return a prop named `form` from `serverProps` when `actions` is declared; the name is reserved for the form action result and the route will throw at render time.
+<Callout type="warning">
+
+**Avoid `form` as a prop name.** When `actions` is declared, `form` is reserved for the action result. Return any other prop name from `serverProps` to avoid a runtime error.
+
+</Callout>
 
 ### `Mochi.api`
 
@@ -125,8 +127,6 @@ await Mochi.serve({
 ```
 
 Throw `MochiHttpError` (via `error(status, message)`) for non-2xx responses; uncaught throws become `500 Internal Server Error`. See `API routes` for the full error contract.
-
-Do **NOT** render HTML from `Mochi.api`; instead, use `Mochi.page` for HTML routes — API routes never go through the error page or `handleError`.
 
 ### `Mochi.ws`
 
@@ -170,7 +170,11 @@ await Mochi.serve({
 });
 ```
 
-Do **NOT** forget `onClose` cleanup when you allocate per-connection resources; instead, register a teardown so timers/subscriptions don't leak when the client disconnects.
+<Callout type="warning">
+
+**Register `onClose` for per-connection resources.** Timers and subscriptions allocated per connection leak when a client disconnects unless you pair them with an `onClose` teardown.
+
+</Callout>
 
 ### `Mochi.file`
 

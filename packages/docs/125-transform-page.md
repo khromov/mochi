@@ -65,6 +65,10 @@ When `sequence()` chains multiple handlers, transforms run inner-most first and 
 
 <Callout type="warning">
 
-Do **NOT** use `transformPage` for static content that belongs in the HTML shell; instead, edit `src/shell.html` (or the default shell) so the markup ships without per-request work. Reserve transforms for values that genuinely depend on the request.
+<Callout type="info">
+
+**Reserve `transformPage` for request-dependent values.** Static markup belongs in `src/shell.html` (or the default shell) so it ships without per-request work; use transforms only for values that genuinely depend on the request.
+
+</Callout>
 
 </Callout>

@@ -21,10 +21,6 @@ Pass an options object to start loading before the element enters the viewport. 
 
 The default `rootMargin` is `'0px'` — hydration fires the moment the island's first child crosses the viewport edge. Once intersection fires the observer disconnects, the component bundle imports, the deferred CSS link is appended to `<head>`, and Svelte hydrates the existing SSR markup.
 
-Do **NOT** assume the island is fully styled before hydration; instead, accept that lazy islands flash unstyled until their CSS link loads. Bundle critical above-the-fold styles into the page shell or use `mochi:hydrate` for anything that must look right pre-hydration.
-
-Do **NOT** nest `mochi:hydrate:visible` inside another hydratable island; instead, hoist it to the page level — nested hydration directives are rejected at compile time.
-
 ### Combining with `mochi:defer`
 
 Stack `mochi:defer mochi:hydrate:visible` to defer both rendering and hydration: the placeholder ships with the page, the SSR HTML streams in when the deferred fetch resolves, and the JavaScript loads only after the now-rendered island scrolls into view.

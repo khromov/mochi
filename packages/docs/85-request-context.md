@@ -104,7 +104,7 @@ import { getRequestContext } from 'mochi-framework';
 const { url, params, cookies, locals, request, requestId } = getRequestContext();
 ```
 
-Do **NOT** call `getRequestContext()` or access `params` / `locals` on the client; they throw. Use `isServer` to guard server-only branches. `url` and `cookies` work on both sides.
+`url` and `cookies` work on both server and client; `getRequestContext()`, `params`, and `locals` are server-only and throw in the browser, so guard those branches with `isServer`.
 
 The context also carries `isWarmup` — `true` when the request was issued by [route warmup](/docs/serve-options/#route-warmup) at startup, not a real client. Guard side effects in `serverProps` that shouldn't fire for synthetic warmup hits:
 

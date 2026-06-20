@@ -4,6 +4,10 @@ slug: error-handling
 description: 'Configure a custom error page and control how uncaught errors are rendered to the client.'
 ---
 
+<script>
+  import Callout from './_components/Callout.svelte';
+</script>
+
 ## Error handling
 
 Mochi renders an HTML error page for any uncaught error escaping a page render — top-level SSR throws, `error(status, ...)` from `serverProps` or actions, malformed form bodies, unknown form actions, and unmatched routes. API routes are not affected; they return a JSON envelope. Island-level boundaries are scoped to hydratable islands — see `Error boundaries`.
@@ -21,8 +25,6 @@ await Mochi.serve({
   },
 });
 ```
-
-Do **NOT** rely on `<svelte:boundary>` to catch a top-level page throw; instead, let it surface to `errorPage` — Mochi does not wrap the page root in a boundary. Author your own `<svelte:boundary>` only when a section should degrade gracefully.
 
 ### `errorPage`
 
@@ -83,7 +85,11 @@ Return one of:
 
 `error` is `null` when the condition didn't originate from a throw (unmatched routes, unknown form actions). Inspect it before forwarding so benign 4xx cases don't page on-call.
 
-Do **NOT** use `handleError` for API routes; instead, handle API failures inside the `Mochi.api` handler — `handleError` is never called for `Mochi.api` responses.
+<Callout type="warning">
+
+**API routes bypass `handleError`.** The `handleError` hook only fires for page routes. For `Mochi.api` handlers, manage failures directly with `MochiHttpError` or `apiError()` inside the route logic.
+
+</Callout>
 
 If the hook itself throws, Mochi logs the secondary error and renders the error page with the original `status` and `message`.
 
@@ -113,7 +119,11 @@ await Mochi.serve({
 
 Uncaught throws inside a `Mochi.api` handler are coerced to `500 Internal Server Error` with a generic message; the original error and stack are logged via `log.error` and never leaked to the client. See `API routes` for the full contract.
 
-Do **NOT** throw a bare `Error` to signal a status code; instead, call `error(status, message)` so the framework returns the typed envelope.
+<Callout type="warning">
+
+**Use `error(status, message)` to signal status codes.** A bare `throw new Error()` is coerced to a generic 500; only `error(status, message)` returns the typed error envelope the framework expects.
+
+</Callout>
 
 ### Fallback behaviour
 
