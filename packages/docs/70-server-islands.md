@@ -76,7 +76,11 @@ Provide fallback children when using `:visible` so the user has something to scr
 
 Props are serialized with `devalue` — see [Passing props to islands](island-props/) for the full list of supported types. Server islands additionally HMAC-sign the payload and pass it as a query parameter; if the signed props exceed URL length limits (~1800 bytes), a warning is emitted.
 
-Do **NOT** ship large blobs through server-island props; instead, fetch the data inside the component using `getRequestContext()`. Signed-prop URLs over 1800 chars trigger a runtime warning.
+<Callout type="warning">
+
+**Fetch data inside islands, not through props.** Large data blobs passed as props inflate the signed URL until it trips a runtime warning. Use `getRequestContext()` inside the island component to fetch data server-side instead.
+
+</Callout>
 
 ### Signing key
 
@@ -99,4 +103,8 @@ bunx mochi-framework generate-key
 
 </Callout>
 
-Do **NOT** commit `MOCHI_KEY` to version control; instead, supply it through your platform's secret store. Generate one with `openssl rand -base64 32 | tr '+/' '-_' | tr -d '='`.
+<Callout type="danger">
+
+**Never commit `MOCHI_KEY`.** It signs server-island prop URLs; leaking it lets attackers forge them. Supply it via your platform's secret store and generate one with `bunx mochi-framework generate-key`.
+
+</Callout>

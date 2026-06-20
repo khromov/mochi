@@ -4,6 +4,10 @@ slug: server-sent-events
 description: 'Push real-time updates to clients over a single HTTP connection with Mochi.sse().'
 ---
 
+<script>
+  import Callout from './_components/Callout.svelte';
+</script>
+
 ## Server-Sent Events
 
 Register an SSE stream with `Mochi.sse(handler)`; the handler receives a `MochiSseStream` and the underlying `Request`, and runs once per client connection.
@@ -33,8 +37,6 @@ Push a single SSE frame to the client. `data` is a string; `options` accepts `ev
 stream.send(JSON.stringify({ ok: true }), { event: 'tick', id: '42' });
 ```
 
-Do **NOT** pass non-string payloads; instead, serialize objects with `JSON.stringify` before calling `send`.
-
 ### `stream.close()`
 
 End the stream from the server side. The connection terminates and any registered `onClose` callbacks fire.
@@ -44,7 +46,11 @@ stream.send('done');
 stream.close();
 ```
 
-Do **NOT** leave long-running streams open without a terminal `close()` when the work is finished; instead, call `close()` so the client stops listening and resources release.
+<Callout type="warning">
+
+**Call `close()` when an SSE stream is finished.** Leaving a long-running stream open keeps the client listening and holds resources. Call `close()` to release them and stop the client.
+
+</Callout>
 
 ### `stream.onClose(callback)`
 
@@ -55,7 +61,16 @@ const interval = setInterval(() => stream.send('ping'), 1000);
 stream.onClose(() => clearInterval(interval));
 ```
 
-Do **NOT** start timers, intervals, or external subscriptions inside an SSE handler without registering a matching `onClose` cleanup; instead, pair every long-lived resource with `stream.onClose(...)` so a disconnected client doesn't leak it.
+<Callout type="warning">
+
+**Pair every long-lived resource with `onClose`.** A timer or subscription with no matching cleanup leaks on each disconnect:
+
+```ts
+const sub = bus.subscribe(onTick);
+stream.onClose(() => sub.unsubscribe());
+```
+
+</Callout>
 
 ### Events
 

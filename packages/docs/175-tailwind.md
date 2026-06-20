@@ -128,13 +128,15 @@ await compileTailwind({
 }
 ```
 
-Do **NOT** static-import `mochi-framework/tailwind` and gate only the call site with `process.env.MODE === 'development'` — the runtime branch is skipped, but the static import already loaded oxide. Instead, put the dynamic `import()` inside the guard so the native binding is never resolved in production.
+<Callout type="info">
+
+**Guard the `mochi-framework/tailwind` import dynamically.** A static import loads the oxide native binding even when the call site is gated by `MODE`. Put the `import()` inside the development guard so the binding is never resolved in production.
+
+</Callout>
 
 ### Preflight and resets
 
 The example imports `tailwindcss/utilities.css` **without** `layer(utilities)`. If your shell's CSS already ships an unlayered universal reset (e.g. `*, *::before, *::after { margin: 0; padding: 0 }`), wrapping utilities in `layer(utilities)` lets the unlayered reset clobber `.p-6`, `.mt-2`, etc., because unlayered styles always beat layered ones in the cascade.
-
-Do **NOT** wrap utilities in `layer(utilities)` when your shell ships an unlayered reset; instead, leave them unlayered so selector specificity wins.
 
 The example also skips Tailwind's preflight so the stylesheet doesn't reset unrelated UI on pages that already have their own resets. The cost is that user-agent defaults leak through — `<button>` keeps its rounded macOS pill shape and clobbers utilities like `rounded-lg` or `bg-transparent`.
 

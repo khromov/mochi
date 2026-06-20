@@ -8,8 +8,6 @@ description: 'Hydratable islands are automatically wrapped in svelte:boundary so
 
 Mochi auto-wraps every `mochi:hydrate` and `mochi:hydrate:visible` island in `<svelte:boundary>`. A throw inside one island no longer takes down the page render — the failed island is replaced by a `<mochi-island-failure>` stub and the rest of the page continues. No opt-in, no configuration.
 
-Do **NOT** assume Mochi wraps your page in a boundary; instead, author `<svelte:boundary>` yourself where you want graceful degradation.
-
 ### What's wrapped
 
 - `mochi:hydrate` — wrapped.
@@ -48,8 +46,6 @@ Mochi passes `transformError` to `render()` and `hydrate()`, which is what makes
   <SomePieceThatMightThrow />
 </svelte:boundary>
 ```
-
-Do **NOT** rely on a bare `<svelte:boundary>` outside Mochi to catch SSR throws; instead, mount it inside a Mochi-rendered tree so `transformError` flows through.
 
 ### `island:error` event
 

@@ -4,6 +4,10 @@ slug: websocket-routes
 description: 'Register WebSocket endpoints with Mochi.ws() and handle upgrade, open, message, close, and drain events.'
 ---
 
+<script>
+  import Callout from './_components/Callout.svelte';
+</script>
+
 ## WebSocket routes
 
 `Mochi.ws(handlers)` registers a WebSocket endpoint backed by Bun's `ServerWebSocket`. The handler map carries five callbacks — `upgrade`, `open`, `message`, `close`, `drain` — and exposes Bun's pub/sub primitives (`ws.subscribe`, `ws.publish`, `ws.unsubscribe`) on the socket.
@@ -56,7 +60,11 @@ await Mochi.serve({
 });
 ```
 
-Do **NOT** authenticate inside `message` and silently drop messages from unauthenticated sockets; instead, reject the upgrade in `upgrade` so the client never establishes the connection.
+<Callout type="warning">
+
+**Reject unauthenticated sockets in `upgrade`, not `message`.** Authenticating inside `message` and dropping frames still lets the connection establish. Return `false` from `upgrade` so the client never connects.
+
+</Callout>
 
 ### `open`
 
@@ -78,7 +86,11 @@ message(ws, message) {
 }
 ```
 
-Do **NOT** run long synchronous work or unbounded `await` chains inside `message`; instead, hand work off to a queue or `setImmediate` — the callback is on the connection's read path and blocks subsequent frames.
+<Callout type="warning">
+
+**Keep `message` fast.** Slow work inside `message` holds up the next message from the same socket. Hand long tasks off to a queue or background task so the handler returns quickly.
+
+</Callout>
 
 ### `close`
 
@@ -89,8 +101,6 @@ close(ws, code, reason) {
   ws.unsubscribe('chat');
 }
 ```
-
-Do **NOT** call `ws.send` or `ws.publish` from inside `close` (or any time after the socket has closed); instead, treat `close` as terminal — sends to a closed socket throw and pub/sub from a closed socket is a no-op.
 
 ### `drain`
 
@@ -118,8 +128,6 @@ Mochi.ws<{ userId: string }>({
 });
 ```
 
-Do **NOT** write to the `__mochi*` fields on `ws.data`; instead, keep your own values under the `user` shape returned from `upgrade`.
-
 ### Pub/sub
 
 Every socket exposes Bun's pub/sub primitives: `ws.subscribe(topic)`, `ws.publish(topic, data)`, `ws.unsubscribe(topic)`. To broadcast from outside a handler, capture the `server` returned by `Mochi.serve()` and call `server.publish(topic, data)`.
@@ -133,7 +141,11 @@ message(ws, msg) {
 },
 ```
 
-Do **NOT** assume `ws.publish` echoes back to the sender; instead, call `ws.send` alongside `ws.publish` if the publisher should also receive the message.
+<Callout type="info">
+
+**`ws.publish` does not echo to the sender.** It delivers only to other subscribers. Call `ws.send` alongside `ws.publish` if the publisher should also receive the message.
+
+</Callout>
 
 ### Lifecycle events
 
