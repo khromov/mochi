@@ -120,10 +120,14 @@ mochiEvents.setHandler('docs:cache-clear', 'file:change', ({ path }) => {
 
 ```ts
 // Wrong — piles up a new listener on every recompile
-mochiEvents.on('file:change', ({ path }) => { /* … */ });
+mochiEvents.on('file:change', ({ path }) => {
+  /* … */
+});
 
 // Right — keyed by name, so re-running replaces the old handler
-mochiEvents.setHandler('docs:cache-clear', 'file:change', ({ path }) => { /* … */ });
+mochiEvents.setHandler('docs:cache-clear', 'file:change', ({ path }) => {
+  /* … */
+});
 ```
 
 </Callout>
