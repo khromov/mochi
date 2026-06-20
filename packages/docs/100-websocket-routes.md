@@ -60,7 +60,7 @@ await Mochi.serve({
 });
 ```
 
-<Callout type="danger">
+<Callout type="warning">
 
 **Reject unauthenticated sockets in `upgrade`, not `message`.** Authenticating inside `message` and dropping frames still lets the connection establish. Return `false` from `upgrade` so the client never connects.
 
@@ -88,7 +88,7 @@ message(ws, message) {
 
 <Callout type="warning">
 
-**Defer heavy work off the read path.** Synchronous operations or unbounded `await` chains inside `message` block subsequent frame processing. Use `setImmediate` or a queue to offload to another tick.
+**Keep `message` fast.** Slow work inside `message` holds up the next message from the same socket. Hand long tasks off to a queue or background task so the handler returns quickly.
 
 </Callout>
 
@@ -101,12 +101,6 @@ close(ws, code, reason) {
   ws.unsubscribe('chat');
 }
 ```
-
-<Callout type="danger">
-
-**Complete sends before close.** Calls to `ws.send` or `ws.publish` inside `close` throw or silently no-op — pub/sub silently discards data. Finish all comms before the socket closes.
-
-</Callout>
 
 ### `drain`
 

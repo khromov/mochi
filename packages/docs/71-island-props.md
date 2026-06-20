@@ -117,6 +117,6 @@ The framework appends one read-only prop to every island invocation. Destructure
 
 - `isHydratable` — `true` when the call site uses `mochi:hydrate`, `mochi:hydrate:visible`, or `mochi:defer mochi:hydrate`. Undefined for pure SSR-only invocations and for bare `mochi:defer`.
 
-`isHydratable` is an input the framework owns. See `Selective hydration with mochi:hydrate` for the branching pattern.
+`isHydratable` is set by the framework, not passed by you. Read it to render an SSR-only fallback at a call site that also hydrates client-side — see [Selective hydration](selective-hydration/).
 
 `islandId` is a reserved name on every island (`mochi:hydrate` and `mochi:defer` alike) — passing it as a literal prop is a compile error, so a component can move between directives without the name silently changing meaning. On `mochi:defer` it is also the framework's transport key inside the signed envelope, stripped server-side before the component renders; a spread carrying it there is overridden by the framework value (last key wins). For a unique id inside the component, use `$props.id()`.

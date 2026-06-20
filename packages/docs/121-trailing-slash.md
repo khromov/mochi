@@ -4,10 +4,6 @@ slug: trailing-slash
 description: 'Enforce a consistent trailing-slash policy across all routes with automatic redirects.'
 ---
 
-<script>
-  import Callout from './_components/Callout.svelte';
-</script>
-
 ## Trailing slash
 
 The `trailingSlash` option on `Mochi.serve()` enforces a consistent trailing-slash policy across every user route. The framework registers each route under both `/foo` and `/foo/`, then redirects requests to the non-canonical form.
@@ -53,7 +49,7 @@ GET /search?q=mochi   →  301  Location: /search/?q=mochi  (policy: 'always')
 
 ### Generating canonical links
 
-`trailingSlashIt(path)` appends a trailing slash, first stripping any the string already ends with so you never double-slash. Build hrefs with it under `trailingSlash: 'always'` so links point straight at the canonical URL and skip the redirect hop.
+`trailingSlashIt(path)` appends a trailing slash, first stripping any the string already ends with so you never double-slash. A query string or `#fragment` is preserved and the slash lands on the path, so you can pass a full URL straight in. Build hrefs with it under `trailingSlash: 'always'` so links point straight at the canonical URL and skip the redirect hop.
 
 ```ts
 import { trailingSlashIt } from 'mochi-framework';
@@ -61,17 +57,8 @@ import { trailingSlashIt } from 'mochi-framework';
 trailingSlashIt('/docs/intro'); // '/docs/intro/'
 trailingSlashIt('/docs/intro/'); // '/docs/intro/'
 trailingSlashIt('/'); // '/'
+trailingSlashIt('/search?q=mochi'); // '/search/?q=mochi'
+trailingSlashIt('/docs/intro#install'); // '/docs/intro/#install'
 ```
 
 It is isomorphic — import it in SSR pages, hydrated islands, and plain `.ts` modules alike.
-
-<Callout type="warning">
-
-**Separate path from query and fragment.** `trailingSlashIt()` appends the slash at the string's end, not before query parameters or fragments. Always split on `?` and `#`, apply `trailingSlashIt()` to the path alone, then re-attach the rest.
-
-</Callout>
-
-```ts
-const [path, hash] = slug.split('#');
-const href = hash ? `${trailingSlashIt(path)}#${hash}` : trailingSlashIt(path);
-```

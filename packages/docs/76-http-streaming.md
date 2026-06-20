@@ -10,7 +10,7 @@ description: 'Mochi renders each page as a complete document, with SSE, WebSocke
 
 ## HTTP streaming
 
-Mochi renders each page as one complete document. Svelte's `render` from `svelte/server` runs to completion, then the HTML ships as a single `text/html` Response. One render pass, no out-of-order chunks to coordinate, deterministic markup every time.
+Mochi renders each page as one complete document. Svelte's `render` from `svelte/server` runs to completion, then the HTML ships as a single `text/html` Response.
 
 <Callout type="info">
 
@@ -23,7 +23,7 @@ The trade-off is that a page holds its response until everything it awaits has r
 - `Mochi.sse(handler)` — Server-Sent Events. The response body is a `ReadableStream` and `stream.send(...)` pushes events as they happen.
 - `Mochi.ws(handlers)` — WebSockets via `Bun.serve` upgrade. Bidirectional, message-by-message.
 
-Reach for these to layer realtime UI on top of an already-rendered page.
+Reach for these to layer realtime UI on top of a rendered base page.
 
 ### Keeping pages fast
 

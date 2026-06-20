@@ -52,12 +52,6 @@ A failed CSS import (missing package, malformed file) surfaces as a `css-bundle-
 </style>
 ```
 
-<Callout type="warning">
-
-**Load each stylesheet through one mechanism.** Importing the same CSS from both a `<style>` block and a side-effect `import` ships it twice. Use `<style>` for component-local rules and `import './foo.css'` for shared/global stylesheets.
-
-</Callout>
-
 ### Variable fonts
 
 Bun's CSS bundler unquotes `format('woff2-variations')` to `format(woff2-variations)`, which browsers silently drop. Mochi re-quotes the four `*-variations` hints (`woff2-variations`, `woff-variations`, `truetype-variations`, `opentype-variations`) after bundling, so `@fontsource-variable/*` packages work without manual workarounds.

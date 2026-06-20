@@ -87,7 +87,15 @@ Return one of:
 
 <Callout type="warning">
 
-**API routes bypass `handleError`.** The `handleError` hook only fires for page routes. For `Mochi.api` handlers, manage failures directly with `MochiHttpError` or `apiError()` inside the route logic.
+**API routes bypass `handleError`.** The hook only fires for page routes. Handle `Mochi.api` failures inside the route with `error()` or `apiError()`:
+
+```ts
+Mochi.api(async () => {
+  const data = await load();
+  if (!data) return apiError(404, 'Not found');
+  return json(data);
+});
+```
 
 </Callout>
 

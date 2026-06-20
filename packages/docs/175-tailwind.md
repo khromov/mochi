@@ -128,7 +128,7 @@ await compileTailwind({
 }
 ```
 
-<Callout type="warning">
+<Callout type="info">
 
 **Guard the `mochi-framework/tailwind` import dynamically.** A static import loads the oxide native binding even when the call site is gated by `MODE`. Put the `import()` inside the development guard so the binding is never resolved in production.
 

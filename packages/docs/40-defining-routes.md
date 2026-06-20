@@ -172,7 +172,14 @@ await Mochi.serve({
 
 <Callout type="warning">
 
-**Register `onClose` for per-connection resources.** Timers and subscriptions allocated per connection leak when a client disconnects unless you pair them with an `onClose` teardown.
+**Tear down anything you open per connection.** Each client opens its own timers, intervals, and event-bus subscriptions — like the `setInterval` above. Without a matching `onClose` teardown they keep running after the client disconnects and leak.
+
+```ts
+Mochi.sse((stream) => {
+  const unsubscribe = chat.subscribe((msg) => stream.send(msg));
+  stream.onClose(unsubscribe); // fires on disconnect or stream.close()
+});
+```
 
 </Callout>
 

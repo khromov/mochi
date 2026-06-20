@@ -68,7 +68,7 @@ In production (`development: false`), prebuilt JS/CSS bundles served from `asset
 - `filters`: `MochiFilters` map of named value-replacement filters. See `Extensions (hooks & filters)`.
 - `warmup`: Warm the SSR pipeline at startup by invoking every static page route once. `boolean | { enabledInProd: boolean; enabledInDev: boolean }`. `true` warms in **production only**; pass the object form for per-mode control. Default: `false`. See `Route warmup` below.
 
-<Callout type="warning">
+<Callout type="info">
 
 **Sync `assetPrefix` between build time and runtime.** When using a prebuilt manifest, pass `assetPrefix` to the `build()` call (or `--asset-prefix`) so the baked-in URLs match. The manifest's precomputed URLs take precedence at runtime if the two disagree, causing silent breakage.
 
@@ -187,7 +187,7 @@ spoofed, client, proxy1, proxy2   # xffDepth: 3 → "client" (spoofed entry igno
 
 <Callout type="warning">
 
-**Use `getClientAddress()` for a trusted client IP.** Reading `x-forwarded-for` directly returns a spoofable address. Pass the right `xffDepth` to `getClientAddress()`; read the raw header only when you want the leftmost address (e.g. geolocation).
+**Use `getClientAddress()` for a trusted client IP.** Reading `x-forwarded-for` directly could return a spoofable address. Pass the right `xffDepth` to `getClientAddress()`; read the raw header only when you want the leftmost address (e.g. geolocation).
 
 </Callout>
 

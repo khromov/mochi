@@ -20,6 +20,12 @@ Components render server-side by default and ship zero JavaScript. Add `mochi:hy
 
 Props are serialized with `devalue` into a `<script type="application/json">` block emitted just before the island, so the same values are available during hydration. See `Passing props to islands` for the supported types.
 
+<Callout type="info">
+
+**Hydration is all-or-nothing per island.** A `mochi:hydrate` (or `mochi:hydrate:visible`) directive hydrates the whole subtree, so nesting one inside another hydratable component is rejected at compile time. Mark the outermost component and let it cover everything below it.
+
+</Callout>
+
 ### The `isHydratable` prop
 
 Every island invocation receives one implicit prop from the framework:

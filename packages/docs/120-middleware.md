@@ -142,12 +142,6 @@ sequence(auth, compress({ methods: ['gzip'] }));
 
 `compress()` is a no-op in development so the debug bar can render the uncompressed HTML response. In production it always adds `Vary: Accept-Encoding`, and compresses when the response carries a compressible `Content-Type` (`text/*`, `application/json`, `application/javascript`, `application/xml`, `application/manifest+json`, `application/ld+json`, `image/svg+xml`). Responses that already declare a `Content-Encoding` pass through untouched. Static framework assets (JS/CSS bundles) and the framework error page also flow through `handle`, so the same `compress()` covers them — that's why other body-touching middleware (auth, etc.) should branch on `event.kind === 'asset'` if they need to skip framework bundles.
 
-<Callout type="warning">
-
-**Verify CDN compression headers reach your server.** If your CDN compresses at the edge but strips the `Content-Encoding` header before forwarding to the origin, `compress()` will compress again—wasting CPU and bandwidth. Either disable `compress()` when the CDN is in front, or use `methods: ['gzip']` to skip expensive per-request brotli.
-
-</Callout>
-
 ### `noCache`
 
 Built-in middleware that defaults `Cache-Control: no-cache` on `page` and `api` responses. Routes that set their own `Cache-Control` are left untouched, so opt-in caching still works per route.

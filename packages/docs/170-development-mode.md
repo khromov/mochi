@@ -116,7 +116,7 @@ mochiEvents.setHandler('docs:cache-clear', 'file:change', ({ path }) => {
 
 <Callout type="warning">
 
-**Use `setHandler` for event handlers in SSR-recompiled code.** `.on()` from modules re-imported by the SSR compile cache (e.g., transitively from `.svelte` files) will pile up duplicate listeners on each recompilation, leaking memory. `setHandler` with a stable name replaces the subscription idempotently. `.on()` is safe only in your server entry, which is loaded once.
+**Use `setHandler` here, not `.on()`.** In dev, the module holding this handler can be re-run when Mochi recompiles — and each `.on()` call would leave behind another duplicate listener firing on every event. `setHandler` registers by name, so re-running just replaces the previous one.
 
 </Callout>
 

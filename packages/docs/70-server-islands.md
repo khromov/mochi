@@ -78,7 +78,7 @@ Props are serialized with `devalue` — see [Passing props to islands](island-pr
 
 <Callout type="warning">
 
-**Fetch data inside islands, not through props.** Large data blobs passed as props create signed URLs that hit runtime warnings above ~1800 bytes. Use `getRequestContext()` inside the island component to fetch data server-side instead.
+**Fetch data inside islands, not through props.** Large data blobs passed as props inflate the signed URL until it trips a runtime warning. Use `getRequestContext()` inside the island component to fetch data server-side instead.
 
 </Callout>
 
@@ -105,6 +105,6 @@ bunx mochi-framework generate-key
 
 <Callout type="danger">
 
-**Never commit `MOCHI_KEY`.** It signs server-island prop URLs; leaking it lets attackers forge them. Supply it via your platform's secret store and generate one with `openssl rand -base64 32 | tr '+/' '-_' | tr -d '='`.
+**Never commit `MOCHI_KEY`.** It signs server-island prop URLs; leaking it lets attackers forge them. Supply it via your platform's secret store and generate one with `bunx mochi-framework generate-key`.
 
 </Callout>

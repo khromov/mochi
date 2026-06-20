@@ -63,7 +63,12 @@ stream.onClose(() => clearInterval(interval));
 
 <Callout type="warning">
 
-**Always pair long-lived resources with cleanup.** Every timer, interval, or subscription created in an SSE handler must have a matching `stream.onClose(...)` callback—including when clients disconnect unexpectedly—to prevent resource leaks per connection.
+**Pair every long-lived resource with `onClose`.** A timer or subscription with no matching cleanup leaks on each disconnect:
+
+```ts
+const sub = bus.subscribe(onTick);
+stream.onClose(() => sub.unsubscribe());
+```
 
 </Callout>
 
