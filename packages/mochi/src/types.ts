@@ -455,6 +455,16 @@ export interface MochiServeOptions {
   /** Deflate-compress server island props when it reduces size. Default: true. */
   compressServerIslandProps?: boolean;
   /**
+   * Experimental: serialization codec for hydratable island props embedded in
+   * the page. `'devalue'` (default) ships JSON text in a
+   * `<script type="application/json">` block; `'msgpack'` ships
+   * base64(msgpackr) in a `<script type="application/x-mochi-msgpack">` block and
+   * lazy-loads a msgpackr decoder on the client. Server islands are unaffected.
+   * Can also be toggled with the `MOCHI_ISLAND_CODEC` env var. See
+   * `packages/mochi/REPORT.md` for the size/correctness trade-offs.
+   */
+  islandPropsCodec?: 'devalue' | 'msgpack';
+  /**
    * Built-in request logger configuration. Pass `{ enabled: false }` to
    * disable the formatter while keeping events flowing on the bus, set
    * `level` to gate `log.*` output globally, or override thresholds via

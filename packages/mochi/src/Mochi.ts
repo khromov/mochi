@@ -327,6 +327,7 @@ export class Mochi {
         liveReload: liveReloadEnabled,
         warmup: warmupEnabled,
         compressServerIslandProps: options.compressServerIslandProps ?? false,
+        islandPropsCodec: options.islandPropsCodec ?? (process.env.MOCHI_ISLAND_CODEC === 'msgpack' ? 'msgpack' : 'devalue'),
         trailingSlash: options.trailingSlash ?? 'never',
         assetPrefix: registry.assetPrefix || undefined,
         logLevel: resolvedLogLevel,

@@ -69,8 +69,16 @@ class HydratableIsland extends HTMLElement {
     // directly, so fall back to that attribute when no ref is present.
     const propsRef = this.getAttribute('props-ref');
     let propsRaw: string | null;
+    // 'devalue' (JSON text) or 'msgpack' (base64-encoded msgpackr) — read from the
+    // referenced <script> element's type so the page is self-describing. The
+    // server-island also-hydrate path inlines `props=` and is always devalue.
+    let propsCodec: 'devalue' | 'msgpack' = 'devalue';
     if (propsRef) {
-      propsRaw = document.getElementById(propsRef)?.textContent ?? null;
+      const node = document.getElementById(propsRef);
+      propsRaw = node?.textContent ?? null;
+      if (node?.getAttribute('type') === 'application/x-mochi-msgpack') {
+        propsCodec = 'msgpack';
+      }
     } else {
       propsRaw = this.getAttribute('props');
     }
@@ -110,7 +118,16 @@ class HydratableIsland extends HTMLElement {
     }
     let props: Record<string, unknown>;
     try {
-      props = propsRaw ? devalueParse(propsRaw) : {};
+      if (!propsRaw) {
+        props = {};
+      } else if (propsCodec === 'msgpack') {
+        // Lazy-load the decoder so default (devalue) pages never ship msgpackr.
+        const { Unpackr } = await import('msgpackr');
+        const bytes = Uint8Array.from(atob(propsRaw), (c) => c.charCodeAt(0));
+        props = new Unpackr({ structuredClone: true }).unpack(bytes) as Record<string, unknown>;
+      } else {
+        props = devalueParse(propsRaw);
+      }
     } catch (err) {
       if (propsRaw && err instanceof SyntaxError) {
         const m = err.message.match(/position (\d+)/);

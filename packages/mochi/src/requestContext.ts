@@ -129,6 +129,7 @@ export interface DebugBarConfig {
   liveReload: boolean;
   warmup: boolean;
   compressServerIslandProps: boolean;
+  islandPropsCodec: 'devalue' | 'msgpack';
   trailingSlash: 'never' | 'always';
   assetPrefix?: string;
   logLevel: string;
