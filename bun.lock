@@ -116,6 +116,9 @@
     "packages/msgpackr-extract-stub": {
       "name": "msgpackr-extract",
       "version": "3.0.4",
+      "devDependencies": {
+        "msgpackr": "^1.11.8",
+      },
     },
     "packages/site": {
       "name": "mochi-site",
