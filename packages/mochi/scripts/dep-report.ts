@@ -100,6 +100,20 @@ async function indexPackages(): Promise<Map<string, IndexEntry>> {
       }
     }
   }
+  // Workspace packages (`packages/*`) resolve locally rather than into node_modules,
+  // so deps satisfied by an override (e.g. the msgpackr-extract stub) are only sizable here.
+  const wsGlob = new Bun.Glob('packages/*/package.json');
+  for await (const rel of wsGlob.scan({ cwd: REPO_ROOT })) {
+    const full = join(REPO_ROOT, rel);
+    try {
+      const pkg = JSON.parse(readFileSync(full, 'utf8')) as PkgJson;
+      if (pkg.name && !index.has(pkg.name)) {
+        index.set(pkg.name, { pkg, dir: dirname(full) });
+      }
+    } catch {
+      // skip
+    }
+  }
   return index;
 }
 

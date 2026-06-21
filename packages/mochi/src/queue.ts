@@ -93,8 +93,9 @@ interface QueueRegistry {
 }
 
 // Pinned so the registry is shared across any duplicate bundled copy of this
-// module (mirrors `mochiEvents` / `requestContext`). The shutdown path and the
-// standalone signal handlers must see every queue and worker, wherever created.
+// module (mirrors `mochiEvents` / `requestContext`). The shutdown path
+// (`closeAllQueueResources`) must see every queue and worker to drain it,
+// wherever — and by whichever bundled copy — it was created.
 const registry = pinGlobal<QueueRegistry>('__mochi_queue_registry__', () => ({
   queues: new Set(),
   workers: new Set(),

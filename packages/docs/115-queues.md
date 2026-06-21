@@ -6,6 +6,7 @@ description: 'Run background jobs in-process with Mochi.queue() and Mochi.worker
 
 <script>
   import Callout from './_components/Callout.svelte';
+  import SeeItInAction from './_components/SeeItInAction.svelte';
 </script>
 
 ## Queues & workers
@@ -229,3 +230,7 @@ await Mochi.serve({
 ### Dependencies
 
 Mochi uses bunqueue as the underlying implementation for queues and workers. To keep the dependency count low, Mochi skips the optional native add-on that bunqueue would otherwise pull in, so it and its platform-specific binaries never land in your install.
+
+<SeeItInAction
+demos={[{ href: "/demos/queue/", title: "Background Jobs", hook: "Offload work to a Mochi.worker() via Mochi.queue() — embedded, no Redis." }]}
+/>
