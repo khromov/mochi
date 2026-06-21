@@ -3,11 +3,11 @@
   import QueueWidget from './QueueWidget.svelte';
   import { loadSources } from '../../components/utils.ts';
   import { files } from './files.ts';
-  import type { QueueStatus } from './queue.ts';
+  import type { QueueStatus } from './queue.server.ts';
 
   const sources = await loadSources(files);
 
-  let { initial }: { initial: QueueStatus } = $props();
+  let { initial, suggestedUser }: { initial: QueueStatus; suggestedUser: string } = $props();
 </script>
 
 <DemoPage
@@ -20,7 +20,7 @@
     <code>Mochi.worker('demo-notifications', …)</code> with <code>concurrency: 2</code> picks the job up and records it. Initial state comes from
     <code>serverProps</code>; a <code>Mochi.sse()</code> route then pushes each completion in realtime — no polling.
   </p>
-  <QueueWidget {initial} mochi:hydrate />
+  <QueueWidget {initial} {suggestedUser} mochi:hydrate />
 </DemoPage>
 
 <style>

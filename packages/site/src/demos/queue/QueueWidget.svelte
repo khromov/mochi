@@ -1,9 +1,10 @@
 <script lang="ts">
   import { enhance } from 'mochi-framework';
   import type { MochiSubmitFunction } from 'mochi-framework';
-  import type { ProcessedEntry, QueueStatus } from './queue.ts';
+  import type { ProcessedEntry, QueueStatus } from './queue.server.ts';
+  import { randomUsername } from './usernames.ts';
 
-  let { initial }: { initial: QueueStatus } = $props();
+  let { initial, suggestedUser }: { initial: QueueStatus; suggestedUser: string } = $props();
 
   let pending = $state(0);
   // Seed mutable local state from the serverProps snapshot; the SSE stream owns it after.
@@ -11,6 +12,9 @@
   let processed = $state<ProcessedEntry[]>(initial.processed);
   // svelte-ignore state_referenced_locally
   let processedTotal = $state(initial.processedTotal);
+  // Preloaded server-side so SSR and hydration match; refreshed after each submit.
+  // svelte-ignore state_referenced_locally
+  let username = $state(suggestedUser);
   let lastQueued = $state<string | null>(null);
 
   // Initial state arrives via serverProps; the SSE stream pushes a fresh status
@@ -40,6 +44,7 @@
     return ({ result }) => {
       if (result.type === 'success' && result.data) {
         lastQueued = result.data.queued;
+        username = randomUsername();
       } else {
         pending = Math.max(0, pending - 1);
       }
@@ -51,7 +56,7 @@
   <form method="POST" action="?/enqueue" {@attach enhance(handleEnqueue)}>
     <label>
       <span>Username</span>
-      <input type="text" name="username" placeholder="alice" autocomplete="off" />
+      <input type="text" name="username" placeholder="alice" autocomplete="off" bind:value={username} />
     </label>
     <button type="submit">Enqueue notification</button>
   </form>

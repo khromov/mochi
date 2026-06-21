@@ -1,12 +1,14 @@
 import { Mochi, success, mochiEvents } from 'mochi-framework';
 import type { MochiRouteValue } from 'mochi-framework';
-import { notificationQueue, queueStatus, QUEUE_NAME } from './queue';
+import { notificationQueue, queueStatus, QUEUE_NAME } from './queue.server';
+import { randomUsername } from './usernames';
 
 export const routes: Record<string, MochiRouteValue> = {
   '/demos/queue': Mochi.page('./src/demos/queue/Queue.svelte', {
     // Initial state for the first render / hydration; the SSE stream below keeps
-    // it live thereafter.
-    serverProps: () => ({ initial: queueStatus() }),
+    // it live thereafter. `suggestedUser` is generated server-side so SSR and
+    // hydration agree on the preloaded value.
+    serverProps: () => ({ initial: queueStatus(), suggestedUser: randomUsername() }),
     actions: {
       enqueue: async ({ formData }) => {
         // Accept any free-text username. It is stored as-is and only ever
