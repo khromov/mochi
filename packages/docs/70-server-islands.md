@@ -6,6 +6,7 @@ description: 'Render components after initial page load by fetching their HTML f
 
 <script>
   import Callout from './_components/Callout.svelte';
+  import SeeItInAction from './_components/SeeItInAction.svelte';
 </script>
 
 ## Server islands with `mochi:defer`
@@ -108,3 +109,10 @@ bunx mochi-framework generate-key
 **Never commit `MOCHI_KEY`.** It signs server-island prop URLs; leaking it lets attackers forge them. Supply it via your platform's secret store and generate one with `bunx mochi-framework generate-key`.
 
 </Callout>
+
+<SeeItInAction
+demos={[
+{ href: "/demos/server-island/", title: "Server Islands", hook: "Components marked mochi:defer render server-side on demand after the initial page is delivered." },
+{ href: "/demos/lazy-server-island/", title: "Lazy Server Islands", hook: "Server islands marked mochi:defer:visible only fetch when the wrapper scrolls into view." },
+]}
+/>
