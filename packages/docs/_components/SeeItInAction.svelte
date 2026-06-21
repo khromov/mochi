@@ -28,7 +28,6 @@
   import OctagonAlert from '@lucide/svelte/icons/octagon-alert';
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
   import ShieldAlert from '@lucide/svelte/icons/shield-alert';
-  import Wind from '@lucide/svelte/icons/wind';
   import ListTodo from '@lucide/svelte/icons/list-todo';
 
   interface DemoLink {
@@ -70,14 +69,14 @@
     '/demos/form-errors/': OctagonAlert,
     '/demos/error/': TriangleAlert,
     '/demos/error-boundaries/': ShieldAlert,
-    '/demos/tailwind/': Wind,
-    'https://demos.mochi.fast/todo': ListTodo,
+    'https://demos.mochi.fast/todo/': ListTodo,
   };
 </script>
 
 {#if demos.length > 0}
   <section class="see-it-in-action">
     <h2 class="sia-heading">See it in action</h2>
+    <p class="sia-subtitle">Live demos showing key concepts from this page</p>
     <div class="sia-grid">
       {#each demos as demo (demo.href)}
         {@const external = demo.href.startsWith('http')}
@@ -104,13 +103,19 @@
   .see-it-in-action {
     margin: 2.5rem 0 0;
   }
-  .sia-heading {
+  .see-it-in-action .sia-heading {
     font-family: var(--font-serif);
     font-size: 1.5rem;
     font-weight: 500;
     letter-spacing: -0.005em;
     color: var(--text);
-    margin: 0 0 0.85rem;
+    margin: 0 0 0.2rem;
+  }
+  .see-it-in-action .sia-subtitle {
+    margin: 0 0 0.9rem;
+    color: var(--text-muted);
+    font-size: 0.95rem;
+    line-height: 1.4;
   }
   .sia-grid {
     display: grid;

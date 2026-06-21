@@ -162,8 +162,5 @@ Preflight resets every element on every page that imports the stylesheet. On a m
 </Callout>
 
 <SeeItInAction
-  demos={[
-    { href: "/demos/tailwind/", title: "Tailwind", hook: "Tailwind utility classes scoped to a single Mochi route, with Preflight skipped." },
-    { href: "https://demos.mochi.fast/todo", title: "Tailwind Todo App", hook: "Classic todo app styled with Tailwind CSS." },
-  ]}
+  demos={[{ href: "https://demos.mochi.fast/todo/", title: "Tailwind Todo App", hook: "Classic todo app styled with Tailwind CSS." }]}
 />
