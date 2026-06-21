@@ -185,6 +185,15 @@ describe('Mochi queue + worker', () => {
     expect(Object.keys(job).sort()).toEqual(['attempt', 'data', 'enqueuedAt', 'id', 'name', 'queue']);
   });
 
+  test('createQueue is idempotent per name (handles do not accumulate)', () => {
+    const name = uniqueName();
+    const a = createQueue(name, { dataPath });
+    const b = createQueue(name, { dataPath });
+    const c = createQueue(name, { dataPath });
+    expect(b).toBe(a);
+    expect(c).toBe(a);
+  });
+
   test('re-registering a worker keeps the first and ignores the duplicate', async () => {
     const name = uniqueName();
     const ran: string[] = [];

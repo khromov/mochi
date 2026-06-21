@@ -108,6 +108,7 @@ interface Closeable {
 interface QueueRegistry {
   queues: Set<Closeable>;
   workers: Set<Closeable>;
+  queuesByName: Map<string, Closeable>;
   workersByName: Map<string, Closeable>;
   /** Worker names we've already warned about re-registering, so dev HMR doesn't spam. */
   warnedReregister: Set<string>;
@@ -124,6 +125,7 @@ interface QueueRegistry {
 const registry = pinGlobal<QueueRegistry>('__mochi_queue_registry__', () => ({
   queues: new Set(),
   workers: new Set(),
+  queuesByName: new Map(),
   workersByName: new Map(),
   warnedReregister: new Set(),
   dataPath: undefined,
@@ -173,6 +175,16 @@ function toBunJobOptions(opts: MochiJobOptions | undefined): JobOptions | undefi
 
 export function createQueue<T>(name: string, opts?: MochiQueueOptions): MochiQueue<T> {
   rememberDataPath(opts?.dataPath);
+
+  // Idempotent per name (like createWorker): a producer handle is a singleton,
+  // and the dev route-HMR watcher re-runs the defining module repeatedly. Return
+  // the existing handle so handles don't accumulate in the registry. Silent —
+  // unlike a worker, re-getting a queue has no processor that could go stale.
+  const existing = registry.queuesByName.get(name);
+  if (existing) {
+    return existing as unknown as MochiQueue<T>;
+  }
+
   const queue = new Queue<T>(name, {
     embedded: true,
     dataPath: opts?.dataPath,
@@ -196,11 +208,13 @@ export function createQueue<T>(name: string, opts?: MochiQueueOptions): MochiQue
     },
     async close() {
       registry.queues.delete(handle);
+      registry.queuesByName.delete(name);
       queue.close();
     },
   };
   const registered: Closeable = handle;
   registry.queues.add(registered);
+  registry.queuesByName.set(name, registered);
   return handle;
 }
 
