@@ -3,6 +3,7 @@ import { parseArgs } from 'node:util';
 import path from 'node:path';
 import { existsSync } from 'node:fs';
 import { build } from './build';
+import { closeAllQueueResources } from './queue';
 import { extractServeOptions } from './extractServeOptions';
 import { updateSkill, SKILL_TARGETS, SKILL_DESTS, DEFAULT_SKILL_TARGET, type SkillTarget } from './updateSkill';
 import { generateKey } from './generateKey';
@@ -174,6 +175,13 @@ async function main() {
     publicDir: values['public-dir'],
     assetPrefix: values['asset-prefix'],
   });
+
+  // `build` is a one-shot command, but extracting serve options imports the
+  // user's entry for real — a top-level Mochi.worker() spawns a live embedded
+  // queue thread that keeps the event loop alive and hangs the CLI. Drain any
+  // queues/workers and exit explicitly so the build always terminates.
+  await closeAllQueueResources();
+  process.exit(0);
 }
 
 main().catch((err: unknown) => {
