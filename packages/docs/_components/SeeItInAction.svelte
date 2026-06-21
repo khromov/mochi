@@ -81,12 +81,7 @@
       {#each demos as demo (demo.href)}
         {@const external = demo.href.startsWith('http')}
         {@const Icon = iconFor[demo.href]}
-        <a
-          class="sia-card"
-          href={demo.href}
-          target={external ? '_blank' : undefined}
-          rel={external ? 'noopener noreferrer' : undefined}
-        >
+        <a class="sia-card" href={demo.href} target={external ? '_blank' : undefined} rel={external ? 'noopener noreferrer' : undefined}>
           {#if Icon}
             <span class="sia-icon"><Icon size={16} strokeWidth={1.5} /></span>
           {/if}

@@ -62,8 +62,8 @@ Bun's CSS bundler unquotes `format('woff2-variations')` to `format(woff2-variati
 A `.css` edit triggers a fast rebundle and a page reload — no SSR recompile. Edits to `.svelte` or `.ts` files go through the full compile path.
 
 <SeeItInAction
-  demos={[
-    { href: "https://demos.mochi.fast/todo/", title: "Tailwind Todo App", hook: "Classic todo app styled with Tailwind CSS." },
-    { href: "/demos/lazy/", title: "Lazy Islands", hook: "Islands marked mochi:hydrate:visible hydrate and load their CSS only when scrolled into view." },
-  ]}
+demos={[
+{ href: "https://demos.mochi.fast/todo/", title: "Tailwind Todo App", hook: "Classic todo app styled with Tailwind CSS." },
+{ href: "/demos/lazy/", title: "Lazy Islands", hook: "Islands marked mochi:hydrate:visible hydrate and load their CSS only when scrolled into view." },
+]}
 />

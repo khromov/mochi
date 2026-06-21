@@ -203,9 +203,9 @@ Returning a `Response` directly from an action bypasses the JSON envelope on enh
 Reach for `enhance` when the action's outcome should update UI without a navigation flicker — interactive forms, optimistic patterns, inline validation. Stick with a plain `<form method="POST">` when the action ends in a redirect anyway and the JS bundle is not worth shipping.
 
 <SeeItInAction
-  demos={[
-    { href: "/demos/login/", title: "Form Actions", hook: "A login form rendered twice — plain HTML POST and intercepted with {@attach enhance(...)}." },
-    { href: "/demos/form-errors/", title: "Form Errors", hook: "A thrown action error shown inline via {@attach enhance(...)}, or as the Mochi error page on plain submit." },
-    { href: "/demos/form-return-data/", title: "Using form return data", hook: "An action returns data via success({...}); {@attach enhance(...)} updates the UI in place, plain HTML re-renders the page." },
-  ]}
+demos={[
+{ href: "/demos/login/", title: "Form Actions", hook: "A login form rendered twice — plain HTML POST and intercepted with {@attach enhance(...)}." },
+{ href: "/demos/form-errors/", title: "Form Errors", hook: "A thrown action error shown inline via {@attach enhance(...)}, or as the Mochi error page on plain submit." },
+{ href: "/demos/form-return-data/", title: "Using form return data", hook: "An action returns data via success({...}); {@attach enhance(...)} updates the UI in place, plain HTML re-renders the page." },
+]}
 />

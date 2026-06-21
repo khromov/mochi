@@ -192,8 +192,8 @@ The finished app is running on this site at [**/docs/your-first-mochi-app/hello*
 - [Passing props to islands](/docs/island-props/) — every type `devalue` can round-trip
 
 <SeeItInAction
-  demos={[
-    { href: "/demos/hello-world/", title: "Hello World", hook: "The simplest possible Mochi page — pure server-rendered Svelte." },
-    { href: "/demos/server-props/", title: "Server Props", hook: "Define serverProps on Mochi.page() to pass fresh data into a Svelte page on every request." },
-  ]}
+demos={[
+{ href: "/demos/hello-world/", title: "Hello World", hook: "The simplest possible Mochi page — pure server-rendered Svelte." },
+{ href: "/demos/server-props/", title: "Server Props", hook: "Define serverProps on Mochi.page() to pass fresh data into a Svelte page on every request." },
+]}
 />

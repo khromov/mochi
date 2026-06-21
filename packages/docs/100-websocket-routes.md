@@ -153,8 +153,8 @@ message(ws, msg) {
 Every WebSocket emits `ws:open`, `ws:message`, and `ws:close` on `mochiEvents`. `logger()` already prints them. See `Events` for the full payload shape and how to add custom subscribers.
 
 <SeeItInAction
-  demos={[
-    { href: "/demos/chat/", title: "Real-time Chat", hook: "A hydrated island over a Mochi.ws() route, with pub/sub broadcast and in-memory history." },
-    { href: "/demos/streams/", title: "Real-time Streams", hook: "WebSocket and SSE clocks, lazily hydrated via mochi:hydrate:visible." },
-  ]}
+demos={[
+{ href: "/demos/chat/", title: "Real-time Chat", hook: "A hydrated island over a Mochi.ws() route, with pub/sub broadcast and in-memory history." },
+{ href: "/demos/streams/", title: "Real-time Streams", hook: "WebSocket and SSE clocks, lazily hydrated via mochi:hydrate:visible." },
+]}
 />

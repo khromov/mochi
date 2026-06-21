@@ -133,8 +133,8 @@ If you'd rather wire it by hand — or need finer control — give the element a
 ```
 
 <SeeItInAction
-  demos={[
-    { href: "/demos/view-transitions/", title: "View Transitions", hook: "Drop <ViewTransitions /> into a shared layout to animate full-page navigations with zero JavaScript." },
-    { href: "/demos/custom-transitions/", title: "Custom Transitions", hook: "Bring your own @keyframes to <ViewTransitions /> via custom={{ in, out }} — here, a funky 3D spin." },
-  ]}
+demos={[
+{ href: "/demos/view-transitions/", title: "View Transitions", hook: "Drop <ViewTransitions /> into a shared layout to animate full-page navigations with zero JavaScript." },
+{ href: "/demos/custom-transitions/", title: "Custom Transitions", hook: "Bring your own @keyframes to <ViewTransitions /> via custom={{ in, out }} — here, a funky 3D spin." },
+]}
 />

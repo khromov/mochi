@@ -67,5 +67,5 @@ return redirect(303, '/dashboard');
 ```
 
 <SeeItInAction
-  demos={[{ href: "/demos/url/", title: "Isomorphic URL", hook: "One import for the current URL — reads from the request on the server, window.location on the client." }]}
+demos={[{ href: "/demos/url/", title: "Isomorphic URL", hook: "One import for the current URL — reads from the request on the server, window.location on the client." }]}
 />
