@@ -3,21 +3,24 @@
   import QueueWidget from './QueueWidget.svelte';
   import { loadSources } from '../../components/utils.ts';
   import { files } from './files.ts';
+  import type { QueueStatus } from './queue.ts';
 
   const sources = await loadSources(files);
+
+  let { initial }: { initial: QueueStatus } = $props();
 </script>
 
 <DemoPage
   title="Background jobs with queues"
-  description="Mochi.queue() is a producer handle; Mochi.worker() runs a consumer in the same process. The form enqueues a job, the worker processes it ~700ms later, and the status endpoint reflects the result."
+  description="Mochi.queue() is a producer handle; Mochi.worker() runs a consumer in the same process. The form enqueues a job, the worker processes it ~700ms later, and the result streams back live."
   {sources}
 >
   <p>
-    The page action calls <code>emailQueue.add('send', {'{ to }'})</code>. A
-    <code>Mochi.worker('demo-emails', …)</code> with <code>concurrency: 2</code> picks the job up and records it. The widget polls
-    <code>/demos/queue/status</code> to show processed jobs as they land.
+    The page action calls <code>notificationQueue.add('notify', {'{ user }'})</code>. A
+    <code>Mochi.worker('demo-notifications', …)</code> with <code>concurrency: 2</code> picks the job up and records it. Initial state comes from
+    <code>serverProps</code>; a <code>Mochi.sse()</code> route then pushes each completion in realtime — no polling.
   </p>
-  <QueueWidget mochi:hydrate />
+  <QueueWidget {initial} mochi:hydrate />
 </DemoPage>
 
 <style>

@@ -1,31 +1,38 @@
 <script lang="ts">
   import { enhance } from 'mochi-framework';
   import type { MochiSubmitFunction } from 'mochi-framework';
+  import type { ProcessedEntry, QueueStatus } from './queue.ts';
 
-  interface ProcessedEntry {
-    to: string;
-    at: number;
-  }
+  let { initial }: { initial: QueueStatus } = $props();
 
   let pending = $state(0);
-  let processed = $state<ProcessedEntry[]>([]);
-  let processedTotal = $state(0);
+  // Seed mutable local state from the serverProps snapshot; the SSE stream owns it after.
+  // svelte-ignore state_referenced_locally
+  let processed = $state<ProcessedEntry[]>(initial.processed);
+  // svelte-ignore state_referenced_locally
+  let processedTotal = $state(initial.processedTotal);
   let lastQueued = $state<string | null>(null);
 
-  async function refresh() {
-    const res = await fetch('/demos/queue/status');
-    if (!res.ok) {
-      return;
-    }
-    const status = (await res.json()) as { processed: ProcessedEntry[]; processedTotal: number };
-    processed = status.processed;
-    processedTotal = status.processedTotal;
-  }
-
+  // Initial state arrives via serverProps; the SSE stream pushes a fresh status
+  // every time a job completes — no polling.
   $effect(() => {
-    refresh();
-    const id = setInterval(refresh, 1000);
-    return () => clearInterval(id);
+    const source = new EventSource('/demos/queue/events/');
+    source.addEventListener('message', (e) => {
+      const status = JSON.parse(e.data) as QueueStatus;
+      const advanced = status.processedTotal - processedTotal;
+      if (advanced > 0) {
+        pending = Math.max(0, pending - advanced);
+      }
+      processed = status.processed;
+      processedTotal = status.processedTotal;
+    });
+
+    const close = () => source.close();
+    window.addEventListener('pagehide', close);
+    return () => {
+      window.removeEventListener('pagehide', close);
+      close();
+    };
   });
 
   const handleEnqueue: MochiSubmitFunction<{ queued: string; jobId: string }> = () => {
@@ -33,12 +40,9 @@
     return ({ result }) => {
       if (result.type === 'success' && result.data) {
         lastQueued = result.data.queued;
-      }
-      // Give the worker a moment, then reflect the result.
-      setTimeout(() => {
+      } else {
         pending = Math.max(0, pending - 1);
-        refresh();
-      }, 900);
+      }
     };
   };
 </script>
@@ -46,10 +50,10 @@
 <div class="queue">
   <form method="POST" action="?/enqueue" {@attach enhance(handleEnqueue)}>
     <label>
-      <span>Recipient</span>
-      <input type="email" name="to" placeholder="alice@example.com" />
+      <span>Username</span>
+      <input type="text" name="username" placeholder="alice" autocomplete="off" />
     </label>
-    <button type="submit">Enqueue email job</button>
+    <button type="submit">Enqueue notification</button>
   </form>
 
   <div class="status">
@@ -64,17 +68,18 @@
   </div>
 
   {#if lastQueued}
-    <p class="hint">Queued a job for <code>{lastQueued}</code> — the worker picks it up within ~700ms.</p>
+    <p class="hint">Queued a notification for <code>{lastQueued}</code> — the worker picks it up within ~700ms.</p>
   {/if}
 
   <h3>Recently processed</h3>
   {#if processed.length === 0}
-    <p class="empty">No jobs processed yet. Enqueue one above.</p>
+    <p class="empty">No notifications processed yet. Enqueue one above.</p>
   {:else}
     <ul>
-      {#each processed as entry (entry.at + entry.to)}
+      <!-- {entry.user} is free-text from the user; Svelte escapes it on render, so it's XSS-safe. -->
+      {#each processed as entry (entry.at + entry.user)}
         <li>
-          <code>{entry.to}</code>
+          <code>{entry.user}</code>
           <span class="time">{new Date(entry.at).toLocaleTimeString()}</span>
         </li>
       {/each}
