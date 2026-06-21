@@ -26,13 +26,21 @@ afterEach(async () => {
   await closeAllQueueResources();
 });
 
-afterAll(() => {
+afterAll(async () => {
   // The last afterEach closes bunqueue's embedded store (shutdownManager ->
-  // storage.close()), but Windows can lag in releasing the SQLite file lock,
-  // so a rm immediately after close intermittently throws EBUSY. rmSync's
-  // built-in retry is exactly for this; it costs nothing on platforms that
-  // release the handle synchronously.
-  rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  // storage.close()), but Windows releases the underlying SQLite file lock
+  // asynchronously, so an immediate rm throws EBUSY. (Bun ignores rmSync's
+  // maxRetries option, so retry by hand.) This is best-effort cleanup of an
+  // ephemeral temp dir — never fail the suite over it, so give up quietly once
+  // the budget is exhausted; the OS reclaims it on process exit regardless.
+  for (let attempt = 0; attempt < 25; attempt++) {
+    try {
+      rmSync(dataDir, { recursive: true, force: true });
+      return;
+    } catch {
+      await Bun.sleep(100);
+    }
+  }
 });
 
 describe('Mochi queue + worker', () => {
