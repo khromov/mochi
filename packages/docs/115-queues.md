@@ -191,3 +191,7 @@ Mochi.worker('emails', async (job) => {
 **Embedded mode only.** Producer and consumer share one process. bunqueue also supports a TCP server mode for distributed workers; Mochi doesn't expose that yet.
 
 </Callout>
+
+### Dependencies
+
+Mochi uses bunqueue as the underlying implementation for queues and workers. To keep the dependency count low, Mochi skips the optional native add-on that bunqueue would otherwise pull in, so it and its platform-specific binaries never land in your install.
