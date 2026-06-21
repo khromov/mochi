@@ -7,5 +7,5 @@ export const files: SourceSpec[] = [
   { label: 'types.ts', path: './src/demos/queue/types.ts' },
   { label: 'usernames.ts', path: './src/demos/queue/usernames.ts' },
   { label: 'routes.ts', path: './src/demos/queue/routes.ts' },
-  { label: 'index.ts', path: './src/demoIndex.ts' },
+  { label: 'index.ts', path: './src/demos/queue/index.ts' },
 ];
