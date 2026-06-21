@@ -6,6 +6,7 @@ description: 'Mochi renders each page as a complete document, with SSE, WebSocke
 
 <script>
   import Callout from './_components/Callout.svelte';
+  import SeeItInAction from './_components/SeeItInAction.svelte';
 </script>
 
 ## HTTP streaming
@@ -30,3 +31,7 @@ Reach for these to layer realtime UI on top of a rendered base page.
 - **Server islands** (`mochi:defer`) load slow or personalized fragments out-of-band after the shell ships. The rest of the page renders immediately; the island fetches itself once the browser sees the placeholder.
 - **Visible hydration** (`mochi:hydrate:visible`) keeps the initial JS payload small.
 - **Shared HTTP cache** (Cloudflare, CloudFront, Fastly, Varnish, nginx) in front of the origin makes render time irrelevant for the cacheable common case. Server islands can stay uncached behind a cached shell — see `Cache`.
+
+<SeeItInAction
+demos={[{ href: "/demos/streams/", title: "Real-time Streams", hook: "WebSocket and SSE clocks, lazily hydrated via mochi:hydrate:visible." }]}
+/>

@@ -6,6 +6,7 @@ description: 'Keep server-only modules like bun:sqlite out of client bundles usi
 
 <script>
   import Callout from './_components/Callout.svelte';
+  import SeeItInAction from './_components/SeeItInAction.svelte';
 </script>
 
 ## Server-only imports
@@ -53,3 +54,7 @@ getVersion from /…/db.server.ts was called on the client; this is a server-onl
 
 - `export * from './x'` — Mochi warns at build time; declare named exports in the `.server.ts` file directly.
 - `.server.svelte` — component-level convention is not provided. Put server-only code in plain TS and call it from a component.
+
+<SeeItInAction
+demos={[{ href: "/demos/data-loading/", title: "Data Loading", hook: "Server-side fetch from PokéAPI cached via MochiCache and rendered at request time." }]}
+/>

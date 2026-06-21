@@ -6,6 +6,7 @@ description: 'Integrate Tailwind CSS v4 into a Mochi app using the setupTailwind
 
 <script>
   import Callout from './_components/Callout.svelte';
+  import SeeItInAction from './_components/SeeItInAction.svelte';
 </script>
 
 ## Tailwind
@@ -159,3 +160,7 @@ To opt back in, `@import 'tailwindcss/preflight.css' layer(base);`.
 Preflight resets every element on every page that imports the stylesheet. On a multi-page site, scope your Tailwind CSS to a single page (only that `.svelte` imports it) or accept that preflight will reset shared chrome too.
 
 </Callout>
+
+<SeeItInAction
+demos={[{ href: "https://demos.mochi.fast/todo/", title: "Tailwind Todo App", hook: "Classic todo app styled with Tailwind CSS." }]}
+/>

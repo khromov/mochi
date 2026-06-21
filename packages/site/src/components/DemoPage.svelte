@@ -297,14 +297,14 @@
     text-decoration: none;
     transition:
       box-shadow 0.15s ease,
+      border-color 0.15s ease,
       transform 0.15s ease;
   }
 
   .more-card:hover {
     transform: translateY(-2px);
-    box-shadow:
-      inset 3px 0 0 var(--accent),
-      var(--shadow-md);
+    border-color: var(--accent);
+    box-shadow: var(--shadow-md);
   }
 
   .mc-icon {

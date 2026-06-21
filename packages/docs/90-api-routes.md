@@ -6,6 +6,7 @@ description: 'Register JSON endpoints with Mochi.api() that receive a request ev
 
 <script>
   import Callout from './_components/Callout.svelte';
+  import SeeItInAction from './_components/SeeItInAction.svelte';
 </script>
 
 ## API routes
@@ -150,3 +151,7 @@ Mochi.api(async () => {
 ```
 
 API routes never render the HTML error page and `handleError` is **not** called for them — the JSON envelope is the only contract.
+
+<SeeItInAction
+demos={[{ href: "/demos/api/", title: "API Endpoints", hook: "JSON routes defined with Mochi.api(), tested live against the running server." }]}
+/>

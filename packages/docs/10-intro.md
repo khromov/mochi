@@ -7,6 +7,7 @@ description: 'A lightweight, server-first Svelte 5 framework running on Bun that
 <script>
   import Callout from './_components/Callout.svelte';
   import IslandsDemo from './_components/IslandsDemo.svelte';
+  import SeeItInAction from './_components/SeeItInAction.svelte';
 </script>
 
 # mochi
@@ -40,3 +41,11 @@ The header text, the main column, and the footer ship as HTML and stay that way.
 ## Community
 
 Questions, bug reports, ideas, or just want to see what others are building? Join the [Mochi Discord](/discord/).
+
+<SeeItInAction
+demos={[
+{ href: "/demos/hello-world/", title: "Hello World", hook: "The simplest possible Mochi page — pure server-rendered Svelte." },
+{ href: "/demos/hydration/", title: "Hydration Modes", hook: "The same component rendered five ways — eager, lazy, visible, rootMargin-tuned, and deferred server island." },
+{ href: "/demos/server-props/", title: "Server Props", hook: "Define serverProps on Mochi.page() to pass fresh data into a Svelte page on every request." },
+]}
+/>
