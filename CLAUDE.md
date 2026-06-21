@@ -4,34 +4,47 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository layout
 
-Bun workspaces monorepo:
+Bun workspaces monorepo (`packages/*`):
 
 - `packages/mochi` — the `mochi-framework` library (published to npm). All framework source lives here.
-- `packages/site` — demo site that consumes `mochi-framework` via `workspace:*`.
-- `packages/demos` — standalone demos site (HN clone today). Deployed separately from `packages/site`.
+- `packages/site` — main site that consumes `mochi-framework` via `workspace:*`; serves the marketing pages, the docs (rendered from `packages/docs` markdown), and the inline demos. Port 3333.
+- `packages/demos` — standalone demos site (HN clone, todo, admin). Deployed separately from `packages/site`. Port 3334.
+- `packages/minimal` — smallest possible Mochi app; doubles as the smoke-test target and the `create-mochi` template source. Port 3335.
+- `packages/docs` — `mochi-docs`: markdown content only (no server/scripts of its own); consumed and rendered by `packages/site`.
+- `packages/cli` — published as `create-mochi`: the `mochi-framework build` and project-scaffolding CLI (`@clack/prompts` + `commander`).
+- `packages/msgpackr-extract-stub` — published as `msgpackr-extract`; a pure-JS stub wired in via the root `overrides` so the native module is never built (see the `project_msgpackr_dep_pinning` memory).
+- `packages/video-animations` — Satori-based frame generation for promo videos (`bun run mochi:animate`).
+- `packages/remotion` — rendered video output assets.
 
-Root `package.json` scripts delegate into packages with `bun --cwd=packages/<name> run …`. Most framework work happens inside `packages/mochi/src/`; site/demo work lives in `packages/site/src/` and `packages/demos/src/`.
+Root `package.json` scripts delegate into packages with `bun --cwd=packages/<name> run …` or fan out with `bun --filter='*' run …`. Most framework work happens inside `packages/mochi/src/`; app work lives in `packages/site/src/` and `packages/demos/src/`.
 
 ## Commands
 
 ```sh
-bun run dev          # Run BOTH site (3333) and demos (3334) in parallel, MODE=development
+bun run dev          # scripts/dev.ts: auto-discovers every package with a `dev` script and runs them
+                     # in parallel with color-prefixed logs — site (3333), demos (3334), minimal (3335)
 bun run dev:site     # Just the main site
 bun run dev:demos    # Just the demos site
 bun run start        # Start the main site in production mode
-bun run start:all    # Run both sites in production mode
-bun run build        # Pre-build islands for site + demos (parallel via `bun --filter`)
-bun run clean        # Remove .mochi/ in site + demos
+bun run start:all    # Run all production-capable sites
+bun run build        # Pre-build islands across workspaces (parallel via `bun --filter`)
+bun run clean        # Remove .mochi/ across workspaces
 bun run typecheck    # tsc --noEmit across all workspaces
 bun run test         # Run tests across all workspaces (bun test)
+bun run checks       # lint:fix + format + typecheck + test — the standard pre-done gate (delegate to a sub-agent)
 bun run lint         # eslint . (ignores .mochi/, packages/site/.mochi/, .claude/)
 bun run lint:fix     # eslint . --fix
 bun run format       # prettier --write .
 bun run format:check # prettier --check . (used by CI)
+bun run syncpack     # syncpack lint — verify dependency versions agree across workspaces (syncpack:fix to apply)
 bun run loc          # Lines-of-code report for all packages (.github/scripts/loc-report.ts)
+bun run deps         # Dependency report (packages/mochi/scripts/dep-report.ts)
+bun run bench:msgpack # msgpack serialization benchmark
+bun run cli-test     # create-mochi CLI regression test (.github/scripts/cli-regression-test.ts)
+bun run mochi:animate # Generate promo-video frames (packages/video-animations)
 ```
 
-Multi-package scripts (`build`, `test`, `typecheck`, `clean`, `dev`, `start:all`) use `bun --filter='*' run <script>`, which fans out to every workspace, runs in topological order, and parallelises siblings.
+Multi-package scripts (`build`, `test`, `typecheck`, `clean`, `start:all`) use `bun --filter='*' run <script>`, which fans out to every workspace, runs in topological order, and parallelises siblings. `bun run dev` instead uses `scripts/dev.ts`, which dynamically discovers packages exposing a `dev` script.
 
 Run a single test file: `bun test packages/mochi/src/forms.test.ts` (or pass `-t <pattern>` to filter).
 
