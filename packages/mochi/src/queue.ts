@@ -13,7 +13,7 @@
  * processing immediately. This mirrors bunqueue's embedded `new Queue` +
  * `new Worker`, which share in-process state.
  */
-import { Queue, Worker } from 'bunqueue/client';
+import { Queue, Worker, shutdownManager } from 'bunqueue/client';
 import type { Job, JobOptions } from 'bunqueue/client';
 import { pinGlobal } from './globalState';
 import { mochiEvents } from './events';
@@ -307,6 +307,12 @@ export async function closeAllQueueResources(): Promise<void> {
   const queues = [...registry.queues];
   await Promise.allSettled(workers.map((w) => w.close()));
   await Promise.allSettled(queues.map((q) => q.close()));
+  // Embedded mode keeps a process-global manager (open SQLite handle + several
+  // un-unref'd background intervals). Closing individual handles doesn't touch
+  // it, so without this the SQLite file stays locked (Windows rm -> EBUSY) and
+  // the intervals keep the event loop alive (the process never exits). Sync and
+  // idempotent, so it's safe on the double-call / signal-handler paths.
+  shutdownManager();
 }
 
 /**
