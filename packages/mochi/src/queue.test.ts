@@ -185,6 +185,30 @@ describe('Mochi queue + worker', () => {
     expect(Object.keys(job).sort()).toEqual(['attempt', 'data', 'enqueuedAt', 'id', 'name', 'queue']);
   });
 
+  test('re-registering a worker keeps the first and ignores the duplicate', async () => {
+    const name = uniqueName();
+    const ran: string[] = [];
+    const first = deferred<void>();
+
+    const a = createWorker(
+      name,
+      async () => {
+        ran.push('A');
+        first.resolve();
+      },
+      { dataPath },
+    );
+    // A dev HMR re-import re-runs the module body — the duplicate must be ignored.
+    const b = createWorker(name, async () => ran.push('B'), { dataPath });
+    expect(b).toBe(a);
+
+    const queue = createQueue(name, { dataPath });
+    await queue.add('job', {});
+    await first.promise;
+    await Bun.sleep(150);
+    expect(ran).toEqual(['A']);
+  });
+
   test('closeAllQueueResources closes handles and is idempotent', async () => {
     const name = uniqueName();
     createWorker(name, async () => null, { dataPath });

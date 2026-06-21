@@ -109,6 +109,8 @@ interface QueueRegistry {
   queues: Set<Closeable>;
   workers: Set<Closeable>;
   workersByName: Map<string, Closeable>;
+  /** Worker names we've already warned about re-registering, so dev HMR doesn't spam. */
+  warnedReregister: Set<string>;
   /** First `dataPath` seen; bunqueue ignores later differing paths in the same process. */
   dataPath: string | null | undefined;
   signalHandlersInstalled: boolean;
@@ -123,6 +125,7 @@ const registry = pinGlobal<QueueRegistry>('__mochi_queue_registry__', () => ({
   queues: new Set(),
   workers: new Set(),
   workersByName: new Map(),
+  warnedReregister: new Set(),
   dataPath: undefined,
   signalHandlersInstalled: false,
   serveOwnsShutdown: false,
@@ -206,11 +209,21 @@ export function createWorker<T, R = unknown>(name: string, processor: MochiProce
 
   const existing = registry.workersByName.get(name);
   if (existing) {
-    // A re-import (dev HMR re-runs island/route modules) would otherwise stack a
-    // second consumer on the same queue. Replace the old one, mirroring how
-    // `consoleLogger`/`mochiEvents.setHandler` guard against duplicate subscribers.
-    logger.warn(`[queue] worker "${name}" re-created; closing the previous instance.`);
-    void existing.close();
+    // The dev route-HMR watcher re-bundles and re-executes route modules (and
+    // everything they import) to hot-swap routes, so a top-level
+    // `Mochi.worker()` call can run again within the same process. Keep the
+    // FIRST worker — the one the running server's live handlers are bound to —
+    // and ignore the re-registration, rather than swapping in a second consumer
+    // whose processor closure (and any module-level state it captures) has
+    // diverged from those handlers. The trade-off is that worker code/option
+    // changes don't hot-reload; a server restart applies them.
+    if (!registry.warnedReregister.has(name)) {
+      registry.warnedReregister.add(name);
+      logger.warn(
+        `[queue] worker "${name}" is already registered — keeping the running instance. Dev route-reload re-runs worker modules; restart the server to apply changes to its processor or options.`,
+      );
+    }
+    return existing as unknown as MochiWorker<T, R>;
   }
 
   const worker = new Worker<T, R>(name, (job) => processor(toMochiJob(job as Job<T>, name)), {

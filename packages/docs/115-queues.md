@@ -161,6 +161,18 @@ mochiEvents.on('queue:completed', ({ queue, jobName, duration }) => {
 });
 ```
 
+### Dev mode & hot reload
+
+`Mochi.worker()` is **idempotent per queue name**: only one worker runs for a given name in a process. In dev, the route hot-reload watcher re-runs your modules (including the one that calls `Mochi.worker()`), but the framework keeps the first worker and logs a one-time warning instead of starting a duplicate.
+
+The trade-off: **changes to a worker's processor or options don't hot-reload** — restart the dev server to apply them. The same idempotency means you can keep ordinary in-memory state (a results buffer, a counter) in module scope without it being duplicated.
+
+<Callout type="info">
+
+This applies to the worker. A long-running resource the worker _opens_ (a DB pool, a client connection) is your own singleton — if it must survive the dev module re-run, pin it to `globalThis` the way the framework pins its own internals.
+
+</Callout>
+
 ### Shutdown
 
 Queues and workers close gracefully when `Mochi.serve()` receives `SIGTERM`/`SIGINT` — in-flight jobs drain before the process exits. This works even for a **standalone worker process** that never calls `Mochi.serve()`: creating a worker installs the same signal handlers.
