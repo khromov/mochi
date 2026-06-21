@@ -17,8 +17,6 @@
   let username = $state(suggestedUser);
   let lastQueued = $state<string | null>(null);
 
-  // Initial state arrives via serverProps; the SSE stream pushes a fresh status
-  // every time a job completes — no polling.
   $effect(() => {
     const source = new EventSource('/demos/queue/events/');
     source.addEventListener('message', (e) => {

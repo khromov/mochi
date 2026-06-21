@@ -10,16 +10,12 @@ export const workers: Record<string, MochiWorkerConfig> = {
 
 export const routes: Record<string, MochiRouteValue> = {
   '/demos/queue': Mochi.page('./src/demos/queue/Queue.svelte', {
-    // Initial state for the first render / hydration; the SSE stream below keeps
-    // it live thereafter. `suggestedUser` is generated server-side so SSR and
-    // hydration agree on the preloaded value.
+    // `suggestedUser` is generated server-side so SSR and hydration agree.
     serverProps: () => ({ initial: queueStatus(), suggestedUser: randomUsername() }),
     actions: {
       enqueue: async ({ formData }) => {
-        // Accept any free-text username. It is stored as-is and only ever
-        // rendered through Svelte text interpolation (`{entry.user}`), which
-        // auto-escapes — so arbitrary input can't inject markup. Cap the length
-        // to keep the UI tidy.
+        // Free-text username is safe unsanitized: it's only ever rendered through
+        // Svelte text interpolation (`{entry.user}`), which auto-escapes.
         const user = String(formData.get('username') ?? '')
           .trim()
           .slice(0, 64);
@@ -28,7 +24,6 @@ export const routes: Record<string, MochiRouteValue> = {
       },
     },
   }),
-  // Push the latest status whenever a job in this queue completes.
   '/demos/queue/events': Mochi.sse((stream) => {
     const push = (event: { queue: string }) => {
       if (event.queue === QUEUE_NAME) {

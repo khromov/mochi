@@ -1,17 +1,7 @@
 /**
- * Background job queues for Mochi, backed by bunqueue's embedded mode.
- *
- * This is the single isolation boundary around bunqueue: it is the only module
- * in the framework that imports `bunqueue/client`, and no bunqueue type ever
- * leaks into the public surface. Swapping the backend means rewriting this file
- * and nothing else (`grep -rl "bunqueue" packages/mochi/src` returns just this).
- *
- * `Mochi.queue()` returns a *live handle* created at module top-level: a
- * producer you call `.add()` on from anywhere (e.g. a page action). Workers are
- * different — `Mochi.worker()` returns an inert config (like
- * `Mochi.page/api/ws/sse/file`) that `Mochi.serve({ workers })` turns into a
- * live consumer via `createWorker` below. Both map onto bunqueue's embedded
- * `new Queue` + `new Worker`, which share in-process state.
+ * The single isolation boundary around bunqueue: the only module that imports
+ * `bunqueue/client`, with no bunqueue type leaking into the public surface, so
+ * swapping the backend means rewriting just this file.
  */
 import { Queue, Worker, shutdownManager } from 'bunqueue/client';
 import type { Job, JobOptions } from 'bunqueue/client';
@@ -137,10 +127,9 @@ function toBunJobOptions(opts: MochiJobOptions | undefined): JobOptions | undefi
 export function createQueue<T>(name: string, opts?: MochiQueueOptions): MochiQueue<T> {
   rememberDataPath(opts?.dataPath);
 
-  // Idempotent per name (like createWorker): a producer handle is a singleton,
-  // and the dev route-HMR watcher re-runs the defining module repeatedly. Return
-  // the existing handle so handles don't accumulate in the registry. Silent —
-  // unlike a worker, re-getting a queue has no processor that could go stale.
+  // A producer handle is a singleton per name; the dev route-HMR watcher re-runs
+  // the defining module repeatedly, so reuse the existing handle instead of
+  // accumulating duplicates in the registry.
   const existing = registry.queuesByName.get(name);
   if (existing) {
     return existing as unknown as MochiQueue<T>;
@@ -170,6 +159,8 @@ export function createQueue<T>(name: string, opts?: MochiQueueOptions): MochiQue
     async close() {
       registry.queues.delete(handle);
       registry.queuesByName.delete(name);
+      // bunqueue's Queue.close() is synchronous (returns void) — only Worker.close()
+      // is async — so there's nothing to await here.
       queue.close();
     },
   };
@@ -197,7 +188,9 @@ export function createWorker<T, R = unknown>(name: string, processor: MochiProce
   };
 
   // bunqueue's `finishedOn`/`processedOn` are unreliable on the public job at
-  // event time, so measure duration ourselves from the `active` event.
+  // event time, so measure duration ourselves from the `active` event. Entries are
+  // cleared on completed/failed; a job that goes active but never resolves would
+  // leak one, but the map is bounded by in-flight jobs so this is a non-issue.
   const startedAt = new Map<string, number>();
   const durationFor = (jobId: string): number => {
     const start = startedAt.get(jobId);
@@ -253,10 +246,8 @@ export function createWorker<T, R = unknown>(name: string, processor: MochiProce
 }
 
 /**
- * Gracefully close every queue and worker created via `Mochi.queue` / the
- * `workers` mounted by `Mochi.serve()`. Workers first (stop pulling new jobs),
- * then queues. Idempotent and never throws — `Mochi.serve()`'s shutdown path
- * calls it, and `mochi-framework build` calls it to drain top-level producers.
+ * Workers first (stop pulling new jobs), then queues. Idempotent and never
+ * throws, so it's safe on both the serve shutdown path and the build drain path.
  */
 export async function closeAllQueueResources(): Promise<void> {
   const workers = [...registry.workers];

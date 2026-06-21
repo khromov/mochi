@@ -146,7 +146,8 @@ export class Mochi {
    * Create a background job queue (producer handle). Unlike `page`/`api`/`ws`/
    * `sse`/`file`, this returns a *live* handle — call it at module top-level and
    * `.add()` jobs from anywhere (e.g. a page action). Backed by bunqueue's
-   * embedded mode; the matching `Mochi.worker(name, …)` consumes the jobs.
+   * embedded mode; a `Mochi.worker(…)` mounted under this name as the
+   * `Mochi.serve({ workers })` map key consumes the jobs.
    */
   static queue<T = unknown>(name: string, opts?: MochiQueueOptions): MochiQueue<T> {
     return createQueue<T>(name, opts);

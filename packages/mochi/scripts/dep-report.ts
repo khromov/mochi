@@ -19,15 +19,10 @@ const REPO_ROOT = join(ROOT, '..', '..');
 const BUN_STORE = join(REPO_ROOT, 'node_modules', '.bun');
 
 /**
- * Set of package names bun actually installed, read from `bun.lock`'s top-level
- * `packages` map. Each entry's value is `[id, ...]` where `id` is `name@version`
- * (or `name@workspace:…`); strip the trailing `@<version>` to recover the name.
- * The scope `@` sits at index 0, so `lastIndexOf('@')` always points at the version.
- * This is the source of truth for "actually put in" — optional deps bun skipped
- * (e.g. wrong-platform native binaries) never appear here.
- *
- * `bun.lock` is JSONC: it uses trailing commas (no comments), so strip those before
- * `JSON.parse` rather than reaching for a JSONC dependency.
+ * The set of names bun actually installed — the source of truth for "present in
+ * the tree", since optional deps bun skipped (e.g. wrong-platform native
+ * binaries) never appear in `bun.lock`. The lock is JSONC, so strip trailing
+ * commas before `JSON.parse` rather than pulling in a JSONC dependency.
  */
 function loadInstalledFromLock(): Set<string> {
   const installed = new Set<string>();

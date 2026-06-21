@@ -176,11 +176,9 @@ async function main() {
     assetPrefix: values['asset-prefix'],
   });
 
-  // `build` is a one-shot command, but extracting serve options imports the
-  // user's entry for real — a top-level Mochi.queue() producer opens an embedded
-  // store whose background intervals keep the event loop alive and hang the CLI.
-  // (Workers no longer auto-start; they're inert config until Mochi.serve mounts
-  // them.) Drain any producers and exit explicitly so the build always terminates.
+  // Extracting serve options imports the user's entry for real, so a top-level
+  // Mochi.queue() producer opens an embedded store whose background intervals
+  // keep the event loop alive and hang this one-shot build. Drain and exit.
   await closeAllQueueResources();
   process.exit(0);
 }
