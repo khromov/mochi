@@ -55,5 +55,8 @@
   },
   "patchedDependencies": {
     "svelte-check@4.6.0": "packages/mochi/patches/svelte-check@4.6.0.patch"
+  },
+  "overrides": {
+    "msgpackr-extract": "workspace:*"
   }
 }

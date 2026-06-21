@@ -1,0 +1,7 @@
+{
+  "name": "msgpackr-extract",
+  "version": "3.0.4",
+  "private": true,
+  "description": "Empty stub used to override the native msgpackr-extract accelerator out of the dependency graph. See README.",
+  "main": "index.cjs"
+}

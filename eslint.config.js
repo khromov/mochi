@@ -27,6 +27,11 @@ export default ts.config(
     files: ['**/*.ts', '**/*.svelte'],
     rules: { 'no-undef': 'off' },
   },
+  // .cjs files are CommonJS — expose module/require/exports globals
+  {
+    files: ['**/*.cjs'],
+    languageOptions: { sourceType: 'commonjs' },
+  },
   prettier,
   ...svelte.configs['flat/prettier'],
   // Keep project rules last so they override prettier configs (which disable `curly`)
