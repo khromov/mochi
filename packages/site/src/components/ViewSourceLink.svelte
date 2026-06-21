@@ -19,7 +19,7 @@
     display: inline-flex;
     align-items: center;
     gap: 0.4rem;
-    align-self: flex-end;
+    align-self: flex-start;
     font-size: 0.82rem;
     color: var(--text-muted);
     text-decoration: none;
