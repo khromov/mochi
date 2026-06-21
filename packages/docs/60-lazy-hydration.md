@@ -6,6 +6,7 @@ description: 'Defer island hydration until the component scrolls into view with 
 
 <script>
   import Callout from './_components/Callout.svelte';
+  import SeeItInAction from './_components/SeeItInAction.svelte';
 </script>
 
 ## Lazy hydration with `mochi:hydrate:visible`
@@ -40,3 +41,10 @@ Stack `mochi:defer mochi:hydrate:visible` to defer both rendering and hydration:
 ```
 
 See `Selective hydration` for the eager `mochi:hydrate` directive and `Server islands` for `mochi:defer` on its own.
+
+<SeeItInAction
+  demos={[
+    { href: "/demos/lazy/", title: "Lazy Islands", hook: "Islands marked mochi:hydrate:visible hydrate and load their CSS only when scrolled into view." },
+    { href: "/demos/lazy-server-island/", title: "Lazy Server Islands", hook: "Server islands marked mochi:defer:visible only fetch when the wrapper scrolls into view." },
+  ]}
+/>

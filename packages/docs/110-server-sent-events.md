@@ -6,6 +6,7 @@ description: 'Push real-time updates to clients over a single HTTP connection wi
 
 <script>
   import Callout from './_components/Callout.svelte';
+  import SeeItInAction from './_components/SeeItInAction.svelte';
 </script>
 
 ## Server-Sent Events
@@ -75,3 +76,7 @@ stream.onClose(() => sub.unsubscribe());
 ### Events
 
 `Mochi.sse` emits `sse:open`, `sse:message`, and `sse:close` on `mochiEvents`. `logger()` prints them by default.
+
+<SeeItInAction
+  demos={[{ href: "/demos/streams/", title: "Real-time Streams", hook: "WebSocket and SSE clocks, lazily hydrated via mochi:hydrate:visible." }]}
+/>

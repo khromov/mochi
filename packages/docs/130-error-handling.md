@@ -6,6 +6,7 @@ description: 'Configure a custom error page and control how uncaught errors are 
 
 <script>
   import Callout from './_components/Callout.svelte';
+  import SeeItInAction from './_components/SeeItInAction.svelte';
 </script>
 
 ## Error handling
@@ -136,3 +137,7 @@ Uncaught throws inside a `Mochi.api` handler are coerced to `500 Internal Server
 ### Fallback behaviour
 
 If the user's `errorPage` itself throws during render, Mochi returns a plain-text response that mentions both the original error and the secondary render failure — the error page cannot crash the server.
+
+<SeeItInAction
+  demos={[{ href: "/demos/error/", title: "Error Handling", hook: "Catch render errors and unmatched routes via Mochi.serve()'s errorPage option and the handleError hook." }]}
+/>

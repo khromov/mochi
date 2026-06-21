@@ -6,6 +6,7 @@ description: 'Build-time constants for branching on render target (isServer, isB
 
 <script>
   import Callout from './_components/Callout.svelte';
+  import SeeItInAction from './_components/SeeItInAction.svelte';
 </script>
 
 ## Environment constants
@@ -99,3 +100,7 @@ Use `isHydratable` to peek request-scoped state only when the client won't take 
 ```
 
 See the [Forms demo](/demos/login/) for a side-by-side comparison of hydrated and SSR-only render paths.
+
+<SeeItInAction
+  demos={[{ href: "/demos/url/", title: "Isomorphic URL", hook: "One import for the current URL — reads from the request on the server, window.location on the client." }]}
+/>

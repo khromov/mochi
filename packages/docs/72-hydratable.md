@@ -6,6 +6,7 @@ description: 'Serialize computed server values into the page so the client can r
 
 <script>
   import Callout from './_components/Callout.svelte';
+  import SeeItInAction from './_components/SeeItInAction.svelte';
 </script>
 
 ## Hydratable values (experimental)
@@ -65,3 +66,7 @@ Values are serialized with [`devalue`](https://www.npmjs.com/package/devalue), s
 **No CSP nonce wiring.** Mochi does not yet pass a `csp.nonce` through to Svelte's `render()`, so the inline lookup script will be blocked under strict `script-src` policies. Either allow `'unsafe-inline'` for scripts (which you likely already do for the island bootstrap) or wait for nonce plumbing.
 
 </Callout>
+
+<SeeItInAction
+  demos={[{ href: "/demos/hydratable/", title: "Hydratable", hook: "Compute a value once on the server with hydratable(); the hydrated island reads it from <head> instead of re-running the async work." }]}
+/>

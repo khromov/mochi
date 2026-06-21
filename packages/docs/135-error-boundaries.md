@@ -4,6 +4,10 @@ slug: error-boundaries
 description: 'Hydratable islands are automatically wrapped in svelte:boundary so a single island failure cannot crash the page.'
 ---
 
+<script>
+  import SeeItInAction from './_components/SeeItInAction.svelte';
+</script>
+
 ## Error boundaries
 
 Mochi auto-wraps every `mochi:hydrate` and `mochi:hydrate:visible` island in `<svelte:boundary>`. A throw inside one island no longer takes down the page render — the failed island is replaced by a `<mochi-island-failure>` stub and the rest of the page continues. No opt-in, no configuration.
@@ -74,3 +78,7 @@ The `MochiIslandErrorKind` type also reserves `'client-hydrate'`, but client-sid
 
 - [Error handling](error-handling/) — top-level page errors and the configured `errorPage`.
 - [Selective hydration](selective-hydration/), [Lazy hydration](lazy-hydration/), [Server islands](server-islands/) — the directives boundaries wrap.
+
+<SeeItInAction
+  demos={[{ href: "/demos/error-boundaries/", title: "Error Boundaries", hook: "Contain island failures with <svelte:boundary> so one broken component does not crash the page." }]}
+/>

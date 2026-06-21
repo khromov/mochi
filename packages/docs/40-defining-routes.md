@@ -6,6 +6,7 @@ description: 'Register pages, APIs, WebSockets, SSE endpoints, and file routes u
 
 <script>
   import Callout from './_components/Callout.svelte';
+  import SeeItInAction from './_components/SeeItInAction.svelte';
 </script>
 
 ## Defining routes
@@ -226,3 +227,11 @@ Every `Mochi.page` and `Mochi.api` route answers `HEAD` automatically by running
 ### Static files
 
 Files under `./public` are served automatically; no route entry is needed. A user-defined route always wins over a same-path public file. See `Serve options` for `publicDir`.
+
+<SeeItInAction
+  demos={[
+    { href: "/demos/hello-world/", title: "Hello World", hook: "The simplest possible Mochi page — pure server-rendered Svelte." },
+    { href: "/demos/api/", title: "API Endpoints", hook: "JSON routes defined with Mochi.api(), tested live against the running server." },
+    { href: "/demos/file/", title: "File Routes", hook: "Serve a file from disk with Mochi.file() — static path or a per-request resolver." },
+  ]}
+/>

@@ -6,6 +6,7 @@ description: 'Build your first page with serverProps, selective hydration, and s
 
 <script>
   import Callout from './_components/Callout.svelte';
+  import SeeItInAction from './_components/SeeItInAction.svelte';
 </script>
 
 ## Your first Mochi app
@@ -189,3 +190,10 @@ The finished app is running on this site at [**/docs/your-first-mochi-app/hello*
 - [Lazy hydration](/docs/lazy-hydration/) — `mochi:hydrate:visible` for below-the-fold islands
 - [Server islands](/docs/server-islands/) — `mochi:defer`, signed props, and `MOCHI_KEY`
 - [Passing props to islands](/docs/island-props/) — every type `devalue` can round-trip
+
+<SeeItInAction
+  demos={[
+    { href: "/demos/hello-world/", title: "Hello World", hook: "The simplest possible Mochi page — pure server-rendered Svelte." },
+    { href: "/demos/server-props/", title: "Server Props", hook: "Define serverProps on Mochi.page() to pass fresh data into a Svelte page on every request." },
+  ]}
+/>

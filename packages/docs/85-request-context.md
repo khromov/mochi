@@ -6,6 +6,7 @@ description: 'Access the current URL, route params, cookies, and locals from any
 
 <script>
   import Callout from './_components/Callout.svelte';
+  import SeeItInAction from './_components/SeeItInAction.svelte';
 </script>
 
 ## Request context
@@ -115,3 +116,10 @@ serverProps: async () => {
   return { posts: await loadPosts() };
 };
 ```
+
+<SeeItInAction
+  demos={[
+    { href: "/demos/request-id/", title: "Request ID", hook: "Every request gets a UUID v7 — read it server-side via getRequestContext().requestId; the same id rides every lifecycle event for correlation." },
+    { href: "/demos/cookies/", title: "Cookies", hook: "Read and write cookies on the server and the client through one MochiCookieJar API." },
+  ]}
+/>

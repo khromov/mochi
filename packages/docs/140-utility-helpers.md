@@ -4,6 +4,10 @@ slug: utility-helpers
 description: 'Small helper functions for building JSON responses, error responses, and form-action results.'
 ---
 
+<script>
+  import SeeItInAction from './_components/SeeItInAction.svelte';
+</script>
+
 ## Utility helpers
 
 Small functions exported from `mochi-framework` for shaping responses and form-action results. Each helper is documented in depth where it is used; this page is a single index.
@@ -61,3 +65,7 @@ import { redirect } from 'mochi-framework';
 
 return redirect(303, '/dashboard');
 ```
+
+<SeeItInAction
+  demos={[{ href: "/demos/url/", title: "Isomorphic URL", hook: "One import for the current URL — reads from the request on the server, window.location on the client." }]}
+/>

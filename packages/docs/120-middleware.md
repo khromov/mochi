@@ -6,6 +6,7 @@ description: 'Intercept and transform requests and responses using SvelteKit-sty
 
 <script>
   import Callout from './_components/Callout.svelte';
+  import SeeItInAction from './_components/SeeItInAction.svelte';
 </script>
 
 ## Middleware (hooks)
@@ -157,3 +158,7 @@ await Mochi.serve({
 ```
 
 `asset`, `fallback`, and `error` events pass through unchanged — framework bundles already get long-lived immutable caching in production. WebSocket upgrades and SSE streams never reach the middleware.
+
+<SeeItInAction
+  demos={[{ href: "/demos/request-id/", title: "Request ID", hook: "Every request gets a UUID v7 — read it server-side via getRequestContext().requestId; the same id rides every lifecycle event for correlation." }]}
+/>

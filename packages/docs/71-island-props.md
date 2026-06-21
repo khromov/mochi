@@ -6,6 +6,7 @@ description: 'How props are serialized and passed to hydratable islands, includi
 
 <script>
   import Callout from './_components/Callout.svelte';
+  import SeeItInAction from './_components/SeeItInAction.svelte';
 </script>
 
 ## Passing props to islands
@@ -120,3 +121,11 @@ The framework appends one read-only prop to every island invocation. Destructure
 `isHydratable` is set by the framework, not passed by you. Read it to render an SSR-only fallback at a call site that also hydrates client-side — see [Selective hydration](selective-hydration/).
 
 `islandId` is a reserved name on every island (`mochi:hydrate` and `mochi:defer` alike) — passing it as a literal prop is a compile error, so a component can move between directives without the name silently changing meaning. On `mochi:defer` it is also the framework's transport key inside the signed envelope, stripped server-side before the component renders; a spread carrying it there is overridden by the framework value (last key wins). For a unique id inside the component, use `$props.id()`.
+
+<SeeItInAction
+  demos={[
+    { href: "/demos/island-props/", title: "Crossing the server-client boundary with props", hook: "How props travel from a server-rendered parent into a hydrated island — Date, Map, Set, BigInt, URL, typed arrays, and even cyclic refs survive devalue's round-trip." },
+    { href: "/demos/prop-dedup/", title: "Shared Props", hook: "Nine islands, three unique payloads — each set serialized once and referenced via props-ref." },
+    { href: "/demos/props-id/", title: "Unique IDs", hook: "Svelte's native $props.id() inside islands — SSR-consistent, unique per instance, namespaced in server islands." },
+  ]}
+/>
