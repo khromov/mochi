@@ -20,6 +20,8 @@
     align-items: center;
     gap: 0.4rem;
     align-self: flex-start;
+    /* Pull the link closer to the code viewer below (parent flex uses gap: 1rem). */
+    margin-bottom: -1.25rem;
     font-size: 0.82rem;
     color: var(--text-muted);
     text-decoration: none;
