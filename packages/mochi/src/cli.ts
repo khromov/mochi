@@ -177,9 +177,10 @@ async function main() {
   });
 
   // `build` is a one-shot command, but extracting serve options imports the
-  // user's entry for real — a top-level Mochi.worker() spawns a live embedded
-  // queue thread that keeps the event loop alive and hangs the CLI. Drain any
-  // queues/workers and exit explicitly so the build always terminates.
+  // user's entry for real — a top-level Mochi.queue() producer opens an embedded
+  // store whose background intervals keep the event loop alive and hang the CLI.
+  // (Workers no longer auto-start; they're inert config until Mochi.serve mounts
+  // them.) Drain any producers and exit explicitly so the build always terminates.
   await closeAllQueueResources();
   process.exit(0);
 }

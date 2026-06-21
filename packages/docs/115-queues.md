@@ -12,16 +12,25 @@ description: 'Run background jobs in-process with Mochi.queue() and Mochi.worker
 
 Offload work that shouldn't block a response — sending email, encoding media, calling slow third-party APIs — to a background **worker**. `Mochi.queue()` is the producer; `Mochi.worker()` is the consumer. Both run in your process, backed by [bunqueue](https://bunqueue.dev/)'s embedded mode. No Redis, no separate service.
 
-Unlike `Mochi.page` / `api` / `ws` / `sse`, these don't return route configs for `Mochi.serve()` — they return **live handles**. Create them at module top-level and use them anywhere.
+`Mochi.queue()` returns a **live handle** — create it at module top-level and `.add()` to it from anywhere. `Mochi.worker()` is different: like `Mochi.page` / `api` / `ws` / `sse`, it returns an **inert config** that you mount in `Mochi.serve({ workers })`, keyed by queue name. So every background worker the server runs is declared in one place.
 
 ```ts
 import { Mochi } from 'mochi-framework';
 
-const emails = Mochi.queue<{ to: string }>('emails');
+// producer — a live handle you import and `.add()` to
+export const emails = Mochi.queue<{ to: string }>('emails');
 
-Mochi.worker<{ to: string }>('emails', async (job) => {
-  await sendEmail(job.data.to);
-  return { sent: true };
+await Mochi.serve({
+  routes: {
+    /* … */
+  },
+  workers: {
+    // the map key is the queue name
+    emails: Mochi.worker<{ to: string }>(async (job) => {
+      await sendEmail(job.data.to);
+      return { sent: true };
+    }),
+  },
 });
 
 // from a page action, an API route, anywhere:
@@ -53,7 +62,17 @@ await queue.addBulk([
 ### `Mochi.worker()`
 
 ```ts
-const worker = Mochi.worker<JobData, Result>(name, processor, options?);
+const workerConfig = Mochi.worker<JobData, Result>(processor, options?);
+```
+
+`Mochi.worker()` returns an inert config — mount it under the queue name in `Mochi.serve({ workers })`:
+
+```ts
+await Mochi.serve({
+  workers: {
+    emails: Mochi.worker<JobData, Result>(processor, { concurrency: 10 }),
+  },
+});
 ```
 
 The processor receives a read-only `MochiJob<T>` and returns the job result:
@@ -67,18 +86,23 @@ The processor receives a read-only `MochiJob<T>` and returns the job result:
 | `attempt`    | `number` | 1-based attempt number (1 on first run) |
 | `enqueuedAt` | `number` | epoch ms when enqueued                  |
 
-Options: `concurrency` (jobs processed at once), `dataPath` (see below). Subscribe to outcomes on the handle:
+Options: `concurrency` (jobs processed at once), `dataPath` (see below), and `on` for lifecycle listeners. Subscribe to outcomes via `on`:
 
 ```ts
-const worker = Mochi.worker('emails', processor, { concurrency: 10 });
-
-worker.on('completed', (job, result) => log.info(`${job.name} done`));
-worker.on('failed', (job, error) => log.warn(`${job.name} failed: ${error.message}`));
+Mochi.worker(processor, {
+  concurrency: 10,
+  on: {
+    completed: (job, result) => log.info(`${job.name} done`),
+    failed: (job, error) => log.warn(`${job.name} failed: ${error.message}`),
+  },
+});
 ```
+
+Or subscribe globally on the [`mochiEvents` bus](#observability) (filter by `queue` name) — handy when the listener lives far from the worker declaration.
 
 ### Producer + consumer in one module
 
-The common pattern is a shared module: define the queue and worker together, export the queue so route code can `.add()` to it.
+The common pattern is a shared module: export the live queue handle (so route code can `.add()` to it) and the worker config (so your entry can mount it).
 
 ```ts
 // jobs.ts
@@ -86,7 +110,7 @@ import { Mochi } from 'mochi-framework';
 
 export const emails = Mochi.queue<{ to: string }>('emails');
 
-Mochi.worker<{ to: string }>('emails', async (job) => {
+export const emailWorker = Mochi.worker<{ to: string }>(async (job) => {
   await sendEmail(job.data.to);
   return { sent: true };
 });
@@ -110,11 +134,17 @@ export const routes = {
 };
 ```
 
-<Callout type="info">
+```ts
+// index.ts
+import { Mochi } from 'mochi-framework';
+import { routes } from './routes';
+import { emailWorker } from './jobs';
 
-Importing `jobs.ts` is what starts the worker. Make sure something in your server's import graph reaches it — importing it from `routes.ts` (as above) is enough.
-
-</Callout>
+await Mochi.serve({
+  routes,
+  workers: { emails: emailWorker },
+});
+```
 
 ### Persistence
 
@@ -122,7 +152,8 @@ By default the queue is **in-memory** — jobs do not survive a restart. Pass `d
 
 ```ts
 const queue = Mochi.queue('emails', { dataPath: '.mochi/queue.sqlite' });
-Mochi.worker('emails', processor, { dataPath: '.mochi/queue.sqlite' });
+// in Mochi.serve({ workers }):
+//   emails: Mochi.worker(processor, { dataPath: '.mochi/queue.sqlite' })
 ```
 
 <Callout type="warning">
@@ -140,9 +171,8 @@ const queue = Mochi.queue('api-calls', {
   bunqueue: { defaultJobOptions: { backoff: { type: 'exponential', delay: 1000 } } },
 });
 
-Mochi.worker('api-calls', processor, {
-  bunqueue: { limiter: { max: 100, duration: 1000 } },
-});
+// in Mochi.serve({ workers }):
+//   'api-calls': Mochi.worker(processor, { bunqueue: { limiter: { max: 100, duration: 1000 } } })
 
 await queue.add('call', data, { attempts: 5, bunqueue: { backoff: { type: 'jitter', delay: 1000 } } });
 ```
@@ -163,26 +193,30 @@ mochiEvents.on('queue:completed', ({ queue, jobName, duration }) => {
 
 ### Dev mode & hot reload
 
-`Mochi.worker()` is **idempotent per queue name**: only one worker runs for a given name in a process. In dev, the route hot-reload watcher re-runs your modules (including the one that calls `Mochi.worker()`), but the framework keeps the first worker and logs a one-time warning instead of starting a duplicate.
+A worker is instantiated **once**, by `Mochi.serve({ workers })` — `Mochi.worker()` itself is just inert config, so the dev route hot-reload watcher re-running your modules can't spawn a duplicate consumer.
 
-The trade-off: **changes to a worker's processor or options don't hot-reload** — restart the dev server to apply them. The same idempotency means you can keep ordinary in-memory state (a results buffer, a counter) in module scope without it being duplicated.
+The trade-off: **changes to a worker's processor or options don't hot-reload** — restart the dev server to apply them. Because the worker module is imported once, you can keep ordinary in-memory state (a results buffer, a counter) in module scope without it being duplicated.
 
 <Callout type="info">
 
-This applies to the worker. A long-running resource the worker _opens_ (a DB pool, a client connection) is your own singleton — if it must survive the dev module re-run, pin it to `globalThis` the way the framework pins its own internals.
+A long-running resource the worker _opens_ (a DB pool, a client connection) is your own singleton — if it must survive a dev module re-run, pin it to `globalThis` the way the framework pins its own internals.
 
 </Callout>
 
 ### Shutdown
 
-Queues and workers close gracefully when `Mochi.serve()` receives `SIGTERM`/`SIGINT` — in-flight jobs drain before the process exits. This works even for a **standalone worker process** that never calls `Mochi.serve()`: creating a worker installs the same signal handlers.
+Queues and workers close gracefully when `Mochi.serve()` receives `SIGTERM`/`SIGINT` — in-flight jobs drain before the process exits. A **worker-only process** (no page/API routes) is just `Mochi.serve({ workers })` with no `routes`:
 
 ```ts
-// worker.ts — run with `bun worker.ts`, no HTTP server
+// worker.ts — run with `bun worker.ts`
 import { Mochi } from 'mochi-framework';
 
-Mochi.worker('emails', async (job) => {
-  await sendEmail(job.data.to);
+await Mochi.serve({
+  workers: {
+    emails: Mochi.worker(async (job) => {
+      await sendEmail(job.data.to);
+    }),
+  },
 });
 ```
 

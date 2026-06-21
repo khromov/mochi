@@ -9,7 +9,7 @@ import { clearDocsCaches, DOCS_DIR } from './lib/docs';
 import { highlightCode } from './lib/highlight.server';
 import { handle as cookieVaryTestHandle } from './demos/cookie-vary-test/routes';
 import { encodeDebugBarGlobals } from './lib/debugBarEncode';
-import { routes } from './routes';
+import { routes, workers } from './routes';
 
 const DEVELOPMENT = process.env.MODE === 'development';
 const IS_DOCKER = process.env.MOCHI_DOCKER === 'true';
@@ -150,6 +150,7 @@ await Mochi.serve({
     'trailingSlash:redirect': (redirect, { url }) => (url.pathname === '/mcp' ? null : redirect),
   },
   routes,
+  workers,
 });
 
 logger.info('Server running at ' + origin);

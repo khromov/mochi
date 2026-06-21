@@ -37,6 +37,23 @@ throw new Error('serve should have halted execution before this line');`,
     expect(options?.optimize).toEqual({ enabled: true, exclude: ['x.svelte'] });
   });
 
+  test('captures the workers map without starting a worker thread', async () => {
+    // Mochi.worker() is inert config now, so importing the entry for extraction
+    // must not spawn a live bunqueue thread (which would hang the build). The
+    // test simply completing proves nothing kept the event loop alive.
+    const entry = writeEntry(
+      `import { Mochi } from 'mochi-framework';
+await Mochi.serve({ routes: {}, workers: { emails: Mochi.worker(async () => ({ sent: true }), { concurrency: 2 }) } });
+throw new Error('serve should have halted execution before this line');`,
+    );
+
+    const options = await extractServeOptions(entry);
+
+    expect(options?.workers).toBeDefined();
+    expect(options?.workers?.emails?.__mochiWorker).toBe(true);
+    expect(options?.workers?.emails?.options).toEqual({ concurrency: 2 });
+  });
+
   test('returns null when the entry never calls serve()', async () => {
     const entry = writeEntry(`import { Mochi } from 'mochi-framework';
 const _ = Mochi;`);

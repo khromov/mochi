@@ -12,12 +12,13 @@
 
 <DemoPage
   title="Background jobs with queues"
-  description="Mochi.queue() is a producer handle; Mochi.worker() runs a consumer in the same process. The form enqueues a job, the worker processes it ~700ms later, and the result streams back live."
+  description="Mochi.queue() is a producer handle; a worker declared in the Mochi.serve() workers option consumes jobs in the same process. The form enqueues a job, the worker processes it ~700ms later, and the result streams back live."
   {sources}
 >
   <p>
     The page action calls <code>notificationQueue.add('notify', {'{ user }'})</code>. A
-    <code>Mochi.worker('demo-notifications', …)</code> with <code>concurrency: 2</code> picks the job up and records it. Initial state comes from
+    <code>Mochi.worker(…)</code> with <code>concurrency: 2</code>, mounted as <code>workers: {'{'} 'demo-notifications': … }</code> in
+    <code>Mochi.serve()</code>, picks the job up and records it. Initial state comes from
     <code>serverProps</code>; a <code>Mochi.sse()</code> route then pushes each completion in realtime — no polling.
   </p>
   <QueueWidget {initial} {suggestedUser} mochi:hydrate />

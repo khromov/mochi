@@ -7,7 +7,7 @@ import type { RenderResult } from './ComponentRegistry';
 import { loadSvelteConfig } from './svelteConfig';
 import { buildInlineWebComponent } from './buildInlineWebComponent';
 import { buildClientStatsRoutes, CLIENT_STATS_COMPONENT } from './clientStatsRoutes';
-import { isMochiPage, isMochiApi, isMochiWs, isMochiSse, isMochiFile, isServerPropsResolver } from './types';
+import { isMochiPage, isMochiApi, isMochiWs, isMochiSse, isMochiFile, isMochiWorker, isServerPropsResolver } from './types';
 import type {
   BunRouteValue,
   HttpMethod,
@@ -22,6 +22,8 @@ import type {
   MochiRouteValue,
   MochiServerPropsResolver,
   MochiServeOptions,
+  MochiWorkerConfig,
+  MochiWorkerListeners,
   RouteRegistrationResult,
   MochiSseConfig,
   MochiSseHandler,
@@ -44,8 +46,8 @@ import { resolveWarmupEnabled, markWarmupRequest, isWarmablePattern } from './wa
 import { createErrorResponder, DEFAULT_ERROR_PAGE_PATH } from './errors';
 import { requestContext } from './requestContext';
 import type { MochiRequestContext } from './requestContext';
-import { createQueue, createWorker, closeAllQueueResources, markServeOwnsShutdown } from './queue';
-import type { MochiQueue, MochiQueueOptions, MochiWorker, MochiWorkerOptions, MochiProcessor } from './queue';
+import { createQueue, createWorker, closeAllQueueResources } from './queue';
+import type { MochiQueue, MochiQueueOptions, MochiWorkerEventMap, MochiWorkerOptions, MochiProcessor } from './queue';
 import { finalizeCookieHeaders } from './cookies';
 import { makeRequestContextBuilder } from './requestSetup';
 import { verifyAndDecodeProps } from './serverIslandCrypto';
@@ -151,13 +153,23 @@ export class Mochi {
   }
 
   /**
-   * Start a worker that processes jobs from the queue `name` (live handle, like
-   * `Mochi.queue`). The processor receives a read-only `MochiJob`; its return
-   * value is the job result. Closes gracefully on `Mochi.serve()` shutdown, or
-   * on SIGTERM/SIGINT when run as a standalone worker process.
+   * Declare a worker that processes jobs from a queue. Unlike `Mochi.queue`,
+   * this returns an *inert config* (like `page`/`api`/`ws`/`sse`/`file`) — the
+   * live worker is created only when the descriptor is mounted in
+   * `Mochi.serve({ workers: { '<queue-name>': Mochi.worker(...) } })`, where the
+   * map key is the queue name. The processor receives a read-only `MochiJob`;
+   * its return value is the job result. Pass `on` to subscribe to lifecycle
+   * events on the worker handle (or use the `mochiEvents` bus). Workers drain
+   * gracefully on `Mochi.serve()` shutdown.
    */
-  static worker<T = unknown, R = unknown>(name: string, processor: MochiProcessor<T, R>, opts?: MochiWorkerOptions): MochiWorker<T, R> {
-    return createWorker<T, R>(name, processor, opts);
+  static worker<T = unknown, R = unknown>(processor: MochiProcessor<T, R>, opts?: MochiWorkerOptions & { on?: MochiWorkerListeners<T, R> }): MochiWorkerConfig {
+    const { on, ...options } = opts ?? {};
+    return {
+      __mochiWorker: true,
+      processor: processor as MochiProcessor<unknown, unknown>,
+      options,
+      on: on as MochiWorkerListeners<unknown, unknown> | undefined,
+    };
   }
 
   private static resolveHtmlShell(
@@ -1334,6 +1346,20 @@ export class Mochi {
       mochiEvents.emit('server:start', startEvent);
     }
 
+    if (options.workers) {
+      for (const [name, config] of Object.entries(options.workers)) {
+        if (!isMochiWorker(config)) {
+          continue;
+        }
+        const handle = createWorker(name, config.processor, config.options);
+        if (config.on) {
+          for (const [event, listener] of Object.entries(config.on)) {
+            handle.on(event as keyof MochiWorkerEventMap<unknown, unknown>, listener as MochiWorkerEventMap<unknown, unknown>[keyof MochiWorkerEventMap<unknown, unknown>]);
+          }
+        }
+      }
+    }
+
     if (warmupHandlers.length > 0) {
       mochiEvents.emit('warmup:start', { routeCount: warmupHandlers.length });
       const t0 = performance.now();
@@ -1409,9 +1435,6 @@ export class Mochi {
    * already forbids more than one server per process.
    */
   private static installShutdownHandlers(options: MochiServeOptions, server: Server<undefined>): void {
-    // Take ownership of shutdown so the queue module's standalone signal
-    // handlers stand down — we drain queues here as part of graceful shutdown.
-    markServeOwnsShutdown();
     let shuttingDown = false;
     const handle = async (signal: NodeJS.Signals): Promise<void> => {
       if (shuttingDown) {

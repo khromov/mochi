@@ -4,6 +4,7 @@ import type { MochiCookieJar } from './cookies';
 import type { MochiCsrfOptions } from './csrf';
 import type { MochiFilters, MochiHooks } from './extensions';
 import type { MochiProxyOptions } from './proxy';
+import type { MochiJob, MochiProcessor, MochiWorkerOptions } from './queue';
 
 export type MochiServerPropsResolver = (req: Request, params: Record<string, string>) => Record<string, unknown> | Promise<Record<string, unknown>>;
 
@@ -294,6 +295,37 @@ export function isMochiSse(value: unknown): value is MochiSseConfig {
   return typeof value === 'object' && value !== null && (value as MochiSseConfig).__mochiSse === true;
 }
 
+// ---------------------------------------------------------------------------
+// Background workers
+// ---------------------------------------------------------------------------
+
+/** Typed lifecycle listeners passed to `Mochi.worker(processor, { on })`. */
+export interface MochiWorkerListeners<T, R> {
+  active?: (job: MochiJob<T>) => void;
+  completed?: (job: MochiJob<T>, result: R) => void;
+  failed?: (job: MochiJob<T>, error: Error) => void;
+  error?: (error: Error) => void;
+}
+
+/**
+ * Inert descriptor returned by `Mochi.worker()` — mirrors `MochiApiConfig`/
+ * `MochiWsConfig` et al. Non-generic so a heterogeneous `workers` map type-checks;
+ * `Mochi.worker<T, R>` keeps the generics only to type the processor/listeners at
+ * the call site, then erases them here. The live worker is created only when this
+ * is mounted in `Mochi.serve({ workers })`, which calls `createWorker` and wires
+ * `on` listeners to the resulting handle.
+ */
+export interface MochiWorkerConfig {
+  readonly __mochiWorker: true;
+  readonly processor: MochiProcessor<unknown, unknown>;
+  readonly options?: MochiWorkerOptions;
+  readonly on?: MochiWorkerListeners<unknown, unknown>;
+}
+
+export function isMochiWorker(value: unknown): value is MochiWorkerConfig {
+  return typeof value === 'object' && value !== null && (value as MochiWorkerConfig).__mochiWorker === true;
+}
+
 export type MochiRouteValue = MochiPageConfig | MochiApiConfig | MochiWsConfig | MochiSseConfig | MochiFileConfig | BunRouteValue;
 
 /** `stack` is only populated when the server runs with `development: true`. */
@@ -432,6 +464,14 @@ export interface MochiServeOptions {
   /** Path to a prebuilt manifest JSON. Defaults to `.mochi/manifest.json`. */
   manifest?: string;
   routes?: Record<string, MochiRouteValue>;
+  /**
+   * Background workers to start with the server, keyed by queue name. Each value
+   * is a `Mochi.worker(processor, opts?)` descriptor; the matching producer is a
+   * `Mochi.queue(name)` handle you `.add()` to from route code. Workers drain
+   * gracefully on shutdown. A worker-only process is `Mochi.serve({ workers })`
+   * with no `routes`.
+   */
+  workers?: Record<string, MochiWorkerConfig>;
   fetch?: (req: Request, server: Server<undefined>) => Response | Promise<Response>;
   htmlShell?: string;
   /**

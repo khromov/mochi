@@ -124,6 +124,8 @@ export type {
   MochiSseStream,
   MochiFileConfig,
   MochiFileResolver,
+  MochiWorkerConfig,
+  MochiWorkerListeners,
   BunRouteValue,
   MochiSvelteShakerOptions,
 } from './types';

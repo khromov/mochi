@@ -6,12 +6,12 @@
  * leaks into the public surface. Swapping the backend means rewriting this file
  * and nothing else (`grep -rl "bunqueue" packages/mochi/src` returns just this).
  *
- * Unlike `Mochi.page/api/ws/sse/file` — which return inert config objects that
- * `Mochi.serve()` mounts — `Mochi.queue()` and `Mochi.worker()` return *live
- * handles* created at module top-level. A queue is a producer you call `.add()`
- * on from anywhere (e.g. a page action); a worker is a consumer that starts
- * processing immediately. This mirrors bunqueue's embedded `new Queue` +
- * `new Worker`, which share in-process state.
+ * `Mochi.queue()` returns a *live handle* created at module top-level: a
+ * producer you call `.add()` on from anywhere (e.g. a page action). Workers are
+ * different — `Mochi.worker()` returns an inert config (like
+ * `Mochi.page/api/ws/sse/file`) that `Mochi.serve({ workers })` turns into a
+ * live consumer via `createWorker` below. Both map onto bunqueue's embedded
+ * `new Queue` + `new Worker`, which share in-process state.
  */
 import { Queue, Worker, shutdownManager } from 'bunqueue/client';
 import type { Job, JobOptions } from 'bunqueue/client';
@@ -88,14 +88,8 @@ interface QueueRegistry {
   queues: Set<Closeable>;
   workers: Set<Closeable>;
   queuesByName: Map<string, Closeable>;
-  workersByName: Map<string, Closeable>;
-  /** Worker names we've already warned about re-registering, so dev HMR doesn't spam. */
-  warnedReregister: Set<string>;
   /** First `dataPath` seen; bunqueue ignores later differing paths in the same process. */
   dataPath: string | null | undefined;
-  signalHandlersInstalled: boolean;
-  /** Set once `Mochi.serve()` installs its own shutdown handlers, which drain queues. */
-  serveOwnsShutdown: boolean;
 }
 
 // Pinned so the registry is shared across any duplicate bundled copy of this
@@ -105,21 +99,8 @@ const registry = pinGlobal<QueueRegistry>('__mochi_queue_registry__', () => ({
   queues: new Set(),
   workers: new Set(),
   queuesByName: new Map(),
-  workersByName: new Map(),
-  warnedReregister: new Set(),
   dataPath: undefined,
-  signalHandlersInstalled: false,
-  serveOwnsShutdown: false,
 }));
-
-/**
- * Called by `Mochi.serve()` so the standalone signal handlers below stand down:
- * with a server running, `serve()` drives shutdown (and drains queues via
- * `closeAllQueueResources()`), so the queue handler must not also `process.exit`.
- */
-export function markServeOwnsShutdown(): void {
-  registry.serveOwnsShutdown = true;
-}
 
 function rememberDataPath(dataPath: string | undefined): void {
   if (registry.dataPath === undefined) {
@@ -200,25 +181,6 @@ export function createQueue<T>(name: string, opts?: MochiQueueOptions): MochiQue
 export function createWorker<T, R = unknown>(name: string, processor: MochiProcessor<T, R>, opts?: MochiWorkerOptions): MochiWorker<T, R> {
   rememberDataPath(opts?.dataPath);
 
-  const existing = registry.workersByName.get(name);
-  if (existing) {
-    // The dev route-HMR watcher re-bundles and re-executes route modules (and
-    // everything they import) to hot-swap routes, so a top-level
-    // `Mochi.worker()` call can run again within the same process. Keep the
-    // FIRST worker — the one the running server's live handlers are bound to —
-    // and ignore the re-registration, rather than swapping in a second consumer
-    // whose processor closure (and any module-level state it captures) has
-    // diverged from those handlers. The trade-off is that worker code/option
-    // changes don't hot-reload; a server restart applies them.
-    if (!registry.warnedReregister.has(name)) {
-      registry.warnedReregister.add(name);
-      logger.warn(
-        `[queue] worker "${name}" is already registered — keeping the running instance. Dev route-reload re-runs worker modules; restart the server to apply changes to its processor or options.`,
-      );
-    }
-    return existing as unknown as MochiWorker<T, R>;
-  }
-
   const worker = new Worker<T, R>(name, (job) => processor(toMochiJob(job as Job<T>, name)), {
     embedded: true,
     dataPath: opts?.dataPath,
@@ -282,25 +244,18 @@ export function createWorker<T, R = unknown>(name: string, processor: MochiProce
     },
     async close() {
       registry.workers.delete(handle);
-      if (registry.workersByName.get(name) === handle) {
-        registry.workersByName.delete(name);
-      }
       await worker.close();
     },
   };
-  const registered: Closeable = handle;
-  registry.workers.add(registered);
-  registry.workersByName.set(name, registered);
-
-  ensureStandaloneSignalHandlers();
+  registry.workers.add(handle);
   return handle;
 }
 
 /**
- * Gracefully close every queue and worker created via `Mochi.queue/worker`.
- * Workers first (stop pulling new jobs), then queues. Idempotent and never
- * throws — safe to call from both `Mochi.serve()`'s shutdown path and the
- * standalone signal handlers.
+ * Gracefully close every queue and worker created via `Mochi.queue` / the
+ * `workers` mounted by `Mochi.serve()`. Workers first (stop pulling new jobs),
+ * then queues. Idempotent and never throws — `Mochi.serve()`'s shutdown path
+ * calls it, and `mochi-framework build` calls it to drain top-level producers.
  */
 export async function closeAllQueueResources(): Promise<void> {
   const workers = [...registry.workers];
@@ -311,34 +266,6 @@ export async function closeAllQueueResources(): Promise<void> {
   // un-unref'd background intervals). Closing individual handles doesn't touch
   // it, so without this the SQLite file stays locked (Windows rm -> EBUSY) and
   // the intervals keep the event loop alive (the process never exits). Sync and
-  // idempotent, so it's safe on the double-call / signal-handler paths.
+  // idempotent, so it's safe on the double-call path.
   shutdownManager();
-}
-
-/**
- * Install one-shot SIGTERM/SIGINT handlers that drain queues on exit. Covers the
- * standalone-worker-process case (a file that only calls `Mochi.worker()`,
- * never `Mochi.serve()`). When a server *is* running, `Mochi.serve()` also
- * drains via `closeAllQueueResources()` — that call is idempotent, so the
- * double path is harmless.
- */
-function ensureStandaloneSignalHandlers(): void {
-  if (registry.signalHandlersInstalled) {
-    return;
-  }
-  registry.signalHandlersInstalled = true;
-  let shuttingDown = false;
-  const handle = async (): Promise<void> => {
-    if (registry.serveOwnsShutdown) {
-      return;
-    }
-    if (shuttingDown) {
-      process.exit(1);
-    }
-    shuttingDown = true;
-    await closeAllQueueResources();
-    process.exit(0);
-  };
-  process.once('SIGTERM', handle);
-  process.once('SIGINT', handle);
 }

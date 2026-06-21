@@ -207,28 +207,14 @@ describe('Mochi queue + worker', () => {
     expect(c).toBe(a);
   });
 
-  test('re-registering a worker keeps the first and ignores the duplicate', async () => {
+  test('createWorker no longer dedupes by name (workers mount once via serve)', () => {
+    // Per-name idempotency was removed: workers are instantiated exactly once by
+    // Mochi.serve({ workers }), not re-run at module top-level by dev HMR. Each
+    // createWorker call now returns a distinct live handle.
     const name = uniqueName();
-    const ran: string[] = [];
-    const first = deferred<void>();
-
-    const a = createWorker(
-      name,
-      async () => {
-        ran.push('A');
-        first.resolve();
-      },
-      { dataPath },
-    );
-    // A dev HMR re-import re-runs the module body — the duplicate must be ignored.
-    const b = createWorker(name, async () => ran.push('B'), { dataPath });
-    expect(b).toBe(a);
-
-    const queue = createQueue(name, { dataPath });
-    await queue.add('job', {});
-    await first.promise;
-    await Bun.sleep(150);
-    expect(ran).toEqual(['A']);
+    const a = createWorker(name, async () => null, { dataPath });
+    const b = createWorker(name, async () => null, { dataPath });
+    expect(b).not.toBe(a);
   });
 
   test('closeAllQueueResources closes handles and is idempotent', async () => {

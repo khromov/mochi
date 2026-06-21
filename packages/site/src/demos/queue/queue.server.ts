@@ -10,12 +10,11 @@ export const notificationQueue = Mochi.queue<NotificationJob>(QUEUE_NAME);
 const processed: ProcessedEntry[] = [];
 let processedTotal = 0;
 
-// Mochi.worker() is idempotent per queue name: in dev the route-HMR watcher
-// re-runs this module, but the framework keeps the first worker (and warns)
-// instead of spawning a duplicate that would write to a divergent copy of the
-// state below. Worker code changes need a server restart to take effect.
-Mochi.worker<NotificationJob>(
-  QUEUE_NAME,
+// Inert worker config — the live worker starts only when this is mounted in
+// Mochi.serve({ workers: { [QUEUE_NAME]: notificationWorker } }). The module is
+// imported once, so the closure below (and the state it captures) is single even
+// under dev route-reload; worker changes still need a server restart.
+export const notificationWorker = Mochi.worker<NotificationJob>(
   async (job) => {
     // Simulate the latency of actually delivering a notification so the UI shows
     // the queued → processing → done transition rather than completing instantly.
