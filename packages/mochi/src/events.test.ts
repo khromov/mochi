@@ -29,6 +29,21 @@ describe('mochiEvents', () => {
       type: 'change',
     });
   });
+
+  test('queue:completed is part of the event map', () => {
+    let received: { queue: string; jobName: string; attempt: number } | null = null;
+    const handler = (e: { queue: string; jobName: string; attempt: number; duration: number }) => {
+      received = { queue: e.queue, jobName: e.jobName, attempt: e.attempt };
+    };
+    mochiEvents.on('queue:completed', handler);
+    mochiEvents.emit('queue:completed', { queue: 'emails', jobId: 'j1', jobName: 'send', attempt: 1, duration: 12 });
+    mochiEvents.off('queue:completed', handler);
+    expect(received as { queue: string; jobName: string; attempt: number } | null).toEqual({
+      queue: 'emails',
+      jobName: 'send',
+      attempt: 1,
+    });
+  });
 });
 
 describe('mochiEvents.setHandler', () => {

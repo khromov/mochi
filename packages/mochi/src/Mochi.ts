@@ -44,6 +44,8 @@ import { resolveWarmupEnabled, markWarmupRequest, isWarmablePattern } from './wa
 import { createErrorResponder, DEFAULT_ERROR_PAGE_PATH } from './errors';
 import { requestContext } from './requestContext';
 import type { MochiRequestContext } from './requestContext';
+import { createQueue, createWorker, closeAllQueueResources, markServeOwnsShutdown } from './queue';
+import type { MochiQueue, MochiQueueOptions, MochiWorker, MochiWorkerOptions, MochiProcessor } from './queue';
 import { finalizeCookieHeaders } from './cookies';
 import { makeRequestContextBuilder } from './requestSetup';
 import { verifyAndDecodeProps } from './serverIslandCrypto';
@@ -136,6 +138,26 @@ export class Mochi {
 
   static file(source: string | MochiFileResolver): MochiFileConfig {
     return { __mochiFile: true, source };
+  }
+
+  /**
+   * Create a background job queue (producer handle). Unlike `page`/`api`/`ws`/
+   * `sse`/`file`, this returns a *live* handle — call it at module top-level and
+   * `.add()` jobs from anywhere (e.g. a page action). Backed by bunqueue's
+   * embedded mode; the matching `Mochi.worker(name, …)` consumes the jobs.
+   */
+  static queue<T = unknown>(name: string, opts?: MochiQueueOptions): MochiQueue<T> {
+    return createQueue<T>(name, opts);
+  }
+
+  /**
+   * Start a worker that processes jobs from the queue `name` (live handle, like
+   * `Mochi.queue`). The processor receives a read-only `MochiJob`; its return
+   * value is the job result. Closes gracefully on `Mochi.serve()` shutdown, or
+   * on SIGTERM/SIGINT when run as a standalone worker process.
+   */
+  static worker<T = unknown, R = unknown>(name: string, processor: MochiProcessor<T, R>, opts?: MochiWorkerOptions): MochiWorker<T, R> {
+    return createWorker<T, R>(name, processor, opts);
   }
 
   private static resolveHtmlShell(
@@ -1387,6 +1409,9 @@ export class Mochi {
    * already forbids more than one server per process.
    */
   private static installShutdownHandlers(options: MochiServeOptions, server: Server<undefined>): void {
+    // Take ownership of shutdown so the queue module's standalone signal
+    // handlers stand down — we drain queues here as part of graceful shutdown.
+    markServeOwnsShutdown();
     let shuttingDown = false;
     const handle = async (signal: NodeJS.Signals): Promise<void> => {
       if (shuttingDown) {
@@ -1399,6 +1424,7 @@ export class Mochi {
       } catch (err) {
         logger.error(`mochi:shutdown hook failed: ${err instanceof Error ? err.message : err}`);
       }
+      await closeAllQueueResources();
       const stopEvent: MochiServerStopEvent = { reason: 'signal' };
       if (signal === 'SIGTERM' || signal === 'SIGINT') {
         stopEvent.signal = signal;

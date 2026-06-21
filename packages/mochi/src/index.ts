@@ -50,6 +50,11 @@ export type {
   MochiCacheRevalidateEvent,
   MochiCacheRevalidateFailedEvent,
   MochiCacheErrorEvent,
+  MochiQueueAddedEvent,
+  MochiQueueActiveEvent,
+  MochiQueueCompletedEvent,
+  MochiQueueFailedEvent,
+  MochiQueueErrorEvent,
   MochiServerStartEvent,
   MochiServerStopEvent,
   MochiWarmupStartEvent,
@@ -69,6 +74,7 @@ export type {
   MochiRecompileTrigger,
   MochiClientBundleEvent,
 } from './events';
+export type { MochiQueue, MochiWorker, MochiJob, MochiJobRef, MochiJobOptions, MochiQueueOptions, MochiWorkerOptions, MochiProcessor, MochiWorkerEventMap } from './queue';
 export { json, error, apiError } from './utils';
 export { trailingSlashIt } from './trailingSlash';
 export { fail, redirect, success } from './forms';
