@@ -55,7 +55,7 @@ import { mochiEvents } from './events';
 import type { MochiActionResult, MochiErrorEvent, MochiErrorKind, MochiServerStartEvent, MochiServerStopEvent } from './events';
 import type { DebugBarData, DebugBarRuntimeData } from './requestContext';
 import { consoleLogger } from './consoleLogger';
-import { parse as devalueParse, stringify as devalueStringify } from 'devalue';
+import { stringify as devalueStringify } from 'devalue';
 import { ISLAND_FAILURE_CSS, ISLAND_FAILURE_DEV_CSS, islandFailureStub } from './web-components/islandFailureStub';
 import { resolvePublicFiles, registerPublicRoutes } from './publicDir';
 import { startDevWatcher } from './devWatcher';
@@ -1071,11 +1071,11 @@ export class Mochi {
       // Verify signature and decode props (empty means no props)
       let decodedProps: Record<string, unknown>;
       if (signedProps) {
-        const propsJson = verifyAndDecodeProps(signedProps);
-        if (propsJson === null) {
+        const decoded = verifyAndDecodeProps(signedProps);
+        if (decoded === null) {
           return new Response('Invalid props signature', { status: 403 });
         }
-        decodedProps = devalueParse(propsJson) as Record<string, unknown>;
+        decodedProps = decoded as Record<string, unknown>;
       } else {
         decodedProps = {};
       }

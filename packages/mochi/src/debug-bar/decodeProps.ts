@@ -1,7 +1,11 @@
-import { parse as devalueParse } from 'devalue';
+import { unpackServerIslandProps } from '../serverIslandSerialize';
 
 /**
- * Client-side decoders for the dev debug bar.
+ * Client-side decoders for the dev debug bar. Server-island props are packed
+ * with msgpackr (see `serverIslandSerialize.ts`); this decoder mirrors the
+ * server's `verifyAndDecodeProps` minus the HMAC check (the toolbar only
+ * displays props, it doesn't trust them). This pulls msgpackr into the dev-only
+ * debug-bar bundle; production island bundles never load it.
  */
 
 /** base64url → bytes. `atob` only speaks standard base64, so translate first. */
@@ -22,13 +26,13 @@ export async function decodeSignedProps(token: string): Promise<Record<string, u
   const dot = token.lastIndexOf('.');
   const payload = dot === -1 ? token : token.slice(0, dot);
 
-  let json: string;
+  let bytes: Uint8Array;
   if (payload.startsWith('~')) {
     const compressed = base64urlToBytes(payload.slice(1));
     const stream = new Blob([compressed as BlobPart]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
-    json = await new Response(stream).text();
+    bytes = new Uint8Array(await new Response(stream).arrayBuffer());
   } else {
-    json = new TextDecoder().decode(base64urlToBytes(payload));
+    bytes = base64urlToBytes(payload);
   }
-  return devalueParse(json) as Record<string, unknown>;
+  return unpackServerIslandProps(bytes) as Record<string, unknown>;
 }

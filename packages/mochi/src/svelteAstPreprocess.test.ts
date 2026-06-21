@@ -203,7 +203,9 @@ describe('preprocessHydratable', () => {
     expect(transformed).toContain('<mochi-server-island');
     expect(transformed).toContain('component-name="Greeting"');
     expect(transformed).toContain('__mochi_sign_props__');
-    expect(transformed).toContain('__mochi_stringify__');
+    // Server islands no longer wrap props in devalue `stringify` — signProps
+    // packs the value with msgpackr internally.
+    expect(transformed).not.toContain('__mochi_stringify__');
     expect(transformed).toContain('name: "World"');
     expect(transformed).toContain('__MOCHI_SERVER_CSS_URL__Greeting__');
     expect(transformed).not.toContain('mochi:defer');
@@ -263,7 +265,8 @@ describe('preprocessHydratable', () => {
     const { transformed } = preprocessHydratable(source, '/test/File.svelte');
 
     expect(transformed).toContain('import { signProps as __mochi_sign_props__ } from "mochi-server-island-runtime"');
-    expect(transformed).toContain('import { stringify as __mochi_stringify__ } from "mochi-framework"');
+    // No devalue `stringify` import — signProps packs the props itself.
+    expect(transformed).not.toContain('import { stringify as __mochi_stringify__ } from "mochi-framework"');
   });
 
   test('duplicate server island instances', () => {
@@ -404,7 +407,7 @@ describe('preprocessHydratable', () => {
     // not as a redundant wrapper attribute.
     expect(transformed).not.toContain('island-id');
     expect(transformed).toContain('islandId: __mochi_iid');
-    expect(transformed).toContain('__mochi_stringify__');
+    expect(transformed).toContain('__mochi_sign_props__');
   });
 
   test('literal islandId prop on a server island is rejected', () => {
@@ -444,9 +447,9 @@ describe('preprocessHydratable', () => {
     const source = `${SCRIPT('import Srv from "./Srv.svelte";')}<Srv mochi:defer name="hello" />`;
     const { transformed } = preprocessHydratable(source, '/test/File.svelte');
 
-    const stringifyMatch = transformed.match(/__mochi_stringify__\((\{[^)]+\})\)/);
-    expect(stringifyMatch).not.toBeNull();
-    expect(stringifyMatch![1]).toContain('islandId');
+    const signMatch = transformed.match(/__mochi_sign_props__\((\{[^)]+\})\)/);
+    expect(signMatch).not.toBeNull();
+    expect(signMatch![1]).toContain('islandId');
   });
 
   test('serverIslands not returned for hydrate-only components', () => {

@@ -10,7 +10,7 @@ description: 'How props are serialized and passed to hydratable islands, includi
 
 ## Passing props to islands
 
-Pass props to a component marked with `mochi:hydrate`, `mochi:hydrate:visible`, or `mochi:defer` exactly as you would to any Svelte component — the framework serializes them with [`devalue`](https://github.com/Rich-Harris/devalue) so the same values reach the hydrating client.
+Pass props to a component marked with `mochi:hydrate`, `mochi:hydrate:visible`, or `mochi:defer` exactly as you would to any Svelte component — the framework serializes them so the same values reach the client. Hydratable islands (`mochi:hydrate*`) use [`devalue`](https://github.com/Rich-Harris/devalue); `mochi:defer` server islands use [`msgpackr`](https://github.com/kriszyp/msgpackr), which roughly halves the signed token. Both preserve the same types (see [Supported types](#supported-types)).
 
 ```svelte
 <!-- file: src/routes/Page.svelte -->
@@ -81,7 +81,7 @@ When a component wraps a native element and forwards the rest of its attributes,
 
 For `mochi:hydrate*` islands, props are emitted as a `<script type="application/json" id="mochi-props-N">` block placed just before the island. When several islands on a page share the exact same payload, the block is emitted once before the first of them and the rest reference it by id — so identical props ship over the wire only once.
 
-For `mochi:defer` server islands the flow differs: props are HMAC-signed and passed as a query parameter to a per-island endpoint — see [Server islands](server-islands/).
+For `mochi:defer` server islands the flow differs: props are packed with `msgpackr`, HMAC-signed, and passed as a query parameter to a per-island endpoint — see [Server islands](server-islands/). msgpack keeps the token short, which matters because it travels in the URL.
 
 ### Supported types
 
@@ -91,6 +91,8 @@ For `mochi:defer` server islands the flow differs: props are HMAC-signed and pas
 - `BigInt`, typed arrays (`Uint8Array`, etc.)
 - `undefined`, `Infinity`, `NaN`, `-0`
 - Repeated and cyclic references (identity is preserved)
+
+> One difference between the two codecs: `mochi:defer` server islands (msgpackr) restore `-0` as `+0`. Hydratable islands (devalue) preserve `-0`. Everything else above is identical across both.
 
 ### Not supported
 

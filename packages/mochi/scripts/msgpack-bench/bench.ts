@@ -19,6 +19,7 @@ import { stringify as devalueStringify, parse as devalueParse } from 'devalue';
 import { Packr, Unpackr } from 'msgpackr';
 import { encodeBase122, decodeBase122 } from './base122';
 import { ALL, REPRESENTATIVE, SPECIAL, type Payload } from './payloads';
+import { packServerIslandProps } from '../../src/serverIslandSerialize';
 
 const packr = new Packr({ structuredClone: true });
 const unpackr = new Unpackr({ structuredClone: true });
@@ -269,6 +270,35 @@ function baseGzip(rows: Row[]): number | null {
   return rows.find((r) => r.label === 'devalue (text)')?.gzipped ?? null;
 }
 
+// Model the server-island signed-token length exactly as `serverIslandCrypto.ts`:
+// deflate-if-smaller (≥64B, `~` prefix), base64url, plus a 23-char `.`+128-bit sig.
+const SIG_CHARS = 23;
+function serverIslandTokenLen(bytes: Uint8Array<ArrayBuffer>): number {
+  const uncompressed = Buffer.from(bytes).toString('base64url');
+  if (bytes.length >= 64) {
+    const compressed = '~' + Buffer.from(Bun.deflateSync(bytes)).toString('base64url');
+    if (compressed.length < uncompressed.length) {
+      return compressed.length + SIG_CHARS;
+    }
+  }
+  return uncompressed.length + SIG_CHARS;
+}
+
+function serverIslandTokenMarkdown(): string {
+  const lines = ['| payload | devalue token | msgpack token | Δ |', '| --- | ---: | ---: | ---: |'];
+  for (const pl of [...REPRESENTATIVE, ...SPECIAL]) {
+    const dv = serverIslandTokenLen(utf8(devalueStringify(pl.value)));
+    let mp: number | null;
+    try {
+      mp = serverIslandTokenLen(new Uint8Array(packServerIslandProps(pl.value)));
+    } catch {
+      mp = null;
+    }
+    lines.push(`| ${pl.name} | ${dv} | ${mp ?? '—'} | ${pct(mp, dv)} |`);
+  }
+  return lines.join('\n');
+}
+
 function mdTable(payload: Payload, rows: Row[]): string {
   const base = baseGzip(rows);
   const lines: string[] = [];
@@ -357,11 +387,10 @@ const PROSE_PATHS = `## Two transport paths, two verdicts
 - **Hydratable islands** (inline \`<script>\`): text-bound. msgpack must pay the
   encoding tax above, then compete against \`gzip(devalue-text)\`. See the per-payload
   tables — on these payloads the inline path typically **ties or loses** after gzip.
-- **Server islands** (network fetch): the response body can be raw
-  \`application/msgpack\` with **zero text tax**. The \`msgpack raw (binary)\` rows are
-  the relevant number there, and that is where msgpack's compactness actually pays
-  off. This path is left on devalue in the prototype and recommended as the
-  higher-value follow-up.
+- **Server islands** (signed token in the fetch URL): the props are packed,
+  HMAC-signed, deflate-if-smaller, and base64url'd into a query parameter. msgpack's
+  compactness roughly **halves the token** (table below), which directly relieves the
+  ~1800-char URL-length limit. **This path has been adopted** — see below.
 
 ## Correctness caveats
 
@@ -377,11 +406,25 @@ types — it is included only for scale.
 1. **Do not switch the inline hydration path to msgpack** unless the per-payload
    gzip deltas below are consistently negative for your real props — base122 closes
    most of base64's gap but rarely beats gzipped devalue text, and it costs a client
-   bundle (msgpackr) that devalue-text does not.
-2. **Consider msgpack for the server-island fetch path**, where raw binary ships
-   with no encoding tax (\`serverIslandCrypto.ts\` — separate change, signs/deflates).
-3. Keep devalue as the default; the prototype gates msgpack behind
-   \`Mochi.serve({ islandPropsCodec: 'msgpack' })\` so real pages can be A/B'd.`;
+   bundle (msgpackr) that devalue-text does not. The inline path stays on devalue
+   (an experimental \`Mochi.serve({ islandPropsCodec: 'msgpack' })\` flag exists for A/B).
+2. **Adopt msgpack for server-island props** — done; see below.`;
+
+const PROSE_ADOPTED = `## Adopted: server-island props
+
+Server-island props (\`mochi:defer\`) now serialize with **msgpackr** instead of
+devalue (\`serverIslandSerialize.ts\` + \`serverIslandCrypto.ts\`). This path is
+server↔server — the client only round-trips the opaque signed token — so in
+production it adds **zero client-bundle weight** (only the dev debug-bar decoder
+loads msgpackr) and carries no client correctness risk. The token rides in the
+fetch URL, so the smaller payload directly relieves the ~1800-char URL-length limit.
+
+\`Packr({ structuredClone: true })\` plus custom \`URL\`/\`URLSearchParams\` extensions
+reaches full devalue type parity (Date, Map, Set, undefined, Infinity/NaN, RegExp,
+BigInt, typed arrays, cyclic & repeated refs, URL, URLSearchParams). The one known
+divergence is \`-0\` → \`+0\`. Hydratable-island props are unchanged (still devalue).
+
+Signed-token length (deflate-if-smaller + base64url + 23-char sig), Δ vs devalue:`;
 
 // ---- main --------------------------------------------------------------------
 
@@ -409,6 +452,10 @@ function main(): void {
       out.push('');
     }
     out.push(PROSE_PATHS);
+    out.push('');
+    out.push(PROSE_ADOPTED);
+    out.push('');
+    out.push(serverIslandTokenMarkdown());
     out.push('');
     console.log(out.join('\n'));
     return;
