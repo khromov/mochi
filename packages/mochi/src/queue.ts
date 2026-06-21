@@ -19,20 +19,14 @@ import { pinGlobal } from './globalState';
 import { mochiEvents } from './events';
 import { logger } from './log';
 
-/**
- * Read-only view of a job handed to a worker processor and to worker event
- * listeners. Deliberately narrow — it carries data, not bunqueue's ~40 mutation
- * methods — so userland can't reach behind the abstraction.
- */
+/** Deliberately narrow — data, not bunqueue's ~40 mutation methods — so userland can't reach behind the abstraction. */
 export interface MochiJob<T> {
   readonly id: string;
   readonly name: string;
   readonly data: T;
-  /** Name of the queue this job belongs to. */
   readonly queue: string;
-  /** 1-based attempt number (1 on the first run, 2 on the first retry, …). */
+  /** 1-based (bunqueue's `attemptsMade` is 0-based on the first run). */
   readonly attempt: number;
-  /** Epoch ms when the job was enqueued. */
   readonly enqueuedAt: number;
 }
 
@@ -45,39 +39,24 @@ export interface MochiJobRef {
 }
 
 export interface MochiJobOptions {
-  /** Higher runs sooner. */
   priority?: number;
-  /** Delay in ms before the job becomes available. */
   delay?: number;
-  /** Max attempts before the job is considered failed. */
   attempts?: number;
-  /** Custom id, for idempotency / deduplication. */
   jobId?: string;
-  /**
-   * Escape hatch: forwarded verbatim to bunqueue's `JobOptions` (backoff,
-   * repeat, deduplication, …). Spread last, so it overrides the fields above.
-   */
+  /** Forwarded verbatim to bunqueue's `JobOptions`; spread last, so it overrides the fields above. */
   bunqueue?: Record<string, unknown>;
 }
 
 export interface MochiQueueOptions {
-  /**
-   * SQLite file for embedded persistence. Omit for an in-memory queue (jobs do
-   * not survive a restart). bunqueue locks the path to the first queue/worker
-   * constructed in the process — see the conflict warning below.
-   */
+  /** Omit for in-memory. bunqueue locks the path to the first queue/worker in the process — see `rememberDataPath`. */
   dataPath?: string;
   defaultJobOptions?: MochiJobOptions;
-  /** Forwarded verbatim to bunqueue's `QueueOptions`. */
   bunqueue?: Record<string, unknown>;
 }
 
 export interface MochiWorkerOptions {
-  /** How many jobs to process at once. Default: bunqueue's default (1). */
   concurrency?: number;
-  /** SQLite file for embedded persistence. See `MochiQueueOptions.dataPath`. */
   dataPath?: string;
-  /** Forwarded verbatim to bunqueue's `WorkerOptions` (limiter, lockDuration, …). */
   bunqueue?: Record<string, unknown>;
 }
 
