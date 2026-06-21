@@ -27,7 +27,12 @@ afterEach(async () => {
 });
 
 afterAll(() => {
-  rmSync(dataDir, { recursive: true, force: true });
+  // The last afterEach closes bunqueue's embedded store (shutdownManager ->
+  // storage.close()), but Windows can lag in releasing the SQLite file lock,
+  // so a rm immediately after close intermittently throws EBUSY. rmSync's
+  // built-in retry is exactly for this; it costs nothing on platforms that
+  // release the handle synchronously.
+  rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 });
 
 describe('Mochi queue + worker', () => {
