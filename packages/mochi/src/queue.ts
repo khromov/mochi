@@ -69,6 +69,8 @@ export interface MochiQueue<T> {
 }
 
 interface Closeable {
+  /** Drain order on shutdown: workers stop pulling jobs before queues close. */
+  kind: 'worker' | 'queue';
   close(): Promise<void>;
 }
 
@@ -231,8 +233,8 @@ export function createQueue<T = unknown, R = unknown>(
   registry.byName.set(name, producer as MochiQueue<unknown>);
   // bunqueue's Queue.close() is synchronous (returns void) — only Worker.close()
   // is async — so the queue's closeable just wraps the sync call.
-  registry.closeables.add({ close: async () => void queue.close() });
-  registry.closeables.add({ close: () => worker.close() });
+  registry.closeables.add({ kind: 'queue', close: async () => void queue.close() });
+  registry.closeables.add({ kind: 'worker', close: () => worker.close() });
   return producer;
 }
 
@@ -257,7 +259,10 @@ export function getQueue<T = unknown>(name: string): MochiQueue<T> {
  */
 export async function closeAllQueueResources(): Promise<void> {
   const closeables = [...registry.closeables];
-  await Promise.allSettled(closeables.map((c) => c.close()));
+  // Workers first so they stop pulling new jobs (and drain in-flight ones)
+  // before the queues backing them close out from under them.
+  await Promise.allSettled(closeables.filter((c) => c.kind === 'worker').map((c) => c.close()));
+  await Promise.allSettled(closeables.filter((c) => c.kind === 'queue').map((c) => c.close()));
   // Embedded mode keeps a process-global manager (open SQLite handle + several
   // un-unref'd background intervals). Closing individual handles doesn't touch
   // it, so without this the SQLite file stays locked (Windows rm -> EBUSY) and
