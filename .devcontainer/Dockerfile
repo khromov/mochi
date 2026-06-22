@@ -89,6 +89,12 @@ ENV BUN_INSTALL=/home/node/.bun
 ENV PATH=$PATH:/home/node/.bun/bin
 
 
+# Copy custom Claude Code statusline script (wired up via postCreateCommand)
+COPY statusline.sh /home/node/statusline.sh
+USER root
+RUN chmod +x /home/node/statusline.sh && chown node:node /home/node/statusline.sh
+USER node
+
 # Copy and set up firewall script
 COPY init-firewall.sh /usr/local/bin/
 USER root
