@@ -316,9 +316,13 @@
 
   /* Fixed layout in both states so columns keep identical proportions and the
      header never reflows when the body rows are removed on collapse. */
-  .comparison-table {
-    width: 100%;
-    table-layout: fixed;
+  /* Scoped under `.comparison` to out-specify the global `.readme table`
+     (`display: block`), so table-layout: fixed applies and the table fills
+     100% even with no body rows in the collapsed preview. */
+  .comparison .comparison-table {
+    display: table !important;
+    width: 100% !important;
+    table-layout: fixed !important;
     border-collapse: collapse;
     margin: 0;
     font-family: var(--font-sans);
