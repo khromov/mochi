@@ -164,9 +164,9 @@
   // we fall back to the per-instance `collapsed` prop for the initial render.
   const collapsed = $derived(comparisonOpen() === null ? collapsedDefault : !comparisonOpen());
   const filteredRows = $derived.by(() => {
-    if (activeTab === 'all') return rows;
-    if (activeTab === 'mochi-only') return rows.filter((row) => rank[row.mochi.status] > rank[row.kit.status]);
-    if (activeTab === 'kit-only') return rows.filter((row) => rank[row.kit.status] > rank[row.mochi.status]);
+    if (activeTab === 'all') {return rows;}
+    if (activeTab === 'mochi-only') {return rows.filter((row) => rank[row.mochi.status] > rank[row.kit.status]);}
+    if (activeTab === 'kit-only') {return rows.filter((row) => rank[row.kit.status] > rank[row.mochi.status]);}
     return rows.filter((row) => row.tags.includes(activeTab));
   });
   // Collapsed preview renders only the header row (no body rows).
