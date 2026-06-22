@@ -15,13 +15,18 @@
 
   const rows: Row[] = [
     { feature: 'Background job queues', mochi: { yes: true, note: 'Mochi.queue()', href: '/docs/queues/' }, kit: { yes: false } },
-    { feature: 'Built-in SQLite database', mochi: { yes: true, note: 'bun:sqlite', href: '/docs/server-only-imports/' }, kit: { yes: false, note: 'bring your own' } },
+    { feature: 'Built-in SQLite database', mochi: { yes: true, note: 'bun:sqlite', href: '/docs/server-only-imports/' }, kit: { yes: false, note: 'Only with adapter-node' } },
+    {
+      feature: 'Built-in Postgres & MySQL support',
+      mochi: { yes: true, note: 'Bun.sql()', href: '/docs/server-only-imports/' },
+      kit: { yes: false, note: 'bring your own cloud database' },
+    },
     {
       feature: 'Real-time WebSockets',
       mochi: { yes: true, note: 'Mochi.ws()', href: '/docs/websocket-routes/' },
       kit: { yes: false, note: 'custom server with external package' },
     },
-    { feature: 'Server-Sent Events', mochi: { yes: true, note: 'Mochi.sse()', href: '/docs/server-sent-events/' }, kit: { yes: false, note: 'manual stream' } },
+    { feature: 'Server-Sent Events', mochi: { yes: true, note: 'Mochi.sse()', href: '/docs/server-sent-events/' }, kit: { yes: false, note: 'manual setup' } },
     { feature: 'Server islands / selective hydration', mochi: { yes: true, note: 'mochi:defer', href: '/docs/server-islands/' }, kit: { yes: false, note: 'full hydration' } },
     { feature: 'SWR caching', mochi: { yes: true, note: 'MochiCache', href: '/docs/cache/' }, kit: { yes: false } },
     { feature: 'View Transitions', mochi: { yes: true, note: 'built-in component', href: '/docs/view-transitions/' }, kit: { yes: false, note: 'manual wiring' } },
@@ -61,7 +66,7 @@
                 <Icon class="cell-icon" size={22} aria-hidden="true" />
                 <span class="label"
                   >{cell.yes ? 'Yes' : 'No'}{#if cell.note}<span class="note"
-                      >&nbsp;-&nbsp;{#if cell.href}<a href={cell.href}>{cell.note}</a>{:else}{cell.note}{/if}</span
+                      >&nbsp;-&nbsp;{#if cell.href}<a href={cell.href} target="_blank" rel="noopener noreferrer">{cell.note}</a>{:else}{cell.note}{/if}</span
                     >{/if}</span
                 >
               </span>
@@ -95,7 +100,7 @@
     padding: 0.5rem 0.75rem;
     text-align: left;
     border-bottom: 1px solid var(--border);
-    vertical-align: middle;
+    vertical-align: top;
   }
 
   .comparison-table thead th {
@@ -120,12 +125,13 @@
 
   .cell {
     display: inline-flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 0.4rem;
   }
 
   .cell :global(.cell-icon) {
     flex-shrink: 0;
+    margin-top: 0.05rem;
   }
 
   .label {
