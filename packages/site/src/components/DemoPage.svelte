@@ -1,6 +1,7 @@
 <script>
   import { url } from 'mochi-framework';
   import CodeViewer from './CodeViewer.svelte';
+  import ViewSourceLink from './ViewSourceLink.svelte';
   import PageShell from './PageShell.svelte';
   import ReadmeCopy from './ReadmeCopy.svelte';
   import { demoIconFor } from '../lib/demoIcons';
@@ -15,6 +16,12 @@
   // matching the /llms.json index derivation.
   const current = demos.find((d) => d.title === title);
   const demoHref = current?.href.startsWith('/') ? current.href : undefined;
+
+  // Match by URL, not title — a demo page's heading can differ from its registry
+  // title (e.g. queue), and some demos route to sub-paths (e.g. data-loading →
+  // /pikachu). Prefix-match the trailing-slashed href so sub-routes still resolve.
+  const sourceDemo = demos.find((d) => d.href.startsWith('/') && url.pathname.startsWith(d.href));
+  const sourcePath = sourceDemo?.slug ? `packages/site/src/demos/${sourceDemo.slug}` : undefined;
 
   const moreDemos = demos
     .filter((d) => d.title !== title)
@@ -67,6 +74,9 @@
         {@render children()}
       </div>
       {#if sources && sources.length > 0}
+        {#if sourcePath}
+          <ViewSourceLink path={sourcePath} />
+        {/if}
         <CodeViewer {sources} mochi:hydrate />
       {/if}
     </div>

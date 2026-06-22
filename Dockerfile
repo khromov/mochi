@@ -56,8 +56,16 @@ RUN mkdir -p packages/${WORKSPACE}/.mochi && chown -R bun:bun packages/${WORKSPA
 RUN bun packages/site/src/lib/generateDocsBarrel.ts
 
 ENV WORKSPACE=${WORKSPACE}
+ENV PORT=${PORT}
 ENV MOCHI_LIVE_RELOAD=false
 ENV MOCHI_DOCKER=true
 USER bun
 EXPOSE ${PORT}/tcp
+
+# No curl/wget in the alpine base; bun is on PATH, so probe with fetch. Reads
+# PORT from the env above and hits the canonical /health/ (trailingSlash:'always'
+# would otherwise 308 a bare /health) so the redirect hop never happens.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+  CMD bun --eval "fetch('http://127.0.0.1:'+process.env.PORT+'/health/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+
 ENTRYPOINT [ "sh", "-c", "exec bun run dev:${WORKSPACE}" ]

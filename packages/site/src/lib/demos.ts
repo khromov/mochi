@@ -25,6 +25,7 @@ import { files as mdsvex } from '../demos/mdsvex/files.ts';
 import { files as nestedComponents } from '../demos/nested-components/files.ts';
 import { files as propDedup } from '../demos/prop-dedup/files.ts';
 import { files as propsId } from '../demos/props-id/files.ts';
+import { files as queue } from '../demos/queue/files.ts';
 import { files as reloadFormData } from '../demos/reload-form-data/files.ts';
 import { files as requestId } from '../demos/request-id/files.ts';
 import { files as serverIsland } from '../demos/server-island/files.ts';
@@ -188,6 +189,14 @@ export const demos: Demo[] = [
     files: streams,
     title: 'Real-time Streams',
     hook: 'WebSocket and SSE clocks, lazily hydrated via mochi:hydrate:visible.',
+    category: 'endpoints',
+  },
+  {
+    href: '/demos/queue/',
+    slug: 'queue',
+    files: queue,
+    title: 'Background jobs with queues',
+    hook: 'Offload work to a Mochi.queue() with an embedded worker — no Redis.',
     category: 'endpoints',
   },
   {

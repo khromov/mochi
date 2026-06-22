@@ -7,11 +7,18 @@ description: 'A mapping of SvelteKit concepts to their Mochi equivalents for dev
 <script>
   import Callout from './_components/Callout.svelte';
   import SeeItInAction from './_components/SeeItInAction.svelte';
+  import ComparisonTable from './_components/ComparisonTable.svelte';
 </script>
 
 ## Coming from SvelteKit
 
-You have likely already been using SvelteKit as your main framework for Svelte. Here is a quick list of most of the SvelteKit features and how they map to equivalent concepts in Mochi, so you can be up and running quickly.
+You have likely already been using SvelteKit as your main framework for Svelte. Below you'll find a list of most of the SvelteKit features and how they map to equivalent concepts in Mochi, so you can be up and running quickly.
+
+Before that you'll find a simplified comparison table below, but you can [skip to the feature list directly](#routing) if you prefer.
+
+### Feature comparison
+
+<ComparisonTable mochi:hydrate />
 
 ### Routing
 
@@ -624,7 +631,7 @@ Listen for `beforeunload` or `popstate` directly — there is no `beforeNavigate
 
 ### Link options (`data-sveltekit-preload-*`)
 
-No equivalent. There is no client router to preload code or data into — the browser handles `<a>` clicks natively. `data-sveltekit-reload`, `data-sveltekit-replacestate`, `data-sveltekit-keepfocus`, and `data-sveltekit-noscroll` likewise have no Mochi attribute.
+Planned, but not yet available. Mochi has no client router today, so there is nothing to preload code or data into — the browser handles `<a>` clicks natively, and link preloading is on the roadmap. `data-sveltekit-reload`, `data-sveltekit-replacestate`, `data-sveltekit-keepfocus`, and `data-sveltekit-noscroll` likewise have no Mochi attribute.
 
 ```html
 <!-- SvelteKit -->
@@ -687,7 +694,7 @@ No framework helper. Call `history.pushState` / `history.replaceState` directly 
 
 ### Service workers
 
-No equivalent. There is no `src/service-worker.ts` convention and no `$service-worker` virtual module. Register one yourself from a hydrated island if you need offline support.
+Planned, but not yet available. There is currently no `src/service-worker.ts` convention and no `$service-worker` virtual module; built-in service worker integration is on the roadmap. For now, register one yourself from a hydrated island if you need offline support.
 
 ```ts
 // file (SvelteKit): src/service-worker.ts
@@ -702,6 +709,24 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js');
 }
 // then ship /public/sw.js yourself
+```
+
+### Image optimization (`@sveltejs/enhanced-img`)
+
+Planned, but not yet available. SvelteKit offers build-time image optimization via `@sveltejs/enhanced-img` (the `<enhanced:img>` element), with runtime transformations available at extra cost through a CDN. Mochi has no equivalent yet — build-time and runtime image transformations are on the roadmap. For now, optimize images ahead of time and reference them with a plain `<img>`.
+
+```svelte
+<!-- file (SvelteKit): src/routes/+page.svelte -->
+<script>
+  import hero from './hero.png?enhanced';
+</script>
+
+<enhanced:img src={hero} alt="Hero" />
+```
+
+```svelte
+<!-- file (Mochi): src/Home.svelte -->
+<img src="/hero.png" alt="Hero" width="800" height="400" />
 ```
 
 ### Remote functions
