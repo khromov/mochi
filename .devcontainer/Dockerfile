@@ -117,10 +117,13 @@ RUN printf '%s\n' \
   | tee -a /home/node/.zshrc /home/node/.bashrc >/dev/null
 
 
-# Copy custom Claude Code statusline script (wired up via postCreateCommand)
+# Copy custom Claude Code statusline script and portable global settings
+# (both merged into ~/.claude/settings.json via postCreateCommand).
 COPY statusline.sh /home/node/statusline.sh
+COPY claude-settings.json /home/node/claude-settings.json
 USER root
-RUN chmod +x /home/node/statusline.sh && chown node:node /home/node/statusline.sh
+RUN chmod +x /home/node/statusline.sh && \
+  chown node:node /home/node/statusline.sh /home/node/claude-settings.json
 USER node
 
 # Copy and set up firewall script
