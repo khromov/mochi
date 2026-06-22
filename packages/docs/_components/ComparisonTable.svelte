@@ -142,10 +142,11 @@
 
   const labelFor: Record<Status, string> = { yes: 'Yes', no: 'No', partial: 'Partial', planned: 'Planned' };
 
-  // `mochi-only` / `kit-only` denote features one framework has (yes) and the
-  // other lacks — derived from status, not a per-row tag. `kit-only` also
-  // includes rows Mochi has `planned` (SvelteKit has it; Mochi intends to).
+  // `mochi-only` / `kit-only` show features where one framework leads — its
+  // support (ranked yes > partial > planned > no) is stronger than the other's
+  // and is at least partial. Derived from status, not a per-row tag.
   type Filter = Category | 'all' | 'mochi-only' | 'kit-only';
+  const rank: Record<Status, number> = { yes: 3, partial: 2, planned: 1, no: 0 };
   const tabs: { id: Filter; label: string }[] = [
     { id: 'all', label: 'All' },
     { id: 'performance', label: 'Performance' },
@@ -164,8 +165,8 @@
   const collapsed = $derived(comparisonOpen() === null ? collapsedDefault : !comparisonOpen());
   const filteredRows = $derived.by(() => {
     if (activeTab === 'all') return rows;
-    if (activeTab === 'mochi-only') return rows.filter((row) => row.mochi.status === 'yes' && row.kit.status === 'no');
-    if (activeTab === 'kit-only') return rows.filter((row) => row.kit.status === 'yes' && (row.mochi.status === 'no' || row.mochi.status === 'planned'));
+    if (activeTab === 'mochi-only') return rows.filter((row) => rank[row.mochi.status] >= 2 && rank[row.mochi.status] > rank[row.kit.status]);
+    if (activeTab === 'kit-only') return rows.filter((row) => rank[row.kit.status] >= 2 && rank[row.kit.status] > rank[row.mochi.status]);
     return rows.filter((row) => row.tags.includes(activeTab));
   });
   // Collapsed preview renders only the header row (no body rows).
