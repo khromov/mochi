@@ -57,6 +57,6 @@
     "svelte-check@4.6.0": "packages/mochi/patches/svelte-check@4.6.0.patch"
   },
   "overrides": {
-    "msgpackr-extract": "workspace:*"
+    "msgpackr-extract": "npm:@mochi-framework/msgpackr-extract-stub@^0.0.1"
   }
 }

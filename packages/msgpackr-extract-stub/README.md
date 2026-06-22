@@ -1,11 +1,11 @@
-# msgpackr-extract (stub)
+# @mochi-framework/msgpackr-extract-stub
 
 This is **not** the real [`msgpackr-extract`](https://www.npmjs.com/package/msgpackr-extract).
-It's a local empty stub that exists only to be substituted for it via the root
-`package.json` `overrides` field:
+It's an empty stub meant to be substituted for it via a `package.json`
+`overrides` field:
 
 ```jsonc
-"overrides": { "msgpackr-extract": "workspace:*" }
+"overrides": { "msgpackr-extract": "npm:@mochi-framework/msgpackr-extract-stub@^0.0.1" }
 ```
 
 `msgpackr` (pulled in transitively by `bunqueue`) lists `msgpackr-extract` as an

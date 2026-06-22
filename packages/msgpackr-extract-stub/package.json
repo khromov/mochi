@@ -3,8 +3,17 @@
   "version": "0.0.1",
   "description": "Empty stub used to override the native msgpackr-extract accelerator out of the dependency graph. See README.",
   "main": "index.cjs",
-  "files": ["index.cjs", "README.md"],
-  "keywords": ["mochi", "msgpackr", "msgpackr-extract", "stub", "override"],
+  "files": [
+    "index.cjs",
+    "README.md"
+  ],
+  "keywords": [
+    "mochi",
+    "msgpackr",
+    "msgpackr-extract",
+    "stub",
+    "override"
+  ],
   "publishConfig": {
     "access": "public"
   },
