@@ -37,37 +37,35 @@ export interface MochiJobOptions {
   bunqueue?: Record<string, unknown>;
 }
 
-export interface MochiQueueOptions {
-  /** Omit for in-memory. bunqueue locks the path to the first queue/worker in the process — see `rememberDataPath`. */
-  dataPath?: string;
-  defaultJobOptions?: MochiJobOptions;
-  bunqueue?: Record<string, unknown>;
-}
-
-export interface MochiWorkerOptions {
-  concurrency?: number;
-  dataPath?: string;
-  bunqueue?: Record<string, unknown>;
-}
-
-export interface MochiQueue<T> {
-  readonly name: string;
-  add(name: string, data: T, opts?: MochiJobOptions): Promise<MochiJobRef>;
-  addBulk(jobs: Array<{ name: string; data: T; opts?: MochiJobOptions }>): Promise<MochiJobRef[]>;
-  close(): Promise<void>;
-}
-
-export interface MochiWorkerEventMap<T, R> {
+/** Lifecycle listeners; the same map is used for the per-queue `on` option and the `MochiQueueListeners` config. */
+export interface MochiQueueListeners<T, R> {
   active: (job: MochiJob<T>) => void;
   completed: (job: MochiJob<T>, result: R) => void;
   failed: (job: MochiJob<T>, error: Error) => void;
   error: (error: Error) => void;
 }
 
-export interface MochiWorker<T, R> {
+/** The non-processor settings of a queue — what survives on the inert `MochiQueueConfig.options`. */
+export interface MochiQueueRuntimeOptions {
+  concurrency?: number;
+  /** Omit for in-memory. bunqueue locks the path to the first queue in the process — see `rememberDataPath`. */
+  dataPath?: string;
+  defaultJobOptions?: MochiJobOptions;
+  /** Forwarded verbatim to bunqueue's `Queue` and `Worker` constructors. */
+  bunqueue?: Record<string, unknown>;
+}
+
+/** The full config object passed to `Mochi.queue({ process, … })`. */
+export interface MochiQueueOptions<T, R = unknown> extends MochiQueueRuntimeOptions {
+  process: MochiProcessor<T, R>;
+  on?: Partial<MochiQueueListeners<T, R>>;
+}
+
+/** Producer handle returned by `Mochi.getQueue(name)`. */
+export interface MochiQueue<T> {
   readonly name: string;
-  on<K extends keyof MochiWorkerEventMap<T, R>>(event: K, listener: MochiWorkerEventMap<T, R>[K]): this;
-  close(): Promise<void>;
+  add(name: string, data: T, opts?: MochiJobOptions): Promise<MochiJobRef>;
+  addBulk(jobs: Array<{ name: string; data: T; opts?: MochiJobOptions }>): Promise<MochiJobRef[]>;
 }
 
 interface Closeable {
@@ -75,65 +73,23 @@ interface Closeable {
 }
 
 interface QueueRegistry {
-  queues: Set<Closeable>;
-  workers: Set<Closeable>;
-  queuesByName: Map<string, Closeable>;
-  /** Live worker count per queue name; drives the "enqueued but no consumer" warning. */
-  workersByName: Map<string, number>;
-  /** Queue names already warned about (no mounted worker) — warn once, not per `add()`. */
-  warnedMissingWorker: Set<string>;
+  /** Producer handles, keyed by name; what `getQueue()` resolves. */
+  byName: Map<string, MochiQueue<unknown>>;
+  /** Every producer/consumer resource, for `closeAllQueueResources` to drain on shutdown. */
+  closeables: Set<Closeable>;
   /** First `dataPath` seen; bunqueue ignores later differing paths in the same process. */
   dataPath: string | null | undefined;
-  /**
-   * Set true once `Mochi.serve()` has mounted its workers. Workers are declared
-   * only there (no dynamic insertion), so a `createWorker` while locked is a bug
-   * — serve unlocks for its own mounting, then relocks.
-   */
-  workersLocked: boolean;
 }
 
 // Pinned so the registry is shared across any duplicate bundled copy of this
 // module (mirrors `mochiEvents` / `requestContext`). The shutdown path
-// (`closeAllQueueResources`) must see every queue and worker to drain it,
-// wherever — and by whichever bundled copy — it was created.
+// (`closeAllQueueResources`) must see every resource to drain it, wherever — and
+// by whichever bundled copy — it was created.
 const registry = pinGlobal<QueueRegistry>('__mochi_queue_registry__', () => ({
-  queues: new Set(),
-  workers: new Set(),
-  queuesByName: new Map(),
-  workersByName: new Map(),
-  warnedMissingWorker: new Set(),
+  byName: new Map(),
+  closeables: new Set(),
   dataPath: undefined,
-  workersLocked: false,
 }));
-
-/**
- * `Mochi.serve()` wraps its worker mounting in these: unlock so its own
- * `createWorker` calls are allowed (even if a previous serve in this process
- * locked), then lock so a `Mochi.worker()`/`createWorker` reached after startup
- * throws instead of silently inserting an unmanaged worker.
- */
-export function unlockWorkerCreation(): void {
-  registry.workersLocked = false;
-}
-export function lockWorkerCreation(): void {
-  registry.workersLocked = true;
-}
-
-/**
- * Warn (once per queue name) when a job is enqueued to a queue that has no
- * mounted worker — in embedded mode that job will sit unconsumed forever, so
- * this is almost always a typo'd queue name or a worker missing from
- * `Mochi.serve({ workers })`.
- */
-function warnIfNoConsumer(name: string): void {
-  if ((registry.workersByName.get(name) ?? 0) > 0 || registry.warnedMissingWorker.has(name)) {
-    return;
-  }
-  registry.warnedMissingWorker.add(name);
-  logger.warn(
-    `[queue] enqueued to "${name}" but no worker is mounted for it — the job won't be processed. Mount one via Mochi.serve({ workers: { '${name}': Mochi.worker(...) } }).`,
-  );
-}
 
 function rememberDataPath(dataPath: string | undefined): void {
   if (registry.dataPath === undefined) {
@@ -166,94 +122,67 @@ function toBunJobOptions(opts: MochiJobOptions | undefined): JobOptions | undefi
   return { priority, delay, attempts, jobId, ...bunqueue };
 }
 
-export function createQueue<T>(name: string, opts?: MochiQueueOptions): MochiQueue<T> {
-  rememberDataPath(opts?.dataPath);
-
-  // A producer handle is a singleton per name; the dev route-HMR watcher re-runs
-  // the defining module repeatedly, so reuse the existing handle instead of
-  // accumulating duplicates in the registry. Note the cached handle's `T` is not
-  // revalidated — `Mochi.queue<A>('x')` then `Mochi.queue<B>('x')` returns the
-  // same handle typed as `B`; with one queue name per payload type this is moot.
-  const existing = registry.queuesByName.get(name);
-  if (existing) {
-    return existing as unknown as MochiQueue<T>;
-  }
+/**
+ * Build a queue: a bunqueue `Queue` (producer) and `Worker` (consumer) from one
+ * config. Registers the producer handle under `name` (resolved by `getQueue`)
+ * and both resources for shutdown draining. Invoked only by `Mochi.serve`, where
+ * a queue is declared once with its processor co-located — there is no separate
+ * worker concept and no dynamic insertion.
+ */
+export function createQueue<T = unknown, R = unknown>(
+  name: string,
+  process: MochiProcessor<T, R>,
+  options?: MochiQueueRuntimeOptions,
+  listeners?: Partial<MochiQueueListeners<T, R>>,
+): MochiQueue<T> {
+  rememberDataPath(options?.dataPath);
 
   const queue = new Queue<T>(name, {
     embedded: true,
-    dataPath: opts?.dataPath,
-    defaultJobOptions: toBunJobOptions(opts?.defaultJobOptions),
-    ...opts?.bunqueue,
+    dataPath: options?.dataPath,
+    defaultJobOptions: toBunJobOptions(options?.defaultJobOptions),
+    ...options?.bunqueue,
   });
 
-  const handle: MochiQueue<T> = {
+  const producer: MochiQueue<T> = {
     name,
     async add(jobName, data, jobOpts) {
-      warnIfNoConsumer(name);
       const job = await queue.add(jobName, data, toBunJobOptions(jobOpts));
       mochiEvents.emit('queue:added', { queue: name, jobId: job.id, jobName: job.name });
       return { id: job.id, name: job.name };
     },
     async addBulk(jobs) {
-      warnIfNoConsumer(name);
       const created = await queue.addBulk(jobs.map((j) => ({ name: j.name, data: j.data, opts: toBunJobOptions(j.opts) })));
       for (const job of created) {
         mochiEvents.emit('queue:added', { queue: name, jobId: job.id, jobName: job.name });
       }
       return created.map((job) => ({ id: job.id, name: job.name }));
     },
-    async close() {
-      registry.queues.delete(handle);
-      registry.queuesByName.delete(name);
-      // bunqueue's Queue.close() is synchronous (returns void) — only Worker.close()
-      // is async — so there's nothing to await here.
-      queue.close();
-    },
   };
-  const registered: Closeable = handle;
-  registry.queues.add(registered);
-  registry.queuesByName.set(name, registered);
-  return handle;
-}
 
-export function createWorker<T, R = unknown>(
-  name: string,
-  processor: MochiProcessor<T, R>,
-  opts?: MochiWorkerOptions,
-  initialListeners?: Partial<MochiWorkerEventMap<T, R>>,
-): MochiWorker<T, R> {
-  if (registry.workersLocked) {
-    throw new Error(
-      `Cannot create worker for "${name}" after Mochi.serve() has started — there is no dynamic worker insertion. Declare every worker up front in Mochi.serve({ workers }).`,
-    );
-  }
-  rememberDataPath(opts?.dataPath);
-
-  const listeners: { [K in keyof MochiWorkerEventMap<T, R>]: Set<MochiWorkerEventMap<T, R>[K]> } = {
+  const sinks: { [K in keyof MochiQueueListeners<T, R>]: Set<MochiQueueListeners<T, R>[K]> } = {
     active: new Set(),
     completed: new Set(),
     failed: new Set(),
     error: new Set(),
   };
-
-  // Seed caller listeners (from `Mochi.serve({ workers: { …: Mochi.worker(_, { on }) } })`)
-  // BEFORE constructing the worker, which starts draining immediately. Wiring them
-  // after would let a job that's already queued complete in the gap and miss the
-  // `completed`/`active` handler.
-  if (initialListeners) {
-    for (const key of Object.keys(initialListeners) as (keyof MochiWorkerEventMap<T, R>)[]) {
-      const listener = initialListeners[key];
+  // Seed caller listeners (from `Mochi.queue({ on })`) BEFORE constructing the
+  // worker, which starts draining immediately. Wiring them after would let a job
+  // already queued complete in the gap and miss the `completed`/`active` handler.
+  if (listeners) {
+    for (const key of Object.keys(listeners) as (keyof MochiQueueListeners<T, R>)[]) {
+      const listener = listeners[key];
       if (listener) {
-        (listeners[key] as unknown as Set<unknown>).add(listener);
+        (sinks[key] as unknown as Set<unknown>).add(listener);
       }
     }
   }
 
-  const worker = new Worker<T, R>(name, (job) => processor(toMochiJob(job as Job<T>, name)), {
+  const worker = new Worker<T, R>(name, (job) => process(toMochiJob(job as Job<T>, name)), {
     embedded: true,
-    dataPath: opts?.dataPath,
-    concurrency: opts?.concurrency,
-    ...opts?.bunqueue,
+    dataPath: options?.dataPath,
+    concurrency: options?.concurrency,
+    ...options?.bunqueue,
   });
 
   // bunqueue's `finishedOn`/`processedOn` are unreliable on the public job at
@@ -271,7 +200,7 @@ export function createWorker<T, R = unknown>(
     startedAt.set(job.id, performance.now());
     mochiEvents.emit('queue:active', { queue: name, jobId: job.id, jobName: job.name, attempt: job.attemptsMade + 1 });
     const mj = toMochiJob(job as Job<T>, name);
-    for (const l of listeners.active) {
+    for (const l of sinks.active) {
       l(mj);
     }
   });
@@ -279,7 +208,7 @@ export function createWorker<T, R = unknown>(
   worker.on('completed', (job, result) => {
     mochiEvents.emit('queue:completed', { queue: name, jobId: job.id, jobName: job.name, attempt: job.attemptsMade + 1, duration: durationFor(job.id) });
     const mj = toMochiJob(job as Job<T>, name);
-    for (const l of listeners.completed) {
+    for (const l of sinks.completed) {
       l(mj, result);
     }
   });
@@ -287,69 +216,48 @@ export function createWorker<T, R = unknown>(
   worker.on('failed', (job, error) => {
     mochiEvents.emit('queue:failed', { queue: name, jobId: job.id, jobName: job.name, attempt: job.attemptsMade + 1, duration: durationFor(job.id), error: error.message });
     const mj = toMochiJob(job as Job<T>, name);
-    for (const l of listeners.failed) {
+    for (const l of sinks.failed) {
       l(mj, error);
     }
   });
 
   worker.on('error', (error) => {
     mochiEvents.emit('queue:error', { queue: name, error: error.message });
-    for (const l of listeners.error) {
+    for (const l of sinks.error) {
       l(error);
     }
   });
 
-  const handle: MochiWorker<T, R> = {
-    name,
-    on(event, listener) {
-      listeners[event].add(listener);
-      return this;
-    },
-    async close() {
-      registry.workers.delete(handle);
-      const remaining = (registry.workersByName.get(name) ?? 1) - 1;
-      if (remaining > 0) {
-        registry.workersByName.set(name, remaining);
-      } else {
-        registry.workersByName.delete(name);
-      }
-      await worker.close();
-    },
-  };
-  registry.workers.add(handle);
-  registry.workersByName.set(name, (registry.workersByName.get(name) ?? 0) + 1);
-  // A worker now consumes this name; clear any prior "no consumer" latch so a
-  // producer created before the worker mounted doesn't keep silencing real ones.
-  registry.warnedMissingWorker.delete(name);
-  return handle;
+  registry.byName.set(name, producer as MochiQueue<unknown>);
+  // bunqueue's Queue.close() is synchronous (returns void) — only Worker.close()
+  // is async — so the queue's closeable just wraps the sync call.
+  registry.closeables.add({ close: async () => void queue.close() });
+  registry.closeables.add({ close: () => worker.close() });
+  return producer;
 }
 
 /**
- * Queue names that have a producer (`Mochi.queue()`) but no worker among the
- * names about to be mounted. Called by `Mochi.serve` against the keys of its
- * `workers` map *before* binding (so the live workers don't exist yet). Workers
- * can only be declared there — no dynamic insertion — so a producer left without
- * a consumer is a permanent dead end that `Mochi.serve` turns into a fatal.
+ * Resolve the producer handle for a queue declared in `Mochi.serve({ queues })`.
+ * Throws if the name was never declared (a typo, or `getQueue` reached before
+ * `Mochi.serve()` mounted its queues) — producing to an unknown queue would
+ * otherwise silently drop every job.
  */
-export function unconsumedQueueNames(mountedWorkerNames: Set<string>): string[] {
-  const orphans: string[] = [];
-  for (const name of registry.queuesByName.keys()) {
-    if (!mountedWorkerNames.has(name)) {
-      orphans.push(name);
-    }
+export function getQueue<T = unknown>(name: string): MochiQueue<T> {
+  const handle = registry.byName.get(name);
+  if (!handle) {
+    throw new Error(`Mochi.getQueue("${name}"): no such queue. Declare it via Mochi.serve({ queues: { "${name}": Mochi.queue(...) } }) before producing to it.`);
   }
-  return orphans;
+  return handle as MochiQueue<T>;
 }
 
 /**
- * Workers first (stop pulling new jobs), then queues. Idempotent and never
- * throws, so it's safe on both the serve shutdown path and the build drain path.
+ * Drain every queue resource — workers first (stop pulling new jobs), then
+ * queues. Idempotent and never throws, so it's safe on both the serve shutdown
+ * path and the build drain path.
  */
 export async function closeAllQueueResources(): Promise<void> {
-  const workers = [...registry.workers];
-  const queues = [...registry.queues];
-  await Promise.allSettled(workers.map((w) => w.close()));
-  await Promise.allSettled(queues.map((q) => q.close()));
+  const closeables = [...registry.closeables];
+  await Promise.allSettled(closeables.map((c) => c.close()));
   // Embedded mode keeps a process-global manager (open SQLite handle + several
   // un-unref'd background intervals). Closing individual handles doesn't touch
   // it, so without this the SQLite file stays locked (Windows rm -> EBUSY) and
@@ -357,15 +265,10 @@ export async function closeAllQueueResources(): Promise<void> {
   // idempotent, so it's safe on the double-call path.
   shutdownManager();
   // The manager is gone, so the embedded store's first-path lock is released too;
-  // reset the remembered path (and the warning latches) so a fresh queue/worker
-  // created afterwards starts clean rather than warning against a stale path.
-  // Clear the name maps too: each close() prunes its own entry, but a close() that
-  // rejected (swallowed by allSettled) would otherwise leave a stale name behind.
-  registry.queuesByName.clear();
-  registry.workersByName.clear();
+  // reset the remembered path so a fresh queue created afterwards starts clean
+  // rather than warning against a stale path. Clear the resources too so a fresh
+  // serve in this process (e.g. a test that restarts) can re-mount its queues.
+  registry.byName.clear();
+  registry.closeables.clear();
   registry.dataPath = undefined;
-  registry.warnedMissingWorker.clear();
-  // A fresh serve in this process (e.g. a test that restarts) must be able to
-  // mount workers again.
-  registry.workersLocked = false;
 }

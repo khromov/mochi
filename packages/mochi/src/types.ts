@@ -4,7 +4,7 @@ import type { MochiCookieJar } from './cookies';
 import type { MochiCsrfOptions } from './csrf';
 import type { MochiFilters, MochiHooks } from './extensions';
 import type { MochiProxyOptions } from './proxy';
-import type { MochiJob, MochiProcessor, MochiWorkerOptions } from './queue';
+import type { MochiProcessor, MochiQueueListeners, MochiQueueRuntimeOptions } from './queue';
 
 export type MochiServerPropsResolver = (req: Request, params: Record<string, string>) => Record<string, unknown> | Promise<Record<string, unknown>>;
 
@@ -296,34 +296,27 @@ export function isMochiSse(value: unknown): value is MochiSseConfig {
 }
 
 // ---------------------------------------------------------------------------
-// Background workers
+// Background queues
 // ---------------------------------------------------------------------------
 
-/** Typed lifecycle listeners passed to `Mochi.worker(processor, { on })`. */
-export interface MochiWorkerListeners<T, R> {
-  active?: (job: MochiJob<T>) => void;
-  completed?: (job: MochiJob<T>, result: R) => void;
-  failed?: (job: MochiJob<T>, error: Error) => void;
-  error?: (error: Error) => void;
-}
-
 /**
- * Inert descriptor returned by `Mochi.worker()` — mirrors `MochiApiConfig`/
- * `MochiWsConfig` et al. Non-generic so a heterogeneous `workers` map type-checks;
- * `Mochi.worker<T, R>` keeps the generics only to type the processor/listeners at
- * the call site, then erases them here. The live worker is created only when this
- * is mounted in `Mochi.serve({ workers })`, which calls `createWorker`, passing
- * the `on` listeners so they're wired before the worker can pull its first job.
+ * Inert descriptor returned by `Mochi.queue()` — mirrors `MochiApiConfig`/
+ * `MochiWsConfig` et al. Non-generic so a heterogeneous `queues` map type-checks;
+ * `Mochi.queue<T, R>` keeps the generics only to type the processor/listeners at
+ * the call site, then erases them here. The live queue (producer + consumer) is
+ * created only when this is mounted in `Mochi.serve({ queues })`, which calls
+ * `createQueue`, passing the `on` listeners so they're wired before the consumer
+ * can pull its first job.
  */
-export interface MochiWorkerConfig {
-  readonly __mochiWorker: true;
-  readonly processor: MochiProcessor<unknown, unknown>;
-  readonly options?: MochiWorkerOptions;
-  readonly on?: MochiWorkerListeners<unknown, unknown>;
+export interface MochiQueueConfig {
+  readonly __mochiQueue: true;
+  readonly process: MochiProcessor<unknown, unknown>;
+  readonly options?: MochiQueueRuntimeOptions;
+  readonly on?: Partial<MochiQueueListeners<unknown, unknown>>;
 }
 
-export function isMochiWorker(value: unknown): value is MochiWorkerConfig {
-  return typeof value === 'object' && value !== null && (value as MochiWorkerConfig).__mochiWorker === true;
+export function isMochiQueue(value: unknown): value is MochiQueueConfig {
+  return typeof value === 'object' && value !== null && (value as MochiQueueConfig).__mochiQueue === true;
 }
 
 export type MochiRouteValue = MochiPageConfig | MochiApiConfig | MochiWsConfig | MochiSseConfig | MochiFileConfig | BunRouteValue;
@@ -465,13 +458,12 @@ export interface MochiServeOptions {
   manifest?: string;
   routes?: Record<string, MochiRouteValue>;
   /**
-   * Background workers to start with the server, keyed by queue name. Each value
-   * is a `Mochi.worker(processor, opts?)` descriptor; the matching producer is a
-   * `Mochi.queue(name)` handle you `.add()` to from route code. Workers drain
-   * gracefully on shutdown. A worker-only process is `Mochi.serve({ workers })`
-   * with no `routes`.
+   * Background job queues to start with the server, keyed by queue name. Each
+   * value is a `Mochi.queue({ process, … })` descriptor; produce to it from route
+   * code via `Mochi.getQueue(name).add(...)`. Queues drain gracefully on
+   * shutdown. A queue-only process is `Mochi.serve({ queues })` with no `routes`.
    */
-  workers?: Record<string, MochiWorkerConfig>;
+  queues?: Record<string, MochiQueueConfig>;
   fetch?: (req: Request, server: Server<undefined>) => Response | Promise<Response>;
   htmlShell?: string;
   /**

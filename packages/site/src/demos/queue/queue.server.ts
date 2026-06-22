@@ -1,11 +1,8 @@
 import { Mochi, mochiEvents } from 'mochi-framework';
+import type { MochiQueueConfig } from 'mochi-framework';
 import type { NotificationJob, ProcessedEntry, QueueStatus } from './types';
 
 export const QUEUE_NAME = 'demo-notifications';
-
-// In-memory so the demo writes no SQLite file into the site working dir; pass
-// `dataPath` to persist.
-export const notificationQueue = Mochi.queue<NotificationJob>(QUEUE_NAME);
 
 // One server-owned snapshot, shared by every connected client. `inFlight` is
 // tracked off the event bus (not per request) so it counts enqueues and
@@ -27,8 +24,11 @@ const settle = (e: { queue: string }) => {
 mochiEvents.on('queue:completed', settle);
 mochiEvents.on('queue:failed', settle);
 
-export const notificationWorker = Mochi.worker<NotificationJob>(
-  async (job) => {
+// In-memory so the demo writes no SQLite file into the site working dir; pass
+// `dataPath` to persist. Mounted under QUEUE_NAME in Mochi.serve({ queues }).
+export const notificationQueue: MochiQueueConfig = Mochi.queue<NotificationJob>({
+  concurrency: 2,
+  process: async (job) => {
     // Simulate delivery latency so the UI shows the queued → processing → done
     // transition rather than completing instantly.
     await Bun.sleep(700);
@@ -39,8 +39,7 @@ export const notificationWorker = Mochi.worker<NotificationJob>(
     processedTotal++;
     return { delivered: true };
   },
-  { concurrency: 2 },
-);
+});
 
 export function queueStatus(): QueueStatus {
   return { processed: [...processed].reverse(), processedTotal, inFlight };

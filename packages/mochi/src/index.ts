@@ -74,7 +74,7 @@ export type {
   MochiRecompileTrigger,
   MochiClientBundleEvent,
 } from './events';
-export type { MochiQueue, MochiWorker, MochiJob, MochiJobRef, MochiJobOptions, MochiQueueOptions, MochiWorkerOptions, MochiProcessor, MochiWorkerEventMap } from './queue';
+export type { MochiQueue, MochiJob, MochiJobRef, MochiJobOptions, MochiQueueOptions, MochiQueueRuntimeOptions, MochiQueueListeners, MochiProcessor } from './queue';
 export { json, error, apiError } from './utils';
 export { trailingSlashIt } from './trailingSlash';
 export { fail, redirect, success } from './forms';
@@ -124,8 +124,7 @@ export type {
   MochiSseStream,
   MochiFileConfig,
   MochiFileResolver,
-  MochiWorkerConfig,
-  MochiWorkerListeners,
+  MochiQueueConfig,
   BunRouteValue,
   MochiSvelteShakerOptions,
 } from './types';

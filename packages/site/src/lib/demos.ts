@@ -195,8 +195,8 @@ export const demos: Demo[] = [
     href: '/demos/queue/',
     slug: 'queue',
     files: queue,
-    title: 'Background Jobs',
-    hook: 'Offload work to a Mochi.worker() via Mochi.queue() — embedded, no Redis.',
+    title: 'Queue Background Jobs',
+    hook: 'Offload work to a Mochi.queue() with an embedded worker — no Redis.',
     category: 'endpoints',
   },
   {

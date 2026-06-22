@@ -7,7 +7,7 @@ import type { RenderResult } from './ComponentRegistry';
 import { loadSvelteConfig } from './svelteConfig';
 import { buildInlineWebComponent } from './buildInlineWebComponent';
 import { buildClientStatsRoutes, CLIENT_STATS_COMPONENT } from './clientStatsRoutes';
-import { isMochiPage, isMochiApi, isMochiWs, isMochiSse, isMochiFile, isMochiWorker, isServerPropsResolver } from './types';
+import { isMochiPage, isMochiApi, isMochiWs, isMochiSse, isMochiFile, isMochiQueue, isServerPropsResolver } from './types';
 import type {
   BunRouteValue,
   HttpMethod,
@@ -22,8 +22,7 @@ import type {
   MochiRouteValue,
   MochiServerPropsResolver,
   MochiServeOptions,
-  MochiWorkerConfig,
-  MochiWorkerListeners,
+  MochiQueueConfig,
   RouteRegistrationResult,
   MochiSseConfig,
   MochiSseHandler,
@@ -46,8 +45,8 @@ import { resolveWarmupEnabled, markWarmupRequest, isWarmablePattern } from './wa
 import { createErrorResponder, DEFAULT_ERROR_PAGE_PATH } from './errors';
 import { requestContext } from './requestContext';
 import type { MochiRequestContext } from './requestContext';
-import { createQueue, createWorker, closeAllQueueResources, unconsumedQueueNames, lockWorkerCreation, unlockWorkerCreation } from './queue';
-import type { MochiQueue, MochiQueueOptions, MochiWorkerEventMap, MochiWorkerOptions, MochiProcessor } from './queue';
+import { createQueue, getQueue, closeAllQueueResources } from './queue';
+import type { MochiQueue, MochiQueueOptions, MochiQueueListeners, MochiProcessor } from './queue';
 import { finalizeCookieHeaders } from './cookies';
 import { makeRequestContextBuilder } from './requestSetup';
 import { verifyAndDecodeProps } from './serverIslandCrypto';
@@ -143,34 +142,33 @@ export class Mochi {
   }
 
   /**
-   * Create a background job queue (producer handle). Unlike `page`/`api`/`ws`/
-   * `sse`/`file`, this returns a *live* handle — call it at module top-level and
-   * `.add()` jobs from anywhere (e.g. a page action). Backed by bunqueue's
-   * embedded mode; a `Mochi.worker(…)` mounted under this name as the
-   * `Mochi.serve({ workers })` map key consumes the jobs.
+   * Declare a background job queue. Like `page`/`api`/`ws`/`sse`/`file`, this
+   * returns an *inert config* — the live queue (producer + consumer) is created
+   * only when the descriptor is mounted in `Mochi.serve({ queues })`, keyed by
+   * queue name. The config bundles the `process` consumer (receives a read-only
+   * `MochiJob`, returns the job result) with its options (`concurrency`,
+   * `dataPath`, …) and optional `on` lifecycle listeners. Produce jobs from
+   * anywhere via `Mochi.getQueue(name).add(...)`. Queues drain gracefully on
+   * `Mochi.serve()` shutdown.
    */
-  static queue<T = unknown>(name: string, opts?: MochiQueueOptions): MochiQueue<T> {
-    return createQueue<T>(name, opts);
+  static queue<T = unknown, R = unknown>(config: MochiQueueOptions<T, R>): MochiQueueConfig {
+    const { process, on, ...options } = config;
+    return {
+      __mochiQueue: true,
+      process: process as MochiProcessor<unknown, unknown>,
+      options,
+      on: on as Partial<MochiQueueListeners<unknown, unknown>> | undefined,
+    };
   }
 
   /**
-   * Declare a worker that processes jobs from a queue. Unlike `Mochi.queue`,
-   * this returns an *inert config* (like `page`/`api`/`ws`/`sse`/`file`) — the
-   * live worker is created only when the descriptor is mounted in
-   * `Mochi.serve({ workers: { '<queue-name>': Mochi.worker(...) } })`, where the
-   * map key is the queue name. The processor receives a read-only `MochiJob`;
-   * its return value is the job result. Pass `on` to subscribe to lifecycle
-   * events on the worker handle (or use the `mochiEvents` bus). Workers drain
-   * gracefully on `Mochi.serve()` shutdown.
+   * Resolve the producer handle for a queue declared in
+   * `Mochi.serve({ queues })` and `.add()` jobs to it. Pass the payload type
+   * explicitly (`Mochi.getQueue<JobData>(name)`). Throws if the queue name was
+   * never declared, or if reached before `Mochi.serve()` has mounted its queues.
    */
-  static worker<T = unknown, R = unknown>(processor: MochiProcessor<T, R>, opts?: MochiWorkerOptions & { on?: MochiWorkerListeners<T, R> }): MochiWorkerConfig {
-    const { on, ...options } = opts ?? {};
-    return {
-      __mochiWorker: true,
-      processor: processor as MochiProcessor<unknown, unknown>,
-      options,
-      on: on as MochiWorkerListeners<unknown, unknown> | undefined,
-    };
+  static getQueue<T = unknown>(name: string): MochiQueue<T> {
+    return getQueue<T>(name);
   }
 
   private static resolveHtmlShell(
@@ -1326,21 +1324,12 @@ export class Mochi {
           }
         : userWebSocketOptions;
 
-    // Validate workers BEFORE binding so a misconfiguration fails fast without
-    // leaving a half-started server listening. Workers are mounted only here —
-    // there's no dynamic insertion — so a `Mochi.queue()` producer with no
-    // matching key in `workers` is a permanent dead end (a typo'd name, or a
-    // Mochi.worker() left out of the map); fail loudly instead of swallowing jobs.
-    for (const [name, config] of Object.entries(options.workers ?? {})) {
-      if (!isMochiWorker(config)) {
-        throw new Error(`Mochi.serve({ workers }): "${name}" is not a Mochi.worker(...) descriptor. Each value must be created with Mochi.worker().`);
+    // Validate queues BEFORE binding so a misconfiguration fails fast without
+    // leaving a half-started server listening.
+    for (const [name, config] of Object.entries(options.queues ?? {})) {
+      if (!isMochiQueue(config)) {
+        throw new Error(`Mochi.serve({ queues }): "${name}" is not a Mochi.queue(...) descriptor. Each value must be created with Mochi.queue().`);
       }
-    }
-    const orphanQueues = unconsumedQueueNames(new Set(Object.keys(options.workers ?? {})));
-    if (orphanQueues.length > 0) {
-      throw new Error(
-        `Mochi.serve(): queue(s) [${orphanQueues.join(', ')}] have a Mochi.queue() producer but no worker mounted. Add one via Mochi.serve({ workers: { '${orphanQueues[0]}': Mochi.worker(...) } }).`,
-      );
     }
 
     const server = Bun.serve({
@@ -1364,23 +1353,17 @@ export class Mochi {
       mochiEvents.emit('server:start', startEvent);
     }
 
-    // Validated above; mount the live workers now (after bind, so they drain on
-    // the same shutdown path as the server). Unlock for our own mounting, then
-    // relock so a stray createWorker()/Mochi.worker() reached after startup is a
-    // hard error rather than a silent, unmanaged dynamic insertion. If a worker
-    // throws mid-mount, tear the just-bound server down rather than leaving it
-    // listening half-started; `finally` keeps the lock restored on either path.
-    unlockWorkerCreation();
+    // Validated above; mount the live queues now (after bind, so they drain on
+    // the same shutdown path as the server). If a queue throws mid-mount, tear
+    // the just-bound server down rather than leaving it listening half-started.
     try {
-      for (const [name, config] of Object.entries(options.workers ?? {})) {
-        createWorker(name, config.processor, config.options, config.on as Partial<MochiWorkerEventMap<unknown, unknown>> | undefined);
+      for (const [name, config] of Object.entries(options.queues ?? {})) {
+        createQueue(name, config.process, config.options, config.on);
       }
     } catch (err) {
       await closeAllQueueResources();
       server.stop(true);
       throw err;
-    } finally {
-      lockWorkerCreation();
     }
 
     if (warmupHandlers.length > 0) {

@@ -221,7 +221,7 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
   subscribe('queue:error', ({ queue, error }) => ({
     label: 'QUEUE',
     path: queue,
-    note: `${styleText('red', 'worker error')} ${styleText('dim', error)}`,
+    note: `${styleText('red', 'queue error')} ${styleText('dim', error)}`,
     level: 'warn',
   }));
 

@@ -1,10 +1,9 @@
-import { afterAll, afterEach, describe, expect, spyOn, test } from 'bun:test';
+import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
-import { createQueue, createWorker, closeAllQueueResources, unconsumedQueueNames } from './queue';
+import { createQueue, getQueue, closeAllQueueResources } from './queue';
 import type { MochiJob } from './queue';
 import { mochiEvents } from './events';
-import { logger } from './log';
 
 // bunqueue locks its embedded store to the first dataPath used in the process,
 // so the whole file shares one temp dir and each test uses a unique queue name.
@@ -44,12 +43,12 @@ afterAll(async () => {
   }
 });
 
-describe('Mochi queue + worker', () => {
-  test('roundtrips a job from producer to worker', async () => {
+describe('Mochi queue', () => {
+  test('roundtrips a job from producer to consumer', async () => {
     const name = uniqueName();
     const seen = deferred<MochiJob<{ to: string }>>();
 
-    createWorker<{ to: string }>(
+    const queue = createQueue<{ to: string }>(
       name,
       async (job) => {
         seen.resolve(job);
@@ -58,7 +57,6 @@ describe('Mochi queue + worker', () => {
       { dataPath },
     );
 
-    const queue = createQueue<{ to: string }>(name, { dataPath });
     const ref = await queue.add('send', { to: 'alice@example.com' });
     expect(ref.id).toBeString();
     expect(ref.name).toBe('send');
@@ -76,7 +74,7 @@ describe('Mochi queue + worker', () => {
     let processed = 0;
     const done = deferred<void>();
 
-    createWorker<{ n: number }>(
+    const queue = createQueue<{ n: number }>(
       name,
       async () => {
         if (++processed === 3) {
@@ -86,7 +84,6 @@ describe('Mochi queue + worker', () => {
       { dataPath },
     );
 
-    const queue = createQueue<{ n: number }>(name, { dataPath });
     const refs = await queue.addBulk([
       { name: 'job', data: { n: 1 } },
       { name: 'job', data: { n: 2 } },
@@ -105,7 +102,7 @@ describe('Mochi queue + worker', () => {
     let completed = 0;
     const allDone = deferred<void>();
 
-    createWorker<{ i: number }>(
+    const queue = createQueue<{ i: number }>(
       name,
       async () => {
         active++;
@@ -119,7 +116,6 @@ describe('Mochi queue + worker', () => {
       { dataPath, concurrency: 2 },
     );
 
-    const queue = createQueue<{ i: number }>(name, { dataPath });
     await queue.addBulk([0, 1, 2, 3].map((i) => ({ name: 'job', data: { i } })));
 
     await allDone.promise;
@@ -140,8 +136,7 @@ describe('Mochi queue + worker', () => {
     mochiEvents.on('queue:active', (e) => active.push(e));
     mochiEvents.on('queue:completed', (e) => completed.resolve(e));
 
-    createWorker<{ x: number }>(name, async () => ({ ok: true }), { dataPath });
-    const queue = createQueue<{ x: number }>(name, { dataPath });
+    const queue = createQueue<{ x: number }>(name, async () => ({ ok: true }), { dataPath });
     await queue.add('compute', { x: 1 });
 
     const done = await completed.promise;
@@ -153,30 +148,29 @@ describe('Mochi queue + worker', () => {
     expect(done.duration).toBeGreaterThanOrEqual(0);
   });
 
-  test('reports failures via queue:failed and the worker handle', async () => {
+  test('reports failures via queue:failed and the on.failed listener', async () => {
     const name = uniqueName();
     const failedEvent = deferred<{ error: string; attempt: number }>();
-    const failedHandle = deferred<Error>();
+    const failedListener = deferred<Error>();
 
     mochiEvents.on('queue:failed', (e) => failedEvent.resolve(e));
 
-    const worker = createWorker<{ y: number }>(
+    const queue = createQueue<{ y: number }>(
       name,
       async () => {
         throw new Error('boom');
       },
       { dataPath },
+      { failed: (_job, error) => failedListener.resolve(error) },
     );
-    worker.on('failed', (_job, error) => failedHandle.resolve(error));
 
-    const queue = createQueue<{ y: number }>(name, { dataPath });
     await queue.add('explode', { y: 1 }, { attempts: 1 });
 
     const event = await failedEvent.promise;
     expect(event.error).toBe('boom');
     expect(event.attempt).toBe(1);
 
-    const error = await failedHandle.promise;
+    const error = await failedListener.promise;
     expect(error).toBeInstanceOf(Error);
     expect(error.message).toBe('boom');
   });
@@ -185,7 +179,7 @@ describe('Mochi queue + worker', () => {
     const name = uniqueName();
     const seen = deferred<MochiJob<unknown>>();
 
-    createWorker(
+    const queue = createQueue(
       name,
       async (job) => {
         seen.resolve(job);
@@ -194,7 +188,6 @@ describe('Mochi queue + worker', () => {
       { dataPath },
     );
 
-    const queue = createQueue(name, { dataPath });
     await queue.add('probe', { hello: 'world' });
 
     const job = await seen.promise;
@@ -203,71 +196,25 @@ describe('Mochi queue + worker', () => {
     expect(Object.keys(job).sort()).toEqual(['attempt', 'data', 'enqueuedAt', 'id', 'name', 'queue']);
   });
 
-  test('createQueue is idempotent per name (handles do not accumulate)', () => {
+  test('getQueue resolves the producer handle created for a name', () => {
     const name = uniqueName();
-    const a = createQueue(name, { dataPath });
-    const b = createQueue(name, { dataPath });
-    const c = createQueue(name, { dataPath });
-    expect(b).toBe(a);
-    expect(c).toBe(a);
+    const created = createQueue(name, async () => null, { dataPath });
+    expect(getQueue(name)).toBe(created);
   });
 
-  test('createWorker no longer dedupes by name (workers mount once via serve)', () => {
-    // Per-name idempotency was removed: workers are instantiated exactly once by
-    // Mochi.serve({ workers }), not re-run at module top-level by dev HMR. Each
-    // createWorker call now returns a distinct live handle.
-    const name = uniqueName();
-    const a = createWorker(name, async () => null, { dataPath });
-    const b = createWorker(name, async () => null, { dataPath });
-    expect(b).not.toBe(a);
+  test('getQueue throws for a queue that was never declared', () => {
+    expect(() => getQueue('never-declared')).toThrow(/no such queue/);
   });
 
-  test('closeAllQueueResources closes handles and is idempotent', async () => {
+  test('closeAllQueueResources closes resources and is idempotent', async () => {
     const name = uniqueName();
-    createWorker(name, async () => null, { dataPath });
-    createQueue(name, { dataPath });
+    createQueue(name, async () => null, { dataPath });
 
     await closeAllQueueResources();
+    // After draining, the handle is gone from the registry.
+    expect(() => getQueue(name)).toThrow(/no such queue/);
     // A second call must not throw even though the registry is already empty.
     await closeAllQueueResources();
     expect(true).toBe(true);
-  });
-
-  test('warns once when enqueuing to a queue with no mounted worker', async () => {
-    const name = uniqueName();
-    const warn = spyOn(logger, 'warn').mockImplementation(() => {});
-    try {
-      const queue = createQueue(name, { dataPath });
-      await queue.add('orphan', { x: 1 });
-      await queue.add('orphan', { x: 2 });
-      const calls = warn.mock.calls.filter((c) => String(c[0]).includes(name));
-      expect(calls).toHaveLength(1);
-    } finally {
-      warn.mockRestore();
-    }
-  });
-
-  test('does not warn when a worker is mounted for the queue', async () => {
-    const name = uniqueName();
-    const warn = spyOn(logger, 'warn').mockImplementation(() => {});
-    try {
-      createWorker(name, async () => null, { dataPath });
-      const queue = createQueue(name, { dataPath });
-      await queue.add('ok', { x: 1 });
-      const calls = warn.mock.calls.filter((c) => String(c[0]).includes(name));
-      expect(calls).toHaveLength(0);
-    } finally {
-      warn.mockRestore();
-    }
-  });
-
-  test('unconsumedQueueNames flags producers whose name is not in the mounted set', () => {
-    const a = uniqueName();
-    const b = uniqueName();
-    createQueue(a, { dataPath });
-    createQueue(b, { dataPath });
-    // `a` is about to be mounted, `b` is not — `b` is the orphan.
-    expect(unconsumedQueueNames(new Set([a]))).toEqual([b]);
-    expect(unconsumedQueueNames(new Set([a, b]))).toEqual([]);
   });
 });
