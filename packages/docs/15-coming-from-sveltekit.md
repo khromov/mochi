@@ -7,11 +7,16 @@ description: 'A mapping of SvelteKit concepts to their Mochi equivalents for dev
 <script>
   import Callout from './_components/Callout.svelte';
   import SeeItInAction from './_components/SeeItInAction.svelte';
+  import ComparisonTable from './_components/ComparisonTable.svelte';
 </script>
 
 ## Coming from SvelteKit
 
 You have likely already been using SvelteKit as your main framework for Svelte. Here is a quick list of most of the SvelteKit features and how they map to equivalent concepts in Mochi, so you can be up and running quickly.
+
+At a glance, here's how the two frameworks compare feature-for-feature:
+
+<ComparisonTable />
 
 ### Routing
 
