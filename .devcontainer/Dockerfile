@@ -25,7 +25,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   jq \
   nano \
   vim \
+  locales \
+  tzdata \
   && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Generate the en_US.UTF-8 locale so bash/zsh stop warning about LC_ALL,
+# and configure the system timezone from the TZ build arg.
+RUN sed -i 's/^# *\(en_US.UTF-8 UTF-8\)/\1/' /etc/locale.gen && \
+  locale-gen en_US.UTF-8 && \
+  update-locale LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 && \
+  ln -snf "/usr/share/zoneinfo/$TZ" /etc/localtime && \
+  echo "$TZ" > /etc/timezone
+ENV LANG=en_US.UTF-8
+ENV LANGUAGE=en_US.UTF-8
+ENV LC_ALL=en_US.UTF-8
 
 # Ensure default node user has access to /usr/local/share
 RUN mkdir -p /usr/local/share/npm-global && \
