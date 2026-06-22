@@ -121,7 +121,7 @@
       feature: 'Built-in Markdown (mdsvex)',
       tags: ['frontend'],
       mochi: { status: 'yes', note: 'mdsvex built-in', href: '/docs/mdsvex/' },
-      kit: { status: 'partial', note: 'via integration (sv add mdsvex)' },
+      kit: { status: 'yes', note: 'via integration (sv add mdsvex)' },
     },
     {
       feature: 'Centralized logging system',
