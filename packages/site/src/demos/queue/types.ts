@@ -10,6 +10,8 @@ export interface NotificationJob {
 export interface ProcessedEntry {
   user: string;
   at: number;
+  /** How long the job spent in `process()`, in milliseconds. */
+  ms: number;
 }
 
 export interface QueueStatus {

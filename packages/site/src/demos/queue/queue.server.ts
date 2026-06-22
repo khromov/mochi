@@ -31,8 +31,9 @@ export const notificationQueue: MochiQueueConfig = Mochi.queue<NotificationJob>(
   process: async (job) => {
     // Simulate delivery latency so the UI shows the queued → processing → done
     // transition rather than completing instantly.
-    await Bun.sleep(700);
-    processed.push({ user: job.data.user, at: Date.now() });
+    const start = Date.now();
+    await Bun.sleep(500 + Math.random() * 1500);
+    processed.push({ user: job.data.user, at: Date.now(), ms: Date.now() - start });
     if (processed.length > 20) {
       processed.shift();
     }

@@ -67,7 +67,7 @@
   </div>
 
   {#if lastQueued}
-    <p class="hint">Queued a notification for <code>{lastQueued}</code> — the worker picks it up within ~700ms.</p>
+    <p class="hint">Queued a notification for <code>{lastQueued}</code>.</p>
   {/if}
 
   <h3>Recently processed</h3>
@@ -79,7 +79,7 @@
       {#each processed as entry (entry.at + entry.user)}
         <li>
           <code>{entry.user}</code>
-          <span class="time">{new Date(entry.at).toLocaleTimeString()}</span>
+          <span class="time">{new Date(entry.at).toLocaleTimeString()} · {(entry.ms / 1000).toFixed(2)}s</span>
         </li>
       {/each}
     </ul>
