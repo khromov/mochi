@@ -1,6 +1,6 @@
 ---
-name: review-mochi
-description: Review the current branch's changes (or a specific PR). Use when the user asks to "review my branch", "review this", "review PR <number>", or "/review-mochi [number]". Always consumes the entire diff into context, then produces a thorough, concise code review.
+name: mochi-review
+description: Review the current branch's changes (or a specific PR). Use when the user asks to "review my branch", "review this", "review PR <number>", or "/mochi-review [number]". Always consumes the entire diff into context, then produces a thorough, concise code review.
 ---
 
 You are an expert code reviewer. Follow these steps:
