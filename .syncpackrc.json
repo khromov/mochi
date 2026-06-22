@@ -20,6 +20,12 @@
       "label": "Private workspace packages are unversioned — don't require a version",
       "dependencyTypes": ["local"],
       "isIgnored": true
+    },
+    {
+      "label": "msgpackr-extract is a pinned npm-alias override — semver comparison doesn't apply",
+      "dependencies": ["msgpackr-extract"],
+      "dependencyTypes": ["overrides"],
+      "isIgnored": true
     }
   ]
 }

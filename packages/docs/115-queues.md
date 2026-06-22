@@ -219,7 +219,7 @@ await Mochi.serve({
 
 ### Dependencies
 
-Mochi uses bunqueue as the underlying implementation for queues. To keep the dependency count low, Mochi skips the optional native add-on that bunqueue would otherwise pull in, so it and its platform-specific binaries never land in your install.
+Mochi uses bunqueue as the underlying implementation for queues. bunqueue pulls in `msgpackr`, whose optional native accelerator (`msgpackr-extract`) would otherwise drag platform-specific prebuilt binaries into your install — so Mochi swaps it out via a `package.json` `overrides` entry pointing at [`@mochi-framework/msgpackr-extract-stub`](https://www.npmjs.com/package/@mochi-framework/msgpackr-extract-stub), an empty stub that keeps `msgpackr` on its pure-JS codec so no native binaries are installed. New projects scaffolded with `create-mochi` ship this override by default — to opt out and use the native bindings, just delete the `overrides` entry from your `package.json`.
 
 <SeeItInAction
 demos={[{ href: "/demos/queue/", title: "Background jobs with queues", hook: "Offload work to a Mochi.queue() with an embedded worker — no Redis." }]}
