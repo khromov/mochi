@@ -100,7 +100,7 @@
     {
       feature: 'Type-safe routes & params',
       tags: ['backend', 'frontend'],
-      mochi: { status: 'planned', note: 'validate params inline' },
+      mochi: { status: 'planned' },
       kit: { status: 'yes', note: 'generated ./$types & $app/types' },
     },
     { feature: 'Remote functions (type-safe RPC)', tags: ['backend', 'frontend'], mochi: { status: 'no' }, kit: { status: 'yes', note: 'experimental' } },
@@ -245,15 +245,49 @@
     margin: 1.5rem 0 0.6rem;
   }
 
+  /* Horizontal scroll behind a right-edge fade. `overflow-x: auto` means the
+     scrollbar only exists when the pills overflow; its thumb stays transparent
+     and is only revealed on hover, so it's never visually noisy. No JS. */
   .tabs-scroll {
     flex: 1 1 auto;
     min-width: 0;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 22px), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 22px), transparent);
+  }
+  .tabs-scroll:hover {
+    scrollbar-color: var(--border-strong) transparent;
+  }
+  .tabs-scroll::-webkit-scrollbar {
+    height: 8px;
+  }
+  .tabs-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  /* Transparent 2px border + padding-box clip insets the thumb so it floats
+     with a little breathing room rather than touching the edges. */
+  .tabs-scroll::-webkit-scrollbar-thumb {
+    background: transparent;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+    border-radius: 999px;
+  }
+  .tabs-scroll:hover::-webkit-scrollbar-thumb {
+    background: var(--border-strong);
+    background-clip: padding-box;
+  }
+  .tabs-scroll:hover::-webkit-scrollbar-thumb:hover {
+    background: var(--text-subtle);
   }
 
   .tabs {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: 0.4rem;
+    padding-right: 22px;
   }
 
   .collapse-btn {
@@ -280,30 +314,9 @@
     color: var(--text);
   }
 
-  /* On narrow screens the filter pills scroll horizontally behind a right-edge
-     fade; the collapse button stays pinned outside the scroll area. */
-  @media (max-width: 640px) {
-    .tabs-scroll {
-      overflow-x: auto;
-      -webkit-overflow-scrolling: touch;
-      scrollbar-width: none;
-      -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 22px), transparent);
-      mask-image: linear-gradient(to right, #000 calc(100% - 22px), transparent);
-    }
-    .tabs-scroll::-webkit-scrollbar {
-      display: none;
-    }
-    .tabs {
-      flex-wrap: nowrap;
-      padding-right: 22px;
-    }
-    .tab {
-      flex-shrink: 0;
-      white-space: nowrap;
-    }
-  }
-
   .tab {
+    flex-shrink: 0;
+    white-space: nowrap;
     font-family: var(--font-sans);
     font-size: 0.875rem;
     font-weight: 500;
