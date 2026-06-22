@@ -1367,12 +1367,21 @@ export class Mochi {
     // Validated above; mount the live workers now (after bind, so they drain on
     // the same shutdown path as the server). Unlock for our own mounting, then
     // relock so a stray createWorker()/Mochi.worker() reached after startup is a
-    // hard error rather than a silent, unmanaged dynamic insertion.
+    // hard error rather than a silent, unmanaged dynamic insertion. If a worker
+    // throws mid-mount, tear the just-bound server down rather than leaving it
+    // listening half-started; `finally` keeps the lock restored on either path.
     unlockWorkerCreation();
-    for (const [name, config] of Object.entries(options.workers ?? {})) {
-      createWorker(name, config.processor, config.options, config.on as Partial<MochiWorkerEventMap<unknown, unknown>> | undefined);
+    try {
+      for (const [name, config] of Object.entries(options.workers ?? {})) {
+        createWorker(name, config.processor, config.options, config.on as Partial<MochiWorkerEventMap<unknown, unknown>> | undefined);
+      }
+    } catch (err) {
+      await closeAllQueueResources();
+      server.stop(true);
+      throw err;
+    } finally {
+      lockWorkerCreation();
     }
-    lockWorkerCreation();
 
     if (warmupHandlers.length > 0) {
       mochiEvents.emit('warmup:start', { routeCount: warmupHandlers.length });
