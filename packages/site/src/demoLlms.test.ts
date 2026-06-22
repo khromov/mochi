@@ -4,7 +4,7 @@ import path from 'node:path';
 import type { Server } from 'bun';
 import { Mochi } from 'mochi-framework';
 import { internalDemoLlmsRoutes } from './lib/docs';
-import { routes } from './routes';
+import { routes, workers } from './routes';
 
 // Boots the real site routes so the per-demo llms.txt routes are exercised against
 // the actual router — this is what catches collisions like /demos/data-loading/:id
@@ -22,6 +22,9 @@ describe('per-demo llms.txt routes', () => {
       logger: { enabled: false },
       outDir,
       routes,
+      // Mount the demo workers too — serving the producer-bearing routes without
+      // them now trips the "queue has no worker" startup guard.
+      workers,
     });
     base = `http://localhost:${server.port}`;
   });

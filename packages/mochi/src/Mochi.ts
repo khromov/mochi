@@ -46,7 +46,7 @@ import { resolveWarmupEnabled, markWarmupRequest, isWarmablePattern } from './wa
 import { createErrorResponder, DEFAULT_ERROR_PAGE_PATH } from './errors';
 import { requestContext } from './requestContext';
 import type { MochiRequestContext } from './requestContext';
-import { createQueue, createWorker, closeAllQueueResources } from './queue';
+import { createQueue, createWorker, closeAllQueueResources, unconsumedQueueNames, lockWorkerCreation, unlockWorkerCreation } from './queue';
 import type { MochiQueue, MochiQueueOptions, MochiWorkerEventMap, MochiWorkerOptions, MochiProcessor } from './queue';
 import { finalizeCookieHeaders } from './cookies';
 import { makeRequestContextBuilder } from './requestSetup';
@@ -1326,6 +1326,23 @@ export class Mochi {
           }
         : userWebSocketOptions;
 
+    // Validate workers BEFORE binding so a misconfiguration fails fast without
+    // leaving a half-started server listening. Workers are mounted only here —
+    // there's no dynamic insertion — so a `Mochi.queue()` producer with no
+    // matching key in `workers` is a permanent dead end (a typo'd name, or a
+    // Mochi.worker() left out of the map); fail loudly instead of swallowing jobs.
+    for (const [name, config] of Object.entries(options.workers ?? {})) {
+      if (!isMochiWorker(config)) {
+        throw new Error(`Mochi.serve({ workers }): "${name}" is not a Mochi.worker(...) descriptor. Each value must be created with Mochi.worker().`);
+      }
+    }
+    const orphanQueues = unconsumedQueueNames(new Set(Object.keys(options.workers ?? {})));
+    if (orphanQueues.length > 0) {
+      throw new Error(
+        `Mochi.serve(): queue(s) [${orphanQueues.join(', ')}] have a Mochi.queue() producer but no worker mounted. Add one via Mochi.serve({ workers: { '${orphanQueues[0]}': Mochi.worker(...) } }).`,
+      );
+    }
+
     const server = Bun.serve({
       ...bunOptions,
       routes: bunRoutes,
@@ -1347,19 +1364,15 @@ export class Mochi {
       mochiEvents.emit('server:start', startEvent);
     }
 
-    if (options.workers) {
-      for (const [name, config] of Object.entries(options.workers)) {
-        if (!isMochiWorker(config)) {
-          continue;
-        }
-        const handle = createWorker(name, config.processor, config.options);
-        if (config.on) {
-          for (const [event, listener] of Object.entries(config.on)) {
-            handle.on(event as keyof MochiWorkerEventMap<unknown, unknown>, listener as MochiWorkerEventMap<unknown, unknown>[keyof MochiWorkerEventMap<unknown, unknown>]);
-          }
-        }
-      }
+    // Validated above; mount the live workers now (after bind, so they drain on
+    // the same shutdown path as the server). Unlock for our own mounting, then
+    // relock so a stray createWorker()/Mochi.worker() reached after startup is a
+    // hard error rather than a silent, unmanaged dynamic insertion.
+    unlockWorkerCreation();
+    for (const [name, config] of Object.entries(options.workers ?? {})) {
+      createWorker(name, config.processor, config.options, config.on as Partial<MochiWorkerEventMap<unknown, unknown>> | undefined);
     }
+    lockWorkerCreation();
 
     if (warmupHandlers.length > 0) {
       mochiEvents.emit('warmup:start', { routeCount: warmupHandlers.length });

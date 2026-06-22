@@ -147,6 +147,12 @@ await Mochi.serve({
 });
 ```
 
+<Callout type="warning">
+
+Every queue you produce to must have a worker mounted under its name. Workers are declared only in `Mochi.serve({ workers })` — there's no dynamic insertion — so a `Mochi.queue()` whose name is missing from the `workers` map is a **fatal startup error** (it would otherwise swallow every job silently). A typo'd queue name fails the same way.
+
+</Callout>
+
 ### Persistence
 
 By default the queue is **in-memory** — jobs do not survive a restart. Pass `dataPath` to persist to SQLite:

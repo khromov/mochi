@@ -84,6 +84,12 @@ interface QueueRegistry {
   warnedMissingWorker: Set<string>;
   /** First `dataPath` seen; bunqueue ignores later differing paths in the same process. */
   dataPath: string | null | undefined;
+  /**
+   * Set true once `Mochi.serve()` has mounted its workers. Workers are declared
+   * only there (no dynamic insertion), so a `createWorker` while locked is a bug
+   * — serve unlocks for its own mounting, then relocks.
+   */
+  workersLocked: boolean;
 }
 
 // Pinned so the registry is shared across any duplicate bundled copy of this
@@ -97,7 +103,21 @@ const registry = pinGlobal<QueueRegistry>('__mochi_queue_registry__', () => ({
   workersByName: new Map(),
   warnedMissingWorker: new Set(),
   dataPath: undefined,
+  workersLocked: false,
 }));
+
+/**
+ * `Mochi.serve()` wraps its worker mounting in these: unlock so its own
+ * `createWorker` calls are allowed (even if a previous serve in this process
+ * locked), then lock so a `Mochi.worker()`/`createWorker` reached after startup
+ * throws instead of silently inserting an unmanaged worker.
+ */
+export function unlockWorkerCreation(): void {
+  registry.workersLocked = false;
+}
+export function lockWorkerCreation(): void {
+  registry.workersLocked = true;
+}
 
 /**
  * Warn (once per queue name) when a job is enqueued to a queue that has no
@@ -196,15 +216,18 @@ export function createQueue<T>(name: string, opts?: MochiQueueOptions): MochiQue
   return handle;
 }
 
-export function createWorker<T, R = unknown>(name: string, processor: MochiProcessor<T, R>, opts?: MochiWorkerOptions): MochiWorker<T, R> {
+export function createWorker<T, R = unknown>(
+  name: string,
+  processor: MochiProcessor<T, R>,
+  opts?: MochiWorkerOptions,
+  initialListeners?: Partial<MochiWorkerEventMap<T, R>>,
+): MochiWorker<T, R> {
+  if (registry.workersLocked) {
+    throw new Error(
+      `Cannot create worker for "${name}" after Mochi.serve() has started — there is no dynamic worker insertion. Declare every worker up front in Mochi.serve({ workers }).`,
+    );
+  }
   rememberDataPath(opts?.dataPath);
-
-  const worker = new Worker<T, R>(name, (job) => processor(toMochiJob(job as Job<T>, name)), {
-    embedded: true,
-    dataPath: opts?.dataPath,
-    concurrency: opts?.concurrency,
-    ...opts?.bunqueue,
-  });
 
   const listeners: { [K in keyof MochiWorkerEventMap<T, R>]: Set<MochiWorkerEventMap<T, R>[K]> } = {
     active: new Set(),
@@ -212,6 +235,26 @@ export function createWorker<T, R = unknown>(name: string, processor: MochiProce
     failed: new Set(),
     error: new Set(),
   };
+
+  // Seed caller listeners (from `Mochi.serve({ workers: { …: Mochi.worker(_, { on }) } })`)
+  // BEFORE constructing the worker, which starts draining immediately. Wiring them
+  // after would let a job that's already queued complete in the gap and miss the
+  // `completed`/`active` handler.
+  if (initialListeners) {
+    for (const key of Object.keys(initialListeners) as (keyof MochiWorkerEventMap<T, R>)[]) {
+      const listener = initialListeners[key];
+      if (listener) {
+        (listeners[key] as unknown as Set<unknown>).add(listener);
+      }
+    }
+  }
+
+  const worker = new Worker<T, R>(name, (job) => processor(toMochiJob(job as Job<T>, name)), {
+    embedded: true,
+    dataPath: opts?.dataPath,
+    concurrency: opts?.concurrency,
+    ...opts?.bunqueue,
+  });
 
   // bunqueue's `finishedOn`/`processedOn` are unreliable on the public job at
   // event time, so measure duration ourselves from the `active` event. Entries are
@@ -282,6 +325,23 @@ export function createWorker<T, R = unknown>(name: string, processor: MochiProce
 }
 
 /**
+ * Queue names that have a producer (`Mochi.queue()`) but no worker among the
+ * names about to be mounted. Called by `Mochi.serve` against the keys of its
+ * `workers` map *before* binding (so the live workers don't exist yet). Workers
+ * can only be declared there — no dynamic insertion — so a producer left without
+ * a consumer is a permanent dead end that `Mochi.serve` turns into a fatal.
+ */
+export function unconsumedQueueNames(mountedWorkerNames: Set<string>): string[] {
+  const orphans: string[] = [];
+  for (const name of registry.queuesByName.keys()) {
+    if (!mountedWorkerNames.has(name)) {
+      orphans.push(name);
+    }
+  }
+  return orphans;
+}
+
+/**
  * Workers first (stop pulling new jobs), then queues. Idempotent and never
  * throws, so it's safe on both the serve shutdown path and the build drain path.
  */
@@ -299,6 +359,13 @@ export async function closeAllQueueResources(): Promise<void> {
   // The manager is gone, so the embedded store's first-path lock is released too;
   // reset the remembered path (and the warning latches) so a fresh queue/worker
   // created afterwards starts clean rather than warning against a stale path.
+  // Clear the name maps too: each close() prunes its own entry, but a close() that
+  // rejected (swallowed by allSettled) would otherwise leave a stale name behind.
+  registry.queuesByName.clear();
+  registry.workersByName.clear();
   registry.dataPath = undefined;
   registry.warnedMissingWorker.clear();
+  // A fresh serve in this process (e.g. a test that restarts) must be able to
+  // mount workers again.
+  registry.workersLocked = false;
 }

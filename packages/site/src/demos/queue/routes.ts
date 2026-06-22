@@ -19,18 +19,26 @@ export const routes: Record<string, MochiRouteValue> = {
         const user = String(formData.get('username') ?? '')
           .trim()
           .slice(0, 64);
-        const ref = await notificationQueue.add('notify', { user: user || 'anonymous' });
-        return success({ queued: user || 'anonymous', jobId: ref.id });
+        await notificationQueue.add('notify', { user: user || 'anonymous' });
+        return success({ queued: user || 'anonymous' });
       },
     },
   }),
   '/demos/queue/events': Mochi.sse((stream) => {
+    // Broadcast the shared snapshot on enqueue and on settle, so every client's
+    // in-flight/processed counts move together — no per-client reconciliation.
     const push = (event: { queue: string }) => {
       if (event.queue === QUEUE_NAME) {
         stream.send(JSON.stringify(queueStatus()));
       }
     };
+    mochiEvents.on('queue:added', push);
     mochiEvents.on('queue:completed', push);
-    stream.onClose(() => mochiEvents.off('queue:completed', push));
+    mochiEvents.on('queue:failed', push);
+    stream.onClose(() => {
+      mochiEvents.off('queue:added', push);
+      mochiEvents.off('queue:completed', push);
+      mochiEvents.off('queue:failed', push);
+    });
   }),
 };

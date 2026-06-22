@@ -312,8 +312,8 @@ export interface MochiWorkerListeners<T, R> {
  * `MochiWsConfig` et al. Non-generic so a heterogeneous `workers` map type-checks;
  * `Mochi.worker<T, R>` keeps the generics only to type the processor/listeners at
  * the call site, then erases them here. The live worker is created only when this
- * is mounted in `Mochi.serve({ workers })`, which calls `createWorker` and wires
- * `on` listeners to the resulting handle.
+ * is mounted in `Mochi.serve({ workers })`, which calls `createWorker`, passing
+ * the `on` listeners so they're wired before the worker can pull its first job.
  */
 export interface MochiWorkerConfig {
   readonly __mochiWorker: true;

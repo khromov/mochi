@@ -4,7 +4,7 @@ import path from 'node:path';
 import type { Server } from 'bun';
 import { Mochi } from './Mochi';
 import { isMochiWorker } from './types';
-import { closeAllQueueResources } from './queue';
+import { closeAllQueueResources, createWorker } from './queue';
 
 function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
   let resolve!: (value: T) => void;
@@ -76,5 +76,10 @@ describe('Mochi.serve({ workers })', () => {
     expect(processed).toEqual(['alice']);
     expect(done.jobName).toBe('notify');
     expect(done.result).toEqual({ sent: true });
+  });
+
+  test('creating a worker after serve() has started is fatal (no dynamic insertion)', () => {
+    // Runs after the serve above, which locked worker creation.
+    expect(() => createWorker('too-late', async () => null)).toThrow(/no dynamic worker insertion/);
   });
 });

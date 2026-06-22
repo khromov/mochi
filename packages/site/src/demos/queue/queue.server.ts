@@ -1,4 +1,4 @@
-import { Mochi } from 'mochi-framework';
+import { Mochi, mochiEvents } from 'mochi-framework';
 import type { NotificationJob, ProcessedEntry, QueueStatus } from './types';
 
 export const QUEUE_NAME = 'demo-notifications';
@@ -7,8 +7,25 @@ export const QUEUE_NAME = 'demo-notifications';
 // `dataPath` to persist.
 export const notificationQueue = Mochi.queue<NotificationJob>(QUEUE_NAME);
 
+// One server-owned snapshot, shared by every connected client. `inFlight` is
+// tracked off the event bus (not per request) so it counts enqueues and
+// completions from all browsers — everyone sees the same numbers.
 const processed: ProcessedEntry[] = [];
 let processedTotal = 0;
+let inFlight = 0;
+
+mochiEvents.on('queue:added', (e) => {
+  if (e.queue === QUEUE_NAME) {
+    inFlight++;
+  }
+});
+const settle = (e: { queue: string }) => {
+  if (e.queue === QUEUE_NAME) {
+    inFlight = Math.max(0, inFlight - 1);
+  }
+};
+mochiEvents.on('queue:completed', settle);
+mochiEvents.on('queue:failed', settle);
 
 export const notificationWorker = Mochi.worker<NotificationJob>(
   async (job) => {
@@ -26,5 +43,5 @@ export const notificationWorker = Mochi.worker<NotificationJob>(
 );
 
 export function queueStatus(): QueueStatus {
-  return { processed: [...processed].reverse(), processedTotal };
+  return { processed: [...processed].reverse(), processedTotal, inFlight };
 }

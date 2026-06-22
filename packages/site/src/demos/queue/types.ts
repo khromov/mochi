@@ -13,6 +13,9 @@ export interface ProcessedEntry {
 }
 
 export interface QueueStatus {
+  /** Global, server-owned snapshot broadcast to every client — all browsers see the same numbers. */
   processed: ProcessedEntry[];
   processedTotal: number;
+  /** Jobs enqueued but not yet completed, across all clients. */
+  inFlight: number;
 }

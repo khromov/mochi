@@ -1,7 +1,7 @@
 import { afterAll, afterEach, describe, expect, spyOn, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
-import { createQueue, createWorker, closeAllQueueResources } from './queue';
+import { createQueue, createWorker, closeAllQueueResources, unconsumedQueueNames } from './queue';
 import type { MochiJob } from './queue';
 import { mochiEvents } from './events';
 import { logger } from './log';
@@ -259,5 +259,15 @@ describe('Mochi queue + worker', () => {
     } finally {
       warn.mockRestore();
     }
+  });
+
+  test('unconsumedQueueNames flags producers whose name is not in the mounted set', () => {
+    const a = uniqueName();
+    const b = uniqueName();
+    createQueue(a, { dataPath });
+    createQueue(b, { dataPath });
+    // `a` is about to be mounted, `b` is not — `b` is the orphan.
+    expect(unconsumedQueueNames(new Set([a]))).toEqual([b]);
+    expect(unconsumedQueueNames(new Set([a, b]))).toEqual([]);
   });
 });

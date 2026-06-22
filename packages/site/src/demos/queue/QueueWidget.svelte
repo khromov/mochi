@@ -6,8 +6,10 @@
 
   let { initial, suggestedUser }: { initial: QueueStatus; suggestedUser: string } = $props();
 
-  let pending = $state(0);
-  // Seed mutable local state from the serverProps snapshot; the SSE stream owns it after.
+  // Seed from the serverProps snapshot; the SSE stream then owns all three. These
+  // are the server's global counters, identical in every connected browser.
+  // svelte-ignore state_referenced_locally
+  let pending = $state(initial.inFlight);
   // svelte-ignore state_referenced_locally
   let processed = $state<ProcessedEntry[]>(initial.processed);
   // svelte-ignore state_referenced_locally
@@ -21,10 +23,7 @@
     const source = new EventSource('/demos/queue/events/');
     source.addEventListener('message', (e) => {
       const status = JSON.parse(e.data) as QueueStatus;
-      const advanced = status.processedTotal - processedTotal;
-      if (advanced > 0) {
-        pending = Math.max(0, pending - advanced);
-      }
+      pending = status.inFlight;
       processed = status.processed;
       processedTotal = status.processedTotal;
     });
@@ -37,14 +36,11 @@
     };
   });
 
-  const handleEnqueue: MochiSubmitFunction<{ queued: string; jobId: string }> = () => {
-    pending++;
+  const handleEnqueue: MochiSubmitFunction<{ queued: string }> = () => {
     return ({ result }) => {
       if (result.type === 'success' && result.data) {
         lastQueued = result.data.queued;
         username = randomUsername();
-      } else {
-        pending = Math.max(0, pending - 1);
       }
     };
   };
