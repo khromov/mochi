@@ -2,8 +2,9 @@
   import Check from '@lucide/svelte/icons/check';
   import X from '@lucide/svelte/icons/x';
 
+  type Status = 'yes' | 'no' | 'partial';
   interface Cell {
-    yes: boolean;
+    status: Status;
     note?: string;
     href?: string;
   }
@@ -14,36 +15,46 @@
   }
 
   const rows: Row[] = [
-    { feature: 'Background job queues', mochi: { yes: true, note: 'Mochi.queue()', href: '/docs/queues/' }, kit: { yes: false } },
-    { feature: 'Built-in SQLite database', mochi: { yes: true, note: 'bun:sqlite', href: '/docs/server-only-imports/' }, kit: { yes: false, note: 'Only with adapter-node' } },
+    { feature: 'Background job queues', mochi: { status: 'yes', note: 'Mochi.queue()', href: '/docs/queues/' }, kit: { status: 'no' } },
+    {
+      feature: 'Built-in SQLite database',
+      mochi: { status: 'yes', note: 'bun:sqlite', href: '/docs/server-only-imports/' },
+      kit: { status: 'partial', note: 'Only with adapter-node' },
+    },
     {
       feature: 'Built-in Postgres & MySQL support',
-      mochi: { yes: true, note: 'Bun.sql()', href: '/docs/server-only-imports/' },
-      kit: { yes: false, note: 'bring your own cloud database' },
+      mochi: { status: 'yes', note: 'Bun.sql()', href: '/docs/server-only-imports/' },
+      kit: { status: 'no', note: 'bring your own cloud database' },
     },
     {
       feature: 'Real-time WebSockets',
-      mochi: { yes: true, note: 'Mochi.ws()', href: '/docs/websocket-routes/' },
-      kit: { yes: false, note: 'custom server with external package' },
+      mochi: { status: 'yes', note: 'Mochi.ws()', href: '/docs/websocket-routes/' },
+      kit: { status: 'no', note: 'custom server with external package' },
     },
-    { feature: 'Server-Sent Events', mochi: { yes: true, note: 'Mochi.sse()', href: '/docs/server-sent-events/' }, kit: { yes: false, note: 'manual setup' } },
-    { feature: 'Server islands / selective hydration', mochi: { yes: true, note: 'mochi:defer', href: '/docs/server-islands/' }, kit: { yes: false, note: 'full hydration' } },
-    { feature: 'SWR caching', mochi: { yes: true, note: 'MochiCache', href: '/docs/cache/' }, kit: { yes: false } },
-    { feature: 'View Transitions', mochi: { yes: true, note: 'built-in component', href: '/docs/view-transitions/' }, kit: { yes: false, note: 'manual wiring' } },
-    { feature: 'Image resizing', mochi: { yes: true, note: 'Bun.Image(), coming soon', href: '/docs/why-bun/' }, kit: { yes: false, note: 'enhanced-img plugin' } },
-    { feature: 'Observability event bus', mochi: { yes: true, note: 'mochiEvents', href: '/docs/events/' }, kit: { yes: false, note: 'experimental OpenTelemetry' } },
-    { feature: 'Form actions + enhance', mochi: { yes: true }, kit: { yes: true } },
-    { feature: 'Middleware / hooks', mochi: { yes: true }, kit: { yes: true } },
-    { feature: 'Cookies & CSRF protection', mochi: { yes: true }, kit: { yes: true } },
-    { feature: 'Client-side router (goto / invalidate)', mochi: { yes: false }, kit: { yes: true } },
-    { feature: 'Nested layouts', mochi: { yes: false, note: 'manual wrappers' }, kit: { yes: true } },
-    { feature: 'Prerendering / SSG', mochi: { yes: false }, kit: { yes: true } },
-    { feature: 'Remote functions (type-safe RPC)', mochi: { yes: false }, kit: { yes: true, note: 'experimental' } },
-    { feature: 'Deployment adapters', mochi: { yes: false, note: 'Bun only' }, kit: { yes: true } },
-    { feature: 'Link preloading / shallow routing', mochi: { yes: false }, kit: { yes: true } },
-    { feature: 'Service worker integration', mochi: { yes: false }, kit: { yes: true } },
-    { feature: 'Snapshots', mochi: { yes: false, note: 'bfcache' }, kit: { yes: true } },
+    { feature: 'Server-Sent Events', mochi: { status: 'yes', note: 'Mochi.sse()', href: '/docs/server-sent-events/' }, kit: { status: 'no', note: 'manual setup' } },
+    {
+      feature: 'Server islands / selective hydration',
+      mochi: { status: 'yes', note: 'mochi:defer', href: '/docs/server-islands/' },
+      kit: { status: 'no', note: 'full hydration' },
+    },
+    { feature: 'SWR caching', mochi: { status: 'yes', note: 'MochiCache', href: '/docs/cache/' }, kit: { status: 'no' } },
+    { feature: 'View Transitions', mochi: { status: 'yes', note: 'built-in component', href: '/docs/view-transitions/' }, kit: { status: 'no', note: 'manual wiring' } },
+    { feature: 'Image resizing', mochi: { status: 'yes', note: 'Bun.Image(), coming soon', href: '/docs/why-bun/' }, kit: { status: 'no', note: 'enhanced-img plugin' } },
+    { feature: 'Observability event bus', mochi: { status: 'yes', note: 'mochiEvents', href: '/docs/events/' }, kit: { status: 'no', note: 'experimental OpenTelemetry' } },
+    { feature: 'Form actions + enhance', mochi: { status: 'yes' }, kit: { status: 'yes' } },
+    { feature: 'Middleware / hooks', mochi: { status: 'yes' }, kit: { status: 'yes' } },
+    { feature: 'Cookies & CSRF protection', mochi: { status: 'yes' }, kit: { status: 'yes' } },
+    { feature: 'Client-side router (goto / invalidate)', mochi: { status: 'no' }, kit: { status: 'yes' } },
+    { feature: 'Nested layouts', mochi: { status: 'no', note: 'manual wrappers' }, kit: { status: 'yes' } },
+    { feature: 'Prerendering / SSG', mochi: { status: 'no' }, kit: { status: 'yes' } },
+    { feature: 'Remote functions (type-safe RPC)', mochi: { status: 'no' }, kit: { status: 'yes', note: 'experimental' } },
+    { feature: 'Deployment adapters', mochi: { status: 'no', note: 'Bun only' }, kit: { status: 'yes' } },
+    { feature: 'Link preloading / shallow routing', mochi: { status: 'no' }, kit: { status: 'yes' } },
+    { feature: 'Service worker integration', mochi: { status: 'no' }, kit: { status: 'yes' } },
+    { feature: 'Snapshots', mochi: { status: 'no', note: 'bfcache' }, kit: { status: 'yes' } },
   ];
+
+  const labelFor: Record<Status, string> = { yes: 'Yes', no: 'No', partial: 'Partial' };
 </script>
 
 <div class="comparison">
@@ -60,12 +71,17 @@
         <tr>
           <th scope="row" class="feature-col">{row.feature}</th>
           {#each [row.mochi, row.kit] as cell, i (i)}
-            {@const Icon = cell.yes ? Check : X}
             <td>
-              <span class="cell {cell.yes ? 'yes' : 'no'}">
-                <Icon class="cell-icon" size={22} aria-hidden="true" />
+              <span class="cell {cell.status}">
+                {#if cell.status === 'partial'}
+                  <span class="tilde" aria-hidden="true">~</span>
+                {:else if cell.status === 'yes'}
+                  <Check class="cell-icon" size={22} aria-hidden="true" />
+                {:else}
+                  <X class="cell-icon" size={22} aria-hidden="true" />
+                {/if}
                 <span class="label"
-                  >{cell.yes ? 'Yes' : 'No'}{#if cell.note}<span class="note"
+                  >{labelFor[cell.status]}{#if cell.note}<span class="note"
                       >&nbsp;-&nbsp;{#if cell.href}<a href={cell.href} target="_blank" rel="noopener noreferrer">{cell.note}</a>{:else}{cell.note}{/if}</span
                     >{/if}</span
                 >
@@ -131,11 +147,27 @@
 
   .cell :global(.cell-icon) {
     flex-shrink: 0;
-    margin-top: 0.05rem;
+  }
+
+  .tilde {
+    flex-shrink: 0;
+    margin-top: 1px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 19px;
+    height: 19px;
+    border-radius: 50%;
+    background: #e07b2c;
+    color: #fff;
+    font-weight: 700;
+    font-size: 1.1rem;
+    line-height: 1;
   }
 
   .label {
     font-weight: 500;
+    line-height: 22px;
   }
 
   .note {
