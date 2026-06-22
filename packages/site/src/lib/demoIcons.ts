@@ -58,7 +58,7 @@ export const demoIconFor: Record<string, DemoIconMeta> = {
   'API Endpoints': { icon: Webhook, label: 'JSON API routes' },
   'Shared State': { icon: Share2, label: 'Shared $state across islands' },
   'Real-time Streams': { icon: AudioWaveform, label: 'WebSocket + SSE streams' },
-  'Queue Background Jobs': { icon: Inbox, label: 'Embedded job queue + worker' },
+  'Background jobs with queues': { icon: Inbox, label: 'Embedded job queue + worker' },
   'Server Islands': { icon: ComponentIcon, label: 'Deferred server island' },
   'Lazy Islands': { icon: Telescope, label: 'Hydrate when visible' },
   'Lazy Server Islands': { icon: Eye, label: 'Fetch server island when visible' },

@@ -95,7 +95,7 @@ await emails.addBulk([
 The common pattern is a shared module that exports the queue config (so your entry can mount it) while route code produces by name.
 
 ```ts
-// jobs.ts
+// jobs.server.ts
 import { Mochi } from 'mochi-framework';
 
 export const emailQueue = Mochi.queue<{ to: string }>({
@@ -127,7 +127,7 @@ export const routes = {
 // index.ts
 import { Mochi } from 'mochi-framework';
 import { routes } from './routes';
-import { emailQueue } from './jobs';
+import { emailQueue } from './jobs.server';
 
 await Mochi.serve({
   routes,
@@ -222,5 +222,5 @@ await Mochi.serve({
 Mochi uses bunqueue as the underlying implementation for queues. To keep the dependency count low, Mochi skips the optional native add-on that bunqueue would otherwise pull in, so it and its platform-specific binaries never land in your install.
 
 <SeeItInAction
-demos={[{ href: "/demos/queue/", title: "Background Jobs", hook: "Offload work to a Mochi.queue() with an embedded worker — no Redis." }]}
+demos={[{ href: "/demos/queue/", title: "Background jobs with queues", hook: "Offload work to a Mochi.queue() with an embedded worker — no Redis." }]}
 />
