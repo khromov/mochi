@@ -82,7 +82,7 @@
         "mochi-framework": "src/cli.js",
       },
       "dependencies": {
-        "bunqueue": "2.8.20",
+        "bunqueue": "^2.8.20",
         "chokidar": "^5.0.0",
         "deepmerge": "^4.3.1",
         "devalue": "^5.8.1",

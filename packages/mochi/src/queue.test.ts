@@ -1,9 +1,10 @@
-import { afterAll, afterEach, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, describe, expect, spyOn, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { createQueue, createWorker, closeAllQueueResources } from './queue';
 import type { MochiJob } from './queue';
 import { mochiEvents } from './events';
+import { logger } from './log';
 
 // bunqueue locks its embedded store to the first dataPath used in the process,
 // so the whole file shares one temp dir and each test uses a unique queue name.
@@ -122,7 +123,11 @@ describe('Mochi queue + worker', () => {
     await queue.addBulk([0, 1, 2, 3].map((i) => ({ name: 'job', data: { i } })));
 
     await allDone.promise;
-    expect(maxActive).toBe(2);
+    // Concurrency caps in-flight jobs at 2; assert the ceiling held and that more
+    // than one ran at once, without depending on the exact timing of when all four
+    // jobs were enqueued vs. drained.
+    expect(maxActive).toBeLessThanOrEqual(2);
+    expect(maxActive).toBeGreaterThan(1);
   });
 
   test('emits queue:* lifecycle events on the mochi bus', async () => {
@@ -226,5 +231,33 @@ describe('Mochi queue + worker', () => {
     // A second call must not throw even though the registry is already empty.
     await closeAllQueueResources();
     expect(true).toBe(true);
+  });
+
+  test('warns once when enqueuing to a queue with no mounted worker', async () => {
+    const name = uniqueName();
+    const warn = spyOn(logger, 'warn').mockImplementation(() => {});
+    try {
+      const queue = createQueue(name, { dataPath });
+      await queue.add('orphan', { x: 1 });
+      await queue.add('orphan', { x: 2 });
+      const calls = warn.mock.calls.filter((c) => String(c[0]).includes(name));
+      expect(calls).toHaveLength(1);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  test('does not warn when a worker is mounted for the queue', async () => {
+    const name = uniqueName();
+    const warn = spyOn(logger, 'warn').mockImplementation(() => {});
+    try {
+      createWorker(name, async () => null, { dataPath });
+      const queue = createQueue(name, { dataPath });
+      await queue.add('ok', { x: 1 });
+      const calls = warn.mock.calls.filter((c) => String(c[0]).includes(name));
+      expect(calls).toHaveLength(0);
+    } finally {
+      warn.mockRestore();
+    }
   });
 });

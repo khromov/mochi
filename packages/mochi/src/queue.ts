@@ -78,6 +78,10 @@ interface QueueRegistry {
   queues: Set<Closeable>;
   workers: Set<Closeable>;
   queuesByName: Map<string, Closeable>;
+  /** Live worker count per queue name; drives the "enqueued but no consumer" warning. */
+  workersByName: Map<string, number>;
+  /** Queue names already warned about (no mounted worker) — warn once, not per `add()`. */
+  warnedMissingWorker: Set<string>;
   /** First `dataPath` seen; bunqueue ignores later differing paths in the same process. */
   dataPath: string | null | undefined;
 }
@@ -90,8 +94,26 @@ const registry = pinGlobal<QueueRegistry>('__mochi_queue_registry__', () => ({
   queues: new Set(),
   workers: new Set(),
   queuesByName: new Map(),
+  workersByName: new Map(),
+  warnedMissingWorker: new Set(),
   dataPath: undefined,
 }));
+
+/**
+ * Warn (once per queue name) when a job is enqueued to a queue that has no
+ * mounted worker — in embedded mode that job will sit unconsumed forever, so
+ * this is almost always a typo'd queue name or a worker missing from
+ * `Mochi.serve({ workers })`.
+ */
+function warnIfNoConsumer(name: string): void {
+  if ((registry.workersByName.get(name) ?? 0) > 0 || registry.warnedMissingWorker.has(name)) {
+    return;
+  }
+  registry.warnedMissingWorker.add(name);
+  logger.warn(
+    `[queue] enqueued to "${name}" but no worker is mounted for it — the job won't be processed. Mount one via Mochi.serve({ workers: { '${name}': Mochi.worker(...) } }).`,
+  );
+}
 
 function rememberDataPath(dataPath: string | undefined): void {
   if (registry.dataPath === undefined) {
@@ -129,7 +151,9 @@ export function createQueue<T>(name: string, opts?: MochiQueueOptions): MochiQue
 
   // A producer handle is a singleton per name; the dev route-HMR watcher re-runs
   // the defining module repeatedly, so reuse the existing handle instead of
-  // accumulating duplicates in the registry.
+  // accumulating duplicates in the registry. Note the cached handle's `T` is not
+  // revalidated — `Mochi.queue<A>('x')` then `Mochi.queue<B>('x')` returns the
+  // same handle typed as `B`; with one queue name per payload type this is moot.
   const existing = registry.queuesByName.get(name);
   if (existing) {
     return existing as unknown as MochiQueue<T>;
@@ -145,11 +169,13 @@ export function createQueue<T>(name: string, opts?: MochiQueueOptions): MochiQue
   const handle: MochiQueue<T> = {
     name,
     async add(jobName, data, jobOpts) {
+      warnIfNoConsumer(name);
       const job = await queue.add(jobName, data, toBunJobOptions(jobOpts));
       mochiEvents.emit('queue:added', { queue: name, jobId: job.id, jobName: job.name });
       return { id: job.id, name: job.name };
     },
     async addBulk(jobs) {
+      warnIfNoConsumer(name);
       const created = await queue.addBulk(jobs.map((j) => ({ name: j.name, data: j.data, opts: toBunJobOptions(j.opts) })));
       for (const job of created) {
         mochiEvents.emit('queue:added', { queue: name, jobId: job.id, jobName: job.name });
@@ -238,10 +264,20 @@ export function createWorker<T, R = unknown>(name: string, processor: MochiProce
     },
     async close() {
       registry.workers.delete(handle);
+      const remaining = (registry.workersByName.get(name) ?? 1) - 1;
+      if (remaining > 0) {
+        registry.workersByName.set(name, remaining);
+      } else {
+        registry.workersByName.delete(name);
+      }
       await worker.close();
     },
   };
   registry.workers.add(handle);
+  registry.workersByName.set(name, (registry.workersByName.get(name) ?? 0) + 1);
+  // A worker now consumes this name; clear any prior "no consumer" latch so a
+  // producer created before the worker mounted doesn't keep silencing real ones.
+  registry.warnedMissingWorker.delete(name);
   return handle;
 }
 
@@ -260,4 +296,9 @@ export async function closeAllQueueResources(): Promise<void> {
   // the intervals keep the event loop alive (the process never exits). Sync and
   // idempotent, so it's safe on the double-call path.
   shutdownManager();
+  // The manager is gone, so the embedded store's first-path lock is released too;
+  // reset the remembered path (and the warning latches) so a fresh queue/worker
+  // created afterwards starts clean rather than warning against a stale path.
+  registry.dataPath = undefined;
+  registry.warnedMissingWorker.clear();
 }
