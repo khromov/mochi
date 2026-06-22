@@ -7,7 +7,7 @@ import type { RenderResult } from './ComponentRegistry';
 import { loadSvelteConfig } from './svelteConfig';
 import { buildInlineWebComponent } from './buildInlineWebComponent';
 import { buildClientStatsRoutes, CLIENT_STATS_COMPONENT } from './clientStatsRoutes';
-import { isMochiPage, isMochiApi, isMochiWs, isMochiSse, isMochiFile, isServerPropsResolver } from './types';
+import { isMochiPage, isMochiApi, isMochiWs, isMochiSse, isMochiFile, isMochiQueue, isServerPropsResolver } from './types';
 import type {
   BunRouteValue,
   HttpMethod,
@@ -22,6 +22,7 @@ import type {
   MochiRouteValue,
   MochiServerPropsResolver,
   MochiServeOptions,
+  MochiQueueConfig,
   RouteRegistrationResult,
   MochiSseConfig,
   MochiSseHandler,
@@ -44,6 +45,8 @@ import { resolveWarmupEnabled, markWarmupRequest, isWarmablePattern } from './wa
 import { createErrorResponder, DEFAULT_ERROR_PAGE_PATH } from './errors';
 import { requestContext } from './requestContext';
 import type { MochiRequestContext } from './requestContext';
+import { createQueue, getQueue, closeAllQueueResources } from './queue';
+import type { MochiQueue, MochiQueueOptions, MochiQueueListeners, MochiProcessor } from './queue';
 import { finalizeCookieHeaders } from './cookies';
 import { makeRequestContextBuilder } from './requestSetup';
 import { verifyAndDecodeProps } from './serverIslandCrypto';
@@ -136,6 +139,36 @@ export class Mochi {
 
   static file(source: string | MochiFileResolver): MochiFileConfig {
     return { __mochiFile: true, source };
+  }
+
+  /**
+   * Declare a background job queue. Like `page`/`api`/`ws`/`sse`/`file`, this
+   * returns an *inert config* — the live queue (producer + consumer) is created
+   * only when the descriptor is mounted in `Mochi.serve({ queues })`, keyed by
+   * queue name. The config bundles the `process` consumer (receives a read-only
+   * `MochiJob`, returns the job result) with its options (`concurrency`,
+   * `dataPath`, …) and optional `on` lifecycle listeners. Produce jobs from
+   * anywhere via `Mochi.getQueue(name).add(...)`. Queues drain gracefully on
+   * `Mochi.serve()` shutdown.
+   */
+  static queue<T = unknown, R = unknown>(config: MochiQueueOptions<T, R>): MochiQueueConfig {
+    const { process, on, ...options } = config;
+    return {
+      __mochiQueue: true,
+      process: process as MochiProcessor<unknown, unknown>,
+      options,
+      on: on as Partial<MochiQueueListeners<unknown, unknown>> | undefined,
+    };
+  }
+
+  /**
+   * Resolve the producer handle for a queue declared in
+   * `Mochi.serve({ queues })` and `.add()` jobs to it. Pass the payload type
+   * explicitly (`Mochi.getQueue<JobData>(name)`). Throws if the queue name was
+   * never declared, or if reached before `Mochi.serve()` has mounted its queues.
+   */
+  static getQueue<T = unknown>(name: string): MochiQueue<T> {
+    return getQueue<T>(name);
   }
 
   private static resolveHtmlShell(
@@ -1291,6 +1324,14 @@ export class Mochi {
           }
         : userWebSocketOptions;
 
+    // Validate queues BEFORE binding so a misconfiguration fails fast without
+    // leaving a half-started server listening.
+    for (const [name, config] of Object.entries(options.queues ?? {})) {
+      if (!isMochiQueue(config)) {
+        throw new Error(`Mochi.serve({ queues }): "${name}" is not a Mochi.queue(...) descriptor. Each value must be created with Mochi.queue().`);
+      }
+    }
+
     const server = Bun.serve({
       ...bunOptions,
       routes: bunRoutes,
@@ -1310,6 +1351,19 @@ export class Mochi {
         startEvent.hostname = server.hostname;
       }
       mochiEvents.emit('server:start', startEvent);
+    }
+
+    // Validated above; mount the live queues now (after bind, so they drain on
+    // the same shutdown path as the server). If a queue throws mid-mount, tear
+    // the just-bound server down rather than leaving it listening half-started.
+    try {
+      for (const [name, config] of Object.entries(options.queues ?? {})) {
+        createQueue(name, config.process, config.options, config.on);
+      }
+    } catch (err) {
+      await closeAllQueueResources();
+      server.stop(true);
+      throw err;
     }
 
     if (warmupHandlers.length > 0) {
@@ -1399,6 +1453,7 @@ export class Mochi {
       } catch (err) {
         logger.error(`mochi:shutdown hook failed: ${err instanceof Error ? err.message : err}`);
       }
+      await closeAllQueueResources();
       const stopEvent: MochiServerStopEvent = { reason: 'signal' };
       if (signal === 'SIGTERM' || signal === 'SIGINT') {
         stopEvent.signal = signal;

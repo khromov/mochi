@@ -29,6 +29,7 @@
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
   import ShieldAlert from '@lucide/svelte/icons/shield-alert';
   import ListTodo from '@lucide/svelte/icons/list-todo';
+  import Inbox from '@lucide/svelte/icons/inbox';
 
   interface DemoLink {
     href: string;
@@ -57,6 +58,7 @@
     '/demos/api/': Webhook,
     '/demos/file/': FileDown,
     '/demos/streams/': AudioWaveform,
+    '/demos/queue/': Inbox,
     '/demos/server-island/': ComponentIcon,
     '/demos/island-props/': Package2,
     '/demos/lazy/': Telescope,

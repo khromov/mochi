@@ -3,6 +3,7 @@ import { parseArgs } from 'node:util';
 import path from 'node:path';
 import { existsSync } from 'node:fs';
 import { build } from './build';
+import { closeAllQueueResources } from './queue';
 import { extractServeOptions } from './extractServeOptions';
 import { updateSkill, SKILL_TARGETS, SKILL_DESTS, DEFAULT_SKILL_TARGET, type SkillTarget } from './updateSkill';
 import { generateKey } from './generateKey';
@@ -174,6 +175,12 @@ async function main() {
     publicDir: values['public-dir'],
     assetPrefix: values['asset-prefix'],
   });
+
+  // Extracting serve options imports the user's entry for real, so a top-level
+  // Mochi.queue() producer opens an embedded store whose background intervals
+  // keep the event loop alive and hang this one-shot build. Drain and exit.
+  await closeAllQueueResources();
+  process.exit(0);
 }
 
 main().catch((err: unknown) => {
