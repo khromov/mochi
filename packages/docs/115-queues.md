@@ -11,9 +11,9 @@ description: 'Run background jobs in-process with Mochi.queue() and Mochi.worker
 
 ## Queues & workers
 
-Offload work that shouldn't block a response — sending email, encoding media, calling slow third-party APIs — to a background **worker**. `Mochi.queue()` is the producer; `Mochi.worker()` is the consumer. Both run in your process, backed by [bunqueue](https://bunqueue.dev/)'s embedded mode. No Redis, no separate service.
+Offload work that shouldn't block a response — sending email, encoding media, calling slow third-party APIs — to a background **worker**. `Mochi.worker()` is the consumer; `Mochi.queue()` is the producer. Both run in your process, backed by [bunqueue](https://bunqueue.dev/)'s embedded mode.
 
-`Mochi.queue()` returns a **live handle** — create it at module top-level and `.add()` to it from anywhere. `Mochi.worker()` is different: like `Mochi.page` / `api` / `ws` / `sse`, it returns an **inert config** that you mount in `Mochi.serve({ workers })`, keyed by queue name. So every background worker the server runs is declared in one place.
+`Mochi.worker()` — like `Mochi.page` / `api` / `ws` / `sse` — returns an **inert config** that you mount in `Mochi.serve({ workers })`, keyed by queue name, so every background worker the server runs is declared in one place. `Mochi.queue()` is different: it returns a **live handle** — create it at module top-level and `.add()` to it from anywhere.
 
 ```ts
 import { Mochi } from 'mochi-framework';
@@ -36,28 +36,6 @@ await Mochi.serve({
 
 // from a page action, an API route, anywhere:
 await emails.add('send', { to: 'alice@example.com' });
-```
-
-### `Mochi.queue()`
-
-```ts
-const queue = Mochi.queue<JobData>(name, options?);
-```
-
-| Method                   | Returns                  | Notes                                |
-| ------------------------ | ------------------------ | ------------------------------------ |
-| `add(name, data, opts?)` | `Promise<MochiJobRef>`   | enqueue one job                      |
-| `addBulk(jobs)`          | `Promise<MochiJobRef[]>` | enqueue many in one call             |
-| `close()`                | `Promise<void>`          | stop the producer (auto on shutdown) |
-
-`MochiJobRef` is `{ id, name }`. Per-job options: `priority`, `delay` (ms), `attempts`, `jobId`.
-
-```ts
-await queue.add('send', { to: 'bob@example.com' }, { priority: 10, delay: 5000 });
-await queue.addBulk([
-  { name: 'send', data: { to: 'a@x.com' } },
-  { name: 'send', data: { to: 'b@x.com' }, opts: { priority: 10 } },
-]);
 ```
 
 ### `Mochi.worker()`
@@ -100,6 +78,28 @@ Mochi.worker(processor, {
 ```
 
 Or subscribe globally on the [`mochiEvents` bus](#observability) (filter by `queue` name) — handy when the listener lives far from the worker declaration.
+
+### `Mochi.queue()`
+
+```ts
+const queue = Mochi.queue<JobData>(name, options?);
+```
+
+| Method                   | Returns                  | Notes                                |
+| ------------------------ | ------------------------ | ------------------------------------ |
+| `add(name, data, opts?)` | `Promise<MochiJobRef>`   | enqueue one job                      |
+| `addBulk(jobs)`          | `Promise<MochiJobRef[]>` | enqueue many in one call             |
+| `close()`                | `Promise<void>`          | stop the producer (auto on shutdown) |
+
+`MochiJobRef` is `{ id, name }`. Per-job options: `priority`, `delay` (ms), `attempts`, `jobId`.
+
+```ts
+await queue.add('send', { to: 'bob@example.com' }, { priority: 10, delay: 5000 });
+await queue.addBulk([
+  { name: 'send', data: { to: 'a@x.com' } },
+  { name: 'send', data: { to: 'b@x.com' }, opts: { priority: 10 } },
+]);
+```
 
 ### Producer + consumer in one module
 
