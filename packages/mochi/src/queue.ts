@@ -1,10 +1,12 @@
 /**
- * The single isolation boundary around bunqueue: the only module that imports
- * `bunqueue/client`, with no bunqueue type leaking into the public surface, so
- * swapping the backend means rewriting just this file.
+ * The single isolation boundary around bunqueue: the only module that touches it,
+ * with no bunqueue type leaking into the public surface, so swapping the backend
+ * means rewriting just this file. bunqueue is bundled into `./vendor/bunqueue-client.js`
+ * (a devDependency, not a runtime one) to keep msgpackr/msgpackr-extract out of
+ * consumers' dependency graphs — see scripts/vendor-bunqueue.ts.
  */
-import { Queue, Worker, shutdownManager } from 'bunqueue/client';
-import type { Job, JobOptions } from 'bunqueue/client';
+import { Queue, Worker, shutdownManager } from './vendor/bunqueue-client.js';
+import type { Job, JobOptions } from './vendor/bunqueue-client.js';
 import { pinGlobal } from './globalState';
 import { mochiEvents } from './events';
 import { logger } from './log';

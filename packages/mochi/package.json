@@ -72,7 +72,9 @@
   "scripts": {
     "test": "bun scripts/run-tests.ts",
     "typecheck": "svelte-check --tsconfig ./tsconfig.json --compiler-warnings 'attribute_illegal_colon:ignore' && tsc -p tsconfig.json --noEmit",
-    "deps:report": "bun scripts/dep-report.ts"
+    "deps:report": "bun scripts/dep-report.ts",
+    "vendor:bunqueue": "bun scripts/vendor-bunqueue.ts",
+    "prepack": "bun scripts/vendor-bunqueue.ts"
   },
   "peerDependencies": {
     "svelte": "^5.56.3",
@@ -88,7 +90,6 @@
     }
   },
   "dependencies": {
-    "bunqueue": "^2.8.20",
     "chokidar": "^5.0.0",
     "deepmerge": "^4.3.1",
     "devalue": "^5.8.1",
@@ -105,6 +106,7 @@
     "@tailwindcss/oxide": "^4.3.1",
     "@types/bun": "1.3.14",
     "@types/js-cookie": "^3.0.6",
+    "bunqueue": "^2.8.20",
     "svelte": "^5.56.3",
     "svelte-check": "4.6.0",
     "typescript": "^6.0.3"

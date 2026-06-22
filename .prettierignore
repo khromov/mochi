@@ -1,2 +1,4 @@
 **/CHANGELOG.md
 **/*.patch
+# Generated dependency bundles (see packages/mochi/scripts/vendor-bunqueue.ts)
+**/vendor/*.js
