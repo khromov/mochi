@@ -1,8 +1,9 @@
 <script lang="ts">
   import Check from '@lucide/svelte/icons/check';
   import X from '@lucide/svelte/icons/x';
+  import Clock from '@lucide/svelte/icons/clock';
 
-  type Status = 'yes' | 'no' | 'partial';
+  type Status = 'yes' | 'no' | 'partial' | 'planned';
   interface Cell {
     status: Status;
     note?: string;
@@ -15,46 +16,68 @@
   }
 
   const rows: Row[] = [
-    { feature: 'Background job queues', mochi: { status: 'yes', note: 'Mochi.queue()', href: '/docs/queues/' }, kit: { status: 'no' } },
+    {
+      feature: 'Server islands / selective hydration',
+      mochi: { status: 'yes', note: 'mochi:defer', href: '/docs/server-islands/' },
+      kit: { status: 'no', note: 'full page hydration only' },
+    },
     {
       feature: 'Built-in SQLite database',
-      mochi: { status: 'yes', note: 'bun:sqlite', href: '/docs/server-only-imports/' },
+      mochi: { status: 'yes', note: 'bun:sqlite', href: 'https://bun.com/docs/api/sqlite' },
       kit: { status: 'partial', note: 'Only with adapter-node' },
     },
     {
       feature: 'Built-in Postgres & MySQL support',
-      mochi: { status: 'yes', note: 'Bun.sql()', href: '/docs/server-only-imports/' },
+      mochi: { status: 'yes', note: 'Bun.sql()', href: 'https://bun.com/docs/api/sql' },
       kit: { status: 'no', note: 'bring your own cloud database' },
     },
+    { feature: 'Background job queues', mochi: { status: 'yes', note: 'Mochi.queue()', href: '/docs/queues/' }, kit: { status: 'no' } },
+    {
+      feature: 'JavaScript bundle size optimization',
+      mochi: { status: 'yes', note: 'optimized for first page load' },
+      kit: { status: 'partial', note: 'optimized for several page views; slightly larger on first load' },
+    },
+    {
+      feature: 'Deployment targets',
+      mochi: { status: 'no', note: 'Bun only' },
+      kit: { status: 'yes', note: 'Node, Vercel, Bun and other cloud providers' },
+    },
+    { feature: 'Client-side router (goto / invalidate)', mochi: { status: 'no' }, kit: { status: 'yes' } },
+    { feature: 'Prerendering / SSG', mochi: { status: 'no' }, kit: { status: 'yes' } },
+    { feature: 'Form actions + progressively enhanced forms', mochi: { status: 'yes' }, kit: { status: 'yes' } },
+    { feature: 'Middleware', mochi: { status: 'yes' }, kit: { status: 'yes' } },
+    { feature: 'Hooks & extension filters', mochi: { status: 'yes', note: 'eventHooks & filters', href: '/docs/extensions/' }, kit: { status: 'no' } },
+    { feature: 'Top-level await', mochi: { status: 'yes' }, kit: { status: 'partial', note: 'experimental' } },
     {
       feature: 'Real-time WebSockets',
       mochi: { status: 'yes', note: 'Mochi.ws()', href: '/docs/websocket-routes/' },
       kit: { status: 'no', note: 'custom server with external package' },
     },
     { feature: 'Server-Sent Events', mochi: { status: 'yes', note: 'Mochi.sse()', href: '/docs/server-sent-events/' }, kit: { status: 'no', note: 'manual setup' } },
-    {
-      feature: 'Server islands / selective hydration',
-      mochi: { status: 'yes', note: 'mochi:defer', href: '/docs/server-islands/' },
-      kit: { status: 'no', note: 'full hydration' },
-    },
-    { feature: 'SWR caching', mochi: { status: 'yes', note: 'MochiCache', href: '/docs/cache/' }, kit: { status: 'no' } },
-    { feature: 'View Transitions', mochi: { status: 'yes', note: 'built-in component', href: '/docs/view-transitions/' }, kit: { status: 'no', note: 'manual wiring' } },
-    { feature: 'Image resizing', mochi: { status: 'yes', note: 'Bun.Image(), coming soon', href: '/docs/why-bun/' }, kit: { status: 'no', note: 'enhanced-img plugin' } },
-    { feature: 'Observability event bus', mochi: { status: 'yes', note: 'mochiEvents', href: '/docs/events/' }, kit: { status: 'no', note: 'experimental OpenTelemetry' } },
-    { feature: 'Form actions + enhance', mochi: { status: 'yes' }, kit: { status: 'yes' } },
-    { feature: 'Middleware / hooks', mochi: { status: 'yes' }, kit: { status: 'yes' } },
-    { feature: 'Cookies & CSRF protection', mochi: { status: 'yes' }, kit: { status: 'yes' } },
-    { feature: 'Client-side router (goto / invalidate)', mochi: { status: 'no' }, kit: { status: 'yes' } },
-    { feature: 'Nested layouts', mochi: { status: 'no', note: 'manual wrappers' }, kit: { status: 'yes' } },
-    { feature: 'Prerendering / SSG', mochi: { status: 'no' }, kit: { status: 'yes' } },
+    { feature: 'Built-in caching library', mochi: { status: 'yes', note: 'MochiCache', href: '/docs/cache/' }, kit: { status: 'no' } },
+    { feature: 'Cookie helpers', mochi: { status: 'yes' }, kit: { status: 'yes' } },
     { feature: 'Remote functions (type-safe RPC)', mochi: { status: 'no' }, kit: { status: 'yes', note: 'experimental' } },
-    { feature: 'Deployment adapters', mochi: { status: 'no', note: 'Bun only' }, kit: { status: 'yes' } },
-    { feature: 'Link preloading / shallow routing', mochi: { status: 'no' }, kit: { status: 'yes' } },
-    { feature: 'Service worker integration', mochi: { status: 'no' }, kit: { status: 'yes' } },
-    { feature: 'Snapshots', mochi: { status: 'no', note: 'bfcache' }, kit: { status: 'yes' } },
+    {
+      feature: 'View Transitions',
+      mochi: { status: 'yes', note: 'built-in component', href: '/docs/view-transitions/' },
+      kit: { status: 'partial', note: 'manual wiring', href: 'https://svelte.dev/blog/view-transitions' },
+    },
+    {
+      feature: 'Centralized logging system',
+      mochi: { status: 'yes', note: 'mochiEvents', href: '/docs/events/' },
+      kit: { status: 'no', note: 'experimental OpenTelemetry only' },
+    },
+    {
+      feature: 'Image resizing',
+      mochi: { status: 'planned', note: 'build & runtime transformations' },
+      kit: { status: 'partial', note: 'build-time only; runtime at extra cost' },
+    },
+    { feature: 'Link preloading', mochi: { status: 'planned' }, kit: { status: 'yes' } },
+    { feature: 'Service worker integration', mochi: { status: 'planned' }, kit: { status: 'yes' } },
+    { feature: 'Snapshots', mochi: { status: 'partial', note: 'browser-native restoration' }, kit: { status: 'yes', note: 'manual setup' } },
   ];
 
-  const labelFor: Record<Status, string> = { yes: 'Yes', no: 'No', partial: 'Partial' };
+  const labelFor: Record<Status, string> = { yes: 'Yes', no: 'No', partial: 'Partial', planned: 'Planned' };
 </script>
 
 <div class="comparison">
@@ -77,6 +100,8 @@
                   <span class="tilde" aria-hidden="true">~</span>
                 {:else if cell.status === 'yes'}
                   <Check class="cell-icon" size={22} aria-hidden="true" />
+                {:else if cell.status === 'planned'}
+                  <Clock class="cell-icon" size={22} aria-hidden="true" />
                 {:else}
                   <X class="cell-icon" size={22} aria-hidden="true" />
                 {/if}
@@ -189,5 +214,8 @@
   }
   .cell.no :global(.cell-icon) {
     color: var(--badge-danger-text);
+  }
+  .cell.planned :global(.cell-icon) {
+    color: var(--badge-tip-text);
   }
 </style>
