@@ -4,6 +4,10 @@ slug: why-bun
 description: 'Why Mochi chose Bun as its runtime and which Bun APIs the framework relies on.'
 ---
 
+<script>
+  import ComparisonTable from './_components/ComparisonTable.svelte';
+</script>
+
 ## Why Bun?
 
 Mochi was built to be performant and simple. We do this by "outsourcing" subsystem complexity to the Bun runtime. Instead of writing or managing a bundler, an HTML parser, a router, database drivers, compression, and hashing as separate npm packages, the framework delegates to Bun's standard library. Bun maintains those components; Mochi just calls them.
@@ -21,6 +25,12 @@ Mochi is backed by just ~10 runtime dependencies. We don't minimize dependencies
 - `bun:sqlite` and `bun:sql` — zero-dep SQLite and PostgreSQL for app data. Replaces `better-sqlite3` and `pg`.
 - `bun:test` — runs Mochi's own test suite, with per-file process isolation. Replaces Vitest or Jest.
 - Native `.ts` execution and auto-loaded `.env` — TypeScript runs directly under `bun run`. Replaces `ts-node` and `dotenv`.
+
+### Batteries included
+
+Leaning on Bun's standard library is what lets Mochi ship so much out of the box. Here's how that batteries-included surface compares to SvelteKit:
+
+<ComparisonTable mochi:hydrate />
 
 ### On the horizon
 

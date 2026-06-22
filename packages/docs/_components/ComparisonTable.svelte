@@ -22,7 +22,7 @@
 
   const rows: Row[] = [
     {
-      feature: 'Server islands / selective hydration',
+      feature: 'Server islands & selective hydration',
       tags: ['performance', 'frontend'],
       mochi: { status: 'yes', note: 'mochi:defer', href: '/docs/server-islands/' },
       kit: { status: 'no', note: 'full page hydration only' },
@@ -61,14 +61,13 @@
       mochi: { status: 'no', note: 'Bun only' },
       kit: { status: 'yes', note: 'Node, Vercel, Bun and other cloud providers' },
     },
-    { feature: 'Client-side router (goto / invalidate)', tags: ['frontend'], mochi: { status: 'no' }, kit: { status: 'yes' } },
     {
-      feature: 'Type-safe routes & params',
-      tags: ['backend', 'frontend'],
-      mochi: { status: 'no', note: 'validate params inline' },
-      kit: { status: 'yes', note: 'generated ./$types & $app/types' },
+      feature: 'Prerendering / SSG',
+      tags: ['performance', 'frontend'],
+      mochi: { status: 'partial', note: 'route warmup supported', href: '/docs/serve-options/#route-warmup' },
+      kit: { status: 'yes' },
     },
-    { feature: 'Prerendering / SSG', tags: ['performance', 'frontend'], mochi: { status: 'partial', note: 'warmup pre-render' }, kit: { status: 'yes' } },
+    { feature: 'Build as static HTML', tags: ['performance', 'frontend'], mochi: { status: 'no', note: 'SSR only' }, kit: { status: 'yes', note: 'adapter-static' } },
     { feature: 'Form actions + progressively enhanced forms', tags: ['backend', 'frontend'], mochi: { status: 'yes' }, kit: { status: 'yes' } },
     { feature: 'Middleware', tags: ['backend'], mochi: { status: 'yes' }, kit: { status: 'yes' } },
     {
@@ -88,7 +87,7 @@
       feature: 'Server-Sent Events',
       tags: ['backend'],
       mochi: { status: 'yes', note: 'Mochi.sse()', href: '/docs/server-sent-events/' },
-      kit: { status: 'no', note: 'manual setup' },
+      kit: { status: 'no', note: 'manual setup, limited provider support' },
     },
     {
       feature: 'Built-in caching library',
@@ -97,12 +96,25 @@
       kit: { status: 'no' },
     },
     { feature: 'Cookie helpers', tags: ['backend'], mochi: { status: 'yes' }, kit: { status: 'yes' } },
+    { feature: 'Client-side router', tags: ['frontend'], mochi: { status: 'no' }, kit: { status: 'yes' } },
+    {
+      feature: 'Type-safe routes & params',
+      tags: ['backend', 'frontend'],
+      mochi: { status: 'planned', note: 'validate params inline' },
+      kit: { status: 'yes', note: 'generated ./$types & $app/types' },
+    },
     { feature: 'Remote functions (type-safe RPC)', tags: ['backend', 'frontend'], mochi: { status: 'no' }, kit: { status: 'yes', note: 'experimental' } },
     {
       feature: 'View Transitions',
       tags: ['frontend'],
       mochi: { status: 'yes', note: 'built-in component', href: '/docs/view-transitions/' },
       kit: { status: 'partial', note: 'manual wiring', href: 'https://svelte.dev/blog/view-transitions' },
+    },
+    {
+      feature: 'Highly interactive apps',
+      tags: ['frontend'],
+      mochi: { status: 'yes', note: 'WS, SSE & View Transitions' },
+      kit: { status: 'yes', note: 'SPA mode & remote functions' },
     },
     { feature: 'Tailwind', tags: ['frontend'], mochi: { status: 'yes', note: 'Tailwind v4', href: '/docs/tailwind/' }, kit: { status: 'yes' } },
     {
@@ -130,28 +142,39 @@
 
   const labelFor: Record<Status, string> = { yes: 'Yes', no: 'No', partial: 'Partial', planned: 'Planned' };
 
-  const tabs: { id: Category | 'all'; label: string }[] = [
+  // `mochi-only` / `kit-only` denote features one framework has (yes) and the
+  // other lacks — derived from status, not a per-row tag. `kit-only` also
+  // includes rows Mochi has `planned` (SvelteKit has it; Mochi intends to).
+  type Filter = Category | 'all' | 'mochi-only' | 'kit-only';
+  const tabs: { id: Filter; label: string }[] = [
     { id: 'all', label: 'All' },
     { id: 'performance', label: 'Performance' },
     { id: 'backend', label: 'Backend' },
     { id: 'frontend', label: 'Frontend' },
+    { id: 'mochi-only', label: 'Mochi only' },
+    { id: 'kit-only', label: 'SvelteKit only' },
   ];
 
   let { collapsed: collapsedDefault = false }: { collapsed?: boolean } = $props();
 
-  let activeTab = $state<Category | 'all'>('all');
+  let activeTab = $state<Filter>('all');
   // Collapsed state lives in a shared store so an external "Expand" link (a
   // separate island) can open this one. Until anyone interacts it's `null`, so
   // we fall back to the per-instance `collapsed` prop for the initial render.
   const collapsed = $derived(comparisonOpen() === null ? collapsedDefault : !comparisonOpen());
-  const filteredRows = $derived(activeTab === 'all' ? rows : rows.filter((row) => row.tags.includes(activeTab)));
+  const filteredRows = $derived.by(() => {
+    if (activeTab === 'all') return rows;
+    if (activeTab === 'mochi-only') return rows.filter((row) => row.mochi.status === 'yes' && row.kit.status === 'no');
+    if (activeTab === 'kit-only') return rows.filter((row) => row.kit.status === 'yes' && (row.mochi.status === 'no' || row.mochi.status === 'planned'));
+    return rows.filter((row) => row.tags.includes(activeTab));
+  });
   // Collapsed preview renders only the header row (no body rows).
   const visibleRows = $derived(collapsed ? [] : filteredRows);
 </script>
 
 <div class="table-header">
   <div class="tabs-scroll">
-    <div class="tabs" role="tablist" aria-label="Filter features by area">
+    <div class="tabs" role="tablist" aria-label="Filter features">
       {#each tabs as tab (tab.id)}
         <button
           type="button"
@@ -369,6 +392,12 @@
     font-weight: 500;
     color: var(--text);
     width: 42%;
+  }
+
+  @media (max-width: 640px) {
+    .feature-col {
+      width: 30%;
+    }
   }
 
   .comparison-table tbody tr:last-child th,
