@@ -1,4 +1,4 @@
-FROM node:24
+FROM node:24-slim
 
 ARG TZ
 ENV TZ="$TZ"
@@ -9,6 +9,9 @@ ARG CLAUDE_CODE_VERSION=latest
 RUN apt-get update && apt-get install -y --no-install-recommends \
   less \
   git \
+  wget \
+  curl \
+  ca-certificates \
   procps \
   sudo \
   fzf \
@@ -100,6 +103,18 @@ ARG BUN_VERSION=1.3.14
 RUN curl -fsSL https://bun.com/install | bash -s "bun-v${BUN_VERSION}"
 ENV BUN_INSTALL=/home/node/.bun
 ENV PATH=$PATH:/home/node/.bun/bin
+
+# Claude Code aliases. All run with permission prompts bypassed
+# (--dangerously-skip-permissions) since this devcontainer is already isolated.
+# The variants use `command claude` so they don't re-trigger the `claude` alias.
+RUN printf '%s\n' \
+  '' \
+  '# Claude Code aliases' \
+  'alias claude="claude --dangerously-skip-permissions"' \
+  'alias cs="command claude --model sonnet --dangerously-skip-permissions"' \
+  'alias c200="CLAUDE_CODE_DISABLE_1M_CONTEXT=1 command claude --dangerously-skip-permissions"' \
+  'alias cs200="CLAUDE_CODE_DISABLE_1M_CONTEXT=1 command claude --model sonnet --dangerously-skip-permissions"' \
+  | tee -a /home/node/.zshrc /home/node/.bashrc >/dev/null
 
 
 # Copy custom Claude Code statusline script (wired up via postCreateCommand)
