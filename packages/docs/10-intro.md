@@ -7,8 +7,8 @@ description: 'A lightweight, server-first Svelte 5 framework running on Bun that
 <script>
   import Callout from './_components/Callout.svelte';
   import IslandsDemo from './_components/IslandsDemo.svelte';
-  import SeeItInAction from './_components/SeeItInAction.svelte';
   import ComparisonTable from './_components/ComparisonTable.svelte';
+  import ExpandComparison from './_components/ExpandComparison.svelte';
 </script>
 
 # mochi
@@ -33,7 +33,7 @@ The header text, the main column, and the footer ship as HTML and stay that way.
 - **No heavy bundler (no Vite).** Uses the lighting-fast Bun bundler, which builds sites with hundreds of routes in seconds.
 - **Real-time built in.** WebSockets and Server Sent Events are first-class route types — no extra packages or services required.
 
-Want to know more? Expand the table below to see a full feature comparison.
+Want to know more? <ExpandComparison mochi:hydrate /> to see a full feature comparison.
 
 <ComparisonTable mochi:hydrate collapsed />
 
@@ -46,11 +46,3 @@ Want to know more? Expand the table below to see a full feature comparison.
 ## Community
 
 Questions, bug reports, ideas, or just want to see what others are building? Join the [Mochi Discord](/discord/).
-
-<SeeItInAction
-demos={[
-{ href: "/demos/hello-world/", title: "Hello World", hook: "The simplest possible Mochi page — pure server-rendered Svelte." },
-{ href: "/demos/hydration/", title: "Hydration Modes", hook: "The same component rendered five ways — eager, lazy, visible, rootMargin-tuned, and deferred server island." },
-{ href: "/demos/server-props/", title: "Server Props", hook: "Define serverProps on Mochi.page() to pass fresh data into a Svelte page on every request." },
-]}
-/>
