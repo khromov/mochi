@@ -5,6 +5,7 @@
   interface Cell {
     yes: boolean;
     note?: string;
+    href?: string;
   }
   interface Row {
     feature: string;
@@ -13,15 +14,19 @@
   }
 
   const rows: Row[] = [
-    { feature: 'Background job queues', mochi: { yes: true, note: 'Mochi.queue' }, kit: { yes: false } },
-    { feature: 'Built-in SQLite database', mochi: { yes: true, note: 'bun:sqlite' }, kit: { yes: false, note: 'bring your own' } },
-    { feature: 'Real-time WebSockets', mochi: { yes: true, note: 'Mochi.ws' }, kit: { yes: false, note: 'custom server with external package' } },
-    { feature: 'Server-Sent Events', mochi: { yes: true, note: 'Mochi.sse' }, kit: { yes: false, note: 'manual stream' } },
-    { feature: 'Server islands / selective hydration', mochi: { yes: true }, kit: { yes: false, note: 'full hydration' } },
-    { feature: 'SWR caching', mochi: { yes: true, note: 'MochiCache' }, kit: { yes: false } },
-    { feature: 'View Transitions', mochi: { yes: true, note: 'built-in component' }, kit: { yes: false, note: 'manual wiring' } },
-    { feature: 'Image resizing', mochi: { yes: true, note: 'Bun.Image(), coming soon' }, kit: { yes: false, note: 'enhanced-img plugin' } },
-    { feature: 'Observability event bus', mochi: { yes: true, note: 'mochiEvents' }, kit: { yes: false, note: 'experimental OpenTelemetry' } },
+    { feature: 'Background job queues', mochi: { yes: true, note: 'Mochi.queue()', href: '/docs/queues/' }, kit: { yes: false } },
+    { feature: 'Built-in SQLite database', mochi: { yes: true, note: 'bun:sqlite', href: '/docs/server-only-imports/' }, kit: { yes: false, note: 'bring your own' } },
+    {
+      feature: 'Real-time WebSockets',
+      mochi: { yes: true, note: 'Mochi.ws()', href: '/docs/websocket-routes/' },
+      kit: { yes: false, note: 'custom server with external package' },
+    },
+    { feature: 'Server-Sent Events', mochi: { yes: true, note: 'Mochi.sse()', href: '/docs/server-sent-events/' }, kit: { yes: false, note: 'manual stream' } },
+    { feature: 'Server islands / selective hydration', mochi: { yes: true, note: 'mochi:defer', href: '/docs/server-islands/' }, kit: { yes: false, note: 'full hydration' } },
+    { feature: 'SWR caching', mochi: { yes: true, note: 'MochiCache', href: '/docs/cache/' }, kit: { yes: false } },
+    { feature: 'View Transitions', mochi: { yes: true, note: 'built-in component', href: '/docs/view-transitions/' }, kit: { yes: false, note: 'manual wiring' } },
+    { feature: 'Image resizing', mochi: { yes: true, note: 'Bun.Image(), coming soon', href: '/docs/why-bun/' }, kit: { yes: false, note: 'enhanced-img plugin' } },
+    { feature: 'Observability event bus', mochi: { yes: true, note: 'mochiEvents', href: '/docs/events/' }, kit: { yes: false, note: 'experimental OpenTelemetry' } },
     { feature: 'Form actions + enhance', mochi: { yes: true }, kit: { yes: true } },
     { feature: 'Middleware / hooks', mochi: { yes: true }, kit: { yes: true } },
     { feature: 'Cookies & CSRF protection', mochi: { yes: true }, kit: { yes: true } },
@@ -54,9 +59,11 @@
             <td>
               <span class="cell {cell.yes ? 'yes' : 'no'}">
                 <Icon class="cell-icon" size={22} aria-hidden="true" />
-                <span class="label">
-                  {cell.yes ? 'Yes' : 'No'}{#if cell.note}<span class="note"> ({cell.note})</span>{/if}
-                </span>
+                <span class="label"
+                  >{cell.yes ? 'Yes' : 'No'}{#if cell.note}<span class="note"
+                      >&nbsp;-&nbsp;{#if cell.href}<a href={cell.href}>{cell.note}</a>{:else}{cell.note}{/if}</span
+                    >{/if}</span
+                >
               </span>
             </td>
           {/each}
@@ -129,6 +136,14 @@
     color: var(--text-muted);
     font-size: 0.85rem;
     font-weight: 400;
+  }
+
+  .note a {
+    color: var(--accent);
+    text-decoration: none;
+  }
+  .note a:hover {
+    text-decoration: underline;
   }
 
   .cell.yes :global(.cell-icon) {
