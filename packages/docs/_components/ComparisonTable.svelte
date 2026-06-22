@@ -338,7 +338,7 @@
       border-color 0.15s ease;
   }
 
-  .tab:not(:disabled):hover {
+  .tab:not(:disabled):not(.active):hover {
     border-color: var(--accent);
     color: var(--text);
   }
@@ -347,6 +347,11 @@
     background: var(--accent);
     border-color: var(--accent);
     color: var(--accent-text);
+  }
+
+  .tab.active:not(:disabled):hover {
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
   }
 
   .tab:disabled {
