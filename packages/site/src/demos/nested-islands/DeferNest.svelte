@@ -31,6 +31,7 @@
   }
 
   .island-loading {
+    margin-top: 0.6rem;
     padding: 0.85rem;
     border: 2px dashed var(--border-strong);
     border-radius: var(--radius-md);

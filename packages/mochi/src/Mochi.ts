@@ -1164,19 +1164,25 @@ export class Mochi {
           }
         }
 
-        const headers: Record<string, string> = {
-          'Content-Type': 'text/html; charset=utf-8',
-          'Cache-Control': 'private, no-store',
-        };
-        // Deliver CSS for hydratable islands rendered inside this server island's
-        // deferred content. Their CSS is gated out of the host page's <head> (it
-        // isn't rendered at page time), so the client loads it from this header
-        // after fetch. Hashed ASCII asset paths — comma-join is header-safe.
-        if (result.cssUrls.length > 0) {
-          headers['X-Mochi-Island-CSS'] = result.cssUrls.join(',');
+        // Prepend <link> tags for CSS the host page never linked: hydratable
+        // islands rendered only inside this deferred content (their CSS is gated
+        // out of the page <head> because they aren't rendered at page time), plus
+        // any side-effect CSS imports. Browsers load <link> assigned via the
+        // client's `innerHTML`, so these apply as soon as the island appears. The
+        // island's own scoped CSS already loads via the wrapper's `css-url`
+        // attribute, so exclude it to avoid a duplicate tag.
+        const ownCss = registry.getComponentCssUrl(componentPath);
+        const extraCss = result.cssUrls.filter((url) => url !== ownCss);
+        if (extraCss.length > 0) {
+          body = extraCss.map((url) => `<link rel="stylesheet" href="${url}">`).join('') + body;
         }
 
-        return new Response(body, { headers });
+        return new Response(body, {
+          headers: {
+            'Content-Type': 'text/html; charset=utf-8',
+            'Cache-Control': 'private, no-store',
+          },
+        });
       });
     });
 

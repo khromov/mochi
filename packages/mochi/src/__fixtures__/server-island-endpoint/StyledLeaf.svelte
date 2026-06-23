@@ -1,4 +1,5 @@
 <script lang="ts">
+  import './leafStyles.css';
   const uid = $props.id();
 </script>
 

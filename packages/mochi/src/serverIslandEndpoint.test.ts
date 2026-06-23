@@ -124,19 +124,26 @@ describe('server island endpoint', () => {
     expect(uid.startsWith(`${islandId}-`)).toBe(true);
   });
 
-  // The endpoint ships the rendered subtree's CSS in `X-Mochi-Island-CSS` so the
-  // client (ServerIsland.ts) can load styles for content the host page never
-  // linked. StyledLeaf carries its own CSS and no hydratable child.
-  test('delivers the rendered island CSS via X-Mochi-Island-CSS', async () => {
+  // CSS the host page never linked (here a side-effect import; in practice also
+  // hydratable descendants rendered only in deferred content) ships as <link>
+  // tags inside the response — the browser loads them when the client assigns
+  // the HTML via innerHTML. The island's own scoped CSS is excluded; it loads
+  // via the wrapper's `css-url` attribute.
+  test('injects <link> tags for CSS the host page did not link', async () => {
     const props = signProps(devalueStringify({ islandId: 's-css-0' }));
     const res = await fetch(`${base}/_mochi/island/StyledLeaf?props=${encodeURIComponent(props)}`);
     expect(res.status).toBe(200);
-    expect(res.headers.get('X-Mochi-Island-CSS')).toContain('StyledLeaf-');
+    const body = await res.text();
+    expect(body).toContain('<link rel="stylesheet"');
+    expect(body).toContain('leafStyles');
+    // The own scoped CSS is delivered via css-url, not duplicated as a body link.
+    expect(body).not.toContain('/css/StyledLeaf-');
   });
 
-  test('a CSS-less server island sends no island CSS header', async () => {
+  test('a CSS-less server island injects no <link>', async () => {
     const res = await fetch(`${base}/_mochi/island/Echo?props=${encodeURIComponent(token)}`);
     expect(res.status).toBe(200);
-    expect(res.headers.get('X-Mochi-Island-CSS')).toBeNull();
+    const body = await res.text();
+    expect(body).not.toContain('<link rel="stylesheet"');
   });
 });

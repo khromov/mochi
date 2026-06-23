@@ -395,6 +395,11 @@ export class ComponentRegistry {
     return this.serverIslandPaths;
   }
 
+  /** Asset URL of a component's compiled scoped CSS, by resolved path (none if it has no styles). */
+  getComponentCssUrl(componentPath: string): string | undefined {
+    return this.cssFileUrls.get(componentPath);
+  }
+
   setPublicFiles(map: Map<string, string> | Record<string, string>): void {
     this.publicFiles = map instanceof Map ? new Map(map) : new Map(Object.entries(map));
   }
