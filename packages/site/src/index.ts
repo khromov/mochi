@@ -10,7 +10,7 @@ import { highlightCode } from './lib/highlight.server';
 import { handle as cookieVaryTestHandle } from './demos/cookie-vary-test/routes';
 import { encodeDebugBarGlobals } from './lib/debugBarEncode';
 import { agentDiscoveryLinks } from './lib/wellKnown/agentDiscoveryLinks';
-import { routes } from './routes';
+import { routes, queues } from './routes';
 
 const DEVELOPMENT = process.env.MODE === 'development';
 const IS_DOCKER = process.env.MOCHI_DOCKER === 'true';
@@ -153,6 +153,7 @@ await Mochi.serve({
     'trailingSlash:redirect': (redirect, { url }) => (url.pathname === '/mcp' || url.pathname === '/.well-known/api-catalog' ? null : redirect),
   },
   routes,
+  queues,
 });
 
 logger.info('Server running at ' + origin);

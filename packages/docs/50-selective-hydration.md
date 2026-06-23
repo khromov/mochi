@@ -6,6 +6,7 @@ description: 'Mark components with mochi:hydrate to ship client-side JavaScript 
 
 <script>
   import Callout from './_components/Callout.svelte';
+  import SeeItInAction from './_components/SeeItInAction.svelte';
 </script>
 
 ## Selective hydration with `mochi:hydrate`
@@ -20,7 +21,11 @@ Components render server-side by default and ship zero JavaScript. Add `mochi:hy
 
 Props are serialized with `devalue` into a `<script type="application/json">` block emitted just before the island, so the same values are available during hydration. See `Passing props to islands` for the supported types.
 
-Do **NOT** nest `mochi:hydrate` (or `mochi:hydrate:visible`) inside another hydratable component; instead, remove the inner directive and let the outer island hydrate the whole subtree. Hydration is all-or-nothing per island — the framework rejects nested directives at compile time.
+<Callout type="info">
+
+**Hydration is all-or-nothing per island.** A `mochi:hydrate` (or `mochi:hydrate:visible`) directive hydrates the whole subtree, so nesting one inside another hydratable component is rejected at compile time. Mark the outermost component and let it cover everything below it.
+
+</Callout>
 
 ### The `isHydratable` prop
 
@@ -48,8 +53,6 @@ Accept it in the component's `$props()` to branch on hydration state at the same
   <span>{count}</span>
 {/if}
 ```
-
-Do **NOT** declare `isHydratable` as a user-controlled prop; instead, treat it as a read-only input from the framework.
 
 ### Unique ids with `$props.id()`
 
@@ -92,3 +95,11 @@ Use `mochi:defer` to render the component on a separate request after the page s
 <!-- Server-rendered after page load, then hydrated -->
 <ShoppingCart mochi:defer mochi:hydrate items={initialItems} />
 ```
+
+<SeeItInAction
+demos={[
+{ href: "/demos/hydration/", title: "Hydration Modes", hook: "The same component rendered five ways — eager, lazy, visible, rootMargin-tuned, and deferred server island." },
+{ href: "/demos/lazy/", title: "Lazy Islands", hook: "Islands marked mochi:hydrate:visible hydrate and load their CSS only when scrolled into view." },
+{ href: "/demos/server-island/", title: "Server Islands", hook: "Components marked mochi:defer render server-side on demand after the initial page is delivered." },
+]}
+/>

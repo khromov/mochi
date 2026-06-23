@@ -23,8 +23,10 @@ import { files as lazyServerIsland } from '../demos/lazy-server-island/files.ts'
 import { files as login } from '../demos/login/files.ts';
 import { files as mdsvex } from '../demos/mdsvex/files.ts';
 import { files as nestedComponents } from '../demos/nested-components/files.ts';
+import { files as nestedIslands } from '../demos/nested-islands/files.ts';
 import { files as propDedup } from '../demos/prop-dedup/files.ts';
 import { files as propsId } from '../demos/props-id/files.ts';
+import { files as queue } from '../demos/queue/files.ts';
 import { files as reloadFormData } from '../demos/reload-form-data/files.ts';
 import { files as requestId } from '../demos/request-id/files.ts';
 import { files as serverIsland } from '../demos/server-island/files.ts';
@@ -191,6 +193,14 @@ export const demos: Demo[] = [
     category: 'endpoints',
   },
   {
+    href: '/demos/queue/',
+    slug: 'queue',
+    files: queue,
+    title: 'Background jobs with queues',
+    hook: 'Offload work to a Mochi.queue() with an embedded worker — no Redis.',
+    category: 'endpoints',
+  },
+  {
     href: '/demos/server-island/',
     slug: 'server-island',
     files: serverIsland,
@@ -244,6 +254,14 @@ export const demos: Demo[] = [
     files: nestedComponents,
     title: 'Nested Components',
     hook: 'A five-level recursive tree — hydrating the root carries the whole subtree in one island.',
+    category: 'hydration',
+  },
+  {
+    href: '/demos/nested-islands/',
+    slug: 'nested-islands',
+    files: nestedIslands,
+    title: 'Nested Islands',
+    hook: 'Islands inside islands — a mochi:defer server island wrapping mochi:hydrate components, and a server island nesting both a deferred and a deferred-hydrated server island.',
     category: 'hydration',
   },
   {

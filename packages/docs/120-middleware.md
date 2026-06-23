@@ -4,6 +4,11 @@ slug: middleware
 description: 'Intercept and transform requests and responses using SvelteKit-style handle functions.'
 ---
 
+<script>
+  import Callout from './_components/Callout.svelte';
+  import SeeItInAction from './_components/SeeItInAction.svelte';
+</script>
+
 ## Middleware (hooks)
 
 Middleware uses SvelteKit-style `Handle` functions registered via `Mochi.serve({ handle })`. Each handle receives `{ event, resolve }`, mutates `event` as needed, calls `resolve(event)` to continue the chain, and returns the resulting `Response`.
@@ -24,9 +29,11 @@ export const auth: Handle = async ({ event, resolve }) => {
 };
 ```
 
-Do **NOT** return without calling `resolve(event)` when you intend the request to continue; instead, always either short-circuit with your own `Response` or `return resolve(event)`.
+<Callout type="warning">
 
-Do **NOT** call `resolve(event)` without `await` (or `return`) when you need to inspect or post-process the response; instead, `const response = await resolve(event)` and return `response`.
+**Await `resolve()` to post-process responses.** When you need to inspect or modify the response, use `const response = await resolve(event)` and return the response explicitly. Without `await`, your function completes before post-processing finishes, causing silent data loss and race conditions.
+
+</Callout>
 
 ### `event.locals`
 
@@ -88,8 +95,6 @@ await Mochi.serve({
 });
 ```
 
-Do **NOT** assign multiple handles to `handle` directly; instead, wrap them in `sequence()`.
-
 ### `resolve(event, opts)`
 
 `resolve` accepts an options bag for post-processing the response:
@@ -138,8 +143,6 @@ sequence(auth, compress({ methods: ['gzip'] }));
 
 `compress()` is a no-op in development so the debug bar can render the uncompressed HTML response. In production it always adds `Vary: Accept-Encoding`, and compresses when the response carries a compressible `Content-Type` (`text/*`, `application/json`, `application/javascript`, `application/xml`, `application/manifest+json`, `application/ld+json`, `image/svg+xml`). Responses that already declare a `Content-Encoding` pass through untouched. Static framework assets (JS/CSS bundles) and the framework error page also flow through `handle`, so the same `compress()` covers them — that's why other body-touching middleware (auth, etc.) should branch on `event.kind === 'asset'` if they need to skip framework bundles.
 
-Do **NOT** keep `compress()` in front of your CDN if it already brotli/gzips at the edge; instead, drop it or pass `methods: ['gzip']` to skip the per-request brotli cost.
-
 ### `noCache`
 
 Built-in middleware that defaults `Cache-Control: no-cache` on `page` and `api` responses. Routes that set their own `Cache-Control` are left untouched, so opt-in caching still works per route.
@@ -155,3 +158,7 @@ await Mochi.serve({
 ```
 
 `asset`, `fallback`, and `error` events pass through unchanged — framework bundles already get long-lived immutable caching in production. WebSocket upgrades and SSE streams never reach the middleware.
+
+<SeeItInAction
+demos={[{ href: "/demos/request-id/", title: "Request ID", hook: "Every request gets a UUID v7 — read it server-side via getRequestContext().requestId; the same id rides every lifecycle event for correlation." }]}
+/>

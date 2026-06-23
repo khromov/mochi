@@ -1,5 +1,5 @@
 import { Mochi, error, getRequestContext } from 'mochi-framework';
-import type { MochiRouteValue } from 'mochi-framework';
+import type { MochiRouteValue, MochiQueueConfig } from 'mochi-framework';
 import {
   buildDocsNav,
   buildLlmsJson,
@@ -45,8 +45,10 @@ import { routes as leakTestRoutes } from './leak-test/routes';
 import { routes as loginRoutes } from './demos/login/routes';
 import { routes as mdsvexRoutes } from './demos/mdsvex/routes';
 import { routes as nestedComponentsRoutes } from './demos/nested-components/routes';
+import { routes as nestedIslandsRoutes } from './demos/nested-islands/routes';
 import { routes as propDedupRoutes } from './demos/prop-dedup/routes';
 import { routes as propsIdRoutes } from './demos/props-id/routes';
+import { routes as queueRoutes, queues as queueQueues } from './demos/queue/routes';
 import { routes as reloadFormDataRoutes } from './demos/reload-form-data/routes';
 import { routes as requestIdRoutes } from './demos/request-id/routes';
 import { routes as serverIslandRoutes } from './demos/server-island/routes';
@@ -197,8 +199,10 @@ export const routes: Record<string, MochiRouteValue> = {
   ...loginRoutes,
   ...mdsvexRoutes,
   ...nestedComponentsRoutes,
+  ...nestedIslandsRoutes,
   ...propDedupRoutes,
   ...propsIdRoutes,
+  ...queueRoutes,
   ...reloadFormDataRoutes,
   ...requestIdRoutes,
   ...serverIslandRoutes,
@@ -209,4 +213,9 @@ export const routes: Record<string, MochiRouteValue> = {
   ...viewTransitionsRoutes,
   ...customTransitionsRoutes,
   ...yourFirstMochiAppRoutes,
+};
+
+// Background job queues, mounted in Mochi.serve({ queues }) (see src/index.ts).
+export const queues: Record<string, MochiQueueConfig> = {
+  ...queueQueues,
 };

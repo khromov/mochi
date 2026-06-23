@@ -110,3 +110,34 @@ describe('mochi-framework update-skill (subprocess)', () => {
     }
   });
 });
+
+describe('mochi-framework generate-key (subprocess)', () => {
+  it('writes a 32-byte MOCHI_KEY to .env in the current directory', async () => {
+    const cwd = freshCwd();
+    const proc = Bun.spawn([process.execPath, CLI, 'generate-key'], { cwd, stdout: 'pipe', stderr: 'pipe' });
+    const exitCode = await proc.exited;
+
+    expect(exitCode).toBe(0);
+    const env = await Bun.file(path.join(cwd, '.env')).text();
+    const key = env.match(/^MOCHI_KEY=(.+)$/m)?.[1];
+    expect(key).toBeDefined();
+    expect(Buffer.from(key!, 'base64url').length).toBe(32);
+  });
+
+  it('replaces an existing MOCHI_KEY without prompting when --force is passed', async () => {
+    const cwd = freshCwd();
+    await Bun.write(path.join(cwd, '.env'), 'MOCHI_KEY=old\n');
+    const proc = Bun.spawn([process.execPath, CLI, 'generate-key', '--force'], { cwd, stdout: 'pipe', stderr: 'pipe' });
+    const exitCode = await proc.exited;
+
+    expect(exitCode).toBe(0);
+    expect(await Bun.file(path.join(cwd, '.env')).text()).not.toContain('MOCHI_KEY=old');
+  });
+
+  it('lists generate-key in --help', async () => {
+    const { exitCode, stdout } = await runCli('--help');
+
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain('generate-key');
+  });
+});

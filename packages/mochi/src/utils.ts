@@ -172,6 +172,15 @@ export function normalizeAssetPrefix(input: string | undefined): string {
  * `<!--` and `-->`), not arbitrary HTML — the patterns below assume the
  * surrounding `<!-- -->` has already been stripped by the caller.
  */
+/**
+ * A `<link rel="stylesheet">` tag for a compiled CSS asset URL. Centralized so a
+ * future CSP `nonce`/`crossorigin` attribute is added in one place; the URL is an
+ * internal hashed asset path, not user input, so it's not escaped.
+ */
+export function cssLinkTag(url: string): string {
+  return `<link rel="stylesheet" href="${url}">`;
+}
+
 export function isSvelteMarker(text: string): boolean {
   // Svelte emits:
   //   <!--[-->, <!--]-->          block open/close (HYDRATION_START / HYDRATION_END)

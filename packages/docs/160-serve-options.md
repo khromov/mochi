@@ -30,7 +30,11 @@ Response compression is opt-in via the [`compress()` middleware](/docs/middlewar
 
 In production (`development: false`), prebuilt JS/CSS bundles served from `assetPrefix` (default `/_mochi`) get `Cache-Control: public, max-age=31536000, immutable` automatically. Filenames are content-hashed, so any change yields a new URL — there's nothing to invalidate. In development the header is omitted so live-reload edits aren't pinned in the browser cache. Public-dir files (`./public/...`) keep Bun's default static-route headers; their URLs are stable, so don't mark them immutable. To override, mutate `response.headers` in a `handle` middleware.
 
-Do **NOT** call `Mochi.serve()` more than once per process; instead, run a second site as a separate process on a different port. A second call throws `Mochi.serve() has already been called. Only one instance is allowed.`
+<Callout type="warning">
+
+**One serve() call per process.** To run multiple sites, spawn separate processes on different ports. A second call within the same process throws `Mochi.serve() has already been called. Only one instance is allowed.`
+
+</Callout>
 
 <Callout type="info">
 
@@ -64,7 +68,11 @@ Do **NOT** call `Mochi.serve()` more than once per process; instead, run a secon
 - `filters`: `MochiFilters` map of named value-replacement filters. See `Extensions (hooks & filters)`.
 - `warmup`: Warm the SSR pipeline at startup by invoking every static page route once. `boolean | { enabledInProd: boolean; enabledInDev: boolean }`. `true` warms in **production only**; pass the object form for per-mode control. Default: `false`. See `Route warmup` below.
 
-Do **NOT** set `assetPrefix` only at runtime when running against a prebuilt manifest; instead, also pass it to the `build()` call (or `--asset-prefix`) so the manifest's baked-in URLs match. The manifest value wins at runtime when the two disagree.
+<Callout type="info">
+
+**Sync `assetPrefix` between build time and runtime.** When using a prebuilt manifest, pass `assetPrefix` to the `build()` call (or `--asset-prefix`) so the baked-in URLs match. The manifest's precomputed URLs take precedence at runtime if the two disagree, causing silent breakage.
+
+</Callout>
 
 ### Route warmup
 
@@ -127,8 +135,6 @@ await Mochi.serve({
 
 In production the check refuses every form mutation until `proxy.origin` (or `proxy.hostHeader`) is set, so the deployment break is loud rather than silent. In development the same request is allowed through with a `[mochi]` warning so local work isn't blocked.
 
-Do **NOT** disable `checkOrigin` to silence a 403 in production; instead, configure `proxy.origin` so the framework knows what origin to trust.
-
 ### Proxy
 
 `proxy` tells the framework how to recover the public origin (used by the CSRF check) and the real client IP (returned by `getClientAddress()` on the request context) from forwarded headers. Behind a load balancer, CDN, or tunnel, the connection Bun sees is the proxy, not the client.
@@ -159,7 +165,11 @@ await Mochi.serve({
 });
 ```
 
-Do **NOT** set the header options when the proxy is not trusted to overwrite them; instead, leave them unset. Clients can spoof these headers when reaching the app directly.
+<Callout type="danger">
+
+**Only trust forwarded headers behind a trusted proxy.** Leave the header options unset unless a proxy you control overwrites them. When the app is reachable directly, clients can spoof these headers.
+
+</Callout>
 
 #### `xffDepth` and spoofing
 
@@ -175,7 +185,11 @@ The framework reads from the **right**, skipping `xffDepth - 1` trusted proxies,
 spoofed, client, proxy1, proxy2   # xffDepth: 3 → "client" (spoofed entry ignored)
 ```
 
-Do **NOT** read `request.headers.get('x-forwarded-for')` directly when you want a trusted client IP; instead, use `getClientAddress()` with the right `xffDepth`. Read the raw header only when you want the leftmost address (e.g. geolocation where realness matters more than trust).
+<Callout type="warning">
+
+**Use `getClientAddress()` for a trusted client IP.** Reading `x-forwarded-for` directly could return a spoofable address. Pass the right `xffDepth` to `getClientAddress()`; read the raw header only when you want the leftmost address (e.g. geolocation).
+
+</Callout>
 
 #### `getClientAddress()`
 

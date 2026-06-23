@@ -7,6 +7,8 @@ description: 'A lightweight, server-first Svelte 5 framework running on Bun that
 <script>
   import Callout from './_components/Callout.svelte';
   import IslandsDemo from './_components/IslandsDemo.svelte';
+  import ComparisonTable from './_components/ComparisonTable.svelte';
+  import ExpandComparison from './_components/ExpandComparison.svelte';
 </script>
 
 # mochi
@@ -30,6 +32,10 @@ The header text, the main column, and the footer ship as HTML and stay that way.
 - **Uses the platform.** Mochi ships with first-class support for View Transitions. No client side router, no state to keep track of between requests.
 - **No heavy bundler (no Vite).** Uses the lighting-fast Bun bundler, which builds sites with hundreds of routes in seconds.
 - **Real-time built in.** WebSockets and Server Sent Events are first-class route types — no extra packages or services required.
+
+Want to know more? <ExpandComparison mochi:hydrate /> to see a full feature comparison.
+
+<ComparisonTable mochi:hydrate collapsed />
 
 <Callout type="info">
 

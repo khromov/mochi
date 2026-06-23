@@ -39,6 +39,7 @@ await Mochi.serve({
   },
   routes: {
     '/': Mochi.page('./src/Landing.svelte'),
+    '/health': Mochi.api(({ method }) => Response.json({ status: 'ok', method })),
     ...adminRoutes,
     ...hnRoutes,
     ...todoRoutes,
