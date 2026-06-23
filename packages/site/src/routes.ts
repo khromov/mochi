@@ -41,6 +41,7 @@ import { routes as leakTestRoutes } from './leak-test/routes';
 import { routes as loginRoutes } from './demos/login/routes';
 import { routes as mdsvexRoutes } from './demos/mdsvex/routes';
 import { routes as nestedComponentsRoutes } from './demos/nested-components/routes';
+import { routes as nestedIslandsRoutes } from './demos/nested-islands/routes';
 import { routes as propDedupRoutes } from './demos/prop-dedup/routes';
 import { routes as propsIdRoutes } from './demos/props-id/routes';
 import { routes as queueRoutes, queues as queueQueues } from './demos/queue/routes';
@@ -190,6 +191,7 @@ export const routes: Record<string, MochiRouteValue> = {
   ...loginRoutes,
   ...mdsvexRoutes,
   ...nestedComponentsRoutes,
+  ...nestedIslandsRoutes,
   ...propDedupRoutes,
   ...propsIdRoutes,
   ...queueRoutes,

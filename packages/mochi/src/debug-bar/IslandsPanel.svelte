@@ -54,13 +54,17 @@
     const server = document.querySelectorAll('mochi-server-island');
 
     hydratable.forEach((element) => {
-      // A hydratable island nested inside a server island is the realized child
-      // of a `mochi:defer mochi:hydrate` invocation — already represented by the
-      // server-island entry (whose mode shows `+ mochi:hydrate`). Don't list twice.
-      if (element.closest('mochi-server-island')) {
+      const name = element.getAttribute('component-name') ?? 'unknown';
+      // Skip the realized child of a `mochi:defer mochi:hydrate` invocation: the
+      // server-island fetch wraps its content in a `<mochi-hydratable-island>`
+      // with the same component-name (see Mochi.ts also-hydrate path), already
+      // represented by the server-island entry (mode shows `+ mochi:hydrate`).
+      // Match by `also-hydrate` + matching name so a genuinely separate
+      // `mochi:hydrate` child nested in a plain `mochi:defer` island still lists.
+      const host = element.closest('mochi-server-island');
+      if (host?.getAttribute('also-hydrate') && host.getAttribute('component-name') === name) {
         return;
       }
-      const name = element.getAttribute('component-name') ?? 'unknown';
       const mode = element.getAttribute('hydrate-on') === 'visible' ? 'mochi:hydrate:visible' : 'mochi:hydrate';
       // Props ride in a <script type="application/json" id="<propsRef>"> block
       // emitted just before the island. The block carries `data-shared` only

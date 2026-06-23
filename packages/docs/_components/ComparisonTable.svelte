@@ -219,6 +219,7 @@
           <th scope="row" class="feature-col">{row.feature}</th>
           {#each [row.mochi, row.kit] as cell, i (i)}
             <td>
+              <span class="col-label" aria-hidden="true">{i === 0 ? 'Mochi' : 'SvelteKit'}</span>
               <span class="cell {cell.status}">
                 {#if cell.status === 'partial'}
                   <span class="tilde" aria-hidden="true">~</span>
@@ -419,9 +420,67 @@
     width: 42%;
   }
 
+  /* Desktop: the thead row already labels the columns, so the per-cell label is
+     redundant. It's only revealed in the stacked mobile layout below. Declared
+     before the media query so the mobile `display: block` wins on source order. */
+  .col-label {
+    display: none;
+  }
+
+  /* Mobile: drop the horizontal-scroll 3-column table for a stacked layout —
+     each feature becomes a full-width heading with the Mochi/SvelteKit cells
+     snug beneath it in two columns. Scoped to :not(.preview) so the collapsed
+     preview keeps its fixed-layout faded header row. */
   @media (max-width: 640px) {
-    .feature-col {
-      width: 30%;
+    .comparison:not(.preview) .comparison-table {
+      min-width: 0;
+      display: block;
+      width: 100%;
+    }
+
+    .comparison:not(.preview) thead {
+      display: none;
+    }
+
+    .comparison:not(.preview) tbody {
+      display: block;
+    }
+
+    .comparison:not(.preview) tbody tr {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .comparison:not(.preview) tbody tr:last-child {
+      border-bottom: none;
+    }
+
+    /* Flush two-up columns split by a single gray divider, no gutter gap. */
+    .comparison:not(.preview) td + td {
+      border-left: 1px solid var(--border);
+    }
+
+    .comparison:not(.preview) .feature-col {
+      grid-column: 1 / -1;
+      width: auto;
+      background: var(--surface-muted);
+      font-weight: 600;
+      text-align: center;
+    }
+
+    .comparison:not(.preview) td {
+      border-bottom: none;
+      text-align: center;
+    }
+
+    .col-label {
+      display: block;
+      margin-bottom: 0.2rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-align: center;
     }
   }
 
