@@ -140,7 +140,7 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
         // Always emit signed-props for server islands (no empty-props optimization)
         // because islandId is always injected, and all props must be HMAC-signed
         // to prevent client-side tampering via query parameters.
-        let attrs = `component-name="${comp.name}" signed-props={__mochi_sign_props__(__mochi_stringify__(${propsExpr}))} css-url="__MOCHI_SERVER_CSS_URL__${comp.name}__" data-asset-prefix="__MOCHI_ASSET_PREFIX__"`;
+        let attrs = `component-name="${comp.name}" signed-props={__mochi_sign_props__(${propsExpr})} css-url="__MOCHI_SERVER_CSS_URL__${comp.name}__" data-asset-prefix="__MOCHI_ASSET_PREFIX__"`;
 
         // `mochi:defer:visible` defers the fetch until the wrapper enters the
         // viewport. `rootMargin` rides inside the existing `server-options`
@@ -282,7 +282,8 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
 
   // Inject imports into the component's <script> tag
   const needsEmitProps = hydratables.length > 0;
-  const needsStringify = serverIslands.length > 0;
+  // Server islands sign their props directly; `signProps` packs the value with
+  // msgpackr internally, so no devalue `stringify` import is injected here.
   const needsSignProps = serverIslands.length > 0;
   // Only server islands need the `__mochi_iid` transport id (it rides inside
   // their signed envelope as `idPrefix` for the standalone render). Hydratable
@@ -290,14 +291,11 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
   // `<!--$...-->` comment markers on hydration.
   const needsUid = serverIslands.length > 0;
 
-  if ((needsEmitProps || needsStringify || needsSignProps) && ast.instance) {
+  if ((needsEmitProps || needsSignProps) && ast.instance) {
     const contentStart = (ast.instance.content as unknown as Positioned).start;
     let imports = '';
     if (needsEmitProps) {
       imports += '\nimport { emitIslandProps as __mochi_emit_props__ } from "mochi-framework";';
-    }
-    if (needsStringify) {
-      imports += '\nimport { stringify as __mochi_stringify__ } from "mochi-framework";';
     }
     if (needsUid) {
       imports += '\nlet __mochi_uid__ = 0;';

@@ -89,6 +89,7 @@
         "js-cookie": "^3.0.8",
         "magic-string": "^0.30.21",
         "mitt": "^3.0.1",
+        "msgpackr": "^1.12.1",
         "negotiator": "^1.0.0",
         "svelte-shaker": "0.9.0",
         "zimmerframe": "^1.1.4",

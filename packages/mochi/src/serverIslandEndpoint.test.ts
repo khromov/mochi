@@ -9,7 +9,6 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import type { Server } from 'bun';
-import { parse as devalueParse, stringify as devalueStringify } from 'devalue';
 import { Mochi } from './Mochi';
 import { signProps, verifyAndDecodeProps } from './serverIslandCrypto';
 
@@ -39,7 +38,7 @@ describe('server island endpoint', () => {
     // Drive the endpoint exactly like the ServerIsland web component would:
     // the only thing on the wrapper is the signed-props token. The island id is
     // no longer a separate attribute — it lives inside the signed envelope, so
-    // recover it the same way the endpoint does (verify + devalue-parse).
+    // recover it the same way the endpoint does (verify + unpack).
     const html = await (await fetch(`${base}/`)).text();
     const wrapper = html.match(/<mochi-server-island\b[^>]*>/)?.[0];
     if (!wrapper) {
@@ -51,7 +50,7 @@ describe('server island endpoint', () => {
     if (!decoded) {
       throw new Error('could not verify the page wrapper signed-props token');
     }
-    islandId = (devalueParse(decoded) as { islandId: string }).islandId;
+    islandId = (decoded as { islandId: string }).islandId;
   });
 
   afterAll(() => {
@@ -80,7 +79,7 @@ describe('server island endpoint', () => {
   });
 
   test('islandId containing `--` skips namespacing instead of failing the render', async () => {
-    const legacy = signProps(devalueStringify({ islandId: 'mochi--legacy-0', name: 'Legacy' }));
+    const legacy = signProps({ islandId: 'mochi--legacy-0', name: 'Legacy' });
     const res = await fetch(`${base}/_mochi/island/Echo?props=${encodeURIComponent(legacy)}`);
     expect(res.status).toBe(200);
     const body = await res.text();
@@ -94,7 +93,7 @@ describe('server island endpoint', () => {
   });
 
   test('missing islandId renders un-namespaced rather than failing', async () => {
-    const noId = signProps(devalueStringify({ name: 'Bare' }));
+    const noId = signProps({ name: 'Bare' });
     const res = await fetch(`${base}/_mochi/island/Echo?props=${encodeURIComponent(noId)}`);
     expect(res.status).toBe(200);
     const body = await res.text();

@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { stringify as devalueStringify } from 'devalue';
 import { signProps, verifyAndDecodeProps } from './serverIslandCrypto';
 
 const GLOBAL_CONFIG_KEY = '__mochi_config__';
@@ -20,18 +19,16 @@ afterEach(() => {
 });
 
 describe('signProps + verifyAndDecodeProps', () => {
-  test('round-trips: verify decodes what sign produces', () => {
+  test('round-trips: verify decodes the value sign produced', () => {
     installConfig();
-    const json = devalueStringify({ islandId: 'mochi-abc-0', name: 'World' });
-    const token = signProps(json);
-    const decoded = verifyAndDecodeProps(token);
-    expect(decoded).toBe(json);
+    const value = { islandId: 'mochi-abc-0', name: 'World' };
+    const token = signProps(value);
+    expect(verifyAndDecodeProps(token)).toEqual(value);
   });
 
   test('rejects a tampered token', () => {
     installConfig();
-    const json = devalueStringify({ islandId: 'mochi-abc-0' });
-    const token = signProps(json);
+    const token = signProps({ islandId: 'mochi-abc-0' });
     const tampered = 'X' + token.slice(1);
     expect(verifyAndDecodeProps(tampered)).toBeNull();
   });

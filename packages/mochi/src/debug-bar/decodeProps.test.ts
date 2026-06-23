@@ -20,7 +20,7 @@ describe('decodeSignedProps', () => {
   test('round-trips an uncompressed payload', async () => {
     installConfig();
     const props = { islandId: 'mochi-abc-0', name: 'World', count: 3 };
-    const token = signProps(devalueStringify(props));
+    const token = signProps(props);
     // Short payload → no compression marker.
     expect(token.startsWith('~')).toBe(false);
 
@@ -32,7 +32,7 @@ describe('decodeSignedProps', () => {
     // A long, repetitive payload (≥64 bytes) compresses, so signProps emits the
     // `~`-prefixed raw-deflate form that the browser decodes with deflate-raw.
     const props = { islandId: 'mochi-abc-1', data: 'a'.repeat(500) };
-    const token = signProps(devalueStringify(props));
+    const token = signProps(props);
     expect(token.startsWith('~')).toBe(true);
 
     expect(await decodeSignedProps(token)).toEqual(props);
