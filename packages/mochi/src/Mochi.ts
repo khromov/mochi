@@ -37,7 +37,7 @@ import { csrfCheck, DEFAULT_FORM_CONTENT_TYPES, DEFAULT_PROTECTED_METHODS } from
 import { applyFilter, initExtensions, runHook } from './extensions';
 import { escapeHtmlAttr } from './htmlEscape';
 import { buildPublicUrl } from './proxy';
-import { apiError, collectHeaderPairs, headResponse, isHtmlResponse, MochiHttpError, withHead } from './utils';
+import { apiError, collectHeaderPairs, cssLinkTag, headResponse, isHtmlResponse, MochiHttpError, withHead } from './utils';
 import type { MochiEvent, MochiEventKind, MochiResolveOptions } from './hooks';
 import { applyResolveOptions } from './hooks';
 import { alternateSlashPattern, trailingSlashRedirect } from './trailingSlash';
@@ -191,7 +191,7 @@ export class Mochi {
     },
   ): string {
     const bootstrapUrl = result.bootstrapUrl;
-    const cssLinks = result.cssUrls.map((url) => `<link rel="stylesheet" href="${url}">`).join('\n');
+    const cssLinks = result.cssUrls.map(cssLinkTag).join('\n');
     const serverIslandScript = result.hasServerIslands ? `<script>(()=>{${opts.serverIslandClientJs}})()</script>` : '';
     const debugInfoScript = registry.debugBarEnabled && opts.debugInfo ? `<script>window.__mochi_debug=${jsonForHtml(opts.debugInfo)}</script>` : '';
     const pageEntryScript = opts.liveReloadClientJs && opts.pageEntry ? `<script>window.__mochi_page_entry=${jsonForHtml(opts.pageEntry)}</script>` : '';
@@ -1174,7 +1174,7 @@ export class Mochi {
         const ownCss = registry.getComponentCssUrl(componentPath);
         const extraCss = result.cssUrls.filter((url) => url !== ownCss);
         if (extraCss.length > 0) {
-          body = extraCss.map((url) => `<link rel="stylesheet" href="${url}">`).join('') + body;
+          body = extraCss.map(cssLinkTag).join('') + body;
         }
 
         return new Response(body, {

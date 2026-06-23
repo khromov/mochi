@@ -474,7 +474,7 @@
       text-align: center;
     }
 
-    .col-label {
+    .comparison:not(.preview) .col-label {
       display: block;
       margin-bottom: 0.2rem;
       font-size: 0.75rem;
