@@ -363,8 +363,8 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
 
   async function applyRouteChanges(
     freshRoutes: Record<string, unknown>,
-  ): Promise<{ updated: number; added: string[]; removed: string[]; api: number; ws: number; sse: number; page: number; file: number }> {
-    const counts = { updated: 0, added: [] as string[], removed: [] as string[], api: 0, ws: 0, sse: 0, page: 0, file: 0 };
+  ): Promise<{ updated: number; added: string[]; removed: string[]; api: number; ws: number; sse: number; page: number; file: number; proxy: number }> {
+    const counts = { updated: 0, added: [] as string[], removed: [] as string[], api: 0, ws: 0, sse: 0, page: 0, file: 0, proxy: 0 };
     const freshPatterns = new Set(Object.keys(freshRoutes));
 
     for (const [pattern, handler] of Object.entries(freshRoutes)) {
@@ -452,7 +452,7 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
     reloadChain = reloadChain.then(async () => {
       mochiEvents.emit('recompile:start', { trigger: 'entry', path: filename, pageCount: 0 });
       const start = performance.now();
-      let counts: { updated: number; added: string[]; removed: string[]; api: number; ws: number; sse: number; page: number; file: number } = {
+      let counts: { updated: number; added: string[]; removed: string[]; api: number; ws: number; sse: number; page: number; file: number; proxy: number } = {
         updated: 0,
         added: [],
         removed: [],
@@ -461,6 +461,7 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
         sse: 0,
         page: 0,
         file: 0,
+        proxy: 0,
       };
       try {
         const freshRoutes = await buildEntry();

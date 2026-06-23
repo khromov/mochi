@@ -38,6 +38,7 @@ import Hash from '@lucide/svelte/icons/hash';
 import Barcode from '@lucide/svelte/icons/barcode';
 import Tornado from '@lucide/svelte/icons/tornado';
 import Inbox from '@lucide/svelte/icons/inbox';
+import Waypoints from '@lucide/svelte/icons/waypoints';
 
 export interface DemoIconMeta {
   icon: Component;
@@ -84,4 +85,5 @@ export const demoIconFor: Record<string, DemoIconMeta> = {
   'View Transitions': { icon: Blend, label: 'Animated cross-document navigations' },
   'Custom Transitions': { icon: Tornado, label: 'Custom @keyframes spin via custom={{ in, out }}' },
   'File Routes': { icon: FileDown, label: 'Serve a file from disk with Mochi.file()' },
+  'Reverse proxy': { icon: Waypoints, label: 'Forward a mount upstream with Mochi.proxy()' },
 };

@@ -99,7 +99,13 @@ export type BunRouteValue =
 
 export interface RouteRegistrationResult {
   bunRouteValue: BunRouteValue;
-  type: 'page' | 'api' | 'ws' | 'sse' | 'file';
+  type: 'page' | 'api' | 'ws' | 'sse' | 'file' | 'proxy';
+  /**
+   * Additional sibling routes a single descriptor needs registered under their
+   * own patterns (e.g. a `Mochi.proxy({ trailingSlashRedirect })` mount that
+   * also installs a bare-mount `/p/:id` → `/p/:id/` redirect).
+   */
+  extraRoutes?: Record<string, BunRouteValue>;
 }
 
 // ---------------------------------------------------------------------------
@@ -259,7 +265,24 @@ export interface MochiWsData<T = unknown> {
    * undefined.
    */
   __mochiEntry?: string;
+  /**
+   * Internal relay state for a socket upgraded by a `Mochi.proxy()` route. Set
+   * only on proxied sockets; the relay handlers registered by the proxy read it
+   * to pipe frames to/from the upstream `WebSocket`. User routes leave it
+   * undefined.
+   */
+  __mochiProxy?: MochiProxyWsState;
   user: T;
+}
+
+/** Per-socket relay state attached to `ws.data` for a proxied WebSocket. */
+export interface MochiProxyWsState {
+  /** `ws://`/`wss://` URL of the upstream socket to relay to. */
+  upstreamWs: string;
+  /** The client connection to the upstream, created on `open`. */
+  client?: WebSocket;
+  /** Frames received from the browser before the upstream socket opened. */
+  buffer: Array<string | Buffer>;
 }
 
 export interface MochiWsConfig {
@@ -296,6 +319,64 @@ export function isMochiSse(value: unknown): value is MochiSseConfig {
 }
 
 // ---------------------------------------------------------------------------
+// Reverse-proxy routes
+// ---------------------------------------------------------------------------
+
+/**
+ * The event object passed to `Mochi.proxy()` callbacks (`target`, `rewritePath`,
+ * `headers`, `onResponse`). Extends MochiEvent with the resolved route params
+ * and the request's cookie jar so upstream selection can branch on either.
+ */
+export interface MochiProxyEvent extends MochiEvent {
+  /** Resolved route params (e.g. `:id` from `/p/:id/*`). */
+  params: Record<string, string>;
+  /** The request's cookie jar. */
+  cookies: MochiCookieJar;
+}
+
+/**
+ * What `target()` resolves to for a request:
+ *  - a string origin (`'http://127.0.0.1:8001'`) → forward there
+ *  - `null` → respond `502` (no upstream)
+ *  - a `Response` → short-circuit (custom error/redirect)
+ */
+export type MochiProxyTarget = string | null | Response;
+
+export interface MochiProxyConfig {
+  readonly __mochiProxy: true;
+  /**
+   * Resolve the upstream origin for a request. May be async. Return a string
+   * origin, `null` (→ 502), or a `Response` to fully short-circuit.
+   */
+  readonly target: (event: MochiProxyEvent) => MochiProxyTarget | Promise<MochiProxyTarget>;
+  /**
+   * What path to send upstream. Default: the `*` capture (everything after the
+   * matched prefix), so `/p/<id>/static/x.js` → `/static/x.js`. Override to
+   * remount or add a base path. The returned value should start with `/`.
+   */
+  readonly rewritePath?: (rest: string, event: MochiProxyEvent) => string;
+  /** Proxy WebSocket upgrades too. Default: `true`. */
+  readonly ws?: boolean;
+  /**
+   * For subpath-hosted upstreams that emit relative URLs (code-server, Jupyter,
+   * …): redirect a bare mount hit (`/p/<id>`) to its trailing-slash form
+   * (`/p/<id>/`). The mount itself is always exempt from the global
+   * `trailingSlash` policy. Default: `false`.
+   */
+  readonly trailingSlashRedirect?: boolean;
+  /** Mutate request headers before forwarding (after Mochi's default hygiene). */
+  readonly headers?: (headers: Headers, event: MochiProxyEvent) => void;
+  /** Inspect/transform the upstream response before it's streamed back. */
+  readonly onResponse?: (res: Response, event: MochiProxyEvent) => Response | void | Promise<Response | void>;
+  /** Upstream connect/idle timeout in ms. Default: none (Bun fetch default). */
+  readonly timeout?: number;
+}
+
+export function isMochiProxy(value: unknown): value is MochiProxyConfig {
+  return typeof value === 'object' && value !== null && (value as MochiProxyConfig).__mochiProxy === true;
+}
+
+// ---------------------------------------------------------------------------
 // Background queues
 // ---------------------------------------------------------------------------
 
@@ -319,7 +400,7 @@ export function isMochiQueue(value: unknown): value is MochiQueueConfig {
   return typeof value === 'object' && value !== null && (value as MochiQueueConfig).__mochiQueue === true;
 }
 
-export type MochiRouteValue = MochiPageConfig | MochiApiConfig | MochiWsConfig | MochiSseConfig | MochiFileConfig | BunRouteValue;
+export type MochiRouteValue = MochiPageConfig | MochiApiConfig | MochiWsConfig | MochiSseConfig | MochiFileConfig | MochiProxyConfig | BunRouteValue;
 
 /** `stack` is only populated when the server runs with `development: true`. */
 export interface MochiErrorProps {

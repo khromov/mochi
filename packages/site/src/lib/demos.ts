@@ -25,6 +25,7 @@ import { files as mdsvex } from '../demos/mdsvex/files.ts';
 import { files as nestedComponents } from '../demos/nested-components/files.ts';
 import { files as propDedup } from '../demos/prop-dedup/files.ts';
 import { files as propsId } from '../demos/props-id/files.ts';
+import { files as proxy } from '../demos/proxy/files.ts';
 import { files as queue } from '../demos/queue/files.ts';
 import { files as reloadFormData } from '../demos/reload-form-data/files.ts';
 import { files as requestId } from '../demos/request-id/files.ts';
@@ -173,6 +174,14 @@ export const demos: Demo[] = [
     files: file,
     title: 'File Routes',
     hook: 'Serve a file from disk with Mochi.file() — static path or a per-request resolver.',
+    category: 'endpoints',
+  },
+  {
+    href: '/demos/proxy/',
+    slug: 'proxy',
+    files: proxy,
+    title: 'Reverse proxy',
+    hook: 'Forward a mount to an upstream — HTTP and WebSocket — with Mochi.proxy(), prefix stripped.',
     category: 'endpoints',
   },
   {

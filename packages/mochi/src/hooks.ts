@@ -11,13 +11,14 @@ import type { Server } from 'bun';
  *
  *  - `'page'`     — handled by `Mochi.page` (GET render or POST form action)
  *  - `'api'`      — handled by `Mochi.api`
+ *  - `'proxy'`    — handled by `Mochi.proxy` (reverse-proxied HTTP or WS upgrade)
  *  - `'asset'`    — framework static asset: `/_mochi/client/*.js|.css` bundle
  *                   or the `/_mochi/client/stats` dev endpoint
  *  - `'fallback'` — unmatched URL that will be passed to the user's `fetch`
  *  - `'error'`    — unmatched URL with no `fetch` configured; the framework
  *                   error responder will render a 404
  */
-export type MochiEventKind = 'page' | 'api' | 'asset' | 'fallback' | 'error';
+export type MochiEventKind = 'page' | 'api' | 'proxy' | 'asset' | 'fallback' | 'error';
 
 /**
  * The event object passed to every middleware handle function.
