@@ -23,6 +23,7 @@ import { files as lazyServerIsland } from '../demos/lazy-server-island/files.ts'
 import { files as login } from '../demos/login/files.ts';
 import { files as mdsvex } from '../demos/mdsvex/files.ts';
 import { files as nestedComponents } from '../demos/nested-components/files.ts';
+import { files as nestedIslands } from '../demos/nested-islands/files.ts';
 import { files as propDedup } from '../demos/prop-dedup/files.ts';
 import { files as propsId } from '../demos/props-id/files.ts';
 import { files as queue } from '../demos/queue/files.ts';
@@ -253,6 +254,14 @@ export const demos: Demo[] = [
     files: nestedComponents,
     title: 'Nested Components',
     hook: 'A five-level recursive tree — hydrating the root carries the whole subtree in one island.',
+    category: 'hydration',
+  },
+  {
+    href: '/demos/nested-islands/',
+    slug: 'nested-islands',
+    files: nestedIslands,
+    title: 'Nested Islands',
+    hook: 'Islands inside islands — a mochi:defer server island wrapping mochi:hydrate components, and a server island nesting both a deferred and a deferred-hydrated server island.',
     category: 'hydration',
   },
   {
