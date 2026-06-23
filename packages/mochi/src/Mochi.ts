@@ -7,7 +7,8 @@ import type { RenderResult } from './ComponentRegistry';
 import { loadSvelteConfig } from './svelteConfig';
 import { buildInlineWebComponent } from './buildInlineWebComponent';
 import { buildClientStatsRoutes, CLIENT_STATS_COMPONENT } from './clientStatsRoutes';
-import { isMochiPage, isMochiApi, isMochiWs, isMochiSse, isMochiFile, isMochiQueue, isServerPropsResolver } from './types';
+import { isMochiPage, isMochiApi, isMochiWs, isMochiSse, isMochiFile, isMochiProxy, isMochiQueue, isServerPropsResolver } from './types';
+import { buildUpstreamHeaders, cleanResponseHeaders, proxyWsRelayHandlers } from './proxyRelay';
 import type {
   BunRouteValue,
   HttpMethod,
@@ -15,6 +16,9 @@ import type {
   MochiApiHandler,
   MochiFileConfig,
   MochiFileResolver,
+  MochiProxyConfig,
+  MochiProxyEvent,
+  MochiProxyTarget,
   MochiPageConfig,
   MochiPageHandlerConfig,
   MochiFormActionResult,
@@ -139,6 +143,19 @@ export class Mochi {
 
   static file(source: string | MochiFileResolver): MochiFileConfig {
     return { __mochiFile: true, source };
+  }
+
+  /**
+   * Reverse-proxy a mount to an upstream origin, owning **both** HTTP and
+   * WebSocket transports. Mount with a trailing `*` capture
+   * (`'/p/:id/*': Mochi.proxy({ target })`); the `*` portion is forwarded
+   * upstream with the matched prefix stripped. `target` resolves the upstream
+   * per request (string origin, `null` → 502, or a `Response` to short-circuit).
+   * Because it resolves as a normal route, the global `handle` middleware wraps
+   * it like any other route — auth, logging, and `mochiEvents` all compose.
+   */
+  static proxy(config: Omit<MochiProxyConfig, '__mochiProxy'>): MochiProxyConfig {
+    return { __mochiProxy: true, ...config };
   }
 
   /**
@@ -440,8 +457,12 @@ export class Mochi {
     const sseHandlerMap = development ? new Map<string, MochiSseHandler>() : undefined;
     const pageConfigMap = development ? new Map<string, MochiPageHandlerConfig>() : undefined;
     const bunRoutes: Record<string, BunRouteValue> = {};
-    const routeCounts = { page: 0, api: 0, ws: 0, sse: 0, file: 0 };
+    const routeCounts = { page: 0, api: 0, ws: 0, sse: 0, file: 0, proxy: 0 };
     const trailingSlashPolicy = options.trailingSlash;
+    // Proxy bare-mount redirect patterns ('/p/:id') are excluded from the
+    // global alt-slash registration below — pairing them with their own
+    // trailing-slash form would shadow the wildcard mount.
+    const proxyBareMounts = new Set<string>();
 
     const buildRequestContext = makeRequestContextBuilder({
       proxy: options.proxy,
@@ -1023,6 +1044,147 @@ export class Mochi {
           });
         };
         return { bunRouteValue, type: 'file' };
+      } else if (isMochiProxy(handler)) {
+        const config = handler;
+        const wsEnabled = config.ws !== false;
+        // The mount prefix is the pattern with its trailing `*` capture removed:
+        // '/p/:id/*' → '/p/:id'. Stripping the substituted prefix from the
+        // request path yields the `*` portion forwarded upstream.
+        const mountPattern = pattern.replace(/\/\*$/, '').replace(/\*$/, '');
+
+        if (wsEnabled) {
+          // One shared relay handler set keyed by this pattern; per-socket
+          // upstream state lives on `ws.data.__mochiProxy` (set at upgrade time).
+          wsHandlersMap.set(pattern, proxyWsRelayHandlers);
+        }
+
+        const resolveRest = (pathname: string, params: Record<string, string>): string => {
+          let prefix = mountPattern;
+          for (const [key, value] of Object.entries(params)) {
+            prefix = prefix.replace(`:${key}`, value);
+          }
+          return pathname.slice(prefix.length) || '/';
+        };
+
+        const bunRouteValue = (async (req: Request, server: Server<undefined>): Promise<Response | undefined> => {
+          const setup = buildRequestContext(req, server, { kind: 'proxy', pattern });
+          if ('earlyResponse' in setup) {
+            return setup.earlyResponse;
+          }
+          const { ctx, start, requestId, url, params } = setup;
+          const proxyPath = url.pathname + url.search;
+
+          return requestContext.run(ctx, async () => {
+            runHook('route:matched', { pattern, request: req, url, params, kind: 'proxy' });
+            const isUpgrade = (req.headers.get('upgrade') ?? '').toLowerCase() === 'websocket';
+            let upgraded = false;
+
+            const innerResolve = async (event: MochiEvent, resolveOpts?: MochiResolveOptions): Promise<Response> => {
+              const proxyEvent: MochiProxyEvent = { ...event, params: ctx.params, cookies: ctx.cookies };
+
+              let target: MochiProxyTarget;
+              try {
+                target = await config.target(proxyEvent);
+              } catch (err) {
+                logger.error(`PROXY ${url.pathname} → target() threw:`, err);
+                emitError('proxy', requestId, req, url, 502, err);
+                return apiError(502, 'Bad Gateway');
+              }
+              if (target instanceof Response) {
+                return applyResolveOptions(target, resolveOpts);
+              }
+              if (target === null) {
+                return apiError(502, 'Bad Gateway');
+              }
+
+              const origin = target.replace(/\/$/, '');
+              const rest = (config.rewritePath ?? ((r) => r))(resolveRest(url.pathname, ctx.params), proxyEvent);
+
+              if (isUpgrade && wsEnabled) {
+                const scheme = origin.startsWith('https') ? 'wss' : 'ws';
+                const upstreamWs = `${scheme}://${origin.replace(/^https?:\/\//, '')}${rest}${url.search}`;
+                const ok = (server as unknown as { upgrade: (req: Request, opts: Record<string, unknown>) => boolean }).upgrade(req, {
+                  data: {
+                    __mochiRoutePattern: pattern,
+                    __mochiOpenedAt: performance.now(),
+                    __mochiPath: proxyPath,
+                    __mochiProxy: { upstreamWs, buffer: [] },
+                    user: undefined,
+                  } satisfies MochiWsData,
+                });
+                if (!ok) {
+                  return new Response('WebSocket upgrade failed', { status: 500 });
+                }
+                upgraded = true;
+                mochiEvents.emit('ws:open', { path: proxyPath, duration: performance.now() - start });
+                // Sentinel response; Bun ignores it once the socket is hijacked.
+                return new Response(null, { status: 101 });
+              }
+
+              const headers = buildUpstreamHeaders(req, new URL(origin).host);
+              config.headers?.(headers, proxyEvent);
+              let upstreamRes: Response;
+              try {
+                upstreamRes = await fetch(`${origin}${rest}${url.search}`, {
+                  method: req.method,
+                  headers,
+                  body: req.body,
+                  redirect: 'manual',
+                  ...(req.body ? { duplex: 'half' } : {}),
+                  ...(config.timeout ? { signal: AbortSignal.timeout(config.timeout) } : {}),
+                } as RequestInit);
+              } catch (err) {
+                logger.error(`PROXY ${req.method} ${url.pathname} → upstream error:`, err);
+                emitError('proxy', requestId, req, url, 502, err);
+                return apiError(502, 'Bad Gateway');
+              }
+
+              let res = new Response(upstreamRes.body, {
+                status: upstreamRes.status,
+                statusText: upstreamRes.statusText,
+                headers: cleanResponseHeaders(upstreamRes),
+              });
+              if (config.onResponse) {
+                const transformed = await config.onResponse(res, proxyEvent);
+                if (transformed) {
+                  res = transformed;
+                }
+              }
+              return applyResolveOptions(res, resolveOpts);
+            };
+
+            const event: MochiEvent = { request: req, url, server, locals: ctx.locals, kind: 'proxy', isWarmup: ctx.isWarmup };
+            const response = middleware ? await middleware({ event, resolve: innerResolve }) : await innerResolve(event);
+
+            if (upgraded) {
+              // Connection hijacked by `server.upgrade()`; Bun expects undefined.
+              return undefined;
+            }
+
+            const final = finalizeCookieHeaders(response, ctx.cookies);
+            mochiEvents.emit('request', {
+              requestId,
+              kind: 'proxy',
+              method: req.method,
+              path: proxyPath,
+              status: final.status,
+              duration: performance.now() - start,
+            });
+            return final;
+          });
+        }) as unknown as BunRouteValue;
+
+        let extraRoutes: Record<string, BunRouteValue> | undefined;
+        if (config.trailingSlashRedirect && mountPattern && mountPattern !== pattern) {
+          proxyBareMounts.add(mountPattern);
+          extraRoutes = {
+            [mountPattern]: (req: Request): Response => {
+              const u = new URL(req.url);
+              return new Response(null, { status: 308, headers: { Location: `${u.pathname}/${u.search}` } });
+            },
+          };
+        }
+        return { bunRouteValue, type: 'proxy', extraRoutes };
       }
       return null;
     }
@@ -1041,6 +1203,11 @@ export class Mochi {
         if (result) {
           bunRoutes[pattern] = result.bunRouteValue;
           routeCounts[result.type] += 1;
+          if (result.extraRoutes) {
+            for (const [extraPattern, extraValue] of Object.entries(result.extraRoutes)) {
+              bunRoutes[extraPattern] = extraValue;
+            }
+          }
         } else {
           bunRoutes[pattern] = handler as BunRouteValue;
         }
@@ -1052,6 +1219,12 @@ export class Mochi {
     // redirect checks above turn the non-canonical form into a 301/308.
     if (trailingSlashPolicy) {
       for (const [pattern, value] of Object.entries(bunRoutes)) {
+        // Wildcard proxy mounts ('/p/:id/*') and their bare-mount redirect
+        // patterns ('/p/:id') own their own trailing-slash behavior; an
+        // auto-paired alt-slash form would shadow the wildcard.
+        if (pattern.includes('*') || proxyBareMounts.has(pattern)) {
+          continue;
+        }
         const alt = alternateSlashPattern(pattern);
         if (alt && !(alt in bunRoutes)) {
           bunRoutes[alt] = value;

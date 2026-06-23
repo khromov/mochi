@@ -11,7 +11,7 @@ import type { MochiRequestContext } from './requestContext';
 
 // RouteKind covers user-route shapes; MochiRequestKind in events.ts covers the
 // broader event taxonomy (asset, fallback, error). They overlap on page|api|file.
-export type RouteKind = 'page' | 'api' | 'ws' | 'sse' | 'island' | 'file';
+export type RouteKind = 'page' | 'api' | 'ws' | 'sse' | 'island' | 'file' | 'proxy';
 
 export interface RequestSetupConfig {
   proxy: MochiProxyOptions | undefined;
@@ -61,6 +61,11 @@ const KIND_POLICY: Record<RouteKind, KindPolicy> = {
   // Files are leaf resources (like static assets), so they opt out of
   // trailing-slash normalization — a file URL should never gain a trailing `/`.
   file: { timeout: false, trailingSlash: false, csrf: false, debugBar: false },
+  // Proxies own the whole forwarded subpath: trailing-slash enforcement and
+  // CSRF must not mutate or reject upstream traffic. The connection is
+  // long-lived (streamed bodies, WS), so disable Bun's default request timeout
+  // (`timeout: true` is what calls `server.timeout(req, 0)`).
+  proxy: { timeout: true, trailingSlash: false, csrf: false, debugBar: false },
 };
 
 export function makeRequestContextBuilder(cfg: RequestSetupConfig): RequestContextBuilder {

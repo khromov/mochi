@@ -48,7 +48,7 @@ export interface MochiHookContext {
     request: Request;
     url: URL;
     params: Record<string, string>;
-    kind: 'page' | 'api' | 'ws' | 'sse' | 'file';
+    kind: 'page' | 'api' | 'ws' | 'sse' | 'file' | 'proxy';
   };
 }
 

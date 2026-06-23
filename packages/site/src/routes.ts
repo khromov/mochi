@@ -43,6 +43,7 @@ import { routes as mdsvexRoutes } from './demos/mdsvex/routes';
 import { routes as nestedComponentsRoutes } from './demos/nested-components/routes';
 import { routes as propDedupRoutes } from './demos/prop-dedup/routes';
 import { routes as propsIdRoutes } from './demos/props-id/routes';
+import { routes as proxyRoutes } from './demos/proxy/routes';
 import { routes as queueRoutes, queues as queueQueues } from './demos/queue/routes';
 import { routes as reloadFormDataRoutes } from './demos/reload-form-data/routes';
 import { routes as requestIdRoutes } from './demos/request-id/routes';
@@ -192,6 +193,7 @@ export const routes: Record<string, MochiRouteValue> = {
   ...nestedComponentsRoutes,
   ...propDedupRoutes,
   ...propsIdRoutes,
+  ...proxyRoutes,
   ...queueRoutes,
   ...reloadFormDataRoutes,
   ...requestIdRoutes,

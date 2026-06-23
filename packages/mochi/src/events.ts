@@ -1,7 +1,7 @@
 import mitt, { type Emitter, type Handler } from 'mitt';
 import { pinGlobal } from './globalState';
 
-export type MochiRequestKind = 'page' | 'api' | 'file' | 'asset' | 'fallback' | 'error';
+export type MochiRequestKind = 'page' | 'api' | 'file' | 'proxy' | 'asset' | 'fallback' | 'error';
 
 export interface MochiRequestEvent {
   /**
@@ -164,7 +164,7 @@ export interface MochiWarmupCompleteEvent {
   durationMs: number;
 }
 
-export type MochiErrorKind = 'page' | 'api' | 'action' | 'file';
+export type MochiErrorKind = 'page' | 'api' | 'action' | 'file' | 'proxy';
 
 export interface MochiErrorEvent {
   /** Same `requestId` as the surrounding `request` event. */
