@@ -262,6 +262,13 @@ export interface MochiPreprocessCacheSummaryEvent {
   files: number;
 }
 
+export interface MochiCompileCacheSummaryEvent {
+  hits: number;
+  misses: number;
+  /** Total file lookups during the batch (`hits + misses`). */
+  files: number;
+}
+
 export interface MochiCompileErrorLog {
   file?: string;
   line?: number;
@@ -309,6 +316,7 @@ export type MochiEventMap = {
   'preprocess-cache:hit': MochiPreprocessCacheEvent;
   'preprocess-cache:miss': MochiPreprocessCacheEvent;
   'preprocess-cache:summary': MochiPreprocessCacheSummaryEvent;
+  'compile-cache:summary': MochiCompileCacheSummaryEvent;
   'recompile:start': MochiRecompileStartEvent;
   'recompile:complete': MochiRecompileCompleteEvent;
   'client-bundle:complete': MochiClientBundleEvent;
