@@ -1,8 +1,8 @@
 // A `mochi:hydrate` island rendered only inside a server island's deferred
 // content is gated out of the host page's <head> (it isn't rendered at page
-// time), so its CSS must travel with the island render. The endpoint serializes
-// `renderComponent().cssUrls` into the `X-Mochi-Island-CSS` header (see
-// serverIslandEndpoint.test.ts for the header wiring); this file asserts that
+// time), so its CSS must travel with the island render. The endpoint injects
+// `<link>` tags for `renderComponent().cssUrls` into the response (see
+// serverIslandEndpoint.test.ts for that wiring); this file asserts that
 // `cssUrls` actually collects a nested hydratable child's CSS.
 //
 // Driven through ComponentRegistry rather than Mochi.serve: building the child's
