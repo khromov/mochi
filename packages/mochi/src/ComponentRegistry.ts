@@ -12,6 +12,7 @@ import { mochiEvents } from './events';
 import type { MarkdownConfig, MochiManifest, MochiSvelteShakerOptions } from './types';
 import { type HydratableComponent, type ServerIslandComponent } from './svelteAstPreprocess';
 import { cachedPreprocessHydratable, createPreprocessCacheStats } from './preprocessCache';
+import { CompileCache, compileFingerprint, createCompileCacheStats, type CompileCacheStats } from './compileCache';
 import { mergeCompilerOptions, type MochiSvelteConfig } from './svelteConfig';
 import { applyFilter } from './extensions';
 import { buildServerOnlyStubModule, scanServerOnlyExports } from './serverOnlyScan';
@@ -84,6 +85,8 @@ function createMarkdownLoader(opts: {
   development: boolean;
   cssMap?: Map<string, string>;
   userCompilerOptions: CompileOptions;
+  compileCache: CompileCache;
+  compileCacheStats?: CompileCacheStats;
   hydration?: {
     fileHydratables: Map<string, HydratableComponent[]>;
     allHydratables: HydratableComponent[];
@@ -92,8 +95,27 @@ function createMarkdownLoader(opts: {
   };
 }) {
   const highlight = opts.markdown.highlight;
+  const fingerprint = compileFingerprint(opts.userCompilerOptions, opts.development);
   return async (args: { path: string }) => {
     const raw = await Bun.file(args.path).text();
+    // Cache hit: replay the side effects (hydration metadata, scoped CSS) the
+    // miss path would have produced and skip mdsvex + svelte compile entirely.
+    // Keyed on raw source, so this assumes mdsvex + the user preprocessors are
+    // pure in (source, filename): a plugin that reads an *external* file (e.g. a
+    // sibling .json) won't re-run until this file's own bytes change or the
+    // config reloads — the standard Vite/SvelteKit preprocessor contract.
+    const cached = opts.compileCache.get(opts.target, args.path, raw, fingerprint, opts.compileCacheStats);
+    if (cached) {
+      if (opts.hydration) {
+        opts.hydration.fileHydratables.set(args.path, cached.hydratables);
+        opts.hydration.allHydratables.push(...cached.hydratables);
+        opts.hydration.allServerIslands.push(...cached.serverIslands);
+      }
+      if (opts.target === 'server' && cached.css && opts.cssMap) {
+        opts.cssMap.set(args.path, cached.css);
+      }
+      return { contents: cached.js, loader: 'js' as const };
+    }
     // mdsvex's `compile` declares a nested-Promise return type, so we accept
     // `unknown` at the type level and await + validate at runtime. `await`
     // flattens any thenable chain to the eventual `{ code; … } | undefined`.
@@ -108,12 +130,16 @@ function createMarkdownLoader(opts: {
       throw new Error(`markdown.compile returned no output for ${args.path}`);
     }
     let svelteSource = compiled.code;
+    let hydratables: HydratableComponent[] = [];
+    let serverIslands: ServerIslandComponent[] = [];
     if (opts.hydration) {
-      const { transformed, hydratables, serverIslands } = cachedPreprocessHydratable(svelteSource, args.path, opts.hydration.preprocessCacheStats);
+      const preprocessed = cachedPreprocessHydratable(svelteSource, args.path, opts.hydration.preprocessCacheStats);
+      hydratables = preprocessed.hydratables;
+      serverIslands = preprocessed.serverIslands;
       opts.hydration.fileHydratables.set(args.path, hydratables);
       opts.hydration.allHydratables.push(...hydratables);
       opts.hydration.allServerIslands.push(...serverIslands);
-      svelteSource = transformed;
+      svelteSource = preprocessed.transformed;
     }
     const { js, css } = svelteCompile(
       svelteSource,
@@ -123,9 +149,11 @@ function createMarkdownLoader(opts: {
         ...(opts.target === 'client' ? { dev: opts.development } : {}),
       }),
     );
-    if (opts.target === 'server' && css?.code && opts.cssMap) {
-      opts.cssMap.set(args.path, css.code);
+    const cssCode = opts.target === 'server' ? (css?.code ?? null) : null;
+    if (cssCode && opts.cssMap) {
+      opts.cssMap.set(args.path, cssCode);
     }
+    opts.compileCache.set(opts.target, args.path, raw, fingerprint, { js: js.code, css: cssCode, hydratables, serverIslands });
     return { contents: js.code, loader: 'js' as const };
   };
 }
@@ -258,6 +286,12 @@ export class ComponentRegistry {
   private errors: MochiCompileError[] = [];
   /** Bumped each time `buildClientBundle()` runs; read+reset by `recompileAll()`. */
   private clientBundleCallCount = 0;
+  /**
+   * Per-registry compiled-output cache. Instance-scoped (not a module global) so
+   * two registries with different markdown/preprocessor config can't serve each
+   * other stale output for the same path — see {@link CompileCache}.
+   */
+  readonly compileCache = new CompileCache();
 
   constructor(opts: ComponentRegistryOptions = {}) {
     this.development = opts.development ?? true;
@@ -415,9 +449,12 @@ export class ComponentRegistry {
     const allHydratables: HydratableComponent[] = [];
     const allServerIslands: ServerIslandComponent[] = [];
     const preprocessCacheStats = createPreprocessCacheStats();
+    const compileCacheStats = createCompileCacheStats();
     const fileHydratables = new Map<string, HydratableComponent[]>();
     const development = this.development;
     const userCompilerOptions = this.svelteConfig.compilerOptions ?? {};
+    const serverFingerprint = compileFingerprint(userCompilerOptions, development);
+    const compileCache = this.compileCache;
     const markdown = this.markdown;
     const shakenSources = this.shakenSources;
 
@@ -521,6 +558,16 @@ export class ComponentRegistry {
         });
         build.onLoad({ filter: /\.svelte$/ }, async (args) => {
           const raw = shakenSources.get(args.path) ?? (await Bun.file(args.path).text());
+          const cached = compileCache.get('server', args.path, raw, serverFingerprint, compileCacheStats);
+          if (cached) {
+            fileHydratables.set(args.path, cached.hydratables);
+            allHydratables.push(...cached.hydratables);
+            allServerIslands.push(...cached.serverIslands);
+            if (cached.css) {
+              cssMap.set(args.path, cached.css);
+            }
+            return { contents: cached.js, loader: 'js' };
+          }
           const preprocessed = await applyUserPreprocessors(raw, args.path, 'server', development);
           // Vendored .svelte from node_modules can never carry `mochi:*` directives
           const isVendored = args.path.includes(`${path.sep}node_modules${path.sep}`);
@@ -538,9 +585,11 @@ export class ComponentRegistry {
               filename: args.path,
             }),
           );
-          if (css?.code) {
-            cssMap.set(args.path, css.code);
+          const cssCode = css?.code ?? null;
+          if (cssCode) {
+            cssMap.set(args.path, cssCode);
           }
+          compileCache.set('server', args.path, raw, serverFingerprint, { js: js.code, css: cssCode, hydratables, serverIslands });
           return { contents: js.code, loader: 'js' };
         });
         if (markdown) {
@@ -552,6 +601,8 @@ export class ComponentRegistry {
               development,
               cssMap,
               userCompilerOptions,
+              compileCache,
+              compileCacheStats,
               hydration: { fileHydratables, allHydratables, allServerIslands, preprocessCacheStats },
             }),
           );
@@ -742,6 +793,15 @@ export class ComponentRegistry {
       });
     }
 
+    const compileCacheFiles = compileCacheStats.hits + compileCacheStats.misses;
+    if (compileCacheFiles > 0) {
+      mochiEvents.emit('compile-cache:summary', {
+        hits: compileCacheStats.hits,
+        misses: compileCacheStats.misses,
+        files: compileCacheFiles,
+      });
+    }
+
     // Write per-component CSS files to disk (minified) and track their URLs
     const cssOutDir = `${this.outDir}/svelte-css`;
     for (const [componentPath, cssCode] of cssMap) {
@@ -790,6 +850,9 @@ export class ComponentRegistry {
     const userCompilerOptions = this.svelteConfig.compilerOptions ?? {};
     const markdown = this.markdown;
     const shakenSources = this.shakenSources;
+    const compileCacheStats = createCompileCacheStats();
+    const clientFingerprint = compileFingerprint(userCompilerOptions, development);
+    const compileCache = this.compileCache;
     // Deduplicate by resolved path
     const unique = new Map<string, HydratableComponent>();
     for (const c of this.hydratableComponents) {
@@ -977,6 +1040,10 @@ export class ComponentRegistry {
         });
         build.onLoad({ filter: /\.svelte$/ }, async (args) => {
           const source = shakenSources.get(args.path) ?? (await Bun.file(args.path).text());
+          const cached = compileCache.get('client', args.path, source, clientFingerprint, compileCacheStats);
+          if (cached) {
+            return { contents: cached.js, loader: 'js' };
+          }
           const preprocessed = await applyUserPreprocessors(source, args.path, 'client', development);
           const { js } = svelteCompile(
             preprocessed,
@@ -988,10 +1055,11 @@ export class ComponentRegistry {
               dev: development,
             }),
           );
+          compileCache.set('client', args.path, source, clientFingerprint, { js: js.code, css: null, hydratables: [], serverIslands: [] });
           return { contents: js.code, loader: 'js' };
         });
         if (markdown) {
-          build.onLoad({ filter: MARKDOWN_FILE_FILTER }, createMarkdownLoader({ markdown, target: 'client', development, userCompilerOptions }));
+          build.onLoad({ filter: MARKDOWN_FILE_FILTER }, createMarkdownLoader({ markdown, target: 'client', development, userCompilerOptions, compileCache, compileCacheStats }));
         }
       },
     };
@@ -1084,6 +1152,15 @@ export class ComponentRegistry {
       outputBytes,
       durationMs: performance.now() - bundleStart,
     });
+
+    const compileCacheFiles = compileCacheStats.hits + compileCacheStats.misses;
+    if (compileCacheFiles > 0) {
+      mochiEvents.emit('compile-cache:summary', {
+        hits: compileCacheStats.hits,
+        misses: compileCacheStats.misses,
+        files: compileCacheFiles,
+      });
+    }
   }
 
   async renderComponent(filename: string, props?: Record<string, unknown>, opts?: { stripMarkers?: boolean; idPrefix?: string }): Promise<RenderResult> {
