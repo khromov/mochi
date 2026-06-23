@@ -31,7 +31,7 @@
       feature: 'Built-in SQLite database',
       tags: ['backend'],
       mochi: { status: 'yes', note: 'bun:sqlite', href: 'https://bun.com/docs/api/sqlite' },
-      kit: { status: 'no', note: 'bring your own driver; needs a persistent server' },
+      kit: { status: 'partial', note: 'node:sqlite via adapter-node on Node or Deno' },
     },
     {
       feature: 'Built-in Postgres & MySQL support',
