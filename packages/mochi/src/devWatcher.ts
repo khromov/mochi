@@ -8,7 +8,6 @@ import { mochiEvents } from './events';
 import type { MochiFileChangeType } from './events';
 import { logger } from './log';
 import { evictPreprocessCacheEntry } from './preprocessCache';
-import { __resetCompileMemCache, evictCompileCacheEntry } from './compileCache';
 import { extractServeOptions } from './extractServeOptions';
 import { buildPublicUrl } from './proxy';
 import { resolvePublicFiles, registerPublicRoutes } from './publicDir';
@@ -606,7 +605,7 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
       }
       if (event === 'unlink' && filePath.endsWith('.svelte')) {
         evictPreprocessCacheEntry(path.resolve(filePath));
-        evictCompileCacheEntry(path.resolve(filePath));
+        registry.compileCache.evict(path.resolve(filePath));
         registry.evict(path.resolve(filePath));
       }
       if (triggerShellReload && shellPath && path.resolve(filePath) === shellPath) {
@@ -636,10 +635,11 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
       let summary: { pages: Set<string>; clientBundleCount: number } = { pages: new Set(), clientBundleCount: 0 };
       try {
         registry.svelteConfig = await loadSvelteConfig(undefined, { reload: true, tempDir: outDir });
-        // New compiler options invalidate every cached compile output. The
-        // fingerprint guard would already miss them, but clear so stale entries
-        // from the previous config don't accumulate over a long dev session.
-        __resetCompileMemCache();
+        // A config reload can change the compiler options, markdown/mdsvex config,
+        // or user preprocessors. Only the compiler options are in the cache
+        // fingerprint, so the markdown/preprocessor cases need an explicit reset —
+        // without it those entries would serve output built under the old config.
+        registry.compileCache.reset();
         summary = await registry.recompileAll();
       } catch (e) {
         logger.warn(`Svelte config reload failed: ${e instanceof Error ? e.message : e}`);
