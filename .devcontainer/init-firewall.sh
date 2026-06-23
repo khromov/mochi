@@ -24,11 +24,31 @@ else
     echo "No Docker DNS rules to restore"
 fi
 
+# Disable IPv6 entirely. This firewall only governs IPv4, so any traffic over
+# IPv6 (AAAA records) would otherwise bypass the allowlist. Flush all chains and
+# default every policy to DROP, keeping only loopback so local ::1 services work.
+# Guarded so a kernel without an IPv6 stack (ip6tables unusable) doesn't abort.
+if command -v ip6tables >/dev/null 2>&1; then
+    echo "Disabling IPv6..."
+    ip6tables -F || true
+    ip6tables -X || true
+    ip6tables -P INPUT DROP || true
+    ip6tables -P FORWARD DROP || true
+    ip6tables -P OUTPUT DROP || true
+    ip6tables -A INPUT -i lo -j ACCEPT || true
+    ip6tables -A OUTPUT -o lo -j ACCEPT || true
+else
+    echo "ip6tables not available — skipping IPv6 lockdown"
+fi
+
 # First allow DNS and localhost before any restrictions
-# Allow outbound DNS
+# Allow outbound DNS (UDP plus TCP — resolvers fall back to TCP for truncated
+# or oversized responses, and the OUTPUT default policy below is DROP)
 iptables -A OUTPUT -p udp --dport 53 -j ACCEPT
+iptables -A OUTPUT -p tcp --dport 53 -j ACCEPT
 # Allow inbound DNS responses
 iptables -A INPUT -p udp --sport 53 -j ACCEPT
+iptables -A INPUT -p tcp --sport 53 -m state --state ESTABLISHED -j ACCEPT
 # Allow outbound SSH
 iptables -A OUTPUT -p tcp --dport 22 -j ACCEPT
 # Allow inbound SSH responses

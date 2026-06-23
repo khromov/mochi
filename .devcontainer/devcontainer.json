@@ -45,7 +45,7 @@
   },
   "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=delegated",
   "workspaceFolder": "/workspace",
-  "postCreateCommand": "mkdir -p /home/node/.claude && [ -s /home/node/.claude/settings.json ] || echo '{}' > /home/node/.claude/settings.json && tmp=$(jq '.statusLine = {type: \"command\", command: \"bash /home/node/statusline.sh\"}' /home/node/.claude/settings.json) && printf '%s\\n' \"$tmp\" > /home/node/.claude/settings.json",
+  "postCreateCommand": "mkdir -p /home/node/.claude && [ -s /home/node/.claude/settings.json ] || echo '{}' > /home/node/.claude/settings.json && tmp=$(jq -s '.[0] * .[1] * {statusLine: {type: \"command\", command: \"bash /home/node/statusline.sh\"}}' /home/node/claude-settings.json /home/node/.claude/settings.json) && printf '%s\\n' \"$tmp\" > /home/node/.claude/settings.json",
   "postStartCommand": "sudo /usr/local/bin/init-firewall.sh",
   "waitFor": "postStartCommand"
 }
