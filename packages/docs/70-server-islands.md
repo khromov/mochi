@@ -57,6 +57,18 @@ Apply `mochi:hydrate` alongside `mochi:defer` to fetch the island on-demand and 
 <ShoppingCart mochi:defer mochi:hydrate items={initialItems} />
 ```
 
+### Nesting islands inside a server island
+
+A server island's content is itself a full render, so it may contain `mochi:hydrate` islands and further `mochi:defer` server islands. Each nested island behaves normally — hydratable children hydrate once the deferred HTML lands, and nested server islands fetch themselves.
+
+```svelte
+<!-- file: src/Dashboard.svelte (rendered via mochi:defer) -->
+<Chart mochi:hydrate {data} />
+<Notifications mochi:defer />
+```
+
+CSS for nested hydratable islands is delivered with the fetched HTML (the host page can't link it ahead of time, since the content isn't rendered until the island resolves), so styles apply as soon as the island appears.
+
 ### Lazy server islands with `mochi:defer:visible`
 
 Defer the _fetch_ until the wrapper scrolls into view, mirroring [`mochi:hydrate:visible`](lazy-hydration/):
@@ -113,6 +125,7 @@ bunx mochi-framework generate-key
 <SeeItInAction
 demos={[
 { href: "/demos/server-island/", title: "Server Islands", hook: "Components marked mochi:defer render server-side on demand after the initial page is delivered." },
+{ href: "/demos/nested-islands/", title: "Nested Islands", hook: "Islands inside islands — a mochi:defer server island wrapping mochi:hydrate components, and a server island nesting more server islands." },
 { href: "/demos/lazy-server-island/", title: "Lazy Server Islands", hook: "Server islands marked mochi:defer:visible only fetch when the wrapper scrolls into view." },
 ]}
 />

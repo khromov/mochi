@@ -98,6 +98,22 @@ class ServerIsland extends HTMLElement {
           document.head.appendChild(link);
         }
 
+        // CSS for hydratable islands nested in this server island's content.
+        // The host page never linked it (the content wasn't rendered at page
+        // time), so load it here, deduped against the shared set above.
+        const islandCss = response.headers.get('X-Mochi-Island-CSS');
+        if (islandCss) {
+          for (const href of islandCss.split(',')) {
+            if (href && !_css.has(href)) {
+              _css.add(href);
+              const link = document.createElement('link');
+              link.rel = 'stylesheet';
+              link.href = href;
+              document.head.appendChild(link);
+            }
+          }
+        }
+
         // SAFETY: HTML comes from our own same-origin server-island endpoint with HMAC-signed props.
         // If the island endpoint ever returns user-controlled content, this must be sanitized.
         this.innerHTML = html;

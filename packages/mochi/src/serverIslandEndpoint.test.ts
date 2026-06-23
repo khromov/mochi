@@ -123,4 +123,20 @@ describe('server island endpoint', () => {
     const uid = body.match(/data-uid="([^"]+)"/)![1]!;
     expect(uid.startsWith(`${islandId}-`)).toBe(true);
   });
+
+  // The endpoint ships the rendered subtree's CSS in `X-Mochi-Island-CSS` so the
+  // client (ServerIsland.ts) can load styles for content the host page never
+  // linked. StyledLeaf carries its own CSS and no hydratable child.
+  test('delivers the rendered island CSS via X-Mochi-Island-CSS', async () => {
+    const props = signProps(devalueStringify({ islandId: 's-css-0' }));
+    const res = await fetch(`${base}/_mochi/island/StyledLeaf?props=${encodeURIComponent(props)}`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('X-Mochi-Island-CSS')).toContain('StyledLeaf-');
+  });
+
+  test('a CSS-less server island sends no island CSS header', async () => {
+    const res = await fetch(`${base}/_mochi/island/Echo?props=${encodeURIComponent(token)}`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('X-Mochi-Island-CSS')).toBeNull();
+  });
 });

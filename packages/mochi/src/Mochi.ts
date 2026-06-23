@@ -1164,12 +1164,19 @@ export class Mochi {
           }
         }
 
-        return new Response(body, {
-          headers: {
-            'Content-Type': 'text/html; charset=utf-8',
-            'Cache-Control': 'private, no-store',
-          },
-        });
+        const headers: Record<string, string> = {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Cache-Control': 'private, no-store',
+        };
+        // Deliver CSS for hydratable islands rendered inside this server island's
+        // deferred content. Their CSS is gated out of the host page's <head> (it
+        // isn't rendered at page time), so the client loads it from this header
+        // after fetch. Hashed ASCII asset paths — comma-join is header-safe.
+        if (result.cssUrls.length > 0) {
+          headers['X-Mochi-Island-CSS'] = result.cssUrls.join(',');
+        }
+
+        return new Response(body, { headers });
       });
     });
 
