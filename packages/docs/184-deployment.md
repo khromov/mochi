@@ -22,36 +22,36 @@ None of the links below are affiliate links, nor should any of the links be seen
 
 Deploy code or containers — the platform manages infrastructure, scaling, and networking.
 
-- [Railway](https://railway.app) — Both dedicated Bun and Docker support
-- [Render](https://render.com) — Docker-based web services, Git-push deploys
-- [Fly.io](https://fly.io) — Docker-native, global edge, scale-to-zero
-- [Heroku](https://heroku.com) — supports Docker deployments
-- [Koyeb](https://koyeb.com) — Git or Docker, 250+ edge locations
-- [Clever Cloud](https://www.clever.cloud) — native Bun / Docker support
-- [Zeabur](https://zeabur.com) — auto-detects Bun
-- [Scaleway Serverless Containers](https://www.scaleway.com/en/serverless-containers/) — deploy from any registry, billed per millisecond
-- [DigitalOcean App Platform](https://www.digitalocean.com/products/app-platform) — Git or Docker deploy
+- <span title="USA">🇺🇸</span> <a href="https://railway.app" rel="nofollow">Railway</a> — Both dedicated Bun and Docker support
+- <span title="USA">🇺🇸</span> <a href="https://render.com" rel="nofollow">Render</a> — Docker-based web services, Git-push deploys
+- <span title="USA">🇺🇸</span> <a href="https://fly.io" rel="nofollow">Fly.io</a> — Docker-native, global edge, scale-to-zero
+- <span title="USA">🇺🇸</span> <a href="https://heroku.com" rel="nofollow">Heroku</a> — supports Docker deployments
+- <span title="France">🇫🇷</span> <a href="https://koyeb.com" rel="nofollow">Koyeb</a> — Git or Docker, 250+ edge locations
+- <span title="France">🇫🇷</span> <a href="https://www.clever.cloud" rel="nofollow">Clever Cloud</a> — native Bun / Docker support
+- <span title="Singapore">🇸🇬</span> <a href="https://zeabur.com" rel="nofollow">Zeabur</a> — auto-detects Bun
+- <span title="France">🇫🇷</span> <a href="https://www.scaleway.com/en/serverless-containers/" rel="nofollow">Scaleway Serverless Containers</a> — deploy from any registry, billed per millisecond
+- <span title="USA">🇺🇸</span> <a href="https://www.digitalocean.com/products/app-platform" rel="nofollow">DigitalOcean App Platform</a> — Git or Docker deploy
 
 ## Traditional VPS / IaaS
 
 You get a server, install Bun yourself, and manage the process (systemd, Docker, etc.).
 
-- [Hetzner](https://hetzner.com) — very cheap, popular with indie devs (German)
-- [DigitalOcean Droplets](https://www.digitalocean.com/products/droplets) — simple cloud VMs
-- [OVHcloud](https://ovhcloud.com) — dedicated servers, VPS, private cloud; strong GDPR compliance
-- [Scaleway Instances](https://www.scaleway.com/en/virtual-instances/) — Offers VMs alongside their serverless offering
-- [Vultr](https://vultr.com)
-- [Akamai / Linode](https://www.linode.com)
-- [Kamatera](https://kamatera.com) — pay-as-you-go cloud VMs
+- <span title="Germany">🇩🇪</span> <a href="https://hetzner.com" rel="nofollow">Hetzner</a> — very cheap, popular with indie devs
+- <span title="USA">🇺🇸</span> <a href="https://www.digitalocean.com/products/droplets" rel="nofollow">DigitalOcean Droplets</a> — simple cloud VMs
+- <span title="France">🇫🇷</span> <a href="https://ovhcloud.com" rel="nofollow">OVHcloud</a> — dedicated servers, VPS, private cloud; strong GDPR compliance
+- <span title="France">🇫🇷</span> <a href="https://www.scaleway.com/en/virtual-instances/" rel="nofollow">Scaleway Instances</a> — Offers VMs alongside their serverless offering
+- <span title="USA">🇺🇸</span> <a href="https://vultr.com" rel="nofollow">Vultr</a>
+- <span title="USA">🇺🇸</span> <a href="https://www.linode.com" rel="nofollow">Akamai / Linode</a>
+- <span title="USA">🇺🇸</span><span title="Israeli-founded">🇮🇱</span> <a href="https://kamatera.com" rel="nofollow">Kamatera</a> — pay-as-you-go cloud VMs (Israeli-founded, HQ in New York)
 
 ## Big Cloud (multiple deployment options)
 
 Each of these offers VPS, serverless, containers, and Kubernetes — pick the model that fits.
 
-- [AWS](https://aws.amazon.com) — EC2 (VPS), Lambda + Web Adapter (serverless), Fargate (serverless containers), App Runner (PaaS), ECS/EKS (orchestrated)
-- [Google Cloud](https://cloud.google.com) — Compute Engine (VPS), Cloud Run (serverless containers), GKE (Kubernetes), Cloud Functions
-- [Azure](https://azure.microsoft.com) — VMs (VPS), Container Apps (serverless), ACI (containers), AKS (Kubernetes)
-- [Oracle Cloud](https://cloud.oracle.com) — generous always-free tier (ARM VMs)
+- <span title="USA">🇺🇸</span> <a href="https://aws.amazon.com" rel="nofollow">AWS</a> — EC2 (VPS), Lambda + Web Adapter (serverless), Fargate (serverless containers), App Runner (PaaS), ECS/EKS (orchestrated)
+- <span title="USA">🇺🇸</span> <a href="https://cloud.google.com" rel="nofollow">Google Cloud</a> — Compute Engine (VPS), Cloud Run (serverless containers), GKE (Kubernetes), Cloud Functions
+- <span title="USA">🇺🇸</span> <a href="https://azure.microsoft.com" rel="nofollow">Azure</a> — VMs (VPS), Container Apps (serverless), ACI (containers), AKS (Kubernetes)
+- <span title="USA">🇺🇸</span> <a href="https://cloud.oracle.com" rel="nofollow">Oracle Cloud</a> — generous always-free tier (ARM VMs)
 
 ## Self-hosted tools
 
@@ -65,6 +65,6 @@ Not platforms themselves — you install these on a VPS from one of the provider
 
 Connect to your existing infrastructure at different cloud providers
 
-- [Northflank](https://northflank.com) — containers, jobs, APIs; bring-your-own-cloud
-- [Kuberns](https://kuberns.com) — Git-push deploy on AWS infra, no Dockerfile needed
-- [Convox](https://www.convox.com/)
+- <span title="United Kingdom">🇬🇧</span> <a href="https://northflank.com" rel="nofollow">Northflank</a> — containers, jobs, APIs; bring-your-own-cloud
+- <span title="India">🇮🇳</span> <a href="https://kuberns.com" rel="nofollow">Kuberns</a> — Git-push deploy on AWS infra, no Dockerfile needed
+- <span title="USA">🇺🇸</span> <a href="https://www.convox.com/" rel="nofollow">Convox</a>
