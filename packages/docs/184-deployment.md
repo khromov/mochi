@@ -77,6 +77,7 @@ The flag next to each provider above reflects where the **company** is headquart
 <details>
 <summary style="cursor: pointer">Provider headquarters &amp; sources</summary>
 
+<!-- prettier-ignore -->
 | Provider | Country | Source |
 | --- | --- | --- |
 | Railway | 🇺🇸 USA | <a href="https://railway.com/legal/dpa" target="_blank" rel="nofollow noopener">DPA (San Francisco, CA)</a> |
