@@ -52,6 +52,7 @@ Each of these offers VPS, serverless, containers, and Kubernetes — pick the mo
 - <span title="USA">🇺🇸</span> <a href="https://cloud.google.com" target="_blank" rel="nofollow noopener">Google Cloud</a> — Compute Engine (VPS), Cloud Run (serverless containers), GKE (Kubernetes), Cloud Functions
 - <span title="USA">🇺🇸</span> <a href="https://azure.microsoft.com" target="_blank" rel="nofollow noopener">Azure</a> — VMs (VPS), Container Apps (serverless), ACI (containers), AKS (Kubernetes)
 - <span title="USA">🇺🇸</span> <a href="https://cloud.oracle.com" target="_blank" rel="nofollow noopener">Oracle Cloud</a> — generous always-free tier (ARM VMs)
+- <span title="USA">🇺🇸</span> <a href="https://www.ibm.com/cloud" target="_blank" rel="nofollow noopener">IBM Cloud</a> — VPC (VPS), Code Engine (serverless containers), IKS/OpenShift (Kubernetes)
 
 ## Self-hosted tools
 
@@ -96,6 +97,7 @@ The flag next to each provider above reflects where the **company** is headquart
 | Google Cloud | 🇺🇸 USA | <a href="https://en.wikipedia.org/wiki/Google" target="_blank" rel="nofollow noopener">Wikipedia (Mountain View, CA)</a> |
 | Azure | 🇺🇸 USA | <a href="https://news.microsoft.com/facts-about-microsoft/" target="_blank" rel="nofollow noopener">Microsoft facts (Redmond, WA)</a> |
 | Oracle Cloud | 🇺🇸 USA | <a href="https://en.wikipedia.org/wiki/Oracle_Corporation" target="_blank" rel="nofollow noopener">Wikipedia (Austin, TX)</a> |
+| IBM Cloud | 🇺🇸 USA | <a href="https://en.wikipedia.org/wiki/IBM" target="_blank" rel="nofollow noopener">Wikipedia (Armonk, NY)</a> |
 | Northflank | 🇬🇧 United Kingdom | <a href="https://northflank.com/about" target="_blank" rel="nofollow noopener">About (London, UK)</a> |
 | Kuberns | 🇮🇳 India | <a href="https://www.linkedin.com/company/kuberns" target="_blank" rel="nofollow noopener">LinkedIn (Gujarat, India)</a> |
 | Convox | 🇺🇸 USA | <a href="https://www.ycombinator.com/companies/convox" target="_blank" rel="nofollow noopener">Y Combinator (Atlanta, GA)</a> |
