@@ -96,6 +96,12 @@
       kit: { status: 'no' },
     },
     { feature: 'Cookie helpers', tags: ['backend'], mochi: { status: 'yes' }, kit: { status: 'yes' } },
+    {
+      feature: 'AI development support',
+      tags: ['backend', 'frontend'],
+      mochi: { status: 'yes', note: 'Skill, MCP & llms.txt', href: '/docs/docs-for-llms/' },
+      kit: { status: 'yes', note: 'Skill, MCP & llms.txt', href: 'https://svelte.dev/docs/ai/overview' },
+    },
     { feature: 'Client-side router', tags: ['frontend'], mochi: { status: 'no' }, kit: { status: 'yes' } },
     {
       feature: 'Type-safe routes & params',
