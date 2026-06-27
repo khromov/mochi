@@ -48,6 +48,28 @@ The fallback children are an SSR placeholder only — they are **not** passed to
 
 </Callout>
 
+### Lazy client-only with `mochi:clientOnly:visible`
+
+Defer the browser-side `mount()` until the wrapper scrolls into the viewport. The component still never renders on the server — its JavaScript and CSS are simply fetched and mounted only when the placeholder intersects the viewport via `IntersectionObserver`.
+
+```svelte
+<AudioVisualizer mochi:clientOnly:visible />
+```
+
+Pass `rootMargin` to start loading before the element enters the viewport — forwarded straight to `IntersectionObserver` (default `'0px'`):
+
+```svelte
+<AudioVisualizer mochi:clientOnly:visible={{ rootMargin: '200px' }} />
+```
+
+Provide fallback children as the placeholder — they reserve space and give the observer something to watch until the component mounts (an empty wrapper still gets a 1px minimum height so it remains observable):
+
+```svelte
+<ChartCanvas mochi:clientOnly:visible data={points}>
+  <div class="chart-skeleton">Loading chart…</div>
+</ChartCanvas>
+```
+
 ### Server-side APIs are unavailable
 
 The component never runs on the server, so server-only APIs — `getRequestContext()`, `cookies`, `hydratable()` server reads — are unavailable inside it. Pass any server-derived values in as props from the page.
@@ -60,5 +82,5 @@ The component never runs on the server, so server-only APIs — `getRequestConte
 
 ### Limitations
 
-- Combining `mochi:clientOnly` with `mochi:hydrate*` or `mochi:defer*` is a compile error — a client-only component is never server-rendered.
+- Combining `mochi:clientOnly*` with `mochi:hydrate*` or `mochi:defer*` is a compile error — a client-only component is never server-rendered.
 - Like other islands, it must not be nested inside another hydratable component.

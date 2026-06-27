@@ -16,6 +16,10 @@ declare module 'svelte/elements' {
     retries?: number;
   }
 
+  interface MochiClientOnlyVisibleOptions {
+    rootMargin?: string;
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   export interface HTMLAttributes<T> {
     'mochi:hydrate'?: boolean;
@@ -23,6 +27,7 @@ declare module 'svelte/elements' {
     'mochi:defer'?: boolean | MochiDeferOptions;
     'mochi:defer:visible'?: boolean | MochiDeferVisibleOptions;
     'mochi:clientOnly'?: boolean;
+    'mochi:clientOnly:visible'?: boolean | MochiClientOnlyVisibleOptions;
   }
 }
 

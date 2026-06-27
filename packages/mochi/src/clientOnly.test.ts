@@ -59,6 +59,22 @@ describe('mochi:clientOnly rendering', () => {
     expect(propsScript![1]).not.toContain('islandId');
   });
 
+  test('mochi:clientOnly:visible emits hydrate-on/options and a resolved css-url, still no SSR render', async () => {
+    const result = await requestContext.run(makeCtx(), () => registry.renderComponent(FIXTURE_PAGE));
+
+    const visible = result.body.match(/<mochi-hydratable-island[^>]*hydrate-on="visible"[^>]*>([\s\S]*?)<\/mochi-hydratable-island>/);
+    expect(visible).not.toBeNull();
+    expect(visible![0]).toContain('client-only');
+    expect(visible![0]).toContain('hydrate-options=');
+    expect(visible![0]).toContain('150px');
+    // Lazy CSS URL is substituted to a real path, not left as a placeholder
+    expect(visible![0]).toMatch(/css-url="[^"]*\/css\/[^"]+\.css"/);
+    expect(visible![0]).not.toContain('__MOCHI_CSS_URL__');
+    // Fallback ships; the component itself never renders server-side
+    expect(visible![1]).toContain('<p data-fallback-visible="">loading lazily</p>');
+    expect(result.body).not.toContain('data-widget-lazy-rendered');
+  });
+
   test('client bundle URL is substituted and bootstrap/CSS are exposed', async () => {
     const result = await requestContext.run(makeCtx(), () => registry.renderComponent(FIXTURE_PAGE));
 

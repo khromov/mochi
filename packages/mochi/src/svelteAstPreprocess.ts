@@ -160,6 +160,24 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
           attrs += ` props-ref={__mochi_emit_props__(${propsExpr}, __mochi_iid)}`;
         }
 
+        // `mochi:clientOnly:visible` defers the browser-side `mount()` until the
+        // wrapper enters the viewport. The runtime reuses the hydratable visible
+        // path (`hydrate-on="visible"` + `hydrate-options` for `rootMargin`, plus
+        // lazy `css-url`); `client-only` still flips it from `hydrate()` to
+        // `mount()`. Mirrors the `mochi:hydrate:visible` branch below.
+        const isVisible = directives.clientOnly.name === 'mochi:clientOnly:visible';
+        if (isVisible) {
+          let visibleOptionsExpr: string | null = null;
+          if (directives.clientOnly.value !== true && !Array.isArray(directives.clientOnly.value)) {
+            const expr = directives.clientOnly.value.expression as unknown as Positioned;
+            visibleOptionsExpr = source.slice(expr.start, expr.end);
+          }
+          attrs += ` hydrate-on="visible" css-url="__MOCHI_CSS_URL__${comp.name}__"`;
+          if (visibleOptionsExpr) {
+            attrs += ` hydrate-options={JSON.stringify(${visibleOptionsExpr})}`;
+          }
+        }
+
         // The component invocation is never emitted server-side — SSR renders
         // only the wrapper (plus the optional fallback markup, removed when
         // the client mounts the component). No <svelte:boundary> needed: there
@@ -369,7 +387,7 @@ interface MochiDirectives {
   clientOnly: AST.Attribute | null;
 }
 
-/** Find `mochi:defer*`, `mochi:hydrate*`, and `mochi:clientOnly` attributes on a component. */
+/** Find `mochi:defer*`, `mochi:hydrate*`, and `mochi:clientOnly*` attributes on a component. */
 function findMochiDirectives(attributes: Array<AST.Attribute | AST.SpreadAttribute | AST.Directive | AST.AttachTag>): MochiDirectives {
   let server: AST.Attribute | null = null;
   let hydrate: AST.Attribute | null = null;
@@ -383,7 +401,7 @@ function findMochiDirectives(attributes: Array<AST.Attribute | AST.SpreadAttribu
         server = attr;
       } else if (attr.name === 'mochi:hydrate' || attr.name === 'mochi:hydrate:visible') {
         hydrate = attr;
-      } else if (attr.name === 'mochi:clientOnly') {
+      } else if (attr.name === 'mochi:clientOnly' || attr.name === 'mochi:clientOnly:visible') {
         clientOnly = attr;
       }
     }

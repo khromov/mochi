@@ -207,7 +207,7 @@ export class Mochi {
     const slots: Record<'head' | 'css' | 'body' | 'script', () => string> = {
       head: () => logLevelScript + warnShim + result.head,
       css: () =>
-        `<style>mochi-hydratable-island, mochi-server-island { display: contents; } mochi-server-island[defer-on="visible"]:empty { display: block; min-height: 1px; }${ISLAND_FAILURE_CSS}${
+        `<style>mochi-hydratable-island, mochi-server-island { display: contents; } mochi-server-island[defer-on="visible"]:empty, mochi-hydratable-island[hydrate-on="visible"]:empty { display: block; min-height: 1px; }${ISLAND_FAILURE_CSS}${
           registry.development ? ISLAND_FAILURE_DEV_CSS : ''
         }</style>\n${cssLinks}`,
       body: () => result.body + debugInfoScript + pageEntryScript + (registry.debugBarEnabled ? '<div id="mochi-dev-toolbar"></div>' : ''),

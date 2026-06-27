@@ -657,3 +657,49 @@ describe('mochi:clientOnly', () => {
     expect(transformed).toContain('let __mochi_uid__ = 0;');
   });
 });
+
+describe('mochi:clientOnly:visible', () => {
+  test('basic self-closing emits client-only + visible attributes', () => {
+    const source = `${SCRIPT('import Foo from "./Foo.svelte";')}<Foo mochi:clientOnly:visible />`;
+    const { transformed, hydratables, serverIslands } = preprocessHydratable(source, '/test/File.svelte');
+
+    expect(hydratables).toHaveLength(1);
+    expect(serverIslands).toHaveLength(0);
+    expect(transformed).toContain('<mochi-hydratable-island');
+    expect(transformed).toContain('client-only');
+    expect(transformed).toContain('hydrate-on="visible"');
+    expect(transformed).toContain('__MOCHI_CSS_URL__Foo__');
+    // Still client-only: never server-rendered, no boundary, no options unless given
+    expect(transformed).not.toContain('<Foo');
+    expect(transformed).not.toContain('<svelte:boundary>');
+    expect(transformed).not.toContain('hydrate-options');
+    expect(transformed).not.toContain('mochi:clientOnly');
+  });
+
+  test('with rootMargin option emits hydrate-options', () => {
+    const source = `${SCRIPT('import Foo from "./Foo.svelte";')}<Foo mochi:clientOnly:visible={{rootMargin: "100px"}} />`;
+    const { transformed } = preprocessHydratable(source, '/test/File.svelte');
+
+    expect(transformed).toContain('hydrate-on="visible"');
+    expect(transformed).toContain('hydrate-options={JSON.stringify({rootMargin: "100px"})}');
+    expect(transformed).not.toContain('mochi:clientOnly:visible');
+  });
+
+  test('fallback children render inside the wrapper', () => {
+    const source = `${SCRIPT('import Foo from "./Foo.svelte";')}<Foo mochi:clientOnly:visible><span>loading…</span></Foo>`;
+    const { transformed } = preprocessHydratable(source, '/test/File.svelte');
+
+    expect(transformed).toMatch(/<mochi-hydratable-island [^>]*hydrate-on="visible"[^>]*><span>loading…<\/span><\/mochi-hydratable-island>/);
+    expect(transformed).not.toContain('<Foo');
+  });
+
+  test('combining with mochi:hydrate throws', () => {
+    const source = `${SCRIPT('import Foo from "./Foo.svelte";')}<Foo mochi:clientOnly:visible mochi:hydrate />`;
+    expect(() => preprocessHydratable(source, '/test/File.svelte')).toThrow('Cannot combine `mochi:clientOnly` with `mochi:hydrate`');
+  });
+
+  test('combining with mochi:defer throws', () => {
+    const source = `${SCRIPT('import Foo from "./Foo.svelte";')}<Foo mochi:defer mochi:clientOnly:visible />`;
+    expect(() => preprocessHydratable(source, '/test/File.svelte')).toThrow('Cannot combine `mochi:clientOnly` with `mochi:defer`');
+  });
+});

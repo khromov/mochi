@@ -97,6 +97,13 @@ Use `mochi:clientOnly` to skip SSR entirely — the component is mounted in the 
 <AudioVisualizer mochi:clientOnly />
 ```
 
+Add `:visible` to defer the browser mount until the placeholder scrolls into view, with the same `rootMargin` option:
+
+```svelte
+<!-- Never server-rendered; mounts when scrolled into view -->
+<AudioVisualizer mochi:clientOnly:visible={{ rootMargin: '200px' }} />
+```
+
 ### `mochi:defer`
 
 Use `mochi:defer` to render the component on a separate request after the page ships, and combine it with `mochi:hydrate` to also hydrate the deferred markup once it lands. See `Server islands with mochi:defer` for the full lifecycle.
