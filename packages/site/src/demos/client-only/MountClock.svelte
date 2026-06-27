@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import type { ClientOnlyProps } from 'mochi-framework';
 
   let { label = 'Lazy island' }: ClientOnlyProps<{ label?: string }> = $props();
@@ -8,7 +9,7 @@
   const mountedAt = performance.now();
   let seconds = $state(0);
 
-  $effect(() => {
+  onMount(() => {
     const id = setInterval(() => {
       seconds = Math.floor((performance.now() - mountedAt) / 1000);
     }, 1000);
