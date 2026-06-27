@@ -149,9 +149,7 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
         // `mochi:*` islands inside it are left untransformed and get wiped on
         // mount. Authors type the component's props with `ClientOnlyProps<T>`
         // so the children type-check; the snippet is never passed at runtime.
-        const childNodes = comp.fragment.nodes;
-        const hasRealChildren = childNodes.some((n) => !(n.type === 'Text' && n.data.trim() === ''));
-        const fallback = hasRealChildren ? source.slice((childNodes[0] as unknown as Positioned).start, (childNodes[childNodes.length - 1] as unknown as Positioned).end) : '';
+        const fallback = comp.fragment.nodes.map((n) => source.slice(n.start, n.end)).join('');
 
         // No islandId/isHydratable in the serialized payload: the client
         // bootstrap injects both from the wrapper's attributes, and keeping
