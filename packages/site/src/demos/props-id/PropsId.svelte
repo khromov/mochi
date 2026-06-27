@@ -6,6 +6,7 @@
   import LabeledField from './LabeledField.svelte';
   import ServerStamp from './ServerStamp.svelte';
   import ServerHydratedStamp from './ServerHydratedStamp.svelte';
+  import ClientStamp from './ClientStamp.svelte';
 
   const sources = await loadSources(files);
 </script>
@@ -36,6 +37,13 @@
     the value survived from the deferred render into the hydrated client.
   </p>
   <ServerHydratedStamp mochi:defer mochi:hydrate />
+
+  <h3>Client-only island</h3>
+  <p class="hint">
+    A <code>mochi:clientOnly</code> island never renders on the server, so its <code>$props.id()</code> is minted entirely in the browser when the component mounts — there is no SSR
+    value to reuse, yet the id is still unique and stable for the component's lifetime.
+  </p>
+  <ClientStamp mochi:clientOnly />
 </DemoPage>
 
 <style>
