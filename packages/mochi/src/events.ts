@@ -98,6 +98,45 @@ export interface MochiCacheErrorEvent {
   error: unknown;
 }
 
+export interface MochiQueueAddedEvent {
+  queue: string;
+  jobId: string;
+  jobName: string;
+}
+
+export interface MochiQueueActiveEvent {
+  queue: string;
+  jobId: string;
+  jobName: string;
+  /** 1-based attempt number (1 on the first run). */
+  attempt: number;
+}
+
+export interface MochiQueueCompletedEvent {
+  queue: string;
+  jobId: string;
+  jobName: string;
+  attempt: number;
+  /** Processing time in ms, measured from the `active` event. */
+  duration: number;
+}
+
+export interface MochiQueueFailedEvent {
+  queue: string;
+  jobId: string;
+  jobName: string;
+  attempt: number;
+  duration: number;
+  /** Message of the error the processor threw. */
+  error: string;
+}
+
+export interface MochiQueueErrorEvent {
+  queue: string;
+  /** Worker-level error not tied to a specific job (e.g. a poll failure). */
+  error: string;
+}
+
 export interface MochiServerStartEvent {
   /** Bound TCP port; absent when serving over a Unix socket. */
   port?: number;
@@ -223,6 +262,13 @@ export interface MochiPreprocessCacheSummaryEvent {
   files: number;
 }
 
+export interface MochiCompileCacheSummaryEvent {
+  hits: number;
+  misses: number;
+  /** Total file lookups during the batch (`hits + misses`). */
+  files: number;
+}
+
 export interface MochiCompileErrorLog {
   file?: string;
   line?: number;
@@ -251,6 +297,11 @@ export type MochiEventMap = {
   'cache:revalidate': MochiCacheRevalidateEvent;
   'cache:revalidate:failed': MochiCacheRevalidateFailedEvent;
   'cache:error': MochiCacheErrorEvent;
+  'queue:added': MochiQueueAddedEvent;
+  'queue:active': MochiQueueActiveEvent;
+  'queue:completed': MochiQueueCompletedEvent;
+  'queue:failed': MochiQueueFailedEvent;
+  'queue:error': MochiQueueErrorEvent;
   'server:start': MochiServerStartEvent;
   'server:stop': MochiServerStopEvent;
   'warmup:start': MochiWarmupStartEvent;
@@ -265,6 +316,7 @@ export type MochiEventMap = {
   'preprocess-cache:hit': MochiPreprocessCacheEvent;
   'preprocess-cache:miss': MochiPreprocessCacheEvent;
   'preprocess-cache:summary': MochiPreprocessCacheSummaryEvent;
+  'compile-cache:summary': MochiCompileCacheSummaryEvent;
   'recompile:start': MochiRecompileStartEvent;
   'recompile:complete': MochiRecompileCompleteEvent;
   'client-bundle:complete': MochiClientBundleEvent;

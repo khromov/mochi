@@ -4,34 +4,47 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository layout
 
-Bun workspaces monorepo:
+Bun workspaces monorepo (`packages/*`):
 
 - `packages/mochi` — the `mochi-framework` library (published to npm). All framework source lives here.
-- `packages/site` — demo site that consumes `mochi-framework` via `workspace:*`.
-- `packages/demos` — standalone demos site (HN clone today). Deployed separately from `packages/site`.
+- `packages/site` — main site that consumes `mochi-framework` via `workspace:*`; serves the marketing pages, the docs (rendered from `packages/docs` markdown), and the inline demos. Port 3333.
+- `packages/demos` — standalone demos site (HN clone, todo, admin). Deployed separately from `packages/site`. Port 3334.
+- `packages/minimal` — smallest possible Mochi app; doubles as the smoke-test target and the `create-mochi` template source. Port 3335.
+- `packages/docs` — `mochi-docs`: markdown content only (no server/scripts of its own); consumed and rendered by `packages/site`.
+- `packages/cli` — published as `create-mochi`: the `mochi-framework build` and project-scaffolding CLI (`@clack/prompts` + `commander`).
+- `packages/msgpackr-extract-stub` — published as `@mochi-framework/msgpackr-extract-stub`; a pure-JS stub wired in via the root `overrides` so the native `msgpackr-extract` is never built.
+- `packages/video-animations` — Satori-based frame generation for promo videos (`bun run mochi:animate`). Satori (yoga) rounds element `left`/`top` to the integer pixel grid, so animate position via `transform: translate(${x}px, ${y}px)` with the element pinned at `left:0/top:0` — driving per-frame motion through `left`/`top` stair-steps and jitters ~1–2px. See `leaf()` in `src/frame.ts`.
+- `packages/remotion` — rendered video output assets.
 
-Root `package.json` scripts delegate into packages with `bun --cwd=packages/<name> run …`. Most framework work happens inside `packages/mochi/src/`; site/demo work lives in `packages/site/src/` and `packages/demos/src/`.
+Root `package.json` scripts delegate into packages with `bun --cwd=packages/<name> run …` or fan out with `bun --filter='*' run …`. Most framework work happens inside `packages/mochi/src/`; app work lives in `packages/site/src/` and `packages/demos/src/`.
 
 ## Commands
 
 ```sh
-bun run dev          # Run BOTH site (3333) and demos (3334) in parallel, MODE=development
+bun run dev          # scripts/dev.ts: auto-discovers every package with a `dev` script and runs them
+                     # in parallel with color-prefixed logs — site (3333), demos (3334), minimal (3335)
 bun run dev:site     # Just the main site
 bun run dev:demos    # Just the demos site
 bun run start        # Start the main site in production mode
-bun run start:all    # Run both sites in production mode
-bun run build        # Pre-build islands for site + demos (parallel via `bun --filter`)
-bun run clean        # Remove .mochi/ in site + demos
+bun run start:all    # Run all production-capable sites
+bun run build        # Pre-build islands across workspaces (parallel via `bun --filter`)
+bun run clean        # Remove .mochi/ across workspaces
 bun run typecheck    # tsc --noEmit across all workspaces
 bun run test         # Run tests across all workspaces (bun test)
+bun run checks       # lint:fix + format + typecheck + test — the standard pre-done gate (delegate to a sub-agent)
 bun run lint         # eslint . (ignores .mochi/, packages/site/.mochi/, .claude/)
 bun run lint:fix     # eslint . --fix
 bun run format       # prettier --write .
 bun run format:check # prettier --check . (used by CI)
+bun run syncpack     # syncpack lint — verify dependency versions agree across workspaces (syncpack:fix to apply)
 bun run loc          # Lines-of-code report for all packages (.github/scripts/loc-report.ts)
+bun run deps         # Dependency report (packages/mochi/scripts/dep-report.ts)
+bun run bench:msgpack # msgpack serialization benchmark
+bun run cli-test     # create-mochi CLI regression test (.github/scripts/cli-regression-test.ts)
+bun run mochi:animate # Generate promo-video frames (packages/video-animations)
 ```
 
-Multi-package scripts (`build`, `test`, `typecheck`, `clean`, `dev`, `start:all`) use `bun --filter='*' run <script>`, which fans out to every workspace, runs in topological order, and parallelises siblings.
+Multi-package scripts (`build`, `test`, `typecheck`, `clean`, `start:all`) use `bun --filter='*' run <script>`, which fans out to every workspace, runs in topological order, and parallelises siblings. `bun run dev` instead uses `scripts/dev.ts`, which dynamically discovers packages exposing a `dev` script.
 
 Run a single test file: `bun test packages/mochi/src/forms.test.ts` (or pass `-t <pattern>` to filter).
 
@@ -50,7 +63,7 @@ Mochi is an experimental SSR framework for Svelte 5 + Bun with islands-based sel
   - `Mochi.api(handler)` — JSON API route with automatic `MochiHttpError` handling.
   - `Mochi.ws(handlers)` — WebSocket route (`upgrade`/`open`/`message`/`close`/`drain`).
   - `Mochi.sse(handler)` — Server-Sent Events stream (`send`/`close`/`onClose`).
-- **`ComponentRegistry.ts`** — SSR compilation of `.svelte` via Svelte 5; preprocesses `mochi:hydrate`, `mochi:hydrate:visible`, `mochi:defer`, `mochi:defer:visible`; builds client bundles only for hydratable components; exposes the virtual `mochi` module (`isServer`, `isBrowser`, `isDev`).
+- **`ComponentRegistry.ts`** — SSR compilation of `.svelte` via Svelte 5; preprocesses `mochi:hydrate`, `mochi:hydrate:visible`, `mochi:defer`, `mochi:defer:visible`; builds client bundles only for hydratable components; exposes the virtual `mochi` module (`isServer`, `isBrowser`, `isDev`). New `mochi-framework` exports usable inside `.svelte` files must be added to **both** `mochi-env` `build.onLoad` blocks here — the server block (real re-export) and the client block (throwing browser stub) — not just `index.ts`; otherwise the SSR build fails with `No matching export in "mochi-env:mochi-framework"` (smoke-test the demo site — typecheck/unit tests won't catch it).
 - **`hooks.ts`** — SvelteKit-style middleware. `Handle` receives `{ event, resolve }`. `sequence(...)` composes handles. `resolve(event, opts)` accepts `transformPage` / `filterResponseHeaders`.
 - **`requestContext.ts`** — `getRequestContext()` returns `{ request, url, params, locals, cookies, form? }` via `AsyncLocalStorage`. Available in any server-side code (components, API handlers, server islands). The `AsyncLocalStorage` instance is pinned on `globalThis` so multiple bundled copies share state.
 - **`forms.ts`** — `fail(status, data)`, `redirect(status, location)`, `success(data?)` return values from a `Mochi.page` action. `fail`/`success` re-render the page with a `form` prop; `redirect` issues the redirect response. A page route may not return its own `form` prop if it declares actions (reserved name).
@@ -90,6 +103,8 @@ To add a new event: add the payload type + key to `MochiEventMap` in `events.ts`
 1. Push errors to `this.errors` in `ComponentRegistry`.
 2. The page render path checks `registry.getErrors()` before each render and throws `MochiHttpError(500, …)` if any are present. The thrown error routes through `routeErrorResponse` and renders the configured `errorPage` (default: `DefaultError.svelte`) with the formatted compile errors in `error.message`.
 
+Error-boundary scope is **islands-only**: the preprocessor auto-wraps `mochi:hydrate*` islands in `<svelte:boundary>`, but does NOT auto-wrap pages. An uncaught top-level SSR throw must fall through to the route-handler try/catch and render the configured `errorPage` — don't add page auto-wrappers (they'd convert a hard-fail into a silent stub). Users author their own `<svelte:boundary>` when they want to gracefully degrade a portion of a page.
+
 ## Releases
 
 This repo uses [release-please](https://github.com/googleapis/release-please) with Conventional Commits:
@@ -110,20 +125,43 @@ Default to Bun instead of Node.js:
 - `Bun.file` over `node:fs` readFile/writeFile.
 - Bun auto-loads `.env` — don't add `dotenv`.
 
+## Dependencies
+
+- **Avoid the SSR build's `external` list.** When a dep won't bundle in `ComponentRegistry.ts`'s `Bun.build`, swap it for a cleanly-packaged (ideally CJS) alternative rather than externalizing — `external` deps must resolve at runtime from the consumer's compiled-chunk location, which is fragile across `workspace:*` packages. Concrete precedent: `@msgpack/msgpack` (unbundleable) → `@ably/msgpack-js` (bundles clean, same byte output). Externalizing "fixed" the build but broke `mochi-minimal` at runtime.
+- **Vendoring** a library with separate Node/browser builds: combine both into a single ESM TS file switching at runtime via `typeof process !== 'undefined'` (the only safe strict-ESM global probe) — do NOT preserve its `package.json` `browser`-field remap (bundler-field remaps fragment behavior across Bun server / browser / SSR / hydrated client). Keep the upstream `LICENSE`, drop the npm dep, and delete the verbatim originals.
+
+## Docker
+
+The runtime is **colima**, usually stopped — start it before building:
+
+```sh
+colima start            # only if `colima status` says not running
+docker build ...
+```
+
+Build targets default to `WORKSPACE=site` (override `--build-arg WORKSPACE=demos`): `Dockerfile` = dev-mode image (the variant actually deployed, site ≈ 423 MB); `Dockerfile.production` = prebuilt SSR + `--omit=dev` (site ≈ 294 MB). A bad cached `install` layer can fail a prod build with a misleading `Could not read .../index.ts` parse error — a `--no-cache` rebuild fixes it; reproduce in a clean container before blaming source.
+
 ## Hydration notes
 
 - Hydration is all-or-nothing per island: `mochi:hydrate` hydrates the entire subtree together, no per-child opt-in.
-- All island components (`mochi:hydrate`, `mochi:hydrate:visible`, `mochi:defer`, `mochi:defer:visible`) implicitly receive an `islandId` prop matching the wrapper's `island-id` attribute. Accept it with `let { islandId } = $props()` if needed.
+- Islands do not receive an id prop. For a unique, SSR-stable id inside any component (e.g. for `<label for>`), use Svelte's native `const uid = $props.id();`. Server-island renders are namespaced via render's `idPrefix` (derived from the wrapper's `island-id`), so their ids never collide with the host page.
 - Hydratable invocations (`mochi:hydrate`, `mochi:hydrate:visible`, `mochi:defer`, `mochi:defer:visible`, `mochi:defer mochi:hydrate`) also implicitly receive `isHydratable: true` as a prop; pure SSR-only invocations leave it undefined. Use it to branch SSR-only fallback logic at the same call site that hydrates client-side: `let { isHydratable }: { isHydratable?: boolean } = $props()`.
+- A top-level read in a `mochi:hydrate*` island runs on the server during SSR **and again on the client during hydration** — there's no automatic SSR-value carryover. If it reads something the client can't see (e.g. `cookies.get()` against an `HttpOnly` cookie via `document.cookie`), the value flips to `(not set)` after hydration. To display a server snapshot, wrap the read in Svelte's `hydratable(key, fn)` (imported from `svelte`, not mochi; namespace the key, e.g. `mochi-demo:cookies-ssr`) — the server result is devalue-serialized into the page and reused client-side. See `packages/site/src/demos/cookies/CookieDemo.svelte`.
+- Never write a literal `</script>` inside a `.svelte` `<script>` block — even in a `// comment`, JSDoc, or string literal, it closes the tag at the HTML-parsing layer before TypeScript sees it and yields a misleading `js_parse_error: Unexpected token` at line `:0`. Break it (`script` + `>` separately). If you hit that error at line 0 right after editing a `.svelte` file, search the script block for `</script` first.
 
 ## Conventions
 
 - When moving components or other files, use `git mv` to preserve history.
-- After completing your work, run `bun run checks` (which runs lint:fix + format + typecheck + test) instead of running those steps individually. **Always delegate this to a sub-agent** (e.g. via the `Agent` tool) that runs the command and reports back only the pass/fail status plus any failures — never run `bun run checks` directly in the main context, since its multi-thousand-line lint/typecheck/test output will pollute your conversation window.
+- After completing your work, run `bun run checks` (which runs lint:fix + format + typecheck + test) instead of running those steps individually. **Always delegate this to a Sonnet-based sub-agent** (e.g. via the `Agent` tool) that runs the command and reports back only the pass/fail status plus any failures — never run `bun run checks` directly in the main context, since its multi-thousand-line lint/typecheck/test output will pollute your conversation window.
 - Before adding a new dependency, look up its latest version with `bun info <pkg> version` and pin to that — don't guess from training data, which is often months stale.
 - For every new framework feature, add a short, to-the-point section (or sub-section in an existing page) under `packages/docs/`. Match the terse, code-first style of the existing pages. For warnings/notes/danger boxes inside docs, use `packages/docs/_components/Callout.svelte` (`type="info" | "warning" | "danger"`) — import it via a `<script>` block at the top of the markdown file. See `145-cache.md` for an example.
 - Every demo in `packages/site/src/demos/` must have its own distinct icon. When you add a demo, also add a `demoIconFor` entry in `packages/site/src/lib/demoIcons.ts` — pick a Lucide icon that hasn't been used yet and that visually evokes the demo's concept.
-- After non-trivial changes, run a smoke test of the demo site to catch runtime regressions. The user may already have `bun run dev` running (which fans out to ports `3333` + `3334` + `3335`), so use a single-site command on a different port to avoid collisions: `PORT=4444 bun run dev:site` (or `bun run start`). Hit a couple of routes (e.g. `curl -sS http://localhost:4444/`) and then stop the server.
+- After non-trivial changes, run a smoke test of the demo site to catch runtime regressions. The user may already have `bun run dev` running (which fans out to ports `3333` + `3334` + `3335`), so use a single-site command on a different port to avoid collisions: `PORT=4444 bun run dev:site` (or `bun run start`). Hit a couple of routes (e.g. `curl -sS http://localhost:4444/`) and then stop the server. Tear it down with `pkill -f dev:site` (or `pkill -f "src/index.ts"`), not by killing the port — `bun run` fans into a 3-process tree and killing only the port listener orphans the two wrappers, which pile up across runs; verify with `pgrep -x bun`.
+- **Never auto-commit.** Don't run `git commit` (or `git add` + `commit`) on your own, even after a feature is "done". Finish, run checks/format (delegated), report what changed, and wait for an explicit "commit" / "/commit" / "make a PR". `git push` and PR creation are equally gated. Read-only git inspection (status/diff/log) is fine.
+- **Debug empirically, with a minimal reproduction.** Never claim a bug's root cause from reading code/comments — reproduce it first with a small standalone script that strips everything except the triggering conditions, then diagnose. Code comments describe workarounds for a specific context, not proof the same issue applies elsewhere.
+- For framework-internal self-requests (warmup, prerender, self-checks), invoke the route handler in-process with a synthetic `Request` + the real `server` object — don't `fetch()` the loopback server (avoids the network hop and `0.0.0.0` resolution quirks). Watch trailing-slash policy: request the canonical path or `buildRequestContext` early-returns a 301/308. New behaviors like this should be an opt-in `Mochi.serve()` option (default `false`).
+- Build demos to do **exactly** what was asked — nothing decorative.
+- A demo's source file list is the single source of truth in `packages/site/src/demos/<slug>/files.ts` (`files: SourceSpec[]`, paths relative to the site root, including cross-folder files like `./src/demoIndex.ts`). It's consumed by the demo entry `.svelte` (`loadSources(files)`) and by the `/demos/<slug>/llms.txt` route via the registry `packages/site/src/lib/demoFiles.ts`. When adding a demo, create its `files.ts`, import it in the entry, and add an entry to `lib/demoFiles.ts` — don't scan/parse the folder.
 
 ## Icons (Lucide)
 
@@ -139,6 +177,8 @@ For non-Svelte contexts (e.g. HTML strings in `highlight.ts`), inline the icon's
 ## Comments
 
 Use code comments sparingly, this is important. Comments should explain WHY something is done, not what is being done. Do not add comment signatures for new functions unless you need to explain WHY the function is needed.
+
+Never reference plan files (`~/.claude/plans/*.md`) from code comments, docstrings, or commit messages — they live outside the repo and are a dead link for any future reader. If context is genuinely needed, restate the rationale inline so the comment stands on its own.
 
 ## After every change
 

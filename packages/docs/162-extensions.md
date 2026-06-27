@@ -4,6 +4,10 @@ slug: extensions
 description: 'Observe or transform framework behavior at lifecycle moments using hooks and filters.'
 ---
 
+<script>
+  import Callout from './_components/Callout.svelte';
+</script>
+
 ## Extensions (hooks & filters)
 
 Extension points for `Mochi.serve()`. Pass `eventHooks` and `filters` as top-level options; each registry holds at most one entry per name.
@@ -27,8 +31,6 @@ Names use a `namespace:camelCase` convention. Each name is registered in a typed
 
 - **Hooks** run a user function at a specific framework moment. No return value — observation or side effects only.
 - **Filters** replace a framework default value. The callback receives the existing value and returns the new one.
-
-Do **NOT** mutate framework state from a filter or return a value from a hook; instead, pick the surface that matches the intent — observation goes in a hook, value substitution goes in a filter.
 
 ### Hooks
 
@@ -94,8 +96,6 @@ await Mochi.serve({
   routes,
 });
 ```
-
-Do **NOT** do heavy work in `route:matched`; instead, use a `handle` middleware — this hook is observation only and runs on every matching request.
 
 The hook does not fire when the framework rejects the request before route handling (e.g. CSRF block). `getRequestContext()` is available inside the hook for all four kinds and exposes the matched `requestId`, `url`, and `params`.
 
@@ -169,7 +169,19 @@ await Mochi.serve({
 });
 ```
 
-Do **NOT** bypass CSRF on a state-mutating endpoint; instead, prefer the narrower `csrf:trustedOrigins` filter or `csrf.checkOrigin: false` on `Mochi.serve()`.
+#### `trailingSlash:redirect`
+
+Override the `trailingSlash` policy for the current request. The filter receives the redirect the framework computed — a `Response` (301/308) when the path isn't canonical, or `null` when no redirect applies. Return the input unchanged to delegate, or `null` to skip the redirect and let the request reach its handler as-is. Sync. Useful for endpoints that must answer at an exact path regardless of the site-wide policy — e.g. an MCP endpoint at `/mcp` under `trailingSlash: 'always'`.
+
+```ts
+await Mochi.serve({
+  trailingSlash: 'always',
+  filters: {
+    'trailingSlash:redirect': (redirect, { url }) => (url.pathname === '/mcp' ? null : redirect),
+  },
+  routes,
+});
+```
 
 #### `cookie:defaults`
 
@@ -197,7 +209,11 @@ await Mochi.serve({
 });
 ```
 
-Do **NOT** use `html:shell` for full template ownership; instead, set `htmlShell` directly on `Mochi.serve()` — this filter is for snippet injection.
+<Callout type="warning">
+
+**Use `htmlShell` on `serve()` for full template control.** The `html:shell` filter is for snippet injection only; using it to replace the entire template will bypass placeholder processing and break your layout.
+
+</Callout>
 
 #### `serverIsland:secretKey`
 

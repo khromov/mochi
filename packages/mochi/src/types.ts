@@ -4,6 +4,7 @@ import type { MochiCookieJar } from './cookies';
 import type { MochiCsrfOptions } from './csrf';
 import type { MochiFilters, MochiHooks } from './extensions';
 import type { MochiProxyOptions } from './proxy';
+import type { MochiProcessor, MochiQueueListeners, MochiQueueRuntimeOptions } from './queue';
 
 export type MochiServerPropsResolver = (req: Request, params: Record<string, string>) => Record<string, unknown> | Promise<Record<string, unknown>>;
 
@@ -294,6 +295,30 @@ export function isMochiSse(value: unknown): value is MochiSseConfig {
   return typeof value === 'object' && value !== null && (value as MochiSseConfig).__mochiSse === true;
 }
 
+// ---------------------------------------------------------------------------
+// Background queues
+// ---------------------------------------------------------------------------
+
+/**
+ * Inert descriptor returned by `Mochi.queue()` — mirrors `MochiApiConfig`/
+ * `MochiWsConfig` et al. Non-generic so a heterogeneous `queues` map type-checks;
+ * `Mochi.queue<T, R>` keeps the generics only to type the processor/listeners at
+ * the call site, then erases them here. The live queue (producer + consumer) is
+ * created only when this is mounted in `Mochi.serve({ queues })`, which calls
+ * `createQueue`, passing the `on` listeners so they're wired before the consumer
+ * can pull its first job.
+ */
+export interface MochiQueueConfig {
+  readonly __mochiQueue: true;
+  readonly process: MochiProcessor<unknown, unknown>;
+  readonly options?: MochiQueueRuntimeOptions;
+  readonly on?: Partial<MochiQueueListeners<unknown, unknown>>;
+}
+
+export function isMochiQueue(value: unknown): value is MochiQueueConfig {
+  return typeof value === 'object' && value !== null && (value as MochiQueueConfig).__mochiQueue === true;
+}
+
 export type MochiRouteValue = MochiPageConfig | MochiApiConfig | MochiWsConfig | MochiSseConfig | MochiFileConfig | BunRouteValue;
 
 /** `stack` is only populated when the server runs with `development: true`. */
@@ -432,6 +457,13 @@ export interface MochiServeOptions {
   /** Path to a prebuilt manifest JSON. Defaults to `.mochi/manifest.json`. */
   manifest?: string;
   routes?: Record<string, MochiRouteValue>;
+  /**
+   * Background job queues to start with the server, keyed by queue name. Each
+   * value is a `Mochi.queue({ process, … })` descriptor; produce to it from route
+   * code via `Mochi.getQueue(name).add(...)`. Queues drain gracefully on
+   * shutdown. A queue-only process is `Mochi.serve({ queues })` with no `routes`.
+   */
+  queues?: Record<string, MochiQueueConfig>;
   fetch?: (req: Request, server: Server<undefined>) => Response | Promise<Response>;
   htmlShell?: string;
   /**

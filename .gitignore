@@ -45,6 +45,8 @@ reports
 !.claude/skills/
 !.claude/commands/
 !.claude/autofixer-report.ts
+!.claude/settings.json
 IMPROVEMENTS.md
 flamegraphs
 REPORT.md
+GEMINI.md

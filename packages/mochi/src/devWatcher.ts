@@ -15,6 +15,7 @@ import { loadSvelteConfig } from './svelteConfig';
 import { alternateSlashPattern } from './trailingSlash';
 import {
   isMochiApi,
+  isMochiFile,
   isMochiPage,
   isMochiSse,
   isMochiWs,
@@ -295,7 +296,7 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
   let knownEntryPatterns = new Set<string>();
   let routeComponentPaths: Map<string, string> = new Map();
 
-  function routeType(handler: unknown): 'api' | 'ws' | 'sse' | 'page' | null {
+  function routeType(handler: unknown): 'api' | 'ws' | 'sse' | 'page' | 'file' | null {
     if (isMochiApi(handler)) {
       return 'api';
     }
@@ -308,10 +309,13 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
     if (isMochiPage(handler)) {
       return 'page';
     }
+    if (isMochiFile(handler)) {
+      return 'file';
+    }
     return null;
   }
 
-  function currentRouteType(pattern: string): 'api' | 'ws' | 'sse' | 'page' | null {
+  function currentRouteType(pattern: string): 'api' | 'ws' | 'sse' | 'page' | 'file' | null {
     if (apiHandlerMap?.has(pattern)) {
       return 'api';
     }
@@ -323,6 +327,12 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
     }
     if (pageConfigMap?.has(pattern)) {
       return 'page';
+    }
+    // File routes have no per-pattern handler map (their source is captured in
+    // the registered closure), so a known pattern absent from every map must be
+    // a file route — the only remaining route type.
+    if (knownEntryPatterns.has(pattern)) {
+      return 'file';
     }
     return null;
   }
@@ -374,6 +384,19 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
             addBunRoute(pattern, result.bunRouteValue);
             counts.added.push(pattern);
             counts.removed.push(pattern);
+            logger.info(`Route retyped ${currentType}→${type}: ${pattern}`);
+          }
+        } else if (type === 'file' && registerRoutePattern && unregisterRoutePattern) {
+          // File routes have no handler map to mutate in place — their source
+          // is baked into the registered closure — so swap by re-registering.
+          unregisterRoutePattern(pattern);
+          removeBunRoute(pattern);
+          const result = await registerRoutePattern(pattern, handler as MochiRouteValue);
+          if (result) {
+            addBunRoute(pattern, result.bunRouteValue);
+            counts.file++;
+            counts.updated++;
+            logger.info(`Route updated file: ${pattern}`);
           }
         } else {
           if (isMochiApi(handler) && apiHandlerMap?.has(pattern)) {
@@ -401,6 +424,7 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
             addBunRoute(pattern, result.bunRouteValue);
             counts[result.type]++;
             counts.added.push(pattern);
+            logger.info(`Route added ${result.type}: ${pattern}`);
           }
         } catch (e) {
           logger.warn(`Failed to register route ${pattern}: ${e instanceof Error ? e.message : e}`);
@@ -415,6 +439,7 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
           unregisterRoutePattern(pattern);
           removeBunRoute(pattern);
           counts.removed.push(pattern);
+          logger.info(`Route removed: ${pattern}`);
         }
       }
     }
@@ -455,6 +480,9 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
             }
             if (counts.page) {
               parts.push(`${counts.page} page`);
+            }
+            if (counts.file) {
+              parts.push(`${counts.file} file`);
             }
             if (counts.added.length) {
               parts.push(`+${counts.added.length} new`);
@@ -577,6 +605,7 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
       }
       if (event === 'unlink' && filePath.endsWith('.svelte')) {
         evictPreprocessCacheEntry(path.resolve(filePath));
+        registry.compileCache.evict(path.resolve(filePath));
         registry.evict(path.resolve(filePath));
       }
       if (triggerShellReload && shellPath && path.resolve(filePath) === shellPath) {
@@ -606,6 +635,11 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
       let summary: { pages: Set<string>; clientBundleCount: number } = { pages: new Set(), clientBundleCount: 0 };
       try {
         registry.svelteConfig = await loadSvelteConfig(undefined, { reload: true, tempDir: outDir });
+        // A config reload can change the compiler options, markdown/mdsvex config,
+        // or user preprocessors. Only the compiler options are in the cache
+        // fingerprint, so the markdown/preprocessor cases need an explicit reset —
+        // without it those entries would serve output built under the old config.
+        registry.compileCache.reset();
         summary = await registry.recompileAll();
       } catch (e) {
         logger.warn(`Svelte config reload failed: ${e instanceof Error ? e.message : e}`);

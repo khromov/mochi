@@ -4,6 +4,11 @@ slug: events
 description: 'Subscribe to framework lifecycle events like requests, WebSocket activity, and builds via a mitt emitter.'
 ---
 
+<script>
+  import Callout from './_components/Callout.svelte';
+  import SeeItInAction from './_components/SeeItInAction.svelte';
+</script>
+
 ## Events
 
 Mochi exposes a process-wide [`mitt`](https://www.npmjs.com/package/mitt) emitter named `mochiEvents`. Subscribe from application code to feed metrics, audit logs, custom log destinations, or anything else that needs a structured view of server activity.
@@ -15,6 +20,7 @@ Event names use a `namespace:action` convention. Every key is in the typed `Moch
 - [`request`](#request) — every HTTP request (page or API)
 - [`ws:open`](#wsopen), [`ws:message`](#wsmessage), [`ws:close`](#wsclose) — WebSocket lifecycle
 - [`sse:open`](#sseopen), [`sse:message`](#ssemessage), [`sse:close`](#sseclose) — Server-Sent Events lifecycle
+- [`queue:added`](#queueadded), [`queue:active`](#queueactive), [`queue:completed`](#queuecompleted), [`queue:failed`](#queuefailed), [`queue:error`](#queueerror) — [background job](/docs/queues/) lifecycle
 - [`server:start`](#serverstart), [`server:stop`](#serverstop) — server lifecycle
 - [`warmup:start`](#warmupstart), [`warmup:complete`](#warmupcomplete) — route warmup batch lifecycle (only with `warmup: true`)
 - [`error`](#error) — page/api/action handler threw, response was an error page or `apiError`
@@ -38,7 +44,11 @@ mochiEvents.on('request', ({ method, path, status, duration }) => {
 });
 ```
 
-Handlers run synchronously. Do **NOT** `await` long-running work inside a handler; instead, fire-and-forget to your metrics or log client so the next emission is not stalled.
+<Callout type="warning">
+
+**Keep async work out of handlers.** Handlers run synchronously and block the event emission chain; offload metrics, logging, and other I/O to a fire-and-forget async task so downstream handlers are not delayed.
+
+</Callout>
 
 ### `mochiEvents.setHandler`
 
@@ -54,8 +64,6 @@ mochiEvents.setHandler('metrics:request', 'request', ({ status, duration }) => {
 
 Namespace `name` (`metrics:request`, not `request`) so unrelated subsystems do not silently evict each other.
 
-Do **NOT** mix `setHandler` with `mochiEvents.off()` for the same name; instead, call `setHandler(name, type, noop)` or rely on a fresh `setHandler(name, …)` to swap the handler — the name table is maintained only by `setHandler`.
-
 ### `hasSubscribers`
 
 Use `hasSubscribers(name)` to skip payload construction when nobody is listening:
@@ -67,8 +75,6 @@ if (hasSubscribers('compile:error')) {
   mochiEvents.emit('compile:error', expensivePayload());
 }
 ```
-
-Do **NOT** wrap every emission in `hasSubscribers`; instead, reach for it only when the payload involves loops, allocations, or stack capture. The built-in events emit unconditionally — their object literals are below noise.
 
 ### `requestId` correlation
 
@@ -89,7 +95,11 @@ Mochi.serve({
 });
 ```
 
-Do **NOT** enable `proxy.requestIdHeader` for traffic you do not control; instead, leave it unset so the framework generates an id with `nanoid` — clients can spoof any header, smearing log lines for unrelated requests together.
+<Callout type="danger">
+
+**Only set `proxy.requestIdHeader` for traffic you fully control.** Clients can spoof headers; if you trust untrusted traffic, attacker-controlled ids will correlate unrelated requests together in logs, breaking trace correlation.
+
+</Callout>
 
 ### Event reference
 
@@ -171,6 +181,61 @@ Fires when the SSE stream closes (client disconnect or explicit close).
 | ---------- | -------- | ---------------------- |
 | `path`     | `string` | URL pathname           |
 | `duration` | `number` | ms the stream was open |
+
+#### `queue:added`
+
+Fires after a job is enqueued via `queue.add()` / `queue.addBulk()`. See [Queues](/docs/queues/).
+
+| Field     | Type     | Notes                  |
+| --------- | -------- | ---------------------- |
+| `queue`   | `string` | queue name             |
+| `jobId`   | `string` | generated job id       |
+| `jobName` | `string` | job name passed to add |
+
+#### `queue:active`
+
+Fires when a worker starts processing a job.
+
+| Field     | Type     | Notes                                   |
+| --------- | -------- | --------------------------------------- |
+| `queue`   | `string` | queue name                              |
+| `jobId`   | `string` | job id                                  |
+| `jobName` | `string` | job name                                |
+| `attempt` | `number` | 1-based attempt number (1 on first run) |
+
+#### `queue:completed`
+
+Fires when a job's processor returns successfully.
+
+| Field      | Type     | Notes                                 |
+| ---------- | -------- | ------------------------------------- |
+| `queue`    | `string` | queue name                            |
+| `jobId`    | `string` | job id                                |
+| `jobName`  | `string` | job name                              |
+| `attempt`  | `number` | attempt that succeeded                |
+| `duration` | `number` | processing ms, measured from `active` |
+
+#### `queue:failed`
+
+Fires when a job's processor throws (once per failed attempt).
+
+| Field      | Type     | Notes                          |
+| ---------- | -------- | ------------------------------ |
+| `queue`    | `string` | queue name                     |
+| `jobId`    | `string` | job id                         |
+| `jobName`  | `string` | job name                       |
+| `attempt`  | `number` | attempt that failed            |
+| `duration` | `number` | processing ms before the throw |
+| `error`    | `string` | thrown error message           |
+
+#### `queue:error`
+
+Fires for a worker-level error not tied to a specific job (e.g. a poll failure).
+
+| Field   | Type     | Notes         |
+| ------- | -------- | ------------- |
+| `queue` | `string` | queue name    |
+| `error` | `string` | error message |
 
 #### `server:start`
 
@@ -327,13 +392,13 @@ Fires whenever the registry rebuilds the hydratable client bundle (one Bun.build
 
 Fires when an island fails — server-island render, hydratable SSR render, or client-side hydration. The framework still ships an error placeholder; this event lets you observe it.
 
-| Field           | Type                                           | Notes                              |
-| --------------- | ---------------------------------------------- | ---------------------------------- |
-| `componentName` | `string`                                       | island component identifier        |
-| `islandId`      | `string \| undefined`                          | DOM `island-id` if known           |
-| `kind`          | `'hydratable' \| 'server' \| 'client-hydrate'` | which lifecycle stage failed       |
-| `message`       | `string`                                       | error message                      |
-| `stack`         | `string \| undefined`                          | stack trace, populated in dev only |
+| Field           | Type                                           | Notes                                             |
+| --------------- | ---------------------------------------------- | ------------------------------------------------- |
+| `componentName` | `string`                                       | island component identifier                       |
+| `islandId`      | `string \| undefined`                          | envelope id; set for `'server'`, else `undefined` |
+| `kind`          | `'hydratable' \| 'server' \| 'client-hydrate'` | which lifecycle stage failed                      |
+| `message`       | `string`                                       | error message                                     |
+| `stack`         | `string \| undefined`                          | stack trace, populated in dev only                |
 
 #### `file:change`
 
@@ -352,8 +417,10 @@ Emitted by `MochiCache` — see [Subscribing to cache events](/docs/cache#subscr
 
 `mochiEvents` is a plain mitt emitter — `emit` your own keys on it for quick experiments. Custom keys are absent from `MochiEventMap`, so handlers and emit sites lose typing.
 
-Do **NOT** use `mochiEvents` for application events you own; instead, construct a separate emitter you control so the typed map stays accurate to the framework's surface.
-
 ### Built-in subscribers
 
 `logger()` (see `logger`) already prints `request`, `ws:*`, `sse:*`, `server:*`, `error`, and `cache:revalidate` lines. Pass `{ cache: 'verbose' }` to also print every `cache:read`, or `{ cache: false }` to silence cache logging entirely.
+
+<SeeItInAction
+demos={[{ href: "/demos/cache-events/", title: "Cache Events", hook: "Subscribe to MochiCache lifecycle events through mochiEvents and log them to the server console." }]}
+/>

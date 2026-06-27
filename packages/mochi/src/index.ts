@@ -10,6 +10,8 @@
 export { Mochi } from './Mochi';
 export { build } from './build';
 export type { MochiBuildOptions } from './build';
+export { runTests } from './testing';
+export type { RunTestsOptions } from './testing';
 export type { MochiSvelteConfig } from './svelteConfig';
 export { getRequestContext } from './requestContext';
 export type { MochiRequestContext } from './requestContext';
@@ -48,6 +50,11 @@ export type {
   MochiCacheRevalidateEvent,
   MochiCacheRevalidateFailedEvent,
   MochiCacheErrorEvent,
+  MochiQueueAddedEvent,
+  MochiQueueActiveEvent,
+  MochiQueueCompletedEvent,
+  MochiQueueFailedEvent,
+  MochiQueueErrorEvent,
   MochiServerStartEvent,
   MochiServerStopEvent,
   MochiWarmupStartEvent,
@@ -67,6 +74,7 @@ export type {
   MochiRecompileTrigger,
   MochiClientBundleEvent,
 } from './events';
+export type { MochiQueue, MochiJob, MochiJobRef, MochiJobOptions, MochiQueueOptions, MochiQueueRuntimeOptions, MochiQueueListeners, MochiProcessor } from './queue';
 export { json, error, apiError } from './utils';
 export { trailingSlashIt } from './trailingSlash';
 export { fail, redirect, success } from './forms';
@@ -116,6 +124,7 @@ export type {
   MochiSseStream,
   MochiFileConfig,
   MochiFileResolver,
+  MochiQueueConfig,
   BunRouteValue,
   MochiSvelteShakerOptions,
 } from './types';

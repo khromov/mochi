@@ -6,6 +6,7 @@ description: 'Cache server-side data with stale-while-revalidate semantics using
 
 <script>
   import Callout from './_components/Callout.svelte';
+  import SeeItInAction from './_components/SeeItInAction.svelte';
 </script>
 
 ## Cache
@@ -119,3 +120,11 @@ See the [Cache Events demo](/demos/cache-events/) for a worked example that pipe
 ### Server-only
 
 `MochiCache` lives on the server. Importing it into a hydratable island throws — caches are shared per-process state and don't make sense in the browser. Construct cache instances in `.ts` modules or page-route scripts, never inside a `mochi:hydrate` component.
+
+<SeeItInAction
+demos={[
+{ href: "/demos/data-loading/", title: "Data Loading", hook: "Server-side fetch from PokéAPI cached via MochiCache and rendered at request time." },
+{ href: "/demos/cache-events/", title: "Cache Events", hook: "Subscribe to MochiCache lifecycle events through mochiEvents and log them to the server console." },
+{ href: "/cookie-vary-test/", title: "Cookie Vary Test", hook: "A page that sets Vary: Cookie on its response — useful for testing cookie-partitioned cache keys." },
+]}
+/>

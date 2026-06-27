@@ -2,13 +2,9 @@
   import DemoPage from '../../components/DemoPage.svelte';
   import FileViewer from './FileViewer.svelte';
   import { loadSources } from '../../components/utils.ts';
+  import { files } from './files.ts';
 
-  const sources = await loadSources([
-    { label: 'File.svelte', path: './src/demos/file/File.svelte' },
-    { label: 'FileViewer.svelte', path: './src/demos/file/FileViewer.svelte' },
-    { label: 'routes.ts', path: './src/demos/file/routes.ts' },
-    { label: 'index.ts', path: './src/demoIndex.ts' },
-  ]);
+  const sources = await loadSources(files);
 </script>
 
 <DemoPage

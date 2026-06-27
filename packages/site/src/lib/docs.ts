@@ -1,14 +1,33 @@
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { compile as mdsvexCompile } from 'mdsvex';
+import { logger, trailingSlashIt } from 'mochi-framework';
 import rehypeSlug from 'rehype-slug';
-import { demos } from './demos';
+import { demos, type Demo } from './demos';
+import type { SourceSpec } from '../components/utils.ts';
 import type { TocEntry } from './toc';
 
 type MdsvexRehypePlugin = NonNullable<NonNullable<Parameters<typeof mdsvexCompile>[1]>['rehypePlugins']>[number];
 
 export const DOCS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../docs');
 const DEMOS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../demos');
+// Demo source paths in each demo's `files` are written relative to the site package root (e.g. './src/...').
+const SITE_ROOT = path.resolve(DEMOS_DIR, '../..');
+
+// Internal demos are keyed by their folder name (`slug`) and carry their own `files`
+// list — the single source of truth shared by the demo page, the per-demo llms.txt
+// route, and the /llms-full.txt bundle.
+type InternalDemo = Demo & { slug: string; files: SourceSpec[] };
+// `demos` is a static module import, so the filtered list never changes at
+// runtime — compute it once and reuse it across every llms.txt/json request.
+let cachedInternalDemos: InternalDemo[] | null = null;
+function internalDemos(): InternalDemo[] {
+  return (cachedInternalDemos ??= demos.filter((d): d is InternalDemo => d.href.startsWith('/') && !!d.slug && !!d.files));
+}
+function filesForDemo(slug: string): SourceSpec[] | undefined {
+  return internalDemos().find((d) => d.slug === slug)?.files;
+}
 
 /** Parses the leading numeric prefix of a filename (e.g. `"01-intro.md"` → `1`). */
 function leadingFileNumber(filename: string, fallback = Number.NaN): number {
@@ -36,17 +55,19 @@ export interface DocEntry {
 let cachedDocs: DocEntry[] | null = null;
 let cachedBySlug: Map<string, DocEntry> | null = null;
 let cachedNav: TocEntry[] | null = null;
-let cachedLlmsTxt: string | null = null;
+let cachedLlmsRecommendedTxt: string | null = null;
 let cachedLlmsFullTxt: string | null = null;
 let cachedSitemapXml: string | null = null;
+const cachedDemoLlmsTxt = new Map<string, string | null>();
 
 export function clearDocsCaches(): void {
   cachedDocs = null;
   cachedBySlug = null;
   cachedNav = null;
-  cachedLlmsTxt = null;
+  cachedLlmsRecommendedTxt = null;
   cachedLlmsFullTxt = null;
   cachedSitemapXml = null;
+  cachedDemoLlmsTxt.clear();
 }
 
 export async function loadDocs(): Promise<DocEntry[]> {
@@ -63,7 +84,12 @@ export async function loadDocs(): Promise<DocEntry[]> {
   filenames.sort((a, b) => {
     const na = leadingFileNumber(a);
     const nb = leadingFileNumber(b);
-    if (Number.isFinite(na) && Number.isFinite(nb)) {
+    // Only let the numeric prefix decide when the two numbers differ. Two docs
+    // sharing a prefix must fall back to a total order, else stable-sort
+    // preserves Bun.Glob.scan's filesystem order, which differs between the
+    // image-build and runtime container filesystems and makes the generated
+    // docs barrel non-reproducible.
+    if (Number.isFinite(na) && Number.isFinite(nb) && na !== nb) {
       return na - nb;
     }
     return a.localeCompare(b);
@@ -149,56 +175,87 @@ export async function buildDocsNav(): Promise<TocEntry[]> {
   return entries;
 }
 
-async function buildDemosTxt(): Promise<string> {
-  const tsGlob = new Bun.Glob('*/*.ts');
-  const svelteGlob = new Bun.Glob('*/*.svelte');
-  const files: string[] = [];
-  for await (const f of tsGlob.scan(DEMOS_DIR)) {
-    files.push(f);
-  }
-  for await (const f of svelteGlob.scan(DEMOS_DIR)) {
-    files.push(f);
-  }
-  files.sort();
-
-  const demoMap = new Map<string, string[]>();
-  for (const file of files) {
-    const slash = file.indexOf('/');
-    const dir = file.slice(0, slash);
-    const filename = file.slice(slash + 1);
-    if (!demoMap.has(dir)) {
-      demoMap.set(dir, []);
-    }
-    demoMap.get(dir)!.push(filename);
-  }
-
+async function buildDemosTxt(stripStyles = false): Promise<string> {
+  const slugs = internalDemos()
+    .map((d) => d.slug)
+    .sort();
   const parts: string[] = ['# Demo Source Files\n'];
-  for (const [demo, filenames] of demoMap) {
-    parts.push(`## Demo: ${demo}\n`);
-    for (const filename of filenames) {
-      const abs = path.join(DEMOS_DIR, demo, filename);
-      const content = await Bun.file(abs).text();
-      const lang = filename.endsWith('.svelte') ? 'svelte' : 'ts';
-      parts.push(`### ${demo}/${filename}\n\`\`\`${lang}\n${content.trimEnd()}\n\`\`\`\n`);
+  for (const slug of slugs) {
+    // The cached getDemoLlmsTxt serves the per-demo route (styles intact); the
+    // /llms-full.txt bundle wants them stripped, so build that variant directly.
+    const section = stripStyles ? await buildDemoLlmsTxt(slug, true) : await getDemoLlmsTxt(slug);
+    if (section !== null) {
+      parts.push(section);
     }
   }
   return parts.join('\n');
 }
 
-export async function buildLlmsTxt(): Promise<string> {
-  if (cachedLlmsTxt) {
-    return cachedLlmsTxt;
+// Per-demo source bundle built from the demo's declared `files` list — the same list
+// the demo page renders via loadSources — so cross-folder files (e.g. shared stores,
+// the demoIndex.ts example) are included, not just files in the demo folder.
+export async function getDemoLlmsTxt(slug: string): Promise<string | null> {
+  if (cachedDemoLlmsTxt.has(slug)) {
+    return cachedDemoLlmsTxt.get(slug)!;
+  }
+  const result = await buildDemoLlmsTxt(slug);
+  // Source files never change at runtime, so cache the rendered bundle (including
+  // the null "no such demo" result) to avoid re-reading every file on each request.
+  cachedDemoLlmsTxt.set(slug, result);
+  return result;
+}
+
+async function buildDemoLlmsTxt(slug: string, stripStyles = false): Promise<string | null> {
+  const specs = filesForDemo(slug);
+  if (!specs || specs.length === 0) {
+    return null;
+  }
+  const parts: string[] = [`## Demo: ${slug}\n`];
+  for (const { label, path: rel, lang } of specs) {
+    const abs = path.resolve(SITE_ROOT, rel);
+    if (!existsSync(abs)) {
+      // A declared source file that isn't on disk is almost always a typo'd path
+      // in the demo's files.ts — surface it instead of silently dropping the file.
+      logger.warn(`[llms] demo '${slug}': source file not found, skipping: ${rel}`);
+      continue;
+    }
+    let content = (await Bun.file(abs).text()).trimEnd();
+    const fence = lang ?? (label.endsWith('.svelte') ? 'svelte' : 'ts');
+    // Strip <style> blocks only from Svelte-fenced sources — never from .ts, where a
+    // literal "<style>" would just be code/text, not markup to elide.
+    if (stripStyles && fence === 'svelte') {
+      content = stripSvelteStyleBlocks(content);
+    }
+    parts.push(`### ${label}\n\`\`\`${fence}\n${content}\n\`\`\`\n`);
+  }
+  if (parts.length === 1) {
+    return null;
+  }
+  return parts.join('\n').trimEnd() + '\n';
+}
+
+export async function buildLlmsRecommendedTxt(): Promise<string> {
+  if (cachedLlmsRecommendedTxt) {
+    return cachedLlmsRecommendedTxt;
   }
   const docs = await loadDocs();
-  cachedLlmsTxt = docs.map((d) => d.raw.trimEnd()).join('\n\n') + '\n';
-  return cachedLlmsTxt;
+  cachedLlmsRecommendedTxt = docs.map((d) => d.raw.trimEnd()).join('\n\n') + '\n';
+  return cachedLlmsRecommendedTxt;
+}
+
+// Component <style> blocks in demo source are presentation noise for an LLM
+// consuming /llms-full.txt — replace each with an empty placeholder so the
+// component still reads as complete, without shipping the CSS.
+const SVELTE_STYLE_BLOCK_RE = /<style\b[^>]*>[\s\S]*?<\/style>/g;
+function stripSvelteStyleBlocks(text: string): string {
+  return text.replace(SVELTE_STYLE_BLOCK_RE, '<style>\n  /* Styles omitted */\n</style>');
 }
 
 export async function buildLlmsFullTxt(): Promise<string> {
   if (cachedLlmsFullTxt) {
     return cachedLlmsFullTxt;
   }
-  const [docs, demos] = await Promise.all([loadDocs(), buildDemosTxt()]);
+  const [docs, demos] = await Promise.all([loadDocs(), buildDemosTxt(true)]);
   cachedLlmsFullTxt = docs.map((d) => d.raw.trimEnd()).join('\n\n') + '\n\n' + demos;
   return cachedLlmsFullTxt;
 }
@@ -215,7 +272,9 @@ export async function buildSitemapXml(): Promise<string> {
   const urls: string[] = [
     `  <url><loc>${SITE_BASE}/</loc></url>`,
     ...docs.map((d) => `  <url><loc>${SITE_BASE}/docs/${d.slug}/</loc></url>`),
-    ...internalDemos.map((d) => `  <url><loc>${SITE_BASE}${d.href}/</loc></url>`),
+    // Demo hrefs already carry a trailing slash; trailingSlashIt normalizes to
+    // exactly one rather than appending unconditionally (which produced `…/request-id//`).
+    ...internalDemos.map((d) => `  <url><loc>${trailingSlashIt(`${SITE_BASE}${d.href}`)}</loc></url>`),
   ];
 
   cachedSitemapXml = ['<?xml version="1.0" encoding="UTF-8"?>', '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">', ...urls, '</urlset>', ''].join('\n');
@@ -225,6 +284,94 @@ export async function buildSitemapXml(): Promise<string> {
 export async function getDocLlmsTxt(slug: string): Promise<string | null> {
   const doc = await getDoc(slug);
   return doc ? doc.raw.trimEnd() + '\n' : null;
+}
+
+export interface LlmsIndexEntry {
+  title: string;
+  description: string;
+  url: string;
+}
+
+/** The plain-text source URL for a demo, derived from its page href (which ends in '/'). */
+function demoLlmsPath(href: string): string {
+  return href.endsWith('/') ? `${href}llms.txt` : `${href}/llms.txt`;
+}
+
+export interface DemoLlmsRoute {
+  /** Route path, sitting alongside the demo page (e.g. /demos/chat/llms.txt, /cookie-vary-test/llms.txt). */
+  path: string;
+  /** Demo folder name (the demo's `slug`) used to look up its source. */
+  slug: string;
+}
+
+/**
+ * Demos with local source, each as the static llms.txt route to register and the
+ * `slug` (folder name) behind it. The route is static (not a param) so it outranks
+ * demo param routes like /demos/data-loading/:id, and its path tracks the demo's own
+ * page href so source and page share a prefix.
+ */
+export function internalDemoLlmsRoutes(): DemoLlmsRoute[] {
+  return internalDemos().map((d) => ({ path: demoLlmsPath(d.href), slug: d.slug }));
+}
+
+export interface SectionIndexEntry {
+  type: 'doc' | 'demo';
+  slug: string;
+  title: string;
+  description: string;
+}
+
+export async function buildSectionIndex(): Promise<SectionIndexEntry[]> {
+  const docList = await loadDocs();
+  const docs: SectionIndexEntry[] = docList.map((d) => ({
+    type: 'doc',
+    slug: d.slug,
+    title: d.title,
+    description: d.description ?? '',
+  }));
+  const demoEntries: SectionIndexEntry[] = internalDemos().map((d) => ({ type: 'demo', slug: d.slug, title: d.title, description: d.hook }));
+  return [...docs, ...demoEntries];
+}
+
+export async function buildLlmsJson(origin: string): Promise<{ docs: LlmsIndexEntry[]; demos: LlmsIndexEntry[] }> {
+  const docList = await loadDocs();
+  const docs: LlmsIndexEntry[] = docList.map((d) => ({
+    title: d.title,
+    description: d.description ?? '',
+    url: `${origin}/docs/${d.slug}/llms.txt`,
+  }));
+  const demoEntries: LlmsIndexEntry[] = internalDemos().map((d) => ({ title: d.title, description: d.hook, url: `${origin}${demoLlmsPath(d.href)}` }));
+  return { docs, demos: demoEntries };
+}
+
+const SITE_NAME = 'Mochi';
+const SITE_SUMMARY = 'Mochi is an SSR-first framework for Svelte 5 on Bun with islands-based selective hydration.';
+
+// Standard llms.txt index: title + summary + linked sections, rendered from the same
+// data as /llms.json. Per-request (origin-dependent), so not cached.
+export async function buildLlmsIndexTxt(origin: string): Promise<string> {
+  const { docs, demos } = await buildLlmsJson(origin);
+  const link = (e: LlmsIndexEntry) => `- [${e.title}](${e.url}): ${e.description}`;
+  const lines = [
+    `# ${SITE_NAME}`,
+    '',
+    `> ${SITE_SUMMARY}`,
+    '',
+    '## Docs',
+    '',
+    ...docs.map(link),
+    '',
+    '## Examples',
+    '',
+    ...demos.map(link),
+    '',
+    '## Optional',
+    '',
+    `- [All docs concatenated](${origin}/llms-recommended.txt): The full documentation in reading order.`,
+    `- [Docs + every demo's source](${origin}/llms-full.txt): Everything, for maximum context.`,
+    '',
+  ];
+  return lines.join('\n');
 }
 
 type HastNode = {

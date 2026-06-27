@@ -2,6 +2,8 @@
   import '@fontsource/public-sans';
   import '@fontsource-variable/fraunces/full.css';
   import { MetaTags, type MetaTagsProps } from 'svelte-meta-tags';
+  import { url } from 'mochi-framework';
+  import { ViewTransitions } from 'mochi-framework/components';
   import Sidebar from './Sidebar.svelte';
   import MobileNav from './MobileNav.svelte';
   import Banner from './Banner.svelte';
@@ -23,18 +25,37 @@
   } = $props();
 
   const mergedMetaTags = $derived(mergeMetaTags(metaTags));
+
+  // The nav islands hydrate, so their props are serialized into the page. Each demo's
+  // server-only `files` carries paths like './src/demos/url/routes.ts'; crawlers mine
+  // those as relative URLs and resolve them against the page, producing phantom 404s.
+  // Nav never reads `.files`, so drop it before it ships to the client.
+  const navDemos = demos.map(({ files: _files, ...rest }) => rest);
+
+  // These demos render their own <ViewTransitions>. Match each route and its
+  // subpaths exactly so an unrelated future demo sharing the prefix (e.g.
+  // /demos/view-transitions-foo) doesn't lose the site instance.
+  const ownsViewTransitions = $derived(['/demos/view-transitions', '/demos/custom-transitions'].some((base) => url.pathname === base || url.pathname.startsWith(`${base}/`)));
 </script>
 
 <MetaTags {...mergedMetaTags} />
 
+{#if !ownsViewTransitions}
+  <ViewTransitions type="fade" regions="mochi-body" />
+{/if}
+
 <Banner />
-<MobileNav mochi:hydrate {docsNav} {demos} {currentSlug} />
+<MobileNav mochi:hydrate {docsNav} demos={navDemos} {currentSlug} />
 <CodeBlockCopy mochi:hydrate />
 
 <div class="page">
-  <Sidebar mochi:hydrate {docsNav} {demos} {currentSlug} />
+  <Sidebar mochi:hydrate {docsNav} demos={navDemos} {currentSlug} />
 
-  <div class="main-col">
+  <!-- Naming `.body` (rendered by the page component) confines the transition to
+       it; everything else (banner, sidebar, debug bar) is part of `root` and
+       frozen by ViewTransitions. Gate the name off on demo pages so their own
+       transitions own the whole subtree. -->
+  <div class="main-col" class:scope-view-transition={!ownsViewTransitions}>
     {@render children()}
   </div>
 </div>
@@ -50,6 +71,10 @@
     display: flex;
     flex-direction: column;
     min-width: 0;
+  }
+
+  .main-col.scope-view-transition :global(.body) {
+    view-transition-name: mochi-body;
   }
 
   @media (max-width: 768px) {

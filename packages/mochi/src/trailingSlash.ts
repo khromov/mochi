@@ -32,13 +32,18 @@ function unTrailingSlashIt(str: string): string {
 }
 
 /**
- * Appends a trailing slash.
+ * Appends a trailing slash to the path portion of a string.
  *
- * Will remove a trailing forward slash if it exists already, before adding a
- * trailing forward slash. This prevents double slashing a string or path.
+ * Strips any slash the path already ends with first, so the result is never
+ * double-slashed. A query string or `#fragment` is split off, left untouched,
+ * and re-attached after the path so the slash always lands on the path itself.
  */
 export function trailingSlashIt(str: string): string {
-  return unTrailingSlashIt(str) + '/';
+  const boundary = str.search(/[?#]/);
+  if (boundary === -1) {
+    return unTrailingSlashIt(str) + '/';
+  }
+  return unTrailingSlashIt(str.slice(0, boundary)) + '/' + str.slice(boundary);
 }
 
 export function alternateSlashPattern(pattern: string): string | null {

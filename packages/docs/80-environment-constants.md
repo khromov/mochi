@@ -6,6 +6,7 @@ description: 'Build-time constants for branching on render target (isServer, isB
 
 <script>
   import Callout from './_components/Callout.svelte';
+  import SeeItInAction from './_components/SeeItInAction.svelte';
 </script>
 
 ## Environment constants
@@ -17,8 +18,6 @@ import { isServer, isBrowser, isDev } from 'mochi-framework';
 ```
 
 `mochi-framework` resolves to one of two virtual modules at compile time — server builds export `isServer = true`, client bundles export `isBrowser = true`. The values are literal booleans, so `if (isBrowser) { … }` blocks dead-code-eliminate out of the opposite bundle.
-
-Do **NOT** read `process.env.NODE_ENV` or `typeof window` to detect environment; instead, import these constants — they survive bundling intact.
 
 ### `isServer`
 
@@ -65,19 +64,20 @@ export function trace(msg: string) {
 
 ## Auto-injected island props
 
-The preprocessor injects two extra props on every component invoked with `mochi:hydrate`, `mochi:hydrate:visible`, or `mochi:defer mochi:hydrate`:
+The preprocessor injects one extra prop on every component invoked with `mochi:hydrate`, `mochi:hydrate:visible`, or `mochi:defer mochi:hydrate`:
 
-- `islandId` (`string`): stable id matching the wrapping `<mochi-hydratable-island island-id>` attribute.
 - `isHydratable` (`true | undefined`): `true` for hydratable invocations, absent on plain SSR-only invocations.
 
-Accept them with `$props`:
+Accept it with `$props`:
 
 ```svelte
 <!-- file: src/lib/Counter.svelte -->
 <script lang="ts">
-  let { islandId, isHydratable }: { islandId?: string; isHydratable?: boolean } = $props();
+  let { isHydratable }: { isHydratable?: boolean } = $props();
 </script>
 ```
+
+For a unique per-instance id (e.g. `<label for>`), use Svelte's native `$props.id()` — see [Selective hydration](/docs/selective-hydration/).
 
 ### Branching SSR-only behavior with `isHydratable`
 
@@ -100,3 +100,7 @@ Use `isHydratable` to peek request-scoped state only when the client won't take 
 ```
 
 See the [Forms demo](/demos/login/) for a side-by-side comparison of hydrated and SSR-only render paths.
+
+<SeeItInAction
+demos={[{ href: "/demos/url/", title: "Isomorphic URL", hook: "One import for the current URL — reads from the request on the server, window.location on the client." }]}
+/>

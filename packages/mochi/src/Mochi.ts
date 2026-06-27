@@ -7,7 +7,7 @@ import type { RenderResult } from './ComponentRegistry';
 import { loadSvelteConfig } from './svelteConfig';
 import { buildInlineWebComponent } from './buildInlineWebComponent';
 import { buildClientStatsRoutes, CLIENT_STATS_COMPONENT } from './clientStatsRoutes';
-import { isMochiPage, isMochiApi, isMochiWs, isMochiSse, isMochiFile, isServerPropsResolver } from './types';
+import { isMochiPage, isMochiApi, isMochiWs, isMochiSse, isMochiFile, isMochiQueue, isServerPropsResolver } from './types';
 import type {
   BunRouteValue,
   HttpMethod,
@@ -22,6 +22,7 @@ import type {
   MochiRouteValue,
   MochiServerPropsResolver,
   MochiServeOptions,
+  MochiQueueConfig,
   RouteRegistrationResult,
   MochiSseConfig,
   MochiSseHandler,
@@ -34,8 +35,9 @@ import { isFormFail, isFormRedirect, isFormSuccess } from './forms';
 import { isEnhanceRequest, jsonError, jsonFailure, jsonRedirect, jsonSuccess } from './formsJson';
 import { csrfCheck, DEFAULT_FORM_CONTENT_TYPES, DEFAULT_PROTECTED_METHODS } from './csrf';
 import { applyFilter, initExtensions, runHook } from './extensions';
+import { escapeHtmlAttr } from './htmlEscape';
 import { buildPublicUrl } from './proxy';
-import { apiError, collectHeaderPairs, headResponse, isHtmlResponse, MochiHttpError, withHead } from './utils';
+import { apiError, collectHeaderPairs, cssLinkTag, headResponse, isHtmlResponse, MochiHttpError, withHead } from './utils';
 import type { MochiEvent, MochiEventKind, MochiResolveOptions } from './hooks';
 import { applyResolveOptions } from './hooks';
 import { alternateSlashPattern, trailingSlashRedirect } from './trailingSlash';
@@ -43,6 +45,8 @@ import { resolveWarmupEnabled, markWarmupRequest, isWarmablePattern } from './wa
 import { createErrorResponder, DEFAULT_ERROR_PAGE_PATH } from './errors';
 import { requestContext } from './requestContext';
 import type { MochiRequestContext } from './requestContext';
+import { createQueue, getQueue, closeAllQueueResources } from './queue';
+import type { MochiQueue, MochiQueueOptions, MochiQueueListeners, MochiProcessor } from './queue';
 import { finalizeCookieHeaders } from './cookies';
 import { makeRequestContextBuilder } from './requestSetup';
 import { verifyAndDecodeProps } from './serverIslandCrypto';
@@ -50,7 +54,6 @@ import { initMochiConfig } from './mochiConfig';
 import { logger, setLogLevel, DEFAULT_LOG_LEVEL, type LogLevel } from './log';
 import { mochiEvents } from './events';
 import type { MochiActionResult, MochiErrorEvent, MochiErrorKind, MochiServerStartEvent, MochiServerStopEvent } from './events';
-import { nanoid } from 'nanoid';
 import type { DebugBarData, DebugBarRuntimeData } from './requestContext';
 import { consoleLogger } from './consoleLogger';
 import { parse as devalueParse, stringify as devalueStringify } from 'devalue';
@@ -64,7 +67,7 @@ const DEFAULT_HTML_SHELL = await Bun.file(new URL('./templates/default-shell.htm
 /**
  * Dev-only: append a trailing `<script>` after the response body that mixes
  * the current request's response headers and inbound cookies into
- * `window.__mochi_debug`. The static fields (route, params, islandProps, …)
+ * `window.__mochi_debug`. The static fields (route, params, …)
  * are baked into the body in `resolveHtmlShell` and cached with it; the
  * dynamic fields written here always reflect *this* request, so cache hits
  * still see the correct headers and cookies.
@@ -138,6 +141,36 @@ export class Mochi {
     return { __mochiFile: true, source };
   }
 
+  /**
+   * Declare a background job queue. Like `page`/`api`/`ws`/`sse`/`file`, this
+   * returns an *inert config* — the live queue (producer + consumer) is created
+   * only when the descriptor is mounted in `Mochi.serve({ queues })`, keyed by
+   * queue name. The config bundles the `process` consumer (receives a read-only
+   * `MochiJob`, returns the job result) with its options (`concurrency`,
+   * `dataPath`, …) and optional `on` lifecycle listeners. Produce jobs from
+   * anywhere via `Mochi.getQueue(name).add(...)`. Queues drain gracefully on
+   * `Mochi.serve()` shutdown.
+   */
+  static queue<T = unknown, R = unknown>(config: MochiQueueOptions<T, R>): MochiQueueConfig {
+    const { process, on, ...options } = config;
+    return {
+      __mochiQueue: true,
+      process: process as MochiProcessor<unknown, unknown>,
+      options,
+      on: on as Partial<MochiQueueListeners<unknown, unknown>> | undefined,
+    };
+  }
+
+  /**
+   * Resolve the producer handle for a queue declared in
+   * `Mochi.serve({ queues })` and `.add()` jobs to it. Pass the payload type
+   * explicitly (`Mochi.getQueue<JobData>(name)`). Throws if the queue name was
+   * never declared, or if reached before `Mochi.serve()` has mounted its queues.
+   */
+  static getQueue<T = unknown>(name: string): MochiQueue<T> {
+    return getQueue<T>(name);
+  }
+
   private static resolveHtmlShell(
     template: string,
     result: RenderResult,
@@ -158,7 +191,7 @@ export class Mochi {
     },
   ): string {
     const bootstrapUrl = result.bootstrapUrl;
-    const cssLinks = result.cssUrls.map((url) => `<link rel="stylesheet" href="${url}">`).join('\n');
+    const cssLinks = result.cssUrls.map(cssLinkTag).join('\n');
     const serverIslandScript = result.hasServerIslands ? `<script>(()=>{${opts.serverIslandClientJs}})()</script>` : '';
     const debugInfoScript = registry.debugBarEnabled && opts.debugInfo ? `<script>window.__mochi_debug=${jsonForHtml(opts.debugInfo)}</script>` : '';
     const pageEntryScript = opts.liveReloadClientJs && opts.pageEntry ? `<script>window.__mochi_page_entry=${jsonForHtml(opts.pageEntry)}</script>` : '';
@@ -247,7 +280,7 @@ export class Mochi {
           return inbound;
         }
       }
-      return nanoid(32);
+      return Bun.randomUUIDv7();
     };
 
     const { enabled: loggerEnabled = true, level: configuredLevel, ...loggerOptions } = options.logger ?? {};
@@ -1046,16 +1079,23 @@ export class Mochi {
       const hydrateMode = url.searchParams.get('hydrate');
 
       // Verify signature and decode props (empty means no props)
-      let props: Record<string, unknown>;
+      let decodedProps: Record<string, unknown>;
       if (signedProps) {
         const propsJson = verifyAndDecodeProps(signedProps);
         if (propsJson === null) {
           return new Response('Invalid props signature', { status: 403 });
         }
-        props = devalueParse(propsJson) as Record<string, unknown>;
+        decodedProps = devalueParse(propsJson) as Record<string, unknown>;
       } else {
-        props = {};
+        decodedProps = {};
       }
+
+      // `islandId` rides inside the signed envelope as transport only — it
+      // identifies the wrapper for debug/error reporting and must not reach
+      // the component as a prop (components use `$props.id()` for ids). Split it
+      // off into a fresh object rather than deleting in place.
+      const { islandId: rawIslandId, ...props } = decodedProps;
+      const islandId = typeof rawIslandId === 'string' ? rawIslandId : undefined;
 
       // Look up the component path
       const componentPath = registry.getServerIslandPath(componentName);
@@ -1068,15 +1108,21 @@ export class Mochi {
         await registry.compile(componentPath);
         let result: RenderResult;
         try {
+          // Namespacing via `idPrefix` keeps `$props.id()` values from this
+          // standalone render from colliding with ids the host page already
+          // emitted (both renders otherwise start their uid counter at `s1`).
+          // Svelte rejects prefixes containing `--`, so guard against tokens
+          // signed by an older deploy carrying an incompatible id.
           result = await registry.renderComponent(componentPath, props as Record<string, unknown>, {
             stripMarkers: false,
+            ...(islandId && !islandId.includes('--') ? { idPrefix: islandId } : {}),
           });
         } catch (err) {
           const e = err instanceof Error ? err : new Error(String(err));
           logger.error(`Server island "${componentName}" failed: ${e.message}`);
           mochiEvents.emit('island:error', {
             componentName,
-            islandId: (props as Record<string, unknown>).islandId as string | undefined,
+            islandId,
             kind: 'server',
             message: e.message,
             stack: registry.development ? e.stack : undefined,
@@ -1102,17 +1148,9 @@ export class Mochi {
           const serializedProps = devalueStringify(props);
           const bootstrapUrl = registry.getIslandBootstrapUrl();
 
-          const islandId = props.islandId as string | undefined;
-          if (!islandId) {
-            logger.warn(`Server island "${componentName}" missing islandId in props`);
-          }
           let hydrateAttrs = `component-name="${componentName}"`;
-          if (islandId) {
-            hydrateAttrs += ` island-id="${islandId}"`;
-          }
           if (Object.keys(props as Record<string, unknown>).length > 0) {
-            const escapedProps = serializedProps.replace(/"/g, '&quot;');
-            hydrateAttrs += ` props="${escapedProps}"`;
+            hydrateAttrs += ` props="${escapeHtmlAttr(serializedProps)}"`;
           }
           if (componentUrl) {
             hydrateAttrs += ` component-url="${componentUrl}"`;
@@ -1124,6 +1162,19 @@ export class Mochi {
           if (bootstrapUrl) {
             body += `<script type="module" src="${bootstrapUrl}"></script>`;
           }
+        }
+
+        // Prepend <link> tags for CSS the host page never linked: hydratable
+        // islands rendered only inside this deferred content (their CSS is gated
+        // out of the page <head> because they aren't rendered at page time), plus
+        // any side-effect CSS imports. Browsers load <link> assigned via the
+        // client's `innerHTML`, so these apply as soon as the island appears. The
+        // island's own scoped CSS already loads via the wrapper's `css-url`
+        // attribute, so exclude it to avoid a duplicate tag.
+        const ownCss = registry.getComponentCssUrl(componentPath);
+        const extraCss = result.cssUrls.filter((url) => url !== ownCss);
+        if (extraCss.length > 0) {
+          body = extraCss.map(cssLinkTag).join('') + body;
         }
 
         return new Response(body, {
@@ -1161,7 +1212,7 @@ export class Mochi {
     const composedFetch = async (req: Request, server: Server<undefined>): Promise<Response> => {
       const url = buildPublicUrl(req, options.proxy);
       if (trailingSlashPolicy) {
-        const redirect = trailingSlashRedirect(req.method, url, trailingSlashPolicy);
+        const redirect = applyFilter('trailingSlash:redirect', trailingSlashRedirect(req.method, url, trailingSlashPolicy), { request: req, url, policy: trailingSlashPolicy });
         if (redirect) {
           return redirect;
         }
@@ -1286,6 +1337,14 @@ export class Mochi {
           }
         : userWebSocketOptions;
 
+    // Validate queues BEFORE binding so a misconfiguration fails fast without
+    // leaving a half-started server listening.
+    for (const [name, config] of Object.entries(options.queues ?? {})) {
+      if (!isMochiQueue(config)) {
+        throw new Error(`Mochi.serve({ queues }): "${name}" is not a Mochi.queue(...) descriptor. Each value must be created with Mochi.queue().`);
+      }
+    }
+
     const server = Bun.serve({
       ...bunOptions,
       routes: bunRoutes,
@@ -1305,6 +1364,19 @@ export class Mochi {
         startEvent.hostname = server.hostname;
       }
       mochiEvents.emit('server:start', startEvent);
+    }
+
+    // Validated above; mount the live queues now (after bind, so they drain on
+    // the same shutdown path as the server). If a queue throws mid-mount, tear
+    // the just-bound server down rather than leaving it listening half-started.
+    try {
+      for (const [name, config] of Object.entries(options.queues ?? {})) {
+        createQueue(name, config.process, config.options, config.on);
+      }
+    } catch (err) {
+      await closeAllQueueResources();
+      server.stop(true);
+      throw err;
     }
 
     if (warmupHandlers.length > 0) {
@@ -1394,6 +1466,7 @@ export class Mochi {
       } catch (err) {
         logger.error(`mochi:shutdown hook failed: ${err instanceof Error ? err.message : err}`);
       }
+      await closeAllQueueResources();
       const stopEvent: MochiServerStopEvent = { reason: 'signal' };
       if (signal === 'SIGTERM' || signal === 'SIGINT') {
         stopEvent.signal = signal;

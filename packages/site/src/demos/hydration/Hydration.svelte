@@ -2,13 +2,9 @@
   import DemoPage from '../../components/DemoPage.svelte';
   import HydrationTarget from './HydrationTarget.svelte';
   import { loadSources } from '../../components/utils.ts';
+  import { files } from './files.ts';
 
-  const sources = await loadSources([
-    { label: 'Hydration.svelte', path: './src/demos/hydration/Hydration.svelte' },
-    { label: 'HydrationTarget.svelte', path: './src/demos/hydration/HydrationTarget.svelte' },
-    { label: 'routes.ts', path: './src/demos/hydration/routes.ts' },
-    { label: 'index.ts', path: './src/demoIndex.ts' },
-  ]);
+  const sources = await loadSources(files);
 </script>
 
 <DemoPage

@@ -33,7 +33,13 @@ import Snowflake from '@lucide/svelte/icons/snowflake';
 import Fingerprint from '@lucide/svelte/icons/fingerprint';
 import Link from '@lucide/svelte/icons/link';
 import MonitorSmartphone from '@lucide/svelte/icons/monitor-smartphone';
+import Blend from '@lucide/svelte/icons/blend';
 import FileDown from '@lucide/svelte/icons/file-down';
+import Hash from '@lucide/svelte/icons/hash';
+import Barcode from '@lucide/svelte/icons/barcode';
+import Tornado from '@lucide/svelte/icons/tornado';
+import Inbox from '@lucide/svelte/icons/inbox';
+import SquareStack from '@lucide/svelte/icons/square-stack';
 
 export interface DemoIconMeta {
   icon: Component;
@@ -49,25 +55,29 @@ export const demoIconFor: Record<string, DemoIconMeta> = {
   Hydratable: { icon: Snowflake, label: 'Server-computed value reused on hydration' },
   Cookies: { icon: Cookie, label: 'Server + client cookies' },
   'Cache Events': { icon: DatabaseZap, label: 'Custom cache event subscriber' },
+  'Request ID': { icon: Barcode, label: 'Per-request correlation id' },
   'Real-time Chat': { icon: MessageCircle, label: 'WebSocket chat' },
   'API Endpoints': { icon: Webhook, label: 'JSON API routes' },
   'Shared State': { icon: Share2, label: 'Shared $state across islands' },
   'Real-time Streams': { icon: AudioWaveform, label: 'WebSocket + SSE streams' },
-  'Server Island': { icon: ComponentIcon, label: 'Deferred server island' },
+  'Background jobs with queues': { icon: Inbox, label: 'Embedded job queue + worker' },
+  'Server Islands': { icon: ComponentIcon, label: 'Deferred server island' },
   'Client-only Islands': { icon: MonitorSmartphone, label: 'No SSR — mounts in the browser' },
   'Lazy Islands': { icon: Telescope, label: 'Hydrate when visible' },
   'Lazy Server Islands': { icon: Eye, label: 'Fetch server island when visible' },
-  'Font Loading': { icon: Type, label: 'Bundle fontsource + standalone fonts' },
+  'Font loading': { icon: Type, label: 'Bundle fontsource + standalone fonts' },
   'Crossing the server-client boundary with props': { icon: Package2, label: 'Props serialized into the island — every devalue type' },
   'Nested Components': { icon: ListTree, label: 'Five-level deep tree under one island' },
+  'Nested Islands': { icon: SquareStack, label: 'Islands nested inside server islands' },
   'Shared Props': { icon: Boxes, label: 'Auto-deduplicated island props' },
-  Forms: { icon: ClipboardPen, label: 'Forms with action handlers' },
+  'Unique IDs': { icon: Hash, label: 'Native $props.id() in islands' },
+  'Form Actions': { icon: ClipboardPen, label: 'Forms with action handlers' },
   'Using form return data': { icon: Dices, label: 'success({ value }) round-trip via {@attach enhance(...)}' },
   'Form Errors': { icon: OctagonAlert, label: 'Thrown server errors, inline or full-page' },
   'Form Redirects': { icon: Signpost, label: 'redirect() — intercepted JSON or followed natively' },
-  'File Upload': { icon: FileUp, label: 'multipart/form-data with {@attach enhance(...)}' },
+  'File Uploads via form actions': { icon: FileUp, label: 'multipart/form-data with {@attach enhance(...)}' },
   'Reloading associated form data': { icon: RefreshCw, label: 'Refetch related state after a successful submit' },
-  Cancelling: { icon: CircleX, label: 'cancel() and controller.abort() cancellation paths' },
+  'Cancelling form submissions': { icon: CircleX, label: 'cancel() and controller.abort() cancellation paths' },
   'Error Handling': { icon: TriangleAlert, label: 'Error pages and handleError' },
   'Error Boundaries': { icon: ShieldAlert, label: 'Walled-off island failures' },
   'Hacker News Clone': { icon: Flame, label: 'Hacker News reader (WIP)' },
@@ -75,5 +85,7 @@ export const demoIconFor: Record<string, DemoIconMeta> = {
   'Tailwind Todo App': { icon: ListTodo, label: 'Todo app on Tailwind' },
   'Cookie Vary Test': { icon: Fingerprint, label: 'Response-driven Vary: Cookie' },
   'Isomorphic URL': { icon: Link, label: 'Same url import on server and client' },
+  'View Transitions': { icon: Blend, label: 'Animated cross-document navigations' },
+  'Custom Transitions': { icon: Tornado, label: 'Custom @keyframes spin via custom={{ in, out }}' },
   'File Routes': { icon: FileDown, label: 'Serve a file from disk with Mochi.file()' },
 };

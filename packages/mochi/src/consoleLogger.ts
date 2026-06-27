@@ -189,6 +189,42 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
     level: 'warn',
   }));
 
+  // Enqueue and per-attempt start are high-volume; route them through
+  // `logger.debug` so the default stream stays quiet. `completed` carries the
+  // duration (escalated to warn when slow); `failed`/`error` always warn.
+  subscribe('queue:added', ({ queue, jobName, jobId }) => ({
+    label: 'QUEUE',
+    path: `${queue}/${jobName}`,
+    note: styleText('dim', `+ ${jobId}`),
+    level: 'debug',
+  }));
+  subscribe('queue:active', ({ queue, jobName }) => ({
+    label: 'QUEUE',
+    path: `${queue}/${jobName}`,
+    note: styleText('cyan', 'active'),
+    level: 'debug',
+  }));
+  subscribe('queue:completed', ({ queue, jobName, duration }) => ({
+    label: 'QUEUE',
+    path: `${queue}/${jobName}`,
+    note: styleText('green', 'done'),
+    duration,
+    slow,
+    verySlow,
+  }));
+  subscribe('queue:failed', ({ queue, jobName, attempt, error }) => ({
+    label: 'QUEUE',
+    path: `${queue}/${jobName}`,
+    note: `${styleText('red', `failed (attempt ${attempt})`)} ${styleText('dim', error)}`,
+    level: 'warn',
+  }));
+  subscribe('queue:error', ({ queue, error }) => ({
+    label: 'QUEUE',
+    path: queue,
+    note: `${styleText('red', 'queue error')} ${styleText('dim', error)}`,
+    level: 'warn',
+  }));
+
   subscribe('preprocess-cache:hit', ({ filePath }) => ({
     label: 'PCACHE',
     path: relPath(filePath),
@@ -205,6 +241,15 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
     const rate = files === 0 ? '0.0' : ((hits / files) * 100).toFixed(1);
     return {
       label: 'PCACHE',
+      path: '-',
+      note: styleText('dim', `${hits} hit / ${misses} miss across ${files} files (${rate}%)`),
+      level: 'log',
+    };
+  });
+  subscribe('compile-cache:summary', ({ hits, misses, files }) => {
+    const rate = files === 0 ? '0.0' : ((hits / files) * 100).toFixed(1);
+    return {
+      label: 'CCACHE',
       path: '-',
       note: styleText('dim', `${hits} hit / ${misses} miss across ${files} files (${rate}%)`),
       level: 'log',

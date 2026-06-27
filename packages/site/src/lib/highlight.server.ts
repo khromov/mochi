@@ -4,7 +4,7 @@ import { mochiTheme } from './shiki-theme';
 
 const shiki = await createShiki({
   themes: [mochiTheme],
-  langs: ['bash', 'css', 'dockerfile', 'html', 'javascript', 'json', 'plaintext', 'svelte', 'typescript', 'xml'],
+  langs: ['bash', 'css', 'dockerfile', 'html', 'javascript', 'json', 'plaintext', 'svelte', 'toml', 'typescript', 'xml'],
 });
 
 export const highlightCode = createHighlighter((code, lang) =>
