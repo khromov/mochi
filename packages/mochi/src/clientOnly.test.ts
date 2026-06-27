@@ -83,4 +83,46 @@ describe('mochi:clientOnly rendering', () => {
     expect(result.bootstrapUrl).not.toBeNull();
     expect(result.cssUrls.length).toBeGreaterThan(0);
   });
+
+  test('eager client-only CSS ships in the page head; the lazy one stays deferred', async () => {
+    const result = await requestContext.run(makeCtx(), () => registry.renderComponent(FIXTURE_PAGE));
+    const joined = result.cssUrls.join(',');
+
+    // The non-visible client-only component never SSR-renders, but its wrapper
+    // still appears in the body so its CSS travels in the page <head>.
+    expect(joined).toContain('/css/Widget-');
+    // The :visible client-only component defers its CSS to the wrapper's css-url
+    // attribute (loaded at mount), so it must NOT be in the page head.
+    expect(joined).not.toContain('WidgetLazy-');
+  });
+});
+
+describe('mochi:clientOnly nested inside a hydratable parent', () => {
+  let outDir: string;
+  let registry: ComponentRegistry;
+  const NESTED_PAGE = path.join(import.meta.dir, '__fixtures__', 'client-only', 'NestedPage.svelte');
+
+  beforeAll(async () => {
+    outDir = mkdtempSync(path.join(import.meta.dir, '..', '.mochi-client-only-nested-'));
+    registry = new ComponentRegistry({ development: true, outDir });
+    // Nested-hydration detection runs during the server pass, before the client
+    // bundle is built. Building a second client bundle in this process trips the
+    // Bun bundler EISDIR bug (see serverIslandCss.test.ts), but the error is
+    // already recorded by then, so swallow a build failure and assert on it.
+    try {
+      await registry.compile(NESTED_PAGE);
+    } catch {
+      // ignore — client bundle build hazard, detection already happened
+    }
+  });
+
+  afterAll(() => {
+    rmSync(outDir, { recursive: true, force: true });
+  });
+
+  test('a mochi:clientOnly child of a mochi:hydrate parent is flagged as nested hydration', () => {
+    const nested = registry.getErrors().filter((e) => e.kind === 'nested-hydration');
+    expect(nested).toHaveLength(1);
+    expect(nested[0]).toMatchObject({ kind: 'nested-hydration', parent: 'NestedParent', child: 'Widget' });
+  });
 });
