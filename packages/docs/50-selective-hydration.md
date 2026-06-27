@@ -31,9 +31,9 @@ Props are serialized with `devalue` into a `<script type="application/json">` bl
 
 Every island invocation receives one implicit prop from the framework:
 
-- `isHydratable` — `true` when the call site uses `mochi:hydrate`, `mochi:hydrate:visible`, `mochi:clientOnly`, or `mochi:defer mochi:hydrate`. Undefined for pure SSR-only invocations.
+- `isHydratable` — `true` when the call site uses `mochi:hydrate`, `mochi:hydrate:visible`, `mochi:clientOnly`, `mochi:clientOnly:visible`, or `mochi:defer mochi:hydrate`. Undefined for pure SSR-only invocations. For `mochi:clientOnly*` islands it is always `true` (they never server-render, so the component only ever runs at client mount).
 
-`mochi:hydrate*` and `mochi:clientOnly` islands receive no `islandId` prop — for a unique id, use Svelte's `$props.id()`. Server islands (`mochi:defer`) are the exception: they carry an `islandId` inside their signed props envelope as the render's `idPrefix`.
+`mochi:hydrate*` and `mochi:clientOnly*` islands receive no `islandId` prop — for a unique id, use Svelte's `$props.id()`. Server islands (`mochi:defer`) are the exception: they carry an `islandId` inside their signed props envelope as the render's `idPrefix`.
 
 Accept it in the component's `$props()` to branch on hydration state at the same call site that opts in:
 
