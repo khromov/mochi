@@ -38,11 +38,12 @@
   </p>
   <ServerHydratedStamp mochi:defer mochi:hydrate />
 
-  <h3>Client-only island</h3>
+  <h3>Two client-only islands, two ids</h3>
   <p class="hint">
-    A <code>mochi:clientOnly</code> island never renders on the server, so its <code>$props.id()</code> is minted entirely in the browser when the component mounts — there is no SSR
-    value to reuse, yet the id is still unique and stable for the component's lifetime.
+    Client-only islands are never server-rendered, so each <code>$props.id()</code> is minted in the browser at mount. Svelte draws these from a global counter — unique even across separate
+    <code>mount()</code> calls — so two independently-mounted islands still get distinct ids (e.g. <code>c1</code> and <code>c2</code>) without any SSR pass to keep them apart.
   </p>
+  <ClientStamp mochi:clientOnly />
   <ClientStamp mochi:clientOnly />
 </DemoPage>
 
