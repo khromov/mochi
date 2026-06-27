@@ -114,6 +114,13 @@ Use `mochi:defer` to render the component on a separate request after the page s
 <ShoppingCart mochi:defer mochi:hydrate items={initialItems} />
 ```
 
+Add `:visible` to defer the fetch until the placeholder scrolls into view, with the same `rootMargin` option (and combinable with `mochi:hydrate*`):
+
+```svelte
+<!-- Fetched only when scrolled into view -->
+<UserAvatar mochi:defer:visible={{ rootMargin: '200px' }} userId={123} />
+```
+
 <SeeItInAction
 demos={[
 { href: "/demos/hydration/", title: "Hydration Modes", hook: "The same component rendered five ways — eager, lazy, visible, rootMargin-tuned, and deferred server island." },
