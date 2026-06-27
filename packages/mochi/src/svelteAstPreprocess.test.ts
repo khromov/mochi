@@ -591,9 +591,12 @@ describe('mochi:clientOnly', () => {
     const source = `${SCRIPT('import Foo from "./Foo.svelte";')}<Foo mochi:clientOnly count={n} />`;
     const { transformed } = preprocessHydratable(source, '/test/File.svelte');
 
-    expect(transformed).toContain('props-ref={__mochi_emit_props__({count: n}, __mochi_iid)}');
+    expect(transformed).toContain('props-ref={__mochi_emit_props__({count: n})}');
     expect(transformed).not.toContain('islandId:');
     expect(transformed).not.toContain('isHydratable');
+    // No id is minted for client-only islands; Svelte mints `$props.id()` at mount.
+    expect(transformed).not.toContain('island-id');
+    expect(transformed).not.toContain('__mochi_iid');
   });
 
   test('fallback children render inside the wrapper', () => {
@@ -654,7 +657,8 @@ describe('mochi:clientOnly', () => {
     const { transformed } = preprocessHydratable(source, '/test/File.svelte');
 
     expect(transformed).toContain('import { emitIslandProps as __mochi_emit_props__ } from "mochi-framework";');
-    expect(transformed).toContain('let __mochi_uid__ = 0;');
+    // Client-only islands mint no id, so the `__mochi_uid__` counter isn't needed.
+    expect(transformed).not.toContain('let __mochi_uid__ = 0;');
   });
 });
 

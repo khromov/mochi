@@ -3,14 +3,9 @@
   import BrowserCanvas from './BrowserCanvas.svelte';
   import MountClock from './MountClock.svelte';
   import { loadSources } from '../../components/utils.ts';
+  import { files } from './files.ts';
 
-  const sources = await loadSources([
-    { label: 'ClientOnly.svelte', path: './src/demos/client-only/ClientOnly.svelte' },
-    { label: 'BrowserCanvas.svelte', path: './src/demos/client-only/BrowserCanvas.svelte' },
-    { label: 'MountClock.svelte', path: './src/demos/client-only/MountClock.svelte' },
-    { label: 'routes.ts', path: './src/demos/client-only/routes.ts' },
-    { label: 'index.ts', path: './src/demoIndex.ts' },
-  ]);
+  const sources = await loadSources(files);
 </script>
 
 <DemoPage
