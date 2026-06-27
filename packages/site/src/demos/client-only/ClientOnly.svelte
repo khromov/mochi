@@ -35,8 +35,8 @@
     <div class="skeleton">Mounts when scrolled into view…</div>
   </MountClock>
   <p class="facts">
-    Same browser-only mount as above, but deferred: an <code>IntersectionObserver</code> holds off the <code>mount()</code> until the placeholder enters the viewport, and the
-    component's bundle and CSS load only then. Open the console to see it mount as you scroll.
+    Same browser-only mount as above, but deferred: an <code>IntersectionObserver</code> holds off the <code>mount()</code> until the placeholder enters the viewport, and the component's
+    bundle and CSS load only then. Open the console to see it mount as you scroll.
   </p>
 </DemoPage>
 
