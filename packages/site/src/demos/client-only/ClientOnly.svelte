@@ -27,7 +27,7 @@
   </p>
 
   <div class="spacer">
-    <p>Scroll down — the next canvas is marked <code>mochi:clientOnly:visible</code>, so it stays an empty fallback until it reaches the viewport, then mounts in the browser.</p>
+    <p>Scroll down — the island below is marked <code>mochi:clientOnly:visible</code>, so it stays a fallback until it reaches the viewport, then mounts in the browser.</p>
   </div>
 
   <h2 class="visible-heading">Lazy client-only with <code>mochi:clientOnly:visible</code></h2>

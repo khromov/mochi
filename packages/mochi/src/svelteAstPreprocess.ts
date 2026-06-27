@@ -95,9 +95,8 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
   const serverIslands: ServerIslandComponent[] = [];
   const seen = new Set<string>();
   const seenServer = new Set<string>();
-  // Client-only islands render nothing server-side, so — unlike plain
-  // hydratables — they can't recover `$props.id()` from Svelte's hydration
-  // markers and need an explicit `__mochi_iid` to match their props payload.
+  // Client-only islands render nothing server-side, so they can't recover
+  // `$props.id()` from hydration markers and need an explicit `__mochi_iid`.
   let hasClientOnly = false;
 
   // Walk the AST fragment to find Component nodes with mochi directives
@@ -141,30 +140,22 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
           hydratables.push({ name: comp.name, resolvedPath: resolved });
         }
 
-        // Children are the optional SSR fallback: their raw source is emitted
-        // inside the wrapper as placeholder markup (removed when the client
-        // mounts the component). The walk never descends into a client-only
-        // component, so slicing the children source here can't overlap a
-        // nested transform. Keep the fallback to static markup — nested
-        // `mochi:*` islands inside it are left untransformed and get wiped on
-        // mount. Authors type the component's props with `ClientOnlyProps<T>`
-        // so the children type-check; the snippet is never passed at runtime.
+        // Children are the optional SSR fallback, emitted as placeholder markup
+        // that's removed when the client mounts the component. Static markup only:
+        // nested `mochi:*` islands here are left untransformed and wiped on mount.
         const fallback = comp.fragment.nodes.map((n) => source.slice(n.start, n.end)).join('');
 
-        // No islandId/isHydratable in the serialized payload: the client
-        // bootstrap injects both from the wrapper's attributes, and keeping
-        // them out preserves the props-ref dedup across islands.
+        // islandId/isHydratable are left out of the payload so the props-ref dedup
+        // holds across islands; the client bootstrap injects both from attributes.
         const propsExpr = buildPropsFromAst(source, comp.attributes);
         let attrs = `island-id={__mochi_iid} component-name="${comp.name}" component-url="__MOCHI_COMPONENT_URL__${comp.name}__" client-only`;
         if (propsExpr !== '{}') {
           attrs += ` props-ref={__mochi_emit_props__(${propsExpr}, __mochi_iid)}`;
         }
 
-        // `mochi:clientOnly:visible` defers the browser-side `mount()` until the
-        // wrapper enters the viewport. The runtime reuses the hydratable visible
-        // path (`hydrate-on="visible"` + `hydrate-options` for `rootMargin`, plus
-        // lazy `css-url`); `client-only` still flips it from `hydrate()` to
-        // `mount()`. Mirrors the `mochi:hydrate:visible` branch below.
+        // `mochi:clientOnly:visible` defers `mount()` until the wrapper enters the
+        // viewport, reusing the hydratable visible path; `client-only` still flips
+        // `hydrate()` to `mount()`. Mirrors the `mochi:hydrate:visible` branch below.
         const isVisible = directives.clientOnly.name === 'mochi:clientOnly:visible';
         if (isVisible) {
           let visibleOptionsExpr: string | null = null;
@@ -178,10 +169,8 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
           }
         }
 
-        // The component invocation is never emitted server-side — SSR renders
-        // only the wrapper (plus the optional fallback markup, removed when
-        // the client mounts the component). No <svelte:boundary> needed: there
-        // is no SSR render to protect and no hydration marker to force.
+        // No <svelte:boundary>: the component never renders server-side, so there's
+        // no SSR throw to catch and no hydration marker to force.
         const constDecl = `{#if true}{@const __mochi_iid = \`\${${pid}}-\${__mochi_uid__++}\`}`;
         const replacement = `${constDecl}<mochi-hydratable-island ${attrs}>${fallback}</mochi-hydratable-island>{/if}`;
 
@@ -345,11 +334,9 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
   const needsEmitProps = hydratables.length > 0;
   const needsStringify = serverIslands.length > 0;
   const needsSignProps = serverIslands.length > 0;
-  // Server islands need the `__mochi_iid` transport id (it rides inside their
-  // signed envelope as `idPrefix` for the standalone render), and client-only
-  // islands need it to key their props payload since nothing is rendered
-  // server-side. Plain hydratable islands no longer carry an id — Svelte
-  // recovers `$props.id()` from its own `<!--$...-->` comment markers.
+  // Server islands ride `__mochi_iid` inside their signed envelope as `idPrefix`;
+  // client-only islands key their props payload by it. Plain hydratables recover
+  // `$props.id()` from Svelte's own `<!--$...-->` markers and need no id.
   const needsUid = serverIslands.length > 0 || hasClientOnly;
 
   if ((needsEmitProps || needsStringify || needsSignProps) && ast.instance) {
