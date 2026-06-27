@@ -1,5 +1,7 @@
 <script lang="ts">
-  let { label } = $props<{ label: string }>();
+  import type { ClientOnlyProps } from '../../index';
+
+  let { label }: ClientOnlyProps<{ label: string }> = $props();
 </script>
 
 <div data-widget-rendered>{label}</div>

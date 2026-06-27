@@ -1,5 +1,7 @@
 <script lang="ts">
-  let { waves = 3 } = $props<{ waves?: number }>();
+  import type { ClientOnlyProps } from 'mochi-framework';
+
+  let { waves = 3 }: ClientOnlyProps<{ waves?: number }> = $props();
 
   // These top-level browser reads would crash an SSR render — safe here
   // because mochi:clientOnly components never run on the server.

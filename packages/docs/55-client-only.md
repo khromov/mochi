@@ -25,21 +25,26 @@ Props work exactly like `mochi:hydrate` — serialized with `devalue` and embedd
 
 ### Fallback content
 
-Pass a snippet as the directive value — it renders server-side as placeholder content and is removed the moment the component mounts:
+Pass fallback markup as children — it renders server-side as placeholder content and is removed the moment the component mounts:
 
 ```svelte
-{#snippet chartSkeleton()}
+<ChartCanvas mochi:clientOnly data={points}>
   <div class="chart-skeleton">Loading chart…</div>
-{/snippet}
+</ChartCanvas>
+```
 
-<ChartCanvas mochi:clientOnly={chartSkeleton} data={points} />
+For `svelte-check` to accept the fallback children, the client-only component types its props with `ClientOnlyProps<T>` — it adds an optional `children` snippet so the call site type-checks without you declaring a `children` prop by hand:
+
+```svelte
+<script lang="ts">
+  import type { ClientOnlyProps } from 'mochi-framework';
+  let { data }: ClientOnlyProps<{ data: number[] }> = $props();
+</script>
 ```
 
 <Callout type="warning">
 
-The fallback snippet is an SSR placeholder only — it is **not** passed to the component (snippets can't be serialized across the network boundary). Keep it to static markup: do **NOT** put `mochi:*` islands inside it, since the fallback is wiped from the DOM when the component mounts.
-
-Children of a `mochi:clientOnly` invocation are a compile error — they would force the component to declare a phantom `children` prop just to satisfy `svelte-check`. The snippet form has no such requirement.
+The fallback children are an SSR placeholder only — they are **not** passed to the component at runtime, so don't render `children` inside a client-only component. Keep the fallback to static markup: do **NOT** put `mochi:*` islands inside it, since it is wiped from the DOM when the component mounts.
 
 </Callout>
 
@@ -55,6 +60,5 @@ The component never runs on the server, so server-only APIs — `getRequestConte
 
 ### Limitations
 
-- No `:visible` variant — the component mounts eagerly once its bundle loads.
 - Combining `mochi:clientOnly` with `mochi:hydrate*` or `mochi:defer*` is a compile error — a client-only component is never server-rendered.
 - Like other islands, it must not be nested inside another hydratable component.

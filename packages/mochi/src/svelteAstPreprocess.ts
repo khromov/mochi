@@ -38,9 +38,9 @@ export interface PreprocessResult {
  * - Combined `mochi:defer*` + `mochi:hydrate*` → server island with `also-hydrate`
  *   attribute, registered in both lists
  * - `mochi:clientOnly` → wraps in `<mochi-hydratable-island client-only>`; the
- *   component is never invoked server-side, an optional fallback snippet passed
- *   as the directive value becomes SSR placeholder content, and the client
- *   mounts (not hydrates) the component
+ *   component is never invoked server-side, optional fallback markup passed as
+ *   children becomes SSR placeholder content, and the client mounts (not
+ *   hydrates) the component
  */
 export function preprocessHydratable(source: string, filePath: string): PreprocessResult {
   if (!source.includes('mochi:hydrate') && !source.includes('mochi:defer') && !source.includes('mochi:clientOnly')) {
@@ -135,37 +135,23 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
 
       if (directives.clientOnly) {
         // --- CLIENT ONLY ---
-        // Children are rejected rather than treated as fallback content: the
-        // original invocation type-checks against the component's props, so
-        // children would force a phantom `children?: Snippet` prop on every
-        // client-only component. A snippet in the directive value rides the
-        // mochi:* attribute, which is type-erased for components.
-        const hasRealChildren = comp.fragment.nodes.some((n) => !(n.type === 'Text' && n.data.trim() === ''));
-        if (hasRealChildren) {
-          throw new Error(
-            `\`mochi:clientOnly\` does not take children — pass the SSR fallback as a snippet in the directive value instead:\n` +
-              `  {#snippet fallback()}…{/snippet}\n` +
-              `  <${comp.name} mochi:clientOnly={fallback} />`,
-          );
-        }
-
         hasClientOnly = true;
         if (!seen.has(resolved)) {
           seen.add(resolved);
           hydratables.push({ name: comp.name, resolvedPath: resolved });
         }
 
-        // Optional fallback snippet: `mochi:clientOnly={someSnippet}`. A bare
-        // `mochi:clientOnly` (or a boolean literal value) means no fallback.
-        let fallbackExpr: string | null = null;
-        const clientOnlyValue = directives.clientOnly.value;
-        if (clientOnlyValue !== true && !Array.isArray(clientOnlyValue)) {
-          const exprNode = clientOnlyValue.expression;
-          if (!(exprNode.type === 'Literal' && typeof exprNode.value === 'boolean')) {
-            const expr = exprNode as unknown as Positioned;
-            fallbackExpr = source.slice(expr.start, expr.end);
-          }
-        }
+        // Children are the optional SSR fallback: their raw source is emitted
+        // inside the wrapper as placeholder markup (removed when the client
+        // mounts the component). The walk never descends into a client-only
+        // component, so slicing the children source here can't overlap a
+        // nested transform. Keep the fallback to static markup — nested
+        // `mochi:*` islands inside it are left untransformed and get wiped on
+        // mount. Authors type the component's props with `ClientOnlyProps<T>`
+        // so the children type-check; the snippet is never passed at runtime.
+        const childNodes = comp.fragment.nodes;
+        const hasRealChildren = childNodes.some((n) => !(n.type === 'Text' && n.data.trim() === ''));
+        const fallback = hasRealChildren ? source.slice((childNodes[0] as unknown as Positioned).start, (childNodes[childNodes.length - 1] as unknown as Positioned).end) : '';
 
         // No islandId/isHydratable in the serialized payload: the client
         // bootstrap injects both from the wrapper's attributes, and keeping
@@ -177,11 +163,10 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
         }
 
         // The component invocation is never emitted server-side — SSR renders
-        // only the wrapper (plus the optional fallback snippet, removed when
+        // only the wrapper (plus the optional fallback markup, removed when
         // the client mounts the component). No <svelte:boundary> needed: there
         // is no SSR render to protect and no hydration marker to force.
         const constDecl = `{#if true}{@const __mochi_iid = \`\${${pid}}-\${__mochi_uid__++}\`}`;
-        const fallback = fallbackExpr ? `{@render (${fallbackExpr})()}` : '';
         const replacement = `${constDecl}<mochi-hydratable-island ${attrs}>${fallback}</mochi-hydratable-island>{/if}`;
 
         s.overwrite(comp.start, comp.end, replacement);

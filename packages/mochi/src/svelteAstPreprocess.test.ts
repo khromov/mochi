@@ -596,27 +596,21 @@ describe('mochi:clientOnly', () => {
     expect(transformed).not.toContain('isHydratable');
   });
 
-  test('a fallback snippet in the directive value renders inside the wrapper', () => {
-    const source = `${SCRIPT('import Foo from "./Foo.svelte";')}{#snippet loading()}<span>loading…</span>{/snippet}\n<Foo mochi:clientOnly={loading} />`;
+  test('fallback children render inside the wrapper', () => {
+    const source = `${SCRIPT('import Foo from "./Foo.svelte";')}<Foo mochi:clientOnly><span>loading…</span></Foo>`;
     const { transformed } = preprocessHydratable(source, '/test/File.svelte');
 
-    expect(transformed).toMatch(/<mochi-hydratable-island [^>]*>\{@render \(loading\)\(\)\}<\/mochi-hydratable-island>/);
+    expect(transformed).toMatch(/<mochi-hydratable-island [^>]*><span>loading…<\/span><\/mochi-hydratable-island>/);
     expect(transformed).not.toContain('<Foo');
-    // The snippet expression must not leak into the serialized props
+    // No props on the invocation → no props-ref (empty-props optimization)
     expect(transformed).not.toContain('props-ref');
   });
 
-  test('a boolean literal value means no fallback', () => {
+  test('a boolean literal value with no children means no fallback', () => {
     const source = `${SCRIPT('import Foo from "./Foo.svelte";')}<Foo mochi:clientOnly={true} />`;
     const { transformed } = preprocessHydratable(source, '/test/File.svelte');
 
-    expect(transformed).not.toContain('@render');
     expect(transformed).toMatch(/<mochi-hydratable-island [^>]*><\/mochi-hydratable-island>/);
-  });
-
-  test('children throw a clear compile error', () => {
-    const source = `${SCRIPT('import Foo from "./Foo.svelte";')}<Foo mochi:clientOnly><span>loading…</span></Foo>`;
-    expect(() => preprocessHydratable(source, '/test/File.svelte')).toThrow('`mochi:clientOnly` does not take children');
   });
 
   test('whitespace-only children are tolerated', () => {
