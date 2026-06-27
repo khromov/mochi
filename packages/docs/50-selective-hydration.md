@@ -31,7 +31,9 @@ Props are serialized with `devalue` into a `<script type="application/json">` bl
 
 Every island invocation receives one implicit prop from the framework:
 
-- `isHydratable` — `true` when the call site uses `mochi:hydrate`, `mochi:hydrate:visible`, or `mochi:defer mochi:hydrate`. Undefined for pure SSR-only invocations.
+- `isHydratable` — `true` when the call site uses `mochi:hydrate`, `mochi:hydrate:visible`, `mochi:clientOnly`, `mochi:clientOnly:visible`, or `mochi:defer mochi:hydrate`. Undefined for pure SSR-only invocations. For `mochi:clientOnly*` islands it is always `true` (they never server-render, so the component only ever runs at client mount).
+
+`mochi:hydrate*` and `mochi:clientOnly*` islands receive no `islandId` prop — for a unique id, use Svelte's `$props.id()`. Server islands (`mochi:defer`) are the exception: they carry an `islandId` inside their signed props envelope as the render's `idPrefix`.
 
 Accept it in the component's `$props()` to branch on hydration state at the same call site that opts in:
 
@@ -87,6 +89,22 @@ Islands that use `:visible` require JS to apply their styles — per-component C
 
 </Callout>
 
+### `mochi:clientOnly`
+
+Use `mochi:clientOnly` to skip SSR entirely — the component is mounted in the browser only, with an optional fallback snippet as the SSR placeholder. See `Client-only components with mochi:clientOnly`.
+
+```svelte
+<!-- Never server-rendered; mounts in the browser -->
+<AudioVisualizer mochi:clientOnly />
+```
+
+Add `:visible` to defer the browser mount until the placeholder scrolls into view, with the same `rootMargin` option:
+
+```svelte
+<!-- Never server-rendered; mounts when scrolled into view -->
+<AudioVisualizer mochi:clientOnly:visible={{ rootMargin: '200px' }} />
+```
+
 ### `mochi:defer`
 
 Use `mochi:defer` to render the component on a separate request after the page ships, and combine it with `mochi:hydrate` to also hydrate the deferred markup once it lands. See `Server islands with mochi:defer` for the full lifecycle.
@@ -94,6 +112,13 @@ Use `mochi:defer` to render the component on a separate request after the page s
 ```svelte
 <!-- Server-rendered after page load, then hydrated -->
 <ShoppingCart mochi:defer mochi:hydrate items={initialItems} />
+```
+
+Add `:visible` to defer the fetch until the placeholder scrolls into view, with the same `rootMargin` option (and combinable with `mochi:hydrate*`):
+
+```svelte
+<!-- Fetched only when scrolled into view -->
+<UserAvatar mochi:defer:visible={{ rootMargin: '200px' }} userId={123} />
 ```
 
 <SeeItInAction

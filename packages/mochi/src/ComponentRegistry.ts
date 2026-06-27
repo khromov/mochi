@@ -670,7 +670,7 @@ export class ComponentRegistry {
             childPath: child.resolvedPath,
           });
           logger.error(
-            `\nNested hydration directives are not allowed.\n  <${child.name}> with mochi:hydrate or mochi:hydrate:visible is inside <${parent.name}> which is also hydratable.\n  Remove the directive from ${child.name} — it hydrates automatically as part of ${parent.name}.\n`,
+            `\nNested hydration directives are not allowed.\n  <${child.name}> with mochi:hydrate, mochi:hydrate:visible, or mochi:clientOnly is inside <${parent.name}> which is also hydratable.\n  Remove the directive from ${child.name} — it hydrates automatically as part of ${parent.name}.\n`,
           );
         }
       }

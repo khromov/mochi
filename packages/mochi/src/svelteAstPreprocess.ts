@@ -28,8 +28,8 @@ export interface PreprocessResult {
 
 /**
  * Preprocess a Svelte source file to detect `mochi:hydrate`, `mochi:hydrate:visible`,
- * `mochi:defer`, and `mochi:defer:visible` on child components. Uses Svelte's own
- * parser for robust AST-based matching instead of fragile regexes.
+ * `mochi:defer`, `mochi:defer:visible`, and `mochi:clientOnly` on child components.
+ * Uses Svelte's own parser for robust AST-based matching instead of fragile regexes.
  *
  * - `mochi:hydrate` / `mochi:hydrate:visible` → wraps in `<mochi-hydratable-island>`
  * - `mochi:defer` / `mochi:defer:visible` → wraps in `<mochi-server-island>` with
@@ -37,9 +37,13 @@ export interface PreprocessResult {
  *   waits for IntersectionObserver before fetching
  * - Combined `mochi:defer*` + `mochi:hydrate*` → server island with `also-hydrate`
  *   attribute, registered in both lists
+ * - `mochi:clientOnly` → wraps in `<mochi-hydratable-island client-only>`; the
+ *   component is never invoked server-side, optional fallback markup passed as
+ *   children becomes SSR placeholder content, and the client mounts (not
+ *   hydrates) the component
  */
 export function preprocessHydratable(source: string, filePath: string): PreprocessResult {
-  if (!source.includes('mochi:hydrate') && !source.includes('mochi:defer')) {
+  if (!source.includes('mochi:hydrate') && !source.includes('mochi:defer') && !source.includes('mochi:clientOnly')) {
     return { transformed: source, hydratables: [], serverIslands: [] };
   }
   const ast = parse(source, { modern: true });
@@ -96,7 +100,7 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
   walk(ast.fragment as AST.SvelteNode, null, {
     Component(comp, { next }) {
       const directives = findMochiDirectives(comp.attributes);
-      if (!directives.server && !directives.hydrate) {
+      if (!directives.server && !directives.hydrate && !directives.clientOnly) {
         next();
         return;
       }
@@ -110,12 +114,12 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
       const resolved = path.resolve(path.dirname(filePath), importPath);
 
       // `islandId` is a reserved framework name on every island, rejected on
-      // both `mochi:defer` and `mochi:hydrate` so the two directives behave
-      // the same. On `mochi:defer` it's the transport key inside the signed
+      // `mochi:clientOnly`, `mochi:defer`, and `mochi:hydrate` so the directives
+      // behave the same. On `mochi:defer` it's the transport key inside the signed
       // envelope (stripped before the component renders); erroring everywhere
       // means a component can move between directives without a prop silently
       // changing meaning. For a unique id, use Svelte's `$props.id()`.
-      const islandDirective = directives.server ?? directives.hydrate!;
+      const islandDirective = directives.clientOnly ?? directives.server ?? directives.hydrate!;
       for (const attr of comp.attributes) {
         if (attr.type === 'Attribute' && attr.name === 'islandId') {
           throw new Error(
@@ -125,7 +129,50 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
         }
       }
 
-      if (directives.server) {
+      if (directives.clientOnly) {
+        // --- CLIENT ONLY ---
+        if (!seen.has(resolved)) {
+          seen.add(resolved);
+          hydratables.push({ name: comp.name, resolvedPath: resolved });
+        }
+
+        // Children are the optional SSR fallback, emitted as placeholder markup
+        // that's removed when the client mounts the component. Static markup only:
+        // nested `mochi:*` islands here are left untransformed and wiped on mount.
+        const fallback = comp.fragment.nodes.map((n) => source.slice(n.start, n.end)).join('');
+
+        // No islandId: nothing renders server-side, so there's no hydration id to
+        // carry. The client bootstrap injects `isHydratable: true` at mount; the
+        // payload itself dedups on its serialized props alone, like plain
+        // hydratable islands.
+        const propsExpr = buildPropsFromAst(source, comp.attributes);
+        let attrs = `component-name="${comp.name}" component-url="__MOCHI_COMPONENT_URL__${comp.name}__" client-only`;
+        if (propsExpr !== '{}') {
+          attrs += ` props-ref={__mochi_emit_props__(${propsExpr})}`;
+        }
+
+        // `mochi:clientOnly:visible` defers `mount()` until the wrapper enters the
+        // viewport, reusing the hydratable visible path; `client-only` still flips
+        // `hydrate()` to `mount()`. Mirrors the `mochi:hydrate:visible` branch below.
+        const isVisible = directives.clientOnly.name === 'mochi:clientOnly:visible';
+        if (isVisible) {
+          let visibleOptionsExpr: string | null = null;
+          if (directives.clientOnly.value !== true && !Array.isArray(directives.clientOnly.value)) {
+            const expr = directives.clientOnly.value.expression as unknown as Positioned;
+            visibleOptionsExpr = source.slice(expr.start, expr.end);
+          }
+          attrs += ` hydrate-on="visible" css-url="__MOCHI_CSS_URL__${comp.name}__"`;
+          if (visibleOptionsExpr) {
+            attrs += ` hydrate-options={JSON.stringify(${visibleOptionsExpr})}`;
+          }
+        }
+
+        // No <svelte:boundary>: the component never renders server-side, so there's
+        // no SSR throw to catch and no hydration marker to force.
+        const replacement = `<mochi-hydratable-island ${attrs}>${fallback}</mochi-hydratable-island>`;
+
+        s.overwrite(comp.start, comp.end, replacement);
+      } else if (directives.server) {
         // --- SERVER ISLAND ---
         if (!seenServer.has(resolved)) {
           seenServer.add(resolved);
@@ -284,10 +331,10 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
   const needsEmitProps = hydratables.length > 0;
   const needsStringify = serverIslands.length > 0;
   const needsSignProps = serverIslands.length > 0;
-  // Only server islands need the `__mochi_iid` transport id (it rides inside
-  // their signed envelope as `idPrefix` for the standalone render). Hydratable
-  // islands no longer carry an id — Svelte recovers `$props.id()` from its own
-  // `<!--$...-->` comment markers on hydration.
+  // Only server islands need the `__mochi_iid` transport id, riding inside their
+  // signed envelope as `idPrefix` for the standalone render. Hydratable and
+  // client-only islands carry no id — Svelte recovers `$props.id()` from its own
+  // `<!--$...-->` markers (client-only mints it fresh at mount).
   const needsUid = serverIslands.length > 0;
 
   if ((needsEmitProps || needsStringify || needsSignProps) && ast.instance) {
@@ -322,12 +369,14 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
 interface MochiDirectives {
   server: AST.Attribute | null;
   hydrate: AST.Attribute | null;
+  clientOnly: AST.Attribute | null;
 }
 
-/** Find `mochi:defer*` and `mochi:hydrate*` attributes on a component. */
+/** Find `mochi:defer*`, `mochi:hydrate*`, and `mochi:clientOnly*` attributes on a component. */
 function findMochiDirectives(attributes: Array<AST.Attribute | AST.SpreadAttribute | AST.Directive | AST.AttachTag>): MochiDirectives {
   let server: AST.Attribute | null = null;
   let hydrate: AST.Attribute | null = null;
+  let clientOnly: AST.Attribute | null = null;
   for (const attr of attributes) {
     if (attr.type === 'Attribute') {
       if (attr.name === 'mochi:defer' || attr.name === 'mochi:defer:visible') {
@@ -337,10 +386,15 @@ function findMochiDirectives(attributes: Array<AST.Attribute | AST.SpreadAttribu
         server = attr;
       } else if (attr.name === 'mochi:hydrate' || attr.name === 'mochi:hydrate:visible') {
         hydrate = attr;
+      } else if (attr.name === 'mochi:clientOnly' || attr.name === 'mochi:clientOnly:visible') {
+        clientOnly = attr;
       }
     }
   }
-  return { server, hydrate };
+  if (clientOnly && (server || hydrate)) {
+    throw new Error(`Cannot combine \`mochi:clientOnly\` with \`${(server ?? hydrate)!.name}\` — a client-only component is never server-rendered.`);
+  }
+  return { server, hydrate, clientOnly };
 }
 
 /**

@@ -32,6 +32,7 @@ import Eye from '@lucide/svelte/icons/eye';
 import Snowflake from '@lucide/svelte/icons/snowflake';
 import Fingerprint from '@lucide/svelte/icons/fingerprint';
 import Link from '@lucide/svelte/icons/link';
+import MonitorSmartphone from '@lucide/svelte/icons/monitor-smartphone';
 import Blend from '@lucide/svelte/icons/blend';
 import FileDown from '@lucide/svelte/icons/file-down';
 import Hash from '@lucide/svelte/icons/hash';
@@ -61,6 +62,7 @@ export const demoIconFor: Record<string, DemoIconMeta> = {
   'Real-time Streams': { icon: AudioWaveform, label: 'WebSocket + SSE streams' },
   'Background jobs with queues': { icon: Inbox, label: 'Embedded job queue + worker' },
   'Server Islands': { icon: ComponentIcon, label: 'Deferred server island' },
+  'Client-only Islands': { icon: MonitorSmartphone, label: 'No SSR — mounts in the browser' },
   'Lazy Islands': { icon: Telescope, label: 'Hydrate when visible' },
   'Lazy Server Islands': { icon: Eye, label: 'Fetch server island when visible' },
   'Font loading': { icon: Type, label: 'Bundle fontsource + standalone fonts' },

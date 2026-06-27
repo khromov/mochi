@@ -2,6 +2,7 @@ import type { SourceSpec } from '../components/utils.ts';
 import { files as api } from '../demos/api/files.ts';
 import { files as cacheEvents } from '../demos/cache-events/files.ts';
 import { files as chat } from '../demos/chat/files.ts';
+import { files as clientOnly } from '../demos/client-only/files.ts';
 import { files as cookieVaryTest } from '../demos/cookie-vary-test/files.ts';
 import { files as cookies } from '../demos/cookies/files.ts';
 import { files as dataLoading } from '../demos/data-loading/files.ts';
@@ -214,6 +215,14 @@ export const demos: Demo[] = [
     files: islandProps,
     title: 'Crossing the server-client boundary with props',
     hook: 'How props travel from a server-rendered parent into a hydrated island — Date, Map, Set, BigInt, URL, typed arrays, and even cyclic refs survive devalue’s round-trip.',
+    category: 'hydration',
+  },
+  {
+    href: '/demos/client-only/',
+    slug: 'client-only',
+    files: clientOnly,
+    title: 'Client-only Islands',
+    hook: 'Components marked mochi:clientOnly skip SSR entirely and mount in the browser — a fallback snippet fills in until then.',
     category: 'hydration',
   },
   {
