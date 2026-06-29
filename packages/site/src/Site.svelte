@@ -45,8 +45,8 @@
     <section class="docs-cta">
       <h2 class="docs-cta-title">What is Mochi?</h2>
       <p class="lead">
-        Mochi is a lightweight, server-first framework for Svelte 5 on Bun. Mochi websites render server-side on every
-        request and ship as plain HTML. Components only ship JavaScript when you explicitly mark them as
+        Mochi is a lightweight, server-first framework for Svelte 5 on Bun. Mochi websites render server-side on every request and ship as plain HTML. Components only ship
+        JavaScript when you explicitly mark them as
         <a href="/docs/intro#server-rendered-with-island-interactivity">islands</a>.
       </p>
     </section>
