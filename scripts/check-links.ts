@@ -215,7 +215,7 @@ async function main() {
     if (res.status >= 300 && res.status < 400) {
       const location = res.headers.get('location') ?? '';
       // Confirm the redirect lands somewhere real before classifying it as benign.
-      let finalOk = true;
+      let finalOk: boolean;
       try {
         const followed = await fetch(url, { redirect: 'follow' });
         finalOk = followed.ok;
