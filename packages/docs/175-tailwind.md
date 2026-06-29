@@ -110,7 +110,7 @@ if (process.env.MODE === 'development') {
 }
 ```
 
-Pair it with a prebuild script that compiles the CSS ahead of [`mochi-framework build`](/docs/cli#build):
+Pair it with a prebuild script that compiles the CSS ahead of [`mochi-framework build`](/docs/cli/#build):
 
 ```ts
 // file: scripts/prebuild.ts

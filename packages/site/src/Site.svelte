@@ -42,12 +42,21 @@
   </header>
 
   <main class="body">
+    <section class="docs-cta">
+      <h2 class="docs-cta-title">What is Mochi?</h2>
+      <p class="lead">
+        Mochi is a lightweight, server-first framework for Svelte 5 on Bun. Mochi websites render server-side on every request and ship as plain HTML. Components only ship
+        JavaScript when you explicitly mark them as
+        <a href="/docs/intro/#server-rendered-with-island-interactivity">islands</a>.
+      </p>
+    </section>
+
     <QuickStart mochi:hydrate />
 
     <section class="docs-cta">
       <h2 class="docs-cta-title">Documentation</h2>
       <p class="docs-cta-blurb">Setup, hydration modes, routes, hooks, forms, cookies — everything in one place.</p>
-      <a class="docs-cta-link" href="/docs/{firstDocSlug}">Start reading →</a>
+      <a class="docs-cta-link" href="/docs/{firstDocSlug}/">Start reading →</a>
     </section>
 
     <h2 class="demos-heading">Demos</h2>
@@ -146,6 +155,23 @@
     flex: 1;
   }
 
+  .lead {
+    color: var(--text-muted);
+    font-size: 1.05rem;
+    line-height: 1.6;
+    margin: 0;
+  }
+
+  .lead a {
+    color: var(--accent);
+    text-decoration: none;
+    font-weight: 600;
+  }
+
+  .lead a:hover {
+    text-decoration: underline;
+  }
+
   .demos-heading {
     font-family: var(--font-serif);
     font-size: 1.75rem;
@@ -217,8 +243,8 @@
 
   .docs-cta-blurb {
     color: var(--text-muted);
-    font-size: 0.95rem;
-    line-height: 1.5;
+    font-size: 1.05rem;
+    line-height: 1.6;
     margin-bottom: 1rem;
   }
 

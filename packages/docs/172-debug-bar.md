@@ -15,7 +15,7 @@ await Mochi.serve({
 });
 ```
 
-In production (`development: false`) the toolbar mount point, its entry script, and the per-request `window.__mochi_debug` payload are all stripped from the HTML — the bar adds zero bytes to production responses. See [development mode](development-mode) for the rest of what dev mode turns on.
+In production (`development: false`) the toolbar mount point, its entry script, and the per-request `window.__mochi_debug` payload are all stripped from the HTML — the bar adds zero bytes to production responses. See [development mode](/docs/development-mode/) for the rest of what dev mode turns on.
 
 ### Buttons
 
@@ -37,7 +37,7 @@ The cogwheel at the right edge of the bar opens a checklist of the five panels. 
 
 Lists every `<mochi-hydratable-island>` and `<mochi-server-island>` on the page, grouped by type. Each row shows the component name, its hydration mode (`mochi:hydrate`, `mochi:hydrate:visible`, `mochi:defer`, …), and props size. Click a row to expand the inline props as syntax-highlighted JSON; click the crosshair icon to scroll to the island and flash a cyan outline around it for ~1.5s.
 
-The `Islands` button in the bar shows a running total props size and changes color past two thresholds — yellow above **10 KB**, red above **100 KB**. Props payload is the dominant tax on hydration, so this is the number to watch when a page feels heavy. See [passing props to islands](island-props) for how to keep payloads small.
+The `Islands` button in the bar shows a running total props size and changes color past two thresholds — yellow above **10 KB**, red above **100 KB**. Props payload is the dominant tax on hydration, so this is the number to watch when a page feels heavy. See [passing props to islands](/docs/island-props/) for how to keep payloads small.
 
 When two or more islands ship the exact same props payload, Mochi hoists it into a single shared `<script type="application/json">` block. Those rows show a `shared` badge, and the panel's totals only count the shared payload once.
 

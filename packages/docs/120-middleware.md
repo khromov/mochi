@@ -99,7 +99,7 @@ await Mochi.serve({
 
 `resolve` accepts an options bag for post-processing the response:
 
-- `transformPage({ html, done })` — rewrite the HTML body before it is sent. See [`transformPage`](/docs/transform-page).
+- `transformPage({ html, done })` — rewrite the HTML body before it is sent. See [`transformPage`](/docs/transform-page/).
 - `filterResponseHeaders(name, value)` — return `true` to keep a header, `false` to drop it.
 
 ```ts

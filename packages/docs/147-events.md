@@ -411,7 +411,7 @@ Fires from the dev file watcher (chokidar). Production builds do not run the wat
 
 #### `cache:read`, `cache:revalidate`
 
-Emitted by `MochiCache` — see [Subscribing to cache events](/docs/cache#subscribing-to-cache-events) for payloads and a worked subscriber.
+Emitted by `MochiCache` — see [Subscribing to cache events](/docs/cache/#subscribing-to-cache-events) for payloads and a worked subscriber.
 
 ### Custom events
 
