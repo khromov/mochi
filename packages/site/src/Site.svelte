@@ -56,7 +56,7 @@
     <section class="docs-cta">
       <h2 class="docs-cta-title">Documentation</h2>
       <p class="docs-cta-blurb">Setup, hydration modes, routes, hooks, forms, cookies — everything in one place.</p>
-      <a class="docs-cta-link" href="/docs/{firstDocSlug}">Start reading →</a>
+      <a class="docs-cta-link" href="/docs/{firstDocSlug}/">Start reading →</a>
     </section>
 
     <h2 class="demos-heading">Demos</h2>
