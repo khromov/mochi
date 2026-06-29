@@ -35,7 +35,7 @@ await Mochi.serve({
   warmup: true,
   handle: sequence(immutableAssets, analytics),
   filters: {
-    'consoleLogger:line': silenceInternalRoutes,
+    'consoleLogger:line': (line, ctx) => (ctx.path.startsWith('/health') ? null : silenceInternalRoutes(line, ctx)),
   },
   routes: {
     '/': Mochi.page('./src/Landing.svelte'),

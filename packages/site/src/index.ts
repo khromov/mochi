@@ -144,7 +144,7 @@ await Mochi.serve({
     },
   },
   filters: {
-    'consoleLogger:line': silenceInternalRoutes,
+    'consoleLogger:line': (line, ctx) => (ctx.path.startsWith('/health') ? null : silenceInternalRoutes(line, ctx)),
     // The MCP endpoint must answer at exactly /mcp; the site-wide trailingSlash: 'always'
     // policy would otherwise 308 it to /mcp/ and some MCP clients don't follow the redirect.
     'trailingSlash:redirect': (redirect, { url }) => (url.pathname === '/mcp' ? null : redirect),
