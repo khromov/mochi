@@ -22,7 +22,7 @@ import { json } from 'mochi-framework';
 return json({ ok: true }, { status: 201 });
 ```
 
-`error(status, message)`: throw a `MochiHttpError` that the framework catches and renders as the configured error page (or a JSON envelope from API routes). See [Error handling](error-handling).
+`error(status, message)`: throw a `MochiHttpError` that the framework catches and renders as the configured error page (or a JSON envelope from API routes). See [Error handling](/docs/error-handling/).
 
 ```ts
 import { error } from 'mochi-framework';
@@ -30,7 +30,7 @@ import { error } from 'mochi-framework';
 if (!user) error(404, 'User not found');
 ```
 
-`apiError(status, message)`: return — don't throw — a JSON error `Response` shaped as `{ error: { message, status } }`. Use inside `Mochi.api()` when you want a typed error without unwinding the stack. See [API routes](api-routes).
+`apiError(status, message)`: return — don't throw — a JSON error `Response` shaped as `{ error: { message, status } }`. Use inside `Mochi.api()` when you want a typed error without unwinding the stack. See [API routes](/docs/api-routes/).
 
 ```ts
 import { apiError } from 'mochi-framework';
@@ -40,7 +40,7 @@ return apiError(400, 'Missing id');
 
 ### Form-action helpers
 
-Used as return values from a `Mochi.page` action. See [Defining routes](defining-routes) and [Progressive enhancement](use-enhance) for the full action lifecycle.
+Used as return values from a `Mochi.page` action. See [Defining routes](/docs/defining-routes/) and [Progressive enhancement](/docs/progressively-enhancing-forms-with-enhance/) for the full action lifecycle.
 
 `fail(status, data)`: re-render the page with `form = { ok: false, ...data }` and the given HTTP status. Use for validation errors.
 
