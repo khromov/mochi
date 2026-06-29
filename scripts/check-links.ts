@@ -72,18 +72,28 @@ async function pool<T>(items: T[], limit: number, fn: (item: T) => Promise<void>
   await Promise.all(workers);
 }
 
-/** Pull every href/src out of a chunk of server-rendered HTML. */
+/**
+ * Pull every href/src out of a chunk of server-rendered HTML. Code samples
+ * (`<pre>`/`<code>`) are stripped first — syntax highlighting renders the `<` of
+ * an example tag as `&lt;` but keeps the attribute quotes literal, so an
+ * illustrative `src="..."` would otherwise read as a real (and bogus) link.
+ */
 function extractLinks(html: string): string[] {
+  const stripped = html.replace(/<pre[\s\S]*?<\/pre>/gi, '').replace(/<code[\s\S]*?<\/code>/gi, '');
   const out: string[] = [];
   const re = /(?:href|src)\s*=\s*("([^"]*)"|'([^']*)')/gi;
   let m: RegExpExecArray | null;
-  while ((m = re.exec(html)) !== null) {
+  while ((m = re.exec(stripped)) !== null) {
     out.push(m[2] ?? m[3] ?? '');
   }
   return out;
 }
 
 const SKIP_SCHEMES = /^(mailto:|tel:|javascript:|data:|#)/i;
+
+// Same-origin pathnames the error demo links to on purpose to show off error
+// handling — a non-200 here is the demo working, not a broken link.
+const IGNORE_PATHS = new Set(['/demos/error/404/', '/demos/error/500/', '/does-not-exist/']);
 
 async function main() {
   const { base, external, concurrency } = parseArgs(process.argv.slice(2));
@@ -103,24 +113,30 @@ async function main() {
     process.exit(2);
   }
 
-  // llms.json lists each page's llms.txt source; the rendered page sits one level up.
-  const pages = [`${base}/`, ...[...index.docs, ...index.demos].map((e) => e.url.replace(/llms\.txt$/, ''))];
+  // llms.json lists each page's llms.txt source; the rendered page sits one level
+  // up. The entry origin is whatever the site reports for itself (its configured
+  // proxy origin, not necessarily `base`), so rebuild every URL against `base` —
+  // that's what makes the `base` argument actually redirect the crawl.
+  const toBase = (u: string) => `${base}${new URL(u).pathname.replace(/llms\.txt$/, '')}`;
+  const pages = [`${base}/`, ...[...index.docs, ...index.demos].map((e) => toBase(e.url))];
 
   console.log(styleText('dim', `Crawling ${pages.length} pages from ${base}/llms.json …`));
 
   // Map of normalized link → the pages that reference it (deduped, hash stripped).
   const links = new Map<string, Set<string>>();
+  // Pages from llms.json that don't even render — counted as failures, not skipped.
+  const pageErrors: { url: string; status: string }[] = [];
   await pool(pages, concurrency, async (page) => {
     let html: string;
     try {
       const res = await fetch(page);
       if (!res.ok) {
-        console.error(styleText('red', `  page ${page} → ${res.status}`));
+        pageErrors.push({ url: page, status: String(res.status) });
         return;
       }
       html = await res.text();
     } catch (err) {
-      console.error(styleText('red', `  page ${page} → ${String(err)}`));
+      pageErrors.push({ url: page, status: err instanceof Error ? err.message : String(err) });
       return;
     }
     for (const raw of extractLinks(html)) {
@@ -138,6 +154,9 @@ async function main() {
       }
       const isExternal = resolved.origin !== origin;
       if (isExternal && !external) {
+        continue;
+      }
+      if (!isExternal && IGNORE_PATHS.has(resolved.pathname)) {
         continue;
       }
       resolved.hash = '';
@@ -166,16 +185,26 @@ async function main() {
     }
   });
 
-  if (broken.length === 0) {
+  if (broken.length === 0 && pageErrors.length === 0) {
     console.log(styleText('green', `✓ All ${targets.length} links OK across ${pages.length} pages.`));
     process.exit(0);
   }
 
-  console.log(styleText('red', `✗ ${broken.length} broken link(s):\n`));
-  for (const b of broken.sort((a, z) => a.url.localeCompare(z.url))) {
-    console.log(`${styleText('red', b.status)}  ${b.url}`);
-    for (const src of b.sources.sort()) {
-      console.log(styleText('dim', `      ← ${src}`));
+  if (pageErrors.length > 0) {
+    console.log(styleText('red', `✗ ${pageErrors.length} page(s) from llms.json failed to load:\n`));
+    for (const p of pageErrors.sort((a, z) => a.url.localeCompare(z.url))) {
+      console.log(`${styleText('red', p.status)}  ${p.url}`);
+    }
+    console.log('');
+  }
+
+  if (broken.length > 0) {
+    console.log(styleText('red', `✗ ${broken.length} broken link(s):\n`));
+    for (const b of broken.sort((a, z) => a.url.localeCompare(z.url))) {
+      console.log(`${styleText('red', b.status)}  ${b.url}`);
+      for (const src of b.sources.sort()) {
+        console.log(styleText('dim', `      ← ${src}`));
+      }
     }
   }
   process.exit(1);

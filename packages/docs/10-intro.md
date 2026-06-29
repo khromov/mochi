@@ -13,7 +13,7 @@ description: 'A lightweight, server-first Svelte 5 framework running on Bun that
 
 # mochi
 
-Mochi is a lightweight, server-first framework for [Svelte 5](https://svelte.dev/) on [Bun](https://bun.sh/). Mochi websites render server-side on every request and ship as plain HTML. Components only ship JavaScript when you explicitly mark them as islands.
+Mochi is a lightweight, server-first framework for [Svelte 5](https://svelte.dev/) on [Bun](https://bun.sh/) — it renders everything as plain HTML and ships JavaScript only for the components you mark as islands.
 
 ## Server-rendered, with island interactivity
 

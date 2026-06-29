@@ -87,7 +87,7 @@ Provide fallback children when using `:visible` so the user has something to scr
 
 ### Props
 
-Props are serialized with `devalue` — see [Passing props to islands](island-props/) for the full list of supported types. Server islands additionally HMAC-sign the payload and pass it as a query parameter; if the signed props exceed URL length limits (~1800 bytes), a warning is emitted.
+Props are serialized with `devalue` — see [Passing props to islands](/docs/island-props/) for the full list of supported types. Server islands additionally HMAC-sign the payload and pass it as a query parameter; if the signed props exceed URL length limits (~1800 bytes), a warning is emitted.
 
 <Callout type="warning">
 
