@@ -71,7 +71,7 @@ CSS for nested hydratable islands is delivered with the fetched HTML (the host p
 
 ### Lazy server islands with `mochi:defer:visible`
 
-Defer the _fetch_ until the wrapper scrolls into view, mirroring [`mochi:hydrate:visible`](lazy-hydration/):
+Defer the _fetch_ until the wrapper scrolls into view, mirroring [`mochi:hydrate:visible`](/docs/lazy-hydration/):
 
 ```svelte
 <UserAvatar mochi:defer:visible userId={123}>
