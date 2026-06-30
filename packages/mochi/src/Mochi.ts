@@ -246,7 +246,11 @@ export class Mochi {
     const debugBarEnabled = development && (options.debugBar ?? true);
     const liveReloadEnabled = options.liveReload ?? development;
     const middleware = options.handle;
-    const outDir = options.outDir ?? './.mochi';
+    const baseOutDir = options.outDir ?? './.mochi';
+    // Keep dev artifacts out of the production .mochi so the two modes never
+    // collide (stale manifest/public from a prod build, or dev chunks served by
+    // a later `start`). Prod stays at the root so Docker/deploys are unaffected.
+    const outDir = development ? path.join(baseOutDir, 'dev') : baseOutDir;
     const publicDir = options.publicDir ?? './public';
     // Only a file-based shell can be watched/re-read; an inline-string shell
     // has no source file, and the built-in default is bundled, not a runtime file.
@@ -319,9 +323,11 @@ export class Mochi {
       // compiles at startup, so the shake must run before the first compile.
       await registry.prepareShake();
       if (development) {
-        for (const dir of [`${outDir}/svelte-client`, `${outDir}/svelte-compile`, `${outDir}/svelte-css`]) {
-          rmSync(dir, { recursive: true, force: true });
-          mkdirSync(dir, { recursive: true });
+        // outDir is the dev-only dir (.mochi/dev). Wipe it whole each startup so
+        // stale entry-hmr / import-css / compiled chunks can't leak across restarts.
+        rmSync(outDir, { recursive: true, force: true });
+        for (const sub of ['svelte-client', 'svelte-compile', 'svelte-css']) {
+          mkdirSync(path.join(outDir, sub), { recursive: true });
         }
       }
     }
