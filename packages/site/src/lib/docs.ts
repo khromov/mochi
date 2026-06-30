@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { compile as mdsvexCompile } from 'mdsvex';
 import { logger, trailingSlashIt } from 'mochi-framework';
 import rehypeSlug from 'rehype-slug';
@@ -9,12 +10,26 @@ import type { TocEntry } from './toc';
 
 type MdsvexRehypePlugin = NonNullable<NonNullable<Parameters<typeof mdsvexCompile>[1]>['rehypePlugins']>[number];
 
-// Anchor on the runtime cwd (the site package root — the same assumption the
-// framework makes for `outDir`/`publicDir`/watch paths), NOT on `import.meta.url`.
-// In dev the whole server is bundled into `.mochi/dev/entry-hmr/entry.js`, so a
-// module-relative walk (`../../../docs`) lands one level too shallow and points at
-// the non-existent `packages/site/docs`.
-const SITE_ROOT = process.cwd();
+// Anchor on the site package root, located by walking up to the nearest
+// package.json. A fixed module-relative walk (`../../../docs`) is wrong because
+// in dev the whole server is bundled into `.mochi/dev/entry-hmr/entry.js`, so
+// `import.meta.url` sits one directory deeper than the source and the walk lands
+// at the non-existent `packages/site/docs`. cwd is no anchor either: the dev
+// server runs from `packages/site` but the build-time barrel generator runs from
+// the repo root. The package.json walk is stable across all three.
+function findSiteRoot(): string {
+  let dir = path.dirname(fileURLToPath(import.meta.url));
+  while (!existsSync(path.join(dir, 'package.json'))) {
+    const parent = path.dirname(dir);
+    if (parent === dir) {
+      throw new Error(`Could not locate the site package root from ${fileURLToPath(import.meta.url)}`);
+    }
+    dir = parent;
+  }
+  return dir;
+}
+
+const SITE_ROOT = findSiteRoot();
 export const DOCS_DIR = path.resolve(SITE_ROOT, '../docs');
 // Internal demos are keyed by their folder name (`slug`) and carry their own `files`
 // list — the single source of truth shared by the demo page, the per-demo llms.txt
