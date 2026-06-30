@@ -16,8 +16,6 @@ type MdsvexRehypePlugin = NonNullable<NonNullable<Parameters<typeof mdsvexCompil
 // the non-existent `packages/site/docs`.
 const SITE_ROOT = process.cwd();
 export const DOCS_DIR = path.resolve(SITE_ROOT, '../docs');
-const DEMOS_DIR = path.resolve(SITE_ROOT, 'src/demos');
-
 // Internal demos are keyed by their folder name (`slug`) and carry their own `files`
 // list — the single source of truth shared by the demo page, the per-demo llms.txt
 // route, and the /llms-full.txt bundle.
