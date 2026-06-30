@@ -1,6 +1,5 @@
 import { existsSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { compile as mdsvexCompile } from 'mdsvex';
 import { logger, trailingSlashIt } from 'mochi-framework';
 import rehypeSlug from 'rehype-slug';
@@ -10,10 +9,14 @@ import type { TocEntry } from './toc';
 
 type MdsvexRehypePlugin = NonNullable<NonNullable<Parameters<typeof mdsvexCompile>[1]>['rehypePlugins']>[number];
 
-export const DOCS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../docs');
-const DEMOS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../demos');
-// Demo source paths in each demo's `files` are written relative to the site package root (e.g. './src/...').
-const SITE_ROOT = path.resolve(DEMOS_DIR, '../..');
+// Anchor on the runtime cwd (the site package root — the same assumption the
+// framework makes for `outDir`/`publicDir`/watch paths), NOT on `import.meta.url`.
+// In dev the whole server is bundled into `.mochi/dev/entry-hmr/entry.js`, so a
+// module-relative walk (`../../../docs`) lands one level too shallow and points at
+// the non-existent `packages/site/docs`.
+const SITE_ROOT = process.cwd();
+export const DOCS_DIR = path.resolve(SITE_ROOT, '../docs');
+const DEMOS_DIR = path.resolve(SITE_ROOT, 'src/demos');
 
 // Internal demos are keyed by their folder name (`slug`) and carry their own `files`
 // list — the single source of truth shared by the demo page, the per-demo llms.txt
