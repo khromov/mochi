@@ -15,7 +15,10 @@ import prettyBytes from './lib/prettyBytes';
 export interface MochiBuildOptions {
   routes: Record<string, MochiRouteValue>;
   development?: boolean;
-  /** Directory for build output (cwd-relative). Default: `./.mochi`. */
+  /**
+   * Base directory for build output (cwd-relative). Default: `./.mochi`.
+   * A `--dev` build nests under `<outDir>/dev`; production writes to the root.
+   */
   outDir?: string;
   /** Static assets directory (cwd-relative). Default: `./public`. */
   publicDir?: string;
@@ -63,7 +66,10 @@ export async function build(options: MochiBuildOptions): Promise<void> {
   console.log('Starting build...\n');
   const startedAt = performance.now();
   const development = options.development ?? false;
-  const outDir = options.outDir ?? './.mochi';
+  const baseOutDir = options.outDir ?? './.mochi';
+  // Mirror the dev/prod split in Mochi.serve(): a `--dev` build nests under
+  // `dev/` so it can't clobber the production manifest at the root.
+  const outDir = development ? path.join(baseOutDir, 'dev') : baseOutDir;
   const publicDir = options.publicDir ?? './public';
 
   // Clean previous build artifacts

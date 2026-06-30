@@ -58,7 +58,7 @@ In production (`development: false`), prebuilt JS/CSS bundles served from `asset
 - `compressServerIslandProps`: Deflate-compress server-island props when it reduces size. Default: `true`.
 - `logger`: Built-in request logger. Default: `{ enabled: true }`. Pass `{ enabled: false }` to disable, or override `slowThreshold` / `verySlowThreshold`.
 - `publicDir`: Directory served as static assets (cwd-relative). Default: `./public`.
-- `outDir`: Directory for build artifacts and dev cache (cwd-relative). Default: `./.mochi`.
+- `outDir`: Base directory for build artifacts and dev cache (cwd-relative). Default: `./.mochi`. Production writes here directly; development nests under `<outDir>/dev` so a dev run can't collide with a production build (and is wiped clean on every dev startup).
 - `assetPrefix`: URL prefix for framework client assets and the server-island endpoint. Must start with `/`, must not be `/`, must not end with `/`, must not contain whitespace or `..`. Default: `/_mochi`.
 - `additionalWatchPaths`: Extra dev-mode watcher paths added to the defaults `src` and `public`. Default: `[]`.
 - `barrelWarnings`: Dev-only warning when a dependency drags a large, almost-entirely-tree-shaken module into the build graph (a "barrel import" that slows rebuilds). Default: enabled. `false` silences it; `{ ignore: ['pkg'] }` suppresses specific packages; `{ minBytes }` overrides the 50 KB size threshold. See `Development mode`.
