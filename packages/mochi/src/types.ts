@@ -503,7 +503,11 @@ export interface MochiServeOptions {
   } & import('./consoleLogger').ConsoleLoggerOptions;
   /** Directory served as static assets (cwd-relative). Default: `./public`. */
   publicDir?: string;
-  /** Directory for build artifacts and dev cache (cwd-relative). Default: `./.mochi`. */
+  /**
+   * Base directory for build artifacts and dev cache (cwd-relative). Default: `./.mochi`.
+   * Production writes here directly; development nests under `<outDir>/dev` so the two
+   * modes never collide.
+   */
   outDir?: string;
   /**
    * URL prefix under which framework client assets (JS bundles, CSS, bundle
