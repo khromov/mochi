@@ -79,6 +79,7 @@ export interface MochiFilterValue {
   'compile:preprocessors': PreprocessorGroup[];
   'publicDir:scan': Map<string, string>;
   'consoleLogger:line': string;
+  'barrel:warn': string;
 }
 
 // Optional per-filter override for the *return* type when it differs from the
@@ -87,6 +88,7 @@ export interface MochiFilterValue {
 // `MochiFilterValue[K]` when a key is absent.
 export interface MochiFilterReturn {
   'consoleLogger:line': string | null;
+  'barrel:warn': string | null;
 }
 
 export interface MochiFilterContext {
@@ -118,6 +120,16 @@ export interface MochiFilterContext {
     /** The originating `mochiEvents` event. Narrow on `source.name` for typed access to per-event fields. */
     source: ConsoleLoggerSource;
   };
+  'barrel:warn': {
+    /** The offending package, e.g. `'@lucide/svelte'`. */
+    pkg: string;
+    /** The large re-export file pulled into the graph, relative to its package, e.g. `'@lucide/svelte/dist/icons/index.js'`. */
+    file: string;
+    /** Parsed size of `file` in bytes. */
+    bytes: number;
+    /** Fraction of `bytes` that survived into the bundle (≈ 0 for a barrel). */
+    usedRatio: number;
+  };
 }
 
 export interface MochiFilterKindMap {
@@ -132,6 +144,7 @@ export interface MochiFilterKindMap {
   'compile:preprocessors': 'sync';
   'publicDir:scan': 'async';
   'consoleLogger:line': 'sync';
+  'barrel:warn': 'sync';
 }
 
 type FilterReturn<K extends keyof MochiFilterValue> = K extends keyof MochiFilterReturn ? MochiFilterReturn[K] : MochiFilterValue[K];
@@ -170,6 +183,7 @@ const FILTER_KINDS: { [K in keyof MochiFilterValue]: MochiKind } = {
   'compile:preprocessors': 'sync',
   'publicDir:scan': 'async',
   'consoleLogger:line': 'sync',
+  'barrel:warn': 'sync',
 };
 
 // Pinned on globalThis so duplicate bundled copies of mochi-framework share one

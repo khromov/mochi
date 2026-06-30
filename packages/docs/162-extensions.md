@@ -303,3 +303,31 @@ Context fields:
   return line;
 }
 ```
+
+#### `barrel:warn`
+
+Mutate or drop the dev-only [barrel-import warning](/docs/development-mode) before it's logged. The first argument is the rendered warning string; the second is a structured context describing the offending dependency. Return the string to log it, a rewritten string to substitute, or `null` to suppress it. Sync.
+
+This is the programmatic escape hatch for silencing logic richer than the static `barrelWarnings: { ignore }` list — e.g. suppress only below a size, or only outside CI.
+
+```ts
+await Mochi.serve({
+  filters: {
+    // Drop the warning for one package, rewrite the rest:
+    'barrel:warn': (line, { pkg, bytes }) => {
+      if (pkg === '@lucide/svelte') return null;
+      return `${line} (${Math.round(bytes / 1024)} KB parsed)`;
+    },
+  },
+  routes,
+});
+```
+
+Context fields:
+
+- `pkg` — the offending package, e.g. `'@lucide/svelte'`.
+- `file` — the large re-export file pulled into the graph, relative to its package.
+- `bytes` — parsed size of `file`.
+- `usedRatio` — fraction of `bytes` that survived tree-shaking into the bundle (≈ 0 for a barrel).
+
+The warning (and this filter) is dev-only and fires once per package. See [Development mode](/docs/development-mode) for the `barrelWarnings` config knobs.

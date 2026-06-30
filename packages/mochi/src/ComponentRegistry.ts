@@ -9,6 +9,7 @@ import { requestContext } from './requestContext';
 import type { DebugBarData } from './requestContext';
 import { logger } from './log';
 import { mochiEvents } from './events';
+import { detectHeavyBarrels, type BarrelMetafile } from './barrelDetect';
 import type { MarkdownConfig, MochiManifest, MochiSvelteShakerOptions } from './types';
 import { type HydratableComponent, type ServerIslandComponent } from './svelteAstPreprocess';
 import { cachedPreprocessHydratable, createPreprocessCacheStats } from './preprocessCache';
@@ -210,6 +211,16 @@ export interface ComponentRegistryOptions {
   markdown?: MarkdownConfig;
   /** Run the whole-program svelte-shaker pass before compiling. Production only — `prepareShake()` is a no-op in dev. */
   optimize?: boolean | MochiSvelteShakerOptions;
+  /**
+   * Dev-only warning when a dependency drags a large module into the build graph
+   * that's almost entirely tree-shaken away — the "barrel import" smell (e.g.
+   * `import { Sun } from '@lucide/svelte'` instead of `@lucide/svelte/icons/sun`),
+   * which slows every rebuild because the big re-export file is re-parsed each time.
+   * Default: enabled. `false` silences it entirely; `{ ignore: ['pkg-name'] }`
+   * suppresses specific packages you can't fix; `minBytes` overrides the parsed-size
+   * threshold (default 50 KB).
+   */
+  barrelWarnings?: boolean | { ignore?: string[]; minBytes?: number };
 }
 
 export class ComponentRegistry {
@@ -281,6 +292,11 @@ export class ComponentRegistry {
   svelteConfig: MochiSvelteConfig;
   readonly markdown: MarkdownConfig | undefined;
   readonly optimize: boolean | MochiSvelteShakerOptions;
+  private readonly barrelWarningsEnabled: boolean;
+  private readonly barrelIgnore: Set<string>;
+  private readonly barrelMinBytes: number;
+  /** Packages already warned about this process, so the warning fires once, not on every rebuild. */
+  private readonly warnedBarrels = new Set<string>();
   /** absPath → slimmed `.svelte` source from the last `prepareShake()`; empty when shaking is off. */
   private shakenSources: Map<string, string> = new Map();
   private errors: MochiCompileError[] = [];
@@ -301,6 +317,10 @@ export class ComponentRegistry {
     this.svelteConfig = opts.svelteConfig ?? {};
     this.markdown = opts.markdown;
     this.optimize = opts.optimize ?? false;
+    const bw = opts.barrelWarnings;
+    this.barrelWarningsEnabled = bw !== false;
+    this.barrelIgnore = new Set(typeof bw === 'object' ? (bw.ignore ?? []) : []);
+    this.barrelMinBytes = (typeof bw === 'object' && bw.minBytes) || 50 * 1024;
   }
 
   /**
@@ -655,6 +675,8 @@ export class ComponentRegistry {
       }
       throw new Error(message);
     }
+
+    this.warnOnBarrelImports(result.metafile);
 
     // Detect nested hydration — a hydratable component must not itself contain mochi:hydrate or mochi:hydrate:visible children
     const hydratablePaths = new Set(allHydratables.map((h) => h.resolvedPath));
@@ -1149,6 +1171,7 @@ export class ComponentRegistry {
       });
       outputStats.sort((a, b) => b.size - a.size);
       this.clientStats = { outputs: outputStats };
+      this.warnOnBarrelImports(result.metafile);
     }
 
     const outputBytes = this.clientStats?.outputs.reduce((sum, o) => sum + o.size, 0) ?? 0;
@@ -1423,6 +1446,30 @@ export class ComponentRegistry {
 
   private static cleanInputPath(p: string): string {
     return p.replace(/^(?:\.\.\/)*node_modules\/(?:\.bun\/[^/]+\/node_modules\/)?/, '');
+  }
+
+  /** Emit a dev-only, once-per-package warning for heavy barrel imports in a finished build's metafile. */
+  private warnOnBarrelImports(metafile: BarrelMetafile | undefined): void {
+    if (!this.development || !this.barrelWarningsEnabled || !metafile) {
+      return;
+    }
+    for (const { pkg, file, bytes, usedRatio } of detectHeavyBarrels(metafile, this.barrelMinBytes, this.barrelIgnore)) {
+      if (this.warnedBarrels.has(pkg)) {
+        continue;
+      }
+      this.warnedBarrels.add(pkg);
+      const kb = Math.round(bytes / 1024);
+      const message =
+        `Heavy barrel import: "${pkg}" parses ${file} (${kb} KB) on every rebuild but uses ~none of it. ` +
+        `This slows dev rebuilds — import from a sub-path instead (e.g. '@lucide/svelte/icons/sun'). ` +
+        `Silence via Mochi.serve({ barrelWarnings: { ignore: ['${pkg}'] } }) or barrelWarnings: false.`;
+      // The `barrel:warn` filter can rewrite the line or return null to drop it,
+      // for silencing logic richer than the static `ignore` list.
+      const line = applyFilter('barrel:warn', message, { pkg, file, bytes, usedRatio });
+      if (line !== null) {
+        logger.warn(line);
+      }
+    }
   }
 
   private static cleanInputs(inputs: { path: string; size: number }[]): { path: string; size: number }[] {

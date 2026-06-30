@@ -619,6 +619,18 @@ export interface MochiServeOptions {
    * while keeping other config visible. Default: `false`.
    */
   optimize?: boolean | MochiSvelteShakerOptions;
+  /**
+   * Dev-only warning when a dependency drags a large module into the build graph
+   * that's then almost entirely tree-shaken away — the "barrel import" smell, e.g.
+   * `import { Sun } from '@lucide/svelte'` instead of `@lucide/svelte/icons/sun`.
+   * Bun re-parses that big re-export file on every rebuild, so it slows HMR even
+   * though little of it ships. Default: enabled.
+   *
+   * - `false` — silence the warning entirely.
+   * - `{ ignore: ['pkg-name'] }` — suppress specific packages you can't fix.
+   * - `{ minBytes: 102400 }` — override the parsed-size threshold (default 50 KB).
+   */
+  barrelWarnings?: boolean | { ignore?: string[]; minBytes?: number };
   [key: string]: unknown;
 }
 
