@@ -1460,24 +1460,31 @@ export class ComponentRegistry {
     if (!this.barrelWarningsEnabled || !metafile) {
       return;
     }
-    for (const barrel of detectHeavyBarrels(metafile, this.barrelMinBytes, this.barrelIgnore)) {
-      if (this.warnedBarrels.has(barrel.pkg)) {
-        continue;
+    // Barrel detection is an advisory diagnostic — it must never break a build or
+    // dev rebuild. A malformed metafile, a throwing user `barrel:warn` filter, etc.
+    // are swallowed (debug-logged) rather than propagated.
+    try {
+      for (const barrel of detectHeavyBarrels(metafile, this.barrelMinBytes, this.barrelIgnore)) {
+        if (this.warnedBarrels.has(barrel.pkg)) {
+          continue;
+        }
+        this.warnedBarrels.add(barrel.pkg);
+        const { pkg, file, bytes, usedRatio } = barrel;
+        // The `barrel:warn` filter can rewrite the line or return null to drop it,
+        // for silencing logic richer than the static `ignore` list. In a build the
+        // rewritten text feeds the grouped summary's count but not its wording.
+        const line = applyFilter('barrel:warn', formatBarrelLine(barrel), { pkg, file, bytes, usedRatio });
+        if (line === null) {
+          continue;
+        }
+        if (this.development) {
+          logger.warn(line);
+        } else {
+          this.pendingBarrels.push(barrel);
+        }
       }
-      this.warnedBarrels.add(barrel.pkg);
-      const { pkg, file, bytes, usedRatio } = barrel;
-      // The `barrel:warn` filter can rewrite the line or return null to drop it,
-      // for silencing logic richer than the static `ignore` list. In a build the
-      // rewritten text feeds the grouped summary's count but not its wording.
-      const line = applyFilter('barrel:warn', formatBarrelLine(barrel), { pkg, file, bytes, usedRatio });
-      if (line === null) {
-        continue;
-      }
-      if (this.development) {
-        logger.warn(line);
-      } else {
-        this.pendingBarrels.push(barrel);
-      }
+    } catch (err) {
+      logger.debug('barrel detection skipped:', err);
     }
   }
 
@@ -1486,8 +1493,13 @@ export class ComponentRegistry {
     if (this.development || this.pendingBarrels.length === 0) {
       return;
     }
-    logger.warn(formatBarrelSummary(this.pendingBarrels));
-    this.pendingBarrels = [];
+    try {
+      logger.warn(formatBarrelSummary(this.pendingBarrels));
+    } catch (err) {
+      logger.debug('barrel summary skipped:', err);
+    } finally {
+      this.pendingBarrels = [];
+    }
   }
 
   private static cleanInputs(inputs: { path: string; size: number }[]): { path: string; size: number }[] {
