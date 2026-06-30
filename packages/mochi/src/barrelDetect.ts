@@ -60,3 +60,41 @@ export function detectHeavyBarrels(metafile: BarrelMetafile, minBytes: number, i
   }
   return found.sort((a, b) => b.bytes - a.bytes);
 }
+
+/** Render a barrel's tree-shaken-survivor ratio as a human percentage (≈ 0 for a real barrel). */
+export function formatUsedRatio(ratio: number): string {
+  const pct = ratio * 100;
+  if (pct <= 0) {
+    return '0%';
+  }
+  if (pct < 0.1) {
+    return '<0.1%';
+  }
+  return `${pct.toFixed(1)}%`;
+}
+
+/** The per-package warning line emitted live in dev. */
+export function formatBarrelLine(b: HeavyBarrel): string {
+  const kb = Math.round(b.bytes / 1024);
+  return (
+    `Heavy barrel import: "${b.pkg}" parses ${b.file} (${kb} KB) on every rebuild but uses only ${formatUsedRatio(b.usedRatio)} of it. ` +
+    `This slows rebuilds — import from a sub-path instead (e.g. '@lucide/svelte/icons/sun'). ` +
+    `Silence via Mochi.serve({ barrelWarnings: { ignore: ['${b.pkg}'] } }) or barrelWarnings: false.`
+  );
+}
+
+/** One grouped summary line for a whole build, so a noisy build isn't buried in per-package warnings. */
+export function formatBarrelSummary(barrels: HeavyBarrel[]): string {
+  const n = barrels.length;
+  const totalKb = Math.round(barrels.reduce((sum, b) => sum + b.bytes, 0) / 1024);
+  const worst = barrels
+    .slice(0, 3)
+    .map((b) => `${b.pkg} (${Math.round(b.bytes / 1024)} KB, ${formatUsedRatio(b.usedRatio)} used)`)
+    .join(', ');
+  const more = n > 3 ? `, +${n - 3} more` : '';
+  return (
+    `${n} heavy barrel import${n === 1 ? '' : 's'} parsed but barely used (${totalKb} KB total) — slows builds. ` +
+    `Import from sub-paths (e.g. '@lucide/svelte/icons/sun'). Worst: ${worst}${more}. ` +
+    `Silence via barrelWarnings: false.`
+  );
+}

@@ -156,20 +156,26 @@ Healthy `bundles=` for a non-CSS save is `1` — the bundle is deferred to a sin
 
 ### Barrel-import warning
 
-In dev, Mochi warns when a dependency drags a large module into the build graph that's then almost entirely tree-shaken away — the classic "barrel import" smell:
+Mochi warns when a dependency drags a large module into the build graph that's then almost entirely tree-shaken away — the classic "barrel import" smell:
 
 ```ts
 import { Sun } from '@lucide/svelte'; // ❌ parses the whole ~100 KB re-export index every rebuild
 import Sun from '@lucide/svelte/icons/sun'; // ✅ pulls only the one icon
 ```
 
-Bun doesn't bundle the barrel's thousands of modules — it tree-shakes them — but it still re-parses the package's big re-export file on every rebuild, which slows HMR. The warning names the offending package and file:
+Bun doesn't bundle the barrel's thousands of modules — it tree-shakes them — but it still re-parses the package's big re-export file on every rebuild, which slows HMR. In dev the warning fires once per package as it's seen, naming the offending package, file, and how much of it survives tree-shaking:
 
 ```
-[mochi] Heavy barrel import: "@lucide/svelte" parses @lucide/svelte/dist/icons/index.js (106 KB) on every rebuild but uses ~none of it.
+[mochi] Heavy barrel import: "@lucide/svelte" parses @lucide/svelte/dist/icons/index.js (106 KB) on every rebuild but uses only 0% of it.
 ```
 
-It fires once per package and is dev-only (zero overhead in production). Tune or silence it via `barrelWarnings` on `Mochi.serve()`:
+A production `mochi-framework build` runs the same check, but collapses every offender into a single grouped summary line so a noisy build isn't buried in warnings:
+
+```
+[mochi] 3 heavy barrel imports parsed but barely used (244 KB total) — slows builds. Worst: @lucide/svelte (106 KB, 0% used), …
+```
+
+Tune or silence it via `barrelWarnings` on `Mochi.serve()` (and pass the same value to the build, see `Serve options`):
 
 ```ts
 await Mochi.serve({

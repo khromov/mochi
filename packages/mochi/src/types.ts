@@ -624,11 +624,12 @@ export interface MochiServeOptions {
    */
   optimize?: boolean | MochiSvelteShakerOptions;
   /**
-   * Dev-only warning when a dependency drags a large module into the build graph
+   * Warning when a dependency drags a large module into the build graph
    * that's then almost entirely tree-shaken away — the "barrel import" smell, e.g.
    * `import { Sun } from '@lucide/svelte'` instead of `@lucide/svelte/icons/sun`.
    * Bun re-parses that big re-export file on every rebuild, so it slows HMR even
-   * though little of it ships. Default: enabled.
+   * though little of it ships. In dev it fires once per package; a production build
+   * collapses the offenders into one grouped summary line. Default: enabled.
    *
    * - `false` — silence the warning entirely.
    * - `{ ignore: ['pkg-name'] }` — suppress specific packages you can't fix.

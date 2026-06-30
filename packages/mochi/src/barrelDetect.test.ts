@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { detectHeavyBarrels, type BarrelMetafile } from './barrelDetect';
+import { detectHeavyBarrels, formatBarrelLine, formatBarrelSummary, formatUsedRatio, type BarrelMetafile, type HeavyBarrel } from './barrelDetect';
 
 const LUCIDE_INDEX = '../../node_modules/.bun/@lucide+svelte@1.21.0+hash/node_modules/@lucide/svelte/dist/icons/index.js';
 const LUCIDE_ICON = '../../node_modules/.bun/@lucide+svelte@1.21.0+hash/node_modules/@lucide/svelte/dist/icons/sun.svelte';
@@ -65,5 +65,50 @@ describe('detectHeavyBarrels', () => {
       outputs: { 'out.js': { inputs: { 'src/Huge.svelte': { bytesInOutput: 0 } } } },
     };
     expect(detectHeavyBarrels(mf, MIN, new Set())).toEqual([]);
+  });
+});
+
+describe('formatUsedRatio', () => {
+  test('renders 0 for a fully tree-shaken barrel', () => {
+    expect(formatUsedRatio(0)).toBe('0%');
+  });
+
+  test('renders a floor marker for tiny non-zero ratios', () => {
+    expect(formatUsedRatio(0.0004)).toBe('<0.1%'); // 0.04%
+  });
+
+  test('renders one decimal for normal ratios', () => {
+    expect(formatUsedRatio(0.042)).toBe('4.2%');
+    expect(formatUsedRatio(0.5)).toBe('50.0%');
+  });
+});
+
+describe('formatBarrelLine', () => {
+  test('names the package, KB, and the real used percentage', () => {
+    const b: HeavyBarrel = { pkg: '@lucide/svelte', file: '@lucide/svelte/dist/icons/index.js', bytes: 108457, usedRatio: 0 };
+    const line = formatBarrelLine(b);
+    expect(line).toContain('"@lucide/svelte"');
+    expect(line).toContain('(106 KB)');
+    expect(line).toContain('uses only 0% of it');
+    expect(line).not.toContain('~none');
+  });
+});
+
+describe('formatBarrelSummary', () => {
+  const mk = (pkg: string, kb: number, usedRatio = 0): HeavyBarrel => ({ pkg, file: `${pkg}/index.js`, bytes: kb * 1024, usedRatio });
+
+  test('counts offenders, totals KB, and lists the top three', () => {
+    const summary = formatBarrelSummary([mk('a', 100), mk('b', 50), mk('c', 25)]);
+    expect(summary).toContain('3 heavy barrel imports');
+    expect(summary).toContain('(175 KB total)');
+    expect(summary).toContain('Worst: a (100 KB, 0% used), b (50 KB, 0% used), c (25 KB, 0% used)');
+    expect(summary).not.toContain('more');
+  });
+
+  test('singularizes and appends a "+N more" tail past three', () => {
+    const summary = formatBarrelSummary([mk('a', 100), mk('b', 50), mk('c', 25), mk('d', 10), mk('e', 10)]);
+    expect(summary).toContain(', +2 more.');
+
+    expect(formatBarrelSummary([mk('solo', 80)])).toContain('1 heavy barrel import ');
   });
 });

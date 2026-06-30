@@ -46,6 +46,12 @@ export interface MochiBuildOptions {
    * runtime agree. Default: `false`.
    */
   optimize?: boolean | MochiSvelteShakerOptions;
+  /**
+   * Heavy barrel-import warning. Mirror the value passed to `Mochi.serve({ barrelWarnings })`
+   * so the build honors the same silencing. In a build the offenders are collapsed into one
+   * grouped summary line. Default: enabled. See `MochiServeOptions['barrelWarnings']`.
+   */
+  barrelWarnings?: boolean | { ignore?: string[]; minBytes?: number };
 }
 
 type RouteKind = 'page' | 'api' | 'ws' | 'sse';
@@ -86,6 +92,7 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     svelteConfig,
     markdown: options.markdown,
     optimize: options.optimize,
+    barrelWarnings: options.barrelWarnings,
   });
   await registry.prepareShake();
 
@@ -118,6 +125,7 @@ export async function build(options: MochiBuildOptions): Promise<void> {
   if (ssrEntrypoints.length > 0) {
     await registry.compileAll(ssrEntrypoints);
   }
+  registry.flushBarrelWarnings();
 
   const compileErrors = registry.getErrors();
   if (compileErrors.length > 0) {

@@ -9,7 +9,7 @@ import { requestContext } from './requestContext';
 import type { DebugBarData } from './requestContext';
 import { logger } from './log';
 import { mochiEvents } from './events';
-import { detectHeavyBarrels, type BarrelMetafile } from './barrelDetect';
+import { detectHeavyBarrels, formatBarrelLine, formatBarrelSummary, type BarrelMetafile, type HeavyBarrel } from './barrelDetect';
 import type { MarkdownConfig, MochiManifest, MochiSvelteShakerOptions } from './types';
 import { type HydratableComponent, type ServerIslandComponent } from './svelteAstPreprocess';
 import { cachedPreprocessHydratable, createPreprocessCacheStats } from './preprocessCache';
@@ -212,13 +212,14 @@ export interface ComponentRegistryOptions {
   /** Run the whole-program svelte-shaker pass before compiling. Production only — `prepareShake()` is a no-op in dev. */
   optimize?: boolean | MochiSvelteShakerOptions;
   /**
-   * Dev-only warning when a dependency drags a large module into the build graph
+   * Warning when a dependency drags a large module into the build graph
    * that's almost entirely tree-shaken away — the "barrel import" smell (e.g.
    * `import { Sun } from '@lucide/svelte'` instead of `@lucide/svelte/icons/sun`),
    * which slows every rebuild because the big re-export file is re-parsed each time.
-   * Default: enabled. `false` silences it entirely; `{ ignore: ['pkg-name'] }`
-   * suppresses specific packages you can't fix; `minBytes` overrides the parsed-size
-   * threshold (default 50 KB).
+   * In dev it fires once per package as it's seen; in a production build the offenders
+   * are collapsed into a single grouped summary line. Default: enabled. `false` silences
+   * it entirely; `{ ignore: ['pkg-name'] }` suppresses specific packages you can't fix;
+   * `minBytes` overrides the parsed-size threshold (default 50 KB).
    */
   barrelWarnings?: boolean | { ignore?: string[]; minBytes?: number };
 }
@@ -297,6 +298,8 @@ export class ComponentRegistry {
   private readonly barrelMinBytes: number;
   /** Packages already warned about this process, so the warning fires once, not on every rebuild. */
   private readonly warnedBarrels = new Set<string>();
+  /** Build-mode buffer: barrels collected across the build, flushed as one grouped summary by `flushBarrelWarnings()`. */
+  private pendingBarrels: HeavyBarrel[] = [];
   /** absPath → slimmed `.svelte` source from the last `prepareShake()`; empty when shaking is off. */
   private shakenSources: Map<string, string> = new Map();
   private errors: MochiCompileError[] = [];
@@ -1448,28 +1451,43 @@ export class ComponentRegistry {
     return p.replace(/^(?:\.\.\/)*node_modules\/(?:\.bun\/[^/]+\/node_modules\/)?/, '');
   }
 
-  /** Emit a dev-only, once-per-package warning for heavy barrel imports in a finished build's metafile. */
+  /**
+   * Once-per-package heavy-barrel detection over a finished build's metafile. In dev each offender
+   * is warned immediately; in a production build they're buffered and emitted as one grouped summary
+   * by `flushBarrelWarnings()`.
+   */
   private warnOnBarrelImports(metafile: BarrelMetafile | undefined): void {
-    if (!this.development || !this.barrelWarningsEnabled || !metafile) {
+    if (!this.barrelWarningsEnabled || !metafile) {
       return;
     }
-    for (const { pkg, file, bytes, usedRatio } of detectHeavyBarrels(metafile, this.barrelMinBytes, this.barrelIgnore)) {
-      if (this.warnedBarrels.has(pkg)) {
+    for (const barrel of detectHeavyBarrels(metafile, this.barrelMinBytes, this.barrelIgnore)) {
+      if (this.warnedBarrels.has(barrel.pkg)) {
         continue;
       }
-      this.warnedBarrels.add(pkg);
-      const kb = Math.round(bytes / 1024);
-      const message =
-        `Heavy barrel import: "${pkg}" parses ${file} (${kb} KB) on every rebuild but uses ~none of it. ` +
-        `This slows dev rebuilds — import from a sub-path instead (e.g. '@lucide/svelte/icons/sun'). ` +
-        `Silence via Mochi.serve({ barrelWarnings: { ignore: ['${pkg}'] } }) or barrelWarnings: false.`;
+      this.warnedBarrels.add(barrel.pkg);
+      const { pkg, file, bytes, usedRatio } = barrel;
       // The `barrel:warn` filter can rewrite the line or return null to drop it,
-      // for silencing logic richer than the static `ignore` list.
-      const line = applyFilter('barrel:warn', message, { pkg, file, bytes, usedRatio });
-      if (line !== null) {
+      // for silencing logic richer than the static `ignore` list. In a build the
+      // rewritten text feeds the grouped summary's count but not its wording.
+      const line = applyFilter('barrel:warn', formatBarrelLine(barrel), { pkg, file, bytes, usedRatio });
+      if (line === null) {
+        continue;
+      }
+      if (this.development) {
         logger.warn(line);
+      } else {
+        this.pendingBarrels.push(barrel);
       }
     }
+  }
+
+  /** Flush build-mode barrel offenders as a single grouped warning. No-op in dev or when nothing was buffered. */
+  flushBarrelWarnings(): void {
+    if (this.development || this.pendingBarrels.length === 0) {
+      return;
+    }
+    logger.warn(formatBarrelSummary(this.pendingBarrels));
+    this.pendingBarrels = [];
   }
 
   private static cleanInputs(inputs: { path: string; size: number }[]): { path: string; size: number }[] {
