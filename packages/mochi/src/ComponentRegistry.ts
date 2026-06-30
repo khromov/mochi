@@ -26,17 +26,36 @@ import prettyBytes from './lib/prettyBytes';
  * the application of those preprocessors is async (Svelte's `preprocess()`).
  */
 async function applyUserPreprocessors(source: string, filename: string, target: 'server' | 'client', development: boolean): Promise<string> {
-  const preprocessors: PreprocessorGroup[] = applyFilter('compile:preprocessors', [], {
+  const userPreprocessors: PreprocessorGroup[] = applyFilter('compile:preprocessors', [], {
     filename,
     target,
     development,
   });
-  if (preprocessors.length === 0) {
-    return source;
-  }
-  const result = await sveltePreprocess(source, preprocessors, { filename });
+  // `builtinTsPreprocessor` runs last so it also strips TS that user
+  // preprocessors emit. svelte's `preprocess()` parses the component and hands
+  // each hook properly-parsed `attributes` — so it, not a source scan, decides
+  // whether a script block is TS. It's a byte-identical no-op when no hook
+  // transforms, so plain-JS components pass through untouched; no fast-path gate
+  // (or brittle source regex) is needed.
+  const result = await sveltePreprocess(source, [...userPreprocessors, builtinTsPreprocessor], { filename });
   return result.code;
 }
+
+// Svelte 5's native TS stripping is incomplete (e.g. it throws on constructor
+// parameter properties). Run Bun's transpiler over <script lang="ts"> before
+// svelte/compiler — the same treatment the .svelte.[jt]s rune-module loaders
+// already apply. transformSync does NOT tree-shake, so value imports referenced
+// only in the template survive.
+const tsScriptTranspiler = new Bun.Transpiler({ loader: 'ts' });
+const builtinTsPreprocessor: PreprocessorGroup = {
+  name: 'mochi-ts',
+  script({ content, attributes }) {
+    if (attributes.lang !== 'ts') {
+      return;
+    }
+    return { code: tsScriptTranspiler.transformSync(content) };
+  },
+};
 
 /** Directory containing the framework's own .ts/.svelte source files. */
 const FRAMEWORK_DIR = path.dirname(Bun.fileURLToPath(import.meta.url));
