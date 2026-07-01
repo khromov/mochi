@@ -9,7 +9,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import type { Server } from 'bun';
 import { stringify as devalueStringify } from 'devalue';
-import { runIsolatedBuild } from './buildFixture.isolated';
+import { runIsolatedBuild } from './utils/runIsolatedBuild';
 import { Mochi } from './Mochi';
 import { logger } from './log';
 import { encryptProps } from './serverIslandCrypto';
