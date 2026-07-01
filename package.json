@@ -35,6 +35,7 @@
     "cli-test": "bun .github/scripts/cli-regression-test.ts",
     "flamegraph": "bun scripts/flamegraph.ts",
     "check-links": "bun scripts/check-links.ts",
+    "check-vendored-versions": "bun scripts/check-vendored-versions.ts",
     "update": "bun update --interactive --recursive",
     "deps": "bun packages/mochi/scripts/dep-report.ts",
     "e18e": "bash scripts/e18e.sh",
