@@ -51,12 +51,8 @@ If the existing call site is sync, **do not convert it to async** to fit an asyn
 4. **Wire the call site.** At the chosen line, insert:
 
    ```ts
-   await runHook('namespace:name', {
-     /* context */
-   }); // async-kind
-   runHook('namespace:name', {
-     /* context */
-   }); // sync-kind (no await)
+   await runHook('namespace:name', {/* context */}); // async-kind
+   runHook('namespace:name', {/* context */}); // sync-kind (no await)
    ```
 
    Import `runHook` from `./extensions` if not already imported.

@@ -19,9 +19,7 @@ Offload work that shouldn't block a response — sending email, encoding media, 
 import { Mochi } from 'mochi-framework';
 
 await Mochi.serve({
-  routes: {
-    /* … */
-  },
+  routes: {/* … */},
   queues: {
     // the map key is the queue name
     emails: Mochi.queue<{ to: string }>({
