@@ -52,6 +52,12 @@ Run a single test file: `bun test packages/mochi/src/forms.test.ts` (or pass `-t
 
 Every test file runs in its own `bun test` process, up to `navigator.hardwareConcurrency` files in parallel. `packages/mochi/scripts/run-tests.ts` globs `src/**/*.test.ts`, spawns each file individually, and aggregates exit codes. This avoids Bun bundler EISDIR bugs when compiling the same Svelte entrypoint twice, `globalThis.__mochi_config__` conflicts from multiple `Mochi.serve()` calls, and `GlobalRegistrator` pollution. Parallelism is safe because every test uses unique temp dirs (`mkdtempSync`) and `port: 0`.
 
+#### `runIsolatedBuild` — run a build in a child process
+
+`build()` runs two `compileAll` passes (pages, then server islands). Under the `bun test` runtime specifically, the **second** pass trips a Bun bundler EISDIR bug once the SSR bundle transitively pulls in `@noble/ciphers` (server-island props are encrypted) — it reads `@noble/ciphers/aes.js` as a directory. A real `mochi-framework build` (a plain `bun run` process) is unaffected; only `build()` called _inside_ `bun test` fails, and it fails even alone in a file, so splitting tests across files does not help.
+
+The fix: run the build in a separate plain-`bun` child process. `packages/mochi/src/utils/runIsolatedBuild.ts` exports `runIsolatedBuild(fixturePage, outDir)`, which spawns itself via `Bun.spawn([process.execPath, import.meta.path, …])` (the same subprocess pattern as `cli.test.ts`) and, guarded by `import.meta.main`, calls `build()`. The manifest tests (`buildServerIslandManifest`, `buildNestedServerIslands`, `serverIslandManifestMiss`) call `runIsolatedBuild(...)` in place of an in-process `build()`, then read the emitted `manifest.json` / boot `Mochi.serve()` (a single `compileAll`, which is fine in-process). It lives under `utils/` (not a `*.test.ts` file) so the runner never executes it directly — it's only ever spawned. When adding a test that needs a real precompiled build, use `runIsolatedBuild` rather than importing `build` directly.
+
 ## Architecture
 
 Mochi is an experimental SSR framework for Svelte 5 + Bun with islands-based selective hydration. Components render server-side on every request; only components marked with `mochi:hydrate*` or `mochi:defer` ship JavaScript to the browser.

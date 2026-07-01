@@ -7,10 +7,11 @@
 // EISDIR bug reading `@noble/ciphers/aes.js`. A real `mochi-framework build`
 // doesn't hit this (it's a fresh process), so tests spawn this script via
 // `bun run` to get the same clean-process behavior instead of calling `build()`
-// inline. Named `.isolated.ts` so it's excluded from the `*.test.ts` glob.
+// inline. Lives under `utils/` (not a `*.test.ts` file) so the test runner never
+// executes it directly — it's only ever spawned.
 import path from 'node:path';
-import { build } from './build';
-import { Mochi } from './Mochi';
+import { build } from '../build';
+import { Mochi } from '../Mochi';
 
 /**
  * Spawn this file as a `bun run` subprocess to precompile `fixturePage` into
@@ -19,7 +20,9 @@ import { Mochi } from './Mochi';
  */
 export async function runIsolatedBuild(fixturePage: string, outDir: string): Promise<void> {
   const proc = Bun.spawn([process.execPath, import.meta.path, fixturePage, outDir], {
-    cwd: path.join(import.meta.dir, '..'),
+    // Run from the package root (this file lives in `src/utils/`) so module and
+    // svelte resolution behave like a normal `mochi-framework build`.
+    cwd: path.join(import.meta.dir, '..', '..'),
     stdin: 'ignore',
     stdout: 'pipe',
     stderr: 'pipe',
@@ -33,7 +36,7 @@ export async function runIsolatedBuild(fixturePage: string, outDir: string): Pro
 if (import.meta.main) {
   const [fixturePage, outDir] = process.argv.slice(2);
   if (!fixturePage || !outDir) {
-    console.error('usage: bun run buildFixture.isolated.ts <fixturePage> <outDir>');
+    console.error('usage: bun run src/utils/runIsolatedBuild.ts <fixturePage> <outDir>');
     process.exit(2);
   }
   await build({

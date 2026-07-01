@@ -7,7 +7,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
-import { runIsolatedBuild } from './buildFixture.isolated';
+import { runIsolatedBuild } from './utils/runIsolatedBuild';
 import type { MochiManifest } from './types';
 
 const FIXTURE_PAGE = path.join(import.meta.dir, '__fixtures__', 'nested-server-islands', 'Page.svelte');
