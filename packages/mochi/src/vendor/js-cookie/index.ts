@@ -105,11 +105,11 @@ function init(converter: CookieConverter, defaultAttributes: CookieAttributes): 
     const cookies = document.cookie ? document.cookie.split('; ') : [];
     const jar: { [name: string]: string } = {};
     for (let i = 0; i < cookies.length; i++) {
-      const parts = cookies[i].split('=');
+      const parts = cookies[i]!.split('=');
       const value = parts.slice(1).join('=');
 
       try {
-        const found = decodeURIComponent(parts[0]);
+        const found = decodeURIComponent(parts[0]!);
         if (!(found in jar)) {
           jar[found] = converter.read(value, found);
         }
