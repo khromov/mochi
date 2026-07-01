@@ -46,7 +46,16 @@ export interface MochiBuildOptions {
    * runtime agree. Default: `false`.
    */
   optimize?: boolean | MochiSvelteShakerOptions;
+  /**
+   * Maximum server-island nesting depth to follow when precompiling `mochi:defer`
+   * islands into the manifest. One compile wave equals one level of nesting; the
+   * build throws if the island graph is still producing new islands past this
+   * many waves. Mirror `Mochi.serve({ maxIslandDepth })`. Default: `10`.
+   */
+  maxIslandDepth?: number;
 }
+
+const DEFAULT_MAX_ISLAND_DEPTH = 10;
 
 type RouteKind = 'page' | 'api' | 'ws' | 'sse';
 
@@ -119,9 +128,43 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     await registry.compileAll(ssrEntrypoints);
   }
 
-  const compileErrors = registry.getErrors();
+  let compileErrors = registry.getErrors();
   if (compileErrors.length > 0) {
     throw new Error(`[mochi:build] ${formatCompileErrors(compileErrors)}`);
+  }
+
+  // Precompile server islands (mochi:defer) as standalone SSR modules so the
+  // production runtime never compiles on a request path. Otherwise the first
+  // fetch of each deferred island triggers an on-demand compile at runtime
+  // (registry.compile in the server-island endpoint). Compile in waves: each
+  // wave picks up islands not yet compiled, and compiling them can (in theory)
+  // surface more. In practice discovery is eager — compiling the pages already
+  // preprocessed the whole transitive graph — so a single wave usually covers
+  // everything, even for deeply nested chains. Termination is guaranteed
+  // regardless (each island compiles once; island files are finite), so
+  // `maxIslandDepth` is a defense-in-depth tripwire, not a correctness knob.
+  const maxIslandDepth = options.maxIslandDepth ?? DEFAULT_MAX_ISLAND_DEPTH;
+  const compiledIslands = new Set<string>();
+  let depth = 0;
+  for (;;) {
+    const islandPaths = [...new Set(registry.getServerIslandPaths().values())].filter((p) => !compiledIslands.has(p));
+    if (islandPaths.length === 0) {
+      break;
+    }
+    depth += 1;
+    if (depth > maxIslandDepth) {
+      throw new Error(
+        `[mochi:build] Server island nesting exceeded maxIslandDepth (${maxIslandDepth}). ` +
+          `Still discovering new islands at depth ${depth}: ${islandPaths.map((p) => path.basename(p)).join(', ')}. ` +
+          `Raise maxIslandDepth in Mochi.serve() if this nesting is intentional.`,
+      );
+    }
+    islandPaths.forEach((p) => compiledIslands.add(p));
+    await registry.compileAll(islandPaths);
+    compileErrors = registry.getErrors();
+    if (compileErrors.length > 0) {
+      throw new Error(`[mochi:build] ${formatCompileErrors(compileErrors)}`);
+    }
   }
 
   allRoutes.sort((a, b) => a.pattern.localeCompare(b.pattern, undefined, { numeric: true }));

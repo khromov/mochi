@@ -623,6 +623,20 @@ export interface MochiServeOptions {
    * while keeping other config visible. Default: `false`.
    */
   optimize?: boolean | MochiSvelteShakerOptions;
+  /**
+   * Maximum server-island **nesting depth** the prebuild will follow when
+   * precompiling `mochi:defer` islands into the manifest. The build compiles
+   * islands in waves — pages → their islands → islands nested inside those, and
+   * so on — and one wave equals one level of nesting. If the graph is still
+   * producing new islands past this many waves, the build throws instead of
+   * looping. Termination is already guaranteed (each island compiles once), so
+   * this is a defense-in-depth guard, not a correctness requirement; raise it
+   * only if you intentionally nest server islands very deeply.
+   *
+   * **Build only** — read by `mochi-framework build` from your `Mochi.serve()`
+   * call. Default: `10`.
+   */
+  maxIslandDepth?: number;
   [key: string]: unknown;
 }
 

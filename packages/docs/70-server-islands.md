@@ -49,6 +49,12 @@ Server island components are normal Svelte components with full access to the re
 
 Failed fetches are retried with exponential backoff (default 5 retries, 1s–10s); pass `mochi:defer={{ retries: 10 }}` to override.
 
+<Callout type="info">
+
+`mochi-framework build` precompiles every server island into the manifest as a standalone SSR module, so production renders them from the prebuilt bundle. The first `mochi:defer` fetch never triggers an on-demand compile at runtime.
+
+</Callout>
+
 ### Combining with hydration
 
 Apply `mochi:hydrate` alongside `mochi:defer` to fetch the island on-demand and then hydrate it for client-side interactivity:
