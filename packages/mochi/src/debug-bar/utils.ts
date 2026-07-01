@@ -1,4 +1,4 @@
-import prettyBytes from '../lib/prettyBytes';
+import prettyBytes from '../vendor/pretty-bytes';
 
 export const formatSize = prettyBytes;
 

@@ -10,7 +10,7 @@ import { logger, setLogLevel } from './log';
 import { consoleLogger } from './consoleLogger';
 import { mochiEvents } from './events';
 import { styleText } from 'node:util';
-import prettyBytes from './lib/prettyBytes';
+import prettyBytes from './vendor/pretty-bytes';
 
 export interface MochiBuildOptions {
   routes: Record<string, MochiRouteValue>;

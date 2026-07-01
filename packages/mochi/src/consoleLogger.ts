@@ -1,6 +1,6 @@
 import nodePath from 'node:path';
 import { styleText } from 'node:util';
-import prettyBytes from './lib/prettyBytes';
+import prettyBytes from './vendor/pretty-bytes';
 import { mochiEvents } from './events';
 import type { MochiEventMap, MochiRequestKind } from './events';
 import { logger } from './log';

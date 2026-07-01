@@ -18,7 +18,7 @@ import { applyFilter } from './extensions';
 import { buildServerOnlyStubModule, scanServerOnlyExports } from './serverOnlyScan';
 import { freshImport } from './freshImport';
 import { shakeApp } from './svelteShaker';
-import prettyBytes from './lib/prettyBytes';
+import prettyBytes from './vendor/pretty-bytes';
 
 /**
  * Run user-supplied Svelte preprocessors via the `compile:preprocessors`
