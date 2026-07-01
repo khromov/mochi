@@ -1,3 +1,4 @@
+import nodePath from 'node:path';
 import { styleText } from 'node:util';
 import prettyBytes from './lib/prettyBytes';
 import { mochiEvents } from './events';
@@ -52,6 +53,7 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
   const LEVEL_BY_KIND: Record<MochiRequestKind, 'info' | 'log' | 'debug'> = {
     page: 'info',
     api: 'info',
+    file: 'info',
     asset: 'debug',
     fallback: 'debug',
     error: 'log',
@@ -127,7 +129,7 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
   subscribe('server:start', ({ port, hostname, development, routes }) => {
     const where = `${hostname ?? 'localhost'}:${port}`;
     const mode = styleText('dim', development ? 'dev' : 'prod');
-    const counts = styleText('dim', `page=${routes.page} api=${routes.api} ws=${routes.ws} sse=${routes.sse}`);
+    const counts = styleText('dim', `page=${routes.page} api=${routes.api} ws=${routes.ws} sse=${routes.sse} file=${routes.file}`);
     return { label: 'BOOT', path: where, note: `${mode} ${counts}` };
   });
 
@@ -179,6 +181,54 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
     const detail = removed === 0 ? 'nothing stale' : `${removed} stale (${removedVariants}v/${removedOriginals}o), freed ${prettyBytes(freedBytes)}`;
     return { label: 'CACHE', path: 'image:sweep', note: styleText('dim', detail), duration: durationMs, slow, verySlow, level: 'info' };
   });
+  subscribe('cache:revalidate:failed', (payload) => ({
+    label: 'CACHE',
+    path: payload.key,
+    note: `${styleText('red', 'revalidate failed')} ${styleText('dim', errorMessage(payload.error))}`,
+    level: 'warn',
+  }));
+  subscribe('cache:error', (payload) => ({
+    label: 'CACHE',
+    path: payload.key,
+    note: `${styleText('red', `storage ${payload.operation} failed`)} ${styleText('dim', errorMessage(payload.error))}`,
+    level: 'warn',
+  }));
+
+  // Enqueue and per-attempt start are high-volume; route them through
+  // `logger.debug` so the default stream stays quiet. `completed` carries the
+  // duration (escalated to warn when slow); `failed`/`error` always warn.
+  subscribe('queue:added', ({ queue, jobName, jobId }) => ({
+    label: 'QUEUE',
+    path: `${queue}/${jobName}`,
+    note: styleText('dim', `+ ${jobId}`),
+    level: 'debug',
+  }));
+  subscribe('queue:active', ({ queue, jobName }) => ({
+    label: 'QUEUE',
+    path: `${queue}/${jobName}`,
+    note: styleText('cyan', 'active'),
+    level: 'debug',
+  }));
+  subscribe('queue:completed', ({ queue, jobName, duration }) => ({
+    label: 'QUEUE',
+    path: `${queue}/${jobName}`,
+    note: styleText('green', 'done'),
+    duration,
+    slow,
+    verySlow,
+  }));
+  subscribe('queue:failed', ({ queue, jobName, attempt, error }) => ({
+    label: 'QUEUE',
+    path: `${queue}/${jobName}`,
+    note: `${styleText('red', `failed (attempt ${attempt})`)} ${styleText('dim', error)}`,
+    level: 'warn',
+  }));
+  subscribe('queue:error', ({ queue, error }) => ({
+    label: 'QUEUE',
+    path: queue,
+    note: `${styleText('red', 'queue error')} ${styleText('dim', error)}`,
+    level: 'warn',
+  }));
 
   subscribe('preprocess-cache:hit', ({ filePath }) => ({
     label: 'PCACHE',
@@ -196,6 +246,15 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
     const rate = files === 0 ? '0.0' : ((hits / files) * 100).toFixed(1);
     return {
       label: 'PCACHE',
+      path: '-',
+      note: styleText('dim', `${hits} hit / ${misses} miss across ${files} files (${rate}%)`),
+      level: 'log',
+    };
+  });
+  subscribe('compile-cache:summary', ({ hits, misses, files }) => {
+    const rate = files === 0 ? '0.0' : ((hits / files) * 100).toFixed(1);
+    return {
+      label: 'CCACHE',
       path: '-',
       note: styleText('dim', `${hits} hit / ${misses} miss across ${files} files (${rate}%)`),
       level: 'log',
@@ -229,6 +288,8 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
       let action: string;
       if (trigger === 'css') {
         action = 'rebundled CSS';
+      } else if (trigger === 'html-shell') {
+        action = 'shell changed → reloading all tabs';
       } else if (trigger === 'svelte-config') {
         action = `config reload → rebuilt ${pages}, ${bundles}`;
       } else {
@@ -261,15 +322,16 @@ export const silenceInternalRoutes = (line: string, { path }: MochiFilterContext
   return line;
 };
 
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 function relPath(p: string): string {
   if (!p) {
     return p;
   }
-  const cwd = process.cwd();
-  if (p.startsWith(cwd + '/')) {
-    return p.slice(cwd.length + 1);
-  }
-  return p;
+  const rel = nodePath.relative(process.cwd(), p);
+  return rel && !rel.startsWith('..') && !nodePath.isAbsolute(rel) ? rel : p;
 }
 
 function colorCacheStatus(status: 'fresh' | 'stale' | 'expired' | 'miss'): string {
@@ -305,10 +367,11 @@ interface EmitInput {
   /**
    * Default log level for the line. `'debug'` keeps high-volume request lines
    * (asset/fallback) hidden unless the user opts into the most verbose level;
-   * `'log'` is for moderately verbose lines. Always escalated to `warn` for
-   * 5xx or slow responses.
+   * `'log'` is for moderately verbose lines. `'warn'` is for degradations that
+   * always warrant attention. Always escalated to `warn` for 5xx or slow
+   * responses regardless of this value.
    */
-  level?: 'info' | 'log' | 'debug';
+  level?: 'info' | 'log' | 'debug' | 'warn';
 }
 
 const KIND_WIDTH = 'fallback'.length;
@@ -319,6 +382,8 @@ function colorKind(kind: MochiRequestKind): string {
       return styleText('cyan', kind.padEnd(KIND_WIDTH));
     case 'api':
       return styleText('magenta', kind.padEnd(KIND_WIDTH));
+    case 'file':
+      return styleText('green', kind.padEnd(KIND_WIDTH));
     case 'asset':
       return styleText('dim', kind.padEnd(KIND_WIDTH));
     case 'fallback':

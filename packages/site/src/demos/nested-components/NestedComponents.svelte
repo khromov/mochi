@@ -2,13 +2,9 @@
   import DemoPage from '../../components/DemoPage.svelte';
   import Level from './Level.svelte';
   import { loadSources } from '../../components/utils.ts';
+  import { files } from './files.ts';
 
-  const sources = await loadSources([
-    { label: 'NestedComponents.svelte', path: './src/demos/nested-components/NestedComponents.svelte' },
-    { label: 'Level.svelte', path: './src/demos/nested-components/Level.svelte' },
-    { label: 'routes.ts', path: './src/demos/nested-components/routes.ts' },
-    { label: 'index.ts', path: './src/demoIndex.ts' },
-  ]);
+  const sources = await loadSources(files);
 </script>
 
 <DemoPage

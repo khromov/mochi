@@ -1,7 +1,7 @@
 import { checkEnvironment } from './checkEnvironment';
 import { ComponentRegistry, formatCompileErrors } from './ComponentRegistry';
 import { isMochiPage, isMochiApi, isMochiWs, isMochiSse } from './types';
-import type { MarkdownConfig, MochiRouteValue } from './types';
+import type { MarkdownConfig, MochiRouteValue, MochiSvelteShakerOptions } from './types';
 import { rmSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { scanPublicDir } from './publicDir';
@@ -15,7 +15,10 @@ import prettyBytes from './lib/prettyBytes';
 export interface MochiBuildOptions {
   routes: Record<string, MochiRouteValue>;
   development?: boolean;
-  /** Directory for build output (cwd-relative). Default: `./.mochi`. */
+  /**
+   * Base directory for build output (cwd-relative). Default: `./.mochi`.
+   * A `--dev` build nests under `<outDir>/dev`; production writes to the root.
+   */
   outDir?: string;
   /** Static assets directory (cwd-relative). Default: `./public`. */
   publicDir?: string;
@@ -37,6 +40,12 @@ export interface MochiBuildOptions {
    * use the same pipeline. Omit to leave markdown unhandled.
    */
   markdown?: MarkdownConfig;
+  /**
+   * Run the whole-program svelte-shaker pass before compiling. Mirror the value
+   * passed to `Mochi.serve({ optimize })` so the prebuilt manifest and the
+   * runtime agree. Default: `false`.
+   */
+  optimize?: boolean | MochiSvelteShakerOptions;
 }
 
 type RouteKind = 'page' | 'api' | 'ws' | 'sse';
@@ -57,7 +66,10 @@ export async function build(options: MochiBuildOptions): Promise<void> {
   console.log('Starting build...\n');
   const startedAt = performance.now();
   const development = options.development ?? false;
-  const outDir = options.outDir ?? './.mochi';
+  const baseOutDir = options.outDir ?? './.mochi';
+  // Mirror the dev/prod split in Mochi.serve(): a `--dev` build nests under
+  // `dev/` so it can't clobber the production manifest at the root.
+  const outDir = development ? path.join(baseOutDir, 'dev') : baseOutDir;
   const publicDir = options.publicDir ?? './public';
 
   // Clean previous build artifacts
@@ -73,7 +85,9 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     assetPrefix: options.assetPrefix,
     svelteConfig,
     markdown: options.markdown,
+    optimize: options.optimize,
   });
+  await registry.prepareShake();
 
   // Compile all Mochi.page() handlers in one Bun.build so transitive deps
   // (devalue, mochi-framework internals) emit as shared chunks alongside the
@@ -105,9 +119,30 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     await registry.compileAll(ssrEntrypoints);
   }
 
-  const compileErrors = registry.getErrors();
+  let compileErrors = registry.getErrors();
   if (compileErrors.length > 0) {
     throw new Error(`[mochi:build] ${formatCompileErrors(compileErrors)}`);
+  }
+
+  // Precompile server islands (mochi:defer) as standalone SSR modules so the
+  // production runtime never compiles on a request path. Otherwise the first
+  // fetch of each deferred island triggers an on-demand compile at runtime
+  // (registry.compile in the server-island endpoint). Discovery is eager — a
+  // `mochi:defer` island's import stays in its compiled source (only the
+  // markup usage is rewritten), so compiling a page transitively resolves
+  // every island it references. If eager discovery is ever defeated (e.g. a
+  // `mochi:defer` target resolved through something other than a static
+  // import), the island simply won't be in the manifest — the server-island
+  // endpoint in Mochi.ts warns and falls back to an on-demand compile rather
+  // than throwing here.
+  const islandPaths = [...new Set(registry.getServerIslandPaths().values())];
+  if (islandPaths.length > 0) {
+    logger.info(`[mochi:build] precompiling ${islandPaths.length} server island(s): ${islandPaths.map((p) => path.basename(p)).join(', ')}`);
+    await registry.compileAll(islandPaths);
+    compileErrors = registry.getErrors();
+    if (compileErrors.length > 0) {
+      throw new Error(`[mochi:build] ${formatCompileErrors(compileErrors)}`);
+    }
   }
 
   allRoutes.sort((a, b) => a.pattern.localeCompare(b.pattern, undefined, { numeric: true }));
@@ -140,7 +175,7 @@ export async function build(options: MochiBuildOptions): Promise<void> {
 
   const publicFiles = new Map<string, string>();
   for (const [urlPath, srcPath] of publicSrc) {
-    const destPath = path.join(outDir, 'public', urlPath);
+    const destPath = path.join(outDir, 'public', ...urlPath.split('/').filter(Boolean));
     await Bun.write(destPath, Bun.file(srcPath));
     publicFiles.set(urlPath, destPath);
   }

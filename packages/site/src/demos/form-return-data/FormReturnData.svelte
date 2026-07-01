@@ -2,13 +2,9 @@
   import DemoPage from '../../components/DemoPage.svelte';
   import RandomRoll from './RandomRoll.svelte';
   import { loadSources } from '../../components/utils.ts';
+  import { files } from './files.ts';
 
-  const sources = await loadSources([
-    { label: 'FormReturnData.svelte', path: './src/demos/form-return-data/FormReturnData.svelte' },
-    { label: 'RandomRoll.svelte', path: './src/demos/form-return-data/RandomRoll.svelte' },
-    { label: 'routes.ts', path: './src/demos/form-return-data/routes.ts' },
-    { label: 'index.ts', path: './src/demoIndex.ts' },
-  ]);
+  const sources = await loadSources(files);
 </script>
 
 <DemoPage

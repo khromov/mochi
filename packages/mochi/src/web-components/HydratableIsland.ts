@@ -1,6 +1,6 @@
 /// <reference lib="dom" />
 /// <reference lib="dom.iterable" />
-import { hydrate } from 'svelte';
+import { hydrate, mount } from 'svelte';
 import type { Component } from 'svelte';
 import { parse as devalueParse } from 'devalue';
 import { isDev, logger } from 'mochi-framework';
@@ -63,9 +63,10 @@ class HydratableIsland extends HTMLElement {
     if (!name) {
       return;
     }
-    // Props may live inline on `props=...` or — when deduplicated server-side
-    // because another island on the page shares the exact same payload — in a
-    // shared <script type="application/json" id="<propsRef>"> block.
+    // Page islands carry a `props-ref` pointing at a
+    // <script type="application/json" id="<propsRef>"> block emitted just before
+    // them. The server-island also-hydrate path instead inlines `props=...`
+    // directly, so fall back to that attribute when no ref is present.
     const propsRef = this.getAttribute('props-ref');
     let propsRaw: string | null;
     if (propsRef) {
@@ -124,33 +125,34 @@ class HydratableIsland extends HTMLElement {
       }
       throw err;
     }
-    const islandId = this.getAttribute('island-id');
-    if (islandId) {
-      props.islandId = islandId;
-    }
     props.isHydratable = true;
     // `transformError` makes <svelte:boundary> work for client-side errors
     // (e.g. throws inside $effect / $derived after hydration). Returns an
     // Error instance — same shape as the SSR transformError — so user-written
     // `failed` snippets can rely on `error instanceof Error`. `message` is
     // made enumerable to match SSR (see ComponentRegistry transformError).
-    hydrate(Component, {
-      target: this,
-      props,
-      transformError: (err: unknown): Error => {
-        const e = err instanceof Error ? err : new Error(String(err));
-        logger.error(`Island "${name}" runtime error:`, e);
-        const out = isDev ? e : new Error('Island error');
-        Object.defineProperty(out, 'message', {
-          value: out.message,
-          enumerable: true,
-          writable: true,
-          configurable: true,
-        });
-        return out;
-      },
-    });
-    logger.log('Hydrated', name);
+    const transformError = (err: unknown): Error => {
+      const e = err instanceof Error ? err : new Error(String(err));
+      logger.error(`Island "${name}" runtime error:`, e);
+      const out = isDev ? e : new Error('Island error');
+      Object.defineProperty(out, 'message', {
+        value: out.message,
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
+      return out;
+    };
+    const clientOnly = this.hasAttribute('client-only');
+    if (clientOnly) {
+      // mochi:clientOnly islands have no SSR HTML — the wrapper holds optional
+      // fallback content. Remove it exactly when the real component mounts.
+      this.innerHTML = '';
+      mount(Component, { target: this, props, transformError });
+    } else {
+      hydrate(Component, { target: this, props, transformError });
+    }
+    logger.log(clientOnly ? 'Mounted' : 'Hydrated', name);
   }
 }
 

@@ -6,6 +6,7 @@ description: 'Integrate Tailwind CSS v4 into a Mochi app using the setupTailwind
 
 <script>
   import Callout from './_components/Callout.svelte';
+  import SeeItInAction from './_components/SeeItInAction.svelte';
 </script>
 
 ## Tailwind
@@ -36,12 +37,11 @@ bun add tailwindcss @tailwindcss/node @tailwindcss/oxide
 @source './*.svelte';
 ```
 
-3. Call `setupTailwind` at module scope in your routes file, before `Mochi.serve()` runs. Top-level `await` ensures the generated CSS exists for both the build CLI and the dev server:
+3. Call `setupTailwind` at module scope in your `src/index.ts`, before `Mochi.serve()` runs. Top-level `await` ensures the generated CSS exists for both the build CLI and the dev server:
 
 ```ts
-// file: src/routes.ts
+// file: src/index.ts
 import { Mochi } from 'mochi-framework';
-import type { MochiRouteValue } from 'mochi-framework';
 import { setupTailwind } from 'mochi-framework/tailwind';
 
 await setupTailwind({
@@ -50,9 +50,11 @@ await setupTailwind({
   minify: process.env.MODE !== 'development',
 });
 
-export const routes: Record<string, MochiRouteValue> = {
-  '/': Mochi.page('./src/Home.svelte'),
-};
+await Mochi.serve({
+  routes: {
+    '/': Mochi.page('./src/Home.svelte'),
+  },
+});
 ```
 
 4. `import` the generated file from any `.svelte` that uses Tailwind classes:
@@ -98,7 +100,7 @@ The watcher only attaches when `process.env.MODE === 'development'`.
 If you generate the CSS at build time, dynamic-import the helper so production never loads oxide:
 
 ```ts
-// file: src/routes.ts
+// file: src/index.ts
 if (process.env.MODE === 'development') {
   const { setupTailwind } = await import('mochi-framework/tailwind');
   await setupTailwind({
@@ -108,7 +110,7 @@ if (process.env.MODE === 'development') {
 }
 ```
 
-Pair it with a prebuild script that compiles the CSS ahead of `mochi-framework build`:
+Pair it with a prebuild script that compiles the CSS ahead of [`mochi-framework build`](/docs/cli/#build):
 
 ```ts
 // file: scripts/prebuild.ts
@@ -127,13 +129,15 @@ await compileTailwind({
 }
 ```
 
-Do **NOT** static-import `mochi-framework/tailwind` and gate only the call site with `process.env.MODE === 'development'` — the runtime branch is skipped, but the static import already loaded oxide. Instead, put the dynamic `import()` inside the guard so the native binding is never resolved in production.
+<Callout type="info">
+
+**Guard the `mochi-framework/tailwind` import dynamically.** A static import loads the oxide native binding even when the call site is gated by `MODE`. Put the `import()` inside the development guard so the binding is never resolved in production.
+
+</Callout>
 
 ### Preflight and resets
 
 The example imports `tailwindcss/utilities.css` **without** `layer(utilities)`. If your shell's CSS already ships an unlayered universal reset (e.g. `*, *::before, *::after { margin: 0; padding: 0 }`), wrapping utilities in `layer(utilities)` lets the unlayered reset clobber `.p-6`, `.mt-2`, etc., because unlayered styles always beat layered ones in the cascade.
-
-Do **NOT** wrap utilities in `layer(utilities)` when your shell ships an unlayered reset; instead, leave them unlayered so selector specificity wins.
 
 The example also skips Tailwind's preflight so the stylesheet doesn't reset unrelated UI on pages that already have their own resets. The cost is that user-agent defaults leak through — `<button>` keeps its rounded macOS pill shape and clobbers utilities like `rounded-lg` or `bg-transparent`.
 
@@ -156,3 +160,7 @@ To opt back in, `@import 'tailwindcss/preflight.css' layer(base);`.
 Preflight resets every element on every page that imports the stylesheet. On a multi-page site, scope your Tailwind CSS to a single page (only that `.svelte` imports it) or accept that preflight will reset shared chrome too.
 
 </Callout>
+
+<SeeItInAction
+demos={[{ href: "https://demos.mochi.fast/todo/", title: "Tailwind Todo App", hook: "Classic todo app styled with Tailwind CSS." }]}
+/>

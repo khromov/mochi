@@ -1,5 +1,6 @@
 <script lang="ts">
   import { getRequestContext } from 'mochi-framework';
+  import mochiPkg from 'mochi-framework/package.json' with { type: 'json' };
   import Leaves from './components/Leaves.svelte';
 
   const { url } = getRequestContext();
@@ -50,7 +51,7 @@
       <a href="https://github.com/khromov/mochi" target="_blank" rel="noopener noreferrer">GitHub</a>
     </div>
   </section>
-  <div class="footer-version">mochi · MIT</div>
+  <div class="footer-version">mochi v{mochiPkg.version} · MIT</div>
 </main>
 
 <style>

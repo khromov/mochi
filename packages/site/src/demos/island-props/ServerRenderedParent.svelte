@@ -3,20 +3,9 @@
   import ClientRenderedChild from './ClientRenderedChild.svelte';
   import { typeOf } from './devalueTypeOf.ts';
   import { loadSources } from '../../components/utils.ts';
+  import { files } from './files.ts';
 
-  const sources = await loadSources([
-    {
-      label: 'ServerRenderedParent.svelte',
-      path: './src/demos/island-props/ServerRenderedParent.svelte',
-    },
-    {
-      label: 'ClientRenderedChild.svelte',
-      path: './src/demos/island-props/ClientRenderedChild.svelte',
-    },
-    { label: 'devalueTypeOf.ts', path: './src/demos/island-props/devalueTypeOf.ts' },
-    { label: 'routes.ts', path: './src/demos/island-props/routes.ts' },
-    { label: 'index.ts', path: './src/demoIndex.ts' },
-  ]);
+  const sources = await loadSources(files);
 
   const shared = { x: 1 };
   const cyclic: { name: string; self?: unknown } = { name: 'cyclic' };

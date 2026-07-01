@@ -27,7 +27,7 @@ function makeCtx(opts?: { dev?: boolean }): MochiRequestContext {
     isWarmup: false,
     cookies: new MochiCookieJar(null),
     islandProps: new Map(),
-    debugBarData: opts?.dev ? { route: '/', pathname: '/', params: {}, islandProps: {} } : undefined,
+    debugBarData: opts?.dev ? { route: '/', pathname: '/', params: {}, serverProps: {} } : undefined,
     getClientAddress: () => null,
   };
 }
@@ -90,9 +90,9 @@ describe('encryptProps debug bar recording', () => {
       (ctx) => {
         const props = { islandId: 'mochi-test-0', greeting: 'Hello', count: 42 };
         const json = devalueStringify(props);
-        encryptProps(json, COMP);
+        const token = encryptProps(json, COMP);
 
-        const recorded = ctx.debugBarData!.islandProps['mochi-test-0'];
+        const recorded = ctx.debugBarData!.serverProps![token];
         expect(recorded).toBeDefined();
         const parsed = JSON.parse(recorded!);
         expect(parsed.islandId).toBe('mochi-test-0');
@@ -133,7 +133,7 @@ describe('encryptProps debug bar recording', () => {
         const badJson = '{not valid devalue}';
         const token = encryptProps(badJson, COMP);
         expect(token).toBeDefined();
-        expect(Object.keys(ctx.debugBarData!.islandProps)).toHaveLength(0);
+        expect(Object.keys(ctx.debugBarData!.serverProps!)).toHaveLength(0);
       },
       { dev: true },
     );

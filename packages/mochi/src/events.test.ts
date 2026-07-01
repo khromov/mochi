@@ -29,6 +29,21 @@ describe('mochiEvents', () => {
       type: 'change',
     });
   });
+
+  test('queue:completed is part of the event map', () => {
+    let received: { queue: string; jobName: string; attempt: number } | null = null;
+    const handler = (e: { queue: string; jobName: string; attempt: number; duration: number }) => {
+      received = { queue: e.queue, jobName: e.jobName, attempt: e.attempt };
+    };
+    mochiEvents.on('queue:completed', handler);
+    mochiEvents.emit('queue:completed', { queue: 'emails', jobId: 'j1', jobName: 'send', attempt: 1, duration: 12 });
+    mochiEvents.off('queue:completed', handler);
+    expect(received as { queue: string; jobName: string; attempt: number } | null).toEqual({
+      queue: 'emails',
+      jobName: 'send',
+      attempt: 1,
+    });
+  });
 });
 
 describe('mochiEvents.setHandler', () => {
@@ -119,13 +134,13 @@ describe('new event payloads round-trip', () => {
       port: 3333,
       hostname: 'localhost',
       development: true,
-      routes: { page: 2, api: 1, ws: 0, sse: 0 },
+      routes: { page: 2, api: 1, ws: 0, sse: 0, file: 0 },
     });
     expect(received).toEqual({
       port: 3333,
       hostname: 'localhost',
       development: true,
-      routes: { page: 2, api: 1, ws: 0, sse: 0 },
+      routes: { page: 2, api: 1, ws: 0, sse: 0, file: 0 },
     });
   });
 

@@ -1,6 +1,6 @@
 {
   "name": "mochi-framework",
-  "version": "0.5.0",
+  "version": "0.7.0",
   "type": "module",
   "license": "MIT",
   "keywords": [
@@ -49,6 +49,11 @@
       "bun": "./src/build.ts",
       "default": "./src/build.ts"
     },
+    "./components": {
+      "types": "./src/components/index.ts",
+      "svelte": "./src/components/index.ts",
+      "default": "./src/components/index.ts"
+    },
     "./highlight": {
       "types": "./src/highlight.ts",
       "bun": "./src/highlight.ts",
@@ -76,9 +81,9 @@
     "deps:report": "bun scripts/dep-report.ts"
   },
   "peerDependencies": {
-    "svelte": "^5.55.7",
-    "@tailwindcss/node": "^4.0.0",
-    "@tailwindcss/oxide": "^4.0.0"
+    "svelte": "^5.56.4",
+    "@tailwindcss/node": "^4.3.0",
+    "@tailwindcss/oxide": "^4.3.0"
   },
   "peerDependenciesMeta": {
     "@tailwindcss/node": {
@@ -90,26 +95,25 @@
   },
   "dependencies": {
     "@noble/ciphers": "2.2.0",
-    "@types/negotiator": "^0.6.4",
-    "chokidar": "^4.0.3",
+    "bunqueue": "^2.8.20",
+    "chokidar": "^5.0.0",
     "deepmerge": "^4.3.1",
     "devalue": "^5.8.1",
-    "js-cookie": "^3.0.7",
+    "js-cookie": "^3.0.8",
     "magic-string": "^0.30.21",
     "mitt": "^3.0.1",
-    "nanoid": "^5.1.11",
     "negotiator": "^1.0.0",
-    "stale-while-revalidate-cache": "^3.4.1",
+    "svelte-shaker": "0.9.0",
     "zimmerframe": "^1.1.4"
   },
   "devDependencies": {
-    "@happy-dom/global-registrator": "20.9.0",
-    "@tailwindcss/node": "4.3.0",
-    "@tailwindcss/oxide": "4.3.0",
+    "@happy-dom/global-registrator": "^20.10.3",
+    "@tailwindcss/node": "^4.3.1",
+    "@tailwindcss/oxide": "^4.3.1",
     "@types/bun": "1.3.14",
     "@types/js-cookie": "^3.0.6",
-    "svelte": "^5.55.9",
-    "svelte-check": "4.4.7",
+    "svelte": "^5.56.4",
+    "svelte-check": "4.6.0",
     "typescript": "^6.0.3"
   }
 }

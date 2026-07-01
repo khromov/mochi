@@ -2,6 +2,7 @@ import type { Server } from 'bun';
 import { csrfCheck, type MochiCsrfOptions } from './csrf';
 import { buildPublicUrl, getClientAddress, type MochiProxyOptions } from './proxy';
 import { extractParams } from './utils';
+import { applyFilter } from './extensions';
 import { trailingSlashRedirect, type TrailingSlashPolicy } from './trailingSlash';
 import { MochiCookieJar, type CookieSerializeOptions } from './cookies';
 import { mochiEvents } from './events';
@@ -9,8 +10,8 @@ import { isWarmupRequest } from './warmup';
 import type { MochiRequestContext } from './requestContext';
 
 // RouteKind covers user-route shapes; MochiRequestKind in events.ts covers the
-// broader event taxonomy (asset, fallback, error). They overlap on page|api.
-export type RouteKind = 'page' | 'api' | 'ws' | 'sse' | 'island';
+// broader event taxonomy (asset, fallback, error). They overlap on page|api|file.
+export type RouteKind = 'page' | 'api' | 'ws' | 'sse' | 'island' | 'file';
 
 export interface RequestSetupConfig {
   proxy: MochiProxyOptions | undefined;
@@ -57,6 +58,9 @@ const KIND_POLICY: Record<RouteKind, KindPolicy> = {
   sse: { timeout: true, trailingSlash: true, csrf: false, debugBar: false },
   ws: { timeout: false, trailingSlash: false, csrf: false, debugBar: false },
   island: { timeout: false, trailingSlash: false, csrf: false, debugBar: false },
+  // Files are leaf resources (like static assets), so they opt out of
+  // trailing-slash normalization — a file URL should never gain a trailing `/`.
+  file: { timeout: false, trailingSlash: false, csrf: false, debugBar: false },
 };
 
 export function makeRequestContextBuilder(cfg: RequestSetupConfig): RequestContextBuilder {
@@ -71,8 +75,8 @@ export function makeRequestContextBuilder(cfg: RequestSetupConfig): RequestConte
     const url = buildPublicUrl(req, cfg.proxy);
 
     const reportEarlyExit = (status: number): void => {
-      // 'request' event accepts only page|api kinds; see MochiRequestKind in events.ts
-      if (opts.kind !== 'page' && opts.kind !== 'api') {
+      // 'request' event accepts only page|api|file kinds; see MochiRequestKind in events.ts
+      if (opts.kind !== 'page' && opts.kind !== 'api' && opts.kind !== 'file') {
         return;
       }
       mochiEvents.emit('request', {
@@ -86,7 +90,11 @@ export function makeRequestContextBuilder(cfg: RequestSetupConfig): RequestConte
     };
 
     if (policy.trailingSlash && cfg.trailingSlashPolicy) {
-      const redirect = trailingSlashRedirect(req.method, url, cfg.trailingSlashPolicy);
+      const redirect = applyFilter('trailingSlash:redirect', trailingSlashRedirect(req.method, url, cfg.trailingSlashPolicy), {
+        request: req,
+        url,
+        policy: cfg.trailingSlashPolicy,
+      });
       if (redirect) {
         reportEarlyExit(redirect.status);
         return { earlyResponse: redirect };
@@ -120,10 +128,10 @@ export function makeRequestContextBuilder(cfg: RequestSetupConfig): RequestConte
         route: opts.pattern,
         pathname: url.pathname,
         params,
-        islandProps: {},
         pageCacheEnabled: true,
         varyOnCookies: [],
         images: [],
+        serverProps: {},
       };
     }
 

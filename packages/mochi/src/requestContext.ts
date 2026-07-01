@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { MochiCookieJar } from './cookies';
+import type { IslandPropsEntry } from './islandPropsRegistry';
 import type { MochiFormResult } from './types';
 import { pinGlobal } from './globalState';
 
@@ -31,12 +32,14 @@ export interface MochiRequestContext {
   cookies: MochiCookieJar;
   /**
    * Per-request hydratable-island props dedup registry, keyed by serialized
-   * JSON payload, valued by ref id (e.g. "mochi-props-3"). Populated by
-   * `emitIslandProps()` during SSR; consumed by `ComponentRegistry` to hoist
-   * shared `<script type="application/json">` blocks into the rendered HTML.
+   * JSON payload, valued by ref id (e.g. "mochi-props-3") plus the number of
+   * islands that emitted that exact payload. Populated by `emitIslandProps()`
+   * during SSR; consumed by `ComponentRegistry`, which emits each payload as a
+   * `<script type="application/json">` block before its first island and marks
+   * blocks reused by >=2 islands with `data-shared` in the rendered HTML.
    * Internal — not for application use.
    */
-  islandProps: Map<string, string>;
+  islandProps: Map<string, IslandPropsEntry>;
   /**
    * Dev-only debug-bar data bag. Populated during routing (route/pathname/
    * params) and SSR (e.g. `emitIslandProps()` fills `islandProps`).
@@ -100,8 +103,6 @@ export interface DebugBarData {
   pathname: string;
   /** Route params extracted from the pattern. */
   params: Record<string, string>;
-  /** islandId → pretty-printed props JSON. */
-  islandProps: Record<string, string>;
   /**
    * Always `true` in dev while the page-cache feature is being rebuilt; the
    * `/__mochi/admin/page-cache` route serves placeholder data. The debug bar
@@ -122,6 +123,45 @@ export interface DebugBarData {
   bundles?: BundleInfo[];
   /** Images produced via `getResizedImage()` during this request, with decoded params. */
   images?: ImageDebugEntry[];
+  /**
+   * Server-island props recorded during SSR, keyed by the encrypted `signed-props`
+   * token. Because island props are encrypted (opaque on the wire), the client
+   * can't decode them; the debug bar reads the decoded snapshot from here instead,
+   * matching on the token it sees in the island's `signed-props` attribute.
+   */
+  serverProps?: Record<string, string>;
+  /** Mochi framework version (constant per server). */
+  mochiVersion?: string;
+  /** Resolved Svelte version (constant per server). */
+  svelteVersion?: string;
+  /** Bun runtime version (constant per server). */
+  bunVersion?: string;
+  /** Curated snapshot of the `Mochi.serve()` configuration (constant per server). */
+  config?: DebugBarConfig;
+}
+
+/**
+ * Serializable, descriptive subset of `MochiServeOptions` surfaced in the debug
+ * bar's Info panel. Functions (handle, routes, fetch) are reduced to booleans or
+ * counts so the whole shape survives `JSON.stringify` into the HTML.
+ */
+export interface DebugBarConfig {
+  mode: 'development' | 'production';
+  port?: number;
+  hostname?: string;
+  debugBar: boolean;
+  liveReload: boolean;
+  warmup: boolean;
+  compressServerIslandProps: boolean;
+  trailingSlash: 'never' | 'always';
+  assetPrefix?: string;
+  logLevel: string;
+  /** Whether an `options.handle` middleware is configured. */
+  middleware: boolean;
+  csrf: boolean;
+  proxy: boolean;
+  markdown: boolean;
+  routeCount: number;
 }
 
 /**

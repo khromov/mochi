@@ -77,7 +77,7 @@ declare module 'mochi-framework' {
    * it directly. Server-only — the client virtual module exposes a stub that
    * throws.
    */
-  export function emitIslandProps(value: unknown, islandId?: string): string;
+  export function emitIslandProps(value: unknown): string;
 
   /**
    * Svelte attachment that progressively enhances a `<form method="POST">`.

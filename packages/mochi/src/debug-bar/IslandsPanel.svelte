@@ -1,7 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { SvelteSet } from 'svelte/reactivity';
-  import { logger } from 'mochi-framework';
   import type { IslandInfo } from './types';
   import { formatSize, getPropsWarnLevel, PROPS_WARN_RED_BYTES, PROPS_WARN_YELLOW_BYTES } from './utils';
   import IslandRow from './IslandRow.svelte';
@@ -54,55 +53,64 @@
     const hydratable = document.querySelectorAll('mochi-hydratable-island');
     const server = document.querySelectorAll('mochi-server-island');
 
-    hydratable.forEach((el) => {
-      const id = el.getAttribute('island-id');
-      if (!id) {
-        logger.warn('[debug] Hydratable island missing island-id:', el);
+    hydratable.forEach((element) => {
+      const name = element.getAttribute('component-name') ?? 'unknown';
+      // Skip the realized child of a `mochi:defer mochi:hydrate` invocation: the
+      // server-island fetch wraps its content in a `<mochi-hydratable-island>`
+      // with the same component-name (see Mochi.ts also-hydrate path), already
+      // represented by the server-island entry (mode shows `+ mochi:hydrate`).
+      // Match by `also-hydrate` + matching name so a genuinely separate
+      // `mochi:hydrate` child nested in a plain `mochi:defer` island still lists.
+      const host = element.closest('mochi-server-island');
+      if (host?.getAttribute('also-hydrate') && host.getAttribute('component-name') === name) {
         return;
       }
-      const name = el.getAttribute('component-name') ?? 'unknown';
-      const mode = el.getAttribute('hydrate-on') === 'visible' ? 'mochi:hydrate:visible' : 'mochi:hydrate';
-      // Props may be inline (`props=...`) or hoisted into a shared
-      // <script type="application/json" id="<propsRef>"> block when multiple
-      // islands on the page share the exact same payload.
-      const propsRef = el.getAttribute('props-ref');
+      const mode = element.getAttribute('hydrate-on') === 'visible' ? 'mochi:hydrate:visible' : 'mochi:hydrate';
+      // Props ride in a <script type="application/json" id="<propsRef>"> block
+      // emitted just before the island. The block carries `data-shared` only
+      // when >=2 islands reuse the same payload. The server-island also-hydrate
+      // path inlines `props=...` directly, so fall back to that attribute.
+      const propsRef = element.getAttribute('props-ref');
       let rawProps: string | null;
+      let shared = false;
       if (propsRef) {
-        rawProps = document.getElementById(propsRef)?.textContent ?? null;
+        const block = document.getElementById(propsRef);
+        rawProps = block?.textContent ?? null;
+        shared = block?.hasAttribute('data-shared') ?? false;
       } else {
-        rawProps = el.getAttribute('props');
+        rawProps = element.getAttribute('props');
       }
       const propsSize = rawProps?.length ?? 0;
       result.push({
-        id,
+        element: element as HTMLElement,
         name,
         type: 'hydrated',
         mode,
         propsSize,
         rawProps,
+        signedProps: null,
         propsRef,
+        shared,
         serverOptions: null,
       });
     });
 
-    server.forEach((el) => {
-      const id = el.getAttribute('island-id');
-      if (!id) {
-        logger.warn('[debug] Server island missing island-id:', el);
-        return;
-      }
-      const name = el.getAttribute('component-name') ?? 'unknown';
-      const mode = describeServerIslandMode(el.getAttribute('defer-on'), el.getAttribute('also-hydrate'));
-      const propsSize = el.getAttribute('signed-props')?.length ?? 0;
+    server.forEach((element) => {
+      const name = element.getAttribute('component-name') ?? 'unknown';
+      const mode = describeServerIslandMode(element.getAttribute('defer-on'), element.getAttribute('also-hydrate'));
+      const signedProps = element.getAttribute('signed-props');
+      const propsSize = signedProps?.length ?? 0;
       result.push({
-        id,
+        element: element as HTMLElement,
         name,
         type: 'server',
         mode,
         propsSize,
         rawProps: null,
+        signedProps,
         propsRef: null,
-        serverOptions: el.getAttribute('server-options'),
+        shared: false,
+        serverOptions: element.getAttribute('server-options'),
       });
     });
 
@@ -149,14 +157,14 @@
 
       {#if hydratedIslands.length > 0}
         <div class="island-group-label">Hydrated Islands</div>
-        {#each hydratedIslands as island (island.id)}
+        {#each hydratedIslands as island (island.element)}
           <IslandRow {island} />
         {/each}
       {/if}
 
       {#if serverIslands.length > 0}
         <div class="island-group-label">Server Islands</div>
-        {#each serverIslands as island (island.id)}
+        {#each serverIslands as island (island.element)}
           <IslandRow {island} />
         {/each}
       {/if}

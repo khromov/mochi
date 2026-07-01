@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import type { MochiServeOptions } from './types';
 import { applyFilter, initExtensions, runHook, type MochiFilterContext } from './extensions';
+import type { IslandPropsEntry } from './islandPropsRegistry';
 
 const fakeOptions = {} as MochiServeOptions;
 
@@ -459,6 +460,38 @@ describe('new extension points', () => {
     expect(applyFilter('image:url', '/a?p=t', { ...ctx, original: false })).toBe('/a?p=t');
   });
 
+  test('trailingSlash:redirect can suppress the redirect for a specific path', () => {
+    const redirect = new Response(null, { status: 308, headers: { Location: '/mcp/' } });
+    initExtensions({
+      filters: {
+        'trailingSlash:redirect': (computed, { url }) => (url.pathname === '/mcp' ? null : computed),
+      },
+    });
+    const exempt = applyFilter('trailingSlash:redirect', redirect, {
+      request: new Request('http://localhost/mcp'),
+      url: new URL('http://localhost/mcp'),
+      policy: 'always',
+    });
+    expect(exempt).toBeNull();
+    const other = applyFilter('trailingSlash:redirect', redirect, {
+      request: new Request('http://localhost/docs'),
+      url: new URL('http://localhost/docs'),
+      policy: 'always',
+    });
+    expect(other).toBe(redirect);
+  });
+
+  test('trailingSlash:redirect leaves the computed redirect untouched with no filter', () => {
+    const redirect = new Response(null, { status: 308, headers: { Location: '/foo/' } });
+    initExtensions({ filters: {} });
+    const result = applyFilter('trailingSlash:redirect', redirect, {
+      request: new Request('http://localhost/foo'),
+      url: new URL('http://localhost/foo'),
+      policy: 'always',
+    });
+    expect(result).toBe(redirect);
+  });
+
   // The runtime fires `route:matched` from inside `requestContext.run(...)`
   // for all four kinds (page, api, ws, sse). Drive the same shape here to lock
   // the contract that `getRequestContext()` works inside the hook regardless
@@ -489,7 +522,7 @@ describe('new extension points', () => {
       locals: {},
       isWarmup: false,
       cookies: new MochiCookieJar(null),
-      islandProps: new Map<string, string>(),
+      islandProps: new Map<string, IslandPropsEntry>(),
       getClientAddress: () => null,
     };
     requestContext.run(ctx, () => {

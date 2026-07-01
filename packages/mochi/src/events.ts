@@ -1,7 +1,7 @@
 import mitt, { type Emitter, type Handler } from 'mitt';
 import { pinGlobal } from './globalState';
 
-export type MochiRequestKind = 'page' | 'api' | 'asset' | 'fallback' | 'error';
+export type MochiRequestKind = 'page' | 'api' | 'file' | 'asset' | 'fallback' | 'error';
 
 export interface MochiRequestEvent {
   /**
@@ -96,12 +96,64 @@ export interface MochiImageCacheSweepEvent {
   durationMs: number;
 }
 
+export interface MochiCacheRevalidateFailedEvent {
+  key: string;
+  /** The error thrown by the background revalidation function. */
+  error: unknown;
+}
+
+export interface MochiCacheErrorEvent {
+  key: string;
+  /** Which storage operation threw. */
+  operation: 'get' | 'set' | 'remove' | 'clear';
+  error: unknown;
+}
+
+export interface MochiQueueAddedEvent {
+  queue: string;
+  jobId: string;
+  jobName: string;
+}
+
+export interface MochiQueueActiveEvent {
+  queue: string;
+  jobId: string;
+  jobName: string;
+  /** 1-based attempt number (1 on the first run). */
+  attempt: number;
+}
+
+export interface MochiQueueCompletedEvent {
+  queue: string;
+  jobId: string;
+  jobName: string;
+  attempt: number;
+  /** Processing time in ms, measured from the `active` event. */
+  duration: number;
+}
+
+export interface MochiQueueFailedEvent {
+  queue: string;
+  jobId: string;
+  jobName: string;
+  attempt: number;
+  duration: number;
+  /** Message of the error the processor threw. */
+  error: string;
+}
+
+export interface MochiQueueErrorEvent {
+  queue: string;
+  /** Worker-level error not tied to a specific job (e.g. a poll failure). */
+  error: string;
+}
+
 export interface MochiServerStartEvent {
   /** Bound TCP port; absent when serving over a Unix socket. */
   port?: number;
   hostname?: string;
   development: boolean;
-  routes: { page: number; api: number; ws: number; sse: number };
+  routes: { page: number; api: number; ws: number; sse: number; file: number };
 }
 
 export interface MochiServerStopEvent {
@@ -123,7 +175,7 @@ export interface MochiWarmupCompleteEvent {
   durationMs: number;
 }
 
-export type MochiErrorKind = 'page' | 'api' | 'action';
+export type MochiErrorKind = 'page' | 'api' | 'action' | 'file';
 
 export interface MochiErrorEvent {
   /** Same `requestId` as the surrounding `request` event. */
@@ -173,7 +225,7 @@ export interface MochiCompileCompleteEvent {
   durationMs: number;
 }
 
-export type MochiRecompileTrigger = 'file' | 'css' | 'svelte-config' | 'route-module';
+export type MochiRecompileTrigger = 'file' | 'css' | 'svelte-config' | 'html-shell' | 'entry';
 
 export interface MochiRecompileStartEvent {
   trigger: MochiRecompileTrigger;
@@ -221,6 +273,13 @@ export interface MochiPreprocessCacheSummaryEvent {
   files: number;
 }
 
+export interface MochiCompileCacheSummaryEvent {
+  hits: number;
+  misses: number;
+  /** Total file lookups during the batch (`hits + misses`). */
+  files: number;
+}
+
 export interface MochiCompileErrorLog {
   file?: string;
   line?: number;
@@ -248,6 +307,13 @@ export type MochiEventMap = {
   'cache:read': MochiCacheReadEvent;
   'cache:revalidate': MochiCacheRevalidateEvent;
   'image:cache-sweep': MochiImageCacheSweepEvent;
+  'cache:revalidate:failed': MochiCacheRevalidateFailedEvent;
+  'cache:error': MochiCacheErrorEvent;
+  'queue:added': MochiQueueAddedEvent;
+  'queue:active': MochiQueueActiveEvent;
+  'queue:completed': MochiQueueCompletedEvent;
+  'queue:failed': MochiQueueFailedEvent;
+  'queue:error': MochiQueueErrorEvent;
   'server:start': MochiServerStartEvent;
   'server:stop': MochiServerStopEvent;
   'warmup:start': MochiWarmupStartEvent;
@@ -262,6 +328,7 @@ export type MochiEventMap = {
   'preprocess-cache:hit': MochiPreprocessCacheEvent;
   'preprocess-cache:miss': MochiPreprocessCacheEvent;
   'preprocess-cache:summary': MochiPreprocessCacheSummaryEvent;
+  'compile-cache:summary': MochiCompileCacheSummaryEvent;
   'recompile:start': MochiRecompileStartEvent;
   'recompile:complete': MochiRecompileCompleteEvent;
   'client-bundle:complete': MochiClientBundleEvent;

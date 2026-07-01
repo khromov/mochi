@@ -6,17 +6,52 @@
   import ImagesPanel from './ImagesPanel.svelte';
   import WarningsPanel from './WarningsPanel.svelte';
   import BundlesPanel from './BundlesPanel.svelte';
+  import InfoPanel from './InfoPanel.svelte';
+  import SettingsPanel from './SettingsPanel.svelte';
+  import Settings from '../icons/settings.svelte';
   import { cleanupHighlight } from './highlight';
   import { debugBarState } from './state.svelte';
   import { getPropsWarnLevel, formatSize } from './utils';
+  import { HIDDEN_PANELS_KEY, parseHiddenPanels, type ConfigurablePanel } from './panelSettings';
 
   const STORAGE_KEY = 'mochi:debug:collapsed';
 
-  type Panel = 'warnings' | 'islands' | 'images' | 'request' | 'bundles' | null;
+  type Panel = 'warnings' | 'islands' | 'images' | 'request' | 'bundles' | 'info' | 'settings' | null;
   let activePanel: Panel = $state(null);
 
   let hasDebugInfo = $state(false);
   let collapsed = $state(false);
+
+  function safeGetItem(key: string): string | null {
+    try {
+      return localStorage.getItem(key);
+    } catch {
+      return null;
+    }
+  }
+
+  let hiddenPanels: ConfigurablePanel[] = $state(parseHiddenPanels(safeGetItem(HIDDEN_PANELS_KEY)));
+
+  $effect(() => {
+    try {
+      localStorage.setItem(HIDDEN_PANELS_KEY, JSON.stringify(hiddenPanels));
+    } catch {
+      /* storage blocked */
+    }
+  });
+
+  // The last-visible-panel invariant is enforced by SettingsPanel disabling the
+  // checkbox (via canToggle) — a disabled input never fires onchange.
+  function togglePanelVisibility(panel: ConfigurablePanel) {
+    if (hiddenPanels.includes(panel)) {
+      hiddenPanels = hiddenPanels.filter((p) => p !== panel);
+    } else {
+      hiddenPanels = [...hiddenPanels, panel];
+      if (activePanel === panel) {
+        activePanel = null;
+      }
+    }
+  }
 
   function toggle(panel: Panel) {
     activePanel = activePanel === panel ? null : panel;
@@ -73,6 +108,8 @@
   <ImagesPanel open={activePanel === 'images'} onclose={() => (activePanel = null)} />
   <BundlesPanel open={activePanel === 'bundles'} onclose={() => (activePanel = null)} />
   <RequestPanel open={activePanel === 'request'} onclose={() => (activePanel = null)} />
+  <InfoPanel open={activePanel === 'info'} onclose={() => (activePanel = null)} />
+  <SettingsPanel open={activePanel === 'settings'} onclose={() => (activePanel = null)} {hiddenPanels} ontoggle={togglePanelVisibility} />
 
   <div class="bar" class:is-collapsed={collapsed}>
     <button
@@ -86,31 +123,41 @@
       <span class="logo">{'\u{1F361}'} mochi</span>
     </button>
     <div class="bar-actions" aria-hidden={collapsed}>
-      {#if hasDebugInfo}
+      {#if hasDebugInfo && !hiddenPanels.includes('info')}
+        <button class="btn info-btn" onclick={() => toggle('info')} tabindex={collapsed ? -1 : 0}>Info</button>
+      {/if}
+      {#if hasDebugInfo && !hiddenPanels.includes('request')}
         <button class="btn request-btn" onclick={() => toggle('request')} tabindex={collapsed ? -1 : 0}>Request</button>
       {/if}
-      <button
-        class="btn island-btn"
-        class:warn-yellow={warnLevel === 'yellow'}
-        class:warn-red={warnLevel === 'red'}
-        onclick={() => toggle('islands')}
-        tabindex={collapsed ? -1 : 0}
-      >
-        Islands <span class="badge" class:badge-yellow={warnLevel === 'yellow'} class:badge-red={warnLevel === 'red'}>{debugBarState.islandCount}</span>
-      </button>
+      {#if !hiddenPanels.includes('islands')}
+        <button
+          class="btn island-btn"
+          class:warn-yellow={warnLevel === 'yellow'}
+          class:warn-red={warnLevel === 'red'}
+          onclick={() => toggle('islands')}
+          tabindex={collapsed ? -1 : 0}
+        >
+          Islands <span class="badge" class:badge-yellow={warnLevel === 'yellow'} class:badge-red={warnLevel === 'red'}>{debugBarState.islandCount}</span>
+        </button>
+      {/if}
       {#if debugBarState.imageCount > 0}
         <button class="btn image-btn" onclick={() => toggle('images')} tabindex={collapsed ? -1 : 0}>
           Images <span class="badge">{debugBarState.imageCount}</span>
         </button>
       {/if}
-      {#if debugBarState.warningCount > 0}
+      {#if debugBarState.warningCount > 0 && !hiddenPanels.includes('warnings')}
         <button class="btn warn-btn" onclick={() => toggle('warnings')} tabindex={collapsed ? -1 : 0}>
           Warnings <span class="badge">{debugBarState.warningCount}</span>
         </button>
       {/if}
-      <button class="btn bundles-btn" class:no-js={noJs} onclick={() => toggle('bundles')} tabindex={collapsed ? -1 : 0}>
-        JS <span class="bundle-badge" class:sparkle={noJs}>{bundleSizeLabel}</span>
-        {#if bundleFiltered}<span class="filter-dot"></span>{/if}
+      {#if !hiddenPanels.includes('bundles')}
+        <button class="btn bundles-btn" class:no-js={noJs} onclick={() => toggle('bundles')} tabindex={collapsed ? -1 : 0}>
+          JS <span class="bundle-badge" class:sparkle={noJs}>{bundleSizeLabel}</span>
+          {#if bundleFiltered}<span class="filter-dot"></span>{/if}
+        </button>
+      {/if}
+      <button class="btn settings-btn" onclick={() => toggle('settings')} tabindex={collapsed ? -1 : 0} aria-label="Configure panels" title="Configure panels">
+        <Settings size={12} />
       </button>
     </div>
   </div>
@@ -321,6 +368,16 @@
     color: #d4e0e8;
     border-color: #6a7a86;
   }
+  .info-btn {
+    background: #243038;
+    color: #b8cdd4;
+    border-color: #455560;
+  }
+  .info-btn:hover {
+    background: #2d3b44;
+    color: #d4e4ec;
+    border-color: #7a96a4;
+  }
   .bundles-btn {
     position: relative;
     background: #2e2a38;
@@ -331,6 +388,17 @@
     background: #383248;
     color: #e0d8ee;
     border-color: #b8a3c4;
+  }
+  .settings-btn {
+    padding: 0.3em 0.45em;
+    background: #23261f;
+    color: #8c9286;
+    border-color: #3d4137;
+  }
+  .settings-btn:hover {
+    background: #2a2e25;
+    color: #c7e0cd;
+    border-color: #8ab79a;
   }
   .filter-dot {
     position: absolute;

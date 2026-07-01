@@ -1,17 +1,19 @@
 ---
 title: 'Welcome'
 slug: intro
-description: 'A lightweight, server-first Svelte 5 framework on Bun that ships JavaScript only for interactive islands.'
+description: 'A lightweight, server-first Svelte 5 framework running on Bun that ships client-side JavaScript only for interactive islands.'
 ---
 
 <script>
   import Callout from './_components/Callout.svelte';
   import IslandsDemo from './_components/IslandsDemo.svelte';
+  import ComparisonTable from './_components/ComparisonTable.svelte';
+  import ExpandComparison from './_components/ExpandComparison.svelte';
 </script>
 
 # mochi
 
-Mochi is a lightweight, server-first framework for [Svelte 5](https://svelte.dev/) on [Bun](https://bun.sh/). Mochi websites render server-side on every request and ship as plain HTML. Components only ship JavaScript when you explicitly mark them as islands.
+Mochi is a lightweight, server-first framework for [Svelte 5](https://svelte.dev/) on [Bun](https://bun.sh/) — it renders everything as plain HTML and ships JavaScript only for the components you mark as islands.
 
 ## Server-rendered, with island interactivity
 
@@ -31,6 +33,10 @@ The header text, the main column, and the footer ship as HTML and stay that way.
 - **No heavy bundler (no Vite).** Uses the lighting-fast Bun bundler, which builds sites with hundreds of routes in seconds.
 - **Real-time built in.** WebSockets and Server Sent Events are first-class route types — no extra packages or services required.
 
+Want to know more? <ExpandComparison mochi:hydrate /> to see a full feature comparison.
+
+<ComparisonTable mochi:hydrate collapsed />
+
 <Callout type="info">
 
 **Mochi is in early development.** Only use in production if you are brave.
@@ -39,4 +45,4 @@ The header text, the main column, and the footer ship as HTML and stay that way.
 
 ## Community
 
-Questions, bug reports, ideas, or just want to see what others are building? Join the [Mochi Discord](https://discord.com/invite/QCGfks4gg8).
+Questions, bug reports, ideas, or just want to see what others are building? Join the [Mochi Discord](/discord/).

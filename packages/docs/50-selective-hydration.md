@@ -6,6 +6,7 @@ description: 'Mark components with mochi:hydrate to ship client-side JavaScript 
 
 <script>
   import Callout from './_components/Callout.svelte';
+  import SeeItInAction from './_components/SeeItInAction.svelte';
 </script>
 
 ## Selective hydration with `mochi:hydrate`
@@ -18,31 +19,34 @@ Components render server-side by default and ship zero JavaScript. Add `mochi:hy
 <StaticHeader />
 ```
 
-Props are serialized with `devalue` and embedded into the HTML so the same values are available during hydration. See `Passing props to islands` for the supported types.
+Props are serialized with `devalue` into a `<script type="application/json">` block emitted just before the island, so the same values are available during hydration. See `Passing props to islands` for the supported types.
 
-Do **NOT** nest `mochi:hydrate` (or `mochi:hydrate:visible`) inside another hydratable component; instead, remove the inner directive and let the outer island hydrate the whole subtree. Hydration is all-or-nothing per island — the framework rejects nested directives at compile time.
+<Callout type="info">
 
-### `islandId` and `isHydratable` props
+**Hydration is all-or-nothing per island.** A `mochi:hydrate` (or `mochi:hydrate:visible`) directive hydrates the whole subtree, so nesting one inside another hydratable component is rejected at compile time. Mark the outermost component and let it cover everything below it.
 
-Every island invocation receives two implicit props from the framework:
+</Callout>
 
-- `islandId` — string matching the wrapper's `island-id` attribute, available on `mochi:hydrate`, `mochi:hydrate:visible`, and `mochi:defer`.
-- `isHydratable` — `true` when the call site uses `mochi:hydrate`, `mochi:hydrate:visible`, or `mochi:defer mochi:hydrate`. Undefined for pure SSR-only invocations.
+### The `isHydratable` prop
 
-Accept them in the component's `$props()` to branch on hydration state at the same call site that opts in:
+Every island invocation receives one implicit prop from the framework:
+
+- `isHydratable` — `true` when the call site uses `mochi:hydrate`, `mochi:hydrate:visible`, `mochi:clientOnly`, `mochi:clientOnly:visible`, or `mochi:defer mochi:hydrate`. Undefined for pure SSR-only invocations. For `mochi:clientOnly*` islands it is always `true` (they never server-render, so the component only ever runs at client mount).
+
+`mochi:hydrate*` and `mochi:clientOnly*` islands receive no `islandId` prop — for a unique id, use Svelte's `$props.id()`. Server islands (`mochi:defer`) are the exception: they carry an `islandId` inside their signed props envelope as the render's `idPrefix`.
+
+Accept it in the component's `$props()` to branch on hydration state at the same call site that opts in:
 
 ```svelte
 <!-- file: src/lib/Counter.svelte -->
 <script lang="ts">
   let {
-    islandId,
     isHydratable,
     count = 0,
-  } = $props<{
-    islandId?: string;
+  }: {
     isHydratable?: boolean;
     count?: number;
-  }>();
+  } = $props();
 </script>
 
 {#if isHydratable}
@@ -52,7 +56,21 @@ Accept them in the component's `$props()` to branch on hydration state at the sa
 {/if}
 ```
 
-Do **NOT** declare `islandId` or `isHydratable` as user-controlled props; instead, treat them as read-only inputs from the framework.
+### Unique ids with `$props.id()`
+
+For a unique, SSR-stable id inside an island, use Svelte's native [`$props.id()`](<https://svelte.dev/docs/svelte/$props#$props.id()>) — the value generated during the server render is reused on hydration:
+
+```svelte
+<!-- file: src/lib/SignupField.svelte -->
+<script lang="ts">
+  const uid = $props.id();
+</script>
+
+<label for="{uid}-email">Email</label>
+<input id="{uid}-email" type="email" />
+```
+
+Each component instance gets its own id, so repeating the same island on a page never produces duplicate DOM ids. It also works inside server islands: their standalone renders are namespaced with the island id carried inside the signed props envelope (via render's `idPrefix`), so ids from a deferred fragment cannot collide with ids already on the page.
 
 ### `mochi:hydrate:visible`
 
@@ -71,6 +89,22 @@ Islands that use `:visible` require JS to apply their styles — per-component C
 
 </Callout>
 
+### `mochi:clientOnly`
+
+Use `mochi:clientOnly` to skip SSR entirely — the component is mounted in the browser only, with an optional fallback snippet as the SSR placeholder. See `Client-only components with mochi:clientOnly`.
+
+```svelte
+<!-- Never server-rendered; mounts in the browser -->
+<AudioVisualizer mochi:clientOnly />
+```
+
+Add `:visible` to defer the browser mount until the placeholder scrolls into view, with the same `rootMargin` option:
+
+```svelte
+<!-- Never server-rendered; mounts when scrolled into view -->
+<AudioVisualizer mochi:clientOnly:visible={{ rootMargin: '200px' }} />
+```
+
 ### `mochi:defer`
 
 Use `mochi:defer` to render the component on a separate request after the page ships, and combine it with `mochi:hydrate` to also hydrate the deferred markup once it lands. See `Server islands with mochi:defer` for the full lifecycle.
@@ -79,3 +113,18 @@ Use `mochi:defer` to render the component on a separate request after the page s
 <!-- Server-rendered after page load, then hydrated -->
 <ShoppingCart mochi:defer mochi:hydrate items={initialItems} />
 ```
+
+Add `:visible` to defer the fetch until the placeholder scrolls into view, with the same `rootMargin` option (and combinable with `mochi:hydrate*`):
+
+```svelte
+<!-- Fetched only when scrolled into view -->
+<UserAvatar mochi:defer:visible={{ rootMargin: '200px' }} userId={123} />
+```
+
+<SeeItInAction
+demos={[
+{ href: "/demos/hydration/", title: "Hydration Modes", hook: "The same component rendered five ways — eager, lazy, visible, rootMargin-tuned, and deferred server island." },
+{ href: "/demos/lazy/", title: "Lazy Islands", hook: "Islands marked mochi:hydrate:visible hydrate and load their CSS only when scrolled into view." },
+{ href: "/demos/server-island/", title: "Server Islands", hook: "Components marked mochi:defer render server-side on demand after the initial page is delivered." },
+]}
+/>

@@ -1,14 +1,8 @@
 import { parse } from 'svelte/compiler';
 import type { AST } from 'svelte/compiler';
 import MagicString from 'magic-string';
-import { customAlphabet } from 'nanoid';
 import path from 'node:path';
 import { walk } from 'zimmerframe';
-
-// Dash-free alphabet: island IDs are embedded as `mochi-<id>-<uid>`, so an id
-// containing `-` breaks that delimiter and (historically) made tests flaky
-// when a generated id happened to start with `-`.
-const nanoid = customAlphabet('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_');
 
 /** Svelte's AST nodes all have start/end, but estree types don't declare them. */
 interface Positioned {
@@ -34,8 +28,8 @@ export interface PreprocessResult {
 
 /**
  * Preprocess a Svelte source file to detect `mochi:hydrate`, `mochi:hydrate:visible`,
- * `mochi:defer`, and `mochi:defer:visible` on child components. Uses Svelte's own
- * parser for robust AST-based matching instead of fragile regexes.
+ * `mochi:defer`, `mochi:defer:visible`, and `mochi:clientOnly` on child components.
+ * Uses Svelte's own parser for robust AST-based matching instead of fragile regexes.
  *
  * - `mochi:hydrate` / `mochi:hydrate:visible` → wraps in `<mochi-hydratable-island>`
  * - `mochi:defer` / `mochi:defer:visible` → wraps in `<mochi-server-island>` with
@@ -43,16 +37,30 @@ export interface PreprocessResult {
  *   waits for IntersectionObserver before fetching
  * - Combined `mochi:defer*` + `mochi:hydrate*` → server island with `also-hydrate`
  *   attribute, registered in both lists
+ * - `mochi:clientOnly` → wraps in `<mochi-hydratable-island client-only>`; the
+ *   component is never invoked server-side, optional fallback markup passed as
+ *   children becomes SSR placeholder content, and the client mounts (not
+ *   hydrates) the component
  */
 export function preprocessHydratable(source: string, filePath: string): PreprocessResult {
-  if (!source.includes('mochi:hydrate') && !source.includes('mochi:defer')) {
+  if (!source.includes('mochi:hydrate') && !source.includes('mochi:defer') && !source.includes('mochi:clientOnly')) {
     return { transformed: source, hydratables: [], serverIslands: [] };
   }
   const ast = parse(source, { modern: true });
   const s = new MagicString(source);
 
-  // Build import map from AST: component name → relative import path
+  // Build import map from AST: component name → relative import path.
+  // Also detect an existing `const x = $props.id()` declaration — Svelte
+  // allows only one per component (`props_duplicate`), so when the author
+  // already has one we must reuse its identifier instead of injecting ours.
+  //
+  // Limitation: this only scans top-level instance-script variable
+  // declarations (the idiomatic `const id = $props.id()`). A `$props.id()`
+  // call nested in a function/snippet, or otherwise not bound to a top-level
+  // identifier, won't be detected — we'd inject our own and Svelte would then
+  // fail with `props_duplicate`. Not worth handling until someone hits it.
   const importMap = new Map<string, string>();
+  let pidVar: string | null = null;
   if (ast.instance) {
     for (const node of ast.instance.content.body) {
       if (
@@ -64,9 +72,24 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
         node.specifiers[0]!.type === 'ImportDefaultSpecifier'
       ) {
         importMap.set(node.specifiers[0]!.local.name, node.source.value);
+      } else if (node.type === 'VariableDeclaration') {
+        for (const decl of node.declarations) {
+          if (
+            decl.id.type === 'Identifier' &&
+            decl.init?.type === 'CallExpression' &&
+            decl.init.callee.type === 'MemberExpression' &&
+            decl.init.callee.object.type === 'Identifier' &&
+            decl.init.callee.object.name === '$props' &&
+            decl.init.callee.property.type === 'Identifier' &&
+            decl.init.callee.property.name === 'id'
+          ) {
+            pidVar = decl.id.name;
+          }
+        }
       }
     }
   }
+  const pid = pidVar ?? '__mochi_pid__';
 
   const hydratables: HydratableComponent[] = [];
   const serverIslands: ServerIslandComponent[] = [];
@@ -77,7 +100,7 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
   walk(ast.fragment as AST.SvelteNode, null, {
     Component(comp, { next }) {
       const directives = findMochiDirectives(comp.attributes);
-      if (!directives.server && !directives.hydrate) {
+      if (!directives.server && !directives.hydrate && !directives.clientOnly) {
         next();
         return;
       }
@@ -90,14 +113,72 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
 
       const resolved = path.resolve(path.dirname(filePath), importPath);
 
-      if (directives.server) {
+      // `islandId` is a reserved framework name on every island, rejected on
+      // `mochi:clientOnly`, `mochi:defer`, and `mochi:hydrate` so the directives
+      // behave the same. On `mochi:defer` it's the transport key inside the signed
+      // envelope (stripped before the component renders); erroring everywhere
+      // means a component can move between directives without a prop silently
+      // changing meaning. For a unique id, use Svelte's `$props.id()`.
+      const islandDirective = directives.clientOnly ?? directives.server ?? directives.hydrate!;
+      for (const attr of comp.attributes) {
+        if (attr.type === 'Attribute' && attr.name === 'islandId') {
+          throw new Error(
+            `\`islandId\` is a reserved framework name and cannot be passed as a prop to a \`${islandDirective.name}\` island. ` +
+              `For a unique id inside ${comp.name}, use Svelte's \`$props.id()\`.`,
+          );
+        }
+      }
+
+      if (directives.clientOnly) {
+        // --- CLIENT ONLY ---
+        if (!seen.has(resolved)) {
+          seen.add(resolved);
+          hydratables.push({ name: comp.name, resolvedPath: resolved });
+        }
+
+        // Children are the optional SSR fallback, emitted as placeholder markup
+        // that's removed when the client mounts the component. Static markup only:
+        // nested `mochi:*` islands here are left untransformed and wiped on mount.
+        const fallback = comp.fragment.nodes.map((n) => source.slice(n.start, n.end)).join('');
+
+        // No islandId: nothing renders server-side, so there's no hydration id to
+        // carry. The client bootstrap injects `isHydratable: true` at mount; the
+        // payload itself dedups on its serialized props alone, like plain
+        // hydratable islands.
+        const propsExpr = buildPropsFromAst(source, comp.attributes);
+        let attrs = `component-name="${comp.name}" component-url="__MOCHI_COMPONENT_URL__${comp.name}__" client-only`;
+        if (propsExpr !== '{}') {
+          attrs += ` props-ref={__mochi_emit_props__(${propsExpr})}`;
+        }
+
+        // `mochi:clientOnly:visible` defers `mount()` until the wrapper enters the
+        // viewport, reusing the hydratable visible path; `client-only` still flips
+        // `hydrate()` to `mount()`. Mirrors the `mochi:hydrate:visible` branch below.
+        const isVisible = directives.clientOnly.name === 'mochi:clientOnly:visible';
+        if (isVisible) {
+          let visibleOptionsExpr: string | null = null;
+          if (directives.clientOnly.value !== true && !Array.isArray(directives.clientOnly.value)) {
+            const expr = directives.clientOnly.value.expression as unknown as Positioned;
+            visibleOptionsExpr = source.slice(expr.start, expr.end);
+          }
+          attrs += ` hydrate-on="visible" css-url="__MOCHI_CSS_URL__${comp.name}__"`;
+          if (visibleOptionsExpr) {
+            attrs += ` hydrate-options={JSON.stringify(${visibleOptionsExpr})}`;
+          }
+        }
+
+        // No <svelte:boundary>: the component never renders server-side, so there's
+        // no SSR throw to catch and no hydration marker to force.
+        const replacement = `<mochi-hydratable-island ${attrs}>${fallback}</mochi-hydratable-island>`;
+
+        s.overwrite(comp.start, comp.end, replacement);
+      } else if (directives.server) {
         // --- SERVER ISLAND ---
         if (!seenServer.has(resolved)) {
           seenServer.add(resolved);
           serverIslands.push({ name: comp.name, resolvedPath: resolved });
         }
 
-        const baseId = `mochi-${nanoid(8)}`;
         // Server islands only get `isHydratable: true` when also-hydrate is set
         // (i.e. `mochi:defer mochi:hydrate`); a pure `mochi:defer` is
         // SSR-only-via-fetch and never hydrates.
@@ -107,7 +188,9 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
         // because islandId is always injected, and all props must be encrypted
         // to prevent reading/tampering via query parameters. The component name is
         // bound as AAD so a token sealed for one island can't be replayed on another.
-        let attrs = `island-id={__mochi_iid} component-name="${comp.name}" signed-props={__mochi_encrypt_props__(__mochi_stringify__(${propsExpr}), ${JSON.stringify(comp.name)})} css-url="__MOCHI_SERVER_CSS_URL__${comp.name}__" data-asset-prefix="__MOCHI_ASSET_PREFIX__"`;
+        // The islandId rides inside the encrypted envelope (transport only, stripped
+        // before render); there's no separate `island-id` attribute.
+        let attrs = `component-name="${comp.name}" signed-props={__mochi_encrypt_props__(__mochi_stringify__(${propsExpr}), ${JSON.stringify(comp.name)})} css-url="__MOCHI_SERVER_CSS_URL__${comp.name}__" data-asset-prefix="__MOCHI_ASSET_PREFIX__"`;
 
         // `mochi:defer:visible` defers the fetch until the wrapper enters the
         // viewport. `rootMargin` rides inside the existing `server-options`
@@ -142,7 +225,7 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
         }
 
         // Children become fallback content
-        const constDecl = `{#if true}{@const __mochi_iid = \`${baseId}-\${__mochi_uid__++}\`}`;
+        const constDecl = `{#if true}{@const __mochi_iid = \`\${${pid}}-\${__mochi_uid__++}\`}`;
         let replacement: string;
         if (comp.fragment.nodes.length > 0) {
           const childrenSource = comp.fragment.nodes.map((n) => source.slice(n.start, n.end)).join('');
@@ -177,15 +260,14 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
         }
 
         // Build wrapper attributes
-        const baseId = `mochi-${nanoid(8)}`;
         const propsExpr = buildPropsFromAst(source, comp.attributes);
-        let attrs = `island-id={__mochi_iid} component-name="${comp.name}" component-url="__MOCHI_COMPONENT_URL__${comp.name}__"`;
+        let attrs = `component-name="${comp.name}" component-url="__MOCHI_COMPONENT_URL__${comp.name}__"`;
         // Skip props when component has no props to avoid serializing empty objects in HTML.
         // `__mochi_emit_props__` registers the payload in the per-request dedup map and
-        // returns a ref id; the matching <script type="application/json"> block is
-        // hoisted into the body by ComponentRegistry after render.
+        // returns a ref id; after render ComponentRegistry's HTMLRewriter pass emits each
+        // payload as a <script type="application/json"> block just before its first island.
         if (propsExpr !== '{}') {
-          attrs += ` props-ref={__mochi_emit_props__(${propsExpr}, __mochi_iid)}`;
+          attrs += ` props-ref={__mochi_emit_props__(${propsExpr})}`;
         }
         if (isVisible) {
           attrs += ` hydrate-on="visible"`;
@@ -195,13 +277,12 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
           }
         }
 
-        // Build inner component with the auto-injected `islandId` and
-        // `isHydratable` props. Both are framework conventions: `islandId`
-        // identifies the wrapping `<mochi-hydratable-island>`, `isHydratable`
-        // is a `true` boolean that lets components branch SSR-only behavior
-        // off the same auto-injection pipeline (no Svelte context needed).
+        // Build inner component with the auto-injected `isHydratable` prop —
+        // a `true` boolean that lets components branch SSR-only behavior off
+        // the auto-injection pipeline (no Svelte context needed). Components
+        // needing a unique id use Svelte's native `$props.id()` instead.
         let innerTag: string;
-        const autoProps = `islandId={__mochi_iid} isHydratable={true}`;
+        const autoProps = `isHydratable={true}`;
         if (comp.fragment.nodes.length > 0) {
           const childrenSource = comp.fragment.nodes.map((n) => source.slice(n.start, n.end)).join('');
           innerTag = `<${comp.name}${propsSource ? ' ' + propsSource : ''} ${autoProps}>${childrenSource}</${comp.name}>`;
@@ -209,7 +290,6 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
           innerTag = `<${comp.name}${propsSource ? ' ' + propsSource : ''} ${autoProps} />`;
         }
 
-        const constDecl = `{#if true}{@const __mochi_iid = \`${baseId}-\${__mochi_uid__++}\`}`;
         // Wrap the island in <svelte:boundary> so an SSR throw inside the
         // component doesn't take down the parent page render. The boundary sits
         // OUTSIDE <mochi-hydratable-island> so its <!--[-->…<!--]--> markers
@@ -233,8 +313,14 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
         // through the mount fallback).
         const failedSnippet =
           `{#snippet failed(error)}` + `<mochi-island-failure data-component=${JSON.stringify(comp.name)} data-message={error.message}></mochi-island-failure>` + `{/snippet}`;
+        // The `{#if true}` wrapper gives each island its own scope: every island
+        // declares a `{#snippet failed}` under the same name, and without a
+        // per-island block Svelte collapses them to one shared snippet so a
+        // throwing island renders a sibling island's failure stub. The block
+        // adds page-level `<!--[-->…<!--]-->` markers, stripped by the existing
+        // stripPageMarkers pass.
         const replacement =
-          `${constDecl}<svelte:boundary>${failedSnippet}` +
+          `{#if true}<svelte:boundary>${failedSnippet}` +
           `<mochi-hydratable-island ${attrs}><svelte:boundary>${innerTag}</svelte:boundary></mochi-hydratable-island>` +
           `</svelte:boundary>{/if}`;
         s.overwrite(comp.start, comp.end, replacement);
@@ -248,7 +334,11 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
   const needsEmitProps = hydratables.length > 0;
   const needsStringify = serverIslands.length > 0;
   const needsSignProps = serverIslands.length > 0;
-  const needsUid = hydratables.length > 0 || serverIslands.length > 0;
+  // Only server islands need the `__mochi_iid` transport id, riding inside their
+  // signed envelope as `idPrefix` for the standalone render. Hydratable and
+  // client-only islands carry no id — Svelte recovers `$props.id()` from its own
+  // `<!--$...-->` markers (client-only mints it fresh at mount).
+  const needsUid = serverIslands.length > 0;
 
   if ((needsEmitProps || needsStringify || needsSignProps) && ast.instance) {
     const contentStart = (ast.instance.content as unknown as Positioned).start;
@@ -261,6 +351,14 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
     }
     if (needsUid) {
       imports += '\nlet __mochi_uid__ = 0;';
+      // Island ids are `${$props.id()}-${counter}`: the rune is unique per
+      // component instance per render, the counter disambiguates multiple
+      // islands within one instance — unique page-wide, and SSR-stable on
+      // hydration because Svelte reads the id back from its `<!--$...-->`
+      // comment marker.
+      if (!pidVar) {
+        imports += '\nconst __mochi_pid__ = $props.id();';
+      }
     }
     if (needsSignProps) {
       imports += '\nimport { encryptProps as __mochi_encrypt_props__ } from "mochi-server-island-runtime";';
@@ -274,12 +372,14 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
 interface MochiDirectives {
   server: AST.Attribute | null;
   hydrate: AST.Attribute | null;
+  clientOnly: AST.Attribute | null;
 }
 
-/** Find `mochi:defer*` and `mochi:hydrate*` attributes on a component. */
+/** Find `mochi:defer*`, `mochi:hydrate*`, and `mochi:clientOnly*` attributes on a component. */
 function findMochiDirectives(attributes: Array<AST.Attribute | AST.SpreadAttribute | AST.Directive | AST.AttachTag>): MochiDirectives {
   let server: AST.Attribute | null = null;
   let hydrate: AST.Attribute | null = null;
+  let clientOnly: AST.Attribute | null = null;
   for (const attr of attributes) {
     if (attr.type === 'Attribute') {
       if (attr.name === 'mochi:defer' || attr.name === 'mochi:defer:visible') {
@@ -289,15 +389,25 @@ function findMochiDirectives(attributes: Array<AST.Attribute | AST.SpreadAttribu
         server = attr;
       } else if (attr.name === 'mochi:hydrate' || attr.name === 'mochi:hydrate:visible') {
         hydrate = attr;
+      } else if (attr.name === 'mochi:clientOnly' || attr.name === 'mochi:clientOnly:visible') {
+        clientOnly = attr;
       }
     }
   }
-  return { server, hydrate };
+  if (clientOnly && (server || hydrate)) {
+    throw new Error(`Cannot combine \`mochi:clientOnly\` with \`${(server ?? hydrate)!.name}\` — a client-only component is never server-rendered.`);
+  }
+  return { server, hydrate, clientOnly };
 }
 
-/** Build a JS object expression from AST attributes, skipping mochi:* attrs. */
+/**
+ * Build a JS object expression from AST attributes, skipping mochi:* attrs.
+ * `extraEntries` are framework-owned keys appended LAST so they win over
+ * user-supplied spreads (last key wins in an object literal) — a `{...rest}`
+ * carrying `islandId` must not override the transport id.
+ */
 function buildPropsFromAst(source: string, attributes: Array<AST.Attribute | AST.SpreadAttribute | AST.Directive | AST.AttachTag>, extraEntries: string[] = []): string {
-  const entries: string[] = [...extraEntries];
+  const entries: string[] = [];
   for (const attr of attributes) {
     if (attr.type === 'SpreadAttribute') {
       const expr = attr.expression as unknown as Positioned;
@@ -328,5 +438,6 @@ function buildPropsFromAst(source: string, attributes: Array<AST.Attribute | AST
     }
     // Skip Directive and AttachTag types — they're not props
   }
+  entries.push(...extraEntries);
   return `{${entries.join(', ')}}`;
 }

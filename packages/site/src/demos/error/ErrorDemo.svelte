@@ -2,13 +2,9 @@
   import { highlightCode } from '../../lib/highlight.server';
   import DemoPage from '../../components/DemoPage.svelte';
   import { loadSources } from '../../components/utils.ts';
+  import { files } from './files.ts';
 
-  const sources = await loadSources([
-    { label: 'ErrorDemo.svelte', path: './src/demos/error/ErrorDemo.svelte' },
-    { label: 'Error500.svelte', path: './src/demos/error/Error500.svelte' },
-    { label: 'routes.ts', path: './src/demos/error/routes.ts' },
-    { label: 'index.ts', path: './src/demoIndex.ts' },
-  ]);
+  const sources = await loadSources(files);
 
   const handleErrorSnippet = `const handleError: HandleError = ({ error, event, status, message }) => {
   logger.info(

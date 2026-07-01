@@ -1,8 +1,5 @@
 <script lang="ts">
-  let { current, options } = $props<{
-    current: string;
-    options: { name: string }[];
-  }>();
+  let { current, options }: { current: string; options: { name: string }[] } = $props();
 
   function onChange(event: Event) {
     (event.currentTarget as HTMLSelectElement).form?.requestSubmit();

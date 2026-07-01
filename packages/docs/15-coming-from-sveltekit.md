@@ -6,11 +6,19 @@ description: 'A mapping of SvelteKit concepts to their Mochi equivalents for dev
 
 <script>
   import Callout from './_components/Callout.svelte';
+  import SeeItInAction from './_components/SeeItInAction.svelte';
+  import ComparisonTable from './_components/ComparisonTable.svelte';
 </script>
 
 ## Coming from SvelteKit
 
-You have likely already been using SvelteKit as your main framework for Svelte. Here is a quick list of most of the SvelteKit features and how they map to equivalent concepts in Mochi, so you can be up and running quickly.
+You have likely already been using SvelteKit as your main framework for Svelte. Below you'll find a list of most of the SvelteKit features and how they map to equivalent concepts in Mochi, so you can be up and running quickly.
+
+Before that you'll find a simplified comparison table below, but you can [skip to the feature list directly](#routing) if you prefer.
+
+### Feature comparison
+
+<ComparisonTable mochi:hydrate />
 
 ### Routing
 
@@ -24,14 +32,16 @@ src/routes/health/+server.ts      → /health
 ```
 
 ```ts
-// file (Mochi): src/routes.ts
+// file (Mochi): src/index.ts
 import { Mochi } from 'mochi-framework';
 
-export const routes = {
-  '/': Mochi.page('./src/Home.svelte'),
-  '/posts/:slug': Mochi.page('./src/Post.svelte'),
-  '/health': Mochi.api(() => Response.json({ status: 'ok' })),
-};
+await Mochi.serve({
+  routes: {
+    '/': Mochi.page('./src/Home.svelte'),
+    '/posts/:slug': Mochi.page('./src/Post.svelte'),
+    '/health': Mochi.api(() => Response.json({ status: 'ok' })),
+  },
+});
 ```
 
 ### Advanced routing
@@ -47,18 +57,20 @@ export function match(param: string): param is 'apple' | 'orange' {
 ```
 
 ```ts
-// file (Mochi): src/routes.ts
+// file (Mochi): src/index.ts
 import { Mochi, error } from 'mochi-framework';
 
-export const routes = {
-  '/fruits/:name': Mochi.page('./src/Fruit.svelte', {
-    serverProps: ({ params }) => {
-      if (params.name !== 'apple' && params.name !== 'orange') error(404, 'Unknown fruit');
-      return { name: params.name };
-    },
-  }),
-  '/files/*': Mochi.page('./src/Files.svelte'),
-};
+await Mochi.serve({
+  routes: {
+    '/fruits/:name': Mochi.page('./src/Fruit.svelte', {
+      serverProps: ({ params }) => {
+        if (params.name !== 'apple' && params.name !== 'orange') error(404, 'Unknown fruit');
+        return { name: params.name };
+      },
+    }),
+    '/files/*': Mochi.page('./src/Files.svelte'),
+  },
+});
 ```
 
 <Callout type="tip">
@@ -127,15 +139,17 @@ export async function baseProps() {
 ```
 
 ```ts
-// file (Mochi): src/routes.ts
+// file (Mochi): src/index.ts
 import { Mochi } from 'mochi-framework';
 import { baseProps } from './lib/baseProps';
 
-export const routes = {
-  '/': Mochi.page('./src/Home.svelte', {
-    serverProps: async () => ({ ...(await baseProps()), posts: await loadPosts() }),
-  }),
-};
+await Mochi.serve({
+  routes: {
+    '/': Mochi.page('./src/Home.svelte', {
+      serverProps: async () => ({ ...(await baseProps()), posts: await loadPosts() }),
+    }),
+  },
+});
 ```
 
 <Callout type="tip">
@@ -156,10 +170,16 @@ export async function load({ params }) {
 ```
 
 ```ts
-// file (Mochi): src/routes.ts
-'/posts/:slug': Mochi.page('./src/Post.svelte', {
-  serverProps: async (_req, params) => ({ post: await loadPost(params.slug) }),
-}),
+// file (Mochi): src/index.ts
+import { Mochi } from 'mochi-framework';
+
+await Mochi.serve({
+  routes: {
+    '/posts/:slug': Mochi.page('./src/Post.svelte', {
+      serverProps: async (_req, params) => ({ post: await loadPost(params.slug) }),
+    }),
+  },
+});
 ```
 
 ```svelte
@@ -195,22 +215,24 @@ export const actions = {
 ```
 
 ```ts
-// file (Mochi): src/routes.ts
+// file (Mochi): src/index.ts
 import { Mochi, fail, success, redirect } from 'mochi-framework';
 
-export const routes = {
-  '/login': Mochi.page('./src/Login.svelte', {
-    actions: {
-      default: ({ formData, cookies }) => {
-        const username = String(formData.get('username') ?? '');
-        if (!username) return fail(400, { error: 'Username required' });
-        cookies.set('user', username, { httpOnly: true, path: '/' });
-        return success({ username });
+await Mochi.serve({
+  routes: {
+    '/login': Mochi.page('./src/Login.svelte', {
+      actions: {
+        default: ({ formData, cookies }) => {
+          const username = String(formData.get('username') ?? '');
+          if (!username) return fail(400, { error: 'Username required' });
+          cookies.set('user', username, { httpOnly: true, path: '/' });
+          return success({ username });
+        },
+        logout: () => redirect(303, '/'),
       },
-      logout: () => redirect(303, '/'),
-    },
-  }),
-};
+    }),
+  },
+});
 ```
 
 ```svelte
@@ -278,16 +300,18 @@ export async function POST({ params, request }) {
 ```
 
 ```ts
-// file (Mochi): src/routes.ts
+// file (Mochi): src/index.ts
 import { Mochi, error } from 'mochi-framework';
 
-export const routes = {
-  '/api/users/:id': Mochi.api(async ({ method, request, params }) => {
-    if (method === 'GET') return Response.json(await loadUser(params.id));
-    if (method === 'POST') return Response.json(await createUser(params.id, await request.json()));
-    error(405, 'Method not allowed');
-  }),
-};
+await Mochi.serve({
+  routes: {
+    '/api/users/:id': Mochi.api(async ({ method, request, params }) => {
+      if (method === 'GET') return Response.json(await loadUser(params.id));
+      if (method === 'POST') return Response.json(await createUser(params.id, await request.json()));
+      error(405, 'Method not allowed');
+    }),
+  },
+});
 ```
 
 <Callout type="tip">
@@ -332,9 +356,13 @@ SvelteKit's `+error.svelte` becomes the `errorPage` option on `Mochi.serve()` �
 ```ts
 // file (Mochi): src/index.ts
 import { Mochi } from 'mochi-framework';
-import { routes } from './routes';
 
-await Mochi.serve({ errorPage: './src/Error.svelte', routes });
+await Mochi.serve({
+  errorPage: './src/Error.svelte',
+  routes: {
+    '/': Mochi.page('./src/Home.svelte'),
+  },
+});
 ```
 
 ```svelte
@@ -603,7 +631,7 @@ Listen for `beforeunload` or `popstate` directly — there is no `beforeNavigate
 
 ### Link options (`data-sveltekit-preload-*`)
 
-No equivalent. There is no client router to preload code or data into — the browser handles `<a>` clicks natively. `data-sveltekit-reload`, `data-sveltekit-replacestate`, `data-sveltekit-keepfocus`, and `data-sveltekit-noscroll` likewise have no Mochi attribute.
+Planned, but not yet available. Mochi has no client router today, so there is nothing to preload code or data into — the browser handles `<a>` clicks natively, and link preloading is on the roadmap. `data-sveltekit-reload`, `data-sveltekit-replacestate`, `data-sveltekit-keepfocus`, and `data-sveltekit-noscroll` likewise have no Mochi attribute.
 
 ```html
 <!-- SvelteKit -->
@@ -666,7 +694,7 @@ No framework helper. Call `history.pushState` / `history.replaceState` directly 
 
 ### Service workers
 
-No equivalent. There is no `src/service-worker.ts` convention and no `$service-worker` virtual module. Register one yourself from a hydrated island if you need offline support.
+Planned, but not yet available. There is currently no `src/service-worker.ts` convention and no `$service-worker` virtual module; built-in service worker integration is on the roadmap. For now, register one yourself from a hydrated island if you need offline support.
 
 ```ts
 // file (SvelteKit): src/service-worker.ts
@@ -681,6 +709,24 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js');
 }
 // then ship /public/sw.js yourself
+```
+
+### Image optimization (`@sveltejs/enhanced-img`)
+
+Planned, but not yet available. SvelteKit offers build-time image optimization via `@sveltejs/enhanced-img` (the `<enhanced:img>` element), with runtime transformations available at extra cost through a CDN. Mochi has no equivalent yet — build-time and runtime image transformations are on the roadmap. For now, optimize images ahead of time and reference them with a plain `<img>`.
+
+```svelte
+<!-- file (SvelteKit): src/routes/+page.svelte -->
+<script>
+  import hero from './hero.png?enhanced';
+</script>
+
+<enhanced:img src={hero} alt="Hero" />
+```
+
+```svelte
+<!-- file (Mochi): src/Home.svelte -->
+<img src="/hero.png" alt="Hero" width="800" height="400" />
 ```
 
 ### Remote functions
@@ -698,12 +744,18 @@ export const addLike = command(v.string(), async (id) => {
 ```
 
 ```ts
-// file (Mochi): src/routes.ts
-'/api/like/:id': Mochi.api(async ({ method, params }) => {
-  if (method !== 'POST') error(405, 'POST only');
-  await db.sql`UPDATE item SET likes = likes + 1 WHERE id = ${params.id}`;
-  return Response.json({ ok: true });
-}),
+// file (Mochi): src/index.ts
+import { Mochi, error } from 'mochi-framework';
+
+await Mochi.serve({
+  routes: {
+    '/api/like/:id': Mochi.api(async ({ method, params }) => {
+      if (method !== 'POST') error(405, 'POST only');
+      await db.sql`UPDATE item SET likes = likes + 1 WHERE id = ${params.id}`;
+      return Response.json({ ok: true });
+    }),
+  },
+});
 // then on the client: await fetch(`/api/like/${id}`, { method: 'POST' })
 ```
 
@@ -899,3 +951,11 @@ await Mochi.serve({
 - [Events](/docs/events/) — `mochiEvents` lifecycle bus for observability and logging.
 - [Cache](/docs/cache/) — `MochiCache` SWR caching for arbitrary computations.
 - [Trailing slash](/docs/trailing-slash/) — global `trailingSlash` policy on `Mochi.serve()`.
+
+<SeeItInAction
+demos={[
+{ href: "/demos/server-props/", title: "Server Props", hook: "Define serverProps on Mochi.page() to pass fresh data into a Svelte page on every request." },
+{ href: "/demos/login/", title: "Form Actions", hook: "A login form rendered twice — plain HTML POST and intercepted with {@attach enhance(...)}." },
+{ href: "/demos/api/", title: "API Endpoints", hook: "JSON routes defined with Mochi.api(), tested live against the running server." },
+]}
+/>

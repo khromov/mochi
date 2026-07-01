@@ -2,7 +2,7 @@ import type { MochiApiConfig, MochiPageConfig } from './types';
 
 export const PAGE_CACHE_ADMIN_PATH = '/__mochi/admin/page-cache';
 
-export const PAGE_CACHE_ADMIN_COMPONENT = new URL('./templates/PageCacheAdmin/PageCacheAdmin.svelte', import.meta.url).pathname;
+export const PAGE_CACHE_ADMIN_COMPONENT = Bun.fileURLToPath(new URL('./templates/PageCacheAdmin/PageCacheAdmin.svelte', import.meta.url));
 
 // Placeholder shapes — the real page-cache implementation is being rebuilt.
 // Until then the admin UI renders these stubs and purge actions are no-ops.

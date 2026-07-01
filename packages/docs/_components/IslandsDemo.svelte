@@ -191,6 +191,7 @@
     --demo-accent-text: #8a4516;
   }
 
+  /* Explicit dark choice — wins regardless of system preference. */
   :global(html.dark) .islands-demo,
   :global(html[data-theme='dark']) .islands-demo {
     --demo-gray: #3d4146;
@@ -205,6 +206,25 @@
     --demo-accent-hover: #f7a872;
     --demo-accent-soft: #3a2615;
     --demo-accent-text: #f7c79b;
+  }
+
+  /* Auto mode — follow the OS preference, mirroring shell.html's global theme.
+     `:not([data-theme='light'])` lets an explicit light choice win on dark systems. */
+  @media (prefers-color-scheme: dark) {
+    :global(html:not([data-theme='light'])) .islands-demo {
+      --demo-gray: #3d4146;
+      --demo-gray-soft: #22262a;
+      --demo-gray-text: #9aa0a6;
+
+      --demo-green: #7ab48e;
+      --demo-green-soft: #1f2e25;
+      --demo-green-text: #a4d2b3;
+
+      --demo-accent: #f49654;
+      --demo-accent-hover: #f7a872;
+      --demo-accent-soft: #3a2615;
+      --demo-accent-text: #f7c79b;
+    }
   }
 
   @media (prefers-reduced-motion: reduce) {

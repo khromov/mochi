@@ -8,8 +8,7 @@ description: 'Overview of the framework directory structure and key source files
 
 Framework source lives in `packages/mochi/src/`; the demo site that consumes it lives in `packages/site/src/`. The files you reach for most often:
 
-- `packages/site/src/index.ts` — HTTP server entry point; calls `Mochi.serve()`.
-- `packages/site/src/routes.ts` — route definitions for the demo site.
+- `packages/site/src/index.ts` — HTTP server entry point; calls `Mochi.serve()` and defines the demo site's route record inline.
 - `packages/mochi/src/Mochi.ts` — `Mochi.serve()`, `Mochi.page()`, `Mochi.api()`, `Mochi.ws()`, `Mochi.sse()`.
 - `packages/mochi/src/ComponentRegistry.ts` — SSR compilation, hydration preprocessing, client bundling.
 - `packages/mochi/src/hooks.ts` — middleware system (`Handle`, `sequence()`).

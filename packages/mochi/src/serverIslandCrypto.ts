@@ -16,21 +16,23 @@ import { requestContext } from './requestContext';
 import { encryptPayload, decryptPayload } from './payloadCrypto';
 
 export function encryptProps(propsJson: string, componentName: string): string {
+  const { options } = getMochiConfig();
+  const token = encryptPayload(propsJson, { aad: componentName, compress: options.compressServerIslandProps ?? true });
+
+  // Encrypted props are opaque on the wire, so the client can't decode them for
+  // the debug bar. Record the decoded snapshot keyed by the token the client
+  // will see in the island's `signed-props` attribute. Best-effort — ignore
+  // failures (e.g. invalid devalue JSON) so encryption never depends on it.
   try {
     const ctx = requestContext.getStore();
-    if (ctx?.debugBarData) {
-      const obj = devalParse(propsJson);
-      const id = obj?.islandId;
-      if (id) {
-        ctx.debugBarData.islandProps[id] = JSON.stringify(obj, null, 2);
-      }
+    if (ctx?.debugBarData?.serverProps) {
+      ctx.debugBarData.serverProps[token] = JSON.stringify(devalParse(propsJson), null, 2);
     }
   } catch {
     // Debug recording is best-effort; ignore failures.
   }
 
-  const { options } = getMochiConfig();
-  return encryptPayload(propsJson, { aad: componentName, compress: options.compressServerIslandProps ?? true });
+  return token;
 }
 
 export function decryptProps(token: string, componentName: string): string | null {

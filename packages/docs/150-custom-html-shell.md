@@ -15,11 +15,12 @@ description: 'Replace the default HTML wrapper with a custom shell template cont
 ```ts
 // file: src/index.ts
 import { Mochi } from 'mochi-framework';
-import { routes } from './routes';
 
 await Mochi.serve({
   htmlShell: './src/shell.html',
-  routes,
+  routes: {
+    '/': Mochi.page('./src/Home.svelte'),
+  },
 });
 ```
 
@@ -53,8 +54,6 @@ _Example:_ minimal shell.
 </html>
 ```
 
-Do **NOT** omit a placeholder — every required asset for that slot is silently dropped. Skip `{{mochi.script}}` and hydration, server islands, the debug bar, and dev live-reload all stop working; skip `{{mochi.css}}` and component styles never load; skip `{{mochi.body}}` and the page renders blank.
-
 ### When to customize
 
 - Add `<meta>`, `<link rel="icon">`, analytics snippets, or third-party scripts site-wide.
@@ -72,5 +71,3 @@ export const handle: Handle = ({ event, resolve }) =>
     transformPage: ({ html }) => html.replace('%nonce%', event.locals.nonce),
   });
 ```
-
-Do **NOT** read request data inside `htmlShell` — it is loaded once at startup; instead, inject per-request values via `transformPage`.

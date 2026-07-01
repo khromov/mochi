@@ -13,7 +13,7 @@ export function compareVersions(actual: string, required: string): boolean {
   return true;
 }
 
-export async function checkEnvironment(): Promise<void> {
+export async function checkEnvironment(): Promise<{ svelteVersion: string }> {
   if (typeof Bun === 'undefined') {
     throw new Error('Mochi requires the Bun runtime.');
   }
@@ -34,4 +34,6 @@ export async function checkEnvironment(): Promise<void> {
   if (!compareVersions(svelteVersion, MIN_SVELTE_VERSION)) {
     throw new Error(`Mochi requires Svelte ${MIN_SVELTE_VERSION} or higher (found ${svelteVersion}).`);
   }
+
+  return { svelteVersion };
 }

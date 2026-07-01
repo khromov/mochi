@@ -1,74 +1,82 @@
 import { stringify } from 'devalue';
-import { logger } from './log';
 import { getRequestContext } from './requestContext';
+
+/**
+ * One entry in the per-request island props dedup registry
+ * (`ctx.islandProps`): the ref id assigned to a unique serialized payload and
+ * the number of islands that emitted that exact payload.
+ */
+export interface IslandPropsEntry {
+  id: string;
+  emitCount: number;
+}
 
 /**
  * Serialize a hydratable island's props via devalue and register them in the
  * per-request dedup registry. Returns a stable ref id (e.g. "mochi-props-3")
  * that the preprocessor emits as the `props-ref` attribute. After SSR,
- * `ComponentRegistry` hoists the registry into shared
- * `<script type="application/json" id="mochi-props-N">` blocks.
+ * `ComponentRegistry`'s HTMLRewriter pass emits each payload as a
+ * `<script type="application/json" id="mochi-props-N">` block placed just
+ * before the first island that references it.
  *
  * Two islands whose serialized JSON is byte-identical share the same ref id;
- * that's the entire dedup mechanism — no post-render HTML scan required.
- *
- * If `islandId` is supplied and `ctx.debugBarData` is initialized (dev mode),
- * the pretty-printed JSON is also recorded under `debugBarData.islandProps`
- * keyed by islandId so the dev toolbar can render it without a post-render
- * HTML scan.
+ * that's the entire dedup mechanism. The per-id emit count lets the render pass
+ * flag blocks that more than one island actually shares.
  *
  * Server islands intentionally do NOT use this path. Their `signed-props`
  * payloads are encrypted and travel through URL query strings, so
  * they keep using `stringify` directly via the preprocessor's server-island branch.
  */
-export function emitIslandProps(value: unknown, islandId?: string): string {
+export function emitIslandProps(value: unknown): string {
   const json = stringify(value);
   const ctx = getRequestContext();
-  let id = ctx.islandProps.get(json);
-  if (!id) {
-    id = `mochi-props-${ctx.islandProps.size}`;
-    ctx.islandProps.set(json, id);
+  let entry = ctx.islandProps.get(json);
+  if (!entry) {
+    entry = { id: `mochi-props-${ctx.islandProps.size}`, emitCount: 0 };
+    ctx.islandProps.set(json, entry);
   }
-  if (islandId && ctx.debugBarData) {
-    let pretty = json;
-    try {
-      pretty = JSON.stringify(JSON.parse(json), null, 2);
-    } catch (err) {
-      if (err instanceof SyntaxError) {
-        const m = err.message.match(/position (\d+)/);
-        const pos = m ? Number(m[1]) : -1;
-        if (pos >= 0) {
-          const ch = json.charCodeAt(pos);
-          const around = json.slice(Math.max(0, pos - 20), pos + 20);
-          logger.warn(`Island "${islandId}" props unparseable at position ${pos} (char U+${ch.toString(16).padStart(4, '0')}, len=${json.length}): ${JSON.stringify(around)}`);
-        } else {
-          logger.warn(`Island "${islandId}" props unparseable: ${err.message}`);
-        }
-      } else {
-        logger.warn(`Island "${islandId}" props pretty-print failed: ${err}`);
-      }
-    }
-    ctx.debugBarData.islandProps[islandId] = pretty;
-  }
-  return id;
+  entry.emitCount++;
+  return entry.id;
 }
 
 /**
- * Build the `<script type="application/json">` blocks that carry the
- * deduplicated props for a single rendered page. Caller is responsible for
- * prepending the result to the rendered body. Every `<` inside the JSON is
- * escaped to its `<` JSON unicode escape so the HTML script-data
- * tokenizer (which ignores `type="application/json"`) cannot see a `</script`
- * sequence and terminate the block early.
+ * Render the `<script type="application/json" id="mochi-props-N">` block that
+ * carries one island's deduplicated props. `ComponentRegistry`'s HTMLRewriter
+ * pass calls this once per unique payload and inserts the result immediately
+ * before the first `<mochi-hydratable-island>` that references it. Blocks
+ * reused by two or more islands carry a `data-shared` marker so the dev toolbar
+ * can flag genuinely deduplicated props without re-counting refs across the
+ * DOM — a lone island's block stays unmarked.
+ *
+ * Every `<` inside the JSON is escaped to its `<` JSON unicode escape so
+ * the HTML script-data tokenizer (which ignores `type="application/json"`)
+ * cannot see a `</script` sequence and terminate the block early.
  */
-export function buildIslandPropsScripts(registry: Map<string, string>): string {
-  if (registry.size === 0) {
-    return '';
+export function renderIslandPropsScript(id: string, json: string, emitCount: number): string {
+  const safe = json.replace(/</g, '\\u003C');
+  const shared = emitCount >= 2 ? ' data-shared' : '';
+  return `<script type="application/json" id="${id}"${shared}>${safe}</script>`;
+}
+
+/**
+ * Insert one island's props block immediately before `el` — the first
+ * `<mochi-hydratable-island>` that references it. `ComponentRegistry`'s
+ * HTMLRewriter pass calls this for every island in document order: `propsById`
+ * maps a ref id to its payload + emit count, and `emitted` records ids already
+ * written so islands sharing a byte-identical payload reuse the single block
+ * emitted before the first of them. Islands with no `props-ref` — or a ref
+ * absent from the registry, e.g. the server-island also-hydrate path that
+ * inlines `props=` — are left untouched.
+ */
+export function injectIslandPropsBlock(el: HTMLRewriterTypes.Element, propsById: Map<string, { json: string; emitCount: number }>, emitted: Set<string>): void {
+  const ref = el.getAttribute('props-ref');
+  if (!ref || emitted.has(ref)) {
+    return;
   }
-  let out = '';
-  for (const [json, id] of registry) {
-    const safe = json.replace(/</g, '\\u003C');
-    out += `<script type="application/json" id="${id}">${safe}</script>`;
+  const entry = propsById.get(ref);
+  if (!entry) {
+    return;
   }
-  return out;
+  emitted.add(ref);
+  el.before(renderIslandPropsScript(ref, entry.json, entry.emitCount), { html: true });
 }

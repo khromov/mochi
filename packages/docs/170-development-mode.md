@@ -56,7 +56,7 @@ await Mochi.serve({
 }
 ```
 
-`MODE` is a user-space convention — Mochi reads only `options.development`. Do **NOT** read `process.env.NODE_ENV` to drive the flag; instead, pass `development` explicitly so test runners and one-off scripts get the same behaviour.
+`MODE` is a user-space convention — Mochi reads only `options.development`. Passing `development` explicitly via your entry file keeps test runners and one-off scripts on the same behaviour.
 
 ### Live reload
 
@@ -85,25 +85,19 @@ await Mochi.serve({
 
 Defaults are always included — `additionalWatchPaths` is additive. Paths that don't exist on disk are skipped silently.
 
+### Component hot-reload
+
+Svelte component changes are picked up automatically via the SSR compile cache — edit a `.svelte` file and the browser will refresh.
+
 ### Route handler HMR
 
-Svelte component changes are picked up automatically via the SSR compile cache. **Route handler code** — `Mochi.api` handlers, `serverProps` resolvers, form `actions`, `Mochi.ws` handlers, `Mochi.sse` handlers — is also hot-swapped when the route module or any of its transitive dependencies changes.
+**Route handler code** — `Mochi.api` handlers, `serverProps` resolvers, form `actions`, `Mochi.ws` handlers, `Mochi.sse` handlers — is hot-swapped without a restart. The watcher builds your entry (`src/index.ts`) to discover its transitive dependencies; when any of them changes it rebuilds the entry, re-reads the `routes` from its `Mochi.serve()` call, and updates the running server in place.
 
-By convention Mochi looks for `./src/routes.ts` (then `.js`) at startup. Override with `routeModule`:
+Adding, removing, and editing route patterns all work without a restart — new routes are registered, removed routes are cleaned up, and the route table is reloaded on the fly. WebSocket connections stay open; the browser is notified to reload so pages pick up updated `serverProps`.
 
-```ts
-// file: src/index.ts
-await Mochi.serve({
-  routeModule: './src/my-routes.ts', // default: auto-discovered
-  routes,
-});
-```
-
-When a dependency of the route module changes the framework re-bundles it, reimports the fresh handlers, and updates the running server — no restart, no lost WebSocket connections. The browser is notified to reload so pages pick up updated `serverProps`.
-
-Adding, removing, and editing route patterns all work without a restart. New routes are registered and removed routes are cleaned up automatically; the server's route table is reloaded on the fly.
-
-Do **NOT** rely on module-scoped mutable state surviving a route HMR cycle; instead, move shared state into a separate module that the route module imports (e.g. an in-memory store or database) — each rebuild re-evaluates the route module and resets any `let` / `const` declared at module scope.
+<Callout type="warning">
+Do <strong>NOT</strong> rely on module-scoped mutable state surviving a route HMR cycle. Each reload re-evaluates the <em>entire entry dependency graph</em>, resetting any <code>let</code> / <code>const</code> declared at module scope. Move shared state into a module the entry imports (an in-memory store or database), and keep top-level side effects (e.g. cache priming) idempotent — they re-run on every reload.
+</Callout>
 
 ### `file:change` event
 
@@ -120,7 +114,23 @@ mochiEvents.setHandler('docs:cache-clear', 'file:change', ({ path }) => {
 
 `path` is absolute; `type` is `'add' | 'change' | 'unlink' | 'addDir' | 'unlinkDir'`. The event fires synchronously, before the debounced browser reload, so subscribers are caught up by the time the next request arrives.
 
-Do **NOT** register `file:change` handlers with `.on()` from a module that can be re-imported by the SSR compile cache (e.g. anything imported transitively from a `.svelte` file); instead, use `setHandler` with a stable name so re-imports don't pile up listeners. Plain `.on()` is fine in your server entry, which is loaded once.
+<Callout type="warning">
+
+**Use `setHandler` here, not `.on()`.** In dev, the module holding this handler can be re-run when Mochi recompiles — and each `.on()` call would leave behind another duplicate listener firing on every event. `setHandler` registers by name, so re-running just replaces the previous one.
+
+```ts
+// Wrong — piles up a new listener on every recompile
+mochiEvents.on('file:change', ({ path }) => {
+  /* … */
+});
+
+// Right — keyed by name, so re-running replaces the old handler
+mochiEvents.setHandler('docs:cache-clear', 'file:change', ({ path }) => {
+  /* … */
+});
+```
+
+</Callout>
 
 In production (`development: false`) the watcher never starts and `file:change` never emits. See `events` for the full payload reference.
 
@@ -138,4 +148,8 @@ The built-in logger (default for `Mochi.serve()`) prints a structured line per s
 
 Healthy `bundles=` for a non-CSS save is `1` — the bundle is deferred to a single trailing call after every page has recompiled. A higher number means a regression to per-page bundling, which is O(N²) work for N hydratable pages.
 
-Do **NOT** silence the rebuild lines by disabling the whole logger; instead, pass `logger: { compile: false }` to `Mochi.serve()` to drop only the `BUILD` / `BNDL` / `HMR` lines.
+<Callout type="warning">
+
+**Use `logger: { compile: false }` to suppress rebuild lines.** Pass this option to `Mochi.serve()` to drop only `BUILD` / `BNDL` / `HMR` output; disabling the whole logger loses other diagnostics.
+
+</Callout>

@@ -11,7 +11,7 @@
   import Settings from '@lucide/svelte/icons/settings';
   import AdminThemeToggle from './AdminThemeToggle.svelte';
   import { mergeMetaTags } from '../lib/baseMetaTags';
-  import type { Component } from 'svelte';
+  import type { Component, Snippet } from 'svelte';
 
   type Section = {
     key: string;
@@ -20,15 +20,13 @@
     live: boolean;
   };
 
-  let {
-    activeNav,
-    metaTags = {},
-    children,
-  } = $props<{
+  interface Props {
     activeNav?: string;
     metaTags?: MetaTagsProps;
-    children: () => unknown;
-  }>();
+    children: Snippet;
+  }
+
+  let { activeNav, metaTags = {}, children }: Props = $props();
 
   const mergedMetaTags = $derived(mergeMetaTags({ canonical: `https://demos.mochi.fast${url.pathname}`, ...metaTags }));
 

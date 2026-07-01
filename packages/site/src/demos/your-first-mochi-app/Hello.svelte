@@ -3,7 +3,7 @@
   import LikeButton from './LikeButton.svelte';
   import Visitor from './Visitor.svelte';
 
-  let { siteName, renderedAt } = $props<{ siteName: string; renderedAt: string }>();
+  let { siteName, renderedAt }: { siteName: string; renderedAt: string } = $props();
 
   const { url } = getRequestContext();
   const visitorName = url.searchParams.get('name') ?? 'friend';

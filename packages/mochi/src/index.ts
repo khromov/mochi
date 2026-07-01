@@ -10,6 +10,8 @@
 export { Mochi } from './Mochi';
 export { build } from './build';
 export type { MochiBuildOptions } from './build';
+export { runTests } from './testing';
+export type { RunTestsOptions } from './testing';
 export type { MochiSvelteConfig } from './svelteConfig';
 export { getRequestContext } from './requestContext';
 export type { MochiRequestContext } from './requestContext';
@@ -49,6 +51,13 @@ export type {
   MochiCacheReadEvent,
   MochiCacheRevalidateEvent,
   MochiImageCacheSweepEvent,
+  MochiCacheRevalidateFailedEvent,
+  MochiCacheErrorEvent,
+  MochiQueueAddedEvent,
+  MochiQueueActiveEvent,
+  MochiQueueCompletedEvent,
+  MochiQueueFailedEvent,
+  MochiQueueErrorEvent,
   MochiServerStartEvent,
   MochiServerStopEvent,
   MochiWarmupStartEvent,
@@ -68,6 +77,7 @@ export type {
   MochiRecompileTrigger,
   MochiClientBundleEvent,
 } from './events';
+export type { MochiQueue, MochiJob, MochiJobRef, MochiJobOptions, MochiQueueOptions, MochiQueueRuntimeOptions, MochiQueueListeners, MochiProcessor } from './queue';
 export { json, error, apiError } from './utils';
 export { trailingSlashIt } from './trailingSlash';
 export { fail, redirect, success } from './forms';
@@ -116,5 +126,20 @@ export type {
   MochiSseConfig,
   MochiSseHandler,
   MochiSseStream,
+  MochiFileConfig,
+  MochiFileResolver,
+  MochiQueueConfig,
   BunRouteValue,
+  MochiSvelteShakerOptions,
 } from './types';
+
+import type { Snippet } from 'svelte';
+
+/**
+ * Props helper for a `mochi:clientOnly` component. Adds an optional `children`
+ * snippet so the SSR fallback passed as children type-checks against the
+ * component. The fallback is SSR-only placeholder markup — it is NOT passed to
+ * the component at runtime, so don't render `children` inside a client-only
+ * component.
+ */
+export type ClientOnlyProps<T> = Omit<T, 'children'> & { children?: Snippet };

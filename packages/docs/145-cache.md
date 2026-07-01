@@ -6,11 +6,12 @@ description: 'Cache server-side data with stale-while-revalidate semantics using
 
 <script>
   import Callout from './_components/Callout.svelte';
+  import SeeItInAction from './_components/SeeItInAction.svelte';
 </script>
 
 ## Cache
 
-`MochiCache` wraps [`stale-while-revalidate-cache`](https://www.npmjs.com/package/stale-while-revalidate-cache) for caching server-side data — typically slow upstream API calls. Construct once at module scope and share the instance across requests.
+`MochiCache` caches server-side data — typically slow upstream API calls — with stale-while-revalidate semantics. Construct once at module scope and share the instance across requests.
 
 ```ts
 // src/lib/cache.ts
@@ -57,29 +58,44 @@ Use it from a page or API route:
 | `fetch(key, fn)`           | `Promise<T>`                 |
 | `fetchWithStatus(key, fn)` | `Promise<{ value, status }>` |
 | `delete(key)`              | `Promise<void>`              |
+| `clearItems()`             | `Promise<void>`              |
+
+`clearItems()` empties the whole cache in one call.
 
 `status` is `'fresh' \| 'stale' \| 'expired' \| 'miss'`.
 
 ### Options
-
-`MochiCacheOptions` extends the upstream `Config` (so `retry`, `retryDelay`, `serialize`, `deserialize` and any future options pass through). Mochi-specific defaults:
 
 | Option           | Default           |
 | ---------------- | ----------------- |
 | `minTimeToStale` | `5_000` (5s)      |
 | `maxTimeToLive`  | `600_000` (10min) |
 | `storage`        | in-memory `Map`   |
+| `serialize`      | identity          |
+| `deserialize`    | identity          |
 
-For multi-process or persistent caching, pass a custom `storage` that implements `getItem` / `setItem` / `removeItem` (e.g. Redis, SQLite via `bun:sqlite`).
+For multi-process or persistent caching, pass a custom `storage` that implements `getItem` / `setItem` / `removeItem` / `clear` (e.g. Redis, SQLite via `bun:sqlite`). These methods may be synchronous (in-memory `Map`, `bun:sqlite`) or `async` / Promise-returning (Redis, network stores) — the cache awaits every call. Each key holds a single entry (the value plus its write time). When a backend needs a string or buffer — like Redis — supply `serialize` / `deserialize` to encode and decode that entry, e.g. `serialize: JSON.stringify, deserialize: JSON.parse`.
+
+<Callout type="warning">
+
+**In-flight de-duplication is per-server.** Concurrent calls for the same key on one instance share a single `fn` invocation, but that coordination lives in process memory. With multiple instances behind a shared backend (`bun:sqlite`, Redis), each instance de-duplicates only its own requests — so on a cold key, every instance may run `fn` once and race to write the same entry. The shared store keeps results consistent; it does not collapse the concurrent fetches into one.
+
+</Callout>
+
+If a `storage` call throws, the cache degrades instead of failing the request: a read error recomputes via `fn` (reported as a `miss`), a write error returns the freshly computed value uncached, and a `delete` error is re-thrown to the caller. Every case also emits a `cache:error` event.
 
 ### Subscribing to cache events
 
-`MochiCache` emits two events on `mochiEvents`:
+`MochiCache` emits these events on `mochiEvents`:
 
-| Event              | Payload           | When                                                |
-| ------------------ | ----------------- | --------------------------------------------------- |
-| `cache:read`       | `{ key, status }` | Every cache lookup, regardless of which method ran. |
-| `cache:revalidate` | `{ key }`         | A background refetch starts (stale read).           |
+| Event                     | Payload                     | When                                                         |
+| ------------------------- | --------------------------- | ------------------------------------------------------------ |
+| `cache:read`              | `{ key, status }`           | Every cache lookup, regardless of which method ran.          |
+| `cache:revalidate`        | `{ key }`                   | A background refetch starts (stale read).                    |
+| `cache:revalidate:failed` | `{ key, error }`            | A background refetch threw; the stale value is still served. |
+| `cache:error`             | `{ key, operation, error }` | A `storage` `get` / `set` / `remove` call threw.             |
+
+`consoleLogger()` surfaces `cache:revalidate:failed` and `cache:error` as warnings — a silently degrading upstream or storage backend is otherwise invisible.
 
 `status` is `'fresh' \| 'stale' \| 'expired' \| 'miss'`. Use `mochiEvents.setHandler` to attach a custom subscriber — it replaces a prior handler under the same name, so dev re-imports don't pile up listeners:
 
@@ -104,3 +120,11 @@ See the [Cache Events demo](/demos/cache-events/) for a working example that pip
 ### Server-only
 
 `MochiCache` lives on the server. Importing it into a hydratable island throws — caches are shared per-process state and don't make sense in the browser. Construct cache instances in `.ts` modules or page-route scripts, never inside a `mochi:hydrate` component.
+
+<SeeItInAction
+demos={[
+{ href: "/demos/data-loading/", title: "Data Loading", hook: "Server-side fetch from PokéAPI cached via MochiCache and rendered at request time." },
+{ href: "/demos/cache-events/", title: "Cache Events", hook: "Subscribe to MochiCache lifecycle events through mochiEvents and log them to the server console." },
+{ href: "/cookie-vary-test/", title: "Cookie Vary Test", hook: "A page that sets Vary: Cookie on its response — useful for testing cookie-partitioned cache keys." },
+]}
+/>

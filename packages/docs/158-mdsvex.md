@@ -6,6 +6,7 @@ description: 'Enable Markdown support in Mochi pages with mdsvex and rehype/rema
 
 <script>
   import Callout from './_components/Callout.svelte';
+  import SeeItInAction from './_components/SeeItInAction.svelte';
 </script>
 
 ## MdSvex
@@ -26,33 +27,25 @@ bun add mdsvex@^0.12 rehype-slug@^6
 Mochi is tested against `mdsvex ^0.12` and `rehype-slug ^6`. Other rehype/remark
 plugins follow their own version ranges — install whichever your pipeline needs.
 
+With `markdown` configured, `.md` and `.svx` files compile through the supplied
+pipeline and can be used anywhere a `.svelte` component is accepted — including
+as a `Mochi.page()` route target:
+
 ```ts
 // src/index.ts
 import { Mochi } from 'mochi-framework';
 import { compile as mdsvexCompile } from 'mdsvex';
 import rehypeSlug from 'rehype-slug';
-import { routes } from './routes';
 
 await Mochi.serve({
   markdown: {
     compile: mdsvexCompile,
     rehypePlugins: [rehypeSlug],
   },
-  routes,
+  routes: {
+    '/about': Mochi.page('./src/about.md'),
+  },
 });
-```
-
-With `markdown` configured, `.md` and `.svx` files compile through the supplied
-pipeline and can be used anywhere a `.svelte` component is accepted — including
-as a `Mochi.page()` route target:
-
-```ts
-// src/routes.ts
-import { Mochi } from 'mochi-framework';
-
-export const routes = {
-  '/about': Mochi.page('./src/about.md'),
-};
 ```
 
 Markdown can embed Svelte syntax — a top-level `<script>` block, `$props`, and
@@ -145,3 +138,7 @@ importing one then surfaces as a "no loader" error from Bun's bundler. Your
 `svelte.config.js` `compilerOptions` still apply to compiled markdown. See
 [Svelte config](/docs/svelte-config/).
 </Callout>
+
+<SeeItInAction
+demos={[{ href: "/demos/mdsvex/", title: "MdSvex", hook: "A .md file compiled through mdsvex and rendered as a Svelte component, with an embedded <script> block." }]}
+/>

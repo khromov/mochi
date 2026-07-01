@@ -4,32 +4,43 @@ slug: api-routes
 description: 'Register JSON endpoints with Mochi.api() that receive a request event and return a Response.'
 ---
 
+<script>
+  import Callout from './_components/Callout.svelte';
+  import SeeItInAction from './_components/SeeItInAction.svelte';
+</script>
+
 ## API routes
 
 `Mochi.api(handler)` registers a JSON endpoint. The handler receives a `MochiApiEvent` (`method`, `request`, `url`, `server`, `locals`, `params`, `cookies`) and **must** return a `Response` (or a `Promise<Response>`).
 
 ```ts
-// file: src/routes.ts
+// file: src/index.ts
 import { Mochi } from 'mochi-framework';
 
-export const routes = {
-  '/health': Mochi.api(({ method }) => Response.json({ status: 'ok', method })),
-};
+await Mochi.serve({
+  routes: {
+    '/health': Mochi.api(({ method }) => Response.json({ status: 'ok', method })),
+  },
+});
 ```
-
-Do **NOT** return a plain object or string from a `Mochi.api` handler; instead, wrap the value in `Response.json(...)` or the `json()` helper — anything else fails type-checking and the runtime won't serialize it for you.
 
 ### `MochiApiEvent`
 
 Destructure `params` and `cookies` directly off the event — they mirror what `Mochi.page` form-action handlers receive:
 
 ```ts
-// file: src/routes.ts
-'/items/:id': Mochi.api(({ url, params, cookies }) => {
-  const tab = url.searchParams.get('tab') ?? 'overview';
-  const session = cookies.get('session');
-  return Response.json({ id: params.id, tab, session });
-}),
+// file: src/index.ts
+import { Mochi } from 'mochi-framework';
+
+await Mochi.serve({
+  routes: {
+    '/items/:id': Mochi.api(({ url, params, cookies }) => {
+      const tab = url.searchParams.get('tab') ?? 'overview';
+      const session = cookies.get('session');
+      return Response.json({ id: params.id, tab, session });
+    }),
+  },
+});
 ```
 
 `getRequestContext()` still works and exposes the same values plus `requestId`, `islandProps`, `getClientAddress()`, etc. — reach for it from helper functions that aren't passed the event.
@@ -39,15 +50,25 @@ Destructure `params` and `cookies` directly off the event — they mirror what `
 Use the standard `Request` body methods (`json()`, `text()`, `formData()`, `arrayBuffer()`). The body stream can only be consumed once.
 
 ```ts
-// file: src/routes.ts
-'/add': Mochi.api(async ({ method, request }) => {
-  if (method !== 'POST') error(405, 'Method Not Allowed');
-  const { a, b } = await request.json();
-  return Response.json({ result: a + b });
-}),
+// file: src/index.ts
+import { Mochi, error } from 'mochi-framework';
+
+await Mochi.serve({
+  routes: {
+    '/add': Mochi.api(async ({ method, request }) => {
+      if (method !== 'POST') error(405, 'Method Not Allowed');
+      const { a, b } = await request.json();
+      return Response.json({ result: a + b });
+    }),
+  },
+});
 ```
 
-Do **NOT** call `request.json()` (or any other body method) more than once on the same request; instead, await it once, store the result, and reuse the value — a second read throws `TypeError: Body already used`.
+<Callout type="warning">
+
+**Read the request body only once.** Calling `request.json()` (or any body method) a second time throws `TypeError: Body already used`. Await it once, store the result, and reuse the value.
+
+</Callout>
 
 ### `json` (response helper)
 
@@ -78,7 +99,11 @@ Mochi.api(async () => {
 
 `error` is typed `: never`, so TypeScript narrows control flow after the call — no manual `return` needed.
 
-Do **NOT** throw a bare `Error` or any non-`MochiHttpError` value to signal a status code; instead, call `error(status, message)` — uncaught throws are coerced to `500 Internal Server Error` with a generic message and the original is logged server-side, never leaked to the client.
+<Callout type="danger">
+
+**Uncaught errors become 500s.** Any throw that isn't a `MochiHttpError` is caught by the framework, coerced to `500 Internal Server Error` with a generic message, logged server-side, and never leaked to the client — use `error(status, message)` to return intended status codes.
+
+</Callout>
 
 ### `apiError` (typed return)
 
@@ -126,3 +151,7 @@ Mochi.api(async () => {
 ```
 
 API routes never render the HTML error page and `handleError` is **not** called for them — the JSON envelope is the only contract.
+
+<SeeItInAction
+demos={[{ href: "/demos/api/", title: "API Endpoints", hook: "JSON routes defined with Mochi.api(), tested live against the running server." }]}
+/>

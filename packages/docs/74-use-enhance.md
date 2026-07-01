@@ -6,6 +6,7 @@ description: 'Progressively enhance HTML forms to submit via fetch when JavaScri
 
 <script>
   import Callout from './_components/Callout.svelte';
+  import SeeItInAction from './_components/SeeItInAction.svelte';
 </script>
 
 ## Progressively enhancing forms with enhance
@@ -26,8 +27,6 @@ description: 'Progressively enhance HTML forms to submit via fetch when JavaScri
 ```
 
 Place the form inside a hydrated island (`mochi:hydrate`, `mochi:hydrate:visible`, or `mochi:defer mochi:hydrate`). When hydration is skipped the attachment never runs and the form falls back to a native HTML POST — that is the progressive-enhancement contract.
-
-Do **NOT** call `enhance()` outside a hydrated island; instead, mark the surrounding component with `mochi:hydrate*` so the attachment can attach in the browser.
 
 `enhance` is a factory: call it as `{@attach enhance()}` even with no options. Attachments require Svelte 5.29+.
 
@@ -150,20 +149,22 @@ The `submit` callback receives `cancel` and `controller`:
 No server changes are needed beyond declaring the action. The same `Mochi.page(path, { actions })` definition serves both the no-JS HTML POST flow and the enhanced JSON flow:
 
 ```ts
-// file: src/routes.ts
+// file: src/index.ts
 import { Mochi, fail, success } from 'mochi-framework';
 
-export const routes = {
-  '/login': Mochi.page('./src/Login.svelte', {
-    actions: {
-      default: ({ formData }) => {
-        const username = String(formData.get('username') ?? '');
-        if (!username) return fail(400, { error: 'Username required' });
-        return success({ username });
+await Mochi.serve({
+  routes: {
+    '/login': Mochi.page('./src/Login.svelte', {
+      actions: {
+        default: ({ formData }) => {
+          const username = String(formData.get('username') ?? '');
+          if (!username) return fail(400, { error: 'Username required' });
+          return success({ username });
+        },
       },
-    },
-  }),
-};
+    }),
+  },
+});
 ```
 
 Returning a `Response` directly from an action bypasses the JSON envelope on enhanced submissions — treat that path as an escape hatch.
@@ -173,8 +174,6 @@ Returning a `Response` directly from an action bypasses the JSON envelope on enh
 **Wrap data in `success()` to round-trip it to the client.** A plain return like `return { username }` strips the data on the enhanced path and the result handler receives an empty `data` object. This matches the non-enhanced behavior. Always use `success()` when the client needs the returned data.
 
 </Callout>
-
-Do **NOT** return a plain object from an action when the enhanced client needs `data`; instead, wrap it with `success()` (or `fail()` for errors).
 
 ### deserialize
 
@@ -202,3 +201,11 @@ Do **NOT** return a plain object from an action when the enhanced client needs `
 ### When to use enhance
 
 Reach for `enhance` when the action's outcome should update UI without a navigation flicker — interactive forms, optimistic patterns, inline validation. Stick with a plain `<form method="POST">` when the action ends in a redirect anyway and the JS bundle is not worth shipping.
+
+<SeeItInAction
+demos={[
+{ href: "/demos/login/", title: "Form Actions", hook: "A login form rendered twice — plain HTML POST and intercepted with {@attach enhance(...)}." },
+{ href: "/demos/form-errors/", title: "Form Errors", hook: "A thrown action error shown inline via {@attach enhance(...)}, or as the Mochi error page on plain submit." },
+{ href: "/demos/form-return-data/", title: "Using form return data", hook: "An action returns data via success({...}); {@attach enhance(...)} updates the UI in place, plain HTML re-renders the page." },
+]}
+/>

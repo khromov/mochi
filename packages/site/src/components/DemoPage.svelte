@@ -1,7 +1,9 @@
 <script>
   import { url } from 'mochi-framework';
   import CodeViewer from './CodeViewer.svelte';
+  import ViewSourceLink from './ViewSourceLink.svelte';
   import PageShell from './PageShell.svelte';
+  import ReadmeCopy from './ReadmeCopy.svelte';
   import { demoIconFor } from '../lib/demoIcons';
   import { buildDocsNav } from '../lib/docs';
   import { demos } from '../lib/demos';
@@ -9,6 +11,17 @@
   let { title, description, sources, children } = $props();
 
   const docsNav = await buildDocsNav();
+
+  // Internal demos expose their source next to the demo page at `${href}llms.txt`,
+  // matching the /llms.json index derivation.
+  const current = demos.find((d) => d.title === title);
+  const demoHref = current?.href.startsWith('/') ? current.href : undefined;
+
+  // Match by URL, not title — a demo page's heading can differ from its registry
+  // title (e.g. queue), and some demos route to sub-paths (e.g. data-loading →
+  // /pikachu). Prefix-match the trailing-slashed href so sub-routes still resolve.
+  const sourceDemo = demos.find((d) => d.href.startsWith('/') && url.pathname.startsWith(d.href));
+  const sourcePath = sourceDemo?.slug ? `packages/site/src/demos/${sourceDemo.slug}` : undefined;
 
   const moreDemos = demos
     .filter((d) => d.title !== title)
@@ -28,7 +41,7 @@
     canonical: `https://mochi.fast${url.pathname}`,
   }}
 >
-  <header class="hero">
+  <header class="hero-minimal">
     <div class="hero-inner">
       <nav class="crumbs" aria-label="Breadcrumb">
         <a class="brand" href="/">🍡 mochi</a>
@@ -43,8 +56,10 @@
 
   <main class="body">
     <div class="demo-card">
+      {#if demoHref}
+        <ReadmeCopy mochi:hydrate href={demoHref} kind="demos" />
+      {/if}
       <div class="card-header">
-        <h1>{title}</h1>
         {#if demoIconFor[title]}
           {@const meta = demoIconFor[title]}
           {@const Icon = meta.icon}
@@ -52,12 +67,16 @@
             <Icon size={16} strokeWidth={1.6} />
           </span>
         {/if}
+        <h1>{title}</h1>
       </div>
       <p class="card-desc">{description}</p>
       <div class="demo-body">
         {@render children()}
       </div>
       {#if sources && sources.length > 0}
+        {#if sourcePath}
+          <ViewSourceLink path={sourcePath} />
+        {/if}
         <CodeViewer {sources} mochi:hydrate />
       {/if}
     </div>
@@ -93,8 +112,8 @@
 </PageShell>
 
 <style>
-  .hero {
-    padding: 1rem 1.25rem;
+  .hero-minimal {
+    padding: 0.6rem 1.25rem;
     text-align: left;
   }
 
@@ -181,6 +200,7 @@
   }
 
   .demo-card {
+    position: relative;
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
@@ -202,7 +222,9 @@
   .card-header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    gap: 0.6rem;
+    /* Reserve room at the top-right for the absolutely-positioned llms.txt pill. */
+    padding-right: 6rem;
   }
 
   .demo-icon {
@@ -285,14 +307,14 @@
     text-decoration: none;
     transition:
       box-shadow 0.15s ease,
+      border-color 0.15s ease,
       transform 0.15s ease;
   }
 
   .more-card:hover {
     transform: translateY(-2px);
-    box-shadow:
-      inset 3px 0 0 var(--accent),
-      var(--shadow-md);
+    border-color: var(--accent);
+    box-shadow: var(--shadow-md);
   }
 
   .mc-icon {

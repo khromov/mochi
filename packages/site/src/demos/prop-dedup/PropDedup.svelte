@@ -2,13 +2,9 @@
   import DemoPage from '../../components/DemoPage.svelte';
   import SharedPropsCard from './SharedPropsCard.svelte';
   import { loadSources } from '../../components/utils.ts';
+  import { files } from './files.ts';
 
-  const sources = await loadSources([
-    { label: 'PropDedup.svelte', path: './src/demos/prop-dedup/PropDedup.svelte' },
-    { label: 'SharedPropsCard.svelte', path: './src/demos/prop-dedup/SharedPropsCard.svelte' },
-    { label: 'routes.ts', path: './src/demos/prop-dedup/routes.ts' },
-    { label: 'index.ts', path: './src/demoIndex.ts' },
-  ]);
+  const sources = await loadSources(files);
 
   // Three distinct prop payloads. Each is reused across three cards in its
   // group, so the page renders nine hydratable islands but only three unique
@@ -63,8 +59,8 @@
   <p class="hint">
     Each group below renders the same component three times with the same props. In the SSR: you'll find <strong>three</strong>
     <code>&lt;script type="application/json"&gt;</code>
-    blocks (one per group) and nine <code>&lt;mochi-hydratable-island props-ref="…"&gt;</code> tags pointing at them. Note that you'll also find an extra script block for the source
-    code viewer component.
+    blocks (one per group) and nine <code>&lt;mochi-hydratable-island props-ref="…"&gt;</code> tags pointing at them. Each shared block carries a <code>data-shared</code> marker; a lone
+    island (like the source code viewer on this page) still gets its own block, just without that marker.
   </p>
 
   {#each groups as group (group.heading)}

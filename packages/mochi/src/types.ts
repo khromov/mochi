@@ -5,6 +5,7 @@ import type { MochiCsrfOptions } from './csrf';
 import type { MochiFilters, MochiHooks } from './extensions';
 import type { MochiProxyOptions } from './proxy';
 import type { MochiImageOptions } from './image/types';
+import type { MochiProcessor, MochiQueueListeners, MochiQueueRuntimeOptions } from './queue';
 
 export type MochiServerPropsResolver = (req: Request, params: Record<string, string>) => Record<string, unknown> | Promise<Record<string, unknown>>;
 
@@ -72,6 +73,25 @@ export function isMochiApi(value: unknown): value is MochiApiConfig {
   return typeof value === 'object' && value !== null && (value as MochiApiConfig).__mochiApi === true;
 }
 
+// ---------------------------------------------------------------------------
+// File routes
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolves the disk path of the file to serve for a `Mochi.file()` route.
+ * Receives the request and the resolved route params (e.g. `:name`).
+ */
+export type MochiFileResolver = (req: Request, params: Record<string, string>) => string | Promise<string>;
+
+export interface MochiFileConfig {
+  readonly __mochiFile: true;
+  readonly source: string | MochiFileResolver;
+}
+
+export function isMochiFile(value: unknown): value is MochiFileConfig {
+  return typeof value === 'object' && value !== null && (value as MochiFileConfig).__mochiFile === true;
+}
+
 export type BunRouteValue =
   | Response
   | BunFile
@@ -80,7 +100,7 @@ export type BunRouteValue =
 
 export interface RouteRegistrationResult {
   bunRouteValue: BunRouteValue;
-  type: 'page' | 'api' | 'ws' | 'sse';
+  type: 'page' | 'api' | 'ws' | 'sse' | 'file';
 }
 
 // ---------------------------------------------------------------------------
@@ -276,7 +296,31 @@ export function isMochiSse(value: unknown): value is MochiSseConfig {
   return typeof value === 'object' && value !== null && (value as MochiSseConfig).__mochiSse === true;
 }
 
-export type MochiRouteValue = MochiPageConfig | MochiApiConfig | MochiWsConfig | MochiSseConfig | BunRouteValue;
+// ---------------------------------------------------------------------------
+// Background queues
+// ---------------------------------------------------------------------------
+
+/**
+ * Inert descriptor returned by `Mochi.queue()` — mirrors `MochiApiConfig`/
+ * `MochiWsConfig` et al. Non-generic so a heterogeneous `queues` map type-checks;
+ * `Mochi.queue<T, R>` keeps the generics only to type the processor/listeners at
+ * the call site, then erases them here. The live queue (producer + consumer) is
+ * created only when this is mounted in `Mochi.serve({ queues })`, which calls
+ * `createQueue`, passing the `on` listeners so they're wired before the consumer
+ * can pull its first job.
+ */
+export interface MochiQueueConfig {
+  readonly __mochiQueue: true;
+  readonly process: MochiProcessor<unknown, unknown>;
+  readonly options?: MochiQueueRuntimeOptions;
+  readonly on?: Partial<MochiQueueListeners<unknown, unknown>>;
+}
+
+export function isMochiQueue(value: unknown): value is MochiQueueConfig {
+  return typeof value === 'object' && value !== null && (value as MochiQueueConfig).__mochiQueue === true;
+}
+
+export type MochiRouteValue = MochiPageConfig | MochiApiConfig | MochiWsConfig | MochiSseConfig | MochiFileConfig | BunRouteValue;
 
 /** `stack` is only populated when the server runs with `development: true`. */
 export interface MochiErrorProps {
@@ -414,6 +458,13 @@ export interface MochiServeOptions {
   /** Path to a prebuilt manifest JSON. Defaults to `.mochi/manifest.json`. */
   manifest?: string;
   routes?: Record<string, MochiRouteValue>;
+  /**
+   * Background job queues to start with the server, keyed by queue name. Each
+   * value is a `Mochi.queue({ process, … })` descriptor; produce to it from route
+   * code via `Mochi.getQueue(name).add(...)`. Queues drain gracefully on
+   * shutdown. A queue-only process is `Mochi.serve({ queues })` with no `routes`.
+   */
+  queues?: Record<string, MochiQueueConfig>;
   fetch?: (req: Request, server: Server<undefined>) => Response | Promise<Response>;
   htmlShell?: string;
   /**
@@ -453,7 +504,11 @@ export interface MochiServeOptions {
   } & import('./consoleLogger').ConsoleLoggerOptions;
   /** Directory served as static assets (cwd-relative). Default: `./public`. */
   publicDir?: string;
-  /** Directory for build artifacts and dev cache (cwd-relative). Default: `./.mochi`. */
+  /**
+   * Base directory for build artifacts and dev cache (cwd-relative). Default: `./.mochi`.
+   * Production writes here directly; development nests under `<outDir>/dev` so the two
+   * modes never collide.
+   */
   outDir?: string;
   /**
    * URL prefix under which framework client assets (JS bundles, CSS, bundle
@@ -466,13 +521,6 @@ export interface MochiServeOptions {
    * flag) so dev and prod stay in sync.
    */
   assetPrefix?: string;
-  /**
-   * Path to a module that exports `routes: Record<string, MochiRouteValue>`.
-   * In dev mode, changes to this module or its transitive dependencies
-   * hot-swap the handler configs for existing route patterns without a restart.
-   * Default: auto-discovered from `./src/routes.ts` or `./src/routes.js`.
-   */
-  routeModule?: string;
   /** Extra paths the dev-mode file watcher monitors, in addition to the defaults `src` and `public`. */
   additionalWatchPaths?: string[];
   /**
@@ -568,5 +616,38 @@ export interface MochiServeOptions {
    * `MochiImageOptions`.
    */
   image?: MochiImageOptions;
+  /**
+   * Run the whole-program [svelte-shaker](https://github.com/baseballyama/svelte-shaker)
+   * pass before compiling, slimming `.svelte` source (prop folding, dead-branch
+   * removal, CSS narrowing) so the Svelte compiler emits less code.
+   *
+   * **Production only** — ignored in dev, since shaking is whole-program and
+   * per-file HMR can't safely reuse a one-time shake. Only components under
+   * `./src` are scanned. `mochi-framework build` reads this value straight from
+   * your entry's `Mochi.serve()` call, so the prebuilt manifest stays in sync
+   * with no mirroring needed.
+   *
+   * Pass `true` to shake everything, or an object with `enabled: true` and
+   * additional options (`exclude`). Set `enabled: false` to disable shaking
+   * while keeping other config visible. Default: `false`.
+   */
+  optimize?: boolean | MochiSvelteShakerOptions;
   [key: string]: unknown;
+}
+
+export interface MochiSvelteShakerOptions {
+  /**
+   * Whether the optimizer is active. When `false`, shaking is skipped even
+   * though an options object is present — useful to keep `exclude` / `report`
+   * config visible while temporarily disabling the pass.
+   */
+  enabled: boolean;
+  /**
+   * Glob patterns (cwd-relative) of `.svelte` files to leave unshaken — they
+   * compile from their original source instead of svelte-shaker's slimmed
+   * output. Use to dodge a component the shaker mis-transforms (e.g. a `class:`
+   * shorthand on a folded prop). Excluding never affects how *other* components
+   * are shaken. Example: `['src/components/ThemeToggle.svelte', 'src/legacy/**']`.
+   */
+  exclude?: string[];
 }

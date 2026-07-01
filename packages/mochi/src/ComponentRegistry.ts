@@ -2,20 +2,23 @@ import { compile as svelteCompile, compileModule as svelteCompileModule, preproc
 import { render } from 'svelte/server';
 import path from 'node:path';
 import fs from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import type { BunPlugin } from 'bun';
-import { isSvelteMarker, normalizeAssetPrefix, normalizeIslandHydrationMarkers, stripHydrationMarkers, toCompileErrorLogs } from './utils';
-import { buildIslandPropsScripts } from './islandPropsRegistry';
+import { isSvelteMarker, normalizeAssetPrefix, normalizeIslandHydrationMarkers, stripHydrationMarkers, toCompileErrorLogs, toPosixPath } from './utils';
+import { injectIslandPropsBlock } from './islandPropsRegistry';
 import { requestContext } from './requestContext';
 import type { DebugBarData } from './requestContext';
 import { logger } from './log';
 import { mochiEvents } from './events';
-import type { MarkdownConfig, MochiManifest } from './types';
+import type { MarkdownConfig, MochiManifest, MochiSvelteShakerOptions } from './types';
 import { type HydratableComponent, type ServerIslandComponent } from './svelteAstPreprocess';
 import { cachedPreprocessHydratable, createPreprocessCacheStats } from './preprocessCache';
+import { CompileCache, compileFingerprint, createCompileCacheStats, type CompileCacheStats } from './compileCache';
 import { mergeCompilerOptions, type MochiSvelteConfig } from './svelteConfig';
 import { applyFilter } from './extensions';
 import { buildServerOnlyStubModule, scanServerOnlyExports } from './serverOnlyScan';
+import { freshImport } from './freshImport';
+import { shakeApp } from './svelteShaker';
+import prettyBytes from './lib/prettyBytes';
 
 /**
  * Run user-supplied Svelte preprocessors via the `compile:preprocessors`
@@ -36,7 +39,7 @@ async function applyUserPreprocessors(source: string, filename: string, target: 
 }
 
 /** Directory containing the framework's own .ts/.svelte source files. */
-const FRAMEWORK_DIR = path.dirname(fileURLToPath(import.meta.url));
+const FRAMEWORK_DIR = path.dirname(Bun.fileURLToPath(import.meta.url));
 
 // TODO
 // Bun's CSS bundler unquotes `format('woff2-variations')` to `format(woff2-variations)`,
@@ -82,6 +85,8 @@ function createMarkdownLoader(opts: {
   development: boolean;
   cssMap?: Map<string, string>;
   userCompilerOptions: CompileOptions;
+  compileCache: CompileCache;
+  compileCacheStats?: CompileCacheStats;
   hydration?: {
     fileHydratables: Map<string, HydratableComponent[]>;
     allHydratables: HydratableComponent[];
@@ -90,8 +95,27 @@ function createMarkdownLoader(opts: {
   };
 }) {
   const highlight = opts.markdown.highlight;
+  const fingerprint = compileFingerprint(opts.userCompilerOptions, opts.development);
   return async (args: { path: string }) => {
     const raw = await Bun.file(args.path).text();
+    // Cache hit: replay the side effects (hydration metadata, scoped CSS) the
+    // miss path would have produced and skip mdsvex + svelte compile entirely.
+    // Keyed on raw source, so this assumes mdsvex + the user preprocessors are
+    // pure in (source, filename): a plugin that reads an *external* file (e.g. a
+    // sibling .json) won't re-run until this file's own bytes change or the
+    // config reloads — the standard Vite/SvelteKit preprocessor contract.
+    const cached = opts.compileCache.get(opts.target, args.path, raw, fingerprint, opts.compileCacheStats);
+    if (cached) {
+      if (opts.hydration) {
+        opts.hydration.fileHydratables.set(args.path, cached.hydratables);
+        opts.hydration.allHydratables.push(...cached.hydratables);
+        opts.hydration.allServerIslands.push(...cached.serverIslands);
+      }
+      if (opts.target === 'server' && cached.css && opts.cssMap) {
+        opts.cssMap.set(args.path, cached.css);
+      }
+      return { contents: cached.js, loader: 'js' as const };
+    }
     // mdsvex's `compile` declares a nested-Promise return type, so we accept
     // `unknown` at the type level and await + validate at runtime. `await`
     // flattens any thenable chain to the eventual `{ code; … } | undefined`.
@@ -106,12 +130,16 @@ function createMarkdownLoader(opts: {
       throw new Error(`markdown.compile returned no output for ${args.path}`);
     }
     let svelteSource = compiled.code;
+    let hydratables: HydratableComponent[] = [];
+    let serverIslands: ServerIslandComponent[] = [];
     if (opts.hydration) {
-      const { transformed, hydratables, serverIslands } = cachedPreprocessHydratable(svelteSource, args.path, opts.hydration.preprocessCacheStats);
+      const preprocessed = cachedPreprocessHydratable(svelteSource, args.path, opts.hydration.preprocessCacheStats);
+      hydratables = preprocessed.hydratables;
+      serverIslands = preprocessed.serverIslands;
       opts.hydration.fileHydratables.set(args.path, hydratables);
       opts.hydration.allHydratables.push(...hydratables);
       opts.hydration.allServerIslands.push(...serverIslands);
-      svelteSource = transformed;
+      svelteSource = preprocessed.transformed;
     }
     const { js, css } = svelteCompile(
       svelteSource,
@@ -121,9 +149,11 @@ function createMarkdownLoader(opts: {
         ...(opts.target === 'client' ? { dev: opts.development } : {}),
       }),
     );
-    if (opts.target === 'server' && css?.code && opts.cssMap) {
-      opts.cssMap.set(args.path, css.code);
+    const cssCode = opts.target === 'server' ? (css?.code ?? null) : null;
+    if (cssCode && opts.cssMap) {
+      opts.cssMap.set(args.path, cssCode);
     }
+    opts.compileCache.set(opts.target, args.path, raw, fingerprint, { js: js.code, css: cssCode, hydratables, serverIslands });
     return { contents: js.code, loader: 'js' as const };
   };
 }
@@ -178,6 +208,8 @@ export interface ComponentRegistryOptions {
   svelteConfig?: MochiSvelteConfig;
   /** User-injected markdown integration. When unset, `.md`/`.svx` imports are not handled. */
   markdown?: MarkdownConfig;
+  /** Run the whole-program svelte-shaker pass before compiling. Production only — `prepareShake()` is a no-op in dev. */
+  optimize?: boolean | MochiSvelteShakerOptions;
 }
 
 export class ComponentRegistry {
@@ -188,6 +220,11 @@ export class ComponentRegistry {
       module: { default: any };
       cssComponents: Set<string>;
       hydratables: HydratableComponent[];
+      // Absolute path to the compiled `.server.js` on disk. Recorded from the
+      // build's metafile (not reconstructed from the source basename) so two
+      // entrypoints sharing a basename — e.g. PageOne.svelte in two demo
+      // folders — resolve to their own distinct, hashed outputs.
+      ssrPath: string;
     }
   > = new Map();
   private hydratableComponents: HydratableComponent[] = [];
@@ -238,14 +275,25 @@ export class ComponentRegistry {
   /** Maps public URL path → disk path (relative to cwd) for static files from `public/`. */
   private publicFiles: Map<string, string> = new Map();
   readonly development: boolean;
+  /** Set by `fromManifest()`; distinguishes a prebuilt-manifest boot from a live, compile-on-demand one. */
+  loadedFromManifest = false;
   readonly debugBarEnabled: boolean;
   readonly outDir: string;
   readonly assetPrefix: string;
   svelteConfig: MochiSvelteConfig;
   readonly markdown: MarkdownConfig | undefined;
+  readonly optimize: boolean | MochiSvelteShakerOptions;
+  /** absPath → slimmed `.svelte` source from the last `prepareShake()`; empty when shaking is off. */
+  private shakenSources: Map<string, string> = new Map();
   private errors: MochiCompileError[] = [];
   /** Bumped each time `buildClientBundle()` runs; read+reset by `recompileAll()`. */
   private clientBundleCallCount = 0;
+  /**
+   * Per-registry compiled-output cache. Instance-scoped (not a module global) so
+   * two registries with different markdown/preprocessor config can't serve each
+   * other stale output for the same path — see {@link CompileCache}.
+   */
+  readonly compileCache = new CompileCache();
 
   constructor(opts: ComponentRegistryOptions = {}) {
     this.development = opts.development ?? true;
@@ -254,6 +302,86 @@ export class ComponentRegistry {
     this.assetPrefix = normalizeAssetPrefix(opts.assetPrefix);
     this.svelteConfig = opts.svelteConfig ?? {};
     this.markdown = opts.markdown;
+    this.optimize = opts.optimize ?? false;
+  }
+
+  /**
+   * Run the whole-program svelte-shaker pass over the app and cache the slimmed
+   * source so the compile `onLoad` handlers feed it to the Svelte compiler
+   * instead of the raw file. No-op in dev (shaking is whole-program, so per-file
+   * HMR can't safely reuse a one-time shake) or when the option is off. On any
+   * failure we fall back to unshaken disk reads rather than break the build.
+   */
+  async prepareShake(appRoot = path.resolve('src')): Promise<void> {
+    const opt = this.optimize;
+    const enabled = typeof opt === 'object' ? opt.enabled : !!opt;
+    if (!enabled || this.development) {
+      return;
+    }
+    if (!fs.existsSync(appRoot)) {
+      logger.warn(`svelte-shaker: no source directory at ${appRoot}; nothing to shake`);
+      return;
+    }
+    try {
+      const { shaken, originals } = await shakeApp(appRoot);
+      if (shaken.size === 0) {
+        logger.warn(`svelte-shaker: no .svelte components found under ${appRoot}; nothing to shake`);
+      }
+      const cwd = process.cwd();
+      const exclude = typeof opt === 'object' ? (opt.exclude ?? []) : [];
+      let excluded = 0;
+      if (exclude.length > 0) {
+        const globs = exclude.map((p) => new Bun.Glob(p));
+        for (const id of [...shaken.keys()]) {
+          const rel = path.relative(cwd, id);
+          // Excluded files compile from original source. Safe regardless: the
+          // whole-app scan still covered them as call sites of other components.
+          if (globs.some((g) => g.match(rel) || g.match(id))) {
+            shaken.delete(id);
+            excluded++;
+          }
+        }
+      }
+      this.shakenSources = shaken;
+
+      // The shake map holds *every* in-scope component — untouched ones are
+      // returned verbatim — so its size is the scan count, not the number
+      // changed. Diff against the originals the engine already read (no second
+      // disk pass) to find what the shaker actually slimmed.
+      const changed: { name: string; before: number; after: number }[] = [];
+      for (const [id, out] of shaken) {
+        const original = originals.get(id) ?? out;
+        if (original !== out) {
+          changed.push({ name: path.relative(cwd, id), before: Buffer.byteLength(original, 'utf8'), after: Buffer.byteLength(out, 'utf8') });
+        }
+      }
+      logger.info(`svelte-shaker: slimmed ${changed.length} of ${shaken.size} component(s)${excluded > 0 ? `, ${excluded} excluded` : ''}`);
+      this.reportShake(changed);
+    } catch (e) {
+      // Empty cache -> every onLoad reads the original source, so a failed shake
+      // never breaks the build (`shakenSources.get(path) ?? Bun.file(path)`).
+      logger.warn('svelte-shaker: optimization skipped; building from original sources (output is unaffected).');
+      logger.warn('svelte-shaker: this looks like a svelte-shaker bug — please report it with the error below at https://github.com/baseballyama/svelte-shaker/issues');
+      logger.error(e);
+      this.shakenSources = new Map();
+    }
+  }
+
+  /** Log a per-component before→after source-byte breakdown for the changed components. */
+  private reportShake(rows: { name: string; before: number; after: number }[]): void {
+    if (rows.length === 0) {
+      return;
+    }
+    rows.sort((a, b) => b.before - b.after - (a.before - a.after));
+    const nameWidth = Math.max(...rows.map((r) => r.name.length));
+    const pct = (before: number, after: number): string => `${(((after - before) / before) * 100).toFixed(1)}%`;
+    logger.info('svelte-shaker: source size before → after');
+    for (const r of rows) {
+      logger.info(`  ${r.name.padEnd(nameWidth)}  ${prettyBytes(r.before)} → ${prettyBytes(r.after)}  (${pct(r.before, r.after)})`);
+    }
+    const totalBefore = rows.reduce((s, r) => s + r.before, 0);
+    const totalAfter = rows.reduce((s, r) => s + r.after, 0);
+    logger.info(`  ${`total (${rows.length} changed)`.padEnd(nameWidth)}  ${prettyBytes(totalBefore)} → ${prettyBytes(totalAfter)}  (${pct(totalBefore, totalAfter)})`);
   }
 
   getServerIslandPath(name: string): string | undefined {
@@ -267,6 +395,11 @@ export class ComponentRegistry {
 
   getServerIslandPaths(): Map<string, string> {
     return this.serverIslandPaths;
+  }
+
+  /** Asset URL of a component's compiled scoped CSS, by resolved path (none if it has no styles). */
+  getComponentCssUrl(componentPath: string): string | undefined {
+    return this.cssFileUrls.get(componentPath);
   }
 
   setPublicFiles(map: Map<string, string> | Record<string, string>): void {
@@ -300,6 +433,10 @@ export class ComponentRegistry {
     }
   }
 
+  isCompiled(absolutePath: string): boolean {
+    return this.compiledComponents.has(absolutePath) || [...this.compiledComponents.keys()].some((k) => path.resolve(k) === absolutePath);
+  }
+
   /**
    * Compile a cohort of page entrypoints in one `Bun.build` invocation with
    * `splitting: true`. Shared transitive deps (npm packages and the
@@ -323,10 +460,14 @@ export class ComponentRegistry {
     const allHydratables: HydratableComponent[] = [];
     const allServerIslands: ServerIslandComponent[] = [];
     const preprocessCacheStats = createPreprocessCacheStats();
+    const compileCacheStats = createCompileCacheStats();
     const fileHydratables = new Map<string, HydratableComponent[]>();
     const development = this.development;
     const userCompilerOptions = this.svelteConfig.compilerOptions ?? {};
+    const serverFingerprint = compileFingerprint(userCompilerOptions, development);
+    const compileCache = this.compileCache;
     const markdown = this.markdown;
+    const shakenSources = this.shakenSources;
 
     const sveltePlugin: BunPlugin = {
       name: 'svelte-ssr',
@@ -375,34 +516,34 @@ export class ComponentRegistry {
             // Single source of truth for `logger` lives in log.ts. Re-export here
             // (and on the client) so user code does `import { logger } from
             // 'mochi-framework'` and gets the level-gated, isomorphic logger.
-            `import { logger as __mochi_logger, setLogLevel, getLogLevel } from "${path.join(FRAMEWORK_DIR, 'log.ts')}";`,
+            `import { logger as __mochi_logger, setLogLevel, getLogLevel } from "${toPosixPath(path.join(FRAMEWORK_DIR, 'log.ts'))}";`,
             `export { setLogLevel, getLogLevel };`,
             `export const logger = __mochi_logger;`,
             `export function devWarn(msg) { __mochi_logger.warn(msg); }`,
             // Re-export devalue so .svelte files (and the preprocessor's
             // injected hydration-prop import) can use stringify/parse without
             // a separate install. Resolved from the framework's own deps.
-            `export { stringify, parse } from "${Bun.resolveSync('devalue', FRAMEWORK_DIR)}";`,
-            `export { trailingSlashIt } from "${path.join(FRAMEWORK_DIR, 'trailingSlash.ts')}";`,
+            `export { stringify, parse } from "${toPosixPath(Bun.resolveSync('devalue', FRAMEWORK_DIR))}";`,
+            `export { trailingSlashIt } from "${toPosixPath(path.join(FRAMEWORK_DIR, 'trailingSlash.ts'))}";`,
             // Per-request hydratable-island props dedup helper. Used by the
             // preprocessor's injected `__mochi_emit_props__` import.
-            `export { emitIslandProps } from "${path.join(FRAMEWORK_DIR, 'islandPropsRegistry.ts')}";`,
+            `export { emitIslandProps } from "${toPosixPath(path.join(FRAMEWORK_DIR, 'islandPropsRegistry.ts'))}";`,
             // Expose the event bus. Pinned on globalThis under the same key as
             // `events.ts` so the bundled copy and the real server runtime share
             // one emitter instance.
-            `import __mochi_mitt__ from "${Bun.resolveSync('mitt', FRAMEWORK_DIR)}";`,
+            `import __mochi_mitt__ from "${toPosixPath(Bun.resolveSync('mitt', FRAMEWORK_DIR))}";`,
             `if (!globalThis.__mochi_events__) globalThis.__mochi_events__ = __mochi_mitt__();`,
             `export const mochiEvents = globalThis.__mochi_events__;`,
             // Server-side cache class. Re-exported through the virtual module so .svelte
             // files can `import { MochiCache } from 'mochi-framework'` directly.
-            `export { MochiCache } from "${path.join(FRAMEWORK_DIR, 'cache.ts')}";`,
+            `export { MochiCache } from "${toPosixPath(path.join(FRAMEWORK_DIR, 'cache.ts'))}";`,
             // Image helpers. Server-only (signing needs the secret key); re-exported
             // so .svelte files can `import { getResizedImage } from 'mochi-framework'`.
-            `export { getResizedImage, getImage, getImageBytes, getImagePlaceholder, invalidateImage } from "${path.join(FRAMEWORK_DIR, 'image/getResizedImage.ts')}";`,
+            `export { getResizedImage, getImage, getImageBytes, getImagePlaceholder, invalidateImage } from "${toPosixPath(path.join(FRAMEWORK_DIR, 'image/getResizedImage.ts'))}";`,
             // `enhance` / `deserialize` are browser-only Svelte action helpers.
             // Svelte never invokes actions during SSR, so these stubs only fire
             // if user code calls them on the server — which is a usage error.
-            `export { enhance, deserialize } from "${path.join(FRAMEWORK_DIR, 'enhance.ssr.ts')}";`,
+            `export { enhance, deserialize } from "${toPosixPath(path.join(FRAMEWORK_DIR, 'enhance.ssr.ts'))}";`,
           ].join('\n'),
           loader: 'js',
         }));
@@ -411,7 +552,7 @@ export class ComponentRegistry {
           namespace: 'mochi-server-island',
         }));
         build.onLoad({ filter: /.*/, namespace: 'mochi-server-island' }, () => ({
-          contents: [`import { encryptProps } from "${path.join(FRAMEWORK_DIR, 'serverIslandCrypto.ts')}";`, `export { encryptProps };`].join('\n'),
+          contents: [`import { encryptProps } from "${toPosixPath(path.join(FRAMEWORK_DIR, 'serverIslandCrypto.ts'))}";`, `export { encryptProps };`].join('\n'),
           loader: 'js',
         }));
         build.onLoad({ filter: /\.svelte\.[jt]s$/ }, async (args) => {
@@ -430,7 +571,17 @@ export class ComponentRegistry {
           return { contents: js.code, loader: 'js' };
         });
         build.onLoad({ filter: /\.svelte$/ }, async (args) => {
-          const raw = await Bun.file(args.path).text();
+          const raw = shakenSources.get(args.path) ?? (await Bun.file(args.path).text());
+          const cached = compileCache.get('server', args.path, raw, serverFingerprint, compileCacheStats);
+          if (cached) {
+            fileHydratables.set(args.path, cached.hydratables);
+            allHydratables.push(...cached.hydratables);
+            allServerIslands.push(...cached.serverIslands);
+            if (cached.css) {
+              cssMap.set(args.path, cached.css);
+            }
+            return { contents: cached.js, loader: 'js' };
+          }
           const preprocessed = await applyUserPreprocessors(raw, args.path, 'server', development);
           // Vendored .svelte from node_modules can never carry `mochi:*` directives
           const isVendored = args.path.includes(`${path.sep}node_modules${path.sep}`);
@@ -448,9 +599,11 @@ export class ComponentRegistry {
               filename: args.path,
             }),
           );
-          if (css?.code) {
-            cssMap.set(args.path, css.code);
+          const cssCode = css?.code ?? null;
+          if (cssCode) {
+            cssMap.set(args.path, cssCode);
           }
+          compileCache.set('server', args.path, raw, serverFingerprint, { js: js.code, css: cssCode, hydratables, serverIslands });
           return { contents: js.code, loader: 'js' };
         });
         if (markdown) {
@@ -462,6 +615,8 @@ export class ComponentRegistry {
               development,
               cssMap,
               userCompilerOptions,
+              compileCache,
+              compileCacheStats,
               hydration: { fileHydratables, allHydratables, allServerIslands, preprocessCacheStats },
             }),
           );
@@ -476,7 +631,7 @@ export class ComponentRegistry {
       target: 'bun',
       conditions: ['svelte'],
       // Svelte stays external because it's a peer dep the consumer already
-      // provides. Everything else (devalue, cookie, nanoid, etc.) gets bundled
+      // provides. Everything else (devalue, cookie, etc.) gets bundled
       // — but with `splitting: true` Bun emits shared transitive
       // deps into separate chunk files alongside each entry's `.server.js`,
       // so they're written exactly once across the cohort. Two
@@ -487,7 +642,10 @@ export class ComponentRegistry {
       splitting: true,
       outdir: compileOutDir,
       naming: {
-        entry: '[name].server.js',
+        // Hash the entry name so entrypoints that share a basename (e.g.
+        // PageOne.svelte in two different demo folders) don't collide on one
+        // output path. The real on-disk name is read back from the metafile.
+        entry: '[name]-[hash].server.js',
         chunk: 'chunk-[hash].js',
         asset: '[name]-[hash].[ext]',
       },
@@ -521,7 +679,7 @@ export class ComponentRegistry {
             childPath: child.resolvedPath,
           });
           logger.error(
-            `\nNested hydration directives are not allowed.\n  <${child.name}> with mochi:hydrate or mochi:hydrate:visible is inside <${parent.name}> which is also hydratable.\n  Remove the directive from ${child.name} — it hydrates automatically as part of ${parent.name}.\n`,
+            `\nNested hydration directives are not allowed.\n  <${child.name}> with mochi:hydrate, mochi:hydrate:visible, or mochi:clientOnly is inside <${parent.name}> which is also hydratable.\n  Remove the directive from ${child.name} — it hydrates automatically as part of ${parent.name}.\n`,
           );
         }
       }
@@ -568,7 +726,6 @@ export class ComponentRegistry {
     };
 
     const compileDuration = performance.now() - compileStart;
-    const cacheBust = Date.now();
     for (const filename of todo) {
       const resolvedFilename = path.resolve(filename);
       const outKey = entryToOutKey.get(resolvedFilename);
@@ -576,13 +733,17 @@ export class ComponentRegistry {
         throw new Error(`Svelte SSR build produced no output for ${filename}`);
       }
 
-      // `naming.entry` is `[name].server.js`, so the on-disk filename mirrors
-      // the entry's basename. Use that directly instead of relying on the
-      // metafile's path representation (which Bun emits relative to cwd).
-      const entryBasename = path.basename(filename, path.extname(filename));
-      const outPath = path.join(compileOutDir, `${entryBasename}.server.js`);
+      // Entry names are hashed, so the on-disk filename isn't derivable from the
+      // source basename. Read the actual output filename from the metafile key
+      // (Bun emits it relative to cwd, but only its basename matters here) and
+      // join it to the compile dir — same approach as the client build.
+      const outPath = path.join(compileOutDir, path.basename(outKey));
 
-      const mod = await import(outPath + `?t=${cacheBust}`);
+      // Dev rebuilds re-import the same on-disk entry, so we can't rely on Bun's
+      // query-string cache-busting (unreliable on Windows — returns the stale module).
+      // `freshImport` copies the entry to a unique path so the re-import is a guaranteed
+      // cache miss. Production compiles each entry once, so a direct import is fine.
+      const mod = this.development ? await freshImport(outPath) : await import(Bun.pathToFileURL(outPath).href);
 
       const entryInputs = transitiveInputs(outKey);
 
@@ -620,6 +781,7 @@ export class ComponentRegistry {
         module: mod,
         cssComponents: entryCssComponents,
         hydratables: entryHydratables,
+        ssrPath: outPath,
       });
 
       mochiEvents.emit('compile:complete', {
@@ -642,6 +804,15 @@ export class ComponentRegistry {
         hits: preprocessCacheStats.hits,
         misses: preprocessCacheStats.misses,
         files,
+      });
+    }
+
+    const compileCacheFiles = compileCacheStats.hits + compileCacheStats.misses;
+    if (compileCacheFiles > 0) {
+      mochiEvents.emit('compile-cache:summary', {
+        hits: compileCacheStats.hits,
+        misses: compileCacheStats.misses,
+        files: compileCacheFiles,
       });
     }
 
@@ -692,6 +863,10 @@ export class ComponentRegistry {
     const debugBarEnabled = this.debugBarEnabled;
     const userCompilerOptions = this.svelteConfig.compilerOptions ?? {};
     const markdown = this.markdown;
+    const shakenSources = this.shakenSources;
+    const compileCacheStats = createCompileCacheStats();
+    const clientFingerprint = compileFingerprint(userCompilerOptions, development);
+    const compileCache = this.compileCache;
     // Deduplicate by resolved path
     const unique = new Map<string, HydratableComponent>();
     for (const c of this.hydratableComponents) {
@@ -710,9 +885,13 @@ export class ComponentRegistry {
     this.debugBarUrl = null;
 
     const frameworkDir = FRAMEWORK_DIR;
-    const hydratableIslandPath = path.join(frameworkDir, 'web-components', 'HydratableIsland.ts');
+    // POSIX-ify every path that becomes a Bun.build entrypoint, a `filesMap`
+    // key, or an embedded import specifier: forward slashes survive intact in
+    // generated source (backslashes get eaten as JS escapes on Windows) and
+    // keep a file's module identity consistent across all three uses.
+    const hydratableIslandPath = toPosixPath(path.join(frameworkDir, 'web-components', 'HydratableIsland.ts'));
     const debugBarDir = path.join(frameworkDir, 'debug-bar') + path.sep;
-    const debugBarEntryPath = path.join(debugBarDir, 'debugbar-entry.ts');
+    const debugBarEntryPath = toPosixPath(path.join(debugBarDir, 'debugbar-entry.ts'));
 
     // Generate per-component virtual entry points
     const entrypoints: string[] = [hydratableIslandPath];
@@ -723,14 +902,14 @@ export class ComponentRegistry {
 
     for (const [, comp] of unique) {
       const entryName = `_hydrate-${comp.name}.js`;
-      const entryPath = path.join(frameworkDir, entryName);
-      const entrySource = `import { registerComponent } from "${hydratableIslandPath}";\nimport ${comp.name} from "${comp.resolvedPath}";\nregisterComponent("${comp.name}", ${comp.name});\n`;
+      const entryPath = toPosixPath(path.join(frameworkDir, entryName));
+      const entrySource = `import { registerComponent } from "${hydratableIslandPath}";\nimport ${comp.name} from "${toPosixPath(comp.resolvedPath)}";\nregisterComponent("${comp.name}", ${comp.name});\n`;
       entrypoints.push(entryPath);
       filesMap[entryPath] = entrySource;
     }
 
-    const cookiesClientPath = path.join(frameworkDir, 'cookies.client.ts');
-    const enhanceClientPath = path.join(frameworkDir, 'enhance.client.ts');
+    const cookiesClientPath = toPosixPath(path.join(frameworkDir, 'cookies.client.ts'));
+    const enhanceClientPath = toPosixPath(path.join(frameworkDir, 'enhance.client.ts'));
 
     const clientPlugin: BunPlugin = {
       name: 'svelte-client',
@@ -814,13 +993,13 @@ export class ComponentRegistry {
             // server in window.__mochi_log_level (set by Mochi.serve via the HTML
             // shell). devWarn keeps routing through window.__mochi_warn so the
             // debug-bar's warnings panel still receives entries.
-            `import { logger as __mochi_logger, setLogLevel, getLogLevel } from "${path.join(FRAMEWORK_DIR, 'log.ts')}";`,
+            `import { logger as __mochi_logger, setLogLevel, getLogLevel } from "${toPosixPath(path.join(FRAMEWORK_DIR, 'log.ts'))}";`,
             `export { setLogLevel, getLogLevel };`,
             `export const logger = __mochi_logger;`,
             `if (typeof window !== "undefined" && window.__mochi_log_level) setLogLevel(window.__mochi_log_level);`,
             `export function devWarn(msg) { if (typeof window !== "undefined" && window.__mochi_warn) window.__mochi_warn(msg); else __mochi_logger.warn(msg); }`,
-            `export { stringify, parse } from "${Bun.resolveSync('devalue', FRAMEWORK_DIR)}";`,
-            `export { trailingSlashIt } from "${path.join(FRAMEWORK_DIR, 'trailingSlash.ts')}";`,
+            `export { stringify, parse } from "${toPosixPath(Bun.resolveSync('devalue', FRAMEWORK_DIR))}";`,
+            `export { trailingSlashIt } from "${toPosixPath(path.join(FRAMEWORK_DIR, 'trailingSlash.ts'))}";`,
             // Server-only; the preprocessor never injects __mochi_emit_props__
             // into client bundles, but this stub keeps the module surface
             // symmetric and produces a clear error if anyone imports it.
@@ -880,7 +1059,11 @@ export class ComponentRegistry {
           return { contents: js.code, loader: 'js' };
         });
         build.onLoad({ filter: /\.svelte$/ }, async (args) => {
-          const source = await Bun.file(args.path).text();
+          const source = shakenSources.get(args.path) ?? (await Bun.file(args.path).text());
+          const cached = compileCache.get('client', args.path, source, clientFingerprint, compileCacheStats);
+          if (cached) {
+            return { contents: cached.js, loader: 'js' };
+          }
           const preprocessed = await applyUserPreprocessors(source, args.path, 'client', development);
           const { js } = svelteCompile(
             preprocessed,
@@ -892,10 +1075,11 @@ export class ComponentRegistry {
               dev: development,
             }),
           );
+          compileCache.set('client', args.path, source, clientFingerprint, { js: js.code, css: null, hydratables: [], serverIslands: [] });
           return { contents: js.code, loader: 'js' };
         });
         if (markdown) {
-          build.onLoad({ filter: MARKDOWN_FILE_FILTER }, createMarkdownLoader({ markdown, target: 'client', development, userCompilerOptions }));
+          build.onLoad({ filter: MARKDOWN_FILE_FILTER }, createMarkdownLoader({ markdown, target: 'client', development, userCompilerOptions, compileCache, compileCacheStats }));
         }
       },
     };
@@ -933,13 +1117,19 @@ export class ComponentRegistry {
     // This avoids fragile filename matching.
     if (result.metafile) {
       // Build reverse lookup: entryPath -> component name (null = bootstrap)
+      // Keys and the lookup below are canonicalized through the same
+      // toPosixPath(path.resolve(...)) transform. The entrypoints are a mix of
+      // POSIX (toPosixPath) and native (path.join) paths, while Bun's metafile
+      // entryPoint is native — on Windows the formats diverge and the bootstrap
+      // lookup silently misses, dropping the hydration <script>. Canonicalizing
+      // both sides keeps them comparable on every platform.
       const entryToComponent = new Map<string, string | null>();
-      entryToComponent.set(hydratableIslandPath, null);
+      entryToComponent.set(toPosixPath(path.resolve(hydratableIslandPath)), null);
       if (debugBarEnabled) {
-        entryToComponent.set(debugBarEntryPath, '__debugbar__');
+        entryToComponent.set(toPosixPath(path.resolve(debugBarEntryPath)), '__debugbar__');
       }
       for (const [, comp] of unique) {
-        const entryPath = path.join(frameworkDir, `_hydrate-${comp.name}.js`);
+        const entryPath = toPosixPath(path.resolve(path.join(frameworkDir, `_hydrate-${comp.name}.js`)));
         entryToComponent.set(entryPath, comp.name);
       }
 
@@ -947,7 +1137,7 @@ export class ComponentRegistry {
         if (!outMeta.entryPoint) {
           continue;
         }
-        const resolvedEntry = path.resolve(outMeta.entryPoint);
+        const resolvedEntry = toPosixPath(path.resolve(outMeta.entryPoint));
         const compName = entryToComponent.get(resolvedEntry);
         const url = `${this.assetPrefix}/client/${path.basename(outPath)}`;
         if (compName === null) {
@@ -960,7 +1150,7 @@ export class ComponentRegistry {
       }
       const outputStats = Object.entries(result.metafile.outputs).map(([outPath, outMeta]) => {
         const inputs = Object.entries(outMeta.inputs).map(([inputPath, inputMeta]) => ({
-          path: inputPath.replace(path.resolve('.') + '/', ''),
+          path: toPosixPath(inputPath).replace(toPosixPath(path.resolve('.')) + '/', ''),
           size: inputMeta.bytesInOutput,
         }));
         inputs.sort((a, b) => b.size - a.size);
@@ -982,9 +1172,18 @@ export class ComponentRegistry {
       outputBytes,
       durationMs: performance.now() - bundleStart,
     });
+
+    const compileCacheFiles = compileCacheStats.hits + compileCacheStats.misses;
+    if (compileCacheFiles > 0) {
+      mochiEvents.emit('compile-cache:summary', {
+        hits: compileCacheStats.hits,
+        misses: compileCacheStats.misses,
+        files: compileCacheFiles,
+      });
+    }
   }
 
-  async renderComponent(filename: string, props?: Record<string, unknown>, opts?: { stripMarkers?: boolean }): Promise<RenderResult> {
+  async renderComponent(filename: string, props?: Record<string, unknown>, opts?: { stripMarkers?: boolean; idPrefix?: string }): Promise<RenderResult> {
     await this.compile(filename);
     const { module: mod, cssComponents, hydratables } = this.compiledComponents.get(filename)!;
 
@@ -1031,11 +1230,15 @@ export class ComponentRegistry {
     const renderOptions: {
       props?: Record<string, unknown>;
       transformError: typeof transformError;
+      idPrefix?: string;
     } = {
       transformError,
     };
     if (props) {
       renderOptions.props = props;
+    }
+    if (opts?.idPrefix) {
+      renderOptions.idPrefix = opts.idPrefix;
     }
     const { body, head } = await render(mod.default, renderOptions);
 
@@ -1070,8 +1273,25 @@ export class ComponentRegistry {
     const shouldStrip = opts?.stripMarkers !== false && hydratables.length === 0;
     const hasIslandsOrServerIslands = hydratables.length > 0 || hasServerCssPlaceholders;
 
-    // Single HTMLRewriter pass: collect rendered island names, detect server
-    // islands, and conditionally strip page-level hydration markers.
+    const ctx = requestContext.getStore();
+
+    // Index the per-request island props registry by ref id so the rewriter
+    // pass below can emit each payload as a <script type="application/json">
+    // block immediately before the first island that references it. HTMLRewriter
+    // visits elements in document order, so the first callback for a given
+    // `props-ref` is that payload's first island; islands sharing a byte-identical
+    // payload reuse one block, and blocks reused by >=2 islands get `data-shared`.
+    const propsById = new Map<string, { json: string; emitCount: number }>();
+    if (ctx) {
+      for (const [json, entry] of ctx.islandProps) {
+        propsById.set(entry.id, { json, emitCount: entry.emitCount });
+      }
+    }
+    const emittedProps = new Set<string>();
+
+    // Single HTMLRewriter pass: inject island props blocks, collect rendered
+    // island names, detect server islands, and conditionally strip page-level
+    // hydration markers.
     const renderedIslandNames = new Set<string>();
     let hasServerIslands = false;
     if (hasIslandsOrServerIslands || shouldStrip) {
@@ -1094,6 +1314,7 @@ export class ComponentRegistry {
               if (raw) {
                 renderedIslandNames.add(raw);
               }
+              injectIslandPropsBlock(el, propsById, emittedProps);
             },
           })
           .on('mochi-server-island', {
@@ -1114,25 +1335,13 @@ export class ComponentRegistry {
       }
       output = rewriter.transform(output);
     }
+    // Clear so a second render within the same request doesn't re-emit the same
+    // blocks (e.g. an error page rendering after the original page).
+    ctx?.islandProps.clear();
 
-    // Hoist the per-request island props registry into <script type="application/json">
-    // blocks. Each unique payload was assigned a ref id by `emitIslandProps()` during
-    // SSR; the matching `props-ref="<id>"` lives on each <mochi-hydratable-island>.
-    const ctx = requestContext.getStore();
     let debugBarData: RenderResult['debugBarData'];
-    if (ctx && ctx.islandProps.size > 0) {
-      output = buildIslandPropsScripts(ctx.islandProps) + output;
-      // Clear so a second render within the same request doesn't re-emit the
-      // same blocks (e.g. an error page rendering after the original page).
-      ctx.islandProps.clear();
-    }
     if (ctx?.debugBarData) {
-      debugBarData = { ...ctx.debugBarData, islandProps: { ...ctx.debugBarData.islandProps } };
-      // Clear only the dynamic SSR-collected entries; route/pathname/params
-      // were set at request start and stay valid across a same-request rerender.
-      for (const k of Object.keys(ctx.debugBarData.islandProps)) {
-        delete ctx.debugBarData.islandProps[k];
-      }
+      debugBarData = { ...ctx.debugBarData };
 
       if (this.debugBarEnabled && this.clientStats) {
         const urlToComponent = new Map<string, string>();
@@ -1523,9 +1732,8 @@ export class ComponentRegistry {
   toManifest(): MochiManifest {
     const components: MochiManifest['components'] = {};
     for (const [filename, entry] of this.compiledComponents) {
-      const basename = path.basename(filename, '.svelte');
       components[filename] = {
-        ssrModule: path.join(this.outDir, 'svelte-compile', `${basename}.server.js`),
+        ssrModule: entry.ssrPath,
         hydratables: entry.hydratables.map((h) => ({
           name: h.name,
           resolvedPath: h.resolvedPath,
@@ -1581,6 +1789,7 @@ export class ComponentRegistry {
       outDir: outDir ?? path.dirname(manifestPath),
       assetPrefix: manifest.assetPrefix,
     });
+    registry.loadedFromManifest = true;
 
     registry.islandBootstrapUrl = manifest.bootstrapUrl;
     registry.clientStats = manifest.stats;
@@ -1614,11 +1823,12 @@ export class ComponentRegistry {
     // Load SSR modules and populate compiledComponents
     for (const [filename, entry] of Object.entries(manifest.components)) {
       const modulePath = path.resolve(entry.ssrModule);
-      const mod = await import(modulePath);
+      const mod = await import(Bun.pathToFileURL(modulePath).href);
       registry.compiledComponents.set(filename, {
         module: mod,
         cssComponents: new Set(entry.cssComponents),
         hydratables: entry.hydratables,
+        ssrPath: modulePath,
       });
       registry.hydratableComponents.push(...entry.hydratables);
     }

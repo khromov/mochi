@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import Copy from '@lucide/svelte/icons/copy';
   import Check from '@lucide/svelte/icons/check';
+  import { mdiApple, mdiMicrosoftWindows, mdiLinux } from '@mdi/js';
   import toast from 'svelte-french-toast';
 
   const QUICK_START_CMD = 'bun create mochi@latest';
@@ -70,8 +71,15 @@
     </div>
   </div>
   <p class="quickstart-note">
-    Requires <a href="https://bun.sh" target="_blank" rel="noopener noreferrer">Bun</a> <code>&gt;= 1.3.14</code>.
-    <a href="/docs/why-bun/" class="why-bun-link" style="border-bottom-color: currentColor;">Why Bun?</a>
+    <span class="quickstart-note-text">
+      Requires <a href="https://bun.sh" target="_blank" rel="noopener noreferrer">Bun</a> <code>&gt;= 1.3.14</code>.
+      <a href="/docs/why-bun/" class="why-bun-link" style="border-bottom-color: currentColor;">Why Bun?</a>
+    </span>
+    <span class="os-icons">
+      <svg class="os-icon" viewBox="0 0 24 24" role="img" aria-label="Supports macOS"><title>Supports macOS</title><path d={mdiApple} /></svg>
+      <svg class="os-icon" viewBox="0 0 24 24" role="img" aria-label="Supports Windows"><title>Supports Windows</title><path d={mdiMicrosoftWindows} /></svg>
+      <svg class="os-icon" viewBox="0 0 24 24" role="img" aria-label="Supports Linux"><title>Supports Linux</title><path d={mdiLinux} /></svg>
+    </span>
   </p>
 </section>
 
@@ -98,6 +106,34 @@
     font-size: 0.78rem;
     line-height: 1.4;
     color: var(--text-subtle);
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem 0.75rem;
+  }
+
+  .os-icons {
+    margin-left: auto;
+    margin-right: 0.85rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6rem;
+    color: var(--text-subtle);
+  }
+
+  .os-icon {
+    height: 17px;
+    width: auto;
+    fill: currentColor;
+    opacity: 0.65;
+    transition:
+      opacity 0.12s ease,
+      color 0.12s ease;
+  }
+
+  .os-icon:hover {
+    opacity: 1;
+    color: var(--accent);
   }
 
   .quickstart-note code {
@@ -289,6 +325,16 @@
     }
     .terminal-copy {
       padding: 0.4rem 0.5rem;
+    }
+  }
+
+  @media (max-width: 400px) {
+    .quickstart-note {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+    .os-icons {
+      margin-left: 0;
     }
   }
 </style>

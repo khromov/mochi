@@ -4,7 +4,7 @@ import { applyResolveOptions } from './hooks';
 import { logger } from './log';
 import { MochiHttpError } from './utils';
 
-export const DEFAULT_ERROR_PAGE_PATH = new URL('./templates/DefaultError.svelte', import.meta.url).pathname;
+export const DEFAULT_ERROR_PAGE_PATH = Bun.fileURLToPath(new URL('./templates/DefaultError.svelte', import.meta.url));
 
 export interface ErrorResponderDeps {
   handleError: HandleError | undefined;
