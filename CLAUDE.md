@@ -31,7 +31,7 @@ bun run build        # Pre-build islands across workspaces (parallel via `bun --
 bun run clean        # Remove .mochi/ across workspaces
 bun run typecheck    # tsc --noEmit across all workspaces
 bun run test         # Run tests across all workspaces (bun test)
-bun run checks       # lint:fix + format + typecheck + test — the standard pre-done gate (delegate to a sub-agent)
+bun run checks       # lint:fix + format + typecheck + test — the standard pre-done gate (delegate to a sub-agent from the main context; run it directly if you already are one)
 bun run lint         # eslint . (ignores .mochi/, packages/site/.mochi/, .claude/)
 bun run lint:fix     # eslint . --fix
 bun run format       # prettier --write .
@@ -152,7 +152,7 @@ Build targets default to `WORKSPACE=site` (override `--build-arg WORKSPACE=demos
 ## Conventions
 
 - When moving components or other files, use `git mv` to preserve history.
-- After completing your work, run `bun run checks` (which runs lint:fix + format + typecheck + test) instead of running those steps individually. **Always delegate this to a Sonnet-based sub-agent** (e.g. via the `Agent` tool) that runs the command and reports back only the pass/fail status plus any failures — never run `bun run checks` directly in the main context, since its multi-thousand-line lint/typecheck/test output will pollute your conversation window.
+- After completing your work, run `bun run checks` (which runs lint:fix + format + typecheck + test) instead of running those steps individually. **From the main context, delegate this to a Sonnet-based sub-agent** (e.g. via the `Agent` tool) that runs the command and reports back only the pass/fail status plus any failures — never run `bun run checks` directly in the main context, since its multi-thousand-line lint/typecheck/test output will pollute your conversation window. **Exception: if you are already running as a sub-agent, do NOT spawn another sub-agent — run `bun run checks` directly and report the result.** Sub-agents must not nest.
 - Before adding a new dependency, look up its latest version with `bun info <pkg> version` and pin to that — don't guess from training data, which is often months stale.
 - For every new framework feature, add a short, to-the-point section (or sub-section in an existing page) under `packages/docs/`. Match the terse, code-first style of the existing pages. For warnings/notes/danger boxes inside docs, use `packages/docs/_components/Callout.svelte` (`type="info" | "warning" | "danger"`) — import it via a `<script>` block at the top of the markdown file. See `145-cache.md` for an example.
 - Every demo in `packages/site/src/demos/` must have its own distinct icon. When you add a demo, also add a `demoIconFor` entry in `packages/site/src/lib/demoIcons.ts` — pick a Lucide icon that hasn't been used yet and that visually evokes the demo's concept.
@@ -182,4 +182,4 @@ Never reference plan files (`~/.claude/plans/*.md`) from code comments, docstrin
 
 ## After every change
 
-Run `bun run format` — but **delegate it to a sub-agent**, same rule as `bun run checks` above. The agent runs the command and reports back only the status (pass / fail + any errors); the main context should never see the per-file "unchanged / formatted" listing.
+Run `bun run format` — but **delegate it to a sub-agent** from the main context, same rule as `bun run checks` above (including the exception: if you are already a sub-agent, run it directly rather than nesting another sub-agent). The agent runs the command and reports back only the status (pass / fail + any errors); the main context should never see the per-file "unchanged / formatted" listing.
