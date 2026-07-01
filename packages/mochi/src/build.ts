@@ -46,18 +46,7 @@ export interface MochiBuildOptions {
    * runtime agree. Default: `false`.
    */
   optimize?: boolean | MochiSvelteShakerOptions;
-  /**
-   * Maximum number of server-island compile waves to run when precompiling
-   * `mochi:defer` islands into the manifest; the build throws if the island
-   * graph is still producing new islands past this many waves. In practice
-   * discovery is eager and completes in a single wave regardless of nesting
-   * depth — see the comment above the wave loop below. Mirror
-   * `Mochi.serve({ maxIslandDepth })`. Default: `10`.
-   */
-  maxIslandDepth?: number;
 }
-
-const DEFAULT_MAX_ISLAND_DEPTH = 10;
 
 type RouteKind = 'page' | 'api' | 'ws' | 'sse';
 
@@ -138,34 +127,20 @@ export async function build(options: MochiBuildOptions): Promise<void> {
   // Precompile server islands (mochi:defer) as standalone SSR modules so the
   // production runtime never compiles on a request path. Otherwise the first
   // fetch of each deferred island triggers an on-demand compile at runtime
-  // (registry.compile in the server-island endpoint). Compile in waves: each
-  // wave picks up islands not yet compiled, and compiling them can (in theory)
-  // surface more. In practice discovery is eager — a `mochi:defer` island's
-  // import stays in its compiled source (only the markup usage is rewritten),
-  // so compiling a page transitively resolves every island it references,
-  // however deeply nested, in that same pass. A single wave therefore usually
-  // covers the whole graph regardless of nesting depth. Termination is
-  // guaranteed regardless (each island compiles once; island files are
-  // finite), so `maxIslandDepth` is a defense-in-depth tripwire, not a
-  // correctness knob.
-  const maxIslandDepth = options.maxIslandDepth ?? DEFAULT_MAX_ISLAND_DEPTH;
-  const compiledIslands = new Set<string>();
-  let depth = 0;
-  for (;;) {
-    const islandPaths = [...new Set(registry.getServerIslandPaths().values())].filter((p) => !compiledIslands.has(p));
-    if (islandPaths.length === 0) {
-      break;
-    }
-    depth += 1;
-    if (depth > maxIslandDepth) {
-      throw new Error(
-        `[mochi:build] Server island nesting exceeded maxIslandDepth (${maxIslandDepth}). ` +
-          `Still discovering new islands at depth ${depth}: ${islandPaths.map((p) => path.basename(p)).join(', ')}. ` +
-          `Raise maxIslandDepth in Mochi.serve() if this nesting is intentional.`,
-      );
-    }
-    logger.info(`[mochi:build] server-island wave ${depth}/${maxIslandDepth}: compiling ${islandPaths.length} island(s) — ${islandPaths.map((p) => path.basename(p)).join(', ')}`);
-    islandPaths.forEach((p) => compiledIslands.add(p));
+  // (registry.compile in the server-island endpoint). Discovery is eager — a
+  // `mochi:defer` island's import stays in its compiled source (only the
+  // markup usage is rewritten), so compiling a page transitively resolves
+  // every island it references, however deeply nested, in that same pass. So
+  // one extra compile pass over whatever `getServerIslandPaths()` already
+  // holds covers the whole graph; there's no wave loop to run, because eager
+  // discovery never leaves anything for a second pass to pick up. If eager
+  // discovery is ever defeated (e.g. a `mochi:defer` target resolved through
+  // something other than a static import), the island simply won't be in the
+  // manifest — the server-island endpoint in Mochi.ts warns and falls back to
+  // an on-demand compile rather than throwing here.
+  const islandPaths = [...new Set(registry.getServerIslandPaths().values())];
+  if (islandPaths.length > 0) {
+    logger.info(`[mochi:build] precompiling ${islandPaths.length} server island(s): ${islandPaths.map((p) => path.basename(p)).join(', ')}`);
     await registry.compileAll(islandPaths);
     compileErrors = registry.getErrors();
     if (compileErrors.length > 0) {

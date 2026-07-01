@@ -67,7 +67,6 @@ In production (`development: false`), prebuilt JS/CSS bundles served from `asset
 - `hooks`: `MochiHooks` map of named lifecycle hooks. See `Extensions (hooks & filters)`.
 - `filters`: `MochiFilters` map of named value-replacement filters. See `Extensions (hooks & filters)`.
 - `warmup`: Warm the SSR pipeline at startup by invoking every static page route once. `boolean | { enabledInProd: boolean; enabledInDev: boolean }`. `true` warms in **production only**; pass the object form for per-mode control. Default: `false`. See `Route warmup` below.
-- `maxIslandDepth`: **Build-only.** Maximum server-island nesting depth `mochi-framework build` will follow when precompiling `mochi:defer` islands into the manifest. Read from your `Mochi.serve()` call. The build already terminates on its own (each island compiles once, and discovery is eager), so this is a defense-in-depth cap, not a correctness knob — raise it only if you intentionally nest server islands very deeply. Default: `10`.
 
 <Callout type="info">
 

@@ -1,9 +1,9 @@
-// The build precompiles server islands in waves (pages → newly-discovered islands
-// → islands discovered by compiling those). Discovery is eager — the page compile
-// transitively preprocesses every nested `mochi:defer` component — so a deeply
-// nested chain still resolves in a single wave; this covers that the whole chain
-// lands in the manifest, and that the `maxIslandDepth` tripwire throws rather than
-// looping unbounded (exercised at the boundary by capping waves at 0).
+// The build precompiles server islands (mochi:defer) in a single pass over
+// whatever `getServerIslandPaths()` holds after the page compile. Discovery is
+// eager — the page compile transitively preprocesses every nested `mochi:defer`
+// component, because its import survives into the compiled source even though
+// only the markup usage is rewritten — so a deeply nested chain still resolves
+// in that one pass. This covers that the whole chain lands in the manifest.
 import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
@@ -25,7 +25,7 @@ describe('build precompiles nested server islands', () => {
     dirs.splice(0).forEach((dir) => rmSync(dir, { recursive: true, force: true }));
   });
 
-  test('compiles every nesting level into the manifest under the default depth', async () => {
+  test('compiles every nesting level into the manifest in one pass', async () => {
     const outDir = freshOutDir();
     await build({ routes: { '/': Mochi.page(FIXTURE_PAGE) }, development: false, outDir });
 
@@ -34,12 +34,5 @@ describe('build precompiles nested server islands', () => {
     for (const islandPath of Object.values(manifest.serverIslandPaths ?? {})) {
       expect(manifest.components[islandPath], `expected components entry for ${islandPath}`).toBeDefined();
     }
-  });
-
-  test('throws when island waves exceed maxIslandDepth instead of looping unbounded', async () => {
-    const outDir = freshOutDir();
-    // Discovery is eager, so a normal build needs exactly one wave; capping at 0
-    // makes any server island trip the tripwire, exercising the guard's boundary.
-    expect(build({ routes: { '/': Mochi.page(FIXTURE_PAGE) }, development: false, outDir, maxIslandDepth: 0 })).rejects.toThrow(/exceeded maxIslandDepth \(0\)/);
   });
 });

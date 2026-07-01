@@ -170,7 +170,6 @@ async function main() {
     routes,
     markdown: serveOptions?.markdown,
     optimize: serveOptions && 'optimize' in serveOptions ? serveOptions.optimize : undefined,
-    maxIslandDepth: typeof serveOptions?.maxIslandDepth === 'number' ? serveOptions.maxIslandDepth : undefined,
     development: values.dev,
     outDir: values['out-dir'],
     publicDir: values['public-dir'],
