@@ -7,8 +7,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
-import { build } from './build';
-import { Mochi } from './Mochi';
+import { runIsolatedBuild } from './buildFixture.isolated';
 import type { MochiManifest } from './types';
 
 const FIXTURE_PAGE = path.join(import.meta.dir, '__fixtures__', 'nested-server-islands', 'Page.svelte');
@@ -27,7 +26,7 @@ describe('build precompiles nested server islands', () => {
 
   test('compiles every nesting level into the manifest in one pass', async () => {
     const outDir = freshOutDir();
-    await build({ routes: { '/': Mochi.page(FIXTURE_PAGE) }, development: false, outDir });
+    await runIsolatedBuild(FIXTURE_PAGE, outDir);
 
     const manifest: MochiManifest = JSON.parse(await Bun.file(path.join(outDir, 'manifest.json')).text());
     expect(Object.keys(manifest.serverIslandPaths ?? {}).sort()).toEqual(['Level1', 'Level2', 'Level3']);

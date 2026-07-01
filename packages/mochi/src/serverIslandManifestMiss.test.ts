@@ -9,7 +9,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import type { Server } from 'bun';
 import { stringify as devalueStringify } from 'devalue';
-import { build } from './build';
+import { runIsolatedBuild } from './buildFixture.isolated';
 import { Mochi } from './Mochi';
 import { logger } from './log';
 import { encryptProps } from './serverIslandCrypto';
@@ -31,7 +31,7 @@ describe('server-island manifest miss', () => {
 
   test('warns and falls back to an on-demand compile instead of 404ing or crashing', async () => {
     const outDir = freshOutDir();
-    await build({ routes: { '/': Mochi.page(FIXTURE_PAGE) }, development: false, outDir });
+    await runIsolatedBuild(FIXTURE_PAGE, outDir);
 
     const manifestPath = path.join(outDir, 'manifest.json');
     const manifest: MochiManifest = JSON.parse(await Bun.file(manifestPath).text());
