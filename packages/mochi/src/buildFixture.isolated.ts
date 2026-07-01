@@ -18,7 +18,7 @@ import { Mochi } from './Mochi';
  * caller's process. Throws with the child's stderr on failure.
  */
 export async function runIsolatedBuild(fixturePage: string, outDir: string): Promise<void> {
-  const proc = Bun.spawn(['bun', 'run', import.meta.path, fixturePage, outDir], {
+  const proc = Bun.spawn([process.execPath, import.meta.path, fixturePage, outDir], {
     cwd: path.join(import.meta.dir, '..'),
     stdin: 'ignore',
     stdout: 'pipe',
