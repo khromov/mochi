@@ -8,7 +8,7 @@
 </script>
 
 <DemoPage
-  title="Island Depth"
+  title="Nested Island Max Depth"
   description="Server islands can nest to any depth: each mochi:defer island's HTML is fetched on demand, and when it arrives it may contain further mochi:defer islands that fetch in turn. This chain goes four levels deep — level 1 fetches level 2, which fetches level 3, which fetches level 4. The prebuild precompiles every level into the manifest (Mochi discovers the whole chain eagerly at build time), so no level compiles on a request path in production. The maxIslandDepth option in Mochi.serve() caps how deep the build will follow the chain as a safety guard."
   {sources}
 >

@@ -70,7 +70,7 @@ export const demoIconFor: Record<string, DemoIconMeta> = {
   'Crossing the server-client boundary with props': { icon: Package2, label: 'Props serialized into the island — every devalue type' },
   'Nested Components': { icon: ListTree, label: 'Five-level deep tree under one island' },
   'Nested Islands': { icon: SquareStack, label: 'Islands nested inside server islands' },
-  'Island Depth': { icon: Layers2, label: 'Server islands nested several levels deep' },
+  'Nested Island Max Depth': { icon: Layers2, label: 'Server islands nested several levels deep' },
   'Shared Props': { icon: Boxes, label: 'Auto-deduplicated island props' },
   'Unique IDs': { icon: Hash, label: 'Native $props.id() in islands' },
   'Form Actions': { icon: ClipboardPen, label: 'Forms with action handlers' },

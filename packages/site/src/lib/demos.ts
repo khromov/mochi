@@ -278,7 +278,7 @@ export const demos: Demo[] = [
     href: '/demos/island-depth/',
     slug: 'island-depth',
     files: islandDepth,
-    title: 'Island Depth',
+    title: 'Nested Island Max Depth',
     hook: 'A chain of mochi:defer server islands nested four levels deep — each fetches the next on demand, and the prebuild precompiles the whole chain.',
     category: 'hydration',
   },

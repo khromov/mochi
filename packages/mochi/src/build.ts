@@ -47,10 +47,12 @@ export interface MochiBuildOptions {
    */
   optimize?: boolean | MochiSvelteShakerOptions;
   /**
-   * Maximum server-island nesting depth to follow when precompiling `mochi:defer`
-   * islands into the manifest. One compile wave equals one level of nesting; the
-   * build throws if the island graph is still producing new islands past this
-   * many waves. Mirror `Mochi.serve({ maxIslandDepth })`. Default: `10`.
+   * Maximum number of server-island compile waves to run when precompiling
+   * `mochi:defer` islands into the manifest; the build throws if the island
+   * graph is still producing new islands past this many waves. In practice
+   * discovery is eager and completes in a single wave regardless of nesting
+   * depth — see the comment above the wave loop below. Mirror
+   * `Mochi.serve({ maxIslandDepth })`. Default: `10`.
    */
   maxIslandDepth?: number;
 }
@@ -138,11 +140,14 @@ export async function build(options: MochiBuildOptions): Promise<void> {
   // fetch of each deferred island triggers an on-demand compile at runtime
   // (registry.compile in the server-island endpoint). Compile in waves: each
   // wave picks up islands not yet compiled, and compiling them can (in theory)
-  // surface more. In practice discovery is eager — compiling the pages already
-  // preprocessed the whole transitive graph — so a single wave usually covers
-  // everything, even for deeply nested chains. Termination is guaranteed
-  // regardless (each island compiles once; island files are finite), so
-  // `maxIslandDepth` is a defense-in-depth tripwire, not a correctness knob.
+  // surface more. In practice discovery is eager — a `mochi:defer` island's
+  // import stays in its compiled source (only the markup usage is rewritten),
+  // so compiling a page transitively resolves every island it references,
+  // however deeply nested, in that same pass. A single wave therefore usually
+  // covers the whole graph regardless of nesting depth. Termination is
+  // guaranteed regardless (each island compiles once; island files are
+  // finite), so `maxIslandDepth` is a defense-in-depth tripwire, not a
+  // correctness knob.
   const maxIslandDepth = options.maxIslandDepth ?? DEFAULT_MAX_ISLAND_DEPTH;
   const compiledIslands = new Set<string>();
   let depth = 0;
@@ -159,6 +164,7 @@ export async function build(options: MochiBuildOptions): Promise<void> {
           `Raise maxIslandDepth in Mochi.serve() if this nesting is intentional.`,
       );
     }
+    logger.info(`[mochi:build] server-island wave ${depth}/${maxIslandDepth}: compiling ${islandPaths.length} island(s) — ${islandPaths.map((p) => path.basename(p)).join(', ')}`);
     islandPaths.forEach((p) => compiledIslands.add(p));
     await registry.compileAll(islandPaths);
     compileErrors = registry.getErrors();

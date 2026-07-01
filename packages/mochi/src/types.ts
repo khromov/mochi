@@ -624,14 +624,23 @@ export interface MochiServeOptions {
    */
   optimize?: boolean | MochiSvelteShakerOptions;
   /**
-   * Maximum server-island **nesting depth** the prebuild will follow when
-   * precompiling `mochi:defer` islands into the manifest. The build compiles
-   * islands in waves — pages → their islands → islands nested inside those, and
-   * so on — and one wave equals one level of nesting. If the graph is still
-   * producing new islands past this many waves, the build throws instead of
-   * looping. Termination is already guaranteed (each island compiles once), so
-   * this is a defense-in-depth guard, not a correctness requirement; raise it
-   * only if you intentionally nest server islands very deeply.
+   * Maximum number of server-island compile **waves** the prebuild will run
+   * when precompiling `mochi:defer` islands into the manifest. A wave picks up
+   * every island discovered so far that hasn't been compiled yet; compiling an
+   * island can (in theory) surface more islands nested inside it, which the
+   * next wave picks up.
+   *
+   * This does **not** track component-nesting depth in practice: an island's
+   * `mochi:defer` import stays in its compiled source even though it's unused
+   * (only the markup usage is rewritten), so Bun's bundler still resolves it
+   * while compiling the page — which recursively pulls in every island the
+   * page transitively references, however deeply nested. Discovery is
+   * therefore normally eager and completes in a single wave regardless of
+   * nesting depth (a chain of 20 nested `mochi:defer` islands still compiles
+   * in wave 1). Termination is already guaranteed (each island compiles once),
+   * so this is a defense-in-depth guard against a discovery pattern that
+   * breaks that eagerness (e.g. an island resolved dynamically instead of via
+   * a static import), not a correctness requirement or a deep-nesting limit.
    *
    * **Build only** — read by `mochi-framework build` from your `Mochi.serve()`
    * call. Default: `10`.
