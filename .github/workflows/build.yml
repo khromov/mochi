@@ -62,7 +62,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and Push Docker Image
-        uses: docker/build-push-action@v3
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: Dockerfile
@@ -74,6 +74,8 @@ jobs:
             PUBLIC_DISABLE_OPFS=false
             WORKSPACE=${{ matrix.workspace }}
             PORT=${{ matrix.port }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
 
       - name: Deploy on CapRover
         uses: caprover/deploy-from-github@v1.1.2
