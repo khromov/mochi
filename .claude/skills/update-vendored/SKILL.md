@@ -6,7 +6,9 @@ user-invocable: true
 
 # Update vendored scripts
 
-Every folder under `packages/mochi/src/vendor/` is a hand-adapted, TypeScript-converted copy of a small upstream npm package (see `Dependencies` → `Vendoring` in `/CLAUDE.md`). This skill checks each one against its latest npm release and, for anything behind, merges the upstream delta forward — it does **not** blindly overwrite the vendored file, since that would destroy the TS conversion / ESM merge / other adaptations already applied.
+Every folder under `packages/mochi/src/vendor/` is a copy of a small upstream npm package (see `Dependencies` → `Vendoring` in `/CLAUDE.md`). This skill checks each one against its latest npm release and, for anything behind, replaces it wholesale with the new version's published source.
+
+**Files must be added AS IS from what npm published for that version.** Do not diff the old and new upstream sources and hand-patch changes into the existing vendored file, and do not otherwise edit, refactor, or "fix" the vendored code yourself — that risks silently introducing behavior the upstream package never had. The only permitted mechanical step is re-applying the same file-format treatment already established for that vendor folder (e.g. the `.ts` extension, the ESM/CJS-build merge via the `typeof process !== 'undefined'` runtime switch) so it fits the existing build — never a judgment-based content edit.
 
 ## Step 1 — check
 
@@ -20,23 +22,21 @@ This prints, per vendored script: the pinned version (parsed from the `// Vendor
 
 For every script where pinned ≠ latest:
 
-1. Note the npm package name (matches the vendor folder name so far in this repo) and the two versions.
-2. Download both tarballs into the scratchpad dir and extract them, so the exact upstream diff is visible:
+1. Note the npm package name (matches the vendor folder name so far in this repo) and the latest version.
+2. Download only the latest tarball into the scratchpad dir and extract it:
 
    ```sh
    cd <scratchpad>
-   npm pack <pkg>@<pinned-version> && npm pack <pkg>@<latest-version>
-   mkdir old new && tar -xzf <pkg>-<pinned-version>.tgz -C old --strip-components=1
-   tar -xzf <pkg>-<latest-version>.tgz -C new --strip-components=1
-   diff -ru old new
+   npm pack <pkg>@<latest-version>
+   mkdir new && tar -xzf <pkg>-<latest-version>.tgz -C new --strip-components=1
    ```
 
-3. Read the diff. Apply only the _semantic_ changes it shows to the vendored `packages/mochi/src/vendor/<name>/index.ts` by hand with Edit — keep the existing type annotations, ESM shape, `mochi`-specific tweaks (e.g. the `typeof process !== 'undefined'` runtime switch, dropped `browser` field remaps), and any inline comments already there. Do not paste raw upstream source over the file.
+3. Take the new version's source file(s) as published — unmodified — and use them to replace `packages/mochi/src/vendor/<name>/index.ts` wholesale, applying only the mechanical treatment described above (extension, ESM/CJS merge if the original vendoring did that). Do not carry forward or hand-merge anything from the old vendored file's content.
 4. Bump the version in the `// Vendored from ...` comment to `<latest-version>`.
-5. Diff the upstream `LICENSE` (old vs new) — if the copyright year or contributor list changed, update `packages/mochi/src/vendor/<name>/LICENSE` to match.
-6. Remove the downloaded tarballs and `old/`/`new/` extraction dirs from the scratchpad.
+5. Compare the upstream `LICENSE` (old vs new, as published — not hand-edited) — if the copyright year or contributor list changed, replace `packages/mochi/src/vendor/<name>/LICENSE` with the new one as-is.
+6. Remove the downloaded tarball and `new/` extraction dir from the scratchpad.
 
-If the diff reveals a structural rewrite too large to hand-merge confidently (new required peer deps, dropped/renamed exports, a different module system), stop and report it to the user instead of guessing — re-vendoring from scratch is a judgment call for them, not something to push through silently.
+If the new version doesn't fit the established mechanical treatment (new required peer deps, a different module system, split across more files than before), stop and report it to the user instead of guessing — re-vendoring from scratch is a judgment call for them, not something to push through silently.
 
 ## Step 3 — verify
 
