@@ -275,6 +275,8 @@ export class ComponentRegistry {
   /** Maps public URL path → disk path (relative to cwd) for static files from `public/`. */
   private publicFiles: Map<string, string> = new Map();
   readonly development: boolean;
+  /** Set by `fromManifest()`; distinguishes a prebuilt-manifest boot from a live, compile-on-demand one. */
+  loadedFromManifest = false;
   readonly debugBarEnabled: boolean;
   readonly outDir: string;
   readonly assetPrefix: string;
@@ -429,6 +431,10 @@ export class ComponentRegistry {
       this.entryDeps.delete(key);
       this.entryImportedCss.delete(key);
     }
+  }
+
+  isCompiled(absolutePath: string): boolean {
+    return this.compiledComponents.has(absolutePath) || [...this.compiledComponents.keys()].some((k) => path.resolve(k) === absolutePath);
   }
 
   /**
@@ -1774,6 +1780,7 @@ export class ComponentRegistry {
       outDir: outDir ?? path.dirname(manifestPath),
       assetPrefix: manifest.assetPrefix,
     });
+    registry.loadedFromManifest = true;
 
     registry.islandBootstrapUrl = manifest.bootstrapUrl;
     registry.clientStats = manifest.stats;

@@ -18,6 +18,7 @@ import { files as formReturnData } from '../demos/form-return-data/files.ts';
 import { files as helloWorld } from '../demos/hello-world/files.ts';
 import { files as hydratable } from '../demos/hydratable/files.ts';
 import { files as hydration } from '../demos/hydration/files.ts';
+import { files as islandDepth } from '../demos/island-depth/files.ts';
 import { files as islandProps } from '../demos/island-props/files.ts';
 import { files as lazy } from '../demos/lazy/files.ts';
 import { files as lazyServerIsland } from '../demos/lazy-server-island/files.ts';
@@ -271,6 +272,14 @@ export const demos: Demo[] = [
     files: nestedIslands,
     title: 'Nested Islands',
     hook: 'Islands inside islands — a mochi:defer server island wrapping mochi:hydrate components, and a server island nesting both a deferred and a deferred-hydrated server island.',
+    category: 'hydration',
+  },
+  {
+    href: '/demos/island-depth/',
+    slug: 'island-depth',
+    files: islandDepth,
+    title: 'Nested Island Max Depth',
+    hook: 'A chain of mochi:defer server islands nested four levels deep — each fetches the next on demand, and the prebuild precompiles the whole chain.',
     category: 'hydration',
   },
   {
