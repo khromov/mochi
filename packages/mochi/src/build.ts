@@ -130,14 +130,11 @@ export async function build(options: MochiBuildOptions): Promise<void> {
   // (registry.compile in the server-island endpoint). Discovery is eager — a
   // `mochi:defer` island's import stays in its compiled source (only the
   // markup usage is rewritten), so compiling a page transitively resolves
-  // every island it references, however deeply nested, in that same pass. So
-  // one extra compile pass over whatever `getServerIslandPaths()` already
-  // holds covers the whole graph; there's no wave loop to run, because eager
-  // discovery never leaves anything for a second pass to pick up. If eager
-  // discovery is ever defeated (e.g. a `mochi:defer` target resolved through
-  // something other than a static import), the island simply won't be in the
-  // manifest — the server-island endpoint in Mochi.ts warns and falls back to
-  // an on-demand compile rather than throwing here.
+  // every island it references. If eager discovery is ever defeated (e.g. a
+  // `mochi:defer` target resolved through something other than a static
+  // import), the island simply won't be in the manifest — the server-island
+  // endpoint in Mochi.ts warns and falls back to an on-demand compile rather
+  // than throwing here.
   const islandPaths = [...new Set(registry.getServerIslandPaths().values())];
   if (islandPaths.length > 0) {
     logger.info(`[mochi:build] precompiling ${islandPaths.length} server island(s): ${islandPaths.map((p) => path.basename(p)).join(', ')}`);
