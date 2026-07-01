@@ -48,6 +48,28 @@ export function srcHash(src: string): string {
   return hash(src);
 }
 
+// Recursively sort object keys so an op descriptor hashes the same regardless of
+// the order the caller wrote the option properties. Arrays keep their order (a
+// transform chain is order-sensitive).
+function canonicalize(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(canonicalize);
+  }
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.keys(value as Record<string, unknown>)
+        .sort()
+        .map((k) => [k, canonicalize((value as Record<string, unknown>)[k])]),
+    );
+  }
+  return value;
+}
+
+/** Stable variant id for an arbitrary (non-`ImageRequest`) transform descriptor. */
+export function pipelineVariantId(descriptor: unknown): string {
+  return hash(JSON.stringify(canonicalize(descriptor)));
+}
+
 /** Identifies a variant by everything that affects the bytes — deliberately NOT the TTL. */
 export function variantId(req: ImageRequest): string {
   const canonical = JSON.stringify({
@@ -100,30 +122,30 @@ export class ImageCache {
     return join(this.root, srcHash(src));
   }
 
-  private basePath(req: ImageRequest): string {
-    return join(this.srcDir(req.src), `${variantId(req)}.${extForFormat(req.format)}`);
+  private basePathFor(src: string, id: string, ext: string): string {
+    return join(this.srcDir(src), `${id}.${ext}`);
   }
 
-  private async readMeta(req: ImageRequest): Promise<SidecarMeta | null> {
+  private async readMetaFor(src: string, id: string, ext: string): Promise<SidecarMeta | null> {
     try {
-      const raw = await readFile(`${this.basePath(req)}.json`, 'utf-8');
+      const raw = await readFile(`${this.basePathFor(src, id, ext)}.json`, 'utf-8');
       return JSON.parse(raw) as SidecarMeta;
     } catch {
       return null;
     }
   }
 
-  private async readBytes(req: ImageRequest): Promise<Uint8Array | null> {
+  private async readBytesFor(src: string, id: string, ext: string): Promise<Uint8Array | null> {
     try {
-      const buf = await readFile(this.basePath(req));
+      const buf = await readFile(this.basePathFor(src, id, ext));
       return new Uint8Array(buf);
     } catch {
       return null;
     }
   }
 
-  private async write(req: ImageRequest, bytes: Uint8Array, meta: SidecarMeta): Promise<void> {
-    const base = this.basePath(req);
+  private async writeFor(src: string, id: string, ext: string, bytes: Uint8Array, meta: SidecarMeta): Promise<void> {
+    const base = this.basePathFor(src, id, ext);
     await this.writeBytesAndMeta(base, `${base}.json`, bytes, meta);
   }
 
@@ -140,12 +162,11 @@ export class ImageCache {
     await rename(`${metaPath}.tmp`, metaPath);
   }
 
-  private emitRead(req: ImageRequest, status: ImageCacheStatus): void {
-    mochiEvents.emit('cache:read', { key: `image:${variantId(req)}`, status });
+  private emitReadFor(id: string, status: ImageCacheStatus): void {
+    mochiEvents.emit('cache:read', { key: `image:${id}`, status });
   }
 
-  private revalidate(req: ImageRequest, regenerate: () => Promise<RegenResult>): Promise<CacheEntry> {
-    const id = variantId(req);
+  private revalidateFor(src: string, id: string, ext: string, regenerate: () => Promise<RegenResult>): Promise<CacheEntry> {
     const existing = this.inflight.get(id);
     if (existing) {
       return existing;
@@ -155,7 +176,7 @@ export class ImageCache {
       const r = await regenerate();
       // The variant inherits the original's SWR window and records which
       // original generation it was resized from.
-      const om = await this.readOriginalMeta(req.src);
+      const om = await this.readOriginalMeta(src);
       const now = Date.now();
       const meta: SidecarMeta = {
         version: 1,
@@ -167,10 +188,10 @@ export class ImageCache {
         createdAt: now,
         staleAt: om?.staleAt ?? now,
         evictAt: om?.evictAt ?? now,
-        src: req.src,
+        src,
         originalCreatedAt: om?.createdAt,
       };
-      await this.write(req, r.bytes, meta);
+      await this.writeFor(src, id, ext, r.bytes, meta);
       return { bytes: r.bytes, meta };
     })().finally(() => this.inflight.delete(id));
 
@@ -179,41 +200,48 @@ export class ImageCache {
   }
 
   /**
-   * Read a resized variant. A variant has no window of its own — its
-   * fresh/stale/evicted state is derived from the shared original's sidecar.
-   * `originalCreatedAt` marks which original generation produced these bytes, so a
-   * refreshed original (bumped `createdAt`) serves the old variant stale while
-   * it regenerates. The variant disappears when the original is evicted.
+   * Read a cached variant keyed by an arbitrary id (a resize `variantId`, or a
+   * `pipelineVariantId` for the raw `Bun.Image` wrapper). A variant has no window
+   * of its own — its fresh/stale/evicted state is derived from the shared
+   * original's sidecar. `originalCreatedAt` marks which original generation
+   * produced these bytes, so a refreshed original (bumped `createdAt`) serves the
+   * old variant stale while it regenerates. The variant disappears when the
+   * original is evicted.
    */
-  async get(req: ImageRequest, regenerate: () => Promise<RegenResult>): Promise<{ entry: CacheEntry; status: ImageCacheStatus }> {
-    const meta = await this.readMeta(req);
-    const orig = await this.readOriginalMeta(req.src);
+  async getVariant(src: string, id: string, ext: string, regenerate: () => Promise<RegenResult>): Promise<{ entry: CacheEntry; status: ImageCacheStatus }> {
+    const meta = await this.readMetaFor(src, id, ext);
+    const orig = await this.readOriginalMeta(src);
     const now = Date.now();
 
     if (meta && orig) {
       const sameGen = meta.originalCreatedAt === orig.createdAt;
       if (sameGen && now < orig.staleAt) {
-        const bytes = await this.readBytes(req);
+        const bytes = await this.readBytesFor(src, id, ext);
         if (bytes) {
-          this.emitRead(req, 'fresh');
+          this.emitReadFor(id, 'fresh');
           return { entry: { bytes, meta }, status: 'fresh' };
         }
       } else if (now < orig.evictAt) {
         // Stale window, or the original was refreshed to a newer generation:
         // serve the existing variant immediately and regenerate in the background.
-        const bytes = await this.readBytes(req);
+        const bytes = await this.readBytesFor(src, id, ext);
         if (bytes) {
-          this.emitRead(req, 'stale');
-          mochiEvents.emit('cache:revalidate', { key: `image:${variantId(req)}` });
-          void this.revalidate(req, regenerate).catch(() => {});
+          this.emitReadFor(id, 'stale');
+          mochiEvents.emit('cache:revalidate', { key: `image:${id}` });
+          void this.revalidateFor(src, id, ext, regenerate).catch(() => {});
           return { entry: { bytes, meta }, status: 'stale' };
         }
       }
     }
 
-    this.emitRead(req, 'miss');
-    const entry = await this.revalidate(req, regenerate);
+    this.emitReadFor(id, 'miss');
+    const entry = await this.revalidateFor(src, id, ext, regenerate);
     return { entry, status: 'miss' };
+  }
+
+  /** Resize-variant read: derives the id/ext from the `ImageRequest`. */
+  get(req: ImageRequest, regenerate: () => Promise<RegenResult>): Promise<{ entry: CacheEntry; status: ImageCacheStatus }> {
+    return this.getVariant(req.src, variantId(req), extForFormat(req.format), regenerate);
   }
 
   private originalMetaPath(src: string): string {
@@ -398,7 +426,11 @@ export class ImageCache {
   }
 
   async invalidateVariant(req: ImageRequest): Promise<void> {
-    const base = this.basePath(req);
+    await this.invalidateVariantById(req.src, variantId(req), extForFormat(req.format));
+  }
+
+  async invalidateVariantById(src: string, id: string, ext: string): Promise<void> {
+    const base = this.basePathFor(src, id, ext);
     await Promise.all([
       unlink(base).catch((e) => {
         if (!isMissingFileError(e)) {

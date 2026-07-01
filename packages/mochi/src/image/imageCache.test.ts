@@ -143,6 +143,28 @@ describe('ImageCache variant (lifetime follows the original)', () => {
     await cache.setPlaceholder('https://example.com/a.png', 'data:image/png;base64,AAAA');
     expect(await cache.getPlaceholder('https://example.com/a.png')).toBe('data:image/png;base64,AAAA');
   });
+
+  test('getVariant caches an arbitrary pipeline id and follows the original', async () => {
+    const dir = tmp();
+    const cache = new ImageCache(dir);
+    await cache.getOriginal(SRC, 60_000, 86_400_000, origFn('o'));
+    let calls = 0;
+    const fn = async (): Promise<RegenResult> => {
+      calls++;
+      return { bytes: new Uint8Array([9, 9, 9]), contentType: 'image/webp', width: 5, height: 5, format: 'webp' };
+    };
+
+    expect((await cache.getVariant(SRC, 'pipe123', 'bin', fn)).status).toBe('miss');
+    const second = await cache.getVariant(SRC, 'pipe123', 'bin', fn);
+    expect(second.status).toBe('fresh');
+    expect(calls).toBe(1);
+    expect(Array.from(second.entry.bytes)).toEqual([9, 9, 9]);
+    expect(existsSync(join(dir, srcHash(SRC), 'pipe123.bin'))).toBe(true);
+
+    await cache.invalidateVariantById(SRC, 'pipe123', 'bin');
+    expect((await cache.getVariant(SRC, 'pipe123', 'bin', fn)).status).toBe('miss');
+    expect(calls).toBe(2);
+  });
 });
 
 describe('ImageCache.getOriginal', () => {

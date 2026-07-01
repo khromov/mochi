@@ -540,6 +540,7 @@ export class ComponentRegistry {
             // Image helpers. Server-only (signing needs the secret key); re-exported
             // so .svelte files can `import { getResizedImage } from 'mochi-framework'`.
             `export { getResizedImage, getImage, getImageBytes, getImagePlaceholder, invalidateImage } from "${toPosixPath(path.join(FRAMEWORK_DIR, 'image/getResizedImage.ts'))}";`,
+            `export { cachedImage, CachedImage } from "${toPosixPath(path.join(FRAMEWORK_DIR, 'image/cachedImage.ts'))}";`,
             // `enhance` / `deserialize` are browser-only Svelte action helpers.
             // Svelte never invokes actions during SSR, so these stubs only fire
             // if user code calls them on the server — which is a usage error.
@@ -1029,6 +1030,8 @@ export class ComponentRegistry {
             `export function getImageBytes() { throw new Error("getImageBytes() is only available on the server"); }`,
             `export function getImagePlaceholder() { throw new Error("getImagePlaceholder() is only available on the server"); }`,
             `export function invalidateImage() { throw new Error("invalidateImage() is only available on the server"); }`,
+            `export function cachedImage() { throw new Error("cachedImage() is only available on the server"); }`,
+            `export class CachedImage { constructor() { throw new Error("CachedImage is only available on the server"); } }`,
             `export { enhance, deserialize } from "${enhanceClientPath}";`,
           ].join('\n'),
           loader: 'js',

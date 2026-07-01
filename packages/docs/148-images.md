@@ -122,6 +122,29 @@ await invalidateImage(src); // mark stale: next request serves cached bytes, re-
 await invalidateImage(src, { hard: true }); // mark expired: next request blocks for a fresh re-fetch
 ```
 
+### Custom pipelines with `cachedImage`
+
+`getResizedImage` / `<Image>` cover resize + re-encode. For the full `Bun.Image` API — `rotate`, `flip`/`flop`, `modulate`, indexed-palette PNG, progressive JPEG, ThumbHash placeholders — use `cachedImage(src)`. It mirrors `Bun.Image`'s chainable API but caches each pipeline's output on the **same disk store** as `<Image>` (shared per-source originals, same stale-while-revalidate window and janitor). A cache hit skips the source fetch, decode, and encode:
+
+```ts
+import { cachedImage } from 'mochi-framework';
+
+// Bytes / data URL of an arbitrary pipeline — cached by (src + chain).
+const url = await cachedImage(src).resize(300, 300, { fit: 'inside' }).rotate(90).webp({ quality: 80 }).dataurl();
+
+const bytes = await cachedImage(src).modulate({ saturation: 0 }).png().bytes();
+const { width, height, format } = await cachedImage(src).resize(240, 240).metadata();
+const blur = await cachedImage(src).placeholder(); // ThumbHash data URL (source-derived; ignores the chain)
+```
+
+Terminals: `bytes()`, `buffer()`, `blob()`, `toBase64()`, `dataurl()`, `metadata()`, `placeholder()`. `bytes()` and `dataurl()` for the same chain resolve to one on-disk variant. The cache key is the source URL plus the recorded op chain — if a source's bytes change under a stable URL, call `invalidateImage(src)` (it cascades to every `cachedImage` variant of that source too).
+
+<Callout type="info">
+
+**Server-only.** `cachedImage` reads/writes the disk cache and runs `Bun.Image`, so it only works server-side (in a page/API route or server island) — importing it into a hydratable island throws. `src` is fetched through the same SSRF-guarded pipeline as `<Image>`, so keep `blockPrivateNetworks` on and prefer `allowedHosts` for user-controlled sources.
+
+</Callout>
+
 ### Configuration
 
 Configure under `Mochi.serve({ image: { … } })`. Everything is optional:

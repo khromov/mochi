@@ -1,34 +1,21 @@
-<script>
-  import DemoPage from '../../components/DemoPage.svelte';
-  import CodeSnippet from '../../components/CodeSnippet.svelte';
-  import ImageCredits from '../../components/ImageCredits.svelte';
+<script module>
+  import { cachedImage } from 'mochi-framework';
   import { loadSources } from '../../components/utils.ts';
   import { highlightCode } from '../../lib/highlight.server';
 
   const CDN = 'https://sta-public.fra1.cdn.digitaloceanspaces.com/mochi';
   const srcUrl = (n) => `${CDN}/mochi-${n}.jpg`;
 
-  const cache = Object.create(null);
-  async function fetchBytes(n) {
-    const url = srcUrl(n);
-    if (!cache[url]) {
-      cache[url] = new Uint8Array(await (await fetch(url)).arrayBuffer());
-    }
-    return cache[url];
-  }
-
-  // Each pipeline gets a fresh `Bun.Image` over a sliced copy — the decode borrows the
-  // buffer off-thread, so reusing one view across pipelines is unsafe.
-  async function image(n) {
-    return new Bun.Image((await fetchBytes(n)).slice());
-  }
+  // `cachedImage(url)` fetches + caches the source and caches each transform
+  // pipeline on the same disk store `<Image>` uses — a hit skips fetch/decode/encode.
+  const image = (n) => cachedImage(srcUrl(n));
 
   function toDataUrl(bytes, mime) {
     return `data:${mime};base64,${Buffer.from(bytes).toString('base64')}`;
   }
 
   async function render(n, build, mime) {
-    const bytes = await build(await image(n)).bytes();
+    const bytes = await build(image(n)).bytes();
     return { url: toDataUrl(bytes, mime), size: bytes.length };
   }
 
@@ -36,89 +23,191 @@
     return (await render(n, build, mime)).url;
   }
 
-  const kb = (bytes) => `${(bytes / 1024).toFixed(1)} KB`;
   const snippet = (code) => highlightCode(code, 'typescript');
 
-  const codeSetup = await snippet(
-    [
-      '// fetch the bytes, then decode — Bun.Image takes a path, Buffer, or Blob',
-      "const url = 'https://sta-public.fra1.cdn.digitaloceanspaces.com/mochi/mochi-1.jpg';",
-      'const bytes = await fetch(url).then((r) => r.bytes());',
-      'const img = new Bun.Image(bytes);',
-    ].join('\n'),
-  );
+  // Every transform + snippet below is request-independent, so compute the whole
+  // page once and cache the result. Runs top-to-bottom on the first request only;
+  // later requests reuse the memoized object.
+  async function computePipeline() {
+    const codeSetup = await snippet(
+      [
+        "import { cachedImage } from 'mochi-framework';",
+        '',
+        '// cachedImage fetches + caches the source, then caches every transform',
+        "// on the same disk store <Image> uses. The chain mirrors Bun.Image's API.",
+        "const url = 'https://sta-public.fra1.cdn.digitaloceanspaces.com/mochi/mochi-1.jpg';",
+        'const img = cachedImage(url);',
+      ].join('\n'),
+    );
 
-  const meta = await (await image(1)).metadata();
-  const metaImg = await du(1, (im) => im.resize(260, 260, { fit: 'inside' }).webp());
-  const codeMeta = await snippet('await img.metadata();\n// { width, height, format }');
+    const meta = await image(1).metadata();
+    const metaImg = await du(1, (im) => im.resize(260, 260, { fit: 'inside' }).webp());
+    const codeMeta = await snippet('await img.metadata();\n// { width, height, format }');
 
-  const fitFill = await du(2, (im) => im.resize(240, 240, { fit: 'fill' }).webp());
-  const fitInside = await du(2, (im) => im.resize(240, 240, { fit: 'inside' }).webp());
-  const codeFit = await snippet("img.resize(240, 240, { fit: 'inside' });");
+    const fitFill = await du(2, (im) => im.resize(240, 240, { fit: 'fill' }).webp());
+    const fitInside = await du(2, (im) => im.resize(240, 240, { fit: 'inside' }).webp());
+    const codeFit = await snippet("img.resize(240, 240, { fit: 'inside' });");
 
-  // downscale then upscale to make the resampling kernel visible
-  const filterNearest = await du(3, (im) => im.resize(56, 56, { fit: 'inside' }).resize(240, 240, { fit: 'fill', filter: 'nearest' }).webp());
-  const filterLanczos = await du(3, (im) => im.resize(56, 56, { fit: 'inside' }).resize(240, 240, { fit: 'fill', filter: 'lanczos3' }).webp());
-  const codeFilter = await snippet("img.resize(240, 240, { filter: 'nearest' });");
+    // downscale then upscale to make the resampling kernel visible
+    const filterNearest = await du(3, (im) => im.resize(56, 56, { fit: 'inside' }).resize(240, 240, { fit: 'fill', filter: 'nearest' }).webp());
+    const filterLanczos = await du(3, (im) => im.resize(56, 56, { fit: 'inside' }).resize(240, 240, { fit: 'fill', filter: 'lanczos3' }).webp());
+    const codeFilter = await snippet("img.resize(240, 240, { filter: 'nearest' });");
 
-  const rotate90 = await du(4, (im) => im.resize(200, 200, { fit: 'inside' }).rotate(90).webp());
-  const rotate180 = await du(4, (im) => im.resize(200, 200, { fit: 'inside' }).rotate(180).webp());
-  const rotate270 = await du(4, (im) => im.resize(200, 200, { fit: 'inside' }).rotate(270).webp());
-  const codeRotate = await snippet('img.rotate(90);');
+    const rotate90 = await du(4, (im) => im.resize(200, 200, { fit: 'inside' }).rotate(90).webp());
+    const rotate180 = await du(4, (im) => im.resize(200, 200, { fit: 'inside' }).rotate(180).webp());
+    const rotate270 = await du(4, (im) => im.resize(200, 200, { fit: 'inside' }).rotate(270).webp());
+    const codeRotate = await snippet('img.rotate(90);');
 
-  const flipOriginal = await du(5, (im) => im.resize(200, 200, { fit: 'inside' }).webp());
-  const flipped = await du(5, (im) => im.resize(200, 200, { fit: 'inside' }).flip().webp());
-  const flopped = await du(5, (im) => im.resize(200, 200, { fit: 'inside' }).flop().webp());
-  const codeFlip = await snippet('img.flip(); // or img.flop()');
+    const flipOriginal = await du(5, (im) => im.resize(200, 200, { fit: 'inside' }).webp());
+    const flipped = await du(5, (im) => im.resize(200, 200, { fit: 'inside' }).flip().webp());
+    const flopped = await du(5, (im) => im.resize(200, 200, { fit: 'inside' }).flop().webp());
+    const codeFlip = await snippet('img.flip(); // or img.flop()');
 
-  const modGrey = await du(7, (im) => im.resize(200, 200, { fit: 'inside' }).modulate({ saturation: 0 }).webp());
-  const modBright = await du(7, (im) => im.resize(200, 200, { fit: 'inside' }).modulate({ brightness: 1.5 }).webp());
-  const modSaturate = await du(7, (im) => im.resize(200, 200, { fit: 'inside' }).modulate({ saturation: 2 }).webp());
-  const codeModulate = await snippet('img.modulate({ saturation: 0 });');
+    const modGrey = await du(7, (im) => im.resize(200, 200, { fit: 'inside' }).modulate({ saturation: 0 }).webp());
+    const modBright = await du(7, (im) => im.resize(200, 200, { fit: 'inside' }).modulate({ brightness: 1.5 }).webp());
+    const modSaturate = await du(7, (im) => im.resize(200, 200, { fit: 'inside' }).modulate({ saturation: 2 }).webp());
+    const codeModulate = await snippet('img.modulate({ saturation: 0 });');
 
-  // same source/size across all three formats for a fair byte-size comparison
-  const FMT_SRC = 9;
-  const fmt = (build, mime) => render(FMT_SRC, (im) => build(im.resize(300, 300, { fit: 'inside' })), mime);
-  const formats = [
-    { label: 'jpeg({ quality: 85 })', out: await fmt((im) => im.jpeg({ quality: 85 }), 'image/jpeg') },
-    { label: 'png()', out: await fmt((im) => im.png(), 'image/png') },
-    { label: 'webp({ quality: 80 })', out: await fmt((im) => im.webp({ quality: 80 }), 'image/webp') },
-  ];
-  const codeFormat = await snippet('img.webp({ quality: 80 });');
+    // same source/size across all three formats for a fair byte-size comparison
+    const FMT_SRC = 9;
+    const fmt = (build, mime) => render(FMT_SRC, (im) => build(im.resize(300, 300, { fit: 'inside' })), mime);
+    const formats = [
+      { label: 'jpeg({ quality: 85 })', out: await fmt((im) => im.jpeg({ quality: 85 }), 'image/jpeg') },
+      { label: 'png()', out: await fmt((im) => im.png(), 'image/png') },
+      { label: 'webp({ quality: 80 })', out: await fmt((im) => im.webp({ quality: 80 }), 'image/webp') },
+    ];
+    const codeFormat = await snippet('img.webp({ quality: 80 });');
 
-  const pngTruecolor = await render(11, (im) => im.resize(300, 300, { fit: 'inside' }).png(), 'image/png');
-  const pngPalette = await render(11, (im) => im.resize(300, 300, { fit: 'inside' }).png({ palette: true, colors: 32, dither: true }), 'image/png');
-  const codePalette = await snippet('img.png({ palette: true, colors: 32, dither: true });');
+    const pngTruecolor = await render(11, (im) => im.resize(300, 300, { fit: 'inside' }).png(), 'image/png');
+    const pngPalette = await render(11, (im) => im.resize(300, 300, { fit: 'inside' }).png({ palette: true, colors: 32, dither: true }), 'image/png');
+    const codePalette = await snippet('img.png({ palette: true, colors: 32, dither: true });');
 
-  const qLow = await render(6, (im) => im.resize(300, 300, { fit: 'inside' }).jpeg({ quality: 20 }), 'image/jpeg');
-  const qHigh = await render(6, (im) => im.resize(300, 300, { fit: 'inside' }).jpeg({ quality: 85 }), 'image/jpeg');
-  const codeQuality = await snippet('img.jpeg({ quality: 20 });');
+    const qLow = await render(6, (im) => im.resize(300, 300, { fit: 'inside' }).jpeg({ quality: 20 }), 'image/jpeg');
+    const qHigh = await render(6, (im) => im.resize(300, 300, { fit: 'inside' }).jpeg({ quality: 85 }), 'image/jpeg');
+    const codeQuality = await snippet('img.jpeg({ quality: 20 });');
 
-  const PH_SRC = 8;
-  const phMeta = await (await image(PH_SRC)).metadata();
-  const phRatio = `${phMeta.width} / ${phMeta.height}`;
-  const placeholder = await (await image(PH_SRC)).placeholder();
-  const placeholderReal = await du(PH_SRC, (im) => im.resize(200, 200, { fit: 'inside' }).webp());
-  const codePlaceholder = await snippet('await img.placeholder();\n// "data:image/png;base64,..."');
+    const PH_SRC = 8;
+    const phMeta = await image(PH_SRC).metadata();
+    const phRatio = `${phMeta.width} / ${phMeta.height}`;
+    const placeholder = await image(PH_SRC).placeholder();
+    const placeholderReal = await du(PH_SRC, (im) => im.resize(200, 200, { fit: 'inside' }).webp());
+    const codePlaceholder = await snippet('await img.placeholder();\n// "data:image/png;base64,..."');
 
-  const progressive = await render(10, (im) => im.resize(300, 300, { fit: 'inside' }).jpeg({ progressive: true }), 'image/jpeg');
-  const codeProgressive = await snippet('img.jpeg({ progressive: true });');
+    const progressive = await render(10, (im) => im.resize(300, 300, { fit: 'inside' }).jpeg({ progressive: true }), 'image/jpeg');
+    const codeProgressive = await snippet('img.jpeg({ progressive: true });');
 
-  const sources = await loadSources([
-    { label: 'ImagePipelineDemo.svelte', path: './src/demos/image-pipeline/ImagePipelineDemo.svelte' },
-    { label: 'routes.ts', path: './src/demos/image-pipeline/routes.ts' },
-    { label: 'index.ts', path: './src/demoIndex.ts' },
-  ]);
+    const sources = await loadSources([
+      { label: 'ImagePipelineDemo.svelte', path: './src/demos/image-pipeline/ImagePipelineDemo.svelte' },
+      { label: 'routes.ts', path: './src/demos/image-pipeline/routes.ts' },
+      { label: 'index.ts', path: './src/demoIndex.ts' },
+    ]);
+
+    return {
+      codeSetup,
+      meta,
+      metaImg,
+      codeMeta,
+      fitFill,
+      fitInside,
+      codeFit,
+      filterNearest,
+      filterLanczos,
+      codeFilter,
+      rotate90,
+      rotate180,
+      rotate270,
+      codeRotate,
+      flipOriginal,
+      flipped,
+      flopped,
+      codeFlip,
+      modGrey,
+      modBright,
+      modSaturate,
+      codeModulate,
+      formats,
+      codeFormat,
+      pngTruecolor,
+      pngPalette,
+      codePalette,
+      qLow,
+      qHigh,
+      codeQuality,
+      phRatio,
+      placeholder,
+      placeholderReal,
+      codePlaceholder,
+      progressive,
+      codeProgressive,
+      sources,
+    };
+  }
+
+  // In-process layer: assemble the page (incl. syntax highlighting) once per
+  // process; cachedImage is the persistent, cross-restart layer underneath.
+  let built;
+  export function buildPipeline() {
+    return (built ??= computePipeline());
+  }
+</script>
+
+<script>
+  import DemoPage from '../../components/DemoPage.svelte';
+  import CodeSnippet from '../../components/CodeSnippet.svelte';
+  import ImageCredits from '../../components/ImageCredits.svelte';
+
+  const kb = (bytes) => `${(bytes / 1024).toFixed(1)} KB`;
+
+  const {
+    codeSetup,
+    meta,
+    metaImg,
+    codeMeta,
+    fitFill,
+    fitInside,
+    codeFit,
+    filterNearest,
+    filterLanczos,
+    codeFilter,
+    rotate90,
+    rotate180,
+    rotate270,
+    codeRotate,
+    flipOriginal,
+    flipped,
+    flopped,
+    codeFlip,
+    modGrey,
+    modBright,
+    modSaturate,
+    codeModulate,
+    formats,
+    codeFormat,
+    pngTruecolor,
+    pngPalette,
+    codePalette,
+    qLow,
+    qHigh,
+    codeQuality,
+    phRatio,
+    placeholder,
+    placeholderReal,
+    codePlaceholder,
+    progressive,
+    codeProgressive,
+    sources,
+  } = await buildPipeline();
 </script>
 
 <DemoPage
   title="Advanced Image use"
-  description="Every Bun.Image option in one place — decode, resize, rotate, flip, modulate, and re-encode with the raw native pipeline. Each transform runs server-side at request time and is inlined as a data: URL, so the page ships zero client JS."
+  description="Every Bun.Image option in one place — decode, resize, rotate, flip, modulate, and re-encode — through cachedImage, which caches each pipeline on the same disk store as <Image>. Output is inlined as a data: URL, so the page ships zero client JS."
   {sources}
 >
   <p>
-    Each example starts from a single decoded source. We fetch one of the demo photos from the CDN and decode the bytes — every snippet below reuses this <code>img</code>. (Pass
-    downloaded bytes, not a URL: <code>Bun.Image</code> treats a string as a filesystem path, so handing it untrusted input is an arbitrary-file-read.)
+    Each example starts from a single source. <code>cachedImage(url)</code> fetches and caches the source photo, then caches every transform below on disk — so the first request
+    does the work and later requests (even after a restart) skip the fetch, decode, and encode. The chain mirrors <code>Bun.Image</code>'s API; every snippet reuses this
+    <code>img</code>.
   </p>
   <CodeSnippet html={codeSetup} />
 
