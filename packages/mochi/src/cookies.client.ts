@@ -17,11 +17,11 @@ export function createClientCookies() {
     },
 
     set(name: string, value: string, options?: CookieSerializeOptions): void {
-      Cookies.set(name, value, options);
+      Cookies.set(name, value, options ? { ...options } : undefined);
     },
 
     delete(name: string, options?: Pick<CookieSerializeOptions, 'path' | 'domain'>): void {
-      Cookies.remove(name, options);
+      Cookies.remove(name, options ? { ...options } : undefined);
     },
   };
 }
