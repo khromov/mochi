@@ -1,4 +1,4 @@
-import Cookies from 'js-cookie';
+import Cookies from './vendor/js-cookie/index.ts';
 import type { CookieSerializeOptions, Cookie } from './cookies';
 
 export function createClientCookies() {
