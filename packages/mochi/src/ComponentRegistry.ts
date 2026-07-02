@@ -537,6 +537,8 @@ export class ComponentRegistry {
             // Server-side cache class. Re-exported through the virtual module so .svelte
             // files can `import { MochiCache } from 'mochi-framework'` directly.
             `export { MochiCache } from "${toPosixPath(path.join(FRAMEWORK_DIR, 'cache.ts'))}";`,
+            // Cache storage adapters — server-only (FileStorage touches the fs).
+            `export { MemoryStorage, FileStorage } from "${toPosixPath(path.join(FRAMEWORK_DIR, 'cache-storage.ts'))}";`,
             // Image helpers. Server-only (signing needs the secret key); re-exported
             // so .svelte files can `import { getResizedImage } from 'mochi-framework'`.
             `export { getResizedImage, getImage, getImageBytes, getImagePlaceholder, invalidateImage } from "${toPosixPath(path.join(FRAMEWORK_DIR, 'image/getResizedImage.ts'))}";`,
@@ -1024,6 +1026,9 @@ export class ComponentRegistry {
             // MochiCache is server-only; ship a stub that throws so accidental
             // client imports surface clearly instead of failing the bundle.
             `export class MochiCache { constructor() { throw new Error("MochiCache is only available on the server"); } }`,
+            // Cache storage adapters are server-only; ship throwing stubs too.
+            `export class MemoryStorage { constructor() { throw new Error("MemoryStorage is only available on the server"); } }`,
+            `export class FileStorage { constructor() { throw new Error("FileStorage is only available on the server"); } }`,
             // Image helpers are server-only (signing/fetch/disk-cache); ship throwing stubs.
             `export function getResizedImage() { throw new Error("getResizedImage() is only available on the server"); }`,
             `export function getImage() { throw new Error("getImage() is only available on the server"); }`,

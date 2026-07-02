@@ -85,6 +85,13 @@ export interface MochiCacheRevalidateEvent {
   key: string;
 }
 
+export interface MochiCacheSweepEvent {
+  /** Expired entries deleted by this sweep. */
+  removed: number;
+  /** Sweep wall-clock duration in ms. */
+  durationMs: number;
+}
+
 export interface MochiImageCacheSweepEvent {
   /** Resized variants deleted (original evicted, missing, or superseded by a newer generation). */
   removedVariants: number;
@@ -344,6 +351,7 @@ export type MochiEventMap = {
   'island:error': MochiIslandErrorEvent;
   'cache:read': MochiCacheReadEvent;
   'cache:revalidate': MochiCacheRevalidateEvent;
+  'cache:sweep': MochiCacheSweepEvent;
   'image:cache-sweep': MochiImageCacheSweepEvent;
   'image:store': MochiImageStoreEvent;
   'image:delete': MochiImageDeleteEvent;

@@ -177,6 +177,15 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
     path: payload.key,
     note: styleText('cyan', 'revalidate'),
   }));
+  subscribe('cache:sweep', ({ removed, durationMs }) => ({
+    label: 'CACHE',
+    path: 'sweep',
+    note: styleText('dim', removed === 0 ? 'nothing expired' : `${removed} expired removed`),
+    duration: durationMs,
+    slow,
+    verySlow,
+    level: 'info',
+  }));
   subscribe('image:cache-sweep', ({ removedVariants, removedOriginals, freedBytes, durationMs }) => {
     const removed = removedVariants + removedOriginals;
     const detail = removed === 0 ? 'nothing stale' : `${removed} stale (${removedVariants}v/${removedOriginals}o), freed ${prettyBytes(freedBytes)}`;

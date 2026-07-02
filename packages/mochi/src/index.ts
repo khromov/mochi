@@ -18,7 +18,9 @@ export type { MochiRequestContext } from './requestContext';
 export { getMochiConfig } from './mochiConfig';
 export type { CookieSerializeOptions, Cookie } from './cookies';
 export { MochiCache } from './cache';
-export type { MochiCacheOptions, CacheResult, CacheStatus } from './cache';
+export type { MochiCacheOptions, CacheResult, CacheStatus, Storage } from './cache';
+export { MemoryStorage, FileStorage } from './cache-storage';
+export type { FileStorageOptions } from './cache-storage';
 export { getResizedImage, getImage, getImageBytes, getImagePlaceholder, invalidateImage } from './image/getResizedImage';
 export { cachedImage, CachedImage } from './image/cachedImage';
 export type { CachedImageOptions } from './image/cachedImage';
@@ -52,6 +54,7 @@ export type {
   MochiCacheStatus,
   MochiCacheReadEvent,
   MochiCacheRevalidateEvent,
+  MochiCacheSweepEvent,
   MochiImageCacheSweepEvent,
   MochiImageEntryKind,
   MochiImageStoreEvent,
