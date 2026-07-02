@@ -81,7 +81,7 @@ Hello from Mochi! Inserted via transformPage
   });
 };
 
-const ANALYTICS_SCRIPT = `<script defer src="https://u.khromov.se/u.js" data-website-id="8dceb8f5-6533-4c03-9cd6-1ce74accd63a"></script>`;
+const ANALYTICS_SCRIPT = `<script defer src="https://u.khromov.se/u.js" data-performance="true" data-website-id="8dceb8f5-6533-4c03-9cd6-1ce74accd63a"></script>`;
 const analytics: Handle = async ({ event, resolve }) => {
   return resolve(event, {
     transformPage({ html }) {
