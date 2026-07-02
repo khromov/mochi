@@ -182,6 +182,23 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
     const detail = removed === 0 ? 'nothing stale' : `${removed} stale (${removedVariants}v/${removedOriginals}o), freed ${prettyBytes(freedBytes)}`;
     return { label: 'CACHE', path: 'image:sweep', note: styleText('dim', detail), duration: durationMs, slow, verySlow, level: 'info' };
   });
+  // Per-file image writes/deletes are high-volume relative to the aggregate
+  // `image:cache-sweep` line above; route them through `logger.debug`.
+  subscribe('image:store', ({ kind, path, size, format, width, height }) => {
+    const dims = width && height ? `${width}x${height} ` : '';
+    return {
+      label: 'IMG ',
+      path,
+      note: `${styleText('cyan', `store ${kind}`)} ${format ? `${format} ` : ''}${dims}${prettyBytes(size)}`.trimEnd(),
+      level: 'debug',
+    };
+  });
+  subscribe('image:delete', ({ kind, path, size, reason }) => ({
+    label: 'IMG ',
+    path,
+    note: `${styleText('dim', `delete ${kind} ${reason}`)} freed ${prettyBytes(size)}`,
+    level: 'debug',
+  }));
   subscribe('cache:revalidate:failed', (payload) => ({
     label: 'CACHE',
     path: payload.key,

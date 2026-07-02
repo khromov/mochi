@@ -57,6 +57,10 @@
   <div class="frame">
     <ImageIslandCard mochi:hydrate src={remote} />
   </div>
+  <p class="note">
+    Caveat: props passed to a hydrated island — like this card's <code>src</code> — are serialized in plain text into the page for hydration, so the source URL is visible to the
+    client here. If your origin must stay secret, keep <code>&lt;Image&gt;</code> in server-rendered markup or a server island, whose props are encrypted.
+  </p>
 
   <h3>Programmatic</h3>
   <p><code>getResizedImage()</code> returns a signed URL you can use anywhere:</p>

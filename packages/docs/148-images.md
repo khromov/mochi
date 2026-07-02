@@ -43,7 +43,22 @@ Add `placeholder` to render a [ThumbHash](https://evanw.github.io/thumbhash/) bl
 
 > `Bun.Image` supports only `fit: 'inside'` and `fit: 'fill'` — there is no crop/"cover" mode. To get an exact square from a non-square source you must use `fill` (which stretches); otherwise `inside` keeps the aspect ratio and the output won't fill both dimensions.
 
-`<Image>` also works inside `mochi:hydrate*` islands: minting needs the server secret, so the minted URL (and placeholder) are serialized into the page via Svelte's `hydratable` and reused during hydration — the browser never mints. If a client-side re-render changes the image props, there's no snapshot for the new configuration and the `<img>` degrades to the raw `src` URL.
+`<Image>` also works inside `mochi:hydrate*` islands — forward the island's auto-injected `isHydratable` prop. Minting needs the server secret, so with the prop set the minted URL (and placeholder) are serialized into the page via Svelte's `hydratable` and reused during hydration — the browser never mints:
+
+```svelte
+<script lang="ts">
+  import { Image } from 'mochi-framework/image';
+  let { src, isHydratable }: { src: string; isHydratable?: boolean } = $props();
+</script>
+
+<Image {src} width={400} {isHydratable} />
+```
+
+If the forward is missing, or a client-side re-render changes the image props, there's no snapshot to reuse and the `<img>` degrades to the raw `src` URL.
+
+<Callout type="warning">
+Hydrated-island props ship in plain text in the page HTML — so a <code>src</code> you pass into a <code>mochi:hydrate</code> island (and any URL literal in the island's client JS) is visible to the client, even though the minted image URL itself stays encrypted. If your origin must stay secret, keep <code>&lt;Image&gt;</code> in server-rendered markup or a server island (<code>mochi:defer</code>), whose props are encrypted.
+</Callout>
 
 ### Programmatic
 

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { mkdir, readdir, readFile, rename, rm, rmdir, stat, unlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { mochiEvents } from '../events';
+import { hasSubscribers, mochiEvents, type MochiImageEntryKind } from '../events';
 import { extForFormat } from './resize';
 import type { ImageFormat, ImageRequest } from './types';
 
@@ -219,6 +219,17 @@ export class ImageCache {
         originalCreatedAt: r.originalCreatedAt ?? om?.createdAt,
       };
       await this.writeFor(src, id, ext, r.bytes, meta);
+      mochiEvents.emit('image:store', {
+        kind: 'variant',
+        src,
+        path: this.basePathFor(src, id, ext),
+        id,
+        size: r.bytes.byteLength,
+        contentType: r.contentType,
+        width: r.width,
+        height: r.height,
+        format: r.format,
+      });
       return { bytes: r.bytes, meta };
     })().finally(() => this.inflight.delete(id));
 
@@ -312,7 +323,17 @@ export class ImageCache {
     } catch {
       return;
     }
-    await Promise.all(files.filter((f) => f.startsWith('original.') && f !== 'original.json' && f !== `original.${keepExt}`).map((f) => unlink(join(dir, f)).catch(() => {})));
+    await Promise.all(
+      files
+        .filter((f) => f.startsWith('original.') && f !== 'original.json' && f !== `original.${keepExt}`)
+        .map(async (f) => {
+          const path = join(dir, f);
+          const freed = await this.removeFile(path);
+          if (freed > 0) {
+            mochiEvents.emit('image:delete', { kind: 'original', src, path, id: originalId(src), size: freed, reason: 'superseded' });
+          }
+        }),
+    );
   }
 
   private async readOriginalBytes(src: string, contentType: string): Promise<Uint8Array | null> {
@@ -429,6 +450,17 @@ export class ImageCache {
       // changes the `original.<ext>` filename; drop any bytes left under the old
       // extension so they don't linger until the next sweep.
       await this.removeStaleOriginalBytes(src, extForContentType(contentType));
+      mochiEvents.emit('image:store', {
+        kind: 'original',
+        src,
+        path: this.originalBytesPath(src, contentType),
+        id: originalId(src),
+        size: fetched.bytes.byteLength,
+        contentType,
+        width: 0,
+        height: 0,
+        format: '',
+      });
       return { bytes: fetched.bytes, meta };
     })().finally(() => this.inflight.delete(key));
 
@@ -437,7 +469,49 @@ export class ImageCache {
   }
 
   async invalidateSrc(src: string): Promise<void> {
-    await rm(this.srcDir(src), { recursive: true, force: true });
+    const dir = this.srcDir(src);
+    // Bulk `rm -rf` can't enumerate what it deleted, so per-file delete events
+    // are only constructible by first reading the directory. Do that solely when
+    // someone is listening — otherwise stay a plain, fast recursive remove.
+    if (hasSubscribers('image:delete')) {
+      await this.emitSrcDirDeletes(src, dir);
+    }
+    await rm(dir, { recursive: true, force: true });
+  }
+
+  private async emitSrcDirDeletes(src: string, dir: string): Promise<void> {
+    let files: string[];
+    try {
+      files = await readdir(dir);
+    } catch {
+      return;
+    }
+    for (const f of files) {
+      // Sidecars/temp files aren't independent entries — skip them.
+      if (f.endsWith('.json') || f.endsWith('.tmp')) {
+        continue;
+      }
+      let kind: MochiImageEntryKind;
+      let id: string;
+      if (f === 'placeholder.txt') {
+        kind = 'placeholder';
+        id = originalId(src);
+      } else if (f.startsWith('original.')) {
+        kind = 'original';
+        id = originalId(src);
+      } else {
+        kind = 'variant';
+        id = f.slice(0, f.lastIndexOf('.'));
+      }
+      const path = join(dir, f);
+      let size = 0;
+      try {
+        size = (await stat(path)).size;
+      } catch {
+        // best-effort; the file may vanish between readdir and stat
+      }
+      mochiEvents.emit('image:delete', { kind, src, path, id, size, reason: 'invalidated' });
+    }
   }
 
   /**
@@ -467,18 +541,17 @@ export class ImageCache {
 
   async invalidateVariantById(src: string, id: string, ext: string): Promise<void> {
     const base = this.basePathFor(src, id, ext);
-    await Promise.all([
-      unlink(base).catch((e) => {
-        if (!isMissingFileError(e)) {
-          throw e;
-        }
-      }),
+    const [freed] = await Promise.all([
+      this.removeFile(base),
       unlink(`${base}.json`).catch((e) => {
         if (!isMissingFileError(e)) {
           throw e;
         }
       }),
     ]);
+    if (freed > 0) {
+      mochiEvents.emit('image:delete', { kind: 'variant', src, path: base, id, size: freed, reason: 'invalidated' });
+    }
   }
 
   /**
@@ -524,28 +597,59 @@ export class ImageCache {
         const meta = await this.readMetaAt(join(dir, f));
         const superseded = orig !== null && meta !== null && meta.originalCreatedAt !== orig.createdAt;
         if (origDead || superseded) {
-          freedBytes += await this.removeFile(join(dir, f.slice(0, -'.json'.length))); // bytes
-          freedBytes += await this.removeFile(join(dir, f)); // sidecar
+          const bytesPath = join(dir, f.slice(0, -'.json'.length));
+          const freed = (await this.removeFile(bytesPath)) + (await this.removeFile(join(dir, f))); // bytes + sidecar
+          freedBytes += freed;
           removedVariants++;
+          mochiEvents.emit('image:delete', {
+            kind: 'variant',
+            src: meta?.src ?? '',
+            path: bytesPath,
+            id: meta?.etag ?? f.slice(0, f.lastIndexOf('.')),
+            size: freed,
+            reason: origDead ? 'evicted' : 'superseded',
+          });
         }
       }
 
       if (orig !== null && origDead) {
         // Remove every `original.*` (bytes of any extension + the sidecar) so a
         // stale-format leftover from a content-type change is reclaimed too.
+        let freed = 0;
         for (const f of files) {
           if (f.startsWith('original.')) {
-            freedBytes += await this.removeFile(join(dir, f));
+            freed += await this.removeFile(join(dir, f));
           }
         }
+        freedBytes += freed;
         removedOriginals++;
+        mochiEvents.emit('image:delete', {
+          kind: 'original',
+          src: orig.src,
+          path: this.originalBytesPath(orig.src, orig.contentType),
+          id: originalId(orig.src),
+          size: freed,
+          reason: 'evicted',
+        });
       }
 
       // The placeholder is bound to the original's generation, so it's dead
       // disk once the original is gone — and leaving it would keep the src
       // directory from ever being reclaimed below.
       if (origDead && files.includes('placeholder.txt')) {
-        freedBytes += await this.removeFile(join(dir, 'placeholder.txt'));
+        const placeholderPath = join(dir, 'placeholder.txt');
+        const freed = await this.removeFile(placeholderPath);
+        freedBytes += freed;
+        if (orig !== null) {
+          mochiEvents.emit('image:delete', {
+            kind: 'placeholder',
+            src: orig.src,
+            path: placeholderPath,
+            id: originalId(orig.src),
+            size: freed,
+            reason: 'evicted',
+          });
+        }
       }
 
       // Reclaim the src directory once the sweep has emptied it (no variants,
@@ -589,7 +693,19 @@ export class ImageCache {
   async setPlaceholder(src: string, dataUrl: string, originalCreatedAt: number): Promise<void> {
     await mkdir(this.srcDir(src), { recursive: true });
     const path = this.placeholderPath(src);
-    await writeFile(`${path}.tmp`, JSON.stringify({ dataUrl, originalCreatedAt }));
+    const json = JSON.stringify({ dataUrl, originalCreatedAt });
+    await writeFile(`${path}.tmp`, json);
     await rename(`${path}.tmp`, path);
+    mochiEvents.emit('image:store', {
+      kind: 'placeholder',
+      src,
+      path,
+      id: originalId(src),
+      size: Buffer.byteLength(json),
+      contentType: '',
+      width: 0,
+      height: 0,
+      format: '',
+    });
   }
 }

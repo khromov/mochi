@@ -35,6 +35,7 @@ import { routes as formReturnDataRoutes } from './demos/form-return-data/routes'
 import { routes as helloWorldRoutes } from './demos/hello-world/routes';
 import { routes as hydratableRoutes } from './demos/hydratable/routes';
 import { routes as imageRoutes } from './demos/image/routes';
+import { routes as imageEventsRoutes } from './demos/image-events/routes';
 import { routes as imagePipelineRoutes } from './demos/image-pipeline/routes';
 import { routes as hydrationRoutes } from './demos/hydration/routes';
 import { routes as islandPropsRoutes } from './demos/island-props/routes';
@@ -189,6 +190,7 @@ export const routes: Record<string, MochiRouteValue> = {
   ...helloWorldRoutes,
   ...hydratableRoutes,
   ...imageRoutes,
+  ...imageEventsRoutes,
   ...imagePipelineRoutes,
   ...hydrationRoutes,
   ...islandPropsRoutes,

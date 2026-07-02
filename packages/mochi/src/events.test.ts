@@ -225,6 +225,58 @@ describe('new event payloads round-trip', () => {
     expect(seen).toEqual(['start:/p/Foo.svelte', 'done:/p/Foo.svelte']);
   });
 
+  test('image:store', () => {
+    let received: unknown;
+    mochiEvents.on('image:store', (e) => {
+      received = e;
+    });
+    mochiEvents.emit('image:store', {
+      kind: 'variant',
+      src: 'https://cdn.example/a.jpg',
+      path: '/cache/hash/v1.webp',
+      id: 'v1',
+      size: 4096,
+      contentType: 'image/webp',
+      width: 200,
+      height: 100,
+      format: 'webp',
+    });
+    expect(received).toEqual({
+      kind: 'variant',
+      src: 'https://cdn.example/a.jpg',
+      path: '/cache/hash/v1.webp',
+      id: 'v1',
+      size: 4096,
+      contentType: 'image/webp',
+      width: 200,
+      height: 100,
+      format: 'webp',
+    });
+  });
+
+  test('image:delete', () => {
+    let received: unknown;
+    mochiEvents.on('image:delete', (e) => {
+      received = e;
+    });
+    mochiEvents.emit('image:delete', {
+      kind: 'original',
+      src: 'https://cdn.example/a.jpg',
+      path: '/cache/hash/original.jpg',
+      id: 'o1',
+      size: 8192,
+      reason: 'evicted',
+    });
+    expect(received).toEqual({
+      kind: 'original',
+      src: 'https://cdn.example/a.jpg',
+      path: '/cache/hash/original.jpg',
+      id: 'o1',
+      size: 8192,
+      reason: 'evicted',
+    });
+  });
+
   test('compile:error carries structured logs', () => {
     let received: unknown;
     mochiEvents.on('compile:error', (e) => {

@@ -1,7 +1,9 @@
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { mochiEvents } from '../events';
+import type { MochiImageDeleteEvent, MochiImageStoreEvent } from '../events';
 import { ImageCache, srcHash } from './imageCache';
 import type { RegenResult, SidecarMeta } from './imageCache';
 import type { ImageRequest } from './types';
@@ -446,5 +448,102 @@ describe('ImageCache.sweep', () => {
   test('is a no-op when the cache dir does not exist', async () => {
     const cache = new ImageCache(join(tmp(), 'not-created-yet'));
     expect(await cache.sweep(Date.now())).toEqual({ removedVariants: 0, removedOriginals: 0, freedBytes: 0 });
+  });
+});
+
+describe('ImageCache lifecycle events', () => {
+  const stores: MochiImageStoreEvent[] = [];
+  const deletes: MochiImageDeleteEvent[] = [];
+  const onStore = (e: MochiImageStoreEvent) => stores.push(e);
+  const onDelete = (e: MochiImageDeleteEvent) => deletes.push(e);
+  beforeEach(() => {
+    stores.length = 0;
+    deletes.length = 0;
+    mochiEvents.on('image:store', onStore);
+    mochiEvents.on('image:delete', onDelete);
+  });
+  afterEach(() => {
+    mochiEvents.off('image:store', onStore);
+    mochiEvents.off('image:delete', onDelete);
+  });
+
+  test('getOriginal miss emits image:store kind:original', async () => {
+    const cache = new ImageCache(tmp());
+    await cache.getOriginal(SRC, 60_000, 86_400_000, origFn('o', 'image/jpeg'));
+    const originals = stores.filter((s) => s.kind === 'original');
+    expect(originals).toHaveLength(1);
+    expect(originals[0]).toMatchObject({ kind: 'original', src: SRC, contentType: 'image/jpeg', width: 0, height: 0, format: '' });
+    expect(originals[0]!.size).toBeGreaterThan(0);
+    expect(originals[0]!.path.endsWith('original.jpg')).toBe(true);
+  });
+
+  test('variant miss emits image:store kind:variant with dimensions', async () => {
+    const cache = new ImageCache(tmp());
+    await cache.getOriginal(SRC, 60_000, 86_400_000, origFn('o'));
+    stores.length = 0; // ignore the original store above
+    await cache.get(req(), regen('v1'));
+    const variants = stores.filter((s) => s.kind === 'variant');
+    expect(variants).toHaveLength(1);
+    expect(variants[0]).toMatchObject({ kind: 'variant', src: SRC, contentType: 'image/webp', width: 100, height: 100, format: 'webp' });
+  });
+
+  test('setPlaceholder emits image:store kind:placeholder', async () => {
+    const dir = tmp();
+    const cache = new ImageCache(dir);
+    await cache.getOriginal(SRC, 60_000, 86_400_000, origFn('o'));
+    stores.length = 0;
+    await cache.setPlaceholder(SRC, 'data:image/png;base64,AAAA', readOrigMeta(dir).createdAt);
+    expect(stores).toHaveLength(1);
+    expect(stores[0]).toMatchObject({ kind: 'placeholder', src: SRC, contentType: '', format: '' });
+  });
+
+  test('sweep emits image:delete reason:evicted for the original, variant, and placeholder', async () => {
+    const dir = tmp();
+    const cache = new ImageCache(dir);
+    await cache.getOriginal(SRC, 0, 0, origFn('o')); // immediately evicted
+    await cache.setPlaceholder(SRC, 'data:image/png;base64,AAAA', readOrigMeta(dir).createdAt);
+    await cache.get(req(), regen('v'));
+    deletes.length = 0;
+    await cache.sweep(Date.now() + 1000);
+    expect(deletes.map((d) => d.kind).sort()).toEqual(['original', 'placeholder', 'variant']);
+    expect(deletes.every((d) => d.reason === 'evicted')).toBe(true);
+  });
+
+  test('sweep emits reason:superseded for an old-generation variant', async () => {
+    const cache = new ImageCache(tmp());
+    await cache.getOriginal(SRC, 60_000, 86_400_000, origFn('o1'));
+    await cache.get(req(), regen('v1'));
+    await cache.getOriginal(SRC, 0, 0, origFn('o2'));
+    await new Promise((r) => setTimeout(r, 5));
+    await cache.getOriginal(SRC, 60_000, 86_400_000, origFn('o3'));
+    deletes.length = 0;
+    await cache.sweep(Date.now());
+    expect(deletes.find((d) => d.kind === 'variant')?.reason).toBe('superseded');
+  });
+
+  test('invalidateVariantById emits reason:invalidated only when a file existed', async () => {
+    const cache = new ImageCache(tmp());
+    await cache.getOriginal(SRC, 60_000, 86_400_000, origFn('o'));
+    await cache.getVariant(SRC, 'pipe123', 'bin', async () => ({ bytes: new Uint8Array([1]), contentType: 'image/webp', width: 5, height: 5, format: 'webp' }));
+    deletes.length = 0;
+    await cache.invalidateVariantById(SRC, 'pipe123', 'bin');
+    expect(deletes).toHaveLength(1);
+    expect(deletes[0]).toMatchObject({ kind: 'variant', reason: 'invalidated', id: 'pipe123' });
+
+    deletes.length = 0;
+    await cache.invalidateVariantById(SRC, 'does-not-exist', 'bin');
+    expect(deletes).toHaveLength(0);
+  });
+
+  test('invalidateSrc emits an invalidated delete per entry while subscribed', async () => {
+    const cache = new ImageCache(tmp());
+    await cache.getOriginal(SRC, 60_000, 86_400_000, origFn('o'));
+    await cache.get(req(), regen('v'));
+    deletes.length = 0;
+    await cache.invalidateSrc(SRC);
+    const kinds = deletes.map((d) => d.kind);
+    expect(kinds).toContain('original');
+    expect(kinds).toContain('variant');
+    expect(deletes.every((d) => d.reason === 'invalidated')).toBe(true);
   });
 });
