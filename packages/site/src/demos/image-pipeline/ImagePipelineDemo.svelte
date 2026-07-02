@@ -1,6 +1,7 @@
 <script module>
   import { cachedImage } from 'mochi-framework';
   import { loadSources } from '../../components/utils.ts';
+  import { files } from './files.ts';
   import { highlightCode } from '../../lib/highlight.server';
 
   const CDN = 'https://sta-public.fra1.cdn.digitaloceanspaces.com/mochi';
@@ -96,11 +97,7 @@
     const progressive = await render(10, (im) => im.resize(300, 300, { fit: 'inside' }).jpeg({ progressive: true }), 'image/jpeg');
     const codeProgressive = await snippet('img.jpeg({ progressive: true });');
 
-    const sources = await loadSources([
-      { label: 'ImagePipelineDemo.svelte', path: './src/demos/image-pipeline/ImagePipelineDemo.svelte' },
-      { label: 'routes.ts', path: './src/demos/image-pipeline/routes.ts' },
-      { label: 'index.ts', path: './src/demoIndex.ts' },
-    ]);
+    const sources = await loadSources(files);
 
     return {
       codeSetup,

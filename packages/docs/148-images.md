@@ -33,7 +33,7 @@ Add `placeholder` to render a [ThumbHash](https://evanw.github.io/thumbhash/) bl
 | Prop                   | Default    | Notes                                                                  |
 | ---------------------- | ---------- | ---------------------------------------------------------------------- |
 | `src`                  | —          | http/https source URL (required)                                       |
-| `width` / `height`     | —          | Target size; height-only derives width by ratio                        |
+| `width` / `height`     | —          | Target size; height-only derives width by ratio. Must be positive      |
 | `alt`                  | `''`       | Always set this                                                        |
 | `format`               | `webp`     | `webp` \| `jpeg` \| `png` \| `avif`                                    |
 | `quality`              | `80`       | 1–100 (ignored for `png`)                                              |
@@ -42,6 +42,8 @@ Add `placeholder` to render a [ThumbHash](https://evanw.github.io/thumbhash/) bl
 | `loading` / `decoding` | lazy/async | Passed through to `<img>`                                              |
 
 > `Bun.Image` supports only `fit: 'inside'` and `fit: 'fill'` — there is no crop/"cover" mode. To get an exact square from a non-square source you must use `fill` (which stretches); otherwise `inside` keeps the aspect ratio and the output won't fill both dimensions.
+
+`<Image>` also works inside `mochi:hydrate*` islands: minting needs the server secret, so the minted URL (and placeholder) are serialized into the page via Svelte's `hydratable` and reused during hydration — the browser never mints. If a client-side re-render changes the image props, there's no snapshot for the new configuration and the `<img>` degrades to the raw `src` URL.
 
 ### Programmatic
 
@@ -113,7 +115,7 @@ In **development** mode no `Cache-Control` is sent at all, so edits and `invalid
 
 ### Invalidation
 
-Invalidate a source immediately. It operates on the shared original, so it cascades to every resized variant:
+Invalidate a source immediately. It operates on the shared original, so it cascades to every resized variant — and to the ThumbHash placeholder, which is bound to the original's generation and recomputes once the source has been re-fetched:
 
 ```ts
 import { invalidateImage } from 'mochi-framework';
@@ -163,21 +165,21 @@ await Mochi.serve({
 });
 ```
 
-| Option                 | Default                | Notes                                           |
-| ---------------------- | ---------------------- | ----------------------------------------------- |
-| `enabled`              | `true`                 | Set `false` to unmount the endpoint             |
-| `cacheDir`             | `./.mochi/image-cache` | Must not be under `publicDir`                   |
-| `defaultFormat`        | `webp`                 | Used when the caller omits `format`             |
-| `outputFormats`        | all four               | Allowed output formats                          |
-| `allowedHosts`         | any public host        | Exact host or `*.example.com`                   |
-| `blockPrivateNetworks` | `true`                 | Reject private/loopback/link-local addresses    |
-| `fetchTimeoutMs`       | `10_000`               | Upstream fetch timeout                          |
-| `maxResponseBytes`     | `20 MB`                | Hard source-size cap                            |
-| `maxPixels`            | `50_000_000`           | Decompression-bomb guard                        |
-| `timeToStale`          | `14_400_000`           | Cache time-to-stale (ms); variants follow it    |
-| `timeToEvict`          | `86_400_000`           | Cache time-to-evict (ms); variants follow it    |
-| `sweepIntervalMs`      | `3_600_000`            | Background cache-janitor interval; `0` disables |
-| `compressPayload`      | `true`                 | Deflate the encrypted URL payload               |
+| Option                 | Default                | Notes                                                                     |
+| ---------------------- | ---------------------- | ------------------------------------------------------------------------- |
+| `enabled`              | `true`                 | `false` unmounts the endpoint; URL helpers then return the raw source URL |
+| `cacheDir`             | `./.mochi/image-cache` | Must not be under `publicDir`                                             |
+| `defaultFormat`        | `webp`                 | Used when the caller omits `format`                                       |
+| `outputFormats`        | all four               | Allowed output formats                                                    |
+| `allowedHosts`         | any public host        | Exact host or `*.example.com`                                             |
+| `blockPrivateNetworks` | `true`                 | Reject private/loopback/link-local addresses                              |
+| `fetchTimeoutMs`       | `10_000`               | Upstream fetch timeout                                                    |
+| `maxResponseBytes`     | `20 MB`                | Hard source-size cap                                                      |
+| `maxPixels`            | `50_000_000`           | Decompression-bomb guard                                                  |
+| `timeToStale`          | `14_400_000`           | Cache time-to-stale (ms); variants follow it                              |
+| `timeToEvict`          | `86_400_000`           | Cache time-to-evict (ms); variants follow it                              |
+| `sweepIntervalMs`      | `3_600_000`            | Background cache-janitor interval; `0` disables                           |
+| `compressPayload`      | `true`                 | Deflate the encrypted URL payload                                         |
 
 <Callout type="warning">
 

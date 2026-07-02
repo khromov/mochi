@@ -137,11 +137,49 @@ describe('ImageCache variant (lifetime follows the original)', () => {
     expect((await cache.get(png, regen('p3'))).status).toBe('miss');
   });
 
-  test('placeholder round-trips', async () => {
-    const cache = new ImageCache(tmp());
-    expect(await cache.getPlaceholder('https://example.com/a.png')).toBeNull();
-    await cache.setPlaceholder('https://example.com/a.png', 'data:image/png;base64,AAAA');
-    expect(await cache.getPlaceholder('https://example.com/a.png')).toBe('data:image/png;base64,AAAA');
+  test('placeholder round-trips while the original generation matches', async () => {
+    const dir = tmp();
+    const cache = new ImageCache(dir);
+    expect(await cache.getPlaceholder(SRC)).toBeNull();
+    await cache.getOriginal(SRC, 60_000, 86_400_000, origFn('o'));
+    await cache.setPlaceholder(SRC, 'data:image/png;base64,AAAA', readOrigMeta(dir).createdAt);
+    expect(await cache.getPlaceholder(SRC)).toBe('data:image/png;base64,AAAA');
+  });
+
+  test('placeholder misses once the original moves to a new generation', async () => {
+    const dir = tmp();
+    const cache = new ImageCache(dir);
+    await cache.getOriginal(SRC, 60_000, 86_400_000, origFn('o1'));
+    await cache.setPlaceholder(SRC, 'data:image/png;base64,AAAA', readOrigMeta(dir).createdAt);
+    expect(await cache.getPlaceholder(SRC)).toBe('data:image/png;base64,AAAA');
+
+    // Hard invalidate + re-fetch: the original's createdAt (generation) bumps,
+    // so the placeholder computed from the old bytes must not be served.
+    await cache.invalidateOriginal(SRC, true);
+    await new Promise((r) => setTimeout(r, 5));
+    await cache.getOriginal(SRC, 60_000, 86_400_000, origFn('o2'));
+    expect(await cache.getPlaceholder(SRC)).toBeNull();
+  });
+
+  test('a variant stamped from an older original generation is not served fresh', async () => {
+    const dir = tmp();
+    const cache = new ImageCache(dir);
+    await cache.getOriginal(SRC, 60_000, 86_400_000, origFn('o'));
+    const gen = readOrigMeta(dir).createdAt;
+
+    // The regenerate callback reports bytes derived from an older generation
+    // (a background original refresh landed mid-regeneration).
+    await cache.getVariant(SRC, 'race1', 'webp', async () => ({
+      bytes: new TextEncoder().encode('old-gen'),
+      contentType: 'image/webp',
+      width: 100,
+      height: 100,
+      format: 'webp',
+      originalCreatedAt: gen - 1,
+    }));
+
+    const result = await cache.getVariant(SRC, 'race1', 'webp', regen('v2'));
+    expect(result.status).toBe('stale'); // generation mismatch → regenerate, don't serve as fresh
   });
 
   test('getVariant caches an arbitrary pipeline id and follows the original', async () => {
@@ -307,6 +345,29 @@ describe('ImageCache.invalidateOriginal', () => {
     const cache = new ImageCache(tmp());
     await cache.invalidateOriginal('https://example.com/missing.png', true);
   });
+
+  test('a stale window snapshot cannot resurrect a hard-invalidated entry', async () => {
+    const dir = tmp();
+    const cache = new ImageCache(dir);
+    await cache.getOriginal(SRC, 60_000, 86_400_000, origFn('o'));
+    const snapshot = readOrigMeta(dir); // read before the invalidate lands
+
+    await cache.invalidateOriginal(SRC, true);
+    const invalidated = readOrigMeta(dir);
+
+    // Simulates a request that read the sidecar before the invalidate and asks
+    // for a shorter-than-snapshot window: it must min against the on-disk
+    // (invalidated) values, not extend them from its stale copy.
+    await (
+      cache as unknown as {
+        shortenOriginalWindow(src: string, meta: SidecarMeta, timeToStale: number, timeToEvict: number, now: number): Promise<SidecarMeta>;
+      }
+    ).shortenOriginalWindow(SRC, snapshot, 30_000, 1_000_000, Date.now());
+
+    const after = readOrigMeta(dir);
+    expect(after.staleAt).toBeLessThanOrEqual(invalidated.staleAt);
+    expect(after.evictAt).toBeLessThanOrEqual(invalidated.evictAt);
+  });
 });
 
 describe('ImageCache.sweep', () => {
@@ -355,18 +416,18 @@ describe('ImageCache.sweep', () => {
     expect(swept.removedOriginals).toBe(0); // fresh original kept
   });
 
-  test('preserves the placeholder and keeps the dir', async () => {
+  test('removes the placeholder with its evicted original so the dir is reclaimed', async () => {
     const dir = tmp();
     const cache = new ImageCache(dir);
-    await cache.setPlaceholder(SRC, 'data:image/png;base64,AAAA');
     await cache.getOriginal(SRC, 0, 0, origFn('o')); // immediately evicted
+    await cache.setPlaceholder(SRC, 'data:image/png;base64,AAAA', readOrigMeta(dir).createdAt);
     await cache.get(req(), regen('v'));
 
     const swept = await cache.sweep(Date.now() + 1000);
     expect(swept.removedOriginals).toBe(1);
     expect(swept.removedVariants).toBe(1);
-    expect(await cache.getPlaceholder(SRC)).toBe('data:image/png;base64,AAAA');
-    expect(existsSync(join(dir, srcHash(SRC)))).toBe(true);
+    expect(await cache.getPlaceholder(SRC)).toBeNull();
+    expect(existsSync(join(dir, srcHash(SRC)))).toBe(false);
   });
 
   test('removes a stray-format original leftover when the original is evicted', async () => {

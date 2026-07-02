@@ -1,10 +1,19 @@
 <script lang="ts">
-  // Pure-SSR image component: emits a single <img> pointing at a signed,
+  // Server-rendered image component: emits a single <img> pointing at a signed,
   // cached, resized URL. With `placeholder`, the ThumbHash blur is set as the
   // <img>'s own background-image — it shows through until the real image paints
-  // over it, so the blur-up needs zero client JS, no extra element, and no
-  // hydration.
-  import { getResizedImage, getImagePlaceholder } from './getResizedImage';
+  // over it, so the blur-up needs zero client JS.
+  //
+  // Also works inside mochi:hydrate* islands: URL minting needs the server
+  // secret, so the server-minted values are wrapped in `hydratable` — they're
+  // devalue-serialized into the page and reused during hydration instead of
+  // re-run in the browser. The import goes through the `mochi-framework`
+  // virtual module, whose client build ships throwing stubs instead of the
+  // node-only crypto/fs/dns graph; the stubs are never called because a
+  // post-hydration re-render with changed props skips minting entirely and
+  // degrades to the raw source URL.
+  import { hydratable } from 'svelte';
+  import { getResizedImage, getImagePlaceholder } from 'mochi-framework';
   import type { ImageFit, ImageFormat } from './types';
 
   let {
@@ -33,8 +42,10 @@
     class?: string;
   } = $props();
 
-  const resized = $derived(getResizedImage(src, { width, height, quality, format, fit }));
-  const blur = $derived(placeholder ? await getImagePlaceholder(src) : null);
+  const isBrowser = typeof window !== 'undefined';
+  const key = $derived(`mochi:image:${JSON.stringify([src, width, height, quality, format, fit])}`);
+  const resized = $derived(hydratable(key, () => (isBrowser ? src : getResizedImage(src, { width, height, quality, format, fit }))));
+  const blur = $derived(placeholder ? await hydratable(`${key}#placeholder`, () => (isBrowser ? null : getImagePlaceholder(src))) : null);
 </script>
 
 <img

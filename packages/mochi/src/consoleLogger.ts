@@ -55,6 +55,7 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
     api: 'info',
     file: 'info',
     asset: 'debug',
+    image: 'debug',
     fallback: 'debug',
     error: 'log',
   };
@@ -385,6 +386,7 @@ function colorKind(kind: MochiRequestKind): string {
     case 'file':
       return styleText('green', kind.padEnd(KIND_WIDTH));
     case 'asset':
+    case 'image':
       return styleText('dim', kind.padEnd(KIND_WIDTH));
     case 'fallback':
       return styleText('yellow', kind.padEnd(KIND_WIDTH));

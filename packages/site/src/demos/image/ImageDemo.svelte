@@ -2,6 +2,8 @@
   import DemoPage from '../../components/DemoPage.svelte';
   import ImageCredits from '../../components/ImageCredits.svelte';
   import { loadSources } from '../../components/utils.ts';
+  import { files } from './files.ts';
+  import ImageIslandCard from './ImageIslandCard.svelte';
   import { Image } from 'mochi-framework/image';
   import { getResizedImage, getImage, getImagePlaceholder } from 'mochi-framework';
   import ArrowDown from '@lucide/svelte/icons/arrow-down';
@@ -16,11 +18,7 @@
 
   const blur = await getImagePlaceholder(remote);
 
-  const sources = await loadSources([
-    { label: 'ImageDemo.svelte', path: './src/demos/image/ImageDemo.svelte' },
-    { label: 'routes.ts', path: './src/demos/image/routes.ts' },
-    { label: 'index.ts', path: './src/demoIndex.ts' },
-  ]);
+  const sources = await loadSources(files);
 </script>
 
 <DemoPage
@@ -50,6 +48,15 @@
       <Image src={remote} width={600} height={400} alt="A resized random photo with blur-up" placeholder />
     </div>
   {/if}
+
+  <h3>Inside a hydrated island</h3>
+  <p>
+    <code>&lt;Image&gt;</code> also works inside a <code>mochi:hydrate</code> island: the server-minted URL and placeholder are serialized into the page (via Svelte's
+    <code>hydratable</code>) and reused during hydration, so the browser never needs the signing secret. The button is live client-side state:
+  </p>
+  <div class="frame">
+    <ImageIslandCard mochi:hydrate src={remote} />
+  </div>
 
   <h3>Programmatic</h3>
   <p><code>getResizedImage()</code> returns a signed URL you can use anywhere:</p>

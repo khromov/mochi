@@ -17,6 +17,29 @@ function clampQuality(quality: number): number {
   return Math.min(100, Math.max(1, Math.round(quality)));
 }
 
+// Throw rather than clamp: the binary codec's varint silently mangles negative
+// or NaN values (-5 would decode as 123), so a bad dimension must fail at mint
+// time instead of serving a silently wrong image.
+function checkDimension(value: number | undefined, name: string): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!Number.isFinite(value) || value < 1) {
+    throw new Error(`Image ${name} must be a positive number, got ${value}`);
+  }
+  return Math.round(value);
+}
+
+function checkTtl(value: number | undefined, name: string): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!Number.isFinite(value) || value < 0) {
+    throw new Error(`Image ${name} must be a non-negative number of milliseconds, got ${value}`);
+  }
+  return Math.round(value);
+}
+
 function buildRequest(src: string, opts: ResizeImageOptions, resolved: ResolvedImageOptions): ImageRequest {
   let format: ImageFormat = opts.format ?? resolved.defaultFormat;
   if (!resolved.outputFormats.includes(format)) {
@@ -25,8 +48,8 @@ function buildRequest(src: string, opts: ResizeImageOptions, resolved: ResolvedI
   }
   return {
     src,
-    width: opts.width,
-    height: opts.height,
+    width: checkDimension(opts.width, 'width'),
+    height: checkDimension(opts.height, 'height'),
     fit: opts.fit ?? 'inside',
     withoutEnlargement: opts.withoutEnlargement ? true : undefined,
     format,
@@ -48,10 +71,21 @@ export function getResizedImage(src: string, opts: ResizeImageOptions = {}): str
   return mintImageUrl(req, buildImageFilename(req), options);
 }
 
+let warnedDisabled = false;
+
 // Mint the signed URL and let the `image:url` filter rewrite it (e.g. prepend a
 // CDN origin) before it's recorded/returned — so the debug bar logs what the
 // caller actually gets.
 function mintImageUrl(req: ImageRequest, filename: string, options: ResolvedImageOptions): string {
+  // The endpoint isn't registered when the feature is off, so a minted URL
+  // would silently 404. Degrade to the raw source URL instead.
+  if (!options.enabled) {
+    if (!warnedDisabled) {
+      warnedDisabled = true;
+      logger.warn('The image endpoint is disabled (image.enabled is false); getResizedImage/getImage return the raw source URL.');
+    }
+    return req.src;
+  }
   const token = encryptImageRequest(req, filename, options, options.compressPayload);
   const raw = `${getImageAssetPrefix()}/image/${filename}?p=${token}`;
   const url = applyFilter('image:url', raw, { src: req.src, filename, original: req.original === true });
@@ -68,8 +102,8 @@ function buildOriginalRequest(src: string, opts: OriginalImageOptions, resolved:
     quality: resolved.defaultQuality,
     autoOrient: resolved.autoOrient,
     original: true,
-    timeToStale: opts.timeToStale,
-    timeToEvict: opts.timeToEvict,
+    timeToStale: checkTtl(opts.timeToStale, 'timeToStale'),
+    timeToEvict: checkTtl(opts.timeToEvict, 'timeToEvict'),
   };
 }
 
@@ -144,9 +178,9 @@ export async function getImagePlaceholder(src: string): Promise<string | null> {
     return cached;
   }
   try {
-    const { bytes } = await getCachedOriginal(src, {}, options, cache);
+    const { bytes, createdAt } = await getCachedOriginal(src, {}, options, cache);
     const dataUrl = await computePlaceholder(bytes, options);
-    await cache.setPlaceholder(src, dataUrl);
+    await cache.setPlaceholder(src, dataUrl, createdAt);
     return dataUrl;
   } catch (err) {
     logger.warn(`Could not compute image placeholder for ${src}: ${err instanceof Error ? err.message : String(err)}`);

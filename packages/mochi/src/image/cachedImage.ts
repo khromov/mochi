@@ -126,7 +126,7 @@ export class CachedImage {
     const autoOrient = this.opts.autoOrient ?? options.autoOrient;
 
     const { entry } = await cache.getVariant(this.src, this.variantId(), this.ext(), async () => {
-      const { bytes: srcBytes } = await getCachedOriginal(this.src, { timeToStale: this.opts.timeToStale, timeToEvict: this.opts.timeToEvict }, options, cache);
+      const { bytes: srcBytes, createdAt } = await getCachedOriginal(this.src, { timeToStale: this.opts.timeToStale, timeToEvict: this.opts.timeToEvict }, options, cache);
       let out: Uint8Array;
       let meta: Bun.Image.Metadata;
       try {
@@ -148,6 +148,7 @@ export class CachedImage {
         width: meta.width,
         height: meta.height,
         format: meta.format as ImageFormat,
+        originalCreatedAt: createdAt,
       };
     });
     return { bytes: entry.bytes, contentType: entry.meta.contentType, width: entry.meta.width, height: entry.meta.height, format: entry.meta.format };

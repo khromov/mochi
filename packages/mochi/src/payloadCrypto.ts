@@ -48,9 +48,16 @@ export const DEFAULT_COMPRESS_MIN_BYTES = 80;
 
 // 64-byte AES-256-SIV key derived from the root secret. SHA-512's 64-byte output
 // maps directly to noble's expected key length (split internally into the S2V
-// and CTR halves).
+// and CTR halves). Memoized per secret — the derivation is a pure function of
+// the config's secretKey, and encrypt/decrypt run on every image URL mint and
+// every island-props round-trip (the key on secret handles tests reconfiguring).
+let cachedSivKey: { secret: Buffer; key: Buffer } | undefined;
 function sivKey(): Buffer {
-  return createHmac('sha512', getMochiConfig().secretKey).update('mochi-payload-aes-siv-v1').digest();
+  const secret = getMochiConfig().secretKey;
+  if (!cachedSivKey || cachedSivKey.secret !== secret) {
+    cachedSivKey = { secret, key: createHmac('sha512', secret).update('mochi-payload-aes-siv-v1').digest() };
+  }
+  return cachedSivKey.key;
 }
 
 export interface EncryptOptions {

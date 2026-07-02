@@ -38,6 +38,11 @@ describe('assertAllowedSource', () => {
     expect(url.hostname).toBe('8.8.8.8');
   });
 
+  test('allows a public IPv6 literal (brackets stripped for the IP check, no DNS)', async () => {
+    const url = await assertAllowedSource('https://[2606:4700::6810:84e5]/a.png', block);
+    expect(url.hostname).toBe('[2606:4700::6810:84e5]');
+  });
+
   test('enforces an allowlist (exact + wildcard) without DNS', async () => {
     const opts = { allowedHosts: ['cdn.example.com', '*.images.net'], blockPrivateNetworks: false };
     expect((await assertAllowedSource('https://cdn.example.com/a.png', opts)).hostname).toBe('cdn.example.com');

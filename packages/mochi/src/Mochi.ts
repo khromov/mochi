@@ -1206,12 +1206,28 @@ export class Mochi {
     });
 
     // Register the signed image-resize endpoint (enabled unless explicitly off)
-    // and start the background cache janitor.
+    // and start the background cache janitor. The resolved options are the
+    // single source of truth for `enabled` — `getResizedImage` consults the
+    // same flag to fall back to raw source URLs when the endpoint is off.
     let stopImageSweeper: (() => void) | undefined;
-    if (options.image?.enabled !== false) {
-      bunRoutes[`${registry.assetPrefix}/image/:filename`] = createImageHandler();
-      const { options: imageOptions, cache } = getImageRuntime();
-      stopImageSweeper = startImageCacheSweeper(cache, imageOptions.sweepIntervalMs);
+    const imageRuntime = getImageRuntime();
+    if (imageRuntime.options.enabled) {
+      const imageHandler = createImageHandler();
+      bunRoutes[`${registry.assetPrefix}/image/:filename`] = withHead(async (req: Request): Promise<Response> => {
+        const start = performance.now();
+        const response = await imageHandler(req);
+        const url = new URL(req.url);
+        mochiEvents.emit('request', {
+          requestId: newRequestId(req),
+          kind: 'image',
+          method: req.method,
+          path: url.pathname + url.search,
+          status: response.status,
+          duration: performance.now() - start,
+        });
+        return response;
+      });
+      stopImageSweeper = startImageCacheSweeper(imageRuntime.cache, imageRuntime.options.sweepIntervalMs);
     }
 
     if (process.env.MOCHI_MEMORY_PROBE === '1') {

@@ -102,9 +102,13 @@ export async function assertAllowedSource(src: string, opts: SsrfGuardOptions): 
     if (url.hostname.toLowerCase() === 'localhost') {
       throw new ImageError(400, 'Source host resolves to a private address');
     }
+    // URL.hostname keeps the brackets on IPv6 literals ('[::1]'), which isIP()
+    // doesn't recognize — strip them so literals take the direct-check path
+    // instead of failing a DNS lookup of the bracketed string.
+    const host = url.hostname.startsWith('[') && url.hostname.endsWith(']') ? url.hostname.slice(1, -1) : url.hostname;
     let addresses: string[];
-    if (isIP(url.hostname)) {
-      addresses = [url.hostname];
+    if (isIP(host)) {
+      addresses = [host];
     } else {
       try {
         const results = await lookup(url.hostname, { all: true });

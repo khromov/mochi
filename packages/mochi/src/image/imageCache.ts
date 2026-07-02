@@ -38,6 +38,11 @@ export interface RegenResult {
   width: number;
   height: number;
   format: ImageFormat;
+  // The original generation (`createdAt`) the bytes were derived from. Must be
+  // reported by the callback rather than re-read after it returns: a background
+  // original refresh can land mid-regeneration, and stamping the new generation
+  // onto bytes resized from the old one would serve stale content as fresh.
+  originalCreatedAt?: number;
 }
 
 function hash(input: string): string {
@@ -115,8 +120,29 @@ function isMissingFileError(err: unknown): boolean {
  */
 export class ImageCache {
   private inflight = new Map<string, Promise<CacheEntry>>();
+  private originalMetaLocks = new Map<string, Promise<unknown>>();
 
   constructor(private readonly root: string) {}
+
+  // Serialize read-modify-write cycles on a source's original sidecar:
+  // `shortenOriginalWindow` and `invalidateOriginal` both re-read inside the
+  // lock, so neither can clobber the other's write with a stale snapshot
+  // (e.g. resurrecting a hard-invalidated entry).
+  private withOriginalMetaLock<T>(src: string, fn: () => Promise<T>): Promise<T> {
+    const prev = this.originalMetaLocks.get(src) ?? Promise.resolve();
+    const run = prev.then(fn, fn);
+    const tail = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.originalMetaLocks.set(src, tail);
+    void tail.then(() => {
+      if (this.originalMetaLocks.get(src) === tail) {
+        this.originalMetaLocks.delete(src);
+      }
+    });
+    return run;
+  }
 
   private srcDir(src: string): string {
     return join(this.root, srcHash(src));
@@ -174,8 +200,9 @@ export class ImageCache {
 
     const promise = (async (): Promise<CacheEntry> => {
       const r = await regenerate();
-      // The variant inherits the original's SWR window and records which
-      // original generation it was resized from.
+      // The variant inherits the original's SWR window. The generation stamp
+      // prefers the callback's report (the generation of the bytes actually
+      // used) over the sidecar re-read, which may already be a newer generation.
       const om = await this.readOriginalMeta(src);
       const now = Date.now();
       const meta: SidecarMeta = {
@@ -189,7 +216,7 @@ export class ImageCache {
         staleAt: om?.staleAt ?? now,
         evictAt: om?.evictAt ?? now,
         src,
-        originalCreatedAt: om?.createdAt,
+        originalCreatedAt: r.originalCreatedAt ?? om?.createdAt,
       };
       await this.writeFor(src, id, ext, r.bytes, meta);
       return { bytes: r.bytes, meta };
@@ -351,13 +378,20 @@ export class ImageCache {
     if (wantStaleAt >= meta.staleAt && wantEvictAt >= meta.evictAt) {
       return meta;
     }
-    const next: SidecarMeta = {
-      ...meta,
-      staleAt: Math.min(meta.staleAt, wantStaleAt),
-      evictAt: Math.min(meta.evictAt, wantEvictAt),
-    };
-    await this.writeMeta(this.originalMetaPath(src), next);
-    return next;
+    return this.withOriginalMetaLock(src, async () => {
+      // Min against the current on-disk sidecar, not the caller's snapshot — a
+      // concurrent invalidate may have shortened the window since it was read.
+      const current = (await this.readOriginalMeta(src)) ?? meta;
+      const next: SidecarMeta = {
+        ...current,
+        staleAt: Math.min(current.staleAt, wantStaleAt),
+        evictAt: Math.min(current.evictAt, wantEvictAt),
+      };
+      if (next.staleAt !== current.staleAt || next.evictAt !== current.evictAt) {
+        await this.writeMeta(this.originalMetaPath(src), next);
+      }
+      return next;
+    });
   }
 
   private revalidateOriginal(
@@ -413,15 +447,17 @@ export class ImageCache {
    * expired (the next request re-fetches synchronously). No-op if nothing is cached.
    */
   async invalidateOriginal(src: string, hard: boolean): Promise<void> {
-    const meta = await this.readOriginalMeta(src);
-    if (!meta) {
-      return;
-    }
-    const now = Date.now();
-    await this.writeMeta(this.originalMetaPath(src), {
-      ...meta,
-      staleAt: Math.min(meta.staleAt, now),
-      evictAt: hard ? Math.min(meta.evictAt, now) : meta.evictAt,
+    await this.withOriginalMetaLock(src, async () => {
+      const meta = await this.readOriginalMeta(src);
+      if (!meta) {
+        return;
+      }
+      const now = Date.now();
+      await this.writeMeta(this.originalMetaPath(src), {
+        ...meta,
+        staleAt: Math.min(meta.staleAt, now),
+        evictAt: hard ? Math.min(meta.evictAt, now) : meta.evictAt,
+      });
     });
   }
 
@@ -447,11 +483,11 @@ export class ImageCache {
 
   /**
    * Janitor sweep: walk the cache root and delete entries that can no longer be
-   * served — full-size originals past their evict window, and variants whose
-   * original is gone, evicted, or superseded by a newer generation. Fresh
-   * entries and the (TTL-less) placeholder are left untouched. Variant freshness
-   * already derives from the original at request time, so this only reclaims dead
-   * disk; it never changes what a live request would see.
+   * served — full-size originals past their evict window, and variants (and the
+   * placeholder) whose original is gone, evicted, or superseded by a newer
+   * generation. Variant freshness already derives from the original at request
+   * time, so this only reclaims dead disk; it never changes what a live request
+   * would see.
    */
   async sweep(now: number = Date.now()): Promise<{ removedVariants: number; removedOriginals: number; freedBytes: number }> {
     let removedVariants = 0;
@@ -505,6 +541,13 @@ export class ImageCache {
         removedOriginals++;
       }
 
+      // The placeholder is bound to the original's generation, so it's dead
+      // disk once the original is gone — and leaving it would keep the src
+      // directory from ever being reclaimed below.
+      if (origDead && files.includes('placeholder.txt')) {
+        freedBytes += await this.removeFile(join(dir, 'placeholder.txt'));
+      }
+
       // Reclaim the src directory once the sweep has emptied it (no variants,
       // original, or placeholder remain).
       try {
@@ -523,18 +566,30 @@ export class ImageCache {
     return join(this.srcDir(src), 'placeholder.txt');
   }
 
+  /**
+   * Placeholders have no window of their own; like variants, they're bound to
+   * the original generation they were computed from, so an invalidated or
+   * re-fetched original makes the next read a miss (recompute) instead of
+   * serving the previous image's blur forever.
+   */
   async getPlaceholder(src: string): Promise<string | null> {
     try {
-      return await readFile(this.placeholderPath(src), 'utf-8');
+      const raw = await readFile(this.placeholderPath(src), 'utf-8');
+      const stored = JSON.parse(raw) as { dataUrl: string; originalCreatedAt: number };
+      const orig = await this.readOriginalMeta(src);
+      if (!orig || orig.createdAt !== stored.originalCreatedAt) {
+        return null;
+      }
+      return stored.dataUrl;
     } catch {
       return null;
     }
   }
 
-  async setPlaceholder(src: string, dataUrl: string): Promise<void> {
+  async setPlaceholder(src: string, dataUrl: string, originalCreatedAt: number): Promise<void> {
     await mkdir(this.srcDir(src), { recursive: true });
     const path = this.placeholderPath(src);
-    await writeFile(`${path}.tmp`, dataUrl);
+    await writeFile(`${path}.tmp`, JSON.stringify({ dataUrl, originalCreatedAt }));
     await rename(`${path}.tmp`, path);
   }
 }

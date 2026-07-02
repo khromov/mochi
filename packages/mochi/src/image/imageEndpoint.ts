@@ -118,7 +118,7 @@ export function createImageHandler(): (req: Request) => Promise<Response> {
 
     try {
       const { entry, status } = await cache.get(request, async () => {
-        const { bytes } = await getCachedOriginal(request.src, { timeToStale: request.timeToStale, timeToEvict: request.timeToEvict }, options, cache);
+        const { bytes, createdAt } = await getCachedOriginal(request.src, { timeToStale: request.timeToStale, timeToEvict: request.timeToEvict }, options, cache);
         const result = await resizeImage(bytes, request, options);
         return {
           bytes: result.bytes,
@@ -126,6 +126,7 @@ export function createImageHandler(): (req: Request) => Promise<Response> {
           width: result.width,
           height: result.height,
           format: result.format,
+          originalCreatedAt: createdAt,
         };
       });
 
