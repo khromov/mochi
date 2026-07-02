@@ -3,7 +3,7 @@
   import Heart from '@lucide/svelte/icons/heart';
 
   let { src }: { src: string } = $props();
-  let likes = $state(0);
+  let likes = $state(42);
 </script>
 
 <div class="card">
@@ -35,6 +35,15 @@
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     background: var(--surface);
+    /* Explicit color: the UA's `buttontext` default can render white under
+       `color-scheme: light dark` even when the site theme is light. */
+    color: var(--text);
+    font-family: var(--font-sans);
     cursor: pointer;
+  }
+  .card__btn:hover {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+    color: var(--accent-hover);
   }
 </style>

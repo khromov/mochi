@@ -137,12 +137,10 @@
     color: var(--text-muted, #888);
     line-height: 0;
   }
+  /* The global `pre` style supplies the dark code background/text; only the
+     size differs here — overriding the background alone would strand the
+     light code text on a light surface. */
   .url {
-    overflow-x: auto;
-    padding: 0.75rem 1rem;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    background: var(--surface);
     font-size: 0.8rem;
   }
   .note {
