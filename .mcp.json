@@ -11,10 +11,7 @@
     "chrome-devtools": {
       "type": "stdio",
       "command": "bunx",
-      "args": [
-        "chrome-devtools-mcp@latest",
-        "--headless=true"
-      ],
+      "args": ["chrome-devtools-mcp@latest", "--headless=true"],
       "env": {}
     }
   }
