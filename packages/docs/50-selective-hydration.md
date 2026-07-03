@@ -27,29 +27,27 @@ Props are serialized with `devalue` into a `<script type="application/json">` bl
 
 </Callout>
 
-### The `isHydratable` prop
+### `isHydratable()`
 
-Every island invocation receives one implicit prop from the framework:
+`isHydratable()` (from `mochi-framework`) tells a component whether it's part of a hydrated island. It's `true` when the call site — or any ancestor up to the island boundary — uses `mochi:hydrate`, `mochi:hydrate:visible`, `mochi:clientOnly`, `mochi:clientOnly:visible`, or `mochi:defer mochi:hydrate`; `false` for pure SSR-only renders and bare `mochi:defer`. For `mochi:clientOnly*` islands it is always `true` (they never server-render).
 
-- `isHydratable` — `true` when the call site uses `mochi:hydrate`, `mochi:hydrate:visible`, `mochi:clientOnly`, `mochi:clientOnly:visible`, or `mochi:defer mochi:hydrate`. Undefined for pure SSR-only invocations. For `mochi:clientOnly*` islands it is always `true` (they never server-render, so the component only ever runs at client mount).
+Unlike a prop, it propagates through the whole island subtree — a nested, non-directive child reads the same value as the island root — so you don't thread anything down manually. It reads a Svelte context, so call it at component init (top of `<script>`), not inside an `$effect`.
 
 `mochi:hydrate*` and `mochi:clientOnly*` islands receive no `islandId` prop — for a unique id, use Svelte's `$props.id()`. Server islands (`mochi:defer`) are the exception: they carry an `islandId` inside their signed props envelope as the render's `idPrefix`.
 
-Accept it in the component's `$props()` to branch on hydration state at the same call site that opts in:
+Branch on hydration state at the same call site that opts in:
 
 ```svelte
 <!-- file: src/lib/Counter.svelte -->
 <script lang="ts">
-  let {
-    isHydratable,
-    count = 0,
-  }: {
-    isHydratable?: boolean;
-    count?: number;
-  } = $props();
+  import { isHydratable } from 'mochi-framework';
+
+  let { count = 0 }: { count?: number } = $props();
+
+  const hydrating = isHydratable();
 </script>
 
-{#if isHydratable}
+{#if hydrating}
   <button onclick={() => count++}>{count}</button>
 {:else}
   <span>{count}</span>

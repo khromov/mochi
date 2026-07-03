@@ -4,6 +4,7 @@ import { hydrate, mount } from 'svelte';
 import type { Component } from 'svelte';
 import { parse as devalueParse } from 'devalue';
 import { isDev, logger } from 'mochi-framework';
+import { HYDRATABLE_KEY } from '../isHydratable';
 import './IslandFailure';
 import { islandFailureStub } from './islandFailureStub';
 import { observeVisible } from './sharedVisibilityObserver';
@@ -125,7 +126,6 @@ class HydratableIsland extends HTMLElement {
       }
       throw err;
     }
-    props.isHydratable = true;
     // `transformError` makes <svelte:boundary> work for client-side errors
     // (e.g. throws inside $effect / $derived after hydration). Returns an
     // Error instance — same shape as the SSR transformError — so user-written
@@ -143,14 +143,21 @@ class HydratableIsland extends HTMLElement {
       });
       return out;
     };
+    // For plain/clientOnly islands `Component` is the island's generated context
+    // wrapper (registered under the island name) — it sets the `isHydratable()`
+    // context and statically renders the real component; the SSR side renders the
+    // same wrapper, so markers match. `mochi:defer mochi:hydrate` islands render
+    // standalone server-side without that wrapper, so we also seed the context
+    // here (data-only — it doesn't affect markers) and on the standalone render.
+    const context = new Map<symbol, boolean>([[HYDRATABLE_KEY, true]]);
     const clientOnly = this.hasAttribute('client-only');
     if (clientOnly) {
       // mochi:clientOnly islands have no SSR HTML — the wrapper holds optional
       // fallback content. Remove it exactly when the real component mounts.
       this.innerHTML = '';
-      mount(Component, { target: this, props, transformError });
+      mount(Component, { target: this, props, transformError, context });
     } else {
-      hydrate(Component, { target: this, props, transformError });
+      hydrate(Component, { target: this, props, transformError, context });
     }
     logger.log(clientOnly ? 'Mounted' : 'Hydrated', name);
   }

@@ -1,18 +1,20 @@
 <script lang="ts">
   import { readFileSync } from 'node:fs';
+  import { isHydratable } from 'mochi-framework';
 
   let {
     src,
     string,
-    isHydratable,
   }: {
     src?: string;
     string?: string;
-    isHydratable?: boolean;
   } = $props();
 
+  // Read the context at init (getContext can't run inside a $derived).
+  const hydrating = isHydratable();
+
   const content = $derived.by(() => {
-    if (isHydratable) {
+    if (hydrating) {
       throw new Error('<RawScript /> must not be hydrated — it inlines file contents during SSR only. Remove the mochi: directives.');
     }
 

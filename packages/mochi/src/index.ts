@@ -23,6 +23,7 @@ export { MemoryStorage, FileStorage } from './cache-storage';
 export type { FileStorageOptions } from './cache-storage';
 export { getResizedImage, getImage, getImageBytes, getImagePlaceholder, invalidateImage } from './image/getResizedImage';
 export { cachedImage, CachedImage } from './image/cachedImage';
+export { isHydratable } from './isHydratable';
 export type { CachedImageOptions } from './image/cachedImage';
 export type { MochiImageOptions, ResizeImageOptions, OriginalImageOptions, InvalidateImageOptions, ImageFormat, ImageFit } from './image/types';
 export { sequence } from './hooks';

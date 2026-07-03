@@ -1,13 +1,13 @@
 <script lang="ts">
-  import { enhance, isServer, getRequestContext } from 'mochi-framework';
+  import { enhance, isServer, isHydratable, getRequestContext } from 'mochi-framework';
   import type { MochiEnhanceOptions, MochiSubmitFunction } from 'mochi-framework';
 
-  let { initialUser, isHydratable }: { initialUser: string | null; isHydratable?: boolean } = $props();
+  let { initialUser }: { initialUser: string | null } = $props();
 
+  const hydrating = isHydratable();
   // For SSR-only (plain HTML) renders, read the form action result so errors
   // and the prefilled username survive the re-render after a failed POST.
-  // svelte-ignore state_referenced_locally
-  const _form = !isHydratable && isServer ? getRequestContext().form : null;
+  const _form = !hydrating && isServer ? getRequestContext().form : null;
   const _failData = _form && !_form.ok ? _form.data : null;
 
   // initialUser is the SSR snapshot — local state takes over after hydration.
@@ -43,7 +43,7 @@
 
 {#if currentUser}
   <div class="signed-in">
-    <p>Signed in as <strong>{currentUser}</strong>.{isHydratable ? ' No page reloads happened on the way here.' : ''}</p>
+    <p>Signed in as <strong>{currentUser}</strong>.{hydrating ? ' No page reloads happened on the way here.' : ''}</p>
     <!-- The default fallback handles redirect by calling window.location.assign,
          which works fine for logout. No callback needed. -->
     <form method="POST" action="?/logout" {@attach enhance()}>

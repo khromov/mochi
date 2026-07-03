@@ -14,8 +14,9 @@ describe('preprocessHydratable', () => {
     expect(transformed).toContain('<mochi-hydratable-island');
     expect(transformed).toContain('component-name="Foo"');
     expect(transformed).toContain('__MOCHI_COMPONENT_URL__Foo__');
-    expect(transformed).toContain('<Foo isHydratable={true} />');
-    expect(transformed).not.toContain('MochiIslandCtx');
+    // Childless islands render through their generated context wrapper.
+    expect(transformed).toContain('<MochiIslandWrap__0 />');
+    expect(transformed).toContain('import MochiIslandWrap__0 from "mochi-island-wrapper:');
     expect(transformed).not.toContain('mochi:hydrate');
     expect(transformed).toContain('__mochi_emit_props__');
   });
@@ -95,7 +96,9 @@ describe('preprocessHydratable', () => {
 
     expect(hydratables).toHaveLength(1);
     expect(transformed).toContain('<mochi-hydratable-island');
-    expect(transformed).toContain('<Wrapper isHydratable={true}><span>child content</span></Wrapper>');
+    // Islands with children fall back to a bare invocation (no context wrapper).
+    expect(transformed).toContain('<Wrapper><span>child content</span></Wrapper>');
+    expect(transformed).not.toContain('MochiIslandWrap');
   });
 
   test('duplicate component instances', () => {
@@ -345,15 +348,14 @@ describe('preprocessHydratable', () => {
     const source = `${SCRIPT('import Foo from "./Foo.svelte";')}<Foo mochi:hydrate count={1} />`;
     const { transformed } = preprocessHydratable(source, '/test/File.svelte');
 
-    // Hydratable islands carry no id at all — the inner component only gets
-    // isHydratable, and components needing an id use Svelte's native
+    // Hydratable islands carry no id at all — the inner component renders through
+    // its context wrapper, and components needing an id use Svelte's native
     // $props.id() (recovered from its own comment markers on hydration).
     expect(transformed).not.toContain('island-id');
-    expect(transformed).toContain('<Foo count={1} isHydratable={true} />');
+    expect(transformed).toContain('<MochiIslandWrap__0 count={1} />');
     expect(transformed).not.toContain('islandId={__mochi_iid}');
-
-    // No MochiIslandContext wrapper
-    expect(transformed).not.toContain('MochiIslandCtx');
+    // No stray isHydratable prop is injected.
+    expect(transformed).not.toContain('isHydratable=');
   });
 
   test('island id derives from $props.id() plus a per-instance counter (server islands)', () => {
@@ -559,8 +561,8 @@ describe('preprocessHydratable', () => {
     const source = `${SCRIPT('import Foo from "./Foo.svelte";')}<Foo mochi:hydrate name="test" count={42} />`;
     const { transformed } = preprocessHydratable(source, '/test/File.svelte');
 
-    // The inner tag is unchanged — boundary just wraps it
-    expect(transformed).toContain('<Foo name="test" count={42} isHydratable={true} />');
+    // Props flow onto the context wrapper, which spreads them to the component.
+    expect(transformed).toContain('<MochiIslandWrap__0 name="test" count={42} />');
     expect(transformed).toContain('<svelte:boundary>');
   });
 });
@@ -646,8 +648,10 @@ describe('mochi:clientOnly', () => {
     const { transformed, hydratables } = preprocessHydratable(source, '/test/File.svelte');
 
     expect(hydratables).toHaveLength(1);
-    // Only the hydrate instance keeps an inner component invocation
-    expect(transformed.match(/<Foo /g)).toHaveLength(1);
+    // Only the hydrate instance keeps an inner component invocation — now through
+    // its context wrapper. The clientOnly instance emits no server-side tag.
+    expect(transformed).not.toContain('<Foo ');
+    expect(transformed.match(/<MochiIslandWrap__0 \/>/g)).toHaveLength(1);
     expect(transformed.match(/<mochi-hydratable-island/g)).toHaveLength(2);
     expect(transformed.match(/client-only/g)).toHaveLength(1);
   });

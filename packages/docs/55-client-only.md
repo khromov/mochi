@@ -17,7 +17,7 @@ Add `mochi:clientOnly` to a component that must never render on the server. SSR 
 <AudioVisualizer mochi:clientOnly />
 ```
 
-Props work exactly like `mochi:hydrate` — serialized with `devalue` and embedded into the HTML. See `Passing props to islands` for the supported types. The implicit `isHydratable` prop is injected at mount (always `true`). There is **no** `islandId` prop on a client-only island — nothing renders server-side, so there's no id to carry; for a unique id inside the component, use Svelte's `$props.id()`, which `mount()` mints fresh in the browser.
+Props work exactly like `mochi:hydrate` — serialized with `devalue` and embedded into the HTML. See `Passing props to islands` for the supported types. `isHydratable()` returns `true` throughout a client-only island's subtree (it always hydrates). There is **no** `islandId` prop on a client-only island — nothing renders server-side, so there's no id to carry; for a unique id inside the component, use Svelte's `$props.id()`, which `mount()` mints fresh in the browser.
 
 ```svelte
 <MapWidget mochi:clientOnly zoom={12} center={coords} />

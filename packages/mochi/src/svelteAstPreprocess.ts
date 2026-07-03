@@ -3,6 +3,7 @@ import type { AST } from 'svelte/compiler';
 import MagicString from 'magic-string';
 import path from 'node:path';
 import { walk } from 'zimmerframe';
+import { wrapperSpecifier } from './islandWrapper';
 
 /** Svelte's AST nodes all have start/end, but estree types don't declare them. */
 interface Positioned {
@@ -13,6 +14,12 @@ interface Positioned {
 export interface HydratableComponent {
   name: string;
   resolvedPath: string;
+  // True when this island renders through its generated `isHydratable()` context
+  // wrapper (plain `mochi:hydrate*` and `mochi:clientOnly*`). The client entry
+  // registers the wrapper instead of the bare component so its markers match the
+  // SSR side. `mochi:defer mochi:hydrate` islands render standalone server-side
+  // (no inline wrapper), so they stay unwrapped.
+  wrap?: boolean;
 }
 
 export interface ServerIslandComponent {
@@ -48,6 +55,20 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
   }
   const ast = parse(source, { modern: true });
   const s = new MagicString(source);
+  // Island component resolved-path → injected local identifier for its generated
+  // context wrapper. One import per distinct island component; injected only when
+  // the map is non-empty.
+  const wrapperImports = new Map<string, string>();
+  const wrapperLocalFor = (resolvedPath: string): string => {
+    let local = wrapperImports.get(resolvedPath);
+    if (!local) {
+      // Must start with a capital so Svelte treats `<…>` as a component, not an
+      // (invalid) custom element.
+      local = `MochiIslandWrap__${wrapperImports.size}`;
+      wrapperImports.set(resolvedPath, local);
+    }
+    return local;
+  };
 
   // Build import map from AST: component name → relative import path.
   // Also detect an existing `const x = $props.id()` declaration — Svelte
@@ -133,7 +154,7 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
         // --- CLIENT ONLY ---
         if (!seen.has(resolved)) {
           seen.add(resolved);
-          hydratables.push({ name: comp.name, resolvedPath: resolved });
+          hydratables.push({ name: comp.name, resolvedPath: resolved, wrap: true });
         }
 
         // Children are the optional SSR fallback, emitted as placeholder markup
@@ -241,7 +262,7 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
 
         if (!seen.has(resolved)) {
           seen.add(resolved);
-          hydratables.push({ name: comp.name, resolvedPath: resolved });
+          hydratables.push({ name: comp.name, resolvedPath: resolved, wrap: true });
         }
 
         // Build the non-mochi props source for the inner component tag
@@ -277,17 +298,22 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
           }
         }
 
-        // Build inner component with the auto-injected `isHydratable` prop —
-        // a `true` boolean that lets components branch SSR-only behavior off
-        // the auto-injection pipeline (no Svelte context needed). Components
-        // needing a unique id use Svelte's native `$props.id()` instead.
+        // Build the inner component invocation. For the common (childless) case
+        // we render the island through its generated context wrapper, which
+        // seeds the `isHydratable()` context for the whole subtree and statically
+        // renders the component. The SAME wrapper renders on the client
+        // (registered under the island name), so the hydration markers match —
+        // a wrapper on only one side, or a dynamic/`{@render}` layer, trips a
+        // Svelte hydration_mismatch. Props flow through the wrapper's `$props()`.
+        // Islands that pass children fall back to a bare invocation (context does
+        // not propagate into them; the client can't reconstruct snippet children).
         let innerTag: string;
-        const autoProps = `isHydratable={true}`;
         if (comp.fragment.nodes.length > 0) {
           const childrenSource = comp.fragment.nodes.map((n) => source.slice(n.start, n.end)).join('');
-          innerTag = `<${comp.name}${propsSource ? ' ' + propsSource : ''} ${autoProps}>${childrenSource}</${comp.name}>`;
+          innerTag = `<${comp.name}${propsSource ? ' ' + propsSource : ''}>${childrenSource}</${comp.name}>`;
         } else {
-          innerTag = `<${comp.name}${propsSource ? ' ' + propsSource : ''} ${autoProps} />`;
+          const wLocal = wrapperLocalFor(resolved);
+          innerTag = `<${wLocal}${propsSource ? ' ' + propsSource : ''} />`;
         }
 
         // Wrap the island in <svelte:boundary> so an SSR throw inside the
@@ -340,9 +366,12 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
   // `<!--$...-->` markers (client-only mints it fresh at mount).
   const needsUid = serverIslands.length > 0;
 
-  if ((needsEmitProps || needsStringify || needsSignProps) && ast.instance) {
+  if ((needsEmitProps || needsStringify || needsSignProps || wrapperImports.size > 0) && ast.instance) {
     const contentStart = (ast.instance.content as unknown as Positioned).start;
     let imports = '';
+    for (const [resolvedPath, local] of wrapperImports) {
+      imports += `\nimport ${local} from "${wrapperSpecifier(resolvedPath)}";`;
+    }
     if (needsEmitProps) {
       imports += '\nimport { emitIslandProps as __mochi_emit_props__ } from "mochi-framework";';
     }

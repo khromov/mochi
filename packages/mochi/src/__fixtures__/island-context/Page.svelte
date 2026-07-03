@@ -3,6 +3,8 @@
 </script>
 
 <section>
-  <Probe mochi:hydrate />
+  <!-- Hydrated island with a nested plain child: both should read hydratable=true -->
+  <Probe mochi:hydrate nest />
+  <!-- Plain SSR-only sibling: hydratable=false -->
   <Probe />
 </section>

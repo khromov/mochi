@@ -62,35 +62,33 @@ export function trace(msg: string) {
 }
 ```
 
-## Auto-injected island props
+## `isHydratable()`
 
-The preprocessor injects one extra prop on every component invoked with `mochi:hydrate`, `mochi:hydrate:visible`, or `mochi:defer mochi:hydrate`:
+`isHydratable()` returns `true` when the calling component is anywhere inside a hydrated island subtree — during **both** the SSR pass and the client hydration pass — and `false` for plain SSR-only components. Because it reads a Svelte context seeded once at the island boundary, it propagates to descendants at any depth, not just the directive-bearing tag.
 
-- `isHydratable` (`true | undefined`): `true` for hydratable invocations, absent on plain SSR-only invocations.
-
-Accept it with `$props`:
+Call it at component init (top of `<script>`), like Svelte's own `getContext`:
 
 ```svelte
 <!-- file: src/lib/Counter.svelte -->
 <script lang="ts">
-  let { isHydratable }: { isHydratable?: boolean } = $props();
+  import { isHydratable } from 'mochi-framework';
+
+  const hydrating = isHydratable();
 </script>
 ```
 
 For a unique per-instance id (e.g. `<label for>`), use Svelte's native `$props.id()` — see [Selective hydration](/docs/selective-hydration/).
 
-### Branching SSR-only behavior with `isHydratable`
+### Branching SSR-only behavior with `isHydratable()`
 
-Use `isHydratable` to peek request-scoped state only when the client won't take over rendering — e.g. read the post-submit form snapshot so the SSR HTML reflects the last action result, but skip it when an `enhance` attachment will populate state client-side.
+Use `isHydratable()` to peek request-scoped state only when the client won't take over rendering — e.g. read the post-submit form snapshot so the SSR HTML reflects the last action result, but skip it when an `enhance` attachment will populate state client-side.
 
 ```svelte
 <!-- file: src/lib/RandomRoll.svelte -->
 <script lang="ts">
-  import { isServer, getRequestContext } from 'mochi-framework';
+  import { isServer, isHydratable, getRequestContext } from 'mochi-framework';
 
-  let { isHydratable }: { isHydratable?: boolean } = $props();
-
-  const initial = isHydratable || !isServer ? null : peekForm();
+  const initial = isHydratable() || !isServer ? null : peekForm();
 
   function peekForm() {
     const f = getRequestContext().form;

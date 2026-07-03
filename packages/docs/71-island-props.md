@@ -99,26 +99,22 @@ For `mochi:defer` server islands the flow differs: props are encrypted (opaque o
 - Class instances (the constructor is lost — only own enumerable properties survive)
 - `Symbol`
 
-### Auto-injected props
+### Knowing whether you're being hydrated
 
-The framework appends one read-only prop to every island invocation. Destructure it in `$props()` to use it:
+Islands don't receive an injected prop for this. Instead, call `isHydratable()` (from `mochi-framework`) — it's `true` anywhere inside a hydrated island subtree, not just the directive-bearing tag, so a nested child sees it too:
 
 ```svelte
 <!-- file: src/lib/UserCard.svelte -->
 <script lang="ts">
-  let {
-    isHydratable,
-    user,
-  }: {
-    isHydratable?: boolean;
-    user: { name: string; id: number };
-  } = $props();
+  import { isHydratable } from 'mochi-framework';
+
+  let { user }: { user: { name: string; id: number } } = $props();
+
+  const hydrating = isHydratable();
 </script>
 ```
 
-- `isHydratable` — `true` when the call site uses `mochi:hydrate`, `mochi:hydrate:visible`, or `mochi:defer mochi:hydrate`. Undefined for pure SSR-only invocations and for bare `mochi:defer`.
-
-`isHydratable` is set by the framework, not passed by you. Read it to render an SSR-only fallback at a call site that also hydrates client-side — see [Selective hydration](/docs/selective-hydration/).
+`isHydratable()` is `true` for `mochi:hydrate`, `mochi:hydrate:visible`, `mochi:clientOnly*`, and `mochi:defer mochi:hydrate` subtrees; `false` for pure SSR-only renders and bare `mochi:defer`. Use it to render an SSR-only fallback in a component that also hydrates client-side — see [Selective hydration](/docs/selective-hydration/).
 
 `islandId` is a reserved name on every island (`mochi:hydrate` and `mochi:defer` alike) — passing it as a literal prop is a compile error, so a component can move between directives without the name silently changing meaning. On `mochi:defer` it is also the framework's transport key inside the signed envelope, stripped server-side before the component renders; a spread carrying it there is overridden by the framework value (last key wins). For a unique id inside the component, use `$props.id()`.
 

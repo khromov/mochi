@@ -23,7 +23,7 @@ function makeCtx(): MochiRequestContext {
   };
 }
 
-describe('auto-injected `isHydratable` prop', () => {
+describe('isHydratable() context propagation', () => {
   let outDir: string;
   let registry: ComponentRegistry;
 
@@ -37,10 +37,12 @@ describe('auto-injected `isHydratable` prop', () => {
     rmSync(outDir, { recursive: true, force: true });
   });
 
-  test('hydratable Probe renders data-hydratable="true", plain Probe renders "false"', async () => {
+  test('context reaches the island root AND its nested non-directive child, not the plain sibling', async () => {
     const result = await requestContext.run(makeCtx(), () => registry.renderComponent(FIXTURE_PAGE));
 
+    // Page renders: <Probe mochi:hydrate nest/> (root + nested child) then a
+    // plain <Probe/>. Root and nested child read true; the plain sibling false.
     const matches = [...result.body.matchAll(/data-hydratable="(true|false)"/g)].map((m) => m[1]);
-    expect(matches).toEqual(['true', 'false']);
+    expect(matches).toEqual(['true', 'true', 'false']);
   });
 });

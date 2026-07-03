@@ -11,6 +11,7 @@ import { logger } from './log';
 import { mochiEvents } from './events';
 import type { MarkdownConfig, MochiManifest, MochiSvelteShakerOptions } from './types';
 import { type HydratableComponent, type ServerIslandComponent } from './svelteAstPreprocess';
+import { WRAPPER_PREFIX, componentPathFromWrapper, wrapperSource } from './islandWrapper';
 import { cachedPreprocessHydratable, createPreprocessCacheStats } from './preprocessCache';
 import { CompileCache, compileFingerprint, createCompileCacheStats, type CompileCacheStats } from './compileCache';
 import { mergeCompilerOptions, type MochiSvelteConfig } from './svelteConfig';
@@ -543,6 +544,10 @@ export class ComponentRegistry {
             // so .svelte files can `import { getResizedImage } from 'mochi-framework'`.
             `export { getResizedImage, getImage, getImageBytes, getImagePlaceholder, invalidateImage } from "${toPosixPath(path.join(FRAMEWORK_DIR, 'image/getResizedImage.ts'))}";`,
             `export { cachedImage, CachedImage } from "${toPosixPath(path.join(FRAMEWORK_DIR, 'image/cachedImage.ts'))}";`,
+            // `isHydratable()` reads a Svelte context and is genuinely
+            // isomorphic — the same real re-export ships to the client block
+            // below (not a throwing stub like the server-only helpers above).
+            `export { isHydratable } from "${toPosixPath(path.join(FRAMEWORK_DIR, 'isHydratable.ts'))}";`,
             // `enhance` / `deserialize` are browser-only Svelte action helpers.
             // Svelte never invokes actions during SSR, so these stubs only fire
             // if user code calls them on the server — which is a usage error.
@@ -558,6 +563,17 @@ export class ComponentRegistry {
           contents: [`import { encryptProps } from "${toPosixPath(path.join(FRAMEWORK_DIR, 'serverIslandCrypto.ts'))}";`, `export { encryptProps };`].join('\n'),
           loader: 'js',
         }));
+        // Generated island context wrappers (see islandWrapper.ts). Materialized
+        // on demand so the SSR build can compile them while it is still
+        // discovering islands.
+        build.onResolve({ filter: new RegExp('^' + WRAPPER_PREFIX) }, (args) => ({ path: args.path, namespace: 'mochi-island-wrapper' }));
+        build.onLoad({ filter: /.*/, namespace: 'mochi-island-wrapper' }, (args) => {
+          const src = wrapperSource(toPosixPath(componentPathFromWrapper(args.path)), toPosixPath(path.join(FRAMEWORK_DIR, 'isHydratable.ts')));
+          const { js } = svelteCompile(src, mergeCompilerOptions(userCompilerOptions, { generate: 'server', filename: args.path }));
+          // resolveDir anchors the wrapper's bare `svelte` imports (the virtual
+          // module has no filesystem location of its own).
+          return { contents: js.code, loader: 'js', resolveDir: FRAMEWORK_DIR };
+        });
         build.onLoad({ filter: /\.svelte\.[jt]s$/ }, async (args) => {
           let source = await Bun.file(args.path).text();
           if (args.path.endsWith('.ts')) {
@@ -870,10 +886,12 @@ export class ComponentRegistry {
     const compileCacheStats = createCompileCacheStats();
     const clientFingerprint = compileFingerprint(userCompilerOptions, development);
     const compileCache = this.compileCache;
-    // Deduplicate by resolved path
+    // Deduplicate by resolved path; keep `wrap` sticky so a component used as a
+    // plain island anywhere gets its context wrapper registered.
     const unique = new Map<string, HydratableComponent>();
     for (const c of this.hydratableComponents) {
-      unique.set(c.resolvedPath, c);
+      const prev = unique.get(c.resolvedPath);
+      unique.set(c.resolvedPath, prev?.wrap ? { ...c, wrap: true } : c);
     }
 
     // Clear previous client JS entries (CSS entries are kept — they're per-component and stable)
@@ -906,7 +924,20 @@ export class ComponentRegistry {
     for (const [, comp] of unique) {
       const entryName = `_hydrate-${comp.name}.js`;
       const entryPath = toPosixPath(path.join(frameworkDir, entryName));
-      const entrySource = `import { registerComponent } from "${hydratableIslandPath}";\nimport ${comp.name} from "${toPosixPath(comp.resolvedPath)}";\nregisterComponent("${comp.name}", ${comp.name});\n`;
+      // Register the island's context wrapper (not the bare component) so the
+      // client hydrates the same tree the SSR side rendered — see islandWrapper.ts.
+      // The wrapper is pre-compiled to client JS and served from a real
+      // framework-dir path via `files`, so its bare `svelte` imports resolve (a
+      // namespaced virtual module has no directory Bun can resolve them from).
+      let importFrom = toPosixPath(comp.resolvedPath);
+      if (comp.wrap) {
+        const wrapPath = toPosixPath(path.join(frameworkDir, `__mochi_island_wrap_${comp.name}.js`));
+        const wrapSrc = wrapperSource(toPosixPath(comp.resolvedPath), toPosixPath(path.join(FRAMEWORK_DIR, 'isHydratable.ts')));
+        const { js } = svelteCompile(wrapSrc, mergeCompilerOptions(userCompilerOptions, { generate: 'client', filename: wrapPath, dev: development }));
+        filesMap[wrapPath] = js.code;
+        importFrom = wrapPath;
+      }
+      const entrySource = `import { registerComponent } from "${hydratableIslandPath}";\nimport ${comp.name} from "${importFrom}";\nregisterComponent("${comp.name}", ${comp.name});\n`;
       entrypoints.push(entryPath);
       filesMap[entryPath] = entrySource;
     }
@@ -1037,6 +1068,9 @@ export class ComponentRegistry {
             `export function invalidateImage() { throw new Error("invalidateImage() is only available on the server"); }`,
             `export function cachedImage() { throw new Error("cachedImage() is only available on the server"); }`,
             `export class CachedImage { constructor() { throw new Error("CachedImage is only available on the server"); } }`,
+            // Isomorphic — same real re-export as the server block (reads Svelte
+            // context, which works identically during hydration).
+            `export { isHydratable } from "${toPosixPath(path.join(FRAMEWORK_DIR, 'isHydratable.ts'))}";`,
             `export { enhance, deserialize } from "${enhanceClientPath}";`,
           ].join('\n'),
           loader: 'js',
@@ -1191,7 +1225,11 @@ export class ComponentRegistry {
     }
   }
 
-  async renderComponent(filename: string, props?: Record<string, unknown>, opts?: { stripMarkers?: boolean; idPrefix?: string }): Promise<RenderResult> {
+  async renderComponent(
+    filename: string,
+    props?: Record<string, unknown>,
+    opts?: { stripMarkers?: boolean; idPrefix?: string; context?: Map<unknown, unknown> },
+  ): Promise<RenderResult> {
     await this.compile(filename);
     const { module: mod, cssComponents, hydratables } = this.compiledComponents.get(filename)!;
 
@@ -1239,6 +1277,7 @@ export class ComponentRegistry {
       props?: Record<string, unknown>;
       transformError: typeof transformError;
       idPrefix?: string;
+      context?: Map<unknown, unknown>;
     } = {
       transformError,
     };
@@ -1247,6 +1286,9 @@ export class ComponentRegistry {
     }
     if (opts?.idPrefix) {
       renderOptions.idPrefix = opts.idPrefix;
+    }
+    if (opts?.context) {
+      renderOptions.context = opts.context;
     }
     const { body, head } = await render(mod.default, renderOptions);
 

@@ -4,6 +4,7 @@ import { existsSync, rmSync, mkdirSync } from 'fs';
 import path from 'node:path';
 import { ComponentRegistry, formatCompileErrors } from './ComponentRegistry';
 import type { RenderResult } from './ComponentRegistry';
+import { HYDRATABLE_KEY } from './isHydratable';
 import { loadSvelteConfig } from './svelteConfig';
 import { buildInlineWebComponent } from './buildInlineWebComponent';
 import { buildClientStatsRoutes, CLIENT_STATS_COMPONENT } from './clientStatsRoutes';
@@ -1135,6 +1136,11 @@ export class Mochi {
           result = await registry.renderComponent(componentPath, props as Record<string, unknown>, {
             stripMarkers: false,
             ...(islandId && !islandId.includes('--') ? { idPrefix: islandId } : {}),
+            // For `mochi:defer mochi:hydrate`, this standalone render is the island
+            // root, so seeding context here scopes `isHydratable()` to the island
+            // subtree (the client mirrors it in HydratableIsland). A pure
+            // `mochi:defer` never hydrates, so it stays unseeded.
+            ...(hydrateMode === 'eager' || hydrateMode === 'visible' ? { context: new Map([[HYDRATABLE_KEY, true]]) } : {}),
           });
         } catch (err) {
           const e = err instanceof Error ? err : new Error(String(err));

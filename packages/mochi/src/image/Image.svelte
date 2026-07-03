@@ -4,22 +4,21 @@
   // <img>'s own background-image — it shows through until the real image paints
   // over it, so the blur-up needs zero client JS.
   //
-  // Inside a mochi:hydrate* island, forward the island's injected
-  // `isHydratable` prop. Minting needs the server secret, so with the prop set
-  // the minted values are wrapped in `hydratable` — devalue-serialized into
-  // the page and reused during hydration instead of re-minted in the browser.
-  // Without it (pure SSR) nothing is serialized: the snapshot would print
-  // `src` into the markup for no benefit, undoing the encrypted token's
-  // whole point. In the island case that's fine — island props (and the
+  // Inside a mochi:hydrate* island `isHydratable()` is true (it propagates to
+  // the whole island subtree, so a nested `<Image>` sees it too). Minting needs
+  // the server secret, so there the minted values are wrapped in `hydratable` —
+  // devalue-serialized into the page and reused during hydration instead of
+  // re-minted in the browser. In pure SSR nothing is serialized: the snapshot
+  // would print `src` into the markup for no benefit, undoing the encrypted
+  // token's whole point. In the island case that's fine — island props (and the
   // island's client JS) already expose `src` to the client.
   //
-  // The import goes through the `mochi-framework` virtual module, whose
-  // client build ships throwing stubs instead of the node-only crypto/fs/dns
-  // graph; the stubs are never called because browser-side minting (changed
-  // props after hydration, or a missing `isHydratable` forward) degrades to
-  // the raw source URL instead.
+  // The mochi-framework imports go through the virtual module, whose client
+  // build ships throwing stubs instead of the node-only crypto/fs/dns graph; the
+  // stubs are never called because browser-side minting (changed props after
+  // hydration) degrades to the raw source URL instead.
   import { hydratable } from 'svelte';
-  import { getResizedImage, getImagePlaceholder } from 'mochi-framework';
+  import { getResizedImage, getImagePlaceholder, isHydratable } from 'mochi-framework';
   import type { ImageFit, ImageFormat } from './types';
 
   let {
@@ -34,7 +33,6 @@
     decoding = 'async',
     placeholder = false,
     class: className = undefined,
-    isHydratable = false,
   }: {
     src: string;
     width?: number;
@@ -47,15 +45,15 @@
     decoding?: 'async' | 'sync' | 'auto';
     placeholder?: boolean;
     class?: string;
-    isHydratable?: boolean;
   } = $props();
 
+  const hydrating = isHydratable();
   const isBrowser = typeof window !== 'undefined';
   const mintUrl = () => (isBrowser ? src : getResizedImage(src, { width, height, quality, format, fit }));
   const mintBlur = () => (isBrowser ? null : getImagePlaceholder(src));
   const key = $derived(`mochi:image:${JSON.stringify([src, width, height, quality, format, fit])}`);
-  const resized = $derived(isHydratable ? hydratable(key, mintUrl) : mintUrl());
-  const blur = $derived(placeholder ? await (isHydratable ? hydratable(`${key}#placeholder`, mintBlur) : mintBlur()) : null);
+  const resized = $derived(hydrating ? hydratable(key, mintUrl) : mintUrl());
+  const blur = $derived(placeholder ? await (hydrating ? hydratable(`${key}#placeholder`, mintBlur) : mintBlur()) : null);
 </script>
 
 <img

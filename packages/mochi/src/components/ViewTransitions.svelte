@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { getRequestContext, devWarn } from 'mochi-framework';
+  import { getRequestContext, devWarn, isHydratable } from 'mochi-framework';
   import RawScript from './RawScript.svelte';
   import slugify from '../vendor/slugify/index.ts';
 
@@ -10,7 +10,6 @@
     easing = 'ease',
     regions,
     keepElementSelectors,
-    isHydratable,
   }: {
     type?: 'fade' | 'slide' | 'scale' | 'blur' | 'flip';
     // The BODY of each keyframe (the `from`/`to`/`%` rules); overrides `type`.
@@ -19,9 +18,11 @@
     easing?: string;
     regions?: string | string[];
     keepElementSelectors?: string | string[];
-    // Injected by the framework on island invocations (mochi:hydrate*/defer*).
-    isHydratable?: boolean;
   } = $props();
+
+  // Read the context at init (getContext can't run inside a $derived). True
+  // anywhere inside a hydrated island subtree.
+  const hydrating = isHydratable();
 
   const locals = getRequestContext().locals;
   const isFirst = !locals.__mochi_view_transitions__;
@@ -116,7 +117,7 @@
   // Build the <style> tag as a string rather than in markup: that keeps the
   // literal `</style>` out of the template, which svelte2tsx mis-parses.
   const styleTag = $derived.by(() => {
-    if (isHydratable) {
+    if (hydrating) {
       throw new Error('<ViewTransitions /> must not be hydrated — it emits static CSS only. Remove the mochi: directives.');
     }
     if (!Number.isFinite(duration) || duration < 0) {
