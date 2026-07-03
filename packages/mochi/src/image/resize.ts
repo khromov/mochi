@@ -1,29 +1,8 @@
 import { ImageError } from './types';
 import type { ImageFormat, ImageRequest, ResolvedImageOptions } from './types';
 
-// @types/bun 1.3.14 does not yet declare `Bun.Image`, so we model the slice we
-// use. The runtime API is verified against Bun 1.3.14.
-interface BunImageMetadata {
-  width: number;
-  height: number;
-  format: string;
-}
-interface BunImageInstance {
-  metadata(): Promise<BunImageMetadata>;
-  resize(width: number, height?: number, options?: { fit?: string; withoutEnlargement?: boolean }): BunImageInstance;
-  webp(options?: { quality?: number }): BunImageInstance;
-  jpeg(options?: { quality?: number }): BunImageInstance;
-  avif(options?: { quality?: number }): BunImageInstance;
-  png(options?: { compressionLevel?: number }): BunImageInstance;
-  bytes(): Promise<Uint8Array>;
-  placeholder(): Promise<string>;
-}
-interface BunImageCtor {
-  new (input: Uint8Array | ArrayBuffer | Buffer, options?: { maxPixels?: number; autoOrient?: boolean }): BunImageInstance;
-}
-
-function imageCtor(): BunImageCtor {
-  const ctor = (Bun as unknown as { Image?: BunImageCtor }).Image;
+function imageCtor(): typeof Bun.Image {
+  const ctor = (Bun as { Image?: typeof Bun.Image }).Image;
   if (!ctor) {
     throw new ImageError(500, 'Bun.Image is unavailable; Bun >= 1.3.14 is required');
   }
@@ -63,7 +42,7 @@ export interface ResizeResult {
 export async function resizeImage(input: Uint8Array, req: ImageRequest, opts: ResolvedImageOptions): Promise<ResizeResult> {
   const Image = imageCtor();
 
-  let img: BunImageInstance;
+  let img: Bun.Image;
   try {
     img = new Image(input, { maxPixels: opts.maxPixels, autoOrient: req.autoOrient });
   } catch (err) {
@@ -73,7 +52,7 @@ export async function resizeImage(input: Uint8Array, req: ImageRequest, opts: Re
     throw new ImageError(422, 'Could not decode source image');
   }
 
-  let meta: BunImageMetadata;
+  let meta: Bun.Image.Metadata;
   try {
     meta = await img.metadata();
   } catch {
@@ -94,7 +73,7 @@ export async function resizeImage(input: Uint8Array, req: ImageRequest, opts: Re
 
   let pipe = img;
   if (width) {
-    const resizeOpts: { fit?: string; withoutEnlargement?: boolean } = { fit: req.fit };
+    const resizeOpts: Bun.Image.ResizeOptions = { fit: req.fit };
     if (req.withoutEnlargement) {
       resizeOpts.withoutEnlargement = true;
     }
@@ -126,7 +105,7 @@ export async function resizeImage(input: Uint8Array, req: ImageRequest, opts: Re
     throw new ImageError(500, 'Image encode failed');
   }
 
-  let outMeta: BunImageMetadata;
+  let outMeta: Bun.Image.Metadata;
   try {
     outMeta = await new Image(out).metadata();
   } catch {
