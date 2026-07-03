@@ -52,7 +52,7 @@
   <h3>Inside a hydrated island</h3>
   <p>
     <code>&lt;Image&gt;</code> also works inside a <code>mochi:hydrate</code> island: the server-minted URL and placeholder are serialized into the page (via Svelte's
-    <code>hydratable</code>) and reused during hydration, so the browser never needs the signing secret. The button is live client-side state:
+    <code>hydratable</code>) and reused during hydration, so the browser never needs the encryption secret. The button is live client-side state:
   </p>
   <div class="frame">
     <ImageIslandCard mochi:hydrate src={remote} />
@@ -63,7 +63,7 @@
   </p>
 
   <h3>Programmatic</h3>
-  <p><code>getResizedImage()</code> returns a signed URL you can use anywhere:</p>
+  <p><code>getResizedImage()</code> returns an encrypted URL you can use anywhere:</p>
   <pre class="url">{directUrl}</pre>
   <div class="frame">
     <img src={directUrl} width={400} alt="Resized via getResizedImage()" />
@@ -76,7 +76,7 @@
 
   <h3>Full-size original</h3>
   <p>
-    <code>getImage()</code> returns a signed URL for the un-resized original — fetched once and shared, so every resized variant above reuses this one cached download:
+    <code>getImage()</code> returns an encrypted URL for the un-resized original — fetched once and shared, so every resized variant above reuses this one cached download:
   </p>
   <pre class="url">{originalUrl}</pre>
   <div class="frame">

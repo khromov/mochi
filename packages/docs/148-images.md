@@ -1,7 +1,7 @@
 ---
 title: 'Images'
 slug: images
-description: 'On-the-fly image resizing on Bun.Image with signed URLs and a stale-while-revalidate disk cache.'
+description: 'On-the-fly image resizing on Bun.Image with encrypted URLs and a stale-while-revalidate disk cache.'
 ---
 
 <script>
@@ -14,7 +14,7 @@ Mochi resizes images on the fly with [`Bun.Image`](https://bun.com/docs/runtime/
 
 ### Component
 
-Import `Image` and point it at a source. It renders a single `<img>` with a signed, resized `src` — no client JS:
+Import `Image` and point it at a source. It renders a single `<img>` with an encrypted, resized `src` — no client JS:
 
 ```svelte
 <script>
@@ -62,7 +62,7 @@ Hydrated-island props ship in plain text in the page HTML — so a <code>src</co
 
 ### Programmatic
 
-`getResizedImage()` returns a signed URL — use it anywhere (no fetch happens until the browser requests it):
+`getResizedImage()` returns an encrypted URL — use it anywhere (no fetch happens until the browser requests it):
 
 ```ts
 import { getResizedImage } from 'mochi-framework';
@@ -80,7 +80,7 @@ The returned URL is relative by default. To serve images from a CDN — or other
 
 ### Full-size originals
 
-`getImage()` returns a signed URL for the **un-resized** original (original bytes and content-type), and `getImageBytes()` returns the cached bytes for server-side use:
+`getImage()` returns an encrypted URL for the **un-resized** original (original bytes and content-type), and `getImageBytes()` returns the cached bytes for server-side use:
 
 ```ts
 import { getImage, getImageBytes } from 'mochi-framework';

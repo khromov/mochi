@@ -90,7 +90,7 @@ export const demoIconFor: Record<string, DemoIconMeta> = {
   'Tailwind Todo App': { icon: ListTodo, label: 'Todo app on Tailwind' },
   'Cookie Vary Test': { icon: Fingerprint, label: 'Response-driven Vary: Cookie' },
   'Isomorphic URL': { icon: Link, label: 'Same url import on server and client' },
-  'Image Resizing': { icon: ImageIcon, label: 'Signed, cached image resizing on Bun.Image' },
+  'Image Resizing': { icon: ImageIcon, label: 'Encrypted, cached image resizing on Bun.Image' },
   'Image Events': { icon: CloudUpload, label: 'Mirror the <Image> cache via image:store / image:delete' },
   'Advanced Image use': { icon: WandSparkles, label: 'Full Bun.Image transform pipeline' },
   'View Transitions': { icon: Blend, label: 'Animated cross-document navigations' },

@@ -146,7 +146,7 @@ export const demos: Demo[] = [
     slug: 'image',
     files: image,
     title: 'Image Resizing',
-    hook: 'On-the-fly image resizing on Bun.Image, served from a signed, stale-while-revalidate disk cache.',
+    hook: 'On-the-fly image resizing on Bun.Image, served from an encrypted, stale-while-revalidate disk cache.',
     category: 'data',
   },
   {

@@ -33,7 +33,7 @@ Every island invocation receives one implicit prop from the framework:
 
 - `isHydratable` — `true` when the call site uses `mochi:hydrate`, `mochi:hydrate:visible`, `mochi:clientOnly`, `mochi:clientOnly:visible`, or `mochi:defer mochi:hydrate`. Undefined for pure SSR-only invocations. For `mochi:clientOnly*` islands it is always `true` (they never server-render, so the component only ever runs at client mount).
 
-`mochi:hydrate*` and `mochi:clientOnly*` islands receive no `islandId` prop — for a unique id, use Svelte's `$props.id()`. Server islands (`mochi:defer`) are the exception: they carry an `islandId` inside their signed props envelope as the render's `idPrefix`.
+`mochi:hydrate*` and `mochi:clientOnly*` islands receive no `islandId` prop — for a unique id, use Svelte's `$props.id()`. Server islands (`mochi:defer`) are the exception: they carry an `islandId` inside their encrypted props envelope as the render's `idPrefix`.
 
 Accept it in the component's `$props()` to branch on hydration state at the same call site that opts in:
 
@@ -70,7 +70,7 @@ For a unique, SSR-stable id inside an island, use Svelte's native [`$props.id()`
 <input id="{uid}-email" type="email" />
 ```
 
-Each component instance gets its own id, so repeating the same island on a page never produces duplicate DOM ids. It also works inside server islands: their standalone renders are namespaced with the island id carried inside the signed props envelope (via render's `idPrefix`), so ids from a deferred fragment cannot collide with ids already on the page.
+Each component instance gets its own id, so repeating the same island on a page never produces duplicate DOM ids. It also works inside server islands: their standalone renders are namespaced with the island id carried inside the encrypted props envelope (via render's `idPrefix`), so ids from a deferred fragment cannot collide with ids already on the page.
 
 ### `mochi:hydrate:visible`
 
