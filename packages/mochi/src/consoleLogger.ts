@@ -266,6 +266,21 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
     level: 'warn',
   }));
 
+  subscribe('email:sent', ({ to, subject, transport, duration }) => ({
+    label: 'MAIL',
+    path: to.join(', '),
+    note: `${styleText('green', transport === 'log' ? 'logged (not sent)' : `sent via ${transport}`)} ${styleText('dim', JSON.stringify(subject))}`,
+    duration,
+    slow,
+    verySlow,
+  }));
+  subscribe('email:error', ({ to, subject, transport, error }) => ({
+    label: 'MAIL',
+    path: to.join(', '),
+    note: `${styleText('red', `send failed (${transport})`)} ${styleText('dim', `${JSON.stringify(subject)} — ${error}`)}`,
+    level: 'warn',
+  }));
+
   subscribe('preprocess-cache:hit', ({ filePath }) => ({
     label: 'PCACHE',
     path: relPath(filePath),

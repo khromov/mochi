@@ -193,6 +193,26 @@ export interface MochiQueueErrorEvent {
   error: string;
 }
 
+export interface MochiEmailSentEvent {
+  /** Recipient addresses. */
+  to: string[];
+  subject: string;
+  /** Which transport delivered it. */
+  transport: 'smtp' | 'custom' | 'log';
+  /** Provider/SMTP message id, when the transport returns one. */
+  messageId?: string;
+  /** Send wall-clock duration in ms. */
+  duration: number;
+}
+
+export interface MochiEmailErrorEvent {
+  to: string[];
+  subject: string;
+  transport: 'smtp' | 'custom' | 'log';
+  /** Message of the error the transport threw. */
+  error: string;
+}
+
 export interface MochiServerStartEvent {
   /** Bound TCP port; absent when serving over a Unix socket. */
   port?: number;
@@ -362,6 +382,8 @@ export type MochiEventMap = {
   'queue:completed': MochiQueueCompletedEvent;
   'queue:failed': MochiQueueFailedEvent;
   'queue:error': MochiQueueErrorEvent;
+  'email:sent': MochiEmailSentEvent;
+  'email:error': MochiEmailErrorEvent;
   'server:start': MochiServerStartEvent;
   'server:stop': MochiServerStopEvent;
   'warmup:start': MochiWarmupStartEvent;

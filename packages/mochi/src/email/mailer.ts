@@ -1,0 +1,95 @@
+import { mochiEvents } from '../events';
+import { getEmailRuntime } from './config';
+import { renderEmailComponent } from './render';
+import { buildTransport } from './transports';
+import { EmailError, type MochiEmailMessage, type MochiEmailResult, type ResolvedEmailMessage } from './types';
+
+function toArray(value: string | string[] | undefined): string[] | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  const list = (Array.isArray(value) ? value : [value]).map((a) => a.trim()).filter(Boolean);
+  return list.length > 0 ? list : undefined;
+}
+
+/** Naive HTML → plain-text fallback so HTML mails stay multipart. */
+function htmlToText(html: string): string {
+  return html
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Send one transactional message through the configured transport. With no
+ * transport configured, the default `log` transport logs it and does not send.
+ * Callable from any server-side code (route actions, API handlers, queue jobs).
+ */
+export async function sendEmail(message: MochiEmailMessage): Promise<MochiEmailResult> {
+  const runtime = getEmailRuntime();
+  const { options } = runtime;
+
+  const from = message.from ?? options.from;
+  if (!from) {
+    throw new EmailError('No `from` address. Set a message `from` or configure `email.from` in Mochi.serve().');
+  }
+
+  const to = toArray(message.to);
+  if (!to || to.length === 0) {
+    throw new EmailError('An email needs at least one `to` recipient.');
+  }
+
+  let html = message.html;
+  if (message.component) {
+    if (!runtime.registry) {
+      throw new EmailError('Rendering a Svelte email template requires a running Mochi.serve() (the component registry is not available).');
+    }
+    html = await renderEmailComponent(runtime.registry, message.component, message.props);
+  }
+
+  const text = message.text ?? (html ? htmlToText(html) : undefined);
+  if (!html && !text) {
+    throw new EmailError('An email needs a body: pass `html`, `text`, or `component`.');
+  }
+
+  const resolved: ResolvedEmailMessage = {
+    from,
+    to,
+    ...(toArray(message.cc) ? { cc: toArray(message.cc) } : {}),
+    ...(toArray(message.bcc) ? { bcc: toArray(message.bcc) } : {}),
+    ...(message.replyTo ? { replyTo: message.replyTo } : {}),
+    subject: message.subject,
+    ...(html ? { html } : {}),
+    ...(text ? { text } : {}),
+    ...(message.attachments ? { attachments: message.attachments } : {}),
+    ...(message.headers ? { headers: message.headers } : {}),
+  };
+
+  const transport = (runtime.transport ??= buildTransport(options.transport));
+  const start = performance.now();
+  try {
+    const result = await transport.send(resolved);
+    mochiEvents.emit('email:sent', {
+      to: resolved.to,
+      subject: resolved.subject,
+      transport: result.transport,
+      messageId: result.messageId,
+      duration: performance.now() - start,
+    });
+    return result;
+  } catch (error) {
+    mochiEvents.emit('email:error', {
+      to: resolved.to,
+      subject: resolved.subject,
+      transport: transport.name,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  }
+}

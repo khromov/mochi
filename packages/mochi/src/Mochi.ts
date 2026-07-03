@@ -54,6 +54,9 @@ import { decryptProps } from './serverIslandCrypto';
 import { createImageHandler } from './image/imageEndpoint';
 import { getImageRuntime } from './image/config';
 import { startImageCacheSweeper } from './image/sweeper';
+import { getEmailRuntime, closeEmailTransport } from './email/config';
+import { sendEmail } from './email/mailer';
+import type { MochiEmailMessage, MochiEmailResult } from './email/types';
 import { initMochiConfig } from './mochiConfig';
 import { logger, setLogLevel, DEFAULT_LOG_LEVEL, type LogLevel } from './log';
 import { mochiEvents } from './events';
@@ -173,6 +176,18 @@ export class Mochi {
    */
   static getQueue<T = unknown>(name: string): MochiQueue<T> {
     return getQueue<T>(name);
+  }
+
+  /**
+   * Send a transactional email. Configured under `Mochi.serve({ email })` with
+   * a default `from` and a pluggable `transport` (SMTP, a custom-send function,
+   * or the default `log` transport that logs instead of sending). Pass a
+   * message body as `html`, `text`, or a Svelte `component` (rendered to HTML
+   * with its scoped CSS inlined). Callable from any server-side code — route
+   * actions, API handlers, or queue jobs.
+   */
+  static email(message: MochiEmailMessage): Promise<MochiEmailResult> {
+    return sendEmail(message);
   }
 
   private static resolveHtmlShell(
@@ -1245,6 +1260,10 @@ export class Mochi {
     // and start the background cache janitor. The resolved options are the
     // single source of truth for `enabled` — `getResizedImage` consults the
     // same flag to fall back to raw source URLs when the endpoint is off.
+    // Give the mailer a handle to the live compile cache so Mochi.email() can
+    // render Svelte email templates through the same registry as page routes.
+    getEmailRuntime().registry = registry;
+
     let stopImageSweeper: (() => void) | undefined;
     const imageRuntime = getImageRuntime();
     if (imageRuntime.options.enabled) {
@@ -1432,15 +1451,16 @@ export class Mochi {
       ...(websocketOption ? { websocket: websocketOption } : {}),
     } as Parameters<typeof Bun.serve>[0]);
 
-    // Tie the image-cache janitor's lifetime to the server: any stop path
-    // (tests calling server.stop(), or the signal handler below) clears the
-    // sweep timers instead of leaking them. Wrapping stop covers both, since the
-    // signal handler calls server.stop() too.
-    if (stopImageSweeper) {
+    // Tie subsystem cleanup to the server's lifetime: any stop path (tests
+    // calling server.stop(), or the signal handler below) clears the image-cache
+    // sweep timers and closes a pooled SMTP connection instead of leaking them.
+    // Wrapping stop covers both, since the signal handler calls server.stop().
+    {
       const sweeperStop = stopImageSweeper;
       const stopServer = server.stop.bind(server);
       server.stop = ((closeActiveConnections?: boolean) => {
-        sweeperStop();
+        sweeperStop?.();
+        void closeEmailTransport();
         return stopServer(closeActiveConnections);
       }) as typeof server.stop;
     }

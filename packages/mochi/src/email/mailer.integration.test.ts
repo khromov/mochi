@@ -1,0 +1,107 @@
+// Exercises Mochi.email() end-to-end through a booted server: the default log
+// transport (does not send), a custom-send transport, and the SMTP transport
+// against a fake server. One Mochi.serve() per process (initMochiConfig allows
+// only one), so the transport is swapped on the pinned runtime between tests.
+import { afterAll, beforeAll, describe, expect, spyOn, test } from 'bun:test';
+import { mkdtempSync, rmSync } from 'node:fs';
+import path from 'node:path';
+import type { Server } from 'bun';
+import { Mochi } from '../Mochi';
+import { logger } from '../log';
+import { getEmailRuntime } from './config';
+import type { MochiEmailTransportConfig, ResolvedEmailMessage } from './types';
+import { startFakeSmtpServer, type FakeSmtpServer } from '../__fixtures__/email/fakeSmtpServer';
+
+function useTransport(config: MochiEmailTransportConfig): void {
+  const runtime = getEmailRuntime();
+  runtime.options.transport = config;
+  runtime.transport = undefined; // force a rebuild on next send
+}
+
+describe('Mochi.email()', () => {
+  let server: Server<undefined>;
+  let outDir: string;
+
+  beforeAll(async () => {
+    outDir = mkdtempSync(path.join(import.meta.dir, '..', '..', '.mochi-email-int-'));
+    server = await Mochi.serve({
+      port: 0,
+      development: false,
+      logger: { enabled: false },
+      outDir,
+      routes: {},
+      email: { from: 'noreply@test.dev' },
+    });
+  });
+
+  afterAll(() => {
+    server.stop(true);
+    rmSync(outDir, { recursive: true, force: true });
+  });
+
+  test('default (unconfigured) transport logs and does not send', async () => {
+    useTransport({ type: 'log' });
+    const warn = spyOn(logger, 'warn');
+    try {
+      const result = await Mochi.email({ to: 'user@example.com', subject: 'Hi', html: '<p>Hello</p>' });
+      expect(result.transport).toBe('log');
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0]?.[0]).toContain('not sent');
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  test('custom transport receives the fully resolved message', async () => {
+    let captured: ResolvedEmailMessage | undefined;
+    useTransport({
+      type: 'custom',
+      send: (msg) => {
+        captured = msg;
+        return { messageId: 'custom-1' };
+      },
+    });
+
+    const result = await Mochi.email({
+      to: 'user@example.com',
+      subject: 'Welcome',
+      html: '<p>Hi <b>there</b></p>',
+    });
+
+    expect(result).toEqual({ transport: 'custom', messageId: 'custom-1' });
+    expect(captured).toBeDefined();
+    expect(captured!.from).toBe('noreply@test.dev'); // filled from options
+    expect(captured!.to).toEqual(['user@example.com']); // normalized to array
+    expect(captured!.html).toBe('<p>Hi <b>there</b></p>');
+    expect(captured!.text).toBe('Hi there'); // derived from html
+  });
+
+  test('SMTP transport delivers to a test server', async () => {
+    const smtp: FakeSmtpServer = startFakeSmtpServer();
+    useTransport({ type: 'smtp', host: '127.0.0.1', port: smtp.port, secure: false });
+    try {
+      const result = await Mochi.email({
+        to: 'rcpt@example.com',
+        from: 'sender@test.dev',
+        subject: 'SMTP works',
+        text: 'plain body',
+      });
+
+      expect(result.transport).toBe('smtp');
+      expect(smtp.messages).toHaveLength(1);
+      const msg = smtp.messages[0]!;
+      expect(msg.from).toBe('sender@test.dev');
+      expect(msg.to).toContain('rcpt@example.com');
+      expect(msg.data).toContain('Subject: SMTP works');
+      expect(msg.data).toContain('plain body');
+    } finally {
+      smtp.close();
+    }
+  });
+
+  test('rejects a message with no recipient or no body', async () => {
+    useTransport({ type: 'log' });
+    await expect(Mochi.email({ to: '', subject: 'x', text: 'y' })).rejects.toThrow(/recipient/);
+    await expect(Mochi.email({ to: 'a@b.dev', subject: 'x' })).rejects.toThrow(/body/);
+  });
+});
