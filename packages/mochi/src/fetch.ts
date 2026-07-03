@@ -1,13 +1,13 @@
 // Isomorphic resilient fetch wrapper. Lives on native `fetch` + `AbortSignal`
 // only (no node: imports, no env branching) so the exact same module runs in
-// the Bun server, during SSR, and in a hydrated island. `Mochi.fetch` is a
-// thin server-side alias; `.svelte` files import `mochiFetch` from
-// 'mochi-framework'. Returns a standard `Response` — nothing bespoke to learn.
+// the Bun server, during SSR, and in a hydrated island — imported everywhere as
+// `mochiFetch` from 'mochi-framework' (often aliased to `fetch` as a drop-in).
+// Returns a standard `Response` — nothing bespoke to learn.
 
 export interface MochiFetchOptions extends RequestInit {
   /** Prefixes a relative `input`. Absolute inputs (and `Request` inputs) ignore it. */
   baseUrl?: string;
-  /** Per-attempt timeout in ms. Each retry gets a fresh timeout. Default 10_000. */
+  /** Per-attempt timeout in ms, bounding time-to-response-headers (not the body download). Each retry gets a fresh timeout. Default 10_000. */
   timeout?: number;
   /** Additional attempts after the first. Default 2 (→ 3 total attempts). */
   retries?: number;
@@ -28,6 +28,9 @@ const DEFAULT_RETRY_STATUS_CODES = [408, 429, 500, 502, 503, 504];
 // duplicate side-effect. Opt them in explicitly via `retryMethods`.
 const DEFAULT_RETRY_METHODS = ['GET', 'HEAD', 'PUT', 'DELETE', 'OPTIONS'];
 const MAX_BACKOFF_MS = 10_000;
+// A hostile or misconfigured upstream can send an enormous `Retry-After`; cap
+// the honored value so it can't hang the client for minutes/hours per attempt.
+const MAX_RETRY_AFTER_MS = 60_000;
 
 export async function mochiFetch(input: string | URL | Request, options: MochiFetchOptions = {}): Promise<Response> {
   const {
@@ -43,20 +46,32 @@ export async function mochiFetch(input: string | URL | Request, options: MochiFe
 
   const target = resolveUrl(input, baseUrl);
   const method = (init.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase();
-  const methodRetryable = retryMethods.some((m) => m.toUpperCase() === method);
+  // A raw `ReadableStream` body is one-shot: it can't be replayed across
+  // attempts, so retrying would send a locked/empty body. Fall back to a single
+  // attempt in that case. (`Request` inputs are cloned per attempt below, so
+  // their bodies stay replayable.)
+  const bodyIsOneShot = init.body instanceof ReadableStream;
+  const methodRetryable = !bodyIsOneShot && retryMethods.some((m) => m.toUpperCase() === method);
   const maxAttempts = Math.max(0, retries) + 1;
+  const retryPossible = methodRetryable && maxAttempts > 1;
 
   let lastError: unknown;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    // Fresh per-attempt timeout, composed with any caller-supplied signal so
-    // an external cancel still propagates.
-    const timeoutSignal = AbortSignal.timeout(timeout);
-    const signal = userSignal ? AbortSignal.any([userSignal, timeoutSignal]) : timeoutSignal;
+    // Fresh per-attempt timeout via a controller we can clear once the response
+    // headers arrive — otherwise the timer would keep governing (and could
+    // abort) a slow body read the caller is legitimately streaming.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(new DOMException('The operation timed out.', 'TimeoutError')), timeout);
+    const signal = userSignal ? AbortSignal.any([userSignal, controller.signal]) : controller.signal;
 
     let response: Response;
     try {
-      response = await fetch(target, { ...init, signal });
+      // Clone a retryable `Request` input so a later attempt doesn't reuse its
+      // already-consumed body. The original stays pristine for the next clone.
+      const attemptInput = input instanceof Request ? (retryPossible ? input.clone() : input) : target;
+      response = await fetch(attemptInput, { ...init, signal });
     } catch (err) {
+      clearTimeout(timer);
       // A caller-triggered abort is intentional — surface it immediately and
       // never treat it as a retryable transport failure.
       if (userSignal?.aborted) {
@@ -64,17 +79,21 @@ export async function mochiFetch(input: string | URL | Request, options: MochiFe
       }
       lastError = err;
       if (methodRetryable && attempt < maxAttempts) {
-        await sleep(backoffDelay(attempt, retryDelay));
+        await sleep(backoffDelay(attempt, retryDelay), userSignal);
         continue;
       }
       throw err;
     }
 
+    // Headers are in hand; stop the per-attempt timeout so it can never abort a
+    // slow body read. The caller's own `signal` still governs the returned body.
+    clearTimeout(timer);
+
     if (methodRetryable && attempt < maxAttempts && retryStatusCodes.includes(response.status)) {
       const delay = retryAfterDelay(response) ?? backoffDelay(attempt, retryDelay);
       // Release the body before discarding the response, or the connection leaks.
       await response.body?.cancel();
-      await sleep(delay);
+      await sleep(delay, userSignal);
       continue;
     }
 
@@ -107,15 +126,34 @@ function retryAfterDelay(response: Response): number | null {
   }
   const seconds = Number(header);
   if (Number.isFinite(seconds)) {
-    return Math.max(0, seconds * 1000);
+    return clampRetryAfter(seconds * 1000);
   }
   const date = Date.parse(header);
   if (Number.isFinite(date)) {
-    return Math.max(0, date - Date.now());
+    return clampRetryAfter(date - Date.now());
   }
   return null;
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function clampRetryAfter(ms: number): number {
+  return Math.min(Math.max(0, ms), MAX_RETRY_AFTER_MS);
+}
+
+// Abortable so a caller's `signal` firing mid-backoff is surfaced right away
+// instead of waiting out the full delay (which `Retry-After` can make long).
+function sleep(ms: number, signal?: AbortSignal | null): Promise<void> {
+  if (signal?.aborted) {
+    return Promise.reject(signal.reason);
+  }
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal!.reason);
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
 }

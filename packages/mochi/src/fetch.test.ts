@@ -135,4 +135,92 @@ describe('mochiFetch', () => {
     expect(calls).toBe(2);
     expect(elapsed).toBeLessThan(1000);
   });
+
+  test('the per-attempt timeout does not abort a slow body read once headers arrive', async () => {
+    // Real fetch ties the abort signal to the response body stream. Model that:
+    // headers return immediately, the body streams for longer than `timeout`.
+    setFetch(
+      (_input, init) =>
+        new Promise((resolve) => {
+          const stream = new ReadableStream({
+            async start(controller) {
+              controller.enqueue(new TextEncoder().encode('chunk'));
+              await new Promise((r) => setTimeout(r, 60)); // slower than the 20ms timeout
+              if (init?.signal?.aborted) {
+                controller.error(init.signal.reason);
+                return;
+              }
+              controller.enqueue(new TextEncoder().encode('-done'));
+              controller.close();
+            },
+          });
+          resolve(new Response(stream, { status: 200 }));
+        }),
+    );
+    const res = await mochiFetch('http://x.test/', { timeout: 20, retries: 0 });
+    expect(await res.text()).toBe('chunk-done');
+  });
+
+  test('a caller abort during backoff is surfaced immediately, not after the delay', async () => {
+    const controller = new AbortController();
+    setFetch((_input, init) => {
+      if (init?.signal?.aborted) {
+        return Promise.reject(new DOMException('aborted', 'AbortError'));
+      }
+      // Force a long between-attempt wait so a delayed abort would be obvious.
+      return Promise.resolve(new Response('busy', { status: 503, headers: { 'retry-after': '30' } }));
+    });
+    const start = performance.now();
+    const promise = mochiFetch('http://x.test/', { signal: controller.signal, retries: 3 });
+    setTimeout(() => controller.abort(), 20);
+    await expect(promise).rejects.toThrow();
+    expect(performance.now() - start).toBeLessThan(1000);
+  });
+
+  test('a one-shot ReadableStream body is not retried (never reused after consumption)', async () => {
+    let calls = 0;
+    const bodiesSeen: string[] = [];
+    setFetch(async (_input, init) => {
+      calls++;
+      bodiesSeen.push(init?.body ? await new Response(init.body).text() : '(none)');
+      return new Response('busy', { status: 503 });
+    });
+    const body = new ReadableStream({
+      start(c) {
+        c.enqueue(new TextEncoder().encode('PAYLOAD'));
+        c.close();
+      },
+    });
+    // PUT is retryable by default, but the stream body forces a single attempt.
+    const res = await mochiFetch('http://x.test/', {
+      method: 'PUT',
+      body,
+      // @ts-expect-error `duplex` is required for stream bodies but absent from RequestInit types
+      duplex: 'half',
+      retries: 3,
+      retryDelay: 1,
+    });
+    expect(res.status).toBe(503);
+    expect(calls).toBe(1);
+    expect(bodiesSeen).toEqual(['PAYLOAD']);
+  });
+
+  test('a retryable Request input is cloned so its body survives a retry', async () => {
+    let calls = 0;
+    const bodiesSeen: string[] = [];
+    setFetch(async (input) => {
+      calls++;
+      const req = input as Request;
+      bodiesSeen.push(await req.text());
+      return new Response('busy', { status: calls < 2 ? 503 : 200 });
+    });
+    const req = new Request('http://x.test/', {
+      method: 'PUT',
+      body: 'PAYLOAD',
+    });
+    const res = await mochiFetch(req, { retries: 3, retryDelay: 1 });
+    expect(res.status).toBe(200);
+    expect(calls).toBe(2);
+    expect(bodiesSeen).toEqual(['PAYLOAD', 'PAYLOAD']);
+  });
 });
