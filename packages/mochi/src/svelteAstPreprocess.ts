@@ -187,7 +187,8 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
         // Always emit signed-props for server islands (no empty-props optimization)
         // because islandId is always injected, and all props must be encrypted
         // to prevent reading/tampering via query parameters. The component name is
-        // bound as AAD so a token sealed for one island can't be replayed on another.
+        // bound as AAD so a token sealed for one component can't be replayed
+        // against a different component.
         // The islandId rides inside the encrypted envelope (transport only, stripped
         // before render); there's no separate `island-id` attribute.
         let attrs = `component-name="${comp.name}" signed-props={__mochi_encrypt_props__(__mochi_stringify__(${propsExpr}), ${JSON.stringify(comp.name)})} css-url="__MOCHI_SERVER_CSS_URL__${comp.name}__" data-asset-prefix="__MOCHI_ASSET_PREFIX__"`;
