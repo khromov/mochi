@@ -1,8 +1,9 @@
 import { getImageRuntime } from './config';
-import { getCachedOriginal, getImagePlaceholder } from './getResizedImage';
+import { getCachedOriginal, getImagePlaceholder, pushDebugImage } from './getResizedImage';
 import { pipelineVariantId } from './imageCache';
 import { ImageError } from './types';
 import type { ImageFormat } from './types';
+import { requestContext } from '../requestContext';
 
 /** A recorded chainable call — replayed against a real `Bun.Image` on a cache miss. */
 interface Op {
@@ -151,7 +152,45 @@ export class CachedImage {
         originalCreatedAt: createdAt,
       };
     });
-    return { bytes: entry.bytes, contentType: entry.meta.contentType, width: entry.meta.width, height: entry.meta.height, format: entry.meta.format };
+    const resolved = { bytes: entry.bytes, contentType: entry.meta.contentType, width: entry.meta.width, height: entry.meta.height, format: entry.meta.format };
+    this.recordForDebugBar(resolved);
+    return resolved;
+  }
+
+  // Cap for the inline preview `data:` URL — pipeline variants have no served
+  // URL, so the preview is the base64 bytes embedded in the page. Beyond this we
+  // record the entry without a preview rather than bloat the debug payload.
+  private static readonly PREVIEW_BYTE_CAP = 1_048_576;
+
+  // Human-readable render of the recorded op chain, e.g. `resize(240, 240, {"fit":"inside"}).webp()`.
+  private pipelineString(): string {
+    return this.ops.map((op) => `${op.m}(${op.a.map((a) => JSON.stringify(a)).join(', ')})`).join('.');
+  }
+
+  private previewFilename(): string {
+    const tail = this.src.split(/[?#]/)[0]!.split('/').pop() || 'image';
+    const base = tail.replace(/\.[^.]+$/, '') || 'image';
+    return `${base}.${this.ext()}`;
+  }
+
+  private recordForDebugBar(resolved: { bytes: Uint8Array; contentType: string; width: number; height: number; format: string }): void {
+    try {
+      // Skip building the (potentially large) data URL when the debug bar is off.
+      if (!requestContext.getStore()?.debugBarData?.images) {
+        return;
+      }
+      const url = resolved.bytes.byteLength <= CachedImage.PREVIEW_BYTE_CAP ? `data:${resolved.contentType};base64,${Buffer.from(resolved.bytes).toString('base64')}` : '';
+      pushDebugImage({
+        url,
+        id: this.variantId(),
+        filename: this.previewFilename(),
+        kind: 'cached',
+        pipeline: this.pipelineString(),
+        params: { src: this.src, width: resolved.width, height: resolved.height, format: resolved.format },
+      });
+    } catch {
+      // Debug recording is best-effort; ignore failures.
+    }
   }
 
   // Terminals.

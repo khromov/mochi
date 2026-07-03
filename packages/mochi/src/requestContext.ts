@@ -74,13 +74,22 @@ export interface BundleInfo {
   inputs: Array<{ path: string; size: number }>;
 }
 
-/** One image produced by `getResizedImage()` during the request (dev debug bar only). */
+/** One image produced during the request (dev debug bar only) — a signed
+ * `getResizedImage()` URL (`kind: 'url'`) or a programmatic `cachedImage()`
+ * pipeline (`kind: 'cached'`). */
 export interface ImageDebugEntry {
+  /** For `'cached'` entries there's no served URL; this is an inline `data:` preview (or empty when over the size cap). */
   url: string;
+  /** Stable identity for de-duping and list keying. Defaults to `url` (used by the signed-URL path); the `cachedImage` path sets its variant id so preview-less entries don't collide on an empty `url`. */
+  id?: string;
   filename: string;
   /** Decoded (unsigned) request params — src, dimensions, format, quality, fit, TTL, … */
   params: Record<string, unknown>;
-  /** The compact binary wire encoding (before encryption), so the bar can show the on-wire format next to the JSON. */
+  /** Discriminates the signed-URL path from the programmatic `cachedImage()` path. Defaults to `'url'`. */
+  kind?: 'url' | 'cached';
+  /** `cachedImage` only: the recorded op chain, e.g. `resize(240, 240).webp()`. */
+  pipeline?: string;
+  /** The compact binary wire encoding (before encryption), so the bar can show the on-wire format next to the JSON. `'url'` entries only. */
   wire?: {
     /** Space-separated hex of the packed header (control bytes + varints), before the UTF-8 src tail. */
     headerHex: string;

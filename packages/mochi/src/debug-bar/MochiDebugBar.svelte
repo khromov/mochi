@@ -140,7 +140,7 @@
           Islands <span class="badge" class:badge-yellow={warnLevel === 'yellow'} class:badge-red={warnLevel === 'red'}>{debugBarState.islandCount}</span>
         </button>
       {/if}
-      {#if debugBarState.imageCount > 0}
+      {#if debugBarState.imageCount > 0 && !hiddenPanels.includes('images')}
         <button class="btn image-btn" onclick={() => toggle('images')} tabindex={collapsed ? -1 : 0}>
           Images <span class="badge">{debugBarState.imageCount}</span>
         </button>

@@ -31,7 +31,7 @@ In production (`development: false`) the toolbar mount point, its entry script, 
 
 ### Configuring panels
 
-The cogwheel at the right edge of the bar opens a checklist of the five panels. Unchecked panels disappear from the bar; the choice persists across reloads in `localStorage` under `mochi:debug:hidden-panels`. At least one panel always stays enabled — the last checked box is disabled. Conditional buttons still respect their availability: re-enabling `Warnings` only shows the button once something is queued.
+The cogwheel at the right edge of the bar opens a checklist of the panels. Unchecked panels disappear from the bar; the choice persists across reloads in `localStorage` under `mochi:debug:hidden-panels`. At least one panel always stays enabled — the last checked box is disabled. Conditional buttons still respect their availability: re-enabling `Warnings` or `Images` only shows the button once something is queued or an image was produced.
 
 ### Islands panel
 
@@ -44,6 +44,10 @@ When two or more islands ship the exact same props payload, Mochi hoists it into
 ### Server islands
 
 Server-island rows display a lock icon next to the mode tag. Their props are encrypted before being sent to the client (opaque on the wire and tamper-proof) — the decoded JSON shown in the panel comes from a dev-only sidecar copy. In production no plaintext props leave the server.
+
+### Images panel
+
+Lists every image produced during the request. Signed URLs from [`<Image>` / `getResizedImage`](/docs/images/) show a lock icon (their request params are AES-256 encrypted on the wire; the decoded JSON is a dev-only view) and the binary wire format. Programmatic [`cachedImage`](/docs/images/#custom-pipelines-with-cachedimage) pipelines show a `cachedImage` tag and the recorded op chain (`resize(240, 240).webp()`) instead — their preview is the resolved output inlined as a `data:` URL (omitted for outputs over 1 MB). Click a row to expand the preview, params, and pipeline.
 
 ### Warnings
 

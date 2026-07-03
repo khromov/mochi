@@ -156,6 +156,8 @@ const blur = await cachedImage(src).placeholder(); // ThumbHash data URL (source
 
 Terminals: `bytes()`, `buffer()`, `blob()`, `toBase64()`, `dataurl()`, `metadata()`, `placeholder()`. `bytes()` and `dataurl()` for the same chain resolve to one on-disk variant. The cache key is the source URL plus the recorded op chain — if a source's bytes change under a stable URL, call `invalidateImage(src)` (it cascades to every `cachedImage` variant of that source too).
 
+In dev, each resolved pipeline shows up in the [debug bar's Images panel](/docs/debug-bar/#images-panel) with a preview and its op chain, alongside `<Image>` URLs.
+
 <Callout type="info">
 
 **Server-only.** `cachedImage` reads/writes the disk cache and runs `Bun.Image`, so it only works server-side (in a page/API route or server island) — importing it into a hydratable island throws. `src` is fetched through the same SSRF-guarded pipeline as `<Image>`, so keep `blockPrivateNetworks` on and prefer `allowedHosts` for user-controlled sources.

@@ -19,6 +19,7 @@
     info: { bg: '#243038', fg: '#b8cdd4', border: '#455560' },
     request: { bg: '#2c343a', fg: '#b8cad4', border: '#4a5560' },
     islands: { bg: '#2a3a2f', fg: '#c7e0cd', border: '#4a6354' },
+    images: { bg: '#382a32', fg: '#d4b8c8', border: '#5a4050' },
     warnings: { bg: '#3a3120', fg: '#f0d398', border: '#6a5530' },
     bundles: { bg: '#2e2a38', fg: '#c4b8d4', border: '#4a4060' },
   };

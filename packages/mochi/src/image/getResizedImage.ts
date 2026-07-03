@@ -4,7 +4,7 @@ import { encryptImageRequest } from './imageCrypto';
 import { packImageRequest } from './imageCodec';
 import { computePlaceholder } from './resize';
 import { buildImageFilename, buildOriginalFilename } from './slug';
-import { requestContext } from '../requestContext';
+import { requestContext, type ImageDebugEntry } from '../requestContext';
 import { applyFilter } from '../extensions';
 import { logger } from '../log';
 import type { ImageCache, ImageCacheStatus } from './imageCache';
@@ -151,19 +151,33 @@ export async function getImageBytes(src: string, opts: OriginalImageOptions = {}
   }
 }
 
-function recordForDebugBar(url: string, filename: string, req: ImageRequest): void {
+/**
+ * Push an entry into the current request's debug-bar image list, de-duped by
+ * `url`. Shared by the signed-URL path (`recordForDebugBar`) and the
+ * programmatic `cachedImage()` path. Best-effort — ignores any failure and is a
+ * no-op when the debug bar isn't active (no `debugBarData`).
+ */
+export function pushDebugImage(entry: ImageDebugEntry): void {
   try {
-    const ctx = requestContext.getStore();
-    const images = ctx?.debugBarData?.images;
-    if (images && !images.some((i) => i.url === url)) {
-      const packed = packImageRequest(req);
-      const srcByteLength = Buffer.byteLength(req.src, 'utf-8');
-      const headerHex = Array.from(packed.subarray(0, packed.length - srcByteLength), (b) => b.toString(16).padStart(2, '0')).join(' ');
-      images.push({ url, filename, params: { ...req }, wire: { headerHex, srcByteLength } });
+    const images = requestContext.getStore()?.debugBarData?.images;
+    const key = entry.id ?? entry.url;
+    if (images && !images.some((i) => (i.id ?? i.url) === key)) {
+      images.push(entry);
     }
   } catch {
     // Debug recording is best-effort; ignore failures.
   }
+}
+
+function recordForDebugBar(url: string, filename: string, req: ImageRequest): void {
+  // Skip the wire packing entirely when the debug bar isn't active.
+  if (!requestContext.getStore()?.debugBarData?.images) {
+    return;
+  }
+  const packed = packImageRequest(req);
+  const srcByteLength = Buffer.byteLength(req.src, 'utf-8');
+  const headerHex = Array.from(packed.subarray(0, packed.length - srcByteLength), (b) => b.toString(16).padStart(2, '0')).join(' ');
+  pushDebugImage({ url, filename, kind: 'url', params: { ...req }, wire: { headerHex, srcByteLength } });
 }
 
 /**

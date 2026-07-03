@@ -1,6 +1,6 @@
 export const HIDDEN_PANELS_KEY = 'mochi:debug:hidden-panels';
 
-export const CONFIGURABLE_PANELS = ['info', 'request', 'islands', 'warnings', 'bundles'] as const;
+export const CONFIGURABLE_PANELS = ['info', 'request', 'islands', 'images', 'warnings', 'bundles'] as const;
 
 export type ConfigurablePanel = (typeof CONFIGURABLE_PANELS)[number];
 
@@ -8,6 +8,7 @@ export const PANEL_LABELS: Record<ConfigurablePanel, string> = {
   info: 'Info',
   request: 'Request',
   islands: 'Islands',
+  images: 'Images',
   warnings: 'Warnings',
   bundles: 'JS Bundles',
 };
