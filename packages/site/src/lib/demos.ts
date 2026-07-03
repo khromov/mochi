@@ -6,6 +6,7 @@ import { files as clientOnly } from '../demos/client-only/files.ts';
 import { files as cookieVaryTest } from '../demos/cookie-vary-test/files.ts';
 import { files as cookies } from '../demos/cookies/files.ts';
 import { files as dataLoading } from '../demos/data-loading/files.ts';
+import { files as entityProps } from '../demos/entity-props/files.ts';
 import { files as error } from '../demos/error/files.ts';
 import { files as errorBoundaries } from '../demos/error-boundaries/files.ts';
 import { files as file } from '../demos/file/files.ts';
@@ -414,5 +415,13 @@ export const demos: Demo[] = [
     title: 'Tailwind Todo App',
     hook: 'Classic todo app styled with Tailwind CSS.',
     category: 'sites',
+  },
+  {
+    href: '/demos/entity-props/',
+    slug: 'entity-props',
+    files: entityProps,
+    title: 'HTML Entities in Props',
+    hook: 'HTML entities in a static island prop (label="Tom &amp; Jerry") decode to their characters — identical on the server and after hydration.',
+    category: 'hydration',
   },
 ];

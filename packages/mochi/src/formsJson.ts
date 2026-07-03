@@ -7,6 +7,10 @@ import { json, negotiate } from './utils';
  * and is checked first; otherwise proper q-value content negotiation on the
  * `Accept` header determines preference, so `Accept: text/html,
  * application/json;q=0.01` is correctly treated as NOT enhanced.
+ *
+ * `text/html` is listed first so a wildcard `Accept` header (a plain `curl -X POST`)
+ * prefers the HTML re-render — only an explicit `Accept: application/json` (or the
+ * `x-mochi-action` header) opts into the JSON envelope.
  */
 export function isEnhanceRequest(req: Request): boolean {
   if (req.method !== 'POST') {
@@ -16,7 +20,7 @@ export function isEnhanceRequest(req: Request): boolean {
     return true;
   }
   const accept = req.headers.get('accept') ?? '*/*';
-  return negotiate(accept, ['application/json', 'text/html']) === 'application/json';
+  return negotiate(accept, ['text/html', 'application/json']) === 'application/json';
 }
 
 /**

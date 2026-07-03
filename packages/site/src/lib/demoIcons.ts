@@ -44,6 +44,7 @@ import Tornado from '@lucide/svelte/icons/tornado';
 import Inbox from '@lucide/svelte/icons/inbox';
 import SquareStack from '@lucide/svelte/icons/square-stack';
 import Layers2 from '@lucide/svelte/icons/layers-2';
+import Ampersand from '@lucide/svelte/icons/ampersand';
 
 export interface DemoIconMeta {
   icon: Component;
@@ -71,6 +72,7 @@ export const demoIconFor: Record<string, DemoIconMeta> = {
   'Lazy Server Islands': { icon: Eye, label: 'Fetch server island when visible' },
   'Font loading': { icon: Type, label: 'Bundle fontsource + standalone fonts' },
   'Crossing the server-client boundary with props': { icon: Package2, label: 'Props serialized into the island — every devalue type' },
+  'HTML Entities in Props': { icon: Ampersand, label: 'HTML entities in static island props decode across SSR + hydration' },
   'Nested Components': { icon: ListTree, label: 'Five-level deep tree under one island' },
   'Nested Islands': { icon: SquareStack, label: 'Islands nested inside server islands' },
   'Nested Island Max Depth': { icon: Layers2, label: 'Server islands nested several levels deep' },

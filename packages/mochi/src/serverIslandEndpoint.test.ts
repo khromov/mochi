@@ -114,13 +114,14 @@ describe('server island endpoint', () => {
     expect(body.match(/data-uid="([^"]+)"/)![1]!).toMatch(/^s\d+$/);
   });
 
-  // `mochi:defer mochi:hydrate`: the client (ServerIsland.ts) re-fetches with
-  // `hydrate=eager`, so the endpoint wraps the render in a hydratable island.
-  // The namespaced `$props.id()` must survive into that wrapper — the client's
-  // `hydrate()` reads the id back from the SSR `<!--$…-->` marker, so a prefixed
-  // server id is exactly what hydrates, keeping it collision-free with the host.
-  test('also-hydrate wraps the namespaced render in a hydratable island', async () => {
-    const res = await fetch(`${base}/_mochi/island/${echoKey}?props=${encodeURIComponent(token)}&hydrate=eager`);
+  // `mochi:defer mochi:hydrate`: the authored also-hydrate mode rides inside the
+  // encrypted envelope (`__mochi_ah`), so the endpoint wraps the render in a
+  // hydratable island. The namespaced `$props.id()` must survive into that wrapper —
+  // the client's `hydrate()` reads the id back from the SSR `<!--$…-->` marker, so a
+  // prefixed server id is exactly what hydrates, keeping it collision-free with the host.
+  test('an envelope carrying __mochi_ah wraps the namespaced render in a hydratable island', async () => {
+    const ahToken = encryptProps(devalueStringify({ islandId, __mochi_ah: 'eager', name: 'World' }), echoKey);
+    const res = await fetch(`${base}/_mochi/island/${echoKey}?props=${encodeURIComponent(ahToken)}`);
     expect(res.status).toBe(200);
     const body = await res.text();
 
@@ -132,6 +133,20 @@ describe('server island endpoint', () => {
     // The id the client will hydrate against is still prefixed by the envelope id.
     const uid = body.match(/data-uid="([^"]+)"/)![1]!;
     expect(uid.startsWith(`${islandId}-`)).toBe(true);
+  });
+
+  // Security: the also-hydrate decision must come from the *decrypted* envelope,
+  // never a query param. `token` is a pure `mochi:defer` island's sealed props
+  // (no `__mochi_ah`), so appending `hydrate=eager` must NOT make the endpoint
+  // wrap-and-echo the decrypted props as a plaintext `props="…"` attribute —
+  // otherwise the endpoint is a decryption oracle for any sealed token.
+  test('ignores a ?hydrate= query param on a token that did not opt into hydration', async () => {
+    const res = await fetch(`${base}/_mochi/island/${echoKey}?props=${encodeURIComponent(token)}&hydrate=eager`);
+    expect(res.status).toBe(200);
+    const body = await res.text();
+    expect(body).not.toContain('<mochi-hydratable-island');
+    // No raw serialized props echoed for client hydration.
+    expect(body).not.toContain('props="');
   });
 
   // CSS the host page never linked (here a side-effect import; in practice also

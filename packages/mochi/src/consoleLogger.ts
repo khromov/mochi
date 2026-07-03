@@ -1,6 +1,7 @@
 import nodePath from 'node:path';
 import { styleText } from 'node:util';
 import prettyBytes from './vendor/pretty-bytes';
+import { pinGlobal } from './globalState';
 import { mochiEvents } from './events';
 import type { MochiEventMap, MochiRequestKind } from './events';
 import { logger } from './log';
@@ -22,7 +23,9 @@ export interface ConsoleLoggerOptions {
 const DEFAULT_SLOW = 500;
 const DEFAULT_VERY_SLOW = 2000;
 
-let registered = false;
+// Pinned on `globalThis` so a bundled SSR copy of this module can't double-subscribe
+// to `mochiEvents` with its own private flag (matching every other cross-bundle singleton).
+const state = pinGlobal<{ registered: boolean }>('__mochi_console_logger__', () => ({ registered: false }));
 
 /**
  * Pre-built consumer of `mochiEvents` that prints one formatted line per HTTP
@@ -42,10 +45,16 @@ let registered = false;
  * customise. Safe to call manually — duplicate calls are a no-op.
  */
 export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
-  if (registered) {
+  if (state.registered) {
+    // A second call can't re-subscribe, so any options it carries are silently
+    // dropped. Warn rather than swallow — a common trap is calling `consoleLogger()`
+    // at import time, which makes `Mochi.serve({ logger: {...} })` a no-op.
+    if (Object.keys(options).length > 0) {
+      logger.warn('consoleLogger() was already registered; the options passed to this call are ignored.');
+    }
     return;
   }
-  registered = true;
+  state.registered = true;
 
   const slow = options.slowThreshold ?? DEFAULT_SLOW;
   const verySlow = options.verySlowThreshold ?? DEFAULT_VERY_SLOW;

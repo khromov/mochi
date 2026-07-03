@@ -148,9 +148,9 @@ describe('getClientAddress', () => {
     expect(getClientAddress(r, null, { addressHeader: 'x-forwarded-for', xffDepth: 3 })).toBe('client');
   });
 
-  test('xffDepth deeper than the chain returns the leftmost entry', () => {
+  test('xffDepth deeper than the chain returns the rightmost (closest-proxy) entry, never the spoofable leftmost', () => {
     const r = req({ 'x-forwarded-for': 'a, b' });
-    expect(getClientAddress(r, 'fb', { addressHeader: 'x-forwarded-for', xffDepth: 5 })).toBe('a');
+    expect(getClientAddress(r, 'fb', { addressHeader: 'x-forwarded-for', xffDepth: 5 })).toBe('b');
   });
 
   test('empty x-forwarded-for falls back to the connecting address', () => {

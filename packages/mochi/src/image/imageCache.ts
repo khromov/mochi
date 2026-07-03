@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
-import { readdir, rename, rm, rmdir, stat, unlink } from 'node:fs/promises';
+import { readdir, rename, rmdir, stat, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
-import { hasSubscribers, mochiEvents, type MochiImageEntryKind } from '../events';
+import { mochiEvents } from '../events';
 import { extForFormat } from './resize';
 import type { ImageFormat, ImageRequest } from './types';
 
@@ -108,9 +108,13 @@ function extForContentType(ct: string): string {
   return EXT_FOR_CONTENT_TYPE[ct.split(';')[0]!.trim().toLowerCase()] ?? 'bin';
 }
 
-function isMissingFileError(err: unknown): boolean {
-  return Boolean(err && typeof err === 'object' && (err as { code?: string }).code === 'ENOENT');
-}
+// When the sweep finds `original.<ext>` bytes with no `original.json` sidecar it
+// can't tell a crash-orphan (safe to reclaim) from the live write window between
+// the bytes rename and the sidecar-last write (`writeBytesAndMeta`). Bytes touched
+// within this window are treated as an in-flight write and left for a later sweep;
+// a genuine orphan will be older than this and reclaimed then. Writes complete in
+// milliseconds, so a few seconds is comfortably conservative.
+const ORPHAN_ORIGINAL_GRACE_MS = 10_000;
 
 /**
  * Disk-backed image cache with stale-while-revalidate semantics. Both the
@@ -349,6 +353,15 @@ export class ImageCache {
     }
   }
 
+  /** Modification time in ms, or null if the file can't be stat'd (vanished/racing). */
+  private async safeMtimeMs(path: string): Promise<number | null> {
+    try {
+      return (await stat(path)).mtimeMs;
+    } catch {
+      return null;
+    }
+  }
+
   // Best-effort delete of `original.<ext>` bytes whose extension isn't `keepExt`
   // (and never the `original.json` sidecar) — used to reclaim a previous
   // generation's bytes when the source's content-type changed.
@@ -514,52 +527,6 @@ export class ImageCache {
     return promise;
   }
 
-  async invalidateSrc(src: string): Promise<void> {
-    const dir = this.srcDir(src);
-    // Bulk `rm -rf` can't enumerate what it deleted, so per-file delete events
-    // are only constructible by first reading the directory. Do that solely when
-    // someone is listening — otherwise stay a plain, fast recursive remove.
-    if (hasSubscribers('image:delete')) {
-      await this.emitSrcDirDeletes(src, dir);
-    }
-    await rm(dir, { recursive: true, force: true });
-  }
-
-  private async emitSrcDirDeletes(src: string, dir: string): Promise<void> {
-    let files: string[];
-    try {
-      files = await readdir(dir);
-    } catch {
-      return;
-    }
-    for (const f of files) {
-      // Sidecars/temp files aren't independent entries — skip them.
-      if (f.endsWith('.json') || f.endsWith('.tmp')) {
-        continue;
-      }
-      let kind: MochiImageEntryKind;
-      let id: string;
-      if (f === 'placeholder.txt') {
-        kind = 'placeholder';
-        id = originalId(src);
-      } else if (f.startsWith('original.')) {
-        kind = 'original';
-        id = originalId(src);
-      } else {
-        kind = 'variant';
-        id = f.slice(0, f.lastIndexOf('.'));
-      }
-      const path = join(dir, f);
-      let size = 0;
-      try {
-        size = (await stat(path)).size;
-      } catch {
-        // best-effort; the file may vanish between readdir and stat
-      }
-      mochiEvents.emit('image:delete', { kind, src, path, id, size, reason: 'invalidated' });
-    }
-  }
-
   /**
    * Immediately invalidate a source by rewriting the shared original's SWR
    * timers; every variant follows the original, so this cascades. `hard: false`
@@ -582,25 +549,6 @@ export class ImageCache {
         evictAt: hard ? Math.min(meta.evictAt, now) : meta.evictAt,
       });
     });
-  }
-
-  async invalidateVariant(req: ImageRequest): Promise<void> {
-    await this.invalidateVariantById(req.src, variantId(req), extForFormat(req.format));
-  }
-
-  async invalidateVariantById(src: string, id: string, ext: string): Promise<void> {
-    const base = this.basePathFor(src, id, ext);
-    const [freed] = await Promise.all([
-      this.removeFile(base),
-      unlink(`${base}.json`).catch((e) => {
-        if (!isMissingFileError(e)) {
-          throw e;
-        }
-      }),
-    ]);
-    if (freed > 0) {
-      mochiEvents.emit('image:delete', { kind: 'variant', src, path: base, id, size: freed, reason: 'invalidated' });
-    }
   }
 
   /**
@@ -661,25 +609,49 @@ export class ImageCache {
         }
       }
 
-      if (orig !== null && origDead) {
+      if (origDead) {
         // Remove every `original.*` (bytes of any extension + the sidecar) so a
-        // stale-format leftover from a content-type change is reclaimed too.
+        // stale-format leftover from a content-type change is reclaimed too. This
+        // runs even when the sidecar is missing (`orig === null`): a crash landing
+        // between the bytes write and the sidecar-last write leaves orphaned
+        // `original.<ext>` bytes that would otherwise leak forever and keep the src
+        // dir from ever being reclaimed.
+        //
+        // But a sidecar can also be legitimately absent *during* a live write (the
+        // bytes are renamed in before the sidecar is written), so a sidecar-less
+        // original is only reclaimed once its bytes are older than the grace window
+        // — otherwise a concurrent first-generation write races the sweep and gets
+        // its just-written bytes deleted out from under it.
         let freed = 0;
+        let inflight = false;
         for (const f of files) {
           if (f.startsWith('original.')) {
+            if (orig === null) {
+              const mtime = await this.safeMtimeMs(join(dir, f));
+              if (mtime !== null && mtime > now - ORPHAN_ORIGINAL_GRACE_MS) {
+                inflight = true;
+                continue;
+              }
+            }
             freed += await this.removeFile(join(dir, f));
           }
         }
-        freedBytes += freed;
-        removedOriginals++;
-        mochiEvents.emit('image:delete', {
-          kind: 'original',
-          src: orig.src,
-          path: this.originalBytesPath(orig.src, orig.contentType),
-          id: originalId(orig.src),
-          size: freed,
-          reason: 'evicted',
-        });
+        // With no sidecar there's no metadata to describe the entry, so only
+        // report the orphan case when bytes were actually reclaimed. Skip the
+        // report (and the removal accounting) entirely when we deferred to a
+        // suspected in-flight write.
+        if (!inflight && (orig !== null || freed > 0)) {
+          freedBytes += freed;
+          removedOriginals++;
+          mochiEvents.emit('image:delete', {
+            kind: 'original',
+            src: orig?.src ?? '',
+            path: orig ? this.originalBytesPath(orig.src, orig.contentType) : join(dir, 'original'),
+            id: orig ? originalId(orig.src) : d.name,
+            size: freed,
+            reason: 'evicted',
+          });
+        }
       }
 
       // The placeholder is bound to the original's generation, so it's dead

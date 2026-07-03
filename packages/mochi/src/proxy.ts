@@ -131,7 +131,10 @@ export function getClientAddress(request: Request, fallback: string | null, opti
       return fallback;
     }
     const depth = options?.xffDepth ?? 1;
-    return ips[ips.length - depth] ?? ips[0]!;
+    // A misconfigured `xffDepth` larger than the chain must never surrender to
+    // the leftmost entry — that one is fully client-controlled and spoofable.
+    // Fall back to the rightmost (closest-proxy) entry instead.
+    return ips[ips.length - depth] ?? ips[ips.length - 1]!;
   }
 
   return value.trim() || fallback;

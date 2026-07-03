@@ -41,8 +41,11 @@ describe('trailingSlash: unset (no policy)', () => {
     expect(res.status).toBe(404);
   });
 
-  test('internal /_mochi/client/stats/ (trailing slash) serves 200', async () => {
+  test('internal /_mochi/client/stats/ is gated out of production (404)', async () => {
+    // The client-stats route is registered only when the debug bar is enabled
+    // (development), so on a production server it 404s regardless of slash form —
+    // it would otherwise disclose bundle input paths and sizes.
     const res = await fetch(`${base}/_mochi/client/stats/`, { redirect: 'manual' });
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(404);
   });
 });

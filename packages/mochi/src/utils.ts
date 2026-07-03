@@ -166,13 +166,6 @@ export function normalizeAssetPrefix(input: string | undefined): string {
 }
 
 /**
- * Test whether an HTML comment's text is a Svelte SSR hydration marker.
- *
- * `text` must be the *inner* text of an HTML comment (i.e. the bytes between
- * `<!--` and `-->`), not arbitrary HTML — the patterns below assume the
- * surrounding `<!-- -->` has already been stripped by the caller.
- */
-/**
  * A `<link rel="stylesheet">` tag for a compiled CSS asset URL. Centralized so a
  * future CSP `nonce`/`crossorigin` attribute is added in one place; the URL is an
  * internal hashed asset path, not user input, so it's not escaped.
@@ -181,6 +174,13 @@ export function cssLinkTag(url: string): string {
   return `<link rel="stylesheet" href="${url}">`;
 }
 
+/**
+ * Test whether an HTML comment's text is a Svelte SSR hydration marker.
+ *
+ * `text` must be the *inner* text of an HTML comment (i.e. the bytes between
+ * `<!--` and `-->`), not arbitrary HTML — the patterns below assume the
+ * surrounding `<!-- -->` has already been stripped by the caller.
+ */
 export function isSvelteMarker(text: string): boolean {
   // Svelte emits:
   //   <!--[-->, <!--]-->          block open/close (HYDRATION_START / HYDRATION_END)
@@ -190,17 +190,6 @@ export function isSvelteMarker(text: string): boolean {
   //   <!--[-1-->                   N = nth :else if, -1 = final :else)
   //   <!---->, <!--s8967g-->      empty / component hash
   return text === '[' || text === ']' || text === '[!' || text.startsWith('[?') || /^\[-?\d+$/.test(text) || /^\w*$/.test(text);
-}
-
-/**
- * Strip Svelte SSR hydration markers from HTML, but preserve them inside
- * `<mochi-hydratable-island>` and `<mochi-server-island>` blocks.
- *
- * Uses Bun's HTMLRewriter (based on Cloudflare's lol-html) to properly parse
- * HTML and track element nesting instead of fragile regex/manual scanning.
- */
-export function stripHydrationMarkers(html: string): string {
-  return stripPageMarkers(html);
 }
 
 /**
@@ -224,7 +213,14 @@ export function normalizeIslandHydrationMarkers(html: string): string {
   return html.replace(/(<mochi-hydratable-island\b[^>]*>)<!--\[--><!--\[-->(.*?)<!--\]--><!--\]-->(<\/mochi-hydratable-island>)/gs, '$1<!--[-->$2<!--]-->$3');
 }
 
-function stripPageMarkers(html: string): string {
+/**
+ * Strip Svelte SSR hydration markers from HTML, but preserve them inside
+ * `<mochi-hydratable-island>` and `<mochi-server-island>` blocks.
+ *
+ * Uses Bun's HTMLRewriter (based on Cloudflare's lol-html) to properly parse
+ * HTML and track element nesting instead of fragile regex/manual scanning.
+ */
+export function stripHydrationMarkers(html: string): string {
   let islandDepth = 0;
 
   const trackIsland = {
