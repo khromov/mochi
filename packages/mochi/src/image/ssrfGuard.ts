@@ -24,6 +24,8 @@ function hostMatches(hostname: string, pattern: string): boolean {
   return host === pat;
 }
 
+// TODO: This and similar functions should be moved to separate utils or use a
+// off the shelf library rather than reimplementing the wheel.
 function ipv4IsPrivate(ip: string): boolean {
   const parts = ip.split('.').map(Number);
   if (parts.length !== 4 || parts.some((n) => Number.isNaN(n))) {
