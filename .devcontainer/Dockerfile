@@ -5,6 +5,12 @@ ENV TZ="$TZ"
 
 ARG CLAUDE_CODE_VERSION=latest
 
+# node:slim's base strips /usr/share/doc/* (dpkg path-exclude), but Debian ships
+# fzf's shell-integration scripts (key-bindings.zsh / completion.zsh) there. Keep
+# fzf's docs so those scripts actually land on disk and the zsh startup `source`
+# lines (and the oh-my-zsh fzf plugin) resolve instead of erroring.
+RUN echo 'path-include /usr/share/doc/fzf/*' > /etc/dpkg/dpkg.cfg.d/keep-fzf-docs
+
 # Install basic development tools and iptables/ipset
 RUN apt-get update && apt-get install -y --no-install-recommends \
   less \
