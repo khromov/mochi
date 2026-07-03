@@ -164,7 +164,7 @@ export class CachedImage {
 
   // Human-readable render of the recorded op chain, e.g. `resize(240, 240, {"fit":"inside"}).webp()`.
   private pipelineString(): string {
-    return this.ops.map((op) => `${op.m}(${op.a.map((a) => JSON.stringify(a)).join(', ')})`).join('.');
+    return this.ops.map((op) => `${op.m}(${op.a.map((a) => (a === undefined ? 'undefined' : JSON.stringify(a))).join(', ')})`).join('.');
   }
 
   private previewFilename(): string {
