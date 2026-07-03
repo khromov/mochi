@@ -105,4 +105,11 @@ declare module 'mochi-framework' {
     Success extends import('./types').MochiFormShape = import('./types').MochiFormShape,
     Failure extends import('./types').MochiFormShape = import('./types').MochiFormShape,
   >(text: string): import('./types').MochiEnhanceResult<Success, Failure>;
+
+  /**
+   * Resilient `fetch` wrapper with retries, a per-attempt timeout, and an
+   * optional `baseUrl`. Isomorphic — usable in SSR and hydrated islands. Passes
+   * through to the standard `fetch`/`Response` API.
+   */
+  export function mochiFetch(input: string | URL | Request, options?: import('./fetch').MochiFetchOptions): Promise<Response>;
 }

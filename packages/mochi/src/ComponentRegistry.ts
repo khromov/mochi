@@ -546,6 +546,8 @@ export class ComponentRegistry {
             // Svelte never invokes actions during SSR, so these stubs only fire
             // if user code calls them on the server — which is a usage error.
             `export { enhance, deserialize } from "${toPosixPath(path.join(FRAMEWORK_DIR, 'enhance.ssr.ts'))}";`,
+            // Isomorphic resilient fetch — a real re-export on both sides.
+            `export { mochiFetch } from "${toPosixPath(path.join(FRAMEWORK_DIR, 'fetch.ts'))}";`,
           ].join('\n'),
           loader: 'js',
         }));
@@ -1048,6 +1050,8 @@ export class ComponentRegistry {
             `export function cachedImage() { throw new Error("cachedImage() is only available on the server"); }`,
             `export class CachedImage { constructor() { throw new Error("CachedImage is only available on the server"); } }`,
             `export { enhance, deserialize } from "${enhanceClientPath}";`,
+            // mochiFetch is genuinely isomorphic — a real re-export here too, not a throwing stub.
+            `export { mochiFetch } from "${toPosixPath(path.join(FRAMEWORK_DIR, 'fetch.ts'))}";`,
           ].join('\n'),
           loader: 'js',
         }));

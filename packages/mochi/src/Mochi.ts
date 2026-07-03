@@ -47,6 +47,8 @@ import { createErrorResponder, DEFAULT_ERROR_PAGE_PATH } from './errors';
 import { requestContext } from './requestContext';
 import type { MochiRequestContext } from './requestContext';
 import { createQueue, getQueue, closeAllQueueResources } from './queue';
+import { mochiFetch } from './fetch';
+import type { MochiFetchOptions } from './fetch';
 import type { MochiQueue, MochiQueueOptions, MochiQueueListeners, MochiProcessor } from './queue';
 import { finalizeCookieHeaders } from './cookies';
 import { makeRequestContextBuilder } from './requestSetup';
@@ -173,6 +175,16 @@ export class Mochi {
    */
   static getQueue<T = unknown>(name: string): MochiQueue<T> {
     return getQueue<T>(name);
+  }
+
+  /**
+   * Resilient `fetch`: adds retries with backoff, a per-attempt timeout, and an
+   * optional `baseUrl`. Otherwise passes straight through to standard
+   * `fetch`/`Response` — no bespoke response object. Isomorphic; `.svelte`
+   * files import the same helper as `mochiFetch` from `'mochi-framework'`.
+   */
+  static fetch(input: string | URL | Request, options?: MochiFetchOptions): Promise<Response> {
+    return mochiFetch(input, options);
   }
 
   private static resolveHtmlShell(

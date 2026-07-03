@@ -35,6 +35,8 @@ export type { ConsoleLoggerOptions } from './consoleLogger';
 export { logger, setLogLevel, getLogLevel } from './log';
 export type { LogLevel } from './log';
 export { mochiEvents, hasSubscribers } from './events';
+export { mochiFetch } from './fetch';
+export type { MochiFetchOptions } from './fetch';
 export type { MochiCompileError } from './ComponentRegistry';
 export type {
   MochiEmitter,
