@@ -247,14 +247,6 @@ export const demos: Demo[] = [
     category: 'hydration',
   },
   {
-    href: '/demos/entity-props/',
-    slug: 'entity-props',
-    files: entityProps,
-    title: 'HTML Entities in Props',
-    hook: 'HTML entities in a static island prop (label="Tom &amp; Jerry") decode to their characters — identical on the server and after hydration.',
-    category: 'hydration',
-  },
-  {
     href: '/demos/client-only/',
     slug: 'client-only',
     files: clientOnly,
@@ -423,5 +415,13 @@ export const demos: Demo[] = [
     title: 'Tailwind Todo App',
     hook: 'Classic todo app styled with Tailwind CSS.',
     category: 'sites',
+  },
+  {
+    href: '/demos/entity-props/',
+    slug: 'entity-props',
+    files: entityProps,
+    title: 'HTML Entities in Props',
+    hook: 'HTML entities in a static island prop (label="Tom &amp; Jerry") decode to their characters — identical on the server and after hydration.',
+    category: 'hydration',
   },
 ];
