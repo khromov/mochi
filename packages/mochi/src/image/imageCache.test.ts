@@ -491,6 +491,35 @@ describe('ImageCache.sweep', () => {
     const cache = new ImageCache(join(tmp(), 'not-created-yet'));
     expect(await cache.sweep(Date.now())).toEqual({ removedVariants: 0, removedOriginals: 0, freedBytes: 0 });
   });
+
+  test('leaves a sidecar-less original written within the grace window (in-flight write, not a crash-orphan)', async () => {
+    const dir = tmp();
+    const cache = new ImageCache(dir);
+    const srcDir = join(dir, srcHash(SRC));
+    await cache.getOriginal(SRC, 60_000, 86_400_000, origFn('o', 'image/jpeg'));
+    // Drop only the sidecar to mimic the live write window: `writeBytesAndMeta`
+    // renames the bytes in *before* writing `original.json`, so a sweep landing in
+    // that gap sees bytes with no sidecar. Their mtime is ~now, inside the grace.
+    rmSync(join(srcDir, 'original.json'));
+
+    const swept = await cache.sweep(Date.now());
+    expect(swept.removedOriginals).toBe(0);
+    expect(existsSync(join(srcDir, 'original.jpg'))).toBe(true); // in-flight bytes preserved
+  });
+
+  test('reclaims a sidecar-less original once its bytes age past the grace window (crash-orphan)', async () => {
+    const dir = tmp();
+    const cache = new ImageCache(dir);
+    const srcDir = join(dir, srcHash(SRC));
+    await cache.getOriginal(SRC, 60_000, 86_400_000, origFn('o', 'image/jpeg'));
+    rmSync(join(srcDir, 'original.json'));
+
+    // Sweep far enough ahead that the orphan bytes are older than the grace window.
+    const swept = await cache.sweep(Date.now() + 60_000);
+    expect(swept.removedOriginals).toBe(1);
+    expect(existsSync(join(srcDir, 'original.jpg'))).toBe(false);
+    expect(existsSync(srcDir)).toBe(false); // dir emptied and reclaimed
+  });
 });
 
 describe('ImageCache lifecycle events', () => {

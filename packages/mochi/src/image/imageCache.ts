@@ -108,6 +108,14 @@ function extForContentType(ct: string): string {
   return EXT_FOR_CONTENT_TYPE[ct.split(';')[0]!.trim().toLowerCase()] ?? 'bin';
 }
 
+// When the sweep finds `original.<ext>` bytes with no `original.json` sidecar it
+// can't tell a crash-orphan (safe to reclaim) from the live write window between
+// the bytes rename and the sidecar-last write (`writeBytesAndMeta`). Bytes touched
+// within this window are treated as an in-flight write and left for a later sweep;
+// a genuine orphan will be older than this and reclaimed then. Writes complete in
+// milliseconds, so a few seconds is comfortably conservative.
+const ORPHAN_ORIGINAL_GRACE_MS = 10_000;
+
 /**
  * Disk-backed image cache with stale-while-revalidate semantics. Both the
  * encoded bytes and the SWR timing metadata live on disk, so timers survive a
@@ -342,6 +350,15 @@ export class ImageCache {
       return size;
     } catch {
       return 0;
+    }
+  }
+
+  /** Modification time in ms, or null if the file can't be stat'd (vanished/racing). */
+  private async safeMtimeMs(path: string): Promise<number | null> {
+    try {
+      return (await stat(path)).mtimeMs;
+    } catch {
+      return null;
     }
   }
 
@@ -598,17 +615,32 @@ export class ImageCache {
         // runs even when the sidecar is missing (`orig === null`): a crash landing
         // between the bytes write and the sidecar-last write leaves orphaned
         // `original.<ext>` bytes that would otherwise leak forever and keep the src
-        // dir from ever being reclaimed. The sidecar-last protocol makes
-        // bytes-without-sidecar always safe to drop.
+        // dir from ever being reclaimed.
+        //
+        // But a sidecar can also be legitimately absent *during* a live write (the
+        // bytes are renamed in before the sidecar is written), so a sidecar-less
+        // original is only reclaimed once its bytes are older than the grace window
+        // — otherwise a concurrent first-generation write races the sweep and gets
+        // its just-written bytes deleted out from under it.
         let freed = 0;
+        let inflight = false;
         for (const f of files) {
           if (f.startsWith('original.')) {
+            if (orig === null) {
+              const mtime = await this.safeMtimeMs(join(dir, f));
+              if (mtime !== null && mtime > now - ORPHAN_ORIGINAL_GRACE_MS) {
+                inflight = true;
+                continue;
+              }
+            }
             freed += await this.removeFile(join(dir, f));
           }
         }
         // With no sidecar there's no metadata to describe the entry, so only
-        // report the orphan case when bytes were actually reclaimed.
-        if (orig !== null || freed > 0) {
+        // report the orphan case when bytes were actually reclaimed. Skip the
+        // report (and the removal accounting) entirely when we deferred to a
+        // suspected in-flight write.
+        if (!inflight && (orig !== null || freed > 0)) {
           freedBytes += freed;
           removedOriginals++;
           mochiEvents.emit('image:delete', {

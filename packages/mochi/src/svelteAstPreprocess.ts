@@ -3,6 +3,7 @@ import type { AST } from 'svelte/compiler';
 import MagicString from 'magic-string';
 import path from 'node:path';
 import { walk } from 'zimmerframe';
+import { ALSO_HYDRATE_ENVELOPE_KEY, type AlsoHydrateMode } from './types';
 
 /** Svelte's AST nodes all have start/end, but estree types don't declare them. */
 interface Positioned {
@@ -205,8 +206,10 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
         // `?hydrate=` query param; otherwise an attacker could append `hydrate=eager`
         // to any sealed token and have the endpoint echo the decrypted props back in
         // plaintext, turning a pure `mochi:defer` island into a decryption oracle.
-        const alsoHydrateMode = directives.hydrate ? (directives.hydrate.name === 'mochi:hydrate:visible' ? 'visible' : 'eager') : null;
-        const autoEntries = directives.hydrate ? [`islandId: __mochi_iid`, `isHydratable: true`, `__mochi_ah: ${JSON.stringify(alsoHydrateMode)}`] : [`islandId: __mochi_iid`];
+        const alsoHydrateMode: AlsoHydrateMode | null = directives.hydrate ? (directives.hydrate.name === 'mochi:hydrate:visible' ? 'visible' : 'eager') : null;
+        const autoEntries = directives.hydrate
+          ? [`islandId: __mochi_iid`, `isHydratable: true`, `${ALSO_HYDRATE_ENVELOPE_KEY}: ${JSON.stringify(alsoHydrateMode)}`]
+          : [`islandId: __mochi_iid`];
         const propsExpr = buildPropsFromAst(source, comp.attributes, autoEntries);
         // Always emit signed-props for server islands (no empty-props optimization)
         // because islandId is always injected, and all props must be encrypted

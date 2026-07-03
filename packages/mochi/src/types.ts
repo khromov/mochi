@@ -13,6 +13,22 @@ export function isServerPropsResolver(serverProps: Record<string, unknown> | Moc
   return typeof serverProps === 'function';
 }
 
+/**
+ * A `mochi:defer mochi:hydrate` island's authored hydration mode. It rides inside
+ * the encrypted server-island envelope under {@link ALSO_HYDRATE_ENVELOPE_KEY}
+ * (transport-only, stripped before render — never trusted from a query param).
+ * The preprocessor (producer) and the island endpoint (consumer) must agree on
+ * this set, so both import it from here rather than hardcoding the literals.
+ */
+export type AlsoHydrateMode = 'eager' | 'visible';
+
+/** Envelope key carrying the {@link AlsoHydrateMode} inside the sealed props. */
+export const ALSO_HYDRATE_ENVELOPE_KEY = '__mochi_ah';
+
+export function isAlsoHydrateMode(value: unknown): value is AlsoHydrateMode {
+  return value === 'eager' || value === 'visible';
+}
+
 export interface MochiPageHandlerConfig {
   serverProps?: Record<string, unknown> | MochiServerPropsResolver;
   actions?: MochiFormActions;

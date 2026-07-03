@@ -63,6 +63,12 @@ Apply `mochi:hydrate` alongside `mochi:defer` to fetch the island on-demand and 
 <ShoppingCart mochi:defer mochi:hydrate items={initialItems} />
 ```
 
+<Callout type="warning">
+
+**Adding `mochi:hydrate` makes the props client-visible.** A pure `mochi:defer` island's props never leave the server in plaintext — the token on the wire is opaque ciphertext and the endpoint returns only rendered HTML. But hydration needs the raw props on the client, so `mochi:defer mochi:hydrate` echoes the decrypted props back as plaintext (exactly like any [hydratable island](/docs/island-props/)). Don't pass server-only secrets to an island you also hydrate. The choice is sealed inside the token, not the URL — appending `?hydrate=` to a defer-only token can't force the endpoint to reveal its props.
+
+</Callout>
+
 ### Nesting islands inside a server island
 
 A server island's content is itself a full render, so it may contain `mochi:hydrate` islands and further `mochi:defer` server islands. Each nested island behaves normally — hydratable children hydrate once the deferred HTML lands, and nested server islands fetch themselves.

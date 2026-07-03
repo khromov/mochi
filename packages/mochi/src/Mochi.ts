@@ -7,7 +7,7 @@ import type { RenderResult } from './ComponentRegistry';
 import { loadSvelteConfig } from './svelteConfig';
 import { buildInlineWebComponent } from './buildInlineWebComponent';
 import { buildClientStatsRoutes, CLIENT_STATS_COMPONENT } from './clientStatsRoutes';
-import { isMochiPage, isMochiApi, isMochiWs, isMochiSse, isMochiFile, isMochiQueue, isServerPropsResolver } from './types';
+import { isMochiPage, isMochiApi, isMochiWs, isMochiSse, isMochiFile, isMochiQueue, isServerPropsResolver, isAlsoHydrateMode, ALSO_HYDRATE_ENVELOPE_KEY } from './types';
 import type {
   BunRouteValue,
   HttpMethod,
@@ -1138,9 +1138,9 @@ export class Mochi {
       // param: trusting `?hydrate=` would let anyone append it to a sealed token and
       // have the endpoint echo the decrypted props back in plaintext (a decryption
       // oracle against pure `mochi:defer` islands).
-      const { islandId: rawIslandId, __mochi_ah: rawHydrateMode, ...props } = decodedProps;
+      const { [ALSO_HYDRATE_ENVELOPE_KEY]: rawHydrateMode, islandId: rawIslandId, ...props } = decodedProps;
       const islandId = typeof rawIslandId === 'string' ? rawIslandId : undefined;
-      const hydrateMode = rawHydrateMode === 'eager' || rawHydrateMode === 'visible' ? rawHydrateMode : null;
+      const hydrateMode = isAlsoHydrateMode(rawHydrateMode) ? rawHydrateMode : null;
 
       // Look up the component path
       const componentPath = registry.getServerIslandPath(componentName);
@@ -1198,7 +1198,7 @@ export class Mochi {
         let body = result.body;
 
         // If also-hydrate is requested, wrap in hydratable island
-        if (hydrateMode === 'eager' || hydrateMode === 'visible') {
+        if (isAlsoHydrateMode(hydrateMode)) {
           const componentUrl = registry.getComponentEntryUrl(componentName);
           const serializedProps = devalueStringify(props);
           const bootstrapUrl = registry.getIslandBootstrapUrl();
