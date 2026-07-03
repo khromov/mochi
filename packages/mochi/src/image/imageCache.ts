@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
-import { readdir, rename, rm, rmdir, stat, unlink } from 'node:fs/promises';
+import { readdir, rename, rmdir, stat, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
-import { hasSubscribers, mochiEvents, type MochiImageEntryKind } from '../events';
+import { mochiEvents } from '../events';
 import { extForFormat } from './resize';
 import type { ImageFormat, ImageRequest } from './types';
 
@@ -106,10 +106,6 @@ const EXT_FOR_CONTENT_TYPE: Record<string, string> = {
 /** Cosmetic on-disk extension for an original's content-type; the sidecar holds the authoritative type. */
 function extForContentType(ct: string): string {
   return EXT_FOR_CONTENT_TYPE[ct.split(';')[0]!.trim().toLowerCase()] ?? 'bin';
-}
-
-function isMissingFileError(err: unknown): boolean {
-  return Boolean(err && typeof err === 'object' && (err as { code?: string }).code === 'ENOENT');
 }
 
 /**
@@ -514,52 +510,6 @@ export class ImageCache {
     return promise;
   }
 
-  async invalidateSrc(src: string): Promise<void> {
-    const dir = this.srcDir(src);
-    // Bulk `rm -rf` can't enumerate what it deleted, so per-file delete events
-    // are only constructible by first reading the directory. Do that solely when
-    // someone is listening — otherwise stay a plain, fast recursive remove.
-    if (hasSubscribers('image:delete')) {
-      await this.emitSrcDirDeletes(src, dir);
-    }
-    await rm(dir, { recursive: true, force: true });
-  }
-
-  private async emitSrcDirDeletes(src: string, dir: string): Promise<void> {
-    let files: string[];
-    try {
-      files = await readdir(dir);
-    } catch {
-      return;
-    }
-    for (const f of files) {
-      // Sidecars/temp files aren't independent entries — skip them.
-      if (f.endsWith('.json') || f.endsWith('.tmp')) {
-        continue;
-      }
-      let kind: MochiImageEntryKind;
-      let id: string;
-      if (f === 'placeholder.txt') {
-        kind = 'placeholder';
-        id = originalId(src);
-      } else if (f.startsWith('original.')) {
-        kind = 'original';
-        id = originalId(src);
-      } else {
-        kind = 'variant';
-        id = f.slice(0, f.lastIndexOf('.'));
-      }
-      const path = join(dir, f);
-      let size = 0;
-      try {
-        size = (await stat(path)).size;
-      } catch {
-        // best-effort; the file may vanish between readdir and stat
-      }
-      mochiEvents.emit('image:delete', { kind, src, path, id, size, reason: 'invalidated' });
-    }
-  }
-
   /**
    * Immediately invalidate a source by rewriting the shared original's SWR
    * timers; every variant follows the original, so this cascades. `hard: false`
@@ -582,25 +532,6 @@ export class ImageCache {
         evictAt: hard ? Math.min(meta.evictAt, now) : meta.evictAt,
       });
     });
-  }
-
-  async invalidateVariant(req: ImageRequest): Promise<void> {
-    await this.invalidateVariantById(req.src, variantId(req), extForFormat(req.format));
-  }
-
-  async invalidateVariantById(src: string, id: string, ext: string): Promise<void> {
-    const base = this.basePathFor(src, id, ext);
-    const [freed] = await Promise.all([
-      this.removeFile(base),
-      unlink(`${base}.json`).catch((e) => {
-        if (!isMissingFileError(e)) {
-          throw e;
-        }
-      }),
-    ]);
-    if (freed > 0) {
-      mochiEvents.emit('image:delete', { kind: 'variant', src, path: base, id, size: freed, reason: 'invalidated' });
-    }
   }
 
   /**

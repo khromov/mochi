@@ -74,6 +74,17 @@ describe('preprocessHydratable', () => {
     expect(transformed).toContain('theme: "dark"');
   });
 
+  test('string literal props with HTML entities are decoded', () => {
+    const source = `${SCRIPT('import Comp from "./Comp.svelte";')}<Comp label="Tom &amp; Jerry" mochi:hydrate />`;
+    const { transformed } = preprocessHydratable(source, '/test/File.svelte');
+
+    // The serialized prop payload must carry the decoded `&`, matching the `{expr}`
+    // path — pre-fix this was the raw source `label: "Tom &amp; Jerry"`. (The SSR
+    // component invocation keeps the raw `&amp;`; Svelte decodes that at compile time.)
+    expect(transformed).toContain('label: "Tom & Jerry"');
+    expect(transformed).not.toContain('label: "Tom &amp; Jerry"');
+  });
+
   test('nested braces in props (fixed over regex)', () => {
     const source = `${SCRIPT('import Comp from "./Comp.svelte";')}<Comp data={{ a: { b: 1 } }} mochi:hydrate />`;
     const { transformed } = preprocessHydratable(source, '/test/File.svelte');

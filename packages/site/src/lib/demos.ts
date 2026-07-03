@@ -6,6 +6,7 @@ import { files as clientOnly } from '../demos/client-only/files.ts';
 import { files as cookieVaryTest } from '../demos/cookie-vary-test/files.ts';
 import { files as cookies } from '../demos/cookies/files.ts';
 import { files as dataLoading } from '../demos/data-loading/files.ts';
+import { files as entityProps } from '../demos/entity-props/files.ts';
 import { files as error } from '../demos/error/files.ts';
 import { files as errorBoundaries } from '../demos/error-boundaries/files.ts';
 import { files as file } from '../demos/file/files.ts';
@@ -243,6 +244,14 @@ export const demos: Demo[] = [
     files: islandProps,
     title: 'Crossing the server-client boundary with props',
     hook: 'How props travel from a server-rendered parent into a hydrated island — Date, Map, Set, BigInt, URL, typed arrays, and even cyclic refs survive devalue’s round-trip.',
+    category: 'hydration',
+  },
+  {
+    href: '/demos/entity-props/',
+    slug: 'entity-props',
+    files: entityProps,
+    title: 'HTML Entities in Props',
+    hook: 'HTML entities in a static island prop (label="Tom &amp; Jerry") decode to their characters — identical on the server and after hydration.',
     category: 'hydration',
   },
   {

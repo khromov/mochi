@@ -123,22 +123,6 @@ describe('ImageCache variant (lifetime follows the original)', () => {
     expect((await cache.get(req(), regen('v2'))).status).toBe('miss');
   });
 
-  test('invalidateVariant removes one variant; invalidateSrc removes all', async () => {
-    const cache = new ImageCache(tmp());
-    await cache.getOriginal(SRC, 60_000, 86_400_000, origFn('o'));
-    const webp = req({ format: 'webp' });
-    const png = req({ format: 'png' });
-    await cache.get(webp, regen('w'));
-    await cache.get(png, regen('p'));
-
-    await cache.invalidateVariant(webp);
-    expect((await cache.get(webp, regen('w2'))).status).toBe('miss');
-    expect((await cache.get(png, regen('p2'))).status).toBe('fresh');
-
-    await cache.invalidateSrc(SRC);
-    expect((await cache.get(png, regen('p3'))).status).toBe('miss');
-  });
-
   test('placeholder round-trips while the original generation matches', async () => {
     const dir = tmp();
     const cache = new ImageCache(dir);
@@ -200,10 +184,6 @@ describe('ImageCache variant (lifetime follows the original)', () => {
     expect(calls).toBe(1);
     expect(Array.from(second.entry.bytes)).toEqual([9, 9, 9]);
     expect(existsSync(join(dir, srcHash(SRC), 'pipe123.bin'))).toBe(true);
-
-    await cache.invalidateVariantById(SRC, 'pipe123', 'bin');
-    expect((await cache.getVariant(SRC, 'pipe123', 'bin', fn)).status).toBe('miss');
-    expect(calls).toBe(2);
   });
 });
 
@@ -347,13 +327,6 @@ describe('ImageCache.getOriginal', () => {
     await cache.getOriginal(SRC, 60_000, 86_400_000, origFn('webp-bytes', 'image/webp'));
     expect(existsSync(join(srcDir, 'original.webp'))).toBe(true);
     expect(existsSync(join(srcDir, 'original.jpg'))).toBe(false); // stale-format bytes reclaimed
-  });
-
-  test('invalidateSrc drops the original entry', async () => {
-    const cache = new ImageCache(tmp());
-    await cache.getOriginal(SRC, 60_000, 86_400_000, origFn('o'));
-    await cache.invalidateSrc(SRC);
-    expect((await cache.getOriginal(SRC, 60_000, 86_400_000, origFn('o'))).status).toBe('miss');
   });
 });
 
@@ -588,31 +561,5 @@ describe('ImageCache lifecycle events', () => {
     deletes.length = 0;
     await cache.sweep(Date.now());
     expect(deletes.find((d) => d.kind === 'variant')?.reason).toBe('superseded');
-  });
-
-  test('invalidateVariantById emits reason:invalidated only when a file existed', async () => {
-    const cache = new ImageCache(tmp());
-    await cache.getOriginal(SRC, 60_000, 86_400_000, origFn('o'));
-    await cache.getVariant(SRC, 'pipe123', 'bin', async () => ({ bytes: new Uint8Array([1]), contentType: 'image/webp', width: 5, height: 5, format: 'webp' }));
-    deletes.length = 0;
-    await cache.invalidateVariantById(SRC, 'pipe123', 'bin');
-    expect(deletes).toHaveLength(1);
-    expect(deletes[0]).toMatchObject({ kind: 'variant', reason: 'invalidated', id: 'pipe123' });
-
-    deletes.length = 0;
-    await cache.invalidateVariantById(SRC, 'does-not-exist', 'bin');
-    expect(deletes).toHaveLength(0);
-  });
-
-  test('invalidateSrc emits an invalidated delete per entry while subscribed', async () => {
-    const cache = new ImageCache(tmp());
-    await cache.getOriginal(SRC, 60_000, 86_400_000, origFn('o'));
-    await cache.get(req(), regen('v'));
-    deletes.length = 0;
-    await cache.invalidateSrc(SRC);
-    const kinds = deletes.map((d) => d.kind);
-    expect(kinds).toContain('original');
-    expect(kinds).toContain('variant');
-    expect(deletes.every((d) => d.reason === 'invalidated')).toBe(true);
   });
 });

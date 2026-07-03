@@ -477,17 +477,20 @@ function buildPropsFromAst(source: string, attributes: Array<AST.Attribute | AST
         const hasExpr = parts.some((v) => v.type !== 'Text');
         if (!hasExpr) {
           // Pure text — JSON.stringify escapes embedded quotes/backslashes so
-          // `title='He said "hi"'` can't produce syntactically broken JS.
-          const text = parts.map((v) => (v.type === 'Text' ? v.raw : '')).join('');
+          // `title='He said "hi"'` can't produce syntactically broken JS. Use the
+          // decoded `data` (not the raw source `raw`) so HTML entities like `&amp;`
+          // reach the component as `&`, matching the `{expr}` path.
+          const text = parts.map((v) => (v.type === 'Text' ? v.data : '')).join('');
           entries.push(`${attr.name}: ${JSON.stringify(text)}`);
         } else {
           // Mixed text + expression (e.g. `title="Hello {name}"`) — emit a template
           // literal so expressions interpolate instead of being spliced in as
-          // literal source text. Escape backslash/backtick/`${` in the text runs.
+          // literal source text. Use the decoded `data` for the same reason as the
+          // pure-text branch, and escape backslash/backtick/`${` in the text runs.
           const tpl = parts
             .map((v) => {
               if (v.type === 'Text') {
-                return v.raw.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$\{/g, '\\${');
+                return v.data.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$\{/g, '\\${');
               }
               const expr = v.expression as unknown as Positioned;
               return '${' + source.slice(expr.start, expr.end) + '}';
