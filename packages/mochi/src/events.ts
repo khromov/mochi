@@ -1,5 +1,6 @@
 import mitt, { type Emitter, type Handler } from 'mitt';
 import { pinGlobal } from './globalState';
+import type { MochiEmailResult } from './email/types';
 
 export type MochiRequestKind = 'page' | 'api' | 'file' | 'asset' | 'image' | 'fallback' | 'error';
 
@@ -198,7 +199,7 @@ export interface MochiEmailSentEvent {
   to: string[];
   subject: string;
   /** Which transport delivered it. */
-  transport: 'smtp' | 'custom' | 'log';
+  transport: MochiEmailResult['transport'];
   /** Provider/SMTP message id, when the transport returns one. */
   messageId?: string;
   /** Send wall-clock duration in ms. */
@@ -208,7 +209,7 @@ export interface MochiEmailSentEvent {
 export interface MochiEmailErrorEvent {
   to: string[];
   subject: string;
-  transport: 'smtp' | 'custom' | 'log';
+  transport: MochiEmailResult['transport'];
   /** Message of the error the transport threw. */
   error: string;
 }

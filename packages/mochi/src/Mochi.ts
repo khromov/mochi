@@ -1458,9 +1458,9 @@ export class Mochi {
     {
       const sweeperStop = stopImageSweeper;
       const stopServer = server.stop.bind(server);
-      server.stop = ((closeActiveConnections?: boolean) => {
+      server.stop = (async (closeActiveConnections?: boolean) => {
         sweeperStop?.();
-        void closeEmailTransport();
+        await closeEmailTransport();
         return stopServer(closeActiveConnections);
       }) as typeof server.stop;
     }

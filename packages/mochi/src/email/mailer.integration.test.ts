@@ -2,12 +2,12 @@
 // transport (does not send), a custom-send transport, and the SMTP transport
 // against a fake server. One Mochi.serve() per process (initMochiConfig allows
 // only one), so the transport is swapped on the pinned runtime between tests.
-import { afterAll, beforeAll, describe, expect, spyOn, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import type { Server } from 'bun';
 import { Mochi } from '../Mochi';
-import { logger } from '../log';
+import { mochiEvents, type MochiEmailSentEvent } from '../events';
 import { getEmailRuntime } from './config';
 import type { MochiEmailTransportConfig, ResolvedEmailMessage } from './types';
 import { startFakeSmtpServer, type FakeSmtpServer } from '../__fixtures__/email/fakeSmtpServer';
@@ -39,16 +39,21 @@ describe('Mochi.email()', () => {
     rmSync(outDir, { recursive: true, force: true });
   });
 
-  test('default (unconfigured) transport logs and does not send', async () => {
+  test('default (unconfigured) transport reports via event and does not send', async () => {
     useTransport({ type: 'log' });
-    const warn = spyOn(logger, 'warn');
+    const sent: MochiEmailSentEvent[] = [];
+    const onSent = (e: MochiEmailSentEvent) => sent.push(e);
+    mochiEvents.on('email:sent', onSent);
     try {
       const result = await Mochi.email({ to: 'user@example.com', subject: 'Hi', html: '<p>Hello</p>' });
       expect(result.transport).toBe('log');
-      expect(warn).toHaveBeenCalledTimes(1);
-      expect(warn.mock.calls[0]?.[0]).toContain('not sent');
+      expect(result.accepted).toEqual(['user@example.com']);
+      // Delivery is reported only through the event (transport: 'log'); the log
+      // transport performs no send.
+      expect(sent).toHaveLength(1);
+      expect(sent[0]?.transport).toBe('log');
     } finally {
-      warn.mockRestore();
+      mochiEvents.off('email:sent', onSent);
     }
   });
 

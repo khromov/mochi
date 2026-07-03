@@ -266,14 +266,20 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
     level: 'warn',
   }));
 
-  subscribe('email:sent', ({ to, subject, transport, duration }) => ({
-    label: 'MAIL',
-    path: to.join(', '),
-    note: `${styleText('green', transport === 'log' ? 'logged (not sent)' : `sent via ${transport}`)} ${styleText('dim', JSON.stringify(subject))}`,
-    duration,
-    slow,
-    verySlow,
-  }));
+  subscribe('email:sent', ({ to, subject, transport, duration }) => {
+    // The `log` transport did not send: warn (visible in production) and colour
+    // it yellow so it never reads as a delivered-mail success line.
+    const notSent = transport === 'log';
+    return {
+      label: 'MAIL',
+      path: to.join(', '),
+      note: `${styleText(notSent ? 'yellow' : 'green', notSent ? 'logged (not sent)' : `sent via ${transport}`)} ${styleText('dim', JSON.stringify(subject))}`,
+      duration,
+      slow,
+      verySlow,
+      ...(notSent ? { level: 'warn' as const } : {}),
+    };
+  });
   subscribe('email:error', ({ to, subject, transport, error }) => ({
     label: 'MAIL',
     path: to.join(', '),

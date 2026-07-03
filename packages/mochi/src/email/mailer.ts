@@ -58,11 +58,13 @@ export async function sendEmail(message: MochiEmailMessage): Promise<MochiEmailR
     throw new EmailError('An email needs a body: pass `html`, `text`, or `component`.');
   }
 
+  const cc = toArray(message.cc);
+  const bcc = toArray(message.bcc);
   const resolved: ResolvedEmailMessage = {
     from,
     to,
-    ...(toArray(message.cc) ? { cc: toArray(message.cc) } : {}),
-    ...(toArray(message.bcc) ? { bcc: toArray(message.bcc) } : {}),
+    ...(cc ? { cc } : {}),
+    ...(bcc ? { bcc } : {}),
     ...(message.replyTo ? { replyTo: message.replyTo } : {}),
     subject: message.subject,
     ...(html ? { html } : {}),

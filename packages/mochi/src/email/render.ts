@@ -19,7 +19,7 @@ export async function renderEmailComponent(registry: ComponentRegistry, componen
     .map((url) => registry.getClientFile(url))
     .filter((c): c is string => Boolean(c))
     .join('\n');
-  const head = result.head ? result.head : '';
+  const head = result.head ?? '';
   const doc = `<!doctype html><html><head><meta charset="utf-8">${head}${css ? `<style>${css}</style>` : ''}</head><body>${result.body}</body></html>`;
 
   let juice: typeof import('juice').default;
