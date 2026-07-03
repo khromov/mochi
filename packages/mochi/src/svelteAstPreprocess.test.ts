@@ -4,16 +4,23 @@ import { preprocessHydratable } from './svelteAstPreprocess';
 
 const SCRIPT = (imports: string) => `<script>\n${imports}\n</script>\n`;
 
+// Mirror of the internal `islandIdentity()`: an island's `component-name`, its
+// registry keys, and its `__MOCHI_*__<id>__` placeholders are keyed by
+// `<localName>_<hash of resolved path>`, not the bare import name — so two
+// same-named components in different files can't collide to one registry entry.
+// Tests use fixture files under `/test`, matching the `filePath` passed below.
+const idFor = (name: string, importPath: string) => `${name}_${Bun.hash(path.resolve('/test', importPath)).toString(36)}`;
+
 describe('preprocessHydratable', () => {
   test('basic mochi:hydrate self-closing', () => {
     const source = `${SCRIPT('import Foo from "./Foo.svelte";')}<Foo mochi:hydrate />`;
     const { transformed, hydratables } = preprocessHydratable(source, '/test/File.svelte');
 
     expect(hydratables).toHaveLength(1);
-    expect(hydratables[0]!.name).toBe('Foo');
+    expect(hydratables[0]!.name).toBe(idFor('Foo', './Foo.svelte'));
     expect(transformed).toContain('<mochi-hydratable-island');
-    expect(transformed).toContain('component-name="Foo"');
-    expect(transformed).toContain('__MOCHI_COMPONENT_URL__Foo__');
+    expect(transformed).toContain(`component-name="${idFor('Foo', './Foo.svelte')}"`);
+    expect(transformed).toContain(`__MOCHI_COMPONENT_URL__${idFor('Foo', './Foo.svelte')}__`);
     expect(transformed).toContain('<Foo isHydratable={true} />');
     expect(transformed).not.toContain('MochiIslandCtx');
     expect(transformed).not.toContain('mochi:hydrate');
@@ -26,7 +33,7 @@ describe('preprocessHydratable', () => {
 
     expect(hydratables).toHaveLength(1);
     expect(transformed).toContain('hydrate-on="visible"');
-    expect(transformed).toContain('__MOCHI_CSS_URL__Clock__');
+    expect(transformed).toContain(`__MOCHI_CSS_URL__${idFor('Clock', './Clock.svelte')}__`);
     expect(transformed).toContain('hydrate-options={JSON.stringify({rootMargin: "100px"})}');
     expect(transformed).not.toContain('mochi:hydrate:visible');
   });
@@ -114,7 +121,7 @@ describe('preprocessHydratable', () => {
     const { hydratables } = preprocessHydratable(source, '/test/File.svelte');
 
     expect(hydratables).toHaveLength(2);
-    expect(hydratables.map((h) => h.name)).toEqual(['Foo', 'Bar']);
+    expect(hydratables.map((h) => h.name)).toEqual([idFor('Foo', './Foo.svelte'), idFor('Bar', './Bar.svelte')]);
   });
 
   test('component inside {#each} block', () => {
@@ -122,7 +129,7 @@ describe('preprocessHydratable', () => {
     const { hydratables } = preprocessHydratable(source, '/test/File.svelte');
 
     expect(hydratables).toHaveLength(1);
-    expect(hydratables[0]!.name).toBe('Item');
+    expect(hydratables[0]!.name).toBe(idFor('Item', './Item.svelte'));
   });
 
   test('component inside {#if} block', () => {
@@ -198,14 +205,14 @@ describe('preprocessHydratable', () => {
     const { transformed, hydratables, serverIslands } = preprocessHydratable(source, '/test/File.svelte');
 
     expect(serverIslands).toHaveLength(1);
-    expect(serverIslands[0]!.name).toBe('Greeting');
+    expect(serverIslands[0]!.name).toBe(idFor('Greeting', './Greeting.svelte'));
     expect(hydratables).toHaveLength(0);
     expect(transformed).toContain('<mochi-server-island');
-    expect(transformed).toContain('component-name="Greeting"');
+    expect(transformed).toContain(`component-name="${idFor('Greeting', './Greeting.svelte')}"`);
     expect(transformed).toContain('__mochi_encrypt_props__');
     expect(transformed).toContain('__mochi_stringify__');
     expect(transformed).toContain('name: "World"');
-    expect(transformed).toContain('__MOCHI_SERVER_CSS_URL__Greeting__');
+    expect(transformed).toContain(`__MOCHI_SERVER_CSS_URL__${idFor('Greeting', './Greeting.svelte')}__`);
     expect(transformed).not.toContain('mochi:defer');
   });
 
@@ -227,7 +234,7 @@ describe('preprocessHydratable', () => {
     expect(hydratables).toHaveLength(1);
     expect(transformed).toContain('<mochi-server-island');
     expect(transformed).toContain('also-hydrate="eager"');
-    expect(transformed).toContain('__MOCHI_COMPONENT_URL__Widget__');
+    expect(transformed).toContain(`__MOCHI_COMPONENT_URL__${idFor('Widget', './Widget.svelte')}__`);
     expect(transformed).toContain('__mochi_encrypt_props__');
   });
 
@@ -239,7 +246,7 @@ describe('preprocessHydratable', () => {
     expect(hydratables).toHaveLength(1);
     expect(transformed).toContain('<mochi-server-island');
     expect(transformed).toContain('also-hydrate="visible"');
-    expect(transformed).toContain('__MOCHI_COMPONENT_URL__Lazy__');
+    expect(transformed).toContain(`__MOCHI_COMPONENT_URL__${idFor('Lazy', './Lazy.svelte')}__`);
   });
 
   test('mochi:defer with options passes server-options attribute', () => {
@@ -282,11 +289,11 @@ describe('preprocessHydratable', () => {
     const { transformed, hydratables, serverIslands } = preprocessHydratable(source, '/test/File.svelte');
 
     expect(serverIslands).toHaveLength(1);
-    expect(serverIslands[0]!.name).toBe('Greeting');
+    expect(serverIslands[0]!.name).toBe(idFor('Greeting', './Greeting.svelte'));
     expect(hydratables).toHaveLength(0);
     expect(transformed).toContain('<mochi-server-island');
     expect(transformed).toContain('defer-on="visible"');
-    expect(transformed).toContain('component-name="Greeting"');
+    expect(transformed).toContain(`component-name="${idFor('Greeting', './Greeting.svelte')}"`);
     expect(transformed).toContain('name: "World"');
     expect(transformed).not.toContain('mochi:defer:visible');
   });
@@ -316,7 +323,7 @@ describe('preprocessHydratable', () => {
     expect(transformed).toContain('<mochi-server-island');
     expect(transformed).toContain('defer-on="visible"');
     expect(transformed).toContain('also-hydrate="eager"');
-    expect(transformed).toContain('__MOCHI_COMPONENT_URL__Widget__');
+    expect(transformed).toContain(`__MOCHI_COMPONENT_URL__${idFor('Widget', './Widget.svelte')}__`);
   });
 
   test('mochi:defer:visible + mochi:hydrate:visible combination', () => {
@@ -461,10 +468,10 @@ describe('preprocessHydratable', () => {
     const { transformed, hydratables } = preprocessHydratable(source, '/test/File.svelte');
 
     expect(hydratables).toHaveLength(1);
-    expect(hydratables[0]!.name).toBe('Readme');
+    expect(hydratables[0]!.name).toBe(idFor('Readme', './Readme.md'));
     expect(hydratables[0]!.resolvedPath).toBe(path.resolve('/test', 'Readme.md'));
     expect(transformed).toContain('<mochi-hydratable-island');
-    expect(transformed).toContain('component-name="Readme"');
+    expect(transformed).toContain(`component-name="${idFor('Readme', './Readme.md')}"`);
   });
 
   test('.svx import resolves as a hydratable component', () => {
@@ -571,12 +578,12 @@ describe('mochi:clientOnly', () => {
     const { transformed, hydratables, serverIslands } = preprocessHydratable(source, '/test/File.svelte');
 
     expect(hydratables).toHaveLength(1);
-    expect(hydratables[0]!.name).toBe('Foo');
+    expect(hydratables[0]!.name).toBe(idFor('Foo', './Foo.svelte'));
     expect(serverIslands).toHaveLength(0);
     expect(transformed).toContain('<mochi-hydratable-island');
     expect(transformed).toContain('client-only');
-    expect(transformed).toContain('component-name="Foo"');
-    expect(transformed).toContain('__MOCHI_COMPONENT_URL__Foo__');
+    expect(transformed).toContain(`component-name="${idFor('Foo', './Foo.svelte')}"`);
+    expect(transformed).toContain(`__MOCHI_COMPONENT_URL__${idFor('Foo', './Foo.svelte')}__`);
     // The component invocation is never emitted server-side
     expect(transformed).not.toContain('<Foo');
     expect(transformed).not.toContain('mochi:clientOnly');
@@ -672,7 +679,7 @@ describe('mochi:clientOnly:visible', () => {
     expect(transformed).toContain('<mochi-hydratable-island');
     expect(transformed).toContain('client-only');
     expect(transformed).toContain('hydrate-on="visible"');
-    expect(transformed).toContain('__MOCHI_CSS_URL__Foo__');
+    expect(transformed).toContain(`__MOCHI_CSS_URL__${idFor('Foo', './Foo.svelte')}__`);
     // Still client-only: never server-rendered, no boundary, no options unless given
     expect(transformed).not.toContain('<Foo');
     expect(transformed).not.toContain('<svelte:boundary>');

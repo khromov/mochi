@@ -29,7 +29,12 @@ describe('build precompiles nested server islands', () => {
     await runIsolatedBuild(FIXTURE_PAGE, outDir);
 
     const manifest: MochiManifest = JSON.parse(await Bun.file(path.join(outDir, 'manifest.json')).text());
-    expect(Object.keys(manifest.serverIslandPaths ?? {}).sort()).toEqual(['Level1', 'Level2', 'Level3']);
+    // Islands are keyed by `<localName>_<hash>` (see islandIdentity), not the bare import name.
+    expect(Object.keys(manifest.serverIslandPaths ?? {}).sort()).toEqual([
+      expect.stringMatching(/^Level1_\w+$/),
+      expect.stringMatching(/^Level2_\w+$/),
+      expect.stringMatching(/^Level3_\w+$/),
+    ]);
     for (const islandPath of Object.values(manifest.serverIslandPaths ?? {})) {
       expect(manifest.components[islandPath], `expected components entry for ${islandPath}`).toBeDefined();
     }

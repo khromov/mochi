@@ -11,12 +11,18 @@ interface Positioned {
 }
 
 export interface HydratableComponent {
+  /** Unique identity key (`<localName>_<hash>`, see `islandIdentity`) — the registry map key, `component-name` attribute, and placeholder key. */
   name: string;
+  /** The bare local import identifier, for human-facing messages only (never an identity key). */
+  displayName: string;
   resolvedPath: string;
 }
 
 export interface ServerIslandComponent {
+  /** Unique identity key (`<localName>_<hash>`, see `islandIdentity`) — the registry map key, `component-name` attribute, and props AAD. */
   name: string;
+  /** The bare local import identifier, for human-facing messages only (never an identity key). */
+  displayName: string;
   resolvedPath: string;
 }
 
@@ -113,6 +119,16 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
 
       const resolved = path.resolve(path.dirname(filePath), importPath);
 
+      // Unique identity for this island, used everywhere the framework keys an
+      // island by "name": the `component-name` attribute, the server-island
+      // endpoint path, the props-encryption AAD, the `__MOCHI_*__<id>__`
+      // placeholders, and the registry maps. `comp.name` alone is the bare local
+      // import identifier and is NOT unique — see `islandIdentity`. `comp.name`
+      // is still used below for the real Svelte tag and human-facing error text.
+      // (Distinct from the reserved `islandId` prop — that's a per-render
+      // instance id; this is a per-component-file identity.)
+      const islandKey = islandIdentity(comp.name, resolved);
+
       // `islandId` is a reserved framework name on every island, rejected on
       // `mochi:clientOnly`, `mochi:defer`, and `mochi:hydrate` so the directives
       // behave the same. On `mochi:defer` it's the transport key inside the signed
@@ -133,7 +149,7 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
         // --- CLIENT ONLY ---
         if (!seen.has(resolved)) {
           seen.add(resolved);
-          hydratables.push({ name: comp.name, resolvedPath: resolved });
+          hydratables.push({ name: islandKey, displayName: comp.name, resolvedPath: resolved });
         }
 
         // Children are the optional SSR fallback, emitted as placeholder markup
@@ -146,7 +162,7 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
         // payload itself dedups on its serialized props alone, like plain
         // hydratable islands.
         const propsExpr = buildPropsFromAst(source, comp.attributes);
-        let attrs = `component-name="${comp.name}" component-url="__MOCHI_COMPONENT_URL__${comp.name}__" client-only`;
+        let attrs = `component-name="${islandKey}" component-url="__MOCHI_COMPONENT_URL__${islandKey}__" client-only`;
         if (propsExpr !== '{}') {
           attrs += ` props-ref={__mochi_emit_props__(${propsExpr})}`;
         }
@@ -161,7 +177,7 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
             const expr = directives.clientOnly.value.expression as unknown as Positioned;
             visibleOptionsExpr = source.slice(expr.start, expr.end);
           }
-          attrs += ` hydrate-on="visible" css-url="__MOCHI_CSS_URL__${comp.name}__"`;
+          attrs += ` hydrate-on="visible" css-url="__MOCHI_CSS_URL__${islandKey}__"`;
           if (visibleOptionsExpr) {
             attrs += ` hydrate-options={JSON.stringify(${visibleOptionsExpr})}`;
           }
@@ -176,7 +192,7 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
         // --- SERVER ISLAND ---
         if (!seenServer.has(resolved)) {
           seenServer.add(resolved);
-          serverIslands.push({ name: comp.name, resolvedPath: resolved });
+          serverIslands.push({ name: islandKey, displayName: comp.name, resolvedPath: resolved });
         }
 
         // Server islands only get `isHydratable: true` when also-hydrate is set
@@ -191,7 +207,7 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
         // against a different component.
         // The islandId rides inside the encrypted envelope (transport only, stripped
         // before render); there's no separate `island-id` attribute.
-        let attrs = `component-name="${comp.name}" signed-props={__mochi_encrypt_props__(__mochi_stringify__(${propsExpr}), ${JSON.stringify(comp.name)})} css-url="__MOCHI_SERVER_CSS_URL__${comp.name}__" data-asset-prefix="__MOCHI_ASSET_PREFIX__"`;
+        let attrs = `component-name="${islandKey}" signed-props={__mochi_encrypt_props__(__mochi_stringify__(${propsExpr}), ${JSON.stringify(islandKey)})} css-url="__MOCHI_SERVER_CSS_URL__${islandKey}__" data-asset-prefix="__MOCHI_ASSET_PREFIX__"`;
 
         // `mochi:defer:visible` defers the fetch until the wrapper enters the
         // viewport. `rootMargin` rides inside the existing `server-options`
@@ -218,10 +234,10 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
         if (directives.hydrate) {
           const isVisible = directives.hydrate.name === 'mochi:hydrate:visible';
           attrs += isVisible ? ` also-hydrate="visible"` : ` also-hydrate="eager"`;
-          attrs += ` component-url="__MOCHI_COMPONENT_URL__${comp.name}__"`;
+          attrs += ` component-url="__MOCHI_COMPONENT_URL__${islandKey}__"`;
           if (!seen.has(resolved)) {
             seen.add(resolved);
-            hydratables.push({ name: comp.name, resolvedPath: resolved });
+            hydratables.push({ name: islandKey, displayName: comp.name, resolvedPath: resolved });
           }
         }
 
@@ -242,7 +258,7 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
 
         if (!seen.has(resolved)) {
           seen.add(resolved);
-          hydratables.push({ name: comp.name, resolvedPath: resolved });
+          hydratables.push({ name: islandKey, displayName: comp.name, resolvedPath: resolved });
         }
 
         // Build the non-mochi props source for the inner component tag
@@ -262,7 +278,7 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
 
         // Build wrapper attributes
         const propsExpr = buildPropsFromAst(source, comp.attributes);
-        let attrs = `component-name="${comp.name}" component-url="__MOCHI_COMPONENT_URL__${comp.name}__"`;
+        let attrs = `component-name="${islandKey}" component-url="__MOCHI_COMPONENT_URL__${islandKey}__"`;
         // Skip props when component has no props to avoid serializing empty objects in HTML.
         // `__mochi_emit_props__` registers the payload in the per-request dedup map and
         // returns a ref id; after render ComponentRegistry's HTMLRewriter pass emits each
@@ -272,7 +288,7 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
         }
         if (isVisible) {
           attrs += ` hydrate-on="visible"`;
-          attrs += ` css-url="__MOCHI_CSS_URL__${comp.name}__"`;
+          attrs += ` css-url="__MOCHI_CSS_URL__${islandKey}__"`;
           if (visibleOptionsExpr) {
             attrs += ` hydrate-options={JSON.stringify(${visibleOptionsExpr})}`;
           }
@@ -368,6 +384,30 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
   }
 
   return { transformed: s.toString(), hydratables, serverIslands };
+}
+
+/**
+ * Stable, unique identity for an island. Used as the `component-name` attribute
+ * (which the client web components forward to the server-island endpoint and the
+ * client hydratable registry), the props-encryption AAD, and the key for every
+ * registry map (`serverIslandPaths`, `componentEntryUrls`, …).
+ *
+ * The bare local import name is NOT unique across a project: two different
+ * component files that happen to be imported under the same identifier — e.g. a
+ * `Widget.svelte` in `./a` and another in `./b`, each `import Widget from …` —
+ * both key on `"Widget"`. The registry is a last-write-wins `Map`, so one
+ * silently overwrites the other and the loser's island renders the winner's
+ * component (its encrypted props even decrypt cleanly, since the AAD would match
+ * too). Suffixing a hash of the resolved file path makes the identity unique per
+ * component file. The result stays a valid `\w+` token so it flows through the
+ * `__MOCHI_*__<id>__` placeholder regexes and `encodeURIComponent` unchanged.
+ *
+ * The hash derives only from the resolved path (base36 of a 64-bit hash), so it
+ * is stable for a given file within a build and never leaks the absolute path
+ * into client HTML.
+ */
+function islandIdentity(name: string, resolvedPath: string): string {
+  return `${name}_${Bun.hash(resolvedPath).toString(36)}`;
 }
 
 interface MochiDirectives {

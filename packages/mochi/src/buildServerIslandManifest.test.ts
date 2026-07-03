@@ -19,12 +19,16 @@ describe('build precompiles server islands into the manifest', () => {
   let outDir: string;
   let manifest: MochiManifest;
   let islandPaths: string[];
+  // Islands are keyed by `<localName>_<hash>` (see islandIdentity), not the bare
+  // import name; recover the concrete `Echo_…` key from the manifest.
+  let echoKey: string;
 
   beforeAll(async () => {
     outDir = mkdtempSync(path.join(import.meta.dir, '..', '.mochi-island-manifest-'));
     await runIsolatedBuild(FIXTURE_PAGE, outDir);
     manifest = JSON.parse(await Bun.file(path.join(outDir, 'manifest.json')).text());
     islandPaths = Object.values(manifest.serverIslandPaths ?? {});
+    echoKey = Object.keys(manifest.serverIslandPaths ?? {}).find((k) => k.startsWith('Echo_'))!;
   });
 
   afterAll(() => {
@@ -32,7 +36,7 @@ describe('build precompiles server islands into the manifest', () => {
   });
 
   test('the fixture declares the expected server islands', () => {
-    expect(Object.keys(manifest.serverIslandPaths ?? {}).sort()).toEqual(['Echo', 'StyledLeaf']);
+    expect(Object.keys(manifest.serverIslandPaths ?? {}).sort()).toEqual([expect.stringMatching(/^Echo_\w+$/), expect.stringMatching(/^StyledLeaf_\w+$/)]);
   });
 
   test('each server-island source path has a standalone components entry whose ssrModule exists', async () => {
@@ -58,8 +62,8 @@ describe('build precompiles server islands into the manifest', () => {
         routes: { '/': Mochi.page(FIXTURE_PAGE) },
       });
       const base = `http://localhost:${server.port}`;
-      const props = encryptProps(devalueStringify({ name: 'World' }), 'Echo');
-      const res = await fetch(`${base}/_mochi/island/Echo?props=${encodeURIComponent(props)}`);
+      const props = encryptProps(devalueStringify({ name: 'World' }), echoKey);
+      const res = await fetch(`${base}/_mochi/island/${echoKey}?props=${encodeURIComponent(props)}`);
       expect(res.status).toBe(200);
       expect(await res.text()).toContain('>World<');
       // Boot may compile framework-internal templates (error page, debug bar);

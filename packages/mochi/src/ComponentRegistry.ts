@@ -676,13 +676,13 @@ export class ComponentRegistry {
         for (const child of children) {
           this.errors.push({
             kind: 'nested-hydration',
-            parent: parent.name,
-            child: child.name,
+            parent: parent.displayName,
+            child: child.displayName,
             parentPath: filePath,
             childPath: child.resolvedPath,
           });
           logger.error(
-            `\nNested hydration directives are not allowed.\n  <${child.name}> with mochi:hydrate, mochi:hydrate:visible, or mochi:clientOnly is inside <${parent.name}> which is also hydratable.\n  Remove the directive from ${child.name} — it hydrates automatically as part of ${parent.name}.\n`,
+            `\nNested hydration directives are not allowed.\n  <${child.displayName}> with mochi:hydrate, mochi:hydrate:visible, or mochi:clientOnly is inside <${parent.displayName}> which is also hydratable.\n  Remove the directive from ${child.displayName} — it hydrates automatically as part of ${parent.displayName}.\n`,
           );
         }
       }
@@ -1356,6 +1356,9 @@ export class ComponentRegistry {
         for (const [name, url] of this.componentEntryUrls) {
           urlToComponent.set(url, name);
         }
+        // Island identity keys are `<localName>_<hash>`; show the bare local name
+        // in the debug bar's bundle list instead of the hashed key.
+        const displayByKey = new Map(this.hydratableComponents.map((h) => [h.name, h.displayName]));
         const pageHasIslands = hydratables.length > 0;
         const bundles: NonNullable<typeof debugBarData.bundles> = [];
         const outputByName = new Map(this.clientStats.outputs.map((o) => [o.name, o]));
@@ -1386,7 +1389,7 @@ export class ComponentRegistry {
               if (!renderedIslandNames.has(compName)) {
                 continue;
               }
-              bundles.push({ url, label: compName, sizeBytes: output.size - wcDeduct, kind: 'island', inputs: nonWc });
+              bundles.push({ url, label: displayByKey.get(compName) ?? compName, sizeBytes: output.size - wcDeduct, kind: 'island', inputs: nonWc });
             } else {
               if (!pageHasIslands) {
                 continue;
@@ -1744,6 +1747,7 @@ export class ComponentRegistry {
         ssrModule: entry.ssrPath,
         hydratables: entry.hydratables.map((h) => ({
           name: h.name,
+          displayName: h.displayName,
           resolvedPath: h.resolvedPath,
         })),
         cssComponents: [...entry.cssComponents],

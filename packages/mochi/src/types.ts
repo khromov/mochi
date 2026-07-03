@@ -337,7 +337,7 @@ export interface MochiErrorProps {
 
 export interface MochiManifestComponent {
   ssrModule: string;
-  hydratables: { name: string; resolvedPath: string }[];
+  hydratables: { name: string; displayName: string; resolvedPath: string }[];
   cssComponents: string[];
 }
 

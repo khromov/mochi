@@ -75,7 +75,7 @@
   <div class="island-item">
     <button class="island-header" type="button" onclick={toggle}>
       <span class="chevron"><ChevronRight size={12} /></span>
-      <span class="island-name">{island.name}</span>
+      <span class="island-name">{island.displayName}</span>
     </button>
     <span class="island-meta">
       <span
