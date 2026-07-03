@@ -6,6 +6,13 @@ import { cachedImage } from './cachedImage';
 import { resolveImageOptions } from './config';
 import { ImageCache, srcHash } from './imageCache';
 import { mochiEvents } from '../events';
+import { requestContext } from '../requestContext';
+import type { ImageDebugEntry, MochiRequestContext } from '../requestContext';
+
+// Minimal request context carrying only the debug-bar image bag the recorder reads.
+function runWithDebugBar<T>(images: ImageDebugEntry[], fn: () => Promise<T>): Promise<T> {
+  return requestContext.run({ debugBarData: { images } } as unknown as MochiRequestContext, fn);
+}
 
 const SRC = 'https://example.com/photo.png';
 
@@ -104,5 +111,44 @@ describe('cachedImage', () => {
     expect(ph).not.toBeNull();
     expect(ph!.startsWith('data:image/')).toBe(true);
     expect(await cache.getPlaceholder(SRC)).toBe(ph); // stored in the shared placeholder cache
+  });
+
+  describe('debug bar recording', () => {
+    test('resolving under a request context records a cached entry with preview, params, and pipeline', async () => {
+      const images: ImageDebugEntry[] = [];
+      await runWithDebugBar(images, () => cachedImage(SRC).resize(20, 20, { fit: 'fill' }).webp().bytes());
+
+      expect(images).toHaveLength(1);
+      const entry = images[0]!;
+      expect(entry.kind).toBe('cached');
+      expect(entry.url.startsWith('data:image/webp;base64,')).toBe(true);
+      expect(entry.params).toMatchObject({ src: SRC, width: 20, height: 20, format: 'webp' });
+      expect(entry.pipeline).toBe('resize(20, 20, {"fit":"fill"}).webp()');
+      expect(entry.id).toBeTruthy();
+    });
+
+    test('the same chain resolved twice records a single de-duped entry', async () => {
+      const images: ImageDebugEntry[] = [];
+      await runWithDebugBar(images, async () => {
+        await cachedImage(SRC).resize(10, 10).webp().bytes();
+        await cachedImage(SRC).resize(10, 10).webp().dataurl();
+      });
+      expect(images).toHaveLength(1);
+    });
+
+    test('distinct chains record distinct entries', async () => {
+      const images: ImageDebugEntry[] = [];
+      await runWithDebugBar(images, async () => {
+        await cachedImage(SRC).resize(10, 10).webp().bytes();
+        await cachedImage(SRC).resize(10, 10).rotate(90).webp().bytes();
+      });
+      expect(images).toHaveLength(2);
+      expect(new Set(images.map((i) => i.id)).size).toBe(2);
+    });
+
+    test('resolving without a request context does not throw and records nothing observable', async () => {
+      const bytes = await cachedImage(SRC).resize(10, 10).webp().bytes();
+      expect(bytes.byteLength).toBeGreaterThan(0);
+    });
   });
 });

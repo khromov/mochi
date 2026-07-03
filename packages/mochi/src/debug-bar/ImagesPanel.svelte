@@ -21,12 +21,12 @@
 <DebugPanel title="Images" color="#d4b8c8" {open} {onclose}>
   <div class="image-body">
     {#if images.length === 0}
-      <div class="image-empty">No resized images on this page.</div>
+      <div class="image-empty">No images on this page.</div>
     {:else}
       <div class="image-summary">
         <strong>{images.length}</strong> image{images.length !== 1 ? 's' : ''}
       </div>
-      {#each images as image (image.url)}
+      {#each images as image (image.id ?? image.url)}
         <ImageRow {image} />
       {/each}
     {/if}

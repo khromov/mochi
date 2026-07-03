@@ -34,17 +34,27 @@
       <span class="island-name">{image.filename}</span>
     </button>
     <span class="island-meta">
+      {#if image.kind === 'cached'}<span class="island-tag tag-cached">cachedImage</span>{/if}
       {#if format}<span class="island-tag tag-fmt">{format}</span>{/if}
       <span class="island-size">{dims}</span>
-      <span class="lock-icon" title="Image params are encrypted (authenticated AES-256) in production. Decoded params are shown only in dev mode.">
-        <Lock size={10} />
-      </span>
+      {#if image.kind !== 'cached'}
+        <span class="lock-icon" title="Image params are encrypted (authenticated AES-256) in production. Decoded params are shown only in dev mode.">
+          <Lock size={10} />
+        </span>
+      {/if}
     </span>
   </div>
   <div class="image-detail">
-    <a class="image-preview" href={image.url} target="_blank" rel="noopener" title="Open image in a new tab">
-      <img src={image.url} loading="lazy" alt={image.filename} />
-    </a>
+    {#if image.url}
+      <a class="image-preview" href={image.url} target="_blank" rel="noopener" title="Open image in a new tab">
+        <img src={image.url} loading="lazy" alt={image.filename} />
+      </a>
+    {:else}
+      <div class="image-nopreview">Preview omitted (over 1 MB)</div>
+    {/if}
+    {#if image.pipeline}
+      <pre class="pipeline">{image.pipeline}</pre>
+    {/if}
     <!-- eslint-disable-next-line svelte/no-at-html-tags -- sanitized JSON highlight output -->
     <pre class="island-props">{@html paramsHtml}</pre>
     {#if image.wire}
@@ -68,6 +78,10 @@
     background: rgba(184, 163, 196, 0.16);
     color: #b8a3c4;
     text-transform: uppercase;
+  }
+  .tag-cached {
+    background: rgba(122, 162, 138, 0.16);
+    color: #8fbf9f;
   }
   .image-detail {
     display: none;
@@ -97,6 +111,22 @@
     max-height: 140px;
     width: auto;
     height: auto;
+  }
+  .image-nopreview {
+    align-self: flex-start;
+    color: #8e9488;
+    font-size: 10px;
+    font-style: italic;
+  }
+  .pipeline {
+    margin: 0;
+    padding: 0;
+    font-size: 10px;
+    line-height: 1.5;
+    color: #8fbf9f;
+    white-space: pre-wrap;
+    word-break: break-all;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   }
   .island-props {
     background: transparent;
