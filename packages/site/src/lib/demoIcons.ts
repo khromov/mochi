@@ -45,6 +45,7 @@ import Inbox from '@lucide/svelte/icons/inbox';
 import SquareStack from '@lucide/svelte/icons/square-stack';
 import Layers2 from '@lucide/svelte/icons/layers-2';
 import Ampersand from '@lucide/svelte/icons/ampersand';
+import Repeat from '@lucide/svelte/icons/repeat';
 
 export interface DemoIconMeta {
   icon: Component;
@@ -57,6 +58,7 @@ export const demoIconFor: Record<string, DemoIconMeta> = {
   'Server Props': { icon: PackageOpen, label: 'Server-resolved props' },
   'Hydration Modes': { icon: Layers, label: 'All hydration modes' },
   'Data Loading': { icon: Globe, label: 'Server-side fetch' },
+  'Resilient Fetch': { icon: Repeat, label: 'Resilient outbound fetch with retries' },
   Hydratable: { icon: Snowflake, label: 'Server-computed value reused on hydration' },
   Cookies: { icon: Cookie, label: 'Server + client cookies' },
   'Cache Events': { icon: DatabaseZap, label: 'Custom cache event subscriber' },

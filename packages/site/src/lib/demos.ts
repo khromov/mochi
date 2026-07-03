@@ -7,6 +7,7 @@ import { files as cookieVaryTest } from '../demos/cookie-vary-test/files.ts';
 import { files as cookies } from '../demos/cookies/files.ts';
 import { files as dataLoading } from '../demos/data-loading/files.ts';
 import { files as entityProps } from '../demos/entity-props/files.ts';
+import { files as fetchDemo } from '../demos/fetch/files.ts';
 import { files as error } from '../demos/error/files.ts';
 import { files as errorBoundaries } from '../demos/error-boundaries/files.ts';
 import { files as file } from '../demos/file/files.ts';
@@ -96,6 +97,14 @@ export const demos: Demo[] = [
     files: dataLoading,
     title: 'Data Loading',
     hook: 'Server-side fetch from PokéAPI cached via MochiCache and rendered at request time.',
+    category: 'data',
+  },
+  {
+    href: '/demos/fetch/',
+    slug: 'fetch',
+    files: fetchDemo,
+    title: 'Resilient Fetch',
+    hook: 'mochiFetch() — a drop-in for fetch adding retries, a timeout, and a base URL — loads a Pokémon from PokéAPI.',
     category: 'data',
   },
   {
