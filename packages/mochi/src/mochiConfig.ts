@@ -32,6 +32,13 @@ export async function initMochiConfig(options: MochiServeOptions): Promise<void>
     );
   }
   const baseKey = envKey ? Buffer.from(envKey, 'base64url') : randomBytes(32);
+  if (envKey && baseKey.length < 32) {
+    logger.warn(
+      `MOCHI_KEY decoded to only ${baseKey.length} bytes — this is likely a typo or truncated value. ` +
+        'A short key yields a low-entropy secret for signing island props and image URLs. ' +
+        'Generate a proper one with `bunx mochi-framework generate-key`.',
+    );
+  }
   const secretKey = await applyFilter('serverIsland:secretKey', baseKey, {
     options,
     envKeyPresent,

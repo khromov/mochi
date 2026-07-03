@@ -10,7 +10,7 @@ import type { BunRouteValue } from './types';
 // its name starts with a dot.
 const ALLOWED_DOT_DIRS = new Set(['.well-known']);
 
-function isExcludedDotPath(relative: string): boolean {
+export function isExcludedDotPath(relative: string): boolean {
   const segments = relative.split('/');
   for (let i = 0; i < segments.length; i++) {
     const segment = segments[i];

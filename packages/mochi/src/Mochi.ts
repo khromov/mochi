@@ -37,7 +37,8 @@ import { csrfCheck, DEFAULT_FORM_CONTENT_TYPES, DEFAULT_PROTECTED_METHODS } from
 import { applyFilter, initExtensions, runHook } from './extensions';
 import { escapeHtmlAttr } from './htmlEscape';
 import { buildPublicUrl } from './proxy';
-import { apiError, collectHeaderPairs, cssLinkTag, headResponse, isHtmlResponse, MochiHttpError, withHead } from './utils';
+import { realpath } from 'node:fs/promises';
+import { apiError, collectHeaderPairs, cssLinkTag, headResponse, isHtmlResponse, MochiHttpError, toPosixPath, withHead } from './utils';
 import type { MochiEvent, MochiEventKind, MochiResolveOptions } from './hooks';
 import { applyResolveOptions } from './hooks';
 import { alternateSlashPattern, trailingSlashRedirect } from './trailingSlash';
@@ -61,7 +62,7 @@ import type { DebugBarData, DebugBarRuntimeData } from './requestContext';
 import { consoleLogger } from './consoleLogger';
 import { parse as devalueParse, stringify as devalueStringify } from 'devalue';
 import { ISLAND_FAILURE_CSS, ISLAND_FAILURE_DEV_CSS, islandFailureStub } from './web-components/islandFailureStub';
-import { resolvePublicFiles, registerPublicRoutes } from './publicDir';
+import { resolvePublicFiles, registerPublicRoutes, isExcludedDotPath } from './publicDir';
 import { startDevWatcher } from './devWatcher';
 import { buildPageCacheAdminRoutes, PAGE_CACHE_ADMIN_COMPONENT } from './pageCacheAdminRoutes';
 
@@ -466,7 +467,10 @@ export class Mochi {
     });
 
     const internalRoutes: Record<string, MochiPageConfig | MochiApiConfig> = {
-      ...buildClientStatsRoutes(registry),
+      // Gate the client-stats page behind the debug bar (like the page-cache admin
+      // routes) — in production it would otherwise disclose every bundle's input
+      // file paths and sizes (project structure, dependency names).
+      ...(debugBarEnabled ? buildClientStatsRoutes(registry) : {}),
       ...(debugBarEnabled ? buildPageCacheAdminRoutes() : {}),
     };
     const allRoutes = Object.keys(internalRoutes).length > 0 ? { ...internalRoutes, ...(options.routes ?? {}) } : options.routes;
@@ -742,7 +746,11 @@ export class Mochi {
             type: 'page',
           };
         }
-        return { bunRouteValue: withHead(getHandler), type: 'page' };
+        // Register as a method-keyed object (not a bare function) so Bun 405s a
+        // POST/PUT/etc. to an action-less page. A bare function is invoked for
+        // every method and would render 200 on POST in production, diverging from
+        // dev (where `pageConfigMap` forces the method-keyed path below).
+        return { bunRouteValue: withHead({ GET: getHandler } as unknown as BunRouteValue), type: 'page' };
       } else if (isMochiApi(handler)) {
         if (apiHandlerMap) {
           apiHandlerMap.set(pattern, handler.handler);
@@ -1000,16 +1008,37 @@ export class Mochi {
 
             try {
               const filePath = typeof source === 'function' ? await source(req, ctx.params) : source;
-              // Route params are URL-decoded and may contain `../`; confine every
-              // resolved path to the app root so a resolver can't be tricked into
-              // serving files outside the project.
+              // Route params are URL-decoded and may contain `../`, so confine the
+              // resolved path to the app root. `realpath` resolves symlinks first —
+              // so a symlink inside the root pointing outside can't escape — and
+              // also proves the file exists (ENOENT → 404). Containment is checked
+              // via `path.relative` (handles separators and canonical casing).
               const resolvedPath = path.resolve(filePath);
+              let realPath: string;
+              try {
+                realPath = await realpath(resolvedPath);
+              } catch {
+                emitError('file', requestId, req, url, 404, new Error(`File not found: ${filePath}`));
+                return finish(new Response('Not Found', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } }));
+              }
               const appRoot = process.cwd();
-              if (!resolvedPath.startsWith(appRoot + path.sep)) {
+              const rel = path.relative(appRoot, realPath);
+              if (rel === '' || rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) {
                 emitError('file', requestId, req, url, 404, new Error(`Path escapes the app root: ${filePath}`));
                 return finish(new Response('Not Found', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } }));
               }
-              const file = Bun.file(resolvedPath);
+              // Reject dotfiles / dot-directories (`.env`, `.mochi/…`, `.git/…`, source
+              // files, etc.) that live *inside* the root — the containment check above
+              // only stops escaping it. `.well-known` stays allowed, matching the
+              // public-dir policy.
+              if (isExcludedDotPath(toPosixPath(rel))) {
+                emitError('file', requestId, req, url, 404, new Error(`Refusing to serve dotfile path: ${filePath}`));
+                return finish(new Response('Not Found', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } }));
+              }
+              const file = Bun.file(realPath);
+              // `realpath` proves the path exists, but it resolves directories too;
+              // `Bun.file(dir).exists()` is false, so this also turns a directory
+              // target into a 404 instead of streaming it (EISDIR → 500).
               if (!(await file.exists())) {
                 emitError('file', requestId, req, url, 404, new Error(`File not found: ${filePath}`));
                 return finish(new Response('Not Found', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } }));
@@ -1085,7 +1114,6 @@ export class Mochi {
       }
 
       const signedProps = url.searchParams.get('props') ?? '';
-      const hydrateMode = url.searchParams.get('hydrate');
 
       // Decrypt props (empty means no props)
       let decodedProps: Record<string, unknown>;
@@ -1099,12 +1127,20 @@ export class Mochi {
         decodedProps = {};
       }
 
-      // `islandId` rides inside the signed envelope as transport only — it
-      // identifies the wrapper for debug/error reporting and must not reach
-      // the component as a prop (components use `$props.id()` for ids). Split it
-      // off into a fresh object rather than deleting in place.
-      const { islandId: rawIslandId, ...props } = decodedProps;
+      // `islandId` and `__mochi_ah` (the authored also-hydrate mode) ride inside
+      // the signed envelope as transport only — islandId identifies the wrapper for
+      // debug/error reporting, `__mochi_ah` says whether the island opted into
+      // hydration. Neither must reach the component as a prop (components use
+      // `$props.id()` for ids). Split them off into a fresh object rather than
+      // deleting in place.
+      //
+      // The hydrate mode is read from the *decrypted* payload, never from a query
+      // param: trusting `?hydrate=` would let anyone append it to a sealed token and
+      // have the endpoint echo the decrypted props back in plaintext (a decryption
+      // oracle against pure `mochi:defer` islands).
+      const { islandId: rawIslandId, __mochi_ah: rawHydrateMode, ...props } = decodedProps;
       const islandId = typeof rawIslandId === 'string' ? rawIslandId : undefined;
+      const hydrateMode = rawHydrateMode === 'eager' || rawHydrateMode === 'visible' ? rawHydrateMode : null;
 
       // Look up the component path
       const componentPath = registry.getServerIslandPath(componentName);

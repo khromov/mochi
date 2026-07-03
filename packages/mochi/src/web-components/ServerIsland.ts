@@ -103,10 +103,14 @@ class ServerIsland extends HTMLElement {
         this.innerHTML = html;
         return;
       } catch (err) {
-        if (err instanceof Error && 'abort' in err) {
-          throw err;
-        }
         lastErr = err;
+        if (err instanceof Error && 'abort' in err) {
+          // A 4xx is deterministic — retrying won't help. Stop the loop and fall
+          // through to the failure reporting below rather than rethrowing out of
+          // this (unawaited) async method, which would surface as an unhandled
+          // rejection and leave the island silently stuck on its fallback.
+          break;
+        }
         if (ll !== 'silent' && ll !== 'error') {
           console.warn(`${tag} failed (attempt ${attempt}/${maxRetries + 1}): ${err}`);
         }

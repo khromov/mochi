@@ -198,7 +198,15 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
         // Server islands only get `isHydratable: true` when also-hydrate is set
         // (i.e. `mochi:defer mochi:hydrate`); a pure `mochi:defer` is
         // SSR-only-via-fetch and never hydrates.
-        const autoEntries = directives.hydrate ? [`islandId: __mochi_iid`, `isHydratable: true`] : [`islandId: __mochi_iid`];
+        //
+        // The authored also-hydrate mode rides *inside the encrypted envelope*
+        // (`__mochi_ah`, transport-only, stripped before render — like islandId).
+        // The endpoint reads it from the decrypted payload rather than trusting the
+        // `?hydrate=` query param; otherwise an attacker could append `hydrate=eager`
+        // to any sealed token and have the endpoint echo the decrypted props back in
+        // plaintext, turning a pure `mochi:defer` island into a decryption oracle.
+        const alsoHydrateMode = directives.hydrate ? (directives.hydrate.name === 'mochi:hydrate:visible' ? 'visible' : 'eager') : null;
+        const autoEntries = directives.hydrate ? [`islandId: __mochi_iid`, `isHydratable: true`, `__mochi_ah: ${JSON.stringify(alsoHydrateMode)}`] : [`islandId: __mochi_iid`];
         const propsExpr = buildPropsFromAst(source, comp.attributes, autoEntries);
         // Always emit signed-props for server islands (no empty-props optimization)
         // because islandId is always injected, and all props must be encrypted
@@ -310,7 +318,7 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
         // Wrap the island in <svelte:boundary> so an SSR throw inside the
         // component doesn't take down the parent page render. The boundary sits
         // OUTSIDE <mochi-hydratable-island> so its <!--[-->…<!--]--> markers
-        // land at page level and are stripped by the existing stripPageMarkers
+        // land at page level and are stripped by the existing stripHydrationMarkers
         // pass. On failure the island wrapper is absent from the DOM; the
         // client never attempts hydration and <mochi-island-failure> is shown
         // directly. Server-side rendering of `failed` requires `transformError`
@@ -335,7 +343,7 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
         // per-island block Svelte collapses them to one shared snippet so a
         // throwing island renders a sibling island's failure stub. The block
         // adds page-level `<!--[-->…<!--]-->` markers, stripped by the existing
-        // stripPageMarkers pass.
+        // stripHydrationMarkers pass.
         const replacement =
           `{#if true}<svelte:boundary>${failedSnippet}` +
           `<mochi-hydratable-island ${attrs}><svelte:boundary>${innerTag}</svelte:boundary></mochi-hydratable-island>` +
@@ -464,17 +472,29 @@ function buildPropsFromAst(source: string, attributes: Array<AST.Attribute | AST
         const expr = attr.value.expression as unknown as Positioned;
         entries.push(`${attr.name}: ${source.slice(expr.start, expr.end)}`);
       } else {
-        // String literal value like name="hello" → array of Text/ExpressionTag nodes
-        const text = attr.value
-          .map((v) => {
-            if (v.type === 'Text') {
-              return v.raw;
-            }
-            const expr = v.expression as unknown as Positioned;
-            return source.slice(expr.start, expr.end);
-          })
-          .join('');
-        entries.push(`${attr.name}: "${text}"`);
+        // String literal value like name="hello" → array of Text/ExpressionTag nodes.
+        const parts = attr.value;
+        const hasExpr = parts.some((v) => v.type !== 'Text');
+        if (!hasExpr) {
+          // Pure text — JSON.stringify escapes embedded quotes/backslashes so
+          // `title='He said "hi"'` can't produce syntactically broken JS.
+          const text = parts.map((v) => (v.type === 'Text' ? v.raw : '')).join('');
+          entries.push(`${attr.name}: ${JSON.stringify(text)}`);
+        } else {
+          // Mixed text + expression (e.g. `title="Hello {name}"`) — emit a template
+          // literal so expressions interpolate instead of being spliced in as
+          // literal source text. Escape backslash/backtick/`${` in the text runs.
+          const tpl = parts
+            .map((v) => {
+              if (v.type === 'Text') {
+                return v.raw.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$\{/g, '\\${');
+              }
+              const expr = v.expression as unknown as Positioned;
+              return '${' + source.slice(expr.start, expr.end) + '}';
+            })
+            .join('');
+          entries.push(`${attr.name}: \`${tpl}\``);
+        }
       }
     }
     // Skip Directive and AttachTag types — they're not props

@@ -4,7 +4,7 @@ import { isMochiPage, isMochiApi, isMochiWs, isMochiSse } from './types';
 import type { MarkdownConfig, MochiRouteValue, MochiSvelteShakerOptions } from './types';
 import { rmSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
-import { scanPublicDir } from './publicDir';
+import { scanPublicDir, publicRouteKey } from './publicDir';
 import { loadSvelteConfig } from './svelteConfig';
 import { logger, setLogLevel } from './log';
 import { consoleLogger } from './consoleLogger';
@@ -161,7 +161,10 @@ export async function build(options: MochiBuildOptions): Promise<void> {
   const publicSrc = await scanPublicDir(publicDir);
   const conflicts: string[] = [];
   for (const urlPath of publicSrc.keys()) {
-    if (urlPath in options.routes) {
+    // Runtime registers public files under the percent-encoded `publicRouteKey`,
+    // so a route declared in encoded form (e.g. `/a%20b.txt`) would collide there
+    // but slip past a raw-key check. Compare both forms.
+    if (urlPath in options.routes || publicRouteKey(urlPath) in options.routes) {
       conflicts.push(urlPath);
     }
   }

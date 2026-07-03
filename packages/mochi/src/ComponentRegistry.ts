@@ -232,8 +232,6 @@ export class ComponentRegistry {
   private islandBootstrapUrl: string | null = null;
   private debugBarUrl: string | null = null;
   private clientFiles: Map<string, string> = new Map();
-  /** Framework-level client files that persist across cache clears */
-  private frameworkFiles: Map<string, string> = new Map();
   /** Maps component file path → CSS URL */
   private cssFileUrls: Map<string, string> = new Map();
   /**
@@ -462,6 +460,7 @@ export class ComponentRegistry {
     const preprocessCacheStats = createPreprocessCacheStats();
     const compileCacheStats = createCompileCacheStats();
     const fileHydratables = new Map<string, HydratableComponent[]>();
+    const fileServerIslands = new Map<string, ServerIslandComponent[]>();
     const development = this.development;
     const userCompilerOptions = this.svelteConfig.compilerOptions ?? {};
     const serverFingerprint = compileFingerprint(userCompilerOptions, development);
@@ -578,6 +577,7 @@ export class ComponentRegistry {
           const cached = compileCache.get('server', args.path, raw, serverFingerprint, compileCacheStats);
           if (cached) {
             fileHydratables.set(args.path, cached.hydratables);
+            fileServerIslands.set(args.path, cached.serverIslands);
             allHydratables.push(...cached.hydratables);
             allServerIslands.push(...cached.serverIslands);
             if (cached.css) {
@@ -592,6 +592,7 @@ export class ComponentRegistry {
             ? { transformed: preprocessed, hydratables: [] as HydratableComponent[], serverIslands: [] as ServerIslandComponent[] }
             : cachedPreprocessHydratable(preprocessed, args.path, preprocessCacheStats);
           fileHydratables.set(args.path, hydratables);
+          fileServerIslands.set(args.path, serverIslands);
           allHydratables.push(...hydratables);
           allServerIslands.push(...serverIslands);
 
@@ -667,6 +668,12 @@ export class ComponentRegistry {
       }
       throw new Error(message);
     }
+
+    // Detection below recomputes nested-hydration errors for every file in this
+    // batch, so drop any prior ones for the recompiled files first. Without this,
+    // a fixed mistake keeps 500-ing every page until a restart, and an unfixed one
+    // is re-pushed (duplicated) on every save.
+    this.errors = this.errors.filter((e) => !(e.kind === 'nested-hydration' && fileHydratables.has(e.parentPath)));
 
     // Detect nested hydration — a hydratable component must not itself contain mochi:hydrate or mochi:hydrate:visible children
     const hydratablePaths = new Set(allHydratables.map((h) => h.resolvedPath));
@@ -769,11 +776,16 @@ export class ComponentRegistry {
       // from this entry. With one batched build, plugin closures see every
       // entry's files; we narrow back per-entry via the metafile graph.
       const entryHydratables: HydratableComponent[] = [];
+      const entryServerIslands: ServerIslandComponent[] = [];
       const entryCssComponents = new Set<string>();
       for (const inp of entryInputs) {
         const h = fileHydratables.get(inp);
         if (h) {
           entryHydratables.push(...h);
+        }
+        const si = fileServerIslands.get(inp);
+        if (si) {
+          entryServerIslands.push(...si);
         }
         if (cssMap.has(inp)) {
           entryCssComponents.add(inp);
@@ -791,7 +803,7 @@ export class ComponentRegistry {
         path: filename,
         ssrSizeBytes: outputsMeta[outKey]?.bytes ?? 0,
         hydratableCount: entryHydratables.length,
-        serverIslandCount: allServerIslands.length,
+        serverIslandCount: entryServerIslands.length,
         durationMs: compileDuration,
       });
     }
@@ -876,16 +888,14 @@ export class ComponentRegistry {
       unique.set(c.resolvedPath, c);
     }
 
-    // Clear previous client JS entries (CSS entries are kept — they're per-component and stable)
-    const clientPrefix = `${this.assetPrefix}/client/`;
-    for (const key of [...this.clientFiles.keys()]) {
-      if (key.startsWith(clientPrefix)) {
-        this.clientFiles.delete(key);
-      }
-    }
-    this.componentEntryUrls.clear();
-    this.islandBootstrapUrl = null;
-    this.debugBarUrl = null;
+    // Build into local maps first and swap them into the instance fields only
+    // after the build succeeds — a failed `Bun.build` must not leave the registry
+    // stripped (island JS would 404 until the next successful build). CSS entries
+    // in `clientFiles` are per-component and stable, so they survive the swap.
+    const newClientFiles = new Map<string, string>();
+    const newComponentEntryUrls = new Map<string, string>();
+    let newIslandBootstrapUrl: string | null = null;
+    let newDebugBarUrl: string | null = null;
 
     const frameworkDir = FRAMEWORK_DIR;
     // POSIX-ify every path that becomes a Bun.build entrypoint, a `filesMap`
@@ -1118,7 +1128,7 @@ export class ComponentRegistry {
 
     for (const output of result.outputs) {
       const filename = path.basename(output.path);
-      this.clientFiles.set(`${this.assetPrefix}/client/${filename}`, await output.text());
+      newClientFiles.set(`${this.assetPrefix}/client/${filename}`, await output.text());
     }
 
     // Map entry-point outputs back to components using metafile.entryPoint
@@ -1149,11 +1159,11 @@ export class ComponentRegistry {
         const compName = entryToComponent.get(resolvedEntry);
         const url = `${this.assetPrefix}/client/${path.basename(outPath)}`;
         if (compName === null) {
-          this.islandBootstrapUrl = url;
+          newIslandBootstrapUrl = url;
         } else if (compName === '__debugbar__') {
-          this.debugBarUrl = url;
+          newDebugBarUrl = url;
         } else if (compName !== undefined) {
-          this.componentEntryUrls.set(compName, url);
+          newComponentEntryUrls.set(compName, url);
         }
       }
       const outputStats = Object.entries(result.metafile.outputs).map(([outPath, outMeta]) => {
@@ -1173,6 +1183,25 @@ export class ComponentRegistry {
       outputStats.sort((a, b) => b.size - a.size);
       this.clientStats = { outputs: outputStats };
     }
+
+    // Swap the freshly-built maps into the instance fields now the build has
+    // succeeded. Replace only the client-prefix JS entries; the per-component CSS
+    // entries in `clientFiles` are stable and preserved.
+    const clientPrefix = `${this.assetPrefix}/client/`;
+    for (const key of [...this.clientFiles.keys()]) {
+      if (key.startsWith(clientPrefix)) {
+        this.clientFiles.delete(key);
+      }
+    }
+    for (const [k, v] of newClientFiles) {
+      this.clientFiles.set(k, v);
+    }
+    this.componentEntryUrls.clear();
+    for (const [k, v] of newComponentEntryUrls) {
+      this.componentEntryUrls.set(k, v);
+    }
+    this.islandBootstrapUrl = newIslandBootstrapUrl;
+    this.debugBarUrl = newDebugBarUrl;
 
     const outputBytes = this.clientStats?.outputs.reduce((sum, o) => sum + o.size, 0) ?? 0;
     mochiEvents.emit('client-bundle:complete', {
@@ -1494,16 +1523,8 @@ export class ComponentRegistry {
     return this.islandBootstrapUrl;
   }
 
-  /** Register a framework-level client file (persists across cache clears). Returns the hashed URL. */
-  registerFrameworkFile(name: string, content: string): string {
-    const hash = Bun.hash(content).toString(36);
-    const url = `${this.assetPrefix}/client/${name}-${hash}.js`;
-    this.frameworkFiles.set(url, content);
-    return url;
-  }
-
   getClientFile(urlPath: string): string | undefined {
-    return this.clientFiles.get(urlPath) ?? this.frameworkFiles.get(urlPath);
+    return this.clientFiles.get(urlPath);
   }
 
   getClientFiles(): Map<string, string> {

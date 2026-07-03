@@ -661,25 +661,34 @@ export class ImageCache {
         }
       }
 
-      if (orig !== null && origDead) {
+      if (origDead) {
         // Remove every `original.*` (bytes of any extension + the sidecar) so a
-        // stale-format leftover from a content-type change is reclaimed too.
+        // stale-format leftover from a content-type change is reclaimed too. This
+        // runs even when the sidecar is missing (`orig === null`): a crash landing
+        // between the bytes write and the sidecar-last write leaves orphaned
+        // `original.<ext>` bytes that would otherwise leak forever and keep the src
+        // dir from ever being reclaimed. The sidecar-last protocol makes
+        // bytes-without-sidecar always safe to drop.
         let freed = 0;
         for (const f of files) {
           if (f.startsWith('original.')) {
             freed += await this.removeFile(join(dir, f));
           }
         }
-        freedBytes += freed;
-        removedOriginals++;
-        mochiEvents.emit('image:delete', {
-          kind: 'original',
-          src: orig.src,
-          path: this.originalBytesPath(orig.src, orig.contentType),
-          id: originalId(orig.src),
-          size: freed,
-          reason: 'evicted',
-        });
+        // With no sidecar there's no metadata to describe the entry, so only
+        // report the orphan case when bytes were actually reclaimed.
+        if (orig !== null || freed > 0) {
+          freedBytes += freed;
+          removedOriginals++;
+          mochiEvents.emit('image:delete', {
+            kind: 'original',
+            src: orig?.src ?? '',
+            path: orig ? this.originalBytesPath(orig.src, orig.contentType) : join(dir, 'original'),
+            id: orig ? originalId(orig.src) : d.name,
+            size: freed,
+            reason: 'evicted',
+          });
+        }
       }
 
       // The placeholder is bound to the original's generation, so it's dead
