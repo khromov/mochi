@@ -92,7 +92,9 @@ export async function mochiFetch(input: string | URL | Request, options: MochiFe
     if (methodRetryable && attempt < maxAttempts && retryStatusCodes.includes(response.status)) {
       const delay = retryAfterDelay(response) ?? backoffDelay(attempt, retryDelay);
       // Release the body before discarding the response, or the connection leaks.
-      await response.body?.cancel();
+      // A `cancel()` on an already-errored body (e.g. the upstream reset the
+      // connection mid-stream) rejects — swallow it so it can't abort the retry.
+      await response.body?.cancel().catch(() => {});
       await sleep(delay, userSignal);
       continue;
     }
@@ -113,20 +115,27 @@ function resolveUrl(input: string | URL | Request, baseUrl: string | undefined):
 }
 
 function backoffDelay(attempt: number, base: number): number {
-  const ceiling = base * 2 ** (attempt - 1);
+  // Cap the ceiling *before* jittering. Clamping the jittered value instead
+  // would collapse a large fraction of high-attempt delays onto exactly the cap
+  // (no spread), reintroducing the lockstep stampede full jitter exists to avoid.
+  const ceiling = Math.min(base * 2 ** (attempt - 1), MAX_BACKOFF_MS);
   // Full jitter (random in [0, ceiling]) spreads retries so a fleet of clients
   // doesn't stampede a recovering upstream in lockstep.
-  return Math.min(Math.random() * ceiling, MAX_BACKOFF_MS);
+  return Math.random() * ceiling;
 }
 
 function retryAfterDelay(response: Response): number | null {
-  const header = response.headers.get('retry-after');
+  const header = response.headers.get('retry-after')?.trim();
   if (!header) {
     return null;
   }
-  const seconds = Number(header);
-  if (Number.isFinite(seconds)) {
-    return clampRetryAfter(seconds * 1000);
+  // Numeric form is a non-negative integer delta in seconds (per RFC 9110).
+  // Match it explicitly rather than via `Number()` — a hex-ish or scientific
+  // header (`'0x0'`, `'1e3'`) coerces to a bogus number (0, 1000, …), which
+  // would skip or distort backoff; those must fall through to the date form,
+  // then to exponential backoff.
+  if (/^\d+$/.test(header)) {
+    return clampRetryAfter(Number(header) * 1000);
   }
   const date = Date.parse(header);
   if (Number.isFinite(date)) {

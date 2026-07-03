@@ -1,5 +1,6 @@
 <script>
   import { mochiFetch as fetch } from 'mochi-framework';
+  import { pokemonCache } from '../../lib/cache';
   import DemoPage from '../../components/DemoPage.svelte';
   import { loadSources } from '../../components/utils.ts';
   import { files } from './files.ts';
@@ -7,20 +8,33 @@
   const sources = await loadSources(files);
 
   // mochiFetch is a drop-in for fetch: same call, plus retries, a timeout, and
-  // a base URL. Here it loads a Pokémon from PokéAPI resiliently at request time.
-  // The retries ride out a flaky upstream; if it's fully unreachable, mochiFetch
-  // still throws after the last attempt — so degrade gracefully rather than 500.
+  // a base URL. Here it loads a Pokémon from PokéAPI resiliently, wrapped in
+  // MochiCache so the resilient fetch only fires on a cache miss rather than on
+  // every render. The retries ride out a flaky upstream; if it's fully
+  // unreachable, mochiFetch throws after the last attempt — and because the
+  // factory throws, that transient failure is never cached as a success.
   async function loadPokemon() {
     try {
-      const res = await fetch('pokemon/pikachu', {
-        baseUrl: 'https://pokeapi.co/api/v2/',
-        retries: 3,
-        timeout: 5_000,
+      const pokemon = await pokemonCache.fetch('mochi-fetch:pikachu', async () => {
+        const res = await fetch('pokemon/pikachu', {
+          baseUrl: 'https://pokeapi.co/api/v2/',
+          retries: 3,
+          timeout: 5_000,
+        });
+        if (!res.ok) {
+          throw new Error(`PokéAPI responded ${res.status}`);
+        }
+        const data = await res.json();
+        // A 200 with an unexpected shape (e.g. a maintenance payload) would let
+        // the template deref `data.sprites`/`.types`/`.stats` and throw at the
+        // page top level — outside this try/catch — turning a soft failure into
+        // a 500. Validate up front so those cases degrade gracefully too.
+        if (!data?.sprites || !Array.isArray(data.types) || !Array.isArray(data.stats)) {
+          throw new Error('Unexpected response shape');
+        }
+        return data;
       });
-      if (res.ok) {
-        return { pokemon: await res.json(), loadError: '' };
-      }
-      return { pokemon: null, loadError: `PokéAPI responded ${res.status}` };
+      return { pokemon, loadError: '' };
     } catch (e) {
       return { pokemon: null, loadError: e instanceof Error ? e.message : String(e) };
     }

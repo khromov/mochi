@@ -223,4 +223,51 @@ describe('mochiFetch', () => {
     expect(calls).toBe(2);
     expect(bodiesSeen).toEqual(['PAYLOAD', 'PAYLOAD']);
   });
+
+  test('a retryable response whose body errors on cancel still retries', async () => {
+    let calls = 0;
+    setFetch(() => {
+      calls++;
+      if (calls >= 2) {
+        return Promise.resolve(new Response('ok', { status: 200 }));
+      }
+      // A 503 whose body is already errored — draining it via `cancel()` rejects.
+      const body = new ReadableStream({
+        start(controller) {
+          controller.error(new Error('connection reset'));
+        },
+      });
+      return Promise.resolve(new Response(body, { status: 503 }));
+    });
+    const res = await mochiFetch('http://x.test/', { retries: 3, retryDelay: 1 });
+    expect(res.status).toBe(200);
+    expect(calls).toBe(2);
+  });
+
+  test('a malformed Retry-After is ignored rather than treated as a zero-second delay', async () => {
+    let calls = 0;
+    setFetch(() => {
+      calls++;
+      // `'0x0'` survives Headers normalization (unlike whitespace, which is
+      // trimmed to '') yet `Number('0x0')` coerces to 0 — the exact input the
+      // `Number()` path mishandles.
+      return Promise.resolve(new Response('busy', { status: calls < 2 ? 503 : 200, headers: calls < 2 ? { 'retry-after': '0x0' } : {} }));
+    });
+    // Pin the jitter so the fallback backoff is deterministic (200ms). A bogus
+    // header must fall through to this backoff — the buggy path (`Number('0x0')`
+    // → 0) would instead retry with a 0ms delay, so the elapsed time is what
+    // actually distinguishes "ignored" from "treated as zero".
+    const realRandom = Math.random;
+    Math.random = () => 1;
+    try {
+      const start = performance.now();
+      const res = await mochiFetch('http://x.test/', { retries: 3, retryDelay: 200 });
+      const elapsed = performance.now() - start;
+      expect(res.status).toBe(200);
+      expect(calls).toBe(2);
+      expect(elapsed).toBeGreaterThanOrEqual(150);
+    } finally {
+      Math.random = realRandom;
+    }
+  });
 });
