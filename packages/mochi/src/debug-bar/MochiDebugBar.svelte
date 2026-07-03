@@ -123,9 +123,6 @@
       <span class="logo">{'\u{1F361}'} mochi</span>
     </button>
     <div class="bar-actions" aria-hidden={collapsed}>
-      {#if hasDebugInfo && !hiddenPanels.includes('info')}
-        <button class="btn info-btn" onclick={() => toggle('info')} tabindex={collapsed ? -1 : 0}>Info</button>
-      {/if}
       {#if hasDebugInfo && !hiddenPanels.includes('request')}
         <button class="btn request-btn" onclick={() => toggle('request')} tabindex={collapsed ? -1 : 0}>Request</button>
       {/if}
@@ -155,6 +152,9 @@
           JS <span class="bundle-badge" class:sparkle={noJs}>{bundleSizeLabel}</span>
           {#if bundleFiltered}<span class="filter-dot"></span>{/if}
         </button>
+      {/if}
+      {#if hasDebugInfo && !hiddenPanels.includes('info')}
+        <button class="btn info-btn" onclick={() => toggle('info')} tabindex={collapsed ? -1 : 0}>Info</button>
       {/if}
       <button class="btn settings-btn" onclick={() => toggle('settings')} tabindex={collapsed ? -1 : 0} aria-label="Configure panels" title="Configure panels">
         <Settings size={12} />
