@@ -11,7 +11,7 @@
 
   interface Props {
     title: string;
-    active: 'dashboard' | 'products';
+    active: 'dashboard' | 'products' | 'profile';
     user?: string;
     children: Snippet;
   }
@@ -58,23 +58,34 @@
       </nav>
 
       <!-- User + logout, pinned to the bottom on desktop -->
-      <form method="POST" action="/login/?/logout" class="mt-auto hidden items-center gap-2 border-t border-stone-200 pt-3 md:flex dark:border-stone-800">
-        <div class="flex size-8 items-center justify-center rounded-full bg-matcha-100 font-serif text-sm font-semibold text-matcha-700 dark:bg-matcha-500/15 dark:text-matcha-300">
-          {user.charAt(0).toUpperCase()}
-        </div>
-        <div class="min-w-0 flex-1">
-          <p class="truncate text-sm font-medium text-stone-700 dark:text-stone-300">{user}</p>
-          <p class="text-xs text-stone-400">Signed in</p>
-        </div>
-        <button
-          type="submit"
-          aria-label="Log out"
-          title="Log out"
-          class="inline-flex size-8 items-center justify-center rounded-lg text-stone-400 transition hover:bg-stone-100 hover:text-stone-700 dark:hover:bg-stone-800 dark:hover:text-stone-200"
+      <div class="mt-auto hidden items-center gap-1 border-t border-stone-200 pt-3 md:flex dark:border-stone-800">
+        <a
+          href="/profile/"
+          aria-current={active === 'profile' ? 'page' : undefined}
+          class="-mx-1 flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-1.5 transition
+            {active === 'profile' ? 'bg-matcha-50 dark:bg-matcha-500/10' : 'hover:bg-stone-100 dark:hover:bg-stone-800'}"
         >
-          <LogOut size={16} strokeWidth={1.8} />
-        </button>
-      </form>
+          <div
+            class="flex size-8 shrink-0 items-center justify-center rounded-full bg-matcha-100 font-serif text-sm font-semibold text-matcha-700 dark:bg-matcha-500/15 dark:text-matcha-300"
+          >
+            {user.charAt(0).toUpperCase()}
+          </div>
+          <div class="min-w-0 flex-1">
+            <p class="truncate text-sm font-medium text-stone-700 dark:text-stone-300">{user}</p>
+            <p class="text-xs text-stone-400">View profile</p>
+          </div>
+        </a>
+        <form method="POST" action="/login/?/logout">
+          <button
+            type="submit"
+            aria-label="Log out"
+            title="Log out"
+            class="inline-flex size-8 items-center justify-center rounded-lg text-stone-400 transition hover:bg-stone-100 hover:text-stone-700 dark:hover:bg-stone-800 dark:hover:text-stone-200"
+          >
+            <LogOut size={16} strokeWidth={1.8} />
+          </button>
+        </form>
+      </div>
     </aside>
 
     <!-- Main -->

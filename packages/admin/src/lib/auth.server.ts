@@ -87,6 +87,31 @@ export function currentUser(): string {
   return DEMO_USER.username;
 }
 
+export interface Profile {
+  username: string;
+  name: string;
+  email: string;
+  role: string;
+  /** ISO date the account was created. */
+  joinedAt: string;
+}
+
+/**
+ * The signed-in user's profile.
+ *
+ * STUB: a real app reads the session, then the `users` row. Returns fixed demo
+ * data for now. See tasks/session-store.md.
+ */
+export function getProfile(): Profile {
+  return {
+    username: DEMO_USER.username,
+    name: 'Admin User',
+    email: 'admin@mochi.example',
+    role: 'Administrator',
+    joinedAt: '2024-01-15',
+  };
+}
+
 /**
  * Page-request auth guard, composed via `sequence()` in src/index.ts.
  *
