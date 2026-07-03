@@ -59,9 +59,6 @@ class ServerIsland extends HTMLElement {
     if (signedProps) {
       params.set('props', signedProps);
     }
-    if (alsoHydrate) {
-      params.set('hydrate', alsoHydrate);
-    }
     const qs = params.toString();
     if (qs) {
       url += `?${qs}`;
