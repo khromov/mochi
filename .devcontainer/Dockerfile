@@ -36,7 +36,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   vim \
   locales \
   tzdata \
+  chromium \
+  fonts-liberation \
   && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# chrome-devtools-mcp resolves the default "stable" Chrome channel to
+# /opt/google/chrome/chrome on Linux. Google ships no arm64 Chrome, so point that
+# path at Debian's chromium. This keeps the committed .mcp.json free of a
+# Linux-only --executablePath, so the same config also works on a macOS host
+# (where puppeteer auto-detects the installed Google Chrome).
+RUN mkdir -p /opt/google/chrome && ln -s /usr/bin/chromium /opt/google/chrome/chrome
 
 # Generate the en_US.UTF-8 locale so bash/zsh stop warning about LC_ALL,
 # and configure the system timezone from the TZ build arg.
