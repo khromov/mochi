@@ -37,6 +37,7 @@
     "check-links": "bun scripts/check-links.ts",
     "check-vendored-versions": "bun scripts/check-vendored-versions.ts",
     "update": "bun update --interactive --recursive",
+    "outdated": "bun outdated --filter='*'",
     "deps": "bun packages/mochi/scripts/dep-report.ts",
     "e18e": "bash scripts/e18e.sh",
     "mochi:animate": "bun --cwd=packages/video-animations run animate",
