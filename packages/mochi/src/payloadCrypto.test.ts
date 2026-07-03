@@ -96,3 +96,50 @@ describe('encryptPayload + decryptPayload', () => {
     expect(decryptPayload('!!!!')).toBeNull();
   });
 });
+
+// AES-256-SIV is deterministic, so a fixed (secret, aad, plaintext) always seals
+// to the same wire bytes. These frozen tokens pin the on-the-wire envelope: if an
+// upgrade to @noble/ciphers (or a change to the key derivation, flags byte, or
+// compression gate) alters the format, these fail loudly. That matters because
+// tokens minted by an old build must still decrypt on a new one — a silent wire
+// change would break every in-flight image URL and server-island payload.
+//
+// If a change here is intentional, regenerate the expected values and confirm the
+// break is acceptable; do NOT blindly --update-snapshots. All tokens use the
+// installConfig() default secret 'test-key-for-unit-tests-32bytes!'.
+describe('wire format is stable (regression guard)', () => {
+  const WIRE = {
+    short: 'wT9yKd4HhqlJrSos_BXECSURIy1f4X7PUASy0e9goNTHEg',
+    aad: 'WBRAPhaUsZ9YWubbt1nlu0MrxX81soiybXqPIfbNLGiDWw1po2tDPtqEmVL-mO9oJuPQ4BqmrTSj9-7m',
+    long: 'dQeIP5VTltvuxbMF0O0h0sSeFa5qMXOtaAg',
+    empty: 'BG88zLVcSZpJ9EH_vpizzSk',
+  };
+
+  test('short JSON payload seals to a stable token', () => {
+    installConfig();
+    expect(encryptPayload(JSON.stringify({ a: 1, b: 'two' }))).toBe(WIRE.short);
+  });
+
+  test('aad-bound payload seals to a stable token', () => {
+    installConfig();
+    expect(encryptPayload(JSON.stringify({ src: 'https://example.com/a.png', w: 200 }), { aad: 'a.webp' })).toBe(WIRE.aad);
+  });
+
+  test('long compressed payload seals to a stable token', () => {
+    installConfig();
+    expect(encryptPayload('x'.repeat(500))).toBe(WIRE.long);
+  });
+
+  test('empty payload seals to a stable token', () => {
+    installConfig();
+    expect(encryptPayload('')).toBe(WIRE.empty);
+  });
+
+  test('each frozen token still round-trips (format is readable, not just stable)', () => {
+    installConfig();
+    expect(decryptPayload(WIRE.short)).toBe(JSON.stringify({ a: 1, b: 'two' }));
+    expect(decryptPayload(WIRE.aad, { aad: 'a.webp' })).toBe(JSON.stringify({ src: 'https://example.com/a.png', w: 200 }));
+    expect(decryptPayload(WIRE.long)).toBe('x'.repeat(500));
+    expect(decryptPayload(WIRE.empty)).toBe('');
+  });
+});
