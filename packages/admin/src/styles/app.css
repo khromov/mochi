@@ -1,0 +1,32 @@
+/* Tailwind v4 input for the admin template.
+   This is a standalone app with its own shell.html and no surrounding site
+   chrome, so we opt INTO Preflight for a clean, modern reset across every page.
+   Explicit CSS sub-imports (theme/preflight/utilities) resolve reliably through
+   Mochi's compileTailwind — mirrors packages/demos/src/todo/app.css. */
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/preflight.css' layer(base);
+@import 'tailwindcss/utilities.css' layer(utilities);
+
+@source '../**/*.svelte';
+
+/* Design tokens — a calm, refined admin palette. A single restrained accent
+   (matcha green) with warm stone neutrals. Dark mode swaps via the variant below. */
+@theme {
+  --font-sans: 'Public Sans Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-serif: 'Fraunces Variable', ui-serif, Georgia, serif;
+
+  --color-matcha-50: #f2f7f1;
+  --color-matcha-100: #e0ece0;
+  --color-matcha-200: #c2d9c2;
+  --color-matcha-300: #97bd98;
+  --color-matcha-400: #6b9c6d;
+  --color-matcha-500: #4a7c59;
+  --color-matcha-600: #396147;
+  --color-matcha-700: #2e4d3a;
+  --color-matcha-800: #263d30;
+  --color-matcha-900: #203228;
+}
+
+/* Class-based dark mode: the ThemeToggle island (and the no-flash script in
+   shell.html) stamp data-theme on <html>, mirroring the other Mochi sites. */
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));

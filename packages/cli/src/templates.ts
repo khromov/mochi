@@ -1,4 +1,4 @@
-export type TemplateId = 'minimal' | 'demos';
+export type TemplateId = 'minimal' | 'demos' | 'admin';
 
 export interface Template {
   id: TemplateId;
@@ -28,6 +28,12 @@ export const TEMPLATES: readonly Template[] = [
     label: 'Demos',
     hint: 'a larger reference app with multiple demos (HN clone, todo, …)',
     source: 'khromov/mochi/packages/demos',
+  },
+  {
+    id: 'admin',
+    label: 'Admin',
+    hint: 'a login + dashboard + CRUD admin panel (batteries stubbed, Tailwind UI)',
+    source: 'khromov/mochi/packages/admin',
   },
 ] as const;
 

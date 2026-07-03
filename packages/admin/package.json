@@ -1,0 +1,34 @@
+{
+  "name": "mochi-admin",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "bun": ">=1.3.14"
+  },
+  "scripts": {
+    "build": "bun scripts/prebuild.ts && mochi-framework build",
+    "start": "bun src/index.ts",
+    "dev": "MODE=development bun src/index.ts",
+    "typecheck": "svelte-check --tsconfig ./tsconfig.json --compiler-warnings 'attribute_illegal_colon:ignore' && tsc -p tsconfig.json --noEmit",
+    "test": "bun test",
+    "clean": "rimraf .mochi"
+  },
+  "dependencies": {
+    "@fontsource-variable/fraunces": "^5.2.9",
+    "@fontsource-variable/public-sans": "^5.2.7",
+    "@lucide/svelte": "^1.23.0",
+    "@tailwindcss/node": "^4.3.1",
+    "@tailwindcss/oxide": "^4.3.1",
+    "mochi-framework": "workspace:*",
+    "svelte": "^5.56.4",
+    "tailwindcss": "^4.3.1"
+  },
+  "devDependencies": {
+    "@types/bun": "1.3.14",
+    "svelte-check": "4.7.1",
+    "typescript": "^6.0.3"
+  },
+  "overrides": {
+    "msgpackr-extract": "npm:@mochi-framework/msgpackr-extract-stub@*"
+  }
+}
