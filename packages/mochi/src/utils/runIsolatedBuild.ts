@@ -18,6 +18,9 @@ import { Mochi } from '../Mochi';
  * `outDir`'s manifest, isolating the build's `compileAll` passes from the
  * caller's process. Throws with the child's stderr on failure.
  */
+
+// TODO: This is not a great long-term solution, let's re-evaluate in the future and see if there is
+// a better way of doing this.
 export async function runIsolatedBuild(fixturePage: string, outDir: string): Promise<void> {
   const proc = Bun.spawn([process.execPath, import.meta.path, fixturePage, outDir], {
     // Run from the package root (this file lives in `src/utils/`) so module and
