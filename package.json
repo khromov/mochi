@@ -57,7 +57,7 @@
     "typescript-eslint": "^8.61.1"
   },
   "patchedDependencies": {
-    "svelte-check@4.6.0": "packages/mochi/patches/svelte-check@4.6.0.patch"
+    "svelte-check@4.7.1": "packages/mochi/patches/svelte-check@4.7.1.patch"
   },
   "overrides": {
     "msgpackr-extract": "npm:@mochi-framework/msgpackr-extract-stub@*"
