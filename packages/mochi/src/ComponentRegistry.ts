@@ -542,6 +542,11 @@ export class ComponentRegistry {
             // so .svelte files can `import { getResizedImage } from 'mochi-framework'`.
             `export { getResizedImage, getImage, getImageBytes, getImagePlaceholder, invalidateImage } from "${toPosixPath(path.join(FRAMEWORK_DIR, 'image/getResizedImage.ts'))}";`,
             `export { cachedImage, CachedImage } from "${toPosixPath(path.join(FRAMEWORK_DIR, 'image/cachedImage.ts'))}";`,
+            // Per-user feature-flag check. Server-only (needs the request context
+            // + secret); re-exported so .svelte files can `import { feature } from
+            // 'mochi-framework'`. On a hydrated island evaluate in a server island
+            // or pass the boolean down as a prop (see the client stub below).
+            `export { feature } from "${toPosixPath(path.join(FRAMEWORK_DIR, 'features.ts'))}";`,
             // `enhance` / `deserialize` are browser-only Svelte action helpers.
             // Svelte never invokes actions during SSR, so these stubs only fire
             // if user code calls them on the server — which is a usage error.
@@ -1017,6 +1022,10 @@ export class ComponentRegistry {
             // into client bundles, but this stub keeps the module surface
             // symmetric and produces a clear error if anyone imports it.
             `export function emitIslandProps() { throw new Error("emitIslandProps() is only available on the server"); }`,
+            // Feature flags are per-user and evaluated server-side. In a hydrated
+            // island, evaluate in a server island or pass the boolean down as a
+            // prop rather than calling feature() during client hydration.
+            `export function feature() { throw new Error("feature() is only available on the server. In a hydrated island, evaluate it server-side and pass the result down as a prop."); }`,
             // mochiEvents is a server-side bus. On the client we ship a stub so
             // bundles don't pull in mitt and accidental emits surface in the
             // console instead of silently misbehaving. Subscribers registered

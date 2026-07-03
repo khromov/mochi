@@ -149,6 +149,10 @@ await Mochi.serve({
     // policy would otherwise 308 it to /mcp/ and some MCP clients don't follow the redirect.
     'trailingSlash:redirect': (redirect, { url }) => (url.pathname === '/mcp' ? null : redirect),
   },
+  features: {
+    'demo-new-hero': { rollout: 0.5 },
+    'demo-beta-badge': { rollout: 0.5 },
+  },
   routes,
   queues,
 });

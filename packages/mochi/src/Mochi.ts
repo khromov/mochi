@@ -47,6 +47,7 @@ import { createErrorResponder, DEFAULT_ERROR_PAGE_PATH } from './errors';
 import { requestContext } from './requestContext';
 import type { MochiRequestContext } from './requestContext';
 import { createQueue, getQueue, closeAllQueueResources } from './queue';
+import { evaluateFeature } from './features';
 import type { MochiQueue, MochiQueueOptions, MochiQueueListeners, MochiProcessor } from './queue';
 import { finalizeCookieHeaders } from './cookies';
 import { makeRequestContextBuilder } from './requestSetup';
@@ -173,6 +174,17 @@ export class Mochi {
    */
   static getQueue<T = unknown>(name: string): MochiQueue<T> {
     return getQueue<T>(name);
+  }
+
+  /**
+   * Resolve a per-user feature flag declared in `Mochi.serve({ features })`.
+   * Deterministic and sticky per user (backed by the encrypted `mochi_ff`
+   * cookie), so the same user always sees the same state. Returns `false` for an
+   * undeclared flag or when called outside a request. Inside a `.svelte`
+   * component import the standalone `feature()` from `mochi-framework` instead.
+   */
+  static feature(name: string): boolean {
+    return evaluateFeature(name);
   }
 
   private static resolveHtmlShell(

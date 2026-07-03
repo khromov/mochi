@@ -22,6 +22,7 @@ import { routes as chatRoutes } from './demos/chat/routes';
 import { routes as clientOnlyRoutes } from './demos/client-only/routes';
 import { routes as cookieVaryTestRoutes } from './demos/cookie-vary-test/routes';
 import { routes as cookiesRoutes } from './demos/cookies/routes';
+import { routes as featureFlagsRoutes } from './demos/feature-flags/routes';
 import { routes as dataLoadingRoutes } from './demos/data-loading/routes';
 import { routes as entityPropsRoutes } from './demos/entity-props/routes';
 import { routes as errorRoutes } from './demos/error/routes';
@@ -178,6 +179,7 @@ export const routes: Record<string, MochiRouteValue> = {
   ...clientOnlyRoutes,
   ...cookieVaryTestRoutes,
   ...cookiesRoutes,
+  ...featureFlagsRoutes,
   ...dataLoadingRoutes,
   ...entityPropsRoutes,
   ...errorRoutes,

@@ -16,6 +16,7 @@ export type { MochiSvelteConfig } from './svelteConfig';
 export { getRequestContext } from './requestContext';
 export type { MochiRequestContext } from './requestContext';
 export { getMochiConfig } from './mochiConfig';
+export { feature, setFeatureOverride } from './features';
 export type { CookieSerializeOptions, Cookie } from './cookies';
 export { MochiCache } from './cache';
 export type { MochiCacheOptions, CacheResult, CacheStatus, Storage } from './cache';
@@ -138,6 +139,9 @@ export type {
   MochiFileConfig,
   MochiFileResolver,
   MochiQueueConfig,
+  MochiFeatureFlag,
+  MochiFeatures,
+  MochiFeatureContext,
   BunRouteValue,
   MochiSvelteShakerOptions,
 } from './types';

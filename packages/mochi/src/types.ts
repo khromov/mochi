@@ -336,6 +336,48 @@ export function isMochiQueue(value: unknown): value is MochiQueueConfig {
   return typeof value === 'object' && value !== null && (value as MochiQueueConfig).__mochiQueue === true;
 }
 
+// ---------------------------------------------------------------------------
+// Feature flags
+// ---------------------------------------------------------------------------
+
+/**
+ * The subset of the request context passed to a flag's `target` predicate.
+ * Enough to target on the authenticated user (`locals`), the URL, request
+ * headers, or existing cookies — without exposing the internal context shape.
+ */
+export interface MochiFeatureContext {
+  readonly request: Request;
+  readonly url: URL;
+  readonly locals: Record<string, unknown>;
+  readonly cookies: MochiCookieJar;
+}
+
+/**
+ * A single feature flag definition, declared in `Mochi.serve({ features })` and
+ * checked with `Mochi.feature(name)` / `feature(name)`.
+ *
+ * Evaluation order: `target` (if it returns a boolean, it wins) → a sticky
+ * per-user override stored in the encrypted cookie → deterministic percentage
+ * bucketing on `rollout`. The same user always resolves to the same state.
+ */
+export interface MochiFeatureFlag {
+  /**
+   * Fraction of users the flag is enabled for, in `[0, 1]`. Assignment is
+   * sticky and deterministic per user (HMAC of the flag name + the user's
+   * opaque cookie seed), so raising `rollout` only ever adds users. Default 0.
+   */
+  rollout?: number;
+  /**
+   * Optional targeting predicate evaluated first. Return `true`/`false` to force
+   * the flag on/off (bypassing `rollout`); return `undefined` to fall through to
+   * the sticky override / percentage bucketing.
+   */
+  target?: (ctx: MochiFeatureContext) => boolean | undefined;
+}
+
+/** Feature-flag definitions keyed by flag name, for `Mochi.serve({ features })`. */
+export type MochiFeatures = Record<string, MochiFeatureFlag>;
+
 export type MochiRouteValue = MochiPageConfig | MochiApiConfig | MochiWsConfig | MochiSseConfig | MochiFileConfig | BunRouteValue;
 
 /** `stack` is only populated when the server runs with `development: true`. */
@@ -481,6 +523,13 @@ export interface MochiServeOptions {
    * shutdown. A queue-only process is `Mochi.serve({ queues })` with no `routes`.
    */
   queues?: Record<string, MochiQueueConfig>;
+  /**
+   * Per-user feature flags, keyed by flag name. Check them anywhere in a request
+   * with `Mochi.feature(name)` (route/handler code) or `feature(name)` (inside a
+   * `.svelte` component). Assignment is carried by an encrypted, opaque `mochi_ff`
+   * cookie — see the feature-flags docs for the caching-proxy requirements.
+   */
+  features?: MochiFeatures;
   fetch?: (req: Request, server: Server<undefined>) => Response | Promise<Response>;
   htmlShell?: string;
   /**
