@@ -28,6 +28,19 @@ describe('assertAllowedSource', () => {
     await expectBlocked('http://[fd00::1]/a.png');
   });
 
+  test('rejects IPv4-embedded IPv6 forms (hex-mapped, NAT64, compatible, 6to4)', async () => {
+    await expectBlocked('http://[::ffff:7f00:1]/a.png'); // hex IPv4-mapped 127.0.0.1
+    await expectBlocked('http://[::ffff:a9fe:a9fe]/a.png'); // hex IPv4-mapped 169.254.169.254 (cloud metadata)
+    await expectBlocked('http://[64:ff9b::7f00:1]/a.png'); // NAT64 127.0.0.1
+    await expectBlocked('http://[::7f00:1]/a.png'); // IPv4-compatible 127.0.0.1
+    await expectBlocked('http://[2002:c0a8:101::]/a.png'); // 6to4 embedding 192.168.1.1
+  });
+
+  test('still allows a genuinely public IPv6 (no false positive)', async () => {
+    const url = await assertAllowedSource('https://[2606:4700:4700::1111]/a.png', block);
+    expect(url.hostname).toBe('[2606:4700:4700::1111]');
+  });
+
   test('rejects non-http protocols', async () => {
     await expectBlocked('file:///etc/passwd');
     await expectBlocked('data:image/png;base64,AAAA');

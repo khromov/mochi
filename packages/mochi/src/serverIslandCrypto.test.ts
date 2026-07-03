@@ -104,6 +104,25 @@ describe('encryptProps debug bar recording', () => {
     );
   });
 
+  test('records rich devalue types (BigInt/Map/Set) instead of throwing/dropping', () => {
+    installConfig();
+    withCtx(
+      (ctx) => {
+        const props = { islandId: 'mochi-test-0', big: 42n, map: new Map([['a', 1]]), set: new Set([7, 8]) };
+        const json = devalueStringify(props);
+        const token = encryptProps(json, COMP);
+
+        const recorded = ctx.debugBarData!.serverProps![token];
+        expect(recorded).toBeDefined(); // a BigInt would throw plain JSON.stringify → nothing recorded
+        const parsed = JSON.parse(recorded!) as { big: string; map: Record<string, number>; set: number[] };
+        expect(parsed.big).toBe('42n');
+        expect(parsed.map).toEqual({ a: 1 }); // Map, not collapsed to {}
+        expect(parsed.set).toEqual([7, 8]); // Set, not collapsed to {}
+      },
+      { dev: true },
+    );
+  });
+
   test('does not record when debugBarData is undefined (prod)', () => {
     installConfig();
     withCtx((ctx) => {

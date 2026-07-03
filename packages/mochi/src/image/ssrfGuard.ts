@@ -53,21 +53,98 @@ function ipv4IsPrivate(ip: string): boolean {
   return false;
 }
 
+// Expand an IPv6 literal into its eight 16-bit groups, resolving `::` and any
+// trailing dotted-quad IPv4 embedding. Returns null for anything unparseable.
+function expandIpv6(addr: string): number[] | null {
+  let s = addr;
+  // Fold a trailing dotted IPv4 (e.g. ::ffff:127.0.0.1) into two hextets so the
+  // hex and dotted spellings of the same address normalize identically.
+  const dotted = s.match(/(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (dotted) {
+    const octets = dotted.slice(1, 5).map(Number);
+    if (octets.some((n) => n > 255)) {
+      return null;
+    }
+    const [a = 0, b = 0, c = 0, d = 0] = octets;
+    s = s.slice(0, dotted.index) + ((a << 8) | b).toString(16) + ':' + ((c << 8) | d).toString(16);
+  }
+
+  const parseGroups = (part: string): number[] | null => {
+    if (part === '') {
+      return [];
+    }
+    const out: number[] = [];
+    for (const g of part.split(':')) {
+      if (!/^[0-9a-f]{1,4}$/.test(g)) {
+        return null;
+      }
+      out.push(parseInt(g, 16));
+    }
+    return out;
+  };
+
+  const halves = s.split('::');
+  if (halves.length > 2) {
+    return null;
+  }
+  if (halves.length === 2) {
+    const head = parseGroups(halves[0] ?? '');
+    const tail = parseGroups(halves[1] ?? '');
+    if (!head || !tail) {
+      return null;
+    }
+    const missing = 8 - head.length - tail.length;
+    if (missing < 0) {
+      return null;
+    }
+    return [...head, ...Array<number>(missing).fill(0), ...tail];
+  }
+  const groups = parseGroups(s);
+  return groups && groups.length === 8 ? groups : null;
+}
+
+function groupsToIpv4(hi: number, lo: number): string {
+  return `${hi >> 8}.${hi & 0xff}.${lo >> 8}.${lo & 0xff}`;
+}
+
+// Recover the embedded IPv4 from the standard IPv6→IPv4 transition ranges, so a
+// loopback/private IPv4 can't tunnel past the guard in IPv6 clothing.
+function embeddedIpv4(g: number[]): string | null {
+  const top96Zero = g[0] === 0 && g[1] === 0 && g[2] === 0 && g[3] === 0 && g[4] === 0;
+  if (top96Zero && g[5] === 0xffff) {
+    return groupsToIpv4(g[6]!, g[7]!); // IPv4-mapped ::ffff:0:0/96
+  }
+  if (top96Zero && g[5] === 0) {
+    return groupsToIpv4(g[6]!, g[7]!); // IPv4-compatible ::/96 (deprecated)
+  }
+  if (g[0] === 0x0064 && g[1] === 0xff9b && g[2] === 0 && g[3] === 0 && g[4] === 0 && g[5] === 0) {
+    return groupsToIpv4(g[6]!, g[7]!); // NAT64 64:ff9b::/96
+  }
+  if (g[0] === 0x2002) {
+    return groupsToIpv4(g[1]!, g[2]!); // 6to4 2002::/16
+  }
+  return null;
+}
+
 function ipv6IsPrivate(ip: string): boolean {
   const addr = ip.toLowerCase().split('%')[0] ?? ''; // strip zone id
-  if (addr === '::1' || addr === '::') {
+  const g = expandIpv6(addr);
+  if (!g) {
+    return true; // unparseable → reject (fail closed)
+  }
+  // loopback ::1 and unspecified ::
+  if (g[0] === 0 && g[1] === 0 && g[2] === 0 && g[3] === 0 && g[4] === 0 && g[5] === 0 && g[6] === 0 && (g[7] === 0 || g[7] === 1)) {
     return true;
-  } // loopback / unspecified
-  if (addr.startsWith('fe8') || addr.startsWith('fe9') || addr.startsWith('fea') || addr.startsWith('feb')) {
+  }
+  if ((g[0]! & 0xffc0) === 0xfe80) {
+    return true; // link-local fe80::/10
+  }
+  if ((g[0]! & 0xfe00) === 0xfc00) {
+    return true; // unique-local fc00::/7
+  }
+  const v4 = embeddedIpv4(g);
+  if (v4 && ipv4IsPrivate(v4)) {
     return true;
-  } // link-local fe80::/10
-  if (addr.startsWith('fc') || addr.startsWith('fd')) {
-    return true;
-  } // unique-local fc00::/7
-  // IPv4-mapped (::ffff:a.b.c.d)
-  const mapped = addr.match(/::ffff:(\d+\.\d+\.\d+\.\d+)$/);
-  if (mapped) {
-    return ipv4IsPrivate(mapped[1] ?? '');
   }
   return false;
 }

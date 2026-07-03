@@ -86,10 +86,10 @@ function mintImageUrl(req: ImageRequest, filename: string, options: ResolvedImag
     }
     return req.src;
   }
-  const token = encryptImageRequest(req, filename, options, options.compressPayload);
+  const token = encryptImageRequest(req, filename, options.compressPayload);
   const raw = `${getImageAssetPrefix()}/image/${filename}?p=${token}`;
   const url = applyFilter('image:url', raw, { src: req.src, filename, original: req.original === true });
-  recordForDebugBar(url, filename, req, options);
+  recordForDebugBar(url, filename, req);
   return url;
 }
 
@@ -151,12 +151,12 @@ export async function getImageBytes(src: string, opts: OriginalImageOptions = {}
   }
 }
 
-function recordForDebugBar(url: string, filename: string, req: ImageRequest, resolved: ResolvedImageOptions): void {
+function recordForDebugBar(url: string, filename: string, req: ImageRequest): void {
   try {
     const ctx = requestContext.getStore();
     const images = ctx?.debugBarData?.images;
     if (images && !images.some((i) => i.url === url)) {
-      const packed = packImageRequest(req, resolved);
+      const packed = packImageRequest(req);
       const srcByteLength = Buffer.byteLength(req.src, 'utf-8');
       const headerHex = Array.from(packed.subarray(0, packed.length - srcByteLength), (b) => b.toString(16).padStart(2, '0')).join(' ');
       images.push({ url, filename, params: { ...req }, wire: { headerHex, srcByteLength } });

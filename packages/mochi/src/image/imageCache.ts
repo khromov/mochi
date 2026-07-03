@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
-import { mkdir, readdir, readFile, rename, rm, rmdir, stat, unlink, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { readdir, rename, rm, rmdir, stat, unlink } from 'node:fs/promises';
+import { join } from 'node:path';
 import { hasSubscribers, mochiEvents, type MochiImageEntryKind } from '../events';
 import { extForFormat } from './resize';
 import type { ImageFormat, ImageRequest } from './types';
@@ -121,6 +121,11 @@ function isMissingFileError(err: unknown): boolean {
 export class ImageCache {
   private inflight = new Map<string, Promise<CacheEntry>>();
   private originalMetaLocks = new Map<string, Promise<unknown>>();
+  // Monotonic per-src counter bumped on every invalidation. A background
+  // revalidation captures it before fetching and, under the meta lock, refuses
+  // to persist if it changed — so an in-flight refetch can't resurrect an
+  // invalidation that landed while it was in flight.
+  private originalEpoch = new Map<string, number>();
 
   constructor(private readonly root: string) {}
 
@@ -154,7 +159,7 @@ export class ImageCache {
 
   private async readMetaFor(src: string, id: string, ext: string): Promise<SidecarMeta | null> {
     try {
-      const raw = await readFile(`${this.basePathFor(src, id, ext)}.json`, 'utf-8');
+      const raw = await Bun.file(`${this.basePathFor(src, id, ext)}.json`).text();
       return JSON.parse(raw) as SidecarMeta;
     } catch {
       return null;
@@ -163,11 +168,47 @@ export class ImageCache {
 
   private async readBytesFor(src: string, id: string, ext: string): Promise<Uint8Array | null> {
     try {
-      const buf = await readFile(this.basePathFor(src, id, ext));
-      return new Uint8Array(buf);
+      return new Uint8Array(await Bun.file(this.basePathFor(src, id, ext)).arrayBuffer());
     } catch {
       return null;
     }
+  }
+
+  // Read a variant's sidecar + bytes as a consistent pair. The writer commits
+  // bytes-first, sidecar-last, so a reader can otherwise pair an OLD sidecar
+  // (its createdAt drives the ETag) with NEW bytes. Re-read the sidecar after the
+  // bytes and only accept the pair when its generation is unchanged; retry a
+  // bounded number of times across a concurrent write, else fall through to a miss.
+  private async readConsistentEntry(readMeta: () => Promise<SidecarMeta | null>, readBytes: (meta: SidecarMeta) => Promise<Uint8Array | null>): Promise<CacheEntry | null> {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const meta = await readMeta();
+      if (!meta) {
+        return null;
+      }
+      const bytes = await readBytes(meta);
+      if (!bytes) {
+        return null;
+      }
+      const confirm = await readMeta();
+      if (confirm && confirm.createdAt === meta.createdAt && confirm.contentType === meta.contentType) {
+        return { bytes, meta };
+      }
+    }
+    return null;
+  }
+
+  private readConsistentVariant(src: string, id: string, ext: string): Promise<CacheEntry | null> {
+    return this.readConsistentEntry(
+      () => this.readMetaFor(src, id, ext),
+      () => this.readBytesFor(src, id, ext),
+    );
+  }
+
+  private readConsistentOriginal(src: string): Promise<CacheEntry | null> {
+    return this.readConsistentEntry(
+      () => this.readOriginalMeta(src),
+      (meta) => this.readOriginalBytes(src, meta.contentType),
+    );
   }
 
   private async writeFor(src: string, id: string, ext: string, bytes: Uint8Array, meta: SidecarMeta): Promise<void> {
@@ -177,14 +218,13 @@ export class ImageCache {
 
   // Write bytes first, sidecar last: the sidecar's presence marks the entry valid.
   private async writeBytesAndMeta(bytesPath: string, metaPath: string, bytes: Uint8Array, meta: SidecarMeta): Promise<void> {
-    await mkdir(dirname(bytesPath), { recursive: true });
-    await writeFile(`${bytesPath}.tmp`, bytes);
+    await Bun.write(`${bytesPath}.tmp`, bytes); // Bun.write creates parent dirs
     await rename(`${bytesPath}.tmp`, bytesPath);
     await this.writeMeta(metaPath, meta);
   }
 
   private async writeMeta(metaPath: string, meta: SidecarMeta): Promise<void> {
-    await writeFile(`${metaPath}.tmp`, JSON.stringify(meta));
+    await Bun.write(`${metaPath}.tmp`, JSON.stringify(meta));
     await rename(`${metaPath}.tmp`, metaPath);
   }
 
@@ -247,27 +287,24 @@ export class ImageCache {
    * original is evicted.
    */
   async getVariant(src: string, id: string, ext: string, regenerate: () => Promise<RegenResult>): Promise<{ entry: CacheEntry; status: ImageCacheStatus }> {
-    const meta = await this.readMetaFor(src, id, ext);
     const orig = await this.readOriginalMeta(src);
     const now = Date.now();
 
-    if (meta && orig) {
-      const sameGen = meta.originalCreatedAt === orig.createdAt;
-      if (sameGen && now < orig.staleAt) {
-        const bytes = await this.readBytesFor(src, id, ext);
-        if (bytes) {
+    if (orig) {
+      const entry = await this.readConsistentVariant(src, id, ext);
+      if (entry) {
+        const sameGen = entry.meta.originalCreatedAt === orig.createdAt;
+        if (sameGen && now < orig.staleAt) {
           this.emitReadFor(id, 'fresh');
-          return { entry: { bytes, meta }, status: 'fresh' };
+          return { entry, status: 'fresh' };
         }
-      } else if (now < orig.evictAt) {
-        // Stale window, or the original was refreshed to a newer generation:
-        // serve the existing variant immediately and regenerate in the background.
-        const bytes = await this.readBytesFor(src, id, ext);
-        if (bytes) {
+        if (now < orig.evictAt) {
+          // Stale window, or the original was refreshed to a newer generation:
+          // serve the existing variant immediately and regenerate in the background.
           this.emitReadFor(id, 'stale');
           mochiEvents.emit('cache:revalidate', { key: `image:${id}` });
           void this.revalidateFor(src, id, ext, regenerate).catch(() => {});
-          return { entry: { bytes, meta }, status: 'stale' };
+          return { entry, status: 'stale' };
         }
       }
     }
@@ -296,7 +333,7 @@ export class ImageCache {
 
   private async readMetaAt(path: string): Promise<SidecarMeta | null> {
     try {
-      return JSON.parse(await readFile(path, 'utf-8')) as SidecarMeta;
+      return JSON.parse(await Bun.file(path).text()) as SidecarMeta;
     } catch {
       return null;
     }
@@ -338,7 +375,7 @@ export class ImageCache {
 
   private async readOriginalBytes(src: string, contentType: string): Promise<Uint8Array | null> {
     try {
-      return new Uint8Array(await readFile(this.originalBytesPath(src, contentType)));
+      return new Uint8Array(await Bun.file(this.originalBytesPath(src, contentType)).arrayBuffer());
     } catch {
       return null;
     }
@@ -361,24 +398,20 @@ export class ImageCache {
     timeToEvict: number,
     fetchFn: () => Promise<{ bytes: Uint8Array; contentType: string | null }>,
   ): Promise<{ entry: CacheEntry; status: ImageCacheStatus }> {
-    const meta = await this.readOriginalMeta(src);
     const now = Date.now();
+    const cached = await this.readConsistentOriginal(src);
 
-    if (meta) {
+    if (cached) {
+      const meta = cached.meta;
       if (now < meta.staleAt) {
-        const bytes = await this.readOriginalBytes(src, meta.contentType);
-        if (bytes) {
-          this.emitOriginalRead(src, 'fresh');
-          return { entry: { bytes, meta: await this.shortenOriginalWindow(src, meta, timeToStale, timeToEvict, now) }, status: 'fresh' };
-        }
-      } else if (now < meta.evictAt) {
-        const bytes = await this.readOriginalBytes(src, meta.contentType);
-        if (bytes) {
-          this.emitOriginalRead(src, 'stale');
-          mochiEvents.emit('cache:revalidate', { key: `image:${originalId(src)}` });
-          void this.revalidateOriginal(src, timeToStale, timeToEvict, fetchFn).catch(() => {});
-          return { entry: { bytes, meta: await this.shortenOriginalWindow(src, meta, timeToStale, timeToEvict, now) }, status: 'stale' };
-        }
+        this.emitOriginalRead(src, 'fresh');
+        return { entry: { bytes: cached.bytes, meta: await this.shortenOriginalWindow(src, meta, timeToStale, timeToEvict, now) }, status: 'fresh' };
+      }
+      if (now < meta.evictAt) {
+        this.emitOriginalRead(src, 'stale');
+        mochiEvents.emit('cache:revalidate', { key: `image:${originalId(src)}` });
+        void this.revalidateOriginal(src, timeToStale, timeToEvict, fetchFn).catch(() => {});
+        return { entry: { bytes: cached.bytes, meta: await this.shortenOriginalWindow(src, meta, timeToStale, timeToEvict, now) }, status: 'stale' };
       }
     }
 
@@ -415,6 +448,21 @@ export class ImageCache {
     });
   }
 
+  private freshOriginalMeta(src: string, contentType: string, timeToStale: number, timeToEvict: number, now: number): SidecarMeta {
+    return {
+      version: 1,
+      contentType,
+      etag: originalId(src),
+      width: 0,
+      height: 0,
+      format: '',
+      createdAt: now,
+      staleAt: now + timeToStale,
+      evictAt: now + timeToEvict,
+      src,
+    };
+  }
+
   private revalidateOriginal(
     src: string,
     timeToStale: number,
@@ -429,39 +477,37 @@ export class ImageCache {
       return existing;
     }
 
+    const epochAtStart = this.originalEpoch.get(src) ?? 0;
     const promise = (async (): Promise<CacheEntry> => {
       const fetched = await fetchFn();
       const contentType = fetched.contentType ?? 'application/octet-stream';
-      const now = Date.now();
-      const meta: SidecarMeta = {
-        version: 1,
-        contentType,
-        etag: originalId(src),
-        width: 0,
-        height: 0,
-        format: '',
-        createdAt: now,
-        staleAt: now + timeToStale,
-        evictAt: now + timeToEvict,
-        src,
-      };
-      await this.writeBytesAndMeta(this.originalBytesPath(src, contentType), this.originalMetaPath(src), fetched.bytes, meta);
-      // The origin may switch formats between generations (png → webp), which
-      // changes the `original.<ext>` filename; drop any bytes left under the old
-      // extension so they don't linger until the next sweep.
-      await this.removeStaleOriginalBytes(src, extForContentType(contentType));
-      mochiEvents.emit('image:store', {
-        kind: 'original',
-        src,
-        path: this.originalBytesPath(src, contentType),
-        id: originalId(src),
-        size: fetched.bytes.byteLength,
-        contentType,
-        width: 0,
-        height: 0,
-        format: '',
+      // Persist under the meta lock so this write is serialized against
+      // invalidate/shorten. If an invalidation landed while we were fetching
+      // (epoch changed), don't resurrect it — return the current on-disk state.
+      return this.withOriginalMetaLock(src, async () => {
+        if ((this.originalEpoch.get(src) ?? 0) !== epochAtStart) {
+          const current = await this.readOriginalMeta(src);
+          return { bytes: fetched.bytes, meta: current ?? this.freshOriginalMeta(src, contentType, timeToStale, timeToEvict, Date.now()) };
+        }
+        const meta = this.freshOriginalMeta(src, contentType, timeToStale, timeToEvict, Date.now());
+        await this.writeBytesAndMeta(this.originalBytesPath(src, contentType), this.originalMetaPath(src), fetched.bytes, meta);
+        // The origin may switch formats between generations (png → webp), which
+        // changes the `original.<ext>` filename; drop any bytes left under the old
+        // extension so they don't linger until the next sweep.
+        await this.removeStaleOriginalBytes(src, extForContentType(contentType));
+        mochiEvents.emit('image:store', {
+          kind: 'original',
+          src,
+          path: this.originalBytesPath(src, contentType),
+          id: originalId(src),
+          size: fetched.bytes.byteLength,
+          contentType,
+          width: 0,
+          height: 0,
+          format: '',
+        });
+        return { bytes: fetched.bytes, meta };
       });
-      return { bytes: fetched.bytes, meta };
     })().finally(() => this.inflight.delete(key));
 
     this.inflight.set(key, promise);
@@ -522,6 +568,9 @@ export class ImageCache {
    */
   async invalidateOriginal(src: string, hard: boolean): Promise<void> {
     await this.withOriginalMetaLock(src, async () => {
+      // Bump inside the lock so a concurrent revalidation writing after us sees
+      // the new epoch and skips its resurrecting write.
+      this.originalEpoch.set(src, (this.originalEpoch.get(src) ?? 0) + 1);
       const meta = await this.readOriginalMeta(src);
       if (!meta) {
         return;
@@ -678,7 +727,7 @@ export class ImageCache {
    */
   async getPlaceholder(src: string): Promise<string | null> {
     try {
-      const raw = await readFile(this.placeholderPath(src), 'utf-8');
+      const raw = await Bun.file(this.placeholderPath(src)).text();
       const stored = JSON.parse(raw) as { dataUrl: string; originalCreatedAt: number };
       const orig = await this.readOriginalMeta(src);
       if (!orig || orig.createdAt !== stored.originalCreatedAt) {
@@ -691,10 +740,9 @@ export class ImageCache {
   }
 
   async setPlaceholder(src: string, dataUrl: string, originalCreatedAt: number): Promise<void> {
-    await mkdir(this.srcDir(src), { recursive: true });
     const path = this.placeholderPath(src);
     const json = JSON.stringify({ dataUrl, originalCreatedAt });
-    await writeFile(`${path}.tmp`, json);
+    await Bun.write(`${path}.tmp`, json); // Bun.write creates parent dirs
     await rename(`${path}.tmp`, path);
     mochiEvents.emit('image:store', {
       kind: 'placeholder',

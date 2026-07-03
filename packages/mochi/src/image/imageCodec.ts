@@ -2,10 +2,12 @@
  * Compact binary encoding for the image-request payload that travels (encrypted)
  * in the `?p=` query param. Replaces `JSON.stringify(req)` to keep the token
  * short: enums/booleans collapse into two control bytes, numbers become LEB128
- * varints, and the source URL is the trailing bytes. Fields that equal the
- * resolved server defaults are omitted and refilled on decode — the encoder
- * (`getResizedImage`/`getImage`) and decoder (`imageEndpoint`) share one process
- * and config, so the reconstruction is lossless.
+ * varints, and the source URL is the trailing bytes. Tokens are self-describing:
+ * a field is encoded whenever it is present (quality is always present), never
+ * merely "when it differs from the current default". A minted URL lives in
+ * browser/CDN/page caches, so decoding must not depend on the server config in
+ * effect at decode time — otherwise changing a default (e.g. `defaultQuality`)
+ * would silently re-render already-issued URLs.
  *
  * Layout (before encryption):
  *   byte 0  format(0-1) | fitFill(2) | autoOrient(3) | withoutEnlargement(4) | original(5) | hasWidth(6) | hasHeight(7)
@@ -14,8 +16,19 @@
  *   [utf-8 src ...]                                                                            (rest of buffer)
  */
 import type { ImageFit, ImageFormat, ImageRequest, ResolvedImageOptions } from './types';
+import { ImageError } from './types';
 
-const FORMATS: ImageFormat[] = ['webp', 'jpeg', 'png', 'avif'];
+const FORMATS = ['webp', 'jpeg', 'png', 'avif'] as const satisfies readonly ImageFormat[];
+
+// The format field is 2 bits (see layout above), so at most 4 formats fit. These
+// guards fail loudly if that invariant is broken rather than silently aliasing a
+// new format onto index 0 (webp): the runtime check catches a 5th FORMATS entry,
+// the type check catches an ImageFormat member missing from FORMATS.
+if (FORMATS.length > 4) {
+  throw new Error('imageCodec: format field is 2 bits — FORMATS cannot exceed 4 entries');
+}
+type _UncoveredFormat = Exclude<ImageFormat, (typeof FORMATS)[number]>;
+const _assertFormatsCovered: [_UncoveredFormat] extends [never] ? true : ['add these formats to FORMATS', _UncoveredFormat] = true;
 
 const FIT_FILL = 1 << 2;
 const AUTO_ORIENT = 1 << 3;
@@ -55,12 +68,15 @@ function readVarint(buf: Uint8Array, cursor: { i: number }): number {
   }
 }
 
-export function packImageRequest(req: ImageRequest, resolved: ResolvedImageOptions): Uint8Array {
-  const fmtIndex = Math.max(0, FORMATS.indexOf(req.format));
+export function packImageRequest(req: ImageRequest): Uint8Array {
+  const fmtIndex = FORMATS.indexOf(req.format);
+  if (fmtIndex < 0) {
+    throw new ImageError(500, `unsupported codec output format: ${req.format}`);
+  }
 
-  const hasQuality = req.quality !== resolved.defaultQuality;
-  const hasTimeToStale = req.timeToStale !== undefined && req.timeToStale !== resolved.timeToStale;
-  const hasTimeToEvict = req.timeToEvict !== undefined && req.timeToEvict !== resolved.timeToEvict;
+  const hasQuality = req.quality !== undefined;
+  const hasTimeToStale = req.timeToStale !== undefined;
+  const hasTimeToEvict = req.timeToEvict !== undefined;
 
   let control = fmtIndex & 0b11;
   if (req.fit === 'fill') {

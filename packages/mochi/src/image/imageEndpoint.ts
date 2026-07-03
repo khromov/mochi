@@ -5,6 +5,7 @@ import { originalId, variantId } from './imageCache';
 import { getMochiConfig } from '../mochiConfig';
 import { resizeImage } from './resize';
 import { ImageError } from './types';
+import type { ImageRequest, ResolvedImageOptions } from './types';
 
 function textResponse(status: number, message: string): Response {
   return new Response(message, {
@@ -42,6 +43,16 @@ export function imageCacheControl(timeToStaleMs: number, timeToEvictMs: number):
   const maxAge = Math.max(0, Math.floor(timeToStaleMs / 1000));
   const swr = Math.max(0, Math.floor((timeToEvictMs - timeToStaleMs) / 1000));
   return swr > 0 ? `public, max-age=${maxAge}, stale-while-revalidate=${swr}` : `public, max-age=${maxAge}`;
+}
+
+// The Cache-Control for both originals and variants: undefined in dev (so
+// edits/invalidations aren't fought by the browser cache), else derived from the
+// per-request TTL override the response actually used, falling back to defaults.
+export function resolveImageCacheControl(request: ImageRequest, options: ResolvedImageOptions, development: boolean): string | undefined {
+  if (development) {
+    return undefined;
+  }
+  return imageCacheControl(request.timeToStale ?? options.timeToStale, request.timeToEvict ?? options.timeToEvict);
 }
 
 /**
@@ -84,7 +95,7 @@ export function createImageHandler(): (req: Request) => Promise<Response> {
         // ETag carries the cache generation, so a re-fetched/invalidated source
         // yields a new ETag and a stale conditional request gets fresh bytes.
         const etag = `"${originalId(request.src)}-${createdAt}"`;
-        const cacheControl = development ? undefined : imageCacheControl(request.timeToStale ?? options.timeToStale, request.timeToEvict ?? options.timeToEvict);
+        const cacheControl = resolveImageCacheControl(request, options, development);
         if (req.headers.get('if-none-match') === etag) {
           return new Response(null, { status: 304, headers: { ETag: etag, 'X-Content-Type-Options': 'nosniff', ...(cacheControl ? { 'Cache-Control': cacheControl } : {}) } });
         }
@@ -133,9 +144,10 @@ export function createImageHandler(): (req: Request) => Promise<Response> {
       // ETag carries the served bytes' generation (bumped on regeneration), so
       // revalidation reflects the current content rather than the stable id.
       const etag = `"${variantId(request)}-${entry.meta.createdAt}"`;
-      // Variants follow the original's default window (they never carry their own
-      // TTL override), so the browser policy derives from the resolved defaults.
-      const cacheControl = development ? undefined : imageCacheControl(options.timeToStale, options.timeToEvict);
+      // Honour the per-request TTL override (the same one that fetched/shortened
+      // the shared original) — otherwise the browser could cache a variant far
+      // longer than the original's real window.
+      const cacheControl = resolveImageCacheControl(request, options, development);
       if (req.headers.get('if-none-match') === etag) {
         return new Response(null, { status: 304, headers: { ETag: etag, 'X-Content-Type-Options': 'nosniff', ...(cacheControl ? { 'Cache-Control': cacheControl } : {}) } });
       }

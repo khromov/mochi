@@ -11,8 +11,8 @@ import { encryptPayloadBytes, decryptPayloadBytes } from '../payloadCrypto';
 import { packImageRequest, unpackImageRequest } from './imageCodec';
 import type { ImageRequest, ResolvedImageOptions } from './types';
 
-export function encryptImageRequest(req: ImageRequest, filename: string, resolved: ResolvedImageOptions, compress = true): string {
-  return encryptPayloadBytes(packImageRequest(req, resolved), { aad: filename, compress });
+export function encryptImageRequest(req: ImageRequest, filename: string, compress = true): string {
+  return encryptPayloadBytes(packImageRequest(req), { aad: filename, compress });
 }
 
 export function decryptImageRequest(token: string, filename: string, resolved: ResolvedImageOptions): ImageRequest | null {

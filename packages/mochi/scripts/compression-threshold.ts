@@ -16,34 +16,13 @@
  */
 import { stringify } from 'devalue';
 import { packImageRequest } from '../src/image/imageCodec';
-import type { ImageFormat, ImageRequest, ResolvedImageOptions } from '../src/image/types';
+import type { ImageFormat, ImageRequest } from '../src/image/types';
 import { encryptPayloadBytes, decryptPayloadBytes } from '../src/payloadCrypto';
 
 // --- setup: the crypto fns read globalThis.__mochi_config__ (see payloadCrypto.test.ts) ---
 (globalThis as unknown as Record<string, unknown>).__mochi_config__ = {
   options: {},
   secretKey: Buffer.from('compression-threshold-script-key'),
-};
-
-// Only defaultQuality / timeToStale / timeToEvict are read by packImageRequest;
-// the rest are filled to satisfy the type with the documented defaults.
-const resolvedImage: ResolvedImageOptions = {
-  enabled: true,
-  cacheDir: './.mochi/image-cache',
-  defaultFormat: 'webp',
-  defaultQuality: 80,
-  outputFormats: ['webp', 'jpeg', 'png', 'avif'],
-  inputFormats: ['jpeg', 'png', 'webp', 'avif', 'gif'],
-  maxPixels: 50_000_000,
-  autoOrient: true,
-  allowedHosts: undefined,
-  blockPrivateNetworks: true,
-  fetchTimeoutMs: 10_000,
-  maxResponseBytes: 20 * 1024 * 1024,
-  timeToStale: 14_400_000,
-  timeToEvict: 86_400_000,
-  compressPayload: true,
-  sweepIntervalMs: 3_600_000,
 };
 
 type Category = 'image' | 'devalue';
@@ -62,7 +41,7 @@ const FORMATS: ImageFormat[] = ['webp', 'jpeg', 'png', 'avif'];
 
 function buildImageSamples(): Sample[] {
   const samples: Sample[] = [];
-  const push = (label: string, req: ImageRequest) => samples.push({ category: 'image', label, bytes: packImageRequest(req, resolvedImage) });
+  const push = (label: string, req: ImageRequest) => samples.push({ category: 'image', label, bytes: packImageRequest(req) });
 
   // Short / typical real URLs across a few option combos.
   push('short png 200x200', imageReq());

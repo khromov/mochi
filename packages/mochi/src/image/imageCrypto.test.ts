@@ -40,18 +40,18 @@ describe('encryptImageRequest + decryptImageRequest', () => {
   test('round-trips the request', () => {
     installConfig();
     const r = req();
-    expect(decryptImageRequest(encryptImageRequest(r, NAME, RESOLVED), NAME, RESOLVED)).toEqual(r);
+    expect(decryptImageRequest(encryptImageRequest(r, NAME), NAME, RESOLVED)).toEqual(r);
   });
 
   test('token is opaque ciphertext — src not readable', () => {
     installConfig();
-    const token = encryptImageRequest(req({ src: 'https://internal.evil/secret' }), NAME, RESOLVED);
+    const token = encryptImageRequest(req({ src: 'https://internal.evil/secret' }), NAME);
     expect(Buffer.from(token, 'base64url').toString('utf-8')).not.toContain('internal.evil');
   });
 
   test('rejects a tampered payload', () => {
     installConfig();
-    const token = encryptImageRequest(req(), NAME, RESOLVED);
+    const token = encryptImageRequest(req(), NAME);
     const mid = Math.floor(token.length / 2);
     const tampered = token.slice(0, mid) + (token[mid] === 'A' ? 'B' : 'A') + token.slice(mid + 1);
     expect(decryptImageRequest(tampered, NAME, RESOLVED)).toBeNull();
@@ -59,21 +59,21 @@ describe('encryptImageRequest + decryptImageRequest', () => {
 
   test('rejects a tampered filename (AAD mismatch)', () => {
     installConfig();
-    const token = encryptImageRequest(req(), NAME, RESOLVED);
+    const token = encryptImageRequest(req(), NAME);
     expect(decryptImageRequest(token, 'evil-200x200.webp', RESOLVED)).toBeNull();
   });
 
   test('round-trips a long src (compressed path)', () => {
     installConfig();
     const r = req({ src: 'https://example.com/' + 'segment/'.repeat(40) + 'image.png' });
-    expect(decryptImageRequest(encryptImageRequest(r, NAME, RESOLVED), NAME, RESOLVED)).toEqual(r);
+    expect(decryptImageRequest(encryptImageRequest(r, NAME), NAME, RESOLVED)).toEqual(r);
   });
 
   test('compress=false skips compression but still round-trips', () => {
     installConfig();
     const r = req({ src: 'https://example.com/' + 'segment/'.repeat(40) + 'image.png' });
-    const compressed = encryptImageRequest(r, NAME, RESOLVED, true);
-    const raw = encryptImageRequest(r, NAME, RESOLVED, false);
+    const compressed = encryptImageRequest(r, NAME, true);
+    const raw = encryptImageRequest(r, NAME, false);
     expect(raw.length).toBeGreaterThan(compressed.length);
     expect(decryptImageRequest(raw, NAME, RESOLVED)).toEqual(r);
   });
@@ -82,13 +82,13 @@ describe('encryptImageRequest + decryptImageRequest', () => {
     installConfig();
     const r = req({ original: true });
     const name = 'a-original.png';
-    expect(decryptImageRequest(encryptImageRequest(r, name, RESOLVED), name, RESOLVED)).toEqual(r);
+    expect(decryptImageRequest(encryptImageRequest(r, name), name, RESOLVED)).toEqual(r);
   });
 
   test('binary token is shorter than the equivalent JSON-based token', () => {
     installConfig();
     const r = req({ format: 'jpeg', quality: 60, width: 400, height: 400 });
-    const token = encryptImageRequest(r, NAME, RESOLVED);
+    const token = encryptImageRequest(r, NAME);
     const jsonToken = encryptPayload(JSON.stringify(r), { aad: NAME });
     expect(token.length).toBeLessThan(jsonToken.length);
   });
@@ -102,28 +102,28 @@ describe('wire-format snapshots (fixed MOCHI_KEY)', () => {
   test('resize with all defaults', () => {
     installConfig();
     const r = req();
-    expect(encryptImageRequest(r, 'a-200x200.webp', RESOLVED)).toBe('EdVTtzw_Z4DaPuSxmghJY1kpV6Ub7g70Hx7-PbCmGSWySMCm2nNom-TDB73mN4nz');
-    expect(decryptImageRequest(encryptImageRequest(r, 'a-200x200.webp', RESOLVED), 'a-200x200.webp', RESOLVED)).toEqual(r);
+    expect(encryptImageRequest(r, 'a-200x200.webp')).toBe('mIPeMUNWobp8YMM_6uEcPyqNdQM6ILXjk7futwWfAohYkimtw4XeMT1RZph18wA43Q');
+    expect(decryptImageRequest(encryptImageRequest(r, 'a-200x200.webp'), 'a-200x200.webp', RESOLVED)).toEqual(r);
   });
 
   test('resize with non-default format/quality/fit/withoutEnlargement', () => {
     installConfig();
     const r = req({ width: 400, height: 400, fit: 'fill', format: 'jpeg', quality: 60, withoutEnlargement: true });
-    expect(encryptImageRequest(r, 'a-400x400.jpg', RESOLVED)).toBe('dRS2gS0oBXb_kz2ASp3WEZPtlixmT5zDoKR5l1x5NqH3-MZEVHC0sRzsV0j5gEZEVg');
-    expect(decryptImageRequest(encryptImageRequest(r, 'a-400x400.jpg', RESOLVED), 'a-400x400.jpg', RESOLVED)).toEqual(r);
+    expect(encryptImageRequest(r, 'a-400x400.jpg')).toBe('dRS2gS0oBXb_kz2ASp3WEZPtlixmT5zDoKR5l1x5NqH3-MZEVHC0sRzsV0j5gEZEVg');
+    expect(decryptImageRequest(encryptImageRequest(r, 'a-400x400.jpg'), 'a-400x400.jpg', RESOLVED)).toEqual(r);
   });
 
   test('full-size original', () => {
     installConfig();
     const r = req({ width: undefined, height: undefined, original: true });
-    expect(encryptImageRequest(r, 'a-original.png', RESOLVED)).toBe('uPauTzXa_G33yy6NKYv3xwfiC1k_D5OE4hFYoe8-okCREQQ7bogHS2zMBog');
-    expect(decryptImageRequest(encryptImageRequest(r, 'a-original.png', RESOLVED), 'a-original.png', RESOLVED)).toEqual(r);
+    expect(encryptImageRequest(r, 'a-original.png')).toBe('II07KeM11dybktl_Q_w8q1PhqJ_8VLkwQzHQydaumaiThOO_tTh-Iif3cQDc');
+    expect(decryptImageRequest(encryptImageRequest(r, 'a-original.png'), 'a-original.png', RESOLVED)).toEqual(r);
   });
 
   test('long src exercises the compressed path', () => {
     installConfig();
     const r = req({ src: 'https://example.com/' + 'segment/'.repeat(40) + 'image.png' });
-    expect(encryptImageRequest(r, 'a-200x200.webp', RESOLVED)).toBe('Kl4mm058MWQUNWkczDt0BCg0PMgNAZ1jLgaHArr5Wl3vTGUFXWARVCib5S4U56PoYcBgwIX30VK3Kbg8BQMexldflw');
-    expect(decryptImageRequest(encryptImageRequest(r, 'a-200x200.webp', RESOLVED), 'a-200x200.webp', RESOLVED)).toEqual(r);
+    expect(encryptImageRequest(r, 'a-200x200.webp')).toBe('lsaKrfJThxCvq58RbM-_0d5w4ggZHjpek32G05lgbaoPIMH5xHi5eCxkJHttrz190s5sREbTByaPgFwPqppnn5DwtAI');
+    expect(decryptImageRequest(encryptImageRequest(r, 'a-200x200.webp'), 'a-200x200.webp', RESOLVED)).toEqual(r);
   });
 });

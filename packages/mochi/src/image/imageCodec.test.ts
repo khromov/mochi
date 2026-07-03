@@ -19,7 +19,7 @@ function req(over: Partial<ImageRequest> = {}): ImageRequest {
 }
 
 function roundTrip(r: ImageRequest): ImageRequest | null {
-  return unpackImageRequest(packImageRequest(r, RESOLVED), RESOLVED);
+  return unpackImageRequest(packImageRequest(r), RESOLVED);
 }
 
 describe('packImageRequest + unpackImageRequest', () => {
@@ -28,12 +28,30 @@ describe('packImageRequest + unpackImageRequest', () => {
     expect(roundTrip(r)).toEqual(r);
   });
 
-  test('omits default fields and refills them on decode', () => {
-    const r = req(); // quality/format/autoOrient equal the resolved defaults; timeToStale/timeToEvict absent
-    const packed = packImageRequest(r, RESOLVED);
-    // 2 control bytes + width varint(2) + height varint(2) — no quality/timeToStale/timeToEvict — then the trailing utf-8 src.
-    expect(packed.length).toBe(2 + 2 + 2 + Buffer.byteLength(r.src));
+  test('always encodes quality; omits only truly-absent optional fields', () => {
+    const r = req(); // quality equals the default, but is still encoded; timeToStale/timeToEvict absent
+    const packed = packImageRequest(r);
+    // 2 control bytes + width varint(2) + height varint(2) + quality(1) — no timeToStale/timeToEvict — then the trailing utf-8 src.
+    expect(packed.length).toBe(2 + 2 + 2 + 1 + Buffer.byteLength(r.src));
     expect(unpackImageRequest(packed, RESOLVED)).toEqual(r);
+  });
+
+  test('a token is self-describing: a later config default change does not reinterpret it', () => {
+    // Mint with quality equal to config A's default and TTLs equal to A's defaults.
+    const configA = resolveImageOptions({ defaultQuality: 80, timeToStale: 111, timeToEvict: 222 });
+    const r = req({ quality: configA.defaultQuality, timeToStale: configA.timeToStale, timeToEvict: configA.timeToEvict });
+    const packed = packImageRequest(r);
+    // Decode under a DIFFERENT config: the decoded values must still be config A's,
+    // not config B's defaults.
+    const configB = resolveImageOptions({ defaultQuality: 50, timeToStale: 999, timeToEvict: 1_000 });
+    const decoded = unpackImageRequest(packed, configB);
+    expect(decoded?.quality).toBe(80);
+    expect(decoded?.timeToStale).toBe(111);
+    expect(decoded?.timeToEvict).toBe(222);
+  });
+
+  test('throws on an output format the 2-bit codec field cannot represent', () => {
+    expect(() => packImageRequest(req({ format: 'gif' as ImageFormat }))).toThrow();
   });
 
   test('round-trips a request with no width/height', () => {

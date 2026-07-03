@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { imageCacheControl, safeOriginalContentType } from './imageEndpoint';
+import { imageCacheControl, resolveImageCacheControl, safeOriginalContentType } from './imageEndpoint';
+import { resolveImageOptions } from './config';
+import type { ImageRequest } from './types';
+
+function req(over: Partial<ImageRequest> = {}): ImageRequest {
+  return { src: 'https://example.com/a.png', width: 200, fit: 'inside', format: 'webp', quality: 80, autoOrient: true, ...over };
+}
 
 describe('imageCacheControl', () => {
   test('derives max-age (s) from time-to-stale and SWR from the rest of the evict window', () => {
@@ -17,6 +23,24 @@ describe('imageCacheControl', () => {
 
   test('floors sub-second windows to whole seconds', () => {
     expect(imageCacheControl(1_500, 2_900)).toBe('public, max-age=1, stale-while-revalidate=1');
+  });
+});
+
+describe('resolveImageCacheControl (per-request TTL override)', () => {
+  const options = resolveImageOptions({ timeToStale: 14_400_000, timeToEvict: 86_400_000 });
+
+  test('a per-request TTL drives max-age, not the resolved default', () => {
+    // Request asks for a 60s stale / 120s evict window; the browser policy must
+    // reflect that, not the 4h default.
+    expect(resolveImageCacheControl(req({ timeToStale: 60_000, timeToEvict: 120_000 }), options, false)).toBe('public, max-age=60, stale-while-revalidate=60');
+  });
+
+  test('falls back to the resolved defaults when the request carries no TTL', () => {
+    expect(resolveImageCacheControl(req(), options, false)).toBe('public, max-age=14400, stale-while-revalidate=72000');
+  });
+
+  test('omits Cache-Control entirely in development', () => {
+    expect(resolveImageCacheControl(req({ timeToStale: 60_000 }), options, true)).toBeUndefined();
   });
 });
 

@@ -347,3 +347,7 @@ await Mochi.serve({
   routes,
 });
 ```
+
+<Callout type="danger">
+Only rewrite the **origin/prefix** — never the last path segment (the `filename`). That segment is authenticated (bound as AAD to the encrypted token), so the image endpoint re-derives it from the served path and rejects (403) any request whose filename was changed. Rewriting the host/prefix is safe; renaming `photo-500x500.webp` is not. Mochi logs a warning if a filter changes the filename.
+</Callout>

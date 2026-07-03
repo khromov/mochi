@@ -15,6 +15,23 @@ import { getMochiConfig } from './mochiConfig';
 import { requestContext } from './requestContext';
 import { encryptPayload, decryptPayload } from './payloadCrypto';
 
+// TODO: Replace with some package?
+// devalue carries rich types (BigInt, Map, Set) that plain JSON.stringify can't:
+// BigInt throws, Map/Set collapse to `{}`. Coerce them to a JSON-safe shape so
+// the debug-bar snapshot renders them instead of silently dropping the island.
+function jsonSafeReplacer(_key: string, value: unknown): unknown {
+  if (typeof value === 'bigint') {
+    return `${value}n`;
+  }
+  if (value instanceof Map) {
+    return Object.fromEntries(value);
+  }
+  if (value instanceof Set) {
+    return Array.from(value);
+  }
+  return value;
+}
+
 export function encryptProps(propsJson: string, componentName: string): string {
   const { options } = getMochiConfig();
   const token = encryptPayload(propsJson, { aad: componentName, compress: options.compressServerIslandProps ?? true });
@@ -26,7 +43,7 @@ export function encryptProps(propsJson: string, componentName: string): string {
   try {
     const ctx = requestContext.getStore();
     if (ctx?.debugBarData?.serverProps) {
-      ctx.debugBarData.serverProps[token] = JSON.stringify(devalParse(propsJson), null, 2);
+      ctx.debugBarData.serverProps[token] = JSON.stringify(devalParse(propsJson), jsonSafeReplacer, 2);
     }
   } catch {
     // Debug recording is best-effort; ignore failures.

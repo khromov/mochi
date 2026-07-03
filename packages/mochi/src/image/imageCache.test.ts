@@ -207,6 +207,45 @@ describe('ImageCache variant (lifetime follows the original)', () => {
   });
 });
 
+describe('ImageCache.readConsistentVariant (torn-read guard)', () => {
+  function metaGen(createdAt: number): SidecarMeta {
+    return {
+      version: 1,
+      contentType: 'image/webp',
+      etag: 'v',
+      width: 1,
+      height: 1,
+      format: 'webp',
+      createdAt,
+      staleAt: createdAt + 1_000,
+      evictAt: createdAt + 2_000,
+      src: SRC,
+      originalCreatedAt: createdAt,
+    };
+  }
+
+  test('never pairs an old sidecar with newer bytes', async () => {
+    const cache = new ImageCache(tmp());
+    // Simulate a concurrent write: the first sidecar read reports generation 1,
+    // but the bytes (and every later sidecar read) are generation 2. The helper
+    // must reject the {gen1 meta, gen2 bytes} torn pair and return a consistent one.
+    const metaSeq = [metaGen(1), metaGen(2), metaGen(2), metaGen(2), metaGen(2)];
+    let i = 0;
+    const stub = cache as unknown as {
+      readMetaFor: () => Promise<SidecarMeta | null>;
+      readBytesFor: () => Promise<Uint8Array | null>;
+      readConsistentVariant(src: string, id: string, ext: string): Promise<{ bytes: Uint8Array; meta: SidecarMeta } | null>;
+    };
+    stub.readMetaFor = async () => metaSeq[i++] ?? metaGen(2);
+    stub.readBytesFor = async () => new TextEncoder().encode('gen2');
+
+    const entry = await stub.readConsistentVariant(SRC, 'v', 'webp');
+    expect(entry).not.toBeNull();
+    expect(entry!.meta.createdAt).toBe(2); // matches the bytes' generation, not the torn gen1
+    expect(new TextDecoder().decode(entry!.bytes)).toBe('gen2');
+  });
+});
+
 describe('ImageCache.getOriginal', () => {
   test('miss regenerates, preserves content-type; subsequent read is fresh', async () => {
     const cache = new ImageCache(tmp());
@@ -369,6 +408,36 @@ describe('ImageCache.invalidateOriginal', () => {
     const after = readOrigMeta(dir);
     expect(after.staleAt).toBeLessThanOrEqual(invalidated.staleAt);
     expect(after.evictAt).toBeLessThanOrEqual(invalidated.evictAt);
+  });
+
+  test('an in-flight background revalidation cannot resurrect a hard invalidation', async () => {
+    const dir = tmp();
+    const cache = new ImageCache(dir);
+    await cache.getOriginal(SRC, 60_000, 86_400_000, origFn('o'));
+
+    // Start a revalidation whose fetch is parked, then hard-invalidate while it's
+    // in flight. When the fetch finally resolves, its write must not reset the
+    // window that the invalidation expired.
+    let resolveFetch!: (v: { bytes: Uint8Array; contentType: string | null }) => void;
+    const gate = new Promise<{ bytes: Uint8Array; contentType: string | null }>((res) => {
+      resolveFetch = res;
+    });
+    const revalidate = (
+      cache as unknown as {
+        revalidateOriginal(src: string, ts: number, te: number, fn: () => Promise<{ bytes: Uint8Array; contentType: string | null }>): Promise<unknown>;
+      }
+    ).revalidateOriginal(SRC, 60_000, 86_400_000, () => gate);
+
+    await cache.invalidateOriginal(SRC, true);
+    const invalidated = readOrigMeta(dir);
+
+    resolveFetch({ bytes: new TextEncoder().encode('late'), contentType: 'image/jpeg' });
+    await revalidate;
+
+    const after = readOrigMeta(dir);
+    // Still expired (≈ now), NOT reset to a fresh now + 86_400_000 window.
+    expect(after.evictAt).toBeLessThanOrEqual(invalidated.evictAt);
+    expect(after.evictAt).toBeLessThanOrEqual(Date.now());
   });
 });
 
