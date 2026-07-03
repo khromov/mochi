@@ -81,6 +81,26 @@ describe('Mochi.email()', () => {
     expect(captured!.text).toBe('Hi there'); // derived from html
   });
 
+  test('derived plain-text keeps literal angle brackets and does not double-decode entities', async () => {
+    let captured: ResolvedEmailMessage | undefined;
+    useTransport({
+      type: 'custom',
+      send: (msg) => {
+        captured = msg;
+      },
+    });
+
+    // `a < b and c > d` is body text (not markup) and `&amp;lt;` is an escaped
+    // entity that must survive as the literal `&lt;`.
+    await Mochi.email({
+      to: 'user@example.com',
+      subject: 'Edge cases',
+      html: '<p>if a < b and c > d — use &amp;lt;br&amp;gt; &amp; go</p>',
+    });
+
+    expect(captured!.text).toBe('if a < b and c > d — use &lt;br&gt; & go');
+  });
+
   test('SMTP transport delivers to a test server', async () => {
     const smtp: FakeSmtpServer = startFakeSmtpServer();
     useTransport({ type: 'smtp', host: '127.0.0.1', port: smtp.port, secure: false });

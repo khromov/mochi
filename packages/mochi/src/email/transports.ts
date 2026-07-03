@@ -53,6 +53,7 @@ type NodemailerTransporter = {
 class SmtpTransport implements EmailTransport {
   readonly name = 'smtp' as const;
   private transporterPromise: Promise<NodemailerTransporter> | undefined;
+  private readonly inFlight = new Set<Promise<MochiEmailResult>>();
 
   constructor(private readonly config: Extract<MochiEmailTransportConfig, { type: 'smtp' }>) {}
 
@@ -86,7 +87,16 @@ class SmtpTransport implements EmailTransport {
     }) as unknown as NodemailerTransporter;
   }
 
-  async send(message: ResolvedEmailMessage): Promise<MochiEmailResult> {
+  send(message: ResolvedEmailMessage): Promise<MochiEmailResult> {
+    // Track the whole operation (transporter build + sendMail) so close() can
+    // drain it before tearing down a pooled connection — otherwise a shutdown
+    // mid-send closes the pool out from under an in-flight delivery.
+    const op = this.deliver(message);
+    this.inFlight.add(op);
+    return op.finally(() => this.inFlight.delete(op));
+  }
+
+  private async deliver(message: ResolvedEmailMessage): Promise<MochiEmailResult> {
     const transporter = await this.getTransporter();
     const info = await transporter.sendMail({
       from: message.from,
@@ -114,6 +124,9 @@ class SmtpTransport implements EmailTransport {
     if (!pending) {
       return;
     }
+    // Let in-flight sends settle before closing so a message mid-delivery isn't
+    // killed by the pool teardown.
+    await Promise.allSettled(this.inFlight);
     // Await the in-flight build so a pool that finishes constructing mid-shutdown
     // is still closed rather than orphaned. Swallow a build that rejected — there
     // is nothing to close.

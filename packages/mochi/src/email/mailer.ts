@@ -14,16 +14,23 @@ function toArray(value: string | string[] | undefined): string[] | undefined {
 
 /** Naive HTML → plain-text fallback so HTML mails stay multipart. */
 function htmlToText(html: string): string {
-  return html
-    .replace(/<style[\s\S]*?<\/style>/gi, '')
-    .replace(/<script[\s\S]*?<\/script>/gi, '')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&amp;/gi, '&')
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>')
-    .replace(/\s+/g, ' ')
-    .trim();
+  return (
+    html
+      .replace(/<style[\s\S]*?<\/style>/gi, '')
+      .replace(/<script[\s\S]*?<\/script>/gi, '')
+      // Only strip things that actually look like a tag — the name starts with a
+      // letter, `/`, `!`, or `?`. A literal `a < b` in body text (no tag name
+      // after `<`) is left intact instead of being swallowed as a bogus tag.
+      .replace(/<\/?[a-zA-Z!?][^>]*>/g, ' ')
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/&lt;/gi, '<')
+      .replace(/&gt;/gi, '>')
+      // Decode `&amp;` LAST: an escaped entity like `&amp;lt;` must resolve to the
+      // literal text `&lt;`, not be double-decoded into `<`.
+      .replace(/&amp;/gi, '&')
+      .replace(/\s+/g, ' ')
+      .trim()
+  );
 }
 
 /**

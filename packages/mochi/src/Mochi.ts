@@ -1459,8 +1459,15 @@ export class Mochi {
       const sweeperStop = stopImageSweeper;
       const stopServer = server.stop.bind(server);
       server.stop = (async (closeActiveConnections?: boolean) => {
-        sweeperStop?.();
-        await closeEmailTransport();
+        // Subsystem cleanup must never gate the socket close: a transport whose
+        // close() throws (e.g. a nodemailer pool) would otherwise leave the
+        // listener open and hang shutdown. Best-effort, then always stop.
+        try {
+          sweeperStop?.();
+          await closeEmailTransport();
+        } catch (err) {
+          logger.warn(`Subsystem cleanup failed during shutdown: ${err instanceof Error ? err.message : err}`);
+        }
         return stopServer(closeActiveConnections);
       }) as typeof server.stop;
     }
