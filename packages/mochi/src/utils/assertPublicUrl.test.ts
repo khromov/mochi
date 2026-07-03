@@ -1,15 +1,14 @@
 import { describe, expect, test } from 'bun:test';
-import { assertAllowedSource } from './ssrfGuard';
-import type { SsrfGuardOptions } from './ssrfGuard';
-import { ImageError } from './types';
+import { assertPublicUrl, SsrfGuardError } from './assertPublicUrl';
+import type { UrlGuardOptions } from './assertPublicUrl';
 
-const block: SsrfGuardOptions = { allowedHosts: undefined, blockPrivateNetworks: true };
+const block: UrlGuardOptions = { allowedHosts: undefined, blockPrivateNetworks: true };
 
-async function expectBlocked(src: string, opts: SsrfGuardOptions = block) {
-  await expect(assertAllowedSource(src, opts)).rejects.toBeInstanceOf(ImageError);
+async function expectBlocked(src: string, opts: UrlGuardOptions = block) {
+  await expect(assertPublicUrl(src, opts)).rejects.toBeInstanceOf(SsrfGuardError);
 }
 
-describe('assertAllowedSource', () => {
+describe('assertPublicUrl', () => {
   test('rejects localhost and loopback', async () => {
     await expectBlocked('http://localhost/a.png');
     await expectBlocked('http://127.0.0.1/a.png');
@@ -37,7 +36,7 @@ describe('assertAllowedSource', () => {
   });
 
   test('still allows a genuinely public IPv6 (no false positive)', async () => {
-    const url = await assertAllowedSource('https://[2606:4700:4700::1111]/a.png', block);
+    const url = await assertPublicUrl('https://[2606:4700:4700::1111]/a.png', block);
     expect(url.hostname).toBe('[2606:4700:4700::1111]');
   });
 
@@ -47,19 +46,19 @@ describe('assertAllowedSource', () => {
   });
 
   test('allows a public IP literal', async () => {
-    const url = await assertAllowedSource('https://8.8.8.8/a.png', block);
+    const url = await assertPublicUrl('https://8.8.8.8/a.png', block);
     expect(url.hostname).toBe('8.8.8.8');
   });
 
   test('allows a public IPv6 literal (brackets stripped for the IP check, no DNS)', async () => {
-    const url = await assertAllowedSource('https://[2606:4700::6810:84e5]/a.png', block);
+    const url = await assertPublicUrl('https://[2606:4700::6810:84e5]/a.png', block);
     expect(url.hostname).toBe('[2606:4700::6810:84e5]');
   });
 
   test('enforces an allowlist (exact + wildcard) without DNS', async () => {
     const opts = { allowedHosts: ['cdn.example.com', '*.images.net'], blockPrivateNetworks: false };
-    expect((await assertAllowedSource('https://cdn.example.com/a.png', opts)).hostname).toBe('cdn.example.com');
-    expect((await assertAllowedSource('https://foo.images.net/a.png', opts)).hostname).toBe('foo.images.net');
+    expect((await assertPublicUrl('https://cdn.example.com/a.png', opts)).hostname).toBe('cdn.example.com');
+    expect((await assertPublicUrl('https://foo.images.net/a.png', opts)).hostname).toBe('foo.images.net');
     await expectBlocked('https://evil.com/a.png', opts);
     await expectBlocked('https://images.net/a.png', opts); // bare apex doesn't match *.images.net
   });

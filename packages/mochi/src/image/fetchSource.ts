@@ -1,4 +1,4 @@
-import { assertAllowedSource } from './ssrfGuard';
+import { assertPublicUrl, SsrfGuardError } from '../utils/assertPublicUrl';
 import { applyFilter } from '../extensions';
 import { ImageError } from './types';
 import type { ResolvedImageOptions } from './types';
@@ -22,10 +22,18 @@ export async function fetchImageSource(src: string, opts: ResolvedImageOptions):
   let target = src;
   let res: Response;
   for (let hop = 0; ; hop++) {
-    const url = await assertAllowedSource(target, {
-      allowedHosts: opts.allowedHosts,
-      blockPrivateNetworks: opts.blockPrivateNetworks,
-    });
+    let url: URL;
+    try {
+      url = await assertPublicUrl(target, {
+        allowedHosts: opts.allowedHosts,
+        blockPrivateNetworks: opts.blockPrivateNetworks,
+      });
+    } catch (e) {
+      if (e instanceof SsrfGuardError) {
+        throw new ImageError(400, e.message);
+      }
+      throw e;
+    }
 
     try {
       res = await fetch(url, {
