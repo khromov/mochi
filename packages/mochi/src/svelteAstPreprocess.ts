@@ -493,12 +493,14 @@ function buildPropsFromAst(source: string, attributes: Array<AST.Attribute | AST
           const tpl = parts
             .map((v) => {
               if (v.type === 'Text') {
+                // TODO: This is a bit jank and should be refactored
                 return v.data.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$\{/g, '\\${');
               }
               const expr = v.expression as unknown as Positioned;
               return '${' + source.slice(expr.start, expr.end) + '}';
             })
             .join('');
+          // TODO: This is a bit jank and should be refactored
           entries.push(`${attr.name}: \`${tpl}\``);
         }
       }
