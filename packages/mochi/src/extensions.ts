@@ -76,9 +76,12 @@ export interface MochiFilterValue {
   'cookie:defaults': CookieSerializeOptions;
   'html:shell': string;
   'serverIsland:secretKey': Buffer;
+  'payload:compressMinBytes': number;
   'compile:preprocessors': PreprocessorGroup[];
   'publicDir:scan': Map<string, string>;
   'consoleLogger:line': string;
+  'image:maxRedirects': number;
+  'image:url': string;
 }
 
 // Optional per-filter override for the *return* type when it differs from the
@@ -98,6 +101,7 @@ export interface MochiFilterContext {
   'cookie:defaults': { options: MochiServeOptions };
   'html:shell': { options: MochiServeOptions; development: boolean };
   'serverIsland:secretKey': { options: MochiServeOptions; envKeyPresent: boolean };
+  'payload:compressMinBytes': { options: MochiServeOptions; payload: Uint8Array };
   'compile:preprocessors': {
     filename: string;
     target: 'server' | 'client';
@@ -118,6 +122,8 @@ export interface MochiFilterContext {
     /** The originating `mochiEvents` event. Narrow on `source.name` for typed access to per-event fields. */
     source: ConsoleLoggerSource;
   };
+  'image:maxRedirects': { src: string };
+  'image:url': { src: string; filename: string; original: boolean };
 }
 
 export interface MochiFilterKindMap {
@@ -129,9 +135,12 @@ export interface MochiFilterKindMap {
   'cookie:defaults': 'sync';
   'html:shell': 'sync';
   'serverIsland:secretKey': 'async';
+  'payload:compressMinBytes': 'sync';
   'compile:preprocessors': 'sync';
   'publicDir:scan': 'async';
   'consoleLogger:line': 'sync';
+  'image:maxRedirects': 'sync';
+  'image:url': 'sync';
 }
 
 type FilterReturn<K extends keyof MochiFilterValue> = K extends keyof MochiFilterReturn ? MochiFilterReturn[K] : MochiFilterValue[K];
@@ -167,9 +176,12 @@ const FILTER_KINDS: { [K in keyof MochiFilterValue]: MochiKind } = {
   'cookie:defaults': 'sync',
   'html:shell': 'sync',
   'serverIsland:secretKey': 'async',
+  'payload:compressMinBytes': 'sync',
   'compile:preprocessors': 'sync',
   'publicDir:scan': 'async',
   'consoleLogger:line': 'sync',
+  'image:maxRedirects': 'sync',
+  'image:url': 'sync',
 };
 
 // Pinned on globalThis so duplicate bundled copies of mochi-framework share one

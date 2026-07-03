@@ -9,10 +9,10 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import type { Server } from 'bun';
 import { stringify as devalueStringify } from 'devalue';
-import { build } from './build';
+import { runIsolatedBuild } from './utils/runIsolatedBuild';
 import { Mochi } from './Mochi';
 import { logger } from './log';
-import { signProps } from './serverIslandCrypto';
+import { encryptProps } from './serverIslandCrypto';
 import type { MochiManifest } from './types';
 
 const FIXTURE_PAGE = path.join(import.meta.dir, '__fixtures__', 'server-island-endpoint', 'Page.svelte');
@@ -31,12 +31,15 @@ describe('server-island manifest miss', () => {
 
   test('warns and falls back to an on-demand compile instead of 404ing or crashing', async () => {
     const outDir = freshOutDir();
-    await build({ routes: { '/': Mochi.page(FIXTURE_PAGE) }, development: false, outDir });
+    await runIsolatedBuild(FIXTURE_PAGE, outDir);
 
     const manifestPath = path.join(outDir, 'manifest.json');
     const manifest: MochiManifest = JSON.parse(await Bun.file(manifestPath).text());
-    const echoPath = manifest.serverIslandPaths?.Echo;
-    expect(echoPath, 'expected Echo in serverIslandPaths').toBeDefined();
+    // Islands are keyed by `<localName>_<hash>` (see islandIdentity), not the bare
+    // import name; recover the concrete `Echo_…` key from the manifest.
+    const echoKey = Object.keys(manifest.serverIslandPaths ?? {}).find((k) => k.startsWith('Echo_'));
+    expect(echoKey, 'expected Echo in serverIslandPaths').toBeDefined();
+    const echoPath = manifest.serverIslandPaths![echoKey!];
     // Simulate the gap: discovery found Echo, but it never made it into
     // `components` (e.g. a future bug in the precompile pass).
     delete manifest.components[echoPath!];
@@ -54,11 +57,11 @@ describe('server-island manifest miss', () => {
         routes: { '/': Mochi.page(FIXTURE_PAGE) },
       });
       const base = `http://localhost:${server.port}`;
-      const props = signProps(devalueStringify({ name: 'World' }));
-      const res = await fetch(`${base}/_mochi/island/Echo?props=${encodeURIComponent(props)}`);
+      const props = encryptProps(devalueStringify({ name: 'World' }), echoKey!);
+      const res = await fetch(`${base}/_mochi/island/${echoKey}?props=${encodeURIComponent(props)}`);
       expect(res.status).toBe(200);
       expect(await res.text()).toContain('>World<');
-      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Server island "Echo" was missing from the prebuilt manifest'));
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining(`Server island "${echoKey}" was missing from the prebuilt manifest`));
     } finally {
       warnSpy.mockRestore();
       server?.stop(true);

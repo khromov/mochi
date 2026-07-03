@@ -62,6 +62,7 @@ describe('recompile* batches into one compileAll + one buildClientBundle per cyc
       for (const filename of todo) {
         const stub: HydratableComponent = {
           name: `Stub_${path.basename(filename, '.svelte')}`,
+          displayName: path.basename(filename, '.svelte'),
           resolvedPath: filename,
         };
         internals.compiledComponents.set(filename, {

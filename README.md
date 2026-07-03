@@ -10,7 +10,7 @@ An SSR framework for [Svelte 5](https://svelte.dev/) + [Bun](https://bun.sh/) wi
 bun create mochi@latest
 ```
 
-(Requires `Bun >= 1.3.13`, [Why Bun?](https://mochi.fast/docs/why-bun/))
+(Requires `Bun >= 1.3.14`, [Why Bun?](https://mochi.fast/docs/why-bun/))
 
 ## Documentation
 

@@ -30,6 +30,8 @@ Event names use a `namespace:action` convention. Every key is in the typed `Moch
 - [`client-bundle:complete`](#client-bundlecomplete) — hydratable client bundle finished
 - [`island:error`](#islanderror) — a hydratable, server, or client-hydrate island errored
 - [`file:change`](#filechange) — dev-only file watcher
+- [`image:store`](#imagestore), [`image:delete`](#imagedelete) — [`<Image>`](/docs/images/) cache file written / removed
+- `image:cache-sweep` — aggregate counts per janitor sweep (see [Images](/docs/images/))
 - `cache:read`, `cache:revalidate` — see [Subscribing to cache events](/docs/cache/#subscribing-to-cache-events)
 
 ### Subscribing
@@ -408,6 +410,59 @@ Fires from the dev file watcher (chokidar). Production builds do not run the wat
 | ------ | --------------------- | ---------------------------------------------------------- |
 | `path` | `string`              | absolute path of the changed file                          |
 | `type` | `MochiFileChangeType` | `'add' \| 'change' \| 'unlink' \| 'addDir' \| 'unlinkDir'` |
+
+#### `image:store`
+
+Fires when the [`<Image>`](/docs/images/) cache commits a file to disk: a downloaded full-size `original`, a resized `variant`/thumbnail, or a ThumbHash blur `placeholder`. Emitted once per regeneration (concurrent misses coalesce), so it's the hook for mirroring cache writes to durable storage like S3.
+
+| Field         | Type                                       | Notes                                                  |
+| ------------- | ------------------------------------------ | ------------------------------------------------------ |
+| `kind`        | `'original' \| 'variant' \| 'placeholder'` | which entry type was written                           |
+| `src`         | `string`                                   | the image source (URL/key) this entry derives from     |
+| `path`        | `string`                                   | absolute path of the file just committed on disk       |
+| `id`          | `string`                                   | `variantId` for `variant`; `originalId(src)` otherwise |
+| `size`        | `number`                                   | bytes written                                          |
+| `contentType` | `string`                                   | authoritative content type; `''` for `placeholder`     |
+| `width`       | `number`                                   | pixel width; `0` for `original` and `placeholder`      |
+| `height`      | `number`                                   | pixel height; `0` for `original` and `placeholder`     |
+| `format`      | `string`                                   | encoded format (e.g. `'webp'`); `''` for the two above |
+
+Read the file **synchronously at the top of the handler** — it provably exists at emit time — then offload the upload to a fire-and-forget task. A lazy `await readFile(path)` inside a slow handler could race the janitor sweep and miss the file.
+
+```ts
+import { readFileSync } from 'node:fs';
+import { mochiEvents } from 'mochi-framework';
+
+mochiEvents.on('image:store', ({ kind, src, path, contentType }) => {
+  const body = readFileSync(path); // sync: the file is guaranteed present now
+  void s3.putObject({ Bucket, Key: `img/${kind}/${src}`, Body: body, ContentType: contentType });
+});
+```
+
+<Callout type="warning">
+
+**Keep async work out of handlers.** Handlers run synchronously and block the emission chain; read the bytes synchronously, then hand the upload to an async task so downstream handlers are not delayed.
+
+</Callout>
+
+#### `image:delete`
+
+Fires when the `<Image>` cache removes a file from disk — evicted by the janitor sweep, superseded by a newer generation, or explicitly invalidated. Pair it with `image:store` to keep an S3 mirror in sync. Bulk `invalidateSrc()` only emits per-file deletes while a subscriber is registered.
+
+| Field    | Type                                         | Notes                                                                                                          |
+| -------- | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `kind`   | `'original' \| 'variant' \| 'placeholder'`   | which entry type was removed                                                                                   |
+| `src`    | `string`                                     | the image source this entry derived from                                                                       |
+| `path`   | `string`                                     | absolute path of the removed file                                                                              |
+| `id`     | `string`                                     | same id scheme as `image:store`                                                                                |
+| `size`   | `number`                                     | bytes reclaimed (`0` if the file was already gone)                                                             |
+| `reason` | `'evicted' \| 'superseded' \| 'invalidated'` | `evicted` = past its window (sweep); `superseded` = newer generation; `invalidated` = explicit invalidate call |
+
+```ts
+mochiEvents.on('image:delete', ({ kind, src, path }) => {
+  void s3.deleteObject({ Bucket, Key: `img/${kind}/${src}` });
+});
+```
 
 #### `cache:read`, `cache:revalidate`
 

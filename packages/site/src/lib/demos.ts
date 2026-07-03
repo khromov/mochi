@@ -18,6 +18,9 @@ import { files as formReturnData } from '../demos/form-return-data/files.ts';
 import { files as helloWorld } from '../demos/hello-world/files.ts';
 import { files as hydratable } from '../demos/hydratable/files.ts';
 import { files as hydration } from '../demos/hydration/files.ts';
+import { files as image } from '../demos/image/files.ts';
+import { files as imageEvents } from '../demos/image-events/files.ts';
+import { files as imagePipeline } from '../demos/image-pipeline/files.ts';
 import { files as islandDepth } from '../demos/island-depth/files.ts';
 import { files as islandProps } from '../demos/island-props/files.ts';
 import { files as lazy } from '../demos/lazy/files.ts';
@@ -136,6 +139,30 @@ export const demos: Demo[] = [
     files: cacheEvents,
     title: 'Cache Events',
     hook: 'Subscribe to MochiCache lifecycle events through mochiEvents and log them to the server console.',
+    category: 'data',
+  },
+  {
+    href: '/demos/image/',
+    slug: 'image',
+    files: image,
+    title: 'Image Resizing',
+    hook: 'On-the-fly image resizing on Bun.Image, served from an encrypted, stale-while-revalidate disk cache.',
+    category: 'data',
+  },
+  {
+    href: '/demos/image-events/',
+    slug: 'image-events',
+    files: imageEvents,
+    title: 'Image Events',
+    hook: 'Subscribe to image:store / image:delete on mochiEvents to mirror the <Image> cache to durable storage like S3.',
+    category: 'data',
+  },
+  {
+    href: '/demos/image-pipeline/',
+    slug: 'image-pipeline',
+    files: imagePipeline,
+    title: 'Advanced Image use',
+    hook: 'Decode, resize, rotate, flip, modulate, and re-encode with the raw Bun.Image pipeline — every option, server-rendered to inline data URLs.',
     category: 'data',
   },
   {

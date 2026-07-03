@@ -64,6 +64,12 @@
       "bun": "./src/tailwind.ts",
       "default": "./src/tailwind.ts"
     },
+    "./image": {
+      "types": "./src/image/index.ts",
+      "svelte": "./src/image/index.ts",
+      "bun": "./src/image/index.ts",
+      "default": "./src/image/index.ts"
+    },
     "./ambient": {
       "types": "./src/mochi-ambient.d.ts"
     },
@@ -88,6 +94,7 @@
     }
   },
   "dependencies": {
+    "@noble/ciphers": "2.2.0",
     "bunqueue": "^2.8.20",
     "chokidar": "^5.0.0",
     "deepmerge": "^4.3.1",

@@ -49,7 +49,10 @@ import { createQueue, getQueue, closeAllQueueResources } from './queue';
 import type { MochiQueue, MochiQueueOptions, MochiQueueListeners, MochiProcessor } from './queue';
 import { finalizeCookieHeaders } from './cookies';
 import { makeRequestContextBuilder } from './requestSetup';
-import { verifyAndDecodeProps } from './serverIslandCrypto';
+import { decryptProps } from './serverIslandCrypto';
+import { createImageHandler } from './image/imageEndpoint';
+import { getImageRuntime } from './image/config';
+import { startImageCacheSweeper } from './image/sweeper';
 import { initMochiConfig } from './mochiConfig';
 import { logger, setLogLevel, DEFAULT_LOG_LEVEL, type LogLevel } from './log';
 import { mochiEvents } from './events';
@@ -1084,12 +1087,12 @@ export class Mochi {
       const signedProps = url.searchParams.get('props') ?? '';
       const hydrateMode = url.searchParams.get('hydrate');
 
-      // Verify signature and decode props (empty means no props)
+      // Decrypt props (empty means no props)
       let decodedProps: Record<string, unknown>;
       if (signedProps) {
-        const propsJson = verifyAndDecodeProps(signedProps);
+        const propsJson = decryptProps(signedProps, componentName);
         if (propsJson === null) {
-          return new Response('Invalid props signature', { status: 403 });
+          return new Response('Invalid props', { status: 403 });
         }
         decodedProps = devalueParse(propsJson) as Record<string, unknown>;
       } else {
@@ -1201,6 +1204,31 @@ export class Mochi {
         });
       });
     });
+
+    // Register the signed image-resize endpoint (enabled unless explicitly off)
+    // and start the background cache janitor. The resolved options are the
+    // single source of truth for `enabled` — `getResizedImage` consults the
+    // same flag to fall back to raw source URLs when the endpoint is off.
+    let stopImageSweeper: (() => void) | undefined;
+    const imageRuntime = getImageRuntime();
+    if (imageRuntime.options.enabled) {
+      const imageHandler = createImageHandler();
+      bunRoutes[`${registry.assetPrefix}/image/:filename`] = withHead(async (req: Request): Promise<Response> => {
+        const start = performance.now();
+        const response = await imageHandler(req);
+        const url = new URL(req.url);
+        mochiEvents.emit('request', {
+          requestId: newRequestId(req),
+          kind: 'image',
+          method: req.method,
+          path: url.pathname + url.search,
+          status: response.status,
+          duration: performance.now() - start,
+        });
+        return response;
+      });
+      stopImageSweeper = startImageCacheSweeper(imageRuntime.cache, imageRuntime.options.sweepIntervalMs);
+    }
 
     if (process.env.MOCHI_MEMORY_PROBE === '1') {
       bunRoutes['/__mochi/health/memory'] = (): Response => {
@@ -1367,6 +1395,19 @@ export class Mochi {
       fetch: composedFetch,
       ...(websocketOption ? { websocket: websocketOption } : {}),
     } as Parameters<typeof Bun.serve>[0]);
+
+    // Tie the image-cache janitor's lifetime to the server: any stop path
+    // (tests calling server.stop(), or the signal handler below) clears the
+    // sweep timers instead of leaking them. Wrapping stop covers both, since the
+    // signal handler calls server.stop() too.
+    if (stopImageSweeper) {
+      const sweeperStop = stopImageSweeper;
+      const stopServer = server.stop.bind(server);
+      server.stop = ((closeActiveConnections?: boolean) => {
+        sweeperStop();
+        return stopServer(closeActiveConnections);
+      }) as typeof server.stop;
+    }
 
     {
       const startEvent: MochiServerStartEvent = {

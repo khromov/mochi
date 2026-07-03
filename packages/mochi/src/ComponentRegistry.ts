@@ -537,6 +537,12 @@ export class ComponentRegistry {
             // Server-side cache class. Re-exported through the virtual module so .svelte
             // files can `import { MochiCache } from 'mochi-framework'` directly.
             `export { MochiCache } from "${toPosixPath(path.join(FRAMEWORK_DIR, 'cache.ts'))}";`,
+            // Cache storage adapters — server-only (FileStorage touches the fs).
+            `export { MemoryStorage, FileStorage } from "${toPosixPath(path.join(FRAMEWORK_DIR, 'cache-storage.ts'))}";`,
+            // Image helpers. Server-only (signing needs the secret key); re-exported
+            // so .svelte files can `import { getResizedImage } from 'mochi-framework'`.
+            `export { getResizedImage, getImage, getImageBytes, getImagePlaceholder, invalidateImage } from "${toPosixPath(path.join(FRAMEWORK_DIR, 'image/getResizedImage.ts'))}";`,
+            `export { cachedImage, CachedImage } from "${toPosixPath(path.join(FRAMEWORK_DIR, 'image/cachedImage.ts'))}";`,
             // `enhance` / `deserialize` are browser-only Svelte action helpers.
             // Svelte never invokes actions during SSR, so these stubs only fire
             // if user code calls them on the server — which is a usage error.
@@ -549,7 +555,7 @@ export class ComponentRegistry {
           namespace: 'mochi-server-island',
         }));
         build.onLoad({ filter: /.*/, namespace: 'mochi-server-island' }, () => ({
-          contents: [`import { signProps } from "${toPosixPath(path.join(FRAMEWORK_DIR, 'serverIslandCrypto.ts'))}";`, `export { signProps };`].join('\n'),
+          contents: [`import { encryptProps } from "${toPosixPath(path.join(FRAMEWORK_DIR, 'serverIslandCrypto.ts'))}";`, `export { encryptProps };`].join('\n'),
           loader: 'js',
         }));
         build.onLoad({ filter: /\.svelte\.[jt]s$/ }, async (args) => {
@@ -670,13 +676,13 @@ export class ComponentRegistry {
         for (const child of children) {
           this.errors.push({
             kind: 'nested-hydration',
-            parent: parent.name,
-            child: child.name,
+            parent: parent.displayName,
+            child: child.displayName,
             parentPath: filePath,
             childPath: child.resolvedPath,
           });
           logger.error(
-            `\nNested hydration directives are not allowed.\n  <${child.name}> with mochi:hydrate, mochi:hydrate:visible, or mochi:clientOnly is inside <${parent.name}> which is also hydratable.\n  Remove the directive from ${child.name} — it hydrates automatically as part of ${parent.name}.\n`,
+            `\nNested hydration directives are not allowed.\n  <${child.displayName}> with mochi:hydrate, mochi:hydrate:visible, or mochi:clientOnly is inside <${parent.displayName}> which is also hydratable.\n  Remove the directive from ${child.displayName} — it hydrates automatically as part of ${parent.displayName}.\n`,
           );
         }
       }
@@ -1020,6 +1026,17 @@ export class ComponentRegistry {
             // MochiCache is server-only; ship a stub that throws so accidental
             // client imports surface clearly instead of failing the bundle.
             `export class MochiCache { constructor() { throw new Error("MochiCache is only available on the server"); } }`,
+            // Cache storage adapters are server-only; ship throwing stubs too.
+            `export class MemoryStorage { constructor() { throw new Error("MemoryStorage is only available on the server"); } }`,
+            `export class FileStorage { constructor() { throw new Error("FileStorage is only available on the server"); } }`,
+            // Image helpers are server-only (signing/fetch/disk-cache); ship throwing stubs.
+            `export function getResizedImage() { throw new Error("getResizedImage() is only available on the server"); }`,
+            `export function getImage() { throw new Error("getImage() is only available on the server"); }`,
+            `export function getImageBytes() { throw new Error("getImageBytes() is only available on the server"); }`,
+            `export function getImagePlaceholder() { throw new Error("getImagePlaceholder() is only available on the server"); }`,
+            `export function invalidateImage() { throw new Error("invalidateImage() is only available on the server"); }`,
+            `export function cachedImage() { throw new Error("cachedImage() is only available on the server"); }`,
+            `export class CachedImage { constructor() { throw new Error("CachedImage is only available on the server"); } }`,
             `export { enhance, deserialize } from "${enhanceClientPath}";`,
           ].join('\n'),
           loader: 'js',
@@ -1339,6 +1356,9 @@ export class ComponentRegistry {
         for (const [name, url] of this.componentEntryUrls) {
           urlToComponent.set(url, name);
         }
+        // Island identity keys are `<localName>_<hash>`; show the bare local name
+        // in the debug bar's bundle list instead of the hashed key.
+        const displayByKey = new Map(this.hydratableComponents.map((h) => [h.name, h.displayName]));
         const pageHasIslands = hydratables.length > 0;
         const bundles: NonNullable<typeof debugBarData.bundles> = [];
         const outputByName = new Map(this.clientStats.outputs.map((o) => [o.name, o]));
@@ -1369,7 +1389,7 @@ export class ComponentRegistry {
               if (!renderedIslandNames.has(compName)) {
                 continue;
               }
-              bundles.push({ url, label: compName, sizeBytes: output.size - wcDeduct, kind: 'island', inputs: nonWc });
+              bundles.push({ url, label: displayByKey.get(compName) ?? compName, sizeBytes: output.size - wcDeduct, kind: 'island', inputs: nonWc });
             } else {
               if (!pageHasIslands) {
                 continue;
@@ -1727,6 +1747,7 @@ export class ComponentRegistry {
         ssrModule: entry.ssrPath,
         hydratables: entry.hydratables.map((h) => ({
           name: h.name,
+          displayName: h.displayName,
           resolvedPath: h.resolvedPath,
         })),
         cssComponents: [...entry.cssComponents],

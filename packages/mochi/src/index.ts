@@ -18,7 +18,13 @@ export type { MochiRequestContext } from './requestContext';
 export { getMochiConfig } from './mochiConfig';
 export type { CookieSerializeOptions, Cookie } from './cookies';
 export { MochiCache } from './cache';
-export type { MochiCacheOptions, CacheResult, CacheStatus } from './cache';
+export type { MochiCacheOptions, CacheResult, CacheStatus, Storage } from './cache';
+export { MemoryStorage, FileStorage } from './cache-storage';
+export type { FileStorageOptions } from './cache-storage';
+export { getResizedImage, getImage, getImageBytes, getImagePlaceholder, invalidateImage } from './image/getResizedImage';
+export { cachedImage, CachedImage } from './image/cachedImage';
+export type { CachedImageOptions } from './image/cachedImage';
+export type { MochiImageOptions, ResizeImageOptions, OriginalImageOptions, InvalidateImageOptions, ImageFormat, ImageFit } from './image/types';
 export { sequence } from './hooks';
 export { compress } from './middleware/compress';
 export type { CompressOptions } from './middleware/compress';
@@ -48,6 +54,12 @@ export type {
   MochiCacheStatus,
   MochiCacheReadEvent,
   MochiCacheRevalidateEvent,
+  MochiCacheSweepEvent,
+  MochiImageCacheSweepEvent,
+  MochiImageEntryKind,
+  MochiImageStoreEvent,
+  MochiImageDeleteReason,
+  MochiImageDeleteEvent,
   MochiCacheRevalidateFailedEvent,
   MochiCacheErrorEvent,
   MochiQueueAddedEvent,
@@ -80,6 +92,7 @@ export { trailingSlashIt } from './trailingSlash';
 export { fail, redirect, success } from './forms';
 export { enhance, deserialize } from './enhance.ssr';
 export { isFormContentType, DEFAULT_FORM_CONTENT_TYPES, DEFAULT_PROTECTED_METHODS } from './csrf';
+export { DEFAULT_COMPRESS_MIN_BYTES } from './payloadCrypto';
 export type { MochiCsrfOptions } from './csrf';
 export type {
   MochiHooks,

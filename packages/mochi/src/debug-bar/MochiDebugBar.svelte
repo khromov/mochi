@@ -3,6 +3,7 @@
   import StatusDot from './StatusDot.svelte';
   import RequestPanel from './RequestPanel.svelte';
   import IslandsPanel from './IslandsPanel.svelte';
+  import ImagesPanel from './ImagesPanel.svelte';
   import WarningsPanel from './WarningsPanel.svelte';
   import BundlesPanel from './BundlesPanel.svelte';
   import InfoPanel from './InfoPanel.svelte';
@@ -15,7 +16,7 @@
 
   const STORAGE_KEY = 'mochi:debug:collapsed';
 
-  type Panel = 'warnings' | 'islands' | 'request' | 'bundles' | 'info' | 'settings' | null;
+  type Panel = 'warnings' | 'islands' | 'images' | 'request' | 'bundles' | 'info' | 'settings' | null;
   let activePanel: Panel = $state(null);
 
   let hasDebugInfo = $state(false);
@@ -104,6 +105,7 @@
 <div class="mochi-debug-bar-root" bind:this={rootEl}>
   <WarningsPanel open={activePanel === 'warnings'} onclose={() => (activePanel = null)} />
   <IslandsPanel open={activePanel === 'islands'} onclose={() => (activePanel = null)} />
+  <ImagesPanel open={activePanel === 'images'} onclose={() => (activePanel = null)} />
   <BundlesPanel open={activePanel === 'bundles'} onclose={() => (activePanel = null)} />
   <RequestPanel open={activePanel === 'request'} onclose={() => (activePanel = null)} />
   <InfoPanel open={activePanel === 'info'} onclose={() => (activePanel = null)} />
@@ -136,6 +138,11 @@
           tabindex={collapsed ? -1 : 0}
         >
           Islands <span class="badge" class:badge-yellow={warnLevel === 'yellow'} class:badge-red={warnLevel === 'red'}>{debugBarState.islandCount}</span>
+        </button>
+      {/if}
+      {#if debugBarState.imageCount > 0}
+        <button class="btn image-btn" onclick={() => toggle('images')} tabindex={collapsed ? -1 : 0}>
+          Images <span class="badge">{debugBarState.imageCount}</span>
         </button>
       {/if}
       {#if debugBarState.warningCount > 0 && !hiddenPanels.includes('warnings')}
@@ -341,6 +348,16 @@
     background: #4f2f27;
     border-color: #e9a89a;
   }
+  .image-btn {
+    background: #382a32;
+    color: #d4b8c8;
+    border-color: #5a4050;
+  }
+  .image-btn:hover {
+    background: #43323c;
+    color: #ecd2e0;
+    border-color: #c4a3b8;
+  }
   .request-btn {
     background: #2c343a;
     color: #b8cad4;
@@ -479,5 +496,102 @@
   .badge-red {
     background: rgba(233, 168, 154, 0.3);
     color: #f4b6a7;
+  }
+
+  /* Shared expandable-row chrome for IslandRow + ImageRow. Bounded to the debug
+     bar so the generic class names never leak into the host page. */
+  :global(.mochi-debug-bar-root .island-row) {
+    margin-bottom: 3px;
+  }
+  :global(.mochi-debug-bar-root .island-row:last-child) {
+    margin-bottom: 0;
+  }
+  :global(.mochi-debug-bar-root .island-item) {
+    background: #272a22;
+    color: #e8e6dd;
+    padding: 6px 10px;
+    border-radius: 6px;
+    border: 1px solid #353930;
+    font-size: 11px;
+    line-height: 1.5;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    transition:
+      background 120ms ease,
+      border-color 120ms ease;
+  }
+  :global(.mochi-debug-bar-root .island-item:hover) {
+    background: #2d3128;
+    border-color: #434836;
+  }
+  :global(.mochi-debug-bar-root .island-row.open .island-item) {
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+    background: #2d3128;
+    border-bottom-color: transparent;
+  }
+  :global(.mochi-debug-bar-root .island-header) {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: none;
+    border: none;
+    color: inherit;
+    font: inherit;
+    padding: 0;
+    cursor: pointer;
+    text-align: left;
+    flex: 1;
+    min-width: 0;
+  }
+  :global(.mochi-debug-bar-root .chevron) {
+    color: #8e9488;
+    display: inline-flex;
+    align-items: center;
+    transition:
+      transform 120ms ease,
+      color 120ms ease;
+  }
+  :global(.mochi-debug-bar-root .island-header:hover .chevron) {
+    color: #8ab79a;
+  }
+  :global(.mochi-debug-bar-root .island-row.open .chevron) {
+    transform: rotate(90deg);
+    color: #8ab79a;
+  }
+  :global(.mochi-debug-bar-root .island-name) {
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  :global(.mochi-debug-bar-root .island-meta) {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    color: #a8ada0;
+    flex-shrink: 0;
+  }
+  :global(.mochi-debug-bar-root .island-tag) {
+    font-size: 9px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-weight: 500;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    letter-spacing: 0.02em;
+  }
+  :global(.mochi-debug-bar-root .lock-icon) {
+    display: inline-flex;
+    align-items: center;
+    color: #c4a3a8;
+    cursor: help;
+  }
+  :global(.mochi-debug-bar-root .island-size) {
+    font-size: 10px;
+    color: #8e9488;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   }
 </style>

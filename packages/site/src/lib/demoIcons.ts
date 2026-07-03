@@ -32,6 +32,9 @@ import Eye from '@lucide/svelte/icons/eye';
 import Snowflake from '@lucide/svelte/icons/snowflake';
 import Fingerprint from '@lucide/svelte/icons/fingerprint';
 import Link from '@lucide/svelte/icons/link';
+import ImageIcon from '@lucide/svelte/icons/image';
+import CloudUpload from '@lucide/svelte/icons/cloud-upload';
+import WandSparkles from '@lucide/svelte/icons/wand-sparkles';
 import MonitorSmartphone from '@lucide/svelte/icons/monitor-smartphone';
 import Blend from '@lucide/svelte/icons/blend';
 import FileDown from '@lucide/svelte/icons/file-down';
@@ -87,6 +90,9 @@ export const demoIconFor: Record<string, DemoIconMeta> = {
   'Tailwind Todo App': { icon: ListTodo, label: 'Todo app on Tailwind' },
   'Cookie Vary Test': { icon: Fingerprint, label: 'Response-driven Vary: Cookie' },
   'Isomorphic URL': { icon: Link, label: 'Same url import on server and client' },
+  'Image Resizing': { icon: ImageIcon, label: 'Encrypted, cached image resizing on Bun.Image' },
+  'Image Events': { icon: CloudUpload, label: 'Mirror the <Image> cache via image:store / image:delete' },
+  'Advanced Image use': { icon: WandSparkles, label: 'Full Bun.Image transform pipeline' },
   'View Transitions': { icon: Blend, label: 'Animated cross-document navigations' },
   'Custom Transitions': { icon: Tornado, label: 'Custom @keyframes spin via custom={{ in, out }}' },
   'File Routes': { icon: FileDown, label: 'Serve a file from disk with Mochi.file()' },

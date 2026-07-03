@@ -76,6 +76,38 @@ Use it from a page or API route:
 
 For multi-process or persistent caching, pass a custom `storage` that implements `getItem` / `setItem` / `removeItem` / `clear` (e.g. Redis, SQLite via `bun:sqlite`). These methods may be synchronous (in-memory `Map`, `bun:sqlite`) or `async` / Promise-returning (Redis, network stores) — the cache awaits every call. Each key holds a single entry (the value plus its write time). When a backend needs a string or buffer — like Redis — supply `serialize` / `deserialize` to encode and decode that entry, e.g. `serialize: JSON.stringify, deserialize: JSON.parse`.
 
+### File-based storage
+
+`FileStorage` persists each entry as a JSON file on disk, so the cache survives restarts. It's turnkey — no `serialize` / `deserialize` needed:
+
+```ts
+import { MochiCache, FileStorage } from 'mochi-framework';
+
+export const pokemonCache = new MochiCache({
+  minTimeToStale: 10_000,
+  maxTimeToLive: 300_000,
+  storage: new FileStorage({
+    directory: './.cache/pokemon',
+    maxAge: 300_000, // must be >= maxTimeToLive
+  }),
+});
+```
+
+Stale-while-revalidate works exactly as with in-memory storage — the entry's write time lives inside the file. A background sweep runs on an interval to delete expired files (there's no read-time eviction otherwise), and `purgeOnInit` empties the directory on startup.
+
+| Option          | Default           |                                                                  |
+| --------------- | ----------------- | ---------------------------------------------------------------- |
+| `directory`     | _(required)_      | Where cache files are written; created if missing.               |
+| `purgeOnInit`   | `false`           | Delete the directory's contents when the adapter is constructed. |
+| `purgeInterval` | `60_000` (1min)   | Background sweep interval in ms. `<= 0` disables the sweeper.    |
+| `maxAge`        | `600_000` (10min) | Files older than this are deleted by the sweep.                  |
+
+<Callout type="warning">
+
+**Keep `maxAge` at or above `maxTimeToLive`.** The sweep deletes files past `maxAge` — set it lower and the sweeper would remove entries the cache still wants to serve stale, turning a fast stale read into a blocking recompute. Values must be JSON-serializable (no `Date`, `Map`, `BigInt`, or `undefined` round-trip).
+
+</Callout>
+
 <Callout type="warning">
 
 **In-flight de-duplication is per-server.** Concurrent calls for the same key on one instance share a single `fn` invocation, but that coordination lives in process memory. With multiple instances behind a shared backend (`bun:sqlite`, Redis), each instance de-duplicates only its own requests — so on a cold key, every instance may run `fn` once and race to write the same entry. The shared store keeps results consistent; it does not collapse the concurrent fetches into one.
@@ -92,6 +124,7 @@ If a `storage` call throws, the cache degrades instead of failing the request: a
 | ------------------------- | --------------------------- | ------------------------------------------------------------ |
 | `cache:read`              | `{ key, status }`           | Every cache lookup, regardless of which method ran.          |
 | `cache:revalidate`        | `{ key }`                   | A background refetch starts (stale read).                    |
+| `cache:sweep`             | `{ removed, durationMs }`   | A `FileStorage` background sweep deleted expired files.      |
 | `cache:revalidate:failed` | `{ key, error }`            | A background refetch threw; the stale value is still served. |
 | `cache:error`             | `{ key, operation, error }` | A `storage` `get` / `set` / `remove` call threw.             |
 
@@ -115,7 +148,7 @@ import { consoleLogger } from 'mochi-framework';
 consoleLogger({ cache: 'verbose' });
 ```
 
-See the [Cache Events demo](/demos/cache-events/) for a worked example that pipes events into an in-memory ring buffer and renders them on the page.
+See the [Cache Events demo](/demos/cache-events/) for a working example that pipes events into an in-memory ring buffer and renders them on the page.
 
 ### Server-only
 

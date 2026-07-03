@@ -4,6 +4,7 @@ import type { MochiCookieJar } from './cookies';
 import type { MochiCsrfOptions } from './csrf';
 import type { MochiFilters, MochiHooks } from './extensions';
 import type { MochiProxyOptions } from './proxy';
+import type { MochiImageOptions } from './image/types';
 import type { MochiProcessor, MochiQueueListeners, MochiQueueRuntimeOptions } from './queue';
 
 export type MochiServerPropsResolver = (req: Request, params: Record<string, string>) => Record<string, unknown> | Promise<Record<string, unknown>>;
@@ -336,7 +337,7 @@ export interface MochiErrorProps {
 
 export interface MochiManifestComponent {
   ssrModule: string;
-  hydratables: { name: string; resolvedPath: string }[];
+  hydratables: { name: string; displayName: string; resolvedPath: string }[];
   cssComponents: string[];
 }
 
@@ -607,6 +608,14 @@ export interface MochiServeOptions {
    * Default: `false`.
    */
   warmup?: boolean | MochiWarmupOptions;
+  /**
+   * On-the-fly image resizing. Mounts a signed `/_mochi/image/*` endpoint and
+   * powers `getResizedImage()` / the `<Image>` component. Every served URL's
+   * payload is encrypted so attackers cannot request arbitrary sources. Default: enabled
+   * with sensible defaults; pass `{ enabled: false }` to turn it off. See
+   * `MochiImageOptions`.
+   */
+  image?: MochiImageOptions;
   /**
    * Run the whole-program [svelte-shaker](https://github.com/baseballyama/svelte-shaker)
    * pass before compiling, slimming `.svelte` source (prop folding, dead-branch

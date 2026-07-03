@@ -1,7 +1,7 @@
 import mitt, { type Emitter, type Handler } from 'mitt';
 import { pinGlobal } from './globalState';
 
-export type MochiRequestKind = 'page' | 'api' | 'file' | 'asset' | 'fallback' | 'error';
+export type MochiRequestKind = 'page' | 'api' | 'file' | 'asset' | 'image' | 'fallback' | 'error';
 
 export interface MochiRequestEvent {
   /**
@@ -83,6 +83,62 @@ export interface MochiCacheReadEvent {
 
 export interface MochiCacheRevalidateEvent {
   key: string;
+}
+
+export interface MochiCacheSweepEvent {
+  /** Expired entries deleted by this sweep. */
+  removed: number;
+  /** Sweep wall-clock duration in ms. */
+  durationMs: number;
+}
+
+export interface MochiImageCacheSweepEvent {
+  /** Resized variants deleted (original evicted, missing, or superseded by a newer generation). */
+  removedVariants: number;
+  /** Full-size originals deleted (past their evict window). */
+  removedOriginals: number;
+  /** Bytes reclaimed from disk. */
+  freedBytes: number;
+  /** Sweep wall-clock duration in ms. */
+  durationMs: number;
+}
+
+export type MochiImageEntryKind = 'original' | 'variant' | 'placeholder';
+
+export interface MochiImageStoreEvent {
+  /** Shared full-size original, a resized variant/thumbnail, or a ThumbHash blur placeholder. */
+  kind: MochiImageEntryKind;
+  /** The image source (URL or key) this entry derives from. */
+  src: string;
+  /** Absolute path of the file just committed to the image cache on disk. */
+  path: string;
+  /** Stable id: the `variantId` for `variant`; `originalId(src)` for `original`/`placeholder`. */
+  id: string;
+  /** Bytes written to disk. */
+  size: number;
+  /** Authoritative content type; `''` for `placeholder`. */
+  contentType: string;
+  /** Pixel width; `0` for `original` (never decoded) and `placeholder`. */
+  width: number;
+  /** Pixel height; `0` for `original` and `placeholder`. */
+  height: number;
+  /** Encoded format (e.g. `'webp'`); `''` for `original` and `placeholder`. */
+  format: string;
+}
+
+export type MochiImageDeleteReason = 'evicted' | 'superseded' | 'invalidated';
+
+export interface MochiImageDeleteEvent {
+  kind: MochiImageEntryKind;
+  src: string;
+  /** Absolute path of the file removed from the cache. */
+  path: string;
+  /** Same id scheme as `MochiImageStoreEvent.id`. */
+  id: string;
+  /** Bytes reclaimed from disk (`0` if the file was already gone). */
+  size: number;
+  /** `evicted` = past its window (sweep); `superseded` = a newer generation replaced it; `invalidated` = explicit invalidate call. */
+  reason: MochiImageDeleteReason;
 }
 
 export interface MochiCacheRevalidateFailedEvent {
@@ -295,6 +351,10 @@ export type MochiEventMap = {
   'island:error': MochiIslandErrorEvent;
   'cache:read': MochiCacheReadEvent;
   'cache:revalidate': MochiCacheRevalidateEvent;
+  'cache:sweep': MochiCacheSweepEvent;
+  'image:cache-sweep': MochiImageCacheSweepEvent;
+  'image:store': MochiImageStoreEvent;
+  'image:delete': MochiImageDeleteEvent;
   'cache:revalidate:failed': MochiCacheRevalidateFailedEvent;
   'cache:error': MochiCacheErrorEvent;
   'queue:added': MochiQueueAddedEvent;

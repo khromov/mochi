@@ -11,7 +11,7 @@ import path from 'node:path';
 import type { Server } from 'bun';
 import { parse as devalueParse, stringify as devalueStringify } from 'devalue';
 import { Mochi } from './Mochi';
-import { signProps, verifyAndDecodeProps } from './serverIslandCrypto';
+import { encryptProps, decryptProps } from './serverIslandCrypto';
 
 const FIXTURE_PAGE = path.join(import.meta.dir, '__fixtures__', 'server-island-endpoint', 'Page.svelte');
 
@@ -22,6 +22,11 @@ describe('server island endpoint', () => {
   let islandId: string;
   let token: string;
   let pageWrapper: string;
+  // Islands are keyed by `<localName>_<hash>` (see islandIdentity), not the bare
+  // import name, so a same-named component in another file can't collide. Recover
+  // the concrete keys from the rendered wrappers rather than hardcoding them.
+  let echoKey: string;
+  let styledLeafKey: string;
 
   beforeAll(async () => {
     outDir = mkdtempSync(path.join(import.meta.dir, '..', '.mochi-island-endpoint-'));
@@ -41,15 +46,20 @@ describe('server island endpoint', () => {
     // no longer a separate attribute — it lives inside the signed envelope, so
     // recover it the same way the endpoint does (verify + devalue-parse).
     const html = await (await fetch(`${base}/`)).text();
-    const wrapper = html.match(/<mochi-server-island\b[^>]*>/)?.[0];
-    if (!wrapper) {
-      throw new Error('fixture page did not render a <mochi-server-island> wrapper');
+    const wrappers = [...html.matchAll(/<mochi-server-island\b[^>]*>/g)].map((m) => m[0]);
+    const wrapperByKey = (prefix: string) => wrappers.find((w) => new RegExp(`component-name="(${prefix}_\\w+)"`).test(w));
+    const echoWrapper = wrapperByKey('Echo');
+    const styledWrapper = wrapperByKey('StyledLeaf');
+    if (!echoWrapper || !styledWrapper) {
+      throw new Error('fixture page did not render the expected <mochi-server-island> wrappers');
     }
-    pageWrapper = wrapper;
-    token = wrapper.match(/signed-props="([^"]+)"/)![1]!;
-    const decoded = verifyAndDecodeProps(token);
+    pageWrapper = echoWrapper;
+    echoKey = echoWrapper.match(/component-name="([^"]+)"/)![1]!;
+    styledLeafKey = styledWrapper.match(/component-name="([^"]+)"/)![1]!;
+    token = echoWrapper.match(/signed-props="([^"]+)"/)![1]!;
+    const decoded = decryptProps(token, echoKey);
     if (!decoded) {
-      throw new Error('could not verify the page wrapper signed-props token');
+      throw new Error('could not decrypt the page wrapper signed-props token');
     }
     islandId = (devalueParse(decoded) as { islandId: string }).islandId;
   });
@@ -65,7 +75,7 @@ describe('server island endpoint', () => {
   });
 
   test('strips islandId from props and namespaces $props.id() with the envelope id', async () => {
-    const res = await fetch(`${base}/_mochi/island/Echo?props=${encodeURIComponent(token)}`);
+    const res = await fetch(`${base}/_mochi/island/${echoKey}?props=${encodeURIComponent(token)}`);
     expect(res.status).toBe(200);
     const body = await res.text();
 
@@ -80,8 +90,8 @@ describe('server island endpoint', () => {
   });
 
   test('islandId containing `--` skips namespacing instead of failing the render', async () => {
-    const legacy = signProps(devalueStringify({ islandId: 'mochi--legacy-0', name: 'Legacy' }));
-    const res = await fetch(`${base}/_mochi/island/Echo?props=${encodeURIComponent(legacy)}`);
+    const legacy = encryptProps(devalueStringify({ islandId: 'mochi--legacy-0', name: 'Legacy' }), echoKey);
+    const res = await fetch(`${base}/_mochi/island/${echoKey}?props=${encodeURIComponent(legacy)}`);
     expect(res.status).toBe(200);
     const body = await res.text();
 
@@ -94,8 +104,8 @@ describe('server island endpoint', () => {
   });
 
   test('missing islandId renders un-namespaced rather than failing', async () => {
-    const noId = signProps(devalueStringify({ name: 'Bare' }));
-    const res = await fetch(`${base}/_mochi/island/Echo?props=${encodeURIComponent(noId)}`);
+    const noId = encryptProps(devalueStringify({ name: 'Bare' }), echoKey);
+    const res = await fetch(`${base}/_mochi/island/${echoKey}?props=${encodeURIComponent(noId)}`);
     expect(res.status).toBe(200);
     const body = await res.text();
 
@@ -110,7 +120,7 @@ describe('server island endpoint', () => {
   // `hydrate()` reads the id back from the SSR `<!--$…-->` marker, so a prefixed
   // server id is exactly what hydrates, keeping it collision-free with the host.
   test('also-hydrate wraps the namespaced render in a hydratable island', async () => {
-    const res = await fetch(`${base}/_mochi/island/Echo?props=${encodeURIComponent(token)}&hydrate=eager`);
+    const res = await fetch(`${base}/_mochi/island/${echoKey}?props=${encodeURIComponent(token)}&hydrate=eager`);
     expect(res.status).toBe(200);
     const body = await res.text();
 
@@ -130,8 +140,8 @@ describe('server island endpoint', () => {
   // the HTML via innerHTML. The island's own scoped CSS is excluded; it loads
   // via the wrapper's `css-url` attribute.
   test('injects <link> tags for CSS the host page did not link', async () => {
-    const props = signProps(devalueStringify({ islandId: 's-css-0' }));
-    const res = await fetch(`${base}/_mochi/island/StyledLeaf?props=${encodeURIComponent(props)}`);
+    const props = encryptProps(devalueStringify({ islandId: 's-css-0' }), styledLeafKey);
+    const res = await fetch(`${base}/_mochi/island/${styledLeafKey}?props=${encodeURIComponent(props)}`);
     expect(res.status).toBe(200);
     const body = await res.text();
     expect(body).toContain('<link rel="stylesheet"');
@@ -141,7 +151,7 @@ describe('server island endpoint', () => {
   });
 
   test('a CSS-less server island injects no <link>', async () => {
-    const res = await fetch(`${base}/_mochi/island/Echo?props=${encodeURIComponent(token)}`);
+    const res = await fetch(`${base}/_mochi/island/${echoKey}?props=${encodeURIComponent(token)}`);
     expect(res.status).toBe(200);
     const body = await res.text();
     expect(body).not.toContain('<link rel="stylesheet"');

@@ -74,6 +74,21 @@ export interface BundleInfo {
   inputs: Array<{ path: string; size: number }>;
 }
 
+/** One image produced by `getResizedImage()` during the request (dev debug bar only). */
+export interface ImageDebugEntry {
+  url: string;
+  filename: string;
+  /** Decoded (unsigned) request params — src, dimensions, format, quality, fit, TTL, … */
+  params: Record<string, unknown>;
+  /** The compact binary wire encoding (before encryption), so the bar can show the on-wire format next to the JSON. */
+  wire?: {
+    /** Space-separated hex of the packed header (control bytes + varints), before the UTF-8 src tail. */
+    headerHex: string;
+    /** Byte length of the UTF-8 src tail. */
+    srcByteLength: number;
+  };
+}
+
 /**
  * SSR-side debug-bar payload. These fields are emitted into the cached HTML
  * body and stay stable across cache hits. The dynamic per-request fields
@@ -106,6 +121,15 @@ export interface DebugBarData {
   ssrDurationMs?: number;
   /** Framework JS bundles injected for this page (bootstrap, island entries, shared chunks). */
   bundles?: BundleInfo[];
+  /** Images produced via `getResizedImage()` during this request, with decoded params. */
+  images?: ImageDebugEntry[];
+  /**
+   * Server-island props recorded during SSR, keyed by the encrypted `signed-props`
+   * token. Because island props are encrypted (opaque on the wire), the client
+   * can't decode them; the debug bar reads the decoded snapshot from here instead,
+   * matching on the token it sees in the island's `signed-props` attribute.
+   */
+  serverProps?: Record<string, string>;
   /** Mochi framework version (constant per server). */
   mochiVersion?: string;
   /** Resolved Svelte version (constant per server). */

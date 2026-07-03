@@ -1,4 +1,4 @@
-const MIN_BUN_VERSION = '1.3.13';
+const MIN_BUN_VERSION = '1.3.14';
 const MIN_SVELTE_VERSION = '5.55.1';
 
 export function compareVersions(actual: string, required: string): boolean {

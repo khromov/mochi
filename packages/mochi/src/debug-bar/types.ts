@@ -16,7 +16,10 @@ declare global {
 export interface IslandInfo {
   /** The wrapper element itself — the stable identity for keying and locating. */
   element: HTMLElement;
+  /** Raw `component-name` (`<localName>_<hash>`) — used for element matching, not display. */
   name: string;
+  /** The bare local component name, recovered from `name` for a human-readable label. */
+  displayName: string;
   type: 'hydrated' | 'server';
   mode: string;
   propsSize: number;

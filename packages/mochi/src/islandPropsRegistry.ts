@@ -24,8 +24,8 @@ export interface IslandPropsEntry {
  * flag blocks that more than one island actually shares.
  *
  * Server islands intentionally do NOT use this path. Their `signed-props`
- * payloads are HMAC-signed and travel through URL query strings, so they keep
- * using `stringify` directly via the preprocessor's server-island branch.
+ * payloads are encrypted and travel through URL query strings, so
+ * they keep using `stringify` directly via the preprocessor's server-island branch.
  */
 export function emitIslandProps(value: unknown): string {
   const json = stringify(value);

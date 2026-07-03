@@ -130,6 +130,8 @@ export function makeRequestContextBuilder(cfg: RequestSetupConfig): RequestConte
         params,
         pageCacheEnabled: true,
         varyOnCookies: [],
+        images: [],
+        serverProps: {},
       };
     }
 

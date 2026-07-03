@@ -55,6 +55,7 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
     api: 'info',
     file: 'info',
     asset: 'debug',
+    image: 'debug',
     fallback: 'debug',
     error: 'log',
   };
@@ -175,6 +176,37 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
     label: 'CACHE',
     path: payload.key,
     note: styleText('cyan', 'revalidate'),
+  }));
+  subscribe('cache:sweep', ({ removed, durationMs }) => ({
+    label: 'CACHE',
+    path: 'sweep',
+    note: styleText('dim', removed === 0 ? 'nothing expired' : `${removed} expired removed`),
+    duration: durationMs,
+    slow,
+    verySlow,
+    level: 'info',
+  }));
+  subscribe('image:cache-sweep', ({ removedVariants, removedOriginals, freedBytes, durationMs }) => {
+    const removed = removedVariants + removedOriginals;
+    const detail = removed === 0 ? 'nothing stale' : `${removed} stale (${removedVariants}v/${removedOriginals}o), freed ${prettyBytes(freedBytes)}`;
+    return { label: 'CACHE', path: 'image:sweep', note: styleText('dim', detail), duration: durationMs, slow, verySlow, level: 'info' };
+  });
+  // Per-file image writes/deletes are high-volume relative to the aggregate
+  // `image:cache-sweep` line above; route them through `logger.debug`.
+  subscribe('image:store', ({ kind, path, size, format, width, height }) => {
+    const dims = width && height ? `${width}x${height} ` : '';
+    return {
+      label: 'IMG ',
+      path,
+      note: `${styleText('cyan', `store ${kind}`)} ${format ? `${format} ` : ''}${dims}${prettyBytes(size)}`.trimEnd(),
+      level: 'debug',
+    };
+  });
+  subscribe('image:delete', ({ kind, path, size, reason }) => ({
+    label: 'IMG ',
+    path,
+    note: `${styleText('dim', `delete ${kind} ${reason}`)} freed ${prettyBytes(size)}`,
+    level: 'debug',
   }));
   subscribe('cache:revalidate:failed', (payload) => ({
     label: 'CACHE',
@@ -380,6 +412,7 @@ function colorKind(kind: MochiRequestKind): string {
     case 'file':
       return styleText('green', kind.padEnd(KIND_WIDTH));
     case 'asset':
+    case 'image':
       return styleText('dim', kind.padEnd(KIND_WIDTH));
     case 'fallback':
       return styleText('yellow', kind.padEnd(KIND_WIDTH));

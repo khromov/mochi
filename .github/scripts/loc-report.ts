@@ -52,6 +52,7 @@ const PACKAGES: Package[] = [
       'src/cookies*.ts',
       'src/extensions.ts',
       'src/cache.ts',
+      'src/image/**',
       'src/middleware/**',
       'src/enhance*.ts',
       'src/build*.ts',

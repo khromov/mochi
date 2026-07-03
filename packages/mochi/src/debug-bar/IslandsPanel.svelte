@@ -48,6 +48,16 @@
     return base + (HYDRATE_SUFFIX[alsoHydrate ?? ''] ?? '');
   }
 
+  // Island `component-name`s are `<localName>_<base36 hash of resolved path>`
+  // (see `islandIdentity` in svelteAstPreprocess.ts) so two same-named components
+  // in different files can't collide. Strip the appended `_<hash>` for a friendly
+  // label — the framework always adds exactly one such segment, so removing the
+  // trailing run of lowercase/digits recovers the author's name even when it
+  // itself contains underscores.
+  function displayNameOf(componentName: string): string {
+    return componentName.replace(/_[0-9a-z]+$/, '') || componentName;
+  }
+
   function scanIslands() {
     const result: IslandInfo[] = [];
     const hydratable = document.querySelectorAll('mochi-hydratable-island');
@@ -84,6 +94,7 @@
       result.push({
         element: element as HTMLElement,
         name,
+        displayName: displayNameOf(name),
         type: 'hydrated',
         mode,
         propsSize,
@@ -103,6 +114,7 @@
       result.push({
         element: element as HTMLElement,
         name,
+        displayName: displayNameOf(name),
         type: 'server',
         mode,
         propsSize,

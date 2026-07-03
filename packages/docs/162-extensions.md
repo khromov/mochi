@@ -217,7 +217,7 @@ await Mochi.serve({
 
 #### `serverIsland:secretKey`
 
-Override the HMAC key used to sign server-island props. The default value is the `MOCHI_KEY` env var (or a fresh random key if unset). Use this to source the key from KMS / Vault / a secret manager. Async.
+Override the secret key used to encrypt server-island props and image payloads. The default value is the `MOCHI_KEY` env var (or a fresh random key if unset). Use this to source the key from KMS / Vault / a secret manager. Async.
 
 ```ts
 await Mochi.serve({
@@ -232,6 +232,24 @@ await Mochi.serve({
 ```
 
 The `envKeyPresent` field on the filter context tells you whether `MOCHI_KEY` was set, in case you want to fall back to the env-derived default.
+
+#### `payload:compressMinBytes`
+
+The minimum size (bytes) a server-island-prop or image payload must reach before the framework attempts to deflate it ahead of encryption. Below the threshold, zlib framing outweighs any saving, so the deflate call is skipped. Evaluated per payload — the filter receives the (pre-encryption) `payload` bytes in its context, so the threshold can be decided per payload. Sync.
+
+```ts
+import { DEFAULT_COMPRESS_MIN_BYTES } from 'mochi-framework';
+
+await Mochi.serve({
+  filters: {
+    // Raise the bar to 128 B, but never bother deflating payloads that already look binary.
+    'payload:compressMinBytes': (def, { payload }) => (payload[0] === 0x89 ? Infinity : 128),
+  },
+  routes,
+});
+```
+
+Default is `DEFAULT_COMPRESS_MIN_BYTES` (80), derived empirically — re-run `bun packages/mochi/scripts/compression-threshold.ts` to reproduce. The `payload` is read-only context (mutating it corrupts the ciphertext). The inner "use only if smaller" check still discards any payload that fails to shrink, so raising the threshold only trades a bit of CPU against missed wins; returning `Infinity` disables compression for that payload entirely.
 
 #### `compile:preprocessors`
 
@@ -292,7 +310,7 @@ Context fields:
 - `label` — event tag (`'GET '`, `'WS  '`, `'BUILD'`, `'CACHE'`, …).
 - `path` — URL path for requests; cache key for `CACHE`/`PAGECACHE`; source file for `BUILD`/`HMR`; `localhost:port` for `BOOT`.
 - `status` — HTTP status (request lines only).
-- `kind` — `'page' | 'api' | 'file' | 'asset' | 'fallback' | 'error'` (request lines only).
+- `kind` — `'page' | 'api' | 'file' | 'asset' | 'image' | 'fallback' | 'error'` (request lines only).
 - `source` — `{ name, payload }` for the originating `mochiEvents` event. Narrow on `source.name` to access typed per-event fields (e.g. `requestId` on `'request'`, `size` on `'ws:message'`, `hydratableCount` on `'compile:complete'`).
 
 ```ts
@@ -303,3 +321,33 @@ Context fields:
   return line;
 }
 ```
+
+#### `image:maxRedirects`
+
+Override how many upstream redirects the image fetcher will follow when resolving a source. Each hop is re-validated against `allowedHosts` / `blockPrivateNetworks` (an allowed host can't redirect into a private network), so this caps how long that chain may be. The default is `5`; return a smaller number to tighten it, `0` to reject any redirect, or a larger number for sources behind several hops. The `src` being fetched is in the context, so you can decide per-host. Sync.
+
+```ts
+await Mochi.serve({
+  filters: {
+    'image:maxRedirects': (max, { src }) => (new URL(src).hostname === 'cdn.example.com' ? 10 : max),
+  },
+  routes,
+});
+```
+
+#### `image:url`
+
+Rewrite the encrypted URL returned by `getResizedImage()` / `getImage()` (and the `<Image>` component) before it reaches your markup — typically to prepend a CDN origin in front of the relative `/_mochi/image/…?p=<token>` path. The context carries the source `src`, the cosmetic `filename`, and `original` (`true` for `getImage`, `false` for resized variants), so you can route originals and variants differently. Return the URL unchanged to opt out per call. Sync.
+
+```ts
+await Mochi.serve({
+  filters: {
+    'image:url': (url, { original }) => `https://cdn.example.com${url}`,
+  },
+  routes,
+});
+```
+
+<Callout type="danger">
+Only rewrite the **origin/prefix** — never the last path segment (the `filename`). That segment is authenticated (bound as AAD to the encrypted token), so the image endpoint re-derives it from the served path and rejects (403) any request whose filename was changed. Rewriting the host/prefix is safe; renaming `photo-500x500.webp` is not. Mochi logs a warning if a filter changes the filename.
+</Callout>
