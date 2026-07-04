@@ -4,9 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { mochiEvents } from '../events';
 import type { MochiImageDeleteEvent, MochiImageStoreEvent } from '../events';
-import { ImageCache, srcHash } from './imageCache';
+import { ImageCache, srcHash, variantId } from './imageCache';
 import type { RegenResult, SidecarMeta } from './imageCache';
-import type { ImageRequest } from './types';
 
 const dirs: string[] = [];
 function tmp(): string {
@@ -20,15 +19,14 @@ afterEach(() => {
   }
 });
 
-function req(over: Partial<ImageRequest> = {}): ImageRequest {
-  return { src: 'https://example.com/a.png', width: 100, fit: 'inside', format: 'webp', quality: 80, autoOrient: true, ...over };
-}
-
 function regen(tag: string): () => Promise<RegenResult> {
   return async () => ({ bytes: new TextEncoder().encode(tag), contentType: 'image/webp', width: 100, height: 100, format: 'webp' });
 }
 
 const SRC = 'https://example.com/a.png';
+// Cache-mechanics tests don't need a real size — any stable configHash/ext works.
+const ID = variantId(SRC, 'fakehash123');
+const EXT = 'webp';
 
 function origFn(tag: string, ct: string | null = 'image/jpeg', counter?: { n: number }) {
   return async (): Promise<{ bytes: Uint8Array; contentType: string | null }> => {
@@ -52,11 +50,11 @@ describe('ImageCache variant (lifetime follows the original)', () => {
       calls++;
       return { bytes: new Uint8Array([1, 2, 3]), contentType: 'image/webp', width: 100, height: 100, format: 'webp' };
     };
-    const first = await cache.get(req(), fn);
+    const first = await cache.getVariant(SRC, ID, EXT, fn);
     expect(first.status).toBe('miss');
     expect(calls).toBe(1);
 
-    const second = await cache.get(req(), fn);
+    const second = await cache.getVariant(SRC, ID, EXT, fn);
     expect(second.status).toBe('fresh');
     expect(calls).toBe(1);
     expect(Array.from(second.entry.bytes)).toEqual([1, 2, 3]);
@@ -65,9 +63,9 @@ describe('ImageCache variant (lifetime follows the original)', () => {
   test('inherits the original stale window and revalidates in the background', async () => {
     const cache = new ImageCache(tmp());
     await cache.getOriginal(SRC, 0, 86_400_000, origFn('o')); // original immediately stale
-    await cache.get(req(), regen('v1'));
+    await cache.getVariant(SRC, ID, EXT, regen('v1'));
     let revalidated = 0;
-    const result = await cache.get(req(), async () => {
+    const result = await cache.getVariant(SRC, ID, EXT, async () => {
       revalidated++;
       return { bytes: new TextEncoder().encode('v2'), contentType: 'image/webp', width: 100, height: 100, format: 'webp' };
     });
@@ -85,8 +83,8 @@ describe('ImageCache variant (lifetime follows the original)', () => {
       calls++;
       return { bytes: new Uint8Array([calls]), contentType: 'image/webp', width: 100, height: 100, format: 'webp' };
     };
-    await cache.get(req(), fn);
-    const second = await cache.get(req(), fn);
+    await cache.getVariant(SRC, ID, EXT, fn);
+    const second = await cache.getVariant(SRC, ID, EXT, fn);
     expect(second.status).toBe('miss');
     expect(calls).toBe(2);
   });
@@ -94,8 +92,8 @@ describe('ImageCache variant (lifetime follows the original)', () => {
   test('a refreshed original (new generation) serves the variant stale and regenerates', async () => {
     const cache = new ImageCache(tmp());
     await cache.getOriginal(SRC, 60_000, 86_400_000, origFn('o1'));
-    await cache.get(req(), regen('v1'));
-    expect((await cache.get(req(), regen('v1'))).status).toBe('fresh');
+    await cache.getVariant(SRC, ID, EXT, regen('v1'));
+    expect((await cache.getVariant(SRC, ID, EXT, regen('v1'))).status).toBe('fresh');
 
     // Evict + re-fetch the original so its createdAt (generation) bumps.
     await cache.getOriginal(SRC, 0, 0, origFn('o2'));
@@ -103,7 +101,7 @@ describe('ImageCache variant (lifetime follows the original)', () => {
     await cache.getOriginal(SRC, 60_000, 86_400_000, origFn('o3'));
 
     let calls = 0;
-    const result = await cache.get(req(), async () => {
+    const result = await cache.getVariant(SRC, ID, EXT, async () => {
       calls++;
       return { bytes: new TextEncoder().encode('v2'), contentType: 'image/webp', width: 100, height: 100, format: 'webp' };
     });
@@ -116,11 +114,11 @@ describe('ImageCache variant (lifetime follows the original)', () => {
     const dir = tmp();
     const cache = new ImageCache(dir);
     await cache.getOriginal(SRC, 60_000, 86_400_000, origFn('o'));
-    await cache.get(req(), regen('v1'));
-    expect((await cache.get(req(), regen('v1'))).status).toBe('fresh');
+    await cache.getVariant(SRC, ID, EXT, regen('v1'));
+    expect((await cache.getVariant(SRC, ID, EXT, regen('v1'))).status).toBe('fresh');
 
     rmSync(join(dir, srcHash(SRC), 'original.json'));
-    expect((await cache.get(req(), regen('v2'))).status).toBe('miss');
+    expect((await cache.getVariant(SRC, ID, EXT, regen('v2'))).status).toBe('miss');
   });
 
   test('placeholder round-trips while the original generation matches', async () => {
@@ -168,7 +166,7 @@ describe('ImageCache variant (lifetime follows the original)', () => {
     expect(result.status).toBe('stale'); // generation mismatch → regenerate, don't serve as fresh
   });
 
-  test('getVariant caches an arbitrary pipeline id and follows the original', async () => {
+  test('getVariant caches an arbitrary size id and follows the original', async () => {
     const dir = tmp();
     const cache = new ImageCache(dir);
     await cache.getOriginal(SRC, 60_000, 86_400_000, origFn('o'));
@@ -309,9 +307,9 @@ describe('ImageCache.getOriginal', () => {
 
   test('original and resize variants coexist for the same src', async () => {
     const cache = new ImageCache(tmp());
-    await cache.get(req(), regen('variant'));
+    await cache.getVariant(SRC, ID, EXT, regen('variant'));
     await cache.getOriginal(SRC, 60_000, 86_400_000, origFn('original'));
-    expect(new TextDecoder().decode((await cache.get(req(), regen('x'))).entry.bytes)).toBe('variant');
+    expect(new TextDecoder().decode((await cache.getVariant(SRC, ID, EXT, regen('x'))).entry.bytes)).toBe('variant');
     expect(new TextDecoder().decode((await cache.getOriginal(SRC, 60_000, 86_400_000, origFn('x'))).entry.bytes)).toBe('original');
   });
 
@@ -334,24 +332,24 @@ describe('ImageCache.invalidateOriginal', () => {
   test('soft marks the original stale — variants serve stale and revalidate', async () => {
     const cache = new ImageCache(tmp());
     await cache.getOriginal(SRC, 60_000, 86_400_000, origFn('o'));
-    await cache.get(req(), regen('v'));
-    expect((await cache.get(req(), regen('v'))).status).toBe('fresh');
+    await cache.getVariant(SRC, ID, EXT, regen('v'));
+    expect((await cache.getVariant(SRC, ID, EXT, regen('v'))).status).toBe('fresh');
 
     await cache.invalidateOriginal(SRC, false);
 
-    expect((await cache.get(req(), regen('v'))).status).toBe('stale');
+    expect((await cache.getVariant(SRC, ID, EXT, regen('v'))).status).toBe('stale');
     expect((await cache.getOriginal(SRC, 60_000, 86_400_000, origFn('o'))).status).toBe('stale');
   });
 
   test('hard marks the original expired — variants miss and re-fetch', async () => {
     const cache = new ImageCache(tmp());
     await cache.getOriginal(SRC, 60_000, 86_400_000, origFn('o'));
-    await cache.get(req(), regen('v'));
-    expect((await cache.get(req(), regen('v'))).status).toBe('fresh');
+    await cache.getVariant(SRC, ID, EXT, regen('v'));
+    expect((await cache.getVariant(SRC, ID, EXT, regen('v'))).status).toBe('fresh');
 
     await cache.invalidateOriginal(SRC, true);
 
-    expect((await cache.get(req(), regen('v'))).status).toBe('miss');
+    expect((await cache.getVariant(SRC, ID, EXT, regen('v'))).status).toBe('miss');
     expect((await cache.getOriginal(SRC, 60_000, 86_400_000, origFn('o2'))).status).toBe('miss');
   });
 
@@ -418,17 +416,17 @@ describe('ImageCache.sweep', () => {
   test('leaves fresh entries untouched', async () => {
     const cache = new ImageCache(tmp());
     await cache.getOriginal(SRC, 60_000, 86_400_000, origFn('o'));
-    await cache.get(req(), regen('v'));
+    await cache.getVariant(SRC, ID, EXT, regen('v'));
 
     expect(await cache.sweep(Date.now())).toEqual({ removedVariants: 0, removedOriginals: 0, freedBytes: 0 });
-    expect((await cache.get(req(), regen('v'))).status).toBe('fresh');
+    expect((await cache.getVariant(SRC, ID, EXT, regen('v'))).status).toBe('fresh');
   });
 
   test('removes an evicted original and its variants, reclaiming the dir', async () => {
     const dir = tmp();
     const cache = new ImageCache(dir);
     await cache.getOriginal(SRC, 60_000, 86_400_000, origFn('o'));
-    await cache.get(req(), regen('v'));
+    await cache.getVariant(SRC, ID, EXT, regen('v'));
 
     const swept = await cache.sweep(Date.now() + 2 * 86_400_000); // jump past the evict window
     expect(swept.removedOriginals).toBe(1);
@@ -439,7 +437,7 @@ describe('ImageCache.sweep', () => {
 
   test('removes a variant orphaned from a missing original', async () => {
     const cache = new ImageCache(tmp());
-    await cache.get(req(), regen('v')); // variant written with no original present
+    await cache.getVariant(SRC, ID, EXT, regen('v')); // variant written with no original present
 
     const swept = await cache.sweep(Date.now());
     expect(swept).toMatchObject({ removedVariants: 1, removedOriginals: 0 });
@@ -448,7 +446,7 @@ describe('ImageCache.sweep', () => {
   test('removes a variant superseded by a newer original generation', async () => {
     const cache = new ImageCache(tmp());
     await cache.getOriginal(SRC, 60_000, 86_400_000, origFn('o1'));
-    await cache.get(req(), regen('v1')); // tied to the o1 generation
+    await cache.getVariant(SRC, ID, EXT, regen('v1')); // tied to the o1 generation
 
     // Evict + re-fetch so the original's createdAt (generation) bumps.
     await cache.getOriginal(SRC, 0, 0, origFn('o2'));
@@ -465,7 +463,7 @@ describe('ImageCache.sweep', () => {
     const cache = new ImageCache(dir);
     await cache.getOriginal(SRC, 0, 0, origFn('o')); // immediately evicted
     await cache.setPlaceholder(SRC, 'data:image/png;base64,AAAA', readOrigMeta(dir).createdAt);
-    await cache.get(req(), regen('v'));
+    await cache.getVariant(SRC, ID, EXT, regen('v'));
 
     const swept = await cache.sweep(Date.now() + 1000);
     expect(swept.removedOriginals).toBe(1);
@@ -552,7 +550,7 @@ describe('ImageCache lifecycle events', () => {
     const cache = new ImageCache(tmp());
     await cache.getOriginal(SRC, 60_000, 86_400_000, origFn('o'));
     stores.length = 0; // ignore the original store above
-    await cache.get(req(), regen('v1'));
+    await cache.getVariant(SRC, ID, EXT, regen('v1'));
     const variants = stores.filter((s) => s.kind === 'variant');
     expect(variants).toHaveLength(1);
     expect(variants[0]).toMatchObject({ kind: 'variant', src: SRC, contentType: 'image/webp', width: 100, height: 100, format: 'webp' });
@@ -573,7 +571,7 @@ describe('ImageCache lifecycle events', () => {
     const cache = new ImageCache(dir);
     await cache.getOriginal(SRC, 0, 0, origFn('o')); // immediately evicted
     await cache.setPlaceholder(SRC, 'data:image/png;base64,AAAA', readOrigMeta(dir).createdAt);
-    await cache.get(req(), regen('v'));
+    await cache.getVariant(SRC, ID, EXT, regen('v'));
     deletes.length = 0;
     await cache.sweep(Date.now() + 1000);
     expect(deletes.map((d) => d.kind).sort()).toEqual(['original', 'placeholder', 'variant']);
@@ -583,7 +581,7 @@ describe('ImageCache lifecycle events', () => {
   test('sweep emits reason:superseded for an old-generation variant', async () => {
     const cache = new ImageCache(tmp());
     await cache.getOriginal(SRC, 60_000, 86_400_000, origFn('o1'));
-    await cache.get(req(), regen('v1'));
+    await cache.getVariant(SRC, ID, EXT, regen('v1'));
     await cache.getOriginal(SRC, 0, 0, origFn('o2'));
     await new Promise((r) => setTimeout(r, 5));
     await cache.getOriginal(SRC, 60_000, 86_400_000, origFn('o3'));

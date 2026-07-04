@@ -1,11 +1,12 @@
-import { getImageRuntime } from './config';
-import { getCachedOriginal } from './getResizedImage';
+import { getImageRuntime, getSize } from './config';
+import { getCachedOriginal } from './imageApi';
 import { decryptImageRequest } from './imageCrypto';
 import { originalId, variantId } from './imageCache';
 import { getMochiConfig } from '../mochiConfig';
-import { resizeImage } from './resize';
+import { logger } from '../log';
+import { extForFormat, runPipeline } from './resize';
 import { ImageError } from './types';
-import type { ImageRequest, ResolvedImageOptions } from './types';
+import type { ResolvedImageSize } from './types';
 
 function textResponse(status: number, message: string): Response {
   return new Response(message, {
@@ -35,9 +36,8 @@ export function safeOriginalContentType(contentType: string): { contentType: str
  * Browser/CDN cache policy for a successful image response, derived from the
  * entry's SWR window: cache without revalidating for `timeToStale`, then serve
  * stale while revalidating in the background for the rest of the evict window.
- * The URL is stable per (src, params), so correctness across a refresh rides on
- * the generation-aware ETag once `max-age` lapses. Trade-off: `invalidateImage()`
- * reaches an already-cached browser only after its `max-age` expires.
+ * The URL is stable per (src, size), so correctness across a refresh rides on
+ * the generation-aware ETag once `max-age` lapses.
  */
 export function imageCacheControl(timeToStaleMs: number, timeToEvictMs: number): string {
   const maxAge = Math.max(0, Math.floor(timeToStaleMs / 1000));
@@ -47,18 +47,29 @@ export function imageCacheControl(timeToStaleMs: number, timeToEvictMs: number):
 
 // The Cache-Control for both originals and variants: undefined in dev (so
 // edits/invalidations aren't fought by the browser cache), else derived from the
-// per-request TTL override the response actually used, falling back to defaults.
-export function resolveImageCacheControl(request: ImageRequest, options: ResolvedImageOptions, development: boolean): string | undefined {
+// effective TTL window (a size's overrides, or the global defaults).
+export function resolveImageCacheControl(timeToStale: number, timeToEvict: number, development: boolean): string | undefined {
   if (development) {
     return undefined;
   }
-  return imageCacheControl(request.timeToStale ?? options.timeToStale, request.timeToEvict ?? options.timeToEvict);
+  return imageCacheControl(timeToStale, timeToEvict);
+}
+
+const warnedUnknownSize = new Set<string>();
+
+function warnUnknownSize(name: string): void {
+  if (!warnedUnknownSize.has(name)) {
+    warnedUnknownSize.add(name);
+    logger.warn(`Image request referenced unknown size "${name}" (redefined/removed since minting); serving the full-size original.`);
+  }
 }
 
 /**
- * The `/_mochi/image/<filename>?p=…` endpoint: decrypt the payload (the
- * filename is bound as AAD), then serve from the stale-while-revalidate disk
- * cache, regenerating on miss by fetching + resizing the source.
+ * The `/_mochi/image/<filename>?p=…` endpoint: decrypt the payload (the filename
+ * is bound as AAD), then serve from the stale-while-revalidate disk cache,
+ * regenerating on miss by fetching the source and running the referenced named
+ * size. An `original` request (or an unknown size name) serves the shared
+ * original bytes verbatim.
  */
 export function createImageHandler(): (req: Request) => Promise<Response> {
   // In dev, omit Cache-Control entirely so edits/invalidations show up on the
@@ -75,27 +86,24 @@ export function createImageHandler(): (req: Request) => Promise<Response> {
       return textResponse(403, 'Missing payload');
     }
 
-    // The filename is bound as AAD, so a tampered path (e.g. swapped
-    // /my-image.webp) or payload fails decryption.
-    const request = decryptImageRequest(token, filename, options);
+    // The filename is bound as AAD, so a tampered path or payload fails decryption.
+    const request = decryptImageRequest(token, filename);
     if (!request) {
       return textResponse(403, 'Invalid payload');
     }
 
-    // Full-size original: serve the shared cached bytes verbatim. The resize
-    // format/fit guards below don't apply (originals may be gif/svg/etc.).
-    if (request.original) {
+    const size: ResolvedImageSize | undefined = request.original ? undefined : getSize(request.size, options);
+    if (request.size && !size) {
+      warnUnknownSize(request.size);
+    }
+
+    // Full-size original: serve the shared cached bytes verbatim (originals may be
+    // gif/svg/etc.). Covers explicit originals and unknown-size fallbacks.
+    if (!size) {
       try {
-        const { bytes, contentType, status, createdAt } = await getCachedOriginal(
-          request.src,
-          { timeToStale: request.timeToStale, timeToEvict: request.timeToEvict },
-          options,
-          cache,
-        );
-        // ETag carries the cache generation, so a re-fetched/invalidated source
-        // yields a new ETag and a stale conditional request gets fresh bytes.
+        const { bytes, contentType, status, createdAt } = await getCachedOriginal(request.src, {}, options, cache);
         const etag = `"${originalId(request.src)}-${createdAt}"`;
-        const cacheControl = resolveImageCacheControl(request, options, development);
+        const cacheControl = resolveImageCacheControl(options.timeToStale, options.timeToEvict, development);
         if (req.headers.get('if-none-match') === etag) {
           return new Response(null, { status: 304, headers: { ETag: etag, 'X-Content-Type-Options': 'nosniff', ...(cacheControl ? { 'Cache-Control': cacheControl } : {}) } });
         }
@@ -120,17 +128,11 @@ export function createImageHandler(): (req: Request) => Promise<Response> {
       }
     }
 
-    if (!options.outputFormats.includes(request.format)) {
-      return textResponse(415, 'Output format not allowed');
-    }
-    if (request.fit !== 'inside' && request.fit !== 'fill') {
-      return textResponse(415, 'Invalid fit');
-    }
-
     try {
-      const { entry, status } = await cache.get(request, async () => {
-        const { bytes, createdAt } = await getCachedOriginal(request.src, { timeToStale: request.timeToStale, timeToEvict: request.timeToEvict }, options, cache);
-        const result = await resizeImage(bytes, request, options);
+      const id = variantId(request.src, size.configHash);
+      const { entry, status } = await cache.getVariant(request.src, id, extForFormat(size.format), async () => {
+        const { bytes, createdAt } = await getCachedOriginal(request.src, { timeToStale: size.timeToStale, timeToEvict: size.timeToEvict }, options, cache);
+        const result = await runPipeline(bytes, size, options);
         return {
           bytes: result.bytes,
           contentType: result.contentType,
@@ -141,13 +143,11 @@ export function createImageHandler(): (req: Request) => Promise<Response> {
         };
       });
 
-      // ETag carries the served bytes' generation (bumped on regeneration), so
-      // revalidation reflects the current content rather than the stable id.
-      const etag = `"${variantId(request)}-${entry.meta.createdAt}"`;
-      // Honour the per-request TTL override (the same one that fetched/shortened
-      // the shared original) — otherwise the browser could cache a variant far
-      // longer than the original's real window.
-      const cacheControl = resolveImageCacheControl(request, options, development);
+      // ETag carries the variant id (which folds in the size config hash) plus
+      // the served bytes' generation, so both a redefinition and a source refresh
+      // revalidate correctly.
+      const etag = `"${id}-${entry.meta.createdAt}"`;
+      const cacheControl = resolveImageCacheControl(size.timeToStale ?? options.timeToStale, size.timeToEvict ?? options.timeToEvict, development);
       if (req.headers.get('if-none-match') === etag) {
         return new Response(null, { status: 304, headers: { ETag: etag, 'X-Content-Type-Options': 'nosniff', ...(cacheControl ? { 'Cache-Control': cacheControl } : {}) } });
       }

@@ -146,8 +146,8 @@ export const demos: Demo[] = [
     href: '/demos/image/',
     slug: 'image',
     files: image,
-    title: 'Image Resizing',
-    hook: 'On-the-fly image resizing on Bun.Image, served from an encrypted, stale-while-revalidate disk cache.',
+    title: 'Image Pipelines',
+    hook: 'On-the-fly image transforms via named sizes, served from an encrypted, stale-while-revalidate disk cache. <Image> only mints a URL; the endpoint does the work.',
     category: 'data',
   },
   {
@@ -162,8 +162,8 @@ export const demos: Demo[] = [
     href: '/demos/image-pipeline/',
     slug: 'image-pipeline',
     files: imagePipeline,
-    title: 'Advanced Image use',
-    hook: 'Decode, resize, rotate, flip, modulate, and re-encode with the raw Bun.Image pipeline — every option, server-rendered to inline data URLs.',
+    title: 'Named sizes',
+    hook: 'Declare resize / rotate / flip / modulate / format transforms once as named sizes; getImageUrl mints a deferred URL and getImage runs one inline for bytes + metadata.',
     category: 'data',
   },
   {

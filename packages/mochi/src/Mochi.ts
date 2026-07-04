@@ -1241,10 +1241,10 @@ export class Mochi {
       });
     });
 
-    // Register the signed image-resize endpoint (enabled unless explicitly off)
-    // and start the background cache janitor. The resolved options are the
-    // single source of truth for `enabled` — `getResizedImage` consults the
-    // same flag to fall back to raw source URLs when the endpoint is off.
+    // Register the signed image endpoint (enabled unless explicitly off) and
+    // start the background cache janitor. The resolved options are the single
+    // source of truth for `enabled` — `getImageUrl` consults the same flag to
+    // fall back to raw source URLs when the endpoint is off.
     let stopImageSweeper: (() => void) | undefined;
     const imageRuntime = getImageRuntime();
     if (imageRuntime.options.enabled) {

@@ -2,8 +2,7 @@ import { createHash } from 'node:crypto';
 import { readdir, rename, rmdir, stat, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { mochiEvents } from '../events';
-import { extForFormat } from './resize';
-import type { ImageFormat, ImageRequest } from './types';
+import type { ImageFormat } from './types';
 
 // For the shared full-size original entry, `width`/`height` are 0 and `format`
 // is '' (we don't decode originals); `contentType` is the authoritative type.
@@ -53,41 +52,15 @@ export function srcHash(src: string): string {
   return hash(src);
 }
 
-// Recursively sort object keys so an op descriptor hashes the same regardless of
-// the order the caller wrote the option properties. Arrays keep their order (a
-// transform chain is order-sensitive).
-function canonicalize(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    return value.map(canonicalize);
-  }
-  if (value && typeof value === 'object') {
-    return Object.fromEntries(
-      Object.keys(value as Record<string, unknown>)
-        .sort()
-        .map((k) => [k, canonicalize((value as Record<string, unknown>)[k])]),
-    );
-  }
-  return value;
-}
-
-/** Stable variant id for an arbitrary (non-`ImageRequest`) transform descriptor. */
-export function pipelineVariantId(descriptor: unknown): string {
-  return hash(JSON.stringify(canonicalize(descriptor)));
-}
-
-/** Identifies a variant by everything that affects the bytes — deliberately NOT the TTL. */
-export function variantId(req: ImageRequest): string {
-  const canonical = JSON.stringify({
-    src: req.src,
-    width: req.width ?? null,
-    height: req.height ?? null,
-    fit: req.fit,
-    withoutEnlargement: req.withoutEnlargement ?? false,
-    format: req.format,
-    quality: req.quality,
-    autoOrient: req.autoOrient,
-  });
-  return hash(canonical);
+/**
+ * Identifies a variant by its source and the size's config hash. The config
+ * hash already folds in every byte-affecting field (dims, ops, format, quality),
+ * so a size redefinition changes the id — a new cache entry and ETag — while
+ * two sizes with identical config correctly share one entry. Deliberately NOT
+ * keyed by the TTLs.
+ */
+export function variantId(src: string, configHash: string): string {
+  return hash(`variant:${configHash}:${src}`);
 }
 
 export function originalId(src: string): string {
@@ -282,13 +255,12 @@ export class ImageCache {
   }
 
   /**
-   * Read a cached variant keyed by an arbitrary id (a resize `variantId`, or a
-   * `pipelineVariantId` for the raw `Bun.Image` wrapper). A variant has no window
-   * of its own — its fresh/stale/evicted state is derived from the shared
-   * original's sidecar. `originalCreatedAt` marks which original generation
-   * produced these bytes, so a refreshed original (bumped `createdAt`) serves the
-   * old variant stale while it regenerates. The variant disappears when the
-   * original is evicted.
+   * Read a cached variant keyed by its `variantId` (source + size config
+   * hash). A variant has no window of its own — its fresh/stale/evicted state is
+   * derived from the shared original's sidecar. `originalCreatedAt` marks which
+   * original generation produced these bytes, so a refreshed original (bumped
+   * `createdAt`) serves the old variant stale while it regenerates. The variant
+   * disappears when the original is evicted.
    */
   async getVariant(src: string, id: string, ext: string, regenerate: () => Promise<RegenResult>): Promise<{ entry: CacheEntry; status: ImageCacheStatus }> {
     const orig = await this.readOriginalMeta(src);
@@ -316,11 +288,6 @@ export class ImageCache {
     this.emitReadFor(id, 'miss');
     const entry = await this.revalidateFor(src, id, ext, regenerate);
     return { entry, status: 'miss' };
-  }
-
-  /** Resize-variant read: derives the id/ext from the `ImageRequest`. */
-  get(req: ImageRequest, regenerate: () => Promise<RegenResult>): Promise<{ entry: CacheEntry; status: ImageCacheStatus }> {
-    return this.getVariant(req.src, variantId(req), extForFormat(req.format), regenerate);
   }
 
   private originalMetaPath(src: string): string {

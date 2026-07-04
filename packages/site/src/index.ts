@@ -137,6 +137,29 @@ await Mochi.serve({
   additionalWatchPaths: ['../docs'],
   logger: { level: 'log' },
   proxy: { origin }, // TODO: This is a bit of an awkward way to set the allowed csrf domain...
+  // Named image sizes used by the /demos/image* pages (kept in sync with the
+  // example shown in ./src/demoIndex.ts).
+  image: {
+    sizes: {
+      hero: { width: 600, height: 400, fit: 'inside' },
+      square: { width: 400, height: 400, fit: 'inside' },
+      card: { width: 400, height: 267, fit: 'inside' },
+      thumb: { width: 240, height: 240, fit: 'inside' },
+      'fit-fill': { width: 240, height: 240, fit: 'fill' },
+      'fit-inside': { width: 240, height: 240, fit: 'inside' },
+      rotate90: { width: 200, height: 200, fit: 'inside', rotate: 90 },
+      rotate180: { width: 200, height: 200, fit: 'inside', rotate: 180 },
+      rotate270: { width: 200, height: 200, fit: 'inside', rotate: 270 },
+      flip: { width: 200, height: 200, fit: 'inside', flip: true },
+      flop: { width: 200, height: 200, fit: 'inside', flop: true },
+      grayscale: { width: 200, height: 200, fit: 'inside', modulate: { saturation: 0 } },
+      brighten: { width: 200, height: 200, fit: 'inside', modulate: { brightness: 1.5 } },
+      saturate: { width: 200, height: 200, fit: 'inside', modulate: { saturation: 2 } },
+      'fmt-jpeg': { width: 300, height: 300, fit: 'inside', format: 'jpeg', quality: 85 },
+      'fmt-png': { width: 300, height: 300, fit: 'inside', format: 'png' },
+      'fmt-webp': { width: 300, height: 300, fit: 'inside', format: 'webp', quality: 80 },
+    },
+  },
   markdown: markdownConfig,
   eventHooks: {
     'mochi:init': ({ options }) => {

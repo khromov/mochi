@@ -19,7 +19,7 @@
     <code>image:store</code> events, one per file written to disk:
   </p>
   <div class="frame">
-    <Image src={remote} width={600} height={400} placeholder alt="A resized random photo" />
+    <Image src={remote} size="hero" placeholder alt="A resized random photo" />
   </div>
   <p class="hint">
     Each event carries the on-disk <code>path</code> plus <code>kind</code>, <code>src</code>, <code>size</code>, and (for variants) dimensions/format — everything an S3 mirror

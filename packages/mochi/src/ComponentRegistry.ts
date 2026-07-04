@@ -539,9 +539,8 @@ export class ComponentRegistry {
             // Cache storage adapters — server-only (FileStorage touches the fs).
             `export { MemoryStorage, FileStorage } from "${toPosixPath(path.join(FRAMEWORK_DIR, 'cache-storage.ts'))}";`,
             // Image helpers. Server-only (signing needs the secret key); re-exported
-            // so .svelte files can `import { getResizedImage } from 'mochi-framework'`.
-            `export { getResizedImage, getImage, getImageBytes, getImagePlaceholder, invalidateImage } from "${toPosixPath(path.join(FRAMEWORK_DIR, 'image/getResizedImage.ts'))}";`,
-            `export { cachedImage, CachedImage } from "${toPosixPath(path.join(FRAMEWORK_DIR, 'image/cachedImage.ts'))}";`,
+            // so .svelte files can `import { getImageUrl } from 'mochi-framework'`.
+            `export { getImageUrl, getImageAttrs, getImage, getImagePlaceholder, imagePlaceholder, warmImagePlaceholder, invalidateImage } from "${toPosixPath(path.join(FRAMEWORK_DIR, 'image/imageApi.ts'))}";`,
             // `enhance` / `deserialize` are browser-only Svelte action helpers.
             // Svelte never invokes actions during SSR, so these stubs only fire
             // if user code calls them on the server — which is a usage error.
@@ -1040,13 +1039,16 @@ export class ComponentRegistry {
             `export class MemoryStorage { constructor() { throw new Error("MemoryStorage is only available on the server"); } }`,
             `export class FileStorage { constructor() { throw new Error("FileStorage is only available on the server"); } }`,
             // Image helpers are server-only (signing/fetch/disk-cache); ship throwing stubs.
-            `export function getResizedImage() { throw new Error("getResizedImage() is only available on the server"); }`,
+            // getImageUrl/warmImagePlaceholder degrade to no-ops rather than throwing:
+            // <Image> may re-mint on the client after hydration (with the raw src) and
+            // warm-placeholder is best-effort, so a throw there would break hydration.
+            `export function getImageUrl(src) { return src; }`,
+            `export function getImageAttrs(src) { return { url: src }; }`,
+            `export function warmImagePlaceholder() {}`,
             `export function getImage() { throw new Error("getImage() is only available on the server"); }`,
-            `export function getImageBytes() { throw new Error("getImageBytes() is only available on the server"); }`,
-            `export function getImagePlaceholder() { throw new Error("getImagePlaceholder() is only available on the server"); }`,
+            `export function getImagePlaceholder() { return Promise.resolve(null); }`,
+            `export function imagePlaceholder() { return Promise.resolve(null); }`,
             `export function invalidateImage() { throw new Error("invalidateImage() is only available on the server"); }`,
-            `export function cachedImage() { throw new Error("cachedImage() is only available on the server"); }`,
-            `export class CachedImage { constructor() { throw new Error("CachedImage is only available on the server"); } }`,
             `export { enhance, deserialize } from "${enhanceClientPath}";`,
           ].join('\n'),
           loader: 'js',

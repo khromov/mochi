@@ -47,7 +47,7 @@ Server-island rows display a lock icon next to the mode tag. Their props are enc
 
 ### Images panel
 
-Lists every image produced during the request. Signed URLs from [`<Image>` / `getResizedImage`](/docs/images/) show a lock icon (their request params are AES-256 encrypted on the wire; the decoded JSON is a dev-only view) and the binary wire format. Programmatic [`cachedImage`](/docs/images/#custom-pipelines-with-cachedimage) pipelines show a `cachedImage` tag and the recorded op chain (`resize(240, 240).webp()`) instead — their preview is the resolved output inlined as a `data:` URL (omitted for outputs over 1 MB). Click a row to expand the preview, params, and pipeline.
+Lists every image produced during the request. Deferred URLs from [`<Image>` / `getImageUrl`](/docs/images/) show a lock icon (their `src` + size name are AES-256 encrypted on the wire; the decoded params are a dev-only view) and the size-name tag. Inline [`getImage`](/docs/images/#getimage-inline-bytes-metadata) results show an `inline` tag instead — their preview is the resolved output inlined as a `data:` URL (omitted for outputs over 1 MB). Click a row to expand the preview and params.
 
 ### Warnings
 

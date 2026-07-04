@@ -1,7 +1,7 @@
 ---
 title: 'Images'
 slug: images
-description: 'On-the-fly image resizing on Bun.Image with encrypted URLs and a stale-while-revalidate disk cache.'
+description: 'On-the-fly image transforms on Bun.Image via named sizes, with encrypted URLs and a stale-while-revalidate disk cache.'
 ---
 
 <script>
@@ -10,40 +10,72 @@ description: 'On-the-fly image resizing on Bun.Image with encrypted URLs and a s
 
 ## Images
 
-Mochi resizes images on the fly with [`Bun.Image`](https://bun.com/docs/runtime/image), serving them from an encrypted, stale-while-revalidate disk cache. Every URL's payload is encrypted (authenticated encryption keyed off your `MOCHI_KEY`), so the source URL and params aren't readable and an attacker can't request arbitrary sources through your server.
+Mochi transforms images on the fly with [`Bun.Image`](https://bun.com/docs/runtime/image), serving them from an encrypted, stale-while-revalidate disk cache. You declare transforms once as **named sizes** in `Mochi.serve()`, then reference them by name. `<Image>` and `getImageUrl()` only mint a signed URL — the fetch, decode, and transform happen lazily in the `/_mochi/image` endpoint on the browser's request, so **SSR never blocks on image work**. Every URL's payload is encrypted (authenticated encryption keyed off your `MOCHI_KEY`), so the source URL isn't readable and an attacker can't request arbitrary sources or transforms through your server.
+
+### Declare sizes
+
+Define your transforms under `Mochi.serve({ image: { sizes } })`. Each size is a named, declarative recipe:
+
+```ts
+await Mochi.serve({
+  image: {
+    sizes: {
+      thumbnail: { width: 200, height: 200, fit: 'inside', format: 'webp', quality: 80 },
+      avatar: { width: 96, height: 96, fit: 'fill' },
+      grayscale: { width: 600, modulate: { saturation: 0 }, format: 'jpeg', quality: 85 },
+    },
+  },
+  routes,
+});
+```
+
+Transforms apply in a fixed order: **resize → rotate → flip → flop → modulate → format-encode**. Pipelines are validated at startup (bad dimensions/formats throw immediately). Redefining a size re-renders every URL that uses it — a config hash is folded into the cache key and `ETag`, so caches bust automatically.
+
+| Pipeline field                | Notes                                                              |
+| ----------------------------- | ------------------------------------------------------------------ |
+| `width` / `height`            | Target size; height-only derives width by ratio                    |
+| `fit`                         | `inside` keeps aspect & fits within W×H; `fill` stretches to W×H   |
+| `withoutEnlargement`          | Never upscale beyond the source's intrinsic size                   |
+| `rotate`                      | Degrees clockwise                                                  |
+| `flip` / `flop`               | Mirror vertically / horizontally                                   |
+| `modulate`                    | `{ brightness?, saturation?, hue?, lightness? }` (`1` = unchanged) |
+| `format`                      | `webp` \| `jpeg` \| `png` \| `avif` (default: `defaultFormat`)     |
+| `quality`                     | 1–100 (ignored for `png`; default: `defaultQuality`)               |
+| `autoOrient`                  | Apply EXIF orientation (default: the global `autoOrient`)          |
+| `timeToStale` / `timeToEvict` | Per-size cache-window overrides (ms)                               |
+
+> `Bun.Image` supports only `fit: 'inside'` and `fit: 'fill'` — there is no crop/"cover" mode. To get an exact square from a non-square source use `fill` (which stretches); otherwise `inside` keeps the aspect ratio and the output won't fill both dimensions.
 
 ### Component
 
-Import `Image` and point it at a source. It renders a single `<img>` with an encrypted, resized `src` — no client JS:
+Import `Image` and reference a size by name. It renders a single `<img>` with an encrypted `src` and no client JS. The `<img>`'s `width`/`height` default to the size's declared dimensions:
 
 ```svelte
 <script>
   import { Image } from 'mochi-framework/image';
 </script>
 
-<Image src="https://example.com/photo.jpg" width={640} height={400} alt="A photo" />
+<Image src="https://example.com/photo.jpg" size="thumbnail" alt="A photo" />
 ```
 
-Add `placeholder` to render a [ThumbHash](https://evanw.github.io/thumbhash/) blur that shows until the image loads. It's set as the `<img>`'s own `background-image`, so it needs no client JS — the loaded image paints over it and sharpens in via a CSS blur-up animation (disabled under `prefers-reduced-motion`):
+Add `placeholder` to render a [ThumbHash](https://evanw.github.io/thumbhash/) blur behind the image. It's set as the `<img>`'s own `background-image` (no client JS), and the loaded image paints over it via a CSS blur-up (disabled under `prefers-reduced-motion`). The blur is computed **in the background** on first use — it never blocks SSR, so it appears from the second render onward:
 
 ```svelte
-<Image src="https://example.com/photo.jpg" width={640} height={400} alt="A photo" placeholder />
+<Image src="https://example.com/photo.jpg" size="thumbnail" alt="A photo" placeholder />
 ```
 
-| Prop                   | Default    | Notes                                                                  |
-| ---------------------- | ---------- | ---------------------------------------------------------------------- |
-| `src`                  | —          | http/https source URL (required)                                       |
-| `width` / `height`     | —          | Target size; height-only derives width by ratio. Must be positive      |
-| `alt`                  | `''`       | Always set this                                                        |
-| `format`               | `webp`     | `webp` \| `jpeg` \| `png` \| `avif`                                    |
-| `quality`              | `80`       | 1–100 (ignored for `png`)                                              |
-| `fit`                  | `inside`   | `inside` keeps aspect & fits within W×H; `fill` stretches to exact W×H |
-| `placeholder`          | `false`    | Blur-up via an inline `background-image`; pure SSR, no client JS       |
-| `loading` / `decoding` | lazy/async | Passed through to `<img>`                                              |
+| Prop                   | Default     | Notes                                                       |
+| ---------------------- | ----------- | ----------------------------------------------------------- |
+| `src`                  | —           | http/https source URL (required)                            |
+| `size`                 | —           | Named size; omitted → the full-size original                |
+| `alt`                  | `''`        | Always set this                                             |
+| `placeholder`          | `false`     | Background-warmed ThumbHash blur-up; pure SSR, no client JS |
+| `width` / `height`     | size's dims | `<img>` attribute override (for layout/CLS)                 |
+| `loading` / `decoding` | lazy/async  | Passed through to `<img>`                                   |
 
-> `Bun.Image` supports only `fit: 'inside'` and `fit: 'fill'` — there is no crop/"cover" mode. To get an exact square from a non-square source you must use `fill` (which stretches); otherwise `inside` keeps the aspect ratio and the output won't fill both dimensions.
+A bare `<Image src>` with no `size` (or an unknown size name) serves the full-size original and logs a one-time warning.
 
-`<Image>` also works inside `mochi:hydrate*` islands — forward the island's auto-injected `isHydratable` prop. Minting needs the server secret, so with the prop set the minted URL (and placeholder) are serialized into the page via Svelte's `hydratable` and reused during hydration — the browser never mints:
+`<Image>` also works inside `mochi:hydrate*` islands — forward the island's auto-injected `isHydratable` prop. Minting needs the server secret, so with the prop set the minted URL is serialized into the page via Svelte's `hydratable` and reused during hydration — the browser never mints:
 
 ```svelte
 <script lang="ts">
@@ -51,7 +83,7 @@ Add `placeholder` to render a [ThumbHash](https://evanw.github.io/thumbhash/) bl
   let { src, isHydratable }: { src: string; isHydratable?: boolean } = $props();
 </script>
 
-<Image {src} width={400} {isHydratable} />
+<Image {src} size="thumbnail" {isHydratable} />
 ```
 
 If the forward is missing, or a client-side re-render changes the image props, there's no snapshot to reuse and the `<img>` degrades to the raw `src` URL.
@@ -60,55 +92,54 @@ If the forward is missing, or a client-side re-render changes the image props, t
 Hydrated-island props ship in plain text in the page HTML — so a <code>src</code> you pass into a <code>mochi:hydrate</code> island (and any URL literal in the island's client JS) is visible to the client, even though the minted image URL itself stays encrypted. If your origin must stay secret, keep <code>&lt;Image&gt;</code> in server-rendered markup or a server island (<code>mochi:defer</code>), whose props are encrypted.
 </Callout>
 
-### Programmatic
+### `getImageUrl` — deferred URLs
 
-`getResizedImage()` returns an encrypted URL — use it anywhere (no fetch happens until the browser requests it):
+`getImageUrl(src, size)` returns an encrypted URL. It's synchronous and near-instant — no fetch happens until the browser requests it, and the transform runs in the endpoint:
 
 ```ts
-import { getResizedImage } from 'mochi-framework';
+import { getImageUrl } from 'mochi-framework';
 
-const url = getResizedImage('https://example.com/photo.jpg', {
-  width: 500,
-  height: 500,
-  format: 'webp',
-  quality: 80,
-});
-// → /_mochi/image/photo-500x500.webp?p=<encrypted token>
+const url = getImageUrl('https://example.com/photo.jpg', 'thumbnail');
+// → /_mochi/image/photo-thumbnail.webp?p=<encrypted token>
+
+const original = getImageUrl('https://example.com/photo.jpg');
+// no size → a URL for the un-resized original
 ```
 
-The returned URL is relative by default. To serve images from a CDN — or otherwise rewrite the host/prefix — register the [`image:url`](/docs/extensions/#imageurl) filter; it runs on the URL from both `getResizedImage()` and `getImage()` (and the `<Image>` component).
+The returned URL is relative by default. To serve images from a CDN — or otherwise rewrite the host/prefix — register the [`image:url`](/docs/extensions/#imageurl) filter; it runs on the URL from `getImageUrl()`, `getImage()`, and the `<Image>` component.
+
+### `getImage` — inline bytes + metadata
+
+When you need the transformed bytes server-side (OG images, inlining, a dimension probe), `getImage(src, size)` runs the size **inline** and returns the bytes plus metadata. It shares the same disk cache as `getImageUrl`/`<Image>`, so a warm variant skips the fetch/decode/encode. Prefer `getImageUrl` for anything that ends up in an `<img src>` — it defers all work to the endpoint.
+
+```ts
+import { getImage } from 'mochi-framework';
+
+const { bytes, contentType, width, height, format } = await getImage(src, 'thumbnail');
+
+// No size → the cached full-size original bytes.
+const original = await getImage(src);
+```
+
+An unknown or omitted size name returns the original bytes (with a one-time warning).
 
 ### Full-size originals
 
-`getImage()` returns an encrypted URL for the **un-resized** original (original bytes and content-type), and `getImageBytes()` returns the cached bytes for server-side use:
-
-```ts
-import { getImage, getImageBytes } from 'mochi-framework';
-
-const url = getImage('https://example.com/photo.jpg');
-// → /_mochi/image/photo-original.jpg?p=<token>   — use in <img src>
-
-const orig = await getImageBytes('https://example.com/photo.jpg');
-// → { bytes, contentType } | null
-```
-
-The original is fetched once and **shared**: every resized variant of a source reads from this one cached download instead of re-fetching the origin per size/format. Originals aren't restricted to `outputFormats`, but the response is hardened against same-origin XSS: raster image types (`jpeg`, `png`, `webp`, `avif`, `gif`) are served inline with their original content-type, while `image/svg+xml` and any non-image type are served as a download (`Content-Type: application/octet-stream`, `Content-Disposition: attachment`) rather than rendered. All image responses also carry `X-Content-Type-Options: nosniff`.
-
-The original's cache window comes from `timeToStale` / `timeToEvict`, overridable per call. Because many callers share one entry, the **shortest** requested window wins:
-
-```ts
-getImage(src, { timeToStale: 30_000, timeToEvict: 3_600_000 });
-```
+The original is fetched once and **shared**: every variant of a source reads from this one cached download instead of re-fetching the origin per size. Originals aren't restricted to `outputFormats`, but the response is hardened against same-origin XSS: raster image types (`jpeg`, `png`, `webp`, `avif`, `gif`) are served inline with their original content-type, while `image/svg+xml` and any non-image type are served as a download (`Content-Type: application/octet-stream`, `Content-Disposition: attachment`) rather than rendered. All image responses also carry `X-Content-Type-Options: nosniff`.
 
 ### Caching & TTL
 
-The original's encoded bytes and its stale-while-revalidate timers are stored on disk (`cacheDir`), so the cache survives restarts. There is one TTL — the original's — and resized variants follow it; a variant never expires independently of the source it was resized from.
+The original's encoded bytes and its stale-while-revalidate timers are stored on disk (`cacheDir`), so the cache survives restarts. There is one TTL — the original's — and variants follow it; a variant never expires independently of the source it was transformed from. Defaults come from the global `timeToStale` / `timeToEvict`, overridable per size:
 
 ```ts
 await Mochi.serve({
   image: {
     timeToStale: 14_400_000, // serve fresh for 4 h
     timeToEvict: 86_400_000, // re-fetch source after 1 day
+    sizes: {
+      // this size pins a shorter window on its source
+      volatile: { width: 400, timeToStale: 30_000, timeToEvict: 3_600_000 },
+    },
   },
   routes,
 });
@@ -118,19 +149,17 @@ await Mochi.serve({
 - **Stale** (between `timeToStale` and `timeToEvict`): served immediately, source re-fetched in the background.
 - **Expired** (past `timeToEvict`): re-fetched synchronously.
 
-When the original is re-fetched, any existing variants are served stale once more and regenerated from the new original in the background; when the original is evicted, its variants are dropped with it.
+When the original is re-fetched, existing variants are served stale once more and regenerated from the new original in the background; when the original is evicted, its variants are dropped with it.
 
 Eviction is lazy — dead bytes linger on disk until the next request overwrites them. A background janitor reclaims them: every `sweepIntervalMs` (default 1 h, plus once shortly after boot) it deletes evicted originals and orphaned/superseded variants, logging one `CACHE image:sweep` line per run. Set `sweepIntervalMs: 0` to disable it.
 
-Served images carry both an `ETag` (tied to the cache generation) and a `Cache-Control` derived from the cache window — `public, max-age=<timeToStale>, stale-while-revalidate=<timeToEvict − timeToStale>`. Within `max-age` the browser serves from its own cache with no round-trip; after it, the `stale-while-revalidate` window lets it paint the cached copy instantly while revalidating in the background. The URL is stable per `(src, params)`, so once `max-age` lapses, correctness across a source refresh rides on the generation-aware `ETag`: a changed source yields a new `ETag` and the conditional request gets fresh bytes (a `304` while unchanged).
+Served images carry both an `ETag` (tied to the cache generation and the size config hash) and a `Cache-Control` derived from the cache window — `public, max-age=<timeToStale>, stale-while-revalidate=<timeToEvict − timeToStale>`. Within `max-age` the browser serves from its own cache with no round-trip; after it, the `stale-while-revalidate` window lets it paint the cached copy instantly while revalidating in the background. The URL is stable per `(src, size)`, so once `max-age` lapses, correctness across a source refresh or a size redefinition rides on the `ETag`.
 
-The trade-off of a non-zero `max-age` is that `invalidateImage()` only reaches an **already-cached browser** once its `max-age` expires — server-side revalidation still picks it up on the next miss. To tighten that, lower `timeToStale`: a smaller `max-age` revalidates sooner (and `timeToStale: 0` makes every request revalidate, falling back to background `stale-while-revalidate` so it stays a fast `304` rather than a blocking fetch).
-
-In **development** mode no `Cache-Control` is sent at all, so edits and `invalidateImage()` calls always show up on the next request without a browser cache to fight.
+The trade-off of a non-zero `max-age` is that `invalidateImage()` only reaches an **already-cached browser** once its `max-age` expires — server-side revalidation still picks it up on the next miss. To tighten that, lower `timeToStale`. In **development** mode no `Cache-Control` is sent at all, so edits and `invalidateImage()` calls always show up on the next request.
 
 ### Invalidation
 
-Invalidate a source immediately. It operates on the shared original, so it cascades to every resized variant — and to the ThumbHash placeholder, which is bound to the original's generation and recomputes once the source has been re-fetched:
+Invalidate a source immediately. It operates on the shared original, so it cascades to every variant — and to the ThumbHash placeholder, which is bound to the original's generation and recomputes once the source has been re-fetched:
 
 ```ts
 import { invalidateImage } from 'mochi-framework';
@@ -139,54 +168,19 @@ await invalidateImage(src); // mark stale: next request serves cached bytes, re-
 await invalidateImage(src, { hard: true }); // mark expired: next request blocks for a fresh re-fetch
 ```
 
-### Custom pipelines with `cachedImage`
-
-`getResizedImage` / `<Image>` cover resize + re-encode. For the full `Bun.Image` API — `rotate`, `flip`/`flop`, `modulate`, indexed-palette PNG, progressive JPEG, ThumbHash placeholders — use `cachedImage(src)`. It mirrors `Bun.Image`'s chainable API but caches each pipeline's output on the **same disk store** as `<Image>` (shared per-source originals, same stale-while-revalidate window and janitor). A cache hit skips the source fetch, decode, and encode:
-
-```ts
-import { cachedImage } from 'mochi-framework';
-
-// Bytes / data URL of an arbitrary pipeline — cached by (src + chain).
-const url = await cachedImage(src).resize(300, 300, { fit: 'inside' }).rotate(90).webp({ quality: 80 }).dataurl();
-
-const bytes = await cachedImage(src).modulate({ saturation: 0 }).png().bytes();
-const { width, height, format } = await cachedImage(src).resize(240, 240).metadata();
-const blur = await cachedImage(src).placeholder(); // ThumbHash data URL (source-derived; ignores the chain)
-```
-
-Terminals: `bytes()`, `buffer()`, `blob()`, `toBase64()`, `dataurl()`, `metadata()`, `placeholder()`. `bytes()` and `dataurl()` for the same chain resolve to one on-disk variant. The cache key is the source URL plus the recorded op chain — if a source's bytes change under a stable URL, call `invalidateImage(src)` (it cascades to every `cachedImage` variant of that source too).
-
-In dev, each resolved pipeline shows up in the [debug bar's Images panel](/docs/debug-bar/#images-panel) with a preview and its op chain, alongside `<Image>` URLs.
-
-<Callout type="info">
-
-**Server-only.** `cachedImage` reads/writes the disk cache and runs `Bun.Image`, so it only works server-side (in a page/API route or server island) — importing it into a hydratable island throws. `src` is fetched through the same SSRF-guarded pipeline as `<Image>`, so keep `blockPrivateNetworks` on and prefer `allowedHosts` for user-controlled sources.
-
-</Callout>
+In dev, each image produced during a request shows up in the [debug bar's Images panel](/docs/debug-bar/#images-panel) — deferred `getImageUrl`/`<Image>` URLs and inline `getImage()` results, tagged with the size name.
 
 ### Configuration
 
-Configure under `Mochi.serve({ image: { … } })`. Everything is optional:
-
-```ts
-await Mochi.serve({
-  image: {
-    cacheDir: './.mochi/image-cache',
-    defaultFormat: 'webp',
-    defaultQuality: 80,
-    allowedHosts: ['cdn.example.com', '*.images.net'],
-    maxResponseBytes: 20_000_000,
-    fetchTimeoutMs: 10_000,
-  },
-  routes,
-});
-```
+Configure under `Mochi.serve({ image: { … } })`. Everything except `sizes` is optional:
 
 | Option                 | Default                | Notes                                                                     |
 | ---------------------- | ---------------------- | ------------------------------------------------------------------------- |
+| `sizes`                | `{}`                   | Named transform recipes (see [Declare sizes](#declare-sizes))             |
 | `enabled`              | `true`                 | `false` unmounts the endpoint; URL helpers then return the raw source URL |
 | `cacheDir`             | `./.mochi/image-cache` | Must not be under `publicDir`                                             |
-| `defaultFormat`        | `webp`                 | Used when the caller omits `format`                                       |
+| `defaultFormat`        | `webp`                 | Pipeline default when it omits `format`                                   |
+| `defaultQuality`       | `80`                   | Pipeline default when it omits `quality`                                  |
 | `outputFormats`        | all four               | Allowed output formats                                                    |
 | `allowedHosts`         | any public host        | Exact host or `*.example.com`                                             |
 | `blockPrivateNetworks` | `true`                 | Reject private/loopback/link-local addresses                              |
@@ -200,8 +194,8 @@ await Mochi.serve({
 
 <Callout type="warning">
 
-**Encryption is the security boundary.** The payload is encrypted (authenticated encryption) with a key derived from your `MOCHI_KEY`, so only your server can mint URLs and the source URL/params stay hidden; the cosmetic filename is bound as authenticated data (tampering it fails decryption). Still, if you pass a **user-controlled** `src` into `getResizedImage()`, keep `blockPrivateNetworks` on (the default) and prefer an `allowedHosts` allowlist so a user can't proxy requests to internal services. Upstream redirects are followed but **every hop is re-validated** against those same checks, so an allowed host can't `302` you into a private network; cap the hop count with the [`image:maxRedirects`](/docs/extensions/#imagemaxredirects) filter. SVG is never decoded for resizing, and a full-size original that is SVG (or any non-raster type) is served as a download rather than inline, so it can't execute script in your origin.
+**Encryption is the security boundary.** The payload is encrypted (authenticated encryption) with a key derived from your `MOCHI_KEY`, so only your server can mint URLs and the source URL stays hidden; the cosmetic filename is bound as authenticated data (tampering it fails decryption). Callers can only reference sizes the server declared. Still, if you pass a **user-controlled** `src` into `getImageUrl()`/`getImage()`, keep `blockPrivateNetworks` on (the default) and prefer an `allowedHosts` allowlist so a user can't proxy requests to internal services. Upstream redirects are followed but **every hop is re-validated** against those same checks, so an allowed host can't `302` you into a private network; cap the hop count with the [`image:maxRedirects`](/docs/extensions/#imagemaxredirects) filter. SVG is never decoded for transforms, and a full-size original that is SVG (or any non-raster type) is served as a download rather than inline, so it can't execute script in your origin.
 
 </Callout>
 
-See the [Image Resizing demo](/demos/image/) for a working example.
+See the [Named sizes demo](/demos/image-size/) and the [Image demo](/demos/image/) for working examples.

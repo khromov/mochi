@@ -4,46 +4,77 @@ export type ImageFormat = 'webp' | 'jpeg' | 'png' | 'avif';
 export type ImageFit = 'inside' | 'fill';
 
 /**
- * The request payload baked (encrypted) into every image URL. Field names mirror
- * the Bun `Image` API where one exists. The payload is packed positionally into a
- * compact binary token (see `imageCodec.ts`) — the property names never appear on
- * the wire — then sealed with authenticated encryption (see `payloadCrypto.ts`),
- * so the source URL and params are neither readable nor tamperable.
+ * The request payload baked (encrypted) into every image URL. It carries only the
+ * source URL and the *name* of a size declared in `Mochi.serve({ image: { sizes } })`
+ * — never the transform config itself, which lives server-side. The payload is
+ * packed into a compact binary token (see `imageCodec.ts`) then sealed with
+ * authenticated encryption (see `payloadCrypto.ts`), so the source URL is neither
+ * readable nor tamperable and callers can only reference sizes the server defined.
  */
 export interface ImageRequest {
   src: string;
+  /** Name of the named size to apply. Absent → serve the full-size original. */
+  size?: string;
+  /** Full-size original request: serve the cached origin bytes verbatim, no transform. */
+  original?: true;
+}
+
+/**
+ * A named image size, declared under `Mochi.serve({ image: { sizes: { … } } })`.
+ * Transforms apply in a fixed order: resize → rotate → flip → flop → modulate →
+ * format-encode. Callers reference the size by name; changing a size's
+ * definition re-renders every URL that uses it (the config hash busts caches).
+ */
+export interface ImageSize {
   /** Target width in px. */
   width?: number;
   /** Target height in px. */
   height?: number;
-  /** Resize fit (defaults applied at sign time). */
-  fit: ImageFit;
-  /** Never upscale beyond the source's intrinsic size. */
-  withoutEnlargement?: boolean;
-  /** Output format. */
-  format: ImageFormat;
-  /** Quality 1-100 (ignored for png). */
-  quality: number;
-  /** Apply EXIF orientation. */
-  autoOrient: boolean;
-  /** Original-window override (ms). Set only by `getImage`; thumbnails inherit the parent original's window. */
-  timeToStale?: number;
-  /** Original-window override (ms). Set only by `getImage`; thumbnails inherit the parent original's window. */
-  timeToEvict?: number;
-  /** Full-size original request: serve the cached origin bytes verbatim, no resize. Resize fields above are ignored. */
-  original?: true;
-}
-
-/** Per-call options accepted by `getResizedImage(src, opts)` and `<Image>`. */
-export interface ResizeImageOptions {
-  width?: number;
-  height?: number;
+  /** Resize fit. Default: `inside`. */
   fit?: ImageFit;
   /** Never upscale beyond the source's intrinsic size. */
   withoutEnlargement?: boolean;
+  /** Rotate by degrees. */
+  rotate?: number;
+  /** Mirror vertically (top-bottom). */
+  flip?: boolean;
+  /** Mirror horizontally (left-right). */
+  flop?: boolean;
+  /** Brightness/saturation/hue/lightness adjustment. */
+  modulate?: Bun.Image.ModulateOptions;
+  /** Output format. Default: the configured `defaultFormat`. */
   format?: ImageFormat;
+  /** Quality 1-100 (ignored for png). Default: the configured `defaultQuality`. */
   quality?: number;
+  /** Apply EXIF orientation. Default: the configured `autoOrient`. */
   autoOrient?: boolean;
+  /** Decompression-bomb guard passed to `Bun.Image`. Default: the configured `maxPixels`. */
+  maxPixels?: number;
+  /** Original-window override (ms) — shortest requested window wins across variants. */
+  timeToStale?: number;
+  /** Original-window override (ms) — shortest requested window wins across variants. */
+  timeToEvict?: number;
+}
+
+/** A size with every field resolved against the global defaults, plus a stable config hash. */
+export interface ResolvedImageSize {
+  name: string;
+  width?: number;
+  height?: number;
+  fit: ImageFit;
+  withoutEnlargement: boolean;
+  rotate?: number;
+  flip: boolean;
+  flop: boolean;
+  modulate?: Bun.Image.ModulateOptions;
+  format: ImageFormat;
+  quality: number;
+  autoOrient: boolean;
+  maxPixels: number;
+  timeToStale?: number;
+  timeToEvict?: number;
+  /** Digest of every byte-affecting field — folded into the cache key + ETag so a redefinition busts caches. */
+  configHash: string;
 }
 
 /** Options for `invalidateImage(src, opts)`. */
@@ -53,8 +84,8 @@ export interface InvalidateImageOptions {
 }
 
 /**
- * Per-call options accepted by `getImage(src, opts)` and `getImageBytes(src, opts)`.
- * These set the shared original's cache window (shortest requested wins).
+ * The shared original's cache window (shortest requested wins). Set internally
+ * from a size's TTL overrides, or the global defaults for the original path.
  */
 export interface OriginalImageOptions {
   /** Override the configured time-to-stale (ms). */
@@ -70,6 +101,11 @@ export interface OriginalImageOptions {
 export interface MochiImageOptions {
   /** Mount the `/_mochi/image/*` endpoint. Default: `true`. */
   enabled?: boolean;
+  /**
+   * Named transform sizes, referenced by name from `<Image size>`,
+   * `getImageUrl(src, name)`, and `getImage(src, name)`. Validated at startup.
+   */
+  sizes?: Record<string, ImageSize>;
   /** Disk cache directory. Must NOT be under `publicDir`. Default: `./.mochi/image-cache`. */
   cacheDir?: string;
   /** Output format when the caller doesn't specify one. Default: `webp`. */
@@ -105,6 +141,7 @@ export interface MochiImageOptions {
 /** Fully-resolved options with every field present. */
 export interface ResolvedImageOptions {
   enabled: boolean;
+  sizes: Record<string, ResolvedImageSize>;
   cacheDir: string;
   defaultFormat: ImageFormat;
   defaultQuality: number;

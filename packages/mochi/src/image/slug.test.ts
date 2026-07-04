@@ -1,30 +1,50 @@
 import { describe, expect, test } from 'bun:test';
-import { buildImageFilename } from './slug';
-import type { ImageRequest } from './types';
+import { buildImageFilename, buildOriginalFilename } from './slug';
+import { resolveImageOptions } from './config';
+import type { ImageSize, ResolvedImageSize } from './types';
 
-function req(over: Partial<ImageRequest> = {}): ImageRequest {
-  return { src: 'https://example.com/photos/My-Cat.PNG', fit: 'inside', format: 'webp', quality: 80, autoOrient: true, ...over };
+function size(name: string, def: ImageSize = {}): ResolvedImageSize {
+  return resolveImageOptions({ sizes: { [name]: def } }).sizes[name]!;
 }
 
 describe('buildImageFilename', () => {
-  test('derives a slug from the source basename + dimensions', () => {
-    expect(buildImageFilename(req({ width: 500, height: 500 }))).toBe('my-cat-500x500.webp');
+  test('derives a slug from the source basename + the size name', () => {
+    const p = size('thumbnail', { width: 500, height: 500 });
+    expect(buildImageFilename('https://example.com/photos/My-Cat.PNG', p)).toBe('my-cat-thumbnail.webp');
   });
 
-  test('width-only and height-only labels', () => {
-    expect(buildImageFilename(req({ width: 320 }))).toBe('my-cat-320w.webp');
-    expect(buildImageFilename(req({ height: 200 }))).toBe('my-cat-200h.webp');
+  test('the size name is slugified too', () => {
+    const p = size('Hero Banner!!', {});
+    expect(buildImageFilename('https://example.com/photos/My-Cat.PNG', p)).toBe('my-cat-hero-banner.webp');
   });
 
-  test('no dimensions → basename only', () => {
-    expect(buildImageFilename(req())).toBe('my-cat.webp');
+  test('extension follows the size output format (jpeg -> jpg)', () => {
+    const p = size('thumb', { format: 'jpeg' });
+    expect(buildImageFilename('https://example.com/photos/My-Cat.PNG', p)).toBe('my-cat-thumb.jpg');
   });
 
-  test('extension follows output format (jpeg → jpg)', () => {
-    expect(buildImageFilename(req({ width: 100, height: 100, format: 'jpeg' }))).toBe('my-cat-100x100.jpg');
+  test('every output format maps to the expected extension', () => {
+    expect(buildImageFilename('https://example.com/a.png', size('p', { format: 'webp' }))).toEndWith('.webp');
+    expect(buildImageFilename('https://example.com/a.png', size('p', { format: 'png' }))).toEndWith('.png');
+    expect(buildImageFilename('https://example.com/a.png', size('p', { format: 'avif' }))).toEndWith('.avif');
   });
 
   test('falls back to "image" when the source has no usable basename', () => {
-    expect(buildImageFilename(req({ src: 'https://example.com/', width: 100, height: 100 }))).toBe('image-100x100.webp');
+    const p = size('thumb', {});
+    expect(buildImageFilename('https://example.com/', p)).toBe('image-thumb.webp');
+  });
+});
+
+describe('buildOriginalFilename', () => {
+  test('derives a slug from the source basename, keeping the source extension', () => {
+    expect(buildOriginalFilename('https://example.com/photos/My-Cat.PNG')).toBe('my-cat-original.png');
+  });
+
+  test('falls back to "img" when the source has no recognizable extension', () => {
+    expect(buildOriginalFilename('https://example.com/photos/my-cat')).toBe('my-cat-original.img');
+  });
+
+  test('falls back to "image" when the source has no usable basename', () => {
+    expect(buildOriginalFilename('https://example.com/')).toBe('image-original.img');
   });
 });

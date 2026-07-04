@@ -625,11 +625,11 @@ export interface MochiServeOptions {
    */
   warmup?: boolean | MochiWarmupOptions;
   /**
-   * On-the-fly image resizing. Mounts a signed `/_mochi/image/*` endpoint and
-   * powers `getResizedImage()` / the `<Image>` component. Every served URL's
-   * payload is encrypted so attackers cannot request arbitrary sources. Default: enabled
-   * with sensible defaults; pass `{ enabled: false }` to turn it off. See
-   * `MochiImageOptions`.
+   * On-the-fly image transforms via named sizes. Mounts a signed
+   * `/_mochi/image/*` endpoint and powers `getImageUrl()` / the `<Image>`
+   * component. Every served URL's payload is encrypted so attackers cannot
+   * request arbitrary sources or transforms. Default: enabled with sensible
+   * defaults; pass `{ enabled: false }` to turn it off. See `MochiImageOptions`.
    */
   image?: MochiImageOptions;
   /**

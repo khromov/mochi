@@ -75,27 +75,20 @@ export interface BundleInfo {
 }
 
 /** One image produced during the request (dev debug bar only) — a signed
- * `getResizedImage()` URL (`kind: 'url'`) or a programmatic `cachedImage()`
- * pipeline (`kind: 'cached'`). */
+ * `getImageUrl()`/`<Image>` URL (`kind: 'url'`) or an inline `getImage()`
+ * result (`kind: 'inline'`). */
 export interface ImageDebugEntry {
-  /** For `'cached'` entries there's no served URL; this is an inline `data:` preview (or empty when over the size cap). */
+  /** For `'inline'` entries this is a `data:` preview of the bytes (or empty when over the size cap); for `'url'` entries it's the served URL. */
   url: string;
-  /** Stable identity for de-duping and list keying. Defaults to `url` (used by the signed-URL path); the `cachedImage` path sets its variant id so preview-less entries don't collide on an empty `url`. */
+  /** Stable identity for de-duping and list keying. Defaults to `url`; inline entries set their variant id so preview-less entries don't collide on an empty `url`. */
   id?: string;
   filename: string;
-  /** Decoded (unsigned) request params — src, dimensions, format, quality, fit, TTL, … */
+  /** The size's resolved, byte-affecting params — src, dimensions, format, quality (or `{ original: true }`). */
   params: Record<string, unknown>;
-  /** Discriminates the signed-URL path from the programmatic `cachedImage()` path. Defaults to `'url'`. */
-  kind?: 'url' | 'cached';
-  /** `cachedImage` only: the recorded op chain, e.g. `resize(240, 240).webp()`. */
-  pipeline?: string;
-  /** The compact binary wire encoding (before encryption), so the bar can show the on-wire format next to the JSON. `'url'` entries only. */
-  wire?: {
-    /** Space-separated hex of the packed header (control bytes + varints), before the UTF-8 src tail. */
-    headerHex: string;
-    /** Byte length of the UTF-8 src tail. */
-    srcByteLength: number;
-  };
+  /** Discriminates the deferred-URL path from the inline `getImage()` path. Defaults to `'url'`. */
+  kind?: 'url' | 'inline';
+  /** The named size applied, if any (absent for the full-size original). */
+  size?: string;
 }
 
 /**
@@ -130,7 +123,7 @@ export interface DebugBarData {
   ssrDurationMs?: number;
   /** Framework JS bundles injected for this page (bootstrap, island entries, shared chunks). */
   bundles?: BundleInfo[];
-  /** Images produced via `getResizedImage()` during this request, with decoded params. */
+  /** Images produced via `getImageUrl()`/`<Image>`/`getImage()` during this request, with decoded params. */
   images?: ImageDebugEntry[];
   /**
    * Server-island props recorded during SSR, keyed by the encrypted `signed-props`
