@@ -61,7 +61,7 @@ import type { MochiEmailMessage, MochiEmailResult } from './email/types';
 import { initMochiConfig } from './mochiConfig';
 import { logger, setLogLevel, DEFAULT_LOG_LEVEL, type LogLevel } from './log';
 import { mochiEvents } from './events';
-import type { MochiActionResult, MochiErrorEvent, MochiErrorKind, MochiServerStartEvent, MochiServerStopEvent } from './events';
+import type { MochiActionResult, MochiEmailSentEvent, MochiErrorEvent, MochiErrorKind, MochiServerStartEvent, MochiServerStopEvent } from './events';
 import type { DebugBarData, DebugBarRuntimeData } from './requestContext';
 import { consoleLogger } from './consoleLogger';
 import { parse as devalueParse, stringify as devalueStringify } from 'devalue';
@@ -1397,6 +1397,7 @@ export class Mochi {
     // routes, and so `wsHandlersMap.size > 0` is true even when the user has
     // no WebSocket routes of their own.
     const liveReloadClients = new Set<ServerWebSocket<MochiWsData>>();
+    let stopEmailBadgeBroadcast: (() => void) | undefined;
     if (liveReloadEnabled) {
       wsHandlersMap.set('/__mochi_live_reload', {
         open(ws) {
@@ -1407,6 +1408,22 @@ export class Mochi {
           liveReloadClients.delete(ws as ServerWebSocket<MochiWsData>);
         },
       });
+
+      // Fan dev-outbox arrivals out over the same live-reload socket so open tabs
+      // can surface a "new email" badge (and the outbox page itself can live-reload)
+      // without a second WebSocket. Only the `dev` transport fills the outbox.
+      const onDevEmail = (payload: MochiEmailSentEvent) => {
+        if (payload.transport !== 'dev') return;
+        for (const client of liveReloadClients) {
+          try {
+            client.send('email:new');
+          } catch {
+            liveReloadClients.delete(client);
+          }
+        }
+      };
+      mochiEvents.on('email:sent', onDevEmail);
+      stopEmailBadgeBroadcast = () => mochiEvents.off('email:sent', onDevEmail);
     }
 
     const websocketOption =
@@ -1467,6 +1484,7 @@ export class Mochi {
         // listener open and hang shutdown. Best-effort, then always stop.
         try {
           sweeperStop?.();
+          stopEmailBadgeBroadcast?.();
           await closeEmailTransport();
         } catch (err) {
           logger.warn(`Subsystem cleanup failed during shutdown: ${err instanceof Error ? err.message : err}`);

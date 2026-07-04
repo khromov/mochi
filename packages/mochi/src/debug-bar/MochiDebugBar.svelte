@@ -27,6 +27,10 @@
   // toolbar link on the config snapshot rather than always showing it.
   let emailHref = $state<string | null>(null);
 
+  // Count of dev emails captured since the outbox was last opened. Bumped by the
+  // `mochi:email-new` event that LiveReload dispatches off the live-reload socket.
+  let newEmailCount = $state(0);
+
   function safeGetItem(key: string): string | null {
     try {
       return localStorage.getItem(key);
@@ -82,6 +86,10 @@
     }
   }
 
+  function handleNewEmail() {
+    newEmailCount += 1;
+  }
+
   let warnLevel = $derived(getPropsWarnLevel(debugBarState.totalPropsSize));
 
   let bundleSizeLabel = $derived(debugBarState.displayBundleSize > 0 ? formatSize(debugBarState.displayBundleSize) : '0');
@@ -99,9 +107,11 @@
       /* storage blocked */
     }
     document.addEventListener('click', handleDocumentClick);
+    window.addEventListener('mochi:email-new', handleNewEmail);
 
     return () => {
       document.removeEventListener('click', handleDocumentClick);
+      window.removeEventListener('mochi:email-new', handleNewEmail);
     };
   });
 
@@ -165,8 +175,18 @@
         <button class="btn info-btn" onclick={() => toggle('info')} tabindex={collapsed ? -1 : 0}>Info</button>
       {/if}
       {#if emailHref}
-        <a class="btn email-btn" href={emailHref} target="_blank" rel="noopener" tabindex={collapsed ? -1 : 0} aria-label="Open dev email outbox" title="Dev email outbox">
+        <a
+          class="btn email-btn"
+          href={emailHref}
+          target="_blank"
+          rel="noopener"
+          tabindex={collapsed ? -1 : 0}
+          aria-label={newEmailCount > 0 ? `Open dev email outbox (${newEmailCount} new)` : 'Open dev email outbox'}
+          title={newEmailCount > 0 ? `${newEmailCount} new email${newEmailCount > 1 ? 's' : ''}` : 'Dev email outbox'}
+          onclick={() => (newEmailCount = 0)}
+        >
           <Mail size={12} />
+          <span class="email-badge" class:has-new={newEmailCount > 0}>{newEmailCount}</span>
         </a>
       {/if}
       <button class="btn settings-btn" onclick={() => toggle('settings')} tabindex={collapsed ? -1 : 0} aria-label="Configure panels" title="Configure panels">
@@ -412,6 +432,25 @@
     background: #34463a;
     color: #c8e8c8;
     border-color: #8ab79a;
+  }
+  .email-badge {
+    border-radius: 999px;
+    min-width: 1.4em;
+    height: 1.4em;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.82em;
+    font-weight: 700;
+    padding: 0 0.4em;
+    background: #434836;
+    color: #c7cabf;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    letter-spacing: 0;
+  }
+  .email-badge.has-new {
+    background: #e85454;
+    color: #ffffff;
   }
   .settings-btn {
     padding: 0.3em 0.45em;

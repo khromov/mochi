@@ -1,5 +1,6 @@
 <script lang="ts">
   import EmailView from './EmailView.svelte';
+  import TimeAgo from './TimeAgo.svelte';
 
   interface StoredAttachment {
     filename: string;
@@ -34,25 +35,6 @@
   let { emails, selected, basePath }: { emails: EmailListItem[]; selected: StoredEmail | null; basePath: string } = $props();
 
   const example = `Mochi.email({ to: 'you@app.test', subject: 'Hello', html: '<b>Hi!</b>' })`;
-
-  function relTime(ts: number): string {
-    const s = Math.max(0, Math.round((Date.now() - ts) / 1000));
-    if (s < 5) {
-      return 'just now';
-    }
-    if (s < 60) {
-      return `${s}s ago`;
-    }
-    const m = Math.floor(s / 60);
-    if (m < 60) {
-      return `${m}m ago`;
-    }
-    const h = Math.floor(m / 60);
-    if (h < 24) {
-      return `${h}h ago`;
-    }
-    return `${Math.floor(h / 24)}d ago`;
-  }
 
   function fmtDate(ts: number): string {
     return new Date(ts).toLocaleString();
@@ -119,7 +101,7 @@
               <a class="msg" class:active={selected?.id === e.id} href="{basePath}?id={e.id}">
                 <div class="msg-row">
                   <span class="msg-subject">{e.subject || '(no subject)'}</span>
-                  <span class="msg-time">{relTime(e.sentAt)}</span>
+                  <span class="msg-time"><TimeAgo sentAt={e.sentAt} mochi:hydrate /></span>
                 </div>
                 <div class="msg-to">{e.to.join(', ')}</div>
                 {#if (!e.hasHtml && e.hasText) || e.attachmentCount > 0}
