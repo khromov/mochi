@@ -76,6 +76,31 @@ function readMochiVersion(): Promise<string | null> {
     .catch(() => null));
 }
 
+type ShellSlot = 'head' | 'css' | 'body' | 'script';
+type ShellPart = { text: string } | { slot: ShellSlot };
+
+// Parse an HTML shell into ordered literal/placeholder parts ONCE (per template),
+// so filling it per request is a walk over these parts instead of a global-regex
+// scan. Splitting the template (not the assembled output) also guarantees an
+// injected body containing literal `{{mochi.script}}` is never re-expanded.
+function parseShellTemplate(template: string): ShellPart[] {
+  const parts: ShellPart[] = [];
+  const re = /\{\{mochi\.(head|css|body|script)\}\}/g;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(template)) !== null) {
+    if (m.index > last) {
+      parts.push({ text: template.slice(last, m.index) });
+    }
+    parts.push({ slot: m[1] as ShellSlot });
+    last = m.index + m[0].length;
+  }
+  if (last < template.length) {
+    parts.push({ text: template.slice(last) });
+  }
+  return parts;
+}
+
 /**
  * Dev-only: append a trailing `<script>` after the response body that mixes
  * the current request's response headers and inbound cookies into
@@ -183,53 +208,75 @@ export class Mochi {
     return getQueue<T>(name);
   }
 
-  private static resolveHtmlShell(
-    template: string,
-    result: RenderResult,
+  /**
+   * Build a shell renderer once at startup. Request-invariant fragments (the log
+   * shim, warn shim, island `<style>` prefix, server-island runtime wrapper,
+   * live-reload tail, asset prefix) are computed here, so filling the shell per
+   * request only concatenates the genuinely dynamic parts into the pre-parsed
+   * template segments — no per-request regex scan or constant-string rebuilds.
+   */
+  private static createShellRenderer(
     registry: ComponentRegistry,
-    opts: {
+    config: {
       serverIslandClientJs: string;
       liveReloadClientJs: string;
-      debugBarUrl?: string | null;
-      debugInfo?: DebugBarData;
       logLevel: LogLevel;
-      /**
-       * Absolute path of the page entry that rendered this HTML. Inlined as
-       * `window.__mochi_page_entry` when live-reload is enabled so the WS can
-       * scope `reload` signals to tabs whose entry was actually affected by a
-       * change. Omitted when live-reload is off.
-       */
-      pageEntry?: string;
+      /** Reads the current shell template (reassigned on dev shell edits). */
+      getTemplate: () => string;
     },
-  ): string {
-    const bootstrapUrl = result.bootstrapUrl;
-    const cssLinks = result.cssUrls.map(cssLinkTag).join('\n');
-    const serverIslandScript = result.hasServerIslands ? `<script>(()=>{${opts.serverIslandClientJs}})()</script>` : '';
-    const debugInfoScript = registry.debugBarEnabled && opts.debugInfo ? `<script>window.__mochi_debug=${jsonForHtml(opts.debugInfo)}</script>` : '';
-    const pageEntryScript = opts.liveReloadClientJs && opts.pageEntry ? `<script>window.__mochi_page_entry=${jsonForHtml(opts.pageEntry)}</script>` : '';
-    const logLevelScript = opts.logLevel === DEFAULT_LOG_LEVEL ? '' : `<script>window.__mochi_log_level=${JSON.stringify(opts.logLevel)}</script>`;
+  ): (result: RenderResult, opts?: { debugInfo?: DebugBarData; pageEntry?: string }) => string {
+    const { serverIslandClientJs, liveReloadClientJs, logLevel, getTemplate } = config;
+
+    const logLevelScript = logLevel === DEFAULT_LOG_LEVEL ? '' : `<script>window.__mochi_log_level=${JSON.stringify(logLevel)}</script>`;
     // Feeds the debug bar's Warnings panel. When the debug bar is off the
     // single `window.__mochi_warn?.(...)` call site no-ops via optional chaining.
     const warnShim = registry.debugBarEnabled
       ? `<script>window.__mochi_warnings=[];window.__mochi_warn=function(m){console.warn("[mochi] "+m);window.__mochi_warnings.push(m)}</script>`
       : '';
-    // Single global-regex pass. The function-form replacer is also required
-    // for safety: string-form replacements interpret `$&`, `$'`, `` $` ``, `$$`
-    // as special patterns, which minified JS and serialized props can contain.
-    const slots: Record<'head' | 'css' | 'body' | 'script', () => string> = {
-      head: () => logLevelScript + warnShim + result.head,
-      css: () =>
-        `<style>mochi-hydratable-island, mochi-server-island { display: contents; } mochi-server-island[defer-on="visible"]:empty, mochi-hydratable-island[hydrate-on="visible"]:empty { display: block; min-height: 1px; }${ISLAND_FAILURE_CSS}${
-          registry.development ? ISLAND_FAILURE_DEV_CSS : ''
-        }</style>\n${cssLinks}`,
-      body: () => result.body + debugInfoScript + pageEntryScript + (registry.debugBarEnabled ? '<div id="mochi-dev-toolbar"></div>' : ''),
-      script: () =>
+    const cssStylePrefix = `<style>mochi-hydratable-island, mochi-server-island { display: contents; } mochi-server-island[defer-on="visible"]:empty, mochi-hydratable-island[hydrate-on="visible"]:empty { display: block; min-height: 1px; }${ISLAND_FAILURE_CSS}${
+      registry.development ? ISLAND_FAILURE_DEV_CSS : ''
+    }</style>\n`;
+    const serverIslandScript = `<script>(()=>{${serverIslandClientJs}})()</script>`;
+    const liveReloadTail = liveReloadClientJs ? `<script>${liveReloadClientJs}</script><mochi-live-reload></mochi-live-reload>` : '';
+    const toolbarDiv = registry.debugBarEnabled ? '<div id="mochi-dev-toolbar"></div>' : '';
+    const assetPrefixJson = JSON.stringify(registry.assetPrefix);
+
+    // Parse the shell once; re-parse only when a dev shell edit swaps the template.
+    let parsedFrom: string | undefined;
+    let parts: ShellPart[] = [];
+
+    return (result, opts) => {
+      const template = getTemplate();
+      if (template !== parsedFrom) {
+        parts = parseShellTemplate(template);
+        parsedFrom = template;
+      }
+
+      const bootstrapUrl = result.bootstrapUrl;
+      const cssLinks = result.cssUrls.map(cssLinkTag).join('\n');
+      const debugBarUrl = registry.getDebugBarUrl();
+      const debugInfoScript = registry.debugBarEnabled && opts?.debugInfo ? `<script>window.__mochi_debug=${jsonForHtml(opts.debugInfo)}</script>` : '';
+      const pageEntryScript = liveReloadClientJs && opts?.pageEntry ? `<script>window.__mochi_page_entry=${jsonForHtml(opts.pageEntry)}</script>` : '';
+
+      const head = logLevelScript + warnShim + result.head;
+      const css = cssStylePrefix + cssLinks;
+      const body = result.body + debugInfoScript + pageEntryScript + toolbarDiv;
+      const script =
         (bootstrapUrl ? `<script type="module" src="${bootstrapUrl}"></script>` : '') +
-        serverIslandScript +
-        (opts.debugBarUrl ? `<script type="module" src="${opts.debugBarUrl}"></script><script>window.__mochi_asset_prefix=${JSON.stringify(registry.assetPrefix)}</script>` : '') +
-        (opts.liveReloadClientJs ? `<script>${opts.liveReloadClientJs}</script><mochi-live-reload></mochi-live-reload>` : ''),
+        (result.hasServerIslands ? serverIslandScript : '') +
+        (debugBarUrl ? `<script type="module" src="${debugBarUrl}"></script><script>window.__mochi_asset_prefix=${assetPrefixJson}</script>` : '') +
+        liveReloadTail;
+
+      let out = '';
+      for (const part of parts) {
+        if ('text' in part) {
+          out += part.text;
+        } else {
+          out += part.slot === 'head' ? head : part.slot === 'css' ? css : part.slot === 'body' ? body : script;
+        }
+      }
+      return out;
     };
-    return template.replace(/\{\{mochi\.(head|css|body|script)\}\}/g, (_match, key: keyof typeof slots) => slots[key]());
   }
 
   static async serve(options: MochiServeOptions): Promise<Server<undefined>> {
@@ -410,18 +457,21 @@ export class Mochi {
     const serverIslandClientJs = registry.serverIslandClientJs ?? (await buildInlineWebComponent('./web-components/ServerIsland.ts'));
     const liveReloadClientJs = liveReloadEnabled ? await buildInlineWebComponent('./web-components/LiveReload.ts') : '';
 
+    // Precompute request-invariant shell fragments once; `getTemplate` reads the
+    // live `shellTemplate` so dev shell edits (reloadShell) are picked up.
+    const renderShell = Mochi.createShellRenderer(registry, {
+      serverIslandClientJs,
+      liveReloadClientJs,
+      logLevel: resolvedLogLevel,
+      getTemplate: () => shellTemplate,
+    });
+
     const { renderErrorResponse, routeErrorResponse } = createErrorResponder({
       handleError: options.handleError,
       development,
       registry,
       errorPagePath,
-      renderShell: (result) =>
-        Mochi.resolveHtmlShell(shellTemplate, result, registry, {
-          serverIslandClientJs,
-          liveReloadClientJs,
-          debugBarUrl: registry.getDebugBarUrl(),
-          logLevel: resolvedLogLevel,
-        }),
+      renderShell: (result) => renderShell(result),
     });
 
     // Run the user's handleError hook (if configured), sanitize the error for
@@ -521,12 +571,8 @@ export class Mochi {
               });
             }
           }
-          const html = Mochi.resolveHtmlShell(shellTemplate, result, registry, {
-            serverIslandClientJs,
-            liveReloadClientJs,
-            debugBarUrl: registry.getDebugBarUrl(),
+          const html = renderShell(result, {
             debugInfo: result.debugBarData ? { ...result.debugBarData, liveReloadEnabled, ...serverDebugInfo } : undefined,
-            logLevel: resolvedLogLevel,
             pageEntry: liveReloadEnabled ? path.resolve(componentPath) : undefined,
           });
           const response = new Response(html, {
