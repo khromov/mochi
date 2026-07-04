@@ -1,3 +1,4 @@
+import { recordDevEmail } from './devOutbox';
 import { EmailError, type MochiEmailResult, type MochiEmailTransportConfig, type ResolvedEmailMessage } from './types';
 
 /** A transport turns a resolved message into a delivery. */
@@ -13,6 +14,8 @@ export function buildTransport(config: MochiEmailTransportConfig): EmailTranspor
   switch (config.type) {
     case 'log':
       return new LogTransport();
+    case 'dev':
+      return new DevTransport();
     case 'custom':
       return new CustomTransport(config.send);
     case 'smtp':
@@ -31,6 +34,19 @@ class LogTransport implements EmailTransport {
   readonly name = 'log' as const;
   async send(message: ResolvedEmailMessage): Promise<MochiEmailResult> {
     return { transport: 'log', accepted: message.to };
+  }
+}
+
+/**
+ * Development transport: sends nothing, but captures each message into an
+ * in-memory outbox (see `devOutbox.ts`) that the dev-only viewer at
+ * `/_mochi/email` renders. Default transport in development.
+ */
+class DevTransport implements EmailTransport {
+  readonly name = 'dev' as const;
+  async send(message: ResolvedEmailMessage): Promise<MochiEmailResult> {
+    recordDevEmail(message);
+    return { transport: 'dev', accepted: message.to };
   }
 }
 

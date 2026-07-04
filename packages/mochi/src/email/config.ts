@@ -1,13 +1,20 @@
 import { getMochiConfig } from '../mochiConfig';
 import type { ComponentRegistry } from '../ComponentRegistry';
+import type { StoredEmail } from './devOutbox';
 import type { EmailTransport } from './transports';
 import type { MochiEmailOptions, ResolvedEmailOptions } from './types';
 
-export function resolveEmailOptions(opts: MochiEmailOptions | undefined): ResolvedEmailOptions {
+/**
+ * Resolve email options. With no `transport`, development defaults to `dev`
+ * (captured into the in-memory outbox at `/_mochi/email`) and production to
+ * `log` — neither actually sends, so an unconfigured mailer never silently
+ * delivers.
+ */
+export function resolveEmailOptions(opts: MochiEmailOptions | undefined, development: boolean): ResolvedEmailOptions {
   const o = opts ?? {};
   return {
     from: o.from,
-    transport: o.transport ?? { type: 'log' },
+    transport: o.transport ?? { type: development ? 'dev' : 'log' },
   };
 }
 
@@ -17,6 +24,8 @@ export interface EmailRuntime {
   transport?: EmailTransport;
   /** The live compile cache, assigned by `Mochi.serve()`; needed to render Svelte email templates. */
   registry?: ComponentRegistry;
+  /** In-memory outbox populated by the `dev` transport; read by the email viewer. */
+  outbox?: StoredEmail[];
 }
 
 // Pinned on globalThis like __mochi_config__ / __mochi_image_runtime__:
@@ -29,7 +38,8 @@ export function getEmailRuntime(): EmailRuntime {
   let runtime = g[GLOBAL_KEY] as EmailRuntime | undefined;
   if (!runtime) {
     const { options } = getMochiConfig();
-    runtime = { options: resolveEmailOptions(options.email as MochiEmailOptions | undefined) };
+    const development = (options.development as boolean | undefined) ?? true;
+    runtime = { options: resolveEmailOptions(options.email as MochiEmailOptions | undefined, development) };
     g[GLOBAL_KEY] = runtime;
   }
   return runtime;

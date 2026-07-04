@@ -9,6 +9,7 @@ import type { Server } from 'bun';
 import { Mochi } from '../Mochi';
 import { mochiEvents, type MochiEmailSentEvent } from '../events';
 import { getEmailRuntime } from './config';
+import { clearDevOutbox, getDevEmail, getDevEmails } from './devOutbox';
 import type { MochiEmailTransportConfig, ResolvedEmailMessage } from './types';
 import { startFakeSmtpServer, type FakeSmtpServer } from '../__fixtures__/email/fakeSmtpServer';
 
@@ -99,6 +100,43 @@ describe('Mochi.email()', () => {
     });
 
     expect(captured!.text).toBe('if a < b and c > d — use &lt;br&gt; & go');
+  });
+
+  test('dev transport captures resolved messages into the in-memory outbox', async () => {
+    useTransport({ type: 'dev' });
+    clearDevOutbox();
+
+    const result = await Mochi.email({
+      to: 'first@example.com',
+      cc: 'cc@example.com',
+      subject: 'First',
+      html: '<p>Hi <b>there</b></p>',
+      headers: { 'X-Kind': 'test' },
+    });
+
+    expect(result.transport).toBe('dev');
+    expect(result.accepted).toEqual(['first@example.com']);
+
+    const emails = getDevEmails();
+    expect(emails).toHaveLength(1);
+    const stored = emails[0]!;
+    expect(stored.from).toBe('noreply@test.dev'); // filled from options
+    expect(stored.to).toEqual(['first@example.com']);
+    expect(stored.cc).toEqual(['cc@example.com']);
+    expect(stored.html).toBe('<p>Hi <b>there</b></p>');
+    expect(stored.text).toBe('Hi there'); // derived from html
+    expect(stored.headers).toEqual({ 'X-Kind': 'test' });
+    expect(getDevEmail(stored.id)).toBe(stored);
+
+    // A second send lands at the front (newest-first).
+    await Mochi.email({ to: 'second@example.com', subject: 'Second', text: 'plain' });
+    const after = getDevEmails();
+    expect(after).toHaveLength(2);
+    expect(after[0]?.subject).toBe('Second');
+    expect(after[1]?.subject).toBe('First');
+
+    clearDevOutbox();
+    expect(getDevEmails()).toHaveLength(0);
   });
 
   test('SMTP transport delivers to a test server', async () => {

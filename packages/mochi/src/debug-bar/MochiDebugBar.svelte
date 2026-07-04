@@ -9,6 +9,7 @@
   import InfoPanel from './InfoPanel.svelte';
   import SettingsPanel from './SettingsPanel.svelte';
   import Settings from '../icons/settings.svelte';
+  import Mail from '../icons/mail.svelte';
   import { cleanupHighlight } from './highlight';
   import { debugBarState } from './state.svelte';
   import { getPropsWarnLevel, formatSize } from './utils';
@@ -21,6 +22,10 @@
 
   let hasDebugInfo = $state(false);
   let collapsed = $state(false);
+
+  // The email viewer only exists when the `dev` transport is active, so gate the
+  // toolbar link on the config snapshot rather than always showing it.
+  let emailHref = $state<string | null>(null);
 
   function safeGetItem(key: string): string | null {
     try {
@@ -85,6 +90,9 @@
 
   onMount(() => {
     hasDebugInfo = !!window.__mochi_debug;
+    if (window.__mochi_debug?.config?.email === 'dev') {
+      emailHref = `${window.__mochi_asset_prefix ?? ''}/email`;
+    }
     try {
       collapsed = localStorage.getItem(STORAGE_KEY) === '1';
     } catch {
@@ -155,6 +163,11 @@
       {/if}
       {#if hasDebugInfo && !hiddenPanels.includes('info')}
         <button class="btn info-btn" onclick={() => toggle('info')} tabindex={collapsed ? -1 : 0}>Info</button>
+      {/if}
+      {#if emailHref}
+        <a class="btn email-btn" href={emailHref} target="_blank" rel="noopener" tabindex={collapsed ? -1 : 0} aria-label="Open dev email outbox" title="Dev email outbox">
+          <Mail size={12} />
+        </a>
       {/if}
       <button class="btn settings-btn" onclick={() => toggle('settings')} tabindex={collapsed ? -1 : 0} aria-label="Configure panels" title="Configure panels">
         <Settings size={12} />
@@ -388,6 +401,17 @@
     background: #383248;
     color: #e0d8ee;
     border-color: #b8a3c4;
+  }
+  .email-btn {
+    padding: 0.3em 0.45em;
+    background: #2a3a2f;
+    color: #a7c9a8;
+    border-color: #4a6354;
+  }
+  .email-btn:hover {
+    background: #34463a;
+    color: #c8e8c8;
+    border-color: #8ab79a;
   }
   .settings-btn {
     padding: 0.3em 0.45em;

@@ -33,7 +33,7 @@ await Mochi.email({
 
 <Callout type="warning">
 
-With **no transport configured**, `Mochi.email()` uses the default **log** transport: it logs the message and **does not send**. Configure a transport before relying on delivery.
+With **no transport configured**, `Mochi.email()` defaults to the **dev** transport in development (captured to an in-memory viewer, never sent) and the **log** transport in production (logged, never sent). Neither delivers — configure a real transport before relying on delivery.
 
 </Callout>
 
@@ -58,7 +58,7 @@ await Mochi.email({
 
 ### Transports
 
-Set `email.transport` to one of three shapes. Omit it for the default `log` transport.
+Set `email.transport` to one of four shapes. Omit it for the environment default: **dev** in development, **log** in production.
 
 **SMTP** — delivers over SMTP via [nodemailer](https://nodemailer.com/) (loaded lazily, only when this transport sends):
 
@@ -96,7 +96,37 @@ email: {
 }
 ```
 
-**Log** (default) — logs a one-line summary and sends nothing. Used automatically when `transport` is unset; set it explicitly with `{ type: 'log' }`.
+**Dev** (default in development) — sends nothing, but captures each message into an in-memory outbox you can browse. Used automatically in dev when `transport` is unset; set it explicitly with `{ type: 'dev' }`:
+
+```ts
+email: { from: 'noreply@acme.dev', transport: { type: 'dev' } }
+```
+
+**Log** (default in production) — logs a one-line summary and sends nothing. Used automatically in production when `transport` is unset; set it explicitly with `{ type: 'log' }`.
+
+### The dev outbox
+
+The `dev` transport stores every message in the running dev-server process and serves a viewer at **`/_mochi/email`** — a two-pane inbox that renders the exact HTML (in a sandboxed iframe), the plain-text alternative, the raw source, recipients, headers, and attachments. When the `dev` transport is active, an envelope icon appears in the [debug bar](/docs/debug-bar/) linking straight to it.
+
+<Callout type="info">
+
+The outbox is **in-memory and dev-only**: it holds the most recent 100 messages, is wiped on restart, and the `/_mochi/email` route is not registered in production. It's for previewing mail during development — not a delivery log.
+
+</Callout>
+
+Because delivery should differ between environments, pick the transport dynamically. `NODE_ENV` is the reliable signal in a server entry (the `isDev` virtual is only available inside `.svelte`/compiled code):
+
+```ts
+await Mochi.serve({
+  routes: {/* … */},
+  email: {
+    from: 'noreply@acme.dev',
+    transport: process.env.NODE_ENV === 'production' ? { type: 'smtp', host: 'smtp.acme.dev', port: 587, auth: { user, pass } } : { type: 'dev' }, // captured to /_mochi/email
+  },
+});
+```
+
+Leaving `transport` unset gives you exactly this split automatically (`dev` in development, `log` in production).
 
 ### Svelte templates
 

@@ -170,6 +170,8 @@ export interface DebugBarConfig {
   csrf: boolean;
   proxy: boolean;
   markdown: boolean;
+  /** Active email transport type. `dev` gates the toolbar's email-viewer link. */
+  email: 'log' | 'dev' | 'smtp' | 'custom';
   routeCount: number;
 }
 

@@ -7,6 +7,7 @@ import type { RenderResult } from './ComponentRegistry';
 import { loadSvelteConfig } from './svelteConfig';
 import { buildInlineWebComponent } from './buildInlineWebComponent';
 import { buildClientStatsRoutes, CLIENT_STATS_COMPONENT } from './clientStatsRoutes';
+import { buildEmailViewerRoutes, EMAIL_VIEWER_COMPONENT } from './emailViewerRoutes';
 import { isMochiPage, isMochiApi, isMochiWs, isMochiSse, isMochiFile, isMochiQueue, isServerPropsResolver, isAlsoHydrateMode, ALSO_HYDRATE_ENVELOPE_KEY } from './types';
 import type {
   BunRouteValue,
@@ -370,6 +371,7 @@ export class Mochi {
         csrf: !!options.csrf,
         proxy: !!options.proxy,
         markdown: !!options.markdown,
+        email: getEmailRuntime().options.transport.type,
         routeCount: Object.keys(options.routes ?? {}).length,
       },
     };
@@ -402,7 +404,7 @@ export class Mochi {
     // same process touch the same transitive deps.
     const ssrEntrypoints: string[] = [errorPagePath, CLIENT_STATS_COMPONENT];
     if (debugBarEnabled) {
-      ssrEntrypoints.push(PAGE_CACHE_ADMIN_COMPONENT);
+      ssrEntrypoints.push(PAGE_CACHE_ADMIN_COMPONENT, EMAIL_VIEWER_COMPONENT);
     }
     if (options.routes) {
       for (const handler of Object.values(options.routes)) {
@@ -487,6 +489,7 @@ export class Mochi {
       // file paths and sizes (project structure, dependency names).
       ...(debugBarEnabled ? buildClientStatsRoutes(registry) : {}),
       ...(debugBarEnabled ? buildPageCacheAdminRoutes() : {}),
+      ...(debugBarEnabled ? buildEmailViewerRoutes(registry) : {}),
     };
     const allRoutes = Object.keys(internalRoutes).length > 0 ? { ...internalRoutes, ...(options.routes ?? {}) } : options.routes;
 

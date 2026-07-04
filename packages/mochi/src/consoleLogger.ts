@@ -267,17 +267,26 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
   }));
 
   subscribe('email:sent', ({ to, subject, transport, duration }) => {
-    // The `log` transport did not send: warn (visible in production) and colour
-    // it yellow so it never reads as a delivered-mail success line.
-    const notSent = transport === 'log';
+    // Three delivery classes:
+    //  - log:  did not send — warn (visible in production) and colour yellow so
+    //          it never reads as a delivered-mail success line.
+    //  - dev:  captured into the outbox — expected in development, so info-level
+    //          and pointed at the viewer, not a warning.
+    //  - else: actually delivered (smtp/custom) — green.
+    const note =
+      transport === 'log'
+        ? styleText('yellow', 'logged (not sent)')
+        : transport === 'dev'
+          ? styleText('cyan', 'captured → /_mochi/email')
+          : styleText('green', `sent via ${transport}`);
     return {
       label: 'MAIL',
       path: to.join(', '),
-      note: `${styleText(notSent ? 'yellow' : 'green', notSent ? 'logged (not sent)' : `sent via ${transport}`)} ${styleText('dim', JSON.stringify(subject))}`,
+      note: `${note} ${styleText('dim', JSON.stringify(subject))}`,
       duration,
       slow,
       verySlow,
-      ...(notSent ? { level: 'warn' as const } : {}),
+      ...(transport === 'log' ? { level: 'warn' as const } : {}),
     };
   });
   subscribe('email:error', ({ to, subject, transport, error }) => ({

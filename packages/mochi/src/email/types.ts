@@ -36,7 +36,7 @@ export interface MochiEmailAttachment {
 
 /** Outcome of a send. `transport` says which transport handled it. */
 export interface MochiEmailResult {
-  transport: 'smtp' | 'custom' | 'log';
+  transport: 'smtp' | 'custom' | 'log' | 'dev';
   messageId?: string;
   accepted?: string[];
   rejected?: string[];
@@ -84,19 +84,22 @@ export type MochiEmailSendFn = (message: ResolvedEmailMessage) => Promise<Omit<M
 
 /**
  * Pluggable transport, set under `Mochi.serve({ email: { transport } })`.
- * Omit it entirely for the default `log` transport, which never sends.
+ * Omit it entirely for the default transport: `dev` in development (captured
+ * into the in-memory outbox viewable at `/_mochi/email`), `log` in production
+ * (logged, never sent).
  */
-export type MochiEmailTransportConfig = { type: 'log' } | ({ type: 'smtp' } & MochiSmtpConfig) | { type: 'custom'; send: MochiEmailSendFn };
+export type MochiEmailTransportConfig = { type: 'log' } | { type: 'dev' } | ({ type: 'smtp' } & MochiSmtpConfig) | { type: 'custom'; send: MochiEmailSendFn };
 
 /**
  * Email configuration. Every field is optional; see `resolveEmailOptions` for
- * defaults. With no `transport`, the safe `log` transport is used — messages
- * are logged, never sent.
+ * defaults. With no `transport`, development uses the `dev` transport (captured
+ * to the in-memory outbox at `/_mochi/email`, never sent) and production uses
+ * the safe `log` transport — messages are logged, never sent.
  */
 export interface MochiEmailOptions {
   /** Default `From` address used when a message omits `from`. */
   from?: string;
-  /** Transport to deliver through. Default: `{ type: 'log' }` (does not send). */
+  /** Transport to deliver through. Default: `{ type: 'dev' }` in development, `{ type: 'log' }` in production (neither sends). */
   transport?: MochiEmailTransportConfig;
 }
 
