@@ -405,7 +405,9 @@ export class Mochi {
     }
     await registry.compileAll(ssrEntrypoints);
 
-    const serverIslandClientJs = await buildInlineWebComponent('./web-components/ServerIsland.ts');
+    // Prod-with-manifest restores this from disk (baked by `build()`); otherwise
+    // build it on demand (memoized). LiveReload is dev-only, so it's never prebuilt.
+    const serverIslandClientJs = registry.serverIslandClientJs ?? (await buildInlineWebComponent('./web-components/ServerIsland.ts'));
     const liveReloadClientJs = liveReloadEnabled ? await buildInlineWebComponent('./web-components/LiveReload.ts') : '';
 
     const { renderErrorResponse, routeErrorResponse } = createErrorResponder({
