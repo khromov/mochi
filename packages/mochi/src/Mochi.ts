@@ -68,9 +68,6 @@ import { buildPageCacheAdminRoutes, PAGE_CACHE_ADMIN_COMPONENT } from './pageCac
 
 const DEFAULT_HTML_SHELL = await Bun.file(new URL('./templates/default-shell.html', import.meta.url)).text();
 
-// The framework version is fixed for the life of the process; memoize the read
-// so it doesn't hit disk on every Mochi.serve() call. Resolves to null if the
-// package.json cannot be read.
 let mochiVersionPromise: Promise<string | null> | undefined;
 function readMochiVersion(): Promise<string | null> {
   return (mochiVersionPromise ??= Bun.file(path.join(import.meta.dir, '..', 'package.json'))
