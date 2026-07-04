@@ -4,25 +4,7 @@
  * resolved relative to this file, so callers pass paths like
  * `./web-components/ServerIsland.ts`.
  */
-// The bundled+minified output of a framework web component depends solely on
-// its (constant) source file, so the result is stable for the life of the
-// process. Memoize by `relPath` to avoid re-running a full Bun.build+minify on
-// every Mochi.serve() call.
-const cache = new Map<string, Promise<string>>();
-
-export function buildInlineWebComponent(relPath: string): Promise<string> {
-  let p = cache.get(relPath);
-  if (!p) {
-    p = buildInlineWebComponentUncached(relPath).catch((err) => {
-      cache.delete(relPath);
-      throw err;
-    });
-    cache.set(relPath, p);
-  }
-  return p;
-}
-
-async function buildInlineWebComponentUncached(relPath: string): Promise<string> {
+export async function buildInlineWebComponent(relPath: string): Promise<string> {
   const entry = Bun.fileURLToPath(new URL(relPath, import.meta.url));
   const result = await Bun.build({
     entrypoints: [entry],

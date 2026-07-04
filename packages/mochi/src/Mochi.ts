@@ -105,7 +105,7 @@ function parseShellTemplate(template: string): ShellPart[] {
  * Dev-only: append a trailing `<script>` after the response body that mixes
  * the current request's response headers and inbound cookies into
  * `window.__mochi_debug`. The static fields (route, params, …)
- * are baked into the body in `resolveHtmlShell` and cached with it; the
+ * are baked into the body in `createShellRenderer` and cached with it; the
  * dynamic fields written here always reflect *this* request, so cache hits
  * still see the correct headers and cookies.
  *
@@ -383,6 +383,17 @@ export class Mochi {
         for (const sub of ['svelte-client', 'svelte-compile', 'svelte-css']) {
           mkdirSync(path.join(outDir, sub), { recursive: true });
         }
+      } else {
+        // Production without a prebuilt manifest is valid but silently much
+        // slower — components compile at boot and server islands compile on the
+        // request path. Warn loudly (error level) so a forgotten build doesn't
+        // masquerade as a healthy deploy.
+        logger.error(
+          `Running in production without a prebuilt manifest (${manifestPath} not found). ` +
+            `This is an unsupported configuration and is not recommended: components compile at startup ` +
+            `and server islands compile on the first request, making cold starts and initial responses ` +
+            `much slower. Run \`mochi-framework build\` before \`start\` to precompile and bake the manifest.`,
+        );
       }
     }
 
@@ -453,7 +464,7 @@ export class Mochi {
     await registry.compileAll(ssrEntrypoints);
 
     // Prod-with-manifest restores this from disk (baked by `build()`); otherwise
-    // build it on demand (memoized). LiveReload is dev-only, so it's never prebuilt.
+    // build it on demand. LiveReload is dev-only, so it's never prebuilt.
     const serverIslandClientJs = registry.serverIslandClientJs ?? (await buildInlineWebComponent('./web-components/ServerIsland.ts'));
     const liveReloadClientJs = liveReloadEnabled ? await buildInlineWebComponent('./web-components/LiveReload.ts') : '';
 
