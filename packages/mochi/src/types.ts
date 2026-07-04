@@ -383,6 +383,12 @@ export interface MochiManifest {
   importedCssUrls?: Record<string, string>;
   /** Maps page entry .svelte path → list of CSS-import paths reachable from it */
   entryImportedCss?: Record<string, string[]>;
+  /**
+   * Disk path (project-root-relative) to the prebuilt, minified ServerIsland
+   * inline web-component script. Emitted by `build()` so the production runtime
+   * loads it from disk instead of running a `Bun.build` at startup.
+   */
+  serverIslandScript?: string;
 }
 
 /**

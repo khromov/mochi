@@ -17,7 +17,16 @@ export function compareVersions(actual: string, required: string): boolean {
   return true;
 }
 
-export async function checkEnvironment(): Promise<{ svelteVersion: string }> {
+let cached: Promise<{ svelteVersion: string }> | undefined;
+
+export function checkEnvironment(): Promise<{ svelteVersion: string }> {
+  return (cached ??= runCheck().catch((err) => {
+    cached = undefined;
+    throw err;
+  }));
+}
+
+async function runCheck(): Promise<{ svelteVersion: string }> {
   if (typeof Bun === 'undefined') {
     throw new Error('Mochi requires the Bun runtime.');
   }
