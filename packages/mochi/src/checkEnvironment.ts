@@ -17,10 +17,6 @@ export function compareVersions(actual: string, required: string): boolean {
   return true;
 }
 
-// The environment (Bun runtime + installed Svelte) is fixed for the life of the
-// process, so memoize the resolved check to avoid re-resolving and re-reading
-// svelte/package.json on every Mochi.serve()/build() call. On failure the cache
-// is cleared so a genuinely bad environment still throws on each call.
 let cached: Promise<{ svelteVersion: string }> | undefined;
 
 export function checkEnvironment(): Promise<{ svelteVersion: string }> {
