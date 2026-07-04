@@ -33,6 +33,19 @@ const MAX_OUTBOX = 100;
 
 let counter = 0;
 
+export type DevEmailListener = (email: StoredEmail) => void;
+
+/**
+ * Subscribe to dev-outbox captures. Used by `Mochi.serve()` to push a "new email"
+ * signal (carrying the captured id) over the live-reload socket. Listeners live on
+ * the shared runtime so a duplicated module copy still reaches the same set.
+ */
+export function onDevEmailRecorded(listener: DevEmailListener): () => void {
+  const set = (getEmailRuntime().recordListeners ??= new Set());
+  set.add(listener);
+  return () => set.delete(listener);
+}
+
 function attachmentSize(content: MochiEmailAttachment['content']): number {
   return typeof content === 'string' ? Buffer.byteLength(content) : content.byteLength;
 }
@@ -59,6 +72,14 @@ export function recordDevEmail(message: ResolvedEmailMessage): StoredEmail {
   if (outbox.length > MAX_OUTBOX) {
     outbox.length = MAX_OUTBOX;
   }
+  // A throwing listener must never break capture.
+  runtime.recordListeners?.forEach((listener) => {
+    try {
+      listener(stored);
+    } catch {
+      /* ignore listener errors */
+    }
+  });
   return stored;
 }
 

@@ -26,6 +26,8 @@ export interface EmailRuntime {
   registry?: ComponentRegistry;
   /** In-memory outbox populated by the `dev` transport; read by the email viewer. */
   outbox?: StoredEmail[];
+  /** Dev-only listeners notified when the `dev` transport captures a message (see `onDevEmailRecorded`). */
+  recordListeners?: Set<(email: StoredEmail) => void>;
 }
 
 // Pinned on globalThis like __mochi_config__ / __mochi_image_runtime__:

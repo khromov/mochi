@@ -1,6 +1,7 @@
 <script lang="ts">
   import EmailView from './EmailView.svelte';
-  import TimeAgo from './TimeAgo.svelte';
+  import MsgItem from './MsgItem.svelte';
+  import OutboxSync from './OutboxSync.svelte';
 
   interface StoredAttachment {
     filename: string;
@@ -73,6 +74,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 </svelte:head>
 
+<OutboxSync viewedId={selected?.id ?? null} allIds={emails.map((e) => e.id)} mochi:hydrate />
+
 <div class="shell">
   <header class="topbar">
     <div class="brand">
@@ -98,19 +101,18 @@
         <ul class="msg-list">
           {#each emails as e (e.id)}
             <li>
-              <a class="msg" class:active={selected?.id === e.id} href="{basePath}?id={e.id}">
-                <div class="msg-row">
-                  <span class="msg-subject">{e.subject || '(no subject)'}</span>
-                  <span class="msg-time"><TimeAgo sentAt={e.sentAt} mochi:hydrate /></span>
-                </div>
-                <div class="msg-to">{e.to.join(', ')}</div>
-                {#if (!e.hasHtml && e.hasText) || e.attachmentCount > 0}
-                  <div class="msg-tags">
-                    {#if !e.hasHtml && e.hasText}<span class="tag">text</span>{/if}
-                    {#if e.attachmentCount > 0}<span class="tag">📎 {e.attachmentCount}</span>{/if}
-                  </div>
-                {/if}
-              </a>
+              <MsgItem
+                id={e.id}
+                subject={e.subject}
+                to={e.to}
+                sentAt={e.sentAt}
+                hasHtml={e.hasHtml}
+                hasText={e.hasText}
+                attachmentCount={e.attachmentCount}
+                active={selected?.id === e.id}
+                {basePath}
+                mochi:hydrate
+              />
             </li>
           {/each}
         </ul>
@@ -363,73 +365,6 @@
     flex-direction: column;
     gap: 0.15rem;
   }
-  .msg {
-    display: block;
-    text-decoration: none;
-    color: inherit;
-    padding: 0.6rem 0.7rem;
-    border-radius: var(--ev-radius-md);
-    border-left: 2px solid transparent;
-    transition:
-      background 0.12s ease,
-      border-color 0.12s ease;
-  }
-  .msg:hover {
-    background: var(--ev-accent-soft);
-    border-left-color: var(--ev-accent);
-  }
-  .msg.active {
-    background: var(--ev-accent-soft);
-    border-left-color: var(--ev-accent);
-  }
-  .msg-row {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 0.5rem;
-  }
-  .msg-subject {
-    font-weight: 600;
-    font-size: 0.88rem;
-    color: var(--ev-text);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .msg.active .msg-subject {
-    color: var(--ev-accent-soft-text);
-  }
-  .msg-time {
-    flex-shrink: 0;
-    font-size: 0.68rem;
-    color: var(--ev-text-subtle);
-    font-family: var(--ev-font-mono);
-  }
-  .msg-to {
-    margin-top: 0.15rem;
-    font-size: 0.76rem;
-    color: var(--ev-text-muted);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .msg-tags {
-    display: flex;
-    gap: 0.3rem;
-    margin-top: 0.35rem;
-  }
-  .tag {
-    font-size: 0.62rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    padding: 0.1rem 0.4rem;
-    border-radius: 999px;
-    background: var(--ev-surface-muted);
-    color: var(--ev-text-subtle);
-    border: 1px solid var(--ev-border);
-  }
-
   .detail-pane {
     background: var(--ev-surface);
     border: 1px solid var(--ev-border);

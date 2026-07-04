@@ -52,7 +52,13 @@
     <p>
       <a class="outbox-link" href="/_mochi/email" target="_blank" rel="noopener">View it in the dev outbox →</a>
     </p>
-    <button type="button" class="secondary" onclick={reset}>Send another</button>
+    {#if isHydratable}
+      <button type="button" class="send-another" onclick={reset}>Send another</button>
+    {:else}
+      <!-- No JS in the plain version: a normal link back to the page drops the
+           ?/send form snapshot so the empty form renders again. -->
+      <a class="send-another" href="/demos/email/">Send another</a>
+    {/if}
   </div>
 {:else}
   <form method="POST" action="?/send" class="send" {@attach enhance(sendOpts)}>
@@ -175,13 +181,22 @@
     cursor: not-allowed;
   }
 
-  button.secondary {
+  .send-another {
+    align-self: flex-start;
+    padding: 0.5rem 1rem;
     background: var(--surface-muted);
     color: var(--text);
-    border-color: var(--border);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    font-family: inherit;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-block;
   }
 
-  button.secondary:hover:not(:disabled) {
+  .send-another:hover {
     background: var(--surface);
     border-color: var(--accent);
   }

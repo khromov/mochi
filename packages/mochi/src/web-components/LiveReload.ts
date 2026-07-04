@@ -42,17 +42,19 @@ class MochiLiveReload extends HTMLElement {
         this.reloadNow();
         return;
       }
-      // A dev-outbox email landed. On the outbox page itself, full-reload so the
-      // new message shows up live; anywhere else, tell the debug bar to bump its
-      // "new email" badge. assetPrefix is only injected with the debug bar, which
-      // is also what mounts the outbox route — so it's present whenever it matters.
-      if (e.data === 'email:new') {
+      // A dev-outbox email landed (message is `email:new:<id>`). On the outbox page
+      // itself, full-reload so the new message shows up live; anywhere else, hand the
+      // captured id to the debug bar so it can mark it unread. assetPrefix is only
+      // injected with the debug bar, which is also what mounts the outbox route — so
+      // it's present whenever it matters.
+      if (typeof e.data === 'string' && e.data.startsWith('email:new:')) {
+        const id = e.data.slice('email:new:'.length);
         const prefix = window.__mochi_asset_prefix;
         const onOutbox = typeof prefix === 'string' && location.pathname.replace(/\/+$/, '') === `${prefix}/email`;
         if (onOutbox) {
           this.reloadNow();
         } else {
-          dispatchEvent(new CustomEvent('mochi:email-new'));
+          dispatchEvent(new CustomEvent('mochi:email-new', { detail: { id } }));
         }
       }
     };

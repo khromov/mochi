@@ -14,6 +14,7 @@
   import { debugBarState } from './state.svelte';
   import { getPropsWarnLevel, formatSize } from './utils';
   import { HIDDEN_PANELS_KEY, parseHiddenPanels, type ConfigurablePanel } from './panelSettings';
+  import { UNREAD_EMAILS_KEY, loadUnreadEmailIds } from './unread';
 
   const STORAGE_KEY = 'mochi:debug:collapsed';
 
@@ -27,9 +28,19 @@
   // toolbar link on the config snapshot rather than always showing it.
   let emailHref = $state<string | null>(null);
 
-  // Count of dev emails captured since the outbox was last opened. Bumped by the
-  // `mochi:email-new` event that LiveReload dispatches off the live-reload socket.
-  let newEmailCount = $state(0);
+  // Ids of dev emails captured but not yet read in the outbox. Persisted in
+  // localStorage so the badge survives reloads and stays in sync across tabs:
+  // LiveReload's `mochi:email-new` adds ids, the outbox's `mochi:outbox-sync`
+  // removes read/cleared ones, and `storage` events mirror other tabs.
+  let unreadIds = $state<string[]>([]);
+
+  function persistUnread() {
+    try {
+      localStorage.setItem(UNREAD_EMAILS_KEY, JSON.stringify(unreadIds));
+    } catch {
+      /* storage blocked */
+    }
+  }
 
   function safeGetItem(key: string): string | null {
     try {
@@ -86,8 +97,31 @@
     }
   }
 
-  function handleNewEmail() {
-    newEmailCount += 1;
+  function handleNewEmail(e: Event) {
+    const id = (e as CustomEvent<{ id?: string }>).detail?.id;
+    if (typeof id === 'string' && !unreadIds.includes(id)) {
+      unreadIds = [...unreadIds, id];
+      persistUnread();
+    }
+  }
+
+  // The outbox reports the message being read plus every id it still holds, so we
+  // drop the read one and prune ids that were cleared away (avoids a stuck badge).
+  function handleOutboxSync(e: Event) {
+    const detail = (e as CustomEvent<{ viewedId?: string | null; allIds?: string[] }>).detail;
+    const existing = new Set(Array.isArray(detail?.allIds) ? detail.allIds : []);
+    const viewedId = typeof detail?.viewedId === 'string' ? detail.viewedId : null;
+    const next = unreadIds.filter((id) => existing.has(id) && id !== viewedId);
+    if (next.length !== unreadIds.length) {
+      unreadIds = next;
+      persistUnread();
+    }
+  }
+
+  function handleStorage(e: StorageEvent) {
+    if (e.key === UNREAD_EMAILS_KEY) {
+      unreadIds = loadUnreadEmailIds();
+    }
   }
 
   let warnLevel = $derived(getPropsWarnLevel(debugBarState.totalPropsSize));
@@ -106,12 +140,17 @@
     } catch {
       /* storage blocked */
     }
+    unreadIds = loadUnreadEmailIds();
     document.addEventListener('click', handleDocumentClick);
     window.addEventListener('mochi:email-new', handleNewEmail);
+    window.addEventListener('mochi:outbox-sync', handleOutboxSync);
+    window.addEventListener('storage', handleStorage);
 
     return () => {
       document.removeEventListener('click', handleDocumentClick);
       window.removeEventListener('mochi:email-new', handleNewEmail);
+      window.removeEventListener('mochi:outbox-sync', handleOutboxSync);
+      window.removeEventListener('storage', handleStorage);
     };
   });
 
@@ -181,12 +220,11 @@
           target="_blank"
           rel="noopener"
           tabindex={collapsed ? -1 : 0}
-          aria-label={newEmailCount > 0 ? `Open dev email outbox (${newEmailCount} new)` : 'Open dev email outbox'}
-          title={newEmailCount > 0 ? `${newEmailCount} new email${newEmailCount > 1 ? 's' : ''}` : 'Dev email outbox'}
-          onclick={() => (newEmailCount = 0)}
+          aria-label={unreadIds.length > 0 ? `Open dev email outbox (${unreadIds.length} unread)` : 'Open dev email outbox'}
+          title={unreadIds.length > 0 ? `${unreadIds.length} unread email${unreadIds.length > 1 ? 's' : ''}` : 'Dev email outbox'}
         >
           <Mail size={12} />
-          <span class="email-badge" class:has-new={newEmailCount > 0}>{newEmailCount}</span>
+          <span class="email-badge" class:has-new={unreadIds.length > 0}>{unreadIds.length}</span>
         </a>
       {/if}
       <button class="btn settings-btn" onclick={() => toggle('settings')} tabindex={collapsed ? -1 : 0} aria-label="Configure panels" title="Configure panels">
