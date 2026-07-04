@@ -2,7 +2,17 @@ import path from 'node:path';
 import fs from 'node:fs/promises';
 import { downloadTemplate } from '@bluwy/giget-core';
 import { getTemplate, type TemplateId } from './templates.ts';
-import { ensureGitignore, fetchLatestMochiVersion, resolveMochiVersionRange, setDefaultPort, transformPackageJson, transformTsconfig, validatePackageName } from './utils.ts';
+import {
+  ensureGitignore,
+  fetchLatestMochiVersion,
+  resolveMochiVersionRange,
+  retargetDockerignore,
+  setDefaultPort,
+  stripDockerfileEnvPort,
+  transformPackageJson,
+  transformTsconfig,
+  validatePackageName,
+} from './utils.ts';
 
 export const SCAFFOLDED_PORT = 3333;
 
@@ -17,6 +27,8 @@ export interface CreateOptions {
   force?: boolean;
   /** Override the version of `mochi-framework` injected into `package.json`. Default: latest from npm. */
   mochiVersion?: string;
+  /** Rename the template `Dockerfile` to Vercel's `Dockerfile.vercel` convention. Default: `false`. */
+  vercel?: boolean;
 }
 
 export interface CreateResult {
@@ -59,7 +71,28 @@ export async function create(opts: CreateOptions): Promise<CreateResult> {
 
   ensureGitignore(dir);
 
+  if (opts.vercel) {
+    await applyVercelConvention(dir);
+  }
+
   return { dir, template: template.id, mochiVersion };
+}
+
+// Vercel builds from a `Dockerfile.vercel`. Rename the template's `Dockerfile`
+// (stripping its baked-in `ENV PORT` so the app honours Vercel's injected `$PORT`)
+// and retarget the matching `.dockerignore` entry. A template that ships no bare
+// `Dockerfile` (e.g. `demos`) is a graceful no-op.
+async function applyVercelConvention(dir: string): Promise<void> {
+  const dockerfile = path.join(dir, 'Dockerfile');
+  let raw: string;
+  try {
+    raw = await fs.readFile(dockerfile, 'utf8');
+  } catch {
+    return;
+  }
+  await fs.writeFile(path.join(dir, 'Dockerfile.vercel'), stripDockerfileEnvPort(raw));
+  await fs.rm(dockerfile);
+  await rewriteFile(path.join(dir, '.dockerignore'), retargetDockerignore);
 }
 
 async function rewriteFile(file: string, transform: (raw: string) => string): Promise<void> {

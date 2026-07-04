@@ -126,6 +126,18 @@ export function setDefaultPort(contents: string, port: number): string {
   return contents.replace(/(const PORT = Number\(process\.env\.PORT\) \|\| )\d+(;)/, `$1${port}$2`);
 }
 
+// Vercel injects `$PORT` at runtime (defaulting to 80), so a hardcoded `ENV PORT`
+// baked into the image just muddies which port the container listens on. Drop the
+// line so the app falls back to the platform-provided value.
+export function stripDockerfileEnvPort(contents: string): string {
+  return contents.replace(/^ENV PORT=\S+[ \t]*\r?\n/m, '');
+}
+
+/** Retarget a `.dockerignore` `Dockerfile` entry at `Dockerfile.vercel` after the rename. */
+export function retargetDockerignore(contents: string): string {
+  return contents.replace(/^Dockerfile[ \t]*$/m, 'Dockerfile.vercel');
+}
+
 const DEFAULT_GITIGNORE = `node_modules
 .mochi
 .mochi-*

@@ -13,6 +13,7 @@ const program = new Command('create-mochi')
   .argument('[path]', 'where the project should be created')
   .addOption(new Option('--template <name>', 'starter template').choices([...TEMPLATE_IDS]))
   .addOption(new Option('--force', 'overwrite existing directory contents'))
+  .addOption(new Option('--vercel', "rename the Dockerfile to Vercel's Dockerfile.vercel convention"))
   .version(pkg.version, '-v, --version')
   .configureHelp({
     formatHelp(cmd, helper) {
@@ -37,6 +38,7 @@ await program.parseAsync().catch((err) => {
 interface CliOptions {
   template?: TemplateId;
   force?: boolean;
+  vercel?: boolean;
 }
 
 async function runCreate(rawPath: string | undefined, opts: CliOptions): Promise<void> {
@@ -45,13 +47,14 @@ async function runCreate(rawPath: string | undefined, opts: CliOptions): Promise
   const dir = await promptDirectory(rawPath);
   const force = await maybePromptForce(dir, opts.force === true);
   const template = await promptTemplate(opts.template);
+  const vercel = await maybePromptVercel(opts.vercel === true);
   const name = defaultNameFor(dir);
 
   const spinner = p.spinner();
   spinner.start(`Downloading ${styleText('cyan', template)} template`);
   let result;
   try {
-    result = await create({ dir, template, name, force });
+    result = await create({ dir, template, name, force, vercel });
   } catch (err) {
     spinner.stop(styleText('red', 'Failed to download template.'));
     p.cancel(err instanceof Error ? err.message : String(err));
@@ -67,6 +70,7 @@ async function runCreate(rawPath: string | undefined, opts: CliOptions): Promise
       `${styleText('dim', '1.')} cd ${rel}`,
       `${styleText('dim', '2.')} bun install`,
       `${styleText('dim', '3.')} bun run dev`,
+      ...(vercel ? ['', styleText('dim', 'Deploy: '), `   vercel deploy  ${styleText('dim', '# builds Dockerfile.vercel — see https://mochi.fast/docs/vercel/')}`] : []),
       '',
       styleText('dim', `mochi-framework pinned to ${result.mochiVersion}`),
     ].join('\n'),
@@ -128,6 +132,21 @@ async function maybePromptForce(dir: string, alreadyForced: boolean): Promise<bo
     process.exit(0);
   }
   return true;
+}
+
+async function maybePromptVercel(alreadyOptedIn: boolean): Promise<boolean> {
+  if (alreadyOptedIn) {
+    return true;
+  }
+  const confirm = await p.confirm({
+    message: 'Are you planning to deploy to Vercel?',
+    initialValue: false,
+  });
+  if (p.isCancel(confirm)) {
+    p.cancel('Operation cancelled.');
+    process.exit(0);
+  }
+  return confirm === true;
 }
 
 async function promptTemplate(provided: string | undefined): Promise<TemplateId> {
