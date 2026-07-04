@@ -68,6 +68,17 @@ import { buildPageCacheAdminRoutes, PAGE_CACHE_ADMIN_COMPONENT } from './pageCac
 
 const DEFAULT_HTML_SHELL = await Bun.file(new URL('./templates/default-shell.html', import.meta.url)).text();
 
+// The framework version is fixed for the life of the process; memoize the read
+// so it doesn't hit disk on every Mochi.serve() call. Resolves to null if the
+// package.json cannot be read.
+let mochiVersionPromise: Promise<string | null> | undefined;
+function readMochiVersion(): Promise<string | null> {
+  return (mochiVersionPromise ??= Bun.file(path.join(import.meta.dir, '..', 'package.json'))
+    .json()
+    .then((pkg) => (pkg as { version: string }).version)
+    .catch(() => null));
+}
+
 /**
  * Dev-only: append a trailing `<script>` after the response body that mixes
  * the current request's response headers and inbound cookies into
@@ -226,12 +237,7 @@ export class Mochi {
 
   static async serve(options: MochiServeOptions): Promise<Server<undefined>> {
     const { svelteVersion } = await checkEnvironment();
-    let mochiVersion: string | null = null;
-    try {
-      mochiVersion = ((await Bun.file(path.join(import.meta.dir, '..', 'package.json')).json()) as { version: string }).version;
-    } catch {
-      // mochiVersion remains null if package.json cannot be read
-    }
+    const mochiVersion = await readMochiVersion();
     initExtensions(options);
     await runHook('mochi:init', { options });
     await initMochiConfig(options);
