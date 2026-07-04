@@ -11,6 +11,12 @@
     }
   },
   "runArgs": ["--cap-add=NET_ADMIN", "--cap-add=NET_RAW"],
+  "forwardPorts": [3333, 3334, 3335],
+  "portsAttributes": {
+    "3333": { "label": "site", "onAutoForward": "notify" },
+    "3334": { "label": "demos", "onAutoForward": "notify" },
+    "3335": { "label": "minimal", "onAutoForward": "notify" }
+  },
   "customizations": {
     "vscode": {
       "extensions": ["anthropic.claude-code", "dbaeumer.vscode-eslint", "esbenp.prettier-vscode", "eamodio.gitlens"],

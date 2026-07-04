@@ -75,7 +75,10 @@ describe('public files with spaces in their names are served', () => {
   // previously re-registered every public file under its raw key, 404-ing them.
   test('serves a spaced file added after startup (dev-watcher reload)', async () => {
     writeFileSync(path.join(publicDir, 'added later.txt'), 'SPACED_LIVE_ADD');
-    const res = await fetchUntil(`${base}/added%20later.txt`, 200);
+    // Generous deadline: under full-suite parallel load, chokidar's watch+debounce
+    // latency can exceed the default 8s, causing a flaky 404 before the route is
+    // re-registered. 20s keeps the assertion meaningful without flaking.
+    const res = await fetchUntil(`${base}/added%20later.txt`, 200, 20_000);
     expect(res.status).toBe(200);
     expect(await res.text()).toBe('SPACED_LIVE_ADD');
   });
