@@ -4,9 +4,10 @@ import { EmailError } from './types';
 /**
  * Render a Svelte component to a standalone HTML email body: SSR-render through
  * the existing registry (no page shell, no hydration/client JS), collect the
- * component's scoped CSS, then inline it into `style=""` attributes with `juice`
- * for email-client compatibility. Media queries and pseudo-classes that can't
- * be inlined are preserved in a `<style>` block.
+ * component's scoped CSS, then inline it into `style=""` attributes with
+ * `@css-inline/css-inline` for email-client compatibility. Media queries and
+ * pseudo-classes that can't be inlined are preserved in a `<style>` block
+ * (`keepStyleTags: true`).
  *
  * Runs outside an HTTP request when called from a background job, so email
  * templates must not touch request-context APIs (`getRequestContext`,
@@ -25,13 +26,13 @@ export async function renderEmailComponent(registry: ComponentRegistry, componen
   const head = result.head ?? '';
   const doc = stripScripts(`<!doctype html><html><head><meta charset="utf-8">${head}${css ? `<style>${css}</style>` : ''}</head><body>${result.body}</body></html>`);
 
-  let juice: typeof import('juice').default;
+  let inline: typeof import('@css-inline/css-inline').inline;
   try {
-    ({ default: juice } = await import('juice'));
+    ({ inline } = await import('@css-inline/css-inline'));
   } catch {
-    throw new EmailError("The 'juice' package is required to render Svelte email templates. Install it with `bun add juice`.");
+    throw new EmailError("The '@css-inline/css-inline' package is required to render Svelte email templates. Install it with `bun add @css-inline/css-inline`.");
   }
-  return juice(doc);
+  return inline(doc, { keepStyleTags: true });
 }
 
 function stripScripts(html: string): string {

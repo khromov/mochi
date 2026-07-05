@@ -1,7 +1,7 @@
 <script lang="ts">
   // Rendered by Mochi.email({ component, props }) — runs server-side with no
   // request context, so it must not touch getRequestContext()/cookies/url.
-  // The scoped style block below is inlined into style="" attributes by juice.
+  // The scoped style block below is inlined into style="" attributes by css-inline.
   let { subject, message }: { subject: string; message: string } = $props();
 </script>
 

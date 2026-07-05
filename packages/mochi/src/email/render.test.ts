@@ -47,7 +47,7 @@ describe('renderEmailComponent', () => {
     const html = await requestContext.run(makeCtx(), () => renderEmailComponent(registry, WELCOME, { name: 'Ada' }));
 
     expect(html).toContain('Hello Ada');
-    // juice moved the scoped rules onto the elements as inline styles.
+    // css-inline moved the scoped rules onto the elements as inline styles.
     expect(html).toContain('style="');
     expect(html).toContain('#6b46c1'); // h1 color, now inline
     expect(html).toContain('padding: 24px');
