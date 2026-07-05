@@ -29,6 +29,11 @@ export async function renderEmailComponent(registry: ComponentRegistry, componen
   return inline(doc, { keepStyleTags: true });
 }
 
+// We use the `-wasm` build of css-inline rather than the default
+// `@css-inline/css-inline`, which ships native N-API addons (per-platform ABI
+// binaries via optionalDependencies). A single portable `.wasm` keeps installs
+// binary-free and identical across platforms (incl. the Docker image).
+//
 // The WASM build must be instantiated once via `initWasm` before `inline()` is
 // usable (and `initWasm` refuses to run twice), so cache the load+init promise.
 // The bytes are handed to `initWasm` directly rather than letting it `fetch()` a
@@ -40,9 +45,10 @@ function loadCssInline(): Promise<typeof import('@css-inline/css-inline-wasm')> 
     cssInlinePromise = (async () => {
       const mod = await import('@css-inline/css-inline-wasm');
       const wasmBytes = await Bun.file(new URL(import.meta.resolve('@css-inline/css-inline-wasm/index_bg.wasm'))).arrayBuffer();
-      // The `{ module_or_path }` object form is the current, non-deprecated init
-      // API but isn't reflected in the shipped types yet — passing raw bytes
-      // works too but logs an upstream deprecation warning on every boot.
+      // wasm-bindgen deprecated the positional `initWasm(bytes)` form (which is
+      // what the shipped `.d.ts` still types) in favor of this single-object
+      // form; passing bytes positionally works but logs a one-time "deprecated
+      // parameters" warning. Hence the cast — the object form isn't in the types.
       await mod.initWasm({ module_or_path: wasmBytes } as unknown as Parameters<typeof mod.initWasm>[0]);
       return mod;
     })().catch((err) => {
