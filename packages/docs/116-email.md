@@ -58,6 +58,14 @@ await Mochi.email({
 
 `Mochi.email()` resolves the body (rendering `component` if given, deriving a plain-text part from HTML), fills `from` from `email.from`, normalizes recipients, sends, and resolves to a `MochiEmailResult` (`{ transport, messageId?, accepted?, rejected? }`).
 
+Any address field (`from`, `to`, `replyTo`, …) accepts a display name via the standard `Name <addr>` form — pass it through as one string and the recipient's client shows the name:
+
+```ts
+await Mochi.email({ from: 'Acme <noreply@acme.dev>', to: 'Alice <alice@example.com>', subject, text });
+```
+
+The same applies to the `email.from` default in `Mochi.serve()` — `from: 'Acme <noreply@acme.dev>'`. A bare address (`noreply@acme.dev`) sends with no display name.
+
 ### The body
 
 A message has two independent parts:
