@@ -60,7 +60,7 @@ await Mochi.email({
 
 Set `email.transport` to one of four shapes. Omit it for the environment default: **dev** in development, **log** in production.
 
-**SMTP** — delivers over SMTP via [nodemailer](https://nodemailer.com/) (loaded lazily, only when this transport sends):
+**SMTP** — delivers over SMTP via [nodemailer](https://nodemailer.com/):
 
 ```ts
 email: {
