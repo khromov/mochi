@@ -196,6 +196,17 @@ export interface RenderResult {
   debugBarData?: DebugBarData;
 }
 
+/**
+ * Result of {@link ComponentRegistry.renderStatic} — the stateless render path
+ * used for email. No islands, no shell, no request state, so there's no
+ * bootstrap URL, no server-island flag, and no debug-bar snapshot.
+ */
+export interface StaticRenderResult {
+  body: string;
+  head: string;
+  cssUrls: string[];
+}
+
 export interface ComponentRegistryOptions {
   development?: boolean;
   /** Bundle and surface the dev-only debug-bar entry. Default: same as `development`. */
@@ -1276,6 +1287,77 @@ export class ComponentRegistry {
     }
   }
 
+  /**
+   * Stateless SSR for email templates: no islands, no shell, no request state.
+   * Unlike `renderComponent`, this never touches `ctx.islandProps` and always
+   * runs outside any ambient request context (`getRequestContext()` throws
+   * inside the template regardless of call site), so it can't interleave with a
+   * page render. Islands and server islands are a hard error — email clients run
+   * no JS and can't make the follow-up request a deferred island needs.
+   */
+  async renderStatic(filename: string, props?: Record<string, unknown>): Promise<StaticRenderResult> {
+    await this.compile(filename);
+    const entry = this.compiledComponents.get(filename);
+    if (!entry) {
+      throw new Error(`renderStatic: failed to compile ${filename}`);
+    }
+    const { module: mod, cssComponents, hydratables } = entry;
+
+    // Island guard (pre-render): import-graph based, so it fires even for an
+    // island behind a false `{#if}` — deterministic and props-independent.
+    if (hydratables.length > 0) {
+      const names = hydratables.map((h) => h.displayName).join(', ');
+      throw new Error(`Email templates can't contain islands (${names}). mochi:hydrate* / mochi:clientOnly need client JS, which an email can't run — render the content inline instead.`);
+    }
+
+    const development = this.development;
+    const componentBaseName = path.basename(filename, path.extname(filename));
+    // Keep <svelte:boundary> functional during SSR (Svelte 5.51+). Email needs
+    // none of the client-hydration bookkeeping `renderComponent`'s
+    // `transformError` carries — just log and degrade.
+    const transformError = (err: unknown): Error => {
+      const e = err instanceof Error ? err : new Error(String(err));
+      logger.error(`Email SSR error in ${componentBaseName}: ${e.message}`);
+      return development ? e : new Error('Email render error');
+    };
+
+    const { body, head } = await requestContext.exit(() => render(mod.default, { ...(props ? { props } : {}), transformError }));
+
+    let output = body;
+
+    // Server-island guard (post-render): no per-entry metadata to check up
+    // front, so detect the emitted placeholder in the rendered output.
+    if (output.includes('<mochi-server-island')) {
+      throw new Error(`Email templates can't contain server islands (mochi:defer*) — they load over a follow-up request an email can't make. Render the content inline instead.`);
+    }
+
+    output = output.replaceAll('__MOCHI_ASSET_PREFIX__', this.assetPrefix);
+
+    const cssUrls: string[] = [];
+    for (const componentPath of cssComponents) {
+      const cssUrl = this.cssFileUrls.get(componentPath);
+      if (cssUrl) {
+        cssUrls.push(cssUrl);
+      }
+    }
+    // Side-effect CSS imports reachable from this entry (e.g. @fontsource fonts).
+    const imported = this.entryImportedCss.get(filename);
+    if (imported) {
+      for (const cssPath of imported) {
+        const url = this.importedCssUrls.get(cssPath);
+        if (url) {
+          cssUrls.push(url);
+        }
+      }
+    }
+
+    return {
+      body: stripHydrationMarkers(output),
+      head: stripHydrationMarkers(head ?? ''),
+      cssUrls,
+    };
+  }
+
   async renderComponent(filename: string, props?: Record<string, unknown>, opts?: { stripMarkers?: boolean; idPrefix?: string }): Promise<RenderResult> {
     await this.compile(filename);
     const { module: mod, cssComponents, hydratables, hydratablesByName, hydratablesByPath, islandPaths } = this.compiledComponents.get(filename)!;
@@ -1333,6 +1415,16 @@ export class ComponentRegistry {
     if (opts?.idPrefix) {
       renderOptions.idPrefix = opts.idPrefix;
     }
+
+    // Each render owns the whole `islandProps` map: `emitIslandProps` fills it
+    // during this `render()`, the HTMLRewriter pass below drains it. Clearing up
+    // front makes sequential same-ctx renders self-contained — the error page
+    // after a failed page render, an action's POST re-render. Nested renders no
+    // longer exist (email uses `renderStatic`; the island endpoint runs in its
+    // own request context), so nothing else holds pending entries here.
+    const ctx = requestContext.getStore();
+    ctx?.islandProps.clear();
+
     const { body, head } = await render(mod.default, renderOptions);
 
     let output = body;
@@ -1362,9 +1454,7 @@ export class ComponentRegistry {
     const shouldStrip = opts?.stripMarkers !== false && hydratables.length === 0;
     const hasIslandsOrServerIslands = hydratables.length > 0 || hasServerCssPlaceholders;
 
-    const ctx = requestContext.getStore();
-
-    // Index the per-request island props registry by ref id so the rewriter
+    // Index the per-render island props registry by ref id so the rewriter
     // pass below can emit each payload as a <script type="application/json">
     // block immediately before the first island that references it. HTMLRewriter
     // visits elements in document order, so the first callback for a given
@@ -1423,20 +1513,6 @@ export class ComponentRegistry {
         });
       }
       output = rewriter.transform(output);
-    }
-    // TODO: Check if email should live outside this flow, if this is the main reason we need this workaround.
-    // Drop only the entries this render actually emitted (not the whole map) so
-    // a second render within the same request doesn't re-emit the same blocks
-    // (e.g. an error page rendering after the original page), while entries left
-    // behind by an outer, still-in-progress render — e.g. a page whose
-    // serverProps resolver calls Mochi.email({ component }) mid-render, a nested
-    // renderComponent() call — survive for that outer render to still emit.
-    if (ctx) {
-      for (const [json, entry] of ctx.islandProps) {
-        if (emittedProps.has(entry.id)) {
-          ctx.islandProps.delete(json);
-        }
-      }
     }
 
     let debugBarData: RenderResult['debugBarData'];

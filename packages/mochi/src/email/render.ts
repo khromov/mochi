@@ -1,23 +1,25 @@
 import type { ComponentRegistry } from '../ComponentRegistry';
 
 /**
- * Render a Svelte component to a standalone HTML email body: SSR-render through
- * the existing registry (no page shell, no hydration/client JS), collect the
- * component's scoped CSS, then inline it into `style=""` attributes with
- * `@css-inline/css-inline-wasm` for email-client compatibility. Media queries
- * and pseudo-classes that can't be inlined are preserved in a `<style>` block
- * (`keepStyleTags: true`).
+ * Render a Svelte component to a standalone HTML email body via the registry's
+ * stateless `renderStatic` path (no page shell, no islands, no hydration/client
+ * JS), collect the component's scoped CSS, then inline it into `style=""`
+ * attributes with `@css-inline/css-inline-wasm` for email-client compatibility.
+ * Media queries and pseudo-classes that can't be inlined are preserved in a
+ * `<style>` block (`keepStyleTags: true`).
  *
- * Runs outside an HTTP request when called from a background job, so email
- * templates must not touch request-context APIs (`getRequestContext`,
- * `cookies`, `url`). Called from within a route action, the request context is
- * already active.
+ * Email templates **always** render outside the request context — `renderStatic`
+ * runs the Svelte render via `requestContext.exit`, so request-context APIs
+ * (`getRequestContext`, `cookies`, `url`) throw regardless of whether the send
+ * originates from a background job or a route action. Pass everything the
+ * template needs via `props`. Islands (`mochi:hydrate*`) and server islands
+ * (`mochi:defer*`) are a hard error.
  *
  * Any `<script>` in the rendered markup is stripped: email clients block
  * scripts outright, so they only bloat the message and trip spam heuristics.
  */
 export async function renderEmailComponent(registry: ComponentRegistry, component: string, props?: Record<string, unknown>): Promise<string> {
-  const result = await registry.renderComponent(component, props, { stripMarkers: true });
+  const result = await registry.renderStatic(component, props);
   const css = result.cssUrls
     .map((url) => registry.getClientFile(url))
     .filter((c): c is string => Boolean(c))

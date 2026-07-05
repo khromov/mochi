@@ -200,7 +200,13 @@ await Mochi.email({
 
 <Callout type="info">
 
-Email templates render **outside an HTTP request** when sent from a background job, so they must not use request-context APIs (`getRequestContext`, `cookies`, `url`). Sent from within a route action, the request context is already active.
+Email templates **always** render outside the request context — even when sent from within a route action — so request-context APIs (`getRequestContext`, `cookies`, `url`) throw regardless of where the send originates. Pass everything the template needs through `props`.
+
+</Callout>
+
+<Callout type="danger">
+
+**No islands in emails.** A `mochi:hydrate*` island or a `mochi:defer*` server island — anywhere in the template, or in anything it imports, even behind a branch that never renders — is a hard error. Email clients run no JavaScript and can't make the follow-up request a deferred island needs; render the content inline instead.
 
 </Callout>
 
