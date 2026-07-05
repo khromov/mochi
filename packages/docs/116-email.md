@@ -155,7 +155,7 @@ Leaving `transport` unset gives you exactly this split automatically (`dev` in d
 
 ### Svelte templates
 
-Author an email body as a Svelte component instead of an HTML string. Pass its path as `component` (like `Mochi.page()`) plus `props`. Mochi SSR-renders it through the same pipeline as your pages — no page shell, no client JS — and **inlines its scoped CSS** into `style=""` attributes (via [juice](https://github.com/Automattic/juice), loaded lazily) for email-client compatibility.
+Author an email body as a Svelte component instead of an HTML string. Pass its path as `component` (like `Mochi.page()`) plus `props`. Mochi SSR-renders it through the same pipeline as your pages and **inlines its scoped CSS** into `style=""` attributes (via [juice](https://github.com/Automattic/juice)) for email-client compatibility.
 
 ```svelte
 <!-- ./src/emails/Welcome.svelte -->
@@ -193,6 +193,51 @@ Email templates render **outside an HTTP request** when sent from a background j
 <Callout type="warning">
 
 CSS inlining is best-effort, and email clients support only a limited, inconsistent subset of CSS. Rules that can't be inlined (media queries, pseudo-classes) are left in a `<style>` block that some clients strip, and modern layout (flexbox/grid, custom properties) is unreliable across clients. Favor simple, table- and inline-style-friendly markup, and always test your templates in the clients you care about.
+
+</Callout>
+
+### Sending in the background
+
+Delivery is slow and can fail — an SMTP handshake or a third-party API call shouldn't block the response to your user. Offload the send to a [`Mochi.queue()`](/docs/queues/): the action returns immediately, and a background worker runs `Mochi.email()` with automatic retries.
+
+```ts
+// jobs.server.ts
+import { Mochi } from 'mochi-framework';
+
+export const emailQueue = Mochi.queue<{ to: string; name: string }>({
+  concurrency: 5,
+  defaultJobOptions: { attempts: 3 }, // retry a failed send
+  process: async (job) => {
+    await Mochi.email({
+      to: job.data.to,
+      subject: 'Welcome to Acme',
+      component: './src/emails/Welcome.svelte',
+      props: { name: job.data.name },
+    });
+  },
+});
+```
+
+```ts
+// routes.ts — enqueue instead of awaiting the send
+register: async ({ request }) => {
+  const data = await request.formData();
+  await Mochi.getQueue<{ to: string; name: string }>('emails').add('welcome', {
+    to: String(data.get('email')),
+    name: String(data.get('name')),
+  });
+  return success({ ok: true });
+},
+```
+
+```ts
+// index.ts
+await Mochi.serve({ routes, queues: { emails: emailQueue } });
+```
+
+<Callout type="info">
+
+A job runs **outside an HTTP request**, so the `process` function — and any Svelte template it renders — can't reach `getRequestContext`, `cookies`, or `url`. Put everything the message needs (recipient, template props) into the job payload, which must be serializable.
 
 </Callout>
 
