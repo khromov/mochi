@@ -70,14 +70,21 @@ class SmtpTransport implements EmailTransport {
   readonly name = 'smtp' as const;
   private transporterPromise: Promise<NodemailerTransporter> | undefined;
   private readonly inFlight = new Set<Promise<MochiEmailResult>>();
+  private closed = false;
 
   constructor(private readonly config: Extract<MochiEmailTransportConfig, { type: 'smtp' }>) {}
 
   // Memoize the in-flight build (synchronous `??=`) so concurrent first sends
   // share one transporter instead of each racing past an `await` and creating —
   // then leaking — its own pool. A failed build is not cached, so a later send
-  // retries the lazy import.
+  // retries the lazy import. Once `closed` (set synchronously by close(), before
+  // its own await), refuse to build a new pool — otherwise a send racing close()
+  // could spin up a transporter after close() has already captured the one it's
+  // about to await-then-close, and that new pool would never be closed.
   private getTransporter(): Promise<NodemailerTransporter> {
+    if (this.closed) {
+      return Promise.reject(new EmailError('SMTP transport is closed.'));
+    }
     return (this.transporterPromise ??= this.buildTransporter().catch((err) => {
       this.transporterPromise = undefined;
       throw err;
@@ -127,6 +134,9 @@ class SmtpTransport implements EmailTransport {
   }
 
   async close(): Promise<void> {
+    // Block new pool creation first (synchronously) so `pending` below is
+    // guaranteed to be the last transporter that will ever exist.
+    this.closed = true;
     const pending = this.transporterPromise;
     this.transporterPromise = undefined;
     if (!pending) {

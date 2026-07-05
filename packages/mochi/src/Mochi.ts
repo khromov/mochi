@@ -414,6 +414,13 @@ export class Mochi {
       }
     }
 
+    const emailTransportType = getEmailRuntime().options.transport.type;
+    // The dev outbox captures mail purely off the resolved transport, independent
+    // of the debug bar — so the viewer route (and its compile) must key off the
+    // same condition, or `debugBar: false` silently captures mail with no way to
+    // ever read it back (only production is documented to disable the route).
+    const emailViewerEnabled = development && emailTransportType === 'dev';
+
     const serverDebugInfo: Partial<DebugBarData> = {
       mochiVersion: mochiVersion ?? undefined,
       svelteVersion,
@@ -433,7 +440,7 @@ export class Mochi {
         csrf: !!options.csrf,
         proxy: !!options.proxy,
         markdown: !!options.markdown,
-        email: getEmailRuntime().options.transport.type,
+        email: emailTransportType,
         routeCount: Object.keys(options.routes ?? {}).length,
       },
     };
@@ -466,7 +473,10 @@ export class Mochi {
     // same process touch the same transitive deps.
     const ssrEntrypoints: string[] = [errorPagePath, CLIENT_STATS_COMPONENT];
     if (debugBarEnabled) {
-      ssrEntrypoints.push(PAGE_CACHE_ADMIN_COMPONENT, EMAIL_VIEWER_COMPONENT);
+      ssrEntrypoints.push(PAGE_CACHE_ADMIN_COMPONENT);
+    }
+    if (emailViewerEnabled) {
+      ssrEntrypoints.push(EMAIL_VIEWER_COMPONENT);
     }
     if (options.routes) {
       for (const handler of Object.values(options.routes)) {
@@ -556,7 +566,7 @@ export class Mochi {
       // file paths and sizes (project structure, dependency names).
       ...(debugBarEnabled ? buildClientStatsRoutes(registry) : {}),
       ...(debugBarEnabled ? buildPageCacheAdminRoutes() : {}),
-      ...(debugBarEnabled ? buildEmailViewerRoutes(registry) : {}),
+      ...(emailViewerEnabled ? buildEmailViewerRoutes(registry) : {}),
     };
     const allRoutes = Object.keys(internalRoutes).length > 0 ? { ...internalRoutes, ...(options.routes ?? {}) } : options.routes;
 
@@ -1577,7 +1587,7 @@ export class Mochi {
       }
     } catch (err) {
       await closeAllQueueResources();
-      server.stop(true);
+      await server.stop(true);
       throw err;
     }
 
@@ -1674,7 +1684,7 @@ export class Mochi {
         stopEvent.signal = signal;
       }
       mochiEvents.emit('server:stop', stopEvent);
-      server.stop();
+      await server.stop();
     };
     process.on('SIGTERM', handle);
     process.on('SIGINT', handle);

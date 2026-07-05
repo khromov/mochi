@@ -1,9 +1,15 @@
 import type { ComponentRegistry } from './ComponentRegistry';
 import { clearDevOutbox, getDevAttachment, getDevEmail, getDevEmails, type StoredEmail } from './email/devOutbox';
 import { redirect } from './forms';
+import { baseContentType, INLINE_SAFE_IMAGE_TYPES } from './inlineContentTypeSafety';
 import type { MochiApiConfig, MochiPageConfig } from './types';
 
 export const EMAIL_VIEWER_COMPONENT = Bun.fileURLToPath(new URL('./templates/EmailViewer/EmailViewer.svelte', import.meta.url));
+
+// Attachments can additionally be these raster/document types without risking
+// same-origin XSS (unlike an upstream image original, these are always
+// served with `nosniff` + this exact allowlist, never trusted as-is).
+const EMAIL_INLINE_SAFE_EXTRA_TYPES = new Set(['image/bmp', 'image/x-icon', 'application/pdf', 'text/plain']);
 
 /** Light list projection — full bodies are only sent for the selected message. */
 export interface EmailListItem {
@@ -64,7 +70,7 @@ export function buildEmailViewerRoutes(registry: ComponentRegistry): Record<stri
     },
   };
   // Streams one attachment's stored bytes so the viewer can open it in a new tab.
-  // Dev-only (mounted behind the debug bar), so no auth beyond that gate.
+  // Dev-only (only mounted while the `dev` transport is active), so no auth beyond that gate.
   const attachment: MochiApiConfig = {
     __mochiApi: true,
     handler: ({ url }) => {
@@ -84,7 +90,8 @@ export function buildEmailViewerRoutes(registry: ComponentRegistry): Record<stri
       // dev-server origin); everything else — HTML, SVG, XML — downloads, so a
       // malicious attachment can't execute script against the dev origin. `nosniff`
       // stops the browser from second-guessing the declared type.
-      const inlineSafe = /^(?:image\/(?:png|jpe?g|gif|webp|avif|bmp|x-icon)|application\/pdf|text\/plain)\b/i.test(contentType);
+      const base = baseContentType(contentType);
+      const inlineSafe = INLINE_SAFE_IMAGE_TYPES.has(base) || EMAIL_INLINE_SAFE_EXTRA_TYPES.has(base);
       return new Response(body, {
         headers: {
           'Content-Type': contentType,

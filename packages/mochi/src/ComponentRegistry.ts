@@ -1424,9 +1424,20 @@ export class ComponentRegistry {
       }
       output = rewriter.transform(output);
     }
-    // Clear so a second render within the same request doesn't re-emit the same
-    // blocks (e.g. an error page rendering after the original page).
-    ctx?.islandProps.clear();
+    // TODO: Check if email should live outside this flow, if this is the main reason we need this workaround.
+    // Drop only the entries this render actually emitted (not the whole map) so
+    // a second render within the same request doesn't re-emit the same blocks
+    // (e.g. an error page rendering after the original page), while entries left
+    // behind by an outer, still-in-progress render — e.g. a page whose
+    // serverProps resolver calls Mochi.email({ component }) mid-render, a nested
+    // renderComponent() call — survive for that outer render to still emit.
+    if (ctx) {
+      for (const [json, entry] of ctx.islandProps) {
+        if (emittedProps.has(entry.id)) {
+          ctx.islandProps.delete(json);
+        }
+      }
+    }
 
     let debugBarData: RenderResult['debugBarData'];
     if (ctx?.debugBarData) {

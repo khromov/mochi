@@ -3,6 +3,7 @@ import { getCachedOriginal } from './getResizedImage';
 import { decryptImageRequest } from './imageCrypto';
 import { originalId, variantId } from './imageCache';
 import { getMochiConfig } from '../mochiConfig';
+import { baseContentType, INLINE_SAFE_IMAGE_TYPES } from '../inlineContentTypeSafety';
 import { resizeImage } from './resize';
 import { ImageError } from './types';
 import type { ImageRequest, ResolvedImageOptions } from './types';
@@ -14,8 +15,6 @@ function textResponse(status: number, message: string): Response {
   });
 }
 
-const INLINE_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/avif', 'image/gif']);
-
 /**
  * Originals are served verbatim from an upstream we don't fully control. Only
  * raster image types are safe to render inline in our origin; anything else
@@ -24,8 +23,7 @@ const INLINE_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'im
  * SVG from executing, so the Content-Type is rewritten rather than just labelled.
  */
 export function safeOriginalContentType(contentType: string): { contentType: string; attachment: boolean } {
-  const base = contentType.split(';')[0]!.trim().toLowerCase();
-  if (INLINE_IMAGE_TYPES.has(base)) {
+  if (INLINE_SAFE_IMAGE_TYPES.has(baseContentType(contentType))) {
     return { contentType, attachment: false };
   }
   return { contentType: 'application/octet-stream', attachment: true };
