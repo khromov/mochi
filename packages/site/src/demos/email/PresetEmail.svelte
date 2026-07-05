@@ -1,7 +1,7 @@
 <script lang="ts">
   // Rendered by Mochi.email({ component, props }) — this runs server-side with no
   // request context, so it must not touch getRequestContext()/cookies/url.
-  // The scoped style block below is inlined into the HTML by the mailer (juice).
+  // The scoped style block below is inlined into the HTML by the mailer (css-inline).
   let { preset, name }: { preset: string; name: string } = $props();
 
   const receiptItems = [

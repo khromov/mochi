@@ -163,7 +163,7 @@ Leaving `transport` unset gives you exactly this split automatically (`dev` in d
 
 ### Svelte templates
 
-Author an email body as a Svelte component instead of an HTML string. Pass its path as `component` (like `Mochi.page()`) plus `props`. Mochi SSR-renders it through the same pipeline as your pages and **inlines its scoped CSS** into `style=""` attributes (via [juice](https://github.com/Automattic/juice)) for email-client compatibility.
+Author an email body as a Svelte component instead of an HTML string. Pass its path as `component` (like `Mochi.page()`) plus `props`. Mochi SSR-renders it through the same pipeline as your pages and **inlines its scoped CSS** into `style=""` attributes (via [css-inline](https://github.com/Stranger6667/css-inline)) for email-client compatibility.
 
 <Callout type="warning">
 

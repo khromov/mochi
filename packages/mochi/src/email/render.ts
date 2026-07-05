@@ -1,12 +1,12 @@
 import type { ComponentRegistry } from '../ComponentRegistry';
-import { EmailError } from './types';
 
 /**
  * Render a Svelte component to a standalone HTML email body: SSR-render through
  * the existing registry (no page shell, no hydration/client JS), collect the
- * component's scoped CSS, then inline it into `style=""` attributes with `juice`
- * for email-client compatibility. Media queries and pseudo-classes that can't
- * be inlined are preserved in a `<style>` block.
+ * component's scoped CSS, then inline it into `style=""` attributes with
+ * `@css-inline/css-inline-wasm` for email-client compatibility. Media queries
+ * and pseudo-classes that can't be inlined are preserved in a `<style>` block
+ * (`keepStyleTags: true`).
  *
  * Runs outside an HTTP request when called from a background job, so email
  * templates must not touch request-context APIs (`getRequestContext`,
@@ -25,13 +25,38 @@ export async function renderEmailComponent(registry: ComponentRegistry, componen
   const head = result.head ?? '';
   const doc = stripScripts(`<!doctype html><html><head><meta charset="utf-8">${head}${css ? `<style>${css}</style>` : ''}</head><body>${result.body}</body></html>`);
 
-  let juice: typeof import('juice').default;
-  try {
-    ({ default: juice } = await import('juice'));
-  } catch {
-    throw new EmailError("The 'juice' package is required to render Svelte email templates. Install it with `bun add juice`.");
+  const { inline } = await loadCssInline();
+  return inline(doc, { keepStyleTags: true });
+}
+
+// We use the `-wasm` build of css-inline rather than the default
+// `@css-inline/css-inline`, which ships native N-API addons (per-platform ABI
+// binaries via optionalDependencies). A single portable `.wasm` keeps installs
+// binary-free and identical across platforms (incl. the Docker image).
+//
+// The WASM build must be instantiated once via `initWasm` before `inline()` is
+// usable (and `initWasm` refuses to run twice), so cache the load+init promise.
+// The bytes are handed to `initWasm` directly rather than letting it `fetch()` a
+// relative URL — there's no fetchable origin server-side.
+let cssInlinePromise: Promise<typeof import('@css-inline/css-inline-wasm')> | undefined;
+
+function loadCssInline(): Promise<typeof import('@css-inline/css-inline-wasm')> {
+  if (!cssInlinePromise) {
+    cssInlinePromise = (async () => {
+      const mod = await import('@css-inline/css-inline-wasm');
+      const wasmBytes = await Bun.file(new URL(import.meta.resolve('@css-inline/css-inline-wasm/index_bg.wasm'))).arrayBuffer();
+      // wasm-bindgen deprecated the positional `initWasm(bytes)` form (which is
+      // what the shipped `.d.ts` still types) in favor of this single-object
+      // form; passing bytes positionally works but logs a one-time "deprecated
+      // parameters" warning. Hence the cast — the object form isn't in the types.
+      await mod.initWasm({ module_or_path: wasmBytes } as unknown as Parameters<typeof mod.initWasm>[0]);
+      return mod;
+    })().catch((err) => {
+      cssInlinePromise = undefined;
+      throw err;
+    });
   }
-  return juice(doc);
+  return cssInlinePromise;
 }
 
 function stripScripts(html: string): string {

@@ -94,13 +94,13 @@
     }
   },
   "dependencies": {
+    "@css-inline/css-inline-wasm": "^0.21.0",
     "@noble/ciphers": "2.2.0",
     "bunqueue": "^2.8.20",
     "chokidar": "^5.0.0",
     "deepmerge": "^4.3.1",
     "devalue": "^5.8.1",
     "ipaddr.js": "2.4.0",
-    "juice": "^12.1.1",
     "magic-string": "^0.30.21",
     "mitt": "^3.0.1",
     "negotiator": "^1.0.0",

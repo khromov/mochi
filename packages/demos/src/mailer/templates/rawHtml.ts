@@ -3,7 +3,7 @@ function escapeHtml(value: string): string {
 }
 
 // Hand-authored HTML with styles inlined directly on each tag — unlike the
-// Svelte template, nothing here runs through Mochi's juice CSS-inlining pass.
+// Svelte template, nothing here runs through Mochi's css-inline CSS-inlining pass.
 export function renderRawEmailHtml({ subject, message }: { subject: string; message: string }): string {
   const safeSubject = escapeHtml(subject);
   const safeMessage = escapeHtml(message).replace(/\n/g, '<br />');
