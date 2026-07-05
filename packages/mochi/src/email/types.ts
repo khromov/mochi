@@ -107,21 +107,22 @@ export interface MochiEmailOptions {
   /** Transport to deliver through. Default: `{ type: 'dev' }` in development, `{ type: 'log' }` in production (neither sends). */
   transport?: MochiEmailTransportConfig;
   /**
-   * Whether `consoleLogger()` prints recipient addresses and the subject in its
-   * `MAIL` lines. Both are PII and `email:error` lines log at `warn` (so they
-   * reach production logs). Set `false` to replace them with `<redacted>` —
-   * transport, error, and duration are still logged. Default `true`. Only
-   * affects the console formatter; the `email:sent`/`email:error` events always
-   * carry the real values for your own subscribers.
+   * Whether `consoleLogger()` redacts recipient addresses and the subject from
+   * its `MAIL` lines. Both are PII and `email:error` lines log at `warn` (so
+   * they reach production logs). Set `true` to replace them with `<redacted>` —
+   * transport, error, and duration are still logged. Defaults to `true` in
+   * production and `false` in development. Only affects the console formatter;
+   * the `email:sent`/`email:error` events always carry the real values for your
+   * own subscribers.
    */
-  logPii?: boolean;
+  filterPii?: boolean;
 }
 
 /** Fully-resolved email options with the transport always present. */
 export interface ResolvedEmailOptions {
   from?: string;
   transport: MochiEmailTransportConfig;
-  logPii: boolean;
+  filterPii: boolean;
 }
 
 /** Thrown for misconfiguration or transport failures surfaced to the caller. */

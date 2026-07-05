@@ -14,7 +14,7 @@ const GLOBAL_KEY = '__mochi_email_runtime__';
 // Seed the pinned runtime directly so we don't need a full Mochi.serve().
 function seedRuntime(): void {
   (globalThis as unknown as Record<string, unknown>)[GLOBAL_KEY] = {
-    options: { transport: { type: 'dev' }, logPii: true },
+    options: { transport: { type: 'dev' }, filterPii: false },
     outbox: [],
   } satisfies EmailRuntime;
 }

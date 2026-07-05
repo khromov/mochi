@@ -12,6 +12,9 @@ import { EmailError } from './types';
  * templates must not touch request-context APIs (`getRequestContext`,
  * `cookies`, `url`). Called from within a route action, the request context is
  * already active.
+ *
+ * Any `<script>` in the rendered markup is stripped: email clients block
+ * scripts outright, so they only bloat the message and trip spam heuristics.
  */
 export async function renderEmailComponent(registry: ComponentRegistry, component: string, props?: Record<string, unknown>): Promise<string> {
   const result = await registry.renderComponent(component, props, { stripMarkers: true });
@@ -20,7 +23,7 @@ export async function renderEmailComponent(registry: ComponentRegistry, componen
     .filter((c): c is string => Boolean(c))
     .join('\n');
   const head = result.head ?? '';
-  const doc = `<!doctype html><html><head><meta charset="utf-8">${head}${css ? `<style>${css}</style>` : ''}</head><body>${result.body}</body></html>`;
+  const doc = stripScripts(`<!doctype html><html><head><meta charset="utf-8">${head}${css ? `<style>${css}</style>` : ''}</head><body>${result.body}</body></html>`);
 
   let juice: typeof import('juice').default;
   try {
@@ -29,4 +32,8 @@ export async function renderEmailComponent(registry: ComponentRegistry, componen
     throw new EmailError("The 'juice' package is required to render Svelte email templates. Install it with `bun add juice`.");
   }
   return juice(doc);
+}
+
+function stripScripts(html: string): string {
+  return new HTMLRewriter().on('script', { element: (el) => el.remove() }).transform(html);
 }

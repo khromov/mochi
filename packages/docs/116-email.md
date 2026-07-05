@@ -157,6 +157,12 @@ Leaving `transport` unset gives you exactly this split automatically (`dev` in d
 
 Author an email body as a Svelte component instead of an HTML string. Pass its path as `component` (like `Mochi.page()`) plus `props`. Mochi SSR-renders it through the same pipeline as your pages and **inlines its scoped CSS** into `style=""` attributes (via [juice](https://github.com/Automattic/juice)) for email-client compatibility.
 
+<Callout type="warning">
+
+`<script>` tags are **not allowed** in an email body and are stripped during rendering — email clients block scripts outright, so any script only bloats the message and trips spam filters. The component's own `<script>` block (props, logic) is compile-time and never reaches the output; this applies to scripts you emit into the markup (e.g. via `<svelte:head>` or `{@html}`).
+
+</Callout>
+
 ```svelte
 <!-- ./src/emails/Welcome.svelte -->
 <script lang="ts">
@@ -262,20 +268,20 @@ Log level follows the outcome: successful deliveries (`sent via smtp`, `captured
 
 ### Keeping recipients and subjects out of logs
 
-`MAIL` lines print the recipient addresses and the subject. Because `email:error` logs at `warn`, a failed send writes both to your production logs by default:
+`MAIL` lines print the recipient addresses and the subject, and because `email:error` logs at `warn`, a failed send would write both to your logs:
 
 ```
 MAIL alice@example.com send failed (smtp) "Password reset" — Connection timeout
 ```
 
-Both are PII. Set `email.logPii: false` to replace them with `<redacted>`:
+Both are PII, so `email.filterPii` defaults to `true` in production (redacted) and `false` in development (full values, for easier local debugging). Set it explicitly to override:
 
 ```ts
 await Mochi.serve({
   email: {
     from: 'noreply@acme.dev',
     transport: { type: 'smtp', host: 'smtp.acme.dev', port: 587, auth: { user, pass } },
-    logPii: false, // redact recipients + subject from MAIL log lines
+    filterPii: true, // redact recipients + subject from MAIL log lines
   },
   routes,
 });
@@ -286,6 +292,6 @@ The transport, error, and duration are still logged, so the lines stay useful fo
 
 <Callout type="info">
 
-`logPii` only affects the `consoleLogger()` output. The `email:sent` / `email:error` events still carry the real `to` and `subject`, so your own `mochiEvents` subscribers (metrics, error tracking) get the full values.
+`filterPii` only affects the `consoleLogger()` output. The `email:sent` / `email:error` events still carry the real `to` and `subject`, so your own `mochiEvents` subscribers (metrics, error tracking) get the full values.
 
 </Callout>

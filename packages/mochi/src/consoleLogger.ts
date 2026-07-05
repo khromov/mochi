@@ -404,11 +404,11 @@ function errorMessage(error: unknown): string {
 const REDACTED = '<redacted>';
 
 // Recipients and subject are PII, and `email:error` lines log at `warn` (so they
-// reach production logs). `email.logPii: false` swaps them for a placeholder in
+// reach production logs). `email.filterPii: true` swaps them for a placeholder in
 // the MAIL line. `scrub` also strips any recipient that leaked into a transport
 // error string (e.g. an SMTP "550 no such user <addr>").
 function redactMailPii(to: string[], subject: string, cc: string[] = [], bcc: string[] = []): { recipients: string; subject: string; scrub: (s: string) => string } {
-  if (getEmailRuntime().options.logPii) {
+  if (!getEmailRuntime().options.filterPii) {
     return { recipients: to.join(', '), subject: JSON.stringify(subject), scrub: (s) => s };
   }
   const recipients = [...to, ...cc, ...bcc];

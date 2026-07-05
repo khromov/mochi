@@ -12,6 +12,7 @@ import { MochiCookieJar } from '../cookies';
 import { renderEmailComponent } from './render';
 
 const WELCOME = path.join(import.meta.dir, '..', '__fixtures__', 'email', 'Welcome.svelte');
+const WITH_SCRIPT = path.join(import.meta.dir, '..', '__fixtures__', 'email', 'WithScript.svelte');
 
 function makeCtx(): MochiRequestContext {
   return {
@@ -35,6 +36,7 @@ describe('renderEmailComponent', () => {
     outDir = mkdtempSync(path.join(import.meta.dir, '..', '..', '.mochi-email-render-'));
     registry = new ComponentRegistry({ development: true, outDir });
     await registry.compile(WELCOME);
+    await registry.compile(WITH_SCRIPT);
   });
 
   afterAll(() => {
@@ -52,5 +54,13 @@ describe('renderEmailComponent', () => {
     // No hydration/client assets in an email body.
     expect(html).not.toContain('<script');
     expect(html).not.toContain('<link');
+  });
+
+  test('strips <script> tags emitted by the template', async () => {
+    const html = await requestContext.run(makeCtx(), () => renderEmailComponent(registry, WITH_SCRIPT, { name: 'Ada' }));
+
+    expect(html).toContain('Hello Ada'); // template still rendered
+    expect(html).not.toContain('<script');
+    expect(html).not.toContain('window.tracked');
   });
 });

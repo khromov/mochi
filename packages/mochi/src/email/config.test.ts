@@ -4,7 +4,8 @@ import { resolveEmailOptions } from './config';
 describe('resolveEmailOptions', () => {
   test('defaults to the dev transport in development', () => {
     expect(resolveEmailOptions(undefined, true).transport).toEqual({ type: 'dev' });
-    expect(resolveEmailOptions({ from: 'a@b.dev' }, true)).toEqual({ from: 'a@b.dev', transport: { type: 'dev' }, logPii: true });
+    expect(resolveEmailOptions({ from: 'a@b.dev' }, true)).toEqual({ from: 'a@b.dev', transport: { type: 'dev' }, filterPii: false });
+    expect(resolveEmailOptions({ from: 'a@b.dev' }, false)).toEqual({ from: 'a@b.dev', transport: { type: 'log' }, filterPii: true });
   });
 
   test('defaults to the log transport in production', () => {
@@ -18,9 +19,10 @@ describe('resolveEmailOptions', () => {
     expect(resolveEmailOptions({ transport: { type: 'log' } }, true).transport).toEqual({ type: 'log' });
   });
 
-  test('logPii defaults to true and is overridable', () => {
-    expect(resolveEmailOptions(undefined, true).logPii).toBe(true);
-    expect(resolveEmailOptions({}, false).logPii).toBe(true);
-    expect(resolveEmailOptions({ logPii: false }, false).logPii).toBe(false);
+  test('filterPii defaults to false in dev and true in prod, and is overridable', () => {
+    expect(resolveEmailOptions(undefined, true).filterPii).toBe(false);
+    expect(resolveEmailOptions(undefined, false).filterPii).toBe(true);
+    expect(resolveEmailOptions({ filterPii: true }, true).filterPii).toBe(true);
+    expect(resolveEmailOptions({ filterPii: false }, false).filterPii).toBe(false);
   });
 });
