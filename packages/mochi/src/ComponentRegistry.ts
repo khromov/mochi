@@ -212,6 +212,23 @@ export interface ComponentRegistryOptions {
   optimize?: boolean | MochiSvelteShakerOptions;
 }
 
+/**
+ * Precompute the per-component island lookups a render needs. Called once when a
+ * compiled-component entry is created (compileAll / fromManifest) so renderComponent
+ * reads them instead of rebuilding three collections on every render.
+ */
+function indexHydratables(hydratables: HydratableComponent[]): {
+  hydratablesByName: Map<string, HydratableComponent>;
+  hydratablesByPath: Map<string, HydratableComponent>;
+  islandPaths: Set<string>;
+} {
+  return {
+    hydratablesByName: new Map(hydratables.map((h) => [h.name, h])),
+    hydratablesByPath: new Map(hydratables.map((h) => [h.resolvedPath, h])),
+    islandPaths: new Set(hydratables.map((h) => h.resolvedPath)),
+  };
+}
+
 export class ComponentRegistry {
   private compiledComponents: Map<
     string,
@@ -220,6 +237,11 @@ export class ComponentRegistry {
       module: { default: any };
       cssComponents: Set<string>;
       hydratables: HydratableComponent[];
+      // Island lookups derived once from `hydratables` at compile time and reused
+      // on every render (renderComponent), instead of rebuilt per render.
+      hydratablesByName: Map<string, HydratableComponent>;
+      hydratablesByPath: Map<string, HydratableComponent>;
+      islandPaths: Set<string>;
       // Absolute path to the compiled `.server.js` on disk. Recorded from the
       // build's metafile (not reconstructed from the source basename) so two
       // entrypoints sharing a basename — e.g. PageOne.svelte in two demo
@@ -228,6 +250,15 @@ export class ComponentRegistry {
     }
   > = new Map();
   private hydratableComponents: HydratableComponent[] = [];
+  /**
+   * Prebuilt, minified ServerIsland inline web-component script. Set by `build()`
+   * (via `setServerIslandScript`) and restored by `fromManifest`, so the runtime
+   * skips the startup `Bun.build`. Undefined in dev / prod-without-manifest, where
+   * `Mochi.serve()` builds it on demand (memoized).
+   */
+  serverIslandClientJs?: string;
+  /** Disk path recorded for the manifest; see `serverIslandClientJs`. */
+  private serverIslandScriptFile?: string;
   private componentEntryUrls: Map<string, string> = new Map();
   private islandBootstrapUrl: string | null = null;
   private debugBarUrl: string | null = null;
@@ -413,6 +444,12 @@ export class ComponentRegistry {
 
   getPublicFiles(): Map<string, string> {
     return this.publicFiles;
+  }
+
+  /** Record the prebuilt ServerIsland inline script (content + disk path for the manifest). */
+  setServerIslandScript(diskPath: string, content: string): void {
+    this.serverIslandScriptFile = diskPath;
+    this.serverIslandClientJs = content;
   }
 
   /**
@@ -803,6 +840,7 @@ export class ComponentRegistry {
         module: mod,
         cssComponents: entryCssComponents,
         hydratables: entryHydratables,
+        ...indexHydratables(entryHydratables),
         ssrPath: outPath,
       });
 
@@ -1240,7 +1278,7 @@ export class ComponentRegistry {
 
   async renderComponent(filename: string, props?: Record<string, unknown>, opts?: { stripMarkers?: boolean; idPrefix?: string }): Promise<RenderResult> {
     await this.compile(filename);
-    const { module: mod, cssComponents, hydratables } = this.compiledComponents.get(filename)!;
+    const { module: mod, cssComponents, hydratables, hydratablesByName, hydratablesByPath, islandPaths } = this.compiledComponents.get(filename)!;
 
     const development = this.development;
     const componentBaseName = path.basename(filename, path.extname(filename));
@@ -1296,10 +1334,6 @@ export class ComponentRegistry {
       renderOptions.idPrefix = opts.idPrefix;
     }
     const { body, head } = await render(mod.default, renderOptions);
-
-    const hydratablesByName = new Map(hydratables.map((h) => [h.name, h]));
-    const hydratablesByPath = new Map(hydratables.map((h) => [h.resolvedPath, h]));
-    const islandPaths = new Set(hydratables.map((h) => h.resolvedPath));
 
     let output = body;
 
@@ -1828,6 +1862,9 @@ export class ComponentRegistry {
     if (this.entryImportedCss.size > 0) {
       manifest.entryImportedCss = Object.fromEntries([...this.entryImportedCss].map(([k, v]) => [k, [...v]]));
     }
+    if (this.serverIslandScriptFile) {
+      manifest.serverIslandScript = this.serverIslandScriptFile;
+    }
     return manifest;
   }
 
@@ -1880,6 +1917,7 @@ export class ComponentRegistry {
         module: mod,
         cssComponents: new Set(entry.cssComponents),
         hydratables: entry.hydratables,
+        ...indexHydratables(entry.hydratables),
         ssrPath: modulePath,
       });
       registry.hydratableComponents.push(...entry.hydratables);
@@ -1897,6 +1935,11 @@ export class ComponentRegistry {
       for (const [urlPath, diskPath] of Object.entries(manifest.publicFiles)) {
         registry.publicFiles.set(urlPath, diskPath);
       }
+    }
+
+    // Restore the prebuilt ServerIsland inline script so the runtime skips Bun.build.
+    if (manifest.serverIslandScript) {
+      registry.serverIslandClientJs = await Bun.file(path.resolve(manifest.serverIslandScript)).text();
     }
 
     return registry;

@@ -21,7 +21,7 @@ class MochiLiveReload extends HTMLElement {
   private connect() {
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
     // window.__mochi_page_entry is the abs path of the entry that rendered
-    // this page, injected by resolveHtmlShell in dev. Sending it lets the
+    // this page, injected by the shell renderer in dev. Sending it lets the
     // server scope `reload` signals to the tabs whose entry was actually
     // recompiled. Tabs loaded against an older shell omit it and conserva-
     // tively reload on every change.
