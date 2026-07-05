@@ -39,6 +39,8 @@ With **no transport configured**, `Mochi.email()` defaults to the **dev** transp
 
 ### The message
 
+Envelope fields, plus the body — an HTML part (`html` or `component`) and a text part (`text`), see below:
+
 ```ts
 await Mochi.email({
   to: 'alice@example.com', // string or string[]
@@ -47,14 +49,36 @@ await Mochi.email({
   bcc,
   replyTo, // optional
   subject: 'Welcome',
-  html: '<h1>Hi</h1>', // one of html / text / component
-  text: 'Hi', // auto-derived from html when omitted
+  html: '<h1>Hi</h1>', // the body — see "The body" below
   attachments: [{ filename: 'invoice.pdf', content: bytes }],
   headers: { 'X-Entity': 'signup' },
 });
 ```
 
 `Mochi.email()` resolves the body (rendering `component` if given, deriving a plain-text part from HTML), fills `from` from `email.from`, normalizes recipients, sends, and resolves to a `MochiEmailResult` (`{ transport, messageId?, accepted?, rejected? }`).
+
+### The body
+
+A message has two independent parts:
+
+- **The HTML part** — either an `html` string **or** a `component` (a Svelte template rendered to inlined HTML). If you pass both, `component` wins.
+- **The text part** — the `text` string. Always recommended alongside HTML, but **auto-derived from the HTML when omitted**, so the message stays multipart (better deliverability).
+
+```ts
+// HTML + your own plain-text alternative (recommended):
+await Mochi.email({ to, subject, html: '<h1>Hi</h1>', text: 'Hi' });
+
+// A Svelte component + your own plain-text alternative:
+await Mochi.email({ to, subject, component: './src/emails/Welcome.svelte', props: { name: 'Alice' }, text: 'Welcome, Alice' });
+
+// HTML only — Mochi derives the text part for you:
+await Mochi.email({ to, subject, html: '<h1>Hi</h1>' });
+
+// Plain-text only — no HTML part at all:
+await Mochi.email({ to, subject, text: 'Hi' });
+```
+
+Supplying `text` yourself is recommended: the auto-derived fallback is a naive tag-strip of your HTML, so a hand-written plain-text version usually reads better. The Svelte-component option is covered in [Svelte templates](#svelte-templates) below.
 
 ### Transports
 

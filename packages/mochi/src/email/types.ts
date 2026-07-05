@@ -1,10 +1,11 @@
 /**
  * A single transactional message passed to `Mochi.email(...)`.
  *
- * Exactly one body source is used, in this precedence: `component` (rendered to
- * inlined HTML), then `html`, then `text`. When `text` is omitted but an HTML
- * body exists, a plain-text alternative is derived so the message stays
- * multipart (better deliverability).
+ * The body has two independent parts. The HTML part comes from `component`
+ * (rendered to inlined HTML) or `html` — `component` wins when both are set. The
+ * text part comes from `text`; when omitted but an HTML part exists, a plain-text
+ * alternative is derived from it so the message stays multipart (better
+ * deliverability). Supplying `text` yourself alongside HTML is recommended.
  */
 export interface MochiEmailMessage {
   to: string | string[];
@@ -14,9 +15,9 @@ export interface MochiEmailMessage {
   bcc?: string | string[];
   replyTo?: string;
   subject: string;
-  /** Pre-rendered HTML body. Ignored when `component` is set. */
+  /** Pre-rendered HTML part. Ignored when `component` is set. */
   html?: string;
-  /** Plain-text body. Auto-derived from the HTML when omitted. */
+  /** Plain-text part. Recommended alongside HTML; auto-derived from it when omitted. */
   text?: string;
   /** Path to a `.svelte` email template, rendered to HTML with its scoped CSS inlined. */
   component?: string;

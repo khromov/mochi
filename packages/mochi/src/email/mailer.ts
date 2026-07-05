@@ -111,6 +111,8 @@ export async function sendEmail(message: MochiEmailMessage): Promise<MochiEmailR
   } catch (error) {
     mochiEvents.emit('email:error', {
       to: filtered.to,
+      ...(filtered.cc ? { cc: filtered.cc } : {}),
+      ...(filtered.bcc ? { bcc: filtered.bcc } : {}),
       subject: filtered.subject,
       transport: transport.name,
       error: error instanceof Error ? error.message : String(error),

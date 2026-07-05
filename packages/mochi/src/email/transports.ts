@@ -114,18 +114,10 @@ class SmtpTransport implements EmailTransport {
 
   private async deliver(message: ResolvedEmailMessage): Promise<MochiEmailResult> {
     const transporter = await this.getTransporter();
-    const info = await transporter.sendMail({
-      from: message.from,
-      to: message.to,
-      ...(message.cc ? { cc: message.cc } : {}),
-      ...(message.bcc ? { bcc: message.bcc } : {}),
-      ...(message.replyTo ? { replyTo: message.replyTo } : {}),
-      subject: message.subject,
-      ...(message.html ? { html: message.html } : {}),
-      ...(message.text ? { text: message.text } : {}),
-      ...(message.attachments ? { attachments: message.attachments } : {}),
-      ...(message.headers ? { headers: message.headers } : {}),
-    });
+    // `ResolvedEmailMessage`'s fields map 1:1 onto nodemailer's `sendMail`
+    // options (from/to/cc/bcc/replyTo/subject/html/text/attachments/headers) and
+    // its optional keys are already absent (not undefined), so spread it directly.
+    const info = await transporter.sendMail({ ...message });
     return {
       transport: 'smtp',
       messageId: info.messageId,

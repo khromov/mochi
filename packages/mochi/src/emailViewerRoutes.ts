@@ -78,10 +78,18 @@ export function buildEmailViewerRoutes(registry: ComponentRegistry): Record<stri
       // Copy into a fresh view so the body is a concrete BodyInit (the stored
       // type widens to Uint8Array<ArrayBufferLike>, which Response rejects).
       const body: BodyInit = typeof att.content === 'string' ? att.content : new Uint8Array(att.content);
+      const contentType = att.contentType || 'application/octet-stream';
+      // An attachment's bytes and type are attacker-controlled when the app
+      // relays a user-supplied file. Only render known-inert types inline (in the
+      // dev-server origin); everything else — HTML, SVG, XML — downloads, so a
+      // malicious attachment can't execute script against the dev origin. `nosniff`
+      // stops the browser from second-guessing the declared type.
+      const inlineSafe = /^(?:image\/(?:png|jpe?g|gif|webp|avif|bmp|x-icon)|application\/pdf|text\/plain)\b/i.test(contentType);
       return new Response(body, {
         headers: {
-          'Content-Type': att.contentType || 'application/octet-stream',
-          'Content-Disposition': `inline; filename="${safeName}"`,
+          'Content-Type': contentType,
+          'Content-Disposition': `${inlineSafe ? 'inline' : 'attachment'}; filename="${safeName}"`,
+          'X-Content-Type-Options': 'nosniff',
           'Cache-Control': 'no-store',
         },
       });

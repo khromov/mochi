@@ -208,6 +208,9 @@ export interface MochiEmailSentEvent {
 
 export interface MochiEmailErrorEvent {
   to: string[];
+  /** Cc/bcc recipients, carried so the console logger can scrub them out of the error string under `logPii: false` (a transport error may echo a bcc address). */
+  cc?: string[];
+  bcc?: string[];
   subject: string;
   transport: MochiEmailResult['transport'];
   /** Message of the error the transport threw. */

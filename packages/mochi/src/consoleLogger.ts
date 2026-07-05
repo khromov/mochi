@@ -295,8 +295,8 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
       ...(transport === 'log' ? { level: 'warn' as const } : {}),
     };
   });
-  subscribe('email:error', ({ to, subject, transport, error }) => {
-    const { recipients, subject: subj, scrub } = redactMailPii(to, subject);
+  subscribe('email:error', ({ to, cc, bcc, subject, transport, error }) => {
+    const { recipients, subject: subj, scrub } = redactMailPii(to, subject, cc, bcc);
     return {
       label: 'MAIL',
       path: recipients,
@@ -407,14 +407,15 @@ const REDACTED = '<redacted>';
 // reach production logs). `email.logPii: false` swaps them for a placeholder in
 // the MAIL line. `scrub` also strips any recipient that leaked into a transport
 // error string (e.g. an SMTP "550 no such user <addr>").
-function redactMailPii(to: string[], subject: string): { recipients: string; subject: string; scrub: (s: string) => string } {
+function redactMailPii(to: string[], subject: string, cc: string[] = [], bcc: string[] = []): { recipients: string; subject: string; scrub: (s: string) => string } {
   if (getEmailRuntime().options.logPii) {
     return { recipients: to.join(', '), subject: JSON.stringify(subject), scrub: (s) => s };
   }
+  const recipients = [...to, ...cc, ...bcc];
   return {
     recipients: REDACTED,
     subject: REDACTED,
-    scrub: (s) => to.reduce((out, addr) => out.replaceAll(addr, REDACTED), s),
+    scrub: (s) => recipients.reduce((out, addr) => out.replaceAll(addr, REDACTED), s),
   };
 }
 

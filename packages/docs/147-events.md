@@ -256,12 +256,14 @@ Fires after `Mochi.email()` hands a message to its transport (or when the [`emai
 
 Fires when a transport throws while sending. `Mochi.email()` re-throws after emitting.
 
-| Field       | Type                                   | Notes                 |
-| ----------- | -------------------------------------- | --------------------- |
-| `to`        | `string[]`                             | recipient addresses   |
-| `subject`   | `string`                               | message subject       |
-| `transport` | `'smtp' \| 'custom' \| 'log' \| 'dev'` | transport that failed |
-| `error`     | `string`                               | error message         |
+| Field       | Type                                   | Notes                                    |
+| ----------- | -------------------------------------- | ---------------------------------------- |
+| `to`        | `string[]`                             | recipient addresses                      |
+| `cc`        | `string[] \| undefined`                | cc recipients, when the message had any  |
+| `bcc`       | `string[] \| undefined`                | bcc recipients, when the message had any |
+| `subject`   | `string`                               | message subject                          |
+| `transport` | `'smtp' \| 'custom' \| 'log' \| 'dev'` | transport that failed                    |
+| `error`     | `string`                               | error message                            |
 
 #### `server:start`
 
