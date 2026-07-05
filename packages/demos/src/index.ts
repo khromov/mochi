@@ -3,6 +3,8 @@ import type { Handle } from 'mochi-framework';
 import { routes as adminRoutes } from './admin/routes';
 import { routes as hnRoutes } from './hn/routes';
 import { routes as todoRoutes } from './todo/routes';
+import { routes as mailerRoutes } from './mailer/routes';
+import { createSmtpTransport } from './mailer/smtpTransport';
 
 const IS_DOCKER = process.env.MOCHI_DOCKER === 'true';
 const immutableAssets: Handle = async ({ event, resolve }) => {
@@ -33,9 +35,16 @@ await Mochi.serve({
   idleTimeout: 60,
   compressServerIslandProps: true,
   warmup: true,
+  proxy: { origin: process.env.MOCHI_ORIGIN || `http://localhost:${PORT}` },
   handle: sequence(immutableAssets, analytics),
   filters: {
     'consoleLogger:line': (line, ctx) => (ctx.path.startsWith('/health') ? null : silenceInternalRoutes(line, ctx)),
+  },
+  email: {
+    // Replace once a real Mailgun sending domain is configured.
+    from: process.env.SMTP_FROM || 'Mochi Demos <postmaster@example.mailgun.org>',
+    transport: createSmtpTransport(),
+    filterPii: false,
   },
   routes: {
     '/': Mochi.page('./src/Landing.svelte'),
@@ -43,6 +52,7 @@ await Mochi.serve({
     ...adminRoutes,
     ...hnRoutes,
     ...todoRoutes,
+    ...mailerRoutes,
   },
 });
 

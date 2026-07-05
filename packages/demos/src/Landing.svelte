@@ -6,6 +6,7 @@
   import Newspaper from '@lucide/svelte/icons/newspaper';
   import LayoutDashboard from '@lucide/svelte/icons/layout-dashboard';
   import ListChecks from '@lucide/svelte/icons/list-checks';
+  import Mail from '@lucide/svelte/icons/mail';
   import ArrowRight from '@lucide/svelte/icons/arrow-right';
   import type { Component } from 'svelte';
 
@@ -42,6 +43,14 @@
       accent: '#5f6bbf',
       accentSoft: '#e0e3f4',
       icon: ListChecks,
+    },
+    {
+      href: '/mailer/',
+      title: 'Mailer',
+      hook: 'Send a real email via Mailgun — plain text, raw HTML, or a Svelte template.',
+      accent: '#a6316f',
+      accentSoft: '#f6dce9',
+      icon: Mail,
     },
   ];
 
