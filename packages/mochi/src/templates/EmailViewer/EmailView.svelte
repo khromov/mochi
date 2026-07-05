@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
+
   type Tab = 'html' | 'text' | 'source';
 
   let { html, text }: { html?: string; text?: string } = $props();
@@ -12,7 +14,7 @@
     ).filter((t): t is { id: Tab; label: string } => t !== null),
   );
 
-  let active: Tab = $state(html ? 'html' : 'text');
+  let active: Tab = $state(untrack(() => (html ? 'html' : 'text')));
 
   let frame = $state<HTMLIFrameElement | null>(null);
   let frameHeight = $state(480);

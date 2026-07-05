@@ -35,5 +35,11 @@ export async function renderEmailComponent(registry: ComponentRegistry, componen
 }
 
 function stripScripts(html: string): string {
-  return new HTMLRewriter().on('script', { element: (el) => el.remove() }).transform(html);
+  return new HTMLRewriter()
+    .on('script', {
+      element: (el) => {
+        el.remove();
+      },
+    })
+    .transform(html);
 }
