@@ -191,3 +191,5 @@ Never reference plan files (`~/.claude/plans/*.md`) from code comments, docstrin
 ## After every change
 
 Run `bun run format` — but **delegate it to a sub-agent** from the main context, same rule as `bun run checks` above (including the exception: if you are already a sub-agent, run it directly rather than nesting another sub-agent). The agent runs the command and reports back only the status (pass / fail + any errors); the main context should never see the per-file "unchanged / formatted" listing.
+
+After a task is finished and all checks are done, terminate (kill) stray bun and Chrome processes in preparation for next task.

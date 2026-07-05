@@ -1307,7 +1307,9 @@ export class ComponentRegistry {
     // island behind a false `{#if}` — deterministic and props-independent.
     if (hydratables.length > 0) {
       const names = hydratables.map((h) => h.displayName).join(', ');
-      throw new Error(`Email templates can't contain islands (${names}). mochi:hydrate* / mochi:clientOnly need client JS, which an email can't run — render the content inline instead.`);
+      throw new Error(
+        `Email templates can't contain islands (${names}). mochi:hydrate* / mochi:clientOnly need client JS, which an email can't run — render the content inline instead.`,
+      );
     }
 
     const development = this.development;
