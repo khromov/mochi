@@ -39,7 +39,6 @@ bun run format:check # prettier --check . (used by CI)
 bun run syncpack     # syncpack lint — verify dependency versions agree across workspaces (syncpack:fix to apply)
 bun run loc          # Lines-of-code report for all packages (.github/scripts/loc-report.ts)
 bun run deps         # Dependency report (packages/mochi/scripts/dep-report.ts)
-bun run bench:msgpack # msgpack serialization benchmark
 bun run cli-test     # create-mochi CLI regression test (.github/scripts/cli-regression-test.ts)
 bun run mochi:animate # Generate promo-video frames (packages/video-animations)
 ```
