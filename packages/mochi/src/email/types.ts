@@ -34,9 +34,13 @@ export interface MochiEmailAttachment {
   contentType?: string;
 }
 
-/** Outcome of a send. `transport` says which transport handled it. */
+/**
+ * Outcome of a send. `transport` says which transport handled it, or
+ * `'suppressed'` when the `email:message` filter vetoed the send (returned
+ * `null`) so it never reached a transport.
+ */
 export interface MochiEmailResult {
-  transport: 'smtp' | 'custom' | 'log' | 'dev';
+  transport: 'smtp' | 'custom' | 'log' | 'dev' | 'suppressed';
   messageId?: string;
   accepted?: string[];
   rejected?: string[];
@@ -101,12 +105,22 @@ export interface MochiEmailOptions {
   from?: string;
   /** Transport to deliver through. Default: `{ type: 'dev' }` in development, `{ type: 'log' }` in production (neither sends). */
   transport?: MochiEmailTransportConfig;
+  /**
+   * Whether `consoleLogger()` prints recipient addresses and the subject in its
+   * `MAIL` lines. Both are PII and `email:error` lines log at `warn` (so they
+   * reach production logs). Set `false` to replace them with `<redacted>` —
+   * transport, error, and duration are still logged. Default `true`. Only
+   * affects the console formatter; the `email:sent`/`email:error` events always
+   * carry the real values for your own subscribers.
+   */
+  logPii?: boolean;
 }
 
 /** Fully-resolved email options with the transport always present. */
 export interface ResolvedEmailOptions {
   from?: string;
   transport: MochiEmailTransportConfig;
+  logPii: boolean;
 }
 
 /** Thrown for misconfiguration or transport failures surfaced to the caller. */

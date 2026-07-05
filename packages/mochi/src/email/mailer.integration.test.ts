@@ -8,6 +8,7 @@ import path from 'node:path';
 import type { Server } from 'bun';
 import { Mochi } from '../Mochi';
 import { mochiEvents, type MochiEmailSentEvent } from '../events';
+import { initExtensions } from '../extensions';
 import { getEmailRuntime } from './config';
 import { clearDevOutbox, getDevEmail, getDevEmails } from './devOutbox';
 import type { MochiEmailTransportConfig, ResolvedEmailMessage } from './types';
@@ -159,6 +160,50 @@ describe('Mochi.email()', () => {
       expect(msg.data).toContain('plain body');
     } finally {
       smtp.close();
+    }
+  });
+
+  test('email:message filter rewrites the message before the dev outbox captures it', async () => {
+    useTransport({ type: 'dev' });
+    clearDevOutbox();
+    initExtensions({
+      filters: {
+        'email:message': (msg) => ({ ...msg, headers: { ...msg.headers, 'X-Intercepted': 'yes' } }),
+      },
+    });
+    try {
+      await Mochi.email({ to: 'user@example.com', subject: 'Filtered', html: '<p>Hi</p>' });
+      const emails = getDevEmails();
+      expect(emails).toHaveLength(1);
+      expect(emails[0]?.headers?.['X-Intercepted']).toBe('yes');
+    } finally {
+      initExtensions({});
+      clearDevOutbox();
+    }
+  });
+
+  test('email:message returning null suppresses the send', async () => {
+    useTransport({ type: 'dev' });
+    clearDevOutbox();
+    const sent: MochiEmailSentEvent[] = [];
+    const onSent = (e: MochiEmailSentEvent) => sent.push(e);
+    mochiEvents.on('email:sent', onSent);
+    initExtensions({
+      filters: {
+        'email:message': () => null,
+      },
+    });
+    try {
+      const result = await Mochi.email({ to: 'user@example.com', subject: 'Nope', html: '<p>Hi</p>' });
+      // Veto never reaches a transport, so nothing is captured and the outcome
+      // is reported as `suppressed` (still observable via email:sent).
+      expect(result).toEqual({ transport: 'suppressed' });
+      expect(getDevEmails()).toHaveLength(0);
+      expect(sent).toHaveLength(1);
+      expect(sent[0]?.transport).toBe('suppressed');
+    } finally {
+      mochiEvents.off('email:sent', onSent);
+      initExtensions({});
     }
   });
 

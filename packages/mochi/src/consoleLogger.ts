@@ -5,6 +5,7 @@ import { pinGlobal } from './globalState';
 import { mochiEvents } from './events';
 import type { MochiEventMap, MochiRequestKind } from './events';
 import { logger } from './log';
+import { getEmailRuntime } from './email/config';
 import { applyFilter, type ConsoleLoggerSource, type MochiFilterContext, type MochiFilterReturn } from './extensions';
 
 export interface ConsoleLoggerOptions {
@@ -267,34 +268,42 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
   }));
 
   subscribe('email:sent', ({ to, subject, transport, duration }) => {
-    // Three delivery classes:
-    //  - log:  did not send — warn (visible in production) and colour yellow so
-    //          it never reads as a delivered-mail success line.
-    //  - dev:  captured into the outbox — expected in development, so info-level
-    //          and pointed at the viewer, not a warning.
-    //  - else: actually delivered (smtp/custom) — green.
+    // Four delivery classes:
+    //  - log:        did not send — warn (visible in production) and colour yellow
+    //                so it never reads as a delivered-mail success line.
+    //  - dev:        captured into the outbox — expected in development, so
+    //                info-level and pointed at the viewer, not a warning.
+    //  - suppressed: the `email:message` filter vetoed the send — magenta so it's
+    //                distinct from a real delivery.
+    //  - else:       actually delivered (smtp/custom) — green.
     const note =
       transport === 'log'
         ? styleText('yellow', 'logged (not sent)')
         : transport === 'dev'
           ? styleText('cyan', 'captured → /_mochi/email')
-          : styleText('green', `sent via ${transport}`);
+          : transport === 'suppressed'
+            ? styleText('magenta', 'suppressed (filtered)')
+            : styleText('green', `sent via ${transport}`);
+    const { recipients, subject: subj } = redactMailPii(to, subject);
     return {
       label: 'MAIL',
-      path: to.join(', '),
-      note: `${note} ${styleText('dim', JSON.stringify(subject))}`,
+      path: recipients,
+      note: `${note} ${styleText('dim', subj)}`,
       duration,
       slow,
       verySlow,
       ...(transport === 'log' ? { level: 'warn' as const } : {}),
     };
   });
-  subscribe('email:error', ({ to, subject, transport, error }) => ({
-    label: 'MAIL',
-    path: to.join(', '),
-    note: `${styleText('red', `send failed (${transport})`)} ${styleText('dim', `${JSON.stringify(subject)} — ${error}`)}`,
-    level: 'warn',
-  }));
+  subscribe('email:error', ({ to, subject, transport, error }) => {
+    const { recipients, subject: subj, scrub } = redactMailPii(to, subject);
+    return {
+      label: 'MAIL',
+      path: recipients,
+      note: `${styleText('red', `send failed (${transport})`)} ${styleText('dim', `${subj} — ${scrub(error)}`)}`,
+      level: 'warn',
+    };
+  });
 
   subscribe('preprocess-cache:hit', ({ filePath }) => ({
     label: 'PCACHE',
@@ -390,6 +399,23 @@ export const silenceInternalRoutes = (line: string, { path }: MochiFilterContext
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+const REDACTED = '<redacted>';
+
+// Recipients and subject are PII, and `email:error` lines log at `warn` (so they
+// reach production logs). `email.logPii: false` swaps them for a placeholder in
+// the MAIL line. `scrub` also strips any recipient that leaked into a transport
+// error string (e.g. an SMTP "550 no such user <addr>").
+function redactMailPii(to: string[], subject: string): { recipients: string; subject: string; scrub: (s: string) => string } {
+  if (getEmailRuntime().options.logPii) {
+    return { recipients: to.join(', '), subject: JSON.stringify(subject), scrub: (s) => s };
+  }
+  return {
+    recipients: REDACTED,
+    subject: REDACTED,
+    scrub: (s) => to.reduce((out, addr) => out.replaceAll(addr, REDACTED), s),
+  };
 }
 
 function relPath(p: string): string {

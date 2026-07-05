@@ -20,7 +20,7 @@
 
   <div class="split">
     <EmailList {emails} selectedId={selected?.id ?? null} {basePath} />
-    <EmailDetails {selected} />
+    <EmailDetails {selected} {basePath} />
   </div>
 </div>
 

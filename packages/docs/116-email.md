@@ -106,7 +106,7 @@ email: { from: 'noreply@acme.dev', transport: { type: 'dev' } }
 
 ### The dev outbox
 
-The `dev` transport stores every message in the running dev-server process and serves a viewer at **`/_mochi/email`** — a two-pane inbox that renders the exact HTML (in a sandboxed iframe), the plain-text alternative, the raw source, recipients, headers, and attachments. When the `dev` transport is active, an envelope icon appears in the [debug bar](/docs/debug-bar/) linking straight to it.
+The `dev` transport stores every message in the running dev-server process and serves a viewer at **`/_mochi/email`** — a two-pane inbox that renders the exact HTML (in a sandboxed iframe), the plain-text alternative, the raw source, recipients, headers, and attachments. Each attachment is a link — click it to open the captured file inline in a new tab. When the `dev` transport is active, an envelope icon appears in the [debug bar](/docs/debug-bar/) linking straight to it.
 
 <Callout type="info">
 
@@ -165,6 +165,51 @@ Email templates render **outside an HTTP request** when sent from a background j
 
 </Callout>
 
+### Intercepting messages
+
+The [`email:message` filter](/docs/extensions/#emailmessage) is the interceptor seam for outgoing mail. It runs on the fully-resolved message right before the transport, and can rewrite it (audit BCC, `List-Unsubscribe` headers, a staging catch-all) or return `null` to suppress the send. Prefer it over a `custom` transport when you only need to touch the message, not take over delivery.
+
+```ts
+await Mochi.serve({
+  filters: {
+    'email:message': (message) => ({ ...message, bcc: [...(message.bcc ?? []), 'audit@app.dev'] }),
+  },
+  routes,
+});
+```
+
 ### Observability
 
-Each send emits a `email:sent` event (`{ to, subject, transport, messageId?, duration }`); failures emit `email:error`. `consoleLogger()` formats both as `MAIL` lines. Subscribe to `mochiEvents` for custom metrics.
+Each send emits a `email:sent` event (`{ to, subject, transport, messageId?, duration }`); failures emit `email:error` (`{ to, subject, transport, error }`). A send vetoed by the `email:message` filter emits `email:sent` with `transport: 'suppressed'`. `consoleLogger()` formats all of them as `MAIL` lines. Subscribe to `mochiEvents` for custom metrics.
+
+Log level follows the outcome: successful deliveries (`sent via smtp`, `captured → /_mochi/email`, `suppressed`) are **info**, so they show in development but stay quiet at the production default level of `warn`. The two "didn't actually deliver" cases — the `log` transport's `logged (not sent)` and any `email:error` `send failed` — are **warn**, so they surface in production.
+
+### Keeping recipients and subjects out of logs
+
+`MAIL` lines print the recipient addresses and the subject. Because `email:error` logs at `warn`, a failed send writes both to your production logs by default:
+
+```
+MAIL alice@example.com send failed (smtp) "Password reset" — Connection timeout
+```
+
+Both are PII. Set `email.logPii: false` to replace them with `<redacted>`:
+
+```ts
+await Mochi.serve({
+  email: {
+    from: 'noreply@acme.dev',
+    transport: { type: 'smtp', host: 'smtp.acme.dev', port: 587, auth: { user, pass } },
+    logPii: false, // redact recipients + subject from MAIL log lines
+  },
+  routes,
+});
+// MAIL <redacted> send failed (smtp) <redacted> — Connection timeout
+```
+
+The transport, error, and duration are still logged, so the lines stay useful for debugging. Any recipient address that leaks into a transport's error string (e.g. an SMTP `550 no such user …`) is scrubbed too.
+
+<Callout type="info">
+
+`logPii` only affects the `consoleLogger()` output. The `email:sent` / `email:error` events still carry the real `to` and `subject`, so your own `mochiEvents` subscribers (metrics, error tracking) get the full values.
+
+</Callout>

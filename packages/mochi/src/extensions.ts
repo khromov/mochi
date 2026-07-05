@@ -19,6 +19,7 @@ import type { PreprocessorGroup } from 'svelte/compiler';
 import type { CookieSerializeOptions } from './cookies';
 import type { MochiServeOptions } from './types';
 import type { MochiEventMap, MochiRequestKind } from './events';
+import type { ResolvedEmailMessage, MochiEmailTransportConfig } from './email/types';
 import type { TrailingSlashPolicy } from './trailingSlash';
 import { pinGlobal } from './globalState';
 
@@ -82,6 +83,7 @@ export interface MochiFilterValue {
   'consoleLogger:line': string;
   'image:maxRedirects': number;
   'image:url': string;
+  'email:message': ResolvedEmailMessage;
 }
 
 // Optional per-filter override for the *return* type when it differs from the
@@ -90,6 +92,7 @@ export interface MochiFilterValue {
 // `MochiFilterValue[K]` when a key is absent.
 export interface MochiFilterReturn {
   'consoleLogger:line': string | null;
+  'email:message': ResolvedEmailMessage | null;
 }
 
 export interface MochiFilterContext {
@@ -124,6 +127,7 @@ export interface MochiFilterContext {
   };
   'image:maxRedirects': { src: string };
   'image:url': { src: string; filename: string; original: boolean };
+  'email:message': { transport: MochiEmailTransportConfig['type'] };
 }
 
 export interface MochiFilterKindMap {
@@ -141,6 +145,7 @@ export interface MochiFilterKindMap {
   'consoleLogger:line': 'sync';
   'image:maxRedirects': 'sync';
   'image:url': 'sync';
+  'email:message': 'async';
 }
 
 type FilterReturn<K extends keyof MochiFilterValue> = K extends keyof MochiFilterReturn ? MochiFilterReturn[K] : MochiFilterValue[K];
@@ -182,6 +187,7 @@ const FILTER_KINDS: { [K in keyof MochiFilterValue]: MochiKind } = {
   'consoleLogger:line': 'sync',
   'image:maxRedirects': 'sync',
   'image:url': 'sync',
+  'email:message': 'async',
 };
 
 // Pinned on globalThis so duplicate bundled copies of mochi-framework share one

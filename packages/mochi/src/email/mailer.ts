@@ -1,4 +1,5 @@
 import { mochiEvents } from '../events';
+import { applyFilter } from '../extensions';
 import { getEmailRuntime } from './config';
 import { renderEmailComponent } from './render';
 import { buildTransport } from './transports';
@@ -80,13 +81,28 @@ export async function sendEmail(message: MochiEmailMessage): Promise<MochiEmailR
     ...(message.headers ? { headers: message.headers } : {}),
   };
 
-  const transport = (runtime.transport ??= buildTransport(options.transport));
+  // Give application code a seam to rewrite the outgoing message (audit BCC,
+  // List-Unsubscribe headers, staging catch-all) or veto it entirely by
+  // returning null. Runs before the transport so the dev outbox and SMTP both
+  // deliver the filtered message, and a veto never touches a transport.
   const start = performance.now();
-  try {
-    const result = await transport.send(resolved);
+  const filtered = await applyFilter('email:message', resolved, { transport: options.transport.type });
+  if (filtered === null) {
     mochiEvents.emit('email:sent', {
       to: resolved.to,
       subject: resolved.subject,
+      transport: 'suppressed',
+      duration: performance.now() - start,
+    });
+    return { transport: 'suppressed' };
+  }
+
+  const transport = (runtime.transport ??= buildTransport(options.transport));
+  try {
+    const result = await transport.send(filtered);
+    mochiEvents.emit('email:sent', {
+      to: filtered.to,
+      subject: filtered.subject,
       transport: result.transport,
       messageId: result.messageId,
       duration: performance.now() - start,
@@ -94,8 +110,8 @@ export async function sendEmail(message: MochiEmailMessage): Promise<MochiEmailR
     return result;
   } catch (error) {
     mochiEvents.emit('email:error', {
-      to: resolved.to,
-      subject: resolved.subject,
+      to: filtered.to,
+      subject: filtered.subject,
       transport: transport.name,
       error: error instanceof Error ? error.message : String(error),
     });

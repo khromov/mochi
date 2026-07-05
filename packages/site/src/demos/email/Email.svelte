@@ -1,6 +1,7 @@
 <script lang="ts">
   import DemoPage from '../../components/DemoPage.svelte';
   import EmailForm from './EmailForm.svelte';
+  import AttachmentForm from './AttachmentForm.svelte';
   import { loadSources } from '../../components/utils.ts';
   import { files } from './files.ts';
 
@@ -20,6 +21,12 @@
   <EmailForm mochi:hydrate />
   <h3>Plain HTML</h3>
   <EmailForm />
+  <h3>Sending an attachment</h3>
+  <p>
+    Pass <code>attachments</code> to <code>Mochi.email(&#123; ... &#125;)</code> to send a file alongside the body. The route action reads a small pre-resized image off disk and
+    attaches it; the outbox lists it as a <code>📎</code> chip on the captured message.
+  </p>
+  <AttachmentForm mochi:hydrate />
 </DemoPage>
 
 <style>

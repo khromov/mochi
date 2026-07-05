@@ -2,7 +2,7 @@
   import EmailView from './EmailView.svelte';
   import type { StoredEmail } from './types';
 
-  let { selected }: { selected: StoredEmail | null } = $props();
+  let { selected, basePath }: { selected: StoredEmail | null; basePath: string } = $props();
 
   const example = `Mochi.email({ to: 'you@app.test', subject: 'Hello', html: '<b>Hi!</b>' })`;
 
@@ -75,11 +75,11 @@
 
     {#if selected.attachments && selected.attachments.length > 0}
       <div class="attachments">
-        {#each selected.attachments as a (a.filename)}
-          <span class="attach-chip">
+        {#each selected.attachments as a, i (i)}
+          <a class="attach-chip" href={`${basePath}/attachment?id=${selected.id}&index=${i}`} target="_blank" rel="noopener">
             <span class="attach-name">{a.filename}</span>
             <span class="attach-size">{fmtSize(a.size)}</span>
-          </span>
+          </a>
         {/each}
       </div>
     {/if}
@@ -227,6 +227,15 @@
     border: 1px solid var(--ev-border);
     border-radius: 999px;
     font-size: 0.78rem;
+    text-decoration: none;
+    cursor: pointer;
+    transition:
+      border-color 0.12s,
+      background 0.12s;
+  }
+  .attach-chip:hover {
+    border-color: var(--ev-accent);
+    background: var(--ev-accent-soft);
   }
   .attach-name {
     font-weight: 600;

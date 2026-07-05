@@ -1,11 +1,17 @@
 import { getEmailRuntime } from './config';
 import type { MochiEmailAttachment, ResolvedEmailMessage } from './types';
 
-/** Attachment metadata kept for the viewer — the raw `content` is dropped. */
+/**
+ * Attachment metadata plus its raw bytes, kept so the dev viewer can open the
+ * file. `content` is server-only — the viewer route strips it out of the
+ * `selected` projection so the bytes are never serialized into the page; the
+ * download route reads it back via `getDevAttachment`.
+ */
 export interface StoredAttachment {
   filename: string;
   contentType?: string;
   size: number;
+  content?: string | Uint8Array;
 }
 
 /**
@@ -66,7 +72,9 @@ export function recordDevEmail(message: ResolvedEmailMessage): StoredEmail {
     ...(message.html ? { html: message.html } : {}),
     ...(message.text ? { text: message.text } : {}),
     ...(message.headers ? { headers: message.headers } : {}),
-    ...(message.attachments ? { attachments: message.attachments.map((a) => ({ filename: a.filename, contentType: a.contentType, size: attachmentSize(a.content) })) } : {}),
+    ...(message.attachments
+      ? { attachments: message.attachments.map((a) => ({ filename: a.filename, contentType: a.contentType, size: attachmentSize(a.content), content: a.content })) }
+      : {}),
   };
   outbox.unshift(stored);
   if (outbox.length > MAX_OUTBOX) {
@@ -91,6 +99,11 @@ export function getDevEmails(): StoredEmail[] {
 /** One captured message by id, or `undefined`. */
 export function getDevEmail(id: string): StoredEmail | undefined {
   return getDevEmails().find((e) => e.id === id);
+}
+
+/** One captured attachment (with its raw bytes) by message id + index, for the viewer's download route. */
+export function getDevAttachment(id: string, index: number): StoredAttachment | undefined {
+  return getDevEmail(id)?.attachments?.[index];
 }
 
 /** Empty the outbox. */

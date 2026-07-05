@@ -31,3 +31,13 @@ export const EMAIL_PRESETS: EmailPreset[] = [
 ];
 
 export const presetById = (id: string): EmailPreset | undefined => EMAIL_PRESETS.find((p) => p.id === id);
+
+// The attachment demo sends this fixed image. Server-side path resolved in the
+// route action; the client only needs the display filename and preview URL.
+export const ATTACHMENT = {
+  subject: 'A photo for you 🍡',
+  filename: 'mochi.jpg',
+  path: './src/demos/email/mochi-photo.jpg',
+  previewUrl: '/demos/email/mochi-photo.jpg',
+  contentType: 'image/jpeg',
+} as const;

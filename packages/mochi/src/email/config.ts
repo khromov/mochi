@@ -15,6 +15,7 @@ export function resolveEmailOptions(opts: MochiEmailOptions | undefined, develop
   return {
     from: o.from,
     transport: o.transport ?? { type: development ? 'dev' : 'log' },
+    logPii: o.logPii ?? true,
   };
 }
 
