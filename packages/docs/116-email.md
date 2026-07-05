@@ -49,7 +49,8 @@ await Mochi.email({
   bcc,
   replyTo, // optional
   subject: 'Welcome',
-  html: '<h1>Hi</h1>', // the body — see "The body" below
+  component: './src/emails/Welcome.svelte', // the body (a Svelte template) — see "The body" below
+  props: { name: 'Alice' }, // props passed to the component
   attachments: [{ filename: 'invoice.pdf', content: bytes }],
   headers: { 'X-Entity': 'signup' },
 });
