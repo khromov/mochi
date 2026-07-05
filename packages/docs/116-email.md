@@ -189,6 +189,12 @@ Email templates render **outside an HTTP request** when sent from a background j
 
 </Callout>
 
+<Callout type="warning">
+
+CSS inlining is best-effort, and email clients support only a limited, inconsistent subset of CSS. Rules that can't be inlined (media queries, pseudo-classes) are left in a `<style>` block that some clients strip, and modern layout (flexbox/grid, custom properties) is unreliable across clients. Favor simple, table- and inline-style-friendly markup, and always test your templates in the clients you care about.
+
+</Callout>
+
 ### Intercepting messages
 
 The [`email:message` filter](/docs/extensions/#emailmessage) is the interceptor seam for outgoing mail. It runs on the fully-resolved message right before the transport, and can rewrite it (audit BCC, `List-Unsubscribe` headers, a staging catch-all) or return `null` to suppress the send. Prefer it over a `custom` transport when you only need to touch the message, not take over delivery.
