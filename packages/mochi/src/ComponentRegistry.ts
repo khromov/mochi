@@ -1321,7 +1321,13 @@ export class ComponentRegistry {
       return development ? e : new Error('Email render error');
     };
 
-    const { body, head } = await requestContext.exit(() => render(mod.default, { ...(props ? { props } : {}), transformError }));
+    // `render()` returns a lazy thenable — the component only executes when the
+    // thenable is awaited (in a microtask). The exit callback must be `async`
+    // and `await` render *inside* it, so that deferred execution stays within
+    // the exited async context; otherwise `exit()` returns before the component
+    // runs and the ambient request context leaks back in. Isolation is why
+    // `getRequestContext()` throws in an email template regardless of call site.
+    const { body, head } = await requestContext.exit(async () => await render(mod.default, { ...(props ? { props } : {}), transformError }));
 
     let output = body;
 
