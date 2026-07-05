@@ -94,7 +94,7 @@
     }
   },
   "dependencies": {
-    "@css-inline/css-inline": "^0.21.0",
+    "@css-inline/css-inline-wasm": "^0.21.0",
     "@noble/ciphers": "2.2.0",
     "bunqueue": "^2.8.20",
     "chokidar": "^5.0.0",
