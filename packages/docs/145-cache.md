@@ -80,6 +80,8 @@ Use it from a page or API route:
 
 For multi-process or persistent caching, pass a custom `storage` that implements `getItem` / `setItem` / `removeItem` / `clear` (e.g. Redis, SQLite via `bun:sqlite`). These methods may be synchronous (in-memory `Map`, `bun:sqlite`) or `async` / Promise-returning (Redis, network stores) — the cache awaits every call. Each key holds a single entry (the value plus its write time). When a backend needs a string or buffer — like Redis — supply `serialize` / `deserialize` to encode and decode that entry, e.g. `serialize: JSON.stringify, deserialize: JSON.parse`.
 
+The default `MemoryStorage` accepts `{ maxAge, purgeInterval }` for age-based eviction, mirroring `FileStorage` below — `new MemoryStorage({ maxAge: 300_000, purgeInterval: 60_000 })`. With no options it never evicts (the prior, still-default behavior).
+
 ### File-based storage
 
 `FileStorage` persists each entry as a JSON file on disk, so the cache survives restarts. It's turnkey — no `serialize` / `deserialize` needed:

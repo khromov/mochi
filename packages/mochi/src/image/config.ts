@@ -70,6 +70,7 @@ export function resolveImageOptions(opts: MochiImageOptions | undefined): Resolv
     enabled: o.enabled ?? true,
     sizes,
     cacheDir: o.cacheDir ?? './.mochi/image-cache',
+    storage: o.storage,
     defaultFormat,
     defaultQuality,
     outputFormats,
@@ -105,7 +106,13 @@ export function getImageRuntime(): ImageRuntime {
     const resolved = resolveImageOptions(options.image as MochiImageOptions | undefined);
     runtime = {
       options: resolved,
-      cache: new ImageCache({ cacheDir: resolved.cacheDir, minTimeToStale: resolved.timeToStale, maxTimeToLive: resolved.timeToEvict, sizes: resolved.sizes }),
+      cache: new ImageCache({
+        cacheDir: resolved.cacheDir,
+        minTimeToStale: resolved.timeToStale,
+        maxTimeToLive: resolved.timeToEvict,
+        sizes: resolved.sizes,
+        storage: resolved.storage,
+      }),
     };
     g[GLOBAL_KEY] = runtime;
   }

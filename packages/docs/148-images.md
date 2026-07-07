@@ -152,6 +152,32 @@ Served images carry both an `ETag` (tied to the cache generation and the size co
 
 The trade-off of a non-zero `max-age` is that `invalidateImage()` only reaches an **already-cached browser** once its `max-age` expires — server-side revalidation still picks it up on the next miss. To tighten that, lower `timeToStale`. In **development** mode no `Cache-Control` is sent at all, so edits and `invalidateImage()` calls always show up on the next request.
 
+### Custom cache storage
+
+By default the image cache is backed by `FileStorage` under `cacheDir`, so it survives restarts. Pass `storage` to swap in a different backend — e.g. `MemoryStorage` for a faster, disk-free cache:
+
+```ts
+import { MemoryStorage } from 'mochi-framework';
+
+await Mochi.serve({
+  image: {
+    storage: new MemoryStorage({ maxAge: 86_400_000 }), // must be >= timeToEvict
+    timeToStale: 14_400_000,
+    timeToEvict: 86_400_000,
+    sizes: { thumbnail: { width: 200, height: 200 } },
+  },
+  routes,
+});
+```
+
+`cacheDir` is ignored once `storage` is set. `maxAge` drives the same background janitor (`sweepIntervalMs`) that would otherwise sweep `FileStorage` — omit it and entries are never reclaimed.
+
+<Callout type="warning">
+
+**In-memory image caching trades disk for RAM.** Every cached original and resized variant's bytes live in process memory instead of on disk, so cache size adds directly to your process's memory footprint — size `maxAge`/`timeToEvict` accordingly for your traffic. The cache is also lost on every restart or deploy, so the first request after a restart always re-fetches and re-transforms.
+
+</Callout>
+
 ### Invalidation
 
 Invalidate a source immediately. It operates on the shared original, so it cascades to every variant — and to the ThumbHash placeholder:
@@ -169,23 +195,24 @@ In dev, each image produced during a request shows up in the [debug bar's Images
 
 Configure under `Mochi.serve({ image: { … } })`. Everything except `sizes` is optional:
 
-| Option                 | Default                | Notes                                                                     |
-| ---------------------- | ---------------------- | ------------------------------------------------------------------------- |
-| `sizes`                | `{}`                   | Named transform recipes (see [Declare sizes](#declare-sizes))             |
-| `enabled`              | `true`                 | `false` unmounts the endpoint; URL helpers then return the raw source URL |
-| `cacheDir`             | `./.mochi/image-cache` | Must not be under `publicDir`                                             |
-| `defaultFormat`        | `webp`                 | Pipeline default when it omits `format`                                   |
-| `defaultQuality`       | `80`                   | Pipeline default when it omits `quality`                                  |
-| `outputFormats`        | all four               | Allowed output formats                                                    |
-| `allowedHosts`         | any public host        | Exact host or `*.example.com`                                             |
-| `blockPrivateNetworks` | `true`                 | Reject private/loopback/link-local addresses                              |
-| `fetchTimeoutMs`       | `10_000`               | Upstream fetch timeout                                                    |
-| `maxResponseBytes`     | `20 MB`                | Hard source-size cap                                                      |
-| `maxPixels`            | `50_000_000`           | Decompression-bomb guard                                                  |
-| `timeToStale`          | `14_400_000`           | Cache time-to-stale (ms); variants follow it                              |
-| `timeToEvict`          | `86_400_000`           | Cache time-to-evict (ms); variants follow it                              |
-| `sweepIntervalMs`      | `3_600_000`            | Background cache-janitor interval; `0` disables                           |
-| `compressPayload`      | `true`                 | Deflate the encrypted URL payload                                         |
+| Option                 | Default                 | Notes                                                                          |
+| ---------------------- | ----------------------- | ------------------------------------------------------------------------------ |
+| `sizes`                | `{}`                    | Named transform recipes (see [Declare sizes](#declare-sizes))                  |
+| `enabled`              | `true`                  | `false` unmounts the endpoint; URL helpers then return the raw source URL      |
+| `cacheDir`             | `./.mochi/image-cache`  | Must not be under `publicDir`; ignored when `storage` is set                   |
+| `storage`              | `FileStorage(cacheDir)` | Override the cache backend (see [Custom cache storage](#custom-cache-storage)) |
+| `defaultFormat`        | `webp`                  | Pipeline default when it omits `format`                                        |
+| `defaultQuality`       | `80`                    | Pipeline default when it omits `quality`                                       |
+| `outputFormats`        | all four                | Allowed output formats                                                         |
+| `allowedHosts`         | any public host         | Exact host or `*.example.com`                                                  |
+| `blockPrivateNetworks` | `true`                  | Reject private/loopback/link-local addresses                                   |
+| `fetchTimeoutMs`       | `10_000`                | Upstream fetch timeout                                                         |
+| `maxResponseBytes`     | `20 MB`                 | Hard source-size cap                                                           |
+| `maxPixels`            | `50_000_000`            | Decompression-bomb guard                                                       |
+| `timeToStale`          | `14_400_000`            | Cache time-to-stale (ms); variants follow it                                   |
+| `timeToEvict`          | `86_400_000`            | Cache time-to-evict (ms); variants follow it                                   |
+| `sweepIntervalMs`      | `3_600_000`             | Background cache-janitor interval; `0` disables                                |
+| `compressPayload`      | `true`                  | Deflate the encrypted URL payload                                              |
 
 <Callout type="warning">
 

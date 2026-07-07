@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { CacheStatus } from '../cache';
+import type { CacheStatus, Storage } from '../cache';
 import { MochiCache } from '../cache';
 import { FileStorage, isBlobRef, readBlobRef, type BlobRef } from '../cache-storage';
 import { mochiEvents, type MochiImageDeleteReason } from '../events';
@@ -114,6 +114,15 @@ export interface ImageCacheOptions {
   maxTimeToLive: number;
   /** Configured named sizes — the cascade deletes each source's variants by these. */
   sizes: Record<string, ResolvedImageSize>;
+  /** Override the default `FileStorage(cacheDir)` backend. `cacheDir` is ignored when set. */
+  storage?: Storage;
+}
+
+// A `path` label for `image:store`/`image:delete` events. Cosmetic — falls back
+// to the raw key for a backend (e.g. `MemoryStorage`) that has no file path.
+function pathForKey(storage: Storage, key: string): string {
+  const withPath = storage as Partial<{ pathForKey(key: string): string }>;
+  return typeof withPath.pathForKey === 'function' ? withPath.pathForKey(key) : key;
 }
 
 /**
@@ -128,7 +137,7 @@ export interface ImageCacheOptions {
  * everything else is reclaimed by the age-based sweep.
  */
 export class ImageCache {
-  private readonly storage: FileStorage;
+  private readonly storage: Storage;
   private readonly cache: MochiCache;
   private readonly minTimeToStale: number;
   private readonly maxTimeToLive: number;
@@ -140,7 +149,9 @@ export class ImageCache {
     this.sizes = options.sizes;
     // FileStorage's own age-sweeper is disabled; the image sweeper (`sweeper.ts`)
     // drives `sweep()`. `maxAge >= maxTimeToLive`, so it never drops a servable entry.
-    this.storage = new FileStorage({ directory: options.cacheDir, maxAge: options.maxTimeToLive, purgeInterval: 0 });
+    // A caller-supplied `storage` owns its own eviction config (e.g. `MemoryStorage`'s
+    // `maxAge`) — `sweep()` below still drives it on the same schedule.
+    this.storage = options.storage ?? new FileStorage({ directory: options.cacheDir, maxAge: options.maxTimeToLive, purgeInterval: 0 });
     // 60s in-flight timeout: an image regen (fetch upstream → decode → resize)
     // should never hold the per-key coalescing lock for long, so a hung upstream
     // fails fast instead of parking every waiter until the far larger default.
@@ -211,7 +222,7 @@ export class ImageCache {
       mochiEvents.emit('image:store', {
         kind: 'variant',
         src,
-        path: this.storage.pathForKey(key),
+        path: pathForKey(this.storage, key),
         id,
         size: r.bytes.byteLength,
         contentType: r.contentType,
@@ -254,7 +265,7 @@ export class ImageCache {
       mochiEvents.emit('image:store', {
         kind: 'original',
         src,
-        path: this.storage.pathForKey(key),
+        path: pathForKey(this.storage, key),
         id: originalId(src),
         size: fetched.bytes.byteLength,
         contentType,
@@ -291,7 +302,7 @@ export class ImageCache {
       mochiEvents.emit('image:delete', {
         kind: 'original',
         src,
-        path: this.storage.pathForKey(key),
+        path: pathForKey(this.storage, key),
         id: originalId(src),
         size: storedBytesLen(orig.value.bytes),
         reason: 'invalidated',
@@ -310,7 +321,7 @@ export class ImageCache {
       mochiEvents.emit('image:delete', {
         kind: 'placeholder',
         src,
-        path: this.storage.pathForKey(phKey(src)),
+        path: pathForKey(this.storage, phKey(src)),
         id: originalId(src),
         size: Buffer.byteLength(ph.value.dataUrl),
         reason,
@@ -324,7 +335,7 @@ export class ImageCache {
         mochiEvents.emit('image:delete', {
           kind: 'variant',
           src,
-          path: this.storage.pathForKey(varKey(id)),
+          path: pathForKey(this.storage, varKey(id)),
           id,
           size: storedBytesLen(variant.value.bytes),
           reason,
@@ -334,14 +345,19 @@ export class ImageCache {
   }
 
   /**
-   * Janitor sweep: reclaim entries past the global window. Delegates to
-   * FileStorage's age-based sweep. TODO: restore precise per-kind counts — the
-   * flat keyspace can't distinguish originals from variants, so everything
-   * reclaimed is reported under `removedVariants`.
+   * Janitor sweep: reclaim entries past the global window. Delegates to the
+   * storage backend's own age-based sweep (`FileStorage` or a configured
+   * `MemoryStorage`); a backend with no `sweep` support is a no-op. TODO:
+   * restore precise per-kind counts — the flat keyspace can't distinguish
+   * originals from variants, so everything reclaimed is reported under
+   * `removedVariants`.
    */
   async sweep(now: number = Date.now()): Promise<{ removedVariants: number; removedOriginals: number; freedBytes: number }> {
-    const { removed, freedBytes } = await this.storage.sweep(now);
-    return { removedVariants: removed, removedOriginals: 0, freedBytes };
+    const result = await this.storage.sweep?.(now);
+    if (!result) {
+      return { removedVariants: 0, removedOriginals: 0, freedBytes: 0 };
+    }
+    return { removedVariants: result.removed, removedOriginals: 0, freedBytes: result.freedBytes };
   }
 
   /**
@@ -366,7 +382,7 @@ export class ImageCache {
       mochiEvents.emit('image:store', {
         kind: 'placeholder',
         src,
-        path: this.storage.pathForKey(key),
+        path: pathForKey(this.storage, key),
         id: originalId(src),
         size: Buffer.byteLength(dataUrl),
         contentType: '',

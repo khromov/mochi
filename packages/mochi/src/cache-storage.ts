@@ -61,15 +61,38 @@ function isBlobPointer(value: unknown): value is BlobPointer {
   return typeof value === 'object' && value !== null && typeof (value as { __mochiBlob?: unknown }).__mochiBlob === 'string';
 }
 
+export interface MemoryStorageOptions {
+  /** Entries older than this (ms) are eligible for removal by `sweep()`. Default: unset — `sweep()` never removes anything, matching plain `new MemoryStorage()`'s prior behavior. */
+  maxAge?: number;
+  /** Background sweep interval (ms) that evicts aged-out entries. Requires `maxAge`. Default: unset (no timer) — call `sweep()` manually, or rely on an external caller-driven janitor (e.g. `ImageCache`'s). */
+  purgeInterval?: number;
+}
+
+/**
+ * In-memory `Storage` backed by a `Map`. With no options it never evicts, same
+ * as before `sweep()` existed. Pass `maxAge` to make `sweep()` reclaim aged-out
+ * entries — required for a bounded memory footprint when used as a long-lived
+ * backend (e.g. `ImageCache`'s `storage` override), since nothing else here
+ * reclaims memory.
+ */
 export class MemoryStorage implements Storage {
-  private store = new Map<string, unknown>();
+  private store = new Map<string, { value: unknown; writtenAt: number }>();
+  private readonly maxAge?: number;
+  private intervalTimer?: ReturnType<typeof setInterval>;
+
+  constructor(options: MemoryStorageOptions = {}) {
+    this.maxAge = options.maxAge;
+    if (options.purgeInterval && options.purgeInterval > 0) {
+      this.startSweeper(options.purgeInterval);
+    }
+  }
 
   getItem(key: string): unknown {
-    return this.store.get(key) ?? null;
+    return this.store.get(key)?.value ?? null;
   }
 
   setItem(key: string, value: unknown): void {
-    this.store.set(key, value);
+    this.store.set(key, { value, writtenAt: Date.now() });
   }
 
   removeItem(key: string): void {
@@ -78,6 +101,41 @@ export class MemoryStorage implements Storage {
 
   clear(): void {
     this.store.clear();
+  }
+
+  /**
+   * Delete entries older than `maxAge`. `freedBytes` is always `0` — unlike
+   * `FileStorage`'s file sizes, in-memory values have no cheap byte accounting.
+   */
+  sweep(now: number = Date.now()): { removed: number; freedBytes: number } {
+    if (this.maxAge === undefined) {
+      return { removed: 0, freedBytes: 0 };
+    }
+    let removed = 0;
+    for (const [key, entry] of this.store) {
+      if (now - entry.writtenAt > this.maxAge) {
+        this.store.delete(key);
+        removed++;
+      }
+    }
+    return { removed, freedBytes: 0 };
+  }
+
+  /** Stop the background sweep. Call when the store is no longer needed (e.g. in tests). */
+  dispose(): void {
+    if (this.intervalTimer) {
+      clearInterval(this.intervalTimer);
+    }
+    this.intervalTimer = undefined;
+  }
+
+  private startSweeper(intervalMs: number): void {
+    this.intervalTimer = setInterval(() => {
+      const start = Date.now();
+      const { removed } = this.sweep(start);
+      mochiEvents.emit('cache:sweep', { removed, durationMs: Date.now() - start });
+    }, intervalMs);
+    this.intervalTimer.unref?.();
   }
 }
 

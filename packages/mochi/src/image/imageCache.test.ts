@@ -2,6 +2,8 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { Storage } from '../cache';
+import { MemoryStorage } from '../cache-storage';
 import { mochiEvents } from '../events';
 import type { MochiImageDeleteEvent, MochiImageStoreEvent } from '../events';
 import { ImageCache, originalId, variantId, type ImageCacheOptions, type RegenResult } from './imageCache';
@@ -270,5 +272,53 @@ describe('ImageCache lifecycle events', () => {
     await cache.setPlaceholder(SRC, 'data:image/png;base64,AAAA', 0);
     expect(stores).toHaveLength(1);
     expect(stores[0]).toMatchObject({ kind: 'placeholder', src: SRC, contentType: '', format: '' });
+  });
+});
+
+describe('ImageCache custom storage', () => {
+  test('a MemoryStorage-backed cache behaves like the FileStorage default', async () => {
+    const cache = makeCache({ storage: new MemoryStorage() });
+    const counter = { n: 0 };
+
+    const first = await cache.getOriginal(SRC, 60_000, 86_400_000, origFn([1, 2, 3], 'image/gif', counter));
+    expect(first.status).toBe('miss');
+    expect(counter.n).toBe(1);
+
+    const second = await cache.getOriginal(SRC, 60_000, 86_400_000, origFn([1, 2, 3], 'image/gif', counter));
+    expect(second.status).toBe('fresh');
+    expect(counter.n).toBe(1);
+
+    const variant = await cache.getVariant(SRC, ID, 'webp', regen([9, 9]));
+    expect(variant.status).toBe('miss');
+    expect(Array.from(variant.entry.bytes)).toEqual([9, 9]);
+  });
+
+  test('sweep reclaims aged entries when the MemoryStorage was configured with maxAge', async () => {
+    const cache = makeCache({ storage: new MemoryStorage({ maxAge: 1_000 }), minTimeToStale: 10, maxTimeToLive: 1_000 });
+    const counter = { n: 0 };
+    await cache.getOriginal(SRC, 10, 1_000, origFn([1, 2, 3], 'image/jpeg', counter));
+
+    const swept = await cache.sweep(Date.now() + 10_000);
+    expect(swept.removedVariants).toBeGreaterThan(0);
+
+    const after = await cache.getOriginal(SRC, 10, 1_000, origFn([1, 2, 3], 'image/jpeg', counter));
+    expect(after.status).toBe('miss'); // reclaimed → re-fetched
+    expect(counter.n).toBe(2);
+  });
+
+  test('sweep on a storage without maxAge/sweep support degrades to zero counts', async () => {
+    // A minimal Storage implementing only the 4 core methods — no `sweep`.
+    const store = new Map<string, unknown>();
+    const bare: Storage = {
+      getItem: (key) => store.get(key) ?? null,
+      setItem: (key, value) => void store.set(key, value),
+      removeItem: (key) => void store.delete(key),
+      clear: () => void store.clear(),
+    };
+
+    const cache = makeCache({ storage: bare });
+    await cache.getOriginal(SRC, 60_000, 86_400_000, origFn([1, 2, 3]));
+
+    await expect(cache.sweep(Date.now() + 1_000_000)).resolves.toEqual({ removedVariants: 0, removedOriginals: 0, freedBytes: 0 });
   });
 });

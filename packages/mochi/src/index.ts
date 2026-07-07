@@ -20,7 +20,7 @@ export type { CookieSerializeOptions, Cookie } from './cookies';
 export { MochiCache } from './cache';
 export type { MochiCacheOptions, CacheResult, CacheStatus, Storage } from './cache';
 export { MemoryStorage, FileStorage } from './cache-storage';
-export type { FileStorageOptions } from './cache-storage';
+export type { FileStorageOptions, MemoryStorageOptions } from './cache-storage';
 export { getImageUrl, getImageAttrs, getImage, getImagePlaceholder, imagePlaceholder, warmImagePlaceholder, invalidateImage } from './image/imageApi';
 export type { ResolvedImage, ImageAttrs } from './image/imageApi';
 export type { MochiImageOptions, ImageSize, InvalidateImageOptions, ImageFormat, ImageFit } from './image/types';

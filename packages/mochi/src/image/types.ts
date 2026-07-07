@@ -1,3 +1,5 @@
+import type { Storage } from '../cache';
+
 export type ImageFormat = 'webp' | 'jpeg' | 'png' | 'avif';
 
 /** Resize fit. Bun.Image only accepts these two. */
@@ -100,8 +102,13 @@ export interface MochiImageOptions {
    * `getImageUrl(src, name)`, and `getImage(src, name)`. Validated at startup.
    */
   sizes?: Record<string, ImageSize>;
-  /** Disk cache directory. Must NOT be under `publicDir`. Default: `./.mochi/image-cache`. */
+  /** Disk cache directory. Must NOT be under `publicDir`. Default: `./.mochi/image-cache`. Ignored when `storage` is set. */
   cacheDir?: string;
+  /**
+   * Override the default `FileStorage(cacheDir)` cache backend — e.g. `new MemoryStorage({ maxAge })`
+   * for an in-memory cache. See the "Custom cache storage" docs section for trade-offs.
+   */
+  storage?: Storage;
   /** Output format when the caller doesn't specify one. Default: `webp`. */
   defaultFormat?: ImageFormat;
   /** Default encode quality 1-100. Default: `80`. */
@@ -137,6 +144,7 @@ export interface ResolvedImageOptions {
   enabled: boolean;
   sizes: Record<string, ResolvedImageSize>;
   cacheDir: string;
+  storage?: Storage;
   defaultFormat: ImageFormat;
   defaultQuality: number;
   outputFormats: ImageFormat[];
