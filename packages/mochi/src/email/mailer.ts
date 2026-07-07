@@ -35,7 +35,7 @@ export function htmlToText(html: string): string {
         });
       },
     })
-    .on('p, div, br, li, tr, h1, h2, h3, h4, h5, h6', {
+    .on('p, div, br, hr, li, tr, td, th, ul, ol, table, thead, tbody, blockquote, section, article, header, footer, h1, h2, h3, h4, h5, h6', {
       element() {
         out += ' ';
       },
