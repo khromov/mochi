@@ -63,11 +63,11 @@ describe('htmlToText', () => {
   });
 
   test('renders mailto: links as a bare address', () => {
-    expect(htmlToText('<a href="mailto:foo@example.com">Email us</a>')).toBe('Email us ( foo@example.com )');
-    // Text already the address → the scheme-stripped href matches it → no parens.
+    expect(htmlToText('<a href="mailto:foo@example.com">Email us</a>')).toBe('Email us <foo@example.com>');
+    // Text already the address → the scheme-stripped href matches it → no suffix.
     expect(htmlToText('<a href="mailto:foo@example.com">foo@example.com</a>')).toBe('foo@example.com');
     // Query params (subject/body) are dropped — just the address.
-    expect(htmlToText('<a href="MAILTO:foo@example.com?subject=Hi">Contact</a>')).toBe('Contact ( foo@example.com )');
+    expect(htmlToText('<a href="MAILTO:foo@example.com?subject=Hi">Contact</a>')).toBe('Contact <foo@example.com>');
   });
 
   test('passes plain text through untouched', () => {
