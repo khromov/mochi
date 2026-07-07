@@ -2,7 +2,7 @@ import { stringify } from 'devalue';
 import { getRequestContext } from './requestContext';
 
 /**
- * One entry in the per-request island props dedup registry
+ * One entry in the per-render island props dedup registry
  * (`ctx.islandProps`): the ref id assigned to a unique serialized payload and
  * the number of islands that emitted that exact payload.
  */
@@ -13,7 +13,7 @@ export interface IslandPropsEntry {
 
 /**
  * Serialize a hydratable island's props via devalue and register them in the
- * per-request dedup registry. Returns a stable ref id (e.g. "mochi-props-3")
+ * per-render dedup registry. Returns a stable ref id (e.g. "mochi-props-3")
  * that the preprocessor emits as the `props-ref` attribute. After SSR,
  * `ComponentRegistry`'s HTMLRewriter pass emits each payload as a
  * `<script type="application/json" id="mochi-props-N">` block placed just

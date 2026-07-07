@@ -351,3 +351,33 @@ await Mochi.serve({
 <Callout type="danger">
 Only rewrite the **origin/prefix** — never the last path segment (the `filename`). That segment is authenticated (bound as AAD to the encrypted token), so the image endpoint re-derives it from the served path and rejects (403) any request whose filename was changed. Rewriting the host/prefix is safe; renaming `photo-500x500.webp` is not. Mochi logs a warning if a filter changes the filename.
 </Callout>
+
+#### `email:message`
+
+Intercept every message sent through `Mochi.email()` right before it reaches the transport. The filter receives the fully-resolved message (`from` filled, addresses arrayified, body rendered) and returns a modified message, or `null` to **suppress** the send entirely. The context carries the configured `transport` type (`'log' | 'dev' | 'smtp' | 'custom'`) so you can branch on where the message is headed. Async.
+
+This is the interceptor seam for transactional mail — add an audit BCC, inject compliance headers, or reroute recipients in staging — without replacing the whole transport.
+
+```ts
+await Mochi.serve({
+  email: { from: 'noreply@app.dev', transport: { type: 'smtp', host: 'smtp.example.com' } },
+  filters: {
+    'email:message': (message, { transport }) => {
+      // In non-production, redirect all real mail to a catch-all inbox.
+      if (transport === 'smtp' && process.env.STAGING) {
+        return { ...message, to: ['qa@app.dev'], cc: undefined, bcc: undefined };
+      }
+      return { ...message, headers: { ...message.headers, 'List-Unsubscribe': '<mailto:unsub@app.dev>' } };
+    },
+  },
+  routes,
+});
+```
+
+Return `null` to veto — the message never reaches a transport (nothing is delivered, nothing is captured into the dev outbox):
+
+```ts
+'email:message': async (message) => ((await suppressionList.has(message.to)) ? null : message),
+```
+
+A suppressed send still emits an `email:sent` event with `transport: 'suppressed'` (and `consoleLogger()` prints it as a `MAIL … suppressed (filtered)` line), so blocked mail stays observable. `Mochi.email()` resolves to `{ transport: 'suppressed' }` in that case.

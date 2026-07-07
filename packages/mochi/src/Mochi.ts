@@ -7,6 +7,7 @@ import type { RenderResult } from './ComponentRegistry';
 import { loadSvelteConfig } from './svelteConfig';
 import { buildInlineWebComponent } from './buildInlineWebComponent';
 import { buildClientStatsRoutes, CLIENT_STATS_COMPONENT } from './clientStatsRoutes';
+import { buildEmailViewerRoutes, EMAIL_VIEWER_COMPONENT } from './emailViewerRoutes';
 import { isMochiPage, isMochiApi, isMochiWs, isMochiSse, isMochiFile, isMochiQueue, isServerPropsResolver, isAlsoHydrateMode, ALSO_HYDRATE_ENVELOPE_KEY } from './types';
 import type {
   BunRouteValue,
@@ -54,6 +55,10 @@ import { decryptProps } from './serverIslandCrypto';
 import { createImageHandler } from './image/imageEndpoint';
 import { getImageRuntime } from './image/config';
 import { startImageCacheSweeper } from './image/sweeper';
+import { getEmailRuntime, closeEmailTransport } from './email/config';
+import { onDevEmailRecorded } from './email/devOutbox';
+import { sendEmail } from './email/mailer';
+import type { MochiEmailMessage, MochiEmailResult } from './email/types';
 import { initMochiConfig } from './mochiConfig';
 import { logger, setLogLevel, DEFAULT_LOG_LEVEL, type LogLevel } from './log';
 import { mochiEvents } from './events';
@@ -206,6 +211,18 @@ export class Mochi {
    */
   static getQueue<T = unknown>(name: string): MochiQueue<T> {
     return getQueue<T>(name);
+  }
+
+  /**
+   * Send a transactional email. Configured under `Mochi.serve({ email })` with
+   * a default `from` and a pluggable `transport` (SMTP, a custom-send function,
+   * or the default `log` transport that logs instead of sending). Pass a
+   * message body as `html`, `text`, or a Svelte `component` (rendered to HTML
+   * with its scoped CSS inlined). Callable from any server-side code — route
+   * actions, API handlers, or queue jobs.
+   */
+  static email(message: MochiEmailMessage): Promise<MochiEmailResult> {
+    return sendEmail(message);
   }
 
   /**
@@ -397,6 +414,13 @@ export class Mochi {
       }
     }
 
+    const emailTransportType = getEmailRuntime().options.transport.type;
+    // The dev outbox captures mail purely off the resolved transport, independent
+    // of the debug bar — so the viewer route (and its compile) must key off the
+    // same condition, or `debugBar: false` silently captures mail with no way to
+    // ever read it back (only production is documented to disable the route).
+    const emailViewerEnabled = development && emailTransportType === 'dev';
+
     const serverDebugInfo: Partial<DebugBarData> = {
       mochiVersion: mochiVersion ?? undefined,
       svelteVersion,
@@ -416,6 +440,7 @@ export class Mochi {
         csrf: !!options.csrf,
         proxy: !!options.proxy,
         markdown: !!options.markdown,
+        email: emailTransportType,
         routeCount: Object.keys(options.routes ?? {}).length,
       },
     };
@@ -449,6 +474,9 @@ export class Mochi {
     const ssrEntrypoints: string[] = [errorPagePath, CLIENT_STATS_COMPONENT];
     if (debugBarEnabled) {
       ssrEntrypoints.push(PAGE_CACHE_ADMIN_COMPONENT);
+    }
+    if (emailViewerEnabled) {
+      ssrEntrypoints.push(EMAIL_VIEWER_COMPONENT);
     }
     if (options.routes) {
       for (const handler of Object.values(options.routes)) {
@@ -538,6 +566,7 @@ export class Mochi {
       // file paths and sizes (project structure, dependency names).
       ...(debugBarEnabled ? buildClientStatsRoutes(registry) : {}),
       ...(debugBarEnabled ? buildPageCacheAdminRoutes() : {}),
+      ...(emailViewerEnabled ? buildEmailViewerRoutes(registry) : {}),
     };
     const allRoutes = Object.keys(internalRoutes).length > 0 ? { ...internalRoutes, ...(options.routes ?? {}) } : options.routes;
 
@@ -1307,6 +1336,10 @@ export class Mochi {
     // and start the background cache janitor. The resolved options are the
     // single source of truth for `enabled` — `getResizedImage` consults the
     // same flag to fall back to raw source URLs when the endpoint is off.
+    // Give the mailer a handle to the live compile cache so Mochi.email() can
+    // render Svelte email templates through the same registry as page routes.
+    getEmailRuntime().registry = registry;
+
     let stopImageSweeper: (() => void) | undefined;
     const imageRuntime = getImageRuntime();
     if (imageRuntime.options.enabled) {
@@ -1437,6 +1470,7 @@ export class Mochi {
     // routes, and so `wsHandlersMap.size > 0` is true even when the user has
     // no WebSocket routes of their own.
     const liveReloadClients = new Set<ServerWebSocket<MochiWsData>>();
+    let stopEmailBadgeBroadcast: (() => void) | undefined;
     if (liveReloadEnabled) {
       wsHandlersMap.set('/__mochi_live_reload', {
         open(ws) {
@@ -1446,6 +1480,20 @@ export class Mochi {
         close(ws) {
           liveReloadClients.delete(ws as ServerWebSocket<MochiWsData>);
         },
+      });
+
+      // Fan dev-outbox arrivals out over the same live-reload socket so open tabs
+      // can surface a "new email" badge (and the outbox page itself can live-reload)
+      // without a second WebSocket. The captured id rides along so the toolbar can
+      // track which messages are still unread.
+      stopEmailBadgeBroadcast = onDevEmailRecorded((email) => {
+        for (const client of liveReloadClients) {
+          try {
+            client.send(`email:new:${email.id}`);
+          } catch {
+            liveReloadClients.delete(client);
+          }
+        }
       });
     }
 
@@ -1494,15 +1542,24 @@ export class Mochi {
       ...(websocketOption ? { websocket: websocketOption } : {}),
     } as Parameters<typeof Bun.serve>[0]);
 
-    // Tie the image-cache janitor's lifetime to the server: any stop path
-    // (tests calling server.stop(), or the signal handler below) clears the
-    // sweep timers instead of leaking them. Wrapping stop covers both, since the
-    // signal handler calls server.stop() too.
-    if (stopImageSweeper) {
+    // Tie subsystem cleanup to the server's lifetime: any stop path (tests
+    // calling server.stop(), or the signal handler below) clears the image-cache
+    // sweep timers and closes a pooled SMTP connection instead of leaking them.
+    // Wrapping stop covers both, since the signal handler calls server.stop().
+    {
       const sweeperStop = stopImageSweeper;
       const stopServer = server.stop.bind(server);
-      server.stop = ((closeActiveConnections?: boolean) => {
-        sweeperStop();
+      server.stop = (async (closeActiveConnections?: boolean) => {
+        // Subsystem cleanup must never gate the socket close: a transport whose
+        // close() throws (e.g. a nodemailer pool) would otherwise leave the
+        // listener open and hang shutdown. Best-effort, then always stop.
+        try {
+          sweeperStop?.();
+          stopEmailBadgeBroadcast?.();
+          await closeEmailTransport();
+        } catch (err) {
+          logger.warn(`Subsystem cleanup failed during shutdown: ${err instanceof Error ? err.message : err}`);
+        }
         return stopServer(closeActiveConnections);
       }) as typeof server.stop;
     }
@@ -1530,7 +1587,7 @@ export class Mochi {
       }
     } catch (err) {
       await closeAllQueueResources();
-      server.stop(true);
+      await server.stop(true);
       throw err;
     }
 
@@ -1627,7 +1684,7 @@ export class Mochi {
         stopEvent.signal = signal;
       }
       mochiEvents.emit('server:stop', stopEvent);
-      server.stop();
+      await server.stop();
     };
     process.on('SIGTERM', handle);
     process.on('SIGINT', handle);

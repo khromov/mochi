@@ -33,6 +33,7 @@ await Mochi.serve({
   idleTimeout: 60,
   compressServerIslandProps: true,
   warmup: true,
+  proxy: { origin: process.env.MOCHI_ORIGIN || `http://localhost:${PORT}` },
   handle: sequence(immutableAssets, analytics),
   filters: {
     'consoleLogger:line': (line, ctx) => (ctx.path.startsWith('/health') ? null : silenceInternalRoutes(line, ctx)),
