@@ -50,8 +50,24 @@ describe('htmlToText', () => {
     expect(htmlToText('<p>x &nbsp; y</p>')).toBe('x y');
   });
 
-  test('ignores attributes, keeping only link text', () => {
-    expect(htmlToText('<a href="http://x" title="t">link</a>')).toBe('link');
+  test('surfaces a link destination after its text, with padded parens', () => {
+    // Parens are space-padded so auto-linkifying clients don't eat the `)`.
+    expect(htmlToText('<a href="http://x" title="t">link</a>')).toBe('link ( http://x )');
+    expect(htmlToText('<p>Visit <a href="https://example.com/page?a=1&amp;b=2">our site</a> now</p>')).toBe('Visit our site ( https://example.com/page?a=1&b=2 ) now');
+  });
+
+  test('omits the destination when it adds nothing', () => {
+    // href equal to the visible text, or absent, produces no parenthetical.
+    expect(htmlToText('<a href="http://x">http://x</a>')).toBe('http://x');
+    expect(htmlToText('<a>bare</a>')).toBe('bare');
+  });
+
+  test('renders mailto: links as a bare address', () => {
+    expect(htmlToText('<a href="mailto:foo@example.com">Email us</a>')).toBe('Email us ( foo@example.com )');
+    // Text already the address → the scheme-stripped href matches it → no parens.
+    expect(htmlToText('<a href="mailto:foo@example.com">foo@example.com</a>')).toBe('foo@example.com');
+    // Query params (subject/body) are dropped — just the address.
+    expect(htmlToText('<a href="MAILTO:foo@example.com?subject=Hi">Contact</a>')).toBe('Contact ( foo@example.com )');
   });
 
   test('passes plain text through untouched', () => {

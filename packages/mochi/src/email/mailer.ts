@@ -18,9 +18,10 @@ function toArray(value: string | string[] | undefined): string[] | undefined {
  * HTML → plain-text fallback so HTML mails stay multipart. Drops every tag,
  * suppresses the *contents* of <script>/<style> (css-inline emits a <style>
  * block into the rendered email HTML), inserts spaces around block-level tags so
- * adjacent blocks don't collide, and decodes entities in a single pass via
- * html-entities. Bun's `text` chunks don't decode entities, so the decode runs
- * last — which also preserves escapes like `&amp;lt;` → `&lt;` (not `<`).
+ * adjacent blocks don't collide, surfaces each link's destination as
+ * `text ( href )`, and decodes entities in a single pass via html-entities.
+ * Bun's `text` chunks don't decode entities, so the decode runs last — which
+ * also preserves escapes like `&amp;lt;` → `&lt;` (not `<`).
  */
 export function htmlToText(html: string): string {
   let out = '';
@@ -37,6 +38,23 @@ export function htmlToText(html: string): string {
     .on('p, div, br, li, tr, h1, h2, h3, h4, h5, h6', {
       element() {
         out += ' ';
+      },
+    })
+    .on('a', {
+      element(el) {
+        let href = el.getAttribute('href')?.trim();
+        if (href && /^mailto:/i.test(href)) {
+          href = href.slice('mailto:'.length).split('?')[0];
+        }
+        if (!href) {
+          return;
+        }
+        const start = out.length;
+        el.onEndTag(() => {
+          if (href !== out.slice(start).trim()) {
+            out += ` ( ${href} )`;
+          }
+        });
       },
     })
     .onDocument({
