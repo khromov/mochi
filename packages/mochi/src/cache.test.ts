@@ -568,3 +568,131 @@ describe('MochiCache cache:delete event', () => {
     expect(deleted).toEqual(['k']);
   });
 });
+
+describe('MochiCache invalidation vs in-flight revalidation', () => {
+  // Map-backed async storage whose NEXT setItem parks on a gate — lands the race
+  // exactly in the window between a run's supersession check and its write.
+  function makeGatedStorage() {
+    const store = new Map<string, unknown>();
+    let release: (() => void) | undefined;
+    let armed = false;
+    const storage: Storage = {
+      getItem: (key) => store.get(key) ?? null,
+      async setItem(key, value) {
+        if (armed) {
+          armed = false;
+          await new Promise<void>((r) => {
+            release = r;
+          });
+        }
+        store.set(key, value);
+      },
+      removeItem: (key) => void store.delete(key),
+      clear: () => store.clear(),
+    };
+    return {
+      storage,
+      store,
+      armGate: () => {
+        armed = true;
+      },
+      // Resolves once the gated setItem has actually parked (and is holding the
+      // key lock) — the precondition for landing a mutation in the race window.
+      parked: async () => {
+        while (!release) {
+          await wait(1);
+        }
+      },
+      openGate: () => {
+        release!();
+        release = undefined;
+      },
+    };
+  }
+
+  test('a delete during a pending revalidation write is not resurrected', async () => {
+    const { storage, store, armGate, parked, openGate } = makeGatedStorage();
+    const cache = new MochiCache({ storage, minTimeToStale: 10, maxTimeToLive: 60_000 });
+
+    await cache.fetch('k', () => 'v1');
+    await wait(30); // age into the stale window
+
+    armGate();
+    // Serves 'v1' stale; the background run computes 'v2' and parks inside setItem.
+    expect((await cache.fetchWithStatus('k', () => 'v2')).value).toBe('v1');
+    await parked();
+
+    const deletion = cache.delete('k'); // queues behind the parked write
+    await wait(5);
+    openGate();
+    await deletion;
+    await wait(5); // let the background run fully settle
+
+    expect(store.size).toBe(0);
+    expect(await cache.peek('k')).toBeNull();
+  });
+
+  test('a delete while fn is still pending is not resurrected either', async () => {
+    const { storage, store } = makeGatedStorage();
+    const cache = new MochiCache({ storage, minTimeToStale: 10, maxTimeToLive: 60_000 });
+
+    await cache.fetch('k', () => 'v1');
+    await wait(30);
+
+    let releaseFn: (() => void) | undefined;
+    expect(
+      (
+        await cache.fetchWithStatus('k', async () => {
+          await new Promise<void>((r) => {
+            releaseFn = r;
+          });
+          return 'v2';
+        })
+      ).value,
+    ).toBe('v1');
+
+    await cache.delete('k'); // completes fully while fn is parked
+    releaseFn!();
+    await wait(5);
+
+    expect(store.size).toBe(0);
+    expect(await cache.peek('k')).toBeNull();
+  });
+
+  test('a markStale racing a pending revalidation write is never left fresh', async () => {
+    const { storage, armGate, parked, openGate } = makeGatedStorage();
+    const cache = new MochiCache({ storage, minTimeToStale: 1_000, maxTimeToLive: 60_000 });
+
+    await cache.fetch('k', () => 'v1');
+    await cache.delete('k');
+
+    armGate();
+    const refill = cache.fetch('k', () => 'v2'); // miss → run parks inside setItem
+    await parked();
+    const staling = cache.markStale('k'); // backdate queues behind the parked write
+    await wait(5);
+    openGate();
+    await refill;
+    await staling;
+
+    // Whichever side of the race landed last, the invalidation must hold: the
+    // entry may carry either value but can never read as fresh.
+    expect((await cache.peek('k'))?.status).toBe('stale');
+  });
+
+  test('supersession bookkeeping is pruned once runs settle', async () => {
+    const cache = new MochiCache({ minTimeToStale: 10, maxTimeToLive: 60_000 });
+
+    await cache.fetch('k', () => 'v1');
+    await wait(30);
+    await cache.fetchWithStatus('k', () => 'v2');
+    await cache.markStale('k');
+    await cache.delete('k');
+    await wait(10);
+
+    const internals = cache as unknown as { epochs: Map<string, number>; activeRuns: Map<string, number>; locks: Map<string, Promise<void>> };
+    expect(internals.epochs.size).toBe(0);
+    expect(internals.activeRuns.size).toBe(0);
+    expect(internals.locks.size).toBe(0);
+  });
+});

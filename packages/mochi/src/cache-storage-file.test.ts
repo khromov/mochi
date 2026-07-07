@@ -3,7 +3,7 @@ import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { MochiCache } from './cache';
-import { FileStorage, isBlobRef, readBlobRef, type BlobRef } from './cache-storage';
+import { FileStorage, isBlobRef, readBlobRef, tryReadBlobRef, type BlobRef } from './cache-storage';
 import { mochiEvents } from './events';
 
 const wait = Bun.sleep;
@@ -289,6 +289,58 @@ describe('FileStorage binary offload', () => {
     expect(swept.removed).toBe(1);
     expect(swept.freedBytes).toBeGreaterThan(0);
     expect(readdirSync(dir)).toHaveLength(0); // json + blob folder both gone
+  });
+
+  test('sweep leaves a young orphaned blob folder for a later pass (in-flight first write)', async () => {
+    const dir = makeDir();
+    const storage = new FileStorage({ directory: dir, purgeInterval: 0, maxAge: 1_000 });
+    created.push(storage);
+
+    // A blob folder with no owning JSON — exactly what a concurrent first write
+    // looks like between its blob rename and its JSON rename.
+    await Bun.write(join(dir, 'deadbeef', 'b0.bin'), new Uint8Array([1, 2, 3]));
+
+    const early = await storage.sweep(Date.now());
+    expect(early.freedBytes).toBe(0);
+    expect(countDirs(dir)).toBe(1);
+
+    // Once older than the grace window it's a genuine crash orphan — reclaimed.
+    const late = await storage.sweep(Date.now() + 20_000);
+    expect(late.freedBytes).toBe(3);
+    expect(countDirs(dir)).toBe(0);
+  });
+
+  test('a superseded generation never serves torn bytes: the stale ref reads null', async () => {
+    const dir = makeDir();
+    const storage = new FileStorage({ directory: dir, purgeInterval: 0 });
+    created.push(storage);
+
+    await storage.setItem('img', { value: { bytes: new Uint8Array([1, 1, 1]) }, createdAt: 1 });
+    const gen1 = (await storage.getItem('img')) as { value: { bytes: BlobRef } };
+    await storage.setItem('img', { value: { bytes: new Uint8Array([2, 2, 2, 2]) }, createdAt: 2 });
+    const gen2 = (await storage.getItem('img')) as { value: { bytes: BlobRef } };
+
+    // Each generation got its own file, so the old ref can't read new bytes...
+    expect(gen2.value.bytes.path).not.toBe(gen1.value.bytes.path);
+    expect(Array.from(await readBlobRef(gen2.value.bytes))).toEqual([2, 2, 2, 2]);
+    // ...it reads nothing at all: the writer reclaimed it after committing.
+    expect(await tryReadBlobRef(gen1.value.bytes)).toBeNull();
+  });
+
+  test('setItem reclaims superseded blob generations after the JSON commits', async () => {
+    const dir = makeDir();
+    const storage = new FileStorage({ directory: dir, purgeInterval: 0 });
+    created.push(storage);
+
+    await storage.setItem('img', { value: { bytes: new Uint8Array([1]) }, createdAt: 1 });
+    await storage.setItem('img', { value: { bytes: new Uint8Array([2]) }, createdAt: 2 });
+
+    const blobDirs = readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory());
+    expect(blobDirs).toHaveLength(1);
+    const files = readdirSync(join(dir, blobDirs[0]!.name));
+    expect(files).toHaveLength(1);
+    const current = (await storage.getItem('img')) as { value: { bytes: BlobRef } };
+    expect(current.value.bytes.path.endsWith(files[0]!)).toBe(true);
   });
 
   test('re-persisting a read-back value keeps the existing blob (markStale path)', async () => {

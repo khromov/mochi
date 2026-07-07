@@ -35,6 +35,23 @@ export async function readBlobRef(ref: BlobRef): Promise<Uint8Array> {
   return new Uint8Array(await Bun.file(ref.path).arrayBuffer());
 }
 
+/**
+ * Like {@link readBlobRef}, but a vanished blob file reads as `null` instead of
+ * throwing. A lazy ref can legitimately outlive its file — a newer write for the
+ * same key supersedes the blob, or the sweep reclaims the entry — and callers
+ * treat that as a cache miss rather than an error.
+ */
+export async function tryReadBlobRef(ref: BlobRef): Promise<Uint8Array | null> {
+  try {
+    return await readBlobRef(ref);
+  } catch (err) {
+    if (isENOENT(err)) {
+      return null;
+    }
+    throw err;
+  }
+}
+
 // Buffer extends Uint8Array, so this covers both.
 function isBinary(value: unknown): value is Uint8Array {
   return value instanceof Uint8Array;
@@ -76,6 +93,13 @@ export interface FileStorageOptions {
 }
 
 const isENOENT = (err: unknown): boolean => (err as NodeJS.ErrnoException | undefined)?.code === 'ENOENT';
+
+// The sweep can't tell a crash-orphaned blob folder (safe to reclaim) from the
+// live window between a first write's blob renames and its JSON rename —
+// `setItem` commits blobs before the JSON, so a sidecar-less folder younger than
+// this is treated as an in-flight write and left for a later sweep. Writes
+// complete in milliseconds; a few seconds is comfortably conservative.
+const ORPHAN_BLOB_GRACE_MS = 10_000;
 
 let tmpCounter = 0;
 
@@ -132,7 +156,8 @@ export class FileStorage implements Storage {
     const hash = this.hashKey(key);
     const path = join(this.directory, `${hash}.json`);
     const blobs: { relPath: string; data: Uint8Array }[] = [];
-    const json = this.encodeBlobs(value, hash, blobs);
+    const referenced = new Set<string>();
+    const json = this.encodeBlobs(value, hash, blobs, referenced);
     // Write the offloaded blobs first (each tmp+rename), so a reader that sees the
     // JSON always sees the blobs it points at. Bun.write creates the `<hash>/` dir.
     for (const b of blobs) {
@@ -146,6 +171,27 @@ export class FileStorage implements Storage {
     const tmp = `${path}.${process.pid}.${tmpCounter++}.tmp`;
     await Bun.write(tmp, JSON.stringify(json));
     await rename(tmp, path);
+    await this.reclaimSupersededBlobs(hash, referenced);
+  }
+
+  // The JSON rename above is the commit point: any `.bin` in the key's folder the
+  // committed JSON doesn't reference is a superseded generation. A reader still
+  // holding its lazy BlobRef degrades to ENOENT → `tryReadBlobRef` → miss, which
+  // is the consistency contract — it must never see mixed-generation meta/bytes.
+  // Temp files are skipped (a concurrent writer's in-progress work). Best-effort:
+  // a crash before this runs leaves dead files the key's next write reclaims.
+  private async reclaimSupersededBlobs(hash: string, referenced: Set<string>): Promise<void> {
+    let files: string[];
+    try {
+      files = await readdir(join(this.directory, hash));
+    } catch {
+      return;
+    }
+    for (const f of files) {
+      if (f.endsWith('.bin') && !referenced.has(`${hash}/${f}`)) {
+        await unlink(join(this.directory, hash, f)).catch(() => {});
+      }
+    }
   }
 
   async removeItem(key: string): Promise<void> {
@@ -225,7 +271,9 @@ export class FileStorage implements Storage {
     );
 
     // Pass 2: orphaned blob folders whose owning JSON no longer exists (already
-    // reclaimed in pass 1, or lost to a crash). `dirSize`/`rm` no-op if gone.
+    // reclaimed in pass 1, lost to a crash — or an in-flight first write whose
+    // JSON hasn't landed yet, which the mtime grace below protects; a rename into
+    // the folder refreshes its mtime). `dirSize`/`rm` no-op if gone.
     await Promise.all(
       entries
         .filter((entry) => entry.isDirectory())
@@ -233,6 +281,13 @@ export class FileStorage implements Storage {
           const ownerExists = await Bun.file(join(this.directory, `${entry.name}.json`)).exists();
           if (!ownerExists) {
             const dir = join(this.directory, entry.name);
+            try {
+              if (now - (await stat(dir)).mtimeMs <= ORPHAN_BLOB_GRACE_MS) {
+                return;
+              }
+            } catch {
+              return; // vanished mid-sweep
+            }
             freedBytes += await this.dirSize(dir);
             await rm(dir, { recursive: true, force: true });
           }
@@ -289,24 +344,30 @@ export class FileStorage implements Storage {
   // Deep-clone `value`, replacing binary fields with on-disk pointers and pushing
   // their bytes onto `blobs` to be written. Never mutates the input. An existing
   // BlobRef (e.g. re-persisted by `markStale`) is re-pointed at its existing blob
-  // file without rewriting it. A single write carries either all real binaries
-  // (fresh compute) or all BlobRefs (re-persist), so blob indices never collide.
-  private encodeBlobs(value: unknown, hash: string, blobs: { relPath: string; data: Uint8Array }[]): unknown {
+  // file without rewriting it. Fresh binaries get generation-unique filenames so
+  // a rewrite of the same key never renames new bytes over a file a concurrently
+  // issued lazy BlobRef still points at (which would pair old metadata with new
+  // bytes); superseded generations are reclaimed by `setItem` after the JSON
+  // commits, and `referenced` collects every relPath the outgoing JSON keeps.
+  private encodeBlobs(value: unknown, hash: string, blobs: { relPath: string; data: Uint8Array }[], referenced: Set<string>): unknown {
     if (isBinary(value)) {
-      const relPath = `${hash}/b${blobs.length}.bin`;
+      const relPath = `${hash}/b${blobs.length}.${process.pid}.${tmpCounter++}.bin`;
       blobs.push({ relPath, data: value });
+      referenced.add(relPath);
       return { __mochiBlob: relPath, bytes: value.byteLength } satisfies BlobPointer;
     }
     if (isBlobRef(value)) {
-      return { __mochiBlob: relative(this.directory, value.path), bytes: value.bytes } satisfies BlobPointer;
+      const relPath = relative(this.directory, value.path);
+      referenced.add(relPath);
+      return { __mochiBlob: relPath, bytes: value.bytes } satisfies BlobPointer;
     }
     if (Array.isArray(value)) {
-      return value.map((v) => this.encodeBlobs(v, hash, blobs));
+      return value.map((v) => this.encodeBlobs(v, hash, blobs, referenced));
     }
     if (value !== null && typeof value === 'object') {
       const out: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-        out[k] = this.encodeBlobs(v, hash, blobs);
+        out[k] = this.encodeBlobs(v, hash, blobs, referenced);
       }
       return out;
     }
