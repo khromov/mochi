@@ -84,6 +84,12 @@ function mapStatus(status: CacheStatus): ImageCacheStatus {
   return status;
 }
 
+// Byte length of a stored payload, whether it's still in memory (fresh compute)
+// or offloaded to a blob (a FileStorage read returns a BlobRef carrying its size).
+function storedBytesLen(bytes: Uint8Array | BlobRef): number {
+  return isBlobRef(bytes) ? bytes.bytes : bytes.byteLength;
+}
+
 // The stored cache value for an original/variant: metadata plus the encoded bytes.
 // FileStorage offloads `bytes` to a blob file and returns it as a lazy `BlobRef`
 // on a cache hit, so reading the metadata never loads the bytes.
@@ -264,18 +270,22 @@ export class ImageCache {
       await this.cache.markStale(key);
       return;
     }
-    // Cascade first, then drop the original. The delete re-fires the cascade hook,
-    // which finds nothing left (a harmless no-op), so there's no double emit.
+    // Peek the original for its size before deleting. Cascade first, then drop the
+    // original — the delete re-fires the cascade hook, which finds nothing left (a
+    // harmless no-op), so there's no double emit.
+    const orig = await this.cache.peek<StoredImage>(key);
     await this.cascadeSource(src, 'invalidated');
     await this.cache.delete(key);
-    mochiEvents.emit('image:delete', {
-      kind: 'original',
-      src,
-      path: this.storage.pathForKey(key),
-      id: originalId(src),
-      size: 0,
-      reason: 'invalidated',
-    });
+    if (orig) {
+      mochiEvents.emit('image:delete', {
+        kind: 'original',
+        src,
+        path: this.storage.pathForKey(key),
+        id: originalId(src),
+        size: storedBytesLen(orig.value.bytes),
+        reason: 'invalidated',
+      });
+    }
   }
 
   // Delete a source's placeholder and every configured size's variant, emitting an
@@ -291,7 +301,7 @@ export class ImageCache {
         src,
         path: this.storage.pathForKey(phKey(src)),
         id: originalId(src),
-        size: 0,
+        size: Buffer.byteLength(ph.value.dataUrl),
         reason,
       });
     }
@@ -305,7 +315,7 @@ export class ImageCache {
           src,
           path: this.storage.pathForKey(varKey(id)),
           id,
-          size: 0,
+          size: storedBytesLen(variant.value.bytes),
           reason,
         });
       }

@@ -4,8 +4,9 @@
   import { files } from './files.ts';
   import { getImageUrl } from 'mochi-framework';
   import RefreshCw from '@lucide/svelte/icons/refresh-cw';
+  import DeleteInspector from './DeleteInspector.svelte';
 
-  let { src, generation } = $props();
+  let { src, generation, deleted = [] } = $props();
 
   const variants = [
     { size: 'hero', label: 'hero — 600×400', w: 600, h: 400 },
@@ -29,8 +30,9 @@
   <p>
     The images below all derive from <strong>one shared cached original</strong>, fetched from our own
     <code>/demos/image-invalidation/source.jpg</code> route — a <code>Mochi.file()</code> endpoint that serves a random bundled photo on every request. Hit the button to
-    <code>invalidateImage(src, &lbrace; hard: true &rbrace;)</code>: it deletes the cached original and cascades to every named size, so the next request re-fetches the source and
-    <strong>all sizes update to the same new photo in lockstep</strong>.
+    <code>invalidateImage(src, &lbrace; hard: true &rbrace;)</code>: it <strong>hard-deletes</strong> the cached original and cascades to every named size, so the next request
+    re-fetches the source and <strong>all sizes update to the same new photo in lockstep</strong>. The <code>image:delete</code> events from that cascade are captured below and logged
+    to your browser + server console.
   </p>
 
   <div class="actions">
@@ -44,6 +46,8 @@
       <span class="count">Invalidated {generation} time{generation === 1 ? '' : 's'}</span>
     {/if}
   </div>
+
+  <DeleteInspector mochi:hydrate {deleted} />
 
   <h3>Shared original</h3>
   <div class="frame">

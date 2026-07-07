@@ -194,6 +194,10 @@ describe('ImageCache.invalidateOriginal cascade', () => {
 
     expect(deletes.map((d) => d.kind).sort()).toEqual(['original', 'placeholder', 'variant']);
     expect(deletes.every((d) => d.reason === 'invalidated')).toBe(true);
+    // Each delete reports the bytes it reclaimed (read from the stored blob).
+    expect(deletes.every((d) => d.size > 0)).toBe(true);
+    expect(deletes.find((d) => d.kind === 'original')?.size).toBe(3); // [1,2,3]
+    expect(deletes.find((d) => d.kind === 'variant')?.size).toBe(2); // [9,9]
     expect(await cache.getPlaceholder(SRC)).toBeNull();
   });
 
