@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import type { BunPlugin } from 'bun';
 import { isSvelteMarker, normalizeAssetPrefix, normalizeIslandHydrationMarkers, stripHydrationMarkers, toCompileErrorLogs, toPosixPath } from './utils';
 import { injectIslandPropsBlock } from './islandPropsRegistry';
-import { requestContext } from './requestContext';
+import { requestContext, renderDetached } from './requestContext';
 import type { DebugBarData } from './requestContext';
 import { logger } from './log';
 import { mochiEvents } from './events';
@@ -1305,13 +1305,14 @@ export class ComponentRegistry {
       return development ? e : new Error('Email render error');
     };
 
-    // `render()` returns a lazy thenable — the component only executes when the
-    // thenable is awaited (in a microtask). The exit callback must be `async`
-    // and `await` render *inside* it, so that deferred execution stays within
-    // the exited async context; otherwise `exit()` returns before the component
-    // runs and the ambient request context leaks back in. Isolation is why
-    // `getRequestContext()` throws in an email template regardless of call site.
-    const { body, head } = await requestContext.exit(async () => await render(mod.default, { ...(props ? { props } : {}), transformError }));
+    // Render fully detached from any ambient request context (see renderDetached).
+    // Read body/head inside the callback so materialization happens in the cleared
+    // scope — returning plain strings, never the live render object. Isolation is
+    // why `getRequestContext()` throws in an email template regardless of call site.
+    const { body, head } = await renderDetached(async () => {
+      const rendered = await render(mod.default, { ...(props ? { props } : {}), transformError });
+      return { body: rendered.body, head: rendered.head };
+    });
 
     let output = body;
 
