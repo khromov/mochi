@@ -107,6 +107,58 @@ export class MochiCache {
       mochiEvents.emit('cache:error', { key, operation: 'remove', error });
       throw error;
     }
+    mochiEvents.emit('cache:delete', { key });
+  }
+
+  /**
+   * Read a key's current status and value WITHOUT running `fn` or revalidating —
+   * a pure probe. Returns `null` on a miss (nothing cached). Unlike
+   * `fetchWithStatus` this never recomputes, emits no `cache:read`, and reports
+   * `'expired'` for an entry past `maxTimeToLive` rather than refreshing it.
+   */
+  async peek<T>(key: string): Promise<CacheResult<T> | null> {
+    const entry = await this.read(key);
+    if (entry == null) {
+      return null;
+    }
+    const age = this.now() - entry.createdAt;
+    const status: CacheStatus = age < this.minTimeToStale ? 'fresh' : age < this.maxTimeToLive ? 'stale' : 'expired';
+    return { value: entry.value as T, status };
+  }
+
+  /**
+   * Backdate a key so its next read is served stale-while-revalidate: rewrite the
+   * stored entry's `createdAt` to `now - minTimeToStale`, landing its age in the
+   * stale window `[minTimeToStale, maxTimeToLive)`. A no-op if the key is missing
+   * or already at-or-past that age (never makes an entry look fresher, never
+   * un-expires one). Works through the `Storage` interface, so it applies equally
+   * to `MemoryStorage` and `FileStorage`.
+   */
+  async markStale(key: string): Promise<void> {
+    // Drop any in-flight run first so its supersession guard trips and a pending
+    // revalidation can't overwrite the backdated timestamp.
+    this.inflight.delete(key);
+    let raw: unknown;
+    try {
+      raw = await this.storage.getItem(key);
+    } catch (error) {
+      mochiEvents.emit('cache:error', { key, operation: 'get', error });
+      return;
+    }
+    if (raw == null) {
+      return;
+    }
+    const entry = this.deserialize(raw) as CacheEntry;
+    const staleCreatedAt = this.now() - this.minTimeToStale;
+    if (entry.createdAt <= staleCreatedAt) {
+      return;
+    }
+    const next = this.serialize({ value: entry.value, createdAt: staleCreatedAt } satisfies CacheEntry);
+    try {
+      await this.storage.setItem(key, next);
+    } catch (error) {
+      mochiEvents.emit('cache:error', { key, operation: 'set', error });
+    }
   }
 
   async clearItems(): Promise<void> {

@@ -115,7 +115,10 @@ export function getImageRuntime(): ImageRuntime {
   if (!runtime) {
     const { options } = getMochiConfig();
     const resolved = resolveImageOptions(options.image as MochiImageOptions | undefined);
-    runtime = { options: resolved, cache: new ImageCache(resolved.cacheDir) };
+    runtime = {
+      options: resolved,
+      cache: new ImageCache({ cacheDir: resolved.cacheDir, minTimeToStale: resolved.timeToStale, maxTimeToLive: resolved.timeToEvict, sizes: resolved.sizes }),
+    };
     g[GLOBAL_KEY] = runtime;
   }
   return runtime;

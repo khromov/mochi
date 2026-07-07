@@ -26,7 +26,7 @@ function installRuntime(imageOptions: Record<string, unknown> = {}): ImageCache 
   const dir = mkdtempSync(join(tmpdir(), 'mochi-imgapi-'));
   dirs.push(dir);
   const resolved = resolveImageOptions({ ...imageOptions, cacheDir: dir });
-  const cache = new ImageCache(dir);
+  const cache = new ImageCache({ cacheDir: dir, minTimeToStale: resolved.timeToStale, maxTimeToLive: resolved.timeToEvict, sizes: resolved.sizes });
   (globalThis as unknown as Record<string, unknown>)[GLOBAL_RUNTIME_KEY] = { options: resolved, cache };
   return cache;
 }

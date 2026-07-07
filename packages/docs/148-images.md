@@ -31,18 +31,18 @@ await Mochi.serve({
 
 Transforms apply in a fixed order: **resize → rotate → flip → flop → modulate → format-encode**. Pipelines are validated at startup (bad dimensions/formats throw immediately). Redefining a size re-renders every URL that uses it — a config hash is folded into the cache key and `ETag`, so caches bust automatically.
 
-| Pipeline field                | Notes                                                              |
-| ----------------------------- | ------------------------------------------------------------------ |
-| `width` / `height`            | Target size; height-only derives width by ratio                    |
-| `fit`                         | `inside` keeps aspect & fits within W×H; `fill` stretches to W×H   |
-| `withoutEnlargement`          | Never upscale beyond the source's intrinsic size                   |
-| `rotate`                      | Degrees clockwise                                                  |
-| `flip` / `flop`               | Mirror vertically / horizontally                                   |
-| `modulate`                    | `{ brightness?, saturation?, hue?, lightness? }` (`1` = unchanged) |
-| `format`                      | `webp` \| `jpeg` \| `png` \| `avif` (default: `defaultFormat`)     |
-| `quality`                     | 1–100 (ignored for `png`; default: `defaultQuality`)               |
-| `autoOrient`                  | Apply EXIF orientation (default: the global `autoOrient`)          |
-| `timeToStale` / `timeToEvict` | Per-size cache-window overrides (ms)                               |
+| Pipeline field                | Default             | Notes                                                              |
+| ----------------------------- | ------------------- | ------------------------------------------------------------------ |
+| `width` / `height`            | —                   | Target size; height-only derives width by ratio                    |
+| `fit`                         | `'inside'`          | `inside` keeps aspect & fits within W×H; `fill` stretches to W×H   |
+| `withoutEnlargement`          | `false`             | Never upscale beyond the source's intrinsic size                   |
+| `rotate`                      | none                | Degrees clockwise                                                  |
+| `flip` / `flop`               | `false`             | Mirror vertically / horizontally                                   |
+| `modulate`                    | none                | `{ brightness?, saturation?, hue?, lightness? }` (`1` = unchanged) |
+| `format`                      | `defaultFormat`     | `webp` \| `jpeg` \| `png` \| `avif`                                |
+| `quality`                     | `defaultQuality`    | 1–100 (ignored for `png`)                                          |
+| `autoOrient`                  | global `autoOrient` | Apply EXIF orientation                                             |
+| `timeToStale` / `timeToEvict` | global (inherit)    | Per-size cache-window overrides (ms)                               |
 
 > `Bun.Image` supports only `fit: 'inside'` and `fit: 'fill'` — there is no crop/"cover" mode. To get an exact square from a non-square source use `fill` (which stretches); otherwise `inside` keeps the aspect ratio and the output won't fill both dimensions.
 
@@ -149,9 +149,9 @@ await Mochi.serve({
 - **Stale** (between `timeToStale` and `timeToEvict`): served immediately, source re-fetched in the background.
 - **Expired** (past `timeToEvict`): re-fetched synchronously.
 
-When the original is re-fetched, existing variants are served stale once more and regenerated from the new original in the background; when the original is evicted, its variants are dropped with it.
+A variant has no window of its own — its freshness mirrors the shared original at request time: while the original is fresh the variant serves from disk; once the original goes stale the variant is served stale and regenerated in the background; once it expires the variant is regenerated synchronously.
 
-Eviction is lazy — dead bytes linger on disk until the next request overwrites them. A background janitor reclaims them: every `sweepIntervalMs` (default 1 h, plus once shortly after boot) it deletes evicted originals and orphaned/superseded variants, logging one `CACHE image:sweep` line per run. Set `sweepIntervalMs: 0` to disable it.
+Eviction is lazy — entries past the cache window linger on disk until reclaimed. A background janitor reclaims them by age: every `sweepIntervalMs` (default 1 h, plus once shortly after boot) it deletes entries past `timeToEvict`, logging one `CACHE image:sweep` line per run. A hard `invalidateImage()` additionally drops a source's variants and placeholder right away. Set `sweepIntervalMs: 0` to disable the janitor.
 
 Served images carry both an `ETag` (tied to the cache generation and the size config hash) and a `Cache-Control` derived from the cache window — `public, max-age=<timeToStale>, stale-while-revalidate=<timeToEvict − timeToStale>`. Within `max-age` the browser serves from its own cache with no round-trip; after it, the `stale-while-revalidate` window lets it paint the cached copy instantly while revalidating in the background. The URL is stable per `(src, size)`, so once `max-age` lapses, correctness across a source refresh or a size redefinition rides on the `ETag`.
 
@@ -159,7 +159,7 @@ The trade-off of a non-zero `max-age` is that `invalidateImage()` only reaches a
 
 ### Invalidation
 
-Invalidate a source immediately. It operates on the shared original, so it cascades to every variant — and to the ThumbHash placeholder, which is bound to the original's generation and recomputes once the source has been re-fetched:
+Invalidate a source immediately. It operates on the shared original, so it cascades to every variant — and to the ThumbHash placeholder:
 
 ```ts
 import { invalidateImage } from 'mochi-framework';

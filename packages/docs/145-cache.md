@@ -53,14 +53,18 @@ Use it from a page or API route:
 
 ### API
 
-| Method                     | Returns                      |
-| -------------------------- | ---------------------------- |
-| `fetch(key, fn)`           | `Promise<T>`                 |
-| `fetchWithStatus(key, fn)` | `Promise<{ value, status }>` |
-| `delete(key)`              | `Promise<void>`              |
-| `clearItems()`             | `Promise<void>`              |
+| Method                     | Returns                              |
+| -------------------------- | ------------------------------------ |
+| `fetch(key, fn)`           | `Promise<T>`                         |
+| `fetchWithStatus(key, fn)` | `Promise<{ value, status }>`         |
+| `peek(key)`                | `Promise<{ value, status } \| null>` |
+| `markStale(key)`           | `Promise<void>`                      |
+| `delete(key)`              | `Promise<void>`                      |
+| `clearItems()`             | `Promise<void>`                      |
 
 `clearItems()` empties the whole cache in one call.
+
+`peek(key)` reports a key's current `status` and value **without** running `fn`, revalidating, or emitting `cache:read` — a pure probe (returns `null` on a miss). `markStale(key)` backdates an entry so its next read is served stale-while-revalidate; it's a no-op on a missing or already-stale key and never freshens or un-expires one. Both work through the `storage` interface, so they apply to any backend.
 
 `status` is `'fresh' \| 'stale' \| 'expired' \| 'miss'`.
 
@@ -95,6 +99,8 @@ export const pokemonCache = new MochiCache({
 
 Stale-while-revalidate works exactly as with in-memory storage — the entry's write time lives inside the file. A background sweep runs on an interval to delete expired files (there's no read-time eviction otherwise), and `purgeOnInit` empties the directory on startup.
 
+Binary fields (`Uint8Array` / `Buffer`) anywhere in a value are offloaded transparently: each is written to its own file in a `<key-hash>/` folder and replaced by a pointer in the JSON, so large binaries (e.g. image bytes) don't base64-bloat it. On read they come back as lazy blob references — resolve one with `readBlobRef(ref)` (`isBlobRef(value)` narrows) — so a metadata read never loads the bytes. Deleting a key removes its blob folder with it.
+
 | Option          | Default           |                                                                  |
 | --------------- | ----------------- | ---------------------------------------------------------------- |
 | `directory`     | _(required)_      | Where cache files are written; created if missing.               |
@@ -124,6 +130,7 @@ If a `storage` call throws, the cache degrades instead of failing the request: a
 | ------------------------- | --------------------------- | ------------------------------------------------------------ |
 | `cache:read`              | `{ key, status }`           | Every cache lookup, regardless of which method ran.          |
 | `cache:revalidate`        | `{ key }`                   | A background refetch starts (stale read).                    |
+| `cache:delete`            | `{ key }`                   | A key was removed via `delete(key)`.                         |
 | `cache:sweep`             | `{ removed, durationMs }`   | A `FileStorage` background sweep deleted expired files.      |
 | `cache:revalidate:failed` | `{ key, error }`            | A background refetch threw; the stale value is still served. |
 | `cache:error`             | `{ key, operation, error }` | A `storage` `get` / `set` / `remove` call threw.             |

@@ -3,7 +3,7 @@ import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { MochiCache } from './cache';
-import { FileStorage } from './cache-storage';
+import { FileStorage, isBlobRef, readBlobRef, type BlobRef } from './cache-storage';
 import { mochiEvents } from './events';
 
 const wait = Bun.sleep;
@@ -117,7 +117,7 @@ describe('FileStorage', () => {
     await storage.setItem('k', { value: 1, createdAt: 0 });
 
     // Nothing expired yet.
-    expect(await storage.sweep()).toEqual({ removed: 0 });
+    expect(await storage.sweep()).toEqual({ removed: 0, freedBytes: 0 });
     expect(await storage.getItem('k')).not.toBeNull();
 
     // Advance the clock past maxAge relative to the file's mtime.
@@ -227,5 +227,82 @@ describe('MochiCache with FileStorage (stale-while-revalidate)', () => {
     created.push(reopened);
     const entry = (await reopened.getItem('k')) as { value: number } | null;
     expect(entry?.value).toBe(2);
+  });
+});
+
+describe('FileStorage binary offload', () => {
+  function countDirs(dir: string): number {
+    return readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory()).length;
+  }
+
+  test('offloads a binary field to a nested folder and resolves it lazily', async () => {
+    const dir = makeDir();
+    const storage = new FileStorage({ directory: dir, purgeInterval: 0 });
+    created.push(storage);
+
+    const bytes = new Uint8Array([1, 2, 3, 4, 5]);
+    await storage.setItem('img', { value: { meta: 'hi', bytes }, createdAt: 7 });
+
+    // The JSON no longer carries the raw bytes; a blob folder holds them.
+    expect(countDirs(dir)).toBe(1);
+
+    const raw = (await storage.getItem('img')) as { value: { meta: string; bytes: BlobRef }; createdAt: number };
+    expect(raw.value.meta).toBe('hi');
+    expect(raw.createdAt).toBe(7);
+    // Binary field comes back as a lazy ref, not eagerly-loaded bytes.
+    expect(isBlobRef(raw.value.bytes)).toBe(true);
+    expect(raw.value.bytes.bytes).toBe(5);
+    expect(Array.from(await readBlobRef(raw.value.bytes))).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  test('removeItem reclaims the blob folder with the JSON', async () => {
+    const dir = makeDir();
+    const storage = new FileStorage({ directory: dir, purgeInterval: 0 });
+    created.push(storage);
+
+    await storage.setItem('img', { value: { bytes: new Uint8Array([9]) }, createdAt: 0 });
+    expect(countDirs(dir)).toBe(1);
+    await storage.removeItem('img');
+    expect(readdirSync(dir)).toHaveLength(0);
+  });
+
+  test('clear removes blob folders too', async () => {
+    const dir = makeDir();
+    const storage = new FileStorage({ directory: dir, purgeInterval: 0 });
+    created.push(storage);
+
+    await storage.setItem('a', { value: { bytes: new Uint8Array([1]) }, createdAt: 0 });
+    await storage.setItem('b', { value: { bytes: new Uint8Array([2]) }, createdAt: 0 });
+    await storage.clear();
+    expect(readdirSync(dir)).toHaveLength(0);
+  });
+
+  test('sweep reclaims aged-out blob folders and reports freed bytes', async () => {
+    const dir = makeDir();
+    const storage = new FileStorage({ directory: dir, purgeInterval: 0, maxAge: 1_000 });
+    created.push(storage);
+
+    await storage.setItem('img', { value: { bytes: new Uint8Array([1, 2, 3]) }, createdAt: 0 });
+    expect(countDirs(dir)).toBe(1);
+
+    const swept = await storage.sweep(Date.now() + 10_000);
+    expect(swept.removed).toBe(1);
+    expect(swept.freedBytes).toBeGreaterThan(0);
+    expect(readdirSync(dir)).toHaveLength(0); // json + blob folder both gone
+  });
+
+  test('re-persisting a read-back value keeps the existing blob (markStale path)', async () => {
+    const dir = makeDir();
+    const storage = new FileStorage({ directory: dir, purgeInterval: 0 });
+    const cache = new MochiCache({ minTimeToStale: 50, maxTimeToLive: 10_000, storage });
+    created.push(storage);
+
+    await cache.fetch('img', () => ({ bytes: new Uint8Array([5, 5, 5]) }));
+    await cache.markStale('img'); // reads the BlobRef back and re-persists the envelope
+    const after = (await storage.getItem('img')) as { value: { bytes: BlobRef } };
+    expect(isBlobRef(after.value.bytes)).toBe(true);
+    expect(Array.from(await readBlobRef(after.value.bytes))).toEqual([5, 5, 5]);
+    // Still exactly one blob folder — markStale reused it rather than orphaning one.
+    expect(countDirs(dir)).toBe(1);
   });
 });

@@ -21,6 +21,7 @@ import { files as helloWorld } from '../demos/hello-world/files.ts';
 import { files as hydratable } from '../demos/hydratable/files.ts';
 import { files as hydration } from '../demos/hydration/files.ts';
 import { files as image } from '../demos/image/files.ts';
+import { files as imageInvalidation } from '../demos/image-invalidation/files.ts';
 import { files as imageEvents } from '../demos/image-events/files.ts';
 import { files as imagePipeline } from '../demos/image-pipeline/files.ts';
 import { files as islandDepth } from '../demos/island-depth/files.ts';
@@ -149,6 +150,14 @@ export const demos: Demo[] = [
     files: image,
     title: 'Image Pipelines',
     hook: 'On-the-fly image transforms via named sizes, served from an encrypted, stale-while-revalidate disk cache. <Image> only mints a URL; the endpoint does the work.',
+    category: 'data',
+  },
+  {
+    href: '/demos/image-invalidation/',
+    slug: 'image-invalidation',
+    files: imageInvalidation,
+    title: 'Image Invalidation',
+    hook: 'Clear a cached image on demand with invalidateImage() — hard-evict the shared original and watch every named size re-fetch in lockstep.',
     category: 'data',
   },
   {

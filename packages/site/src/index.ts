@@ -140,6 +140,11 @@ await Mochi.serve({
   // Named image sizes used by the /demos/image* pages (kept in sync with the
   // example shown in ./src/demoIndex.ts).
   image: {
+    // The image-invalidation demo sources from our own loopback endpoint, which the
+    // SSRF guard would otherwise reject as a private address. Safe here: every image
+    // src on this site is hardcoded and server-minted (encrypted URLs), never taken
+    // from user input, so there's no arbitrary-fetch vector to protect against.
+    blockPrivateNetworks: false,
     sizes: {
       hero: { width: 600, height: 400, fit: 'inside' },
       square: { width: 400, height: 400, fit: 'inside' },

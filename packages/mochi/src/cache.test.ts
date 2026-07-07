@@ -458,3 +458,84 @@ describe('MochiCache storage-error resilience', () => {
     expect(errors).toEqual([{ key: 'k', operation: 'remove', error: expect.any(Error) }]);
   });
 });
+
+describe('MochiCache.peek', () => {
+  test('reports status without running fn or emitting cache:read', async () => {
+    const cache = new MochiCache({ minTimeToStale: 50, maxTimeToLive: 5_000 });
+    const reads: string[] = [];
+    mochiEvents.on('cache:read', ({ status }) => reads.push(status));
+
+    expect(await cache.peek('k')).toBeNull(); // miss, no recompute
+
+    let calls = 0;
+    await cache.fetch('k', () => {
+      calls++;
+      return 'v';
+    });
+    reads.length = 0;
+
+    const peeked = await cache.peek<string>('k');
+    expect(peeked).toEqual({ value: 'v', status: 'fresh' });
+    expect(calls).toBe(1); // peek never ran fn
+    expect(reads).toEqual([]); // peek emits no cache:read
+  });
+
+  test('reports expired for an entry past maxTimeToLive without refreshing it', async () => {
+    const cache = new MochiCache({ minTimeToStale: 5, maxTimeToLive: 10 });
+    let calls = 0;
+    await cache.fetch('k', () => {
+      calls++;
+      return 'v';
+    });
+    await wait(20);
+    expect((await cache.peek('k'))?.status).toBe('expired');
+    expect(calls).toBe(1); // still not recomputed
+  });
+});
+
+describe('MochiCache.markStale', () => {
+  test('makes a fresh entry serve stale + revalidate on the next read', async () => {
+    const cache = new MochiCache({ minTimeToStale: 10_000, maxTimeToLive: 100_000 });
+    let calls = 0;
+    const fn = () => {
+      calls++;
+      return `v${calls}`;
+    };
+
+    await cache.fetch('k', fn);
+    expect((await cache.peek('k'))?.status).toBe('fresh');
+
+    await cache.markStale('k');
+    expect((await cache.peek('k'))?.status).toBe('stale');
+
+    const result = await cache.fetchWithStatus('k', fn);
+    expect(result).toEqual({ value: 'v1', status: 'stale' }); // stale value served
+    await wait(20);
+    expect(calls).toBe(2); // revalidated in the background
+  });
+
+  test('is a no-op on a missing key and never freshens an already-stale entry', async () => {
+    const cache = new MochiCache({ minTimeToStale: 10, maxTimeToLive: 100_000 });
+    await expect(cache.markStale('missing')).resolves.toBeUndefined();
+
+    await cache.fetch('k', () => 'v');
+    await wait(20); // now already stale
+    const before = (await cache.peek('k'))!;
+    await cache.markStale('k');
+    const after = (await cache.peek('k'))!;
+    expect(after.status).toBe('stale');
+    expect(after.value).toBe(before.value); // value untouched
+  });
+});
+
+describe('MochiCache cache:delete event', () => {
+  test('delete emits cache:delete with the key', async () => {
+    const cache = new MochiCache({ minTimeToStale: 1_000, maxTimeToLive: 5_000 });
+    const deleted: string[] = [];
+    mochiEvents.on('cache:delete', ({ key }) => deleted.push(key));
+
+    await cache.fetch('k', () => 'v');
+    await cache.delete('k');
+    expect(deleted).toEqual(['k']);
+  });
+});

@@ -187,6 +187,12 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
     path: payload.key,
     note: styleText('cyan', 'revalidate'),
   }));
+  subscribe('cache:delete', (payload) => ({
+    label: 'CACHE',
+    path: payload.key,
+    note: styleText('dim', 'delete'),
+    level: 'debug',
+  }));
   subscribe('cache:sweep', ({ removed, durationMs }) => ({
     label: 'CACHE',
     path: 'sweep',

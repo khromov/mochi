@@ -86,6 +86,11 @@ export interface MochiCacheRevalidateEvent {
   key: string;
 }
 
+export interface MochiCacheDeleteEvent {
+  /** The key that was removed from the cache. */
+  key: string;
+}
+
 export interface MochiCacheSweepEvent {
   /** Expired entries deleted by this sweep. */
   removed: number;
@@ -375,6 +380,7 @@ export type MochiEventMap = {
   'island:error': MochiIslandErrorEvent;
   'cache:read': MochiCacheReadEvent;
   'cache:revalidate': MochiCacheRevalidateEvent;
+  'cache:delete': MochiCacheDeleteEvent;
   'cache:sweep': MochiCacheSweepEvent;
   'image:cache-sweep': MochiImageCacheSweepEvent;
   'image:store': MochiImageStoreEvent;

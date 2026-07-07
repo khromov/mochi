@@ -33,6 +33,7 @@ import Snowflake from '@lucide/svelte/icons/snowflake';
 import Fingerprint from '@lucide/svelte/icons/fingerprint';
 import Link from '@lucide/svelte/icons/link';
 import ImageIcon from '@lucide/svelte/icons/image';
+import ImageOff from '@lucide/svelte/icons/image-off';
 import CloudUpload from '@lucide/svelte/icons/cloud-upload';
 import WandSparkles from '@lucide/svelte/icons/wand-sparkles';
 import MonitorSmartphone from '@lucide/svelte/icons/monitor-smartphone';
@@ -95,6 +96,7 @@ export const demoIconFor: Record<string, DemoIconMeta> = {
   'Cookie Vary Test': { icon: Fingerprint, label: 'Response-driven Vary: Cookie' },
   'Isomorphic URL': { icon: Link, label: 'Same url import on server and client' },
   'Image Pipelines': { icon: ImageIcon, label: 'Encrypted, cached image transforms via named sizes' },
+  'Image Invalidation': { icon: ImageOff, label: 'Clear a cached image on demand with invalidateImage()' },
   'Image Events': { icon: CloudUpload, label: 'Mirror the <Image> cache via image:store / image:delete' },
   'Named sizes': { icon: WandSparkles, label: 'Declarative named Bun.Image transform sizes' },
   'View Transitions': { icon: Blend, label: 'Animated cross-document navigations' },
