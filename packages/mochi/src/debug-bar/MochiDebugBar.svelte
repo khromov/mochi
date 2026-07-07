@@ -9,10 +9,12 @@
   import InfoPanel from './InfoPanel.svelte';
   import SettingsPanel from './SettingsPanel.svelte';
   import Settings from '../icons/settings.svelte';
+  import Mail from '../icons/mail.svelte';
   import { cleanupHighlight } from './highlight';
   import { debugBarState } from './state.svelte';
   import { getPropsWarnLevel, formatSize } from './utils';
   import { HIDDEN_PANELS_KEY, parseHiddenPanels, type ConfigurablePanel } from './panelSettings';
+  import { UNREAD_EMAILS_KEY, loadUnreadEmailIds } from './unread';
 
   const STORAGE_KEY = 'mochi:debug:collapsed';
 
@@ -21,6 +23,24 @@
 
   let hasDebugInfo = $state(false);
   let collapsed = $state(false);
+
+  // The email viewer only exists when the `dev` transport is active, so gate the
+  // toolbar link on the config snapshot rather than always showing it.
+  let emailHref = $state<string | null>(null);
+
+  // Ids of dev emails captured but not yet read in the outbox. Persisted in
+  // localStorage so the badge survives reloads and stays in sync across tabs:
+  // LiveReload's `mochi:email-new` adds ids, the outbox's `mochi:outbox-sync`
+  // removes read/cleared ones, and `storage` events mirror other tabs.
+  let unreadIds = $state<string[]>([]);
+
+  function persistUnread() {
+    try {
+      localStorage.setItem(UNREAD_EMAILS_KEY, JSON.stringify(unreadIds));
+    } catch {
+      /* storage blocked */
+    }
+  }
 
   function safeGetItem(key: string): string | null {
     try {
@@ -77,6 +97,33 @@
     }
   }
 
+  function handleNewEmail(e: Event) {
+    const id = (e as CustomEvent<{ id?: string }>).detail?.id;
+    if (typeof id === 'string' && !unreadIds.includes(id)) {
+      unreadIds = [...unreadIds, id];
+      persistUnread();
+    }
+  }
+
+  // The outbox reports the message being read plus every id it still holds, so we
+  // drop the read one and prune ids that were cleared away (avoids a stuck badge).
+  function handleOutboxSync(e: Event) {
+    const detail = (e as CustomEvent<{ viewedId?: string | null; allIds?: string[] }>).detail;
+    const existing = new Set(Array.isArray(detail?.allIds) ? detail.allIds : []);
+    const viewedId = typeof detail?.viewedId === 'string' ? detail.viewedId : null;
+    const next = unreadIds.filter((id) => existing.has(id) && id !== viewedId);
+    if (next.length !== unreadIds.length) {
+      unreadIds = next;
+      persistUnread();
+    }
+  }
+
+  function handleStorage(e: StorageEvent) {
+    if (e.key === UNREAD_EMAILS_KEY) {
+      unreadIds = loadUnreadEmailIds();
+    }
+  }
+
   let warnLevel = $derived(getPropsWarnLevel(debugBarState.totalPropsSize));
 
   let bundleSizeLabel = $derived(debugBarState.displayBundleSize > 0 ? formatSize(debugBarState.displayBundleSize) : '0');
@@ -85,15 +132,25 @@
 
   onMount(() => {
     hasDebugInfo = !!window.__mochi_debug;
+    if (window.__mochi_debug?.config?.email === 'dev') {
+      emailHref = `${window.__mochi_asset_prefix ?? ''}/email`;
+    }
     try {
       collapsed = localStorage.getItem(STORAGE_KEY) === '1';
     } catch {
       /* storage blocked */
     }
+    unreadIds = loadUnreadEmailIds();
     document.addEventListener('click', handleDocumentClick);
+    window.addEventListener('mochi:email-new', handleNewEmail);
+    window.addEventListener('mochi:outbox-sync', handleOutboxSync);
+    window.addEventListener('storage', handleStorage);
 
     return () => {
       document.removeEventListener('click', handleDocumentClick);
+      window.removeEventListener('mochi:email-new', handleNewEmail);
+      window.removeEventListener('mochi:outbox-sync', handleOutboxSync);
+      window.removeEventListener('storage', handleStorage);
     };
   });
 
@@ -155,6 +212,20 @@
       {/if}
       {#if hasDebugInfo && !hiddenPanels.includes('info')}
         <button class="btn info-btn" onclick={() => toggle('info')} tabindex={collapsed ? -1 : 0}>Info</button>
+      {/if}
+      {#if emailHref}
+        <a
+          class="btn email-btn"
+          href={emailHref}
+          target="_blank"
+          rel="noopener"
+          tabindex={collapsed ? -1 : 0}
+          aria-label={unreadIds.length > 0 ? `Open dev email outbox (${unreadIds.length} unread)` : 'Open dev email outbox'}
+          title={unreadIds.length > 0 ? `${unreadIds.length} unread email${unreadIds.length > 1 ? 's' : ''}` : 'Dev email outbox'}
+        >
+          <Mail size={12} />
+          <span class="email-badge" class:has-new={unreadIds.length > 0}>{unreadIds.length}</span>
+        </a>
       {/if}
       <button class="btn settings-btn" onclick={() => toggle('settings')} tabindex={collapsed ? -1 : 0} aria-label="Configure panels" title="Configure panels">
         <Settings size={12} />
@@ -388,6 +459,36 @@
     background: #383248;
     color: #e0d8ee;
     border-color: #b8a3c4;
+  }
+  .email-btn {
+    padding: 0.3em 0.45em;
+    background: #2a3a2f;
+    color: #a7c9a8;
+    border-color: #4a6354;
+  }
+  .email-btn:hover {
+    background: #34463a;
+    color: #c8e8c8;
+    border-color: #8ab79a;
+  }
+  .email-badge {
+    border-radius: 999px;
+    min-width: 1.4em;
+    height: 1.4em;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.82em;
+    font-weight: 700;
+    padding: 0 0.4em;
+    background: #434836;
+    color: #c7cabf;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    letter-spacing: 0;
+  }
+  .email-badge.has-new {
+    background: #e85454;
+    color: #ffffff;
   }
   .settings-btn {
     padding: 0.3em 0.45em;

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import type { MochiServeOptions } from './types';
 import { applyFilter, initExtensions, runHook, type MochiFilterContext } from './extensions';
 import type { IslandPropsEntry } from './islandPropsRegistry';
+import type { ResolvedEmailMessage } from './email/types';
 
 const fakeOptions = {} as MochiServeOptions;
 
@@ -458,6 +459,53 @@ describe('new extension points', () => {
     const ctx = { src: 'https://example.com/photo.jpg', filename: 'photo-original.jpg' };
     expect(applyFilter('image:url', '/a?p=t', { ...ctx, original: true })).toBe('https://originals.example.com/a?p=t');
     expect(applyFilter('image:url', '/a?p=t', { ...ctx, original: false })).toBe('/a?p=t');
+  });
+
+  const fakeResolved = (overrides: Partial<ResolvedEmailMessage> = {}): ResolvedEmailMessage => ({
+    from: 'noreply@test.dev',
+    to: ['user@example.com'],
+    subject: 'Hi',
+    html: '<p>Hello</p>',
+    text: 'Hello',
+    ...overrides,
+  });
+
+  test('email:message resolves to the input message unchanged when no filter registered', async () => {
+    const input = fakeResolved();
+    const result = await applyFilter('email:message', input, { transport: 'dev' });
+    expect(result).toBe(input);
+  });
+
+  test('email:message can rewrite the outgoing message (inject a header)', async () => {
+    initExtensions({
+      filters: {
+        'email:message': (msg) => ({ ...msg, headers: { ...msg.headers, 'List-Unsubscribe': '<mailto:x@y.dev>' } }),
+      },
+    });
+    const result = await applyFilter('email:message', fakeResolved(), { transport: 'smtp' });
+    expect(result?.headers?.['List-Unsubscribe']).toBe('<mailto:x@y.dev>');
+  });
+
+  test('email:message returning null vetoes the send', async () => {
+    initExtensions({
+      filters: {
+        'email:message': () => null,
+      },
+    });
+    const result = await applyFilter('email:message', fakeResolved(), { transport: 'dev' });
+    expect(result).toBeNull();
+  });
+
+  test('email:message can branch on the configured transport in context', async () => {
+    initExtensions({
+      filters: {
+        'email:message': (msg, { transport }) => (transport === 'smtp' ? { ...msg, to: ['catchall@test.dev'] } : msg),
+      },
+    });
+    const rerouted = await applyFilter('email:message', fakeResolved(), { transport: 'smtp' });
+    expect(rerouted?.to).toEqual(['catchall@test.dev']);
+    const untouched = await applyFilter('email:message', fakeResolved(), { transport: 'dev' });
+    expect(untouched?.to).toEqual(['user@example.com']);
   });
 
   test('trailingSlash:redirect can suppress the redirect for a specific path', () => {

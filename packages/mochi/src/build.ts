@@ -1,5 +1,8 @@
 import { checkEnvironment } from './checkEnvironment';
 import { ComponentRegistry, formatCompileErrors } from './ComponentRegistry';
+import { buildInlineWebComponent } from './buildInlineWebComponent';
+import { DEFAULT_ERROR_PAGE_PATH } from './errors';
+import { CLIENT_STATS_COMPONENT } from './clientStatsRoutes';
 import { isMochiPage, isMochiApi, isMochiWs, isMochiSse } from './types';
 import type { MarkdownConfig, MochiRouteValue, MochiSvelteShakerOptions } from './types';
 import { rmSync, mkdirSync } from 'node:fs';
@@ -46,6 +49,12 @@ export interface MochiBuildOptions {
    * runtime agree. Default: `false`.
    */
   optimize?: boolean | MochiSvelteShakerOptions;
+  /**
+   * Path to a custom error page component. Mirror the value passed to
+   * `Mochi.serve({ errorPage })` so it lands in the manifest and the runtime
+   * skips compiling it at startup. Default: Mochi's built-in error page.
+   */
+  errorPage?: string;
 }
 
 type RouteKind = 'page' | 'api' | 'ws' | 'sse';
@@ -93,7 +102,10 @@ export async function build(options: MochiBuildOptions): Promise<void> {
   // (devalue, mochi-framework internals) emit as shared chunks alongside the
   // per-page `.server.js` files instead of being inlined into every page.
   const compiledPages: string[] = [];
-  const ssrEntrypoints: string[] = [];
+  // Seed with the framework components that Mochi.serve() otherwise compiles at
+  // startup (the error page + the client-stats admin page). Baking them into the
+  // manifest makes the boot-time compileAll a no-op in production.
+  const ssrEntrypoints: string[] = [options.errorPage ?? DEFAULT_ERROR_PAGE_PATH, CLIENT_STATS_COMPONENT];
   const allRoutes: RouteEntry[] = [];
 
   const compileStats = new Map<string, { ssrSizeBytes: number; hydratableCount: number }>();
@@ -183,6 +195,13 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     publicFiles.set(urlPath, destPath);
   }
   registry.setPublicFiles(publicFiles);
+
+  // Prebuild the framework's ServerIsland inline web-component script so the
+  // production runtime loads it from disk instead of running Bun.build at boot.
+  const serverIslandScriptPath = path.join(outDir, 'server-island.js');
+  const serverIslandJs = await buildInlineWebComponent('./web-components/ServerIsland.ts');
+  await Bun.write(serverIslandScriptPath, serverIslandJs);
+  registry.setServerIslandScript(serverIslandScriptPath, serverIslandJs);
 
   // Write manifest
   const manifestPath = path.join(outDir, 'manifest.json');

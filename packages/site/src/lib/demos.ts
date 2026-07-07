@@ -6,6 +6,7 @@ import { files as clientOnly } from '../demos/client-only/files.ts';
 import { files as cookieVaryTest } from '../demos/cookie-vary-test/files.ts';
 import { files as cookies } from '../demos/cookies/files.ts';
 import { files as dataLoading } from '../demos/data-loading/files.ts';
+import { files as email } from '../demos/email/files.ts';
 import { files as entityProps } from '../demos/entity-props/files.ts';
 import { files as error } from '../demos/error/files.ts';
 import { files as errorBoundaries } from '../demos/error-boundaries/files.ts';
@@ -332,6 +333,14 @@ export const demos: Demo[] = [
     files: login,
     title: 'Form Actions',
     hook: 'A login form rendered twice — plain HTML POST and intercepted with {@attach enhance(...)}.',
+    category: 'forms',
+  },
+  {
+    href: '/demos/email/',
+    slug: 'email',
+    files: email,
+    title: 'Send Email',
+    hook: 'Send a pre-written email through Mochi.email() and read it back in the /_mochi/email dev outbox.',
     category: 'forms',
   },
   {

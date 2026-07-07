@@ -57,6 +57,7 @@
       { key: 'CSRF', value: onOff(config.csrf), muted: !config.csrf },
       { key: 'Proxy', value: onOff(config.proxy), muted: !config.proxy },
       { key: 'Markdown', value: onOff(config.markdown), muted: !config.markdown },
+      { key: 'Email', value: config.email, muted: config.email === 'log' },
       { key: 'Routes', value: String(config.routeCount), muted: false },
     ];
     return rows;

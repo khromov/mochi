@@ -45,6 +45,7 @@ import Inbox from '@lucide/svelte/icons/inbox';
 import SquareStack from '@lucide/svelte/icons/square-stack';
 import Layers2 from '@lucide/svelte/icons/layers-2';
 import Ampersand from '@lucide/svelte/icons/ampersand';
+import Mail from '@lucide/svelte/icons/mail';
 
 export interface DemoIconMeta {
   icon: Component;
@@ -78,6 +79,7 @@ export const demoIconFor: Record<string, DemoIconMeta> = {
   'Nested Island Max Depth': { icon: Layers2, label: 'Server islands nested several levels deep' },
   'Shared Props': { icon: Boxes, label: 'Auto-deduplicated island props' },
   'Unique IDs': { icon: Hash, label: 'Native $props.id() in islands' },
+  'Send Email': { icon: Mail, label: 'Send a transactional email' },
   'Form Actions': { icon: ClipboardPen, label: 'Forms with action handlers' },
   'Using form return data': { icon: Dices, label: 'success({ value }) round-trip via {@attach enhance(...)}' },
   'Form Errors': { icon: OctagonAlert, label: 'Thrown server errors, inline or full-page' },

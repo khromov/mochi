@@ -24,6 +24,17 @@ export type { FileStorageOptions } from './cache-storage';
 export { getImageUrl, getImageAttrs, getImage, getImagePlaceholder, imagePlaceholder, warmImagePlaceholder, invalidateImage } from './image/imageApi';
 export type { ResolvedImage, ImageAttrs } from './image/imageApi';
 export type { MochiImageOptions, ImageSize, InvalidateImageOptions, ImageFormat, ImageFit } from './image/types';
+export { EmailError } from './email/types';
+export type {
+  MochiEmailOptions,
+  MochiEmailMessage,
+  MochiEmailResult,
+  MochiEmailAttachment,
+  MochiEmailTransportConfig,
+  MochiEmailSendFn,
+  MochiSmtpConfig,
+  ResolvedEmailMessage,
+} from './email/types';
 export { sequence } from './hooks';
 export { compress } from './middleware/compress';
 export type { CompressOptions } from './middleware/compress';
@@ -66,6 +77,8 @@ export type {
   MochiQueueCompletedEvent,
   MochiQueueFailedEvent,
   MochiQueueErrorEvent,
+  MochiEmailSentEvent,
+  MochiEmailErrorEvent,
   MochiServerStartEvent,
   MochiServerStopEvent,
   MochiWarmupStartEvent,

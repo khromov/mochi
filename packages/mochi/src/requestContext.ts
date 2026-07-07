@@ -31,12 +31,15 @@ export interface MochiRequestContext {
   /** Cookie jar for reading/writing cookies within this request. */
   cookies: MochiCookieJar;
   /**
-   * Per-request hydratable-island props dedup registry, keyed by serialized
-   * JSON payload, valued by ref id (e.g. "mochi-props-3") plus the number of
-   * islands that emitted that exact payload. Populated by `emitIslandProps()`
-   * during SSR; consumed by `ComponentRegistry`, which emits each payload as a
+   * Hydratable-island props dedup registry, keyed by serialized JSON payload,
+   * valued by ref id (e.g. "mochi-props-3") plus the number of islands that
+   * emitted that exact payload. Populated by `emitIslandProps()` during SSR;
+   * consumed by `ComponentRegistry`, which emits each payload as a
    * `<script type="application/json">` block before its first island and marks
    * blocks reused by >=2 islands with `data-shared` in the rendered HTML.
+   * Effectively per-render scratch space: `renderComponent` clears it at the
+   * start of every render, so sequential same-ctx renders (error page after a
+   * failed render, an action re-render) don't clobber each other.
    * Internal — not for application use.
    */
   islandProps: Map<string, IslandPropsEntry>;
@@ -163,6 +166,8 @@ export interface DebugBarConfig {
   csrf: boolean;
   proxy: boolean;
   markdown: boolean;
+  /** Active email transport type. `dev` gates the toolbar's email-viewer link. */
+  email: 'log' | 'dev' | 'smtp' | 'custom';
   routeCount: number;
 }
 

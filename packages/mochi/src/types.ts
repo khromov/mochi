@@ -5,6 +5,7 @@ import type { MochiCsrfOptions } from './csrf';
 import type { MochiFilters, MochiHooks } from './extensions';
 import type { MochiProxyOptions } from './proxy';
 import type { MochiImageOptions } from './image/types';
+import type { MochiEmailOptions } from './email/types';
 import type { MochiProcessor, MochiQueueListeners, MochiQueueRuntimeOptions } from './queue';
 
 export type MochiServerPropsResolver = (req: Request, params: Record<string, string>) => Record<string, unknown> | Promise<Record<string, unknown>>;
@@ -383,6 +384,12 @@ export interface MochiManifest {
   importedCssUrls?: Record<string, string>;
   /** Maps page entry .svelte path → list of CSS-import paths reachable from it */
   entryImportedCss?: Record<string, string[]>;
+  /**
+   * Disk path (project-root-relative) to the prebuilt, minified ServerIsland
+   * inline web-component script. Emitted by `build()` so the production runtime
+   * loads it from disk instead of running a `Bun.build` at startup.
+   */
+  serverIslandScript?: string;
 }
 
 /**
@@ -632,6 +639,14 @@ export interface MochiServeOptions {
    * defaults; pass `{ enabled: false }` to turn it off. See `MochiImageOptions`.
    */
   image?: MochiImageOptions;
+  /**
+   * Transactional email. Configures `Mochi.email(...)` with a default `from`
+   * and a pluggable `transport` (SMTP, a custom-send function for HTTP email
+   * APIs, or the default `log` transport that logs instead of sending). See
+   * `MochiEmailOptions`. Default: unconfigured — the `log` transport is used
+   * and no mail is sent.
+   */
+  email?: MochiEmailOptions;
   /**
    * Run the whole-program [svelte-shaker](https://github.com/baseballyama/svelte-shaker)
    * pass before compiling, slimming `.svelte` source (prop folding, dead-branch

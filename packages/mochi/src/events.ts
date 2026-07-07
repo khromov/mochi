@@ -1,5 +1,6 @@
 import mitt, { type Emitter, type Handler } from 'mitt';
 import { pinGlobal } from './globalState';
+import type { MochiEmailResult } from './email/types';
 
 export type MochiRequestKind = 'page' | 'api' | 'file' | 'asset' | 'image' | 'fallback' | 'error';
 
@@ -193,6 +194,29 @@ export interface MochiQueueErrorEvent {
   error: string;
 }
 
+export interface MochiEmailSentEvent {
+  /** Recipient addresses. */
+  to: string[];
+  subject: string;
+  /** Which transport delivered it. */
+  transport: MochiEmailResult['transport'];
+  /** Provider/SMTP message id, when the transport returns one. */
+  messageId?: string;
+  /** Send wall-clock duration in ms. */
+  duration: number;
+}
+
+export interface MochiEmailErrorEvent {
+  to: string[];
+  /** Cc/bcc recipients, carried so the console logger can scrub them out of the error string under `filterPii: true` (a transport error may echo a bcc address). */
+  cc?: string[];
+  bcc?: string[];
+  subject: string;
+  transport: MochiEmailResult['transport'];
+  /** Message of the error the transport threw. */
+  error: string;
+}
+
 export interface MochiServerStartEvent {
   /** Bound TCP port; absent when serving over a Unix socket. */
   port?: number;
@@ -362,6 +386,8 @@ export type MochiEventMap = {
   'queue:completed': MochiQueueCompletedEvent;
   'queue:failed': MochiQueueFailedEvent;
   'queue:error': MochiQueueErrorEvent;
+  'email:sent': MochiEmailSentEvent;
+  'email:error': MochiEmailErrorEvent;
   'server:start': MochiServerStartEvent;
   'server:stop': MochiServerStopEvent;
   'warmup:start': MochiWarmupStartEvent;

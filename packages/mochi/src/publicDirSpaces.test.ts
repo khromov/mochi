@@ -4,18 +4,27 @@ import path from 'node:path';
 import type { Server } from 'bun';
 import { Mochi } from './Mochi';
 
-// Poll a URL until it returns the expected status or the deadline passes. The
-// dev watcher debounces public-dir changes (~100ms) and chokidar's event
-// latency varies by platform, so the live-add assertion can't fetch immediately.
-async function fetchUntil(url: string, status: number, timeoutMs = 8000): Promise<Response> {
+// Poll a URL until it returns the expected status or the deadline passes,
+// re-touching the file once per outer cycle. Under full-suite parallel load,
+// chokidar/fsevents can drop (or never deliver) a single fs event, so one write
+// may be missed permanently — no timeout can recover a missed event. Re-touching
+// gives the watcher repeated chances to observe a change and re-register the
+// route. The re-touch cadence must stay wider than the watcher's ~100ms reload
+// debounce, or successive writes would keep resetting it and the reload would
+// never fire; hence a burst of quick polls between touches rather than touching
+// on every poll.
+async function pollWithRetouch(url: string, touch: () => void, status: number, timeoutMs = 20_000): Promise<Response> {
   const deadline = performance.now() + timeoutMs;
   let last: Response | undefined;
   while (performance.now() < deadline) {
-    last = await fetch(url);
-    if (last.status === status) {
-      return last;
+    touch();
+    for (let i = 0; i < 6 && performance.now() < deadline; i++) {
+      last = await fetch(url);
+      if (last.status === status) {
+        return last;
+      }
+      await Bun.sleep(150);
     }
-    await Bun.sleep(50);
   }
   return last!;
 }
@@ -74,8 +83,8 @@ describe('public files with spaces in their names are served', () => {
   // Regression for the dev-watcher reload path: adding a spaced file at runtime
   // previously re-registered every public file under its raw key, 404-ing them.
   test('serves a spaced file added after startup (dev-watcher reload)', async () => {
-    writeFileSync(path.join(publicDir, 'added later.txt'), 'SPACED_LIVE_ADD');
-    const res = await fetchUntil(`${base}/added%20later.txt`, 200);
+    const added = path.join(publicDir, 'added later.txt');
+    const res = await pollWithRetouch(`${base}/added%20later.txt`, () => writeFileSync(added, 'SPACED_LIVE_ADD'), 200);
     expect(res.status).toBe(200);
     expect(await res.text()).toBe('SPACED_LIVE_ADD');
   });

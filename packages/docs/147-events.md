@@ -21,6 +21,7 @@ Event names use a `namespace:action` convention. Every key is in the typed `Moch
 - [`ws:open`](#wsopen), [`ws:message`](#wsmessage), [`ws:close`](#wsclose) — WebSocket lifecycle
 - [`sse:open`](#sseopen), [`sse:message`](#ssemessage), [`sse:close`](#sseclose) — Server-Sent Events lifecycle
 - [`queue:added`](#queueadded), [`queue:active`](#queueactive), [`queue:completed`](#queuecompleted), [`queue:failed`](#queuefailed), [`queue:error`](#queueerror) — [background job](/docs/queues/) lifecycle
+- [`email:sent`](#emailsent), [`email:error`](#emailerror) — [transactional email](/docs/email/) delivery
 - [`server:start`](#serverstart), [`server:stop`](#serverstop) — server lifecycle
 - [`warmup:start`](#warmupstart), [`warmup:complete`](#warmupcomplete) — route warmup batch lifecycle (only with `warmup: true`)
 - [`error`](#error) — page/api/action handler threw, response was an error page or `apiError`
@@ -238,6 +239,31 @@ Fires for a worker-level error not tied to a specific job (e.g. a poll failure).
 | ------- | -------- | ------------- |
 | `queue` | `string` | queue name    |
 | `error` | `string` | error message |
+
+#### `email:sent`
+
+Fires after `Mochi.email()` hands a message to its transport (or when the [`email:message` filter](/docs/extensions/#emailmessage) vetoes it). See [Email](/docs/email/).
+
+| Field       | Type                                                   | Notes                                                               |
+| ----------- | ------------------------------------------------------ | ------------------------------------------------------------------- |
+| `to`        | `string[]`                                             | recipient addresses (as actually sent, post-filter)                 |
+| `subject`   | `string`                                               | message subject                                                     |
+| `transport` | `'smtp' \| 'custom' \| 'log' \| 'dev' \| 'suppressed'` | which transport delivered it; `'suppressed'` when the filter vetoed |
+| `messageId` | `string \| undefined`                                  | provider/SMTP id, when the transport returns one                    |
+| `duration`  | `number`                                               | send wall-clock in ms                                               |
+
+#### `email:error`
+
+Fires when a transport throws while sending. `Mochi.email()` re-throws after emitting.
+
+| Field       | Type                                   | Notes                                    |
+| ----------- | -------------------------------------- | ---------------------------------------- |
+| `to`        | `string[]`                             | recipient addresses                      |
+| `cc`        | `string[] \| undefined`                | cc recipients, when the message had any  |
+| `bcc`       | `string[] \| undefined`                | bcc recipients, when the message had any |
+| `subject`   | `string`                               | message subject                          |
+| `transport` | `'smtp' \| 'custom' \| 'log' \| 'dev'` | transport that failed                    |
+| `error`     | `string`                               | error message                            |
 
 #### `server:start`
 

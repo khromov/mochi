@@ -17,7 +17,16 @@ export function compareVersions(actual: string, required: string): boolean {
   return true;
 }
 
-export async function checkEnvironment(): Promise<{ svelteVersion: string }> {
+let cached: Promise<{ svelteVersion: string }> | undefined;
+
+export function checkEnvironment(): Promise<{ svelteVersion: string }> {
+  return (cached ??= runCheck().catch((err) => {
+    cached = undefined;
+    throw err;
+  }));
+}
+
+async function runCheck(): Promise<{ svelteVersion: string }> {
   if (typeof Bun === 'undefined') {
     throw new Error('Mochi requires the Bun runtime.');
   }
@@ -28,7 +37,16 @@ export async function checkEnvironment(): Promise<{ svelteVersion: string }> {
 
   let svelteVersion: string;
   try {
-    const pkgPath = Bun.resolveSync('svelte/package.json', process.cwd());
+    // Resolve svelte from the framework's own location first — that's the exact
+    // copy ComponentRegistry imports for compilation, and unlike process.cwd() it
+    // doesn't depend on where the process was launched (cwd breaks the resolve in
+    // monorepos or whenever the app is started from a non-root directory).
+    let pkgPath: string;
+    try {
+      pkgPath = Bun.resolveSync('svelte/package.json', import.meta.dir);
+    } catch {
+      pkgPath = Bun.resolveSync('svelte/package.json', process.cwd());
+    }
     const pkg = (await Bun.file(pkgPath).json()) as { version: string };
     svelteVersion = pkg.version;
   } catch {

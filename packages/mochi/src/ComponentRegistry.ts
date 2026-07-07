@@ -196,6 +196,17 @@ export interface RenderResult {
   debugBarData?: DebugBarData;
 }
 
+/**
+ * Result of {@link ComponentRegistry.renderStatic} — the stateless render path
+ * used for email. No islands, no shell, no request state, so there's no
+ * bootstrap URL, no server-island flag, and no debug-bar snapshot.
+ */
+export interface StaticRenderResult {
+  body: string;
+  head: string;
+  cssUrls: string[];
+}
+
 export interface ComponentRegistryOptions {
   development?: boolean;
   /** Bundle and surface the dev-only debug-bar entry. Default: same as `development`. */
@@ -212,6 +223,23 @@ export interface ComponentRegistryOptions {
   optimize?: boolean | MochiSvelteShakerOptions;
 }
 
+/**
+ * Precompute the per-component island lookups a render needs. Called once when a
+ * compiled-component entry is created (compileAll / fromManifest) so renderComponent
+ * reads them instead of rebuilding three collections on every render.
+ */
+function indexHydratables(hydratables: HydratableComponent[]): {
+  hydratablesByName: Map<string, HydratableComponent>;
+  hydratablesByPath: Map<string, HydratableComponent>;
+  islandPaths: Set<string>;
+} {
+  return {
+    hydratablesByName: new Map(hydratables.map((h) => [h.name, h])),
+    hydratablesByPath: new Map(hydratables.map((h) => [h.resolvedPath, h])),
+    islandPaths: new Set(hydratables.map((h) => h.resolvedPath)),
+  };
+}
+
 export class ComponentRegistry {
   private compiledComponents: Map<
     string,
@@ -220,6 +248,11 @@ export class ComponentRegistry {
       module: { default: any };
       cssComponents: Set<string>;
       hydratables: HydratableComponent[];
+      // Island lookups derived once from `hydratables` at compile time and reused
+      // on every render (renderComponent), instead of rebuilt per render.
+      hydratablesByName: Map<string, HydratableComponent>;
+      hydratablesByPath: Map<string, HydratableComponent>;
+      islandPaths: Set<string>;
       // Absolute path to the compiled `.server.js` on disk. Recorded from the
       // build's metafile (not reconstructed from the source basename) so two
       // entrypoints sharing a basename — e.g. PageOne.svelte in two demo
@@ -228,6 +261,15 @@ export class ComponentRegistry {
     }
   > = new Map();
   private hydratableComponents: HydratableComponent[] = [];
+  /**
+   * Prebuilt, minified ServerIsland inline web-component script. Set by `build()`
+   * (via `setServerIslandScript`) and restored by `fromManifest`, so the runtime
+   * skips the startup `Bun.build`. Undefined in dev / prod-without-manifest, where
+   * `Mochi.serve()` builds it on demand (memoized).
+   */
+  serverIslandClientJs?: string;
+  /** Disk path recorded for the manifest; see `serverIslandClientJs`. */
+  private serverIslandScriptFile?: string;
   private componentEntryUrls: Map<string, string> = new Map();
   private islandBootstrapUrl: string | null = null;
   private debugBarUrl: string | null = null;
@@ -406,6 +448,12 @@ export class ComponentRegistry {
 
   getPublicFiles(): Map<string, string> {
     return this.publicFiles;
+  }
+
+  /** Record the prebuilt ServerIsland inline script (content + disk path for the manifest). */
+  setServerIslandScript(diskPath: string, content: string): void {
+    this.serverIslandScriptFile = diskPath;
+    this.serverIslandClientJs = content;
   }
 
   /**
@@ -795,6 +843,7 @@ export class ComponentRegistry {
         module: mod,
         cssComponents: entryCssComponents,
         hydratables: entryHydratables,
+        ...indexHydratables(entryHydratables),
         ssrPath: outPath,
       });
 
@@ -1222,9 +1271,88 @@ export class ComponentRegistry {
     }
   }
 
+  /**
+   * Stateless SSR for email templates: no islands, no shell, no request state.
+   * Unlike `renderComponent`, this never touches `ctx.islandProps` and always
+   * runs outside any ambient request context (`getRequestContext()` throws
+   * inside the template regardless of call site), so it can't interleave with a
+   * page render. Islands and server islands are a hard error — email clients run
+   * no JS and can't make the follow-up request a deferred island needs.
+   */
+  async renderStatic(filename: string, props?: Record<string, unknown>): Promise<StaticRenderResult> {
+    await this.compile(filename);
+    const entry = this.compiledComponents.get(filename);
+    if (!entry) {
+      throw new Error(`renderStatic: failed to compile ${filename}`);
+    }
+    const { module: mod, cssComponents, hydratables } = entry;
+
+    // Island guard (pre-render): import-graph based, so it fires even for an
+    // island behind a false `{#if}` — deterministic and props-independent.
+    if (hydratables.length > 0) {
+      const names = hydratables.map((h) => h.displayName).join(', ');
+      throw new Error(
+        `Email templates can't contain islands (${names}). mochi:hydrate* / mochi:clientOnly need client JS, which an email can't run — render the content inline instead.`,
+      );
+    }
+
+    const development = this.development;
+    const componentBaseName = path.basename(filename, path.extname(filename));
+    // Keep <svelte:boundary> functional during SSR (Svelte 5.51+). Email needs
+    // none of the client-hydration bookkeeping `renderComponent`'s
+    // `transformError` carries — just log and degrade.
+    const transformError = (err: unknown): Error => {
+      const e = err instanceof Error ? err : new Error(String(err));
+      logger.error(`Email SSR error in ${componentBaseName}: ${e.message}`);
+      return development ? e : new Error('Email render error');
+    };
+
+    // `render()` returns a lazy thenable — the component only executes when the
+    // thenable is awaited (in a microtask). The exit callback must be `async`
+    // and `await` render *inside* it, so that deferred execution stays within
+    // the exited async context; otherwise `exit()` returns before the component
+    // runs and the ambient request context leaks back in. Isolation is why
+    // `getRequestContext()` throws in an email template regardless of call site.
+    const { body, head } = await requestContext.exit(async () => await render(mod.default, { ...(props ? { props } : {}), transformError }));
+
+    let output = body;
+
+    // Server-island guard (post-render): no per-entry metadata to check up
+    // front, so detect the emitted placeholder in the rendered output.
+    if (output.includes('<mochi-server-island')) {
+      throw new Error(`Email templates can't contain server islands (mochi:defer*) — they load over a follow-up request an email can't make. Render the content inline instead.`);
+    }
+
+    output = output.replaceAll('__MOCHI_ASSET_PREFIX__', this.assetPrefix);
+
+    const cssUrls: string[] = [];
+    for (const componentPath of cssComponents) {
+      const cssUrl = this.cssFileUrls.get(componentPath);
+      if (cssUrl) {
+        cssUrls.push(cssUrl);
+      }
+    }
+    // Side-effect CSS imports reachable from this entry (e.g. @fontsource fonts).
+    const imported = this.entryImportedCss.get(filename);
+    if (imported) {
+      for (const cssPath of imported) {
+        const url = this.importedCssUrls.get(cssPath);
+        if (url) {
+          cssUrls.push(url);
+        }
+      }
+    }
+
+    return {
+      body: stripHydrationMarkers(output),
+      head: stripHydrationMarkers(head ?? ''),
+      cssUrls,
+    };
+  }
+
   async renderComponent(filename: string, props?: Record<string, unknown>, opts?: { stripMarkers?: boolean; idPrefix?: string }): Promise<RenderResult> {
     await this.compile(filename);
-    const { module: mod, cssComponents, hydratables } = this.compiledComponents.get(filename)!;
+    const { module: mod, cssComponents, hydratables, hydratablesByName, hydratablesByPath, islandPaths } = this.compiledComponents.get(filename)!;
 
     const development = this.development;
     const componentBaseName = path.basename(filename, path.extname(filename));
@@ -1279,11 +1407,17 @@ export class ComponentRegistry {
     if (opts?.idPrefix) {
       renderOptions.idPrefix = opts.idPrefix;
     }
-    const { body, head } = await render(mod.default, renderOptions);
 
-    const hydratablesByName = new Map(hydratables.map((h) => [h.name, h]));
-    const hydratablesByPath = new Map(hydratables.map((h) => [h.resolvedPath, h]));
-    const islandPaths = new Set(hydratables.map((h) => h.resolvedPath));
+    // Each render owns the whole `islandProps` map: `emitIslandProps` fills it
+    // during this `render()`, the HTMLRewriter pass below drains it. Clearing up
+    // front makes sequential same-ctx renders self-contained — the error page
+    // after a failed page render, an action's POST re-render. Nested renders no
+    // longer exist (email uses `renderStatic`; the island endpoint runs in its
+    // own request context), so nothing else holds pending entries here.
+    const ctx = requestContext.getStore();
+    ctx?.islandProps.clear();
+
+    const { body, head } = await render(mod.default, renderOptions);
 
     let output = body;
 
@@ -1312,9 +1446,7 @@ export class ComponentRegistry {
     const shouldStrip = opts?.stripMarkers !== false && hydratables.length === 0;
     const hasIslandsOrServerIslands = hydratables.length > 0 || hasServerCssPlaceholders;
 
-    const ctx = requestContext.getStore();
-
-    // Index the per-request island props registry by ref id so the rewriter
+    // Index the per-render island props registry by ref id so the rewriter
     // pass below can emit each payload as a <script type="application/json">
     // block immediately before the first island that references it. HTMLRewriter
     // visits elements in document order, so the first callback for a given
@@ -1374,9 +1506,6 @@ export class ComponentRegistry {
       }
       output = rewriter.transform(output);
     }
-    // Clear so a second render within the same request doesn't re-emit the same
-    // blocks (e.g. an error page rendering after the original page).
-    ctx?.islandProps.clear();
 
     let debugBarData: RenderResult['debugBarData'];
     if (ctx?.debugBarData) {
@@ -1811,6 +1940,9 @@ export class ComponentRegistry {
     if (this.entryImportedCss.size > 0) {
       manifest.entryImportedCss = Object.fromEntries([...this.entryImportedCss].map(([k, v]) => [k, [...v]]));
     }
+    if (this.serverIslandScriptFile) {
+      manifest.serverIslandScript = this.serverIslandScriptFile;
+    }
     return manifest;
   }
 
@@ -1863,6 +1995,7 @@ export class ComponentRegistry {
         module: mod,
         cssComponents: new Set(entry.cssComponents),
         hydratables: entry.hydratables,
+        ...indexHydratables(entry.hydratables),
         ssrPath: modulePath,
       });
       registry.hydratableComponents.push(...entry.hydratables);
@@ -1880,6 +2013,11 @@ export class ComponentRegistry {
       for (const [urlPath, diskPath] of Object.entries(manifest.publicFiles)) {
         registry.publicFiles.set(urlPath, diskPath);
       }
+    }
+
+    // Restore the prebuilt ServerIsland inline script so the runtime skips Bun.build.
+    if (manifest.serverIslandScript) {
+      registry.serverIslandClientJs = await Bun.file(path.resolve(manifest.serverIslandScript)).text();
     }
 
     return registry;
