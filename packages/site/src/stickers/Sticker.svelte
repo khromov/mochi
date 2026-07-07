@@ -57,9 +57,11 @@
     width: max-content;
   }
 
+  /* All box dimensions are in rem so the whole card scales with the root
+     font-size — print shrinks that one value to fit the sheet (see @media print). */
   .sticker-canvas {
-    width: 720px;
-    height: 380px;
+    width: 45rem;
+    height: 23.75rem;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -69,7 +71,7 @@
       url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>"),
       linear-gradient(135deg, #2b3d33 0%, #4a7c59 100%);
     background-size:
-      240px 240px,
+      15rem 15rem,
       auto;
     background-blend-mode: soft-light, normal;
     text-align: center;
@@ -77,8 +79,8 @@
     /* Force the green fill, noise, and cut-line to render when printing. */
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
-    border: 18px solid #fff;
-    border-radius: 28px;
+    border: 1.125rem solid #fff;
+    border-radius: 1.75rem;
     /* Slim black cut-line around the outer edge of the white border.
        outline (not box-shadow) so it survives printing. */
     outline: 1.5px solid #000;
@@ -132,6 +134,12 @@
 
   /* Print just the grid, one 3×3 sheet, with the page chrome dropped. */
   @media print {
+    /* Scale every rem-based dimension down so 3 cards + gaps (~2192px at 16px)
+       fit the ~980px printable width of a landscape sheet. 16px * 0.42 ≈ 6.7px. */
+    :global(html) {
+      font-size: 6.7px;
+    }
+
     .sticker-page {
       padding: 0;
     }
