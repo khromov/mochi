@@ -1,7 +1,8 @@
 <script lang="ts">
   let { name }: { name: string } = $props();
   const tag = 'scr' + 'ipt';
-  const injected = `<${tag}>window.tracked = true;</${tag}>`;
+  const styleTag = 'sty' + 'le';
+  const injected = `<${tag}>window.tracked = true;</${tag}><${styleTag}>.injected{color:hotpink}</${styleTag}>`;
 </script>
 
 <div class="card">

@@ -60,12 +60,16 @@ describe('renderEmailComponent', () => {
     expect(html).not.toContain('<link');
   });
 
-  test('strips <script> tags emitted by the template', async () => {
+  test('strips <script> and <style> tags emitted by the template body', async () => {
     const html = await renderEmailComponent(registry, WITH_SCRIPT, { name: 'Ada' });
 
     expect(html).toContain('Hello Ada'); // template still rendered
     expect(html).not.toContain('<script');
     expect(html).not.toContain('window.tracked');
+    // The body-injected <style> is stripped; its rules never reach the output.
+    expect(html).not.toContain('hotpink');
+    // But the component's own scoped CSS still inlines onto elements.
+    expect(html).toContain('padding: 24px');
   });
 
   // Statelessness regression (replaces the old nested-render workaround): even

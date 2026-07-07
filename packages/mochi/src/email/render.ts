@@ -15,8 +15,12 @@ import type { ComponentRegistry } from '../ComponentRegistry';
  * template needs via `props`. Islands (`mochi:hydrate*`) and server islands
  * (`mochi:defer*`) are a hard error.
  *
- * Any `<script>` in the rendered markup is stripped: email clients block
- * scripts outright, so they only bloat the message and trip spam heuristics.
+ * Any `<script>` or `<style>` in the rendered markup is stripped: email
+ * clients block scripts outright, so they only bloat the message and trip spam
+ * heuristics, and stray `<style>` blocks would survive css-inline's
+ * `keepStyleTags` pass and ship un-inlined rules that many clients ignore. The
+ * strip runs on the component body only — the framework's collected scoped CSS
+ * is re-added as a head `<style>` afterward so css-inline still has it to work.
  */
 export async function renderEmailComponent(registry: ComponentRegistry, component: string, props?: Record<string, unknown>): Promise<string> {
   const result = await registry.renderStatic(component, props);
@@ -25,7 +29,8 @@ export async function renderEmailComponent(registry: ComponentRegistry, componen
     .filter((c): c is string => Boolean(c))
     .join('\n');
   const head = result.head ?? '';
-  const doc = stripScripts(`<!doctype html><html><head><meta charset="utf-8">${head}${css ? `<style>${css}</style>` : ''}</head><body>${result.body}</body></html>`);
+  const body = stripScriptsAndStyles(result.body);
+  const doc = `<!doctype html><html><head><meta charset="utf-8">${head}${css ? `<style>${css}</style>` : ''}</head><body>${body}</body></html>`;
 
   const { inline } = await loadCssInline();
   return inline(doc, { keepStyleTags: true });
@@ -61,9 +66,9 @@ function loadCssInline(): Promise<typeof import('@css-inline/css-inline-wasm')> 
   return cssInlinePromise;
 }
 
-function stripScripts(html: string): string {
+function stripScriptsAndStyles(html: string): string {
   return new HTMLRewriter()
-    .on('script', {
+    .on('script, style', {
       element: (el) => {
         el.remove();
       },
