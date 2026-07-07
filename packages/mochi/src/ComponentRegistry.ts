@@ -274,13 +274,6 @@ export class ComponentRegistry {
   private islandBootstrapUrl: string | null = null;
   private debugBarUrl: string | null = null;
   private clientFiles: Map<string, string> = new Map();
-  /**
-   * The single previous generation of client-bundle JS whose hash changed on the
-   * last rebuild. Served as a fallback so a page that loaded the old HTML can still
-   * fetch its old-hash bundle during the live-reload swap instead of 404ing. Bounded
-   * to one generation, so it can't grow across a long dev session.
-   */
-  private retiredClientFiles: Map<string, string> = new Map();
   /** Maps component file path → CSS URL */
   private cssFileUrls: Map<string, string> = new Map();
   /**
@@ -1244,24 +1237,13 @@ export class ComponentRegistry {
     // succeeded. Replace only the client-prefix JS entries; the per-component CSS
     // entries in `clientFiles` are stable and preserved.
     const clientPrefix = `${this.assetPrefix}/client/`;
-    const retired = new Map<string, string>();
     for (const key of [...this.clientFiles.keys()]) {
       if (key.startsWith(clientPrefix)) {
-        retired.set(key, this.clientFiles.get(key)!);
         this.clientFiles.delete(key);
       }
     }
     for (const [k, v] of newClientFiles) {
       this.clientFiles.set(k, v);
-    }
-    // Keep only the URLs whose hash actually changed this round — a page mid
-    // live-reload can still fetch its old-hash bundle from here instead of 404ing.
-    // Replacing (not merging) bounds this to one generation.
-    this.retiredClientFiles = new Map();
-    for (const [k, v] of retired) {
-      if (!this.clientFiles.has(k)) {
-        this.retiredClientFiles.set(k, v);
-      }
     }
     this.componentEntryUrls.clear();
     for (const [k, v] of newComponentEntryUrls) {
@@ -1671,7 +1653,7 @@ export class ComponentRegistry {
   }
 
   getClientFile(urlPath: string): string | undefined {
-    return this.clientFiles.get(urlPath) ?? this.retiredClientFiles.get(urlPath);
+    return this.clientFiles.get(urlPath);
   }
 
   getClientFiles(): Map<string, string> {
@@ -1701,7 +1683,6 @@ export class ComponentRegistry {
     this.islandBootstrapUrl = null;
     this.debugBarUrl = null;
     this.clientFiles.clear();
-    this.retiredClientFiles.clear();
     this.cssFileUrls.clear();
     this.cssRawByPath.clear();
     this.importedCssUrls.clear();
