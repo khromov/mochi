@@ -23,7 +23,7 @@
 </script>
 
 <DemoPage
-  title="Image Invalidation"
+  title="Image: Invalidation"
   description="Clear a cached image on demand with invalidateImage(). Our own source endpoint returns a random bundled photo on every fetch, so a hard invalidation — which drops the shared original and cascades to its variants — is visible the moment the sizes re-fetch together."
   {sources}
 >

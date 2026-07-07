@@ -135,7 +135,7 @@
 </script>
 
 <DemoPage
-  title="Named sizes"
+  title="Image: Named sizes"
   description="Transforms are declared once as named sizes under image.sizes in Mochi.serve() and referenced by name. getImageUrl(src, name) mints a signed URL and the /_mochi/image endpoint runs the size lazily — so SSR never blocks. getImage(src, name) is the inline escape hatch that returns the transformed bytes + metadata, used below for dimensions and byte sizes."
   {sources}
 >
