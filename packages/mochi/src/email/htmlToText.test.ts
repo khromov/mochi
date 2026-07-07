@@ -1,0 +1,64 @@
+import { describe, expect, test } from 'bun:test';
+import { htmlToText } from './mailer';
+
+describe('htmlToText', () => {
+  test('strips formatting tags, keeping their text', () => {
+    expect(htmlToText('<p>Hi <b>there</b></p>')).toBe('Hi there');
+  });
+
+  test('drops <style> contents (not just the tags)', () => {
+    expect(htmlToText('<style>.x{color:red}</style><p>Body</p>')).toBe('Body');
+  });
+
+  test('drops <script> contents', () => {
+    expect(htmlToText('<script>alert(1)</script><p>Body</p>')).toBe('Body');
+  });
+
+  test('keeps literal angle brackets in body text', () => {
+    expect(htmlToText('<p>if a < b and c > d</p>')).toBe('if a < b and c > d');
+  });
+
+  test('decodes entities exactly once — no double-decode', () => {
+    // `&amp;lt;` is the escaped text "&lt;", not the tag "<".
+    expect(htmlToText('<p>&amp;lt;br&amp;gt;</p>')).toBe('&lt;br&gt;');
+  });
+
+  test('matches the pinned integration edge case', () => {
+    const html = '<p>if a < b and c > d — use &amp;lt;br&amp;gt; &amp; go</p>';
+    expect(htmlToText(html)).toBe('if a < b and c > d — use &lt;br&gt; & go');
+  });
+
+  test('decodes named and numeric entities beyond the legacy four', () => {
+    expect(htmlToText('<p>&copy; 2026 &mdash; don&#8217;t</p>')).toBe('© 2026 — don’t');
+  });
+
+  test('separates adjacent block elements with a space', () => {
+    expect(htmlToText('<p>one</p><p>two</p>')).toBe('one two');
+    expect(htmlToText('<div>a</div><div>b</div>')).toBe('a b');
+    expect(htmlToText('a<br>b')).toBe('a b');
+  });
+
+  test('flattens nested list items', () => {
+    expect(htmlToText('<ul><li>a</li><li>b</li></ul>')).toBe('a b');
+  });
+
+  test('collapses whitespace and trims', () => {
+    expect(htmlToText('   <p>  hi  </p>  ')).toBe('hi');
+  });
+
+  test('collapses a non-breaking space into surrounding whitespace', () => {
+    expect(htmlToText('<p>x &nbsp; y</p>')).toBe('x y');
+  });
+
+  test('ignores attributes, keeping only link text', () => {
+    expect(htmlToText('<a href="http://x" title="t">link</a>')).toBe('link');
+  });
+
+  test('passes plain text through untouched', () => {
+    expect(htmlToText('just text')).toBe('just text');
+  });
+
+  test('returns an empty string for empty input', () => {
+    expect(htmlToText('')).toBe('');
+  });
+});

@@ -1,3 +1,4 @@
+import { decode as decodeHtmlEntities } from 'html-entities';
 import { mochiEvents } from '../events';
 import { applyFilter } from '../extensions';
 import { getEmailRuntime } from './config';
@@ -13,25 +14,40 @@ function toArray(value: string | string[] | undefined): string[] | undefined {
   return list.length > 0 ? list : undefined;
 }
 
-/** Naive HTML → plain-text fallback so HTML mails stay multipart. */
-function htmlToText(html: string): string {
-  return (
-    html
-      .replace(/<style[\s\S]*?<\/style>/gi, '')
-      .replace(/<script[\s\S]*?<\/script>/gi, '')
-      // Only strip things that actually look like a tag — the name starts with a
-      // letter, `/`, `!`, or `?`. A literal `a < b` in body text (no tag name
-      // after `<`) is left intact instead of being swallowed as a bogus tag.
-      .replace(/<\/?[a-zA-Z!?][^>]*>/g, ' ')
-      .replace(/&nbsp;/gi, ' ')
-      .replace(/&lt;/gi, '<')
-      .replace(/&gt;/gi, '>')
-      // Decode `&amp;` LAST: an escaped entity like `&amp;lt;` must resolve to the
-      // literal text `&lt;`, not be double-decoded into `<`.
-      .replace(/&amp;/gi, '&')
-      .replace(/\s+/g, ' ')
-      .trim()
-  );
+/**
+ * HTML → plain-text fallback so HTML mails stay multipart. Drops every tag,
+ * suppresses the *contents* of <script>/<style> (css-inline emits a <style>
+ * block into the rendered email HTML), inserts spaces around block-level tags so
+ * adjacent blocks don't collide, and decodes entities in a single pass via
+ * html-entities. Bun's `text` chunks don't decode entities, so the decode runs
+ * last — which also preserves escapes like `&amp;lt;` → `&lt;` (not `<`).
+ */
+export function htmlToText(html: string): string {
+  let out = '';
+  let skipDepth = 0;
+  new HTMLRewriter()
+    .on('script, style', {
+      element(el) {
+        skipDepth++;
+        el.onEndTag(() => {
+          skipDepth--;
+        });
+      },
+    })
+    .on('p, div, br, li, tr, h1, h2, h3, h4, h5, h6', {
+      element() {
+        out += ' ';
+      },
+    })
+    .onDocument({
+      text(chunk) {
+        if (skipDepth === 0) {
+          out += chunk.text;
+        }
+      },
+    })
+    .transform(html);
+  return decodeHtmlEntities(out).replace(/\s+/g, ' ').trim();
 }
 
 /**
