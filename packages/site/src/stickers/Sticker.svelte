@@ -74,10 +74,14 @@
     background-blend-mode: soft-light, normal;
     text-align: center;
     overflow: hidden;
+    /* Force the green fill, noise, and cut-line to render when printing. */
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
     border: 18px solid #fff;
     border-radius: 28px;
-    /* Slim black cut-line around the outer edge of the white border. */
-    box-shadow: 0 0 0 1.5px #000;
+    /* Slim black cut-line around the outer edge of the white border.
+       outline (not box-shadow) so it survives printing. */
+    outline: 1.5px solid #000;
   }
 
   /* Sized to the logo so the URL can right-align directly under its final glyph. */
@@ -121,6 +125,11 @@
     letter-spacing: 0.04em;
   }
 
+  /* Landscape so the wide 3×3 grid lays out horizontally on the sheet. */
+  @page {
+    size: landscape;
+  }
+
   /* Print just the grid, one 3×3 sheet, with the page chrome dropped. */
   @media print {
     .sticker-page {
@@ -129,6 +138,10 @@
 
     .page-title,
     .page-desc {
+      display: none;
+    }
+
+    :global(#mochi-dev-toolbar) {
       display: none;
     }
   }
