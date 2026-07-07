@@ -103,13 +103,10 @@ export class MemoryStorage implements Storage {
     this.store.clear();
   }
 
-  /**
-   * Delete entries older than `maxAge`. `freedBytes` is always `0` — unlike
-   * `FileStorage`'s file sizes, in-memory values have no cheap byte accounting.
-   */
-  sweep(now: number = Date.now()): { removed: number; freedBytes: number } {
+  /** Delete entries older than `maxAge`. */
+  sweep(now: number = Date.now()): { removed: number } {
     if (this.maxAge === undefined) {
-      return { removed: 0, freedBytes: 0 };
+      return { removed: 0 };
     }
     let removed = 0;
     for (const [key, entry] of this.store) {
@@ -118,7 +115,7 @@ export class MemoryStorage implements Storage {
         removed++;
       }
     }
-    return { removed, freedBytes: 0 };
+    return { removed };
   }
 
   /** Stop the background sweep. Call when the store is no longer needed (e.g. in tests). */
@@ -292,7 +289,7 @@ export class FileStorage implements Storage {
    * folder with it, plus any orphaned blob folder whose owning JSON is gone.
    * Public so callers/tests can sweep on demand.
    */
-  async sweep(now: number = Date.now()): Promise<{ removed: number; freedBytes: number }> {
+  async sweep(now: number = Date.now()): Promise<{ removed: number }> {
     const entries = await readdir(this.directory, { withFileTypes: true }).catch((err) => {
       if (isENOENT(err)) {
         return [] as Dirent[];
@@ -300,7 +297,6 @@ export class FileStorage implements Storage {
       throw err;
     });
     let removed = 0;
-    let freedBytes = 0;
 
     // Pass 1: aged-out JSON/tmp files, each taking its blob folder with it.
     await Promise.all(
@@ -311,12 +307,10 @@ export class FileStorage implements Storage {
           try {
             const info = await stat(filePath);
             if (now - info.mtimeMs > this.maxAge) {
-              freedBytes += info.size;
               await unlink(filePath);
               removed++;
               if (entry.name.endsWith('.json')) {
                 const blobDir = join(this.directory, entry.name.slice(0, -'.json'.length));
-                freedBytes += await this.dirSize(blobDir);
                 await rm(blobDir, { recursive: true, force: true });
               }
             }
@@ -331,7 +325,7 @@ export class FileStorage implements Storage {
     // Pass 2: orphaned blob folders whose owning JSON no longer exists (already
     // reclaimed in pass 1, lost to a crash — or an in-flight first write whose
     // JSON hasn't landed yet, which the mtime grace below protects; a rename into
-    // the folder refreshes its mtime). `dirSize`/`rm` no-op if gone.
+    // the folder refreshes its mtime). `rm` no-ops if gone.
     await Promise.all(
       entries
         .filter((entry) => entry.isDirectory())
@@ -346,32 +340,12 @@ export class FileStorage implements Storage {
             } catch {
               return; // vanished mid-sweep
             }
-            freedBytes += await this.dirSize(dir);
             await rm(dir, { recursive: true, force: true });
           }
         }),
     );
 
-    return { removed, freedBytes };
-  }
-
-  /** Sum of the (flat) blob files in a `<hash>/` folder; `0` if it's gone. */
-  private async dirSize(dir: string): Promise<number> {
-    let files: string[];
-    try {
-      files = await readdir(dir);
-    } catch {
-      return 0;
-    }
-    let total = 0;
-    for (const f of files) {
-      try {
-        total += (await stat(join(dir, f))).size;
-      } catch {
-        // vanished mid-sweep; ignore
-      }
-    }
-    return total;
+    return { removed };
   }
 
   /** Stop the background sweep. Call when the cache is no longer needed (e.g. in tests). */

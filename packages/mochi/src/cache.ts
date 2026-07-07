@@ -17,7 +17,7 @@ export interface Storage {
   /** Remove every entry from the backend. */
   clear(): void | Promise<void>;
   /** Optional age-based eviction, callable on demand by a caller-driven janitor (e.g. `ImageCache`). `FileStorage` and `MemoryStorage` both implement it. */
-  sweep?(now?: number): { removed: number; freedBytes: number } | Promise<{ removed: number; freedBytes: number }>;
+  sweep?(now?: number): { removed: number } | Promise<{ removed: number }>;
 }
 
 export interface MochiCacheOptions {

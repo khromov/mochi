@@ -44,7 +44,7 @@ describe('MemoryStorage', () => {
     const storage = makeStorage();
     await storage.setItem('k', { value: 1 });
 
-    expect(storage.sweep(Date.now() + 1_000_000)).toEqual({ removed: 0, freedBytes: 0 });
+    expect(storage.sweep(Date.now() + 1_000_000)).toEqual({ removed: 0 });
     expect(await storage.getItem('k')).not.toBeNull();
   });
 
@@ -53,7 +53,7 @@ describe('MemoryStorage', () => {
     await storage.setItem('k', { value: 1 });
 
     // Nothing expired yet.
-    expect(storage.sweep()).toEqual({ removed: 0, freedBytes: 0 });
+    expect(storage.sweep()).toEqual({ removed: 0 });
     expect(await storage.getItem('k')).not.toBeNull();
 
     // Advance the clock past maxAge relative to the entry's write time.

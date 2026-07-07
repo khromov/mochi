@@ -352,12 +352,9 @@ export class ImageCache {
    * originals from variants, so everything reclaimed is reported under
    * `removedVariants`.
    */
-  async sweep(now: number = Date.now()): Promise<{ removedVariants: number; removedOriginals: number; freedBytes: number }> {
+  async sweep(now: number = Date.now()): Promise<{ removedVariants: number; removedOriginals: number }> {
     const result = await this.storage.sweep?.(now);
-    if (!result) {
-      return { removedVariants: 0, removedOriginals: 0, freedBytes: 0 };
-    }
-    return { removedVariants: result.removed, removedOriginals: 0, freedBytes: result.freedBytes };
+    return { removedVariants: result?.removed ?? 0, removedOriginals: 0 };
   }
 
   /**

@@ -208,9 +208,9 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
     verySlow,
     level: 'info',
   }));
-  subscribe('image:cache-sweep', ({ removedVariants, removedOriginals, freedBytes, durationMs }) => {
+  subscribe('image:cache-sweep', ({ removedVariants, removedOriginals, durationMs }) => {
     const removed = removedVariants + removedOriginals;
-    const detail = removed === 0 ? 'nothing stale' : `${removed} stale (${removedVariants}v/${removedOriginals}o), freed ${prettyBytes(freedBytes)}`;
+    const detail = removed === 0 ? 'nothing stale' : `${removed} stale (${removedVariants}v/${removedOriginals}o)`;
     return { label: 'CACHE', path: 'image:sweep', note: styleText('dim', detail), duration: durationMs, slow, verySlow, level: 'info' };
   });
   // Per-file image writes/deletes are high-volume relative to the aggregate

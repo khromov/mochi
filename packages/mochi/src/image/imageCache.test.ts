@@ -222,7 +222,7 @@ describe('ImageCache.sweep', () => {
   test('leaves entries within the window untouched', async () => {
     const cache = makeCache();
     await cache.getOriginal(SRC, 60_000, 86_400_000, origFn([1, 2, 3]));
-    expect(await cache.sweep(Date.now())).toEqual({ removedVariants: 0, removedOriginals: 0, freedBytes: 0 });
+    expect(await cache.sweep(Date.now())).toEqual({ removedVariants: 0, removedOriginals: 0 });
   });
 
   test('reclaims entries past the window and forces a re-fetch', async () => {
@@ -231,7 +231,7 @@ describe('ImageCache.sweep', () => {
     await cache.getOriginal(SRC, 10, 1_000, origFn([1, 2, 3], 'image/jpeg', counter));
 
     const swept = await cache.sweep(Date.now() + 10_000);
-    expect(swept.freedBytes).toBeGreaterThan(0);
+    expect(swept.removedVariants).toBeGreaterThan(0);
 
     const after = await cache.getOriginal(SRC, 10, 1_000, origFn([1, 2, 3], 'image/jpeg', counter));
     expect(after.status).toBe('miss'); // reclaimed → re-fetched
@@ -319,6 +319,6 @@ describe('ImageCache custom storage', () => {
     const cache = makeCache({ storage: bare });
     await cache.getOriginal(SRC, 60_000, 86_400_000, origFn([1, 2, 3]));
 
-    await expect(cache.sweep(Date.now() + 1_000_000)).resolves.toEqual({ removedVariants: 0, removedOriginals: 0, freedBytes: 0 });
+    await expect(cache.sweep(Date.now() + 1_000_000)).resolves.toEqual({ removedVariants: 0, removedOriginals: 0 });
   });
 });

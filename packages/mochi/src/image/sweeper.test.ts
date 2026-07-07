@@ -6,7 +6,7 @@ function fakeCache(onSweep: () => void): ImageCache {
   return {
     sweep: async () => {
       onSweep();
-      return { removedVariants: 0, removedOriginals: 0, freedBytes: 0 };
+      return { removedVariants: 0, removedOriginals: 0 };
     },
   } as unknown as ImageCache;
 }

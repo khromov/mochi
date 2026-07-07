@@ -108,8 +108,6 @@ export interface MochiImageCacheSweepEvent {
   removedVariants: number;
   /** Full-size originals deleted (past their evict window). */
   removedOriginals: number;
-  /** Bytes reclaimed from disk. */
-  freedBytes: number;
   /** Sweep wall-clock duration in ms. */
   durationMs: number;
 }

@@ -117,7 +117,7 @@ describe('FileStorage', () => {
     await storage.setItem('k', { value: 1, createdAt: 0 });
 
     // Nothing expired yet.
-    expect(await storage.sweep()).toEqual({ removed: 0, freedBytes: 0 });
+    expect(await storage.sweep()).toEqual({ removed: 0 });
     expect(await storage.getItem('k')).not.toBeNull();
 
     // Advance the clock past maxAge relative to the file's mtime.
@@ -277,7 +277,7 @@ describe('FileStorage binary offload', () => {
     expect(readdirSync(dir)).toHaveLength(0);
   });
 
-  test('sweep reclaims aged-out blob folders and reports freed bytes', async () => {
+  test('sweep reclaims aged-out blob folders', async () => {
     const dir = makeDir();
     const storage = new FileStorage({ directory: dir, purgeInterval: 0, maxAge: 1_000 });
     created.push(storage);
@@ -287,7 +287,6 @@ describe('FileStorage binary offload', () => {
 
     const swept = await storage.sweep(Date.now() + 10_000);
     expect(swept.removed).toBe(1);
-    expect(swept.freedBytes).toBeGreaterThan(0);
     expect(readdirSync(dir)).toHaveLength(0); // json + blob folder both gone
   });
 
@@ -300,13 +299,11 @@ describe('FileStorage binary offload', () => {
     // looks like between its blob rename and its JSON rename.
     await Bun.write(join(dir, 'deadbeef', 'b0.bin'), new Uint8Array([1, 2, 3]));
 
-    const early = await storage.sweep(Date.now());
-    expect(early.freedBytes).toBe(0);
+    await storage.sweep(Date.now());
     expect(countDirs(dir)).toBe(1);
 
     // Once older than the grace window it's a genuine crash orphan — reclaimed.
-    const late = await storage.sweep(Date.now() + 20_000);
-    expect(late.freedBytes).toBe(3);
+    await storage.sweep(Date.now() + 20_000);
     expect(countDirs(dir)).toBe(0);
   });
 
