@@ -35,23 +35,6 @@ export async function readBlobRef(ref: BlobRef): Promise<Uint8Array> {
   return new Uint8Array(await Bun.file(ref.path).arrayBuffer());
 }
 
-/**
- * Like {@link readBlobRef}, but a vanished blob file reads as `null` instead of
- * throwing. A lazy ref can legitimately outlive its file — a newer write for the
- * same key supersedes the blob, or the sweep reclaims the entry — and callers
- * treat that as a cache miss rather than an error.
- */
-export async function tryReadBlobRef(ref: BlobRef): Promise<Uint8Array | null> {
-  try {
-    return await readBlobRef(ref);
-  } catch (err) {
-    if (isENOENT(err)) {
-      return null;
-    }
-    throw err;
-  }
-}
-
 // Buffer extends Uint8Array, so this covers both.
 function isBinary(value: unknown): value is Uint8Array {
   return value instanceof Uint8Array;
@@ -156,8 +139,6 @@ const isENOENT = (err: unknown): boolean => (err as NodeJS.ErrnoException | unde
 // complete in milliseconds; a few seconds is comfortably conservative.
 const ORPHAN_BLOB_GRACE_MS = 10_000;
 
-let tmpCounter = 0;
-
 /**
  * Persists each cache entry as a JSON file (`<sha256(key)>.json`) under `directory`.
  * The entry's own `createdAt` drives stale-while-revalidate, so this backend is a
@@ -211,42 +192,24 @@ export class FileStorage implements Storage {
     const hash = this.hashKey(key);
     const path = join(this.directory, `${hash}.json`);
     const blobs: { relPath: string; data: Uint8Array }[] = [];
-    const referenced = new Set<string>();
-    const json = this.encodeBlobs(value, hash, blobs, referenced);
+    const json = this.encodeBlobs(value, hash, blobs);
     // Write the offloaded blobs first (each tmp+rename), so a reader that sees the
-    // JSON always sees the blobs it points at. Bun.write creates the `<hash>/` dir.
+    // JSON always sees the blobs it points at. Blob names are content-addressed, so
+    // an identical file already on disk needs no rewrite. Bun.write creates `<hash>/`.
     for (const b of blobs) {
       const blobPath = join(this.directory, b.relPath);
-      const blobTmp = `${blobPath}.${process.pid}.${tmpCounter++}.tmp`;
+      if (await Bun.file(blobPath).exists()) {
+        continue;
+      }
+      const blobTmp = `${blobPath}.${crypto.randomUUID()}.tmp`;
       await Bun.write(blobTmp, b.data);
       await rename(blobTmp, blobPath);
     }
     // Write to a unique temp file then rename into place — rename is atomic on the
     // same filesystem, so a concurrent `getItem` never reads a half-written file.
-    const tmp = `${path}.${process.pid}.${tmpCounter++}.tmp`;
+    const tmp = `${path}.${crypto.randomUUID()}.tmp`;
     await Bun.write(tmp, JSON.stringify(json));
     await rename(tmp, path);
-    await this.reclaimSupersededBlobs(hash, referenced);
-  }
-
-  // The JSON rename above is the commit point: any `.bin` in the key's folder the
-  // committed JSON doesn't reference is a superseded generation. A reader still
-  // holding its lazy BlobRef degrades to ENOENT → `tryReadBlobRef` → miss, which
-  // is the consistency contract — it must never see mixed-generation meta/bytes.
-  // Temp files are skipped (a concurrent writer's in-progress work). Best-effort:
-  // a crash before this runs leaves dead files the key's next write reclaims.
-  private async reclaimSupersededBlobs(hash: string, referenced: Set<string>): Promise<void> {
-    let files: string[];
-    try {
-      files = await readdir(join(this.directory, hash));
-    } catch {
-      return;
-    }
-    for (const f of files) {
-      if (f.endsWith('.bin') && !referenced.has(`${hash}/${f}`)) {
-        await unlink(join(this.directory, hash, f)).catch(() => {});
-      }
-    }
   }
 
   async removeItem(key: string): Promise<void> {
@@ -376,30 +339,29 @@ export class FileStorage implements Storage {
   // Deep-clone `value`, replacing binary fields with on-disk pointers and pushing
   // their bytes onto `blobs` to be written. Never mutates the input. An existing
   // BlobRef (e.g. re-persisted by `markStale`) is re-pointed at its existing blob
-  // file without rewriting it. Fresh binaries get generation-unique filenames so
-  // a rewrite of the same key never renames new bytes over a file a concurrently
-  // issued lazy BlobRef still points at (which would pair old metadata with new
-  // bytes); superseded generations are reclaimed by `setItem` after the JSON
-  // commits, and `referenced` collects every relPath the outgoing JSON keeps.
-  private encodeBlobs(value: unknown, hash: string, blobs: { relPath: string; data: Uint8Array }[], referenced: Set<string>): unknown {
+  // file without rewriting it. Fresh binaries are content-addressed by
+  // `sha256(bytes)`, so a filename always implies its bytes: a rewrite writes a new
+  // file rather than renaming new bytes over one a live lazy BlobRef still points
+  // at, and identical bytes dedupe to one file. Superseded (now-unreferenced) blobs
+  // are reclaimed with the whole entry folder by `removeItem`/the sweep.
+  private encodeBlobs(value: unknown, hash: string, blobs: { relPath: string; data: Uint8Array }[]): unknown {
     if (isBinary(value)) {
-      const relPath = `${hash}/b${blobs.length}.${process.pid}.${tmpCounter++}.bin`;
+      const digest = new Bun.CryptoHasher('sha256').update(value).digest('hex');
+      const relPath = `${hash}/${digest}.bin`;
       blobs.push({ relPath, data: value });
-      referenced.add(relPath);
       return { __mochiBlob: relPath, bytes: value.byteLength } satisfies BlobPointer;
     }
     if (isBlobRef(value)) {
       const relPath = relative(this.directory, value.path);
-      referenced.add(relPath);
       return { __mochiBlob: relPath, bytes: value.bytes } satisfies BlobPointer;
     }
     if (Array.isArray(value)) {
-      return value.map((v) => this.encodeBlobs(v, hash, blobs, referenced));
+      return value.map((v) => this.encodeBlobs(v, hash, blobs));
     }
     if (value !== null && typeof value === 'object') {
       const out: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-        out[k] = this.encodeBlobs(v, hash, blobs, referenced);
+        out[k] = this.encodeBlobs(v, hash, blobs);
       }
       return out;
     }

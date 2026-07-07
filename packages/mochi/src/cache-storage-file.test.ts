@@ -3,7 +3,7 @@ import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { MochiCache } from './cache';
-import { FileStorage, isBlobRef, readBlobRef, tryReadBlobRef, type BlobRef } from './cache-storage';
+import { FileStorage, isBlobRef, readBlobRef, type BlobRef } from './cache-storage';
 import { mochiEvents } from './events';
 
 const wait = Bun.sleep;
@@ -307,7 +307,7 @@ describe('FileStorage binary offload', () => {
     expect(countDirs(dir)).toBe(0);
   });
 
-  test('a superseded generation never serves torn bytes: the stale ref reads null', async () => {
+  test('content-addressed blobs never serve torn bytes: each ref reads its own generation', async () => {
     const dir = makeDir();
     const storage = new FileStorage({ directory: dir, purgeInterval: 0 });
     created.push(storage);
@@ -317,27 +317,29 @@ describe('FileStorage binary offload', () => {
     await storage.setItem('img', { value: { bytes: new Uint8Array([2, 2, 2, 2]) }, createdAt: 2 });
     const gen2 = (await storage.getItem('img')) as { value: { bytes: BlobRef } };
 
-    // Each generation got its own file, so the old ref can't read new bytes...
+    // Different bytes → different content-addressed filename, so the two refs never
+    // alias: the new bytes are written to a new file rather than over gen1's.
     expect(gen2.value.bytes.path).not.toBe(gen1.value.bytes.path);
     expect(Array.from(await readBlobRef(gen2.value.bytes))).toEqual([2, 2, 2, 2]);
-    // ...it reads nothing at all: the writer reclaimed it after committing.
-    expect(await tryReadBlobRef(gen1.value.bytes)).toBeNull();
+    // The superseded blob is left on disk (reclaimed with the folder later), so an
+    // outstanding gen1 ref still reads its own bytes — never gen2's.
+    expect(Array.from(await readBlobRef(gen1.value.bytes))).toEqual([1, 1, 1]);
   });
 
-  test('setItem reclaims superseded blob generations after the JSON commits', async () => {
+  test('identical bytes dedupe to a single content-addressed blob file', async () => {
     const dir = makeDir();
     const storage = new FileStorage({ directory: dir, purgeInterval: 0 });
     created.push(storage);
 
-    await storage.setItem('img', { value: { bytes: new Uint8Array([1]) }, createdAt: 1 });
-    await storage.setItem('img', { value: { bytes: new Uint8Array([2]) }, createdAt: 2 });
+    await storage.setItem('img', { value: { bytes: new Uint8Array([7, 7]) }, createdAt: 1 });
+    await storage.setItem('img', { value: { bytes: new Uint8Array([7, 7]) }, createdAt: 2 });
 
     const blobDirs = readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory());
     expect(blobDirs).toHaveLength(1);
-    const files = readdirSync(join(dir, blobDirs[0]!.name));
-    expect(files).toHaveLength(1);
+    // Same bytes → same digest → one file, no rewrite on the second setItem.
+    expect(readdirSync(join(dir, blobDirs[0]!.name))).toHaveLength(1);
     const current = (await storage.getItem('img')) as { value: { bytes: BlobRef } };
-    expect(current.value.bytes.path.endsWith(files[0]!)).toBe(true);
+    expect(Array.from(await readBlobRef(current.value.bytes))).toEqual([7, 7]);
   });
 
   test('re-persisting a read-back value keeps the existing blob (markStale path)', async () => {

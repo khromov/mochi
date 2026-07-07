@@ -86,9 +86,6 @@ export class MochiCache {
   private inflightTimeout: number;
   private crossProcessInflight: boolean;
   private inflight = new Map<string, Promise<unknown>>();
-  // Serialize storage writes per key so a run's persist and an invalidation's
-  // removal/backdate can't interleave.
-  private locks = new Map<string, Promise<void>>();
 
   constructor(options: MochiCacheOptions = {}) {
     this.storage = options.storage ?? new MemoryStorage();
@@ -155,7 +152,7 @@ export class MochiCache {
   async delete(key: string): Promise<void> {
     this.inflight.delete(key);
     try {
-      await this.withKeyLock(key, async () => this.storage.removeItem(key));
+      await this.storage.removeItem(key);
     } catch (error) {
       mochiEvents.emit('cache:error', { key, operation: 'remove', error });
       throw error;
@@ -194,31 +191,27 @@ export class MochiCache {
     // Drop any in-flight run first so its supersession guard trips and a pending
     // revalidation can't overwrite the backdated timestamp.
     this.inflight.delete(key);
-    // The backdate is a read-modify-write: the key lock makes the no-op guard
-    // trustworthy against a run's persist landing between the read and the write.
-    await this.withKeyLock(key, async () => {
-      let raw: unknown;
-      try {
-        raw = await this.storage.getItem(key);
-      } catch (error) {
-        mochiEvents.emit('cache:error', { key, operation: 'get', error });
-        return;
-      }
-      if (raw == null) {
-        return;
-      }
-      const entry = this.deserialize(raw) as CacheEntry;
-      const staleCreatedAt = this.now() - this.minTimeToStale;
-      if (entry.createdAt <= staleCreatedAt) {
-        return;
-      }
-      const next = this.serialize({ value: entry.value, createdAt: staleCreatedAt } satisfies CacheEntry);
-      try {
-        await this.storage.setItem(key, next);
-      } catch (error) {
-        mochiEvents.emit('cache:error', { key, operation: 'set', error });
-      }
-    });
+    let raw: unknown;
+    try {
+      raw = await this.storage.getItem(key);
+    } catch (error) {
+      mochiEvents.emit('cache:error', { key, operation: 'get', error });
+      return;
+    }
+    if (raw == null) {
+      return;
+    }
+    const entry = this.deserialize(raw) as CacheEntry;
+    const staleCreatedAt = this.now() - this.minTimeToStale;
+    if (entry.createdAt <= staleCreatedAt) {
+      return;
+    }
+    const next = this.serialize({ value: entry.value, createdAt: staleCreatedAt } satisfies CacheEntry);
+    try {
+      await this.storage.setItem(key, next);
+    } catch (error) {
+      mochiEvents.emit('cache:error', { key, operation: 'set', error });
+    }
   }
 
   async clearItems(): Promise<void> {
@@ -264,12 +257,8 @@ export class MochiCache {
         const serialized = this.serialize({ value, createdAt: this.now() } satisfies CacheEntry);
         // Skip the write if this run was superseded while `fn` was pending — by an
         // inflight takeover/timeout or a delete/markStale/clear that cleared the
-        // slot. The key lock orders this atomically against those mutations' own
-        // storage writes, so a late revalidation can't land after the removal.
-        await this.withKeyLock(key, async () => {
-          if (this.inflight.get(key) !== ref.current) {
-            return;
-          }
+        // slot — so a late revalidation can't resurrect a key the caller removed.
+        if (this.inflight.get(key) === ref.current) {
           // A storage write failure must not discard the freshly computed value
           // the caller is waiting on — emit and continue, the next read recomputes.
           try {
@@ -277,7 +266,7 @@ export class MochiCache {
           } catch (error) {
             mochiEvents.emit('cache:error', { key, operation: 'set', error });
           }
-        });
+        }
         // Round-trip through (de)serialize so a fresh compute returns the same shape
         // a later cache hit would, even with non-identity transforms.
         return (this.deserialize(serialized) as CacheEntry).value as T;
@@ -354,25 +343,6 @@ export class MochiCache {
     } catch (error) {
       mochiEvents.emit('cache:error', { key, operation: 'remove', error });
     }
-  }
-
-  // Serialize storage writes per key so a run's persist and an invalidation's
-  // removal/backdate can't interleave. Rejections propagate to the caller but
-  // never break the chain for the next waiter.
-  private withKeyLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
-    const prev = this.locks.get(key) ?? Promise.resolve();
-    const run = prev.then(fn, fn);
-    const tail = run.then(
-      () => undefined,
-      () => undefined,
-    );
-    this.locks.set(key, tail);
-    void tail.then(() => {
-      if (this.locks.get(key) === tail) {
-        this.locks.delete(key);
-      }
-    });
-    return run;
   }
 
   private emitRead<T>(key: string, value: T, status: CacheStatus): CacheResult<T> {
