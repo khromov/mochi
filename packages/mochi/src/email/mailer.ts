@@ -19,7 +19,7 @@ function toArray(value: string | string[] | undefined): string[] | undefined {
  * suppresses the *contents* of <script>/<style> (css-inline emits a <style>
  * block into the rendered email HTML), inserts spaces around block-level tags so
  * adjacent blocks don't collide, surfaces each link's destination as
- * `text ( href )`, and decodes entities in a single pass via html-entities.
+ * `text <href>`, and decodes entities in a single pass via html-entities.
  * Bun's `text` chunks don't decode entities, so the decode runs last — which
  * also preserves escapes like `&amp;lt;` → `&lt;` (not `<`).
  */
@@ -102,19 +102,19 @@ export async function sendEmail(message: MochiEmailMessage): Promise<MochiEmailR
     throw new EmailError('An email needs a body: pass `html`, `text`, or `component`.');
   }
 
-  const cc = toArray(message.cc);
-  const bcc = toArray(message.bcc);
+  // Pass author-supplied fields (subject, replyTo, attachments, headers) through
+  // untouched; strip the template inputs (`component`/`props`, already rendered
+  // into `html`) and override the normalized fields so the raw `string`/array
+  // union and an unfilled `from` never reach a transport.
+  const { component: _component, props: _props, ...passthrough } = message;
   const resolved: ResolvedEmailMessage = {
+    ...passthrough,
     from,
     to,
-    ...(cc ? { cc } : {}),
-    ...(bcc ? { bcc } : {}),
-    ...(message.replyTo ? { replyTo: message.replyTo } : {}),
-    subject: message.subject,
-    ...(html ? { html } : {}),
-    ...(text ? { text } : {}),
-    ...(message.attachments ? { attachments: message.attachments } : {}),
-    ...(message.headers ? { headers: message.headers } : {}),
+    cc: toArray(message.cc),
+    bcc: toArray(message.bcc),
+    html,
+    text,
   };
 
   // Give application code a seam to rewrite the outgoing message (audit BCC,

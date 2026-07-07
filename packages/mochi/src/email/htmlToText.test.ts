@@ -43,9 +43,7 @@ describe('htmlToText', () => {
   });
 
   test('separates table cells and rows (email HTML is table-based)', () => {
-    expect(htmlToText('<table><tr><td>Name</td><td>Bob</td></tr><tr><td>Age</td><td>30</td></tr></table>')).toBe(
-      'Name Bob Age 30',
-    );
+    expect(htmlToText('<table><tr><td>Name</td><td>Bob</td></tr><tr><td>Age</td><td>30</td></tr></table>')).toBe('Name Bob Age 30');
   });
 
   test('keeps inline elements contiguous', () => {
