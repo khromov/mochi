@@ -12,7 +12,7 @@
   <div class="sticker-canvas">
     <div class="sticker-inner">
       <span class="sticker-logo">🍡 mochi</span>
-      <span class="sticker-tag">Svelte meta-framework</span>
+      <span class="sticker-tag">The new Svelte meta-framework</span>
       <span class="sticker-url">mochi.fast</span>
     </div>
   </div>
@@ -59,7 +59,7 @@
 
   .sticker-canvas {
     width: 720px;
-    height: 405px;
+    height: 380px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -102,21 +102,21 @@
   .sticker-tag {
     display: block;
     text-align: right;
-    margin-top: 0.75rem;
+    margin-top: 0.15rem;
     font-family: 'Fraunces Variable', Georgia, 'Times New Roman', serif;
     font-style: italic;
     font-weight: 300;
-    font-size: 2rem;
-    color: rgba(255, 255, 255, 0.82);
+    font-size: 1.9rem;
+    color: rgba(255, 255, 255, 0.96);
     letter-spacing: 0.003em;
   }
 
   .sticker-url {
     display: block;
     text-align: right;
-    margin-top: 0.35rem;
+    margin-top: 0.15rem;
     font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
-    font-size: 2rem;
+    font-size: 2.25rem;
     color: rgba(255, 255, 255, 0.92);
     letter-spacing: 0.04em;
   }
