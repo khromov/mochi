@@ -129,7 +129,7 @@ export function createImageHandler(): (req: Request) => Promise<Response> {
     try {
       const id = variantId(request.src, size.configHash);
       const { entry, status } = await cache.getVariant(request.src, id, extForFormat(size.format), async () => {
-        const { bytes, createdAt } = await getCachedOriginal(request.src, { timeToStale: size.timeToStale, timeToEvict: size.timeToEvict }, options, cache);
+        const { bytes, createdAt } = await getCachedOriginal(request.src, {}, options, cache);
         const result = await runPipeline(bytes, size, options);
         return {
           bytes: result.bytes,
@@ -145,7 +145,7 @@ export function createImageHandler(): (req: Request) => Promise<Response> {
       // the served bytes' generation, so both a redefinition and a source refresh
       // revalidate correctly.
       const etag = `"${id}-${entry.meta.createdAt}"`;
-      const cacheControl = resolveImageCacheControl(size.timeToStale ?? options.timeToStale, size.timeToEvict ?? options.timeToEvict, development);
+      const cacheControl = resolveImageCacheControl(options.timeToStale, options.timeToEvict, development);
       if (req.headers.get('if-none-match') === etag) {
         return new Response(null, { status: 304, headers: { ETag: etag, 'X-Content-Type-Options': 'nosniff', ...(cacheControl ? { 'Cache-Control': cacheControl } : {}) } });
       }

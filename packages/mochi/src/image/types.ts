@@ -50,10 +50,6 @@ export interface ImageSize {
   autoOrient?: boolean;
   /** Decompression-bomb guard passed to `Bun.Image`. Default: the configured `maxPixels`. */
   maxPixels?: number;
-  /** Original-window override (ms) — shortest requested window wins across variants. */
-  timeToStale?: number;
-  /** Original-window override (ms) — shortest requested window wins across variants. */
-  timeToEvict?: number;
 }
 
 /** A size with every field resolved against the global defaults, plus a stable config hash. */
@@ -71,8 +67,6 @@ export interface ResolvedImageSize {
   quality: number;
   autoOrient: boolean;
   maxPixels: number;
-  timeToStale?: number;
-  timeToEvict?: number;
   /** Digest of every byte-affecting field — folded into the cache key + ETag so a redefinition busts caches. */
   configHash: string;
 }

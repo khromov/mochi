@@ -31,18 +31,17 @@ await Mochi.serve({
 
 Transforms apply in a fixed order: **resize → rotate → flip → flop → modulate → format-encode**. Pipelines are validated at startup (bad dimensions/formats throw immediately). Redefining a size re-renders every URL that uses it — a config hash is folded into the cache key and `ETag`, so caches bust automatically.
 
-| Pipeline field                | Default             | Notes                                                              |
-| ----------------------------- | ------------------- | ------------------------------------------------------------------ |
-| `width` / `height`            | —                   | Target size; height-only derives width by ratio                    |
-| `fit`                         | `'inside'`          | `inside` keeps aspect & fits within W×H; `fill` stretches to W×H   |
-| `withoutEnlargement`          | `false`             | Never upscale beyond the source's intrinsic size                   |
-| `rotate`                      | none                | Degrees clockwise                                                  |
-| `flip` / `flop`               | `false`             | Mirror vertically / horizontally                                   |
-| `modulate`                    | none                | `{ brightness?, saturation?, hue?, lightness? }` (`1` = unchanged) |
-| `format`                      | `defaultFormat`     | `webp` \| `jpeg` \| `png` \| `avif`                                |
-| `quality`                     | `defaultQuality`    | 1–100 (ignored for `png`)                                          |
-| `autoOrient`                  | global `autoOrient` | Apply EXIF orientation                                             |
-| `timeToStale` / `timeToEvict` | global (inherit)    | Per-size cache-window overrides (ms)                               |
+| Pipeline field       | Default             | Notes                                                              |
+| -------------------- | ------------------- | ------------------------------------------------------------------ |
+| `width` / `height`   | —                   | Target size; height-only derives width by ratio                    |
+| `fit`                | `'inside'`          | `inside` keeps aspect & fits within W×H; `fill` stretches to W×H   |
+| `withoutEnlargement` | `false`             | Never upscale beyond the source's intrinsic size                   |
+| `rotate`             | none                | Degrees clockwise                                                  |
+| `flip` / `flop`      | `false`             | Mirror vertically / horizontally                                   |
+| `modulate`           | none                | `{ brightness?, saturation?, hue?, lightness? }` (`1` = unchanged) |
+| `format`             | `defaultFormat`     | `webp` \| `jpeg` \| `png` \| `avif`                                |
+| `quality`            | `defaultQuality`    | 1–100 (ignored for `png`)                                          |
+| `autoOrient`         | global `autoOrient` | Apply EXIF orientation                                             |
 
 > `Bun.Image` supports only `fit: 'inside'` and `fit: 'fill'` — there is no crop/"cover" mode. To get an exact square from a non-square source use `fill` (which stretches); otherwise `inside` keeps the aspect ratio and the output won't fill both dimensions.
 
@@ -129,17 +128,13 @@ The original is fetched once and **shared**: every variant of a source reads fro
 
 ### Caching & TTL
 
-The original's encoded bytes and its stale-while-revalidate timers are stored on disk (`cacheDir`), so the cache survives restarts. There is one TTL — the original's — and variants follow it; a variant never expires independently of the source it was transformed from. Defaults come from the global `timeToStale` / `timeToEvict`, overridable per size:
+The original's encoded bytes and its stale-while-revalidate timers are stored on disk (`cacheDir`), so the cache survives restarts. There is one TTL — the original's — and variants follow it; a variant never expires independently of the source it was transformed from. Both TTLs are global only; sizes have no TTL overrides:
 
 ```ts
 await Mochi.serve({
   image: {
     timeToStale: 14_400_000, // serve fresh for 4 h
     timeToEvict: 86_400_000, // re-fetch source after 1 day
-    sizes: {
-      // this size pins a shorter window on its source
-      volatile: { width: 400, timeToStale: 30_000, timeToEvict: 3_600_000 },
-    },
   },
   routes,
 });

@@ -16,20 +16,10 @@ function checkDimension(name: string, pipe: string, value: number | undefined): 
   return Math.round(value);
 }
 
-function checkTtl(name: string, pipe: string, value: number | undefined): number | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-  if (!Number.isFinite(value) || value < 0) {
-    throw new Error(`Image size "${pipe}": ${name} must be a non-negative number of ms, got ${value}`);
-  }
-  return Math.round(value);
-}
-
 /**
  * Resolve one named size against the global defaults and stamp a config hash.
- * The hash covers every byte-affecting field (not the TTLs) so redefining a
- * size changes the cache key + ETag and re-renders its already-minted URLs.
+ * The hash covers every byte-affecting field so redefining a size changes the
+ * cache key + ETag and re-renders its already-minted URLs.
  */
 function resolveSize(
   name: string,
@@ -55,12 +45,10 @@ function resolveSize(
     quality,
     autoOrient: p.autoOrient ?? defaults.autoOrient,
     maxPixels: p.maxPixels ?? defaults.maxPixels,
-    timeToStale: checkTtl('timeToStale', name, p.timeToStale),
-    timeToEvict: checkTtl('timeToEvict', name, p.timeToEvict),
     configHash: '',
   };
-  // Hash the byte-affecting fields (everything but name + TTLs + the placeholder hash).
-  const { name: _n, timeToStale: _s, timeToEvict: _e, configHash: _h, ...bytesAffecting } = resolved;
+  // Hash the byte-affecting fields (everything but name + the placeholder hash).
+  const { name: _n, configHash: _h, ...bytesAffecting } = resolved;
   resolved.configHash = createHash('sha256').update(JSON.stringify(bytesAffecting)).digest('base64url').slice(0, 16);
   return resolved;
 }
