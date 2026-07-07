@@ -42,6 +42,16 @@ describe('htmlToText', () => {
     expect(htmlToText('<ul><li>a</li><li>b</li></ul>')).toBe('a b');
   });
 
+  test('separates table cells and rows (email HTML is table-based)', () => {
+    expect(htmlToText('<table><tr><td>Name</td><td>Bob</td></tr><tr><td>Age</td><td>30</td></tr></table>')).toBe(
+      'Name Bob Age 30',
+    );
+  });
+
+  test('keeps inline elements contiguous', () => {
+    expect(htmlToText('x<span>a</span><b>b</b>y')).toBe('xaby');
+  });
+
   test('collapses whitespace and trims', () => {
     expect(htmlToText('   <p>  hi  </p>  ')).toBe('hi');
   });
