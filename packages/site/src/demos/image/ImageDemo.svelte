@@ -1,11 +1,13 @@
 <script>
   import DemoPage from '../../components/DemoPage.svelte';
+  import CodeSnippet from '../../components/CodeSnippet.svelte';
   import ImageCredits from '../../components/ImageCredits.svelte';
   import { loadSources } from '../../components/utils.ts';
   import { files } from './files.ts';
   import ImageIslandCard from './ImageIslandCard.svelte';
   import { Image } from 'mochi-framework/image';
   import { getImageUrl, getImagePlaceholder } from 'mochi-framework';
+  import { highlightCode } from '../../lib/highlight.server';
   import ArrowDown from '@lucide/svelte/icons/arrow-down';
 
   const remote = 'https://sta-public.fra1.cdn.digitaloceanspaces.com/mochi/mochi-1.jpg';
@@ -20,6 +22,17 @@
   const originalUrl = getImageUrl(remote);
 
   const blur = await getImagePlaceholder(remote);
+
+  // Small "how to use" snippets shown under each example. Syntax highlighting is
+  // server-side (Shiki), so these are computed once during SSR.
+  const svelte = (code) => highlightCode(code, 'svelte');
+  const ts = (code) => highlightCode(code, 'typescript');
+  const codeComponent = await svelte('<Image src={photo} size="hero" alt="A resized photo" />');
+  const codePlaceholder = await svelte('<Image src={photo} size="hero" placeholder alt="A resized photo" />');
+  const codeIsland = await svelte('<ImageIslandCard mochi:hydrate src={photo} />');
+  const codeProgrammatic = await ts("const url = getImageUrl(src, 'square');");
+  const codeOriginal = await ts('const url = getImageUrl(src); // no size name → the original');
+  const codeGallery = await svelte('{#each gallery as src (src)}\n  <Image {src} size="square" placeholder alt="Photo" />\n{/each}');
 
   const sources = await loadSources(files);
 </script>
@@ -37,6 +50,7 @@
   <div class="frame">
     <Image src={remote} size="hero" alt="A resized random photo" />
   </div>
+  <CodeSnippet html={codeComponent} />
 
   <h3>With a blur placeholder</h3>
   <p>
@@ -54,6 +68,7 @@
       <Image src={remote} size="hero" alt="A resized random photo with blur-up" placeholder />
     </div>
   {/if}
+  <CodeSnippet html={codePlaceholder} />
 
   <h3>Inside a hydrated island</h3>
   <p>
@@ -63,6 +78,7 @@
   <div class="frame">
     <ImageIslandCard mochi:hydrate src={remote} />
   </div>
+  <CodeSnippet html={codeIsland} />
   <p class="note">
     Caveat: props passed to a hydrated island — like this card's <code>src</code> — are serialized in plain text into the page for hydration, so the source URL is visible to the
     client here. If your origin must stay secret, keep <code>&lt;Image&gt;</code> in server-rendered markup or a server island, whose props are encrypted.
@@ -74,6 +90,7 @@
   <div class="frame">
     <img src={directUrl} width="400" alt="Resized via getImageUrl()" />
   </div>
+  <CodeSnippet html={codeProgrammatic} />
   <p class="note">
     The <code>square</code> size uses <code>fit: 'inside'</code>, which preserves aspect ratio and fits <em>within</em> the 400&times;400 box — so this 3:2 photo becomes
     400&times;267. Set <code>fit: 'fill'</code> on the size to force an exact square (stretching); <code>Bun.Image</code> has no crop/cover mode.
@@ -87,6 +104,7 @@
   <div class="frame">
     <img src={originalUrl} width="400" alt="Full-size original via getImageUrl()" />
   </div>
+  <CodeSnippet html={codeOriginal} />
 
   <h3>Gallery</h3>
   <p>
@@ -97,6 +115,7 @@
       <Image {src} size="square" placeholder alt="Gallery photo {i + 1}" class="grid__img" />
     {/each}
   </div>
+  <CodeSnippet html={codeGallery} />
 
   <ImageCredits />
 </DemoPage>
