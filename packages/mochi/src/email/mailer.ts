@@ -51,8 +51,10 @@ export function htmlToText(html: string): string {
         }
         const start = out.length;
         el.onEndTag(() => {
+          // Angle brackets are the RFC-standard plain-text URL delimiter — mail
+          // clients that auto-linkify stop at the `>`, so no padding is needed.
           if (href !== out.slice(start).trim()) {
-            out += ` ( ${href} )`;
+            out += ` <${href}>`;
           }
         });
       },

@@ -50,14 +50,14 @@ describe('htmlToText', () => {
     expect(htmlToText('<p>x &nbsp; y</p>')).toBe('x y');
   });
 
-  test('surfaces a link destination after its text, with padded parens', () => {
-    // Parens are space-padded so auto-linkifying clients don't eat the `)`.
-    expect(htmlToText('<a href="http://x" title="t">link</a>')).toBe('link ( http://x )');
-    expect(htmlToText('<p>Visit <a href="https://example.com/page?a=1&amp;b=2">our site</a> now</p>')).toBe('Visit our site ( https://example.com/page?a=1&b=2 ) now');
+  test('surfaces a link destination after its text, in angle brackets', () => {
+    // Angle brackets are the RFC-standard plain-text URL delimiter.
+    expect(htmlToText('<a href="http://x" title="t">link</a>')).toBe('link <http://x>');
+    expect(htmlToText('<p>Visit <a href="https://example.com/page?a=1&amp;b=2">our site</a> now</p>')).toBe('Visit our site <https://example.com/page?a=1&b=2> now');
   });
 
   test('omits the destination when it adds nothing', () => {
-    // href equal to the visible text, or absent, produces no parenthetical.
+    // href equal to the visible text, or absent, produces no bracketed suffix.
     expect(htmlToText('<a href="http://x">http://x</a>')).toBe('http://x');
     expect(htmlToText('<a>bare</a>')).toBe('bare');
   });
