@@ -141,7 +141,10 @@ export class ImageCache {
     // FileStorage's own age-sweeper is disabled; the image sweeper (`sweeper.ts`)
     // drives `sweep()`. `maxAge >= maxTimeToLive`, so it never drops a servable entry.
     this.storage = new FileStorage({ directory: options.cacheDir, maxAge: options.maxTimeToLive, purgeInterval: 0 });
-    this.cache = new MochiCache({ minTimeToStale: this.minTimeToStale, maxTimeToLive: this.maxTimeToLive, storage: this.storage });
+    // 60s in-flight timeout: an image regen (fetch upstream → decode → resize)
+    // should never hold the per-key coalescing lock for long, so a hung upstream
+    // fails fast instead of parking every waiter until the far larger default.
+    this.cache = new MochiCache({ minTimeToStale: this.minTimeToStale, maxTimeToLive: this.maxTimeToLive, storage: this.storage, inflightTimeout: 60_000 });
     // Cascade: deleting a source's original key reclaims its variants + placeholder.
     // `setHandler` (not `.on`) so a dev re-import replaces rather than stacks the sub.
     mochiEvents.setHandler('mochi-image:cache-delete', 'cache:delete', (event) => {

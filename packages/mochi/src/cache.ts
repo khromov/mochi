@@ -29,6 +29,15 @@ export interface MochiCacheOptions {
   serialize?: (entry: unknown) => unknown;
   /** Deserialize a cache entry read back from storage. Defaults to identity. */
   deserialize?: (raw: unknown) => unknown;
+  /**
+   * Max ms a single recompute may hold the per-key in-flight lock. If `fn` hasn't
+   * settled by then the lock is released and coalesced callers reject with a
+   * timeout error, so a hung upstream can't trap every waiter forever. The
+   * abandoned run keeps executing but its result is discarded (the stored-write
+   * guard already drops superseded runs). Default 1 hour; `<= 0` or non-finite
+   * disables the timeout.
+   */
+  inflightTimeout?: number;
 }
 
 export interface CacheResult<T> {
@@ -44,12 +53,25 @@ interface CacheEntry {
 
 const identity = (value: unknown) => value;
 
+// Race a recompute against a timeout so a hung `fn` can't hold the per-key
+// in-flight lock forever. `Promise.race` attaches a reaction to `work`, so a late
+// rejection after the timeout wins the race is still considered handled (no
+// unhandled-rejection warning); `run`'s stored-write guard discards its result.
+function withTimeout<T>(work: Promise<T>, ms: number, key: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`MochiCache: recompute for "${key}" timed out after ${ms}ms`)), ms);
+  });
+  return Promise.race([work, timeout]).finally(() => clearTimeout(timer));
+}
+
 export class MochiCache {
   private storage: Storage;
   private minTimeToStale: number;
   private maxTimeToLive: number;
   private serialize: (entry: unknown) => unknown;
   private deserialize: (raw: unknown) => unknown;
+  private inflightTimeout: number;
   private inflight = new Map<string, Promise<unknown>>();
 
   constructor(options: MochiCacheOptions = {}) {
@@ -58,6 +80,7 @@ export class MochiCache {
     this.maxTimeToLive = options.maxTimeToLive ?? 600_000;
     this.serialize = options.serialize ?? identity;
     this.deserialize = options.deserialize ?? identity;
+    this.inflightTimeout = options.inflightTimeout ?? 3_600_000;
 
     if (this.minTimeToStale >= this.maxTimeToLive) {
       throw new Error(`MochiCache: minTimeToStale (${this.minTimeToStale}) must be less than maxTimeToLive (${this.maxTimeToLive}).`);
@@ -194,11 +217,12 @@ export class MochiCache {
     }
 
     const ref: { current: Promise<T> | null } = { current: null };
-    const promise = (async () => {
+    const work = (async () => {
       const value = await fn();
       const serialized = this.serialize({ value, createdAt: this.now() } satisfies CacheEntry);
-      // Skip the write if this run was deleted/superseded while `fn` was pending,
-      // so a late revalidation can't resurrect a key the caller already removed.
+      // Skip the write if this run was deleted/superseded while `fn` was pending
+      // (including by a timeout that released the lock), so a late revalidation
+      // can't resurrect a key the caller already removed.
       if (this.inflight.get(key) === ref.current) {
         // A storage write failure must not discard the freshly computed value the
         // caller is waiting on — emit and continue, the next read recomputes.
@@ -211,7 +235,10 @@ export class MochiCache {
       // Round-trip through (de)serialize so a fresh compute returns the same shape
       // a later cache hit would, even with non-identity transforms.
       return (this.deserialize(serialized) as CacheEntry).value as T;
-    })().finally(() => {
+    })();
+
+    const guarded = this.inflightTimeout > 0 && Number.isFinite(this.inflightTimeout) ? withTimeout(work, this.inflightTimeout, key) : work;
+    const promise = guarded.finally(() => {
       if (this.inflight.get(key) === ref.current) {
         this.inflight.delete(key);
       }

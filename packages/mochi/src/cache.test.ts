@@ -226,6 +226,35 @@ describe('MochiCache concurrency', () => {
     expect(calls).toBe(1);
   });
 
+  test('a hung fn is released by inflightTimeout so a later read starts fresh', async () => {
+    const cache = new MochiCache({ minTimeToStale: 1_000, maxTimeToLive: 5_000, inflightTimeout: 30 });
+    let calls = 0;
+    let release!: (value: number) => void;
+    const fn = () =>
+      new Promise<number>((resolve) => {
+        calls++;
+        // First call hangs forever; a later call resolves immediately.
+        if (calls === 1) {
+          release = resolve;
+        } else {
+          resolve(calls);
+        }
+      });
+
+    // Coalesced callers on the hung run all reject once the timeout releases the lock.
+    await expect(cache.fetch('k', fn)).rejects.toThrow(/timed out after 30ms/);
+    expect(calls).toBe(1);
+
+    // The lock is gone, so a fresh read runs fn again and succeeds.
+    expect(await cache.fetch('k', fn)).toBe(2);
+    expect(calls).toBe(2);
+
+    // The abandoned first run completing late must not overwrite the cache.
+    release(1);
+    await wait(10);
+    expect(await cache.fetch('k', fn)).toBe(2);
+  });
+
   test('with no cached value, later reads block on the in-flight request', async () => {
     const cache = new MochiCache({ minTimeToStale: 1_000, maxTimeToLive: 5_000 });
     let calls = 0;
