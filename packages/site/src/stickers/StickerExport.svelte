@@ -8,7 +8,9 @@
 
   async function download() {
     const node = document.getElementById(targetId);
-    if (!node) return;
+    if (!node) {
+      return;
+    }
     busy = true;
     error = '';
     try {
