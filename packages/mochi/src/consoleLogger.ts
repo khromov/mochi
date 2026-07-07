@@ -187,6 +187,12 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
     path: payload.key,
     note: styleText('cyan', 'revalidate'),
   }));
+  subscribe('cache:inflight:deferred', (payload) => ({
+    label: 'CACHE',
+    path: payload.key,
+    note: styleText('dim', 'deferred to peer'),
+    level: 'debug',
+  }));
   subscribe('cache:delete', (payload) => ({
     label: 'CACHE',
     path: payload.key,

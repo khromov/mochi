@@ -64,6 +64,7 @@ export type {
   MochiCacheStatus,
   MochiCacheReadEvent,
   MochiCacheRevalidateEvent,
+  MochiCacheInflightDeferredEvent,
   MochiCacheDeleteEvent,
   MochiCacheSweepEvent,
   MochiImageCacheSweepEvent,

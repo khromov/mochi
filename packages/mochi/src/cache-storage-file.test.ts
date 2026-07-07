@@ -358,3 +358,154 @@ describe('FileStorage binary offload', () => {
     expect(countDirs(dir)).toBe(1);
   });
 });
+
+// Two MochiCache instances over one shared directory model two load-balanced
+// processes: each has its own in-process `inflight` Map but a common FileStorage,
+// which reads fresh from disk on every getItem — so the advisory marker one writes
+// is visible to the other.
+describe('MochiCache cross-process in-flight marker (shared FileStorage)', () => {
+  // Mirrors MochiCache.markerKey — the tests are deliberately white-box on this.
+  const markerKey = (key: string) => `mochi:inflight:${key}`;
+
+  async function waitForMarker(storage: FileStorage, key: string, present: boolean): Promise<void> {
+    for (let i = 0; i < 250; i++) {
+      const raw = await storage.getItem(markerKey(key));
+      if ((raw != null) === present) {
+        return;
+      }
+      await wait(2);
+    }
+    throw new Error(`marker for "${key}" never became ${present ? 'present' : 'absent'}`);
+  }
+
+  function twoProcesses(opts: { minTimeToStale: number; maxTimeToLive: number; inflightTimeout: number }) {
+    const dir = makeDir();
+    const storageA = new FileStorage({ directory: dir, purgeInterval: 0 });
+    const storageB = new FileStorage({ directory: dir, purgeInterval: 0 });
+    created.push(storageA, storageB);
+    const common = { ...opts, crossProcessInflight: true } as const;
+    return {
+      storageA,
+      storageB,
+      cacheA: new MochiCache({ storage: storageA, ...common }),
+      cacheB: new MochiCache({ storage: storageB, ...common }),
+    };
+  }
+
+  test('a peer refreshing a stale entry makes another process serve stale without re-running fn', async () => {
+    const { storageA, cacheA, cacheB } = twoProcesses({ minTimeToStale: 20, maxTimeToLive: 10_000, inflightTimeout: 1_000 });
+
+    await cacheA.fetch('k', () => 1);
+    await wait(40); // age into the stale window on both
+
+    // A serves stale and kicks off a background revalidation that parks in fn,
+    // holding the marker for the duration.
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    let aCalls = 0;
+    const aStale = await cacheA.fetchWithStatus('k', async () => {
+      aCalls++;
+      await gate;
+      return 2;
+    });
+    expect(aStale.status).toBe('stale');
+    await waitForMarker(storageA, 'k', true);
+
+    // B hits the same stale entry, sees A's fresh marker, and defers.
+    const deferred: string[] = [];
+    mochiEvents.on('cache:inflight:deferred', (e) => deferred.push(e.key));
+    let bCalls = 0;
+    const bRead = await cacheB.fetchWithStatus('k', () => {
+      bCalls++;
+      return 99;
+    });
+
+    expect(bRead).toEqual({ value: 1, status: 'stale' });
+    expect(bCalls).toBe(0); // B did NOT run a duplicate regeneration
+    expect(deferred).toContain('k');
+
+    // Release A: exactly one regeneration happened across both processes.
+    release();
+    await waitForMarker(storageA, 'k', false);
+    expect(aCalls).toBe(1);
+  });
+
+  test('a peer refreshing an expired entry makes another process serve the old value instead of recomputing', async () => {
+    const { storageA, cacheA, cacheB } = twoProcesses({ minTimeToStale: 10, maxTimeToLive: 30, inflightTimeout: 1_000 });
+
+    await cacheA.fetch('k', () => 1);
+    await wait(50); // past maxTimeToLive → expired on both
+
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    let aCalls = 0;
+    // The expired path awaits run(), so A's read only resolves once fn releases.
+    const aRead = cacheA.fetchWithStatus('k', async () => {
+      aCalls++;
+      await gate;
+      return 2;
+    });
+    await waitForMarker(storageA, 'k', true);
+
+    let bCalls = 0;
+    const bRead = await cacheB.fetchWithStatus('k', () => {
+      bCalls++;
+      return 99;
+    });
+    expect(bRead).toEqual({ value: 1, status: 'stale' });
+    expect(bCalls).toBe(0);
+
+    release();
+    expect((await aRead).value).toBe(2);
+    expect(aCalls).toBe(1);
+  });
+
+  test('a marker past its lease is ignored so a crashed peer never blocks regeneration', async () => {
+    const inflightTimeout = 100;
+    const { storageA, cacheA } = twoProcesses({ minTimeToStale: 10, maxTimeToLive: 30, inflightTimeout });
+
+    await cacheA.fetch('k', () => 1);
+    await wait(50); // expired
+
+    // A crashed peer left a marker behind, now older than the lease.
+    await storageA.setItem(markerKey('k'), { startedAt: Date.now() - (inflightTimeout + 50) });
+
+    let calls = 0;
+    const read = await cacheA.fetchWithStatus('k', () => {
+      calls++;
+      return 2;
+    });
+    expect(read).toEqual({ value: 2, status: 'expired' });
+    expect(calls).toBe(1); // stale marker did not make us defer
+  });
+
+  test('does not defer to our own in-process regeneration — concurrent expired callers coalesce to one fresh regen', async () => {
+    const { cacheA } = twoProcesses({ minTimeToStale: 10, maxTimeToLive: 30, inflightTimeout: 1_000 });
+    let calls = 0;
+    const fn = async () => {
+      calls++;
+      await wait(20);
+      return calls;
+    };
+
+    await cacheA.fetch('k', fn); // calls = 1
+    await wait(50); // expired
+
+    const [a, b] = await Promise.all([cacheA.fetchWithStatus('k', fn), cacheA.fetchWithStatus('k', fn)]);
+    expect(a.value).toBe(2);
+    expect(b.value).toBe(2); // both fresh via local coalescing, neither served stale
+    expect(calls).toBe(2); // exactly one regeneration
+  });
+
+  test('delete removes the marker', async () => {
+    const { storageA, storageB, cacheA } = twoProcesses({ minTimeToStale: 10, maxTimeToLive: 10_000, inflightTimeout: 1_000 });
+
+    await cacheA.fetch('k', () => 1);
+    // A fresh marker as if a peer were mid-regen.
+    await storageA.setItem(markerKey('k'), { startedAt: Date.now() });
+
+    await cacheA.delete('k');
+
+    expect(await storageB.getItem(markerKey('k'))).toBeNull();
+  });
+});

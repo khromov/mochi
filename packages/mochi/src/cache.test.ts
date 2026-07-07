@@ -680,7 +680,7 @@ describe('MochiCache invalidation vs in-flight revalidation', () => {
     expect((await cache.peek('k'))?.status).toBe('stale');
   });
 
-  test('supersession bookkeeping is pruned once runs settle', async () => {
+  test('per-key bookkeeping is pruned once runs settle', async () => {
     const cache = new MochiCache({ minTimeToStale: 10, maxTimeToLive: 60_000 });
 
     await cache.fetch('k', () => 'v1');
@@ -690,9 +690,8 @@ describe('MochiCache invalidation vs in-flight revalidation', () => {
     await cache.delete('k');
     await wait(10);
 
-    const internals = cache as unknown as { epochs: Map<string, number>; activeRuns: Map<string, number>; locks: Map<string, Promise<void>> };
-    expect(internals.epochs.size).toBe(0);
-    expect(internals.activeRuns.size).toBe(0);
+    const internals = cache as unknown as { inflight: Map<string, unknown>; locks: Map<string, Promise<void>> };
+    expect(internals.inflight.size).toBe(0);
     expect(internals.locks.size).toBe(0);
   });
 });

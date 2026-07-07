@@ -38,6 +38,16 @@ export interface MochiCacheOptions {
    * disables the timeout.
    */
   inflightTimeout?: number;
+  /**
+   * Best-effort cross-process request coalescing over a shared `storage` backend.
+   * A recompute writes an advisory `mochi:inflight:<key>` marker; a peer process
+   * that hits a stale/expired entry while the marker is fresh serves its in-hand
+   * value instead of piling on a duplicate regeneration. Advisory only (no atomic
+   * lock), leased to `inflightTimeout` so a crashed peer's marker self-expires, and
+   * a no-op unless `inflightTimeout` is finite and `> 0`. Pointless with the default
+   * process-local `MemoryStorage`; intended for a shared `FileStorage`. Default false.
+   */
+  crossProcessInflight?: boolean;
 }
 
 export interface CacheResult<T> {
@@ -72,18 +82,11 @@ export class MochiCache {
   private serialize: (entry: unknown) => unknown;
   private deserialize: (raw: unknown) => unknown;
   private inflightTimeout: number;
+  private crossProcessInflight: boolean;
   private inflight = new Map<string, Promise<unknown>>();
-  // Supersession guard for the check-then-act window in `run`: dropping a key's
-  // inflight slot isn't enough, because a run already past that check can land
-  // its `setItem` AFTER the delete/markStale storage op and resurrect the entry.
-  // Every invalidating mutation bumps the key's epoch and runs its storage write
-  // under the key's lock; a run persists under the same lock only if the epoch it
-  // captured at start is unchanged. Epochs are only consulted by in-flight runs,
-  // so the map is pruned when a key's last run settles (`activeRuns`).
-  private epochs = new Map<string, number>();
-  private activeRuns = new Map<string, number>();
+  // Serialize storage writes per key so a run's persist and an invalidation's
+  // removal/backdate can't interleave.
   private locks = new Map<string, Promise<void>>();
-  private globalEpoch = 0;
 
   constructor(options: MochiCacheOptions = {}) {
     this.storage = options.storage ?? new MemoryStorage();
@@ -92,6 +95,7 @@ export class MochiCache {
     this.serialize = options.serialize ?? identity;
     this.deserialize = options.deserialize ?? identity;
     this.inflightTimeout = options.inflightTimeout ?? 3_600_000;
+    this.crossProcessInflight = options.crossProcessInflight ?? false;
 
     if (this.minTimeToStale >= this.maxTimeToLive) {
       throw new Error(`MochiCache: minTimeToStale (${this.minTimeToStale}) must be less than maxTimeToLive (${this.maxTimeToLive}).`);
@@ -119,6 +123,11 @@ export class MochiCache {
     }
 
     if (age < this.maxTimeToLive) {
+      // A peer process is already refreshing this key — serve our in-hand value
+      // and don't add a duplicate background regen to the fleet.
+      if (await this.deferToPeer(key)) {
+        return this.emitRead(key, cached, 'stale');
+      }
       // Serve the stale value immediately and refresh in the background. A
       // failing upstream would otherwise keep us serving stale silently until
       // maxTimeToLive — surface it so logging/metrics can see the degradation.
@@ -129,19 +138,29 @@ export class MochiCache {
       return this.emitRead(key, cached, 'stale');
     }
 
+    // Past maxTimeToLive: recompute. But if a peer is already refreshing (fresh
+    // marker) and we're within a bounded grace window, serve the old value rather
+    // than pile on a duplicate synchronous regen; past the bound, recompute anyway
+    // so a wedged fleet never serves arbitrarily ancient bytes.
+    if (age < this.maxTimeToLive + this.inflightTimeout && (await this.deferToPeer(key))) {
+      return this.emitRead(key, cached, 'stale');
+    }
+
     const value = await this.run(key, fn);
     return this.emitRead(key, value, 'expired');
   }
 
   async delete(key: string): Promise<void> {
     this.inflight.delete(key);
-    this.bumpEpoch(key);
     try {
       await this.withKeyLock(key, async () => this.storage.removeItem(key));
     } catch (error) {
       mochiEvents.emit('cache:error', { key, operation: 'remove', error });
       throw error;
     }
+    // Drop any advisory marker so a just-invalidated key doesn't briefly make
+    // peers defer to a regeneration that will no longer happen.
+    await this.removeMarker(key);
     mochiEvents.emit('cache:delete', { key });
   }
 
@@ -170,11 +189,9 @@ export class MochiCache {
    * to `MemoryStorage` and `FileStorage`.
    */
   async markStale(key: string): Promise<void> {
-    // Drop any in-flight run and bump the epoch first, so a pending revalidation
-    // can't overwrite the backdated timestamp — whether it's still before its
-    // supersession check or already racing toward its write.
+    // Drop any in-flight run first so its supersession guard trips and a pending
+    // revalidation can't overwrite the backdated timestamp.
     this.inflight.delete(key);
-    this.bumpEpoch(key);
     // The backdate is a read-modify-write: the key lock makes the no-op guard
     // trustworthy against a run's persist landing between the read and the write.
     await this.withKeyLock(key, async () => {
@@ -204,10 +221,7 @@ export class MochiCache {
 
   async clearItems(): Promise<void> {
     // Drop in-flight runs first so a pending revalidation can't repopulate a key
-    // after the storage is cleared; the global epoch bump catches runs that are
-    // already past their inflight check.
-    this.globalEpoch++;
-    this.epochs.clear();
+    // after the storage is cleared.
     this.inflight.clear();
     try {
       await this.storage.clear();
@@ -237,20 +251,21 @@ export class MochiCache {
       return existing;
     }
 
-    const epoch = { g: this.globalEpoch, k: this.epochOf(key) };
-    this.activeRuns.set(key, (this.activeRuns.get(key) ?? 0) + 1);
     const ref: { current: Promise<T> | null } = { current: null };
     const work = (async () => {
+      // Publish the advisory cross-process marker before the expensive `fn` so a
+      // peer that starts moments later sees it and defers (best-effort; no-op
+      // unless crossProcessInflight is on). Removed once this run settles.
+      await this.writeMarker(key);
       try {
         const value = await fn();
         const serialized = this.serialize({ value, createdAt: this.now() } satisfies CacheEntry);
-        // Skip the write if this run was superseded while `fn` was pending — by a
-        // delete/markStale/clear (epoch) or an inflight takeover/timeout
-        // (identity). The key lock orders this atomically against those
-        // mutations' own storage writes, so a late revalidation can never land
-        // after the removal that superseded it.
+        // Skip the write if this run was superseded while `fn` was pending — by an
+        // inflight takeover/timeout or a delete/markStale/clear that cleared the
+        // slot. The key lock orders this atomically against those mutations' own
+        // storage writes, so a late revalidation can't land after the removal.
         await this.withKeyLock(key, async () => {
-          if (epoch.g !== this.globalEpoch || epoch.k !== this.epochOf(key) || this.inflight.get(key) !== ref.current) {
+          if (this.inflight.get(key) !== ref.current) {
             return;
           }
           // A storage write failure must not discard the freshly computed value
@@ -265,15 +280,7 @@ export class MochiCache {
         // a later cache hit would, even with non-identity transforms.
         return (this.deserialize(serialized) as CacheEntry).value as T;
       } finally {
-        // Decrement when the WORK settles (not the timeout-guarded promise): an
-        // abandoned run still consults its epoch, so the entry must outlive it.
-        const remaining = (this.activeRuns.get(key) ?? 1) - 1;
-        if (remaining <= 0) {
-          this.activeRuns.delete(key);
-          this.epochs.delete(key);
-        } else {
-          this.activeRuns.set(key, remaining);
-        }
+        await this.removeMarker(key);
       }
     })();
 
@@ -289,15 +296,61 @@ export class MochiCache {
     return promise;
   }
 
-  private epochOf(key: string): number {
-    return this.epochs.get(key) ?? 0;
+  // The advisory cross-process in-flight marker is keyed separately from the value.
+  // FileStorage hashes this into its own file, so it never collides with the entry.
+  private markerKey(key: string): string {
+    return `mochi:inflight:${key}`;
   }
 
-  // Only bump while a run is in flight: the epoch exists solely to tell such a
-  // run it was superseded, and skipping the write otherwise keeps the map pruned.
-  private bumpEpoch(key: string): void {
-    if (this.activeRuns.has(key)) {
-      this.epochs.set(key, this.epochOf(key) + 1);
+  private markerLeaseEnabled(): boolean {
+    return this.crossProcessInflight && this.inflightTimeout > 0 && Number.isFinite(this.inflightTimeout);
+  }
+
+  // True when a *remote* process is refreshing this key — a fresh advisory marker
+  // exists and we aren't already computing it locally (local coalescing already
+  // hands those callers the fresh value). The signal to serve our in-hand value
+  // instead of piling on a duplicate regen. Any read failure degrades to false
+  // (recompute as usual), so the marker can only ever remove work, never block it.
+  private async deferToPeer(key: string): Promise<boolean> {
+    if (!this.markerLeaseEnabled() || this.inflight.has(key)) {
+      return false;
+    }
+    let raw: unknown;
+    try {
+      raw = await this.storage.getItem(this.markerKey(key));
+    } catch {
+      return false;
+    }
+    const marker = raw as { startedAt?: number } | null;
+    if (marker == null || typeof marker.startedAt !== 'number') {
+      return false;
+    }
+    if (this.now() - marker.startedAt >= this.inflightTimeout) {
+      return false;
+    }
+    mochiEvents.emit('cache:inflight:deferred', { key });
+    return true;
+  }
+
+  private async writeMarker(key: string): Promise<void> {
+    if (!this.markerLeaseEnabled()) {
+      return;
+    }
+    try {
+      await this.storage.setItem(this.markerKey(key), { startedAt: this.now() });
+    } catch (error) {
+      mochiEvents.emit('cache:error', { key, operation: 'set', error });
+    }
+  }
+
+  private async removeMarker(key: string): Promise<void> {
+    if (!this.markerLeaseEnabled()) {
+      return;
+    }
+    try {
+      await this.storage.removeItem(this.markerKey(key));
+    } catch (error) {
+      mochiEvents.emit('cache:error', { key, operation: 'remove', error });
     }
   }
 

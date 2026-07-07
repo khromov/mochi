@@ -144,7 +144,15 @@ export class ImageCache {
     // 60s in-flight timeout: an image regen (fetch upstream → decode → resize)
     // should never hold the per-key coalescing lock for long, so a hung upstream
     // fails fast instead of parking every waiter until the far larger default.
-    this.cache = new MochiCache({ minTimeToStale: this.minTimeToStale, maxTimeToLive: this.maxTimeToLive, storage: this.storage, inflightTimeout: 60_000 });
+    // crossProcessInflight: the cache dir is shared across load-balanced processes,
+    // so an advisory marker lets peers skip duplicate regens (lease = the 60s above).
+    this.cache = new MochiCache({
+      minTimeToStale: this.minTimeToStale,
+      maxTimeToLive: this.maxTimeToLive,
+      storage: this.storage,
+      inflightTimeout: 60_000,
+      crossProcessInflight: true,
+    });
     // Cascade: deleting a source's original key reclaims its variants + placeholder.
     // `setHandler` (not `.on`) so a dev re-import replaces rather than stacks the sub.
     mochiEvents.setHandler('mochi-image:cache-delete', 'cache:delete', (event) => {

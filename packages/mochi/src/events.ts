@@ -86,6 +86,11 @@ export interface MochiCacheRevalidateEvent {
   key: string;
 }
 
+export interface MochiCacheInflightDeferredEvent {
+  /** The key whose regeneration we skipped because a peer process is refreshing it. */
+  key: string;
+}
+
 export interface MochiCacheDeleteEvent {
   /** The key that was removed from the cache. */
   key: string;
@@ -380,6 +385,7 @@ export type MochiEventMap = {
   'island:error': MochiIslandErrorEvent;
   'cache:read': MochiCacheReadEvent;
   'cache:revalidate': MochiCacheRevalidateEvent;
+  'cache:inflight:deferred': MochiCacheInflightDeferredEvent;
   'cache:delete': MochiCacheDeleteEvent;
   'cache:sweep': MochiCacheSweepEvent;
   'image:cache-sweep': MochiImageCacheSweepEvent;
