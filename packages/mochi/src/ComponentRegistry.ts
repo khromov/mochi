@@ -920,58 +920,19 @@ export class ComponentRegistry {
     }
   }
 
-  private async buildClientBundle(): Promise<void> {
-    this.clientBundleCallCount += 1;
-    const bundleStart = performance.now();
+  private createClientBuildPlugin(locals: {
+    compileCacheStats: CompileCacheStats;
+    clientFingerprint: string;
+    debugBarDir: string;
+    cookiesClientPath: string;
+    enhanceClientPath: string;
+  }): BunPlugin {
     const development = this.development;
-    const debugBarEnabled = this.debugBarEnabled;
     const userCompilerOptions = this.svelteConfig.compilerOptions ?? {};
     const markdown = this.markdown;
     const shakenSources = this.shakenSources;
-    const compileCacheStats = createCompileCacheStats();
-    const clientFingerprint = compileFingerprint(userCompilerOptions, development);
     const compileCache = this.compileCache;
-    // Deduplicate by resolved path
-    const unique = new Map<string, HydratableComponent>();
-    for (const c of this.hydratableComponents) {
-      unique.set(c.resolvedPath, c);
-    }
-
-    // Build into local maps first and swap them into the instance fields only
-    // after the build succeeds — a failed `Bun.build` must not leave the registry
-    // stripped (island JS would 404 until the next successful build). CSS entries
-    // in `clientFiles` are per-component and stable, so they survive the swap.
-    const newClientFiles = new Map<string, string>();
-    const newComponentEntryUrls = new Map<string, string>();
-    let newIslandBootstrapUrl: string | null = null;
-    let newDebugBarUrl: string | null = null;
-
-    const frameworkDir = FRAMEWORK_DIR;
-    // POSIX-ify every path that becomes a Bun.build entrypoint, a `filesMap`
-    // key, or an embedded import specifier: forward slashes survive intact in
-    // generated source (backslashes get eaten as JS escapes on Windows) and
-    // keep a file's module identity consistent across all three uses.
-    const hydratableIslandPath = toPosixPath(path.join(frameworkDir, 'web-components', 'HydratableIsland.ts'));
-    const debugBarDir = path.join(frameworkDir, 'debug-bar') + path.sep;
-    const debugBarEntryPath = toPosixPath(path.join(debugBarDir, 'debugbar-entry.ts'));
-
-    // Generate per-component virtual entry points
-    const entrypoints: string[] = [hydratableIslandPath];
-    if (debugBarEnabled) {
-      entrypoints.push(debugBarEntryPath);
-    }
-    const filesMap: Record<string, string> = {};
-
-    for (const [, comp] of unique) {
-      const entryName = `_hydrate-${comp.name}.js`;
-      const entryPath = toPosixPath(path.join(frameworkDir, entryName));
-      const entrySource = `import { registerComponent } from "${hydratableIslandPath}";\nimport ${comp.name} from "${toPosixPath(comp.resolvedPath)}";\nregisterComponent("${comp.name}", ${comp.name});\n`;
-      entrypoints.push(entryPath);
-      filesMap[entryPath] = entrySource;
-    }
-
-    const cookiesClientPath = toPosixPath(path.join(frameworkDir, 'cookies.client.ts'));
-    const enhanceClientPath = toPosixPath(path.join(frameworkDir, 'enhance.client.ts'));
+    const { compileCacheStats, clientFingerprint, debugBarDir, cookiesClientPath, enhanceClientPath } = locals;
 
     const clientPlugin: BunPlugin = {
       name: 'svelte-client',
@@ -1150,6 +1111,54 @@ export class ComponentRegistry {
         }
       },
     };
+    return clientPlugin;
+  }
+
+  private async buildClientBundle(): Promise<void> {
+    this.clientBundleCallCount += 1;
+    const bundleStart = performance.now();
+    const development = this.development;
+    const userCompilerOptions = this.svelteConfig.compilerOptions ?? {};
+    const compileCacheStats = createCompileCacheStats();
+    const clientFingerprint = compileFingerprint(userCompilerOptions, development);
+    // Deduplicate by resolved path
+    const unique = new Map<string, HydratableComponent>();
+    for (const c of this.hydratableComponents) {
+      unique.set(c.resolvedPath, c);
+    }
+
+    // Build into local maps first and swap them into the instance fields only
+    // after the build succeeds — a failed `Bun.build` must not leave the registry
+    // stripped (island JS would 404 until the next successful build). CSS entries
+    // in `clientFiles` are per-component and stable, so they survive the swap.
+    const newClientFiles = new Map<string, string>();
+    const newComponentEntryUrls = new Map<string, string>();
+    let newIslandBootstrapUrl: string | null = null;
+
+    const frameworkDir = FRAMEWORK_DIR;
+    // POSIX-ify every path that becomes a Bun.build entrypoint, a `filesMap`
+    // key, or an embedded import specifier: forward slashes survive intact in
+    // generated source (backslashes get eaten as JS escapes on Windows) and
+    // keep a file's module identity consistent across all three uses.
+    const hydratableIslandPath = toPosixPath(path.join(frameworkDir, 'web-components', 'HydratableIsland.ts'));
+    const debugBarDir = path.join(frameworkDir, 'debug-bar') + path.sep;
+
+    // Generate per-component virtual entry points
+    const entrypoints: string[] = [hydratableIslandPath];
+    const filesMap: Record<string, string> = {};
+
+    for (const [, comp] of unique) {
+      const entryName = `_hydrate-${comp.name}.js`;
+      const entryPath = toPosixPath(path.join(frameworkDir, entryName));
+      const entrySource = `import { registerComponent } from "${hydratableIslandPath}";\nimport ${comp.name} from "${toPosixPath(comp.resolvedPath)}";\nregisterComponent("${comp.name}", ${comp.name});\n`;
+      entrypoints.push(entryPath);
+      filesMap[entryPath] = entrySource;
+    }
+
+    const cookiesClientPath = toPosixPath(path.join(frameworkDir, 'cookies.client.ts'));
+    const enhanceClientPath = toPosixPath(path.join(frameworkDir, 'enhance.client.ts'));
+
+    const clientPlugin = this.createClientBuildPlugin({ compileCacheStats, clientFingerprint, debugBarDir, cookiesClientPath, enhanceClientPath });
 
     const result = await Bun.build({
       entrypoints,
@@ -1192,9 +1201,6 @@ export class ComponentRegistry {
       // both sides keeps them comparable on every platform.
       const entryToComponent = new Map<string, string | null>();
       entryToComponent.set(toPosixPath(path.resolve(hydratableIslandPath)), null);
-      if (debugBarEnabled) {
-        entryToComponent.set(toPosixPath(path.resolve(debugBarEntryPath)), '__debugbar__');
-      }
       for (const [, comp] of unique) {
         const entryPath = toPosixPath(path.resolve(path.join(frameworkDir, `_hydrate-${comp.name}.js`)));
         entryToComponent.set(entryPath, comp.name);
@@ -1209,8 +1215,6 @@ export class ComponentRegistry {
         const url = `${this.assetPrefix}/client/${path.basename(outPath)}`;
         if (compName === null) {
           newIslandBootstrapUrl = url;
-        } else if (compName === '__debugbar__') {
-          newDebugBarUrl = url;
         } else if (compName !== undefined) {
           newComponentEntryUrls.set(compName, url);
         }
@@ -1250,7 +1254,6 @@ export class ComponentRegistry {
       this.componentEntryUrls.set(k, v);
     }
     this.islandBootstrapUrl = newIslandBootstrapUrl;
-    this.debugBarUrl = newDebugBarUrl;
 
     const outputBytes = this.clientStats?.outputs.reduce((sum, o) => sum + o.size, 0) ?? 0;
     mochiEvents.emit('client-bundle:complete', {
@@ -1266,6 +1269,77 @@ export class ComponentRegistry {
         misses: compileCacheStats.misses,
         files: compileCacheFiles,
       });
+    }
+  }
+
+  /**
+   * Build the dev debug-bar client bundle once, as its own self-contained
+   * (`splitting: false`) build served from a stable `/debugbar/` URL prefix.
+   * Deliberately kept out of `buildClientBundle`: on-demand page / server-island
+   * compiles re-run that build, which deletes and re-hashes every `/client/`
+   * asset. A page already in the browser pins the old debug-bar `<script src>`,
+   * so a rebuild mid-session would 404 it (the reported bug). The debug-bar code
+   * is runtime-invariant, so building it once under a prefix the per-page rebuild
+   * never touches keeps the URL alive for the whole process. Idempotent and
+   * self-healing: no-ops once built, rebuilds if the file was cleared.
+   */
+  async buildDebugBar(): Promise<void> {
+    if (!this.debugBarEnabled) {
+      return;
+    }
+    if (this.debugBarUrl && this.clientFiles.has(this.debugBarUrl)) {
+      return;
+    }
+
+    const frameworkDir = FRAMEWORK_DIR;
+    const debugBarDir = path.join(frameworkDir, 'debug-bar') + path.sep;
+    const debugBarEntryPath = toPosixPath(path.join(debugBarDir, 'debugbar-entry.ts'));
+    const cookiesClientPath = toPosixPath(path.join(frameworkDir, 'cookies.client.ts'));
+    const enhanceClientPath = toPosixPath(path.join(frameworkDir, 'enhance.client.ts'));
+    const compileCacheStats = createCompileCacheStats();
+    const clientFingerprint = compileFingerprint(this.svelteConfig.compilerOptions ?? {}, this.development);
+    const plugin = this.createClientBuildPlugin({ compileCacheStats, clientFingerprint, debugBarDir, cookiesClientPath, enhanceClientPath });
+
+    // The debug bar is a dev-only convenience — a build failure here must never
+    // take the server down. In particular the Bun bundler trips an EISDIR-style
+    // read bug (on `devalue`/`clsx`) when a second `Bun.build` runs inside the
+    // `bun test` runtime; a real `bun run` dev process builds it fine. Degrade
+    // gracefully (no debug bar this process) instead of throwing.
+    try {
+      const result = await Bun.build({
+        entrypoints: [debugBarEntryPath],
+        plugins: [plugin],
+        target: 'browser',
+        conditions: ['svelte', ...(this.development ? ['development'] : ['production'])],
+        define: {
+          DEV: String(this.development),
+          BROWSER: 'true',
+          NODE: 'false',
+        },
+        minify: true,
+        splitting: false,
+        naming: '[name]-[hash].[ext]',
+        publicPath: `${this.assetPrefix}/debugbar/`,
+        outdir: path.resolve(`${this.outDir}/svelte-client`),
+        throw: false,
+      });
+
+      if (!result.success) {
+        logger.warn(`Debug bar build failed; continuing without it:\n${formatBuildMessages(result.logs)}`);
+        return;
+      }
+
+      let debugBarUrl: string | null = null;
+      for (const output of result.outputs) {
+        const url = `${this.assetPrefix}/debugbar/${path.basename(output.path)}`;
+        this.clientFiles.set(url, await output.text());
+        if (output.kind === 'entry-point') {
+          debugBarUrl = url;
+        }
+      }
+      this.debugBarUrl = debugBarUrl;
+    } catch (err) {
+      logger.warn(`Debug bar build errored; continuing without it: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
@@ -1522,9 +1596,6 @@ export class ComponentRegistry {
         const outputByName = new Map(this.clientStats.outputs.map((o) => [o.name, o]));
         for (const output of this.clientStats.outputs) {
           const url = `${this.assetPrefix}/client/${output.name}`;
-          if (url === this.debugBarUrl) {
-            continue;
-          }
           if (url === this.islandBootstrapUrl) {
             if (!pageHasIslands) {
               continue;

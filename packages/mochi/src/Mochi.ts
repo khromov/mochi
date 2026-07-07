@@ -491,6 +491,12 @@ export class Mochi {
     }
     await registry.compileAll(ssrEntrypoints);
 
+    // Build the dev debug-bar client bundle up front (no-op when the debug bar
+    // is disabled / in prod), awaited before `Bun.serve()` so its script is
+    // ready and its URL is stable before any request is served. Kept separate
+    // from the per-page client bundle so on-demand recompiles never re-hash it.
+    await registry.buildDebugBar();
+
     // Prod-with-manifest restores this from disk (baked by `build()`); otherwise
     // build it on demand. LiveReload is dev-only, so it's never prebuilt.
     const serverIslandClientJs = registry.serverIslandClientJs ?? (await buildInlineWebComponent('./web-components/ServerIsland.ts'));
