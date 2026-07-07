@@ -95,8 +95,11 @@ class SmtpTransport implements EmailTransport {
     let nodemailer: typeof import('nodemailer');
     try {
       nodemailer = await import('nodemailer');
-    } catch {
-      throw new EmailError("The 'nodemailer' package is required for the SMTP transport. Install it with `bun add nodemailer`.");
+    } catch (err) {
+      throw new EmailError(
+        "Failed to load 'nodemailer' for the SMTP transport. It ships as a dependency of mochi-framework, so this usually means dependencies weren't installed correctly — try reinstalling (`bun install`).",
+        { cause: err },
+      );
     }
     const { host, port, secure, auth, pool, tls } = this.config;
     const resolvedSecure = secure ?? port === 465;

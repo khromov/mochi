@@ -127,8 +127,8 @@ export interface ResolvedEmailOptions {
 
 /** Thrown for misconfiguration or transport failures surfaced to the caller. */
 export class EmailError extends Error {
-  constructor(message: string) {
-    super(message);
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
     this.name = 'EmailError';
   }
 }
