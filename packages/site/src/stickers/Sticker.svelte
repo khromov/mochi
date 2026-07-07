@@ -10,23 +10,25 @@
 </svelte:head>
 
 {#snippet card()}
-  <div class="sticker-canvas">
-    <div class="sticker-inner">
-      <span class="sticker-logo"><span class="sticker-dango" aria-hidden="true"></span>mochi</span>
-      <span class="sticker-tag">The new Svelte meta-framework</span>
-      <span class="sticker-url">mochi.fast</span>
+  <div class="sticker-cell">
+    <div class="sticker-canvas">
+      <div class="sticker-inner">
+        <span class="sticker-logo"><span class="sticker-dango" aria-hidden="true"></span>mochi</span>
+        <span class="sticker-tag">The new Svelte meta-framework</span>
+        <span class="sticker-url">mochi.fast</span>
+      </div>
     </div>
   </div>
 {/snippet}
 
 <div class="sticker-page">
   <h1 class="page-title">Stickers</h1>
-  <p class="page-desc">Nine 720 × 405 (16:9) stickers. Download a high-resolution PNG print sheet.</p>
+  <p class="page-desc">Choose a grid — the sheet size stays fixed, so the stickers scale to fit. Download a high-resolution PNG.</p>
 
-  <StickerExport mochi:hydrate targetId="sticker-sheet" />
+  <StickerExport mochi:hydrate targetId="sticker-sheet" gridId="sticker-grid" />
 
   <div id="sticker-sheet" class="print-sheet">
-    <div class="sticker-grid">
+    <div id="sticker-grid" class="sticker-grid">
       {#each Array(9) as _, i (i)}
         {@render card()}
       {/each}
@@ -62,16 +64,27 @@
     padding: 4px;
   }
 
+  /* Fixed sheet size. Columns/rows are driven by --cols/--rows (set by the
+     controls island); the cells — and therefore the stickers — shrink or grow
+     to fill this constant box as the count changes. */
   .sticker-grid {
     display: grid;
-    grid-template-columns: repeat(3, max-content);
-    gap: 1rem;
-    width: max-content;
+    grid-template-columns: repeat(var(--cols, 3), 1fr);
+    grid-template-rows: repeat(var(--rows, 3), 1fr);
+    gap: 16px;
+    width: 2192px;
+    height: 1172px;
+  }
+
+  /* Each grid cell is a query container, so the sticker's internals (below)
+     size in cqw and stay proportional at any grid density. */
+  .sticker-cell {
+    container-type: size;
   }
 
   .sticker-canvas {
-    width: 45rem;
-    height: 23.75rem;
+    width: 100%;
+    height: 100%;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -88,11 +101,11 @@
     /* Force the green fill, noise, and cut-line to render when printing. */
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
-    border: 1.125rem solid #fff;
-    border-radius: 1.75rem;
-    /* Slim black cut-line around the outer edge of the white border.
+    border: 2.5cqw solid #fff;
+    border-radius: 3.9cqw;
+    /* Slim gray cut-line around the outer edge of the white border.
        outline (not box-shadow) so it survives printing. */
-    outline: 2.5px solid #000;
+    outline: 0.35cqw solid #cccccc;
   }
 
   /* Sized to the logo so the URL can right-align directly under its final glyph. */
@@ -103,7 +116,7 @@
   .sticker-logo {
     display: block;
     font-family: 'Fraunces Variable', Georgia, 'Times New Roman', serif;
-    font-size: 10rem;
+    font-size: 22.2cqw;
     font-weight: 400;
     font-variation-settings:
       'opsz' 144,
@@ -132,11 +145,11 @@
   .sticker-tag {
     display: block;
     text-align: right;
-    margin-top: 0.15rem;
+    margin-top: 0.33cqw;
     font-family: 'Fraunces Variable', Georgia, 'Times New Roman', serif;
     font-style: italic;
     font-weight: 300;
-    font-size: 1.9rem;
+    font-size: 4.22cqw;
     color: rgba(255, 255, 255, 0.96);
     letter-spacing: 0.003em;
   }
@@ -144,9 +157,9 @@
   .sticker-url {
     display: block;
     text-align: right;
-    margin-top: 0.15rem;
+    margin-top: 0.33cqw;
     font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
-    font-size: 2.25rem;
+    font-size: 5cqw;
     color: rgba(255, 255, 255, 0.92);
     letter-spacing: 0.04em;
   }

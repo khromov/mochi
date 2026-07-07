@@ -1,24 +1,52 @@
 <script lang="ts">
   import { toPng } from 'html-to-image';
 
-  let { targetId }: { targetId: string } = $props();
+  let { targetId, gridId }: { targetId: string; gridId: string } = $props();
 
+  const presets = [
+    { label: '2 × 2', cols: 2, rows: 2 },
+    { label: '3 × 3', cols: 3, rows: 3 },
+    { label: '4 × 4', cols: 4, rows: 4 },
+    { label: '5 × 5', cols: 5, rows: 5 },
+    { label: '6 × 6', cols: 6, rows: 6 },
+  ];
+
+  let selected = $state(1); // 3 × 3
   let busy = $state(false);
   let error = $state('');
 
+  // The grid is server-rendered outside this island, so drive it through the
+  // DOM: set --cols/--rows and clone/trim the (identical) sticker cells to
+  // match cols × rows. Cloning is safe because no card carries per-card state.
+  function applyGrid(cols: number, rows: number) {
+    const grid = document.getElementById(gridId);
+    if (!grid) return;
+    grid.style.setProperty('--cols', String(cols));
+    grid.style.setProperty('--rows', String(rows));
+    const count = cols * rows;
+    const template = grid.firstElementChild;
+    if (!template) return;
+    while (grid.children.length < count) grid.appendChild(template.cloneNode(true));
+    while (grid.children.length > count) grid.lastElementChild!.remove();
+  }
+
+  function onSelect(e: Event) {
+    selected = Number((e.currentTarget as HTMLSelectElement).value);
+    const { cols, rows } = presets[selected];
+    applyGrid(cols, rows);
+  }
+
   async function download() {
     const node = document.getElementById(targetId);
-    if (!node) {
-      return;
-    }
+    if (!node) return;
     busy = true;
     error = '';
     try {
-      // pixelRatio 3 → each 720px card renders at 2160px, a crisp print sheet.
-      // The whole render happens once in the browser, so the grain and gradient
-      // stay sharp and identical across every sticker (unlike the print path).
-      // Explicit width/height: the sheet is wider than the viewport, and without
-      // them html-to-image clips the overflowing right column.
+      // Fixed sheet size → the export stays ~6600px wide at any grid density.
+      // Rendering the DOM once (WYSIWYG) keeps the grain and gradient sharp and
+      // identical across every sticker. Explicit width/height stops the wider-
+      // than-viewport sheet from having its right column clipped.
+      const { cols, rows } = presets[selected];
       const dataUrl = await toPng(node, {
         pixelRatio: 3,
         cacheBust: true,
@@ -28,7 +56,7 @@
       });
       const a = document.createElement('a');
       a.href = dataUrl;
-      a.download = 'mochi-stickers.png';
+      a.download = `mochi-stickers-${cols}x${rows}.png`;
       a.click();
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
@@ -39,9 +67,19 @@
 </script>
 
 <div class="export">
+  <label class="grid-picker">
+    <span>Grid</span>
+    <select onchange={onSelect}>
+      {#each presets as p, i (p.label)}
+        <option value={i} selected={i === selected}>{p.label}</option>
+      {/each}
+    </select>
+  </label>
+
   <button class="export-btn" onclick={download} disabled={busy}>
     {busy ? 'Generating…' : 'Download PNG'}
   </button>
+
   {#if error}
     <span class="export-error">Export failed: {error}</span>
   {/if}
@@ -51,12 +89,30 @@
   .export {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
+    gap: 1rem;
     margin-bottom: 1.5rem;
+    font-family: var(--font-sans, system-ui);
+  }
+
+  .grid-picker {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.9rem;
+    color: var(--text-muted, #4a5751);
+  }
+
+  .grid-picker select {
+    font: inherit;
+    color: var(--text, #1f2a24);
+    background: var(--surface, #fff);
+    border: 1px solid var(--border, #e8e4d8);
+    border-radius: var(--radius-md, 8px);
+    padding: 0.4rem 0.6rem;
+    cursor: pointer;
   }
 
   .export-btn {
-    font-family: var(--font-sans, system-ui);
     font-size: 0.9rem;
     font-weight: 600;
     color: var(--accent-text, #fff);
