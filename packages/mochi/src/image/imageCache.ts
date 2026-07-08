@@ -310,6 +310,16 @@ export class ImageCache {
     }
   }
 
+  /**
+   * Empty the entire image cache — every original, resized variant, and blur
+   * placeholder — by clearing the backing storage in one shot. Unlike
+   * `invalidateOriginal`, this does not emit a per-entry `image:delete`; it's a
+   * wholesale reset intended for the dev debug bar. No-op on an empty cache.
+   */
+  async clearAll(): Promise<void> {
+    await this.cache.clearItems();
+  }
+
   // Delete a source's placeholder and every configured size's variant, emitting an
   // `image:delete` per entry that actually existed. Idempotent: a second run finds
   // nothing and emits nothing. TODO: reclaim ad-hoc inline variants (config hashes

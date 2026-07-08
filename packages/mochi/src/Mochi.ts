@@ -1361,6 +1361,19 @@ export class Mochi {
       stopImageSweeper = startImageCacheSweeper(imageRuntime.cache, imageRuntime.options.sweepIntervalMs);
     }
 
+    // Dev-only: the debug bar's Cache tab POSTs here to empty the image cache.
+    // Registered whenever the debug bar is on (independent of the image endpoint),
+    // since the tab always shows; clearing an unpopulated cache is a harmless no-op.
+    if (debugBarEnabled) {
+      bunRoutes[`${registry.assetPrefix}/image-cache/clear`] = async (req: Request): Promise<Response> => {
+        if (req.method !== 'POST') {
+          return new Response('Method Not Allowed', { status: 405 });
+        }
+        await imageRuntime.cache.clearAll();
+        return Response.json({ ok: true });
+      };
+    }
+
     if (process.env.MOCHI_MEMORY_PROBE === '1') {
       bunRoutes['/__mochi/health/memory'] = (): Response => {
         Bun.gc(true);

@@ -209,6 +209,33 @@ describe('ImageCache.invalidateOriginal cascade', () => {
   });
 });
 
+describe('ImageCache.clearAll', () => {
+  test('empties originals, variants, and placeholders so the next read is a miss', async () => {
+    const cache = makeCache();
+    const origCounter = { n: 0 };
+    const varCounter = { n: 0 };
+    await cache.getOriginal(SRC, 60_000, 86_400_000, origFn([1, 2, 3], 'image/png', origCounter));
+    await cache.getVariant(SRC, ID, 'webp', regen([9, 9], varCounter));
+    await cache.setPlaceholder(SRC, 'data:image/png;base64,AAAA', 0);
+    expect(origCounter.n).toBe(1);
+    expect(varCounter.n).toBe(1);
+
+    await cache.clearAll();
+
+    expect(await cache.getPlaceholder(SRC)).toBeNull();
+    // Everything regenerates from scratch after a clear.
+    await cache.getOriginal(SRC, 60_000, 86_400_000, origFn([1, 2, 3], 'image/png', origCounter));
+    await cache.getVariant(SRC, ID, 'webp', regen([9, 9], varCounter));
+    expect(origCounter.n).toBe(2);
+    expect(varCounter.n).toBe(2);
+  });
+
+  test('is a no-op on an empty cache', async () => {
+    const cache = makeCache();
+    await expect(cache.clearAll()).resolves.toBeUndefined();
+  });
+});
+
 describe('ImageCache.getPlaceholder', () => {
   test('round-trips a data URL and misses before it is set', async () => {
     const cache = makeCache();
