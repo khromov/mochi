@@ -356,6 +356,23 @@ describe('FileStorage binary offload', () => {
     // Still exactly one blob folder — markStale reused it rather than orphaning one.
     expect(countDirs(dir)).toBe(1);
   });
+
+  test('durable write leaves no temp files behind (all renamed into place)', async () => {
+    const dir = makeDir();
+    const storage = new FileStorage({ directory: dir, purgeInterval: 0 });
+    created.push(storage);
+
+    await storage.setItem('img', { value: { meta: 'hi', bytes: new Uint8Array([1, 2, 3, 4]) }, createdAt: 0 });
+
+    // Round-trips through the durable-write path.
+    const raw = (await storage.getItem('img')) as { value: { meta: string; bytes: BlobRef } };
+    expect(raw.value.meta).toBe('hi');
+    expect(Array.from(await readBlobRef(raw.value.bytes))).toEqual([1, 2, 3, 4]);
+
+    // No `.tmp` survivors anywhere — every temp write was fsynced then renamed.
+    const tmpLeftovers = readdirSync(dir, { recursive: true, withFileTypes: true }).filter((e) => e.name.endsWith('.tmp'));
+    expect(tmpLeftovers).toHaveLength(0);
+  });
 });
 
 // Two MochiCache instances over one shared directory model two load-balanced

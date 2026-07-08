@@ -1,5 +1,5 @@
 import { mkdirSync, rmSync, type Dirent } from 'node:fs';
-import { readdir, rename, rm, stat, unlink } from 'node:fs/promises';
+import { mkdir, open, readdir, rename, rm, stat, unlink, type FileHandle } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import type { Storage } from './cache';
 import { mochiEvents } from './events';
@@ -132,6 +132,38 @@ export interface FileStorageOptions {
 
 const isENOENT = (err: unknown): boolean => (err as NodeJS.ErrnoException | undefined)?.code === 'ENOENT';
 
+// Write `data`, fsync it to disk, then return — so a later rename can never
+// expose a torn/zero-length file after a crash. Unlike Bun.write, `open` does
+// NOT create parent dirs; callers must ensure the directory exists.
+async function writeFileDurable(path: string, data: string | Uint8Array): Promise<void> {
+  const fh = await open(path, 'w');
+  try {
+    await fh.write(data);
+    await fh.sync();
+  } finally {
+    await fh.close();
+  }
+}
+
+// fsync a directory so a rename into it survives a crash. Best-effort: some
+// filesystems reject directory fsync with EINVAL/ENOTSUP — there the data file
+// was still fsynced (no torn read), we only forgo rename-durability, which
+// safely degrades to "revert to the prior version".
+const DIR_FSYNC_UNSUPPORTED = new Set(['EINVAL', 'ENOTSUP', 'EPERM', 'EISDIR']);
+async function fsyncDir(dir: string): Promise<void> {
+  let fh: FileHandle | undefined;
+  try {
+    fh = await open(dir, 'r');
+    await fh.sync();
+  } catch (err) {
+    if (!DIR_FSYNC_UNSUPPORTED.has((err as NodeJS.ErrnoException).code ?? '')) {
+      throw err;
+    }
+  } finally {
+    await fh?.close();
+  }
+}
+
 // The sweep can't tell a crash-orphaned blob folder (safe to reclaim) from the
 // live window between a first write's blob renames and its JSON rename —
 // `setItem` commits blobs before the JSON, so a sidecar-less folder younger than
@@ -193,23 +225,32 @@ export class FileStorage implements Storage {
     const path = join(this.directory, `${hash}.json`);
     const blobs: { relPath: string; data: Uint8Array }[] = [];
     const json = this.encodeBlobs(value, hash, blobs);
-    // Write the offloaded blobs first (each tmp+rename), so a reader that sees the
-    // JSON always sees the blobs it points at. Blob names are content-addressed, so
-    // an identical file already on disk needs no rewrite. Bun.write creates `<hash>/`.
-    for (const b of blobs) {
-      const blobPath = join(this.directory, b.relPath);
-      if (await Bun.file(blobPath).exists()) {
-        continue;
+    // Write the offloaded blobs first (each durable-write + rename), so a reader
+    // that sees the JSON always sees the blobs it points at. Blob names are
+    // content-addressed, so an identical file already on disk needs no rewrite.
+    // Unlike Bun.write, `open` won't create `<hash>/`, so mkdir it once up front.
+    if (blobs.length > 0) {
+      const blobDir = join(this.directory, hash);
+      await mkdir(blobDir, { recursive: true });
+      for (const b of blobs) {
+        const blobPath = join(this.directory, b.relPath);
+        if (await Bun.file(blobPath).exists()) {
+          continue;
+        }
+        const blobTmp = `${blobPath}.${crypto.randomUUID()}.tmp`;
+        await writeFileDurable(blobTmp, b.data);
+        await rename(blobTmp, blobPath);
       }
-      const blobTmp = `${blobPath}.${crypto.randomUUID()}.tmp`;
-      await Bun.write(blobTmp, b.data);
-      await rename(blobTmp, blobPath);
+      await fsyncDir(blobDir);
     }
-    // Write to a unique temp file then rename into place — rename is atomic on the
-    // same filesystem, so a concurrent `getItem` never reads a half-written file.
+    // Write to a unique temp file (fsynced), then rename into place — rename is
+    // atomic on the same filesystem, so a concurrent `getItem` never reads a
+    // half-written file, and the fsync means a crash can't leave a torn file
+    // either. fsync the directory so the rename itself survives a crash.
     const tmp = `${path}.${crypto.randomUUID()}.tmp`;
-    await Bun.write(tmp, JSON.stringify(json));
+    await writeFileDurable(tmp, JSON.stringify(json));
     await rename(tmp, path);
+    await fsyncDir(this.directory);
   }
 
   async removeItem(key: string): Promise<void> {
