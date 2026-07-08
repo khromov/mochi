@@ -37,6 +37,22 @@ describe('packImageRequest + unpackImageRequest', () => {
     expect(roundTrip(r)).toEqual(r);
   });
 
+  test('round-trips an http:// src', () => {
+    const r: ImageRequest = { src: 'http://example.com/a.png', size: 'thumbnail' };
+    expect(roundTrip(r)).toEqual(r);
+  });
+
+  test('elides the https:// prefix into the control byte instead of literal bytes', () => {
+    const r: ImageRequest = { src: 'https://example.com/a.png' };
+    // 1 control byte + the src with "https://" (8 bytes) stripped.
+    expect(packImageRequest(r).length).toBe(1 + 'example.com/a.png'.length);
+  });
+
+  test('round-trips a src with no recognized protocol prefix', () => {
+    const r: ImageRequest = { src: 'ftp://example.com/a.png' };
+    expect(roundTrip(r)).toEqual(r);
+  });
+
   test('returns null for an empty buffer', () => {
     expect(unpackImageRequest(new Uint8Array([]))).toBeNull();
   });

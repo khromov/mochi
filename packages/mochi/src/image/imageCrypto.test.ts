@@ -102,21 +102,21 @@ describe('wire-format snapshots (fixed MOCHI_KEY)', () => {
   test('named size', () => {
     installConfig();
     const r = req();
-    expect(encryptImageRequest(r, 'a-thumbnail.webp')).toBe('xvnWjcYy6r5D2av9naeVoznwjJqdSYHsULRS9rIRU15VaDejmMEBlvMkwjGgrJwGc-3LmvY');
+    expect(encryptImageRequest(r, 'a-thumbnail.webp')).toBe('R1F2_pT8F3GLCK6cAK41WpEWUTdqj3ePAD9v-cvpSPoUNra0VX7k_Y_n0svD');
     expect(decryptImageRequest(encryptImageRequest(r, 'a-thumbnail.webp'), 'a-thumbnail.webp')).toEqual(r);
   });
 
   test('full-size original', () => {
     installConfig();
     const r = req({ size: undefined, original: true });
-    expect(encryptImageRequest(r, 'a-original.png')).toBe('rplr_fdag_QX6zdcRCNAdrvxxOMCRmTs6zC_6egFSE7CnRC9FuWdtK2cmQ');
+    expect(encryptImageRequest(r, 'a-original.png')).toBe('W8ez56i4wdJST-iMY1Cb915tsWbNeiUOX7mgaBU5EsRRA_I');
     expect(decryptImageRequest(encryptImageRequest(r, 'a-original.png'), 'a-original.png')).toEqual(r);
   });
 
   test('long src exercises the compressed path', () => {
     installConfig();
     const r = req({ src: 'https://example.com/' + 'segment/'.repeat(40) + 'image.png' });
-    expect(encryptImageRequest(r, 'a-thumbnail.webp')).toBe('OVAbGQtETrOzGGZ2SqvAxx9UATWlLzue1o-q9NXCpxdUqDxTV8uSLN9jkJARv0jGkd7wGw1aqsd74JhYduT-AZe3W5UznIY');
+    expect(encryptImageRequest(r, 'a-thumbnail.webp')).toBe('Gru2nGPlfktfG2DwYtPNs_JFNbWrV8cNxffQCsSs5v_0vYTorFEekt06uSIsHRfnA6HsKggrWE1DyepylY1q');
     expect(decryptImageRequest(encryptImageRequest(r, 'a-thumbnail.webp'), 'a-thumbnail.webp')).toEqual(r);
   });
 });
