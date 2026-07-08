@@ -320,6 +320,15 @@ export class ImageCache {
     await this.cache.clearItems();
   }
 
+  /**
+   * Number of entries currently in the cache (originals + variants + placeholders,
+   * plus any transient in-flight markers) — a rough size indicator for the dev
+   * debug bar. Returns `0` if the backing storage can't report a count.
+   */
+  async count(): Promise<number> {
+    return (await this.storage.count?.()) ?? 0;
+  }
+
   // Delete a source's placeholder and every configured size's variant, emitting an
   // `image:delete` per entry that actually existed. Idempotent: a second run finds
   // nothing and emits nothing. TODO: reclaim ad-hoc inline variants (config hashes

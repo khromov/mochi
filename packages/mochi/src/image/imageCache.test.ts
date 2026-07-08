@@ -219,9 +219,11 @@ describe('ImageCache.clearAll', () => {
     await cache.setPlaceholder(SRC, 'data:image/png;base64,AAAA', 0);
     expect(origCounter.n).toBe(1);
     expect(varCounter.n).toBe(1);
+    expect(await cache.count()).toBe(3); // original + variant + placeholder
 
     await cache.clearAll();
 
+    expect(await cache.count()).toBe(0);
     expect(await cache.getPlaceholder(SRC)).toBeNull();
     // Everything regenerates from scratch after a clear.
     await cache.getOriginal(SRC, 60_000, 86_400_000, origFn([1, 2, 3], 'image/png', origCounter));

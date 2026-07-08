@@ -8,6 +8,7 @@
   type Status = 'idle' | 'clearing' | 'done' | 'error';
   let status: Status = $state('idle');
   let errorMsg = $state('');
+  let count: number | null = $state(null);
   let resetTimer: ReturnType<typeof setTimeout> | undefined;
 
   const LABELS: Record<Status, string> = {
@@ -17,6 +18,27 @@
     error: 'Failed — retry',
   };
 
+  const endpoint = () => `${window.__mochi_asset_prefix ?? ''}/image-cache/`;
+
+  async function refreshCount() {
+    try {
+      const res = await fetch(endpoint());
+      if (res.ok) {
+        const data = (await res.json()) as { count?: number };
+        count = typeof data.count === 'number' ? data.count : null;
+      }
+    } catch {
+      /* leave the last known count */
+    }
+  }
+
+  // Refresh the count each time the panel is opened so the badge reflects reality.
+  $effect(() => {
+    if (open) {
+      void refreshCount();
+    }
+  });
+
   async function clearCache() {
     if (status === 'clearing') {
       return;
@@ -25,10 +47,12 @@
     errorMsg = '';
     clearTimeout(resetTimer);
     try {
-      const res = await fetch(`${window.__mochi_asset_prefix ?? ''}/image-cache/clear`, { method: 'POST' });
+      const res = await fetch(endpoint(), { method: 'POST' });
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}`);
       }
+      const data = (await res.json()) as { count?: number };
+      count = typeof data.count === 'number' ? data.count : 0;
       status = 'done';
       resetTimer = setTimeout(() => (status = 'idle'), 2000);
     } catch (err) {
@@ -46,7 +70,10 @@
     <p class="cache-desc">Empties the on-disk image cache — every original, resized variant, and blur placeholder.</p>
     <button class="cache-clear-btn" class:is-done={status === 'done'} class:is-error={status === 'error'} type="button" onclick={clearCache} disabled={status === 'clearing'}>
       <Trash size={13} />
-      {LABELS[status]}
+      <span class="cache-clear-label">{LABELS[status]}</span>
+      {#if count !== null}
+        <span class="cache-count-badge">{count}</span>
+      {/if}
     </button>
     {#if status === 'error' && errorMsg}
       <div class="cache-error">{errorMsg}</div>
@@ -86,6 +113,24 @@
       background 120ms ease,
       color 120ms ease,
       border-color 120ms ease;
+  }
+  .cache-clear-label {
+    flex: 0 1 auto;
+  }
+  .cache-count-badge {
+    border-radius: 999px;
+    min-width: 1.5em;
+    height: 1.5em;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.82em;
+    font-weight: 600;
+    padding: 0 0.5em;
+    background: rgba(111, 174, 156, 0.28);
+    color: #d4f0e6;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    letter-spacing: 0;
   }
   .cache-clear-btn:hover:not(:disabled) {
     background: #2b453e;

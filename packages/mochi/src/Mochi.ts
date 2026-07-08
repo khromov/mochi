@@ -1361,17 +1361,24 @@ export class Mochi {
       stopImageSweeper = startImageCacheSweeper(imageRuntime.cache, imageRuntime.options.sweepIntervalMs);
     }
 
-    // Dev-only: the debug bar's Cache tab POSTs here to empty the image cache.
-    // Registered whenever the debug bar is on (independent of the image endpoint),
-    // since the tab always shows; clearing an unpopulated cache is a harmless no-op.
+    // Dev-only: the debug bar's Cache tab reads the entry count (GET) and empties
+    // the image cache (POST). Registered whenever the debug bar is on (independent
+    // of the image endpoint), since the tab always shows; counting/clearing an
+    // unpopulated cache is a harmless no-op.
     if (debugBarEnabled) {
-      bunRoutes[`${registry.assetPrefix}/image-cache/clear`] = async (req: Request): Promise<Response> => {
-        if (req.method !== 'POST') {
-          return new Response('Method Not Allowed', { status: 405 });
+      const imageCacheHandler = async (req: Request): Promise<Response> => {
+        if (req.method === 'POST') {
+          await imageRuntime.cache.clearAll();
+          return Response.json({ ok: true, count: 0 });
         }
-        await imageRuntime.cache.clearAll();
-        return Response.json({ ok: true });
+        if (req.method === 'GET') {
+          return Response.json({ count: await imageRuntime.cache.count() });
+        }
+        return new Response('Method Not Allowed', { status: 405 });
       };
+      // Register both slash variants so it works under any `trailingSlash` policy.
+      bunRoutes[`${registry.assetPrefix}/image-cache`] = imageCacheHandler;
+      bunRoutes[`${registry.assetPrefix}/image-cache/`] = imageCacheHandler;
     }
 
     if (process.env.MOCHI_MEMORY_PROBE === '1') {

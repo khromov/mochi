@@ -86,6 +86,10 @@ export class MemoryStorage implements Storage {
     this.store.clear();
   }
 
+  count(): number {
+    return this.store.size;
+  }
+
   /** Delete entries older than `maxAge`. */
   sweep(now: number = Date.now()): { removed: number } {
     if (this.maxAge === undefined) {
@@ -286,6 +290,17 @@ export class FileStorage implements Storage {
         return undefined;
       }),
     );
+  }
+
+  /** Number of persisted entries — one `<hash>.json` per key. Excludes in-flight `.tmp` writes and blob folders. */
+  async count(): Promise<number> {
+    const entries = await readdir(this.directory, { withFileTypes: true }).catch((err) => {
+      if (isENOENT(err)) {
+        return [] as Dirent[];
+      }
+      throw err;
+    });
+    return entries.filter((entry) => !entry.isDirectory() && entry.name.endsWith('.json')).length;
   }
 
   /**

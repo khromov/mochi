@@ -18,6 +18,8 @@ export interface Storage {
   clear(): void | Promise<void>;
   /** Optional age-based eviction, callable on demand by a caller-driven janitor (e.g. `ImageCache`). `FileStorage` and `MemoryStorage` both implement it. */
   sweep?(now?: number): { removed: number } | Promise<{ removed: number }>;
+  /** Optional entry count, for observability (e.g. the dev debug bar). `FileStorage` and `MemoryStorage` both implement it. */
+  count?(): number | Promise<number>;
 }
 
 export interface MochiCacheOptions {

@@ -357,6 +357,22 @@ describe('FileStorage binary offload', () => {
     expect(countDirs(dir)).toBe(1);
   });
 
+  test('count reports the number of persisted entries (json files only)', async () => {
+    const storage = makeStorage();
+    expect(await storage.count()).toBe(0);
+
+    await storage.setItem('a', { value: 1, createdAt: 0 });
+    await storage.setItem('b', { value: { bytes: new Uint8Array([1, 2]) }, createdAt: 0 });
+    // Two entries — the blob folder for 'b' must not inflate the count.
+    expect(await storage.count()).toBe(2);
+
+    await storage.removeItem('a');
+    expect(await storage.count()).toBe(1);
+
+    await storage.clear();
+    expect(await storage.count()).toBe(0);
+  });
+
   test('durable write leaves no temp files behind (all renamed into place)', async () => {
     const dir = makeDir();
     const storage = new FileStorage({ directory: dir, purgeInterval: 0 });

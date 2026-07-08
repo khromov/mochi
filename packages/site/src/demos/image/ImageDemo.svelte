@@ -2,6 +2,7 @@
   import DemoPage from '../../components/DemoPage.svelte';
   import CodeSnippet from '../../components/CodeSnippet.svelte';
   import ImageCredits from '../../components/ImageCredits.svelte';
+  import Callout from '../../../../docs/_components/Callout.svelte';
   import { loadSources } from '../../components/utils.ts';
   import { files } from './files.ts';
   import ImageIslandCard from './ImageIslandCard.svelte';
@@ -79,10 +80,10 @@
     <ImageIslandCard mochi:hydrate src={remote} />
   </div>
   <CodeSnippet html={codeIsland} />
-  <p class="note">
-    Caveat: props passed to a hydrated island — like this card's <code>src</code> — are serialized in plain text into the page for hydration, so the source URL is visible to the
-    client here. If your origin must stay secret, keep <code>&lt;Image&gt;</code> in server-rendered markup or a server island, whose props are encrypted.
-  </p>
+  <Callout type="warning">
+    Props passed to a hydrated island — like this card's <code>src</code> — are serialized in plain text into the page for hydration, so the source URL is visible to the client
+    here. If your origin must stay secret, keep <code>&lt;Image&gt;</code> in server-rendered markup or a server island, whose props are encrypted.
+  </Callout>
 
   <h3>Programmatic</h3>
   <p><code>getImageUrl(src, 'square')</code> returns the same encrypted URL you can use anywhere:</p>
