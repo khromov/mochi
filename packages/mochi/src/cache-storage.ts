@@ -135,7 +135,7 @@ const isENOENT = (err: unknown): boolean => (err as NodeJS.ErrnoException | unde
 // Write `data`, fsync it to disk, then return — so a later rename can never
 // expose a torn/zero-length file after a crash. Unlike Bun.write, `open` does
 // NOT create parent dirs; callers must ensure the directory exists.
-async function writeFileDurable(path: string, data: string | Uint8Array): Promise<void> {
+async function writeFileDurable(path: string, data: Uint8Array): Promise<void> {
   const fh = await open(path, 'w');
   try {
     await fh.write(data);
@@ -248,7 +248,7 @@ export class FileStorage implements Storage {
     // half-written file, and the fsync means a crash can't leave a torn file
     // either. fsync the directory so the rename itself survives a crash.
     const tmp = `${path}.${crypto.randomUUID()}.tmp`;
-    await writeFileDurable(tmp, JSON.stringify(json));
+    await writeFileDurable(tmp, new TextEncoder().encode(JSON.stringify(json)));
     await rename(tmp, path);
     await fsyncDir(this.directory);
   }
