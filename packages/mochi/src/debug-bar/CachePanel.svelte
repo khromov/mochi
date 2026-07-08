@@ -325,6 +325,11 @@
   .cache-row.open .chevron {
     transform: rotate(90deg);
     color: #6fae9c;
+    margin-top: 1px;
+  }
+  /* Keep the chevron pinned to the first line when the full key wraps. */
+  .cache-row.open .cache-row-header {
+    align-items: flex-start;
   }
   .cache-key {
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -332,6 +337,13 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  /* Expanded rows show the full key — wrap instead of truncating. */
+  .cache-row.open .cache-key {
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    word-break: break-all;
   }
   .cache-value {
     border-top: 1px solid #353930;
