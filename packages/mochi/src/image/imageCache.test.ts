@@ -238,6 +238,23 @@ describe('ImageCache.clearAll', () => {
   });
 });
 
+describe('ImageCache.keys / inspect (dev debug bar)', () => {
+  test('keys lists cached entries and inspect returns the stored envelope', async () => {
+    const cache = makeCache();
+    await cache.getOriginal(SRC, 60_000, 86_400_000, origFn([1, 2, 3], 'image/png'));
+
+    const keys = await cache.keys();
+    const origKey = keys.find((k) => k.includes(SRC));
+    expect(origKey).toBeDefined();
+
+    const entry = (await cache.inspect(origKey!)) as { value: unknown; createdAt: number };
+    expect(entry).not.toBeNull();
+    expect(typeof entry.createdAt).toBe('number');
+
+    expect(await cache.inspect('img:orig:https://example.com/nope.png')).toBeNull();
+  });
+});
+
 describe('ImageCache.getPlaceholder', () => {
   test('round-trips a data URL and misses before it is set', async () => {
     const cache = makeCache();

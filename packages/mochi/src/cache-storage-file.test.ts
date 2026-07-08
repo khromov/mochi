@@ -373,6 +373,21 @@ describe('FileStorage binary offload', () => {
     expect(await storage.count()).toBe(0);
   });
 
+  test('keys lists the plaintext keys of persisted entries', async () => {
+    const storage = makeStorage();
+    expect(await storage.keys()).toEqual([]);
+
+    await storage.setItem('pokemon:pikachu', { value: 1, createdAt: 0 });
+    await storage.setItem('img:orig:https://example.com/a.png', { value: { bytes: new Uint8Array([1]) }, createdAt: 0 });
+    expect((await storage.keys()).sort()).toEqual(['img:orig:https://example.com/a.png', 'pokemon:pikachu']);
+
+    // A round-trip through getItem still returns the unwrapped value.
+    expect(await storage.getItem('pokemon:pikachu')).toEqual({ value: 1, createdAt: 0 });
+
+    await storage.removeItem('pokemon:pikachu');
+    expect(await storage.keys()).toEqual(['img:orig:https://example.com/a.png']);
+  });
+
   test('durable write leaves no temp files behind (all renamed into place)', async () => {
     const dir = makeDir();
     const storage = new FileStorage({ directory: dir, purgeInterval: 0 });

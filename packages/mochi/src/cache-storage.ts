@@ -44,6 +44,22 @@ function isBlobPointer(value: unknown): value is BlobPointer {
   return typeof value === 'object' && value !== null && typeof (value as { __mochiBlob?: unknown }).__mochiBlob === 'string';
 }
 
+/**
+ * On-disk wrapper written by `FileStorage`: the plaintext cache key alongside the
+ * (blob-encoded) value. Since files are named by `sha256(key)`, storing the key
+ * is the only way to enumerate keys (`keys()`) for the dev debug bar. Files
+ * written before this wrapper existed (no `__mochiValue`) are read as the bare
+ * value for backward compatibility.
+ */
+interface KeyedEnvelope {
+  __mochiKey: string;
+  __mochiValue: unknown;
+}
+
+function isKeyedEnvelope(value: unknown): value is KeyedEnvelope {
+  return typeof value === 'object' && value !== null && '__mochiValue' in value && typeof (value as KeyedEnvelope).__mochiKey === 'string';
+}
+
 export interface MemoryStorageOptions {
   /** Entries older than this (ms) are eligible for removal by `sweep()`. Default: unset — `sweep()` never removes anything, matching plain `new MemoryStorage()`'s prior behavior. */
   maxAge?: number;
@@ -88,6 +104,10 @@ export class MemoryStorage implements Storage {
 
   count(): number {
     return this.store.size;
+  }
+
+  keys(): string[] {
+    return [...this.store.keys()];
   }
 
   /** Delete entries older than `maxAge`. */
@@ -221,7 +241,8 @@ export class FileStorage implements Storage {
       }
       throw err;
     }
-    return this.decodeBlobs(JSON.parse(text));
+    const parsed = JSON.parse(text);
+    return this.decodeBlobs(isKeyedEnvelope(parsed) ? parsed.__mochiValue : parsed);
   }
 
   async setItem(key: string, value: unknown): Promise<void> {
@@ -252,7 +273,8 @@ export class FileStorage implements Storage {
     // half-written file, and the fsync means a crash can't leave a torn file
     // either. fsync the directory so the rename itself survives a crash.
     const tmp = `${path}.${crypto.randomUUID()}.tmp`;
-    await writeFileDurable(tmp, new TextEncoder().encode(JSON.stringify(json)));
+    const envelope: KeyedEnvelope = { __mochiKey: key, __mochiValue: json };
+    await writeFileDurable(tmp, new TextEncoder().encode(JSON.stringify(envelope)));
     await rename(tmp, path);
     await fsyncDir(this.directory);
   }
@@ -301,6 +323,33 @@ export class FileStorage implements Storage {
       throw err;
     });
     return entries.filter((entry) => !entry.isDirectory() && entry.name.endsWith('.json')).length;
+  }
+
+  /**
+   * Plaintext keys of every persisted entry, read from each file's stored envelope
+   * (filenames are `sha256(key)`, so the key can't be recovered from the name).
+   * Reads every JSON file — intended for dev observability, not a hot path. Legacy
+   * files without a stored key are skipped.
+   */
+  async keys(): Promise<string[]> {
+    const entries = await readdir(this.directory, { withFileTypes: true }).catch((err) => {
+      if (isENOENT(err)) {
+        return [] as Dirent[];
+      }
+      throw err;
+    });
+    const files = entries.filter((entry) => !entry.isDirectory() && entry.name.endsWith('.json'));
+    const keys = await Promise.all(
+      files.map(async (entry) => {
+        try {
+          const parsed = JSON.parse(await Bun.file(join(this.directory, entry.name)).text());
+          return isKeyedEnvelope(parsed) ? parsed.__mochiKey : null;
+        } catch {
+          return null; // unreadable/corrupt/legacy — omit from the listing
+        }
+      }),
+    );
+    return keys.filter((key): key is string => key !== null);
   }
 
   /**

@@ -20,6 +20,8 @@ export interface Storage {
   sweep?(now?: number): { removed: number } | Promise<{ removed: number }>;
   /** Optional entry count, for observability (e.g. the dev debug bar). `FileStorage` and `MemoryStorage` both implement it. */
   count?(): number | Promise<number>;
+  /** Optional list of all stored keys, for observability (e.g. the dev debug bar). `FileStorage` and `MemoryStorage` both implement it. */
+  keys?(): string[] | Promise<string[]>;
 }
 
 export interface MochiCacheOptions {

@@ -1369,16 +1369,36 @@ export class Mochi {
       const imageCacheHandler = async (req: Request): Promise<Response> => {
         if (req.method === 'POST') {
           await imageRuntime.cache.clearAll();
-          return Response.json({ ok: true, count: 0 });
+          return Response.json({ ok: true, count: 0, keys: [] });
         }
         if (req.method === 'GET') {
-          return Response.json({ count: await imageRuntime.cache.count() });
+          // `keys` already excludes transient in-flight markers; count matches the
+          // visible list so the debug bar badge equals the number of listed keys.
+          const keys = await imageRuntime.cache.keys();
+          return Response.json({ count: keys.length, keys });
         }
         return new Response('Method Not Allowed', { status: 405 });
       };
-      // Register both slash variants so it works under any `trailingSlash` policy.
+      // Returns the raw stored entry for a single key (`?key=<url-encoded key>`).
+      const imageCacheEntryHandler = async (req: Request): Promise<Response> => {
+        if (req.method !== 'GET') {
+          return new Response('Method Not Allowed', { status: 405 });
+        }
+        const key = new URL(req.url).searchParams.get('key');
+        if (!key) {
+          return new Response('Missing ?key', { status: 400 });
+        }
+        const value = await imageRuntime.cache.inspect(key);
+        if (value == null) {
+          return new Response('Not Found', { status: 404 });
+        }
+        return Response.json({ key, value });
+      };
+      // Register both slash variants so they work under any `trailingSlash` policy.
       bunRoutes[`${registry.assetPrefix}/image-cache`] = imageCacheHandler;
       bunRoutes[`${registry.assetPrefix}/image-cache/`] = imageCacheHandler;
+      bunRoutes[`${registry.assetPrefix}/image-cache/entry`] = imageCacheEntryHandler;
+      bunRoutes[`${registry.assetPrefix}/image-cache/entry/`] = imageCacheEntryHandler;
     }
 
     if (process.env.MOCHI_MEMORY_PROBE === '1') {

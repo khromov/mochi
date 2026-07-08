@@ -329,6 +329,17 @@ export class ImageCache {
     return (await this.storage.count?.()) ?? 0;
   }
 
+  /** Cache keys (originals, variants, placeholders) for the dev debug bar. Excludes the transient `mochi:inflight:` coalescing markers. Empty if the backing storage can't enumerate. */
+  async keys(): Promise<string[]> {
+    const keys = (await this.storage.keys?.()) ?? [];
+    return keys.filter((key) => !key.startsWith('mochi:inflight:'));
+  }
+
+  /** The raw stored entry for a key (`{ value, createdAt }`), or `null` if absent. Binary fields come back as lazy {@link BlobRef}s, not bytes — safe to serialize for the dev debug bar. */
+  async inspect(key: string): Promise<unknown> {
+    return this.storage.getItem(key);
+  }
+
   // Delete a source's placeholder and every configured size's variant, emitting an
   // `image:delete` per entry that actually existed. Idempotent: a second run finds
   // nothing and emits nothing. TODO: reclaim ad-hoc inline variants (config hashes
