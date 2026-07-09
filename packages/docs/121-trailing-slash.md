@@ -6,7 +6,7 @@ description: 'Enforce a consistent trailing-slash policy across all routes with 
 
 ## Trailing slash
 
-The `trailingSlash` option on `Mochi.serve()` enforces a consistent trailing-slash policy across every user route. The framework registers each route under both `/foo` and `/foo/`, then redirects requests to the non-canonical form.
+The `trailingSlash` option on `Mochi.serve()` enforces a consistent trailing-slash policy across `Mochi.page()` and `Mochi.sse()` routes. The framework registers each route under both `/foo` and `/foo/`, then redirects requests to the non-canonical form. `Mochi.api()` routes are always exempt — see below.
 
 ```ts
 await Mochi.serve({
@@ -23,6 +23,20 @@ await Mochi.serve({
 | `'always'` | Trailing slash | `/about` → `/about/` |
 
 Default: unset — neither form is redirected and only the form you registered is matched.
+
+### `Mochi.api()` routes are exempt
+
+`trailingSlash` never applies to `Mochi.api()` routes — no mirroring, no redirect, regardless of policy. Only the exact pattern you declared matches; the other slash form 404s like any unregistered path.
+
+```ts
+await Mochi.serve({
+  trailingSlash: 'always',
+  routes: {
+    '/about': Mochi.page(About), // /about → 301 → /about/
+    '/api/ping': Mochi.api(() => json({ ok: true })), // only /api/ping matches
+  },
+});
+```
 
 ### Redirect status codes
 

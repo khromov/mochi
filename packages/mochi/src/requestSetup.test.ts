@@ -112,6 +112,13 @@ describe('makeRequestContextBuilder', () => {
     expect('earlyResponse' in setup).toBe(false);
   });
 
+  test('kind: "api" skips trailing-slash redirects even when the policy would trigger', () => {
+    const build = makeRequestContextBuilder(makeConfig({ trailingSlashPolicy: 'always' }));
+    const { server } = mockServer();
+    const setup = build(mockReq('GET', '/api/ping'), server, { kind: 'api', pattern: '/api/ping' });
+    expect('earlyResponse' in setup).toBe(false);
+  });
+
   test('kind: "page" with trailingSlashPolicy: "always" redirects and emits a request event', () => {
     const build = makeRequestContextBuilder(makeConfig({ trailingSlashPolicy: 'always' }));
     const { server } = mockServer();

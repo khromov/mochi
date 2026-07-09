@@ -1164,12 +1164,16 @@ export class Mochi {
       pageConfigMap?.delete(pattern);
     }
 
+    const apiPatterns = new Set<string>();
     if (allRoutes) {
       for (const [pattern, handler] of Object.entries(allRoutes)) {
         const result = await registerRoutePattern(pattern, handler);
         if (result) {
           bunRoutes[pattern] = result.bunRouteValue;
           routeCounts[result.type] += 1;
+          if (result.type === 'api') {
+            apiPatterns.add(pattern);
+          }
         } else {
           bunRoutes[pattern] = handler as BunRouteValue;
         }
@@ -1179,8 +1183,13 @@ export class Mochi {
     // Register the alt-slash variant of every user route so Bun's literal
     // pattern matcher matches both `/foo` and `/foo/`. The per-handler
     // redirect checks above turn the non-canonical form into a 301/308.
+    // Api routes are excluded entirely — they never mirror or redirect on
+    // trailing slash, only the exact declared pattern matches.
     if (trailingSlashPolicy) {
       for (const [pattern, value] of Object.entries(bunRoutes)) {
+        if (apiPatterns.has(pattern)) {
+          continue;
+        }
         const alt = alternateSlashPattern(pattern);
         if (alt && !(alt in bunRoutes)) {
           bunRoutes[alt] = value;
@@ -1426,7 +1435,15 @@ export class Mochi {
 
     const composedFetch = async (req: Request, server: Server<undefined>): Promise<Response> => {
       const url = buildPublicUrl(req, options.proxy);
-      if (trailingSlashPolicy) {
+      // A request for the non-canonical slash form of a real api route never
+      // matched Bun's route table (api routes aren't mirrored), so it lands
+      // here. Recognise that case and skip the generic redirect too — api
+      // routes are exempt from trailingSlash everywhere, not just when matched.
+      const isUnmatchedApiAltForm = (() => {
+        const alt = alternateSlashPattern(url.pathname);
+        return alt !== null && apiPatterns.has(alt);
+      })();
+      if (trailingSlashPolicy && !isUnmatchedApiAltForm) {
         const redirect = applyFilter('trailingSlash:redirect', trailingSlashRedirect(req.method, url, trailingSlashPolicy), { request: req, url, policy: trailingSlashPolicy });
         if (redirect) {
           return redirect;
@@ -1682,6 +1699,7 @@ export class Mochi {
         development,
         entryPath: Bun.main,
         apiHandlerMap,
+        apiPatterns,
         sseHandlerMap,
         wsHandlersMap,
         pageConfigMap,

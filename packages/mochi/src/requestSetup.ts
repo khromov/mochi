@@ -54,7 +54,9 @@ interface KindPolicy {
 
 const KIND_POLICY: Record<RouteKind, KindPolicy> = {
   page: { timeout: true, trailingSlash: true, csrf: true, debugBar: true },
-  api: { timeout: false, trailingSlash: true, csrf: true, debugBar: false },
+  // Api routes never mirror or redirect on trailing slash — only the exact
+  // declared pattern matches, regardless of the global policy.
+  api: { timeout: false, trailingSlash: false, csrf: true, debugBar: false },
   sse: { timeout: true, trailingSlash: true, csrf: false, debugBar: false },
   ws: { timeout: false, trailingSlash: false, csrf: false, debugBar: false },
   island: { timeout: false, trailingSlash: false, csrf: false, debugBar: false },

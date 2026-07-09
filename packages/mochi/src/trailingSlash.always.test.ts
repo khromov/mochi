@@ -78,15 +78,14 @@ describe('trailingSlash: "always"', () => {
     expect(res.status).toBe(200);
   });
 
-  test('api route also redirects non-canonical form', async () => {
+  test('api route is exempt: declared pattern serves 200 with no redirect', async () => {
     const res = await fetch(`${base}/api/ping`, { redirect: 'manual' });
-    expect(res.status).toBe(301);
-    expect(res.headers.get('Location')).toBe('/api/ping/');
-  });
-
-  test('api route serves canonical form', async () => {
-    const res = await fetch(`${base}/api/ping/`);
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true });
+  });
+
+  test('api route is exempt: alt-slash form is not mirrored (404, no redirect)', async () => {
+    const res = await fetch(`${base}/api/ping/`, { redirect: 'manual' });
+    expect(res.status).toBe(404);
   });
 });

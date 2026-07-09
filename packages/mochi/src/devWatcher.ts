@@ -58,6 +58,10 @@ export interface DevWatcherDeps {
   development: boolean;
   entryPath: string;
   apiHandlerMap?: Map<string, MochiApiHandler>;
+  // Patterns registered as `Mochi.api()` routes — kept in sync here so the
+  // composedFetch fallback can keep exempting api routes from trailingSlash
+  // even for patterns added/removed after the initial `Mochi.serve()` call.
+  apiPatterns?: Set<string>;
   sseHandlerMap?: Map<string, MochiSseHandler>;
   wsHandlersMap?: Map<string, MochiWsHandlers<unknown>>;
   pageConfigMap?: Map<string, MochiPageHandlerConfig>;
@@ -90,6 +94,7 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
     development,
     entryPath,
     apiHandlerMap,
+    apiPatterns,
     sseHandlerMap,
     wsHandlersMap,
     pageConfigMap,
@@ -296,7 +301,9 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
   let knownEntryPatterns = new Set<string>();
   let routeComponentPaths: Map<string, string> = new Map();
 
-  function routeType(handler: unknown): 'api' | 'ws' | 'sse' | 'page' | 'file' | null {
+  type DevRouteType = 'api' | 'ws' | 'sse' | 'page' | 'file' | null;
+
+  function routeType(handler: unknown): DevRouteType {
     if (isMochiApi(handler)) {
       return 'api';
     }
@@ -315,7 +322,7 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
     return null;
   }
 
-  function currentRouteType(pattern: string): 'api' | 'ws' | 'sse' | 'page' | 'file' | null {
+  function currentRouteType(pattern: string): DevRouteType {
     if (apiHandlerMap?.has(pattern)) {
       return 'api';
     }
@@ -337,10 +344,12 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
     return null;
   }
 
-  function addBunRoute(pattern: string, value: BunRouteValue): void {
+  // Api routes never mirror on trailing slash — only the exact declared
+  // pattern matches, matching the non-hot-reload registration in Mochi.ts.
+  function addBunRoute(pattern: string, value: BunRouteValue, type: DevRouteType): void {
     bunRoutes[pattern] = value;
     baseBunRoutes[pattern] = value;
-    if (trailingSlashPolicy) {
+    if (trailingSlashPolicy && type !== 'api') {
       const alt = alternateSlashPattern(pattern);
       if (alt && !(alt in bunRoutes)) {
         bunRoutes[alt] = value;
@@ -349,8 +358,8 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
     }
   }
 
-  function removeBunRoute(pattern: string): void {
-    if (trailingSlashPolicy) {
+  function removeBunRoute(pattern: string, type: DevRouteType): void {
+    if (trailingSlashPolicy && type !== 'api') {
       const alt = alternateSlashPattern(pattern);
       if (alt) {
         delete bunRoutes[alt];
@@ -378,10 +387,16 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
 
         if (currentType && currentType !== type && registerRoutePattern && unregisterRoutePattern) {
           unregisterRoutePattern(pattern);
-          removeBunRoute(pattern);
+          removeBunRoute(pattern, currentType);
+          if (currentType === 'api') {
+            apiPatterns?.delete(pattern);
+          }
           const result = await registerRoutePattern(pattern, handler as MochiRouteValue);
           if (result) {
-            addBunRoute(pattern, result.bunRouteValue);
+            addBunRoute(pattern, result.bunRouteValue, result.type);
+            if (result.type === 'api') {
+              apiPatterns?.add(pattern);
+            }
             counts.added.push(pattern);
             counts.removed.push(pattern);
             logger.info(`Route retyped ${currentType}→${type}: ${pattern}`);
@@ -390,10 +405,10 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
           // File routes have no handler map to mutate in place — their source
           // is baked into the registered closure — so swap by re-registering.
           unregisterRoutePattern(pattern);
-          removeBunRoute(pattern);
+          removeBunRoute(pattern, 'file');
           const result = await registerRoutePattern(pattern, handler as MochiRouteValue);
           if (result) {
-            addBunRoute(pattern, result.bunRouteValue);
+            addBunRoute(pattern, result.bunRouteValue, result.type);
             counts.file++;
             counts.updated++;
             logger.info(`Route updated file: ${pattern}`);
@@ -421,7 +436,10 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
         try {
           const result = await registerRoutePattern(pattern, handler as MochiRouteValue);
           if (result) {
-            addBunRoute(pattern, result.bunRouteValue);
+            addBunRoute(pattern, result.bunRouteValue, result.type);
+            if (result.type === 'api') {
+              apiPatterns?.add(pattern);
+            }
             counts[result.type]++;
             counts.added.push(pattern);
             logger.info(`Route added ${result.type}: ${pattern}`);
@@ -436,8 +454,12 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
     if (unregisterRoutePattern) {
       for (const pattern of knownEntryPatterns) {
         if (!freshPatterns.has(pattern)) {
+          const removedType = currentRouteType(pattern);
           unregisterRoutePattern(pattern);
-          removeBunRoute(pattern);
+          removeBunRoute(pattern, removedType);
+          if (removedType === 'api') {
+            apiPatterns?.delete(pattern);
+          }
           counts.removed.push(pattern);
           logger.info(`Route removed: ${pattern}`);
         }

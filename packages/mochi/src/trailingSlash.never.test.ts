@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import type { Server } from 'bun';
 import { Mochi } from './Mochi';
+import { json } from './utils';
 
 const FIXTURE_PAGE = path.join(import.meta.dir, '__fixtures__', 'css-imports', 'Page.svelte');
 
@@ -24,6 +25,7 @@ describe('trailingSlash: "never"', () => {
         '/': Mochi.page(FIXTURE_PAGE),
         '/about': Mochi.page(FIXTURE_PAGE),
         '/docs/:slug': Mochi.page(FIXTURE_PAGE),
+        '/api/ping': Mochi.api(async () => json({ ok: true })),
       },
     });
     base = `http://localhost:${server.port}`;
@@ -66,5 +68,16 @@ describe('trailingSlash: "never"', () => {
     expect(res.status).toBe(301);
     expect(res.headers.get('Location')).toBe('/about');
     expect(await res.text()).toBe('');
+  });
+
+  test('api route is exempt: declared pattern serves 200 with no redirect', async () => {
+    const res = await fetch(`${base}/api/ping`, { redirect: 'manual' });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+  });
+
+  test('api route is exempt: alt-slash form is not mirrored (404, no redirect)', async () => {
+    const res = await fetch(`${base}/api/ping/`, { redirect: 'manual' });
+    expect(res.status).toBe(404);
   });
 });
