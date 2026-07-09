@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import type { BunPlugin } from 'bun';
 import { isSvelteMarker, normalizeAssetPrefix, normalizeIslandHydrationMarkers, stripHydrationMarkers, toCompileErrorLogs, toPosixPath } from './utils';
 import { injectIslandPropsBlock } from './islandPropsRegistry';
-import { requestContext } from './requestContext';
+import { requestContext, MOCHI_REQUEST_CONTEXT_KEY } from './requestContext';
 import type { DebugBarData } from './requestContext';
 import { logger } from './log';
 import { mochiEvents } from './events';
@@ -535,11 +535,12 @@ export class ComponentRegistry {
         build.onLoad({ filter: /.*/, namespace: 'mochi-env' }, () => ({
           contents: [
             `export const isServer = true; export const isBrowser = false; export const DEV = ${development}; export const isDev = ${development};`,
-            `export function getRequestContext() {`,
-            `  const ctx = globalThis.__mochi_request_context__?.getStore();`,
-            `  if (!ctx) throw new Error("getRequestContext() called outside of a request.");`,
-            `  return ctx;`,
-            `}`,
+            // Re-export the real `getRequestContext` (single source of truth) so the
+            // context proxies below share its ALS + Svelte-context fallback — Bun 1.4.0
+            // drops the AsyncLocalStorage store across Svelte's async-SSR continuations,
+            // and the fallback recovers it from the SSR context. See requestContext.ts.
+            `export { getRequestContext } from "${toPosixPath(path.join(FRAMEWORK_DIR, 'requestContext.ts'))}";`,
+            `import { getRequestContext } from "${toPosixPath(path.join(FRAMEWORK_DIR, 'requestContext.ts'))}";`,
             `function __mochiCtxProxy(key) {`,
             `  return new Proxy({}, {`,
             `    get(_, p) {`,
@@ -1398,6 +1399,7 @@ export class ComponentRegistry {
       props?: Record<string, unknown>;
       transformError: typeof transformError;
       idPrefix?: string;
+      context?: Map<unknown, unknown>;
     } = {
       transformError,
     };
@@ -1416,6 +1418,15 @@ export class ComponentRegistry {
     // own request context), so nothing else holds pending entries here.
     const ctx = requestContext.getStore();
     ctx?.islandProps.clear();
+
+    // Bun 1.4.0 drops the AsyncLocalStorage store across the `.then()` continuations
+    // Svelte's async SSR renderer uses (see reproduction/), so `getRequestContext()`
+    // throws mid-render. Svelte restores its own SSR context at every async boundary,
+    // so we carry the request context on it too; the generated `getRequestContext`
+    // falls back to `getContext(MOCHI_REQUEST_CONTEXT_KEY)` when the ALS store is gone.
+    if (ctx) {
+      renderOptions.context = new Map([[MOCHI_REQUEST_CONTEXT_KEY, ctx]]);
+    }
 
     const { body, head } = await render(mod.default, renderOptions);
 

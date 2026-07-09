@@ -1,0 +1,12 @@
+{
+  "name": "svelte-async-ssr-als-repro",
+  "private": true,
+  "type": "module",
+  "description": "Bun 1.4.0 drops Svelte's internal render-context AsyncLocalStorage under concurrent async SSR",
+  "scripts": {
+    "start": "bun run repro.ts"
+  },
+  "dependencies": {
+    "svelte": "5.56.4"
+  }
+}

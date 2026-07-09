@@ -4,7 +4,10 @@ import svelte from 'eslint-plugin-svelte';
 import prettier from 'eslint-config-prettier';
 
 export default ts.config(
-  { ignores: ['**/.mochi/', '**/.mochi-*/', '.claude/', 'node_modules/', 'out/', '**/CHANGELOG.md'] },
+  // `reproduction-svelte/` is a self-contained repro with its own install and uses
+  // Svelte's experimental async syntax (`await` in `$derived`) that the root config
+  // doesn't enable — it has its own toolchain, so keep it out of the repo lint.
+  { ignores: ['**/.mochi/', '**/.mochi-*/', '.claude/', 'node_modules/', 'out/', '**/CHANGELOG.md', 'reproduction-svelte/'] },
   js.configs.recommended,
   ...ts.configs.recommended,
   ...svelte.configs['flat/recommended'],
@@ -31,6 +34,11 @@ export default ts.config(
   {
     files: ['**/*.cjs'],
     languageOptions: { sourceType: 'commonjs' },
+  },
+  // Standalone Bun/Node scripts (e.g. the Bun-bug reproduction) use runtime globals
+  {
+    files: ['reproduction/**/*.mjs'],
+    languageOptions: { globals: { console: 'readonly', process: 'readonly' } },
   },
   prettier,
   ...svelte.configs['flat/prettier'],
