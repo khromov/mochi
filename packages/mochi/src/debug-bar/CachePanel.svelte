@@ -3,6 +3,8 @@
   import DebugPanel from './DebugPanel.svelte';
   import Trash from '../icons/trash-2.svelte';
   import ChevronRight from '../icons/chevron-right.svelte';
+  import Copy from '../icons/copy.svelte';
+  import Check from '../icons/check.svelte';
   import X from '../icons/x.svelte';
 
   let { open, onclose }: { open: boolean; onclose: () => void } = $props();
@@ -15,7 +17,9 @@
   let query = $state('');
   let expanded: Record<string, boolean> = $state({});
   let values: Record<string, { loading?: boolean; json?: string; error?: string }> = $state({});
+  let copiedKey: string | null = $state(null);
   let resetTimer: ReturnType<typeof setTimeout> | undefined;
+  let copiedTimer: ReturnType<typeof setTimeout> | undefined;
 
   const LABELS: Record<Status, string> = {
     idle: 'Empty image cache',
@@ -46,20 +50,47 @@
     }
   });
 
+  // Fetch (and memoize) the stored value for a key. Shared by expand + copy.
+  async function loadValue(key: string): Promise<{ json?: string; error?: string }> {
+    const existing = values[key];
+    if (existing && (existing.json !== undefined || existing.error !== undefined)) {
+      return existing;
+    }
+    values[key] = { loading: true };
+    try {
+      const res = await fetch(`${base()}entry/?key=${encodeURIComponent(key)}`);
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      const data = (await res.json()) as { value: unknown };
+      const result = { json: JSON.stringify(data.value, null, 2) };
+      values[key] = result;
+      return result;
+    } catch (err) {
+      const result = { error: err instanceof Error ? err.message : String(err) };
+      values[key] = result;
+      return result;
+    }
+  }
+
   async function toggleKey(key: string) {
     expanded[key] = !expanded[key];
-    if (expanded[key] && values[key] === undefined) {
-      values[key] = { loading: true };
-      try {
-        const res = await fetch(`${base()}entry/?key=${encodeURIComponent(key)}`);
-        if (!res.ok) {
-          throw new Error(`HTTP ${res.status}`);
-        }
-        const data = (await res.json()) as { value: unknown };
-        values[key] = { json: JSON.stringify(data.value, null, 2) };
-      } catch (err) {
-        values[key] = { error: err instanceof Error ? err.message : String(err) };
-      }
+    if (expanded[key]) {
+      await loadValue(key);
+    }
+  }
+
+  // Copy the key and its value on two lines, loading the value first if needed.
+  async function copyKey(key: string) {
+    const result = await loadValue(key);
+    const payload = result.json ?? result.error ?? '';
+    try {
+      await navigator.clipboard.writeText(`${key}\n${payload}`);
+      copiedKey = key;
+      clearTimeout(copiedTimer);
+      copiedTimer = setTimeout(() => (copiedKey = null), 1200);
+    } catch {
+      /* clipboard unavailable */
     }
   }
 
@@ -100,7 +131,10 @@
     return keys.filter((k) => k.toLowerCase().includes(normalizedQuery));
   });
 
-  onDestroy(() => clearTimeout(resetTimer));
+  onDestroy(() => {
+    clearTimeout(resetTimer);
+    clearTimeout(copiedTimer);
+  });
 </script>
 
 <DebugPanel title="Cache" color="#a7d0c4" {open} {onclose}>
@@ -133,10 +167,15 @@
     {:else}
       {#each filtered as key (key)}
         <div class="cache-row" class:open={expanded[key]}>
-          <button class="cache-row-header" type="button" onclick={() => toggleKey(key)}>
-            <span class="chevron"><ChevronRight size={12} /></span>
-            <span class="cache-key">{key}</span>
-          </button>
+          <div class="cache-row-top">
+            <button class="cache-row-header" type="button" onclick={() => toggleKey(key)}>
+              <span class="chevron"><ChevronRight size={12} /></span>
+              <span class="cache-key" class:searching={normalizedQuery !== ''}><bdi>{key}</bdi></span>
+            </button>
+            <button class="cache-copy-btn" class:copied={copiedKey === key} type="button" onclick={() => copyKey(key)} title="Copy key and value" aria-label="Copy key and value">
+              {#if copiedKey === key}<Check size={12} />{:else}<Copy size={12} />{/if}
+            </button>
+          </div>
           {#if expanded[key]}
             <div class="cache-value">
               {#if values[key]?.loading}
@@ -296,22 +335,49 @@
     border-radius: 6px;
     overflow: hidden;
   }
+  .cache-row-top {
+    display: flex;
+    align-items: center;
+  }
   .cache-row-header {
     display: flex;
     align-items: center;
     gap: 6px;
-    width: 100%;
+    flex: 1;
     background: none;
     border: none;
     color: #e8e6dd;
     font: inherit;
-    padding: 6px 10px;
+    padding: 6px 4px 6px 10px;
     cursor: pointer;
     text-align: left;
     min-width: 0;
   }
-  .cache-row-header:hover {
+  .cache-row-top:hover {
     background: #2d3128;
+  }
+  .cache-copy-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    align-self: stretch;
+    background: none;
+    border: none;
+    border-left: 1px solid #353930;
+    color: #8e9488;
+    padding: 0 8px;
+    cursor: pointer;
+    transition:
+      color 120ms ease,
+      background 120ms ease;
+  }
+  .cache-copy-btn:hover {
+    color: #c8ece0;
+    background: rgba(111, 174, 156, 0.12);
+  }
+  .cache-copy-btn.copied {
+    color: #6fae9c;
   }
   .chevron {
     color: #8e9488;
@@ -327,9 +393,13 @@
     color: #6fae9c;
     margin-top: 1px;
   }
-  /* Keep the chevron pinned to the first line when the full key wraps. */
+  /* Keep the chevron + copy button pinned to the first line when the full key wraps. */
+  .cache-row.open .cache-row-top,
   .cache-row.open .cache-row-header {
     align-items: flex-start;
+  }
+  .cache-row.open .cache-copy-btn {
+    align-self: stretch;
   }
   .cache-key {
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -337,6 +407,16 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    min-width: 0;
+  }
+  .cache-key bdi {
+    unicode-bidi: isolate;
+  }
+  /* While searching, keys share a long common prefix, so truncate the START and
+     keep the distinguishing tail visible (leading ellipsis via rtl flow). */
+  .cache-key.searching {
+    direction: rtl;
+    text-align: left;
   }
   /* Expanded rows show the full key — wrap instead of truncating. */
   .cache-row.open .cache-key {
@@ -344,6 +424,7 @@
     text-overflow: clip;
     white-space: normal;
     word-break: break-all;
+    direction: ltr;
   }
   .cache-value {
     border-top: 1px solid #353930;

@@ -251,7 +251,7 @@ describe('ImageCache.keys / inspect (dev debug bar)', () => {
     expect(entry).not.toBeNull();
     expect(typeof entry.createdAt).toBe('number');
 
-    expect(await cache.inspect('img:orig:https://example.com/nope.png')).toBeNull();
+    expect(await cache.inspect('MochiImage:Original:https://example.com/nope.png')).toBeNull();
   });
 });
 

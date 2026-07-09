@@ -68,9 +68,9 @@ export function originalId(src: string): string {
 // Cache-key convention. The prefixes are distinct, so the `cache:delete` cascade
 // hook can recover a source from an original key; variant keys are constructed
 // from (src, configHash) and never need to be parsed back.
-const ORIG_PREFIX = 'img:orig:';
-const VAR_PREFIX = 'img:var:';
-const PH_PREFIX = 'img:ph:';
+const ORIG_PREFIX = 'MochiImage:Original:';
+const VAR_PREFIX = 'MochiImage:Variant:';
+const PH_PREFIX = 'MochiImage:Placeholder:';
 const origKey = (src: string): string => ORIG_PREFIX + src;
 const varKey = (id: string): string => VAR_PREFIX + id;
 const phKey = (src: string): string => PH_PREFIX + src;
@@ -128,8 +128,9 @@ function pathForKey(storage: Storage, key: string): string {
 /**
  * Image cache backed by {@link MochiCache} over {@link FileStorage}. Originals,
  * resized variants, and blur placeholders are each a cache entry under the
- * `img:orig:` / `img:var:` / `img:ph:` key convention; the SWR window, request
- * coalescing, and binary persistence all come from the shared cache primitives.
+ * `MochiImage:Original:` / `MochiImage:Variant:` / `MochiImage:Placeholder:` key
+ * convention; the SWR window, request coalescing, and binary persistence all come
+ * from the shared cache primitives.
  *
  * A variant has no window of its own — its served freshness mirrors the shared
  * original's status at request time. Hard invalidation deletes the original key,
