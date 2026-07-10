@@ -14,6 +14,7 @@ import {
   internalDemoLlmsRoutes,
   loadDocs,
 } from './lib/docs';
+import { loadPosts, getPost } from './lib/blog';
 import { respondMcp } from './lib/mcp';
 import { profilerEnabled, startProfiler, stopProfiler } from './lib/profiler';
 import { routes as apiRoutes } from './demos/api/routes';
@@ -130,6 +131,33 @@ export const routes: Record<string, MochiRouteValue> = {
         toc: doc.toc,
         prev,
         next,
+      };
+    },
+  }),
+  '/blog': Mochi.page('./src/Blog.svelte', {
+    serverProps: async () => {
+      const posts = await loadPosts({ includeDrafts: DEVELOPMENT });
+      return {
+        docsNav: await buildDocsNav(),
+        posts: posts.map(({ slug, title, description, date, draft }) => ({ slug, title, description, date, draft })),
+      };
+    },
+  }),
+  '/blog/:slug': Mochi.page('./src/BlogPost.svelte', {
+    serverProps: async () => {
+      const { params } = getRequestContext();
+      const slug = params.slug ?? '';
+      const post = await getPost(slug, { includeDrafts: DEVELOPMENT });
+      if (!post) {
+        error(404, `No post '${slug}'`);
+      }
+      return {
+        slug: post.slug,
+        title: post.title,
+        description: post.description,
+        date: post.date,
+        draft: post.draft,
+        docsNav: await buildDocsNav(),
       };
     },
   }),

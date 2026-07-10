@@ -1,35 +1,16 @@
 import { existsSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { compile as mdsvexCompile } from 'mdsvex';
 import { logger, trailingSlashIt } from 'mochi-framework';
 import rehypeSlug from 'rehype-slug';
+import { SITE_ROOT } from './siteRoot';
+import { loadPosts } from './blog';
 import { demos, type Demo } from './demos';
 import type { SourceSpec } from '../components/utils.ts';
 import type { TocEntry } from './toc';
 
 type MdsvexRehypePlugin = NonNullable<NonNullable<Parameters<typeof mdsvexCompile>[1]>['rehypePlugins']>[number];
 
-// Anchor on the site package root, located by walking up to the nearest
-// package.json. A fixed module-relative walk (`../../../docs`) is wrong because
-// in dev the whole server is bundled into `.mochi/dev/entry-hmr/entry.js`, so
-// `import.meta.url` sits one directory deeper than the source and the walk lands
-// at the non-existent `packages/site/docs`. cwd is no anchor either: the dev
-// server runs from `packages/site` but the build-time barrel generator runs from
-// the repo root. The package.json walk is stable across all three.
-function findSiteRoot(): string {
-  let dir = path.dirname(fileURLToPath(import.meta.url));
-  while (!existsSync(path.join(dir, 'package.json'))) {
-    const parent = path.dirname(dir);
-    if (parent === dir) {
-      throw new Error(`Could not locate the site package root from ${fileURLToPath(import.meta.url)}`);
-    }
-    dir = parent;
-  }
-  return dir;
-}
-
-const SITE_ROOT = findSiteRoot();
 export const DOCS_DIR = path.resolve(SITE_ROOT, '../docs');
 // Internal demos are keyed by their folder name (`slug`) and carry their own `files`
 // list — the single source of truth shared by the demo page, the per-demo llms.txt
@@ -283,11 +264,15 @@ export async function buildSitemapXml(): Promise<string> {
     return cachedSitemapXml;
   }
   const docs = await loadDocs();
+  // Published posts only — loadPosts() without includeDrafts never exposes drafts.
+  const posts = await loadPosts();
   const internalDemos = demos.filter((d) => d.href.startsWith('/'));
 
   const urls: string[] = [
     `  <url><loc>${SITE_BASE}/</loc></url>`,
     ...docs.map((d) => `  <url><loc>${SITE_BASE}/docs/${d.slug}/</loc></url>`),
+    `  <url><loc>${SITE_BASE}/blog/</loc></url>`,
+    ...posts.map((p) => `  <url><loc>${SITE_BASE}/blog/${p.slug}/</loc></url>`),
     // Demo hrefs already carry a trailing slash; trailingSlashIt normalizes to
     // exactly one rather than appending unconditionally (which produced `…/request-id//`).
     ...internalDemos.map((d) => `  <url><loc>${trailingSlashIt(`${SITE_BASE}${d.href}`)}</loc></url>`),
