@@ -20,25 +20,35 @@
   // match cols × rows. Cloning is safe because no card carries per-card state.
   function applyGrid(cols: number, rows: number) {
     const grid = document.getElementById(gridId);
-    if (!grid) return;
+    if (!grid) {
+      return;
+    }
     grid.style.setProperty('--cols', String(cols));
     grid.style.setProperty('--rows', String(rows));
     const count = cols * rows;
     const template = grid.firstElementChild;
-    if (!template) return;
-    while (grid.children.length < count) grid.appendChild(template.cloneNode(true));
-    while (grid.children.length > count) grid.lastElementChild!.remove();
+    if (!template) {
+      return;
+    }
+    while (grid.children.length < count) {
+      grid.appendChild(template.cloneNode(true));
+    }
+    while (grid.children.length > count) {
+      grid.lastElementChild!.remove();
+    }
   }
 
   function onSelect(e: Event) {
     selected = Number((e.currentTarget as HTMLSelectElement).value);
-    const { cols, rows } = presets[selected];
+    const { cols, rows } = presets[selected]!;
     applyGrid(cols, rows);
   }
 
   async function download() {
     const node = document.getElementById(targetId);
-    if (!node) return;
+    if (!node) {
+      return;
+    }
     busy = true;
     error = '';
     try {
@@ -46,7 +56,7 @@
       // Rendering the DOM once (WYSIWYG) keeps the grain and gradient sharp and
       // identical across every sticker. Explicit width/height stops the wider-
       // than-viewport sheet from having its right column clipped.
-      const { cols, rows } = presets[selected];
+      const { cols, rows } = presets[selected]!;
       const dataUrl = await toPng(node, {
         pixelRatio: 3,
         cacheBust: true,
