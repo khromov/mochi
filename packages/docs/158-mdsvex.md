@@ -104,8 +104,7 @@ export const highlightCode = createHighlighter((code, lang) => shiki.codeToHtml(
 Shiki defaults to the oniguruma WASM engine, whose `WebAssembly.Memory`
 grows and is never reclaimed — and each compiled SSR bundle that imports
 this module spins up its own copy. `createJavaScriptRegexEngine` uses the
-JS `RegExp` engine instead, so no WASM is loaded (`forgiving: true` skips
-the few grammar patterns that don't compile under `RegExp`).
+JS `RegExp` engine instead, so no WASM is loaded.
 
 ```ts
 // src/index.ts
