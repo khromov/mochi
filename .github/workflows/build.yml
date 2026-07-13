@@ -35,7 +35,8 @@ jobs:
             # while demos stays on the stable default pinned in the Dockerfile.
             # Pinned by digest so the moving canary tag can't drift the deploy
             # underneath us; bump the digest to intentionally move forward.
-            # bun_image: oven/bun:canary-alpine@sha256:bba48f6599532b99017f1d7aabf80a80bbce9dd33e6faf6ac7f76b8f2d75fac8
+            bun_image: oven/bun:1.3.14-alpine
+            #bun_image: oven/bun:canary-alpine@sha256:bba48f6599532b99017f1d7aabf80a80bbce9dd33e6faf6ac7f76b8f2d75fac8
           # Standalone demos site, also deployed in dev mode. Requires repo
           # secret APP_TOKEN_DEMOS — the per-app deploy token from the
           # mochi-demos CapRover app's "Deployment" tab.
