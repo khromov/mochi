@@ -103,6 +103,17 @@ export const routes: Record<string, MochiRouteValue> = {
         }),
       }
     : {}),
+  // TEMP: on-demand V8 heap snapshot for memory-leak debugging. Remove when done.
+  '/_heapsnapshot': Mochi.api(() => {
+    const snapshot = Bun.generateHeapSnapshot('v8');
+    const filename = `mochi-${Date.now()}.heapsnapshot`;
+    return new Response(snapshot, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Disposition': `attachment; filename="${filename}"`,
+      },
+    });
+  }),
   '/discord': Mochi.api(() => Response.redirect('https://discord.com/invite/QCGfks4gg8', 302)),
   '/': Mochi.page('./src/Site.svelte', {
     serverProps: async () => {
