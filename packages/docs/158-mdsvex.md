@@ -89,16 +89,23 @@ bun add shiki
 
 ```ts
 // src/lib/highlightCode.ts
-import { createHighlighter as createShiki } from 'shiki';
+import { createHighlighter as createShiki, createJavaScriptRegexEngine } from 'shiki';
 import { createHighlighter } from 'mochi-framework/highlight';
 
 const shiki = await createShiki({
+  engine: createJavaScriptRegexEngine({ forgiving: true }),
   themes: ['vitesse-dark'],
   langs: ['typescript', 'bash'],
 });
 
 export const highlightCode = createHighlighter((code, lang) => shiki.codeToHtml(code, { lang, theme: 'vitesse-dark' }));
 ```
+
+Shiki defaults to the oniguruma WASM engine, whose `WebAssembly.Memory`
+grows and is never reclaimed — and each compiled SSR bundle that imports
+this module spins up its own copy. `createJavaScriptRegexEngine` uses the
+JS `RegExp` engine instead, so no WASM is loaded (`forgiving: true` skips
+the few grammar patterns that don't compile under `RegExp`).
 
 ```ts
 // src/index.ts
