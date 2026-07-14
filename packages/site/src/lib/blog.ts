@@ -10,6 +10,8 @@ export interface PostMetadata {
   description?: string;
   date: string;
   draft?: boolean;
+  /** Author slug, keyed into `authors.ts`. */
+  author: string;
 }
 
 export interface PostEntry {
@@ -19,6 +21,8 @@ export interface PostEntry {
   /** Publication date as 'YYYY-MM-DD'. */
   date: string;
   draft: boolean;
+  /** Author slug, keyed into `authors.ts`. */
+  author: string;
   filename: string;
   raw: string;
 }
@@ -69,6 +73,9 @@ async function loadAllPosts(): Promise<PostEntry[]> {
     if (typeof metadata.date !== 'string' || !DATE_RE.test(metadata.date)) {
       throw new Error(`Post "${filename}" needs a date frontmatter field shaped 'YYYY-MM-DD' (quoted)`);
     }
+    if (!metadata.author) {
+      throw new Error(`Post "${filename}" is missing required frontmatter field: author`);
+    }
 
     entries.push({
       slug: metadata.slug,
@@ -76,6 +83,7 @@ async function loadAllPosts(): Promise<PostEntry[]> {
       description: metadata.description,
       date: metadata.date,
       draft: metadata.draft === true,
+      author: metadata.author,
       filename,
       raw,
     });

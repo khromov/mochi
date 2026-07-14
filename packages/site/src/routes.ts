@@ -168,6 +168,7 @@ export const routes: Record<string, MochiRouteValue> = {
         description: post.description,
         date: post.date,
         draft: post.draft,
+        author: post.author,
         docsNav: await buildDocsNav(),
       };
     },

@@ -4,6 +4,7 @@
   import type { TocEntry } from './lib/toc';
   import { formatPostDate } from './lib/formatDate';
   import { blogComponents } from './lib/blogComponents.generated';
+  import { getAuthor } from './lib/authors';
 
   let {
     slug,
@@ -11,6 +12,7 @@
     description,
     date,
     draft,
+    author,
     docsNav,
   }: {
     slug: string;
@@ -18,10 +20,12 @@
     description?: string;
     date: string;
     draft: boolean;
+    author: string;
     docsNav: TocEntry[];
   } = $props();
 
   const PostComponent = $derived(blogComponents[slug]);
+  const postAuthor = $derived(getAuthor(author));
 </script>
 
 <svelte:head>
@@ -58,10 +62,12 @@
       {/if}
 
       <div class="author-box">
-        <img class="author-avatar" src="/authors/stanislav-khromov.jpg" alt="Stanislav Khromov" width="56" height="56" loading="lazy" />
+        <img class="author-avatar" src={postAuthor.avatar} alt={postAuthor.name} width="56" height="56" loading="lazy" />
         <div>
-          <p class="author-name">Stanislav</p>
-          <p class="author-bio"><a href="https://stanislav.garden">Personal website</a></p>
+          <p class="author-name">{postAuthor.name}</p>
+          {#if postAuthor.bio}
+            <p class="author-bio"><a href={postAuthor.bio.href}>{postAuthor.bio.label}</a></p>
+          {/if}
         </div>
       </div>
 

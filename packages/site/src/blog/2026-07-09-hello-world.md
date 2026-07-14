@@ -3,6 +3,7 @@ title: Hello World
 slug: hello-world
 description: Introducing the Mochi blog.
 date: '2026-07-14'
+author: stanislav
 ---
 
 # Hello World
