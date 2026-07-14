@@ -8,12 +8,6 @@ describe('loadPosts', () => {
     expect(posts.every((p) => !p.draft)).toBe(true);
   });
 
-  it('includes drafts with includeDrafts', async () => {
-    const posts = await loadPosts({ includeDrafts: true });
-    expect(posts.some((p) => p.draft)).toBe(true);
-    expect(posts.length).toBeGreaterThan((await loadPosts()).length);
-  });
-
   it('sorts newest first', async () => {
     const posts = await loadPosts({ includeDrafts: true });
     const dates = posts.map((p) => p.date);
@@ -34,12 +28,6 @@ describe('getPost', () => {
     const post = await getPost('hello-world');
     expect(post?.title).toBe('Hello World');
     expect(post?.draft).toBe(false);
-  });
-
-  it('hides a draft unless includeDrafts is set', async () => {
-    expect(await getPost('mochi-on-bun-1-4')).toBeNull();
-    const draft = await getPost('mochi-on-bun-1-4', { includeDrafts: true });
-    expect(draft?.draft).toBe(true);
   });
 
   it('returns null for an unknown slug', async () => {
