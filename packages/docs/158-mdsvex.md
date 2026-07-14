@@ -106,6 +106,12 @@ grows and is never reclaimed — and each compiled SSR bundle that imports
 this module spins up its own copy. `createJavaScriptRegexEngine` uses the
 JS `RegExp` engine instead, so no WASM is loaded.
 
+<Callout type="info">
+
+The JS `RegExp` engine can hang on Windows — gate it behind `process.platform !== 'win32'` and fall back to the WASM default there.
+
+</Callout>
+
 ```ts
 // src/index.ts
 import { highlightCode } from './lib/highlightCode';
