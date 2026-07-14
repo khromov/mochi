@@ -219,25 +219,34 @@ export function normalizeIslandHydrationMarkers(html: string): string {
  *
  * Uses Bun's HTMLRewriter (based on Cloudflare's lol-html) to properly parse
  * HTML and track element nesting instead of fragile regex/manual scanning.
+ *
+ * NOTE(bun<1.4.0): the obvious implementation tracks island nesting depth with
+ * `el.onEndTag(() => islandDepth--)`, but registering an `onEndTag` callback
+ * while inside a request's `AsyncLocalStorage` context leaks that context
+ * frame — and thus the whole request (BunRequest, cookies, …) — for the life
+ * of the process on Bun 1.3.x. Instead we flag island-internal comments via an
+ * element-scoped `comments` handler, which lol-html invokes immediately before
+ * the document handler for the same comment. Once the minimum supported Bun is
+ * >= 1.4.0, revert this to the simpler onEndTag depth counter.
  */
 export function stripHydrationMarkers(html: string): string {
-  let islandDepth = 0;
-
-  const trackIsland = {
-    element(el: HTMLRewriterTypes.Element) {
-      islandDepth++;
-      el.onEndTag(() => {
-        islandDepth--;
-      });
+  let insideIsland = false;
+  const markInside = {
+    comments() {
+      insideIsland = true;
     },
   };
 
   return new HTMLRewriter()
-    .on('mochi-hydratable-island', trackIsland)
-    .on('mochi-server-island', trackIsland)
+    .on('mochi-hydratable-island', markInside)
+    .on('mochi-server-island', markInside)
     .onDocument({
       comments(comment) {
-        if (islandDepth === 0 && isSvelteMarker(comment.text)) {
+        if (insideIsland) {
+          insideIsland = false;
+          return;
+        }
+        if (isSvelteMarker(comment.text)) {
           comment.remove();
         }
       },
