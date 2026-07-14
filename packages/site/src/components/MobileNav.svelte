@@ -92,6 +92,9 @@
         <li class="toc-item level-2">
           <a href="/" onclick={close}>Home</a>
         </li>
+        <li class="toc-item level-2">
+          <a href="/blog/" onclick={close}>Blog</a>
+        </li>
       </ul>
 
       {#if filteredDocs.length > 0}
