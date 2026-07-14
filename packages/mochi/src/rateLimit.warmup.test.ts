@@ -41,9 +41,9 @@ describe('rateLimit ignores warmup requests', () => {
   });
 
   test('warmup does not consume the quota; real requests do', async () => {
-    const first = await fetch(`${base}/`);
-    expect(first.status).toBe(200);
-    const second = await fetch(`${base}/`);
-    expect(second.status).toBe(429);
+    const firstResponse = await fetch(`${base}/`);
+    expect(firstResponse.status).toBe(200);
+    const secondResponse = await fetch(`${base}/`);
+    expect(secondResponse.status).toBe(429);
   });
 });

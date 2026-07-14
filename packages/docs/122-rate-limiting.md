@@ -99,7 +99,7 @@ rateLimit: { limit: 1000, window: '1h', key: (req) => req.headers.get('x-api-key
 An allowed request exposes its limiter state on the request context — render quotas in `serverProps` or any server-side code:
 
 ```ts
-const rl = getRequestContext().rateLimit;
+const rateLimit = getRequestContext().rateLimit;
 // { limit: 5, remaining: 3, resetIn: 42, resetAt, key, tier? } — or undefined if no limiter ran
 ```
 

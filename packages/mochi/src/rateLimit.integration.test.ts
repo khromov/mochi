@@ -45,45 +45,45 @@ describe('rateLimit route option', () => {
 
   test('per-route override beats the global default, then blocks with hitlimit JSON', async () => {
     for (let i = 0; i < 5; i++) {
-      const res = await fetch(`${base}/api/override`);
-      expect(res.status).toBe(200);
-      expect(res.headers.get('RateLimit-Limit')).toBe('5');
-      expect(res.headers.get('RateLimit-Remaining')).toBe(String(4 - i));
+      const response = await fetch(`${base}/api/override`);
+      expect(response.status).toBe(200);
+      expect(response.headers.get('RateLimit-Limit')).toBe('5');
+      expect(response.headers.get('RateLimit-Remaining')).toBe(String(4 - i));
     }
-    const blocked = await fetch(`${base}/api/override`);
-    expect(blocked.status).toBe(429);
-    expect(blocked.headers.get('Retry-After')).toBeDefined();
-    expect(blocked.headers.get('RateLimit-Remaining')).toBe('0');
-    const body = (await blocked.json()) as { hitlimit: boolean; remaining: number; resetIn: number };
+    const blockedResponse = await fetch(`${base}/api/override`);
+    expect(blockedResponse.status).toBe(429);
+    expect(blockedResponse.headers.get('Retry-After')).toBeDefined();
+    expect(blockedResponse.headers.get('RateLimit-Remaining')).toBe('0');
+    const body = (await blockedResponse.json()) as { hitlimit: boolean; remaining: number; resetIn: number };
     expect(body.hitlimit).toBe(true);
     expect(body.remaining).toBe(0);
     expect(body.resetIn).toBeGreaterThan(0);
   });
 
   test('routes without their own config share the global limiter bucket', async () => {
-    const first = await fetch(`${base}/api/global`);
-    expect(first.status).toBe(200);
-    expect(first.headers.get('RateLimit-Limit')).toBe('2');
+    const firstResponse = await fetch(`${base}/api/global`);
+    expect(firstResponse.status).toBe(200);
+    expect(firstResponse.headers.get('RateLimit-Limit')).toBe('2');
     // Second hit lands on a DIFFERENT route but the SAME shared bucket.
-    const second = await fetch(`${base}/api/global-shared`);
-    expect(second.status).toBe(200);
-    expect(second.headers.get('RateLimit-Remaining')).toBe('0');
-    const third = await fetch(`${base}/api/global`);
-    expect(third.status).toBe(429);
+    const secondResponse = await fetch(`${base}/api/global-shared`);
+    expect(secondResponse.status).toBe(200);
+    expect(secondResponse.headers.get('RateLimit-Remaining')).toBe('0');
+    const thirdResponse = await fetch(`${base}/api/global`);
+    expect(thirdResponse.status).toBe(429);
   });
 
   test('rateLimit: false opts a route out entirely', async () => {
     for (let i = 0; i < 10; i++) {
-      const res = await fetch(`${base}/api/optout`);
-      expect(res.status).toBe(200);
-      expect(res.headers.get('RateLimit-Limit')).toBeNull();
+      const response = await fetch(`${base}/api/optout`);
+      expect(response.status).toBe(200);
+      expect(response.headers.get('RateLimit-Limit')).toBeNull();
     }
   });
 
   test('getRequestContext().rateLimit exposes usage to handlers', async () => {
-    const res = await fetch(`${base}/api/info`);
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { rateLimit: { limit: number; remaining: number; resetIn: number; key: string } };
+    const response = await fetch(`${base}/api/info`);
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { rateLimit: { limit: number; remaining: number; resetIn: number; key: string } };
     expect(body.rateLimit.limit).toBe(9);
     expect(body.rateLimit.remaining).toBe(8);
     expect(body.rateLimit.resetIn).toBeGreaterThan(0);
@@ -97,17 +97,17 @@ describe('rateLimit route option', () => {
   });
 
   test('blocked page route renders the HTML error page at 429 with headers', async () => {
-    const ok = await fetch(`${base}/page`);
-    expect(ok.status).toBe(200);
-    expect(ok.headers.get('content-type')).toContain('text/html');
-    expect(ok.headers.get('RateLimit-Limit')).toBe('1');
+    const allowedResponse = await fetch(`${base}/page`);
+    expect(allowedResponse.status).toBe(200);
+    expect(allowedResponse.headers.get('content-type')).toContain('text/html');
+    expect(allowedResponse.headers.get('RateLimit-Limit')).toBe('1');
 
-    const blocked = await fetch(`${base}/page`);
-    expect(blocked.status).toBe(429);
-    expect(blocked.headers.get('content-type')).toContain('text/html');
-    expect(blocked.headers.get('RateLimit-Remaining')).toBe('0');
-    expect(blocked.headers.get('Retry-After')).toBeDefined();
-    const html = await blocked.text();
+    const blockedResponse = await fetch(`${base}/page`);
+    expect(blockedResponse.status).toBe(429);
+    expect(blockedResponse.headers.get('content-type')).toContain('text/html');
+    expect(blockedResponse.headers.get('RateLimit-Remaining')).toBe('0');
+    expect(blockedResponse.headers.get('Retry-After')).toBeDefined();
+    const html = await blockedResponse.text();
     expect(html).toContain('429');
     expect(html).toContain('Rate limit exceeded');
   });
