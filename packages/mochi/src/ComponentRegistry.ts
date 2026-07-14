@@ -1466,39 +1466,46 @@ export class ComponentRegistry {
     const renderedIslandNames = new Set<string>();
     let hasServerIslands = false;
     if (hasIslandsOrServerIslands || shouldStrip) {
-      let islandDepth = 0;
-      const trackIsland = {
-        element(el: HTMLRewriterTypes.Element) {
-          islandDepth++;
-          el.onEndTag(() => {
-            islandDepth--;
-          });
-        },
-      };
+      // NOTE(bun<1.4.0): don't use `el.onEndTag()` to track island nesting
+      // depth — registering it inside a request's AsyncLocalStorage context
+      // leaks the context frame (and the whole request) for the life of the
+      // process on Bun 1.3.x. We instead flag island-internal comments via
+      // element-scoped `comments` handlers, which lol-html invokes immediately
+      // before the document handler for the same comment. Revert to an onEndTag
+      // depth counter once the minimum supported Bun is >= 1.4.0.
+      let insideIsland = false;
       const rewriter = new HTMLRewriter();
       if (hasIslandsOrServerIslands) {
         rewriter
           .on('mochi-hydratable-island', {
             element(el) {
-              trackIsland.element(el);
               const raw = el.getAttribute('component-name');
               if (raw) {
                 renderedIslandNames.add(raw);
               }
               injectIslandPropsBlock(el, propsById, emittedProps);
             },
+            comments() {
+              insideIsland = true;
+            },
           })
           .on('mochi-server-island', {
-            element(el) {
+            element() {
               hasServerIslands = true;
-              trackIsland.element(el);
+            },
+            comments() {
+              insideIsland = true;
             },
           });
       }
       if (shouldStrip) {
         rewriter.onDocument({
           comments(comment) {
-            if (islandDepth === 0 && isSvelteMarker(comment.text)) {
+            if (insideIsland) {
+              insideIsland = false;
+              return;
+            }
+            if (isSvelteMarker(comment.text)) {
               comment.remove();
             }
           },
