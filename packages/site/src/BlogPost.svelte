@@ -60,8 +60,8 @@
       <div class="author-box">
         <img class="author-avatar" src="/authors/stanislav-khromov.jpg" alt="Stanislav Khromov" width="56" height="56" loading="lazy" />
         <div>
-          <p class="author-name">Stanislav Khromov</p>
-          <p class="author-bio">Creator of Mochi · <a href="https://github.com/khromov">GitHub</a></p>
+          <p class="author-name">Stanislav</p>
+          <p class="author-bio"><a href="https://stanislav.garden">Personal website</a></p>
         </div>
       </div>
 
