@@ -66,7 +66,9 @@
         <div>
           <p class="author-name">{postAuthor.name}</p>
           {#if postAuthor.bio}
-            <p class="author-bio"><a href={postAuthor.bio.href}>{postAuthor.bio.label}</a></p>
+            <p class="author-bio">
+              <a href={postAuthor.bio.href} target="_blank" rel="noopener noreferrer">{postAuthor.bio.label}</a>
+            </p>
           {/if}
         </div>
       </div>
