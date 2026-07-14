@@ -5,7 +5,9 @@ import rehypeExternalLinks from './lib/rehypeExternalLinks';
 import { Mochi, mochiEvents, sequence, logger, noCache, compress, silenceInternalRoutes } from 'mochi-framework';
 import type { Handle, HandleError, MarkdownConfig } from 'mochi-framework';
 import { generateDocsBarrel } from './lib/generateDocsBarrel';
+import { generateBlogBarrel } from './lib/generateBlogBarrel';
 import { clearDocsCaches, DOCS_DIR } from './lib/docs';
+import { clearBlogCaches, BLOG_DIR } from './lib/blog';
 import { highlightCode } from './lib/highlight.server';
 import { handle as cookieVaryTestHandle } from './demos/cookie-vary-test/routes';
 import { encodeDebugBarGlobals } from './lib/debugBarEncode';
@@ -23,12 +25,23 @@ const immutableAssets: Handle = async ({ event, resolve }) => {
 
 if (process.env.MODE === 'development') {
   await generateDocsBarrel();
+  await generateBlogBarrel();
 
   const docsDirPrefix = DOCS_DIR + path.sep;
   mochiEvents.setHandler('docs-cache-clear', 'file:change', async ({ path: changed }) => {
     if (changed.startsWith(docsDirPrefix) && changed.endsWith('.md')) {
       clearDocsCaches();
       await generateDocsBarrel();
+    }
+  });
+
+  const blogDirPrefix = BLOG_DIR + path.sep;
+  mochiEvents.setHandler('blog-cache-clear', 'file:change', async ({ path: changed }) => {
+    if (changed.startsWith(blogDirPrefix) && changed.endsWith('.md')) {
+      clearBlogCaches();
+      // The sitemap cache lives with the docs caches and includes blog URLs.
+      clearDocsCaches();
+      await generateBlogBarrel();
     }
   });
 }
