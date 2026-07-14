@@ -76,6 +76,48 @@ describe('stripHydrationMarkers', () => {
     const html = '<mochi-server-island id-x><!--[--><div>placeholder</div><!--]--></mochi-server-island>';
     expect(stripHydrationMarkers(html)).toBe(html);
   });
+
+  // The tests below pin the lol-html dispatch invariants the flag-based
+  // implementation depends on (see the NOTE(bun<1.4.0) in utils.ts): the
+  // element-scoped comments handler must fire before the document handler for
+  // the same comment, and must cover descendant comments. If a Bun upgrade
+  // ever breaks either, these fail loudly instead of hydration breaking
+  // silently in production.
+  test('does not touch <mochi-hydratable-island> contents', () => {
+    const html = '<mochi-hydratable-island id-x><!--[--><div>counter</div><!--]--></mochi-hydratable-island>';
+    expect(stripHydrationMarkers(html)).toBe(html);
+  });
+
+  test('keeps markers in deep descendants of an island', () => {
+    const html = '<mochi-hydratable-island id-x><div><span><!--[--><em>deep</em><!--]--></span></div></mochi-hydratable-island>';
+    expect(stripHydrationMarkers(html)).toBe(html);
+  });
+
+  test('keeps markers inside nested islands', () => {
+    const html = '<mochi-hydratable-island id-outer><!--[--><mochi-server-island id-inner><!--[--><p>inner</p><!--]--></mochi-server-island><!--]--></mochi-hydratable-island>';
+    expect(stripHydrationMarkers(html)).toBe(html);
+  });
+
+  test('removes markers between two sibling islands', () => {
+    const island = (id: string) => `<mochi-hydratable-island ${id}><!--[--><p>x</p><!--]--></mochi-hydratable-island>`;
+    const html = `${island('a')}<!--[--><p>between</p><!--]-->${island('b')}`;
+    const expected = `${island('a')}<p>between</p>${island('b')}`;
+    expect(stripHydrationMarkers(html)).toBe(expected);
+  });
+
+  test('removes a marker immediately after an island close tag', () => {
+    const html = '<mochi-server-island id-x><!--[--><p>in</p><!--]--></mochi-server-island><!--]-->';
+    const expected = '<mochi-server-island id-x><!--[--><p>in</p><!--]--></mochi-server-island>';
+    expect(stripHydrationMarkers(html)).toBe(expected);
+  });
+
+  test('leaves non-marker comments alone everywhere', () => {
+    // <!--note--> is word-only, so it counts as a Svelte hash marker and
+    // survives only because it sits inside an island; the outside comments
+    // survive because whitespace disqualifies them as markers.
+    const html = '<!-- plain --><mochi-hydratable-island id-x><!--note--><p>x</p></mochi-hydratable-island><!-- plain2 -->';
+    expect(stripHydrationMarkers(html)).toBe(html);
+  });
 });
 
 describe('normalizeIslandHydrationMarkers', () => {
