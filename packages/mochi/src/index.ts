@@ -120,6 +120,20 @@ export type {
 } from './extensions';
 export { getClientAddress, resolveExpectedOrigin } from './proxy';
 export type { MochiProxyOptions } from './proxy';
+export { memoryStore, sqliteStore, postgresStore } from './rateLimit';
+export type { MochiRateLimitOptions } from './rateLimit';
+export type {
+  HitLimitInfo,
+  HitLimitStore,
+  TierConfig,
+  HeadersConfig,
+  BanConfig,
+  KeyGenerator,
+  SkipFunction,
+  StoreErrorHandler,
+  ResponseFormatter,
+  StoreResult,
+} from '@joint-ops/hitlimit-bun';
 export type { Handle, HandleError, MochiErrorInfo, MochiEvent, MochiEventKind, MochiResolveOptions, MochiResolveFn } from './hooks';
 export type {
   MarkdownConfig,

@@ -51,6 +51,9 @@ import { createQueue, getQueue, closeAllQueueResources } from './queue';
 import type { MochiQueue, MochiQueueOptions, MochiQueueListeners, MochiProcessor } from './queue';
 import { finalizeCookieHeaders } from './cookies';
 import { makeRequestContextBuilder } from './requestSetup';
+import { createRouteLimiter, applyRateLimitHeaders } from './rateLimit';
+import type { MochiRateLimitOptions, RouteLimiter } from './rateLimit';
+import type { HitLimitStore } from '@joint-ops/hitlimit-bun';
 import { decryptProps } from './serverIslandCrypto';
 import { createImageHandler } from './image/imageEndpoint';
 import { getImageRuntime } from './image/config';
@@ -154,6 +157,7 @@ export class Mochi {
     config?: {
       serverProps?: Record<string, unknown> | MochiServerPropsResolver;
       actions?: MochiFormActions;
+      rateLimit?: MochiRateLimitOptions | false;
     },
   ): MochiPageConfig {
     return {
@@ -161,11 +165,12 @@ export class Mochi {
       componentPath,
       serverProps: config?.serverProps,
       actions: config?.actions,
+      rateLimit: config?.rateLimit,
     };
   }
 
-  static api(handler: MochiApiHandler): MochiApiConfig {
-    return { __mochiApi: true, handler };
+  static api(handler: MochiApiHandler, config?: { rateLimit?: MochiRateLimitOptions | false }): MochiApiConfig {
+    return { __mochiApi: true, handler, rateLimit: config?.rateLimit };
   }
 
   static ws<T = unknown>(handlers: MochiWsHandlers<T>): MochiWsConfig {
@@ -570,10 +575,64 @@ export class Mochi {
     };
     const allRoutes = Object.keys(internalRoutes).length > 0 ? { ...internalRoutes, ...(options.routes ?? {}) } : options.routes;
 
+    const rateLimitStores = new Set<HitLimitStore>();
+    const routeLimiters = new Map<string, RouteLimiter>();
+    let sharedGlobalLimiter: RouteLimiter | null = null;
+    function resolveLimiter(routeCfg: MochiRateLimitOptions | false | undefined, pattern: string): RouteLimiter | null {
+      if (routeCfg === false) {
+        return null;
+      }
+      if (routeCfg) {
+        const limiter = createRouteLimiter(routeCfg);
+        if (limiter.ownsStore) {
+          rateLimitStores.add(limiter.store);
+        }
+        routeLimiters.set(pattern, limiter);
+        return limiter;
+      }
+      if (!options.rateLimit) {
+        return null;
+      }
+      // Internal routes (debug bar, email viewer) never inherit the global
+      // limiter — dev tooling polling must not drain the user-facing quota.
+      if (pattern in internalRoutes) {
+        return null;
+      }
+      if (!sharedGlobalLimiter) {
+        sharedGlobalLimiter = createRouteLimiter(options.rateLimit);
+        if (sharedGlobalLimiter.ownsStore) {
+          rateLimitStores.add(sharedGlobalLimiter.store);
+        }
+      }
+      return sharedGlobalLimiter;
+    }
+
+    interface RouteLimitGate {
+      headers?: Record<string, string>;
+      blockedBody?: Record<string, unknown>;
+      blockedMessage?: string;
+    }
+    async function checkRouteLimit(limiter: RouteLimiter | null, ctx: MochiRequestContext, req: Request): Promise<RouteLimitGate> {
+      if (!limiter || ctx.isWarmup) {
+        return {};
+      }
+      const outcome = await limiter.check(req, ctx.getClientAddress);
+      if (outcome.kind === 'skip') {
+        return {};
+      }
+      if (outcome.kind === 'allowed') {
+        ctx.rateLimit = outcome.info;
+        return { headers: outcome.headers };
+      }
+      const message = outcome.retryAfterSeconds != null ? `Rate limit exceeded. Try again in ${outcome.retryAfterSeconds}s.` : 'Rate limit exceeded.';
+      return { headers: outcome.headers, blockedBody: outcome.body, blockedMessage: message };
+    }
+
     async function registerRoutePattern(pattern: string, handler: MochiRouteValue): Promise<RouteRegistrationResult | null> {
       if (isMochiPage(handler)) {
         mochiPageMap.set(pattern, handler);
         const { componentPath, serverProps, actions } = handler;
+        const limiter = resolveLimiter(handler.rateLimit, pattern);
         if (pageConfigMap) {
           pageConfigMap.set(pattern, { serverProps, actions });
         }
@@ -642,9 +701,22 @@ export class Mochi {
             runHook('route:matched', { pattern, request: req, url, params, kind: 'page' });
             const innerResolve = async (_event: MochiEvent, resolveOpts?: MochiResolveOptions): Promise<Response> => inner(ctx, event, resolveOpts);
 
-            const response = middleware ? await middleware({ event, resolve: innerResolve }) : await innerResolve(event);
+            const gate = await checkRouteLimit(limiter, ctx, req);
+            let blockedResponse: Response | undefined;
+            if (gate.blockedMessage) {
+              // Enhanced form POSTs expect JSON (mirrors csrfErrorTransform above);
+              // everything else gets the configured error page at 429.
+              blockedResponse = isEnhanceRequest(req)
+                ? jsonError(429, gate.blockedMessage)
+                : await routeErrorResponse(req, event, undefined, new MochiHttpError(429, gate.blockedMessage));
+            }
 
-            const final = finalizeCookieHeaders(response, ctx.cookies);
+            const response = blockedResponse ?? (middleware ? await middleware({ event, resolve: innerResolve }) : await innerResolve(event));
+
+            let final = finalizeCookieHeaders(response, ctx.cookies);
+            if (gate.headers) {
+              final = applyRateLimitHeaders(final, gate.headers);
+            }
             const shipped = await appendDebugTail(final, ctx, development);
             mochiEvents.emit('request', {
               requestId,
@@ -847,6 +919,7 @@ export class Mochi {
           apiHandlerMap.set(pattern, handler.handler);
         }
         const capturedApiHandler = handler.handler;
+        const limiter = resolveLimiter(handler.rateLimit, pattern);
 
         const bunRouteValue: BunRouteValue = async (req: Request, server: Server<undefined>): Promise<Response> => {
           const setup = buildRequestContext(req, server, { kind: 'api', pattern });
@@ -857,6 +930,14 @@ export class Mochi {
 
           return requestContext.run(ctx, async () => {
             runHook('route:matched', { pattern, request: req, url, params, kind: 'api' });
+            const event: MochiEvent = { request: req, url, server, locals: ctx.locals, kind: 'api', isWarmup: ctx.isWarmup };
+
+            const gate = await checkRouteLimit(limiter, ctx, req);
+            let blockedResponse: Response | undefined;
+            if (gate.blockedBody) {
+              blockedResponse = Response.json(gate.blockedBody, { status: 429 });
+            }
+
             const innerResolve = async (event: MochiEvent, resolveOpts?: MochiResolveOptions): Promise<Response> => {
               const apiEvent = {
                 ...event,
@@ -880,10 +961,12 @@ export class Mochi {
               }
             };
 
-            const event: MochiEvent = { request: req, url, server, locals: ctx.locals, kind: 'api', isWarmup: ctx.isWarmup };
-            const response = middleware ? await middleware({ event, resolve: innerResolve }) : await innerResolve(event);
+            const response = blockedResponse ?? (middleware ? await middleware({ event, resolve: innerResolve }) : await innerResolve(event));
 
-            const final = finalizeCookieHeaders(response, ctx.cookies);
+            let final = finalizeCookieHeaders(response, ctx.cookies);
+            if (gate.headers) {
+              final = applyRateLimitHeaders(final, gate.headers);
+            }
             mochiEvents.emit('request', {
               requestId,
               kind: 'api',
@@ -1162,6 +1245,17 @@ export class Mochi {
       sseHandlerMap?.delete(pattern);
       wsHandlersMap?.delete(pattern);
       pageConfigMap?.delete(pattern);
+      // Dev re-registration creates a fresh limiter — shut down the outgoing
+      // per-route store so its sweep timer / sqlite handle doesn't leak. The
+      // shared global limiter is never in this map and survives reloads.
+      const limiter = routeLimiters.get(pattern);
+      if (limiter) {
+        routeLimiters.delete(pattern);
+        if (limiter.ownsStore) {
+          rateLimitStores.delete(limiter.store);
+          void limiter.store.shutdown?.();
+        }
+      }
     }
 
     if (allRoutes) {
@@ -1557,6 +1651,9 @@ export class Mochi {
           sweeperStop?.();
           stopEmailBadgeBroadcast?.();
           await closeEmailTransport();
+          for (const store of rateLimitStores) {
+            await store.shutdown?.();
+          }
         } catch (err) {
           logger.warn(`Subsystem cleanup failed during shutdown: ${err instanceof Error ? err.message : err}`);
         }

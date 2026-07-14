@@ -7,6 +7,7 @@ import type { MochiProxyOptions } from './proxy';
 import type { MochiImageOptions } from './image/types';
 import type { MochiEmailOptions } from './email/types';
 import type { MochiProcessor, MochiQueueListeners, MochiQueueRuntimeOptions } from './queue';
+import type { MochiRateLimitOptions } from './rateLimit';
 
 export type MochiServerPropsResolver = (req: Request, params: Record<string, string>) => Record<string, unknown> | Promise<Record<string, unknown>>;
 
@@ -40,6 +41,8 @@ export interface MochiPageConfig {
   readonly componentPath: string;
   readonly serverProps?: Record<string, unknown> | MochiServerPropsResolver;
   readonly actions?: MochiFormActions;
+  /** Per-route rate limit. Overrides the global `rateLimit` serve option; `false` opts this route out. */
+  readonly rateLimit?: MochiRateLimitOptions | false;
 }
 
 export function isMochiPage(value: unknown): value is MochiPageConfig {
@@ -84,6 +87,8 @@ export type MochiApiHandler = (event: MochiApiEvent) => Response | Promise<Respo
 export interface MochiApiConfig {
   readonly __mochiApi: true;
   readonly handler: MochiApiHandler;
+  /** Per-route rate limit. Overrides the global `rateLimit` serve option; `false` opts this route out. */
+  readonly rateLimit?: MochiRateLimitOptions | false;
 }
 
 export function isMochiApi(value: unknown): value is MochiApiConfig {
@@ -604,6 +609,13 @@ export interface MochiServeOptions {
    * are never redirected. Default: unset (no canonicalisation).
    */
   trailingSlash?: 'never' | 'always';
+  /**
+   * Global rate limit applied to every page and API route (a thin shim around
+   * `@joint-ops/hitlimit-bun`). Routes inheriting this option share one limiter —
+   * one bucket per key (default: the proxy-aware client IP) across all of them.
+   * A route's own `rateLimit` config replaces it; `rateLimit: false` opts out.
+   */
+  rateLimit?: MochiRateLimitOptions;
   /**
    * Event hooks: run a function at a specific framework moment. One entry per name,
    * no priorities. See `MochiHooks` for available names.

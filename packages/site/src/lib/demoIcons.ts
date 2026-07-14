@@ -46,6 +46,7 @@ import SquareStack from '@lucide/svelte/icons/square-stack';
 import Layers2 from '@lucide/svelte/icons/layers-2';
 import Ampersand from '@lucide/svelte/icons/ampersand';
 import Mail from '@lucide/svelte/icons/mail';
+import Gauge from '@lucide/svelte/icons/gauge';
 
 export interface DemoIconMeta {
   icon: Component;
@@ -64,6 +65,7 @@ export const demoIconFor: Record<string, DemoIconMeta> = {
   'Request ID': { icon: Barcode, label: 'Per-request correlation id' },
   'Real-time Chat': { icon: MessageCircle, label: 'WebSocket chat' },
   'API Endpoints': { icon: Webhook, label: 'JSON API routes' },
+  'Rate Limiting': { icon: Gauge, label: 'Per-route request throttling by IP' },
   'Shared State': { icon: Share2, label: 'Shared $state across islands' },
   'Real-time Streams': { icon: AudioWaveform, label: 'WebSocket + SSE streams' },
   'Background jobs with queues': { icon: Inbox, label: 'Embedded job queue + worker' },

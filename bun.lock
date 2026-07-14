@@ -83,6 +83,7 @@
       },
       "dependencies": {
         "@css-inline/css-inline-wasm": "^0.21.0",
+        "@joint-ops/hitlimit-bun": "1.5.0",
         "@noble/ciphers": "2.2.0",
         "bunqueue": "^2.8.20",
         "chokidar": "^5.0.0",
@@ -222,6 +223,10 @@
     "@humanwhocodes/module-importer": ["@humanwhocodes/module-importer@1.0.1", "", {}, "sha512-bxveV4V8v5Yb4ncFTT3rPSgZBOpCkjfK0y4oVVVJwIuDVBRMDXrPyXRL988i5ap9m9bnyEEjWfm5WkBmtffLfA=="],
 
     "@humanwhocodes/retry": ["@humanwhocodes/retry@0.4.3", "", {}, "sha512-bV0Tgo9K4hfPCek+aMAn81RppFKv2ySDQeMoSZuvTASywNTnVJCArCZE2FWqpvIatKu7VMRLWlR1EazvVhDyhQ=="],
+
+    "@joint-ops/hitlimit-bun": ["@joint-ops/hitlimit-bun@1.5.0", "", { "dependencies": { "@joint-ops/hitlimit-types": "1.5.0" }, "peerDependencies": { "elysia": ">=1.0.0", "hono": ">=4.0.0", "ioredis": ">=5.0.0", "mongodb": ">=6.0.0", "mysql2": ">=3.0.0", "pg": ">=8.0.0" }, "optionalPeers": ["elysia", "hono", "ioredis", "mongodb", "mysql2", "pg"] }, "sha512-lXssGDzHmSKG9qU/3DFxF2olFlmGHwPFXP+tIN8wXBFwHN6/Fo1RKD01DL4jQMy1j1wgEU7+Uli62CH2HX141A=="],
+
+    "@joint-ops/hitlimit-types": ["@joint-ops/hitlimit-types@1.5.0", "", {}, "sha512-GN84tYDj1rgLMUfyCJhjnuNZDj3Vm08Lm46EUrbB3uewmxINx7FytUXRbxbXvj2/ow+lfOisEz57wa3ohWGM+w=="],
 
     "@jridgewell/gen-mapping": ["@jridgewell/gen-mapping@0.3.13", "", { "dependencies": { "@jridgewell/sourcemap-codec": "^1.5.0", "@jridgewell/trace-mapping": "^0.3.24" } }, "sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA=="],
 
