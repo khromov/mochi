@@ -16,6 +16,9 @@ concurrency:
 jobs:
   test-matrix:
     runs-on: ${{ matrix.os }}
+    # Fail fast on a hung step instead of burning the 6h account default (a
+    # Windows Shiki-engine hang once ran for 6h before being cancelled).
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
