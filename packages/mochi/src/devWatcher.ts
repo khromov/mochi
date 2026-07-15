@@ -12,6 +12,7 @@ import { extractServeOptions } from './extractServeOptions';
 import { buildPublicUrl } from './proxy';
 import { resolvePublicFiles, registerPublicRoutes } from './publicDir';
 import { loadSvelteConfig } from './svelteConfig';
+import type { MochiRateLimitOptions } from './rateLimit';
 import { alternateSlashPattern } from './trailingSlash';
 import {
   isMochiApi,
@@ -63,6 +64,7 @@ export interface DevWatcherDeps {
   pageConfigMap?: Map<string, MochiPageHandlerConfig>;
   registerRoutePattern?: (pattern: string, handler: MochiRouteValue) => Promise<RouteRegistrationResult | null>;
   unregisterRoutePattern?: (pattern: string) => void;
+  updateRouteLimiter?: (pattern: string, rateLimit: MochiRateLimitOptions | false | undefined) => void;
   trailingSlashPolicy?: 'never' | 'always';
   shellPath?: string;
   reloadShell?: () => Promise<void>;
@@ -95,6 +97,7 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
     pageConfigMap,
     registerRoutePattern,
     unregisterRoutePattern,
+    updateRouteLimiter,
     trailingSlashPolicy,
     shellPath,
     reloadShell,
@@ -401,6 +404,7 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
         } else {
           if (isMochiApi(handler) && apiHandlerMap?.has(pattern)) {
             apiHandlerMap.set(pattern, handler.handler);
+            updateRouteLimiter?.(pattern, handler.rateLimit);
             counts.api++;
             counts.updated++;
           } else if (isMochiWs(handler) && wsHandlersMap?.has(pattern)) {
@@ -413,6 +417,7 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
             counts.updated++;
           } else if (isMochiPage(handler) && pageConfigMap?.has(pattern)) {
             pageConfigMap.set(pattern, { serverProps: handler.serverProps, actions: handler.actions });
+            updateRouteLimiter?.(pattern, handler.rateLimit);
             counts.page++;
             counts.updated++;
           }

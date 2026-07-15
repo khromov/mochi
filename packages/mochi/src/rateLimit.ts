@@ -1,5 +1,6 @@
 import { checkLimit, memoryStore, DEFAULT_LIMIT, DEFAULT_WINDOW, DEFAULT_MESSAGE } from '@joint-ops/hitlimit-bun';
 import type { HitLimitInfo, HitLimitOptions, HitLimitResult, HitLimitStore, ResolvedConfig } from '@joint-ops/hitlimit-bun';
+import { logger } from './log';
 
 export { memoryStore };
 export { sqliteStore } from '@joint-ops/hitlimit-bun/stores/sqlite';
@@ -94,6 +95,11 @@ export function createRouteLimiter(options: MochiRateLimitOptions): RouteLimiter
         result = await checkLimit(resolved, req);
       } catch (error) {
         const action = await resolved.onStoreError(error as Error, req);
+        // A dead store must not fail silently — fail-open means rate limiting
+        // is effectively off until the store recovers.
+        logger.warn(
+          `Rate limit store error (${action === 'deny' ? 'failing closed, blocking request' : 'failing open, request allowed'}): ${error instanceof Error ? error.message : String(error)}`,
+        );
         return action === 'deny' ? { kind: 'blocked', info: null, headers: {}, body: { hitlimit: true, message: 'Rate limit error' }, retryAfterSeconds: null } : { kind: 'skip' };
       }
       return result.allowed

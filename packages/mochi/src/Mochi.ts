@@ -576,9 +576,13 @@ export class Mochi {
     const allRoutes = Object.keys(internalRoutes).length > 0 ? { ...internalRoutes, ...(options.routes ?? {}) } : options.routes;
 
     const rateLimitStores = new Set<HitLimitStore>();
-    const routeLimiters = new Map<string, RouteLimiter>();
+    // Route closures look their limiter up here per request (never capture it) so
+    // the dev watcher can swap a route's limiter in place when its `rateLimit`
+    // config changes — a captured const would pin the boot-time config until
+    // restart. A null entry marks a limitable route with no limiter.
+    const routeLimiters = new Map<string, RouteLimiter | null>();
     let sharedGlobalLimiter: RouteLimiter | null = null;
-    function resolveLimiter(routeCfg: MochiRateLimitOptions | false | undefined, pattern: string): RouteLimiter | null {
+    function buildLimiter(routeCfg: MochiRateLimitOptions | false | undefined, pattern: string): RouteLimiter | null {
       if (routeCfg === false) {
         return null;
       }
@@ -587,7 +591,6 @@ export class Mochi {
         if (limiter.ownsStore) {
           rateLimitStores.add(limiter.store);
         }
-        routeLimiters.set(pattern, limiter);
         return limiter;
       }
       if (!options.rateLimit) {
@@ -605,6 +608,28 @@ export class Mochi {
         }
       }
       return sharedGlobalLimiter;
+    }
+    function resolveLimiter(routeCfg: MochiRateLimitOptions | false | undefined, pattern: string): void {
+      routeLimiters.set(pattern, buildLimiter(routeCfg, pattern));
+    }
+    function retireLimiter(pattern: string): void {
+      const limiter = routeLimiters.get(pattern);
+      routeLimiters.delete(pattern);
+      // The shared global limiter is never shut down here — other routes still
+      // use it, and its counters intentionally survive dev reloads.
+      if (limiter && limiter !== sharedGlobalLimiter && limiter.ownsStore) {
+        rateLimitStores.delete(limiter.store);
+        void limiter.store.shutdown?.();
+      }
+    }
+    // Dev-watcher hook for in-place route updates (same pattern, same type):
+    // rebuild the limiter so `rateLimit` edits take effect without a restart.
+    function updateRouteLimiter(pattern: string, routeCfg: MochiRateLimitOptions | false | undefined): void {
+      if (!routeLimiters.has(pattern)) {
+        return;
+      }
+      retireLimiter(pattern);
+      resolveLimiter(routeCfg, pattern);
     }
 
     interface RouteLimitGate {
@@ -632,7 +657,7 @@ export class Mochi {
       if (isMochiPage(handler)) {
         mochiPageMap.set(pattern, handler);
         const { componentPath, serverProps, actions } = handler;
-        const limiter = resolveLimiter(handler.rateLimit, pattern);
+        resolveLimiter(handler.rateLimit, pattern);
         if (pageConfigMap) {
           pageConfigMap.set(pattern, { serverProps, actions });
         }
@@ -701,7 +726,7 @@ export class Mochi {
             runHook('route:matched', { pattern, request: req, url, params, kind: 'page' });
             const innerResolve = async (_event: MochiEvent, resolveOpts?: MochiResolveOptions): Promise<Response> => inner(ctx, event, resolveOpts);
 
-            const gate = await checkRouteLimit(limiter, ctx, req);
+            const gate = await checkRouteLimit(routeLimiters.get(pattern) ?? null, ctx, req);
             let blockedResponse: Response | undefined;
             if (gate.blockedMessage) {
               // Enhanced form POSTs expect JSON (mirrors csrfErrorTransform above);
@@ -919,7 +944,7 @@ export class Mochi {
           apiHandlerMap.set(pattern, handler.handler);
         }
         const capturedApiHandler = handler.handler;
-        const limiter = resolveLimiter(handler.rateLimit, pattern);
+        resolveLimiter(handler.rateLimit, pattern);
 
         const bunRouteValue: BunRouteValue = async (req: Request, server: Server<undefined>): Promise<Response> => {
           const setup = buildRequestContext(req, server, { kind: 'api', pattern });
@@ -932,7 +957,7 @@ export class Mochi {
             runHook('route:matched', { pattern, request: req, url, params, kind: 'api' });
             const event: MochiEvent = { request: req, url, server, locals: ctx.locals, kind: 'api', isWarmup: ctx.isWarmup };
 
-            const gate = await checkRouteLimit(limiter, ctx, req);
+            const gate = await checkRouteLimit(routeLimiters.get(pattern) ?? null, ctx, req);
             let blockedResponse: Response | undefined;
             if (gate.blockedBody) {
               blockedResponse = Response.json(gate.blockedBody, { status: 429 });
@@ -1246,16 +1271,8 @@ export class Mochi {
       wsHandlersMap?.delete(pattern);
       pageConfigMap?.delete(pattern);
       // Dev re-registration creates a fresh limiter — shut down the outgoing
-      // per-route store so its sweep timer / sqlite handle doesn't leak. The
-      // shared global limiter is never in this map and survives reloads.
-      const limiter = routeLimiters.get(pattern);
-      if (limiter) {
-        routeLimiters.delete(pattern);
-        if (limiter.ownsStore) {
-          rateLimitStores.delete(limiter.store);
-          void limiter.store.shutdown?.();
-        }
-      }
+      // per-route store so its sweep timer / sqlite handle doesn't leak.
+      retireLimiter(pattern);
     }
 
     if (allRoutes) {
@@ -1744,6 +1761,7 @@ export class Mochi {
         pageConfigMap,
         registerRoutePattern,
         unregisterRoutePattern,
+        updateRouteLimiter,
         trailingSlashPolicy,
         shellPath,
         reloadShell,

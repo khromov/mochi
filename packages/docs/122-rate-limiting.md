@@ -27,6 +27,8 @@ Requests are keyed by client IP by default. Over the limit:
 - **API routes** return a `429` JSON body (`{ hitlimit: true, message, limit, remaining, resetIn }`).
 - **Page routes** render your configured [error page](/docs/error-handling/) with status `429`. Enhanced form submissions get JSON instead, like other form errors.
 
+Blocked requests never reach your [`handle` middleware](/docs/middleware/) — the `429` is produced before it runs, like CSRF rejections — but they still emit the standard `request` event, so they show up in [logging](/docs/logging/).
+
 Every limited route's responses — allowed or blocked — carry `RateLimit-*` and `X-RateLimit-*` headers, plus `Retry-After` on a `429`.
 
 ```sh
@@ -105,7 +107,7 @@ const rateLimit = getRequestContext().rateLimit;
 
 <Callout type="info">
 
-**Not counted:** [warmup](/docs/serve-options/) requests, trailing-slash redirects, and CSRF rejections never consume quota. In dev, editing a route file resets that route's in-memory counters.
+**Not counted:** [warmup](/docs/serve-options/) requests, trailing-slash redirects, and CSRF rejections never consume quota. In dev, `rateLimit` edits apply on save — editing a route file rebuilds that route's limiter, so a route with its own config gets fresh in-memory counters (routes on the global limiter keep their shared bucket).
 
 </Callout>
 
