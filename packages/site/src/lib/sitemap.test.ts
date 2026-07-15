@@ -56,4 +56,14 @@ describe('buildSitemapXml', () => {
     // At least one docs URL of the expected shape is present.
     expect([...urls].some((u) => /^https:\/\/mochi\.fast\/docs\/[^/]+\/$/.test(u))).toBe(true);
   });
+
+  it('includes the blog index and published posts, never drafts', async () => {
+    const xml = await buildSitemapXml();
+    const urls = new Set(locs(xml));
+    expect(urls.has('https://mochi.fast/blog/')).toBe(true);
+    expect(urls.has('https://mochi.fast/blog/hello-world/')).toBe(true);
+    for (const loc of urls) {
+      expect(loc).not.toContain('mochi-on-bun-1-4');
+    }
+  });
 });
