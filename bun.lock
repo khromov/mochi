@@ -44,6 +44,7 @@
         "@tailwindcss/oxide": "^4.3.1",
         "html-entities": "^2.6.0",
         "mochi-framework": "workspace:*",
+        "mochi-shared": "workspace:*",
         "svelte": "^5.56.4",
         "svelte-meta-tags": "^5.0.0",
         "tailwindcss": "^4.3.1",
@@ -126,6 +127,16 @@
         "msgpackr": "^1.12.1",
       },
     },
+    "packages/shared": {
+      "name": "mochi-shared",
+      "dependencies": {
+        "mochi-framework": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "1.3.14",
+        "typescript": "^6.0.3",
+      },
+    },
     "packages/site": {
       "name": "mochi-site",
       "dependencies": {
@@ -139,6 +150,7 @@
         "@tmcp/transport-http": "0.8.6",
         "mdsvex": "^0.12.7",
         "mochi-framework": "workspace:*",
+        "mochi-shared": "workspace:*",
         "rehype-slug": "^6.0.0",
         "shiki": "^4.2.0",
         "slugify": "^1.6.9",
@@ -160,6 +172,7 @@
         "@fontsource-variable/fraunces": "^5.2.9",
         "@fontsource/public-sans": "^5.2.7",
         "mochi-framework": "workspace:*",
+        "mochi-shared": "workspace:*",
         "svelte": "^5.56.4",
       },
       "devDependencies": {
@@ -648,6 +661,8 @@
     "mochi-framework": ["mochi-framework@workspace:packages/mochi"],
 
     "mochi-minimal": ["mochi-minimal@workspace:packages/minimal"],
+
+    "mochi-shared": ["mochi-shared@workspace:packages/shared"],
 
     "mochi-site": ["mochi-site@workspace:packages/site"],
 

@@ -4,6 +4,7 @@ import rehypeSlug from 'rehype-slug';
 import rehypeExternalLinks from './lib/rehypeExternalLinks';
 import { Mochi, mochiEvents, sequence, logger, noCache, compress, silenceInternalRoutes } from 'mochi-framework';
 import type { Handle, HandleError, MarkdownConfig } from 'mochi-framework';
+import { analytics } from 'mochi-shared';
 import { generateDocsBarrel } from './lib/generateDocsBarrel';
 import { generateBlogBarrel } from './lib/generateBlogBarrel';
 import { clearDocsCaches, DOCS_DIR } from './lib/docs';
@@ -90,15 +91,6 @@ Hello from Mochi! Inserted via transformPage
 ⠀⠀⠀⠀⠈⠳⠦⠤⠴⠛⠈⠓⠤⠤⠞⠁⠉⠛⠒⠚⠋⠁⠀⠀⠀⠀⠀⠀
 -->`;
       return html.replace('{{mochi.dog}}', dog);
-    },
-  });
-};
-
-const ANALYTICS_SCRIPT = `<script defer src="https://u.khromov.se/u.js" data-performance="true" data-website-id="8dceb8f5-6533-4c03-9cd6-1ce74accd63a"></script>`;
-const analytics: Handle = async ({ event, resolve }) => {
-  return resolve(event, {
-    transformPage({ html }) {
-      return html.replace('{{mochi.analytics}}', IS_DOCKER ? ANALYTICS_SCRIPT : '');
     },
   });
 };

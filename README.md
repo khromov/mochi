@@ -65,17 +65,18 @@ See [PITCH.md](./PITCH.md) for a Mochi-vs-SvelteKit feature comparison.
 | `packages/demos`   | Standalone demos site (HN clone, admin, todo) — deployed separately                         |
 | `packages/minimal` | Bare-bones hello-world template — also bundled by `create-mochi`                            |
 | `packages/support` | Support form (`support.mochi.fast`) — deployed separately; the only site with SMTP config   |
+| `packages/shared`  | `mochi-shared` — private helpers for the deployed sites only, never for `packages/mochi`    |
 | `packages/cli`     | `create-mochi` scaffolder — published to npm                                                |
 
 ## Running locally
 
 Sites run side-by-side; each has its own default port.
 
-| Command             | Site                                            | Default port             |
-| ------------------- | ----------------------------------------------- | ------------------------ |
+| Command             | Site                                            | Default port                      |
+| ------------------- | ----------------------------------------------- | --------------------------------- |
 | `bun run dev`       | All workspaces with a `dev` script, in parallel | `3333` + `3334` + `3335` + `3336` |
-| `bun run dev:site`  | Just the documentation site (`packages/site`)   | `3333`                   |
-| `bun run dev:demos` | Just the demos site (`packages/demos`)          | `3334`                   |
+| `bun run dev:site`  | Just the documentation site (`packages/site`)   | `3333`                            |
+| `bun run dev:demos` | Just the demos site (`packages/demos`)          | `3334`                            |
 
 Override the port with `PORT=…` if needed (single-site commands only — `PORT` would collide if applied to both at once). Production equivalents are `bun run start`, `bun run start:demos`, and `bun run start:all`.
 
@@ -102,12 +103,15 @@ Override the port with `PORT=…` if needed (single-site commands only — `PORT
 
 ## Deployment
 
-The two main sites (docs and demos) build to their own Docker image and deploy to separate CapRover apps via `.github/workflows/build.yml` (matrix strategy).
+Each deployed site builds to its own Docker image and deploys to a separate CapRover app via `.github/workflows/build.yml` (matrix strategy — the `dockerfile` field selects the image per site).
 
-| Site  | Dockerfile                             | GHCR image                    | CapRover app  | Deploy token secret |
-| ----- | -------------------------------------- | ----------------------------- | ------------- | ------------------- |
-| site  | `Dockerfile`                           | `ghcr.io/khromov/mochi`       | `mochi`       | `APP_TOKEN`         |
-| demos | `packages/demos/Dockerfile.production` | `ghcr.io/khromov/mochi-demos` | `mochi-demos` | `APP_TOKEN_DEMOS`   |
+| Site    | Dockerfile              | GHCR image                      | CapRover app    | Deploy token secret |
+| ------- | ----------------------- | ------------------------------- | --------------- | ------------------- |
+| site    | `Dockerfile`            | `ghcr.io/khromov/mochi`         | `mochi`         | `APP_TOKEN`         |
+| demos   | `Dockerfile`            | `ghcr.io/khromov/mochi-demos`   | `mochi-demos`   | `APP_TOKEN_DEMOS`   |
+| support | `Dockerfile.production` | `ghcr.io/khromov/mochi-support` | `mochi-support` | `APP_TOKEN_SUPPORT` |
+
+`site` and `demos` deploy in dev mode (debug bar visible); `support` deploys prebuilt. The support app also needs its SMTP env vars set in CapRover — it refuses to boot without them. See [`packages/support/.env.example`](./packages/support/.env.example).
 
 ## Install
 

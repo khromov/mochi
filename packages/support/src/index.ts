@@ -1,5 +1,6 @@
 import { Mochi, silenceInternalRoutes } from 'mochi-framework';
 import type { MochiEmailTransportConfig } from 'mochi-framework';
+import { analytics } from 'mochi-shared';
 import { routes } from './routes';
 
 const PORT = Number(process.env.PORT) || 3336;
@@ -31,6 +32,7 @@ await Mochi.serve({
   htmlShell: './src/shell.html',
   trailingSlash: 'always',
   proxy: { origin: ORIGIN },
+  handle: analytics,
   email: {
     from: process.env.SMTP_FROM || 'Mochi Support Form <noreply@mochi.fast>',
     transport: smtp,

@@ -24,7 +24,7 @@
 
   <div class="message">{message}</div>
 
-  <p class="muted">Sent from the support form on mochi.fast. Reply to this email to reach the sender directly.</p>
+  <p class="muted">Sent from the support form on support.mochi.fast. Reply to this email to reach the sender directly.</p>
 </div>
 
 <style>

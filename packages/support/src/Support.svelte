@@ -14,6 +14,7 @@
 
 <div class="page">
   <header class="hero-minimal">
+    <a class="back" href="https://mochi.fast/">← Back to Mochi</a>
     <div class="hero-inner">
       <a class="logo" href="https://mochi.fast/">🍡 mochi</a>
       <p class="tagline">SSR framework for Svelte 5 + Bun with islands-based selective hydration</p>
@@ -37,7 +38,6 @@
       </ul>
       <h2>Get in touch</h2>
       <SupportForm mochi:hydrate />
-      <p class="back-link"><a href="https://mochi.fast/docs/">← Back to the Mochi docs</a></p>
     </section>
   </main>
 
@@ -55,6 +55,36 @@
 
   .hero-minimal {
     padding: 1.5rem 1.5rem;
+  }
+
+  .back {
+    position: absolute;
+    top: 1rem;
+    left: 1rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.35rem 0.7rem;
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: #d8e4dc;
+    text-decoration: none;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: var(--radius-md);
+    transition:
+      background 0.12s ease,
+      color 0.12s ease;
+  }
+
+  .back:hover {
+    background: rgba(255, 255, 255, 0.16);
+    color: #fff;
+  }
+
+  .back:focus-visible {
+    outline: 2px solid #fff;
+    outline-offset: 2px;
   }
 
   .hero-inner {
@@ -150,14 +180,6 @@
   .support-card a {
     color: var(--accent-hover);
     text-underline-offset: 3px;
-  }
-
-  /* Scoped under .support-card to outrank `.support-card p`'s margin reset. */
-  .support-card .back-link {
-    margin: 1.5rem 0 0;
-    padding-top: 1.25rem;
-    border-top: 1px solid var(--border);
-    font-size: 0.95rem;
   }
 
   @media (max-width: 768px) {
