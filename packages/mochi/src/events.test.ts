@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import type { MochiEmitter } from './events';
+import type { MochiEmitter, MochiCaptchaVerifyEvent } from './events';
 import { hasSubscribers, mochiEvents } from './events';
 
 const globalSlot = () => (globalThis as unknown as Record<string, unknown>).__mochi_events__ as MochiEmitter;
@@ -14,6 +14,17 @@ describe('mochiEvents', () => {
     const b = (await import('./events')).mochiEvents;
     expect(a).toBe(b);
     expect(a).toBe(mochiEvents);
+  });
+
+  test('roundtrip emit/subscribe works for captcha:verify', () => {
+    let received: MochiCaptchaVerifyEvent | null = null;
+    const handler = (e: MochiCaptchaVerifyEvent) => {
+      received = e;
+    };
+    mochiEvents.on('captcha:verify', handler);
+    mochiEvents.emit('captcha:verify', { ok: false, reason: 'replay', bits: 16, ageMs: 4200 });
+    mochiEvents.off('captcha:verify', handler);
+    expect(received as MochiCaptchaVerifyEvent | null).toEqual({ ok: false, reason: 'replay', bits: 16, ageMs: 4200 });
   });
 
   test('roundtrip emit/subscribe works', () => {

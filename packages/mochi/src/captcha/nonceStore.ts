@@ -27,9 +27,15 @@ export class SqliteNonceStore implements NonceStore {
   constructor(path: string) {
     this.db = new Database(path, { create: true });
     this.db.run('CREATE TABLE IF NOT EXISTS nonces (nonce TEXT PRIMARY KEY, expires_at INTEGER NOT NULL)');
+    // Without this the prune below is a full table scan on every consume — the
+    // primary key indexes `nonce`, not `expires_at`.
+    this.db.run('CREATE INDEX IF NOT EXISTS nonces_expires_at ON nonces (expires_at)');
   }
 
   consume(nonce: string, expiresAt: number): boolean {
+    // Pruning rides on consume rather than a background sweeper: a row is only
+    // ever added by a consume, so the table can't grow while nothing is calling
+    // this. That makes it self-limiting — no timer to own or shut down.
     this.db.run('DELETE FROM nonces WHERE expires_at < ?', [Date.now()]);
     const result = this.db.run('INSERT OR IGNORE INTO nonces (nonce, expires_at) VALUES (?, ?)', [nonce, expiresAt]);
     return result.changes === 1;

@@ -65,7 +65,7 @@
       </label>
     </fieldset>
 
-    <MochiCaptcha {...captcha} bind:verified />
+    <MochiCaptcha {...captcha} emoji="🍡" label="Slide the mochi to the right" bind:verified />
 
     <noscript><p class="error">JavaScript is required to send this form. Alternatively, email support@mochi.fast directly.</p></noscript>
 

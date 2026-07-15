@@ -1,8 +1,10 @@
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 import { mintCaptcha, verifyCaptcha, consumeCaptcha, solveCaptcha } from './captcha';
 import { CAPTCHA_STEPS, chainInput, powInput, leadingZeroBits } from './pow';
 import { encryptPayload } from '../payloadCrypto';
+import { mochiEvents } from '../events';
+import type { MochiCaptchaVerifyEvent } from '../events';
 import type { MochiCaptchaOptions } from './types';
 
 const GLOBAL_CONFIG_KEY = '__mochi_config__';
@@ -180,6 +182,60 @@ describe('replay protection', () => {
     });
     expect((await verifyCaptcha(fields(solveCaptcha(mintCaptcha())))).ok).toBe(true);
     expect(seen).toHaveLength(1);
+  });
+});
+
+describe('captcha:verify event', () => {
+  const seen: MochiCaptchaVerifyEvent[] = [];
+  const record = (e: MochiCaptchaVerifyEvent) => {
+    seen.push(e);
+  };
+
+  beforeEach(() => {
+    seen.length = 0;
+    mochiEvents.on('captcha:verify', record);
+  });
+
+  afterEach(() => {
+    mochiEvents.off('captcha:verify', record);
+  });
+
+  test('reports success with the sealed difficulty', async () => {
+    installConfig();
+    await verifyCaptcha(fields(solveCaptcha(mintCaptcha())));
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatchObject({ ok: true, reason: 'ok', bits: 8 });
+    expect(seen[0]?.ageMs).toBeGreaterThanOrEqual(0);
+  });
+
+  // The client only ever sees one generic message; operators need the real cause.
+  test('reports the true reason behind the generic client error', async () => {
+    installConfig({ bits: 8, minAgeMs: 5000 });
+    const tooFast = await verifyCaptcha(fields(solveCaptcha(mintCaptcha())));
+    expect(tooFast).toEqual({ ok: false, error: 'Verification failed — reload the page and try again.' });
+    expect(seen[0]).toMatchObject({ ok: false, reason: 'too-fast' });
+  });
+
+  test('distinguishes malformed, bad-pow and replay', async () => {
+    installConfig();
+    await verifyCaptcha(fields({ captcha_token: 'nope', captcha_pow: '1' }));
+    expect(seen.at(-1)).toMatchObject({ ok: false, reason: 'malformed' });
+
+    const minted = mintCaptcha();
+    await verifyCaptcha(fields({ captcha_token: minted.token, captcha_pow: powFor(minted.token, 8, false) }));
+    expect(seen.at(-1)).toMatchObject({ ok: false, reason: 'bad-pow', bits: 8 });
+
+    const solved = solveCaptcha(mintCaptcha());
+    await verifyCaptcha(fields(solved));
+    await verifyCaptcha(fields(solved));
+    expect(seen.at(-1)).toMatchObject({ ok: false, reason: 'replay' });
+  });
+
+  test('expired tokens report expired', async () => {
+    installConfig({ bits: 8, minAgeMs: 0, maxAgeMs: 1000 });
+    const token = sealToken({ iat: Date.now() - 60_000 });
+    await verifyCaptcha(fields({ captcha_token: token, captcha_pow: powFor(token, 8, true) }));
+    expect(seen.at(-1)).toMatchObject({ ok: false, reason: 'expired' });
   });
 });
 

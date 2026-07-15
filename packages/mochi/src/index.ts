@@ -99,6 +99,8 @@ export type {
   MochiRecompileCompleteEvent,
   MochiRecompileTrigger,
   MochiClientBundleEvent,
+  MochiCaptchaVerifyEvent,
+  MochiCaptchaReason,
 } from './events';
 export type { MochiQueue, MochiJob, MochiJobRef, MochiJobOptions, MochiQueueOptions, MochiQueueRuntimeOptions, MochiQueueListeners, MochiProcessor } from './queue';
 export { json, error, apiError } from './utils';

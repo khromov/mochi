@@ -5,6 +5,7 @@ import { files as chat } from '../demos/chat/files.ts';
 import { files as clientOnly } from '../demos/client-only/files.ts';
 import { files as cookieVaryTest } from '../demos/cookie-vary-test/files.ts';
 import { files as captcha } from '../demos/captcha/files.ts';
+import { files as captchaStyling } from '../demos/captcha-styling/files.ts';
 import { files as cookies } from '../demos/cookies/files.ts';
 import { files as dataLoading } from '../demos/data-loading/files.ts';
 import { files as email } from '../demos/email/files.ts';
@@ -399,6 +400,14 @@ export const demos: Demo[] = [
     files: captcha,
     title: 'Captcha',
     hook: 'Slide-to-verify with a hash chain and proof-of-work — no third party, no tracking.',
+    category: 'forms',
+  },
+  {
+    href: '/demos/captcha-styling/',
+    slug: 'captcha-styling',
+    files: captchaStyling,
+    title: 'Captcha Styling',
+    hook: 'The same captcha four ways — every colour is a CSS custom property with a built-in fallback.',
     category: 'forms',
   },
   {

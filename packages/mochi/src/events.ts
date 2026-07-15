@@ -75,6 +75,22 @@ export interface MochiIslandErrorEvent {
   stack?: string;
 }
 
+export type MochiCaptchaReason = 'ok' | 'malformed' | 'expired' | 'too-fast' | 'bad-pow' | 'replay';
+
+export interface MochiCaptchaVerifyEvent {
+  ok: boolean;
+  /**
+   * The real cause, for operators. `verifyCaptcha()` deliberately returns one
+   * generic message to the client so a bot can't tell these apart and probe for
+   * the limits — this is where the distinction stays visible.
+   */
+  reason: MochiCaptchaReason;
+  /** Difficulty sealed in the token. Absent when the token never opened. */
+  bits?: number;
+  /** Token age at verification. Absent when the token never opened. */
+  ageMs?: number;
+}
+
 export type MochiCacheStatus = 'fresh' | 'stale' | 'expired' | 'miss';
 
 export interface MochiCacheReadEvent {
@@ -391,6 +407,7 @@ export type MochiEventMap = {
   'sse:close': MochiSseCloseEvent;
   'file:change': MochiFileChangeEvent;
   'island:error': MochiIslandErrorEvent;
+  'captcha:verify': MochiCaptchaVerifyEvent;
   'cache:read': MochiCacheReadEvent;
   'cache:revalidate': MochiCacheRevalidateEvent;
   'cache:inflight:deferred': MochiCacheInflightDeferredEvent;

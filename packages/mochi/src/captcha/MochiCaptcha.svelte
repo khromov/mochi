@@ -1,8 +1,15 @@
 <script lang="ts">
   import type { Attachment } from 'svelte/attachments';
+  import { logger } from 'mochi-framework';
   import { CAPTCHA_STEPS, chainInput, powInput, leadingZeroBits, toHex } from './pow';
 
-  let { token = '', bits = 16, verified = $bindable(false) }: { token?: string; bits?: number; verified?: boolean } = $props();
+  let {
+    token = '',
+    bits = 16,
+    emoji = '🧩',
+    label = 'Slide to verify',
+    verified = $bindable(false),
+  }: { token?: string; bits?: number; emoji?: string; label?: string; verified?: boolean } = $props();
 
   let solved = $state(false);
   let powNonce = $state<string | null>(null);
@@ -36,6 +43,9 @@
       const step = ++claimedSteps;
       stepQueue = stepQueue.then(async () => {
         chain = toHex(await sha256(chainInput(chain, step)));
+        // Logged through the framework logger, so it is level-gated: visible at
+        // `log` level (the dev default) and silent in production.
+        logger.log(`captcha: link ${step}/${CAPTCHA_STEPS} minted — ${chain.slice(0, 16)}…`);
         if (step === CAPTCHA_STEPS) {
           await solvePow(chain);
         }
@@ -44,9 +54,12 @@
   }
 
   async function solvePow(challenge: string) {
+    logger.log(`captcha: chain complete, solving ${bits}-bit proof-of-work over ${challenge.slice(0, 16)}…`);
+    const startedAt = Date.now();
     for (let n = 0; !destroyed; n++) {
       if (leadingZeroBits(await sha256(powInput(challenge, String(n)))) >= bits) {
         powNonce = String(n);
+        logger.log(`captcha: solved in ${Date.now() - startedAt}ms — nonce ${n} after ${n + 1} attempts`);
         return;
       }
       if (n % 256 === 255) {
@@ -134,7 +147,7 @@
       style="transform: translateX({offset}px)"
       role="slider"
       tabindex={solved ? -1 : 0}
-      aria-label="Slide the mochi all the way to the right to prove you're human"
+      aria-label={label}
       aria-valuemin="0"
       aria-valuemax="100"
       aria-valuenow={solved ? 100 : Math.round((offset / Math.max(maxOffset, 1)) * 100)}
@@ -144,7 +157,7 @@
       onpointercancel={onPointerUp}
       onkeydown={onKeyDown}
     >
-      🍡
+      {emoji}
     </div>
     <span class="captcha-hint" aria-live="polite">
       {#if verified}
@@ -152,7 +165,7 @@
       {:else if solved}
         Verifying…
       {:else}
-        Slide the mochi to the right
+        {label}
       {/if}
     </span>
   </div>
@@ -169,7 +182,7 @@
     position: relative;
     height: 44px;
     border: 1px solid var(--mochi-captcha-border, #e8e4d8);
-    border-radius: 999px;
+    border-radius: var(--mochi-captcha-radius, 999px);
     background: var(--mochi-captcha-track-bg, #faf8f1);
     overflow: hidden;
   }
@@ -178,7 +191,7 @@
     position: absolute;
     inset: 0 auto 0 0;
     background: var(--mochi-captcha-accent-soft, #e0ebe1);
-    border-radius: 999px;
+    border-radius: var(--mochi-captcha-radius, 999px);
   }
 
   .captcha .handle {
@@ -189,7 +202,7 @@
     align-items: center;
     justify-content: center;
     font-size: 1.35rem;
-    border-radius: 999px;
+    border-radius: var(--mochi-captcha-radius, 999px);
     background: var(--mochi-captcha-handle-bg, #fffdf8);
     border: 1px solid var(--mochi-captcha-accent, #4a7c59);
     cursor: grab;

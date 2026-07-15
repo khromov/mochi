@@ -37,7 +37,7 @@
       <input name="name" autocomplete="name" />
     </label>
 
-    <MochiCaptcha {...captcha} />
+    <MochiCaptcha {...captcha} emoji="🍡" label="Slide the mochi to the right" />
 
     {#if errorMessage}
       <p class="error" role="alert">{errorMessage}</p>

@@ -1,13 +1,21 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { encryptPayload, decryptPayload } from '../payloadCrypto';
+import { mochiEvents } from '../events';
+import type { MochiCaptchaReason } from '../events';
 import { getCaptchaRuntime } from './config';
 import { CAPTCHA_AAD, CAPTCHA_STEPS, chainInput, powInput, leadingZeroBits } from './pow';
 import type { CaptchaResult } from './types';
 
 // One message for every token failure, so a probing bot can't distinguish
-// "too fast" from "tampered" and binary-search the timing floor.
+// "too fast" from "tampered" and binary-search the timing floor. The real
+// reason still reaches operators through the `captcha:verify` event.
 const GENERIC_ERROR = 'Verification failed — reload the page and try again.';
 const REPLAY_ERROR = 'This form was already submitted. Reload the page to try again.';
+
+function reject(reason: MochiCaptchaReason, details?: { bits?: number; ageMs?: number }): CaptchaResult {
+  mochiEvents.emit('captcha:verify', { ok: false, reason, ...details });
+  return { ok: false, error: reason === 'replay' ? REPLAY_ERROR : GENERIC_ERROR };
+}
 
 export interface MintedCaptcha {
   token: string;
@@ -38,7 +46,7 @@ export async function verifyCaptcha(formData: FormData, options?: { consume?: bo
   const pow = String(formData.get('captcha_pow') ?? '');
   const opened = token ? decryptPayload(token, { aad: CAPTCHA_AAD }) : null;
   if (opened === null) {
-    return { ok: false, error: GENERIC_ERROR };
+    return reject('malformed');
   }
 
   let iat: number;
@@ -47,17 +55,20 @@ export async function verifyCaptcha(formData: FormData, options?: { consume?: bo
   try {
     const parsed = JSON.parse(opened) as { iat?: unknown; nonce?: unknown; bits?: unknown };
     if (typeof parsed.iat !== 'number' || typeof parsed.nonce !== 'string' || typeof parsed.bits !== 'number') {
-      return { ok: false, error: GENERIC_ERROR };
+      return reject('malformed');
     }
     ({ iat, nonce, bits } = parsed as { iat: number; nonce: string; bits: number });
   } catch {
-    return { ok: false, error: GENERIC_ERROR };
+    return reject('malformed');
   }
 
   const { options: resolved, store } = getCaptchaRuntime();
-  const age = Date.now() - iat;
-  if (age < resolved.minAgeMs || age > resolved.maxAgeMs) {
-    return { ok: false, error: GENERIC_ERROR };
+  const ageMs = Date.now() - iat;
+  if (ageMs < resolved.minAgeMs) {
+    return reject('too-fast', { bits, ageMs });
+  }
+  if (ageMs > resolved.maxAgeMs) {
+    return reject('expired', { bits, ageMs });
   }
 
   // Re-derive the slide-step chain from the raw token: the widget only reaches
@@ -68,13 +79,14 @@ export async function verifyCaptcha(formData: FormData, options?: { consume?: bo
     challenge = createHash('sha256').update(chainInput(challenge, step)).digest('hex');
   }
   if (leadingZeroBits(createHash('sha256').update(powInput(challenge, pow)).digest()) < bits) {
-    return { ok: false, error: GENERIC_ERROR };
+    return reject('bad-pow', { bits, ageMs });
   }
 
   const expiresAt = iat + resolved.maxAgeMs;
   if (options?.consume !== false && !(await store.consume(nonce, expiresAt))) {
-    return { ok: false, error: REPLAY_ERROR };
+    return reject('replay', { bits, ageMs });
   }
+  mochiEvents.emit('captcha:verify', { ok: true, reason: 'ok', bits, ageMs });
   return { ok: true, nonce, expiresAt };
 }
 

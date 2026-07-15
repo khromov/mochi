@@ -320,6 +320,14 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
     };
   });
 
+  subscribe('captcha:verify', ({ ok, reason, bits, ageMs }) => ({
+    label: 'CAPTCHA',
+    path: reason,
+    note: ok ? styleText('green', `verified (${bits}-bit)`) : styleText('yellow', 'rejected'),
+    ...(ageMs != null ? { duration: ageMs, neutral: true } : {}),
+    level: ok ? ('info' as const) : ('warn' as const),
+  }));
+
   subscribe('preprocess-cache:hit', ({ filePath }) => ({
     label: 'PCACHE',
     path: relPath(filePath),
