@@ -404,6 +404,43 @@ describe('FileStorage binary offload (offloadBinary: true)', () => {
   });
 });
 
+describe('FileStorage binary inline (offloadBinary off, the default)', () => {
+  test('a binary field round-trips as Uint8Array with no blob folder', async () => {
+    const dir = makeDir();
+    const storage = new FileStorage({ directory: dir, purgeInterval: 0 });
+    created.push(storage);
+
+    const bytes = new Uint8Array([1, 2, 3, 4, 5]);
+    await storage.setItem('img', { value: { meta: 'hi', nested: [bytes] }, createdAt: 7 });
+
+    // Everything lives in the JSON — no per-key blob folder was created.
+    expect(readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory())).toHaveLength(0);
+
+    const raw = (await storage.getItem('img')) as { value: { meta: string; nested: unknown[] }; createdAt: number };
+    expect(raw.value.meta).toBe('hi');
+    expect(raw.createdAt).toBe(7);
+    // The bytes come back eagerly as a real Uint8Array, not a lazy BlobRef.
+    expect(isBlobRef(raw.value.nested[0])).toBe(false);
+    expect(raw.value.nested[0]).toBeInstanceOf(Uint8Array);
+    expect(Array.from(raw.value.nested[0] as Uint8Array)).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  test('entries written with offloadBinary on still read as BlobRefs after the flag is dropped', async () => {
+    const dir = makeDir();
+    const writer = new FileStorage({ directory: dir, purgeInterval: 0, offloadBinary: true });
+    created.push(writer);
+    await writer.setItem('img', { value: { bytes: new Uint8Array([8, 9]) }, createdAt: 0 });
+
+    // Pointers on disk are self-describing, so a default (flag-off) storage over
+    // the same directory still resolves them.
+    const reader = new FileStorage({ directory: dir, purgeInterval: 0 });
+    created.push(reader);
+    const raw = (await reader.getItem('img')) as { value: { bytes: BlobRef } };
+    expect(isBlobRef(raw.value.bytes)).toBe(true);
+    expect(Array.from(await readBlobRef(raw.value.bytes))).toEqual([8, 9]);
+  });
+});
+
 // Two MochiCache instances over one shared directory model two load-balanced
 // processes: each has its own in-process `inflight` Map but a common FileStorage,
 // which reads fresh from disk on every getItem — so the advisory marker one writes

@@ -204,6 +204,8 @@ export const routes: Record<string, MochiRouteValue> = {
           to: 'support@mochi.fast',
           replyTo: email,
           subject: `Support request from ${name || email}`,
+          component: './src/SupportEmail.svelte',
+          props: { name, email, message },
           text: [`From: ${name || '(no name)'} <${email}>`, '', message].join('\n'),
         });
         return success();
