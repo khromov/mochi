@@ -4,6 +4,12 @@ import { themes } from '../demos/captcha-styling/themes';
 export type ShotSubject = {
   /** Resolved per request, server-side — same contract as a page's serverProps. */
   props: (url: URL) => Record<string, unknown>;
+  /**
+   * The subject's unscaled CSS-pixel box. It's the sole source of truth for the
+   * subject's width (the frame applies it), and the frame scales up from it to
+   * fill the canvas — so a wrong value here yields a wrongly-scaled shot.
+   */
+  natural: { width: number; height: number };
 };
 
 const captchaThemes = ['defaults', ...Object.keys(themes)];
@@ -15,6 +21,8 @@ const captchaThemes = ['defaults', ...Object.keys(themes)];
  */
 export const subjects: Record<string, ShotSubject> = {
   captcha: {
+    // The track is 44px tall in MochiCaptcha's own CSS; 416 is a comfortable slider width.
+    natural: { width: 416, height: 44 },
     props: (url) => {
       const theme = url.searchParams.get('theme') ?? 'defaults';
       if (!captchaThemes.includes(theme)) {
@@ -23,7 +31,28 @@ export const subjects: Record<string, ShotSubject> = {
       return { captcha: mintCaptcha(), theme };
     },
   },
+
+  like: {
+    natural: { width: 120, height: 34 },
+    props: () => ({ initialLikes: 42 }),
+  },
 };
+
+/**
+ * Fraction of the frame the subject grows to fill. Short of 1 so the component
+ * doesn't collide with the edges of the shot.
+ */
+const FILL = 0.9;
+
+/**
+ * Largest uniform scale that still fits, i.e. `fit: inside` — the same contain
+ * semantics as the image `sizes` in index.ts. Uniform because the alternative is
+ * stretching each axis to the frame, which distorts any subject whose aspect ratio
+ * isn't the frame's (the captcha is ~9.5:1 against a 16:9 canvas).
+ */
+export function fitScale(frame: { width: number; height: number }, natural: { width: number; height: number }): number {
+  return Math.min(frame.width / natural.width, frame.height / natural.height) * FILL;
+}
 
 export const SCHEMES = ['light', 'dark'] as const;
 

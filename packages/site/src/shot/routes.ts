@@ -1,6 +1,6 @@
 import { Mochi, error, getRequestContext } from 'mochi-framework';
 import type { Handle, MochiRouteValue } from 'mochi-framework';
-import { subjects, frameSize, readScheme, SCHEMES } from './registry';
+import { subjects, frameSize, fitScale, readScheme, SCHEMES } from './registry';
 
 /**
  * Renders one component alone on a bare 16:9 canvas (1280x720 by default), with no
@@ -18,7 +18,8 @@ export const routes: Record<string, MochiRouteValue> = {
       if (!readScheme(url.searchParams)) {
         error(400, `No scheme '${url.searchParams.get('scheme')}'. Known: ${SCHEMES.join(', ')}`);
       }
-      return { name, ...frameSize(url.searchParams), props: subject.props(url) };
+      const frame = frameSize(url.searchParams);
+      return { name, ...frame, natural: subject.natural, scale: fitScale(frame, subject.natural), props: subject.props(url) };
     },
   }),
 };

@@ -17,8 +17,9 @@
 </div>
 
 <style>
-  /* The track fills its container, so the frame has to give it a width to fill. */
+  /* The track fills its container; the frame sizes that container from the subject's
+     declared natural width, so this must not set a width of its own. */
   .subject {
-    width: 26rem;
+    width: 100%;
   }
 </style>
