@@ -1,10 +1,31 @@
 import { checkLimit, memoryStore, DEFAULT_LIMIT, DEFAULT_WINDOW, DEFAULT_MESSAGE } from '@joint-ops/hitlimit-bun';
 import type { HitLimitInfo, HitLimitOptions, HitLimitResult, HitLimitStore, ResolvedConfig } from '@joint-ops/hitlimit-bun';
+import { sqliteStore as hitlimitSqliteStore } from '@joint-ops/hitlimit-bun/stores/sqlite';
+import type { SqliteStoreOptions } from '@joint-ops/hitlimit-bun/stores/sqlite';
 import { logger } from './log';
 
 export { memoryStore };
-export { sqliteStore } from '@joint-ops/hitlimit-bun/stores/sqlite';
 export { postgresStore } from '@joint-ops/hitlimit-bun/stores/postgres';
+
+/**
+ * hitlimit v1.5.0 keeps its prepared statements on the store and never finalizes
+ * them, so its `shutdown()` reaches `db.close()` — the no-arg form, i.e.
+ * `sqlite3_close_v2` — with statements still outstanding. That only zombies the
+ * connection: the db/-wal/-shm files stay open until GC finalizes the statements,
+ * and Windows refuses to unlink an open file. Finalize them first so the close
+ * actually releases the handles. The dep is pinned; re-verify on bumps.
+ */
+export function sqliteStore(options?: SqliteStoreOptions): HitLimitStore {
+  const store = hitlimitSqliteStore(options);
+  const close = store.shutdown?.bind(store);
+  store.shutdown = () => {
+    for (const value of Object.values(store)) {
+      (value as { finalize?: () => void } | null)?.finalize?.();
+    }
+    close?.();
+  };
+  return store;
+}
 
 /**
  * Per-route / global rate-limit options — a mirror of hitlimit's `HitLimitOptions`
