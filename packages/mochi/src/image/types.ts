@@ -80,17 +80,6 @@ export interface InvalidateImageOptions {
 }
 
 /**
- * The shared original's cache window (shortest requested wins). Set internally
- * from a size's TTL overrides, or the global defaults for the original path.
- */
-export interface OriginalImageOptions {
-  /** Override the configured time-to-stale (ms). */
-  timeToStale?: number;
-  /** Override the configured time-to-evict (ms). */
-  timeToEvict?: number;
-}
-
-/**
  * Image API configuration, set under `Mochi.serve({ image: { … } })`.
  * Every field is optional; see `resolveImageOptions` for defaults.
  */

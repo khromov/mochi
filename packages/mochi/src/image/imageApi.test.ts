@@ -147,7 +147,7 @@ describe('getImage', () => {
   test('returns transformed bytes + metadata for a real named size', async () => {
     installConfig();
     const cache = installRuntime({ sizes: { thumb: { width: 20, height: 20, format: 'webp' } } });
-    await cache.getOriginal(SRC, 3_600_000, 86_400_000, async () => ({ bytes: SOURCE_BYTES, contentType: 'image/png' }));
+    await cache.getOriginal(SRC, async () => ({ bytes: SOURCE_BYTES, contentType: 'image/png' }));
 
     const result = await getImage(SRC, 'thumb');
     expect(result.format).toBe('webp');
@@ -160,7 +160,7 @@ describe('getImage', () => {
   test('an unknown/omitted size returns the original bytes', async () => {
     installConfig();
     const cache = installRuntime({});
-    await cache.getOriginal(SRC, 3_600_000, 86_400_000, async () => ({ bytes: SOURCE_BYTES, contentType: 'image/png' }));
+    await cache.getOriginal(SRC, async () => ({ bytes: SOURCE_BYTES, contentType: 'image/png' }));
 
     const result = await getImage(SRC);
     expect(result.contentType).toBe('image/png');

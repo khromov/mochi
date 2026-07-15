@@ -1,5 +1,4 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { getContext } from 'svelte';
 import type { MochiCookieJar } from './cookies';
 import type { IslandPropsEntry } from './islandPropsRegistry';
 import type { MochiFormResult } from './types';
@@ -191,16 +190,6 @@ export interface DebugBarRuntimeData extends DebugBarData {
 export const requestContext = pinGlobal('__mochi_request_context__', () => new AsyncLocalStorage<MochiRequestContext>());
 
 /**
- * Key under which the request context is threaded through Svelte's SSR context
- * (`render(component, { context })`). Bun 1.4.0 drops the `AsyncLocalStorage`
- * store across the `.then()` continuations Svelte's async SSR uses, but Svelte
- * restores its own SSR context at every async boundary — so `getRequestContext()`
- * falls back to `getContext(MOCHI_REQUEST_CONTEXT_KEY)` when the ALS store is gone.
- * See `reproduction/` for the isolated Bun repro.
- */
-export const MOCHI_REQUEST_CONTEXT_KEY = 'mochi.request-context';
-
-/**
  * Returns the current request context. Available in any server-side code
  * running within a request (components, API handlers, helpers).
  *
@@ -213,22 +202,8 @@ export const MOCHI_REQUEST_CONTEXT_KEY = 'mochi.request-context';
  */
 export function getRequestContext(): MochiRequestContext {
   const ctx = requestContext.getStore();
-  if (ctx) {
-    return ctx;
+  if (!ctx) {
+    throw new Error('getRequestContext() called outside of a request. ' + 'It is only available in server-side code running within a Mochi request handler.');
   }
-  // Bun 1.4.0 drops the AsyncLocalStorage store across the `.then()` continuations
-  // Svelte's async SSR renderer uses (see `reproduction/`), so `getStore()` returns
-  // undefined mid-render. Svelte restores its own SSR context at every async
-  // boundary, and `renderComponent` threads the request context through it, so we
-  // recover it here. `getContext` is only valid during component init/render, hence
-  // the try/catch for callers running outside a Svelte render.
-  try {
-    const fromSvelte = getContext<MochiRequestContext | undefined>(MOCHI_REQUEST_CONTEXT_KEY);
-    if (fromSvelte) {
-      return fromSvelte;
-    }
-  } catch {
-    // Not inside a component render — fall through to the error below.
-  }
-  throw new Error('getRequestContext() called outside of a request. ' + 'It is only available in server-side code running within a Mochi request handler.');
+  return ctx;
 }

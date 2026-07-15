@@ -14,12 +14,12 @@
   // only mints a signed URL; the endpoint runs the size lazily on request.
   // getImage() is the inline escape hatch: it runs the size now and returns
   // the transformed bytes + metadata (used here for dimensions and byte sizes).
-  async function computePipeline() {
+  async function computePage() {
     const codeSetup = await snippet(
       [
         "import { getImageUrl, getImage } from 'mochi-framework';",
         '',
-        '// Pipelines are declared once in Mochi.serve({ image: { sizes } }).',
+        '// Sizes are declared once in Mochi.serve({ image: { sizes } }).',
         '// getImageUrl mints a signed URL; the transform runs in the endpoint.',
         "const url = getImageUrl(src, 'thumb'); // near-instant, for <img src>",
         '',
@@ -96,8 +96,8 @@
   // In-process layer: assemble the page (incl. syntax highlighting) once per
   // process; the image cache is the persistent, cross-restart layer underneath.
   let built;
-  export function buildPipeline() {
-    return (built ??= computePipeline());
+  export function buildPage() {
+    return (built ??= computePage());
   }
 </script>
 
@@ -131,7 +131,7 @@
     formats,
     codeFormat,
     sources,
-  } = await buildPipeline();
+  } = await buildPage();
 </script>
 
 <DemoPage

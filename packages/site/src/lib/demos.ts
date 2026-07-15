@@ -148,8 +148,8 @@ export const demos: Demo[] = [
     href: '/demos/image/',
     slug: 'image',
     files: image,
-    title: 'Image: Pipelines',
-    hook: 'On-the-fly image transforms via named sizes, served from an encrypted, stale-while-revalidate disk cache. <Image> only mints a URL; the endpoint does the work.',
+    title: 'Image: Component',
+    hook: 'The <Image> component — named sizes, ThumbHash blur-up placeholders, a gallery, and island usage. It only mints an encrypted URL; the endpoint does the work.',
     category: 'data',
   },
   {

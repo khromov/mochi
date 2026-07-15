@@ -2,13 +2,13 @@ import { getImageAssetPrefix, getImageRuntime, getSize } from './config';
 import { fetchImageSource } from './fetchSource';
 import { encryptImageRequest } from './imageCrypto';
 import { variantId } from './imageCache';
-import { computePlaceholder, extForFormat, runPipeline } from './resize';
+import { computePlaceholder, runPipeline } from './resize';
 import { buildImageFilename, buildOriginalFilename } from './slug';
 import { requestContext, type ImageDebugEntry } from '../requestContext';
 import { applyFilter } from '../extensions';
 import { logger } from '../log';
 import type { ImageCache, ImageCacheStatus } from './imageCache';
-import type { ImageRequest, InvalidateImageOptions, OriginalImageOptions, ResolvedImageOptions, ResolvedImageSize } from './types';
+import type { ImageRequest, InvalidateImageOptions, ResolvedImageOptions, ResolvedImageSize } from './types';
 
 const warnedUnknownSize = new Set<string>();
 
@@ -107,7 +107,7 @@ export async function getImage(src: string, size?: string): Promise<ResolvedImag
   const resolved = resolveNamed(size, options);
 
   if (!resolved) {
-    const { bytes, contentType } = await getCachedOriginal(src, {}, options, cache);
+    const { bytes, contentType } = await getCachedOriginal(src, options, cache);
     let meta = { width: 0, height: 0, format: '' };
     try {
       meta = await new Bun.Image(bytes).metadata();
@@ -120,8 +120,8 @@ export async function getImage(src: string, size?: string): Promise<ResolvedImag
   }
 
   const id = variantId(src, resolved.configHash);
-  const { entry } = await cache.getVariant(src, id, extForFormat(resolved.format), async () => {
-    const { bytes, createdAt } = await getCachedOriginal(src, {}, options, cache);
+  const { entry } = await cache.getVariant(src, id, async () => {
+    const { bytes, createdAt } = await getCachedOriginal(src, options, cache);
     const out = await runPipeline(bytes, resolved, options);
     return { bytes: out.bytes, contentType: out.contentType, width: out.width, height: out.height, format: out.format, originalCreatedAt: createdAt };
   });
@@ -131,19 +131,16 @@ export async function getImage(src: string, size?: string): Promise<ResolvedImag
 }
 
 /**
- * Fetch-or-serve the cached full-size original for `src`, applying the
- * shortest-wins TTL. Backs both the size path (so every variant reuses one
- * origin download) and the original path of `getImageUrl`/`getImage`.
+ * Fetch-or-serve the cached full-size original for `src`. Backs both the size
+ * path (so every variant reuses one origin download) and the original path of
+ * `getImageUrl`/`getImage`.
  */
 export async function getCachedOriginal(
   src: string,
-  opts: OriginalImageOptions,
   resolved: ResolvedImageOptions,
   cache: ImageCache,
 ): Promise<{ bytes: Uint8Array; contentType: string; status: ImageCacheStatus; createdAt: number }> {
-  const timeToStale = opts.timeToStale ?? resolved.timeToStale;
-  const timeToEvict = opts.timeToEvict ?? resolved.timeToEvict;
-  const { entry, status } = await cache.getOriginal(src, timeToStale, timeToEvict, () => fetchImageSource(src, resolved));
+  const { entry, status } = await cache.getOriginal(src, () => fetchImageSource(src, resolved));
   return { bytes: entry.bytes, contentType: entry.meta.contentType, status, createdAt: entry.meta.createdAt };
 }
 
@@ -212,7 +209,7 @@ export async function getImagePlaceholder(src: string): Promise<string | null> {
     return cached;
   }
   try {
-    const { bytes, createdAt } = await getCachedOriginal(src, {}, options, cache);
+    const { bytes, createdAt } = await getCachedOriginal(src, options, cache);
     const dataUrl = await computePlaceholder(bytes, options);
     await cache.setPlaceholder(src, dataUrl, createdAt);
     return dataUrl;

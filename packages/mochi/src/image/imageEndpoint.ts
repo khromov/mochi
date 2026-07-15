@@ -5,7 +5,7 @@ import { originalId, variantId } from './imageCache';
 import { getMochiConfig } from '../mochiConfig';
 import { logger } from '../log';
 import { baseContentType, INLINE_SAFE_IMAGE_TYPES } from '../inlineContentTypeSafety';
-import { extForFormat, runPipeline } from './resize';
+import { runPipeline } from './resize';
 import { ImageError } from './types';
 import type { ResolvedImageSize } from './types';
 
@@ -99,7 +99,7 @@ export function createImageHandler(): (req: Request) => Promise<Response> {
     // gif/svg/etc.). Covers explicit originals and unknown-size fallbacks.
     if (!size) {
       try {
-        const { bytes, contentType, status, createdAt } = await getCachedOriginal(request.src, {}, options, cache);
+        const { bytes, contentType, status, createdAt } = await getCachedOriginal(request.src, options, cache);
         const etag = `"${originalId(request.src)}-${createdAt}"`;
         const cacheControl = resolveImageCacheControl(options.timeToStale, options.timeToEvict, development);
         if (req.headers.get('if-none-match') === etag) {
@@ -128,8 +128,8 @@ export function createImageHandler(): (req: Request) => Promise<Response> {
 
     try {
       const id = variantId(request.src, size.configHash);
-      const { entry, status } = await cache.getVariant(request.src, id, extForFormat(size.format), async () => {
-        const { bytes, createdAt } = await getCachedOriginal(request.src, {}, options, cache);
+      const { entry, status } = await cache.getVariant(request.src, id, async () => {
+        const { bytes, createdAt } = await getCachedOriginal(request.src, options, cache);
         const result = await runPipeline(bytes, size, options);
         return {
           bytes: result.bytes,
@@ -142,9 +142,10 @@ export function createImageHandler(): (req: Request) => Promise<Response> {
       });
 
       // ETag carries the variant id (which folds in the size config hash) plus
-      // the served bytes' generation, so both a redefinition and a source refresh
-      // revalidate correctly.
-      const etag = `"${id}-${entry.meta.createdAt}"`;
+      // the original generation the bytes were encoded from, so a redefinition
+      // and a source refresh both revalidate, while a byte-identical re-encode
+      // from the same generation keeps its ETag (no spurious re-downloads).
+      const etag = `"${id}-${entry.meta.originalCreatedAt ?? entry.meta.createdAt}"`;
       const cacheControl = resolveImageCacheControl(options.timeToStale, options.timeToEvict, development);
       if (req.headers.get('if-none-match') === etag) {
         return new Response(null, { status: 304, headers: { ETag: etag, 'X-Content-Type-Options': 'nosniff', ...(cacheControl ? { 'Cache-Control': cacheControl } : {}) } });

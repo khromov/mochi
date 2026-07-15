@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { MemoryStorage } from './cache-storage';
 import { mochiEvents } from './events';
 
@@ -251,11 +252,14 @@ export class MochiCache {
     }
 
     const ref: { current: Promise<T> | null } = { current: null };
+    // Owns this run's advisory marker: a timed-out/superseded run that settles
+    // late must not delete the marker a newer run has since written.
+    const runId = randomUUID();
     const work = (async () => {
       // Publish the advisory cross-process marker before the expensive `fn` so a
       // peer that starts moments later sees it and defers (best-effort; no-op
       // unless crossProcessInflight is on). Removed once this run settles.
-      await this.writeMarker(key);
+      await this.writeMarker(key, runId);
       try {
         const value = await fn();
         const serialized = this.serialize({ value, createdAt: this.now() } satisfies CacheEntry);
@@ -275,7 +279,7 @@ export class MochiCache {
         // a later cache hit would, even with non-identity transforms.
         return (this.deserialize(serialized) as CacheEntry).value as T;
       } finally {
-        await this.removeMarker(key);
+        await this.removeMarker(key, runId);
       }
     })();
 
@@ -327,22 +331,35 @@ export class MochiCache {
     return true;
   }
 
-  private async writeMarker(key: string): Promise<void> {
+  private async writeMarker(key: string, runId: string): Promise<void> {
     if (!this.markerLeaseEnabled()) {
       return;
     }
     try {
-      await this.storage.setItem(this.markerKey(key), { startedAt: this.now() });
+      await this.storage.setItem(this.markerKey(key), { startedAt: this.now(), runId });
     } catch (error) {
       mochiEvents.emit('cache:error', { key, operation: 'set', error });
     }
   }
 
-  private async removeMarker(key: string): Promise<void> {
+  /**
+   * With a `runId`, only remove the marker if that run still owns it (a stale
+   * settle must not clear a newer run's marker and un-defer the fleet); the
+   * read-then-remove is not atomic, but the marker is advisory so the worst case
+   * is one extra duplicate regen. Without a `runId` (delete/invalidate paths),
+   * remove unconditionally.
+   */
+  private async removeMarker(key: string, runId?: string): Promise<void> {
     if (!this.markerLeaseEnabled()) {
       return;
     }
     try {
+      if (runId !== undefined) {
+        const raw = (await this.storage.getItem(this.markerKey(key))) as { runId?: string } | null;
+        if (raw != null && raw.runId !== undefined && raw.runId !== runId) {
+          return;
+        }
+      }
       await this.storage.removeItem(this.markerKey(key));
     } catch (error) {
       mochiEvents.emit('cache:error', { key, operation: 'remove', error });

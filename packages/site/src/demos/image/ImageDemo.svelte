@@ -39,7 +39,7 @@
 </script>
 
 <DemoPage
-  title="Image: Pipelines"
+  title="Image: Component"
   description="On-the-fly image transforms on Bun.Image, served from an encrypted, stale-while-revalidate disk cache. Transforms are declared once as named sizes in Mochi.serve(); <Image> and getImageUrl() only mint a signed URL, and the endpoint runs the size lazily — so SSR never blocks on image work."
   {sources}
 >

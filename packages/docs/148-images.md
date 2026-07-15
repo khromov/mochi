@@ -29,9 +29,9 @@ await Mochi.serve({
 });
 ```
 
-Transforms apply in a fixed order: **resize → rotate → flip → flop → modulate → format-encode**. Pipelines are validated at startup (bad dimensions/formats throw immediately). Redefining a size re-renders every URL that uses it — a config hash is folded into the cache key and `ETag`, so caches bust automatically.
+Transforms apply in a fixed order: **resize → rotate → flip → flop → modulate → format-encode**. Sizes are validated at startup (bad dimensions/formats throw immediately). Redefining a size re-renders every URL that uses it — a config hash is folded into the cache key and `ETag`, so caches bust automatically.
 
-| Pipeline field       | Default             | Notes                                                              |
+| Size field           | Default             | Notes                                                              |
 | -------------------- | ------------------- | ------------------------------------------------------------------ |
 | `width` / `height`   | —                   | Target size; height-only derives width by ratio                    |
 | `fit`                | `'inside'`          | `inside` keeps aspect & fits within W×H; `fill` stretches to W×H   |
@@ -72,7 +72,7 @@ Add `placeholder` to render a [ThumbHash](https://evanw.github.io/thumbhash/) bl
 | `width` / `height`     | size's dims | `<img>` attribute override (for layout/CLS)                 |
 | `loading` / `decoding` | lazy/async  | Passed through to `<img>`                                   |
 
-A bare `<Image src>` with no `size` (or an unknown size name) serves the full-size original and logs a one-time warning.
+A bare `<Image src>` with no `size` serves the full-size original — that's the normal way to serve an un-resized image, not an error. An **unknown** size name also degrades to the original, but logs a one-time server warning.
 
 `<Image>` also works inside `mochi:hydrate*` islands — forward the island's auto-injected `isHydratable` prop. Minting needs the server secret, so with the prop set the minted URL is serialized into the page via Svelte's `hydratable` and reused during hydration — the browser never mints:
 
@@ -107,6 +107,23 @@ const original = getImageUrl('https://example.com/photo.jpg');
 
 The returned URL is relative by default. To serve images from a CDN — or otherwise rewrite the host/prefix — register the [`image:url`](/docs/extensions/#imageurl) filter; it runs on the URL from `getImageUrl()`, `getImage()`, and the `<Image>` component.
 
+### `getImageAttrs` — URL + declared dimensions
+
+`getImageAttrs(src, size?)` is `getImageUrl` plus the size's declared `width`/`height` — what `<Image>` uses to set `src`/`width`/`height` in one server-side pass. Synchronous, server-only. With no `size` (or an unknown name) the dimensions are `undefined`:
+
+```ts
+import { getImageAttrs } from 'mochi-framework';
+
+const { url, width, height } = getImageAttrs(src, 'thumbnail');
+// → { url: '/_mochi/image/…', width: 200, height: 200 }
+```
+
+<Callout type="warning">
+
+`getImageAttrs` and `<Image>` stamp the size's **declared** `width`/`height` as attributes — but with `fit: 'inside'` (the default) the served image's real dimensions can be smaller, since the transform fits within the box while keeping the aspect ratio. If the aspect ratio matters for layout, add CSS such as `height: auto` (or `object-fit`) so the declared attributes only reserve space instead of stretching the image.
+
+</Callout>
+
 ### `getImage` — inline bytes + metadata
 
 When you need the transformed bytes server-side (OG images, inlining, a dimension probe), `getImage(src, size)` runs the size **inline** and returns the bytes plus metadata. It shares the same disk cache as `getImageUrl`/`<Image>`, so a warm variant skips the fetch/decode/encode. Prefer `getImageUrl` for anything that ends up in an `<img src>` — it defers all work to the endpoint.
@@ -120,7 +137,29 @@ const { bytes, contentType, width, height, format } = await getImage(src, 'thumb
 const original = await getImage(src);
 ```
 
-An unknown or omitted size name returns the original bytes (with a one-time warning).
+An omitted size returns the cached original bytes; an unknown size name does the same, with a one-time server warning.
+
+### Placeholder APIs
+
+The ThumbHash blur behind `<Image placeholder>` is also available directly. All three are server-only and share the image cache:
+
+```ts
+import { getImagePlaceholder, imagePlaceholder, warmImagePlaceholder } from 'mochi-framework';
+
+// Compute-and-cache: fetches/decodes the original on a miss (blocking).
+// Returns a tiny data: URL, or null if the source can't be fetched/decoded.
+const blur = await getImagePlaceholder(src);
+
+// Non-blocking read: cached blur or null — a miss kicks off a background
+// warm so a later render has it. This is what <Image placeholder> uses.
+const maybeBlur = await imagePlaceholder(src);
+
+// Fire-and-forget: start computing the blur now (de-duped while in flight),
+// so a later render finds it cached.
+warmImagePlaceholder(src);
+```
+
+Use `getImagePlaceholder` when you need the blur *now* (e.g. an OG-image route) and can afford the fetch; use `imagePlaceholder`/`warmImagePlaceholder` in SSR paths that must never block on image work.
 
 ### Full-size originals
 
@@ -193,7 +232,7 @@ In dev, each image produced during a request shows up in the [debug bar's Images
 
 ### Configuration
 
-Configure under `Mochi.serve({ image: { … } })`. Everything except `sizes` is optional:
+Configure under `Mochi.serve({ image: { … } })`. Every option is optional — `sizes` defaults to `{}`:
 
 | Option                 | Default                 | Notes                                                                          |
 | ---------------------- | ----------------------- | ------------------------------------------------------------------------------ |
@@ -201,8 +240,8 @@ Configure under `Mochi.serve({ image: { … } })`. Everything except `sizes` is 
 | `enabled`              | `true`                  | `false` unmounts the endpoint; URL helpers then return the raw source URL      |
 | `cacheDir`             | `./.mochi/image-cache`  | Must not be under `publicDir`; ignored when `storage` is set                   |
 | `storage`              | `FileStorage(cacheDir)` | Override the cache backend (see [Custom cache storage](#custom-cache-storage)) |
-| `defaultFormat`        | `webp`                  | Pipeline default when it omits `format`                                        |
-| `defaultQuality`       | `80`                    | Pipeline default when it omits `quality`                                       |
+| `defaultFormat`        | `webp`                  | Used when a size omits `format`                                                |
+| `defaultQuality`       | `80`                    | Used when a size omits `quality`                                               |
 | `outputFormats`        | all four                | Allowed output formats                                                         |
 | `allowedHosts`         | any public host         | Exact host or `*.example.com`                                                  |
 | `blockPrivateNetworks` | `true`                  | Reject private/loopback/link-local addresses                                   |
@@ -220,4 +259,4 @@ Configure under `Mochi.serve({ image: { … } })`. Everything except `sizes` is 
 
 </Callout>
 
-See the [Named sizes demo](/demos/image-size/) and the [Image demo](/demos/image/) for working examples.
+See the [Named sizes demo](/demos/image-pipeline/) and the [Image demo](/demos/image/) for working examples.

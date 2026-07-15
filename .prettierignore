@@ -1,4 +1,2 @@
 **/CHANGELOG.md
 **/*.patch
-# Self-contained Svelte repro (experimental async syntax; own toolchain)
-reproduction-svelte/

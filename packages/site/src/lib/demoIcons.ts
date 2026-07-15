@@ -95,7 +95,7 @@ export const demoIconFor: Record<string, DemoIconMeta> = {
   'Tailwind Todo App': { icon: ListTodo, label: 'Todo app on Tailwind' },
   'Cookie Vary Test': { icon: Fingerprint, label: 'Response-driven Vary: Cookie' },
   'Isomorphic URL': { icon: Link, label: 'Same url import on server and client' },
-  'Image: Pipelines': { icon: ImageIcon, label: 'Encrypted, cached image transforms via named sizes' },
+  'Image: Component': { icon: ImageIcon, label: '<Image> with named sizes and blur-up placeholders' },
   'Image: Invalidation': { icon: ImageOff, label: 'Clear a cached image on demand with invalidateImage()' },
   'Image: Events': { icon: CloudUpload, label: 'Mirror the <Image> cache via image:store / image:delete' },
   'Image: Named sizes': { icon: WandSparkles, label: 'Declarative named Bun.Image transform sizes' },
