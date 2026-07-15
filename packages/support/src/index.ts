@@ -37,6 +37,12 @@ await Mochi.serve({
     from: process.env.SMTP_FROM || 'Mochi Support Form <noreply@mochi.fast>',
     transport: smtp,
   },
+  captcha: {
+    bits: Number(process.env.CAPTCHA_POW_BITS) || 16,
+    minAgeMs: Number.isFinite(Number(process.env.CAPTCHA_MIN_AGE_MS)) ? Number(process.env.CAPTCHA_MIN_AGE_MS) : 2000,
+    store: process.env.CAPTCHA_NONCE_STORE === 'sqlite' ? 'sqlite' : 'memory',
+    ...(process.env.CAPTCHA_NONCE_DB ? { storePath: process.env.CAPTCHA_NONCE_DB } : {}),
+  },
   eventHooks: {
     // Boot-only by design, not a module-level throw: `mochi-framework build`
     // imports this entry to read the serve() options, and the build runs without

@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Attachment } from 'svelte/attachments';
-  import { CAPTCHA_STEPS, chainInput, powInput, leadingZeroBits, toHex } from '../lib/pow';
+  import { CAPTCHA_STEPS, chainInput, powInput, leadingZeroBits, toHex } from './pow';
 
   let { token = '', bits = 16, verified = $bindable(false) }: { token?: string; bits?: number; verified?: boolean } = $props();
 
@@ -161,19 +161,23 @@
 <input type="hidden" name="captcha_pow" value={verified ? powNonce : ''} />
 
 <style>
+  /* Defaults live in each var()'s fallback, not in a declaration on .captcha:
+     a value set here would sit on the element itself and beat anything the host
+     inherits down from an ancestor, so the theming vars could never be
+     overridden. */
   .captcha .track {
     position: relative;
     height: 44px;
-    border: 1px solid var(--border);
+    border: 1px solid var(--mochi-captcha-border, #e8e4d8);
     border-radius: 999px;
-    background: var(--surface-muted);
+    background: var(--mochi-captcha-track-bg, #faf8f1);
     overflow: hidden;
   }
 
   .captcha .fill {
     position: absolute;
     inset: 0 auto 0 0;
-    background: var(--accent-soft);
+    background: var(--mochi-captcha-accent-soft, #e0ebe1);
     border-radius: 999px;
   }
 
@@ -186,8 +190,8 @@
     justify-content: center;
     font-size: 1.35rem;
     border-radius: 999px;
-    background: var(--surface);
-    border: 1px solid var(--accent);
+    background: var(--mochi-captcha-handle-bg, #fffdf8);
+    border: 1px solid var(--mochi-captcha-accent, #4a7c59);
     cursor: grab;
     touch-action: none;
     user-select: none;
@@ -213,12 +217,12 @@
     text-align: center;
     line-height: 1.2;
     font-size: 0.85rem;
-    color: var(--text-subtle);
+    color: var(--mochi-captcha-hint-text, #6e756d);
     pointer-events: none;
   }
 
   .captcha.verified .captcha-hint {
-    color: var(--accent-soft-text);
+    color: var(--mochi-captcha-accent-soft-text, #2f5b3f);
     font-weight: 600;
   }
 </style>

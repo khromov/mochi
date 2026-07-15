@@ -1,7 +1,7 @@
-// Isomorphic proof-of-work helpers — imported by both the SlideCaptcha island
+// Isomorphic proof-of-work helpers — imported by both the MochiCaptcha island
 // (client bundle) and the server-side verifier, so no server-only imports here.
 
-export const CAPTCHA_AAD = 'support-captcha';
+export const CAPTCHA_AAD = 'mochi-captcha';
 
 // The PoW challenge is the last link of a hash chain the widget advances one
 // link per slider step, so the challenge is never present in the page — it

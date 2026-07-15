@@ -1,9 +1,9 @@
 <script lang="ts">
   import { enhance, isServer, getRequestContext } from 'mochi-framework';
-  import type { MochiEnhanceOptions, MochiSubmitFunction } from 'mochi-framework';
-  import SlideCaptcha from './components/SlideCaptcha.svelte';
+  import type { MochiEnhanceOptions, MochiSubmitFunction, MintedCaptcha } from 'mochi-framework';
+  import { MochiCaptcha } from 'mochi-framework/components';
 
-  let { isHydratable, captchaToken = '', captchaBits = 16 }: { isHydratable?: boolean; captchaToken?: string; captchaBits?: number } = $props();
+  let { isHydratable, captcha }: { isHydratable?: boolean; captcha: MintedCaptcha } = $props();
 
   // For SSR-only (plain HTML) renders, read the form action result so the
   // confirmation / error survives the page re-render after a POST.
@@ -65,7 +65,7 @@
       </label>
     </fieldset>
 
-    <SlideCaptcha token={captchaToken} bits={captchaBits} bind:verified />
+    <MochiCaptcha {...captcha} bind:verified />
 
     <noscript><p class="error">JavaScript is required to send this form. Alternatively, email support@mochi.fast directly.</p></noscript>
 
@@ -83,6 +83,14 @@
     display: flex;
     flex-direction: column;
     gap: 1rem;
+
+    --mochi-captcha-accent: var(--accent);
+    --mochi-captcha-accent-soft: var(--accent-soft);
+    --mochi-captcha-accent-soft-text: var(--accent-soft-text);
+    --mochi-captcha-border: var(--border);
+    --mochi-captcha-track-bg: var(--surface-muted);
+    --mochi-captcha-handle-bg: var(--surface);
+    --mochi-captcha-hint-text: var(--text-subtle);
   }
 
   fieldset {

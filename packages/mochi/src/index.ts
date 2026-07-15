@@ -104,6 +104,11 @@ export type { MochiQueue, MochiJob, MochiJobRef, MochiJobOptions, MochiQueueOpti
 export { json, error, apiError } from './utils';
 export { trailingSlashIt } from './trailingSlash';
 export { fail, redirect, success } from './forms';
+
+export { mintCaptcha, verifyCaptcha, consumeCaptcha, solveCaptcha } from './captcha/captcha';
+export { MemoryNonceStore, SqliteNonceStore } from './captcha/nonceStore';
+export type { MintedCaptcha } from './captcha/captcha';
+export type { MochiCaptchaOptions, CaptchaResult, NonceStore } from './captcha/types';
 export { enhance, deserialize } from './enhance.ssr';
 export { isFormContentType, DEFAULT_FORM_CONTENT_TYPES, DEFAULT_PROTECTED_METHODS } from './csrf';
 export { DEFAULT_COMPRESS_MIN_BYTES, encryptPayload, decryptPayload } from './payloadCrypto';

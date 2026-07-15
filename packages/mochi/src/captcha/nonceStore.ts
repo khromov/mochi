@@ -1,9 +1,5 @@
 import { Database } from 'bun:sqlite';
-
-export interface NonceStore {
-  /** Atomically record the nonce; false if it was already seen (and not expired). */
-  consume(nonce: string, expiresAt: number): boolean;
-}
+import type { NonceStore } from './types';
 
 export class MemoryNonceStore implements NonceStore {
   private seen = new Map<string, number>();
@@ -38,11 +34,4 @@ export class SqliteNonceStore implements NonceStore {
     const result = this.db.run('INSERT OR IGNORE INTO nonces (nonce, expires_at) VALUES (?, ?)', [nonce, expiresAt]);
     return result.changes === 1;
   }
-}
-
-export function createNonceStore(): NonceStore {
-  if (process.env.CAPTCHA_NONCE_STORE === 'sqlite') {
-    return new SqliteNonceStore(process.env.CAPTCHA_NONCE_DB ?? '.mochi/captcha-nonces.sqlite');
-  }
-  return new MemoryNonceStore();
 }

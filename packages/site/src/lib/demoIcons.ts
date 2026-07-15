@@ -15,6 +15,7 @@ import Boxes from '@lucide/svelte/icons/boxes';
 import ClipboardPen from '@lucide/svelte/icons/clipboard-pen';
 import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
 import ShieldAlert from '@lucide/svelte/icons/shield-alert';
+import ShieldCheck from '@lucide/svelte/icons/shield-check';
 import Flame from '@lucide/svelte/icons/flame';
 import LayoutDashboard from '@lucide/svelte/icons/layout-dashboard';
 import DatabaseZap from '@lucide/svelte/icons/database-zap';
@@ -83,6 +84,7 @@ export const demoIconFor: Record<string, DemoIconMeta> = {
   'Send Email': { icon: Mail, label: 'Send a transactional email' },
   'Form Actions': { icon: ClipboardPen, label: 'Forms with action handlers' },
   'Using form return data': { icon: Dices, label: 'success({ value }) round-trip via {@attach enhance(...)}' },
+  Captcha: { icon: ShieldCheck, label: 'Slide-to-verify captcha with proof-of-work' },
   'Form Errors': { icon: OctagonAlert, label: 'Thrown server errors, inline or full-page' },
   'Form Redirects': { icon: Signpost, label: 'redirect() — intercepted JSON or followed natively' },
   'File Uploads via form actions': { icon: FileUp, label: 'multipart/form-data with {@attach enhance(...)}' },

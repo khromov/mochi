@@ -19,6 +19,7 @@ import { respondMcp } from './lib/mcp';
 import { profilerEnabled, startProfiler, stopProfiler } from './lib/profiler';
 import { routes as apiRoutes } from './demos/api/routes';
 import { routes as cacheEventsRoutes } from './demos/cache-events/routes';
+import { routes as captchaRoutes } from './demos/captcha/routes';
 import { routes as chatRoutes } from './demos/chat/routes';
 import { routes as clientOnlyRoutes } from './demos/client-only/routes';
 import { routes as cookieVaryTestRoutes } from './demos/cookie-vary-test/routes';
@@ -219,6 +220,7 @@ export const routes: Record<string, MochiRouteValue> = {
   ...demoLlmsRoutes,
   ...apiRoutes,
   ...cacheEventsRoutes,
+  ...captchaRoutes,
   ...chatRoutes,
   ...clientOnlyRoutes,
   ...cookieVaryTestRoutes,

@@ -1,22 +1,19 @@
-import { Mochi, fail, success, logger } from 'mochi-framework';
+import { Mochi, fail, success, logger, mintCaptcha, verifyCaptcha, consumeCaptcha } from 'mochi-framework';
 import type { MochiRouteValue } from 'mochi-framework';
-import { mintCaptchaToken, verifyCaptchaToken, powBits } from './lib/captcha';
-import { createNonceStore } from './lib/nonceStore';
 
 const SUPPORT_TO = process.env.SUPPORT_TO || 'support@mochi.fast';
 
-const nonceStore = createNonceStore();
-
 export const routes: Record<string, MochiRouteValue> = {
   '/': Mochi.page('./src/Support.svelte', {
-    serverProps: () => ({ captchaToken: mintCaptchaToken(), captchaBits: powBits() }),
+    serverProps: () => ({ captcha: mintCaptcha() }),
     actions: {
       send: async ({ formData }) => {
         // The token is minted at SSR; the client must re-derive the slide-step
         // hash chain and solve a SHA-256 proof-of-work over its final link, so
         // a passing POST proves the page was fetched, the captcha logic ran,
-        // and real hashing work was spent.
-        const captcha = verifyCaptchaToken(String(formData.get('captcha_token') ?? ''), String(formData.get('captcha_pow') ?? ''));
+        // and real hashing work was spent. Burning the nonce is deferred to
+        // consumeCaptcha() below so field validation can still reject first.
+        const captcha = await verifyCaptcha(formData, { consume: false });
         if (!captcha.ok) {
           return fail(400, { error: captcha.error });
         }
@@ -39,7 +36,7 @@ export const routes: Record<string, MochiRouteValue> = {
         // Consume the one-time nonce only after field validation (a fixable
         // email typo shouldn't burn it) but before sending (a retried SMTP
         // failure must not double-send).
-        if (!nonceStore.consume(captcha.nonce, captcha.expiresAt)) {
+        if (!(await consumeCaptcha(captcha))) {
           return fail(400, { error: 'This form was already submitted. Reload the page to send another message.' });
         }
         try {

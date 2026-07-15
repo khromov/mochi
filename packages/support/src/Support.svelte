@@ -4,7 +4,9 @@
   import Footer from './components/Footer.svelte';
   import SupportForm from './SupportForm.svelte';
 
-  let { captchaToken = '', captchaBits = 16 }: { captchaToken?: string; captchaBits?: number } = $props();
+  import type { MintedCaptcha } from 'mochi-framework';
+
+  let { captcha }: { captcha: MintedCaptcha } = $props();
 </script>
 
 <svelte:head>
@@ -39,7 +41,7 @@
         <li><strong>Architecture &amp; scaling</strong> — designing and scaling Mochi applications.</li>
       </ul>
       <h2>Get in touch</h2>
-      <SupportForm mochi:hydrate {captchaToken} {captchaBits} />
+      <SupportForm mochi:hydrate {captcha} />
     </section>
   </main>
 

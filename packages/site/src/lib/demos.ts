@@ -4,6 +4,7 @@ import { files as cacheEvents } from '../demos/cache-events/files.ts';
 import { files as chat } from '../demos/chat/files.ts';
 import { files as clientOnly } from '../demos/client-only/files.ts';
 import { files as cookieVaryTest } from '../demos/cookie-vary-test/files.ts';
+import { files as captcha } from '../demos/captcha/files.ts';
 import { files as cookies } from '../demos/cookies/files.ts';
 import { files as dataLoading } from '../demos/data-loading/files.ts';
 import { files as email } from '../demos/email/files.ts';
@@ -390,6 +391,14 @@ export const demos: Demo[] = [
     files: reloadFormData,
     title: 'Reloading associated form data',
     hook: 'After a successful submit, refetch the related list inside enhance() — or rely on the post-POST re-render.',
+    category: 'forms',
+  },
+  {
+    href: '/demos/captcha/',
+    slug: 'captcha',
+    files: captcha,
+    title: 'Captcha',
+    hook: 'Slide-to-verify with a hash chain and proof-of-work — no third party, no tracking.',
     category: 'forms',
   },
   {
