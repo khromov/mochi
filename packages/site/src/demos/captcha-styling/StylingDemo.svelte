@@ -23,7 +23,13 @@
     <h4>Themed</h4>
     <p>Map the vars onto your palette. These point at this site's tokens, so this one follows the light/dark toggle.</p>
     <div style={themes.themed.css}>
-      <MochiCaptcha {...captchas[1]} emoji={themes.themed.emoji} label={themes.themed.label} />
+      <MochiCaptcha
+        {...captchas[1]}
+        emoji={themes.themed.emoji}
+        label={themes.themed.label}
+        verifyingLabel={themes.themed.verifyingLabel}
+        verifiedLabel={themes.themed.verifiedLabel}
+      />
     </div>
     <CodeSnippet html={svelte.themed} />
     <CodeSnippet html={css.themed} />
@@ -33,7 +39,13 @@
     <h4>Candy</h4>
     <p>The vars are just colours — hand them anything, including gradients.</p>
     <div style={themes.candy.css}>
-      <MochiCaptcha {...captchas[2]} emoji={themes.candy.emoji} label={themes.candy.label} />
+      <MochiCaptcha
+        {...captchas[2]}
+        emoji={themes.candy.emoji}
+        label={themes.candy.label}
+        verifyingLabel={themes.candy.verifyingLabel}
+        verifiedLabel={themes.candy.verifiedLabel}
+      />
     </div>
     <CodeSnippet html={svelte.candy} />
     <CodeSnippet html={css.candy} />
@@ -43,7 +55,13 @@
     <h4>Terminal</h4>
     <p>Square off the corners with <code>--mochi-captcha-radius</code> for a different silhouette.</p>
     <div style={themes.terminal.css}>
-      <MochiCaptcha {...captchas[3]} emoji={themes.terminal.emoji} label={themes.terminal.label} />
+      <MochiCaptcha
+        {...captchas[3]}
+        emoji={themes.terminal.emoji}
+        label={themes.terminal.label}
+        verifyingLabel={themes.terminal.verifyingLabel}
+        verifiedLabel={themes.terminal.verifiedLabel}
+      />
     </div>
     <CodeSnippet html={svelte.terminal} />
     <CodeSnippet html={css.terminal} />

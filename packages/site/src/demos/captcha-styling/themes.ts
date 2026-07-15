@@ -1,9 +1,11 @@
-// Each theme's emoji/label/declarations feed both the live widget and the code
+// Each theme's emoji/labels/declarations feed both the live widget and the code
 // samples rendered beside it, so what the page shows can't drift from what it does.
 export const themes = {
   themed: {
     emoji: '🍡',
     label: 'Slide the mochi to the right',
+    verifyingLabel: 'Steaming…',
+    verifiedLabel: 'Freshly made — thanks!',
     css: `--mochi-captcha-accent: var(--accent);
 --mochi-captcha-accent-soft: var(--accent-soft);
 --mochi-captcha-accent-soft-text: var(--accent-soft-text);
@@ -16,6 +18,8 @@ export const themes = {
   candy: {
     emoji: '🍭',
     label: 'Slide for a tasty treat',
+    verifyingLabel: 'Unwrapping…',
+    verifiedLabel: 'Enjoy your sweet!',
     css: `--mochi-captcha-accent: #d6336c;
 --mochi-captcha-accent-soft: linear-gradient(90deg, #ffd6e7, #ffa8cd);
 --mochi-captcha-accent-soft-text: #a61e4d;
@@ -28,6 +32,8 @@ export const themes = {
   terminal: {
     emoji: '▶',
     label: 'SLIDE TO PROVE HUMANITY',
+    verifyingLabel: 'VERIFYING…',
+    verifiedLabel: 'ACCESS GRANTED',
     css: `--mochi-captcha-radius: 0;
 --mochi-captcha-accent: #33ff77;
 --mochi-captcha-accent-soft: #04301a;
@@ -59,4 +65,5 @@ export const defaultsSample = `/* Each var's built-in fallback. */
 
 export const rule = (selector: string, declarations: string): string => `${selector} {\n${declarations.replace(/^/gm, '  ')}\n}`;
 
-export const markup = (theme: (typeof themes)[ThemeName]): string => `<MochiCaptcha\n  {...captcha}\n  emoji="${theme.emoji}"\n  label="${theme.label}"\n/>`;
+export const markup = (theme: (typeof themes)[ThemeName]): string =>
+  `<MochiCaptcha\n  {...captcha}\n  emoji="${theme.emoji}"\n  label="${theme.label}"\n  verifyingLabel="${theme.verifyingLabel}"\n  verifiedLabel="${theme.verifiedLabel}"\n/>`;

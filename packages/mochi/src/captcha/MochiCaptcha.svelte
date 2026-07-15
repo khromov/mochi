@@ -8,8 +8,18 @@
     bits = 16,
     emoji = '🧩',
     label = 'Slide to verify',
+    verifyingLabel = 'Verifying…',
+    verifiedLabel = 'Verified — thanks!',
     verified = $bindable(false),
-  }: { token?: string; bits?: number; emoji?: string; label?: string; verified?: boolean } = $props();
+  }: {
+    token?: string;
+    bits?: number;
+    emoji?: string;
+    label?: string;
+    verifyingLabel?: string;
+    verifiedLabel?: string;
+    verified?: boolean;
+  } = $props();
 
   let solved = $state(false);
   let powNonce = $state<string | null>(null);
@@ -161,9 +171,9 @@
     </div>
     <span class="captcha-hint" aria-live="polite">
       {#if verified}
-        Verified — thanks!
+        {verifiedLabel}
       {:else if solved}
-        Verifying…
+        {verifyingLabel}
       {:else}
         {label}
       {/if}

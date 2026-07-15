@@ -55,16 +55,24 @@ export const routes = {
 
 #### Props
 
-| Prop       | Default             | Description                                                                                   |
-| ---------- | ------------------- | --------------------------------------------------------------------------------------------- |
-| `token`    | —                   | The sealed challenge from `mintCaptcha()`.                                                    |
-| `bits`     | `16`                | Difficulty the widget solves at. Comes from `mintCaptcha()`; don't set it by hand.            |
-| `emoji`    | `🧩`                | The character on the handle.                                                                  |
-| `label`    | `'Slide to verify'` | The hint shown in the track. Doubles as the handle's accessible name, so keep it descriptive. |
-| `verified` | `false`             | `$bindable` — true once solved and the proof-of-work has landed.                              |
+| Prop             | Default                | Description                                                                                   |
+| ---------------- | ---------------------- | --------------------------------------------------------------------------------------------- |
+| `token`          | —                      | The sealed challenge from `mintCaptcha()`.                                                    |
+| `bits`           | `16`                   | Difficulty the widget solves at. Comes from `mintCaptcha()`; don't set it by hand.            |
+| `emoji`          | `🧩`                   | The character on the handle.                                                                  |
+| `label`          | `'Slide to verify'`    | The hint shown in the track. Doubles as the handle's accessible name, so keep it descriptive. |
+| `verifyingLabel` | `'Verifying…'`         | Replaces the hint while the proof-of-work runs.                                               |
+| `verifiedLabel`  | `'Verified — thanks!'` | Replaces the hint once the proof-of-work lands.                                               |
+| `verified`       | `false`                | `$bindable` — true once solved and the proof-of-work has landed.                              |
 
 ```svelte
 <MochiCaptcha {...captcha} emoji="🍡" label="Slide the mochi to the right" />
+```
+
+All three hints are yours, so the widget can stay in your app's voice from the first frame to the last:
+
+```svelte
+<MochiCaptcha {...captcha} emoji="▶" label="SLIDE TO PROVE HUMANITY" verifyingLabel="VERIFYING…" verifiedLabel="ACCESS GRANTED" />
 ```
 
 ### How it works

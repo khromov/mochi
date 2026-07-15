@@ -59,6 +59,7 @@ import { routes as queueRoutes, queues as queueQueues } from './demos/queue/rout
 import { routes as reloadFormDataRoutes } from './demos/reload-form-data/routes';
 import { routes as requestIdRoutes } from './demos/request-id/routes';
 import { routes as serverIslandRoutes } from './demos/server-island/routes';
+import { routes as shotRoutes } from './shot/routes';
 import { routes as serverPropsRoutes } from './demos/server-props/routes';
 import { routes as sharedStateRoutes } from './demos/shared-state/routes';
 import { routes as streamsRoutes } from './demos/streams/routes';
@@ -262,6 +263,7 @@ export const routes: Record<string, MochiRouteValue> = {
   ...requestIdRoutes,
   ...serverIslandRoutes,
   ...serverPropsRoutes,
+  ...shotRoutes,
   ...sharedStateRoutes,
   ...streamsRoutes,
   ...urlRoutes,
