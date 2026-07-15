@@ -1,5 +1,5 @@
 import mitt, { type Emitter, type Handler } from 'mitt';
-import { pinGlobal } from './globalState';
+import { pinGlobal } from './utils/globalState';
 import type { MochiEmailResult } from './email/types';
 
 export type MochiRequestKind = 'page' | 'api' | 'file' | 'asset' | 'image' | 'fallback' | 'error';

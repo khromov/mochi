@@ -1,5 +1,5 @@
-import type { DebugBarRuntimeData } from '../requestContext';
-import type { LogLevel } from '../log';
+import type { DebugBarRuntimeData } from '../runtime/requestContext';
+import type { LogLevel } from '../utils/log';
 
 declare global {
   interface Window {

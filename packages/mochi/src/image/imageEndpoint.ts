@@ -3,7 +3,7 @@ import { getCachedOriginal } from './getResizedImage';
 import { decryptImageRequest } from './imageCrypto';
 import { originalId, variantId } from './imageCache';
 import { getMochiConfig } from '../mochiConfig';
-import { baseContentType, INLINE_SAFE_IMAGE_TYPES } from '../inlineContentTypeSafety';
+import { baseContentType, INLINE_SAFE_IMAGE_TYPES } from '../utils/inlineContentTypeSafety';
 import { resizeImage } from './resize';
 import { ImageError } from './types';
 import type { ImageRequest, ResolvedImageOptions } from './types';

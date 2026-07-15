@@ -4,9 +4,9 @@ import { encryptImageRequest } from './imageCrypto';
 import { packImageRequest } from './imageCodec';
 import { computePlaceholder } from './resize';
 import { buildImageFilename, buildOriginalFilename } from './slug';
-import { requestContext, type ImageDebugEntry } from '../requestContext';
+import { requestContext, type ImageDebugEntry } from '../runtime/requestContext';
 import { applyFilter } from '../extensions';
-import { logger } from '../log';
+import { logger } from '../utils/log';
 import type { ImageCache, ImageCacheStatus } from './imageCache';
 import type { ImageFormat, ImageRequest, InvalidateImageOptions, OriginalImageOptions, ResizeImageOptions, ResolvedImageOptions } from './types';
 

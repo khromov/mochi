@@ -3,7 +3,7 @@ import { getCachedOriginal, getImagePlaceholder, pushDebugImage } from './getRes
 import { pipelineVariantId } from './imageCache';
 import { ImageError } from './types';
 import type { ImageFormat } from './types';
-import { requestContext } from '../requestContext';
+import { requestContext } from '../runtime/requestContext';
 
 /** A recorded chainable call — replayed against a real `Bun.Image` on a cache miss. */
 interface Op {

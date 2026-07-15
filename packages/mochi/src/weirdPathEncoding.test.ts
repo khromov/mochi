@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { ComponentRegistry } from './ComponentRegistry';
-import { requestContext } from './requestContext';
-import { MochiCookieJar } from './cookies';
+import { ComponentRegistry } from './compiler/ComponentRegistry';
+import { requestContext } from './runtime/requestContext';
+import { MochiCookieJar } from './runtime/cookies';
 
 // Encoding regression: the install path may contain characters that are special in
 // URLs/import specifiers (`#`, spaces). CI runs in a clean path, so nothing else

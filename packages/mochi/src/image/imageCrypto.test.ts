@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { encryptImageRequest, decryptImageRequest } from './imageCrypto';
 import { resolveImageOptions } from './config';
-import { encryptPayload } from '../payloadCrypto';
+import { encryptPayload } from '../islands/payloadCrypto';
 import type { ImageRequest } from './types';
 
 const RESOLVED = resolveImageOptions({});

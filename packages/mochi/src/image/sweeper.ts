@@ -1,5 +1,5 @@
 import { mochiEvents } from '../events';
-import { logger } from '../log';
+import { logger } from '../utils/log';
 import type { ImageCache } from './imageCache';
 
 /**

@@ -6,8 +6,8 @@ import { cachedImage } from './cachedImage';
 import { resolveImageOptions } from './config';
 import { ImageCache, srcHash } from './imageCache';
 import { mochiEvents } from '../events';
-import { requestContext } from '../requestContext';
-import type { ImageDebugEntry, MochiRequestContext } from '../requestContext';
+import { requestContext } from '../runtime/requestContext';
+import type { ImageDebugEntry, MochiRequestContext } from '../runtime/requestContext';
 
 // Minimal request context carrying only the debug-bar image bag the recorder reads.
 function runWithDebugBar<T>(images: ImageDebugEntry[], fn: () => Promise<T>): Promise<T> {
