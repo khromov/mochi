@@ -205,6 +205,11 @@
     border-radius: var(--mochi-captcha-radius, 999px);
     background: var(--mochi-captcha-handle-bg, #fffdf8);
     border: 1px solid var(--mochi-captcha-accent, #4a7c59);
+    /* Defaulting to the accent keeps the glyph legible for free: the accent is
+       already drawn on the handle background as its border, so contrast between
+       the two is a requirement the host has met. Only affects text-presentation
+       glyphs — colour-font emoji ignore it. */
+    color: var(--mochi-captcha-handle-text, var(--mochi-captcha-accent, #4a7c59));
     cursor: grab;
     touch-action: none;
     user-select: none;

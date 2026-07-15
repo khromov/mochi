@@ -175,10 +175,13 @@ Every colour is a CSS custom property whose default lives in the `var()` fallbac
   --mochi-captcha-border: #e8e4d8;
   --mochi-captcha-track-bg: #faf8f1;
   --mochi-captcha-handle-bg: #fffdf8;
+  --mochi-captcha-handle-text: var(--mochi-captcha-accent);
   --mochi-captcha-hint-text: #6e756d;
   --mochi-captcha-radius: 999px;
 }
 ```
+
+`--mochi-captcha-handle-text` colours the `emoji` glyph, and follows the accent unless you set it. It only bites for glyphs with a text presentation — `▶`, `→` — since colour-font emoji like `🍡` paint themselves and ignore CSS colour entirely.
 
 The defaults are light-mode only. In a dark or themed app, point these at your own tokens — `--mochi-captcha-track-bg: var(--surface-muted)` and so on — so the widget follows your theme instead of sitting there as a bright slab.
 

@@ -15,7 +15,7 @@ export const themes = {
 
   candy: {
     emoji: '🍭',
-    label: 'Slide the lollipop',
+    label: 'Slide for a tasty treat',
     css: `--mochi-captcha-accent: #d6336c;
 --mochi-captcha-accent-soft: linear-gradient(90deg, #ffd6e7, #ffa8cd);
 --mochi-captcha-accent-soft-text: #a61e4d;
@@ -27,7 +27,7 @@ export const themes = {
 
   terminal: {
     emoji: '▶',
-    label: 'AWAITING INPUT',
+    label: 'SLIDE TO PROVE HUMANITY',
     css: `--mochi-captcha-radius: 0;
 --mochi-captcha-accent: #33ff77;
 --mochi-captcha-accent-soft: #04301a;
@@ -52,6 +52,7 @@ export const defaultsSample = `/* Each var's built-in fallback. */
   --mochi-captcha-border: #e8e4d8;
   --mochi-captcha-track-bg: #faf8f1;
   --mochi-captcha-handle-bg: #fffdf8;
+  --mochi-captcha-handle-text: var(--mochi-captcha-accent);
   --mochi-captcha-hint-text: #6e756d;
   --mochi-captcha-radius: 999px;
 }`;
