@@ -70,7 +70,7 @@
     { feature: 'Build as static HTML', tags: ['performance', 'frontend'], mochi: { status: 'no', note: 'SSR only' }, kit: { status: 'yes', note: 'adapter-static' } },
     { feature: 'Form actions + progressively enhanced forms', tags: ['backend', 'frontend'], mochi: { status: 'yes' }, kit: { status: 'yes' } },
     {
-      feature: 'Captcha',
+      feature: 'Form captcha',
       tags: ['backend', 'frontend'],
       mochi: { status: 'yes', note: 'MochiCaptcha', href: '/docs/captcha/' },
       kit: { status: 'no', note: 'third-party service' },
