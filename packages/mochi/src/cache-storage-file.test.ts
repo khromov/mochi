@@ -251,13 +251,22 @@ describe('MochiCache with FileStorage (stale-while-revalidate)', () => {
 
     // Trigger the stale read; it returns 1 and revalidates in the background.
     expect((await cache.fetchWithStatus('k', fn)).status).toBe('stale');
-    await wait(20); // let the background write settle
 
     // A brand-new FileStorage over the same directory sees the persisted refresh —
-    // proving SWR wrote the new value through to disk, not just in memory.
+    // proving SWR wrote the new value through to disk, not just in memory. The
+    // background write is fire-and-forget, so poll for it rather than assuming a
+    // fixed sleep is long enough (Windows CI timers/disk I/O are coarser and
+    // occasionally miss a short fixed wait).
     const reopened = new FileStorage({ directory: dir, purgeInterval: 0 });
     created.push(reopened);
-    const entry = (await reopened.getItem('k')) as { value: number } | null;
+    let entry: { value: number } | null = null;
+    for (let i = 0; i < 250; i++) {
+      entry = (await reopened.getItem('k')) as { value: number } | null;
+      if (entry?.value === 2) {
+        break;
+      }
+      await wait(2);
+    }
     expect(entry?.value).toBe(2);
   });
 });
