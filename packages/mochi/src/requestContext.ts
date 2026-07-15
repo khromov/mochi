@@ -207,3 +207,30 @@ export function getRequestContext(): MochiRequestContext {
   }
   return ctx;
 }
+
+/**
+ * Run an async function fully detached from the ambient request context.
+ *
+ * Used by the stateless render path (email/static). Inside `fn`, the request
+ * context is cleared, so `getRequestContext()` (and anything built on it —
+ * `cookies`, `url`) throws regardless of whether the caller is inside a request.
+ *
+ * Contract — do NOT loosen:
+ *  - This wrapper owns the `await`, so the render runs while the store is cleared
+ *    even though `render()` from svelte/server is a *lazy thenable* (the component
+ *    executes in a microtask when awaited). `fn` may be a plain thunk returning
+ *    that thenable; this wrapper awaits it inside the cleared scope.
+ *  - `fn` MUST read any lazy getters (Svelte render `body`/`head`) and return plain
+ *    values, so materialization also happens in the cleared scope — never return the
+ *    live render object and read its getters at the call site (that reads under the
+ *    restored ambient context).
+ * The assertion is a tripwire if either invariant regresses.
+ */
+export async function renderDetached<T>(fn: () => Promise<T>): Promise<T> {
+  return requestContext.exit(async () => {
+    if (requestContext.getStore() !== undefined) {
+      throw new Error('renderDetached: request context was not cleared — isolation failed');
+    }
+    return await fn();
+  });
+}
