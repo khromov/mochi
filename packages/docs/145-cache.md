@@ -103,12 +103,12 @@ Stale-while-revalidate works exactly as with in-memory storage — the entry's w
 
 Binary fields (`Uint8Array` / `Buffer`) anywhere in a value round-trip transparently — by default they're inlined as base64 in the JSON and come back as `Uint8Array`, nothing to manage. For values carrying large binaries, opt into `offloadBinary: true`: each binary is written to its own file in a `<key-hash>/` folder and replaced by a pointer in the JSON instead of base64-bloating it. Offloaded fields read back as lazy blob references — resolve one with `readBlobRef(ref)` (`isBlobRef(value)` narrows) — so a metadata read never loads the bytes. Deleting a key removes its blob folder with it, and pointers already on disk always decode, so flipping the flag never orphans existing entries. The built-in [image cache](/docs/images/) enables offloading internally.
 
-| Option          | Default           |                                                                             |
-| --------------- | ----------------- | --------------------------------------------------------------------------- |
-| `directory`     | _(required)_      | Where cache files are written; created if missing.                          |
-| `purgeOnInit`   | `false`           | Delete the directory's contents when the adapter is constructed.            |
-| `purgeInterval` | `60_000` (1min)   | Background sweep interval in ms. `<= 0` disables the sweeper.               |
-| `maxAge`        | `600_000` (10min) | Files older than this are deleted by the sweep.                             |
+| Option          | Default           |                                                                            |
+| --------------- | ----------------- | -------------------------------------------------------------------------- |
+| `directory`     | _(required)_      | Where cache files are written; created if missing.                         |
+| `purgeOnInit`   | `false`           | Delete the directory's contents when the adapter is constructed.           |
+| `purgeInterval` | `60_000` (1min)   | Background sweep interval in ms. `<= 0` disables the sweeper.              |
+| `maxAge`        | `600_000` (10min) | Files older than this are deleted by the sweep.                            |
 | `offloadBinary` | `false`           | Offload binary fields to per-key blob files, read back as lazy `BlobRef`s. |
 
 <Callout type="warning">
