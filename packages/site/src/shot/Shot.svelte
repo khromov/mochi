@@ -1,6 +1,9 @@
 <script lang="ts">
+  import type { ComponentProps } from 'svelte';
   import CaptchaShot from './subjects/CaptchaShot.svelte';
 
+  // `props` arrives as an opaque bag: the route resolves it by name via registry.ts,
+  // which is what guarantees the shape each branch below casts it to.
   let { name, width, height, props }: { name: string; width: number; height: number; props: Record<string, unknown> } = $props();
 </script>
 
@@ -10,7 +13,7 @@
        so a dynamic <Subject /> would render SSR-only and never hydrate. Each subject in
        registry.ts needs a branch here. -->
   {#if name === 'captcha'}
-    <CaptchaShot mochi:hydrate {...props} />
+    <CaptchaShot mochi:hydrate {...props as ComponentProps<typeof CaptchaShot>} />
   {/if}
 </div>
 

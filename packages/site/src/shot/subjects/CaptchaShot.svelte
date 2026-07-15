@@ -7,7 +7,7 @@
   let { captcha, theme }: { captcha: MintedCaptcha; theme: ThemeName | 'defaults' } = $props();
 
   // 'defaults' deliberately applies nothing: the widget's var() fallbacks are the subject.
-  const applied = theme === 'defaults' ? null : themes[theme];
+  const applied = $derived(theme === 'defaults' ? null : themes[theme]);
 </script>
 
 <!-- Hydrated by the whole-subtree island in Shot.svelte, so MochiCaptcha needs no
