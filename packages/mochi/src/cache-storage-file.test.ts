@@ -230,15 +230,21 @@ describe('MochiCache with FileStorage (stale-while-revalidate)', () => {
   });
 });
 
-describe('FileStorage binary offload', () => {
+describe('FileStorage binary offload (offloadBinary: true)', () => {
   function countDirs(dir: string): number {
     return readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory()).length;
   }
 
+  // Offloading is opt-in; this suite covers the opted-in behavior.
+  function makeOffloadStorage(dir: string, options: Partial<ConstructorParameters<typeof FileStorage>[0]> = {}): FileStorage {
+    const storage = new FileStorage({ directory: dir, purgeInterval: 0, offloadBinary: true, ...options });
+    created.push(storage);
+    return storage;
+  }
+
   test('offloads a binary field to a nested folder and resolves it lazily', async () => {
     const dir = makeDir();
-    const storage = new FileStorage({ directory: dir, purgeInterval: 0 });
-    created.push(storage);
+    const storage = makeOffloadStorage(dir);
 
     const bytes = new Uint8Array([1, 2, 3, 4, 5]);
     await storage.setItem('img', { value: { meta: 'hi', bytes }, createdAt: 7 });
@@ -257,8 +263,7 @@ describe('FileStorage binary offload', () => {
 
   test('removeItem reclaims the blob folder with the JSON', async () => {
     const dir = makeDir();
-    const storage = new FileStorage({ directory: dir, purgeInterval: 0 });
-    created.push(storage);
+    const storage = makeOffloadStorage(dir);
 
     await storage.setItem('img', { value: { bytes: new Uint8Array([9]) }, createdAt: 0 });
     expect(countDirs(dir)).toBe(1);
@@ -268,8 +273,7 @@ describe('FileStorage binary offload', () => {
 
   test('clear removes blob folders too', async () => {
     const dir = makeDir();
-    const storage = new FileStorage({ directory: dir, purgeInterval: 0 });
-    created.push(storage);
+    const storage = makeOffloadStorage(dir);
 
     await storage.setItem('a', { value: { bytes: new Uint8Array([1]) }, createdAt: 0 });
     await storage.setItem('b', { value: { bytes: new Uint8Array([2]) }, createdAt: 0 });
@@ -279,8 +283,7 @@ describe('FileStorage binary offload', () => {
 
   test('sweep reclaims aged-out blob folders', async () => {
     const dir = makeDir();
-    const storage = new FileStorage({ directory: dir, purgeInterval: 0, maxAge: 1_000 });
-    created.push(storage);
+    const storage = makeOffloadStorage(dir, { maxAge: 1_000 });
 
     await storage.setItem('img', { value: { bytes: new Uint8Array([1, 2, 3]) }, createdAt: 0 });
     expect(countDirs(dir)).toBe(1);
@@ -292,8 +295,7 @@ describe('FileStorage binary offload', () => {
 
   test('sweep leaves a young orphaned blob folder for a later pass (in-flight first write)', async () => {
     const dir = makeDir();
-    const storage = new FileStorage({ directory: dir, purgeInterval: 0, maxAge: 1_000 });
-    created.push(storage);
+    const storage = makeOffloadStorage(dir, { maxAge: 1_000 });
 
     // A blob folder with no owning JSON — exactly what a concurrent first write
     // looks like between its blob rename and its JSON rename.
@@ -309,8 +311,7 @@ describe('FileStorage binary offload', () => {
 
   test('content-addressed blobs never serve torn bytes: each ref reads its own generation', async () => {
     const dir = makeDir();
-    const storage = new FileStorage({ directory: dir, purgeInterval: 0 });
-    created.push(storage);
+    const storage = makeOffloadStorage(dir);
 
     await storage.setItem('img', { value: { bytes: new Uint8Array([1, 1, 1]) }, createdAt: 1 });
     const gen1 = (await storage.getItem('img')) as { value: { bytes: BlobRef } };
@@ -328,8 +329,7 @@ describe('FileStorage binary offload', () => {
 
   test('identical bytes dedupe to a single content-addressed blob file', async () => {
     const dir = makeDir();
-    const storage = new FileStorage({ directory: dir, purgeInterval: 0 });
-    created.push(storage);
+    const storage = makeOffloadStorage(dir);
 
     await storage.setItem('img', { value: { bytes: new Uint8Array([7, 7]) }, createdAt: 1 });
     await storage.setItem('img', { value: { bytes: new Uint8Array([7, 7]) }, createdAt: 2 });
@@ -344,9 +344,8 @@ describe('FileStorage binary offload', () => {
 
   test('re-persisting a read-back value keeps the existing blob (markStale path)', async () => {
     const dir = makeDir();
-    const storage = new FileStorage({ directory: dir, purgeInterval: 0 });
+    const storage = makeOffloadStorage(dir);
     const cache = new MochiCache({ minTimeToStale: 50, maxTimeToLive: 10_000, storage });
-    created.push(storage);
 
     await cache.fetch('img', () => ({ bytes: new Uint8Array([5, 5, 5]) }));
     await cache.markStale('img'); // reads the BlobRef back and re-persists the envelope
@@ -358,7 +357,7 @@ describe('FileStorage binary offload', () => {
   });
 
   test('count reports the number of persisted entries (json files only)', async () => {
-    const storage = makeStorage();
+    const storage = makeStorage({ offloadBinary: true });
     expect(await storage.count()).toBe(0);
 
     await storage.setItem('a', { value: 1, createdAt: 0 });
@@ -374,7 +373,7 @@ describe('FileStorage binary offload', () => {
   });
 
   test('keys lists the plaintext keys of persisted entries', async () => {
-    const storage = makeStorage();
+    const storage = makeStorage({ offloadBinary: true });
     expect(await storage.keys()).toEqual([]);
 
     await storage.setItem('pokemon:pikachu', { value: 1, createdAt: 0 });
@@ -390,8 +389,7 @@ describe('FileStorage binary offload', () => {
 
   test('durable write leaves no temp files behind (all renamed into place)', async () => {
     const dir = makeDir();
-    const storage = new FileStorage({ directory: dir, purgeInterval: 0 });
-    created.push(storage);
+    const storage = makeOffloadStorage(dir);
 
     await storage.setItem('img', { value: { meta: 'hi', bytes: new Uint8Array([1, 2, 3, 4]) }, createdAt: 0 });
 
@@ -554,5 +552,40 @@ describe('MochiCache cross-process in-flight marker (shared FileStorage)', () =>
     await cacheA.delete('k');
 
     expect(await storageB.getItem(markerKey('k'))).toBeNull();
+  });
+
+  test('a timed-out run settling late does not remove the marker of the run that superseded it', async () => {
+    // Long enough that run 2 (held open ~40ms below) never trips the timeout itself.
+    const { storageA, cacheA } = twoProcesses({ minTimeToStale: 10, maxTimeToLive: 10_000, inflightTimeout: 200 });
+
+    // Run 1 hangs past the in-flight timeout, so its lock is released while its
+    // work (and marker cleanup) is still pending.
+    let releaseFirst!: () => void;
+    const firstGate = new Promise<void>((r) => (releaseFirst = r));
+    await expect(
+      cacheA.fetch('k', async () => {
+        await firstGate;
+        return 1;
+      }),
+    ).rejects.toThrow(/timed out/);
+
+    // Run 2 takes over the key and writes its own marker.
+    let releaseSecond!: () => void;
+    const secondGate = new Promise<void>((r) => (releaseSecond = r));
+    const second = cacheA.fetch('k', async () => {
+      await secondGate;
+      return 2;
+    });
+    await waitForMarker(storageA, 'k', true);
+
+    // The abandoned first run settles late — it must leave run 2's marker alone,
+    // so peer processes keep deferring to the regeneration that is still running.
+    releaseFirst();
+    await wait(30);
+    expect(await storageA.getItem(markerKey('k'))).not.toBeNull();
+
+    releaseSecond();
+    expect(await second).toBe(2);
+    await waitForMarker(storageA, 'k', false);
   });
 });

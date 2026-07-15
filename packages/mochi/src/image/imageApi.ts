@@ -39,8 +39,8 @@ function mintFor(src: string, size: string | undefined, options: ResolvedImageOp
  * Build a signed, cacheable URL for `src` transformed through a named size.
  * Server-side only (it reads the signing secret). Synchronous and near-instant —
  * no fetch, decode, or encode happens here; the endpoint applies the size lazily
- * on the browser's request. An unknown/omitted size name serves the full-size
- * original (with a one-time server-log warning). Path:
+ * on the browser's request. Omitting the size serves the full-size original; an
+ * unknown size name does too, with a one-time server-log warning. Path:
  * `/_mochi/image/my-image-thumbnail.webp?p=<token>`.
  */
 export function getImageUrl(src: string, size?: string): string {

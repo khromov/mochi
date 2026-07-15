@@ -159,7 +159,7 @@ const maybeBlur = await imagePlaceholder(src);
 warmImagePlaceholder(src);
 ```
 
-Use `getImagePlaceholder` when you need the blur *now* (e.g. an OG-image route) and can afford the fetch; use `imagePlaceholder`/`warmImagePlaceholder` in SSR paths that must never block on image work.
+Use `getImagePlaceholder` when you need the blur _now_ (e.g. an OG-image route) and can afford the fetch; use `imagePlaceholder`/`warmImagePlaceholder` in SSR paths that must never block on image work.
 
 ### Full-size originals
 

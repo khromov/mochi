@@ -15,10 +15,6 @@
  *   byte 0  original(0) | hasSize(1) | httpsPrefix(2) | httpPrefix(3) | reserved(4-7)
  *   [varint sizeNameByteLength] [utf-8 size name]   (present when hasSize)
  *   [utf-8 src, with a matched protocol prefix stripped]     (rest of buffer)
- *
- * Versioning rides on the AAD, not on layout bits: `imageCrypto.ts` folds a
- * wire-version label into the AAD, so a token from an incompatible layout fails
- * authentication instead of misparsing here. Bump that label when this changes.
  */
 import type { ImageRequest } from './types';
 

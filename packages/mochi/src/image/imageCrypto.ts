@@ -11,22 +11,11 @@ import { encryptPayloadBytes, decryptPayloadBytes } from '../payloadCrypto';
 import { packImageRequest, unpackImageRequest } from './imageCodec';
 import type { ImageRequest } from './types';
 
-// Wire-format version, folded into the AAD. A token minted under a different
-// payload layout fails authentication outright (clean 403) instead of
-// decrypting successfully and misparsing under the current bit layout — the
-// pre-named-sizes format used every control bit, so the codec itself cannot
-// distinguish generations. Bump when `imageCodec.ts` changes incompatibly.
-const WIRE_VERSION = 'mochi-image-v2';
-
-function versionedAad(filename: string): string {
-  return `${WIRE_VERSION}:${filename}`;
-}
-
 export function encryptImageRequest(req: ImageRequest, filename: string, compress = true): string {
-  return encryptPayloadBytes(packImageRequest(req), { aad: versionedAad(filename), compress });
+  return encryptPayloadBytes(packImageRequest(req), { aad: filename, compress });
 }
 
 export function decryptImageRequest(token: string, filename: string): ImageRequest | null {
-  const buf = decryptPayloadBytes(token, { aad: versionedAad(filename) });
+  const buf = decryptPayloadBytes(token, { aad: filename });
   return buf === null ? null : unpackImageRequest(buf);
 }

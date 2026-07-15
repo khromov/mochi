@@ -44,12 +44,21 @@ function isBlobPointer(value: unknown): value is BlobPointer {
   return typeof value === 'object' && value !== null && typeof (value as { __mochiBlob?: unknown }).__mochiBlob === 'string';
 }
 
+/** On-disk sentinel for a binary field when offloading is off: the bytes inlined as base64. */
+interface InlineBinary {
+  __mochiBinary: string;
+}
+
+function isInlineBinary(value: unknown): value is InlineBinary {
+  return typeof value === 'object' && value !== null && typeof (value as { __mochiBinary?: unknown }).__mochiBinary === 'string';
+}
+
 /**
  * On-disk wrapper written by `FileStorage`: the plaintext cache key alongside the
  * (blob-encoded) value. Since files are named by `sha256(key)`, storing the key
- * is the only way to enumerate keys (`keys()`) for the dev debug bar. Files
- * written before this wrapper existed (no `__mochiValue`) are read as the bare
- * value for backward compatibility.
+ * is the only way to enumerate keys (`keys()`) for the dev debug bar. A file
+ * without the wrapper (corrupt, foreign, or written by an older version) reads
+ * as a miss and is overwritten by the next recompute.
  */
 interface KeyedEnvelope {
   __mochiKey: string;
@@ -152,6 +161,8 @@ export interface FileStorageOptions {
   purgeInterval?: number;
   /** Files older than this (ms) are deleted by the sweep. Should be `>=` the cache's `maxTimeToLive`. Default `600_000`. */
   maxAge?: number;
+  /** Offload binary fields (`Uint8Array`/`Buffer`) to per-key blob files and return lazy {@link BlobRef}s on read. Default `false` — binaries are inlined as base64 in the JSON and round-trip as `Uint8Array`. */
+  offloadBinary?: boolean;
 }
 
 const isENOENT = (err: unknown): boolean => (err as NodeJS.ErrnoException | undefined)?.code === 'ENOENT';
@@ -201,22 +212,27 @@ const ORPHAN_BLOB_GRACE_MS = 10_000;
  * drop-in for `MemoryStorage` — the sweep only removes files past `maxAge`, which
  * the cache would recompute anyway, so it never deletes a still-servable entry.
  *
- * Binary fields (`Uint8Array`/`Buffer`) anywhere in a value are transparently
- * offloaded: each is written to its own file in a `<sha256(key)>/` folder and
- * replaced by a pointer in the JSON, so a value can carry large binaries (e.g.
- * image bytes) without base64-bloating the JSON. `getItem` returns those fields as
- * lazy {@link BlobRef}s (resolved on demand via {@link readBlobRef}), keeping
- * metadata reads cheap. Deleting a key removes its blob folder with it.
+ * Binary fields (`Uint8Array`/`Buffer`) anywhere in a value round-trip
+ * transparently: by default they're inlined as base64 in the JSON and come back
+ * as `Uint8Array` — nothing to manage. With `offloadBinary: true` each binary is
+ * instead written to its own file in a `<sha256(key)>/` folder and replaced by a
+ * pointer in the JSON, so a value can carry large binaries (e.g. image bytes)
+ * without base64-bloating it; `getItem` then returns those fields as lazy
+ * {@link BlobRef}s (resolved on demand via {@link readBlobRef}), keeping metadata
+ * reads cheap. Deleting a key removes its blob folder with it. Pointers already
+ * on disk always decode, so flipping the flag never orphans existing entries.
  */
 export class FileStorage implements Storage {
   private directory: string;
   private maxAge: number;
+  private offloadBinary: boolean;
   private initialTimer?: ReturnType<typeof setTimeout>;
   private intervalTimer?: ReturnType<typeof setInterval>;
 
   constructor(options: FileStorageOptions) {
     this.directory = options.directory;
     this.maxAge = options.maxAge ?? 600_000;
+    this.offloadBinary = options.offloadBinary ?? false;
 
     if (options.purgeOnInit) {
       rmSync(this.directory, { recursive: true, force: true });
@@ -242,7 +258,10 @@ export class FileStorage implements Storage {
       throw err;
     }
     const parsed = JSON.parse(text);
-    return this.decodeBlobs(isKeyedEnvelope(parsed) ? parsed.__mochiValue : parsed);
+    if (!isKeyedEnvelope(parsed)) {
+      return null;
+    }
+    return this.decodeBlobs(parsed.__mochiValue);
   }
 
   async setItem(key: string, value: unknown): Promise<void> {
@@ -451,6 +470,9 @@ export class FileStorage implements Storage {
   // are reclaimed with the whole entry folder by `removeItem`/the sweep.
   private encodeBlobs(value: unknown, hash: string, blobs: { relPath: string; data: Uint8Array }[]): unknown {
     if (isBinary(value)) {
+      if (!this.offloadBinary) {
+        return { __mochiBinary: Buffer.from(value).toString('base64') } satisfies InlineBinary;
+      }
       const digest = new Bun.CryptoHasher('sha256').update(value).digest('hex');
       const relPath = `${hash}/${digest}.bin`;
       blobs.push({ relPath, data: value });
@@ -473,10 +495,15 @@ export class FileStorage implements Storage {
     return value;
   }
 
-  // Inverse of `encodeBlobs`: turn on-disk pointers back into lazy BlobRefs.
+  // Inverse of `encodeBlobs`: turn on-disk pointers back into lazy BlobRefs and
+  // inlined base64 back into bytes. Both sentinels are self-describing, so entries
+  // written under either `offloadBinary` setting decode regardless of the flag.
   private decodeBlobs(value: unknown): unknown {
     if (isBlobPointer(value)) {
       return { __mochiBlobRef: true, path: join(this.directory, value.__mochiBlob), bytes: value.bytes } satisfies BlobRef;
+    }
+    if (isInlineBinary(value)) {
+      return new Uint8Array(Buffer.from(value.__mochiBinary, 'base64'));
     }
     if (Array.isArray(value)) {
       return value.map((v) => this.decodeBlobs(v));

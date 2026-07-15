@@ -21,9 +21,7 @@ function checkDimension(field: string, sizeName: string, value: number | undefin
 function canonicalStringify(value: unknown): string {
   return JSON.stringify(value, (_key, v: unknown) => {
     if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
-      return Object.fromEntries(
-        Object.entries(v as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
-      );
+      return Object.fromEntries(Object.entries(v as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
     }
     return v;
   });

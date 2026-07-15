@@ -115,7 +115,7 @@ interface StoredImage {
 interface StoredPlaceholder {
   dataUrl: string;
   /** The original generation the blur was computed from; a refreshed original invalidates it. */
-  originalCreatedAt?: number;
+  originalCreatedAt: number;
 }
 
 export interface ImageCacheOptions {
@@ -165,7 +165,9 @@ export class ImageCache {
     // drives `sweep()`. `maxAge >= maxTimeToLive`, so it never drops a servable entry.
     // A caller-supplied `storage` owns its own eviction config (e.g. `MemoryStorage`'s
     // `maxAge`) — `sweep()` below still drives it on the same schedule.
-    this.storage = options.storage ?? new FileStorage({ directory: options.cacheDir, maxAge: options.maxTimeToLive, purgeInterval: 0 });
+    // offloadBinary: image bytes are exactly the large-binary case blob offloading
+    // exists for — metadata reads must never load the encoded bytes.
+    this.storage = options.storage ?? new FileStorage({ directory: options.cacheDir, maxAge: options.maxTimeToLive, purgeInterval: 0, offloadBinary: true });
     // 60s in-flight timeout: an image regen (fetch upstream → decode → resize)
     // should never hold the per-key coalescing lock for long, so a hung upstream
     // fails fast instead of parking every waiter until the far larger default.
@@ -443,7 +445,7 @@ export class ImageCache {
       return null;
     }
     const orig = await this.cache.peek<StoredImage>(origKey(src));
-    if (orig && cached.value.originalCreatedAt !== undefined && cached.value.originalCreatedAt !== orig.value.createdAt) {
+    if (orig && cached.value.originalCreatedAt !== orig.value.createdAt) {
       return null;
     }
     return cached.value.dataUrl;
