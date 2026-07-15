@@ -208,9 +208,12 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
     verySlow,
     level: 'info',
   }));
-  subscribe('image:cache-sweep', ({ removedVariants, removedOriginals, durationMs }) => {
-    const removed = removedVariants + removedOriginals;
-    const detail = removed === 0 ? 'nothing stale' : `${removed} stale (${removedVariants}v/${removedOriginals}o)`;
+  subscribe('image:cache-sweep', ({ removedVariants, removedOriginals, removedOther, durationMs }) => {
+    const removed = removedVariants + removedOriginals + removedOther;
+    // `removedOther` is markers/tmp/unattributable — noise on the common line, so
+    // only show it when there actually is some.
+    const other = removedOther > 0 ? `/${removedOther}?` : '';
+    const detail = removed === 0 ? 'nothing stale' : `${removed} stale (${removedVariants}v/${removedOriginals}o${other})`;
     return { label: 'CACHE', path: 'image:sweep', note: styleText('dim', detail), duration: durationMs, slow, verySlow, level: 'info' };
   });
   // Per-file image writes/deletes are high-volume relative to the aggregate

@@ -39,6 +39,7 @@ _Bun must be v1.3.14 or newer (see [`.bun-version`](./.bun-version))._
 - Hacker News demo: http://localhost:3334/hn/front/
 - Tailwind + Todo demo: http://localhost:3334/todo/
 - Hello world minimal template: http://localhost:3335/
+- Support form: http://localhost:3336/
 
 ## Goals
 
@@ -63,6 +64,7 @@ See [PITCH.md](./PITCH.md) for a Mochi-vs-SvelteKit feature comparison.
 | `packages/site`    | Documentation + demo site (`mochi.fast`)                                                    |
 | `packages/demos`   | Standalone demos site (HN clone, admin, todo) — deployed separately                         |
 | `packages/minimal` | Bare-bones hello-world template — also bundled by `create-mochi`                            |
+| `packages/support` | Support form (`support.mochi.fast`) — deployed separately; the only site with SMTP config   |
 | `packages/cli`     | `create-mochi` scaffolder — published to npm                                                |
 
 ## Running locally
@@ -71,7 +73,7 @@ Sites run side-by-side; each has its own default port.
 
 | Command             | Site                                            | Default port             |
 | ------------------- | ----------------------------------------------- | ------------------------ |
-| `bun run dev`       | All workspaces with a `dev` script, in parallel | `3333` + `3334` + `3335` |
+| `bun run dev`       | All workspaces with a `dev` script, in parallel | `3333` + `3334` + `3335` + `3336` |
 | `bun run dev:site`  | Just the documentation site (`packages/site`)   | `3333`                   |
 | `bun run dev:demos` | Just the demos site (`packages/demos`)          | `3334`                   |
 

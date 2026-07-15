@@ -95,6 +95,32 @@ describe('mochiEvents.setHandler', () => {
     const subscribers = mochiEvents.all.get('file:change') ?? [];
     expect(subscribers.length).toBe(1);
   });
+
+  test('removeHandler unregisters the named handler', () => {
+    const calls: string[] = [];
+    mochiEvents.setHandler('gone', 'file:change', () => calls.push('gone'));
+    mochiEvents.setHandler('kept', 'file:change', () => calls.push('kept'));
+
+    mochiEvents.removeHandler('gone');
+    mochiEvents.emit('file:change', { path: '/tmp/a.md', type: 'change' });
+
+    expect(calls).toEqual(['kept']);
+    expect(mochiEvents.all.get('file:change')?.length).toBe(1);
+  });
+
+  test('removeHandler frees the name for reuse and is a no-op when unknown', () => {
+    const calls: string[] = [];
+    expect(() => mochiEvents.removeHandler('never-registered')).not.toThrow();
+
+    mochiEvents.setHandler('reused', 'file:change', () => calls.push('first'));
+    mochiEvents.removeHandler('reused');
+    // The name table entry is gone, so this registers cleanly rather than
+    // re-removing a stale handler.
+    mochiEvents.setHandler('reused', 'file:change', () => calls.push('second'));
+    mochiEvents.emit('file:change', { path: '/tmp/a.md', type: 'change' });
+
+    expect(calls).toEqual(['second']);
+  });
 });
 
 describe('hasSubscribers', () => {

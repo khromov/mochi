@@ -154,6 +154,20 @@
         "typescript": "^6.0.3",
       },
     },
+    "packages/support": {
+      "name": "mochi-support",
+      "dependencies": {
+        "@fontsource-variable/fraunces": "^5.2.9",
+        "@fontsource/public-sans": "^5.2.7",
+        "mochi-framework": "workspace:*",
+        "svelte": "^5.56.4",
+      },
+      "devDependencies": {
+        "@types/bun": "1.3.14",
+        "svelte-check": "4.7.1",
+        "typescript": "^6.0.3",
+      },
+    },
     "packages/video-animations": {
       "name": "mochi-video-animations",
       "dependencies": {
@@ -636,6 +650,8 @@
     "mochi-minimal": ["mochi-minimal@workspace:packages/minimal"],
 
     "mochi-site": ["mochi-site@workspace:packages/site"],
+
+    "mochi-support": ["mochi-support@workspace:packages/support"],
 
     "mochi-video-animations": ["mochi-video-animations@workspace:packages/video-animations"],
 

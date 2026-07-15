@@ -129,6 +129,10 @@ export interface ImageCacheOptions {
   storage?: Storage;
 }
 
+// Each instance subscribes its own cascade, so the handler name must be unique —
+// a shared name would make a second instance silently evict the first's.
+let cascadeSeq = 0;
+
 // A `path` label for `image:store`/`image:delete` events. Cosmetic — falls back
 // to the raw key for a backend (e.g. `MemoryStorage`) that has no file path.
 function pathForKey(storage: Storage, key: string): string {
@@ -156,15 +160,19 @@ export class ImageCache {
   private readonly minTimeToStale: number;
   private readonly maxTimeToLive: number;
   private readonly sizes: Record<string, ResolvedImageSize>;
+  private readonly cascadeHandlerName: string;
 
   constructor(options: ImageCacheOptions) {
     this.minTimeToStale = options.minTimeToStale;
     this.maxTimeToLive = options.maxTimeToLive;
     this.sizes = options.sizes;
-    // FileStorage's own age-sweeper is disabled; the image sweeper (`sweeper.ts`)
-    // drives `sweep()`. `maxAge >= maxTimeToLive`, so it never drops a servable entry.
-    // A caller-supplied `storage` owns its own eviction config (e.g. `MemoryStorage`'s
-    // `maxAge`) — `sweep()` below still drives it on the same schedule.
+    // Eviction stays the backend's; only the schedule and the per-kind accounting
+    // live here. So FileStorage's own timer is off (`purgeInterval: 0`) and the image
+    // sweeper (`sweeper.ts`) calls `sweep()` instead — one janitor, on an interval the
+    // image config owns, reporting variants/originals separately. `maxAge >=
+    // maxTimeToLive`, so it never drops a servable entry. A caller-supplied `storage`
+    // keeps its own eviction policy (e.g. `MemoryStorage`'s `maxAge`); driving it from
+    // here is what puts every backend on that one schedule.
     // offloadBinary: image bytes are exactly the large-binary case blob offloading
     // exists for — metadata reads must never load the encoded bytes.
     this.storage = options.storage ?? new FileStorage({ directory: options.cacheDir, maxAge: options.maxTimeToLive, purgeInterval: 0, offloadBinary: true });
@@ -182,11 +190,28 @@ export class ImageCache {
     });
     // Cascade: deleting a source's original key reclaims its variants + placeholder.
     // `setHandler` (not `.on`) so a dev re-import replaces rather than stacks the sub.
-    mochiEvents.setHandler('mochi-image:cache-delete', 'cache:delete', (event) => {
+    // Each cascade only ever reclaims what's in its own storage, so instances that
+    // share the bus don't interfere; `dispose()` unsubscribes.
+    this.cascadeHandlerName = `mochi-image:cache-delete:${++cascadeSeq}`;
+    mochiEvents.setHandler(this.cascadeHandlerName, 'cache:delete', (event) => {
       if (event.key.startsWith(ORIG_PREFIX)) {
         void this.cascadeSource(event.key.slice(ORIG_PREFIX.length), 'invalidated').catch(() => {});
       }
     });
+  }
+
+  /**
+   * Release this cache's bus subscription and stop its storage's own timers. For
+   * teardown (tests, or an explicitly owned instance).
+   *
+   * Not called on server stop: `getImageRuntime()` is a global singleton that
+   * outlives a `Mochi.serve()` cycle, so disposing it there would leave the next
+   * server with a live cache whose cascade no longer fires. `Mochi.serve` stops the
+   * sweeper's timers instead.
+   */
+  dispose(): void {
+    mochiEvents.removeHandler(this.cascadeHandlerName);
+    (this.storage as Partial<{ dispose(): void }>).dispose?.();
   }
 
   private async toBytes(field: Uint8Array | BlobRef): Promise<Uint8Array> {
@@ -403,34 +428,29 @@ export class ImageCache {
   }
 
   /**
-   * Janitor sweep: reclaim entries past the global window. Delegates to the
-   * storage backend's own age-based sweep (`FileStorage` or a configured
-   * `MemoryStorage`); a backend with no `sweep` support is a no-op. Per-kind
-   * counts come from diffing the key list around the sweep (best-effort under
-   * concurrent writes); a backend without `keys()` reports everything under
-   * `removedVariants`.
+   * Janitor sweep: reclaim entries past the global window. The eviction itself is
+   * the storage backend's own age-based sweep (`FileStorage` or a configured
+   * `MemoryStorage`); a backend with no `sweep` support is a no-op. All this adds
+   * is per-kind attribution, from the keys the backend reports removing.
+   *
+   * Anything the backend can't name — `mochi:inflight:` markers, `.tmp` writes,
+   * corrupt files, or every removal from a backend that ignores `reportKeys` —
+   * lands in `removedOther` rather than being guessed at, so the three counts
+   * always sum to what was actually removed.
    */
-  async sweep(now: number = Date.now()): Promise<{ removedVariants: number; removedOriginals: number }> {
-    const before = await this.storage.keys?.();
-    const result = await this.storage.sweep?.(now);
+  async sweep(now: number = Date.now()): Promise<{ removedVariants: number; removedOriginals: number; removedOther: number }> {
+    const result = await this.storage.sweep?.(now, { reportKeys: true });
     const removed = result?.removed ?? 0;
-    if (removed === 0 || !before) {
-      return { removedVariants: removed, removedOriginals: 0 };
-    }
-    const after = new Set((await this.storage.keys?.()) ?? []);
     let removedOriginals = 0;
     let removedVariants = 0;
-    for (const key of before) {
-      if (after.has(key)) {
-        continue;
-      }
+    for (const key of result?.removedKeys ?? []) {
       if (key.startsWith(ORIG_PREFIX)) {
         removedOriginals++;
       } else if (key.startsWith(VAR_PREFIX) || key.startsWith(PH_PREFIX)) {
         removedVariants++;
       }
     }
-    return { removedVariants, removedOriginals };
+    return { removedVariants, removedOriginals, removedOther: removed - removedVariants - removedOriginals };
   }
 
   /**

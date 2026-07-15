@@ -137,6 +137,38 @@ describe('FileStorage', () => {
     expect(events.length).toBeGreaterThanOrEqual(1);
     expect(await storage.getItem('k')).toBeNull();
   });
+
+  test('sweep reports the plaintext keys it removed when asked', async () => {
+    const storage = makeStorage({ maxAge: 50 });
+    await storage.setItem('alpha', { value: 1, createdAt: 0 });
+    await storage.setItem('beta', { value: 2, createdAt: 0 });
+
+    const swept = await storage.sweep(Date.now() + 1_000, { reportKeys: true });
+    expect(swept.removed).toBe(2);
+    // Filenames are sha256(key), so these can only come from the stored envelope.
+    expect(swept.removedKeys?.toSorted()).toEqual(['alpha', 'beta']);
+  });
+
+  test('sweep omits removedKeys unless reportKeys is set', async () => {
+    const storage = makeStorage({ maxAge: 50 });
+    await storage.setItem('alpha', { value: 1, createdAt: 0 });
+
+    const swept = await storage.sweep(Date.now() + 1_000);
+    expect(swept.removed).toBe(1);
+    expect(swept.removedKeys).toBeUndefined();
+  });
+
+  test('sweep removes an envelope-less file but reports no key for it', async () => {
+    const storage = makeStorage({ maxAge: 50 });
+    await storage.setItem('alpha', { value: 1, createdAt: 0 });
+    // A legacy/corrupt file: valid JSON, no `__mochiKey` envelope. Its key is
+    // unrecoverable, so it must count toward `removed` without inventing a key.
+    await Bun.write(join(storage.pathForKey('alpha'), '..', 'deadbeef.json'), JSON.stringify({ nope: true }));
+
+    const swept = await storage.sweep(Date.now() + 1_000, { reportKeys: true });
+    expect(swept.removed).toBe(2);
+    expect(swept.removedKeys).toEqual(['alpha']);
+  });
 });
 
 describe('MochiCache with FileStorage (stale-while-revalidate)', () => {

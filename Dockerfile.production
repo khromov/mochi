@@ -15,8 +15,12 @@
 
 ARG WORKSPACE=site
 ARG PORT=3333
+# Global scope (before the first FROM) so every stage's FROM can read it. Kept in
+# sync with the root Dockerfile's arg of the same name; build.yml passes it to
+# every matrix leg.
+ARG BUN_IMAGE=oven/bun:1.3.14-alpine
 
-FROM oven/bun:1.3.14-alpine AS base
+FROM ${BUN_IMAGE} AS base
 WORKDIR /usr/src/app
 
 # install stage — copy only mochi + the target workspace, then write a
@@ -60,6 +64,9 @@ FROM base AS release
 ARG WORKSPACE
 ARG PORT
 ENV WORKSPACE=${WORKSPACE}
+# Without this the app never sees PORT and falls back to whatever its entry
+# hardcodes — which happens to match today, but only by coincidence.
+ENV PORT=${PORT}
 
 COPY --from=install /temp/prod/package.json ./
 COPY packages/mochi packages/mochi

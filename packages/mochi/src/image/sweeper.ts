@@ -17,8 +17,8 @@ export function startImageCacheSweeper(cache: ImageCache, intervalMs: number): (
   const runSweep = async (): Promise<void> => {
     const start = Date.now();
     try {
-      const { removedVariants, removedOriginals } = await cache.sweep(start);
-      mochiEvents.emit('image:cache-sweep', { removedVariants, removedOriginals, durationMs: Date.now() - start });
+      const { removedVariants, removedOriginals, removedOther } = await cache.sweep(start);
+      mochiEvents.emit('image:cache-sweep', { removedVariants, removedOriginals, removedOther, durationMs: Date.now() - start });
     } catch (err) {
       logger.warn(`Image cache sweep failed: ${err instanceof Error ? err.message : String(err)}`);
     }

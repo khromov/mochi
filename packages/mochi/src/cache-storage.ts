@@ -1,7 +1,7 @@
 import { mkdirSync, rmSync, type Dirent } from 'node:fs';
 import { mkdir, open, readdir, rename, rm, stat, unlink, type FileHandle } from 'node:fs/promises';
 import { join, relative } from 'node:path';
-import type { Storage } from './cache';
+import type { Storage, SweepOptions, SweepResult } from './cache';
 import { mochiEvents } from './events';
 import { logger } from './log';
 
@@ -119,19 +119,23 @@ export class MemoryStorage implements Storage {
     return [...this.store.keys()];
   }
 
-  /** Delete entries older than `maxAge`. */
-  sweep(now: number = Date.now()): { removed: number } {
+  /** Delete entries older than `maxAge`. `reportKeys` also returns the keys removed. */
+  sweep(now: number = Date.now(), options: SweepOptions = {}): SweepResult {
     if (this.maxAge === undefined) {
-      return { removed: 0 };
+      return options.reportKeys ? { removed: 0, removedKeys: [] } : { removed: 0 };
     }
+    const removedKeys: string[] = [];
     let removed = 0;
     for (const [key, entry] of this.store) {
       if (now - entry.writtenAt > this.maxAge) {
         this.store.delete(key);
         removed++;
+        if (options.reportKeys) {
+          removedKeys.push(key);
+        }
       }
     }
-    return { removed };
+    return options.reportKeys ? { removed, removedKeys } : { removed };
   }
 
   /** Stop the background sweep. Call when the store is no longer needed (e.g. in tests). */
@@ -358,16 +362,8 @@ export class FileStorage implements Storage {
       throw err;
     });
     const files = entries.filter((entry) => !entry.isDirectory() && entry.name.endsWith('.json'));
-    const keys = await Promise.all(
-      files.map(async (entry) => {
-        try {
-          const parsed = JSON.parse(await Bun.file(join(this.directory, entry.name)).text());
-          return isKeyedEnvelope(parsed) ? parsed.__mochiKey : null;
-        } catch {
-          return null; // unreadable/corrupt/legacy — omit from the listing
-        }
-      }),
-    );
+    // Unreadable/corrupt/legacy files read back as null — omit them from the listing.
+    const keys = await Promise.all(files.map((entry) => this.readKey(join(this.directory, entry.name))));
     return keys.filter((key): key is string => key !== null);
   }
 
@@ -375,8 +371,16 @@ export class FileStorage implements Storage {
    * Delete files older than `maxAge`, reclaiming each entry's offloaded blob
    * folder with it, plus any orphaned blob folder whose owning JSON is gone.
    * Public so callers/tests can sweep on demand.
+   *
+   * `reportKeys` additionally returns each removed entry's plaintext key, read from
+   * its envelope just before the unlink (filenames are `sha256(key)`, so the key is
+   * not recoverable afterwards). That costs one extra read per *expired* entry, which
+   * is why it's opt-in — but it lets a janitor attribute removals without calling
+   * `keys()`, which reads every file in the directory. `.tmp` writes and corrupt or
+   * legacy files carry no recoverable key, so they count toward `removed` without
+   * appearing in `removedKeys`.
    */
-  async sweep(now: number = Date.now()): Promise<{ removed: number }> {
+  async sweep(now: number = Date.now(), options: SweepOptions = {}): Promise<SweepResult> {
     const entries = await readdir(this.directory, { withFileTypes: true }).catch((err) => {
       if (isENOENT(err)) {
         return [] as Dirent[];
@@ -384,6 +388,7 @@ export class FileStorage implements Storage {
       throw err;
     });
     let removed = 0;
+    const removedKeys: string[] = [];
 
     // Pass 1: aged-out JSON/tmp files, each taking its blob folder with it.
     await Promise.all(
@@ -394,6 +399,12 @@ export class FileStorage implements Storage {
           try {
             const info = await stat(filePath);
             if (now - info.mtimeMs > this.maxAge) {
+              if (options.reportKeys && entry.name.endsWith('.json')) {
+                const key = await this.readKey(filePath);
+                if (key !== null) {
+                  removedKeys.push(key);
+                }
+              }
               await unlink(filePath);
               removed++;
               if (entry.name.endsWith('.json')) {
@@ -432,7 +443,7 @@ export class FileStorage implements Storage {
         }),
     );
 
-    return { removed };
+    return options.reportKeys ? { removed, removedKeys } : { removed };
   }
 
   /** Stop the background sweep. Call when the cache is no longer needed (e.g. in tests). */
@@ -445,6 +456,17 @@ export class FileStorage implements Storage {
     }
     this.initialTimer = undefined;
     this.intervalTimer = undefined;
+  }
+
+  // The plaintext key stored in a file's envelope, or null if it can't be recovered
+  // (unreadable, corrupt, or a legacy file written before envelopes).
+  private async readKey(filePath: string): Promise<string | null> {
+    try {
+      const parsed = JSON.parse(await Bun.file(filePath).text());
+      return isKeyedEnvelope(parsed) ? parsed.__mochiKey : null;
+    } catch {
+      return null;
+    }
   }
 
   private hashKey(key: string): string {

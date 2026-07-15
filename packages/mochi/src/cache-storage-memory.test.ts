@@ -62,6 +62,23 @@ describe('MemoryStorage', () => {
     expect(await storage.getItem('k')).toBeNull();
   });
 
+  test('sweep reports the keys it removed when asked', async () => {
+    const storage = makeStorage({ maxAge: 50 });
+    await storage.setItem('alpha', { value: 1 });
+    await storage.setItem('beta', { value: 2 });
+
+    const swept = storage.sweep(Date.now() + 1_000, { reportKeys: true });
+    expect(swept.removed).toBe(2);
+    expect(swept.removedKeys?.toSorted()).toEqual(['alpha', 'beta']);
+  });
+
+  test('sweep omits removedKeys unless reportKeys is set', async () => {
+    const storage = makeStorage({ maxAge: 50 });
+    await storage.setItem('alpha', { value: 1 });
+
+    expect(storage.sweep(Date.now() + 1_000).removedKeys).toBeUndefined();
+  });
+
   test('background sweeper emits cache:sweep', async () => {
     const events: number[] = [];
     mochiEvents.on('cache:sweep', ({ removed }) => events.push(removed));

@@ -276,7 +276,6 @@ export async function buildSitemapXml(): Promise<string> {
     ...docs.map((d) => `  <url><loc>${SITE_BASE}/docs/${d.slug}/</loc></url>`),
     `  <url><loc>${SITE_BASE}/blog/</loc></url>`,
     ...posts.map((p) => `  <url><loc>${SITE_BASE}/blog/${p.slug}/</loc></url>`),
-    `  <url><loc>${SITE_BASE}/support/</loc></url>`,
     // Demo hrefs already carry a trailing slash; trailingSlashIt normalizes to
     // exactly one rather than appending unconditionally (which produced `…/request-id//`).
     ...internalDemos.map((d) => `  <url><loc>${trailingSlashIt(`${SITE_BASE}${d.href}`)}</loc></url>`),

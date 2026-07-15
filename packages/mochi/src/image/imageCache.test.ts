@@ -17,6 +17,11 @@ function tmp(): string {
 }
 
 afterEach(() => {
+  // dispose() drops each cache's cascade subscription; `all.clear()` alone would
+  // leave the emitter's name table populated.
+  for (const cache of caches.splice(0)) {
+    cache.dispose();
+  }
   mochiEvents.all.clear();
   for (const d of dirs.splice(0)) {
     rmSync(d, { recursive: true, force: true });
@@ -27,8 +32,11 @@ afterEach(() => {
 const CFG = 'cfgTHUMB';
 const SIZES = { thumb: { name: 'thumb', configHash: CFG, format: 'webp', width: 100, height: 100 } } as unknown as Record<string, ResolvedImageSize>;
 
+const caches: ImageCache[] = [];
 function makeCache(overrides: Partial<ImageCacheOptions> = {}): ImageCache {
-  return new ImageCache({ cacheDir: tmp(), minTimeToStale: 60_000, maxTimeToLive: 86_400_000, sizes: SIZES, ...overrides });
+  const cache = new ImageCache({ cacheDir: tmp(), minTimeToStale: 60_000, maxTimeToLive: 86_400_000, sizes: SIZES, ...overrides });
+  caches.push(cache);
+  return cache;
 }
 
 const SRC = 'https://example.com/a.png';
@@ -352,7 +360,7 @@ describe('ImageCache.sweep', () => {
   test('leaves entries within the window untouched', async () => {
     const cache = makeCache();
     await cache.getOriginal(SRC, origFn([1, 2, 3]));
-    expect(await cache.sweep(Date.now())).toEqual({ removedVariants: 0, removedOriginals: 0 });
+    expect(await cache.sweep(Date.now())).toEqual({ removedVariants: 0, removedOriginals: 0, removedOther: 0 });
   });
 
   test('reclaims entries past the window and forces a re-fetch', async () => {
@@ -367,6 +375,40 @@ describe('ImageCache.sweep', () => {
     const after = await cache.getOriginal(SRC, origFn([1, 2, 3], 'image/jpeg', counter));
     expect(after.status).toBe('miss'); // reclaimed → re-fetched
     expect(counter.n).toBe(2);
+  });
+
+  test('attributes variants and placeholders apart from originals', async () => {
+    const cache = makeCache({ minTimeToStale: 10, maxTimeToLive: 1_000 });
+    await cache.getOriginal(SRC, origFn([1, 2, 3]));
+    await cache.getVariant(SRC, ID, regen(cache, [9, 9]));
+    await cache.setPlaceholder(SRC, 'data:image/png;base64,AAAA', 0);
+
+    // One original; the variant and the placeholder both bucket as variants.
+    const swept = await cache.sweep(Date.now() + 10_000);
+    expect(swept).toEqual({ removedVariants: 2, removedOriginals: 1, removedOther: 0 });
+  });
+
+  test('counts reconcile with what the backend actually removed', async () => {
+    const storage = new MemoryStorage({ maxAge: 1_000 });
+    const cache = makeCache({ storage, minTimeToStale: 10, maxTimeToLive: 1_000 });
+    await cache.getOriginal(SRC, origFn([1, 2, 3]));
+    await cache.getVariant(SRC, ID, regen(cache, [9, 9]));
+    const stored = (await storage.keys()).length;
+
+    const swept = await cache.sweep(Date.now() + 10_000);
+    expect(swept.removedVariants + swept.removedOriginals + swept.removedOther).toBe(stored);
+  });
+
+  test('a swept inflight marker is counted, not silently dropped', async () => {
+    const storage = new MemoryStorage({ maxAge: 1_000 });
+    const cache = makeCache({ storage, minTimeToStale: 10, maxTimeToLive: 1_000 });
+    await cache.getOriginal(SRC, origFn([1, 2, 3]));
+    // A marker outliving its run (e.g. a peer crashed mid-regen). It matches no
+    // image prefix, so it used to vanish from the totals and undercount the sweep.
+    await storage.setItem(`mochi:inflight:MochiImage:Original:${SRC}`, { startedAt: 0, runId: 'x' });
+
+    const swept = await cache.sweep(Date.now() + 10_000);
+    expect(swept).toEqual({ removedVariants: 0, removedOriginals: 1, removedOther: 1 });
   });
 });
 
@@ -450,6 +492,29 @@ describe('ImageCache custom storage', () => {
     const cache = makeCache({ storage: bare });
     await cache.getOriginal(SRC, origFn([1, 2, 3]));
 
-    await expect(cache.sweep(Date.now() + 1_000_000)).resolves.toEqual({ removedVariants: 0, removedOriginals: 0 });
+    await expect(cache.sweep(Date.now() + 1_000_000)).resolves.toEqual({ removedVariants: 0, removedOriginals: 0, removedOther: 0 });
+  });
+
+  test('a backend that sweeps but does not report keys counts as unattributed', async () => {
+    const store = new Map<string, unknown>();
+    // Honours the pre-`reportKeys` contract: sweeps, but names nothing.
+    const opaque: Storage = {
+      getItem: (key) => store.get(key) ?? null,
+      setItem: (key, value) => void store.set(key, value),
+      removeItem: (key) => void store.delete(key),
+      clear: () => void store.clear(),
+      sweep: () => {
+        const removed = store.size;
+        store.clear();
+        return { removed };
+      },
+    };
+
+    const cache = makeCache({ storage: opaque });
+    await cache.getOriginal(SRC, origFn([1, 2, 3]));
+
+    // This used to report the original as a *variant*; unattributed is the honest answer.
+    const swept = await cache.sweep(Date.now() + 1_000_000);
+    expect(swept).toEqual({ removedVariants: 0, removedOriginals: 0, removedOther: 1 });
   });
 });

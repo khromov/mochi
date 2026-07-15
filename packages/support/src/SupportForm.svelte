@@ -110,7 +110,7 @@
     {#if isHydratable}
       <button type="button" class="send-another" onclick={reset}>Send another message</button>
     {:else}
-      <a class="send-another" href="/support/">Send another message</a>
+      <a class="send-another" href="/">Send another message</a>
     {/if}
   </div>
 {:else}

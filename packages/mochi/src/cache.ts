@@ -4,6 +4,22 @@ import { mochiEvents } from './events';
 
 export type CacheStatus = 'fresh' | 'stale' | 'expired' | 'miss';
 
+export interface SweepOptions {
+  /** Also return the plaintext keys removed by this sweep. Default `false`. */
+  reportKeys?: boolean;
+}
+
+export interface SweepResult {
+  /** Entries removed by this sweep. */
+  removed: number;
+  /**
+   * The removed keys, when `reportKeys` was requested and the backend supports it.
+   * May be shorter than `removed`: `FileStorage` counts `.tmp` writes and corrupt
+   * files it cannot name. Absent entirely when `reportKeys` wasn't asked for.
+   */
+  removedKeys?: string[];
+}
+
 /**
  * Pluggable key/value backend. Defaults to an in-memory Map.
  *
@@ -17,8 +33,16 @@ export interface Storage {
   removeItem(key: string): void | Promise<void>;
   /** Remove every entry from the backend. */
   clear(): void | Promise<void>;
-  /** Optional age-based eviction, callable on demand by a caller-driven janitor (e.g. `ImageCache`). `FileStorage` and `MemoryStorage` both implement it. */
-  sweep?(now?: number): { removed: number } | Promise<{ removed: number }>;
+  /**
+   * Optional age-based eviction, callable on demand by a caller-driven janitor (e.g. `ImageCache`).
+   * `FileStorage` and `MemoryStorage` both implement it.
+   *
+   * `reportKeys` asks the backend to also return the plaintext keys it removed, so a janitor can
+   * attribute removals without re-enumerating the whole backend. Opt-in because it can cost the
+   * backend extra work (`FileStorage` must read each expired entry's envelope before unlinking).
+   * `removedKeys` may be shorter than `removed` — a backend reports only the removals it can name.
+   */
+  sweep?(now?: number, options?: SweepOptions): SweepResult | Promise<SweepResult>;
   /** Optional entry count, for observability (e.g. the dev debug bar). `FileStorage` and `MemoryStorage` both implement it. */
   count?(): number | Promise<number>;
   /** Optional list of all stored keys, for observability (e.g. the dev debug bar). `FileStorage` and `MemoryStorage` both implement it. */

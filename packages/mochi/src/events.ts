@@ -103,11 +103,21 @@ export interface MochiCacheSweepEvent {
   durationMs: number;
 }
 
+/**
+ * Counts always reconcile: `removedVariants + removedOriginals + removedOther`
+ * equals the total the storage backend reported removing.
+ */
 export interface MochiImageCacheSweepEvent {
-  /** Resized variants deleted (original evicted, missing, or superseded by a newer generation). */
+  /** Resized variants and blur placeholders deleted (original evicted, missing, or superseded by a newer generation). */
   removedVariants: number;
   /** Full-size originals deleted (past their evict window). */
   removedOriginals: number;
+  /**
+   * Removed files that aren't image entries: transient `mochi:inflight:` coalescing
+   * markers, in-flight `.tmp` writes, corrupt/legacy files, and every removal from a
+   * custom backend that doesn't report which keys it swept.
+   */
+  removedOther: number;
   /** Sweep wall-clock duration in ms. */
   durationMs: number;
 }
@@ -433,9 +443,17 @@ export interface MochiEmitter extends Emitter<MochiEventMap> {
    * Don't mix this with `.off()` for the same name — the name table is
    * maintained only by `setHandler`, so calling `.off()` directly leaves a
    * stale entry that the next `setHandler(name, ...)` will try (harmlessly) to
-   * re-remove from mitt.
+   * re-remove from mitt. Use `removeHandler` instead.
    */
   setHandler<K extends keyof MochiEventMap>(name: string, type: K, handler: (event: MochiEventMap[K]) => void): void;
+
+  /**
+   * Unregister the handler previously registered under `name`, and drop the name
+   * from the table. The counterpart to `setHandler` — needed by any subsystem that
+   * subscribes per-instance and must not leak a live subscription after teardown.
+   * No-op if `name` was never registered.
+   */
+  removeHandler(name: string): void;
 }
 
 // TODO: Check if this is still needed since we fixed the bundling duplication
@@ -459,6 +477,14 @@ export const mochiEvents: MochiEmitter = pinGlobal<MochiEmitter>('__mochi_events
       handler: handler as Handler<MochiEventMap[keyof MochiEventMap]>,
     });
     base.on(type, handler);
+  };
+  base.removeHandler = (name) => {
+    const prior = byName.get(name);
+    if (!prior) {
+      return;
+    }
+    base.off(prior.type, prior.handler as never);
+    byName.delete(name);
   };
   return base;
 });

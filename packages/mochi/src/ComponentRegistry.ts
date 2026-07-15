@@ -1076,6 +1076,7 @@ export class ComponentRegistry {
             `  on() {},`,
             `  off() {},`,
             `  setHandler() {},`,
+            `  removeHandler() {},`,
             `  emit(type) {`,
             `    __mochi_logger.warn(`,
             `      "mochiEvents.emit(" + JSON.stringify(type) + ") was called in the browser. " +`,
