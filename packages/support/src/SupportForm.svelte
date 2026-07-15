@@ -3,7 +3,7 @@
   import type { MochiEnhanceOptions, MochiSubmitFunction } from 'mochi-framework';
   import SlideCaptcha from './components/SlideCaptcha.svelte';
 
-  let { isHydratable }: { isHydratable?: boolean } = $props();
+  let { isHydratable, captchaToken = '', captchaBits = 16 }: { isHydratable?: boolean; captchaToken?: string; captchaBits?: number } = $props();
 
   // For SSR-only (plain HTML) renders, read the form action result so the
   // confirmation / error survives the page re-render after a POST.
@@ -38,25 +38,15 @@
     },
   };
 
-  let solved = $state(false);
-
-  function reset() {
-    sent = false;
-    errorMessage = null;
-    // The captcha unmounts with the form, but `solved` outlives it — a fresh
-    // SlideCaptcha would otherwise mount pre-verified with its handle at rest.
-    solved = false;
-  }
+  let verified = $state(false);
 </script>
 
 {#if sent}
   <div class="sent">
     <p>✅ Thanks — your message has been sent. We'll get back to you soon.</p>
-    {#if isHydratable}
-      <button type="button" class="send-another" onclick={reset}>Send another message</button>
-    {:else}
-      <a class="send-another" href="/">Send another message</a>
-    {/if}
+    <!-- A full navigation, not a state reset: the captcha token minted at SSR
+         is single-use and was consumed by this send — a reload mints a fresh one. -->
+    <a class="send-another" href="/">Send another message</a>
   </div>
 {:else}
   <form method="POST" action="?/send" class="support-form" {@attach enhance(sendOpts)}>
@@ -75,10 +65,12 @@
       </label>
     </fieldset>
 
-    <SlideCaptcha bind:solved />
+    <SlideCaptcha token={captchaToken} bits={captchaBits} bind:verified />
+
+    <noscript><p class="error">JavaScript is required to send this form. Alternatively, email support@mochi.fast directly.</p></noscript>
 
     <div class="submit-row">
-      <button type="submit" disabled={pending || !solved}>{pending ? 'Sending…' : 'Send message'}</button>
+      <button type="submit" disabled={pending || !verified}>{pending ? 'Sending…' : 'Send message'}</button>
       {#if errorMessage}
         <p class="error" role="alert">{errorMessage}</p>
       {/if}

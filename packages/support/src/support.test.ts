@@ -1,10 +1,17 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
+import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
 import type { Server } from 'bun';
-import { Mochi } from 'mochi-framework';
+import { Mochi, encryptPayload } from 'mochi-framework';
 import type { ResolvedEmailMessage } from 'mochi-framework';
+import { CAPTCHA_AAD, powInput, leadingZeroBits } from './lib/pow';
 import { routes } from './routes';
+
+// Low difficulty + a short age floor so tests don't hash for seconds or sleep.
+// Safe to set here: captcha.ts reads env lazily and this file is its own process.
+process.env.CAPTCHA_POW_BITS = '8';
+process.env.CAPTCHA_MIN_AGE_MS = '500';
 
 const sent: ResolvedEmailMessage[] = [];
 
@@ -15,7 +22,26 @@ const post = (base: string, fields: Record<string, string>): Promise<Response> =
     body: new URLSearchParams(fields).toString(),
   });
 
-const valid = { captcha: 'slid', name: 'Ada', email: 'ada@example.com', message: 'Help please' };
+// Tokens are minted in-process with the same key the server derived, so they
+// verify exactly like the ones serverProps embeds at SSR.
+const mintToken = (ageMs = 1000): string => encryptPayload(JSON.stringify({ iat: Date.now() - ageMs, nonce: randomUUID() }), { aad: CAPTCHA_AAD });
+
+const powFor = (token: string, passing: boolean): string => {
+  for (let n = 0; ; n++) {
+    const digest = createHash('sha256').update(powInput(token, String(n))).digest();
+    if (leadingZeroBits(digest) >= 8 === passing) {
+      return String(n);
+    }
+  }
+};
+
+const validFields = (token: string): Record<string, string> => ({
+  captcha_token: token,
+  captcha_pow: powFor(token, true),
+  name: 'Ada',
+  email: 'ada@example.com',
+  message: 'Help please',
+});
 
 describe('support form action', () => {
   let server: Server<undefined>;
@@ -68,7 +94,7 @@ describe('support form action', () => {
 
   test('a valid submission sends one email to SUPPORT_TO', async () => {
     sent.length = 0;
-    const res = await post(base, valid);
+    const res = await post(base, validFields(mintToken()));
     expect(res.status).toBe(200);
     expect(sent).toHaveLength(1);
     expect(sent[0]?.to).toEqual(['support@mochi.fast']);
@@ -79,30 +105,76 @@ describe('support form action', () => {
     expect(sent[0]?.text).toContain('Help please');
   });
 
-  test('an unsolved captcha is rejected and sends nothing', async () => {
+  test('a missing captcha token is rejected and sends nothing', async () => {
     sent.length = 0;
-    const res = await post(base, { ...valid, captcha: '' });
+    const res = await post(base, { ...validFields(mintToken()), captcha_token: '', captcha_pow: '' });
     expect(res.status).toBe(400);
     expect(sent).toHaveLength(0);
   });
 
+  test('a garbled captcha token is rejected', async () => {
+    sent.length = 0;
+    const res = await post(base, { ...validFields(mintToken()), captcha_token: 'not-a-token' });
+    expect(res.status).toBe(400);
+    expect(sent).toHaveLength(0);
+  });
+
+  test('an expired token is rejected', async () => {
+    sent.length = 0;
+    const res = await post(base, validFields(mintToken(16 * 60_000)));
+    expect(res.status).toBe(400);
+    expect(sent).toHaveLength(0);
+  });
+
+  test('a token younger than the age floor is rejected', async () => {
+    sent.length = 0;
+    const res = await post(base, validFields(mintToken(0)));
+    expect(res.status).toBe(400);
+    expect(sent).toHaveLength(0);
+  });
+
+  test('a proof-of-work below the difficulty target is rejected', async () => {
+    sent.length = 0;
+    const token = mintToken();
+    const res = await post(base, { ...validFields(token), captcha_pow: powFor(token, false) });
+    expect(res.status).toBe(400);
+    expect(sent).toHaveLength(0);
+  });
+
+  test('a replayed token is rejected after one successful send', async () => {
+    sent.length = 0;
+    const fields = validFields(mintToken());
+    expect((await post(base, fields)).status).toBe(200);
+    expect((await post(base, fields)).status).toBe(400);
+    expect(sent).toHaveLength(1);
+  });
+
+  test('a field-validation failure does not burn the nonce', async () => {
+    sent.length = 0;
+    const fields = validFields(mintToken());
+    expect((await post(base, { ...fields, email: 'not-an-email' })).status).toBe(400);
+    expect(sent).toHaveLength(0);
+    expect((await post(base, fields)).status).toBe(200);
+    expect(sent).toHaveLength(1);
+  });
+
   test('a malformed email address is rejected', async () => {
     sent.length = 0;
-    const res = await post(base, { ...valid, email: 'not-an-email' });
+    const res = await post(base, { ...validFields(mintToken()), email: 'not-an-email' });
     expect(res.status).toBe(400);
     expect(sent).toHaveLength(0);
   });
 
   test('an empty message is rejected', async () => {
     sent.length = 0;
-    const res = await post(base, { ...valid, message: '   ' });
+    const res = await post(base, { ...validFields(mintToken()), message: '   ' });
     expect(res.status).toBe(400);
     expect(sent).toHaveLength(0);
   });
 
   test('CR/LF in the name cannot smuggle headers into the subject', async () => {
     sent.length = 0;
-    const res = await post(base, { ...valid, name: 'Ada\r\nBcc: evil@example.com' });
+    const res = await post(base, { ...validFields(mintToken()), name: 'Ada\r\nBcc: evil@example.com' });
     expect(res.status).toBe(200);
     expect(sent).toHaveLength(1);
     expect(sent[0]?.subject).not.toContain('\n');

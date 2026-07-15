@@ -356,6 +356,42 @@ describe('ImageCache.getPlaceholder', () => {
   });
 });
 
+describe('ImageCache.setPlaceholder', () => {
+  test('overwrites an existing placeholder', async () => {
+    const cache = makeCache();
+    await cache.setPlaceholder(SRC, 'data:image/png;base64,OLD', 0);
+    await cache.setPlaceholder(SRC, 'data:image/png;base64,NEW', 0);
+    expect(await cache.getPlaceholder(SRC)).toBe('data:image/png;base64,NEW');
+  });
+
+  test('a rewrite never leaves the key absent', async () => {
+    // Regression: this used to `delete` then re-`fetch`, so for most of every
+    // rewrite the placeholder was missing — concurrent readers each saw a miss and
+    // kicked off their own recompute, and the debug bar's entry lookup 410'd.
+    const cache = makeCache();
+    const key = `MochiImage:Placeholder:${SRC}`;
+    await cache.setPlaceholder(SRC, 'data:image/png;base64,AAAA', 0);
+
+    let sawMiss = false;
+    let stop = false;
+    const reader = (async () => {
+      while (!stop) {
+        if ((await cache.inspect(key)) == null) {
+          sawMiss = true;
+        }
+        await Promise.resolve();
+      }
+    })();
+    for (let i = 0; i < 20; i++) {
+      await cache.setPlaceholder(SRC, `data:image/png;base64,GEN${i}`, i);
+    }
+    stop = true;
+    await reader;
+
+    expect(sawMiss).toBe(false);
+  });
+});
+
 describe('ImageCache.sweep', () => {
   test('leaves entries within the window untouched', async () => {
     const cache = makeCache();

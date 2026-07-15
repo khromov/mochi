@@ -1390,7 +1390,11 @@ export class Mochi {
         }
         const value = await imageRuntime.cache.inspect(key);
         if (value == null) {
-          return new Response('Not Found', { status: 404 });
+          // 410, not 404: the handler ran and the key simply isn't stored — the
+          // listing it came from is a snapshot, and entries are evicted between
+          // listing and expanding. A 404 here would be indistinguishable from the
+          // route being unregistered or the key arriving mangled.
+          return new Response('Gone', { status: 410 });
         }
         return Response.json({ key, value });
       };

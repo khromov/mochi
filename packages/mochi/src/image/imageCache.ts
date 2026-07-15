@@ -473,22 +473,21 @@ export class ImageCache {
 
   async setPlaceholder(src: string, dataUrl: string, originalCreatedAt: number): Promise<void> {
     const key = phKey(src);
-    // Overwrite unconditionally: a plain `fetch` would skip the write if a stale
-    // entry were still present. Only called on a miss/expired in practice.
-    await this.cache.delete(key);
-    await this.cache.fetch<StoredPlaceholder>(key, () => {
-      mochiEvents.emit('image:store', {
-        kind: 'placeholder',
-        src,
-        path: pathForKey(this.storage, key),
-        id: originalId(src),
-        size: Buffer.byteLength(dataUrl),
-        contentType: '',
-        width: 0,
-        height: 0,
-        format: '',
-      });
-      return { dataUrl, originalCreatedAt };
+    // `set`, not `delete` + `fetch`: a recompute (the original moved on to a new
+    // generation) must replace the entry in one atomic write. Deleting first left the
+    // key absent for the duration of the write, so concurrent readers saw a miss and
+    // each kicked off their own placeholder recompute.
+    await this.cache.set<StoredPlaceholder>(key, { dataUrl, originalCreatedAt });
+    mochiEvents.emit('image:store', {
+      kind: 'placeholder',
+      src,
+      path: pathForKey(this.storage, key),
+      id: originalId(src),
+      size: Buffer.byteLength(dataUrl),
+      contentType: '',
+      width: 0,
+      height: 0,
+      format: '',
     });
   }
 }

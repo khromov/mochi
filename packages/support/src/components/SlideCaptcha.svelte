@@ -1,7 +1,39 @@
 <script lang="ts">
   import type { Attachment } from 'svelte/attachments';
+  import { powInput, leadingZeroBits } from '../lib/pow';
 
-  let { solved = $bindable(false) }: { solved?: boolean } = $props();
+  let { token = '', bits = 16, verified = $bindable(false) }: { token?: string; bits?: number; verified?: boolean } = $props();
+
+  let solved = $state(false);
+  let powNonce = $state<string | null>(null);
+
+  // Solve the proof-of-work eagerly on mount ($effect never runs during SSR)
+  // so it's usually done before a human finishes sliding. The server enforces
+  // a minimum token age, so the head start gives bots nothing.
+  $effect(() => {
+    let cancelled = false;
+    (async () => {
+      const enc = new TextEncoder();
+      for (let n = 0; !cancelled; n++) {
+        const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', enc.encode(powInput(token, String(n)))));
+        if (leadingZeroBits(digest) >= bits) {
+          powNonce = String(n);
+          return;
+        }
+        if (n % 256 === 255) {
+          // Each digest await yields a microtask; a macrotask gap guarantees paint.
+          await new Promise((r) => setTimeout(r));
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  });
+
+  $effect(() => {
+    verified = solved && powNonce !== null;
+  });
 
   const HANDLE = 44;
   let maxOffset = $state(0);
@@ -67,7 +99,7 @@
   }
 </script>
 
-<div class="captcha" class:solved>
+<div class="captcha" class:solved class:verified>
   <div class="track" {@attach measureTrack}>
     <div class="fill" style="width: {offset + HANDLE}px"></div>
     <div
@@ -87,10 +119,19 @@
     >
       🍡
     </div>
-    <span class="captcha-hint">{solved ? 'Verified — thanks!' : 'Slide the mochi to the right'}</span>
+    <span class="captcha-hint" aria-live="polite">
+      {#if verified}
+        Verified — thanks!
+      {:else if solved}
+        Verifying…
+      {:else}
+        Slide the mochi to the right
+      {/if}
+    </span>
   </div>
 </div>
-<input type="hidden" name="captcha" value={solved ? 'slid' : ''} />
+<input type="hidden" name="captcha_token" value={verified ? token : ''} />
+<input type="hidden" name="captcha_pow" value={verified ? powNonce : ''} />
 
 <style>
   .captcha .track {
@@ -149,7 +190,7 @@
     pointer-events: none;
   }
 
-  .captcha.solved .captcha-hint {
+  .captcha.verified .captcha-hint {
     color: var(--accent-soft-text);
     font-weight: 600;
   }

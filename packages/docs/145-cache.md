@@ -58,6 +58,7 @@ Use it from a page or API route:
 | `fetch(key, fn)`           | `Promise<T>`                         |
 | `fetchWithStatus(key, fn)` | `Promise<{ value, status }>`         |
 | `peek(key)`                | `Promise<{ value, status } \| null>` |
+| `set(key, value)`          | `Promise<void>`                      |
 | `markStale(key)`           | `Promise<void>`                      |
 | `delete(key)`              | `Promise<void>`                      |
 | `clearItems()`             | `Promise<void>`                      |
@@ -65,6 +66,8 @@ Use it from a page or API route:
 `clearItems()` empties the whole cache in one call.
 
 `peek(key)` reports a key's current `status` and value **without** running `fn`, revalidating, or emitting `cache:read` — a pure probe (returns `null` on a miss). `markStale(key)` backdates an entry so its next read is served stale-while-revalidate; it's a no-op on a missing or already-stale key and never freshens or un-expires one. Both work through the `storage` interface, so they apply to any backend.
+
+`set(key, value)` writes a value directly, stamped fresh, overwriting whatever is there — the counterpart to `fetch`, which only computes on a miss or stale read and so can't replace a still-present entry. Reach for it instead of `delete(key)` followed by `fetch`: that sequence leaves the key absent for the whole write, and concurrent readers hitting that gap each start their own recompute.
 
 `status` is `'fresh' \| 'stale' \| 'expired' \| 'miss'`.
 

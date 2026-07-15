@@ -209,6 +209,32 @@ export class MochiCache {
   }
 
   /**
+   * Write `value` to `key` unconditionally, stamped fresh — overwriting whatever is
+   * there. The counterpart to `fetch`, which only computes on a miss/stale and so
+   * can't replace a still-present entry.
+   *
+   * Use this rather than `delete` + `fetch`: that sequence leaves the key absent for
+   * the whole write, during which concurrent readers see a miss and each start their
+   * own recompute. `setItem` is a single atomic replace on `FileStorage` (temp file +
+   * rename), so a reader sees either the old value or the new one, never nothing.
+   *
+   * Drops the key's in-flight run, so a recompute already underway settles without
+   * writing. As with `delete`/`markStale`, that only covers a run that has already
+   * registered: a `fetch` still awaiting its initial storage read hasn't claimed the
+   * slot yet, and its write will land after this one.
+   */
+  async set<T>(key: string, value: T): Promise<void> {
+    this.inflight.delete(key);
+    const entry = this.serialize({ value, createdAt: this.now() } satisfies CacheEntry);
+    try {
+      await this.storage.setItem(key, entry);
+    } catch (error) {
+      mochiEvents.emit('cache:error', { key, operation: 'set', error });
+      throw error;
+    }
+  }
+
+  /**
    * Backdate a key so its next read is served stale-while-revalidate: rewrite the
    * stored entry's `createdAt` to `now - minTimeToStale`, landing its age in the
    * stale window `[minTimeToStale, maxTimeToLive)`. A no-op if the key is missing

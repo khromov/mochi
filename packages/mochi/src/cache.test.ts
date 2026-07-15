@@ -211,6 +211,65 @@ describe('MochiCache nullish values', () => {
   });
 });
 
+describe('MochiCache.set', () => {
+  test('overwrites a still-fresh entry that fetch would have skipped', async () => {
+    const cache = new MochiCache({ minTimeToStale: 1_000, maxTimeToLive: 5_000 });
+    await cache.fetch('k', () => 'first');
+
+    // fetch() honours the fresh entry; set() replaces it.
+    expect(await cache.fetch('k', () => 'second')).toBe('first');
+    await cache.set('k', 'second');
+    expect(await cache.peek('k')).toEqual({ value: 'second', status: 'fresh' });
+  });
+
+  test('writes a missing key and stamps it fresh', async () => {
+    const cache = new MochiCache({ minTimeToStale: 1_000, maxTimeToLive: 5_000 });
+    await cache.set('k', { a: 1 });
+    expect(await cache.peek('k')).toEqual({ value: { a: 1 }, status: 'fresh' });
+  });
+
+  test('never leaves the key absent, unlike delete + fetch', async () => {
+    const cache = new MochiCache({ minTimeToStale: 1_000, maxTimeToLive: 5_000 });
+    await cache.set('k', 'v1');
+
+    let sawMiss = false;
+    let stop = false;
+    const reader = (async () => {
+      while (!stop) {
+        if ((await cache.peek('k')) === null) {
+          sawMiss = true;
+        }
+        await Promise.resolve();
+      }
+    })();
+    for (let i = 0; i < 50; i++) {
+      await cache.set('k', `v${i}`);
+    }
+    stop = true;
+    await reader;
+
+    expect(sawMiss).toBe(false);
+  });
+
+  test('supersedes a registered in-flight recompute rather than being clobbered by it', async () => {
+    // minTimeToStale comfortably above the test's own wall-clock, so the freshness
+    // assertion is about `set` stamping the entry, not about elapsed test time.
+    const cache = new MochiCache({ minTimeToStale: 1_000, maxTimeToLive: 5_000 });
+    const slow = cache.fetch('k', async () => {
+      await wait(30);
+      return 'from-fn';
+    });
+    // Let the run claim its in-flight slot — `fetch` awaits a storage read first, and
+    // `set` can only supersede a run that has already registered.
+    await wait(5);
+    await cache.set('k', 'from-set');
+
+    // The caller still receives its computed value; it just doesn't get written.
+    await expect(slow).resolves.toBe('from-fn');
+    expect(await cache.peek('k')).toEqual({ value: 'from-set', status: 'fresh' });
+  });
+});
+
 describe('MochiCache concurrency', () => {
   test('concurrent misses on the same key run fn once', async () => {
     const cache = new MochiCache({ minTimeToStale: 1_000, maxTimeToLive: 5_000 });

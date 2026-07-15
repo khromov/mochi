@@ -1,16 +1,23 @@
 import { Mochi, fail, success, logger } from 'mochi-framework';
 import type { MochiRouteValue } from 'mochi-framework';
+import { mintCaptchaToken, verifyCaptchaToken, powBits } from './lib/captcha';
+import { createNonceStore } from './lib/nonceStore';
 
 const SUPPORT_TO = process.env.SUPPORT_TO || 'support@mochi.fast';
 
+const nonceStore = createNonceStore();
+
 export const routes: Record<string, MochiRouteValue> = {
   '/': Mochi.page('./src/Support.svelte', {
+    serverProps: () => ({ captchaToken: mintCaptchaToken(), captchaBits: powBits() }),
     actions: {
       send: async ({ formData }) => {
-        // The hidden field is only filled once the slider reaches the end —
-        // a cheap gate against non-JS form bots, not real abuse protection.
-        if (String(formData.get('captcha') ?? '') !== 'slid') {
-          return fail(400, { error: 'Please slide the mochi to confirm you are human.' });
+        // The token is minted at SSR and only usable after the client solves a
+        // SHA-256 proof-of-work over it, so a passing POST proves the page was
+        // fetched, JS ran, and real hashing work was spent.
+        const captcha = verifyCaptchaToken(String(formData.get('captcha_token') ?? ''), String(formData.get('captcha_pow') ?? ''));
+        if (!captcha.ok) {
+          return fail(400, { error: captcha.error });
         }
         // Collapse whitespace so visitor input can't smuggle CR/LF into the
         // subject or Reply-To headers.
@@ -27,6 +34,12 @@ export const routes: Record<string, MochiRouteValue> = {
         }
         if (!message) {
           return fail(400, { error: 'Tell us what you need help with.' });
+        }
+        // Consume the one-time nonce only after field validation (a fixable
+        // email typo shouldn't burn it) but before sending (a retried SMTP
+        // failure must not double-send).
+        if (!nonceStore.consume(captcha.nonce, captcha.expiresAt)) {
+          return fail(400, { error: 'This form was already submitted. Reload the page to send another message.' });
         }
         try {
           await Mochi.email({
