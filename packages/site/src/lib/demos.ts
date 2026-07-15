@@ -24,8 +24,8 @@ import { files as hydratable } from '../demos/hydratable/files.ts';
 import { files as hydration } from '../demos/hydration/files.ts';
 import { files as image } from '../demos/image/files.ts';
 import { files as imageInvalidation } from '../demos/image-invalidation/files.ts';
-import { files as imageEvents } from '../demos/image-events/files.ts';
 import { files as imagePipeline } from '../demos/image-pipeline/files.ts';
+import { files as imageEvents } from '../demos/image-events/files.ts';
 import { files as islandDepth } from '../demos/island-depth/files.ts';
 import { files as islandProps } from '../demos/island-props/files.ts';
 import { files as lazy } from '../demos/lazy/files.ts';
@@ -163,19 +163,19 @@ export const demos: Demo[] = [
     category: 'data',
   },
   {
-    href: '/demos/image-events/',
-    slug: 'image-events',
-    files: imageEvents,
-    title: 'Image: Events',
-    hook: 'Subscribe to image:store / image:delete on mochiEvents to mirror the <Image> cache to durable storage like S3.',
-    category: 'data',
-  },
-  {
     href: '/demos/image-pipeline/',
     slug: 'image-pipeline',
     files: imagePipeline,
     title: 'Image: Named sizes',
     hook: 'Declare resize / rotate / flip / modulate / format transforms once as named sizes; getImageUrl mints a deferred URL and getImage runs one inline for bytes + metadata.',
+    category: 'data',
+  },
+  {
+    href: '/demos/image-events/',
+    slug: 'image-events',
+    files: imageEvents,
+    title: 'Image: Events',
+    hook: 'Subscribe to image:store / image:delete on mochiEvents to mirror the <Image> cache to durable storage like S3.',
     category: 'data',
   },
   {

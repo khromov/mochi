@@ -1,8 +1,13 @@
 <script lang="ts">
   import { MochiCaptcha } from 'mochi-framework/components';
+  import CodeSnippet from '../../components/CodeSnippet.svelte';
+  import { themes } from './themes.ts';
+  import type { ThemeName } from './themes.ts';
   import type { MintedCaptcha } from 'mochi-framework';
 
-  let { captchas }: { captchas: MintedCaptcha[] } = $props();
+  type Snippets = Record<ThemeName | 'defaults', string>;
+
+  let { captchas, css, svelte }: { captchas: MintedCaptcha[]; css: Snippets; svelte: Snippets } = $props();
 </script>
 
 <div class="variants">
@@ -10,30 +15,38 @@
     <h4>Defaults</h4>
     <p>No CSS at all. The widget ships light-mode defaults in each <code>var()</code> fallback, so it looks finished out of the box.</p>
     <MochiCaptcha {...captchas[0]} />
+    <CodeSnippet html={svelte.defaults} />
+    <CodeSnippet html={css.defaults} />
   </section>
 
   <section>
     <h4>Themed</h4>
     <p>Map the vars onto your palette. These point at this site's tokens, so this one follows the light/dark toggle.</p>
-    <div class="themed">
-      <MochiCaptcha {...captchas[1]} emoji="🍡" label="Slide the mochi to the right" />
+    <div style={themes.themed.css}>
+      <MochiCaptcha {...captchas[1]} emoji={themes.themed.emoji} label={themes.themed.label} />
     </div>
+    <CodeSnippet html={svelte.themed} />
+    <CodeSnippet html={css.themed} />
   </section>
 
   <section>
     <h4>Candy</h4>
     <p>The vars are just colours — hand them anything, including gradients.</p>
-    <div class="candy">
-      <MochiCaptcha {...captchas[2]} emoji="🍭" label="Slide the lollipop" />
+    <div style={themes.candy.css}>
+      <MochiCaptcha {...captchas[2]} emoji={themes.candy.emoji} label={themes.candy.label} />
     </div>
+    <CodeSnippet html={svelte.candy} />
+    <CodeSnippet html={css.candy} />
   </section>
 
   <section>
     <h4>Terminal</h4>
     <p>Square off the corners with <code>--mochi-captcha-radius</code> for a different silhouette.</p>
-    <div class="terminal">
-      <MochiCaptcha {...captchas[3]} emoji="▶" label="AWAITING INPUT" />
+    <div style={themes.terminal.css}>
+      <MochiCaptcha {...captchas[3]} emoji={themes.terminal.emoji} label={themes.terminal.label} />
     </div>
+    <CodeSnippet html={svelte.terminal} />
+    <CodeSnippet html={css.terminal} />
   </section>
 </div>
 
@@ -65,37 +78,5 @@
     border-radius: var(--radius-sm);
     font-family: var(--font-mono);
     font-size: 0.8rem;
-  }
-
-  .themed {
-    --mochi-captcha-accent: var(--accent);
-    --mochi-captcha-accent-soft: var(--accent-soft);
-    --mochi-captcha-accent-soft-text: var(--accent-soft-text);
-    --mochi-captcha-border: var(--border);
-    --mochi-captcha-track-bg: var(--surface-muted);
-    --mochi-captcha-handle-bg: var(--surface);
-    --mochi-captcha-hint-text: var(--text-subtle);
-  }
-
-  .candy {
-    --mochi-captcha-accent: #d6336c;
-    --mochi-captcha-accent-soft: linear-gradient(90deg, #ffd6e7, #ffa8cd);
-    --mochi-captcha-accent-soft-text: #a61e4d;
-    --mochi-captcha-border: #ffa8cd;
-    --mochi-captcha-track-bg: #fff0f6;
-    --mochi-captcha-handle-bg: #fff;
-    --mochi-captcha-hint-text: #c2255c;
-  }
-
-  .terminal {
-    --mochi-captcha-radius: 0;
-    --mochi-captcha-accent: #33ff77;
-    --mochi-captcha-accent-soft: #04301a;
-    --mochi-captcha-accent-soft-text: #33ff77;
-    --mochi-captcha-border: #33ff77;
-    --mochi-captcha-track-bg: #04150c;
-    --mochi-captcha-handle-bg: #04301a;
-    --mochi-captcha-hint-text: #2bbd5a;
-    font-family: var(--font-mono);
   }
 </style>
