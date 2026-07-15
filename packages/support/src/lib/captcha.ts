@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { encryptPayload, decryptPayload } from 'mochi-framework';
-import { CAPTCHA_AAD, powInput, leadingZeroBits } from './pow';
+import { CAPTCHA_AAD, CAPTCHA_STEPS, chainInput, powInput, leadingZeroBits } from './pow';
 
 const MAX_AGE_MS = 15 * 60_000;
 
@@ -42,7 +42,11 @@ export function verifyCaptchaToken(token: string, pow: string): { ok: true; nonc
   if (age < minAgeMs() || age > MAX_AGE_MS) {
     return { ok: false, error: GENERIC_ERROR };
   }
-  const digest = createHash('sha256').update(powInput(token, pow)).digest();
+  let challenge = token;
+  for (let step = 1; step <= CAPTCHA_STEPS; step++) {
+    challenge = createHash('sha256').update(chainInput(challenge, step)).digest('hex');
+  }
+  const digest = createHash('sha256').update(powInput(challenge, pow)).digest();
   if (leadingZeroBits(digest) < powBits()) {
     return { ok: false, error: GENERIC_ERROR };
   }

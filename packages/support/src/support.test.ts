@@ -5,7 +5,7 @@ import path from 'node:path';
 import type { Server } from 'bun';
 import { Mochi, encryptPayload } from 'mochi-framework';
 import type { ResolvedEmailMessage } from 'mochi-framework';
-import { CAPTCHA_AAD, powInput, leadingZeroBits } from './lib/pow';
+import { CAPTCHA_AAD, CAPTCHA_STEPS, chainInput, powInput, leadingZeroBits } from './lib/pow';
 import { routes } from './routes';
 
 // Low difficulty + a short age floor so tests don't hash for seconds or sleep.
@@ -26,9 +26,22 @@ const post = (base: string, fields: Record<string, string>): Promise<Response> =
 // verify exactly like the ones serverProps embeds at SSR.
 const mintToken = (ageMs = 1000): string => encryptPayload(JSON.stringify({ iat: Date.now() - ageMs, nonce: randomUUID() }), { aad: CAPTCHA_AAD });
 
+// Re-derive the slide-step hash chain the widget emits, link by link, so the
+// test proves the server accepts exactly the challenge a real slide produces.
+const challengeFor = (token: string): string => {
+  let chain = token;
+  for (let step = 1; step <= CAPTCHA_STEPS; step++) {
+    chain = createHash('sha256').update(chainInput(chain, step)).digest('hex');
+  }
+  return chain;
+};
+
 const powFor = (token: string, passing: boolean): string => {
+  const challenge = challengeFor(token);
   for (let n = 0; ; n++) {
-    const digest = createHash('sha256').update(powInput(token, String(n))).digest();
+    const digest = createHash('sha256')
+      .update(powInput(challenge, String(n)))
+      .digest();
     if (leadingZeroBits(digest) >= 8 === passing) {
       return String(n);
     }
@@ -138,6 +151,22 @@ describe('support form action', () => {
     const token = mintToken();
     const res = await post(base, { ...validFields(token), captcha_pow: powFor(token, false) });
     expect(res.status).toBe(400);
+    expect(sent).toHaveLength(0);
+  });
+
+  test('a proof-of-work over the raw token (skipping the step chain) is rejected', async () => {
+    sent.length = 0;
+    const token = mintToken();
+    for (let n = 0; ; n++) {
+      const digest = createHash('sha256')
+        .update(powInput(token, String(n)))
+        .digest();
+      if (leadingZeroBits(digest) >= 8) {
+        const res = await post(base, { ...validFields(token), captcha_pow: String(n) });
+        expect(res.status).toBe(400);
+        break;
+      }
+    }
     expect(sent).toHaveLength(0);
   });
 

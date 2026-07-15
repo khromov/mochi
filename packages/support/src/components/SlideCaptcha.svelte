@@ -1,35 +1,60 @@
 <script lang="ts">
   import type { Attachment } from 'svelte/attachments';
-  import { powInput, leadingZeroBits } from '../lib/pow';
+  import { CAPTCHA_STEPS, chainInput, powInput, leadingZeroBits, toHex } from '../lib/pow';
 
   let { token = '', bits = 16, verified = $bindable(false) }: { token?: string; bits?: number; verified?: boolean } = $props();
 
   let solved = $state(false);
   let powNonce = $state<string | null>(null);
 
-  // Solve the proof-of-work eagerly on mount ($effect never runs during SSR)
-  // so it's usually done before a human finishes sliding. The server enforces
-  // a minimum token age, so the head start gives bots nothing.
-  $effect(() => {
-    let cancelled = false;
-    (async () => {
-      const enc = new TextEncoder();
-      for (let n = 0; !cancelled; n++) {
-        const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', enc.encode(powInput(token, String(n)))));
-        if (leadingZeroBits(digest) >= bits) {
-          powNonce = String(n);
-          return;
-        }
-        if (n % 256 === 255) {
-          // Each digest await yields a microtask; a macrotask gap guarantees paint.
-          await new Promise((r) => setTimeout(r));
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
+  // The PoW challenge is a hash chain advanced one link per slider step: each
+  // step crossed emits chain = sha256(`${chain}:step${i}`). The final link is
+  // the PoW input, so the answer is only derivable by actually running the
+  // slide progression — it never appears in the page or the island props.
+  // Links are enqueued on a promise chain because pointermove events outrun
+  // the async digest calls and the links must apply strictly in order.
+  // The token is minted once at SSR and never changes for the island's lifetime.
+  // svelte-ignore state_referenced_locally
+  let chain = token;
+  let claimedSteps = 0;
+  let stepQueue: Promise<void> = Promise.resolve();
+  let destroyed = false;
+
+  $effect(() => () => {
+    destroyed = true;
   });
+
+  const enc = new TextEncoder();
+  const sha256 = async (input: string) => new Uint8Array(await crypto.subtle.digest('SHA-256', enc.encode(input)));
+
+  function emitSteps() {
+    if (maxOffset <= 0) {
+      return;
+    }
+    const target = solved ? CAPTCHA_STEPS : Math.min(Math.floor((offset / maxOffset) * CAPTCHA_STEPS), CAPTCHA_STEPS);
+    while (claimedSteps < target) {
+      const step = ++claimedSteps;
+      stepQueue = stepQueue.then(async () => {
+        chain = toHex(await sha256(chainInput(chain, step)));
+        if (step === CAPTCHA_STEPS) {
+          await solvePow(chain);
+        }
+      });
+    }
+  }
+
+  async function solvePow(challenge: string) {
+    for (let n = 0; !destroyed; n++) {
+      if (leadingZeroBits(await sha256(powInput(challenge, String(n)))) >= bits) {
+        powNonce = String(n);
+        return;
+      }
+      if (n % 256 === 255) {
+        // Each digest await yields a microtask; a macrotask gap guarantees paint.
+        await new Promise((r) => setTimeout(r));
+      }
+    }
+  }
 
   $effect(() => {
     verified = solved && powNonce !== null;
@@ -75,6 +100,7 @@
     }
     offset = Math.min(Math.max(offsetStart + e.clientX - pointerStart, 0), maxOffset);
     settle();
+    emitSteps();
   }
 
   function onPointerUp() {
@@ -92,6 +118,7 @@
       e.preventDefault();
       offset = Math.min(offset + maxOffset / 10, maxOffset);
       settle();
+      emitSteps();
     } else if (e.key === 'ArrowLeft') {
       e.preventDefault();
       offset = Math.max(offset - maxOffset / 10, 0);

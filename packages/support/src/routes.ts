@@ -12,9 +12,10 @@ export const routes: Record<string, MochiRouteValue> = {
     serverProps: () => ({ captchaToken: mintCaptchaToken(), captchaBits: powBits() }),
     actions: {
       send: async ({ formData }) => {
-        // The token is minted at SSR and only usable after the client solves a
-        // SHA-256 proof-of-work over it, so a passing POST proves the page was
-        // fetched, JS ran, and real hashing work was spent.
+        // The token is minted at SSR; the client must re-derive the slide-step
+        // hash chain and solve a SHA-256 proof-of-work over its final link, so
+        // a passing POST proves the page was fetched, the captcha logic ran,
+        // and real hashing work was spent.
         const captcha = verifyCaptchaToken(String(formData.get('captcha_token') ?? ''), String(formData.get('captcha_pow') ?? ''));
         if (!captcha.ok) {
           return fail(400, { error: captcha.error });

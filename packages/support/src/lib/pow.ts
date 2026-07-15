@@ -3,8 +3,26 @@
 
 export const CAPTCHA_AAD = 'support-captcha';
 
-export function powInput(token: string, powNonce: string): string {
-  return `${token}:${powNonce}`;
+// The PoW challenge is the last link of a hash chain the widget advances one
+// link per slider step, so the challenge is never present in the page — it
+// only exists once the slide progression has actually been run.
+export const CAPTCHA_STEPS = 10;
+
+export function chainInput(prev: string, step: number): string {
+  return `${prev}:step${step}`;
+}
+
+export function powInput(challenge: string, powNonce: string): string {
+  return `${challenge}:${powNonce}`;
+}
+
+/** Lowercase hex, matching node:crypto's digest('hex') on the server side. */
+export function toHex(bytes: Uint8Array): string {
+  let hex = '';
+  for (const byte of bytes) {
+    hex += byte.toString(16).padStart(2, '0');
+  }
+  return hex;
 }
 
 export function leadingZeroBits(bytes: Uint8Array): number {
