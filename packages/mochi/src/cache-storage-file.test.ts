@@ -645,8 +645,10 @@ describe('MochiCache cross-process in-flight marker (shared FileStorage)', () =>
   });
 
   test('a timed-out run settling late does not remove the marker of the run that superseded it', async () => {
-    // Long enough that run 2 (held open ~40ms below) never trips the timeout itself.
-    const { storageA, cacheA } = twoProcesses({ minTimeToStale: 10, maxTimeToLive: 10_000, inflightTimeout: 200 });
+    // inflightTimeout must be long enough that run 2 never trips it while we wait
+    // for its marker to land (the poll below can take a while under Windows disk
+    // I/O); run 1 still times out first because it's held open until then.
+    const { storageA, cacheA } = twoProcesses({ minTimeToStale: 10, maxTimeToLive: 10_000, inflightTimeout: 2_000 });
 
     // Run 1 hangs past the in-flight timeout, so its lock is released while its
     // work (and marker cleanup) is still pending.

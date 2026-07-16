@@ -1,5 +1,4 @@
 import { Glob } from 'bun';
-import { join } from 'node:path';
 
 export interface RunTestsOptions {
   /** Package root to glob `src/**\/*.test.ts` from and run each file in. Defaults to the cwd. */
@@ -9,9 +8,10 @@ export interface RunTestsOptions {
   /**
    * Hard per-file deadline (ms). A `bun test` child that hasn't exited by then is
    * killed and the file is recorded as failed with a "TIMED OUT" message, so one
-   * wedged process can't hang the whole run. This backstops the force-exit preload
-   * (see below) for the case where a run wedges *before* finishing — its `afterAll`
-   * never runs, so it can't self-exit. Default 120_000.
+   * wedged process can't hang the whole run. Backstops Bun's per-*test* `--timeout`,
+   * which fails a test but never forces the process to exit. Default 60_000 — well
+   * above any healthy file (the slowest here is a few seconds) and well under CI's
+   * job cap, so a genuinely wedged file fails fast and named.
    */
   fileTimeoutMs?: number;
 }
@@ -24,11 +24,6 @@ interface FileResult {
   stdout: string;
   stderr: string;
 }
-
-// Preloaded into every child so a process that passes every test but then won't
-// drain-and-exit (a Bun-on-Windows quirk) terminates itself with Bun's own exit
-// code, instead of wedging until the hard deadline. See testing-force-exit.ts.
-const FORCE_EXIT_PRELOAD = join(import.meta.dir, 'testing-force-exit.ts');
 
 /**
  * Runs each `src/**\/*.test.ts` file in its own `bun test` process, up to
@@ -45,7 +40,7 @@ const FORCE_EXIT_PRELOAD = join(import.meta.dir, 'testing-force-exit.ts');
 export async function runTests(options: RunTestsOptions = {}): Promise<void> {
   const dir = options.dir ?? '.';
   const sequential = new Set(options.sequential ?? []);
-  const fileTimeoutMs = options.fileTimeoutMs ?? 120_000;
+  const fileTimeoutMs = options.fileTimeoutMs ?? 60_000;
 
   const all = (await Array.fromAsync(new Glob('src/**/*.test.ts').scan(dir))).sort();
   const parallel = all.filter((f) => !sequential.has(f));
@@ -56,12 +51,13 @@ export async function runTests(options: RunTestsOptions = {}): Promise<void> {
   const results: FileResult[] = [];
 
   // Run one file in its own `bun test` process under a hard deadline. Bun's
-  // `--timeout` only fails an individual test; a process that passes every test
-  // but then won't exit would otherwise block the worker on `proc.exited` forever.
-  // The force-exit preload makes such a process self-terminate; this deadline is
-  // the backstop for a run that wedges before it can (a test that never returns).
+  // `--timeout` only fails an individual test; a process wedged after its tests
+  // (a leaked handle, or a Bun-on-Windows shutdown quirk that wedges after every
+  // test passes) would otherwise block the worker on `proc.exited` forever and
+  // hang the whole run until CI's job cap. Killing it turns that into a fast,
+  // named failure.
   async function runFile(file: string): Promise<FileResult> {
-    const proc = Bun.spawn(['bun', 'test', '--timeout', '30000', '--preload', FORCE_EXIT_PRELOAD, file], {
+    const proc = Bun.spawn(['bun', 'test', '--timeout', '30000', file], {
       cwd: dir,
       stdin: 'ignore',
       stdout: 'pipe',
