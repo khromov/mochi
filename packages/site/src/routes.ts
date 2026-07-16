@@ -19,6 +19,8 @@ import { respondMcp } from './lib/mcp';
 import { profilerEnabled, startProfiler, stopProfiler } from './lib/profiler';
 import { routes as apiRoutes } from './demos/api/routes';
 import { routes as cacheEventsRoutes } from './demos/cache-events/routes';
+import { routes as captchaRoutes } from './demos/captcha/routes';
+import { routes as captchaStylingRoutes } from './demos/captcha-styling/routes';
 import { routes as chatRoutes } from './demos/chat/routes';
 import { routes as clientOnlyRoutes } from './demos/client-only/routes';
 import { routes as cookieVaryTestRoutes } from './demos/cookie-vary-test/routes';
@@ -38,6 +40,7 @@ import { routes as formReturnDataRoutes } from './demos/form-return-data/routes'
 import { routes as helloWorldRoutes } from './demos/hello-world/routes';
 import { routes as hydratableRoutes } from './demos/hydratable/routes';
 import { routes as imageRoutes } from './demos/image/routes';
+import { routes as imageInvalidationRoutes } from './demos/image-invalidation/routes';
 import { routes as imageEventsRoutes } from './demos/image-events/routes';
 import { routes as imagePipelineRoutes } from './demos/image-pipeline/routes';
 import { routes as hydrationRoutes } from './demos/hydration/routes';
@@ -56,6 +59,7 @@ import { routes as queueRoutes, queues as queueQueues } from './demos/queue/rout
 import { routes as reloadFormDataRoutes } from './demos/reload-form-data/routes';
 import { routes as requestIdRoutes } from './demos/request-id/routes';
 import { routes as serverIslandRoutes } from './demos/server-island/routes';
+import { routes as shotRoutes } from './shot/routes';
 import { routes as serverPropsRoutes } from './demos/server-props/routes';
 import { routes as sharedStateRoutes } from './demos/shared-state/routes';
 import { routes as streamsRoutes } from './demos/streams/routes';
@@ -173,6 +177,9 @@ export const routes: Record<string, MochiRouteValue> = {
       };
     },
   }),
+  // The support form lives at support.mochi.fast (packages/support) — it needs an
+  // SMTP config this site deliberately doesn't carry.
+  '/support': Mochi.api(() => Response.redirect('https://support.mochi.fast/', 302)),
   '/og': Mochi.page('./src/og/OgPage.svelte'),
   '/sitemap.xml': Mochi.api(async () => {
     return new Response(await buildSitemapXml(), {
@@ -215,6 +222,8 @@ export const routes: Record<string, MochiRouteValue> = {
   ...demoLlmsRoutes,
   ...apiRoutes,
   ...cacheEventsRoutes,
+  ...captchaRoutes,
+  ...captchaStylingRoutes,
   ...chatRoutes,
   ...clientOnlyRoutes,
   ...cookieVaryTestRoutes,
@@ -234,6 +243,7 @@ export const routes: Record<string, MochiRouteValue> = {
   ...helloWorldRoutes,
   ...hydratableRoutes,
   ...imageRoutes,
+  ...imageInvalidationRoutes,
   ...imageEventsRoutes,
   ...imagePipelineRoutes,
   ...hydrationRoutes,
@@ -253,6 +263,7 @@ export const routes: Record<string, MochiRouteValue> = {
   ...requestIdRoutes,
   ...serverIslandRoutes,
   ...serverPropsRoutes,
+  ...shotRoutes,
   ...sharedStateRoutes,
   ...streamsRoutes,
   ...urlRoutes,

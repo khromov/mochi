@@ -75,6 +75,22 @@ export interface MochiIslandErrorEvent {
   stack?: string;
 }
 
+export type MochiCaptchaReason = 'ok' | 'malformed' | 'expired' | 'too-fast' | 'bad-pow' | 'replay';
+
+export interface MochiCaptchaVerifyEvent {
+  ok: boolean;
+  /**
+   * The real cause, for operators. `verifyCaptcha()` deliberately returns one
+   * generic message to the client so a bot can't tell these apart and probe for
+   * the limits — this is where the distinction stays visible.
+   */
+  reason: MochiCaptchaReason;
+  /** Difficulty sealed in the token. Absent when the token never opened. */
+  bits?: number;
+  /** Token age at verification. Absent when the token never opened. */
+  ageMs?: number;
+}
+
 export type MochiCacheStatus = 'fresh' | 'stale' | 'expired' | 'miss';
 
 export interface MochiCacheReadEvent {
@@ -86,6 +102,16 @@ export interface MochiCacheRevalidateEvent {
   key: string;
 }
 
+export interface MochiCacheInflightDeferredEvent {
+  /** The key whose regeneration we skipped because a peer process is refreshing it. */
+  key: string;
+}
+
+export interface MochiCacheDeleteEvent {
+  /** The key that was removed from the cache. */
+  key: string;
+}
+
 export interface MochiCacheSweepEvent {
   /** Expired entries deleted by this sweep. */
   removed: number;
@@ -93,13 +119,21 @@ export interface MochiCacheSweepEvent {
   durationMs: number;
 }
 
+/**
+ * Counts always reconcile: `removedVariants + removedOriginals + removedOther`
+ * equals the total the storage backend reported removing.
+ */
 export interface MochiImageCacheSweepEvent {
-  /** Resized variants deleted (original evicted, missing, or superseded by a newer generation). */
+  /** Resized variants and blur placeholders deleted (original evicted, missing, or superseded by a newer generation). */
   removedVariants: number;
   /** Full-size originals deleted (past their evict window). */
   removedOriginals: number;
-  /** Bytes reclaimed from disk. */
-  freedBytes: number;
+  /**
+   * Removed files that aren't image entries: transient `mochi:inflight:` coalescing
+   * markers, in-flight `.tmp` writes, corrupt/legacy files, and every removal from a
+   * custom backend that doesn't report which keys it swept.
+   */
+  removedOther: number;
   /** Sweep wall-clock duration in ms. */
   durationMs: number;
 }
@@ -373,8 +407,11 @@ export type MochiEventMap = {
   'sse:close': MochiSseCloseEvent;
   'file:change': MochiFileChangeEvent;
   'island:error': MochiIslandErrorEvent;
+  'captcha:verify': MochiCaptchaVerifyEvent;
   'cache:read': MochiCacheReadEvent;
   'cache:revalidate': MochiCacheRevalidateEvent;
+  'cache:inflight:deferred': MochiCacheInflightDeferredEvent;
+  'cache:delete': MochiCacheDeleteEvent;
   'cache:sweep': MochiCacheSweepEvent;
   'image:cache-sweep': MochiImageCacheSweepEvent;
   'image:store': MochiImageStoreEvent;
@@ -423,9 +460,17 @@ export interface MochiEmitter extends Emitter<MochiEventMap> {
    * Don't mix this with `.off()` for the same name — the name table is
    * maintained only by `setHandler`, so calling `.off()` directly leaves a
    * stale entry that the next `setHandler(name, ...)` will try (harmlessly) to
-   * re-remove from mitt.
+   * re-remove from mitt. Use `removeHandler` instead.
    */
   setHandler<K extends keyof MochiEventMap>(name: string, type: K, handler: (event: MochiEventMap[K]) => void): void;
+
+  /**
+   * Unregister the handler previously registered under `name`, and drop the name
+   * from the table. The counterpart to `setHandler` — needed by any subsystem that
+   * subscribes per-instance and must not leak a live subscription after teardown.
+   * No-op if `name` was never registered.
+   */
+  removeHandler(name: string): void;
 }
 
 // TODO: Check if this is still needed since we fixed the bundling duplication
@@ -449,6 +494,14 @@ export const mochiEvents: MochiEmitter = pinGlobal<MochiEmitter>('__mochi_events
       handler: handler as Handler<MochiEventMap[keyof MochiEventMap]>,
     });
     base.on(type, handler);
+  };
+  base.removeHandler = (name) => {
+    const prior = byName.get(name);
+    if (!prior) {
+      return;
+    }
+    base.off(prior.type, prior.handler as never);
+    byName.delete(name);
   };
   return base;
 });

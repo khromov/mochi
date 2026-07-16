@@ -9,7 +9,7 @@
 </script>
 
 <div class="card">
-  <Image {src} width={400} height={267} placeholder {isHydratable} alt="A photo rendered inside a hydrated island" />
+  <Image {src} size="card" placeholder {isHydratable} alt="A photo rendered inside a hydrated island" />
   <button class="card__btn" onclick={() => likes++}>
     <Heart size={16} aria-hidden="true" />
     {likes}

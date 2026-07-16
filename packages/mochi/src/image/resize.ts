@@ -1,5 +1,5 @@
 import { ImageError } from './types';
-import type { ImageFormat, ImageRequest, ResolvedImageOptions } from './types';
+import type { ImageFormat, ResolvedImageOptions, ResolvedImageSize } from './types';
 
 function imageCtor(): typeof Bun.Image {
   const ctor = (Bun as { Image?: typeof Bun.Image }).Image;
@@ -39,12 +39,17 @@ export interface ResizeResult {
   format: ImageFormat;
 }
 
-export async function resizeImage(input: Uint8Array, req: ImageRequest, opts: ResolvedImageOptions): Promise<ResizeResult> {
+/**
+ * Run a named size against source bytes: resize → rotate → flip → flop →
+ * modulate → format-encode, in that fixed order. Shared by the endpoint (deferred
+ * URL path) and the inline `getImage()` API — both feed it a resolved size.
+ */
+export async function runPipeline(input: Uint8Array, size: ResolvedImageSize, opts: ResolvedImageOptions): Promise<ResizeResult> {
   const Image = imageCtor();
 
   let img: Bun.Image;
   try {
-    img = new Image(input, { maxPixels: opts.maxPixels, autoOrient: req.autoOrient });
+    img = new Image(input, { maxPixels: size.maxPixels, autoOrient: size.autoOrient });
   } catch (err) {
     if (isUnsupportedFormatError(err)) {
       throw new ImageError(415, 'Unsupported image format');
@@ -64,31 +69,43 @@ export async function resizeImage(input: Uint8Array, req: ImageRequest, opts: Re
   }
 
   // Bun.Image#resize requires width first; derive it from the aspect ratio for
-  // height-only requests.
-  let width = req.width;
-  const height = req.height;
+  // height-only sizes.
+  let width = size.width;
+  const height = size.height;
   if (!width && height && meta.height > 0) {
     width = Math.max(1, Math.round(meta.width * (height / meta.height)));
   }
 
   let pipe = img;
   if (width) {
-    const resizeOpts: Bun.Image.ResizeOptions = { fit: req.fit };
-    if (req.withoutEnlargement) {
+    const resizeOpts: Bun.Image.ResizeOptions = { fit: size.fit };
+    if (size.withoutEnlargement) {
       resizeOpts.withoutEnlargement = true;
     }
-    pipe = height ? img.resize(width, height, resizeOpts) : img.resize(width, undefined, resizeOpts);
+    pipe = height ? pipe.resize(width, height, resizeOpts) : pipe.resize(width, undefined, resizeOpts);
+  }
+  if (size.rotate !== undefined) {
+    pipe = pipe.rotate(size.rotate);
+  }
+  if (size.flip) {
+    pipe = pipe.flip();
+  }
+  if (size.flop) {
+    pipe = pipe.flop();
+  }
+  if (size.modulate) {
+    pipe = pipe.modulate(size.modulate);
   }
 
-  switch (req.format) {
+  switch (size.format) {
     case 'webp':
-      pipe = pipe.webp({ quality: req.quality });
+      pipe = pipe.webp({ quality: size.quality });
       break;
     case 'jpeg':
-      pipe = pipe.jpeg({ quality: req.quality });
+      pipe = pipe.jpeg({ quality: size.quality });
       break;
     case 'avif':
-      pipe = pipe.avif({ quality: req.quality });
+      pipe = pipe.avif({ quality: size.quality });
       break;
     case 'png':
       pipe = pipe.png();
@@ -109,15 +126,15 @@ export async function resizeImage(input: Uint8Array, req: ImageRequest, opts: Re
   try {
     outMeta = await new Image(out).metadata();
   } catch {
-    outMeta = { width: width ?? meta.width, height: height ?? meta.height, format: req.format };
+    outMeta = { width: width ?? meta.width, height: height ?? meta.height, format: size.format };
   }
 
   return {
     bytes: out,
-    contentType: MIME[req.format],
+    contentType: MIME[size.format],
     width: outMeta.width,
     height: outMeta.height,
-    format: req.format,
+    format: size.format,
   };
 }
 

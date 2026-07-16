@@ -187,6 +187,18 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
     path: payload.key,
     note: styleText('cyan', 'revalidate'),
   }));
+  subscribe('cache:inflight:deferred', (payload) => ({
+    label: 'CACHE',
+    path: payload.key,
+    note: styleText('dim', 'deferred to peer'),
+    level: 'debug',
+  }));
+  subscribe('cache:delete', (payload) => ({
+    label: 'CACHE',
+    path: payload.key,
+    note: styleText('dim', 'delete'),
+    level: 'debug',
+  }));
   subscribe('cache:sweep', ({ removed, durationMs }) => ({
     label: 'CACHE',
     path: 'sweep',
@@ -196,9 +208,12 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
     verySlow,
     level: 'info',
   }));
-  subscribe('image:cache-sweep', ({ removedVariants, removedOriginals, freedBytes, durationMs }) => {
-    const removed = removedVariants + removedOriginals;
-    const detail = removed === 0 ? 'nothing stale' : `${removed} stale (${removedVariants}v/${removedOriginals}o), freed ${prettyBytes(freedBytes)}`;
+  subscribe('image:cache-sweep', ({ removedVariants, removedOriginals, removedOther, durationMs }) => {
+    const removed = removedVariants + removedOriginals + removedOther;
+    // `removedOther` is markers/tmp/unattributable — noise on the common line, so
+    // only show it when there actually is some.
+    const other = removedOther > 0 ? `/${removedOther}?` : '';
+    const detail = removed === 0 ? 'nothing stale' : `${removed} stale (${removedVariants}v/${removedOriginals}o${other})`;
     return { label: 'CACHE', path: 'image:sweep', note: styleText('dim', detail), duration: durationMs, slow, verySlow, level: 'info' };
   });
   // Per-file image writes/deletes are high-volume relative to the aggregate
@@ -304,6 +319,14 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
       level: 'warn',
     };
   });
+
+  subscribe('captcha:verify', ({ ok, reason, bits, ageMs }) => ({
+    label: 'CAPTCHA',
+    path: reason,
+    note: ok ? styleText('green', `verified (${bits}-bit)`) : styleText('yellow', 'rejected'),
+    ...(ageMs != null ? { duration: ageMs, neutral: true } : {}),
+    level: ok ? ('info' as const) : ('warn' as const),
+  }));
 
   subscribe('preprocess-cache:hit', ({ filePath }) => ({
     label: 'PCACHE',

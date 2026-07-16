@@ -17,6 +17,7 @@
 import type { Server } from 'bun';
 import type { PreprocessorGroup } from 'svelte/compiler';
 import type { CookieSerializeOptions } from './cookies';
+import type { MochiCaptchaOptions } from './captcha/types';
 import type { MochiServeOptions } from './types';
 import type { MochiEventMap, MochiRequestKind } from './events';
 import type { ResolvedEmailMessage, MochiEmailTransportConfig } from './email/types';
@@ -84,6 +85,8 @@ export interface MochiFilterValue {
   'image:maxRedirects': number;
   'image:url': string;
   'email:message': ResolvedEmailMessage;
+  'captcha:minAgeMs': number;
+  'captcha:driftAllowanceMs': number;
 }
 
 // Optional per-filter override for the *return* type when it differs from the
@@ -128,6 +131,15 @@ export interface MochiFilterContext {
   'image:maxRedirects': { src: string };
   'image:url': { src: string; filename: string; original: boolean };
   'email:message': { transport: MochiEmailTransportConfig['type'] };
+  'captcha:minAgeMs': {
+    /** Difficulty sealed into this token at mint. */
+    bits: number;
+    /** This token's measured age. Already spent — shown so the filter can log, not so it can decide on it. */
+    ageMs: number;
+    /** Upper bound the returned floor must stay under, drift allowance included. */
+    limitMs: number;
+  };
+  'captcha:driftAllowanceMs': { options: MochiCaptchaOptions; maxAgeMs: number };
 }
 
 export interface MochiFilterKindMap {
@@ -146,6 +158,8 @@ export interface MochiFilterKindMap {
   'image:maxRedirects': 'sync';
   'image:url': 'sync';
   'email:message': 'async';
+  'captcha:minAgeMs': 'sync';
+  'captcha:driftAllowanceMs': 'sync';
 }
 
 type FilterReturn<K extends keyof MochiFilterValue> = K extends keyof MochiFilterReturn ? MochiFilterReturn[K] : MochiFilterValue[K];
@@ -188,6 +202,8 @@ const FILTER_KINDS: { [K in keyof MochiFilterValue]: MochiKind } = {
   'image:maxRedirects': 'sync',
   'image:url': 'sync',
   'email:message': 'async',
+  'captcha:minAgeMs': 'sync',
+  'captcha:driftAllowanceMs': 'sync',
 };
 
 // Pinned on globalThis so duplicate bundled copies of mochi-framework share one
