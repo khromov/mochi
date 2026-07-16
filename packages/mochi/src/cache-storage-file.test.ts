@@ -199,7 +199,9 @@ describe('MochiCache with FileStorage (stale-while-revalidate)', () => {
     expect(stale.value).toBe(1);
     expect(stale.status).toBe('stale');
 
-    await wait(20);
+    // Await the background revalidation deterministically — a fixed sleep here
+    // flakes when the disk write is slower than the wait (Windows CI).
+    await cache.settled();
     expect(await cache.fetch('k', fn)).toBe(2);
   });
 

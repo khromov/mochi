@@ -182,6 +182,17 @@ export class MochiCache {
     return this.emitRead(key, value, 'expired');
   }
 
+  /**
+   * Await every in-flight recompute — including fire-and-forget background
+   * revalidations kicked off by a stale read — to settle. Mainly for tests: lets
+   * them wait for a background refresh deterministically instead of a fixed sleep
+   * (which flakes when the recompute's storage write is slower than the wait), and
+   * drains pending work before teardown.
+   */
+  async settled(): Promise<void> {
+    await Promise.allSettled([...this.inflight.values()]);
+  }
+
   async delete(key: string): Promise<void> {
     this.inflight.delete(key);
     try {
