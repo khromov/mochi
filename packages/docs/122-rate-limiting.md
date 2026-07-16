@@ -55,19 +55,19 @@ await Mochi.serve({
 
 All of hitlimit's options are accepted (except `logger` — Mochi logs `429`s through its own [request events](/docs/events/)):
 
-| Option         | Default       |                                                                   |
-| -------------- | ------------- | ----------------------------------------------------------------- |
-| `limit`        | `100`         | Max requests per window                                           |
-| `window`       | `'1m'`        | `'30s'`, `'1m'`, `'1h'`, `'1d'`, or milliseconds                  |
-| `key`          | client IP     | `(req, ctx) => string` — what to bucket by                        |
-| `store`        | in-memory     | `sqliteStore(…)`, `postgresStore(…)`, or a custom `HitLimitStore` |
-| `tiers`/`tier` | —             | Named limits + `(req, ctx) => string` tier resolver               |
-| `ban`          | —             | `{ threshold, duration }` — ban repeat offenders                  |
-| `group`        | —             | `(req, ctx) => string` — shared quota across clients              |
-| `skip`         | —             | `(req, ctx) => boolean` — bypass without consuming quota          |
-| `response`     | hitlimit JSON | Custom 429 body (API routes)                                      |
-| `headers`      | all on        | `{ standard, legacy, retryAfter }`                                |
-| `onStoreError` | `'allow'`     | Fail open or `'deny'` when the store errors                       |
+| Option         | Default       |                                                                                 |
+| -------------- | ------------- | ------------------------------------------------------------------------------- |
+| `limit`        | `100`         | Max requests per window                                                         |
+| `window`       | `'1m'`        | `'30s'`, `'1m'`, `'1h'`, `'1d'`, or milliseconds                                |
+| `key`          | client IP     | `(req, ctx) => string` — what to bucket by                                      |
+| `store`        | in-memory     | `sqliteStore(…)`, `postgresStore(…)`, or a custom `HitLimitStore`               |
+| `tiers`/`tier` | —             | Named limits + `(req, ctx) => string` tier resolver                             |
+| `ban`          | —             | `{ threshold, duration }` — ban repeat offenders                                |
+| `group`        | route pattern | `string \| (req, ctx) => string` — bucket namespace; same value → shared bucket |
+| `skip`         | —             | `(req, ctx) => boolean` — bypass without consuming quota                        |
+| `response`     | hitlimit JSON | Custom 429 body (API routes)                                                    |
+| `headers`      | all on        | `{ standard, legacy, retryAfter }`                                              |
+| `onStoreError` | `'allow'`     | Fail open or `'deny'` when the store errors                                     |
 
 ### Stores
 
@@ -80,11 +80,11 @@ rateLimit: { limit: 100, window: '1m', store: sqliteStore({ path: './ratelimit.d
 rateLimit: { limit: 100, window: '1m', store: postgresStore({ url: process.env.DATABASE_URL }) }
 ```
 
-Counters are bucketed by **key within a store** — there is no per-route namespace. Two memory-backed routes are isolated because each has its own store, but two routes sharing a store instance share counters, and so do two `sqliteStore`/`postgresStore` instances pointing at the same database.
+Counters are bucketed by **key within a store**. A route with its **own** `rateLimit` config also folds its route pattern into that key, so **different routes** backed by the same database — whether they share one store object or each open their own connection to it — keep **separate** counters, even when the key resolves to the same value (e.g. the same client IP). This is per-route _pattern_, not per-instance: run the same route on two servers against one database and both write the same key, so they share a counter — that's how you rate-limit across a fleet. Routes inheriting the [global default](#global-default) are _not_ pattern-namespaced: they all share one bucket per key, by design.
 
-<Callout type="warning">
+<Callout type="info">
 
-**Persisted stores share counters across routes.** Point two routes at the same db and a client's hits on either drain one shared bucket — even if the routes declare different `limit`s. When sharing a persisted store, namespace the `key` per route: `key: () => 'login:' + (getRequestContext().getClientAddress() ?? 'unknown')`.
+**Overriding the namespace with `group`.** Setting `group` replaces the automatic route-pattern namespace with your own. Give two routes the **same** `group` and they share one bucket — a single quota across a family of endpoints (e.g. `/api/auth/login` and `/api/auth/reset`), on any store. Going the other way: routes on the [global default](#global-default) all share one bucket, so give a route its **own** `rateLimit` config to split it off into an isolated one.
 
 </Callout>
 
@@ -127,7 +127,7 @@ An allowed request exposes its limiter state on the request context — render q
 
 ```ts
 const rateLimit = getRequestContext().rateLimit;
-// { limit: 5, remaining: 3, resetIn: 42, resetAt, key, tier? } — or undefined if no limiter ran
+// { limit: 5, remaining: 3, resetIn: 42, resetAt, key, group?, tier? } — or undefined if no limiter ran
 ```
 
 <Callout type="info">

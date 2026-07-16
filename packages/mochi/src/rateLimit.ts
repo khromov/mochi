@@ -93,7 +93,15 @@ function parseWindow(window: string | number): number {
   return parseInt(match[1]) * WINDOW_UNITS[match[2]]!;
 }
 
-export function createRouteLimiter(options: MochiRateLimitOptions): RouteLimiter {
+/**
+ * `autoGroup` namespaces this limiter's stored keys behind a `group:<autoGroup>:`
+ * prefix (see hitlimit's `resolveKey`) so counters can't collide with another
+ * route sharing the same persisted store. Mochi passes the route pattern for a
+ * route's *own* `rateLimit` config; the shared global limiter passes nothing, so
+ * routes inheriting it keep sharing one bucket. An explicit `group` always wins —
+ * set it to opt back into cross-route sharing.
+ */
+export function createRouteLimiter(options: MochiRateLimitOptions, autoGroup?: string): RouteLimiter {
   const store = options.store ?? memoryStore();
   const userKey = options.key;
   const userTier = options.tier;
@@ -122,7 +130,7 @@ export function createRouteLimiter(options: MochiRateLimitOptions): RouteLimiter
     onStoreError: options.onStoreError ?? (() => 'allow'),
     skip: userSkip ? (req) => userSkip(req, getRequestContext()) : undefined,
     ban: options.ban ? { threshold: options.ban.threshold, durationMs: parseWindow(options.ban.duration) } : null,
-    group: typeof userGroup === 'function' ? (req) => userGroup(req, getRequestContext()) : (userGroup ?? null),
+    group: typeof userGroup === 'function' ? (req) => userGroup(req, getRequestContext()) : (userGroup ?? autoGroup ?? null),
   };
   return {
     store,

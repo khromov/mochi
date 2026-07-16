@@ -587,7 +587,10 @@ export class Mochi {
         return null;
       }
       if (routeCfg) {
-        const limiter = createRouteLimiter(routeCfg);
+        // A route's own config is auto-namespaced by its pattern so two routes
+        // sharing a persisted store don't drain one bucket. The shared global
+        // limiter (below) passes no pattern — its routes keep sharing a bucket.
+        const limiter = createRouteLimiter(routeCfg, pattern);
         if (limiter.ownsStore) {
           rateLimitStores.add(limiter.store);
         }
