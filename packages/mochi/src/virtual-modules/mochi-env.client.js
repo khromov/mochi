@@ -1,5 +1,8 @@
 export const isServer = false; export const isBrowser = true; export const DEV = __MOCHI_DEV__; export const isDev = __MOCHI_DEV__;
-export function getRequestContext() { throw new Error("getRequestContext() is only available on the server"); }
+// Shared thrower for the server-only stubs below. Each stub stays a pure
+// declaration (tree-shaken when unused); this helper is pulled in only if one is.
+const __serverOnly = (n) => { throw new Error(n + " is only available on the server"); };
+export function getRequestContext() { __serverOnly("getRequestContext()"); }
 // Lazy cookie jar + /*@__PURE__*/ initializers keep this module tree-shakeable:
 // if an island imports only e.g. `logger`, the bundler drops `cookies` and the
 // whole cookies.client.ts tree instead of eagerly evaluating __cc() at load.
@@ -13,9 +16,7 @@ export const cookies = /*@__PURE__*/ new Proxy({}, {
     return typeof r === "function" ? r.bind(c) : r;
   },
 });
-const __mochiServerOnly = (n) => new Proxy({}, {
-  get() { throw new Error(n + " is only available on the server"); },
-});
+const __mochiServerOnly = (n) => new Proxy({}, { get() { __serverOnly(n); } });
 export const params = /*@__PURE__*/ __mochiServerOnly("params");
 const __loc = () => new URL(window.location.href);
 export const url = /*@__PURE__*/ new Proxy({}, {
@@ -48,7 +49,7 @@ export { trailingSlashIt } from "__MOCHI_TRAILING_SLASH__";
 // Server-only; the preprocessor never injects __mochi_emit_props__
 // into client bundles, but this stub keeps the module surface
 // symmetric and produces a clear error if anyone imports it.
-export function emitIslandProps() { throw new Error("emitIslandProps() is only available on the server"); }
+export function emitIslandProps() { __serverOnly("emitIslandProps()"); }
 // mochiEvents is a server-side bus. On the client we ship a stub so
 // bundles don't pull in mitt and accidental emits surface in the
 // console instead of silently misbehaving. Subscribers registered
@@ -66,16 +67,15 @@ export const mochiEvents = {
     );
   },
 };
-// MochiCache is server-only; ship a stub that throws so accidental
-// client imports surface clearly instead of failing the bundle.
-export class MochiCache { constructor() { throw new Error("MochiCache is only available on the server"); } }
-// Cache storage adapters are server-only; ship throwing stubs too.
-export class MemoryStorage { constructor() { throw new Error("MemoryStorage is only available on the server"); } }
-export class FileStorage { constructor() { throw new Error("FileStorage is only available on the server"); } }
+// MochiCache + storage adapters are server-only; ship stubs that throw so
+// accidental client imports surface clearly instead of failing the bundle.
+export class MochiCache { constructor() { __serverOnly("MochiCache"); } }
+export class MemoryStorage { constructor() { __serverOnly("MemoryStorage"); } }
+export class FileStorage { constructor() { __serverOnly("FileStorage"); } }
 // Blob refs only exist in server-side cache reads; isBlobRef is safe
 // to answer false in the browser, readBlobRef is a usage error.
 export function isBlobRef() { return false; }
-export function readBlobRef() { throw new Error("readBlobRef() is only available on the server"); }
+export function readBlobRef() { __serverOnly("readBlobRef()"); }
 // Image helpers are server-only (signing/fetch/disk-cache); ship throwing stubs.
 // getImageUrl/warmImagePlaceholder degrade to no-ops rather than throwing:
 // <Image> may re-mint on the client after hydration (with the raw src) and
@@ -83,11 +83,11 @@ export function readBlobRef() { throw new Error("readBlobRef() is only available
 export function getImageUrl(src) { return src; }
 export function getImageAttrs(src) { return { url: src }; }
 export function warmImagePlaceholder() {}
-export function getImage() { throw new Error("getImage() is only available on the server"); }
+export function getImage() { __serverOnly("getImage()"); }
 export function getImagePlaceholder() { return Promise.resolve(null); }
 export function imagePlaceholder() { return Promise.resolve(null); }
-export function invalidateImage() { throw new Error("invalidateImage() is only available on the server"); }
-export function memoryStore() { throw new Error("memoryStore() is only available on the server"); }
-export function sqliteStore() { throw new Error("sqliteStore() is only available on the server"); }
-export function postgresStore() { throw new Error("postgresStore() is only available on the server"); }
+export function invalidateImage() { __serverOnly("invalidateImage()"); }
+export function memoryStore() { __serverOnly("memoryStore()"); }
+export function sqliteStore() { __serverOnly("sqliteStore()"); }
+export function postgresStore() { __serverOnly("postgresStore()"); }
 export { enhance, deserialize } from "__MOCHI_ENHANCE_CLIENT__";
