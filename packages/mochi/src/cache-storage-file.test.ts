@@ -183,7 +183,8 @@ describe('MochiCache with FileStorage (stale-while-revalidate)', () => {
   });
 
   test('stale returns cached value and revalidates in the background', async () => {
-    const cache = new MochiCache({ storage: makeStorage(), minTimeToStale: 10, maxTimeToLive: 5_000 });
+    const storage = makeStorage();
+    const cache = new MochiCache({ storage, minTimeToStale: 10, maxTimeToLive: 5_000 });
     let calls = 0;
     const fn = () => ++calls;
 
@@ -194,7 +195,16 @@ describe('MochiCache with FileStorage (stale-while-revalidate)', () => {
     expect(stale.value).toBe(1);
     expect(stale.status).toBe('stale');
 
-    await wait(20);
+    // The background revalidation is fire-and-forget, so poll for the persisted
+    // refresh rather than assuming a fixed sleep is long enough (CI timers/disk
+    // I/O are coarser and occasionally miss a short fixed wait). Until it lands,
+    // the entry is still the original and the next read serves 1.
+    for (let i = 0; i < 250; i++) {
+      if (((await storage.getItem('k')) as { value: number } | null)?.value === 2) {
+        break;
+      }
+      await wait(2);
+    }
     expect(await cache.fetch('k', fn)).toBe(2);
   });
 
