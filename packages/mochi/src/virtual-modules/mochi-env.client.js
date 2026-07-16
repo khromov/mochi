@@ -1,19 +1,24 @@
 export const isServer = false; export const isBrowser = true; export const DEV = __MOCHI_DEV__; export const isDev = __MOCHI_DEV__;
 export function getRequestContext() { throw new Error("getRequestContext() is only available on the server"); }
+// Lazy cookie jar + /*@__PURE__*/ initializers keep this module tree-shakeable:
+// if an island imports only e.g. `logger`, the bundler drops `cookies` and the
+// whole cookies.client.ts tree instead of eagerly evaluating __cc() at load.
 import { createClientCookies as __cc } from "__MOCHI_COOKIES_CLIENT__";
-const __clientCookies = __cc();
-export const cookies = new Proxy({}, {
+let __clientCookies;
+const __getClientCookies = () => (__clientCookies ??= __cc());
+export const cookies = /*@__PURE__*/ new Proxy({}, {
   get(_, p) {
-    const r = __clientCookies[p];
-    return typeof r === "function" ? r.bind(__clientCookies) : r;
+    const c = __getClientCookies();
+    const r = c[p];
+    return typeof r === "function" ? r.bind(c) : r;
   },
 });
 const __mochiServerOnly = (n) => new Proxy({}, {
   get() { throw new Error(n + " is only available on the server"); },
 });
-export const params = __mochiServerOnly("params");
+export const params = /*@__PURE__*/ __mochiServerOnly("params");
 const __loc = () => new URL(window.location.href);
-export const url = new Proxy({}, {
+export const url = /*@__PURE__*/ new Proxy({}, {
   get(_, p) {
     const v = __loc();
     const r = v[p];
@@ -28,7 +33,7 @@ export const url = new Proxy({}, {
     return d;
   },
 });
-export const locals = __mochiServerOnly("locals");
+export const locals = /*@__PURE__*/ __mochiServerOnly("locals");
 // Re-export the isomorphic logger and apply the level seeded by the
 // server in window.__mochi_log_level (set by Mochi.serve via the HTML
 // shell). devWarn keeps routing through window.__mochi_warn so the
