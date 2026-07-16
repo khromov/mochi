@@ -194,15 +194,18 @@ async function renameWithRetry(from: string, to: string): Promise<void> {
   if (process.platform !== 'win32') {
     return rename(from, to);
   }
+  // Ramp to a 100ms poll and keep retrying for a few seconds: under heavy write
+  // contention a peer's handle on the destination can linger longer than a short
+  // window, and a rename that ultimately succeeds beats a spurious hard failure.
   for (let attempt = 0; ; attempt++) {
     try {
       return await rename(from, to);
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code ?? '';
-      if (attempt >= 10 || !RENAME_RETRY_CODES.has(code)) {
+      if (attempt >= 50 || !RENAME_RETRY_CODES.has(code)) {
         throw err;
       }
-      await Bun.sleep(10 * (attempt + 1));
+      await Bun.sleep(Math.min(100, 10 * (attempt + 1)));
     }
   }
 }

@@ -137,8 +137,13 @@ describe('FileStorage', () => {
 
     const storage = makeStorage({ maxAge: 5, purgeInterval: 20 });
     await storage.setItem('k', { value: 1, createdAt: 0 });
-    await wait(60);
 
+    // Poll for the background sweep rather than a fixed wait: the 20ms interval
+    // timer can be starved when many test processes run in parallel on CI, so a
+    // short fixed sleep occasionally sees zero fires.
+    for (let i = 0; i < 200 && events.length === 0; i++) {
+      await wait(10);
+    }
     expect(events.length).toBeGreaterThanOrEqual(1);
     expect(await storage.getItem('k')).toBeNull();
   });
@@ -654,6 +659,10 @@ describe('MochiCache cross-process in-flight marker (shared FileStorage)', () =>
       }),
     ).rejects.toThrow(/timed out/);
 
+    // Run 1's marker is still on disk — its cleanup is deferred until its `fn`
+    // returns (released below), not when the timeout fired.
+    const run1Marker = (await storageA.getItem(markerKey('k'))) as { runId?: string } | null;
+
     // Run 2 takes over the key and writes its own marker.
     let releaseSecond!: () => void;
     const secondGate = new Promise<void>((r) => (releaseSecond = r));
@@ -661,7 +670,17 @@ describe('MochiCache cross-process in-flight marker (shared FileStorage)', () =>
       await secondGate;
       return 2;
     });
-    await waitForMarker(storageA, 'k', true);
+    // Wait until run 2's marker (a *different* runId) has actually replaced run 1's:
+    // `waitForMarker(present)` only checks existence, which run 1's leftover already
+    // satisfies, so it can return before run 2 writes — letting run 1's late cleanup
+    // delete its own still-current marker and flaking the assertion below.
+    for (let i = 0; i < 250; i++) {
+      const marker = (await storageA.getItem(markerKey('k'))) as { runId?: string } | null;
+      if (marker != null && marker.runId !== run1Marker?.runId) {
+        break;
+      }
+      await wait(2);
+    }
 
     // The abandoned first run settles late — it must leave run 2's marker alone,
     // so peer processes keep deferring to the regeneration that is still running.
