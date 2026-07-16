@@ -114,10 +114,15 @@ describe('FileStorage', () => {
 
   test('sweep removes files older than maxAge and keeps fresh ones', async () => {
     const storage = makeStorage({ maxAge: 50 });
+    // Stamp before the write: the file's mtime is necessarily >= this, so a sweep
+    // as-of `before` always sees it as fresh — deterministic regardless of how slow
+    // the durable write (fsync + rename) runs on a loaded CI host. A bare
+    // `sweep()` here would flake whenever the write itself takes longer than maxAge.
+    const before = Date.now();
     await storage.setItem('k', { value: 1, createdAt: 0 });
 
     // Nothing expired yet.
-    expect(await storage.sweep()).toEqual({ removed: 0 });
+    expect(await storage.sweep(before)).toEqual({ removed: 0 });
     expect(await storage.getItem('k')).not.toBeNull();
 
     // Advance the clock past maxAge relative to the file's mtime.
@@ -132,10 +137,17 @@ describe('FileStorage', () => {
 
     const storage = makeStorage({ maxAge: 5, purgeInterval: 20 });
     await storage.setItem('k', { value: 1, createdAt: 0 });
-    await wait(60);
 
-    expect(events.length).toBeGreaterThanOrEqual(1);
+    // Poll for the actual removal rather than a fixed wait or an event count: the
+    // 20ms interval timer can be starved under parallel CI load, and the sweeper's
+    // initial pass can fire before the entry ages past maxAge (so `events.length`
+    // reaching 1 doesn't yet mean `k` was reclaimed). Waiting for the observable
+    // effect is robust on both counts.
+    for (let i = 0; i < 200 && (await storage.getItem('k')) !== null; i++) {
+      await wait(10);
+    }
     expect(await storage.getItem('k')).toBeNull();
+    expect(events.length).toBeGreaterThanOrEqual(1);
   });
 
   test('sweep reports the plaintext keys it removed when asked', async () => {
@@ -195,12 +207,12 @@ describe('MochiCache with FileStorage (stale-while-revalidate)', () => {
     expect(stale.value).toBe(1);
     expect(stale.status).toBe('stale');
 
-    // The background revalidation is fire-and-forget, so poll for the persisted
-    // refresh rather than assuming a fixed sleep is long enough (CI timers/disk
-    // I/O are coarser and occasionally miss a short fixed wait). Until it lands,
-    // the entry is still the original and the next read serves 1.
+    // Poll the backing store for the background revalidation's write rather than a
+    // fixed sleep, which flakes when the disk write is slower than the wait (Windows
+    // CI). Read storage directly, not cache.fetch — the latter would kick a second
+    // stale revalidation before the first has landed.
     for (let i = 0; i < 250; i++) {
-      if (((await storage.getItem('k')) as { value: number } | null)?.value === 2) {
+      if (((await storage.getItem('k')) as { value?: number } | null)?.value === 2) {
         break;
       }
       await wait(2);
@@ -643,8 +655,10 @@ describe('MochiCache cross-process in-flight marker (shared FileStorage)', () =>
   });
 
   test('a timed-out run settling late does not remove the marker of the run that superseded it', async () => {
-    // Long enough that run 2 (held open ~40ms below) never trips the timeout itself.
-    const { storageA, cacheA } = twoProcesses({ minTimeToStale: 10, maxTimeToLive: 10_000, inflightTimeout: 200 });
+    // inflightTimeout must be long enough that run 2 never trips it while we wait
+    // for its marker to land (the poll below can take a while under Windows disk
+    // I/O); run 1 still times out first because it's held open until then.
+    const { storageA, cacheA } = twoProcesses({ minTimeToStale: 10, maxTimeToLive: 10_000, inflightTimeout: 2_000 });
 
     // Run 1 hangs past the in-flight timeout, so its lock is released while its
     // work (and marker cleanup) is still pending.
@@ -657,6 +671,10 @@ describe('MochiCache cross-process in-flight marker (shared FileStorage)', () =>
       }),
     ).rejects.toThrow(/timed out/);
 
+    // Run 1's marker is still on disk — its cleanup is deferred until its `fn`
+    // returns (released below), not when the timeout fired.
+    const run1Marker = (await storageA.getItem(markerKey('k'))) as { runId?: string } | null;
+
     // Run 2 takes over the key and writes its own marker.
     let releaseSecond!: () => void;
     const secondGate = new Promise<void>((r) => (releaseSecond = r));
@@ -664,7 +682,17 @@ describe('MochiCache cross-process in-flight marker (shared FileStorage)', () =>
       await secondGate;
       return 2;
     });
-    await waitForMarker(storageA, 'k', true);
+    // Wait until run 2's marker (a *different* runId) has actually replaced run 1's:
+    // `waitForMarker(present)` only checks existence, which run 1's leftover already
+    // satisfies, so it can return before run 2 writes — letting run 1's late cleanup
+    // delete its own still-current marker and flaking the assertion below.
+    for (let i = 0; i < 250; i++) {
+      const marker = (await storageA.getItem(markerKey('k'))) as { runId?: string } | null;
+      if (marker != null && marker.runId !== run1Marker?.runId) {
+        break;
+      }
+      await wait(2);
+    }
 
     // The abandoned first run settles late — it must leave run 2's marker alone,
     // so peer processes keep deferring to the regeneration that is still running.
