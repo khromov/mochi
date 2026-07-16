@@ -6,18 +6,22 @@
   let { captcha }: { captcha: MintedCaptcha } = $props();
 
   let errorMessage = $state<string | null>(null);
+  let errorReason = $state<string | null>(null);
   let sentMessage = $state<string | null>(null);
   let pending = $state(false);
 
   const handleSubmit: MochiSubmitFunction = () => {
     pending = true;
     errorMessage = null;
+    errorReason = null;
     return ({ result }) => {
       pending = false;
       if (result.type === 'success') {
         sentMessage = (result.data as { message?: string })?.message ?? 'Verified.';
       } else if (result.type === 'failure') {
-        errorMessage = (result.data as { error?: string })?.error ?? 'Verification failed.';
+        const data = result.data as { error?: string; reason?: string };
+        errorMessage = data?.error ?? 'Verification failed.';
+        errorReason = data?.reason ?? null;
       }
     };
   };
@@ -40,12 +44,20 @@
     <MochiCaptcha {...captcha} emoji="🍡" label="Slide the mochi to the right" />
 
     {#if errorMessage}
-      <p class="error" role="alert">{errorMessage}</p>
+      <p class="error" role="alert">
+        {errorMessage}
+        {#if errorReason}
+          <span class="reason">reason: {errorReason}</span>
+        {/if}
+      </p>
     {/if}
 
-    <!-- Deliberately not gated on the captcha, so you can submit unsolved and
-         watch the server reject it. Real forms should disable until verified. -->
-    <button type="submit" disabled={pending}>{pending ? 'Checking…' : 'Submit'}</button>
+    <div class="actions">
+      <!-- Deliberately not gated on the captcha, so you can submit unsolved and
+           watch the server reject it. Real forms should disable until verified. -->
+      <button type="submit" disabled={pending}>{pending ? 'Checking…' : 'Submit'}</button>
+      <button type="submit" formaction="?/replay" class="secondary" disabled={pending}>Submit twice (replay)</button>
+    </div>
   </form>
 {/if}
 
@@ -100,6 +112,20 @@
     font-size: 0.9rem;
   }
 
+  .reason {
+    display: block;
+    margin-top: 0.2rem;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    opacity: 0.75;
+  }
+
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
   .sent {
     display: flex;
     flex-direction: column;
@@ -119,7 +145,6 @@
   }
 
   button {
-    align-self: flex-start;
     padding: 0.5rem 1rem;
     background: var(--accent);
     color: var(--accent-text);
@@ -129,6 +154,18 @@
     font-size: 0.95rem;
     font-weight: 600;
     cursor: pointer;
+  }
+
+  button.secondary {
+    background: transparent;
+    color: var(--text-muted);
+    border-color: var(--border);
+    font-weight: 500;
+  }
+
+  button.secondary:hover:not(:disabled) {
+    background: var(--surface-muted);
+    color: var(--text);
   }
 
   button:disabled {

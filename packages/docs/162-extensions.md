@@ -381,3 +381,37 @@ Return `null` to veto — the message never reaches a transport (nothing is deli
 ```
 
 A suppressed send still emits an `email:sent` event with `transport: 'suppressed'` (and `consoleLogger()` prints it as a `MAIL … suppressed (filtered)` line), so blocked mail stays observable. `Mochi.email()` resolves to `{ transport: 'suppressed' }` in that case.
+
+#### `captcha:minAgeMs`
+
+The captcha timing floor — a token younger than this is refused. Applied per token, so the floor can vary by form. The context carries the `bits` sealed into the token, its measured `ageMs`, and `limitMs` (the expiry bound the returned floor must stay under). Returning a value at or above `limitMs`, or a negative one, throws — it would reject every token. Sync.
+
+This is the only check enforcing that a submission took human time. The proof-of-work bounds an attacker's **cost** (~2^`bits` hashes per token), not any single solver's latency — solve time is geometrically distributed with no lower bound, so a lucky visitor clears it in milliseconds. A form with fields to type into runs well past the 2s default; a form with nothing to fill in may not.
+
+```ts
+import { getRequestContext } from 'mochi-framework';
+
+await Mochi.serve({
+  filters: {
+    // A one-click confirm has nothing to type, so the default floor would reject real visitors.
+    'captcha:minAgeMs': (def) => (getRequestContext().url.pathname === '/confirm/' ? 250 : def),
+  },
+  routes,
+});
+```
+
+#### `captcha:driftAllowanceMs`
+
+Slack added to `maxAgeMs` before a token is refused as expired. A token's age is `Date.now()` at verify minus the `iat` sealed at mint — in a multi-instance deploy those two reads come off different machines, so the difference carries that pair's clock skew. The allowance absorbs it. Resolved once alongside the rest of the captcha options, since skew is a property of the fleet rather than of a request. Sync.
+
+```ts
+await Mochi.serve({
+  filters: {
+    // Single instance — mint and verify share one clock, so no slack is needed.
+    'captcha:driftAllowanceMs': () => 0,
+  },
+  routes,
+});
+```
+
+The allowance only ever widens the **expiry** side, and is deliberately not applied to `minAgeMs`. Padding a floor means subtracting from it, so an allowance wider than the floor would silently delete the too-fast check rather than soften it — leaving a config that still reads like it enforces a 2s floor while accepting instant submissions. Use `captcha:minAgeMs` to move the floor, so the change is explicit.

@@ -109,8 +109,9 @@ export { fail, redirect, success } from './forms';
 
 export { mintCaptcha, verifyCaptcha, consumeCaptcha, solveCaptcha } from './captcha/captcha';
 export { MemoryNonceStore, SqliteNonceStore } from './captcha/nonceStore';
+export { DEFAULT_CAPTCHA_MIN_AGE_MS, DEFAULT_CAPTCHA_DRIFT_ALLOWANCE_MS } from './captcha/config';
 export type { MintedCaptcha } from './captcha/captcha';
-export type { MochiCaptchaOptions, CaptchaResult, NonceStore } from './captcha/types';
+export type { MochiCaptchaOptions, CaptchaResult, CaptchaFailureReason, NonceStore } from './captcha/types';
 export { enhance, deserialize } from './enhance.ssr';
 export { isFormContentType, DEFAULT_FORM_CONTENT_TYPES, DEFAULT_PROTECTED_METHODS } from './csrf';
 export { DEFAULT_COMPRESS_MIN_BYTES, encryptPayload, decryptPayload } from './payloadCrypto';

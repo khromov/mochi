@@ -11,6 +11,11 @@ description: 'Slide-to-verify captcha with proof-of-work, replay protection and 
 
 ## Captcha
 
+<figure>
+  <img src="/docs/captcha.png" alt="The MochiCaptcha slide-to-verify widget in its default styling" />
+  <figcaption>The widget with no CSS applied — every colour falls back to a built-in default.</figcaption>
+</figure>
+
 `<MochiCaptcha />` is a slide-to-verify widget that gates form submissions without a third-party service, a tracker, or a network round-trip. Mint a challenge in `serverProps`, render the component, verify in the action.
 
 ```ts
@@ -122,12 +127,47 @@ await Mochi.serve({
 | Option      | Default                        | Description                                                                     |
 | ----------- | ------------------------------ | ------------------------------------------------------------------------------- |
 | `bits`      | `16`                           | Proof-of-work difficulty in leading zero bits. Each extra bit doubles the work. |
-| `minAgeMs`  | `2000`                         | Reject tokens younger than this — a human can't fill a form instantly.          |
+| `minAgeMs`  | `2000`                         | Reject tokens younger than this — the timing floor. See below.                  |
 | `maxAgeMs`  | `900_000`                      | Reject tokens older than this (15 minutes).                                     |
 | `store`     | `'memory'`                     | One-time nonce store: `'memory'`, `'sqlite'`, or your own `NonceStore`.         |
 | `storePath` | `.mochi/captcha-nonces.sqlite` | SQLite file when `store: 'sqlite'`.                                             |
 
 Every token failure returns the same message, so a probing bot can't tell "too fast" from "tampered" and learn where the limits are.
+
+### The timing floor
+
+`minAgeMs` is the only check enforcing that a submission took human time, and `2000` suits a form the visitor has to type into. It is worth setting deliberately rather than inheriting, because the proof-of-work does not back it up: `bits` bounds an attacker's **cost** — ~2^`bits` hashes per token, on average — not any individual solver's latency. Solve time is geometrically distributed with no lower bound, so a fair share of real visitors clear a 16-bit challenge in a few hundred milliseconds and some clear it in one attempt. On a form with nothing to fill in, the slide plus the proof-of-work can land under two seconds and a genuine visitor gets refused.
+
+Tune it per form with the [`captcha:minAgeMs`](/docs/extensions/#captchaminagems) filter rather than lowering it globally.
+
+### Clock skew
+
+A token's age is `Date.now()` at verify minus the mint time sealed into the token. On one instance that's one clock and the subtraction is exact. Across a multi-instance deploy the two reads come off different machines, so the difference also carries that pair's clock skew — a verifier running behind the minter understates the age and can refuse a real submission as too fast.
+
+`maxAgeMs` is padded by a 30s allowance to absorb this, adjustable via the [`captcha:driftAllowanceMs`](/docs/extensions/#captchadriftallowancems) filter. The floor is **not** padded: padding a floor means subtracting from it, so any allowance wider than `minAgeMs` would delete the too-fast check rather than soften it. Keep instances NTP-synced — a fleet skewed by seconds has no usable elapsed-time signal to floor in the first place, and `MOCHI_KEY` and the nonce store already have to be shared there anyway.
+
+<Callout type="info">
+
+A **negative** `ageMs` on the [`captcha:verify` event](#watching-it-work) means a token was verified before it was minted, which is impossible on a single clock. It's an unambiguous skew alarm, and it fires in the direction that quietly weakens the floor rather than the one visitors complain about.
+
+</Callout>
+
+### Custom messages
+
+`captcha.error` is ready to render, but a failure also carries a `reason` so you can write your own copy:
+
+```ts
+const captcha = await verifyCaptcha(formData);
+if (!captcha.ok) {
+  return fail(400, {
+    error: captcha.reason === 'replay' ? 'You already sent this one — reload for a fresh form.' : captcha.error,
+  });
+}
+```
+
+`reason` is only ever `'replay'` or `'rejected'`. Tampered, too-fast, expired and bad-proof-of-work all collapse into `'rejected'`, so branching on it can't reintroduce the probing surface the single generic message closes. Replay stays separate because it's already public — it's the one failure a real visitor can hit and act on, and reaching it costs a genuinely solved captcha.
+
+To distinguish the rest, listen for the [`captcha:verify` event](#watching-it-work) — operators get the true cause there, the client never does.
 
 ### Replay protection
 
@@ -244,7 +284,7 @@ const res = await fetch(`${base}/contact/?/send`, {
 | `consumeCaptcha(result)`            | `Promise<boolean>`               | Burn a deferred nonce; `false` if already spent.                                 |
 | `solveCaptcha(minted)`              | `{ captcha_token, captcha_pow }` | Solve server-side, for tests.                                                    |
 
-`CaptchaResult` is `{ ok: true; nonce: string; expiresAt: number }` or `{ ok: false; error: string }` — `error` is safe to show to the visitor.
+`CaptchaResult` is `{ ok: true; nonce: string; expiresAt: number }` or `{ ok: false; reason: 'replay' | 'rejected'; error: string }` — `error` is safe to show to the visitor, and `reason` lets you [swap in your own copy](#custom-messages).
 
 <Callout type="info">
 

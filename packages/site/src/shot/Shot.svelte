@@ -34,9 +34,9 @@
          such an import (LikeButton) needs no wrapper; one that isn't (MochiCaptcha,
          a named export of mochi-framework/components) needs a thin local wrapper. -->
     {#if name === 'captcha'}
-      <CaptchaShot mochi:hydrate {...(props as ComponentProps<typeof CaptchaShot>)} />
+      <CaptchaShot mochi:hydrate {...props as ComponentProps<typeof CaptchaShot>} />
     {:else if name === 'like'}
-      <LikeButton mochi:hydrate {...(props as ComponentProps<typeof LikeButton>)} />
+      <LikeButton mochi:hydrate {...props as ComponentProps<typeof LikeButton>} />
     {/if}
   </div>
 </div>
@@ -55,8 +55,13 @@
   }
 
   /* Scaling about the centre keeps the subject centred: transform doesn't affect
-     layout, so flex still centres the unscaled box and the magnification is even. */
+     layout, so flex still centres the unscaled box and the magnification is even.
+     Centres its own content too, so a subject that doesn't fill its declared
+     natural box is still centred rather than pinned to the top-left of it. */
   .fit {
+    display: flex;
+    align-items: center;
+    justify-content: center;
     transform-origin: center;
     flex: none;
   }

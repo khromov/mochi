@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { encryptPayload, decryptPayload } from '../payloadCrypto';
+import { applyFilter } from '../extensions';
 import { mochiEvents } from '../events';
 import type { MochiCaptchaReason } from '../events';
 import { getCaptchaRuntime } from './config';
@@ -14,7 +15,10 @@ const REPLAY_ERROR = 'This form was already submitted. Reload the page to try ag
 
 function reject(reason: MochiCaptchaReason, details?: { bits?: number; ageMs?: number }): CaptchaResult {
   mochiEvents.emit('captcha:verify', { ok: false, reason, ...details });
-  return { ok: false, error: reason === 'replay' ? REPLAY_ERROR : GENERIC_ERROR };
+  // The narrowing to 'rejected' happens here rather than at the call site: it is
+  // what keeps the probing surface closed, so no future reject() caller can
+  // widen it by accident.
+  return reason === 'replay' ? { ok: false, reason: 'replay', error: REPLAY_ERROR } : { ok: false, reason: 'rejected', error: GENERIC_ERROR };
 }
 
 export interface MintedCaptcha {
@@ -40,6 +44,10 @@ export function mintCaptcha(options?: { bits?: number }): MintedCaptcha {
  * the form. Consumes the one-time nonce on success unless `consume: false`, in
  * which case call {@link consumeCaptcha} yourself once the submission is
  * committed.
+ *
+ * A failure carries a ready-to-render `error` plus a `reason` to override it
+ * with your own copy — see {@link CaptchaFailureReason} for why `reason` is
+ * deliberately coarse.
  */
 export async function verifyCaptcha(formData: FormData, options?: { consume?: boolean }): Promise<CaptchaResult> {
   const token = String(formData.get('captcha_token') ?? '');
@@ -64,10 +72,23 @@ export async function verifyCaptcha(formData: FormData, options?: { consume?: bo
 
   const { options: resolved, store } = getCaptchaRuntime();
   const ageMs = Date.now() - iat;
-  if (ageMs < resolved.minAgeMs) {
+
+  // Skew between the minting and the verifying instance lands directly in ageMs
+  // — the two Date.now() reads come off different machines — so the allowance
+  // widens the expiry bound. It deliberately does NOT pad the floor: padding a
+  // floor means subtracting from it, and any allowance wider than minAgeMs would
+  // silently delete the too-fast check rather than soften it. A fleet skewed far
+  // enough to need that has no usable elapsed-time signal left to floor.
+  const limitMs = resolved.maxAgeMs + resolved.driftAllowanceMs;
+  const minAgeMs = applyFilter('captcha:minAgeMs', resolved.minAgeMs, { bits, ageMs, limitMs });
+  if (!Number.isFinite(minAgeMs) || minAgeMs < 0 || minAgeMs >= limitMs) {
+    throw new Error(`Captcha: the captcha:minAgeMs filter returned ${minAgeMs}; expected a non-negative number below ${limitMs}, or every token is rejected`);
+  }
+
+  if (ageMs < minAgeMs) {
     return reject('too-fast', { bits, ageMs });
   }
-  if (ageMs > resolved.maxAgeMs) {
+  if (ageMs > limitMs) {
     return reject('expired', { bits, ageMs });
   }
 
@@ -82,7 +103,11 @@ export async function verifyCaptcha(formData: FormData, options?: { consume?: bo
     return reject('bad-pow', { bits, ageMs });
   }
 
-  const expiresAt = iat + resolved.maxAgeMs;
+  // Tracks the acceptance bound, not maxAgeMs: a token accepted inside the drift
+  // pad would otherwise carry an already-past expiry, and both stores prune on
+  // `expiresAt < now` — the nonce would be swept straight back out and the token
+  // would replay.
+  const expiresAt = iat + limitMs;
   if (options?.consume !== false && !(await store.consume(nonce, expiresAt))) {
     return reject('replay', { bits, ageMs });
   }

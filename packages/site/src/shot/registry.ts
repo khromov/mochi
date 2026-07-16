@@ -32,8 +32,11 @@ export const subjects: Record<string, ShotSubject> = {
     },
   },
 
+  // Carries no wrapper: it's already a default-imported .svelte, so Shot.svelte can
+  // hydrate it directly. Its natural box is the bare button's own intrinsic size,
+  // measured in the browser — nothing here constrains it, so a guess would mis-scale.
   like: {
-    natural: { width: 120, height: 34 },
+    natural: { width: 31, height: 19 },
     props: () => ({ initialLikes: 42 }),
   },
 };

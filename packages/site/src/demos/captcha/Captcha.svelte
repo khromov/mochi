@@ -21,8 +21,12 @@
     <code>verifyCaptcha()</code> re-derives it server-side.
   </p>
   <p>
-    The submit button is <strong>not</strong> gated on the captcha here, so you can submit without solving it and watch the server reject you. Submit twice on one solved token and the
-    replay check rejects the second.
+    The submit button is <strong>not</strong> gated on the captcha here, so you can submit without solving it and watch the server reject you.
+  </p>
+  <p>
+    <strong>Submit twice (replay)</strong> verifies the same token twice in one action — the first call burns the nonce, so the second is a real replay. A failure carries a
+    <code>reason</code>, shown under each message: solve the captcha first and you get <code>replay</code>, which the demo answers with its own copy. Leave it unsolved and every
+    probe-able failure — tampered, too fast, expired, bad proof-of-work — collapses to <code>rejected</code> behind one generic message, so a bot can't tell them apart.
   </p>
 
   <CaptchaForm mochi:hydrate {captcha} />

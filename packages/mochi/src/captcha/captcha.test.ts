@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { mintCaptcha, verifyCaptcha, consumeCaptcha, solveCaptcha } from './captcha';
 import { CAPTCHA_STEPS, chainInput, powInput, leadingZeroBits } from './pow';
 import { encryptPayload } from '../payloadCrypto';
+import { initExtensions } from '../extensions';
 import { mochiEvents } from '../events';
 import type { MochiCaptchaVerifyEvent } from '../events';
 import type { MochiCaptchaOptions } from './types';
@@ -21,6 +22,7 @@ function installConfig(captcha: MochiCaptchaOptions = { bits: 8, minAgeMs: 0 }) 
 afterEach(() => {
   delete (globalThis as unknown as Record<string, unknown>)[GLOBAL_CONFIG_KEY];
   delete (globalThis as unknown as Record<string, unknown>)[GLOBAL_RUNTIME_KEY];
+  initExtensions({}); // clear any filters registered by a test
 });
 
 const fields = (f: Record<string, string>): FormData => {
@@ -71,7 +73,7 @@ describe('mintCaptcha + verifyCaptcha', () => {
     installConfig();
     const solved = solveCaptcha(mintCaptcha());
     const result = await verifyCaptcha(fields({ ...solved, captcha_token: `${solved.captcha_token}x` }));
-    expect(result).toEqual({ ok: false, error: 'Verification failed — reload the page and try again.' });
+    expect(result).toEqual({ ok: false, reason: 'rejected', error: 'Verification failed — reload the page and try again.' });
   });
 
   test('rejects an absent token', async () => {
@@ -139,6 +141,112 @@ describe('mintCaptcha + verifyCaptcha', () => {
   });
 });
 
+describe('clock-drift allowance', () => {
+  const verifyAged = async (ageMs: number, iatOut?: { iat: number }) => {
+    const iat = Date.now() - ageMs;
+    if (iatOut) {
+      iatOut.iat = iat;
+    }
+    const token = sealToken({ iat });
+    return await verifyCaptcha(fields({ captcha_token: token, captcha_pow: powFor(token, 8, true) }));
+  };
+
+  test('accepts a token past maxAgeMs but inside the drift allowance', async () => {
+    installConfig({ bits: 8, minAgeMs: 0, maxAgeMs: 1000 });
+    expect((await verifyAged(10_000)).ok).toBe(true);
+  });
+
+  test('rejects a token past maxAgeMs + the drift allowance', async () => {
+    installConfig({ bits: 8, minAgeMs: 0, maxAgeMs: 1000 });
+    expect((await verifyAged(40_000)).ok).toBe(false);
+  });
+
+  test('the nonce outlives the padded window, so a drift-window token still cannot replay', async () => {
+    // Regression guard for the coupling between the acceptance bound and the
+    // nonce TTL: if expiresAt tracked maxAgeMs alone it would already be in the
+    // past here, both stores prune on `expiresAt < now`, and the nonce would be
+    // swept straight back out — making the token replayable inside the pad.
+    installConfig({ bits: 8, minAgeMs: 0, maxAgeMs: 1000 });
+    const out = { iat: 0 };
+    const first = await verifyAged(10_000, out);
+    expect(first.ok).toBe(true);
+    expect(first.ok && first.expiresAt).toBe(out.iat + 1000 + 30_000);
+    expect(first.ok && first.expiresAt > Date.now()).toBe(true);
+    expect((await verifyAged(10_000, out)).ok).toBe(true); // different nonce, unaffected
+
+    const iat = Date.now() - 10_000;
+    const token = sealToken({ iat });
+    const solved = fields({ captcha_token: token, captcha_pow: powFor(token, 8, true) });
+    expect((await verifyCaptcha(solved)).ok).toBe(true);
+    expect(await verifyCaptcha(solved)).toMatchObject({ ok: false, reason: 'replay' });
+  });
+
+  test('captcha:driftAllowanceMs narrows the window', async () => {
+    initExtensions({ filters: { 'captcha:driftAllowanceMs': () => 0 } });
+    installConfig({ bits: 8, minAgeMs: 0, maxAgeMs: 1000 });
+    expect((await verifyAged(10_000)).ok).toBe(false);
+  });
+
+  test('captcha:driftAllowanceMs receives the resolved maxAgeMs', async () => {
+    let seen = -1;
+    initExtensions({
+      filters: {
+        'captcha:driftAllowanceMs': (value, ctx) => {
+          seen = ctx.maxAgeMs;
+          return value;
+        },
+      },
+    });
+    installConfig({ bits: 8, minAgeMs: 0, maxAgeMs: 1000 });
+    await verifyAged(500);
+    expect(seen).toBe(1000);
+  });
+
+  test('rejects a negative drift allowance', () => {
+    initExtensions({ filters: { 'captcha:driftAllowanceMs': () => -1 } });
+    installConfig({ bits: 8, minAgeMs: 0, maxAgeMs: 1000 });
+    expect(() => mintCaptcha()).toThrow(/non-negative/);
+  });
+});
+
+describe('captcha:minAgeMs', () => {
+  test('overrides the configured floor', async () => {
+    initExtensions({ filters: { 'captcha:minAgeMs': () => 0 } });
+    installConfig({ bits: 8, minAgeMs: 5000 });
+    expect((await verifyCaptcha(fields(solveCaptcha(mintCaptcha())))).ok).toBe(true);
+  });
+
+  test('can raise the floor to reject a fresh token', async () => {
+    initExtensions({ filters: { 'captcha:minAgeMs': () => 5000 } });
+    installConfig({ bits: 8, minAgeMs: 0 });
+    expect((await verifyCaptcha(fields(solveCaptcha(mintCaptcha())))).ok).toBe(false);
+  });
+
+  test('receives the sealed bits and the acceptance bound', async () => {
+    let seenBits = -1;
+    let seenLimitMs = -1;
+    initExtensions({
+      filters: {
+        'captcha:minAgeMs': (value, ctx) => {
+          seenBits = ctx.bits;
+          seenLimitMs = ctx.limitMs;
+          return value;
+        },
+      },
+    });
+    installConfig({ bits: 8, minAgeMs: 0, maxAgeMs: 1000 });
+    await verifyCaptcha(fields(solveCaptcha(mintCaptcha())));
+    expect({ bits: seenBits, limitMs: seenLimitMs }).toEqual({ bits: 8, limitMs: 31_000 });
+  });
+
+  test('throws when the filter returns a floor at or above the acceptance bound', async () => {
+    initExtensions({ filters: { 'captcha:minAgeMs': () => 31_000 } });
+    installConfig({ bits: 8, minAgeMs: 0, maxAgeMs: 1000 });
+    const solved = fields(solveCaptcha(mintCaptcha()));
+    await expect(verifyCaptcha(solved)).rejects.toThrow(/every token is rejected/);
+  });
+});
+
 describe('replay protection', () => {
   test('rejects a replayed token on the second verify', async () => {
     installConfig();
@@ -146,6 +254,7 @@ describe('replay protection', () => {
     expect((await verifyCaptcha(fields(solved))).ok).toBe(true);
     expect(await verifyCaptcha(fields(solved))).toEqual({
       ok: false,
+      reason: 'replay',
       error: 'This form was already submitted. Reload the page to try again.',
     });
   });
@@ -185,6 +294,41 @@ describe('replay protection', () => {
   });
 });
 
+describe('failure reason', () => {
+  test('every probe-able failure collapses to rejected', async () => {
+    // The counterpart to the `captcha:verify` event tests below: those assert
+    // operators get the true cause, this asserts the client never does. If a new
+    // reject() reason ever reaches the caller distinctly, this fails.
+    installConfig({ bits: 8, minAgeMs: 5000, maxAgeMs: 10_000 });
+    const malformed = await verifyCaptcha(fields({ captcha_token: 'nope', captcha_pow: '1' }));
+    const tooFast = await verifyCaptcha(fields(solveCaptcha(mintCaptcha())));
+    const expired = sealToken({ iat: Date.now() - 60_000 });
+    const stale = await verifyCaptcha(fields({ captcha_token: expired, captcha_pow: powFor(expired, 8, true) }));
+    const minted = mintCaptcha();
+    const badPow = await verifyCaptcha(fields({ captcha_token: minted.token, captcha_pow: powFor(minted.token, 8, false) }));
+
+    for (const result of [malformed, tooFast, stale, badPow]) {
+      expect(result).toEqual({ ok: false, reason: 'rejected', error: 'Verification failed — reload the page and try again.' });
+    }
+  });
+
+  test('replay is distinguishable so callers can swap in their own copy', async () => {
+    installConfig();
+    const solved = solveCaptcha(mintCaptcha());
+    await verifyCaptcha(fields(solved));
+    const replayed = await verifyCaptcha(fields(solved));
+
+    expect(replayed.ok).toBe(false);
+    if (replayed.ok) {
+      return;
+    }
+    expect(replayed.reason).toBe('replay');
+    // The shape an app's action branches on.
+    const message = replayed.reason === 'replay' ? 'Already sent — grab a fresh form.' : replayed.error;
+    expect(message).toBe('Already sent — grab a fresh form.');
+  });
+});
+
 describe('captcha:verify event', () => {
   const seen: MochiCaptchaVerifyEvent[] = [];
   const record = (e: MochiCaptchaVerifyEvent) => {
@@ -212,7 +356,7 @@ describe('captcha:verify event', () => {
   test('reports the true reason behind the generic client error', async () => {
     installConfig({ bits: 8, minAgeMs: 5000 });
     const tooFast = await verifyCaptcha(fields(solveCaptcha(mintCaptcha())));
-    expect(tooFast).toEqual({ ok: false, error: 'Verification failed — reload the page and try again.' });
+    expect(tooFast).toEqual({ ok: false, reason: 'rejected', error: 'Verification failed — reload the page and try again.' });
     expect(seen[0]).toMatchObject({ ok: false, reason: 'too-fast' });
   });
 
