@@ -595,6 +595,8 @@ export class ComponentRegistry {
             // Svelte never invokes actions during SSR, so these stubs only fire
             // if user code calls them on the server — which is a usage error.
             `export { enhance, deserialize } from "${toPosixPath(path.join(FRAMEWORK_DIR, 'enhance.ssr.ts'))}";`,
+            // Rate-limit stores — server-only (bun:sqlite / Bun SQL).
+            `export { memoryStore, sqliteStore, postgresStore } from "${toPosixPath(path.join(FRAMEWORK_DIR, 'rateLimit.ts'))}";`,
           ].join('\n'),
           loader: 'js',
         }));
@@ -1105,6 +1107,9 @@ export class ComponentRegistry {
             `export function getImagePlaceholder() { return Promise.resolve(null); }`,
             `export function imagePlaceholder() { return Promise.resolve(null); }`,
             `export function invalidateImage() { throw new Error("invalidateImage() is only available on the server"); }`,
+            `export function memoryStore() { throw new Error("memoryStore() is only available on the server"); }`,
+            `export function sqliteStore() { throw new Error("sqliteStore() is only available on the server"); }`,
+            `export function postgresStore() { throw new Error("postgresStore() is only available on the server"); }`,
             `export { enhance, deserialize } from "${enhanceClientPath}";`,
           ].join('\n'),
           loader: 'js',

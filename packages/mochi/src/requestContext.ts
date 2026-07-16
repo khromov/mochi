@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import type { MochiCookieJar } from './cookies';
 import type { IslandPropsEntry } from './islandPropsRegistry';
 import type { MochiFormResult } from './types';
+import type { MochiRateLimitInfo } from './rateLimit';
 import { pinGlobal } from './globalState';
 
 export interface MochiRequestContext {
@@ -67,6 +68,15 @@ export interface MochiRequestContext {
    * server; the address is read from the right to block spoofing.
    */
   getClientAddress: () => string | null;
+  /**
+   * Rate-limit state for this request when the matched route has a limiter and
+   * the request was allowed: `limit`, `remaining`, `resetIn` (seconds),
+   * `resetAt`, `key`, and `tier` when tiered. Undefined when no limiter applies,
+   * on warmup requests, and when the limiter's `skip()` matched. Read it in
+   * `serverProps` or server-side component code via
+   * `getRequestContext().rateLimit` to render usage (e.g. "3 of 5 used").
+   */
+  rateLimit?: MochiRateLimitInfo;
 }
 
 export interface BundleInfo {
