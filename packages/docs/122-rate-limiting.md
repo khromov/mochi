@@ -59,12 +59,12 @@ All of hitlimit's options are accepted (except `logger` — Mochi logs `429`s th
 | -------------- | ------------- | ----------------------------------------------------------------- |
 | `limit`        | `100`         | Max requests per window                                           |
 | `window`       | `'1m'`        | `'30s'`, `'1m'`, `'1h'`, `'1d'`, or milliseconds                  |
-| `key`          | client IP     | `(req) => string` — what to bucket by                             |
+| `key`          | client IP     | `(req, ctx) => string` — what to bucket by                        |
 | `store`        | in-memory     | `sqliteStore(…)`, `postgresStore(…)`, or a custom `HitLimitStore` |
-| `tiers`/`tier` | —             | Named limits + per-request tier resolver                          |
+| `tiers`/`tier` | —             | Named limits + `(req, ctx) => string` tier resolver               |
 | `ban`          | —             | `{ threshold, duration }` — ban repeat offenders                  |
-| `group`        | —             | Shared quota across clients                                       |
-| `skip`         | —             | `(req) => boolean` — bypass without consuming quota               |
+| `group`        | —             | `(req, ctx) => string` — shared quota across clients              |
+| `skip`         | —             | `(req, ctx) => boolean` — bypass without consuming quota          |
 | `response`     | hitlimit JSON | Custom 429 body (API routes)                                      |
 | `headers`      | all on        | `{ standard, legacy, retryAfter }`                                |
 | `onStoreError` | `'allow'`     | Fail open or `'deny'` when the store errors                       |
@@ -98,11 +98,28 @@ The default key is Mochi's **proxy-aware** client address — the same value as 
 await Mochi.serve({ proxy: { addressHeader: 'x-forwarded-for', xffDepth: 1 }, … });
 ```
 
-Key by anything else with `key`:
+Key by anything else with `key`. It receives the `Request` plus Mochi's [request context](/docs/request-context/) — the same object [`getRequestContext()`](/docs/request-context/) returns, so you can bucket by the proxy-aware IP, cookies, params, or your own identity. It can be `async`. `tier`, `group`, and `skip` receive the same two arguments.
 
 ```ts
-rateLimit: { limit: 1000, window: '1h', key: (req) => req.headers.get('x-api-key') ?? 'anon' }
+// by API key (falling back to the proxy-aware IP)
+key: (req, ctx) => req.headers.get('x-api-key') ?? ctx.getClientAddress() ?? 'anon'
+
+// by logged-in user — derive identity from the request (see the note below)
+key: (req, ctx) => sessionUserId(ctx.cookies) ?? ctx.getClientAddress() ?? 'anon'
+
+// by country, from a CDN geo header
+key: (req) => req.headers.get('cf-ipcountry') ?? 'unknown'
+
+// tiered by plan
+tiers: { free: { limit: 10 }, pro: { limit: 1000 } },
+tier: (req, ctx) => (ctx.locals.plan as string) ?? 'free',
 ```
+
+<Callout type="warning">
+
+**The limiter runs before your `handle` [middleware](/docs/middleware/).** `ctx` is fully populated — `request`, `url`, `params`, `cookies`, `getClientAddress()` — but `ctx.locals` only reflects what ran _before_ the limiter, and `handle` runs _after_ it. So a `userId` your auth middleware puts on `locals` is **not** visible here. To key by the logged-in user, derive the identity straight from the request inside `key` (decode the session cookie / bearer token), rather than reading a middleware-set local.
+
+</Callout>
 
 ### Reading usage server-side
 

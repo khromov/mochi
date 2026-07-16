@@ -2,10 +2,17 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { createRouteLimiter, sqliteStore, applyRateLimitHeaders } from './rateLimit';
+import { requestContext } from './requestContext';
+import type { MochiRequestContext } from './requestContext';
 import type { HitLimitStore } from '@joint-ops/hitlimit-bun';
 
 const makeRequest = (url = 'http://localhost/x', headers?: Record<string, string>) => new Request(url, { headers });
 const clientAddress = (address: string | null) => () => address;
+
+// Custom key/tier/skip/group callbacks read the ambient request context, so their
+// checks must run inside one. Provide a minimal fake with the fields those callbacks use.
+const withCtx = <T>(ctx: Partial<MochiRequestContext>, fn: () => Promise<T>): Promise<T> =>
+  requestContext.run({ locals: {}, getClientAddress: () => null, ...ctx } as MochiRequestContext, fn);
 
 describe('createRouteLimiter', () => {
   test('allows up to the limit, then blocks with headers/body/retryAfter', async () => {
@@ -76,19 +83,47 @@ describe('createRouteLimiter', () => {
 
   test('custom key generator isolates callers and ignores the address', async () => {
     const limiter = createRouteLimiter({ limit: 1, key: (request) => request.headers.get('x-user') ?? 'anon' });
-    const firstRequestUserA = await limiter.check(makeRequest('http://localhost/x', { 'x-user': 'a' }), clientAddress('same-ip'));
+    const firstRequestUserA = await withCtx({}, () => limiter.check(makeRequest('http://localhost/x', { 'x-user': 'a' }), clientAddress('same-ip')));
     expect(firstRequestUserA.kind).toBe('allowed');
-    const secondRequestUserA = await limiter.check(makeRequest('http://localhost/x', { 'x-user': 'a' }), clientAddress('same-ip'));
+    const secondRequestUserA = await withCtx({}, () => limiter.check(makeRequest('http://localhost/x', { 'x-user': 'a' }), clientAddress('same-ip')));
     expect(secondRequestUserA.kind).toBe('blocked');
-    const firstRequestUserB = await limiter.check(makeRequest('http://localhost/x', { 'x-user': 'b' }), clientAddress('same-ip'));
+    const firstRequestUserB = await withCtx({}, () => limiter.check(makeRequest('http://localhost/x', { 'x-user': 'b' }), clientAddress('same-ip')));
     expect(firstRequestUserB.kind).toBe('allowed');
+  });
+
+  test('custom key receives the request context as its second argument', async () => {
+    const limiter = createRouteLimiter({ limit: 1, key: (_req, ctx) => String(ctx.locals.userId) });
+    const firstUserA = await withCtx({ locals: { userId: 'u1' } }, () => limiter.check(makeRequest(), clientAddress('same-ip')));
+    if (firstUserA.kind !== 'allowed') {
+      throw new Error('expected allowed');
+    }
+    expect(firstUserA.info.key).toBe('u1');
+    // Same user (ctx-derived key) drains the same bucket even from the same IP…
+    expect((await withCtx({ locals: { userId: 'u1' } }, () => limiter.check(makeRequest(), clientAddress('same-ip')))).kind).toBe('blocked');
+    // …while a different user gets their own.
+    expect((await withCtx({ locals: { userId: 'u2' } }, () => limiter.check(makeRequest(), clientAddress('same-ip')))).kind).toBe('allowed');
+  });
+
+  test('custom key can bucket by the proxy-aware client address via ctx', async () => {
+    const limiter = createRouteLimiter({ limit: 1, key: (_req, ctx) => ctx.getClientAddress() ?? 'anon' });
+    const outcome = await withCtx({ getClientAddress: () => '9.9.9.9' }, () => limiter.check(makeRequest(), clientAddress(null)));
+    if (outcome.kind !== 'allowed') {
+      throw new Error('expected allowed');
+    }
+    expect(outcome.info.key).toBe('9.9.9.9');
   });
 
   test('skip() bypasses without consuming quota', async () => {
     const limiter = createRouteLimiter({ limit: 1, skip: (request) => new URL(request.url).pathname === '/health' });
-    expect((await limiter.check(makeRequest('http://localhost/health'), clientAddress('ip'))).kind).toBe('skip');
-    expect((await limiter.check(makeRequest('http://localhost/health'), clientAddress('ip'))).kind).toBe('skip');
-    expect((await limiter.check(makeRequest('http://localhost/other'), clientAddress('ip'))).kind).toBe('allowed');
+    expect((await withCtx({}, () => limiter.check(makeRequest('http://localhost/health'), clientAddress('ip')))).kind).toBe('skip');
+    expect((await withCtx({}, () => limiter.check(makeRequest('http://localhost/health'), clientAddress('ip')))).kind).toBe('skip');
+    expect((await withCtx({}, () => limiter.check(makeRequest('http://localhost/other'), clientAddress('ip')))).kind).toBe('allowed');
+  });
+
+  test('skip receives the request context as its second argument', async () => {
+    const limiter = createRouteLimiter({ limit: 1, skip: (_req, ctx) => ctx.locals.bypass === true });
+    expect((await withCtx({ locals: { bypass: true } }, () => limiter.check(makeRequest(), clientAddress('ip')))).kind).toBe('skip');
+    expect((await withCtx({ locals: { bypass: false } }, () => limiter.check(makeRequest(), clientAddress('ip')))).kind).toBe('allowed');
   });
 
   test('onStoreError: default allows, deny blocks without limit info', async () => {

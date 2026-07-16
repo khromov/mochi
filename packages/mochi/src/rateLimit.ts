@@ -3,6 +3,8 @@ import type { HitLimitInfo, HitLimitOptions, HitLimitResult, HitLimitStore, Reso
 import { sqliteStore as hitlimitSqliteStore } from '@joint-ops/hitlimit-bun/stores/sqlite';
 import type { SqliteStoreOptions } from '@joint-ops/hitlimit-bun/stores/sqlite';
 import { logger } from './log';
+import { getRequestContext } from './requestContext';
+import type { MochiRequestContext } from './requestContext';
 
 export { memoryStore };
 export { postgresStore } from '@joint-ops/hitlimit-bun/stores/postgres';
@@ -28,13 +30,32 @@ export function sqliteStore(options?: SqliteStoreOptions): HitLimitStore {
 }
 
 /**
- * Per-route / global rate-limit options — a mirror of hitlimit's `HitLimitOptions`
- * minus `logger` (Mochi has its own logging) and the deprecated `sqlitePath`.
+ * Mochi's request context, passed as the second argument to a rate-limit
+ * `key` / `tier` / `skip` / `group` callback — the same object `getRequestContext()`
+ * returns. Populated at limiter time: `getClientAddress()` (proxy-aware IP),
+ * `cookies`, `params`, `url`, `request`. Note `locals` reflects only what ran
+ * *before* the limiter — `handle` middleware runs after it, so derive identity
+ * from the request (a session cookie / header) rather than a middleware-set local.
  */
-export type MochiRateLimitOptions = Pick<
-  HitLimitOptions<Request>,
-  'limit' | 'window' | 'key' | 'tiers' | 'tier' | 'response' | 'headers' | 'store' | 'onStoreError' | 'skip' | 'ban' | 'group'
->;
+export type MochiRateLimitContext = MochiRequestContext;
+
+export type MochiRateLimitKey = (req: Request, ctx: MochiRateLimitContext) => string | Promise<string>;
+export type MochiRateLimitTier = (req: Request, ctx: MochiRateLimitContext) => string | Promise<string>;
+export type MochiRateLimitSkip = (req: Request, ctx: MochiRateLimitContext) => boolean | Promise<boolean>;
+export type MochiRateLimitGroup = (req: Request, ctx: MochiRateLimitContext) => string | Promise<string>;
+
+/**
+ * Per-route / global rate-limit options — a mirror of hitlimit's `HitLimitOptions`
+ * minus `logger` (Mochi has its own logging) and the deprecated `sqlitePath`. The
+ * `key` / `tier` / `skip` / `group` callbacks additionally receive Mochi's request
+ * context as a second argument (see `MochiRateLimitContext`).
+ */
+export type MochiRateLimitOptions = Pick<HitLimitOptions<Request>, 'limit' | 'window' | 'tiers' | 'response' | 'headers' | 'store' | 'onStoreError' | 'ban'> & {
+  key?: MochiRateLimitKey;
+  tier?: MochiRateLimitTier;
+  skip?: MochiRateLimitSkip;
+  group?: string | MochiRateLimitGroup;
+};
 
 export type RouteLimitOutcome =
   | { kind: 'skip' }
@@ -75,16 +96,22 @@ function parseWindow(window: string | number): number {
 export function createRouteLimiter(options: MochiRateLimitOptions): RouteLimiter {
   const store = options.store ?? memoryStore();
   const userKey = options.key;
-  // hitlimit's KeyGenerator only receives the Request, but the default key must be
-  // Mochi's proxy-aware client address (resolved by the caller with the server in
-  // hand) — so check() stashes it per-Request and the generator reads it back.
+  const userTier = options.tier;
+  const userSkip = options.skip;
+  const userGroup = options.group;
+  // hitlimit's KeyGenerator only receives the Request, but Mochi's callbacks take a
+  // second argument — the request context. The limiter always runs inside
+  // `requestContext.run()` (see checkRouteLimit in Mochi.ts), so the wrappers read
+  // the ambient context with getRequestContext() and forward it. The default key
+  // instead needs Mochi's proxy-aware client address, which the caller resolves with
+  // the server in hand; check() stashes it per-Request and the generator reads it back.
   const addressKeys = new WeakMap<Request, string>();
   const resolved: ResolvedConfig<Request> = {
     limit: options.limit ?? DEFAULT_LIMIT,
     windowMs: parseWindow(options.window ?? DEFAULT_WINDOW),
-    key: userKey ?? ((req) => addressKeys.get(req) ?? 'unknown'),
+    key: userKey ? (req) => userKey(req, getRequestContext()) : (req) => addressKeys.get(req) ?? 'unknown',
     tiers: options.tiers,
-    tier: options.tier,
+    tier: userTier ? (req) => userTier(req, getRequestContext()) : undefined,
     response: options.response ?? { hitlimit: true, message: DEFAULT_MESSAGE },
     headers: {
       standard: options.headers?.standard ?? true,
@@ -93,9 +120,9 @@ export function createRouteLimiter(options: MochiRateLimitOptions): RouteLimiter
     },
     store,
     onStoreError: options.onStoreError ?? (() => 'allow'),
-    skip: options.skip,
+    skip: userSkip ? (req) => userSkip(req, getRequestContext()) : undefined,
     ban: options.ban ? { threshold: options.ban.threshold, durationMs: parseWindow(options.ban.duration) } : null,
-    group: options.group ?? null,
+    group: typeof userGroup === 'function' ? (req) => userGroup(req, getRequestContext()) : (userGroup ?? null),
   };
   return {
     store,

@@ -131,7 +131,7 @@ export type {
 export { getClientAddress, resolveExpectedOrigin } from './proxy';
 export type { MochiProxyOptions } from './proxy';
 export { memoryStore, sqliteStore, postgresStore } from './rateLimit';
-export type { MochiRateLimitOptions } from './rateLimit';
+export type { MochiRateLimitOptions, MochiRateLimitContext, MochiRateLimitKey, MochiRateLimitTier, MochiRateLimitSkip, MochiRateLimitGroup } from './rateLimit';
 export type {
   HitLimitInfo,
   HitLimitStore,

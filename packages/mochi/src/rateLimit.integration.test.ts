@@ -32,6 +32,9 @@ describe('rateLimit route option', () => {
         '/api/keyed': Mochi.api(async () => json({ ok: true }), {
           rateLimit: { limit: 1, window: '1m', key: (req) => req.headers.get('x-user') ?? 'anon' },
         }),
+        '/api/keyed-ctx': Mochi.api(async () => json({ ok: true }), {
+          rateLimit: { limit: 1, window: '1m', key: (_req, ctx) => ctx.cookies.get('uid') ?? 'anon' },
+        }),
         '/page': Mochi.page(FIXTURE_PAGE, { rateLimit: { limit: 1, window: '1m' } }),
       },
     });
@@ -94,6 +97,12 @@ describe('rateLimit route option', () => {
     expect((await fetch(`${base}/api/keyed`, { headers: { 'x-user': 'a' } })).status).toBe(200);
     expect((await fetch(`${base}/api/keyed`, { headers: { 'x-user': 'a' } })).status).toBe(429);
     expect((await fetch(`${base}/api/keyed`, { headers: { 'x-user': 'b' } })).status).toBe(200);
+  });
+
+  test('custom key can bucket by request context (cookie) at limiter time', async () => {
+    expect((await fetch(`${base}/api/keyed-ctx`, { headers: { cookie: 'uid=alice' } })).status).toBe(200);
+    expect((await fetch(`${base}/api/keyed-ctx`, { headers: { cookie: 'uid=alice' } })).status).toBe(429);
+    expect((await fetch(`${base}/api/keyed-ctx`, { headers: { cookie: 'uid=bob' } })).status).toBe(200);
   });
 
   test('blocked page route renders the HTML error page at 429 with headers', async () => {
