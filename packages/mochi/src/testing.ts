@@ -6,6 +6,14 @@ export interface RunTestsOptions {
   /** Test files (paths relative to `dir`) that must run sequentially, after the parallel batch. */
   sequential?: Iterable<string>;
   /**
+   * Test files (paths relative to `dir`) to skip on Windows only. For suites that
+   * pass every test but then wedge in Bun's native post-test shutdown on Windows —
+   * a runtime bug with no JS-level recovery (bun stops running the loop before it
+   * hangs) and no reproduction off-Windows to fix from. Skipped files are logged so
+   * the gap is never silent; their logic still runs on Linux/macOS.
+   */
+  windowsSkip?: Iterable<string>;
+  /**
    * Hard per-file deadline (ms). A `bun test` child that hasn't exited by then is
    * killed and the file is recorded as failed with a "TIMED OUT" message, so one
    * wedged process can't hang the whole run. Backstops Bun's per-*test* `--timeout`,
@@ -42,8 +50,14 @@ export async function runTests(options: RunTestsOptions = {}): Promise<void> {
   const sequential = new Set(options.sequential ?? []);
   const fileTimeoutMs = options.fileTimeoutMs ?? 60_000;
 
-  const all = (await Array.fromAsync(new Glob('src/**/*.test.ts').scan(dir))).sort();
+  const windowsSkip = new Set(process.platform === 'win32' ? (options.windowsSkip ?? []) : []);
+
+  const all = (await Array.fromAsync(new Glob('src/**/*.test.ts').scan(dir))).sort().filter((f) => !windowsSkip.has(f));
   const parallel = all.filter((f) => !sequential.has(f));
+
+  if (windowsSkip.size > 0) {
+    console.log(`Skipping ${windowsSkip.size} file(s) on Windows (Bun native-shutdown wedge): ${[...windowsSkip].join(', ')}`);
+  }
 
   // Run one file at a time on Windows. Some suites pass every test but then wedge
   // in Bun's native post-test shutdown there (no JS-level recovery is possible —
