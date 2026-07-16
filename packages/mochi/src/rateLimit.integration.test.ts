@@ -65,7 +65,7 @@ describe('rateLimit route option', () => {
     }
     const blockedResponse = await fetch(`${base}/api/override`);
     expect(blockedResponse.status).toBe(429);
-    expect(blockedResponse.headers.get('Retry-After')).toBeDefined();
+    expect(blockedResponse.headers.get('Retry-After')).not.toBeNull();
     expect(blockedResponse.headers.get('RateLimit-Remaining')).toBe('0');
     const body = (await blockedResponse.json()) as { hitlimit: boolean; remaining: number; resetIn: number };
     expect(body.hitlimit).toBe(true);
@@ -143,7 +143,7 @@ describe('rateLimit route option', () => {
     expect(blockedResponse.status).toBe(429);
     expect(blockedResponse.headers.get('content-type')).toContain('text/html');
     expect(blockedResponse.headers.get('RateLimit-Remaining')).toBe('0');
-    expect(blockedResponse.headers.get('Retry-After')).toBeDefined();
+    expect(blockedResponse.headers.get('Retry-After')).not.toBeNull();
     const html = await blockedResponse.text();
     expect(html).toContain('429');
     expect(html).toContain('Rate limit exceeded');

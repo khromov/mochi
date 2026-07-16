@@ -52,8 +52,7 @@ import type { MochiQueue, MochiQueueOptions, MochiQueueListeners, MochiProcessor
 import { finalizeCookieHeaders } from './cookies';
 import { makeRequestContextBuilder } from './requestSetup';
 import { createRouteLimiter, applyRateLimitHeaders } from './rateLimit';
-import type { MochiRateLimitOptions, RouteLimiter } from './rateLimit';
-import type { HitLimitStore } from '@joint-ops/hitlimit-bun';
+import type { MochiRateLimitOptions, MochiRateLimitStore, RouteLimiter } from './rateLimit';
 import { decryptProps } from './serverIslandCrypto';
 import { createImageHandler } from './image/imageEndpoint';
 import { getImageRuntime } from './image/config';
@@ -575,7 +574,7 @@ export class Mochi {
     };
     const allRoutes = Object.keys(internalRoutes).length > 0 ? { ...internalRoutes, ...(options.routes ?? {}) } : options.routes;
 
-    const rateLimitStores = new Set<HitLimitStore>();
+    const rateLimitStores = new Set<MochiRateLimitStore>();
     // Route closures look their limiter up here per request (never capture it) so
     // the dev watcher can swap a route's limiter in place when its `rateLimit`
     // config changes — a captured const would pin the boot-time config until
@@ -622,7 +621,10 @@ export class Mochi {
       // use it, and its counters intentionally survive dev reloads.
       if (limiter && limiter !== sharedGlobalLimiter && limiter.ownsStore) {
         rateLimitStores.delete(limiter.store);
-        Promise.resolve(limiter.store.shutdown?.()).catch((err: unknown) => {
+        // async wrapper: sqliteStore's shutdown can throw synchronously (its
+        // finalize-verification guard) — a bare Promise.resolve() would let that
+        // escape into the dev watcher.
+        (async () => limiter.store.shutdown?.())().catch((err: unknown) => {
           logger.warn(`Rate limit store shutdown failed: ${err instanceof Error ? err.message : err}`);
         });
       }
@@ -1725,7 +1727,12 @@ export class Mochi {
           stopEmailBadgeBroadcast?.();
           await closeEmailTransport();
           for (const store of rateLimitStores) {
-            await store.shutdown?.();
+            // Per-store guard: one failing shutdown must not skip the rest.
+            try {
+              await store.shutdown?.();
+            } catch (err) {
+              logger.warn(`Rate limit store shutdown failed: ${err instanceof Error ? err.message : err}`);
+            }
           }
         } catch (err) {
           logger.warn(`Subsystem cleanup failed during shutdown: ${err instanceof Error ? err.message : err}`);

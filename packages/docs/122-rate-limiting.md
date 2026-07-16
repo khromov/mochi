@@ -60,7 +60,7 @@ All of hitlimit's options are accepted (except `logger` — Mochi logs `429`s th
 | `limit`        | `100`         | Max requests per window                                                         |
 | `window`       | `'1m'`        | `'30s'`, `'1m'`, `'1h'`, `'1d'`, or milliseconds                                |
 | `key`          | client IP     | `(req, ctx) => string` — what to bucket by                                      |
-| `store`        | in-memory     | `sqliteStore(…)`, `postgresStore(…)`, or a custom `HitLimitStore`               |
+| `store`        | in-memory     | `sqliteStore(…)`, `postgresStore(…)`, or a custom `MochiRateLimitStore`         |
 | `tiers`/`tier` | —             | Named limits + `(req, ctx) => string` tier resolver                             |
 | `ban`          | —             | `{ threshold, duration }` — ban repeat offenders                                |
 | `group`        | route pattern | `string \| (req, ctx) => string` — bucket namespace; same value → shared bucket |

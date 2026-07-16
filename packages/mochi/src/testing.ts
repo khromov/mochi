@@ -106,6 +106,14 @@ export async function runTests(options: RunTestsOptions = {}): Promise<void> {
     if (outcome === 'timeout') {
       timedOut = true;
       proc.kill();
+      // On POSIX that was SIGTERM, which a process wedged in native code — the
+      // very case this deadline exists for — can ignore; awaiting proc.exited
+      // would then hang the run anyway. Give it a moment to die cleanly, then
+      // SIGKILL. (On Windows kill() already hard-terminates.)
+      const died = await Promise.race([proc.exited.then(() => true), Bun.sleep(2_000).then(() => false)]);
+      if (!died) {
+        proc.kill('SIGKILL');
+      }
     }
 
     const [exitCode, stdout, stderr] = await Promise.all([proc.exited, stdoutP, stderrP]);
