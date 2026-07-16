@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { ComponentProps } from 'svelte';
   import CaptchaShot from './subjects/CaptchaShot.svelte';
+  import ImageShot from './subjects/ImageShot.svelte';
   import LikeButton from '../demos/your-first-mochi-app/LikeButton.svelte';
 
   // `props` arrives as an opaque bag: the route resolves it by name via registry.ts,
@@ -37,6 +38,10 @@
       <CaptchaShot mochi:hydrate {...props as ComponentProps<typeof CaptchaShot>} />
     {:else if name === 'like'}
       <LikeButton mochi:hydrate {...props as ComponentProps<typeof LikeButton>} />
+    {:else if name === 'image-placeholder'}
+      <!-- No mochi:hydrate: <Image> renders a plain <img> and ships no client JS, so
+           there is no island here and nothing for the wrapper trap to catch. -->
+      <ImageShot {...props as ComponentProps<typeof ImageShot>} />
     {/if}
   </div>
 </div>
