@@ -40,4 +40,11 @@ export class SqliteNonceStore implements NonceStore {
     const result = this.db.run('INSERT OR IGNORE INTO nonces (nonce, expires_at) VALUES (?, ?)', [nonce, expiresAt]);
     return result.changes === 1;
   }
+
+  // Release the underlying SQLite handle. Optional in production (the store lives
+  // for the process), but Windows won't delete the DB file while a handle is open,
+  // so tests must close before removing their temp dir.
+  close(): void {
+    this.db.close();
+  }
 }

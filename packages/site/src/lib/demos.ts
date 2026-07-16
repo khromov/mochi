@@ -37,6 +37,7 @@ import { files as nestedIslands } from '../demos/nested-islands/files.ts';
 import { files as propDedup } from '../demos/prop-dedup/files.ts';
 import { files as propsId } from '../demos/props-id/files.ts';
 import { files as queue } from '../demos/queue/files.ts';
+import { files as rateLimit } from '../demos/rate-limit/files.ts';
 import { files as reloadFormData } from '../demos/reload-form-data/files.ts';
 import { files as requestId } from '../demos/request-id/files.ts';
 import { files as serverIsland } from '../demos/server-island/files.ts';
@@ -208,6 +209,14 @@ export const demos: Demo[] = [
     files: api,
     title: 'API Endpoints',
     hook: 'JSON routes defined with Mochi.api(), tested live against the running server.',
+    category: 'endpoints',
+  },
+  {
+    href: '/demos/rate-limit/',
+    slug: 'rate-limit',
+    files: rateLimit,
+    title: 'Rate Limiting',
+    hook: 'A rateLimit config on the route — 5 requests per minute per IP; reload past the limit to hit the 429 error page.',
     category: 'endpoints',
   },
   {
