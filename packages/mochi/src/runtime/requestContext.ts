@@ -88,27 +88,20 @@ export interface BundleInfo {
 }
 
 /** One image produced during the request (dev debug bar only) — a signed
- * `getResizedImage()` URL (`kind: 'url'`) or a programmatic `cachedImage()`
- * pipeline (`kind: 'cached'`). */
+ * `getImageUrl()`/`<Image>` URL (`kind: 'url'`) or an inline `getImage()`
+ * result (`kind: 'inline'`). */
 export interface ImageDebugEntry {
-  /** For `'cached'` entries there's no served URL; this is an inline `data:` preview (or empty when over the size cap). */
+  /** For `'inline'` entries this is a `data:` preview of the bytes (or empty when over the size cap); for `'url'` entries it's the served URL. */
   url: string;
-  /** Stable identity for de-duping and list keying. Defaults to `url` (used by the signed-URL path); the `cachedImage` path sets its variant id so preview-less entries don't collide on an empty `url`. */
+  /** Stable identity for de-duping and list keying. Defaults to `url`; inline entries set their variant id so preview-less entries don't collide on an empty `url`. */
   id?: string;
   filename: string;
-  /** Decoded (unsigned) request params — src, dimensions, format, quality, fit, TTL, … */
+  /** The size's resolved, byte-affecting params — src, dimensions, format, quality (or `{ original: true }`). */
   params: Record<string, unknown>;
-  /** Discriminates the signed-URL path from the programmatic `cachedImage()` path. Defaults to `'url'`. */
-  kind?: 'url' | 'cached';
-  /** `cachedImage` only: the recorded op chain, e.g. `resize(240, 240).webp()`. */
-  pipeline?: string;
-  /** The compact binary wire encoding (before encryption), so the bar can show the on-wire format next to the JSON. `'url'` entries only. */
-  wire?: {
-    /** Space-separated hex of the packed header (control bytes + varints), before the UTF-8 src tail. */
-    headerHex: string;
-    /** Byte length of the UTF-8 src tail. */
-    srcByteLength: number;
-  };
+  /** Discriminates the deferred-URL path from the inline `getImage()` path. Defaults to `'url'`. */
+  kind?: 'url' | 'inline';
+  /** The named size applied, if any (absent for the full-size original). */
+  size?: string;
 }
 
 /**
@@ -143,7 +136,7 @@ export interface DebugBarData {
   ssrDurationMs?: number;
   /** Framework JS bundles injected for this page (bootstrap, island entries, shared chunks). */
   bundles?: BundleInfo[];
-  /** Images produced via `getResizedImage()` during this request, with decoded params. */
+  /** Images produced via `getImageUrl()`/`<Image>`/`getImage()` during this request, with decoded params. */
   images?: ImageDebugEntry[];
   /**
    * Server-island props recorded during SSR, keyed by the encrypted `signed-props`
@@ -223,4 +216,31 @@ export function getRequestContext(): MochiRequestContext {
     throw new Error('getRequestContext() called outside of a request. ' + 'It is only available in server-side code running within a Mochi request handler.');
   }
   return ctx;
+}
+
+/**
+ * Run an async function fully detached from the ambient request context.
+ *
+ * Used by the stateless render path (email/static). Inside `fn`, the request
+ * context is cleared, so `getRequestContext()` (and anything built on it —
+ * `cookies`, `url`) throws regardless of whether the caller is inside a request.
+ *
+ * Contract — do NOT loosen:
+ *  - This wrapper owns the `await`, so the render runs while the store is cleared
+ *    even though `render()` from svelte/server is a *lazy thenable* (the component
+ *    executes in a microtask when awaited). `fn` may be a plain thunk returning
+ *    that thenable; this wrapper awaits it inside the cleared scope.
+ *  - `fn` MUST read any lazy getters (Svelte render `body`/`head`) and return plain
+ *    values, so materialization also happens in the cleared scope — never return the
+ *    live render object and read its getters at the call site (that reads under the
+ *    restored ambient context).
+ * The assertion is a tripwire if either invariant regresses.
+ */
+export async function renderDetached<T>(fn: () => Promise<T>): Promise<T> {
+  return requestContext.exit(async () => {
+    if (requestContext.getStore() !== undefined) {
+      throw new Error('renderDetached: request context was not cleared — isolation failed');
+    }
+    return await fn();
+  });
 }

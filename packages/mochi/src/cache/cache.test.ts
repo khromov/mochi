@@ -211,6 +211,65 @@ describe('MochiCache nullish values', () => {
   });
 });
 
+describe('MochiCache.set', () => {
+  test('overwrites a still-fresh entry that fetch would have skipped', async () => {
+    const cache = new MochiCache({ minTimeToStale: 1_000, maxTimeToLive: 5_000 });
+    await cache.fetch('k', () => 'first');
+
+    // fetch() honours the fresh entry; set() replaces it.
+    expect(await cache.fetch('k', () => 'second')).toBe('first');
+    await cache.set('k', 'second');
+    expect(await cache.peek('k')).toEqual({ value: 'second', status: 'fresh' });
+  });
+
+  test('writes a missing key and stamps it fresh', async () => {
+    const cache = new MochiCache({ minTimeToStale: 1_000, maxTimeToLive: 5_000 });
+    await cache.set('k', { a: 1 });
+    expect(await cache.peek('k')).toEqual({ value: { a: 1 }, status: 'fresh' });
+  });
+
+  test('never leaves the key absent, unlike delete + fetch', async () => {
+    const cache = new MochiCache({ minTimeToStale: 1_000, maxTimeToLive: 5_000 });
+    await cache.set('k', 'v1');
+
+    let sawMiss = false;
+    let stop = false;
+    const reader = (async () => {
+      while (!stop) {
+        if ((await cache.peek('k')) === null) {
+          sawMiss = true;
+        }
+        await Promise.resolve();
+      }
+    })();
+    for (let i = 0; i < 50; i++) {
+      await cache.set('k', `v${i}`);
+    }
+    stop = true;
+    await reader;
+
+    expect(sawMiss).toBe(false);
+  });
+
+  test('supersedes a registered in-flight recompute rather than being clobbered by it', async () => {
+    // minTimeToStale comfortably above the test's own wall-clock, so the freshness
+    // assertion is about `set` stamping the entry, not about elapsed test time.
+    const cache = new MochiCache({ minTimeToStale: 1_000, maxTimeToLive: 5_000 });
+    const slow = cache.fetch('k', async () => {
+      await wait(30);
+      return 'from-fn';
+    });
+    // Let the run claim its in-flight slot — `fetch` awaits a storage read first, and
+    // `set` can only supersede a run that has already registered.
+    await wait(5);
+    await cache.set('k', 'from-set');
+
+    // The caller still receives its computed value; it just doesn't get written.
+    await expect(slow).resolves.toBe('from-fn');
+    expect(await cache.peek('k')).toEqual({ value: 'from-set', status: 'fresh' });
+  });
+});
+
 describe('MochiCache concurrency', () => {
   test('concurrent misses on the same key run fn once', async () => {
     const cache = new MochiCache({ minTimeToStale: 1_000, maxTimeToLive: 5_000 });
@@ -224,6 +283,35 @@ describe('MochiCache concurrency', () => {
     const results = await Promise.all([cache.fetch('k', fn), cache.fetch('k', fn), cache.fetch('k', fn)]);
     expect(results).toEqual([1, 1, 1]);
     expect(calls).toBe(1);
+  });
+
+  test('a hung fn is released by inflightTimeout so a later read starts fresh', async () => {
+    const cache = new MochiCache({ minTimeToStale: 1_000, maxTimeToLive: 5_000, inflightTimeout: 30 });
+    let calls = 0;
+    let release!: (value: number) => void;
+    const fn = () =>
+      new Promise<number>((resolve) => {
+        calls++;
+        // First call hangs forever; a later call resolves immediately.
+        if (calls === 1) {
+          release = resolve;
+        } else {
+          resolve(calls);
+        }
+      });
+
+    // Coalesced callers on the hung run all reject once the timeout releases the lock.
+    await expect(cache.fetch('k', fn)).rejects.toThrow(/timed out after 30ms/);
+    expect(calls).toBe(1);
+
+    // The lock is gone, so a fresh read runs fn again and succeeds.
+    expect(await cache.fetch('k', fn)).toBe(2);
+    expect(calls).toBe(2);
+
+    // The abandoned first run completing late must not overwrite the cache.
+    release(1);
+    await wait(10);
+    expect(await cache.fetch('k', fn)).toBe(2);
   });
 
   test('with no cached value, later reads block on the in-flight request', async () => {
@@ -456,5 +544,143 @@ describe('MochiCache storage-error resilience', () => {
     const cache = new MochiCache({ storage, minTimeToStale: 1_000, maxTimeToLive: 5_000 });
     await expect(cache.delete('k')).rejects.toThrow('remove boom');
     expect(errors).toEqual([{ key: 'k', operation: 'remove', error: expect.any(Error) }]);
+  });
+});
+
+describe('MochiCache.peek', () => {
+  test('reports status without running fn or emitting cache:read', async () => {
+    const cache = new MochiCache({ minTimeToStale: 50, maxTimeToLive: 5_000 });
+    const reads: string[] = [];
+    mochiEvents.on('cache:read', ({ status }) => reads.push(status));
+
+    expect(await cache.peek('k')).toBeNull(); // miss, no recompute
+
+    let calls = 0;
+    await cache.fetch('k', () => {
+      calls++;
+      return 'v';
+    });
+    reads.length = 0;
+
+    const peeked = await cache.peek<string>('k');
+    expect(peeked).toEqual({ value: 'v', status: 'fresh' });
+    expect(calls).toBe(1); // peek never ran fn
+    expect(reads).toEqual([]); // peek emits no cache:read
+  });
+
+  test('reports expired for an entry past maxTimeToLive without refreshing it', async () => {
+    const cache = new MochiCache({ minTimeToStale: 5, maxTimeToLive: 10 });
+    let calls = 0;
+    await cache.fetch('k', () => {
+      calls++;
+      return 'v';
+    });
+    await wait(20);
+    expect((await cache.peek('k'))?.status).toBe('expired');
+    expect(calls).toBe(1); // still not recomputed
+  });
+});
+
+describe('MochiCache.markStale', () => {
+  test('makes a fresh entry serve stale + revalidate on the next read', async () => {
+    const cache = new MochiCache({ minTimeToStale: 10_000, maxTimeToLive: 100_000 });
+    let calls = 0;
+    const fn = () => {
+      calls++;
+      return `v${calls}`;
+    };
+
+    await cache.fetch('k', fn);
+    expect((await cache.peek('k'))?.status).toBe('fresh');
+
+    await cache.markStale('k');
+    expect((await cache.peek('k'))?.status).toBe('stale');
+
+    const result = await cache.fetchWithStatus('k', fn);
+    expect(result).toEqual({ value: 'v1', status: 'stale' }); // stale value served
+    await wait(20);
+    expect(calls).toBe(2); // revalidated in the background
+  });
+
+  test('is a no-op on a missing key and never freshens an already-stale entry', async () => {
+    const cache = new MochiCache({ minTimeToStale: 10, maxTimeToLive: 100_000 });
+    await expect(cache.markStale('missing')).resolves.toBeUndefined();
+
+    await cache.fetch('k', () => 'v');
+    await wait(20); // now already stale
+    const before = (await cache.peek('k'))!;
+    await cache.markStale('k');
+    const after = (await cache.peek('k'))!;
+    expect(after.status).toBe('stale');
+    expect(after.value).toBe(before.value); // value untouched
+  });
+});
+
+describe('MochiCache cache:delete event', () => {
+  test('delete emits cache:delete with the key', async () => {
+    const cache = new MochiCache({ minTimeToStale: 1_000, maxTimeToLive: 5_000 });
+    const deleted: string[] = [];
+    mochiEvents.on('cache:delete', ({ key }) => deleted.push(key));
+
+    await cache.fetch('k', () => 'v');
+    await cache.delete('k');
+    expect(deleted).toEqual(['k']);
+  });
+});
+
+describe('MochiCache invalidation vs in-flight revalidation', () => {
+  function makeStorage() {
+    const store = new Map<string, unknown>();
+    const storage: Storage = {
+      getItem: (key) => store.get(key) ?? null,
+      setItem: (key, value) => void store.set(key, value),
+      removeItem: (key) => void store.delete(key),
+      clear: () => store.clear(),
+    };
+    return { storage, store };
+  }
+
+  // Storage is last-writer-wins; the guarantee we keep is that a run whose slot was
+  // cleared by a delete while `fn` was still pending skips its write (identity
+  // guard), so it can't resurrect a key the caller already removed.
+  test('a delete while fn is still pending is not resurrected', async () => {
+    const { storage, store } = makeStorage();
+    const cache = new MochiCache({ storage, minTimeToStale: 10, maxTimeToLive: 60_000 });
+
+    await cache.fetch('k', () => 'v1');
+    await wait(30);
+
+    let releaseFn: (() => void) | undefined;
+    expect(
+      (
+        await cache.fetchWithStatus('k', async () => {
+          await new Promise<void>((r) => {
+            releaseFn = r;
+          });
+          return 'v2';
+        })
+      ).value,
+    ).toBe('v1');
+
+    await cache.delete('k'); // completes fully while fn is parked
+    releaseFn!();
+    await wait(5);
+
+    expect(store.size).toBe(0);
+    expect(await cache.peek('k')).toBeNull();
+  });
+
+  test('the inflight map is pruned once runs settle', async () => {
+    const cache = new MochiCache({ minTimeToStale: 10, maxTimeToLive: 60_000 });
+
+    await cache.fetch('k', () => 'v1');
+    await wait(30);
+    await cache.fetchWithStatus('k', () => 'v2');
+    await cache.markStale('k');
+    await cache.delete('k');
+    await wait(10);
+
+    const internals = cache as unknown as { inflight: Map<string, unknown> };
+    expect(internals.inflight.size).toBe(0);
   });
 });

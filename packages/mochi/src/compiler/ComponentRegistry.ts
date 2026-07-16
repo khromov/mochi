@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import type { BunPlugin } from 'bun';
 import { isSvelteMarker, normalizeAssetPrefix, normalizeIslandHydrationMarkers, stripHydrationMarkers, toCompileErrorLogs, toPosixPath } from '../utils';
 import { injectIslandPropsBlock } from '../islands/islandPropsRegistry';
-import { requestContext } from '../runtime/requestContext';
+import { requestContext, renderDetached } from '../runtime/requestContext';
 import type { DebugBarData } from '../runtime/requestContext';
 import { logger } from '../utils/log';
 import { mochiEvents } from '../events';
@@ -590,11 +590,12 @@ export class ComponentRegistry {
             // files can `import { MochiCache } from 'mochi-framework'` directly.
             `export { MochiCache } from "${toPosixPath(path.join(SRC_DIR, 'cache/cache.ts'))}";`,
             // Cache storage adapters — server-only (FileStorage touches the fs).
-            `export { MemoryStorage, FileStorage } from "${toPosixPath(path.join(SRC_DIR, 'cache/cache-storage.ts'))}";`,
+            // isBlobRef/readBlobRef resolve the lazy blob references a
+            // FileStorage-backed cache returns for binary fields.
+            `export { MemoryStorage, FileStorage, isBlobRef, readBlobRef } from "${toPosixPath(path.join(SRC_DIR, 'cache/cache-storage.ts'))}";`,
             // Image helpers. Server-only (signing needs the secret key); re-exported
-            // so .svelte files can `import { getResizedImage } from 'mochi-framework'`.
-            `export { getResizedImage, getImage, getImageBytes, getImagePlaceholder, invalidateImage } from "${toPosixPath(path.join(SRC_DIR, 'image/getResizedImage.ts'))}";`,
-            `export { cachedImage, CachedImage } from "${toPosixPath(path.join(SRC_DIR, 'image/cachedImage.ts'))}";`,
+            // so .svelte files can `import { getImageUrl } from 'mochi-framework'`.
+            `export { getImageUrl, getImageAttrs, getImage, getImagePlaceholder, imagePlaceholder, warmImagePlaceholder, invalidateImage } from "${toPosixPath(path.join(SRC_DIR, 'image/imageApi.ts'))}";`,
             // `enhance` / `deserialize` are browser-only Svelte action helpers.
             // Svelte never invokes actions during SSR, so these stubs only fire
             // if user code calls them on the server — which is a usage error.
@@ -1082,6 +1083,7 @@ export class ComponentRegistry {
             `  on() {},`,
             `  off() {},`,
             `  setHandler() {},`,
+            `  removeHandler() {},`,
             `  emit(type) {`,
             `    __mochi_logger.warn(`,
             `      "mochiEvents.emit(" + JSON.stringify(type) + ") was called in the browser. " +`,
@@ -1095,14 +1097,21 @@ export class ComponentRegistry {
             // Cache storage adapters are server-only; ship throwing stubs too.
             `export class MemoryStorage { constructor() { throw new Error("MemoryStorage is only available on the server"); } }`,
             `export class FileStorage { constructor() { throw new Error("FileStorage is only available on the server"); } }`,
+            // Blob refs only exist in server-side cache reads; isBlobRef is safe
+            // to answer false in the browser, readBlobRef is a usage error.
+            `export function isBlobRef() { return false; }`,
+            `export function readBlobRef() { throw new Error("readBlobRef() is only available on the server"); }`,
             // Image helpers are server-only (signing/fetch/disk-cache); ship throwing stubs.
-            `export function getResizedImage() { throw new Error("getResizedImage() is only available on the server"); }`,
+            // getImageUrl/warmImagePlaceholder degrade to no-ops rather than throwing:
+            // <Image> may re-mint on the client after hydration (with the raw src) and
+            // warm-placeholder is best-effort, so a throw there would break hydration.
+            `export function getImageUrl(src) { return src; }`,
+            `export function getImageAttrs(src) { return { url: src }; }`,
+            `export function warmImagePlaceholder() {}`,
             `export function getImage() { throw new Error("getImage() is only available on the server"); }`,
-            `export function getImageBytes() { throw new Error("getImageBytes() is only available on the server"); }`,
-            `export function getImagePlaceholder() { throw new Error("getImagePlaceholder() is only available on the server"); }`,
+            `export function getImagePlaceholder() { return Promise.resolve(null); }`,
+            `export function imagePlaceholder() { return Promise.resolve(null); }`,
             `export function invalidateImage() { throw new Error("invalidateImage() is only available on the server"); }`,
-            `export function cachedImage() { throw new Error("cachedImage() is only available on the server"); }`,
-            `export class CachedImage { constructor() { throw new Error("CachedImage is only available on the server"); } }`,
             `export function memoryStore() { throw new Error("memoryStore() is only available on the server"); }`,
             `export function sqliteStore() { throw new Error("sqliteStore() is only available on the server"); }`,
             `export function postgresStore() { throw new Error("postgresStore() is only available on the server"); }`,
@@ -1315,13 +1324,14 @@ export class ComponentRegistry {
       return development ? e : new Error('Email render error');
     };
 
-    // `render()` returns a lazy thenable — the component only executes when the
-    // thenable is awaited (in a microtask). The exit callback must be `async`
-    // and `await` render *inside* it, so that deferred execution stays within
-    // the exited async context; otherwise `exit()` returns before the component
-    // runs and the ambient request context leaks back in. Isolation is why
-    // `getRequestContext()` throws in an email template regardless of call site.
-    const { body, head } = await requestContext.exit(async () => await render(mod.default, { ...(props ? { props } : {}), transformError }));
+    // Render fully detached from any ambient request context (see renderDetached).
+    // Read body/head inside the callback so materialization happens in the cleared
+    // scope — returning plain strings, never the live render object. Isolation is
+    // why `getRequestContext()` throws in an email template regardless of call site.
+    const { body, head } = await renderDetached(async () => {
+      const rendered = await render(mod.default, { ...(props ? { props } : {}), transformError });
+      return { body: rendered.body, head: rendered.head };
+    });
 
     let output = body;
 
@@ -1406,6 +1416,7 @@ export class ComponentRegistry {
       props?: Record<string, unknown>;
       transformError: typeof transformError;
       idPrefix?: string;
+      context?: Map<unknown, unknown>;
     } = {
       transformError,
     };

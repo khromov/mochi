@@ -9,13 +9,13 @@
  */
 import { encryptPayloadBytes, decryptPayloadBytes } from '../islands/payloadCrypto';
 import { packImageRequest, unpackImageRequest } from './imageCodec';
-import type { ImageRequest, ResolvedImageOptions } from './types';
+import type { ImageRequest } from './types';
 
 export function encryptImageRequest(req: ImageRequest, filename: string, compress = true): string {
   return encryptPayloadBytes(packImageRequest(req), { aad: filename, compress });
 }
 
-export function decryptImageRequest(token: string, filename: string, resolved: ResolvedImageOptions): ImageRequest | null {
+export function decryptImageRequest(token: string, filename: string): ImageRequest | null {
   const buf = decryptPayloadBytes(token, { aad: filename });
-  return buf === null ? null : unpackImageRequest(buf, resolved);
+  return buf === null ? null : unpackImageRequest(buf);
 }

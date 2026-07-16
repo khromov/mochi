@@ -42,6 +42,7 @@ const base = (path: string): string => `http://${HOST}${path}`;
 function opts(over: Partial<ResolvedImageOptions> = {}): ResolvedImageOptions {
   return {
     enabled: true,
+    sizes: {},
     cacheDir: '/tmp/unused',
     defaultFormat: 'webp',
     defaultQuality: 80,

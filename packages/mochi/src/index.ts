@@ -18,13 +18,12 @@ export type { MochiRequestContext } from './runtime/requestContext';
 export { getMochiConfig } from './mochiConfig';
 export type { CookieSerializeOptions, Cookie } from './runtime/cookies';
 export { MochiCache } from './cache/cache';
-export type { MochiCacheOptions, CacheResult, CacheStatus, Storage } from './cache/cache';
-export { MemoryStorage, FileStorage } from './cache/cache-storage';
-export type { FileStorageOptions } from './cache/cache-storage';
-export { getResizedImage, getImage, getImageBytes, getImagePlaceholder, invalidateImage } from './image/getResizedImage';
-export { cachedImage, CachedImage } from './image/cachedImage';
-export type { CachedImageOptions } from './image/cachedImage';
-export type { MochiImageOptions, ResizeImageOptions, OriginalImageOptions, InvalidateImageOptions, ImageFormat, ImageFit } from './image/types';
+export type { MochiCacheOptions, CacheResult, CacheStatus, Storage, SweepOptions, SweepResult } from './cache/cache';
+export { MemoryStorage, FileStorage, isBlobRef, readBlobRef } from './cache/cache-storage';
+export type { FileStorageOptions, MemoryStorageOptions, BlobRef } from './cache/cache-storage';
+export { getImageUrl, getImageAttrs, getImage, getImagePlaceholder, imagePlaceholder, warmImagePlaceholder, invalidateImage } from './image/imageApi';
+export type { ResolvedImage, ImageAttrs } from './image/imageApi';
+export type { MochiImageOptions, ImageSize, InvalidateImageOptions, ImageFormat, ImageFit } from './image/types';
 export { EmailError } from './email/types';
 export type {
   MochiEmailOptions,
@@ -65,6 +64,8 @@ export type {
   MochiCacheStatus,
   MochiCacheReadEvent,
   MochiCacheRevalidateEvent,
+  MochiCacheInflightDeferredEvent,
+  MochiCacheDeleteEvent,
   MochiCacheSweepEvent,
   MochiImageCacheSweepEvent,
   MochiImageEntryKind,
@@ -98,14 +99,23 @@ export type {
   MochiRecompileCompleteEvent,
   MochiRecompileTrigger,
   MochiClientBundleEvent,
+  MochiCaptchaVerifyEvent,
+  MochiCaptchaReason,
 } from './events';
 export type { MochiQueue, MochiJob, MochiJobRef, MochiJobOptions, MochiQueueOptions, MochiQueueRuntimeOptions, MochiQueueListeners, MochiProcessor } from './queue';
 export { json, error, apiError } from './utils';
 export { trailingSlashIt } from './runtime/trailingSlash';
 export { fail, redirect, success } from './runtime/forms';
+
+export { mintCaptcha, verifyCaptcha, consumeCaptcha, solveCaptcha } from './captcha/captcha';
+export { MemoryNonceStore, SqliteNonceStore } from './captcha/nonceStore';
+export { DEFAULT_CAPTCHA_MIN_AGE_MS, DEFAULT_CAPTCHA_DRIFT_ALLOWANCE_MS } from './captcha/config';
+export type { MintedCaptcha } from './captcha/captcha';
+export type { MochiCaptchaOptions, CaptchaResult, CaptchaFailureReason, NonceStore } from './captcha/types';
 export { enhance, deserialize } from './runtime/enhance.ssr';
 export { isFormContentType, DEFAULT_FORM_CONTENT_TYPES, DEFAULT_PROTECTED_METHODS } from './runtime/csrf';
-export { DEFAULT_COMPRESS_MIN_BYTES } from './islands/payloadCrypto';
+export { DEFAULT_COMPRESS_MIN_BYTES, encryptPayload, decryptPayload } from './islands/payloadCrypto';
+export type { EncryptOptions } from './islands/payloadCrypto';
 export type { MochiCsrfOptions } from './runtime/csrf';
 export type {
   MochiHooks,
