@@ -1,0 +1,149 @@
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { mkdtempSync, rmSync } from 'node:fs';
+import path from 'node:path';
+import type { Server } from 'bun';
+import { Mochi, mintCaptcha, solveCaptcha } from 'mochi-framework';
+import type { ResolvedEmailMessage } from 'mochi-framework';
+import { routes } from './routes';
+
+const sent: ResolvedEmailMessage[] = [];
+
+const post = (base: string, fields: Record<string, string>): Promise<Response> =>
+  fetch(`${base}/?/send`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams(fields).toString(),
+  });
+
+// Minted + solved in-process against the same key and options the server
+// derived, so these verify exactly like the ones a real slide produces.
+// The captcha's own rules (expiry, age floor, PoW strength, chain derivation)
+// are covered by the framework's captcha tests; this suite is about the
+// action's ordering and field validation.
+const validFields = (): Record<string, string> => ({
+  ...solveCaptcha(mintCaptcha()),
+  name: 'Ada',
+  email: 'ada@example.com',
+  message: 'Help please',
+});
+
+describe('support form action', () => {
+  let server: Server<undefined>;
+  let outDir: string;
+  let base: string;
+
+  beforeAll(async () => {
+    outDir = mkdtempSync(path.join(import.meta.dir, '..', '.mochi-support-test-'));
+    server = await Mochi.serve({
+      port: 0,
+      development: false,
+      logger: { enabled: false },
+      outDir,
+      htmlShell: './src/shell.html',
+      // Mirror src/index.ts, so /health/ resolves the way the deployed app serves it.
+      trailingSlash: 'always',
+      // The port is only known after serve() returns, so proxy.origin can't be
+      // set ahead of time to satisfy the real origin check.
+      csrf: { checkOrigin: false },
+      // Low difficulty and no age floor so tests don't hash for seconds or sleep.
+      captcha: { bits: 8, minAgeMs: 0 },
+      email: {
+        from: 'Mochi Support Form <noreply@mochi.fast>',
+        transport: {
+          type: 'custom',
+          send: (message) => {
+            sent.push(message);
+          },
+        },
+      },
+      routes,
+    });
+    base = `http://localhost:${server.port}`;
+  });
+
+  afterAll(() => {
+    server.stop(true);
+    rmSync(outDir, { recursive: true, force: true });
+  });
+
+  test('GET / renders the form', async () => {
+    const res = await fetch(`${base}/`);
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain('Get in touch');
+  });
+
+  test('/health/ reports ok', async () => {
+    const res = await fetch(`${base}/health/`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ status: 'ok' });
+  });
+
+  test('a valid submission sends one email to SUPPORT_TO', async () => {
+    sent.length = 0;
+    const res = await post(base, validFields());
+    expect(res.status).toBe(200);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.to).toEqual(['support@mochi.fast']);
+    expect(sent[0]?.replyTo).toBe('ada@example.com');
+    expect(sent[0]?.subject).toBe('Support request from Ada');
+    // The Svelte template rendered rather than being passed through as a path.
+    expect(sent[0]?.html).toContain('Help please');
+    expect(sent[0]?.text).toContain('Help please');
+  });
+
+  test('a missing captcha token is rejected and sends nothing', async () => {
+    sent.length = 0;
+    const res = await post(base, { ...validFields(), captcha_token: '', captcha_pow: '' });
+    expect(res.status).toBe(400);
+    expect(sent).toHaveLength(0);
+  });
+
+  test('a garbled captcha token is rejected', async () => {
+    sent.length = 0;
+    const res = await post(base, { ...validFields(), captcha_token: 'not-a-token' });
+    expect(res.status).toBe(400);
+    expect(sent).toHaveLength(0);
+  });
+
+  test('a replayed token is rejected after one successful send', async () => {
+    sent.length = 0;
+    const fields = validFields();
+    expect((await post(base, fields)).status).toBe(200);
+    expect((await post(base, fields)).status).toBe(400);
+    expect(sent).toHaveLength(1);
+  });
+
+  test('a field-validation failure does not burn the nonce', async () => {
+    sent.length = 0;
+    const fields = validFields();
+    expect((await post(base, { ...fields, email: 'not-an-email' })).status).toBe(400);
+    expect(sent).toHaveLength(0);
+    expect((await post(base, fields)).status).toBe(200);
+    expect(sent).toHaveLength(1);
+  });
+
+  test('a malformed email address is rejected', async () => {
+    sent.length = 0;
+    const res = await post(base, { ...validFields(), email: 'not-an-email' });
+    expect(res.status).toBe(400);
+    expect(sent).toHaveLength(0);
+  });
+
+  test('an empty message is rejected', async () => {
+    sent.length = 0;
+    const res = await post(base, { ...validFields(), message: '   ' });
+    expect(res.status).toBe(400);
+    expect(sent).toHaveLength(0);
+  });
+
+  test('CR/LF in the name cannot smuggle headers into the subject', async () => {
+    sent.length = 0;
+    const res = await post(base, { ...validFields(), name: 'Ada\r\nBcc: evil@example.com' });
+    expect(res.status).toBe(200);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.subject).not.toContain('\n');
+    expect(sent[0]?.subject).not.toContain('\r');
+    expect(sent[0]?.subject).toBe('Support request from Ada Bcc: evil@example.com');
+    expect(sent[0]?.bcc).toBeUndefined();
+  });
+});

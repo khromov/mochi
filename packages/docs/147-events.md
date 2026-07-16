@@ -30,6 +30,7 @@ Event names use a `namespace:action` convention. Every key is in the typed `Moch
 - [`recompile:start`](#recompilestart), [`recompile:complete`](#recompilecomplete) — dev rebuild cycle (one per save)
 - [`client-bundle:complete`](#client-bundlecomplete) — hydratable client bundle finished
 - [`island:error`](#islanderror) — a hydratable, server, or client-hydrate island errored
+- [`captcha:verify`](#captchaverify) — a `<MochiCaptcha>` submission was verified or rejected
 - [`file:change`](#filechange) — dev-only file watcher
 - [`image:store`](#imagestore), [`image:delete`](#imagedelete) — [`<Image>`](/docs/images/) cache file written / removed
 - `image:cache-sweep` — aggregate counts per janitor sweep (see [Images](/docs/images/))
@@ -415,6 +416,25 @@ Fires whenever the registry rebuilds the hydratable client bundle (one Bun.build
 | `entryCount`  | `number` | entrypoints fed to Bun.build (bootstrap + per-component) |
 | `outputBytes` | `number` | sum of all output sizes (JS + CSS) from the bundle       |
 | `durationMs`  | `number` | wall-clock ms inside `buildClientBundle()`               |
+
+#### `captcha:verify`
+
+Fires when [`verifyCaptcha()`](/docs/captcha/) finishes, pass or fail. `verifyCaptcha()` deliberately returns one generic message to the client so a bot can't tell the failure modes apart — this event is where the real cause stays visible, which makes it the hook for spam dashboards and alerting on a spike of rejections.
+
+| Field    | Type                  | Notes                                                                     |
+| -------- | --------------------- | ------------------------------------------------------------------------- |
+| `ok`     | `boolean`             | whether verification passed                                               |
+| `reason` | `MochiCaptchaReason`  | `'ok' \| 'malformed' \| 'expired' \| 'too-fast' \| 'bad-pow' \| 'replay'` |
+| `bits`   | `number \| undefined` | difficulty sealed in the token; absent if it never opened                 |
+| `ageMs`  | `number \| undefined` | token age at verification; absent if it never opened                      |
+
+```ts
+mochiEvents.on('captcha:verify', ({ ok, reason }) => {
+  if (!ok) {
+    metrics.increment('captcha.rejected', { reason });
+  }
+});
+```
 
 #### `island:error`
 

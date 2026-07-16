@@ -24,6 +24,7 @@
     "@tmcp/transport-http": "0.8.6",
     "mdsvex": "^0.12.7",
     "mochi-framework": "workspace:*",
+    "mochi-shared": "workspace:*",
     "rehype-slug": "^6.0.0",
     "shiki": "^4.2.0",
     "slugify": "^1.6.9",

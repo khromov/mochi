@@ -6,6 +6,7 @@ import type { MochiFilters, MochiHooks } from './extensions';
 import type { MochiProxyOptions } from './proxy';
 import type { MochiImageOptions } from './image/types';
 import type { MochiEmailOptions } from './email/types';
+import type { MochiCaptchaOptions } from './captcha/types';
 import type { MochiProcessor, MochiQueueListeners, MochiQueueRuntimeOptions } from './queue';
 import type { MochiRateLimitOptions } from './rateLimit';
 
@@ -644,11 +645,11 @@ export interface MochiServeOptions {
    */
   warmup?: boolean | MochiWarmupOptions;
   /**
-   * On-the-fly image resizing. Mounts a signed `/_mochi/image/*` endpoint and
-   * powers `getResizedImage()` / the `<Image>` component. Every served URL's
-   * payload is encrypted so attackers cannot request arbitrary sources. Default: enabled
-   * with sensible defaults; pass `{ enabled: false }` to turn it off. See
-   * `MochiImageOptions`.
+   * On-the-fly image transforms via named sizes. Mounts a signed
+   * `/_mochi/image/*` endpoint and powers `getImageUrl()` / the `<Image>`
+   * component. Every served URL's payload is encrypted so attackers cannot
+   * request arbitrary sources or transforms. Default: enabled with sensible
+   * defaults; pass `{ enabled: false }` to turn it off. See `MochiImageOptions`.
    */
   image?: MochiImageOptions;
   /**
@@ -659,6 +660,14 @@ export interface MochiServeOptions {
    * and no mail is sent.
    */
   email?: MochiEmailOptions;
+  /**
+   * Slide-to-verify captcha backing `mintCaptcha()` / `verifyCaptcha()` and the
+   * `<MochiCaptcha>` component. Tunes proof-of-work difficulty, the token
+   * timing floor and expiry, and the one-time nonce store used for replay
+   * protection. See `MochiCaptchaOptions`. Default: 16 bits, a 2s floor, a
+   * 15-minute expiry, and an in-memory (per-process) nonce store.
+   */
+  captcha?: MochiCaptchaOptions;
   /**
    * Run the whole-program [svelte-shaker](https://github.com/baseballyama/svelte-shaker)
    * pass before compiling, slimming `.svelte` source (prop folding, dead-branch

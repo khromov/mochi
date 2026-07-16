@@ -49,6 +49,7 @@ COPY --from=install /temp/dev/packages/mochi/node_modules packages/mochi/node_mo
 COPY --from=install /temp/dev/packages/site/node_modules packages/site/node_modules
 COPY --from=install /temp/dev/packages/demos/node_modules packages/demos/node_modules
 COPY --from=install /temp/dev/packages/docs/node_modules packages/docs/node_modules
+COPY --from=install /temp/dev/packages/shared/node_modules packages/shared/node_modules
 
 # ncdu for disk usage analysis. libgcc is already present in oven/bun:alpine.
 RUN apk add --no-cache ncdu

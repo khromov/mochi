@@ -1443,14 +1443,14 @@ export class Mochi {
       });
     });
 
-    // Register the signed image-resize endpoint (enabled unless explicitly off)
-    // and start the background cache janitor. The resolved options are the
-    // single source of truth for `enabled` — `getResizedImage` consults the
-    // same flag to fall back to raw source URLs when the endpoint is off.
     // Give the mailer a handle to the live compile cache so Mochi.email() can
     // render Svelte email templates through the same registry as page routes.
     getEmailRuntime().registry = registry;
 
+    // Register the signed image endpoint (enabled unless explicitly off) and
+    // start the background cache janitor. The resolved options are the single
+    // source of truth for `enabled` — `getImageUrl` consults the same flag to
+    // fall back to raw source URLs when the endpoint is off.
     let stopImageSweeper: (() => void) | undefined;
     const imageRuntime = getImageRuntime();
     if (imageRuntime.options.enabled) {
@@ -1470,6 +1470,50 @@ export class Mochi {
         return response;
       });
       stopImageSweeper = startImageCacheSweeper(imageRuntime.cache, imageRuntime.options.sweepIntervalMs);
+    }
+
+    // Dev-only: the debug bar's Cache tab reads the entry count (GET) and empties
+    // the image cache (POST). Registered whenever the debug bar is on (independent
+    // of the image endpoint), since the tab always shows; counting/clearing an
+    // unpopulated cache is a harmless no-op.
+    if (debugBarEnabled) {
+      const imageCacheHandler = async (req: Request): Promise<Response> => {
+        if (req.method === 'POST') {
+          await imageRuntime.cache.clearAll();
+          return Response.json({ ok: true, count: 0, keys: [] });
+        }
+        if (req.method === 'GET') {
+          // `keys` already excludes transient in-flight markers; count matches the
+          // visible list so the debug bar badge equals the number of listed keys.
+          const keys = await imageRuntime.cache.keys();
+          return Response.json({ count: keys.length, keys });
+        }
+        return new Response('Method Not Allowed', { status: 405 });
+      };
+      // Returns the raw stored entry for a single key (`?key=<url-encoded key>`).
+      const imageCacheEntryHandler = async (req: Request): Promise<Response> => {
+        if (req.method !== 'GET') {
+          return new Response('Method Not Allowed', { status: 405 });
+        }
+        const key = new URL(req.url).searchParams.get('key');
+        if (!key) {
+          return new Response('Missing ?key', { status: 400 });
+        }
+        const value = await imageRuntime.cache.inspect(key);
+        if (value == null) {
+          // 410, not 404: the handler ran and the key simply isn't stored — the
+          // listing it came from is a snapshot, and entries are evicted between
+          // listing and expanding. A 404 here would be indistinguishable from the
+          // route being unregistered or the key arriving mangled.
+          return new Response('Gone', { status: 410 });
+        }
+        return Response.json({ key, value });
+      };
+      // Register both slash variants so they work under any `trailingSlash` policy.
+      bunRoutes[`${registry.assetPrefix}/image-cache`] = imageCacheHandler;
+      bunRoutes[`${registry.assetPrefix}/image-cache/`] = imageCacheHandler;
+      bunRoutes[`${registry.assetPrefix}/image-cache/entry`] = imageCacheEntryHandler;
+      bunRoutes[`${registry.assetPrefix}/image-cache/entry/`] = imageCacheEntryHandler;
     }
 
     if (process.env.MOCHI_MEMORY_PROBE === '1') {
