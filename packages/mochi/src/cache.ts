@@ -102,6 +102,10 @@ function withTimeout<T>(work: Promise<T>, ms: number, key: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
     timer = setTimeout(() => reject(new Error(`MochiCache: recompute for "${key}" timed out after ${ms}ms`)), ms);
+    // A guard timer must never keep the process alive: a background revalidation
+    // in flight at exit would otherwise pin the event loop until this (up to a
+    // one-hour) timeout fires — a hard hang on Windows, where Bun waits it out.
+    timer.unref?.();
   });
   return Promise.race([work, timeout]).finally(() => clearTimeout(timer));
 }

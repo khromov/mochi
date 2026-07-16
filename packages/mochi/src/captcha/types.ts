@@ -1,6 +1,8 @@
 export interface NonceStore {
   /** Atomically record the nonce; false if it was already seen (and not expired). */
   consume(nonce: string, expiresAt: number): boolean | Promise<boolean>;
+  /** Release any held resources (e.g. a SQLite handle). Optional. */
+  close?(): void | Promise<void>;
 }
 
 export interface MochiCaptchaOptions {
