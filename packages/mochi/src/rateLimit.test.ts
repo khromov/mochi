@@ -238,6 +238,14 @@ describe('sqliteStore persistence', () => {
     await raw.hit('k', 60_000, 5);
     const db = (raw as unknown as { db: { close(throwOnError?: boolean): void } }).db;
     expect(() => db.close(true)).toThrow();
+
+    // Release the handle for real — otherwise Windows can't unlink finalize-control.db
+    // in afterAll (EBUSY). Mirror the production sqliteStore() shutdown: finalize the
+    // outstanding statements, then close(true) actually releases the db/-wal/-shm files.
+    for (const value of Object.values(raw)) {
+      (value as { finalize?: () => void } | null)?.finalize?.();
+    }
+    db.close(true);
     await raw.shutdown?.();
   });
 });
