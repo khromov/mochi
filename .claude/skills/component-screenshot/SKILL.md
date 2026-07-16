@@ -14,8 +14,8 @@ The image comes from the **chrome-devtools MCP**, not from the server: the route
 
 Request it **with a trailing slash** — `packages/site` sets `trailingSlash: 'always'`, so `/shot/captcha` just 308s.
 
-| Param          | Meaning                                                                                                           |
-| -------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Param          | Meaning                                                                                                            |
+| -------------- | ------------------------------------------------------------------------------------------------------------------ |
 | `?w=`          | Frame width, default `1280`. Height follows 16:9 unless `?h=` is given, so `?w=1920` → 1080.                       |
 | `?h=`          | Frame height. Use it for a doc banner (`?h=360`) — a 720-tall frame is mostly dead space around a short component. |
 | `?scheme=`     | `light` (default) or `dark`. Pinned via a handle in `shot/routes.ts`, wired into `sequence()` in `src/index.ts`.   |
@@ -89,38 +89,51 @@ Files:
 A wrong `natural` doesn't error; it just mis-scales, so don't guess it:
 
 - **Wrapper with `width: 100%`** → the subject fills the box exactly, so `natural.width` is whatever you choose (416 for the captcha). Only the height must be real (the captcha track is 44px in `MochiCaptcha`'s own CSS).
-- **No wrapper** → the component's intrinsic size governs. Put a placeholder in the registry, load the page, and back the true value out of the render:
+- **No wrapper** → the component's intrinsic size governs. Put a placeholder in the registry, load the page, and back the true value out of the render with `subjectBox()` below:
 
   ```js
   () => {
     const fit = document.querySelector('.fit');
-    const el = fit.firstElementChild.getBoundingClientRect();
+    const b = subjectBox(fit);
     const scale = +getComputedStyle(fit).transform.match(/matrix\(([\d.]+)/)[1];
-    return { width: +(el.width / scale).toFixed(1), height: +(el.height / scale).toFixed(1) };
-  }
+    return { width: +(b.width / scale).toFixed(1), height: +(b.height / scale).toFixed(1) };
+  };
   ```
 
-  Then write that into `natural` and reload. (A guessed 120x34 for `LikeButton` was really 31x19 — it rendered off-centre and under-filled.)
+  Then write that into `natural` and reload — a correct value reproduces itself (declare 416x44, measure 416x44). A guessed 120x34 for `LikeButton` was really 31x19: it rendered off-centre and under-filled.
 
 ## Verification
 
-Never trust the shot without measuring it. Equal gaps prove centring; the island wrapper proves it isn't inert HTML:
+Never trust the shot without measuring it. Equal gaps prove centring; the island wrapper proves it isn't inert HTML.
+
+`.fit`'s own box is the _unscaled_ natural box, and its `firstElementChild` is a Svelte-injected `<script>` (0x0) — so measure the union of the rendered descendants instead. `subjectBox()` is the reusable half:
 
 ```js
 () => {
+  // The subject's true visual box: union of every descendant that actually renders.
+  const subjectBox = (fit) => {
+    const rects = [...fit.querySelectorAll('*')].map((e) => e.getBoundingClientRect()).filter((r) => r.width > 0 && r.height > 0);
+    const left = Math.min(...rects.map((r) => r.left));
+    const right = Math.max(...rects.map((r) => r.right));
+    const top = Math.min(...rects.map((r) => r.top));
+    const bottom = Math.max(...rects.map((r) => r.bottom));
+    return { left, right, top, bottom, width: right - left, height: bottom - top };
+  };
+
   const shot = document.querySelector('.shot').getBoundingClientRect();
-  const el = document.querySelector('.fit').firstElementChild.getBoundingClientRect();
+  const b = subjectBox(document.querySelector('.fit'));
   return {
     frame: { w: shot.width, h: shot.height },
     viewport: `${window.innerWidth}x${window.innerHeight}`,
-    gapLeft: +(el.left - shot.left).toFixed(1),
-    gapRight: +(shot.right - el.right).toFixed(1),
-    gapTop: +(el.top - shot.top).toFixed(1),
-    gapBottom: +(shot.bottom - el.bottom).toFixed(1),
-    pctW: +((el.width / shot.width) * 100).toFixed(1),
+    gapLeft: +(b.left - shot.left).toFixed(1),
+    gapRight: +(shot.right - b.right).toFixed(1),
+    gapTop: +(b.top - shot.top).toFixed(1),
+    gapBottom: +(shot.bottom - b.bottom).toFixed(1),
+    pctW: +((b.width / shot.width) * 100).toFixed(1),
+    pctH: +((b.height / shot.height) * 100).toFixed(1),
     hydrated: !!document.querySelector('mochi-hydratable-island'),
   };
-}
+};
 ```
 
 Expect: `frame` == `viewport` == the requested size, left/right and top/bottom gaps equal (sub-pixel rounding is fine), `pctW` near 90 on the limiting axis, `hydrated: true`. Also check `list_console_messages` — a clean SSR response can still throw on hydration.
