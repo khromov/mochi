@@ -42,6 +42,16 @@ function makeCache(overrides: Partial<ImageCacheOptions> = {}): ImageCache {
 const SRC = 'https://example.com/a.png';
 const ID = variantId(SRC, CFG);
 
+// Wait for a fire-and-forget background revalidation to land. A fixed `Bun.sleep`
+// flakes when the regen's disk write is slower than the wait (Windows CI), so poll
+// the observable effect until it holds or a generous deadline passes.
+async function settle(predicate: () => boolean, timeoutMs = 2_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate() && Date.now() < deadline) {
+    await Bun.sleep(5);
+  }
+}
+
 function origFn(bytes: number[], contentType = 'image/jpeg', counter?: { n: number }) {
   return async () => {
     if (counter) {
@@ -90,7 +100,7 @@ describe('ImageCache.getOriginal', () => {
     expect(stale.status).toBe('stale');
     expect(Array.from(stale.entry.bytes)).toEqual([1]); // old bytes served immediately
 
-    await Bun.sleep(20);
+    await settle(() => counter.n === 2);
     expect(counter.n).toBe(2); // revalidated in the background
   });
 
@@ -175,7 +185,7 @@ describe('ImageCache.getVariant (generation-stamped)', () => {
     expect(stale.status).toBe('stale');
     expect(Array.from(stale.entry.bytes)).toEqual([1]); // old bytes served immediately
 
-    await Bun.sleep(20);
+    await settle(() => counter.n === 2);
     expect(counter.n).toBe(2); // variant regenerated in the background
   });
 

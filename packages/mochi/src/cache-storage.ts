@@ -184,6 +184,33 @@ async function writeFileDurable(path: string, data: Uint8Array): Promise<void> {
   }
 }
 
+// TODO: Audit this code on Windows
+// Windows fails a rename with EPERM/EACCES/EBUSY when another handle (a concurrent
+// reader, the sweep, an antivirus scan) has the destination open, and can briefly
+// surface ENOENT on the just-written source before its directory entry settles.
+// All are transient — a short backoff clears them. No-op on POSIX, where rename is
+// atomic and these never occur.
+const RENAME_RETRY_CODES = new Set(['EPERM', 'EACCES', 'EBUSY', 'ENOENT']);
+async function renameWithRetry(from: string, to: string): Promise<void> {
+  if (process.platform !== 'win32') {
+    return rename(from, to);
+  }
+  // Ramp to a 100ms poll and keep retrying for a few seconds: under heavy write
+  // contention a peer's handle on the destination can linger longer than a short
+  // window, and a rename that ultimately succeeds beats a spurious hard failure.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await rename(from, to);
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code ?? '';
+      if (attempt >= 50 || !RENAME_RETRY_CODES.has(code)) {
+        throw err;
+      }
+      await Bun.sleep(Math.min(100, 10 * (attempt + 1)));
+    }
+  }
+}
+
 // fsync a directory so a rename into it survives a crash. Best-effort: some
 // filesystems reject directory fsync with EINVAL/ENOTSUP — there the data file
 // was still fsynced (no torn read), we only forgo rename-durability, which
@@ -287,7 +314,7 @@ export class FileStorage implements Storage {
         }
         const blobTmp = `${blobPath}.${crypto.randomUUID()}.tmp`;
         await writeFileDurable(blobTmp, b.data);
-        await rename(blobTmp, blobPath);
+        await renameWithRetry(blobTmp, blobPath);
       }
       await fsyncDir(blobDir);
     }
@@ -298,7 +325,7 @@ export class FileStorage implements Storage {
     const tmp = `${path}.${crypto.randomUUID()}.tmp`;
     const envelope: KeyedEnvelope = { __mochiKey: key, __mochiValue: json };
     await writeFileDurable(tmp, new TextEncoder().encode(JSON.stringify(envelope)));
-    await rename(tmp, path);
+    await renameWithRetry(tmp, path);
     await fsyncDir(this.directory);
   }
 
@@ -396,9 +423,14 @@ export class FileStorage implements Storage {
         .filter((entry) => !entry.isDirectory() && (entry.name.endsWith('.json') || entry.name.endsWith('.tmp')))
         .map(async (entry) => {
           const filePath = join(this.directory, entry.name);
+          // A `.tmp` is never a cache entry — only ever crash debris or a live
+          // write's in-flight temp — so age it out by the crash-orphan grace, not
+          // `maxAge`. With a tiny `maxAge` a slow write (Windows) would otherwise
+          // let the sweep unlink a temp file mid-write, ENOENT-ing its own rename.
+          const threshold = entry.name.endsWith('.tmp') ? ORPHAN_BLOB_GRACE_MS : this.maxAge;
           try {
             const info = await stat(filePath);
-            if (now - info.mtimeMs > this.maxAge) {
+            if (now - info.mtimeMs > threshold) {
               if (options.reportKeys && entry.name.endsWith('.json')) {
                 const key = await this.readKey(filePath);
                 if (key !== null) {
