@@ -34,7 +34,7 @@ await Mochi.serve({
   proxy: { origin: ORIGIN },
   handle: analytics,
   email: {
-    from: process.env.SMTP_FROM || 'Mochi Support Form <noreply@mochi.fast>',
+    from: process.env.SMTP_FROM || 'Mochi Support Form <support@mochi.fast>',
     transport: smtp,
   },
   captcha: {
