@@ -1107,8 +1107,6 @@ export class ComponentRegistry {
             `export function getImagePlaceholder() { return Promise.resolve(null); }`,
             `export function imagePlaceholder() { return Promise.resolve(null); }`,
             `export function invalidateImage() { throw new Error("invalidateImage() is only available on the server"); }`,
-            `export function cachedImage() { throw new Error("cachedImage() is only available on the server"); }`,
-            `export class CachedImage { constructor() { throw new Error("CachedImage is only available on the server"); } }`,
             `export function memoryStore() { throw new Error("memoryStore() is only available on the server"); }`,
             `export function sqliteStore() { throw new Error("sqliteStore() is only available on the server"); }`,
             `export function postgresStore() { throw new Error("postgresStore() is only available on the server"); }`,

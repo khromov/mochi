@@ -80,7 +80,15 @@ rateLimit: { limit: 100, window: '1m', store: sqliteStore({ path: './ratelimit.d
 rateLimit: { limit: 100, window: '1m', store: postgresStore({ url: process.env.DATABASE_URL }) }
 ```
 
-Two routes given the **same store instance** share counters (same key, same bucket). Distinct configs otherwise get independent buckets even on the same db file path — keys are per-store-instance state in memory, but persisted stores share by key, so prefer a custom `key` if you need separation.
+Counters are bucketed by **key within a store** — there is no per-route namespace. Two memory-backed routes are isolated because each has its own store, but two routes sharing a store instance share counters, and so do two `sqliteStore`/`postgresStore` instances pointing at the same database.
+
+<Callout type="warning">
+
+**Persisted stores share counters across routes.** Point two routes at the same db and a client's hits on either drain one shared bucket — even if the routes declare different `limit`s. When sharing a persisted store, namespace the `key` per route: `key: () => 'login:' + (getRequestContext().getClientAddress() ?? 'unknown')`.
+
+</Callout>
+
+In dev, creating a store inline in a route config (as above) makes each save of that file build a fresh store while the old one — being user-supplied — is never closed by the framework, leaking a handle per reload. Counters still persist (they live in the db), but if the churn bothers you, keep dev on the default memory store and attach the persisted store in production only.
 
 ### Keys and proxies
 

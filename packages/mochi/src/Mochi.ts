@@ -619,7 +619,9 @@ export class Mochi {
       // use it, and its counters intentionally survive dev reloads.
       if (limiter && limiter !== sharedGlobalLimiter && limiter.ownsStore) {
         rateLimitStores.delete(limiter.store);
-        void limiter.store.shutdown?.();
+        Promise.resolve(limiter.store.shutdown?.()).catch((err: unknown) => {
+          logger.warn(`Rate limit store shutdown failed: ${err instanceof Error ? err.message : err}`);
+        });
       }
     }
     // Dev-watcher hook for in-place route updates (same pattern, same type):
@@ -649,7 +651,14 @@ export class Mochi {
         ctx.rateLimit = outcome.info;
         return { headers: outcome.headers };
       }
-      const message = outcome.retryAfterSeconds != null ? `Rate limit exceeded. Try again in ${outcome.retryAfterSeconds}s.` : 'Rate limit exceeded.';
+      // info is null only when the store failed and onStoreError said 'deny' —
+      // say so instead of blaming the client's traffic.
+      const message =
+        outcome.info === null
+          ? 'Rate limiting unavailable.'
+          : outcome.retryAfterSeconds != null
+            ? `Rate limit exceeded. Try again in ${outcome.retryAfterSeconds}s.`
+            : 'Rate limit exceeded.';
       return { headers: outcome.headers, blockedBody: outcome.body, blockedMessage: message };
     }
 

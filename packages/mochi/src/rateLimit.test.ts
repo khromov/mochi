@@ -109,6 +109,7 @@ describe('createRouteLimiter', () => {
     }
     expect(outcome.info).toBeNull();
     expect(outcome.retryAfterSeconds).toBeNull();
+    expect(outcome.body.message).toBe('Rate limiting unavailable');
   });
 
   test('a shared store instance shares counters across limiters; ownsStore is false', async () => {

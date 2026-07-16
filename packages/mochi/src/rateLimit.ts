@@ -121,7 +121,9 @@ export function createRouteLimiter(options: MochiRateLimitOptions): RouteLimiter
         logger.warn(
           `Rate limit store error (${action === 'deny' ? 'failing closed, blocking request' : 'failing open, request allowed'}): ${error instanceof Error ? error.message : String(error)}`,
         );
-        return action === 'deny' ? { kind: 'blocked', info: null, headers: {}, body: { hitlimit: true, message: 'Rate limit error' }, retryAfterSeconds: null } : { kind: 'skip' };
+        return action === 'deny'
+          ? { kind: 'blocked', info: null, headers: {}, body: { hitlimit: true, message: 'Rate limiting unavailable' }, retryAfterSeconds: null }
+          : { kind: 'skip' };
       }
       return result.allowed
         ? { kind: 'allowed', info: result.info, headers: result.headers }
