@@ -114,10 +114,15 @@ describe('FileStorage', () => {
 
   test('sweep removes files older than maxAge and keeps fresh ones', async () => {
     const storage = makeStorage({ maxAge: 50 });
+    // Stamp before the write: the file's mtime is necessarily >= this, so a sweep
+    // as-of `before` always sees it as fresh — deterministic regardless of how slow
+    // the durable write (fsync + rename) runs on a loaded CI host. A bare
+    // `sweep()` here would flake whenever the write itself takes longer than maxAge.
+    const before = Date.now();
     await storage.setItem('k', { value: 1, createdAt: 0 });
 
     // Nothing expired yet.
-    expect(await storage.sweep()).toEqual({ removed: 0 });
+    expect(await storage.sweep(before)).toEqual({ removed: 0 });
     expect(await storage.getItem('k')).not.toBeNull();
 
     // Advance the clock past maxAge relative to the file's mtime.
