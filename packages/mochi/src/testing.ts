@@ -5,6 +5,22 @@ export interface RunTestsOptions {
   dir?: string;
   /** Test files (paths relative to `dir`) that must run sequentially, after the parallel batch. */
   sequential?: Iterable<string>;
+  /**
+   * Hard per-file deadline (ms). A `bun test` child that hasn't exited by then is
+   * killed and the file is recorded as failed with a "TIMED OUT" message, so one
+   * wedged process can't hang the whole run. Backstops Bun's per-*test* `--timeout`,
+   * which fails a test but never forces the process to exit. Default 300_000.
+   */
+  fileTimeoutMs?: number;
+}
+
+interface FileResult {
+  file: string;
+  ok: boolean;
+  timedOut: boolean;
+  exitCode: number | null;
+  stdout: string;
+  stderr: string;
 }
 
 /**
@@ -22,6 +38,7 @@ export interface RunTestsOptions {
 export async function runTests(options: RunTestsOptions = {}): Promise<void> {
   const dir = options.dir ?? '.';
   const sequential = new Set(options.sequential ?? []);
+  const fileTimeoutMs = options.fileTimeoutMs ?? 300_000;
 
   const all = (await Array.fromAsync(new Glob('src/**/*.test.ts').scan(dir))).sort();
   const parallel = all.filter((f) => !sequential.has(f));
@@ -29,40 +46,75 @@ export async function runTests(options: RunTestsOptions = {}): Promise<void> {
   const concurrency = navigator.hardwareConcurrency;
   console.log(`Running ${all.length} test files (${parallel.length} parallel × ${concurrency} workers, ${sequential.size} sequential)`);
 
-  const results: { file: string; ok: boolean }[] = [];
+  const results: FileResult[] = [];
+
+  // Run one file in its own `bun test` process under a hard deadline. Bun's
+  // `--timeout` only fails an individual test; a process wedged after a test (a
+  // leaked handle, a native call that never returns) would otherwise block the
+  // worker on `proc.exited` forever and hang the whole run until CI's job cap.
+  async function runFile(file: string): Promise<FileResult> {
+    const proc = Bun.spawn(['bun', 'test', '--timeout', '30000', file], {
+      cwd: dir,
+      stdin: 'ignore',
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+
+    // Drain from the start so a chatty-but-progressing file can't stall on a full
+    // OS pipe buffer (~64 KB) and masquerade as a hang. `proc.kill()` closes the
+    // child's write ends, so these resolve with the captured partial output.
+    const stdoutP = new Response(proc.stdout).text();
+    const stderrP = new Response(proc.stderr).text();
+
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<'timeout'>((resolve) => {
+      timer = setTimeout(() => resolve('timeout'), fileTimeoutMs);
+      timer.unref?.();
+    });
+
+    const outcome = await Promise.race([proc.exited, deadline]);
+    clearTimeout(timer);
+
+    let timedOut = false;
+    if (outcome === 'timeout') {
+      timedOut = true;
+      proc.kill();
+    }
+
+    const [exitCode, stdout, stderr] = await Promise.all([proc.exited, stdoutP, stderrP]);
+    return { file, ok: !timedOut && exitCode === 0, timedOut, exitCode, stdout, stderr };
+  }
+
+  function report(result: FileResult, prefix = ''): void {
+    if (result.timedOut) {
+      console.log(`\n${prefix}✗ ${result.file} — TIMED OUT after ${Math.round(fileTimeoutMs / 1000)}s (killed)`);
+    } else {
+      console.log(`\n${prefix}${result.ok ? '✓' : '✗'} ${result.file}`);
+    }
+    if (result.stdout) {
+      process.stdout.write(result.stdout);
+    }
+    if (result.stderr) {
+      process.stderr.write(result.stderr);
+    }
+  }
 
   let idx = 0;
   async function next(): Promise<void> {
     while (idx < parallel.length) {
       const file = parallel[idx++]!;
-      const proc = Bun.spawn(['bun', 'test', '--timeout', '30000', file], {
-        cwd: dir,
-        stdin: 'ignore',
-        stdout: 'pipe',
-        stderr: 'pipe',
-      });
-      const [exitCode, stdout, stderr] = await Promise.all([proc.exited, new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
-      results.push({ file, ok: exitCode === 0 });
-      console.log(`\n${exitCode === 0 ? '✓' : '✗'} ${file}`);
-      if (stdout) {
-        process.stdout.write(stdout);
-      }
-      if (stderr) {
-        process.stderr.write(stderr);
-      }
+      const result = await runFile(file);
+      results.push(result);
+      report(result);
     }
   }
 
   await Promise.all(Array.from({ length: concurrency }, () => next()));
 
   for (const file of sequential) {
-    console.log(`\n→ ${file} (sequential)`);
-    const proc = Bun.spawnSync({
-      cmd: ['bun', 'test', '--timeout', '30000', file],
-      cwd: dir,
-      stdio: ['inherit', 'inherit', 'inherit'],
-    });
-    results.push({ file, ok: proc.exitCode === 0 });
+    const result = await runFile(file);
+    results.push(result);
+    report(result, '→ ');
   }
 
   const failed = results.filter((r) => !r.ok);
@@ -71,7 +123,7 @@ export async function runTests(options: RunTestsOptions = {}): Promise<void> {
   if (failed.length > 0) {
     console.log('Failed:');
     for (const r of failed) {
-      console.log(`  ✗ ${r.file}`);
+      console.log(`  ✗ ${r.file}${r.timedOut ? ' (timed out)' : ''}`);
     }
     process.exit(1);
   }

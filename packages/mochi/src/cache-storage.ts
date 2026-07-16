@@ -190,6 +190,13 @@ async function writeFileDurable(path: string, data: Uint8Array): Promise<void> {
 // safely degrades to "revert to the prior version".
 const DIR_FSYNC_UNSUPPORTED = new Set(['EINVAL', 'ENOTSUP', 'EPERM', 'EISDIR']);
 async function fsyncDir(dir: string): Promise<void> {
+  // Windows can't open a directory as a file handle to fsync it — the attempt
+  // always lands in DIR_FSYNC_UNSUPPORTED below and is swallowed, so it buys no
+  // durability there anyway. Skip it outright to avoid churning a doomed
+  // directory handle twice per write in the hot image-cache path.
+  if (process.platform === 'win32') {
+    return;
+  }
   let fh: FileHandle | undefined;
   try {
     fh = await open(dir, 'r');
