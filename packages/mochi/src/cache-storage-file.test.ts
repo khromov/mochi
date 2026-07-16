@@ -138,14 +138,16 @@ describe('FileStorage', () => {
     const storage = makeStorage({ maxAge: 5, purgeInterval: 20 });
     await storage.setItem('k', { value: 1, createdAt: 0 });
 
-    // Poll for the background sweep rather than a fixed wait: the 20ms interval
-    // timer can be starved when many test processes run in parallel on CI, so a
-    // short fixed sleep occasionally sees zero fires.
-    for (let i = 0; i < 200 && events.length === 0; i++) {
+    // Poll for the actual removal rather than a fixed wait or an event count: the
+    // 20ms interval timer can be starved under parallel CI load, and the sweeper's
+    // initial pass can fire before the entry ages past maxAge (so `events.length`
+    // reaching 1 doesn't yet mean `k` was reclaimed). Waiting for the observable
+    // effect is robust on both counts.
+    for (let i = 0; i < 200 && (await storage.getItem('k')) !== null; i++) {
       await wait(10);
     }
-    expect(events.length).toBeGreaterThanOrEqual(1);
     expect(await storage.getItem('k')).toBeNull();
+    expect(events.length).toBeGreaterThanOrEqual(1);
   });
 
   test('sweep reports the plaintext keys it removed when asked', async () => {
@@ -193,7 +195,8 @@ describe('MochiCache with FileStorage (stale-while-revalidate)', () => {
   });
 
   test('stale returns cached value and revalidates in the background', async () => {
-    const cache = new MochiCache({ storage: makeStorage(), minTimeToStale: 10, maxTimeToLive: 5_000 });
+    const storage = makeStorage();
+    const cache = new MochiCache({ storage, minTimeToStale: 10, maxTimeToLive: 5_000 });
     let calls = 0;
     const fn = () => ++calls;
 
@@ -204,9 +207,16 @@ describe('MochiCache with FileStorage (stale-while-revalidate)', () => {
     expect(stale.value).toBe(1);
     expect(stale.status).toBe('stale');
 
-    // Await the background revalidation deterministically — a fixed sleep here
-    // flakes when the disk write is slower than the wait (Windows CI).
-    await cache.settled();
+    // Poll the backing store for the background revalidation's write rather than a
+    // fixed sleep, which flakes when the disk write is slower than the wait (Windows
+    // CI). Read storage directly, not cache.fetch — the latter would kick a second
+    // stale revalidation before the first has landed.
+    for (let i = 0; i < 250; i++) {
+      if (((await storage.getItem('k')) as { value?: number } | null)?.value === 2) {
+        break;
+      }
+      await wait(2);
+    }
     expect(await cache.fetch('k', fn)).toBe(2);
   });
 

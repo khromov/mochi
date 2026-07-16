@@ -102,10 +102,6 @@ function withTimeout<T>(work: Promise<T>, ms: number, key: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
     timer = setTimeout(() => reject(new Error(`MochiCache: recompute for "${key}" timed out after ${ms}ms`)), ms);
-    // A guard timer must never keep the process alive: a background revalidation
-    // in flight at exit would otherwise pin the event loop until this (up to a
-    // one-hour) timeout fires — a hard hang on Windows, where Bun waits it out.
-    timer.unref?.();
   });
   return Promise.race([work, timeout]).finally(() => clearTimeout(timer));
 }
@@ -180,17 +176,6 @@ export class MochiCache {
 
     const value = await this.run(key, fn);
     return this.emitRead(key, value, 'expired');
-  }
-
-  /**
-   * Await every in-flight recompute — including fire-and-forget background
-   * revalidations kicked off by a stale read — to settle. Mainly for tests: lets
-   * them wait for a background refresh deterministically instead of a fixed sleep
-   * (which flakes when the recompute's storage write is slower than the wait), and
-   * drains pending work before teardown.
-   */
-  async settled(): Promise<void> {
-    await Promise.allSettled([...this.inflight.values()]);
   }
 
   async delete(key: string): Promise<void> {

@@ -52,11 +52,15 @@ export async function runTests(options: RunTestsOptions = {}): Promise<void> {
 
   const windowsSkip = new Set(process.platform === 'win32' ? (options.windowsSkip ?? []) : []);
 
-  const all = (await Array.fromAsync(new Glob('src/**/*.test.ts').scan(dir))).sort().filter((f) => !windowsSkip.has(f));
-  const parallel = all.filter((f) => !sequential.has(f));
+  // Bun's Glob yields backslash paths on Windows; normalize to forward slashes so
+  // the `sequential`/`windowsSkip` sets (written with `/`) match. `bun test` accepts
+  // forward-slash paths on Windows too, so the spawned command is unaffected.
+  const all = (await Array.fromAsync(new Glob('src/**/*.test.ts').scan(dir))).map((f) => f.replaceAll('\\', '/')).sort();
+  const included = all.filter((f) => !windowsSkip.has(f));
+  const parallel = included.filter((f) => !sequential.has(f));
 
-  if (windowsSkip.size > 0) {
-    console.log(`Skipping ${windowsSkip.size} file(s) on Windows (Bun native-shutdown wedge): ${[...windowsSkip].join(', ')}`);
+  if (all.length > included.length) {
+    console.log(`Skipping ${all.length - included.length} file(s) on Windows (Bun native-shutdown wedge): ${[...windowsSkip].join(', ')}`);
   }
 
   // Run one file at a time on Windows. Some suites pass every test but then wedge
@@ -65,7 +69,7 @@ export async function runTests(options: RunTestsOptions = {}): Promise<void> {
   // wedge is triggered by many processes tearing down under parallel load. Costs
   // wall-clock but keeps the run honest without skipping or faking a pass.
   const concurrency = process.platform === 'win32' ? 1 : navigator.hardwareConcurrency;
-  console.log(`Running ${all.length} test files (${parallel.length} parallel × ${concurrency} workers, ${sequential.size} sequential)`);
+  console.log(`Running ${included.length} test files (${parallel.length} parallel × ${concurrency} workers, ${sequential.size} sequential)`);
 
   const results: FileResult[] = [];
 
