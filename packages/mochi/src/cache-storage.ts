@@ -184,6 +184,7 @@ async function writeFileDurable(path: string, data: Uint8Array): Promise<void> {
   }
 }
 
+// TODO: Audit this code on Windows
 // Windows fails a rename with EPERM/EACCES/EBUSY when another handle (a concurrent
 // reader, the sweep, an antivirus scan) has the destination open, and can briefly
 // surface ENOENT on the just-written source before its directory entry settles.
