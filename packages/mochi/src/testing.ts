@@ -45,7 +45,12 @@ export async function runTests(options: RunTestsOptions = {}): Promise<void> {
   const all = (await Array.fromAsync(new Glob('src/**/*.test.ts').scan(dir))).sort();
   const parallel = all.filter((f) => !sequential.has(f));
 
-  const concurrency = navigator.hardwareConcurrency;
+  // Run one file at a time on Windows. Some suites pass every test but then wedge
+  // in Bun's native post-test shutdown there (no JS-level recovery is possible —
+  // bun stops running the loop before it hangs); this tests the theory that the
+  // wedge is triggered by many processes tearing down under parallel load. Costs
+  // wall-clock but keeps the run honest without skipping or faking a pass.
+  const concurrency = process.platform === 'win32' ? 1 : navigator.hardwareConcurrency;
   console.log(`Running ${all.length} test files (${parallel.length} parallel × ${concurrency} workers, ${sequential.size} sequential)`);
 
   const results: FileResult[] = [];
