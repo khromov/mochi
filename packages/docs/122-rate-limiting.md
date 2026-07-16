@@ -88,7 +88,21 @@ Counters are bucketed by **key within a store**. A route with its **own** `rateL
 
 </Callout>
 
-In dev, creating a store inline in a route config (as above) makes each save of that file build a fresh store while the old one — being user-supplied — is never closed by the framework, leaking a handle per reload. Counters still persist (they live in the db), but if the churn bothers you, keep dev on the default memory store and attach the persisted store in production only.
+Each store instance owns its backend — a DB connection, prepared statements, and a cleanup timer (or, for memory, a Map and a sweep timer). So don't call `sqliteStore({ path })` inline in every route config: that opens one connection **per route** to the same file, each with its own cleanup sweep, all fighting over SQLite's single write lock (every hit is a write). To cover many routes against one database, create the store **once** and share the instance — the same object folds each route's pattern into its keys, so you get one connection with **separate** per-route counters:
+
+```ts
+const store = sqliteStore({ path: './ratelimit.db' }); // one connection…
+'/api/search': Mochi.api(search, { rateLimit: { limit: 30, window: '1m', store } }), // …own bucket
+'/api/upload': Mochi.api(upload, { rateLimit: { limit: 5, window: '1m', store } }), // …own bucket
+```
+
+Or hang it off the [global default](#global-default) (`Mochi.serve({ rateLimit: { store } })`) — also one connection, but then every inheriting route shares **one bucket per key**.
+
+<Callout type="info">
+
+**Dev reloads.** Creating a store inline in a route config makes each save of that file build a fresh store while the old one — being user-supplied — is never closed by the framework, leaking a handle per reload. Counters still persist (they live in the db), but if the churn bothers you, keep dev on the default memory store and attach the persisted store in production only.
+
+</Callout>
 
 ### Keys and proxies
 
