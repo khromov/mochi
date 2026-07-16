@@ -10,7 +10,7 @@ import type { DebugBarData } from './requestContext';
 import { logger } from './log';
 import { mochiEvents } from './events';
 import type { MarkdownConfig, MochiManifest, MochiSvelteShakerOptions } from './types';
-import { type HydratableComponent, type ServerIslandComponent } from './svelteAstPreprocess';
+import { type HydratableComponent, type PreprocessIslandError, type ServerIslandComponent } from './svelteAstPreprocess';
 import { cachedPreprocessHydratable, createPreprocessCacheStats } from './preprocessCache';
 import { CompileCache, compileFingerprint, createCompileCacheStats, type CompileCacheStats } from './compileCache';
 import { mergeCompilerOptions, type MochiSvelteConfig } from './svelteConfig';
@@ -91,6 +91,7 @@ function createMarkdownLoader(opts: {
     fileHydratables: Map<string, HydratableComponent[]>;
     allHydratables: HydratableComponent[];
     allServerIslands: ServerIslandComponent[];
+    filePreprocessErrors: Map<string, PreprocessIslandError[]>;
     preprocessCacheStats: ReturnType<typeof createPreprocessCacheStats>;
   };
 }) {
@@ -110,6 +111,7 @@ function createMarkdownLoader(opts: {
         opts.hydration.fileHydratables.set(args.path, cached.hydratables);
         opts.hydration.allHydratables.push(...cached.hydratables);
         opts.hydration.allServerIslands.push(...cached.serverIslands);
+        opts.hydration.filePreprocessErrors.set(args.path, cached.preprocessErrors);
       }
       if (opts.target === 'server' && cached.css && opts.cssMap) {
         opts.cssMap.set(args.path, cached.css);
@@ -132,13 +134,16 @@ function createMarkdownLoader(opts: {
     let svelteSource = compiled.code;
     let hydratables: HydratableComponent[] = [];
     let serverIslands: ServerIslandComponent[] = [];
+    let preprocessErrors: PreprocessIslandError[] = [];
     if (opts.hydration) {
       const preprocessed = cachedPreprocessHydratable(svelteSource, args.path, opts.hydration.preprocessCacheStats);
       hydratables = preprocessed.hydratables;
       serverIslands = preprocessed.serverIslands;
+      preprocessErrors = preprocessed.errors;
       opts.hydration.fileHydratables.set(args.path, hydratables);
       opts.hydration.allHydratables.push(...hydratables);
       opts.hydration.allServerIslands.push(...serverIslands);
+      opts.hydration.filePreprocessErrors.set(args.path, preprocessErrors);
       svelteSource = preprocessed.transformed;
     }
     const { js, css } = svelteCompile(
@@ -153,7 +158,7 @@ function createMarkdownLoader(opts: {
     if (cssCode && opts.cssMap) {
       opts.cssMap.set(args.path, cssCode);
     }
-    opts.compileCache.set(opts.target, args.path, raw, fingerprint, { js: js.code, css: cssCode, hydratables, serverIslands });
+    opts.compileCache.set(opts.target, args.path, raw, fingerprint, { js: js.code, css: cssCode, hydratables, serverIslands, preprocessErrors });
     return { contents: js.code, loader: 'js' as const };
   };
 }
@@ -170,14 +175,42 @@ export type MochiCompileError =
       kind: 'css-bundle-failed';
       cssPath: string;
       message: string;
+    }
+  | {
+      kind: 'unresolved-island';
+      component: string;
+      directive: string;
+      filePath: string;
+      importSource: string | null;
     };
 
+function formatUnresolvedIsland(e: Extract<MochiCompileError, { kind: 'unresolved-island' }>): string {
+  const where = path.relative(process.cwd(), e.filePath);
+  const head = `Unresolved island: <${e.component} ${e.directive}> in ${where}`;
+  if (e.importSource === null) {
+    return (
+      `${head} — "${e.component}" has no matching import. mochi:* directives need a static relative import of a ` +
+      `.svelte/.md/.svx file in this file's <script> (e.g. \`import ${e.component} from './${e.component}.svelte'\`). ` +
+      `A component received via props or a variable can't be an island — wrap it in a local .svelte component and put the directive there.`
+    );
+  }
+  const why = e.importSource.startsWith('.')
+    ? `its import of "${e.importSource}" is not a form islands support (a default or named import of a relative .svelte/.md/.svx path)`
+    : `"${e.importSource}" is a package import, which mochi:* directives don't support`;
+  return `${head} — ${why}. Wrap the component in a local .svelte file (e.g. a component that renders <${e.component} … />) and put the directive on that instead.`;
+}
+
 export function formatCompileErrors(errors: MochiCompileError[]): string {
-  const lines = errors.map((e) =>
-    e.kind === 'nested-hydration'
-      ? `Nested mochi:hydrate: <${e.child}> inside <${e.parent}> — remove mochi:hydrate from ${e.child}`
-      : `CSS bundle failed: ${e.cssPath} — ${e.message}`,
-  );
+  const lines = errors.map((e) => {
+    switch (e.kind) {
+      case 'nested-hydration':
+        return `Nested mochi:hydrate: <${e.child}> inside <${e.parent}> — remove mochi:hydrate from ${e.child}`;
+      case 'css-bundle-failed':
+        return `CSS bundle failed: ${e.cssPath} — ${e.message}`;
+      case 'unresolved-island':
+        return formatUnresolvedIsland(e);
+    }
+  });
   const header = `${errors.length} compile error${errors.length === 1 ? '' : 's'}:`;
   return `${header}\n${lines.map((l) => `• ${l}`).join('\n')}`;
 }
@@ -230,12 +263,22 @@ export interface ComponentRegistryOptions {
  */
 function indexHydratables(hydratables: HydratableComponent[]): {
   hydratablesByName: Map<string, HydratableComponent>;
-  hydratablesByPath: Map<string, HydratableComponent>;
+  hydratablesByPath: Map<string, HydratableComponent[]>;
   islandPaths: Set<string>;
 } {
+  // Multi-valued by path: a single file can back several islands (named exports).
+  const byPath = new Map<string, HydratableComponent[]>();
+  for (const h of hydratables) {
+    const list = byPath.get(h.resolvedPath);
+    if (list) {
+      list.push(h);
+    } else {
+      byPath.set(h.resolvedPath, [h]);
+    }
+  }
   return {
     hydratablesByName: new Map(hydratables.map((h) => [h.name, h])),
-    hydratablesByPath: new Map(hydratables.map((h) => [h.resolvedPath, h])),
+    hydratablesByPath: byPath,
     islandPaths: new Set(hydratables.map((h) => h.resolvedPath)),
   };
 }
@@ -244,14 +287,15 @@ export class ComponentRegistry {
   private compiledComponents: Map<
     string,
     {
+      // Named exports alongside `default` back named-export islands.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      module: { default: any };
+      module: { default: any } & Record<string, any>;
       cssComponents: Set<string>;
       hydratables: HydratableComponent[];
       // Island lookups derived once from `hydratables` at compile time and reused
       // on every render (renderComponent), instead of rebuilt per render.
       hydratablesByName: Map<string, HydratableComponent>;
-      hydratablesByPath: Map<string, HydratableComponent>;
+      hydratablesByPath: Map<string, HydratableComponent[]>;
       islandPaths: Set<string>;
       // Absolute path to the compiled `.server.js` on disk. Recorded from the
       // build's metafile (not reconstructed from the source basename) so two
@@ -312,6 +356,8 @@ export class ComponentRegistry {
   }[] = [];
   /** Maps server island component name → resolved file path */
   private serverIslandPaths: Map<string, string> = new Map();
+  /** Maps server island component name → the export it renders, when not `default` (named exports only). */
+  private serverIslandExports: Map<string, string> = new Map();
   /** Maps public URL path → disk path (relative to cwd) for static files from `public/`. */
   private publicFiles: Map<string, string> = new Map();
   readonly development: boolean;
@@ -428,6 +474,11 @@ export class ComponentRegistry {
     return this.serverIslandPaths.get(name);
   }
 
+  /** The named export a server island renders; undefined means the module's default export. */
+  getServerIslandExport(name: string): string | undefined {
+    return this.serverIslandExports.get(name);
+  }
+
   /** Number of pages currently in the compile cache (used by the dev watcher's recompile events). */
   getPageCount(): number {
     return this.compiledComponents.size;
@@ -509,6 +560,7 @@ export class ComponentRegistry {
     const compileCacheStats = createCompileCacheStats();
     const fileHydratables = new Map<string, HydratableComponent[]>();
     const fileServerIslands = new Map<string, ServerIslandComponent[]>();
+    const filePreprocessErrors = new Map<string, PreprocessIslandError[]>();
     const development = this.development;
     const userCompilerOptions = this.svelteConfig.compilerOptions ?? {};
     const serverFingerprint = compileFingerprint(userCompilerOptions, development);
@@ -627,6 +679,7 @@ export class ComponentRegistry {
           if (cached) {
             fileHydratables.set(args.path, cached.hydratables);
             fileServerIslands.set(args.path, cached.serverIslands);
+            filePreprocessErrors.set(args.path, cached.preprocessErrors);
             allHydratables.push(...cached.hydratables);
             allServerIslands.push(...cached.serverIslands);
             if (cached.css) {
@@ -637,11 +690,12 @@ export class ComponentRegistry {
           const preprocessed = await applyUserPreprocessors(raw, args.path, 'server', development);
           // Vendored .svelte from node_modules can never carry `mochi:*` directives
           const isVendored = args.path.includes(`${path.sep}node_modules${path.sep}`);
-          const { transformed, hydratables, serverIslands } = isVendored
-            ? { transformed: preprocessed, hydratables: [] as HydratableComponent[], serverIslands: [] as ServerIslandComponent[] }
+          const { transformed, hydratables, serverIslands, errors } = isVendored
+            ? { transformed: preprocessed, hydratables: [] as HydratableComponent[], serverIslands: [] as ServerIslandComponent[], errors: [] as PreprocessIslandError[] }
             : cachedPreprocessHydratable(preprocessed, args.path, preprocessCacheStats);
           fileHydratables.set(args.path, hydratables);
           fileServerIslands.set(args.path, serverIslands);
+          filePreprocessErrors.set(args.path, errors);
           allHydratables.push(...hydratables);
           allServerIslands.push(...serverIslands);
 
@@ -656,7 +710,7 @@ export class ComponentRegistry {
           if (cssCode) {
             cssMap.set(args.path, cssCode);
           }
-          compileCache.set('server', args.path, raw, serverFingerprint, { js: js.code, css: cssCode, hydratables, serverIslands });
+          compileCache.set('server', args.path, raw, serverFingerprint, { js: js.code, css: cssCode, hydratables, serverIslands, preprocessErrors: errors });
           return { contents: js.code, loader: 'js' };
         });
         if (markdown) {
@@ -670,7 +724,7 @@ export class ComponentRegistry {
               userCompilerOptions,
               compileCache,
               compileCacheStats,
-              hydration: { fileHydratables, allHydratables, allServerIslands, preprocessCacheStats },
+              hydration: { fileHydratables, allHydratables, allServerIslands, filePreprocessErrors, preprocessCacheStats },
             }),
           );
         }
@@ -718,11 +772,20 @@ export class ComponentRegistry {
       throw new Error(message);
     }
 
-    // Detection below recomputes nested-hydration errors for every file in this
-    // batch, so drop any prior ones for the recompiled files first. Without this,
-    // a fixed mistake keeps 500-ing every page until a restart, and an unfixed one
-    // is re-pushed (duplicated) on every save.
-    this.errors = this.errors.filter((e) => !(e.kind === 'nested-hydration' && fileHydratables.has(e.parentPath)));
+    // Detection below recomputes nested-hydration and unresolved-island errors
+    // for every file in this batch, so drop any prior ones for the recompiled
+    // files first. Without this, a fixed mistake keeps 500-ing every page until
+    // a restart, and an unfixed one is re-pushed (duplicated) on every save.
+    this.errors = this.errors.filter(
+      (e) => !(e.kind === 'nested-hydration' && fileHydratables.has(e.parentPath)) && !(e.kind === 'unresolved-island' && filePreprocessErrors.has(e.filePath)),
+    );
+
+    for (const errors of filePreprocessErrors.values()) {
+      for (const err of errors) {
+        this.errors.push({ kind: 'unresolved-island', ...err });
+        logger.error(`\n${formatUnresolvedIsland({ kind: 'unresolved-island', ...err })}\n`);
+      }
+    }
 
     // Detect nested hydration — a hydratable component must not itself contain mochi:hydrate or mochi:hydrate:visible children
     const hydratablePaths = new Set(allHydratables.map((h) => h.resolvedPath));
@@ -913,6 +976,11 @@ export class ComponentRegistry {
     // Register server island component paths
     for (const si of allServerIslands) {
       this.serverIslandPaths.set(si.name, si.resolvedPath);
+      if (si.exportName !== 'default') {
+        this.serverIslandExports.set(si.name, si.exportName);
+      } else {
+        this.serverIslandExports.delete(si.name);
+      }
     }
 
     this.hydratableComponents.push(...allHydratables);
@@ -932,10 +1000,12 @@ export class ComponentRegistry {
     const compileCacheStats = createCompileCacheStats();
     const clientFingerprint = compileFingerprint(userCompilerOptions, development);
     const compileCache = this.compileCache;
-    // Deduplicate by resolved path
+    // Deduplicate by island key (`<localName>_<hash>`), not resolved path — two
+    // named exports of one file, or two pages aliasing the same file's default
+    // under different local names, are distinct islands that each need an entry.
     const unique = new Map<string, HydratableComponent>();
     for (const c of this.hydratableComponents) {
-      unique.set(c.resolvedPath, c);
+      unique.set(c.name, c);
     }
 
     // Build into local maps first and swap them into the instance fields only
@@ -966,7 +1036,13 @@ export class ComponentRegistry {
     for (const [, comp] of unique) {
       const entryName = `_hydrate-${comp.name}.js`;
       const entryPath = toPosixPath(path.join(frameworkDir, entryName));
-      const entrySource = `import { registerComponent } from "${hydratableIslandPath}";\nimport ${comp.name} from "${toPosixPath(comp.resolvedPath)}";\nregisterComponent("${comp.name}", ${comp.name});\n`;
+      // String import specifiers (`import { "x" as y }`) are valid ESM and cover
+      // export names that aren't identifiers.
+      const importStmt =
+        comp.exportName === 'default'
+          ? `import ${comp.name} from "${toPosixPath(comp.resolvedPath)}";`
+          : `import { ${JSON.stringify(comp.exportName)} as ${comp.name} } from "${toPosixPath(comp.resolvedPath)}";`;
+      const entrySource = `import { registerComponent } from "${hydratableIslandPath}";\n${importStmt}\nregisterComponent("${comp.name}", ${comp.name});\n`;
       entrypoints.push(entryPath);
       filesMap[entryPath] = entrySource;
     }
@@ -1151,7 +1227,7 @@ export class ComponentRegistry {
               dev: development,
             }),
           );
-          compileCache.set('client', args.path, source, clientFingerprint, { js: js.code, css: null, hydratables: [], serverIslands: [] });
+          compileCache.set('client', args.path, source, clientFingerprint, { js: js.code, css: null, hydratables: [], serverIslands: [], preprocessErrors: [] });
           return { contents: js.code, loader: 'js' };
         });
         if (markdown) {
@@ -1358,7 +1434,7 @@ export class ComponentRegistry {
     };
   }
 
-  async renderComponent(filename: string, props?: Record<string, unknown>, opts?: { stripMarkers?: boolean; idPrefix?: string }): Promise<RenderResult> {
+  async renderComponent(filename: string, props?: Record<string, unknown>, opts?: { stripMarkers?: boolean; idPrefix?: string; exportName?: string }): Promise<RenderResult> {
     await this.compile(filename);
     const { module: mod, cssComponents, hydratables, hydratablesByName, hydratablesByPath, islandPaths } = this.compiledComponents.get(filename)!;
 
@@ -1426,7 +1502,13 @@ export class ComponentRegistry {
     const ctx = requestContext.getStore();
     ctx?.islandProps.clear();
 
-    const { body, head } = await render(mod.default, renderOptions);
+    const component = opts?.exportName && opts.exportName !== 'default' ? mod[opts.exportName] : mod.default;
+    if (!component) {
+      throw new Error(
+        `renderComponent: ${filename} has no export "${opts?.exportName ?? 'default'}" — the compiled module and the island registry disagree (stale manifest or removed export).`,
+      );
+    }
+    const { body, head } = await render(component, renderOptions);
 
     let output = body;
 
@@ -1588,8 +1670,8 @@ export class ComponentRegistry {
         continue;
       }
       if (islandPaths.has(componentPath)) {
-        const h = hydratablesByPath.get(componentPath);
-        if (h && !renderedIslandNames.has(h.name)) {
+        const hs = hydratablesByPath.get(componentPath);
+        if (hs && hs.every((h) => !renderedIslandNames.has(h.name))) {
           continue;
         }
       }
@@ -1710,6 +1792,7 @@ export class ComponentRegistry {
     this.clientStats = null;
     this.errors = [];
     this.serverIslandPaths.clear();
+    this.serverIslandExports.clear();
   }
 
   /**
@@ -1917,6 +2000,7 @@ export class ComponentRegistry {
           name: h.name,
           displayName: h.displayName,
           resolvedPath: h.resolvedPath,
+          exportName: h.exportName,
         })),
         cssComponents: [...entry.cssComponents],
       };
@@ -1947,6 +2031,9 @@ export class ComponentRegistry {
       stats: this.getClientStats(),
       serverIslandPaths: Object.fromEntries(this.serverIslandPaths),
     };
+    if (this.serverIslandExports.size > 0) {
+      manifest.serverIslandExports = Object.fromEntries(this.serverIslandExports);
+    }
     if (this.publicFiles.size > 0) {
       manifest.publicFiles = Object.fromEntries(this.publicFiles);
     }
@@ -2007,20 +2094,28 @@ export class ComponentRegistry {
     for (const [filename, entry] of Object.entries(manifest.components)) {
       const modulePath = path.resolve(entry.ssrModule);
       const mod = await import(Bun.pathToFileURL(modulePath).href);
+      // Manifests written before exportName existed omit it — those islands are
+      // all default imports, so normalize before anything indexes on it.
+      const hydratables = entry.hydratables.map((h) => ({ ...h, exportName: h.exportName ?? 'default' }));
       registry.compiledComponents.set(filename, {
         module: mod,
         cssComponents: new Set(entry.cssComponents),
-        hydratables: entry.hydratables,
-        ...indexHydratables(entry.hydratables),
+        hydratables,
+        ...indexHydratables(hydratables),
         ssrPath: modulePath,
       });
-      registry.hydratableComponents.push(...entry.hydratables);
+      registry.hydratableComponents.push(...hydratables);
     }
 
     // Load server island paths from manifest
     if (manifest.serverIslandPaths) {
       for (const [name, resolvedPath] of Object.entries(manifest.serverIslandPaths)) {
         registry.serverIslandPaths.set(name, resolvedPath);
+      }
+    }
+    if (manifest.serverIslandExports) {
+      for (const [name, exportName] of Object.entries(manifest.serverIslandExports)) {
+        registry.serverIslandExports.set(name, exportName);
       }
     }
 

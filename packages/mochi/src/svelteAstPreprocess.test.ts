@@ -10,6 +10,9 @@ const SCRIPT = (imports: string) => `<script>\n${imports}\n</script>\n`;
 // same-named components in different files can't collide to one registry entry.
 // Tests use fixture files under `/test`, matching the `filePath` passed below.
 const idFor = (name: string, importPath: string) => `${name}_${Bun.hash(path.resolve('/test', importPath)).toString(36)}`;
+// Named-export islands mix the export name into the identity hash (default-export
+// identities stay path-only, so `idFor` remains the legacy/manifest-stable form).
+const idForNamed = (name: string, importPath: string, exportName: string) => `${name}_${Bun.hash(`${path.resolve('/test', importPath)}#${exportName}`).toString(36)}`;
 
 describe('preprocessHydratable', () => {
   test('basic mochi:hydrate self-closing', () => {
@@ -167,14 +170,92 @@ describe('preprocessHydratable', () => {
     expect(result.transformed).toBe(source);
     expect(result.hydratables).toHaveLength(0);
     expect(result.serverIslands).toHaveLength(0);
+    expect(result.errors).toHaveLength(0);
   });
 
-  test('component without matching import is skipped', () => {
+  test('component without matching import reports an unresolved-island error', () => {
     const source = `${SCRIPT('')}<Unknown mochi:hydrate />`;
-    const { transformed, hydratables } = preprocessHydratable(source, '/test/File.svelte');
+    const { transformed, hydratables, errors } = preprocessHydratable(source, '/test/File.svelte');
 
     expect(hydratables).toHaveLength(0);
     expect(transformed).toBe(source);
+    expect(errors).toEqual([{ component: 'Unknown', directive: 'mochi:hydrate', filePath: '/test/File.svelte', importSource: null }]);
+  });
+
+  test('directive on a bare package import errors with the specifier', () => {
+    const source = `${SCRIPT("import { MochiCaptcha } from 'mochi-framework/components';")}<MochiCaptcha mochi:hydrate />`;
+    const { hydratables, errors } = preprocessHydratable(source, '/test/File.svelte');
+
+    expect(hydratables).toHaveLength(0);
+    expect(errors).toEqual([{ component: 'MochiCaptcha', directive: 'mochi:hydrate', filePath: '/test/File.svelte', importSource: 'mochi-framework/components' }]);
+  });
+
+  test('directive on a relative non-svelte import errors with the specifier', () => {
+    const source = `${SCRIPT("import Widget from './Widget.js';")}<Widget mochi:defer />`;
+    const { serverIslands, errors } = preprocessHydratable(source, '/test/File.svelte');
+
+    expect(serverIslands).toHaveLength(0);
+    expect(errors).toEqual([{ component: 'Widget', directive: 'mochi:defer', filePath: '/test/File.svelte', importSource: './Widget.js' }]);
+  });
+
+  test('mochi:clientOnly shares the unresolved-island gate', () => {
+    const source = `${SCRIPT("import { Thing } from 'some-pkg';")}<Thing mochi:clientOnly />`;
+    const { hydratables, errors } = preprocessHydratable(source, '/test/File.svelte');
+
+    expect(hydratables).toHaveLength(0);
+    expect(errors[0]).toEqual({ component: 'Thing', directive: 'mochi:clientOnly', filePath: '/test/File.svelte', importSource: 'some-pkg' });
+  });
+
+  test('named import from a relative .svelte path is an island', () => {
+    const source = `${SCRIPT("import { Widget } from './Barrel.svelte';")}<Widget mochi:hydrate />`;
+    const { transformed, hydratables, errors } = preprocessHydratable(source, '/test/File.svelte');
+
+    expect(errors).toHaveLength(0);
+    expect(hydratables).toHaveLength(1);
+    expect(hydratables[0]!.exportName).toBe('Widget');
+    expect(hydratables[0]!.name).toBe(idForNamed('Widget', './Barrel.svelte', 'Widget'));
+    expect(transformed).toContain('<mochi-hydratable-island');
+  });
+
+  test('aliased named import keeps the local displayName and the real exportName', () => {
+    const source = `${SCRIPT("import { Widget as W } from './Barrel.svelte';")}<W mochi:hydrate />`;
+    const { hydratables, errors } = preprocessHydratable(source, '/test/File.svelte');
+
+    expect(errors).toHaveLength(0);
+    expect(hydratables).toHaveLength(1);
+    expect(hydratables[0]!.displayName).toBe('W');
+    expect(hydratables[0]!.exportName).toBe('Widget');
+    expect(hydratables[0]!.name).toBe(idForNamed('W', './Barrel.svelte', 'Widget'));
+  });
+
+  test('mixed default + named import hydrates via the default with legacy identity', () => {
+    const source = `${SCRIPT("import Widget, { RESET } from './Widget.svelte';")}<Widget mochi:hydrate />`;
+    const { hydratables, errors } = preprocessHydratable(source, '/test/File.svelte');
+
+    expect(errors).toHaveLength(0);
+    expect(hydratables).toHaveLength(1);
+    expect(hydratables[0]!.exportName).toBe('default');
+    // Hash-stability: default imports keep the pre-exportName identity.
+    expect(hydratables[0]!.name).toBe(idFor('Widget', './Widget.svelte'));
+  });
+
+  test('two named exports from one file are distinct islands', () => {
+    const source = `${SCRIPT("import { A, B } from './Barrel.svelte';")}<A mochi:hydrate />\n<B mochi:hydrate />`;
+    const { hydratables, errors } = preprocessHydratable(source, '/test/File.svelte');
+
+    expect(errors).toHaveLength(0);
+    expect(hydratables).toHaveLength(2);
+    expect(new Set(hydratables.map((h) => h.name)).size).toBe(2);
+  });
+
+  test('named import with mochi:defer records the exportName on the server island', () => {
+    const source = `${SCRIPT("import { Widget } from './Barrel.svelte';")}<Widget mochi:defer />`;
+    const { serverIslands, errors } = preprocessHydratable(source, '/test/File.svelte');
+
+    expect(errors).toHaveLength(0);
+    expect(serverIslands).toHaveLength(1);
+    expect(serverIslands[0]!.exportName).toBe('Widget');
+    expect(serverIslands[0]!.name).toBe(idForNamed('Widget', './Barrel.svelte', 'Widget'));
   });
 
   test('emitIslandProps import is injected into script for hydratable islands', () => {

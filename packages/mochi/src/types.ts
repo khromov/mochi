@@ -355,7 +355,8 @@ export interface MochiErrorProps {
 
 export interface MochiManifestComponent {
   ssrModule: string;
-  hydratables: { name: string; displayName: string; resolvedPath: string }[];
+  /** `exportName` is optional for manifests written before named-export islands existed; absent means `default`. */
+  hydratables: { name: string; displayName: string; resolvedPath: string; exportName?: string }[];
   cssComponents: string[];
 }
 
@@ -379,6 +380,8 @@ export interface MochiManifest {
   } | null;
   /** Maps server island component name → resolved file path */
   serverIslandPaths?: Record<string, string>;
+  /** Maps server island component name → the named export it renders (default-export islands are omitted). */
+  serverIslandExports?: Record<string, string>;
   /** Maps public URL path → disk path (relative to project root) for static files copied from `public/`. */
   publicFiles?: Record<string, string>;
   /** Maps resolved CSS-import path → served URL (e.g. /import-css/inter-<hash>.css) */

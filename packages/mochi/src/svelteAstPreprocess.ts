@@ -17,6 +17,8 @@ export interface HydratableComponent {
   /** The bare local import identifier, for human-facing messages only (never an identity key). */
   displayName: string;
   resolvedPath: string;
+  /** Export the component was imported from: `'default'` or a named export of the resolved module. */
+  exportName: string;
 }
 
 export interface ServerIslandComponent {
@@ -25,12 +27,32 @@ export interface ServerIslandComponent {
   /** The bare local import identifier, for human-facing messages only (never an identity key). */
   displayName: string;
   resolvedPath: string;
+  /** Export the component was imported from: `'default'` or a named export of the resolved module. */
+  exportName: string;
+}
+
+/**
+ * A `mochi:*` directive the preprocessor could not honour. Surfaced as a
+ * compile error (via `ComponentRegistry.getErrors()`) rather than thrown, so
+ * the dev error page can render it and the dev watcher can clear it on fix —
+ * silently skipping would leave an inert component with no signal to the author.
+ */
+export interface PreprocessIslandError {
+  /** Bare component name as written in the template. */
+  component: string;
+  /** The directive that required resolution, e.g. `mochi:hydrate:visible`. */
+  directive: string;
+  /** Absolute path of the file containing the directive. */
+  filePath: string;
+  /** Import specifier when one exists but is unsupported (bare package, namespace, non-svelte source); null when no import matched at all. */
+  importSource: string | null;
 }
 
 export interface PreprocessResult {
   transformed: string;
   hydratables: HydratableComponent[];
   serverIslands: ServerIslandComponent[];
+  errors: PreprocessIslandError[];
 }
 
 /**
@@ -51,7 +73,7 @@ export interface PreprocessResult {
  */
 export function preprocessHydratable(source: string, filePath: string): PreprocessResult {
   if (!source.includes('mochi:hydrate') && !source.includes('mochi:defer') && !source.includes('mochi:clientOnly')) {
-    return { transformed: source, hydratables: [], serverIslands: [] };
+    return { transformed: source, hydratables: [], serverIslands: [], errors: [] };
   }
   const ast = parse(source, { modern: true });
   const s = new MagicString(source);
@@ -66,19 +88,29 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
   // call nested in a function/snippet, or otherwise not bound to a top-level
   // identifier, won't be detected — we'd inject our own and Svelte would then
   // fail with `props_duplicate`. Not worth handling until someone hits it.
-  const importMap = new Map<string, string>();
+  const importMap = new Map<string, { source: string; exportName: string }>();
+  // Local names bound by imports the island pipeline can't handle (bare package
+  // specifiers, namespace imports, non-svelte sources) — kept so a directive on
+  // one of them can name the offending specifier in its compile error.
+  const unsupportedImports = new Map<string, string>();
   let pidVar: string | null = null;
   if (ast.instance) {
     for (const node of ast.instance.content.body) {
-      if (
-        node.type === 'ImportDeclaration' &&
-        typeof node.source.value === 'string' &&
-        /\.(svelte|md|svx)$/.test(node.source.value) && // TODO: Needs to be configurable to support arbitrary extensions
-        node.specifiers &&
-        node.specifiers.length === 1 &&
-        node.specifiers[0]!.type === 'ImportDefaultSpecifier'
-      ) {
-        importMap.set(node.specifiers[0]!.local.name, node.source.value);
+      if (node.type === 'ImportDeclaration' && typeof node.source.value === 'string') {
+        const importSource = node.source.value;
+        const supported =
+          /\.(svelte|md|svx)$/.test(importSource) && // TODO: Needs to be configurable to support arbitrary extensions
+          (importSource.startsWith('./') || importSource.startsWith('../') || path.isAbsolute(importSource));
+        for (const spec of node.specifiers ?? []) {
+          if (supported && spec.type === 'ImportDefaultSpecifier') {
+            importMap.set(spec.local.name, { source: importSource, exportName: 'default' });
+          } else if (supported && spec.type === 'ImportSpecifier') {
+            const exportName = spec.imported.type === 'Identifier' ? spec.imported.name : String(spec.imported.value);
+            importMap.set(spec.local.name, { source: importSource, exportName });
+          } else {
+            unsupportedImports.set(spec.local.name, importSource);
+          }
+        }
       } else if (node.type === 'VariableDeclaration') {
         for (const decl of node.declarations) {
           if (
@@ -100,6 +132,7 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
 
   const hydratables: HydratableComponent[] = [];
   const serverIslands: ServerIslandComponent[] = [];
+  const errors: PreprocessIslandError[] = [];
   const seen = new Set<string>();
   const seenServer = new Set<string>();
 
@@ -112,13 +145,33 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
         return;
       }
 
-      const importPath = importMap.get(comp.name);
-      if (!importPath) {
+      // `islandId` is a reserved framework name on every island, rejected on
+      // `mochi:clientOnly`, `mochi:defer`, and `mochi:hydrate` so the directives
+      // behave the same. On `mochi:defer` it's the transport key inside the signed
+      // envelope (stripped before the component renders); erroring everywhere
+      // means a component can move between directives without a prop silently
+      // changing meaning. For a unique id, use Svelte's `$props.id()`.
+      const islandDirective = directives.clientOnly ?? directives.server ?? directives.hydrate!;
+
+      const entry = importMap.get(comp.name);
+      if (!entry) {
+        // The author asked for an island the pipeline can't build — a compile
+        // error, never a silent skip. For dotted names (`<NS.Widget>`), the base
+        // identifier's import (if any) is the one worth naming in the message.
+        const base = comp.name.split('.')[0]!;
+        errors.push({
+          component: comp.name,
+          directive: islandDirective.name,
+          filePath,
+          importSource: unsupportedImports.get(comp.name) ?? unsupportedImports.get(base) ?? importMap.get(base)?.source ?? null,
+        });
         next();
         return;
       }
 
-      const resolved = path.resolve(path.dirname(filePath), importPath);
+      const resolved = path.resolve(path.dirname(filePath), entry.source);
+      const exportName = entry.exportName;
+      const dedupKey = `${resolved}\0${exportName}`;
 
       // Unique identity for this island, used everywhere the framework keys an
       // island by "name": the `component-name` attribute, the server-island
@@ -128,15 +181,8 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
       // is still used below for the real Svelte tag and human-facing error text.
       // (Distinct from the reserved `islandId` prop — that's a per-render
       // instance id; this is a per-component-file identity.)
-      const islandKey = islandIdentity(comp.name, resolved);
+      const islandKey = islandIdentity(comp.name, resolved, exportName);
 
-      // `islandId` is a reserved framework name on every island, rejected on
-      // `mochi:clientOnly`, `mochi:defer`, and `mochi:hydrate` so the directives
-      // behave the same. On `mochi:defer` it's the transport key inside the signed
-      // envelope (stripped before the component renders); erroring everywhere
-      // means a component can move between directives without a prop silently
-      // changing meaning. For a unique id, use Svelte's `$props.id()`.
-      const islandDirective = directives.clientOnly ?? directives.server ?? directives.hydrate!;
       for (const attr of comp.attributes) {
         if (attr.type === 'Attribute' && attr.name === 'islandId') {
           throw new Error(
@@ -148,9 +194,9 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
 
       if (directives.clientOnly) {
         // --- CLIENT ONLY ---
-        if (!seen.has(resolved)) {
-          seen.add(resolved);
-          hydratables.push({ name: islandKey, displayName: comp.name, resolvedPath: resolved });
+        if (!seen.has(dedupKey)) {
+          seen.add(dedupKey);
+          hydratables.push({ name: islandKey, displayName: comp.name, resolvedPath: resolved, exportName });
         }
 
         // Children are the optional SSR fallback, emitted as placeholder markup
@@ -191,9 +237,9 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
         s.overwrite(comp.start, comp.end, replacement);
       } else if (directives.server) {
         // --- SERVER ISLAND ---
-        if (!seenServer.has(resolved)) {
-          seenServer.add(resolved);
-          serverIslands.push({ name: islandKey, displayName: comp.name, resolvedPath: resolved });
+        if (!seenServer.has(dedupKey)) {
+          seenServer.add(dedupKey);
+          serverIslands.push({ name: islandKey, displayName: comp.name, resolvedPath: resolved, exportName });
         }
 
         // Server islands only get `isHydratable: true` when also-hydrate is set
@@ -246,9 +292,9 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
           const isVisible = directives.hydrate.name === 'mochi:hydrate:visible';
           attrs += isVisible ? ` also-hydrate="visible"` : ` also-hydrate="eager"`;
           attrs += ` component-url="__MOCHI_COMPONENT_URL__${islandKey}__"`;
-          if (!seen.has(resolved)) {
-            seen.add(resolved);
-            hydratables.push({ name: islandKey, displayName: comp.name, resolvedPath: resolved });
+          if (!seen.has(dedupKey)) {
+            seen.add(dedupKey);
+            hydratables.push({ name: islandKey, displayName: comp.name, resolvedPath: resolved, exportName });
           }
         }
 
@@ -267,9 +313,9 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
         // --- HYDRATE / VISIBLE ONLY ---
         const mochiAttr = directives.hydrate!;
 
-        if (!seen.has(resolved)) {
-          seen.add(resolved);
-          hydratables.push({ name: islandKey, displayName: comp.name, resolvedPath: resolved });
+        if (!seen.has(dedupKey)) {
+          seen.add(dedupKey);
+          hydratables.push({ name: islandKey, displayName: comp.name, resolvedPath: resolved, exportName });
         }
 
         // Build the non-mochi props source for the inner component tag
@@ -394,7 +440,7 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
     s.appendRight(contentStart, imports);
   }
 
-  return { transformed: s.toString(), hydratables, serverIslands };
+  return { transformed: s.toString(), hydratables, serverIslands, errors };
 }
 
 /**
@@ -415,10 +461,14 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
  *
  * The hash derives only from the resolved path (base36 of a 64-bit hash), so it
  * is stable for a given file within a build and never leaks the absolute path
- * into client HTML.
+ * into client HTML. Named exports mix the export name into the hash so two
+ * exports of one module (or two local aliases of different exports) stay
+ * distinct; the default export hashes the bare path, keeping every existing
+ * island identity (and prebuilt manifest) unchanged.
  */
-function islandIdentity(name: string, resolvedPath: string): string {
-  return `${name}_${Bun.hash(resolvedPath).toString(36)}`;
+function islandIdentity(name: string, resolvedPath: string, exportName: string): string {
+  const identity = exportName === 'default' ? resolvedPath : `${resolvedPath}#${exportName}`;
+  return `${name}_${Bun.hash(identity).toString(36)}`;
 }
 
 interface MochiDirectives {
