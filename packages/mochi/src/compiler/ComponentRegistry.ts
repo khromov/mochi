@@ -10,7 +10,7 @@ import type { DebugBarData } from '../runtime/requestContext';
 import { logger } from '../utils/log';
 import { mochiEvents } from '../events';
 import type { MarkdownConfig, MochiManifest, MochiSvelteShakerOptions } from '../types';
-import { type HydratableComponent, type PreprocessIslandError, type ServerIslandComponent } from './svelteAstPreprocess';
+import { injectHydratableContextSeed, type HydratableComponent, type PreprocessIslandError, type ServerIslandComponent } from './svelteAstPreprocess';
 import { cachedPreprocessHydratable, createPreprocessCacheStats } from './preprocessCache';
 import { CompileCache, compileFingerprint, createCompileCacheStats, type CompileCacheStats } from './compileCache';
 import { mergeCompilerOptions, type MochiSvelteConfig } from './svelteConfig';
@@ -152,6 +152,7 @@ function createMarkdownLoader(opts: {
       opts.hydration.filePreprocessErrors.set(args.path, preprocessErrors);
       svelteSource = preprocessed.transformed;
     }
+    svelteSource = injectHydratableContextSeed(svelteSource, args.path, opts.userCompilerOptions.runes);
     const { js, css } = svelteCompile(
       svelteSource,
       mergeCompilerOptions(opts.userCompilerOptions, {
@@ -634,9 +635,16 @@ export class ComponentRegistry {
           const preprocessed = await applyUserPreprocessors(raw, args.path, 'server', development);
           // Vendored .svelte from node_modules can never carry `mochi:*` directives
           const isVendored = args.path.includes(`${path.sep}node_modules${path.sep}`);
-          const { transformed, hydratables, serverIslands, errors } = isVendored
+          const preprocessResult = isVendored
             ? { transformed: preprocessed, hydratables: [] as HydratableComponent[], serverIslands: [] as ServerIslandComponent[], errors: [] as PreprocessIslandError[] }
             : cachedPreprocessHydratable(preprocessed, args.path, preprocessCacheStats);
+          const { hydratables, serverIslands, errors } = preprocessResult;
+          let { transformed } = preprocessResult;
+          // Vendored files are skipped on BOTH targets (see the client loader):
+          // the seed's `...rest` extraction must stay SSR/client-symmetric.
+          if (!isVendored) {
+            transformed = injectHydratableContextSeed(transformed, args.path, userCompilerOptions.runes);
+          }
           fileHydratables.set(args.path, hydratables);
           fileServerIslands.set(args.path, serverIslands);
           filePreprocessErrors.set(args.path, errors);
@@ -1075,8 +1083,10 @@ export class ComponentRegistry {
             return { contents: cached.js, loader: 'js' };
           }
           const preprocessed = await applyUserPreprocessors(source, args.path, 'client', development);
+          const isVendored = args.path.includes(`${path.sep}node_modules${path.sep}`);
+          const seeded = isVendored ? preprocessed : injectHydratableContextSeed(preprocessed, args.path, userCompilerOptions.runes);
           const { js } = svelteCompile(
-            preprocessed,
+            seeded,
             mergeCompilerOptions(userCompilerOptions, {
               generate: 'client',
               filename: args.path,

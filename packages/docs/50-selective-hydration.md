@@ -111,6 +111,31 @@ Accept it in the component's `$props()` to branch on hydration state at the same
 {/if}
 ```
 
+### `isHydratable()` at any depth
+
+The prop only reaches the island root. Components nested anywhere below it — including children passed into the island from the page — ask the `isHydratable()` function instead. It returns `true` when the calling component is part of a subtree that will hydrate on this page load, `false` everywhere else (plain SSR, pure `mochi:defer` renders, emails):
+
+```svelte
+<!-- file: src/lib/DeepChild.svelte -->
+<script lang="ts">
+  import { isHydratable } from 'mochi-framework';
+
+  const hydratable = isHydratable();
+</script>
+
+{#if hydratable}
+  <button onclick={...}>Live</button>
+{:else}
+  <a href="/fallback">Static fallback</a>
+{/if}
+```
+
+<Callout type="info">
+
+Like `getContext`, `isHydratable()` must be called during component initialization — at the top level of the `<script>` block, not inside an event handler or `$effect`. In an island root that reads `$props()`, call it after the `$props()` declaration (or just use the prop there).
+
+</Callout>
+
 ### Unique ids with `$props.id()`
 
 For a unique, SSR-stable id inside an island, use Svelte's native [`$props.id()`](<https://svelte.dev/docs/svelte/$props#$props.id()>) — the value generated during the server render is reused on hydration:
