@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { buildInlineWebComponent } from './buildInlineWebComponent';
-import { checkEnvironment } from './checkEnvironment';
+import { buildInlineWebComponent } from './compiler/buildInlineWebComponent';
+import { checkEnvironment } from './cli/checkEnvironment';
 
 // These verify that expensive, process-stable startup work is memoized rather
 // than repeated on every Mochi.serve()/build() call. A memoized function

@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import DebugPanel from './DebugPanel.svelte';
   import X from '../icons/x.svelte';
-  import type { DebugBarConfig } from '../requestContext';
+  import type { DebugBarConfig } from '../runtime/requestContext';
 
   let { open, onclose }: { open: boolean; onclose: () => void } = $props();
 

@@ -129,6 +129,12 @@
       <li class="toc-item level-2">
         <a href="/">Home</a>
       </li>
+      <li class="toc-item level-2">
+        <a href="/blog/">Blog</a>
+      </li>
+      <li class="toc-item level-2">
+        <a href="/support/">Support</a>
+      </li>
     </ul>
 
     {#if filteredDocs.length > 0}

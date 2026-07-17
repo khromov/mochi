@@ -1,13 +1,13 @@
 import type { Server, ServerWebSocket } from 'bun';
-import { checkEnvironment } from './checkEnvironment';
+import { checkEnvironment } from './cli/checkEnvironment';
 import { existsSync, rmSync, mkdirSync } from 'fs';
 import path from 'node:path';
-import { ComponentRegistry, formatCompileErrors } from './ComponentRegistry';
-import type { RenderResult } from './ComponentRegistry';
-import { loadSvelteConfig } from './svelteConfig';
-import { buildInlineWebComponent } from './buildInlineWebComponent';
-import { buildClientStatsRoutes, CLIENT_STATS_COMPONENT } from './clientStatsRoutes';
-import { buildEmailViewerRoutes, EMAIL_VIEWER_COMPONENT } from './emailViewerRoutes';
+import { ComponentRegistry, formatCompileErrors } from './compiler/ComponentRegistry';
+import type { RenderResult } from './compiler/ComponentRegistry';
+import { loadSvelteConfig } from './compiler/svelteConfig';
+import { buildInlineWebComponent } from './compiler/buildInlineWebComponent';
+import { buildClientStatsRoutes, CLIENT_STATS_COMPONENT } from './dev/clientStatsRoutes';
+import { buildEmailViewerRoutes, EMAIL_VIEWER_COMPONENT } from './dev/emailViewerRoutes';
 import { isMochiPage, isMochiApi, isMochiWs, isMochiSse, isMochiFile, isMochiQueue, isServerPropsResolver, isAlsoHydrateMode, ALSO_HYDRATE_ENVELOPE_KEY } from './types';
 import type {
   BunRouteValue,
@@ -32,26 +32,28 @@ import type {
   MochiWsHandlers,
   MochiWsData,
 } from './types';
-import { isFormFail, isFormRedirect, isFormSuccess } from './forms';
-import { isEnhanceRequest, jsonError, jsonFailure, jsonRedirect, jsonSuccess } from './formsJson';
-import { csrfCheck, DEFAULT_FORM_CONTENT_TYPES, DEFAULT_PROTECTED_METHODS } from './csrf';
+import { isFormFail, isFormRedirect, isFormSuccess } from './runtime/forms';
+import { isEnhanceRequest, jsonError, jsonFailure, jsonRedirect, jsonSuccess } from './runtime/formsJson';
+import { csrfCheck, DEFAULT_FORM_CONTENT_TYPES, DEFAULT_PROTECTED_METHODS } from './runtime/csrf';
 import { applyFilter, initExtensions, runHook } from './extensions';
-import { escapeHtmlAttr } from './htmlEscape';
-import { buildPublicUrl } from './proxy';
+import { escapeHtmlAttr } from './utils/htmlEscape';
+import { buildPublicUrl } from './runtime/proxy';
 import { realpath } from 'node:fs/promises';
 import { apiError, collectHeaderPairs, cssLinkTag, headResponse, isHtmlResponse, MochiHttpError, toPosixPath, withHead } from './utils';
-import type { MochiEvent, MochiEventKind, MochiResolveOptions } from './hooks';
-import { applyResolveOptions } from './hooks';
-import { alternateSlashPattern, trailingSlashRedirect } from './trailingSlash';
-import { resolveWarmupEnabled, markWarmupRequest, isWarmablePattern } from './warmup';
-import { createErrorResponder, DEFAULT_ERROR_PAGE_PATH } from './errors';
-import { requestContext } from './requestContext';
-import type { MochiRequestContext } from './requestContext';
+import type { MochiEvent, MochiEventKind, MochiResolveOptions } from './runtime/hooks';
+import { applyResolveOptions } from './runtime/hooks';
+import { alternateSlashPattern, trailingSlashRedirect } from './runtime/trailingSlash';
+import { resolveWarmupEnabled, markWarmupRequest, isWarmablePattern } from './runtime/warmup';
+import { createErrorResponder, DEFAULT_ERROR_PAGE_PATH } from './runtime/errors';
+import { requestContext } from './runtime/requestContext';
+import type { MochiRequestContext } from './runtime/requestContext';
 import { createQueue, getQueue, closeAllQueueResources } from './queue';
 import type { MochiQueue, MochiQueueOptions, MochiQueueListeners, MochiProcessor } from './queue';
-import { finalizeCookieHeaders } from './cookies';
-import { makeRequestContextBuilder } from './requestSetup';
-import { decryptProps } from './serverIslandCrypto';
+import { finalizeCookieHeaders } from './runtime/cookies';
+import { makeRequestContextBuilder } from './runtime/requestSetup';
+import { createRouteLimiter, applyRateLimitHeaders } from './runtime/rateLimit';
+import type { MochiRateLimitOptions, MochiRateLimitStore, RouteLimiter } from './runtime/rateLimit';
+import { decryptProps } from './islands/serverIslandCrypto';
 import { createImageHandler } from './image/imageEndpoint';
 import { getImageRuntime } from './image/config';
 import { startImageCacheSweeper } from './image/sweeper';
@@ -60,16 +62,16 @@ import { onDevEmailRecorded } from './email/devOutbox';
 import { sendEmail } from './email/mailer';
 import type { MochiEmailMessage, MochiEmailResult } from './email/types';
 import { initMochiConfig } from './mochiConfig';
-import { logger, setLogLevel, DEFAULT_LOG_LEVEL, type LogLevel } from './log';
+import { logger, setLogLevel, DEFAULT_LOG_LEVEL, type LogLevel } from './utils/log';
 import { mochiEvents } from './events';
 import type { MochiActionResult, MochiErrorEvent, MochiErrorKind, MochiServerStartEvent, MochiServerStopEvent } from './events';
-import type { DebugBarData, DebugBarRuntimeData } from './requestContext';
-import { consoleLogger } from './consoleLogger';
+import type { DebugBarData, DebugBarRuntimeData } from './runtime/requestContext';
+import { consoleLogger } from './dev/consoleLogger';
 import { parse as devalueParse, stringify as devalueStringify } from 'devalue';
 import { ISLAND_FAILURE_CSS, ISLAND_FAILURE_DEV_CSS, islandFailureStub } from './web-components/islandFailureStub';
-import { resolvePublicFiles, registerPublicRoutes, isExcludedDotPath } from './publicDir';
-import { startDevWatcher } from './devWatcher';
-import { buildPageCacheAdminRoutes, PAGE_CACHE_ADMIN_COMPONENT } from './pageCacheAdminRoutes';
+import { resolvePublicFiles, registerPublicRoutes, isExcludedDotPath } from './runtime/publicDir';
+import { startDevWatcher } from './dev/devWatcher';
+import { buildPageCacheAdminRoutes, PAGE_CACHE_ADMIN_COMPONENT } from './dev/pageCacheAdminRoutes';
 
 const DEFAULT_HTML_SHELL = await Bun.file(new URL('./templates/default-shell.html', import.meta.url)).text();
 
@@ -154,6 +156,7 @@ export class Mochi {
     config?: {
       serverProps?: Record<string, unknown> | MochiServerPropsResolver;
       actions?: MochiFormActions;
+      rateLimit?: MochiRateLimitOptions | false;
     },
   ): MochiPageConfig {
     return {
@@ -161,11 +164,12 @@ export class Mochi {
       componentPath,
       serverProps: config?.serverProps,
       actions: config?.actions,
+      rateLimit: config?.rateLimit,
     };
   }
 
-  static api(handler: MochiApiHandler): MochiApiConfig {
-    return { __mochiApi: true, handler };
+  static api(handler: MochiApiHandler, config?: { rateLimit?: MochiRateLimitOptions | false }): MochiApiConfig {
+    return { __mochiApi: true, handler, rateLimit: config?.rateLimit };
   }
 
   static ws<T = unknown>(handlers: MochiWsHandlers<T>): MochiWsConfig {
@@ -576,10 +580,104 @@ export class Mochi {
     };
     const allRoutes = Object.keys(internalRoutes).length > 0 ? { ...internalRoutes, ...(options.routes ?? {}) } : options.routes;
 
+    const rateLimitStores = new Set<MochiRateLimitStore>();
+    // Route closures look their limiter up here per request (never capture it) so
+    // the dev watcher can swap a route's limiter in place when its `rateLimit`
+    // config changes — a captured const would pin the boot-time config until
+    // restart. A null entry marks a limitable route with no limiter.
+    const routeLimiters = new Map<string, RouteLimiter | null>();
+    let sharedGlobalLimiter: RouteLimiter | null = null;
+    function buildLimiter(routeCfg: MochiRateLimitOptions | false | undefined, pattern: string): RouteLimiter | null {
+      if (routeCfg === false) {
+        return null;
+      }
+      if (routeCfg) {
+        // A route's own config is auto-namespaced by its pattern so two routes
+        // sharing a persisted store don't drain one bucket. The shared global
+        // limiter (below) passes no pattern — its routes keep sharing a bucket.
+        const limiter = createRouteLimiter(routeCfg, pattern);
+        if (limiter.ownsStore) {
+          rateLimitStores.add(limiter.store);
+        }
+        return limiter;
+      }
+      if (!options.rateLimit) {
+        return null;
+      }
+      // Internal routes (debug bar, email viewer) never inherit the global
+      // limiter — dev tooling polling must not drain the user-facing quota.
+      if (pattern in internalRoutes) {
+        return null;
+      }
+      if (!sharedGlobalLimiter) {
+        sharedGlobalLimiter = createRouteLimiter(options.rateLimit);
+        if (sharedGlobalLimiter.ownsStore) {
+          rateLimitStores.add(sharedGlobalLimiter.store);
+        }
+      }
+      return sharedGlobalLimiter;
+    }
+    function resolveLimiter(routeCfg: MochiRateLimitOptions | false | undefined, pattern: string): void {
+      routeLimiters.set(pattern, buildLimiter(routeCfg, pattern));
+    }
+    function retireLimiter(pattern: string): void {
+      const limiter = routeLimiters.get(pattern);
+      routeLimiters.delete(pattern);
+      // The shared global limiter is never shut down here — other routes still
+      // use it, and its counters intentionally survive dev reloads.
+      if (limiter && limiter !== sharedGlobalLimiter && limiter.ownsStore) {
+        rateLimitStores.delete(limiter.store);
+        // async wrapper: sqliteStore's shutdown can throw synchronously (its
+        // finalize-verification guard) — a bare Promise.resolve() would let that
+        // escape into the dev watcher.
+        (async () => limiter.store.shutdown?.())().catch((err: unknown) => {
+          logger.warn(`Rate limit store shutdown failed: ${err instanceof Error ? err.message : err}`);
+        });
+      }
+    }
+    // Dev-watcher hook for in-place route updates (same pattern, same type):
+    // rebuild the limiter so `rateLimit` edits take effect without a restart.
+    function updateRouteLimiter(pattern: string, routeCfg: MochiRateLimitOptions | false | undefined): void {
+      if (!routeLimiters.has(pattern)) {
+        return;
+      }
+      retireLimiter(pattern);
+      resolveLimiter(routeCfg, pattern);
+    }
+
+    interface RouteLimitGate {
+      headers?: Record<string, string>;
+      blockedBody?: Record<string, unknown>;
+      blockedMessage?: string;
+    }
+    async function checkRouteLimit(limiter: RouteLimiter | null, ctx: MochiRequestContext, req: Request): Promise<RouteLimitGate> {
+      if (!limiter || ctx.isWarmup) {
+        return {};
+      }
+      const outcome = await limiter.check(req, ctx.getClientAddress);
+      if (outcome.kind === 'skip') {
+        return {};
+      }
+      if (outcome.kind === 'allowed') {
+        ctx.rateLimit = outcome.info;
+        return { headers: outcome.headers };
+      }
+      // info is null only when the store failed and onStoreError said 'deny' —
+      // say so instead of blaming the client's traffic.
+      const message =
+        outcome.info === null
+          ? 'Rate limiting unavailable.'
+          : outcome.retryAfterSeconds != null
+            ? `Rate limit exceeded. Try again in ${outcome.retryAfterSeconds}s.`
+            : 'Rate limit exceeded.';
+      return { headers: outcome.headers, blockedBody: outcome.body, blockedMessage: message };
+    }
+
     async function registerRoutePattern(pattern: string, handler: MochiRouteValue): Promise<RouteRegistrationResult | null> {
       if (isMochiPage(handler)) {
         mochiPageMap.set(pattern, handler);
         const { componentPath, serverProps, actions } = handler;
+        resolveLimiter(handler.rateLimit, pattern);
         if (pageConfigMap) {
           pageConfigMap.set(pattern, { serverProps, actions });
         }
@@ -648,9 +746,22 @@ export class Mochi {
             runHook('route:matched', { pattern, request: req, url, params, kind: 'page' });
             const innerResolve = async (_event: MochiEvent, resolveOpts?: MochiResolveOptions): Promise<Response> => inner(ctx, event, resolveOpts);
 
-            const response = middleware ? await middleware({ event, resolve: innerResolve }) : await innerResolve(event);
+            const gate = await checkRouteLimit(routeLimiters.get(pattern) ?? null, ctx, req);
+            let blockedResponse: Response | undefined;
+            if (gate.blockedMessage) {
+              // Enhanced form POSTs expect JSON (mirrors csrfErrorTransform above);
+              // everything else gets the configured error page at 429.
+              blockedResponse = isEnhanceRequest(req)
+                ? jsonError(429, gate.blockedMessage)
+                : await routeErrorResponse(req, event, undefined, new MochiHttpError(429, gate.blockedMessage));
+            }
 
-            const final = finalizeCookieHeaders(response, ctx.cookies);
+            const response = blockedResponse ?? (middleware ? await middleware({ event, resolve: innerResolve }) : await innerResolve(event));
+
+            let final = finalizeCookieHeaders(response, ctx.cookies);
+            if (gate.headers) {
+              final = applyRateLimitHeaders(final, gate.headers);
+            }
             const shipped = await appendDebugTail(final, ctx, development);
             mochiEvents.emit('request', {
               requestId,
@@ -853,6 +964,7 @@ export class Mochi {
           apiHandlerMap.set(pattern, handler.handler);
         }
         const capturedApiHandler = handler.handler;
+        resolveLimiter(handler.rateLimit, pattern);
 
         const bunRouteValue: BunRouteValue = async (req: Request, server: Server<undefined>): Promise<Response> => {
           const setup = buildRequestContext(req, server, { kind: 'api', pattern });
@@ -863,6 +975,14 @@ export class Mochi {
 
           return requestContext.run(ctx, async () => {
             runHook('route:matched', { pattern, request: req, url, params, kind: 'api' });
+            const event: MochiEvent = { request: req, url, server, locals: ctx.locals, kind: 'api', isWarmup: ctx.isWarmup };
+
+            const gate = await checkRouteLimit(routeLimiters.get(pattern) ?? null, ctx, req);
+            let blockedResponse: Response | undefined;
+            if (gate.blockedBody) {
+              blockedResponse = Response.json(gate.blockedBody, { status: 429 });
+            }
+
             const innerResolve = async (event: MochiEvent, resolveOpts?: MochiResolveOptions): Promise<Response> => {
               const apiEvent = {
                 ...event,
@@ -886,10 +1006,12 @@ export class Mochi {
               }
             };
 
-            const event: MochiEvent = { request: req, url, server, locals: ctx.locals, kind: 'api', isWarmup: ctx.isWarmup };
-            const response = middleware ? await middleware({ event, resolve: innerResolve }) : await innerResolve(event);
+            const response = blockedResponse ?? (middleware ? await middleware({ event, resolve: innerResolve }) : await innerResolve(event));
 
-            const final = finalizeCookieHeaders(response, ctx.cookies);
+            let final = finalizeCookieHeaders(response, ctx.cookies);
+            if (gate.headers) {
+              final = applyRateLimitHeaders(final, gate.headers);
+            }
             mochiEvents.emit('request', {
               requestId,
               kind: 'api',
@@ -1168,6 +1290,9 @@ export class Mochi {
       sseHandlerMap?.delete(pattern);
       wsHandlersMap?.delete(pattern);
       pageConfigMap?.delete(pattern);
+      // Dev re-registration creates a fresh limiter — shut down the outgoing
+      // per-route store so its sweep timer / sqlite handle doesn't leak.
+      retireLimiter(pattern);
     }
 
     if (allRoutes) {
@@ -1338,14 +1463,14 @@ export class Mochi {
       });
     });
 
-    // Register the signed image-resize endpoint (enabled unless explicitly off)
-    // and start the background cache janitor. The resolved options are the
-    // single source of truth for `enabled` — `getResizedImage` consults the
-    // same flag to fall back to raw source URLs when the endpoint is off.
     // Give the mailer a handle to the live compile cache so Mochi.email() can
     // render Svelte email templates through the same registry as page routes.
     getEmailRuntime().registry = registry;
 
+    // Register the signed image endpoint (enabled unless explicitly off) and
+    // start the background cache janitor. The resolved options are the single
+    // source of truth for `enabled` — `getImageUrl` consults the same flag to
+    // fall back to raw source URLs when the endpoint is off.
     let stopImageSweeper: (() => void) | undefined;
     const imageRuntime = getImageRuntime();
     if (imageRuntime.options.enabled) {
@@ -1365,6 +1490,50 @@ export class Mochi {
         return response;
       });
       stopImageSweeper = startImageCacheSweeper(imageRuntime.cache, imageRuntime.options.sweepIntervalMs);
+    }
+
+    // Dev-only: the debug bar's Cache tab reads the entry count (GET) and empties
+    // the image cache (POST). Registered whenever the debug bar is on (independent
+    // of the image endpoint), since the tab always shows; counting/clearing an
+    // unpopulated cache is a harmless no-op.
+    if (debugBarEnabled) {
+      const imageCacheHandler = async (req: Request): Promise<Response> => {
+        if (req.method === 'POST') {
+          await imageRuntime.cache.clearAll();
+          return Response.json({ ok: true, count: 0, keys: [] });
+        }
+        if (req.method === 'GET') {
+          // `keys` already excludes transient in-flight markers; count matches the
+          // visible list so the debug bar badge equals the number of listed keys.
+          const keys = await imageRuntime.cache.keys();
+          return Response.json({ count: keys.length, keys });
+        }
+        return new Response('Method Not Allowed', { status: 405 });
+      };
+      // Returns the raw stored entry for a single key (`?key=<url-encoded key>`).
+      const imageCacheEntryHandler = async (req: Request): Promise<Response> => {
+        if (req.method !== 'GET') {
+          return new Response('Method Not Allowed', { status: 405 });
+        }
+        const key = new URL(req.url).searchParams.get('key');
+        if (!key) {
+          return new Response('Missing ?key', { status: 400 });
+        }
+        const value = await imageRuntime.cache.inspect(key);
+        if (value == null) {
+          // 410, not 404: the handler ran and the key simply isn't stored — the
+          // listing it came from is a snapshot, and entries are evicted between
+          // listing and expanding. A 404 here would be indistinguishable from the
+          // route being unregistered or the key arriving mangled.
+          return new Response('Gone', { status: 410 });
+        }
+        return Response.json({ key, value });
+      };
+      // Register both slash variants so they work under any `trailingSlash` policy.
+      bunRoutes[`${registry.assetPrefix}/image-cache`] = imageCacheHandler;
+      bunRoutes[`${registry.assetPrefix}/image-cache/`] = imageCacheHandler;
+      bunRoutes[`${registry.assetPrefix}/image-cache/entry`] = imageCacheEntryHandler;
+      bunRoutes[`${registry.assetPrefix}/image-cache/entry/`] = imageCacheEntryHandler;
     }
 
     if (process.env.MOCHI_MEMORY_PROBE === '1') {
@@ -1563,6 +1732,14 @@ export class Mochi {
           sweeperStop?.();
           stopEmailBadgeBroadcast?.();
           await closeEmailTransport();
+          for (const store of rateLimitStores) {
+            // Per-store guard: one failing shutdown must not skip the rest.
+            try {
+              await store.shutdown?.();
+            } catch (err) {
+              logger.warn(`Rate limit store shutdown failed: ${err instanceof Error ? err.message : err}`);
+            }
+          }
         } catch (err) {
           logger.warn(`Subsystem cleanup failed during shutdown: ${err instanceof Error ? err.message : err}`);
         }
@@ -1653,6 +1830,7 @@ export class Mochi {
         pageConfigMap,
         registerRoutePattern,
         unregisterRoutePattern,
+        updateRouteLimiter,
         trailingSlashPolicy,
         shellPath,
         reloadShell,

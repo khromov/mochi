@@ -27,19 +27,42 @@ jobs:
           # live at Dockerfile.production / packages/demos/Dockerfile.production.
           - name: site
             workspace: site
+            dockerfile: Dockerfile
             port: 3333
             image: ghcr.io/khromov/mochi
             caprover_app: mochi
             caprover_token_secret: APP_TOKEN
+            # Temporary: try the site on the Bun canary line (Bun 1.4.0)
+            # while demos stays on the stable default pinned in the Dockerfile.
+            # Pinned by digest so the moving canary tag can't drift the deploy
+            # underneath us; bump the digest to intentionally move forward.
+            bun_image: oven/bun:1.3.14-alpine
+            #bun_image: oven/bun:canary-alpine@sha256:bba48f6599532b99017f1d7aabf80a80bbce9dd33e6faf6ac7f76b8f2d75fac8
           # Standalone demos site, also deployed in dev mode. Requires repo
           # secret APP_TOKEN_DEMOS — the per-app deploy token from the
           # mochi-demos CapRover app's "Deployment" tab.
           - name: demos
             workspace: demos
+            dockerfile: Dockerfile
             port: 3334
             image: ghcr.io/khromov/mochi-demos
             caprover_app: mochi-demos
             caprover_token_secret: APP_TOKEN_DEMOS
+            bun_image: oven/bun:1.3.14-alpine
+          # Support form (support.mochi.fast). The only leg on the prebuilt
+          # Dockerfile.production rather than the dev-mode Dockerfile — a contact
+          # form wants no debug toolbar, and it needs no live docs rendering.
+          # Requires repo secret APP_TOKEN_SUPPORT (per-app deploy token from the
+          # mochi-support CapRover app's "Deployment" tab) plus the SMTP_* env
+          # vars on the app itself; see packages/support/.env.example.
+          - name: support
+            workspace: support
+            dockerfile: Dockerfile.production
+            port: 3336
+            image: ghcr.io/khromov/mochi-support
+            caprover_app: mochi-support
+            caprover_token_secret: APP_TOKEN_SUPPORT
+            bun_image: oven/bun:1.3.14-alpine
 
     steps:
       - name: Checkout Repository
@@ -65,7 +88,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: Dockerfile
+          file: ${{ matrix.dockerfile }}
           platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
@@ -74,6 +97,7 @@ jobs:
             PUBLIC_DISABLE_OPFS=false
             WORKSPACE=${{ matrix.workspace }}
             PORT=${{ matrix.port }}
+            BUN_IMAGE=${{ matrix.bun_image }}
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
 

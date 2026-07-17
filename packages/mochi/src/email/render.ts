@@ -1,4 +1,4 @@
-import type { ComponentRegistry } from '../ComponentRegistry';
+import type { ComponentRegistry } from '../compiler/ComponentRegistry';
 
 /**
  * Render a Svelte component to a standalone HTML email body via the registry's
