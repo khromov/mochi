@@ -2,9 +2,9 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { ComponentRegistry, formatCompileErrors, type MochiCompileError } from './ComponentRegistry';
-import { requestContext } from './requestContext';
-import type { MochiRequestContext } from './requestContext';
-import { MochiCookieJar } from './cookies';
+import { requestContext } from '../runtime/requestContext';
+import type { MochiRequestContext } from '../runtime/requestContext';
+import { MochiCookieJar } from '../runtime/cookies';
 
 function makeCtx(): MochiRequestContext {
   return {
@@ -29,8 +29,8 @@ describe('unresolved-island compile errors', () => {
   const BROKEN = '<h1>page</h1>\n<Unknown mochi:hydrate />\n';
 
   beforeAll(async () => {
-    fixtureDir = mkdtempSync(path.join(import.meta.dir, '..', '.mochi-unresolved-fixture-'));
-    outDir = mkdtempSync(path.join(import.meta.dir, '..', '.mochi-unresolved-'));
+    fixtureDir = mkdtempSync(path.join(import.meta.dir, '..', '..', '.mochi-unresolved-fixture-'));
+    outDir = mkdtempSync(path.join(import.meta.dir, '..', '..', '.mochi-unresolved-'));
     registry = new ComponentRegistry({ development: true, outDir });
     pagePath = path.join(fixtureDir, 'Page.svelte');
     writeFileSync(pagePath, BROKEN);
@@ -84,14 +84,14 @@ describe('formatCompileErrors for unresolved islands', () => {
 });
 
 describe('named-export islands', () => {
-  const PAGE = path.join(import.meta.dir, '__fixtures__', 'named-island', 'Page.svelte');
-  const BARREL = path.join(import.meta.dir, '__fixtures__', 'named-island', 'Barrel.svelte');
+  const PAGE = path.join(import.meta.dir, '..', '__fixtures__', 'named-island', 'Page.svelte');
+  const BARREL = path.join(import.meta.dir, '..', '__fixtures__', 'named-island', 'Barrel.svelte');
   const islandKey = `Inner_${Bun.hash(`${BARREL}#Inner`).toString(36)}`;
   let outDir: string;
   let registry: ComponentRegistry;
 
   beforeAll(async () => {
-    outDir = mkdtempSync(path.join(import.meta.dir, '..', '.mochi-named-island-'));
+    outDir = mkdtempSync(path.join(import.meta.dir, '..', '..', '.mochi-named-island-'));
     registry = new ComponentRegistry({ development: true, outDir });
     await registry.compile(PAGE);
   });
