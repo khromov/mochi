@@ -44,10 +44,12 @@ const ID = variantId(SRC, CFG);
 
 // Wait for a fire-and-forget background revalidation to land. A fixed `Bun.sleep`
 // flakes when the regen's disk write is slower than the wait (Windows CI), so poll
-// the observable effect until it holds or a generous deadline passes.
-async function settle(predicate: () => boolean, timeoutMs = 2_000): Promise<void> {
+// the observable effect until it holds or a generous deadline passes. The predicate
+// may be async so callers can drive convergence from within it (a variant only
+// re-regenerates when it is read).
+async function settle(predicate: () => boolean | Promise<boolean>, timeoutMs = 2_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
-  while (!predicate() && Date.now() < deadline) {
+  while (!(await predicate()) && Date.now() < deadline) {
     await Bun.sleep(5);
   }
 }
@@ -224,15 +226,17 @@ describe('ImageCache.getVariant (generation-stamped)', () => {
     expect(stale.status).toBe('stale');
     expect(Array.from(stale.entry.bytes)).toEqual([10]);
 
-    // Converges within a bounded number of requests: once the original's
-    // background refresh lands, the generation mismatch forces one more regen
-    // against the new bytes — the variant must not stay pinned to [10] as fresh.
+    // Converges once the original's background refresh lands: the generation
+    // mismatch forces one more regen against the new bytes — the variant must not
+    // stay pinned to [10] as fresh. Each read is what drives the regen, so poll by
+    // re-reading, bounded by a deadline rather than a fixed request count (a
+    // Windows regen write can outlast any fixed budget).
     let bytes: number[] = [];
-    for (let i = 0; i < 10 && bytes[0] !== 20; i++) {
-      await Bun.sleep(20);
+    await settle(async () => {
       const read = await cache.getVariant(SRC, ID, transform());
       bytes = Array.from(read.entry.bytes);
-    }
+      return bytes[0] === 20;
+    });
     expect(bytes).toEqual([20]);
   });
 
