@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { extForFormat } from './resize';
 import type { ResolvedImageSize } from './types';
 
@@ -40,4 +41,9 @@ function extFromSrc(src: string): string {
 /** Cosmetic filename for an original; the served Content-Type, not this extension, is authoritative. */
 export function buildOriginalFilename(src: string): string {
   return `${baseName(src)}-original.${extFromSrc(src)}`;
+}
+
+/** Slug for a locally-imported asset's served filename, derived from its on-disk basename stem. */
+export function slugForImport(absPath: string): string {
+  return slugifyStem(path.basename(absPath).replace(/\.[^.]+$/, ''));
 }

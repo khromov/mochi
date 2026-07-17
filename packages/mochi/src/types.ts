@@ -389,6 +389,8 @@ export interface MochiManifest {
   serverIslandExports?: Record<string, string>;
   /** Maps public URL path → disk path (relative to project root) for static files copied from `public/`. */
   publicFiles?: Record<string, string>;
+  /** Maps served asset URL → emitted asset details for locally-imported images (`import x from './x.png'`). */
+  localImageAssets?: Record<string, { src: string; width: number; height: number; format: string; diskPath: string; contentType: string }>;
   /** Maps resolved CSS-import path → served URL (e.g. /import-css/inter-<hash>.css) */
   importedCssUrls?: Record<string, string>;
   /** Maps page entry .svelte path → list of CSS-import paths reachable from it */

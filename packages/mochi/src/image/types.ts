@@ -2,6 +2,26 @@ import type { Storage } from '../cache/cache';
 
 export type ImageFormat = 'webp' | 'jpeg' | 'png' | 'avif';
 
+/**
+ * The object a local image import resolves to (`import hero from './hero.png'`).
+ * `src` is a content-hashed, same-origin URL served from disk; `width`/`height`
+ * are the image's intrinsic pixel dimensions and `format` its decoded format
+ * (e.g. `'jpeg'`). Pass it to `<Image src={hero} …>` or drop `hero.src` into a
+ * plain `<img>`.
+ */
+export interface ImportedImage {
+  src: string;
+  width: number;
+  height: number;
+  format: string;
+}
+
+/** An `ImportedImage` plus the build-time details needed to serve/transform it from disk. */
+export interface LocalImageAsset extends ImportedImage {
+  diskPath: string;
+  contentType: string;
+}
+
 /** Resize fit. Bun.Image only accepts these two. */
 export type ImageFit = 'inside' | 'fill';
 

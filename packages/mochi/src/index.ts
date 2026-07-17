@@ -23,7 +23,7 @@ export { MemoryStorage, FileStorage, isBlobRef, readBlobRef } from './cache/cach
 export type { FileStorageOptions, MemoryStorageOptions, BlobRef } from './cache/cache-storage';
 export { getImageUrl, getImageAttrs, getImage, getImagePlaceholder, imagePlaceholder, warmImagePlaceholder, invalidateImage } from './image/imageApi';
 export type { ResolvedImage, ImageAttrs } from './image/imageApi';
-export type { MochiImageOptions, ImageSize, InvalidateImageOptions, ImageFormat, ImageFit } from './image/types';
+export type { MochiImageOptions, ImageSize, InvalidateImageOptions, ImageFormat, ImageFit, ImportedImage } from './image/types';
 export { EmailError } from './email/types';
 export type {
   MochiEmailOptions,
