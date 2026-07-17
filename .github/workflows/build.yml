@@ -117,44 +117,66 @@ jobs:
       # pushing/deploying: /health/ answers, and the island JS referenced by
       # the served HTML resolves on the same server (guards the class of
       # incident where stale/mismatched bundle hashes 404 in production).
+      #
+      # Every failure path must turn the job RED. The earlier version piped
+      # `curl "$BASE/"` straight into grep with `|| true`, so a reset/5xx on /
+      # collapsed to an empty match and was silently treated as "page has no
+      # island asset — skip", passing green. Here `GET /` is checked on its own
+      # and fails hard, and transient resets are absorbed by curl's own --retry
+      # rather than swallowed.
       - name: Smoke test image
         run: |
           set -uo pipefail
           IMAGE="$(printf '%s\n' "${{ steps.meta.outputs.tags }}" | head -n1)"
           BASE="http://127.0.0.1:${{ matrix.port }}"
+
+          fail() {
+            echo "::error::$1"
+            echo "----- docker logs smoke -----"
+            docker logs smoke 2>&1 || true
+            docker rm -f smoke >/dev/null 2>&1 || true
+            exit 1
+          }
+          # Absorb one-off resets/refused within a single call; a persistently
+          # broken server exhausts the retries and correctly fails.
+          curl_retry() { curl -fsS --retry 5 --retry-delay 1 --retry-all-errors --retry-connrefused "$@"; }
+
           docker run -d --name smoke ${{ matrix.smoke_env }} \
             -p "127.0.0.1:${{ matrix.port }}:${{ matrix.port }}" "$IMAGE"
 
+          # 1) Readiness. The loop is the retry mechanism, so plain curl (no -S):
+          # transient boot errors are expected and shouldn't spam the log — real
+          # trouble is surfaced by docker logs on the not-ready fail() below.
           ready=""
           for _ in $(seq 1 50); do
-            if curl -fsSL --max-time 5 -o /dev/null "$BASE/health/"; then
+            if curl -fs --max-time 5 -o /dev/null "$BASE/health/"; then
               ready=1
               break
             fi
-            if [ "$(docker inspect -f '{{.State.Running}}' smoke)" != "true" ]; then
-              echo "::error::container exited during boot"
-              docker logs smoke
-              exit 1
-            fi
+            [ "$(docker inspect -f '{{.State.Running}}' smoke)" = "true" ] || fail "container exited during boot"
             sleep 3
           done
-          if [ -z "$ready" ]; then
-            echo "::error::/health/ not ready after 150s"
-            docker logs smoke
-            exit 1
-          fi
+          [ -n "$ready" ] || fail "/health/ not ready after 150s"
 
-          ASSET="$(curl -fsSL --max-time 10 "$BASE/" | grep -o '/_mochi/client/[A-Za-z0-9_.-]*\.js' | head -n1 || true)"
-          if [ -n "$ASSET" ]; then
-            echo "checking island asset $ASSET"
-            if ! curl -fsS --max-time 10 -o /dev/null "$BASE$ASSET"; then
-              echo "::error::HTML references $ASSET but the server 404s it"
-              docker logs smoke
-              exit 1
+          # 2) GET / must succeed, and the island bundle it references must
+          # resolve on the same server. Re-fetch / on each attempt so a dev-mode
+          # recompile that re-hashes the bundle URL can't fail us on a stale hash.
+          verified=""
+          for attempt in $(seq 1 8); do
+            html="$(curl_retry --max-time 15 "$BASE/")" || fail "GET / failed"
+            asset="$(printf '%s' "$html" | grep -o '/_mochi/client/[A-Za-z0-9_.-]*\.js' | head -n1 || true)"
+            [ -n "$asset" ] || fail "GET / returned 200 but referenced no /_mochi/client bundle (broken render/shell)"
+            echo "attempt $attempt: verifying island asset $asset"
+            if curl_retry --max-time 15 -o /dev/null "$BASE$asset"; then
+              echo "island asset $asset resolves (200)"
+              verified=1
+              break
             fi
-          else
-            echo "no /_mochi/client asset referenced on / — skipping asset check"
-          fi
+            echo "attempt $attempt: $asset did not resolve — re-fetching / and retrying"
+            sleep 3
+          done
+          [ -n "$verified" ] || fail "HTML references an island bundle the server won't serve"
+
           docker rm -f smoke
 
       - name: Push Docker Image
