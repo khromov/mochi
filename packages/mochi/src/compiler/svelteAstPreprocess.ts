@@ -509,7 +509,15 @@ function seedStatement(valueExpr: string): string {
  * (`$$props`, rune calls) is caught by the legacy/rune scans before the
  * mode-neutral check runs. Covers the common `imports + onMount(...)` island.
  */
-const MODE_NEUTRAL_STATEMENTS = new Set(['ImportDeclaration', 'TSInterfaceDeclaration', 'TSTypeAliasDeclaration', 'FunctionDeclaration', 'ClassDeclaration', 'EmptyStatement', 'ExpressionStatement']);
+const MODE_NEUTRAL_STATEMENTS = new Set([
+  'ImportDeclaration',
+  'TSInterfaceDeclaration',
+  'TSTypeAliasDeclaration',
+  'FunctionDeclaration',
+  'ClassDeclaration',
+  'EmptyStatement',
+  'ExpressionStatement',
+]);
 
 const RUNE_ROOTS = new Set(['$state', '$derived', '$effect', '$bindable', '$inspect', '$host', '$props']);
 const LEGACY_IDENTIFIERS = new Set(['$$props', '$$restProps', '$$slots']);
