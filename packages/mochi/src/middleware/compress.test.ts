@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { Server } from 'bun';
 import { brotliDecompressSync } from 'node:zlib';
-import type { MochiEvent } from '../hooks';
+import type { MochiEvent } from '../runtime/hooks';
 import { compress } from './compress';
 
 function makeEvent(req: Request): MochiEvent {

@@ -1,67 +1,62 @@
 <script lang="ts">
-  // Server-rendered image component: emits a single <img> pointing at a signed,
-  // cached, resized URL. With `placeholder`, the ThumbHash blur is set as the
-  // <img>'s own background-image — it shows through until the real image paints
-  // over it, so the blur-up needs zero client JS.
+  // Server-rendered image component: emits a single <img> pointing at a signed
+  // URL for a named size declared in Mochi.serve({ image: { sizes } }).
+  // Minting is synchronous and near-instant — the fetch/transform happens lazily
+  // in the /_mochi/image endpoint on the browser's request, so SSR is never
+  // blocked. With `placeholder`, a cached ThumbHash blur (if already computed) is
+  // set as the <img>'s own background-image and paints with zero client JS; on a
+  // cold cache the blur is warmed in the background and appears on a later render.
   //
-  // Inside a mochi:hydrate* island, forward the island's injected
-  // `isHydratable` prop. Minting needs the server secret, so with the prop set
-  // the minted values are wrapped in `hydratable` — devalue-serialized into
-  // the page and reused during hydration instead of re-minted in the browser.
-  // Without it (pure SSR) nothing is serialized: the snapshot would print
-  // `src` into the markup for no benefit, undoing the encrypted token's
-  // whole point. In the island case that's fine — island props (and the
-  // island's client JS) already expose `src` to the client.
-  //
-  // The import goes through the `mochi-framework` virtual module, whose
-  // client build ships throwing stubs instead of the node-only crypto/fs/dns
-  // graph; the stubs are never called because browser-side minting (changed
-  // props after hydration, or a missing `isHydratable` forward) degrades to
-  // the raw source URL instead.
+  // Inside a mochi:hydrate* island, forward the island's injected `isHydratable`
+  // prop. Minting needs the server secret, so with the prop set the minted values
+  // are wrapped in `hydratable` — devalue-serialized into the page and reused
+  // during hydration instead of re-minted in the browser. Without it (pure SSR)
+  // nothing is serialized. The import goes through the `mochi-framework` virtual
+  // module, whose client build ships stubs (getImageAttrs returns the raw src).
   import { hydratable } from 'svelte';
-  import { getResizedImage, getImagePlaceholder } from 'mochi-framework';
-  import type { ImageFit, ImageFormat } from './types';
+  import { getImageAttrs, imagePlaceholder } from 'mochi-framework';
 
   let {
     src,
-    width,
-    height,
+    size,
     alt = '',
-    quality,
-    format,
-    fit,
     loading = 'lazy',
     decoding = 'async',
     placeholder = false,
+    width,
+    height,
     class: className = undefined,
     isHydratable = false,
   }: {
     src: string;
-    width?: number;
-    height?: number;
+    /** Name of a size declared in `image.sizes`. Omitted → the full-size original. */
+    size?: string;
     alt?: string;
-    quality?: number;
-    format?: ImageFormat;
-    fit?: ImageFit;
     loading?: 'lazy' | 'eager';
     decoding?: 'async' | 'sync' | 'auto';
     placeholder?: boolean;
+    /** `<img width>` override (px). Defaults to the size's declared width. */
+    width?: number;
+    /** `<img height>` override (px). Defaults to the size's declared height. */
+    height?: number;
     class?: string;
     isHydratable?: boolean;
   } = $props();
 
   const isBrowser = typeof window !== 'undefined';
-  const mintUrl = () => (isBrowser ? src : getResizedImage(src, { width, height, quality, format, fit }));
-  const mintBlur = () => (isBrowser ? null : getImagePlaceholder(src));
-  const key = $derived(`mochi:image:${JSON.stringify([src, width, height, quality, format, fit])}`);
-  const resized = $derived(isHydratable ? hydratable(key, mintUrl) : mintUrl());
+  const mintAttrs = () => (isBrowser ? { url: src } : getImageAttrs(src, size));
+  const mintBlur = () => (isBrowser ? null : imagePlaceholder(src));
+  const key = $derived(`mochi:image:${JSON.stringify([src, size])}`);
+  const attrs = $derived(isHydratable ? hydratable(key, mintAttrs) : mintAttrs());
   const blur = $derived(placeholder ? await (isHydratable ? hydratable(`${key}#placeholder`, mintBlur) : mintBlur()) : null);
+  const imgWidth = $derived(width ?? attrs.width);
+  const imgHeight = $derived(height ?? attrs.height);
 </script>
 
 <img
-  src={resized}
-  {width}
-  {height}
+  src={attrs.url}
+  width={imgWidth}
+  height={imgHeight}
   {alt}
   {loading}
   {decoding}

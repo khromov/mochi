@@ -1,12 +1,14 @@
 import type { BunFile, Server, ServerWebSocket } from 'bun';
-import type { Handle, HandleError, MochiEvent } from './hooks';
-import type { MochiCookieJar } from './cookies';
-import type { MochiCsrfOptions } from './csrf';
+import type { Handle, HandleError, MochiEvent } from './runtime/hooks';
+import type { MochiCookieJar } from './runtime/cookies';
+import type { MochiCsrfOptions } from './runtime/csrf';
 import type { MochiFilters, MochiHooks } from './extensions';
-import type { MochiProxyOptions } from './proxy';
+import type { MochiProxyOptions } from './runtime/proxy';
 import type { MochiImageOptions } from './image/types';
 import type { MochiEmailOptions } from './email/types';
+import type { MochiCaptchaOptions } from './captcha/types';
 import type { MochiProcessor, MochiQueueListeners, MochiQueueRuntimeOptions } from './queue';
+import type { MochiRateLimitOptions } from './runtime/rateLimit';
 
 export type MochiServerPropsResolver = (req: Request, params: Record<string, string>) => Record<string, unknown> | Promise<Record<string, unknown>>;
 
@@ -40,6 +42,8 @@ export interface MochiPageConfig {
   readonly componentPath: string;
   readonly serverProps?: Record<string, unknown> | MochiServerPropsResolver;
   readonly actions?: MochiFormActions;
+  /** Per-route rate limit. Overrides the global `rateLimit` serve option; `false` opts this route out. */
+  readonly rateLimit?: MochiRateLimitOptions | false;
 }
 
 export function isMochiPage(value: unknown): value is MochiPageConfig {
@@ -84,6 +88,8 @@ export type MochiApiHandler = (event: MochiApiEvent) => Response | Promise<Respo
 export interface MochiApiConfig {
   readonly __mochiApi: true;
   readonly handler: MochiApiHandler;
+  /** Per-route rate limit. Overrides the global `rateLimit` serve option; `false` opts this route out. */
+  readonly rateLimit?: MochiRateLimitOptions | false;
 }
 
 export function isMochiApi(value: unknown): value is MochiApiConfig {
@@ -523,8 +529,8 @@ export interface MochiServeOptions {
      * client bundles). `'silent'` suppresses everything including BOOT/STOP.
      * Defaults: `'info'` in development, `'warn'` in production.
      */
-    level?: import('./log').LogLevel;
-  } & import('./consoleLogger').ConsoleLoggerOptions;
+    level?: import('./utils/log').LogLevel;
+  } & import('./dev/consoleLogger').ConsoleLoggerOptions;
   /** Directory served as static assets (cwd-relative). Default: `./public`. */
   publicDir?: string;
   /**
@@ -605,6 +611,13 @@ export interface MochiServeOptions {
    */
   trailingSlash?: 'never' | 'always';
   /**
+   * Global rate limit applied to every page and API route (a thin shim around
+   * `@joint-ops/hitlimit-bun`). Routes inheriting this option share one limiter —
+   * one bucket per key (default: the proxy-aware client IP) across all of them.
+   * A route's own `rateLimit` config replaces it; `rateLimit: false` opts out.
+   */
+  rateLimit?: MochiRateLimitOptions;
+  /**
    * Event hooks: run a function at a specific framework moment. One entry per name,
    * no priorities. See `MochiHooks` for available names.
    */
@@ -632,11 +645,11 @@ export interface MochiServeOptions {
    */
   warmup?: boolean | MochiWarmupOptions;
   /**
-   * On-the-fly image resizing. Mounts a signed `/_mochi/image/*` endpoint and
-   * powers `getResizedImage()` / the `<Image>` component. Every served URL's
-   * payload is encrypted so attackers cannot request arbitrary sources. Default: enabled
-   * with sensible defaults; pass `{ enabled: false }` to turn it off. See
-   * `MochiImageOptions`.
+   * On-the-fly image transforms via named sizes. Mounts a signed
+   * `/_mochi/image/*` endpoint and powers `getImageUrl()` / the `<Image>`
+   * component. Every served URL's payload is encrypted so attackers cannot
+   * request arbitrary sources or transforms. Default: enabled with sensible
+   * defaults; pass `{ enabled: false }` to turn it off. See `MochiImageOptions`.
    */
   image?: MochiImageOptions;
   /**
@@ -647,6 +660,14 @@ export interface MochiServeOptions {
    * and no mail is sent.
    */
   email?: MochiEmailOptions;
+  /**
+   * Slide-to-verify captcha backing `mintCaptcha()` / `verifyCaptcha()` and the
+   * `<MochiCaptcha>` component. Tunes proof-of-work difficulty, the token
+   * timing floor and expiry, and the one-time nonce store used for replay
+   * protection. See `MochiCaptchaOptions`. Default: 16 bits, a 2s floor, a
+   * 15-minute expiry, and an in-memory (per-process) nonce store.
+   */
+  captcha?: MochiCaptchaOptions;
   /**
    * Run the whole-program [svelte-shaker](https://github.com/baseballyama/svelte-shaker)
    * pass before compiling, slimming `.svelte` source (prop folding, dead-branch

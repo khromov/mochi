@@ -13,6 +13,11 @@ description: 'Configure a custom error page and control how uncaught errors are 
 
 Mochi renders an HTML error page for any uncaught error escaping a page render — top-level SSR throws, `error(status, ...)` from `serverProps` or actions, malformed form bodies, unknown form actions, and unmatched routes. API routes are not affected; they return a JSON envelope. Island-level boundaries are scoped to hydratable islands — see `Error boundaries`.
 
+<figure>
+  <img src="/docs/error-page.png" alt="The built-in error page: a large 500 above the message Internal Server Error, a Go home link, and a Stack trace section showing the thrown error" />
+  <figcaption>The built-in error page — what you get when <code>errorPage</code> is omitted. The stack trace section only renders under <code>development: true</code>.</figcaption>
+</figure>
+
 Configure the page via `errorPage` on `Mochi.serve()`. Omit it to use the built-in minimal component.
 
 ```ts

@@ -7,6 +7,7 @@
   import WarningsPanel from './WarningsPanel.svelte';
   import BundlesPanel from './BundlesPanel.svelte';
   import InfoPanel from './InfoPanel.svelte';
+  import CachePanel from './CachePanel.svelte';
   import SettingsPanel from './SettingsPanel.svelte';
   import Settings from '../icons/settings.svelte';
   import Mail from '../icons/mail.svelte';
@@ -18,7 +19,7 @@
 
   const STORAGE_KEY = 'mochi:debug:collapsed';
 
-  type Panel = 'warnings' | 'islands' | 'images' | 'request' | 'bundles' | 'info' | 'settings' | null;
+  type Panel = 'warnings' | 'islands' | 'images' | 'request' | 'bundles' | 'info' | 'cache' | 'settings' | null;
   let activePanel: Panel = $state(null);
 
   let hasDebugInfo = $state(false);
@@ -166,6 +167,7 @@
   <BundlesPanel open={activePanel === 'bundles'} onclose={() => (activePanel = null)} />
   <RequestPanel open={activePanel === 'request'} onclose={() => (activePanel = null)} />
   <InfoPanel open={activePanel === 'info'} onclose={() => (activePanel = null)} />
+  <CachePanel open={activePanel === 'cache'} onclose={() => (activePanel = null)} />
   <SettingsPanel open={activePanel === 'settings'} onclose={() => (activePanel = null)} {hiddenPanels} ontoggle={togglePanelVisibility} />
 
   <div class="bar" class:is-collapsed={collapsed}>
@@ -212,6 +214,9 @@
       {/if}
       {#if hasDebugInfo && !hiddenPanels.includes('info')}
         <button class="btn info-btn" onclick={() => toggle('info')} tabindex={collapsed ? -1 : 0}>Info</button>
+      {/if}
+      {#if !hiddenPanels.includes('cache')}
+        <button class="btn cache-btn" onclick={() => toggle('cache')} tabindex={collapsed ? -1 : 0}>Cache</button>
       {/if}
       {#if emailHref}
         <a
@@ -448,6 +453,16 @@
     background: #2d3b44;
     color: #d4e4ec;
     border-color: #7a96a4;
+  }
+  .cache-btn {
+    background: #223833;
+    color: #a7d0c4;
+    border-color: #3f5f54;
+  }
+  .cache-btn:hover {
+    background: #2b453e;
+    color: #c8ece0;
+    border-color: #6fae9c;
   }
   .bundles-btn {
     position: relative;
