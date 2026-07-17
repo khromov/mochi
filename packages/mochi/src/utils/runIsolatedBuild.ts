@@ -10,7 +10,7 @@
 // inline. Lives under `utils/` (not a `*.test.ts` file) so the test runner never
 // executes it directly — it's only ever spawned.
 import path from 'node:path';
-import { build } from '../build';
+import { build } from '../cli/build';
 import { Mochi } from '../Mochi';
 
 /**

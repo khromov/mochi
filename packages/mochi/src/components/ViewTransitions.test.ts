@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, spyOn, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
-import { ComponentRegistry } from '../ComponentRegistry';
-import { requestContext, type MochiRequestContext } from '../requestContext';
+import { ComponentRegistry } from '../compiler/ComponentRegistry';
+import { requestContext, type MochiRequestContext } from '../runtime/requestContext';
 
 const COMPONENT_PATH = path.join(import.meta.dir, 'ViewTransitions.svelte');
 

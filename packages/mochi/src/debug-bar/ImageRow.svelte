@@ -1,7 +1,7 @@
 <script lang="ts">
   import ChevronRight from '../icons/chevron-right.svelte';
   import Lock from '../icons/lock.svelte';
-  import type { ImageDebugEntry } from '../requestContext';
+  import type { ImageDebugEntry } from '../runtime/requestContext';
   import formatHighlight from '../vendor/json-format-highlight/index.ts';
   import { highlightColors } from './utils';
 

@@ -1,4 +1,4 @@
-import { escapeHtmlAttr } from '../htmlEscape';
+import { escapeHtmlAttr } from '../utils/htmlEscape';
 
 /**
  * Always-shipped: hides the element entirely in production. The dev rule below

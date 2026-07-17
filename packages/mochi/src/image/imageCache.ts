@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
-import type { CacheStatus, Storage } from '../cache';
-import { MochiCache } from '../cache';
-import { FileStorage, isBlobRef, readBlobRef, type BlobRef } from '../cache-storage';
+import type { CacheStatus, Storage } from '../cache/cache';
+import { MochiCache } from '../cache/cache';
+import { FileStorage, isBlobRef, readBlobRef, type BlobRef } from '../cache/cache-storage';
 import { mochiEvents, type MochiImageDeleteReason } from '../events';
 import type { ImageFormat, ResolvedImageSize } from './types';
 

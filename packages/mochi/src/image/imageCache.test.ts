@@ -2,8 +2,8 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { Storage } from '../cache';
-import { MemoryStorage } from '../cache-storage';
+import type { Storage } from '../cache/cache';
+import { MemoryStorage } from '../cache/cache-storage';
 import { mochiEvents } from '../events';
 import type { MochiImageDeleteEvent, MochiImageStoreEvent } from '../events';
 import { ImageCache, originalId, variantId, type ImageCacheOptions, type RegenResult } from './imageCache';
@@ -44,10 +44,12 @@ const ID = variantId(SRC, CFG);
 
 // Wait for a fire-and-forget background revalidation to land. A fixed `Bun.sleep`
 // flakes when the regen's disk write is slower than the wait (Windows CI), so poll
-// the observable effect until it holds or a generous deadline passes.
-async function settle(predicate: () => boolean, timeoutMs = 2_000): Promise<void> {
+// the observable effect until it holds or a generous deadline passes. The predicate
+// may be async so callers can drive convergence from within it (a variant only
+// re-regenerates when it is read).
+async function settle(predicate: () => boolean | Promise<boolean>, timeoutMs = 2_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
-  while (!predicate() && Date.now() < deadline) {
+  while (!(await predicate()) && Date.now() < deadline) {
     await Bun.sleep(5);
   }
 }
@@ -224,15 +226,17 @@ describe('ImageCache.getVariant (generation-stamped)', () => {
     expect(stale.status).toBe('stale');
     expect(Array.from(stale.entry.bytes)).toEqual([10]);
 
-    // Converges within a bounded number of requests: once the original's
-    // background refresh lands, the generation mismatch forces one more regen
-    // against the new bytes — the variant must not stay pinned to [10] as fresh.
+    // Converges once the original's background refresh lands: the generation
+    // mismatch forces one more regen against the new bytes — the variant must not
+    // stay pinned to [10] as fresh. Each read is what drives the regen, so poll by
+    // re-reading, bounded by a deadline rather than a fixed request count (a
+    // Windows regen write can outlast any fixed budget).
     let bytes: number[] = [];
-    for (let i = 0; i < 10 && bytes[0] !== 20; i++) {
-      await Bun.sleep(20);
+    await settle(async () => {
       const read = await cache.getVariant(SRC, ID, transform());
       bytes = Array.from(read.entry.bytes);
-    }
+      return bytes[0] === 20;
+    });
     expect(bytes).toEqual([20]);
   });
 
@@ -353,10 +357,10 @@ describe('ImageCache.getPlaceholder', () => {
     await cache.invalidateOriginal(SRC, false);
     await cache.getOriginal(SRC, fetchFn); // serves stale, kicks the refresh
     let refreshed = orig.entry.meta.createdAt;
-    for (let i = 0; i < 10 && refreshed === orig.entry.meta.createdAt; i++) {
-      await Bun.sleep(20);
+    await settle(async () => {
       refreshed = (await cache.getOriginal(SRC, fetchFn)).entry.meta.createdAt;
-    }
+      return refreshed !== orig.entry.meta.createdAt;
+    });
     expect(refreshed).not.toBe(orig.entry.meta.createdAt);
 
     // The old generation's blur must not be served against the new original.

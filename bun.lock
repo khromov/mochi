@@ -44,7 +44,6 @@
         "@tailwindcss/oxide": "^4.3.1",
         "html-entities": "^2.6.0",
         "mochi-framework": "workspace:*",
-        "mochi-shared": "workspace:*",
         "svelte": "^5.56.5",
         "svelte-meta-tags": "^5.0.0",
         "tailwindcss": "^4.3.1",
@@ -80,7 +79,7 @@
       "name": "mochi-framework",
       "version": "0.7.0",
       "bin": {
-        "mochi-framework": "src/cli.js",
+        "mochi-framework": "src/cli/cli.js",
       },
       "dependencies": {
         "@css-inline/css-inline-wasm": "^0.21.0",

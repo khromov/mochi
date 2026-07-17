@@ -1,5 +1,5 @@
 import { getMochiConfig } from '../mochiConfig';
-import type { ComponentRegistry } from '../ComponentRegistry';
+import type { ComponentRegistry } from '../compiler/ComponentRegistry';
 import type { StoredEmail } from './devOutbox';
 import type { EmailTransport } from './transports';
 import type { MochiEmailOptions, ResolvedEmailOptions } from './types';

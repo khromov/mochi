@@ -16,13 +16,13 @@
 
 import type { Server } from 'bun';
 import type { PreprocessorGroup } from 'svelte/compiler';
-import type { CookieSerializeOptions } from './cookies';
+import type { CookieSerializeOptions } from './runtime/cookies';
 import type { MochiCaptchaOptions } from './captcha/types';
 import type { MochiServeOptions } from './types';
 import type { MochiEventMap, MochiRequestKind } from './events';
 import type { ResolvedEmailMessage, MochiEmailTransportConfig } from './email/types';
-import type { TrailingSlashPolicy } from './trailingSlash';
-import { pinGlobal } from './globalState';
+import type { TrailingSlashPolicy } from './runtime/trailingSlash';
+import { pinGlobal } from './utils/globalState';
 
 /**
  * Discriminated union of every `mochiEvents` payload that `consoleLogger()`

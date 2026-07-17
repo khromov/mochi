@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import type { MochiServeOptions } from './types';
 import { applyFilter, initExtensions, runHook, type MochiFilterContext } from './extensions';
-import type { IslandPropsEntry } from './islandPropsRegistry';
+import type { IslandPropsEntry } from './islands/islandPropsRegistry';
 import type { ResolvedEmailMessage } from './email/types';
 
 const fakeOptions = {} as MochiServeOptions;
@@ -573,8 +573,8 @@ describe('new extension points', () => {
   // the contract that `getRequestContext()` works inside the hook regardless
   // of route type.
   test.each(['ws', 'sse'] as const)('route:matched exposes requestContext for kind %s', async (kind) => {
-    const { requestContext, getRequestContext } = await import('./requestContext');
-    const { MochiCookieJar } = await import('./cookies');
+    const { requestContext, getRequestContext } = await import('./runtime/requestContext');
+    const { MochiCookieJar } = await import('./runtime/cookies');
     let seen: { requestId: string; kind: string; pathname: string; param: string } | null = null;
     initExtensions({
       eventHooks: {

@@ -5,10 +5,10 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
-import { ComponentRegistry } from '../ComponentRegistry';
-import { requestContext } from '../requestContext';
-import type { MochiRequestContext } from '../requestContext';
-import { MochiCookieJar } from '../cookies';
+import { ComponentRegistry } from '../compiler/ComponentRegistry';
+import { requestContext } from '../runtime/requestContext';
+import type { MochiRequestContext } from '../runtime/requestContext';
+import { MochiCookieJar } from '../runtime/cookies';
 import { renderEmailComponent } from './render';
 
 const WELCOME = path.join(import.meta.dir, '..', '__fixtures__', 'email', 'Welcome.svelte');
