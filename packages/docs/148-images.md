@@ -63,6 +63,11 @@ Add `placeholder` to render a [ThumbHash](https://evanw.github.io/thumbhash/) bl
 <Image src="https://example.com/photo.jpg" size="thumbnail" alt="A photo" placeholder />
 ```
 
+<figure>
+  <img src="/docs/image-placeholder.jpg" alt="Side by side: a soft colour-blurred rectangle on the left, and on the right the photo it resolves to — a mochi on a wooden board beside a pink lily" />
+  <figcaption>The ThumbHash blur (left) and the image it resolves to (right). The hash is a handful of bytes, so the blur carries the photo's colour and composition without a second request.</figcaption>
+</figure>
+
 | Prop                   | Default     | Notes                                                       |
 | ---------------------- | ----------- | ----------------------------------------------------------- |
 | `src`                  | —           | http/https source URL (required)                            |

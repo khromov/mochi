@@ -39,6 +39,15 @@ export const subjects: Record<string, ShotSubject> = {
     natural: { width: 31, height: 19 },
     props: () => ({ initialLikes: 42 }),
   },
+
+  // The blur beside the image it resolves to. Unlike every other subject this one is
+  // rendered SSR-only in Shot.svelte — <Image> ships no client JS, so there's nothing
+  // to hydrate. Measured, not guessed: two 600x400 `hero` boxes plus the arrow and
+  // its gaps.
+  'image-placeholder': {
+    natural: { width: 1264, height: 400 },
+    props: () => ({ src: 'https://sta-public.fra1.cdn.digitaloceanspaces.com/mochi/mochi-1.jpg' }),
+  },
 };
 
 /**
