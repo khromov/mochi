@@ -36,7 +36,7 @@ describe('build bakes framework assets into the manifest', () => {
 
   test('B1: manifest references a prebuilt ServerIsland script that exists and matches the live build', async () => {
     expect(manifest.serverIslandScript).toBeString();
-    const diskPath = path.resolve(manifest.serverIslandScript!);
+    const diskPath = path.resolve(outDir, manifest.serverIslandScript!);
     expect(await Bun.file(diskPath).exists()).toBe(true);
     const baked = await Bun.file(diskPath).text();
     expect(baked.length).toBeGreaterThan(0);

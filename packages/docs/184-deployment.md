@@ -18,6 +18,20 @@ You can host Bun and Mochi at hundreds of different hosts. We list some of the m
 None of the links below are affiliate links, nor should any of the links be seen as endorsements.
 </Callout>
 
+## Relocatable builds
+
+`mochi-framework build` output is self-contained: the manifest stores every artifact path relative to the out-dir, so you can build in one place and run in another — build in a CI stage, copy `.mochi/` into the final image, deploy the artifact to a host with a different directory layout. Point the runtime at wherever the output landed:
+
+```ts
+Mochi.serve({ outDir: './.mochi', ... }); // default — or wherever you copied it
+```
+
+<Callout type="warning">
+
+Two things still anchor a prebuilt app to its project. **Run from the project root:** route component paths (`Mochi.page('./src/Site.svelte')`) are cwd-relative, and the compiled SSR modules resolve `node_modules` from the out-dir's location — keep the out-dir inside the project tree, next to `node_modules`. **On-demand server islands need sources:** islands missing from the manifest are compiled at request time from source paths recorded at build. Prebuilt islands (the normal case) don't — they relocate fine.
+
+</Callout>
+
 ## PaaS
 
 Deploy code or containers — the platform manages infrastructure, scaling, and networking.

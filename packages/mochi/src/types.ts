@@ -359,6 +359,7 @@ export interface MochiErrorProps {
 // ---------------------------------------------------------------------------
 
 export interface MochiManifestComponent {
+  /** Compiled SSR module path, relative to the build outDir since manifest v2 (absolute in v1 manifests, still accepted). */
   ssrModule: string;
   /** `exportName` is optional for manifests written before named-export islands existed; absent means `default`. */
   hydratables: { name: string; displayName: string; resolvedPath: string; exportName?: string }[];
@@ -366,13 +367,14 @@ export interface MochiManifestComponent {
 }
 
 export interface MochiManifest {
-  version: 1;
+  /** v2 stores all disk paths relative to the build outDir (relocatable); v1 mixed absolute and cwd-relative paths. */
+  version: 1 | 2;
   /** URL prefix under which framework client assets and the server island endpoint are served. */
   assetPrefix: string;
   bootstrapUrl: string | null;
   componentEntryUrls: Record<string, string>;
   cssFileUrls: Record<string, string>;
-  /** Maps URL path → disk path relative to project root */
+  /** Maps URL path → disk path relative to the build outDir (v2; cwd-relative in v1). */
   clientFiles: Record<string, string>;
   components: Record<string, MochiManifestComponent>;
   stats: {
@@ -387,18 +389,19 @@ export interface MochiManifest {
   serverIslandPaths?: Record<string, string>;
   /** Maps server island component name → the named export it renders (default-export islands are omitted). */
   serverIslandExports?: Record<string, string>;
-  /** Maps public URL path → disk path (relative to project root) for static files copied from `public/`. */
+  /** Maps public URL path → disk path (relative to the build outDir in v2, cwd-relative in v1) for static files copied from `public/`. */
   publicFiles?: Record<string, string>;
-  /** Maps served asset URL → emitted asset details for locally-imported images (`import x from './x.png'`). */
+  /** Maps served asset URL → emitted asset details for locally-imported images (`import x from './x.png'`). `diskPath` is outDir-relative in v2, absolute in v1. */
   localImageAssets?: Record<string, LocalImageAsset>;
   /** Maps resolved CSS-import path → served URL (e.g. /import-css/inter-<hash>.css) */
   importedCssUrls?: Record<string, string>;
   /** Maps page entry .svelte path → list of CSS-import paths reachable from it */
   entryImportedCss?: Record<string, string[]>;
   /**
-   * Disk path (project-root-relative) to the prebuilt, minified ServerIsland
-   * inline web-component script. Emitted by `build()` so the production runtime
-   * loads it from disk instead of running a `Bun.build` at startup.
+   * Disk path (relative to the build outDir in v2, cwd-relative in v1) to the
+   * prebuilt, minified ServerIsland inline web-component script. Emitted by
+   * `build()` so the production runtime loads it from disk instead of running
+   * a `Bun.build` at startup.
    */
   serverIslandScript?: string;
 }

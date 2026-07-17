@@ -1897,10 +1897,20 @@ export class ComponentRegistry {
 
   /** Serialize registry state into a manifest for the prebuild step. */
   toManifest(): MochiManifest {
+    const outDirAbs = path.resolve(this.outDir);
+    // Every artifact the runtime reads from disk lives under outDir, so storing
+    // paths outDir-relative makes the build output relocatable ("build here,
+    // deploy there"). Anything that somehow escapes outDir stays absolute —
+    // fromManifest() passes absolute paths through untouched.
+    const relToOutDir = (p: string): string => {
+      const rel = path.relative(outDirAbs, path.resolve(p));
+      return rel.startsWith('..') ? toPosixPath(path.resolve(p)) : toPosixPath(rel);
+    };
+
     const components: MochiManifest['components'] = {};
     for (const [filename, entry] of this.compiledComponents) {
       components[filename] = {
-        ssrModule: entry.ssrPath,
+        ssrModule: relToOutDir(entry.ssrPath),
         hydratables: entry.hydratables.map((h) => ({
           name: h.name,
           displayName: h.displayName,
@@ -1917,16 +1927,16 @@ export class ComponentRegistry {
     const importCssPrefix = `${this.assetPrefix}/import-css/`;
     for (const [urlPath] of this.clientFiles) {
       if (urlPath.startsWith(clientPrefix)) {
-        clientFiles[urlPath] = path.join(this.outDir, 'svelte-client', path.basename(urlPath));
+        clientFiles[urlPath] = path.posix.join('svelte-client', path.basename(urlPath));
       } else if (urlPath.startsWith(cssPrefix)) {
-        clientFiles[urlPath] = path.join(this.outDir, 'svelte-css', path.basename(urlPath));
+        clientFiles[urlPath] = path.posix.join('svelte-css', path.basename(urlPath));
       } else if (urlPath.startsWith(importCssPrefix)) {
-        clientFiles[urlPath] = path.join(this.outDir, 'import-css', path.basename(urlPath));
+        clientFiles[urlPath] = path.posix.join('import-css', path.basename(urlPath));
       }
     }
 
     const manifest: MochiManifest = {
-      version: 1,
+      version: 2,
       assetPrefix: this.assetPrefix,
       bootstrapUrl: this.islandBootstrapUrl,
       componentEntryUrls: Object.fromEntries(this.componentEntryUrls),
@@ -1940,10 +1950,10 @@ export class ComponentRegistry {
       manifest.serverIslandExports = Object.fromEntries(this.serverIslandExports);
     }
     if (this.publicFiles.size > 0) {
-      manifest.publicFiles = Object.fromEntries(this.publicFiles);
+      manifest.publicFiles = Object.fromEntries([...this.publicFiles].map(([urlPath, diskPath]) => [urlPath, relToOutDir(diskPath)]));
     }
     if (this.localImageAssets.size > 0) {
-      manifest.localImageAssets = Object.fromEntries(this.localImageAssets);
+      manifest.localImageAssets = Object.fromEntries([...this.localImageAssets].map(([url, asset]) => [url, { ...asset, diskPath: relToOutDir(asset.diskPath) }]));
     }
     if (this.importedCssUrls.size > 0) {
       manifest.importedCssUrls = Object.fromEntries(this.importedCssUrls);
@@ -1952,7 +1962,7 @@ export class ComponentRegistry {
       manifest.entryImportedCss = Object.fromEntries([...this.entryImportedCss].map(([k, v]) => [k, [...v]]));
     }
     if (this.serverIslandScriptFile) {
-      manifest.serverIslandScript = this.serverIslandScriptFile;
+      manifest.serverIslandScript = relToOutDir(this.serverIslandScriptFile);
     }
     return manifest;
   }
@@ -1962,9 +1972,21 @@ export class ComponentRegistry {
     const raw = await Bun.file(manifestPath).text();
     const manifest: MochiManifest = JSON.parse(raw);
 
+    const registryOutDir = outDir ?? path.dirname(manifestPath);
+    const outDirAbs = path.resolve(registryOutDir);
+    // v2 manifests store paths relative to the build outDir, so the whole build
+    // output relocates with the directory. v1 manifests stored absolute paths
+    // for some fields and cwd-relative for others — keep both booting.
+    const resolveManifestPath = (p: string): string => {
+      if (path.isAbsolute(p)) {
+        return p;
+      }
+      return manifest.version >= 2 ? path.resolve(outDirAbs, p) : path.resolve(p);
+    };
+
     const registry = new ComponentRegistry({
       development,
-      outDir: outDir ?? path.dirname(manifestPath),
+      outDir: registryOutDir,
       assetPrefix: manifest.assetPrefix,
     });
     registry.loadedFromManifest = true;
@@ -1982,7 +2004,7 @@ export class ComponentRegistry {
 
     // Load all client files (JS + CSS) from disk into memory
     for (const [urlPath, diskPath] of Object.entries(manifest.clientFiles)) {
-      const content = await Bun.file(diskPath).text();
+      const content = await Bun.file(resolveManifestPath(diskPath)).text();
       registry.clientFiles.set(urlPath, content);
     }
 
@@ -2000,7 +2022,7 @@ export class ComponentRegistry {
 
     // Load SSR modules and populate compiledComponents
     for (const [filename, entry] of Object.entries(manifest.components)) {
-      const modulePath = path.resolve(entry.ssrModule);
+      const modulePath = resolveManifestPath(entry.ssrModule);
       const mod = await import(Bun.pathToFileURL(modulePath).href);
       // Manifests written before exportName existed omit it — those islands are
       // all default imports, so normalize before anything indexes on it.
@@ -2027,10 +2049,11 @@ export class ComponentRegistry {
       }
     }
 
-    // Load public file mappings from manifest
+    // Load public file mappings from manifest. Store resolved absolute paths so
+    // the runtime's Bun.file() reads are independent of the deployed layout.
     if (manifest.publicFiles) {
       for (const [urlPath, diskPath] of Object.entries(manifest.publicFiles)) {
-        registry.publicFiles.set(urlPath, diskPath);
+        registry.publicFiles.set(urlPath, resolveManifestPath(diskPath));
       }
     }
 
@@ -2038,7 +2061,7 @@ export class ComponentRegistry {
     // registry so the serving process can stream/transform them from disk.
     if (manifest.localImageAssets) {
       for (const [url, asset] of Object.entries(manifest.localImageAssets)) {
-        const diskPath = path.resolve(asset.diskPath);
+        const diskPath = resolveManifestPath(asset.diskPath);
         registry.localImageAssets.set(url, { ...asset, diskPath });
         registerLocalImageAsset(url, { diskPath, contentType: asset.contentType });
       }
@@ -2046,7 +2069,7 @@ export class ComponentRegistry {
 
     // Restore the prebuilt ServerIsland inline script so the runtime skips Bun.build.
     if (manifest.serverIslandScript) {
-      registry.serverIslandClientJs = await Bun.file(path.resolve(manifest.serverIslandScript)).text();
+      registry.serverIslandClientJs = await Bun.file(resolveManifestPath(manifest.serverIslandScript)).text();
     }
 
     return registry;

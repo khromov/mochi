@@ -378,7 +378,11 @@ export class Mochi {
     let registry: ComponentRegistry;
     if (!development && existsSync(manifestPath)) {
       logger.info(`Loading prebuilt manifest from ${manifestPath}`);
-      registry = await ComponentRegistry.fromManifest(manifestPath, development, outDir);
+      // With an explicit `manifest` but no `outDir`, the manifest's own directory
+      // is the artifact root — v2 manifests resolve their relative paths against
+      // it, so `Mochi.serve({ manifest: '/deploy/out/manifest.json' })` just works.
+      const manifestOutDir = options.manifest && options.outDir === undefined ? path.dirname(manifestPath) : outDir;
+      registry = await ComponentRegistry.fromManifest(manifestPath, development, manifestOutDir);
       if (options.assetPrefix !== undefined && options.assetPrefix !== registry.assetPrefix) {
         logger.warn(
           `assetPrefix in Mochi.serve() (${JSON.stringify(options.assetPrefix)}) differs from the manifest (${JSON.stringify(registry.assetPrefix)}). Using the manifest value — URLs are baked in at build time.`,
