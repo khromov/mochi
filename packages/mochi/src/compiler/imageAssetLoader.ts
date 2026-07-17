@@ -3,14 +3,15 @@ import path from 'node:path';
 import { toPosixPath } from '../utils';
 import { slugForImport } from '../image/slug';
 import { registerLocalImageAsset } from '../image/localAssetRegistry';
-import type { LocalImageAsset } from '../image/types';
+import { IMPORTED_IMAGE_FORMATS } from '../image/types';
+import type { ImportedImageFormat, LocalImageAsset } from '../image/types';
 
 /** Raster image extensions that resolve to an `ImportedImage` object. SVG is excluded (Bun.Image can't decode it). */
 export const IMAGE_FILE_FILTER = /\.(png|jpe?g|webp|avif|gif)$/i;
 
 // `Bun.Image#metadata().format` values we accept. Guards against a file whose
 // extension lies about its contents (e.g. an SVG renamed to `.png`).
-const RASTER_FORMATS = new Set(['png', 'jpeg', 'webp', 'avif', 'gif']);
+const RASTER_FORMATS: ReadonlySet<string> = new Set(IMPORTED_IMAGE_FORMATS);
 
 /**
  * Bun `onLoad` handler for local image imports (`import hero from './hero.png'`).
@@ -44,6 +45,7 @@ export function createImageAssetLoader(opts: { outDir: string; assetPrefix: stri
     if (!RASTER_FORMATS.has(meta.format)) {
       throw new Error(`Cannot import "${args.path}" as an image: unsupported format "${meta.format}". Supported: png, jpg, jpeg, webp, avif, gif.`);
     }
+    const format = meta.format as ImportedImageFormat;
 
     const hash = Bun.hash(bytes).toString(36);
     const ext = path.extname(args.path).slice(1).toLowerCase();
@@ -56,13 +58,13 @@ export function createImageAssetLoader(opts: { outDir: string; assetPrefix: stri
     }
 
     const url = `${opts.assetPrefix}/asset/${filename}`;
-    const contentType = `image/${meta.format}`;
-    const asset: LocalImageAsset = { src: url, width: meta.width, height: meta.height, format: meta.format, diskPath: toPosixPath(diskPath), contentType };
+    const contentType = `image/${format}`;
+    const asset: LocalImageAsset = { src: url, width: meta.width, height: meta.height, format, diskPath: toPosixPath(diskPath), contentType };
     opts.assets.set(url, asset);
     registerLocalImageAsset(url, { diskPath, contentType });
 
     return {
-      contents: `export default ${JSON.stringify({ src: url, width: meta.width, height: meta.height, format: meta.format })};`,
+      contents: `export default ${JSON.stringify({ src: url, width: meta.width, height: meta.height, format })};`,
       loader: 'js',
     };
   };

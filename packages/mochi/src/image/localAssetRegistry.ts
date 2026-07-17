@@ -42,10 +42,6 @@ export function getLocalImageAsset(url: string): LocalImageAssetInfo | undefined
   return registry().get(url);
 }
 
-export function hasLocalImageAsset(url: string): boolean {
-  return registry().has(url);
-}
-
 /**
  * Handler for the `${assetPrefix}/asset/:filename` route. Reconstructs the
  * registry key from the request pathname, and serves the bytes from disk on a

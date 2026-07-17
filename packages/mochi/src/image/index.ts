@@ -1,2 +1,2 @@
 export { default as Image } from './Image.svelte';
-export type { ImportedImage } from './types';
+export type { ImportedImage, ImportedImageFormat } from './types';

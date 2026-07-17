@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { registerLocalImageAsset, getLocalImageAsset, hasLocalImageAsset, createLocalAssetHandler } from './localAssetRegistry';
+import { registerLocalImageAsset, getLocalImageAsset, createLocalAssetHandler } from './localAssetRegistry';
 
 const GLOBAL_KEY = '__mochi_local_image_assets__';
 
@@ -26,10 +26,9 @@ afterEach(() => {
 const PNG = new Uint8Array(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64'));
 
 describe('local image asset registry', () => {
-  test('register / get / has round-trip', () => {
-    expect(hasLocalImageAsset('/_mochi/asset/x-1.png')).toBe(false);
+  test('register / get round-trip', () => {
+    expect(getLocalImageAsset('/_mochi/asset/x-1.png')).toBeUndefined();
     registerLocalImageAsset('/_mochi/asset/x-1.png', { diskPath: '/tmp/x.png', contentType: 'image/png' });
-    expect(hasLocalImageAsset('/_mochi/asset/x-1.png')).toBe(true);
     expect(getLocalImageAsset('/_mochi/asset/x-1.png')).toEqual({ diskPath: '/tmp/x.png', contentType: 'image/png' });
     expect(getLocalImageAsset('/_mochi/asset/missing.png')).toBeUndefined();
   });

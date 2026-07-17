@@ -3,6 +3,14 @@ import type { Storage } from '../cache/cache';
 export type ImageFormat = 'webp' | 'jpeg' | 'png' | 'avif';
 
 /**
+ * Decoded formats a local image import can carry — the `Bun.Image` formats the
+ * build-time loader accepts. Broader than {@link ImageFormat} (the transform
+ * *output* formats): gif can be imported and served, but not transformed into.
+ */
+export const IMPORTED_IMAGE_FORMATS = ['png', 'jpeg', 'webp', 'avif', 'gif'] as const;
+export type ImportedImageFormat = (typeof IMPORTED_IMAGE_FORMATS)[number];
+
+/**
  * The object a local image import resolves to (`import hero from './hero.png'`).
  * `src` is a content-hashed, same-origin URL served from disk; `width`/`height`
  * are the image's intrinsic pixel dimensions and `format` its decoded format
@@ -13,7 +21,7 @@ export interface ImportedImage {
   src: string;
   width: number;
   height: number;
-  format: string;
+  format: ImportedImageFormat;
 }
 
 /** An `ImportedImage` plus the build-time details needed to serve/transform it from disk. */

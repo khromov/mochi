@@ -1665,6 +1665,10 @@ export class ComponentRegistry {
     this.errors = [];
     this.serverIslandPaths.clear();
     this.serverIslandExports.clear();
+    // Only this per-registry map is cleared; the globalThis registry
+    // (localAssetRegistry) deliberately stays append-only so already-rendered
+    // dev HTML can still resolve a replaced image's old hashed URL. The
+    // manifest is built from this map, so stale globals never reach prod.
     this.localImageAssets.clear();
   }
 
