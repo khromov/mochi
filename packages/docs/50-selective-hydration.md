@@ -109,6 +109,12 @@ Like `getContext`, `isHydratable()` must be called during component initializati
 
 </Callout>
 
+<Callout type="warning">
+
+The signal is planted in the island root's `<script>` at compile time, which requires knowing whether that script runs in legacy or runes mode. A root Mochi cannot classify — no runes, no legacy-only syntax, e.g. only a bare reactive `let` — is left untouched and logs a compile-time warning, because `isHydratable()` in its subtree would report `false` during SSR but `true` after hydration. Make the mode explicit: use a rune (`$props()`, `$state`) or set `compilerOptions.runes`.
+
+</Callout>
+
 ### Unique ids with `$props.id()`
 
 For a unique, SSR-stable id inside an island, use Svelte's native [`$props.id()`](<https://svelte.dev/docs/svelte/$props#$props.id()>) — the value generated during the server render is reused on hydration:

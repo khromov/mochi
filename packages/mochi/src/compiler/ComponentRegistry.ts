@@ -10,8 +10,8 @@ import type { DebugBarData } from '../runtime/requestContext';
 import { logger } from '../utils/log';
 import { mochiEvents } from '../events';
 import type { MarkdownConfig, MochiManifest, MochiSvelteShakerOptions } from '../types';
-import { injectHydratableContextSeed, type HydratableComponent, type PreprocessIslandError, type ServerIslandComponent } from './svelteAstPreprocess';
-import { cachedPreprocessHydratable, createPreprocessCacheStats } from './preprocessCache';
+import { type HydratableComponent, type PreprocessIslandError, type ServerIslandComponent } from './svelteAstPreprocess';
+import { cachedInjectHydratableContextSeed, cachedPreprocessHydratable, createPreprocessCacheStats } from './preprocessCache';
 import { CompileCache, compileFingerprint, createCompileCacheStats, type CompileCacheStats } from './compileCache';
 import { mergeCompilerOptions, type MochiSvelteConfig } from './svelteConfig';
 import { applyFilter } from '../extensions';
@@ -99,6 +99,7 @@ function createMarkdownLoader(opts: {
     allServerIslands: ServerIslandComponent[];
     filePreprocessErrors: Map<string, PreprocessIslandError[]>;
     preprocessCacheStats: ReturnType<typeof createPreprocessCacheStats>;
+    declinedSeeds: Map<string, string>;
   };
 }) {
   const highlight = opts.markdown.highlight;
@@ -118,6 +119,9 @@ function createMarkdownLoader(opts: {
         opts.hydration.allHydratables.push(...cached.hydratables);
         opts.hydration.allServerIslands.push(...cached.serverIslands);
         opts.hydration.filePreprocessErrors.set(args.path, cached.preprocessErrors);
+        if (cached.seedDeclined) {
+          opts.hydration.declinedSeeds.set(args.path, cached.seedDeclined);
+        }
       }
       if (opts.target === 'server' && cached.css && opts.cssMap) {
         opts.cssMap.set(args.path, cached.css);
@@ -152,9 +156,12 @@ function createMarkdownLoader(opts: {
       opts.hydration.filePreprocessErrors.set(args.path, preprocessErrors);
       svelteSource = preprocessed.transformed;
     }
-    svelteSource = injectHydratableContextSeed(svelteSource, args.path, opts.userCompilerOptions.runes);
+    const seeded = cachedInjectHydratableContextSeed(svelteSource, args.path, opts.target, opts.userCompilerOptions.runes);
+    if (seeded.declined && opts.hydration) {
+      opts.hydration.declinedSeeds.set(args.path, seeded.declined);
+    }
     const { js, css } = svelteCompile(
-      svelteSource,
+      seeded.code,
       mergeCompilerOptions(opts.userCompilerOptions, {
         generate: opts.target,
         filename: args.path,
@@ -165,7 +172,7 @@ function createMarkdownLoader(opts: {
     if (cssCode && opts.cssMap) {
       opts.cssMap.set(args.path, cssCode);
     }
-    opts.compileCache.set(opts.target, args.path, raw, fingerprint, { js: js.code, css: cssCode, hydratables, serverIslands, preprocessErrors });
+    opts.compileCache.set(opts.target, args.path, raw, fingerprint, { js: js.code, css: cssCode, hydratables, serverIslands, preprocessErrors, seedDeclined: seeded.declined });
     return { contents: js.code, loader: 'js' as const };
   };
 }
@@ -568,6 +575,9 @@ export class ComponentRegistry {
     const fileHydratables = new Map<string, HydratableComponent[]>();
     const fileServerIslands = new Map<string, ServerIslandComponent[]>();
     const filePreprocessErrors = new Map<string, PreprocessIslandError[]>();
+    // Files the hydration-context seed pass could not instrument, with the
+    // reason — cross-referenced against island roots after the build to warn.
+    const declinedSeeds = new Map<string, string>();
     const development = this.development;
     const userCompilerOptions = this.svelteConfig.compilerOptions ?? {};
     const serverFingerprint = compileFingerprint(userCompilerOptions, development);
@@ -627,6 +637,9 @@ export class ComponentRegistry {
             filePreprocessErrors.set(args.path, cached.preprocessErrors);
             allHydratables.push(...cached.hydratables);
             allServerIslands.push(...cached.serverIslands);
+            if (cached.seedDeclined) {
+              declinedSeeds.set(args.path, cached.seedDeclined);
+            }
             if (cached.css) {
               cssMap.set(args.path, cached.css);
             }
@@ -644,7 +657,10 @@ export class ComponentRegistry {
           // must still seed context for its subtree. The pass's mode analysis
           // keeps it safe on arbitrary third-party components, and the graft is
           // inert unless the transport prop actually arrives.
-          const transformed = injectHydratableContextSeed(preprocessResult.transformed, args.path, userCompilerOptions.runes);
+          const seeded = cachedInjectHydratableContextSeed(preprocessResult.transformed, args.path, 'server', userCompilerOptions.runes);
+          if (seeded.declined) {
+            declinedSeeds.set(args.path, seeded.declined);
+          }
           fileHydratables.set(args.path, hydratables);
           fileServerIslands.set(args.path, serverIslands);
           filePreprocessErrors.set(args.path, errors);
@@ -652,7 +668,7 @@ export class ComponentRegistry {
           allServerIslands.push(...serverIslands);
 
           const { js, css } = svelteCompile(
-            transformed,
+            seeded.code,
             mergeCompilerOptions(userCompilerOptions, {
               generate: 'server',
               filename: args.path,
@@ -662,7 +678,14 @@ export class ComponentRegistry {
           if (cssCode) {
             cssMap.set(args.path, cssCode);
           }
-          compileCache.set('server', args.path, raw, serverFingerprint, { js: js.code, css: cssCode, hydratables, serverIslands, preprocessErrors: errors });
+          compileCache.set('server', args.path, raw, serverFingerprint, {
+            js: js.code,
+            css: cssCode,
+            hydratables,
+            serverIslands,
+            preprocessErrors: errors,
+            seedDeclined: seeded.declined,
+          });
           return { contents: js.code, loader: 'js' };
         });
         if (markdown) {
@@ -676,7 +699,7 @@ export class ComponentRegistry {
               userCompilerOptions,
               compileCache,
               compileCacheStats,
-              hydration: { fileHydratables, allHydratables, allServerIslands, filePreprocessErrors, preprocessCacheStats },
+              hydration: { fileHydratables, allHydratables, allServerIslands, filePreprocessErrors, preprocessCacheStats, declinedSeeds },
             }),
           );
         }
@@ -736,6 +759,23 @@ export class ComponentRegistry {
       for (const err of errors) {
         this.errors.push({ kind: 'unresolved-island', ...err });
         logger.error(`\n${formatUnresolvedIsland({ kind: 'unresolved-island', ...err })}\n`);
+      }
+    }
+
+    // A hydrating island root whose script the seed pass couldn't instrument
+    // renders its subtree with `isHydratable()` === false during SSR, while the
+    // client bundle is constant true — a hydration-mismatch hazard the author
+    // can't see otherwise. Client-only roots are exempt (they never SSR); pure
+    // `mochi:defer` roots are exempt (they never hydrate, so false is correct).
+    const hydratingRootPaths = new Set([
+      ...allHydratables.filter((h) => !h.clientOnly).map((h) => h.resolvedPath),
+      ...allServerIslands.filter((si) => si.alsoHydrate).map((si) => si.resolvedPath),
+    ]);
+    for (const [filePath, reason] of declinedSeeds) {
+      if (hydratingRootPaths.has(filePath)) {
+        logger.warn(
+          `\n[mochi] ${path.relative(process.cwd(), filePath)} is a hydrating island root, but hydration context could not be seeded: ${reason}.\n  isHydratable() will report false during SSR but true after hydration, which can cause hydration mismatches in this subtree.\n`,
+        );
       }
     }
 
@@ -1084,10 +1124,10 @@ export class ComponentRegistry {
           }
           const preprocessed = await applyUserPreprocessors(source, args.path, 'client', development);
           // Vendored files are seeded here too — must mirror the server loader
-          // so the seed's `...rest` extraction stays SSR/client-symmetric.
-          const seeded = injectHydratableContextSeed(preprocessed, args.path, userCompilerOptions.runes);
+          // so the seed's transport-prop extraction stays SSR/client-symmetric.
+          const seeded = cachedInjectHydratableContextSeed(preprocessed, args.path, 'client', userCompilerOptions.runes);
           const { js } = svelteCompile(
-            seeded,
+            seeded.code,
             mergeCompilerOptions(userCompilerOptions, {
               generate: 'client',
               filename: args.path,
@@ -1096,7 +1136,14 @@ export class ComponentRegistry {
               dev: development,
             }),
           );
-          compileCache.set('client', args.path, source, clientFingerprint, { js: js.code, css: null, hydratables: [], serverIslands: [], preprocessErrors: [] });
+          compileCache.set('client', args.path, source, clientFingerprint, {
+            js: js.code,
+            css: null,
+            hydratables: [],
+            serverIslands: [],
+            preprocessErrors: [],
+            seedDeclined: seeded.declined,
+          });
           return { contents: js.code, loader: 'js' };
         });
         if (markdown) {

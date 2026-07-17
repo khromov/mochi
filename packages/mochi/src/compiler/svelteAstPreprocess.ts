@@ -20,6 +20,8 @@ export interface HydratableComponent {
   resolvedPath: string;
   /** Export the component was imported from: `'default'` or a named export of the resolved module. */
   exportName: string;
+  /** True for `mochi:clientOnly*` — never server-rendered, so an unseeded root can't cause an SSR/client `isHydratable()` mismatch. */
+  clientOnly?: boolean;
 }
 
 export interface ServerIslandComponent {
@@ -30,6 +32,8 @@ export interface ServerIslandComponent {
   resolvedPath: string;
   /** Export the component was imported from: `'default'` or a named export of the resolved module. */
   exportName: string;
+  /** True for `mochi:defer mochi:hydrate*` — the island hydrates after its fetch, so its root must seed context. */
+  alsoHydrate?: boolean;
 }
 
 /**
@@ -213,7 +217,7 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
         // --- CLIENT ONLY ---
         if (!seen.has(dedupKey)) {
           seen.add(dedupKey);
-          hydratables.push({ name: islandKey, displayName: comp.name, resolvedPath: resolved, exportName });
+          hydratables.push({ name: islandKey, displayName: comp.name, resolvedPath: resolved, exportName, clientOnly: true });
         }
 
         // Children are the optional SSR fallback, emitted as placeholder markup
@@ -256,7 +260,7 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
         // --- SERVER ISLAND ---
         if (!seenServer.has(dedupKey)) {
           seenServer.add(dedupKey);
-          serverIslands.push({ name: islandKey, displayName: comp.name, resolvedPath: resolved, exportName });
+          serverIslands.push({ name: islandKey, displayName: comp.name, resolvedPath: resolved, exportName, alsoHydrate: Boolean(directives.hydrate) });
         }
 
         // Server islands only get the hydratable transport prop when
@@ -498,8 +502,14 @@ function seedStatement(valueExpr: string): string {
   return `if (${valueExpr} === true) ${SEED_FN}(Symbol.for('mochi:hydratable'), true);`;
 }
 
-/** Statement kinds whose semantics don't differ between legacy and runes mode. */
-const MODE_NEUTRAL_STATEMENTS = new Set(['ImportDeclaration', 'TSInterfaceDeclaration', 'TSTypeAliasDeclaration', 'FunctionDeclaration', 'ClassDeclaration', 'EmptyStatement']);
+/**
+ * Statement kinds whose semantics don't differ between legacy and runes mode.
+ * ExpressionStatement qualifies: a top-level call/assignment executes the same
+ * in both modes, and anything mode-sensitive an expression could contain
+ * (`$$props`, rune calls) is caught by the legacy/rune scans before the
+ * mode-neutral check runs. Covers the common `imports + onMount(...)` island.
+ */
+const MODE_NEUTRAL_STATEMENTS = new Set(['ImportDeclaration', 'TSInterfaceDeclaration', 'TSTypeAliasDeclaration', 'FunctionDeclaration', 'ClassDeclaration', 'EmptyStatement', 'ExpressionStatement']);
 
 const RUNE_ROOTS = new Set(['$state', '$derived', '$effect', '$bindable', '$inspect', '$host', '$props']);
 const LEGACY_IDENTIFIERS = new Set(['$$props', '$$restProps', '$$slots']);
@@ -632,6 +642,22 @@ function isModeNeutralScript(instance: AST.Root['instance']): boolean {
   return true;
 }
 
+export interface HydratableSeedResult {
+  code: string;
+  /**
+   * Human-readable reason the seed could NOT be injected, or null when it was
+   * (or when there was nothing to do). A declined file is harmless as a plain
+   * SSR component, but as a *hydrating* island root it makes `isHydratable()`
+   * report false during SSR and true in the browser — the registry
+   * cross-references declines against island roots and warns.
+   */
+  declined: string | null;
+}
+
+const DECLINE_AMBIGUOUS_MODE =
+  'its script mode (legacy vs runes) is ambiguous — a top-level reactive `let` with no runes and no legacy-only syntax. Use a rune (e.g. $state) or set compilerOptions.runes to make the mode explicit';
+const DECLINE_UNSUPPORTED_PATTERN = 'its $props() declaration uses a binding pattern the seed pass cannot graft onto';
+
 /**
  * Inject a context seed into a component's instance script so an island root —
  * which receives the internal `__mochi_hydratable` transport prop on every path (call-site
@@ -641,8 +667,8 @@ function isModeNeutralScript(instance: AST.Root['instance']): boolean {
  * script: zero template/DOM changes means zero hydration-marker risk, the
  * failure mode that sank the earlier wrapper-component attempt.
  *
- * Runs on every compiled component (server AND client — the `...rest`
- * extraction below must be symmetric or rest-spread DOM would differ across
+ * Runs on every compiled component (server AND client — every transport-prop
+ * extraction below must be symmetric or spread-derived DOM would differ across
  * hydration). Svelte allows a single `$props()` call per component, so when
  * the author already calls it we graft onto their declaration instead of
  * adding our own; when they don't, we only add one if the component's mode
@@ -651,9 +677,9 @@ function isModeNeutralScript(instance: AST.Root['instance']): boolean {
  * is forced there's nothing to auto-detect (and injecting the wrong flavor
  * would be a compile error we introduced).
  */
-export function injectHydratableContextSeed(source: string, filePath: string, runesOption?: CompileOptions['runes']): string {
+export function injectHydratableContextSeed(source: string, filePath: string, runesOption?: CompileOptions['runes']): HydratableSeedResult {
   if (source.includes(SEED_FN)) {
-    return source;
+    return { code: source, declined: null };
   }
   // `compilerOptions.runes` may be a per-file predicate — resolve it the same
   // way the compiler will for this file.
@@ -663,7 +689,7 @@ export function injectHydratableContextSeed(source: string, filePath: string, ru
     ast = parse(source, { modern: true });
   } catch {
     // Malformed source: let svelte.compile surface its own, better diagnostic.
-    return source;
+    return { code: source, declined: null };
   }
 
   const s = new MagicString(source);
@@ -676,7 +702,15 @@ export function injectHydratableContextSeed(source: string, filePath: string, ru
     // declaration.
     let valueExpr: string;
     if (propsDecl.id.type === 'Identifier') {
-      valueExpr = `${propsDecl.id.name as string}.${HYDRATABLE_PROP_KEY}`;
+      // `const props = $props()` → `const { __mochi_hydratable: X, ...props } = $props()`.
+      // The rest binding keeps `props.*` reads reactive (Svelte compiles rest
+      // to a live view over the incoming props) while removing the transport
+      // key, so a `{...props}` spread can't leak it into the DOM. A TS
+      // annotation on the identifier survives: the braces wrap only the name.
+      const name = propsDecl.id.name as string;
+      s.appendRight(propsDecl.id.start, `{ ${HYDRATABLE_PROP_KEY}: ${IH_LOCAL}, ...`);
+      s.appendLeft(propsDecl.id.start + name.length, ` }`);
+      valueExpr = IH_LOCAL;
     } else if (propsDecl.id.type === 'ObjectPattern') {
       const properties = propsDecl.id.properties as Array<{ type: string } & Record<string, unknown> & Positioned>;
       const existing = properties.find(
@@ -690,7 +724,7 @@ export function injectHydratableContextSeed(source: string, filePath: string, ru
         const value = existing.value as { type: string; name?: string; left?: { type: string; name?: string } };
         const local = value.type === 'Identifier' ? value.name : value.type === 'AssignmentPattern' && value.left?.type === 'Identifier' ? value.left.name : null;
         if (!local) {
-          return source;
+          return { code: source, declined: DECLINE_UNSUPPORTED_PATTERN };
         }
         valueExpr = local;
       } else {
@@ -704,21 +738,27 @@ export function injectHydratableContextSeed(source: string, filePath: string, ru
         valueExpr = IH_LOCAL;
       }
     } else {
-      return source;
+      return { code: source, declined: DECLINE_UNSUPPORTED_PATTERN };
     }
     s.appendRight(contentStart, `\n${SEED_IMPORT}`);
     s.appendRight(propsDecl.statement.end, `\n${seedStatement(valueExpr)}`);
-    return s.toString();
+    return { code: s.toString(), declined: null };
   }
 
   if (runes === false || (runes === undefined && hasLegacyMarkers(ast))) {
-    // Legacy mode: `$$props` is always in scope; `$props()` would be an error.
+    // Legacy mode: declare the transport key with `export let` rather than
+    // reading `$$props`. A declared prop is excluded from `$$restProps`, so a
+    // legacy island root spreading `{...$$restProps}` can't leak it into the
+    // DOM. (`{...$$props}` deliberately still carries it — that spread means
+    // "everything, declared included", and stripping one key would require
+    // rewriting compiler-generated objects.)
+    const legacyPrologue = `${SEED_IMPORT}\nexport let ${HYDRATABLE_PROP_KEY} = undefined;\n${seedStatement(HYDRATABLE_PROP_KEY)}`;
     if (instance) {
-      s.appendRight(contentStart, `\n${SEED_IMPORT}\n${seedStatement(`$$props.${HYDRATABLE_PROP_KEY}`)}`);
+      s.appendRight(contentStart, `\n${legacyPrologue}`);
     } else {
-      s.prepend(`<script>${SEED_IMPORT}\n${seedStatement(`$$props.${HYDRATABLE_PROP_KEY}`)}</script>\n`);
+      s.prepend(`<script>${legacyPrologue}</script>\n`);
     }
-    return s.toString();
+    return { code: s.toString(), declined: null };
   }
 
   if (runes === true || hasRuneCalls(instance) || isModeNeutralScript(instance)) {
@@ -728,13 +768,13 @@ export function injectHydratableContextSeed(source: string, filePath: string, ru
     } else {
       s.prepend(`<script>${prologue}</script>\n`);
     }
-    return s.toString();
+    return { code: s.toString(), declined: null };
   }
 
   // Mode-ambiguous script (e.g. a reactive top-level `let` with no runes and
   // no legacy markers): injecting $props() could silently flip it to runes
   // mode and kill legacy reactivity. Such an island root simply doesn't seed.
-  return source;
+  return { code: source, declined: DECLINE_AMBIGUOUS_MODE };
 }
 
 interface MochiDirectives {

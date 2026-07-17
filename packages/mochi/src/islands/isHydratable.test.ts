@@ -1,14 +1,18 @@
 // Previously .isolated.test.ts — all tests now run in isolated processes.
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, spyOn, test, type Mock } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { ComponentRegistry } from '../compiler/ComponentRegistry';
 import { requestContext } from '../runtime/requestContext';
 import type { MochiRequestContext } from '../runtime/requestContext';
 import { MochiCookieJar } from '../runtime/cookies';
+import { logger } from '../utils/log';
 
 const FIXTURE_PAGE = path.join(import.meta.dir, '..', '__fixtures__', 'island-context', 'Page.svelte');
 const FIXTURE_PROBE = path.join(import.meta.dir, '..', '__fixtures__', 'island-context', 'Probe.svelte');
+const FIXTURE_SPREAD = path.join(import.meta.dir, '..', '__fixtures__', 'island-context', 'SpreadProbe.svelte');
+const FIXTURE_LEGACY = path.join(import.meta.dir, '..', '__fixtures__', 'island-context', 'LegacyProbe.svelte');
+const FIXTURE_WARN_PAGE = path.join(import.meta.dir, '..', '__fixtures__', 'island-context', 'WarnPage.svelte');
 
 function makeCtx(): MochiRequestContext {
   return {
@@ -27,16 +31,19 @@ function makeCtx(): MochiRequestContext {
 describe('auto-injected `isHydratable` prop', () => {
   let outDir: string;
   let registry: ComponentRegistry;
+  let warnSpy: Mock<typeof logger.warn>;
 
   beforeAll(async () => {
     outDir = mkdtempSync(path.join(import.meta.dir, '..', '..', '.mochi-island-context-'));
     registry = new ComponentRegistry({ development: true, outDir });
-    // One compileAll for both entrypoints: a second Bun.build over the same
+    warnSpy = spyOn(logger, 'warn');
+    // One compileAll for all entrypoints: a second Bun.build over the same
     // transitive deps in one process risks the bundler EISDIR bug.
-    await registry.compileAll([FIXTURE_PAGE, FIXTURE_PROBE]);
+    await registry.compileAll([FIXTURE_PAGE, FIXTURE_PROBE, FIXTURE_SPREAD, FIXTURE_LEGACY, FIXTURE_WARN_PAGE]);
   });
 
   afterAll(() => {
+    warnSpy.mockRestore();
     rmSync(outDir, { recursive: true, force: true });
   });
 
@@ -68,5 +75,28 @@ describe('auto-injected `isHydratable` prop', () => {
 
     const pureDefer = await requestContext.run(makeCtx(), () => registry.renderComponent(FIXTURE_PROBE, {}));
     expect([...pureDefer.body.matchAll(/data-ctx="(true|false)"/g)].map((m) => m[1])).toEqual(['false']);
+  });
+
+  test('identifier-form $props(): the transport prop is stripped from spreads but still seeds context', async () => {
+    const result = await requestContext.run(makeCtx(), () => registry.renderComponent(FIXTURE_SPREAD, { __mochi_hydratable: true, title: 'hello' }));
+
+    expect(result.body).toContain('title="hello"');
+    expect(result.body).not.toContain('__mochi_hydratable');
+    expect([...result.body.matchAll(/data-ctx="(true|false)"/g)].map((m) => m[1])).toEqual(['true']);
+  });
+
+  test('legacy island root: declared transport prop stays out of $$restProps and still seeds context', async () => {
+    const result = await requestContext.run(makeCtx(), () => registry.renderComponent(FIXTURE_LEGACY, { __mochi_hydratable: true, label: 'x', extra: 'y' }));
+
+    expect(result.body).toContain('extra="y"');
+    expect(result.body).not.toContain('__mochi_hydratable');
+    expect([...result.body.matchAll(/data-ctx="(true|false)"/g)].map((m) => m[1])).toEqual(['true']);
+  });
+
+  test('a hydrating island root the seed pass declined produces a compile-time warning', () => {
+    const warned = warnSpy.mock.calls.some((args) =>
+      args.some((a) => typeof a === 'string' && a.includes('AmbiguousRoot.svelte') && a.includes('hydration context could not be seeded')),
+    );
+    expect(warned).toBe(true);
   });
 });
