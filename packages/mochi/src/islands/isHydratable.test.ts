@@ -40,11 +40,13 @@ describe('auto-injected `isHydratable` prop', () => {
     rmSync(outDir, { recursive: true, force: true });
   });
 
-  test('hydratable Probe renders data-hydratable="true", plain Probe renders "false"', async () => {
+  test('the public `isHydratable` prop is no longer injected, and the internal transport never leaks into HTML', async () => {
     const result = await requestContext.run(makeCtx(), () => registry.renderComponent(FIXTURE_PAGE));
 
+    // `isHydratable` is a plain user prop now — undefined on both invocations.
     const matches = [...result.body.matchAll(/data-hydratable="(true|false)"/g)].map((m) => m[1]);
-    expect(matches).toEqual(['true', 'false']);
+    expect(matches).toEqual(['false', 'false']);
+    expect(result.body).not.toContain('__mochi_hydratable');
   });
 
   test('isHydratable() propagates through the island subtree: nested child and snippet child true, outside false', async () => {
@@ -57,16 +59,14 @@ describe('auto-injected `isHydratable` prop', () => {
     expect(matches).toEqual(['true', 'true', 'false', 'false']);
   });
 
-  test('standalone render with the envelope prop (also-hydrate server island path) seeds nested context', async () => {
+  test('standalone render with the envelope transport prop (also-hydrate server island path) seeds nested context', async () => {
     // The `/_mochi/island/:name` endpoint renders the island component
-    // directly, passing the decrypted envelope props — which include
-    // `isHydratable: true` only for `mochi:defer mochi:hydrate`.
-    const alsoHydrate = await requestContext.run(makeCtx(), () => registry.renderComponent(FIXTURE_PROBE, { isHydratable: true }));
+    // directly, passing the decrypted envelope props — which include the
+    // internal transport prop only for `mochi:defer mochi:hydrate`.
+    const alsoHydrate = await requestContext.run(makeCtx(), () => registry.renderComponent(FIXTURE_PROBE, { __mochi_hydratable: true }));
     expect([...alsoHydrate.body.matchAll(/data-ctx="(true|false)"/g)].map((m) => m[1])).toEqual(['true']);
-    expect(alsoHydrate.body).toContain('data-hydratable="true"');
 
     const pureDefer = await requestContext.run(makeCtx(), () => registry.renderComponent(FIXTURE_PROBE, {}));
     expect([...pureDefer.body.matchAll(/data-ctx="(true|false)"/g)].map((m) => m[1])).toEqual(['false']);
-    expect(pureDefer.body).toContain('data-hydratable="false"');
   });
 });

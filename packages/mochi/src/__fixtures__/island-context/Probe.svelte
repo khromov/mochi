@@ -2,8 +2,9 @@
   import type { Snippet } from 'svelte';
   import CtxProbe from './CtxProbe.svelte';
 
-  // `isHydratable` is auto-injected as a prop on hydratable children;
-  // plain SSR-only invocations leave it undefined.
+  // `isHydratable` is a plain user prop now — the framework injects only the
+  // internal `__mochi_hydratable` transport, so this must stay undefined on
+  // every invocation (regression probe for the removed public prop).
   let { isHydratable, children }: { isHydratable?: boolean; children?: Snippet } = $props();
 </script>
 

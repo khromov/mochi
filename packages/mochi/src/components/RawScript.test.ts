@@ -51,6 +51,6 @@ describe('RawScript', () => {
   });
 
   test('refuses to hydrate', async () => {
-    await expect(registry.renderComponent(COMPONENT_PATH, { src: scriptFile, isHydratable: true })).rejects.toThrow('must not be hydrated');
+    await expect(registry.renderComponent(COMPONENT_PATH, { src: scriptFile, __mochi_hydratable: true })).rejects.toThrow('must not be hydrated');
   });
 });

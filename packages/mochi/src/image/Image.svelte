@@ -7,14 +7,14 @@
   // set as the <img>'s own background-image and paints with zero client JS; on a
   // cold cache the blur is warmed in the background and appears on a later render.
   //
-  // Inside a mochi:hydrate* island, forward the island's injected `isHydratable`
-  // prop. Minting needs the server secret, so with the prop set the minted values
+  // Inside a hydrating island — at any nesting depth, detected via
+  // `isHydratable()` — minting needs the server secret, so the minted values
   // are wrapped in `hydratable` — devalue-serialized into the page and reused
-  // during hydration instead of re-minted in the browser. Without it (pure SSR)
+  // during hydration instead of re-minted in the browser. Outside (pure SSR)
   // nothing is serialized. The import goes through the `mochi-framework` virtual
   // module, whose client build ships stubs (getImageAttrs returns the raw src).
   import { hydratable } from 'svelte';
-  import { getImageAttrs, imagePlaceholder } from 'mochi-framework';
+  import { getImageAttrs, imagePlaceholder, isHydratable } from 'mochi-framework';
 
   let {
     src,
@@ -26,7 +26,6 @@
     width,
     height,
     class: className = undefined,
-    isHydratable = false,
   }: {
     src: string;
     /** Name of a size declared in `image.sizes`. Omitted → the full-size original. */
@@ -40,15 +39,15 @@
     /** `<img height>` override (px). Defaults to the size's declared height. */
     height?: number;
     class?: string;
-    isHydratable?: boolean;
   } = $props();
 
+  const hydratableSubtree = isHydratable();
   const isBrowser = typeof window !== 'undefined';
   const mintAttrs = () => (isBrowser ? { url: src } : getImageAttrs(src, size));
   const mintBlur = () => (isBrowser ? null : imagePlaceholder(src));
   const key = $derived(`mochi:image:${JSON.stringify([src, size])}`);
-  const attrs = $derived(isHydratable ? hydratable(key, mintAttrs) : mintAttrs());
-  const blur = $derived(placeholder ? await (isHydratable ? hydratable(`${key}#placeholder`, mintBlur) : mintBlur()) : null);
+  const attrs = $derived(hydratableSubtree ? hydratable(key, mintAttrs) : mintAttrs());
+  const blur = $derived(placeholder ? await (hydratableSubtree ? hydratable(`${key}#placeholder`, mintBlur) : mintBlur()) : null);
   const imgWidth = $derived(width ?? attrs.width);
   const imgHeight = $derived(height ?? attrs.height);
 </script>

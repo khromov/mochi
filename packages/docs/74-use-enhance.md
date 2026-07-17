@@ -61,7 +61,7 @@ Without a callback, `enhance` runs a minimal default per result type:
 
 </Callout>
 
-When the same component renders both as a hydrated island (where `enhance` will fire) and as a plain SSR-only child (where it won't), read the [auto-injected `isHydratable` prop](/docs/environment-constants/#auto-injected-props) to skip the SSR `form`-prop peek when the client will take over.
+When the same component renders both as a hydrated island (where `enhance` will fire) and as a plain SSR-only child (where it won't), call [`isHydratable()`](/docs/selective-hydration/#ishydratable) to skip the SSR `form`-prop peek when the client will take over.
 
 ### Submit callback
 

@@ -183,9 +183,10 @@ describe('ViewTransitions', () => {
     await expect(render({ keepElementSelectors: '</style><script>' })).rejects.toThrow('must not contain "<"');
   });
 
-  test('throws when invoked as an island (isHydratable)', async () => {
-    // The framework injects isHydratable: true on mochi:hydrate*/defer* invocations.
-    await expect(render({ isHydratable: true })).rejects.toThrow('must not be hydrated');
+  test('throws when invoked as an island (isHydratable())', async () => {
+    // The framework injects the internal transport prop on mochi:hydrate*/defer*
+    // invocations; the component detects it via isHydratable().
+    await expect(render({ __mochi_hydratable: true })).rejects.toThrow('must not be hydrated');
   });
 
   test('throws on a non-finite or negative duration', async () => {

@@ -4,6 +4,7 @@ import { hydrate, mount } from 'svelte';
 import type { Component } from 'svelte';
 import { parse as devalueParse } from 'devalue';
 import { isDev, logger } from 'mochi-framework';
+import { HYDRATABLE_PROP_KEY } from '../types';
 import './IslandFailure';
 import { islandFailureStub } from './islandFailureStub';
 import { observeVisible } from './sharedVisibilityObserver';
@@ -125,7 +126,7 @@ class HydratableIsland extends HTMLElement {
       }
       throw err;
     }
-    props.isHydratable = true;
+    props[HYDRATABLE_PROP_KEY] = true;
     // `transformError` makes <svelte:boundary> work for client-side errors
     // (e.g. throws inside $effect / $derived after hydration). Returns an
     // Error instance — same shape as the SSR transformError — so user-written

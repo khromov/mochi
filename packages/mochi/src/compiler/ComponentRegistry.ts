@@ -639,12 +639,12 @@ export class ComponentRegistry {
             ? { transformed: preprocessed, hydratables: [] as HydratableComponent[], serverIslands: [] as ServerIslandComponent[], errors: [] as PreprocessIslandError[] }
             : cachedPreprocessHydratable(preprocessed, args.path, preprocessCacheStats);
           const { hydratables, serverIslands, errors } = preprocessResult;
-          let { transformed } = preprocessResult;
-          // Vendored files are skipped on BOTH targets (see the client loader):
-          // the seed's `...rest` extraction must stay SSR/client-symmetric.
-          if (!isVendored) {
-            transformed = injectHydratableContextSeed(transformed, args.path, userCompilerOptions.runes);
-          }
+          // Seed vendored files too: in a consumer install the framework's own
+          // components live under node_modules, and one used as an island root
+          // must still seed context for its subtree. The pass's mode analysis
+          // keeps it safe on arbitrary third-party components, and the graft is
+          // inert unless the transport prop actually arrives.
+          const transformed = injectHydratableContextSeed(preprocessResult.transformed, args.path, userCompilerOptions.runes);
           fileHydratables.set(args.path, hydratables);
           fileServerIslands.set(args.path, serverIslands);
           filePreprocessErrors.set(args.path, errors);
@@ -1083,8 +1083,9 @@ export class ComponentRegistry {
             return { contents: cached.js, loader: 'js' };
           }
           const preprocessed = await applyUserPreprocessors(source, args.path, 'client', development);
-          const isVendored = args.path.includes(`${path.sep}node_modules${path.sep}`);
-          const seeded = isVendored ? preprocessed : injectHydratableContextSeed(preprocessed, args.path, userCompilerOptions.runes);
+          // Vendored files are seeded here too — must mirror the server loader
+          // so the seed's `...rest` extraction stays SSR/client-symmetric.
+          const seeded = injectHydratableContextSeed(preprocessed, args.path, userCompilerOptions.runes);
           const { js } = svelteCompile(
             seeded,
             mergeCompilerOptions(userCompilerOptions, {

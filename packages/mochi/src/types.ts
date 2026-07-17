@@ -28,6 +28,16 @@ export type AlsoHydrateMode = 'eager' | 'visible';
 /** Envelope key carrying the {@link AlsoHydrateMode} inside the sealed props. */
 export const ALSO_HYDRATE_ENVELOPE_KEY = '__mochi_ah';
 
+/**
+ * Framework-internal prop carrying the "this invocation will hydrate" signal
+ * from an island call site (or the also-hydrate envelope, or the client
+ * bootstrap) to the island root, where the injected context-seed prologue
+ * reads it. Not public API — components ask `isHydratable()` instead. The
+ * producer (preprocessor), the transports (envelope, HydratableIsland), and
+ * the prologue must agree on this name, so all import it from here.
+ */
+export const HYDRATABLE_PROP_KEY = '__mochi_hydratable';
+
 export function isAlsoHydrateMode(value: unknown): value is AlsoHydrateMode {
   return value === 'eager' || value === 'visible';
 }

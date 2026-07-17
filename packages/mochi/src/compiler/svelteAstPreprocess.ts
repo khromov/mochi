@@ -3,7 +3,7 @@ import type { AST, CompileOptions } from 'svelte/compiler';
 import MagicString from 'magic-string';
 import path from 'node:path';
 import { walk } from 'zimmerframe';
-import { ALSO_HYDRATE_ENVELOPE_KEY, type AlsoHydrateMode } from '../types';
+import { ALSO_HYDRATE_ENVELOPE_KEY, HYDRATABLE_PROP_KEY, type AlsoHydrateMode } from '../types';
 import { FRAMEWORK_COMPONENTS_SPECIFIER, resolveFrameworkComponent } from './frameworkComponents';
 
 /** Svelte's AST nodes all have start/end, but estree types don't declare them. */
@@ -222,9 +222,9 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
         const fallback = comp.fragment.nodes.map((n) => source.slice(n.start, n.end)).join('');
 
         // No islandId: nothing renders server-side, so there's no hydration id to
-        // carry. The client bootstrap injects `isHydratable: true` at mount; the
-        // payload itself dedups on its serialized props alone, like plain
-        // hydratable islands.
+        // carry. The client bootstrap injects the hydratable transport prop at
+        // mount; the payload itself dedups on its serialized props alone, like
+        // plain hydratable islands.
         const propsExpr = buildPropsFromAst(source, comp.attributes);
         let attrs = `component-name="${islandKey}" component-url="__MOCHI_COMPONENT_URL__${islandKey}__" client-only`;
         if (propsExpr !== '{}') {
@@ -259,9 +259,9 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
           serverIslands.push({ name: islandKey, displayName: comp.name, resolvedPath: resolved, exportName });
         }
 
-        // Server islands only get `isHydratable: true` when also-hydrate is set
-        // (i.e. `mochi:defer mochi:hydrate`); a pure `mochi:defer` is
-        // SSR-only-via-fetch and never hydrates.
+        // Server islands only get the hydratable transport prop when
+        // also-hydrate is set (i.e. `mochi:defer mochi:hydrate`); a pure
+        // `mochi:defer` is SSR-only-via-fetch and never hydrates.
         //
         // The authored also-hydrate mode rides *inside the encrypted envelope*
         // (`__mochi_ah`, transport-only, stripped before render — like islandId).
@@ -271,7 +271,7 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
         // plaintext, turning a pure `mochi:defer` island into a decryption oracle.
         const alsoHydrateMode: AlsoHydrateMode | null = directives.hydrate ? (directives.hydrate.name === 'mochi:hydrate:visible' ? 'visible' : 'eager') : null;
         const autoEntries = directives.hydrate
-          ? [`islandId: __mochi_iid`, `isHydratable: true`, `${ALSO_HYDRATE_ENVELOPE_KEY}: ${JSON.stringify(alsoHydrateMode)}`]
+          ? [`islandId: __mochi_iid`, `${HYDRATABLE_PROP_KEY}: true`, `${ALSO_HYDRATE_ENVELOPE_KEY}: ${JSON.stringify(alsoHydrateMode)}`]
           : [`islandId: __mochi_iid`];
         const propsExpr = buildPropsFromAst(source, comp.attributes, autoEntries);
         // Always emit signed-props for server islands (no empty-props optimization)
@@ -368,12 +368,12 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
           }
         }
 
-        // Build inner component with the auto-injected `isHydratable` prop —
-        // a `true` boolean that lets components branch SSR-only behavior off
-        // the auto-injection pipeline (no Svelte context needed). Components
-        // needing a unique id use Svelte's native `$props.id()` instead.
+        // Build inner component with the internal hydratable transport prop —
+        // the context-seed prologue injected into the component reads it and
+        // publishes `isHydratable()` to the whole subtree. Components needing
+        // a unique id use Svelte's native `$props.id()` instead.
         let innerTag: string;
-        const autoProps = `isHydratable={true}`;
+        const autoProps = `${HYDRATABLE_PROP_KEY}={true}`;
         if (comp.fragment.nodes.length > 0) {
           const childrenSource = comp.fragment.nodes.map((n) => source.slice(n.start, n.end)).join('');
           innerTag = `<${comp.name}${propsSource ? ' ' + propsSource : ''} ${autoProps}>${childrenSource}</${comp.name}>`;
@@ -634,7 +634,7 @@ function isModeNeutralScript(instance: AST.Root['instance']): boolean {
 
 /**
  * Inject a context seed into a component's instance script so an island root —
- * which receives the auto-injected `isHydratable` prop on every path (call-site
+ * which receives the internal `__mochi_hydratable` transport prop on every path (call-site
  * attribute, also-hydrate envelope, client bootstrap) — publishes it to its
  * whole subtree via Svelte context. Nested components read it back through
  * `isHydratable()` (islands/isHydratable.ts). Deliberately touches only the
@@ -676,15 +676,15 @@ export function injectHydratableContextSeed(source: string, filePath: string, ru
     // declaration.
     let valueExpr: string;
     if (propsDecl.id.type === 'Identifier') {
-      valueExpr = `${propsDecl.id.name as string}.isHydratable`;
+      valueExpr = `${propsDecl.id.name as string}.${HYDRATABLE_PROP_KEY}`;
     } else if (propsDecl.id.type === 'ObjectPattern') {
       const properties = propsDecl.id.properties as Array<{ type: string } & Record<string, unknown> & Positioned>;
       const existing = properties.find(
         (p) =>
           p.type === 'Property' &&
           p.computed !== true &&
-          (((p.key as { type: string; name?: string }).type === 'Identifier' && (p.key as { name: string }).name === 'isHydratable') ||
-            ((p.key as { type: string; value?: unknown }).type === 'Literal' && (p.key as { value: unknown }).value === 'isHydratable')),
+          (((p.key as { type: string; name?: string }).type === 'Identifier' && (p.key as { name: string }).name === HYDRATABLE_PROP_KEY) ||
+            ((p.key as { type: string; value?: unknown }).type === 'Literal' && (p.key as { value: unknown }).value === HYDRATABLE_PROP_KEY)),
       );
       if (existing) {
         const value = existing.value as { type: string; name?: string; left?: { type: string; name?: string } };
@@ -700,7 +700,7 @@ export function injectHydratableContextSeed(source: string, filePath: string, ru
         // leaking through rest spreads — applied on both compile targets so
         // SSR and client agree.
         const hasProps = properties.length > 0;
-        s.appendRight(propsDecl.id.start + 1, hasProps ? ` isHydratable: ${IH_LOCAL},` : ` isHydratable: ${IH_LOCAL} `);
+        s.appendRight(propsDecl.id.start + 1, hasProps ? ` ${HYDRATABLE_PROP_KEY}: ${IH_LOCAL},` : ` ${HYDRATABLE_PROP_KEY}: ${IH_LOCAL} `);
         valueExpr = IH_LOCAL;
       }
     } else {
@@ -714,15 +714,15 @@ export function injectHydratableContextSeed(source: string, filePath: string, ru
   if (runes === false || (runes === undefined && hasLegacyMarkers(ast))) {
     // Legacy mode: `$$props` is always in scope; `$props()` would be an error.
     if (instance) {
-      s.appendRight(contentStart, `\n${SEED_IMPORT}\n${seedStatement('$$props.isHydratable')}`);
+      s.appendRight(contentStart, `\n${SEED_IMPORT}\n${seedStatement(`$$props.${HYDRATABLE_PROP_KEY}`)}`);
     } else {
-      s.prepend(`<script>${SEED_IMPORT}\n${seedStatement('$$props.isHydratable')}</script>\n`);
+      s.prepend(`<script>${SEED_IMPORT}\n${seedStatement(`$$props.${HYDRATABLE_PROP_KEY}`)}</script>\n`);
     }
     return s.toString();
   }
 
   if (runes === true || hasRuneCalls(instance) || isModeNeutralScript(instance)) {
-    const prologue = `${SEED_IMPORT}\nconst { isHydratable: ${IH_LOCAL} } = $props();\n${seedStatement(IH_LOCAL)}`;
+    const prologue = `${SEED_IMPORT}\nconst { ${HYDRATABLE_PROP_KEY}: ${IH_LOCAL} } = $props();\n${seedStatement(IH_LOCAL)}`;
     if (instance) {
       s.appendRight(contentStart, `\n${prologue}`);
     } else {
