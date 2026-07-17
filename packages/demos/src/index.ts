@@ -1,6 +1,6 @@
 import { Mochi, sequence, silenceInternalRoutes } from 'mochi-framework';
 import type { Handle } from 'mochi-framework';
-import { analytics } from 'mochi-shared';
+import { analytics } from './analytics';
 import { routes as adminRoutes } from './admin/routes';
 import { routes as hnRoutes } from './hn/routes';
 import { routes as todoRoutes } from './todo/routes';

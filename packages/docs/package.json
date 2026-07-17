@@ -5,8 +5,8 @@
   "private": true,
   "description": "Documentation for the Mochi framework.",
   "dependencies": {
-    "@lucide/svelte": "^1.23.0",
-    "svelte": "^5.56.4",
+    "@lucide/svelte": "^1.24.0",
+    "svelte": "^5.56.5",
     "uqr": "^0.1.3"
   }
 }
