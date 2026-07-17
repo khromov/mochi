@@ -8,6 +8,11 @@ description: 'A floating dev toolbar showing hydration metrics, request data, is
 
 A floating toolbar pinned to the bottom-right of every page in development. It surfaces hydration cost, request metadata, runtime warnings, and a link to the bundle stats page. `Mochi.serve()` mounts it automatically whenever `development: true` — there is nothing to wire up.
 
+<figure>
+  <img src="/docs/debug-bar.png" alt="The Mochi debug bar: a status dot, the mochi wordmark, and buttons for Request, Islands, JS, Info and Cache, plus the email outbox and cogwheel icons" />
+  <figcaption>The bar as it sits on a page in development. The toolbar has its own dark styling and does not follow the site's theme.</figcaption>
+</figure>
+
 ```ts
 await Mochi.serve({
   development: process.env.MODE === 'development',
@@ -37,6 +42,11 @@ The cogwheel at the right edge of the bar opens a checklist of the panels. Unche
 ### Islands panel
 
 Lists every `<mochi-hydratable-island>` and `<mochi-server-island>` on the page, grouped by type. Each row shows the component name, its hydration mode (`mochi:hydrate`, `mochi:hydrate:visible`, `mochi:defer`, …), and props size. Click a row to expand the inline props as syntax-highlighted JSON; click the crosshair icon to scroll to the island and flash a cyan outline around it for ~1.5s.
+
+<figure>
+  <img src="/docs/debug-bar-islands.png" alt="The Islands panel listing hydrated islands with their mochi:hydrate tags, props sizes, shared badges and crosshair buttons, above a summary reading 12 islands, 39.3 kB total props, 8 hydrated, 4 server" />
+  <figcaption>The Islands panel. The summary row counts hydrated and server islands separately, and rows sharing a props payload carry a <code>shared</code> badge.</figcaption>
+</figure>
 
 The `Islands` button in the bar shows a running total props size and changes color past two thresholds — yellow above **10 KB**, red above **100 KB**. Props payload is the dominant tax on hydration, so this is the number to watch when a page feels heavy. See [passing props to islands](/docs/island-props/) for how to keep payloads small.
 

@@ -63,6 +63,14 @@ jobs:
             caprover_app: mochi-support
             caprover_token_secret: APP_TOKEN_SUPPORT
             bun_image: oven/bun:1.3.14-alpine
+            # Dockerfile.production refuses to boot without SMTP_HOST +
+            # MOCHI_ORIGIN; the transport only connects on send, so dummy
+            # values are enough for a boot smoke test.
+            smoke_env: >-
+              -e SMTP_HOST=smtp.invalid
+              -e SMTP_USER=smoke
+              -e SMTP_PASSWORD=smoke
+              -e MOCHI_ORIGIN=https://support.mochi.fast
 
     steps:
       - name: Checkout Repository
@@ -84,13 +92,17 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and Push Docker Image
+      # Build locally (no push) so the image can be smoke-tested before it
+      # ever reaches the registry — a broken :main tag must not exist, even
+      # un-deployed, since Swarm re-pulls it on task restarts.
+      - name: Build Docker Image
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ${{ matrix.dockerfile }}
           platforms: linux/amd64
-          push: true
+          push: false
+          load: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
@@ -100,6 +112,54 @@ jobs:
             BUN_IMAGE=${{ matrix.bun_image }}
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+      # Boot the freshly built container and verify it actually serves before
+      # pushing/deploying: /health/ answers, and the island JS referenced by
+      # the served HTML resolves on the same server (guards the class of
+      # incident where stale/mismatched bundle hashes 404 in production).
+      - name: Smoke test image
+        run: |
+          set -uo pipefail
+          IMAGE="$(printf '%s\n' "${{ steps.meta.outputs.tags }}" | head -n1)"
+          BASE="http://127.0.0.1:${{ matrix.port }}"
+          docker run -d --name smoke ${{ matrix.smoke_env }} \
+            -p "127.0.0.1:${{ matrix.port }}:${{ matrix.port }}" "$IMAGE"
+
+          ready=""
+          for _ in $(seq 1 50); do
+            if curl -fsSL --max-time 5 -o /dev/null "$BASE/health/"; then
+              ready=1
+              break
+            fi
+            if [ "$(docker inspect -f '{{.State.Running}}' smoke)" != "true" ]; then
+              echo "::error::container exited during boot"
+              docker logs smoke
+              exit 1
+            fi
+            sleep 3
+          done
+          if [ -z "$ready" ]; then
+            echo "::error::/health/ not ready after 150s"
+            docker logs smoke
+            exit 1
+          fi
+
+          ASSET="$(curl -fsSL --max-time 10 "$BASE/" | grep -o '/_mochi/client/[A-Za-z0-9_.-]*\.js' | head -n1 || true)"
+          if [ -n "$ASSET" ]; then
+            echo "checking island asset $ASSET"
+            if ! curl -fsS --max-time 10 -o /dev/null "$BASE$ASSET"; then
+              echo "::error::HTML references $ASSET but the server 404s it"
+              docker logs smoke
+              exit 1
+            fi
+          else
+            echo "no /_mochi/client asset referenced on / — skipping asset check"
+          fi
+          docker rm -f smoke
+
+      - name: Push Docker Image
+        run: |
+          printf '%s\n' "${{ steps.meta.outputs.tags }}" | xargs -n1 docker push
 
       - name: Deploy on CapRover
         uses: caprover/deploy-from-github@v1.1.2
