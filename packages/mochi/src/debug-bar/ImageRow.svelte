@@ -1,6 +1,6 @@
 <script lang="ts">
   import ChevronRight from '../icons/chevron-right.svelte';
-  import HardDrive from '../icons/hard-drive.svelte';
+  import House from '../icons/house.svelte';
   import Lock from '../icons/lock.svelte';
   import type { ImageDebugEntry } from '../runtime/requestContext';
   import formatHighlight from '../vendor/json-format-highlight/index.ts';
@@ -36,7 +36,7 @@
     </button>
     <span class="island-meta">
       {#if image.local}
-        <span class="local-icon" title="Local"><HardDrive size={10} /></span>
+        <span class="local-icon" title="Local image import"><House size={10} /></span>
       {/if}
       {#if image.kind === 'inline'}<span class="island-tag tag-cached">inline</span>{/if}
       {#if image.size}<span class="island-tag tag-size">{image.size}</span>{/if}
