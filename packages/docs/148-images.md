@@ -121,7 +121,9 @@ The imported file is copied to a **content-hashed URL** (`/_mochi/asset/<slug>-<
 The `{ src, width, height, format }` shape is available as the exported `ImportedImage` type. Ambient module types for the image extensions come free via `mochi-framework/ambient` (already referenced by generated projects), so `import hero from './hero.png'` type-checks with no extra `global.d.ts`.
 
 <Callout type="info">
-A ThumbHash <code>placeholder</code> is still computed lazily on demand — nothing is precomputed at build time. It works on an imported image exactly as on a remote one (<code>&lt;Image src={hero} placeholder&gt;</code>, or <code>getImagePlaceholder(hero.src)</code>).
+
+A ThumbHash `placeholder` is still computed lazily on demand — nothing is precomputed at build time. It works on an imported image exactly as on a remote one (`<Image src={hero} placeholder>`, or `getImagePlaceholder(hero.src)`).
+
 </Callout>
 
 <Callout type="warning">

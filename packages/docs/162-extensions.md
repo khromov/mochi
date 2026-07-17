@@ -386,7 +386,9 @@ await Mochi.serve({
 ```
 
 <Callout type="warning">
+
 Widening the regex only decides which files reach the loader — each is still decoded by `Bun.Image` and validated against the accepted raster formats (png/jpeg/webp/avif/gif). A file whose format Mochi can't decode still throws a build error, so extending to a genuinely new format needs `Bun.Image` decode support, not just a matching extension.
+
 </Callout>
 
 #### `image:localAssetFilename`
@@ -416,7 +418,9 @@ await Mochi.serve({
 ```
 
 <Callout type="warning">
+
 Returning an absolute (CDN) URL intentionally bypasses the built-in `/asset/` route and the local-disk shortcut used when `<Image>` transforms an import — the browser and the image transformer will fetch from that URL instead, so pair it with `image:localAssetEmitted` to upload the bytes there. A same-origin override must stay under `${assetPrefix}/asset/` as a single segment, or the built-in route won't serve it.
+
 </Callout>
 
 #### `email:message`
