@@ -4,6 +4,7 @@ import MagicString from 'magic-string';
 import path from 'node:path';
 import { walk } from 'zimmerframe';
 import { ALSO_HYDRATE_ENVELOPE_KEY, type AlsoHydrateMode } from '../types';
+import { FRAMEWORK_COMPONENTS_SPECIFIER, resolveFrameworkComponent } from './frameworkComponents';
 
 /** Svelte's AST nodes all have start/end, but estree types don't declare them. */
 interface Positioned {
@@ -98,6 +99,22 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
     for (const node of ast.instance.content.body) {
       if (node.type === 'ImportDeclaration' && typeof node.source.value === 'string') {
         const importSource = node.source.value;
+        // The framework's own public components resolve to their on-disk
+        // `.svelte` so a directive can sit directly on the package import
+        // (`<MochiCaptcha mochi:hydrate />`) — no local wrapper needed. Named
+        // imports only; an unknown name or a default/namespace import falls
+        // through to the normal unresolved-island error.
+        if (importSource === FRAMEWORK_COMPONENTS_SPECIFIER) {
+          for (const spec of node.specifiers ?? []) {
+            const framework = spec.type === 'ImportSpecifier' && spec.imported.type === 'Identifier' ? resolveFrameworkComponent(spec.imported.name) : null;
+            if (framework) {
+              importMap.set(spec.local.name, { source: framework.resolvedPath, exportName: framework.exportName });
+            } else {
+              unsupportedImports.set(spec.local.name, importSource);
+            }
+          }
+          continue;
+        }
         const supported =
           /\.(svelte|md|svx)$/.test(importSource) && // TODO: Needs to be configurable to support arbitrary extensions
           (importSource.startsWith('./') || importSource.startsWith('../') || path.isAbsolute(importSource));

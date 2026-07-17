@@ -21,6 +21,10 @@ Components render server-side by default and ship zero JavaScript. Add `mochi:hy
 
 Props are serialized with `devalue` into a `<script type="application/json">` block emitted just before the island, so the same values are available during hydration. See `Passing props to islands` for the supported types.
 
+### What is an island?
+
+**An island is any component you mark with a `mochi:*` directive** — `mochi:hydrate`, `mochi:hydrate:visible`, `mochi:clientOnly`, `mochi:clientOnly:visible`, `mochi:defer`, or `mochi:defer:visible`. Everything else is plain server-rendered HTML that ships no JavaScript. Each island is compiled and shipped in isolation: the directive family decides _when_ and _where_ it runs — hydrate in place, mount client-only, or fetch on-demand as a [server island](/docs/server-islands/) — but in every case except the pure server-side `mochi:defer` variants, an island is the unit that gets its own client bundle.
+
 ### Supported import forms
 
 An island must be statically imported from a **relative** `.svelte` / `.md` / `.svx` path in the same file's `<script>`. Default, named, and mixed imports all work:
@@ -37,27 +41,37 @@ An island must be statically imported from a **relative** `.svelte` / `.md` / `.
 <Chart mochi:hydrate:visible />
 ```
 
+The framework's own components from `mochi-framework/components` are the one package exception — a directive sits directly on the package import, no wrapper and no extension:
+
+```svelte
+<script>
+  import { MochiCaptcha } from 'mochi-framework/components';
+</script>
+
+<MochiCaptcha mochi:hydrate />
+```
+
 Anything else is a **compile error** — surfaced on the dev error page and failing `mochi-framework build`:
 
-- **Package imports** (`import { MochiCaptcha } from 'mochi-framework/components'`) — wrap the component in a local `.svelte` file and put the directive on the wrapper instead.
+- **Third-party package imports** (`import { Widget } from 'some-ui-lib'`) — wrap the component in a local `.svelte` file and put the directive on the wrapper instead.
 - **Components received via props, variables, or namespaces** (`<Item.Row mochi:hydrate />`) — an island needs a statically known source file; same wrapper fix.
 
 ```svelte
-<!-- file: src/lib/Captcha.svelte — local wrapper makes the package component an island -->
+<!-- file: src/lib/Wrapped.svelte — local wrapper makes a third-party component an island -->
 <script>
-  import { MochiCaptcha } from 'mochi-framework/components';
+  import { Widget } from 'some-ui-lib';
   let props = $props();
 </script>
 
-<MochiCaptcha {...props} />
+<Widget {...props} />
 ```
 
 ```svelte
 <script>
-  import Captcha from './Captcha.svelte';
+  import Wrapped from './Wrapped.svelte';
 </script>
 
-<Captcha mochi:hydrate />
+<Wrapped mochi:hydrate />
 ```
 
 These rules apply to every directive family: `mochi:hydrate*`, `mochi:defer*`, and `mochi:clientOnly*`.

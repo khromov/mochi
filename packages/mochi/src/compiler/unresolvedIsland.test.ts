@@ -79,13 +79,13 @@ describe('formatCompileErrors for unresolved islands', () => {
     expect(formatCompileErrors(errors)).not.toContain('\\');
   });
 
-  test('package-import variant names the specifier and the wrap workaround', () => {
+  test('third-party package-import variant names the specifier and the wrap workaround', () => {
     const errors: MochiCompileError[] = [
-      { kind: 'unresolved-island', component: 'MochiCaptcha', directive: 'mochi:hydrate', filePath: path.resolve('src/Page.svelte'), importSource: 'mochi-framework/components' },
+      { kind: 'unresolved-island', component: 'Widget', directive: 'mochi:hydrate', filePath: path.resolve('src/Page.svelte'), importSource: 'some-ui-lib' },
     ];
     const msg = formatCompileErrors(errors);
-    expect(msg).toContain('<MochiCaptcha mochi:hydrate>');
-    expect(msg).toContain('"mochi-framework/components" is a package import');
+    expect(msg).toContain('<Widget mochi:hydrate>');
+    expect(msg).toContain('"some-ui-lib" is a third-party package import');
     expect(msg).toContain('Wrap the component in a local .svelte file');
   });
 });

@@ -182,12 +182,42 @@ describe('preprocessHydratable', () => {
     expect(errors).toEqual([{ component: 'Unknown', directive: 'mochi:hydrate', filePath: '/test/File.svelte', importSource: null }]);
   });
 
-  test('directive on a bare package import errors with the specifier', () => {
-    const source = `${SCRIPT("import { MochiCaptcha } from 'mochi-framework/components';")}<MochiCaptcha mochi:hydrate />`;
+  test('directive on a bare third-party package import errors with the specifier', () => {
+    const source = `${SCRIPT("import { Widget } from 'some-ui-lib';")}<Widget mochi:hydrate />`;
     const { hydratables, errors } = preprocessHydratable(source, '/test/File.svelte');
 
     expect(hydratables).toHaveLength(0);
-    expect(errors).toEqual([{ component: 'MochiCaptcha', directive: 'mochi:hydrate', filePath: '/test/File.svelte', importSource: 'mochi-framework/components' }]);
+    expect(errors).toEqual([{ component: 'Widget', directive: 'mochi:hydrate', filePath: '/test/File.svelte', importSource: 'some-ui-lib' }]);
+  });
+
+  test('a mochi-framework/components named import resolves to its on-disk .svelte island', () => {
+    const source = `${SCRIPT("import { MochiCaptcha } from 'mochi-framework/components';")}<MochiCaptcha mochi:hydrate />`;
+    const { transformed, hydratables, errors } = preprocessHydratable(source, '/test/File.svelte');
+
+    expect(errors).toHaveLength(0);
+    expect(hydratables).toHaveLength(1);
+    expect(hydratables[0]!.exportName).toBe('default');
+    expect(hydratables[0]!.resolvedPath.endsWith(path.join('captcha', 'MochiCaptcha.svelte'))).toBe(true);
+    expect(transformed).toContain('<mochi-hydratable-island');
+  });
+
+  test('an aliased mochi-framework/components import keeps the local name but resolves the export', () => {
+    const source = `${SCRIPT("import { MochiCaptcha as Cap } from 'mochi-framework/components';")}<Cap mochi:hydrate />`;
+    const { hydratables, errors } = preprocessHydratable(source, '/test/File.svelte');
+
+    expect(errors).toHaveLength(0);
+    expect(hydratables).toHaveLength(1);
+    expect(hydratables[0]!.displayName).toBe('Cap');
+    expect(hydratables[0]!.exportName).toBe('default');
+    expect(hydratables[0]!.resolvedPath.endsWith(path.join('captcha', 'MochiCaptcha.svelte'))).toBe(true);
+  });
+
+  test('an unknown mochi-framework/components export falls through to an unresolved-island error', () => {
+    const source = `${SCRIPT("import { NotAComponent } from 'mochi-framework/components';")}<NotAComponent mochi:hydrate />`;
+    const { hydratables, errors } = preprocessHydratable(source, '/test/File.svelte');
+
+    expect(hydratables).toHaveLength(0);
+    expect(errors).toEqual([{ component: 'NotAComponent', directive: 'mochi:hydrate', filePath: '/test/File.svelte', importSource: 'mochi-framework/components' }]);
   });
 
   test('directive on a relative non-svelte import errors with the specifier', () => {

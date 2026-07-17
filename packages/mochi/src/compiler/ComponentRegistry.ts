@@ -202,7 +202,7 @@ function formatUnresolvedIsland(e: Extract<MochiCompileError, { kind: 'unresolve
   }
   const why = e.importSource.startsWith('.')
     ? `its import of "${e.importSource}" is not a form islands support (a default or named import of a relative .svelte/.md/.svx path)`
-    : `"${e.importSource}" is a package import, which mochi:* directives don't support`;
+    : `"${e.importSource}" is a third-party package import, which mochi:* directives don't support (the framework's own \`mochi-framework/components\` are the exception and work directly)`;
   return `${head} — ${why}. Wrap the component in a local .svelte file (e.g. a component that renders <${e.component} … />) and put the directive on that instead.`;
 }
 

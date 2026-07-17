@@ -10,10 +10,11 @@
   const applied = $derived(theme === 'defaults' ? null : themes[theme]);
 </script>
 
-<!-- Hydrated by the whole-subtree island in Shot.svelte, so MochiCaptcha needs no
-     directive of its own — and couldn't carry one anyway, being a package import. -->
+<!-- The island is MochiCaptcha itself, straight off the `mochi-framework/components`
+     package import — no local wrapper. The themed frame around it stays static SSR;
+     its CSS custom properties cascade into the hydrated widget as usual. -->
 <div class="subject" style={applied?.css}>
-  <MochiCaptcha {...captcha} emoji={applied?.emoji} label={applied?.label} />
+  <MochiCaptcha mochi:hydrate {...captcha} emoji={applied?.emoji} label={applied?.label} />
 </div>
 
 <style>
