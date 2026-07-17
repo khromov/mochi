@@ -102,6 +102,8 @@ export interface ImageDebugEntry {
   kind?: 'url' | 'inline';
   /** The named size applied, if any (absent for the full-size original). */
   size?: string;
+  /** True when `src` resolves to a locally-imported asset (vs a remote URL). */
+  local?: boolean;
 }
 
 /**

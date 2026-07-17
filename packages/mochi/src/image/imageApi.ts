@@ -1,5 +1,6 @@
 import { getImageAssetPrefix, getImageRuntime, getSize } from './config';
 import { fetchImageSource } from './fetchSource';
+import { getLocalImageAsset } from './localAssetRegistry';
 import { encryptImageRequest } from './imageCrypto';
 import { variantId } from './imageCache';
 import { computePlaceholder, runPipeline } from './resize';
@@ -170,6 +171,7 @@ function recordForDebugBar(url: string, filename: string, req: ImageRequest, siz
     filename,
     kind: 'url',
     size: req.size,
+    local: getLocalImageAsset(req.src) !== undefined,
     params: { src: req.src, ...(size ? { width: size.width, height: size.height, format: size.format, quality: size.quality } : { original: true }) },
   });
 }
@@ -186,6 +188,7 @@ function recordInlineForDebugBar(src: string, size: ResolvedImageSize | undefine
       filename: size ? buildImageFilename(src, size) : buildOriginalFilename(src),
       kind: 'inline',
       size: size?.name,
+      local: getLocalImageAsset(src) !== undefined,
       params: { src, width: result.width, height: result.height, format: result.format },
     });
   } catch {

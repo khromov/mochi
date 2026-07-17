@@ -1,5 +1,6 @@
 <script lang="ts">
   import ChevronRight from '../icons/chevron-right.svelte';
+  import HardDrive from '../icons/hard-drive.svelte';
   import Lock from '../icons/lock.svelte';
   import type { ImageDebugEntry } from '../runtime/requestContext';
   import formatHighlight from '../vendor/json-format-highlight/index.ts';
@@ -34,6 +35,9 @@
       <span class="island-name">{image.filename}</span>
     </button>
     <span class="island-meta">
+      {#if image.local}
+        <span class="local-icon" title="Local"><HardDrive size={10} /></span>
+      {/if}
       {#if image.kind === 'inline'}<span class="island-tag tag-cached">inline</span>{/if}
       {#if image.size}<span class="island-tag tag-size">{image.size}</span>{/if}
       {#if format}<span class="island-tag tag-fmt">{format}</span>{/if}
@@ -63,6 +67,12 @@
      .island-name, .island-meta, .island-tag, .island-size, .lock-icon) lives in
      MochiDebugBar.svelte as a bounded :global block. Only image-specific rules
      are below. */
+  .local-icon {
+    display: inline-flex;
+    align-items: center;
+    color: #a3c4a8;
+    cursor: help;
+  }
   .tag-fmt {
     background: rgba(184, 163, 196, 0.16);
     color: #b8a3c4;
