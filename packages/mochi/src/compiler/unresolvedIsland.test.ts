@@ -72,6 +72,13 @@ describe('formatCompileErrors for unresolved islands', () => {
     expect(msg).toContain('wrap it in a local .svelte component');
   });
 
+  test('the displayed path never carries Windows backslashes', () => {
+    const errors: MochiCompileError[] = [
+      { kind: 'unresolved-island', component: 'Foo', directive: 'mochi:hydrate', filePath: path.join(process.cwd(), 'src\\pages\\Index.svelte'), importSource: null },
+    ];
+    expect(formatCompileErrors(errors)).not.toContain('\\');
+  });
+
   test('package-import variant names the specifier and the wrap workaround', () => {
     const errors: MochiCompileError[] = [
       { kind: 'unresolved-island', component: 'MochiCaptcha', directive: 'mochi:hydrate', filePath: path.resolve('src/Page.svelte'), importSource: 'mochi-framework/components' },

@@ -191,7 +191,7 @@ export type MochiCompileError =
     };
 
 function formatUnresolvedIsland(e: Extract<MochiCompileError, { kind: 'unresolved-island' }>): string {
-  const where = path.relative(process.cwd(), e.filePath);
+  const where = toPosixPath(path.relative(process.cwd(), e.filePath));
   const head = `Unresolved island: <${e.component} ${e.directive}> in ${where}`;
   if (e.importSource === null) {
     return (
