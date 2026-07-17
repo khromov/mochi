@@ -9,7 +9,7 @@
     {
       "label": "Pin svelte-check across the workspace",
       "dependencies": ["svelte-check"],
-      "pinVersion": "4.7.1"
+      "pinVersion": "4.7.3"
     },
     {
       "label": "Peer dependencies are intentionally wide — don't sync them",

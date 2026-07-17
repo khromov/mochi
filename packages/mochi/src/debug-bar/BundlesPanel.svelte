@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import type { BundleInfo } from '../requestContext';
+  import type { BundleInfo } from '../runtime/requestContext';
   import ChevronRight from '../icons/chevron-right.svelte';
   import ArrowUpRight from '../icons/arrow-up-right.svelte';
   import DebugPanel from './DebugPanel.svelte';

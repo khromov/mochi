@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { ComponentRegistry } from '../ComponentRegistry';
+import { ComponentRegistry } from '../compiler/ComponentRegistry';
 
 const COMPONENT_PATH = path.join(import.meta.dir, 'RawScript.svelte');
 

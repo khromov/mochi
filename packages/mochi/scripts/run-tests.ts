@@ -8,5 +8,5 @@ await runTests({
   // a Bun runtime bug we can't recover from in JS. Its cache logic is OS-agnostic
   // and fully covered on Linux/macOS. See testing.ts `windowsSkip`.
   // TODO: Take another pass at making the windows store tests work, especially when Bun >1.4.0 is released
-  windowsSkip: ['src/cache.test.ts'],
+  windowsSkip: ['src/cache/cache.test.ts'],
 });

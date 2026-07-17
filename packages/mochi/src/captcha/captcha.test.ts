@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 import { mintCaptcha, verifyCaptcha, consumeCaptcha, solveCaptcha } from './captcha';
 import { CAPTCHA_STEPS, chainInput, powInput, leadingZeroBits } from './pow';
-import { encryptPayload } from '../payloadCrypto';
+import { encryptPayload } from '../islands/payloadCrypto';
 import { initExtensions } from '../extensions';
 import { mochiEvents } from '../events';
 import type { MochiCaptchaVerifyEvent } from '../events';

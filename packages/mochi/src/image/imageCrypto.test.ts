@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { encryptImageRequest, decryptImageRequest } from './imageCrypto';
-import { encryptPayload } from '../payloadCrypto';
+import { encryptPayload } from '../islands/payloadCrypto';
 import type { ImageRequest } from './types';
 
 const GLOBAL_CONFIG_KEY = '__mochi_config__';

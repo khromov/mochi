@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { encryptPayload, decryptPayload } from '../payloadCrypto';
+import { encryptPayload, decryptPayload } from '../islands/payloadCrypto';
 import { applyFilter } from '../extensions';
 import { mochiEvents } from '../events';
 import type { MochiCaptchaReason } from '../events';

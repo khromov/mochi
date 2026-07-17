@@ -1,4 +1,4 @@
-import type { Storage } from '../cache';
+import type { Storage } from '../cache/cache';
 
 export type ImageFormat = 'webp' | 'jpeg' | 'png' | 'avif';
 

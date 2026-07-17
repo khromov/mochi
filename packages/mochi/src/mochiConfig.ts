@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import type { MochiServeOptions } from './types';
 import { applyFilter } from './extensions';
-import { logger } from './log';
+import { logger } from './utils/log';
 
 export interface MochiContext {
   options: MochiServeOptions;
