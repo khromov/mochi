@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import type { MochiCookieJar } from './cookies';
 import type { IslandPropsEntry } from '../islands/islandPropsRegistry';
 import type { MochiFormResult } from '../types';
-import type { HitLimitInfo } from '@joint-ops/hitlimit-bun';
+import type { MochiRateLimitInfo } from './rateLimit';
 import { pinGlobal } from '../utils/globalState';
 
 export interface MochiRequestContext {
@@ -76,7 +76,7 @@ export interface MochiRequestContext {
    * `serverProps` or server-side component code via
    * `getRequestContext().rateLimit` to render usage (e.g. "3 of 5 used").
    */
-  rateLimit?: HitLimitInfo;
+  rateLimit?: MochiRateLimitInfo;
 }
 
 export interface BundleInfo {

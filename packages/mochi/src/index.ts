@@ -131,19 +131,25 @@ export type {
 export { getClientAddress, resolveExpectedOrigin } from './runtime/proxy';
 export type { MochiProxyOptions } from './runtime/proxy';
 export { memoryStore, sqliteStore, postgresStore } from './runtime/rateLimit';
-export type { MochiRateLimitOptions } from './runtime/rateLimit';
 export type {
-  HitLimitInfo,
-  HitLimitStore,
-  TierConfig,
-  HeadersConfig,
-  BanConfig,
-  KeyGenerator,
-  SkipFunction,
-  StoreErrorHandler,
-  ResponseFormatter,
-  StoreResult,
-} from '@joint-ops/hitlimit-bun';
+  MochiRateLimitOptions,
+  MochiRateLimitContext,
+  MochiRateLimitKey,
+  MochiRateLimitTier,
+  MochiRateLimitSkip,
+  MochiRateLimitGroup,
+  MochiRateLimitInfo,
+  MochiRateLimitStore,
+  MochiRateLimitStoreResult,
+  MochiRateLimitStoreBanResult,
+  MochiRateLimitTierConfig,
+  MochiRateLimitHeadersConfig,
+  MochiRateLimitBanConfig,
+  MochiRateLimitStoreErrorHandler,
+  MochiRateLimitResponseFormatter,
+  MochiSqliteStoreOptions,
+  MochiPostgresStoreOptions,
+} from './runtime/rateLimit';
 export type { Handle, HandleError, MochiErrorInfo, MochiEvent, MochiEventKind, MochiResolveOptions, MochiResolveFn } from './runtime/hooks';
 export type {
   MarkdownConfig,

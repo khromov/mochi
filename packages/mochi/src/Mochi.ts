@@ -52,8 +52,7 @@ import type { MochiQueue, MochiQueueOptions, MochiQueueListeners, MochiProcessor
 import { finalizeCookieHeaders } from './runtime/cookies';
 import { makeRequestContextBuilder } from './runtime/requestSetup';
 import { createRouteLimiter, applyRateLimitHeaders } from './runtime/rateLimit';
-import type { MochiRateLimitOptions, RouteLimiter } from './runtime/rateLimit';
-import type { HitLimitStore } from '@joint-ops/hitlimit-bun';
+import type { MochiRateLimitOptions, MochiRateLimitStore, RouteLimiter } from './runtime/rateLimit';
 import { decryptProps } from './islands/serverIslandCrypto';
 import { createImageHandler } from './image/imageEndpoint';
 import { getImageRuntime } from './image/config';
@@ -575,7 +574,7 @@ export class Mochi {
     };
     const allRoutes = Object.keys(internalRoutes).length > 0 ? { ...internalRoutes, ...(options.routes ?? {}) } : options.routes;
 
-    const rateLimitStores = new Set<HitLimitStore>();
+    const rateLimitStores = new Set<MochiRateLimitStore>();
     // Route closures look their limiter up here per request (never capture it) so
     // the dev watcher can swap a route's limiter in place when its `rateLimit`
     // config changes — a captured const would pin the boot-time config until
@@ -587,7 +586,10 @@ export class Mochi {
         return null;
       }
       if (routeCfg) {
-        const limiter = createRouteLimiter(routeCfg);
+        // A route's own config is auto-namespaced by its pattern so two routes
+        // sharing a persisted store don't drain one bucket. The shared global
+        // limiter (below) passes no pattern — its routes keep sharing a bucket.
+        const limiter = createRouteLimiter(routeCfg, pattern);
         if (limiter.ownsStore) {
           rateLimitStores.add(limiter.store);
         }
@@ -619,7 +621,12 @@ export class Mochi {
       // use it, and its counters intentionally survive dev reloads.
       if (limiter && limiter !== sharedGlobalLimiter && limiter.ownsStore) {
         rateLimitStores.delete(limiter.store);
-        void limiter.store.shutdown?.();
+        // async wrapper: sqliteStore's shutdown can throw synchronously (its
+        // finalize-verification guard) — a bare Promise.resolve() would let that
+        // escape into the dev watcher.
+        (async () => limiter.store.shutdown?.())().catch((err: unknown) => {
+          logger.warn(`Rate limit store shutdown failed: ${err instanceof Error ? err.message : err}`);
+        });
       }
     }
     // Dev-watcher hook for in-place route updates (same pattern, same type):
@@ -649,7 +656,14 @@ export class Mochi {
         ctx.rateLimit = outcome.info;
         return { headers: outcome.headers };
       }
-      const message = outcome.retryAfterSeconds != null ? `Rate limit exceeded. Try again in ${outcome.retryAfterSeconds}s.` : 'Rate limit exceeded.';
+      // info is null only when the store failed and onStoreError said 'deny' —
+      // say so instead of blaming the client's traffic.
+      const message =
+        outcome.info === null
+          ? 'Rate limiting unavailable.'
+          : outcome.retryAfterSeconds != null
+            ? `Rate limit exceeded. Try again in ${outcome.retryAfterSeconds}s.`
+            : 'Rate limit exceeded.';
       return { headers: outcome.headers, blockedBody: outcome.body, blockedMessage: message };
     }
 
@@ -1713,7 +1727,12 @@ export class Mochi {
           stopEmailBadgeBroadcast?.();
           await closeEmailTransport();
           for (const store of rateLimitStores) {
-            await store.shutdown?.();
+            // Per-store guard: one failing shutdown must not skip the rest.
+            try {
+              await store.shutdown?.();
+            } catch (err) {
+              logger.warn(`Rate limit store shutdown failed: ${err instanceof Error ? err.message : err}`);
+            }
           }
         } catch (err) {
           logger.warn(`Subsystem cleanup failed during shutdown: ${err instanceof Error ? err.message : err}`);

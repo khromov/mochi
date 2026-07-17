@@ -1,11 +1,19 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
+import { sqliteStore as hitlimitSqliteStore } from '@joint-ops/hitlimit-bun/stores/sqlite';
 import { createRouteLimiter, sqliteStore, applyRateLimitHeaders } from './rateLimit';
-import type { HitLimitStore } from '@joint-ops/hitlimit-bun';
+import { requestContext } from './requestContext';
+import type { MochiRequestContext } from './requestContext';
+import type { MochiRateLimitStore } from './rateLimit';
 
 const makeRequest = (url = 'http://localhost/x', headers?: Record<string, string>) => new Request(url, { headers });
 const clientAddress = (address: string | null) => () => address;
+
+// Custom key/tier/skip/group callbacks read the ambient request context, so their
+// checks must run inside one. Provide a minimal fake with the fields those callbacks use.
+const withCtx = <T>(ctx: Partial<MochiRequestContext>, fn: () => Promise<T>): Promise<T> =>
+  requestContext.run({ locals: {}, getClientAddress: () => null, ...ctx } as MochiRequestContext, fn);
 
 describe('createRouteLimiter', () => {
   test('allows up to the limit, then blocks with headers/body/retryAfter', async () => {
@@ -76,23 +84,51 @@ describe('createRouteLimiter', () => {
 
   test('custom key generator isolates callers and ignores the address', async () => {
     const limiter = createRouteLimiter({ limit: 1, key: (request) => request.headers.get('x-user') ?? 'anon' });
-    const firstRequestUserA = await limiter.check(makeRequest('http://localhost/x', { 'x-user': 'a' }), clientAddress('same-ip'));
+    const firstRequestUserA = await withCtx({}, () => limiter.check(makeRequest('http://localhost/x', { 'x-user': 'a' }), clientAddress('same-ip')));
     expect(firstRequestUserA.kind).toBe('allowed');
-    const secondRequestUserA = await limiter.check(makeRequest('http://localhost/x', { 'x-user': 'a' }), clientAddress('same-ip'));
+    const secondRequestUserA = await withCtx({}, () => limiter.check(makeRequest('http://localhost/x', { 'x-user': 'a' }), clientAddress('same-ip')));
     expect(secondRequestUserA.kind).toBe('blocked');
-    const firstRequestUserB = await limiter.check(makeRequest('http://localhost/x', { 'x-user': 'b' }), clientAddress('same-ip'));
+    const firstRequestUserB = await withCtx({}, () => limiter.check(makeRequest('http://localhost/x', { 'x-user': 'b' }), clientAddress('same-ip')));
     expect(firstRequestUserB.kind).toBe('allowed');
+  });
+
+  test('custom key receives the request context as its second argument', async () => {
+    const limiter = createRouteLimiter({ limit: 1, key: (_req, ctx) => String(ctx.locals.userId) });
+    const firstUserA = await withCtx({ locals: { userId: 'u1' } }, () => limiter.check(makeRequest(), clientAddress('same-ip')));
+    if (firstUserA.kind !== 'allowed') {
+      throw new Error('expected allowed');
+    }
+    expect(firstUserA.info.key).toBe('u1');
+    // Same user (ctx-derived key) drains the same bucket even from the same IP…
+    expect((await withCtx({ locals: { userId: 'u1' } }, () => limiter.check(makeRequest(), clientAddress('same-ip')))).kind).toBe('blocked');
+    // …while a different user gets their own.
+    expect((await withCtx({ locals: { userId: 'u2' } }, () => limiter.check(makeRequest(), clientAddress('same-ip')))).kind).toBe('allowed');
+  });
+
+  test('custom key can bucket by the proxy-aware client address via ctx', async () => {
+    const limiter = createRouteLimiter({ limit: 1, key: (_req, ctx) => ctx.getClientAddress() ?? 'anon' });
+    const outcome = await withCtx({ getClientAddress: () => '9.9.9.9' }, () => limiter.check(makeRequest(), clientAddress(null)));
+    if (outcome.kind !== 'allowed') {
+      throw new Error('expected allowed');
+    }
+    expect(outcome.info.key).toBe('9.9.9.9');
   });
 
   test('skip() bypasses without consuming quota', async () => {
     const limiter = createRouteLimiter({ limit: 1, skip: (request) => new URL(request.url).pathname === '/health' });
-    expect((await limiter.check(makeRequest('http://localhost/health'), clientAddress('ip'))).kind).toBe('skip');
-    expect((await limiter.check(makeRequest('http://localhost/health'), clientAddress('ip'))).kind).toBe('skip');
-    expect((await limiter.check(makeRequest('http://localhost/other'), clientAddress('ip'))).kind).toBe('allowed');
+    expect((await withCtx({}, () => limiter.check(makeRequest('http://localhost/health'), clientAddress('ip')))).kind).toBe('skip');
+    expect((await withCtx({}, () => limiter.check(makeRequest('http://localhost/health'), clientAddress('ip')))).kind).toBe('skip');
+    expect((await withCtx({}, () => limiter.check(makeRequest('http://localhost/other'), clientAddress('ip')))).kind).toBe('allowed');
+  });
+
+  test('skip receives the request context as its second argument', async () => {
+    const limiter = createRouteLimiter({ limit: 1, skip: (_req, ctx) => ctx.locals.bypass === true });
+    expect((await withCtx({ locals: { bypass: true } }, () => limiter.check(makeRequest(), clientAddress('ip')))).kind).toBe('skip');
+    expect((await withCtx({ locals: { bypass: false } }, () => limiter.check(makeRequest(), clientAddress('ip')))).kind).toBe('allowed');
   });
 
   test('onStoreError: default allows, deny blocks without limit info', async () => {
-    const brokenStore: HitLimitStore = {
+    const brokenStore: MochiRateLimitStore = {
       hit: () => {
         throw new Error('store down');
       },
@@ -109,6 +145,7 @@ describe('createRouteLimiter', () => {
     }
     expect(outcome.info).toBeNull();
     expect(outcome.retryAfterSeconds).toBeNull();
+    expect(outcome.body.message).toBe('Rate limiting unavailable');
   });
 
   test('a shared store instance shares counters across limiters; ownsStore is false', async () => {
@@ -140,6 +177,23 @@ describe('createRouteLimiter', () => {
     await limiter.reset('ip');
     expect((await limiter.check(makeRequest(), clientAddress('ip'))).kind).toBe('allowed');
   });
+
+  test('reset() targets the group-namespaced key of an auto-namespaced limiter', async () => {
+    // Stored keys are `group:<autoGroup>:<key>` — a raw-key reset would be a no-op.
+    const limiter = createRouteLimiter({ limit: 1 }, '/api/x');
+    await limiter.check(makeRequest(), clientAddress('ip'));
+    expect((await limiter.check(makeRequest(), clientAddress('ip'))).kind).toBe('blocked');
+    await limiter.reset('ip');
+    expect((await limiter.check(makeRequest(), clientAddress('ip'))).kind).toBe('allowed');
+  });
+
+  test('reset() targets the group-namespaced key of an explicit static group', async () => {
+    const limiter = createRouteLimiter({ limit: 1, group: 'team' });
+    await limiter.check(makeRequest(), clientAddress('ip'));
+    expect((await limiter.check(makeRequest(), clientAddress('ip'))).kind).toBe('blocked');
+    await limiter.reset('ip');
+    expect((await limiter.check(makeRequest(), clientAddress('ip'))).kind).toBe('allowed');
+  });
 });
 
 describe('sqliteStore persistence', () => {
@@ -162,6 +216,37 @@ describe('sqliteStore persistence', () => {
     const secondLimiter = createRouteLimiter({ limit: 2, window: '1m', store: sqliteStore({ path: dbPath }) });
     expect((await secondLimiter.check(makeRequest(), clientAddress('9.9.9.9'))).kind).toBe('blocked');
     await secondLimiter.store.shutdown?.();
+  });
+
+  // The wrapped shutdown's finalize sweep depends on hitlimit's private field
+  // layout; its `db.close(true)` verification throws "database is locked" if any
+  // statement is still outstanding. These two tests keep that guard honest on
+  // every platform (the leak itself only bites on Windows, where an open handle
+  // blocks unlink):
+  //   1. the wrapped shutdown passes its own verification, and
+  //   2. the verification actually detects unfinalized statements — guarding
+  //      against bun:sqlite ever making close(true) tolerant, which would turn
+  //      test 1 vacuous.
+  test('shutdown finalizes hitlimit statements so the close fully releases the handle', async () => {
+    const store = sqliteStore({ path: path.join(tempDir, 'finalize-check.db') });
+    await store.hit('k', 60_000, 5);
+    expect(() => store.shutdown!()).not.toThrow();
+  });
+
+  test('negative control: close(true) with an outstanding statement throws', async () => {
+    const raw = hitlimitSqliteStore({ path: path.join(tempDir, 'finalize-control.db') });
+    await raw.hit('k', 60_000, 5);
+    const db = (raw as unknown as { db: { close(throwOnError?: boolean): void } }).db;
+    expect(() => db.close(true)).toThrow();
+
+    // Release the handle for real — otherwise Windows can't unlink finalize-control.db
+    // in afterAll (EBUSY). Mirror the production sqliteStore() shutdown: finalize the
+    // outstanding statements, then close(true) actually releases the db/-wal/-shm files.
+    for (const value of Object.values(raw)) {
+      (value as { finalize?: () => void } | null)?.finalize?.();
+    }
+    db.close(true);
+    await raw.shutdown?.();
   });
 });
 

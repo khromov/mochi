@@ -55,19 +55,19 @@ await Mochi.serve({
 
 All of hitlimit's options are accepted (except `logger` — Mochi logs `429`s through its own [request events](/docs/events/)):
 
-| Option         | Default       |                                                                   |
-| -------------- | ------------- | ----------------------------------------------------------------- |
-| `limit`        | `100`         | Max requests per window                                           |
-| `window`       | `'1m'`        | `'30s'`, `'1m'`, `'1h'`, `'1d'`, or milliseconds                  |
-| `key`          | client IP     | `(req) => string` — what to bucket by                             |
-| `store`        | in-memory     | `sqliteStore(…)`, `postgresStore(…)`, or a custom `HitLimitStore` |
-| `tiers`/`tier` | —             | Named limits + per-request tier resolver                          |
-| `ban`          | —             | `{ threshold, duration }` — ban repeat offenders                  |
-| `group`        | —             | Shared quota across clients                                       |
-| `skip`         | —             | `(req) => boolean` — bypass without consuming quota               |
-| `response`     | hitlimit JSON | Custom 429 body (API routes)                                      |
-| `headers`      | all on        | `{ standard, legacy, retryAfter }`                                |
-| `onStoreError` | `'allow'`     | Fail open or `'deny'` when the store errors                       |
+| Option         | Default       |                                                                                 |
+| -------------- | ------------- | ------------------------------------------------------------------------------- |
+| `limit`        | `100`         | Max requests per window                                                         |
+| `window`       | `'1m'`        | `'30s'`, `'1m'`, `'1h'`, `'1d'`, or milliseconds                                |
+| `key`          | client IP     | `(req, ctx) => string` — what to bucket by                                      |
+| `store`        | in-memory     | `sqliteStore(…)`, `postgresStore(…)`, or a custom `MochiRateLimitStore`         |
+| `tiers`/`tier` | —             | Named limits + `(req, ctx) => string` tier resolver                             |
+| `ban`          | —             | `{ threshold, duration }` — ban repeat offenders                                |
+| `group`        | route pattern | `string \| (req, ctx) => string` — bucket namespace; same value → shared bucket |
+| `skip`         | —             | `(req, ctx) => boolean` — bypass without consuming quota                        |
+| `response`     | hitlimit JSON | Custom 429 body (API routes)                                                    |
+| `headers`      | all on        | `{ standard, legacy, retryAfter }`                                              |
+| `onStoreError` | `'allow'`     | Fail open or `'deny'` when the store errors                                     |
 
 ### Stores
 
@@ -80,7 +80,29 @@ rateLimit: { limit: 100, window: '1m', store: sqliteStore({ path: './ratelimit.d
 rateLimit: { limit: 100, window: '1m', store: postgresStore({ url: process.env.DATABASE_URL }) }
 ```
 
-Two routes given the **same store instance** share counters (same key, same bucket). Distinct configs otherwise get independent buckets even on the same db file path — keys are per-store-instance state in memory, but persisted stores share by key, so prefer a custom `key` if you need separation.
+Counters are bucketed by **key within a store**. A route with its **own** `rateLimit` config also folds its route pattern into that key, so **different routes** backed by the same database — whether they share one store object or each open their own connection to it — keep **separate** counters, even when the key resolves to the same value (e.g. the same client IP). This is per-route _pattern_, not per-instance: run the same route on two servers against one database and both write the same key, so they share a counter — that's how you rate-limit across a fleet. Routes inheriting the [global default](#global-default) are _not_ pattern-namespaced: they all share one bucket per key, by design.
+
+<Callout type="info">
+
+**Overriding the namespace with `group`.** Setting `group` replaces the automatic route-pattern namespace with your own. Give two routes the **same** `group` and they share one bucket — a single quota across a family of endpoints (e.g. `/api/auth/login` and `/api/auth/reset`), on any store. Going the other way: routes on the [global default](#global-default) all share one bucket, so give a route its **own** `rateLimit` config to split it off into an isolated one.
+
+</Callout>
+
+Each store instance owns its backend — a DB connection, prepared statements, and a cleanup timer (or, for memory, a Map and a sweep timer). So don't call `sqliteStore({ path })` inline in every route config: that opens one connection **per route** to the same file, each with its own cleanup sweep, all fighting over SQLite's single write lock (every hit is a write). To cover many routes against one database, create the store **once** and share the instance — the same object folds each route's pattern into its keys, so you get one connection with **separate** per-route counters:
+
+```ts
+const store = sqliteStore({ path: './ratelimit.db' }); // one connection…
+'/api/search': Mochi.api(search, { rateLimit: { limit: 30, window: '1m', store } }), // …own bucket
+'/api/upload': Mochi.api(upload, { rateLimit: { limit: 5, window: '1m', store } }), // …own bucket
+```
+
+Or hang it off the [global default](#global-default) (`Mochi.serve({ rateLimit: { store } })`) — also one connection, but then every inheriting route shares **one bucket per key**.
+
+<Callout type="info">
+
+**Dev reloads.** Creating a store inline in a route config makes each save of that file build a fresh store while the old one — being user-supplied — is never closed by the framework, leaking a handle per reload. Counters still persist (they live in the db), but if the churn bothers you, keep dev on the default memory store and attach the persisted store in production only.
+
+</Callout>
 
 ### Keys and proxies
 
@@ -90,11 +112,28 @@ The default key is Mochi's **proxy-aware** client address — the same value as 
 await Mochi.serve({ proxy: { addressHeader: 'x-forwarded-for', xffDepth: 1 }, … });
 ```
 
-Key by anything else with `key`:
+Key by anything else with `key`. It receives the `Request` plus Mochi's [request context](/docs/request-context/) — the same object [`getRequestContext()`](/docs/request-context/) returns, so you can bucket by the proxy-aware IP, cookies, params, or your own identity. It can be `async`. `tier`, `group`, and `skip` receive the same two arguments.
 
 ```ts
-rateLimit: { limit: 1000, window: '1h', key: (req) => req.headers.get('x-api-key') ?? 'anon' }
+// by API key (falling back to the proxy-aware IP)
+key: (req, ctx) => req.headers.get('x-api-key') ?? ctx.getClientAddress() ?? 'anon'
+
+// by logged-in user — derive identity from the request (see the note below)
+key: (req, ctx) => sessionUserId(ctx.cookies) ?? ctx.getClientAddress() ?? 'anon'
+
+// by country, from a CDN geo header
+key: (req) => req.headers.get('cf-ipcountry') ?? 'unknown'
+
+// tiered by plan
+tiers: { free: { limit: 10 }, pro: { limit: 1000 } },
+tier: (req, ctx) => (ctx.locals.plan as string) ?? 'free',
 ```
+
+<Callout type="warning">
+
+**The limiter runs before your `handle` [middleware](/docs/middleware/).** `ctx` is fully populated — `request`, `url`, `params`, `cookies`, `getClientAddress()` — but `ctx.locals` only reflects what ran _before_ the limiter, and `handle` runs _after_ it. So a `userId` your auth middleware puts on `locals` is **not** visible here. To key by the logged-in user, derive the identity straight from the request inside `key` (decode the session cookie / bearer token), rather than reading a middleware-set local.
+
+</Callout>
 
 ### Reading usage server-side
 
@@ -102,7 +141,7 @@ An allowed request exposes its limiter state on the request context — render q
 
 ```ts
 const rateLimit = getRequestContext().rateLimit;
-// { limit: 5, remaining: 3, resetIn: 42, resetAt, key, tier? } — or undefined if no limiter ran
+// { limit: 5, remaining: 3, resetIn: 42, resetAt, key, group?, tier? } — or undefined if no limiter ran
 ```
 
 <Callout type="info">

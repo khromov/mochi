@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import type { Server } from 'bun';
 import { Mochi } from '../Mochi';
+import { memoryStore } from './rateLimit';
 import { getRequestContext } from './requestContext';
 import { json } from '../utils';
 
@@ -12,9 +13,11 @@ describe('rateLimit route option', () => {
   let server: Server<undefined>;
   let outDir: string;
   let base: string;
+  let sharedStore: ReturnType<typeof memoryStore>;
 
   beforeAll(async () => {
     outDir = mkdtempSync(path.join(import.meta.dir, '..', '..', '.mochi-ratelimit-'));
+    sharedStore = memoryStore();
     server = await Mochi.serve({
       port: 0,
       development: false,
@@ -32,14 +35,24 @@ describe('rateLimit route option', () => {
         '/api/keyed': Mochi.api(async () => json({ ok: true }), {
           rateLimit: { limit: 1, window: '1m', key: (req) => req.headers.get('x-user') ?? 'anon' },
         }),
+        '/api/keyed-ctx': Mochi.api(async () => json({ ok: true }), {
+          rateLimit: { limit: 1, window: '1m', key: (_req, ctx) => ctx.cookies.get('uid') ?? 'anon' },
+        }),
+        // Two routes with their OWN configs pointing at the same store instance.
+        '/api/shared-a': Mochi.api(async () => json({ ok: true }), { rateLimit: { limit: 1, window: '1m', store: sharedStore } }),
+        '/api/shared-b': Mochi.api(async () => json({ ok: true }), { rateLimit: { limit: 1, window: '1m', store: sharedStore } }),
+        // Explicit group opts two routes back into a shared bucket.
+        '/api/grouped-a': Mochi.api(async () => json({ ok: true }), { rateLimit: { limit: 1, window: '1m', store: sharedStore, group: 'team' } }),
+        '/api/grouped-b': Mochi.api(async () => json({ ok: true }), { rateLimit: { limit: 1, window: '1m', store: sharedStore, group: 'team' } }),
         '/page': Mochi.page(FIXTURE_PAGE, { rateLimit: { limit: 1, window: '1m' } }),
       },
     });
     base = `http://localhost:${server.port}`;
   });
 
-  afterAll(() => {
+  afterAll(async () => {
     server.stop(true);
+    await sharedStore.shutdown?.();
     rmSync(outDir, { recursive: true, force: true });
   });
 
@@ -52,7 +65,7 @@ describe('rateLimit route option', () => {
     }
     const blockedResponse = await fetch(`${base}/api/override`);
     expect(blockedResponse.status).toBe(429);
-    expect(blockedResponse.headers.get('Retry-After')).toBeDefined();
+    expect(blockedResponse.headers.get('Retry-After')).not.toBeNull();
     expect(blockedResponse.headers.get('RateLimit-Remaining')).toBe('0');
     const body = (await blockedResponse.json()) as { hitlimit: boolean; remaining: number; resetIn: number };
     expect(body.hitlimit).toBe(true);
@@ -83,17 +96,41 @@ describe('rateLimit route option', () => {
   test('getRequestContext().rateLimit exposes usage to handlers', async () => {
     const response = await fetch(`${base}/api/info`);
     expect(response.status).toBe(200);
-    const body = (await response.json()) as { rateLimit: { limit: number; remaining: number; resetIn: number; key: string } };
+    const body = (await response.json()) as { rateLimit: { limit: number; remaining: number; resetIn: number; key: string; group: string } };
     expect(body.rateLimit.limit).toBe(9);
     expect(body.rateLimit.remaining).toBe(8);
     expect(body.rateLimit.resetIn).toBeGreaterThan(0);
     expect(body.rateLimit.key.length).toBeGreaterThan(0);
+    // A route's own config is auto-namespaced by its pattern.
+    expect(body.rateLimit.group).toBe('/api/info');
+  });
+
+  test('per-route configs sharing a store are auto-namespaced by route', async () => {
+    // Both routes carry limit 1 against the SAME store. Without per-route
+    // namespacing the second route would land on the first's exhausted bucket.
+    expect((await fetch(`${base}/api/shared-a`)).status).toBe(200);
+    expect((await fetch(`${base}/api/shared-b`)).status).toBe(200);
+    // Each route's own bucket is now independently spent.
+    expect((await fetch(`${base}/api/shared-a`)).status).toBe(429);
+    expect((await fetch(`${base}/api/shared-b`)).status).toBe(429);
+  });
+
+  test('an explicit group opts routes back into a shared bucket', async () => {
+    expect((await fetch(`${base}/api/grouped-a`)).status).toBe(200);
+    // Same group → same bucket, so the sibling route is already exhausted.
+    expect((await fetch(`${base}/api/grouped-b`)).status).toBe(429);
   });
 
   test('custom key isolates callers sharing an IP', async () => {
     expect((await fetch(`${base}/api/keyed`, { headers: { 'x-user': 'a' } })).status).toBe(200);
     expect((await fetch(`${base}/api/keyed`, { headers: { 'x-user': 'a' } })).status).toBe(429);
     expect((await fetch(`${base}/api/keyed`, { headers: { 'x-user': 'b' } })).status).toBe(200);
+  });
+
+  test('custom key can bucket by request context (cookie) at limiter time', async () => {
+    expect((await fetch(`${base}/api/keyed-ctx`, { headers: { cookie: 'uid=alice' } })).status).toBe(200);
+    expect((await fetch(`${base}/api/keyed-ctx`, { headers: { cookie: 'uid=alice' } })).status).toBe(429);
+    expect((await fetch(`${base}/api/keyed-ctx`, { headers: { cookie: 'uid=bob' } })).status).toBe(200);
   });
 
   test('blocked page route renders the HTML error page at 429 with headers', async () => {
@@ -106,7 +143,7 @@ describe('rateLimit route option', () => {
     expect(blockedResponse.status).toBe(429);
     expect(blockedResponse.headers.get('content-type')).toContain('text/html');
     expect(blockedResponse.headers.get('RateLimit-Remaining')).toBe('0');
-    expect(blockedResponse.headers.get('Retry-After')).toBeDefined();
+    expect(blockedResponse.headers.get('Retry-After')).not.toBeNull();
     const html = await blockedResponse.text();
     expect(html).toContain('429');
     expect(html).toContain('Rate limit exceeded');
