@@ -5,6 +5,7 @@ import { slugForImport } from '../image/slug';
 import { registerLocalImageAsset } from '../image/localAssetRegistry';
 import { IMPORTED_IMAGE_FORMATS } from '../image/types';
 import type { ImportedImageFormat, LocalImageAsset } from '../image/types';
+import { applyFilter, runHook } from '../extensions';
 
 /** Raster image extensions that resolve to an `ImportedImage` object. SVG is excluded (Bun.Image can't decode it). */
 export const IMAGE_FILE_FILTER = /\.(png|jpe?g|webp|avif|gif)$/i;
@@ -49,19 +50,37 @@ export function createImageAssetLoader(opts: { outDir: string; assetPrefix: stri
 
     const hash = Bun.hash(bytes).toString(36);
     const ext = path.extname(args.path).slice(1).toLowerCase();
-    const filename = `${slugForImport(args.path)}-${hash}.${ext}`;
+    // Both build passes run this loader over the same file, so the filters must be
+    // deterministic — a non-deterministic filename/URL would make SSR and client
+    // JS embed divergent `src`s and break the content-addressed disk dedupe.
+    const filename = applyFilter('image:localAssetFilename', `${slugForImport(args.path)}-${hash}.${ext}`, {
+      sourcePath: args.path,
+      hash,
+      ext,
+      format,
+      width: meta.width,
+      height: meta.height,
+    });
     const diskPath = path.resolve(opts.outDir, 'assets', filename);
-    // Content-addressed: identical bytes always produce this same path, so the
-    // write is safe to skip and safe to race between the two build passes.
-    if (!existsSync(diskPath)) {
-      await Bun.write(diskPath, bytes);
-    }
-
-    const url = `${opts.assetPrefix}/asset/${filename}`;
+    const url = applyFilter('image:localAssetUrl', `${opts.assetPrefix}/asset/${filename}`, {
+      sourcePath: args.path,
+      filename,
+      assetPrefix: opts.assetPrefix,
+      format,
+    });
     const contentType = `image/${format}`;
     const asset: LocalImageAsset = { src: url, width: meta.width, height: meta.height, format, diskPath: toPosixPath(diskPath), contentType };
     opts.assets.set(url, asset);
     registerLocalImageAsset(url, { diskPath, contentType });
+
+    // Content-addressed: identical bytes always produce this same path, so the
+    // write is safe to skip and safe to race between the two build passes. The
+    // emitted hook fires alongside the write, so it runs once per emitted asset
+    // (uploads should stay idempotent — concurrent passes could double-fire).
+    if (!existsSync(diskPath)) {
+      await Bun.write(diskPath, bytes);
+      await runHook('image:localAssetEmitted', { sourcePath: args.path, diskPath, url, width: meta.width, height: meta.height, format, contentType });
+    }
 
     return {
       contents: `export default ${JSON.stringify({ src: url, width: meta.width, height: meta.height, format })};`,

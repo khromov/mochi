@@ -5,6 +5,8 @@ import { join } from 'node:path';
 import { createImageAssetLoader, IMAGE_FILE_FILTER } from './imageAssetLoader';
 import { getLocalImageAsset } from '../image/localAssetRegistry';
 import { toPosixPath } from '../utils';
+import { initExtensions } from '../extensions';
+import type { MochiHookContext } from '../extensions';
 import type { LocalImageAsset } from '../image/types';
 
 const GLOBAL_KEY = '__mochi_local_image_assets__';
@@ -36,6 +38,7 @@ function parseModule(contents: string): { src: string; width: number; height: nu
 }
 
 afterEach(() => {
+  initExtensions({});
   delete (globalThis as unknown as Record<string, unknown>)[GLOBAL_KEY];
   for (const d of dirs.splice(0)) {
     rmSync(d, { recursive: true, force: true });
@@ -106,5 +109,85 @@ describe('createImageAssetLoader', () => {
     const svg = writeFixture(dir, 'icon.svg', '<svg xmlns="http://www.w3.org/2000/svg"><rect width="10" height="10"/></svg>');
     const loader = createImageAssetLoader({ outDir, assetPrefix: '/_mochi', assets: new Map() });
     await expect(loader({ path: svg })).rejects.toThrow(/could not be decoded|unsupported format/i);
+  });
+});
+
+describe('image extension points', () => {
+  test('image:localAssetFilename rewrites the emitted filename + diskPath', async () => {
+    const dir = mkdir();
+    const outDir = mkdir();
+    const fixture = writeFixture(dir, 'hero.png', PNG_40x30);
+    initExtensions({
+      filters: {
+        'image:localAssetFilename': (name, ctx) => {
+          expect(ctx.sourcePath).toBe(fixture);
+          expect(ctx.ext).toBe('png');
+          expect(ctx.format).toBe('png');
+          return `custom-${name}`;
+        },
+      },
+    });
+    const assets = new Map<string, LocalImageAsset>();
+    const loader = createImageAssetLoader({ outDir, assetPrefix: '/_mochi', assets });
+    const obj = parseModule((await loader({ path: fixture })).contents);
+
+    expect(obj.src).toMatch(/^\/_mochi\/asset\/custom-hero-[a-z0-9]+\.png$/);
+    const asset = assets.get(obj.src);
+    expect(asset!.diskPath).toContain('/assets/custom-hero-');
+    expect(existsSync(asset!.diskPath)).toBe(true);
+  });
+
+  test('image:localAssetUrl rewrites the served src and the registry key', async () => {
+    const dir = mkdir();
+    const outDir = mkdir();
+    const fixture = writeFixture(dir, 'hero.png', PNG_40x30);
+    initExtensions({
+      filters: {
+        'image:localAssetUrl': (url, ctx) => {
+          expect(url).toBe(`/_mochi/asset/${ctx.filename}`);
+          expect(ctx.assetPrefix).toBe('/_mochi');
+          return `https://cdn.example.com/${ctx.filename}`;
+        },
+      },
+    });
+    const assets = new Map<string, LocalImageAsset>();
+    const loader = createImageAssetLoader({ outDir, assetPrefix: '/_mochi', assets });
+    const obj = parseModule((await loader({ path: fixture })).contents);
+
+    expect(obj.src).toMatch(/^https:\/\/cdn\.example\.com\/hero-[a-z0-9]+\.png$/);
+    // The rewritten URL is the key in both the build map and the request-time registry.
+    expect(assets.get(obj.src)).toBeDefined();
+    expect(getLocalImageAsset(obj.src)).toBeDefined();
+  });
+
+  test('image:localAssetEmitted fires once with the asset context', async () => {
+    const dir = mkdir();
+    const outDir = mkdir();
+    const fixture = writeFixture(dir, 'hero.png', PNG_40x30);
+    const emitted: MochiHookContext['image:localAssetEmitted'][] = [];
+    initExtensions({
+      eventHooks: {
+        'image:localAssetEmitted': (ctx) => {
+          emitted.push(ctx);
+        },
+      },
+    });
+    const loader = createImageAssetLoader({ outDir, assetPrefix: '/_mochi', assets: new Map() });
+    const obj = parseModule((await loader({ path: fixture })).contents);
+
+    expect(emitted).toHaveLength(1);
+    const ctx = emitted[0]!;
+    expect(ctx.sourcePath).toBe(fixture);
+    expect(ctx.url).toBe(obj.src);
+    expect(ctx.width).toBe(40);
+    expect(ctx.height).toBe(30);
+    expect(ctx.format).toBe('png');
+    expect(ctx.contentType).toBe('image/png');
+    expect(existsSync(ctx.diskPath)).toBe(true);
+
+    // Re-processing the same file (as the SSR + client passes do) hits the same
+    // content-addressed disk path, skips the write → the hook does not re-fire.
+    await loader({ path: fixture });
+    expect(emitted).toHaveLength(1);
   });
 });

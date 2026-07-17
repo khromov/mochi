@@ -588,7 +588,7 @@ export class ComponentRegistry {
     const sveltePlugin: BunPlugin = {
       name: 'svelte-ssr',
       setup(build) {
-        build.onLoad({ filter: IMAGE_FILE_FILTER }, imageAssetLoader);
+        build.onLoad({ filter: applyFilter('image:fileFilter', IMAGE_FILE_FILTER, { target: 'server' }) }, imageAssetLoader);
         // Side-effect CSS imports (e.g. `import '@fontsource-variable/inter'`).
         // Bun resolves bare specifiers via package.json#main to the real .css file,
         // so filtering on the resolved path catches both direct and package imports.
@@ -1010,7 +1010,7 @@ export class ComponentRegistry {
     const clientPlugin: BunPlugin = {
       name: 'svelte-client',
       setup(build) {
-        build.onLoad({ filter: IMAGE_FILE_FILTER }, imageAssetLoader);
+        build.onLoad({ filter: applyFilter('image:fileFilter', IMAGE_FILE_FILTER, { target: 'client' }) }, imageAssetLoader);
         // Mirror the SSR side-effect-CSS strip. The bundle is already linked
         // from the SSR-rendered <head> via entryImportedCss → importedCssUrls,
         // so the browser has it. Without this, Bun's default CSS handling
