@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createImageAssetLoader, IMAGE_FILE_FILTER } from './imageAssetLoader';
 import { getLocalImageAsset } from '../image/localAssetRegistry';
+import { toPosixPath } from '../utils';
 import type { LocalImageAsset } from '../image/types';
 
 const GLOBAL_KEY = '__mochi_local_image_assets__';
@@ -73,7 +74,11 @@ describe('createImageAssetLoader', () => {
     expect(asset).toBeDefined();
     expect(existsSync(asset!.diskPath)).toBe(true);
     expect(asset!.contentType).toBe('image/png');
-    expect(getLocalImageAsset(obj.src)).toEqual({ diskPath: asset!.diskPath, contentType: 'image/png' });
+    // The build map stores a POSIX disk path (for the manifest); the global
+    // registry stores the native path (for Bun.file). Compare separator-insensitively.
+    const registered = getLocalImageAsset(obj.src);
+    expect(registered?.contentType).toBe('image/png');
+    expect(registered && toPosixPath(registered.diskPath)).toBe(asset!.diskPath);
   });
 
   test('is content-addressed: same bytes → same url, idempotent write', async () => {
