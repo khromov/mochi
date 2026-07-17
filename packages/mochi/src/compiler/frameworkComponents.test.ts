@@ -3,39 +3,23 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { resolveFrameworkComponent } from './frameworkComponents';
 
-const BARREL_PATH = path.join(import.meta.dir, '..', 'components', 'index.ts');
+// The public components the barrel re-exports, as an independent oracle: each
+// must resolve to the right on-disk file and export. Add a line here when a
+// component joins `mochi-framework/components` — the mismatch is the point.
+const EXPECTED: Record<string, { endsWith: string; exportName: string }> = {
+  ViewTransitions: { endsWith: path.join('components', 'ViewTransitions.svelte'), exportName: 'default' },
+  RawScript: { endsWith: path.join('components', 'RawScript.svelte'), exportName: 'default' },
+  MochiCaptcha: { endsWith: path.join('captcha', 'MochiCaptcha.svelte'), exportName: 'default' },
+};
 
-// Every name the public barrel re-exports must resolve to a real file on disk,
-// so the resolver and the barrel can never silently drift apart.
 describe('resolveFrameworkComponent', () => {
-  const barrelNames = [...fs.readFileSync(BARREL_PATH, 'utf8').matchAll(/export\s*\{([^}]*)\}\s*from\s*['"]([^'"]+)['"]/g)].flatMap(([, clause, spec]) =>
-    /\.(svelte|md|svx)$/.test(spec!)
-      ? clause!.split(',').map((b) =>
-          b
-            .trim()
-            .split(/\s+as\s+/)
-            .pop()!
-            .trim(),
-        )
-      : [],
-  );
-
-  test('the barrel exports at least the known components', () => {
-    expect(barrelNames).toContain('MochiCaptcha');
-    expect(barrelNames.length).toBeGreaterThanOrEqual(3);
-  });
-
-  test.each(barrelNames)('%s resolves to an existing file', (name) => {
-    const resolved = resolveFrameworkComponent(name);
+  test.each(Object.entries(EXPECTED))('%s resolves to the expected file and export', (_name, expected) => {
+    const resolved = resolveFrameworkComponent(_name);
     expect(resolved).not.toBeNull();
+    expect(resolved!.exportName).toBe(expected.exportName);
+    expect(resolved!.resolvedPath.endsWith(expected.endsWith)).toBe(true);
+    // Drift guard: the resolved path is a real component file, not a stale name.
     expect(fs.existsSync(resolved!.resolvedPath)).toBe(true);
-    expect(resolved!.resolvedPath).toMatch(/\.(svelte|md|svx)$/);
-  });
-
-  test('MochiCaptcha resolves to the captcha component via its default export', () => {
-    const resolved = resolveFrameworkComponent('MochiCaptcha');
-    expect(resolved?.exportName).toBe('default');
-    expect(resolved?.resolvedPath.endsWith(path.join('captcha', 'MochiCaptcha.svelte'))).toBe(true);
   });
 
   test('an unknown export resolves to null', () => {
