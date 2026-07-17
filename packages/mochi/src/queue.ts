@@ -5,9 +5,9 @@
  */
 import { Queue, Worker, shutdownManager } from 'bunqueue/client';
 import type { Job, JobOptions } from 'bunqueue/client';
-import { pinGlobal } from './globalState';
+import { pinGlobal } from './utils/globalState';
 import { mochiEvents } from './events';
-import { logger } from './log';
+import { logger } from './utils/log';
 
 /** Deliberately narrow — data, not bunqueue's ~40 mutation methods — so userland can't reach behind the abstraction. */
 export interface MochiJob<T> {

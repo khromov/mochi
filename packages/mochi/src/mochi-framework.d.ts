@@ -16,11 +16,11 @@ declare module 'mochi-framework' {
   /** True when the server was started with `development: true`. */
   export const isDev: boolean;
 
-  type CookieSerializeOptions = import('./cookies').CookieSerializeOptions;
+  type CookieSerializeOptions = import('./runtime/cookies').CookieSerializeOptions;
 
   interface CookieJar {
     get(name: string): string | undefined;
-    getAll(): import('./cookies').Cookie[];
+    getAll(): import('./runtime/cookies').Cookie[];
     has(name: string): boolean;
     set(name: string, value: string, options?: CookieSerializeOptions): void;
     delete(name: string, options?: Pick<CookieSerializeOptions, 'path' | 'domain'>): void;
@@ -38,7 +38,7 @@ declare module 'mochi-framework' {
   export function devWarn(msg: string): void;
 
   /** Returns the current request context (server-side only). */
-  export function getRequestContext(): import('./requestContext').MochiRequestContext;
+  export function getRequestContext(): import('./runtime/requestContext').MochiRequestContext;
 
   /**
    * Cookie jar for the current request. On the server, reads from the request's

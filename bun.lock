@@ -79,7 +79,7 @@
       "name": "mochi-framework",
       "version": "0.7.0",
       "bin": {
-        "mochi-framework": "src/cli.js",
+        "mochi-framework": "src/cli/cli.js",
       },
       "dependencies": {
         "@css-inline/css-inline-wasm": "^0.21.0",
