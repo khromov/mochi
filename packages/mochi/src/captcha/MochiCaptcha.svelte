@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import type { Attachment } from 'svelte/attachments';
   import { logger } from 'mochi-framework';
   import { CAPTCHA_STEPS, chainInput, powInput, leadingZeroBits, toHex } from './pow';
@@ -23,6 +24,18 @@
 
   let solved = $state(false);
   let powNonce = $state<string | null>(null);
+
+  // The widget is inert without JavaScript — the slider, the hash chain and the
+  // proof-of-work all run client-side. Render nothing on the server and reveal it
+  // only once it actually mounts in the browser, so a captcha that was never
+  // hydrated (no `mochi:hydrate` on itself and no hydrated ancestor subtree)
+  // degrades to an empty slot instead of a dead, non-interactive slider. onMount
+  // runs only client-side, so the first (SSR + initial hydration) render is empty
+  // for both and the reveal is a post-hydration update — no hydration mismatch.
+  let mounted = $state(false);
+  onMount(() => {
+    mounted = true;
+  });
 
   // The PoW challenge is a hash chain advanced one link per slider step: each
   // step crossed emits chain = sha256(`${chain}:step${i}`). The final link is
@@ -149,39 +162,41 @@
   }
 </script>
 
-<div class="captcha" class:solved class:verified>
-  <div class="track" {@attach measureTrack}>
-    <div class="fill" style="width: {offset + HANDLE}px"></div>
-    <div
-      class="handle"
-      style="transform: translateX({offset}px)"
-      role="slider"
-      tabindex={solved ? -1 : 0}
-      aria-label={label}
-      aria-valuemin="0"
-      aria-valuemax="100"
-      aria-valuenow={solved ? 100 : Math.round((offset / Math.max(maxOffset, 1)) * 100)}
-      onpointerdown={onPointerDown}
-      onpointermove={onPointerMove}
-      onpointerup={onPointerUp}
-      onpointercancel={onPointerUp}
-      onkeydown={onKeyDown}
-    >
-      {emoji}
+{#if mounted}
+  <div class="captcha" class:solved class:verified>
+    <div class="track" {@attach measureTrack}>
+      <div class="fill" style="width: {offset + HANDLE}px"></div>
+      <div
+        class="handle"
+        style="transform: translateX({offset}px)"
+        role="slider"
+        tabindex={solved ? -1 : 0}
+        aria-label={label}
+        aria-valuemin="0"
+        aria-valuemax="100"
+        aria-valuenow={solved ? 100 : Math.round((offset / Math.max(maxOffset, 1)) * 100)}
+        onpointerdown={onPointerDown}
+        onpointermove={onPointerMove}
+        onpointerup={onPointerUp}
+        onpointercancel={onPointerUp}
+        onkeydown={onKeyDown}
+      >
+        {emoji}
+      </div>
+      <span class="captcha-hint" aria-live="polite">
+        {#if verified}
+          {verifiedLabel}
+        {:else if solved}
+          {verifyingLabel}
+        {:else}
+          {label}
+        {/if}
+      </span>
     </div>
-    <span class="captcha-hint" aria-live="polite">
-      {#if verified}
-        {verifiedLabel}
-      {:else if solved}
-        {verifyingLabel}
-      {:else}
-        {label}
-      {/if}
-    </span>
   </div>
-</div>
-<input type="hidden" name="captcha_token" value={verified ? token : ''} />
-<input type="hidden" name="captcha_pow" value={verified ? powNonce : ''} />
+  <input type="hidden" name="captcha_token" value={verified ? token : ''} />
+  <input type="hidden" name="captcha_pow" value={verified ? powNonce : ''} />
+{/if}
 
 <style>
   /* Defaults live in each var()'s fallback, not in a declaration on .captcha:
