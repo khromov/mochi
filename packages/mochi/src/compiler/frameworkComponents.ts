@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { parse } from 'svelte/compiler';
 
 /**
  * Resolves the framework's own public components (`mochi-framework/components`)
@@ -31,6 +32,11 @@ export interface FrameworkComponent {
 // running build), so parse it once and reuse.
 let cache: Map<string, FrameworkComponent> | null = null;
 
+/** An export/import specifier name is an Identifier or, rarely, a string literal. */
+function specifierName(node: { type: string; name?: string; value?: unknown }): string {
+  return node.type === 'Identifier' ? node.name! : String(node.value);
+}
+
 function parseBarrel(): Map<string, FrameworkComponent> {
   const map = new Map<string, FrameworkComponent>();
   let source: string;
@@ -40,27 +46,26 @@ function parseBarrel(): Map<string, FrameworkComponent> {
     return map;
   }
   const barrelDir = path.dirname(BARREL_PATH);
-  // Matches the barrel's controlled re-export forms, capturing the binding and
-  // its source: `export { default as Name } from '…'`, `export { Orig as Name }
-  // from '…'`, and `export { Name } from '…'`.
-  const re = /export\s*\{([^}]*)\}\s*from\s*['"]([^'"]+)['"]/g;
-  for (const [, clause, spec] of source.matchAll(re)) {
-    if (!clause || !spec || !/\.(svelte|md|svx)$/.test(spec)) {
+  // Reuse Svelte's own (acorn-typescript) parser for a real AST instead of
+  // pattern-matching the source: wrap the barrel in a module script so its
+  // `export { … } from '…'` re-exports parse as `ExportNamedDeclaration` nodes.
+  // For each specifier, `local` is the export name in the source file
+  // (`default` for `export { default as X }`) and `exported` is the name the
+  // barrel — and therefore a `mochi-framework/components` import — exposes.
+  const ast = parse(`<script module lang="ts">\n${source}\n</script>`, { modern: true });
+  for (const node of ast.module?.content.body ?? []) {
+    if (node.type !== 'ExportNamedDeclaration' || !node.source || typeof node.source.value !== 'string') {
       continue;
     }
-    const resolvedPath = path.resolve(barrelDir, spec);
-    for (const raw of clause.split(',')) {
-      const binding = raw.trim();
-      if (!binding) {
+    if (!/\.(svelte|md|svx)$/.test(node.source.value)) {
+      continue;
+    }
+    const resolvedPath = path.resolve(barrelDir, node.source.value);
+    for (const spec of node.specifiers) {
+      if (spec.type !== 'ExportSpecifier') {
         continue;
       }
-      const asMatch = binding.match(/^(\S+)\s+as\s+(\S+)$/);
-      if (asMatch) {
-        const [, orig, local] = asMatch;
-        map.set(local!, { resolvedPath, exportName: orig === 'default' ? 'default' : orig! });
-      } else {
-        map.set(binding, { resolvedPath, exportName: binding });
-      }
+      map.set(specifierName(spec.exported), { resolvedPath, exportName: specifierName(spec.local) });
     }
   }
   return map;
