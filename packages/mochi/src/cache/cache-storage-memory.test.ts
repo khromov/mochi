@@ -85,7 +85,13 @@ describe('MemoryStorage', () => {
 
     const storage = makeStorage({ maxAge: 5, purgeInterval: 20 });
     await storage.setItem('k', { value: 1 });
-    await wait(60);
+    // Poll for the sweeper's tick rather than waiting a fixed multiple of the
+    // interval: a loaded runner (Windows CI) can delay the timer past any fixed
+    // budget, and the wait is only ever as long as the sweep actually takes.
+    const deadline = Date.now() + 2_000;
+    while (events.length === 0 && Date.now() < deadline) {
+      await wait(5);
+    }
 
     expect(events.length).toBeGreaterThanOrEqual(1);
     expect(await storage.getItem('k')).toBeNull();

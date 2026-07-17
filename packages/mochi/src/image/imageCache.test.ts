@@ -357,10 +357,10 @@ describe('ImageCache.getPlaceholder', () => {
     await cache.invalidateOriginal(SRC, false);
     await cache.getOriginal(SRC, fetchFn); // serves stale, kicks the refresh
     let refreshed = orig.entry.meta.createdAt;
-    for (let i = 0; i < 10 && refreshed === orig.entry.meta.createdAt; i++) {
-      await Bun.sleep(20);
+    await settle(async () => {
       refreshed = (await cache.getOriginal(SRC, fetchFn)).entry.meta.createdAt;
-    }
+      return refreshed !== orig.entry.meta.createdAt;
+    });
     expect(refreshed).not.toBe(orig.entry.meta.createdAt);
 
     // The old generation's blur must not be served against the new original.
