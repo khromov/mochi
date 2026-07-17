@@ -1,4 +1,4 @@
-import type { Storage } from '../cache';
+import type { Storage } from '../cache/cache';
 
 export type ImageFormat = 'webp' | 'jpeg' | 'png' | 'avif';
 
@@ -77,17 +77,6 @@ export interface ResolvedImageSize {
 export interface InvalidateImageOptions {
   /** Also mark the entry expired (next request re-fetches synchronously), not just stale. */
   hard?: boolean;
-}
-
-/**
- * The shared original's cache window (shortest requested wins). Set internally
- * from a size's TTL overrides, or the global defaults for the original path.
- */
-export interface OriginalImageOptions {
-  /** Override the configured time-to-stale (ms). */
-  timeToStale?: number;
-  /** Override the configured time-to-evict (ms). */
-  timeToEvict?: number;
 }
 
 /**

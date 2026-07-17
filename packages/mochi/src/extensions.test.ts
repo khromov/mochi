@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import type { MochiServeOptions } from './types';
 import { applyFilter, initExtensions, runHook, type MochiFilterContext } from './extensions';
-import type { IslandPropsEntry } from './islandPropsRegistry';
+import type { IslandPropsEntry } from './islands/islandPropsRegistry';
 import type { ResolvedEmailMessage } from './email/types';
 
 const fakeOptions = {} as MochiServeOptions;
@@ -201,6 +201,34 @@ describe('new extension points', () => {
     });
     expect(applyFilter('payload:compressMinBytes', 80, { options: fakeOptions, payload: Uint8Array.of(0xff, 1, 2) })).toBe(Infinity);
     expect(applyFilter('payload:compressMinBytes', 80, { options: fakeOptions, payload: Uint8Array.of(0x01, 1, 2) })).toBe(80);
+  });
+
+  test('captcha:minAgeMs returns the default unchanged when no filter registered', () => {
+    expect(applyFilter('captcha:minAgeMs', 2000, { bits: 16, ageMs: 5000, limitMs: 930_000 })).toBe(2000);
+  });
+
+  test('captcha:minAgeMs can decide per-token from the context', () => {
+    initExtensions({
+      filters: {
+        // Drop the floor for tokens minted at a difficulty the slow forms use.
+        'captcha:minAgeMs': (def, { bits }) => (bits >= 20 ? 0 : def),
+      },
+    });
+    expect(applyFilter('captcha:minAgeMs', 2000, { bits: 20, ageMs: 100, limitMs: 930_000 })).toBe(0);
+    expect(applyFilter('captcha:minAgeMs', 2000, { bits: 16, ageMs: 100, limitMs: 930_000 })).toBe(2000);
+  });
+
+  test('captcha:driftAllowanceMs returns the default unchanged when no filter registered', () => {
+    expect(applyFilter('captcha:driftAllowanceMs', 30_000, { options: {}, maxAgeMs: 900_000 })).toBe(30_000);
+  });
+
+  test('captcha:driftAllowanceMs can scale off the resolved maxAgeMs', () => {
+    initExtensions({
+      filters: {
+        'captcha:driftAllowanceMs': (_def, { maxAgeMs }) => maxAgeMs * 0.05,
+      },
+    });
+    expect(applyFilter('captcha:driftAllowanceMs', 30_000, { options: {}, maxAgeMs: 900_000 })).toBe(45_000);
   });
 
   test('compile:preprocessors returns the user-supplied list', () => {
@@ -545,8 +573,8 @@ describe('new extension points', () => {
   // the contract that `getRequestContext()` works inside the hook regardless
   // of route type.
   test.each(['ws', 'sse'] as const)('route:matched exposes requestContext for kind %s', async (kind) => {
-    const { requestContext, getRequestContext } = await import('./requestContext');
-    const { MochiCookieJar } = await import('./cookies');
+    const { requestContext, getRequestContext } = await import('./runtime/requestContext');
+    const { MochiCookieJar } = await import('./runtime/cookies');
     let seen: { requestId: string; kind: string; pathname: string; param: string } | null = null;
     initExtensions({
       eventHooks: {

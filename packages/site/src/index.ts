@@ -4,12 +4,14 @@ import rehypeSlug from 'rehype-slug';
 import rehypeExternalLinks from './lib/rehypeExternalLinks';
 import { Mochi, mochiEvents, sequence, logger, noCache, compress, silenceInternalRoutes } from 'mochi-framework';
 import type { Handle, HandleError, MarkdownConfig } from 'mochi-framework';
+import { analytics } from 'mochi-shared';
 import { generateDocsBarrel } from './lib/generateDocsBarrel';
 import { generateBlogBarrel } from './lib/generateBlogBarrel';
 import { clearDocsCaches, DOCS_DIR } from './lib/docs';
 import { clearBlogCaches, BLOG_DIR } from './lib/blog';
 import { highlightCode } from './lib/highlight.server';
 import { handle as cookieVaryTestHandle } from './demos/cookie-vary-test/routes';
+import { handle as shotHandle } from './shot/routes';
 import { encodeDebugBarGlobals } from './lib/debugBarEncode';
 import { routes, queues } from './routes';
 
@@ -94,15 +96,6 @@ Hello from Mochi! Inserted via transformPage
   });
 };
 
-const ANALYTICS_SCRIPT = `<script defer src="https://u.khromov.se/u.js" data-performance="true" data-website-id="8dceb8f5-6533-4c03-9cd6-1ce74accd63a"></script>`;
-const analytics: Handle = async ({ event, resolve }) => {
-  return resolve(event, {
-    transformPage({ html }) {
-      return html.replace('{{mochi.analytics}}', IS_DOCKER ? ANALYTICS_SCRIPT : '');
-    },
-  });
-};
-
 // Re-encodes the debug bar's inlined file paths so crawlers can't mine them as phantom URLs.
 // See packages/site/src/lib/debugBarEncode.ts for the why; debugBarEncode.test.ts guards the match.
 const encodeDebugBarPaths: Handle = async ({ event, resolve }) => {
@@ -141,7 +134,7 @@ await Mochi.serve({
   liveReload: process.env.MOCHI_LIVE_RELOAD === 'false' ? false : undefined,
   htmlShell: './src/shell.html',
   trailingSlash: 'always',
-  handle: sequence(compress(), immutableAssets, helloWorld, asciiDog, analytics, encodeDebugBarPaths, noCache, cookieVaryTestHandle),
+  handle: sequence(compress(), immutableAssets, helloWorld, asciiDog, analytics, encodeDebugBarPaths, noCache, cookieVaryTestHandle, shotHandle),
   handleError,
   idleTimeout: 60,
   compressServerIslandProps: true,

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
-import type { CacheStatus, Storage } from '../cache';
-import { MochiCache } from '../cache';
-import { FileStorage, isBlobRef, readBlobRef, type BlobRef } from '../cache-storage';
+import type { CacheStatus, Storage } from '../cache/cache';
+import { MochiCache } from '../cache/cache';
+import { FileStorage, isBlobRef, readBlobRef, type BlobRef } from '../cache/cache-storage';
 import { mochiEvents, type MochiImageDeleteReason } from '../events';
 import type { ImageFormat, ResolvedImageSize } from './types';
 
@@ -18,8 +18,7 @@ export interface SidecarMeta {
   staleAt: number;
   evictAt: number;
   src: string;
-  // TODO: restore generation stamping. Kept optional for return-shape
-  // compatibility; no longer written (variants mirror the original by status).
+  /** Which original generation produced these bytes (variants only). Folded into the variant ETag. */
   originalCreatedAt?: number;
 }
 
@@ -37,9 +36,14 @@ export interface RegenResult {
   width: number;
   height: number;
   format: ImageFormat;
-  // TODO: restore generation stamping. Currently ignored — variants mirror the
-  // original's live status instead of stamping the generation they came from.
-  originalCreatedAt?: number;
+  /**
+   * `createdAt` of the original generation these bytes were encoded from. A regen
+   * that ran against a still-stale original honestly stamps the old generation, so
+   * the next request sees the mismatch and regenerates again once the original has
+   * refreshed — stamping the new generation onto bytes resized from the old one
+   * would serve stale content as fresh.
+   */
+  originalCreatedAt: number;
 }
 
 function hash(input: string): string {
@@ -94,6 +98,9 @@ function storedBytesLen(bytes: Uint8Array | BlobRef): number {
 // FileStorage offloads `bytes` to a blob file and returns it as a lazy `BlobRef`
 // on a cache hit, so reading the metadata never loads the bytes.
 interface StoredImage {
+  // Generation identity: unlike the cache envelope's createdAt (which markStale
+  // backdates), this survives soft invalidation, so variants/placeholders can be
+  // compared against the exact original generation that produced them.
   createdAt: number;
   contentType: string;
   etag: string;
@@ -101,10 +108,14 @@ interface StoredImage {
   height: number;
   format: string;
   bytes: Uint8Array | BlobRef;
+  /** For variants: the original generation the bytes were encoded from. */
+  originalCreatedAt?: number;
 }
 
 interface StoredPlaceholder {
   dataUrl: string;
+  /** The original generation the blur was computed from; a refreshed original invalidates it. */
+  originalCreatedAt: number;
 }
 
 export interface ImageCacheOptions {
@@ -117,6 +128,10 @@ export interface ImageCacheOptions {
   /** Override the default `FileStorage(cacheDir)` backend. `cacheDir` is ignored when set. */
   storage?: Storage;
 }
+
+// Each instance subscribes its own cascade, so the handler name must be unique —
+// a shared name would make a second instance silently evict the first's.
+let cascadeSeq = 0;
 
 // A `path` label for `image:store`/`image:delete` events. Cosmetic — falls back
 // to the raw key for a backend (e.g. `MemoryStorage`) that has no file path.
@@ -132,10 +147,12 @@ function pathForKey(storage: Storage, key: string): string {
  * convention; the SWR window, request coalescing, and binary persistence all come
  * from the shared cache primitives.
  *
- * A variant has no window of its own — its served freshness mirrors the shared
- * original's status at request time. Hard invalidation deletes the original key,
- * whose `cache:delete` event cascades to the source's variants and placeholder;
- * everything else is reclaimed by the age-based sweep.
+ * A variant has no window of its own — it serves fresh only while the shared
+ * original is fresh and the variant's stamped generation (`originalCreatedAt`)
+ * matches it; otherwise it serves stale and regenerates in the background. Hard
+ * invalidation deletes the original key, whose `cache:delete` event cascades to
+ * the source's variants and placeholder; everything else is reclaimed by the
+ * age-based sweep.
  */
 export class ImageCache {
   private readonly storage: Storage;
@@ -143,16 +160,22 @@ export class ImageCache {
   private readonly minTimeToStale: number;
   private readonly maxTimeToLive: number;
   private readonly sizes: Record<string, ResolvedImageSize>;
+  private readonly cascadeHandlerName: string;
 
   constructor(options: ImageCacheOptions) {
     this.minTimeToStale = options.minTimeToStale;
     this.maxTimeToLive = options.maxTimeToLive;
     this.sizes = options.sizes;
-    // FileStorage's own age-sweeper is disabled; the image sweeper (`sweeper.ts`)
-    // drives `sweep()`. `maxAge >= maxTimeToLive`, so it never drops a servable entry.
-    // A caller-supplied `storage` owns its own eviction config (e.g. `MemoryStorage`'s
-    // `maxAge`) — `sweep()` below still drives it on the same schedule.
-    this.storage = options.storage ?? new FileStorage({ directory: options.cacheDir, maxAge: options.maxTimeToLive, purgeInterval: 0 });
+    // Eviction stays the backend's; only the schedule and the per-kind accounting
+    // live here. So FileStorage's own timer is off (`purgeInterval: 0`) and the image
+    // sweeper (`sweeper.ts`) calls `sweep()` instead — one janitor, on an interval the
+    // image config owns, reporting variants/originals separately. `maxAge >=
+    // maxTimeToLive`, so it never drops a servable entry. A caller-supplied `storage`
+    // keeps its own eviction policy (e.g. `MemoryStorage`'s `maxAge`); driving it from
+    // here is what puts every backend on that one schedule.
+    // offloadBinary: image bytes are exactly the large-binary case blob offloading
+    // exists for — metadata reads must never load the encoded bytes.
+    this.storage = options.storage ?? new FileStorage({ directory: options.cacheDir, maxAge: options.maxTimeToLive, purgeInterval: 0, offloadBinary: true });
     // 60s in-flight timeout: an image regen (fetch upstream → decode → resize)
     // should never hold the per-key coalescing lock for long, so a hung upstream
     // fails fast instead of parking every waiter until the far larger default.
@@ -167,11 +190,28 @@ export class ImageCache {
     });
     // Cascade: deleting a source's original key reclaims its variants + placeholder.
     // `setHandler` (not `.on`) so a dev re-import replaces rather than stacks the sub.
-    mochiEvents.setHandler('mochi-image:cache-delete', 'cache:delete', (event) => {
+    // Each cascade only ever reclaims what's in its own storage, so instances that
+    // share the bus don't interfere; `dispose()` unsubscribes.
+    this.cascadeHandlerName = `mochi-image:cache-delete:${++cascadeSeq}`;
+    mochiEvents.setHandler(this.cascadeHandlerName, 'cache:delete', (event) => {
       if (event.key.startsWith(ORIG_PREFIX)) {
         void this.cascadeSource(event.key.slice(ORIG_PREFIX.length), 'invalidated').catch(() => {});
       }
     });
+  }
+
+  /**
+   * Release this cache's bus subscription and stop its storage's own timers. For
+   * teardown (tests, or an explicitly owned instance).
+   *
+   * Not called on server stop: `getImageRuntime()` is a global singleton that
+   * outlives a `Mochi.serve()` cycle, so disposing it there would leave the next
+   * server with a live cache whose cascade no longer fires. `Mochi.serve` stops the
+   * sweeper's timers instead.
+   */
+  dispose(): void {
+    mochiEvents.removeHandler(this.cascadeHandlerName);
+    (this.storage as Partial<{ dispose(): void }>).dispose?.();
   }
 
   private async toBytes(field: Uint8Array | BlobRef): Promise<Uint8Array> {
@@ -190,23 +230,40 @@ export class ImageCache {
       staleAt: value.createdAt + this.minTimeToStale,
       evictAt: value.createdAt + this.maxTimeToLive,
       src,
+      originalCreatedAt: value.originalCreatedAt,
     };
   }
 
   /**
    * Read a cached variant keyed by its `variantId` (source + size config hash).
-   * A variant has no window of its own: its fresh/stale/miss state mirrors the
-   * shared original's status. Probing the original uses a lazy blob ref, so a
-   * fresh variant serve never loads the original's bytes.
+   * A variant has no window of its own: it is served fresh only while the shared
+   * original is fresh AND the variant was encoded from that exact original
+   * generation (`originalCreatedAt`). A stale original or a generation mismatch
+   * serves the in-hand bytes stale and regenerates in the background; the regen
+   * stamps the generation it actually encoded from, so a regen that raced a
+   * still-refreshing original converges on the next request instead of serving
+   * old bytes as fresh. Probing the original uses a lazy blob ref, so a fresh
+   * variant serve never loads the original's bytes.
    */
-  async getVariant(src: string, id: string, _ext: string, regenerate: () => Promise<RegenResult>): Promise<{ entry: CacheEntry; status: ImageCacheStatus }> {
+  async getVariant(src: string, id: string, regenerate: () => Promise<RegenResult>): Promise<{ entry: CacheEntry; status: ImageCacheStatus }> {
     const key = varKey(id);
     const orig = await this.cache.peek<StoredImage>(origKey(src));
     if (!orig || orig.status === 'expired') {
-      // Original gone or past its window → force a fresh regen against the refreshed original.
-      await this.cache.delete(key);
-    } else if (orig.status === 'stale') {
-      await this.cache.markStale(key);
+      // Original gone or past its window: the variant must not be served, so drop
+      // it (if present) and regenerate against a freshly fetched original. The
+      // peek-first guard keeps a cold start (nothing stored) from clearing the
+      // in-flight slot on every request, which would defeat request coalescing.
+      if (await this.cache.peek<StoredImage>(key)) {
+        await this.cache.delete(key);
+      }
+    } else {
+      const existing = await this.cache.peek<StoredImage>(key);
+      // Only backdate an entry the cache still considers fresh — a stale/expired
+      // entry already regenerates, and markStale would needlessly kill its
+      // in-flight regen (discarding the work via the supersession guard).
+      if (existing && existing.status === 'fresh' && (orig.status === 'stale' || existing.value.originalCreatedAt !== orig.value.createdAt)) {
+        await this.cache.markStale(key);
+      }
     }
 
     const { value, status } = await this.cache.fetchWithStatus<StoredImage>(key, async () => {
@@ -219,6 +276,7 @@ export class ImageCache {
         height: r.height,
         format: r.format,
         bytes: r.bytes,
+        originalCreatedAt: r.originalCreatedAt,
       };
       mochiEvents.emit('image:store', {
         kind: 'variant',
@@ -240,16 +298,10 @@ export class ImageCache {
 
   /**
    * Get-or-fetch the full-size original bytes for a source, shared across every
-   * variant and keyed by `src` alone. `timeToStale`/`timeToEvict` are ignored —
-   * TODO: restore per-request/shortest-wins TTLs; every entry currently shares
-   * one global window.
+   * variant and keyed by `src` alone. Every entry shares the one global
+   * stale/evict window configured on the cache.
    */
-  async getOriginal(
-    src: string,
-    _timeToStale: number,
-    _timeToEvict: number,
-    fetchFn: () => Promise<{ bytes: Uint8Array; contentType: string | null }>,
-  ): Promise<{ entry: CacheEntry; status: ImageCacheStatus }> {
+  async getOriginal(src: string, fetchFn: () => Promise<{ bytes: Uint8Array; contentType: string | null }>): Promise<{ entry: CacheEntry; status: ImageCacheStatus }> {
     const key = origKey(src);
     const { value, status } = await this.cache.fetchWithStatus<StoredImage>(key, async () => {
       const fetched = await fetchFn();
@@ -376,49 +428,66 @@ export class ImageCache {
   }
 
   /**
-   * Janitor sweep: reclaim entries past the global window. Delegates to the
-   * storage backend's own age-based sweep (`FileStorage` or a configured
-   * `MemoryStorage`); a backend with no `sweep` support is a no-op. TODO:
-   * restore precise per-kind counts — the flat keyspace can't distinguish
-   * originals from variants, so everything reclaimed is reported under
-   * `removedVariants`.
+   * Janitor sweep: reclaim entries past the global window. The eviction itself is
+   * the storage backend's own age-based sweep (`FileStorage` or a configured
+   * `MemoryStorage`); a backend with no `sweep` support is a no-op. All this adds
+   * is per-kind attribution, from the keys the backend reports removing.
+   *
+   * Anything the backend can't name — `mochi:inflight:` markers, `.tmp` writes,
+   * corrupt files, or every removal from a backend that ignores `reportKeys` —
+   * lands in `removedOther` rather than being guessed at, so the three counts
+   * always sum to what was actually removed.
    */
-  async sweep(now: number = Date.now()): Promise<{ removedVariants: number; removedOriginals: number }> {
-    const result = await this.storage.sweep?.(now);
-    return { removedVariants: result?.removed ?? 0, removedOriginals: 0 };
+  async sweep(now: number = Date.now()): Promise<{ removedVariants: number; removedOriginals: number; removedOther: number }> {
+    const result = await this.storage.sweep?.(now, { reportKeys: true });
+    const removed = result?.removed ?? 0;
+    let removedOriginals = 0;
+    let removedVariants = 0;
+    for (const key of result?.removedKeys ?? []) {
+      if (key.startsWith(ORIG_PREFIX)) {
+        removedOriginals++;
+      } else if (key.startsWith(VAR_PREFIX) || key.startsWith(PH_PREFIX)) {
+        removedVariants++;
+      }
+    }
+    return { removedVariants, removedOriginals, removedOther: removed - removedVariants - removedOriginals };
   }
 
   /**
-   * Placeholders have no window of their own; served until their global window
-   * lapses or the invalidation cascade removes them. TODO: restore generation
-   * gating so a re-fetched original invalidates the placeholder precisely.
+   * Placeholders are gated by the original's generation: a blur computed from a
+   * previous generation reads as missing (recompute), so a refreshed source
+   * doesn't keep painting the old image's ThumbHash. With no original cached
+   * there's nothing to compare against — serve what we have (cosmetic anyway).
    */
   async getPlaceholder(src: string): Promise<string | null> {
     const cached = await this.cache.peek<StoredPlaceholder>(phKey(src));
     if (!cached || cached.status === 'expired') {
       return null;
     }
+    const orig = await this.cache.peek<StoredImage>(origKey(src));
+    if (orig && cached.value.originalCreatedAt !== orig.value.createdAt) {
+      return null;
+    }
     return cached.value.dataUrl;
   }
 
-  async setPlaceholder(src: string, dataUrl: string, _originalCreatedAt: number): Promise<void> {
+  async setPlaceholder(src: string, dataUrl: string, originalCreatedAt: number): Promise<void> {
     const key = phKey(src);
-    // Overwrite unconditionally: a plain `fetch` would skip the write if a stale
-    // entry were still present. Only called on a miss/expired in practice.
-    await this.cache.delete(key);
-    await this.cache.fetch<StoredPlaceholder>(key, () => {
-      mochiEvents.emit('image:store', {
-        kind: 'placeholder',
-        src,
-        path: pathForKey(this.storage, key),
-        id: originalId(src),
-        size: Buffer.byteLength(dataUrl),
-        contentType: '',
-        width: 0,
-        height: 0,
-        format: '',
-      });
-      return { dataUrl };
+    // `set`, not `delete` + `fetch`: a recompute (the original moved on to a new
+    // generation) must replace the entry in one atomic write. Deleting first left the
+    // key absent for the duration of the write, so concurrent readers saw a miss and
+    // each kicked off their own placeholder recompute.
+    await this.cache.set<StoredPlaceholder>(key, { dataUrl, originalCreatedAt });
+    mochiEvents.emit('image:store', {
+      kind: 'placeholder',
+      src,
+      path: pathForKey(this.storage, key),
+      id: originalId(src),
+      size: Buffer.byteLength(dataUrl),
+      contentType: '',
+      width: 0,
+      height: 0,
+      format: '',
     });
   }
 }

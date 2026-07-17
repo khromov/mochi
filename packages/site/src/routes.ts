@@ -19,6 +19,8 @@ import { respondMcp } from './lib/mcp';
 import { profilerEnabled, startProfiler, stopProfiler } from './lib/profiler';
 import { routes as apiRoutes } from './demos/api/routes';
 import { routes as cacheEventsRoutes } from './demos/cache-events/routes';
+import { routes as captchaRoutes } from './demos/captcha/routes';
+import { routes as captchaStylingRoutes } from './demos/captcha-styling/routes';
 import { routes as chatRoutes } from './demos/chat/routes';
 import { routes as clientOnlyRoutes } from './demos/client-only/routes';
 import { routes as cookieVaryTestRoutes } from './demos/cookie-vary-test/routes';
@@ -54,9 +56,11 @@ import { routes as nestedIslandsRoutes } from './demos/nested-islands/routes';
 import { routes as propDedupRoutes } from './demos/prop-dedup/routes';
 import { routes as propsIdRoutes } from './demos/props-id/routes';
 import { routes as queueRoutes, queues as queueQueues } from './demos/queue/routes';
+import { routes as rateLimitRoutes } from './demos/rate-limit/routes';
 import { routes as reloadFormDataRoutes } from './demos/reload-form-data/routes';
 import { routes as requestIdRoutes } from './demos/request-id/routes';
 import { routes as serverIslandRoutes } from './demos/server-island/routes';
+import { routes as shotRoutes } from './shot/routes';
 import { routes as serverPropsRoutes } from './demos/server-props/routes';
 import { routes as sharedStateRoutes } from './demos/shared-state/routes';
 import { routes as streamsRoutes } from './demos/streams/routes';
@@ -174,6 +178,9 @@ export const routes: Record<string, MochiRouteValue> = {
       };
     },
   }),
+  // The support form lives at support.mochi.fast (packages/support) — it needs an
+  // SMTP config this site deliberately doesn't carry.
+  '/support': Mochi.api(() => Response.redirect('https://support.mochi.fast/', 302)),
   '/og': Mochi.page('./src/og/OgPage.svelte'),
   '/sitemap.xml': Mochi.api(async () => {
     return new Response(await buildSitemapXml(), {
@@ -216,6 +223,8 @@ export const routes: Record<string, MochiRouteValue> = {
   ...demoLlmsRoutes,
   ...apiRoutes,
   ...cacheEventsRoutes,
+  ...captchaRoutes,
+  ...captchaStylingRoutes,
   ...chatRoutes,
   ...clientOnlyRoutes,
   ...cookieVaryTestRoutes,
@@ -251,10 +260,12 @@ export const routes: Record<string, MochiRouteValue> = {
   ...propDedupRoutes,
   ...propsIdRoutes,
   ...queueRoutes,
+  ...rateLimitRoutes,
   ...reloadFormDataRoutes,
   ...requestIdRoutes,
   ...serverIslandRoutes,
   ...serverPropsRoutes,
+  ...shotRoutes,
   ...sharedStateRoutes,
   ...streamsRoutes,
   ...urlRoutes,

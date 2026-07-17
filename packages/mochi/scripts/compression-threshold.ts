@@ -17,7 +17,7 @@
 import { stringify } from 'devalue';
 import { packImageRequest } from '../src/image/imageCodec';
 import type { ImageRequest } from '../src/image/types';
-import { encryptPayloadBytes, decryptPayloadBytes } from '../src/payloadCrypto';
+import { encryptPayloadBytes, decryptPayloadBytes } from '../src/islands/payloadCrypto';
 
 // --- setup: the crypto fns read globalThis.__mochi_config__ (see payloadCrypto.test.ts) ---
 (globalThis as unknown as Record<string, unknown>).__mochi_config__ = {

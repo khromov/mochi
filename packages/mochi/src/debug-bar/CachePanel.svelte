@@ -15,8 +15,10 @@
   let count: number | null = $state(null);
   let keys: string[] | null = $state(null);
   let query = $state('');
+  type CacheValue = { loading?: boolean; json?: string; error?: string; gone?: boolean };
+
   let expanded: Record<string, boolean> = $state({});
-  let values: Record<string, { loading?: boolean; json?: string; error?: string }> = $state({});
+  let values: Record<string, CacheValue> = $state({});
   let copiedKey: string | null = $state(null);
   let resetTimer: ReturnType<typeof setTimeout> | undefined;
   let copiedTimer: ReturnType<typeof setTimeout> | undefined;
@@ -29,6 +31,8 @@
   };
 
   const base = () => `${window.__mochi_asset_prefix ?? ''}/image-cache/`;
+
+  const GONE_TEXT = 'No longer cached — evicted since this list was loaded.';
 
   async function refresh() {
     try {
@@ -51,7 +55,10 @@
   });
 
   // Fetch (and memoize) the stored value for a key. Shared by expand + copy.
-  async function loadValue(key: string): Promise<{ json?: string; error?: string }> {
+  // `gone` is deliberately not memoized: the key list is a snapshot, so an entry can
+  // be evicted between listing and expanding — and recomputed just as easily. Caching
+  // that verdict would keep reporting a since-repopulated entry as gone.
+  async function loadValue(key: string): Promise<CacheValue> {
     const existing = values[key];
     if (existing && (existing.json !== undefined || existing.error !== undefined)) {
       return existing;
@@ -59,6 +66,13 @@
     values[key] = { loading: true };
     try {
       const res = await fetch(`${base()}entry/?key=${encodeURIComponent(key)}`);
+      // 410 means the handler ran and the key isn't stored — an evicted entry, not a
+      // failure. Anything else non-ok is a real error worth showing verbatim.
+      if (res.status === 410) {
+        const result = { gone: true };
+        values[key] = result;
+        return result;
+      }
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}`);
       }
@@ -83,7 +97,7 @@
   // Copy the key and its value on two lines, loading the value first if needed.
   async function copyKey(key: string) {
     const result = await loadValue(key);
-    const payload = result.json ?? result.error ?? '';
+    const payload = result.json ?? result.error ?? (result.gone ? GONE_TEXT : '');
     try {
       await navigator.clipboard.writeText(`${key}\n${payload}`);
       copiedKey = key;
@@ -180,6 +194,8 @@
             <div class="cache-value">
               {#if values[key]?.loading}
                 <span class="cache-value-note">Loading…</span>
+              {:else if values[key]?.gone}
+                <span class="cache-value-note">{GONE_TEXT}</span>
               {:else if values[key]?.error}
                 <span class="cache-value-note error">{values[key]?.error}</span>
               {:else}

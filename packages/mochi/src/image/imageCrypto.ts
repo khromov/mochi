@@ -7,7 +7,7 @@
  * part fails the integrity check. The synthetic IV doubles as the authenticator
  * (no separate signature).
  */
-import { encryptPayloadBytes, decryptPayloadBytes } from '../payloadCrypto';
+import { encryptPayloadBytes, decryptPayloadBytes } from '../islands/payloadCrypto';
 import { packImageRequest, unpackImageRequest } from './imageCodec';
 import type { ImageRequest } from './types';
 

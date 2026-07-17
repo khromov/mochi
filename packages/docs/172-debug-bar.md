@@ -52,7 +52,7 @@ Lists every image produced during the request. Deferred URLs from [`<Image>` / `
 
 ### Cache panel
 
-A single **Empty image cache** button that clears the on-disk [image cache](/docs/images/) — every original, resized variant, and blur placeholder — by `POST`ing to the dev-only `/_mochi/image-cache/clear` endpoint. Useful after tweaking resize settings or replacing a source image, so the next request regenerates from scratch instead of serving a stale variant. The endpoint (and the tab) exist only while the debug bar is enabled, so nothing is exposed in production.
+A single **Empty image cache** button that clears the on-disk [image cache](/docs/images/) — every original, resized variant, and blur placeholder — by `POST`ing to the dev-only `/_mochi/image-cache/` endpoint. Useful after tweaking resize settings or replacing a source image, so the next request regenerates from scratch instead of serving a stale variant. The endpoint (and the tab) exist only while the debug bar is enabled, so nothing is exposed in production.
 
 ### Warnings
 

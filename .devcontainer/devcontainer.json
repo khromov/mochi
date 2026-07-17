@@ -11,11 +11,12 @@
     }
   },
   "runArgs": ["--cap-add=NET_ADMIN", "--cap-add=NET_RAW"],
-  "forwardPorts": [3333, 3334, 3335],
+  "forwardPorts": [3333, 3334, 3335, 3336],
   "portsAttributes": {
     "3333": { "label": "site", "onAutoForward": "notify" },
     "3334": { "label": "demos", "onAutoForward": "notify" },
-    "3335": { "label": "minimal", "onAutoForward": "notify" }
+    "3335": { "label": "minimal", "onAutoForward": "notify" },
+    "3336": { "label": "support", "onAutoForward": "notify" }
   },
   "customizations": {
     "vscode": {

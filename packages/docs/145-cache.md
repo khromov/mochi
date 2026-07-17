@@ -58,6 +58,7 @@ Use it from a page or API route:
 | `fetch(key, fn)`           | `Promise<T>`                         |
 | `fetchWithStatus(key, fn)` | `Promise<{ value, status }>`         |
 | `peek(key)`                | `Promise<{ value, status } \| null>` |
+| `set(key, value)`          | `Promise<void>`                      |
 | `markStale(key)`           | `Promise<void>`                      |
 | `delete(key)`              | `Promise<void>`                      |
 | `clearItems()`             | `Promise<void>`                      |
@@ -65,6 +66,8 @@ Use it from a page or API route:
 `clearItems()` empties the whole cache in one call.
 
 `peek(key)` reports a key's current `status` and value **without** running `fn`, revalidating, or emitting `cache:read` — a pure probe (returns `null` on a miss). `markStale(key)` backdates an entry so its next read is served stale-while-revalidate; it's a no-op on a missing or already-stale key and never freshens or un-expires one. Both work through the `storage` interface, so they apply to any backend.
+
+`set(key, value)` writes a value directly, stamped fresh, overwriting whatever is there — the counterpart to `fetch`, which only computes on a miss or stale read and so can't replace a still-present entry. Reach for it instead of `delete(key)` followed by `fetch`: that sequence leaves the key absent for the whole write, and concurrent readers hitting that gap each start their own recompute.
 
 `status` is `'fresh' \| 'stale' \| 'expired' \| 'miss'`.
 
@@ -101,14 +104,15 @@ export const pokemonCache = new MochiCache({
 
 Stale-while-revalidate works exactly as with in-memory storage — the entry's write time lives inside the file. A background sweep runs on an interval to delete expired files (there's no read-time eviction otherwise), and `purgeOnInit` empties the directory on startup.
 
-Binary fields (`Uint8Array` / `Buffer`) anywhere in a value are offloaded transparently: each is written to its own file in a `<key-hash>/` folder and replaced by a pointer in the JSON, so large binaries (e.g. image bytes) don't base64-bloat it. On read they come back as lazy blob references — resolve one with `readBlobRef(ref)` (`isBlobRef(value)` narrows) — so a metadata read never loads the bytes. Deleting a key removes its blob folder with it.
+Binary fields (`Uint8Array` / `Buffer`) anywhere in a value round-trip transparently — by default they're inlined as base64 in the JSON and come back as `Uint8Array`, nothing to manage. For values carrying large binaries, opt into `offloadBinary: true`: each binary is written to its own file in a `<key-hash>/` folder and replaced by a pointer in the JSON instead of base64-bloating it. Offloaded fields read back as lazy blob references — resolve one with `readBlobRef(ref)` (`isBlobRef(value)` narrows) — so a metadata read never loads the bytes. Deleting a key removes its blob folder with it, and pointers already on disk always decode, so flipping the flag never orphans existing entries. The built-in [image cache](/docs/images/) enables offloading internally.
 
-| Option          | Default           |                                                                  |
-| --------------- | ----------------- | ---------------------------------------------------------------- |
-| `directory`     | _(required)_      | Where cache files are written; created if missing.               |
-| `purgeOnInit`   | `false`           | Delete the directory's contents when the adapter is constructed. |
-| `purgeInterval` | `60_000` (1min)   | Background sweep interval in ms. `<= 0` disables the sweeper.    |
-| `maxAge`        | `600_000` (10min) | Files older than this are deleted by the sweep.                  |
+| Option          | Default           |                                                                            |
+| --------------- | ----------------- | -------------------------------------------------------------------------- |
+| `directory`     | _(required)_      | Where cache files are written; created if missing.                         |
+| `purgeOnInit`   | `false`           | Delete the directory's contents when the adapter is constructed.           |
+| `purgeInterval` | `60_000` (1min)   | Background sweep interval in ms. `<= 0` disables the sweeper.              |
+| `maxAge`        | `600_000` (10min) | Files older than this are deleted by the sweep.                            |
+| `offloadBinary` | `false`           | Offload binary fields to per-key blob files, read back as lazy `BlobRef`s. |
 
 <Callout type="warning">
 

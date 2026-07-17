@@ -49,6 +49,7 @@ COPY --from=install /temp/dev/packages/mochi/node_modules packages/mochi/node_mo
 COPY --from=install /temp/dev/packages/site/node_modules packages/site/node_modules
 COPY --from=install /temp/dev/packages/demos/node_modules packages/demos/node_modules
 COPY --from=install /temp/dev/packages/docs/node_modules packages/docs/node_modules
+COPY --from=install /temp/dev/packages/shared/node_modules packages/shared/node_modules
 
 # ncdu for disk usage analysis. libgcc is already present in oven/bun:alpine.
 RUN apk add --no-cache ncdu
@@ -67,9 +68,9 @@ USER bun
 EXPOSE ${PORT}/tcp
 
 # No curl/wget in the alpine base; bun is on PATH, so probe with fetch. Reads
-# PORT from the env above and hits the canonical /health/ (trailingSlash:'always'
-# would otherwise 308 a bare /health) so the redirect hop never happens.
+# PORT from the env above and hits the bare /health: it is a Mochi.api() route,
+# so trailingSlash:'always' never applies to it and /health/ is a hard 404.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-  CMD bun --eval "fetch('http://127.0.0.1:'+process.env.PORT+'/health/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+  CMD bun --eval "fetch('http://127.0.0.1:'+process.env.PORT+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 ENTRYPOINT [ "sh", "-c", "exec bun run dev:${WORKSPACE}" ]

@@ -6,14 +6,25 @@ import type { ImageFormat, ImageSize, MochiImageOptions, ResolvedImageOptions, R
 const ALL_FORMATS: ImageFormat[] = ['webp', 'jpeg', 'png', 'avif'];
 const DEFAULT_INPUT_FORMATS = ['jpeg', 'png', 'webp', 'avif', 'gif'];
 
-function checkDimension(name: string, pipe: string, value: number | undefined): number | undefined {
+function checkDimension(field: string, sizeName: string, value: number | undefined): number | undefined {
   if (value === undefined) {
     return undefined;
   }
   if (!Number.isFinite(value) || value < 1) {
-    throw new Error(`Image size "${pipe}": ${name} must be a positive number, got ${value}`);
+    throw new Error(`Image size "${sizeName}": ${field} must be a positive number, got ${value}`);
   }
   return Math.round(value);
+}
+
+// JSON.stringify with object keys sorted at every depth, so the config hash is
+// insensitive to key order (e.g. a reordered `modulate` object hashes the same).
+function canonicalStringify(value: unknown): string {
+  return JSON.stringify(value, (_key, v: unknown) => {
+    if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
+      return Object.fromEntries(Object.entries(v as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
+    }
+    return v;
+  });
 }
 
 /**
@@ -30,7 +41,14 @@ function resolveSize(
   if (!defaults.outputFormats.includes(format)) {
     throw new Error(`Image size "${name}": format "${format}" is not in outputFormats`);
   }
-  const quality = Math.min(100, Math.max(1, Math.round(p.quality ?? defaults.quality)));
+  const rawQuality = p.quality ?? defaults.quality;
+  if (!Number.isFinite(rawQuality)) {
+    throw new Error(`Image size "${name}": quality must be a finite number, got ${rawQuality}`);
+  }
+  const quality = Math.min(100, Math.max(1, Math.round(rawQuality)));
+  if (p.rotate !== undefined && !Number.isFinite(p.rotate)) {
+    throw new Error(`Image size "${name}": rotate must be a finite number, got ${p.rotate}`);
+  }
   const resolved: ResolvedImageSize = {
     name,
     width: checkDimension('width', name, p.width),
@@ -47,9 +65,10 @@ function resolveSize(
     maxPixels: p.maxPixels ?? defaults.maxPixels,
     configHash: '',
   };
-  // Hash the byte-affecting fields (everything but name + the placeholder hash).
+  // Hash the byte-affecting fields (everything but name + the placeholder hash),
+  // with keys canonicalized so identical configs always share a hash.
   const { name: _n, configHash: _h, ...bytesAffecting } = resolved;
-  resolved.configHash = createHash('sha256').update(JSON.stringify(bytesAffecting)).digest('base64url').slice(0, 16);
+  resolved.configHash = createHash('sha256').update(canonicalStringify(bytesAffecting)).digest('base64url').slice(0, 16);
   return resolved;
 }
 
@@ -61,7 +80,9 @@ export function resolveImageOptions(opts: MochiImageOptions | undefined): Resolv
   const maxPixels = o.maxPixels ?? 50_000_000;
   const autoOrient = o.autoOrient ?? true;
 
-  const sizes: Record<string, ResolvedImageSize> = {};
+  // Null-prototype map: size names are arbitrary user strings, so a plain object
+  // would resolve names like "toString" or "__proto__" through the prototype chain.
+  const sizes: Record<string, ResolvedImageSize> = Object.create(null);
   for (const [name, p] of Object.entries(o.sizes ?? {})) {
     sizes[name] = resolveSize(name, p, { format: defaultFormat, quality: defaultQuality, autoOrient, maxPixels, outputFormats });
   }
@@ -121,7 +142,9 @@ export function getImageRuntime(): ImageRuntime {
 
 /** Look up a resolved named size, or `undefined` if the name is unknown/absent. */
 export function getSize(name: string | undefined, options: ResolvedImageOptions): ResolvedImageSize | undefined {
-  return name === undefined ? undefined : options.sizes[name];
+  // Object.hasOwn guards a `sizes` that arrived as a plain object literal (tests,
+  // user-constructed options) against prototype-chain hits like "constructor".
+  return name !== undefined && Object.hasOwn(options.sizes, name) ? options.sizes[name] : undefined;
 }
 
 export function getImageAssetPrefix(): string {
