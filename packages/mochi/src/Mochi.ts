@@ -1387,6 +1387,8 @@ export class Mochi {
           result = await registry.renderComponent(componentPath, props as Record<string, unknown>, {
             stripMarkers: false,
             ...(islandId && !islandId.includes('--') ? { idPrefix: islandId } : {}),
+            // Named-export islands render that export, not the module's default.
+            ...(registry.getServerIslandExport(componentName) ? { exportName: registry.getServerIslandExport(componentName) } : {}),
           });
         } catch (err) {
           const e = err instanceof Error ? err : new Error(String(err));

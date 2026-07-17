@@ -64,6 +64,7 @@ describe('recompile* batches into one compileAll + one buildClientBundle per cyc
           name: `Stub_${path.basename(filename, '.svelte')}`,
           displayName: path.basename(filename, '.svelte'),
           resolvedPath: filename,
+          exportName: 'default',
         };
         internals.compiledComponents.set(filename, {
           module: { default: () => '' },
