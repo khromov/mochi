@@ -1,6 +1,8 @@
+import path from 'node:path';
 import { getImageAssetPrefix, getImageRuntime, getSize } from './config';
 import { fetchImageSource } from './fetchSource';
 import { getLocalImageAsset } from './localAssetRegistry';
+import { toPosixPath } from '../utils';
 import { encryptImageRequest } from './imageCrypto';
 import { variantId } from './imageCache';
 import { computePlaceholder, runPipeline } from './resize';
@@ -162,16 +164,35 @@ export function pushDebugImage(entry: ImageDebugEntry): void {
   }
 }
 
+/**
+ * For a locally-imported asset, recover the original file's display name + a
+ * project-relative path from the registry (`sourcePath` is recorded only by the
+ * in-process dev build loader). Lets the debug bar show `hero.jpg` and its source
+ * path instead of the content-hashed served filename. Returns `undefined` when the
+ * src isn't a local import (or its source path wasn't recorded, e.g. from a manifest).
+ */
+function localSourceDisplay(src: string): { filename: string; sourcePath: string } | undefined {
+  const abs = getLocalImageAsset(src)?.sourcePath;
+  if (!abs) {
+    return undefined;
+  }
+  const rel = path.relative(process.cwd(), abs);
+  const display = rel && !rel.startsWith('..') && !path.isAbsolute(rel) ? rel : abs;
+  return { filename: path.basename(abs), sourcePath: toPosixPath(display) };
+}
+
 function recordForDebugBar(url: string, filename: string, req: ImageRequest, size: ResolvedImageSize | undefined): void {
   if (!requestContext.getStore()?.debugBarData?.images) {
     return;
   }
+  const local = localSourceDisplay(req.src);
   pushDebugImage({
     url,
-    filename,
+    filename: local?.filename ?? filename,
     kind: 'url',
     size: req.size,
     local: getLocalImageAsset(req.src) !== undefined,
+    sourcePath: local?.sourcePath,
     params: { src: req.src, ...(size ? { width: size.width, height: size.height, format: size.format, quality: size.quality } : { original: true }) },
   });
 }
@@ -182,13 +203,15 @@ function recordInlineForDebugBar(src: string, size: ResolvedImageSize | undefine
       return;
     }
     const url = result.bytes.byteLength <= INLINE_PREVIEW_BYTE_CAP ? `data:${result.contentType};base64,${Buffer.from(result.bytes).toString('base64')}` : '';
+    const local = localSourceDisplay(src);
     pushDebugImage({
       url,
       id: size ? variantId(src, size.configHash) : `inline-original:${src}`,
-      filename: size ? buildImageFilename(src, size) : buildOriginalFilename(src),
+      filename: local?.filename ?? (size ? buildImageFilename(src, size) : buildOriginalFilename(src)),
       kind: 'inline',
       size: size?.name,
       local: getLocalImageAsset(src) !== undefined,
+      sourcePath: local?.sourcePath,
       params: { src, width: result.width, height: result.height, format: result.format },
     });
   } catch {

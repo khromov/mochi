@@ -20,6 +20,10 @@
 export interface LocalImageAssetInfo {
   diskPath: string;
   contentType: string;
+  /** Absolute path of the original imported file. Recorded only by the in-process
+   * build loader (dev) for the debug bar — never threaded through the prod manifest,
+   * so it stays a dev-only convenience and no build-machine path leaks into artifacts. */
+  sourcePath?: string;
 }
 
 const GLOBAL_KEY = '__mochi_local_image_assets__';

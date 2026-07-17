@@ -104,6 +104,9 @@ export interface ImageDebugEntry {
   size?: string;
   /** True when `src` resolves to a locally-imported asset (vs a remote URL). */
   local?: boolean;
+  /** For local imports: the original file's project-relative path (dev only), so the
+   * bar can show `src/…/hero.jpg` instead of the content-hashed served filename. */
+  sourcePath?: string;
 }
 
 /**

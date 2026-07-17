@@ -50,6 +50,9 @@
     </span>
   </div>
   <div class="image-detail">
+    {#if image.sourcePath}
+      <div class="image-source" title="Original import path">{image.sourcePath}</div>
+    {/if}
     {#if image.url}
       <a class="image-preview" href={image.url} target="_blank" rel="noopener" title="Open image in a new tab">
         <img src={image.url} loading="lazy" alt={image.filename} />
@@ -120,6 +123,12 @@
     color: #8e9488;
     font-size: 10px;
     font-style: italic;
+  }
+  .image-source {
+    color: #a3c4a8;
+    font-size: 10px;
+    word-break: break-all;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   }
   .island-props {
     background: transparent;

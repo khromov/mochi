@@ -71,7 +71,7 @@ export function createImageAssetLoader(opts: { outDir: string; assetPrefix: stri
     const contentType = `image/${format}`;
     const asset: LocalImageAsset = { src: url, width: meta.width, height: meta.height, format, diskPath: toPosixPath(diskPath), contentType };
     opts.assets.set(url, asset);
-    registerLocalImageAsset(url, { diskPath, contentType });
+    registerLocalImageAsset(url, { diskPath, contentType, sourcePath: args.path });
 
     // Content-addressed: identical bytes always produce this same path, so the
     // write is safe to skip and safe to race between the two build passes. The
