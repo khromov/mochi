@@ -15,6 +15,7 @@
   // module, whose client build ships stubs (getImageAttrs returns the raw src).
   import { hydratable } from 'svelte';
   import { getImageAttrs, imagePlaceholder, isHydratable } from 'mochi-framework';
+  import type { ImportedImage } from 'mochi-framework';
 
   let {
     src,
@@ -27,7 +28,8 @@
     height,
     class: className = undefined,
   }: {
-    src: string;
+    /** An http/https URL, or the object from a local image import (`import x from './x.png'`). */
+    src: string | ImportedImage;
     /** Name of a size declared in `image.sizes`. Omitted → the full-size original. */
     size?: string;
     alt?: string;
@@ -42,14 +44,30 @@
   } = $props();
 
   const hydratableSubtree = isHydratable();
+  // A local image import passes an object; a remote source passes a string.
+  // Normalize to a string source (never the object) before touching any image
+  // API — the client `getImageAttrs` stub returns `{ url: src }`, so it must
+  // receive the URL string, and the hydratable key must serialize deterministically.
+  const resolvedSrc = $derived(typeof src === 'string' ? src : src.src);
+  const intrinsic = $derived(typeof src === 'object' && src !== null ? src : undefined);
   const isBrowser = typeof window !== 'undefined';
-  const mintAttrs = () => (isBrowser ? { url: src } : getImageAttrs(src, size));
-  const mintBlur = () => (isBrowser ? null : imagePlaceholder(src));
-  const key = $derived(`mochi:image:${JSON.stringify([src, size])}`);
+  const mintAttrs = () => {
+    if (isBrowser) {
+      return { url: resolvedSrc };
+    }
+    // Imported image with no transform: serve the static URL directly, skipping
+    // the encrypted endpoint round-trip. We already know its intrinsic dimensions.
+    if (intrinsic && size === undefined) {
+      return { url: resolvedSrc, width: intrinsic.width, height: intrinsic.height };
+    }
+    return getImageAttrs(resolvedSrc, size);
+  };
+  const mintBlur = () => (isBrowser ? null : imagePlaceholder(resolvedSrc));
+  const key = $derived(`mochi:image:${JSON.stringify([resolvedSrc, size])}`);
   const attrs = $derived(hydratableSubtree ? hydratable(key, mintAttrs) : mintAttrs());
   const blur = $derived(placeholder ? await (hydratableSubtree ? hydratable(`${key}#placeholder`, mintBlur) : mintBlur()) : null);
-  const imgWidth = $derived(width ?? attrs.width);
-  const imgHeight = $derived(height ?? attrs.height);
+  const imgWidth = $derived(width ?? attrs.width ?? intrinsic?.width);
+  const imgHeight = $derived(height ?? attrs.height ?? intrinsic?.height);
 </script>
 
 <img

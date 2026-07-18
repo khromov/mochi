@@ -1,5 +1,6 @@
 import { assertPublicUrl, SsrfGuardError } from '../utils/assertPublicUrl';
 import { applyFilter } from '../extensions';
+import { getLocalImageAsset } from './localAssetRegistry';
 import { ImageError } from './types';
 import type { ResolvedImageOptions } from './types';
 
@@ -11,6 +12,16 @@ export interface FetchedSource {
 const DEFAULT_MAX_REDIRECTS = 5;
 
 export async function fetchImageSource(src: string, opts: ResolvedImageOptions): Promise<FetchedSource> {
+  // Locally-imported asset (`import hero from './hero.png'`): its `src` is a
+  // same-origin `/_mochi/asset/…` URL that `assertPublicUrl` would reject, so
+  // read the bytes straight from disk. Only URLs the build registered are
+  // readable — request input is a Map key, never a filesystem path — and the
+  // src arrives decrypted from an authenticated token, so it can't be forged.
+  const local = getLocalImageAsset(src);
+  if (local) {
+    return { bytes: await Bun.file(local.diskPath).bytes(), contentType: local.contentType };
+  }
+
   // One timeout bounds the whole chain (all redirect hops), not each hop.
   const signal = AbortSignal.timeout(opts.fetchTimeoutMs);
 
