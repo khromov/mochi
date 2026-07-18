@@ -26,6 +26,8 @@ Children of a deferred component become the fallback shown until the island reso
 </UserAvatar>
 ```
 
+Like all islands, a deferred component must be statically imported from a relative `.svelte`/`.md`/`.svx` path — package imports or props-passed components are a compile error. See `Supported import forms` under `Selective hydration`.
+
 Server island components are normal Svelte components with full access to the request context via `getRequestContext()` — cookies are forwarded automatically because the fetch is same-origin.
 
 ```svelte

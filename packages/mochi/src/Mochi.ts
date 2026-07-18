@@ -55,6 +55,7 @@ import { createRouteLimiter, applyRateLimitHeaders } from './runtime/rateLimit';
 import type { MochiRateLimitOptions, MochiRateLimitStore, RouteLimiter } from './runtime/rateLimit';
 import { decryptProps } from './islands/serverIslandCrypto';
 import { createImageHandler } from './image/imageEndpoint';
+import { createLocalAssetHandler } from './image/localAssetRegistry';
 import { getImageRuntime } from './image/config';
 import { startImageCacheSweeper } from './image/sweeper';
 import { getEmailRuntime, closeEmailTransport } from './email/config';
@@ -1396,6 +1397,8 @@ export class Mochi {
           result = await registry.renderComponent(componentPath, props as Record<string, unknown>, {
             stripMarkers: false,
             ...(islandId && !islandId.includes('--') ? { idPrefix: islandId } : {}),
+            // Named-export islands render that export, not the module's default.
+            ...(registry.getServerIslandExport(componentName) ? { exportName: registry.getServerIslandExport(componentName) } : {}),
           });
         } catch (err) {
           const e = err instanceof Error ? err : new Error(String(err));
@@ -1494,6 +1497,13 @@ export class Mochi {
       });
       stopImageSweeper = startImageCacheSweeper(imageRuntime.cache, imageRuntime.options.sweepIntervalMs);
     }
+
+    // Serve locally-imported image assets (`import x from './x.png'`) from disk.
+    // Registered unconditionally — this is plain static serving, independent of
+    // whether the transform endpoint (`image.enabled`) is on. The handler reads
+    // the global registry the build populated (in-process in dev, from the
+    // manifest in prod), so new images in dev need no route reload.
+    bunRoutes[`${registry.assetPrefix}/asset/:filename`] = withHead(createLocalAssetHandler(development));
 
     // Dev-only: the debug bar's Cache tab reads the entry count (GET) and empties
     // the image cache (POST). Registered whenever the debug bar is on (independent
