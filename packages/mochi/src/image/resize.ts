@@ -1,4 +1,4 @@
-import { ImageError } from './types';
+import { IMAGE_EXT, IMAGE_MIME, ImageError } from './types';
 import type { ImageFormat, ResolvedImageOptions, ResolvedImageSize } from './types';
 
 function imageCtor(): typeof Bun.Image {
@@ -9,22 +9,8 @@ function imageCtor(): typeof Bun.Image {
   return ctor;
 }
 
-const MIME: Record<ImageFormat, string> = {
-  webp: 'image/webp',
-  jpeg: 'image/jpeg',
-  png: 'image/png',
-  avif: 'image/avif',
-};
-
-const EXT: Record<ImageFormat, string> = {
-  webp: 'webp',
-  jpeg: 'jpg',
-  png: 'png',
-  avif: 'avif',
-};
-
 export function extForFormat(format: ImageFormat): string {
-  return EXT[format];
+  return IMAGE_EXT[format];
 }
 
 function isUnsupportedFormatError(err: unknown): boolean {
@@ -131,7 +117,7 @@ export async function runPipeline(input: Uint8Array, size: ResolvedImageSize, op
 
   return {
     bytes: out,
-    contentType: MIME[size.format],
+    contentType: IMAGE_MIME[size.format],
     width: outMeta.width,
     height: outMeta.height,
     format: size.format,

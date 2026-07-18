@@ -3,7 +3,7 @@ import path from 'node:path';
 import { toPosixPath } from '../utils';
 import { slugForImport } from '../image/slug';
 import { registerLocalImageAsset } from '../image/localAssetRegistry';
-import { IMPORTED_IMAGE_FORMATS } from '../image/types';
+import { IMAGE_MIME, IMPORTED_IMAGE_FORMATS } from '../image/types';
 import type { ImportedImageFormat, LocalImageAsset } from '../image/types';
 import { applyFilter, runHook } from '../extensions';
 
@@ -67,7 +67,7 @@ export function createImageAssetLoader(opts: { outDir: string; assetPrefix: stri
       assetPrefix: opts.assetPrefix,
       format,
     });
-    const contentType = `image/${format}`;
+    const contentType = IMAGE_MIME[format];
     const asset: LocalImageAsset = { src: url, width: meta.width, height: meta.height, format, diskPath: toPosixPath(diskPath), contentType };
     opts.assets.set(url, asset);
     registerLocalImageAsset(url, { diskPath, contentType, sourcePath: args.path });

@@ -14,17 +14,8 @@
  */
 import path from 'node:path';
 import { getImageRuntime, getImageAssetPrefix } from './config';
-import { IMAGE_FILE_FILTER, IMPORTED_IMAGE_FORMATS } from './types';
+import { IMAGE_FILE_FILTER, IMAGE_FORMAT_BY_EXT, IMAGE_MIME, IMPORTED_IMAGE_FORMATS } from './types';
 import type { ImportedImage, ImportedImageFormat } from './types';
-
-const CONTENT_TYPES: Record<string, string> = {
-  png: 'image/png',
-  jpg: 'image/jpeg',
-  jpeg: 'image/jpeg',
-  webp: 'image/webp',
-  avif: 'image/avif',
-  gif: 'image/gif',
-};
 
 const RASTER_FORMATS: ReadonlySet<string> = new Set(IMPORTED_IMAGE_FORMATS);
 
@@ -57,12 +48,11 @@ function resolveLocalDirRef(ref: string, localDirs: Record<string, string>): Loc
   if (escape === '' || escape === '..' || escape.startsWith(`..${path.sep}`) || path.isAbsolute(escape)) {
     return undefined;
   }
-  const ext = path.extname(rel).slice(1).toLowerCase();
-  const contentType = CONTENT_TYPES[ext];
-  if (!contentType) {
+  const format = IMAGE_FORMAT_BY_EXT[path.extname(rel).slice(1).toLowerCase()];
+  if (!format) {
     return undefined;
   }
-  return { diskPath, contentType };
+  return { diskPath, contentType: IMAGE_MIME[format] };
 }
 
 /**
