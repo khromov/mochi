@@ -1,6 +1,5 @@
-import { Mochi, sequence, silenceInternalRoutes } from 'mochi-framework';
+import { Mochi, silenceInternalRoutes } from 'mochi-framework';
 import type { Handle } from 'mochi-framework';
-import { analytics } from './analytics';
 import { routes as adminRoutes } from './admin/routes';
 import { routes as hnRoutes } from './hn/routes';
 import { routes as todoRoutes } from './todo/routes';
@@ -26,7 +25,7 @@ await Mochi.serve({
   compressServerIslandProps: true,
   warmup: true,
   proxy: { origin: process.env.MOCHI_ORIGIN || `http://localhost:${PORT}` },
-  handle: sequence(immutableAssets, analytics),
+  handle: immutableAssets,
   filters: {
     'consoleLogger:line': (line, ctx) => (ctx.path.startsWith('/health') ? null : silenceInternalRoutes(line, ctx)),
   },
