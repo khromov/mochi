@@ -716,22 +716,17 @@ export class ComponentRegistry {
       throw: false,
     });
 
-    if (!result.success) {
-      const message = `Svelte SSR build failed:\n${formatBuildMessages(result.logs)}`;
-      for (const f of todo) {
-        mochiEvents.emit('compile:error', {
-          path: f,
-          message,
-          logs: toCompileErrorLogs(result.logs),
-        });
-      }
-      throw new Error(message);
-    }
-
-    // Detection below recomputes nested-hydration and unresolved-island errors
-    // for every file in this batch, so drop any prior ones for the recompiled
-    // files first. Without this, a fixed mistake keeps 500-ing every page until
-    // a restart, and an unfixed one is re-pushed (duplicated) on every save.
+    // Detection recomputes nested-hydration and unresolved-island errors for
+    // every file in this batch, so drop any prior ones for the recompiled files
+    // first. Without this, a fixed mistake keeps 500-ing every page until a
+    // restart, and an unfixed one is re-pushed (duplicated) on every save.
+    //
+    // This runs BEFORE the `result.success` throw on purpose. The hydration maps
+    // are populated by the svelte `onLoad`, which fires for every entry before
+    // Bun resolves transitive JS deps — so a later bundler failure must not
+    // swallow a structural error we already detected. It also keeps these errors
+    // reported under the `bun test`-only Bun-bundler EISDIR bug, where an SSR
+    // build can fail after preprocessing already succeeded.
     this.errors = this.errors.filter(
       (e) => !(e.kind === 'nested-hydration' && fileHydratables.has(e.parentPath)) && !(e.kind === 'unresolved-island' && filePreprocessErrors.has(e.filePath)),
     );
@@ -761,6 +756,18 @@ export class ComponentRegistry {
           );
         }
       }
+    }
+
+    if (!result.success) {
+      const message = `Svelte SSR build failed:\n${formatBuildMessages(result.logs)}`;
+      for (const f of todo) {
+        mochiEvents.emit('compile:error', {
+          path: f,
+          message,
+          logs: toCompileErrorLogs(result.logs),
+        });
+      }
+      throw new Error(message);
     }
 
     // Walk Bun's output graph (not the source-import graph) to attribute
