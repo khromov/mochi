@@ -46,10 +46,41 @@ export const routes = {
   import type { MintedCaptcha } from 'mochi-framework';
 
   let { captcha }: { captcha: MintedCaptcha } = $props();
-  let verified = $state(false);
 </script>
 
 <form method="POST" action="?/send">
+  <input name="email" type="email" required />
+  <MochiCaptcha mochi:hydrate {...captcha} />
+  <button type="submit">Send</button>
+</form>
+```
+
+### Hydration
+
+The captcha runs entirely in the browser — the slider, the hash chain and the proof-of-work are all client-side — so it renders **nothing on the server** and appears only once it hydrates. Wire it up one of two ways:
+
+- **Hydrate the captcha itself** — put `mochi:hydrate` on it, as above, and it becomes its own island.
+- **Hydrate the surrounding subtree** — if the captcha sits inside a component you hydrate, it hydrates with it, no directive on the captcha needed.
+
+The subtree route is the common one: the moment you attach [`enhance`](/docs/progressively-enhancing-forms-with-enhance/) to the form or bind `verified` to gate the submit button, you're hydrating the form component anyway (`enhance` only runs client-side), and the captcha rides along. A binding can't cross an island boundary, so `bind:verified` **only** works this way — the captcha and the code binding it must hydrate together.
+
+```svelte
+<!-- src/Contact.svelte (the page) — hydrate the form so enhance and the captcha run -->
+<ContactForm mochi:hydrate {captcha} />
+```
+
+```svelte
+<!-- src/ContactForm.svelte -->
+<script lang="ts">
+  import { enhance } from 'mochi-framework';
+  import { MochiCaptcha } from 'mochi-framework/components';
+  import type { MintedCaptcha } from 'mochi-framework';
+
+  let { captcha }: { captcha: MintedCaptcha } = $props();
+  let verified = $state(false);
+</script>
+
+<form method="POST" action="?/send" {@attach enhance()}>
   <input name="email" type="email" required />
   <MochiCaptcha {...captcha} bind:verified />
   <button type="submit" disabled={!verified}>Send</button>
@@ -57,6 +88,8 @@ export const routes = {
 ```
 
 `bind:verified` is optional — bind it to disable submit until the challenge is solved. The server rejects unsolved submissions either way.
+
+A captcha that hydrates by neither route stays empty — an empty slot rather than a dead slider that looks interactive but can never verify.
 
 #### Props
 
@@ -288,7 +321,7 @@ const res = await fetch(`${base}/contact/?/send`, {
 
 <Callout type="info">
 
-Solving requires JavaScript: the widget is a hydrated island. Give non-JS visitors another route to you — a `<noscript>` block with a mailto link — since the form can't be completed without it.
+Solving requires JavaScript: the widget is a hydrated island, and it renders nothing until it hydrates. Give non-JS visitors another route to you — a `<noscript>` block with a mailto link — since the form can't be completed without it.
 
 </Callout>
 

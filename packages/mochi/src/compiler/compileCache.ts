@@ -1,16 +1,19 @@
-import type { HydratableComponent, ServerIslandComponent } from './svelteAstPreprocess';
+import type { HydratableComponent, PreprocessIslandError, ServerIslandComponent } from './svelteAstPreprocess';
 
 /**
  * The full result of compiling one `.svelte` / `.md` source for a given target:
  * the emitted JS the bundler consumes, the scoped CSS (server only — the client
  * build strips CSS), and the hydration metadata extracted by the preprocessor.
- * Everything a call site needs to replay its side effects on a cache hit.
+ * Everything a call site needs to replay its side effects on a cache hit —
+ * including the preprocessor's island errors, so a hit on an unfixed file
+ * re-reports them instead of silently clearing the compile error.
  */
 export interface CompiledFileOutput {
   js: string;
   css: string | null;
   hydratables: HydratableComponent[];
   serverIslands: ServerIslandComponent[];
+  preprocessErrors: PreprocessIslandError[];
 }
 
 interface CacheEntry {

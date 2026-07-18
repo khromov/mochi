@@ -31,11 +31,11 @@
     <!-- To add a component: give it a branch here, plus a registry.ts entry carrying
          its natural size and props. A branch rather than a dynamic <Subject /> because
          the island preprocessor only reads mochi:hydrate off a static invocation of a
-         default-imported .svelte file — see BUG_REPORT.md. A component that is already
-         such an import (LikeButton) needs no wrapper; one that isn't (MochiCaptcha,
-         a named export of mochi-framework/components) needs a thin local wrapper. -->
+         statically-known component (a relative-import .svelte or a `mochi-framework/components`
+         export). The captcha subject hydrates MochiCaptcha directly inside CaptchaShot, so
+         its branch mounts CaptchaShot as plain SSR. -->
     {#if name === 'captcha'}
-      <CaptchaShot mochi:hydrate {...props as ComponentProps<typeof CaptchaShot>} />
+      <CaptchaShot {...props as ComponentProps<typeof CaptchaShot>} />
     {:else if name === 'like'}
       <LikeButton mochi:hydrate {...props as ComponentProps<typeof LikeButton>} />
     {:else if name === 'image-placeholder'}
