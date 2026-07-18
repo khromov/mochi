@@ -115,6 +115,16 @@ export function isMochiFile(value: unknown): value is MochiFileConfig {
   return typeof value === 'object' && value !== null && (value as MochiFileConfig).__mochiFile === true;
 }
 
+/**
+ * One `localDirs` entry: a root directory as a plain path string, or the object
+ * form to also serve dotfile paths from that dir (refused by default, matching
+ * the `Mochi.file` / public-dir policy).
+ */
+export type LocalDirEntry = string | { root: string; includeDotfiles?: boolean };
+
+/** Named runtime-served directories, set under `Mochi.serve({ localDirs })`. */
+export type MochiLocalDirs = Record<string, LocalDirEntry>;
+
 export type BunRouteValue =
   | Response
   | BunFile
@@ -657,6 +667,15 @@ export interface MochiServeOptions {
    * defaults; pass `{ enabled: false }` to turn it off. See `MochiImageOptions`.
    */
   image?: MochiImageOptions;
+  /**
+   * Named directories served at runtime under `${assetPrefix}/files/<name>/<path>`.
+   * Any file inside a root is addressable by path the moment it exists on disk —
+   * write with `Bun.write`, read with `localFile('<name>/<path>')` /
+   * `localFileBytes(...)`, or `localImage(...)` for raster images. Names appear
+   * in URLs (letters, digits, `_`, `-` only); roots resolve relative to cwd.
+   * Dotfile paths are refused unless the dir sets `includeDotfiles: true`.
+   */
+  localDirs?: MochiLocalDirs;
   /**
    * Transactional email. Configures `Mochi.email(...)` with a default `from`
    * and a pluggable `transport` (SMTP, a custom-send function for HTTP email

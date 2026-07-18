@@ -38,6 +38,7 @@ export function renderMochiEnvServer(development: boolean): string {
     __MOCHI_CACHE__: frameworkFile('cache/cache.ts'),
     __MOCHI_CACHE_STORAGE__: frameworkFile('cache/cache-storage.ts'),
     __MOCHI_IMAGE_API__: frameworkFile('image/imageApi.ts'),
+    __MOCHI_LOCAL_FILES__: frameworkFile('runtime/localDirs.ts'),
     __MOCHI_ENHANCE_SSR__: frameworkFile('runtime/enhance.ssr.ts'),
     __MOCHI_RATE_LIMIT__: frameworkFile('runtime/rateLimit.ts'),
   });

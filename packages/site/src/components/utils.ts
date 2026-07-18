@@ -5,7 +5,7 @@ export function delay(minMs: number, maxMs: number = minMs): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export type SourceSpec = { label: string; path: string; lang?: string; showImageConfig?: boolean };
+export type SourceSpec = { label: string; path: string; lang?: string; showImageConfig?: boolean; showLocalDirs?: boolean };
 type Source = { label: string; lang: string; html: string; styleHtml?: string };
 
 const cache = new Map<string, string>();
@@ -22,10 +22,13 @@ async function read(path: string): Promise<string> {
 
 export async function loadSources(specs: SourceSpec[]): Promise<Source[]> {
   return Promise.all(
-    specs.map(async ({ label, path, lang, showImageConfig }) => {
+    specs.map(async ({ label, path, lang, showImageConfig, showLocalDirs }) => {
       let code = stripDemoWrapper(await read(path));
       if (isDemoIndex(path) && !showImageConfig) {
-        code = stripImageConfig(code);
+        code = stripTopLevelBlock(code, /^\s*image:\s*\{/);
+      }
+      if (isDemoIndex(path) && !showLocalDirs) {
+        code = stripTopLevelBlock(code, /^\s*localDirs:\s*\{/);
       }
       const resolvedLang = inferLang(label, lang);
       if (resolvedLang === 'svelte') {
@@ -50,10 +53,11 @@ export function isDemoIndex(path: string): boolean {
   return path.endsWith('demoIndex.ts');
 }
 
-// The shared demoIndex example carries the site's full named-image-sizes config, which is
-// noise in every demo except the image ones. Drop the `image: {…}` block (and its leading
-// comment) so non-image demos show a clean minimal Mochi.serve() call.
-export function stripImageConfig(code: string): string {
+// The shared demoIndex example carries the site's full image-sizes and localDirs
+// config, which is noise in demos that don't showcase them. Drop the matched
+// top-level `key: {…}` block (and its leading comment) so other demos show a
+// clean minimal Mochi.serve() call.
+export function stripTopLevelBlock(code: string, keyPattern: RegExp): string {
   const lines = code.split('\n');
   const out: string[] = [];
   let depth = 0;
@@ -66,7 +70,7 @@ export function stripImageConfig(code: string): string {
       }
       continue;
     }
-    if (/^\s*image:\s*\{/.test(line)) {
+    if (keyPattern.test(line)) {
       while (out.length && /^\s*\/\//.test(out[out.length - 1]!)) {
         out.pop();
       }

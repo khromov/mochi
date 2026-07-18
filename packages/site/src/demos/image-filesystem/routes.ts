@@ -1,7 +1,7 @@
 import { Mochi, localImage } from 'mochi-framework';
 import type { MochiRouteValue } from 'mochi-framework';
 
-// image.localDirs (see index.ts) declares two runtime-served folders:
+// localDirs (see index.ts) declares runtime-served folders, among them:
 //   photos  → ./images   (checked-in sample photos)
 //   uploads → ./uploads  (written at runtime, below)
 

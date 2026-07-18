@@ -216,6 +216,43 @@ Route params are URL-decoded before they reach your resolver, so `params.name` c
 
 </Callout>
 
+### Local directories (`localDirs`)
+
+Declare named folders whose contents are served **at runtime** — whatever is on disk right now, any file type. Write a file with `Bun.write` and it is addressable the moment it exists, at `${assetPrefix}/files/<name>/<path>`; the path-addressed URLs survive restarts:
+
+```ts
+await Mochi.serve({
+  localDirs: {
+    media: './uploads', // string shorthand
+    secrets: { root: './data', includeDotfiles: true }, // object form
+  },
+  routes,
+});
+```
+
+`localFile` resolves a `'<dir>/<path>'` ref to its served URL plus metadata (plain data — safe to pass as a page prop); `localFileBytes` reads the bytes through the same guarded resolution. Both are server-only:
+
+```ts
+import { localFile, localFileBytes } from 'mochi-framework';
+
+const f = await localFile('media/album.zip');
+// f → { url: '/_mochi/files/media/album.zip', size, contentType: 'application/zip', lastModified }
+
+const bytes = await localFileBytes('media/notes.txt'); // Uint8Array
+```
+
+`Content-Type` is derived from the file extension (`application/octet-stream` for unknown extensions), with `X-Content-Type-Options: nosniff`. Because content behind a URL is mutable, production serves with `Cache-Control: public, max-age=0, must-revalidate` plus `Last-Modified`/`304` revalidation instead of caching forever; dev sends no cache headers. `Range` requests are answered natively (`206`/`416`, `Accept-Ranges: bytes`) — unlike `Mochi.file`, so audio/video seeking and resumable downloads work.
+
+Security: requests are confined to the declared roots (`../` traversal, absolute paths, and encoded variants all resolve to a `404`); dir names may only contain letters, digits, `_` and `-`; dotfile paths are refused by default (`.well-known` exempt, same policy as `Mochi.file` and the public dir) unless that dir sets `includeDotfiles: true`.
+
+<Callout type="warning">
+
+The declared root is the security boundary: **everything** non-dotfile inside it is public. Point `localDirs` at folders that hold only servable content — never at `./src`, the project root, or a folder where private files might land.
+
+</Callout>
+
+For raster images, `localImage('<dir>/<path>')` layers on top of this: it probes intrinsic dimensions and returns an object `<Image>` and `getImageUrl` accept. See [Images → Local files at runtime](/docs/images/#local-files-at-runtime).
+
 ### HEAD requests
 
 Every `Mochi.page` and `Mochi.api` route answers `HEAD` automatically by running its `GET`/handler logic and stripping the response body. Status and headers match the equivalent `GET`, and `Content-Length` is set to the byte length the `GET` body would have had. No per-route opt-in is needed — this also covers static assets and the `404` fallback.

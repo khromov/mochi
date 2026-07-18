@@ -132,12 +132,12 @@ Two edge cases. With <code>image.enabled: false</code> the <code>/_mochi/asset/�
 
 ### Local files at runtime
 
-Imports are **build-time**: the file is baked into the build at compile. For a folder whose contents change **while the server runs** — uploads, generated images — declare it under `image.localDirs`. Any raster image inside a declared root is addressable by path the moment it exists on disk, with no registration step:
+Imports are **build-time**: the file is baked into the build at compile. For a folder whose contents change **while the server runs** — uploads, generated images — declare it under the top-level [`localDirs`](/docs/defining-routes/#local-directories-localdirs) serve option. Any file inside a declared root is addressable by path the moment it exists on disk, with no registration step; `localImage` is the image view of that mechanism:
 
 ```ts
 Mochi.serve({
+  localDirs: { media: './uploads' },
   image: {
-    localDirs: { media: './uploads' },
     sizes: { thumb: { width: 240, height: 240 } },
   },
   // …
@@ -164,7 +164,7 @@ const img = await localImage('media/cat.jpg');
 
 Because URLs are **path-addressed** (`/_mochi/files/<dir>/<path>`), they survive restarts — store them in a database, render them years later. The flip side is that the content behind a URL is mutable, so unlike the immutable content-hashed `/_mochi/asset/…` URLs, production serves local-dir files with `Cache-Control: public, max-age=0, must-revalidate` + `Last-Modified`/304 revalidation instead of caching forever.
 
-Only raster-image extensions (**png, jpg, jpeg, webp, avif, gif**) are servable, requests are confined to the declared roots (`../` traversal resolves to a 404), and dir names may only contain letters, digits, `_` and `-`.
+The `/files/` route serves **any** file type (see [Local directories](/docs/defining-routes/#local-directories-localdirs) for `localFile`/`localFileBytes`, caching, and the dotfile policy) — but `localImage` and the transform pipeline additionally require a raster-image extension (**png, jpg, jpeg, webp, avif, gif**); a `.zip` src is never a valid transform source. Requests are confined to the declared roots (`../` traversal resolves to a 404).
 
 <Callout type="warning">
 
@@ -315,25 +315,24 @@ In dev, each image produced during a request shows up in the [debug bar's Images
 
 Configure under `Mochi.serve({ image: { … } })`. Every option is optional — `sizes` defaults to `{}`:
 
-| Option                 | Default                 | Notes                                                                                |
-| ---------------------- | ----------------------- | ------------------------------------------------------------------------------------ |
-| `sizes`                | `{}`                    | Named transform recipes (see [Declare sizes](#declare-sizes))                        |
-| `enabled`              | `true`                  | `false` unmounts the endpoint; URL helpers then return the raw source URL            |
-| `localDirs`            | `{}`                    | Named runtime-served folders (see [Local files at runtime](#local-files-at-runtime)) |
-| `cacheDir`             | `./.mochi/image-cache`  | Must not be under `publicDir`; ignored when `storage` is set                         |
-| `storage`              | `FileStorage(cacheDir)` | Override the cache backend (see [Custom cache storage](#custom-cache-storage))       |
-| `defaultFormat`        | `webp`                  | Used when a size omits `format`                                                      |
-| `defaultQuality`       | `80`                    | Used when a size omits `quality`                                                     |
-| `outputFormats`        | all four                | Allowed output formats                                                               |
-| `allowedHosts`         | any public host         | Exact host or `*.example.com`                                                        |
-| `blockPrivateNetworks` | `true`                  | Reject private/loopback/link-local addresses                                         |
-| `fetchTimeoutMs`       | `10_000`                | Upstream fetch timeout                                                               |
-| `maxResponseBytes`     | `20 MB`                 | Hard source-size cap                                                                 |
-| `maxPixels`            | `50_000_000`            | Decompression-bomb guard                                                             |
-| `timeToStale`          | `14_400_000`            | Cache time-to-stale (ms); variants follow it                                         |
-| `timeToEvict`          | `86_400_000`            | Cache time-to-evict (ms); variants follow it                                         |
-| `sweepIntervalMs`      | `3_600_000`             | Background cache-janitor interval; `0` disables                                      |
-| `compressPayload`      | `true`                  | Deflate the encrypted URL payload                                                    |
+| Option                 | Default                 | Notes                                                                          |
+| ---------------------- | ----------------------- | ------------------------------------------------------------------------------ |
+| `sizes`                | `{}`                    | Named transform recipes (see [Declare sizes](#declare-sizes))                  |
+| `enabled`              | `true`                  | `false` unmounts the endpoint; URL helpers then return the raw source URL      |
+| `cacheDir`             | `./.mochi/image-cache`  | Must not be under `publicDir`; ignored when `storage` is set                   |
+| `storage`              | `FileStorage(cacheDir)` | Override the cache backend (see [Custom cache storage](#custom-cache-storage)) |
+| `defaultFormat`        | `webp`                  | Used when a size omits `format`                                                |
+| `defaultQuality`       | `80`                    | Used when a size omits `quality`                                               |
+| `outputFormats`        | all four                | Allowed output formats                                                         |
+| `allowedHosts`         | any public host         | Exact host or `*.example.com`                                                  |
+| `blockPrivateNetworks` | `true`                  | Reject private/loopback/link-local addresses                                   |
+| `fetchTimeoutMs`       | `10_000`                | Upstream fetch timeout                                                         |
+| `maxResponseBytes`     | `20 MB`                 | Hard source-size cap                                                           |
+| `maxPixels`            | `50_000_000`            | Decompression-bomb guard                                                       |
+| `timeToStale`          | `14_400_000`            | Cache time-to-stale (ms); variants follow it                                   |
+| `timeToEvict`          | `86_400_000`            | Cache time-to-evict (ms); variants follow it                                   |
+| `sweepIntervalMs`      | `3_600_000`             | Background cache-janitor interval; `0` disables                                |
+| `compressPayload`      | `true`                  | Deflate the encrypted URL payload                                              |
 
 <Callout type="warning">
 

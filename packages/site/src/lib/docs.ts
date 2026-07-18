@@ -6,7 +6,7 @@ import rehypeSlug from 'rehype-slug';
 import { SITE_ROOT } from './siteRoot';
 import { loadPosts } from './blog';
 import { demos, type Demo } from './demos';
-import { isDemoIndex, stripImageConfig, type SourceSpec } from '../components/utils.ts';
+import { isDemoIndex, stripTopLevelBlock, type SourceSpec } from '../components/utils.ts';
 import type { TocEntry } from './toc';
 
 type MdsvexRehypePlugin = NonNullable<NonNullable<Parameters<typeof mdsvexCompile>[1]>['rehypePlugins']>[number];
@@ -208,7 +208,7 @@ async function buildDemoLlmsTxt(slug: string, stripStyles = false): Promise<stri
     return null;
   }
   const parts: string[] = [`## Demo: ${slug}\n`];
-  for (const { label, path: rel, lang, showImageConfig } of specs) {
+  for (const { label, path: rel, lang, showImageConfig, showLocalDirs } of specs) {
     const abs = path.resolve(SITE_ROOT, rel);
     if (!existsSync(abs)) {
       // A declared source file that isn't on disk is almost always a typo'd path
@@ -218,7 +218,10 @@ async function buildDemoLlmsTxt(slug: string, stripStyles = false): Promise<stri
     }
     let content = (await Bun.file(abs).text()).trimEnd();
     if (isDemoIndex(rel) && !showImageConfig) {
-      content = stripImageConfig(content).trimEnd();
+      content = stripTopLevelBlock(content, /^\s*image:\s*\{/).trimEnd();
+    }
+    if (isDemoIndex(rel) && !showLocalDirs) {
+      content = stripTopLevelBlock(content, /^\s*localDirs:\s*\{/).trimEnd();
     }
     const fence = lang ?? (label.endsWith('.svelte') ? 'svelte' : 'ts');
     // Strip <style> blocks only from Svelte-fenced sources — never from .ts, where a

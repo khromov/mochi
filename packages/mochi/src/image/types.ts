@@ -150,14 +150,6 @@ export interface MochiImageOptions {
    * `getImageUrl(src, name)`, and `getImage(src, name)`. Validated at startup.
    */
   sizes?: Record<string, ImageSize>;
-  /**
-   * Named directories served at runtime under `${assetPrefix}/files/<name>/<path>`.
-   * The runtime counterpart of build-time local image imports: any raster image
-   * inside a root is addressable by path the moment it exists on disk — write
-   * with `Bun.write`, read with `localImage('<name>/<path>')`. Names appear in
-   * URLs (letters, digits, `_`, `-` only); roots resolve relative to cwd.
-   */
-  localDirs?: Record<string, string>;
   /** Disk cache directory. Must NOT be under `publicDir`. Default: `./.mochi/image-cache`. Ignored when `storage` is set. */
   cacheDir?: string;
   /**
@@ -199,8 +191,6 @@ export interface MochiImageOptions {
 export interface ResolvedImageOptions {
   enabled: boolean;
   sizes: Record<string, ResolvedImageSize>;
-  /** `localDirs` with every root resolved to an absolute path. */
-  localDirs: Record<string, string>;
   cacheDir: string;
   storage?: Storage;
   defaultFormat: ImageFormat;

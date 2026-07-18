@@ -13,7 +13,7 @@
   const squareUrl = getImageUrl(photo.src, 'square');
 
   const ts = (code) => highlightCode(code, 'typescript');
-  const codeConfig = await ts("image: {\n  localDirs: { photos: './images', uploads: './uploads' },\n}");
+  const codeConfig = await ts("localDirs: { photos: './images', uploads: './uploads' },");
   const codeRead = await ts("const photo = await localImage('photos/mochi-3.jpg');\n// photo → { src: '/_mochi/files/photos/mochi-3.jpg', width, height, format }");
   const codeWrite = await ts("await Bun.write('./uploads/mochi-copy.jpg', bytes);\nconst uploaded = await localImage('uploads/mochi-copy.jpg');");
   const codeUrl = await ts("const url = getImageUrl(photo.src, 'square');");
@@ -23,7 +23,7 @@
 
 <DemoPage
   title="Image: Filesystem"
-  description="Serve images from a runtime read/write folder. image.localDirs declares allowlisted roots; any raster image inside one is addressable by path the moment it exists on disk — no build step, no registration, and the path-addressed URLs survive restarts."
+  description="Serve images from a runtime read/write folder. localDirs declares allowlisted roots; any image inside one is addressable by path the moment it exists on disk — no build step, no registration, and the path-addressed URLs survive restarts."
   {sources}
 >
   <h3>Declare the folders</h3>

@@ -56,7 +56,7 @@ import type { MochiRateLimitOptions, MochiRateLimitStore, RouteLimiter } from '.
 import { decryptProps } from './islands/serverIslandCrypto';
 import { createImageHandler } from './image/imageEndpoint';
 import { createLocalAssetHandler } from './image/localAssetRegistry';
-import { createLocalFilesHandler } from './image/localDirs';
+import { createLocalFilesHandler, getLocalDirs } from './runtime/localDirs';
 import { getImageRuntime } from './image/config';
 import { startImageCacheSweeper } from './image/sweeper';
 import { getEmailRuntime, closeEmailTransport } from './email/config';
@@ -1497,11 +1497,13 @@ export class Mochi {
     // manifest in prod), so new images in dev need no route reload.
     bunRoutes[`${registry.assetPrefix}/asset/:filename`] = withHead(createLocalAssetHandler(development));
 
-    // Serve runtime local-dir images (`image.localDirs`) by path. Like the asset
-    // route this is plain static serving, independent of `image.enabled` — but
-    // the content is mutable (files can be written/replaced while running), so
-    // the handler revalidates instead of caching immutably.
-    if (Object.keys(imageRuntime.options.localDirs).length > 0) {
+    // Serve runtime local dirs (`localDirs`) by path — any file type, not just
+    // images. Plain static serving like the asset route, but the content is
+    // mutable (files can be written/replaced while running), so the handler
+    // revalidates instead of caching immutably. Calling getLocalDirs() here
+    // also fail-fast validates the config at boot.
+    const localDirs = getLocalDirs();
+    if (Object.keys(localDirs).length > 0) {
       bunRoutes[`${registry.assetPrefix}/files/*`] = withHead(createLocalFilesHandler(development));
     }
 

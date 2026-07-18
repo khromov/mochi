@@ -1,8 +1,9 @@
 import path from 'node:path';
-import { getImageAssetPrefix, getImageRuntime, getSize } from './config';
+import { getImageRuntime, getSize } from './config';
+import { getAssetPrefix } from '../mochiConfig';
 import { fetchImageSource } from './fetchSource';
 import { getLocalImageAsset } from './localAssetRegistry';
-import { resolveLocalDirFile } from './localDirs';
+import { resolveLocalDirFile } from '../runtime/localDirs';
 import { toPosixPath } from '../utils';
 import { encryptImageRequest } from './imageCrypto';
 import { variantId } from './imageCache';
@@ -84,7 +85,7 @@ function mintImageUrl(req: ImageRequest, filename: string, size: ResolvedImageSi
     return req.src;
   }
   const token = encryptImageRequest(req, filename, options.compressPayload);
-  const raw = `${getImageAssetPrefix()}/image/${filename}?p=${token}`;
+  const raw = `${getAssetPrefix()}/image/${filename}?p=${token}`;
   const url = applyFilter('image:url', raw, { src: req.src, filename, original: req.original === true });
   recordForDebugBar(url, filename, req, size);
   return url;
@@ -303,4 +304,4 @@ export async function invalidateImage(src: string, opts: InvalidateImageOptions 
 
 // Runtime local-dir lookup — re-exported here so the `__MOCHI_IMAGE_API__`
 // virtual-module token covers it for .svelte files alongside the other image APIs.
-export { localImage } from './localDirs';
+export { localImage } from './localImage';
