@@ -583,7 +583,12 @@ export class ComponentRegistry {
     const compileCache = this.compileCache;
     const markdown = this.markdown;
     const shakenSources = this.shakenSources;
-    const imageAssetLoader = createImageAssetLoader({ outDir: this.outDir, assetPrefix: this.assetPrefix, assets: this.localImageAssets });
+    const imageAssetLoader = createImageAssetLoader({
+      outDir: this.outDir,
+      assetPrefix: this.assetPrefix,
+      assets: this.localImageAssets,
+      rejectUnknown: this.loadedFromManifest && !this.development,
+    });
 
     const sveltePlugin: BunPlugin = {
       name: 'svelte-ssr',
@@ -1005,7 +1010,12 @@ export class ComponentRegistry {
 
     const cookiesClientPath = toPosixPath(path.join(srcDir, 'runtime/cookies.client.ts'));
     const enhanceClientPath = toPosixPath(path.join(srcDir, 'runtime/enhance.client.ts'));
-    const imageAssetLoader = createImageAssetLoader({ outDir: this.outDir, assetPrefix: this.assetPrefix, assets: this.localImageAssets });
+    const imageAssetLoader = createImageAssetLoader({
+      outDir: this.outDir,
+      assetPrefix: this.assetPrefix,
+      assets: this.localImageAssets,
+      rejectUnknown: this.loadedFromManifest && !this.development,
+    });
 
     const clientPlugin: BunPlugin = {
       name: 'svelte-client',

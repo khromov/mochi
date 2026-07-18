@@ -29,7 +29,7 @@ const RASTER_FORMATS: ReadonlySet<string> = new Set(IMPORTED_IMAGE_FORMATS);
  * emitting an asset output, which the client pass would otherwise sweep into its
  * text-only `clientFiles` map and corrupt.
  */
-export function createImageAssetLoader(opts: { outDir: string; assetPrefix: string; assets: Map<string, LocalImageAsset> }) {
+export function createImageAssetLoader(opts: { outDir: string; assetPrefix: string; assets: Map<string, LocalImageAsset>; rejectUnknown?: boolean }) {
   return async (args: { path: string }): Promise<{ contents: string; loader: 'js' }> => {
     const bytes = await Bun.file(args.path).bytes();
 
@@ -68,6 +68,21 @@ export function createImageAssetLoader(opts: { outDir: string; assetPrefix: stri
       assetPrefix: opts.assetPrefix,
       format,
     });
+    // In a prebuilt-manifest production server, imports are meant to be fully
+    // resolved at build time. If a component compiles on-demand at request time
+    // (a manifest miss) and imports an image absent from the manifest, that's a
+    // stale/broken build — reject it loudly instead of silently hashing and
+    // serving a source the build never vetted. The membership check keeps
+    // legitimately-built re-imports (SSR + client passes, on-demand island
+    // recompiles) idempotent, since `assets` is repopulated from the manifest.
+    if (opts.rejectUnknown && !opts.assets.has(url)) {
+      throw new Error(
+        `Cannot import "${args.path}" at runtime in production: local image imports are resolved at build time, ` +
+          `and this file is not part of the prebuilt manifest (its URL "${url}" was not registered by the build). ` +
+          `Rebuild to include it.`,
+      );
+    }
+
     const contentType = `image/${format}`;
     const asset: LocalImageAsset = { src: url, width: meta.width, height: meta.height, format, diskPath: toPosixPath(diskPath), contentType };
     opts.assets.set(url, asset);
