@@ -99,6 +99,23 @@ await Mochi.serve({
 
 The hook does not fire when the framework rejects the request before route handling (e.g. CSRF block). `getRequestContext()` is available inside the hook for all four kinds and exposes the matched `requestId`, `url`, and `params`.
 
+#### `image:localAssetEmitted`
+
+Fires at **build time**, right after a locally-imported image (`import hero from './hero.png'`) has been content-hashed and written to `<outDir>/assets/`. The context carries the `sourcePath`, the on-disk `diskPath`, the served `url` (post-`image:localAssetUrl`), intrinsic `width`/`height`, decoded `format`, and `contentType`. Use it to mirror imported assets to a CDN, generate extra derivatives, or record a build manifest. Async.
+
+```ts
+await Mochi.serve({
+  eventHooks: {
+    'image:localAssetEmitted': async ({ diskPath, url }) => {
+      await cdn.upload(url, await Bun.file(diskPath).bytes());
+    },
+  },
+  routes,
+});
+```
+
+Because assets are content-addressed, the hook fires once per unique asset per build (the second build pass hits the existing file and skips both the write and the hook). Treat any upload as idempotent — concurrent passes could fire it more than once for the same bytes.
+
 ### Filters
 
 #### `csrf:formContentTypes`
@@ -350,6 +367,60 @@ await Mochi.serve({
 
 <Callout type="danger">
 Only rewrite the **origin/prefix** — never the last path segment (the `filename`). That segment is authenticated (bound as AAD to the encrypted token), so the image endpoint re-derives it from the served path and rejects (403) any request whose filename was changed. Rewriting the host/prefix is safe; renaming `photo-500x500.webp` is not. Mochi logs a warning if a filter changes the filename.
+</Callout>
+
+#### `image:fileFilter`
+
+Controls which local imports are intercepted and turned into `ImportedImage` objects. The default (`IMAGE_FILE_FILTER`, exported from `mochi-framework`) matches `png`, `jpg`/`jpeg`, `webp`, `avif`, and `gif`. Return a narrower regex to opt some files out (they fall through to Bun's default loader), or a wider one to intercept more. Resolved once per build pass — the `target` (`'server' | 'client'`) is in context. Sync.
+
+```ts
+import { IMAGE_FILE_FILTER } from 'mochi-framework';
+
+await Mochi.serve({
+  filters: {
+    // Also treat .bmp imports as images.
+    'image:fileFilter': (re) => new RegExp(re.source + '|\\.bmp$', 'i'),
+  },
+  routes,
+});
+```
+
+<Callout type="warning">
+
+Widening the regex only decides which files reach the loader — each is still decoded by `Bun.Image` and validated against the accepted raster formats (png/jpeg/webp/avif/gif). A file whose format Mochi can't decode still throws a build error, so extending to a genuinely new format needs `Bun.Image` decode support, not just a matching extension.
+
+</Callout>
+
+#### `image:localAssetFilename`
+
+Rename the content-hashed file a local image import emits under `<outDir>/assets/`. The default is `<slug>-<hash>.<ext>`; the context carries the `sourcePath`, `hash`, `ext`, `format`, and intrinsic `width`/`height`. The filter runs in **both** build passes, so it must be deterministic — a non-deterministic name would make the SSR and client bundles disagree on the URL. Keep the result a single path segment (the built-in `/asset/:filename` route serves one segment). Sync.
+
+```ts
+await Mochi.serve({
+  filters: {
+    'image:localAssetFilename': (name, { hash, ext }) => `img.${hash}.${ext}`,
+  },
+  routes,
+});
+```
+
+#### `image:localAssetUrl`
+
+Rewrite the `src` URL a local image import resolves to. The default is `${assetPrefix}/asset/<filename>` (served from disk by the built-in route); the context carries the `sourcePath`, `filename`, `assetPrefix`, and `format`. Like `image:localAssetFilename`, it runs in both passes and must be deterministic. Sync.
+
+```ts
+await Mochi.serve({
+  filters: {
+    'image:localAssetUrl': (_url, { filename }) => `https://cdn.example.com/${filename}`,
+  },
+  routes,
+});
+```
+
+<Callout type="warning">
+
+Returning an absolute (CDN) URL intentionally bypasses the built-in `/asset/` route and the local-disk shortcut used when `<Image>` transforms an import — the browser and the image transformer will fetch from that URL instead, so pair it with `image:localAssetEmitted` to upload the bytes there. A same-origin override must stay under `${assetPrefix}/asset/` as a single segment, or the built-in route won't serve it.
+
 </Callout>
 
 #### `email:message`

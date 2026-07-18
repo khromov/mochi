@@ -17,6 +17,9 @@ import { mergeCompilerOptions, type MochiSvelteConfig } from './svelteConfig';
 import { applyFilter } from '../extensions';
 import { buildServerOnlyStubModule, scanServerOnlyExports } from './serverOnlyScan';
 import { renderMochiEnvServer, renderMochiEnvClient } from './virtualModuleTemplate';
+import { createImageAssetLoader, IMAGE_FILE_FILTER } from './imageAssetLoader';
+import { registerLocalImageAsset } from '../image/localAssetRegistry';
+import type { LocalImageAsset } from '../image/types';
 import { freshImport } from './freshImport';
 import { shakeApp } from './svelteShaker';
 import prettyBytes from '../vendor/pretty-bytes';
@@ -366,6 +369,8 @@ export class ComponentRegistry {
   private serverIslandExports: Map<string, string> = new Map();
   /** Maps public URL path → disk path (relative to cwd) for static files from `public/`. */
   private publicFiles: Map<string, string> = new Map();
+  /** Maps served asset URL → emitted asset for locally-imported images (`import x from './x.png'`). */
+  private localImageAssets: Map<string, LocalImageAsset> = new Map();
   readonly development: boolean;
   /** Set by `fromManifest()`; distinguishes a prebuilt-manifest boot from a live, compile-on-demand one. */
   loadedFromManifest = false;
@@ -507,6 +512,11 @@ export class ComponentRegistry {
     return this.publicFiles;
   }
 
+  /** Emitted assets for locally-imported images, keyed by served URL. */
+  getLocalImageAssets(): Map<string, LocalImageAsset> {
+    return this.localImageAssets;
+  }
+
   /** Record the prebuilt ServerIsland inline script (content + disk path for the manifest). */
   setServerIslandScript(diskPath: string, content: string): void {
     this.serverIslandScriptFile = diskPath;
@@ -572,10 +582,17 @@ export class ComponentRegistry {
     const compileCache = this.compileCache;
     const markdown = this.markdown;
     const shakenSources = this.shakenSources;
+    const imageAssetLoader = createImageAssetLoader({
+      outDir: this.outDir,
+      assetPrefix: this.assetPrefix,
+      assets: this.localImageAssets,
+      rejectUnknown: this.loadedFromManifest && !this.development,
+    });
 
     const sveltePlugin: BunPlugin = {
       name: 'svelte-ssr',
       setup(build) {
+        build.onLoad({ filter: applyFilter('image:fileFilter', IMAGE_FILE_FILTER, { target: 'server' }) }, imageAssetLoader);
         // Side-effect CSS imports (e.g. `import '@fontsource-variable/inter'`).
         // Bun resolves bare specifiers via package.json#main to the real .css file,
         // so filtering on the resolved path catches both direct and package imports.
@@ -700,22 +717,17 @@ export class ComponentRegistry {
       throw: false,
     });
 
-    if (!result.success) {
-      const message = `Svelte SSR build failed:\n${formatBuildMessages(result.logs)}`;
-      for (const f of todo) {
-        mochiEvents.emit('compile:error', {
-          path: f,
-          message,
-          logs: toCompileErrorLogs(result.logs),
-        });
-      }
-      throw new Error(message);
-    }
-
-    // Detection below recomputes nested-hydration and unresolved-island errors
-    // for every file in this batch, so drop any prior ones for the recompiled
-    // files first. Without this, a fixed mistake keeps 500-ing every page until
-    // a restart, and an unfixed one is re-pushed (duplicated) on every save.
+    // Detection recomputes nested-hydration and unresolved-island errors for
+    // every file in this batch, so drop any prior ones for the recompiled files
+    // first. Without this, a fixed mistake keeps 500-ing every page until a
+    // restart, and an unfixed one is re-pushed (duplicated) on every save.
+    //
+    // This runs BEFORE the `result.success` throw on purpose. The hydration maps
+    // are populated by the svelte `onLoad`, which fires for every entry before
+    // Bun resolves transitive JS deps — so a later bundler failure must not
+    // swallow a structural error we already detected. It also keeps these errors
+    // reported under the `bun test`-only Bun-bundler EISDIR bug, where an SSR
+    // build can fail after preprocessing already succeeded.
     this.errors = this.errors.filter(
       (e) => !(e.kind === 'nested-hydration' && fileHydratables.has(e.parentPath)) && !(e.kind === 'unresolved-island' && filePreprocessErrors.has(e.filePath)),
     );
@@ -745,6 +757,18 @@ export class ComponentRegistry {
           );
         }
       }
+    }
+
+    if (!result.success) {
+      const message = `Svelte SSR build failed:\n${formatBuildMessages(result.logs)}`;
+      for (const f of todo) {
+        mochiEvents.emit('compile:error', {
+          path: f,
+          message,
+          logs: toCompileErrorLogs(result.logs),
+        });
+      }
+      throw new Error(message);
     }
 
     // Walk Bun's output graph (not the source-import graph) to attribute
@@ -989,10 +1013,17 @@ export class ComponentRegistry {
 
     const cookiesClientPath = toPosixPath(path.join(srcDir, 'runtime/cookies.client.ts'));
     const enhanceClientPath = toPosixPath(path.join(srcDir, 'runtime/enhance.client.ts'));
+    const imageAssetLoader = createImageAssetLoader({
+      outDir: this.outDir,
+      assetPrefix: this.assetPrefix,
+      assets: this.localImageAssets,
+      rejectUnknown: this.loadedFromManifest && !this.development,
+    });
 
     const clientPlugin: BunPlugin = {
       name: 'svelte-client',
       setup(build) {
+        build.onLoad({ filter: applyFilter('image:fileFilter', IMAGE_FILE_FILTER, { target: 'client' }) }, imageAssetLoader);
         // Mirror the SSR side-effect-CSS strip. The bundle is already linked
         // from the SSR-rendered <head> via entryImportedCss → importedCssUrls,
         // so the browser has it. Without this, Bun's default CSS handling
@@ -1647,6 +1678,11 @@ export class ComponentRegistry {
     this.errors = [];
     this.serverIslandPaths.clear();
     this.serverIslandExports.clear();
+    // Only this per-registry map is cleared; the globalThis registry
+    // (localAssetRegistry) deliberately stays append-only so already-rendered
+    // dev HTML can still resolve a replaced image's old hashed URL. The
+    // manifest is built from this map, so stale globals never reach prod.
+    this.localImageAssets.clear();
   }
 
   /**
@@ -1890,6 +1926,9 @@ export class ComponentRegistry {
     if (this.publicFiles.size > 0) {
       manifest.publicFiles = Object.fromEntries(this.publicFiles);
     }
+    if (this.localImageAssets.size > 0) {
+      manifest.localImageAssets = Object.fromEntries(this.localImageAssets);
+    }
     if (this.importedCssUrls.size > 0) {
       manifest.importedCssUrls = Object.fromEntries(this.importedCssUrls);
     }
@@ -1976,6 +2015,16 @@ export class ComponentRegistry {
     if (manifest.publicFiles) {
       for (const [urlPath, diskPath] of Object.entries(manifest.publicFiles)) {
         registry.publicFiles.set(urlPath, diskPath);
+      }
+    }
+
+    // Restore locally-imported image assets and repopulate the global request-time
+    // registry so the serving process can stream/transform them from disk.
+    if (manifest.localImageAssets) {
+      for (const [url, asset] of Object.entries(manifest.localImageAssets)) {
+        const diskPath = path.resolve(asset.diskPath);
+        registry.localImageAssets.set(url, { ...asset, diskPath });
+        registerLocalImageAsset(url, { diskPath, contentType: asset.contentType });
       }
     }
 

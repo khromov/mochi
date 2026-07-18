@@ -1,14 +1,16 @@
 import { afterEach, beforeAll, describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getImageUrl, getImageAttrs, getImage } from './imageApi';
+import { registerLocalImageAsset } from './localAssetRegistry';
 import { resolveImageOptions } from './config';
 import { ImageCache } from './imageCache';
 import { initExtensions } from '../extensions';
 
 const GLOBAL_CONFIG_KEY = '__mochi_config__';
 const GLOBAL_RUNTIME_KEY = '__mochi_image_runtime__';
+const GLOBAL_LOCAL_ASSETS_KEY = '__mochi_local_image_assets__';
 
 function installConfig(options: Record<string, unknown> = {}): void {
   (globalThis as unknown as Record<string, unknown>)[GLOBAL_CONFIG_KEY] = {
@@ -34,6 +36,7 @@ function installRuntime(imageOptions: Record<string, unknown> = {}): ImageCache 
 afterEach(() => {
   delete (globalThis as unknown as Record<string, unknown>)[GLOBAL_CONFIG_KEY];
   delete (globalThis as unknown as Record<string, unknown>)[GLOBAL_RUNTIME_KEY];
+  delete (globalThis as unknown as Record<string, unknown>)[GLOBAL_LOCAL_ASSETS_KEY];
   initExtensions({});
   for (const d of dirs.splice(0)) {
     rmSync(d, { recursive: true, force: true });
@@ -163,6 +166,50 @@ describe('getImage', () => {
     await cache.getOriginal(SRC, async () => ({ bytes: SOURCE_BYTES, contentType: 'image/png' }));
 
     const result = await getImage(SRC);
+    expect(result.contentType).toBe('image/png');
+    expect(Array.from(result.bytes)).toEqual(Array.from(SOURCE_BYTES));
+  });
+});
+
+describe('locally-imported image src (disk-backed)', () => {
+  // Register a real on-disk asset so getImage/getImageUrl transform it via the
+  // fetchImageSource local branch instead of a network fetch.
+  function installLocalAsset(): string {
+    const dir = mkdtempSync(join(tmpdir(), 'mochi-imgapi-local-'));
+    dirs.push(dir);
+    const diskPath = join(dir, 'hero.png');
+    writeFileSync(diskPath, SOURCE_BYTES);
+    const url = '/_mochi/asset/hero-deadbeef.png';
+    registerLocalImageAsset(url, { diskPath, contentType: 'image/png' });
+    return url;
+  }
+
+  test('getImageUrl mints a normal signed URL for a local src', () => {
+    installConfig();
+    installRuntime({ sizes: { thumb: { width: 20, height: 20 } } });
+    initExtensions({});
+    const src = installLocalAsset();
+    expect(getImageUrl(src, 'thumb')).toStartWith('/_mochi/image/hero-deadbeef-thumb.webp?p=');
+  });
+
+  test('getImage transforms a local src by reading it from disk', async () => {
+    installConfig();
+    installRuntime({ sizes: { thumb: { width: 20, height: 20, format: 'webp' } } });
+    initExtensions({});
+    const src = installLocalAsset();
+    const result = await getImage(src, 'thumb');
+    expect(result.format).toBe('webp');
+    expect(result.width).toBe(20);
+    expect(result.height).toBe(20);
+    expect(result.bytes.byteLength).toBeGreaterThan(0);
+  });
+
+  test('getImage with no size returns the original disk bytes', async () => {
+    installConfig();
+    installRuntime({});
+    initExtensions({});
+    const src = installLocalAsset();
+    const result = await getImage(src);
     expect(result.contentType).toBe('image/png');
     expect(Array.from(result.bytes)).toEqual(Array.from(SOURCE_BYTES));
   });
