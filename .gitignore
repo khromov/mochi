@@ -9,6 +9,8 @@ cli-tests
 packages/site/src/lib/docComponents.generated.ts
 packages/site/src/lib/blogComponents.generated.ts
 packages/demos/src/todo/app.generated.css
+# written at runtime by the image-filesystem demo
+packages/site/uploads/
 
 # code coverage
 coverage

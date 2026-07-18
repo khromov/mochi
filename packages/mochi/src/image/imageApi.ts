@@ -2,6 +2,7 @@ import path from 'node:path';
 import { getImageAssetPrefix, getImageRuntime, getSize } from './config';
 import { fetchImageSource } from './fetchSource';
 import { getLocalImageAsset } from './localAssetRegistry';
+import { resolveLocalDirFile } from './localDirs';
 import { toPosixPath } from '../utils';
 import { encryptImageRequest } from './imageCrypto';
 import { variantId } from './imageCache';
@@ -165,20 +166,31 @@ export function pushDebugImage(entry: ImageDebugEntry): void {
 }
 
 /**
- * For a locally-imported asset, recover the original file's display name + a
- * project-relative path from the registry (`sourcePath` is recorded only by the
- * in-process dev build loader). Lets the debug bar show `hero.jpg` and its source
- * path instead of the content-hashed served filename. Returns `undefined` when the
- * src isn't a local import (or its source path wasn't recorded, e.g. from a manifest).
+ * For a locally-imported asset or a local-dir file, recover the original file's
+ * display name + a project-relative path (`sourcePath` is recorded only by the
+ * in-process dev build loader; local-dir srcs resolve to their disk path). Lets
+ * the debug bar show `hero.jpg` and its source path instead of the content-hashed
+ * served filename. Returns `undefined` when the src isn't local (or its source
+ * path wasn't recorded, e.g. from a manifest).
  */
 function localSourceDisplay(src: string): { filename: string; sourcePath: string } | undefined {
-  const abs = getLocalImageAsset(src)?.sourcePath;
+  const abs = getLocalImageAsset(src)?.sourcePath ?? localDirSrc(src)?.diskPath;
   if (!abs) {
     return undefined;
   }
   const rel = path.relative(process.cwd(), abs);
   const display = rel && !rel.startsWith('..') && !path.isAbsolute(rel) ? rel : abs;
   return { filename: path.basename(abs), sourcePath: toPosixPath(display) };
+}
+
+// Same-origin-shape gate mirrors fetchSource: a remote src must never reach the
+// resolver (it reads the asset prefix from the global config).
+function localDirSrc(src: string): ReturnType<typeof resolveLocalDirFile> {
+  return src.startsWith('/') ? resolveLocalDirFile(src) : undefined;
+}
+
+function isLocalSrc(src: string): boolean {
+  return getLocalImageAsset(src) !== undefined || localDirSrc(src) !== undefined;
 }
 
 function recordForDebugBar(url: string, filename: string, req: ImageRequest, size: ResolvedImageSize | undefined): void {
@@ -191,7 +203,7 @@ function recordForDebugBar(url: string, filename: string, req: ImageRequest, siz
     filename: local?.filename ?? filename,
     kind: 'url',
     size: req.size,
-    local: getLocalImageAsset(req.src) !== undefined,
+    local: isLocalSrc(req.src),
     sourcePath: local?.sourcePath,
     params: { src: req.src, ...(size ? { width: size.width, height: size.height, format: size.format, quality: size.quality } : { original: true }) },
   });
@@ -210,7 +222,7 @@ function recordInlineForDebugBar(src: string, size: ResolvedImageSize | undefine
       filename: local?.filename ?? (size ? buildImageFilename(src, size) : buildOriginalFilename(src)),
       kind: 'inline',
       size: size?.name,
-      local: getLocalImageAsset(src) !== undefined,
+      local: isLocalSrc(src),
       sourcePath: local?.sourcePath,
       params: { src, width: result.width, height: result.height, format: result.format },
     });
@@ -288,3 +300,7 @@ export async function invalidateImage(src: string, opts: InvalidateImageOptions 
   const { cache } = getImageRuntime();
   await cache.invalidateOriginal(src, opts.hard ?? false);
 }
+
+// Runtime local-dir lookup — re-exported here so the `__MOCHI_IMAGE_API__`
+// virtual-module token covers it for .svelte files alongside the other image APIs.
+export { localImage } from './localDirs';

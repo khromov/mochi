@@ -151,6 +151,9 @@ await Mochi.serve({
     // src on this site is hardcoded and server-minted (encrypted URLs), never taken
     // from user input, so there's no arbitrary-fetch vector to protect against.
     blockPrivateNetworks: false,
+    // Runtime-served folders for the image-filesystem demo: photos is the
+    // checked-in sample set, uploads is written at request time (gitignored).
+    localDirs: { photos: './images', uploads: './uploads' },
     sizes: {
       hero: { width: 600, height: 400, fit: 'inside' },
       square: { width: 400, height: 400, fit: 'inside' },

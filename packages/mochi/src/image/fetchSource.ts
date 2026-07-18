@@ -1,6 +1,7 @@
 import { assertPublicUrl, SsrfGuardError } from '../utils/assertPublicUrl';
 import { applyFilter } from '../extensions';
 import { getLocalImageAsset } from './localAssetRegistry';
+import { resolveLocalDirFile } from './localDirs';
 import { ImageError } from './types';
 import type { ResolvedImageOptions } from './types';
 
@@ -20,6 +21,20 @@ export async function fetchImageSource(src: string, opts: ResolvedImageOptions):
   const local = getLocalImageAsset(src);
   if (local) {
     return { bytes: await Bun.file(local.diskPath).bytes(), contentType: local.contentType };
+  }
+
+  // Runtime local-dir image (`image.localDirs`): same-origin `/_mochi/files/…`
+  // src, same trust argument as above — the resolver enforces the configured
+  // roots, so read the bytes straight from disk. Gated on a configured dir +
+  // same-origin shape so remote srcs never touch the resolver (which reads the
+  // asset prefix from the global config — absent in unit tests).
+  const localDir = src.startsWith('/') && Object.keys(opts.localDirs).length > 0 ? resolveLocalDirFile(src, opts.localDirs) : undefined;
+  if (localDir) {
+    const file = Bun.file(localDir.diskPath);
+    if (!(await file.exists())) {
+      throw new ImageError(404, `Local image not found: ${src}`);
+    }
+    return { bytes: await file.bytes(), contentType: localDir.contentType };
   }
 
   // One timeout bounds the whole chain (all redirect hops), not each hop.

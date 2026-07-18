@@ -2,6 +2,9 @@ import type { Storage } from '../cache/cache';
 
 export type ImageFormat = 'webp' | 'jpeg' | 'png' | 'avif';
 
+/** Raster image extensions that resolve to an `ImportedImage` object. SVG is excluded (Bun.Image can't decode it). */
+export const IMAGE_FILE_FILTER = /\.(png|jpe?g|webp|avif|gif)$/i;
+
 /**
  * Decoded formats a local image import can carry — the `Bun.Image` formats the
  * build-time loader accepts. Broader than {@link ImageFormat} (the transform
@@ -119,6 +122,14 @@ export interface MochiImageOptions {
    * `getImageUrl(src, name)`, and `getImage(src, name)`. Validated at startup.
    */
   sizes?: Record<string, ImageSize>;
+  /**
+   * Named directories served at runtime under `${assetPrefix}/files/<name>/<path>`.
+   * The runtime counterpart of build-time local image imports: any raster image
+   * inside a root is addressable by path the moment it exists on disk — write
+   * with `Bun.write`, read with `localImage('<name>/<path>')`. Names appear in
+   * URLs (letters, digits, `_`, `-` only); roots resolve relative to cwd.
+   */
+  localDirs?: Record<string, string>;
   /** Disk cache directory. Must NOT be under `publicDir`. Default: `./.mochi/image-cache`. Ignored when `storage` is set. */
   cacheDir?: string;
   /**
@@ -160,6 +171,8 @@ export interface MochiImageOptions {
 export interface ResolvedImageOptions {
   enabled: boolean;
   sizes: Record<string, ResolvedImageSize>;
+  /** `localDirs` with every root resolved to an absolute path. */
+  localDirs: Record<string, string>;
   cacheDir: string;
   storage?: Storage;
   defaultFormat: ImageFormat;

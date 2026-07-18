@@ -8,6 +8,9 @@ await Mochi.serve({
   // getImageUrl(src, 'name') and getImage(src, 'name'). The URL only carries the
   // src + size name; the endpoint runs the transform lazily on request.
   image: {
+    // Named folders served at runtime: any raster image inside is addressable
+    // at /_mochi/files/<name>/<path> the moment it exists on disk.
+    localDirs: { photos: './images', uploads: './uploads' },
     sizes: {
       hero: { width: 600, height: 400, fit: 'inside' },
       square: { width: 400, height: 400, fit: 'inside' },

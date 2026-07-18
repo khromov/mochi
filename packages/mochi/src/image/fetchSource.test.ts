@@ -47,6 +47,7 @@ function opts(over: Partial<ResolvedImageOptions> = {}): ResolvedImageOptions {
   return {
     enabled: true,
     sizes: {},
+    localDirs: {},
     cacheDir: '/tmp/unused',
     defaultFormat: 'webp',
     defaultQuality: 80,
@@ -177,5 +178,44 @@ describe('fetchImageSource local-asset branch', () => {
     // Not in the registry → falls through to assertPublicUrl, which rejects a
     // relative (non-http/https) src with a 400 SsrfGuard-mapped ImageError.
     await expect(fetchImageSource('/_mochi/asset/nope-0.png', opts())).rejects.toBeInstanceOf(ImageError);
+  });
+});
+
+describe('fetchImageSource local-dir branch', () => {
+  const dirs: string[] = [];
+
+  afterEach(() => {
+    delete (globalThis as unknown as Record<string, unknown>)['__mochi_config__'];
+    for (const d of dirs.splice(0)) {
+      rmSync(d, { recursive: true, force: true });
+    }
+  });
+
+  function writeDirFile(bytes: Buffer): { root: string; src: string } {
+    // The resolver reads the asset prefix from the global config.
+    (globalThis as unknown as Record<string, unknown>)['__mochi_config__'] = {
+      options: {},
+      secretKey: Buffer.from('test-key-for-unit-tests-32bytes!'),
+    };
+    const root = mkdtempSync(join(tmpdir(), 'mochi-localdir-'));
+    dirs.push(root);
+    writeFileSync(join(root, 'photo.png'), bytes);
+    return { root, src: '/_mochi/files/media/photo.png' };
+  }
+
+  test('reads a configured local-dir image from disk without fetching', async () => {
+    const { root, src } = writeDirFile(PNG);
+    const { bytes, contentType } = await fetchImageSource(src, opts({ localDirs: { media: root }, allowedHosts: undefined, blockPrivateNetworks: true }));
+    expect(contentType).toBe('image/png');
+    expect(Buffer.from(bytes)).toEqual(PNG);
+  });
+
+  test('a missing file under a configured dir is a 404 ImageError, not an SSRF rejection', async () => {
+    const { root } = writeDirFile(PNG);
+    await expect(fetchImageSource('/_mochi/files/media/nope.png', opts({ localDirs: { media: root } }))).rejects.toMatchObject({ status: 404 });
+  });
+
+  test('with no localDirs configured, a same-origin src never touches the resolver and is rejected as a URL', async () => {
+    await expect(fetchImageSource('/_mochi/files/media/photo.png', opts())).rejects.toBeDefined();
   });
 });

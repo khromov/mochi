@@ -130,6 +130,48 @@ A ThumbHash `placeholder` is still computed lazily on demand — nothing is prec
 Two edge cases. With <code>image.enabled: false</code> the <code>/_mochi/asset/…</code> route still serves the file (it's plain static serving), but a <code>size</code> becomes a no-op — <code>&lt;Image&gt;</code> falls back to the raw static URL. And the <a href="/docs/extensions/#imageurl"><code>image:url</code></a> CDN-rewrite filter only runs on <em>minted</em> transform URLs, so the no-size static URL (<code>hero.src</code>) bypasses it — use a <code>size</code> if you need local assets routed through the filter.
 </Callout>
 
+### Local files at runtime
+
+Imports are **build-time**: the file is baked into the build at compile. For a folder whose contents change **while the server runs** — uploads, generated images — declare it under `image.localDirs`. Any raster image inside a declared root is addressable by path the moment it exists on disk, with no registration step:
+
+```ts
+Mochi.serve({
+  image: {
+    localDirs: { media: './uploads' },
+    sizes: { thumb: { width: 240, height: 240 } },
+  },
+  // …
+});
+```
+
+```ts
+import { localImage, getImageUrl } from 'mochi-framework';
+
+// Write any time at runtime…
+await Bun.write('./uploads/cat.jpg', bytes);
+
+// …and read/serve it immediately — no restart, no re-registration.
+const img = await localImage('media/cat.jpg');
+// img → { src: '/_mochi/files/media/cat.jpg', width, height, format }
+```
+
+```svelte
+<Image src={img} size="thumb" alt="A runtime-served photo" />
+<img src={img.src} width={img.width} height={img.height} alt="" />
+```
+
+`localImage('<dir>/<path>')` probes the file and returns the same `ImportedImage` shape as a build-time import, so `<Image>`, `getImageUrl(img.src, 'thumb')`, and `placeholder` all work identically; transforms read the bytes from disk. Probes are memoized per file and revalidated by mtime/size, so calling it per request is cheap. It is server-only and needs the running server's config — call it from `serverProps`, handlers, or component scripts, not at module scope of a routes file.
+
+Because URLs are **path-addressed** (`/_mochi/files/<dir>/<path>`), they survive restarts — store them in a database, render them years later. The flip side is that the content behind a URL is mutable, so unlike the immutable content-hashed `/_mochi/asset/…` URLs, production serves local-dir files with `Cache-Control: public, max-age=0, must-revalidate` + `Last-Modified`/304 revalidation instead of caching forever.
+
+Only raster-image extensions (**png, jpg, jpeg, webp, avif, gif**) are servable, requests are confined to the declared roots (`../` traversal resolves to a 404), and dir names may only contain letters, digits, `_` and `-`.
+
+<Callout type="warning">
+
+The transform cache is keyed by `src` and serves stale-while-revalidate: after you **replace** a file in place, `/_mochi/files/…` serves the new bytes immediately, but an already-minted transform URL keeps its cached output until `timeToStale`. Call `invalidateImage(img.src)` after overwriting a file — or write under a new name.
+
+</Callout>
+
 ### `getImageUrl` — deferred URLs
 
 `getImageUrl(src, size)` returns an encrypted URL. It's synchronous and near-instant — no fetch happens until the browser requests it, and the transform runs in the endpoint:
@@ -273,24 +315,25 @@ In dev, each image produced during a request shows up in the [debug bar's Images
 
 Configure under `Mochi.serve({ image: { … } })`. Every option is optional — `sizes` defaults to `{}`:
 
-| Option                 | Default                 | Notes                                                                          |
-| ---------------------- | ----------------------- | ------------------------------------------------------------------------------ |
-| `sizes`                | `{}`                    | Named transform recipes (see [Declare sizes](#declare-sizes))                  |
-| `enabled`              | `true`                  | `false` unmounts the endpoint; URL helpers then return the raw source URL      |
-| `cacheDir`             | `./.mochi/image-cache`  | Must not be under `publicDir`; ignored when `storage` is set                   |
-| `storage`              | `FileStorage(cacheDir)` | Override the cache backend (see [Custom cache storage](#custom-cache-storage)) |
-| `defaultFormat`        | `webp`                  | Used when a size omits `format`                                                |
-| `defaultQuality`       | `80`                    | Used when a size omits `quality`                                               |
-| `outputFormats`        | all four                | Allowed output formats                                                         |
-| `allowedHosts`         | any public host         | Exact host or `*.example.com`                                                  |
-| `blockPrivateNetworks` | `true`                  | Reject private/loopback/link-local addresses                                   |
-| `fetchTimeoutMs`       | `10_000`                | Upstream fetch timeout                                                         |
-| `maxResponseBytes`     | `20 MB`                 | Hard source-size cap                                                           |
-| `maxPixels`            | `50_000_000`            | Decompression-bomb guard                                                       |
-| `timeToStale`          | `14_400_000`            | Cache time-to-stale (ms); variants follow it                                   |
-| `timeToEvict`          | `86_400_000`            | Cache time-to-evict (ms); variants follow it                                   |
-| `sweepIntervalMs`      | `3_600_000`             | Background cache-janitor interval; `0` disables                                |
-| `compressPayload`      | `true`                  | Deflate the encrypted URL payload                                              |
+| Option                 | Default                 | Notes                                                                                |
+| ---------------------- | ----------------------- | ------------------------------------------------------------------------------------ |
+| `sizes`                | `{}`                    | Named transform recipes (see [Declare sizes](#declare-sizes))                        |
+| `enabled`              | `true`                  | `false` unmounts the endpoint; URL helpers then return the raw source URL            |
+| `localDirs`            | `{}`                    | Named runtime-served folders (see [Local files at runtime](#local-files-at-runtime)) |
+| `cacheDir`             | `./.mochi/image-cache`  | Must not be under `publicDir`; ignored when `storage` is set                         |
+| `storage`              | `FileStorage(cacheDir)` | Override the cache backend (see [Custom cache storage](#custom-cache-storage))       |
+| `defaultFormat`        | `webp`                  | Used when a size omits `format`                                                      |
+| `defaultQuality`       | `80`                    | Used when a size omits `quality`                                                     |
+| `outputFormats`        | all four                | Allowed output formats                                                               |
+| `allowedHosts`         | any public host         | Exact host or `*.example.com`                                                        |
+| `blockPrivateNetworks` | `true`                  | Reject private/loopback/link-local addresses                                         |
+| `fetchTimeoutMs`       | `10_000`                | Upstream fetch timeout                                                               |
+| `maxResponseBytes`     | `20 MB`                 | Hard source-size cap                                                                 |
+| `maxPixels`            | `50_000_000`            | Decompression-bomb guard                                                             |
+| `timeToStale`          | `14_400_000`            | Cache time-to-stale (ms); variants follow it                                         |
+| `timeToEvict`          | `86_400_000`            | Cache time-to-evict (ms); variants follow it                                         |
+| `sweepIntervalMs`      | `3_600_000`             | Background cache-janitor interval; `0` disables                                      |
+| `compressPayload`      | `true`                  | Deflate the encrypted URL payload                                                    |
 
 <Callout type="warning">
 

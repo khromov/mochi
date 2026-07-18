@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import path from 'node:path';
 import { getMochiConfig } from '../mochiConfig';
 import { ImageCache } from './imageCache';
 import type { ImageFormat, ImageSize, MochiImageOptions, ResolvedImageOptions, ResolvedImageSize } from './types';
@@ -87,9 +88,20 @@ export function resolveImageOptions(opts: MochiImageOptions | undefined): Resolv
     sizes[name] = resolveSize(name, p, { format: defaultFormat, quality: defaultQuality, autoOrient, maxPixels, outputFormats });
   }
 
+  // Null-prototype for the same reason as `sizes` — dir names come from URLs at
+  // request time, so a plain object would resolve "constructor" etc.
+  const localDirs: Record<string, string> = Object.create(null);
+  for (const [name, root] of Object.entries(o.localDirs ?? {})) {
+    if (!/^[A-Za-z0-9_-]+$/.test(name)) {
+      throw new Error(`Image localDirs name "${name}" is invalid: names appear in URLs and may only contain letters, digits, "_" and "-"`);
+    }
+    localDirs[name] = path.resolve(root);
+  }
+
   return {
     enabled: o.enabled ?? true,
     sizes,
+    localDirs,
     cacheDir: o.cacheDir ?? './.mochi/image-cache',
     storage: o.storage,
     defaultFormat,

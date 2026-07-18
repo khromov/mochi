@@ -87,6 +87,7 @@ export function getImage() { __serverOnly("getImage()"); }
 export function getImagePlaceholder() { return Promise.resolve(null); }
 export function imagePlaceholder() { return Promise.resolve(null); }
 export function invalidateImage() { __serverOnly("invalidateImage()"); }
+export function localImage() { __serverOnly("localImage()"); }
 export function memoryStore() { __serverOnly("memoryStore()"); }
 export function sqliteStore() { __serverOnly("sqliteStore()"); }
 export function postgresStore() { __serverOnly("postgresStore()"); }

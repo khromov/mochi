@@ -84,3 +84,28 @@ describe('getSize', () => {
     expect(getSize('toString', plain)).toBeUndefined();
   });
 });
+
+describe('resolveImageOptions localDirs', () => {
+  test('defaults to an empty map', () => {
+    expect(Object.keys(resolveImageOptions({}).localDirs)).toEqual([]);
+    expect(Object.keys(resolveImageOptions(undefined).localDirs)).toEqual([]);
+  });
+
+  test('resolves roots to absolute paths', () => {
+    const { localDirs } = resolveImageOptions({ localDirs: { media: './uploads' } });
+    expect(localDirs.media).toStartWith('/');
+    expect(localDirs.media?.endsWith('/uploads')).toBe(true);
+  });
+
+  test('throws on a dir name that cannot appear in a URL segment', () => {
+    for (const name of ['has space', 'a/b', 'dots.dot', '', 'ünïcode']) {
+      expect(() => resolveImageOptions({ localDirs: { [name]: './x' } })).toThrow(/localDirs name/);
+    }
+  });
+
+  test('the resolved map has a null prototype (URL-derived names cannot hit the prototype chain)', () => {
+    const { localDirs } = resolveImageOptions({ localDirs: { media: './uploads' } });
+    expect(Object.getPrototypeOf(localDirs)).toBeNull();
+    expect((localDirs as Record<string, unknown>).toString).toBeUndefined();
+  });
+});

@@ -21,10 +21,10 @@ export { MochiCache } from './cache/cache';
 export type { MochiCacheOptions, CacheResult, CacheStatus, Storage, SweepOptions, SweepResult } from './cache/cache';
 export { MemoryStorage, FileStorage, isBlobRef, readBlobRef } from './cache/cache-storage';
 export type { FileStorageOptions, MemoryStorageOptions, BlobRef } from './cache/cache-storage';
-export { getImageUrl, getImageAttrs, getImage, getImagePlaceholder, imagePlaceholder, warmImagePlaceholder, invalidateImage } from './image/imageApi';
+export { getImageUrl, getImageAttrs, getImage, getImagePlaceholder, imagePlaceholder, warmImagePlaceholder, invalidateImage, localImage } from './image/imageApi';
 export type { ResolvedImage, ImageAttrs } from './image/imageApi';
 export type { MochiImageOptions, ImageSize, InvalidateImageOptions, ImageFormat, ImageFit, ImportedImage, ImportedImageFormat } from './image/types';
-export { IMAGE_FILE_FILTER } from './compiler/imageAssetLoader';
+export { IMAGE_FILE_FILTER } from './image/types';
 export { EmailError } from './email/types';
 export type {
   MochiEmailOptions,
