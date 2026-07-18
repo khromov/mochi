@@ -103,6 +103,35 @@ describe('createImageAssetLoader', () => {
     expect(again.src).toBe(ra.src);
   });
 
+  test('rejectUnknown: throws for an image not already in the assets map, without writing or registering', async () => {
+    const dir = mkdir();
+    const outDir = mkdir();
+    const fixture = writeFixture(dir, 'new.png', PNG_40x30);
+    const assets = new Map<string, LocalImageAsset>();
+    const loader = createImageAssetLoader({ outDir, assetPrefix: '/_mochi', assets, rejectUnknown: true });
+
+    await expect(loader({ path: fixture })).rejects.toThrow(/runtime in production|not part of the prebuilt manifest/i);
+    // Nothing registered in either map, and no asset emitted to disk.
+    expect(assets.size).toBe(0);
+    expect(existsSync(join(outDir, 'assets'))).toBe(false);
+  });
+
+  test('rejectUnknown: passes through when the url is already registered (manifest-restored asset)', async () => {
+    const dir = mkdir();
+    const outDir = mkdir();
+    const fixture = writeFixture(dir, 'known.png', PNG_40x30);
+    const assets = new Map<string, LocalImageAsset>();
+
+    // First a normal (build-time) pass to learn the content-hashed url, mimicking
+    // what fromManifest repopulates into the shared assets map.
+    const built = parseModule((await createImageAssetLoader({ outDir, assetPrefix: '/_mochi', assets })({ path: fixture })).contents);
+
+    // A prod on-demand recompile of the same built image must succeed idempotently.
+    const guarded = createImageAssetLoader({ outDir, assetPrefix: '/_mochi', assets, rejectUnknown: true });
+    const again = parseModule((await guarded({ path: fixture })).contents);
+    expect(again.src).toBe(built.src);
+  });
+
   test('rejects an undecodable/SVG file with a clear error', async () => {
     const dir = mkdir();
     const outDir = mkdir();
