@@ -520,8 +520,7 @@ export class ComponentRegistry {
    *
    * Boot-time and dev-watcher paths should call `compileAll` directly with
    * the full set of entrypoints — that produces a single shared SSR bundle
-   * (deduplicates `devalue`/etc. via Bun's `splitting: true`)
-   * and avoids the second-`Bun.build`-in-one-process EISDIR bug.
+   * (deduplicates `devalue`/etc. via Bun's `splitting: true`).
    */
   async compile(filename: string, opts: { force?: boolean } = {}): Promise<void> {
     await this.compileAll([filename], opts);
@@ -685,10 +684,7 @@ export class ComponentRegistry {
       // provides. Everything else (devalue, cookie, etc.) gets bundled
       // — but with `splitting: true` Bun emits shared transitive
       // deps into separate chunk files alongside each entry's `.server.js`,
-      // so they're written exactly once across the cohort. Two
-      // `Bun.build` calls that touch the same transitive deps in one process
-      // trip a Bun bundler EISDIR bug; batching all entrypoints into a single
-      // call sidesteps it.
+      // so they're written exactly once across the cohort.
       external: ['svelte', 'svelte/*'],
       splitting: true,
       outdir: compileOutDir,
@@ -1804,8 +1800,7 @@ export class ComponentRegistry {
 
     this.clientBundleCallCount = 0;
     // Rebuild every affected entry in a single Bun.build so transitive deps
-    // dedupe across them (and so a multi-page rebuild never trips the
-    // double-`Bun.build` EISDIR bug).
+    // dedupe across them.
     await this.safeBatchCompile([...affected], 'Targeted rebuild failed');
     this.rebuildHydratables();
     // `compileAll` already calls `buildClientBundle` once when the cohort

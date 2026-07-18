@@ -40,8 +40,8 @@ interface FileResult {
  * Per-file isolation is required because `Mochi.serve()` enforces a single
  * instance per process (the `globalThis.__mochi_config__` singleton) — booting
  * two servers in one process throws "Mochi.serve() has already been called."
- * Separate processes also sidestep Bun bundler EISDIR errors and test-global
- * pollution from compiling the same Svelte entry twice.
+ * Separate processes also sidestep test-global pollution from compiling the
+ * same Svelte entry twice.
  *
  * Exits the process with code 1 if any file fails.
  */
