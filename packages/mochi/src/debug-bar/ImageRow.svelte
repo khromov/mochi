@@ -1,5 +1,6 @@
 <script lang="ts">
   import ChevronRight from '../icons/chevron-right.svelte';
+  import House from '../icons/house.svelte';
   import Lock from '../icons/lock.svelte';
   import type { ImageDebugEntry } from '../runtime/requestContext';
   import formatHighlight from '../vendor/json-format-highlight/index.ts';
@@ -34,6 +35,9 @@
       <span class="island-name">{image.filename}</span>
     </button>
     <span class="island-meta">
+      {#if image.local}
+        <span class="local-icon" title="Local image import"><House size={10} /></span>
+      {/if}
       {#if image.kind === 'inline'}<span class="island-tag tag-cached">inline</span>{/if}
       {#if image.size}<span class="island-tag tag-size">{image.size}</span>{/if}
       {#if format}<span class="island-tag tag-fmt">{format}</span>{/if}
@@ -46,6 +50,9 @@
     </span>
   </div>
   <div class="image-detail">
+    {#if image.sourcePath}
+      <div class="image-source" title="Original import path">{image.sourcePath}</div>
+    {/if}
     {#if image.url}
       <a class="image-preview" href={image.url} target="_blank" rel="noopener" title="Open image in a new tab">
         <img src={image.url} loading="lazy" alt={image.filename} />
@@ -63,6 +70,12 @@
      .island-name, .island-meta, .island-tag, .island-size, .lock-icon) lives in
      MochiDebugBar.svelte as a bounded :global block. Only image-specific rules
      are below. */
+  .local-icon {
+    display: inline-flex;
+    align-items: center;
+    color: #a3c4a8;
+    cursor: help;
+  }
   .tag-fmt {
     background: rgba(184, 163, 196, 0.16);
     color: #b8a3c4;
@@ -110,6 +123,12 @@
     color: #8e9488;
     font-size: 10px;
     font-style: italic;
+  }
+  .image-source {
+    color: #a3c4a8;
+    font-size: 10px;
+    word-break: break-all;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   }
   .island-props {
     background: transparent;
