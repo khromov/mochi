@@ -38,6 +38,8 @@ Names use a `namespace:camelCase` convention. Each name is registered in a typed
 
 Fires as the very first thing inside `Mochi.serve()`, before any framework state is set up. Async.
 
+Nothing the framework mounts exists yet — in particular [queues](/docs/queues/) are created after the server binds, so `Mochi.getQueue()` throws here. Add jobs from `mochi:ready` or from a queue's `recover` callback instead.
+
 ```ts
 await Mochi.serve({
   eventHooks: {

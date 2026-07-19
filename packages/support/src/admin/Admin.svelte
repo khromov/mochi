@@ -2,7 +2,7 @@
   import '@fontsource/public-sans';
   import '@fontsource-variable/fraunces/full.css';
   import SubmissionCard from './SubmissionCard.svelte';
-  import type { EmailLogEntry, Submission } from '../types';
+  import type { EmailLogEntry, Submission } from '../db.server';
 
   let { inbox, handled, logs }: { inbox: Submission[]; handled: Submission[]; logs: Record<number, EmailLogEntry[]> } = $props();
 </script>

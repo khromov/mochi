@@ -1,7 +1,7 @@
 import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
-import { createQueue, getQueue, closeAllQueueResources } from './queue';
+import { createQueue, getQueue, closeAllQueueResources, runQueueRecovery } from './queue';
 import type { MochiJob } from './queue';
 import { mochiEvents } from './events';
 
@@ -202,8 +202,44 @@ describe('Mochi queue', () => {
     expect(getQueue(name)).toBe(created);
   });
 
-  test('getQueue throws for a queue that was never declared', () => {
-    expect(() => getQueue('never-declared')).toThrow(/no such queue/);
+  test('getQueue blames the lifecycle, not a typo, when nothing is mounted', () => {
+    expect(() => getQueue('never-declared')).toThrow(/no queues are mounted/);
+    expect(() => getQueue('never-declared')).toThrow(/mochi:init/);
+  });
+
+  test('getQueue names the mounted queues when only the name is wrong', () => {
+    const name = uniqueName();
+    createQueue(name, async () => null, { dataPath });
+    expect(() => getQueue('typoed')).toThrow(/no such queue/);
+    expect(() => getQueue('typoed')).toThrow(new RegExp(`Mounted queues: ${name}`));
+  });
+
+  test('runQueueRecovery hands each callback its own producer handle', async () => {
+    const name = uniqueName();
+    const created = createQueue(name, async () => null, { dataPath });
+    let received: unknown;
+    await runQueueRecovery([[name, { recover: (queue) => void (received = queue) }]]);
+    expect(received).toBe(created);
+  });
+
+  test('a throwing recover is contained and reported on the event bus', async () => {
+    const name = uniqueName();
+    createQueue(name, async () => null, { dataPath });
+    const errors: Array<{ queue: string; error: string }> = [];
+    mochiEvents.on('queue:error', (e) => errors.push(e));
+
+    await runQueueRecovery([
+      [
+        name,
+        {
+          recover: () => {
+            throw new Error('store unavailable');
+          },
+        },
+      ],
+    ]);
+
+    expect(errors).toEqual([{ queue: name, error: 'store unavailable' }]);
   });
 
   test('closeAllQueueResources closes resources and is idempotent', async () => {
@@ -211,8 +247,9 @@ describe('Mochi queue', () => {
     createQueue(name, async () => null, { dataPath });
 
     await closeAllQueueResources();
-    // After draining, the handle is gone from the registry.
-    expect(() => getQueue(name)).toThrow(/no such queue/);
+    // After draining, the handle is gone from the registry — which reads as an
+    // empty registry, so getQueue reports the mount-state message.
+    expect(() => getQueue(name)).toThrow(/no queues are mounted/);
     // A second call must not throw even though the registry is already empty.
     await closeAllQueueResources();
     expect(true).toBe(true);

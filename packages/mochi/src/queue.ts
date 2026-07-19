@@ -59,9 +59,18 @@ export interface MochiQueueRuntimeOptions {
 export interface MochiQueueOptions<T, R = unknown> extends MochiQueueRuntimeOptions {
   process: MochiProcessor<T, R>;
   on?: Partial<MochiQueueListeners<T, R>>;
+  /**
+   * Runs once at startup, after every queue in `Mochi.serve({ queues })` is
+   * mounted, with this queue's handle. The place to add back work
+   * your own store still considers unfinished — an in-memory queue loses its
+   * jobs on restart, and even a persisted one can't know about rows written
+   * before the job was accepted. A throw is logged and emitted as `queue:error`
+   * without stopping the server.
+   */
+  recover?: (queue: MochiQueue<T>) => void | Promise<void>;
 }
 
-/** Producer handle returned by `Mochi.getQueue(name)`. */
+/** Handle returned by `Mochi.getQueue(name)` — what you add jobs through. */
 export interface MochiQueue<T> {
   readonly name: string;
   add(name: string, data: T, opts?: MochiJobOptions): Promise<MochiJobRef>;
@@ -239,7 +248,7 @@ export function createQueue<T = unknown, R = unknown>(
 }
 
 /**
- * Resolve the producer handle for a queue declared in `Mochi.serve({ queues })`.
+ * Resolve the handle for a queue declared in `Mochi.serve({ queues })`, to add jobs to it.
  * Throws if the name was never declared (a typo, or `getQueue` reached before
  * `Mochi.serve()` mounted its queues) — producing to an unknown queue would
  * otherwise silently drop every job.
@@ -247,9 +256,45 @@ export function createQueue<T = unknown, R = unknown>(
 export function getQueue<T = unknown>(name: string): MochiQueue<T> {
   const handle = registry.byName.get(name);
   if (!handle) {
-    throw new Error(`Mochi.getQueue("${name}"): no such queue. Declare it via Mochi.serve({ queues: { "${name}": Mochi.queue(...) } }) before producing to it.`);
+    // An empty registry is almost always a lifecycle mistake rather than a
+    // typo: queues mount late in serve() — after the `mochi:init` hook and
+    // after the server binds — so anything reaching for a handle earlier
+    // finds nothing. Saying "no such queue" there sends people hunting for a
+    // misspelling that isn't the problem.
+    if (registry.byName.size === 0) {
+      throw new Error(
+        `Mochi.getQueue("${name}"): no queues are mounted in this process. Mochi.serve({ queues }) mounts them after the "mochi:init" hook and after the server binds, so call getQueue() somewhere that runs later: a queue's recover() callback, the "mochi:ready" hook, or any request handler.`,
+      );
+    }
+    throw new Error(
+      `Mochi.getQueue("${name}"): no such queue. Declare it via Mochi.serve({ queues: { "${name}": Mochi.queue(...) } }) before producing to it. Mounted queues: ${[...registry.byName.keys()].join(', ')}.`,
+    );
   }
   return handle as MochiQueue<T>;
+}
+
+/**
+ * Run every mounted queue's `recover` callback, once, at startup. Called by
+ * `Mochi.serve()` after the whole `queues` map is mounted (not from
+ * `createQueue`), so a callback may reach a sibling queue via `getQueue`.
+ *
+ * A failure is contained: the server is already bound and serving by this
+ * point, so a transient store error during recovery must not take the site
+ * down with it. It surfaces on the `queue:error` bus and in the log instead.
+ */
+export async function runQueueRecovery(entries: Array<[string, { recover?: (queue: MochiQueue<never>) => void | Promise<void> }]>): Promise<void> {
+  for (const [name, config] of entries) {
+    if (!config.recover) {
+      continue;
+    }
+    try {
+      await config.recover(getQueue(name) as MochiQueue<never>);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error(`[queue] ${name}: recover() failed — ${message}`);
+      mochiEvents.emit('queue:error', { queue: name, error: message });
+    }
+  }
 }
 
 /**

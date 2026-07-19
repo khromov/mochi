@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { EmailLogEntry, EmailStatus } from '../types';
+  import type { EmailLogEntry, EmailStatus } from '../db.server';
 
   let { status, entries }: { status: EmailStatus; entries: EmailLogEntry[] } = $props();
 

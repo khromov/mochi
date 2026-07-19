@@ -1,7 +1,35 @@
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { Database } from 'bun:sqlite';
-import type { EmailLogEntry, EmailLogEvent, Submission } from './types';
+
+export type EmailStatus = 'pending' | 'sent' | 'failed';
+
+export type EmailLogEvent = 'queued' | 'requeued' | 'sending' | 'sent' | 'failed';
+
+// These types live here, next to the queries that produce them: a type-only
+// import is erased before the client build, so even a hydrated island can
+// `import type` from this module without pulling bun:sqlite along.
+export interface Submission {
+  id: number;
+  name: string;
+  email: string;
+  message: string;
+  created_at: number;
+  handled_at: number | null;
+  email_status: EmailStatus;
+  email_error: string | null;
+  email_sent_at: number | null;
+}
+
+/** One line of the delivery history shown in the admin panel's email-log popup. */
+export interface EmailLogEntry {
+  id: number;
+  submission_id: number;
+  at: number;
+  attempt: number;
+  event: EmailLogEvent;
+  detail: string | null;
+}
 
 // Relative to the package root — the app always runs as `bun --cwd=packages/support`.
 // SUPPORT_DB exists so the test suite can point at a temp file instead.

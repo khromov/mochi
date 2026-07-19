@@ -1,6 +1,6 @@
 <script lang="ts">
   import EmailLogDialog from './EmailLogDialog.svelte';
-  import type { EmailLogEntry, Submission } from '../types';
+  import type { EmailLogEntry, Submission } from '../db.server';
 
   let { submission, log }: { submission: Submission; log: EmailLogEntry[] } = $props();
 

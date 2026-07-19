@@ -3,9 +3,7 @@ import type { MochiEmailTransportConfig } from 'mochi-framework';
 import { analytics } from 'mochi-shared';
 import { routes } from './routes';
 import { adminAuth } from './adminAuth';
-import { appendEmailLog, pendingSubmissionIds } from './db.server';
 import { SUPPORT_EMAIL_QUEUE, supportEmailQueue } from './jobs.server';
-import type { SupportEmailJob } from './jobs.server';
 
 const PORT = Number(process.env.PORT) || 3336;
 const DEVELOPMENT = process.env.MODE === 'development';
@@ -70,18 +68,6 @@ await Mochi.serve({
         throw new Error(
           "MOCHI_ORIGIN is not set. Mochi's CSRF check rejects every form POST in production unless proxy.origin is configured, so the form would 403. Set it to the public origin, e.g. https://support.mochi.fast.",
         );
-      }
-    },
-    // Not mochi:init — that fires before serve() mounts its queues, so getQueue
-    // would throw. Jobs are in-memory, so anything left `pending` was stranded
-    // by the previous shutdown; put it back on the queue.
-    'mochi:ready': async () => {
-      const stranded = pendingSubmissionIds();
-      if (stranded.length > 0) {
-        await Mochi.getQueue<SupportEmailJob>(SUPPORT_EMAIL_QUEUE).addBulk(stranded.map((id) => ({ name: 'send', data: { id } })));
-        for (const id of stranded) {
-          appendEmailLog(id, { attempt: 0, event: 'requeued', detail: 'Re-queued on server start' });
-        }
       }
     },
   },

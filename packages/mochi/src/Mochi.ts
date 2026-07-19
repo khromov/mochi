@@ -47,7 +47,7 @@ import { resolveWarmupEnabled, markWarmupRequest, isWarmablePattern } from './ru
 import { createErrorResponder, DEFAULT_ERROR_PAGE_PATH } from './runtime/errors';
 import { requestContext } from './runtime/requestContext';
 import type { MochiRequestContext } from './runtime/requestContext';
-import { createQueue, getQueue, closeAllQueueResources } from './queue';
+import { createQueue, getQueue, closeAllQueueResources, runQueueRecovery } from './queue';
 import type { MochiQueue, MochiQueueOptions, MochiQueueListeners, MochiProcessor } from './queue';
 import { finalizeCookieHeaders } from './runtime/cookies';
 import { makeRequestContextBuilder } from './runtime/requestSetup';
@@ -194,22 +194,25 @@ export class Mochi {
    * only when the descriptor is mounted in `Mochi.serve({ queues })`, keyed by
    * queue name. The config bundles the `process` consumer (receives a read-only
    * `MochiJob`, returns the job result) with its options (`concurrency`,
-   * `dataPath`, …) and optional `on` lifecycle listeners. Produce jobs from
+   * `dataPath`, …) and optional `on` lifecycle listeners. Add jobs from
    * anywhere via `Mochi.getQueue(name).add(...)`. Queues drain gracefully on
    * `Mochi.serve()` shutdown.
    */
   static queue<T = unknown, R = unknown>(config: MochiQueueOptions<T, R>): MochiQueueConfig {
-    const { process, on, ...options } = config;
+    // `recover` is destructured out for the same reason as `process`/`on`:
+    // whatever is left in `options` is forwarded verbatim to bunqueue.
+    const { process, on, recover, ...options } = config;
     return {
       __mochiQueue: true,
       process: process as MochiProcessor<unknown, unknown>,
       options,
       on: on as Partial<MochiQueueListeners<unknown, unknown>> | undefined,
+      recover: recover as ((queue: MochiQueue<never>) => void | Promise<void>) | undefined,
     };
   }
 
   /**
-   * Resolve the producer handle for a queue declared in
+   * Resolve the handle for a queue declared in
    * `Mochi.serve({ queues })` and `.add()` jobs to it. Pass the payload type
    * explicitly (`Mochi.getQueue<JobData>(name)`). Throws if the queue name was
    * never declared, or if reached before `Mochi.serve()` has mounted its queues.
@@ -1777,6 +1780,10 @@ export class Mochi {
       await server.stop(true);
       throw err;
     }
+    // After the whole map is mounted, so a recover() callback may reach a
+    // sibling queue. Awaited, so recovered jobs are enqueued before
+    // `mochi:ready` fires and before serve() resolves.
+    await runQueueRecovery(Object.entries(options.queues ?? {}));
 
     if (warmupHandlers.length > 0) {
       mochiEvents.emit('warmup:start', { routeCount: warmupHandlers.length });

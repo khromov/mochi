@@ -1,6 +1,6 @@
 import { Mochi, logger } from 'mochi-framework';
 import type { MochiQueueConfig } from 'mochi-framework';
-import { appendEmailLog, getSubmission, markEmailFailed, markEmailSent } from './db.server';
+import { appendEmailLog, getSubmission, markEmailFailed, markEmailSent, pendingSubmissionIds } from './db.server';
 
 export const SUPPORT_TO = process.env.SUPPORT_TO || 'support@mochi.fast';
 
@@ -11,11 +11,22 @@ export interface SupportEmailJob {
 }
 
 // In-memory: jobs don't survive a restart. The submission itself is already
-// committed to SQLite, and index.ts re-enqueues anything left `pending` on boot.
+// committed to SQLite, so `recover` puts anything still `pending` back on the
+// queue at boot — the rows, not the queue, are the source of truth.
 export const supportEmailQueue: MochiQueueConfig = Mochi.queue<SupportEmailJob>({
   concurrency: 2,
   defaultJobOptions: { attempts: 3 },
   bunqueue: { backoff: { type: 'exponential', delay: 5000 } },
+  recover: async (queue) => {
+    const stranded = pendingSubmissionIds();
+    if (stranded.length === 0) {
+      return;
+    }
+    await queue.addBulk(stranded.map((id) => ({ name: 'send', data: { id } })));
+    for (const id of stranded) {
+      appendEmailLog(id, { attempt: 0, event: 'requeued', detail: 'Re-queued on server start' });
+    }
+  },
   process: async (job) => {
     const submission = getSubmission(job.data.id);
     if (!submission) {
