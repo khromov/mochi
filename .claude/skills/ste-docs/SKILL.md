@@ -18,7 +18,7 @@ software documentation. The goal is text that a non-native English reader, a
 translator, or an AI tool cannot misread: short sentences, one idea each, plain
 words, active voice, and one name per concept.
 
-This skill covers prose written *by and for developers*: READMEs, docstrings,
+This skill covers prose written _by and for developers_: READMEs, docstrings,
 code comments, guides, runbooks, changelogs, CLI help, and error/log/warning
 messages. It does not change code logic or identifiers already fixed by an API
 — only the documentation and message text around them.
@@ -114,7 +114,7 @@ Run through `references/review-checklist.md`. At minimum confirm:
 
 ## Scope note
 
-This skill governs documentation *tone and clarity*. It does not decide
+This skill governs documentation _tone and clarity_. It does not decide
 formatting mechanics (indentation, Markdown flavor, line-length config) or
 rename code identifiers — keep those to the project's existing style and lint
 config. If a term is a fixed external API field or error string, keep it

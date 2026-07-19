@@ -4,6 +4,7 @@ A lookup table, not a document to read end to end. When you simplify vocabulary,
 prefer the right-hand form in comments, docs, commit messages, and error strings.
 
 Rules of use:
+
 - These are defaults, not absolutes. If a right-hand swap breaks the sentence,
   restructure the whole sentence instead (STE rule 9.1).
 - Keep any term that is a fixed external API field, config key, or quoted error
