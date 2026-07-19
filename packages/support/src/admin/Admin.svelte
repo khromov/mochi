@@ -2,9 +2,9 @@
   import '@fontsource/public-sans';
   import '@fontsource-variable/fraunces/full.css';
   import SubmissionCard from './SubmissionCard.svelte';
-  import type { Submission } from '../types';
+  import type { EmailLogEntry, Submission } from '../types';
 
-  let { inbox, handled }: { inbox: Submission[]; handled: Submission[] } = $props();
+  let { inbox, handled, logs }: { inbox: Submission[]; handled: Submission[]; logs: Record<number, EmailLogEntry[]> } = $props();
 </script>
 
 <svelte:head>
@@ -29,7 +29,7 @@
       {:else}
         <div class="list">
           {#each inbox as submission (submission.id)}
-            <SubmissionCard {submission} />
+            <SubmissionCard {submission} log={logs[submission.id] ?? []} />
           {/each}
         </div>
       {/if}
@@ -42,7 +42,7 @@
       {:else}
         <div class="list">
           {#each handled as submission (submission.id)}
-            <SubmissionCard {submission} />
+            <SubmissionCard {submission} log={logs[submission.id] ?? []} />
           {/each}
         </div>
       {/if}

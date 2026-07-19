@@ -3,7 +3,7 @@ import type { MochiEmailTransportConfig } from 'mochi-framework';
 import { analytics } from 'mochi-shared';
 import { routes } from './routes';
 import { adminAuth } from './adminAuth';
-import { pendingSubmissionIds } from './db.server';
+import { appendEmailLog, pendingSubmissionIds } from './db.server';
 import { SUPPORT_EMAIL_QUEUE, supportEmailQueue } from './jobs.server';
 import type { SupportEmailJob } from './jobs.server';
 
@@ -79,6 +79,9 @@ await Mochi.serve({
       const stranded = pendingSubmissionIds();
       if (stranded.length > 0) {
         await Mochi.getQueue<SupportEmailJob>(SUPPORT_EMAIL_QUEUE).addBulk(stranded.map((id) => ({ name: 'send', data: { id } })));
+        for (const id of stranded) {
+          appendEmailLog(id, { attempt: 0, event: 'requeued', detail: 'Re-queued on server start' });
+        }
       }
     },
   },

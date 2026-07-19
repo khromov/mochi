@@ -1,7 +1,8 @@
 <script lang="ts">
-  import type { Submission } from '../types';
+  import EmailLogDialog from './EmailLogDialog.svelte';
+  import type { EmailLogEntry, Submission } from '../types';
 
-  let { submission }: { submission: Submission } = $props();
+  let { submission, log }: { submission: Submission; log: EmailLogEntry[] } = $props();
 
   const handled = $derived(submission.handled_at !== null);
   const submitted = $derived(new Date(submission.created_at).toISOString().replace('T', ' ').slice(0, 16));
@@ -14,15 +15,7 @@
       <a href="mailto:{submission.email}">{submission.email}</a>
     </div>
     <div class="meta">
-      <span class="pill {submission.email_status}">
-        {#if submission.email_status === 'sent'}
-          email sent
-        {:else if submission.email_status === 'failed'}
-          email failed
-        {:else}
-          email pending
-        {/if}
-      </span>
+      <EmailLogDialog mochi:hydrate status={submission.email_status} entries={log} />
       <time datetime={new Date(submission.created_at).toISOString()}>{submitted}</time>
     </div>
   </header>
@@ -78,28 +71,6 @@
     gap: 0.6rem;
     font-size: 0.85rem;
     color: var(--text-subtle);
-  }
-
-  .pill {
-    padding: 0.15rem 0.55rem;
-    border-radius: 999px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    background: var(--surface-muted);
-    border: 1px solid var(--border);
-    color: var(--text-subtle);
-  }
-
-  .pill.sent {
-    background: var(--accent-soft);
-    color: var(--accent-soft-text);
-    border-color: transparent;
-  }
-
-  .pill.failed {
-    background: #f7e2dd;
-    color: var(--badge-danger-text);
-    border-color: transparent;
   }
 
   .message {

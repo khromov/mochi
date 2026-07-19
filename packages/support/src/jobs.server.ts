@@ -1,8 +1,8 @@
 import { Mochi, logger } from 'mochi-framework';
 import type { MochiQueueConfig } from 'mochi-framework';
-import { getSubmission, markEmailFailed, markEmailSent } from './db.server';
+import { appendEmailLog, getSubmission, markEmailFailed, markEmailSent } from './db.server';
 
-const SUPPORT_TO = process.env.SUPPORT_TO || 'support@mochi.fast';
+export const SUPPORT_TO = process.env.SUPPORT_TO || 'support@mochi.fast';
 
 export const SUPPORT_EMAIL_QUEUE = 'support-emails';
 
@@ -23,8 +23,10 @@ export const supportEmailQueue: MochiQueueConfig = Mochi.queue<SupportEmailJob>(
       return { sent: false };
     }
     const { name, email, message } = submission;
+    appendEmailLog(submission.id, { attempt: job.attempt, event: 'sending', detail: `Delivering to ${SUPPORT_TO}` });
+    let result;
     try {
-      await Mochi.email({
+      result = await Mochi.email({
         to: SUPPORT_TO,
         replyTo: email,
         subject: `Support request from ${name || email}`,
@@ -35,10 +37,19 @@ export const supportEmailQueue: MochiQueueConfig = Mochi.queue<SupportEmailJob>(
     } catch (err) {
       // Recorded before rethrowing so the admin panel shows why, even while
       // bunqueue is still retrying.
-      markEmailFailed(submission.id, err instanceof Error ? err.message : String(err));
+      const reason = err instanceof Error ? err.message : String(err);
+      markEmailFailed(submission.id, reason);
+      appendEmailLog(submission.id, { attempt: job.attempt, event: 'failed', detail: reason });
       throw err;
     }
     markEmailSent(submission.id);
+    appendEmailLog(submission.id, {
+      attempt: job.attempt,
+      event: 'sent',
+      detail: [`transport: ${result.transport}`, result.messageId ? `id: ${result.messageId}` : null, result.accepted?.length ? `accepted: ${result.accepted.join(', ')}` : null]
+        .filter(Boolean)
+        .join(' · '),
+    });
     return { sent: true };
   },
 });

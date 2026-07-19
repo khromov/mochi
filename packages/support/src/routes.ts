@@ -1,7 +1,7 @@
 import { Mochi, fail, redirect, success, logger, mintCaptcha, verifyCaptcha, consumeCaptcha } from 'mochi-framework';
 import type { MochiRouteValue } from 'mochi-framework';
-import { insertSubmission, listSubmissions, setHandled } from './db.server';
-import { SUPPORT_EMAIL_QUEUE } from './jobs.server';
+import { appendEmailLog, emailLogsBySubmission, insertSubmission, listSubmissions, setHandled } from './db.server';
+import { SUPPORT_EMAIL_QUEUE, SUPPORT_TO } from './jobs.server';
 import type { SupportEmailJob } from './jobs.server';
 
 export const routes: Record<string, MochiRouteValue> = {
@@ -46,6 +46,7 @@ export const routes: Record<string, MochiRouteValue> = {
           // and delivery failures surface in /admin/ instead of on the form.
           const id = insertSubmission({ name, email, message });
           await Mochi.getQueue<SupportEmailJob>(SUPPORT_EMAIL_QUEUE).add('send', { id });
+          appendEmailLog(id, { attempt: 0, event: 'queued', detail: `Queued for delivery to ${SUPPORT_TO}` });
         } catch (err) {
           logger.error('support: could not store submission', err);
           return fail(500, { error: 'We could not receive your message right now. Please email support@mochi.fast directly.' });
@@ -55,7 +56,7 @@ export const routes: Record<string, MochiRouteValue> = {
     },
   }),
   '/admin': Mochi.page('./src/admin/Admin.svelte', {
-    serverProps: () => ({ inbox: listSubmissions(false), handled: listSubmissions(true) }),
+    serverProps: () => ({ inbox: listSubmissions(false), handled: listSubmissions(true), logs: emailLogsBySubmission() }),
     // Post/Redirect/Get so a refresh after triaging doesn't re-submit.
     actions: {
       handle: ({ formData }) => {
