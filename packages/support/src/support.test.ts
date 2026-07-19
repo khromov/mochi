@@ -233,7 +233,6 @@ describe('support form action', () => {
     expect(performance.now() - started).toBeGreaterThanOrEqual(80);
   });
 
-
   test('/admin/ lists submissions once authenticated', async () => {
     const res = await fetch(`${base}/admin/`, { headers: AUTH });
     expect(res.status).toBe(200);
