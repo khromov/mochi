@@ -15,7 +15,7 @@ process.env.ADMIN_PASSWORD = 'letmein';
 
 const { routes } = await import('./routes');
 const { SUPPORT_EMAIL_QUEUE, supportEmailQueue } = await import('./jobs.server');
-const { emailLogsBySubmission, listSubmissions } = await import('./db.server');
+const { closeDb, emailLogsBySubmission, listSubmissions } = await import('./db.server');
 const { adminAuth } = await import('./adminAuth');
 
 const sent: ResolvedEmailMessage[] = [];
@@ -90,9 +90,22 @@ describe('support form action', () => {
     base = `http://localhost:${server.port}`;
   });
 
-  afterAll(() => {
+  afterAll(async () => {
     server.stop(true);
-    rmSync(outDir, { recursive: true, force: true });
+    // The SQLite file lives inside outDir, and Windows keeps it locked while a
+    // handle is open — then releases the lock asynchronously, so an immediate rm
+    // still throws EBUSY. Close the handle, then retry (Bun ignores rmSync's
+    // maxRetries). Best-effort cleanup of a temp dir: never fail the suite over
+    // it, the OS reclaims it on exit regardless.
+    closeDb();
+    for (let attempt = 0; attempt < 25; attempt++) {
+      try {
+        rmSync(outDir, { recursive: true, force: true });
+        return;
+      } catch {
+        await Bun.sleep(100);
+      }
+    }
   });
 
   test('GET / renders the form', async () => {

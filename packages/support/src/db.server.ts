@@ -117,7 +117,16 @@ export function emailLogsBySubmission(): Record<number, EmailLogEntry[]> {
   return grouped;
 }
 
-/** Jobs live only in memory, so a restart strands every unsent row — index.ts re-enqueues these on boot. */
+/**
+ * Release the SQLite handle. Only the test suite needs this: Windows keeps the
+ * database file locked while a handle is open, so the temp directory holding it
+ * can't be removed until this runs.
+ */
+export function closeDb(): void {
+  db.close();
+}
+
+/** Jobs live only in memory, so a restart strands every unsent row — the queue's `recover` re-adds them on boot. */
 export function pendingSubmissionIds(): number[] {
   return pendingStmt.all().map((row) => row.id);
 }
