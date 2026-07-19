@@ -7,7 +7,8 @@ const CHALLENGE = { 'WWW-Authenticate': 'Basic realm="Mochi Support Admin", char
 // never throws on a length mismatch and the comparison leaks no length either.
 const digest = (value: string): Buffer => createHash('sha256').update(value).digest();
 
-function credentialsMatch(header: string | null): boolean {
+/** Exported so the /admin rate limiter can spend quota only on failed attempts. */
+export function credentialsMatch(header: string | null): boolean {
   // Read at request time, not module load, so a test can set the env after import.
   const expectedUser = process.env.ADMIN_USER || 'admin';
   const expectedPassword = process.env.ADMIN_PASSWORD || '';
@@ -24,6 +25,14 @@ function credentialsMatch(header: string | null): boolean {
   const password = timingSafeEqual(digest(decoded.slice(separator + 1)), digest(expectedPassword));
   return user && password;
 }
+
+/**
+ * Tarpit for a rejected /admin attempt: caps a single attacker at ~12 guesses a
+ * minute per connection long before the rate limit's window matters. Env-tunable
+ * so the test suite doesn't sit for a minute; read at call time, like the
+ * credentials.
+ */
+export const authFailureDelay = (): Promise<void> => Bun.sleep(Number(process.env.ADMIN_AUTH_DELAY_MS ?? 5000));
 
 /** Gates every /admin request — the GET render and the triage POSTs alike. */
 export const adminAuth: Handle = async ({ event, resolve }) => {

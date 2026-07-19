@@ -33,7 +33,11 @@ await Mochi.serve({
   development: DEVELOPMENT,
   htmlShell: './src/shell.html',
   trailingSlash: 'always',
-  proxy: { origin: ORIGIN },
+  // CapRover's nginx terminates TLS and appends the client IP to
+  // X-Forwarded-For. Without addressHeader every visitor keys to the proxy's
+  // own IP, so /admin/'s rate limit would be one shared bucket. Reading the
+  // rightmost entry (xffDepth 1) can't be spoofed by the client.
+  proxy: { origin: ORIGIN, addressHeader: 'x-forwarded-for', xffDepth: 1 },
   // Auth first, so an unauthorised /admin hit is never counted as a pageview.
   handle: sequence(adminAuth, analytics),
   queues: { [SUPPORT_EMAIL_QUEUE]: supportEmailQueue },

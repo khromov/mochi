@@ -12,6 +12,8 @@ const outDir = mkdtempSync(path.join(import.meta.dir, '..', '.mochi-support-test
 process.env.SUPPORT_DB = path.join(outDir, 'support.sqlite');
 process.env.ADMIN_USER = 'admin';
 process.env.ADMIN_PASSWORD = 'letmein';
+// The real 5s tarpit on a rejected /admin attempt would blow every timeout here.
+process.env.ADMIN_AUTH_DELAY_MS = '80';
 
 const { routes } = await import('./routes');
 const { SUPPORT_EMAIL_QUEUE, supportEmailQueue } = await import('./jobs.server');
@@ -72,6 +74,9 @@ describe('support form action', () => {
       // The port is only known after serve() returns, so proxy.origin can't be
       // set ahead of time to satisfy the real origin check.
       csrf: { checkOrigin: false },
+      // Mirrors the deployed proxy trust, so the /admin/ client-address footer
+      // and the rate limiter's key are exercised the way production resolves them.
+      proxy: { addressHeader: 'x-forwarded-for', xffDepth: 1 },
       // Low difficulty and no age floor so tests don't hash for seconds or sleep.
       captcha: { bits: 8, minAgeMs: 0 },
       email: {
@@ -216,15 +221,26 @@ describe('support form action', () => {
     expect(res.headers.get('WWW-Authenticate')).toContain('Basic');
   });
 
-  test('/admin/ rejects a wrong password', async () => {
+  test('/admin/ rejects a wrong password, after the tarpit delay', async () => {
+    const started = performance.now();
     const res = await fetch(`${base}/admin/`, { headers: { Authorization: `Basic ${Buffer.from('admin:nope').toString('base64')}` } });
     expect(res.status).toBe(401);
+    expect(performance.now() - started).toBeGreaterThanOrEqual(80);
   });
+
 
   test('/admin/ lists submissions once authenticated', async () => {
     const res = await fetch(`${base}/admin/`, { headers: AUTH });
     expect(res.status).toBe(200);
     expect(await res.text()).toContain('ada@example.com');
+  });
+
+  // Runs after the render above, so the component is already compiled and the
+  // only thing this can be measuring is the tarpit.
+  test('correct credentials are never delayed', async () => {
+    const started = performance.now();
+    expect((await fetch(`${base}/admin/`, { headers: AUTH })).status).toBe(200);
+    expect(performance.now() - started).toBeLessThan(80);
   });
 
   test('handled submissions move between the two lists', async () => {
@@ -238,5 +254,28 @@ describe('support form action', () => {
     expect((await adminPost(base, 'unhandle', id as number)).status).toBe(303);
     expect(listSubmissions(false).some((s) => s.id === id)).toBe(true);
     expect(listSubmissions(true).some((s) => s.id === id)).toBe(false);
+  });
+
+  test('/admin/ footer reports the proxy-resolved client address', async () => {
+    const res = await fetch(`${base}/admin/`, { headers: { ...AUTH, 'X-Forwarded-For': '203.0.113.9, 10.0.0.2' } });
+    const html = await res.text();
+    // xffDepth 1 → the rightmost entry, the innermost trusted proxy's view.
+    expect(html).toContain('10.0.0.2');
+    expect(html).toContain('203.0.113.9, 10.0.0.2');
+  });
+
+  // Keep this last: the limiter buckets by client address, so once it trips
+  // every later unauthenticated /admin/ assertion in this file would get a 429.
+  test('repeated wrong passwords are rate limited, but the right one still gets in', async () => {
+    const wrong = { Authorization: `Basic ${Buffer.from('admin:nope').toString('base64')}` };
+    const statuses: number[] = [];
+    for (let i = 0; i < 12; i++) {
+      statuses.push((await fetch(`${base}/admin/`, { headers: wrong })).status);
+    }
+    expect(statuses).toContain(429);
+    expect(statuses.at(-1)).toBe(429);
+    // Correct credentials skip the limiter entirely, so a ban never locks out
+    // someone who knows the password.
+    expect((await fetch(`${base}/admin/`, { headers: AUTH })).status).toBe(200);
   });
 });

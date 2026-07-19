@@ -4,7 +4,17 @@
   import SubmissionCard from './SubmissionCard.svelte';
   import type { EmailLogEntry, Submission } from '../db.server';
 
-  let { inbox, handled, logs }: { inbox: Submission[]; handled: Submission[]; logs: Record<number, EmailLogEntry[]> } = $props();
+  let {
+    inbox,
+    handled,
+    logs,
+    client,
+  }: {
+    inbox: Submission[];
+    handled: Submission[];
+    logs: Record<number, EmailLogEntry[]>;
+    client: { address: string | null; forwardedFor: string | null };
+  } = $props();
 </script>
 
 <svelte:head>
@@ -47,6 +57,11 @@
         </div>
       {/if}
     </section>
+
+    <footer class="client">
+      Your IP: <code>{client.address ?? 'unknown'}</code>
+      · X-Forwarded-For: <code>{client.forwardedFor ?? '(none)'}</code>
+    </footer>
   </main>
 </div>
 
@@ -137,5 +152,15 @@
     display: flex;
     flex-direction: column;
     gap: 1rem;
+  }
+
+  .client {
+    margin-top: 2.5rem;
+    font-size: 0.8rem;
+    color: var(--text-subtle);
+  }
+
+  .client code {
+    font-size: 0.8rem;
   }
 </style>

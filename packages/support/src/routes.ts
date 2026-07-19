@@ -1,5 +1,6 @@
-import { Mochi, fail, redirect, success, logger, mintCaptcha, verifyCaptcha, consumeCaptcha } from 'mochi-framework';
+import { Mochi, fail, redirect, success, logger, mintCaptcha, verifyCaptcha, consumeCaptcha, getRequestContext } from 'mochi-framework';
 import type { MochiRouteValue } from 'mochi-framework';
+import { authFailureDelay, credentialsMatch } from './adminAuth';
 import { appendEmailLog, emailLogsBySubmission, insertSubmission, listSubmissions, setHandled } from './db.server';
 import { SUPPORT_EMAIL_QUEUE, SUPPORT_TO } from './jobs.server';
 import type { SupportEmailJob } from './jobs.server';
@@ -56,7 +57,45 @@ export const routes: Record<string, MochiRouteValue> = {
     },
   }),
   '/admin': Mochi.page('./src/admin/Admin.svelte', {
-    serverProps: () => ({ inbox: listSubmissions(false), handled: listSubmissions(true), logs: emailLogsBySubmission() }),
+    // The limiter runs before the adminAuth middleware, so it can't see the auth
+    // result — re-check the credentials here and skip (spending no quota) when
+    // they're right. Only wrong or missing basic auth counts, which is the
+    // brute-force we want to stop, and knowing the password always gets you in
+    // even mid-ban.
+    rateLimit: {
+      limit: 10,
+      window: '15m',
+      ban: { threshold: 3, duration: '1h' },
+      // Wrong credentials also pay a fixed delay here — the limiter's skip runs
+      // ahead of everything else on this route, so it's the one place that
+      // slows the 401 (and the 429 once the quota is gone) without touching a
+      // successful admin request.
+      skip: async (req) => {
+        const header = req.headers.get('Authorization');
+        if (credentialsMatch(header)) {
+          return true;
+        }
+        // Only a wrong *guess* pays the delay. A request with no credentials is
+        // just a browser fetching the 401 challenge on its way to the prompt —
+        // it still costs quota, but making every first page load hang for 5s
+        // would only punish the admin.
+        if (header) {
+          await authFailureDelay();
+        }
+        return false;
+      },
+    },
+    serverProps: () => {
+      const ctx = getRequestContext();
+      return {
+        inbox: listSubmissions(false),
+        handled: listSubmissions(true),
+        logs: emailLogsBySubmission(),
+        // Shown in the footer so the proxy's client-IP resolution — what the
+        // rate limiter keys on — can be verified in production.
+        client: { address: ctx.getClientAddress(), forwardedFor: ctx.request.headers.get('x-forwarded-for') },
+      };
+    },
     // Post/Redirect/Get so a refresh after triaging doesn't re-submit.
     actions: {
       handle: ({ formData }) => {
