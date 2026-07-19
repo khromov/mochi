@@ -215,10 +215,15 @@ describe('support form action', () => {
     expect(entries.at(-1)?.detail).toContain('transport: custom');
   });
 
-  test('/admin/ demands basic auth', async () => {
+  test('/admin/ demands basic auth, and the challenge is not delayed', async () => {
+    const started = performance.now();
     const res = await fetch(`${base}/admin/`);
     expect(res.status).toBe(401);
     expect(res.headers.get('WWW-Authenticate')).toContain('Basic');
+    // Sending no credentials is how a browser gets the login prompt — it is
+    // neither tarpitted nor charged quota; only a wrong guess is.
+    expect(performance.now() - started).toBeLessThan(80);
+    expect(res.headers.get('RateLimit-Remaining')).toBeNull();
   });
 
   test('/admin/ rejects a wrong password, after the tarpit delay', async () => {

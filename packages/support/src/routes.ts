@@ -58,10 +58,9 @@ export const routes: Record<string, MochiRouteValue> = {
   }),
   '/admin': Mochi.page('./src/admin/Admin.svelte', {
     // The limiter runs before the adminAuth middleware, so it can't see the auth
-    // result — re-check the credentials here and skip (spending no quota) when
-    // they're right. Only wrong or missing basic auth counts, which is the
-    // brute-force we want to stop, and knowing the password always gets you in
-    // even mid-ban.
+    // result — re-check the credentials here and skip (spending no quota) unless
+    // this is a wrong guess. Only guesses count, which is the brute-force we want
+    // to stop, and knowing the password always gets you in even mid-ban.
     rateLimit: {
       limit: 10,
       window: '15m',
@@ -72,16 +71,13 @@ export const routes: Record<string, MochiRouteValue> = {
       // successful admin request.
       skip: async (req) => {
         const header = req.headers.get('Authorization');
-        if (credentialsMatch(header)) {
+        // A request with no credentials is just a browser fetching the 401
+        // challenge on its way to the login prompt — it guesses nothing, so it
+        // neither waits nor spends quota. Only an actual wrong guess does both.
+        if (!header || credentialsMatch(header)) {
           return true;
         }
-        // Only a wrong *guess* pays the delay. A request with no credentials is
-        // just a browser fetching the 401 challenge on its way to the prompt —
-        // it still costs quota, but making every first page load hang for 5s
-        // would only punish the admin.
-        if (header) {
-          await authFailureDelay();
-        }
+        await authFailureDelay();
         return false;
       },
     },
