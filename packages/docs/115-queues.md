@@ -70,7 +70,7 @@ Or subscribe globally on the [`mochiEvents` bus](#observability) (filter by `que
 
 ### `Mochi.getQueue()`
 
-`Mochi.getQueue<JobData>(name)` resolves a mounted queue's handle — call `.add()` on it to add jobs. Pass the payload type explicitly. It throws if the name was never declared in `Mochi.serve({ queues })`, or if reached before `Mochi.serve()` mounted its queues.
+`Mochi.getQueue<JobData>(name)` resolves a mounted queue's handle — call `.add()` on it to add jobs. Pass the payload type explicitly. It throws if the name was never declared in `Mochi.serve({ queues })`, or if reached before `Mochi.serve()` mounted its queues — the message tells you which, so a mistimed call is never reported as a misspelled name.
 
 | Method                   | Returns                  | Notes                    |
 | ------------------------ | ------------------------ | ------------------------ |
@@ -165,7 +165,7 @@ Recovery is awaited before `Mochi.serve()` resolves, so recovered jobs are enque
 
 <Callout type="info">
 
-**Queues mount late.** They are created after the `mochi:init` hook and after the server binds, so `Mochi.getQueue()` throws if you call it from `mochi:init` — the error says as much. Anywhere that runs later can add jobs: a queue's own `recover` callback, the `mochi:ready` hook, or any request handler.
+**Queues mount late.** They are created after the `mochi:init` hook and after the server binds, so `Mochi.getQueue()` throws if you call it from `mochi:init` — the error says as much. Anywhere from the [`mochi:queuesMounted`](/docs/extensions/#mochiqueuesmounted) hook onwards can add jobs: a queue's own `recover` callback, the `mochi:ready` hook, or any request handler.
 
 </Callout>
 

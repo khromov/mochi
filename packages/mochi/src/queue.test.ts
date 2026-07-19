@@ -4,6 +4,7 @@ import path from 'node:path';
 import { createQueue, getQueue, closeAllQueueResources, runQueueRecovery } from './queue';
 import type { MochiJob } from './queue';
 import { mochiEvents } from './events';
+import { markStartupMilestone, resetStartupMilestones } from './lifecycle';
 
 // bunqueue locks its embedded store to the first dataPath used in the process,
 // so the whole file shares one temp dir and each test uses a unique queue name.
@@ -23,6 +24,7 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
 
 afterEach(async () => {
   mochiEvents.all.clear();
+  resetStartupMilestones();
   await closeAllQueueResources();
 });
 
@@ -202,16 +204,31 @@ describe('Mochi queue', () => {
     expect(getQueue(name)).toBe(created);
   });
 
-  test('getQueue blames the lifecycle, not a typo, when nothing is mounted', () => {
-    expect(() => getQueue('never-declared')).toThrow(/no queues are mounted/);
+  // The mount milestone is what separates "too early" from "wrong name" — see
+  // getQueue in ./queue.ts. These tests never run Mochi.serve(), so the
+  // milestone is unset and every lookup is legitimately "too early".
+  test('getQueue blames the lifecycle, not a typo, before queues are mounted', () => {
+    expect(() => getQueue('never-declared')).toThrow(/queues are not mounted yet/);
     expect(() => getQueue('never-declared')).toThrow(/mochi:init/);
   });
 
-  test('getQueue names the mounted queues when only the name is wrong', () => {
+  test('getQueue reports what mounted so far when asked mid-mount', () => {
     const name = uniqueName();
     createQueue(name, async () => null, { dataPath });
+    expect(() => getQueue('typoed')).toThrow(new RegExp(`Mounted so far: ${name}`));
+  });
+
+  test('getQueue names the mounted queues once mounting finished', () => {
+    const name = uniqueName();
+    createQueue(name, async () => null, { dataPath });
+    markStartupMilestone('mochi:queuesMounted');
     expect(() => getQueue('typoed')).toThrow(/no such queue/);
     expect(() => getQueue('typoed')).toThrow(new RegExp(`Mounted queues: ${name}`));
+  });
+
+  test('getQueue says so when serve mounted no queues at all', () => {
+    markStartupMilestone('mochi:queuesMounted');
+    expect(() => getQueue('emails')).toThrow(/no queues were declared/);
   });
 
   test('runQueueRecovery hands each callback its own producer handle', async () => {
@@ -247,9 +264,8 @@ describe('Mochi queue', () => {
     createQueue(name, async () => null, { dataPath });
 
     await closeAllQueueResources();
-    // After draining, the handle is gone from the registry — which reads as an
-    // empty registry, so getQueue reports the mount-state message.
-    expect(() => getQueue(name)).toThrow(/no queues are mounted/);
+    // After draining, the handle is gone from the registry.
+    expect(() => getQueue(name)).toThrow(/queues are not mounted yet/);
     // A second call must not throw even though the registry is already empty.
     await closeAllQueueResources();
     expect(true).toBe(true);

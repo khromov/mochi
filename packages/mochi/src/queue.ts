@@ -6,6 +6,7 @@
 import { Queue, Worker, shutdownManager } from 'bunqueue/client';
 import type { Job, JobOptions } from 'bunqueue/client';
 import { pinGlobal } from './utils/globalState';
+import { startupMilestoneReached } from './lifecycle';
 import { mochiEvents } from './events';
 import { logger } from './utils/log';
 
@@ -256,18 +257,22 @@ export function createQueue<T = unknown, R = unknown>(
 export function getQueue<T = unknown>(name: string): MochiQueue<T> {
   const handle = registry.byName.get(name);
   if (!handle) {
-    // An empty registry is almost always a lifecycle mistake rather than a
-    // typo: queues mount late in serve() — after the `mochi:init` hook and
-    // after the server binds — so anything reaching for a handle earlier
-    // finds nothing. Saying "no such queue" there sends people hunting for a
-    // misspelling that isn't the problem.
-    if (registry.byName.size === 0) {
+    // Three different mistakes, three different answers. Which one it is comes
+    // from the recorded startup milestone, not from guessing at registry size:
+    // an empty registry means "too early" for one app and "declared nothing"
+    // for another, and sending someone hunting for a typo they didn't make is
+    // the whole failure this error exists to prevent.
+    if (!startupMilestoneReached('mochi:queuesMounted')) {
+      const soFar = registry.byName.size > 0 ? ` Mounted so far: ${[...registry.byName.keys()].join(', ')}.` : '';
       throw new Error(
-        `Mochi.getQueue("${name}"): no queues are mounted in this process. Mochi.serve({ queues }) mounts them after the "mochi:init" hook and after the server binds, so call getQueue() somewhere that runs later: a queue's recover() callback, the "mochi:ready" hook, or any request handler.`,
+        `Mochi.getQueue("${name}"): queues are not mounted yet. Mochi.serve({ queues }) mounts them after the "mochi:init" hook and after the server binds, so call getQueue() somewhere that runs later: a queue's recover() callback, the "mochi:ready" hook, or any request handler.${soFar}`,
       );
     }
+    if (registry.byName.size === 0) {
+      throw new Error(`Mochi.getQueue("${name}"): no queues were declared. Add it to Mochi.serve({ queues: { "${name}": Mochi.queue(...) } }) before adding jobs to it.`);
+    }
     throw new Error(
-      `Mochi.getQueue("${name}"): no such queue. Declare it via Mochi.serve({ queues: { "${name}": Mochi.queue(...) } }) before producing to it. Mounted queues: ${[...registry.byName.keys()].join(', ')}.`,
+      `Mochi.getQueue("${name}"): no such queue. Declare it via Mochi.serve({ queues: { "${name}": Mochi.queue(...) } }) before adding jobs to it. Mounted queues: ${[...registry.byName.keys()].join(', ')}.`,
     );
   }
   return handle as MochiQueue<T>;

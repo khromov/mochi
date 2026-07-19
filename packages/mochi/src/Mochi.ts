@@ -48,6 +48,7 @@ import { createErrorResponder, DEFAULT_ERROR_PAGE_PATH } from './runtime/errors'
 import { requestContext } from './runtime/requestContext';
 import type { MochiRequestContext } from './runtime/requestContext';
 import { createQueue, getQueue, closeAllQueueResources, runQueueRecovery } from './queue';
+import { resetStartupMilestones } from './lifecycle';
 import type { MochiQueue, MochiQueueOptions, MochiQueueListeners, MochiProcessor } from './queue';
 import { finalizeCookieHeaders } from './runtime/cookies';
 import { makeRequestContextBuilder } from './runtime/requestSetup';
@@ -1754,6 +1755,8 @@ export class Mochi {
       }) as typeof server.stop;
     }
 
+    await runHook('mochi:listening', { options, server });
+
     {
       const startEvent: MochiServerStartEvent = {
         development,
@@ -1780,6 +1783,10 @@ export class Mochi {
       await server.stop(true);
       throw err;
     }
+    // Fired before recovery runs: by this point every queue in the map is
+    // registered, so a recover() callback (or a user hook) reaching for a
+    // sibling gets its handle rather than a "not mounted yet" error.
+    await runHook('mochi:queuesMounted', { options, server, queues: Object.keys(options.queues ?? {}) });
     // After the whole map is mounted, so a recover() callback may reach a
     // sibling queue. Awaited, so recovered jobs are enqueued before
     // `mochi:ready` fires and before serve() resolves.
@@ -1874,6 +1881,7 @@ export class Mochi {
         logger.error(`mochi:shutdown hook failed: ${err instanceof Error ? err.message : err}`);
       }
       await closeAllQueueResources();
+      resetStartupMilestones();
       const stopEvent: MochiServerStopEvent = { reason: 'signal' };
       if (signal === 'SIGTERM' || signal === 'SIGINT') {
         stopEvent.signal = signal;

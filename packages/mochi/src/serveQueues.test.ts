@@ -5,6 +5,7 @@ import type { Server } from 'bun';
 import { Mochi } from './Mochi';
 import { isMochiQueue } from './types';
 import { closeAllQueueResources } from './queue';
+import { reachedStartupMilestones, resetStartupMilestones } from './lifecycle';
 
 function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
   let resolve!: (value: T) => void;
@@ -43,6 +44,7 @@ describe('Mochi.serve({ queues })', () => {
   afterAll(async () => {
     server?.stop(true);
     await closeAllQueueResources();
+    resetStartupMilestones();
     rmSync(outDir, { recursive: true, force: true });
   });
 
@@ -80,6 +82,13 @@ describe('Mochi.serve({ queues })', () => {
   });
 
   test('getQueue() for a name never declared in serve is fatal', () => {
+    // serve() reached the mount milestone, so this is reported as a wrong name
+    // rather than as "too early", and the error lists what is actually mounted.
     expect(() => Mochi.getQueue('never-declared')).toThrow(/no such queue/);
+    expect(() => Mochi.getQueue('never-declared')).toThrow(/Mounted queues: serve-queue-jobs/);
+  });
+
+  test('serve records the startup milestones it passed', () => {
+    expect(reachedStartupMilestones()).toEqual(['mochi:init', 'mochi:listening', 'mochi:queuesMounted', 'mochi:ready']);
   });
 });

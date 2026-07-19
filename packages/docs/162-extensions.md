@@ -51,6 +51,43 @@ await Mochi.serve({
 });
 ```
 
+#### `mochi:listening`
+
+Fires immediately after `Bun.serve()` returns the bound server, before queues are mounted and before warmup runs. Use it when you need the port as early as possible — announcing the address, opening a tunnel, signalling a supervisor. Async.
+
+```ts
+await Mochi.serve({
+  eventHooks: {
+    'mochi:listening': async ({ server }) => {
+      await notifySupervisor({ port: server.port });
+    },
+  },
+  routes,
+});
+```
+
+#### `mochi:queuesMounted`
+
+Fires once every queue in `Mochi.serve({ queues })` is live, before each queue's `recover` callback runs. `ctx.queues` lists the mounted names. This is the earliest point at which [`Mochi.getQueue()`](/docs/queues/#mochigetqueue) resolves. Async.
+
+```ts
+await Mochi.serve({
+  eventHooks: {
+    'mochi:queuesMounted': async ({ queues }) => {
+      log.info(`queues live: ${queues.join(', ')}`);
+    },
+  },
+  queues,
+  routes,
+});
+```
+
+<Callout type="info">
+
+For re-enqueuing a single queue's unfinished work, prefer that queue's own [`recover`](/docs/queues/#recovery-on-start) callback — it receives the handle directly and keeps the logic next to the queue it belongs to. Reach for `mochi:queuesMounted` when the work spans queues or isn't queue-specific.
+
+</Callout>
+
 #### `mochi:ready`
 
 Fires after `Bun.serve()` returns the bound server, just before `Mochi.serve()` resolves. Use it for post-bind setup that needs the live `Server` instance — warm caches, register with service discovery, kick off background workers. Async.

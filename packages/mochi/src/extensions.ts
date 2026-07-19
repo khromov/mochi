@@ -24,6 +24,11 @@ import type { ResolvedEmailMessage, MochiEmailTransportConfig } from './email/ty
 import type { ImportedImageFormat } from './image/types';
 import type { TrailingSlashPolicy } from './runtime/trailingSlash';
 import { pinGlobal } from './utils/globalState';
+import { markStartupMilestone } from './lifecycle';
+import type { MochiStartupMilestone } from './lifecycle';
+
+/** Startup hooks whose firing is recorded as a lifecycle milestone. */
+const STARTUP_MILESTONE_HOOKS = new Set<string>(['mochi:init', 'mochi:listening', 'mochi:queuesMounted', 'mochi:ready']);
 
 /**
  * Discriminated union of every `mochiEvents` payload that `consoleLogger()`
@@ -40,6 +45,13 @@ export type ConsoleLoggerSource = {
 
 export interface MochiHookContext {
   'mochi:init': { options: MochiServeOptions };
+  'mochi:listening': { options: MochiServeOptions; server: Server<undefined> };
+  'mochi:queuesMounted': {
+    options: MochiServeOptions;
+    server: Server<undefined>;
+    /** Names of the queues just mounted, in declaration order. */
+    queues: string[];
+  };
   'mochi:ready': { options: MochiServeOptions; server: Server<undefined> };
   'mochi:shutdown': {
     options: MochiServeOptions;
@@ -69,6 +81,8 @@ export interface MochiHookContext {
 
 export interface MochiHookKindMap {
   'mochi:init': 'async';
+  'mochi:listening': 'async';
+  'mochi:queuesMounted': 'async';
   'mochi:ready': 'async';
   'mochi:shutdown': 'async';
   'route:matched': 'sync';
@@ -206,6 +220,8 @@ export type MochiFilters = { [K in keyof MochiFilterValue]?: Filter<K> };
 type MochiKind = 'sync' | 'async';
 const HOOK_KINDS: { [K in keyof MochiHookContext]: MochiKind } = {
   'mochi:init': 'async',
+  'mochi:listening': 'async',
+  'mochi:queuesMounted': 'async',
   'mochi:ready': 'async',
   'mochi:shutdown': 'async',
   'route:matched': 'sync',
@@ -249,6 +265,12 @@ export function initExtensions(opts: Pick<MochiServeOptions, 'eventHooks' | 'fil
 // The runtime dispatches on the runtime kind table to guarantee the actual
 // return matches the type — including when no user fn is registered.
 export function runHook<K extends keyof MochiHookContext>(name: K, ctx: MochiHookContext[K]): MochiHookKindMap[K] extends 'async' ? Promise<void> : void {
+  // Startup hooks double as lifecycle milestones. Recording here (rather than
+  // at each call site) keeps the record in step with the hooks themselves;
+  // per-request hooks like `route:matched` are deliberately not recorded.
+  if (STARTUP_MILESTONE_HOOKS.has(name)) {
+    markStartupMilestone(name as MochiStartupMilestone);
+  }
   const fn = registry.eventHooks[name] as Hook<K> | undefined;
   if (HOOK_KINDS[name] === 'async') {
     return Promise.resolve(fn?.(ctx)) as never;

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import type { MochiServeOptions } from './types';
 import { applyFilter, initExtensions, runHook, type MochiFilterContext } from './extensions';
+import { reachedStartupMilestones, resetStartupMilestones } from './lifecycle';
 import type { IslandPropsEntry } from './islands/islandPropsRegistry';
 import type { ResolvedEmailMessage } from './email/types';
 
@@ -345,6 +346,55 @@ describe('new extension points', () => {
     await runHook('mochi:ready', { options: fakeOptions, server: fakeServer });
     expect(saw).not.toBeNull();
     expect(saw!.server).toBe(fakeServer);
+  });
+
+  test('mochi:listening receives the bound server', async () => {
+    let saw: { server: unknown } | null = null;
+    initExtensions({
+      eventHooks: {
+        'mochi:listening': async (ctx) => {
+          await Bun.sleep(1);
+          saw = ctx;
+        },
+      },
+    });
+    const fakeServer = { stop: () => {} } as never;
+    await runHook('mochi:listening', { options: fakeOptions, server: fakeServer });
+    expect(saw).not.toBeNull();
+    expect(saw!.server).toBe(fakeServer);
+  });
+
+  test('mochi:queuesMounted names the mounted queues', async () => {
+    const captured: { queues?: string[] } = {};
+    initExtensions({
+      eventHooks: {
+        'mochi:queuesMounted': async (ctx) => {
+          await Bun.sleep(1);
+          captured.queues = ctx.queues;
+        },
+      },
+    });
+    const fakeServer = { stop: () => {} } as never;
+    await runHook('mochi:queuesMounted', { options: fakeOptions, server: fakeServer, queues: ['emails', 'thumbnails'] });
+    expect(captured.queues).toEqual(['emails', 'thumbnails']);
+  });
+
+  test('the startup hooks resolve with no user hook registered', async () => {
+    initExtensions({});
+    const fakeServer = { stop: () => {} } as never;
+    await runHook('mochi:listening', { options: fakeOptions, server: fakeServer });
+    await runHook('mochi:queuesMounted', { options: fakeOptions, server: fakeServer, queues: [] });
+    // Recorded as milestones even when nobody is listening — that record is
+    // what getQueue() reads to tell "too early" from "wrong name".
+    expect(reachedStartupMilestones()).toContain('mochi:listening');
+    expect(reachedStartupMilestones()).toContain('mochi:queuesMounted');
+  });
+
+  test('per-request hooks are not recorded as startup milestones', () => {
+    resetStartupMilestones();
+    initExtensions({});
+    runHook('route:matched', { pattern: '/', request: new Request('http://localhost/'), url: new URL('http://localhost/'), params: {}, kind: 'page' });
+    expect(reachedStartupMilestones()).toEqual([]);
   });
 
   test('mochi:shutdown awaits an async user hook and receives the signal', async () => {
