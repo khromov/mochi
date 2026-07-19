@@ -15,7 +15,7 @@ process.env.ADMIN_PASSWORD = 'letmein';
 
 const { routes } = await import('./routes');
 const { SUPPORT_EMAIL_QUEUE, supportEmailQueue } = await import('./jobs.server');
-const { listSubmissions } = await import('./db.server');
+const { emailLogsBySubmission, listSubmissions } = await import('./db.server');
 const { adminAuth } = await import('./adminAuth');
 
 const sent: ResolvedEmailMessage[] = [];
@@ -187,6 +187,14 @@ describe('support form action', () => {
     expect(sent[0]?.subject).not.toContain('\r');
     expect(sent[0]?.subject).toBe('Support request from Ada Bcc: evil@example.com');
     expect(sent[0]?.bcc).toBeUndefined();
+  });
+
+  test('the delivery log records queued → sending → sent', async () => {
+    const id = listSubmissions(false).find((s) => s.message === 'Help please')?.id;
+    expect(id).toBeDefined();
+    const entries = emailLogsBySubmission()[id as number] ?? [];
+    expect(entries.map((e) => e.event)).toEqual(['queued', 'sending', 'sent']);
+    expect(entries.at(-1)?.detail).toContain('transport: custom');
   });
 
   test('/admin/ demands basic auth', async () => {
