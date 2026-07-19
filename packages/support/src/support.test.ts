@@ -4,9 +4,23 @@ import path from 'node:path';
 import type { Server } from 'bun';
 import { Mochi, mintCaptcha, solveCaptcha } from 'mochi-framework';
 import type { ResolvedEmailMessage } from 'mochi-framework';
-import { routes } from './routes';
+
+// The suite's temp dir doubles as the outDir and the SQLite location. Both the
+// db path and the admin credentials must be in place before `./routes` and its
+// transitive `./db.server` are evaluated, hence the dynamic imports.
+const outDir = mkdtempSync(path.join(import.meta.dir, '..', '.mochi-support-test-'));
+process.env.SUPPORT_DB = path.join(outDir, 'support.sqlite');
+process.env.ADMIN_USER = 'admin';
+process.env.ADMIN_PASSWORD = 'letmein';
+
+const { routes } = await import('./routes');
+const { SUPPORT_EMAIL_QUEUE, supportEmailQueue } = await import('./jobs.server');
+const { listSubmissions } = await import('./db.server');
+const { adminAuth } = await import('./adminAuth');
 
 const sent: ResolvedEmailMessage[] = [];
+
+const AUTH = { Authorization: `Basic ${Buffer.from('admin:letmein').toString('base64')}` };
 
 const post = (base: string, fields: Record<string, string>): Promise<Response> =>
   fetch(`${base}/?/send`, {
@@ -14,6 +28,21 @@ const post = (base: string, fields: Record<string, string>): Promise<Response> =
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams(fields).toString(),
   });
+
+const adminPost = (base: string, action: string, id: number): Promise<Response> =>
+  fetch(`${base}/admin/?/${action}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...AUTH },
+    body: new URLSearchParams({ id: String(id) }).toString(),
+    redirect: 'manual',
+  });
+
+/** The send is now a background job, so the assertion has to wait for the worker. */
+const waitForSent = async (count: number): Promise<void> => {
+  for (let i = 0; i < 200 && sent.length < count; i++) {
+    await Bun.sleep(10);
+  }
+};
 
 // Minted + solved in-process against the same key and options the server
 // derived, so these verify exactly like the ones a real slide produces.
@@ -29,11 +58,9 @@ const validFields = (): Record<string, string> => ({
 
 describe('support form action', () => {
   let server: Server<undefined>;
-  let outDir: string;
   let base: string;
 
   beforeAll(async () => {
-    outDir = mkdtempSync(path.join(import.meta.dir, '..', '.mochi-support-test-'));
     server = await Mochi.serve({
       port: 0,
       development: false,
@@ -56,6 +83,8 @@ describe('support form action', () => {
           },
         },
       },
+      handle: adminAuth,
+      queues: { [SUPPORT_EMAIL_QUEUE]: supportEmailQueue },
       routes,
     });
     base = `http://localhost:${server.port}`;
@@ -78,11 +107,15 @@ describe('support form action', () => {
     expect(await res.json()).toEqual({ status: 'ok' });
   });
 
-  test('a valid submission sends one email to SUPPORT_TO', async () => {
+  test('a valid submission is stored and sends one email to SUPPORT_TO', async () => {
     sent.length = 0;
     const res = await post(base, validFields());
     expect(res.status).toBe(200);
+    await waitForSent(1);
     expect(sent).toHaveLength(1);
+    const stored = listSubmissions(false).find((s) => s.message === 'Help please');
+    expect(stored?.email).toBe('ada@example.com');
+    expect(stored?.email_status).toBe('sent');
     expect(sent[0]?.to).toEqual(['support@mochi.fast']);
     expect(sent[0]?.replyTo).toBe('ada@example.com');
     expect(sent[0]?.subject).toBe('Support request from Ada');
@@ -95,6 +128,8 @@ describe('support form action', () => {
     sent.length = 0;
     const res = await post(base, { ...validFields(), captcha_token: '', captcha_pow: '' });
     expect(res.status).toBe(400);
+    // Long enough for a job to have been picked up, had one been enqueued.
+    await Bun.sleep(50);
     expect(sent).toHaveLength(0);
   });
 
@@ -102,6 +137,7 @@ describe('support form action', () => {
     sent.length = 0;
     const res = await post(base, { ...validFields(), captcha_token: 'not-a-token' });
     expect(res.status).toBe(400);
+    await Bun.sleep(50);
     expect(sent).toHaveLength(0);
   });
 
@@ -110,6 +146,7 @@ describe('support form action', () => {
     const fields = validFields();
     expect((await post(base, fields)).status).toBe(200);
     expect((await post(base, fields)).status).toBe(400);
+    await waitForSent(1);
     expect(sent).toHaveLength(1);
   });
 
@@ -117,8 +154,10 @@ describe('support form action', () => {
     sent.length = 0;
     const fields = validFields();
     expect((await post(base, { ...fields, email: 'not-an-email' })).status).toBe(400);
+    await Bun.sleep(50);
     expect(sent).toHaveLength(0);
     expect((await post(base, fields)).status).toBe(200);
+    await waitForSent(1);
     expect(sent).toHaveLength(1);
   });
 
@@ -126,6 +165,7 @@ describe('support form action', () => {
     sent.length = 0;
     const res = await post(base, { ...validFields(), email: 'not-an-email' });
     expect(res.status).toBe(400);
+    await Bun.sleep(50);
     expect(sent).toHaveLength(0);
   });
 
@@ -133,6 +173,7 @@ describe('support form action', () => {
     sent.length = 0;
     const res = await post(base, { ...validFields(), message: '   ' });
     expect(res.status).toBe(400);
+    await Bun.sleep(50);
     expect(sent).toHaveLength(0);
   });
 
@@ -140,10 +181,41 @@ describe('support form action', () => {
     sent.length = 0;
     const res = await post(base, { ...validFields(), name: 'Ada\r\nBcc: evil@example.com' });
     expect(res.status).toBe(200);
+    await waitForSent(1);
     expect(sent).toHaveLength(1);
     expect(sent[0]?.subject).not.toContain('\n');
     expect(sent[0]?.subject).not.toContain('\r');
     expect(sent[0]?.subject).toBe('Support request from Ada Bcc: evil@example.com');
     expect(sent[0]?.bcc).toBeUndefined();
+  });
+
+  test('/admin/ demands basic auth', async () => {
+    const res = await fetch(`${base}/admin/`);
+    expect(res.status).toBe(401);
+    expect(res.headers.get('WWW-Authenticate')).toContain('Basic');
+  });
+
+  test('/admin/ rejects a wrong password', async () => {
+    const res = await fetch(`${base}/admin/`, { headers: { Authorization: `Basic ${Buffer.from('admin:nope').toString('base64')}` } });
+    expect(res.status).toBe(401);
+  });
+
+  test('/admin/ lists submissions once authenticated', async () => {
+    const res = await fetch(`${base}/admin/`, { headers: AUTH });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain('ada@example.com');
+  });
+
+  test('handled submissions move between the two lists', async () => {
+    const id = listSubmissions(false)[0]?.id;
+    expect(id).toBeDefined();
+
+    expect((await adminPost(base, 'handle', id as number)).status).toBe(303);
+    expect(listSubmissions(false).some((s) => s.id === id)).toBe(false);
+    expect(listSubmissions(true).some((s) => s.id === id)).toBe(true);
+
+    expect((await adminPost(base, 'unhandle', id as number)).status).toBe(303);
+    expect(listSubmissions(false).some((s) => s.id === id)).toBe(true);
+    expect(listSubmissions(true).some((s) => s.id === id)).toBe(false);
   });
 });

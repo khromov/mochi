@@ -1,7 +1,8 @@
-import { Mochi, fail, success, logger, mintCaptcha, verifyCaptcha, consumeCaptcha } from 'mochi-framework';
+import { Mochi, fail, redirect, success, logger, mintCaptcha, verifyCaptcha, consumeCaptcha } from 'mochi-framework';
 import type { MochiRouteValue } from 'mochi-framework';
-
-const SUPPORT_TO = process.env.SUPPORT_TO || 'support@mochi.fast';
+import { insertSubmission, listSubmissions, setHandled } from './db.server';
+import { SUPPORT_EMAIL_QUEUE } from './jobs.server';
+import type { SupportEmailJob } from './jobs.server';
 
 export const routes: Record<string, MochiRouteValue> = {
   '/': Mochi.page('./src/Support.svelte', {
@@ -34,27 +35,36 @@ export const routes: Record<string, MochiRouteValue> = {
           return fail(400, { error: 'Tell us what you need help with.' });
         }
         // Consume the one-time nonce only after field validation (a fixable
-        // email typo shouldn't burn it) but before sending (a retried SMTP
-        // failure must not double-send).
+        // email typo shouldn't burn it) but before storing (a retried submit
+        // must not duplicate the row).
         if (!(await consumeCaptcha(captcha))) {
           return fail(400, { error: 'This form was already submitted. Reload the page to send another message.' });
         }
         try {
-          await Mochi.email({
-            to: SUPPORT_TO,
-            replyTo: email,
-            subject: `Support request from ${name || email}`,
-            component: './src/SupportEmail.svelte',
-            props: { name, email, message },
-            text: [`From: ${name || '(no name)'} <${email}>`, '', message].join('\n'),
-          });
+          // Store first, deliver later: once the row is committed the message
+          // can't be lost to an SMTP outage, so the visitor is told it landed
+          // and delivery failures surface in /admin/ instead of on the form.
+          const id = insertSubmission({ name, email, message });
+          await Mochi.getQueue<SupportEmailJob>(SUPPORT_EMAIL_QUEUE).add('send', { id });
         } catch (err) {
-          // A real SMTP transport can fail where the `log` transport never could.
-          // Without this the visitor gets a 500 page and loses what they typed.
-          logger.error('support: send failed', err);
-          return fail(500, { error: 'We could not send your message right now. Please email support@mochi.fast directly.' });
+          logger.error('support: could not store submission', err);
+          return fail(500, { error: 'We could not receive your message right now. Please email support@mochi.fast directly.' });
         }
         return success();
+      },
+    },
+  }),
+  '/admin': Mochi.page('./src/admin/Admin.svelte', {
+    serverProps: () => ({ inbox: listSubmissions(false), handled: listSubmissions(true) }),
+    // Post/Redirect/Get so a refresh after triaging doesn't re-submit.
+    actions: {
+      handle: ({ formData }) => {
+        setHandled(Number(formData.get('id')), true);
+        return redirect(303, '/admin/');
+      },
+      unhandle: ({ formData }) => {
+        setHandled(Number(formData.get('id')), false);
+        return redirect(303, '/admin/');
       },
     },
   }),

@@ -1,7 +1,11 @@
-import { Mochi, silenceInternalRoutes } from 'mochi-framework';
+import { Mochi, sequence, silenceInternalRoutes } from 'mochi-framework';
 import type { MochiEmailTransportConfig } from 'mochi-framework';
 import { analytics } from 'mochi-shared';
 import { routes } from './routes';
+import { adminAuth } from './adminAuth';
+import { pendingSubmissionIds } from './db.server';
+import { SUPPORT_EMAIL_QUEUE, supportEmailQueue } from './jobs.server';
+import type { SupportEmailJob } from './jobs.server';
 
 const PORT = Number(process.env.PORT) || 3336;
 const DEVELOPMENT = process.env.MODE === 'development';
@@ -32,7 +36,9 @@ await Mochi.serve({
   htmlShell: './src/shell.html',
   trailingSlash: 'always',
   proxy: { origin: ORIGIN },
-  handle: analytics,
+  // Auth first, so an unauthorised /admin hit is never counted as a pageview.
+  handle: sequence(adminAuth, analytics),
+  queues: { [SUPPORT_EMAIL_QUEUE]: supportEmailQueue },
   email: {
     from: process.env.SMTP_FROM || 'Mochi Support Form <support@mochi.fast>',
     transport: smtp,
@@ -52,6 +58,9 @@ await Mochi.serve({
       if (DEVELOPMENT) {
         return;
       }
+      if (!process.env.ADMIN_PASSWORD) {
+        throw new Error('ADMIN_PASSWORD is not set. Without it /admin/ rejects every request. See packages/support/.env.example.');
+      }
       if (!smtp) {
         throw new Error(
           'SMTP_HOST is not set. Without it the support form would accept submissions and silently drop them on the `log` transport. See packages/support/.env.example.',
@@ -61,6 +70,15 @@ await Mochi.serve({
         throw new Error(
           "MOCHI_ORIGIN is not set. Mochi's CSRF check rejects every form POST in production unless proxy.origin is configured, so the form would 403. Set it to the public origin, e.g. https://support.mochi.fast.",
         );
+      }
+    },
+    // Not mochi:init — that fires before serve() mounts its queues, so getQueue
+    // would throw. Jobs are in-memory, so anything left `pending` was stranded
+    // by the previous shutdown; put it back on the queue.
+    'mochi:ready': async () => {
+      const stranded = pendingSubmissionIds();
+      if (stranded.length > 0) {
+        await Mochi.getQueue<SupportEmailJob>(SUPPORT_EMAIL_QUEUE).addBulk(stranded.map((id) => ({ name: 'send', data: { id } })));
       }
     },
   },
