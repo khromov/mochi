@@ -7,7 +7,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import type { Server } from 'bun';
 import { stringify as devalueStringify } from 'devalue';
-import { runIsolatedBuild } from '../utils/runIsolatedBuild';
+import { build } from '../cli/build';
 import { Mochi } from '../Mochi';
 import { mochiEvents } from '../events';
 import { encryptProps } from './serverIslandCrypto';
@@ -25,7 +25,7 @@ describe('build precompiles server islands into the manifest', () => {
 
   beforeAll(async () => {
     outDir = mkdtempSync(path.join(import.meta.dir, '..', '..', '.mochi-island-manifest-'));
-    await runIsolatedBuild(FIXTURE_PAGE, outDir);
+    await build({ routes: { '/': Mochi.page(FIXTURE_PAGE) }, development: false, outDir });
     manifest = JSON.parse(await Bun.file(path.join(outDir, 'manifest.json')).text());
     islandPaths = Object.values(manifest.serverIslandPaths ?? {});
     echoKey = Object.keys(manifest.serverIslandPaths ?? {}).find((k) => k.startsWith('Echo_'))!;
