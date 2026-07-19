@@ -263,9 +263,8 @@ export function getQueue<T = unknown>(name: string): MochiQueue<T> {
     // for another, and sending someone hunting for a typo they didn't make is
     // the whole failure this error exists to prevent.
     if (!startupMilestoneReached('mochi:queuesMounted')) {
-      const soFar = registry.byName.size > 0 ? ` Mounted so far: ${[...registry.byName.keys()].join(', ')}.` : '';
       throw new Error(
-        `Mochi.getQueue("${name}"): queues are not mounted yet. Mochi.serve({ queues }) mounts them after the "mochi:init" hook and after the server binds, so call getQueue() somewhere that runs later: a queue's recover() callback, the "mochi:ready" hook, or any request handler.${soFar}`,
+        `Mochi.getQueue("${name}"): queues are not mounted yet. Mochi.serve({ queues }) mounts them after the "mochi:init" hook and after the server binds, so call getQueue() somewhere that runs later: a queue's recover() callback, the "mochi:ready" hook, or any request handler.`,
       );
     }
     if (registry.byName.size === 0) {

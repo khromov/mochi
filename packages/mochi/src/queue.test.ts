@@ -212,12 +212,6 @@ describe('Mochi queue', () => {
     expect(() => getQueue('never-declared')).toThrow(/mochi:init/);
   });
 
-  test('getQueue reports what mounted so far when asked mid-mount', () => {
-    const name = uniqueName();
-    createQueue(name, async () => null, { dataPath });
-    expect(() => getQueue('typoed')).toThrow(new RegExp(`Mounted so far: ${name}`));
-  });
-
   test('getQueue names the mounted queues once mounting finished', () => {
     const name = uniqueName();
     createQueue(name, async () => null, { dataPath });
