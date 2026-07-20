@@ -106,6 +106,7 @@ export type {
   MochiCaptchaReason,
 } from './events';
 export type { MochiQueue, MochiJob, MochiJobRef, MochiJobOptions, MochiQueueOptions, MochiQueueRuntimeOptions, MochiQueueListeners, MochiProcessor } from './queue';
+export { DEFAULT_RECOVERY_STALL_WARNING_MS } from './queue';
 export { json, error, apiError } from './utils';
 export { trailingSlashIt } from './runtime/trailingSlash';
 export { fail, redirect, success } from './runtime/forms';
@@ -130,6 +131,8 @@ export type {
   MochiFilterReturn,
   MochiFilterKindMap,
   ConsoleLoggerSource,
+  ConsoleLoggerLevel,
+  ConsoleLoggerLine,
 } from './extensions';
 export { getClientAddress, resolveExpectedOrigin } from './runtime/proxy';
 export type { MochiProxyOptions } from './runtime/proxy';

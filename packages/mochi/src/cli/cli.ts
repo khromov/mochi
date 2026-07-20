@@ -7,6 +7,7 @@ import { closeAllQueueResources } from '../queue';
 import { extractServeOptions } from './extractServeOptions';
 import { updateSkill, SKILL_TARGETS, SKILL_DESTS, DEFAULT_SKILL_TARGET, type SkillTarget } from './updateSkill';
 import { generateKey } from './generateKey';
+import { relForDisplay } from '../utils';
 
 const TARGET_ALIASES: Record<string, SkillTarget> = { agy: 'antigravity' };
 
@@ -71,7 +72,7 @@ async function runUpdateSkill(args: string[]) {
 
   try {
     const { path: dest, created } = await updateSkill({ target });
-    const rel = path.relative(process.cwd(), dest) || dest;
+    const rel = relForDisplay(dest) || dest;
     process.stdout.write(`[mochi] ${created ? 'Created' : 'Updated'} ${rel}\n`);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -86,7 +87,7 @@ async function runGenerateKey(force: boolean) {
       force,
       confirmOverwrite: () => confirm('[mochi] MOCHI_KEY already exists in .env. Overwrite?'),
     });
-    const rel = path.relative(process.cwd(), dest) || dest;
+    const rel = relForDisplay(dest) || dest;
     if (action === 'aborted') {
       process.stdout.write(`[mochi] Aborted. Existing MOCHI_KEY in ${rel} left unchanged.\n`);
       return;

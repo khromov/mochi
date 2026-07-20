@@ -3,7 +3,7 @@ import { render } from 'svelte/server';
 import path from 'node:path';
 import fs from 'node:fs';
 import type { BunPlugin } from 'bun';
-import { isSvelteMarker, normalizeAssetPrefix, normalizeIslandHydrationMarkers, stripHydrationMarkers, toCompileErrorLogs, toPosixPath } from '../utils';
+import { isSvelteMarker, normalizeAssetPrefix, normalizeIslandHydrationMarkers, relForDisplay, stripHydrationMarkers, toCompileErrorLogs, toPosixPath } from '../utils';
 import { injectIslandPropsBlock } from '../islands/islandPropsRegistry';
 import { requestContext, renderDetached } from '../runtime/requestContext';
 import type { DebugBarData } from '../runtime/requestContext';
@@ -30,17 +30,54 @@ import prettyBytes from '../vendor/pretty-bytes';
  * the application of those preprocessors is async (Svelte's `preprocess()`).
  */
 async function applyUserPreprocessors(source: string, filename: string, target: 'server' | 'client', development: boolean): Promise<string> {
-  const preprocessors: PreprocessorGroup[] = applyFilter('compile:preprocessors', [], {
+  const userPreprocessors: PreprocessorGroup[] = applyFilter('compile:preprocessors', [], {
     filename,
     target,
     development,
   });
-  if (preprocessors.length === 0) {
+  // `builtinTsPreprocessor` runs last so it also strips TS that user
+  // preprocessors emit. svelte's `preprocess()` parses the component and hands
+  // each hook properly-parsed `attributes` — so it, not a source scan, decides
+  // whether a script block is TS.
+  //
+  // Fast-path: with no user preprocessors, the only work `preprocess()` can do
+  // is the builtin TS pass, which fires solely on `attributes.lang === 'ts'`.
+  // A `lang="ts"` attribute — in any quoting/spacing — always contains the
+  // literal substring `lang`, so a source lacking it provably has no TS script
+  // to transpile. This gate can only false-*positive* (harmlessly re-parse a
+  // "lang"-containing plain-JS file), never false-negative, so it skips the
+  // full-component parse for the common plain-JS case without the brittleness
+  // of a tag-matching regex. Any user preprocessor may inject TS, so the gate
+  // holds only when none are registered.
+  if (userPreprocessors.length === 0 && !source.includes('lang')) {
     return source;
   }
-  const result = await sveltePreprocess(source, preprocessors, { filename });
+  const result = await sveltePreprocess(source, [...userPreprocessors, builtinTsPreprocessor], { filename });
   return result.code;
 }
+
+// Svelte 5's native TS stripping is incomplete (e.g. it throws on constructor
+// parameter properties). Run Bun's transpiler over <script lang="ts"> before
+// svelte/compiler — the same treatment the .svelte.[jt]s rune-module loaders
+// already apply. transformSync does NOT tree-shake, so value imports referenced
+// only in the template survive.
+const tsScriptTranspiler = new Bun.Transpiler({ loader: 'ts' });
+const builtinTsPreprocessor: PreprocessorGroup = {
+  name: 'mochi-ts',
+  script({ content, attributes }) {
+    if (attributes.lang !== 'ts') {
+      return;
+    }
+    // `lang="ts"` must STAY on the tag: it also puts the template in TS mode
+    // (snippet parameter types, `as` casts in markup), which Bun never sees —
+    // dropping it makes svelte parse those as plain JS and fail. Re-running
+    // svelte's native TS pass over the already-transpiled script is a no-op.
+    // transformSync can't emit a source map, so positions after a transpiled
+    // script drift by its reprinted line-count delta — a limitation shared
+    // with the .svelte.[jt]s rune-module loaders.
+    return { code: tsScriptTranspiler.transformSync(content) };
+  },
+};
 
 /**
  * Directory containing the framework's own .ts/.svelte source files. This file
@@ -79,7 +116,7 @@ export function formatBuildMessages(
   const formatted = logs
     .map((l) => {
       const p = l.position;
-      const where = p ? `${path.relative(process.cwd(), p.file)}:${p.line}:${p.column}` : '<unknown>';
+      const where = p ? `${relForDisplay(p.file)}:${p.line}:${p.column}` : '<unknown>';
       return `  ${where} — ${l.message}`;
     })
     .join('\n');
@@ -156,7 +193,12 @@ function createMarkdownLoader(opts: {
     if (!compiled || typeof compiled.code !== 'string') {
       throw new Error(`markdown.compile returned no output for ${args.path}`);
     }
-    let svelteSource = compiled.code;
+    // mdsvex passes <script lang="ts"> through untouched, so its output needs
+    // the same built-in TS pass as regular .svelte files. User preprocessors
+    // still don't apply here — mdsvex owns markdown transforms. Same safe
+    // `lang` fast-path as applyUserPreprocessors: no `lang` substring → no TS
+    // script → skip the parse (can't false-negative).
+    let svelteSource = compiled.code.includes('lang') ? (await sveltePreprocess(compiled.code, [builtinTsPreprocessor], { filename: args.path })).code : compiled.code;
     let hydratables: HydratableComponent[] = [];
     let serverIslands: ServerIslandComponent[] = [];
     let preprocessErrors: PreprocessIslandError[] = [];
@@ -210,7 +252,7 @@ export type MochiCompileError =
     };
 
 function formatUnresolvedIsland(e: Extract<MochiCompileError, { kind: 'unresolved-island' }>): string {
-  const where = toPosixPath(path.relative(process.cwd(), e.filePath));
+  const where = relForDisplay(e.filePath);
   const head = `Unresolved island: <${e.component} ${e.directive}> in ${where}`;
   if (e.importSource === null) {
     return (
@@ -446,10 +488,12 @@ export class ComponentRegistry {
       if (exclude.length > 0) {
         const globs = exclude.map((p) => new Bun.Glob(p));
         for (const id of [...shaken.keys()]) {
-          const rel = path.relative(cwd, id);
+          // Glob patterns are written with forward slashes, so match against
+          // POSIX-ified paths or Windows never excludes anything.
+          const rel = toPosixPath(path.relative(cwd, id));
           // Excluded files compile from original source. Safe regardless: the
           // whole-app scan still covered them as call sites of other components.
-          if (globs.some((g) => g.match(rel) || g.match(id))) {
+          if (globs.some((g) => g.match(rel) || g.match(toPosixPath(id)))) {
             shaken.delete(id);
             excluded++;
           }
@@ -465,7 +509,7 @@ export class ComponentRegistry {
       for (const [id, out] of shaken) {
         const original = originals.get(id) ?? out;
         if (original !== out) {
-          changed.push({ name: path.relative(cwd, id), before: Buffer.byteLength(original, 'utf8'), after: Buffer.byteLength(out, 'utf8') });
+          changed.push({ name: relForDisplay(id), before: Buffer.byteLength(original, 'utf8'), after: Buffer.byteLength(out, 'utf8') });
         }
       }
       logger.info(`svelte-shaker: slimmed ${changed.length} of ${shaken.size} component(s)${excluded > 0 ? `, ${excluded} excluded` : ''}`);
@@ -1074,7 +1118,7 @@ export class ComponentRegistry {
           const source = await Bun.file(args.path).text();
           const scan = scanServerOnlyExports(source);
           for (const w of scan.warnings) {
-            logger.warn(`[mochi] ${path.relative(process.cwd(), args.path)}: ${w}`);
+            logger.warn(`[mochi] ${relForDisplay(args.path)}: ${w}`);
           }
           return { contents: buildServerOnlyStubModule(args.path, scan), loader: 'js' };
         });
@@ -1748,7 +1792,7 @@ export class ComponentRegistry {
         this.importedCssStats.push({
           name: path.basename(out.path),
           size: cssText.length,
-          inputs: [{ path: path.relative(process.cwd(), cssPath), size: cssText.length }],
+          inputs: [{ path: relForDisplay(cssPath), size: cssText.length }],
           imports: [],
         });
       }),

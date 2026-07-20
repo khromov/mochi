@@ -13,7 +13,7 @@ description: 'Run background jobs in-process with Mochi.queue(), backed by bunqu
 
 Offload work that shouldn't block a response — sending email, encoding media, calling slow third-party APIs — to a background **queue**. A queue bundles a job channel with the `process` function that consumes it; both run in your process, backed by [bunqueue](https://bunqueue.dev/)'s embedded mode.
 
-`Mochi.queue()` — like `Mochi.page` / `api` / `ws` / `sse` — returns an **inert config** that you mount in `Mochi.serve({ queues })`, keyed by name, so every background queue the server runs is declared in one place. Produce jobs from anywhere with `Mochi.getQueue(name).add(...)`.
+`Mochi.queue()` — like `Mochi.page` / `api` / `ws` / `sse` — returns an **inert config** that you mount in `Mochi.serve({ queues })`, keyed by name, so every background queue the server runs is declared in one place. Add jobs from anywhere with `Mochi.getQueue(name).add(...)`.
 
 ```ts
 import { Mochi } from 'mochi-framework';
@@ -53,7 +53,7 @@ const queueConfig = Mochi.queue<JobData, Result>({ process, ...options });
 | `attempt`    | `number` | 1-based attempt number (1 on first run) |
 | `enqueuedAt` | `number` | epoch ms when enqueued                  |
 
-Options: `concurrency` (jobs processed at once), `dataPath` (see below), and `on` for lifecycle listeners:
+Options: `concurrency` (jobs processed at once), `dataPath` (see below), `recover` (a startup callback for re-enqueuing unfinished work — see [Recovery on start](#recovery-on-start)), and `on` for lifecycle listeners:
 
 ```ts
 Mochi.queue({
@@ -70,7 +70,7 @@ Or subscribe globally on the [`mochiEvents` bus](#observability) (filter by `que
 
 ### `Mochi.getQueue()`
 
-`Mochi.getQueue<JobData>(name)` resolves the producer handle for a mounted queue. Pass the payload type explicitly. It throws if the name was never declared in `Mochi.serve({ queues })`, or if reached before `Mochi.serve()` mounted its queues.
+`Mochi.getQueue<JobData>(name)` resolves a mounted queue's handle — call `.add()` on it to add jobs. Pass the payload type explicitly. It throws if the name was never declared in `Mochi.serve({ queues })`, or if reached before `Mochi.serve()` mounted its queues — the message tells you which, so a mistimed call is never reported as a misspelled name.
 
 | Method                   | Returns                  | Notes                    |
 | ------------------------ | ------------------------ | ------------------------ |
@@ -90,7 +90,7 @@ await emails.addBulk([
 
 ### A shared queue module
 
-The common pattern is a shared module that exports the queue config (so your entry can mount it) while route code produces by name.
+The common pattern is a shared module that exports the queue config (so your entry can mount it) while route code adds jobs by name.
 
 ```ts
 // jobs.server.ts
@@ -147,6 +147,30 @@ bunqueue locks the embedded store to the **first** `dataPath` used in the proces
 
 </Callout>
 
+### Recovery on start
+
+An in-memory queue loses its jobs on restart, and even a persisted one can't know about work your own database recorded before the job was accepted. `recover` runs once at startup — after every queue in `Mochi.serve({ queues })` is mounted — with this queue's handle, so it's the place to add back whatever your store still considers unfinished:
+
+```ts
+Mochi.queue<{ id: number }>({
+  process: sendEmail,
+  recover: async (queue) => {
+    // Rows your app marked unsent are the source of truth, not the queue.
+    await queue.addBulk(pendingEmailIds().map((id) => ({ name: 'send', data: { id } })));
+  },
+});
+```
+
+Recovery is awaited before `Mochi.serve()` resolves, so recovered jobs are enqueued before the `mochi:ready` hook fires. Because the server is already bound and serving by then, a throw is contained: Mochi logs it and emits `queue:error`, and the server keeps running.
+
+A `recover` that never settles is never cut short — abandoning it would drop the jobs it was about to add. Since warmup, `mochi:ready` and `serve()` resolving all wait behind it, Mochi logs a warning naming the queue if one is still running after 30 seconds.
+
+<Callout type="info">
+
+**Queues mount late.** They are created after the `mochi:init` hook and after the server binds, so `Mochi.getQueue()` throws if you call it from `mochi:init` — the error says as much. Anywhere from the [`mochi:queuesMounted`](/docs/extensions/#mochiqueuesmounted) hook onwards can add jobs: a queue's own `recover` callback, the `mochi:ready` hook, or any request handler.
+
+</Callout>
+
 ### Advanced options
 
 Mochi wraps a small, stable core. For bunqueue features Mochi doesn't surface first-class — retry backoff, rate limiting, cron/repeat, dead-letter queue, deduplication — pass a `bunqueue` object that is forwarded verbatim to the underlying queue and worker:
@@ -168,7 +192,7 @@ See the [bunqueue docs](https://bunqueue.dev/guide/simple-mode/) for the full op
 
 ### Observability
 
-Queues emit [events](/docs/events/) on the `mochiEvents` bus — `queue:added`, `queue:active`, `queue:completed`, `queue:failed`, `queue:error` — and the built-in [console logger](/docs/logging/) prints a `QUEUE` line per job. Wire your own metrics directly:
+Queues emit [events](/docs/events/) on the `mochiEvents` bus — `queue:added`, `queue:active`, `queue:completed`, `queue:failed`, `queue:error` — and the built-in [console logger](/docs/logging/) prints a `QUEUE` line for `added`, `completed`, `failed`, and `error`. The per-attempt `active` line needs `logger: { level: 'debug' }`. Wire your own metrics directly:
 
 ```ts
 import { mochiEvents } from 'mochi-framework';
@@ -211,7 +235,7 @@ await Mochi.serve({
 
 <Callout type="info">
 
-**Embedded mode only.** Producer and consumer share one process. bunqueue also supports a TCP server mode for distributed workers; Mochi doesn't expose that yet.
+**Embedded mode only.** The code that adds jobs and the worker that runs them share one process. bunqueue also supports a TCP server mode for distributed workers; Mochi doesn't expose that yet.
 
 </Callout>
 
