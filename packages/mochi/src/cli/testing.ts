@@ -38,10 +38,16 @@ interface FileResult {
  * `navigator.hardwareConcurrency` in parallel.
  *
  * Per-file isolation is required because `Mochi.serve()` enforces a single
- * instance per process (the `globalThis.__mochi_config__` singleton) — booting
- * two servers in one process throws "Mochi.serve() has already been called."
- * Separate processes also sidestep Bun bundler EISDIR errors and test-global
- * pollution from compiling the same Svelte entry twice.
+ * instance per process (the `globalThis.__mochi_config__` singleton, plus its
+ * siblings `__mochi_image_runtime__`/captcha/image/email config, none of which
+ * `server.stop()` clears) — booting two servers in one process throws
+ * "Mochi.serve() has already been called." Separate processes also sidestep
+ * `GlobalRegistrator`/happy-dom pollution and test-global pollution from
+ * compiling the same Svelte entry twice.
+ *
+ * Orthogonal to the Bun EISDIR bundler bug — that one is fixed separately by the
+ * hoisted linker in the root `bunfig.toml`, not by this runner, so the linker
+ * fix does not make per-file isolation optional.
  *
  * Exits the process with code 1 if any file fails.
  */

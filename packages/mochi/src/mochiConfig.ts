@@ -16,6 +16,10 @@ export interface MochiContext {
 const GLOBAL_KEY = '__mochi_config__';
 
 export async function initMochiConfig(options: MochiServeOptions): Promise<void> {
+  // This one-per-process singleton (never cleared by server.stop()) is why
+  // server-booting tests must run one file per process via runTests
+  // (cli/testing.ts) rather than a plain `bun test` over the whole suite —
+  // the second Mochi.serve() in a shared process lands here and throws.
   if ((globalThis as unknown as Record<string, unknown>)[GLOBAL_KEY]) {
     throw new Error('Mochi.serve() has already been called. Only one instance is allowed.');
   }
