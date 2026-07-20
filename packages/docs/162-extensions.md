@@ -325,7 +325,7 @@ await Mochi.serve({
 
 Default is `[]`. Preprocessors do not currently apply to `.md` / `.svx` files (mdsvex handles those itself).
 
-`<script lang="ts">` blocks are transpiled to JavaScript by Bun automatically (before compilation, and after any preprocessors you register here run), so you don't need a TypeScript preprocessor — register one only for other transforms (PostCSS, Sass, etc.).
+`<script lang="ts">` blocks are transpiled to JavaScript by Bun automatically (before compilation, and after any preprocessors you register here run), so you don't need a TypeScript preprocessor — register one only for other transforms (PostCSS, Sass, etc.). This built-in TS pass also covers `.md` / `.svx` files, even though user preprocessors don't apply there.
 
 #### `publicDir:scan`
 

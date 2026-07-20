@@ -57,6 +57,13 @@ const builtinTsPreprocessor: PreprocessorGroup = {
     if (attributes.lang !== 'ts') {
       return;
     }
+    // `lang="ts"` must STAY on the tag: it also puts the template in TS mode
+    // (snippet parameter types, `as` casts in markup), which Bun never sees —
+    // dropping it makes svelte parse those as plain JS and fail. Re-running
+    // svelte's native TS pass over the already-transpiled script is a no-op.
+    // transformSync can't emit a source map, so positions after a transpiled
+    // script drift by its reprinted line-count delta — a limitation shared
+    // with the .svelte.[jt]s rune-module loaders.
     return { code: tsScriptTranspiler.transformSync(content) };
   },
 };
@@ -175,7 +182,10 @@ function createMarkdownLoader(opts: {
     if (!compiled || typeof compiled.code !== 'string') {
       throw new Error(`markdown.compile returned no output for ${args.path}`);
     }
-    let svelteSource = compiled.code;
+    // mdsvex passes <script lang="ts"> through untouched, so its output needs
+    // the same built-in TS pass as regular .svelte files. User preprocessors
+    // still don't apply here — mdsvex owns markdown transforms.
+    let svelteSource = (await sveltePreprocess(compiled.code, [builtinTsPreprocessor], { filename: args.path })).code;
     let hydratables: HydratableComponent[] = [];
     let serverIslands: ServerIslandComponent[] = [];
     let preprocessErrors: PreprocessIslandError[] = [];
