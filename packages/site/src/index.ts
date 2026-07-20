@@ -12,6 +12,7 @@ import { clearBlogCaches, BLOG_DIR } from './lib/blog';
 import { highlightCode } from './lib/highlight.server';
 import { handle as cookieVaryTestHandle } from './demos/cookie-vary-test/routes';
 import { handle as shotHandle } from './shot/routes';
+import { logLevelsFilter } from './demos/log-levels/filter';
 import { encodeDebugBarGlobals } from './lib/debugBarEncode';
 import { routes, queues } from './routes';
 
@@ -179,6 +180,7 @@ await Mochi.serve({
   },
   filters: {
     'consoleLogger:line': (line, ctx) => (ctx.path.startsWith('/health') ? null : silenceInternalRoutes(line, ctx)),
+    'consoleLogger:level': logLevelsFilter,
     // The MCP endpoint must answer at exactly /mcp; the site-wide trailingSlash: 'always'
     // policy would otherwise 308 it to /mcp/ and some MCP clients don't follow the redirect.
     'trailingSlash:redirect': (redirect, { url }) => (url.pathname === '/mcp' ? null : redirect),

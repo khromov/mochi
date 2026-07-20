@@ -30,6 +30,7 @@ import { files as islandDepth } from '../demos/island-depth/files.ts';
 import { files as islandProps } from '../demos/island-props/files.ts';
 import { files as lazy } from '../demos/lazy/files.ts';
 import { files as lazyServerIsland } from '../demos/lazy-server-island/files.ts';
+import { files as logLevels } from '../demos/log-levels/files.ts';
 import { files as login } from '../demos/login/files.ts';
 import { files as mdsvex } from '../demos/mdsvex/files.ts';
 import { files as nestedComponents } from '../demos/nested-components/files.ts';
@@ -145,6 +146,14 @@ export const demos: Demo[] = [
     files: cacheEvents,
     title: 'Cache Events',
     hook: 'Subscribe to MochiCache lifecycle events through mochiEvents and log them to the server console.',
+    category: 'data',
+  },
+  {
+    href: '/demos/log-levels/',
+    slug: 'log-levels',
+    files: logLevels,
+    title: 'Console Log Levels',
+    hook: 'Remap the severity of any console line with the consoleLogger:level filter — promote what matters, demote what does not.',
     category: 'data',
   },
   {

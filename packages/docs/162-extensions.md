@@ -343,6 +343,29 @@ await Mochi.serve({
 
 A `Mochi.page` / `Mochi.api` route on the same URL still wins — the filter only adds entries; the wiring step skips entries whose URL is already a user route, with a `[mochi]` warning.
 
+#### `consoleLogger:level`
+
+Change the severity a line is written at. Every `consoleLogger()` line ships with a framework-chosen level — request lines are `info`, asset and image lines are `debug`, degradations are `warn` — and this filter overrides that per app. Return one of `'info' | 'warn' | 'log' | 'debug'`; there is no `null`, dropping a line is `consoleLogger:line`'s job. Sync.
+
+It runs **after** the automatic escalation (5xx responses and slow requests are already `'warn'` by the time you see them, so you can de-escalate them too) and **before** `consoleLogger:line`, whose `ctx.level` reports the remapped value. The level still gates against the active [log level](/docs/logging/) — demoting a line to `'debug'` hides it unless you're running at `level: 'debug'`.
+
+```ts
+await Mochi.serve({
+  filters: {
+    // Job enqueues are noise in this app; health checks matter more than usual.
+    'consoleLogger:level': (level, { path, source }) => {
+      if (source.name === 'queue:added') {
+        return 'debug';
+      }
+      return path.startsWith('/health') ? 'warn' : level;
+    },
+  },
+  routes,
+});
+```
+
+Context fields are the same as `consoleLogger:line` below, minus `level` (that's the filtered value): `label`, `path`, `status`, `kind`, `source`.
+
 #### `consoleLogger:line`
 
 Mutate or drop a formatted line right before `consoleLogger()` writes it. The first argument is the fully-rendered string (timestamp, label, kind, path, status, duration — with ANSI colour codes already applied). The second is a structured context with the underlying values, so you can filter without grepping ANSI-coloured strings. Return the string to log it, a rewritten string to substitute, or `null` to drop the line entirely. Sync.
@@ -362,7 +385,7 @@ await Mochi.serve({
 
 Context fields:
 
-- `level` — resolved log level (`'warn'` for 5xx / slow requests, otherwise the per-event default).
+- `level` — resolved log level (`'warn'` for 5xx / slow requests, otherwise the per-event default, after any `consoleLogger:level` remap).
 - `label` — event tag (`'GET '`, `'WS  '`, `'BUILD'`, `'CACHE'`, …).
 - `path` — URL path for requests; cache key for `CACHE`/`PAGECACHE`; source file for `BUILD`/`HMR`; `localhost:port` for `BOOT`.
 - `status` — HTTP status (request lines only).
