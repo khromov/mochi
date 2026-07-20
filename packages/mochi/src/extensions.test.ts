@@ -351,6 +351,45 @@ describe('new extension points', () => {
     expect(captured.size).toBe(42);
   });
 
+  const fakeLevelCtx = (overrides: Partial<MochiFilterContext['consoleLogger:level']> = {}) => {
+    const { level: _level, ...rest } = fakeLineCtx();
+    return { ...rest, ...overrides } satisfies MochiFilterContext['consoleLogger:level'];
+  };
+
+  test('consoleLogger:level returns the input unchanged when no filter registered', () => {
+    expect(applyFilter('consoleLogger:level', 'info', fakeLevelCtx())).toBe('info');
+  });
+
+  test('consoleLogger:level lets the user remap a line to another severity', () => {
+    initExtensions({
+      filters: {
+        'consoleLogger:level': (level, { path }) => (path.startsWith('/health') ? 'debug' : level),
+      },
+    });
+    expect(applyFilter('consoleLogger:level', 'info', fakeLevelCtx({ path: '/health' }))).toBe('debug');
+    expect(applyFilter('consoleLogger:level', 'info', fakeLevelCtx())).toBe('info');
+  });
+
+  test('consoleLogger:level can narrow on source.name to remap a specific event', () => {
+    initExtensions({
+      filters: {
+        'consoleLogger:level': (level, { source }) => (source.name === 'queue:added' ? 'debug' : level),
+      },
+    });
+    const remapped = applyFilter(
+      'consoleLogger:level',
+      'info',
+      fakeLevelCtx({
+        label: 'QUEUE',
+        kind: undefined,
+        status: undefined,
+        source: { name: 'queue:added', payload: { queue: 'emails', jobId: 'j1', jobName: 'send' } },
+      }),
+    );
+    expect(remapped).toBe('debug');
+    expect(applyFilter('consoleLogger:level', 'info', fakeLevelCtx())).toBe('info');
+  });
+
   test('mochi:ready awaits an async user hook', async () => {
     let saw: { server: unknown; options: unknown } | null = null;
     initExtensions({

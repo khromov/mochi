@@ -39,6 +39,27 @@ export type ConsoleLoggerSource = {
   [K in keyof MochiEventMap]: { name: K; payload: MochiEventMap[K] };
 }[keyof MochiEventMap];
 
+/**
+ * The severities `consoleLogger()` writes through. A subset of `LogLevel` —
+ * a formatted line is never `'error'` (reserved for thrown failures) and
+ * `'silent'` is a global setting, not a per-line one.
+ */
+export type ConsoleLoggerLevel = 'info' | 'warn' | 'log' | 'debug';
+
+/** What identifies a console-logger line — shared by the `consoleLogger:level` and `consoleLogger:line` filter contexts. */
+export interface ConsoleLoggerLine {
+  /** 4-char event tag — `'GET '`, `'POST'`, `'WS  '`, `'BOOT'`, `'BUILD'`, `'CACHE'`, … */
+  label: string;
+  /** The path/key/identifier shown in the line. For requests this is the URL path; for cache events it's the cache key; for compile events it's the source file. */
+  path: string;
+  /** HTTP status — present only for request lines. */
+  status?: number;
+  /** Request kind — present only for request lines. */
+  kind?: MochiRequestKind;
+  /** The originating `mochiEvents` event. Narrow on `source.name` for typed access to per-event fields. */
+  source: ConsoleLoggerSource;
+}
+
 // ---------------------------------------------------------------------------
 // Registry: hooks
 // ---------------------------------------------------------------------------
@@ -109,6 +130,7 @@ export interface MochiFilterValue {
   'payload:compressMinBytes': number;
   'compile:preprocessors': PreprocessorGroup[];
   'publicDir:scan': Map<string, string>;
+  'consoleLogger:level': ConsoleLoggerLevel;
   'consoleLogger:line': string;
   'image:maxRedirects': number;
   'image:url': string;
@@ -146,19 +168,15 @@ export interface MochiFilterContext {
     development: boolean;
   };
   'publicDir:scan': { publicDir: string; development: boolean };
-  'consoleLogger:line': {
-    /** Resolved log level (escalated to `'warn'` for 5xx / slow requests). */
-    level: 'info' | 'warn' | 'log' | 'debug';
-    /** 4-char event tag — `'GET '`, `'POST'`, `'WS  '`, `'BOOT'`, `'BUILD'`, `'CACHE'`, … */
-    label: string;
-    /** The path/key/identifier shown in the line. For requests this is the URL path; for cache events it's the cache key; for compile events it's the source file. */
-    path: string;
-    /** HTTP status — present only for request lines. */
-    status?: number;
-    /** Request kind — present only for request lines. */
-    kind?: MochiRequestKind;
-    /** The originating `mochiEvents` event. Narrow on `source.name` for typed access to per-event fields. */
-    source: ConsoleLoggerSource;
+  /**
+   * Resolved after the 5xx/slow escalation and before `consoleLogger:line`, so a
+   * filter can also de-escalate an escalated line, and `consoleLogger:line` sees
+   * the remapped level in its own context.
+   */
+  'consoleLogger:level': ConsoleLoggerLine;
+  'consoleLogger:line': ConsoleLoggerLine & {
+    /** Resolved log level (escalated to `'warn'` for 5xx / slow requests, then passed through `consoleLogger:level`). */
+    level: ConsoleLoggerLevel;
   };
   'image:maxRedirects': { src: string };
   'image:url': { src: string; filename: string; original: boolean };
@@ -192,6 +210,7 @@ export interface MochiFilterKindMap {
   'payload:compressMinBytes': 'sync';
   'compile:preprocessors': 'sync';
   'publicDir:scan': 'async';
+  'consoleLogger:level': 'sync';
   'consoleLogger:line': 'sync';
   'image:maxRedirects': 'sync';
   'image:url': 'sync';
@@ -243,6 +262,7 @@ const FILTER_KINDS: { [K in keyof MochiFilterValue]: MochiKind } = {
   'payload:compressMinBytes': 'sync',
   'compile:preprocessors': 'sync',
   'publicDir:scan': 'async',
+  'consoleLogger:level': 'sync',
   'consoleLogger:line': 'sync',
   'image:maxRedirects': 'sync',
   'image:url': 'sync',

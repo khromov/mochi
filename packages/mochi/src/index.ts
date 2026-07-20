@@ -129,6 +129,8 @@ export type {
   MochiFilterReturn,
   MochiFilterKindMap,
   ConsoleLoggerSource,
+  ConsoleLoggerLevel,
+  ConsoleLoggerLine,
 } from './extensions';
 export { getClientAddress, resolveExpectedOrigin } from './runtime/proxy';
 export type { MochiProxyOptions } from './runtime/proxy';
