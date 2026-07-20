@@ -941,11 +941,12 @@ export class ComponentRegistry {
         minify: true,
         throw: false,
       });
+      // Read outputs even when the batch reports failure: a single malformed
+      // file must not drop minification for the whole cohort. Entries without
+      // an output fall back to their raw CSS below.
       const minifiedByBase = new Map<string, string>();
-      if (cssResult.success) {
-        for (const out of cssResult.outputs) {
-          minifiedByBase.set(path.basename(out.path), await out.text());
-        }
+      for (const out of cssResult.outputs) {
+        minifiedByBase.set(path.basename(out.path), await out.text());
       }
       const cssWrites: Promise<unknown>[] = [];
       for (const [componentPath, cssCode] of cssTodo) {
