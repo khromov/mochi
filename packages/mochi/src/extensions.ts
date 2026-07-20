@@ -24,6 +24,11 @@ import type { ResolvedEmailMessage, MochiEmailTransportConfig } from './email/ty
 import type { ImportedImageFormat } from './image/types';
 import type { TrailingSlashPolicy } from './runtime/trailingSlash';
 import { pinGlobal } from './utils/globalState';
+import { markStartupMilestone } from './lifecycle';
+import type { MochiStartupMilestone } from './lifecycle';
+
+/** Startup hooks whose firing is recorded as a lifecycle milestone. */
+const STARTUP_MILESTONE_HOOKS = new Set<string>(['mochi:init', 'mochi:listening', 'mochi:queuesMounted', 'mochi:ready']);
 
 /**
  * Discriminated union of every `mochiEvents` payload that `consoleLogger()`
@@ -34,12 +39,40 @@ export type ConsoleLoggerSource = {
   [K in keyof MochiEventMap]: { name: K; payload: MochiEventMap[K] };
 }[keyof MochiEventMap];
 
+/**
+ * The severities `consoleLogger()` writes through. A subset of `LogLevel` —
+ * a formatted line is never `'error'` (reserved for thrown failures) and
+ * `'silent'` is a global setting, not a per-line one.
+ */
+export type ConsoleLoggerLevel = 'info' | 'warn' | 'log' | 'debug';
+
+/** What identifies a console-logger line — shared by the `consoleLogger:level` and `consoleLogger:line` filter contexts. */
+export interface ConsoleLoggerLine {
+  /** 4-char event tag — `'GET '`, `'POST'`, `'WS  '`, `'BOOT'`, `'BUILD'`, `'CACHE'`, … */
+  label: string;
+  /** The path/key/identifier shown in the line. For requests this is the URL path; for cache events it's the cache key; for compile events it's the source file. */
+  path: string;
+  /** HTTP status — present only for request lines. */
+  status?: number;
+  /** Request kind — present only for request lines. */
+  kind?: MochiRequestKind;
+  /** The originating `mochiEvents` event. Narrow on `source.name` for typed access to per-event fields. */
+  source: ConsoleLoggerSource;
+}
+
 // ---------------------------------------------------------------------------
 // Registry: hooks
 // ---------------------------------------------------------------------------
 
 export interface MochiHookContext {
   'mochi:init': { options: MochiServeOptions };
+  'mochi:listening': { options: MochiServeOptions; server: Server<undefined> };
+  'mochi:queuesMounted': {
+    options: MochiServeOptions;
+    server: Server<undefined>;
+    /** Names of the queues just mounted, in declaration order. */
+    queues: string[];
+  };
   'mochi:ready': { options: MochiServeOptions; server: Server<undefined> };
   'mochi:shutdown': {
     options: MochiServeOptions;
@@ -69,6 +102,8 @@ export interface MochiHookContext {
 
 export interface MochiHookKindMap {
   'mochi:init': 'async';
+  'mochi:listening': 'async';
+  'mochi:queuesMounted': 'async';
   'mochi:ready': 'async';
   'mochi:shutdown': 'async';
   'route:matched': 'sync';
@@ -95,6 +130,7 @@ export interface MochiFilterValue {
   'payload:compressMinBytes': number;
   'compile:preprocessors': PreprocessorGroup[];
   'publicDir:scan': Map<string, string>;
+  'consoleLogger:level': ConsoleLoggerLevel;
   'consoleLogger:line': string;
   'image:maxRedirects': number;
   'image:url': string;
@@ -104,6 +140,7 @@ export interface MochiFilterValue {
   'email:message': ResolvedEmailMessage;
   'captcha:minAgeMs': number;
   'captcha:driftAllowanceMs': number;
+  'queue:recoveryStallWarningMs': number;
 }
 
 // Optional per-filter override for the *return* type when it differs from the
@@ -131,19 +168,15 @@ export interface MochiFilterContext {
     development: boolean;
   };
   'publicDir:scan': { publicDir: string; development: boolean };
-  'consoleLogger:line': {
-    /** Resolved log level (escalated to `'warn'` for 5xx / slow requests). */
-    level: 'info' | 'warn' | 'log' | 'debug';
-    /** 4-char event tag — `'GET '`, `'POST'`, `'WS  '`, `'BOOT'`, `'BUILD'`, `'CACHE'`, … */
-    label: string;
-    /** The path/key/identifier shown in the line. For requests this is the URL path; for cache events it's the cache key; for compile events it's the source file. */
-    path: string;
-    /** HTTP status — present only for request lines. */
-    status?: number;
-    /** Request kind — present only for request lines. */
-    kind?: MochiRequestKind;
-    /** The originating `mochiEvents` event. Narrow on `source.name` for typed access to per-event fields. */
-    source: ConsoleLoggerSource;
+  /**
+   * Resolved after the 5xx/slow escalation and before `consoleLogger:line`, so a
+   * filter can also de-escalate an escalated line, and `consoleLogger:line` sees
+   * the remapped level in its own context.
+   */
+  'consoleLogger:level': ConsoleLoggerLine;
+  'consoleLogger:line': ConsoleLoggerLine & {
+    /** Resolved log level (escalated to `'warn'` for 5xx / slow requests, then passed through `consoleLogger:level`). */
+    level: ConsoleLoggerLevel;
   };
   'image:maxRedirects': { src: string };
   'image:url': { src: string; filename: string; original: boolean };
@@ -161,6 +194,8 @@ export interface MochiFilterContext {
     limitMs: number;
   };
   'captcha:driftAllowanceMs': { options: MochiCaptchaOptions; maxAgeMs: number };
+  /** Resolved once per queue that declares a `recover` callback, as recovery starts. */
+  'queue:recoveryStallWarningMs': { queue: string };
 }
 
 export interface MochiFilterKindMap {
@@ -175,6 +210,7 @@ export interface MochiFilterKindMap {
   'payload:compressMinBytes': 'sync';
   'compile:preprocessors': 'sync';
   'publicDir:scan': 'async';
+  'consoleLogger:level': 'sync';
   'consoleLogger:line': 'sync';
   'image:maxRedirects': 'sync';
   'image:url': 'sync';
@@ -184,6 +220,7 @@ export interface MochiFilterKindMap {
   'email:message': 'async';
   'captcha:minAgeMs': 'sync';
   'captcha:driftAllowanceMs': 'sync';
+  'queue:recoveryStallWarningMs': 'sync';
 }
 
 type FilterReturn<K extends keyof MochiFilterValue> = K extends keyof MochiFilterReturn ? MochiFilterReturn[K] : MochiFilterValue[K];
@@ -206,6 +243,8 @@ export type MochiFilters = { [K in keyof MochiFilterValue]?: Filter<K> };
 type MochiKind = 'sync' | 'async';
 const HOOK_KINDS: { [K in keyof MochiHookContext]: MochiKind } = {
   'mochi:init': 'async',
+  'mochi:listening': 'async',
+  'mochi:queuesMounted': 'async',
   'mochi:ready': 'async',
   'mochi:shutdown': 'async',
   'route:matched': 'sync',
@@ -223,6 +262,7 @@ const FILTER_KINDS: { [K in keyof MochiFilterValue]: MochiKind } = {
   'payload:compressMinBytes': 'sync',
   'compile:preprocessors': 'sync',
   'publicDir:scan': 'async',
+  'consoleLogger:level': 'sync',
   'consoleLogger:line': 'sync',
   'image:maxRedirects': 'sync',
   'image:url': 'sync',
@@ -232,6 +272,7 @@ const FILTER_KINDS: { [K in keyof MochiFilterValue]: MochiKind } = {
   'email:message': 'async',
   'captcha:minAgeMs': 'sync',
   'captcha:driftAllowanceMs': 'sync',
+  'queue:recoveryStallWarningMs': 'sync',
 };
 
 // Pinned on globalThis so duplicate bundled copies of mochi-framework share one
@@ -249,6 +290,12 @@ export function initExtensions(opts: Pick<MochiServeOptions, 'eventHooks' | 'fil
 // The runtime dispatches on the runtime kind table to guarantee the actual
 // return matches the type — including when no user fn is registered.
 export function runHook<K extends keyof MochiHookContext>(name: K, ctx: MochiHookContext[K]): MochiHookKindMap[K] extends 'async' ? Promise<void> : void {
+  // Startup hooks double as lifecycle milestones. Recording here (rather than
+  // at each call site) keeps the record in step with the hooks themselves;
+  // per-request hooks like `route:matched` are deliberately not recorded.
+  if (STARTUP_MILESTONE_HOOKS.has(name)) {
+    markStartupMilestone(name as MochiStartupMilestone);
+  }
   const fn = registry.eventHooks[name] as Hook<K> | undefined;
   if (HOOK_KINDS[name] === 'async') {
     return Promise.resolve(fn?.(ctx)) as never;
