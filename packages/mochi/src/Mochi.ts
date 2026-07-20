@@ -55,6 +55,7 @@ import { createRouteLimiter, applyRateLimitHeaders } from './runtime/rateLimit';
 import type { MochiRateLimitOptions, MochiRateLimitStore, RouteLimiter } from './runtime/rateLimit';
 import { decryptProps } from './islands/serverIslandCrypto';
 import { createImageHandler } from './image/imageEndpoint';
+import { createLocalAssetHandler } from './image/localAssetRegistry';
 import { getImageRuntime } from './image/config';
 import { startImageCacheSweeper } from './image/sweeper';
 import { getEmailRuntime, closeEmailTransport } from './email/config';
@@ -471,10 +472,7 @@ export class Mochi {
     // Collect every page entrypoint (error page + every Mochi.page route) so
     // we can compile them in one Bun.build below. Splitting deduplicates
     // shared transitive deps (devalue, mochi-framework internals, etc.) into
-    // chunk files instead of inlining them per page; collapsing
-    // the boot-time pre-compiles into one Bun.build also dodges the
-    // documented EISDIR bug that fires when two `Bun.build` calls in the
-    // same process touch the same transitive deps.
+    // chunk files instead of inlining them per page.
     const ssrEntrypoints: string[] = [errorPagePath, CLIENT_STATS_COMPONENT];
     if (debugBarEnabled) {
       ssrEntrypoints.push(PAGE_CACHE_ADMIN_COMPONENT);
@@ -1393,6 +1391,8 @@ export class Mochi {
           result = await registry.renderComponent(componentPath, props as Record<string, unknown>, {
             stripMarkers: false,
             ...(islandId && !islandId.includes('--') ? { idPrefix: islandId } : {}),
+            // Named-export islands render that export, not the module's default.
+            ...(registry.getServerIslandExport(componentName) ? { exportName: registry.getServerIslandExport(componentName) } : {}),
           });
         } catch (err) {
           const e = err instanceof Error ? err : new Error(String(err));
@@ -1491,6 +1491,13 @@ export class Mochi {
       });
       stopImageSweeper = startImageCacheSweeper(imageRuntime.cache, imageRuntime.options.sweepIntervalMs);
     }
+
+    // Serve locally-imported image assets (`import x from './x.png'`) from disk.
+    // Registered unconditionally — this is plain static serving, independent of
+    // whether the transform endpoint (`image.enabled`) is on. The handler reads
+    // the global registry the build populated (in-process in dev, from the
+    // manifest in prod), so new images in dev need no route reload.
+    bunRoutes[`${registry.assetPrefix}/asset/:filename`] = withHead(createLocalAssetHandler(development));
 
     // Dev-only: the debug bar's Cache tab reads the entry count (GET) and empties
     // the image cache (POST). Registered whenever the debug bar is on (independent

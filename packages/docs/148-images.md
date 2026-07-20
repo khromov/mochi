@@ -68,14 +68,14 @@ Add `placeholder` to render a [ThumbHash](https://evanw.github.io/thumbhash/) bl
   <figcaption>The ThumbHash blur (left) and the image it resolves to (right). The hash is a handful of bytes, so the blur carries the photo's colour and composition without a second request.</figcaption>
 </figure>
 
-| Prop                   | Default     | Notes                                                       |
-| ---------------------- | ----------- | ----------------------------------------------------------- |
-| `src`                  | —           | http/https source URL (required)                            |
-| `size`                 | —           | Named size; omitted → the full-size original                |
-| `alt`                  | `''`        | Always set this                                             |
-| `placeholder`          | `false`     | Background-warmed ThumbHash blur-up; pure SSR, no client JS |
-| `width` / `height`     | size's dims | `<img>` attribute override (for layout/CLS)                 |
-| `loading` / `decoding` | lazy/async  | Passed through to `<img>`                                   |
+| Prop                   | Default     | Notes                                                                      |
+| ---------------------- | ----------- | -------------------------------------------------------------------------- |
+| `src`                  | —           | http/https URL, or a [local image import](#local-image-imports) (required) |
+| `size`                 | —           | Named size; omitted → the full-size original                               |
+| `alt`                  | `''`        | Always set this                                                            |
+| `placeholder`          | `false`     | Background-warmed ThumbHash blur-up; pure SSR, no client JS                |
+| `width` / `height`     | size's dims | `<img>` attribute override (for layout/CLS)                                |
+| `loading` / `decoding` | lazy/async  | Passed through to `<img>`                                                  |
 
 A bare `<Image src>` with no `size` serves the full-size original — that's the normal way to serve an un-resized image, not an error. An **unknown** size name also degrades to the original, but logs a one-time server warning.
 
@@ -94,6 +94,40 @@ If the forward is missing, or a client-side re-render changes the image props, t
 
 <Callout type="warning">
 Hydrated-island props ship in plain text in the page HTML — so a <code>src</code> you pass into a <code>mochi:hydrate</code> island (and any URL literal in the island's client JS) is visible to the client, even though the minted image URL itself stays encrypted. If your origin must stay secret, keep <code>&lt;Image&gt;</code> in server-rendered markup or a server island (<code>mochi:defer</code>), whose props are encrypted.
+</Callout>
+
+### Local image imports
+
+Import a local image Vite-style and get back an object with its served URL and intrinsic metadata:
+
+```svelte
+<script>
+  import { Image } from 'mochi-framework/image';
+  import hero from './hero.png';
+  // hero → { src: '/_mochi/asset/hero-<hash>.png', width, height, format }
+</script>
+
+<!-- Pass the object to <Image> — transforms and placeholder work as usual -->
+<Image src={hero} size="thumbnail" alt="A resized local photo" />
+
+<!-- Or use hero.src directly; width/height avoid layout shift -->
+<img src={hero.src} width={hero.width} height={hero.height} alt="" />
+```
+
+Supported formats: **png, jpg, jpeg, webp, avif, gif**. SVG is not supported (it can't be decoded for metadata/transforms) — put SVGs in your `public/` directory and reference them with a plain `<img src>`.
+
+The imported file is copied to a **content-hashed URL** (`/_mochi/asset/<slug>-<hash>.<ext>`) and served from disk with a long-lived immutable cache in production. Transforms read the file **from disk** — no network fetch — so `<Image src={hero} size="…">` and `placeholder` work without an origin round-trip. A bare `<Image src={hero}>` with no `size` renders the original at its intrinsic dimensions straight from that static URL (no endpoint hop).
+
+The `{ src, width, height, format }` shape is available as the exported `ImportedImage` type. Ambient module types for the image extensions come free via `mochi-framework/ambient` (already referenced by generated projects), so `import hero from './hero.png'` type-checks with no extra `global.d.ts`.
+
+<Callout type="info">
+
+A ThumbHash `placeholder` is still computed lazily on demand — nothing is precomputed at build time. It works on an imported image exactly as on a remote one (`<Image src={hero} placeholder>`, or `getImagePlaceholder(hero.src)`).
+
+</Callout>
+
+<Callout type="warning">
+Two edge cases. With <code>image.enabled: false</code> the <code>/_mochi/asset/…</code> route still serves the file (it's plain static serving), but a <code>size</code> becomes a no-op — <code>&lt;Image&gt;</code> falls back to the raw static URL. And the <a href="/docs/extensions/#imageurl"><code>image:url</code></a> CDN-rewrite filter only runs on <em>minted</em> transform URLs, so the no-size static URL (<code>hero.src</code>) bypasses it — use a <code>size</code> if you need local assets routed through the filter.
 </Callout>
 
 ### `getImageUrl` — deferred URLs

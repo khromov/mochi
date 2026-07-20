@@ -4,7 +4,7 @@ import type { MochiCookieJar } from './runtime/cookies';
 import type { MochiCsrfOptions } from './runtime/csrf';
 import type { MochiFilters, MochiHooks } from './extensions';
 import type { MochiProxyOptions } from './runtime/proxy';
-import type { MochiImageOptions } from './image/types';
+import type { LocalImageAsset, MochiImageOptions } from './image/types';
 import type { MochiEmailOptions } from './email/types';
 import type { MochiCaptchaOptions } from './captcha/types';
 import type { MochiProcessor, MochiQueueListeners, MochiQueueRuntimeOptions } from './queue';
@@ -360,7 +360,8 @@ export interface MochiErrorProps {
 
 export interface MochiManifestComponent {
   ssrModule: string;
-  hydratables: { name: string; displayName: string; resolvedPath: string }[];
+  /** `exportName` is optional for manifests written before named-export islands existed; absent means `default`. */
+  hydratables: { name: string; displayName: string; resolvedPath: string; exportName?: string }[];
   cssComponents: string[];
 }
 
@@ -384,8 +385,12 @@ export interface MochiManifest {
   } | null;
   /** Maps server island component name → resolved file path */
   serverIslandPaths?: Record<string, string>;
+  /** Maps server island component name → the named export it renders (default-export islands are omitted). */
+  serverIslandExports?: Record<string, string>;
   /** Maps public URL path → disk path (relative to project root) for static files copied from `public/`. */
   publicFiles?: Record<string, string>;
+  /** Maps served asset URL → emitted asset details for locally-imported images (`import x from './x.png'`). */
+  localImageAssets?: Record<string, LocalImageAsset>;
   /** Maps resolved CSS-import path → served URL (e.g. /import-css/inter-<hash>.css) */
   importedCssUrls?: Record<string, string>;
   /** Maps page entry .svelte path → list of CSS-import paths reachable from it */

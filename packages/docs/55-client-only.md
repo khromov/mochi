@@ -84,3 +84,4 @@ The component never runs on the server, so server-only APIs — `getRequestConte
 
 - Combining `mochi:clientOnly*` with `mochi:hydrate*` or `mochi:defer*` is a compile error — a client-only component is never server-rendered.
 - Like other islands, it must not be nested inside another hydratable component.
+- The component must be statically imported from a relative `.svelte`/`.md`/`.svx` path — package imports or props-passed components are a compile error. See `Supported import forms` under `Selective hydration`.

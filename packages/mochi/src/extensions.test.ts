@@ -489,6 +489,90 @@ describe('new extension points', () => {
     expect(applyFilter('image:url', '/a?p=t', { ...ctx, original: false })).toBe('/a?p=t');
   });
 
+  test('image:fileFilter returns the default regex unchanged when no filter registered', () => {
+    const input = /\.(png|jpe?g)$/i;
+    expect(applyFilter('image:fileFilter', input, { target: 'server' })).toBe(input);
+  });
+
+  test('image:fileFilter can extend the import regex and branch on target', () => {
+    initExtensions({
+      filters: {
+        'image:fileFilter': (re, { target }) => (target === 'server' ? new RegExp(re.source + '|\\.bmp$', 'i') : re),
+      },
+    });
+    const base = /\.(png)$/i;
+    const server = applyFilter('image:fileFilter', base, { target: 'server' });
+    expect(server.test('a.bmp')).toBe(true);
+    expect(server.test('a.png')).toBe(true);
+    expect(applyFilter('image:fileFilter', base, { target: 'client' })).toBe(base);
+  });
+
+  test('image:localAssetFilename returns the input unchanged when no filter registered', () => {
+    const ctx = { sourcePath: '/src/hero.png', hash: 'abc', ext: 'png', format: 'png' as const, width: 40, height: 30 };
+    expect(applyFilter('image:localAssetFilename', 'hero-abc.png', ctx)).toBe('hero-abc.png');
+  });
+
+  test('image:localAssetFilename rewrites the emitted filename', () => {
+    initExtensions({
+      filters: {
+        'image:localAssetFilename': (name, { hash }) => `img.${hash}.${name.split('.').pop()}`,
+      },
+    });
+    const ctx = { sourcePath: '/src/hero.png', hash: 'abc', ext: 'png', format: 'png' as const, width: 40, height: 30 };
+    expect(applyFilter('image:localAssetFilename', 'hero-abc.png', ctx)).toBe('img.abc.png');
+  });
+
+  test('image:localAssetUrl returns the input unchanged when no filter registered', () => {
+    const ctx = { sourcePath: '/src/hero.png', filename: 'hero-abc.png', assetPrefix: '/_mochi', format: 'png' as const };
+    expect(applyFilter('image:localAssetUrl', '/_mochi/asset/hero-abc.png', ctx)).toBe('/_mochi/asset/hero-abc.png');
+  });
+
+  test('image:localAssetUrl can point imports at a CDN', () => {
+    initExtensions({
+      filters: {
+        'image:localAssetUrl': (_url, { filename }) => `https://cdn.example.com/${filename}`,
+      },
+    });
+    const ctx = { sourcePath: '/src/hero.png', filename: 'hero-abc.png', assetPrefix: '/_mochi', format: 'png' as const };
+    expect(applyFilter('image:localAssetUrl', '/_mochi/asset/hero-abc.png', ctx)).toBe('https://cdn.example.com/hero-abc.png');
+  });
+
+  test('image:localAssetEmitted resolves cleanly when no hook registered', async () => {
+    await expect(
+      runHook('image:localAssetEmitted', {
+        sourcePath: '/src/hero.png',
+        diskPath: '/out/assets/hero-abc.png',
+        url: '/_mochi/asset/hero-abc.png',
+        width: 40,
+        height: 30,
+        format: 'png',
+        contentType: 'image/png',
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  test('image:localAssetEmitted awaits an async user hook with the asset context', async () => {
+    const seen: string[] = [];
+    initExtensions({
+      eventHooks: {
+        'image:localAssetEmitted': async ({ url }) => {
+          await Bun.sleep(5);
+          seen.push(url);
+        },
+      },
+    });
+    await runHook('image:localAssetEmitted', {
+      sourcePath: '/src/hero.png',
+      diskPath: '/out/assets/hero-abc.png',
+      url: '/_mochi/asset/hero-abc.png',
+      width: 40,
+      height: 30,
+      format: 'png',
+      contentType: 'image/png',
+    });
+    expect(seen).toEqual(['/_mochi/asset/hero-abc.png']);
+  });
+
   const fakeResolved = (overrides: Partial<ResolvedEmailMessage> = {}): ResolvedEmailMessage => ({
     from: 'noreply@test.dev',
     to: ['user@example.com'],

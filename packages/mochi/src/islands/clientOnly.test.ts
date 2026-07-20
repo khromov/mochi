@@ -105,15 +105,7 @@ describe('mochi:clientOnly nested inside a hydratable parent', () => {
   beforeAll(async () => {
     outDir = mkdtempSync(path.join(import.meta.dir, '..', '..', '.mochi-client-only-nested-'));
     registry = new ComponentRegistry({ development: true, outDir });
-    // Nested-hydration detection runs during the server pass, before the client
-    // bundle is built. Building a second client bundle in this process trips the
-    // Bun bundler EISDIR bug (see serverIslandCss.test.ts), but the error is
-    // already recorded by then, so swallow a build failure and assert on it.
-    try {
-      await registry.compile(NESTED_PAGE);
-    } catch {
-      // ignore — client bundle build hazard, detection already happened
-    }
+    await registry.compile(NESTED_PAGE);
   });
 
   afterAll(() => {
