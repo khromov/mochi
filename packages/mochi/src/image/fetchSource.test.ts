@@ -1,5 +1,9 @@
 import { afterAll, afterEach, describe, expect, test } from 'bun:test';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fetchImageSource } from './fetchSource';
+import { registerLocalImageAsset } from './localAssetRegistry';
 import { ImageError } from './types';
 import type { ResolvedImageOptions } from './types';
 import { initExtensions } from '../extensions';
@@ -42,6 +46,7 @@ const base = (path: string): string => `http://${HOST}${path}`;
 function opts(over: Partial<ResolvedImageOptions> = {}): ResolvedImageOptions {
   return {
     enabled: true,
+    sizes: {},
     cacheDir: '/tmp/unused',
     defaultFormat: 'webp',
     defaultQuality: 80,
@@ -130,5 +135,47 @@ describe('fetchImageSource redirect re-validation', () => {
     await expect(fetchImageSource(base('/redirect-ok'), opts())).rejects.toMatchObject({
       message: 'Too many redirects',
     });
+  });
+});
+
+describe('fetchImageSource local-asset branch', () => {
+  const dirs: string[] = [];
+  const registered: string[] = [];
+  const localRegistry = () => (globalThis as unknown as Record<string, Map<string, unknown>>)['__mochi_local_image_assets__'];
+
+  afterEach(() => {
+    // Drop only the keys this suite registered, so we don't clobber sibling state.
+    for (const url of registered.splice(0)) {
+      localRegistry()?.delete(url);
+    }
+    for (const d of dirs.splice(0)) {
+      rmSync(d, { recursive: true, force: true });
+    }
+  });
+
+  function writeAsset(bytes: Buffer, contentType: string): string {
+    const dir = mkdtempSync(join(tmpdir(), 'mochi-localasset-'));
+    dirs.push(dir);
+    const diskPath = join(dir, 'hero.png');
+    writeFileSync(diskPath, bytes);
+    const url = `/_mochi/asset/hero-${dirs.length}.png`;
+    registerLocalImageAsset(url, { diskPath, contentType });
+    registered.push(url);
+    return url;
+  }
+
+  test('reads a registered local asset from disk without fetching', async () => {
+    const url = writeAsset(PNG, 'image/png');
+    // A guard that fetched would need the src to be a public URL; a relative
+    // asset URL would otherwise reject. Reaching the bytes proves the disk path.
+    const { bytes, contentType } = await fetchImageSource(url, opts({ allowedHosts: undefined, blockPrivateNetworks: true }));
+    expect(contentType).toBe('image/png');
+    expect(Buffer.from(bytes)).toEqual(PNG);
+  });
+
+  test('an unregistered relative src still hits the SSRF guard', async () => {
+    // Not in the registry → falls through to assertPublicUrl, which rejects a
+    // relative (non-http/https) src with a 400 SsrfGuard-mapped ImageError.
+    await expect(fetchImageSource('/_mochi/asset/nope-0.png', opts())).rejects.toBeInstanceOf(ImageError);
   });
 });

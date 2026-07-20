@@ -21,7 +21,7 @@ class MochiLiveReload extends HTMLElement {
   private connect() {
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
     // window.__mochi_page_entry is the abs path of the entry that rendered
-    // this page, injected by resolveHtmlShell in dev. Sending it lets the
+    // this page, injected by the shell renderer in dev. Sending it lets the
     // server scope `reload` signals to the tabs whose entry was actually
     // recompiled. Tabs loaded against an older shell omit it and conserva-
     // tively reload on every change.
@@ -39,13 +39,23 @@ class MochiLiveReload extends HTMLElement {
 
     this.ws.onmessage = (e) => {
       if (e.data === 'reload') {
-        this.navigating = true;
-        try {
-          this.ws.close(1000, 'navigating');
-        } catch {
-          /* connection already closed */
+        this.reloadNow();
+        return;
+      }
+      // A dev-outbox email landed (message is `email:new:<id>`). On the outbox page
+      // itself, full-reload so the new message shows up live; anywhere else, hand the
+      // captured id to the debug bar so it can mark it unread. assetPrefix is only
+      // injected with the debug bar, which is also what mounts the outbox route — so
+      // it's present whenever it matters.
+      if (typeof e.data === 'string' && e.data.startsWith('email:new:')) {
+        const id = e.data.slice('email:new:'.length);
+        const prefix = window.__mochi_asset_prefix;
+        const onOutbox = typeof prefix === 'string' && location.pathname.replace(/\/+$/, '') === `${prefix}/email`;
+        if (onOutbox) {
+          this.reloadNow();
+        } else {
+          dispatchEvent(new CustomEvent('mochi:email-new', { detail: { id } }));
         }
-        location.reload();
       }
     };
 
@@ -58,6 +68,16 @@ class MochiLiveReload extends HTMLElement {
     this.ws.onerror = () => {
       this.ws.close();
     };
+  }
+
+  private reloadNow() {
+    this.navigating = true;
+    try {
+      this.ws.close(1000, 'navigating');
+    } catch {
+      /* connection already closed */
+    }
+    location.reload();
   }
 
   private handlePageHide = () => {

@@ -99,6 +99,23 @@ await Mochi.serve({
 
 The hook does not fire when the framework rejects the request before route handling (e.g. CSRF block). `getRequestContext()` is available inside the hook for all four kinds and exposes the matched `requestId`, `url`, and `params`.
 
+#### `image:localAssetEmitted`
+
+Fires at **build time**, right after a locally-imported image (`import hero from './hero.png'`) has been content-hashed and written to `<outDir>/assets/`. The context carries the `sourcePath`, the on-disk `diskPath`, the served `url` (post-`image:localAssetUrl`), intrinsic `width`/`height`, decoded `format`, and `contentType`. Use it to mirror imported assets to a CDN, generate extra derivatives, or record a build manifest. Async.
+
+```ts
+await Mochi.serve({
+  eventHooks: {
+    'image:localAssetEmitted': async ({ diskPath, url }) => {
+      await cdn.upload(url, await Bun.file(diskPath).bytes());
+    },
+  },
+  routes,
+});
+```
+
+Because assets are content-addressed, the hook fires once per unique asset per build (the second build pass hits the existing file and skips both the write and the hook). Treat any upload as idempotent — concurrent passes could fire it more than once for the same bytes.
+
 ### Filters
 
 #### `csrf:formContentTypes`
@@ -337,7 +354,7 @@ await Mochi.serve({
 
 #### `image:url`
 
-Rewrite the encrypted URL returned by `getResizedImage()` / `getImage()` (and the `<Image>` component) before it reaches your markup — typically to prepend a CDN origin in front of the relative `/_mochi/image/…?p=<token>` path. The context carries the source `src`, the cosmetic `filename`, and `original` (`true` for `getImage`, `false` for resized variants), so you can route originals and variants differently. Return the URL unchanged to opt out per call. Sync.
+Rewrite the encrypted URL returned by `getImageUrl()` (and the `<Image>` component) before it reaches your markup — typically to prepend a CDN origin in front of the relative `/_mochi/image/…?p=<token>` path. The context carries the source `src`, the cosmetic `filename`, and `original` (`true` for a full-size original, `false` for a size variant), so you can route originals and variants differently. Return the URL unchanged to opt out per call. Sync.
 
 ```ts
 await Mochi.serve({
@@ -351,3 +368,121 @@ await Mochi.serve({
 <Callout type="danger">
 Only rewrite the **origin/prefix** — never the last path segment (the `filename`). That segment is authenticated (bound as AAD to the encrypted token), so the image endpoint re-derives it from the served path and rejects (403) any request whose filename was changed. Rewriting the host/prefix is safe; renaming `photo-500x500.webp` is not. Mochi logs a warning if a filter changes the filename.
 </Callout>
+
+#### `image:fileFilter`
+
+Controls which local imports are intercepted and turned into `ImportedImage` objects. The default (`IMAGE_FILE_FILTER`, exported from `mochi-framework`) matches `png`, `jpg`/`jpeg`, `webp`, `avif`, and `gif`. Return a narrower regex to opt some files out (they fall through to Bun's default loader), or a wider one to intercept more. Resolved once per build pass — the `target` (`'server' | 'client'`) is in context. Sync.
+
+```ts
+import { IMAGE_FILE_FILTER } from 'mochi-framework';
+
+await Mochi.serve({
+  filters: {
+    // Also treat .bmp imports as images.
+    'image:fileFilter': (re) => new RegExp(re.source + '|\\.bmp$', 'i'),
+  },
+  routes,
+});
+```
+
+<Callout type="warning">
+
+Widening the regex only decides which files reach the loader — each is still decoded by `Bun.Image` and validated against the accepted raster formats (png/jpeg/webp/avif/gif). A file whose format Mochi can't decode still throws a build error, so extending to a genuinely new format needs `Bun.Image` decode support, not just a matching extension.
+
+</Callout>
+
+#### `image:localAssetFilename`
+
+Rename the content-hashed file a local image import emits under `<outDir>/assets/`. The default is `<slug>-<hash>.<ext>`; the context carries the `sourcePath`, `hash`, `ext`, `format`, and intrinsic `width`/`height`. The filter runs in **both** build passes, so it must be deterministic — a non-deterministic name would make the SSR and client bundles disagree on the URL. Keep the result a single path segment (the built-in `/asset/:filename` route serves one segment). Sync.
+
+```ts
+await Mochi.serve({
+  filters: {
+    'image:localAssetFilename': (name, { hash, ext }) => `img.${hash}.${ext}`,
+  },
+  routes,
+});
+```
+
+#### `image:localAssetUrl`
+
+Rewrite the `src` URL a local image import resolves to. The default is `${assetPrefix}/asset/<filename>` (served from disk by the built-in route); the context carries the `sourcePath`, `filename`, `assetPrefix`, and `format`. Like `image:localAssetFilename`, it runs in both passes and must be deterministic. Sync.
+
+```ts
+await Mochi.serve({
+  filters: {
+    'image:localAssetUrl': (_url, { filename }) => `https://cdn.example.com/${filename}`,
+  },
+  routes,
+});
+```
+
+<Callout type="warning">
+
+Returning an absolute (CDN) URL intentionally bypasses the built-in `/asset/` route and the local-disk shortcut used when `<Image>` transforms an import — the browser and the image transformer will fetch from that URL instead, so pair it with `image:localAssetEmitted` to upload the bytes there. A same-origin override must stay under `${assetPrefix}/asset/` as a single segment, or the built-in route won't serve it.
+
+</Callout>
+
+#### `email:message`
+
+Intercept every message sent through `Mochi.email()` right before it reaches the transport. The filter receives the fully-resolved message (`from` filled, addresses arrayified, body rendered) and returns a modified message, or `null` to **suppress** the send entirely. The context carries the configured `transport` type (`'log' | 'dev' | 'smtp' | 'custom'`) so you can branch on where the message is headed. Async.
+
+This is the interceptor seam for transactional mail — add an audit BCC, inject compliance headers, or reroute recipients in staging — without replacing the whole transport.
+
+```ts
+await Mochi.serve({
+  email: { from: 'noreply@app.dev', transport: { type: 'smtp', host: 'smtp.example.com' } },
+  filters: {
+    'email:message': (message, { transport }) => {
+      // In non-production, redirect all real mail to a catch-all inbox.
+      if (transport === 'smtp' && process.env.STAGING) {
+        return { ...message, to: ['qa@app.dev'], cc: undefined, bcc: undefined };
+      }
+      return { ...message, headers: { ...message.headers, 'List-Unsubscribe': '<mailto:unsub@app.dev>' } };
+    },
+  },
+  routes,
+});
+```
+
+Return `null` to veto — the message never reaches a transport (nothing is delivered, nothing is captured into the dev outbox):
+
+```ts
+'email:message': async (message) => ((await suppressionList.has(message.to)) ? null : message),
+```
+
+A suppressed send still emits an `email:sent` event with `transport: 'suppressed'` (and `consoleLogger()` prints it as a `MAIL … suppressed (filtered)` line), so blocked mail stays observable. `Mochi.email()` resolves to `{ transport: 'suppressed' }` in that case.
+
+#### `captcha:minAgeMs`
+
+The captcha timing floor — a token younger than this is refused. Applied per token, so the floor can vary by form. The context carries the `bits` sealed into the token, its measured `ageMs`, and `limitMs` (the expiry bound the returned floor must stay under). Returning a value at or above `limitMs`, or a negative one, throws — it would reject every token. Sync.
+
+This is the only check enforcing that a submission took human time. The proof-of-work bounds an attacker's **cost** (~2^`bits` hashes per token), not any single solver's latency — solve time is geometrically distributed with no lower bound, so a lucky visitor clears it in milliseconds. A form with fields to type into runs well past the 2s default; a form with nothing to fill in may not.
+
+```ts
+import { getRequestContext } from 'mochi-framework';
+
+await Mochi.serve({
+  filters: {
+    // A one-click confirm has nothing to type, so the default floor would reject real visitors.
+    'captcha:minAgeMs': (def) => (getRequestContext().url.pathname === '/confirm/' ? 250 : def),
+  },
+  routes,
+});
+```
+
+#### `captcha:driftAllowanceMs`
+
+Slack added to `maxAgeMs` before a token is refused as expired. A token's age is `Date.now()` at verify minus the `iat` sealed at mint — in a multi-instance deploy those two reads come off different machines, so the difference carries that pair's clock skew. The allowance absorbs it. Resolved once alongside the rest of the captcha options, since skew is a property of the fleet rather than of a request. Sync.
+
+```ts
+await Mochi.serve({
+  filters: {
+    // Single instance — mint and verify share one clock, so no slack is needed.
+    'captcha:driftAllowanceMs': () => 0,
+  },
+  routes,
+});
+```
+
+The allowance only ever widens the **expiry** side, and is deliberately not applied to `minAgeMs`. Padding a floor means subtracting from it, so an allowance wider than the floor would silently delete the too-fast check rather than soften it — leaving a config that still reads like it enforces a 2s floor while accepting instant submissions. Use `captcha:minAgeMs` to move the floor, so the change is explicit.

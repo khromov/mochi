@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import type { MochiServeOptions } from './types';
 import { applyFilter, initExtensions, runHook, type MochiFilterContext } from './extensions';
-import type { IslandPropsEntry } from './islandPropsRegistry';
+import type { IslandPropsEntry } from './islands/islandPropsRegistry';
+import type { ResolvedEmailMessage } from './email/types';
 
 const fakeOptions = {} as MochiServeOptions;
 
@@ -200,6 +201,34 @@ describe('new extension points', () => {
     });
     expect(applyFilter('payload:compressMinBytes', 80, { options: fakeOptions, payload: Uint8Array.of(0xff, 1, 2) })).toBe(Infinity);
     expect(applyFilter('payload:compressMinBytes', 80, { options: fakeOptions, payload: Uint8Array.of(0x01, 1, 2) })).toBe(80);
+  });
+
+  test('captcha:minAgeMs returns the default unchanged when no filter registered', () => {
+    expect(applyFilter('captcha:minAgeMs', 2000, { bits: 16, ageMs: 5000, limitMs: 930_000 })).toBe(2000);
+  });
+
+  test('captcha:minAgeMs can decide per-token from the context', () => {
+    initExtensions({
+      filters: {
+        // Drop the floor for tokens minted at a difficulty the slow forms use.
+        'captcha:minAgeMs': (def, { bits }) => (bits >= 20 ? 0 : def),
+      },
+    });
+    expect(applyFilter('captcha:minAgeMs', 2000, { bits: 20, ageMs: 100, limitMs: 930_000 })).toBe(0);
+    expect(applyFilter('captcha:minAgeMs', 2000, { bits: 16, ageMs: 100, limitMs: 930_000 })).toBe(2000);
+  });
+
+  test('captcha:driftAllowanceMs returns the default unchanged when no filter registered', () => {
+    expect(applyFilter('captcha:driftAllowanceMs', 30_000, { options: {}, maxAgeMs: 900_000 })).toBe(30_000);
+  });
+
+  test('captcha:driftAllowanceMs can scale off the resolved maxAgeMs', () => {
+    initExtensions({
+      filters: {
+        'captcha:driftAllowanceMs': (_def, { maxAgeMs }) => maxAgeMs * 0.05,
+      },
+    });
+    expect(applyFilter('captcha:driftAllowanceMs', 30_000, { options: {}, maxAgeMs: 900_000 })).toBe(45_000);
   });
 
   test('compile:preprocessors returns the user-supplied list', () => {
@@ -460,6 +489,137 @@ describe('new extension points', () => {
     expect(applyFilter('image:url', '/a?p=t', { ...ctx, original: false })).toBe('/a?p=t');
   });
 
+  test('image:fileFilter returns the default regex unchanged when no filter registered', () => {
+    const input = /\.(png|jpe?g)$/i;
+    expect(applyFilter('image:fileFilter', input, { target: 'server' })).toBe(input);
+  });
+
+  test('image:fileFilter can extend the import regex and branch on target', () => {
+    initExtensions({
+      filters: {
+        'image:fileFilter': (re, { target }) => (target === 'server' ? new RegExp(re.source + '|\\.bmp$', 'i') : re),
+      },
+    });
+    const base = /\.(png)$/i;
+    const server = applyFilter('image:fileFilter', base, { target: 'server' });
+    expect(server.test('a.bmp')).toBe(true);
+    expect(server.test('a.png')).toBe(true);
+    expect(applyFilter('image:fileFilter', base, { target: 'client' })).toBe(base);
+  });
+
+  test('image:localAssetFilename returns the input unchanged when no filter registered', () => {
+    const ctx = { sourcePath: '/src/hero.png', hash: 'abc', ext: 'png', format: 'png' as const, width: 40, height: 30 };
+    expect(applyFilter('image:localAssetFilename', 'hero-abc.png', ctx)).toBe('hero-abc.png');
+  });
+
+  test('image:localAssetFilename rewrites the emitted filename', () => {
+    initExtensions({
+      filters: {
+        'image:localAssetFilename': (name, { hash }) => `img.${hash}.${name.split('.').pop()}`,
+      },
+    });
+    const ctx = { sourcePath: '/src/hero.png', hash: 'abc', ext: 'png', format: 'png' as const, width: 40, height: 30 };
+    expect(applyFilter('image:localAssetFilename', 'hero-abc.png', ctx)).toBe('img.abc.png');
+  });
+
+  test('image:localAssetUrl returns the input unchanged when no filter registered', () => {
+    const ctx = { sourcePath: '/src/hero.png', filename: 'hero-abc.png', assetPrefix: '/_mochi', format: 'png' as const };
+    expect(applyFilter('image:localAssetUrl', '/_mochi/asset/hero-abc.png', ctx)).toBe('/_mochi/asset/hero-abc.png');
+  });
+
+  test('image:localAssetUrl can point imports at a CDN', () => {
+    initExtensions({
+      filters: {
+        'image:localAssetUrl': (_url, { filename }) => `https://cdn.example.com/${filename}`,
+      },
+    });
+    const ctx = { sourcePath: '/src/hero.png', filename: 'hero-abc.png', assetPrefix: '/_mochi', format: 'png' as const };
+    expect(applyFilter('image:localAssetUrl', '/_mochi/asset/hero-abc.png', ctx)).toBe('https://cdn.example.com/hero-abc.png');
+  });
+
+  test('image:localAssetEmitted resolves cleanly when no hook registered', async () => {
+    await expect(
+      runHook('image:localAssetEmitted', {
+        sourcePath: '/src/hero.png',
+        diskPath: '/out/assets/hero-abc.png',
+        url: '/_mochi/asset/hero-abc.png',
+        width: 40,
+        height: 30,
+        format: 'png',
+        contentType: 'image/png',
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  test('image:localAssetEmitted awaits an async user hook with the asset context', async () => {
+    const seen: string[] = [];
+    initExtensions({
+      eventHooks: {
+        'image:localAssetEmitted': async ({ url }) => {
+          await Bun.sleep(5);
+          seen.push(url);
+        },
+      },
+    });
+    await runHook('image:localAssetEmitted', {
+      sourcePath: '/src/hero.png',
+      diskPath: '/out/assets/hero-abc.png',
+      url: '/_mochi/asset/hero-abc.png',
+      width: 40,
+      height: 30,
+      format: 'png',
+      contentType: 'image/png',
+    });
+    expect(seen).toEqual(['/_mochi/asset/hero-abc.png']);
+  });
+
+  const fakeResolved = (overrides: Partial<ResolvedEmailMessage> = {}): ResolvedEmailMessage => ({
+    from: 'noreply@test.dev',
+    to: ['user@example.com'],
+    subject: 'Hi',
+    html: '<p>Hello</p>',
+    text: 'Hello',
+    ...overrides,
+  });
+
+  test('email:message resolves to the input message unchanged when no filter registered', async () => {
+    const input = fakeResolved();
+    const result = await applyFilter('email:message', input, { transport: 'dev' });
+    expect(result).toBe(input);
+  });
+
+  test('email:message can rewrite the outgoing message (inject a header)', async () => {
+    initExtensions({
+      filters: {
+        'email:message': (msg) => ({ ...msg, headers: { ...msg.headers, 'List-Unsubscribe': '<mailto:x@y.dev>' } }),
+      },
+    });
+    const result = await applyFilter('email:message', fakeResolved(), { transport: 'smtp' });
+    expect(result?.headers?.['List-Unsubscribe']).toBe('<mailto:x@y.dev>');
+  });
+
+  test('email:message returning null vetoes the send', async () => {
+    initExtensions({
+      filters: {
+        'email:message': () => null,
+      },
+    });
+    const result = await applyFilter('email:message', fakeResolved(), { transport: 'dev' });
+    expect(result).toBeNull();
+  });
+
+  test('email:message can branch on the configured transport in context', async () => {
+    initExtensions({
+      filters: {
+        'email:message': (msg, { transport }) => (transport === 'smtp' ? { ...msg, to: ['catchall@test.dev'] } : msg),
+      },
+    });
+    const rerouted = await applyFilter('email:message', fakeResolved(), { transport: 'smtp' });
+    expect(rerouted?.to).toEqual(['catchall@test.dev']);
+    const untouched = await applyFilter('email:message', fakeResolved(), { transport: 'dev' });
+    expect(untouched?.to).toEqual(['user@example.com']);
+  });
+
   test('trailingSlash:redirect can suppress the redirect for a specific path', () => {
     const redirect = new Response(null, { status: 308, headers: { Location: '/mcp/' } });
     initExtensions({
@@ -497,8 +657,8 @@ describe('new extension points', () => {
   // the contract that `getRequestContext()` works inside the hook regardless
   // of route type.
   test.each(['ws', 'sse'] as const)('route:matched exposes requestContext for kind %s', async (kind) => {
-    const { requestContext, getRequestContext } = await import('./requestContext');
-    const { MochiCookieJar } = await import('./cookies');
+    const { requestContext, getRequestContext } = await import('./runtime/requestContext');
+    const { MochiCookieJar } = await import('./runtime/cookies');
     let seen: { requestId: string; kind: string; pathname: string; param: string } | null = null;
     initExtensions({
       eventHooks: {

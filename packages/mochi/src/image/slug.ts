@@ -1,5 +1,6 @@
+import path from 'node:path';
 import { extForFormat } from './resize';
-import type { ImageRequest } from './types';
+import type { ResolvedImageSize } from './types';
 
 function slugifyStem(stem: string): string {
   const slug = stem
@@ -26,25 +27,9 @@ function baseName(src: string): string {
   return slugifyStem(stem);
 }
 
-function dimsLabel(width?: number, height?: number): string {
-  if (width && height) {
-    return `${width}x${height}`;
-  }
-  if (width) {
-    return `${width}w`;
-  }
-  if (height) {
-    return `${height}h`;
-  }
-  return '';
-}
-
-/** Cosmetic filename only (`my-image-500x500.webp`); the authoritative request travels encrypted in the `payload` query param. */
-export function buildImageFilename(req: ImageRequest): string {
-  const base = baseName(req.src);
-  const dims = dimsLabel(req.width, req.height);
-  const name = dims ? `${base}-${dims}` : base;
-  return `${name}.${extForFormat(req.format)}`;
+/** Cosmetic filename only (`my-image-thumbnail.webp`); the authoritative request travels encrypted in the `p` query param. */
+export function buildImageFilename(src: string, size: ResolvedImageSize): string {
+  return `${baseName(src)}-${slugifyStem(size.name)}.${extForFormat(size.format)}`;
 }
 
 function extFromSrc(src: string): string {
@@ -54,6 +39,11 @@ function extFromSrc(src: string): string {
 }
 
 /** Cosmetic filename for an original; the served Content-Type, not this extension, is authoritative. */
-export function buildOriginalFilename(req: ImageRequest): string {
-  return `${baseName(req.src)}-original.${extFromSrc(req.src)}`;
+export function buildOriginalFilename(src: string): string {
+  return `${baseName(src)}-original.${extFromSrc(src)}`;
+}
+
+/** Slug for a locally-imported asset's served filename, derived from its on-disk basename stem. */
+export function slugForImport(absPath: string): string {
+  return slugifyStem(path.basename(absPath).replace(/\.[^.]+$/, ''));
 }

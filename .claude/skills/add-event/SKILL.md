@@ -11,7 +11,7 @@ Mochi emits lifecycle events through `mochiEvents` — a typed [`mitt`](https://
 1. The payload type + `MochiEventMap` entry in `packages/mochi/src/events.ts`.
 2. The emission site (`Mochi.ts`, `cache.ts`, `ComponentRegistry.ts`, or wherever the trigger lives).
 3. Public re-exports in `packages/mochi/src/index.ts`.
-4. (Optional) a log line in `packages/mochi/src/consoleLogger.ts` if `consoleLogger()` should print it.
+4. (Optional) a log line in `packages/mochi/src/dev/consoleLogger.ts` if `consoleLogger()` should print it.
 5. A test in `packages/mochi/src/events.test.ts` (and a behavioural test alongside the consumer if the emission has non-trivial logic).
 6. Docs in `packages/docs/147-events.md`.
 
