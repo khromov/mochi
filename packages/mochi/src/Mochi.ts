@@ -472,10 +472,7 @@ export class Mochi {
     // Collect every page entrypoint (error page + every Mochi.page route) so
     // we can compile them in one Bun.build below. Splitting deduplicates
     // shared transitive deps (devalue, mochi-framework internals, etc.) into
-    // chunk files instead of inlining them per page; collapsing
-    // the boot-time pre-compiles into one Bun.build also dodges the
-    // documented EISDIR bug that fires when two `Bun.build` calls in the
-    // same process touch the same transitive deps.
+    // chunk files instead of inlining them per page.
     const ssrEntrypoints: string[] = [errorPagePath, CLIENT_STATS_COMPONENT];
     if (debugBarEnabled) {
       ssrEntrypoints.push(PAGE_CACHE_ADMIN_COMPONENT);
