@@ -67,7 +67,7 @@ function restoreVariationsFormat(css: string): string {
  * which loses the per-message position info — we always pass `throw: false`
  * to recover the structured logs and run them through this helper instead.
  */
-function formatBuildMessages(
+export function formatBuildMessages(
   logs: ReadonlyArray<{
     message: string;
     position?: { file: string; line: number; column: number } | null;
@@ -76,13 +76,29 @@ function formatBuildMessages(
   if (logs.length === 0) {
     return '  <no diagnostic messages>';
   }
-  return logs
+  const formatted = logs
     .map((l) => {
       const p = l.position;
       const where = p ? `${path.relative(process.cwd(), p.file)}:${p.line}:${p.column}` : '<unknown>';
       return `  ${where} — ${l.message}`;
     })
     .join('\n');
+
+  // A read failure on a file inside the isolated linker's node_modules/.bun
+  // symlink store is the signature of a known Bun bug (a second Bun.build in a
+  // `bun test` / --hot / --watch process fails reading deps the runtime loader
+  // already imported). Without this hint the error looks like a broken dep and
+  // costs hours; with it the fix is a two-line bunfig change.
+  if (/reading file/.test(formatted) && /node_modules[\\/]\.bun[\\/]/.test(formatted)) {
+    return (
+      `${formatted}\n` +
+      `  hint: this matches a known Bun bug — a second Bun.build() inside \`bun test\` (or --hot/--watch)\n` +
+      `  fails reading node_modules files resolved through the isolated linker's symlinked\n` +
+      `  node_modules/.bun store. Fix: add \`linker = "hoisted"\` under \`[install]\` in bunfig.toml,\n` +
+      `  delete node_modules, and reinstall. See https://github.com/khromov/bun-second-build-eisdir-repro`
+    );
+  }
+  return formatted;
 }
 
 const MARKDOWN_EXTENSIONS = ['.md', '.svx'];
@@ -530,8 +546,7 @@ export class ComponentRegistry {
    *
    * Boot-time and dev-watcher paths should call `compileAll` directly with
    * the full set of entrypoints — that produces a single shared SSR bundle
-   * (deduplicates `devalue`/etc. via Bun's `splitting: true`)
-   * and avoids the second-`Bun.build`-in-one-process EISDIR bug.
+   * (deduplicates `devalue`/etc. via Bun's `splitting: true`).
    */
   async compile(filename: string, opts: { force?: boolean } = {}): Promise<void> {
     await this.compileAll([filename], opts);
@@ -702,10 +717,7 @@ export class ComponentRegistry {
       // provides. Everything else (devalue, cookie, etc.) gets bundled
       // — but with `splitting: true` Bun emits shared transitive
       // deps into separate chunk files alongside each entry's `.server.js`,
-      // so they're written exactly once across the cohort. Two
-      // `Bun.build` calls that touch the same transitive deps in one process
-      // trip a Bun bundler EISDIR bug; batching all entrypoints into a single
-      // call sidesteps it.
+      // so they're written exactly once across the cohort.
       external: ['svelte', 'svelte/*'],
       splitting: true,
       outdir: compileOutDir,
@@ -1840,8 +1852,7 @@ export class ComponentRegistry {
 
     this.clientBundleCallCount = 0;
     // Rebuild every affected entry in a single Bun.build so transitive deps
-    // dedupe across them (and so a multi-page rebuild never trips the
-    // double-`Bun.build` EISDIR bug).
+    // dedupe across them.
     await this.safeBatchCompile([...affected], 'Targeted rebuild failed');
     this.rebuildHydratables();
     // `compileAll` already calls `buildClientBundle` once when the cohort
