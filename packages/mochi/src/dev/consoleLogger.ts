@@ -6,7 +6,7 @@ import { mochiEvents } from '../events';
 import type { MochiEventMap, MochiRequestKind } from '../events';
 import { logger } from '../utils/log';
 import { getEmailRuntime } from '../email/config';
-import { applyFilter, type ConsoleLoggerSource, type MochiFilterContext, type MochiFilterReturn } from '../extensions';
+import { applyFilter, type ConsoleLoggerLevel, type ConsoleLoggerSource, type MochiFilterContext, type MochiFilterReturn } from '../extensions';
 
 export interface ConsoleLoggerOptions {
   /** Duration (ms) at which a request is marked slow — duration turns yellow and line uses warn level. */
@@ -246,14 +246,16 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
     level: 'warn',
   }));
 
-  // Enqueue and per-attempt start are high-volume; route them through
-  // `logger.debug` so the default stream stays quiet. `completed` carries the
-  // duration (escalated to warn when slow); `failed`/`error` always warn.
+  // `added` is the only signal that work entered the system — with a slow
+  // processor it's the sole line for as long as the job runs — so it prints at
+  // the default level. Per-attempt `active` repeats on every retry and adds
+  // nothing over added + completed/failed, so it stays on `logger.debug`.
+  // `completed` carries the duration (escalated to warn when slow);
+  // `failed`/`error` always warn.
   subscribe('queue:added', ({ queue, jobName, jobId }) => ({
     label: 'QUEUE',
     path: `${queue}/${jobName}`,
     note: styleText('dim', `+ ${jobId}`),
-    level: 'debug',
   }));
   subscribe('queue:active', ({ queue, jobName }) => ({
     label: 'QUEUE',
@@ -487,7 +489,7 @@ interface EmitInput {
    * always warrant attention. Always escalated to `warn` for 5xx or slow
    * responses regardless of this value.
    */
-  level?: 'info' | 'log' | 'debug' | 'warn';
+  level?: ConsoleLoggerLevel;
 }
 
 const KIND_WIDTH = 'fallback'.length;
@@ -525,7 +527,10 @@ function emit({ label, kind, path, status, note, duration, neutral = false, slow
   const isServerError = status != null && status >= 500;
   const isSlow = !neutral && duration != null && duration >= slow;
 
-  const resolvedLevel: 'info' | 'warn' | 'log' | 'debug' = isServerError || isSlow ? 'warn' : level;
+  const escalated: ConsoleLoggerLevel = isServerError || isSlow ? 'warn' : level;
+  // Remapped before the line filter so `consoleLogger:line` sees the level the
+  // line will actually be written at, not the framework's default for the event.
+  const resolvedLevel = applyFilter('consoleLogger:level', escalated, { label, path, status, kind, source });
 
   const filtered = applyFilter('consoleLogger:line', line, { level: resolvedLevel, label, path, status, kind, source });
   if (filtered == null) {

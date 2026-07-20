@@ -9,6 +9,7 @@ import { MochiCookieJar } from '../runtime/cookies';
 const FIXTURE_DIR = path.join(import.meta.dir, '..', '__fixtures__', 'server-only');
 const FIXTURE_PAGE = path.join(FIXTURE_DIR, 'Page.svelte');
 const SENTINEL = 'sentinel-from-server-module-d3adb33f';
+const TYPE_SENTINEL = 'type-sentinel-from-server-module-c0ffee';
 
 describe('.server.ts imports', () => {
   let outDir: string;
@@ -47,6 +48,17 @@ describe('.server.ts imports', () => {
     for (const src of clientSources) {
       expect(src).not.toContain(SENTINEL);
     }
+  });
+
+  // The island type-imports `Secret` from the same .server.ts it value-imports
+  // from. A type-only import is erased by the TS transform before the client
+  // build resolves anything, so it needs no parallel `types.ts` to stay clean.
+  test('a type-only import from a .server.ts leaves nothing in the client bundle', () => {
+    const joined = [...registry.getClientFiles().entries()]
+      .filter(([url]) => url.endsWith('.js'))
+      .map(([, src]) => src)
+      .join('\n');
+    expect(joined).not.toContain(TYPE_SENTINEL);
   });
 
   test('client bundle emits the throwing stub error message', () => {

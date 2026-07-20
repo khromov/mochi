@@ -93,6 +93,12 @@ COPY --chown=bun:bun --from=build /usr/src/app/packages/${WORKSPACE}/.mochi pack
 # ncdu for disk usage analysis
 RUN apk add --no-cache ncdu
 
+# The workspace tree above is COPYed as root, so an app that opens a SQLite file
+# at runtime (packages/support writes .db/support.sqlite) could not create the
+# directory as `bun`. Pre-creating it owned by the runtime user also means a
+# named volume mounted here inherits bun:bun instead of root.
+RUN mkdir -p packages/${WORKSPACE}/.db && chown bun:bun packages/${WORKSPACE}/.db
+
 USER bun
 EXPOSE ${PORT}/tcp
 ENTRYPOINT [ "sh", "-c", "exec bun --cwd=packages/$WORKSPACE run start" ]

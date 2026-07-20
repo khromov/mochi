@@ -66,7 +66,7 @@ export async function runTests(options: RunTestsOptions = {}): Promise<void> {
   const parallel = included.filter((f) => !sequential.has(f));
 
   if (all.length > included.length) {
-    console.log(`Skipping ${all.length - included.length} file(s) on Windows (Bun native-shutdown wedge): ${[...windowsSkip].join(', ')}`);
+    console.log(`Skipping ${all.length - included.length} file(s) on Windows: ${[...windowsSkip].join(', ')}`);
   }
 
   // Run one file at a time on Windows. Some suites pass every test but then wedge
