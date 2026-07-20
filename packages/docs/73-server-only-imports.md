@@ -34,7 +34,32 @@ export const getVersion = (): string => (db.query('SELECT sqlite_version() as v'
 <p>SQLite {version}</p>
 ```
 
-The `.server.ts` (or `.server.js`) suffix is the entire convention — no runtime API to call, no config. Import with the extension (`./db.server.ts`); extensionless `./db.server` also works. Types follow the import normally.
+The `.server.ts` (or `.server.js`) suffix is the entire convention — no runtime API to call, no config. Import with the extension (`./db.server.ts`); extensionless `./db.server` also works.
+
+### Types are free
+
+A type-only import is erased before the client build resolves anything, so a `.server.ts` file is also the right home for the types describing its data — even for types used inside a hydratable island. There is no need for a parallel `types.ts`:
+
+```ts
+// db.server.ts
+export interface Row {
+  id: number;
+  title: string;
+}
+
+export const listRows = (): Row[] => db.query('SELECT * FROM rows').all() as Row[];
+```
+
+```svelte
+<!-- RowList.svelte — hydratable island -->
+<script lang="ts">
+  import type { Row } from './db.server.ts';
+
+  let { rows }: { rows: Row[] } = $props();
+</script>
+```
+
+Only value imports are stubbed. Use `import type` (or `import { type Row }`) so the compiler drops the import entirely rather than resolving it to a stub.
 
 <Callout type="warning">
 
