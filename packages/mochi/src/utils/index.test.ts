@@ -1,7 +1,18 @@
 import { describe, expect, test } from 'bun:test';
 import type { Server } from 'bun';
 import type { BunRouteValue } from '../types';
-import { DEFAULT_ASSET_PREFIX, headResponse, negotiate, normalizeAssetPrefix, normalizeIslandHydrationMarkers, stripHydrationMarkers, toPosixPath, withHead } from './index';
+import {
+  DEFAULT_ASSET_PREFIX,
+  headResponse,
+  negotiate,
+  normalizeAssetPrefix,
+  normalizeIslandHydrationMarkers,
+  relForDisplay,
+  stripHydrationMarkers,
+  toPosixPath,
+  withHead,
+} from './index';
+import path from 'node:path';
 
 describe('negotiate', () => {
   const types = ['application/json', 'text/html'];
@@ -178,6 +189,20 @@ describe('toPosixPath', () => {
   test('is idempotent', () => {
     const once = toPosixPath('C:\\a\\b');
     expect(toPosixPath(once)).toBe(once);
+  });
+});
+
+describe('relForDisplay', () => {
+  test('relativizes against cwd with forward slashes', () => {
+    expect(relForDisplay(path.join(process.cwd(), 'src', 'pages', 'Index.svelte'))).toBe('src/pages/Index.svelte');
+  });
+
+  test('never emits backslashes, even from backslash-bearing input', () => {
+    expect(relForDisplay(path.join(process.cwd(), 'src\\pages\\Index.svelte'))).not.toContain('\\');
+  });
+
+  test('returns empty string for the cwd itself (callers fall back with ||)', () => {
+    expect(relForDisplay(process.cwd())).toBe('');
   });
 });
 

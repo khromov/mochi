@@ -1,4 +1,4 @@
-import { afterAll, expect, test } from 'bun:test';
+import { afterAll, afterEach, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 
@@ -7,6 +7,18 @@ import path from 'node:path';
 // `utils/shutdownSignalServer.ts` as a child, connects a WebSocket, and signals it.
 const serverScript = path.join(import.meta.dir, 'utils', 'shutdownSignalServer.ts');
 const outDir = mkdtempSync(path.join(import.meta.dir, '..', '.mochi-shutdown-signal-'));
+
+// A test asserts the child exited on its own; when that assertion fails the
+// child is still running. Force-kill any survivor so it doesn't orphan a bun
+// process or keep writing into the shared outDir while the next test runs.
+const liveChildren = new Set<Bun.Subprocess>();
+
+afterEach(() => {
+  for (const proc of liveChildren) {
+    proc.kill('SIGKILL');
+  }
+  liveChildren.clear();
+});
 
 afterAll(() => {
   rmSync(outDir, { recursive: true, force: true });
@@ -19,6 +31,8 @@ async function startChild(shutdownTimeout: number, development = false): Promise
     stdout: 'pipe',
     stderr: 'pipe',
   });
+  liveChildren.add(proc);
+  void proc.exited.then(() => liveChildren.delete(proc));
   // The child prints `port=<n>` once it is listening. In dev mode it also emits
   // startup warnings first, so scan for the marker rather than taking line one.
   const reader = (proc.stdout as ReadableStream<Uint8Array>).getReader();
