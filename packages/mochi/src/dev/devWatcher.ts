@@ -12,6 +12,7 @@ import { extractServeOptions } from '../cli/extractServeOptions';
 import { buildPublicUrl } from '../runtime/proxy';
 import { resolvePublicFiles, registerPublicRoutes } from '../runtime/publicDir';
 import { loadSvelteConfig } from '../compiler/svelteConfig';
+import { recordReloadSignal } from './liveReloadGeneration';
 import type { MochiRateLimitOptions } from '../runtime/rateLimit';
 import { alternateSlashPattern } from '../runtime/trailingSlash';
 import {
@@ -133,6 +134,9 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
   // When `affected` is provided, only tabs whose entry is in that set
   // get the reload — tabs on unaffected pages keep their state.
   const notifyClients = (affected?: Set<string>) => {
+    // Counted before the fan-out so a tab that reconnects after missing this
+    // signal still sees the generation move in its greeting.
+    recordReloadSignal(affected);
     for (const client of liveReloadClients) {
       if (affected !== undefined) {
         const entry = client.data.__mochiEntry;

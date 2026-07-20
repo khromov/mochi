@@ -3,7 +3,7 @@ import { render } from 'svelte/server';
 import path from 'node:path';
 import fs from 'node:fs';
 import type { BunPlugin } from 'bun';
-import { isSvelteMarker, normalizeAssetPrefix, normalizeIslandHydrationMarkers, stripHydrationMarkers, toCompileErrorLogs, toPosixPath } from '../utils';
+import { isSvelteMarker, normalizeAssetPrefix, normalizeIslandHydrationMarkers, relForDisplay, stripHydrationMarkers, toCompileErrorLogs, toPosixPath } from '../utils';
 import { injectIslandPropsBlock } from '../islands/islandPropsRegistry';
 import { requestContext, renderDetached } from '../runtime/requestContext';
 import type { DebugBarData } from '../runtime/requestContext';
@@ -79,7 +79,7 @@ export function formatBuildMessages(
   const formatted = logs
     .map((l) => {
       const p = l.position;
-      const where = p ? `${path.relative(process.cwd(), p.file)}:${p.line}:${p.column}` : '<unknown>';
+      const where = p ? `${relForDisplay(p.file)}:${p.line}:${p.column}` : '<unknown>';
       return `  ${where} — ${l.message}`;
     })
     .join('\n');
@@ -210,7 +210,7 @@ export type MochiCompileError =
     };
 
 function formatUnresolvedIsland(e: Extract<MochiCompileError, { kind: 'unresolved-island' }>): string {
-  const where = toPosixPath(path.relative(process.cwd(), e.filePath));
+  const where = relForDisplay(e.filePath);
   const head = `Unresolved island: <${e.component} ${e.directive}> in ${where}`;
   if (e.importSource === null) {
     return (
@@ -446,10 +446,12 @@ export class ComponentRegistry {
       if (exclude.length > 0) {
         const globs = exclude.map((p) => new Bun.Glob(p));
         for (const id of [...shaken.keys()]) {
-          const rel = path.relative(cwd, id);
+          // Glob patterns are written with forward slashes, so match against
+          // POSIX-ified paths or Windows never excludes anything.
+          const rel = toPosixPath(path.relative(cwd, id));
           // Excluded files compile from original source. Safe regardless: the
           // whole-app scan still covered them as call sites of other components.
-          if (globs.some((g) => g.match(rel) || g.match(id))) {
+          if (globs.some((g) => g.match(rel) || g.match(toPosixPath(id)))) {
             shaken.delete(id);
             excluded++;
           }
@@ -465,7 +467,7 @@ export class ComponentRegistry {
       for (const [id, out] of shaken) {
         const original = originals.get(id) ?? out;
         if (original !== out) {
-          changed.push({ name: path.relative(cwd, id), before: Buffer.byteLength(original, 'utf8'), after: Buffer.byteLength(out, 'utf8') });
+          changed.push({ name: relForDisplay(id), before: Buffer.byteLength(original, 'utf8'), after: Buffer.byteLength(out, 'utf8') });
         }
       }
       logger.info(`svelte-shaker: slimmed ${changed.length} of ${shaken.size} component(s)${excluded > 0 ? `, ${excluded} excluded` : ''}`);
@@ -1074,7 +1076,7 @@ export class ComponentRegistry {
           const source = await Bun.file(args.path).text();
           const scan = scanServerOnlyExports(source);
           for (const w of scan.warnings) {
-            logger.warn(`[mochi] ${path.relative(process.cwd(), args.path)}: ${w}`);
+            logger.warn(`[mochi] ${relForDisplay(args.path)}: ${w}`);
           }
           return { contents: buildServerOnlyStubModule(args.path, scan), loader: 'js' };
         });
@@ -1748,7 +1750,7 @@ export class ComponentRegistry {
         this.importedCssStats.push({
           name: path.basename(out.path),
           size: cssText.length,
-          inputs: [{ path: path.relative(process.cwd(), cssPath), size: cssText.length }],
+          inputs: [{ path: relForDisplay(cssPath), size: cssText.length }],
           imports: [],
         });
       }),
