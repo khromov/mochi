@@ -143,10 +143,13 @@ describe('FileStorage', () => {
     // initial pass can fire before the entry ages past maxAge (so `events.length`
     // reaching 1 doesn't yet mean `k` was reclaimed). Waiting for the observable
     // effect is robust on both counts.
-    for (let i = 0; i < 200 && (await storage.getItem('k')) !== null; i++) {
+    for (let i = 0; i < 200 && ((await storage.getItem('k')) !== null || events.length === 0); i++) {
       await wait(10);
     }
     expect(await storage.getItem('k')).toBeNull();
+    // Polled for above, not just asserted: this has been observed failing on
+    // Windows CI with the entry gone but no event yet recorded. Waiting on both
+    // observable effects removes the ordering assumption between them.
     expect(events.length).toBeGreaterThanOrEqual(1);
   });
 
@@ -512,6 +515,24 @@ describe('MochiCache cross-process in-flight marker (shared FileStorage)', () =>
   // Mirrors MochiCache.markerKey — the tests are deliberately white-box on this.
   const markerKey = (key: string) => `mochi:inflight:${key}`;
 
+  // `inflightTimeout` is doing two jobs in MochiCache: it leases the marker AND
+  // caps how long a recompute may run (cache.ts wraps the run in `withTimeout`).
+  // Every test below is about marker semantics, not about the cap — so the lease
+  // must be far longer than the durable writes a recompute performs. A tight
+  // value (these were 100ms/1s) turns slow disk I/O into a spurious "recompute
+  // timed out" failure: exactly what Windows CI hit, where a single test in this
+  // block takes 400–1300ms while plain FileStorage tests take 10–50ms. Tests that
+  // deliberately exercise the cap set their own short value.
+  const LEASE = 30_000;
+
+  // How long to sleep to age an entry past a (deliberately tiny) TTL. The entry's
+  // timestamp is stamped when the durable write lands, not when `fetch` was
+  // called, so a wait only a little longer than the TTL leaves no margin for disk
+  // latency — the entry then reads as stale rather than expired and the test sees
+  // the cached value instead of a recompute (observed on Linux CI). Waiting far
+  // longer than any TTL here costs milliseconds and removes the race.
+  const AGE_PAST = 200;
+
   async function waitForMarker(storage: FileStorage, key: string, present: boolean): Promise<void> {
     for (let i = 0; i < 250; i++) {
       const raw = await storage.getItem(markerKey(key));
@@ -538,10 +559,10 @@ describe('MochiCache cross-process in-flight marker (shared FileStorage)', () =>
   }
 
   test('a peer refreshing a stale entry makes another process serve stale without re-running fn', async () => {
-    const { storageA, cacheA, cacheB } = twoProcesses({ minTimeToStale: 20, maxTimeToLive: 10_000, inflightTimeout: 1_000 });
+    const { storageA, cacheA, cacheB } = twoProcesses({ minTimeToStale: 20, maxTimeToLive: 10_000, inflightTimeout: LEASE });
 
     await cacheA.fetch('k', () => 1);
-    await wait(40); // age into the stale window on both
+    await wait(AGE_PAST); // age into the stale window on both
 
     // A serves stale and kicks off a background revalidation that parks in fn,
     // holding the marker for the duration.
@@ -576,10 +597,10 @@ describe('MochiCache cross-process in-flight marker (shared FileStorage)', () =>
   });
 
   test('a peer refreshing an expired entry makes another process serve the old value instead of recomputing', async () => {
-    const { storageA, cacheA, cacheB } = twoProcesses({ minTimeToStale: 10, maxTimeToLive: 30, inflightTimeout: 1_000 });
+    const { storageA, cacheA, cacheB } = twoProcesses({ minTimeToStale: 10, maxTimeToLive: 30, inflightTimeout: LEASE });
 
     await cacheA.fetch('k', () => 1);
-    await wait(50); // past maxTimeToLive → expired on both
+    await wait(AGE_PAST); // past maxTimeToLive → expired on both
 
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
@@ -606,11 +627,13 @@ describe('MochiCache cross-process in-flight marker (shared FileStorage)', () =>
   });
 
   test('a marker past its lease is ignored so a crashed peer never blocks regeneration', async () => {
-    const inflightTimeout = 100;
+    // The lease length is arbitrary here — what the test turns on is the marker's
+    // `startedAt` being older than it, which is arithmetic, not elapsed time.
+    const inflightTimeout = LEASE;
     const { storageA, cacheA } = twoProcesses({ minTimeToStale: 10, maxTimeToLive: 30, inflightTimeout });
 
     await cacheA.fetch('k', () => 1);
-    await wait(50); // expired
+    await wait(AGE_PAST); // expired
 
     // A crashed peer left a marker behind, now older than the lease.
     await storageA.setItem(markerKey('k'), { startedAt: Date.now() - (inflightTimeout + 50) });
@@ -625,7 +648,7 @@ describe('MochiCache cross-process in-flight marker (shared FileStorage)', () =>
   });
 
   test('does not defer to our own in-process regeneration — concurrent expired callers coalesce to one fresh regen', async () => {
-    const { cacheA } = twoProcesses({ minTimeToStale: 10, maxTimeToLive: 30, inflightTimeout: 1_000 });
+    const { cacheA } = twoProcesses({ minTimeToStale: 10, maxTimeToLive: 30, inflightTimeout: LEASE });
     let calls = 0;
     const fn = async () => {
       calls++;
@@ -634,7 +657,7 @@ describe('MochiCache cross-process in-flight marker (shared FileStorage)', () =>
     };
 
     await cacheA.fetch('k', fn); // calls = 1
-    await wait(50); // expired
+    await wait(AGE_PAST); // expired
 
     const [a, b] = await Promise.all([cacheA.fetchWithStatus('k', fn), cacheA.fetchWithStatus('k', fn)]);
     expect(a.value).toBe(2);
@@ -643,7 +666,7 @@ describe('MochiCache cross-process in-flight marker (shared FileStorage)', () =>
   });
 
   test('delete removes the marker', async () => {
-    const { storageA, storageB, cacheA } = twoProcesses({ minTimeToStale: 10, maxTimeToLive: 10_000, inflightTimeout: 1_000 });
+    const { storageA, storageB, cacheA } = twoProcesses({ minTimeToStale: 10, maxTimeToLive: 10_000, inflightTimeout: LEASE });
 
     await cacheA.fetch('k', () => 1);
     // A fresh marker as if a peer were mid-regen.
