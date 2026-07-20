@@ -6,6 +6,7 @@
 import { Queue, Worker, shutdownManager } from 'bunqueue/client';
 import type { Job, JobOptions } from 'bunqueue/client';
 import { pinGlobal } from './utils/globalState';
+import { applyFilter } from './extensions';
 import { startupMilestoneReached } from './lifecycle';
 import { mochiEvents } from './events';
 import { logger } from './utils/log';
@@ -285,18 +286,39 @@ export function getQueue<T = unknown>(name: string): MochiQueue<T> {
  * A failure is contained: the server is already bound and serving by this
  * point, so a transient store error during recovery must not take the site
  * down with it. It surfaces on the `queue:error` bus and in the log instead.
+ *
+ * A recover() that never settles is not cut off — abandoning it would drop the
+ * jobs it was about to add, which is the failure recovery exists to prevent.
+ * It is reported instead, because everything downstream (warmup, `mochi:ready`,
+ * `serve()` resolving) waits behind it and would otherwise hang silently.
  */
+export const DEFAULT_RECOVERY_STALL_WARNING_MS = 30_000;
+
 export async function runQueueRecovery(entries: Array<[string, { recover?: (queue: MochiQueue<never>) => void | Promise<void> }]>): Promise<void> {
   for (const [name, config] of entries) {
     if (!config.recover) {
       continue;
     }
+    // Resolved per queue, not once for the run: a queue whose recovery reads a
+    // slow store legitimately needs a longer threshold than its siblings.
+    // A non-positive value opts that queue out of the warning entirely.
+    const stallMs = applyFilter('queue:recoveryStallWarningMs', DEFAULT_RECOVERY_STALL_WARNING_MS, { queue: name });
+    const stallWarning =
+      stallMs > 0
+        ? setTimeout(() => {
+            logger.warn(`[queue] ${name}: recover() is still running after ${stallMs / 1000}s — Mochi.serve() cannot resolve until it settles.`);
+          }, stallMs)
+        : undefined;
+    // Never hold the process open on the warning alone.
+    stallWarning?.unref?.();
     try {
       await config.recover(getQueue(name) as MochiQueue<never>);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       logger.error(`[queue] ${name}: recover() failed — ${message}`);
       mochiEvents.emit('queue:error', { queue: name, error: message });
+    } finally {
+      clearTimeout(stallWarning);
     }
   }
 }

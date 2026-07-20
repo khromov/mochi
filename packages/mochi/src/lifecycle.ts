@@ -32,7 +32,12 @@ export function reachedStartupMilestones(): MochiStartupMilestone[] {
   return [...milestones];
 }
 
-/** Called on shutdown so a fresh `serve()` in the same process starts clean. */
+/**
+ * Clears the record. Wired into the SIGTERM/SIGINT shutdown path only — a bare
+ * `server.stop()` leaves the milestones set, so a test that boots a second
+ * server in-process has to call this itself. That's survivable because
+ * `initMochiConfig` already forbids two `serve()` calls per process.
+ */
 export function resetStartupMilestones(): void {
   milestones.clear();
 }

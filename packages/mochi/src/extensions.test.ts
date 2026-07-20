@@ -232,6 +232,25 @@ describe('new extension points', () => {
     expect(applyFilter('captcha:driftAllowanceMs', 30_000, { options: {}, maxAgeMs: 900_000 })).toBe(45_000);
   });
 
+  test('queue:recoveryStallWarningMs returns the default unchanged when no filter registered', () => {
+    expect(applyFilter('queue:recoveryStallWarningMs', 30_000, { queue: 'emails' })).toBe(30_000);
+  });
+
+  test('queue:recoveryStallWarningMs can raise the threshold for one queue only', () => {
+    initExtensions({
+      filters: {
+        'queue:recoveryStallWarningMs': (def, { queue }) => (queue === 'slow-store' ? 120_000 : def),
+      },
+    });
+    expect(applyFilter('queue:recoveryStallWarningMs', 30_000, { queue: 'slow-store' })).toBe(120_000);
+    expect(applyFilter('queue:recoveryStallWarningMs', 30_000, { queue: 'emails' })).toBe(30_000);
+  });
+
+  test('queue:recoveryStallWarningMs passes 0 through, which silences the warning', () => {
+    initExtensions({ filters: { 'queue:recoveryStallWarningMs': () => 0 } });
+    expect(applyFilter('queue:recoveryStallWarningMs', 30_000, { queue: 'emails' })).toBe(0);
+  });
+
   test('compile:preprocessors returns the user-supplied list', () => {
     const fakePreprocessor = { name: 'fake', markup: () => ({ code: '' }) };
     initExtensions({

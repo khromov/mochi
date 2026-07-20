@@ -71,8 +71,10 @@ const listInboxStmt = db.query<Submission, []>('SELECT * FROM submissions WHERE 
 const listHandledStmt = db.query<Submission, []>('SELECT * FROM submissions WHERE handled_at IS NOT NULL ORDER BY handled_at DESC');
 const sentStmt = db.query<never, [number, number]>("UPDATE submissions SET email_status = 'sent', email_error = NULL, email_sent_at = ? WHERE id = ?");
 const failedStmt = db.query<never, [string, number]>("UPDATE submissions SET email_status = 'failed', email_error = ? WHERE id = ?");
+const attemptErrorStmt = db.query<never, [string, number]>('UPDATE submissions SET email_error = ? WHERE id = ?');
 const handledStmt = db.query<never, [number | null, number]>('UPDATE submissions SET handled_at = ? WHERE id = ?');
-const pendingStmt = db.query<{ id: number }, []>("SELECT id FROM submissions WHERE email_status = 'pending' ORDER BY created_at");
+const undeliveredStmt = db.query<{ id: number }, []>("SELECT id FROM submissions WHERE email_status != 'sent' ORDER BY created_at");
+const requeuedStmt = db.query<never, [number]>("UPDATE submissions SET email_status = 'pending' WHERE id = ?");
 const logInsertStmt = db.query<never, [number, number, number, string, string | null]>('INSERT INTO email_log (submission_id, at, attempt, event, detail) VALUES (?, ?, ?, ?, ?)');
 const logAllStmt = db.query<EmailLogEntry, []>('SELECT * FROM email_log ORDER BY at, id');
 
@@ -96,8 +98,19 @@ export function markEmailSent(id: number): void {
   sentStmt.run(Date.now(), id);
 }
 
+/** Terminal: bunqueue has exhausted its attempts and won't retry on its own. */
 export function markEmailFailed(id: number, error: string): void {
   failedStmt.run(error.slice(0, 1000), id);
+}
+
+/**
+ * A failed attempt that bunqueue will still retry. Records why for the admin
+ * panel but leaves the status `pending` — flipping it to `failed` here would
+ * both misreport a delivery still in flight and, because a restart mid-backoff
+ * loses the in-memory job, put the row in a state `recover` used to skip.
+ */
+export function noteEmailAttemptError(id: number, error: string): void {
+  attemptErrorStmt.run(error.slice(0, 1000), id);
 }
 
 export function setHandled(id: number, handled: boolean): void {
@@ -126,7 +139,22 @@ export function closeDb(): void {
   db.close();
 }
 
-/** Jobs live only in memory, so a restart strands every unsent row — the queue's `recover` re-adds them on boot. */
-export function pendingSubmissionIds(): number[] {
-  return pendingStmt.all().map((row) => row.id);
+/**
+ * Every row whose email hasn't landed — `pending` (never attempted, or mid-retry)
+ * and `failed` (attempts exhausted) alike. Jobs live only in memory, so a restart
+ * strands all of them; the queue's `recover` re-adds them on boot.
+ *
+ * `failed` is deliberately included. A row reaches it only after bunqueue gave up,
+ * which for this form means an SMTP outage that outlasted the backoff — exactly the
+ * case where "the row is the source of truth" has to mean something. Re-trying a
+ * genuinely undeliverable row on every boot is the accepted cost; at this volume a
+ * duplicate email beats a silently dropped one.
+ */
+export function undeliveredSubmissionIds(): number[] {
+  return undeliveredStmt.all().map((row) => row.id);
+}
+
+/** Clears a `failed` row back to `pending` as `recover` puts it back on the queue. */
+export function markEmailRequeued(id: number): void {
+  requeuedStmt.run(id);
 }

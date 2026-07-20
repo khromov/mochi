@@ -32,7 +32,14 @@ export function credentialsMatch(header: string | null): boolean {
  * so the test suite doesn't sit for a minute; read at call time, like the
  * credentials.
  */
-export const authFailureDelay = (): Promise<void> => Bun.sleep(Number(process.env.ADMIN_AUTH_DELAY_MS ?? 5000));
+export const authFailureDelay = (): Promise<void> => {
+  // An unset var is the common case, but an empty or malformed one must not
+  // silently disable the tarpit — `Number('')` is 0 and `Number('abc')` is NaN.
+  // An explicit `0` still opts out; that's a choice, not a typo.
+  const raw = process.env.ADMIN_AUTH_DELAY_MS?.trim();
+  const configured = raw ? Number(raw) : Number.NaN;
+  return Bun.sleep(Number.isFinite(configured) && configured >= 0 ? configured : 5000);
+};
 
 /** Gates every /admin request — the GET render and the triage POSTs alike. */
 export const adminAuth: Handle = async ({ event, resolve }) => {

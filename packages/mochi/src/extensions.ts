@@ -118,6 +118,7 @@ export interface MochiFilterValue {
   'email:message': ResolvedEmailMessage;
   'captcha:minAgeMs': number;
   'captcha:driftAllowanceMs': number;
+  'queue:recoveryStallWarningMs': number;
 }
 
 // Optional per-filter override for the *return* type when it differs from the
@@ -175,6 +176,8 @@ export interface MochiFilterContext {
     limitMs: number;
   };
   'captcha:driftAllowanceMs': { options: MochiCaptchaOptions; maxAgeMs: number };
+  /** Resolved once per queue that declares a `recover` callback, as recovery starts. */
+  'queue:recoveryStallWarningMs': { queue: string };
 }
 
 export interface MochiFilterKindMap {
@@ -198,6 +201,7 @@ export interface MochiFilterKindMap {
   'email:message': 'async';
   'captcha:minAgeMs': 'sync';
   'captcha:driftAllowanceMs': 'sync';
+  'queue:recoveryStallWarningMs': 'sync';
 }
 
 type FilterReturn<K extends keyof MochiFilterValue> = K extends keyof MochiFilterReturn ? MochiFilterReturn[K] : MochiFilterValue[K];
@@ -248,6 +252,7 @@ const FILTER_KINDS: { [K in keyof MochiFilterValue]: MochiKind } = {
   'email:message': 'async',
   'captcha:minAgeMs': 'sync',
   'captcha:driftAllowanceMs': 'sync',
+  'queue:recoveryStallWarningMs': 'sync',
 };
 
 // Pinned on globalThis so duplicate bundled copies of mochi-framework share one
