@@ -325,6 +325,8 @@ await Mochi.serve({
 
 Default is `[]`. Preprocessors do not currently apply to `.md` / `.svx` files (mdsvex handles those itself).
 
+`<script lang="ts">` blocks are transpiled to JavaScript by Bun automatically (before compilation, and after any preprocessors you register here run), so you don't need a TypeScript preprocessor — register one only for other transforms (PostCSS, Sass, etc.). This built-in TS pass also covers `.md` / `.svx` files, even though user preprocessors don't apply there.
+
 #### `publicDir:scan`
 
 Modify the `Map<urlPath, diskPath>` of files served from the public directory. The filter receives a fresh copy after each scan (initial startup + every dev-mode `public/` change), so in-place mutation is safe. Use it to add virtual files, shadow built-in routes, or rename URLs. Async.

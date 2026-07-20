@@ -30,17 +30,54 @@ import prettyBytes from '../vendor/pretty-bytes';
  * the application of those preprocessors is async (Svelte's `preprocess()`).
  */
 async function applyUserPreprocessors(source: string, filename: string, target: 'server' | 'client', development: boolean): Promise<string> {
-  const preprocessors: PreprocessorGroup[] = applyFilter('compile:preprocessors', [], {
+  const userPreprocessors: PreprocessorGroup[] = applyFilter('compile:preprocessors', [], {
     filename,
     target,
     development,
   });
-  if (preprocessors.length === 0) {
+  // `builtinTsPreprocessor` runs last so it also strips TS that user
+  // preprocessors emit. svelte's `preprocess()` parses the component and hands
+  // each hook properly-parsed `attributes` — so it, not a source scan, decides
+  // whether a script block is TS.
+  //
+  // Fast-path: with no user preprocessors, the only work `preprocess()` can do
+  // is the builtin TS pass, which fires solely on `attributes.lang === 'ts'`.
+  // A `lang="ts"` attribute — in any quoting/spacing — always contains the
+  // literal substring `lang`, so a source lacking it provably has no TS script
+  // to transpile. This gate can only false-*positive* (harmlessly re-parse a
+  // "lang"-containing plain-JS file), never false-negative, so it skips the
+  // full-component parse for the common plain-JS case without the brittleness
+  // of a tag-matching regex. Any user preprocessor may inject TS, so the gate
+  // holds only when none are registered.
+  if (userPreprocessors.length === 0 && !source.includes('lang')) {
     return source;
   }
-  const result = await sveltePreprocess(source, preprocessors, { filename });
+  const result = await sveltePreprocess(source, [...userPreprocessors, builtinTsPreprocessor], { filename });
   return result.code;
 }
+
+// Svelte 5's native TS stripping is incomplete (e.g. it throws on constructor
+// parameter properties). Run Bun's transpiler over <script lang="ts"> before
+// svelte/compiler — the same treatment the .svelte.[jt]s rune-module loaders
+// already apply. transformSync does NOT tree-shake, so value imports referenced
+// only in the template survive.
+const tsScriptTranspiler = new Bun.Transpiler({ loader: 'ts' });
+const builtinTsPreprocessor: PreprocessorGroup = {
+  name: 'mochi-ts',
+  script({ content, attributes }) {
+    if (attributes.lang !== 'ts') {
+      return;
+    }
+    // `lang="ts"` must STAY on the tag: it also puts the template in TS mode
+    // (snippet parameter types, `as` casts in markup), which Bun never sees —
+    // dropping it makes svelte parse those as plain JS and fail. Re-running
+    // svelte's native TS pass over the already-transpiled script is a no-op.
+    // transformSync can't emit a source map, so positions after a transpiled
+    // script drift by its reprinted line-count delta — a limitation shared
+    // with the .svelte.[jt]s rune-module loaders.
+    return { code: tsScriptTranspiler.transformSync(content) };
+  },
+};
 
 /**
  * Directory containing the framework's own .ts/.svelte source files. This file
@@ -156,7 +193,12 @@ function createMarkdownLoader(opts: {
     if (!compiled || typeof compiled.code !== 'string') {
       throw new Error(`markdown.compile returned no output for ${args.path}`);
     }
-    let svelteSource = compiled.code;
+    // mdsvex passes <script lang="ts"> through untouched, so its output needs
+    // the same built-in TS pass as regular .svelte files. User preprocessors
+    // still don't apply here — mdsvex owns markdown transforms. Same safe
+    // `lang` fast-path as applyUserPreprocessors: no `lang` substring → no TS
+    // script → skip the parse (can't false-negative).
+    let svelteSource = compiled.code.includes('lang') ? (await sveltePreprocess(compiled.code, [builtinTsPreprocessor], { filename: args.path })).code : compiled.code;
     let hydratables: HydratableComponent[] = [];
     let serverIslands: ServerIslandComponent[] = [];
     let preprocessErrors: PreprocessIslandError[] = [];
