@@ -16,11 +16,11 @@ author: stanislav
 
 I joined Paolo Ricciuti on _This Week in Svelte_ to demo Mochi and talk through the thinking behind it. The Mochi segment starts at [40:16](https://www.youtube.com/watch?v=HCpuzfRdVvI&t=2535s).
 
-Much of the conversation was about the central trade-off of SvelteKit and how Mochi is different. SvelteKit has to run everywhere — static hosts, serverless, the edge — and that generality shapes what its API can offer. If you only deploy to a stateful server, a lot of things stop being services you pay for and start being things you already have: real-time, caching, queues and image resizing are just some of the things you get for free.
+We spent a while on SvelteKit, and where Mochi goes a different way. SvelteKit has to run everywhere — static hosts, serverless, the edge — and that generality shapes what its API can offer. Mochi only targets a stateful server, so it can lean on things SvelteKit can't assume you have — real-time, caching, queues and image resizing are all in the box.
 
-Then we built things:
+The rest of the segment was live coding:
 
-- A brand new app from `bun create mochi@latest`, with a route added by hand as a line in `routes.ts` rather than a folder on disk.
+- A brand new app from `bun create mochi@latest`.
 - A click counter that stubbornly did nothing, because the page shipped zero JavaScript, until [`mochi:hydrate`](/docs/selective-hydration/) turned it into an island and the first script tag showed up in the network tab.
 - The same counter as a [server island](/docs/server-islands/) with `mochi:defer`, fetched in its own request so it can be cached separately from the page around it.
 - A Pokémon page pulling live data from an API, first through `serverProps` on the route, then with a plain `await` at the top of the component.
@@ -28,4 +28,4 @@ Then we built things:
 
 We also talked about what isn't there yet. File-based routing came up from Paolo and from the chat, and it's on my list to revisit before 1.0 — likely through an extensions API rather than baked into the core. Hot module reloading is the other gap: the current solution is not as nice as SvelteKit's.
 
-Mochi is early and in alpha. If that trade-off sounds like one you'd want, the [docs](/docs/intro/) and [demos](/demos/) are the fastest way in, and I'd like to hear what breaks — [Discord](/discord/) or a GitHub issue, either works.
+Mochi is early and in alpha. The [docs](/docs/intro/) and [demos](/) are the fastest way in, and I'd genuinely like to hear what breaks — [Discord](/discord/) or a GitHub issue, either works.
