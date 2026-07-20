@@ -38,7 +38,9 @@ In production (`development: false`), prebuilt JS/CSS bundles served from `asset
 
 <Callout type="info">
 
-**Shutdown signals.** `Mochi.serve()` installs `SIGTERM` and `SIGINT` listeners that fire the [`mochi:shutdown`](/docs/extensions/#mochishutdown) hook and call `server.stop()`. A second signal force-exits with code 1. Existing user listeners on those signals are not displaced — Node.js dispatches signals to every registered listener.
+**Shutdown signals.** `Mochi.serve()` installs `SIGTERM` and `SIGINT` listeners that fire the [`mochi:shutdown`](/docs/extensions/#mochishutdown) hook, drain queues, then stop the server and exit with code 0. In-flight requests get `shutdownTimeout` ms to finish; anything still connected after that is force-closed. A second signal exits immediately with code 1. Existing user listeners on those signals are not displaced — Node.js dispatches signals to every registered listener.
+
+The forced fallback is not optional: a plain `server.stop()` never resolves while a WebSocket is open, so in development a single browser tab holding the live-reload socket would otherwise wedge the process until it is `SIGKILL`ed. The same applies in production to any live `Mochi.ws` connection — while one is open the graceful drain never completes, so shutdown always waits the full `shutdownTimeout` before force-closing. Keep the timeout tight enough for your orchestrator's grace period.
 
 </Callout>
 
@@ -48,6 +50,7 @@ In production (`development: false`), prebuilt JS/CSS bundles served from `asset
 - `hostname`: Interface to bind. Defaults to Bun's default (`0.0.0.0`).
 - `development`: Enables live reload, debug bar, and the dev error overlay. Default: `true`.
 - `liveReload`: Enable the dev-mode live-reload WebSocket (`/__mochi_live_reload` + the `mochi-live-reload` web component). Default: matches `development`. Set to `false` to keep the debug bar but skip the WS — useful behind a proxy where the socket is flaky.
+- `shutdownTimeout`: Grace period in ms for in-flight requests to finish on `SIGTERM`/`SIGINT` before connections are force-closed and the process exits. Default: `5000` in production, `0` in development. `0` force-closes immediately. Note that an open WebSocket never drains, so shutdown pins to this full value whenever one is connected — set it no larger than your orchestrator's kill grace period.
 - `routes`: `Record<string, MochiRouteValue>` of route paths to `Mochi.page` / `Mochi.api` / `Mochi.ws` / `Mochi.sse` registrations.
 - `fetch`: `(req, server) => Response` fallback handler invoked when no route matches. Default: built-in 404.
 - `manifest`: Path to a prebuilt manifest JSON. Default: `<outDir>/manifest.json`.

@@ -53,14 +53,21 @@ Use it from a page or API route:
 
 ### API
 
-| Method                     | Returns                      |
-| -------------------------- | ---------------------------- |
-| `fetch(key, fn)`           | `Promise<T>`                 |
-| `fetchWithStatus(key, fn)` | `Promise<{ value, status }>` |
-| `delete(key)`              | `Promise<void>`              |
-| `clearItems()`             | `Promise<void>`              |
+| Method                     | Returns                              |
+| -------------------------- | ------------------------------------ |
+| `fetch(key, fn)`           | `Promise<T>`                         |
+| `fetchWithStatus(key, fn)` | `Promise<{ value, status }>`         |
+| `peek(key)`                | `Promise<{ value, status } \| null>` |
+| `set(key, value)`          | `Promise<void>`                      |
+| `markStale(key)`           | `Promise<void>`                      |
+| `delete(key)`              | `Promise<void>`                      |
+| `clearItems()`             | `Promise<void>`                      |
 
 `clearItems()` empties the whole cache in one call.
+
+`peek(key)` reports a key's current `status` and value **without** running `fn`, revalidating, or emitting `cache:read` — a pure probe (returns `null` on a miss). `markStale(key)` backdates an entry so its next read is served stale-while-revalidate; it's a no-op on a missing or already-stale key and never freshens or un-expires one. Both work through the `storage` interface, so they apply to any backend.
+
+`set(key, value)` writes a value directly, stamped fresh, overwriting whatever is there — the counterpart to `fetch`, which only computes on a miss or stale read and so can't replace a still-present entry. Reach for it instead of `delete(key)` followed by `fetch`: that sequence leaves the key absent for the whole write, and concurrent readers hitting that gap each start their own recompute.
 
 `status` is `'fresh' \| 'stale' \| 'expired' \| 'miss'`.
 
@@ -75,6 +82,43 @@ Use it from a page or API route:
 | `deserialize`    | identity          |
 
 For multi-process or persistent caching, pass a custom `storage` that implements `getItem` / `setItem` / `removeItem` / `clear` (e.g. Redis, SQLite via `bun:sqlite`). These methods may be synchronous (in-memory `Map`, `bun:sqlite`) or `async` / Promise-returning (Redis, network stores) — the cache awaits every call. Each key holds a single entry (the value plus its write time). When a backend needs a string or buffer — like Redis — supply `serialize` / `deserialize` to encode and decode that entry, e.g. `serialize: JSON.stringify, deserialize: JSON.parse`.
+
+The default `MemoryStorage` accepts `{ maxAge, purgeInterval }` for age-based eviction, mirroring `FileStorage` below — `new MemoryStorage({ maxAge: 300_000, purgeInterval: 60_000 })`. With no options it never evicts (the prior, still-default behavior).
+
+### File-based storage
+
+`FileStorage` persists each entry as a JSON file on disk, so the cache survives restarts. It's turnkey — no `serialize` / `deserialize` needed:
+
+```ts
+import { MochiCache, FileStorage } from 'mochi-framework';
+
+export const pokemonCache = new MochiCache({
+  minTimeToStale: 10_000,
+  maxTimeToLive: 300_000,
+  storage: new FileStorage({
+    directory: './.cache/pokemon',
+    maxAge: 300_000, // must be >= maxTimeToLive
+  }),
+});
+```
+
+Stale-while-revalidate works exactly as with in-memory storage — the entry's write time lives inside the file. A background sweep runs on an interval to delete expired files (there's no read-time eviction otherwise), and `purgeOnInit` empties the directory on startup.
+
+Binary fields (`Uint8Array` / `Buffer`) anywhere in a value round-trip transparently — by default they're inlined as base64 in the JSON and come back as `Uint8Array`, nothing to manage. For values carrying large binaries, opt into `offloadBinary: true`: each binary is written to its own file in a `<key-hash>/` folder and replaced by a pointer in the JSON instead of base64-bloating it. Offloaded fields read back as lazy blob references — resolve one with `readBlobRef(ref)` (`isBlobRef(value)` narrows) — so a metadata read never loads the bytes. Deleting a key removes its blob folder with it, and pointers already on disk always decode, so flipping the flag never orphans existing entries. The built-in [image cache](/docs/images/) enables offloading internally.
+
+| Option          | Default           |                                                                            |
+| --------------- | ----------------- | -------------------------------------------------------------------------- |
+| `directory`     | _(required)_      | Where cache files are written; created if missing.                         |
+| `purgeOnInit`   | `false`           | Delete the directory's contents when the adapter is constructed.           |
+| `purgeInterval` | `60_000` (1min)   | Background sweep interval in ms. `<= 0` disables the sweeper.              |
+| `maxAge`        | `600_000` (10min) | Files older than this are deleted by the sweep.                            |
+| `offloadBinary` | `false`           | Offload binary fields to per-key blob files, read back as lazy `BlobRef`s. |
+
+<Callout type="warning">
+
+**Keep `maxAge` at or above `maxTimeToLive`.** The sweep deletes files past `maxAge` — set it lower and the sweeper would remove entries the cache still wants to serve stale, turning a fast stale read into a blocking recompute. Values must be JSON-serializable (no `Date`, `Map`, `BigInt`, or `undefined` round-trip).
+
+</Callout>
 
 <Callout type="warning">
 
@@ -92,6 +136,8 @@ If a `storage` call throws, the cache degrades instead of failing the request: a
 | ------------------------- | --------------------------- | ------------------------------------------------------------ |
 | `cache:read`              | `{ key, status }`           | Every cache lookup, regardless of which method ran.          |
 | `cache:revalidate`        | `{ key }`                   | A background refetch starts (stale read).                    |
+| `cache:delete`            | `{ key }`                   | A key was removed via `delete(key)`.                         |
+| `cache:sweep`             | `{ removed, durationMs }`   | A `FileStorage` background sweep deleted expired files.      |
 | `cache:revalidate:failed` | `{ key, error }`            | A background refetch threw; the stale value is still served. |
 | `cache:error`             | `{ key, operation, error }` | A `storage` `get` / `set` / `remove` call threw.             |
 
@@ -115,7 +161,7 @@ import { consoleLogger } from 'mochi-framework';
 consoleLogger({ cache: 'verbose' });
 ```
 
-See the [Cache Events demo](/demos/cache-events/) for a worked example that pipes events into an in-memory ring buffer and renders them on the page.
+See the [Cache Events demo](/demos/cache-events/) for a working example that pipes events into an in-memory ring buffer and renders them on the page.
 
 ### Server-only
 

@@ -186,6 +186,32 @@
     color: var(--text-muted);
   }
 
+  /* Doc images are authored at their natural pixel size (e.g. the 1280x720 shots from
+     /shot/:name), so they must be held to the prose column rather than overflow it. */
+  .readme :global(img) {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    margin: 0 0 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+  }
+
+  .readme :global(figure) {
+    margin: 0 0 0.75rem;
+  }
+
+  /* Pull the caption up against its image; the bare-img margin is meant for prose. */
+  .readme :global(figure img) {
+    margin-bottom: 0.4rem;
+  }
+
+  .readme :global(figcaption) {
+    font-size: 0.8rem;
+    line-height: 1.45;
+    color: var(--text-subtle);
+  }
+
   .readme :global(blockquote) {
     margin: 0.75rem 0;
     padding: 0.5rem 0.9rem;

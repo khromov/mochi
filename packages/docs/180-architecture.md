@@ -10,12 +10,12 @@ Framework source lives in `packages/mochi/src/`; the demo site that consumes it 
 
 - `packages/site/src/index.ts` — HTTP server entry point; calls `Mochi.serve()` and defines the demo site's route record inline.
 - `packages/mochi/src/Mochi.ts` — `Mochi.serve()`, `Mochi.page()`, `Mochi.api()`, `Mochi.ws()`, `Mochi.sse()`.
-- `packages/mochi/src/ComponentRegistry.ts` — SSR compilation, hydration preprocessing, client bundling.
-- `packages/mochi/src/hooks.ts` — middleware system (`Handle`, `sequence()`).
-- `packages/mochi/src/utils.ts` — `json()`, `error()`, header helpers.
+- `packages/mochi/src/compiler/ComponentRegistry.ts` — SSR compilation, hydration preprocessing, client bundling.
+- `packages/mochi/src/runtime/hooks.ts` — middleware system (`Handle`, `sequence()`).
+- `packages/mochi/src/utils/index.ts` — `json()`, `error()`, header helpers.
 - `packages/mochi/src/middleware/compress.ts` — optional `compress()` middleware (brotli + gzip negotiation).
 - `packages/mochi/src/middleware/noCache.ts` — optional `noCache` middleware that defaults `Cache-Control: no-cache`.
 - `packages/mochi/src/web-components/HydratableIsland.ts` — client-side custom element for island hydration.
 - `packages/mochi/src/web-components/ServerIsland.ts` — client-side custom element for server island fetching.
-- `packages/mochi/src/serverIslandCrypto.ts` — HMAC signing/verification for server island props.
+- `packages/mochi/src/islands/serverIslandCrypto.ts` — authenticated encryption/decryption for server island props (via the shared `islands/payloadCrypto.ts`, AES-256-SIV / RFC 5297 from `@noble/ciphers`).
 - `packages/mochi/src/types.ts` — shared TypeScript types.

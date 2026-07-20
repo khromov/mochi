@@ -3,23 +3,45 @@
   import StatusDot from './StatusDot.svelte';
   import RequestPanel from './RequestPanel.svelte';
   import IslandsPanel from './IslandsPanel.svelte';
+  import ImagesPanel from './ImagesPanel.svelte';
   import WarningsPanel from './WarningsPanel.svelte';
   import BundlesPanel from './BundlesPanel.svelte';
   import InfoPanel from './InfoPanel.svelte';
+  import CachePanel from './CachePanel.svelte';
   import SettingsPanel from './SettingsPanel.svelte';
   import Settings from '../icons/settings.svelte';
+  import Mail from '../icons/mail.svelte';
   import { cleanupHighlight } from './highlight';
   import { debugBarState } from './state.svelte';
   import { getPropsWarnLevel, formatSize } from './utils';
   import { HIDDEN_PANELS_KEY, parseHiddenPanels, type ConfigurablePanel } from './panelSettings';
+  import { UNREAD_EMAILS_KEY, loadUnreadEmailIds } from './unread';
 
   const STORAGE_KEY = 'mochi:debug:collapsed';
 
-  type Panel = 'warnings' | 'islands' | 'request' | 'bundles' | 'info' | 'settings' | null;
+  type Panel = 'warnings' | 'islands' | 'images' | 'request' | 'bundles' | 'info' | 'cache' | 'settings' | null;
   let activePanel: Panel = $state(null);
 
   let hasDebugInfo = $state(false);
   let collapsed = $state(false);
+
+  // The email viewer only exists when the `dev` transport is active, so gate the
+  // toolbar link on the config snapshot rather than always showing it.
+  let emailHref = $state<string | null>(null);
+
+  // Ids of dev emails captured but not yet read in the outbox. Persisted in
+  // localStorage so the badge survives reloads and stays in sync across tabs:
+  // LiveReload's `mochi:email-new` adds ids, the outbox's `mochi:outbox-sync`
+  // removes read/cleared ones, and `storage` events mirror other tabs.
+  let unreadIds = $state<string[]>([]);
+
+  function persistUnread() {
+    try {
+      localStorage.setItem(UNREAD_EMAILS_KEY, JSON.stringify(unreadIds));
+    } catch {
+      /* storage blocked */
+    }
+  }
 
   function safeGetItem(key: string): string | null {
     try {
@@ -76,6 +98,33 @@
     }
   }
 
+  function handleNewEmail(e: Event) {
+    const id = (e as CustomEvent<{ id?: string }>).detail?.id;
+    if (typeof id === 'string' && !unreadIds.includes(id)) {
+      unreadIds = [...unreadIds, id];
+      persistUnread();
+    }
+  }
+
+  // The outbox reports the message being read plus every id it still holds, so we
+  // drop the read one and prune ids that were cleared away (avoids a stuck badge).
+  function handleOutboxSync(e: Event) {
+    const detail = (e as CustomEvent<{ viewedId?: string | null; allIds?: string[] }>).detail;
+    const existing = new Set(Array.isArray(detail?.allIds) ? detail.allIds : []);
+    const viewedId = typeof detail?.viewedId === 'string' ? detail.viewedId : null;
+    const next = unreadIds.filter((id) => existing.has(id) && id !== viewedId);
+    if (next.length !== unreadIds.length) {
+      unreadIds = next;
+      persistUnread();
+    }
+  }
+
+  function handleStorage(e: StorageEvent) {
+    if (e.key === UNREAD_EMAILS_KEY) {
+      unreadIds = loadUnreadEmailIds();
+    }
+  }
+
   let warnLevel = $derived(getPropsWarnLevel(debugBarState.totalPropsSize));
 
   let bundleSizeLabel = $derived(debugBarState.displayBundleSize > 0 ? formatSize(debugBarState.displayBundleSize) : '0');
@@ -84,15 +133,25 @@
 
   onMount(() => {
     hasDebugInfo = !!window.__mochi_debug;
+    if (window.__mochi_debug?.config?.email === 'dev') {
+      emailHref = `${window.__mochi_asset_prefix ?? ''}/email`;
+    }
     try {
       collapsed = localStorage.getItem(STORAGE_KEY) === '1';
     } catch {
       /* storage blocked */
     }
+    unreadIds = loadUnreadEmailIds();
     document.addEventListener('click', handleDocumentClick);
+    window.addEventListener('mochi:email-new', handleNewEmail);
+    window.addEventListener('mochi:outbox-sync', handleOutboxSync);
+    window.addEventListener('storage', handleStorage);
 
     return () => {
       document.removeEventListener('click', handleDocumentClick);
+      window.removeEventListener('mochi:email-new', handleNewEmail);
+      window.removeEventListener('mochi:outbox-sync', handleOutboxSync);
+      window.removeEventListener('storage', handleStorage);
     };
   });
 
@@ -104,9 +163,11 @@
 <div class="mochi-debug-bar-root" bind:this={rootEl}>
   <WarningsPanel open={activePanel === 'warnings'} onclose={() => (activePanel = null)} />
   <IslandsPanel open={activePanel === 'islands'} onclose={() => (activePanel = null)} />
+  <ImagesPanel open={activePanel === 'images'} onclose={() => (activePanel = null)} />
   <BundlesPanel open={activePanel === 'bundles'} onclose={() => (activePanel = null)} />
   <RequestPanel open={activePanel === 'request'} onclose={() => (activePanel = null)} />
   <InfoPanel open={activePanel === 'info'} onclose={() => (activePanel = null)} />
+  <CachePanel open={activePanel === 'cache'} onclose={() => (activePanel = null)} />
   <SettingsPanel open={activePanel === 'settings'} onclose={() => (activePanel = null)} {hiddenPanels} ontoggle={togglePanelVisibility} />
 
   <div class="bar" class:is-collapsed={collapsed}>
@@ -121,9 +182,6 @@
       <span class="logo">{'\u{1F361}'} mochi</span>
     </button>
     <div class="bar-actions" aria-hidden={collapsed}>
-      {#if hasDebugInfo && !hiddenPanels.includes('info')}
-        <button class="btn info-btn" onclick={() => toggle('info')} tabindex={collapsed ? -1 : 0}>Info</button>
-      {/if}
       {#if hasDebugInfo && !hiddenPanels.includes('request')}
         <button class="btn request-btn" onclick={() => toggle('request')} tabindex={collapsed ? -1 : 0}>Request</button>
       {/if}
@@ -138,6 +196,11 @@
           Islands <span class="badge" class:badge-yellow={warnLevel === 'yellow'} class:badge-red={warnLevel === 'red'}>{debugBarState.islandCount}</span>
         </button>
       {/if}
+      {#if debugBarState.imageCount > 0 && !hiddenPanels.includes('images')}
+        <button class="btn image-btn" onclick={() => toggle('images')} tabindex={collapsed ? -1 : 0}>
+          Images <span class="badge">{debugBarState.imageCount}</span>
+        </button>
+      {/if}
       {#if debugBarState.warningCount > 0 && !hiddenPanels.includes('warnings')}
         <button class="btn warn-btn" onclick={() => toggle('warnings')} tabindex={collapsed ? -1 : 0}>
           Warnings <span class="badge">{debugBarState.warningCount}</span>
@@ -148,6 +211,26 @@
           JS <span class="bundle-badge" class:sparkle={noJs}>{bundleSizeLabel}</span>
           {#if bundleFiltered}<span class="filter-dot"></span>{/if}
         </button>
+      {/if}
+      {#if hasDebugInfo && !hiddenPanels.includes('info')}
+        <button class="btn info-btn" onclick={() => toggle('info')} tabindex={collapsed ? -1 : 0}>Info</button>
+      {/if}
+      {#if !hiddenPanels.includes('cache')}
+        <button class="btn cache-btn" onclick={() => toggle('cache')} tabindex={collapsed ? -1 : 0}>Cache</button>
+      {/if}
+      {#if emailHref}
+        <a
+          class="btn email-btn"
+          href={emailHref}
+          target="_blank"
+          rel="noopener"
+          tabindex={collapsed ? -1 : 0}
+          aria-label={unreadIds.length > 0 ? `Open dev email outbox (${unreadIds.length} unread)` : 'Open dev email outbox'}
+          title={unreadIds.length > 0 ? `${unreadIds.length} unread email${unreadIds.length > 1 ? 's' : ''}` : 'Dev email outbox'}
+        >
+          <Mail size={12} />
+          <span class="email-badge" class:has-new={unreadIds.length > 0}>{unreadIds.length}</span>
+        </a>
       {/if}
       <button class="btn settings-btn" onclick={() => toggle('settings')} tabindex={collapsed ? -1 : 0} aria-label="Configure panels" title="Configure panels">
         <Settings size={12} />
@@ -341,6 +424,16 @@
     background: #4f2f27;
     border-color: #e9a89a;
   }
+  .image-btn {
+    background: #382a32;
+    color: #d4b8c8;
+    border-color: #5a4050;
+  }
+  .image-btn:hover {
+    background: #43323c;
+    color: #ecd2e0;
+    border-color: #c4a3b8;
+  }
   .request-btn {
     background: #2c343a;
     color: #b8cad4;
@@ -361,6 +454,16 @@
     color: #d4e4ec;
     border-color: #7a96a4;
   }
+  .cache-btn {
+    background: #223833;
+    color: #a7d0c4;
+    border-color: #3f5f54;
+  }
+  .cache-btn:hover {
+    background: #2b453e;
+    color: #c8ece0;
+    border-color: #6fae9c;
+  }
   .bundles-btn {
     position: relative;
     background: #2e2a38;
@@ -371,6 +474,36 @@
     background: #383248;
     color: #e0d8ee;
     border-color: #b8a3c4;
+  }
+  .email-btn {
+    padding: 0.3em 0.45em;
+    background: #2a3a2f;
+    color: #a7c9a8;
+    border-color: #4a6354;
+  }
+  .email-btn:hover {
+    background: #34463a;
+    color: #c8e8c8;
+    border-color: #8ab79a;
+  }
+  .email-badge {
+    border-radius: 999px;
+    min-width: 1.4em;
+    height: 1.4em;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.82em;
+    font-weight: 700;
+    padding: 0 0.4em;
+    background: #434836;
+    color: #c7cabf;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    letter-spacing: 0;
+  }
+  .email-badge.has-new {
+    background: #e85454;
+    color: #ffffff;
   }
   .settings-btn {
     padding: 0.3em 0.45em;
@@ -479,5 +612,102 @@
   .badge-red {
     background: rgba(233, 168, 154, 0.3);
     color: #f4b6a7;
+  }
+
+  /* Shared expandable-row chrome for IslandRow + ImageRow. Bounded to the debug
+     bar so the generic class names never leak into the host page. */
+  :global(.mochi-debug-bar-root .island-row) {
+    margin-bottom: 3px;
+  }
+  :global(.mochi-debug-bar-root .island-row:last-child) {
+    margin-bottom: 0;
+  }
+  :global(.mochi-debug-bar-root .island-item) {
+    background: #272a22;
+    color: #e8e6dd;
+    padding: 6px 10px;
+    border-radius: 6px;
+    border: 1px solid #353930;
+    font-size: 11px;
+    line-height: 1.5;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    transition:
+      background 120ms ease,
+      border-color 120ms ease;
+  }
+  :global(.mochi-debug-bar-root .island-item:hover) {
+    background: #2d3128;
+    border-color: #434836;
+  }
+  :global(.mochi-debug-bar-root .island-row.open .island-item) {
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+    background: #2d3128;
+    border-bottom-color: transparent;
+  }
+  :global(.mochi-debug-bar-root .island-header) {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: none;
+    border: none;
+    color: inherit;
+    font: inherit;
+    padding: 0;
+    cursor: pointer;
+    text-align: left;
+    flex: 1;
+    min-width: 0;
+  }
+  :global(.mochi-debug-bar-root .chevron) {
+    color: #8e9488;
+    display: inline-flex;
+    align-items: center;
+    transition:
+      transform 120ms ease,
+      color 120ms ease;
+  }
+  :global(.mochi-debug-bar-root .island-header:hover .chevron) {
+    color: #8ab79a;
+  }
+  :global(.mochi-debug-bar-root .island-row.open .chevron) {
+    transform: rotate(90deg);
+    color: #8ab79a;
+  }
+  :global(.mochi-debug-bar-root .island-name) {
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  :global(.mochi-debug-bar-root .island-meta) {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    color: #a8ada0;
+    flex-shrink: 0;
+  }
+  :global(.mochi-debug-bar-root .island-tag) {
+    font-size: 9px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-weight: 500;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    letter-spacing: 0.02em;
+  }
+  :global(.mochi-debug-bar-root .lock-icon) {
+    display: inline-flex;
+    align-items: center;
+    color: #c4a3a8;
+    cursor: help;
+  }
+  :global(.mochi-debug-bar-root .island-size) {
+    font-size: 10px;
+    color: #8e9488;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   }
 </style>
