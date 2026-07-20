@@ -163,6 +163,8 @@ Mochi.queue<{ id: number }>({
 
 Recovery is awaited before `Mochi.serve()` resolves, so recovered jobs are enqueued before the `mochi:ready` hook fires. Because the server is already bound and serving by then, a throw is contained: Mochi logs it and emits `queue:error`, and the server keeps running.
 
+A `recover` that never settles is never cut short — abandoning it would drop the jobs it was about to add. Since warmup, `mochi:ready` and `serve()` resolving all wait behind it, Mochi logs a warning naming the queue if one is still running after 30 seconds.
+
 <Callout type="info">
 
 **Queues mount late.** They are created after the `mochi:init` hook and after the server binds, so `Mochi.getQueue()` throws if you call it from `mochi:init` — the error says as much. Anywhere from the [`mochi:queuesMounted`](/docs/extensions/#mochiqueuesmounted) hook onwards can add jobs: a queue's own `recover` callback, the `mochi:ready` hook, or any request handler.

@@ -41,16 +41,27 @@ export const routes: Record<string, MochiRouteValue> = {
         if (!(await consumeCaptcha(captcha))) {
           return fail(400, { error: 'This form was already submitted. Reload the page to send another message.' });
         }
+        // Store first, deliver later: once the row is committed the message
+        // can't be lost to an SMTP outage, so the visitor is told it landed
+        // and delivery failures surface in /admin/ instead of on the form.
+        // Committing the row is therefore the only step that can fail the
+        // submission.
+        let id: number;
         try {
-          // Store first, deliver later: once the row is committed the message
-          // can't be lost to an SMTP outage, so the visitor is told it landed
-          // and delivery failures surface in /admin/ instead of on the form.
-          const id = insertSubmission({ name, email, message });
-          await Mochi.getQueue<SupportEmailJob>(SUPPORT_EMAIL_QUEUE).add('send', { id });
-          appendEmailLog(id, { attempt: 0, event: 'queued', detail: `Queued for delivery to ${SUPPORT_TO}` });
+          id = insertSubmission({ name, email, message });
         } catch (err) {
           logger.error('support: could not store submission', err);
           return fail(500, { error: 'We could not receive your message right now. Please email support@mochi.fast directly.' });
+        }
+        // Logged before enqueuing so the entry can't be ordered after the
+        // worker's own `sending` line.
+        appendEmailLog(id, { attempt: 0, event: 'queued', detail: `Queued for delivery to ${SUPPORT_TO}` });
+        try {
+          await Mochi.getQueue<SupportEmailJob>(SUPPORT_EMAIL_QUEUE).add('send', { id });
+        } catch (err) {
+          // The row is committed and still `pending`, so recover() picks it up
+          // on the next boot. Telling the visitor it failed would be wrong.
+          logger.error('support: could not enqueue delivery', err);
         }
         return success();
       },

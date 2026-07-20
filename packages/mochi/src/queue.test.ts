@@ -4,6 +4,8 @@ import path from 'node:path';
 import { createQueue, getQueue, closeAllQueueResources, runQueueRecovery } from './queue';
 import type { MochiJob } from './queue';
 import { mochiEvents } from './events';
+import { initExtensions } from './extensions';
+import { setLogLevel } from './utils/log';
 import { markStartupMilestone, resetStartupMilestones } from './lifecycle';
 
 // bunqueue locks its embedded store to the first dataPath used in the process,
@@ -251,6 +253,43 @@ describe('Mochi queue', () => {
     ]);
 
     expect(errors).toEqual([{ queue: name, error: 'store unavailable' }]);
+  });
+
+  // Behavioural coverage for the `queue:recoveryStallWarningMs` filter: the
+  // real threshold is 30s, so these drive it down far enough to observe.
+  async function recoveryWarnings(stallMs: number | null): Promise<string[]> {
+    const name = uniqueName();
+    createQueue(name, async () => null, { dataPath });
+    initExtensions(stallMs === null ? {} : { filters: { 'queue:recoveryStallWarningMs': () => stallMs } });
+
+    const warnings: string[] = [];
+    const realWarn = console.warn;
+    console.warn = (...args: unknown[]) => void warnings.push(args.join(' '));
+    setLogLevel('warn');
+    try {
+      await runQueueRecovery([[name, { recover: () => Bun.sleep(60) }]]);
+    } finally {
+      console.warn = realWarn;
+      initExtensions({});
+    }
+    return warnings;
+  }
+
+  test('a recover() slower than the filtered threshold warns that serve() is blocked', async () => {
+    const warnings = await recoveryWarnings(10);
+    expect(warnings.some((line) => line.includes('recover() is still running'))).toBe(true);
+  });
+
+  test('a filtered threshold of 0 silences the stall warning', async () => {
+    // The recover() is the same 60ms one that warns above, so a quiet run can
+    // only be the opt-out taking effect.
+    const warnings = await recoveryWarnings(0);
+    expect(warnings.some((line) => line.includes('recover() is still running'))).toBe(false);
+  });
+
+  test('the default threshold does not warn about a fast recover()', async () => {
+    const warnings = await recoveryWarnings(null);
+    expect(warnings).toEqual([]);
   });
 
   test('closeAllQueueResources closes resources and is idempotent', async () => {
