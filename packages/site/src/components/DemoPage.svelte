@@ -63,7 +63,7 @@
         {#if demoIconFor[title]}
           {@const meta = demoIconFor[title]}
           {@const Icon = meta.icon}
-          <span class="demo-icon" title={meta.label} aria-label={meta.label}>
+          <span class="demo-icon" title={meta.label} aria-hidden="true">
             <Icon size={16} strokeWidth={1.6} />
           </span>
         {/if}

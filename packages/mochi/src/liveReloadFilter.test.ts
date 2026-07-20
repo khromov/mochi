@@ -29,18 +29,8 @@ describe('live-reload only signals tabs whose entry was affected', () => {
       port: 0,
       development: true,
       logger: { enabled: false },
-      // The PageCacheAdmin SSR entry pulls `devalue` / `clsx` into the startup
-      // compile graph; with those in the bundle, the watcher's second
-      // `Bun.build` reliably trips the documented EISDIR/Unseekable bug.
-      // Skip it for this test — it only exercises the live-reload filter.
-      debugBar: false,
       outDir,
       additionalWatchPaths: [workDir],
-      // Plain error page with no hydratables so the registry never builds
-      // a client bundle — the recompile-driven `buildClientBundle()` is what
-      // trips the documented bun-test EISDIR bug, and skipping it sidesteps
-      // the limitation that prevents this test from running otherwise.
-      errorPage: path.join(FIXTURE_DIR, 'Error.svelte'),
       routes: {
         '/a': Mochi.page(pageA),
         '/b': Mochi.page(pageB),

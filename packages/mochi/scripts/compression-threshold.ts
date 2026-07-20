@@ -16,8 +16,8 @@
  */
 import { stringify } from 'devalue';
 import { packImageRequest } from '../src/image/imageCodec';
-import type { ImageFormat, ImageRequest } from '../src/image/types';
-import { encryptPayloadBytes, decryptPayloadBytes } from '../src/payloadCrypto';
+import type { ImageRequest } from '../src/image/types';
+import { encryptPayloadBytes, decryptPayloadBytes } from '../src/islands/payloadCrypto';
 
 // --- setup: the crypto fns read globalThis.__mochi_config__ (see payloadCrypto.test.ts) ---
 (globalThis as unknown as Record<string, unknown>).__mochi_config__ = {
@@ -33,28 +33,27 @@ interface Sample {
 }
 
 function imageReq(over: Partial<ImageRequest> = {}): ImageRequest {
-  return { src: 'https://example.com/a.png', width: 200, height: 200, fit: 'inside', format: 'webp', quality: 80, autoOrient: true, ...over };
+  return { src: 'https://example.com/a.png', size: 'thumbnail', ...over };
 }
 
 const CDN = 'https://sta-public.fra1.cdn.digitaloceanspaces.com/mochi';
-const FORMATS: ImageFormat[] = ['webp', 'jpeg', 'png', 'avif'];
+const SIZES = ['thumbnail', 'hero', 'square', 'grayscale-hero'];
 
 function buildImageSamples(): Sample[] {
   const samples: Sample[] = [];
   const push = (label: string, req: ImageRequest) => samples.push({ category: 'image', label, bytes: packImageRequest(req) });
 
-  // Short / typical real URLs across a few option combos.
-  push('short png 200x200', imageReq());
-  push('short jpeg 400x400 q60 fill', imageReq({ src: 'https://example.com/a.png', width: 400, height: 400, fit: 'fill', format: 'jpeg', quality: 60 }));
-  push('demo CDN jpg 640x400', imageReq({ src: `${CDN}/mochi-1.jpg`, width: 640, height: 400, format: 'jpeg', quality: 60 }));
-  push('demo CDN original', imageReq({ src: `${CDN}/mochi-7.jpg`, width: undefined, height: undefined, original: true }));
-  push('cache-window overrides', imageReq({ timeToStale: 5_000, timeToEvict: 7 * 86_400_000 }));
+  // Short / typical real URLs with size names.
+  push('short png + thumbnail', imageReq());
+  push('short jpeg + hero', imageReq({ src: 'https://example.com/a.png', size: 'hero' }));
+  push('demo CDN jpg + hero', imageReq({ src: `${CDN}/mochi-1.jpg`, size: 'hero' }));
+  push('demo CDN original', imageReq({ src: `${CDN}/mochi-7.jpg`, size: undefined, original: true }));
 
   // Progressively longer URLs (more path segments) to bracket the crossover.
   for (const segs of [0, 1, 2, 4, 6, 8, 12, 16, 24, 40]) {
     const src = `https://cdn.example.com/${'assets/photos/'.repeat(segs)}hero-image.jpg`;
-    const fmt = FORMATS[segs % FORMATS.length]!;
-    push(`url +${segs} segs (${fmt})`, imageReq({ src, width: 800, height: 600, format: fmt, quality: 75 }));
+    const size = SIZES[segs % SIZES.length]!;
+    push(`url +${segs} segs (${size})`, imageReq({ src, size }));
   }
   return samples;
 }

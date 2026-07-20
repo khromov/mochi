@@ -1,6 +1,6 @@
 import { promisify } from 'node:util';
 import { brotliCompress as brotliCompressCb, constants as zlibConstants, gzip as gzipCb } from 'node:zlib';
-import type { Handle } from '../hooks';
+import type { Handle } from '../runtime/hooks';
 import { getMochiConfig } from '../mochiConfig';
 import { appendVary, COMPRESSION_TOKEN, negotiateEncoding } from '../utils';
 import type { CompressionMethod } from '../utils';

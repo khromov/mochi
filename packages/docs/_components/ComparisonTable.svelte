@@ -69,6 +69,13 @@
     },
     { feature: 'Build as static HTML', tags: ['performance', 'frontend'], mochi: { status: 'no', note: 'SSR only' }, kit: { status: 'yes', note: 'adapter-static' } },
     { feature: 'Form actions + progressively enhanced forms', tags: ['backend', 'frontend'], mochi: { status: 'yes' }, kit: { status: 'yes' } },
+    {
+      feature: 'Form captcha',
+      tags: ['backend', 'frontend'],
+      mochi: { status: 'yes', note: 'MochiCaptcha', href: '/docs/captcha/' },
+      kit: { status: 'no', note: 'third-party service' },
+    },
+    { feature: 'Rate limiting', tags: ['backend'], mochi: { status: 'yes' }, kit: { status: 'no', note: 'third-party package only' } },
     { feature: 'Middleware', tags: ['backend'], mochi: { status: 'yes' }, kit: { status: 'yes' } },
     {
       feature: 'Hooks & extension filters',
@@ -138,7 +145,7 @@
     {
       feature: 'Image resizing',
       tags: ['performance', 'frontend'],
-      mochi: { status: 'planned', note: 'build & runtime transformations' },
+      mochi: { status: 'yes', note: 'named sizes, runtime transforms', href: '/docs/images/' },
       kit: { status: 'partial', note: 'build-time only; runtime at extra cost' },
     },
     { feature: 'Link preloading', tags: ['performance', 'frontend'], mochi: { status: 'planned' }, kit: { status: 'yes' } },

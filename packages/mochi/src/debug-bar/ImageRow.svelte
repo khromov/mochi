@@ -1,7 +1,8 @@
 <script lang="ts">
   import ChevronRight from '../icons/chevron-right.svelte';
+  import House from '../icons/house.svelte';
   import Lock from '../icons/lock.svelte';
-  import type { ImageDebugEntry } from '../requestContext';
+  import type { ImageDebugEntry } from '../runtime/requestContext';
   import formatHighlight from '../vendor/json-format-highlight/index.ts';
   import { highlightColors } from './utils';
 
@@ -34,17 +35,24 @@
       <span class="island-name">{image.filename}</span>
     </button>
     <span class="island-meta">
-      {#if image.kind === 'cached'}<span class="island-tag tag-cached">cachedImage</span>{/if}
+      {#if image.local}
+        <span class="local-icon" title="Local image import"><House size={10} /></span>
+      {/if}
+      {#if image.kind === 'inline'}<span class="island-tag tag-cached">inline</span>{/if}
+      {#if image.size}<span class="island-tag tag-size">{image.size}</span>{/if}
       {#if format}<span class="island-tag tag-fmt">{format}</span>{/if}
       <span class="island-size">{dims}</span>
-      {#if image.kind !== 'cached'}
-        <span class="lock-icon" title="Image params are encrypted (authenticated AES-256) in production. Decoded params are shown only in dev mode.">
+      {#if image.kind !== 'inline'}
+        <span class="lock-icon" title="The image src + size name are encrypted (authenticated AES-256) in the URL. Decoded params are shown only in dev mode.">
           <Lock size={10} />
         </span>
       {/if}
     </span>
   </div>
   <div class="image-detail">
+    {#if image.sourcePath}
+      <div class="image-source" title="Original import path">{image.sourcePath}</div>
+    {/if}
     {#if image.url}
       <a class="image-preview" href={image.url} target="_blank" rel="noopener" title="Open image in a new tab">
         <img src={image.url} loading="lazy" alt={image.filename} />
@@ -52,20 +60,8 @@
     {:else}
       <div class="image-nopreview">Preview omitted (over 1 MB)</div>
     {/if}
-    {#if image.pipeline}
-      <pre class="pipeline">{image.pipeline}</pre>
-    {/if}
     <!-- eslint-disable-next-line svelte/no-at-html-tags -- sanitized JSON highlight output -->
     <pre class="island-props">{@html paramsHtml}</pre>
-    {#if image.wire}
-      <div class="wire">
-        <div class="wire-head">
-          <span class="wire-title">Wire format</span>
-          <span class="wire-sub">binary, before encryption</span>
-        </div>
-        <pre class="wire-bytes">{image.wire.headerHex}<span class="wire-tail"> + {image.wire.srcByteLength} B utf-8 src</span></pre>
-      </div>
-    {/if}
   </div>
 </div>
 
@@ -74,6 +70,12 @@
      .island-name, .island-meta, .island-tag, .island-size, .lock-icon) lives in
      MochiDebugBar.svelte as a bounded :global block. Only image-specific rules
      are below. */
+  .local-icon {
+    display: inline-flex;
+    align-items: center;
+    color: #a3c4a8;
+    cursor: help;
+  }
   .tag-fmt {
     background: rgba(184, 163, 196, 0.16);
     color: #b8a3c4;
@@ -82,6 +84,10 @@
   .tag-cached {
     background: rgba(122, 162, 138, 0.16);
     color: #8fbf9f;
+  }
+  .tag-size {
+    background: rgba(163, 184, 196, 0.16);
+    color: #a3c4c4;
   }
   .image-detail {
     display: none;
@@ -118,13 +124,9 @@
     font-size: 10px;
     font-style: italic;
   }
-  .pipeline {
-    margin: 0;
-    padding: 0;
+  .image-source {
+    color: #a3c4a8;
     font-size: 10px;
-    line-height: 1.5;
-    color: #8fbf9f;
-    white-space: pre-wrap;
     word-break: break-all;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   }
@@ -140,39 +142,5 @@
     white-space: pre-wrap;
     word-break: break-all;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  }
-  .wire {
-    border-top: 1px solid #2e3228;
-    padding-top: 8px;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-  .wire-head {
-    display: flex;
-    align-items: baseline;
-    gap: 6px;
-  }
-  .wire-title {
-    font-size: 10px;
-    font-weight: 600;
-    color: #b8a3c4;
-  }
-  .wire-sub {
-    font-size: 9px;
-    color: #8e9488;
-  }
-  .wire-bytes {
-    margin: 0;
-    padding: 0;
-    font-size: 10px;
-    line-height: 1.5;
-    white-space: pre-wrap;
-    word-break: break-all;
-    color: #d4b8c8;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  }
-  .wire-tail {
-    color: #8e9488;
   }
 </style>
