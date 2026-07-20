@@ -16,11 +16,14 @@
 
 import type { Server } from 'bun';
 import type { PreprocessorGroup } from 'svelte/compiler';
-import type { CookieSerializeOptions } from './cookies';
+import type { CookieSerializeOptions } from './runtime/cookies';
+import type { MochiCaptchaOptions } from './captcha/types';
 import type { MochiServeOptions } from './types';
 import type { MochiEventMap, MochiRequestKind } from './events';
-import type { TrailingSlashPolicy } from './trailingSlash';
-import { pinGlobal } from './globalState';
+import type { ResolvedEmailMessage, MochiEmailTransportConfig } from './email/types';
+import type { ImportedImageFormat } from './image/types';
+import type { TrailingSlashPolicy } from './runtime/trailingSlash';
+import { pinGlobal } from './utils/globalState';
 
 /**
  * Discriminated union of every `mochiEvents` payload that `consoleLogger()`
@@ -50,6 +53,18 @@ export interface MochiHookContext {
     params: Record<string, string>;
     kind: 'page' | 'api' | 'ws' | 'sse' | 'file';
   };
+  'image:localAssetEmitted': {
+    /** Absolute path of the imported source image. */
+    sourcePath: string;
+    /** Absolute path the content-hashed copy was written to (under `<outDir>/assets/`). */
+    diskPath: string;
+    /** The same-origin URL the import resolves to (post-`image:localAssetUrl`). */
+    url: string;
+    width: number;
+    height: number;
+    format: ImportedImageFormat;
+    contentType: string;
+  };
 }
 
 export interface MochiHookKindMap {
@@ -57,6 +72,7 @@ export interface MochiHookKindMap {
   'mochi:ready': 'async';
   'mochi:shutdown': 'async';
   'route:matched': 'sync';
+  'image:localAssetEmitted': 'async';
 }
 
 type Hook<K extends keyof MochiHookContext> = MochiHookKindMap[K] extends 'async' ? (ctx: MochiHookContext[K]) => void | Promise<void> : (ctx: MochiHookContext[K]) => void;
@@ -82,6 +98,12 @@ export interface MochiFilterValue {
   'consoleLogger:line': string;
   'image:maxRedirects': number;
   'image:url': string;
+  'image:fileFilter': RegExp;
+  'image:localAssetFilename': string;
+  'image:localAssetUrl': string;
+  'email:message': ResolvedEmailMessage;
+  'captcha:minAgeMs': number;
+  'captcha:driftAllowanceMs': number;
 }
 
 // Optional per-filter override for the *return* type when it differs from the
@@ -90,6 +112,7 @@ export interface MochiFilterValue {
 // `MochiFilterValue[K]` when a key is absent.
 export interface MochiFilterReturn {
   'consoleLogger:line': string | null;
+  'email:message': ResolvedEmailMessage | null;
 }
 
 export interface MochiFilterContext {
@@ -124,6 +147,20 @@ export interface MochiFilterContext {
   };
   'image:maxRedirects': { src: string };
   'image:url': { src: string; filename: string; original: boolean };
+  /** Fires once per build pass (`target`), setting the `onLoad` gate for local image imports. */
+  'image:fileFilter': { target: 'server' | 'client' };
+  'image:localAssetFilename': { sourcePath: string; hash: string; ext: string; format: ImportedImageFormat; width: number; height: number };
+  'image:localAssetUrl': { sourcePath: string; filename: string; assetPrefix: string; format: ImportedImageFormat };
+  'email:message': { transport: MochiEmailTransportConfig['type'] };
+  'captcha:minAgeMs': {
+    /** Difficulty sealed into this token at mint. */
+    bits: number;
+    /** This token's measured age. Already spent — shown so the filter can log, not so it can decide on it. */
+    ageMs: number;
+    /** Upper bound the returned floor must stay under, drift allowance included. */
+    limitMs: number;
+  };
+  'captcha:driftAllowanceMs': { options: MochiCaptchaOptions; maxAgeMs: number };
 }
 
 export interface MochiFilterKindMap {
@@ -141,6 +178,12 @@ export interface MochiFilterKindMap {
   'consoleLogger:line': 'sync';
   'image:maxRedirects': 'sync';
   'image:url': 'sync';
+  'image:fileFilter': 'sync';
+  'image:localAssetFilename': 'sync';
+  'image:localAssetUrl': 'sync';
+  'email:message': 'async';
+  'captcha:minAgeMs': 'sync';
+  'captcha:driftAllowanceMs': 'sync';
 }
 
 type FilterReturn<K extends keyof MochiFilterValue> = K extends keyof MochiFilterReturn ? MochiFilterReturn[K] : MochiFilterValue[K];
@@ -166,6 +209,7 @@ const HOOK_KINDS: { [K in keyof MochiHookContext]: MochiKind } = {
   'mochi:ready': 'async',
   'mochi:shutdown': 'async',
   'route:matched': 'sync',
+  'image:localAssetEmitted': 'async',
 };
 const FILTER_KINDS: { [K in keyof MochiFilterValue]: MochiKind } = {
   'csrf:formContentTypes': 'sync',
@@ -182,6 +226,12 @@ const FILTER_KINDS: { [K in keyof MochiFilterValue]: MochiKind } = {
   'consoleLogger:line': 'sync',
   'image:maxRedirects': 'sync',
   'image:url': 'sync',
+  'image:fileFilter': 'sync',
+  'image:localAssetFilename': 'sync',
+  'image:localAssetUrl': 'sync',
+  'email:message': 'async',
+  'captcha:minAgeMs': 'sync',
+  'captcha:driftAllowanceMs': 'sync',
 };
 
 // Pinned on globalThis so duplicate bundled copies of mochi-framework share one

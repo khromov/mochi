@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const PATCH = 'svelte-check@4.7.1.patch';
+const PATCH = 'svelte-check@4.7.3.patch';
 const CANONICAL = join(import.meta.dir, '..', 'patches', PATCH);
 const TEMPLATE_COPIES = [join(import.meta.dir, '..', '..', 'minimal', 'patches', PATCH), join(import.meta.dir, '..', '..', 'demos', 'patches', PATCH)];
 

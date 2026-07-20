@@ -7,6 +7,7 @@ out
 *.tgz
 cli-tests
 packages/site/src/lib/docComponents.generated.ts
+packages/site/src/lib/blogComponents.generated.ts
 packages/demos/src/todo/app.generated.css
 
 # code coverage
@@ -51,3 +52,4 @@ flamegraphs
 REPORT.md
 GEMINI.md
 tasks*
+snapshots*

@@ -28,7 +28,7 @@
     "bun": ">=1.3.14"
   },
   "bin": {
-    "mochi-framework": "src/cli.js"
+    "mochi-framework": "src/cli/cli.js"
   },
   "files": [
     "src",
@@ -45,9 +45,9 @@
       "default": "./src/index.ts"
     },
     "./build": {
-      "types": "./src/build.ts",
-      "bun": "./src/build.ts",
-      "default": "./src/build.ts"
+      "types": "./src/cli/build.ts",
+      "bun": "./src/cli/build.ts",
+      "default": "./src/cli/build.ts"
     },
     "./components": {
       "types": "./src/components/index.ts",
@@ -60,9 +60,9 @@
       "default": "./src/highlight.ts"
     },
     "./tailwind": {
-      "types": "./src/tailwind.ts",
-      "bun": "./src/tailwind.ts",
-      "default": "./src/tailwind.ts"
+      "types": "./src/compiler/tailwind.ts",
+      "bun": "./src/compiler/tailwind.ts",
+      "default": "./src/compiler/tailwind.ts"
     },
     "./image": {
       "types": "./src/image/index.ts",
@@ -94,15 +94,19 @@
     }
   },
   "dependencies": {
+    "@css-inline/css-inline-wasm": "^0.21.0",
+    "@joint-ops/hitlimit-bun": "1.5.0",
     "@noble/ciphers": "2.2.0",
-    "bunqueue": "^2.8.20",
+    "bunqueue": "^2.8.32",
     "chokidar": "^5.0.0",
     "deepmerge": "^4.3.1",
     "devalue": "^5.8.1",
+    "html-entities": "^2.6.0",
     "ipaddr.js": "2.4.0",
     "magic-string": "^0.30.21",
     "mitt": "^3.0.1",
     "negotiator": "^1.0.0",
+    "nodemailer": "^9.0.3",
     "svelte-shaker": "^0.12.0",
     "zimmerframe": "^1.1.4"
   },
@@ -111,8 +115,11 @@
     "@tailwindcss/node": "^4.3.1",
     "@tailwindcss/oxide": "^4.3.1",
     "@types/bun": "1.3.14",
-    "svelte": "^5.56.4",
-    "svelte-check": "4.7.1",
+    "@types/nodemailer": "^8.0.1",
+    "@types/smtp-server": "3.5.13",
+    "smtp-server": "3.19.2",
+    "svelte": "^5.56.5",
+    "svelte-check": "4.7.3",
     "typescript": "^6.0.3"
   }
 }

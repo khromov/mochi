@@ -10,7 +10,7 @@
 </script>
 
 <DemoPage
-  title="Image Events"
+  title="Image: Events"
   description="The <Image> cache emits image:store when it downloads an original, generates a resized variant, or computes a blur placeholder — and image:delete when a file is evicted, superseded, or invalidated. Subscribe on mochiEvents to mirror the cache to durable storage like S3. This demo logs every event to the server console with a [demo:image-events] prefix — load this page cold and watch your terminal."
   {sources}
 >
@@ -19,7 +19,7 @@
     <code>image:store</code> events, one per file written to disk:
   </p>
   <div class="frame">
-    <Image src={remote} width={600} height={400} placeholder alt="A resized random photo" />
+    <Image src={remote} size="hero" placeholder alt="A resized random photo" />
   </div>
   <p class="hint">
     Each event carries the on-disk <code>path</code> plus <code>kind</code>, <code>src</code>, <code>size</code>, and (for variants) dimensions/format — everything an S3 mirror

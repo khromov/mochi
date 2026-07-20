@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto';
-import { readdir, rename, rmdir, stat, unlink } from 'node:fs/promises';
-import { join } from 'node:path';
-import { mochiEvents } from '../events';
-import { extForFormat } from './resize';
-import type { ImageFormat, ImageRequest } from './types';
+import type { CacheStatus, Storage } from '../cache/cache';
+import { MochiCache } from '../cache/cache';
+import { FileStorage, isBlobRef, readBlobRef, type BlobRef } from '../cache/cache-storage';
+import { mochiEvents, type MochiImageDeleteReason } from '../events';
+import type { ImageFormat, ResolvedImageSize } from './types';
 
 // For the shared full-size original entry, `width`/`height` are 0 and `format`
 // is '' (we don't decode originals); `contentType` is the authoritative type.
@@ -18,9 +18,7 @@ export interface SidecarMeta {
   staleAt: number;
   evictAt: number;
   src: string;
-  // Variants only: the original's `createdAt` this variant was resized from. A
-  // variant's freshness/eviction is read from the original's sidecar at request
-  // time; this marks which original generation produced these bytes.
+  /** Which original generation produced these bytes (variants only). Folded into the variant ETag. */
   originalCreatedAt?: number;
 }
 
@@ -38,11 +36,14 @@ export interface RegenResult {
   width: number;
   height: number;
   format: ImageFormat;
-  // The original generation (`createdAt`) the bytes were derived from. Must be
-  // reported by the callback rather than re-read after it returns: a background
-  // original refresh can land mid-regeneration, and stamping the new generation
-  // onto bytes resized from the old one would serve stale content as fresh.
-  originalCreatedAt?: number;
+  /**
+   * `createdAt` of the original generation these bytes were encoded from. A regen
+   * that ran against a still-stale original honestly stamps the old generation, so
+   * the next request sees the mismatch and regenerates again once the original has
+   * refreshed — stamping the new generation onto bytes resized from the old one
+   * would serve stale content as fresh.
+   */
+  originalCreatedAt: number;
 }
 
 function hash(input: string): string {
@@ -53,220 +54,234 @@ export function srcHash(src: string): string {
   return hash(src);
 }
 
-// Recursively sort object keys so an op descriptor hashes the same regardless of
-// the order the caller wrote the option properties. Arrays keep their order (a
-// transform chain is order-sensitive).
-function canonicalize(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    return value.map(canonicalize);
-  }
-  if (value && typeof value === 'object') {
-    return Object.fromEntries(
-      Object.keys(value as Record<string, unknown>)
-        .sort()
-        .map((k) => [k, canonicalize((value as Record<string, unknown>)[k])]),
-    );
-  }
-  return value;
-}
-
-/** Stable variant id for an arbitrary (non-`ImageRequest`) transform descriptor. */
-export function pipelineVariantId(descriptor: unknown): string {
-  return hash(JSON.stringify(canonicalize(descriptor)));
-}
-
-/** Identifies a variant by everything that affects the bytes — deliberately NOT the TTL. */
-export function variantId(req: ImageRequest): string {
-  const canonical = JSON.stringify({
-    src: req.src,
-    width: req.width ?? null,
-    height: req.height ?? null,
-    fit: req.fit,
-    withoutEnlargement: req.withoutEnlargement ?? false,
-    format: req.format,
-    quality: req.quality,
-    autoOrient: req.autoOrient,
-  });
-  return hash(canonical);
+/**
+ * Identifies a variant by its source and the size's config hash. The config
+ * hash already folds in every byte-affecting field (dims, ops, format, quality),
+ * so a size redefinition changes the id — a new cache entry and ETag — while
+ * two sizes with identical config correctly share one entry. Deliberately NOT
+ * keyed by the TTLs.
+ */
+export function variantId(src: string, configHash: string): string {
+  return hash(`variant:${configHash}:${src}`);
 }
 
 export function originalId(src: string): string {
   return hash(`original:${src}`);
 }
 
-const EXT_FOR_CONTENT_TYPE: Record<string, string> = {
-  'image/jpeg': 'jpg',
-  'image/png': 'png',
-  'image/webp': 'webp',
-  'image/avif': 'avif',
-  'image/gif': 'gif',
-  'image/svg+xml': 'svg',
-};
+// Cache-key convention. The prefixes are distinct, so the `cache:delete` cascade
+// hook can recover a source from an original key; variant keys are constructed
+// from (src, configHash) and never need to be parsed back.
+const ORIG_PREFIX = 'MochiImage:Original:';
+const VAR_PREFIX = 'MochiImage:Variant:';
+const PH_PREFIX = 'MochiImage:Placeholder:';
+const origKey = (src: string): string => ORIG_PREFIX + src;
+const varKey = (id: string): string => VAR_PREFIX + id;
+const phKey = (src: string): string => PH_PREFIX + src;
 
-/** Cosmetic on-disk extension for an original's content-type; the sidecar holds the authoritative type. */
-function extForContentType(ct: string): string {
-  return EXT_FOR_CONTENT_TYPE[ct.split(';')[0]!.trim().toLowerCase()] ?? 'bin';
+// MochiCache reports a synchronous recompute as 'expired'; the image status set
+// folds that into 'miss' (both mean "regenerated on this request").
+function mapStatus(status: CacheStatus): ImageCacheStatus {
+  if (status === 'expired' || status === 'miss') {
+    return 'miss';
+  }
+  return status;
 }
 
-// When the sweep finds `original.<ext>` bytes with no `original.json` sidecar it
-// can't tell a crash-orphan (safe to reclaim) from the live write window between
-// the bytes rename and the sidecar-last write (`writeBytesAndMeta`). Bytes touched
-// within this window are treated as an in-flight write and left for a later sweep;
-// a genuine orphan will be older than this and reclaimed then. Writes complete in
-// milliseconds, so a few seconds is comfortably conservative.
-const ORPHAN_ORIGINAL_GRACE_MS = 10_000;
+// Byte length of a stored payload, whether it's still in memory (fresh compute)
+// or offloaded to a blob (a FileStorage read returns a BlobRef carrying its size).
+function storedBytesLen(bytes: Uint8Array | BlobRef): number {
+  return isBlobRef(bytes) ? bytes.bytes : bytes.byteLength;
+}
+
+// The stored cache value for an original/variant: metadata plus the encoded bytes.
+// FileStorage offloads `bytes` to a blob file and returns it as a lazy `BlobRef`
+// on a cache hit, so reading the metadata never loads the bytes.
+interface StoredImage {
+  // Generation identity: unlike the cache envelope's createdAt (which markStale
+  // backdates), this survives soft invalidation, so variants/placeholders can be
+  // compared against the exact original generation that produced them.
+  createdAt: number;
+  contentType: string;
+  etag: string;
+  width: number;
+  height: number;
+  format: string;
+  bytes: Uint8Array | BlobRef;
+  /** For variants: the original generation the bytes were encoded from. */
+  originalCreatedAt?: number;
+}
+
+interface StoredPlaceholder {
+  dataUrl: string;
+  /** The original generation the blur was computed from; a refreshed original invalidates it. */
+  originalCreatedAt: number;
+}
+
+export interface ImageCacheOptions {
+  cacheDir: string;
+  /** One global stale-while-revalidate window shared by every entry. */
+  minTimeToStale: number;
+  maxTimeToLive: number;
+  /** Configured named sizes — the cascade deletes each source's variants by these. */
+  sizes: Record<string, ResolvedImageSize>;
+  /** Override the default `FileStorage(cacheDir)` backend. `cacheDir` is ignored when set. */
+  storage?: Storage;
+}
+
+// Each instance subscribes its own cascade, so the handler name must be unique —
+// a shared name would make a second instance silently evict the first's.
+let cascadeSeq = 0;
+
+// A `path` label for `image:store`/`image:delete` events. Cosmetic — falls back
+// to the raw key for a backend (e.g. `MemoryStorage`) that has no file path.
+function pathForKey(storage: Storage, key: string): string {
+  const withPath = storage as Partial<{ pathForKey(key: string): string }>;
+  return typeof withPath.pathForKey === 'function' ? withPath.pathForKey(key) : key;
+}
 
 /**
- * Disk-backed image cache with stale-while-revalidate semantics. Both the
- * encoded bytes and the SWR timing metadata live on disk, so timers survive a
- * restart. Concurrent misses (and background revalidations) for the same
- * variant are coalesced through `inflight`.
+ * Image cache backed by {@link MochiCache} over {@link FileStorage}. Originals,
+ * resized variants, and blur placeholders are each a cache entry under the
+ * `MochiImage:Original:` / `MochiImage:Variant:` / `MochiImage:Placeholder:` key
+ * convention; the SWR window, request coalescing, and binary persistence all come
+ * from the shared cache primitives.
+ *
+ * A variant has no window of its own — it serves fresh only while the shared
+ * original is fresh and the variant's stamped generation (`originalCreatedAt`)
+ * matches it; otherwise it serves stale and regenerates in the background. Hard
+ * invalidation deletes the original key, whose `cache:delete` event cascades to
+ * the source's variants and placeholder; everything else is reclaimed by the
+ * age-based sweep.
  */
 export class ImageCache {
-  private inflight = new Map<string, Promise<CacheEntry>>();
-  private originalMetaLocks = new Map<string, Promise<unknown>>();
-  // Monotonic per-src counter bumped on every invalidation. A background
-  // revalidation captures it before fetching and, under the meta lock, refuses
-  // to persist if it changed — so an in-flight refetch can't resurrect an
-  // invalidation that landed while it was in flight.
-  private originalEpoch = new Map<string, number>();
+  private readonly storage: Storage;
+  private readonly cache: MochiCache;
+  private readonly minTimeToStale: number;
+  private readonly maxTimeToLive: number;
+  private readonly sizes: Record<string, ResolvedImageSize>;
+  private readonly cascadeHandlerName: string;
 
-  constructor(private readonly root: string) {}
-
-  // Serialize read-modify-write cycles on a source's original sidecar:
-  // `shortenOriginalWindow` and `invalidateOriginal` both re-read inside the
-  // lock, so neither can clobber the other's write with a stale snapshot
-  // (e.g. resurrecting a hard-invalidated entry).
-  private withOriginalMetaLock<T>(src: string, fn: () => Promise<T>): Promise<T> {
-    const prev = this.originalMetaLocks.get(src) ?? Promise.resolve();
-    const run = prev.then(fn, fn);
-    const tail = run.then(
-      () => undefined,
-      () => undefined,
-    );
-    this.originalMetaLocks.set(src, tail);
-    void tail.then(() => {
-      if (this.originalMetaLocks.get(src) === tail) {
-        this.originalMetaLocks.delete(src);
+  constructor(options: ImageCacheOptions) {
+    this.minTimeToStale = options.minTimeToStale;
+    this.maxTimeToLive = options.maxTimeToLive;
+    this.sizes = options.sizes;
+    // Eviction stays the backend's; only the schedule and the per-kind accounting
+    // live here. So FileStorage's own timer is off (`purgeInterval: 0`) and the image
+    // sweeper (`sweeper.ts`) calls `sweep()` instead — one janitor, on an interval the
+    // image config owns, reporting variants/originals separately. `maxAge >=
+    // maxTimeToLive`, so it never drops a servable entry. A caller-supplied `storage`
+    // keeps its own eviction policy (e.g. `MemoryStorage`'s `maxAge`); driving it from
+    // here is what puts every backend on that one schedule.
+    // offloadBinary: image bytes are exactly the large-binary case blob offloading
+    // exists for — metadata reads must never load the encoded bytes.
+    this.storage = options.storage ?? new FileStorage({ directory: options.cacheDir, maxAge: options.maxTimeToLive, purgeInterval: 0, offloadBinary: true });
+    // 60s in-flight timeout: an image regen (fetch upstream → decode → resize)
+    // should never hold the per-key coalescing lock for long, so a hung upstream
+    // fails fast instead of parking every waiter until the far larger default.
+    // crossProcessInflight: the cache dir is shared across load-balanced processes,
+    // so an advisory marker lets peers skip duplicate regens (lease = the 60s above).
+    this.cache = new MochiCache({
+      minTimeToStale: this.minTimeToStale,
+      maxTimeToLive: this.maxTimeToLive,
+      storage: this.storage,
+      inflightTimeout: 60_000,
+      crossProcessInflight: true,
+    });
+    // Cascade: deleting a source's original key reclaims its variants + placeholder.
+    // `setHandler` (not `.on`) so a dev re-import replaces rather than stacks the sub.
+    // Each cascade only ever reclaims what's in its own storage, so instances that
+    // share the bus don't interfere; `dispose()` unsubscribes.
+    this.cascadeHandlerName = `mochi-image:cache-delete:${++cascadeSeq}`;
+    mochiEvents.setHandler(this.cascadeHandlerName, 'cache:delete', (event) => {
+      if (event.key.startsWith(ORIG_PREFIX)) {
+        void this.cascadeSource(event.key.slice(ORIG_PREFIX.length), 'invalidated').catch(() => {});
       }
     });
-    return run;
   }
 
-  private srcDir(src: string): string {
-    return join(this.root, srcHash(src));
+  /**
+   * Release this cache's bus subscription and stop its storage's own timers. For
+   * teardown (tests, or an explicitly owned instance).
+   *
+   * Not called on server stop: `getImageRuntime()` is a global singleton that
+   * outlives a `Mochi.serve()` cycle, so disposing it there would leave the next
+   * server with a live cache whose cascade no longer fires. `Mochi.serve` stops the
+   * sweeper's timers instead.
+   */
+  dispose(): void {
+    mochiEvents.removeHandler(this.cascadeHandlerName);
+    (this.storage as Partial<{ dispose(): void }>).dispose?.();
   }
 
-  private basePathFor(src: string, id: string, ext: string): string {
-    return join(this.srcDir(src), `${id}.${ext}`);
+  private async toBytes(field: Uint8Array | BlobRef): Promise<Uint8Array> {
+    return isBlobRef(field) ? readBlobRef(field) : field;
   }
 
-  private async readMetaFor(src: string, id: string, ext: string): Promise<SidecarMeta | null> {
-    try {
-      const raw = await Bun.file(`${this.basePathFor(src, id, ext)}.json`).text();
-      return JSON.parse(raw) as SidecarMeta;
-    } catch {
-      return null;
-    }
+  private metaFrom(src: string, value: StoredImage): SidecarMeta {
+    return {
+      version: 1,
+      contentType: value.contentType,
+      etag: value.etag,
+      width: value.width,
+      height: value.height,
+      format: value.format,
+      createdAt: value.createdAt,
+      staleAt: value.createdAt + this.minTimeToStale,
+      evictAt: value.createdAt + this.maxTimeToLive,
+      src,
+      originalCreatedAt: value.originalCreatedAt,
+    };
   }
 
-  private async readBytesFor(src: string, id: string, ext: string): Promise<Uint8Array | null> {
-    try {
-      return new Uint8Array(await Bun.file(this.basePathFor(src, id, ext)).arrayBuffer());
-    } catch {
-      return null;
-    }
-  }
-
-  // Read a variant's sidecar + bytes as a consistent pair. The writer commits
-  // bytes-first, sidecar-last, so a reader can otherwise pair an OLD sidecar
-  // (its createdAt drives the ETag) with NEW bytes. Re-read the sidecar after the
-  // bytes and only accept the pair when its generation is unchanged; retry a
-  // bounded number of times across a concurrent write, else fall through to a miss.
-  private async readConsistentEntry(readMeta: () => Promise<SidecarMeta | null>, readBytes: (meta: SidecarMeta) => Promise<Uint8Array | null>): Promise<CacheEntry | null> {
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const meta = await readMeta();
-      if (!meta) {
-        return null;
+  /**
+   * Read a cached variant keyed by its `variantId` (source + size config hash).
+   * A variant has no window of its own: it is served fresh only while the shared
+   * original is fresh AND the variant was encoded from that exact original
+   * generation (`originalCreatedAt`). A stale original or a generation mismatch
+   * serves the in-hand bytes stale and regenerates in the background; the regen
+   * stamps the generation it actually encoded from, so a regen that raced a
+   * still-refreshing original converges on the next request instead of serving
+   * old bytes as fresh. Probing the original uses a lazy blob ref, so a fresh
+   * variant serve never loads the original's bytes.
+   */
+  async getVariant(src: string, id: string, regenerate: () => Promise<RegenResult>): Promise<{ entry: CacheEntry; status: ImageCacheStatus }> {
+    const key = varKey(id);
+    const orig = await this.cache.peek<StoredImage>(origKey(src));
+    if (!orig || orig.status === 'expired') {
+      // Original gone or past its window: the variant must not be served, so drop
+      // it (if present) and regenerate against a freshly fetched original. The
+      // peek-first guard keeps a cold start (nothing stored) from clearing the
+      // in-flight slot on every request, which would defeat request coalescing.
+      if (await this.cache.peek<StoredImage>(key)) {
+        await this.cache.delete(key);
       }
-      const bytes = await readBytes(meta);
-      if (!bytes) {
-        return null;
-      }
-      const confirm = await readMeta();
-      if (confirm && confirm.createdAt === meta.createdAt && confirm.contentType === meta.contentType) {
-        return { bytes, meta };
+    } else {
+      const existing = await this.cache.peek<StoredImage>(key);
+      // Only backdate an entry the cache still considers fresh — a stale/expired
+      // entry already regenerates, and markStale would needlessly kill its
+      // in-flight regen (discarding the work via the supersession guard).
+      if (existing && existing.status === 'fresh' && (orig.status === 'stale' || existing.value.originalCreatedAt !== orig.value.createdAt)) {
+        await this.cache.markStale(key);
       }
     }
-    return null;
-  }
 
-  private readConsistentVariant(src: string, id: string, ext: string): Promise<CacheEntry | null> {
-    return this.readConsistentEntry(
-      () => this.readMetaFor(src, id, ext),
-      () => this.readBytesFor(src, id, ext),
-    );
-  }
-
-  private readConsistentOriginal(src: string): Promise<CacheEntry | null> {
-    return this.readConsistentEntry(
-      () => this.readOriginalMeta(src),
-      (meta) => this.readOriginalBytes(src, meta.contentType),
-    );
-  }
-
-  private async writeFor(src: string, id: string, ext: string, bytes: Uint8Array, meta: SidecarMeta): Promise<void> {
-    const base = this.basePathFor(src, id, ext);
-    await this.writeBytesAndMeta(base, `${base}.json`, bytes, meta);
-  }
-
-  // Write bytes first, sidecar last: the sidecar's presence marks the entry valid.
-  private async writeBytesAndMeta(bytesPath: string, metaPath: string, bytes: Uint8Array, meta: SidecarMeta): Promise<void> {
-    await Bun.write(`${bytesPath}.tmp`, bytes); // Bun.write creates parent dirs
-    await rename(`${bytesPath}.tmp`, bytesPath);
-    await this.writeMeta(metaPath, meta);
-  }
-
-  private async writeMeta(metaPath: string, meta: SidecarMeta): Promise<void> {
-    await Bun.write(`${metaPath}.tmp`, JSON.stringify(meta));
-    await rename(`${metaPath}.tmp`, metaPath);
-  }
-
-  private emitReadFor(id: string, status: ImageCacheStatus): void {
-    mochiEvents.emit('cache:read', { key: `image:${id}`, status });
-  }
-
-  private revalidateFor(src: string, id: string, ext: string, regenerate: () => Promise<RegenResult>): Promise<CacheEntry> {
-    const existing = this.inflight.get(id);
-    if (existing) {
-      return existing;
-    }
-
-    const promise = (async (): Promise<CacheEntry> => {
+    const { value, status } = await this.cache.fetchWithStatus<StoredImage>(key, async () => {
       const r = await regenerate();
-      // The variant inherits the original's SWR window. The generation stamp
-      // prefers the callback's report (the generation of the bytes actually
-      // used) over the sidecar re-read, which may already be a newer generation.
-      const om = await this.readOriginalMeta(src);
-      const now = Date.now();
-      const meta: SidecarMeta = {
-        version: 1,
+      const stored: StoredImage = {
+        createdAt: Date.now(),
         contentType: r.contentType,
         etag: id,
         width: r.width,
         height: r.height,
         format: r.format,
-        createdAt: now,
-        staleAt: om?.staleAt ?? now,
-        evictAt: om?.evictAt ?? now,
-        src,
-        originalCreatedAt: r.originalCreatedAt ?? om?.createdAt,
+        bytes: r.bytes,
+        originalCreatedAt: r.originalCreatedAt,
       };
-      await this.writeFor(src, id, ext, r.bytes, meta);
       mochiEvents.emit('image:store', {
         kind: 'variant',
         src,
-        path: this.basePathFor(src, id, ext),
+        path: pathForKey(this.storage, key),
         id,
         size: r.bytes.byteLength,
         contentType: r.contentType,
@@ -274,454 +289,201 @@ export class ImageCache {
         height: r.height,
         format: r.format,
       });
-      return { bytes: r.bytes, meta };
-    })().finally(() => this.inflight.delete(id));
+      return stored;
+    });
 
-    this.inflight.set(id, promise);
-    return promise;
-  }
-
-  /**
-   * Read a cached variant keyed by an arbitrary id (a resize `variantId`, or a
-   * `pipelineVariantId` for the raw `Bun.Image` wrapper). A variant has no window
-   * of its own — its fresh/stale/evicted state is derived from the shared
-   * original's sidecar. `originalCreatedAt` marks which original generation
-   * produced these bytes, so a refreshed original (bumped `createdAt`) serves the
-   * old variant stale while it regenerates. The variant disappears when the
-   * original is evicted.
-   */
-  async getVariant(src: string, id: string, ext: string, regenerate: () => Promise<RegenResult>): Promise<{ entry: CacheEntry; status: ImageCacheStatus }> {
-    const orig = await this.readOriginalMeta(src);
-    const now = Date.now();
-
-    if (orig) {
-      const entry = await this.readConsistentVariant(src, id, ext);
-      if (entry) {
-        const sameGen = entry.meta.originalCreatedAt === orig.createdAt;
-        if (sameGen && now < orig.staleAt) {
-          this.emitReadFor(id, 'fresh');
-          return { entry, status: 'fresh' };
-        }
-        if (now < orig.evictAt) {
-          // Stale window, or the original was refreshed to a newer generation:
-          // serve the existing variant immediately and regenerate in the background.
-          this.emitReadFor(id, 'stale');
-          mochiEvents.emit('cache:revalidate', { key: `image:${id}` });
-          void this.revalidateFor(src, id, ext, regenerate).catch(() => {});
-          return { entry, status: 'stale' };
-        }
-      }
-    }
-
-    this.emitReadFor(id, 'miss');
-    const entry = await this.revalidateFor(src, id, ext, regenerate);
-    return { entry, status: 'miss' };
-  }
-
-  /** Resize-variant read: derives the id/ext from the `ImageRequest`. */
-  get(req: ImageRequest, regenerate: () => Promise<RegenResult>): Promise<{ entry: CacheEntry; status: ImageCacheStatus }> {
-    return this.getVariant(req.src, variantId(req), extForFormat(req.format), regenerate);
-  }
-
-  private originalMetaPath(src: string): string {
-    return join(this.srcDir(src), 'original.json');
-  }
-
-  private originalBytesPath(src: string, contentType: string): string {
-    return join(this.srcDir(src), `original.${extForContentType(contentType)}`);
-  }
-
-  private async readOriginalMeta(src: string): Promise<SidecarMeta | null> {
-    return this.readMetaAt(this.originalMetaPath(src));
-  }
-
-  private async readMetaAt(path: string): Promise<SidecarMeta | null> {
-    try {
-      return JSON.parse(await Bun.file(path).text()) as SidecarMeta;
-    } catch {
-      return null;
-    }
-  }
-
-  private async removeFile(path: string): Promise<number> {
-    try {
-      const { size } = await stat(path);
-      await unlink(path);
-      return size;
-    } catch {
-      return 0;
-    }
-  }
-
-  /** Modification time in ms, or null if the file can't be stat'd (vanished/racing). */
-  private async safeMtimeMs(path: string): Promise<number | null> {
-    try {
-      return (await stat(path)).mtimeMs;
-    } catch {
-      return null;
-    }
-  }
-
-  // Best-effort delete of `original.<ext>` bytes whose extension isn't `keepExt`
-  // (and never the `original.json` sidecar) — used to reclaim a previous
-  // generation's bytes when the source's content-type changed.
-  private async removeStaleOriginalBytes(src: string, keepExt: string): Promise<void> {
-    const dir = this.srcDir(src);
-    let files: string[];
-    try {
-      files = await readdir(dir);
-    } catch {
-      return;
-    }
-    await Promise.all(
-      files
-        .filter((f) => f.startsWith('original.') && f !== 'original.json' && f !== `original.${keepExt}`)
-        .map(async (f) => {
-          const path = join(dir, f);
-          const freed = await this.removeFile(path);
-          if (freed > 0) {
-            mochiEvents.emit('image:delete', { kind: 'original', src, path, id: originalId(src), size: freed, reason: 'superseded' });
-          }
-        }),
-    );
-  }
-
-  private async readOriginalBytes(src: string, contentType: string): Promise<Uint8Array | null> {
-    try {
-      return new Uint8Array(await Bun.file(this.originalBytesPath(src, contentType)).arrayBuffer());
-    } catch {
-      return null;
-    }
-  }
-
-  private emitOriginalRead(src: string, status: ImageCacheStatus): void {
-    mochiEvents.emit('cache:read', { key: `image:${originalId(src)}`, status });
+    const bytes = await this.toBytes(value.bytes);
+    return { entry: { bytes, meta: this.metaFrom(src, value) }, status: mapStatus(status) };
   }
 
   /**
    * Get-or-fetch the full-size original bytes for a source, shared across every
-   * variant. Same SWR semantics as `get()`, but keyed by `src` alone.
-   * `timeToStale`/`timeToEvict` are the caller's desired window; because many
-   * callers share one entry the SHORTEST requested window wins (see
-   * `shortenOriginalWindow`).
+   * variant and keyed by `src` alone. Every entry shares the one global
+   * stale/evict window configured on the cache.
    */
-  async getOriginal(
-    src: string,
-    timeToStale: number,
-    timeToEvict: number,
-    fetchFn: () => Promise<{ bytes: Uint8Array; contentType: string | null }>,
-  ): Promise<{ entry: CacheEntry; status: ImageCacheStatus }> {
-    const now = Date.now();
-    const cached = await this.readConsistentOriginal(src);
-
-    if (cached) {
-      const meta = cached.meta;
-      if (now < meta.staleAt) {
-        this.emitOriginalRead(src, 'fresh');
-        return { entry: { bytes: cached.bytes, meta: await this.shortenOriginalWindow(src, meta, timeToStale, timeToEvict, now) }, status: 'fresh' };
-      }
-      if (now < meta.evictAt) {
-        this.emitOriginalRead(src, 'stale');
-        mochiEvents.emit('cache:revalidate', { key: `image:${originalId(src)}` });
-        void this.revalidateOriginal(src, timeToStale, timeToEvict, fetchFn).catch(() => {});
-        return { entry: { bytes: cached.bytes, meta: await this.shortenOriginalWindow(src, meta, timeToStale, timeToEvict, now) }, status: 'stale' };
-      }
-    }
-
-    this.emitOriginalRead(src, 'miss');
-    const entry = await this.revalidateOriginal(src, timeToStale, timeToEvict, fetchFn);
-    return { entry, status: 'miss' };
-  }
-
-  /**
-   * Shorten the shared original entry's window to honour the strictest caller:
-   * persist `min(existing, now + requested)`. Only writes the sidecar when a
-   * value actually decreases, so the common case (everyone on the same default
-   * window) stays a pure read.
-   */
-  private async shortenOriginalWindow(src: string, meta: SidecarMeta, timeToStale: number, timeToEvict: number, now: number): Promise<SidecarMeta> {
-    const wantStaleAt = now + timeToStale;
-    const wantEvictAt = now + timeToEvict;
-    if (wantStaleAt >= meta.staleAt && wantEvictAt >= meta.evictAt) {
-      return meta;
-    }
-    return this.withOriginalMetaLock(src, async () => {
-      // Min against the current on-disk sidecar, not the caller's snapshot — a
-      // concurrent invalidate may have shortened the window since it was read.
-      const current = (await this.readOriginalMeta(src)) ?? meta;
-      const next: SidecarMeta = {
-        ...current,
-        staleAt: Math.min(current.staleAt, wantStaleAt),
-        evictAt: Math.min(current.evictAt, wantEvictAt),
-      };
-      if (next.staleAt !== current.staleAt || next.evictAt !== current.evictAt) {
-        await this.writeMeta(this.originalMetaPath(src), next);
-      }
-      return next;
-    });
-  }
-
-  private freshOriginalMeta(src: string, contentType: string, timeToStale: number, timeToEvict: number, now: number): SidecarMeta {
-    return {
-      version: 1,
-      contentType,
-      etag: originalId(src),
-      width: 0,
-      height: 0,
-      format: '',
-      createdAt: now,
-      staleAt: now + timeToStale,
-      evictAt: now + timeToEvict,
-      src,
-    };
-  }
-
-  private revalidateOriginal(
-    src: string,
-    timeToStale: number,
-    timeToEvict: number,
-    fetchFn: () => Promise<{ bytes: Uint8Array; contentType: string | null }>,
-  ): Promise<CacheEntry> {
-    // `o:`-prefixed key: a colon can't appear in a base64url variantId, so this
-    // never collides with the resize-variant inflight entries.
-    const key = `o:${originalId(src)}`;
-    const existing = this.inflight.get(key);
-    if (existing) {
-      return existing;
-    }
-
-    const epochAtStart = this.originalEpoch.get(src) ?? 0;
-    const promise = (async (): Promise<CacheEntry> => {
+  async getOriginal(src: string, fetchFn: () => Promise<{ bytes: Uint8Array; contentType: string | null }>): Promise<{ entry: CacheEntry; status: ImageCacheStatus }> {
+    const key = origKey(src);
+    const { value, status } = await this.cache.fetchWithStatus<StoredImage>(key, async () => {
       const fetched = await fetchFn();
       const contentType = fetched.contentType ?? 'application/octet-stream';
-      // Persist under the meta lock so this write is serialized against
-      // invalidate/shorten. If an invalidation landed while we were fetching
-      // (epoch changed), don't resurrect it — return the current on-disk state.
-      return this.withOriginalMetaLock(src, async () => {
-        if ((this.originalEpoch.get(src) ?? 0) !== epochAtStart) {
-          const current = await this.readOriginalMeta(src);
-          return { bytes: fetched.bytes, meta: current ?? this.freshOriginalMeta(src, contentType, timeToStale, timeToEvict, Date.now()) };
-        }
-        const meta = this.freshOriginalMeta(src, contentType, timeToStale, timeToEvict, Date.now());
-        await this.writeBytesAndMeta(this.originalBytesPath(src, contentType), this.originalMetaPath(src), fetched.bytes, meta);
-        // The origin may switch formats between generations (png → webp), which
-        // changes the `original.<ext>` filename; drop any bytes left under the old
-        // extension so they don't linger until the next sweep.
-        await this.removeStaleOriginalBytes(src, extForContentType(contentType));
-        mochiEvents.emit('image:store', {
-          kind: 'original',
-          src,
-          path: this.originalBytesPath(src, contentType),
-          id: originalId(src),
-          size: fetched.bytes.byteLength,
-          contentType,
-          width: 0,
-          height: 0,
-          format: '',
-        });
-        return { bytes: fetched.bytes, meta };
+      const stored: StoredImage = {
+        createdAt: Date.now(),
+        contentType,
+        etag: originalId(src),
+        width: 0,
+        height: 0,
+        format: '',
+        bytes: fetched.bytes,
+      };
+      mochiEvents.emit('image:store', {
+        kind: 'original',
+        src,
+        path: pathForKey(this.storage, key),
+        id: originalId(src),
+        size: fetched.bytes.byteLength,
+        contentType,
+        width: 0,
+        height: 0,
+        format: '',
       });
-    })().finally(() => this.inflight.delete(key));
+      return stored;
+    });
 
-    this.inflight.set(key, promise);
-    return promise;
+    const bytes = await this.toBytes(value.bytes);
+    return { entry: { bytes, meta: this.metaFrom(src, value) }, status: mapStatus(status) };
   }
 
   /**
-   * Immediately invalidate a source by rewriting the shared original's SWR
-   * timers; every variant follows the original, so this cascades. `hard: false`
-   * marks it stale (served stale-while-revalidate); `hard: true` also marks it
-   * expired (the next request re-fetches synchronously). No-op if nothing is cached.
+   * Immediately invalidate a source. `hard` deletes the original key — its
+   * `cache:delete` cascades to every variant and the placeholder; `soft` marks
+   * the original stale so the variant mirror serves stale-while-revalidate. No-op
+   * if nothing is cached.
    */
   async invalidateOriginal(src: string, hard: boolean): Promise<void> {
-    await this.withOriginalMetaLock(src, async () => {
-      // Bump inside the lock so a concurrent revalidation writing after us sees
-      // the new epoch and skips its resurrecting write.
-      this.originalEpoch.set(src, (this.originalEpoch.get(src) ?? 0) + 1);
-      const meta = await this.readOriginalMeta(src);
-      if (!meta) {
-        return;
-      }
-      const now = Date.now();
-      await this.writeMeta(this.originalMetaPath(src), {
-        ...meta,
-        staleAt: Math.min(meta.staleAt, now),
-        evictAt: hard ? Math.min(meta.evictAt, now) : meta.evictAt,
+    const key = origKey(src);
+    if (!hard) {
+      await this.cache.markStale(key);
+      return;
+    }
+    // Peek the original for its size before deleting. Cascade first, then drop the
+    // original — the delete re-fires the cascade hook, which finds nothing left (a
+    // harmless no-op), so there's no double emit.
+    const orig = await this.cache.peek<StoredImage>(key);
+    await this.cascadeSource(src, 'invalidated');
+    await this.cache.delete(key);
+    if (orig) {
+      mochiEvents.emit('image:delete', {
+        kind: 'original',
+        src,
+        path: pathForKey(this.storage, key),
+        id: originalId(src),
+        size: storedBytesLen(orig.value.bytes),
+        reason: 'invalidated',
       });
-    });
+    }
   }
 
   /**
-   * Janitor sweep: walk the cache root and delete entries that can no longer be
-   * served — full-size originals past their evict window, and variants (and the
-   * placeholder) whose original is gone, evicted, or superseded by a newer
-   * generation. Variant freshness already derives from the original at request
-   * time, so this only reclaims dead disk; it never changes what a live request
-   * would see.
+   * Empty the entire image cache — every original, resized variant, and blur
+   * placeholder — by clearing the backing storage in one shot. Unlike
+   * `invalidateOriginal`, this does not emit a per-entry `image:delete`; it's a
+   * wholesale reset intended for the dev debug bar. No-op on an empty cache.
    */
-  async sweep(now: number = Date.now()): Promise<{ removedVariants: number; removedOriginals: number; freedBytes: number }> {
-    let removedVariants = 0;
-    let removedOriginals = 0;
-    let freedBytes = 0;
-
-    let dirs;
-    try {
-      dirs = await readdir(this.root, { withFileTypes: true });
-    } catch {
-      return { removedVariants, removedOriginals, freedBytes }; // cache dir not created yet
-    }
-
-    for (const d of dirs) {
-      if (!d.isDirectory()) {
-        continue;
-      }
-      const dir = join(this.root, d.name);
-      const orig = await this.readMetaAt(join(dir, 'original.json'));
-      const origDead = orig === null || now >= orig.evictAt;
-
-      let files: string[];
-      try {
-        files = await readdir(dir);
-      } catch {
-        continue;
-      }
-
-      for (const f of files) {
-        // Variants are decided by their sidecar; originals and the placeholder are handled separately.
-        if (!f.endsWith('.json') || f === 'original.json') {
-          continue;
-        }
-        const meta = await this.readMetaAt(join(dir, f));
-        const superseded = orig !== null && meta !== null && meta.originalCreatedAt !== orig.createdAt;
-        if (origDead || superseded) {
-          const bytesPath = join(dir, f.slice(0, -'.json'.length));
-          const freed = (await this.removeFile(bytesPath)) + (await this.removeFile(join(dir, f))); // bytes + sidecar
-          freedBytes += freed;
-          removedVariants++;
-          mochiEvents.emit('image:delete', {
-            kind: 'variant',
-            src: meta?.src ?? '',
-            path: bytesPath,
-            id: meta?.etag ?? f.slice(0, f.lastIndexOf('.')),
-            size: freed,
-            reason: origDead ? 'evicted' : 'superseded',
-          });
-        }
-      }
-
-      if (origDead) {
-        // Remove every `original.*` (bytes of any extension + the sidecar) so a
-        // stale-format leftover from a content-type change is reclaimed too. This
-        // runs even when the sidecar is missing (`orig === null`): a crash landing
-        // between the bytes write and the sidecar-last write leaves orphaned
-        // `original.<ext>` bytes that would otherwise leak forever and keep the src
-        // dir from ever being reclaimed.
-        //
-        // But a sidecar can also be legitimately absent *during* a live write (the
-        // bytes are renamed in before the sidecar is written), so a sidecar-less
-        // original is only reclaimed once its bytes are older than the grace window
-        // — otherwise a concurrent first-generation write races the sweep and gets
-        // its just-written bytes deleted out from under it.
-        let freed = 0;
-        let inflight = false;
-        for (const f of files) {
-          if (f.startsWith('original.')) {
-            if (orig === null) {
-              const mtime = await this.safeMtimeMs(join(dir, f));
-              if (mtime !== null && mtime > now - ORPHAN_ORIGINAL_GRACE_MS) {
-                inflight = true;
-                continue;
-              }
-            }
-            freed += await this.removeFile(join(dir, f));
-          }
-        }
-        // With no sidecar there's no metadata to describe the entry, so only
-        // report the orphan case when bytes were actually reclaimed. Skip the
-        // report (and the removal accounting) entirely when we deferred to a
-        // suspected in-flight write.
-        if (!inflight && (orig !== null || freed > 0)) {
-          freedBytes += freed;
-          removedOriginals++;
-          mochiEvents.emit('image:delete', {
-            kind: 'original',
-            src: orig?.src ?? '',
-            path: orig ? this.originalBytesPath(orig.src, orig.contentType) : join(dir, 'original'),
-            id: orig ? originalId(orig.src) : d.name,
-            size: freed,
-            reason: 'evicted',
-          });
-        }
-      }
-
-      // The placeholder is bound to the original's generation, so it's dead
-      // disk once the original is gone — and leaving it would keep the src
-      // directory from ever being reclaimed below.
-      if (origDead && files.includes('placeholder.txt')) {
-        const placeholderPath = join(dir, 'placeholder.txt');
-        const freed = await this.removeFile(placeholderPath);
-        freedBytes += freed;
-        if (orig !== null) {
-          mochiEvents.emit('image:delete', {
-            kind: 'placeholder',
-            src: orig.src,
-            path: placeholderPath,
-            id: originalId(orig.src),
-            size: freed,
-            reason: 'evicted',
-          });
-        }
-      }
-
-      // Reclaim the src directory once the sweep has emptied it (no variants,
-      // original, or placeholder remain).
-      try {
-        if ((await readdir(dir)).length === 0) {
-          await rmdir(dir);
-        }
-      } catch {
-        // best-effort
-      }
-    }
-
-    return { removedVariants, removedOriginals, freedBytes };
-  }
-
-  private placeholderPath(src: string): string {
-    return join(this.srcDir(src), 'placeholder.txt');
+  async clearAll(): Promise<void> {
+    await this.cache.clearItems();
   }
 
   /**
-   * Placeholders have no window of their own; like variants, they're bound to
-   * the original generation they were computed from, so an invalidated or
-   * re-fetched original makes the next read a miss (recompute) instead of
-   * serving the previous image's blur forever.
+   * Number of entries currently in the cache (originals + variants + placeholders,
+   * plus any transient in-flight markers) — a rough size indicator for the dev
+   * debug bar. Returns `0` if the backing storage can't report a count.
+   */
+  async count(): Promise<number> {
+    return (await this.storage.count?.()) ?? 0;
+  }
+
+  /** Cache keys (originals, variants, placeholders) for the dev debug bar. Excludes the transient `mochi:inflight:` coalescing markers. Empty if the backing storage can't enumerate. */
+  async keys(): Promise<string[]> {
+    const keys = (await this.storage.keys?.()) ?? [];
+    return keys.filter((key) => !key.startsWith('mochi:inflight:'));
+  }
+
+  /** The raw stored entry for a key (`{ value, createdAt }`), or `null` if absent. Binary fields come back as lazy {@link BlobRef}s, not bytes — safe to serialize for the dev debug bar. */
+  async inspect(key: string): Promise<unknown> {
+    return this.storage.getItem(key);
+  }
+
+  // Delete a source's placeholder and every configured size's variant, emitting an
+  // `image:delete` per entry that actually existed. Idempotent: a second run finds
+  // nothing and emits nothing. TODO: reclaim ad-hoc inline variants (config hashes
+  // not in `sizes`) too — they currently fall to the age-based sweep.
+  private async cascadeSource(src: string, reason: MochiImageDeleteReason): Promise<void> {
+    const ph = await this.cache.peek<StoredPlaceholder>(phKey(src));
+    if (ph) {
+      await this.cache.delete(phKey(src));
+      mochiEvents.emit('image:delete', {
+        kind: 'placeholder',
+        src,
+        path: pathForKey(this.storage, phKey(src)),
+        id: originalId(src),
+        size: Buffer.byteLength(ph.value.dataUrl),
+        reason,
+      });
+    }
+    for (const size of Object.values(this.sizes)) {
+      const id = variantId(src, size.configHash);
+      const variant = await this.cache.peek<StoredImage>(varKey(id));
+      if (variant) {
+        await this.cache.delete(varKey(id));
+        mochiEvents.emit('image:delete', {
+          kind: 'variant',
+          src,
+          path: pathForKey(this.storage, varKey(id)),
+          id,
+          size: storedBytesLen(variant.value.bytes),
+          reason,
+        });
+      }
+    }
+  }
+
+  /**
+   * Janitor sweep: reclaim entries past the global window. The eviction itself is
+   * the storage backend's own age-based sweep (`FileStorage` or a configured
+   * `MemoryStorage`); a backend with no `sweep` support is a no-op. All this adds
+   * is per-kind attribution, from the keys the backend reports removing.
+   *
+   * Anything the backend can't name — `mochi:inflight:` markers, `.tmp` writes,
+   * corrupt files, or every removal from a backend that ignores `reportKeys` —
+   * lands in `removedOther` rather than being guessed at, so the three counts
+   * always sum to what was actually removed.
+   */
+  async sweep(now: number = Date.now()): Promise<{ removedVariants: number; removedOriginals: number; removedOther: number }> {
+    const result = await this.storage.sweep?.(now, { reportKeys: true });
+    const removed = result?.removed ?? 0;
+    let removedOriginals = 0;
+    let removedVariants = 0;
+    for (const key of result?.removedKeys ?? []) {
+      if (key.startsWith(ORIG_PREFIX)) {
+        removedOriginals++;
+      } else if (key.startsWith(VAR_PREFIX) || key.startsWith(PH_PREFIX)) {
+        removedVariants++;
+      }
+    }
+    return { removedVariants, removedOriginals, removedOther: removed - removedVariants - removedOriginals };
+  }
+
+  /**
+   * Placeholders are gated by the original's generation: a blur computed from a
+   * previous generation reads as missing (recompute), so a refreshed source
+   * doesn't keep painting the old image's ThumbHash. With no original cached
+   * there's nothing to compare against — serve what we have (cosmetic anyway).
    */
   async getPlaceholder(src: string): Promise<string | null> {
-    try {
-      const raw = await Bun.file(this.placeholderPath(src)).text();
-      const stored = JSON.parse(raw) as { dataUrl: string; originalCreatedAt: number };
-      const orig = await this.readOriginalMeta(src);
-      if (!orig || orig.createdAt !== stored.originalCreatedAt) {
-        return null;
-      }
-      return stored.dataUrl;
-    } catch {
+    const cached = await this.cache.peek<StoredPlaceholder>(phKey(src));
+    if (!cached || cached.status === 'expired') {
       return null;
     }
+    const orig = await this.cache.peek<StoredImage>(origKey(src));
+    if (orig && cached.value.originalCreatedAt !== orig.value.createdAt) {
+      return null;
+    }
+    return cached.value.dataUrl;
   }
 
   async setPlaceholder(src: string, dataUrl: string, originalCreatedAt: number): Promise<void> {
-    const path = this.placeholderPath(src);
-    const json = JSON.stringify({ dataUrl, originalCreatedAt });
-    await Bun.write(`${path}.tmp`, json); // Bun.write creates parent dirs
-    await rename(`${path}.tmp`, path);
+    const key = phKey(src);
+    // `set`, not `delete` + `fetch`: a recompute (the original moved on to a new
+    // generation) must replace the entry in one atomic write. Deleting first left the
+    // key absent for the duration of the write, so concurrent readers saw a miss and
+    // each kicked off their own placeholder recompute.
+    await this.cache.set<StoredPlaceholder>(key, { dataUrl, originalCreatedAt });
     mochiEvents.emit('image:store', {
       kind: 'placeholder',
       src,
-      path,
+      path: pathForKey(this.storage, key),
       id: originalId(src),
-      size: Buffer.byteLength(json),
+      size: Buffer.byteLength(dataUrl),
       contentType: '',
       width: 0,
       height: 0,
