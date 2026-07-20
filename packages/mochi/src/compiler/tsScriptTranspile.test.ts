@@ -52,6 +52,20 @@ describe('<script lang="ts"> is fully transpiled by Bun before compilation', () 
 <em>{chosen}</em>
 `,
     );
+    // Plain-JS component whose script contains the substring "lang" (here in a
+    // JS variable name). The fast-path gate keys on `source.includes('lang')`,
+    // so this deliberately trips the gate's false-positive branch — it must
+    // still run through preprocess + compile and render correctly, proving the
+    // gate only ever adds harmless work, never wrong output.
+    writeFileSync(
+      path.join(dir, 'Langy.svelte'),
+      `<script>
+  const language = 'LANGY_OK';
+</script>
+
+<u>{language}</u>
+`,
+    );
     writeFileSync(
       path.join(dir, 'HydroProbe.svelte'),
       `<script lang="ts">
@@ -73,6 +87,7 @@ describe('<script lang="ts"> is fully transpiled by Bun before compilation', () 
   import Probe from './Probe.svelte';
   import Kinds from './Kinds.svelte';
   import HydroProbe from './HydroProbe.svelte';
+  import Langy from './Langy.svelte';
   class Box {
     constructor(private value = 41) {}
     get next() { return this.value + 1; }
@@ -83,6 +98,7 @@ describe('<script lang="ts"> is fully transpiled by Bun before compilation', () 
 <p>{box.next}</p>
 <Probe />
 <Kinds />
+<Langy />
 <HydroProbe mochi:hydrate />
 {#snippet typed(n: number)}<span>SNIPPET_{n}</span>{/snippet}
 {@render typed(7)}
@@ -102,6 +118,9 @@ describe('<script lang="ts"> is fully transpiled by Bun before compilation', () 
     expect(result.body).toContain('42');
     // Template-only import was preserved (not tree-shaken) → child rendered.
     expect(result.body).toContain('PROBE_RENDERED');
+    // Plain-JS component containing the "lang" substring still compiles through
+    // the fast-path gate's false-positive branch.
+    expect(result.body).toContain('LANGY_OK');
   });
 
   test('template stays in TS mode (typed snippet params) — `lang` is not stripped', async () => {

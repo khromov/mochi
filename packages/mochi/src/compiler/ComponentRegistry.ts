@@ -38,9 +38,20 @@ async function applyUserPreprocessors(source: string, filename: string, target: 
   // `builtinTsPreprocessor` runs last so it also strips TS that user
   // preprocessors emit. svelte's `preprocess()` parses the component and hands
   // each hook properly-parsed `attributes` — so it, not a source scan, decides
-  // whether a script block is TS. It's a byte-identical no-op when no hook
-  // transforms, so plain-JS components pass through untouched; no fast-path gate
-  // (or brittle source regex) is needed.
+  // whether a script block is TS.
+  //
+  // Fast-path: with no user preprocessors, the only work `preprocess()` can do
+  // is the builtin TS pass, which fires solely on `attributes.lang === 'ts'`.
+  // A `lang="ts"` attribute — in any quoting/spacing — always contains the
+  // literal substring `lang`, so a source lacking it provably has no TS script
+  // to transpile. This gate can only false-*positive* (harmlessly re-parse a
+  // "lang"-containing plain-JS file), never false-negative, so it skips the
+  // full-component parse for the common plain-JS case without the brittleness
+  // of a tag-matching regex. Any user preprocessor may inject TS, so the gate
+  // holds only when none are registered.
+  if (userPreprocessors.length === 0 && !source.includes('lang')) {
+    return source;
+  }
   const result = await sveltePreprocess(source, [...userPreprocessors, builtinTsPreprocessor], { filename });
   return result.code;
 }
@@ -184,8 +195,10 @@ function createMarkdownLoader(opts: {
     }
     // mdsvex passes <script lang="ts"> through untouched, so its output needs
     // the same built-in TS pass as regular .svelte files. User preprocessors
-    // still don't apply here — mdsvex owns markdown transforms.
-    let svelteSource = (await sveltePreprocess(compiled.code, [builtinTsPreprocessor], { filename: args.path })).code;
+    // still don't apply here — mdsvex owns markdown transforms. Same safe
+    // `lang` fast-path as applyUserPreprocessors: no `lang` substring → no TS
+    // script → skip the parse (can't false-negative).
+    let svelteSource = compiled.code.includes('lang') ? (await sveltePreprocess(compiled.code, [builtinTsPreprocessor], { filename: args.path })).code : compiled.code;
     let hydratables: HydratableComponent[] = [];
     let serverIslands: ServerIslandComponent[] = [];
     let preprocessErrors: PreprocessIslandError[] = [];
