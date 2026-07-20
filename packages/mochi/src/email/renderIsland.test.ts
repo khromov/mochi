@@ -1,8 +1,6 @@
 // A hydratable island in an email template is a hard error. Kept in its own
-// file with a registry that compiles ONLY the island fixture: building a client
-// bundle for an island alongside other fixtures trips the known `bun test`
-// EISDIR bundler bug (same rationale as isHydratable.test.ts's single-compile
-// registry). A real `mochi-framework build` is unaffected.
+// file with a registry that compiles ONLY the island fixture, so the recorded
+// error can't leak into other fixtures' registry state.
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';

@@ -87,9 +87,10 @@ describe('recompile* batches into one compileAll + one buildClientBundle per cyc
       }
     };
 
-    // Stub the client bundle so the test doesn't run Bun.build (a 2nd Bun.build
-    // would trip the same EISDIR bug). Bumps the counter the real method does
-    // and emits the same event subscribers would see.
+    // Stub the client bundle: the fake `/fake/*.svelte` entrypoints this test
+    // seeds could never survive a real Bun.build, and the stub doubles as the
+    // bundle-call counter. Bumps the counter the real method does and emits
+    // the same event subscribers would see.
     (registry as unknown as { buildClientBundle: () => Promise<void> }).buildClientBundle = async function (): Promise<void> {
       bundleCalls += 1;
       internals.clientBundleCallCount += 1;

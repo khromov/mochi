@@ -98,3 +98,21 @@ await runTests({ sequential: ['src/liveReload.test.ts'] });
 ```
 
 `runTests` exits the process with code `1` if any file fails, so it drops straight into CI.
+
+### Bun workspaces: use the hoisted linker
+
+<Callout type="warning">
+
+In Bun **workspaces**, `bun install` defaults to the isolated linker (a symlinked `node_modules/.bun` store). Combined with `bun test`, this trips a Bun bug: a second `Bun.build()` in the test process — e.g. `Mochi.serve()` compiling after your test file imported `mochi-framework` — fails with `EISDIR reading file` (or `Unexpected reading file`) on a dependency inside `node_modules/.bun`. See the [minimal reproduction](https://github.com/khromov/bun-second-build-eisdir-repro).
+
+</Callout>
+
+Fix: pin the hoisted linker in your workspace root `bunfig.toml`, then delete `node_modules` and reinstall:
+
+```toml
+# bunfig.toml
+[install]
+linker = "hoisted"
+```
+
+Single-package apps — including everything scaffolded by `create-mochi` — install hoisted by default and are unaffected.
