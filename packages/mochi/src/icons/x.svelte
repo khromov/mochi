@@ -1,5 +1,5 @@
 <script lang="ts">
-  import Icon from './Icon.svelte';
+  import Icon from '../components/Icon.svelte';
   let props = $props();
   const iconNode = [
     ['path', { d: 'M18 6 6 18' }],

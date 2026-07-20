@@ -4,8 +4,12 @@ import { files as cacheEvents } from '../demos/cache-events/files.ts';
 import { files as chat } from '../demos/chat/files.ts';
 import { files as clientOnly } from '../demos/client-only/files.ts';
 import { files as cookieVaryTest } from '../demos/cookie-vary-test/files.ts';
+import { files as captcha } from '../demos/captcha/files.ts';
+import { files as captchaStyling } from '../demos/captcha-styling/files.ts';
 import { files as cookies } from '../demos/cookies/files.ts';
 import { files as dataLoading } from '../demos/data-loading/files.ts';
+import { files as email } from '../demos/email/files.ts';
+import { files as entityProps } from '../demos/entity-props/files.ts';
 import { files as error } from '../demos/error/files.ts';
 import { files as errorBoundaries } from '../demos/error-boundaries/files.ts';
 import { files as file } from '../demos/file/files.ts';
@@ -18,6 +22,11 @@ import { files as formReturnData } from '../demos/form-return-data/files.ts';
 import { files as helloWorld } from '../demos/hello-world/files.ts';
 import { files as hydratable } from '../demos/hydratable/files.ts';
 import { files as hydration } from '../demos/hydration/files.ts';
+import { files as image } from '../demos/image/files.ts';
+import { files as imageInvalidation } from '../demos/image-invalidation/files.ts';
+import { files as imagePipeline } from '../demos/image-pipeline/files.ts';
+import { files as imageEvents } from '../demos/image-events/files.ts';
+import { files as islandDepth } from '../demos/island-depth/files.ts';
 import { files as islandProps } from '../demos/island-props/files.ts';
 import { files as lazy } from '../demos/lazy/files.ts';
 import { files as lazyServerIsland } from '../demos/lazy-server-island/files.ts';
@@ -28,6 +37,7 @@ import { files as nestedIslands } from '../demos/nested-islands/files.ts';
 import { files as propDedup } from '../demos/prop-dedup/files.ts';
 import { files as propsId } from '../demos/props-id/files.ts';
 import { files as queue } from '../demos/queue/files.ts';
+import { files as rateLimit } from '../demos/rate-limit/files.ts';
 import { files as reloadFormData } from '../demos/reload-form-data/files.ts';
 import { files as requestId } from '../demos/request-id/files.ts';
 import { files as serverIsland } from '../demos/server-island/files.ts';
@@ -138,6 +148,38 @@ export const demos: Demo[] = [
     category: 'data',
   },
   {
+    href: '/demos/image/',
+    slug: 'image',
+    files: image,
+    title: 'Image: Component',
+    hook: 'The <Image> component — named sizes, ThumbHash blur-up placeholders, a gallery, and island usage. It only mints an encrypted URL; the endpoint does the work.',
+    category: 'data',
+  },
+  {
+    href: '/demos/image-invalidation/',
+    slug: 'image-invalidation',
+    files: imageInvalidation,
+    title: 'Image: Invalidation',
+    hook: 'Clear a cached image on demand with invalidateImage() — hard-evict the shared original and watch every named size re-fetch in lockstep.',
+    category: 'data',
+  },
+  {
+    href: '/demos/image-pipeline/',
+    slug: 'image-pipeline',
+    files: imagePipeline,
+    title: 'Image: Named sizes',
+    hook: 'Declare resize / rotate / flip / modulate / format transforms once as named sizes; getImageUrl mints a deferred URL and getImage runs one inline for bytes + metadata.',
+    category: 'data',
+  },
+  {
+    href: '/demos/image-events/',
+    slug: 'image-events',
+    files: imageEvents,
+    title: 'Image: Events',
+    hook: 'Subscribe to image:store / image:delete on mochiEvents to mirror the <Image> cache to durable storage like S3.',
+    category: 'data',
+  },
+  {
     href: '/demos/request-id/',
     slug: 'request-id',
     files: requestId,
@@ -167,6 +209,14 @@ export const demos: Demo[] = [
     files: api,
     title: 'API Endpoints',
     hook: 'JSON routes defined with Mochi.api(), tested live against the running server.',
+    category: 'endpoints',
+  },
+  {
+    href: '/demos/rate-limit/',
+    slug: 'rate-limit',
+    files: rateLimit,
+    title: 'Rate Limiting',
+    hook: 'A rateLimit config on the route — 5 requests per minute per IP; reload past the limit to hit the 429 error page.',
     category: 'endpoints',
   },
   {
@@ -274,6 +324,14 @@ export const demos: Demo[] = [
     category: 'hydration',
   },
   {
+    href: '/demos/island-depth/',
+    slug: 'island-depth',
+    files: islandDepth,
+    title: 'Nested Island Max Depth',
+    hook: 'A chain of mochi:defer server islands nested four levels deep — each fetches the next on demand, and the prebuild precompiles the whole chain.',
+    category: 'hydration',
+  },
+  {
     href: '/demos/prop-dedup/',
     slug: 'prop-dedup',
     files: propDedup,
@@ -295,6 +353,14 @@ export const demos: Demo[] = [
     files: login,
     title: 'Form Actions',
     hook: 'A login form rendered twice — plain HTML POST and intercepted with {@attach enhance(...)}.',
+    category: 'forms',
+  },
+  {
+    href: '/demos/email/',
+    slug: 'email',
+    files: email,
+    title: 'Send Email',
+    hook: 'Send a pre-written email through Mochi.email() and read it back in the /_mochi/email dev outbox.',
     category: 'forms',
   },
   {
@@ -338,6 +404,22 @@ export const demos: Demo[] = [
     category: 'forms',
   },
   {
+    href: '/demos/captcha/',
+    slug: 'captcha',
+    files: captcha,
+    title: 'Captcha',
+    hook: 'Slide-to-verify with a hash chain and proof-of-work — no third party, no tracking.',
+    category: 'forms',
+  },
+  {
+    href: '/demos/captcha-styling/',
+    slug: 'captcha-styling',
+    files: captchaStyling,
+    title: 'Captcha Styling',
+    hook: 'The same captcha four ways — every colour is a CSS custom property with a built-in fallback.',
+    category: 'forms',
+  },
+  {
     href: '/demos/form-cancel/',
     slug: 'form-cancel',
     files: formCancel,
@@ -378,5 +460,13 @@ export const demos: Demo[] = [
     title: 'Tailwind Todo App',
     hook: 'Classic todo app styled with Tailwind CSS.',
     category: 'sites',
+  },
+  {
+    href: '/demos/entity-props/',
+    slug: 'entity-props',
+    files: entityProps,
+    title: 'HTML Entities in Props',
+    hook: 'HTML entities in a static island prop (label="Tom &amp; Jerry") decode to their characters — identical on the server and after hydration.',
+    category: 'hydration',
   },
 ];

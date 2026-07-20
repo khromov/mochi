@@ -6,7 +6,7 @@
     "packages/*"
   ],
   "engines": {
-    "bun": ">=1.3.13"
+    "bun": ">=1.3.14"
   },
   "scripts": {
     "build": "bun --filter='*' run build",
@@ -35,7 +35,9 @@
     "cli-test": "bun .github/scripts/cli-regression-test.ts",
     "flamegraph": "bun scripts/flamegraph.ts",
     "check-links": "bun scripts/check-links.ts",
+    "check-vendored-versions": "bun scripts/check-vendored-versions.ts",
     "update": "bun update --interactive --recursive",
+    "outdated": "bun outdated --filter='*'",
     "deps": "bun packages/mochi/scripts/dep-report.ts",
     "e18e": "bash scripts/e18e.sh",
     "mochi:animate": "bun --cwd=packages/video-animations run animate",
@@ -44,18 +46,18 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/bun": "1.3.14",
-    "eslint": "^10.5.0",
+    "eslint": "^10.7.0",
     "eslint-config-prettier": "^10.1.8",
-    "eslint-plugin-svelte": "^3.19.0",
-    "prettier": "^3.8.4",
+    "eslint-plugin-svelte": "^3.20.0",
+    "prettier": "^3.9.5",
     "prettier-plugin-svelte": "^4.1.1",
     "rimraf": "^6.1.3",
     "syncpack": "^15.3.2",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.61.1"
+    "typescript-eslint": "^8.64.0"
   },
   "patchedDependencies": {
-    "svelte-check@4.6.0": "packages/mochi/patches/svelte-check@4.6.0.patch"
+    "svelte-check@4.7.3": "packages/mochi/patches/svelte-check@4.7.3.patch"
   },
   "overrides": {
     "msgpackr-extract": "npm:@mochi-framework/msgpackr-extract-stub@*"

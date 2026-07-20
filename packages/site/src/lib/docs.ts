@@ -1,20 +1,17 @@
 import { existsSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { compile as mdsvexCompile } from 'mdsvex';
 import { logger, trailingSlashIt } from 'mochi-framework';
 import rehypeSlug from 'rehype-slug';
+import { SITE_ROOT } from './siteRoot';
+import { loadPosts } from './blog';
 import { demos, type Demo } from './demos';
-import type { SourceSpec } from '../components/utils.ts';
+import { isDemoIndex, stripImageConfig, type SourceSpec } from '../components/utils.ts';
 import type { TocEntry } from './toc';
 
 type MdsvexRehypePlugin = NonNullable<NonNullable<Parameters<typeof mdsvexCompile>[1]>['rehypePlugins']>[number];
 
-export const DOCS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../docs');
-const DEMOS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../demos');
-// Demo source paths in each demo's `files` are written relative to the site package root (e.g. './src/...').
-const SITE_ROOT = path.resolve(DEMOS_DIR, '../..');
-
+export const DOCS_DIR = path.resolve(SITE_ROOT, '../docs');
 // Internal demos are keyed by their folder name (`slug`) and carry their own `files`
 // list — the single source of truth shared by the demo page, the per-demo llms.txt
 // route, and the /llms-full.txt bundle.
@@ -211,7 +208,7 @@ async function buildDemoLlmsTxt(slug: string, stripStyles = false): Promise<stri
     return null;
   }
   const parts: string[] = [`## Demo: ${slug}\n`];
-  for (const { label, path: rel, lang } of specs) {
+  for (const { label, path: rel, lang, showImageConfig } of specs) {
     const abs = path.resolve(SITE_ROOT, rel);
     if (!existsSync(abs)) {
       // A declared source file that isn't on disk is almost always a typo'd path
@@ -220,6 +217,9 @@ async function buildDemoLlmsTxt(slug: string, stripStyles = false): Promise<stri
       continue;
     }
     let content = (await Bun.file(abs).text()).trimEnd();
+    if (isDemoIndex(rel) && !showImageConfig) {
+      content = stripImageConfig(content).trimEnd();
+    }
     const fence = lang ?? (label.endsWith('.svelte') ? 'svelte' : 'ts');
     // Strip <style> blocks only from Svelte-fenced sources — never from .ts, where a
     // literal "<style>" would just be code/text, not markup to elide.
@@ -267,11 +267,15 @@ export async function buildSitemapXml(): Promise<string> {
     return cachedSitemapXml;
   }
   const docs = await loadDocs();
+  // Published posts only — loadPosts() without includeDrafts never exposes drafts.
+  const posts = await loadPosts();
   const internalDemos = demos.filter((d) => d.href.startsWith('/'));
 
   const urls: string[] = [
     `  <url><loc>${SITE_BASE}/</loc></url>`,
     ...docs.map((d) => `  <url><loc>${SITE_BASE}/docs/${d.slug}/</loc></url>`),
+    `  <url><loc>${SITE_BASE}/blog/</loc></url>`,
+    ...posts.map((p) => `  <url><loc>${SITE_BASE}/blog/${p.slug}/</loc></url>`),
     // Demo hrefs already carry a trailing slash; trailingSlashIt normalizes to
     // exactly one rather than appending unconditionally (which produced `…/request-id//`).
     ...internalDemos.map((d) => `  <url><loc>${trailingSlashIt(`${SITE_BASE}${d.href}`)}</loc></url>`),

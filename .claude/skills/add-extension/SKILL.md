@@ -17,7 +17,7 @@ Both must be updated together. This skill walks the full path: registry → call
 
 - Format: `namespace:camelCase` (e.g. `mochi:init`, `csrf:formContentTypes`).
 - Pick an existing namespace if one fits. Current namespaces:
-  - `mochi:` — framework lifecycle (`mochi:init`, `mochi:ready`, `mochi:shutdown`)
+  - `mochi:` — framework lifecycle (`mochi:init`, `mochi:listening`, `mochi:queuesMounted`, `mochi:ready`, `mochi:shutdown`)
   - `route:` — per-request route lifecycle (`route:matched`)
   - `csrf:` — CSRF defaults + override (`csrf:formContentTypes`, `csrf:protectedMethods`, `csrf:trustedOrigins`, `csrf:check`)
   - `cookie:` — cookie defaults (`cookie:defaults`)
@@ -25,6 +25,7 @@ Both must be updated together. This skill walks the full path: registry → call
   - `serverIsland:` — server-island internals (`serverIsland:secretKey`)
   - `compile:` — Svelte compilation pipeline (`compile:preprocessors`)
   - `publicDir:` — public-directory scan results (`publicDir:scan`)
+  - `queue:` — background-queue internals (`queue:recoveryStallWarningMs`)
 - Introduce a new namespace only when no existing one applies.
 - Names are global — one entry per name across the whole framework.
 
@@ -51,12 +52,8 @@ If the existing call site is sync, **do not convert it to async** to fit an asyn
 4. **Wire the call site.** At the chosen line, insert:
 
    ```ts
-   await runHook('namespace:name', {
-     /* context */
-   }); // async-kind
-   runHook('namespace:name', {
-     /* context */
-   }); // sync-kind (no await)
+   await runHook('namespace:name', {/* context */}); // async-kind
+   runHook('namespace:name', {/* context */}); // sync-kind (no await)
    ```
 
    Import `runHook` from `./extensions` if not already imported.

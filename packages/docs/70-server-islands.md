@@ -26,6 +26,8 @@ Children of a deferred component become the fallback shown until the island reso
 </UserAvatar>
 ```
 
+Like all islands, a deferred component must be statically imported from a relative `.svelte`/`.md`/`.svx` path — package imports or props-passed components are a compile error. See `Supported import forms` under `Selective hydration`.
+
 Server island components are normal Svelte components with full access to the request context via `getRequestContext()` — cookies are forwarded automatically because the fetch is same-origin.
 
 ```svelte
@@ -42,12 +44,18 @@ Server island components are normal Svelte components with full access to the re
 ### Fetch flow
 
 1. SSR emits a `<mochi-server-island>` custom element holding the fallback content; the component itself is **not** rendered.
-2. Props are serialized with `devalue`, HMAC-signed, and stamped onto the element as `signed-props`.
-3. On `connectedCallback`, the element fetches `/_mochi/island/{ComponentName}?props={signedProps}` (the `/_mochi` prefix follows `assetPrefix`).
-4. The server verifies the signature, decodes the props, renders the component, and returns the HTML.
+2. Props are serialized with `devalue`, encrypted, and stamped onto the element as `signed-props`.
+3. On `connectedCallback`, the element fetches `/_mochi/island/{ComponentName}?props={token}` (the `/_mochi` prefix follows `assetPrefix`).
+4. The server decrypts the props, renders the component, and returns the HTML.
 5. The HTML replaces the fallback inside the custom element.
 
 Failed fetches are retried with exponential backoff (default 5 retries, 1s–10s); pass `mochi:defer={{ retries: 10 }}` to override.
+
+<Callout type="info">
+
+`mochi-framework build` precompiles every server island into the manifest as a standalone SSR module, so production renders them from the prebuilt bundle. The first `mochi:defer` fetch never triggers an on-demand compile at runtime.
+
+</Callout>
 
 ### Combining with hydration
 
@@ -56,6 +64,12 @@ Apply `mochi:hydrate` alongside `mochi:defer` to fetch the island on-demand and 
 ```svelte
 <ShoppingCart mochi:defer mochi:hydrate items={initialItems} />
 ```
+
+<Callout type="warning">
+
+**Adding `mochi:hydrate` makes the props client-visible.** A pure `mochi:defer` island's props never leave the server in plaintext — the token on the wire is opaque ciphertext and the endpoint returns only rendered HTML. But hydration needs the raw props on the client, so `mochi:defer mochi:hydrate` echoes the decrypted props back as plaintext (exactly like any [hydratable island](/docs/island-props/)). Don't pass server-only secrets to an island you also hydrate. The choice is sealed inside the token, not the URL — appending `?hydrate=` to a defer-only token can't force the endpoint to reveal its props.
+
+</Callout>
 
 ### Nesting islands inside a server island
 
@@ -87,17 +101,25 @@ Provide fallback children when using `:visible` so the user has something to scr
 
 ### Props
 
-Props are serialized with `devalue` — see [Passing props to islands](/docs/island-props/) for the full list of supported types. Server islands additionally HMAC-sign the payload and pass it as a query parameter; if the signed props exceed URL length limits (~1800 bytes), a warning is emitted.
+Props are serialized with `devalue` — see [Passing props to islands](/docs/island-props/) for the full list of supported types. Server islands additionally encrypt the payload (authenticated encryption) and pass it as a query parameter; if the encrypted props exceed URL length limits (~1800 bytes), a warning is emitted. The island's component name is bound as authenticated data, so a props token sealed for one island can't be replayed against another.
 
 <Callout type="warning">
 
-**Fetch data inside islands, not through props.** Large data blobs passed as props inflate the signed URL until it trips a runtime warning. Use `getRequestContext()` inside the island component to fetch data server-side instead.
+**Fetch data inside islands, not through props.** Large data blobs passed as props inflate the encrypted URL until it trips a runtime warning. Use `getRequestContext()` inside the island component to fetch data server-side instead.
 
 </Callout>
 
-### Signing key
+<Callout type="warning">
 
-Props are signed with a 32-byte key resolved at startup from `process.env.MOCHI_KEY` (base64url-encoded). If `MOCHI_KEY` is unset, Mochi generates a random key and logs a warning — fine for local dev, broken across restarts and multi-instance deploys.
+**Treat server-island rendering as idempotent — never trigger mutable actions from it.** Tokens are encrypted, not single-use: once a client has seen a given prop permutation, it can re-fetch that island any number of times. Encryption stops clients from _forging_ new permutations, not from _replaying_ ones they've already received. So a side effect inside the component (incrementing a counter, charging an account, sending an email) will fire again on every replay.
+
+</Callout>
+
+Do **NOT** ship large blobs through server-island props; instead, fetch the data inside the component using `getRequestContext()`. Instead, fetch any data you need inside the island and send only identifiers such as ids as props to minimize the payload over the network. Prop URLs over 1800 chars trigger a runtime warning.
+
+### Encryption key
+
+Props are encrypted with a key derived (HMAC-SHA512) from `process.env.MOCHI_KEY` (base64url-encoded, any length). If `MOCHI_KEY` is unset, Mochi generates a random key and logs a warning — fine for local dev, broken across restarts and multi-instance deploys.
 
 ```sh
 # .env
@@ -112,7 +134,7 @@ bunx mochi-framework generate-key
 
 <Callout type="warning">
 
-**Set `MOCHI_KEY` for any deployment that runs more than one process or survives restarts.** Without a shared key, signatures minted by one instance won't verify on another and deferred islands will fail to load after a restart or rolling deploy.
+**Set `MOCHI_KEY` for any deployment that runs more than one process or survives restarts.** Without a shared key, tokens minted by one instance won't decrypt on another and deferred islands will fail to load after a restart or rolling deploy.
 
 </Callout>
 

@@ -38,7 +38,9 @@ In production (`development: false`), prebuilt JS/CSS bundles served from `asset
 
 <Callout type="info">
 
-**Shutdown signals.** `Mochi.serve()` installs `SIGTERM` and `SIGINT` listeners that fire the [`mochi:shutdown`](/docs/extensions/#mochishutdown) hook and call `server.stop()`. A second signal force-exits with code 1. Existing user listeners on those signals are not displaced — Node.js dispatches signals to every registered listener.
+**Shutdown signals.** `Mochi.serve()` installs `SIGTERM` and `SIGINT` listeners that fire the [`mochi:shutdown`](/docs/extensions/#mochishutdown) hook, drain queues, then stop the server and exit with code 0. In-flight requests get `shutdownTimeout` ms to finish; anything still connected after that is force-closed. A second signal exits immediately with code 1. Existing user listeners on those signals are not displaced — Node.js dispatches signals to every registered listener.
+
+The forced fallback is not optional: a plain `server.stop()` never resolves while a WebSocket is open, so in development a single browser tab holding the live-reload socket would otherwise wedge the process until it is `SIGKILL`ed.
 
 </Callout>
 
@@ -48,6 +50,7 @@ In production (`development: false`), prebuilt JS/CSS bundles served from `asset
 - `hostname`: Interface to bind. Defaults to Bun's default (`0.0.0.0`).
 - `development`: Enables live reload, debug bar, and the dev error overlay. Default: `true`.
 - `liveReload`: Enable the dev-mode live-reload WebSocket (`/__mochi_live_reload` + the `mochi-live-reload` web component). Default: matches `development`. Set to `false` to keep the debug bar but skip the WS — useful behind a proxy where the socket is flaky.
+- `shutdownTimeout`: Grace period in ms for in-flight requests to finish on `SIGTERM`/`SIGINT` before connections are force-closed and the process exits. Default: `5000` in production, `0` in development. `0` force-closes immediately.
 - `routes`: `Record<string, MochiRouteValue>` of route paths to `Mochi.page` / `Mochi.api` / `Mochi.ws` / `Mochi.sse` registrations.
 - `fetch`: `(req, server) => Response` fallback handler invoked when no route matches. Default: built-in 404.
 - `manifest`: Path to a prebuilt manifest JSON. Default: `<outDir>/manifest.json`.
@@ -58,7 +61,7 @@ In production (`development: false`), prebuilt JS/CSS bundles served from `asset
 - `compressServerIslandProps`: Deflate-compress server-island props when it reduces size. Default: `true`.
 - `logger`: Built-in request logger. Default: `{ enabled: true }`. Pass `{ enabled: false }` to disable, or override `slowThreshold` / `verySlowThreshold`.
 - `publicDir`: Directory served as static assets (cwd-relative). Default: `./public`.
-- `outDir`: Directory for build artifacts and dev cache (cwd-relative). Default: `./.mochi`.
+- `outDir`: Base directory for build artifacts and dev cache (cwd-relative). Default: `./.mochi`. Production writes here directly; development nests under `<outDir>/dev` so a dev run can't collide with a production build (and is wiped clean on every dev startup).
 - `assetPrefix`: URL prefix for framework client assets and the server-island endpoint. Must start with `/`, must not be `/`, must not end with `/`, must not contain whitespace or `..`. Default: `/_mochi`.
 - `additionalWatchPaths`: Extra dev-mode watcher paths added to the defaults `src` and `public`. Default: `[]`.
 - `svelteConfigPath`: Path to a Svelte config file. Default: `./svelte.config.js`. See `Svelte config`.

@@ -43,7 +43,7 @@ describe('transformPackageJson', () => {
         svelte: '^5.55.1',
       },
       devDependencies: {
-        '@types/bun': '1.3.13',
+        '@types/bun': '1.3.14',
       },
     });
 
@@ -52,7 +52,7 @@ describe('transformPackageJson', () => {
     expect(out.private).toBe(true);
     expect(out.dependencies['mochi-framework']).toBe('^0.2.5');
     expect(out.dependencies.svelte).toBe('^5.55.1');
-    expect(out.devDependencies['@types/bun']).toBe('1.3.13');
+    expect(out.devDependencies['@types/bun']).toBe('1.3.14');
   });
 
   test('replaces workspace:* deps for non-mochi packages with "latest"', () => {
@@ -81,6 +81,8 @@ describe('transformPackageJson', () => {
     expect(out.patchedDependencies).toEqual({
       'svelte-check@4.4.7': 'patches/svelte-check@4.4.7.patch',
       'svelte-check@4.6.0': 'patches/svelte-check@4.6.0.patch',
+      'svelte-check@4.7.1': 'patches/svelte-check@4.7.1.patch',
+      'svelte-check@4.7.3': 'patches/svelte-check@4.7.3.patch',
     });
   });
 });
