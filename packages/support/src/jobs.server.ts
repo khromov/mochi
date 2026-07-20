@@ -17,6 +17,10 @@ export interface SupportEmailJob {
 // In-memory: jobs don't survive a restart. The submission itself is already
 // committed to SQLite, so `recover` puts every row that hasn't been delivered
 // back on the queue at boot — the rows, not the queue, are the source of truth.
+//
+// This assumes a single instance, which is what support.mochi.fast runs. Scaling
+// it out would have every process recover the same rows and send duplicate
+// emails; the framework-side fix is the single-flight TODO in mochi's queue.ts.
 export const supportEmailQueue: MochiQueueConfig = Mochi.queue<SupportEmailJob>({
   concurrency: 2,
   defaultJobOptions: { attempts: MAX_ATTEMPTS },
