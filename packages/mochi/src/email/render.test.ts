@@ -1,6 +1,5 @@
 // Renders a Svelte email template through the real ComponentRegistry (no
-// Mochi.serve — a single registry build avoids the double-build EISDIR hazard
-// under `bun test`, same rationale as serverIslandCss.test.ts) and asserts the
+// Mochi.serve — email rendering never needs a server) and asserts the
 // scoped CSS is inlined into style="" attributes with no client JS or <link>.
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';

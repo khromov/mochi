@@ -10,7 +10,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import type { Server } from 'bun';
-import { runIsolatedBuild } from '../utils/runIsolatedBuild';
+import { build } from '../cli/build';
 import { Mochi } from '../Mochi';
 import { mochiEvents } from '../events';
 import { DEFAULT_ERROR_PAGE_PATH } from '../runtime/errors';
@@ -26,7 +26,7 @@ describe('build bakes framework assets into the manifest', () => {
 
   beforeAll(async () => {
     outDir = mkdtempSync(path.join(import.meta.dir, '..', '..', '.mochi-framework-assets-'));
-    await runIsolatedBuild(FIXTURE_PAGE, outDir);
+    await build({ routes: { '/': Mochi.page(FIXTURE_PAGE) }, development: false, outDir });
     manifest = JSON.parse(await Bun.file(path.join(outDir, 'manifest.json')).text());
   });
 
