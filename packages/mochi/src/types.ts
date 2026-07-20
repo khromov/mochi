@@ -7,7 +7,7 @@ import type { MochiProxyOptions } from './runtime/proxy';
 import type { LocalImageAsset, MochiImageOptions } from './image/types';
 import type { MochiEmailOptions } from './email/types';
 import type { MochiCaptchaOptions } from './captcha/types';
-import type { MochiProcessor, MochiQueueListeners, MochiQueueRuntimeOptions } from './queue';
+import type { MochiProcessor, MochiQueue, MochiQueueListeners, MochiQueueRuntimeOptions } from './queue';
 import type { MochiRateLimitOptions } from './runtime/rateLimit';
 
 export type MochiServerPropsResolver = (req: Request, params: Record<string, string>) => Record<string, unknown> | Promise<Record<string, unknown>>;
@@ -337,6 +337,7 @@ export interface MochiQueueConfig {
   readonly process: MochiProcessor<unknown, unknown>;
   readonly options?: MochiQueueRuntimeOptions;
   readonly on?: Partial<MochiQueueListeners<unknown, unknown>>;
+  readonly recover?: (queue: MochiQueue<never>) => void | Promise<void>;
 }
 
 export function isMochiQueue(value: unknown): value is MochiQueueConfig {
@@ -494,7 +495,7 @@ export interface MochiServeOptions {
   routes?: Record<string, MochiRouteValue>;
   /**
    * Background job queues to start with the server, keyed by queue name. Each
-   * value is a `Mochi.queue({ process, … })` descriptor; produce to it from route
+   * value is a `Mochi.queue({ process, … })` descriptor; add jobs to it from route
    * code via `Mochi.getQueue(name).add(...)`. Queues drain gracefully on
    * shutdown. A queue-only process is `Mochi.serve({ queues })` with no `routes`.
    */

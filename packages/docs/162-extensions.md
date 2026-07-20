@@ -38,6 +38,8 @@ Names use a `namespace:camelCase` convention. Each name is registered in a typed
 
 Fires as the very first thing inside `Mochi.serve()`, before any framework state is set up. Async.
 
+Nothing the framework mounts exists yet — in particular [queues](/docs/queues/) are created after the server binds, so `Mochi.getQueue()` throws here. Add jobs from `mochi:ready` or from a queue's `recover` callback instead.
+
 ```ts
 await Mochi.serve({
   eventHooks: {
@@ -48,6 +50,43 @@ await Mochi.serve({
   routes,
 });
 ```
+
+#### `mochi:listening`
+
+Fires immediately after `Bun.serve()` returns the bound server, before queues are mounted and before warmup runs. Use it when you need the port as early as possible — announcing the address, opening a tunnel, signalling a supervisor. Async.
+
+```ts
+await Mochi.serve({
+  eventHooks: {
+    'mochi:listening': async ({ server }) => {
+      await notifySupervisor({ port: server.port });
+    },
+  },
+  routes,
+});
+```
+
+#### `mochi:queuesMounted`
+
+Fires once every queue in `Mochi.serve({ queues })` is live, before each queue's `recover` callback runs. `ctx.queues` lists the mounted names. This is the earliest point at which [`Mochi.getQueue()`](/docs/queues/#mochigetqueue) resolves. Async.
+
+```ts
+await Mochi.serve({
+  eventHooks: {
+    'mochi:queuesMounted': async ({ queues }) => {
+      log.info(`queues live: ${queues.join(', ')}`);
+    },
+  },
+  queues,
+  routes,
+});
+```
+
+<Callout type="info">
+
+For re-enqueuing a single queue's unfinished work, prefer that queue's own [`recover`](/docs/queues/#recovery-on-start) callback — it receives the handle directly and keeps the logic next to the queue it belongs to. Reach for `mochi:queuesMounted` when the work spans queues or isn't queue-specific.
+
+</Callout>
 
 #### `mochi:ready`
 
@@ -486,3 +525,22 @@ await Mochi.serve({
 ```
 
 The allowance only ever widens the **expiry** side, and is deliberately not applied to `minAgeMs`. Padding a floor means subtracting from it, so an allowance wider than the floor would silently delete the too-fast check rather than soften it — leaving a config that still reads like it enforces a 2s floor while accepting instant submissions. Use `captcha:minAgeMs` to move the floor, so the change is explicit.
+
+#### `queue:recoveryStallWarningMs`
+
+How long a queue's [`recover`](/docs/queues/#recovery-on-start) callback may run before Mochi logs a warning naming it. Resolved once per queue that declares one, as its recovery starts, so a queue reading a slow store can be given more room than its siblings. Sync.
+
+Recovery is never cut short — abandoning it would drop the jobs it was about to add. The warning exists because everything downstream (warmup, `mochi:ready`, `Mochi.serve()` resolving) waits behind it, so a stuck callback would otherwise hang silently. Defaults to `30_000`.
+
+```ts
+await Mochi.serve({
+  filters: {
+    // This one rebuilds its backlog from a cold object store; 30s is normal for it.
+    'queue:recoveryStallWarningMs': (def, { queue }) => (queue === 'thumbnails' ? 120_000 : def),
+  },
+  queues,
+  routes,
+});
+```
+
+Return `0` to silence the warning for a queue entirely — no timer is scheduled at all.

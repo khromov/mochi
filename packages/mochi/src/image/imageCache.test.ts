@@ -493,8 +493,14 @@ describe('ImageCache lifecycle events', () => {
     mochiEvents.on('image:store', (e) => stores.push(e));
 
     await cache.setPlaceholder(SRC, 'data:image/png;base64,AAAA', 0);
-    expect(stores).toHaveLength(1);
-    expect(stores[0]).toMatchObject({ kind: 'placeholder', src: SRC, contentType: '', format: '' });
+    // Filter by kind like the two tests above: the bus is process-global, so a
+    // straggler emitted by an earlier test's fire-and-forget work can land in
+    // this listener's window (observed on Windows CI, where `stores` arrived
+    // with 2 entries). Asserting one *placeholder* event still catches the
+    // regression this test is for — a setPlaceholder that emits twice or wrong.
+    const placeholders = stores.filter((s) => s.kind === 'placeholder');
+    expect(placeholders).toHaveLength(1);
+    expect(placeholders[0]).toMatchObject({ kind: 'placeholder', src: SRC, contentType: '', format: '' });
   });
 });
 
