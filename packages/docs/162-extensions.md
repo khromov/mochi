@@ -525,3 +525,22 @@ await Mochi.serve({
 ```
 
 The allowance only ever widens the **expiry** side, and is deliberately not applied to `minAgeMs`. Padding a floor means subtracting from it, so an allowance wider than the floor would silently delete the too-fast check rather than soften it — leaving a config that still reads like it enforces a 2s floor while accepting instant submissions. Use `captcha:minAgeMs` to move the floor, so the change is explicit.
+
+#### `queue:recoveryStallWarningMs`
+
+How long a queue's [`recover`](/docs/queues/#recovery-on-start) callback may run before Mochi logs a warning naming it. Resolved once per queue that declares one, as its recovery starts, so a queue reading a slow store can be given more room than its siblings. Sync.
+
+Recovery is never cut short — abandoning it would drop the jobs it was about to add. The warning exists because everything downstream (warmup, `mochi:ready`, `Mochi.serve()` resolving) waits behind it, so a stuck callback would otherwise hang silently. Defaults to `30_000`.
+
+```ts
+await Mochi.serve({
+  filters: {
+    // This one rebuilds its backlog from a cold object store; 30s is normal for it.
+    'queue:recoveryStallWarningMs': (def, { queue }) => (queue === 'thumbnails' ? 120_000 : def),
+  },
+  queues,
+  routes,
+});
+```
+
+Return `0` to silence the warning for a queue entirely — no timer is scheduled at all.
