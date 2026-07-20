@@ -5,7 +5,7 @@
 // `process.exit()`, which would take the test runner down with it. The child
 // can't live in the test file either: importing `bun:test` outside `bun test`
 // throws. So it sits under `utils/` (not a `*.test.ts` file) where the runner
-// never picks it up — the same arrangement as `runIsolatedBuild.ts`.
+// never picks it up.
 import { Mochi } from '../Mochi';
 
 if (import.meta.main) {
