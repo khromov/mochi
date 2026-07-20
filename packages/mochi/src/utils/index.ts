@@ -2,6 +2,7 @@
 /// <reference path="../negotiator.d.ts" />
 import type { Server } from 'bun';
 import Negotiator from 'negotiator';
+import path from 'node:path';
 import type { MochiCompileErrorLog } from '../events';
 import type { BunRouteValue } from '../types';
 
@@ -24,6 +25,15 @@ export function negotiate(accept: string, types: string[]): string | undefined {
  */
 export function toPosixPath(p: string): string {
   return p.replace(/\\/g, '/');
+}
+
+/**
+ * Cwd-relative path for logs, error messages, and reports — always
+ * forward-slash so user-facing output (and the tests that assert on it) is
+ * identical across platforms.
+ */
+export function relForDisplay(p: string): string {
+  return toPosixPath(path.relative(process.cwd(), p));
 }
 
 export type CompressionMethod = 'gzip' | 'brotli';
