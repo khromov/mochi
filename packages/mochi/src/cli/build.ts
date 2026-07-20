@@ -4,7 +4,7 @@ import { buildInlineWebComponent } from '../compiler/buildInlineWebComponent';
 import { DEFAULT_ERROR_PAGE_PATH } from '../runtime/errors';
 import { CLIENT_STATS_COMPONENT } from '../dev/clientStatsRoutes';
 import { isMochiPage, isMochiApi, isMochiWs, isMochiSse } from '../types';
-import type { MarkdownConfig, MochiRouteValue, MochiSvelteShakerOptions } from '../types';
+import type { MarkdownConfig, MochiBarrelWarningOptions, MochiRouteValue, MochiSvelteShakerOptions } from '../types';
 import { rmSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { scanPublicDir, publicRouteKey } from '../runtime/publicDir';
@@ -54,7 +54,7 @@ export interface MochiBuildOptions {
    * so the build honors the same silencing. In a build the offenders are collapsed into one
    * grouped summary line. Default: enabled. See `MochiServeOptions['barrelWarnings']`.
    */
-  barrelWarnings?: boolean | { ignore?: string[]; minBytes?: number };
+  barrelWarnings?: boolean | MochiBarrelWarningOptions;
   /**
    * Path to a custom error page component. Mirror the value passed to
    * `Mochi.serve({ errorPage })` so it lands in the manifest and the runtime

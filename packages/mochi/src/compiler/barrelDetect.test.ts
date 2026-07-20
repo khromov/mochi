@@ -66,6 +66,15 @@ describe('detectHeavyBarrels', () => {
     };
     expect(detectHeavyBarrels(mf, MIN, new Set())).toEqual([]);
   });
+
+  test('skips paths where node_modules is not the anchored prefix', () => {
+    // A mid-path `node_modules/` would otherwise be mis-stripped into a bogus package name.
+    const mf: BarrelMetafile = {
+      inputs: { 'src/vendored/node_modules/pkg/index.js': { bytes: 200000 } },
+      outputs: { 'out.js': { inputs: { 'src/vendored/node_modules/pkg/index.js': { bytesInOutput: 0 } } } },
+    };
+    expect(detectHeavyBarrels(mf, MIN, new Set())).toEqual([]);
+  });
 });
 
 describe('formatUsedRatio', () => {
@@ -110,5 +119,12 @@ describe('formatBarrelSummary', () => {
     expect(summary).toContain(', +2 more.');
 
     expect(formatBarrelSummary([mk('solo', 80)])).toContain('1 heavy barrel import ');
+  });
+
+  test('sorts by size so the "Worst" list is largest-first regardless of input order', () => {
+    // Callers concatenate per-pass results, so the input isn't globally sorted.
+    const summary = formatBarrelSummary([mk('small', 25), mk('big', 100), mk('mid', 50), mk('tiny', 10)]);
+    expect(summary).toContain('Worst: big (100 KB, 0% used), mid (50 KB, 0% used), small (25 KB, 0% used)');
+    expect(summary).toContain(', +1 more.');
   });
 });

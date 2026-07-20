@@ -44,14 +44,17 @@ export function detectHeavyBarrels(metafile: BarrelMetafile, minBytes: number, i
 
   const found: HeavyBarrel[] = [];
   for (const [rawPath, meta] of Object.entries(metafile.inputs)) {
-    if (!rawPath.includes('node_modules/') || meta.bytes < minBytes) {
+    // Anchor on the prefix match (not a bare `.includes`) so a mid-path
+    // `node_modules/` can't be mis-stripped into a bogus package name.
+    const nmPrefix = NODE_MODULES_PREFIX.exec(rawPath);
+    if (!nmPrefix || meta.bytes < minBytes) {
       continue;
     }
     const usedRatio = (usedByInput.get(rawPath) ?? 0) / meta.bytes;
     if (usedRatio >= BARREL_USED_RATIO) {
       continue;
     }
-    const file = rawPath.replace(NODE_MODULES_PREFIX, '');
+    const file = rawPath.slice(nmPrefix[0].length);
     const pkg = packageOf(file);
     if (ignore.has(pkg)) {
       continue;
@@ -87,7 +90,10 @@ export function formatBarrelLine(b: HeavyBarrel): string {
 export function formatBarrelSummary(barrels: HeavyBarrel[]): string {
   const n = barrels.length;
   const totalKb = Math.round(barrels.reduce((sum, b) => sum + b.bytes, 0) / 1024);
-  const worst = barrels
+  // Callers may hand us barrels collected across multiple compile passes
+  // (server then client), so sort here rather than trust the incoming order.
+  const worst = [...barrels]
+    .sort((a, b) => b.bytes - a.bytes)
     .slice(0, 3)
     .map((b) => `${b.pkg} (${Math.round(b.bytes / 1024)} KB, ${formatUsedRatio(b.usedRatio)} used)`)
     .join(', ');

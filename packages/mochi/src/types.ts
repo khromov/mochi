@@ -712,8 +712,16 @@ export interface MochiServeOptions {
    * - `{ ignore: ['pkg-name'] }` — suppress specific packages you can't fix.
    * - `{ minBytes: 102400 }` — override the parsed-size threshold (default 50 KB).
    */
-  barrelWarnings?: boolean | { ignore?: string[]; minBytes?: number };
+  barrelWarnings?: boolean | MochiBarrelWarningOptions;
   [key: string]: unknown;
+}
+
+/** Object form of `MochiServeOptions['barrelWarnings']`. See that field for semantics. */
+export interface MochiBarrelWarningOptions {
+  /** Packages to exclude from the heavy-barrel warning (e.g. ones you can't fix). */
+  ignore?: string[];
+  /** Parsed-size threshold in bytes before a dependency file is considered. Default: 50 KB. */
+  minBytes?: number;
 }
 
 export interface MochiSvelteShakerOptions {

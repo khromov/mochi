@@ -10,7 +10,7 @@ import type { DebugBarData } from '../runtime/requestContext';
 import { logger } from '../utils/log';
 import { mochiEvents } from '../events';
 import { detectHeavyBarrels, formatBarrelLine, formatBarrelSummary, type BarrelMetafile, type HeavyBarrel } from './barrelDetect';
-import type { MarkdownConfig, MochiManifest, MochiSvelteShakerOptions } from '../types';
+import type { MarkdownConfig, MochiBarrelWarningOptions, MochiManifest, MochiSvelteShakerOptions } from '../types';
 import { type HydratableComponent, type PreprocessIslandError, type ServerIslandComponent } from './svelteAstPreprocess';
 import { cachedPreprocessHydratable, createPreprocessCacheStats } from './preprocessCache';
 import { CompileCache, compileFingerprint, createCompileCacheStats, type CompileCacheStats } from './compileCache';
@@ -332,7 +332,7 @@ export interface ComponentRegistryOptions {
    * it entirely; `{ ignore: ['pkg-name'] }` suppresses specific packages you can't fix;
    * `minBytes` overrides the parsed-size threshold (default 50 KB).
    */
-  barrelWarnings?: boolean | { ignore?: string[]; minBytes?: number };
+  barrelWarnings?: boolean | MochiBarrelWarningOptions;
 }
 
 /**
