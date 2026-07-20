@@ -4,6 +4,16 @@ const HEARTBEAT_MS = 15_000;
 const HEARTBEAT_TIMEOUT_MS = 20_000;
 const MAX_BACKOFF_MS = 3000;
 
+/** `<uuid>:<generation>` — the uuid itself contains no colon. */
+function splitGreeting(payload: string): [string, number] {
+  const sep = payload.lastIndexOf(':');
+  if (sep === -1) {
+    return [payload, 0];
+  }
+  const gen = Number.parseInt(payload.slice(sep + 1), 10);
+  return [payload.slice(0, sep), Number.isNaN(gen) ? 0 : gen];
+}
+
 class MochiLiveReload extends HTMLElement {
   private ws: WebSocket | null = null;
   /** Set only when the page is truly going away — the one state that stops the retry loop. */
@@ -12,9 +22,14 @@ class MochiLiveReload extends HTMLElement {
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private backoff = 0;
   private lastMessageAt = 0;
+  private lastTickAt = 0;
   private bootId: string | null = null;
+  private reloadGeneration = 0;
 
   connectedCallback() {
+    // A custom element is disconnected and reconnected whenever it's moved in
+    // the DOM; without this reset, that would retire live reload for good.
+    this.closedForGood = false;
     this.connect();
     addEventListener('pagehide', this.handlePageHide);
     addEventListener('pageshow', this.handlePageShow);
@@ -86,12 +101,16 @@ class MochiLiveReload extends HTMLElement {
         return;
       }
       if (e.data.startsWith('boot:')) {
-        const id = e.data.slice('boot:'.length);
+        // `boot:<process id>:<reload generation>` — the id moves when the dev
+        // server restarts, the generation when a reload signal was broadcast
+        // for this page's entry. Either means the page may be rendered from
+        // stale code; neither means the socket merely blipped and the page
+        // state is still worth keeping.
+        const [id, gen] = splitGreeting(e.data.slice('boot:'.length));
         if (this.bootId === null) {
           this.bootId = id;
-        } else if (this.bootId !== id) {
-          // The dev server restarted while we were disconnected, so this page
-          // may be rendered from stale code.
+          this.reloadGeneration = gen;
+        } else if (this.bootId !== id || gen > this.reloadGeneration) {
           this.reloadNow();
         }
         return;
@@ -158,23 +177,43 @@ class MochiLiveReload extends HTMLElement {
   // would ever trigger a reconnect. Ping and require any inbound traffic back.
   private startHeartbeat() {
     this.stopHeartbeat();
+    this.lastTickAt = Date.now();
     this.heartbeatTimer = setInterval(() => {
       const ws = this.ws;
       if (!ws) {
         return;
       }
-      if (ws.readyState !== WebSocket.OPEN || Date.now() - this.lastMessageAt > HEARTBEAT_TIMEOUT_MS) {
+      const now = Date.now();
+      const sinceTick = now - this.lastTickAt;
+      this.lastTickAt = now;
+      if (ws.readyState !== WebSocket.OPEN) {
         this.dropSocket();
         this.scheduleReconnect(0);
         return;
       }
-      try {
-        ws.send('ping');
-      } catch {
+      // Background tabs throttle timers to about one tick a minute and a
+      // sleeping machine stops them altogether, so a long gap since the last
+      // tick says nothing about the socket — silence we never gave the server
+      // a chance to break. Re-arm the budget and judge on the next tick
+      // instead of recycling a healthy socket every minute the tab is hidden.
+      if (sinceTick > HEARTBEAT_MS * 1.5) {
+        this.lastMessageAt = now;
+      } else if (now - this.lastMessageAt > HEARTBEAT_TIMEOUT_MS) {
         this.dropSocket();
         this.scheduleReconnect(0);
+        return;
       }
+      this.ping(ws);
     }, HEARTBEAT_MS);
+  }
+
+  private ping(ws: WebSocket) {
+    try {
+      ws.send('ping');
+    } catch {
+      this.dropSocket();
+      this.scheduleReconnect(0);
+    }
   }
 
   private stopHeartbeat() {
@@ -191,6 +230,11 @@ class MochiLiveReload extends HTMLElement {
     this.ws = null;
     if (!ws) {
       return;
+    }
+    if (window.__mochi_reload_ws === ws) {
+      // Leaving the global pointing at a closed socket makes anything that
+      // reads it (the debug bar's mount-time fallback) report stale state.
+      window.__mochi_reload_ws = undefined;
     }
     ws.onopen = ws.onmessage = ws.onclose = ws.onerror = null;
     try {
@@ -232,10 +276,20 @@ class MochiLiveReload extends HTMLElement {
     if (this.closedForGood || document.visibilityState === 'hidden') {
       return;
     }
-    if (this.ws === null || this.ws.readyState > WebSocket.OPEN) {
+    const ws = this.ws;
+    if (ws === null || ws.readyState > WebSocket.OPEN) {
       this.backoff = 0;
       this.clearRetry();
       this.connect();
+      return;
+    }
+    if (ws.readyState === WebSocket.OPEN) {
+      // The socket claims to be open, but timers were throttled or frozen
+      // while we were away, so its silence budget means nothing. Restart the
+      // clock and ping now: if it died out there, the next tick catches it.
+      this.lastMessageAt = Date.now();
+      this.startHeartbeat();
+      this.ping(ws);
     }
   };
 }
