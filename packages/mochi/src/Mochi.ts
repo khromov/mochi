@@ -1655,8 +1655,13 @@ export class Mochi {
     if (liveReloadEnabled) {
       wsHandlersMap.set('/__mochi_live_reload', {
         open(ws) {
-          liveReloadClients.add(ws as ServerWebSocket<MochiWsData>);
-          ws.send(liveReloadGreeting((ws as ServerWebSocket<MochiWsData>).data.__mochiEntry));
+          const client = ws as ServerWebSocket<MochiWsData>;
+          liveReloadClients.add(client);
+          try {
+            client.send(liveReloadGreeting(client.data.__mochiEntry));
+          } catch {
+            liveReloadClients.delete(client);
+          }
         },
         // The client heartbeat needs an application-level reply: proxies and
         // sleeping network stacks can swallow protocol pings, leaving a socket
