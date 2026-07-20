@@ -93,10 +93,14 @@ describe('auto-injected `isHydratable` prop', () => {
     expect([...result.body.matchAll(/data-ctx="(true|false)"/g)].map((m) => m[1])).toEqual(['true']);
   });
 
-  test('a hydrating island root the seed pass declined produces a compile-time warning', () => {
-    const warned = warnSpy.mock.calls.some((args) =>
-      args.some((a) => typeof a === 'string' && a.includes('AmbiguousRoot.svelte') && a.includes('hydration context could not be seeded')),
-    );
-    expect(warned).toBe(true);
+  test('a hydrating island root the seed pass declined warns with the reason and a concrete fix', () => {
+    const warning = warnSpy.mock.calls
+      .flat()
+      .find((a): a is string => typeof a === 'string' && a.includes('AmbiguousRoot.svelte') && a.includes('isHydratable() could not be wired up'));
+
+    expect(warning).toBeDefined();
+    expect(warning).toContain('`let count`');
+    expect(warning).toContain('Fix: ');
+    expect(warning).toContain('<svelte:options runes />');
   });
 });

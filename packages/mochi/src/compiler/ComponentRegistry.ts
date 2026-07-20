@@ -104,6 +104,9 @@ export function formatBuildMessages(
 const MARKDOWN_EXTENSIONS = ['.md', '.svx'];
 const MARKDOWN_FILE_FILTER = /\.(md|svx)$/;
 
+/** Stateless (no `g` flag) so repeated `.test()` calls don't walk `lastIndex`. */
+const IS_HYDRATABLE_USAGE = /\bisHydratable\b/;
+
 function createMarkdownLoader(opts: {
   markdown: MarkdownConfig;
   target: 'server' | 'client';
@@ -119,12 +122,16 @@ function createMarkdownLoader(opts: {
     filePreprocessErrors: Map<string, PreprocessIslandError[]>;
     preprocessCacheStats: ReturnType<typeof createPreprocessCacheStats>;
     declinedSeeds: Map<string, string>;
+    hydratableUsage: { used: boolean };
   };
 }) {
   const highlight = opts.markdown.highlight;
   const fingerprint = compileFingerprint(opts.userCompilerOptions, opts.development);
   return async (args: { path: string }) => {
     const raw = await Bun.file(args.path).text();
+    if (opts.hydration && IS_HYDRATABLE_USAGE.test(raw)) {
+      opts.hydration.hydratableUsage.used = true;
+    }
     // Cache hit: replay the side effects (hydration metadata, scoped CSS) the
     // miss path would have produced and skip mdsvex + svelte compile entirely.
     // Keyed on raw source, so this assumes mdsvex + the user preprocessors are
@@ -603,6 +610,17 @@ export class ComponentRegistry {
     // Files the hydration-context seed pass could not instrument, with the
     // reason — cross-referenced against island roots after the build to warn.
     const declinedSeeds = new Map<string, string>();
+    // A decline only matters if something actually calls `isHydratable()`;
+    // otherwise the missing context seed is inert and warning is pure noise.
+    const hydratableUsage = { used: false };
+    // `isHydratable()` must run during component init, so nearly every call
+    // site is a component script we already scan below. A plain .ts helper can
+    // still call it on a component's behalf — those import it from
+    // `mochi-framework`, so the non-component importers are collected here and
+    // scanned after the build. Known blind spot: a helper reaching it through a
+    // local `export * from 'mochi-framework'` re-export is neither a direct
+    // importer nor mentions the name, so its usage suppresses the warning.
+    const mochiFrameworkImporters = new Set<string>();
     const development = this.development;
     const userCompilerOptions = this.svelteConfig.compilerOptions ?? {};
     const serverFingerprint = compileFingerprint(userCompilerOptions, development);
@@ -629,10 +647,12 @@ export class ComponentRegistry {
           importedCssPaths.add(args.path);
           return { contents: '', loader: 'js' };
         });
-        build.onResolve({ filter: /^mochi-framework$/ }, () => ({
-          path: 'mochi-framework',
-          namespace: 'mochi-env',
-        }));
+        build.onResolve({ filter: /^mochi-framework$/ }, (args) => {
+          if (args.importer && !args.importer.endsWith('.svelte')) {
+            mochiFrameworkImporters.add(args.importer);
+          }
+          return { path: 'mochi-framework', namespace: 'mochi-env' };
+        });
         build.onLoad({ filter: /.*/, namespace: 'mochi-env' }, () => ({
           contents: renderMochiEnvServer(development),
           loader: 'js',
@@ -662,6 +682,9 @@ export class ComponentRegistry {
         });
         build.onLoad({ filter: /\.svelte$/ }, async (args) => {
           const raw = shakenSources.get(args.path) ?? (await Bun.file(args.path).text());
+          if (IS_HYDRATABLE_USAGE.test(raw)) {
+            hydratableUsage.used = true;
+          }
           const cached = compileCache.get('server', args.path, raw, serverFingerprint, compileCacheStats);
           if (cached) {
             fileHydratables.set(args.path, cached.hydratables);
@@ -731,7 +754,7 @@ export class ComponentRegistry {
               userCompilerOptions,
               compileCache,
               compileCacheStats,
-              hydration: { fileHydratables, allHydratables, allServerIslands, filePreprocessErrors, preprocessCacheStats, declinedSeeds },
+              hydration: { fileHydratables, allHydratables, allServerIslands, filePreprocessErrors, preprocessCacheStats, declinedSeeds, hydratableUsage },
             }),
           );
         }
@@ -791,15 +814,33 @@ export class ComponentRegistry {
     // client bundle is constant true — a hydration-mismatch hazard the author
     // can't see otherwise. Client-only roots are exempt (they never SSR); pure
     // `mochi:defer` roots are exempt (they never hydrate, so false is correct).
-    const hydratingRootPaths = new Set([
-      ...allHydratables.filter((h) => !h.clientOnly).map((h) => h.resolvedPath),
-      ...allServerIslands.filter((si) => si.alsoHydrate).map((si) => si.resolvedPath),
-    ]);
-    for (const [filePath, reason] of declinedSeeds) {
-      if (hydratingRootPaths.has(filePath)) {
-        logger.warn(
-          `\n[mochi] ${path.relative(process.cwd(), filePath)} is a hydrating island root, but hydration context could not be seeded: ${reason}.\n  isHydratable() will report false during SSR but true after hydration, which can cause hydration mismatches in this subtree.\n`,
-        );
+    if (declinedSeeds.size > 0) {
+      if (!hydratableUsage.used) {
+        for (const importer of mochiFrameworkImporters) {
+          if (
+            IS_HYDRATABLE_USAGE.test(
+              await Bun.file(importer)
+                .text()
+                .catch(() => ''),
+            )
+          ) {
+            hydratableUsage.used = true;
+            break;
+          }
+        }
+      }
+      if (hydratableUsage.used) {
+        const hydratingRootPaths = new Set([
+          ...allHydratables.filter((h) => !h.clientOnly).map((h) => h.resolvedPath),
+          ...allServerIslands.filter((si) => si.alsoHydrate).map((si) => si.resolvedPath),
+        ]);
+        for (const [filePath, reason] of declinedSeeds) {
+          if (hydratingRootPaths.has(filePath)) {
+            logger.warn(
+              `\n[mochi] ${path.relative(process.cwd(), filePath)} is a hydrating island root, but isHydratable() could not be wired up for it or its children.\n  Reason: ${reason}\n  Until then isHydratable() reports false during SSR but true after hydration, which can cause hydration mismatches in this subtree.\n`,
+            );
+          }
+        }
       }
     }
 

@@ -653,18 +653,55 @@ function isModeNeutralScript(instance: AST.Root['instance']): boolean {
 export interface HydratableSeedResult {
   code: string;
   /**
-   * Human-readable reason the seed could NOT be injected, or null when it was
-   * (or when there was nothing to do). A declined file is harmless as a plain
-   * SSR component, but as a *hydrating* island root it makes `isHydratable()`
-   * report false during SSR and true in the browser — the registry
-   * cross-references declines against island roots and warns.
+   * Human-readable reason the seed could NOT be injected followed by a
+   * `Fix:` line, or null when it was (or when there was nothing to do). A
+   * declined file is harmless as a plain SSR component, but as a *hydrating*
+   * island root it makes `isHydratable()` report false during SSR and true in
+   * the browser — the registry cross-references declines against island roots
+   * and warns.
    */
   declined: string | null;
 }
 
-const DECLINE_AMBIGUOUS_MODE =
-  'its script mode (legacy vs runes) is ambiguous — a top-level reactive `let` with no runes and no legacy-only syntax. Use a rune (e.g. $state) or set compilerOptions.runes to make the mode explicit';
-const DECLINE_UNSUPPORTED_PATTERN = 'its $props() declaration uses a binding pattern the seed pass cannot graft onto';
+function declineMessage(reason: string, fix: string): string {
+  return `${reason}\n  Fix: ${fix}`;
+}
+
+function declineAmbiguousMode(instance: AST.Root['instance']): string {
+  const culprit = firstNonNeutralNode(instance);
+  const isLet = culprit?.type === 'VariableDeclaration';
+  const id = isLet ? ((culprit as { declarations?: Array<{ id?: { type?: string; name?: string } }> }).declarations?.[0]?.id ?? null) : null;
+  const binding = id?.type === 'Identifier' && id.name ? id.name : null;
+  const subject = isLet ? (binding ? `top-level \`let ${binding}\`` : 'a top-level reactive `let`') : 'a mode-sensitive top-level statement';
+  const modeFix = 'state the mode outright with `<svelte:options runes />` (or `runes={false}`)';
+  const fix = isLet ? `make it a rune (${binding ? `\`let ${binding} = $state(…)\`` : 'e.g. `$state`'}) if the component is runes-mode, or ${modeFix}` : modeFix;
+  return declineMessage(
+    `its script mode (legacy vs runes) is ambiguous — ${subject} with no runes and no legacy-only syntax, so injecting \`$props()\` could silently flip the file to runes mode and ${isLet ? 'kill legacy reactivity' : 'change its semantics'}`,
+    fix,
+  );
+}
+
+const DECLINE_UNSUPPORTED_PATTERN = declineMessage(
+  'its `$props()` declaration uses a binding pattern the seed pass cannot graft onto',
+  'destructure with `let { … } = $props()` or bind the whole object with `let props = $props()`, and leave the framework-internal `__mochi_hydratable` prop undeclared',
+);
+
+/**
+ * The node that made the script mode-ambiguous, for the decline message: the
+ * exact same scan as `isModeNeutralScript`, stopping at its first reject.
+ */
+function firstNonNeutralNode(instance: AST.Root['instance']): { type: string } | null {
+  for (const node of instance?.content.body ?? []) {
+    if (MODE_NEUTRAL_STATEMENTS.has(node.type)) {
+      continue;
+    }
+    if (node.type === 'VariableDeclaration' && node.kind === 'const') {
+      continue;
+    }
+    return node;
+  }
+  return null;
+}
 
 /**
  * Inject a context seed into a component's instance script so an island root —
@@ -689,9 +726,6 @@ export function injectHydratableContextSeed(source: string, filePath: string, ru
   if (source.includes(SEED_FN)) {
     return { code: source, declined: null };
   }
-  // `compilerOptions.runes` may be a per-file predicate — resolve it the same
-  // way the compiler will for this file.
-  const runes = typeof runesOption === 'function' ? runesOption({ filename: filePath }) : runesOption;
   let ast: AST.Root;
   try {
     ast = parse(source, { modern: true });
@@ -699,6 +733,12 @@ export function injectHydratableContextSeed(source: string, filePath: string, ru
     // Malformed source: let svelte.compile surface its own, better diagnostic.
     return { code: source, declined: null };
   }
+  // `compilerOptions.runes` may be a per-file predicate — resolve it the same
+  // way the compiler will for this file. A per-file `<svelte:options runes>`
+  // beats the project-wide setting, matching the compiler's own resolution;
+  // the parser has already extracted it onto `ast.options`.
+  const projectRunes = typeof runesOption === 'function' ? runesOption({ filename: filePath }) : runesOption;
+  const runes = ast.options?.runes ?? projectRunes;
 
   const s = new MagicString(source);
   const instance = ast.instance;
@@ -782,7 +822,7 @@ export function injectHydratableContextSeed(source: string, filePath: string, ru
   // Mode-ambiguous script (e.g. a reactive top-level `let` with no runes and
   // no legacy markers): injecting $props() could silently flip it to runes
   // mode and kill legacy reactivity. Such an island root simply doesn't seed.
-  return { code: source, declined: DECLINE_AMBIGUOUS_MODE };
+  return { code: source, declined: declineAmbiguousMode(instance) };
 }
 
 interface MochiDirectives {
