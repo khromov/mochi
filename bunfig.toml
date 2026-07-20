@@ -1,0 +1,11 @@
+# Force the hoisted node_modules layout. Bun's default isolated linker for
+# workspaces (symlinks through a node_modules/.bun store) trips a Bun 1.3.14
+# bundler bug: inside a `bun test` process, a second Bun.build() fails with
+# "EISDIR reading file" on any node_modules file that (a) the test process
+# already loaded through the symlink store and (b) appears in that build's
+# module graph (e.g. the server-islands compile pass reaching @noble/ciphers,
+# @joint-ops/hitlimit-bun, or ipaddr.js). Plain `bun run` processes and the
+# hoisted layout are both unaffected — empirically bisected 2026-07-19; same
+# bug class as github.com/oven-sh/bun/issues/22941.
+[install]
+linker = "hoisted"

@@ -5,10 +5,9 @@
 // serverIslandEndpoint.test.ts for that wiring); this file asserts that
 // `cssUrls` actually collects a nested hydratable child's CSS.
 //
-// Driven through ComponentRegistry rather than Mochi.serve: building the child's
-// *client* bundle alongside a second build in the same process trips a Bun
-// bundler EISDIR/Unseekable bug under `bun test`. `cssUrls` is collected during
-// SSR, so a single registry build exercises the real path without that hazard.
+// Driven through ComponentRegistry rather than Mochi.serve: `cssUrls` is
+// collected during SSR, so a single registry build exercises the real path
+// without booting a server.
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
