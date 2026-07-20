@@ -74,6 +74,19 @@ export async function build(options: MochiBuildOptions): Promise<void> {
   console.log(styleText('dim', `Mochi v${version}`));
   console.log('Starting build...\n');
   const startedAt = performance.now();
+  const phases: { name: string; ms: number }[] = [];
+  async function timed<T>(name: string, fn: () => Promise<T>): Promise<T> {
+    const t0 = performance.now();
+    const result = await fn();
+    phases.push({ name, ms: performance.now() - t0 });
+    return result;
+  }
+  let clientBundleCount = 0;
+  let clientBundleMs = 0;
+  mochiEvents.on('client-bundle:complete', ({ durationMs }) => {
+    clientBundleCount += 1;
+    clientBundleMs += durationMs;
+  });
   const development = options.development ?? false;
   const baseOutDir = options.outDir ?? './.mochi';
   // Mirror the dev/prod split in Mochi.serve(): a `--dev` build nests under
@@ -87,6 +100,45 @@ export async function build(options: MochiBuildOptions): Promise<void> {
   mkdirSync(path.join(outDir, 'svelte-client'), { recursive: true });
   mkdirSync(path.join(outDir, 'svelte-css'), { recursive: true });
 
+  // Kick off the compile-independent work now so it overlaps the compile
+  // phases; both promises are awaited before the manifest. The `.catch(() => {})`
+  // guards only mark a rejection as handled in case compileAll throws first —
+  // the real error still surfaces at the trailing `await`.
+  const serverIslandScriptPromise = buildInlineWebComponent('./web-components/ServerIsland.ts');
+  serverIslandScriptPromise.catch(() => {});
+  // Copy publicDir into <outDir>/public and build the URL→disk map. First
+  // ensure no public file collides with a user-declared route, so deploying
+  // never silently drops assets.
+  const publicPipelinePromise = (async () => {
+    const publicSrc = await scanPublicDir(publicDir);
+    const conflicts: string[] = [];
+    for (const urlPath of publicSrc.keys()) {
+      // Runtime registers public files under the percent-encoded `publicRouteKey`,
+      // so a route declared in encoded form (e.g. `/a%20b.txt`) would collide there
+      // but slip past a raw-key check. Compare both forms.
+      if (urlPath in options.routes || publicRouteKey(urlPath) in options.routes) {
+        conflicts.push(urlPath);
+      }
+    }
+    if (conflicts.length > 0) {
+      throw new Error(
+        `[mochi:build] ${publicDir} files collide with registered routes:\n` +
+          conflicts.map((u) => `  - ${u}`).join('\n') +
+          `\nRemove the file from ${publicDir} or rename the route.`,
+      );
+    }
+    const publicFiles = new Map<string, string>();
+    await Promise.all(
+      [...publicSrc].map(async ([urlPath, srcPath]) => {
+        const destPath = path.join(outDir, 'public', ...urlPath.split('/').filter(Boolean));
+        await Bun.write(destPath, Bun.file(srcPath));
+        publicFiles.set(urlPath, destPath);
+      }),
+    );
+    return publicFiles;
+  })();
+  publicPipelinePromise.catch(() => {});
+
   const svelteConfig = await loadSvelteConfig(options.svelteConfigPath);
   const registry = new ComponentRegistry({
     development,
@@ -96,7 +148,7 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     markdown: options.markdown,
     optimize: options.optimize,
   });
-  await registry.prepareShake();
+  await timed('shake', () => registry.prepareShake());
 
   // Compile all Mochi.page() handlers in one Bun.build so transitive deps
   // (devalue, mochi-framework internals) emit as shared chunks alongside the
@@ -128,7 +180,7 @@ export async function build(options: MochiBuildOptions): Promise<void> {
   }
 
   if (ssrEntrypoints.length > 0) {
-    await registry.compileAll(ssrEntrypoints);
+    await timed('pages', () => registry.compileAll(ssrEntrypoints, { deferClientBundle: true }));
   }
 
   let compileErrors = registry.getErrors();
@@ -150,12 +202,16 @@ export async function build(options: MochiBuildOptions): Promise<void> {
   const islandPaths = [...new Set(registry.getServerIslandPaths().values())];
   if (islandPaths.length > 0) {
     logger.info(`[mochi:build] precompiling ${islandPaths.length} server island(s): ${islandPaths.map((p) => path.basename(p)).join(', ')}`);
-    await registry.compileAll(islandPaths);
+    await timed('islands', () => registry.compileAll(islandPaths, { deferClientBundle: true }));
     compileErrors = registry.getErrors();
     if (compileErrors.length > 0) {
       throw new Error(`[mochi:build] ${formatCompileErrors(compileErrors)}`);
     }
   }
+
+  // Both compileAll passes above defer the client bundle so the second pass
+  // doesn't rebuild the same monolithic bundle the first one just produced.
+  await timed('client-bundle', () => registry.finalizeClientBundle());
 
   allRoutes.sort((a, b) => a.pattern.localeCompare(b.pattern, undefined, { numeric: true }));
   printRouteTree(allRoutes, compileStats);
@@ -167,39 +223,14 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     rmSync(path.join(cssDir, raw));
   }
 
-  // Copy publicDir into <outDir>/public and record URL→disk map on the registry.
-  // First ensure no public file collides with a user-declared route, so
-  // deploying never silently drops assets.
-  const publicSrc = await scanPublicDir(publicDir);
-  const conflicts: string[] = [];
-  for (const urlPath of publicSrc.keys()) {
-    // Runtime registers public files under the percent-encoded `publicRouteKey`,
-    // so a route declared in encoded form (e.g. `/a%20b.txt`) would collide there
-    // but slip past a raw-key check. Compare both forms.
-    if (urlPath in options.routes || publicRouteKey(urlPath) in options.routes) {
-      conflicts.push(urlPath);
-    }
-  }
-  if (conflicts.length > 0) {
-    throw new Error(
-      `[mochi:build] ${publicDir} files collide with registered routes:\n` +
-        conflicts.map((u) => `  - ${u}`).join('\n') +
-        `\nRemove the file from ${publicDir} or rename the route.`,
-    );
-  }
-
-  const publicFiles = new Map<string, string>();
-  for (const [urlPath, srcPath] of publicSrc) {
-    const destPath = path.join(outDir, 'public', ...urlPath.split('/').filter(Boolean));
-    await Bun.write(destPath, Bun.file(srcPath));
-    publicFiles.set(urlPath, destPath);
-  }
+  const publicFiles = await timed('public', () => publicPipelinePromise);
   registry.setPublicFiles(publicFiles);
 
-  // Prebuild the framework's ServerIsland inline web-component script so the
-  // production runtime loads it from disk instead of running Bun.build at boot.
+  // Prebuilt (started before compilation) framework ServerIsland inline
+  // web-component script — the production runtime loads it from disk instead
+  // of running Bun.build at boot.
   const serverIslandScriptPath = path.join(outDir, 'server-island.js');
-  const serverIslandJs = await buildInlineWebComponent('./web-components/ServerIsland.ts');
+  const serverIslandJs = await timed('island-script', () => serverIslandScriptPromise);
   await Bun.write(serverIslandScriptPath, serverIslandJs);
   registry.setServerIslandScript(serverIslandScriptPath, serverIslandJs);
 
@@ -210,6 +241,8 @@ export async function build(options: MochiBuildOptions): Promise<void> {
 
   const clientFileCount = Object.keys(manifest.clientFiles).length;
   const publicFileCount = publicFiles.size;
+  const phaseSummary = phases.map((p) => `${p.name} ${formatDuration(p.ms)}`).join(' · ');
+  logger.info(`build: phases — ${phaseSummary} (client bundle ×${clientBundleCount}, ${formatDuration(clientBundleMs)})`);
   const elapsed = formatDuration(performance.now() - startedAt);
   logger.info(
     `build: done in ${elapsed}. ${compiledPages.length} page(s), ${clientFileCount} client file(s), ${publicFileCount} public file(s). Manifest written to ${manifestPath}`,
