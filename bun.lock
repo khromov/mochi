@@ -176,6 +176,7 @@
         "svelte": "^5.56.5",
         "svelte-french-toast": "2.0.0-alpha.0",
         "svelte-meta-tags": "^5.0.0",
+        "svelte-youtube-lite": "^1.3.0",
         "tmcp": "1.19.4",
         "valibot": "1.4.2",
       },
@@ -850,6 +851,8 @@
     "svelte-shaker": ["svelte-shaker@0.12.0", "", { "dependencies": { "magic-string": "0.30.21", "zimmerframe": "1.1.4" }, "peerDependencies": { "@rsvelte/vite-plugin-svelte-native": ">=0.2.4", "svelte": "^5" }, "optionalPeers": ["@rsvelte/vite-plugin-svelte-native"] }, "sha512-4aduDqcCpKSyLZZm6ICGgawtCNfjWsQE4LM/l1rAQFQuN+KrYF5cnHjTBTbEboEQEreKOmPVz/pi7K4GTHp0UQ=="],
 
     "svelte-writable-derived": ["svelte-writable-derived@3.1.1", "", { "peerDependencies": { "svelte": "^3.2.1 || ^4.0.0-next.1 || ^5.0.0-next.94" } }, "sha512-w4LR6/bYZEuCs7SGr+M54oipk/UQKtiMadyOhW0PTwAtJ/Ai12QS77sLngEcfBx2q4H8ZBQucc9ktSA5sUGZWw=="],
+
+    "svelte-youtube-lite": ["svelte-youtube-lite@1.3.0", "", { "peerDependencies": { "svelte": "^5.55.8" } }, "sha512-SgvnCa5QeVNPB7RZQXaMCk7gjrDVIN6mx+SfK7C17TZMBtUD76fpOS8mqItMj7N2HZcmGeUIqIRtconPXXo2PA=="],
 
     "syncpack": ["syncpack@15.3.2", "", { "optionalDependencies": { "syncpack-darwin-arm64": "15.3.2", "syncpack-darwin-x64": "15.3.2", "syncpack-linux-arm64": "15.3.2", "syncpack-linux-arm64-musl": "15.3.2", "syncpack-linux-x64": "15.3.2", "syncpack-linux-x64-musl": "15.3.2", "syncpack-windows-arm64": "15.3.2", "syncpack-windows-x64": "15.3.2" }, "bin": { "syncpack": "index.cjs" } }, "sha512-RKYfXFQlrIWosTheNbyJg3xHNjTDrW2mOvwxAz3XGghrUDN4hDjhKPCTAQrUtGZw9hNeIr37qRO3/+EP927Vtg=="],
 

@@ -1,7 +1,9 @@
-import { Mochi, silenceInternalRoutes } from 'mochi-framework';
+import { Mochi, sequence, silenceInternalRoutes } from 'mochi-framework';
 import type { MochiEmailTransportConfig } from 'mochi-framework';
 import { analytics } from 'mochi-shared';
 import { routes } from './routes';
+import { adminAuth } from './adminAuth';
+import { SUPPORT_EMAIL_QUEUE, supportEmailQueue } from './jobs.server';
 
 const PORT = Number(process.env.PORT) || 3336;
 const DEVELOPMENT = process.env.MODE === 'development';
@@ -31,8 +33,14 @@ await Mochi.serve({
   development: DEVELOPMENT,
   htmlShell: './src/shell.html',
   trailingSlash: 'always',
-  proxy: { origin: ORIGIN },
-  handle: analytics,
+  // CapRover's nginx terminates TLS and appends the client IP to
+  // X-Forwarded-For. Without addressHeader every visitor keys to the proxy's
+  // own IP, so /admin/'s rate limit would be one shared bucket. Reading the
+  // rightmost entry (xffDepth 1) can't be spoofed by the client.
+  proxy: { origin: ORIGIN, addressHeader: 'x-forwarded-for', xffDepth: 1 },
+  // Auth first, so an unauthorised /admin hit is never counted as a pageview.
+  handle: sequence(adminAuth, analytics),
+  queues: { [SUPPORT_EMAIL_QUEUE]: supportEmailQueue },
   email: {
     from: process.env.SMTP_FROM || 'Mochi Support Form <support@mochi.fast>',
     transport: smtp,
@@ -51,6 +59,9 @@ await Mochi.serve({
     'mochi:init': () => {
       if (DEVELOPMENT) {
         return;
+      }
+      if (!process.env.ADMIN_PASSWORD) {
+        throw new Error('ADMIN_PASSWORD is not set. Without it /admin/ rejects every request. See packages/support/.env.example.');
       }
       if (!smtp) {
         throw new Error(

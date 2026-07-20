@@ -48,6 +48,8 @@ await Mochi.serve({
 | `'warn'`   | Slow requests, 5xx responses, deprecations, recoverable problems, plus errors          | Default in production                           |
 | `'error'`  | Only handler failures — `logger.error` calls and unhandled exceptions                  | Production with a separate alerting pipeline    |
 
+Which severity each event lands on is a framework default — request lines are `info`, asset and image lines are `debug`, and so on. Remap them per app with the [`consoleLogger:level` filter](/docs/extensions/): promote the events you care about, demote the ones you don't, without moving the global level.
+
 If `level` is omitted, the default is picked from the `development` flag you pass to `Mochi.serve()`:
 
 | `Mochi.serve({ development })` | Default level |
