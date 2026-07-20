@@ -1,0 +1,160 @@
+import { mkdirSync } from 'node:fs';
+import path from 'node:path';
+import { Database } from 'bun:sqlite';
+
+export type EmailStatus = 'pending' | 'sent' | 'failed';
+
+export type EmailLogEvent = 'queued' | 'requeued' | 'sending' | 'sent' | 'failed';
+
+// These types live here, next to the queries that produce them: a type-only
+// import is erased before the client build, so even a hydrated island can
+// `import type` from this module without pulling bun:sqlite along.
+export interface Submission {
+  id: number;
+  name: string;
+  email: string;
+  message: string;
+  created_at: number;
+  handled_at: number | null;
+  email_status: EmailStatus;
+  email_error: string | null;
+  email_sent_at: number | null;
+}
+
+/** One line of the delivery history shown in the admin panel's email-log popup. */
+export interface EmailLogEntry {
+  id: number;
+  submission_id: number;
+  at: number;
+  attempt: number;
+  event: EmailLogEvent;
+  detail: string | null;
+}
+
+// Relative to the package root — the app always runs as `bun --cwd=packages/support`.
+// SUPPORT_DB exists so the test suite can point at a temp file instead.
+const DB_PATH = process.env.SUPPORT_DB || '.db/support.sqlite';
+
+// bun:sqlite won't create the parent directory.
+mkdirSync(path.dirname(DB_PATH), { recursive: true });
+
+const db = new Database(DB_PATH, { create: true });
+db.exec('PRAGMA journal_mode = WAL');
+db.exec(`
+  CREATE TABLE IF NOT EXISTS submissions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL DEFAULT '',
+    email TEXT NOT NULL,
+    message TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    handled_at INTEGER,
+    email_status TEXT NOT NULL DEFAULT 'pending',
+    email_error TEXT,
+    email_sent_at INTEGER
+  );
+  CREATE INDEX IF NOT EXISTS submissions_by_state ON submissions (handled_at, created_at DESC);
+
+  CREATE TABLE IF NOT EXISTS email_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    submission_id INTEGER NOT NULL,
+    at INTEGER NOT NULL,
+    attempt INTEGER NOT NULL,
+    event TEXT NOT NULL,
+    detail TEXT
+  );
+  CREATE INDEX IF NOT EXISTS email_log_by_submission ON email_log (submission_id, at);
+`);
+
+const insertStmt = db.query<{ id: number }, [string, string, string, number]>('INSERT INTO submissions (name, email, message, created_at) VALUES (?, ?, ?, ?) RETURNING id');
+const getStmt = db.query<Submission, [number]>('SELECT * FROM submissions WHERE id = ?');
+const listInboxStmt = db.query<Submission, []>('SELECT * FROM submissions WHERE handled_at IS NULL ORDER BY created_at DESC');
+const listHandledStmt = db.query<Submission, []>('SELECT * FROM submissions WHERE handled_at IS NOT NULL ORDER BY handled_at DESC');
+const sentStmt = db.query<never, [number, number]>("UPDATE submissions SET email_status = 'sent', email_error = NULL, email_sent_at = ? WHERE id = ?");
+const failedStmt = db.query<never, [string, number]>("UPDATE submissions SET email_status = 'failed', email_error = ? WHERE id = ?");
+const attemptErrorStmt = db.query<never, [string, number]>('UPDATE submissions SET email_error = ? WHERE id = ?');
+const handledStmt = db.query<never, [number | null, number]>('UPDATE submissions SET handled_at = ? WHERE id = ?');
+const undeliveredStmt = db.query<{ id: number }, []>("SELECT id FROM submissions WHERE email_status != 'sent' ORDER BY created_at");
+const requeuedStmt = db.query<never, [number]>("UPDATE submissions SET email_status = 'pending' WHERE id = ?");
+const logInsertStmt = db.query<never, [number, number, number, string, string | null]>('INSERT INTO email_log (submission_id, at, attempt, event, detail) VALUES (?, ?, ?, ?, ?)');
+const logAllStmt = db.query<EmailLogEntry, []>('SELECT * FROM email_log ORDER BY at, id');
+
+export function insertSubmission(fields: { name: string; email: string; message: string }): number {
+  const row = insertStmt.get(fields.name, fields.email, fields.message, Date.now());
+  if (!row) {
+    throw new Error('support: INSERT returned no id');
+  }
+  return row.id;
+}
+
+export function getSubmission(id: number): Submission | null {
+  return getStmt.get(id);
+}
+
+export function listSubmissions(handled: boolean): Submission[] {
+  return handled ? listHandledStmt.all() : listInboxStmt.all();
+}
+
+export function markEmailSent(id: number): void {
+  sentStmt.run(Date.now(), id);
+}
+
+/** Terminal: bunqueue has exhausted its attempts and won't retry on its own. */
+export function markEmailFailed(id: number, error: string): void {
+  failedStmt.run(error.slice(0, 1000), id);
+}
+
+/**
+ * A failed attempt that bunqueue will still retry. Records why for the admin
+ * panel but leaves the status `pending` — flipping it to `failed` here would
+ * both misreport a delivery still in flight and, because a restart mid-backoff
+ * loses the in-memory job, put the row in a state `recover` used to skip.
+ */
+export function noteEmailAttemptError(id: number, error: string): void {
+  attemptErrorStmt.run(error.slice(0, 1000), id);
+}
+
+export function setHandled(id: number, handled: boolean): void {
+  handledStmt.run(handled ? Date.now() : null, id);
+}
+
+export function appendEmailLog(submissionId: number, entry: { attempt: number; event: EmailLogEvent; detail?: string }): void {
+  logInsertStmt.run(submissionId, Date.now(), entry.attempt, entry.event, entry.detail?.slice(0, 1000) ?? null);
+}
+
+/** Grouped by submission id, oldest first — what the admin panel's log popup renders. */
+export function emailLogsBySubmission(): Record<number, EmailLogEntry[]> {
+  const grouped: Record<number, EmailLogEntry[]> = {};
+  for (const entry of logAllStmt.all()) {
+    (grouped[entry.submission_id] ??= []).push(entry);
+  }
+  return grouped;
+}
+
+/**
+ * Release the SQLite handle. Only the test suite needs this: Windows keeps the
+ * database file locked while a handle is open, so the temp directory holding it
+ * can't be removed until this runs.
+ */
+export function closeDb(): void {
+  db.close();
+}
+
+/**
+ * Every row whose email hasn't landed — `pending` (never attempted, or mid-retry)
+ * and `failed` (attempts exhausted) alike. Jobs live only in memory, so a restart
+ * strands all of them; the queue's `recover` re-adds them on boot.
+ *
+ * `failed` is deliberately included. A row reaches it only after bunqueue gave up,
+ * which for this form means an SMTP outage that outlasted the backoff — exactly the
+ * case where "the row is the source of truth" has to mean something. Re-trying a
+ * genuinely undeliverable row on every boot is the accepted cost; at this volume a
+ * duplicate email beats a silently dropped one.
+ */
+export function undeliveredSubmissionIds(): number[] {
+  return undeliveredStmt.all().map((row) => row.id);
+}
+
+/** Clears a `failed` row back to `pending` as `recover` puts it back on the queue. */
+export function markEmailRequeued(id: number): void {
+  requeuedStmt.run(id);
+}
