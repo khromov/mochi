@@ -246,14 +246,16 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
     level: 'warn',
   }));
 
-  // Enqueue and per-attempt start are high-volume; route them through
-  // `logger.debug` so the default stream stays quiet. `completed` carries the
-  // duration (escalated to warn when slow); `failed`/`error` always warn.
+  // `added` is the only signal that work entered the system — with a slow
+  // processor it's the sole line for as long as the job runs — so it prints at
+  // the default level. Per-attempt `active` repeats on every retry and adds
+  // nothing over added + completed/failed, so it stays on `logger.debug`.
+  // `completed` carries the duration (escalated to warn when slow);
+  // `failed`/`error` always warn.
   subscribe('queue:added', ({ queue, jobName, jobId }) => ({
     label: 'QUEUE',
     path: `${queue}/${jobName}`,
     note: styleText('dim', `+ ${jobId}`),
-    level: 'debug',
   }));
   subscribe('queue:active', ({ queue, jobName }) => ({
     label: 'QUEUE',
