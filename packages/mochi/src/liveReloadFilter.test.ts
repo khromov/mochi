@@ -54,8 +54,15 @@ describe('live-reload only signals tabs whose entry was affected', () => {
 
     const aMessages: string[] = [];
     const bMessages: string[] = [];
-    wsA.addEventListener('message', (e) => aMessages.push(typeof e.data === 'string' ? e.data : ''));
-    wsB.addEventListener('message', (e) => bMessages.push(typeof e.data === 'string' ? e.data : ''));
+    // The server greets every client with `boot:<id>`; only reload signals matter here.
+    const collect = (into: string[]) => (e: MessageEvent) => {
+      const data = typeof e.data === 'string' ? e.data : '';
+      if (!data.startsWith('boot:')) {
+        into.push(data);
+      }
+    };
+    wsA.addEventListener('message', collect(aMessages));
+    wsB.addEventListener('message', collect(bMessages));
 
     await Promise.all([
       new Promise<void>((resolve) => wsA.addEventListener('open', () => resolve(), { once: true })),

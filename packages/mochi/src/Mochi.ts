@@ -77,6 +77,13 @@ import { buildPageCacheAdminRoutes, PAGE_CACHE_ADMIN_COMPONENT } from './dev/pag
 
 const DEFAULT_HTML_SHELL = await Bun.file(new URL('./templates/default-shell.html', import.meta.url)).text();
 
+// Identifies this server process to live-reload clients. A reconnecting tab
+// compares it against the id it saw last: a different id means the dev server
+// actually restarted (so the tab must reload to pick up whatever changed while
+// it was disconnected), while the same id means the socket merely blipped —
+// laptop wake, wifi switch — and the page state is still valid.
+const MOCHI_BOOT_ID = crypto.randomUUID();
+
 let mochiVersionPromise: Promise<string | null> | undefined;
 function readMochiVersion(): Promise<string | null> {
   return (mochiVersionPromise ??= Bun.file(path.join(import.meta.dir, '..', 'package.json'))
@@ -1655,8 +1662,16 @@ export class Mochi {
       wsHandlersMap.set('/__mochi_live_reload', {
         open(ws) {
           liveReloadClients.add(ws as ServerWebSocket<MochiWsData>);
+          ws.send(`boot:${MOCHI_BOOT_ID}`);
         },
-        message() {},
+        // The client heartbeat needs an application-level reply: proxies and
+        // sleeping network stacks can swallow protocol pings, leaving a socket
+        // that reads OPEN but is dead.
+        message(ws, message) {
+          if (message === 'ping') {
+            ws.send('pong');
+          }
+        },
         close(ws) {
           liveReloadClients.delete(ws as ServerWebSocket<MochiWsData>);
         },
