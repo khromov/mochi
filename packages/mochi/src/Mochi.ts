@@ -1729,7 +1729,15 @@ export class Mochi {
     {
       const sweeperStop = stopImageSweeper;
       const stopServer = server.stop.bind(server);
+      // The shutdown path calls stop() twice (graceful, then forced once the
+      // grace period lapses); tearing subsystems down a second time would
+      // double-close an already-closed transport, so run them only once.
+      let cleanedUp = false;
       server.stop = (async (closeActiveConnections?: boolean) => {
+        if (cleanedUp) {
+          return stopServer(closeActiveConnections);
+        }
+        cleanedUp = true;
         // Subsystem cleanup must never gate the socket close: a transport whose
         // close() throws (e.g. a nodemailer pool) would otherwise leave the
         // listener open and hang shutdown. Best-effort, then always stop.
@@ -1852,7 +1860,7 @@ export class Mochi {
       });
     }
 
-    Mochi.installShutdownHandlers(options, server);
+    Mochi.installShutdownHandlers(options, server, development);
     await runHook('mochi:ready', { options, server });
 
     return server;
@@ -1864,7 +1872,7 @@ export class Mochi {
    * most CLIs. Listeners are added per `serve()` call, but `initMochiConfig`
    * already forbids more than one server per process.
    */
-  private static installShutdownHandlers(options: MochiServeOptions, server: Server<undefined>): void {
+  private static installShutdownHandlers(options: MochiServeOptions, server: Server<undefined>, development: boolean): void {
     let shuttingDown = false;
     const handle = async (signal: NodeJS.Signals): Promise<void> => {
       if (shuttingDown) {
@@ -1884,7 +1892,24 @@ export class Mochi {
         stopEvent.signal = signal;
       }
       mochiEvents.emit('server:stop', stopEvent);
-      await server.stop();
+
+      // A non-forced stop() waits for every connection to drain, and Bun never
+      // resolves it while a WebSocket is open — in dev, any browser tab holding
+      // the live-reload socket wedges the process forever. So the graceful stop
+      // only ever gets the grace period, then connections are cut regardless.
+      const timeout = options.shutdownTimeout ?? (development ? 0 : 5_000);
+      if (timeout > 0) {
+        // Caught inline: once the grace period wins the race, a late rejection
+        // from the graceful stop has no one left to await it.
+        const graceful = server.stop().catch((err: unknown) => {
+          logger.warn(`Graceful stop failed: ${err instanceof Error ? err.message : err}`);
+        });
+        await Promise.race([graceful, Bun.sleep(timeout)]);
+      }
+      await server.stop(true);
+      // Exit explicitly: chokidar's dev watchers and any timer user code left
+      // running would otherwise keep the event loop alive past the last socket.
+      process.exit(0);
     };
     process.on('SIGTERM', handle);
     process.on('SIGINT', handle);

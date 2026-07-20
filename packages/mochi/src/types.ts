@@ -490,6 +490,16 @@ export interface MochiServeOptions {
    * `/__mochi_live_reload` socket is flaky behind a proxy.
    */
   liveReload?: boolean;
+  /**
+   * Grace period (ms) on `SIGTERM`/`SIGINT` for in-flight requests to finish
+   * before connections are force-closed and the process exits. Default: `5000`
+   * in production, `0` in development. `0` force-closes immediately.
+   *
+   * A non-forced `server.stop()` never resolves while a WebSocket is open, so
+   * without a forced fallback a single connected client (in dev, any browser tab
+   * holding the live-reload socket) wedges the process until it is `SIGKILL`ed.
+   */
+  shutdownTimeout?: number;
   /** Path to a prebuilt manifest JSON. Defaults to `.mochi/manifest.json`. */
   manifest?: string;
   routes?: Record<string, MochiRouteValue>;
