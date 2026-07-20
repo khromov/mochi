@@ -47,7 +47,8 @@ import { resolveWarmupEnabled, markWarmupRequest, isWarmablePattern } from './ru
 import { createErrorResponder, DEFAULT_ERROR_PAGE_PATH } from './runtime/errors';
 import { requestContext } from './runtime/requestContext';
 import type { MochiRequestContext } from './runtime/requestContext';
-import { createQueue, getQueue, closeAllQueueResources } from './queue';
+import { createQueue, getQueue, closeAllQueueResources, runQueueRecovery } from './queue';
+import { resetStartupMilestones } from './lifecycle';
 import type { MochiQueue, MochiQueueOptions, MochiQueueListeners, MochiProcessor } from './queue';
 import { finalizeCookieHeaders } from './runtime/cookies';
 import { makeRequestContextBuilder } from './runtime/requestSetup';
@@ -73,6 +74,7 @@ import { ISLAND_FAILURE_CSS, ISLAND_FAILURE_DEV_CSS, islandFailureStub } from '.
 import { resolvePublicFiles, registerPublicRoutes, isExcludedDotPath } from './runtime/publicDir';
 import { startDevWatcher } from './dev/devWatcher';
 import { buildPageCacheAdminRoutes, PAGE_CACHE_ADMIN_COMPONENT } from './dev/pageCacheAdminRoutes';
+import { liveReloadGreeting } from './dev/liveReloadGeneration';
 
 const DEFAULT_HTML_SHELL = await Bun.file(new URL('./templates/default-shell.html', import.meta.url)).text();
 
@@ -194,22 +196,25 @@ export class Mochi {
    * only when the descriptor is mounted in `Mochi.serve({ queues })`, keyed by
    * queue name. The config bundles the `process` consumer (receives a read-only
    * `MochiJob`, returns the job result) with its options (`concurrency`,
-   * `dataPath`, …) and optional `on` lifecycle listeners. Produce jobs from
+   * `dataPath`, …) and optional `on` lifecycle listeners. Add jobs from
    * anywhere via `Mochi.getQueue(name).add(...)`. Queues drain gracefully on
    * `Mochi.serve()` shutdown.
    */
   static queue<T = unknown, R = unknown>(config: MochiQueueOptions<T, R>): MochiQueueConfig {
-    const { process, on, ...options } = config;
+    // `recover` is destructured out for the same reason as `process`/`on`:
+    // whatever is left in `options` is forwarded verbatim to bunqueue.
+    const { process, on, recover, ...options } = config;
     return {
       __mochiQueue: true,
       process: process as MochiProcessor<unknown, unknown>,
       options,
       on: on as Partial<MochiQueueListeners<unknown, unknown>> | undefined,
+      recover: recover as ((queue: MochiQueue<never>) => void | Promise<void>) | undefined,
     };
   }
 
   /**
-   * Resolve the producer handle for a queue declared in
+   * Resolve the handle for a queue declared in
    * `Mochi.serve({ queues })` and `.add()` jobs to it. Pass the payload type
    * explicitly (`Mochi.getQueue<JobData>(name)`). Throws if the queue name was
    * never declared, or if reached before `Mochi.serve()` has mounted its queues.
@@ -1654,9 +1659,22 @@ export class Mochi {
     if (liveReloadEnabled) {
       wsHandlersMap.set('/__mochi_live_reload', {
         open(ws) {
-          liveReloadClients.add(ws as ServerWebSocket<MochiWsData>);
+          const client = ws as ServerWebSocket<MochiWsData>;
+          liveReloadClients.add(client);
+          try {
+            client.send(liveReloadGreeting(client.data.__mochiEntry));
+          } catch {
+            liveReloadClients.delete(client);
+          }
         },
-        message() {},
+        // The client heartbeat needs an application-level reply: proxies and
+        // sleeping network stacks can swallow protocol pings, leaving a socket
+        // that reads OPEN but is dead.
+        message(ws, message) {
+          if (typeof message === 'string' && message === 'ping') {
+            ws.send('pong');
+          }
+        },
         close(ws) {
           liveReloadClients.delete(ws as ServerWebSocket<MochiWsData>);
         },
@@ -1729,7 +1747,15 @@ export class Mochi {
     {
       const sweeperStop = stopImageSweeper;
       const stopServer = server.stop.bind(server);
+      // The shutdown path calls stop() twice (graceful, then forced once the
+      // grace period lapses); tearing subsystems down a second time would
+      // double-close an already-closed transport, so run them only once.
+      let cleanedUp = false;
       server.stop = (async (closeActiveConnections?: boolean) => {
+        if (cleanedUp) {
+          return stopServer(closeActiveConnections);
+        }
+        cleanedUp = true;
         // Subsystem cleanup must never gate the socket close: a transport whose
         // close() throws (e.g. a nodemailer pool) would otherwise leave the
         // listener open and hang shutdown. Best-effort, then always stop.
@@ -1751,6 +1777,8 @@ export class Mochi {
         return stopServer(closeActiveConnections);
       }) as typeof server.stop;
     }
+
+    await runHook('mochi:listening', { options, server });
 
     {
       const startEvent: MochiServerStartEvent = {
@@ -1778,6 +1806,14 @@ export class Mochi {
       await server.stop(true);
       throw err;
     }
+    // Fired before recovery runs: by this point every queue in the map is
+    // registered, so a recover() callback (or a user hook) reaching for a
+    // sibling gets its handle rather than a "not mounted yet" error.
+    await runHook('mochi:queuesMounted', { options, server, queues: Object.keys(options.queues ?? {}) });
+    // After the whole map is mounted, so a recover() callback may reach a
+    // sibling queue. Awaited, so recovered jobs are enqueued before
+    // `mochi:ready` fires and before serve() resolves.
+    await runQueueRecovery(Object.entries(options.queues ?? {}));
 
     if (warmupHandlers.length > 0) {
       mochiEvents.emit('warmup:start', { routeCount: warmupHandlers.length });
@@ -1842,7 +1878,7 @@ export class Mochi {
       });
     }
 
-    Mochi.installShutdownHandlers(options, server);
+    Mochi.installShutdownHandlers(options, server, development);
     await runHook('mochi:ready', { options, server });
 
     return server;
@@ -1854,7 +1890,7 @@ export class Mochi {
    * most CLIs. Listeners are added per `serve()` call, but `initMochiConfig`
    * already forbids more than one server per process.
    */
-  private static installShutdownHandlers(options: MochiServeOptions, server: Server<undefined>): void {
+  private static installShutdownHandlers(options: MochiServeOptions, server: Server<undefined>, development: boolean): void {
     let shuttingDown = false;
     const handle = async (signal: NodeJS.Signals): Promise<void> => {
       if (shuttingDown) {
@@ -1868,12 +1904,30 @@ export class Mochi {
         logger.error(`mochi:shutdown hook failed: ${err instanceof Error ? err.message : err}`);
       }
       await closeAllQueueResources();
+      resetStartupMilestones();
       const stopEvent: MochiServerStopEvent = { reason: 'signal' };
       if (signal === 'SIGTERM' || signal === 'SIGINT') {
         stopEvent.signal = signal;
       }
       mochiEvents.emit('server:stop', stopEvent);
-      await server.stop();
+
+      // A non-forced stop() waits for every connection to drain, and Bun never
+      // resolves it while a WebSocket is open — in dev, any browser tab holding
+      // the live-reload socket wedges the process forever. So the graceful stop
+      // only ever gets the grace period, then connections are cut regardless.
+      const timeout = options.shutdownTimeout ?? (development ? 0 : 5_000);
+      if (timeout > 0) {
+        // Caught inline: once the grace period wins the race, a late rejection
+        // from the graceful stop has no one left to await it.
+        const graceful = server.stop().catch((err: unknown) => {
+          logger.warn(`Graceful stop failed: ${err instanceof Error ? err.message : err}`);
+        });
+        await Promise.race([graceful, Bun.sleep(timeout)]);
+      }
+      await server.stop(true);
+      // Exit explicitly: chokidar's dev watchers and any timer user code left
+      // running would otherwise keep the event loop alive past the last socket.
+      process.exit(0);
     };
     process.on('SIGTERM', handle);
     process.on('SIGINT', handle);

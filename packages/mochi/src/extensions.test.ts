@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import type { MochiServeOptions } from './types';
 import { applyFilter, initExtensions, runHook, type MochiFilterContext } from './extensions';
+import { reachedStartupMilestones, resetStartupMilestones } from './lifecycle';
 import type { IslandPropsEntry } from './islands/islandPropsRegistry';
 import type { ResolvedEmailMessage } from './email/types';
 
@@ -231,6 +232,25 @@ describe('new extension points', () => {
     expect(applyFilter('captcha:driftAllowanceMs', 30_000, { options: {}, maxAgeMs: 900_000 })).toBe(45_000);
   });
 
+  test('queue:recoveryStallWarningMs returns the default unchanged when no filter registered', () => {
+    expect(applyFilter('queue:recoveryStallWarningMs', 30_000, { queue: 'emails' })).toBe(30_000);
+  });
+
+  test('queue:recoveryStallWarningMs can raise the threshold for one queue only', () => {
+    initExtensions({
+      filters: {
+        'queue:recoveryStallWarningMs': (def, { queue }) => (queue === 'slow-store' ? 120_000 : def),
+      },
+    });
+    expect(applyFilter('queue:recoveryStallWarningMs', 30_000, { queue: 'slow-store' })).toBe(120_000);
+    expect(applyFilter('queue:recoveryStallWarningMs', 30_000, { queue: 'emails' })).toBe(30_000);
+  });
+
+  test('queue:recoveryStallWarningMs passes 0 through, which silences the warning', () => {
+    initExtensions({ filters: { 'queue:recoveryStallWarningMs': () => 0 } });
+    expect(applyFilter('queue:recoveryStallWarningMs', 30_000, { queue: 'emails' })).toBe(0);
+  });
+
   test('compile:preprocessors returns the user-supplied list', () => {
     const fakePreprocessor = { name: 'fake', markup: () => ({ code: '' }) };
     initExtensions({
@@ -331,6 +351,45 @@ describe('new extension points', () => {
     expect(captured.size).toBe(42);
   });
 
+  const fakeLevelCtx = (overrides: Partial<MochiFilterContext['consoleLogger:level']> = {}) => {
+    const { level: _level, ...rest } = fakeLineCtx();
+    return { ...rest, ...overrides } satisfies MochiFilterContext['consoleLogger:level'];
+  };
+
+  test('consoleLogger:level returns the input unchanged when no filter registered', () => {
+    expect(applyFilter('consoleLogger:level', 'info', fakeLevelCtx())).toBe('info');
+  });
+
+  test('consoleLogger:level lets the user remap a line to another severity', () => {
+    initExtensions({
+      filters: {
+        'consoleLogger:level': (level, { path }) => (path.startsWith('/health') ? 'debug' : level),
+      },
+    });
+    expect(applyFilter('consoleLogger:level', 'info', fakeLevelCtx({ path: '/health' }))).toBe('debug');
+    expect(applyFilter('consoleLogger:level', 'info', fakeLevelCtx())).toBe('info');
+  });
+
+  test('consoleLogger:level can narrow on source.name to remap a specific event', () => {
+    initExtensions({
+      filters: {
+        'consoleLogger:level': (level, { source }) => (source.name === 'queue:added' ? 'debug' : level),
+      },
+    });
+    const remapped = applyFilter(
+      'consoleLogger:level',
+      'info',
+      fakeLevelCtx({
+        label: 'QUEUE',
+        kind: undefined,
+        status: undefined,
+        source: { name: 'queue:added', payload: { queue: 'emails', jobId: 'j1', jobName: 'send' } },
+      }),
+    );
+    expect(remapped).toBe('debug');
+    expect(applyFilter('consoleLogger:level', 'info', fakeLevelCtx())).toBe('info');
+  });
+
   test('mochi:ready awaits an async user hook', async () => {
     let saw: { server: unknown; options: unknown } | null = null;
     initExtensions({
@@ -345,6 +404,55 @@ describe('new extension points', () => {
     await runHook('mochi:ready', { options: fakeOptions, server: fakeServer });
     expect(saw).not.toBeNull();
     expect(saw!.server).toBe(fakeServer);
+  });
+
+  test('mochi:listening receives the bound server', async () => {
+    let saw: { server: unknown } | null = null;
+    initExtensions({
+      eventHooks: {
+        'mochi:listening': async (ctx) => {
+          await Bun.sleep(1);
+          saw = ctx;
+        },
+      },
+    });
+    const fakeServer = { stop: () => {} } as never;
+    await runHook('mochi:listening', { options: fakeOptions, server: fakeServer });
+    expect(saw).not.toBeNull();
+    expect(saw!.server).toBe(fakeServer);
+  });
+
+  test('mochi:queuesMounted names the mounted queues', async () => {
+    const captured: { queues?: string[] } = {};
+    initExtensions({
+      eventHooks: {
+        'mochi:queuesMounted': async (ctx) => {
+          await Bun.sleep(1);
+          captured.queues = ctx.queues;
+        },
+      },
+    });
+    const fakeServer = { stop: () => {} } as never;
+    await runHook('mochi:queuesMounted', { options: fakeOptions, server: fakeServer, queues: ['emails', 'thumbnails'] });
+    expect(captured.queues).toEqual(['emails', 'thumbnails']);
+  });
+
+  test('the startup hooks resolve with no user hook registered', async () => {
+    initExtensions({});
+    const fakeServer = { stop: () => {} } as never;
+    await runHook('mochi:listening', { options: fakeOptions, server: fakeServer });
+    await runHook('mochi:queuesMounted', { options: fakeOptions, server: fakeServer, queues: [] });
+    // Recorded as milestones even when nobody is listening — that record is
+    // what getQueue() reads to tell "too early" from "wrong name".
+    expect(reachedStartupMilestones()).toContain('mochi:listening');
+    expect(reachedStartupMilestones()).toContain('mochi:queuesMounted');
+  });
+
+  test('per-request hooks are not recorded as startup milestones', () => {
+    resetStartupMilestones();
+    initExtensions({});
+    runHook('route:matched', { pattern: '/', request: new Request('http://localhost/'), url: new URL('http://localhost/'), params: {}, kind: 'page' });
+    expect(reachedStartupMilestones()).toEqual([]);
   });
 
   test('mochi:shutdown awaits an async user hook and receives the signal', async () => {

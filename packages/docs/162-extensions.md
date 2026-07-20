@@ -38,6 +38,8 @@ Names use a `namespace:camelCase` convention. Each name is registered in a typed
 
 Fires as the very first thing inside `Mochi.serve()`, before any framework state is set up. Async.
 
+Nothing the framework mounts exists yet — in particular [queues](/docs/queues/) are created after the server binds, so `Mochi.getQueue()` throws here. Add jobs from `mochi:ready` or from a queue's `recover` callback instead.
+
 ```ts
 await Mochi.serve({
   eventHooks: {
@@ -48,6 +50,43 @@ await Mochi.serve({
   routes,
 });
 ```
+
+#### `mochi:listening`
+
+Fires immediately after `Bun.serve()` returns the bound server, before queues are mounted and before warmup runs. Use it when you need the port as early as possible — announcing the address, opening a tunnel, signalling a supervisor. Async.
+
+```ts
+await Mochi.serve({
+  eventHooks: {
+    'mochi:listening': async ({ server }) => {
+      await notifySupervisor({ port: server.port });
+    },
+  },
+  routes,
+});
+```
+
+#### `mochi:queuesMounted`
+
+Fires once every queue in `Mochi.serve({ queues })` is live, before each queue's `recover` callback runs. `ctx.queues` lists the mounted names. This is the earliest point at which [`Mochi.getQueue()`](/docs/queues/#mochigetqueue) resolves. Async.
+
+```ts
+await Mochi.serve({
+  eventHooks: {
+    'mochi:queuesMounted': async ({ queues }) => {
+      log.info(`queues live: ${queues.join(', ')}`);
+    },
+  },
+  queues,
+  routes,
+});
+```
+
+<Callout type="info">
+
+For re-enqueuing a single queue's unfinished work, prefer that queue's own [`recover`](/docs/queues/#recovery-on-start) callback — it receives the handle directly and keeps the logic next to the queue it belongs to. Reach for `mochi:queuesMounted` when the work spans queues or isn't queue-specific.
+
+</Callout>
 
 #### `mochi:ready`
 
@@ -304,6 +343,29 @@ await Mochi.serve({
 
 A `Mochi.page` / `Mochi.api` route on the same URL still wins — the filter only adds entries; the wiring step skips entries whose URL is already a user route, with a `[mochi]` warning.
 
+#### `consoleLogger:level`
+
+Change the severity a line is written at. Every `consoleLogger()` line ships with a framework-chosen level — request lines are `info`, asset and image lines are `debug`, degradations are `warn` — and this filter overrides that per app. Return one of `'info' | 'warn' | 'log' | 'debug'`; there is no `null`, dropping a line is `consoleLogger:line`'s job. Sync.
+
+It runs **after** the automatic escalation (5xx responses and slow requests are already `'warn'` by the time you see them, so you can de-escalate them too) and **before** `consoleLogger:line`, whose `ctx.level` reports the remapped value. The level still gates against the active [log level](/docs/logging/) — demoting a line to `'debug'` hides it unless you're running at `level: 'debug'`.
+
+```ts
+await Mochi.serve({
+  filters: {
+    // Job enqueues are noise in this app; health checks matter more than usual.
+    'consoleLogger:level': (level, { path, source }) => {
+      if (source.name === 'queue:added') {
+        return 'debug';
+      }
+      return path.startsWith('/health') ? 'warn' : level;
+    },
+  },
+  routes,
+});
+```
+
+Context fields are the same as `consoleLogger:line` below, minus `level` (that's the filtered value): `label`, `path`, `status`, `kind`, `source`.
+
 #### `consoleLogger:line`
 
 Mutate or drop a formatted line right before `consoleLogger()` writes it. The first argument is the fully-rendered string (timestamp, label, kind, path, status, duration — with ANSI colour codes already applied). The second is a structured context with the underlying values, so you can filter without grepping ANSI-coloured strings. Return the string to log it, a rewritten string to substitute, or `null` to drop the line entirely. Sync.
@@ -323,7 +385,7 @@ await Mochi.serve({
 
 Context fields:
 
-- `level` — resolved log level (`'warn'` for 5xx / slow requests, otherwise the per-event default).
+- `level` — resolved log level (`'warn'` for 5xx / slow requests, otherwise the per-event default, after any `consoleLogger:level` remap).
 - `label` — event tag (`'GET '`, `'WS  '`, `'BUILD'`, `'CACHE'`, …).
 - `path` — URL path for requests; cache key for `CACHE`/`PAGECACHE`; source file for `BUILD`/`HMR`; `localhost:port` for `BOOT`.
 - `status` — HTTP status (request lines only).
@@ -486,3 +548,22 @@ await Mochi.serve({
 ```
 
 The allowance only ever widens the **expiry** side, and is deliberately not applied to `minAgeMs`. Padding a floor means subtracting from it, so an allowance wider than the floor would silently delete the too-fast check rather than soften it — leaving a config that still reads like it enforces a 2s floor while accepting instant submissions. Use `captcha:minAgeMs` to move the floor, so the change is explicit.
+
+#### `queue:recoveryStallWarningMs`
+
+How long a queue's [`recover`](/docs/queues/#recovery-on-start) callback may run before Mochi logs a warning naming it. Resolved once per queue that declares one, as its recovery starts, so a queue reading a slow store can be given more room than its siblings. Sync.
+
+Recovery is never cut short — abandoning it would drop the jobs it was about to add. The warning exists because everything downstream (warmup, `mochi:ready`, `Mochi.serve()` resolving) waits behind it, so a stuck callback would otherwise hang silently. Defaults to `30_000`.
+
+```ts
+await Mochi.serve({
+  filters: {
+    // This one rebuilds its backlog from a cold object store; 30s is normal for it.
+    'queue:recoveryStallWarningMs': (def, { queue }) => (queue === 'thumbnails' ? 120_000 : def),
+  },
+  queues,
+  routes,
+});
+```
+
+Return `0` to silence the warning for a queue entirely — no timer is scheduled at all.

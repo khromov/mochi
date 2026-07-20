@@ -135,6 +135,34 @@ tier: (req, ctx) => (ctx.locals.plan as string) ?? 'free',
 
 </Callout>
 
+### Only counting failures
+
+`skip` bypasses the limiter **without consuming quota**, which inverts nicely for auth: since the limiter runs before your middleware, re-do the credential check inside `skip` so only _rejected_ attempts spend quota. A brute-force run burns the quota; someone who knows the password is never throttled — even mid-ban.
+
+```ts
+'/admin': Mochi.page('./src/Admin.svelte', {
+  rateLimit: {
+    limit: 10,
+    window: '15m',
+    ban: { threshold: 3, duration: '1h' },
+    skip: (req) => credentialsMatch(req.headers.get('Authorization')),
+  },
+}),
+```
+
+`skip` may be `async`, which makes it the natural place for a tarpit too — it runs before anything else on the route, so an `await Bun.sleep(…)` on the failing branch delays the rejection (and the `429` once the quota is gone) without slowing a valid request:
+
+```ts
+skip: async (req) => {
+  const header = req.headers.get('Authorization');
+  // No credentials at all is a browser fetching the 401 challenge, not a guess:
+  // don't stall it, don't charge it.
+  if (!header || credentialsMatch(header)) return true;
+  await Bun.sleep(5000);
+  return false;
+},
+```
+
 ### Reading usage server-side
 
 An allowed request exposes its limiter state on the request context — render quotas in `serverProps` or any server-side code:
