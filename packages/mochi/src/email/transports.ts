@@ -65,6 +65,12 @@ type NodemailerTransporter = {
   close(): void;
 };
 
+// Only `createTransport` is used. Typing against a local interface instead of
+// `typeof import('nodemailer')` keeps consumers from having to resolve
+// nodemailer's types — it ships none, and `@types/nodemailer` is not a runtime
+// dep — since the package publishes source that consumers type-check.
+type NodemailerModule = { createTransport(opts: unknown): NodemailerTransporter };
+
 /** Delivers over SMTP. nodemailer is imported lazily on first send. */
 class SmtpTransport implements EmailTransport {
   readonly name = 'smtp' as const;
@@ -92,9 +98,9 @@ class SmtpTransport implements EmailTransport {
   }
 
   private async buildTransporter(): Promise<NodemailerTransporter> {
-    let nodemailer: typeof import('nodemailer');
+    let nodemailer: NodemailerModule;
     try {
-      nodemailer = await import('nodemailer');
+      nodemailer = (await import('nodemailer')) as unknown as NodemailerModule;
     } catch (err) {
       throw new EmailError(
         "Failed to load 'nodemailer' for the SMTP transport. It ships as a dependency of mochi-framework, so this usually means dependencies weren't installed correctly — try reinstalling (`bun install`).",
@@ -110,7 +116,7 @@ class SmtpTransport implements EmailTransport {
       ...(auth ? { auth } : {}),
       ...(pool ? { pool: true } : {}),
       ...(tls ? { tls } : {}),
-    }) as unknown as NodemailerTransporter;
+    });
   }
 
   send(message: ResolvedEmailMessage): Promise<MochiEmailResult> {

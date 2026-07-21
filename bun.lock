@@ -23,7 +23,7 @@
     },
     "packages/cli": {
       "name": "create-mochi",
-      "version": "0.2.5",
+      "version": "0.3.0",
       "bin": {
         "create-mochi": "src/cli.js",
       },
@@ -81,7 +81,7 @@
     },
     "packages/mochi": {
       "name": "mochi-framework",
-      "version": "0.7.0",
+      "version": "0.8.0",
       "bin": {
         "mochi-framework": "src/cli/cli.js",
       },
@@ -107,7 +107,6 @@
         "@tailwindcss/node": "^4.3.3",
         "@tailwindcss/oxide": "^4.3.3",
         "@types/bun": "1.3.14",
-        "@types/nodemailer": "^8.0.1",
         "@types/smtp-server": "3.5.13",
         "smtp-server": "3.19.2",
         "svelte": "^5.56.7",
