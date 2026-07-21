@@ -251,6 +251,30 @@ describe('new extension points', () => {
     expect(applyFilter('queue:recoveryStallWarningMs', 30_000, { queue: 'emails' })).toBe(0);
   });
 
+  test('queue:lockDurationMs returns the default unchanged when no filter registered', () => {
+    expect(applyFilter('queue:lockDurationMs', 1_800_000, { queue: 'emails', explicit: false })).toBe(1_800_000);
+  });
+
+  test('queue:lockDurationMs can raise the lock for one queue only', () => {
+    initExtensions({
+      filters: {
+        'queue:lockDurationMs': (def, { queue }) => (queue === 'transcode' ? 3_600_000 : def),
+      },
+    });
+    expect(applyFilter('queue:lockDurationMs', 1_800_000, { queue: 'transcode', explicit: false })).toBe(3_600_000);
+    expect(applyFilter('queue:lockDurationMs', 1_800_000, { queue: 'emails', explicit: false })).toBe(1_800_000);
+  });
+
+  test('queue:lockDurationMs can leave queues that chose their own value alone', () => {
+    initExtensions({
+      filters: {
+        'queue:lockDurationMs': (value, { explicit }) => (explicit ? value : 60_000),
+      },
+    });
+    expect(applyFilter('queue:lockDurationMs', 50, { queue: 'transcode', explicit: true })).toBe(50);
+    expect(applyFilter('queue:lockDurationMs', 1_800_000, { queue: 'emails', explicit: false })).toBe(60_000);
+  });
+
   test('compile:preprocessors returns the user-supplied list', () => {
     const fakePreprocessor = { name: 'fake', markup: () => ({ code: '' }) };
     initExtensions({

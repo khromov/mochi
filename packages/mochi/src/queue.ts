@@ -152,7 +152,7 @@ function toBunJobOptions(opts: MochiJobOptions | undefined): JobOptions | undefi
  * I/O queues exist for (a single SMTP send has taken 58s in production), so the
  * ceiling is raised to bunqueue's own 30-minute cap on a processing job.
  */
-const DEFAULT_LOCK_DURATION_MS = 30 * 60_000;
+export const DEFAULT_LOCK_DURATION_MS = 30 * 60_000;
 
 /**
  * Build a queue: a bunqueue `Queue` (producer) and `Worker` (consumer) from one
@@ -210,11 +210,19 @@ export function createQueue<T = unknown, R = unknown>(
     }
   }
 
+  // Filtered per queue, after the per-queue option, so a deployment can raise the
+  // ceiling for every queue at once without editing each declaration — and still
+  // see (via `explicit`) which ones already chose a value for themselves.
+  const lockDuration = applyFilter('queue:lockDurationMs', options?.lockDuration ?? DEFAULT_LOCK_DURATION_MS, {
+    queue: name,
+    explicit: options?.lockDuration !== undefined,
+  });
+
   const worker = new Worker<T, R>(name, (job) => process(toMochiJob(job as Job<T>, name)), {
     embedded: true,
     dataPath: options?.dataPath,
     concurrency: options?.concurrency,
-    lockDuration: options?.lockDuration ?? DEFAULT_LOCK_DURATION_MS,
+    lockDuration,
     ...options?.bunqueue,
   });
 

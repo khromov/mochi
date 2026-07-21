@@ -1,7 +1,7 @@
 import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
-import { createQueue, getQueue, closeAllQueueResources, runQueueRecovery } from './queue';
+import { createQueue, getQueue, closeAllQueueResources, runQueueRecovery, DEFAULT_LOCK_DURATION_MS } from './queue';
 import type { MochiJob } from './queue';
 import { mochiEvents } from './events';
 import { initExtensions } from './extensions';
@@ -214,6 +214,25 @@ describe('Mochi queue', () => {
     await retried.promise;
     expect(runs).toBe(2);
   }, 30_000);
+
+  test('queue:lockDurationMs is resolved once per queue, after the per-queue option', () => {
+    const seen: Array<{ value: number; queue: string; explicit: boolean }> = [];
+    initExtensions({ filters: { 'queue:lockDurationMs': (value, ctx) => (seen.push({ value, ...ctx }), value) } });
+
+    const defaulted = uniqueName();
+    const chosen = uniqueName();
+    try {
+      createQueue(defaulted, async () => null, { dataPath });
+      createQueue(chosen, async () => null, { dataPath, lockDuration: 50 });
+    } finally {
+      initExtensions({});
+    }
+
+    expect(seen).toEqual([
+      { value: DEFAULT_LOCK_DURATION_MS, queue: defaulted, explicit: false },
+      { value: 50, queue: chosen, explicit: true },
+    ]);
+  });
 
   test('does not leak bunqueue job methods into the processor', async () => {
     const name = uniqueName();

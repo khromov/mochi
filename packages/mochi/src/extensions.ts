@@ -142,6 +142,7 @@ export interface MochiFilterValue {
   'captcha:minAgeMs': number;
   'captcha:driftAllowanceMs': number;
   'queue:recoveryStallWarningMs': number;
+  'queue:lockDurationMs': number;
 }
 
 // Optional per-filter override for the *return* type when it differs from the
@@ -208,6 +209,12 @@ export interface MochiFilterContext {
   'captcha:driftAllowanceMs': { options: MochiCaptchaOptions; maxAgeMs: number };
   /** Resolved once per queue that declares a `recover` callback, as recovery starts. */
   'queue:recoveryStallWarningMs': { queue: string };
+  /** Resolved once per queue, as it is created. */
+  'queue:lockDurationMs': {
+    queue: string;
+    /** Whether this queue set `lockDuration` itself — the incoming value is that option, not the framework default. */
+    explicit: boolean;
+  };
 }
 
 export interface MochiFilterKindMap {
@@ -234,6 +241,7 @@ export interface MochiFilterKindMap {
   'captcha:minAgeMs': 'sync';
   'captcha:driftAllowanceMs': 'sync';
   'queue:recoveryStallWarningMs': 'sync';
+  'queue:lockDurationMs': 'sync';
 }
 
 type FilterReturn<K extends keyof MochiFilterValue> = K extends keyof MochiFilterReturn ? MochiFilterReturn[K] : MochiFilterValue[K];
@@ -287,6 +295,7 @@ const FILTER_KINDS: { [K in keyof MochiFilterValue]: MochiKind } = {
   'captcha:minAgeMs': 'sync',
   'captcha:driftAllowanceMs': 'sync',
   'queue:recoveryStallWarningMs': 'sync',
+  'queue:lockDurationMs': 'sync',
 };
 
 // Pinned on globalThis so duplicate bundled copies of mochi-framework share one
