@@ -1360,10 +1360,6 @@ export class Mochi {
       const { [ALSO_HYDRATE_ENVELOPE_KEY]: rawHydrateMode, islandId: rawIslandId, ...props } = decodedProps;
       const islandId = typeof rawIslandId === 'string' ? rawIslandId : undefined;
       const hydrateMode = isAlsoHydrateMode(rawHydrateMode) ? rawHydrateMode : null;
-      // Tokens sealed by an older deploy carried the hydratable signal as a
-      // `__mochi_hydratable` transport prop; strip it so it can't leak into the
-      // rendered component or the client props attribute.
-      delete props['__mochi_hydratable'];
 
       // Look up the component path
       const componentPath = registry.getServerIslandPath(componentName);

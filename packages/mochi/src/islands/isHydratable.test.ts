@@ -13,7 +13,7 @@ const FIXTURE_PAGE = path.join(import.meta.dir, '..', '__fixtures__', 'island-co
 const FIXTURE_PROBE = path.join(import.meta.dir, '..', '__fixtures__', 'island-context', 'Probe.svelte');
 const FIXTURE_SPREAD = path.join(import.meta.dir, '..', '__fixtures__', 'island-context', 'SpreadProbe.svelte');
 const FIXTURE_LEGACY = path.join(import.meta.dir, '..', '__fixtures__', 'island-context', 'LegacyProbe.svelte');
-const FIXTURE_WARN_PAGE = path.join(import.meta.dir, '..', '__fixtures__', 'island-context', 'WarnPage.svelte');
+const FIXTURE_AMBIGUOUS_PAGE = path.join(import.meta.dir, '..', '__fixtures__', 'island-context', 'AmbiguousRootPage.svelte');
 
 const HYDRATABLE_CONTEXT = new Map<unknown, unknown>([[HYDRATABLE_CONTEXT_KEY, true]]);
 
@@ -42,7 +42,7 @@ describe('isHydratable() context', () => {
     warnSpy = spyOn(logger, 'warn');
     // One compileAll for all entrypoints: a second Bun.build over the same
     // transitive deps in one process risks the bundler EISDIR bug.
-    await registry.compileAll([FIXTURE_PAGE, FIXTURE_PROBE, FIXTURE_SPREAD, FIXTURE_LEGACY, FIXTURE_WARN_PAGE]);
+    await registry.compileAll([FIXTURE_PAGE, FIXTURE_PROBE, FIXTURE_SPREAD, FIXTURE_LEGACY, FIXTURE_AMBIGUOUS_PAGE]);
   });
 
   afterAll(() => {
@@ -50,13 +50,22 @@ describe('isHydratable() context', () => {
     rmSync(outDir, { recursive: true, force: true });
   });
 
-  test('no framework prop is injected, and no internal transport key appears in the HTML', async () => {
+  test('no framework prop is injected', async () => {
     const result = await requestContext.run(makeCtx(), () => registry.renderComponent(FIXTURE_PAGE));
 
     // `isHydratable` is a plain user prop — undefined on both invocations.
     const matches = [...result.body.matchAll(/data-hydratable="(true|false)"/g)].map((m) => m[1]);
     expect(matches).toEqual(['false', 'false']);
-    expect(result.body).not.toContain('__mochi_hydratable');
+  });
+
+  test('a user-passed `isHydratable` prop flows through untouched, independent of the context signal', async () => {
+    // `isHydratable` has no framework meaning as a prop name: passing it
+    // reaches the component verbatim, while isHydratable() still reports the
+    // absence of the context seed.
+    const result = await requestContext.run(makeCtx(), () => registry.renderComponent(FIXTURE_PROBE, { isHydratable: true }));
+
+    expect([...result.body.matchAll(/data-hydratable="(true|false)"/g)].map((m) => m[1])).toEqual(['true']);
+    expect([...result.body.matchAll(/data-ctx="(true|false)"/g)].map((m) => m[1])).toEqual(['false']);
   });
 
   test('isHydratable() propagates through the island subtree: nested child and snippet child true, outside false', async () => {
@@ -83,7 +92,6 @@ describe('isHydratable() context', () => {
     const result = await requestContext.run(makeCtx(), () => registry.renderComponent(FIXTURE_SPREAD, { title: 'hello' }, { context: HYDRATABLE_CONTEXT }));
 
     expect(result.body).toContain('title="hello"');
-    expect(result.body).not.toContain('__mochi_hydratable');
     expect([...result.body.matchAll(/data-ctx="(true|false)"/g)].map((m) => m[1])).toEqual(['true']);
   });
 
@@ -91,7 +99,6 @@ describe('isHydratable() context', () => {
     const result = await requestContext.run(makeCtx(), () => registry.renderComponent(FIXTURE_LEGACY, { label: 'x', extra: 'y' }, { context: HYDRATABLE_CONTEXT }));
 
     expect(result.body).toContain('extra="y"');
-    expect(result.body).not.toContain('__mochi_hydratable');
     expect([...result.body.matchAll(/data-ctx="(true|false)"/g)].map((m) => m[1])).toEqual(['true']);
   });
 
@@ -100,7 +107,7 @@ describe('isHydratable() context', () => {
     // couldn't be classified) and a compile-time warning fired. The boundary
     // component seeds context from the render site, so the root's script mode
     // is irrelevant.
-    const result = await requestContext.run(makeCtx(), () => registry.renderComponent(FIXTURE_WARN_PAGE));
+    const result = await requestContext.run(makeCtx(), () => registry.renderComponent(FIXTURE_AMBIGUOUS_PAGE));
 
     expect([...result.body.matchAll(/data-ctx="(true|false)"/g)].map((m) => m[1])).toEqual(['true']);
     const warning = warnSpy.mock.calls.flat().find((a): a is string => typeof a === 'string' && a.includes('isHydratable'));

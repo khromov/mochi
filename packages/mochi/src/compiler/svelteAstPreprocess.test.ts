@@ -25,7 +25,6 @@ describe('preprocessHydratable', () => {
     expect(transformed).toContain(`component-name="${idFor('Foo', './Foo.svelte')}"`);
     expect(transformed).toContain(`__MOCHI_COMPONENT_URL__${idFor('Foo', './Foo.svelte')}__`);
     expect(transformed).toContain('<Foo />');
-    expect(transformed).not.toContain('__mochi_hydratable');
     expect(transformed).not.toContain('mochi:hydrate');
     expect(transformed).toContain('__mochi_emit_props__');
     // The context boundary wraps outside the island wrapper element and its
