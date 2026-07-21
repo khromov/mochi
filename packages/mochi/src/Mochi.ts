@@ -399,6 +399,7 @@ export class Mochi {
         svelteConfig,
         markdown: options.markdown,
         optimize: options.optimize,
+        barrelWarnings: options.barrelWarnings,
       });
       // No-op in dev or when the option is off; production-without-manifest
       // compiles at startup, so the shake must run before the first compile.

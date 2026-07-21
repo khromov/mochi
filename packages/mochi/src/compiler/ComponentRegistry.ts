@@ -9,7 +9,8 @@ import { requestContext, renderDetached } from '../runtime/requestContext';
 import type { DebugBarData } from '../runtime/requestContext';
 import { logger } from '../utils/log';
 import { mochiEvents } from '../events';
-import type { MarkdownConfig, MochiManifest, MochiSvelteShakerOptions } from '../types';
+import { detectHeavyBarrels, formatBarrelLine, formatBarrelSummary, type BarrelMetafile, type HeavyBarrel } from './barrelDetect';
+import type { MarkdownConfig, MochiBarrelWarningOptions, MochiManifest, MochiSvelteShakerOptions } from '../types';
 import { type HydratableComponent, type PreprocessIslandError, type ServerIslandComponent } from './svelteAstPreprocess';
 import { cachedPreprocessHydratable, createPreprocessCacheStats } from './preprocessCache';
 import { CompileCache, compileFingerprint, createCompileCacheStats, type CompileCacheStats } from './compileCache';
@@ -321,6 +322,25 @@ export interface ComponentRegistryOptions {
   markdown?: MarkdownConfig;
   /** Run the whole-program svelte-shaker pass before compiling. Production only — `prepareShake()` is a no-op in dev. */
   optimize?: boolean | MochiSvelteShakerOptions;
+  /**
+   * Warning when a dependency drags a large module into the build graph
+   * that's almost entirely tree-shaken away — the "barrel import" smell (e.g.
+   * `import { Sun } from '@lucide/svelte'` instead of `@lucide/svelte/icons/sun`),
+   * which slows every rebuild because the big re-export file is re-parsed each time.
+   * On a live server it fires once per package as it's seen; a `mochi-framework build`
+   * collapses the offenders into a single grouped summary line. Default: enabled. `false` silences
+   * it entirely; `{ ignore: ['pkg-name'] }` suppresses specific packages you can't fix;
+   * `minBytes` overrides the parsed-size threshold (default 50 KB).
+   */
+  barrelWarnings?: boolean | MochiBarrelWarningOptions;
+  /**
+   * Buffer barrel offenders instead of logging each as it's seen, so a one-shot
+   * `mochi-framework build` can emit them as one grouped summary via
+   * `flushBarrelWarnings()`. A live server (dev or prod-without-manifest) must
+   * leave this off — it compiles lazily and has no end-of-build flush point, so
+   * buffered warnings would never surface. Default: `false`.
+   */
+  bufferBarrelWarnings?: boolean;
 }
 
 /**
@@ -438,6 +458,14 @@ export class ComponentRegistry {
   svelteConfig: MochiSvelteConfig;
   readonly markdown: MarkdownConfig | undefined;
   readonly optimize: boolean | MochiSvelteShakerOptions;
+  private readonly barrelWarningsEnabled: boolean;
+  private readonly barrelIgnore: Set<string>;
+  private readonly barrelMinBytes: number;
+  private readonly barrelBuffering: boolean;
+  /** Packages already warned about this process, so the warning fires once, not on every rebuild. */
+  private readonly warnedBarrels = new Set<string>();
+  /** Buffer used when `bufferBarrelWarnings` is on: barrels collected across the build, flushed as one grouped summary by `flushBarrelWarnings()`. */
+  private pendingBarrels: HeavyBarrel[] = [];
   /** absPath → slimmed `.svelte` source from the last `prepareShake()`; empty when shaking is off. */
   private shakenSources: Map<string, string> = new Map();
   private errors: MochiCompileError[] = [];
@@ -458,6 +486,11 @@ export class ComponentRegistry {
     this.svelteConfig = opts.svelteConfig ?? {};
     this.markdown = opts.markdown;
     this.optimize = opts.optimize ?? false;
+    const bw = opts.barrelWarnings;
+    this.barrelWarningsEnabled = bw !== false;
+    this.barrelIgnore = new Set(typeof bw === 'object' ? (bw.ignore ?? []) : []);
+    this.barrelMinBytes = (typeof bw === 'object' ? bw.minBytes : undefined) ?? 50 * 1024;
+    this.barrelBuffering = opts.bufferBarrelWarnings ?? false;
   }
 
   /**
@@ -798,6 +831,8 @@ export class ComponentRegistry {
         logger.error(`\n${formatUnresolvedIsland({ kind: 'unresolved-island', ...err })}\n`);
       }
     }
+
+    this.warnOnBarrelImports(result.metafile);
 
     // Detect nested hydration — a hydratable component must not itself contain mochi:hydrate or mochi:hydrate:visible children
     const hydratablePaths = new Set(allHydratables.map((h) => h.resolvedPath));
@@ -1261,6 +1296,7 @@ export class ComponentRegistry {
       });
       outputStats.sort((a, b) => b.size - a.size);
       this.clientStats = { outputs: outputStats };
+      this.warnOnBarrelImports(result.metafile);
     }
 
     // Swap the freshly-built maps into the instance fields now the build has
@@ -1652,6 +1688,57 @@ export class ComponentRegistry {
 
   private static cleanInputPath(p: string): string {
     return p.replace(/^(?:\.\.\/)*node_modules\/(?:\.bun\/[^/]+\/node_modules\/)?/, '');
+  }
+
+  /**
+   * Once-per-package heavy-barrel detection over a finished build's metafile. On a live server each
+   * offender is warned immediately; under `bufferBarrelWarnings` (the one-shot build) they're buffered
+   * and emitted as one grouped summary by `flushBarrelWarnings()`.
+   */
+  private warnOnBarrelImports(metafile: BarrelMetafile | undefined): void {
+    if (!this.barrelWarningsEnabled || !metafile) {
+      return;
+    }
+    // Barrel detection is an advisory diagnostic — it must never break a build or
+    // dev rebuild. A malformed metafile, a throwing user `barrel:warn` filter, etc.
+    // are swallowed (debug-logged) rather than propagated.
+    try {
+      for (const barrel of detectHeavyBarrels(metafile, this.barrelMinBytes, this.barrelIgnore)) {
+        if (this.warnedBarrels.has(barrel.pkg)) {
+          continue;
+        }
+        this.warnedBarrels.add(barrel.pkg);
+        const { pkg, file, bytes, usedRatio } = barrel;
+        // The `barrel:warn` filter can rewrite the line or return null to drop it,
+        // for silencing logic richer than the static `ignore` list. In a build the
+        // rewritten text feeds the grouped summary's count but not its wording.
+        const line = applyFilter('barrel:warn', formatBarrelLine(barrel), { pkg, file, bytes, usedRatio });
+        if (line === null) {
+          continue;
+        }
+        if (this.barrelBuffering) {
+          this.pendingBarrels.push(barrel);
+        } else {
+          logger.warn(line);
+        }
+      }
+    } catch (err) {
+      logger.debug('barrel detection skipped:', err);
+    }
+  }
+
+  /** Flush buffered barrel offenders as a single grouped warning. No-op when buffering is off or nothing was collected. */
+  flushBarrelWarnings(): void {
+    if (this.pendingBarrels.length === 0) {
+      return;
+    }
+    try {
+      logger.warn(formatBarrelSummary(this.pendingBarrels));
+    } catch (err) {
+      logger.debug('barrel summary skipped:', err);
+    } finally {
+      this.pendingBarrels = [];
+    }
   }
 
   private static cleanInputs(inputs: { path: string; size: number }[]): { path: string; size: number }[] {

@@ -4,7 +4,7 @@ import { buildInlineWebComponent } from '../compiler/buildInlineWebComponent';
 import { DEFAULT_ERROR_PAGE_PATH } from '../runtime/errors';
 import { CLIENT_STATS_COMPONENT } from '../dev/clientStatsRoutes';
 import { isMochiPage, isMochiApi, isMochiWs, isMochiSse } from '../types';
-import type { MarkdownConfig, MochiRouteValue, MochiSvelteShakerOptions } from '../types';
+import type { MarkdownConfig, MochiBarrelWarningOptions, MochiRouteValue, MochiSvelteShakerOptions } from '../types';
 import { rmSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { scanPublicDir, publicRouteKey } from '../runtime/publicDir';
@@ -49,6 +49,12 @@ export interface MochiBuildOptions {
    * runtime agree. Default: `false`.
    */
   optimize?: boolean | MochiSvelteShakerOptions;
+  /**
+   * Heavy barrel-import warning. Mirror the value passed to `Mochi.serve({ barrelWarnings })`
+   * so the build honors the same silencing. In a build the offenders are collapsed into one
+   * grouped summary line. Default: enabled. See `MochiServeOptions['barrelWarnings']`.
+   */
+  barrelWarnings?: boolean | MochiBarrelWarningOptions;
   /**
    * Path to a custom error page component. Mirror the value passed to
    * `Mochi.serve({ errorPage })` so it lands in the manifest and the runtime
@@ -95,6 +101,10 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     svelteConfig,
     markdown: options.markdown,
     optimize: options.optimize,
+    barrelWarnings: options.barrelWarnings,
+    // Group offenders into one summary for the one-shot production build; a
+    // `--dev` build keeps the dev server's immediate per-package lines.
+    bufferBarrelWarnings: !development,
   });
   await registry.prepareShake();
 
@@ -156,6 +166,9 @@ export async function build(options: MochiBuildOptions): Promise<void> {
       throw new Error(`[mochi:build] ${formatCompileErrors(compileErrors)}`);
     }
   }
+
+  // Flush after both compile passes so island-only barrels are included in the summary.
+  registry.flushBarrelWarnings();
 
   allRoutes.sort((a, b) => a.pattern.localeCompare(b.pattern, undefined, { numeric: true }));
   printRouteTree(allRoutes, compileStats);

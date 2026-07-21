@@ -132,6 +132,7 @@ export interface MochiFilterValue {
   'publicDir:scan': Map<string, string>;
   'consoleLogger:level': ConsoleLoggerLevel;
   'consoleLogger:line': string;
+  'barrel:warn': string;
   'image:maxRedirects': number;
   'image:url': string;
   'image:fileFilter': RegExp;
@@ -149,6 +150,7 @@ export interface MochiFilterValue {
 // `MochiFilterValue[K]` when a key is absent.
 export interface MochiFilterReturn {
   'consoleLogger:line': string | null;
+  'barrel:warn': string | null;
   'email:message': ResolvedEmailMessage | null;
 }
 
@@ -177,6 +179,16 @@ export interface MochiFilterContext {
   'consoleLogger:line': ConsoleLoggerLine & {
     /** Resolved log level (escalated to `'warn'` for 5xx / slow requests, then passed through `consoleLogger:level`). */
     level: ConsoleLoggerLevel;
+  };
+  'barrel:warn': {
+    /** The offending package, e.g. `'@lucide/svelte'`. */
+    pkg: string;
+    /** The large re-export file pulled into the graph, relative to its package, e.g. `'@lucide/svelte/dist/icons/index.js'`. */
+    file: string;
+    /** Parsed size of `file` in bytes. */
+    bytes: number;
+    /** Fraction of `bytes` that survived into the bundle (≈ 0 for a barrel). */
+    usedRatio: number;
   };
   'image:maxRedirects': { src: string };
   'image:url': { src: string; filename: string; original: boolean };
@@ -212,6 +224,7 @@ export interface MochiFilterKindMap {
   'publicDir:scan': 'async';
   'consoleLogger:level': 'sync';
   'consoleLogger:line': 'sync';
+  'barrel:warn': 'sync';
   'image:maxRedirects': 'sync';
   'image:url': 'sync';
   'image:fileFilter': 'sync';
@@ -264,6 +277,7 @@ const FILTER_KINDS: { [K in keyof MochiFilterValue]: MochiKind } = {
   'publicDir:scan': 'async',
   'consoleLogger:level': 'sync',
   'consoleLogger:line': 'sync',
+  'barrel:warn': 'sync',
   'image:maxRedirects': 'sync',
   'image:url': 'sync',
   'image:fileFilter': 'sync',

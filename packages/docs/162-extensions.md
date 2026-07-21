@@ -403,6 +403,34 @@ Context fields:
 }
 ```
 
+#### `barrel:warn`
+
+Mutate or drop a [barrel-import warning](/docs/development-mode) before it's logged. The first argument is the rendered warning string; the second is a structured context describing the offending dependency. Return the string to log it, a rewritten string to substitute, or `null` to suppress it. Sync.
+
+This is the programmatic escape hatch for silencing logic richer than the static `barrelWarnings: { ignore }` list — e.g. suppress only below a size, or only outside CI.
+
+```ts
+await Mochi.serve({
+  filters: {
+    // Drop the warning for one package, rewrite the rest:
+    'barrel:warn': (line, { pkg, bytes }) => {
+      if (pkg === '@lucide/svelte') return null;
+      return `${line} (${Math.round(bytes / 1024)} KB parsed)`;
+    },
+  },
+  routes,
+});
+```
+
+Context fields:
+
+- `pkg` — the offending package, e.g. `'@lucide/svelte'`.
+- `file` — the large re-export file pulled into the graph, relative to its package.
+- `bytes` — parsed size of `file`.
+- `usedRatio` — fraction of `bytes` that survived tree-shaking into the bundle (≈ 0 for a barrel).
+
+The filter runs once per package, in both dev and production builds. In a build the per-package line isn't logged directly — it's collapsed into one grouped summary — but the filter still runs per package, so returning `null` excludes that package from the grouped count. See [Development mode](/docs/development-mode) for the `barrelWarnings` config knobs.
+
 #### `image:maxRedirects`
 
 Override how many upstream redirects the image fetcher will follow when resolving a source. Each hop is re-validated against `allowedHosts` / `blockPrivateNetworks` (an allowed host can't redirect into a private network), so this caps how long that chain may be. The default is `5`; return a smaller number to tighten it, `0` to reject any redirect, or a larger number for sources behind several hops. The `src` being fetched is in the context, so you can decide per-host. Sync.
