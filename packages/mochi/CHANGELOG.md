@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.1](https://github.com/khromov/mochi/compare/mochi-framework-v0.8.0...mochi-framework-v0.8.1) (2026-07-21)
+
+
+### Bug Fixes
+
+* **email:** stop leaking a nodemailer TS7016 error into consumers ([#192](https://github.com/khromov/mochi/issues/192)) ([4eb74f2](https://github.com/khromov/mochi/commit/4eb74f2c80e7c886916551680d062048bcb96730))
+
 ## [0.8.0](https://github.com/khromov/mochi/compare/mochi-framework-v0.7.0...mochi-framework-v0.8.0) (2026-07-21)
 
 
