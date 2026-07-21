@@ -14,7 +14,7 @@ import { consoleLogger } from '../dev/consoleLogger';
 import { mochiEvents } from '../events';
 import { styleText } from 'node:util';
 import prettyBytes from '../vendor/pretty-bytes';
-import { collectImageResources, printResourceTree } from './resourceReport';
+import { collectImageResources, collectScriptResources, collectStyleResources, printResourceSection, printStaticSummary } from './resourceReport';
 
 export interface MochiBuildOptions {
   routes: Record<string, MochiRouteValue>;
@@ -63,11 +63,14 @@ export interface MochiBuildOptions {
    */
   errorPage?: string;
   /**
-   * Print the emitted-resources list (local image imports). Mirror the value
-   * passed to `Mochi.serve({ build: { resources } })`. The summary line keeps
-   * its asset count either way. Default: enabled.
+   * Resource-section toggles for the build report. Mirror the values passed to
+   * `Mochi.serve({ build })`. They hide sections only — the summary line keeps
+   * its counts either way. Default: all enabled.
    */
-  resources?: boolean;
+  showImages?: boolean;
+  showStyles?: boolean;
+  showScripts?: boolean;
+  showStaticFiles?: boolean;
 }
 
 type RouteKind = 'page' | 'api' | 'ws' | 'sse';
@@ -151,6 +154,9 @@ export async function build(options: MochiBuildOptions): Promise<void> {
         );
       }
       const publicFiles = new Map<string, string>();
+      // Summed here rather than re-stat'ing afterwards: the copy below already
+      // opens every file, and public/ can hold tens of thousands of them.
+      let publicBytes = 0;
       // Copy in bounded batches — public/ can hold tens of thousands of files,
       // and an unbounded Promise.all over Bun.write would exhaust file descriptors.
       const copyEntries = [...publicSrc];
@@ -159,12 +165,14 @@ export async function build(options: MochiBuildOptions): Promise<void> {
         await Promise.all(
           copyEntries.slice(i, i + COPY_BATCH).map(async ([urlPath, srcPath]) => {
             const destPath = path.join(outDir, 'public', ...urlPath.split('/').filter(Boolean));
-            await Bun.write(destPath, Bun.file(srcPath));
+            const src = Bun.file(srcPath);
+            publicBytes += src.size;
+            await Bun.write(destPath, src);
             publicFiles.set(urlPath, destPath);
           }),
         );
       }
-      return publicFiles;
+      return { publicFiles, publicBytes };
     });
     publicPipelinePromise.catch(() => {});
 
@@ -253,13 +261,6 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     allRoutes.sort((a, b) => a.pattern.localeCompare(b.pattern, undefined, { numeric: true }));
     printRouteTree(allRoutes, compileStats);
 
-    // After finalizeClientBundle() above, so assets the client pass emitted are
-    // in the map too (both passes share it, keyed by served URL).
-    const imageAssets = registry.getLocalImageAssets();
-    if (options.resources !== false) {
-      printResourceTree(collectImageResources(imageAssets.values()));
-    }
-
     // Clean up intermediate .raw.css files
     const cssDir = path.join(outDir, 'svelte-css');
     const glob = new Bun.Glob('*.raw.css');
@@ -267,7 +268,7 @@ export async function build(options: MochiBuildOptions): Promise<void> {
       rmSync(path.join(cssDir, raw));
     }
 
-    const publicFiles = await publicPipelinePromise;
+    const { publicFiles, publicBytes } = await publicPipelinePromise;
     registry.setPublicFiles(publicFiles);
 
     // Prebuilt (started before compilation) framework ServerIsland inline
@@ -282,6 +283,24 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     const manifestPath = path.join(outDir, 'manifest.json');
     const manifest = registry.toManifest();
     await Bun.write(manifestPath, JSON.stringify(manifest, null, 2));
+
+    // Reported last, once every artifact is on disk and the manifest has
+    // resolved each client URL to its file (the image map is shared by both
+    // compile passes, keyed by served URL).
+    const imageAssets = registry.getLocalImageAssets();
+    if (options.showImages !== false) {
+      printResourceSection('Image', collectImageResources(imageAssets.values()), { glyph: '▣', color: 'yellow', detailHeader: 'dimensions' });
+    }
+    if (options.showStyles !== false) {
+      printResourceSection('Stylesheet', collectStyleResources(manifest.clientFiles, manifest.assetPrefix), { glyph: '◆', color: 'magenta' });
+    }
+    if (options.showScripts !== false) {
+      const scripts = collectScriptResources(manifest.clientFiles, manifest.assetPrefix, manifest.componentEntryUrls, manifest.bootstrapUrl);
+      printResourceSection('Script', scripts, { glyph: '▲', color: 'cyan' });
+    }
+    if (options.showStaticFiles !== false) {
+      printStaticSummary(publicDir, publicFiles.size, publicBytes);
+    }
 
     const clientFileCount = Object.keys(manifest.clientFiles).length;
     const publicFileCount = publicFiles.size;

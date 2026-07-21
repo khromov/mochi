@@ -722,14 +722,20 @@ export interface MochiServeOptions {
   [key: string]: unknown;
 }
 
-/** Object form of `MochiServeOptions['build']`. See that field for semantics. */
+/**
+ * Object form of `MochiServeOptions['build']`. Each flag hides one section of the
+ * build's resource report — never what the build emits, and never the counts on
+ * the summary line. All default to enabled.
+ */
 export interface MochiBuildReportOptions {
-  /**
-   * Print the emitted-resources list — one row per local image import, with its
-   * dimensions and size on disk. The summary line keeps its asset count even
-   * when the list is off. Default: enabled.
-   */
-  resources?: boolean;
+  /** One row per local image import, with its dimensions and size on disk. */
+  showImages?: boolean;
+  /** One row per CSS-import bundle, plus an aggregate row for per-component styles. */
+  showStyles?: boolean;
+  /** One row per island entry bundle, plus an aggregate row for the shared chunks. */
+  showScripts?: boolean;
+  /** Aggregate file count and total size of the copied `publicDir`. */
+  showStaticFiles?: boolean;
 }
 
 /** Object form of `MochiServeOptions['barrelWarnings']`. See that field for semantics. */
