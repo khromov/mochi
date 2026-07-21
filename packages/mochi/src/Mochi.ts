@@ -75,6 +75,7 @@ import { ISLAND_FAILURE_CSS, ISLAND_FAILURE_DEV_CSS, islandFailureStub } from '.
 import { resolvePublicFiles, registerPublicRoutes, isExcludedDotPath } from './runtime/publicDir';
 import { startDevWatcher } from './dev/devWatcher';
 import { buildPageCacheAdminRoutes, PAGE_CACHE_ADMIN_COMPONENT } from './dev/pageCacheAdminRoutes';
+import { liveReloadGreeting } from './dev/liveReloadGeneration';
 
 const DEFAULT_HTML_SHELL = await Bun.file(new URL('./templates/default-shell.html', import.meta.url)).text();
 
@@ -399,6 +400,7 @@ export class Mochi {
         svelteConfig,
         markdown: options.markdown,
         optimize: options.optimize,
+        barrelWarnings: options.barrelWarnings,
       });
       // No-op in dev or when the option is off; production-without-manifest
       // compiles at startup, so the shake must run before the first compile.
@@ -1664,9 +1666,22 @@ export class Mochi {
     if (liveReloadEnabled) {
       wsHandlersMap.set('/__mochi_live_reload', {
         open(ws) {
-          liveReloadClients.add(ws as ServerWebSocket<MochiWsData>);
+          const client = ws as ServerWebSocket<MochiWsData>;
+          liveReloadClients.add(client);
+          try {
+            client.send(liveReloadGreeting(client.data.__mochiEntry));
+          } catch {
+            liveReloadClients.delete(client);
+          }
         },
-        message() {},
+        // The client heartbeat needs an application-level reply: proxies and
+        // sleeping network stacks can swallow protocol pings, leaving a socket
+        // that reads OPEN but is dead.
+        message(ws, message) {
+          if (typeof message === 'string' && message === 'ping') {
+            ws.send('pong');
+          }
+        },
         close(ws) {
           liveReloadClients.delete(ws as ServerWebSocket<MochiWsData>);
         },
