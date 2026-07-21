@@ -2,8 +2,6 @@ export type PersistenceStatus = 'yes' | 'no' | 'planned';
 
 export interface Cell {
   status: PersistenceStatus;
-  /** Short qualifier shown under the mark, e.g. the option that enables it. */
-  note?: string;
   /** Marks the backend a feature uses when you configure nothing. */
   isDefault?: boolean;
 }
@@ -27,7 +25,7 @@ export const persistenceRows: PersistenceRow[] = [
     href: '/docs/queues/',
     memory: { status: 'yes', isDefault: true },
     file: { status: 'no' },
-    sqlite: { status: 'yes', note: 'dataPath' },
+    sqlite: { status: 'yes' },
     postgres: { status: 'planned' },
   },
   {
@@ -35,7 +33,7 @@ export const persistenceRows: PersistenceRow[] = [
     feature: 'Cache',
     href: '/docs/cache/',
     memory: { status: 'yes', isDefault: true },
-    file: { status: 'yes', note: 'FileStorage' },
+    file: { status: 'yes' },
     sqlite: { status: 'planned' },
     postgres: { status: 'planned' },
   },
@@ -43,7 +41,7 @@ export const persistenceRows: PersistenceRow[] = [
     key: 'image-cache',
     feature: 'Image cache',
     href: '/docs/images/',
-    memory: { status: 'yes', note: 'MemoryStorage' },
+    memory: { status: 'yes' },
     file: { status: 'yes', isDefault: true },
     sqlite: { status: 'no' },
     postgres: { status: 'no' },
@@ -54,8 +52,8 @@ export const persistenceRows: PersistenceRow[] = [
     href: '/docs/rate-limiting/',
     memory: { status: 'yes', isDefault: true },
     file: { status: 'no' },
-    sqlite: { status: 'yes', note: 'sqliteStore' },
-    postgres: { status: 'yes', note: 'postgresStore' },
+    sqlite: { status: 'yes' },
+    postgres: { status: 'yes' },
   },
   {
     key: 'captcha',
@@ -63,7 +61,7 @@ export const persistenceRows: PersistenceRow[] = [
     href: '/docs/captcha/',
     memory: { status: 'yes', isDefault: true },
     file: { status: 'no' },
-    sqlite: { status: 'yes', note: "'sqlite'" },
+    sqlite: { status: 'yes' },
     postgres: { status: 'no' },
   },
 ];

@@ -55,7 +55,6 @@
                   <span class="sr-only">{labelFor[cell.status]}</span>
                   {#if cell.isDefault}<span class="star" aria-hidden="true">*</span><span class="sr-only">, default</span>{/if}
                 </span>
-                {#if cell.note}<span class="note">{cell.note}</span>{/if}
               </span>
             </td>
           {/each}
@@ -98,15 +97,7 @@
     text-decoration: underline;
   }
 
-  /* Mark above its qualifier keeps each backend column narrow enough that the
-     backend columns fit the docs container without sideways scrolling. */
-  .cell {
-    display: inline-flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.1rem;
-  }
-
+  .cell,
   .mark {
     display: inline-flex;
     align-items: center;
@@ -147,12 +138,6 @@
 
   .legend :global(.legend-icon.planned) {
     color: var(--badge-tip-text);
-  }
-
-  .note {
-    color: var(--text-muted);
-    font-size: 0.8rem;
-    font-family: var(--font-mono);
   }
 
   .footnote {
@@ -198,11 +183,6 @@
       min-width: 7rem;
       color: var(--text-muted);
       font-size: 0.85rem;
-    }
-    .cell {
-      flex-direction: row;
-      align-items: center;
-      gap: 0.35rem;
     }
   }
 </style>
