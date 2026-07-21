@@ -191,6 +191,12 @@
       padding: 1rem 1.25rem;
     }
 
+    .back {
+      position: static;
+      display: inline-flex;
+      margin-bottom: 0.75rem;
+    }
+
     .logo {
       font-size: 2.2rem;
     }

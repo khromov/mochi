@@ -28,6 +28,7 @@
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
+    min-width: 0;
   }
 
   .row {
@@ -47,5 +48,15 @@
     font-family: var(--font-mono);
     font-size: 0.85rem;
     color: var(--text-muted);
+  }
+
+  @media (max-width: 480px) {
+    .row {
+      flex-wrap: wrap;
+    }
+
+    .row :global(.badge) {
+      flex-basis: 100%;
+    }
   }
 </style>
