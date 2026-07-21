@@ -2,7 +2,8 @@
 // scene, and the outro on one cross-faded timeline (computeTimeline). Square 4K, silent —
 // no Audio, no progress bar. Drive it with a release data module (see releases/).
 import { useEffect, useState } from 'react';
-import { AbsoluteFill, continueRender, delayRender, useCurrentFrame, useVideoConfig } from 'remotion';
+import { AbsoluteFill, continueRender, delayRender, interpolate, staticFile, useCurrentFrame, useVideoConfig } from 'remotion';
+import { Audio } from '@remotion/media';
 import { loadFonts } from '../fonts';
 import { windowOpacity } from '../anim';
 import { ChangelogShell } from './ChangelogShell';
@@ -15,7 +16,7 @@ import type { ChangelogRelease } from './types';
 
 export const ChangelogVideo = ({ release }: { release: ChangelogRelease }) => {
   const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
+  const { fps, durationInFrames } = useVideoConfig();
   const t = frame / fps;
   const tl = computeTimeline(release);
 
@@ -27,6 +28,13 @@ export const ChangelogVideo = ({ release }: { release: ChangelogRelease }) => {
 
   return (
     <AbsoluteFill style={{ overflow: 'hidden' }}>
+      {release.audio ? (
+        <Audio
+          src={staticFile(release.audio)}
+          volume={(f) => interpolate(f, [0, fps, durationInFrames - fps, durationInFrames], [0, 1, 1, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })}
+        />
+      ) : null}
+
       <ChangelogShell t={t} />
 
       <IntroScene opacity={windowOpacity(t, tl.intro.start, tl.intro.end, FADE)} t={t - tl.intro.start} title={release.title} version={release.version} />

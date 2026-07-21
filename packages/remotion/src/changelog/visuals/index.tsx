@@ -1,6 +1,7 @@
 // Reusable visualization primitives the changelog-video skill composes into per-item Visuals.
 // Each takes `t` (seconds since the scene started) so motion is a pure function of time.
 // When an item needs something not covered here, add a new primitive or a bespoke component.
+import { Img, staticFile } from 'remotion';
 import { COLORS, RADIUS } from '../../theme';
 import { clamp, lerp, norm, easeOutCubic, easeOutBack } from '../../anim';
 import { Box, fontDisplay, fontMono, fontSerif } from '../../ui';
@@ -55,6 +56,29 @@ export const CodeChip = ({ t, text }: { t: number; text: string }) => {
       }}
     >
       {text}
+    </Box>
+  );
+};
+
+// A still screenshot sitting in the brand "green shell" — a rounded inset with an accent-green
+// border + glow (the DemoFrame look, but for an <Img> instead of a <Video>). For showing a real
+// UI capture (e.g. the dev email outbox, the captcha slider). `src` is relative to public/.
+export const Screenshot = ({ t, src, width = 1560, height = 877, label }: { t: number; src: string; width?: number; height?: number; label?: string }) => {
+  const a = clamp(norm(t, 0.2, 1.1));
+  return (
+    <Box style={{ flexDirection: 'column', alignItems: 'center', opacity: a, transform: `translateY(${lerp(24, 0, easeOutCubic(a))}px)` }}>
+      <Box
+        style={{
+          padding: 16,
+          borderRadius: RADIUS.lg,
+          background: COLORS.inkDark,
+          border: `2px solid ${COLORS.accentGlow}`,
+          boxShadow: '0 0 0 1px rgba(162,207,177,0.4), 0 30px 90px rgba(0,0,0,0.45), 0 0 70px rgba(162,207,177,0.25)',
+        }}
+      >
+        <Img src={staticFile(src)} style={{ width, height, objectFit: 'contain', borderRadius: RADIUS.md, display: 'block' }} />
+      </Box>
+      {label ? <Box style={{ ...fontMono, fontSize: 72, letterSpacing: '0.16em', textTransform: 'uppercase', color: COLORS.textOnHeroSubtle, marginTop: 44 }}>{label}</Box> : null}
     </Box>
   );
 };

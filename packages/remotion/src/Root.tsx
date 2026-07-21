@@ -4,6 +4,7 @@ import { MochiVideo } from './MochiVideo';
 import { ChangelogVideo } from './changelog/ChangelogVideo';
 import { computeTimeline } from './changelog/timeline';
 import { sampleRelease } from './changelog/releases/sample';
+import { release as release080 } from './changelog/releases/v0_8_0';
 
 export const RemotionRoot = () => (
   <>
@@ -14,6 +15,14 @@ export const RemotionRoot = () => (
       id="ChangelogVideo"
       component={() => <ChangelogVideo release={sampleRelease} />}
       durationInFrames={computeTimeline(sampleRelease).totalFrames}
+      fps={FPS}
+      width={CANVAS_SQUARE.width}
+      height={CANVAS_SQUARE.height}
+    />
+    <Composition
+      id="Changelog-v0-8-0"
+      component={() => <ChangelogVideo release={release080} />}
+      durationInFrames={computeTimeline(release080).totalFrames}
       fps={FPS}
       width={CANVAS_SQUARE.width}
       height={CANVAS_SQUARE.height}

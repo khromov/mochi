@@ -30,6 +30,9 @@ export type ChangelogRelease = {
   title: string;
   items: ChangelogItem[];
   demo?: ChangelogDemo;
+  // Optional background music track (path under packages/remotion/public, via staticFile()).
+  // When set, the composition must be rendered WITHOUT --muted.
+  audio?: string;
   // Override default intro/outro hold (seconds).
   introS?: number;
   outroS?: number;

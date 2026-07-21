@@ -18,13 +18,24 @@ export const IntroScene = ({ opacity, t, title, version }: { opacity: number; t:
       <Box style={{ ...fontDisplay, fontSize: 330, color: COLORS.textOnHero, letterSpacing: '-0.02em', lineHeight: 1, opacity: wordOp, transform: `translateY(${wordY}px)` }}>
         mochi
       </Box>
-      <Box style={{ ...fontDisplay, fontSize: 144, color: COLORS.accentGlow, letterSpacing: '-0.01em', marginTop: 40, textAlign: 'center', opacity: clamp(norm(t, 1.1, 2.0)) }}>
-        {title}
-      </Box>
       <Box
-        style={{ ...fontMono, fontSize: 60, letterSpacing: '0.3em', textTransform: 'uppercase', color: COLORS.textOnHeroSubtle, marginTop: 40, opacity: clamp(norm(t, 1.5, 2.4)) }}
+        style={{
+          ...fontDisplay,
+          fontSize: 300,
+          color: COLORS.accentGlow,
+          letterSpacing: '-0.02em',
+          lineHeight: 1,
+          marginTop: 44,
+          textAlign: 'center',
+          opacity: clamp(norm(t, 1.1, 2.0)),
+        }}
       >
         {version}
+      </Box>
+      <Box
+        style={{ ...fontMono, fontSize: 92, letterSpacing: '0.28em', textTransform: 'uppercase', color: COLORS.textOnHeroSubtle, marginTop: 40, opacity: clamp(norm(t, 1.5, 2.4)) }}
+      >
+        {title}
       </Box>
     </Layer>
   );
