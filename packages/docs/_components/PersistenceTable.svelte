@@ -12,7 +12,7 @@
   const labelFor: Record<Cell['status'], string> = { yes: 'supported', no: 'not supported', planned: 'planned' };
 
   const columns: { label: string; pick: (row: (typeof persistenceRows)[number]) => Cell }[] = [
-    { label: 'In-memory', pick: (r) => r.memory },
+    { label: 'Memory', pick: (r) => r.memory },
     { label: 'File', pick: (r) => r.file },
     { label: 'SQLite', pick: (r) => r.sqlite },
     { label: 'Postgres', pick: (r) => r.postgres },
