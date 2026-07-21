@@ -187,6 +187,7 @@ export type {
   MochiQueueConfig,
   BunRouteValue,
   MochiSvelteShakerOptions,
+  MochiBarrelWarningOptions,
 } from './types';
 
 import type { Snippet } from 'svelte';

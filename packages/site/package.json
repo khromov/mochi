@@ -19,7 +19,6 @@
     "@fontsource/lobster-two": "^5.2.8",
     "@fontsource/public-sans": "^5.2.7",
     "@lucide/svelte": "^1.24.0",
-    "@mdi/js": "7.4.47",
     "@tmcp/adapter-valibot": "0.1.6",
     "@tmcp/transport-http": "0.8.6",
     "mdsvex": "^0.12.7",
