@@ -57,6 +57,18 @@
 
 <style>
   .captcha-demo {
+    /* The widget's own defaults are a fixed light palette; map them onto the site
+       tokens so it follows the light/dark theme like everything else. */
+    --mochi-captcha-track-bg: var(--surface-muted);
+    --mochi-captcha-border: var(--border);
+    --mochi-captcha-handle-bg: var(--surface);
+    --mochi-captcha-handle-text: var(--text);
+    --mochi-captcha-hint-text: var(--text-muted);
+    --mochi-captcha-accent: var(--accent);
+    --mochi-captcha-accent-soft: var(--accent-soft);
+    --mochi-captcha-accent-soft-text: var(--accent-soft-text);
+    --mochi-captcha-radius: var(--radius-md);
+
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
@@ -76,7 +88,7 @@
 
   button {
     background: var(--accent);
-    color: #fff;
+    color: var(--accent-text);
     border: none;
     border-radius: var(--radius-md);
     padding: 0.45rem 0.9rem;
