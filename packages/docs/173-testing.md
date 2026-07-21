@@ -97,7 +97,7 @@ test('GET / renders', async () => {
 await runTests({ sequential: ['src/liveReload.test.ts'] });
 ```
 
-`runTests` exits the process with code `1` if any file fails, so it drops straight into CI.
+Each file's output streams as it finishes, but with many files running in parallel the failure you care about ends up buried. So `runTests` reprints a recap at the end of the run — every failed file, the names of the tests that failed in it, and their error output — and exits the process with code `1` if any file failed, so it drops straight into CI.
 
 ### Bun workspaces: use the hoisted linker
 

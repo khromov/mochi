@@ -33,6 +33,93 @@ interface FileResult {
   stderr: string;
 }
 
+/** One failing test (or one unattached error block, `name: null`) plus the error text `bun test` printed for it. */
+interface Failure {
+  name: string | null;
+  detail: string[];
+}
+
+export interface FailureExcerpt {
+  failures: Failure[];
+  /** Last lines of raw output, used when nothing parsed (a killed process, a crash before the reporter ran). */
+  fallback?: string[];
+}
+
+const MARKER_RE = /^\((?:pass|fail|skip|todo)\)/;
+const FAIL_RE = /^\(fail\)\s*(.*?)(?:\s*\[[\d.]+\s*m?s\])?$/;
+const FOOTER_RE = /^\s*(?:\d+ (?:pass|fail|error|expect)|Ran \d+ tests?)/;
+const ERROR_RE = /^\s*(?:error:|# Unhandled error)/;
+const MAX_DETAIL_LINES = 25;
+const MAX_FILE_LINES = 60;
+
+/**
+ * Pulls the failing test names and their error text out of a `bun test` run.
+ *
+ * `bun test` prints a failure's source snippet and `error:` block *before* the
+ * `(fail) <name>` line that names it, so lines are buffered and attached to the
+ * marker that follows them. Blocks with no following marker (an unhandled error
+ * between tests, an import that threw) are kept unattached.
+ */
+export function extractFailures(result: Pick<FileResult, 'stdout' | 'stderr'>): FailureExcerpt {
+  // The reporter writes to stderr; stdout only carries the version banner and the
+  // test's own console output, so it is a fallback source only.
+  const lines = result.stderr.split('\n');
+  const failures: Failure[] = [];
+  let pending: string[] = [];
+
+  const flushUnattached = (): void => {
+    if (pending.some((l) => ERROR_RE.test(l))) {
+      failures.push({ name: null, detail: trimDetail(pending) });
+    }
+    pending = [];
+  };
+
+  for (const line of lines) {
+    if (MARKER_RE.test(line)) {
+      const failed = FAIL_RE.exec(line);
+      if (failed) {
+        failures.push({ name: failed[1]!.trim() || '(unnamed test)', detail: trimDetail(pending) });
+      }
+      pending = [];
+    } else if (FOOTER_RE.test(line)) {
+      flushUnattached();
+    } else {
+      pending.push(line);
+    }
+  }
+  flushUnattached();
+
+  if (failures.length > 0) {
+    return { failures };
+  }
+
+  const raw = (result.stderr.trim() ? result.stderr : result.stdout).split('\n').filter((l) => l.trim() && !/^bun test v/.test(l));
+  return { failures: [], fallback: raw.slice(-20) };
+}
+
+/** Reduce a buffered block to its error text: from the first `error:`/unhandled-error line onward, capped. */
+function trimDetail(block: string[]): string[] {
+  const start = block.findIndex((l) => ERROR_RE.test(l));
+  const kept = (start === -1 ? block : block.slice(start)).filter((l) => !/^-{3,}$/.test(l.trim()));
+  const trimmed = dropEdgeBlanks(kept);
+  if (trimmed.length <= MAX_DETAIL_LINES) {
+    return trimmed;
+  }
+  return [...trimmed.slice(0, MAX_DETAIL_LINES), `… (truncated, ${trimmed.length - MAX_DETAIL_LINES} more lines)`];
+}
+
+function dropEdgeBlanks(block: string[]): string[] {
+  let start = 0;
+  let end = block.length;
+  while (start < end && !block[start]!.trim()) {
+    start++;
+  }
+  while (end > start && !block[end - 1]!.trim()) {
+    end--;
+  }
+  return block.slice(start, end);
+}
+
 /**
  * Runs each `src/**\/*.test.ts` file in its own `bun test` process, up to
  * `navigator.hardwareConcurrency` in parallel.
@@ -160,11 +247,24 @@ export async function runTests(options: RunTestsOptions = {}): Promise<void> {
 
   const failed = results.filter((r) => !r.ok);
   console.log(`\n${'='.repeat(60)}`);
-  console.log(`${results.length - failed.length}/${results.length} tests passed (concurrency: ${concurrency})`);
+  console.log(`${results.length - failed.length}/${results.length} test files passed (concurrency: ${concurrency})`);
   if (failed.length > 0) {
+    // Re-print each failure at the very end: with files streaming out of order
+    // across workers, the error text that matters is buried thousands of lines up.
     console.log('Failed:');
     for (const r of failed) {
-      console.log(`  ✗ ${r.file}${r.timedOut ? ' (timed out)' : ''}`);
+      console.log(`\n  ✗ ${r.file}${r.timedOut ? ' (timed out)' : ''}`);
+      const { failures, fallback } = extractFailures(r);
+      const body = failures.flatMap((f) => (f.name ? [`(fail) ${f.name}`, ...f.detail] : f.detail)).concat(fallback ?? []);
+      if (body.length === 0) {
+        console.log('    (no output captured before the process was killed)');
+      }
+      for (const line of body.slice(0, MAX_FILE_LINES)) {
+        console.log(line.trim() ? `    ${line}` : '');
+      }
+      if (body.length > MAX_FILE_LINES) {
+        console.log(`    … (truncated, ${body.length - MAX_FILE_LINES} more lines — see this file's output above)`);
+      }
     }
     process.exit(1);
   }
