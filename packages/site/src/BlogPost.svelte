@@ -277,6 +277,7 @@
 
   .readme :global(li) {
     margin-bottom: 0.2rem;
+    color: var(--text-muted);
   }
 
   /* Inline code only — exclude `<pre><code>` blocks, which get their styling
