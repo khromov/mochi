@@ -192,7 +192,7 @@ See the [bunqueue docs](https://bunqueue.dev/guide/simple-mode/) for the full op
 
 ### Observability
 
-Queues emit [events](/docs/events/) on the `mochiEvents` bus — `queue:added`, `queue:active`, `queue:completed`, `queue:failed`, `queue:error` — and the built-in [console logger](/docs/logging/) prints a `QUEUE` line for `added`, `completed`, `failed`, and `error`. The per-attempt `active` line needs `logger: { level: 'debug' }`. Wire your own metrics directly:
+Queues emit [events](/docs/events/) on the `mochiEvents` bus — `queue:added`, `queue:active`, `queue:completed`, `queue:failed`, `queue:error` — and the built-in [console logger](/docs/logging/) prints a `QUEUE` line for `added`, `completed`, `failed`, and `error`. Those four print at `warn`, so they're visible under the production default level; demote them with the [`consoleLogger:level` filter](/docs/extensions/) if you don't want them there. The per-attempt `active` line needs `logger: { level: 'debug' }`. Wire your own metrics directly:
 
 ```ts
 import { mochiEvents } from 'mochi-framework';
