@@ -189,6 +189,7 @@ export type {
   BunRouteValue,
   MochiSvelteShakerOptions,
   MochiBarrelWarningOptions,
+  MochiBuildReportOptions,
 } from './types';
 
 import type { Snippet } from 'svelte';
