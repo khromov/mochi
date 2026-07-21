@@ -10,7 +10,7 @@ await prepareFonts();
 const fonts = await loadFonts();
 
 mkdirSync(PROBE_DIR, { recursive: true });
-for (const t of [2.5, 8.0, 15.0, 22.0, 27.5]) {
+for (const t of [3, 10, 16, 23, 30, 37, 43, 50, 56]) {
   await Bun.write(`${PROBE_DIR}/t${t}.png`, await renderFramePng(t, fonts));
   console.log(`wrote t${t}.png`);
 }

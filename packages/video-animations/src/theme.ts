@@ -37,5 +37,5 @@ export const FONT = {
 
 export const CANVAS = { width: 1920, height: 1080 } as const;
 export const FPS = 30;
-export const DURATION_S = 30;
+export const DURATION_S = 58;
 export const TOTAL_FRAMES = FPS * DURATION_S;
