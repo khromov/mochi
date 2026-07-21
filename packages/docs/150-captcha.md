@@ -5,14 +5,16 @@ description: 'Slide-to-verify captcha with proof-of-work, replay protection and 
 ---
 
 <script>
+  import { Image } from 'mochi-framework/image';
   import Callout from './_components/Callout.svelte';
   import SeeItInAction from './_components/SeeItInAction.svelte';
+  import captchaShot from './images/captcha.png';
 </script>
 
 ## Captcha
 
 <figure>
-  <img src="/docs/captcha.png" alt="The MochiCaptcha slide-to-verify widget in its default styling" />
+  <Image src={captchaShot} size="doc" width={captchaShot.width} height={captchaShot.height} alt="The MochiCaptcha slide-to-verify widget in its default styling" />
   <figcaption>The widget with no CSS applied — every colour falls back to a built-in default.</figcaption>
 </figure>
 

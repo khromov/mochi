@@ -713,7 +713,7 @@ if ('serviceWorker' in navigator) {
 
 ### Image optimization (`@sveltejs/enhanced-img`)
 
-Planned, but not yet available. SvelteKit offers build-time image optimization via `@sveltejs/enhanced-img` (the `<enhanced:img>` element), with runtime transformations available at extra cost through a CDN. Mochi has no equivalent yet — build-time and runtime image transformations are on the roadmap. For now, optimize images ahead of time and reference them with a plain `<img>`.
+Supported, with a different split of the work. SvelteKit optimizes at build time via `@sveltejs/enhanced-img`, with runtime transformations available at extra cost through a CDN. Mochi imports local images the same Vite-style way — the import returns `{ src, width, height, format }` and the file is copied to a content-hashed URL — but the transforms themselves are declared once as [named sizes](/docs/images/) on `Mochi.serve()` and run on demand in `Bun.Image` behind an encrypted URL, cached to disk with stale-while-revalidate. The same `<Image>` works for remote sources, and `placeholder` adds a ThumbHash blur-up with no client JS.
 
 ```svelte
 <!-- file (SvelteKit): src/routes/+page.svelte -->
@@ -725,8 +725,13 @@ Planned, but not yet available. SvelteKit offers build-time image optimization v
 ```
 
 ```svelte
-<!-- file (Mochi): src/Home.svelte -->
-<img src="/hero.png" alt="Hero" width="800" height="400" />
+<!-- file (Mochi): src/Home.svelte — `hero` size declared in Mochi.serve({ image: { sizes } }) -->
+<script>
+  import { Image } from 'mochi-framework/image';
+  import hero from './hero.png';
+</script>
+
+<Image src={hero} size="hero" alt="Hero" />
 ```
 
 ### Remote functions

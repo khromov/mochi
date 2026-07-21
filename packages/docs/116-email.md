@@ -5,7 +5,9 @@ description: 'Send transactional email with Mochi.email() — SMTP, a custom-sen
 ---
 
 <script>
+  import { Image } from 'mochi-framework/image';
   import Callout from './_components/Callout.svelte';
+  import emailOutbox from './images/email-outbox.png';
 </script>
 
 ## Email
@@ -142,7 +144,7 @@ email: { from: 'noreply@acme.dev', transport: { type: 'dev' } }
 The `dev` transport stores every message in the running dev-server process and serves a viewer at **`/_mochi/email`** — a two-pane inbox that renders the exact HTML (in a sandboxed iframe), the plain-text alternative, the raw source, recipients, headers, and attachments. Each attachment is a link — click it to open the captured file inline in a new tab. When the `dev` transport is active, an envelope icon appears in the [debug bar](/docs/debug-bar/) linking straight to it.
 
 <figure>
-  <img src="/docs/email-outbox.png" alt="The dev outbox: a list of four captured messages on the left, and on the right the selected message's from, to and date, an attachment chip, Preview / Text / Source tabs, and the rendered email body" />
+  <Image src={emailOutbox} size="doc" width={emailOutbox.width} height={emailOutbox.height} alt="The dev outbox: a list of four captured messages on the left, and on the right the selected message's from, to and date, an attachment chip, Preview / Text / Source tabs, and the rendered email body" />
   <figcaption>The outbox after sending four messages. The <code>Preview</code> / <code>Text</code> / <code>Source</code> tabs switch between the rendered HTML, the plain-text alternative, and the raw source.</figcaption>
 </figure>
 
