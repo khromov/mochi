@@ -1,12 +1,12 @@
 ---
 name: changelog-video
-description: Generate a reusable, on-brand Remotion changelog video (square 4K, x264, silent, 20-30s) from a release changelog. Use when the user says "make a changelog video", "create a release video", "changelog video", or "/changelog-video". Distinct from mochi-changelog, which writes the text changelog.
+description: Generate a reusable, on-brand Remotion changelog video (square 4K, x264, background music, 20-30s) from a release changelog. Use when the user says "make a changelog video", "create a release video", "changelog video", or "/changelog-video". Distinct from mochi-changelog, which writes the text changelog.
 user-invocable: true
 ---
 
 # Changelog video
 
-Turn a release changelog into a short, on-brand promo video. Output is **square 2160×2160, 30fps, x264/H.264, silent, 20–30s total**. Type sizes are deliberately large so it stays legible on a phone. Videos are data-driven: a per-release module feeds the reusable `ChangelogVideo` composition in `packages/remotion`.
+Turn a release changelog into a short, on-brand promo video. Output is **square 2160×2160, 30fps, x264/H.264, 20–30s total**, with a **default background music track** (`audio/Perfect_Sequence.mp3`, gently faded in/out). Type sizes are deliberately large so it stays legible on a phone. Videos are data-driven: a per-release module feeds the reusable `ChangelogVideo` composition in `packages/remotion`.
 
 ## 0. First: load Remotion domain knowledge
 
@@ -16,7 +16,7 @@ Invoke the **`remotion-best-practices`** skill before writing animation code. No
 
 - The changelog **items**: for each, a short **title**, a one-line **blurb**, and a brief note on **how to visualize** it.
 - Whether there's a **demo video**, its **file path**, and **which item** it belongs to.
-- Reaffirm the fixed constraints: **no music, no sound effects**; total **20–30s**; keep each slide brief.
+- Reaffirm the fixed constraints: total **20–30s**; keep each slide brief. A **default background music track** (`audio/Perfect_Sequence.mp3`) plays unless the user asks to drop or swap it — there are **no sound effects**.
 
 ## 2. Reuse — do not rebuild
 
@@ -26,7 +26,7 @@ Everything lives in `packages/remotion/src/`. The reusable scaffolding is in `ch
 - `changelog/ChangelogScene.tsx` — centered item scene (eyebrow + title + blurb + visual slot) and the `Layer` helper.
 - `changelog/IntroScene.tsx` / `OutroScene.tsx` — branded open/close (Dango + wordmark).
 - `changelog/DemoFrame.tsx` — the demo video in the green-shell inset (see §5).
-- `changelog/visuals/index.tsx` — reusable visual primitives: `BadgeRow`, `CodeChip`, `Stat`. Compose these first.
+- `changelog/visuals/index.tsx` — reusable visual primitives: `BadgeRow`, `CodeChip`, `Stat`, `Screenshot`. Compose these first. `Screenshot` shows a still image (`{ t, src, width, height, label? }`) in the green-shell inset — for real UI captures (dev outbox, captcha slider, debug bar); stage the image under `public/images/` and reference it relative to `public/` (e.g. `images/foo.png`). Keep `CodeChip` text to ~35 monospace chars or it wraps to two lines at this font size.
 - `changelog/timeline.ts` — `computeTimeline(release)`: scene windows + total frames (single source of truth for duration).
 - `changelog/types.ts` — `ChangelogRelease` / `ChangelogItem` / `VisualProps`.
 - `changelog/ChangelogVideo.tsx` — the composition; you rarely need to touch it.
@@ -43,6 +43,7 @@ Copy `changelog/releases/sample.tsx` to `changelog/releases/<version>.tsx` and f
 export const release: ChangelogRelease = {
   version: 'v0.5.0',
   title: 'July release',
+  audio: 'audio/Perfect_Sequence.mp3', // default background music; omit to render silent
   introS: 4,
   outroS: 4,
   items: [
@@ -52,6 +53,8 @@ export const release: ChangelogRelease = {
 };
 ```
 
+The intro card shows the **version large** (accent green) with the release **title small** below it; the outro shows the wordmark + a large `mochi.fast` handle. `ChangelogVideo` reads `release.audio` and renders an `<Audio>` (from `@remotion/media`) faded in/out over the first/last second — so **omitting `audio` yields a silent video**, and the sample release stays silent.
+
 ## 4. Register the composition
 
 In `Root.tsx`, point the changelog `<Composition>` at the new release (or add a per-version entry so several coexist in Studio):
@@ -59,7 +62,7 @@ In `Root.tsx`, point the changelog `<Composition>` at the new release (or add a 
 ```tsx
 import { release } from './changelog/releases/v0_5_0';
 <Composition
-  id="Changelog-v0.5.0"
+  id="Changelog-v0-5-0"
   component={() => <ChangelogVideo release={release} />}
   durationInFrames={computeTimeline(release).totalFrames}
   fps={FPS}
@@ -67,6 +70,8 @@ import { release } from './changelog/releases/v0_5_0';
   height={CANVAS_SQUARE.height}
 />;
 ```
+
+**Composition ids may only contain `a-z A-Z 0-9 -` (and CJK) — no dots.** Use dashes for the version: `Changelog-v0-5-0`, not `Changelog-v0.5.0` (which fails the render with "Composition id can only contain …").
 
 Do **not** pass the release via `defaultProps` — it contains React components, which Remotion can't serialize. Close over it in the inline `component` instead.
 
@@ -81,15 +86,17 @@ If the user provides one:
 
 ## 6. Preview, verify, render
 
-- **Studio:** `bun run mochi:studio` (alias for `bun --cwd=packages/remotion run studio`), open the composition — confirm the shell/leaves, cross-fades, total in 20–30s, demo in the green frame, and **no audio**.
-- **Stills** (optional sanity check): `bun --cwd=packages/remotion x remotion still src/index.ts <id> out/check.png --scale=0.25 --frame=N`.
-- **Final render (x264/H.264, silent):** `--muted` drops the audio track Remotion otherwise adds (these videos have no sound). h264 is the project default in `remotion.config.ts`, so no `--codec` flag is needed:
+- **Studio:** `bun run mochi:studio` (alias for `bun --cwd=packages/remotion run studio`), open the composition — confirm the shell/leaves, cross-fades, total in 20–30s, demo in the green frame, and the **music track plays**.
+- **Stills** (optional sanity check): `cd packages/remotion && bun x remotion still src/index.ts <id> out/check.png --scale=0.25 --frame=N`. (Invoke from inside `packages/remotion`; the `--cwd=… x remotion still` form mangles the args.)
+- **Final render (x264/H.264, with music):** do **not** pass `--muted` when the release sets `audio` — that would strip the track. h264 is the project default in `remotion.config.ts`, so no `--codec` flag is needed:
 
   ```sh
-  bun --cwd=packages/remotion x remotion render src/index.ts <id> out/changelog-<version>.mp4 --crf=18 --muted
+  cd packages/remotion && bun x remotion render src/index.ts <id> out/changelog-<version>.mp4 --crf=18
   ```
 
-- Spot-check the output: `ffprobe out/changelog-<version>.mp4` — expect 2160×2160, `h264`, no audio stream, 20–30s.
+  (Only add `--muted` for a release that deliberately omits `audio`.)
+
+- Spot-check the output: `ffprobe out/changelog-<version>.mp4` — expect 2160×2160, `h264`, an `aac` audio stream, 20–30s.
 
 ## 7. After your changes
 
