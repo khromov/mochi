@@ -149,17 +149,25 @@ bunqueue locks the embedded store to the **first** `dataPath` used in the proces
 
 ### Long-running jobs
 
-A job holds a lock while it runs. If the job outlives the lock, the queue assumes the worker died and hands the job to someone else — while the original is still running. Mochi allows **30 minutes** by default; raise or lower it with `lockDuration` (ms):
+A job holds a lock while it runs. If the job outlives the lock, the queue assumes the worker died and hands the job to someone else — while the original is still running. Mochi allows **30 minutes** by default, which is also the longest a job may run at all; lower it with `lockDuration` (ms) if you want a stuck job reclaimed sooner:
 
 ```ts
-Mochi.queue({ process: transcodeVideo, lockDuration: 2 * 60 * 60 * 1000 });
+Mochi.queue({ process: resizeImage, lockDuration: 60_000 });
 ```
 
 <Callout type="warning">
 
-`lockDuration` must exceed the **worst case** runtime of `process`, not the typical one. A job that overruns it is re-queued mid-flight, and its eventual success is rejected as `Invalid or expired lock token` and reported as a failure — so the work runs (and its side effects fire) twice, even though it succeeded the first time.
+`lockDuration` must exceed the **worst case** runtime of `process`, not the typical one. A job that overruns it is re-queued mid-flight, and its eventual success is rejected as `Invalid or expired lock token` and reported as a failure — even though the work succeeded. Depending on the queue version it is then either retried, firing its side effects a second time, or abandoned where it stands.
 
 </Callout>
+
+<Callout type="danger">
+
+**30 minutes is a ceiling, not just a default.** The underlying queue drops any job that has been processing for longer, whatever `lockDuration` says — so raising it past 30 minutes buys nothing, and the job still fails. Work that can run longer belongs outside the queue, or split into jobs that each finish well inside the limit.
+
+</Callout>
+
+Lowering `lockDuration` does not make a crashed worker's jobs recover faster — that's handled separately by heartbeat-based stall detection, which is independent of the lock.
 
 ### Recovery on start
 
@@ -203,6 +211,12 @@ await Mochi.getQueue('api-calls').add('call', data, {
 ```
 
 See the [bunqueue docs](https://bunqueue.dev/guide/simple-mode/) for the full option set.
+
+<Callout type="info">
+
+`bunqueue` is applied last, so anything it repeats wins over the first-class option next to it. Prefer the first-class option where one exists. The one exception is `lockDuration`, which either spelling can set but the [`queue:lockDurationMs`](/docs/extensions/) filter always gets the final say on.
+
+</Callout>
 
 ### Observability
 
