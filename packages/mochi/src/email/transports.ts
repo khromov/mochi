@@ -100,7 +100,12 @@ class SmtpTransport implements EmailTransport {
   private async buildTransporter(): Promise<NodemailerTransporter> {
     let nodemailer: NodemailerModule;
     try {
-      nodemailer = (await import('nodemailer')) as unknown as NodemailerModule;
+      // nodemailer ships no bundled types and @types/nodemailer is not a runtime dep. Because mochi
+      // publishes source, consumers type-check this file — a *literal* import('nodemailer') would
+      // make their tsc/svelte-check demand nodemailer's types (TS7016). An indirect specifier keeps
+      // the runtime import intact while opting this line out of static module-type resolution.
+      const nodemailerSpecifier = 'nodemailer';
+      nodemailer = (await import(nodemailerSpecifier)) as unknown as NodemailerModule;
     } catch (err) {
       throw new EmailError(
         "Failed to load 'nodemailer' for the SMTP transport. It ships as a dependency of mochi-framework, so this usually means dependencies weren't installed correctly — try reinstalling (`bun install`).",
