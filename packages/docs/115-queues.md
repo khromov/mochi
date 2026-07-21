@@ -53,7 +53,7 @@ const queueConfig = Mochi.queue<JobData, Result>({ process, ...options });
 | `attempt`    | `number` | 1-based attempt number (1 on first run) |
 | `enqueuedAt` | `number` | epoch ms when enqueued                  |
 
-Options: `concurrency` (jobs processed at once), `dataPath` (see below), `recover` (a startup callback for re-enqueuing unfinished work — see [Recovery on start](#recovery-on-start)), and `on` for lifecycle listeners:
+Options: `concurrency` (jobs processed at once), `dataPath` (see below), `lockDuration` (see [Long-running jobs](#long-running-jobs)), `recover` (a startup callback for re-enqueuing unfinished work — see [Recovery on start](#recovery-on-start)), and `on` for lifecycle listeners:
 
 ```ts
 Mochi.queue({
@@ -144,6 +144,20 @@ Mochi.queue({ process, dataPath: '.mochi/queue.sqlite' });
 <Callout type="warning">
 
 bunqueue locks the embedded store to the **first** `dataPath` used in the process. Use one `dataPath` across all your queues; conflicting paths are ignored (Mochi logs a warning).
+
+</Callout>
+
+### Long-running jobs
+
+A job holds a lock while it runs. If the job outlives the lock, the queue assumes the worker died and hands the job to someone else — while the original is still running. Mochi allows **30 minutes** by default; raise or lower it with `lockDuration` (ms):
+
+```ts
+Mochi.queue({ process: transcodeVideo, lockDuration: 2 * 60 * 60 * 1000 });
+```
+
+<Callout type="warning">
+
+`lockDuration` must exceed the **worst case** runtime of `process`, not the typical one. A job that overruns it is re-queued mid-flight, and its eventual success is rejected as `Invalid or expired lock token` and reported as a failure — so the work runs (and its side effects fire) twice, even though it succeeded the first time.
 
 </Callout>
 

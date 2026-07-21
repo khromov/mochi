@@ -179,6 +179,42 @@ describe('Mochi queue', () => {
     expect(error.message).toBe('boom');
   });
 
+  // bunqueue's embedded heartbeat refreshes stall detection but never renews the
+  // job's lock, so a job outliving `lockDuration` is requeued while it is still
+  // running and its eventual success is rejected — the work is reported failed and
+  // retried, firing its side effects twice. Mochi's default TTL is 30 minutes, so
+  // this drives the failure with a deliberately tiny one; the lock reaper only
+  // ticks every 5s, hence the sleep. Before `lockDuration` was threaded through to
+  // the worker, a top-level value was silently dropped and this job completed once.
+  test('a job outliving lockDuration is rejected on completion and retried', async () => {
+    const name = uniqueName();
+    const failed = deferred<string>();
+    const retried = deferred<void>();
+    let runs = 0;
+
+    mochiEvents.on('queue:failed', (e) => failed.resolve(e.error));
+    mochiEvents.on('queue:completed', () => retried.resolve());
+
+    const queue = createQueue<{ z: number }>(
+      name,
+      async () => {
+        // Only the first attempt outlives the lock — the retry returns at once so
+        // the afterEach shutdown doesn't wait on a sleeping job.
+        if (++runs === 1) {
+          await Bun.sleep(7000);
+        }
+        return { ok: true };
+      },
+      { dataPath, concurrency: 2, lockDuration: 50 },
+    );
+
+    await queue.add('slow', { z: 1 }, { attempts: 2, bunqueue: { backoff: 10 } });
+
+    expect(await failed.promise).toMatch(/lock token/i);
+    await retried.promise;
+    expect(runs).toBe(2);
+  }, 30_000);
+
   test('does not leak bunqueue job methods into the processor', async () => {
     const name = uniqueName();
     const seen = deferred<MochiJob<unknown>>();

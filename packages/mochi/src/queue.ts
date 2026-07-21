@@ -52,6 +52,12 @@ export interface MochiQueueRuntimeOptions {
   concurrency?: number;
   /** Omit for in-memory. bunqueue locks the path to the first queue in the process — see `rememberDataPath`. */
   dataPath?: string;
+  /**
+   * How long a job may run before the queue reclaims it, in ms. Must exceed the
+   * worst-case runtime of `process` — see `DEFAULT_LOCK_DURATION_MS` for what
+   * happens when it doesn't.
+   */
+  lockDuration?: number;
   defaultJobOptions?: MochiJobOptions;
   /** Forwarded verbatim to bunqueue's `Queue` and `Worker` constructors. */
   bunqueue?: Record<string, unknown>;
@@ -136,6 +142,19 @@ function toBunJobOptions(opts: MochiJobOptions | undefined): JobOptions | undefi
 }
 
 /**
+ * bunqueue defaults a job's lock to 30s and renews it from the worker heartbeat
+ * — but only over TCP: the embedded heartbeat Mochi runs on calls
+ * `jobHeartbeat(id)` with no token, which refreshes stall detection and never
+ * the lock. So the lock always expires on schedule, and any job outliving it is
+ * requeued mid-flight while still running; its eventual success is then rejected
+ * ("Invalid or expired lock token"), reported as a failure, and retried —
+ * double-firing whatever the job already did. 30s is well within normal for the
+ * I/O queues exist for (a single SMTP send has taken 58s in production), so the
+ * ceiling is raised to bunqueue's own 30-minute cap on a processing job.
+ */
+const DEFAULT_LOCK_DURATION_MS = 30 * 60_000;
+
+/**
  * Build a queue: a bunqueue `Queue` (producer) and `Worker` (consumer) from one
  * config. Registers the producer handle under `name` (resolved by `getQueue`)
  * and both resources for shutdown draining. Invoked only by `Mochi.serve`, where
@@ -195,6 +214,7 @@ export function createQueue<T = unknown, R = unknown>(
     embedded: true,
     dataPath: options?.dataPath,
     concurrency: options?.concurrency,
+    lockDuration: options?.lockDuration ?? DEFAULT_LOCK_DURATION_MS,
     ...options?.bunqueue,
   });
 
