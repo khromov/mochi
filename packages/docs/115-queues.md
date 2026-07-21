@@ -7,11 +7,14 @@ description: 'Run background jobs in-process with Mochi.queue(), backed by bunqu
 <script>
   import Callout from './_components/Callout.svelte';
   import SeeItInAction from './_components/SeeItInAction.svelte';
+  import PersistenceTable from './_components/PersistenceTable.svelte';
 </script>
 
 ## Queues
 
 Offload work that shouldn't block a response — sending email, encoding media, calling slow third-party APIs — to a background **queue**. A queue bundles a job channel with the `process` function that consumes it; both run in your process, backed by [bunqueue](https://bunqueue.dev/)'s embedded mode.
+
+<PersistenceTable feature="queues" />
 
 `Mochi.queue()` — like `Mochi.page` / `api` / `ws` / `sse` — returns an **inert config** that you mount in `Mochi.serve({ queues })`, keyed by name, so every background queue the server runs is declared in one place. Add jobs from anywhere with `Mochi.getQueue(name).add(...)`.
 
@@ -140,6 +143,8 @@ By default the queue is **in-memory** — jobs do not survive a restart. Pass `d
 ```ts
 Mochi.queue({ process, dataPath: '.mochi/queue.sqlite' });
 ```
+
+In-memory and SQLite are the only options today — there's no pluggable backend, and Postgres is planned. See [Persistence](/docs/persistence/) for how this compares to other Mochi features.
 
 <Callout type="warning">
 

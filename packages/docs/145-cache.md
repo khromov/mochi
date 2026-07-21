@@ -7,11 +7,14 @@ description: 'Cache server-side data with stale-while-revalidate semantics using
 <script>
   import Callout from './_components/Callout.svelte';
   import SeeItInAction from './_components/SeeItInAction.svelte';
+  import PersistenceTable from './_components/PersistenceTable.svelte';
 </script>
 
 ## Cache
 
 `MochiCache` caches server-side data — typically slow upstream API calls — with stale-while-revalidate semantics. Construct once at module scope and share the instance across requests.
+
+<PersistenceTable feature="cache" />
 
 ```ts
 // src/lib/cache.ts
@@ -77,17 +80,19 @@ Use it from a page or API route:
 | ---------------- | ----------------- |
 | `minTimeToStale` | `5_000` (5s)      |
 | `maxTimeToLive`  | `600_000` (10min) |
-| `storage`        | in-memory `Map`   |
+| `storage`        | `MemoryStorage`   |
 | `serialize`      | identity          |
 | `deserialize`    | identity          |
 
-For multi-process or persistent caching, pass a custom `storage` that implements `getItem` / `setItem` / `removeItem` / `clear` (e.g. Redis, SQLite via `bun:sqlite`). These methods may be synchronous (in-memory `Map`, `bun:sqlite`) or `async` / Promise-returning (Redis, network stores) — the cache awaits every call. Each key holds a single entry (the value plus its write time). When a backend needs a string or buffer — like Redis — supply `serialize` / `deserialize` to encode and decode that entry, e.g. `serialize: JSON.stringify, deserialize: JSON.parse`.
+Two storage backends ship with the framework: `MemoryStorage` (the default) and `FileStorage`. Built-in SQLite and Postgres backends are planned; for now anything else — SQLite, Postgres, Redis — needs a `storage` you write yourself, implementing `getItem` / `setItem` / `removeItem` / `clear`. These methods may be synchronous (`Map`, `bun:sqlite`) or `async` / Promise-returning (Redis, network stores) — the cache awaits every call. Each key holds a single entry (the value plus its write time). When a backend needs a string or buffer — like Redis — supply `serialize` / `deserialize` to encode and decode that entry, e.g. `serialize: JSON.stringify, deserialize: JSON.parse`.
 
 The default `MemoryStorage` accepts `{ maxAge, purgeInterval }` for age-based eviction, mirroring `FileStorage` below — `new MemoryStorage({ maxAge: 300_000, purgeInterval: 60_000 })`. With no options it never evicts (the prior, still-default behavior).
 
+See [Persistence](/docs/persistence/) for how cache storage compares to the other stateful subsystems.
+
 ### File-based storage
 
-`FileStorage` persists each entry as a JSON file on disk, so the cache survives restarts. It's turnkey — no `serialize` / `deserialize` needed:
+`FileStorage` persists each entry as a JSON file on disk, so the cache survives restarts — the only built-in persistent backend (see [Persistence](/docs/persistence/)). It's turnkey — no `serialize` / `deserialize` needed:
 
 ```ts
 import { MochiCache, FileStorage } from 'mochi-framework';

@@ -7,11 +7,14 @@ description: 'Per-route and global request rate limiting with memory, SQLite, an
 <script>
   import Callout from './_components/Callout.svelte';
   import SeeItInAction from './_components/SeeItInAction.svelte';
+  import PersistenceTable from './_components/PersistenceTable.svelte';
 </script>
 
 ## Rate limiting
 
 Add a `rateLimit` config to any `Mochi.page()` or `Mochi.api()` route. It's a thin shim around [`@joint-ops/hitlimit-bun`](https://www.npmjs.com/package/@joint-ops/hitlimit-bun) — the options pass straight through.
+
+<PersistenceTable feature="rate-limiting" />
 
 ```ts
 '/api/data': Mochi.api(handler, {
@@ -71,14 +74,16 @@ All of hitlimit's options are accepted (except `logger` — Mochi logs `429`s th
 
 ### Stores
 
-Memory is the default — zero config, per-process. For persistence across restarts use SQLite; for shared state across instances use Postgres. Both are re-exported from `mochi-framework`:
+`memoryStore()` is the default — zero config, per-process. For persistence across restarts use SQLite; for shared state across instances use Postgres. All three are re-exported from `mochi-framework`, and anything else is a custom `MochiRateLimitStore`:
 
 ```ts
-import { sqliteStore, postgresStore } from 'mochi-framework';
+import { memoryStore, sqliteStore, postgresStore } from 'mochi-framework';
 
 rateLimit: { limit: 100, window: '1m', store: sqliteStore({ path: './ratelimit.db' }) }
 rateLimit: { limit: 100, window: '1m', store: postgresStore({ url: process.env.DATABASE_URL }) }
 ```
+
+See [Persistence](/docs/persistence/) for how these stores compare with the other Mochi features that persist state.
 
 Counters are bucketed by **key within a store**. A route with its **own** `rateLimit` config also folds its route pattern into that key, so **different routes** backed by the same database — whether they share one store object or each open their own connection to it — keep **separate** counters, even when the key resolves to the same value (e.g. the same client IP). This is per-route _pattern_, not per-instance: run the same route on two servers against one database and both write the same key, so they share a counter — that's how you rate-limit across a fleet. Routes inheriting the [global default](#global-default) are _not_ pattern-namespaced: they all share one bucket per key, by design.
 

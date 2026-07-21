@@ -6,11 +6,14 @@ description: 'On-the-fly image transforms on Bun.Image via named sizes, with enc
 
 <script>
   import Callout from './_components/Callout.svelte';
+  import PersistenceTable from './_components/PersistenceTable.svelte';
 </script>
 
 ## Images
 
 Mochi transforms images on the fly with [`Bun.Image`](https://bun.com/docs/runtime/image), serving them from an encrypted, stale-while-revalidate disk cache. You declare transforms once as **named sizes** in `Mochi.serve()`, then reference them by name. `<Image>` and `getImageUrl()` only mint a signed URL — the fetch, decode, and transform happen lazily in the `/_mochi/image` endpoint on the browser's request, so **SSR never blocks on image work**. Every URL's payload is encrypted (authenticated encryption keyed off your `MOCHI_KEY`), so the source URL isn't readable and an attacker can't request arbitrary sources or transforms through your server.
+
+<PersistenceTable feature="image-cache" />
 
 ### Declare sizes
 
@@ -247,6 +250,8 @@ await Mochi.serve({
   routes,
 });
 ```
+
+`MemoryStorage` is the only other built-in backend — anything else (SQLite, Postgres, Redis, …) means implementing `Storage` yourself. See [Persistence](/docs/persistence/) for how this compares to other Mochi features.
 
 `cacheDir` is ignored once `storage` is set. `maxAge` drives the same background janitor (`sweepIntervalMs`) that would otherwise sweep `FileStorage` — omit it and entries are never reclaimed.
 
