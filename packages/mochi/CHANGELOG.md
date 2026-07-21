@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.2](https://github.com/khromov/mochi/compare/mochi-framework-v0.8.1...mochi-framework-v0.8.2) (2026-07-21)
+
+
+### Bug Fixes
+
+* **email:** stop nodemailer TS7016 leaking from the value-level import ([#194](https://github.com/khromov/mochi/issues/194)) ([9575619](https://github.com/khromov/mochi/commit/9575619a416bc2a21aaddbd99c9fc503f3067f34))
+
 ## [0.8.1](https://github.com/khromov/mochi/compare/mochi-framework-v0.8.0...mochi-framework-v0.8.1) (2026-07-21)
 
 
