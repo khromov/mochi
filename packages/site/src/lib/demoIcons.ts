@@ -32,6 +32,7 @@ import ListTree from '@lucide/svelte/icons/list-tree';
 import FileText from '@lucide/svelte/icons/file-text';
 import Eye from '@lucide/svelte/icons/eye';
 import Snowflake from '@lucide/svelte/icons/snowflake';
+import Droplets from '@lucide/svelte/icons/droplets';
 import Fingerprint from '@lucide/svelte/icons/fingerprint';
 import Link from '@lucide/svelte/icons/link';
 import ImageIcon from '@lucide/svelte/icons/image';
@@ -63,6 +64,7 @@ export const demoIconFor: Record<string, DemoIconMeta> = {
   'Hydration Modes': { icon: Layers, label: 'All hydration modes' },
   'Data Loading': { icon: Globe, label: 'Server-side fetch' },
   Hydratable: { icon: Snowflake, label: 'Server-computed value reused on hydration' },
+  'isHydratable()': { icon: Droplets, label: 'Will this subtree hydrate on this page load?' },
   Cookies: { icon: Cookie, label: 'Server + client cookies' },
   'Cache Events': { icon: DatabaseZap, label: 'Custom cache event subscriber' },
   'Request ID': { icon: Barcode, label: 'Per-request correlation id' },

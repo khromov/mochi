@@ -24,10 +24,14 @@ describe('preprocessHydratable', () => {
     expect(transformed).toContain('<mochi-hydratable-island');
     expect(transformed).toContain(`component-name="${idFor('Foo', './Foo.svelte')}"`);
     expect(transformed).toContain(`__MOCHI_COMPONENT_URL__${idFor('Foo', './Foo.svelte')}__`);
-    expect(transformed).toContain('<Foo isHydratable={true} />');
-    expect(transformed).not.toContain('MochiIslandCtx');
+    expect(transformed).toContain('<Foo />');
     expect(transformed).not.toContain('mochi:hydrate');
     expect(transformed).toContain('__mochi_emit_props__');
+    // The context boundary wraps outside the island wrapper element and its
+    // import is injected into the host's script.
+    expect(transformed).toContain('<MochiHydratableBoundary_><mochi-hydratable-island');
+    expect(transformed).toContain('</mochi-hydratable-island></MochiHydratableBoundary_>');
+    expect(transformed).toContain('import MochiHydratableBoundary_ from "mochi-framework/hydratable-boundary";');
   });
 
   test('mochi:hydrate:visible with options', () => {
@@ -116,7 +120,7 @@ describe('preprocessHydratable', () => {
 
     expect(hydratables).toHaveLength(1);
     expect(transformed).toContain('<mochi-hydratable-island');
-    expect(transformed).toContain('<Wrapper isHydratable={true}><span>child content</span></Wrapper>');
+    expect(transformed).toContain('<Wrapper><span>child content</span></Wrapper>');
   });
 
   test('duplicate component instances', () => {
@@ -474,11 +478,11 @@ describe('preprocessHydratable', () => {
     const source = `${SCRIPT('import Foo from "./Foo.svelte";')}<Foo mochi:hydrate count={1} />`;
     const { transformed } = preprocessHydratable(source, '/test/File.svelte');
 
-    // Hydratable islands carry no id at all — the inner component only gets
-    // isHydratable, and components needing an id use Svelte's native
+    // Hydratable islands carry no id at all — the inner component gets no
+    // framework props, and components needing an id use Svelte's native
     // $props.id() (recovered from its own comment markers on hydration).
     expect(transformed).not.toContain('island-id');
-    expect(transformed).toContain('<Foo count={1} isHydratable={true} />');
+    expect(transformed).toContain('<Foo count={1} />');
     expect(transformed).not.toContain('islandId={__mochi_iid}');
 
     // No MochiIslandContext wrapper
@@ -689,7 +693,7 @@ describe('preprocessHydratable', () => {
     const { transformed } = preprocessHydratable(source, '/test/File.svelte');
 
     // The inner tag is unchanged — boundary just wraps it
-    expect(transformed).toContain('<Foo name="test" count={42} isHydratable={true} />');
+    expect(transformed).toContain('<Foo name="test" count={42} />');
     expect(transformed).toContain('<svelte:boundary>');
   });
 });

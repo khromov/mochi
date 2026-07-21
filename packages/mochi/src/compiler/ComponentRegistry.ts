@@ -711,6 +711,15 @@ export class ComponentRegistry {
           contents: [`import { encryptProps } from "${toPosixPath(path.join(SRC_DIR, 'islands/serverIslandCrypto.ts'))}";`, `export { encryptProps };`].join('\n'),
           loader: 'js',
         }));
+        // The preprocessor's island wrapper (`<MochiHydratableBoundary_>`) —
+        // resolved to the framework's own component in the default namespace so
+        // it flows through the normal `.svelte` loader below. The specifier is
+        // a subpath of a package we own, but deliberately NOT in the exports
+        // map: outside this plugin it must fail to resolve, not fetch a
+        // squattable third-party name.
+        build.onResolve({ filter: /^mochi-framework\/hydratable-boundary$/ }, () => ({
+          path: path.join(SRC_DIR, 'islands/HydratableBoundary.svelte'),
+        }));
         build.onLoad({ filter: /\.svelte\.[jt]s$/ }, async (args) => {
           let source = await Bun.file(args.path).text();
           if (args.path.endsWith('.ts')) {
@@ -743,9 +752,10 @@ export class ComponentRegistry {
           const preprocessed = await applyUserPreprocessors(raw, args.path, 'server', development);
           // Vendored .svelte from node_modules can never carry `mochi:*` directives
           const isVendored = args.path.includes(`${path.sep}node_modules${path.sep}`);
-          const { transformed, hydratables, serverIslands, errors } = isVendored
+          const preprocessResult = isVendored
             ? { transformed: preprocessed, hydratables: [] as HydratableComponent[], serverIslands: [] as ServerIslandComponent[], errors: [] as PreprocessIslandError[] }
             : cachedPreprocessHydratable(preprocessed, args.path, preprocessCacheStats);
+          const { hydratables, serverIslands, errors } = preprocessResult;
           fileHydratables.set(args.path, hydratables);
           fileServerIslands.set(args.path, serverIslands);
           filePreprocessErrors.set(args.path, errors);
@@ -753,7 +763,7 @@ export class ComponentRegistry {
           allServerIslands.push(...serverIslands);
 
           const { js, css } = svelteCompile(
-            transformed,
+            preprocessResult.transformed,
             mergeCompilerOptions(userCompilerOptions, {
               generate: 'server',
               filename: args.path,
@@ -763,7 +773,13 @@ export class ComponentRegistry {
           if (cssCode) {
             cssMap.set(args.path, cssCode);
           }
-          compileCache.set('server', args.path, raw, serverFingerprint, { js: js.code, css: cssCode, hydratables, serverIslands, preprocessErrors: errors });
+          compileCache.set('server', args.path, raw, serverFingerprint, {
+            js: js.code,
+            css: cssCode,
+            hydratables,
+            serverIslands,
+            preprocessErrors: errors,
+          });
           return { contents: js.code, loader: 'js' };
         });
         if (markdown) {
@@ -1190,6 +1206,12 @@ export class ComponentRegistry {
           contents: renderMochiEnvClient(development, cookiesClientPath, enhanceClientPath),
           loader: 'js',
         }));
+        // Client builds never run the island preprocessor, so the injected
+        // boundary import shouldn't appear in a client graph — this alias is
+        // cheap insurance against a stray specifier failing the whole build.
+        build.onResolve({ filter: /^mochi-framework\/hydratable-boundary$/ }, () => ({
+          path: path.join(SRC_DIR, 'islands/HydratableBoundary.svelte'),
+        }));
         // Strip esm-env imports so DEV/BROWSER/NODE become free variables,
         // then Bun's `define` option replaces them with literal booleans.
         // This enables dead code elimination of if(DEV) blocks. Needed because
@@ -1232,7 +1254,13 @@ export class ComponentRegistry {
               dev: development,
             }),
           );
-          compileCache.set('client', args.path, source, clientFingerprint, { js: js.code, css: null, hydratables: [], serverIslands: [], preprocessErrors: [] });
+          compileCache.set('client', args.path, source, clientFingerprint, {
+            js: js.code,
+            css: null,
+            hydratables: [],
+            serverIslands: [],
+            preprocessErrors: [],
+          });
           return { contents: js.code, loader: 'js' };
         });
         if (markdown) {
@@ -1440,7 +1468,11 @@ export class ComponentRegistry {
     };
   }
 
-  async renderComponent(filename: string, props?: Record<string, unknown>, opts?: { stripMarkers?: boolean; idPrefix?: string; exportName?: string }): Promise<RenderResult> {
+  async renderComponent(
+    filename: string,
+    props?: Record<string, unknown>,
+    opts?: { stripMarkers?: boolean; idPrefix?: string; exportName?: string; context?: Map<unknown, unknown> },
+  ): Promise<RenderResult> {
     await this.compile(filename);
     const { module: mod, cssComponents, hydratables, hydratablesByName, hydratablesByPath, islandPaths } = this.compiledComponents.get(filename)!;
 
@@ -1497,6 +1529,9 @@ export class ComponentRegistry {
     }
     if (opts?.idPrefix) {
       renderOptions.idPrefix = opts.idPrefix;
+    }
+    if (opts?.context) {
+      renderOptions.context = opts.context;
     }
 
     // Each render owns the whole `islandProps` map: `emitIslandProps` fills it
