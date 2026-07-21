@@ -44,17 +44,15 @@
             <td>
               <span class="col-label" aria-hidden="true">{col.label}</span>
               <span class="cell {cell.status}">
-                <span class="mark">
-                  {#if cell.status === 'yes'}
-                    <Check class="cell-icon" size={20} aria-hidden="true" />
-                  {:else if cell.status === 'planned'}
-                    <Clock class="cell-icon" size={20} aria-hidden="true" />
-                  {:else}
-                    <X class="cell-icon" size={20} aria-hidden="true" />
-                  {/if}
-                  <span class="sr-only">{labelFor[cell.status]}</span>
-                  {#if cell.isDefault}<span class="star" aria-hidden="true">*</span><span class="sr-only">, default</span>{/if}
-                </span>
+                {#if cell.status === 'yes'}
+                  <Check class="cell-icon" size={20} aria-hidden="true" />
+                {:else if cell.status === 'planned'}
+                  <Clock class="cell-icon" size={20} aria-hidden="true" />
+                {:else}
+                  <X class="cell-icon" size={20} aria-hidden="true" />
+                {/if}
+                <span class="sr-only">{labelFor[cell.status]}</span>
+                {#if cell.isDefault}<span class="star" aria-hidden="true">*</span><span class="sr-only">, default</span>{/if}
               </span>
             </td>
           {/each}
@@ -97,8 +95,7 @@
     text-decoration: underline;
   }
 
-  .cell,
-  .mark {
+  .cell {
     display: inline-flex;
     align-items: center;
     gap: 0.1rem;
