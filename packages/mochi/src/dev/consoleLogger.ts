@@ -246,16 +246,18 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
     level: 'warn',
   }));
 
-  // `added` is the only signal that work entered the system — with a slow
-  // processor it's the sole line for as long as the job runs — so it prints at
-  // the default level. Per-attempt `active` repeats on every retry and adds
-  // nothing over added + completed/failed, so it stays on `logger.debug`.
-  // `completed` carries the duration (escalated to warn when slow);
-  // `failed`/`error` always warn.
+  // Queue lifecycle is operational signal, so `added` and `completed` are
+  // pinned at `warn` to survive the production default level ('warn') — an
+  // `info` default would hide `added` entirely and leave `completed` visible
+  // only when the job trips the slow-escalation. Per-attempt `active` repeats
+  // on every retry and adds nothing over added + completed/failed, so it stays
+  // on `logger.debug`. `failed`/`error` always warn. Apps that find the
+  // lifecycle chatty can demote it with the `consoleLogger:level` filter.
   subscribe('queue:added', ({ queue, jobName, jobId }) => ({
     label: 'QUEUE',
     path: `${queue}/${jobName}`,
     note: styleText('dim', `+ ${jobId}`),
+    level: 'warn',
   }));
   subscribe('queue:active', ({ queue, jobName }) => ({
     label: 'QUEUE',
@@ -270,6 +272,7 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
     duration,
     slow,
     verySlow,
+    level: 'warn',
   }));
   subscribe('queue:failed', ({ queue, jobName, attempt, error }) => ({
     label: 'QUEUE',
