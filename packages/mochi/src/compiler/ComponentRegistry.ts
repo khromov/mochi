@@ -713,8 +713,11 @@ export class ComponentRegistry {
         }));
         // The preprocessor's island wrapper (`<MochiHydratableBoundary_>`) —
         // resolved to the framework's own component in the default namespace so
-        // it flows through the normal `.svelte` loader below.
-        build.onResolve({ filter: /^mochi-hydratable-boundary$/ }, () => ({
+        // it flows through the normal `.svelte` loader below. The specifier is
+        // a subpath of a package we own, but deliberately NOT in the exports
+        // map: outside this plugin it must fail to resolve, not fetch a
+        // squattable third-party name.
+        build.onResolve({ filter: /^mochi-framework\/hydratable-boundary$/ }, () => ({
           path: path.join(SRC_DIR, 'islands/HydratableBoundary.svelte'),
         }));
         build.onLoad({ filter: /\.svelte\.[jt]s$/ }, async (args) => {
@@ -1206,7 +1209,7 @@ export class ComponentRegistry {
         // Client builds never run the island preprocessor, so the injected
         // boundary import shouldn't appear in a client graph — this alias is
         // cheap insurance against a stray specifier failing the whole build.
-        build.onResolve({ filter: /^mochi-hydratable-boundary$/ }, () => ({
+        build.onResolve({ filter: /^mochi-framework\/hydratable-boundary$/ }, () => ({
           path: path.join(SRC_DIR, 'islands/HydratableBoundary.svelte'),
         }));
         // Strip esm-env imports so DEV/BROWSER/NODE become free variables,

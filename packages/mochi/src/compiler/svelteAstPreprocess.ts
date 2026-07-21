@@ -448,7 +448,7 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
       imports += '\nimport { emitIslandProps as __mochi_emit_props__ } from "mochi-framework";';
     }
     if (needsBoundary) {
-      imports += '\nimport MochiHydratableBoundary_ from "mochi-hydratable-boundary";';
+      imports += '\nimport MochiHydratableBoundary_ from "mochi-framework/hydratable-boundary";';
     }
     if (needsStringify) {
       imports += '\nimport { stringify as __mochi_stringify__ } from "mochi-framework";';

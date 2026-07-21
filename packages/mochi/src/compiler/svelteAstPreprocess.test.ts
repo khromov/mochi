@@ -31,7 +31,7 @@ describe('preprocessHydratable', () => {
     // import is injected into the host's script.
     expect(transformed).toContain('<MochiHydratableBoundary_><mochi-hydratable-island');
     expect(transformed).toContain('</mochi-hydratable-island></MochiHydratableBoundary_>');
-    expect(transformed).toContain('import MochiHydratableBoundary_ from "mochi-hydratable-boundary";');
+    expect(transformed).toContain('import MochiHydratableBoundary_ from "mochi-framework/hydratable-boundary";');
   });
 
   test('mochi:hydrate:visible with options', () => {
