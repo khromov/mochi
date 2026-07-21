@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.0](https://github.com/khromov/mochi/compare/create-mochi-v0.2.5...create-mochi-v0.3.0) (2026-07-21)
+
+
+### Features
+
+* add signed image-resize API with stale-while-revalidate cache ([#65](https://github.com/khromov/mochi/issues/65)) ([d1fb6b6](https://github.com/khromov/mochi/commit/d1fb6b68ae185386ad266b5e437a716a2b0e02d4))
+
+
+### Bug Fixes
+
+* resolve validated bugs, security issues & dead code from framework review ([#137](https://github.com/khromov/mochi/issues/137)) ([373e31a](https://github.com/khromov/mochi/commit/373e31a596fc9e3f6f52952fadbcad298a7e6703))
+
 ## [0.2.5](https://github.com/khromov/mochi/compare/create-mochi-v0.2.4...create-mochi-v0.2.5) (2026-06-16)
 
 
