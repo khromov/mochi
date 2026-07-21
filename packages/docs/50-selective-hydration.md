@@ -105,28 +105,7 @@ These rules apply to every directive family: `mochi:hydrate*`, `mochi:defer*`, a
 
 <Callout type="info">
 
-Like `getContext`, `isHydratable()` must be called during component initialization — at the top level of the `<script>` block, not inside an event handler or `$effect`. In an island root, call it after any `$props()` declaration.
-
-</Callout>
-
-<Callout type="warning">
-
-The signal is planted in the island root's `<script>` at compile time, which requires knowing whether that script runs in legacy or runes mode. A root Mochi cannot classify — no runes, no legacy-only syntax, e.g. only a bare reactive `let` — is left untouched and logs a compile-time warning, because `isHydratable()` in its subtree would report `false` during SSR but `true` after hydration. Make the mode explicit, per file or project-wide:
-
-```svelte
-<svelte:options runes={false} />
-
-<!-- or make it a rune: let count = $state(0); project-wide: compilerOptions.runes -->
-<script>
-  let count = 0;
-</script>
-```
-
-</Callout>
-
-<Callout type="info">
-
-The warning only appears if something in the build actually calls `isHydratable()` — without a reader, an unplanted signal changes nothing.
+Like `getContext`, `isHydratable()` must be called during component initialization — at the top level of the `<script>` block, not inside an event handler or `$effect`.
 
 </Callout>
 

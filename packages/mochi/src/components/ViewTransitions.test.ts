@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { ComponentRegistry } from '../compiler/ComponentRegistry';
 import { requestContext, type MochiRequestContext } from '../runtime/requestContext';
+import { HYDRATABLE_CONTEXT_KEY } from '../islands/isHydratable';
 
 const COMPONENT_PATH = path.join(import.meta.dir, 'ViewTransitions.svelte');
 
@@ -184,9 +185,10 @@ describe('ViewTransitions', () => {
   });
 
   test('throws when invoked as an island (isHydratable())', async () => {
-    // The framework injects the internal transport prop on mochi:hydrate*/defer*
+    // The framework seeds the hydratable context on mochi:hydrate*/defer*
     // invocations; the component detects it via isHydratable().
-    await expect(render({ __mochi_hydratable: true })).rejects.toThrow('must not be hydrated');
+    const context = new Map<unknown, unknown>([[HYDRATABLE_CONTEXT_KEY, true]]);
+    await expect(renderInRequest(() => registry.renderComponent(COMPONENT_PATH, undefined, { context }))).rejects.toThrow('must not be hydrated');
   });
 
   test('throws on a non-finite or negative duration', async () => {

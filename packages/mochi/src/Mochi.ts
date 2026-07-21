@@ -9,6 +9,7 @@ import { buildInlineWebComponent } from './compiler/buildInlineWebComponent';
 import { buildClientStatsRoutes, CLIENT_STATS_COMPONENT } from './dev/clientStatsRoutes';
 import { buildEmailViewerRoutes, EMAIL_VIEWER_COMPONENT } from './dev/emailViewerRoutes';
 import { isMochiPage, isMochiApi, isMochiWs, isMochiSse, isMochiFile, isMochiQueue, isServerPropsResolver, isAlsoHydrateMode, ALSO_HYDRATE_ENVELOPE_KEY } from './types';
+import { HYDRATABLE_CONTEXT_KEY } from './islands/isHydratable';
 import type {
   BunRouteValue,
   HttpMethod,
@@ -1359,6 +1360,10 @@ export class Mochi {
       const { [ALSO_HYDRATE_ENVELOPE_KEY]: rawHydrateMode, islandId: rawIslandId, ...props } = decodedProps;
       const islandId = typeof rawIslandId === 'string' ? rawIslandId : undefined;
       const hydrateMode = isAlsoHydrateMode(rawHydrateMode) ? rawHydrateMode : null;
+      // Tokens sealed by an older deploy carried the hydratable signal as a
+      // `__mochi_hydratable` transport prop; strip it so it can't leak into the
+      // rendered component or the client props attribute.
+      delete props['__mochi_hydratable'];
 
       // Look up the component path
       const componentPath = registry.getServerIslandPath(componentName);
@@ -1389,6 +1394,11 @@ export class Mochi {
           result = await registry.renderComponent(componentPath, props as Record<string, unknown>, {
             stripMarkers: false,
             ...(islandId && !islandId.includes('--') ? { idPrefix: islandId } : {}),
+            // An also-hydrate island's standalone render seeds the
+            // `isHydratable()` context for its whole subtree — the same signal
+            // the in-page boundary component provides for `mochi:hydrate*`
+            // islands. Pure `mochi:defer` never hydrates, so no context.
+            ...(hydrateMode !== null ? { context: new Map<unknown, unknown>([[HYDRATABLE_CONTEXT_KEY, true]]) } : {}),
             // Named-export islands render that export, not the module's default.
             ...(registry.getServerIslandExport(componentName) ? { exportName: registry.getServerIslandExport(componentName) } : {}),
           });

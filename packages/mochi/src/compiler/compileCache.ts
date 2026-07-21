@@ -14,13 +14,6 @@ export interface CompiledFileOutput {
   hydratables: HydratableComponent[];
   serverIslands: ServerIslandComponent[];
   preprocessErrors: PreprocessIslandError[];
-  /**
-   * Decline reason from the hydration-context seed pass (null when seeded).
-   * Cached so a hit still lets `compileAll` re-warn about an island root whose
-   * subtree can't see `isHydratable()` — same replay rationale as
-   * `preprocessErrors`.
-   */
-  seedDeclined: string | null;
 }
 
 interface CacheEntry {

@@ -7,12 +7,15 @@ import { requestContext } from '../runtime/requestContext';
 import type { MochiRequestContext } from '../runtime/requestContext';
 import { MochiCookieJar } from '../runtime/cookies';
 import { logger } from '../utils/log';
+import { HYDRATABLE_CONTEXT_KEY } from './isHydratable';
 
 const FIXTURE_PAGE = path.join(import.meta.dir, '..', '__fixtures__', 'island-context', 'Page.svelte');
 const FIXTURE_PROBE = path.join(import.meta.dir, '..', '__fixtures__', 'island-context', 'Probe.svelte');
 const FIXTURE_SPREAD = path.join(import.meta.dir, '..', '__fixtures__', 'island-context', 'SpreadProbe.svelte');
 const FIXTURE_LEGACY = path.join(import.meta.dir, '..', '__fixtures__', 'island-context', 'LegacyProbe.svelte');
 const FIXTURE_WARN_PAGE = path.join(import.meta.dir, '..', '__fixtures__', 'island-context', 'WarnPage.svelte');
+
+const HYDRATABLE_CONTEXT = new Map<unknown, unknown>([[HYDRATABLE_CONTEXT_KEY, true]]);
 
 function makeCtx(): MochiRequestContext {
   return {
@@ -28,7 +31,7 @@ function makeCtx(): MochiRequestContext {
   };
 }
 
-describe('auto-injected `isHydratable` prop', () => {
+describe('isHydratable() context', () => {
   let outDir: string;
   let registry: ComponentRegistry;
   let warnSpy: Mock<typeof logger.warn>;
@@ -47,10 +50,10 @@ describe('auto-injected `isHydratable` prop', () => {
     rmSync(outDir, { recursive: true, force: true });
   });
 
-  test('the public `isHydratable` prop is no longer injected, and the internal transport never leaks into HTML', async () => {
+  test('no framework prop is injected, and no internal transport key appears in the HTML', async () => {
     const result = await requestContext.run(makeCtx(), () => registry.renderComponent(FIXTURE_PAGE));
 
-    // `isHydratable` is a plain user prop now — undefined on both invocations.
+    // `isHydratable` is a plain user prop — undefined on both invocations.
     const matches = [...result.body.matchAll(/data-hydratable="(true|false)"/g)].map((m) => m[1]);
     expect(matches).toEqual(['false', 'false']);
     expect(result.body).not.toContain('__mochi_hydratable');
@@ -66,41 +69,41 @@ describe('auto-injected `isHydratable` prop', () => {
     expect(matches).toEqual(['true', 'true', 'false', 'false']);
   });
 
-  test('standalone render with the envelope transport prop (also-hydrate server island path) seeds nested context', async () => {
+  test('standalone render with the hydratable context (also-hydrate server island path) seeds nested context', async () => {
     // The `/_mochi/island/:name` endpoint renders the island component
-    // directly, passing the decrypted envelope props — which include the
-    // internal transport prop only for `mochi:defer mochi:hydrate`.
-    const alsoHydrate = await requestContext.run(makeCtx(), () => registry.renderComponent(FIXTURE_PROBE, { __mochi_hydratable: true }));
+    // directly, passing `context` only for `mochi:defer mochi:hydrate`.
+    const alsoHydrate = await requestContext.run(makeCtx(), () => registry.renderComponent(FIXTURE_PROBE, {}, { context: HYDRATABLE_CONTEXT }));
     expect([...alsoHydrate.body.matchAll(/data-ctx="(true|false)"/g)].map((m) => m[1])).toEqual(['true']);
 
     const pureDefer = await requestContext.run(makeCtx(), () => registry.renderComponent(FIXTURE_PROBE, {}));
     expect([...pureDefer.body.matchAll(/data-ctx="(true|false)"/g)].map((m) => m[1])).toEqual(['false']);
   });
 
-  test('identifier-form $props(): the transport prop is stripped from spreads but still seeds context', async () => {
-    const result = await requestContext.run(makeCtx(), () => registry.renderComponent(FIXTURE_SPREAD, { __mochi_hydratable: true, title: 'hello' }));
+  test('identifier-form $props() root: spreads stay clean and the subtree sees context', async () => {
+    const result = await requestContext.run(makeCtx(), () => registry.renderComponent(FIXTURE_SPREAD, { title: 'hello' }, { context: HYDRATABLE_CONTEXT }));
 
     expect(result.body).toContain('title="hello"');
     expect(result.body).not.toContain('__mochi_hydratable');
     expect([...result.body.matchAll(/data-ctx="(true|false)"/g)].map((m) => m[1])).toEqual(['true']);
   });
 
-  test('legacy island root: declared transport prop stays out of $$restProps and still seeds context', async () => {
-    const result = await requestContext.run(makeCtx(), () => registry.renderComponent(FIXTURE_LEGACY, { __mochi_hydratable: true, label: 'x', extra: 'y' }));
+  test('legacy island root: $$restProps stays clean and the subtree sees context', async () => {
+    const result = await requestContext.run(makeCtx(), () => registry.renderComponent(FIXTURE_LEGACY, { label: 'x', extra: 'y' }, { context: HYDRATABLE_CONTEXT }));
 
     expect(result.body).toContain('extra="y"');
     expect(result.body).not.toContain('__mochi_hydratable');
     expect([...result.body.matchAll(/data-ctx="(true|false)"/g)].map((m) => m[1])).toEqual(['true']);
   });
 
-  test('a hydrating island root the seed pass declined warns with the reason and a concrete fix', () => {
-    const warning = warnSpy.mock.calls
-      .flat()
-      .find((a): a is string => typeof a === 'string' && a.includes('AmbiguousRoot.svelte') && a.includes('isHydratable() could not be wired up'));
+  test('a mode-ambiguous island root just works: context reaches its subtree with no warning', async () => {
+    // Under the old script-grafting seed pass this root was declined (its mode
+    // couldn't be classified) and a compile-time warning fired. The boundary
+    // component seeds context from the render site, so the root's script mode
+    // is irrelevant.
+    const result = await requestContext.run(makeCtx(), () => registry.renderComponent(FIXTURE_WARN_PAGE));
 
-    expect(warning).toBeDefined();
-    expect(warning).toContain('`let count`');
-    expect(warning).toContain('Fix: ');
-    expect(warning).toContain('<svelte:options runes />');
+    expect([...result.body.matchAll(/data-ctx="(true|false)"/g)].map((m) => m[1])).toEqual(['true']);
+    const warning = warnSpy.mock.calls.flat().find((a): a is string => typeof a === 'string' && a.includes('isHydratable'));
+    expect(warning).toBeUndefined();
   });
 });

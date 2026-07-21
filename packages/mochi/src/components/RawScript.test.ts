@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { ComponentRegistry } from '../compiler/ComponentRegistry';
+import { HYDRATABLE_CONTEXT_KEY } from '../islands/isHydratable';
 
 const COMPONENT_PATH = path.join(import.meta.dir, 'RawScript.svelte');
 
@@ -51,6 +52,7 @@ describe('RawScript', () => {
   });
 
   test('refuses to hydrate', async () => {
-    await expect(registry.renderComponent(COMPONENT_PATH, { src: scriptFile, __mochi_hydratable: true })).rejects.toThrow('must not be hydrated');
+    const context = new Map<unknown, unknown>([[HYDRATABLE_CONTEXT_KEY, true]]);
+    await expect(registry.renderComponent(COMPONENT_PATH, { src: scriptFile }, { context })).rejects.toThrow('must not be hydrated');
   });
 });

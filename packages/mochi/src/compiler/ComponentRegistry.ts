@@ -11,7 +11,7 @@ import { logger } from '../utils/log';
 import { mochiEvents } from '../events';
 import type { MarkdownConfig, MochiManifest, MochiSvelteShakerOptions } from '../types';
 import { type HydratableComponent, type PreprocessIslandError, type ServerIslandComponent } from './svelteAstPreprocess';
-import { cachedInjectHydratableContextSeed, cachedPreprocessHydratable, createPreprocessCacheStats } from './preprocessCache';
+import { cachedPreprocessHydratable, createPreprocessCacheStats } from './preprocessCache';
 import { CompileCache, compileFingerprint, createCompileCacheStats, type CompileCacheStats } from './compileCache';
 import { mergeCompilerOptions, type MochiSvelteConfig } from './svelteConfig';
 import { applyFilter } from '../extensions';
@@ -104,9 +104,6 @@ export function formatBuildMessages(
 const MARKDOWN_EXTENSIONS = ['.md', '.svx'];
 const MARKDOWN_FILE_FILTER = /\.(md|svx)$/;
 
-/** Stateless (no `g` flag) so repeated `.test()` calls don't walk `lastIndex`. */
-const IS_HYDRATABLE_USAGE = /\bisHydratable\b/;
-
 function createMarkdownLoader(opts: {
   markdown: MarkdownConfig;
   target: 'server' | 'client';
@@ -121,17 +118,12 @@ function createMarkdownLoader(opts: {
     allServerIslands: ServerIslandComponent[];
     filePreprocessErrors: Map<string, PreprocessIslandError[]>;
     preprocessCacheStats: ReturnType<typeof createPreprocessCacheStats>;
-    declinedSeeds: Map<string, string>;
-    hydratableUsage: { used: boolean };
   };
 }) {
   const highlight = opts.markdown.highlight;
   const fingerprint = compileFingerprint(opts.userCompilerOptions, opts.development);
   return async (args: { path: string }) => {
     const raw = await Bun.file(args.path).text();
-    if (opts.hydration && IS_HYDRATABLE_USAGE.test(raw)) {
-      opts.hydration.hydratableUsage.used = true;
-    }
     // Cache hit: replay the side effects (hydration metadata, scoped CSS) the
     // miss path would have produced and skip mdsvex + svelte compile entirely.
     // Keyed on raw source, so this assumes mdsvex + the user preprocessors are
@@ -145,9 +137,6 @@ function createMarkdownLoader(opts: {
         opts.hydration.allHydratables.push(...cached.hydratables);
         opts.hydration.allServerIslands.push(...cached.serverIslands);
         opts.hydration.filePreprocessErrors.set(args.path, cached.preprocessErrors);
-        if (cached.seedDeclined) {
-          opts.hydration.declinedSeeds.set(args.path, cached.seedDeclined);
-        }
       }
       if (opts.target === 'server' && cached.css && opts.cssMap) {
         opts.cssMap.set(args.path, cached.css);
@@ -182,12 +171,8 @@ function createMarkdownLoader(opts: {
       opts.hydration.filePreprocessErrors.set(args.path, preprocessErrors);
       svelteSource = preprocessed.transformed;
     }
-    const seeded = cachedInjectHydratableContextSeed(svelteSource, args.path, opts.target, opts.userCompilerOptions.runes);
-    if (seeded.declined && opts.hydration) {
-      opts.hydration.declinedSeeds.set(args.path, seeded.declined);
-    }
     const { js, css } = svelteCompile(
-      seeded.code,
+      svelteSource,
       mergeCompilerOptions(opts.userCompilerOptions, {
         generate: opts.target,
         filename: args.path,
@@ -198,7 +183,7 @@ function createMarkdownLoader(opts: {
     if (cssCode && opts.cssMap) {
       opts.cssMap.set(args.path, cssCode);
     }
-    opts.compileCache.set(opts.target, args.path, raw, fingerprint, { js: js.code, css: cssCode, hydratables, serverIslands, preprocessErrors, seedDeclined: seeded.declined });
+    opts.compileCache.set(opts.target, args.path, raw, fingerprint, { js: js.code, css: cssCode, hydratables, serverIslands, preprocessErrors });
     return { contents: js.code, loader: 'js' as const };
   };
 }
@@ -607,20 +592,6 @@ export class ComponentRegistry {
     const fileHydratables = new Map<string, HydratableComponent[]>();
     const fileServerIslands = new Map<string, ServerIslandComponent[]>();
     const filePreprocessErrors = new Map<string, PreprocessIslandError[]>();
-    // Files the hydration-context seed pass could not instrument, with the
-    // reason — cross-referenced against island roots after the build to warn.
-    const declinedSeeds = new Map<string, string>();
-    // A decline only matters if something actually calls `isHydratable()`;
-    // otherwise the missing context seed is inert and warning is pure noise.
-    const hydratableUsage = { used: false };
-    // `isHydratable()` must run during component init, so nearly every call
-    // site is a component script we already scan below. A plain .ts helper can
-    // still call it on a component's behalf — those import it from
-    // `mochi-framework`, so the non-component importers are collected here and
-    // scanned after the build. Known blind spot: a helper reaching it through a
-    // local `export * from 'mochi-framework'` re-export is neither a direct
-    // importer nor mentions the name, so its usage suppresses the warning.
-    const mochiFrameworkImporters = new Set<string>();
     const development = this.development;
     const userCompilerOptions = this.svelteConfig.compilerOptions ?? {};
     const serverFingerprint = compileFingerprint(userCompilerOptions, development);
@@ -647,12 +618,10 @@ export class ComponentRegistry {
           importedCssPaths.add(args.path);
           return { contents: '', loader: 'js' };
         });
-        build.onResolve({ filter: /^mochi-framework$/ }, (args) => {
-          if (args.importer && !args.importer.endsWith('.svelte')) {
-            mochiFrameworkImporters.add(args.importer);
-          }
-          return { path: 'mochi-framework', namespace: 'mochi-env' };
-        });
+        build.onResolve({ filter: /^mochi-framework$/ }, () => ({
+          path: 'mochi-framework',
+          namespace: 'mochi-env',
+        }));
         build.onLoad({ filter: /.*/, namespace: 'mochi-env' }, () => ({
           contents: renderMochiEnvServer(development),
           loader: 'js',
@@ -664,6 +633,12 @@ export class ComponentRegistry {
         build.onLoad({ filter: /.*/, namespace: 'mochi-server-island' }, () => ({
           contents: [`import { encryptProps } from "${toPosixPath(path.join(SRC_DIR, 'islands/serverIslandCrypto.ts'))}";`, `export { encryptProps };`].join('\n'),
           loader: 'js',
+        }));
+        // The preprocessor's island wrapper (`<MochiHydratableBoundary_>`) —
+        // resolved to the framework's own component in the default namespace so
+        // it flows through the normal `.svelte` loader below.
+        build.onResolve({ filter: /^mochi-hydratable-boundary$/ }, () => ({
+          path: path.join(SRC_DIR, 'islands/HydratableBoundary.svelte'),
         }));
         build.onLoad({ filter: /\.svelte\.[jt]s$/ }, async (args) => {
           let source = await Bun.file(args.path).text();
@@ -682,9 +657,6 @@ export class ComponentRegistry {
         });
         build.onLoad({ filter: /\.svelte$/ }, async (args) => {
           const raw = shakenSources.get(args.path) ?? (await Bun.file(args.path).text());
-          if (IS_HYDRATABLE_USAGE.test(raw)) {
-            hydratableUsage.used = true;
-          }
           const cached = compileCache.get('server', args.path, raw, serverFingerprint, compileCacheStats);
           if (cached) {
             fileHydratables.set(args.path, cached.hydratables);
@@ -692,9 +664,6 @@ export class ComponentRegistry {
             filePreprocessErrors.set(args.path, cached.preprocessErrors);
             allHydratables.push(...cached.hydratables);
             allServerIslands.push(...cached.serverIslands);
-            if (cached.seedDeclined) {
-              declinedSeeds.set(args.path, cached.seedDeclined);
-            }
             if (cached.css) {
               cssMap.set(args.path, cached.css);
             }
@@ -707,15 +676,6 @@ export class ComponentRegistry {
             ? { transformed: preprocessed, hydratables: [] as HydratableComponent[], serverIslands: [] as ServerIslandComponent[], errors: [] as PreprocessIslandError[] }
             : cachedPreprocessHydratable(preprocessed, args.path, preprocessCacheStats);
           const { hydratables, serverIslands, errors } = preprocessResult;
-          // Seed vendored files too: in a consumer install the framework's own
-          // components live under node_modules, and one used as an island root
-          // must still seed context for its subtree. The pass's mode analysis
-          // keeps it safe on arbitrary third-party components, and the graft is
-          // inert unless the transport prop actually arrives.
-          const seeded = cachedInjectHydratableContextSeed(preprocessResult.transformed, args.path, 'server', userCompilerOptions.runes);
-          if (seeded.declined) {
-            declinedSeeds.set(args.path, seeded.declined);
-          }
           fileHydratables.set(args.path, hydratables);
           fileServerIslands.set(args.path, serverIslands);
           filePreprocessErrors.set(args.path, errors);
@@ -723,7 +683,7 @@ export class ComponentRegistry {
           allServerIslands.push(...serverIslands);
 
           const { js, css } = svelteCompile(
-            seeded.code,
+            preprocessResult.transformed,
             mergeCompilerOptions(userCompilerOptions, {
               generate: 'server',
               filename: args.path,
@@ -739,7 +699,6 @@ export class ComponentRegistry {
             hydratables,
             serverIslands,
             preprocessErrors: errors,
-            seedDeclined: seeded.declined,
           });
           return { contents: js.code, loader: 'js' };
         });
@@ -754,7 +713,7 @@ export class ComponentRegistry {
               userCompilerOptions,
               compileCache,
               compileCacheStats,
-              hydration: { fileHydratables, allHydratables, allServerIslands, filePreprocessErrors, preprocessCacheStats, declinedSeeds, hydratableUsage },
+              hydration: { fileHydratables, allHydratables, allServerIslands, filePreprocessErrors, preprocessCacheStats },
             }),
           );
         }
@@ -806,41 +765,6 @@ export class ComponentRegistry {
       for (const err of errors) {
         this.errors.push({ kind: 'unresolved-island', ...err });
         logger.error(`\n${formatUnresolvedIsland({ kind: 'unresolved-island', ...err })}\n`);
-      }
-    }
-
-    // A hydrating island root whose script the seed pass couldn't instrument
-    // renders its subtree with `isHydratable()` === false during SSR, while the
-    // client bundle is constant true — a hydration-mismatch hazard the author
-    // can't see otherwise. Client-only roots are exempt (they never SSR); pure
-    // `mochi:defer` roots are exempt (they never hydrate, so false is correct).
-    if (declinedSeeds.size > 0) {
-      if (!hydratableUsage.used) {
-        for (const importer of mochiFrameworkImporters) {
-          if (
-            IS_HYDRATABLE_USAGE.test(
-              await Bun.file(importer)
-                .text()
-                .catch(() => ''),
-            )
-          ) {
-            hydratableUsage.used = true;
-            break;
-          }
-        }
-      }
-      if (hydratableUsage.used) {
-        const hydratingRootPaths = new Set([
-          ...allHydratables.filter((h) => !h.clientOnly).map((h) => h.resolvedPath),
-          ...allServerIslands.filter((si) => si.alsoHydrate).map((si) => si.resolvedPath),
-        ]);
-        for (const [filePath, reason] of declinedSeeds) {
-          if (hydratingRootPaths.has(filePath)) {
-            logger.warn(
-              `\n[mochi] ${path.relative(process.cwd(), filePath)} is a hydrating island root, but isHydratable() could not be wired up for it or its children.\n  Reason: ${reason}\n  Until then isHydratable() reports false during SSR but true after hydration, which can cause hydration mismatches in this subtree.\n`,
-            );
-          }
-        }
       }
     }
 
@@ -1175,6 +1099,12 @@ export class ComponentRegistry {
           contents: renderMochiEnvClient(development, cookiesClientPath, enhanceClientPath),
           loader: 'js',
         }));
+        // Client builds never run the island preprocessor, so the injected
+        // boundary import shouldn't appear in a client graph — this alias is
+        // cheap insurance against a stray specifier failing the whole build.
+        build.onResolve({ filter: /^mochi-hydratable-boundary$/ }, () => ({
+          path: path.join(SRC_DIR, 'islands/HydratableBoundary.svelte'),
+        }));
         // Strip esm-env imports so DEV/BROWSER/NODE become free variables,
         // then Bun's `define` option replaces them with literal booleans.
         // This enables dead code elimination of if(DEV) blocks. Needed because
@@ -1207,11 +1137,8 @@ export class ComponentRegistry {
             return { contents: cached.js, loader: 'js' };
           }
           const preprocessed = await applyUserPreprocessors(source, args.path, 'client', development);
-          // Vendored files are seeded here too — must mirror the server loader
-          // so the seed's transport-prop extraction stays SSR/client-symmetric.
-          const seeded = cachedInjectHydratableContextSeed(preprocessed, args.path, 'client', userCompilerOptions.runes);
           const { js } = svelteCompile(
-            seeded.code,
+            preprocessed,
             mergeCompilerOptions(userCompilerOptions, {
               generate: 'client',
               filename: args.path,
@@ -1226,7 +1153,6 @@ export class ComponentRegistry {
             hydratables: [],
             serverIslands: [],
             preprocessErrors: [],
-            seedDeclined: seeded.declined,
           });
           return { contents: js.code, loader: 'js' };
         });
@@ -1434,7 +1360,11 @@ export class ComponentRegistry {
     };
   }
 
-  async renderComponent(filename: string, props?: Record<string, unknown>, opts?: { stripMarkers?: boolean; idPrefix?: string; exportName?: string }): Promise<RenderResult> {
+  async renderComponent(
+    filename: string,
+    props?: Record<string, unknown>,
+    opts?: { stripMarkers?: boolean; idPrefix?: string; exportName?: string; context?: Map<unknown, unknown> },
+  ): Promise<RenderResult> {
     await this.compile(filename);
     const { module: mod, cssComponents, hydratables, hydratablesByName, hydratablesByPath, islandPaths } = this.compiledComponents.get(filename)!;
 
@@ -1491,6 +1421,9 @@ export class ComponentRegistry {
     }
     if (opts?.idPrefix) {
       renderOptions.idPrefix = opts.idPrefix;
+    }
+    if (opts?.context) {
+      renderOptions.context = opts.context;
     }
 
     // Each render owns the whole `islandProps` map: `emitIslandProps` fills it
