@@ -4,23 +4,23 @@
   // Every tile below is the same source photo run through a different named size
   // from this site's own `image.sizes` config — the grid is served by the very
   // endpoint the post is describing.
-  const tiles: { size: string; label: string }[] = [
-    { size: 'thumb', label: 'thumb' },
-    { size: 'grayscale', label: 'grayscale' },
-    { size: 'saturate', label: 'saturate' },
-    { size: 'brighten', label: 'brighten' },
-    { size: 'rotate90', label: 'rotate90' },
-    { size: 'flip', label: 'flip' },
-  ];
+  const photo = (n: number) => `https://sta-public.fra1.cdn.digitaloceanspaces.com/mochi/mochi-${n}.jpg`;
 
-  const gallery = Array.from({ length: 6 }, (_, i) => `https://sta-public.fra1.cdn.digitaloceanspaces.com/mochi/mochi-${i + 1}.jpg`);
+  const tiles: { size: string; src: string }[] = [
+    { size: 'thumb', src: photo(1) },
+    { size: 'grayscale', src: photo(2) },
+    { size: 'saturate', src: photo(3) },
+    { size: 'brighten', src: photo(4) },
+    { size: 'rotate90', src: photo(5) },
+    { size: 'flip', src: photo(6) },
+  ];
 </script>
 
 <div class="grid">
-  {#each tiles as tile, i (tile.size)}
+  {#each tiles as tile (tile.size)}
     <figure>
-      <Image src={gallery[i]} size={tile.size} alt={`A photo transformed with the "${tile.label}" size`} />
-      <figcaption>{tile.label}</figcaption>
+      <Image src={tile.src} size={tile.size} alt={`A photo transformed with the "${tile.size}" size`} />
+      <figcaption>{tile.size}</figcaption>
     </figure>
   {/each}
 </div>
