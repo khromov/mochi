@@ -171,6 +171,8 @@ async function main() {
     routes,
     markdown: serveOptions?.markdown,
     optimize: serveOptions && 'optimize' in serveOptions ? serveOptions.optimize : undefined,
+    barrelWarnings: serveOptions?.barrelWarnings,
+    resources: serveOptions?.build?.resources,
     development: values.dev,
     outDir: values['out-dir'],
     publicDir: values['public-dir'],

@@ -82,34 +82,32 @@ These rules apply to every directive family: `mochi:hydrate*`, `mochi:defer*`, a
 
 </Callout>
 
-### The `isHydratable` prop
+### `isHydratable()`
 
-Every island invocation receives one implicit prop from the framework:
-
-- `isHydratable` — `true` when the call site uses `mochi:hydrate`, `mochi:hydrate:visible`, `mochi:clientOnly`, `mochi:clientOnly:visible`, or `mochi:defer mochi:hydrate`. Undefined for pure SSR-only invocations. For `mochi:clientOnly*` islands it is always `true` (they never server-render, so the component only ever runs at client mount).
-
-`mochi:hydrate*` and `mochi:clientOnly*` islands receive no `islandId` prop — for a unique id, use Svelte's `$props.id()`. Server islands (`mochi:defer`) are the exception: they carry an `islandId` inside their encrypted props envelope as the render's `idPrefix`.
-
-Accept it in the component's `$props()` to branch on hydration state at the same call site that opts in:
+`isHydratable()` returns `true` when the calling component is part of a subtree that will hydrate on this page load — `mochi:hydrate*`, `mochi:clientOnly*`, or `mochi:defer mochi:hydrate` — at any nesting depth, including children passed into the island from the page. It returns `false` everywhere else (plain SSR, pure `mochi:defer` renders, emails). Use it to branch SSR-only fallback behavior:
 
 ```svelte
 <!-- file: src/lib/Counter.svelte -->
 <script lang="ts">
-  let {
-    isHydratable,
-    count = 0,
-  }: {
-    isHydratable?: boolean;
-    count?: number;
-  } = $props();
+  import { isHydratable } from 'mochi-framework';
+
+  let { count = 0 }: { count?: number } = $props();
+
+  const hydratable = isHydratable();
 </script>
 
-{#if isHydratable}
+{#if hydratable}
   <button onclick={() => count++}>{count}</button>
 {:else}
   <span>{count}</span>
 {/if}
 ```
+
+<Callout type="info">
+
+Like `getContext`, `isHydratable()` must be called during component initialization — at the top level of the `<script>` block, not inside an event handler or `$effect`.
+
+</Callout>
 
 ### Unique ids with `$props.id()`
 

@@ -9,7 +9,8 @@ import { requestContext, renderDetached } from '../runtime/requestContext';
 import type { DebugBarData } from '../runtime/requestContext';
 import { logger } from '../utils/log';
 import { mochiEvents } from '../events';
-import type { MarkdownConfig, MochiManifest, MochiSvelteShakerOptions } from '../types';
+import { detectHeavyBarrels, formatBarrelLine, formatBarrelSummary, type BarrelMetafile, type HeavyBarrel } from './barrelDetect';
+import type { MarkdownConfig, MochiBarrelWarningOptions, MochiManifest, MochiSvelteShakerOptions } from '../types';
 import { type HydratableComponent, type PreprocessIslandError, type ServerIslandComponent } from './svelteAstPreprocess';
 import { cachedPreprocessHydratable, createPreprocessCacheStats } from './preprocessCache';
 import { CompileCache, compileFingerprint, createCompileCacheStats, type CompileCacheStats } from './compileCache';
@@ -30,17 +31,54 @@ import prettyBytes from '../vendor/pretty-bytes';
  * the application of those preprocessors is async (Svelte's `preprocess()`).
  */
 async function applyUserPreprocessors(source: string, filename: string, target: 'server' | 'client', development: boolean): Promise<string> {
-  const preprocessors: PreprocessorGroup[] = applyFilter('compile:preprocessors', [], {
+  const userPreprocessors: PreprocessorGroup[] = applyFilter('compile:preprocessors', [], {
     filename,
     target,
     development,
   });
-  if (preprocessors.length === 0) {
+  // `builtinTsPreprocessor` runs last so it also strips TS that user
+  // preprocessors emit. svelte's `preprocess()` parses the component and hands
+  // each hook properly-parsed `attributes` — so it, not a source scan, decides
+  // whether a script block is TS.
+  //
+  // Fast-path: with no user preprocessors, the only work `preprocess()` can do
+  // is the builtin TS pass, which fires solely on `attributes.lang === 'ts'`.
+  // A `lang="ts"` attribute — in any quoting/spacing — always contains the
+  // literal substring `lang`, so a source lacking it provably has no TS script
+  // to transpile. This gate can only false-*positive* (harmlessly re-parse a
+  // "lang"-containing plain-JS file), never false-negative, so it skips the
+  // full-component parse for the common plain-JS case without the brittleness
+  // of a tag-matching regex. Any user preprocessor may inject TS, so the gate
+  // holds only when none are registered.
+  if (userPreprocessors.length === 0 && !source.includes('lang')) {
     return source;
   }
-  const result = await sveltePreprocess(source, preprocessors, { filename });
+  const result = await sveltePreprocess(source, [...userPreprocessors, builtinTsPreprocessor], { filename });
   return result.code;
 }
+
+// Svelte 5's native TS stripping is incomplete (e.g. it throws on constructor
+// parameter properties). Run Bun's transpiler over <script lang="ts"> before
+// svelte/compiler — the same treatment the .svelte.[jt]s rune-module loaders
+// already apply. transformSync does NOT tree-shake, so value imports referenced
+// only in the template survive.
+const tsScriptTranspiler = new Bun.Transpiler({ loader: 'ts' });
+const builtinTsPreprocessor: PreprocessorGroup = {
+  name: 'mochi-ts',
+  script({ content, attributes }) {
+    if (attributes.lang !== 'ts') {
+      return;
+    }
+    // `lang="ts"` must STAY on the tag: it also puts the template in TS mode
+    // (snippet parameter types, `as` casts in markup), which Bun never sees —
+    // dropping it makes svelte parse those as plain JS and fail. Re-running
+    // svelte's native TS pass over the already-transpiled script is a no-op.
+    // transformSync can't emit a source map, so positions after a transpiled
+    // script drift by its reprinted line-count delta — a limitation shared
+    // with the .svelte.[jt]s rune-module loaders.
+    return { code: tsScriptTranspiler.transformSync(content) };
+  },
+};
 
 /**
  * Directory containing the framework's own .ts/.svelte source files. This file
@@ -156,7 +194,12 @@ function createMarkdownLoader(opts: {
     if (!compiled || typeof compiled.code !== 'string') {
       throw new Error(`markdown.compile returned no output for ${args.path}`);
     }
-    let svelteSource = compiled.code;
+    // mdsvex passes <script lang="ts"> through untouched, so its output needs
+    // the same built-in TS pass as regular .svelte files. User preprocessors
+    // still don't apply here — mdsvex owns markdown transforms. Same safe
+    // `lang` fast-path as applyUserPreprocessors: no `lang` substring → no TS
+    // script → skip the parse (can't false-negative).
+    let svelteSource = compiled.code.includes('lang') ? (await sveltePreprocess(compiled.code, [builtinTsPreprocessor], { filename: args.path })).code : compiled.code;
     let hydratables: HydratableComponent[] = [];
     let serverIslands: ServerIslandComponent[] = [];
     let preprocessErrors: PreprocessIslandError[] = [];
@@ -279,6 +322,25 @@ export interface ComponentRegistryOptions {
   markdown?: MarkdownConfig;
   /** Run the whole-program svelte-shaker pass before compiling. Production only — `prepareShake()` is a no-op in dev. */
   optimize?: boolean | MochiSvelteShakerOptions;
+  /**
+   * Warning when a dependency drags a large module into the build graph
+   * that's almost entirely tree-shaken away — the "barrel import" smell (e.g.
+   * `import { Sun } from '@lucide/svelte'` instead of `@lucide/svelte/icons/sun`),
+   * which slows every rebuild because the big re-export file is re-parsed each time.
+   * On a live server it fires once per package as it's seen; a `mochi-framework build`
+   * collapses the offenders into a single grouped summary line. Default: enabled. `false` silences
+   * it entirely; `{ ignore: ['pkg-name'] }` suppresses specific packages you can't fix;
+   * `minBytes` overrides the parsed-size threshold (default 50 KB).
+   */
+  barrelWarnings?: boolean | MochiBarrelWarningOptions;
+  /**
+   * Buffer barrel offenders instead of logging each as it's seen, so a one-shot
+   * `mochi-framework build` can emit them as one grouped summary via
+   * `flushBarrelWarnings()`. A live server (dev or prod-without-manifest) must
+   * leave this off — it compiles lazily and has no end-of-build flush point, so
+   * buffered warnings would never surface. Default: `false`.
+   */
+  bufferBarrelWarnings?: boolean;
 }
 
 /**
@@ -396,6 +458,14 @@ export class ComponentRegistry {
   svelteConfig: MochiSvelteConfig;
   readonly markdown: MarkdownConfig | undefined;
   readonly optimize: boolean | MochiSvelteShakerOptions;
+  private readonly barrelWarningsEnabled: boolean;
+  private readonly barrelIgnore: Set<string>;
+  private readonly barrelMinBytes: number;
+  private readonly barrelBuffering: boolean;
+  /** Packages already warned about this process, so the warning fires once, not on every rebuild. */
+  private readonly warnedBarrels = new Set<string>();
+  /** Buffer used when `bufferBarrelWarnings` is on: barrels collected across the build, flushed as one grouped summary by `flushBarrelWarnings()`. */
+  private pendingBarrels: HeavyBarrel[] = [];
   /** absPath → slimmed `.svelte` source from the last `prepareShake()`; empty when shaking is off. */
   private shakenSources: Map<string, string> = new Map();
   private errors: MochiCompileError[] = [];
@@ -416,6 +486,11 @@ export class ComponentRegistry {
     this.svelteConfig = opts.svelteConfig ?? {};
     this.markdown = opts.markdown;
     this.optimize = opts.optimize ?? false;
+    const bw = opts.barrelWarnings;
+    this.barrelWarningsEnabled = bw !== false;
+    this.barrelIgnore = new Set(typeof bw === 'object' ? (bw.ignore ?? []) : []);
+    this.barrelMinBytes = (typeof bw === 'object' ? bw.minBytes : undefined) ?? 50 * 1024;
+    this.barrelBuffering = opts.bufferBarrelWarnings ?? false;
   }
 
   /**
@@ -574,7 +649,7 @@ export class ComponentRegistry {
    * alongside each `<basename>.server.js`, so they're emitted exactly once
    * across the entire cohort.
    */
-  async compileAll(filenames: string[], opts: { force?: boolean } = {}): Promise<void> {
+  async compileAll(filenames: string[], opts: { force?: boolean; deferClientBundle?: boolean } = {}): Promise<void> {
     const todo = opts.force ? [...new Set(filenames)] : [...new Set(filenames)].filter((f) => !this.compiledComponents.has(f));
     if (todo.length === 0) {
       return;
@@ -636,6 +711,15 @@ export class ComponentRegistry {
           contents: [`import { encryptProps } from "${toPosixPath(path.join(SRC_DIR, 'islands/serverIslandCrypto.ts'))}";`, `export { encryptProps };`].join('\n'),
           loader: 'js',
         }));
+        // The preprocessor's island wrapper (`<MochiHydratableBoundary_>`) —
+        // resolved to the framework's own component in the default namespace so
+        // it flows through the normal `.svelte` loader below. The specifier is
+        // a subpath of a package we own, but deliberately NOT in the exports
+        // map: outside this plugin it must fail to resolve, not fetch a
+        // squattable third-party name.
+        build.onResolve({ filter: /^mochi-framework\/hydratable-boundary$/ }, () => ({
+          path: path.join(SRC_DIR, 'islands/HydratableBoundary.svelte'),
+        }));
         build.onLoad({ filter: /\.svelte\.[jt]s$/ }, async (args) => {
           let source = await Bun.file(args.path).text();
           if (args.path.endsWith('.ts')) {
@@ -668,9 +752,10 @@ export class ComponentRegistry {
           const preprocessed = await applyUserPreprocessors(raw, args.path, 'server', development);
           // Vendored .svelte from node_modules can never carry `mochi:*` directives
           const isVendored = args.path.includes(`${path.sep}node_modules${path.sep}`);
-          const { transformed, hydratables, serverIslands, errors } = isVendored
+          const preprocessResult = isVendored
             ? { transformed: preprocessed, hydratables: [] as HydratableComponent[], serverIslands: [] as ServerIslandComponent[], errors: [] as PreprocessIslandError[] }
             : cachedPreprocessHydratable(preprocessed, args.path, preprocessCacheStats);
+          const { hydratables, serverIslands, errors } = preprocessResult;
           fileHydratables.set(args.path, hydratables);
           fileServerIslands.set(args.path, serverIslands);
           filePreprocessErrors.set(args.path, errors);
@@ -678,7 +763,7 @@ export class ComponentRegistry {
           allServerIslands.push(...serverIslands);
 
           const { js, css } = svelteCompile(
-            transformed,
+            preprocessResult.transformed,
             mergeCompilerOptions(userCompilerOptions, {
               generate: 'server',
               filename: args.path,
@@ -688,7 +773,13 @@ export class ComponentRegistry {
           if (cssCode) {
             cssMap.set(args.path, cssCode);
           }
-          compileCache.set('server', args.path, raw, serverFingerprint, { js: js.code, css: cssCode, hydratables, serverIslands, preprocessErrors: errors });
+          compileCache.set('server', args.path, raw, serverFingerprint, {
+            js: js.code,
+            css: cssCode,
+            hydratables,
+            serverIslands,
+            preprocessErrors: errors,
+          });
           return { contents: js.code, loader: 'js' };
         });
         if (markdown) {
@@ -756,6 +847,8 @@ export class ComponentRegistry {
         logger.error(`\n${formatUnresolvedIsland({ kind: 'unresolved-island', ...err })}\n`);
       }
     }
+
+    this.warnOnBarrelImports(result.metafile);
 
     // Detect nested hydration — a hydratable component must not itself contain mochi:hydrate or mochi:hydrate:visible children
     const hydratablePaths = new Set(allHydratables.map((h) => h.resolvedPath));
@@ -928,27 +1021,41 @@ export class ComponentRegistry {
 
     // Write per-component CSS files to disk (minified) and track their URLs
     const cssOutDir = `${this.outDir}/svelte-css`;
-    for (const [componentPath, cssCode] of cssMap) {
-      if (this.cssRawByPath.get(componentPath) === cssCode) {
-        continue;
-      }
-      const compName = path.basename(componentPath, '.svelte');
-      // Write raw CSS so Bun.build can read it as an entrypoint
-      const rawPath = `${cssOutDir}/${compName}.raw.css`;
-      await Bun.write(rawPath, cssCode);
+    const cssTodo = [...cssMap].filter(([componentPath, cssCode]) => this.cssRawByPath.get(componentPath) !== cssCode);
+    if (cssTodo.length > 0) {
+      // Raw filenames carry a path hash: components that share a basename
+      // (e.g. PageOne.svelte in two demo folders) would otherwise collide on
+      // one raw file now that all of them are written before the build.
+      const rawPathFor = (componentPath: string) => `${cssOutDir}/${path.basename(componentPath, '.svelte')}-${Bun.hash(componentPath).toString(36)}.raw.css`;
+      await Promise.all(cssTodo.map(([componentPath, cssCode]) => Bun.write(rawPathFor(componentPath), cssCode)));
+      // One batched Bun.build instead of one per component. Each raw file is a
+      // standalone entrypoint (svelte-emitted CSS has no imports), so in-memory
+      // outputs map back to their entry by basename.
       const cssResult = await Bun.build({
-        entrypoints: [rawPath],
+        entrypoints: cssTodo.map(([componentPath]) => rawPathFor(componentPath)),
         minify: true,
         throw: false,
       });
-      const minified = cssResult.success && cssResult.outputs[0] ? await cssResult.outputs[0].text() : cssCode;
-      const hash = Bun.hash(minified).toString(36);
-      const cssFilename = `${compName}-${hash}.css`;
-      const cssUrl = `${this.assetPrefix}/css/${cssFilename}`;
-      await Bun.write(`${cssOutDir}/${cssFilename}`, minified);
-      this.clientFiles.set(cssUrl, minified);
-      this.cssFileUrls.set(componentPath, cssUrl);
-      this.cssRawByPath.set(componentPath, cssCode);
+      // Read outputs even when the batch reports failure: a single malformed
+      // file must not drop minification for the whole cohort. Entries without
+      // an output fall back to their raw CSS below.
+      const minifiedByBase = new Map<string, string>();
+      for (const out of cssResult.outputs) {
+        minifiedByBase.set(path.basename(out.path), await out.text());
+      }
+      const cssWrites: Promise<unknown>[] = [];
+      for (const [componentPath, cssCode] of cssTodo) {
+        const minified = minifiedByBase.get(path.basename(rawPathFor(componentPath))) ?? cssCode;
+        const compName = path.basename(componentPath, '.svelte');
+        const hash = Bun.hash(minified).toString(36);
+        const cssFilename = `${compName}-${hash}.css`;
+        const cssUrl = `${this.assetPrefix}/css/${cssFilename}`;
+        cssWrites.push(Bun.write(`${cssOutDir}/${cssFilename}`, minified));
+        this.clientFiles.set(cssUrl, minified);
+        this.cssFileUrls.set(componentPath, cssUrl);
+        this.cssRawByPath.set(componentPath, cssCode);
+      }
+      await Promise.all(cssWrites);
     }
 
     if (importedCssPaths.size > 0) {
@@ -966,7 +1073,18 @@ export class ComponentRegistry {
     }
 
     this.hydratableComponents.push(...allHydratables);
-    if (allHydratables.length > 0) {
+    if (!opts.deferClientBundle && allHydratables.length > 0) {
+      await this.buildClientBundle();
+    }
+  }
+
+  /**
+   * Trailing client bundle for callers that batch multiple `compileAll` passes
+   * with `deferClientBundle` (the CLI build compiles pages, then server
+   * islands — without deferral each pass rebuilds the same monolithic bundle).
+   */
+  async finalizeClientBundle(): Promise<void> {
+    if (this.hydratableComponents.length > 0) {
       await this.buildClientBundle();
     }
   }
@@ -1088,6 +1206,12 @@ export class ComponentRegistry {
           contents: renderMochiEnvClient(development, cookiesClientPath, enhanceClientPath),
           loader: 'js',
         }));
+        // Client builds never run the island preprocessor, so the injected
+        // boundary import shouldn't appear in a client graph — this alias is
+        // cheap insurance against a stray specifier failing the whole build.
+        build.onResolve({ filter: /^mochi-framework\/hydratable-boundary$/ }, () => ({
+          path: path.join(SRC_DIR, 'islands/HydratableBoundary.svelte'),
+        }));
         // Strip esm-env imports so DEV/BROWSER/NODE become free variables,
         // then Bun's `define` option replaces them with literal booleans.
         // This enables dead code elimination of if(DEV) blocks. Needed because
@@ -1130,7 +1254,13 @@ export class ComponentRegistry {
               dev: development,
             }),
           );
-          compileCache.set('client', args.path, source, clientFingerprint, { js: js.code, css: null, hydratables: [], serverIslands: [], preprocessErrors: [] });
+          compileCache.set('client', args.path, source, clientFingerprint, {
+            js: js.code,
+            css: null,
+            hydratables: [],
+            serverIslands: [],
+            preprocessErrors: [],
+          });
           return { contents: js.code, loader: 'js' };
         });
         if (markdown) {
@@ -1219,6 +1349,7 @@ export class ComponentRegistry {
       });
       outputStats.sort((a, b) => b.size - a.size);
       this.clientStats = { outputs: outputStats };
+      this.warnOnBarrelImports(result.metafile);
     }
 
     // Swap the freshly-built maps into the instance fields now the build has
@@ -1337,7 +1468,11 @@ export class ComponentRegistry {
     };
   }
 
-  async renderComponent(filename: string, props?: Record<string, unknown>, opts?: { stripMarkers?: boolean; idPrefix?: string; exportName?: string }): Promise<RenderResult> {
+  async renderComponent(
+    filename: string,
+    props?: Record<string, unknown>,
+    opts?: { stripMarkers?: boolean; idPrefix?: string; exportName?: string; context?: Map<unknown, unknown> },
+  ): Promise<RenderResult> {
     await this.compile(filename);
     const { module: mod, cssComponents, hydratables, hydratablesByName, hydratablesByPath, islandPaths } = this.compiledComponents.get(filename)!;
 
@@ -1394,6 +1529,9 @@ export class ComponentRegistry {
     }
     if (opts?.idPrefix) {
       renderOptions.idPrefix = opts.idPrefix;
+    }
+    if (opts?.context) {
+      renderOptions.context = opts.context;
     }
 
     // Each render owns the whole `islandProps` map: `emitIslandProps` fills it
@@ -1610,6 +1748,57 @@ export class ComponentRegistry {
 
   private static cleanInputPath(p: string): string {
     return p.replace(/^(?:\.\.\/)*node_modules\/(?:\.bun\/[^/]+\/node_modules\/)?/, '');
+  }
+
+  /**
+   * Once-per-package heavy-barrel detection over a finished build's metafile. On a live server each
+   * offender is warned immediately; under `bufferBarrelWarnings` (the one-shot build) they're buffered
+   * and emitted as one grouped summary by `flushBarrelWarnings()`.
+   */
+  private warnOnBarrelImports(metafile: BarrelMetafile | undefined): void {
+    if (!this.barrelWarningsEnabled || !metafile) {
+      return;
+    }
+    // Barrel detection is an advisory diagnostic — it must never break a build or
+    // dev rebuild. A malformed metafile, a throwing user `barrel:warn` filter, etc.
+    // are swallowed (debug-logged) rather than propagated.
+    try {
+      for (const barrel of detectHeavyBarrels(metafile, this.barrelMinBytes, this.barrelIgnore)) {
+        if (this.warnedBarrels.has(barrel.pkg)) {
+          continue;
+        }
+        this.warnedBarrels.add(barrel.pkg);
+        const { pkg, file, bytes, usedRatio } = barrel;
+        // The `barrel:warn` filter can rewrite the line or return null to drop it,
+        // for silencing logic richer than the static `ignore` list. In a build the
+        // rewritten text feeds the grouped summary's count but not its wording.
+        const line = applyFilter('barrel:warn', formatBarrelLine(barrel), { pkg, file, bytes, usedRatio });
+        if (line === null) {
+          continue;
+        }
+        if (this.barrelBuffering) {
+          this.pendingBarrels.push(barrel);
+        } else {
+          logger.warn(line);
+        }
+      }
+    } catch (err) {
+      logger.debug('barrel detection skipped:', err);
+    }
+  }
+
+  /** Flush buffered barrel offenders as a single grouped warning. No-op when buffering is off or nothing was collected. */
+  flushBarrelWarnings(): void {
+    if (this.pendingBarrels.length === 0) {
+      return;
+    }
+    try {
+      logger.warn(formatBarrelSummary(this.pendingBarrels));
+    } catch (err) {
+      logger.debug('barrel summary skipped:', err);
+    } finally {
+      this.pendingBarrels = [];
+    }
   }
 
   private static cleanInputs(inputs: { path: string; size: number }[]): { path: string; size: number }[] {

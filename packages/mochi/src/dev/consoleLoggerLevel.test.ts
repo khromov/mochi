@@ -80,4 +80,34 @@ describe('consoleLogger:level changes where a line is written', () => {
     request('/promoted');
     expect(seen).toBe('warn');
   });
+
+  // Queue lifecycle must be visible at the production default level ('warn'),
+  // not just under the dev default — see the queue subscribers in consoleLogger.ts.
+  describe('queue lifecycle at the production level', () => {
+    beforeAll(() => {
+      setLogLevel('warn');
+    });
+
+    afterAll(() => {
+      setLogLevel('debug');
+    });
+
+    test('queue:added is written through console.warn', () => {
+      mochiEvents.emit('queue:added', { queue: 'emails', jobId: 'j1', jobName: 'send' });
+      const line = calls.find((c) => c.text.includes('emails/send'));
+      expect(line?.method).toBe('warn');
+    });
+
+    test('a fast queue:completed still prints, without relying on slow-escalation', () => {
+      mochiEvents.emit('queue:completed', { queue: 'emails', jobId: 'j1', jobName: 'send', attempt: 1, duration: 5 });
+      const line = calls.find((c) => c.text.includes('emails/send'));
+      expect(line?.method).toBe('warn');
+      expect(line?.text).toContain('done');
+    });
+
+    test('queue:active stays debug-gated and prints nothing', () => {
+      mochiEvents.emit('queue:active', { queue: 'emails', jobId: 'j1', jobName: 'send', attempt: 1 });
+      expect(calls).toEqual([]);
+    });
+  });
 });

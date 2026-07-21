@@ -125,7 +125,6 @@ class HydratableIsland extends HTMLElement {
       }
       throw err;
     }
-    props.isHydratable = true;
     // `transformError` makes <svelte:boundary> work for client-side errors
     // (e.g. throws inside $effect / $derived after hydration). Returns an
     // Error instance — same shape as the SSR transformError — so user-written

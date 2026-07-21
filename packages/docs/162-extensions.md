@@ -325,6 +325,8 @@ await Mochi.serve({
 
 Default is `[]`. Preprocessors do not currently apply to `.md` / `.svx` files (mdsvex handles those itself).
 
+`<script lang="ts">` blocks are transpiled to JavaScript by Bun automatically (before compilation, and after any preprocessors you register here run), so you don't need a TypeScript preprocessor — register one only for other transforms (PostCSS, Sass, etc.). This built-in TS pass also covers `.md` / `.svx` files, even though user preprocessors don't apply there.
+
 #### `publicDir:scan`
 
 Modify the `Map<urlPath, diskPath>` of files served from the public directory. The filter receives a fresh copy after each scan (initial startup + every dev-mode `public/` change), so in-place mutation is safe. Use it to add virtual files, shadow built-in routes, or rename URLs. Async.
@@ -400,6 +402,34 @@ Context fields:
   return line;
 }
 ```
+
+#### `barrel:warn`
+
+Mutate or drop a [barrel-import warning](/docs/development-mode) before it's logged. The first argument is the rendered warning string; the second is a structured context describing the offending dependency. Return the string to log it, a rewritten string to substitute, or `null` to suppress it. Sync.
+
+This is the programmatic escape hatch for silencing logic richer than the static `barrelWarnings: { ignore }` list — e.g. suppress only below a size, or only outside CI.
+
+```ts
+await Mochi.serve({
+  filters: {
+    // Drop the warning for one package, rewrite the rest:
+    'barrel:warn': (line, { pkg, bytes }) => {
+      if (pkg === '@lucide/svelte') return null;
+      return `${line} (${Math.round(bytes / 1024)} KB parsed)`;
+    },
+  },
+  routes,
+});
+```
+
+Context fields:
+
+- `pkg` — the offending package, e.g. `'@lucide/svelte'`.
+- `file` — the large re-export file pulled into the graph, relative to its package.
+- `bytes` — parsed size of `file`.
+- `usedRatio` — fraction of `bytes` that survived tree-shaking into the bundle (≈ 0 for a barrel).
+
+The filter runs once per package, in both dev and production builds. In a build the per-package line isn't logged directly — it's collapsed into one grouped summary — but the filter still runs per package, so returning `null` excludes that package from the grouped count. See [Development mode](/docs/development-mode) for the `barrelWarnings` config knobs.
 
 #### `image:maxRedirects`
 
@@ -567,3 +597,22 @@ await Mochi.serve({
 ```
 
 Return `0` to silence the warning for a queue entirely — no timer is scheduled at all.
+
+#### `queue:lockDurationMs`
+
+How long a job may run before its queue reclaims it. Resolved once per queue as it is created, after the per-queue [`lockDuration`](/docs/queues/#long-running-jobs) option — `explicit` says whether the incoming value came from that option rather than the framework default, so a blanket filter can leave queues that chose for themselves alone. Sync. Defaults to `1_800_000` (30 minutes), which is also the ceiling: returning more does not let a job run longer.
+
+```ts
+await Mochi.serve({
+  filters: {
+    // Nothing here should ever hold a job for half an hour; queues that set their own value keep it.
+    'queue:lockDurationMs': (value, { explicit }) => (explicit ? value : 5 * 60_000),
+  },
+  queues,
+  routes,
+});
+```
+
+The returned value must exceed the **worst case** runtime of `process`. Set it too low and a job is re-queued while still running, its eventual success rejected as `Invalid or expired lock token` — the work is reported failed despite having succeeded, and is then either retried or dropped.
+
+This filter is the last word on the lock: unlike every other queue setting, a `lockDuration` passed through the raw [`bunqueue`](/docs/queues/#advanced-options) escape hatch doesn't override it — that value arrives as the incoming `value` with `explicit: true`, exactly like the first-class option.

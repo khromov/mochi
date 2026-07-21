@@ -152,6 +152,10 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
   const errors: PreprocessIslandError[] = [];
   const seen = new Set<string>();
   const seenServer = new Set<string>();
+  // Set only by the hydrate/visible branch: those islands SSR in-page and get
+  // wrapped in the context boundary, which must then be imported below.
+  // clientOnly never SSRs; server islands render standalone at the endpoint.
+  let needsBoundary = false;
 
   // Walk the AST fragment to find Component nodes with mochi directives
   walk(ast.fragment as AST.SvelteNode, null, {
@@ -221,10 +225,10 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
         // nested `mochi:*` islands here are left untransformed and wiped on mount.
         const fallback = comp.fragment.nodes.map((n) => source.slice(n.start, n.end)).join('');
 
-        // No islandId: nothing renders server-side, so there's no hydration id to
-        // carry. The client bootstrap injects `isHydratable: true` at mount; the
-        // payload itself dedups on its serialized props alone, like plain
-        // hydratable islands.
+        // No islandId: nothing renders server-side, so there's no hydration id
+        // to carry (`isHydratable()` is a compile-time constant `true` in client
+        // bundles). The payload itself dedups on its serialized props alone,
+        // like plain hydratable islands.
         const propsExpr = buildPropsFromAst(source, comp.attributes);
         let attrs = `component-name="${islandKey}" component-url="__MOCHI_COMPONENT_URL__${islandKey}__" client-only`;
         if (propsExpr !== '{}') {
@@ -259,20 +263,16 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
           serverIslands.push({ name: islandKey, displayName: comp.name, resolvedPath: resolved, exportName });
         }
 
-        // Server islands only get `isHydratable: true` when also-hydrate is set
-        // (i.e. `mochi:defer mochi:hydrate`); a pure `mochi:defer` is
-        // SSR-only-via-fetch and never hydrates.
-        //
         // The authored also-hydrate mode rides *inside the encrypted envelope*
         // (`__mochi_ah`, transport-only, stripped before render — like islandId).
         // The endpoint reads it from the decrypted payload rather than trusting the
         // `?hydrate=` query param; otherwise an attacker could append `hydrate=eager`
         // to any sealed token and have the endpoint echo the decrypted props back in
         // plaintext, turning a pure `mochi:defer` island into a decryption oracle.
+        // When set, the endpoint seeds the hydratable context into its standalone
+        // render; a pure `mochi:defer` is SSR-only-via-fetch and never hydrates.
         const alsoHydrateMode: AlsoHydrateMode | null = directives.hydrate ? (directives.hydrate.name === 'mochi:hydrate:visible' ? 'visible' : 'eager') : null;
-        const autoEntries = directives.hydrate
-          ? [`islandId: __mochi_iid`, `isHydratable: true`, `${ALSO_HYDRATE_ENVELOPE_KEY}: ${JSON.stringify(alsoHydrateMode)}`]
-          : [`islandId: __mochi_iid`];
+        const autoEntries = directives.hydrate ? [`islandId: __mochi_iid`, `${ALSO_HYDRATE_ENVELOPE_KEY}: ${JSON.stringify(alsoHydrateMode)}`] : [`islandId: __mochi_iid`];
         const propsExpr = buildPropsFromAst(source, comp.attributes, autoEntries);
         // Always emit signed-props for server islands (no empty-props optimization)
         // because islandId is always injected, and all props must be encrypted
@@ -368,17 +368,16 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
           }
         }
 
-        // Build inner component with the auto-injected `isHydratable` prop —
-        // a `true` boolean that lets components branch SSR-only behavior off
-        // the auto-injection pipeline (no Svelte context needed). Components
-        // needing a unique id use Svelte's native `$props.id()` instead.
+        // Build the inner component tag. No framework props are injected — the
+        // `isHydratable()` signal reaches the subtree via the context boundary
+        // wrapper below, and components needing a unique id use Svelte's native
+        // `$props.id()`.
         let innerTag: string;
-        const autoProps = `isHydratable={true}`;
         if (comp.fragment.nodes.length > 0) {
           const childrenSource = comp.fragment.nodes.map((n) => source.slice(n.start, n.end)).join('');
-          innerTag = `<${comp.name}${propsSource ? ' ' + propsSource : ''} ${autoProps}>${childrenSource}</${comp.name}>`;
+          innerTag = `<${comp.name}${propsSource ? ' ' + propsSource : ''}>${childrenSource}</${comp.name}>`;
         } else {
-          innerTag = `<${comp.name}${propsSource ? ' ' + propsSource : ''} ${autoProps} />`;
+          innerTag = `<${comp.name}${propsSource ? ' ' + propsSource : ''} />`;
         }
 
         // Wrap the island in <svelte:boundary> so an SSR throw inside the
@@ -410,9 +409,20 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
         // throwing island renders a sibling island's failure stub. The block
         // adds page-level `<!--[-->…<!--]-->` markers, stripped by the existing
         // stripHydrationMarkers pass.
+        //
+        // <MochiHydratableBoundary_> seeds the `isHydratable()` context for the
+        // island root and its whole subtree (snippet children included — Svelte
+        // context flows from the render site). It must sit OUTSIDE
+        // <mochi-hydratable-island>: its `{@render children?.()}` emits a
+        // trailing `<!---->` SSR anchor, which inside the wrapper would land
+        // before the inner boundary's `<!--]-->` and break client `hydrate()`
+        // (see the inner-boundary note above). Outside, the anchor sits at page
+        // level — inert, since the page body is never hydrated — and the DOM
+        // inside the wrapper element stays byte-identical.
+        needsBoundary = true;
         const replacement =
           `{#if true}<svelte:boundary>${failedSnippet}` +
-          `<mochi-hydratable-island ${attrs}><svelte:boundary>${innerTag}</svelte:boundary></mochi-hydratable-island>` +
+          `<MochiHydratableBoundary_><mochi-hydratable-island ${attrs}><svelte:boundary>${innerTag}</svelte:boundary></mochi-hydratable-island></MochiHydratableBoundary_>` +
           `</svelte:boundary>{/if}`;
         s.overwrite(comp.start, comp.end, replacement);
       }
@@ -431,11 +441,14 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
   // `<!--$...-->` markers (client-only mints it fresh at mount).
   const needsUid = serverIslands.length > 0;
 
-  if ((needsEmitProps || needsStringify || needsSignProps) && ast.instance) {
+  if ((needsEmitProps || needsStringify || needsSignProps || needsBoundary) && ast.instance) {
     const contentStart = (ast.instance.content as unknown as Positioned).start;
     let imports = '';
     if (needsEmitProps) {
       imports += '\nimport { emitIslandProps as __mochi_emit_props__ } from "mochi-framework";';
+    }
+    if (needsBoundary) {
+      imports += '\nimport MochiHydratableBoundary_ from "mochi-framework/hydratable-boundary";';
     }
     if (needsStringify) {
       imports += '\nimport { stringify as __mochi_stringify__ } from "mochi-framework";';

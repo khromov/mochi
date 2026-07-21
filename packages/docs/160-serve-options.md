@@ -64,6 +64,8 @@ The forced fallback is not optional: a plain `server.stop()` never resolves whil
 - `outDir`: Base directory for build artifacts and dev cache (cwd-relative). Default: `./.mochi`. Production writes here directly; development nests under `<outDir>/dev` so a dev run can't collide with a production build (and is wiped clean on every dev startup).
 - `assetPrefix`: URL prefix for framework client assets and the server-island endpoint. Must start with `/`, must not be `/`, must not end with `/`, must not contain whitespace or `..`. Default: `/_mochi`.
 - `additionalWatchPaths`: Extra dev-mode watcher paths added to the defaults `src` and `public`. Default: `[]`.
+- `barrelWarnings`: Warning when a dependency drags a large, almost-entirely-tree-shaken module into the build graph (a "barrel import" that slows rebuilds). Fires once per package in dev, and as one grouped summary line in a production build. Default: enabled. `false` silences it; `{ ignore: ['pkg'] }` suppresses specific packages; `{ minBytes }` overrides the 50 KB size threshold. See `Development mode`.
+- `build`: Output controls for `mochi-framework build`; ignored by the runtime. `{ resources: false }` hides the emitted-resources list (the summary line keeps its asset count). See `CLI`.
 - `svelteConfigPath`: Path to a Svelte config file. Default: `./svelte.config.js`. See `Svelte config`.
 - `csrf`: `MochiCsrfOptions` controlling the origin-header check. See `CSRF` below.
 - `proxy`: `MochiProxyOptions` describing trusted reverse-proxy headers. See `Proxy` below.

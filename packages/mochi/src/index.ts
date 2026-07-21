@@ -104,10 +104,11 @@ export type {
   MochiCaptchaReason,
 } from './events';
 export type { MochiQueue, MochiJob, MochiJobRef, MochiJobOptions, MochiQueueOptions, MochiQueueRuntimeOptions, MochiQueueListeners, MochiProcessor } from './queue';
-export { DEFAULT_RECOVERY_STALL_WARNING_MS } from './queue';
+export { DEFAULT_RECOVERY_STALL_WARNING_MS, DEFAULT_LOCK_DURATION_MS } from './queue';
 export { json, error, apiError } from './utils';
 export { trailingSlashIt } from './runtime/trailingSlash';
 export { fail, redirect, success } from './runtime/forms';
+export { isHydratable } from './islands/isHydratable';
 
 export { mintCaptcha, verifyCaptcha, consumeCaptcha, solveCaptcha } from './captcha/captcha';
 export { MemoryNonceStore, SqliteNonceStore } from './captcha/nonceStore';
@@ -187,6 +188,8 @@ export type {
   MochiQueueConfig,
   BunRouteValue,
   MochiSvelteShakerOptions,
+  MochiBarrelWarningOptions,
+  MochiBuildReportOptions,
 } from './types';
 
 import type { Snippet } from 'svelte';
