@@ -10,8 +10,10 @@
 
 <div class="probe">
   <div class="row">
-    <span class="name">Depth {depth}</span>
-    <code>isHydratable()</code>
+    <div class="label">
+      <span class="name">Depth {depth}</span>
+      <code>isHydratable()</code>
+    </div>
     <Badge kind={hydratable ? 'success' : 'info'}>{String(hydratable)}</Badge>
   </div>
   {#if depth < max}
@@ -37,6 +39,13 @@
     gap: 0.75rem;
   }
 
+  .label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+  }
+
   .name {
     font-family: var(--font-mono);
     font-weight: 600;
@@ -52,11 +61,9 @@
 
   @media (max-width: 480px) {
     .row {
-      flex-wrap: wrap;
-    }
-
-    .row :global(.badge) {
-      flex-basis: 100%;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0.4rem;
     }
   }
 </style>
