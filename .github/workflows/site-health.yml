@@ -10,6 +10,9 @@ on:
         required: false
         default: 'https://mochi.fast'
 
+permissions:
+  contents: read
+
 jobs:
   site-health:
     runs-on: ubuntu-latest
@@ -33,7 +36,8 @@ jobs:
       - name: Check every sitemap page
         env:
           CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
-        run: bun run check-site "${{ inputs.base || 'https://mochi.fast' }}"
+          BASE: ${{ inputs.base || 'https://mochi.fast' }}
+        run: bun run check-site "$BASE"
 
       - name: Write report to Job Summary
         if: always()

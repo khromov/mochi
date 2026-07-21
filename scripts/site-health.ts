@@ -13,11 +13,14 @@ type Args = {
 const usage = `Usage: bun run check-site [base] [--concurrency N] [--report PATH] [--timeout MS]
 
 Reads <base>/sitemap.xml and loads every listed URL in a real headless Chrome.
-A page fails when its main document isn't 2xx, when it redirects (sitemap URLs
-must be canonical), or when it produces any console error/warning, uncaught
-exception, or browser-logged subresource failure. Catches the client-side
+A page fails when its main document isn't 2xx, or when it produces any console
+error/warning, uncaught exception, or browser-logged subresource failure.
+Redirect hops are reported but never fail a page. Catches the client-side
 regressions a plain fetch crawl (scripts/check-links.ts) cannot see: hydration
 errors, island fetch failures, uncaught exceptions.
+
+The sitemap hardcodes the production origin, so each <loc> is re-pointed at
+<base> — pass a local origin to check a dev server.
 
 Writes a human-readable REPORT.md and exits 1 if any page failed.
 
@@ -69,12 +72,12 @@ const parseArgs = (argv: string[]): Args => {
     console.error('--timeout must be at least 1000 (ms)');
     process.exit(2);
   }
-  return {
-    base: (positional[0] ?? 'https://mochi.fast').replace(/\/+$/, ''),
-    concurrency,
-    report,
-    timeout,
-  };
+  const base = (positional[0] ?? 'https://mochi.fast').replace(/\/+$/, '');
+  if (!URL.canParse(base) || !['http:', 'https:'].includes(new URL(base).protocol)) {
+    console.error(`base must be an http(s) origin, got: ${base}`);
+    process.exit(2);
+  }
+  return { base, concurrency, report, timeout };
 };
 
 /**
@@ -136,11 +139,24 @@ async function fetchSitemap(base: string): Promise<string[]> {
     console.error(String(err));
     process.exit(2);
   }
+  const origin = new URL(base);
   const urls = new Set<string>();
   const re = /<loc>\s*([\s\S]*?)\s*<\/loc>/gi;
   let m: RegExpExecArray | null;
   while ((m = re.exec(xml)) !== null) {
-    urls.add(decodeXmlEntities(m[1]));
+    const loc = decodeXmlEntities(m[1]);
+    // The site bakes its production origin into every <loc>, so a run against a
+    // local base would otherwise silently check production instead.
+    let rebased: URL;
+    try {
+      rebased = new URL(loc, `${base}/`);
+    } catch {
+      console.error(styleText('yellow', `Skipping unparseable <loc>: ${loc}`));
+      continue;
+    }
+    rebased.protocol = origin.protocol;
+    rebased.host = origin.host;
+    urls.add(rebased.toString());
   }
   if (urls.size === 0) {
     console.error(styleText('red', `${url} listed no <loc> entries.`));
@@ -217,7 +233,11 @@ async function checkPage(port: number, url: string, timeout: number): Promise<Pa
         return;
       }
       mainLoaderId ??= params.loaderId;
-      if (params.redirectResponse && params.loaderId === mainLoaderId) {
+      // A later self-navigation carries its own loader id; ignore its hops.
+      if (params.loaderId !== mainLoaderId) {
+        return;
+      }
+      if (params.redirectResponse) {
         redirects.push(`${params.redirectResponse.status} ${params.redirectResponse.url}`);
       }
     });
@@ -369,4 +389,7 @@ async function main() {
   process.exit(1);
 }
 
-main();
+main().catch((err) => {
+  console.error(styleText('red', `Site health check aborted: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`));
+  process.exit(2);
+});
