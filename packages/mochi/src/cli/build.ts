@@ -102,6 +102,9 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     markdown: options.markdown,
     optimize: options.optimize,
     barrelWarnings: options.barrelWarnings,
+    // Group offenders into one summary for the one-shot production build; a
+    // `--dev` build keeps the dev server's immediate per-package lines.
+    bufferBarrelWarnings: !development,
   });
   await registry.prepareShake();
 

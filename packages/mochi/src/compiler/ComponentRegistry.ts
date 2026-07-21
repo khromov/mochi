@@ -327,12 +327,20 @@ export interface ComponentRegistryOptions {
    * that's almost entirely tree-shaken away — the "barrel import" smell (e.g.
    * `import { Sun } from '@lucide/svelte'` instead of `@lucide/svelte/icons/sun`),
    * which slows every rebuild because the big re-export file is re-parsed each time.
-   * In dev it fires once per package as it's seen; in a production build the offenders
-   * are collapsed into a single grouped summary line. Default: enabled. `false` silences
+   * On a live server it fires once per package as it's seen; a `mochi-framework build`
+   * collapses the offenders into a single grouped summary line. Default: enabled. `false` silences
    * it entirely; `{ ignore: ['pkg-name'] }` suppresses specific packages you can't fix;
    * `minBytes` overrides the parsed-size threshold (default 50 KB).
    */
   barrelWarnings?: boolean | MochiBarrelWarningOptions;
+  /**
+   * Buffer barrel offenders instead of logging each as it's seen, so a one-shot
+   * `mochi-framework build` can emit them as one grouped summary via
+   * `flushBarrelWarnings()`. A live server (dev or prod-without-manifest) must
+   * leave this off — it compiles lazily and has no end-of-build flush point, so
+   * buffered warnings would never surface. Default: `false`.
+   */
+  bufferBarrelWarnings?: boolean;
 }
 
 /**
@@ -453,9 +461,10 @@ export class ComponentRegistry {
   private readonly barrelWarningsEnabled: boolean;
   private readonly barrelIgnore: Set<string>;
   private readonly barrelMinBytes: number;
+  private readonly barrelBuffering: boolean;
   /** Packages already warned about this process, so the warning fires once, not on every rebuild. */
   private readonly warnedBarrels = new Set<string>();
-  /** Build-mode buffer: barrels collected across the build, flushed as one grouped summary by `flushBarrelWarnings()`. */
+  /** Buffer used when `bufferBarrelWarnings` is on: barrels collected across the build, flushed as one grouped summary by `flushBarrelWarnings()`. */
   private pendingBarrels: HeavyBarrel[] = [];
   /** absPath → slimmed `.svelte` source from the last `prepareShake()`; empty when shaking is off. */
   private shakenSources: Map<string, string> = new Map();
@@ -480,7 +489,8 @@ export class ComponentRegistry {
     const bw = opts.barrelWarnings;
     this.barrelWarningsEnabled = bw !== false;
     this.barrelIgnore = new Set(typeof bw === 'object' ? (bw.ignore ?? []) : []);
-    this.barrelMinBytes = (typeof bw === 'object' && bw.minBytes) || 50 * 1024;
+    this.barrelMinBytes = (typeof bw === 'object' ? bw.minBytes : undefined) ?? 50 * 1024;
+    this.barrelBuffering = opts.bufferBarrelWarnings ?? false;
   }
 
   /**
@@ -1681,9 +1691,9 @@ export class ComponentRegistry {
   }
 
   /**
-   * Once-per-package heavy-barrel detection over a finished build's metafile. In dev each offender
-   * is warned immediately; in a production build they're buffered and emitted as one grouped summary
-   * by `flushBarrelWarnings()`.
+   * Once-per-package heavy-barrel detection over a finished build's metafile. On a live server each
+   * offender is warned immediately; under `bufferBarrelWarnings` (the one-shot build) they're buffered
+   * and emitted as one grouped summary by `flushBarrelWarnings()`.
    */
   private warnOnBarrelImports(metafile: BarrelMetafile | undefined): void {
     if (!this.barrelWarningsEnabled || !metafile) {
@@ -1706,10 +1716,10 @@ export class ComponentRegistry {
         if (line === null) {
           continue;
         }
-        if (this.development) {
-          logger.warn(line);
-        } else {
+        if (this.barrelBuffering) {
           this.pendingBarrels.push(barrel);
+        } else {
+          logger.warn(line);
         }
       }
     } catch (err) {
@@ -1717,9 +1727,9 @@ export class ComponentRegistry {
     }
   }
 
-  /** Flush build-mode barrel offenders as a single grouped warning. No-op in dev or when nothing was buffered. */
+  /** Flush buffered barrel offenders as a single grouped warning. No-op when buffering is off or nothing was collected. */
   flushBarrelWarnings(): void {
-    if (this.development || this.pendingBarrels.length === 0) {
+    if (this.pendingBarrels.length === 0) {
       return;
     }
     try {
