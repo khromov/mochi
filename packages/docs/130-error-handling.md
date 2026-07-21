@@ -4,9 +4,21 @@ slug: error-handling
 description: 'Configure a custom error page and control how uncaught errors are rendered to the client.'
 ---
 
+<script>
+  import { Image } from 'mochi-framework/image';
+  import Callout from './_components/Callout.svelte';
+  import SeeItInAction from './_components/SeeItInAction.svelte';
+  import errorPage from './images/error-page.png';
+</script>
+
 ## Error handling
 
 Mochi renders an HTML error page for any uncaught error escaping a page render — top-level SSR throws, `error(status, ...)` from `serverProps` or actions, malformed form bodies, unknown form actions, and unmatched routes. API routes are not affected; they return a JSON envelope. Island-level boundaries are scoped to hydratable islands — see `Error boundaries`.
+
+<figure>
+  <Image src={errorPage} size="doc" width={errorPage.width} height={errorPage.height} alt="The built-in error page: a large 500 above the message Internal Server Error, a Go home link, and a Stack trace section showing the thrown error" />
+  <figcaption>The built-in error page — what you get when <code>errorPage</code> is omitted. The stack trace section only renders under <code>development: true</code>.</figcaption>
+</figure>
 
 Configure the page via `errorPage` on `Mochi.serve()`. Omit it to use the built-in minimal component.
 
@@ -21,8 +33,6 @@ await Mochi.serve({
   },
 });
 ```
-
-Do **NOT** rely on `<svelte:boundary>` to catch a top-level page throw; instead, let it surface to `errorPage` — Mochi does not wrap the page root in a boundary. Author your own `<svelte:boundary>` only when a section should degrade gracefully.
 
 ### `errorPage`
 
@@ -83,7 +93,19 @@ Return one of:
 
 `error` is `null` when the condition didn't originate from a throw (unmatched routes, unknown form actions). Inspect it before forwarding so benign 4xx cases don't page on-call.
 
-Do **NOT** use `handleError` for API routes; instead, handle API failures inside the `Mochi.api` handler — `handleError` is never called for `Mochi.api` responses.
+<Callout type="warning">
+
+**API routes bypass `handleError`.** The hook only fires for page routes. Handle `Mochi.api` failures inside the route with `error()` or `apiError()`:
+
+```ts
+Mochi.api(async () => {
+  const data = await load();
+  if (!data) return apiError(404, 'Not found');
+  return json(data);
+});
+```
+
+</Callout>
 
 If the hook itself throws, Mochi logs the secondary error and renders the error page with the original `status` and `message`.
 
@@ -113,8 +135,16 @@ await Mochi.serve({
 
 Uncaught throws inside a `Mochi.api` handler are coerced to `500 Internal Server Error` with a generic message; the original error and stack are logged via `log.error` and never leaked to the client. See `API routes` for the full contract.
 
-Do **NOT** throw a bare `Error` to signal a status code; instead, call `error(status, message)` so the framework returns the typed envelope.
+<Callout type="warning">
+
+**Use `error(status, message)` to signal status codes.** A bare `throw new Error()` is coerced to a generic 500; only `error(status, message)` returns the typed error envelope the framework expects.
+
+</Callout>
 
 ### Fallback behaviour
 
 If the user's `errorPage` itself throws during render, Mochi returns a plain-text response that mentions both the original error and the secondary render failure — the error page cannot crash the server.
+
+<SeeItInAction
+demos={[{ href: "/demos/error/", title: "Error Handling", hook: "Catch render errors and unmatched routes via Mochi.serve()'s errorPage option and the handleError hook." }]}
+/>

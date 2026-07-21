@@ -4,6 +4,12 @@ on:
   pull_request:
     branches: [main]
 
+# Cancel superseded runs for the same PR/branch so a new push doesn't leave the
+# old run churning (or hanging) on stale code.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
   pull-requests: write
@@ -19,6 +25,14 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version-file: .bun-version
+
+      - name: Cache Bun dependencies
+        uses: actions/cache@v6
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
 
       - name: Count LOC on PR branch
         run: bun .github/scripts/loc-report.ts --json > pr.json
@@ -50,8 +64,11 @@ jobs:
           retention-days: 30
           if-no-files-found: warn
 
+      - name: Collect changed paths
+        run: git diff --name-only origin/main...HEAD > changed.txt
+
       - name: Render comment
-        run: bun .github/scripts/loc-comment.ts main.json pr.json --repo ${{ github.repository }} --run-id ${{ github.run_id }} --dep-report dep-report.txt > comment.md
+        run: bun .github/scripts/loc-comment.ts main.json pr.json --repo ${{ github.repository }} --run-id ${{ github.run_id }} --dep-report dep-report.txt --changed-paths changed.txt > comment.md
 
       - name: Post or update sticky comment
         uses: actions/github-script@v9

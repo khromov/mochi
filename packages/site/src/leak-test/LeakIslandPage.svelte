@@ -1,7 +1,7 @@
 <script>
   import LeakIsland from './LeakIsland.svelte';
 
-  // ~1 KB random hex string. Per-run randomness means the signed-props blob
+  // ~1 KB random hex string. Per-run randomness means the encrypted props blob
   // captured by the leak harness changes across runs, so any engine-level
   // memoization on a constant payload (string interning, signature cache hits)
   // can't accidentally mask a leak that would surface on real, varied traffic.

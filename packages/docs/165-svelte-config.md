@@ -58,8 +58,6 @@ Three `compilerOptions` are forced by Mochi at every compile call site and canno
 
 Every other field — `runes`, `css`, `accessors`, `cssHash`, `discloseVersion`, `experimental.*`, etc. — is yours to set.
 
-Do **NOT** set `generate` or `filename` in your config; the merge step overwrites them on every compile.
-
 ### Where it applies
 
 The merged options are used everywhere Mochi invokes the Svelte compiler:
@@ -76,5 +74,3 @@ Only `compilerOptions` is honored. SvelteKit-style top-level keys are ignored:
 - `preprocess` — register preprocessors via the `compile:preprocessors` filter on the extensions API instead, not in `svelte.config.js`.
 - `extensions` — Mochi's accepted extensions are fixed (`.svelte`, `.svelte.[jt]s`, `.md`, `.svx`). Adding `.svx` to `extensions` here has no effect; it is already wired into the mdsvex loader.
 - `kit` — SvelteKit-only; ignored.
-
-Do **NOT** put a `preprocess` array in `svelte.config.js` and expect it to run; instead, expose preprocessors through a Mochi extension and the `compile:preprocessors` filter.

@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import type { MochiServeOptions } from './types';
 import { applyFilter } from './extensions';
-import { logger } from './log';
+import { logger } from './utils/log';
 
 export interface MochiContext {
   options: MochiServeOptions;
@@ -16,6 +16,10 @@ export interface MochiContext {
 const GLOBAL_KEY = '__mochi_config__';
 
 export async function initMochiConfig(options: MochiServeOptions): Promise<void> {
+  // This one-per-process singleton (never cleared by server.stop()) is why
+  // server-booting tests must run one file per process via runTests
+  // (cli/testing.ts) rather than a plain `bun test` over the whole suite —
+  // the second Mochi.serve() in a shared process lands here and throws.
   if ((globalThis as unknown as Record<string, unknown>)[GLOBAL_KEY]) {
     throw new Error('Mochi.serve() has already been called. Only one instance is allowed.');
   }
@@ -26,10 +30,19 @@ export async function initMochiConfig(options: MochiServeOptions): Promise<void>
     logger.warn(
       'MOCHI_KEY is not set. A random key will be generated. ' +
         'Server island props will not survive restarts or work across multiple instances. ' +
+        'Image URLs are signed with this key too, so previously-served image links will ' +
+        'stop working after a restart — empty your image cache after restarting. ' +
         'Set MOCHI_KEY in your .env to a base64url-encoded 32-byte secret.',
     );
   }
   const baseKey = envKey ? Buffer.from(envKey, 'base64url') : randomBytes(32);
+  if (envKey && baseKey.length < 32) {
+    logger.warn(
+      `MOCHI_KEY decoded to only ${baseKey.length} bytes — this is likely a typo or truncated value. ` +
+        'A short key yields a low-entropy secret for signing island props and image URLs. ' +
+        'Generate a proper one with `bunx mochi-framework generate-key`.',
+    );
+  }
   const secretKey = await applyFilter('serverIsland:secretKey', baseKey, {
     options,
     envKeyPresent,

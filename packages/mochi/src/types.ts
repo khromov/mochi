@@ -1,14 +1,35 @@
 import type { BunFile, Server, ServerWebSocket } from 'bun';
-import type { Handle, HandleError, MochiEvent } from './hooks';
-import type { MochiCookieJar } from './cookies';
-import type { MochiCsrfOptions } from './csrf';
+import type { Handle, HandleError, MochiEvent } from './runtime/hooks';
+import type { MochiCookieJar } from './runtime/cookies';
+import type { MochiCsrfOptions } from './runtime/csrf';
 import type { MochiFilters, MochiHooks } from './extensions';
-import type { MochiProxyOptions } from './proxy';
+import type { MochiProxyOptions } from './runtime/proxy';
+import type { LocalImageAsset, MochiImageOptions } from './image/types';
+import type { MochiEmailOptions } from './email/types';
+import type { MochiCaptchaOptions } from './captcha/types';
+import type { MochiProcessor, MochiQueue, MochiQueueListeners, MochiQueueRuntimeOptions } from './queue';
+import type { MochiRateLimitOptions } from './runtime/rateLimit';
 
 export type MochiServerPropsResolver = (req: Request, params: Record<string, string>) => Record<string, unknown> | Promise<Record<string, unknown>>;
 
 export function isServerPropsResolver(serverProps: Record<string, unknown> | MochiServerPropsResolver | undefined): serverProps is MochiServerPropsResolver {
   return typeof serverProps === 'function';
+}
+
+/**
+ * A `mochi:defer mochi:hydrate` island's authored hydration mode. It rides inside
+ * the encrypted server-island envelope under {@link ALSO_HYDRATE_ENVELOPE_KEY}
+ * (transport-only, stripped before render — never trusted from a query param).
+ * The preprocessor (producer) and the island endpoint (consumer) must agree on
+ * this set, so both import it from here rather than hardcoding the literals.
+ */
+export type AlsoHydrateMode = 'eager' | 'visible';
+
+/** Envelope key carrying the {@link AlsoHydrateMode} inside the sealed props. */
+export const ALSO_HYDRATE_ENVELOPE_KEY = '__mochi_ah';
+
+export function isAlsoHydrateMode(value: unknown): value is AlsoHydrateMode {
+  return value === 'eager' || value === 'visible';
 }
 
 export interface MochiPageHandlerConfig {
@@ -21,6 +42,8 @@ export interface MochiPageConfig {
   readonly componentPath: string;
   readonly serverProps?: Record<string, unknown> | MochiServerPropsResolver;
   readonly actions?: MochiFormActions;
+  /** Per-route rate limit. Overrides the global `rateLimit` serve option; `false` opts this route out. */
+  readonly rateLimit?: MochiRateLimitOptions | false;
 }
 
 export function isMochiPage(value: unknown): value is MochiPageConfig {
@@ -65,6 +88,8 @@ export type MochiApiHandler = (event: MochiApiEvent) => Response | Promise<Respo
 export interface MochiApiConfig {
   readonly __mochiApi: true;
   readonly handler: MochiApiHandler;
+  /** Per-route rate limit. Overrides the global `rateLimit` serve option; `false` opts this route out. */
+  readonly rateLimit?: MochiRateLimitOptions | false;
 }
 
 export function isMochiApi(value: unknown): value is MochiApiConfig {
@@ -294,6 +319,31 @@ export function isMochiSse(value: unknown): value is MochiSseConfig {
   return typeof value === 'object' && value !== null && (value as MochiSseConfig).__mochiSse === true;
 }
 
+// ---------------------------------------------------------------------------
+// Background queues
+// ---------------------------------------------------------------------------
+
+/**
+ * Inert descriptor returned by `Mochi.queue()` — mirrors `MochiApiConfig`/
+ * `MochiWsConfig` et al. Non-generic so a heterogeneous `queues` map type-checks;
+ * `Mochi.queue<T, R>` keeps the generics only to type the processor/listeners at
+ * the call site, then erases them here. The live queue (producer + consumer) is
+ * created only when this is mounted in `Mochi.serve({ queues })`, which calls
+ * `createQueue`, passing the `on` listeners so they're wired before the consumer
+ * can pull its first job.
+ */
+export interface MochiQueueConfig {
+  readonly __mochiQueue: true;
+  readonly process: MochiProcessor<unknown, unknown>;
+  readonly options?: MochiQueueRuntimeOptions;
+  readonly on?: Partial<MochiQueueListeners<unknown, unknown>>;
+  readonly recover?: (queue: MochiQueue<never>) => void | Promise<void>;
+}
+
+export function isMochiQueue(value: unknown): value is MochiQueueConfig {
+  return typeof value === 'object' && value !== null && (value as MochiQueueConfig).__mochiQueue === true;
+}
+
 export type MochiRouteValue = MochiPageConfig | MochiApiConfig | MochiWsConfig | MochiSseConfig | MochiFileConfig | BunRouteValue;
 
 /** `stack` is only populated when the server runs with `development: true`. */
@@ -311,7 +361,8 @@ export interface MochiErrorProps {
 
 export interface MochiManifestComponent {
   ssrModule: string;
-  hydratables: { name: string; resolvedPath: string }[];
+  /** `exportName` is optional for manifests written before named-export islands existed; absent means `default`. */
+  hydratables: { name: string; displayName: string; resolvedPath: string; exportName?: string }[];
   cssComponents: string[];
 }
 
@@ -335,12 +386,22 @@ export interface MochiManifest {
   } | null;
   /** Maps server island component name → resolved file path */
   serverIslandPaths?: Record<string, string>;
+  /** Maps server island component name → the named export it renders (default-export islands are omitted). */
+  serverIslandExports?: Record<string, string>;
   /** Maps public URL path → disk path (relative to project root) for static files copied from `public/`. */
   publicFiles?: Record<string, string>;
+  /** Maps served asset URL → emitted asset details for locally-imported images (`import x from './x.png'`). */
+  localImageAssets?: Record<string, LocalImageAsset>;
   /** Maps resolved CSS-import path → served URL (e.g. /import-css/inter-<hash>.css) */
   importedCssUrls?: Record<string, string>;
   /** Maps page entry .svelte path → list of CSS-import paths reachable from it */
   entryImportedCss?: Record<string, string[]>;
+  /**
+   * Disk path (project-root-relative) to the prebuilt, minified ServerIsland
+   * inline web-component script. Emitted by `build()` so the production runtime
+   * loads it from disk instead of running a `Bun.build` at startup.
+   */
+  serverIslandScript?: string;
 }
 
 /**
@@ -429,9 +490,26 @@ export interface MochiServeOptions {
    * `/__mochi_live_reload` socket is flaky behind a proxy.
    */
   liveReload?: boolean;
+  /**
+   * Grace period (ms) on `SIGTERM`/`SIGINT` for in-flight requests to finish
+   * before connections are force-closed and the process exits. Default: `5000`
+   * in production, `0` in development. `0` force-closes immediately.
+   *
+   * A non-forced `server.stop()` never resolves while a WebSocket is open, so
+   * without a forced fallback a single connected client (in dev, any browser tab
+   * holding the live-reload socket) wedges the process until it is `SIGKILL`ed.
+   */
+  shutdownTimeout?: number;
   /** Path to a prebuilt manifest JSON. Defaults to `.mochi/manifest.json`. */
   manifest?: string;
   routes?: Record<string, MochiRouteValue>;
+  /**
+   * Background job queues to start with the server, keyed by queue name. Each
+   * value is a `Mochi.queue({ process, … })` descriptor; add jobs to it from route
+   * code via `Mochi.getQueue(name).add(...)`. Queues drain gracefully on
+   * shutdown. A queue-only process is `Mochi.serve({ queues })` with no `routes`.
+   */
+  queues?: Record<string, MochiQueueConfig>;
   fetch?: (req: Request, server: Server<undefined>) => Response | Promise<Response>;
   htmlShell?: string;
   /**
@@ -467,11 +545,15 @@ export interface MochiServeOptions {
      * client bundles). `'silent'` suppresses everything including BOOT/STOP.
      * Defaults: `'info'` in development, `'warn'` in production.
      */
-    level?: import('./log').LogLevel;
-  } & import('./consoleLogger').ConsoleLoggerOptions;
+    level?: import('./utils/log').LogLevel;
+  } & import('./dev/consoleLogger').ConsoleLoggerOptions;
   /** Directory served as static assets (cwd-relative). Default: `./public`. */
   publicDir?: string;
-  /** Directory for build artifacts and dev cache (cwd-relative). Default: `./.mochi`. */
+  /**
+   * Base directory for build artifacts and dev cache (cwd-relative). Default: `./.mochi`.
+   * Production writes here directly; development nests under `<outDir>/dev` so the two
+   * modes never collide.
+   */
   outDir?: string;
   /**
    * URL prefix under which framework client assets (JS bundles, CSS, bundle
@@ -545,6 +627,13 @@ export interface MochiServeOptions {
    */
   trailingSlash?: 'never' | 'always';
   /**
+   * Global rate limit applied to every page and API route (a thin shim around
+   * `@joint-ops/hitlimit-bun`). Routes inheriting this option share one limiter —
+   * one bucket per key (default: the proxy-aware client IP) across all of them.
+   * A route's own `rateLimit` config replaces it; `rateLimit: false` opts out.
+   */
+  rateLimit?: MochiRateLimitOptions;
+  /**
    * Event hooks: run a function at a specific framework moment. One entry per name,
    * no priorities. See `MochiHooks` for available names.
    */
@@ -572,6 +661,30 @@ export interface MochiServeOptions {
    */
   warmup?: boolean | MochiWarmupOptions;
   /**
+   * On-the-fly image transforms via named sizes. Mounts a signed
+   * `/_mochi/image/*` endpoint and powers `getImageUrl()` / the `<Image>`
+   * component. Every served URL's payload is encrypted so attackers cannot
+   * request arbitrary sources or transforms. Default: enabled with sensible
+   * defaults; pass `{ enabled: false }` to turn it off. See `MochiImageOptions`.
+   */
+  image?: MochiImageOptions;
+  /**
+   * Transactional email. Configures `Mochi.email(...)` with a default `from`
+   * and a pluggable `transport` (SMTP, a custom-send function for HTTP email
+   * APIs, or the default `log` transport that logs instead of sending). See
+   * `MochiEmailOptions`. Default: unconfigured — the `log` transport is used
+   * and no mail is sent.
+   */
+  email?: MochiEmailOptions;
+  /**
+   * Slide-to-verify captcha backing `mintCaptcha()` / `verifyCaptcha()` and the
+   * `<MochiCaptcha>` component. Tunes proof-of-work difficulty, the token
+   * timing floor and expiry, and the one-time nonce store used for replay
+   * protection. See `MochiCaptchaOptions`. Default: 16 bits, a 2s floor, a
+   * 15-minute expiry, and an in-memory (per-process) nonce store.
+   */
+  captcha?: MochiCaptchaOptions;
+  /**
    * Run the whole-program [svelte-shaker](https://github.com/baseballyama/svelte-shaker)
    * pass before compiling, slimming `.svelte` source (prop folding, dead-branch
    * removal, CSS narrowing) so the Svelte compiler emits less code.
@@ -587,7 +700,44 @@ export interface MochiServeOptions {
    * while keeping other config visible. Default: `false`.
    */
   optimize?: boolean | MochiSvelteShakerOptions;
+  /**
+   * Warning when a dependency drags a large module into the build graph
+   * that's then almost entirely tree-shaken away — the "barrel import" smell, e.g.
+   * `import { Sun } from '@lucide/svelte'` instead of `@lucide/svelte/icons/sun`.
+   * Bun re-parses that big re-export file on every rebuild, so it slows HMR even
+   * though little of it ships. In dev it fires once per package; a production build
+   * collapses the offenders into one grouped summary line. Default: enabled.
+   *
+   * - `false` — silence the warning entirely.
+   * - `{ ignore: ['pkg-name'] }` — suppress specific packages you can't fix.
+   * - `{ minBytes: 102400 }` — override the parsed-size threshold (default 50 KB).
+   */
+  barrelWarnings?: boolean | MochiBarrelWarningOptions;
+  /**
+   * Output controls for `mochi-framework build`. Ignored by the runtime — it
+   * lives here so the build reads it from your entry along with the rest of
+   * the config, the same way `optimize` and `barrelWarnings` are picked up.
+   */
+  build?: MochiBuildReportOptions;
   [key: string]: unknown;
+}
+
+/** Object form of `MochiServeOptions['build']`. See that field for semantics. */
+export interface MochiBuildReportOptions {
+  /**
+   * Print the emitted-resources list — one row per local image import, with its
+   * dimensions and size on disk. The summary line keeps its asset count even
+   * when the list is off. Default: enabled.
+   */
+  resources?: boolean;
+}
+
+/** Object form of `MochiServeOptions['barrelWarnings']`. See that field for semantics. */
+export interface MochiBarrelWarningOptions {
+  /** Packages to exclude from the heavy-barrel warning (e.g. ones you can't fix). */
+  ignore?: string[];
+  /** Parsed-size threshold in bytes before a dependency file is considered. Default: 50 KB. */
+  minBytes?: number;
 }
 
 export interface MochiSvelteShakerOptions {

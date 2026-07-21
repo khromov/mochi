@@ -1,4 +1,6 @@
 <script lang="ts">
+  import ViewTransitionFirefoxNote from '../../components/ViewTransitionFirefoxNote.svelte';
+
   let { page }: { page: 1 | 2 } = $props();
 
   const other = $derived(page === 1 ? '/demos/custom-transitions/two' : '/demos/custom-transitions');
@@ -9,6 +11,8 @@
   <p>Each navigation is a full page load — the card does a custom <code>spin</code> while the rest of the page swaps instantly.</p>
   <a class="next" href={other}>Go to page {page === 1 ? 2 : 1} →</a>
 </div>
+
+<ViewTransitionFirefoxNote />
 
 <style>
   .card {

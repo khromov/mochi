@@ -1,7 +1,7 @@
 ---
 title: 'Docs for LLMs'
 slug: docs-for-llms
-description: 'An llms.txt index at /llms.txt, plus concatenated bundles for pasting into LLM contexts.'
+description: 'A remote MCP server, an agent skill, and an llms.txt index with concatenated bundles for pasting into LLM contexts.'
 ---
 
 <script>
@@ -13,7 +13,7 @@ description: 'An llms.txt index at /llms.txt, plus concatenated bundles for past
 
 Mochi provides several different ways of integrating LLMs to improve your development experience. We primarily recommend to use _either_ the [**Agent skill**](#agent-skill-recommended) or the [**MCP server**](#mcp-server-recommended). Both will augment your development experience with up-to-date documentation and how-to's on how to do various tasks in Mochi. You can also use the older [llms.txt format](#llmstxt).
 
-## Agent skill (recommended)
+### Agent skill (recommended)
 
 Mochi publishes a `SKILL.md` — agent guidance that tells a coding assistant to fetch the relevant docs and demos from `/llms.txt` before writing framework code. Pull the latest copy into your project with the CLI:
 
@@ -32,7 +32,7 @@ The optional `agent` argument controls where the skill is written (default: `cla
 | `antigravity` (`agy`) | `.agents/skills/mochi/SKILL.md`   |
 | `codex`               | `.agents/skills/mochi/SKILL.md`   |
 
-## MCP Server (recommended)
+### MCP Server (recommended)
 
 Mochi runs an official remote MCP server at `https://mochi.fast/mcp` (HTTP transport). It exposes the same docs and demos as the skill — `get_documentation_sections` to list everything and `get_section` to read specific pages — so an assistant can pull exactly the context it needs. Add it to your tool of choice below.
 
@@ -143,19 +143,19 @@ Refer to your client's documentation for adding a remote MCP server and use `htt
 
 </Disclosure>
 
-## llms.txt
+### llms.txt
 
 [`/llms.txt`](/llms.txt) is the index: a title, a one-line summary, and a linked list of every doc (`## Docs`) and demo (`## Examples`), each pointing at its own plain-text file. The concatenated bundles below are linked under `## Optional`. Start here.
 
-### All docs concatenated
+#### All docs concatenated
 
 The full set of docs, concatenated in reading order, is served at [`/llms-recommended.txt`](/llms-recommended.txt). Use this when you want the model to have the complete picture of the framework API in one paste.
 
-### Docs + demo source
+#### Docs + demo source
 
 [`/llms-full.txt`](/llms-full.txt) includes everything in `/llms-recommended.txt` plus the source of every demo (`.svelte` and `.ts` files), grouped by demo name. Use this when the model needs both the API and real working examples.
 
-### Per-document text
+#### Per-document text
 
 Each individual doc is reachable as plain text at `/docs/<slug>/llms.txt`:
 
@@ -165,14 +165,14 @@ Each individual doc is reachable as plain text at `/docs/<slug>/llms.txt`:
 
 The "Copy as llms.txt" button on each doc page emits just that page — use it to give the model focused context without the rest of the framework.
 
-### Per-demo source
+#### Per-demo source
 
 Each demo's source is reachable as plain text alongside its demo page — usually `/demos/<slug>/llms.txt`. It's the exact source `/llms-full.txt` bundles for that demo, scoped to one demo:
 
 - [`/demos/hello-world/llms.txt`](/demos/hello-world/llms.txt)
 - [`/demos/chat/llms.txt`](/demos/chat/llms.txt)
 
-### Machine-readable index
+#### Machine-readable index
 
 [`/llms.json`](/llms.json) returns a JSON index of every doc and demo — each with its `title`, `description`, and an absolute `url` to its `llms.txt`. Use it to discover what's available and fetch each piece on demand:
 

@@ -6,11 +6,19 @@ description: 'A mapping of SvelteKit concepts to their Mochi equivalents for dev
 
 <script>
   import Callout from './_components/Callout.svelte';
+  import SeeItInAction from './_components/SeeItInAction.svelte';
+  import ComparisonTable from './_components/ComparisonTable.svelte';
 </script>
 
 ## Coming from SvelteKit
 
-You have likely already been using SvelteKit as your main framework for Svelte. Here is a quick list of most of the SvelteKit features and how they map to equivalent concepts in Mochi, so you can be up and running quickly.
+You have likely already been using SvelteKit as your main framework for Svelte. Below you'll find a list of most of the SvelteKit features and how they map to equivalent concepts in Mochi, so you can be up and running quickly.
+
+Before that you'll find a simplified comparison table below, but you can [skip to the feature list directly](#routing) if you prefer.
+
+### Feature comparison
+
+<ComparisonTable mochi:hydrate />
 
 ### Routing
 
@@ -623,7 +631,7 @@ Listen for `beforeunload` or `popstate` directly — there is no `beforeNavigate
 
 ### Link options (`data-sveltekit-preload-*`)
 
-No equivalent. There is no client router to preload code or data into — the browser handles `<a>` clicks natively. `data-sveltekit-reload`, `data-sveltekit-replacestate`, `data-sveltekit-keepfocus`, and `data-sveltekit-noscroll` likewise have no Mochi attribute.
+Planned, but not yet available. Mochi has no client router today, so there is nothing to preload code or data into — the browser handles `<a>` clicks natively, and link preloading is on the roadmap. `data-sveltekit-reload`, `data-sveltekit-replacestate`, `data-sveltekit-keepfocus`, and `data-sveltekit-noscroll` likewise have no Mochi attribute.
 
 ```html
 <!-- SvelteKit -->
@@ -686,7 +694,7 @@ No framework helper. Call `history.pushState` / `history.replaceState` directly 
 
 ### Service workers
 
-No equivalent. There is no `src/service-worker.ts` convention and no `$service-worker` virtual module. Register one yourself from a hydrated island if you need offline support.
+Planned, but not yet available. There is currently no `src/service-worker.ts` convention and no `$service-worker` virtual module; built-in service worker integration is on the roadmap. For now, register one yourself from a hydrated island if you need offline support.
 
 ```ts
 // file (SvelteKit): src/service-worker.ts
@@ -701,6 +709,29 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js');
 }
 // then ship /public/sw.js yourself
+```
+
+### Image optimization (`@sveltejs/enhanced-img`)
+
+Supported, with a different split of the work. SvelteKit optimizes at build time via `@sveltejs/enhanced-img`, with runtime transformations available at extra cost through a CDN. Mochi imports local images the same Vite-style way — the import returns `{ src, width, height, format }` and the file is copied to a content-hashed URL — but the transforms themselves are declared once as [named sizes](/docs/images/) on `Mochi.serve()` and run on demand in `Bun.Image` behind an encrypted URL, cached to disk with stale-while-revalidate. The same `<Image>` works for remote sources, and `placeholder` adds a ThumbHash blur-up with no client JS.
+
+```svelte
+<!-- file (SvelteKit): src/routes/+page.svelte -->
+<script>
+  import hero from './hero.png?enhanced';
+</script>
+
+<enhanced:img src={hero} alt="Hero" />
+```
+
+```svelte
+<!-- file (Mochi): src/Home.svelte — `hero` size declared in Mochi.serve({ image: { sizes } }) -->
+<script>
+  import { Image } from 'mochi-framework/image';
+  import hero from './hero.png';
+</script>
+
+<Image src={hero} size="hero" alt="Hero" />
 ```
 
 ### Remote functions
@@ -925,3 +956,11 @@ await Mochi.serve({
 - [Events](/docs/events/) — `mochiEvents` lifecycle bus for observability and logging.
 - [Cache](/docs/cache/) — `MochiCache` SWR caching for arbitrary computations.
 - [Trailing slash](/docs/trailing-slash/) — global `trailingSlash` policy on `Mochi.serve()`.
+
+<SeeItInAction
+demos={[
+{ href: "/demos/server-props/", title: "Server Props", hook: "Define serverProps on Mochi.page() to pass fresh data into a Svelte page on every request." },
+{ href: "/demos/login/", title: "Form Actions", hook: "A login form rendered twice — plain HTML POST and intercepted with {@attach enhance(...)}." },
+{ href: "/demos/api/", title: "API Endpoints", hook: "JSON routes defined with Mochi.api(), tested live against the running server." },
+]}
+/>

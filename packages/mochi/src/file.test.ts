@@ -21,10 +21,16 @@ describe('Mochi.file', () => {
 
   beforeAll(async () => {
     outDir = mkdtempSync(path.join(import.meta.dir, '..', '.mochi-file-out-'));
-    fixturesDir = mkdtempSync(path.join(import.meta.dir, '..', '.mochi-file-fixtures-'));
+    // Served fixtures must NOT live in a dot-prefixed dir: Mochi.file() rejects any
+    // path with a dot-segment (the dotfile-exfiltration guard), so a `.mochi-*` dir
+    // would 404. Use a non-dot (still gitignored) prefix for files that get served.
+    fixturesDir = mkdtempSync(path.join(import.meta.dir, '..', 'mochi-file-fixtures-'));
     reportPath = path.join(fixturesDir, 'report.txt');
     await Bun.write(reportPath, REPORT_BODY);
     await Bun.write(path.join(fixturesDir, 'alpha.txt'), 'alpha contents');
+    // A dotfile that lives INSIDE the app root — must not be servable even though
+    // the resolver reaches it and the file exists (the dotfile-exfiltration guard).
+    await Bun.write(path.join(fixturesDir, '.secret'), 'in-root secret');
 
     // A real file that lives outside the app root (process.cwd()) — must never
     // be servable, whether referenced absolutely or via `../` traversal.
@@ -115,6 +121,14 @@ describe('Mochi.file', () => {
     // from root confinement rather than the exists() check.
     const escape = path.relative(fixturesDir, outsideSecretPath);
     const res = await fetch(`${base}/files/escape/${encodeURIComponent(escape)}`);
+    expect(res.status).toBe(404);
+    expect(await res.text()).toBe('Not Found');
+  });
+
+  test('a dotfile inside the app root is refused (dotfile-exfiltration guard)', async () => {
+    // The resolver reaches `<fixturesDir>/.secret` and the file exists, so a 404
+    // here proves the dotfile policy — not the exists() check — blocks it.
+    const res = await fetch(`${base}/files/escape/${encodeURIComponent('.secret')}`);
     expect(res.status).toBe(404);
     expect(await res.text()).toBe('Not Found');
   });

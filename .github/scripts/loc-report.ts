@@ -20,11 +20,12 @@ type Package = {
   name: string;
   root: string;
   categories: string[];
+  scanGlob?: string;
   docsGlob?: string;
 };
 
 const REPO_ROOT = join(import.meta.dir, '..', '..');
-const COUNTED_EXTENSIONS = ['ts', 'js', 'svelte', 'html'];
+const COUNTED_EXTENSIONS = ['ts', 'tsx', 'js', 'svelte', 'html'];
 const SCAN_GLOB = `src/**/*.{${COUNTED_EXTENSIONS.join(',')}}`;
 const MISCELLANEOUS = 'Other';
 const DOCS_CATEGORY = 'Docs';
@@ -52,6 +53,7 @@ const PACKAGES: Package[] = [
       'src/cookies*.ts',
       'src/extensions.ts',
       'src/cache.ts',
+      'src/image/**',
       'src/middleware/**',
       'src/enhance*.ts',
       'src/build*.ts',
@@ -86,9 +88,30 @@ const PACKAGES: Package[] = [
     categories: [],
   },
   {
+    name: 'packages/support',
+    root: join(REPO_ROOT, 'packages', 'support'),
+    categories: ['src/**/*.test.ts', 'src/admin/**', 'src/components/**', 'src/*.server.ts', 'src/{index,routes}.ts'],
+  },
+  {
+    name: 'packages/shared',
+    root: join(REPO_ROOT, 'packages', 'shared'),
+    categories: [],
+  },
+  {
     name: 'packages/cli',
     root: join(REPO_ROOT, 'packages', 'cli'),
     categories: ['src/**/*.test.ts', 'src/cli*', 'src/{create,templates,utils}.ts'],
+  },
+  {
+    name: 'packages/remotion',
+    root: join(REPO_ROOT, 'packages', 'remotion'),
+    categories: ['src/changelog/**/*.{ts,tsx}', 'src/*.tsx', 'src/*.ts'],
+  },
+  {
+    name: 'packages/msgpackr-extract-stub',
+    root: join(REPO_ROOT, 'packages', 'msgpackr-extract-stub'),
+    categories: ['*.test.ts'],
+    scanGlob: '*.{ts,js,cjs}',
   },
 ];
 
@@ -160,7 +183,7 @@ async function scanPackage(pkg: Package): Promise<Report> {
 
   const totals: Counts = { files: 0, lines: 0 };
   const nonTestTotals: Counts = { files: 0, lines: 0 };
-  const glob = new Glob(SCAN_GLOB);
+  const glob = new Glob(pkg.scanGlob ?? SCAN_GLOB);
   for await (const file of glob.scan({ cwd: pkg.root, onlyFiles: true })) {
     if (EXCLUDE.some((p) => new Glob(p).match(file))) {
       continue;

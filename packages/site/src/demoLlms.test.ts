@@ -4,7 +4,7 @@ import path from 'node:path';
 import type { Server } from 'bun';
 import { Mochi } from 'mochi-framework';
 import { internalDemoLlmsRoutes } from './lib/docs';
-import { routes } from './routes';
+import { routes, queues } from './routes';
 
 // Boots the real site routes so the per-demo llms.txt routes are exercised against
 // the actual router — this is what catches collisions like /demos/data-loading/:id
@@ -14,7 +14,25 @@ describe('per-demo llms.txt routes', () => {
   let outDir: string;
   let base: string;
 
+  const realBunImage = Bun.Image;
+
   beforeAll(async () => {
+    // This test boots the whole site with an in-process compile, which imports a
+    // local image (the Image demo's `hero.jpg`). The build-time image loader
+    // probes intrinsic dimensions with `new Bun.Image().metadata()` — a native
+    // decode. Run *inside* a `Bun.build` pass under the `bun test` runtime, that
+    // decode trips a Bun bundler EISDIR bug in the next pass (the client bundle),
+    // the same class of bug `runIsolatedBuild` exists to dodge. Real `bun run`
+    // builds (dev + `mochi-framework build`) are unaffected, so we only need to
+    // neutralize the native decode here: stub `Bun.Image` with a metadata-only
+    // fake (this test never inspects image dimensions), restored in `afterAll`.
+    // @ts-expect-error minimal metadata-only stub, not the full Bun.Image type
+    Bun.Image = class {
+      constructor(_bytes: unknown) {}
+      metadata() {
+        return Promise.resolve({ width: 1, height: 1, format: 'jpeg' });
+      }
+    };
     outDir = mkdtempSync(path.join(import.meta.dir, '..', '.mochi-demo-llms-'));
     server = await Mochi.serve({
       port: 0,
@@ -22,11 +40,14 @@ describe('per-demo llms.txt routes', () => {
       logger: { enabled: false },
       outDir,
       routes,
+      // Mount the demo queues too, since the routes produce to them.
+      queues,
     });
     base = `http://localhost:${server.port}`;
   });
 
   afterAll(() => {
+    Bun.Image = realBunImage;
     server.stop(true);
     rmSync(outDir, { recursive: true, force: true });
   });
