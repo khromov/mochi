@@ -13,7 +13,6 @@
 
   async function mint() {
     verified = false;
-    result = null;
     const res = await fetch('/api/captcha-demo/mint', { cache: 'no-store' });
     const minted = (await res.json()) as { token: string; bits: number };
     token = minted.token;
@@ -28,6 +27,7 @@
       return;
     }
     checking = true;
+    result = null;
     const data = new FormData(form);
     const res = await fetch('/api/captcha-demo/verify', {
       method: 'POST',
