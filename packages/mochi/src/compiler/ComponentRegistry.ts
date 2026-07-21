@@ -649,7 +649,7 @@ export class ComponentRegistry {
    * alongside each `<basename>.server.js`, so they're emitted exactly once
    * across the entire cohort.
    */
-  async compileAll(filenames: string[], opts: { force?: boolean } = {}): Promise<void> {
+  async compileAll(filenames: string[], opts: { force?: boolean; deferClientBundle?: boolean } = {}): Promise<void> {
     const todo = opts.force ? [...new Set(filenames)] : [...new Set(filenames)].filter((f) => !this.compiledComponents.has(f));
     if (todo.length === 0) {
       return;
@@ -1005,27 +1005,41 @@ export class ComponentRegistry {
 
     // Write per-component CSS files to disk (minified) and track their URLs
     const cssOutDir = `${this.outDir}/svelte-css`;
-    for (const [componentPath, cssCode] of cssMap) {
-      if (this.cssRawByPath.get(componentPath) === cssCode) {
-        continue;
-      }
-      const compName = path.basename(componentPath, '.svelte');
-      // Write raw CSS so Bun.build can read it as an entrypoint
-      const rawPath = `${cssOutDir}/${compName}.raw.css`;
-      await Bun.write(rawPath, cssCode);
+    const cssTodo = [...cssMap].filter(([componentPath, cssCode]) => this.cssRawByPath.get(componentPath) !== cssCode);
+    if (cssTodo.length > 0) {
+      // Raw filenames carry a path hash: components that share a basename
+      // (e.g. PageOne.svelte in two demo folders) would otherwise collide on
+      // one raw file now that all of them are written before the build.
+      const rawPathFor = (componentPath: string) => `${cssOutDir}/${path.basename(componentPath, '.svelte')}-${Bun.hash(componentPath).toString(36)}.raw.css`;
+      await Promise.all(cssTodo.map(([componentPath, cssCode]) => Bun.write(rawPathFor(componentPath), cssCode)));
+      // One batched Bun.build instead of one per component. Each raw file is a
+      // standalone entrypoint (svelte-emitted CSS has no imports), so in-memory
+      // outputs map back to their entry by basename.
       const cssResult = await Bun.build({
-        entrypoints: [rawPath],
+        entrypoints: cssTodo.map(([componentPath]) => rawPathFor(componentPath)),
         minify: true,
         throw: false,
       });
-      const minified = cssResult.success && cssResult.outputs[0] ? await cssResult.outputs[0].text() : cssCode;
-      const hash = Bun.hash(minified).toString(36);
-      const cssFilename = `${compName}-${hash}.css`;
-      const cssUrl = `${this.assetPrefix}/css/${cssFilename}`;
-      await Bun.write(`${cssOutDir}/${cssFilename}`, minified);
-      this.clientFiles.set(cssUrl, minified);
-      this.cssFileUrls.set(componentPath, cssUrl);
-      this.cssRawByPath.set(componentPath, cssCode);
+      // Read outputs even when the batch reports failure: a single malformed
+      // file must not drop minification for the whole cohort. Entries without
+      // an output fall back to their raw CSS below.
+      const minifiedByBase = new Map<string, string>();
+      for (const out of cssResult.outputs) {
+        minifiedByBase.set(path.basename(out.path), await out.text());
+      }
+      const cssWrites: Promise<unknown>[] = [];
+      for (const [componentPath, cssCode] of cssTodo) {
+        const minified = minifiedByBase.get(path.basename(rawPathFor(componentPath))) ?? cssCode;
+        const compName = path.basename(componentPath, '.svelte');
+        const hash = Bun.hash(minified).toString(36);
+        const cssFilename = `${compName}-${hash}.css`;
+        const cssUrl = `${this.assetPrefix}/css/${cssFilename}`;
+        cssWrites.push(Bun.write(`${cssOutDir}/${cssFilename}`, minified));
+        this.clientFiles.set(cssUrl, minified);
+        this.cssFileUrls.set(componentPath, cssUrl);
+        this.cssRawByPath.set(componentPath, cssCode);
+      }
+      await Promise.all(cssWrites);
     }
 
     if (importedCssPaths.size > 0) {
@@ -1043,7 +1057,18 @@ export class ComponentRegistry {
     }
 
     this.hydratableComponents.push(...allHydratables);
-    if (allHydratables.length > 0) {
+    if (!opts.deferClientBundle && allHydratables.length > 0) {
+      await this.buildClientBundle();
+    }
+  }
+
+  /**
+   * Trailing client bundle for callers that batch multiple `compileAll` passes
+   * with `deferClientBundle` (the CLI build compiles pages, then server
+   * islands — without deferral each pass rebuilds the same monolithic bundle).
+   */
+  async finalizeClientBundle(): Promise<void> {
+    if (this.hydratableComponents.length > 0) {
       await this.buildClientBundle();
     }
   }
