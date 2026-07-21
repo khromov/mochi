@@ -9,6 +9,7 @@
   const LIMIT = 5;
   const COOLDOWN = 5;
 
+  let root: HTMLDivElement | undefined = $state();
   let used = $state(0);
   let limited = $state(false);
   let pressing = $state(false);
@@ -16,14 +17,26 @@
   let cooldownTimer: ReturnType<typeof setInterval> | undefined;
   let loopTimer: ReturnType<typeof setInterval> | undefined;
   let pressTimer: ReturnType<typeof setTimeout> | undefined;
+  let observer: IntersectionObserver | undefined;
 
   onMount(() => {
-    // Drive the button on a steady beat; send() no-ops while limited, so the
-    // loop naturally pauses for the cooldown and resumes once it clears.
-    loopTimer = setInterval(autoPress, 850);
+    // Hold still until the demo first scrolls into view, then drive the button on
+    // a steady beat; send() no-ops while limited, so the loop naturally pauses for
+    // the cooldown and resumes once it clears.
+    observer = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) {
+        observer?.disconnect();
+        autoPress();
+        loopTimer = setInterval(autoPress, 850);
+      }
+    });
+    if (root) {
+      observer.observe(root);
+    }
   });
 
   onDestroy(() => {
+    observer?.disconnect();
     clearInterval(cooldownTimer);
     clearInterval(loopTimer);
     clearTimeout(pressTimer);
@@ -62,7 +75,7 @@
   }
 </script>
 
-<div class="rl" class:limited>
+<div class="rl" class:limited bind:this={root}>
   <div class="pips" role="img" aria-label={limited ? 'Rate limited' : `${used} of ${LIMIT} requests used`}>
     {#each Array(LIMIT) as _, i (i)}
       <span class="pip" class:filled={i < used} style={`--i: ${i}`}></span>
