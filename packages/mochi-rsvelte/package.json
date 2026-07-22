@@ -47,7 +47,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@rsvelte/vite-plugin-svelte-native": "0.2.8"
+    "@rsvelte/vite-plugin-svelte-native": ">=0.2.8 <1.0.0"
   },
   "peerDependencies": {
     "mochi-framework": ">=0.8.0"
