@@ -81,11 +81,15 @@
     "deps:report": "bun scripts/dep-report.ts"
   },
   "peerDependencies": {
-    "svelte": "^5.56.6",
+    "@mochi-framework/rsvelte": ">=0.1.0",
     "@tailwindcss/node": "^4.3.0",
-    "@tailwindcss/oxide": "^4.3.0"
+    "@tailwindcss/oxide": "^4.3.0",
+    "svelte": "^5.56.6"
   },
   "peerDependenciesMeta": {
+    "@mochi-framework/rsvelte": {
+      "optional": true
+    },
     "@tailwindcss/node": {
       "optional": true
     },

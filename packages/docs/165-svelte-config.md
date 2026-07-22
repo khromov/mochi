@@ -67,6 +67,8 @@ The merged options are used everywhere Mochi invokes the Svelte compiler:
 - Client-side island bundles (both `.svelte` and `.svelte.[jt]s`)
 - mdsvex `.md` / `.svx` files (server target)
 
+These options reach whichever compiler backend is active. Under `svelteCompiler: 'rsvelte'`, the function-valued `cssHash` and `warningFilter` are stripped with a warning — see `rsvelte compiler`.
+
 ### What is not read
 
 Only `compilerOptions` is honored. SvelteKit-style top-level keys are ignored:

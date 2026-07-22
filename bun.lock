@@ -79,9 +79,22 @@
         "typescript": "^6.0.3",
       },
     },
+    "packages/minimal-rsvelte": {
+      "name": "mochi-minimal-rsvelte",
+      "dependencies": {
+        "mochi-framework": "workspace:*",
+        "svelte": "^5.56.7",
+      },
+      "devDependencies": {
+        "@mochi-framework/rsvelte": "workspace:*",
+        "@types/bun": "1.3.14",
+        "svelte-check": "4.7.3",
+        "typescript": "^6.0.3",
+      },
+    },
     "packages/mochi": {
       "name": "mochi-framework",
-      "version": "0.8.0",
+      "version": "0.8.2",
       "bin": {
         "mochi-framework": "src/cli/cli.js",
       },
@@ -114,13 +127,34 @@
         "typescript": "^6.0.3",
       },
       "peerDependencies": {
+        "@mochi-framework/rsvelte": ">=0.1.0",
         "@tailwindcss/node": "^4.3.0",
         "@tailwindcss/oxide": "^4.3.0",
         "svelte": "^5.56.6",
       },
       "optionalPeers": [
+        "@mochi-framework/rsvelte",
         "@tailwindcss/node",
         "@tailwindcss/oxide",
+      ],
+    },
+    "packages/mochi-rsvelte": {
+      "name": "@mochi-framework/rsvelte",
+      "version": "0.0.1",
+      "dependencies": {
+        "@rsvelte/vite-plugin-svelte-native": ">=0.2.8 <1.0.0",
+      },
+      "devDependencies": {
+        "@types/bun": "1.3.14",
+        "mochi-framework": "workspace:*",
+        "svelte": "^5.56.7",
+        "typescript": "^6.0.3",
+      },
+      "peerDependencies": {
+        "mochi-framework": ">=0.8.0",
+      },
+      "optionalPeers": [
+        "mochi-framework",
       ],
     },
     "packages/msgpackr-extract-stub": {
@@ -271,6 +305,8 @@
 
     "@mochi-framework/msgpackr-extract-stub": ["@mochi-framework/msgpackr-extract-stub@workspace:packages/msgpackr-extract-stub"],
 
+    "@mochi-framework/rsvelte": ["@mochi-framework/rsvelte@workspace:packages/mochi-rsvelte"],
+
     "@noble/ciphers": ["@noble/ciphers@2.2.0", "", {}, "sha512-Z6pjIZ/8IJcCGzb2S/0Px5J81yij85xASuk1teLNeg75bfT07MV3a/O2Mtn1I2se43k3lkVEcFaR10N4cgQcZA=="],
 
     "@resvg/resvg-js": ["@resvg/resvg-js@2.6.2", "", { "optionalDependencies": { "@resvg/resvg-js-android-arm-eabi": "2.6.2", "@resvg/resvg-js-android-arm64": "2.6.2", "@resvg/resvg-js-darwin-arm64": "2.6.2", "@resvg/resvg-js-darwin-x64": "2.6.2", "@resvg/resvg-js-linux-arm-gnueabihf": "2.6.2", "@resvg/resvg-js-linux-arm64-gnu": "2.6.2", "@resvg/resvg-js-linux-arm64-musl": "2.6.2", "@resvg/resvg-js-linux-x64-gnu": "2.6.2", "@resvg/resvg-js-linux-x64-musl": "2.6.2", "@resvg/resvg-js-win32-arm64-msvc": "2.6.2", "@resvg/resvg-js-win32-ia32-msvc": "2.6.2", "@resvg/resvg-js-win32-x64-msvc": "2.6.2" } }, "sha512-xBaJish5OeGmniDj9cW5PRa/PtmuVU3ziqrbr5xJj901ZDN4TosrVaNZpEiLZAxdfnhAe7uQ7QFWfjPe9d9K2Q=="],
@@ -300,6 +336,18 @@
     "@resvg/resvg-js-win32-x64-msvc": ["@resvg/resvg-js-win32-x64-msvc@2.6.2", "", { "os": "win32", "cpu": "x64" }, "sha512-ZXtYhtUr5SSaBrUDq7DiyjOFJqBVL/dOBN7N/qmi/pO0IgiWW/f/ue3nbvu9joWE5aAKDoIzy/CxsY0suwGosQ=="],
 
     "@rsvelte/compiler": ["@rsvelte/compiler@0.6.1", "", {}, "sha512-pQWa3Z4d9AeS/Jdi0UIpDIwyXXs+feSDzFvLdx71pOMuFY81xxdNNNAgk4yMb4CNyhSOB7udTCzEinx544lzpQ=="],
+
+    "@rsvelte/vite-plugin-svelte-native": ["@rsvelte/vite-plugin-svelte-native@0.2.8", "", { "optionalDependencies": { "@rsvelte/vite-plugin-svelte-native-darwin-arm64": "^0.2.8", "@rsvelte/vite-plugin-svelte-native-darwin-x64": "^0.2.8", "@rsvelte/vite-plugin-svelte-native-linux-arm64-gnu": "^0.2.8", "@rsvelte/vite-plugin-svelte-native-linux-x64-gnu": "^0.2.8", "@rsvelte/vite-plugin-svelte-native-win32-x64-msvc": "^0.2.8" } }, "sha512-OfIzMkZq7HNVeNjUjI5PRt0NFFQ6bYpz/VvKAz6I1PRE/ypLetfpj7mf6DvWURDW19bXNMBR+/VKWuF7fKB8CQ=="],
+
+    "@rsvelte/vite-plugin-svelte-native-darwin-arm64": ["@rsvelte/vite-plugin-svelte-native-darwin-arm64@0.2.8", "", { "os": "darwin", "cpu": "arm64" }, "sha512-vU58E113ZfIj9R7NV4aaA0RGQOcRKmgk1VK0inDwQw6XGnKHU9ZuT8FNv3psIKzxYme2kCewRN8f8geahRlosQ=="],
+
+    "@rsvelte/vite-plugin-svelte-native-darwin-x64": ["@rsvelte/vite-plugin-svelte-native-darwin-x64@0.2.8", "", { "os": "darwin", "cpu": "x64" }, "sha512-PGpCqJcg9P5gsSiQgRWAdtSqzfnMWdnlvoTNnu+ZKIAd0Nhb4PjxB6nB5Oxp7gCLCb9wSTKn0D6Mr+yzlplavA=="],
+
+    "@rsvelte/vite-plugin-svelte-native-linux-arm64-gnu": ["@rsvelte/vite-plugin-svelte-native-linux-arm64-gnu@0.2.8", "", { "os": "linux", "cpu": "arm64" }, "sha512-Mhx43XqAD715b3nesZaJnNzIVkkrpo/Xc0nrJNOmB7wAJqOu+/JgP6ggiOlkt6f1J4pw0VGe0nBSoB0LD538tA=="],
+
+    "@rsvelte/vite-plugin-svelte-native-linux-x64-gnu": ["@rsvelte/vite-plugin-svelte-native-linux-x64-gnu@0.2.8", "", { "os": "linux", "cpu": "x64" }, "sha512-W/Ij2aZZnDCAmshKAZND/G6w/drGlAkiWIr0ZAGQI491LOiypWxRCnKMRY2wuU/bpv/3Ow6A/l2kbyJIp4o8tg=="],
+
+    "@rsvelte/vite-plugin-svelte-native-win32-x64-msvc": ["@rsvelte/vite-plugin-svelte-native-win32-x64-msvc@0.2.8", "", { "os": "win32", "cpu": "x64" }, "sha512-6nmv34Gsrg10v7ONJs+DBfsPy3BFTeEJfrGy4f+TblpGyxzFLIlBSzcvPJaz/V2KAkO5JcuqUYEV+htzS+9bUQ=="],
 
     "@shikijs/core": ["@shikijs/core@4.3.1", "", { "dependencies": { "@shikijs/primitive": "4.3.1", "@shikijs/types": "4.3.1", "@shikijs/vscode-textmate": "^10.0.2", "@types/hast": "^3.0.4", "hast-util-to-html": "^9.0.5" } }, "sha512-ANMDxuaPsNMdDC1m4vfvhlDmJweMwkE5XitTwrq2rWHx5jM+dlm4MmHt2PP6t0uejfR77SuhrhJ0zEijIF/uhA=="],
 
@@ -684,6 +732,8 @@
     "mochi-framework": ["mochi-framework@workspace:packages/mochi"],
 
     "mochi-minimal": ["mochi-minimal@workspace:packages/minimal"],
+
+    "mochi-minimal-rsvelte": ["mochi-minimal-rsvelte@workspace:packages/minimal-rsvelte"],
 
     "mochi-shared": ["mochi-shared@workspace:packages/shared"],
 
