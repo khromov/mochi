@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
-import { CAPTCHA_STEPS, chainInput, powInput, leadingZeroBits, toHex, sha256Bytes, sha256Hex, sha256LeadingZeroBits, deriveChain, solvePowSlice } from './pow';
+import { CAPTCHA_STEPS, chainInput, powInput, leadingZeroBits, toHex, sha256Bytes, sha256Hex, deriveChain, solvePowSlice } from './pow';
 
 const nodeHex = (input: string) => createHash('sha256').update(input, 'utf8').digest('hex');
 
@@ -78,10 +78,25 @@ describe('sha256 vs node:crypto', () => {
     expect(sha256Bytes('mochi')).toHaveLength(32);
   });
 
-  test('sha256LeadingZeroBits agrees with the digest it skips materialising', () => {
-    for (let i = 0; i < 200; i++) {
-      const input = `probe:${i}`;
-      expect(sha256LeadingZeroBits(input)).toBe(leadingZeroBits(sha256Bytes(input)));
+  test('matches the published FIPS 180-4 vectors', () => {
+    expect(sha256Hex('abc')).toBe('ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
+    expect(sha256Hex('')).toBe('e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855');
+    expect(sha256Hex('abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq')).toBe('248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1');
+  });
+
+  // The whole point of moving off crypto.subtle: hashing must not depend on
+  // WebCrypto being present, so the widget can never be stranded by a missing or
+  // misbehaving one (and works outside a secure context).
+  test('hashes with no WebCrypto available at all', () => {
+    const real = globalThis.crypto;
+    // @ts-expect-error deliberately removing the global for the duration
+    delete globalThis.crypto;
+    try {
+      expect(globalThis.crypto).toBeUndefined();
+      expect(sha256Hex('abc')).toBe('ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
+      expect(deriveChain('a-token')).toBe(deriveChain('a-token', nodeHex));
+    } finally {
+      Object.defineProperty(globalThis, 'crypto', { value: real, configurable: true, writable: true });
     }
   });
 });

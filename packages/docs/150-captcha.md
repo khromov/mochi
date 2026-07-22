@@ -132,6 +132,8 @@ The cases it reports are a missing `token` (usually `{...captcha}` not spread), 
 
 Sliding the handle advances a SHA-256 hash chain one link per step. The final link is the proof-of-work challenge, and the widget then brute-forces a nonce whose digest has `bits` leading zeros.
 
+Hashing is synchronous and pure JS (`@noble/hashes`), not `crypto.subtle` — so it needs no secure context and works over plain `http` as well.
+
 The challenge is never in the page — it only exists once the slide progression has actually run. A bot that reads the token out of the HTML and solves a proof-of-work against it directly fails, because the server re-derives the chain and checks the work against its final link.
 
 The token itself is encrypted and authenticated (AES-256-SIV, keyed from `MOCHI_KEY`) and seals the mint time, a one-time nonce, and the difficulty. So a passing submission proves the page was really fetched, the widget really ran, and real hashing work was really spent.
