@@ -17,6 +17,7 @@
     "start:demos": "bun --cwd=packages/demos run start",
     "start:all": "bun --filter='*' run start",
     "dev": "bun scripts/dev.ts",
+    "dev:full": "bun scripts/dev.ts --full",
     "dev:site": "bun --cwd=packages/site run dev",
     "dev:demos": "bun --cwd=packages/demos run dev",
     "test": "bun --filter='*' run test",
