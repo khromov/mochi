@@ -138,7 +138,6 @@ await Mochi.serve({
   handleError,
   idleTimeout: 60,
   compressServerIslandProps: true,
-  svelteCompiler: 'rsvelte',
   optimize: { enabled: true, exclude: [] },
   warmup: true,
   additionalWatchPaths: ['../docs'],
