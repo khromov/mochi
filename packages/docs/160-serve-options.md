@@ -67,6 +67,7 @@ The forced fallback is not optional: a plain `server.stop()` never resolves whil
 - `barrelWarnings`: Warning when a dependency drags a large, almost-entirely-tree-shaken module into the build graph (a "barrel import" that slows rebuilds). Fires once per package in dev, and as one grouped summary line in a production build. Default: enabled. `false` silences it; `{ ignore: ['pkg'] }` suppresses specific packages; `{ minBytes }` overrides the 50 KB size threshold. See `Development mode`.
 - `build`: Output controls for `mochi-framework build`; ignored by the runtime. `{ resources: false }` hides the emitted-resources list (the summary line keeps its asset count). See `CLI`.
 - `svelteConfigPath`: Path to a Svelte config file. Default: `./svelte.config.js`. See `Svelte config`.
+- `svelteCompiler`: Which compiler emits component JS. Default: `'svelte'`. `'rsvelte'` uses the Rust compiler and needs the optional `@mochi-framework/rsvelte` package; overridable with `MOCHI_SVELTE_COMPILER`. See `rsvelte compiler`.
 - `csrf`: `MochiCsrfOptions` controlling the origin-header check. See `CSRF` below.
 - `proxy`: `MochiProxyOptions` describing trusted reverse-proxy headers. See `Proxy` below.
 - `hooks`: `MochiHooks` map of named lifecycle hooks. See `Extensions (hooks & filters)`.

@@ -398,6 +398,7 @@ export class Mochi {
         outDir,
         assetPrefix: options.assetPrefix,
         svelteConfig,
+        svelteCompiler: options.svelteCompiler,
         markdown: options.markdown,
         optimize: options.optimize,
         barrelWarnings: options.barrelWarnings,

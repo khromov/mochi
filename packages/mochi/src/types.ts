@@ -9,6 +9,7 @@ import type { MochiEmailOptions } from './email/types';
 import type { MochiCaptchaOptions } from './captcha/types';
 import type { MochiProcessor, MochiQueue, MochiQueueListeners, MochiQueueRuntimeOptions } from './queue';
 import type { MochiRateLimitOptions } from './runtime/rateLimit';
+import type { MochiSvelteCompiler } from './compiler/svelteCompilerBackend';
 
 export type MochiServerPropsResolver = (req: Request, params: Record<string, string>) => Record<string, unknown> | Promise<Record<string, unknown>>;
 
@@ -574,6 +575,15 @@ export interface MochiServeOptions {
    * Mochi's defaults; missing file → defaults only.
    */
   svelteConfigPath?: string;
+  /**
+   * Which compiler emits component JS. Default `'svelte'` (the official
+   * `svelte/compiler`). `'rsvelte'` routes `compile`/`compileModule` through the
+   * Rust port and requires the optional `@mochi-framework/rsvelte` package — if
+   * it can't be loaded the framework warns and falls back to `'svelte'`.
+   * Component parsing (islands) and preprocessing always use official Svelte.
+   * Override at runtime with `MOCHI_SVELTE_COMPILER=svelte|rsvelte`.
+   */
+  svelteCompiler?: MochiSvelteCompiler;
   /**
    * Dependency-injected markdown (`.md` / `.svx`) support. Pass the `compile`
    * function from `mdsvex` plus any rehype/remark plugins to enable; omit to

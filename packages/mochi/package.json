@@ -82,10 +82,14 @@
   },
   "peerDependencies": {
     "svelte": "^5.56.6",
+    "@mochi-framework/rsvelte": "^0.0.1",
     "@tailwindcss/node": "^4.3.0",
     "@tailwindcss/oxide": "^4.3.0"
   },
   "peerDependenciesMeta": {
+    "@mochi-framework/rsvelte": {
+      "optional": true
+    },
     "@tailwindcss/node": {
       "optional": true
     },

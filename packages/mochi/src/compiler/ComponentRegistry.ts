@@ -1,4 +1,4 @@
-import { compile as svelteCompile, compileModule as svelteCompileModule, preprocess as sveltePreprocess, type CompileOptions, type PreprocessorGroup } from 'svelte/compiler';
+import { preprocess as sveltePreprocess, type CompileOptions, type PreprocessorGroup } from 'svelte/compiler';
 import { render } from 'svelte/server';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -15,6 +15,7 @@ import { type HydratableComponent, type PreprocessIslandError, type ServerIsland
 import { cachedPreprocessHydratable, createPreprocessCacheStats } from './preprocessCache';
 import { CompileCache, compileFingerprint, createCompileCacheStats, type CompileCacheStats } from './compileCache';
 import { mergeCompilerOptions, type MochiSvelteConfig } from './svelteConfig';
+import { backendId, resolveSvelteCompiler, type MochiSvelteCompiler, type SvelteCompilerBackend } from './svelteCompilerBackend';
 import { applyFilter } from '../extensions';
 import { buildServerOnlyStubModule, scanServerOnlyExports } from './serverOnlyScan';
 import { renderMochiEnvServer, renderMochiEnvClient } from './virtualModuleTemplate';
@@ -148,6 +149,7 @@ function createMarkdownLoader(opts: {
   development: boolean;
   cssMap?: Map<string, string>;
   userCompilerOptions: CompileOptions;
+  backend: SvelteCompilerBackend;
   compileCache: CompileCache;
   compileCacheStats?: CompileCacheStats;
   hydration?: {
@@ -159,7 +161,7 @@ function createMarkdownLoader(opts: {
   };
 }) {
   const highlight = opts.markdown.highlight;
-  const fingerprint = compileFingerprint(opts.userCompilerOptions, opts.development);
+  const fingerprint = compileFingerprint(opts.userCompilerOptions, opts.development, backendId(opts.backend));
   return async (args: { path: string }) => {
     const raw = await Bun.file(args.path).text();
     // Cache hit: replay the side effects (hydration metadata, scoped CSS) the
@@ -214,7 +216,7 @@ function createMarkdownLoader(opts: {
       opts.hydration.filePreprocessErrors.set(args.path, preprocessErrors);
       svelteSource = preprocessed.transformed;
     }
-    const { js, css } = svelteCompile(
+    const { js, css } = opts.backend.compile(
       svelteSource,
       mergeCompilerOptions(opts.userCompilerOptions, {
         generate: opts.target,
@@ -318,6 +320,8 @@ export interface ComponentRegistryOptions {
   assetPrefix?: string;
   /** User Svelte config (loaded from `svelte.config.js`). Its `compilerOptions` are merged into the framework's defaults. */
   svelteConfig?: MochiSvelteConfig;
+  /** Which compiler emits component JS. `'rsvelte'` needs the optional adapter package. Default: `'svelte'`. */
+  svelteCompiler?: MochiSvelteCompiler;
   /** User-injected markdown integration. When unset, `.md`/`.svx` imports are not handled. */
   markdown?: MarkdownConfig;
   /** Run the whole-program svelte-shaker pass before compiling. Production only — `prepareShake()` is a no-op in dev. */
@@ -456,6 +460,7 @@ export class ComponentRegistry {
   readonly outDir: string;
   readonly assetPrefix: string;
   svelteConfig: MochiSvelteConfig;
+  private readonly svelteCompiler: MochiSvelteCompiler | undefined;
   readonly markdown: MarkdownConfig | undefined;
   readonly optimize: boolean | MochiSvelteShakerOptions;
   private readonly barrelWarningsEnabled: boolean;
@@ -484,6 +489,7 @@ export class ComponentRegistry {
     this.outDir = opts.outDir ?? './.mochi';
     this.assetPrefix = normalizeAssetPrefix(opts.assetPrefix);
     this.svelteConfig = opts.svelteConfig ?? {};
+    this.svelteCompiler = opts.svelteCompiler;
     this.markdown = opts.markdown;
     this.optimize = opts.optimize ?? false;
     const bw = opts.barrelWarnings;
@@ -671,7 +677,8 @@ export class ComponentRegistry {
     const filePreprocessErrors = new Map<string, PreprocessIslandError[]>();
     const development = this.development;
     const userCompilerOptions = this.svelteConfig.compilerOptions ?? {};
-    const serverFingerprint = compileFingerprint(userCompilerOptions, development);
+    const backend = await resolveSvelteCompiler(this.svelteCompiler);
+    const serverFingerprint = compileFingerprint(userCompilerOptions, development, backendId(backend));
     const compileCache = this.compileCache;
     const markdown = this.markdown;
     const shakenSources = this.shakenSources;
@@ -726,7 +733,7 @@ export class ComponentRegistry {
             const transpiler = new Bun.Transpiler({ loader: 'ts' });
             source = transpiler.transformSync(source);
           }
-          const { js } = svelteCompileModule(
+          const { js } = backend.compileModule(
             source,
             mergeCompilerOptions(userCompilerOptions, {
               generate: 'server',
@@ -762,7 +769,7 @@ export class ComponentRegistry {
           allHydratables.push(...hydratables);
           allServerIslands.push(...serverIslands);
 
-          const { js, css } = svelteCompile(
+          const { js, css } = backend.compile(
             preprocessResult.transformed,
             mergeCompilerOptions(userCompilerOptions, {
               generate: 'server',
@@ -791,6 +798,7 @@ export class ComponentRegistry {
               development,
               cssMap,
               userCompilerOptions,
+              backend,
               compileCache,
               compileCacheStats,
               hydration: { fileHydratables, allHydratables, allServerIslands, filePreprocessErrors, preprocessCacheStats },
@@ -1098,7 +1106,8 @@ export class ComponentRegistry {
     const markdown = this.markdown;
     const shakenSources = this.shakenSources;
     const compileCacheStats = createCompileCacheStats();
-    const clientFingerprint = compileFingerprint(userCompilerOptions, development);
+    const backend = await resolveSvelteCompiler(this.svelteCompiler);
+    const clientFingerprint = compileFingerprint(userCompilerOptions, development, backendId(backend));
     const compileCache = this.compileCache;
     // Deduplicate by island key (`<localName>_<hash>`), not resolved path — two
     // named exports of one file, or two pages aliasing the same file's default
@@ -1227,7 +1236,7 @@ export class ComponentRegistry {
             const transpiler = new Bun.Transpiler({ loader: 'ts' });
             source = transpiler.transformSync(source);
           }
-          const { js } = svelteCompileModule(
+          const { js } = backend.compileModule(
             source,
             mergeCompilerOptions(userCompilerOptions, {
               generate: 'client',
@@ -1244,7 +1253,7 @@ export class ComponentRegistry {
             return { contents: cached.js, loader: 'js' };
           }
           const preprocessed = await applyUserPreprocessors(source, args.path, 'client', development);
-          const { js } = svelteCompile(
+          const { js } = backend.compile(
             preprocessed,
             mergeCompilerOptions(userCompilerOptions, {
               generate: 'client',
@@ -1264,7 +1273,10 @@ export class ComponentRegistry {
           return { contents: js.code, loader: 'js' };
         });
         if (markdown) {
-          build.onLoad({ filter: MARKDOWN_FILE_FILTER }, createMarkdownLoader({ markdown, target: 'client', development, userCompilerOptions, compileCache, compileCacheStats }));
+          build.onLoad(
+            { filter: MARKDOWN_FILE_FILTER },
+            createMarkdownLoader({ markdown, target: 'client', development, userCompilerOptions, backend, compileCache, compileCacheStats }),
+          );
         }
       },
     };

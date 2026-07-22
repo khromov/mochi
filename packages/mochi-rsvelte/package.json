@@ -1,0 +1,65 @@
+{
+  "name": "@mochi-framework/rsvelte",
+  "version": "0.0.1",
+  "description": "Opt-in rsvelte (Rust Svelte compiler) backend for mochi-framework.",
+  "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "mochi",
+    "svelte",
+    "rsvelte",
+    "compiler",
+    "rust"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/khromov/mochi.git",
+    "directory": "packages/mochi-rsvelte"
+  },
+  "homepage": "https://github.com/khromov/mochi/tree/main/packages/mochi-rsvelte#readme",
+  "bugs": {
+    "url": "https://github.com/khromov/mochi/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "engines": {
+    "bun": ">=1.3.14"
+  },
+  "files": [
+    "src",
+    "!src/**/*.test.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "bun": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@rsvelte/vite-plugin-svelte-native": "0.2.8"
+  },
+  "peerDependencies": {
+    "mochi-framework": ">=0.8.0"
+  },
+  "peerDependenciesMeta": {
+    "mochi-framework": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/bun": "1.3.14",
+    "mochi-framework": "workspace:*",
+    "svelte": "^5.56.7",
+    "typescript": "^6.0.3"
+  }
+}
