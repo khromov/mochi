@@ -34,8 +34,8 @@ recycles the container.
 ## Run
 
 ```sh
-colima start          # if the Docker runtime isn't running
-./memtest/run.sh      # build + run detached, snapshots -> volume mochi-heapsnapshots
+colima start             # if the Docker runtime isn't running
+sudo ./memtest/run.sh    # build + run detached, snapshots -> ./snapshots
 docker logs -f mochi-memtest
 ```
 
@@ -43,8 +43,15 @@ Or manually:
 
 ```sh
 docker build -f Dockerfile.memtest -t mochi-memtest .
-docker run -d --restart unless-stopped -v mochi-heapsnapshots:/snapshots mochi-memtest
+sudo mkdir -p snapshots && sudo chown 1000:1000 snapshots
+docker run -d --restart unless-stopped -v "$PWD/snapshots:/snapshots" mochi-memtest
 ```
+
+The `chown` matters: a bind mount keeps the **host** directory's ownership,
+overriding the image's `chown bun:bun /snapshots`, so an unwritable directory
+makes every capture fail with `snapshot capture failed`. `run.sh` does it for
+you (reading the uid out of the image rather than assuming 1000) — run it with
+`sudo` so the chown succeeds.
 
 The site's port is **not published** by default — the driver talks to it over
 `127.0.0.1` inside the container, and publishing would expose `/_heapsnapshot`
@@ -55,13 +62,29 @@ To browse the site under load anyway, bind it to loopback only:
 PUBLISH=127.0.0.1 ./memtest/run.sh
 ```
 
-## Retrieve snapshots
+## Stop a run
 
 ```sh
-# List
-docker run --rm -v mochi-heapsnapshots:/snapshots alpine ls -lh /snapshots
-# Copy the whole volume to the host
-docker cp mochi-memtest:/snapshots ./heapsnapshots
+docker stop mochi-memtest                      # end the run; snapshots are kept
+docker stop mochi-memtest && docker rm mochi-memtest   # ...and drop the container
+```
+
+`docker stop` also clears the `unless-stopped` policy, so the harness stays down
+across a host reboot — it will not come back until you run `run.sh` again. The
+container gets SIGTERM; the site is a grandchild of the driver and the `bun run`
+shims don't forward signals, so expect the stop to take the full 10s timeout
+before Docker force-kills. Nothing is lost — snapshots are written to the host
+mount as they're captured, and a run interrupted mid-capture just leaves the
+partial file behind.
+
+## Retrieve snapshots
+
+Snapshots land in `./snapshots` on the host, so pull them straight off the box:
+
+```sh
+ls -lh snapshots
+# From your laptop — they're JSON and compress ~5-10x, so tar anything bulky.
+scp you@server:'~/mochi/snapshots/heap-*.heapsnapshot' ./
 ```
 
 Open a `.heapsnapshot` in Chrome DevTools → **Memory** → **Load profile**. Load two
