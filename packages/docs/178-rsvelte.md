@@ -48,7 +48,7 @@ MOCHI_SVELTE_COMPILER=rsvelte bun run build
 MOCHI_SVELTE_COMPILER=svelte bun run build
 ```
 
-Mochi logs which compiler it resolved (`Svelte compiler: rsvelte@0.2.8+svelte5.56.4` — the rsvelte release, then the Svelte version it targets) once at startup.
+Mochi logs which compiler it resolved (`Svelte compiler: rsvelte@0.2.8+svelte5.56.4` — the rsvelte release, then the Svelte version it targets) once at startup. Since the fallback is silent by design, that line is also how you assert a build really ran on rsvelte.
 
 ### Benchmark
 
