@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'bun:test';
 import { compile as svelteCompile } from 'svelte/compiler';
-import { backendId, officialBackend, resetSvelteCompilerCache, resolveSvelteCompiler } from './svelteCompilerBackend';
+import { backendId, isBackend, loadRsvelte, officialBackend, resetSvelteCompilerCache, resolveSvelteCompiler } from './svelteCompilerBackend';
 
 const ENV_VAR = 'MOCHI_SVELTE_COMPILER';
 const original = process.env[ENV_VAR];
@@ -45,18 +45,49 @@ describe('resolveSvelteCompiler', () => {
     expect(await resolveSvelteCompiler('svelte')).toBe(officialBackend);
   });
 
-  it('falls back to the official compiler when the rsvelte adapter is unusable', async () => {
-    process.env[ENV_VAR] = 'rsvelte';
-    // In this workspace the adapter resolves, so assert the contract that holds
-    // either way: resolution never throws and always yields a usable backend.
-    const backend = await resolveSvelteCompiler('rsvelte');
-    expect(typeof backend.compile).toBe('function');
-    expect(typeof backend.compileModule).toBe('function');
-    expect(['svelte', 'rsvelte']).toContain(backend.name);
-  });
-
   it('memoizes resolution', async () => {
     process.env[ENV_VAR] = 'rsvelte';
     expect(await resolveSvelteCompiler('rsvelte')).toBe(await resolveSvelteCompiler('rsvelte'));
+  });
+});
+
+// The adapter resolves in this workspace, so the failure modes users actually
+// hit — package absent, package broken — are driven through the injected loader.
+describe('loadRsvelte fallback', () => {
+  it('falls back when the adapter cannot be imported', async () => {
+    const backend = await loadRsvelte(() => Promise.reject(new Error(`Cannot find module '@mochi-framework/rsvelte'`)));
+    expect(backend).toBe(officialBackend);
+  });
+
+  it('falls back when a non-Error rejection escapes the import', async () => {
+    expect(await loadRsvelte(() => Promise.reject('boom'))).toBe(officialBackend);
+  });
+
+  it('falls back when the module has no usable export', async () => {
+    expect(await loadRsvelte(async () => ({}))).toBe(officialBackend);
+    expect(await loadRsvelte(async () => null)).toBe(officialBackend);
+    expect(await loadRsvelte(async () => ({ svelteCompilerBackend: { name: 'rsvelte', version: '1.0.0' } }))).toBe(officialBackend);
+    expect(await loadRsvelte(async () => ({ svelteCompilerBackend: { compile() {}, compileModule() {}, name: 'rsvelte' } }))).toBe(officialBackend);
+  });
+
+  it('accepts a conforming backend', async () => {
+    const fake = { name: 'rsvelte', version: '0.2.8+svelte5.56.4', compile: () => ({ js: { code: '' } }), compileModule: () => ({ js: { code: '' } }) };
+    expect(await loadRsvelte(async () => ({ svelteCompilerBackend: fake }))).toBe(fake);
+    expect(backendId(fake)).toBe('rsvelte@0.2.8+svelte5.56.4');
+  });
+});
+
+describe('isBackend', () => {
+  const ok = { name: 'x', version: '1', compile: () => ({ js: { code: '' } }), compileModule: () => ({ js: { code: '' } }) };
+
+  it('accepts a full backend and rejects partial ones', () => {
+    expect(isBackend(ok)).toBe(true);
+    expect(isBackend(undefined)).toBe(false);
+    expect(isBackend(null)).toBe(false);
+    expect(isBackend('rsvelte')).toBe(false);
+    expect(isBackend({ ...ok, compile: 'nope' })).toBe(false);
+    expect(isBackend({ ...ok, compileModule: undefined })).toBe(false);
+    expect(isBackend({ ...ok, name: 1 })).toBe(false);
+    expect(isBackend({ ...ok, version: undefined })).toBe(false);
   });
 });

@@ -1,5 +1,27 @@
-import { compile as rsCompile, compileModule as rsCompileModule, VERSION as RSVELTE_TARGET_VERSION } from '@rsvelte/vite-plugin-svelte-native';
+import { compile as rsCompile, compileModule as rsCompileModule, VERSION as TARGET_SVELTE_VERSION } from '@rsvelte/vite-plugin-svelte-native';
 import type { SvelteCompileOutput, SvelteCompilerBackend } from 'mochi-framework';
+
+/**
+ * The binding's own `VERSION` is the *Svelte* version it targets, not rsvelte's
+ * — on its own it would keep the backend id stable across an rsvelte upgrade
+ * that changes codegen, which is exactly what the compile-cache fingerprint has
+ * to notice. Both numbers move independently, so both belong in the id.
+ *
+ * Resolved from this file's location rather than `process.cwd()`, which breaks
+ * in monorepos and whenever the app is started from a non-root directory. An
+ * unreadable manifest degrades the id, never the compile.
+ */
+async function bindingVersion(): Promise<string> {
+  try {
+    const pkgPath = Bun.resolveSync('@rsvelte/vite-plugin-svelte-native/package.json', import.meta.dir);
+    const { version } = (await Bun.file(pkgPath).json()) as { version: string };
+    return version;
+  } catch {
+    return 'unknown';
+  }
+}
+
+const BACKEND_VERSION = `${await bindingVersion()}+svelte${TARGET_SVELTE_VERSION}`;
 
 /**
  * Options that are functions in `svelte/compiler` but cannot cross the NAPI
@@ -53,7 +75,7 @@ function adaptOptions(options: Record<string, unknown>): Record<string, unknown>
  */
 export const svelteCompilerBackend: SvelteCompilerBackend = {
   name: 'rsvelte',
-  version: RSVELTE_TARGET_VERSION,
+  version: BACKEND_VERSION,
   compile(source, options) {
     return rsCompile(source, adaptOptions(options as Record<string, unknown>)) as SvelteCompileOutput;
   },

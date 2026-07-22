@@ -28,10 +28,13 @@ const CASES: Record<string, string> = {
 };
 
 /**
- * The only accepted dev-mode divergences, as `${case}/${target}`. Each is Svelte
- * dev-only instrumentation rsvelte doesn't reproduce; none affects runtime
- * behaviour beyond a missing (or differently-placed) dev warning. Production
- * output for these same cases is asserted byte-identical below.
+ * The only *tolerated* dev-mode divergences, as `${case}/${target}`. Each is
+ * Svelte dev-only instrumentation rsvelte doesn't reproduce; none affects
+ * runtime behaviour beyond a missing (or differently-placed) dev warning.
+ * Production output for these same cases is asserted byte-identical below.
+ *
+ * Membership relaxes the equality assertion — it does not require a difference.
+ * An rsvelte upgrade that fixes one of these logs a note instead of failing.
  */
 const DEV_DIVERGENCES = new Set(['snippet/server', 'effect/client', 'awaitDerived/client']);
 
@@ -44,7 +47,9 @@ function opts(generate: 'server' | 'client', filename: string, dev: boolean): Co
 describe('svelteCompilerBackend', () => {
   it('identifies itself', () => {
     expect(svelteCompilerBackend.name).toBe('rsvelte');
-    expect(svelteCompilerBackend.version).toMatch(/^\d+\.\d+\.\d+/);
+    // Both halves matter: the rsvelte release and the Svelte version it targets
+    // move independently, and the compile-cache fingerprint has to see either.
+    expect(svelteCompilerBackend.version).toMatch(/^\d+\.\d+\.\d+.*\+svelte\d+\.\d+\.\d+/);
   });
 
   for (const [name, source] of Object.entries(CASES)) {
@@ -58,14 +63,18 @@ describe('svelteCompilerBackend', () => {
       });
 
       const key = `${name}/${generate}`;
-      it(`compile() dev output ${DEV_DIVERGENCES.has(key) ? 'diverges only as documented' : 'is byte-identical'} — ${key}`, () => {
+      it(`compile() dev output ${DEV_DIVERGENCES.has(key) ? 'may diverge as documented' : 'is byte-identical'} — ${key}`, () => {
         const o = opts(generate, `${name}.svelte`, true);
         const expected = svelteCompile(source, o).js.code;
         const actual = svelteCompilerBackend.compile(source, o).js.code;
-        if (DEV_DIVERGENCES.has(key)) {
-          expect(actual).not.toBe(expected);
-        } else {
+        if (!DEV_DIVERGENCES.has(key)) {
           expect(actual).toBe(expected);
+          return;
+        }
+        // A one-way allowance: an rsvelte release that closes the gap must not
+        // turn CI red, so converging is only reported, never asserted.
+        if (actual === expected) {
+          console.warn(`[mochi-rsvelte] dev output for ${key} now matches svelte/compiler — drop it from DEV_DIVERGENCES and from the docs' "Known divergences".`);
         }
       });
     }

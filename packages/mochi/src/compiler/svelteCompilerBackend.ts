@@ -46,7 +46,8 @@ const RSVELTE_SPECIFIER = '@mochi-framework/rsvelte';
 
 const ENV_VAR = 'MOCHI_SVELTE_COMPILER';
 
-function isBackend(value: unknown): value is SvelteCompilerBackend {
+/** @internal Exported so the fallback path can be tested without a broken install. */
+export function isBackend(value: unknown): value is SvelteCompilerBackend {
   const b = value as Partial<SvelteCompilerBackend> | undefined;
   return typeof b?.compile === 'function' && typeof b.compileModule === 'function' && typeof b.name === 'string' && typeof b.version === 'string';
 }
@@ -61,7 +62,10 @@ function effectiveChoice(configured: MochiSvelteCompiler | undefined): MochiSvel
   if (env === 'svelte' || env === 'rsvelte') {
     return env;
   }
-  if (env) {
+  // A typo'd env var would otherwise re-warn on every registry build — a dev
+  // server rebuilds many times per session.
+  if (env && !envWarned.has(env)) {
+    envWarned.add(env);
     logger.warn(`${ENV_VAR}=${JSON.stringify(env)} is not a known compiler ('svelte' | 'rsvelte') — ignoring.`);
   }
   return configured ?? 'svelte';
@@ -71,15 +75,17 @@ function effectiveChoice(configured: MochiSvelteCompiler | undefined): MochiSvel
 // over its lifetime and each would otherwise re-import the native binding.
 const resolved = new Map<MochiSvelteCompiler, Promise<SvelteCompilerBackend>>();
 const announced = new Set<string>();
+const envWarned = new Set<string>();
 
-async function loadRsvelte(): Promise<SvelteCompilerBackend> {
+/**
+ * @internal Load, validate and fall back — with the module loader injected so a
+ * test can exercise a rejected import or a malformed export without uninstalling
+ * the adapter. Never throws.
+ */
+export async function loadRsvelte(load: () => Promise<unknown> = () => import(RSVELTE_SPECIFIER)): Promise<SvelteCompilerBackend> {
+  let mod: unknown;
   try {
-    const mod = (await import(RSVELTE_SPECIFIER)) as { svelteCompilerBackend?: unknown };
-    if (!isBackend(mod.svelteCompilerBackend)) {
-      logger.warn(`${RSVELTE_SPECIFIER} did not export a usable \`svelteCompilerBackend\` — falling back to svelte/compiler.`);
-      return officialBackend;
-    }
-    return mod.svelteCompilerBackend;
+    mod = await load();
   } catch (err) {
     logger.warn(
       `svelteCompiler: 'rsvelte' was requested but ${RSVELTE_SPECIFIER} could not be loaded — falling back to svelte/compiler. ` +
@@ -87,6 +93,12 @@ async function loadRsvelte(): Promise<SvelteCompilerBackend> {
     );
     return officialBackend;
   }
+  const exported = (mod as { svelteCompilerBackend?: unknown } | null)?.svelteCompilerBackend;
+  if (!isBackend(exported)) {
+    logger.warn(`${RSVELTE_SPECIFIER} did not export a usable \`svelteCompilerBackend\` — falling back to svelte/compiler.`);
+    return officialBackend;
+  }
+  return exported;
 }
 
 /** Resolve the compiler backend for a registry. Never throws — an unusable backend degrades to `svelte`. */
@@ -118,4 +130,5 @@ export function backendId(backend: SvelteCompilerBackend): string {
 export function resetSvelteCompilerCache(): void {
   resolved.clear();
   announced.clear();
+  envWarned.clear();
 }
