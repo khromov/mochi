@@ -95,15 +95,16 @@ A captcha that hydrates by neither route stays empty — an empty slot rather th
 
 #### Props
 
-| Prop             | Default                | Description                                                                                   |
-| ---------------- | ---------------------- | --------------------------------------------------------------------------------------------- |
-| `token`          | —                      | The sealed challenge from `mintCaptcha()`.                                                    |
-| `bits`           | `16`                   | Difficulty the widget solves at. Comes from `mintCaptcha()`; don't set it by hand.            |
-| `emoji`          | `🧩`                   | The character on the handle.                                                                  |
-| `label`          | `'Slide to verify'`    | The hint shown in the track. Doubles as the handle's accessible name, so keep it descriptive. |
-| `verifyingLabel` | `'Verifying…'`         | Replaces the hint while the proof-of-work runs.                                               |
-| `verifiedLabel`  | `'Verified — thanks!'` | Replaces the hint once the proof-of-work lands.                                               |
-| `verified`       | `false`                | `$bindable` — true once solved and the proof-of-work has landed.                              |
+| Prop             | Default                     | Description                                                                                   |
+| ---------------- | --------------------------- | --------------------------------------------------------------------------------------------- |
+| `token`          | —                           | The sealed challenge from `mintCaptcha()`.                                                    |
+| `bits`           | `16`                        | Difficulty the widget solves at. Comes from `mintCaptcha()`; don't set it by hand.            |
+| `emoji`          | `🧩`                        | The character on the handle.                                                                  |
+| `label`          | `'Slide to verify'`         | The hint shown in the track. Doubles as the handle's accessible name, so keep it descriptive. |
+| `verifyingLabel` | `'Verifying…'`              | Replaces the hint while the proof-of-work runs.                                               |
+| `verifiedLabel`  | `'Verified — thanks!'`      | Replaces the hint once the proof-of-work lands.                                               |
+| `errorLabel`     | see [below](#when-it-fails) | Shown if the widget can't complete the challenge. The specific cause is appended under it.    |
+| `verified`       | `false`                     | `$bindable` — true once solved and the proof-of-work has landed.                              |
 
 ```svelte
 <MochiCaptcha {...captcha} emoji="🍡" label="Slide the mochi to the right" />
@@ -114,6 +115,18 @@ All three hints are yours, so the widget can stay in your app's voice from the f
 ```svelte
 <MochiCaptcha {...captcha} emoji="▶" label="SLIDE TO PROVE HUMANITY" verifyingLabel="VERIFYING…" verifiedLabel="ACCESS GRANTED" />
 ```
+
+### When it fails
+
+The widget should never fail to solve a challenge it was handed — but if it does, it says so instead of sitting on "Verifying…". The track turns into a retry button showing `errorLabel` plus the specific cause, and the same message is logged through the [logger](/docs/logging/) at `error` level, so it appears in production consoles too:
+
+```
+[mochi] captcha: no token — spread the result of mintCaptcha() onto <MochiCaptcha />
+```
+
+Tapping it resets the widget for a fresh attempt. Nothing is submitted from an errored widget: the `captcha_token` and `captcha_pow` fields stay empty, so the server rejects it as an unsolved submission either way.
+
+The cases it reports are a missing `token` (usually `{...captcha}` not spread), a `bits` value outside 1–32, and a proof-of-work that ran for 30 seconds of active CPU without landing. Solving runs in short slices that yield to the browser between them, so it stays interruptible and never blocks the page — and once a solve passes two seconds the hint starts showing the attempt count, so a slow device looks slow rather than stuck.
 
 ### How it works
 
@@ -261,8 +274,13 @@ Every colour is a CSS custom property whose default lives in the `var()` fallbac
   --mochi-captcha-handle-text: var(--mochi-captcha-accent);
   --mochi-captcha-hint-text: #6e756d;
   --mochi-captcha-radius: 999px;
+  --mochi-captcha-error-bg: #fdf3f2;
+  --mochi-captcha-error-border: #e9c9c4;
+  --mochi-captcha-error-text: #8a3324;
 }
 ```
+
+The three `error` properties only apply in the [failure state](#when-it-fails).
 
 `--mochi-captcha-handle-text` colours the `emoji` glyph, and follows the accent unless you set it. It only bites for glyphs with a text presentation — `▶`, `→` — since colour-font emoji like `🍡` paint themselves and ignore CSS colour entirely.
 
@@ -282,7 +300,7 @@ The widget logs each link of the chain as it's minted, then the proof-of-work so
 [mochi] captcha: solved in 512ms — nonce 64918 after 64919 attempts
 ```
 
-Raise or silence it per app with `setLogLevel()`.
+Raise or silence it per app with `setLogLevel()`. A [failure](#when-it-fails) is logged at `error` level instead, so it survives the production default.
 
 Server-side, every verification emits a [`captcha:verify`](/docs/events/#captchaverify) event carrying the **real** reason — `'malformed'`, `'expired'`, `'too-fast'`, `'bad-pow'` or `'replay'` — rather than the single generic message the client is given. `consoleLogger()` prints it, and it's the hook to graph rejections or alert on a spam spike:
 

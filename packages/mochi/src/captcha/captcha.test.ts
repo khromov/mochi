@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 import { mintCaptcha, verifyCaptcha, consumeCaptcha, solveCaptcha } from './captcha';
-import { CAPTCHA_STEPS, chainInput, powInput, leadingZeroBits } from './pow';
+import { CAPTCHA_STEPS, chainInput, powInput, leadingZeroBits, sha256Hex, solvePowSlice } from './pow';
 import { encryptPayload } from '../islands/payloadCrypto';
 import { initExtensions } from '../extensions';
 import { mochiEvents } from '../events';
@@ -62,6 +62,30 @@ describe('mintCaptcha + verifyCaptcha', () => {
     installConfig();
     const result = await verifyCaptcha(fields(solveCaptcha(mintCaptcha())));
     expect(result.ok).toBe(true);
+  });
+
+  // solveCaptcha() takes the server's node:crypto path, so on its own it can't
+  // catch the widget's JS digest drifting out of agreement with the verifier.
+  // This walks the client's exact code path instead — the chain link by link,
+  // then the resumable brute force — and checks the server still accepts it.
+  test('accepts a challenge solved the way the widget solves it', async () => {
+    installConfig();
+    const minted = mintCaptcha();
+    let chain = minted.token;
+    for (let step = 1; step <= CAPTCHA_STEPS; step++) {
+      chain = sha256Hex(chainInput(chain, step));
+    }
+    let next = 0;
+    let captcha_pow: string | null = null;
+    while (captcha_pow === null) {
+      const slice = solvePowSlice(chain, minted.bits, next, 0);
+      if ('nonce' in slice) {
+        captcha_pow = slice.nonce;
+      } else {
+        next = slice.next;
+      }
+    }
+    expect((await verifyCaptcha(fields({ captcha_token: minted.token, captcha_pow }))).ok).toBe(true);
   });
 
   test('mints with the configured difficulty by default', () => {
