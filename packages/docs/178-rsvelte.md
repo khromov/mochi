@@ -50,12 +50,6 @@ MOCHI_SVELTE_COMPILER=svelte bun run build
 
 Mochi logs which compiler it resolved (`Svelte compiler: rsvelte@5.56.4`) once at startup.
 
-<Callout type="info">
-
-A prebuilt `manifest.json` bakes already-compiled output, and unlike the in-memory compile cache it isn't keyed on the compiler. Run `bun run clean` before rebuilding after a switch, or you'll measure the old compiler's output.
-
-</Callout>
-
 ### What runs on rsvelte
 
 Only `compile()` and `compileModule()`. Mochi's island preprocessor walks a real Svelte AST with `zimmerframe`, and rsvelte's `parse()` returns a JSON string rather than an upstream-shaped AST — so **parsing and preprocessing always stay on the official compiler**. Islands, `mochi:hydrate*`, `mochi:defer` and user preprocessors behave identically either way.
