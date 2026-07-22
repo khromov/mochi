@@ -50,6 +50,18 @@ MOCHI_SVELTE_COMPILER=svelte bun run build
 
 Mochi logs which compiler it resolved (`Svelte compiler: rsvelte@0.2.8+svelte5.56.4` — the rsvelte release, then the Svelte version it targets) once at startup.
 
+### Benchmark
+
+This benchmark can give you an idea of the gains in a small application (the `demos` preset you can access via the CLI when creating a new project).
+
+| phase           | svelte | rsvelte |    delta |
+| --------------- | -----: | ------: | -------: |
+| total           |  384ms |   289ms | **−25%** |
+| `ssr-build`     |  213ms |   137ms | **−36%** |
+| `client-bundle` |   40ms |    26ms | **−35%** |
+
+(10 cold start runs, median value)
+
 ### What runs on rsvelte
 
 Only `compile()` and `compileModule()`. Mochi's island preprocessor walks a real Svelte AST with `zimmerframe`, and rsvelte's `parse()` returns a JSON string rather than an upstream-shaped AST — so **parsing and preprocessing always stay on the official compiler**. Islands, `mochi:hydrate*`, `mochi:defer` and user preprocessors behave identically either way.
