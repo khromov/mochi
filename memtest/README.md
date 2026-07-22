@@ -14,7 +14,8 @@ multi-day unattended run on a dedicated server.
    server, and fetches every URL with bounded concurrency, forever. The sitemap
    covers `/`, every doc, and every internal demo, so almost every Mochi feature
    is exercised each pass.
-4. **Snapshot loop** — every `SNAPSHOT_INTERVAL_MS`, downloads `/_heapsnapshot`
+4. **Snapshot loop** — captures a **baseline snapshot immediately after readiness**,
+   before any load is applied, then every `SNAPSHOT_INTERVAL_MS` downloads `/_heapsnapshot`
    (`Bun.generateHeapSnapshot('v8')`) with **curl** to
    `/snapshots/heap-<timestamp>.heapsnapshot`, then prunes to the newest
    `SNAPSHOT_KEEP` files. curl runs as a separate process so the large body
@@ -42,7 +43,16 @@ Or manually:
 
 ```sh
 docker build -f Dockerfile.memtest -t mochi-memtest .
-docker run -d --restart unless-stopped -v mochi-heapsnapshots:/snapshots -p 3333:3333 mochi-memtest
+docker run -d --restart unless-stopped -v mochi-heapsnapshots:/snapshots mochi-memtest
+```
+
+The site's port is **not published** by default — the driver talks to it over
+`127.0.0.1` inside the container, and publishing would expose `/_heapsnapshot`
+(a full heap dump) and `/__mochi/health/memory` to whatever can reach the host.
+To browse the site under load anyway, bind it to loopback only:
+
+```sh
+PUBLISH=127.0.0.1 ./memtest/run.sh
 ```
 
 ## Retrieve snapshots
@@ -63,6 +73,7 @@ that only grow.
 | Var                    | Default      | Meaning                                           |
 | ---------------------- | ------------ | ------------------------------------------------- |
 | `PORT`                 | `3333`       | Site port (driver targets `127.0.0.1:$PORT`).     |
+| `PUBLISH`              | _(unset)_    | `run.sh` only: host address to publish `PORT` on. |
 | `SNAPSHOT_DIR`         | `/snapshots` | Where snapshots are written (the mounted volume). |
 | `SNAPSHOT_INTERVAL_MS` | `3600000`    | Snapshot cadence (1h).                            |
 | `SNAPSHOT_KEEP`        | `48`         | Retain the newest N snapshots; older are pruned.  |

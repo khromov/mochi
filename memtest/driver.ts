@@ -194,6 +194,10 @@ async function main(): Promise<void> {
     log('SPAWN_SITE=false — expecting an externally started site');
   }
   await waitForReady();
+  // Baseline before any load is applied — every later snapshot is only
+  // interpretable as a diff against a freshly-booted heap.
+  log('capturing baseline snapshot');
+  await captureSnapshot();
   // Fire all three loops; they run forever until the site (or container) dies.
   await Promise.all([loadLoop(), snapshotLoop(), memLogLoop()]);
 }
