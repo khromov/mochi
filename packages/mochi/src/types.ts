@@ -9,6 +9,7 @@ import type { MochiEmailOptions } from './email/types';
 import type { MochiCaptchaOptions } from './captcha/types';
 import type { MochiProcessor, MochiQueue, MochiQueueListeners, MochiQueueRuntimeOptions } from './queue';
 import type { MochiRateLimitOptions } from './runtime/rateLimit';
+import type { MochiSvelteCompiler } from './compiler/svelteCompilerBackend';
 
 export type MochiServerPropsResolver = (req: Request, params: Record<string, string>) => Record<string, unknown> | Promise<Record<string, unknown>>;
 
@@ -578,6 +579,15 @@ export interface MochiServeOptions {
    */
   svelteConfigPath?: string;
   /**
+   * Which compiler emits component JS. Default `'svelte'` (the official
+   * `svelte/compiler`). `'rsvelte'` routes `compile`/`compileModule` through the
+   * Rust port and requires the optional `@mochi-framework/rsvelte` package — if
+   * it can't be loaded the framework warns and falls back to `'svelte'`.
+   * Component parsing (islands) and preprocessing always use official Svelte.
+   * Override at runtime with `MOCHI_SVELTE_COMPILER=svelte|rsvelte`.
+   */
+  svelteCompiler?: MochiSvelteCompiler;
+  /**
    * Dependency-injected markdown (`.md` / `.svx`) support. Pass the `compile`
    * function from `mdsvex` plus any rehype/remark plugins to enable; omit to
    * leave markdown unhandled.
@@ -703,7 +713,44 @@ export interface MochiServeOptions {
    * while keeping other config visible. Default: `false`.
    */
   optimize?: boolean | MochiSvelteShakerOptions;
+  /**
+   * Warning when a dependency drags a large module into the build graph
+   * that's then almost entirely tree-shaken away — the "barrel import" smell, e.g.
+   * `import { Sun } from '@lucide/svelte'` instead of `@lucide/svelte/icons/sun`.
+   * Bun re-parses that big re-export file on every rebuild, so it slows HMR even
+   * though little of it ships. In dev it fires once per package; a production build
+   * collapses the offenders into one grouped summary line. Default: enabled.
+   *
+   * - `false` — silence the warning entirely.
+   * - `{ ignore: ['pkg-name'] }` — suppress specific packages you can't fix.
+   * - `{ minBytes: 102400 }` — override the parsed-size threshold (default 50 KB).
+   */
+  barrelWarnings?: boolean | MochiBarrelWarningOptions;
+  /**
+   * Output controls for `mochi-framework build`. Ignored by the runtime — it
+   * lives here so the build reads it from your entry along with the rest of
+   * the config, the same way `optimize` and `barrelWarnings` are picked up.
+   */
+  build?: MochiBuildReportOptions;
   [key: string]: unknown;
+}
+
+/** Object form of `MochiServeOptions['build']`. See that field for semantics. */
+export interface MochiBuildReportOptions {
+  /**
+   * Print the emitted-resources list — one row per local image import, with its
+   * dimensions and size on disk. The summary line keeps its asset count even
+   * when the list is off. Default: enabled.
+   */
+  resources?: boolean;
+}
+
+/** Object form of `MochiServeOptions['barrelWarnings']`. See that field for semantics. */
+export interface MochiBarrelWarningOptions {
+  /** Packages to exclude from the heavy-barrel warning (e.g. ones you can't fix). */
+  ignore?: string[];
+  /** Parsed-size threshold in bytes before a dependency file is considered. Default: 50 KB. */
+  minBytes?: number;
 }
 
 export interface MochiSvelteShakerOptions {

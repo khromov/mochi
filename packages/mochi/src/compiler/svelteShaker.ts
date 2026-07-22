@@ -6,8 +6,15 @@
  * Node Shell glue (`svelte-shaker/node`) ourselves instead of hosting a plugin.
  *
  * Because `svelte-shaker/node` is an internal, non-plugin subpath of a pre-1.0
- * package, it can move between patch releases — so the dependency is pinned to an
- * exact version (see `package.json`) rather than a caret range.
+ * package, it can move between releases — so the dependency is pinned to an exact
+ * version in `package.json` rather than a caret range, and every bump is treated as
+ * potentially breaking.
+ *
+ * Pinned at 0.13.0: 0.14.0 through 0.15.0 throw `JSON.stringify cannot serialize
+ * BigInt` from `transform.js` on the mochi-site component graph, which the
+ * fallback below swallows — the build still succeeds, but every component silently
+ * stops being slimmed. Verify a bump with a real `bun run build:site` and check the
+ * "slimmed N of M" line, not just the shake unit tests (they don't reproduce it).
  *
  * The engine is dynamically imported so it is loaded only when shaking actually
  * runs (production builds), keeping it out of every bundle graph.

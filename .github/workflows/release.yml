@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag to re-publish (e.g. mochi-framework-v0.1.0 or create-mochi-v0.0.2)'
+        description: 'Tag to re-publish (e.g. mochi-framework-v0.1.0, create-mochi-v0.0.2 or @mochi-framework/rsvelte-v0.1.0)'
         required: true
         type: string
 
@@ -28,6 +28,8 @@ jobs:
       mochi_tag_name: ${{ steps.release.outputs['packages/mochi--tag_name'] }}
       cli_release_created: ${{ steps.release.outputs['packages/cli--release_created'] }}
       cli_tag_name: ${{ steps.release.outputs['packages/cli--tag_name'] }}
+      rsvelte_release_created: ${{ steps.release.outputs['packages/mochi-rsvelte--release_created'] }}
+      rsvelte_tag_name: ${{ steps.release.outputs['packages/mochi-rsvelte--tag_name'] }}
     steps:
       - uses: googleapis/release-please-action@v4
         id: release
@@ -113,6 +115,33 @@ jobs:
         working-directory: packages/cli
         run: npm publish --provenance --access public
 
+  publish-rsvelte:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.rsvelte_release_created == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.release-please.outputs.rsvelte_tag_name }}
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: 'https://registry.npmjs.org'
+
+      - run: bun install --frozen-lockfile
+
+      - run: bun --cwd=packages/mochi-rsvelte run typecheck
+      - run: bun --cwd=packages/mochi-rsvelte run test
+
+      - name: Publish @mochi-framework/rsvelte to npm
+        working-directory: packages/mochi-rsvelte
+        run: npm publish --provenance --access public
+
   republish:
     if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
@@ -139,7 +168,8 @@ jobs:
           case "$tag" in
             mochi-framework-v*) echo "dir=packages/mochi" >> "$GITHUB_OUTPUT" ;;
             create-mochi-v*) echo "dir=packages/cli" >> "$GITHUB_OUTPUT" ;;
-            *) echo "::error::Unrecognized tag: $tag (expected mochi-framework-v* or create-mochi-v*)"; exit 1 ;;
+            "@mochi-framework/rsvelte-v"*) echo "dir=packages/mochi-rsvelte" >> "$GITHUB_OUTPUT" ;;
+            *) echo "::error::Unrecognized tag: $tag (expected mochi-framework-v*, create-mochi-v* or @mochi-framework/rsvelte-v*)"; exit 1 ;;
           esac
 
       - run: bun --cwd="${{ steps.pkg.outputs.dir }}" run typecheck

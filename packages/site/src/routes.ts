@@ -1,4 +1,4 @@
-import { Mochi, error, getRequestContext } from 'mochi-framework';
+import { Mochi, error, getRequestContext, mintCaptcha, verifyCaptcha } from 'mochi-framework';
 import type { MochiRouteValue, MochiQueueConfig } from 'mochi-framework';
 import {
   buildDocsNav,
@@ -39,6 +39,7 @@ import { routes as formRedirectsRoutes } from './demos/form-redirects/routes';
 import { routes as formReturnDataRoutes } from './demos/form-return-data/routes';
 import { routes as helloWorldRoutes } from './demos/hello-world/routes';
 import { routes as hydratableRoutes } from './demos/hydratable/routes';
+import { routes as isHydratableRoutes } from './demos/is-hydratable/routes';
 import { routes as imageRoutes } from './demos/image/routes';
 import { routes as imageInvalidationRoutes } from './demos/image-invalidation/routes';
 import { routes as imageEventsRoutes } from './demos/image-events/routes';
@@ -182,6 +183,22 @@ export const routes: Record<string, MochiRouteValue> = {
   // SMTP config this site deliberately doesn't carry.
   '/support': Mochi.api(() => Response.redirect('https://support.mochi.fast/', 302)),
   '/og': Mochi.page('./src/og/OgPage.svelte'),
+  // Backs the live captcha embedded in the 0.8.0 blog post. Minting and verifying
+  // happen here rather than in `/blog/:slug` so that route stays post-agnostic.
+  '/api/captcha-demo/mint': Mochi.api(() => Response.json(mintCaptcha()), { rateLimit: { limit: 60, window: '1m' } }),
+  '/api/captcha-demo/verify': Mochi.api(
+    async ({ method, request }) => {
+      if (method !== 'POST') {
+        error(405, 'Method Not Allowed');
+      }
+      const { token, pow } = (await request.json()) as { token?: string; pow?: string };
+      const formData = new FormData();
+      formData.set('captcha_token', String(token ?? ''));
+      formData.set('captcha_pow', String(pow ?? ''));
+      return Response.json(await verifyCaptcha(formData));
+    },
+    { rateLimit: { limit: 30, window: '1m' } },
+  ),
   '/sitemap.xml': Mochi.api(async () => {
     return new Response(await buildSitemapXml(), {
       headers: { 'Content-Type': 'application/xml; charset=utf-8' },
@@ -243,6 +260,7 @@ export const routes: Record<string, MochiRouteValue> = {
   ...formReturnDataRoutes,
   ...helloWorldRoutes,
   ...hydratableRoutes,
+  ...isHydratableRoutes,
   ...imageRoutes,
   ...imageInvalidationRoutes,
   ...imageEventsRoutes,

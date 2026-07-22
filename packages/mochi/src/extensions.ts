@@ -132,6 +132,7 @@ export interface MochiFilterValue {
   'publicDir:scan': Map<string, string>;
   'consoleLogger:level': ConsoleLoggerLevel;
   'consoleLogger:line': string;
+  'barrel:warn': string;
   'image:maxRedirects': number;
   'image:url': string;
   'image:fileFilter': RegExp;
@@ -141,6 +142,7 @@ export interface MochiFilterValue {
   'captcha:minAgeMs': number;
   'captcha:driftAllowanceMs': number;
   'queue:recoveryStallWarningMs': number;
+  'queue:lockDurationMs': number;
 }
 
 // Optional per-filter override for the *return* type when it differs from the
@@ -149,6 +151,7 @@ export interface MochiFilterValue {
 // `MochiFilterValue[K]` when a key is absent.
 export interface MochiFilterReturn {
   'consoleLogger:line': string | null;
+  'barrel:warn': string | null;
   'email:message': ResolvedEmailMessage | null;
 }
 
@@ -178,6 +181,16 @@ export interface MochiFilterContext {
     /** Resolved log level (escalated to `'warn'` for 5xx / slow requests, then passed through `consoleLogger:level`). */
     level: ConsoleLoggerLevel;
   };
+  'barrel:warn': {
+    /** The offending package, e.g. `'@lucide/svelte'`. */
+    pkg: string;
+    /** The large re-export file pulled into the graph, relative to its package, e.g. `'@lucide/svelte/dist/icons/index.js'`. */
+    file: string;
+    /** Parsed size of `file` in bytes. */
+    bytes: number;
+    /** Fraction of `bytes` that survived into the bundle (≈ 0 for a barrel). */
+    usedRatio: number;
+  };
   'image:maxRedirects': { src: string };
   'image:url': { src: string; filename: string; original: boolean };
   /** Fires once per build pass (`target`), setting the `onLoad` gate for local image imports. */
@@ -196,6 +209,12 @@ export interface MochiFilterContext {
   'captcha:driftAllowanceMs': { options: MochiCaptchaOptions; maxAgeMs: number };
   /** Resolved once per queue that declares a `recover` callback, as recovery starts. */
   'queue:recoveryStallWarningMs': { queue: string };
+  /** Resolved once per queue, as it is created. */
+  'queue:lockDurationMs': {
+    queue: string;
+    /** Whether this queue set `lockDuration` itself — through the option or the raw `bunqueue` passthrough — so the incoming value is its choice, not the framework default. */
+    explicit: boolean;
+  };
 }
 
 export interface MochiFilterKindMap {
@@ -212,6 +231,7 @@ export interface MochiFilterKindMap {
   'publicDir:scan': 'async';
   'consoleLogger:level': 'sync';
   'consoleLogger:line': 'sync';
+  'barrel:warn': 'sync';
   'image:maxRedirects': 'sync';
   'image:url': 'sync';
   'image:fileFilter': 'sync';
@@ -221,6 +241,7 @@ export interface MochiFilterKindMap {
   'captcha:minAgeMs': 'sync';
   'captcha:driftAllowanceMs': 'sync';
   'queue:recoveryStallWarningMs': 'sync';
+  'queue:lockDurationMs': 'sync';
 }
 
 type FilterReturn<K extends keyof MochiFilterValue> = K extends keyof MochiFilterReturn ? MochiFilterReturn[K] : MochiFilterValue[K];
@@ -264,6 +285,7 @@ const FILTER_KINDS: { [K in keyof MochiFilterValue]: MochiKind } = {
   'publicDir:scan': 'async',
   'consoleLogger:level': 'sync',
   'consoleLogger:line': 'sync',
+  'barrel:warn': 'sync',
   'image:maxRedirects': 'sync',
   'image:url': 'sync',
   'image:fileFilter': 'sync',
@@ -273,6 +295,7 @@ const FILTER_KINDS: { [K in keyof MochiFilterValue]: MochiKind } = {
   'captcha:minAgeMs': 'sync',
   'captcha:driftAllowanceMs': 'sync',
   'queue:recoveryStallWarningMs': 'sync',
+  'queue:lockDurationMs': 'sync',
 };
 
 // Pinned on globalThis so duplicate bundled copies of mochi-framework share one

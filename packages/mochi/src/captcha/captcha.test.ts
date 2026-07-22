@@ -93,16 +93,22 @@ describe('mintCaptcha + verifyCaptcha', () => {
     const minted = mintCaptcha();
     // Solve against the token itself rather than the chain's final link — what a
     // bot that read the token out of the HTML but never ran the slide would send.
+    //
+    // A nonce that clears the raw target also clears the chained one about 1 try
+    // in 2^bits — ordinary PoW luck, not a chain bypass, but at the 8 bits these
+    // tests run at it lands roughly 1 run in 256 and would fail the assertion
+    // below. Skip those candidates so the test only ever exercises the real
+    // property: a nonce that never touched the chain is rejected.
+    let challenge = minted.token;
+    for (let step = 1; step <= CAPTCHA_STEPS; step++) {
+      challenge = createHash('sha256').update(chainInput(challenge, step)).digest('hex');
+    }
+    const clears = (preimage: string, n: string) => leadingZeroBits(createHash('sha256').update(powInput(preimage, n)).digest()) >= 8;
     const rawPow = (() => {
       for (let n = 0; ; n++) {
-        if (
-          leadingZeroBits(
-            createHash('sha256')
-              .update(powInput(minted.token, String(n)))
-              .digest(),
-          ) >= 8
-        ) {
-          return String(n);
+        const candidate = String(n);
+        if (clears(minted.token, candidate) && !clears(challenge, candidate)) {
+          return candidate;
         }
       }
     })();

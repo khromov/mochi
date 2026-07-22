@@ -21,6 +21,7 @@ import { files as formRedirects } from '../demos/form-redirects/files.ts';
 import { files as formReturnData } from '../demos/form-return-data/files.ts';
 import { files as helloWorld } from '../demos/hello-world/files.ts';
 import { files as hydratable } from '../demos/hydratable/files.ts';
+import { files as isHydratableFiles } from '../demos/is-hydratable/files.ts';
 import { files as hydration } from '../demos/hydration/files.ts';
 import { files as image } from '../demos/image/files.ts';
 import { files as imageInvalidation } from '../demos/image-invalidation/files.ts';
@@ -109,7 +110,15 @@ export const demos: Demo[] = [
     files: hydratable,
     title: 'Hydratable',
     hook: 'Compute a value once on the server with hydratable(); the hydrated island reads it from <head> instead of re-running the async work.',
-    category: 'data',
+    category: 'hydration',
+  },
+  {
+    href: '/demos/is-hydratable/',
+    slug: 'is-hydratable',
+    files: isHydratableFiles,
+    title: 'isHydratable()',
+    hook: 'Ask from any nesting depth whether the current subtree will hydrate on this page load — no prop forwarding needed.',
+    category: 'hydration',
   },
   {
     href: '/demos/cookies/',
