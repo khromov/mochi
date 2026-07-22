@@ -56,11 +56,11 @@ Only `compile()` and `compileModule()`. Mochi's island preprocessor walks a real
 
 ### If it can't load
 
-Prebuilt binaries cover macOS arm64/x64, Linux x64/arm64 (glibc) and Windows x64 (MSVC). There's no musl build, so Alpine-based images aren't supported. When the package is missing or its binary won't load, Mochi logs a warning and compiles with `svelte/compiler` — the build never fails over it.
+Prebuilt binaries cover macOS arm64/x64, Linux x64/arm64 (glibc) and Windows x64 (MSVC). There's no musl build, so Alpine-based images aren't supported. When the package is missing or its binary won't load, Mochi logs a warning and compiles with `svelte/compiler`.
 
 ### Known divergences
 
-Production output is byte-identical to `svelte/compiler` across the constructs Mochi's parity suite covers. Three differences remain:
+Production output should generally be byte-identical to `svelte/compiler`. Three differences remain in the configuration in relation to Mochi:
 
 - **`cssHash` and `warningFilter`** in `svelte.config.js` are functions and can't cross the native boundary. They're stripped with a one-time warning; use rsvelte's `cssHashOverride: '<hash>'` to force a fixed CSS hash.
 - **Dev-only instrumentation** is not always reproduced — `$derived(await …)` loses its reactivity-loss warning, `$effect` differs in state-logging, and snippets skip two dev arg-validation guards. Development builds only; production output matches.
