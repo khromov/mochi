@@ -83,6 +83,16 @@ For a `requestMemo` wrapper that is _expected_ to run outside a request — a ba
 export const getUser = requestMemo((id: string) => db.user(id), { quiet: true });
 ```
 
+### On the client
+
+These are server-only helpers — they memoize against the request context, which only exists on the server. When an island's `<script>` runs again during hydration, the browser bundle resolves them to no-op stubs instead of throwing: `requestCache(key, fn)` just runs `fn()` uncached, `requestMemo(fn)` returns `fn` unwrapped, and `getRequestCache()` hands back a fresh throwaway store per call. Nothing is shared or retained between hydrations, so there is no client-side cache to grow.
+
+<Callout type="warning">
+
+The client stub re-runs the callback — it does **not** replay the server's cached value. A top-level island read like `requestCache(key, () => db.user(id))` runs on the server during SSR and _again_ on the client during hydration, where `db` isn't available. The request cache dedups server work within one render; it is not a way to ship a value to the browser. To reuse an SSR-computed value client-side, wrap it in Svelte's [`hydratable(key, fn)`](/docs/hydratable/).
+
+</Callout>
+
 <Callout type="warning">
 
 **Not a replacement for `MochiCache`.** The request cache has no TTL, no storage backend, and no eviction — the request boundary is the TTL. Use [`MochiCache`](/docs/cache/) for anything that should survive a request; use the request cache to stop repeating work _within_ one.
