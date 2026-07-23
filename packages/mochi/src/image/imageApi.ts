@@ -138,8 +138,26 @@ export async function getImage(src: string, size?: string): Promise<ResolvedImag
  * Fetch-or-serve the cached full-size original for `src`. Backs both the size
  * path (so every variant reuses one origin download) and the original path of
  * `getImageUrl`/`getImage`.
+ *
+ * Request-cached: a warm original still costs a sidecar parse plus a full binary
+ * read of the image off disk on every call, and `MochiCache` only coalesces on
+ * the miss path — so N variants (or N `getImage()` calls) over one source would
+ * otherwise re-read the same bytes N times. Keyed on `src` alone: `resolved` and
+ * `cache` both come from the `getImageRuntime()` process singleton, so they
+ * cannot differ between two calls. `quiet` because the image endpoint runs
+ * outside a request context, where this legitimately falls through uncached.
  */
-export async function getCachedOriginal(
+export const getCachedOriginal: (
+  src: string,
+  resolved: ResolvedImageOptions,
+  cache: ImageCache,
+) => Promise<{ bytes: Uint8Array; contentType: string; status: ImageCacheStatus; createdAt: number }> = requestMemo(readCachedOriginal, {
+  namespace: 'mochi:image:original',
+  key: (src) => src,
+  quiet: true,
+});
+
+async function readCachedOriginal(
   src: string,
   resolved: ResolvedImageOptions,
   cache: ImageCache,
@@ -228,8 +246,19 @@ const INLINE_PREVIEW_BYTE_CAP = 1_048_576;
  * Return a tiny ThumbHash blur-placeholder data URL for a source, computing and
  * caching it on first use. Returns `null` if the source can't be fetched or
  * decoded, so callers can degrade gracefully.
+ *
+ * Request-cached, so repeated calls for one source in a single render share the
+ * blocking compute rather than each paying the placeholder/original cache reads.
  */
-export async function getImagePlaceholder(src: string): Promise<string | null> {
+export const getImagePlaceholder: (src: string) => Promise<string | null> = requestMemo(computeImagePlaceholder, {
+  // Deliberately its own namespace, never shared with `imagePlaceholder` below:
+  // that one returns `null` on a miss by design, and a shared entry would let
+  // its `null` short-circuit a later blocking call in the same request.
+  namespace: 'mochi:image:placeholder:blocking',
+  quiet: true,
+});
+
+async function computeImagePlaceholder(src: string): Promise<string | null> {
   const { options, cache } = getImageRuntime();
   const cached = await cache.getPlaceholder(src);
   if (cached) {
@@ -242,6 +271,9 @@ export async function getImagePlaceholder(src: string): Promise<string | null> {
     return dataUrl;
   } catch (err) {
     logger.warn(`Could not compute image placeholder for ${src}: ${err instanceof Error ? err.message : String(err)}`);
+    // Resolving `null` rather than throwing means the request cache keeps this
+    // entry instead of evicting it — deliberate, so one unreachable source costs
+    // a single failed fetch per request rather than one per caller.
     return null;
   }
 }
