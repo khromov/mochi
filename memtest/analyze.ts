@@ -1,18 +1,18 @@
-// Offline heap-snapshot analyzer for the memtest harness. Picks the newest
-// three V8 snapshots in ./snapshots (captured by driver.ts or pulled manually
-// from /_heapsnapshot) and runs memlab's leak detector over them, then prints a
-// ranked summary the /memory-regression skill reads to map leaks to Mochi source.
+// Offline heap-snapshot analyzer for the memtest harness. Reads the V8 snapshots
+// in ./snapshots (sync them with `bun run memtest:pull`) and runs memlab over
+// them, then prints a ranked summary the /memory-regression skill reads to map
+// leaks to Mochi source.
 //
 // memlab's three-snapshot model: baseline (before the growth window) -> target
-// (growth window start) -> final (growth window end). Objects allocated between
-// baseline and target that survive into final are candidate leaks, clustered by
-// their retainer trace. Newest-three-by-mtime approximates that ordering.
+// (growth window start) -> final (growth window end). We feed it the oldest,
+// midpoint, and newest local snapshots — the widest window, so a slow leak has
+// room to show rather than hiding in the noise between two adjacent captures.
 //
 // Flags:
 //   --full    print memlab's verbatim (VERBOSE) leak report only; skip our summary.
 //   --growth  trend mode for slow, diffuse heap creep that findLeaks won't flag:
 //             run ShapeUnboundGrowthAnalysis across the WHOLE series in ./snapshots
-//             (pull it first with `bun run memtest:pull-all`) plus a constructor
+//             (sync it first with `bun run memtest:pull`) plus a constructor
 //             count/size delta table from oldest -> newest.
 
 import path from 'node:path';
@@ -55,13 +55,18 @@ async function listSnapshots(): Promise<Snap[]> {
   return snaps;
 }
 
-async function newestThree(): Promise<[Snap, Snap, Snap]> {
+// Oldest / midpoint / newest of the local series — the widest baseline -> final
+// window findLeaks can diff. All snapshots are local (memtest:pull mirrors the
+// whole series), so the spread is picked here rather than at download time.
+async function spreadThree(): Promise<[Snap, Snap, Snap]> {
   const snaps = await listSnapshots();
   if (snaps.length < 3) {
-    throw new Error(`Need at least 3 .heapsnapshot files in ${rel(SNAPSHOT_DIR)}, found ${snaps.length}. ` + `Capture more with the memtest harness (see memtest/README.md).`);
+    throw new Error(`Need at least 3 .heapsnapshot files in ${rel(SNAPSHOT_DIR)}, found ${snaps.length}. ` + `Sync them with \`bun run memtest:pull\` (see memtest/README.md).`);
   }
-  const [baseline, target, final] = snaps.slice(-3);
-  return [baseline!, target!, final!];
+  const baseline = snaps[0]!;
+  const target = snaps[Math.floor(snaps.length / 2)]!;
+  const final = snaps[snaps.length - 1]!;
+  return [baseline, target, final];
 }
 
 // Each item memlab returns is a serialized retainer-trace path keyed by
@@ -119,7 +124,7 @@ function constructorCounts(snapshot: IHeapSnapshot): Map<string, { count: number
 async function runGrowth(): Promise<void> {
   const snaps = await listSnapshots();
   if (snaps.length < 2) {
-    throw new Error(`--growth needs at least 2 .heapsnapshot files in ${rel(SNAPSHOT_DIR)}, found ${snaps.length}. ` + `Pull the whole series with \`bun run memtest:pull-all\`.`);
+    throw new Error(`--growth needs at least 2 .heapsnapshot files in ${rel(SNAPSHOT_DIR)}, found ${snaps.length}. ` + `Sync the whole series with \`bun run memtest:pull\`.`);
   }
   const oldest = snaps[0]!;
   const newest = snaps[snaps.length - 1]!;
@@ -181,14 +186,14 @@ async function main(): Promise<void> {
     return;
   }
 
-  const [baseline, target, final] = await newestThree();
+  const [baseline, target, final] = await spreadThree();
   await mkdir(WORK_DIR, { recursive: true });
 
   // --full: hand off entirely to memlab's verbatim VERBOSE report — no header,
   // no summary of ours, just its full output.
   if (!FULL) {
     const fmt = (s: Snap): string => `${s.base}  (${new Date(s.mtimeMs).toISOString()})`;
-    console.log('memlab heap-snapshot analysis — newest 3 by mtime:');
+    console.log('memlab heap-snapshot analysis — oldest / midpoint / newest of the local series:');
     console.log(`  baseline: ${fmt(baseline)}`);
     console.log(`  target:   ${fmt(target)}`);
     console.log(`  final:    ${fmt(final)}`);

@@ -87,14 +87,17 @@ ls -lh snapshots
 scp you@server:'~/mochi/snapshots/heap-*.heapsnapshot' ./
 ```
 
-Or, to set up a local analysis run, use `bun run memtest:pull` — it syncs three
-captures spread across the run — **oldest (baseline), midpoint (target), newest
-(final)** — into `./snapshots` off the remote box (defaults
-`REMOTE_HOST=k@192.168.10.75`, `REMOTE_DIR=mochi/snapshots`; overridable), then
-`bun run memtest:analyze` diffs them with memlab. The wide window is deliberate:
-a slow leak barely moves the heap between two consecutive hourly captures, but
-stands out across the whole run. Add `--full` (`bun run memtest:analyze --full`)
-to skip the condensed summary and print memlab's verbatim VERBOSE report instead.
+Or, to set up a local analysis run, use `bun run memtest:pull` — it syncs the
+**whole series** into `./snapshots` off the remote box (defaults
+`REMOTE_HOST=k@192.168.10.75`, `REMOTE_DIR=mochi/snapshots`; overridable). It's
+incremental: rsync only fetches snapshots you don't already have and prunes ones
+removed on the remote, so re-running after a few new captures is cheap.
+
+Then `bun run memtest:analyze` diffs them with memlab, feeding it the **oldest,
+midpoint, and newest** local snapshots — the widest window, so a slow leak has
+room to show rather than hiding between two adjacent hourly captures. Add
+`--full` (`bun run memtest:analyze --full`) to skip the condensed summary and
+print memlab's verbatim VERBOSE report instead.
 
 ### Slow, diffuse growth (`--growth`)
 
@@ -102,16 +105,13 @@ memlab's default `findLeaks` is a pattern detector — it clusters objects that
 survive a growth window and match known leak shapes. A heap that just _creeps_
 (a cache gaining a few entries an hour, an array appended to steadily) often
 trips none of those patterns, so `findLeaks` reports nothing while RSS climbs.
-For that, use the trend mode:
+For that, use the trend mode over the whole series:
 
 ```sh
-bun run memtest:pull-all          # sync the ENTIRE series (incremental — existing files skipped)
 bun run memtest:analyze --growth
 ```
 
-Both pull commands are incremental: rsync only fetches snapshots you don't
-already have locally and prunes ones removed on the remote, so re-running after a
-few new captures is cheap. It runs memlab's `ShapeUnboundGrowthAnalysis` across every snapshot in
+It runs memlab's `ShapeUnboundGrowthAnalysis` across every snapshot in
 `./snapshots` (object **shapes** whose count/size climb monotonically) plus a
 **constructor count/size delta** table from the oldest to newest snapshot — the
 programmatic version of the DevTools Comparison view. A shape or constructor that
