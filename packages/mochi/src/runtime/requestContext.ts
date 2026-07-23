@@ -177,6 +177,8 @@ export interface RequestCacheStats {
   misses: number;
   /** Entries still stored at the end of the render (rejected async entries evict themselves). */
   entries: number;
+  /** Keys still stored at the end of the render, in insertion order. */
+  keys: string[];
 }
 
 /**

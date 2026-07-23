@@ -255,6 +255,7 @@ export const getImagePlaceholder: (src: string) => Promise<string | null> = requ
   // that one returns `null` on a miss by design, and a shared entry would let
   // its `null` short-circuit a later blocking call in the same request.
   namespace: 'mochi:image:placeholder:blocking',
+  // `quiet` because background warms + the image endpoint call this outside a request, where it legitimately falls through uncached.
   quiet: true,
 });
 

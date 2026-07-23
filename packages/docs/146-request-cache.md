@@ -77,6 +77,12 @@ cache.stats(); // { hits, misses } — also shown in the debug bar's Cache panel
 
 Called outside a request handler — a startup script, a background job, a detached email render — the callback simply runs uncached, with a one-time warning in development. Nothing throws, so helpers built on the request cache stay usable everywhere.
 
+For a `requestMemo` wrapper that is _expected_ to run outside a request — a background warm, a detached render, work reachable from a non-request endpoint — pass `{ quiet: true }` to suppress that warning, since falling through uncached there is intended rather than a mistake:
+
+```ts
+export const getUser = requestMemo((id: string) => db.user(id), { quiet: true });
+```
+
 <Callout type="warning">
 
 **Not a replacement for `MochiCache`.** The request cache has no TTL, no storage backend, and no eviction — the request boundary is the TTL. Use [`MochiCache`](/docs/cache/) for anything that should survive a request; use the request cache to stop repeating work _within_ one.

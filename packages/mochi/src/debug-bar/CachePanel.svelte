@@ -160,6 +160,8 @@
 
   let lookups = $derived((requestCache?.hits ?? 0) + (requestCache?.misses ?? 0));
   let hitRate = $derived(lookups === 0 ? '—' : `${Math.round(((requestCache?.hits ?? 0) / lookups) * 100)}%`);
+  let rcKeys = $derived(requestCache?.keys ?? []);
+  let rcKeysOpen = $state(false);
 </script>
 
 <DebugPanel title="Cache" color="#a7d0c4" {open} {onclose}>
@@ -175,6 +177,21 @@
         <div class="rc-stat"><span class="rc-value">{hitRate}</span><span class="rc-label">hit rate</span></div>
         <div class="rc-stat"><span class="rc-value">{requestCache?.entries ?? 0}</span><span class="rc-label">entries</span></div>
       </div>
+      {#if rcKeys.length > 0}
+        <div class="rc-keys" class:open={rcKeysOpen}>
+          <button class="rc-keys-toggle" type="button" onclick={() => (rcKeysOpen = !rcKeysOpen)} aria-expanded={rcKeysOpen}>
+            <span class="chevron"><ChevronRight size={12} /></span>
+            <span>{rcKeys.length} {rcKeys.length === 1 ? 'key' : 'keys'}</span>
+          </button>
+          {#if rcKeysOpen}
+            <ul class="rc-keys-list">
+              {#each rcKeys as key (key)}
+                <li><bdi>{key}</bdi></li>
+              {/each}
+            </ul>
+          {/if}
+        </div>
+      {/if}
     {/if}
 
     <h3 class="cache-section">Image cache</h3>
@@ -290,6 +307,51 @@
     font-size: 9px;
     color: #8e9488;
     letter-spacing: 0.04em;
+  }
+  .rc-keys {
+    margin-top: 6px;
+  }
+  .rc-keys-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    background: none;
+    border: none;
+    color: #9aa094;
+    font: inherit;
+    font-size: 11px;
+    padding: 2px;
+    cursor: pointer;
+    text-align: left;
+  }
+  .rc-keys-toggle:hover {
+    color: #c8ece0;
+  }
+  .rc-keys.open .rc-keys-toggle .chevron {
+    transform: rotate(90deg);
+    color: #6fae9c;
+  }
+  .rc-keys-list {
+    list-style: none;
+    margin: 4px 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .rc-keys-list li {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 10px;
+    color: #c7cabf;
+    background: #1c1f17;
+    border: 1px solid #353930;
+    border-radius: 4px;
+    padding: 4px 8px;
+    word-break: break-all;
+  }
+  .rc-keys-list bdi {
+    unicode-bidi: isolate;
   }
   .cache-clear-btn {
     display: inline-flex;
