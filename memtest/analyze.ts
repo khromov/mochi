@@ -8,17 +8,23 @@
 // baseline and target that survive into final are candidate leaks, clustered by
 // their retainer trace. Newest-three-by-mtime approximates that ordering.
 //
-// Flags: --full  -> print memlab's verbatim (VERBOSE) output only; skip our
-//                   condensed summary. Use it to read the full leak report.
+// Flags:
+//   --full    print memlab's verbatim (VERBOSE) leak report only; skip our summary.
+//   --growth  trend mode for slow, diffuse heap creep that findLeaks won't flag:
+//             run ShapeUnboundGrowthAnalysis across the WHOLE series in ./snapshots
+//             (pull it first with `bun run memtest:pull-all`) plus a constructor
+//             count/size delta table from oldest -> newest.
 
 import path from 'node:path';
 import { readdir, stat, mkdir } from 'node:fs/promises';
-import { findLeaksBySnapshotFilePaths, ConsoleMode } from '@memlab/api';
+import type { IHeapSnapshot, IHeapNode } from '@memlab/api';
+import { findLeaksBySnapshotFilePaths, ConsoleMode, ShapeUnboundGrowthAnalysis, getHeapFromFile } from '@memlab/api';
 
 const ROOT = path.join(import.meta.dir, '..');
-const SNAPSHOT_DIR = process.env.SNAPSHOT_DIR || path.join(ROOT, 'snapshots');
+const SNAPSHOT_DIR = path.resolve(process.env.SNAPSHOT_DIR || path.join(ROOT, 'snapshots'));
 const WORK_DIR = process.env.MEMLAB_WORK_DIR || path.join(ROOT, '.memtest-out', 'analyze');
 const FULL = process.argv.includes('--full') || process.env.FULL === '1';
+const GROWTH = process.argv.includes('--growth') || process.env.GROWTH === '1';
 const TOP = Number(process.env.TOP) || 10;
 
 // Mirror the framework's toPosixPath() convention (packages/mochi/src/utils)
@@ -29,7 +35,8 @@ const rel = (p: string): string => toPosix(path.relative(process.cwd(), p));
 
 type Snap = { file: string; base: string; mtimeMs: number };
 
-async function newestThree(): Promise<[Snap, Snap, Snap]> {
+// All .heapsnapshot files in SNAPSHOT_DIR, oldest -> newest by mtime.
+async function listSnapshots(): Promise<Snap[]> {
   let names: string[];
   try {
     names = await readdir(SNAPSHOT_DIR);
@@ -44,10 +51,15 @@ async function newestThree(): Promise<[Snap, Snap, Snap]> {
     const file = path.join(SNAPSHOT_DIR, name);
     snaps.push({ file, base: name, mtimeMs: (await stat(file)).mtimeMs });
   }
+  snaps.sort((a, b) => a.mtimeMs - b.mtimeMs);
+  return snaps;
+}
+
+async function newestThree(): Promise<[Snap, Snap, Snap]> {
+  const snaps = await listSnapshots();
   if (snaps.length < 3) {
     throw new Error(`Need at least 3 .heapsnapshot files in ${rel(SNAPSHOT_DIR)}, found ${snaps.length}. ` + `Capture more with the memtest harness (see memtest/README.md).`);
   }
-  snaps.sort((a, b) => a.mtimeMs - b.mtimeMs);
   const [baseline, target, final] = snaps.slice(-3);
   return [baseline!, target!, final!];
 }
@@ -73,19 +85,102 @@ function parseLeak(trace: Record<string, unknown>): Leak {
 }
 
 function bytes(v: number): string {
-  if (!Number.isFinite(v) || v <= 0) {
+  const a = Math.abs(v);
+  if (!Number.isFinite(v)) {
     return '? B';
   }
-  if (v < 1024) {
-    return `${v} B`;
+  const sign = v < 0 ? '-' : '';
+  if (a < 1024) {
+    return `${sign}${a} B`;
   }
-  if (v < 1024 * 1024) {
-    return `${(v / 1024).toFixed(1)} KB`;
+  if (a < 1024 * 1024) {
+    return `${sign}${(a / 1024).toFixed(1)} KB`;
   }
-  return `${(v / 1024 / 1024).toFixed(2)} MB`;
+  return `${sign}${(a / 1024 / 1024).toFixed(2)} MB`;
+}
+
+// Object-node population grouped by constructor name (self size summed). Uses the
+// lightweight heap (no retained-size pass) — plenty for a count/size delta.
+function constructorCounts(snapshot: IHeapSnapshot): Map<string, { count: number; size: number }> {
+  const m = new Map<string, { count: number; size: number }>();
+  snapshot.nodes.forEach((node: IHeapNode) => {
+    if (node.type !== 'object') {
+      return;
+    }
+    const name = node.name || '(anonymous)';
+    const e = m.get(name) ?? { count: 0, size: 0 };
+    e.count += 1;
+    e.size += node.self_size;
+    m.set(name, e);
+  });
+  return m;
+}
+
+async function runGrowth(): Promise<void> {
+  const snaps = await listSnapshots();
+  if (snaps.length < 2) {
+    throw new Error(`--growth needs at least 2 .heapsnapshot files in ${rel(SNAPSHOT_DIR)}, found ${snaps.length}. ` + `Pull the whole series with \`bun run memtest:pull-all\`.`);
+  }
+  const oldest = snaps[0]!;
+  const newest = snaps[snaps.length - 1]!;
+  console.log(`Growth analysis over ${snaps.length} snapshots (${oldest.base} … ${newest.base}).`);
+  console.log('Parsing the whole series twice — this can take a while.\n');
+
+  // 1) Shapes whose object count/size climbs monotonically across the series.
+  await mkdir(WORK_DIR, { recursive: true });
+  const analysis = new ShapeUnboundGrowthAnalysis();
+  await analysis.analyzeSnapshotsInDirectory(SNAPSHOT_DIR, { workDir: WORK_DIR });
+  const shapes = analysis.getShapesWithUnboundGrowth() as Array<{ shape: string; counts?: number[]; sizes?: number[] }>;
+
+  console.log(`\n=== SHAPES WITH UNBOUND GROWTH (${shapes.length}) ===`);
+  if (!shapes.length) {
+    console.log('No object shape grew monotonically across every snapshot.');
+  } else {
+    // Biggest final retained size first.
+    shapes.sort((a, b) => (b.sizes?.at(-1) ?? 0) - (a.sizes?.at(-1) ?? 0));
+    for (const s of shapes.slice(0, TOP)) {
+      const counts = s.counts ?? [];
+      const sizes = s.sizes ?? [];
+      const cTrend = `${counts.at(0) ?? '?'} → ${counts.at(-1) ?? '?'}`;
+      const sTrend = `${bytes(sizes.at(0) ?? 0)} → ${bytes(sizes.at(-1) ?? 0)}`;
+      console.log(`  ${s.shape}`);
+      console.log(`      count ${cTrend}   size ${sTrend}`);
+    }
+  }
+
+  // 2) Which constructors accumulated the most between the oldest and newest snapshot.
+  const [base, fin] = [await getHeapFromFile(oldest.file), await getHeapFromFile(newest.file)];
+  const cBase = constructorCounts(base);
+  const cFin = constructorCounts(fin);
+  const deltas = [...new Set([...cBase.keys(), ...cFin.keys()])]
+    .map((name) => {
+      const b = cBase.get(name) ?? { count: 0, size: 0 };
+      const f = cFin.get(name) ?? { count: 0, size: 0 };
+      return { name, dCount: f.count - b.count, dSize: f.size - b.size };
+    })
+    .filter((d) => d.dCount > 0)
+    .sort((a, b) => b.dCount - a.dCount);
+
+  console.log(`\n=== TOP CONSTRUCTOR DELTAS (oldest → newest) ===`);
+  if (!deltas.length) {
+    console.log('No constructor gained object instances across the window.');
+  } else {
+    for (const d of deltas.slice(0, TOP)) {
+      console.log(`  +${String(d.dCount).padStart(7)}  ${d.name.padEnd(28)} ${bytes(d.dSize)}`);
+    }
+  }
+
+  console.log(
+    `\nA shape/constructor that climbs every snapshot is the leak candidate — grep it in the framework and check what keeps a reference (see the /memory-regression skill).`,
+  );
 }
 
 async function main(): Promise<void> {
+  if (GROWTH) {
+    await runGrowth();
+    return;
+  }
+
   const [baseline, target, final] = await newestThree();
   await mkdir(WORK_DIR, { recursive: true });
 

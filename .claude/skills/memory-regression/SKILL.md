@@ -14,8 +14,8 @@ run it, then map any leaked-object retainer traces back to Mochi source and prop
 
 1. **Check inputs.** `ls -lh snapshots/`. memlab needs **≥3** snapshots. If the local
    folder is empty or stale, pull from the remote memtest box with `bun run memtest:pull`
-   (wipes `./snapshots/` and copies three captures spread across the run — oldest/midpoint/
-   newest — off the server; override the host via `REMOTE_HOST`). The wide window is
+   (incrementally syncs three captures spread across the run — oldest/midpoint/newest —
+   into `./snapshots/`, skipping files already present; override the host via `REMOTE_HOST`). The wide window is
    deliberate: a slow leak barely moves the heap between adjacent hourly captures but stands
    out across the whole run. If there's no remote either, tell the user to capture more with
    the memtest harness (`memtest/README.md` has a no-Docker dry run) and stop — don't
@@ -28,8 +28,18 @@ run it, then map any leaked-object retainer traces back to Mochi source and prop
    `bun run memtest:analyze --full` — it skips the summary and prints memlab's verbatim
    VERBOSE output (every retainer trace in full).
 
-3. **If no leaks:** report that cleanly. Optionally note the three snapshots analyzed and
-   that a longer capture window (`SNAPSHOT_INTERVAL_MS`) may be needed to surface a slow leak.
+3. **If no leaks — but the heap is known to creep — run the trend mode.** `findLeaks` is a
+   pattern detector and misses slow, diffuse growth. Pull the full series and run growth mode:
+
+   ```sh
+   bun run memtest:pull-all          # sync every snapshot (incremental), not just three
+   bun run memtest:analyze --growth
+   ```
+
+   It reports object **shapes with unbound growth** (count/size climbing every snapshot) and a
+   **constructor delta** table (oldest → newest). A shape/constructor that grows monotonically
+   is the leak candidate — take its name to the source map below. Otherwise report clean, and
+   note a longer window (`SNAPSHOT_INTERVAL_MS`) may be needed to surface a slow leak.
 
 4. **If leaks:** for each top cluster, read memlab's full retainer trace (leaked object →
    GC root, in the console report and the per-trace JSON under `.memtest-out/analyze/`).

@@ -87,14 +87,36 @@ ls -lh snapshots
 scp you@server:'~/mochi/snapshots/heap-*.heapsnapshot' ./
 ```
 
-Or, to set up a local analysis run, use `bun run memtest:pull` — it wipes
-`./snapshots` and copies three captures spread across the run — **oldest
-(baseline), midpoint (target), newest (final)** — off the remote box (defaults
+Or, to set up a local analysis run, use `bun run memtest:pull` — it syncs three
+captures spread across the run — **oldest (baseline), midpoint (target), newest
+(final)** — into `./snapshots` off the remote box (defaults
 `REMOTE_HOST=k@192.168.10.75`, `REMOTE_DIR=mochi/snapshots`; overridable), then
 `bun run memtest:analyze` diffs them with memlab. The wide window is deliberate:
 a slow leak barely moves the heap between two consecutive hourly captures, but
 stands out across the whole run. Add `--full` (`bun run memtest:analyze --full`)
 to skip the condensed summary and print memlab's verbatim VERBOSE report instead.
+
+### Slow, diffuse growth (`--growth`)
+
+memlab's default `findLeaks` is a pattern detector — it clusters objects that
+survive a growth window and match known leak shapes. A heap that just _creeps_
+(a cache gaining a few entries an hour, an array appended to steadily) often
+trips none of those patterns, so `findLeaks` reports nothing while RSS climbs.
+For that, use the trend mode:
+
+```sh
+bun run memtest:pull-all          # sync the ENTIRE series (incremental — existing files skipped)
+bun run memtest:analyze --growth
+```
+
+Both pull commands are incremental: rsync only fetches snapshots you don't
+already have locally and prunes ones removed on the remote, so re-running after a
+few new captures is cheap. It runs memlab's `ShapeUnboundGrowthAnalysis` across every snapshot in
+`./snapshots` (object **shapes** whose count/size climb monotonically) plus a
+**constructor count/size delta** table from the oldest to newest snapshot — the
+programmatic version of the DevTools Comparison view. A shape or constructor that
+grows every snapshot is the leak candidate; grep it in the framework and find
+what's holding the reference.
 
 Open a `.heapsnapshot` in Chrome DevTools → **Memory** → **Load profile**. Load two
 snapshots taken hours apart and use the **Comparison** view to find retained objects
@@ -102,18 +124,18 @@ that only grow.
 
 ## Environment variables
 
-| Var                    | Default      | Meaning                                           |
-| ---------------------- | ------------ | ------------------------------------------------- |
-| `PORT`                 | `3333`       | Site port (driver targets `127.0.0.1:$PORT`).     |
-| `PUBLISH`              | _(unset)_    | `run.sh` only: host address to publish `PORT` on. |
-| `SNAPSHOT_DIR`         | `/snapshots` | Where snapshots are written (the mounted volume). |
-| `SNAPSHOT_INTERVAL_MS` | `3600000`    | Snapshot cadence (1h).                            |
-| `SNAPSHOT_KEEP`        | `48`         | Retain the newest N snapshots; older are pruned.  |
-| `CONCURRENCY`          | `8`          | Parallel in-flight requests in the load loop.     |
-| `LOOP_DELAY_MS`        | `0`          | Pause between full sitemap passes.                |
-| `MEM_LOG_INTERVAL_MS`  | `300000`     | Post-GC memory log cadence (5m).                  |
-| `READY_TIMEOUT_MS`     | `120000`     | Max wait for `/health/` on startup.               |
-| `SPAWN_SITE`           | `true`       | Set `false` to drive an externally started site.  |
+| Var                    | Default      | Meaning                                                                     |
+| ---------------------- | ------------ | --------------------------------------------------------------------------- |
+| `PORT`                 | `3333`       | Site port (driver targets `127.0.0.1:$PORT`).                               |
+| `PUBLISH`              | _(unset)_    | `run.sh` only: host address to publish `PORT` on.                           |
+| `SNAPSHOT_DIR`         | `/snapshots` | Where snapshots are written (the mounted volume).                           |
+| `SNAPSHOT_INTERVAL_MS` | `3600000`    | Snapshot cadence (1h).                                                      |
+| `SNAPSHOT_KEEP`        | `168`        | Retain the newest N snapshots; older are pruned (7 days at hourly cadence). |
+| `CONCURRENCY`          | `8`          | Parallel in-flight requests in the load loop.                               |
+| `LOOP_DELAY_MS`        | `0`          | Pause between full sitemap passes.                                          |
+| `MEM_LOG_INTERVAL_MS`  | `300000`     | Post-GC memory log cadence (5m).                                            |
+| `READY_TIMEOUT_MS`     | `120000`     | Max wait for `/health/` on startup.                                         |
+| `SPAWN_SITE`           | `true`       | Set `false` to drive an externally started site.                            |
 
 ## Local dry run (no Docker)
 
