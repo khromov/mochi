@@ -12,14 +12,21 @@ run it, then map any leaked-object retainer traces back to Mochi source and prop
 
 ## Steps
 
-1. **Check inputs.** `ls -lh snapshots/`. memlab needs **≥3** snapshots. If there are
-   fewer, tell the user to capture more with the memtest harness (`memtest/README.md` has
-   a no-Docker dry run) and stop — don't fabricate an analysis.
+1. **Check inputs.** `ls -lh snapshots/`. memlab needs **≥3** snapshots. If the local
+   folder is empty or stale, pull from the remote memtest box with `bun run memtest:pull`
+   (wipes `./snapshots/` and copies three captures spread across the run — oldest/midpoint/
+   newest — off the server; override the host via `REMOTE_HOST`). The wide window is
+   deliberate: a slow leak barely moves the heap between adjacent hourly captures but stands
+   out across the whole run. If there's no remote either, tell the user to capture more with
+   the memtest harness (`memtest/README.md` has a no-Docker dry run) and stop — don't
+   fabricate an analysis.
 
 2. **Run the analyzer:** `bun run memtest:analyze`. It parses ~60 MB of heap JSON, so it
    takes a bit. It prints which three snapshots it chose (by mtime), memlab's own report,
    then a `=== SUMMARY ===` block: leak-trace count and the top leaked objects ranked by
-   retained size. Exit code is non-zero when leaks are found.
+   retained size. Exit code is non-zero when leaks are found. For the complete report, run
+   `bun run memtest:analyze --full` — it skips the summary and prints memlab's verbatim
+   VERBOSE output (every retainer trace in full).
 
 3. **If no leaks:** report that cleanly. Optionally note the three snapshots analyzed and
    that a longer capture window (`SNAPSHOT_INTERVAL_MS`) may be needed to surface a slow leak.

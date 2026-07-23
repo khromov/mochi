@@ -7,14 +7,18 @@
 // (growth window start) -> final (growth window end). Objects allocated between
 // baseline and target that survive into final are candidate leaks, clustered by
 // their retainer trace. Newest-three-by-mtime approximates that ordering.
+//
+// Flags: --full  -> print memlab's verbatim (VERBOSE) output only; skip our
+//                   condensed summary. Use it to read the full leak report.
 
 import path from 'node:path';
 import { readdir, stat, mkdir } from 'node:fs/promises';
-import { findLeaksBySnapshotFilePaths } from '@memlab/api';
+import { findLeaksBySnapshotFilePaths, ConsoleMode } from '@memlab/api';
 
 const ROOT = path.join(import.meta.dir, '..');
 const SNAPSHOT_DIR = process.env.SNAPSHOT_DIR || path.join(ROOT, 'snapshots');
 const WORK_DIR = process.env.MEMLAB_WORK_DIR || path.join(ROOT, '.memtest-out', 'analyze');
+const FULL = process.argv.includes('--full') || process.env.FULL === '1';
 const TOP = Number(process.env.TOP) || 10;
 
 // Mirror the framework's toPosixPath() convention (packages/mochi/src/utils)
@@ -85,16 +89,25 @@ async function main(): Promise<void> {
   const [baseline, target, final] = await newestThree();
   await mkdir(WORK_DIR, { recursive: true });
 
-  const fmt = (s: Snap): string => `${s.base}  (${new Date(s.mtimeMs).toISOString()})`;
-  console.log('memlab heap-snapshot analysis — newest 3 by mtime:');
-  console.log(`  baseline: ${fmt(baseline)}`);
-  console.log(`  target:   ${fmt(target)}`);
-  console.log(`  final:    ${fmt(final)}`);
-  console.log(`  workDir:  ${rel(WORK_DIR)}\n`);
+  // --full: hand off entirely to memlab's verbatim VERBOSE report — no header,
+  // no summary of ours, just its full output.
+  if (!FULL) {
+    const fmt = (s: Snap): string => `${s.base}  (${new Date(s.mtimeMs).toISOString()})`;
+    console.log('memlab heap-snapshot analysis — newest 3 by mtime:');
+    console.log(`  baseline: ${fmt(baseline)}`);
+    console.log(`  target:   ${fmt(target)}`);
+    console.log(`  final:    ${fmt(final)}`);
+    console.log(`  workDir:  ${rel(WORK_DIR)}\n`);
+  }
 
   const leaks = (await findLeaksBySnapshotFilePaths(baseline.file, target.file, final.file, {
     workDir: WORK_DIR,
+    ...(FULL ? { consoleMode: ConsoleMode.VERBOSE } : {}),
   })) as Array<Record<string, unknown>>;
+
+  if (FULL) {
+    return;
+  }
 
   console.log(`\n=== SUMMARY ===`);
   if (!leaks.length) {

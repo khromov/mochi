@@ -22,6 +22,7 @@
     "dev:demos": "bun --cwd=packages/demos run dev",
     "test": "bun --filter='*' run test",
     "test:leak": "bun packages/mochi/scripts/leak/runLeakTest.ts",
+    "memtest:pull": "bash memtest/pull.sh",
     "memtest:analyze": "bun memtest/analyze.ts",
     "typecheck": "bun --filter='*' run typecheck",
     "tsc": "bun run typecheck",

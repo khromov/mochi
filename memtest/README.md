@@ -87,6 +87,15 @@ ls -lh snapshots
 scp you@server:'~/mochi/snapshots/heap-*.heapsnapshot' ./
 ```
 
+Or, to set up a local analysis run, use `bun run memtest:pull` — it wipes
+`./snapshots` and copies three captures spread across the run — **oldest
+(baseline), midpoint (target), newest (final)** — off the remote box (defaults
+`REMOTE_HOST=k@192.168.10.75`, `REMOTE_DIR=mochi/snapshots`; overridable), then
+`bun run memtest:analyze` diffs them with memlab. The wide window is deliberate:
+a slow leak barely moves the heap between two consecutive hourly captures, but
+stands out across the whole run. Add `--full` (`bun run memtest:analyze --full`)
+to skip the condensed summary and print memlab's verbatim VERBOSE report instead.
+
 Open a `.heapsnapshot` in Chrome DevTools → **Memory** → **Load profile**. Load two
 snapshots taken hours apart and use the **Comparison** view to find retained objects
 that only grow.
