@@ -22,6 +22,7 @@
     "dev:demos": "bun --cwd=packages/demos run dev",
     "test": "bun --filter='*' run test",
     "test:leak": "bun packages/mochi/scripts/leak/runLeakTest.ts",
+    "memtest:analyze": "bun memtest/analyze.ts",
     "typecheck": "bun --filter='*' run typecheck",
     "tsc": "bun run typecheck",
     "clean": "bun --filter='*' run clean",
@@ -47,6 +48,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@memlab/api": "^2.0.4",
     "@types/bun": "1.3.14",
     "@types/chrome-remote-interface": "0.34.0",
     "chrome-launcher": "1.2.1",
