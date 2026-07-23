@@ -121,42 +121,70 @@ function constructorCounts(snapshot: IHeapSnapshot): Map<string, { count: number
   return m;
 }
 
+// Classify a per-snapshot count series. memlab's "unbound growth" only means
+// "never decreased", so a one-time warm-up bump (rose between snapshot 1 and 2,
+// then flat) qualifies — that is NOT a leak. A real leak keeps climbing through
+// the back half of the run, so that's what we test for.
+function classifyTrend(counts: number[]): { sustained: boolean; plateauSnap: number | null; backHalfDelta: number } {
+  const n = counts.length;
+  const last = counts[n - 1] ?? 0;
+  // First index of the trailing flat run (== the final value to the end).
+  let plateauFrom = n - 1;
+  for (let i = n - 1; i >= 0 && counts[i] === last; i--) {
+    plateauFrom = i;
+  }
+  const mid = counts[Math.floor(n / 2)] ?? last;
+  const backHalfDelta = last - mid;
+  // Sustained only if still rising across the back half by more than noise.
+  const sustained = backHalfDelta > Math.max(1, 0.01 * mid);
+  const plateauSnap = plateauFrom < n - 1 ? plateauFrom + 1 : null; // 1-based, null if never flattens
+  return { sustained, plateauSnap, backHalfDelta };
+}
+
 async function runGrowth(): Promise<void> {
   const snaps = await listSnapshots();
   if (snaps.length < 2) {
     throw new Error(`--growth needs at least 2 .heapsnapshot files in ${rel(SNAPSHOT_DIR)}, found ${snaps.length}. ` + `Sync the whole series with \`bun run memtest:pull\`.`);
   }
-  const oldest = snaps[0]!;
   const newest = snaps[snaps.length - 1]!;
-  console.log(`Growth analysis over ${snaps.length} snapshots (${oldest.base} … ${newest.base}).`);
+  console.log(`Growth analysis over ${snaps.length} snapshots (${snaps[0]!.base} … ${newest.base}).`);
   console.log('Parsing the whole series twice — this can take a while.\n');
 
-  // 1) Shapes whose object count/size climbs monotonically across the series.
+  // 1) memlab flags shapes whose count never decreased; we then split those into
+  // sustained growth (real leak candidates) vs one-time warm-up.
   await mkdir(WORK_DIR, { recursive: true });
   const analysis = new ShapeUnboundGrowthAnalysis();
   await analysis.analyzeSnapshotsInDirectory(SNAPSHOT_DIR, { workDir: WORK_DIR });
   const shapes = analysis.getShapesWithUnboundGrowth() as Array<{ shape: string; counts?: number[]; sizes?: number[] }>;
 
-  console.log(`\n=== SHAPES WITH UNBOUND GROWTH (${shapes.length}) ===`);
-  if (!shapes.length) {
-    console.log('No object shape grew monotonically across every snapshot.');
-  } else {
-    // Biggest final retained size first.
-    shapes.sort((a, b) => (b.sizes?.at(-1) ?? 0) - (a.sizes?.at(-1) ?? 0));
-    for (const s of shapes.slice(0, TOP)) {
-      const counts = s.counts ?? [];
-      const sizes = s.sizes ?? [];
-      const cTrend = `${counts.at(0) ?? '?'} → ${counts.at(-1) ?? '?'}`;
-      const sTrend = `${bytes(sizes.at(0) ?? 0)} → ${bytes(sizes.at(-1) ?? 0)}`;
-      console.log(`  ${s.shape}`);
-      console.log(`      count ${cTrend}   size ${sTrend}`);
-    }
-  }
+  const classified = shapes
+    .map((s) => ({ s, counts: s.counts ?? [], sizes: s.sizes ?? [], ...classifyTrend(s.counts ?? []) }))
+    .sort((a, b) => (b.sizes.at(-1) ?? 0) - (a.sizes.at(-1) ?? 0));
+  const sustained = classified.filter((c) => c.sustained);
+  const warmup = classified.filter((c) => !c.sustained);
 
-  // 2) Which constructors accumulated the most between the oldest and newest snapshot.
-  const [base, fin] = [await getHeapFromFile(oldest.file), await getHeapFromFile(newest.file)];
+  const line = (c: (typeof classified)[number]): string => {
+    const cTrend = `${c.counts.at(0) ?? '?'} → ${c.counts.at(-1) ?? '?'}`;
+    const sTrend = `${bytes(c.sizes.at(0) ?? 0)} → ${bytes(c.sizes.at(-1) ?? 0)}`;
+    const note = c.plateauSnap ? `flat since #${c.plateauSnap}` : `back-half ${c.backHalfDelta >= 0 ? '+' : ''}${c.backHalfDelta}`;
+    return `  ${c.s.shape}\n      count ${cTrend} (${note})   size ${sTrend}`;
+  };
+
+  console.log(`\n=== SHAPE GROWTH (${shapes.length} flagged by memlab) ===`);
+  console.log(`\nSustained growth — still climbing in the back half, real leak candidates (${sustained.length}):`);
+  console.log(sustained.length ? sustained.slice(0, TOP).map(line).join('\n') : '  (none)');
+  console.log(`\nWarm-up only — rose once early, then flat, NOT a leak (${warmup.length}):`);
+  console.log(warmup.length ? warmup.slice(0, TOP).map(line).join('\n') : '  (none)');
+
+  // 2) Constructor deltas from a POST-warmup snapshot to newest. The driver's
+  // first snapshot is captured before load (pure warm-up), so skip it when we can
+  // — otherwise the table is dominated by first-hour warm-up, not real drift.
+  const cmpStart = snaps.length >= 3 ? snaps[1]! : snaps[0]!;
+  const [base, fin] = [await getHeapFromFile(cmpStart.file), await getHeapFromFile(newest.file)];
   const cBase = constructorCounts(base);
   const cFin = constructorCounts(fin);
+  const totalBase = [...cBase.values()].reduce((s, v) => s + v.count, 0);
+  const totalFin = [...cFin.values()].reduce((s, v) => s + v.count, 0);
   const deltas = [...new Set([...cBase.keys(), ...cFin.keys()])]
     .map((name) => {
       const b = cBase.get(name) ?? { count: 0, size: 0 };
@@ -166,17 +194,22 @@ async function runGrowth(): Promise<void> {
     .filter((d) => d.dCount > 0)
     .sort((a, b) => b.dCount - a.dCount);
 
-  console.log(`\n=== TOP CONSTRUCTOR DELTAS (oldest → newest) ===`);
+  const net = totalFin - totalBase;
+  console.log(`\n=== CONSTRUCTOR DELTAS (post-warmup ${cmpStart.base} → newest) ===`);
+  console.log(`net object nodes: ${totalBase} → ${totalFin} (${net >= 0 ? '+' : ''}${net})`);
   if (!deltas.length) {
-    console.log('No constructor gained object instances across the window.');
+    console.log('No constructor gained object instances after warm-up.');
   } else {
     for (const d of deltas.slice(0, TOP)) {
       console.log(`  +${String(d.dCount).padStart(7)}  ${d.name.padEnd(28)} ${bytes(d.dSize)}`);
     }
   }
 
+  const stable = sustained.length === 0 && net <= Math.max(50, 0.005 * totalBase);
   console.log(
-    `\nA shape/constructor that climbs every snapshot is the leak candidate — grep it in the framework and check what keeps a reference (see the /memory-regression skill).`,
+    stable
+      ? `\nVerdict: no sustained growth after warm-up — the heap stabilizes. No leak evident in this window.`
+      : `\nVerdict: ${sustained.length} shape(s) still climbing in the back half — grep them in the framework and check what keeps a reference (see the /memory-regression skill).`,
   );
 }
 
@@ -204,6 +237,10 @@ async function main(): Promise<void> {
     workDir: WORK_DIR,
     ...(FULL ? { consoleMode: ConsoleMode.VERBOSE } : {}),
   })) as Array<Record<string, unknown>>;
+
+  if (leaks.length) {
+    process.exitCode = 1;
+  }
 
   if (FULL) {
     return;
