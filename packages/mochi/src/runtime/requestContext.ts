@@ -45,6 +45,14 @@ export interface MochiRequestContext {
    */
   islandProps: Map<string, IslandPropsEntry>;
   /**
+   * Per-request memo for `imagePlaceholder()` reads, keyed by source URL. A page
+   * that renders many `<Image placeholder>` over the same source would otherwise
+   * hit the placeholder cache once per `<Image>`. Scoped to the request so an
+   * invalidation between requests is still seen immediately.
+   * Internal — not for application use.
+   */
+  imagePlaceholders?: Map<string, Promise<string | null>>;
+  /**
    * Dev-only debug-bar data bag. Populated during routing (route/pathname/
    * params) and SSR (e.g. `emitIslandProps()` fills `islandProps`).
    * Snapshotted onto `RenderResult.debugBarData` at end of render and
