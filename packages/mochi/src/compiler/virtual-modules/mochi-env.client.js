@@ -67,6 +67,24 @@ export const mochiEvents = {
     );
   },
 };
+// The request cache is server-only, but an island's top-level code runs again
+// during hydration — so these degrade to uncached pass-through rather than
+// throwing and breaking the hydration pass.
+export function requestCache(_key, fn) { return fn(); }
+export function requestMemo(fn) { return fn; }
+export function getRequestCache() {
+  const m = new Map();
+  return {
+    get: (k) => m.get(k),
+    set: (k, v) => { m.set(k, v); },
+    has: (k) => m.has(k),
+    delete: (k) => m.delete(k),
+    clear: () => { m.clear(); },
+    getOrSet: (k, fn) => (m.has(k) ? m.get(k) : (m.set(k, fn()), m.get(k))),
+    get size() { return m.size; },
+    stats: () => ({ hits: 0, misses: 0 }),
+  };
+}
 // MochiCache + storage adapters are server-only; ship stubs that throw so
 // accidental client imports surface clearly instead of failing the bundle.
 export class MochiCache { constructor() { __serverOnly("MochiCache"); } }

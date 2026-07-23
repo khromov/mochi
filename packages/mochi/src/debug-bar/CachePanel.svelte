@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import DebugPanel from './DebugPanel.svelte';
+  import type { RequestCacheStats } from '../runtime/requestContext';
   import Trash from '../icons/trash-2.svelte';
   import ChevronRight from '../icons/chevron-right.svelte';
   import Copy from '../icons/copy.svelte';
@@ -149,10 +150,34 @@
     clearTimeout(resetTimer);
     clearTimeout(copiedTimer);
   });
+
+  // Request-cache stats are a snapshot of the render that produced this page —
+  // baked into the shell, so there's nothing to fetch and nothing to refresh.
+  let requestCache = $state<RequestCacheStats | null>(null);
+  onMount(() => {
+    requestCache = window.__mochi_debug?.requestCache ?? null;
+  });
+
+  let lookups = $derived((requestCache?.hits ?? 0) + (requestCache?.misses ?? 0));
+  let hitRate = $derived(lookups === 0 ? '—' : `${Math.round(((requestCache?.hits ?? 0) / lookups) * 100)}%`);
 </script>
 
 <DebugPanel title="Cache" color="#a7d0c4" {open} {onclose}>
   <div class="cache-body">
+    <h3 class="cache-section">Request cache</h3>
+    <p class="cache-desc">Per-request memoization via <code>requestCache()</code> / <code>requestMemo()</code>, for this render only.</p>
+    {#if lookups === 0}
+      <div class="cache-note">No request-cache lookups on this request.</div>
+    {:else}
+      <div class="rc-stats">
+        <div class="rc-stat"><span class="rc-value">{requestCache?.hits ?? 0}</span><span class="rc-label">hits</span></div>
+        <div class="rc-stat"><span class="rc-value">{requestCache?.misses ?? 0}</span><span class="rc-label">misses</span></div>
+        <div class="rc-stat"><span class="rc-value">{hitRate}</span><span class="rc-label">hit rate</span></div>
+        <div class="rc-stat"><span class="rc-value">{requestCache?.entries ?? 0}</span><span class="rc-label">entries</span></div>
+      </div>
+    {/if}
+
+    <h3 class="cache-section">Image cache</h3>
     <p class="cache-desc">Empties the on-disk image cache — every original, resized variant, and blur placeholder.</p>
     <button class="cache-clear-btn" class:is-done={status === 'done'} class:is-error={status === 'error'} type="button" onclick={clearCache} disabled={status === 'clearing'}>
       <Trash size={13} />
@@ -221,6 +246,50 @@
     font-size: 11px;
     line-height: 1.5;
     padding: 0 2px;
+  }
+  .cache-desc code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 10px;
+    color: #c8ece0;
+  }
+  .cache-section {
+    margin: 0;
+    padding: 0 2px;
+    color: #6fae9c;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .cache-section:not(:first-child) {
+    margin-top: 8px;
+    padding-top: 10px;
+    border-top: 1px solid #353930;
+  }
+  .rc-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+  }
+  .rc-stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    background: #272a22;
+    border: 1px solid #353930;
+    border-radius: 6px;
+    padding: 7px 4px;
+  }
+  .rc-value {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 13px;
+    color: #d4f0e6;
+  }
+  .rc-label {
+    font-size: 9px;
+    color: #8e9488;
+    letter-spacing: 0.04em;
   }
   .cache-clear-btn {
     display: inline-flex;

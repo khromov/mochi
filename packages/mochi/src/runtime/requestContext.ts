@@ -3,6 +3,7 @@ import type { MochiCookieJar } from './cookies';
 import type { IslandPropsEntry } from '../islands/islandPropsRegistry';
 import type { MochiFormResult } from '../types';
 import type { MochiRateLimitInfo } from './rateLimit';
+import type { RequestCacheState } from './requestCache';
 import { pinGlobal } from '../utils/globalState';
 
 export interface MochiRequestContext {
@@ -45,13 +46,13 @@ export interface MochiRequestContext {
    */
   islandProps: Map<string, IslandPropsEntry>;
   /**
-   * Per-request memo for `imagePlaceholder()` reads, keyed by source URL. A page
-   * that renders many `<Image placeholder>` over the same source would otherwise
-   * hit the placeholder cache once per `<Image>`. Scoped to the request so an
+   * Backing store for the request-scoped cache (`requestCache()`,
+   * `requestMemo()`, `getRequestCache()`), created on first use so requests that
+   * never touch it allocate nothing. Entries die with the request, so an
    * invalidation between requests is still seen immediately.
-   * Internal — not for application use.
+   * Internal — application code goes through `getRequestCache()`.
    */
-  imagePlaceholders?: Map<string, Promise<string | null>>;
+  requestCache?: RequestCacheState;
   /**
    * Dev-only debug-bar data bag. Populated during routing (route/pathname/
    * params) and SSR (e.g. `emitIslandProps()` fills `islandProps`).
@@ -151,6 +152,8 @@ export interface DebugBarData {
   bundles?: BundleInfo[];
   /** Images produced via `getImageUrl()`/`<Image>`/`getImage()` during this request, with decoded params. */
   images?: ImageDebugEntry[];
+  /** Request-scoped cache activity for this request (`requestCache()` / `requestMemo()`). */
+  requestCache?: RequestCacheStats;
   /**
    * Server-island props recorded during SSR, keyed by the encrypted `signed-props`
    * token. Because island props are encrypted (opaque on the wire), the client
@@ -166,6 +169,14 @@ export interface DebugBarData {
   bunVersion?: string;
   /** Curated snapshot of the `Mochi.serve()` configuration (constant per server). */
   config?: DebugBarConfig;
+}
+
+/** Per-request cache counters shown in the debug bar's Cache panel. */
+export interface RequestCacheStats {
+  hits: number;
+  misses: number;
+  /** Entries still stored at the end of the render (rejected async entries evict themselves). */
+  entries: number;
 }
 
 /**

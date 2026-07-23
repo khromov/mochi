@@ -20,6 +20,8 @@ export { getMochiConfig } from './mochiConfig';
 export type { CookieSerializeOptions, Cookie } from './runtime/cookies';
 export { MochiCache } from './cache/cache';
 export type { MochiCacheOptions, CacheResult, CacheStatus, Storage, SweepOptions, SweepResult } from './cache/cache';
+export { requestCache, requestMemo, getRequestCache } from './runtime/requestCache';
+export type { MochiRequestCache, RequestMemoOptions } from './runtime/requestCache';
 export { MemoryStorage, FileStorage, isBlobRef, readBlobRef } from './cache/cache-storage';
 export type { FileStorageOptions, MemoryStorageOptions, BlobRef } from './cache/cache-storage';
 export { getImageUrl, getImageAttrs, getImage, getImagePlaceholder, imagePlaceholder, warmImagePlaceholder, invalidateImage } from './image/imageApi';

@@ -8,6 +8,7 @@ import { variantId } from './imageCache';
 import { computePlaceholder, runPipeline } from './resize';
 import { buildImageFilename, buildOriginalFilename } from './slug';
 import { requestContext, type ImageDebugEntry } from '../runtime/requestContext';
+import { requestMemo } from '../runtime/requestCache';
 import { applyFilter } from '../extensions';
 import { logger } from '../utils/log';
 import type { ImageCache, ImageCacheStatus } from './imageCache';
@@ -267,23 +268,12 @@ export function warmImagePlaceholder(src: string): void {
  * Non-blocking placeholder read for `<Image placeholder>`: returns the cached
  * ThumbHash blur if present, otherwise `null` and kicks off a background warm so
  * a later render has it. Never blocks SSR on a fetch/decode. Server-only.
+ *
+ * Request-cached, so a gallery of N `<Image placeholder>` over the same source
+ * resolves to one cache read instead of N. The entry dies with the request, so
+ * an invalidation is still picked up by the next render.
  */
-export async function imagePlaceholder(src: string): Promise<string | null> {
-  // Memoized for the duration of the request: a gallery of N `<Image placeholder>`
-  // over the same source resolves to one cache read instead of N. The memo dies
-  // with the request, so an invalidation is still picked up by the next render.
-  const ctx = requestContext.getStore();
-  if (!ctx) {
-    return readPlaceholder(src);
-  }
-  const memo = (ctx.imagePlaceholders ??= new Map());
-  let hit = memo.get(src);
-  if (hit === undefined) {
-    hit = readPlaceholder(src);
-    memo.set(src, hit);
-  }
-  return hit;
-}
+export const imagePlaceholder: (src: string) => Promise<string | null> = requestMemo(readPlaceholder, { namespace: 'mochi:image:placeholder', quiet: true });
 
 async function readPlaceholder(src: string): Promise<string | null> {
   const { cache } = getImageRuntime();

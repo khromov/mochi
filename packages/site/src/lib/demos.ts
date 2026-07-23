@@ -40,6 +40,7 @@ import { files as propsId } from '../demos/props-id/files.ts';
 import { files as queue } from '../demos/queue/files.ts';
 import { files as rateLimit } from '../demos/rate-limit/files.ts';
 import { files as reloadFormData } from '../demos/reload-form-data/files.ts';
+import { files as requestCache } from '../demos/request-cache/files.ts';
 import { files as requestId } from '../demos/request-id/files.ts';
 import { files as serverIsland } from '../demos/server-island/files.ts';
 import { files as serverProps } from '../demos/server-props/files.ts';
@@ -154,6 +155,14 @@ export const demos: Demo[] = [
     files: cacheEvents,
     title: 'Cache Events',
     hook: 'Subscribe to MochiCache lifecycle events through mochiEvents and log them to the server console.',
+    category: 'data',
+  },
+  {
+    href: '/demos/request-cache/',
+    slug: 'request-cache',
+    files: requestCache,
+    title: 'Request Cache',
+    hook: 'requestMemo() collapses nine MochiCoin proof-of-work hashes into three for one render — then the request ends and the cache goes with it.',
     category: 'data',
   },
   {
