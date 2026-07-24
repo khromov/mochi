@@ -64,6 +64,6 @@ A `.css` edit triggers a fast rebundle and a page reload — no SSR recompile. E
 <SeeItInAction
 demos={[
 { href: "https://demos.mochi.fast/todo/", title: "Tailwind Todo App", hook: "Classic todo app styled with Tailwind CSS." },
-{ href: "/demos/lazy/", title: "Lazy Islands", hook: "Islands marked mochi:hydrate:visible hydrate and load their CSS only when scrolled into view." },
+{ href: "/demos/lazy/", title: "Lazy Islands", hook: "How lazy hydration works — islands marked mochi:hydrate:visible hydrate and load their CSS only when scrolled into view." },
 ]}
 />

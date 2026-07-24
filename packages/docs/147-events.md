@@ -523,5 +523,5 @@ Emitted by `MochiCache` — see [Subscribing to cache events](/docs/cache/#subsc
 `logger()` (see `logger`) already prints `request`, `ws:*`, `sse:*`, `server:*`, `error`, and `cache:revalidate` lines. Pass `{ cache: 'verbose' }` to also print every `cache:read`, or `{ cache: false }` to silence cache logging entirely.
 
 <SeeItInAction
-demos={[{ href: "/demos/cache-events/", title: "Cache Events", hook: "Subscribe to MochiCache lifecycle events through mochiEvents and log them to the server console." }]}
+demos={[{ href: "/demos/cache-events/", title: "Cache Events", hook: "How cache events work — subscribe to MochiCache lifecycle events (hit, miss, set, evict) through mochiEvents for observability." }]}
 />

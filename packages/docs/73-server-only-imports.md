@@ -81,5 +81,5 @@ getVersion from /…/db.server.ts was called on the client; this is a server-onl
 - `.server.svelte` — component-level convention is not provided. Put server-only code in plain TS and call it from a component.
 
 <SeeItInAction
-demos={[{ href: "/demos/data-loading/", title: "Data Loading", hook: "Server-side fetch from PokéAPI cached via MochiCache and rendered at request time." }]}
+demos={[{ href: "/demos/data-loading/", title: "Data Loading", hook: "How server-side data loading works — fetch on the server, cache with MochiCache, and render at request time." }]}
 />

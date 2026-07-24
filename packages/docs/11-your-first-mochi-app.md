@@ -193,7 +193,7 @@ The finished app is running on this site at [**/docs/your-first-mochi-app/hello/
 
 <SeeItInAction
 demos={[
-{ href: "/demos/hello-world/", title: "Hello World", hook: "The simplest possible Mochi page — pure server-rendered Svelte." },
-{ href: "/demos/server-props/", title: "Server Props", hook: "Define serverProps on Mochi.page() to pass fresh data into a Svelte page on every request." },
+{ href: "/demos/hello-world/", title: "Hello World", hook: "How server-side rendering works — a Mochi.page() renders Svelte on the server and ships zero JavaScript." },
+{ href: "/demos/server-props/", title: "Server Props", hook: "How server props work — pass fresh per-request data into a page via serverProps on Mochi.page()." },
 ]}
 />

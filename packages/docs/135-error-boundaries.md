@@ -80,5 +80,5 @@ The `MochiIslandErrorKind` type also reserves `'client-hydrate'`, but client-sid
 - [Selective hydration](/docs/selective-hydration/), [Lazy hydration](/docs/lazy-hydration/), [Server islands](/docs/server-islands/) — the directives boundaries wrap.
 
 <SeeItInAction
-demos={[{ href: "/demos/error-boundaries/", title: "Error Boundaries", hook: "Contain island failures with <svelte:boundary> so one broken component does not crash the page." }]}
+demos={[{ href: "/demos/error-boundaries/", title: "Error Boundaries", hook: "How error boundaries work — contain island failures with <svelte:boundary> so one broken component doesn't crash the page." }]}
 />
