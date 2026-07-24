@@ -138,7 +138,7 @@ Solving runs in short slices that yield to the browser between them, so it stays
 
 <Callout type="info">
 
-The 30-second budget counts _active_ solve time, not wall clock. A backgrounded mobile tab is throttled to roughly one timer callback per second, so a solve there crawls — but it is never charged for time it wasn't scheduled, and it picks up where it left off when the tab comes forward.
+The 60-second budget counts _active_ solve time, not wall clock. A backgrounded mobile tab is throttled to roughly one timer callback per second, so a solve there crawls — but it is never charged for time it wasn't scheduled, and it picks up where it left off when the tab comes forward.
 
 </Callout>
 

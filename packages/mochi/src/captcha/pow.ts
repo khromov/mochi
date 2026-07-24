@@ -33,7 +33,7 @@ export const CAPTCHA_SOLVE_BATCH = 32;
  * scheduling slices entirely, and coming back to a failed captcha you never had
  * a chance to solve is worse than waiting.
  */
-export const CAPTCHA_SOLVE_BUDGET_MS = 30_000;
+export const CAPTCHA_SOLVE_BUDGET_MS = 60_000;
 
 export function chainInput(prev: string, step: number): string {
   return `${prev}:step${step}`;
