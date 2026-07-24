@@ -101,6 +101,16 @@ const shiki = await createShiki({
 export const highlightCode = createHighlighter((code, lang) => shiki.codeToHtml(code, { lang, theme: 'vitesse-dark' }));
 ```
 
+Results are memoized per `(code, lang)`, so a page that highlights the same
+snippets on every SSR render only pays for the first one — a grammar pass costs
+milliseconds per snippet, enough to dominate a render otherwise. The cache holds
+1000 snippets and evicts in insertion order; tune it with `cacheSize` (`0`
+disables memoization) if you highlight unbounded user input:
+
+```ts
+export const highlightCode = createHighlighter((code, lang) => shiki.codeToHtml(code, { lang, theme: 'vitesse-dark' }), { cacheSize: 200 });
+```
+
 Shiki defaults to the oniguruma WASM engine, whose `WebAssembly.Memory`
 grows and is never reclaimed — and each compiled SSR bundle that imports
 this module spins up its own copy. `createJavaScriptRegexEngine` uses the
