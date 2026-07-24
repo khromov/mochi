@@ -162,5 +162,5 @@ importing one then surfaces as a "no loader" error from Bun's bundler. Your
 </Callout>
 
 <SeeItInAction
-demos={[{ href: "/demos/mdsvex/", title: "MdSvex", hook: "A .md file compiled through mdsvex and rendered as a Svelte component, with an embedded <script> block." }]}
+demos={[{ href: "/demos/mdsvex/", title: "MdSvex", hook: "How mdsvex works — a .md file compiled through mdsvex and rendered as a Svelte component, embedded <script> and all." }]}
 />
