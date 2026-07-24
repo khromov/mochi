@@ -44,7 +44,7 @@ See `Selective hydration` for the eager `mochi:hydrate` directive and `Server is
 
 <SeeItInAction
 demos={[
-{ href: "/demos/lazy/", title: "Lazy Islands", hook: "Islands marked mochi:hydrate:visible hydrate and load their CSS only when scrolled into view." },
-{ href: "/demos/lazy-server-island/", title: "Lazy Server Islands", hook: "Server islands marked mochi:defer:visible only fetch when the wrapper scrolls into view." },
+{ href: "/demos/lazy/", title: "Lazy Islands", hook: "How lazy hydration works — islands marked mochi:hydrate:visible hydrate and load their CSS only when scrolled into view." },
+{ href: "/demos/lazy-server-island/", title: "Lazy Server Islands", hook: "How lazy server islands work — server islands marked mochi:defer:visible only fetch when the wrapper scrolls into view." },
 ]}
 />

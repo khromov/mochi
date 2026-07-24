@@ -1,0 +1,64 @@
+# Memory-regression harness image for packages/site. Runs a single Bun driver
+# (memtest/driver.ts) that spawns the site in dev mode, hammers every sitemap
+# URL in a loop, and writes a V8 heap snapshot to the /snapshots volume every
+# SNAPSHOT_INTERVAL_MS. Intended for an unattended multi-day run on a dedicated
+# box; snapshots are diffed in Chrome DevTools to catch heap growth.
+#
+# Mirrors the dev-mode root Dockerfile (same base, install, and release layout)
+# but hands the entrypoint to the driver instead of `bun run dev:site` — the
+# driver spawns the site itself. Dev mode matches what CI actually deploys.
+#
+#   docker build -f Dockerfile.memtest -t mochi-memtest .
+#   docker run -d --restart unless-stopped -v mochi-heapsnapshots:/snapshots mochi-memtest
+
+ARG BUN_IMAGE=oven/bun:1.3.14-alpine
+FROM ${BUN_IMAGE} AS base
+WORKDIR /usr/src/app
+
+# Copy the whole packages/ tree so bun install can reconcile lockfile topology,
+# resolve workspace:* bin shims, and reach packages/mochi/patches/.
+FROM base AS install
+COPY package.json bun.lock /temp/dev/
+COPY packages /temp/dev/packages
+RUN cd /temp/dev && bun install --frozen-lockfile
+
+FROM base AS release
+ARG PORT=3333
+
+COPY package.json tsconfig.json tsconfig.base.json ./
+COPY --chown=bun:bun packages packages
+COPY --chown=bun:bun memtest memtest
+
+COPY --from=install /temp/dev/node_modules node_modules
+COPY --from=install /temp/dev/packages/mochi/node_modules packages/mochi/node_modules
+COPY --from=install /temp/dev/packages/site/node_modules packages/site/node_modules
+COPY --from=install /temp/dev/packages/docs/node_modules packages/docs/node_modules
+
+# curl: the driver downloads /_heapsnapshot via curl (constant-memory streaming
+# to disk, no event-loop contention with the load loop). ncdu for disk analysis.
+RUN apk add --no-cache curl ncdu
+
+# .mochi + src must be writable at runtime (dev-mode on-demand island compile).
+RUN mkdir -p packages/site/.mochi && chown -R bun:bun packages/site/.mochi packages/site/src
+
+# Snapshot volume — created and owned before dropping to the bun user so the
+# driver can write to it even when the volume is empty on first run.
+RUN mkdir -p /snapshots && chown bun:bun /snapshots
+VOLUME /snapshots
+
+RUN bun packages/site/src/lib/generateDocsBarrel.ts
+
+ENV PORT=${PORT}
+ENV MODE=development
+ENV MOCHI_LIVE_RELOAD=false
+ENV MOCHI_DOCKER=true
+ENV MOCHI_MEMORY_PROBE=1
+ENV SNAPSHOT_DIR=/snapshots
+USER bun
+EXPOSE ${PORT}/tcp
+
+# Same fetch-based probe as the deploy image; hits canonical /health/.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+  CMD bun --eval "fetch('http://127.0.0.1:'+process.env.PORT+'/health/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+
+ENTRYPOINT [ "bun", "memtest/driver.ts" ]

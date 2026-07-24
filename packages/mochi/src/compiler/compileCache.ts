@@ -35,9 +35,10 @@ export function createCompileCacheStats(): CompileCacheStats {
 
 /**
  * Compute the cache fingerprint for a build. Output depends on the merged Svelte
- * compiler options and the dev flag; `target` is already encoded in the key.
- * Functions in the options (e.g. `warningFilter`) are dropped by JSON — they
- * don't affect emitted code, so a collision on them is harmless.
+ * compiler options, the dev flag, and which compiler backend emitted it;
+ * `target` is already encoded in the key. Functions in the options (e.g.
+ * `warningFilter`) are dropped by JSON — they don't affect emitted code, so a
+ * collision on them is harmless.
  *
  * The fingerprint deliberately does NOT cover the markdown/mdsvex config or the
  * user preprocessors: those aren't serializable (functions/plugins), and they're
@@ -45,8 +46,8 @@ export function createCompileCacheStats(): CompileCacheStats {
  * single `ComponentRegistry`. Two registries with different markdown/preprocessor
  * config never share a cache, so they can't collide. See {@link CompileCache}.
  */
-export function compileFingerprint(userCompilerOptions: unknown, development: boolean): string {
-  return `${JSON.stringify(userCompilerOptions ?? {})}|dev=${development}`;
+export function compileFingerprint(userCompilerOptions: unknown, development: boolean, backendId = 'svelte'): string {
+  return `${JSON.stringify(userCompilerOptions ?? {})}|dev=${development}|compiler=${backendId}`;
 }
 
 /**

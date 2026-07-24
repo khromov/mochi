@@ -5,6 +5,7 @@ import { DEFAULT_ERROR_PAGE_PATH } from '../runtime/errors';
 import { CLIENT_STATS_COMPONENT } from '../dev/clientStatsRoutes';
 import { isMochiPage, isMochiApi, isMochiWs, isMochiSse } from '../types';
 import type { MarkdownConfig, MochiBarrelWarningOptions, MochiRouteValue, MochiSvelteShakerOptions } from '../types';
+import type { MochiSvelteCompiler } from '../compiler/svelteCompilerBackend';
 import { rmSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { scanPublicDir, publicRouteKey } from '../runtime/publicDir';
@@ -38,6 +39,12 @@ export interface MochiBuildOptions {
    * Mochi's defaults; missing file → defaults only.
    */
   svelteConfigPath?: string;
+  /**
+   * Which compiler emits component JS. Mirror the value passed to
+   * `Mochi.serve({ svelteCompiler })`. `'rsvelte'` requires the optional
+   * `@mochi-framework/rsvelte` package. Default: `'svelte'`.
+   */
+  svelteCompiler?: MochiSvelteCompiler;
   /**
    * Dependency-injected markdown (`.md` / `.svx`) support. Mirror the value
    * passed to `Mochi.serve({ markdown })` so the prebuild and the runtime
@@ -182,6 +189,7 @@ export async function build(options: MochiBuildOptions): Promise<void> {
       outDir,
       assetPrefix: options.assetPrefix,
       svelteConfig,
+      svelteCompiler: options.svelteCompiler,
       markdown: options.markdown,
       optimize: options.optimize,
       barrelWarnings: options.barrelWarnings,

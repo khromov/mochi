@@ -170,6 +170,7 @@ async function main() {
   await build({
     routes,
     markdown: serveOptions?.markdown,
+    svelteCompiler: serveOptions?.svelteCompiler,
     optimize: serveOptions && 'optimize' in serveOptions ? serveOptions.optimize : undefined,
     barrelWarnings: serveOptions?.barrelWarnings,
     showImages: serveOptions?.build?.showImages,

@@ -10,6 +10,7 @@ Bun workspaces monorepo (`packages/*`):
 - `packages/site` — main site that consumes `mochi-framework` via `workspace:*`; serves the marketing pages, the docs (rendered from `packages/docs` markdown), and the inline demos. Port 3333.
 - `packages/demos` — standalone demos site (HN clone, todo, admin). Deployed separately from `packages/site`. Port 3334.
 - `packages/minimal` — smallest possible Mochi app; doubles as the smoke-test target and the `create-mochi` template source. Port 3335.
+- `packages/minimal-rsvelte` — copy of `minimal` pinned to `svelteCompiler: 'rsvelte'`. Exists so CI builds a whole app through `@mochi-framework/rsvelte` on Linux/macOS/Windows; its `scripts/build.ts` wraps `mochi-framework build` and **fails** if the build fell back to `svelte/compiler` (the framework's fallback is silent by design). Port 3337, started only by `bun run dev:full`. Not deployed, not a `create-mochi` template.
 - `packages/shared` — `mochi-shared`: tiny private helpers shared by the deployed sites (currently just the Umami `analytics` handle). **Only for `site` / `support` — never import it from `packages/mochi`**, which is published to npm and must not depend on a private workspace package, nor from `demos` / `minimal`, which double as template sources and must only depend on published packages (duplicate the helper there instead). See its README.
 - `packages/support` — the support form at `support.mochi.fast`. Port 3336. Deployed separately via `Dockerfile.production`. It lives apart from `packages/site` because it is the only site configured with a real SMTP transport (`Mochi.serve({ email })`, driven by `SMTP_*` env vars — see its `.env.example`); every other site rides the framework default, which never sends. Refuses to boot in production without `ADMIN_PASSWORD` + `SMTP_HOST` + `MOCHI_ORIGIN`.
 - `packages/docs` — `mochi-docs`: markdown content only (no server/scripts of its own); consumed and rendered by `packages/site`.
@@ -25,6 +26,7 @@ Root `package.json` scripts delegate into packages with `bun --cwd=packages/<nam
 ```sh
 bun run dev          # scripts/dev.ts: auto-discovers every package with a `dev` script and runs them
                      # in parallel with color-prefixed logs — site (3333), demos (3334), minimal (3335), support (3336)
+bun run dev:full     # Same, plus the packages in dev.ts's FULL_ONLY set — minimal-rsvelte (3337)
 bun run dev:site     # Just the main site
 bun run dev:demos    # Just the demos site
 bun run start        # Start the main site in production mode

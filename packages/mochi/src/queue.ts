@@ -52,6 +52,13 @@ export interface MochiQueueRuntimeOptions {
   concurrency?: number;
   /** Omit for in-memory. bunqueue locks the path to the first queue in the process — see `rememberDataPath`. */
   dataPath?: string;
+  /**
+   * How long a job may run before the queue reclaims it, in ms. Must exceed the
+   * worst-case runtime of `process` — see `DEFAULT_LOCK_DURATION_MS` for what
+   * happens when it doesn't, and why raising this past the 30-minute default
+   * buys nothing.
+   */
+  lockDuration?: number;
   defaultJobOptions?: MochiJobOptions;
   /** Forwarded verbatim to bunqueue's `Queue` and `Worker` constructors. */
   bunqueue?: Record<string, unknown>;
@@ -136,6 +143,25 @@ function toBunJobOptions(opts: MochiJobOptions | undefined): JobOptions | undefi
 }
 
 /**
+ * bunqueue defaults a job's lock to 30s and renews it from the worker heartbeat
+ * — but only over TCP: the embedded heartbeat Mochi runs on calls
+ * `jobHeartbeat(id)` with no token, which refreshes stall detection and never
+ * the lock. So the lock always expires on schedule, and any job outliving it is
+ * requeued mid-flight while still running; its eventual success is then rejected
+ * ("Invalid or expired lock token"), reported as a failure, and retried —
+ * double-firing whatever the job already did. 30s is well within normal for the
+ * I/O queues exist for (a single SMTP send has taken 58s in production), so the
+ * ceiling is raised to bunqueue's own 30-minute cap on a processing job.
+ *
+ * That cap is why this is also the highest useful value: bunqueue's periodic
+ * cleanup drops any entry that has been processing for over 30 minutes
+ * (`cleanOrphanedProcessingEntries`), whatever the lock says. Lowering it is
+ * still meaningful, but it isn't how a crashed worker's jobs come back — stall
+ * detection does that off the heartbeat, independently of the lock.
+ */
+export const DEFAULT_LOCK_DURATION_MS = 30 * 60_000;
+
+/**
  * Build a queue: a bunqueue `Queue` (producer) and `Worker` (consumer) from one
  * config. Registers the producer handle under `name` (resolved by `getQueue`)
  * and both resources for shutdown draining. Invoked only by `Mochi.serve`, where
@@ -191,11 +217,23 @@ export function createQueue<T = unknown, R = unknown>(
     }
   }
 
+  // Filtered per queue, after whatever the queue declared for itself — through the
+  // first-class option or the raw `bunqueue` passthrough, which is why the result
+  // is applied last rather than spread over. A deployment can then move the lock
+  // for every queue at once without editing each declaration, and still see (via
+  // `explicit`) which ones already chose a value for themselves.
+  const declaredLock = options?.lockDuration ?? (typeof options?.bunqueue?.lockDuration === 'number' ? options.bunqueue.lockDuration : undefined);
+  const lockDuration = applyFilter('queue:lockDurationMs', declaredLock ?? DEFAULT_LOCK_DURATION_MS, {
+    queue: name,
+    explicit: declaredLock !== undefined,
+  });
+
   const worker = new Worker<T, R>(name, (job) => process(toMochiJob(job as Job<T>, name)), {
     embedded: true,
     dataPath: options?.dataPath,
     concurrency: options?.concurrency,
     ...options?.bunqueue,
+    lockDuration,
   });
 
   // bunqueue's `finishedOn`/`processedOn` are unreliable on the public job at

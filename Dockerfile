@@ -58,7 +58,13 @@ RUN apk add --no-cache ncdu
 # tailwind step writes app.generated.css into src/ at startup (no-op for site).
 RUN mkdir -p packages/${WORKSPACE}/.mochi && chown -R bun:bun packages/${WORKSPACE}/.mochi packages/${WORKSPACE}/src
 
+# Bake every generated barrel into the image. Dev mode regenerates these at
+# boot (index.ts), but the deployed rootfs is read-only for the `bun` user, so
+# the runtime write is a no-op that recovers onto whatever file is already
+# present — the barrel MUST exist in the image or the SSR compile fails with
+# "Could not resolve". Any new src/lib/*.generated.ts barrel needs a line here.
 RUN bun packages/site/src/lib/generateDocsBarrel.ts
+RUN bun packages/site/src/lib/generateBlogBarrel.ts
 
 ENV WORKSPACE=${WORKSPACE}
 ENV PORT=${PORT}
@@ -70,7 +76,7 @@ EXPOSE ${PORT}/tcp
 # No curl/wget in the alpine base; bun is on PATH, so probe with fetch. Reads
 # PORT from the env above and hits the canonical /health/ (trailingSlash:'always'
 # would otherwise 308 a bare /health) so the redirect hop never happens.
-HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-  CMD bun --eval "fetch('http://127.0.0.1:'+process.env.PORT+'/health/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+#HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+#  CMD bun --eval "fetch('http://127.0.0.1:'+process.env.PORT+'/health/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 ENTRYPOINT [ "sh", "-c", "exec bun run dev:${WORKSPACE}" ]

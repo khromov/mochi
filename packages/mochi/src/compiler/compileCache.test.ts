@@ -29,6 +29,13 @@ describe('compileCache', () => {
     expect(cache.get('server', '/A.svelte', 'src', otherDev)).toBeUndefined();
   });
 
+  test('compiler backend change invalidates the entry', () => {
+    const cache = new CompileCache();
+    cache.set('server', '/A.svelte', 'src', compileFingerprint({ runes: true }, true, 'svelte@5.56.7'), OUTPUT);
+    expect(cache.get('server', '/A.svelte', 'src', compileFingerprint({ runes: true }, true, 'rsvelte@5.56.4'))).toBeUndefined();
+    expect(cache.get('server', '/A.svelte', 'src', compileFingerprint({ runes: true }, true, 'svelte@5.56.7'))).toBe(OUTPUT);
+  });
+
   test('server and client targets keep independent entries for the same path', () => {
     const cache = new CompileCache();
     const serverOut: CompiledFileOutput = { ...OUTPUT, js: 'server' };

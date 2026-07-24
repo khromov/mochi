@@ -1,0 +1,79 @@
+---
+title: 'rsvelte compiler'
+slug: rsvelte
+description: 'Swap the JavaScript Svelte compiler for rsvelte, a Rust port built on OXC, to cut compile time.'
+---
+
+<script>
+  import Callout from './_components/Callout.svelte';
+</script>
+
+## rsvelte
+
+[rsvelte](https://github.com/baseballyama/rsvelte) is a Rust port of the Svelte 5 compiler built on [OXC](https://oxc.rs/). Mochi can route component compilation through it instead of the JavaScript `svelte/compiler`, which speeds up cold builds and dev rebuilds.
+
+It's opt-in. Install the adapter package:
+
+```sh
+bun add -d @mochi-framework/rsvelte
+```
+
+Then pass `svelteCompiler`:
+
+```ts
+// src/index.ts
+await Mochi.serve({
+  port: 3000,
+  svelteCompiler: 'rsvelte',
+  routes: {
+    '/': Mochi.page('./src/Home.svelte'),
+  },
+});
+```
+
+The default is `'svelte'` — without the option nothing changes.
+
+<Callout type="warning">
+
+rsvelte is pre-1.0 and its authors note that APIs and behaviour may change without notice.
+
+</Callout>
+
+### Without touching code
+
+`MOCHI_SVELTE_COMPILER` overrides the option, which is the easy way to A/B a build:
+
+```sh
+MOCHI_SVELTE_COMPILER=rsvelte bun run build
+MOCHI_SVELTE_COMPILER=svelte bun run build
+```
+
+Mochi logs which compiler it resolved (`Svelte compiler: rsvelte@0.2.8+svelte5.56.4` — the rsvelte release, then the Svelte version it targets) once at startup. Since the fallback is silent by design, that line is also how you assert a build really ran on rsvelte.
+
+### Benchmark
+
+This benchmark can give you an idea of the gains in a small application (the `demos` preset you can access via the CLI when creating a new project).
+
+| phase           | svelte | rsvelte |    delta |
+| --------------- | -----: | ------: | -------: |
+| total           |  384ms |   289ms | **−25%** |
+| `ssr-build`     |  213ms |   137ms | **−36%** |
+| `client-bundle` |   40ms |    26ms | **−35%** |
+
+(10 cold start runs, median value)
+
+### What runs on rsvelte
+
+Only `compile()` and `compileModule()`. Mochi's island preprocessor walks a real Svelte AST with `zimmerframe`, and rsvelte's `parse()` returns a JSON string rather than an upstream-shaped AST — so **parsing and preprocessing always stay on the official compiler**. Islands, `mochi:hydrate*`, `mochi:defer` and user preprocessors behave identically either way.
+
+### If it can't load
+
+Prebuilt binaries cover macOS arm64/x64, Linux x64/arm64 (glibc) and Windows x64 (MSVC). There's no musl build, so Alpine-based images aren't supported. When the package is missing or its binary won't load, Mochi logs a warning and compiles with `svelte/compiler`.
+
+### Known divergences
+
+Production output should generally be byte-identical to `svelte/compiler`. Three differences remain in the configuration in relation to Mochi:
+
+- **`cssHash` and `warningFilter`** in `svelte.config.js` are functions and can't cross the native boundary. They're stripped with a one-time warning; use rsvelte's `cssHashOverride: '<hash>'` to force a fixed CSS hash.
+- **Dev-only instrumentation** is not always reproduced — `$derived(await …)` loses its reactivity-loss warning, `$effect` differs in state-logging, and snippets skip two dev arg-validation guards. Development builds only; production output matches.
+- **`compileModule()`** emits a `vVERSION` placeholder in its header comment and different printer whitespace. Semantically identical.
