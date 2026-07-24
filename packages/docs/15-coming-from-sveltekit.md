@@ -959,8 +959,8 @@ await Mochi.serve({
 
 <SeeItInAction
 demos={[
-{ href: "/demos/server-props/", title: "Server Props", hook: "Define serverProps on Mochi.page() to pass fresh data into a Svelte page on every request." },
-{ href: "/demos/login/", title: "Form Actions", hook: "A login form rendered twice — plain HTML POST and intercepted with {@attach enhance(...)}." },
-{ href: "/demos/api/", title: "API Endpoints", hook: "JSON routes defined with Mochi.api(), tested live against the running server." },
+{ href: "/demos/server-props/", title: "Server Props", hook: "How server props work — pass fresh per-request data into a page via serverProps on Mochi.page()." },
+{ href: "/demos/login/", title: "Form Actions", hook: "How form actions work — a form rendered twice, as a plain HTML POST and intercepted with {@attach enhance(...)}." },
+{ href: "/demos/api/", title: "API Endpoints", hook: "How API routes work — define JSON endpoints with Mochi.api(), tested live against the running server." },
 ]}
 />
