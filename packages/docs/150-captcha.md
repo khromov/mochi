@@ -349,7 +349,7 @@ Solving requires JavaScript: the widget is a hydrated island, and it renders not
 
 <SeeItInAction
 demos={[
-{ href: "/demos/captcha/", title: "Captcha", hook: "Slide-to-verify with a hash chain and proof-of-work — no third party, no tracking." },
-{ href: "/demos/captcha-styling/", title: "Captcha Styling", hook: "The same captcha four ways — every colour is a CSS custom property with a built-in fallback." },
+{ href: "/demos/captcha/", title: "Captcha", hook: "How the captcha works — slide-to-verify backed by a hash chain and proof-of-work, with no third party and no tracking." },
+{ href: "/demos/captcha-styling/", title: "Captcha Styling", hook: "How captcha theming works — the same captcha four ways, every colour a CSS custom property with a built-in fallback." },
 ]}
 />

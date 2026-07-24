@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag to re-publish (e.g. mochi-framework-v0.1.0, create-mochi-v0.0.2 or @mochi-framework/rsvelte-v0.1.0)'
+        description: 'Tag to re-publish (e.g. mochi-framework-v0.1.0, create-mochi-v0.0.2 or rsvelte-v0.1.0)'
         required: true
         type: string
 
@@ -168,8 +168,8 @@ jobs:
           case "$tag" in
             mochi-framework-v*) echo "dir=packages/mochi" >> "$GITHUB_OUTPUT" ;;
             create-mochi-v*) echo "dir=packages/cli" >> "$GITHUB_OUTPUT" ;;
-            "@mochi-framework/rsvelte-v"*) echo "dir=packages/mochi-rsvelte" >> "$GITHUB_OUTPUT" ;;
-            *) echo "::error::Unrecognized tag: $tag (expected mochi-framework-v*, create-mochi-v* or @mochi-framework/rsvelte-v*)"; exit 1 ;;
+            rsvelte-v*) echo "dir=packages/mochi-rsvelte" >> "$GITHUB_OUTPUT" ;;
+            *) echo "::error::Unrecognized tag: $tag (expected mochi-framework-v*, create-mochi-v* or rsvelte-v*)"; exit 1 ;;
           esac
 
       - run: bun --cwd="${{ steps.pkg.outputs.dir }}" run typecheck

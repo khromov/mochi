@@ -37,6 +37,7 @@ export function renderMochiEnvServer(development: boolean): string {
     __MOCHI_IS_HYDRATABLE__: frameworkFile('islands/isHydratable.ts'),
     __MOCHI_MITT__: toPosixPath(Bun.resolveSync('mitt', FRAMEWORK_DIR)),
     __MOCHI_CACHE__: frameworkFile('cache/cache.ts'),
+    __MOCHI_REQUEST_CACHE__: frameworkFile('runtime/requestCache.ts'),
     __MOCHI_CACHE_STORAGE__: frameworkFile('cache/cache-storage.ts'),
     __MOCHI_IMAGE_API__: frameworkFile('image/imageApi.ts'),
     __MOCHI_ENHANCE_SSR__: frameworkFile('runtime/enhance.ssr.ts'),

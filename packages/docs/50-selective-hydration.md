@@ -176,8 +176,8 @@ Add `:visible` to defer the fetch until the placeholder scrolls into view, with 
 
 <SeeItInAction
 demos={[
-{ href: "/demos/hydration/", title: "Hydration Modes", hook: "The same component rendered five ways — eager, lazy, visible, rootMargin-tuned, and deferred server island." },
-{ href: "/demos/lazy/", title: "Lazy Islands", hook: "Islands marked mochi:hydrate:visible hydrate and load their CSS only when scrolled into view." },
-{ href: "/demos/server-island/", title: "Server Islands", hook: "Components marked mochi:defer render server-side on demand after the initial page is delivered." },
+{ href: "/demos/hydration/", title: "Hydration Modes", hook: "How the hydration modes work — mochi:hydrate, mochi:hydrate:visible, rootMargin tuning, and mochi:defer server islands side by side." },
+{ href: "/demos/lazy/", title: "Lazy Islands", hook: "How lazy hydration works — islands marked mochi:hydrate:visible hydrate and load their CSS only when scrolled into view." },
+{ href: "/demos/server-island/", title: "Server Islands", hook: "How server islands work — components marked mochi:defer render server-side on demand after the initial page is delivered." },
 ]}
 />
