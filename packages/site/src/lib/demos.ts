@@ -40,6 +40,7 @@ import { files as propsId } from '../demos/props-id/files.ts';
 import { files as queue } from '../demos/queue/files.ts';
 import { files as rateLimit } from '../demos/rate-limit/files.ts';
 import { files as reloadFormData } from '../demos/reload-form-data/files.ts';
+import { files as requestCache } from '../demos/request-cache/files.ts';
 import { files as requestId } from '../demos/request-id/files.ts';
 import { files as serverIsland } from '../demos/server-island/files.ts';
 import { files as serverProps } from '../demos/server-props/files.ts';
@@ -154,6 +155,14 @@ export const demos: Demo[] = [
     files: cacheEvents,
     title: 'Cache Events',
     hook: 'How cache events work — subscribe to MochiCache lifecycle events (hit, miss, set, evict) through mochiEvents for observability.',
+    category: 'data',
+  },
+  {
+    href: '/demos/request-cache/',
+    slug: 'request-cache',
+    files: requestCache,
+    title: 'Request Cache',
+    hook: 'How the request cache works — requestMemo and requestCache run an expensive computation once per request no matter how many components call it, then discard it at the request boundary.',
     category: 'data',
   },
   {

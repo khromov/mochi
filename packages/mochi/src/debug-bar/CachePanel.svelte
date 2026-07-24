@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import DebugPanel from './DebugPanel.svelte';
+  import type { RequestCacheStats } from '../runtime/requestContext';
   import Trash from '../icons/trash-2.svelte';
   import ChevronRight from '../icons/chevron-right.svelte';
   import Copy from '../icons/copy.svelte';
@@ -149,10 +150,56 @@
     clearTimeout(resetTimer);
     clearTimeout(copiedTimer);
   });
+
+  // Request-cache stats are a snapshot of the render that produced this page —
+  // baked into the shell, so there's nothing to fetch and nothing to refresh.
+  let requestCache = $state<RequestCacheStats | null>(null);
+  onMount(() => {
+    requestCache = window.__mochi_debug?.requestCache ?? null;
+  });
+
+  let lookups = $derived((requestCache?.hits ?? 0) + (requestCache?.misses ?? 0));
+  let hitRate = $derived(lookups === 0 ? '—' : `${Math.round(((requestCache?.hits ?? 0) / lookups) * 100)}%`);
+  let rcKeys = $derived(requestCache?.keys ?? []);
+  let rcKeysOpen = $state(false);
 </script>
 
 <DebugPanel title="Cache" color="#a7d0c4" {open} {onclose}>
   <div class="cache-body">
+    {#if lookups === 0}
+      <div class="rc-empty">Request cache <span>No request-cache lookups on this request.</span></div>
+    {:else}
+      <h3 class="cache-section">Request cache</h3>
+      <div class="rc-stats">
+        <div class="rc-stat rc-hits"><span class="rc-value">{requestCache?.hits ?? 0}</span><span class="rc-label">hits</span></div>
+        <div class="rc-stat rc-misses"><span class="rc-value">{requestCache?.misses ?? 0}</span><span class="rc-label">misses</span></div>
+        <div class="rc-stat rc-rate"><span class="rc-value">{hitRate}</span><span class="rc-label">hit rate</span></div>
+        <div class="rc-stat rc-entries"><span class="rc-value">{requestCache?.entries ?? 0}</span><span class="rc-label">entries</span></div>
+      </div>
+      {#if rcKeys.length > 0}
+        <div class="rc-keys" class:open={rcKeysOpen}>
+          <button class="rc-keys-toggle" type="button" onclick={() => (rcKeysOpen = !rcKeysOpen)} aria-expanded={rcKeysOpen}>
+            <span class="chevron"><ChevronRight size={12} /></span>
+            <span>{rcKeys.length} {rcKeys.length === 1 ? 'key' : 'keys'}</span>
+          </button>
+          {#if rcKeysOpen}
+            <ul class="rc-keys-list">
+              {#each rcKeys as k (k.key)}
+                <li>
+                  <bdi class="rc-key-name">{k.key.replace(/:$/, '')}</bdi>
+                  <span class="rc-key-tally">
+                    <span class="rc-key-hits">{k.hits} {k.hits === 1 ? 'hit' : 'hits'}</span>
+                    <span class="rc-key-misses">{k.misses} {k.misses === 1 ? 'miss' : 'misses'}</span>
+                  </span>
+                </li>
+              {/each}
+            </ul>
+          {/if}
+        </div>
+      {/if}
+    {/if}
+
+    <h3 class="cache-section">Image cache</h3>
     <p class="cache-desc">Empties the on-disk image cache — every original, resized variant, and blur placeholder.</p>
     <button class="cache-clear-btn" class:is-done={status === 'done'} class:is-error={status === 'error'} type="button" onclick={clearCache} disabled={status === 'clearing'}>
       <Trash size={13} />
@@ -221,6 +268,169 @@
     font-size: 11px;
     line-height: 1.5;
     padding: 0 2px;
+  }
+  .cache-desc code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 10px;
+    color: #c8ece0;
+  }
+  .cache-section {
+    margin: 0;
+    padding: 0 2px;
+    color: #6fae9c;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .cache-section:not(:first-child) {
+    margin-top: 8px;
+    padding-top: 10px;
+    border-top: 1px solid #353930;
+  }
+  .rc-empty {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    padding: 0 2px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    /* Slightly grayed vs. the active #6fae9c heading, to read as inactive. */
+    color: #5c7a70;
+  }
+  .rc-empty span {
+    font-weight: 400;
+    letter-spacing: 0;
+    text-transform: none;
+    color: #72786c;
+    font-style: italic;
+  }
+  .rc-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+  }
+  .rc-stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+    border: 1px solid;
+    border-radius: 5px;
+    padding: 4px 3px;
+  }
+  .rc-value {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 11px;
+  }
+  .rc-label {
+    font-size: 8px;
+    letter-spacing: 0.04em;
+  }
+  /* Each tile gets its own muted hue so the four read apart at a glance. */
+  .rc-hits {
+    background: #22301f;
+    border-color: #3a4f33;
+  }
+  .rc-hits .rc-value {
+    color: #b6d8a0;
+  }
+  .rc-hits .rc-label {
+    color: #7f9670;
+  }
+  .rc-misses {
+    background: #322324;
+    border-color: #52393b;
+  }
+  .rc-misses .rc-value {
+    color: #e0aeae;
+  }
+  .rc-misses .rc-label {
+    color: #9c7f80;
+  }
+  .rc-rate {
+    background: #262433;
+    border-color: #3a3550;
+  }
+  .rc-rate .rc-value {
+    color: #c4bce6;
+  }
+  .rc-rate .rc-label {
+    color: #8a83a6;
+  }
+  .rc-entries {
+    background: #322d1f;
+    border-color: #524a33;
+  }
+  .rc-entries .rc-value {
+    color: #e6d3a0;
+  }
+  .rc-entries .rc-label {
+    color: #9c9270;
+  }
+  .rc-keys {
+    margin-top: 6px;
+  }
+  .rc-keys-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    background: none;
+    border: none;
+    color: #9aa094;
+    font: inherit;
+    font-size: 11px;
+    padding: 2px;
+    cursor: pointer;
+    text-align: left;
+  }
+  .rc-keys-toggle:hover {
+    color: #c8ece0;
+  }
+  .rc-keys.open .rc-keys-toggle .chevron {
+    transform: rotate(90deg);
+    color: #6fae9c;
+  }
+  .rc-keys-list {
+    list-style: none;
+    margin: 4px 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .rc-keys-list li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 10px;
+    color: #c7cabf;
+    background: #1c1f17;
+    border: 1px solid #353930;
+    border-radius: 4px;
+    padding: 4px 8px;
+  }
+  .rc-key-name {
+    unicode-bidi: isolate;
+    flex: 1;
+    min-width: 0;
+    word-break: break-all;
+  }
+  .rc-key-tally {
+    flex-shrink: 0;
+    display: inline-flex;
+    gap: 5px;
+    font-size: 9px;
+  }
+  .rc-key-hits {
+    color: #b6d8a0;
+  }
+  .rc-key-misses {
+    color: #e0aeae;
   }
   .cache-clear-btn {
     display: inline-flex;

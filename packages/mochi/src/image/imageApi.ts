@@ -8,6 +8,7 @@ import { variantId } from './imageCache';
 import { computePlaceholder, runPipeline } from './resize';
 import { buildImageFilename, buildOriginalFilename } from './slug';
 import { requestContext, type ImageDebugEntry } from '../runtime/requestContext';
+import { requestMemo } from '../runtime/requestCache';
 import { applyFilter } from '../extensions';
 import { logger } from '../utils/log';
 import type { ImageCache, ImageCacheStatus } from './imageCache';
@@ -110,6 +111,8 @@ export async function getImage(src: string, size?: string): Promise<ResolvedImag
   const resolved = resolveNamed(size, options);
 
   if (!resolved) {
+    // `bytes` is the request-cached original, shared by every caller this
+    // request — treat it as read-only; mutating it corrupts the shared entry.
     const { bytes, contentType } = await getCachedOriginal(src, options, cache);
     let meta = { width: 0, height: 0, format: '' };
     try {
@@ -124,6 +127,8 @@ export async function getImage(src: string, size?: string): Promise<ResolvedImag
 
   const id = variantId(src, resolved.configHash);
   const { entry } = await cache.getVariant(src, id, async () => {
+    // Shared request-cached original — read-only. `runPipeline` decodes without
+    // mutating its input, so passing the shared buffer is safe.
     const { bytes, createdAt } = await getCachedOriginal(src, options, cache);
     const out = await runPipeline(bytes, resolved, options);
     return { bytes: out.bytes, contentType: out.contentType, width: out.width, height: out.height, format: out.format, originalCreatedAt: createdAt };
@@ -137,8 +142,26 @@ export async function getImage(src: string, size?: string): Promise<ResolvedImag
  * Fetch-or-serve the cached full-size original for `src`. Backs both the size
  * path (so every variant reuses one origin download) and the original path of
  * `getImageUrl`/`getImage`.
+ *
+ * Request-cached: a warm original still costs a sidecar parse plus a full binary
+ * read of the image off disk on every call, and `MochiCache` only coalesces on
+ * the miss path — so N variants (or N `getImage()` calls) over one source would
+ * otherwise re-read the same bytes N times. Keyed on `src` alone: `resolved` and
+ * `cache` both come from the `getImageRuntime()` process singleton, so they
+ * cannot differ between two calls. `quiet` because the image endpoint runs
+ * outside a request context, where this legitimately falls through uncached.
  */
-export async function getCachedOriginal(
+export const getCachedOriginal: (
+  src: string,
+  resolved: ResolvedImageOptions,
+  cache: ImageCache,
+) => Promise<{ bytes: Uint8Array; contentType: string; status: ImageCacheStatus; createdAt: number }> = requestMemo(readCachedOriginal, {
+  namespace: 'mochi:image:original',
+  key: (src) => src,
+  quiet: true,
+});
+
+async function readCachedOriginal(
   src: string,
   resolved: ResolvedImageOptions,
   cache: ImageCache,
@@ -227,8 +250,20 @@ const INLINE_PREVIEW_BYTE_CAP = 1_048_576;
  * Return a tiny ThumbHash blur-placeholder data URL for a source, computing and
  * caching it on first use. Returns `null` if the source can't be fetched or
  * decoded, so callers can degrade gracefully.
+ *
+ * Request-cached, so repeated calls for one source in a single render share the
+ * blocking compute rather than each paying the placeholder/original cache reads.
  */
-export async function getImagePlaceholder(src: string): Promise<string | null> {
+export const getImagePlaceholder: (src: string) => Promise<string | null> = requestMemo(computeImagePlaceholder, {
+  // Deliberately its own namespace, never shared with `imagePlaceholder` below:
+  // that one returns `null` on a miss by design, and a shared entry would let
+  // its `null` short-circuit a later blocking call in the same request.
+  namespace: 'mochi:image:placeholder:blocking',
+  // `quiet` because background warms + the image endpoint call this outside a request, where it legitimately falls through uncached.
+  quiet: true,
+});
+
+async function computeImagePlaceholder(src: string): Promise<string | null> {
   const { options, cache } = getImageRuntime();
   const cached = await cache.getPlaceholder(src);
   if (cached) {
@@ -241,6 +276,9 @@ export async function getImagePlaceholder(src: string): Promise<string | null> {
     return dataUrl;
   } catch (err) {
     logger.warn(`Could not compute image placeholder for ${src}: ${err instanceof Error ? err.message : String(err)}`);
+    // Resolving `null` rather than throwing means the request cache keeps this
+    // entry instead of evicting it — deliberate, so one unreachable source costs
+    // a single failed fetch per request rather than one per caller.
     return null;
   }
 }
@@ -267,8 +305,14 @@ export function warmImagePlaceholder(src: string): void {
  * Non-blocking placeholder read for `<Image placeholder>`: returns the cached
  * ThumbHash blur if present, otherwise `null` and kicks off a background warm so
  * a later render has it. Never blocks SSR on a fetch/decode. Server-only.
+ *
+ * Request-cached, so a gallery of N `<Image placeholder>` over the same source
+ * resolves to one cache read instead of N. The entry dies with the request, so
+ * an invalidation is still picked up by the next render.
  */
-export async function imagePlaceholder(src: string): Promise<string | null> {
+export const imagePlaceholder: (src: string) => Promise<string | null> = requestMemo(readPlaceholder, { namespace: 'mochi:image:placeholder', quiet: true });
+
+async function readPlaceholder(src: string): Promise<string | null> {
   const { cache } = getImageRuntime();
   const cached = await cache.getPlaceholder(src);
   if (cached) {

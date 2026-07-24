@@ -163,6 +163,10 @@ consoleLogger({ cache: 'verbose' });
 
 See the [Cache Events demo](/demos/cache-events/) for a working example that pipes events into an in-memory ring buffer and renders them on the page.
 
+### Per-request memoization
+
+`MochiCache` is process-wide and outlives the request. To collapse repeated work _within_ a single render — the same lookup called from ten components — reach for the [request cache](/docs/request-cache/) instead, which needs no TTL because entries die with the request.
+
 ### Server-only
 
 `MochiCache` lives on the server. Importing it into a hydratable island throws — caches are shared per-process state and don't make sense in the browser. Construct cache instances in `.ts` modules or page-route scripts, never inside a `mochi:hydrate` component.
