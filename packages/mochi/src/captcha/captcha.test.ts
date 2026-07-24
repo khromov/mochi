@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 import { mintCaptcha, verifyCaptcha, consumeCaptcha, solveCaptcha } from './captcha';
 import { CAPTCHA_STEPS, chainInput, powInput, leadingZeroBits, sha256Hex, solvePowSlice } from './pow';
+import { DEFAULT_CAPTCHA_BITS } from './config';
 import { encryptPayload } from '../islands/payloadCrypto';
 import { initExtensions } from '../extensions';
 import { mochiEvents } from '../events';
@@ -96,6 +97,25 @@ describe('mintCaptcha + verifyCaptcha', () => {
   test('mints with the configured difficulty by default', () => {
     installConfig({ bits: 12, minAgeMs: 0 });
     expect(mintCaptcha().bits).toBe(12);
+  });
+
+  test('falls back to the framework default difficulty', () => {
+    installConfig({ minAgeMs: 0 });
+    expect(mintCaptcha().bits).toBe(DEFAULT_CAPTCHA_BITS);
+  });
+
+  // The behavioural half of the extensions.test.ts unit cases: the filtered
+  // value has to reach the sealed token, not just the resolver's return.
+  test('captcha:bits filter changes the difficulty a token is minted at', () => {
+    initExtensions({ filters: { 'captcha:bits': () => 10 } });
+    installConfig({ minAgeMs: 0 });
+    expect(mintCaptcha().bits).toBe(10);
+  });
+
+  test('captcha:bits filter is still bounds-checked', () => {
+    initExtensions({ filters: { 'captcha:bits': () => 99 } });
+    installConfig({ minAgeMs: 0 });
+    expect(() => mintCaptcha()).toThrow('bits must be an integer between 1 and 32, got 99');
   });
 
   test('rejects a tampered token', async () => {

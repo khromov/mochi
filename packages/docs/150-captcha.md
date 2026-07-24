@@ -98,7 +98,7 @@ A captcha that hydrates by neither route stays empty — an empty slot rather th
 | Prop             | Default                     | Description                                                                                   |
 | ---------------- | --------------------------- | --------------------------------------------------------------------------------------------- |
 | `token`          | —                           | The sealed challenge from `mintCaptcha()`.                                                    |
-| `bits`           | `16`                        | Difficulty the widget solves at. Comes from `mintCaptcha()`; don't set it by hand.            |
+| `bits`           | `19`                        | Difficulty the widget solves at. Comes from `mintCaptcha()`; don't set it by hand.            |
 | `emoji`          | `🧩`                        | The character on the handle.                                                                  |
 | `label`          | `'Slide to verify'`         | The hint shown in the track. Doubles as the handle's accessible name, so keep it descriptive. |
 | `verifyingLabel` | `'Verifying…'`              | Replaces the hint while the proof-of-work runs.                                               |
@@ -179,7 +179,7 @@ Configure defaults on `Mochi.serve()`:
 ```ts
 await Mochi.serve({
   captcha: {
-    bits: 16,
+    bits: 19,
     minAgeMs: 2000,
     maxAgeMs: 900_000,
     store: 'memory',
@@ -188,19 +188,19 @@ await Mochi.serve({
 });
 ```
 
-| Option      | Default                        | Description                                                                     |
-| ----------- | ------------------------------ | ------------------------------------------------------------------------------- |
-| `bits`      | `16`                           | Proof-of-work difficulty in leading zero bits. Each extra bit doubles the work. |
-| `minAgeMs`  | `2000`                         | Reject tokens younger than this — the timing floor. See below.                  |
-| `maxAgeMs`  | `900_000`                      | Reject tokens older than this (15 minutes).                                     |
-| `store`     | `'memory'`                     | One-time nonce store: `'memory'`, `'sqlite'`, or your own `NonceStore`.         |
-| `storePath` | `.mochi/captcha-nonces.sqlite` | SQLite file when `store: 'sqlite'`.                                             |
+| Option      | Default                        | Description                                                                                                                                                    |
+| ----------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `bits`      | `19`                           | Proof-of-work difficulty in leading zero bits. Each extra bit doubles the work. Also settable with the [`captcha:bits`](/docs/extensions/#captchabits) filter. |
+| `minAgeMs`  | `2000`                         | Reject tokens younger than this — the timing floor. See below.                                                                                                 |
+| `maxAgeMs`  | `900_000`                      | Reject tokens older than this (15 minutes).                                                                                                                    |
+| `store`     | `'memory'`                     | One-time nonce store: `'memory'`, `'sqlite'`, or your own `NonceStore`.                                                                                        |
+| `storePath` | `.mochi/captcha-nonces.sqlite` | SQLite file when `store: 'sqlite'`.                                                                                                                            |
 
 Every token failure returns the same message, so a probing bot can't tell "too fast" from "tampered" and learn where the limits are.
 
 ### The timing floor
 
-`minAgeMs` is the only check enforcing that a submission took human time, and `2000` suits a form the visitor has to type into. It is worth setting deliberately rather than inheriting, because the proof-of-work does not back it up: `bits` bounds an attacker's **cost** — ~2^`bits` hashes per token, on average — not any individual solver's latency. Solve time is geometrically distributed with no lower bound, so a fair share of real visitors clear a 16-bit challenge in a few hundred milliseconds and some clear it in one attempt. On a form with nothing to fill in, the slide plus the proof-of-work can land under two seconds and a genuine visitor gets refused.
+`minAgeMs` is the only check enforcing that a submission took human time, and `2000` suits a form the visitor has to type into. It is worth setting deliberately rather than inheriting, because the proof-of-work does not back it up: `bits` bounds an attacker's **cost** — ~2^`bits` hashes per token, on average — not any individual solver's latency. Solve time is geometrically distributed with no lower bound, so a fair share of real visitors clear the challenge in a few hundred milliseconds and some clear it in one attempt. On a form with nothing to fill in, the slide plus the proof-of-work can land under two seconds and a genuine visitor gets refused.
 
 Tune it per form with the [`captcha:minAgeMs`](/docs/extensions/#captchaminagems) filter rather than lowering it globally.
 

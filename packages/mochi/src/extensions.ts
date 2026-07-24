@@ -139,6 +139,7 @@ export interface MochiFilterValue {
   'image:localAssetFilename': string;
   'image:localAssetUrl': string;
   'email:message': ResolvedEmailMessage;
+  'captcha:bits': number;
   'captcha:minAgeMs': number;
   'captcha:driftAllowanceMs': number;
   'queue:recoveryStallWarningMs': number;
@@ -198,6 +199,12 @@ export interface MochiFilterContext {
   'image:localAssetFilename': { sourcePath: string; hash: string; ext: string; format: ImportedImageFormat; width: number; height: number };
   'image:localAssetUrl': { sourcePath: string; filename: string; assetPrefix: string; format: ImportedImageFormat };
   'email:message': { transport: MochiEmailTransportConfig['type'] };
+  /** Resolved once at startup, as the captcha options are read. */
+  'captcha:bits': {
+    options: MochiCaptchaOptions;
+    /** Whether the incoming value is the app's own `bits` option rather than the framework default. */
+    configured: boolean;
+  };
   'captcha:minAgeMs': {
     /** Difficulty sealed into this token at mint. */
     bits: number;
@@ -238,6 +245,7 @@ export interface MochiFilterKindMap {
   'image:localAssetFilename': 'sync';
   'image:localAssetUrl': 'sync';
   'email:message': 'async';
+  'captcha:bits': 'sync';
   'captcha:minAgeMs': 'sync';
   'captcha:driftAllowanceMs': 'sync';
   'queue:recoveryStallWarningMs': 'sync';
@@ -292,6 +300,7 @@ const FILTER_KINDS: { [K in keyof MochiFilterValue]: MochiKind } = {
   'image:localAssetFilename': 'sync',
   'image:localAssetUrl': 'sync',
   'email:message': 'async',
+  'captcha:bits': 'sync',
   'captcha:minAgeMs': 'sync',
   'captcha:driftAllowanceMs': 'sync',
   'queue:recoveryStallWarningMs': 'sync',

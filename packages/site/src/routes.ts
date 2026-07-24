@@ -184,6 +184,10 @@ export const routes: Record<string, MochiRouteValue> = {
   // SMTP config this site deliberately doesn't carry.
   '/support': Mochi.api(() => Response.redirect('https://support.mochi.fast/', 302)),
   '/og': Mochi.page('./src/og/OgPage.svelte'),
+  // Temporary scratch page for the captcha failure states — delete with src/tmp-captcha-failures/.
+  '/tmp/captcha-failures': Mochi.page('./src/tmp-captcha-failures/CaptchaFailures.svelte', {
+    serverProps: () => ({ captcha: mintCaptcha() }),
+  }),
   // Backs the live captcha embedded in the 0.8.0 blog post. Minting and verifying
   // happen here rather than in `/blog/:slug` so that route stays post-agnostic.
   '/api/captcha-demo/mint': Mochi.api(() => Response.json(mintCaptcha()), { rateLimit: { limit: 60, window: '1m' } }),

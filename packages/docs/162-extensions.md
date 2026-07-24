@@ -545,6 +545,22 @@ Return `null` to veto — the message never reaches a transport (nothing is deli
 
 A suppressed send still emits an `email:sent` event with `transport: 'suppressed'` (and `consoleLogger()` prints it as a `MAIL … suppressed (filtered)` line), so blocked mail stays observable. `Mochi.email()` resolves to `{ transport: 'suppressed' }` in that case.
 
+#### `captcha:bits`
+
+Proof-of-work difficulty in leading zero bits, resolved once at startup alongside the rest of the captcha options. The context carries the raw `captcha` options and `configured` — false when the incoming value is the framework default (`DEFAULT_CAPTCHA_BITS`, 19) rather than the app's own `bits`. The result is bounds-checked exactly like the option, so a filter returning something outside 1–32 throws at boot rather than minting tokens no widget can solve. Sync.
+
+Each extra bit doubles the expected work, so this is a cost dial rather than a latency one — see [`captcha:minAgeMs`](#captchaminagems) for why it can't enforce that a submission took human time.
+
+```ts
+await Mochi.serve({
+  filters: {
+    // Lean on the environment instead of hardcoding a test-only difficulty.
+    'captcha:bits': (def) => (process.env.NODE_ENV === 'test' ? 8 : def),
+  },
+  routes,
+});
+```
+
 #### `captcha:minAgeMs`
 
 The captcha timing floor — a token younger than this is refused. Applied per token, so the floor can vary by form. The context carries the `bits` sealed into the token, its measured `ageMs`, and `limitMs` (the expiry bound the returned floor must stay under). Returning a value at or above `limitMs`, or a negative one, throws — it would reject every token. Sync.

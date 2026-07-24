@@ -21,9 +21,19 @@ export const DEFAULT_CAPTCHA_MIN_AGE_MS = 2000;
  */
 export const DEFAULT_CAPTCHA_DRIFT_ALLOWANCE_MS = 30_000;
 
+/**
+ * Proof-of-work difficulty in leading zero bits. Each extra bit doubles the
+ * expected work, so this is a cost dial, not a latency one: ~2^19 hashes lands
+ * around a second on a desktop and a handful on a phone, which is enough to be
+ * worth a spammer's while to avoid without making a real visitor wait. Raise it
+ * per-app with the `bits` option or the `captcha:bits` filter.
+ */
+export const DEFAULT_CAPTCHA_BITS = 19;
+
 export function resolveCaptchaOptions(opts: MochiCaptchaOptions | undefined): ResolvedCaptchaOptions {
   const o = opts ?? {};
-  const bits = o.bits ?? 16;
+  // Filtered before validating, so a filter can't smuggle past the bounds.
+  const bits = applyFilter('captcha:bits', o.bits ?? DEFAULT_CAPTCHA_BITS, { options: o, configured: o.bits !== undefined });
   if (!Number.isInteger(bits) || bits < 1 || bits > 32) {
     throw new Error(`Captcha: bits must be an integer between 1 and 32, got ${bits}`);
   }
