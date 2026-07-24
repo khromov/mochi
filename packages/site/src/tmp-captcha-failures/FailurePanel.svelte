@@ -13,7 +13,7 @@
 
   onMount(() => {
     const original = TextEncoder.prototype.encode;
-    TextEncoder.prototype.encode = function (input?: string) {
+    TextEncoder.prototype.encode = function (this: TextEncoder, input?: string) {
       if (typeof input === 'string' && input.startsWith(BOOM_TOKEN)) {
         throw new Error('simulated digest failure');
       }

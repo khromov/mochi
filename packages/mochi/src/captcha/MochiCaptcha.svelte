@@ -116,11 +116,11 @@
   /** Mirrors the server's own bounds in `resolveCaptchaOptions` — keep in step. */
   function validateProps(): boolean {
     if (!token) {
-      failWith('no token — spread the result of mintCaptcha() onto <MochiCaptcha />', false);
+      failWith('No token — spread the result of mintCaptcha() onto <MochiCaptcha />', false);
       return false;
     }
     if (!Number.isInteger(bits) || bits < 1 || bits > 32) {
-      failWith(`bits must be an integer between 1 and 32, got ${bits}`, false);
+      failWith(`Bits must be an integer between 1 and 32, got ${bits}`, false);
       return false;
     }
     return true;
@@ -154,7 +154,7 @@
         logger.log(`captcha: link ${step}/${CAPTCHA_STEPS} minted — ${chain.slice(0, 16)}…`);
       }
     } catch (e) {
-      failWith(`hash chain failed at link ${claimedSteps}/${CAPTCHA_STEPS} — ${causeOf(e)}`);
+      failWith(`Hash chain failed at link ${claimedSteps}/${CAPTCHA_STEPS} — ${causeOf(e)}`);
       return;
     }
     if (claimedSteps === CAPTCHA_STEPS && powNonce === null && solveTimer === null) {
@@ -183,7 +183,7 @@
       try {
         result = solvePowSlice(challenge, bits, nonce, CAPTCHA_SOLVE_SLICE_MS);
       } catch (e) {
-        failWith(`proof-of-work failed after ${nonce} attempts — ${causeOf(e)}`);
+        failWith(`Proof-of-work failed after ${nonce} attempts — ${causeOf(e)}`);
         return;
       }
       spentMs += Date.now() - sliceStart;
@@ -197,7 +197,7 @@
       nonce = result.next;
       powResumeFrom = nonce;
       if (spentMs >= CAPTCHA_SOLVE_BUDGET_MS) {
-        failWith(`proof-of-work gave up after ${Math.round(spentMs / 1000)}s and ${nonce} attempts at ${bits} bits`);
+        failWith(`Proof-of-work gave up after ${Math.round(spentMs / 1000)}s and ${nonce} attempts at ${bits} bits`);
         return;
       }
       if (spentMs >= PROGRESS_AFTER_MS && spentMs - publishedMs >= PROGRESS_INTERVAL_MS) {
@@ -448,9 +448,12 @@
     font-weight: 600;
   }
 
-  /* Grows past the track's 44px because the diagnostic is a second line. */
+  /* Grows past the track's 44px because the diagnostic is a second line, and
+     centres within it when one line doesn't fill the 44px floor. */
   .captcha .error-box {
-    display: block;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     width: 100%;
     height: auto;
     min-height: 44px;

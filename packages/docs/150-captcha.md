@@ -121,7 +121,7 @@ All three hints are yours, so the widget can stay in your app's voice from the f
 The widget should never fail to solve a challenge it was handed — but if it does, it says so instead of sitting on "Verifying…". Every failure is logged through the [logger](/docs/logging/) at `error` level, so it reaches production consoles:
 
 ```
-[mochi] captcha: no token — spread the result of mintCaptcha() onto <MochiCaptcha />
+[mochi] captcha: No token — spread the result of mintCaptcha() onto <MochiCaptcha />
 ```
 
 What the visitor sees depends on whether trying again could plausibly help.
