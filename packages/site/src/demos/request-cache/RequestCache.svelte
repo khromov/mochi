@@ -19,12 +19,18 @@
   const nf = new Intl.NumberFormat('en-US');
   const topMax = facetTopWords[0]?.[1] ?? 1;
 
-  const snip = (code) => highlightCode(code, 'ts');
-  const codeOverview = await snip('const { words, unique, sentences } = overview();');
-  const codeTopWords = await snip('const top = topWords();');
-  const codeThemes = await snip('const counts = themes();');
-  const codeExtremes = await snip('const { longestWord, longestSentenceExcerpt } = extremes();');
-  const codeRichness = await snip('const hapax = richness();');
+  // Each panel's snippet shows the real pipeline: one memoized analysis at module
+  // scope, then this panel pulling its slice out of the shared result.
+  const snip = (pick) =>
+    highlightCode(
+      `// parsed once per request, shared across panels\nconst analyzeCached = requestMemo(() => analyze(BOOK));\n${pick}`,
+      'ts',
+    );
+  const codeOverview = await snip('const { words, unique, sentences } = analyzeCached();');
+  const codeTopWords = await snip('const { topWords } = analyzeCached();');
+  const codeThemes = await snip('const { themes } = analyzeCached();');
+  const codeExtremes = await snip('const { longestWord, longestSentenceExcerpt } = analyzeCached();');
+  const codeRichness = await snip('const { hapax } = analyzeCached();');
 </script>
 
 <DemoPage
@@ -42,8 +48,6 @@
     <div class="facets">
       <section class="facet">
         <h3>Overview</h3>
-        <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-        <div class="snippet">{@html codeOverview}</div>
         <dl class="stats">
           <div>
             <dt>Words</dt>
@@ -62,12 +66,12 @@
             <dd>~{facetOverview.readingMinutes} min</dd>
           </div>
         </dl>
+        <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+        <div class="snippet">{@html codeOverview}</div>
       </section>
 
       <section class="facet">
         <h3>Top words</h3>
-        <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-        <div class="snippet">{@html codeTopWords}</div>
         <ul class="bars">
           {#each facetTopWords as [word, count] (word)}
             <li>
@@ -77,35 +81,37 @@
             </li>
           {/each}
         </ul>
+        <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+        <div class="snippet">{@html codeTopWords}</div>
       </section>
 
       <section class="facet">
         <h3>Themes</h3>
-        <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-        <div class="snippet">{@html codeThemes}</div>
         <ul class="chips">
           {#each facetThemes as [word, count] (word)}
             <li><span class="chip-word">{word}</span><span class="chip-count">{nf.format(count)}</span></li>
           {/each}
         </ul>
+        <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+        <div class="snippet">{@html codeThemes}</div>
       </section>
 
       <section class="facet">
         <h3>Extremes</h3>
-        <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-        <div class="snippet">{@html codeExtremes}</div>
         <p class="extreme-label">Longest word</p>
         <p class="extreme-value"><code>{facetExtremes.longestWord}</code></p>
         <p class="extreme-label">Longest sentence · {facetExtremes.longestSentenceWords} words</p>
         <blockquote>{facetExtremes.longestSentenceExcerpt.slice(0, 260)}…</blockquote>
+        <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+        <div class="snippet">{@html codeExtremes}</div>
       </section>
 
       <section class="facet">
         <h3>Vocabulary richness</h3>
-        <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-        <div class="snippet">{@html codeRichness}</div>
         <p class="hapax"><strong>{nf.format(facetHapax)}</strong> words appear exactly once</p>
         <p class="extreme-label">Hapax legomena — {Math.round((facetHapax / facetOverview.unique) * 100)}% of the vocabulary</p>
+        <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+        <div class="snippet">{@html codeRichness}</div>
       </section>
     </div>
   </div>
@@ -132,14 +138,16 @@
   }
 
   .facet {
+    display: flex;
+    flex-direction: column;
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
-    padding: 1rem 1.1rem;
+    padding: 0.7rem 1.1rem 1rem;
   }
 
   .facet h3 {
-    margin: 0 0 0.6rem;
+    margin: 0 0 0.7rem;
     font-size: 0.72rem;
     text-transform: uppercase;
     letter-spacing: 0.06em;
@@ -148,8 +156,9 @@
   }
 
   .snippet {
-    margin: 0 0 0.9rem;
-    font-size: 0.8rem;
+    margin-top: auto;
+    padding-top: 1rem;
+    font-size: 0.76rem;
     overflow-x: auto;
   }
 
@@ -255,6 +264,10 @@
     text-transform: uppercase;
     letter-spacing: 0.05em;
     color: var(--text-muted);
+  }
+
+  .extreme-label:first-of-type {
+    margin-top: 0;
   }
 
   .extreme-value {
