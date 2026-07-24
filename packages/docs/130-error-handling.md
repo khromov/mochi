@@ -146,5 +146,5 @@ Uncaught throws inside a `Mochi.api` handler are coerced to `500 Internal Server
 If the user's `errorPage` itself throws during render, Mochi returns a plain-text response that mentions both the original error and the secondary render failure — the error page cannot crash the server.
 
 <SeeItInAction
-demos={[{ href: "/demos/error/", title: "Error Handling", hook: "Catch render errors and unmatched routes via Mochi.serve()'s errorPage option and the handleError hook." }]}
+demos={[{ href: "/demos/error/", title: "Error Handling", hook: "How error handling works — catch render errors and unmatched routes via Mochi.serve()'s errorPage option and the handleError hook." }]}
 />

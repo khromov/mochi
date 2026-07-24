@@ -204,8 +204,8 @@ Reach for `enhance` when the action's outcome should update UI without a navigat
 
 <SeeItInAction
 demos={[
-{ href: "/demos/login/", title: "Form Actions", hook: "A login form rendered twice — plain HTML POST and intercepted with {@attach enhance(...)}." },
-{ href: "/demos/form-errors/", title: "Form Errors", hook: "A thrown action error shown inline via {@attach enhance(...)}, or as the Mochi error page on plain submit." },
-{ href: "/demos/form-return-data/", title: "Using form return data", hook: "An action returns data via success({...}); {@attach enhance(...)} updates the UI in place, plain HTML re-renders the page." },
+{ href: "/demos/login/", title: "Form Actions", hook: "How form actions work — a form rendered twice, as a plain HTML POST and intercepted with {@attach enhance(...)}." },
+{ href: "/demos/form-errors/", title: "Form Errors", hook: "How form action errors work — a thrown action error shows inline via {@attach enhance(...)}, or as the Mochi error page on a plain submit." },
+{ href: "/demos/form-return-data/", title: "Using form return data", hook: "How form action return data works — an action returns success({...}); {@attach enhance(...)} updates the UI in place, plain HTML re-renders." },
 ]}
 />

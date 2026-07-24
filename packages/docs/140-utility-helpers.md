@@ -78,5 +78,5 @@ const opened = decryptPayload(token, { aad: 'my-form' }); // string | null
 ```
 
 <SeeItInAction
-demos={[{ href: "/demos/url/", title: "Isomorphic URL", hook: "One import for the current URL — reads from the request on the server, window.location on the client." }]}
+demos={[{ href: "/demos/url/", title: "Isomorphic URL", hook: "How the isomorphic URL helper works — one import that reads the request URL on the server and window.location on the client." }]}
 />
