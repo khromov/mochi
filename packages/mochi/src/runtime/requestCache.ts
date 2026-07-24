@@ -1,6 +1,7 @@
 import { requestContext } from './requestContext';
 import { getMochiConfig } from '../mochiConfig';
 import { logger } from '../utils/log';
+import { pinGlobal } from '../utils/globalState';
 
 /**
  * Request-scoped memo store. Entries live and die with the HTTP request, so N
@@ -181,7 +182,12 @@ export interface RequestMemoOptions<A extends unknown[]> {
   quiet?: boolean;
 }
 
-let memoCounter = 0;
+// Pinned on globalThis, not a bare module-level `let`: duplicate bundled copies
+// of this module (server runtime + per-component SSR bundles) share one backing
+// request-cache Map via the global-pinned context, so their default namespaces
+// must come from one counter too — otherwise two copies both mint `memo:1` and
+// silently collide on it.
+const memoCounter = pinGlobal('__mochi_request_memo_counter__', () => ({ n: 0 }));
 
 /**
  * Wrap a function so every call within one request is memoized by its
@@ -194,7 +200,7 @@ let memoCounter = 0;
  * ```
  */
 export function requestMemo<A extends unknown[], R>(fn: (...args: A) => R, options: RequestMemoOptions<A> = {}): (...args: A) => R {
-  const namespace = options.namespace ?? `memo:${++memoCounter}`;
+  const namespace = options.namespace ?? `memo:${++memoCounter.n}`;
   const keyOf = options.key ?? defaultKey;
   const label = options.quiet ? undefined : `${fn.name || 'A request-memoized function'}()`;
   return (...args: A): R => cacheWith(`${namespace}:${keyOf(...args)}`, () => fn(...args), label);

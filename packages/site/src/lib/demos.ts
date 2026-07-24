@@ -162,7 +162,7 @@ export const demos: Demo[] = [
     slug: 'request-cache',
     files: requestCache,
     title: 'Request Cache',
-    hook: 'requestMemo() collapses nine MochiCoin proof-of-work hashes into three for one render — then the request ends and the cache goes with it.',
+    hook: 'Five independent readings of Robinson Crusoe — requestMemo() parses the 124k-word book once per request instead of five times, then the cache dies with the request.',
     category: 'data',
   },
   {

@@ -111,6 +111,8 @@ export async function getImage(src: string, size?: string): Promise<ResolvedImag
   const resolved = resolveNamed(size, options);
 
   if (!resolved) {
+    // `bytes` is the request-cached original, shared by every caller this
+    // request — treat it as read-only; mutating it corrupts the shared entry.
     const { bytes, contentType } = await getCachedOriginal(src, options, cache);
     let meta = { width: 0, height: 0, format: '' };
     try {
@@ -125,6 +127,8 @@ export async function getImage(src: string, size?: string): Promise<ResolvedImag
 
   const id = variantId(src, resolved.configHash);
   const { entry } = await cache.getVariant(src, id, async () => {
+    // Shared request-cached original — read-only. `runPipeline` decodes without
+    // mutating its input, so passing the shared buffer is safe.
     const { bytes, createdAt } = await getCachedOriginal(src, options, cache);
     const out = await runPipeline(bytes, resolved, options);
     return { bytes: out.bytes, contentType: out.contentType, width: out.width, height: out.height, format: out.format, originalCreatedAt: createdAt };

@@ -69,9 +69,14 @@ export function createHighlighter(
     }
     cache.set(key, value);
     // A failed pass must not be cached — the next call should retry rather than
-    // replay a rejected promise forever.
+    // replay a rejected promise forever. Guard on identity so a later retry that
+    // has already re-populated this key isn't evicted by the original's rejection.
     if (typeof value !== 'string') {
-      void value.catch(() => cache.delete(key));
+      void value.catch(() => {
+        if (cache.get(key) === value) {
+          cache.delete(key);
+        }
+      });
     }
     return value;
   };

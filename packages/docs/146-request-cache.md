@@ -89,7 +89,7 @@ These are server-only helpers — they memoize against the request context, whic
 
 <Callout type="warning">
 
-**The request cache is a server-side convenience API.** Use it in server-only code or in islands that never hydrate. Inside a **hydrated** component the calls will run _without_ the server's cached values — `requestCache(key, () => db.user(id))` runs on the server during SSR and again on the client during hydration, where `db` might not be available — which is probably not what you want. So development, calling any of these in the browser logs a one-time warning. If you want to reuse a server-computed value on hydration, wrap it in Svelte's [`hydratable(key, fn)`](/docs/hydratable/) instead, or pass it as serverProps to the route.
+**The request cache is a server-side convenience API.** Use it in server-only code or in islands that never hydrate. Inside a **hydrated** component the calls will run _without_ the server's cached values — `requestCache(key, () => db.user(id))` runs on the server during SSR and again on the client during hydration, where `db` might not be available — which is probably not what you want. In development, calling any of these in the browser logs a one-time warning. If you want to reuse a server-computed value on hydration, wrap it in Svelte's [`hydratable(key, fn)`](/docs/hydratable/) instead, or pass it as serverProps to the route.
 
 </Callout>
 
@@ -105,6 +105,6 @@ In development, the debug bar's **Cache** panel has a **Request cache** section 
 
 <SeeItInAction
 demos={[
-{ href: "/demos/request-cache/", title: "Request Cache", hook: "Nine MochiCoin ledger rows over three blocks — the memoized pass mines three proof-of-work hashes instead of nine." },
+{ href: "/demos/request-cache/", title: "Request Cache", hook: "Five independent facets of Robinson Crusoe — the memoized pass parses the 124k-word book once instead of five times." },
 ]}
 />
