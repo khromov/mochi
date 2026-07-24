@@ -1,6 +1,7 @@
 import { getMochiConfig } from '../mochiConfig';
 import { applyFilter } from '../extensions';
 import { MemoryNonceStore, SqliteNonceStore } from './nonceStore';
+import { DEFAULT_CAPTCHA_SOLVE_BUDGET_MS } from './pow';
 import type { MochiCaptchaOptions, NonceStore, ResolvedCaptchaOptions } from './types';
 
 /**
@@ -48,11 +49,19 @@ export function resolveCaptchaOptions(opts: MochiCaptchaOptions | undefined): Re
   if (!Number.isFinite(driftAllowanceMs) || driftAllowanceMs < 0) {
     throw new Error(`Captcha: driftAllowanceMs must be a non-negative finite number, got ${driftAllowanceMs}`);
   }
+  // Resolved here rather than per mint for the same reason as the drift
+  // allowance: how long a visitor's device is given is a property of the app,
+  // not of a request. A single form that wants its own bound sets the prop.
+  const solveBudgetMs = applyFilter('captcha:solveBudgetMs', DEFAULT_CAPTCHA_SOLVE_BUDGET_MS, { options: o, bits });
+  if (!Number.isFinite(solveBudgetMs) || solveBudgetMs <= 0) {
+    throw new Error(`Captcha: solveBudgetMs must be a positive finite number, got ${solveBudgetMs}`);
+  }
   return {
     bits,
     minAgeMs,
     maxAgeMs,
     driftAllowanceMs,
+    solveBudgetMs,
     store: o.store ?? 'memory',
     storePath: o.storePath ?? '.mochi/captcha-nonces.sqlite',
   };

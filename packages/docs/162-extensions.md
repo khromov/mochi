@@ -595,6 +595,24 @@ await Mochi.serve({
 
 The allowance only ever widens the **expiry** side, and is deliberately not applied to `minAgeMs`. Padding a floor means subtracting from it, so an allowance wider than the floor would silently delete the too-fast check rather than soften it — leaving a config that still reads like it enforces a 2s floor while accepting instant submissions. Use `captcha:minAgeMs` to move the floor, so the change is explicit.
 
+#### `captcha:solveBudgetMs`
+
+How long the widget spends _actively_ solving a proof-of-work before it gives up and offers a retry. Resolved once alongside the rest of the captcha options — how patient the app is doesn't vary per request — and handed to the widget through `mintCaptcha()`, so `{...captcha}` carries it. `bits` is the resolved difficulty, filter included, since the budget has to cover the work it implies. Sync. Defaults to `60_000`.
+
+```ts
+await Mochi.serve({
+  filters: {
+    // A three-field form isn't worth a minute of someone's phone: fail fast and let them retry.
+    'captcha:solveBudgetMs': () => 20_000,
+  },
+  routes,
+});
+```
+
+The value must be a positive finite number — anything else throws at startup rather than leaving every widget to give up instantly. One form that wants its own bound sets the [`solveBudgetMs`](/docs/captcha/#props) prop instead, which wins over whatever this returns.
+
+It is a client-side patience bound only: it isn't sealed into the token and nothing verifies against it, so lowering it never rejects a submission that would otherwise have passed — it only decides when a slow device stops trying.
+
 #### `queue:recoveryStallWarningMs`
 
 How long a queue's [`recover`](/docs/queues/#recovery-on-start) callback may run before Mochi logs a warning naming it. Resolved once per queue that declares one, as its recovery starts, so a queue reading a slow store can be given more room than its siblings. Sync.

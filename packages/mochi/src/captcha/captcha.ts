@@ -30,6 +30,12 @@ function reject(reason: MochiCaptchaReason, details?: { bits?: number; ageMs?: n
 export interface MintedCaptcha {
   token: string;
   bits: number;
+  /**
+   * Active solve time the widget will spend before giving up, carried alongside
+   * the token rather than sealed inside it: nothing here verifies against it, so
+   * a visitor rewriting it only changes how long their own device tries.
+   */
+  solveBudgetMs: number;
 }
 
 /**
@@ -39,10 +45,15 @@ export interface MintedCaptcha {
  * checks the difficulty this token was actually minted at — reconfiguring the
  * server can never silently weaken or break tokens already in flight.
  */
-export function mintCaptcha(options?: { bits?: number }): MintedCaptcha {
-  const bits = options?.bits ?? getCaptchaRuntime().options.bits;
+export function mintCaptcha(options?: { bits?: number; solveBudgetMs?: number }): MintedCaptcha {
+  const resolved = getCaptchaRuntime().options;
+  const bits = options?.bits ?? resolved.bits;
+  const solveBudgetMs = options?.solveBudgetMs ?? resolved.solveBudgetMs;
+  if (!Number.isFinite(solveBudgetMs) || solveBudgetMs <= 0) {
+    throw new Error(`Captcha: solveBudgetMs must be a positive finite number, got ${solveBudgetMs}`);
+  }
   const token = encryptPayload(JSON.stringify({ iat: Date.now(), nonce: randomUUID(), bits }), { aad: CAPTCHA_AAD });
-  return { token, bits };
+  return { token, bits, solveBudgetMs };
 }
 
 /**

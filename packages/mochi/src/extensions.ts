@@ -142,6 +142,7 @@ export interface MochiFilterValue {
   'captcha:bits': number;
   'captcha:minAgeMs': number;
   'captcha:driftAllowanceMs': number;
+  'captcha:solveBudgetMs': number;
   'queue:recoveryStallWarningMs': number;
   'queue:lockDurationMs': number;
 }
@@ -214,6 +215,11 @@ export interface MochiFilterContext {
     limitMs: number;
   };
   'captcha:driftAllowanceMs': { options: MochiCaptchaOptions; maxAgeMs: number };
+  'captcha:solveBudgetMs': {
+    options: MochiCaptchaOptions;
+    /** Resolved difficulty, filter included — the budget has to cover the work this implies. */
+    bits: number;
+  };
   /** Resolved once per queue that declares a `recover` callback, as recovery starts. */
   'queue:recoveryStallWarningMs': { queue: string };
   /** Resolved once per queue, as it is created. */
@@ -248,6 +254,7 @@ export interface MochiFilterKindMap {
   'captcha:bits': 'sync';
   'captcha:minAgeMs': 'sync';
   'captcha:driftAllowanceMs': 'sync';
+  'captcha:solveBudgetMs': 'sync';
   'queue:recoveryStallWarningMs': 'sync';
   'queue:lockDurationMs': 'sync';
 }
@@ -303,6 +310,7 @@ const FILTER_KINDS: { [K in keyof MochiFilterValue]: MochiKind } = {
   'captcha:bits': 'sync',
   'captcha:minAgeMs': 'sync',
   'captcha:driftAllowanceMs': 'sync',
+  'captcha:solveBudgetMs': 'sync',
   'queue:recoveryStallWarningMs': 'sync',
   'queue:lockDurationMs': 'sync',
 };

@@ -247,6 +247,20 @@ describe('new extension points', () => {
     expect(applyFilter('captcha:driftAllowanceMs', 30_000, { options: {}, maxAgeMs: 900_000 })).toBe(45_000);
   });
 
+  test('captcha:solveBudgetMs returns the default unchanged when no filter registered', () => {
+    expect(applyFilter('captcha:solveBudgetMs', 60_000, { options: {}, bits: 19 })).toBe(60_000);
+  });
+
+  test('captcha:solveBudgetMs can scale off the resolved difficulty', () => {
+    initExtensions({
+      filters: {
+        'captcha:solveBudgetMs': (def, { bits }) => (bits > 20 ? def * 2 : def),
+      },
+    });
+    expect(applyFilter('captcha:solveBudgetMs', 60_000, { options: {}, bits: 24 })).toBe(120_000);
+    expect(applyFilter('captcha:solveBudgetMs', 60_000, { options: {}, bits: 19 })).toBe(60_000);
+  });
+
   test('queue:recoveryStallWarningMs returns the default unchanged when no filter registered', () => {
     expect(applyFilter('queue:recoveryStallWarningMs', 30_000, { queue: 'emails' })).toBe(30_000);
   });

@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import type { Attachment } from 'svelte/attachments';
   import { logger, isDev } from 'mochi-framework';
-  import { CAPTCHA_STEPS, CAPTCHA_SOLVE_BUDGET_MS, CAPTCHA_SOLVE_SLICE_MS, chainInput, sha256Hex, solvePowSlice } from './pow';
+  import { CAPTCHA_STEPS, DEFAULT_CAPTCHA_SOLVE_BUDGET_MS, CAPTCHA_SOLVE_SLICE_MS, chainInput, sha256Hex, solvePowSlice } from './pow';
 
   const PROGRESS_AFTER_MS = 2000;
   const PROGRESS_INTERVAL_MS = 1000;
@@ -10,6 +10,7 @@
   let {
     token = '',
     bits = 16,
+    solveBudgetMs = DEFAULT_CAPTCHA_SOLVE_BUDGET_MS,
     emoji = '🧩',
     label = 'Slide to verify',
     verifyingLabel = 'Verifying…',
@@ -19,6 +20,7 @@
   }: {
     token?: string;
     bits?: number;
+    solveBudgetMs?: number;
     emoji?: string;
     label?: string;
     verifyingLabel?: string;
@@ -123,6 +125,10 @@
       failWith(`Bits must be an integer between 1 and 32, got ${bits}`, false);
       return false;
     }
+    if (!Number.isFinite(solveBudgetMs) || solveBudgetMs <= 0) {
+      failWith(`Solve budget must be a positive finite number of milliseconds, got ${solveBudgetMs}`, false);
+      return false;
+    }
     return true;
   }
 
@@ -196,7 +202,7 @@
       }
       nonce = result.next;
       powResumeFrom = nonce;
-      if (spentMs >= CAPTCHA_SOLVE_BUDGET_MS) {
+      if (spentMs >= solveBudgetMs) {
         failWith(`Proof-of-work gave up after ${Math.round(spentMs / 1000)}s and ${nonce} attempts at ${bits} bits`);
         return;
       }

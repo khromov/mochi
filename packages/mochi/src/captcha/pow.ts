@@ -28,12 +28,16 @@ export const CAPTCHA_SOLVE_SLICE_MS = 8;
 export const CAPTCHA_SOLVE_BATCH = 32;
 
 /**
- * Total *active* solve time the widget will spend before giving up and showing
- * an error. Active rather than wall-clock: a backgrounded mobile tab stops
- * scheduling slices entirely, and coming back to a failed captcha you never had
- * a chance to solve is worse than waiting.
+ * Default total *active* solve time the widget will spend before giving up and
+ * showing an error. Active rather than wall-clock: a backgrounded mobile tab
+ * stops scheduling slices entirely, and coming back to a failed captcha you
+ * never had a chance to solve is worse than waiting.
+ *
+ * App-wide via the `captcha:solveBudgetMs` filter, per-widget via the
+ * `solveBudgetMs` prop. Purely a client-side patience bound — nothing verifies
+ * against it, so unlike `bits` it is not sealed into the token.
  */
-export const CAPTCHA_SOLVE_BUDGET_MS = 60_000;
+export const DEFAULT_CAPTCHA_SOLVE_BUDGET_MS = 60_000;
 
 export function chainInput(prev: string, step: number): string {
   return `${prev}:step${step}`;

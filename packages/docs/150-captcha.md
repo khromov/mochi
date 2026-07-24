@@ -40,7 +40,7 @@ export const routes = {
 };
 ```
 
-`mintCaptcha()` returns `{ token, bits }` — spread it straight onto the component. The widget adds its own `captcha_token` and `captcha_pow` hidden inputs to the surrounding form, so `verifyCaptcha(formData)` needs nothing else.
+`mintCaptcha()` returns `{ token, bits, solveBudgetMs }` — spread it straight onto the component. The widget adds its own `captcha_token` and `captcha_pow` hidden inputs to the surrounding form, so `verifyCaptcha(formData)` needs nothing else.
 
 ```svelte
 <script lang="ts">
@@ -95,16 +95,17 @@ A captcha that hydrates by neither route stays empty — an empty slot rather th
 
 #### Props
 
-| Prop             | Default                     | Description                                                                                   |
-| ---------------- | --------------------------- | --------------------------------------------------------------------------------------------- |
-| `token`          | —                           | The sealed challenge from `mintCaptcha()`.                                                    |
-| `bits`           | `19`                        | Difficulty the widget solves at. Comes from `mintCaptcha()`; don't set it by hand.            |
-| `emoji`          | `🧩`                        | The character on the handle.                                                                  |
-| `label`          | `'Slide to verify'`         | The hint shown in the track. Doubles as the handle's accessible name, so keep it descriptive. |
-| `verifyingLabel` | `'Verifying…'`              | Replaces the hint while the proof-of-work runs.                                               |
-| `verifiedLabel`  | `'Verified — thanks!'`      | Replaces the hint once the proof-of-work lands.                                               |
-| `errorLabel`     | see [below](#when-it-fails) | Shown if the widget can't complete the challenge it was given.                                |
-| `verified`       | `false`                     | `$bindable` — true once solved and the proof-of-work has landed.                              |
+| Prop             | Default                     | Description                                                                                                                                                                                                                    |
+| ---------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `token`          | —                           | The sealed challenge from `mintCaptcha()`.                                                                                                                                                                                     |
+| `bits`           | `19`                        | Difficulty the widget solves at. Comes from `mintCaptcha()`; don't set it by hand.                                                                                                                                             |
+| `solveBudgetMs`  | `60_000`                    | Active solve time before the widget gives up. Comes from `mintCaptcha()`; set it here to override that for one form. Also settable app-wide with the [`captcha:solveBudgetMs`](/docs/extensions/#captchasolvebudgetms) filter. |
+| `emoji`          | `🧩`                        | The character on the handle.                                                                                                                                                                                                   |
+| `label`          | `'Slide to verify'`         | The hint shown in the track. Doubles as the handle's accessible name, so keep it descriptive.                                                                                                                                  |
+| `verifyingLabel` | `'Verifying…'`              | Replaces the hint while the proof-of-work runs.                                                                                                                                                                                |
+| `verifiedLabel`  | `'Verified — thanks!'`      | Replaces the hint once the proof-of-work lands.                                                                                                                                                                                |
+| `errorLabel`     | see [below](#when-it-fails) | Shown if the widget can't complete the challenge it was given.                                                                                                                                                                 |
+| `verified`       | `false`                     | `$bindable` — true once solved and the proof-of-work has landed.                                                                                                                                                               |
 
 ```svelte
 <MochiCaptcha {...captcha} emoji="🍡" label="Slide the mochi to the right" />
@@ -139,6 +140,14 @@ Solving runs in short slices that yield to the browser between them, so it stays
 <Callout type="info">
 
 The 60-second budget counts _active_ solve time, not wall clock. A backgrounded mobile tab is throttled to roughly one timer callback per second, so a solve there crawls — but it is never charged for time it wasn't scheduled, and it picks up where it left off when the tab comes forward.
+
+Move it app-wide with the [`captcha:solveBudgetMs`](/docs/extensions/#captchasolvebudgetms) filter, or for one form with the `solveBudgetMs` prop:
+
+```svelte
+<MochiCaptcha {...captcha} solveBudgetMs={20_000} />
+```
+
+Unlike `bits` it isn't sealed into the token — nothing verifies against it, so a visitor who rewrites it only changes how long their own device keeps trying.
 
 </Callout>
 
@@ -346,12 +355,12 @@ const res = await fetch(`${base}/contact/?/send`, {
 
 ### API
 
-| Export                              | Returns                          | Description                                                                      |
-| ----------------------------------- | -------------------------------- | -------------------------------------------------------------------------------- |
-| `mintCaptcha(options?)`             | `{ token, bits }`                | Mint a single-use challenge. `options.bits` overrides the configured difficulty. |
-| `verifyCaptcha(formData, options?)` | `Promise<CaptchaResult>`         | Verify and (unless `consume: false`) burn the nonce.                             |
-| `consumeCaptcha(result)`            | `Promise<boolean>`               | Burn a deferred nonce; `false` if already spent.                                 |
-| `solveCaptcha(minted)`              | `{ captcha_token, captcha_pow }` | Solve server-side, for tests.                                                    |
+| Export                              | Returns                          | Description                                                                                           |
+| ----------------------------------- | -------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `mintCaptcha(options?)`             | `{ token, bits, solveBudgetMs }` | Mint a single-use challenge. `options.bits` / `options.solveBudgetMs` override the configured values. |
+| `verifyCaptcha(formData, options?)` | `Promise<CaptchaResult>`         | Verify and (unless `consume: false`) burn the nonce.                                                  |
+| `consumeCaptcha(result)`            | `Promise<boolean>`               | Burn a deferred nonce; `false` if already spent.                                                      |
+| `solveCaptcha(minted)`              | `{ captcha_token, captcha_pow }` | Solve server-side, for tests.                                                                         |
 
 `CaptchaResult` is `{ ok: true; nonce: string; expiresAt: number }` or `{ ok: false; reason: 'replay' | 'rejected'; error: string }` — `error` is safe to show to the visitor, and `reason` lets you [swap in your own copy](#custom-messages).
 

@@ -3,7 +3,8 @@ import { createHash } from 'node:crypto';
 import { mintCaptcha, verifyCaptcha, consumeCaptcha, solveCaptcha } from './captcha';
 import { CAPTCHA_STEPS, chainInput, powInput, leadingZeroBits, sha256Hex, solvePowSlice } from './pow';
 import { DEFAULT_CAPTCHA_BITS } from './config';
-import { encryptPayload } from '../islands/payloadCrypto';
+import { DEFAULT_CAPTCHA_SOLVE_BUDGET_MS } from './pow';
+import { encryptPayload, decryptPayload } from '../islands/payloadCrypto';
 import { initExtensions } from '../extensions';
 import { mochiEvents } from '../events';
 import type { MochiCaptchaVerifyEvent } from '../events';
@@ -116,6 +117,39 @@ describe('mintCaptcha + verifyCaptcha', () => {
     initExtensions({ filters: { 'captcha:bits': () => 99 } });
     installConfig({ minAgeMs: 0 });
     expect(() => mintCaptcha()).toThrow('bits must be an integer between 1 and 32, got 99');
+  });
+
+  test('carries the default solve budget alongside the token', () => {
+    installConfig({ minAgeMs: 0 });
+    expect(mintCaptcha().solveBudgetMs).toBe(DEFAULT_CAPTCHA_SOLVE_BUDGET_MS);
+  });
+
+  test('captcha:solveBudgetMs filter changes the budget the widget is handed', () => {
+    initExtensions({ filters: { 'captcha:solveBudgetMs': () => 5000 } });
+    installConfig({ minAgeMs: 0 });
+    expect(mintCaptcha().solveBudgetMs).toBe(5000);
+  });
+
+  // The budget is a client-side patience bound, so unlike `bits` it must not
+  // reach the sealed payload — a token minted under one budget stays verifiable
+  // after the filter changes.
+  test('the solve budget is not sealed into the token', () => {
+    initExtensions({ filters: { 'captcha:solveBudgetMs': () => 5000 } });
+    installConfig({ bits: 8, minAgeMs: 0 });
+    const minted = mintCaptcha();
+    initExtensions({ filters: { 'captcha:solveBudgetMs': () => 90_000 } });
+    expect(JSON.parse(decryptPayload(minted.token, { aad: 'mochi-captcha' })!)).not.toHaveProperty('solveBudgetMs');
+  });
+
+  test('a per-mint solve budget overrides the resolved one', () => {
+    initExtensions({ filters: { 'captcha:solveBudgetMs': () => 5000 } });
+    installConfig({ minAgeMs: 0 });
+    expect(mintCaptcha({ solveBudgetMs: 12_000 }).solveBudgetMs).toBe(12_000);
+  });
+
+  test('rejects a non-positive per-mint solve budget', () => {
+    installConfig({ minAgeMs: 0 });
+    expect(() => mintCaptcha({ solveBudgetMs: 0 })).toThrow('solveBudgetMs must be a positive finite number, got 0');
   });
 
   test('rejects a tampered token', async () => {
@@ -447,5 +481,11 @@ describe('resolveCaptchaOptions', () => {
   test('rejects an age floor that exceeds the expiry', () => {
     installConfig({ minAgeMs: 5000, maxAgeMs: 1000 });
     expect(() => mintCaptcha()).toThrow(/must be less than maxAgeMs/);
+  });
+
+  test('rejects a solve budget a filter returned as non-positive', () => {
+    initExtensions({ filters: { 'captcha:solveBudgetMs': () => -1 } });
+    installConfig({ minAgeMs: 0 });
+    expect(() => mintCaptcha()).toThrow(/solveBudgetMs must be a positive finite number/);
   });
 });
