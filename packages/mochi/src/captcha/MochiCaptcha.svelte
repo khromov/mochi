@@ -4,9 +4,7 @@
   import { logger, isDev } from 'mochi-framework';
   import { CAPTCHA_STEPS, CAPTCHA_SOLVE_BUDGET_MS, CAPTCHA_SOLVE_SLICE_MS, chainInput, sha256Hex, solvePowSlice } from './pow';
 
-  /** Active solve time before the attempt counter appears at all. */
   const PROGRESS_AFTER_MS = 2000;
-  /** Minimum gap between counter updates — see the note at `progressAttempts`. */
   const PROGRESS_INTERVAL_MS = 1000;
 
   let {
@@ -32,24 +30,17 @@
   let solved = $state(false);
   let powNonce = $state<string | null>(null);
   let error = $state<string | null>(null);
-  // A configuration mistake can't be retried into working, so it doesn't get a
-  // retry affordance — see `suppressed` and the error branch of the markup.
+  // A configuration mistake can't be retried into working, so it gets no retry
+  // affordance.
   let errorRetryable = $state(false);
 
-  // Surfaced next to `verifyingLabel` once the solve outlasts a moment, so the
-  // hint can never sit there as a frozen string with nothing behind it — a
-  // widget that looks stuck now says whether it is actually still working.
-  // Published on an interval rather than per slice: this text sits inside an
-  // aria-live region and a slice lands every few milliseconds, which would turn
-  // a slow solve — exactly the case the counter exists for — into a stream of
-  // screen-reader announcements. null means "not showing".
+  // null means "not showing". Published on an interval rather than per slice:
+  // it sits in an aria-live region and slices land every few milliseconds.
   let progressAttempts = $state<number | null>(null);
 
-  // A non-retryable failure is always the host's misconfiguration. In dev it
-  // renders so it can't be missed; in production there is nothing a visitor
-  // could do with it, and the widget submits no token either way — so it
-  // degrades to the same empty slot as a captcha that never hydrated, with the
-  // cause left in the console by `failWith`.
+  // A misconfiguration is for the developer, not the visitor: shown in dev,
+  // and in production degraded to the same empty slot as a captcha that never
+  // hydrated, with the cause left in the console by `failWith`.
   const suppressed = $derived(error !== null && !errorRetryable && !isDev);
 
   // The widget is inert without JavaScript — the slider, the hash chain and the
@@ -62,9 +53,8 @@
   let mounted = $state(false);
   onMount(() => {
     mounted = true;
-    // Validated at mount rather than when the chain completes: a widget wired up
-    // wrong should say so before the visitor drags anything, not after a full
-    // slide spent hashing towards a challenge that was never going to be solved.
+    // At mount, not when the chain completes: a widget wired up wrong should say
+    // so before the visitor drags anything.
     validateProps();
   });
 
@@ -83,12 +73,9 @@
   let generation = 0;
   let solveTimer: ReturnType<typeof setTimeout> | null = null;
 
-  // Where the nonce search resumes after a retry. The token — and so the chain,
-  // and so the challenge — never changes for the island's lifetime, which makes
-  // the search deterministic: restarting at 0 would replay the identical failed
-  // attempts and an exhausted budget could never resolve itself, leaving a retry
-  // button that cannot possibly recover. Carrying the nonce forward is what
-  // makes pressing it mean something.
+  // Where the nonce search resumes after a retry. The token never changes, so
+  // the search is deterministic — restarting at 0 would replay the attempts that
+  // just failed and an exhausted budget could never resolve itself.
   let powResumeFrom = 0;
 
   $effect(() => () => {
@@ -107,12 +94,9 @@
 
   /**
    * The one way this widget is allowed to stop working. Every path that could
-   * strand it — a throw, an exhausted budget, a misconfigured prop — lands here,
-   * so a failure is always visible and always logged rather than a permanent
-   * "Verifying…" with nothing in the console.
-   *
-   * `retryable` is false only for a misconfiguration, which re-running would
-   * reproduce exactly; those get no retry button.
+   * strand it lands here, so a failure is never a permanent "Verifying…" with
+   * nothing in the console. `retryable` is false only for a misconfiguration,
+   * which re-running would reproduce exactly.
    */
   function failWith(detail: string, retryable = true) {
     cancelSolve();
@@ -125,8 +109,7 @@
     // have released the drag never arrives. Without this the retried slider
     // ignores every subsequent pointerdown — observed in the browser.
     activePointer = null;
-    // `error` level, so this prints in production too (the default level is
-    // `warn`) — a repeat report has something concrete behind it.
+    // `error` level, so it survives the production default of `warn`.
     logger.error(`captcha: ${detail}`);
   }
 
@@ -287,7 +270,6 @@
     emitSteps();
   }
 
-  /** Releases the drag; false if the event belongs to some other pointer. */
   function releasePointer(e: PointerEvent): boolean {
     if (activePointer !== e.pointerId) {
       return false;
@@ -300,12 +282,9 @@
     if (!releasePointer(e) || solved) {
       return;
     }
-    // The lift-off carries its own position, and it can sit past wherever the
-    // last pointermove left us — moves coalesce, and the final one lags the
-    // finger. Applying it is what actually rescues a finger lifting a pixel or
-    // two short of the end; settling against the stale move offset decides
-    // nothing, because any offset within tolerance already settled on the move
-    // that set it.
+    // Moves coalesce, so the lift-off can sit past where the last one left us.
+    // Applying its position is what rescues a finger lifting a pixel short of
+    // the end — settling against the stale move offset decides nothing.
     applyPointer(e);
     settle();
     emitSteps();
@@ -314,8 +293,8 @@
     }
   }
 
-  // Not the same as a release: a cancelled gesture is one the visitor did not
-  // complete, so it must not settle into `solved` the way a lift-off does.
+  // A cancelled gesture is one the visitor didn't complete, so unlike a lift-off
+  // it must not settle into `solved`.
   function onPointerCancel(e: PointerEvent) {
     if (!releasePointer(e)) {
       return;
@@ -345,11 +324,8 @@
   <div class="captcha" class:solved class:verified class:errored={error !== null}>
     {#if error !== null && errorRetryable}
       <!-- A real button rather than the slider in an error skin: tap, Enter and
-           Space all reset the widget for free, and a dead-ended visitor is the
-           thing this whole error path exists to prevent. The cause underneath is
-           developer-facing — a visitor can't act on it, and it describes the
-           framework's internals — so it stays in dev, while `failWith` logs it
-           at `error` level everywhere. -->
+           Space all reset the widget for free. The cause underneath is
+           developer-facing, so it stays in dev. -->
       <button type="button" class="track error-box" onclick={retry}>
         <span class="captcha-hint" role="alert">
           {errorLabel}
@@ -357,8 +333,8 @@
         </span>
       </button>
     {:else if error !== null}
-      <!-- Dev only (see `suppressed`): a configuration mistake, verbatim and
-           with no retry affordance, because retrying reproduces it exactly. -->
+      <!-- Dev only (see `suppressed`): no retry affordance, because retrying
+           reproduces a configuration mistake exactly. -->
       <div class="track error-box">
         <span class="captcha-hint" role="alert"><small>{error}</small></span>
       </div>
@@ -387,8 +363,8 @@
             {verifiedLabel}
           {:else if solved}
             {verifyingLabel}
-            <!-- Hidden from the live region: the state change is what's worth
-                 announcing, not a number ticking past a screen reader. -->
+            <!-- Out of the live region: the state change is worth announcing,
+                 a ticking number isn't. -->
             {#if progressAttempts !== null}<span aria-hidden="true">&nbsp;({progressAttempts.toLocaleString()} attempts)</span>{/if}
           {:else}
             {label}
@@ -484,8 +460,8 @@
     border-color: var(--mochi-captcha-error-border, #e9c9c4);
   }
 
-  /* Only the retryable variant is a <button>, and it has to shed the UA button
-     styling for the .track rule above to land. */
+  /* Only the retryable variant is a button, and it has to shed the UA styling
+     for the .track rule above to land. */
   .captcha button.error-box {
     font: inherit;
     cursor: pointer;
