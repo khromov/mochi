@@ -103,7 +103,7 @@ A captcha that hydrates by neither route stays empty — an empty slot rather th
 | `label`          | `'Slide to verify'`         | The hint shown in the track. Doubles as the handle's accessible name, so keep it descriptive. |
 | `verifyingLabel` | `'Verifying…'`              | Replaces the hint while the proof-of-work runs.                                               |
 | `verifiedLabel`  | `'Verified — thanks!'`      | Replaces the hint once the proof-of-work lands.                                               |
-| `errorLabel`     | see [below](#when-it-fails) | Shown if the widget can't complete the challenge. The specific cause is appended under it.    |
+| `errorLabel`     | see [below](#when-it-fails) | Shown if the widget can't complete the challenge it was given.                                |
 | `verified`       | `false`                     | `$bindable` — true once solved and the proof-of-work has landed.                              |
 
 ```svelte
@@ -118,15 +118,29 @@ All three hints are yours, so the widget can stay in your app's voice from the f
 
 ### When it fails
 
-The widget should never fail to solve a challenge it was handed — but if it does, it says so instead of sitting on "Verifying…". The track turns into a retry button showing `errorLabel` plus the specific cause, and the same message is logged through the [logger](/docs/logging/) at `error` level, so it appears in production consoles too:
+The widget should never fail to solve a challenge it was handed — but if it does, it says so instead of sitting on "Verifying…". Every failure is logged through the [logger](/docs/logging/) at `error` level, so it reaches production consoles:
 
 ```
 [mochi] captcha: no token — spread the result of mintCaptcha() onto <MochiCaptcha />
 ```
 
-Tapping it resets the widget for a fresh attempt. Nothing is submitted from an errored widget: the `captcha_token` and `captcha_pow` fields stay empty, so the server rejects it as an unsolved submission either way.
+What the visitor sees depends on whether trying again could plausibly help.
 
-The cases it reports are a missing `token` (usually `{...captcha}` not spread), a `bits` value outside 1–32, and a proof-of-work that ran for 30 seconds of active CPU without landing. Solving runs in short slices that yield to the browser between them, so it stays interruptible and never blocks the page — and once a solve passes two seconds the hint starts showing the attempt count, so a slow device looks slow rather than stuck.
+**A proof-of-work that ran out of budget, or a hash that threw** — the track becomes a retry button showing `errorLabel`. Tapping it resets the slide, and the nonce search _resumes where it stopped_ rather than restarting: the token never changes, so the search is deterministic and a retry from zero would replay exactly the attempts that already failed.
+
+**A missing `token` (usually `{...captcha}` not spread) or a `bits` value outside 1–32** — a configuration mistake, caught at mount rather than after a full slide, and not retryable, since re-running reproduces it exactly. In development the widget renders the cause verbatim so it can't be missed. In production it renders nothing at all, the same empty slot as a captcha that never hydrated, and the cause stays in the console — there is nothing a visitor could do with it, and either way the widget submits no token.
+
+The diagnostic text is developer-facing and never shown to visitors in production; `errorLabel` is the only string they see.
+
+Nothing is submitted from an errored widget: the `captcha_token` and `captcha_pow` fields stay empty, so the server rejects it as an unsolved submission.
+
+Solving runs in short slices that yield to the browser between them, so it stays interruptible and never blocks the page. Once a solve passes two seconds the hint starts showing the attempt count — updated about once a second, and hidden from screen readers, which are told about the state change rather than the ticking number — so a slow device looks slow rather than stuck.
+
+<Callout type="info">
+
+The 30-second budget counts _active_ solve time, not wall clock. A backgrounded mobile tab is throttled to roughly one timer callback per second, so a solve there crawls — but it is never charged for time it wasn't scheduled, and it picks up where it left off when the tab comes forward.
+
+</Callout>
 
 ### How it works
 

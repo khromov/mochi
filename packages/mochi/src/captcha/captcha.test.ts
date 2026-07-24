@@ -77,13 +77,18 @@ describe('mintCaptcha + verifyCaptcha', () => {
     }
     let next = 0;
     let captcha_pow: string | null = null;
-    while (captcha_pow === null) {
+    // Bounded so a solvePowSlice that stopped advancing fails the test instead
+    // of hanging the suite. At 8 bits a solution lands within a few hundred.
+    for (let i = 0; i < 10_000 && captcha_pow === null; i++) {
       const slice = solvePowSlice(chain, minted.bits, next, 0);
       if ('nonce' in slice) {
         captcha_pow = slice.nonce;
       } else {
         next = slice.next;
       }
+    }
+    if (captcha_pow === null) {
+      throw new Error('solvePowSlice stopped advancing — no nonce after 10,000 slices');
     }
     expect((await verifyCaptcha(fields({ captcha_token: minted.token, captcha_pow }))).ok).toBe(true);
   });

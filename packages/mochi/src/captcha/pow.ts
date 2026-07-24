@@ -9,8 +9,23 @@ export const CAPTCHA_AAD = 'mochi-captcha';
 // only exists once the slide progression has actually been run.
 export const CAPTCHA_STEPS = 10;
 
-/** How long one uninterrupted brute-force slice may run before yielding to paint. */
+/**
+ * How long one brute-force slice may run before yielding to paint. The clock is
+ * only read between batches, so the real bound is
+ * `max(CAPTCHA_SOLVE_SLICE_MS, one batch of CAPTCHA_SOLVE_BATCH hashes)` — the
+ * batch is sized small enough that the second term stays under the first on any
+ * device slow enough to matter.
+ */
 export const CAPTCHA_SOLVE_SLICE_MS = 8;
+
+/**
+ * Attempts between clock reads. Measured (Bun 1.3, arm64): one attempt —
+ * `powInput` + a ~70-byte digest — costs ~1360ns against ~27ns for `Date.now()`,
+ * so a check every 32 adds ~0.06% overhead while capping the un-yielded run at
+ * 32 hashes. A larger batch buys nothing measurable and only widens the worst
+ * main-thread block on a slow phone, which is the device this exists for.
+ */
+export const CAPTCHA_SOLVE_BATCH = 32;
 
 /**
  * Total *active* solve time the widget will spend before giving up and showing
@@ -100,9 +115,7 @@ export function solvePowSlice(challenge: string, bits: number, from: number, sli
   const deadline = now() + sliceMs;
   let n = from;
   for (;;) {
-    // Reading the clock costs more than hashing a ~70-byte input, so only check
-    // it once per batch rather than per attempt.
-    for (let i = 0; i < 512; i++, n++) {
+    for (let i = 0; i < CAPTCHA_SOLVE_BATCH; i++, n++) {
       if (leadingZeroBits(sha256Bytes(powInput(challenge, String(n)))) >= bits) {
         return { nonce: String(n) };
       }

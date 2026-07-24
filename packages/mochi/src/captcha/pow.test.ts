@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
-import { CAPTCHA_STEPS, chainInput, powInput, leadingZeroBits, toHex, sha256Bytes, sha256Hex, deriveChain, solvePowSlice } from './pow';
+import { CAPTCHA_STEPS, CAPTCHA_SOLVE_BATCH, chainInput, powInput, leadingZeroBits, toHex, sha256Bytes, sha256Hex, deriveChain, solvePowSlice } from './pow';
 
 const nodeHex = (input: string) => createHash('sha256').update(input, 'utf8').digest('hex');
 
@@ -150,13 +150,33 @@ describe('solvePowSlice', () => {
     // 32 bits is far out of reach inside one batch, so this always yields.
     const result = solvePowSlice(challenge, 32, 0, 0);
     expect(result).not.toHaveProperty('nonce');
-    expect((result as { next: number }).next).toBeGreaterThan(0);
+    expect((result as { next: number }).next).toBe(CAPTCHA_SOLVE_BATCH);
   });
 
   test('honours the injected clock rather than wall time', () => {
     let now = 0;
     // Advances past the deadline on the second read, so exactly one batch runs.
     const result = solvePowSlice(challenge, 32, 0, 5, () => (now += 100));
-    expect((result as { next: number }).next).toBe(512);
+    expect((result as { next: number }).next).toBe(CAPTCHA_SOLVE_BATCH);
+  });
+
+  // The un-yielded run is what a slow phone feels as a frozen frame, and it is
+  // set by the batch rather than by CAPTCHA_SOLVE_SLICE_MS — the clock is only
+  // read between batches. Pins it small so that stays true.
+  test('never runs more than one batch past the deadline', () => {
+    let reads = 0;
+    // Already past the deadline on the very first check.
+    const result = solvePowSlice(challenge, 32, 0, -1, () => ++reads * 1000);
+    expect((result as { next: number }).next).toBe(CAPTCHA_SOLVE_BATCH);
+    expect(CAPTCHA_SOLVE_BATCH).toBeLessThanOrEqual(64);
+  });
+
+  test('resumes from a non-zero starting nonce', () => {
+    // What a retry after an exhausted budget does: carry the nonce forward
+    // instead of replaying a search that already came up empty.
+    const solution = Number((solvePowSlice(challenge, 12, 0, 10_000) as { nonce: string }).nonce);
+    expect(solution).toBeGreaterThan(0);
+    const past = solvePowSlice(challenge, 12, solution + 1, 10_000) as { nonce: string };
+    expect(Number(past.nonce)).toBeGreaterThan(solution);
   });
 });
