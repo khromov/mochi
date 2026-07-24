@@ -104,5 +104,5 @@ getLogLevel(); // 'error'
 The event bus (`mochiEvents`) is a separate concern: it carries structured payloads to any subscriber you wire up, regardless of console output. The built-in `consoleLogger()` — the thing that prints request lines like `GET /foo 200 12ms` — is just one consumer subscribing to those events and calling `logger.info` / `logger.warn` per event. Plug Sentry, OpenTelemetry, or your own pipeline directly into `mochiEvents`; use `logger` for ad-hoc messages.
 
 <SeeItInAction
-demos={[{ href: "/demos/cache-events/", title: "Cache Events", hook: "Subscribe to MochiCache lifecycle events through mochiEvents and log them to the server console." }]}
+demos={[{ href: "/demos/cache-events/", title: "Cache Events", hook: "How cache events work — subscribe to MochiCache lifecycle events (hit, miss, set, evict) through mochiEvents for observability." }]}
 />

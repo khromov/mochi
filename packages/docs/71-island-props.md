@@ -118,8 +118,8 @@ To branch on whether the current render will hydrate, call [`isHydratable()`](/d
 
 <SeeItInAction
 demos={[
-{ href: "/demos/island-props/", title: "Crossing the server-client boundary with props", hook: "How props travel from a server-rendered parent into a hydrated island — Date, Map, Set, BigInt, URL, typed arrays, and even cyclic refs survive devalue's round-trip." },
-{ href: "/demos/prop-dedup/", title: "Shared Props", hook: "Nine islands, three unique payloads — each set serialized once and referenced via props-ref." },
-{ href: "/demos/props-id/", title: "Unique IDs", hook: "Svelte's native $props.id() inside islands — SSR-consistent, unique per instance, namespaced in server islands." },
+{ href: "/demos/island-props/", title: "Crossing the server-client boundary with props", hook: "How props cross the server-client boundary — Date, Map, Set, BigInt, URL, typed arrays, and even cyclic refs survive devalue's round-trip into a hydrated island." },
+{ href: "/demos/prop-dedup/", title: "Shared Props", hook: "How island prop deduplication works — nine islands share three unique payloads, each serialized once and referenced via props-ref." },
+{ href: "/demos/props-id/", title: "Unique IDs", hook: "How stable island IDs work — Svelte's native $props.id() gives SSR-consistent, per-instance ids, namespaced inside server islands." },
 ]}
 />

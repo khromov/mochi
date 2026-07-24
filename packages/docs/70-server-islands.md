@@ -146,8 +146,8 @@ bunx mochi-framework generate-key
 
 <SeeItInAction
 demos={[
-{ href: "/demos/server-island/", title: "Server Islands", hook: "Components marked mochi:defer render server-side on demand after the initial page is delivered." },
-{ href: "/demos/nested-islands/", title: "Nested Islands", hook: "Islands inside islands — a mochi:defer server island wrapping mochi:hydrate components, and a server island nesting more server islands." },
-{ href: "/demos/lazy-server-island/", title: "Lazy Server Islands", hook: "Server islands marked mochi:defer:visible only fetch when the wrapper scrolls into view." },
+{ href: "/demos/server-island/", title: "Server Islands", hook: "How server islands work — components marked mochi:defer render server-side on demand after the initial page is delivered." },
+{ href: "/demos/nested-islands/", title: "Nested Islands", hook: "How nested islands work — a mochi:defer server island wrapping mochi:hydrate components, and server islands nesting more server islands." },
+{ href: "/demos/lazy-server-island/", title: "Lazy Server Islands", hook: "How lazy server islands work — server islands marked mochi:defer:visible only fetch when the wrapper scrolls into view." },
 ]}
 />
