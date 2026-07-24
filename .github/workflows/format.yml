@@ -37,5 +37,17 @@ jobs:
       - name: Install dependencies
         run: bun install
 
+      # Persist the Prettier cache across runs. Uses --cache-strategy content
+      # (set in the format script) because checkout rewrites mtimes every run,
+      # which would invalidate the default metadata-based cache entirely.
+      - name: Cache Prettier results
+        uses: actions/cache@v6
+        with:
+          path: .cache/prettier
+          key: ${{ runner.os }}-prettiercache-${{ hashFiles('.prettierrc*', 'package.json', 'bun.lock') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-prettiercache-${{ hashFiles('.prettierrc*', 'package.json', 'bun.lock') }}-
+            ${{ runner.os }}-prettiercache-
+
       - name: Format check
         run: bun run format:check

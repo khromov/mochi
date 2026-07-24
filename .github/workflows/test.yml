@@ -44,6 +44,18 @@ jobs:
       - name: Install dependencies
         run: bun install
 
+      # Persist the ESLint cache across runs. Uses --cache-strategy content
+      # (set in the lint script) because checkout rewrites mtimes every run,
+      # which would invalidate the default metadata-based cache entirely.
+      - name: Cache ESLint results
+        uses: actions/cache@v6
+        with:
+          path: .eslintcache
+          key: ${{ runner.os }}-eslintcache-${{ hashFiles('eslint.config.js', 'bun.lock') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-eslintcache-${{ hashFiles('eslint.config.js', 'bun.lock') }}-
+            ${{ runner.os }}-eslintcache-
+
       - name: Check dependency consistency
         run: bun run syncpack
 
