@@ -1,25 +1,10 @@
-import { requestCache, requestMemo } from 'mochi-framework';
-
-export interface Counters {
-  uncached: number;
-  cached: number;
-}
-
-/**
- * Per-request tallies, themselves stored in the request cache — so every
- * facet on the page increments the same object without module-level state
- * leaking between requests.
- */
-export function counters(): Counters {
-  return requestCache('demo:crusoe:counters', () => ({ uncached: 0, cached: 0 }));
-}
+import { requestMemo } from 'mochi-framework';
 
 // The text of Robinson Crusoe, read once at module load and trimmed to Defoe's
 // prose — the Project Gutenberg header/footer is boilerplate that would skew the
 // word counts (and hand "unenforceability" the longest-word crown). The file
 // read is one-time setup; the expensive, repeated work is analyze() below — that
-// is what gets memoized, the same way pure CPU (not I/O) was the memoized cost
-// before.
+// is what gets memoized.
 const RAW = await Bun.file('./src/demos/request-cache/robinson-crusoe.txt').text();
 const bodyStart = RAW.indexOf('***', RAW.indexOf('*** START OF') + 3) + 3;
 const BOOK = RAW.slice(bodyStart, RAW.indexOf('*** END OF'));
@@ -27,7 +12,7 @@ const BOOK = RAW.slice(bodyStart, RAW.indexOf('*** END OF'));
 // Very common English words carry no signal in a top-words list; drop them so
 // the narrative's real vocabulary (shore, boat, island, Friday…) rises to the top.
 const STOPWORDS = new Set(
-  "a an the and or but if of to in into on upon at by for from with without within as than then so such no not nor only own same other another some any each few many more most all both very much well now here there when where while though yet also about before after over under again ever never how what which who whom whose that this these those i me my we us our you your he him his she her it its they them their been being am is are was were be do does did done have has had having would should could shall will may might must can cannot thus therefore hence unto amongst out up down".split(
+  'a an the and or but if of to in into on upon at by for from with without within as than then so such no not nor only own same other another some any each few many more most all both very much well now here there when where while though yet also about before after over under again ever never how what which who whom whose that this these those i me my we us our you your he him his she her it its they them their been being am is are was were be do does did done have has had having would should could shall will may might must can cannot thus therefore hence unto amongst out up down'.split(
     ' ',
   ),
 );
@@ -101,28 +86,16 @@ function analyze(text: string): Analysis {
   };
 }
 
-function analyzeUncached(): Analysis {
-  counters().uncached++;
-  return analyze(BOOK);
-}
-
 /**
- * The same analysis, memoized for the duration of one request. The counter
- * lives inside the wrapped function, so it only ticks on a miss — a hit never
- * runs this body at all. Zero args means a single shared entry: however many
- * facets ask for the analysis, the book is parsed once per request.
+ * The whole-book analysis, memoized for the duration of one request. Zero args
+ * means a single shared entry: however many of the facet helpers below get
+ * called, and from however many components, the book is parsed exactly once per
+ * request — the first call is a miss, every other call is a hit.
  */
-const analyzeCached = requestMemo(
-  (): Analysis => {
-    counters().cached++;
-    return analyze(BOOK);
-  },
-  { namespace: 'demo:crusoe' },
-);
+const analyzeCached = requestMemo(() => analyze(BOOK), { namespace: 'demo:crusoe' });
 
-// Five independent facets. Each is a separate consumer that asks for the whole
-// analysis and keeps only its slice — naively that's five full parses; through
-// analyzeCached() it's one parse and four hits.
+// Five independent facets. Each is its own consumer that asks for the whole
+// analysis and keeps just its slice — five calls, one parse.
 
 export interface Overview {
   words: number;
@@ -131,18 +104,18 @@ export interface Overview {
   readingMinutes: number;
 }
 
-function toOverview(a: Analysis): Overview {
+export function overview(): Overview {
+  const a = analyzeCached();
   return { words: a.words, unique: a.unique, sentences: a.sentences, readingMinutes: a.readingMinutes };
 }
 
-export const overview = () => toOverview(analyzeCached());
-export const overviewUncached = () => toOverview(analyzeUncached());
+export function topWords(): Array<[string, number]> {
+  return analyzeCached().topWords.slice(0, 12);
+}
 
-export const topWords = () => analyzeCached().topWords.slice(0, 12);
-export const topWordsUncached = () => analyzeUncached().topWords.slice(0, 12);
-
-export const themes = () => analyzeCached().themes;
-export const themesUncached = () => analyzeUncached().themes;
+export function themes(): Array<[string, number]> {
+  return analyzeCached().themes;
+}
 
 export interface Extremes {
   longestSentenceWords: number;
@@ -150,7 +123,8 @@ export interface Extremes {
   longestWord: string;
 }
 
-function toExtremes(a: Analysis): Extremes {
+export function extremes(): Extremes {
+  const a = analyzeCached();
   return {
     longestSentenceWords: a.longestSentenceWords,
     longestSentenceExcerpt: a.longestSentenceExcerpt,
@@ -158,8 +132,6 @@ function toExtremes(a: Analysis): Extremes {
   };
 }
 
-export const extremes = () => toExtremes(analyzeCached());
-export const extremesUncached = () => toExtremes(analyzeUncached());
-
-export const richness = () => analyzeCached().hapax;
-export const richnessUncached = () => analyzeUncached().hapax;
+export function richness(): number {
+  return analyzeCached().hapax;
+}

@@ -1,91 +1,73 @@
 <script>
   import DemoPage from '../../components/DemoPage.svelte';
   import { loadSources } from '../../components/utils';
+  import { highlightCode } from '../../lib/highlight.server';
   import { files } from './files.ts';
-  import {
-    counters,
-    overview,
-    overviewUncached,
-    topWords,
-    topWordsUncached,
-    themes,
-    themesUncached,
-    extremes,
-    extremesUncached,
-    richness,
-    richnessUncached,
-  } from './analyzeBook.ts';
+  import { overview, topWords, themes, extremes, richness } from './analyzeBook.ts';
 
   const sources = await loadSources(files);
 
-  // Five independent facets of the same book, each rendered by its own panel —
-  // the shape of a page whose components each look up the value they need,
-  // without knowing what the others already computed.
-  const uncachedStart = performance.now();
-  overviewUncached();
-  topWordsUncached();
-  themesUncached();
-  extremesUncached();
-  richnessUncached();
-  const uncachedMs = Math.round(performance.now() - uncachedStart);
-
-  const cachedStart = performance.now();
+  // Five independent consumers of the same book. Each helper wraps the memoized
+  // analysis, so these five calls parse the 124k-word text exactly once between
+  // them — the first is a cache miss, the rest are hits.
   const facetOverview = overview();
   const facetTopWords = topWords();
   const facetThemes = themes();
   const facetExtremes = extremes();
   const facetHapax = richness();
-  const cachedMs = Math.round(performance.now() - cachedStart);
 
-  const { uncached, cached } = counters();
   const nf = new Intl.NumberFormat('en-US');
   const topMax = facetTopWords[0]?.[1] ?? 1;
+
+  const snip = (code) => highlightCode(code, 'ts');
+  const codeOverview = await snip('const { words, unique, sentences } = overview();');
+  const codeTopWords = await snip('const top = topWords();');
+  const codeThemes = await snip('const counts = themes();');
+  const codeExtremes = await snip('const { longestWord, longestSentenceExcerpt } = extremes();');
+  const codeRichness = await snip('const hapax = richness();');
 </script>
 
 <DemoPage
   title="Request Cache"
-  description="Analysing the full text of Robinson Crusoe — 124,000 words — takes about 20ms of pure CPU. This page shows five independent facets of that analysis, so the naive pass parses the whole book five times. requestMemo() makes it once, for the rest of this request only."
+  description="Five independent helpers each read the full text of Robinson Crusoe, but requestMemo() parses the 124k-word book only once per request — the first call analyses it, the other four are instant cache hits, and the whole cache is thrown away when the request ends."
   {sources}
 >
   <div class="stack">
-    <div class="cards">
-      <div class="card">
-        <span class="card-label">Naive</span>
-        <span class="card-value">{uncached} analyses</span>
-        <span class="card-note">{uncachedMs}ms of CPU</span>
-      </div>
-      <div class="card is-good">
-        <span class="card-label">requestMemo()</span>
-        <span class="card-value">{cached} analysis</span>
-        <span class="card-note">{cachedMs}ms of CPU</span>
-      </div>
-      <div class="card">
-        <span class="card-label">Saved</span>
-        <span class="card-value">{uncachedMs - cachedMs}ms</span>
-        <span class="card-note">same five facets</span>
-      </div>
-    </div>
-
     <p class="hint">
-      Both passes read the identical book — the memoized one just stops parsing it four extra times. Open the <strong>debug bar</strong> at the bottom of the page and its
-      <strong>Cache</strong>
-      panel: the <strong>Request cache</strong> section reports the hits, misses, and hit rate for this exact render (one miss, four hits). Reload and the numbers come back the same —
-      entries die with the request, so the next visitor parses from scratch.
+      Every panel below calls its own helper (<code>overview()</code>, <code>topWords()</code>, …) and each helper asks for the same memoized analysis. Open the
+      <strong>debug bar</strong> at the bottom of the page and its <strong>Cache</strong> panel: the <strong>Request cache</strong> section shows one miss and four hits for this
+      render. Reload and the numbers come back the same — entries die with the request, so the next visitor parses from scratch.
     </p>
 
     <div class="facets">
       <section class="facet">
         <h3>Overview</h3>
+        <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+        <div class="snippet">{@html codeOverview}</div>
         <dl class="stats">
-          <div><dt>Words</dt><dd>{nf.format(facetOverview.words)}</dd></div>
-          <div><dt>Unique</dt><dd>{nf.format(facetOverview.unique)}</dd></div>
-          <div><dt>Sentences</dt><dd>{nf.format(facetOverview.sentences)}</dd></div>
-          <div><dt>Reading time</dt><dd>~{facetOverview.readingMinutes} min</dd></div>
+          <div>
+            <dt>Words</dt>
+            <dd>{nf.format(facetOverview.words)}</dd>
+          </div>
+          <div>
+            <dt>Unique</dt>
+            <dd>{nf.format(facetOverview.unique)}</dd>
+          </div>
+          <div>
+            <dt>Sentences</dt>
+            <dd>{nf.format(facetOverview.sentences)}</dd>
+          </div>
+          <div>
+            <dt>Reading time</dt>
+            <dd>~{facetOverview.readingMinutes} min</dd>
+          </div>
         </dl>
       </section>
 
       <section class="facet">
         <h3>Top words</h3>
+        <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+        <div class="snippet">{@html codeTopWords}</div>
         <ul class="bars">
           {#each facetTopWords as [word, count] (word)}
             <li>
@@ -99,6 +81,8 @@
 
       <section class="facet">
         <h3>Themes</h3>
+        <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+        <div class="snippet">{@html codeThemes}</div>
         <ul class="chips">
           {#each facetThemes as [word, count] (word)}
             <li><span class="chip-word">{word}</span><span class="chip-count">{nf.format(count)}</span></li>
@@ -108,6 +92,8 @@
 
       <section class="facet">
         <h3>Extremes</h3>
+        <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+        <div class="snippet">{@html codeExtremes}</div>
         <p class="extreme-label">Longest word</p>
         <p class="extreme-value"><code>{facetExtremes.longestWord}</code></p>
         <p class="extreme-label">Longest sentence · {facetExtremes.longestSentenceWords} words</p>
@@ -116,6 +102,8 @@
 
       <section class="facet">
         <h3>Vocabulary richness</h3>
+        <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+        <div class="snippet">{@html codeRichness}</div>
         <p class="hapax"><strong>{nf.format(facetHapax)}</strong> words appear exactly once</p>
         <p class="extreme-label">Hapax legomena — {Math.round((facetHapax / facetOverview.unique) * 100)}% of the vocabulary</p>
       </section>
@@ -130,44 +118,6 @@
     gap: 1.25rem;
   }
 
-  .cards {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
-    gap: 0.75rem;
-  }
-
-  .card {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    padding: 0.9rem 1rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.15rem;
-  }
-
-  .card.is-good {
-    border-color: var(--badge-success-text);
-  }
-
-  .card-label {
-    font-size: 0.7rem;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--text-muted);
-  }
-
-  .card-value {
-    font-size: 1.5rem;
-    line-height: 1.1;
-    color: var(--text);
-  }
-
-  .card-note {
-    font-size: 0.78rem;
-    color: var(--text-muted);
-  }
-
   .hint {
     font-size: 0.85rem;
     color: var(--text-muted);
@@ -177,7 +127,7 @@
 
   .facets {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
     gap: 0.75rem;
   }
 
@@ -189,12 +139,25 @@
   }
 
   .facet h3 {
-    margin: 0 0 0.75rem;
+    margin: 0 0 0.6rem;
     font-size: 0.72rem;
     text-transform: uppercase;
     letter-spacing: 0.06em;
     color: var(--text-muted);
     font-weight: 500;
+  }
+
+  .snippet {
+    margin: 0 0 0.9rem;
+    font-size: 0.8rem;
+    overflow-x: auto;
+  }
+
+  .snippet :global(pre) {
+    margin: 0;
+    padding: 0.6rem 0.75rem;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
   }
 
   .stats {
@@ -292,10 +255,6 @@
     text-transform: uppercase;
     letter-spacing: 0.05em;
     color: var(--text-muted);
-  }
-
-  .extreme-label:first-of-type {
-    margin-top: 0;
   }
 
   .extreme-value {

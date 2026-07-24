@@ -162,7 +162,7 @@ export const demos: Demo[] = [
     slug: 'request-cache',
     files: requestCache,
     title: 'Request Cache',
-    hook: 'Five independent readings of Robinson Crusoe — requestMemo() parses the 124k-word book once per request instead of five times, then the cache dies with the request.',
+    hook: 'Share one expensive computation across independent parts of a page: requestMemo() runs a function once per request no matter how many components call it, then discards the result at the request boundary.',
     category: 'data',
   },
   {
