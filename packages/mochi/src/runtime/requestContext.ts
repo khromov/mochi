@@ -171,14 +171,21 @@ export interface DebugBarData {
   config?: DebugBarConfig;
 }
 
+/** Per-key hit/miss breakdown for the debug bar's expandable key list. */
+export interface RequestCacheKeyStats {
+  key: string;
+  hits: number;
+  misses: number;
+}
+
 /** Per-request cache counters shown in the debug bar's Cache panel. */
 export interface RequestCacheStats {
   hits: number;
   misses: number;
   /** Entries still stored at the end of the render (rejected async entries evict themselves). */
   entries: number;
-  /** Keys still stored at the end of the render, in insertion order. */
-  keys: string[];
+  /** Every key touched this request with its hit/miss tally, in first-touch order. */
+  keys: RequestCacheKeyStats[];
 }
 
 /**

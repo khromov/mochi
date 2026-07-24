@@ -69,10 +69,25 @@ export const mochiEvents = {
 };
 // The request cache is server-only, but an island's top-level code runs again
 // during hydration — so these degrade to uncached pass-through rather than
-// throwing and breaking the hydration pass.
-export function requestCache(_key, fn) { return fn(); }
-export function requestMemo(fn) { return fn; }
+// throwing and breaking the hydration pass. A one-time dev warning flags the
+// mismatch, since on the client they run uncached and see none of the server's
+// cached values (usually not what a hydrated component wants).
+let __warnedRequestCache = false;
+function __warnRequestCache(name) {
+  if (!DEV || __warnedRequestCache) return;
+  __warnedRequestCache = true;
+  devWarn(
+    name + " ran in the browser. The request cache is server-only; on the client it runs " +
+    "uncached and does not replay the server's values. Use it in server-only code or " +
+    "non-hydrated islands, or Svelte's hydratable() to reuse a server value after hydration."
+  );
+}
+export function requestCache(_key, fn) { __warnRequestCache("requestCache()"); return fn(); }
+export function requestMemo(fn) {
+  return (...args) => { __warnRequestCache("requestMemo()"); return fn(...args); };
+}
 export function getRequestCache() {
+  __warnRequestCache("getRequestCache()");
   const m = new Map();
   return {
     get: (k) => m.get(k),

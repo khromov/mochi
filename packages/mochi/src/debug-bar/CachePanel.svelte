@@ -166,16 +166,15 @@
 
 <DebugPanel title="Cache" color="#a7d0c4" {open} {onclose}>
   <div class="cache-body">
-    <h3 class="cache-section">Request cache</h3>
-    <p class="cache-desc">Per-request memoization via <code>requestCache()</code> / <code>requestMemo()</code>, for this render only.</p>
     {#if lookups === 0}
-      <div class="cache-note">No request-cache lookups on this request.</div>
+      <div class="rc-empty">Request cache <span>No request-cache lookups on this request.</span></div>
     {:else}
+      <h3 class="cache-section">Request cache</h3>
       <div class="rc-stats">
-        <div class="rc-stat"><span class="rc-value">{requestCache?.hits ?? 0}</span><span class="rc-label">hits</span></div>
-        <div class="rc-stat"><span class="rc-value">{requestCache?.misses ?? 0}</span><span class="rc-label">misses</span></div>
-        <div class="rc-stat"><span class="rc-value">{hitRate}</span><span class="rc-label">hit rate</span></div>
-        <div class="rc-stat"><span class="rc-value">{requestCache?.entries ?? 0}</span><span class="rc-label">entries</span></div>
+        <div class="rc-stat rc-hits"><span class="rc-value">{requestCache?.hits ?? 0}</span><span class="rc-label">hits</span></div>
+        <div class="rc-stat rc-misses"><span class="rc-value">{requestCache?.misses ?? 0}</span><span class="rc-label">misses</span></div>
+        <div class="rc-stat rc-rate"><span class="rc-value">{hitRate}</span><span class="rc-label">hit rate</span></div>
+        <div class="rc-stat rc-entries"><span class="rc-value">{requestCache?.entries ?? 0}</span><span class="rc-label">entries</span></div>
       </div>
       {#if rcKeys.length > 0}
         <div class="rc-keys" class:open={rcKeysOpen}>
@@ -185,8 +184,14 @@
           </button>
           {#if rcKeysOpen}
             <ul class="rc-keys-list">
-              {#each rcKeys as key (key)}
-                <li><bdi>{key}</bdi></li>
+              {#each rcKeys as k (k.key)}
+                <li>
+                  <bdi class="rc-key-name">{k.key}</bdi>
+                  <span class="rc-key-tally">
+                    <span class="rc-key-hits" title="hits">{k.hits}h</span>
+                    <span class="rc-key-misses" title="misses">{k.misses}m</span>
+                  </span>
+                </li>
               {/each}
             </ul>
           {/if}
@@ -283,6 +288,25 @@
     padding-top: 10px;
     border-top: 1px solid #353930;
   }
+  .rc-empty {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    padding: 0 2px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    /* Slightly grayed vs. the active #6fae9c heading, to read as inactive. */
+    color: #5c7a70;
+  }
+  .rc-empty span {
+    font-weight: 400;
+    letter-spacing: 0;
+    text-transform: none;
+    color: #72786c;
+    font-style: italic;
+  }
   .rc-stats {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
@@ -292,21 +316,59 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 2px;
-    background: #272a22;
-    border: 1px solid #353930;
-    border-radius: 6px;
-    padding: 7px 4px;
+    gap: 1px;
+    border: 1px solid;
+    border-radius: 5px;
+    padding: 4px 3px;
   }
   .rc-value {
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: 13px;
-    color: #d4f0e6;
+    font-size: 11px;
   }
   .rc-label {
-    font-size: 9px;
-    color: #8e9488;
+    font-size: 8px;
     letter-spacing: 0.04em;
+  }
+  /* Each tile gets its own muted hue so the four read apart at a glance. */
+  .rc-hits {
+    background: #22301f;
+    border-color: #3a4f33;
+  }
+  .rc-hits .rc-value {
+    color: #b6d8a0;
+  }
+  .rc-hits .rc-label {
+    color: #7f9670;
+  }
+  .rc-misses {
+    background: #322324;
+    border-color: #52393b;
+  }
+  .rc-misses .rc-value {
+    color: #e0aeae;
+  }
+  .rc-misses .rc-label {
+    color: #9c7f80;
+  }
+  .rc-rate {
+    background: #262433;
+    border-color: #3a3550;
+  }
+  .rc-rate .rc-value {
+    color: #c4bce6;
+  }
+  .rc-rate .rc-label {
+    color: #8a83a6;
+  }
+  .rc-entries {
+    background: #322d1f;
+    border-color: #524a33;
+  }
+  .rc-entries .rc-value {
+    color: #e6d3a0;
+  }
+  .rc-entries .rc-label {
+    color: #9c9270;
   }
   .rc-keys {
     margin-top: 6px;
@@ -341,6 +403,9 @@
     gap: 2px;
   }
   .rc-keys-list li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     font-size: 10px;
     color: #c7cabf;
@@ -348,10 +413,24 @@
     border: 1px solid #353930;
     border-radius: 4px;
     padding: 4px 8px;
+  }
+  .rc-key-name {
+    unicode-bidi: isolate;
+    flex: 1;
+    min-width: 0;
     word-break: break-all;
   }
-  .rc-keys-list bdi {
-    unicode-bidi: isolate;
+  .rc-key-tally {
+    flex-shrink: 0;
+    display: inline-flex;
+    gap: 5px;
+    font-size: 9px;
+  }
+  .rc-key-hits {
+    color: #b6d8a0;
+  }
+  .rc-key-misses {
+    color: #e0aeae;
   }
   .cache-clear-btn {
     display: inline-flex;
