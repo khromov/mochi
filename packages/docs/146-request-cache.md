@@ -89,7 +89,7 @@ These are server-only helpers — they memoize against the request context, whic
 
 <Callout type="warning">
 
-The client stub re-runs the callback — it does **not** replay the server's cached value. A top-level island read like `requestCache(key, () => db.user(id))` runs on the server during SSR and _again_ on the client during hydration, where `db` isn't available. The request cache dedups server work within one render; it is not a way to ship a value to the browser. To reuse an SSR-computed value client-side, wrap it in Svelte's [`hydratable(key, fn)`](/docs/hydratable/).
+**The request cache is a server-side convenience API.** Use it in server-only code or in islands that never hydrate. Inside a **hydrated** component the calls will run _without_ the server's cached values — `requestCache(key, () => db.user(id))` runs on the server during SSR and again on the client during hydration, where `db` might not be available — which is probably not what you want. So development, calling any of these in the browser logs a one-time warning. If you want to reuse a server-computed value on hydration, wrap it in Svelte's [`hydratable(key, fn)`](/docs/hydratable/) instead, or pass it as serverProps to the route.
 
 </Callout>
 
