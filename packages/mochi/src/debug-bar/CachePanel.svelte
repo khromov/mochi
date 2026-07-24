@@ -188,8 +188,8 @@
                 <li>
                   <bdi class="rc-key-name">{k.key.replace(/:$/, '')}</bdi>
                   <span class="rc-key-tally">
-                    <span class="rc-key-hits" title="hits">{k.hits}h</span>
-                    <span class="rc-key-misses" title="misses">{k.misses}m</span>
+                    <span class="rc-key-hits">{k.hits} {k.hits === 1 ? 'hit' : 'hits'}</span>
+                    <span class="rc-key-misses">{k.misses} {k.misses === 1 ? 'miss' : 'misses'}</span>
                   </span>
                 </li>
               {/each}
