@@ -105,6 +105,6 @@ In development, the debug bar's **Cache** panel has a **Request cache** section 
 
 <SeeItInAction
 demos={[
-{ href: "/demos/request-cache/", title: "Request Cache", hook: "Five independent facets of Robinson Crusoe — the memoized pass parses the 124k-word book once instead of five times." },
+{ href: "/demos/request-cache/", title: "Request Cache", hook: "How the request cache works — requestMemo and requestCache run an expensive computation once per request no matter how many components call it, then discard it at the request boundary." },
 ]}
 />

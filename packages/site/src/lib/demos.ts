@@ -162,7 +162,7 @@ export const demos: Demo[] = [
     slug: 'request-cache',
     files: requestCache,
     title: 'Request Cache',
-    hook: 'Share one expensive computation across independent parts of a page: requestMemo() runs a function once per request no matter how many components call it, then discards the result at the request boundary.',
+    hook: 'How the request cache works — requestMemo and requestCache run an expensive computation once per request no matter how many components call it, then discard it at the request boundary.',
     category: 'data',
   },
   {
