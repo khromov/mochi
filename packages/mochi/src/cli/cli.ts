@@ -170,8 +170,10 @@ async function main() {
   await build({
     routes,
     markdown: serveOptions?.markdown,
+    svelteCompiler: serveOptions?.svelteCompiler,
     optimize: serveOptions && 'optimize' in serveOptions ? serveOptions.optimize : undefined,
     barrelWarnings: serveOptions?.barrelWarnings,
+    resources: serveOptions?.build?.resources,
     development: values.dev,
     outDir: values['out-dir'],
     publicDir: values['public-dir'],

@@ -89,5 +89,5 @@ Use `isHydratable()` to peek request-scoped state only when the client won't tak
 See the [Forms demo](/demos/login/) for a side-by-side comparison of hydrated and SSR-only render paths.
 
 <SeeItInAction
-demos={[{ href: "/demos/url/", title: "Isomorphic URL", hook: "One import for the current URL — reads from the request on the server, window.location on the client." }]}
+demos={[{ href: "/demos/url/", title: "Isomorphic URL", hook: "How the isomorphic URL helper works — one import that reads the request URL on the server and window.location on the client." }]}
 />

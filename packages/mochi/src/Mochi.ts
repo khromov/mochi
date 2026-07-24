@@ -398,6 +398,7 @@ export class Mochi {
         outDir,
         assetPrefix: options.assetPrefix,
         svelteConfig,
+        svelteCompiler: options.svelteCompiler,
         markdown: options.markdown,
         optimize: options.optimize,
         barrelWarnings: options.barrelWarnings,
@@ -703,6 +704,15 @@ export class Mochi {
           const result = await registry.renderComponent(componentPath, resolvedProps);
           if (result.debugBarData) {
             result.debugBarData.ssrDurationMs = Math.round((performance.now() - ssrStart) * 100) / 100;
+            if (ctx.requestCache) {
+              const { hits, misses, map, perKey } = ctx.requestCache;
+              result.debugBarData.requestCache = {
+                hits,
+                misses,
+                entries: map.size,
+                keys: [...perKey].map(([key, t]) => ({ key, hits: t.hits, misses: t.misses })),
+              };
+            }
             if (result.hasServerIslands) {
               const serverIslandSize = new TextEncoder().encode(serverIslandClientJs).length;
               (result.debugBarData.bundles ??= []).push({

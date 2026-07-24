@@ -25,7 +25,7 @@ Both must be updated together. This skill walks the full path: registry → call
   - `serverIsland:` — server-island internals (`serverIsland:secretKey`)
   - `compile:` — Svelte compilation pipeline (`compile:preprocessors`)
   - `publicDir:` — public-directory scan results (`publicDir:scan`)
-  - `queue:` — background-queue internals (`queue:recoveryStallWarningMs`)
+  - `queue:` — background-queue internals (`queue:recoveryStallWarningMs`, `queue:lockDurationMs`)
 - Introduce a new namespace only when no existing one applies.
 - Names are global — one entry per name across the whole framework.
 

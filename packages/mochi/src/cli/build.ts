@@ -5,6 +5,7 @@ import { DEFAULT_ERROR_PAGE_PATH } from '../runtime/errors';
 import { CLIENT_STATS_COMPONENT } from '../dev/clientStatsRoutes';
 import { isMochiPage, isMochiApi, isMochiWs, isMochiSse } from '../types';
 import type { MarkdownConfig, MochiBarrelWarningOptions, MochiRouteValue, MochiSvelteShakerOptions } from '../types';
+import type { MochiSvelteCompiler } from '../compiler/svelteCompilerBackend';
 import { rmSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { scanPublicDir, publicRouteKey } from '../runtime/publicDir';
@@ -14,6 +15,7 @@ import { consoleLogger } from '../dev/consoleLogger';
 import { mochiEvents } from '../events';
 import { styleText } from 'node:util';
 import prettyBytes from '../vendor/pretty-bytes';
+import { collectImageResources, printResourceTree } from './resourceReport';
 
 export interface MochiBuildOptions {
   routes: Record<string, MochiRouteValue>;
@@ -38,6 +40,12 @@ export interface MochiBuildOptions {
    */
   svelteConfigPath?: string;
   /**
+   * Which compiler emits component JS. Mirror the value passed to
+   * `Mochi.serve({ svelteCompiler })`. `'rsvelte'` requires the optional
+   * `@mochi-framework/rsvelte` package. Default: `'svelte'`.
+   */
+  svelteCompiler?: MochiSvelteCompiler;
+  /**
    * Dependency-injected markdown (`.md` / `.svx`) support. Mirror the value
    * passed to `Mochi.serve({ markdown })` so the prebuild and the runtime
    * use the same pipeline. Omit to leave markdown unhandled.
@@ -61,6 +69,12 @@ export interface MochiBuildOptions {
    * skips compiling it at startup. Default: Mochi's built-in error page.
    */
   errorPage?: string;
+  /**
+   * Print the emitted-resources list (local image imports). Mirror the value
+   * passed to `Mochi.serve({ build: { resources } })`. The summary line keeps
+   * its asset count either way. Default: enabled.
+   */
+  resources?: boolean;
 }
 
 type RouteKind = 'page' | 'api' | 'ws' | 'sse';
@@ -167,6 +181,7 @@ export async function build(options: MochiBuildOptions): Promise<void> {
       outDir,
       assetPrefix: options.assetPrefix,
       svelteConfig,
+      svelteCompiler: options.svelteCompiler,
       markdown: options.markdown,
       optimize: options.optimize,
       barrelWarnings: options.barrelWarnings,
@@ -246,6 +261,13 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     allRoutes.sort((a, b) => a.pattern.localeCompare(b.pattern, undefined, { numeric: true }));
     printRouteTree(allRoutes, compileStats);
 
+    // After finalizeClientBundle() above, so assets the client pass emitted are
+    // in the map too (both passes share it, keyed by served URL).
+    const imageAssets = registry.getLocalImageAssets();
+    if (options.resources !== false) {
+      printResourceTree(collectImageResources(imageAssets.values()));
+    }
+
     // Clean up intermediate .raw.css files
     const cssDir = path.join(outDir, 'svelte-css');
     const glob = new Bun.Glob('*.raw.css');
@@ -275,7 +297,7 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     logger.info(`build: phases — ${phaseSummary} (client bundle ×${clientBundleCount}, ${formatDuration(clientBundleMs)})`);
     const elapsed = formatDuration(performance.now() - startedAt);
     logger.info(
-      `build: done in ${elapsed}. ${compiledPages.length} page(s), ${clientFileCount} client file(s), ${publicFileCount} public file(s). Manifest written to ${manifestPath}`,
+      `build: done in ${elapsed}. ${compiledPages.length} page(s), ${clientFileCount} client file(s), ${publicFileCount} public file(s), ${imageAssets.size} image asset(s). Manifest written to ${manifestPath}`,
     );
   } finally {
     mochiEvents.off('client-bundle:complete', onClientBundle);
