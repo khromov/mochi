@@ -21,11 +21,7 @@
 
   // Each panel's snippet shows the real pipeline: one memoized analysis at module
   // scope, then this panel pulling its slice out of the shared result.
-  const snip = (pick) =>
-    highlightCode(
-      `// parsed once per request, shared across panels\nconst analyzeCached = requestMemo(() => analyze(BOOK));\n${pick}`,
-      'ts',
-    );
+  const snip = (pick) => highlightCode(`// parsed once per request, shared across panels\nconst analyzeCached = requestMemo(() => analyze(BOOK));\n${pick}`, 'ts');
   const codeOverview = await snip('const { words, unique, sentences } = analyzeCached();');
   const codeTopWords = await snip('const { topWords } = analyzeCached();');
   const codeThemes = await snip('const { themes } = analyzeCached();');
@@ -41,8 +37,8 @@
   <div class="stack">
     <p class="hint">
       Every panel below calls its own helper (<code>overview()</code>, <code>topWords()</code>, …) and each helper asks for the same memoized analysis. Open the
-      <strong>debug bar</strong> at the bottom of the page and its <strong>Cache</strong> panel: the <strong>Request cache</strong> section shows one miss and four hits for this
-      render. Reload and the numbers come back the same — entries die with the request, so the next visitor parses from scratch.
+      <strong>debug bar</strong> at the bottom of the page and its <strong>Cache</strong> panel: the <strong>Request cache</strong> section shows one miss and four hits for this render.
+      Reload and the numbers come back the same — entries die with the request, so the next visitor parses from scratch.
     </p>
 
     <div class="facets">

@@ -186,7 +186,7 @@
             <ul class="rc-keys-list">
               {#each rcKeys as k (k.key)}
                 <li>
-                  <bdi class="rc-key-name">{k.key}</bdi>
+                  <bdi class="rc-key-name">{k.key.replace(/:$/, '')}</bdi>
                   <span class="rc-key-tally">
                     <span class="rc-key-hits" title="hits">{k.hits}h</span>
                     <span class="rc-key-misses" title="misses">{k.misses}m</span>
