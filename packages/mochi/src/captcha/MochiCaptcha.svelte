@@ -58,6 +58,9 @@
     // At mount, not when the chain completes: a widget wired up wrong should say
     // so before the visitor drags anything.
     validateProps();
+    // Teardown hangs off onMount rather than onDestroy, the one lifecycle hook
+    // that also fires during SSR: nothing this cancels can exist on the server.
+    return cancelSolve;
   });
 
   // The PoW challenge is a hash chain advanced one link per slider step: each
@@ -79,10 +82,6 @@
   // the search is deterministic — restarting at 0 would replay the attempts that
   // just failed and an exhausted budget could never resolve itself.
   let powResumeFrom = 0;
-
-  $effect(() => () => {
-    cancelSolve();
-  });
 
   const causeOf = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
