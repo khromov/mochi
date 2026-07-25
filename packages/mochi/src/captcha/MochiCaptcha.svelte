@@ -16,6 +16,7 @@
     verifyingLabel = 'Verifying…',
     verifiedLabel = 'Verified — thanks!',
     errorLabel = 'Verification failed — tap to try again',
+    noscriptLabel = 'JavaScript is required to complete this captcha.',
     verified = $bindable(false),
   }: {
     token?: string;
@@ -26,6 +27,7 @@
     verifyingLabel?: string;
     verifiedLabel?: string;
     errorLabel?: string;
+    noscriptLabel?: string;
     verified?: boolean;
   } = $props();
 
@@ -46,12 +48,13 @@
   const suppressed = $derived(error !== null && !errorRetryable && !isDev);
 
   // The widget is inert without JavaScript — the slider, the hash chain and the
-  // proof-of-work all run client-side. Render nothing on the server and reveal it
-  // only once it actually mounts in the browser, so a captcha that was never
+  // proof-of-work all run client-side. Until it mounts in the browser only a
+  // blank spacer the size of the track is rendered, so a captcha that was never
   // hydrated (no `mochi:hydrate` on itself and no hydrated ancestor subtree)
-  // degrades to an empty slot instead of a dead, non-interactive slider. onMount
-  // runs only client-side, so the first (SSR + initial hydration) render is empty
-  // for both and the reveal is a post-hydration update — no hydration mismatch.
+  // degrades to empty space instead of a dead, non-interactive slider, while the
+  // widget taking its place costs no layout shift. onMount runs only client-side,
+  // so the first (SSR + initial hydration) render is the spacer for both and the
+  // swap is a post-hydration update — no hydration mismatch.
   let mounted = $state(false);
   onMount(() => {
     mounted = true;
@@ -380,13 +383,25 @@
   </div>
   <input type="hidden" name="captcha_token" value={verified ? token : ''} />
   <input type="hidden" name="captcha_pow" value={verified ? powNonce : ''} />
+{:else}
+  <div class="captcha-placeholder">
+    <noscript>{noscriptLabel}</noscript>
+  </div>
 {/if}
 
 <style>
-  /* Defaults live in each var()'s fallback, not in a declaration on .captcha:
-     a value set here would sit on the element itself and beat anything the host
-     inherits down from an ancestor, so the theming vars could never be
-     overridden. */
+  .captcha-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    border: 1px solid transparent;
+    text-align: center;
+    line-height: 1.2;
+    font-size: 0.85rem;
+    color: var(--mochi-captcha-hint-text, #6e756d);
+  }
+
   .captcha .track {
     position: relative;
     height: 44px;
@@ -414,10 +429,6 @@
     border-radius: var(--mochi-captcha-radius, 999px);
     background: var(--mochi-captcha-handle-bg, #fffdf8);
     border: 1px solid var(--mochi-captcha-accent, #4a7c59);
-    /* Defaulting to the accent keeps the glyph legible for free: the accent is
-       already drawn on the handle background as its border, so contrast between
-       the two is a requirement the host has met. Only affects text-presentation
-       glyphs — colour-font emoji ignore it. */
     color: var(--mochi-captcha-handle-text, var(--mochi-captcha-accent, #4a7c59));
     cursor: grab;
     touch-action: none;
