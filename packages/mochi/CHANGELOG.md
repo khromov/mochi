@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased
+
+### Breaking changes
+
+- `handle` middleware now wraps every framework route kind, including files, WebSocket handshakes, SSE, server islands, images, public/framework assets, raw Bun routes, dev endpoints, and fallbacks. `event.kind` and request/error lifecycle kind unions were expanded accordingly.
+- `Mochi.ws()` now requires an exact same-origin `Origin` header by default. Configure additional browser origins with its second `trustedOrigins` argument, or explicitly opt into missing/unchecked origins for non-browser clients.
+- SSE routes invoke handlers only for `GET`; every other method returns `405` with `Allow: GET`.
+
+### Security
+
+- Prevent cross-site WebSocket hijacking by validating the proxy-aware public origin before upgrades, including the development live-reload socket.
+- Prevent middleware authorization bypasses on non-page/API routes and server-island endpoints.
+- Redact inbound and outbound cookie values from the client-readable development debug payload.
+- Sanitize unexpected enhanced form-action errors to `Internal Server Error` in production.
+- Reject ambiguous or malformed trusted-proxy origin headers and validate proxy/origin configuration before binding.
+- Prevent SSE field injection through bare carriage returns or newline-bearing `event`/`id` metadata.
+- Preserve finite idle timeouts for ordinary requests; only SSE streams disable the per-request timeout.
+
+### Features
+
+- Type `maxRequestBodySize` and `idleTimeout` explicitly on `MochiServeOptions`; the request-body default remains Bun's 128 MiB limit.
+
 ## [0.8.2](https://github.com/khromov/mochi/compare/mochi-framework-v0.8.1...mochi-framework-v0.8.2) (2026-07-21)
 
 

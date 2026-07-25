@@ -68,6 +68,8 @@
     "svelte-check@4.7.3": "packages/mochi/patches/svelte-check@4.7.3.patch"
   },
   "overrides": {
-    "msgpackr-extract": "npm:@mochi-framework/msgpackr-extract-stub@*"
+    "msgpackr-extract": "npm:@mochi-framework/msgpackr-extract-stub@*",
+    "brace-expansion": "5.0.8",
+    "postcss": "8.5.22"
   }
 }

@@ -131,7 +131,7 @@ Throw `MochiHttpError` (via `error(status, message)`) for non-2xx responses; unc
 
 ### `Mochi.ws`
 
-Register a WebSocket endpoint via `Mochi.ws(handlers)`. `message` is required; `upgrade`, `open`, `close`, `drain` are optional. Return data from `upgrade` (or `false` to reject) to attach to `ws.data.user`.
+Register a WebSocket endpoint via `Mochi.ws(handlers, originOptions?)`. `message` is required; `upgrade`, `open`, `close`, `drain` are optional. Return data from `upgrade` (or `false` to reject) to attach to `ws.data.user`. Handshakes require an exact same-origin `Origin` header by default; use the optional second argument to configure additional trusted origins or non-browser clients.
 
 ```ts
 // file: src/index.ts
@@ -208,7 +208,7 @@ await Mochi.serve({
 });
 ```
 
-A missing file returns a plain-text `404`; a resolver may also `error(404, …)` to force one. The file is read from disk on every request, so files written or deleted at runtime are picked up immediately. `Mochi.file` does **not** support `Range` requests, caching headers (`ETag`/`Cache-Control`), or middleware — reach for `Mochi.api` if you need full control over the response.
+A missing file returns a plain-text `404`; a resolver may also `error(404, …)` to force one. The file is read from disk on every request, so files written or deleted at runtime are picked up immediately. `Mochi.file` passes through global `handle` middleware, but does **not** support `Range` requests or generate caching headers (`ETag`/`Cache-Control`) — reach for `Mochi.api` if you need full control over the response.
 
 <Callout type="danger">
 

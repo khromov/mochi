@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { buildPublicUrl, getClientAddress, resolveExpectedOrigin } from './proxy';
+import { buildPublicUrl, getClientAddress, ProxyHeaderError, resolveExpectedOrigin, validateProxyOptions } from './proxy';
 
 const SAME = 'http://localhost:3333';
 const sameUrl = new URL(`${SAME}/submit`);
@@ -70,6 +70,29 @@ describe('resolveExpectedOrigin', () => {
   test('hostHeader alone uses url.protocol', () => {
     const r = req({ 'x-forwarded-host': 'public.example' });
     expect(resolveExpectedOrigin(r, sameUrl, { hostHeader: 'x-forwarded-host' })).toBe('http://public.example');
+  });
+
+  test('supports a bracketed IPv6 host when replacing its port', () => {
+    const r = req({ 'x-forwarded-host': '[2001:db8::1]', 'x-forwarded-port': '8443' });
+    expect(resolveExpectedOrigin(r, sameUrl, { hostHeader: 'x-forwarded-host', portHeader: 'x-forwarded-port' })).toBe('http://[2001:db8::1]:8443');
+  });
+
+  test('rejects ambiguous, credential-bearing, and malformed forwarded values', () => {
+    expect(() =>
+      resolveExpectedOrigin(req({ 'x-forwarded-proto': 'https,http', 'x-forwarded-host': 'app.example' }), sameUrl, {
+        protocolHeader: 'x-forwarded-proto',
+        hostHeader: 'x-forwarded-host',
+      }),
+    ).toThrow(ProxyHeaderError);
+    expect(() => resolveExpectedOrigin(req({ 'x-forwarded-host': 'victim.example@attacker.example' }), sameUrl, { hostHeader: 'x-forwarded-host' })).toThrow(ProxyHeaderError);
+    expect(() => resolveExpectedOrigin(req({ 'x-forwarded-port': '99999' }), sameUrl, { portHeader: 'x-forwarded-port' })).toThrow(ProxyHeaderError);
+  });
+
+  test('validates static proxy configuration before binding', () => {
+    expect(() => validateProxyOptions({ origin: 'https://user@example.com/path' })).toThrow(TypeError);
+    expect(() => validateProxyOptions({ xffDepth: 0 })).toThrow(TypeError);
+    expect(() => validateProxyOptions({ hostHeader: 'bad header' })).toThrow(TypeError);
+    expect(() => validateProxyOptions({ origin: 'https://example.com/' })).not.toThrow();
   });
 });
 

@@ -221,8 +221,8 @@ export interface DebugBarConfig {
 export interface DebugBarRuntimeData extends DebugBarData {
   /** Outgoing response headers as `[name, value]` pairs (preserves duplicate Set-Cookie entries). */
   headers?: Array<[string, string]>;
-  /** `[name, value]` pairs of cookies sent on the inbound request. */
-  requestCookies?: Array<[string, string]>;
+  /** Names of cookies sent on the inbound request. Values are never exposed to client JavaScript. */
+  requestCookies?: string[];
 }
 
 // TODO: Review this for cross-request security

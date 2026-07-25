@@ -49,6 +49,8 @@ The forced fallback is not optional: a plain `server.stop()` never resolves whil
 - `port`: TCP port to listen on. No default — set it explicitly.
 - `hostname`: Interface to bind. Defaults to Bun's default (`0.0.0.0`).
 - `development`: Enables live reload, debug bar, and the dev error overlay. Default: `true`.
+- `maxRequestBodySize`: Maximum request-body size in bytes, forwarded to `Bun.serve`. Default: Bun's `128 MiB`. Set an application-appropriate lower limit when large uploads are not required.
+- `idleTimeout`: Connection idle timeout in seconds, forwarded to `Bun.serve`. Default: Bun's server default. Mochi disables the timeout only for an active SSE stream; ordinary page/API requests keep the finite server timeout.
 - `liveReload`: Enable the dev-mode live-reload WebSocket (`/__mochi_live_reload` + the `mochi-live-reload` web component). Default: matches `development`. Set to `false` to keep the debug bar but skip the WS — useful behind a proxy where the socket is flaky.
 - `shutdownTimeout`: Grace period in ms for in-flight requests to finish on `SIGTERM`/`SIGINT` before connections are force-closed and the process exits. Default: `5000` in production, `0` in development. `0` force-closes immediately. Note that an open WebSocket never drains, so shutdown pins to this full value whenever one is connected — set it no larger than your orchestrator's kill grace period.
 - `routes`: `Record<string, MochiRouteValue>` of route paths to `Mochi.page` / `Mochi.api` / `Mochi.ws` / `Mochi.sse` registrations.
@@ -144,6 +146,8 @@ In production the check refuses every form mutation until `proxy.origin` (or `pr
 ### Proxy
 
 `proxy` tells the framework how to recover the public origin (used by the CSRF check) and the real client IP (returned by `getClientAddress()` on the request context) from forwarded headers. Behind a load balancer, CDN, or tunnel, the connection Bun sees is the proxy, not the client.
+
+Origin configuration is validated at startup. Per-request forwarded protocol, host, and port values must be single unambiguous values; comma-separated chains, credentials, paths, non-HTTP protocols, and invalid ports fail closed with `400 Bad Request`.
 
 - `origin`: Explicit public origin (e.g. `'https://my.site'`). Wins over the header options.
 - `protocolHeader`: Forwarded-protocol header (typically `'x-forwarded-proto'`).

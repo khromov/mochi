@@ -85,13 +85,14 @@ export async function resolvePublicFiles(opts: { publicDir: string; development:
  * in lockstep — registering under a raw key here is what made spaced filenames
  * 404 until this was centralized.
  */
-export function registerPublicRoutes(routes: Record<string, BunRouteValue>, files: Map<string, string>): void {
+export function registerPublicRoutes(routes: Record<string, BunRouteValue>, files: Map<string, string>, wrap?: (route: string, value: BunRouteValue) => BunRouteValue): void {
   for (const [urlPath, diskPath] of files) {
     const routeKey = publicRouteKey(urlPath);
     if (routeKey in routes) {
       logger.warn(`Public file "${diskPath}" skipped: URL "${urlPath}" is already registered as a route.`);
       continue;
     }
-    routes[routeKey] = Bun.file(diskPath);
+    const value = Bun.file(diskPath);
+    routes[routeKey] = wrap ? wrap(routeKey, value) : value;
   }
 }

@@ -13,6 +13,8 @@ description: 'Push real-time updates to clients over a single HTTP connection wi
 
 Register an SSE stream with `Mochi.sse(handler)`; the handler receives a `MochiSseStream` and the underlying `Request`, and runs once per client connection.
 
+Only `GET` is accepted. Every other method returns `405 Method Not Allowed` with `Allow: GET` without invoking the handler. Global [`handle` middleware](/docs/middleware/) runs before the method check and stream handler.
+
 ```ts
 // file: src/index.ts
 import { Mochi } from 'mochi-framework';
@@ -37,6 +39,8 @@ Push a single SSE frame to the client. `data` is a string; `options` accepts `ev
 ```ts
 stream.send(JSON.stringify({ ok: true }), { event: 'tick', id: '42' });
 ```
+
+Newlines in `data` are encoded as separate `data:` lines, including bare carriage returns. `event` and `id` must not contain CR or LF; `send` throws and Mochi closes the stream if they do. These rules prevent user-controlled strings from injecting additional SSE fields.
 
 ### `stream.close()`
 

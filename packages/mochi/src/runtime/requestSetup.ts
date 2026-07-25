@@ -1,6 +1,6 @@
 import type { Server } from 'bun';
 import { csrfCheck, type MochiCsrfOptions } from './csrf';
-import { buildPublicUrl, getClientAddress, type MochiProxyOptions } from './proxy';
+import { buildPublicUrl, getClientAddress, ProxyHeaderError, type MochiProxyOptions } from './proxy';
 import { extractParams } from '../utils';
 import { applyFilter } from '../extensions';
 import { trailingSlashRedirect, type TrailingSlashPolicy } from './trailingSlash';
@@ -11,7 +11,7 @@ import type { MochiRequestContext } from './requestContext';
 
 // RouteKind covers user-route shapes; MochiRequestKind in events.ts covers the
 // broader event taxonomy (asset, fallback, error). They overlap on page|api|file.
-export type RouteKind = 'page' | 'api' | 'ws' | 'sse' | 'island' | 'file';
+export type RouteKind = 'page' | 'api' | 'ws' | 'sse' | 'island' | 'file' | 'image' | 'asset' | 'raw' | 'dev' | 'fallback' | 'error';
 
 export interface RequestSetupConfig {
   proxy: MochiProxyOptions | undefined;
@@ -31,6 +31,8 @@ export interface PerCallOptions {
   pattern: string;
   paramsOverride?: Record<string, string>;
   csrfErrorTransform?: (resp: Response) => Response;
+  /** Build context now but defer trailing-slash/CSRF responses until `resolve()`. */
+  deferGuards?: boolean;
 }
 
 export type SetupResult =
@@ -41,6 +43,7 @@ export type SetupResult =
       requestId: string;
       url: URL;
       params: Record<string, string>;
+      guardResponse?: Response;
     };
 
 export type RequestContextBuilder = (req: Request, server: Server<undefined>, opts: PerCallOptions) => SetupResult;
@@ -53,11 +56,17 @@ interface KindPolicy {
 }
 
 const KIND_POLICY: Record<RouteKind, KindPolicy> = {
-  page: { timeout: true, trailingSlash: true, csrf: true, debugBar: true },
+  page: { timeout: false, trailingSlash: true, csrf: true, debugBar: true },
   api: { timeout: false, trailingSlash: true, csrf: true, debugBar: false },
   sse: { timeout: true, trailingSlash: true, csrf: false, debugBar: false },
   ws: { timeout: false, trailingSlash: false, csrf: false, debugBar: false },
   island: { timeout: false, trailingSlash: false, csrf: false, debugBar: false },
+  image: { timeout: false, trailingSlash: false, csrf: false, debugBar: false },
+  asset: { timeout: false, trailingSlash: false, csrf: false, debugBar: false },
+  raw: { timeout: false, trailingSlash: true, csrf: true, debugBar: false },
+  dev: { timeout: false, trailingSlash: false, csrf: true, debugBar: false },
+  fallback: { timeout: false, trailingSlash: true, csrf: true, debugBar: false },
+  error: { timeout: false, trailingSlash: true, csrf: true, debugBar: false },
   // Files are leaf resources (like static assets), so they opt out of
   // trailing-slash normalization — a file URL should never gain a trailing `/`.
   file: { timeout: false, trailingSlash: false, csrf: false, debugBar: false },
@@ -72,10 +81,28 @@ export function makeRequestContextBuilder(cfg: RequestSetupConfig): RequestConte
       server.timeout(req, 0);
     }
     const params = extractParams(req);
-    const url = buildPublicUrl(req, cfg.proxy);
+    let url: URL;
+    try {
+      url = buildPublicUrl(req, cfg.proxy);
+    } catch (err) {
+      if (err instanceof ProxyHeaderError) {
+        return {
+          earlyResponse: new Response('Bad Request', {
+            status: 400,
+            headers: {
+              'Content-Type': 'text/plain; charset=utf-8',
+              'Cache-Control': 'no-store',
+            },
+          }),
+        };
+      }
+      throw err;
+    }
 
     const reportEarlyExit = (status: number): void => {
-      // 'request' event accepts only page|api|file kinds; see MochiRequestKind in events.ts
+      // Normal route handlers defer guards so middleware and their unified
+      // request-event finalizer still run. This path remains for direct
+      // request-context consumers and setup failures before a context exists.
       if (opts.kind !== 'page' && opts.kind !== 'api' && opts.kind !== 'file') {
         return;
       }
@@ -89,6 +116,7 @@ export function makeRequestContextBuilder(cfg: RequestSetupConfig): RequestConte
       });
     };
 
+    let guardResponse: Response | undefined;
     if (policy.trailingSlash && cfg.trailingSlashPolicy) {
       const redirect = applyFilter('trailingSlash:redirect', trailingSlashRedirect(req.method, url, cfg.trailingSlashPolicy), {
         request: req,
@@ -96,17 +124,23 @@ export function makeRequestContextBuilder(cfg: RequestSetupConfig): RequestConte
         policy: cfg.trailingSlashPolicy,
       });
       if (redirect) {
-        reportEarlyExit(redirect.status);
-        return { earlyResponse: redirect };
+        if (!opts.deferGuards) {
+          reportEarlyExit(redirect.status);
+          return { earlyResponse: redirect };
+        }
+        guardResponse = redirect;
       }
     }
 
-    if (policy.csrf) {
+    if (!guardResponse && policy.csrf) {
       const csrfResponse = csrfCheck(req, url, cfg.csrf, cfg.proxy, cfg.development, cfg.formContentTypes, cfg.protectedMethods, cfg.trustedOrigins);
       if (csrfResponse) {
         const finalResp = opts.csrfErrorTransform ? opts.csrfErrorTransform(csrfResponse) : csrfResponse;
-        reportEarlyExit(finalResp.status);
-        return { earlyResponse: finalResp };
+        if (!opts.deferGuards) {
+          reportEarlyExit(finalResp.status);
+          return { earlyResponse: finalResp };
+        }
+        guardResponse = finalResp;
       }
     }
 
@@ -135,6 +169,6 @@ export function makeRequestContextBuilder(cfg: RequestSetupConfig): RequestConte
       };
     }
 
-    return { ctx, start, requestId, url, params };
+    return { ctx, start, requestId, url, params, ...(guardResponse ? { guardResponse } : {}) };
   };
 }

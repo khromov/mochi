@@ -82,13 +82,12 @@ describe('makeRequestContextBuilder', () => {
     expect(setup.ctx.debugBarData).toBeUndefined();
   });
 
-  test('kind: "page" calls server.timeout(req, 0)', () => {
+  test('kind: "page" preserves the finite server idle timeout', () => {
     const build = makeRequestContextBuilder(makeConfig());
     const { server, timeout } = mockServer();
     const req = mockReq('GET', '/');
     build(req, server, { kind: 'page', pattern: '/' });
-    expect(timeout).toHaveBeenCalledTimes(1);
-    expect(timeout).toHaveBeenCalledWith(req, 0);
+    expect(timeout).not.toHaveBeenCalled();
   });
 
   test('kind: "sse" calls server.timeout(req, 0)', () => {
@@ -110,6 +109,31 @@ describe('makeRequestContextBuilder', () => {
     const { server } = mockServer();
     const setup = build(mockReq('GET', '/ws'), server, { kind: 'ws', pattern: '/ws' });
     expect('earlyResponse' in setup).toBe(false);
+  });
+
+  test('malformed trusted proxy headers fail closed with a controlled 400', () => {
+    const build = makeRequestContextBuilder(
+      makeConfig({
+        proxy: {
+          protocolHeader: 'x-forwarded-proto',
+          hostHeader: 'x-forwarded-host',
+        },
+      }),
+    );
+    const { server } = mockServer();
+    const setup = build(
+      mockReq('GET', '/api', {
+        'x-forwarded-proto': 'https,http',
+        'x-forwarded-host': 'app.example',
+      }),
+      server,
+      { kind: 'api', pattern: '/api' },
+    );
+    expect('earlyResponse' in setup).toBe(true);
+    if ('earlyResponse' in setup) {
+      expect(setup.earlyResponse.status).toBe(400);
+      expect(setup.earlyResponse.headers.get('Cache-Control')).toBe('no-store');
+    }
   });
 
   test('kind: "page" with trailingSlashPolicy: "always" redirects and emits a request event', () => {
@@ -193,6 +217,30 @@ describe('makeRequestContextBuilder', () => {
       }
       expect(setup.earlyResponse.status).toBe(403);
       expect(setup.earlyResponse.headers.get('X-Transformed')).toBe('1');
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  test('deferGuards returns context and the guard response for middleware ordering', () => {
+    const warn = spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const build = makeRequestContextBuilder(makeConfig());
+      const { server } = mockServer();
+      const req = mockReq('POST', '/submit', {
+        'content-type': 'application/x-www-form-urlencoded',
+        origin: 'http://evil.example',
+      });
+      const setup = build(req, server, {
+        kind: 'page',
+        pattern: '/submit',
+        deferGuards: true,
+      });
+      if ('earlyResponse' in setup) {
+        throw new Error('expected deferred guard');
+      }
+      expect(setup.guardResponse?.status).toBe(403);
+      expect(setup.ctx.request).toBe(req);
     } finally {
       warn.mockRestore();
     }

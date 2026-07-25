@@ -37,6 +37,35 @@ await Mochi.serve({
 
 Only `message` is required; the rest are optional.
 
+### Origin protection
+
+Mochi checks every WebSocket handshake's `Origin` header before upgrading. By default the header is required and must exactly match the proxy-aware public origin. This prevents a hostile web page from opening an authenticated socket with the victim's ambient cookies.
+
+Pass a second options object to `Mochi.ws` when the route intentionally accepts other origins:
+
+```ts
+Mochi.ws(
+  {
+    message(ws, message) {
+      ws.send(message);
+    },
+  },
+  {
+    trustedOrigins: ['https://admin.example.com'],
+    // allowMissingOrigin: true, // opt in for non-browser clients
+    // checkOrigin: false,       // disable all Origin checks
+  },
+);
+```
+
+Origins must be absolute `http://` or `https://` origins without credentials, paths, queries, or fragments. Invalid configuration fails at startup. When Mochi is behind a reverse proxy, configure [`proxy.origin` or trusted forwarded headers](/docs/serve-options/#proxy) so the expected public origin is correct.
+
+<Callout type="danger">
+
+**Do not disable the check just because the socket has authentication.** Browsers attach cookies to cross-site WebSocket handshakes. Use `trustedOrigins` for known browser frontends and `allowMissingOrigin` only for clients that cannot send `Origin`.
+
+</Callout>
+
 ### `upgrade`
 
 Runs once per HTTP upgrade request. Return a value to attach to `ws.data.user`, or return `false` to reject the connection. The route's URL params are passed as the second argument.
@@ -66,6 +95,8 @@ await Mochi.serve({
 **Reject unauthenticated sockets in `upgrade`, not `message`.** Authenticating inside `message` and dropping frames still lets the connection establish. Return `false` from `upgrade` so the client never connects.
 
 </Callout>
+
+Global [`handle` middleware](/docs/middleware/) runs before Origin validation and `upgrade`, so shared session/auth middleware can reject the handshake consistently with pages, APIs, files, SSE, and server islands.
 
 ### `open`
 

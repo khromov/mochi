@@ -33,7 +33,7 @@ In production (`development: false`) the toolbar mount point, its entry script, 
 | Button           | Opens                                                                              |
 | ---------------- | ---------------------------------------------------------------------------------- |
 | Status dot       | Live-reload connection state — green pulse when connected, red when dropped.       |
-| `Request`        | Matched route pattern, pathname, params, response size, `Set-Cookie`s, headers.    |
+| `Request`        | Matched route, params, response size, cookie names/attributes, and headers.        |
 | `Info`           | Mochi / Svelte / Bun versions and a snapshot of the active `Mochi.serve()` config. |
 | `Islands`        | Per-island breakdown with mode tag, props size, and a locate-on-page button.       |
 | `Warnings`       | Anything pushed through `window.__mochi_warn(msg)`. Hidden when the queue empty.   |
@@ -77,6 +77,8 @@ Any code can queue a warning into the toolbar by calling `window.__mochi_warn('m
 ### Request panel
 
 Reads its data from `window.__mochi_debug`, which the framework seeds once per response. The HTML size shown in the title is taken from `PerformanceNavigationTiming` — when the response was compressed, both decoded and over-the-wire sizes are shown side by side.
+
+Cookie values are deliberately never serialized into `window.__mochi_debug`: inbound cookies show names only, and `Set-Cookie` rows preserve the cookie name and attributes but replace the value with `<redacted>`. This also applies to `HttpOnly` cookies, whose values must not become readable by client JavaScript through development tooling.
 
 ### Info panel
 

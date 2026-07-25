@@ -69,6 +69,8 @@ export interface DevWatcherDeps {
   trailingSlashPolicy?: 'never' | 'always';
   shellPath?: string;
   reloadShell?: () => Promise<void>;
+  wrapPublicRoute?: (route: string, value: BunRouteValue) => BunRouteValue;
+  runDevWebSocketUpgrade?: (req: Request, server: Server<undefined>, inner: (req: Request, server: Server<undefined>) => Response | undefined) => Promise<Response | undefined>;
 }
 
 /**
@@ -102,9 +104,11 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
     trailingSlashPolicy,
     shellPath,
     reloadShell,
+    wrapPublicRoute,
+    runDevWebSocketUpgrade,
   } = deps;
 
-  const liveReloadHandler = (req: Request, srv: Server<undefined>): Response => {
+  const liveReloadInner = (req: Request, srv: Server<undefined>): Response | undefined => {
     const url = buildPublicUrl(req, options.proxy);
     const entryParam = url.searchParams.get('entry') ?? undefined;
     const success = (
@@ -123,8 +127,10 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
     if (!success) {
       return new Response('WebSocket upgrade failed', { status: 400 });
     }
-    return undefined as unknown as Response;
+    return undefined;
   };
+  const liveReloadHandler = ((req: Request, srv: Server<undefined>) =>
+    runDevWebSocketUpgrade ? runDevWebSocketUpgrade(req, srv, liveReloadInner) : liveReloadInner(req, srv)) as unknown as BunRouteValue;
 
   // When `affected` is provided, only tabs whose entry is in that set
   // get the reload — tabs on unaffected pages keep their state.
@@ -411,10 +417,15 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
             updateRouteLimiter?.(pattern, handler.rateLimit);
             counts.api++;
             counts.updated++;
-          } else if (isMochiWs(handler) && wsHandlersMap?.has(pattern)) {
-            wsHandlersMap.set(pattern, handler.handlers as MochiWsHandlers<unknown>);
-            counts.ws++;
-            counts.updated++;
+          } else if (isMochiWs(handler) && wsHandlersMap?.has(pattern) && unregisterRoutePattern && registerRoutePattern) {
+            unregisterRoutePattern(pattern);
+            removeBunRoute(pattern);
+            const result = await registerRoutePattern(pattern, handler);
+            if (result) {
+              addBunRoute(pattern, result.bunRouteValue);
+              counts.ws++;
+              counts.updated++;
+            }
           } else if (isMochiSse(handler) && sseHandlerMap?.has(pattern)) {
             sseHandlerMap.set(pattern, handler.handler);
             counts.sse++;
@@ -594,7 +605,7 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
     reloadPublic = debounce(async () => {
       const freshPublic = await resolvePublicFiles({ publicDir, development });
       const nextRoutes: Record<string, BunRouteValue> = { ...baseBunRoutes };
-      registerPublicRoutes(nextRoutes, freshPublic);
+      registerPublicRoutes(nextRoutes, freshPublic, wrapPublicRoute);
       nextRoutes['/__mochi_live_reload'] = liveReloadHandler;
       server.reload({
         routes: nextRoutes,

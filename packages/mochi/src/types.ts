@@ -290,10 +290,26 @@ export interface MochiWsData<T = unknown> {
 export interface MochiWsConfig {
   readonly __mochiWs: true;
   readonly handlers: MochiWsHandlers<unknown>;
+  readonly origin: MochiWsOriginOptions;
 }
 
 export function isMochiWs(value: unknown): value is MochiWsConfig {
   return typeof value === 'object' && value !== null && (value as MochiWsConfig).__mochiWs === true;
+}
+
+/**
+ * Browser Origin policy for a WebSocket upgrade.
+ *
+ * The expected origin is derived from the same proxy-aware public URL used by
+ * page/API requests. By default an Origin header is required and must match it.
+ */
+export interface MochiWsOriginOptions {
+  /** Enforce the Origin check. Default: `true`. */
+  checkOrigin?: boolean;
+  /** Additional exact HTTP(S) origins allowed alongside the public origin. */
+  trustedOrigins?: string[];
+  /** Permit non-browser clients that omit Origin. Default: `false`. */
+  allowMissingOrigin?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -476,6 +492,16 @@ export interface MochiServeOptions {
   port?: number;
   hostname?: string;
   development?: boolean;
+  /**
+   * Maximum request-body size in bytes. Forwarded to `Bun.serve`.
+   * Default: Bun's 128 MiB limit.
+   */
+  maxRequestBodySize?: number;
+  /**
+   * Connection idle timeout in seconds. Forwarded to `Bun.serve`.
+   * Default: Bun's server default. SSE routes disable it for their stream only.
+   */
+  idleTimeout?: number;
   /**
    * Mount the dev-only debug toolbar (the floating bottom-right bar).
    * Default: `true`. Has no effect when `development` is `false` — the

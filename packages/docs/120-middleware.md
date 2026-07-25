@@ -53,15 +53,24 @@ export const attachUser: Handle = async ({ event, resolve }) => {
 
 Every event carries a `kind` discriminator describing what the framework is about to do with the request:
 
-| Value        | When                                                                         |
-| ------------ | ---------------------------------------------------------------------------- |
-| `'page'`     | `Mochi.page` route (GET render or POST form action)                          |
-| `'api'`      | `Mochi.api` route                                                            |
-| `'asset'`    | Framework static asset (`.js` / `.css` client bundle or the dev stats route) |
-| `'fallback'` | Unmatched URL — will be passed to your `fetch` handler                       |
-| `'error'`    | Unmatched URL with no `fetch` configured — framework will render a 404       |
+| Value        | When                                                                     |
+| ------------ | ------------------------------------------------------------------------ |
+| `'page'`     | `Mochi.page` route (GET render or POST form action)                      |
+| `'api'`      | `Mochi.api` route                                                        |
+| `'ws'`       | `Mochi.ws` handshake                                                     |
+| `'sse'`      | `Mochi.sse` request                                                      |
+| `'file'`     | `Mochi.file` route                                                       |
+| `'island'`   | Server-island endpoint                                                   |
+| `'image'`    | Framework image endpoint                                                 |
+| `'asset'`    | Framework bundle or public static asset                                  |
+| `'raw'`      | Raw Bun-compatible value in `routes`                                     |
+| `'dev'`      | Development-only framework endpoint, including the live-reload handshake |
+| `'fallback'` | Unmatched URL — will be passed to your `fetch` handler                   |
+| `'error'`    | Unmatched URL with no `fetch` configured — framework will render a 404   |
 
 `kind` is set once at construction and isn't mutated; an error thrown _during_ a `Mochi.page` render is still `kind: 'page'`.
+
+`handle` is the outer authorization boundary for every route kind above. Framework guards such as CSRF, trailing-slash redirects, WebSocket Origin validation, and route rate limits run when middleware calls `resolve(event)`. A middleware may therefore reject a request before those guards or the route handler run.
 
 Use it to opt out of per-request work for framework assets:
 
@@ -157,7 +166,7 @@ await Mochi.serve({
 });
 ```
 
-`asset`, `fallback`, and `error` events pass through unchanged — framework bundles already get long-lived immutable caching in production. WebSocket upgrades and SSE streams never reach the middleware.
+All other event kinds pass through unchanged. Framework bundles already get long-lived immutable caching in production. For a WebSocket handshake, return `resolve(event)` unchanged when allowing the upgrade; response post-processing is only meaningful when middleware rejects the handshake with an HTTP `Response`.
 
 <SeeItInAction
 demos={[{ href: "/demos/request-id/", title: "Request ID", hook: "How request IDs work — every request gets a UUID v7 on getRequestContext().requestId that rides every lifecycle event for correlation." }]}

@@ -2,7 +2,7 @@ import mitt, { type Emitter, type Handler } from 'mitt';
 import { pinGlobal } from './utils/globalState';
 import type { MochiEmailResult } from './email/types';
 
-export type MochiRequestKind = 'page' | 'api' | 'file' | 'asset' | 'image' | 'fallback' | 'error';
+export type MochiRequestKind = 'page' | 'api' | 'ws' | 'sse' | 'file' | 'island' | 'asset' | 'image' | 'raw' | 'dev' | 'fallback' | 'error';
 
 export interface MochiRequestEvent {
   /**
@@ -278,7 +278,7 @@ export interface MochiWarmupCompleteEvent {
   durationMs: number;
 }
 
-export type MochiErrorKind = 'page' | 'api' | 'action' | 'file';
+export type MochiErrorKind = 'page' | 'api' | 'action' | 'ws' | 'sse' | 'file' | 'island' | 'image' | 'raw' | 'dev';
 
 export interface MochiErrorEvent {
   /** Same `requestId` as the surrounding `request` event. */

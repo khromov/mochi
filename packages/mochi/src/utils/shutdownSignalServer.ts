@@ -23,7 +23,7 @@ if (import.meta.main) {
     outDir,
     shutdownTimeout: Number(shutdownTimeout),
     routes: {
-      '/ws': Mochi.ws({ message() {} }),
+      '/ws': Mochi.ws({ message() {} }, { checkOrigin: false }),
     },
   });
   // The parent waits for this line before connecting.

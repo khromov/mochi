@@ -26,7 +26,7 @@
 
 import { applyFilter } from '../extensions';
 import { logger } from '../utils/log';
-import { resolveExpectedOrigin, type MochiProxyOptions } from './proxy';
+import { normalizeHttpOrigin, resolveExpectedOrigin, type MochiProxyOptions } from './proxy';
 
 /**
  * Default content types that gate the CSRF check. These are the three types a
@@ -55,14 +55,12 @@ export interface MochiCsrfOptions {
  * (configured) wouldn't match `https://foo.com` (sent). Anything else passes
  * through unchanged so we don't accidentally rewrite hostnames or other parts.
  */
-function normalizeOrigin(value: string): string {
-  if (value.startsWith('https://')) {
-    return value.replace(/:443$/, '');
+function normalizeOrigin(value: string): string | null {
+  try {
+    return normalizeHttpOrigin(value, 'Origin header');
+  } catch {
+    return null;
   }
-  if (value.startsWith('http://')) {
-    return value.replace(/:80$/, '');
-  }
-  return value;
 }
 
 /**
@@ -152,7 +150,7 @@ function csrfCheckDefault(
   const origin = request.headers.get('origin');
   const expectedNormalized = normalizeOrigin(expectedOrigin);
   const originNormalized = origin ? normalizeOrigin(origin) : null;
-  if (originNormalized && originNormalized === expectedNormalized) {
+  if (originNormalized && expectedNormalized && originNormalized === expectedNormalized) {
     return null;
   }
   if (originNormalized && [...trustedOrigins].some((t) => normalizeOrigin(t) === originNormalized)) {

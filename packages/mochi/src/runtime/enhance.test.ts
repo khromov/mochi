@@ -146,7 +146,7 @@ describe('enhance JSON envelope', () => {
       const body = (await res.json()) as { type: string; status?: number; error?: { message: string } };
       expect(body.type).toBe('error');
       expect(body.status).toBe(500);
-      expect(body.error?.message).toBe('boom');
+      expect(body.error?.message).toBe('Internal Server Error');
     });
   });
 
