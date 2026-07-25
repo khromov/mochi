@@ -369,8 +369,18 @@ export interface MochiManifestComponent {
 }
 
 export interface MochiManifest {
-  /** v2 stores all disk paths relative to the build outDir (relocatable); v1 mixed absolute and cwd-relative paths. */
-  version: 1 | 2;
+  /**
+   * v2 stores all *artifact* disk paths relative to the build outDir (relocatable);
+   * v1 mixed absolute and cwd-relative paths. Typed loosely because this is parsed
+   * from JSON a newer build may have written — the loader warns and falls back to
+   * the newest rules it knows.
+   *
+   * Source paths (the `components` keys, `hydratables[].resolvedPath`,
+   * `cssFileUrls` keys, `serverIslandPaths`, `entryImportedCss` keys) are *not*
+   * rewritten — they mirror the paths the routes were registered with and are used
+   * as lookup keys, so relocation requires booting the app the same way it was built.
+   */
+  version: number;
   /** URL prefix under which framework client assets and the server island endpoint are served. */
   assetPrefix: string;
   bootstrapUrl: string | null;

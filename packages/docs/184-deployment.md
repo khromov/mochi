@@ -20,15 +20,27 @@ None of the links below are affiliate links, nor should any of the links be seen
 
 ## Relocatable builds
 
-`mochi-framework build` output is self-contained: the manifest stores every artifact path relative to the out-dir, so you can build in one place and run in another — build in a CI stage, copy `.mochi/` into the final image, deploy the artifact to a host with a different directory layout. Point the runtime at wherever the output landed:
+`mochi-framework build` writes every artifact path relative to the out-dir, so you can build in one place and run in another — build in a CI stage, copy `.mochi/` into the final image, move or rename the directory. Point the runtime at wherever the output landed:
 
 ```ts
-Mochi.serve({ outDir: './.mochi', ... }); // default — or wherever you copied it
+Mochi.serve({ outDir: './.mochi' }); // default — or wherever you copied it
+```
+
+Paths resolve against the manifest's own directory, so pointing `manifest` at a relocated build works on its own:
+
+```ts
+Mochi.serve({ manifest: '/srv/app/build/manifest.json' });
 ```
 
 <Callout type="warning">
 
-Two things still anchor a prebuilt app to its project. **Run from the project root:** route component paths (`Mochi.page('./src/Site.svelte')`) are cwd-relative, and the compiled SSR modules resolve `node_modules` from the out-dir's location — keep the out-dir inside the project tree, next to `node_modules`. **On-demand server islands need sources:** islands missing from the manifest are compiled at request time from source paths recorded at build. Prebuilt islands (the normal case) don't — they relocate fine.
+Three things still anchor a prebuilt app to its project. **Run it the way you built it:** route component paths (`Mochi.page('./src/Site.svelte')`) double as manifest lookup keys, so the working directory must resolve them to the same strings — use project-relative paths and boot from the project root. **Keep the out-dir in the project tree:** the compiled SSR modules resolve `node_modules` from the out-dir's location. **On-demand server islands need sources:** islands missing from the manifest are compiled at request time from source paths recorded at build. Prebuilt islands (the normal case) don't — they relocate fine.
+
+</Callout>
+
+<Callout type="info">
+
+The manifest is versioned. A build from a newer `mochi-framework` than the runtime booting it will log a warning and may fail to load — build and serve with the same version.
 
 </Callout>
 

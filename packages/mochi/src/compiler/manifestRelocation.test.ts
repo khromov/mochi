@@ -59,7 +59,11 @@ describe('manifest relocation (build → move → boot)', () => {
     rmSync(outDir, { recursive: true, force: true });
   });
 
-  test('manifest is v2 and contains no absolute disk paths', () => {
+  // Artifact paths only. Source paths (the `components` keys, `resolvedPath`,
+  // `serverIslandPaths`) deliberately still carry whatever the route was
+  // registered with — here that's absolute, since the fixture page lives in a
+  // temp dir. They're lookup keys, not disk reads.
+  test('manifest is v2 and contains no absolute artifact paths', () => {
     expect(manifest.version).toBe(2);
     const diskPaths = [
       ...Object.values(manifest.components).map((c) => c.ssrModule),
@@ -95,6 +99,18 @@ describe('manifest relocation (build → move → boot)', () => {
     expect(info).toBeDefined();
     expect(info!.diskPath.startsWith(outDir)).toBe(true);
     expect(await Bun.file(info!.diskPath).exists()).toBe(true);
+  });
+
+  test('v2 paths resolve against the manifest directory, not the passed outDir', async () => {
+    // The manifest and its artifacts always ship together, so a mismatched
+    // `outDir` (e.g. the default './.mochi' alongside an explicit `manifest`)
+    // must not be able to send the loader looking in the wrong place.
+    const { ComponentRegistry } = await import('./ComponentRegistry');
+    const restored = await ComponentRegistry.fromManifest(path.join(outDir, 'manifest.json'), false, path.join(outDir, 'does-not-exist'));
+    const [assetUrl] = Object.keys(manifest.localImageAssets!);
+    const restoredAsset = restored.getLocalImageAssets().get(assetUrl!);
+    expect(restoredAsset).toBeDefined();
+    expect(await Bun.file(restoredAsset!.diskPath).exists()).toBe(true);
   });
 
   test('v1 manifests with absolute paths still resolve as-is', async () => {

@@ -89,6 +89,9 @@ const builtinTsPreprocessor: PreprocessorGroup = {
  */
 const SRC_DIR = path.join(path.dirname(Bun.fileURLToPath(import.meta.url)), '..');
 
+/** Manifest schema version this runtime writes. v2 made every artifact path out-dir-relative. */
+const MANIFEST_VERSION = 2;
+
 // TODO
 // Bun's CSS bundler unquotes `format('woff2-variations')` to `format(woff2-variations)`,
 // which is invalid CSS — only the seven plain keywords (woff2, woff, truetype, opentype,
@@ -2104,10 +2107,14 @@ export class ComponentRegistry {
     // Every artifact the runtime reads from disk lives under outDir, so storing
     // paths outDir-relative makes the build output relocatable ("build here,
     // deploy there"). Anything that somehow escapes outDir stays absolute —
-    // fromManifest() passes absolute paths through untouched.
+    // fromManifest() passes absolute paths through untouched. On Windows a
+    // different-drive target makes path.relative() return an absolute path,
+    // which escapes without a leading `..` — hence the isAbsolute check too.
     const relToOutDir = (p: string): string => {
-      const rel = path.relative(outDirAbs, path.resolve(p));
-      return rel.startsWith('..') ? toPosixPath(path.resolve(p)) : toPosixPath(rel);
+      const abs = path.resolve(p);
+      const rel = path.relative(outDirAbs, abs);
+      const escapes = rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel);
+      return toPosixPath(escapes ? abs : rel);
     };
 
     const components: MochiManifest['components'] = {};
@@ -2139,7 +2146,7 @@ export class ComponentRegistry {
     }
 
     const manifest: MochiManifest = {
-      version: 2,
+      version: MANIFEST_VERSION,
       assetPrefix: this.assetPrefix,
       bootstrapUrl: this.islandBootstrapUrl,
       componentEntryUrls: Object.fromEntries(this.componentEntryUrls),
@@ -2176,16 +2183,24 @@ export class ComponentRegistry {
     const manifest: MochiManifest = JSON.parse(raw);
 
     const registryOutDir = outDir ?? path.dirname(manifestPath);
-    const outDirAbs = path.resolve(registryOutDir);
-    // v2 manifests store paths relative to the build outDir, so the whole build
-    // output relocates with the directory. v1 manifests stored absolute paths
-    // for some fields and cwd-relative for others — keep both booting.
+    // build() always writes manifest.json at the out-dir root, so the manifest's
+    // own directory *is* the build out-dir — resolving v2 paths against it makes
+    // the pairing intrinsic and can't be desynced by a mismatched `outDir`
+    // option. v1 manifests stored absolute paths for some fields and cwd-relative
+    // for others — keep both booting.
+    const artifactRoot = path.dirname(path.resolve(manifestPath));
     const resolveManifestPath = (p: string): string => {
       if (path.isAbsolute(p)) {
         return p;
       }
-      return manifest.version >= 2 ? path.resolve(outDirAbs, p) : path.resolve(p);
+      return manifest.version >= 2 ? path.resolve(artifactRoot, p) : path.resolve(p);
     };
+
+    if (manifest.version > MANIFEST_VERSION) {
+      logger.warn(
+        `Manifest version ${manifest.version} is newer than this runtime supports (v${MANIFEST_VERSION}) — reading it with v${MANIFEST_VERSION} rules. Upgrade mochi-framework if the app fails to boot.`,
+      );
+    }
 
     const registry = new ComponentRegistry({
       development,
