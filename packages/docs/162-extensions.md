@@ -32,6 +32,20 @@ Names use a `namespace:camelCase` convention. Each name is registered in a typed
 - **Hooks** run a user function at a specific framework moment. No return value — observation or side effects only.
 - **Filters** replace a framework default value. The callback receives the existing value and returns the new one.
 
+### Server-only
+
+The registry lives in the server process and nowhere else. It is never shipped to the browser, so there is no client-side hook or filter — a filter that ran there would find an empty registry and hand back the framework default, silently undoing whatever you configured.
+
+Mochi refuses to let that happen quietly. Pulling the modules behind the registry into a client bundle fails the build, naming the import:
+
+```
+[mochi] src/extensions.ts is server-only (hooks and filters) but was pulled into the
+client bundle by src/lib/Widget.svelte. Move the client-facing part into its own
+module, or import it with `import type`.
+```
+
+The same applies to the `Mochi.serve()` config singleton and the [request context](/docs/request-context/). To use a filtered value inside a hydratable island, resolve it during SSR and pass it down as a prop.
+
 ### Hooks
 
 #### `mochi:init`

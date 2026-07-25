@@ -24,6 +24,7 @@ import type { ResolvedEmailMessage, MochiEmailTransportConfig } from './email/ty
 import type { ImportedImageFormat } from './image/types';
 import type { TrailingSlashPolicy } from './runtime/trailingSlash';
 import { pinGlobal } from './utils/globalState';
+import { assertServerOnly } from './utils/serverOnly';
 import { markStartupMilestone } from './lifecycle';
 import type { MochiStartupMilestone } from './lifecycle';
 
@@ -321,7 +322,13 @@ const FILTER_KINDS: { [K in keyof MochiFilterValue]: MochiKind } = {
 // calling `Mochi.serve()` more than once.
 const registry = pinGlobal<{ eventHooks: MochiHooks; filters: MochiFilters }>('__mochi_extensions_registry__', () => ({ eventHooks: {}, filters: {} }));
 
+// The registry is only ever populated on the server, so a client-side read
+// would hand back the framework default and quietly drop whatever the app
+// configured. Crash instead — see `utils/serverOnly.ts`.
+const SERVER_ONLY_REASON = 'Hooks and filters are server-only — the registry only exists in the server process, so this call could never see a registered entry.';
+
 export function initExtensions(opts: Pick<MochiServeOptions, 'eventHooks' | 'filters'>): void {
+  assertServerOnly('initExtensions()', SERVER_ONLY_REASON);
   registry.eventHooks = opts.eventHooks ?? {};
   registry.filters = opts.filters ?? {};
 }
@@ -330,6 +337,7 @@ export function initExtensions(opts: Pick<MochiServeOptions, 'eventHooks' | 'fil
 // The runtime dispatches on the runtime kind table to guarantee the actual
 // return matches the type — including when no user fn is registered.
 export function runHook<K extends keyof MochiHookContext>(name: K, ctx: MochiHookContext[K]): MochiHookKindMap[K] extends 'async' ? Promise<void> : void {
+  assertServerOnly(`runHook('${name}')`, SERVER_ONLY_REASON);
   // Startup hooks double as lifecycle milestones. Recording here (rather than
   // at each call site) keeps the record in step with the hooks themselves;
   // per-request hooks like `route:matched` are deliberately not recorded.
@@ -352,6 +360,7 @@ export function applyFilter<K extends keyof MochiFilterValue>(
   value: MochiFilterValue[K],
   ctx: MochiFilterContext[K],
 ): MochiFilterKindMap[K] extends 'async' ? FilterReturn<K> | Promise<FilterReturn<K>> : FilterReturn<K> {
+  assertServerOnly(`applyFilter('${name}')`, SERVER_ONLY_REASON);
   const fn = registry.filters[name] as Filter<K> | undefined;
   if (FILTER_KINDS[name] === 'async') {
     if (!fn) {
