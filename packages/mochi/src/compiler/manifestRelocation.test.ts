@@ -1,10 +1,10 @@
 // Manifest v2 stores every disk path relative to the build outDir so a prebuilt
 // app survives "build here, deploy there". Prove it end-to-end: build into one
-// directory, rename it, and boot from the new location — pages SSR, the emitted
+// directory, move it, and boot from the new location — pages SSR, the emitted
 // image asset serves from disk, and the local-asset registry repopulates with
 // relocated paths.
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { mkdtempSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type { Server } from 'bun';
 import { build } from '../cli/build';
@@ -14,6 +14,9 @@ import type { MochiManifest } from '../types';
 
 const GLOBAL_LOCAL_ASSETS_KEY = '__mochi_local_image_assets__';
 
+// Windows can hold a just-built tree briefly after the handles into it are dropped.
+const RM_OPTS = { recursive: true, force: true, maxRetries: 5, retryDelay: 100 } as const;
+
 const PAGE_SRC = `<script>
   import hero from './hero.png';
 </script>
@@ -22,6 +25,7 @@ const PAGE_SRC = `<script>
 
 describe('manifest relocation (build → move → boot)', () => {
   let fixtureDir: string;
+  let buildDir: string;
   let outDir: string;
   let pagePath: string;
   let manifest: MochiManifest;
@@ -35,11 +39,23 @@ describe('manifest relocation (build → move → boot)', () => {
     pagePath = path.join(fixtureDir, 'Page.svelte');
     writeFileSync(pagePath, PAGE_SRC);
 
-    const buildDir = mkdtempSync(path.join(import.meta.dir, '..', '..', '.mochi-reloc-a-'));
+    buildDir = mkdtempSync(path.join(import.meta.dir, '..', '..', '.mochi-reloc-a-'));
     await build({ routes: { '/': Mochi.page(pagePath) }, development: false, outDir: buildDir });
     // The relocation: everything the runtime needs must follow the directory.
+    // Copy rather than rename — `build()` ran in this process and still holds
+    // handles under buildDir (it imports the SSR entries it just emitted), and
+    // Windows refuses to rename a directory a process has open handles into.
+    // Copy-then-deploy is what a real deployment does anyway.
     outDir = buildDir.replace('.mochi-reloc-a-', '.mochi-reloc-b-');
-    renameSync(buildDir, outDir);
+    cpSync(buildDir, outDir, { recursive: true });
+    // Removing the source proves the runtime never reads the build location.
+    // Those same Windows handles can refuse this; the assertions below stand on
+    // the manifest being relative rather than on the source being gone.
+    try {
+      rmSync(buildDir, RM_OPTS);
+    } catch {
+      // Left for afterAll, once the server has released the tree.
+    }
 
     manifest = JSON.parse(await Bun.file(path.join(outDir, 'manifest.json')).text());
     server = await Mochi.serve({
@@ -55,8 +71,9 @@ describe('manifest relocation (build → move → boot)', () => {
   afterAll(() => {
     server?.stop(true);
     delete (globalThis as unknown as Record<string, unknown>)[GLOBAL_LOCAL_ASSETS_KEY];
-    rmSync(fixtureDir, { recursive: true, force: true });
-    rmSync(outDir, { recursive: true, force: true });
+    rmSync(fixtureDir, RM_OPTS);
+    rmSync(outDir, RM_OPTS);
+    rmSync(buildDir, RM_OPTS);
   });
 
   // Artifact paths only. Source paths (the `components` keys, `resolvedPath`,
@@ -98,6 +115,7 @@ describe('manifest relocation (build → move → boot)', () => {
     const info = getLocalImageAsset(assetUrl!);
     expect(info).toBeDefined();
     expect(info!.diskPath.startsWith(outDir)).toBe(true);
+    expect(info!.diskPath).not.toContain('.mochi-reloc-a-');
     expect(await Bun.file(info!.diskPath).exists()).toBe(true);
   });
 
