@@ -2118,7 +2118,14 @@ export class ComponentRegistry {
       const abs = path.resolve(p);
       const rel = path.relative(outDirAbs, abs);
       const escapes = rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel);
-      return toPosixPath(escapes ? abs : rel);
+      if (escapes) {
+        logger.warn(
+          `Build artifact ${relForDisplay(abs)} lives outside the out-dir — baking an absolute path. ` +
+            `This build will not relocate: it only boots from this exact filesystem path.`,
+        );
+        return toPosixPath(abs);
+      }
+      return toPosixPath(rel);
     };
 
     const components: MochiManifest['components'] = {};
@@ -2182,33 +2189,32 @@ export class ComponentRegistry {
   }
 
   /** Load a registry from a prebuilt manifest (production mode). */
-  static async fromManifest(manifestPath: string, development: boolean = false, outDir?: string): Promise<ComponentRegistry> {
+  static async fromManifest(manifestPath: string, development: boolean = false): Promise<ComponentRegistry> {
     const raw = await Bun.file(manifestPath).text();
     const manifest: MochiManifest = JSON.parse(raw);
 
-    const registryOutDir = outDir ?? path.dirname(manifestPath);
-    // build() always writes manifest.json at the out-dir root, so the manifest's
-    // own directory *is* the build out-dir — resolving v2 paths against it makes
-    // the pairing intrinsic and can't be desynced by a mismatched `outDir`
-    // option. v1 manifests stored absolute paths for some fields and cwd-relative
-    // for others — keep both booting.
-    const artifactRoot = path.dirname(path.resolve(manifestPath));
-    const resolveManifestPath = (p: string): string => {
-      if (path.isAbsolute(p)) {
-        return p;
-      }
-      return manifest.version >= 2 ? path.resolve(artifactRoot, p) : path.resolve(p);
-    };
-
-    if (manifest.version > MANIFEST_VERSION) {
-      logger.warn(
-        `Manifest version ${manifest.version} is newer than this runtime supports (v${MANIFEST_VERSION}) — reading it with v${MANIFEST_VERSION} rules. Upgrade mochi-framework if the app fails to boot.`,
+    // The manifest layout is not forwards- or backwards-compatible: a mismatch
+    // means the artifacts on disk are laid out for different loader rules, which
+    // fails as a confusing "file not found" deep in the boot instead of here.
+    if (manifest.version !== MANIFEST_VERSION) {
+      throw new Error(
+        `[mochi] Manifest at ${relForDisplay(manifestPath)} is version ${manifest.version}, but this mochi-framework runtime reads version ${MANIFEST_VERSION}. ` +
+          `Build and serve with the same mochi-framework version, then re-run \`mochi-framework build\`.`,
       );
     }
 
+    // build() always writes manifest.json at the out-dir root, so the manifest's
+    // own directory *is* the build out-dir. Deriving the artifact root from the
+    // manifest's own location makes the pairing intrinsic — there's no caller-
+    // supplied out-dir that could desync from where the artifacts actually live.
+    const artifactRoot = path.dirname(path.resolve(manifestPath));
+    // Absolute entries are the escape hatch for artifacts that landed outside
+    // the out-dir (toManifest() warns when it bakes one) — pass them through.
+    const resolveManifestPath = (p: string): string => (path.isAbsolute(p) ? p : path.resolve(artifactRoot, p));
+
     const registry = new ComponentRegistry({
       development,
-      outDir: registryOutDir,
+      outDir: artifactRoot,
       assetPrefix: manifest.assetPrefix,
     });
     registry.loadedFromManifest = true;

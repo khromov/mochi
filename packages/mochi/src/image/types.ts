@@ -26,7 +26,7 @@ export interface ImportedImage {
 
 /** An `ImportedImage` plus the build-time details needed to serve/transform it from disk. */
 export interface LocalImageAsset extends ImportedImage {
-  /** Absolute in memory/at runtime; serialized outDir-relative into v2 manifests. */
+  /** Absolute in memory/at runtime; serialized outDir-relative into the manifest. */
   diskPath: string;
   contentType: string;
 }

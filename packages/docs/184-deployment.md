@@ -34,13 +34,17 @@ Mochi.serve({ manifest: '/srv/app/build/manifest.json' });
 
 <Callout type="warning">
 
-Three things still anchor a prebuilt app to its project. **Run it the way you built it:** route component paths (`Mochi.page('./src/Site.svelte')`) double as manifest lookup keys, so the working directory must resolve them to the same strings — use project-relative paths and boot from the project root. **Keep the out-dir in the project tree:** the compiled SSR modules resolve `node_modules` from the out-dir's location. **On-demand server islands need sources:** islands missing from the manifest are compiled at request time from source paths recorded at build. Prebuilt islands (the normal case) don't — they relocate fine.
+Three things still anchor a prebuilt app to its project:
+
+- **Run it the way you built it.** Route component paths (`Mochi.page('./src/Site.svelte')`) double as manifest lookup keys, so the working directory must resolve them to the same strings — use project-relative paths and boot from the project root.
+- **Keep the out-dir in the project tree.** The compiled SSR modules resolve `node_modules` from the out-dir's location.
+- **On-demand server islands need sources.** Islands missing from the manifest are compiled at request time from source paths recorded at build. Prebuilt islands — the normal case — don't, and relocate fine.
 
 </Callout>
 
-<Callout type="info">
+<Callout type="danger">
 
-The manifest is versioned. A build from a newer `mochi-framework` than the runtime booting it will log a warning and may fail to load — build and serve with the same version.
+The manifest records a schema version, and the runtime loads only the exact version it writes. Booting a build made by a different `mochi-framework` version throws at startup rather than half-loading — always run `mochi-framework build` with the same version you serve with.
 
 </Callout>
 

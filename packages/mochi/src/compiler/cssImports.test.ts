@@ -71,7 +71,7 @@ describe('CSS imports — happy path', () => {
     const json = JSON.parse(JSON.stringify(manifest));
     const manifestPath = path.join(outDir, 'manifest.json');
     await Bun.write(manifestPath, JSON.stringify(json));
-    const restored = await ComponentRegistry.fromManifest(manifestPath, false, outDir);
+    const restored = await ComponentRegistry.fromManifest(manifestPath, false);
     const restoredManifest = restored.toManifest();
     expect(restoredManifest.importedCssUrls).toEqual(manifest.importedCssUrls);
     expect(restoredManifest.entryImportedCss).toEqual(manifest.entryImportedCss);

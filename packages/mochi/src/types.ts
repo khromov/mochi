@@ -361,7 +361,7 @@ export interface MochiErrorProps {
 // ---------------------------------------------------------------------------
 
 export interface MochiManifestComponent {
-  /** Compiled SSR module path, relative to the build outDir since manifest v2 (absolute in v1 manifests, still accepted). */
+  /** Compiled SSR module path, relative to the build outDir. */
   ssrModule: string;
   /** `exportName` is optional for manifests written before named-export islands existed; absent means `default`. */
   hydratables: { name: string; displayName: string; resolvedPath: string; exportName?: string }[];
@@ -370,15 +370,18 @@ export interface MochiManifestComponent {
 
 export interface MochiManifest {
   /**
-   * v2 stores all *artifact* disk paths relative to the build outDir (relocatable);
-   * v1 mixed absolute and cwd-relative paths. Typed loosely because this is parsed
-   * from JSON a newer build may have written — the loader warns and falls back to
-   * the newest rules it knows.
+   * Schema version of the on-disk build output. The runtime loads only the exact
+   * version it writes (currently 2, which made all *artifact* disk paths
+   * outDir-relative and so relocatable) and throws on anything else — build and
+   * serve with the same `mochi-framework` version. Typed as `number` rather than
+   * a literal because it is parsed from JSON any version may have written; the
+   * check is what narrows it.
    *
    * Source paths (the `components` keys, `hydratables[].resolvedPath`,
-   * `cssFileUrls` keys, `serverIslandPaths`, `entryImportedCss` keys) are *not*
-   * rewritten — they mirror the paths the routes were registered with and are used
-   * as lookup keys, so relocation requires booting the app the same way it was built.
+   * `cssFileUrls` keys, `serverIslandPaths`, `importedCssUrls` keys,
+   * `entryImportedCss` keys) are *not* rewritten — they mirror the paths the
+   * routes were registered with and are used as lookup keys, so relocation
+   * requires booting the app the same way it was built.
    */
   version: number;
   /** URL prefix under which framework client assets and the server island endpoint are served. */
@@ -386,7 +389,7 @@ export interface MochiManifest {
   bootstrapUrl: string | null;
   componentEntryUrls: Record<string, string>;
   cssFileUrls: Record<string, string>;
-  /** Maps URL path → disk path relative to the build outDir (v2; cwd-relative in v1). */
+  /** Maps URL path → disk path relative to the build outDir. */
   clientFiles: Record<string, string>;
   components: Record<string, MochiManifestComponent>;
   stats: {
@@ -401,19 +404,19 @@ export interface MochiManifest {
   serverIslandPaths?: Record<string, string>;
   /** Maps server island component name → the named export it renders (default-export islands are omitted). */
   serverIslandExports?: Record<string, string>;
-  /** Maps public URL path → disk path (relative to the build outDir in v2, cwd-relative in v1) for static files copied from `public/`. */
+  /** Maps public URL path → disk path (relative to the build outDir) for static files copied from `public/`. */
   publicFiles?: Record<string, string>;
-  /** Maps served asset URL → emitted asset details for locally-imported images (`import x from './x.png'`). `diskPath` is outDir-relative in v2, absolute in v1. */
+  /** Maps served asset URL → emitted asset details for locally-imported images (`import x from './x.png'`). `diskPath` is outDir-relative. */
   localImageAssets?: Record<string, LocalImageAsset>;
   /** Maps resolved CSS-import path → served URL (e.g. /import-css/inter-<hash>.css) */
   importedCssUrls?: Record<string, string>;
   /** Maps page entry .svelte path → list of CSS-import paths reachable from it */
   entryImportedCss?: Record<string, string[]>;
   /**
-   * Disk path (relative to the build outDir in v2, cwd-relative in v1) to the
-   * prebuilt, minified ServerIsland inline web-component script. Emitted by
-   * `build()` so the production runtime loads it from disk instead of running
-   * a `Bun.build` at startup.
+   * Disk path (relative to the build outDir) to the prebuilt, minified
+   * ServerIsland inline web-component script. Emitted by `build()` so the
+   * production runtime loads it from disk instead of running a `Bun.build`
+   * at startup.
    */
   serverIslandScript?: string;
 }

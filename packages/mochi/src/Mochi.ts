@@ -384,12 +384,11 @@ export class Mochi {
     let registry: ComponentRegistry;
     if (!development && existsSync(manifestPath)) {
       logger.info(`Loading prebuilt manifest from ${manifestPath}`);
-      // The manifest's own directory is the artifact root (build() always writes
-      // manifest.json at the out-dir root), so an explicit `manifest` pointing
-      // elsewhere also relocates the registry's outDir — otherwise on-demand
-      // island compiles would land in a `.mochi` that holds none of the build.
-      // For the default manifest path this is just `outDir` again.
-      registry = await ComponentRegistry.fromManifest(manifestPath, development, path.dirname(manifestPath));
+      // The registry takes its outDir from the manifest's own directory, so an
+      // explicit `manifest` pointing elsewhere relocates on-demand island
+      // compiles with it rather than writing them into a `.mochi` that holds
+      // none of the build. For the default manifest path that's `outDir` again.
+      registry = await ComponentRegistry.fromManifest(manifestPath, development);
       if (options.assetPrefix !== undefined && options.assetPrefix !== registry.assetPrefix) {
         logger.warn(
           `assetPrefix in Mochi.serve() (${JSON.stringify(options.assetPrefix)}) differs from the manifest (${JSON.stringify(registry.assetPrefix)}). Using the manifest value — URLs are baked in at build time.`,
