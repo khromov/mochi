@@ -24,6 +24,7 @@ import type { ResolvedEmailMessage, MochiEmailTransportConfig } from './email/ty
 import type { ImportedImageFormat } from './image/types';
 import type { TrailingSlashPolicy } from './runtime/trailingSlash';
 import { pinGlobal } from './utils/globalState';
+import { assertServerOnly } from './utils/serverOnly';
 import { markStartupMilestone } from './lifecycle';
 import type { MochiStartupMilestone } from './lifecycle';
 
@@ -139,8 +140,10 @@ export interface MochiFilterValue {
   'image:localAssetFilename': string;
   'image:localAssetUrl': string;
   'email:message': ResolvedEmailMessage;
+  'captcha:bits': number;
   'captcha:minAgeMs': number;
   'captcha:driftAllowanceMs': number;
+  'captcha:solveBudgetMs': number;
   'queue:recoveryStallWarningMs': number;
   'queue:lockDurationMs': number;
 }
@@ -198,6 +201,12 @@ export interface MochiFilterContext {
   'image:localAssetFilename': { sourcePath: string; hash: string; ext: string; format: ImportedImageFormat; width: number; height: number };
   'image:localAssetUrl': { sourcePath: string; filename: string; assetPrefix: string; format: ImportedImageFormat };
   'email:message': { transport: MochiEmailTransportConfig['type'] };
+  /** Resolved once at startup, as the captcha options are read. */
+  'captcha:bits': {
+    options: MochiCaptchaOptions;
+    /** Whether the incoming value is the app's own `bits` option rather than the framework default. */
+    configured: boolean;
+  };
   'captcha:minAgeMs': {
     /** Difficulty sealed into this token at mint. */
     bits: number;
@@ -207,6 +216,11 @@ export interface MochiFilterContext {
     limitMs: number;
   };
   'captcha:driftAllowanceMs': { options: MochiCaptchaOptions; maxAgeMs: number };
+  'captcha:solveBudgetMs': {
+    options: MochiCaptchaOptions;
+    /** Resolved difficulty, filter included — the budget has to cover the work this implies. */
+    bits: number;
+  };
   /** Resolved once per queue that declares a `recover` callback, as recovery starts. */
   'queue:recoveryStallWarningMs': { queue: string };
   /** Resolved once per queue, as it is created. */
@@ -238,8 +252,10 @@ export interface MochiFilterKindMap {
   'image:localAssetFilename': 'sync';
   'image:localAssetUrl': 'sync';
   'email:message': 'async';
+  'captcha:bits': 'sync';
   'captcha:minAgeMs': 'sync';
   'captcha:driftAllowanceMs': 'sync';
+  'captcha:solveBudgetMs': 'sync';
   'queue:recoveryStallWarningMs': 'sync';
   'queue:lockDurationMs': 'sync';
 }
@@ -292,8 +308,10 @@ const FILTER_KINDS: { [K in keyof MochiFilterValue]: MochiKind } = {
   'image:localAssetFilename': 'sync',
   'image:localAssetUrl': 'sync',
   'email:message': 'async',
+  'captcha:bits': 'sync',
   'captcha:minAgeMs': 'sync',
   'captcha:driftAllowanceMs': 'sync',
+  'captcha:solveBudgetMs': 'sync',
   'queue:recoveryStallWarningMs': 'sync',
   'queue:lockDurationMs': 'sync',
 };
@@ -304,7 +322,13 @@ const FILTER_KINDS: { [K in keyof MochiFilterValue]: MochiKind } = {
 // calling `Mochi.serve()` more than once.
 const registry = pinGlobal<{ eventHooks: MochiHooks; filters: MochiFilters }>('__mochi_extensions_registry__', () => ({ eventHooks: {}, filters: {} }));
 
+// The registry is only ever populated on the server, so a client-side read
+// would hand back the framework default and quietly drop whatever the app
+// configured. Crash instead — see `utils/serverOnly.ts`.
+const SERVER_ONLY_REASON = 'Hooks and filters are server-only — the registry only exists in the server process, so this call could never see a registered entry.';
+
 export function initExtensions(opts: Pick<MochiServeOptions, 'eventHooks' | 'filters'>): void {
+  assertServerOnly('initExtensions()', SERVER_ONLY_REASON);
   registry.eventHooks = opts.eventHooks ?? {};
   registry.filters = opts.filters ?? {};
 }
@@ -313,6 +337,7 @@ export function initExtensions(opts: Pick<MochiServeOptions, 'eventHooks' | 'fil
 // The runtime dispatches on the runtime kind table to guarantee the actual
 // return matches the type — including when no user fn is registered.
 export function runHook<K extends keyof MochiHookContext>(name: K, ctx: MochiHookContext[K]): MochiHookKindMap[K] extends 'async' ? Promise<void> : void {
+  assertServerOnly(`runHook('${name}')`, SERVER_ONLY_REASON);
   // Startup hooks double as lifecycle milestones. Recording here (rather than
   // at each call site) keeps the record in step with the hooks themselves;
   // per-request hooks like `route:matched` are deliberately not recorded.
@@ -335,6 +360,7 @@ export function applyFilter<K extends keyof MochiFilterValue>(
   value: MochiFilterValue[K],
   ctx: MochiFilterContext[K],
 ): MochiFilterKindMap[K] extends 'async' ? FilterReturn<K> | Promise<FilterReturn<K>> : FilterReturn<K> {
+  assertServerOnly(`applyFilter('${name}')`, SERVER_ONLY_REASON);
   const fn = registry.filters[name] as Filter<K> | undefined;
   if (FILTER_KINDS[name] === 'async') {
     if (!fn) {

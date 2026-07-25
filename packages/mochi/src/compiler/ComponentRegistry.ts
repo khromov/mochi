@@ -18,6 +18,7 @@ import { mergeCompilerOptions, type MochiSvelteConfig } from './svelteConfig';
 import { backendId, resolveSvelteCompiler, type MochiSvelteCompiler, type SvelteCompilerBackend } from './svelteCompilerBackend';
 import { applyFilter } from '../extensions';
 import { buildServerOnlyStubModule, scanServerOnlyExports } from './serverOnlyScan';
+import { CLIENT_BUILD_DEFINE, serverOnlyModuleGuard } from './serverOnlyModuleGuard';
 import { renderMochiEnvServer, renderMochiEnvClient } from './virtualModuleTemplate';
 import { createImageAssetLoader, IMAGE_FILE_FILTER } from './imageAssetLoader';
 import { registerLocalImageAsset } from '../image/localAssetRegistry';
@@ -1287,13 +1288,16 @@ export class ComponentRegistry {
     const result = await Bun.build({
       entrypoints,
       files: filesMap,
-      plugins: [clientPlugin],
+      // The guard goes first so its `onResolve` sees a server-only specifier
+      // before any of the client plugin's own handlers can claim it.
+      plugins: [serverOnlyModuleGuard, clientPlugin],
       target: 'browser',
       conditions: ['svelte', ...(development ? ['development'] : ['production'])],
       define: {
         DEV: String(development),
         BROWSER: 'true',
         NODE: 'false',
+        ...CLIENT_BUILD_DEFINE,
       },
       minify: true,
       splitting: true,

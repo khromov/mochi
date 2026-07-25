@@ -115,7 +115,7 @@ export { isHydratable } from './islands/isHydratable';
 
 export { mintCaptcha, verifyCaptcha, consumeCaptcha, solveCaptcha } from './captcha/captcha';
 export { MemoryNonceStore, SqliteNonceStore } from './captcha/nonceStore';
-export { DEFAULT_CAPTCHA_MIN_AGE_MS, DEFAULT_CAPTCHA_DRIFT_ALLOWANCE_MS } from './captcha/config';
+export { DEFAULT_CAPTCHA_BITS, DEFAULT_CAPTCHA_MIN_AGE_MS, DEFAULT_CAPTCHA_DRIFT_ALLOWANCE_MS } from './captcha/config';
 export type { MintedCaptcha } from './captcha/captcha';
 export type { MochiCaptchaOptions, CaptchaResult, CaptchaFailureReason, NonceStore } from './captcha/types';
 export { enhance, deserialize } from './runtime/enhance.ssr';
