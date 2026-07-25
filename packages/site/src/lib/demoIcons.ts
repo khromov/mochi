@@ -52,6 +52,9 @@ import Ampersand from '@lucide/svelte/icons/ampersand';
 import Mail from '@lucide/svelte/icons/mail';
 import Gauge from '@lucide/svelte/icons/gauge';
 import Recycle from '@lucide/svelte/icons/recycle';
+import AppWindow from '@lucide/svelte/icons/app-window';
+import PanelTopOpen from '@lucide/svelte/icons/panel-top-open';
+import AppWindowMac from '@lucide/svelte/icons/app-window-mac';
 
 export interface DemoIconMeta {
   icon: Component;
@@ -66,6 +69,9 @@ export const demoIconFor: Record<string, DemoIconMeta> = {
   'Data Loading': { icon: Globe, label: 'Server-side fetch' },
   Hydratable: { icon: Snowflake, label: 'Server-computed value reused on hydration' },
   'isHydratable()': { icon: Droplets, label: 'Will this subtree hydrate on this page load?' },
+  'Hydrated Dialog': { icon: AppWindow, label: 'showModal() and returnValue in a hydrated island' },
+  'Popover Dialog': { icon: PanelTopOpen, label: 'A <dialog> that opens with zero client JavaScript' },
+  'Progressive Dialog': { icon: AppWindowMac, label: 'One <dialog> that works with and without JavaScript' },
   Cookies: { icon: Cookie, label: 'Server + client cookies' },
   'Cache Events': { icon: DatabaseZap, label: 'Custom cache event subscriber' },
   'Request Cache': { icon: Recycle, label: 'Memoize repeated work within one request' },

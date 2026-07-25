@@ -8,6 +8,9 @@ import { files as captcha } from '../demos/captcha/files.ts';
 import { files as captchaStyling } from '../demos/captcha-styling/files.ts';
 import { files as cookies } from '../demos/cookies/files.ts';
 import { files as dataLoading } from '../demos/data-loading/files.ts';
+import { files as dialogHydrated } from '../demos/dialog-hydrated/files.ts';
+import { files as dialogPopover } from '../demos/dialog-popover/files.ts';
+import { files as dialogProgressive } from '../demos/dialog-progressive/files.ts';
 import { files as email } from '../demos/email/files.ts';
 import { files as entityProps } from '../demos/entity-props/files.ts';
 import { files as error } from '../demos/error/files.ts';
@@ -119,6 +122,30 @@ export const demos: Demo[] = [
     files: isHydratableFiles,
     title: 'isHydratable()',
     hook: 'How isHydratable() works — detect from any depth whether the current subtree will hydrate, for SSR-only fallbacks without prop forwarding.',
+    category: 'hydration',
+  },
+  {
+    href: '/demos/dialog-hydrated/',
+    slug: 'dialog-hydrated',
+    files: dialogHydrated,
+    title: 'Hydrated Dialog',
+    hook: 'How <dialog> works in a hydrated island — showModal() opens it, <form method="dialog"> closes it, and the close event reads back returnValue.',
+    category: 'hydration',
+  },
+  {
+    href: '/demos/dialog-popover/',
+    slug: 'dialog-popover',
+    files: dialogPopover,
+    title: 'Popover Dialog',
+    hook: 'How <dialog> works with no hydration — the popover attribute and popovertarget buttons open and close it with zero client JavaScript.',
+    category: 'hydration',
+  },
+  {
+    href: '/demos/dialog-progressive/',
+    slug: 'dialog-progressive',
+    files: dialogProgressive,
+    title: 'Progressive Dialog',
+    hook: 'How one <dialog> serves both worlds — a link the server honours by rendering it open, upgraded to showModal() once JavaScript loads.',
     category: 'hydration',
   },
   {
