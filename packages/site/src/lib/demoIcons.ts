@@ -51,6 +51,7 @@ import Layers2 from '@lucide/svelte/icons/layers-2';
 import Ampersand from '@lucide/svelte/icons/ampersand';
 import Mail from '@lucide/svelte/icons/mail';
 import Gauge from '@lucide/svelte/icons/gauge';
+import Recycle from '@lucide/svelte/icons/recycle';
 
 export interface DemoIconMeta {
   icon: Component;
@@ -67,6 +68,7 @@ export const demoIconFor: Record<string, DemoIconMeta> = {
   'isHydratable()': { icon: Droplets, label: 'Will this subtree hydrate on this page load?' },
   Cookies: { icon: Cookie, label: 'Server + client cookies' },
   'Cache Events': { icon: DatabaseZap, label: 'Custom cache event subscriber' },
+  'Request Cache': { icon: Recycle, label: 'Memoize repeated work within one request' },
   'Request ID': { icon: Barcode, label: 'Per-request correlation id' },
   'Real-time Chat': { icon: MessageCircle, label: 'WebSocket chat' },
   'API Endpoints': { icon: Webhook, label: 'JSON API routes' },

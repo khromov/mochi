@@ -180,6 +180,6 @@ const rateLimit = getRequestContext().rateLimit;
 
 <SeeItInAction
 demos={[
-{ href: "/demos/rate-limit/", title: "Rate Limiting", hook: "5 requests per minute per IP — reload past the limit to hit the 429 error page." },
+{ href: "/demos/rate-limit/", title: "Rate Limiting", hook: "How rate limiting works — a rateLimit config on the route caps requests per IP per minute and serves the 429 error page past the limit." },
 ]}
 />

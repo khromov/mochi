@@ -51,6 +51,8 @@ export const mochiEvents = globalThis.__mochi_events__;
 // Server-side cache class. Re-exported through the virtual module so .svelte
 // files can `import { MochiCache } from 'mochi-framework'` directly.
 export { MochiCache } from "__MOCHI_CACHE__";
+// Request-scoped cache. Server-only (it hangs off the request context).
+export { requestCache, requestMemo, getRequestCache } from "__MOCHI_REQUEST_CACHE__";
 // Cache storage adapters — server-only (FileStorage touches the fs).
 // isBlobRef/readBlobRef resolve the lazy blob references a
 // FileStorage-backed cache returns for binary fields.
