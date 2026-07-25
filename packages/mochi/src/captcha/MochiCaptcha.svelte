@@ -43,7 +43,7 @@
   let progressAttempts = $state<number | null>(null);
 
   // A misconfiguration is for the developer, not the visitor: shown in dev,
-  // and in production degraded to the same empty slot as a captcha that never
+  // and in production degraded to the same blank spacer as a captcha that never
   // hydrated, with the cause left in the console by `failWith`.
   const suppressed = $derived(error !== null && !errorRetryable && !isDev);
 

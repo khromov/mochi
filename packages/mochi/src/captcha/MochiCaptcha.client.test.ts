@@ -337,11 +337,40 @@ afterAll(async () => {
  * ------------------------------------------------------------------ */
 
 describe('MochiCaptcha — the empty entry state', () => {
-  test('renders nothing on the server, so an unhydrated widget is an empty slot rather than a dead slider', () => {
+  test('the server renders only a blank spacer, so an unhydrated widget is empty space rather than a dead slider', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { body } = render(SsrCaptcha as any, { props: { token: 'server-token', bits: 4 } });
-    expect(body).not.toContain('<div');
+    expect(body).toContain('captcha-placeholder');
+    // Nothing to drag, no fields, and no token leaked into markup nobody can use.
+    expect(body).not.toContain('handle');
     expect(body).not.toContain('captcha_token');
+    expect(body).not.toContain('server-token');
+  });
+
+  test('the spacer reserves the height the slider takes, so mounting shifts nothing', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { head } = render(SsrCaptcha as any, { props: { token: 'server-token', bits: 4 } });
+    // `css: 'injected'`, so the component's (minified) stylesheet comes back
+    // with the render. Comments survive minification and would match as
+    // selectors, so they go first.
+    const css = head.replace(/\/\*[\s\S]*?\*\//g, '');
+    const rule = (selector: string) => new RegExp(`${selector}[^{]*\\{([^}]*)\\}`).exec(css)?.[1] ?? '';
+    expect(rule('\\.captcha-placeholder')).toContain('min-height:44px');
+    // Svelte scoping sits between the two class names, hence the gap.
+    expect(rule('\\.captcha[^{]*\\.track')).toContain('height:44px');
+    // The track has a border, so the spacer needs one too — otherwise it is 2px
+    // short of what replaces it under a content-box reset.
+    expect(rule('\\.captcha-placeholder')).toContain('border:1px solid transparent');
+    // The <noscript> must go entirely unstyled: a scripting-enabled parser keeps
+    // its content as raw text that only the UA's `display: none` hides, so an
+    // author `display` would put that text on screen for everyone.
+    expect(css).not.toContain('noscript');
+  });
+
+  test('the spacer carries a <noscript> explaining why the widget is missing without JavaScript', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { body } = render(SsrCaptcha as any, { props: { token: 'server-token', bits: 4, noscriptLabel: 'Turn on JS' } });
+    expect(body).toContain('<noscript>Turn on JS</noscript>');
   });
 
   test('the slider only appears once the component mounts in the browser', () => {

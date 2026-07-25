@@ -59,7 +59,7 @@ export const routes = {
 
 ### Hydration
 
-The captcha runs entirely in the browser — the slider, the hash chain and the proof-of-work are all client-side — so it renders **nothing on the server** and appears only once it hydrates. Wire it up one of two ways:
+The captcha runs entirely in the browser — the slider, the hash chain and the proof-of-work are all client-side — so the server renders **only a blank spacer the size of the widget**, and the slider appears in its place once it hydrates. Nothing moves when it does. Wire it up one of two ways:
 
 - **Hydrate the captcha itself** — put `mochi:hydrate` on it, as above, and it becomes its own island.
 - **Hydrate the surrounding subtree** — if the captcha sits inside a component you hydrate, it hydrates with it, no directive on the captcha needed.
@@ -91,7 +91,13 @@ The subtree route is the common one: the moment you attach [`enhance`](/docs/pro
 
 `bind:verified` is optional — bind it to disable submit until the challenge is solved. The server rejects unsolved submissions either way.
 
-A captcha that hydrates by neither route stays empty — an empty slot rather than a dead slider that looks interactive but can never verify.
+A captcha that hydrates by neither route stays a spacer — blank space rather than a dead slider that looks interactive but can never verify.
+
+With JavaScript switched off the spacer shows a `<noscript>` message instead — _JavaScript is required to complete this captcha._ by default, overridable with `noscriptLabel`:
+
+```svelte
+<MochiCaptcha {...captcha} noscriptLabel="Enable JavaScript to send this form." />
+```
 
 #### Props
 
@@ -105,6 +111,7 @@ A captcha that hydrates by neither route stays empty — an empty slot rather th
 | `verifyingLabel` | `'Verifying…'`              | Replaces the hint while the proof-of-work runs.                                                                                                                                                                                |
 | `verifiedLabel`  | `'Verified — thanks!'`      | Replaces the hint once the proof-of-work lands.                                                                                                                                                                                |
 | `errorLabel`     | see [below](#when-it-fails) | Shown if the widget can't complete the challenge it was given.                                                                                                                                                                 |
+| `noscriptLabel`  | see [below](#hydration)     | The `<noscript>` message, shown in the widget's place when JavaScript is off.                                                                                                                                                  |
 | `verified`       | `false`                     | `$bindable` — true once solved and the proof-of-work has landed.                                                                                                                                                               |
 
 ```svelte
@@ -129,7 +136,7 @@ What the visitor sees depends on whether trying again could plausibly help.
 
 **A proof-of-work that ran out of budget, or a hash that threw** — the track becomes a retry button showing `errorLabel`. Tapping it resets the slide, and the nonce search _resumes where it stopped_ rather than restarting: the token never changes, so the search is deterministic and a retry from zero would replay exactly the attempts that already failed.
 
-**A missing `token` (usually `{...captcha}` not spread) or a `bits` value outside 1–32** — a configuration mistake, caught at mount rather than after a full slide, and not retryable, since re-running reproduces it exactly. In development the widget renders the cause verbatim so it can't be missed. In production it renders nothing at all, the same empty slot as a captcha that never hydrated, and the cause stays in the console — there is nothing a visitor could do with it, and either way the widget submits no token.
+**A missing `token` (usually `{...captcha}` not spread) or a `bits` value outside 1–32** — a configuration mistake, caught at mount rather than after a full slide, and not retryable, since re-running reproduces it exactly. In development the widget renders the cause verbatim so it can't be missed. In production it falls back to the same blank spacer as a captcha that never hydrated, and the cause stays in the console — there is nothing a visitor could do with it, and either way the widget submits no token.
 
 The diagnostic text is developer-facing and never shown to visitors in production; `errorLabel` is the only string they see.
 
@@ -366,7 +373,7 @@ const res = await fetch(`${base}/contact/?/send`, {
 
 <Callout type="info">
 
-Solving requires JavaScript: the widget is a hydrated island, and it renders nothing until it hydrates. Give non-JS visitors another route to you — a `<noscript>` block with a mailto link — since the form can't be completed without it.
+Solving requires JavaScript: the widget is a hydrated island, and until it hydrates there is only a spacer carrying its `noscriptLabel`. That message says what's wrong, not what to do instead — give non-JS visitors another route to you, say a `<noscript>` block with a mailto link, since the form can't be completed without it.
 
 </Callout>
 
