@@ -9,27 +9,35 @@
 
 <DemoPage
   title="Progressive Dialog"
-  description="One <dialog> component that works with and without JavaScript. The open control is a real link the server honours by rendering <dialog open>; when JavaScript is present it intercepts the click and calls showModal() instead."
+  description="One <dialog> that works either way. The popover attribute opens it with zero JavaScript and Accept POSTs to a form action; once the island hydrates, an attachment drops popover and takes over with showModal() plus enhance() so nothing navigates."
   {sources}
 >
   <p>
-    The trick is that nothing about opening the dialog depends on JavaScript existing. The control is an <code>&lt;a href="?terms"&gt;</code>, and the component reads
-    <code>url.searchParams</code> isomorphically — so the server renders <code>&lt;dialog open&gt;</code> for that URL all on its own. JavaScript, when it arrives, only adds an
-    <code>onclick</code> that calls <code>preventDefault()</code> and <code>showModal()</code>, upgrading a navigation into a real modal.
+    This combines the other two dialog demos into a single component. The server-rendered baseline is <code>&lt;dialog popover&gt;</code> plus <code>popovertarget</code> buttons — no
+    JavaScript, no navigation. Because attachments never run during SSR, <code>{'{@attach upgrade}'}</code> is the precise moment JavaScript takes over: it removes the
+    <code>popover</code> attribute and switches the trigger to <code>showModal()</code>.
   </p>
   <p>
-    Below is the same component twice. The first is hydrated, so clicking opens a modal with no navigation. The second is not hydrated at all — clicking performs a real navigation
-    and the dialog comes back already open, which is exactly what the first one degrades to when JavaScript is disabled or fails to load.
+    <strong>Accept</strong> is a real form action either way. Without JavaScript it POSTs to <code>?/accept</code> and the page re-renders, so the component reads the returned value
+    out of <code>getRequestContext().form</code>; that read is wrapped in <code>hydratable()</code> so the value survives hydration instead of flipping back to empty. With
+    JavaScript, <code>{'{@attach enhance(...)}'}</code> intercepts the same submit, so the result arrives as JSON and the modal just closes.
+  </p>
+  <p>
+    One sharp edge worth copying: <strong>Cancel</strong> must be <code>type="button"</code>. A submit button's activation runs form submission <em>instead of</em> the popover
+    action, so a plain <code>&lt;button&gt;</code> inside the form silently leaves no-JS visitors unable to close the dialog — which is exactly who the baseline exists to serve.
+  </p>
+  <p>
+    Below is the same component twice. The first is hydrated, so it upgrades itself. The second has no directive, so it never hydrates — it stays on the popover baseline, which is
+    exactly what the first degrades to when JavaScript is disabled or fails to load.
   </p>
 
   <div class="stack">
-    <ProgressiveDialog mochi:hydrate name="terms" label="mochi:hydrate — intercepted, opens as a modal" />
-    <ProgressiveDialog name="terms-plain" label="No directive — full navigation, server renders it open" />
+    <ProgressiveDialog mochi:hydrate name="modal" label="mochi:hydrate — upgraded to showModal(), Accept posts via enhance()" />
+    <ProgressiveDialog name="plain" label="No directive — popover baseline, Accept does a full POST" />
   </div>
 
   <p class="footnote">
-    See also the <a href="/demos/dialog-hydrated/">hydrated dialog</a> for <code>returnValue</code>, and the <a href="/demos/dialog-popover/">popover dialog</a> for an open/close
-    dialog that needs no JavaScript at all.
+    See also the <a href="/demos/dialog-hydrated/">hydrated dialog</a> and the <a href="/demos/dialog-popover/">popover dialog</a> on their own.
   </p>
 </DemoPage>
 

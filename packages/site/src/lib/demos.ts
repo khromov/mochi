@@ -145,7 +145,7 @@ export const demos: Demo[] = [
     slug: 'dialog-progressive',
     files: dialogProgressive,
     title: 'Progressive Dialog',
-    hook: 'How one <dialog> serves both worlds — a link the server honours by rendering it open, upgraded to showModal() once JavaScript loads.',
+    hook: 'How one <dialog> serves both worlds — a zero-JS popover baseline that upgrades itself to a real showModal() modal once the island hydrates.',
     category: 'hydration',
   },
   {
