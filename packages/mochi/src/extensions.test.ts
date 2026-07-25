@@ -1,5 +1,9 @@
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 import type { MochiServeOptions } from './types';
+import { CLIENT_BUILD_DEFINE } from './compiler/serverOnlyModuleGuard';
+import { toPosixPath } from './utils/index';
 import { applyFilter, initExtensions, runHook, type MochiFilterContext } from './extensions';
 import { reachedStartupMilestones, resetStartupMilestones } from './lifecycle';
 import type { IslandPropsEntry } from './islands/islandPropsRegistry';
@@ -860,5 +864,51 @@ describe('new extension points', () => {
     expect(seen!.requestId).toBe('rid-route-matched');
     expect(seen!.pathname).toBe('/users/42');
     expect(seen!.param).toBe('42');
+  });
+});
+
+describe('client bundles', () => {
+  // The guard is a build-time `define` substitution, so the only honest test is
+  // to actually bundle for the browser the way `ComponentRegistry` does and run
+  // the result. `outDir` sits under the package so the emitted module resolves
+  // its deps through the project's own node_modules chain.
+  const tmpDir = mkdtempSync(path.join(import.meta.dir, '..', '.mochi-extensions-client-'));
+  afterAll(() => rmSync(tmpDir, { recursive: true, force: true }));
+
+  let bundled: typeof import('./extensions');
+
+  beforeAll(async () => {
+    // Source and output must not share a directory: Bun resolves `./entry.js`
+    // back to a sibling `entry.ts` when one exists, so importing the bundle
+    // would silently hand back the unbundled source and the test would pass
+    // against the server build.
+    const srcDir = path.join(tmpDir, 'src');
+    const outDir = path.join(tmpDir, 'dist');
+    mkdirSync(srcDir);
+    const entry = path.join(srcDir, 'entry.ts');
+    writeFileSync(entry, `export { applyFilter, initExtensions, runHook } from '${toPosixPath(path.join(import.meta.dir, 'extensions'))}';\n`);
+    const result = await Bun.build({
+      entrypoints: [entry],
+      target: 'browser',
+      define: { ...CLIENT_BUILD_DEFINE },
+      outdir: outDir,
+      throw: false,
+    });
+    if (!result.success) {
+      throw new Error(result.logs.map((l) => String(l.message ?? l)).join('\n'));
+    }
+    bundled = (await import(result.outputs[0]!.path)) as typeof import('./extensions');
+  });
+
+  test('applyFilter throws instead of silently returning the default', () => {
+    expect(() => bundled.applyFilter('captcha:bits', DEFAULT_CAPTCHA_BITS, { options: {}, configured: false })).toThrow(/applyFilter\('captcha:bits'\) was called in the browser/);
+  });
+
+  test('runHook throws', () => {
+    expect(() => bundled.runHook('mochi:init', { options: fakeOptions })).toThrow(/runHook\('mochi:init'\) was called in the browser/);
+  });
+
+  test('initExtensions throws', () => {
+    expect(() => bundled.initExtensions({})).toThrow(/initExtensions\(\) was called in the browser/);
   });
 });

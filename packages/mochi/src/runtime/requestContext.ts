@@ -5,6 +5,7 @@ import type { MochiFormResult } from '../types';
 import type { MochiRateLimitInfo } from './rateLimit';
 import type { RequestCacheState } from './requestCache';
 import { pinGlobal } from '../utils/globalState';
+import { assertServerOnly } from '../utils/serverOnly';
 
 export interface MochiRequestContext {
   /**
@@ -232,6 +233,10 @@ export interface DebugBarRuntimeData extends DebugBarData {
 // in each compiled component, breaking the context chain.
 export const requestContext = pinGlobal('__mochi_request_context__', () => new AsyncLocalStorage<MochiRequestContext>());
 
+// `mochi-env.client.js` already stubs the public `getRequestContext` export; this
+// covers the other way in — framework code deep-importing this module.
+const SERVER_ONLY_REASON = 'The request context is server-only. Read what you need during SSR and pass it down as a prop, or through Svelte’s hydratable().';
+
 /**
  * Returns the current request context. Available in any server-side code
  * running within a request (components, API handlers, helpers).
@@ -244,6 +249,7 @@ export const requestContext = pinGlobal('__mochi_request_context__', () => new A
  * ```
  */
 export function getRequestContext(): MochiRequestContext {
+  assertServerOnly('getRequestContext()', SERVER_ONLY_REASON);
   const ctx = requestContext.getStore();
   if (!ctx) {
     throw new Error('getRequestContext() called outside of a request. ' + 'It is only available in server-side code running within a Mochi request handler.');
@@ -270,6 +276,7 @@ export function getRequestContext(): MochiRequestContext {
  * The assertion is a tripwire if either invariant regresses.
  */
 export async function renderDetached<T>(fn: () => Promise<T>): Promise<T> {
+  assertServerOnly('renderDetached()', SERVER_ONLY_REASON);
   return requestContext.exit(async () => {
     if (requestContext.getStore() !== undefined) {
       throw new Error('renderDetached: request context was not cleared — isolation failed');
