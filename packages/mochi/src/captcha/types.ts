@@ -33,6 +33,8 @@ export interface ResolvedCaptchaOptions {
   maxAgeMs: number;
   /** Clock-skew slack added to `maxAgeMs`. Filter-only — see `captcha:driftAllowanceMs`. */
   driftAllowanceMs: number;
+  /** Active solve time the widget spends before giving up. Filter-only — see `captcha:solveBudgetMs`; per-widget it's the `solveBudgetMs` prop. */
+  solveBudgetMs: number;
   store: 'memory' | 'sqlite' | NonceStore;
   storePath: string;
 }

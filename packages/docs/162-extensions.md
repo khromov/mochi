@@ -545,6 +545,22 @@ Return `null` to veto — the message never reaches a transport (nothing is deli
 
 A suppressed send still emits an `email:sent` event with `transport: 'suppressed'` (and `consoleLogger()` prints it as a `MAIL … suppressed (filtered)` line), so blocked mail stays observable. `Mochi.email()` resolves to `{ transport: 'suppressed' }` in that case.
 
+#### `captcha:bits`
+
+Proof-of-work difficulty in leading zero bits, resolved once at startup alongside the rest of the captcha options. The context carries the raw `captcha` options and `configured` — false when the incoming value is the framework default (`DEFAULT_CAPTCHA_BITS`, 19) rather than the app's own `bits`. The result is bounds-checked exactly like the option, so a filter returning something outside 1–32 throws at boot rather than minting tokens no widget can solve. Sync.
+
+Each extra bit doubles the expected work, so this is a cost dial rather than a latency one — see [`captcha:minAgeMs`](#captchaminagems) for why it can't enforce that a submission took human time.
+
+```ts
+await Mochi.serve({
+  filters: {
+    // Lean on the environment instead of hardcoding a test-only difficulty.
+    'captcha:bits': (def) => (process.env.NODE_ENV === 'test' ? 8 : def),
+  },
+  routes,
+});
+```
+
 #### `captcha:minAgeMs`
 
 The captcha timing floor — a token younger than this is refused. Applied per token, so the floor can vary by form. The context carries the `bits` sealed into the token, its measured `ageMs`, and `limitMs` (the expiry bound the returned floor must stay under). Returning a value at or above `limitMs`, or a negative one, throws — it would reject every token. Sync.
@@ -578,6 +594,24 @@ await Mochi.serve({
 ```
 
 The allowance only ever widens the **expiry** side, and is deliberately not applied to `minAgeMs`. Padding a floor means subtracting from it, so an allowance wider than the floor would silently delete the too-fast check rather than soften it — leaving a config that still reads like it enforces a 2s floor while accepting instant submissions. Use `captcha:minAgeMs` to move the floor, so the change is explicit.
+
+#### `captcha:solveBudgetMs`
+
+How long the widget spends _actively_ solving a proof-of-work before it gives up and offers a retry. Resolved once alongside the rest of the captcha options — how patient the app is doesn't vary per request — and handed to the widget through `mintCaptcha()`, so `{...captcha}` carries it. `bits` is the resolved difficulty, filter included, since the budget has to cover the work it implies. Sync. Defaults to `60_000`.
+
+```ts
+await Mochi.serve({
+  filters: {
+    // A three-field form isn't worth a minute of someone's phone: fail fast and let them retry.
+    'captcha:solveBudgetMs': () => 20_000,
+  },
+  routes,
+});
+```
+
+The value must be a positive finite number — anything else throws at startup rather than leaving every widget to give up instantly. One form that wants its own bound sets the [`solveBudgetMs`](/docs/captcha/#props) prop instead, which wins over whatever this returns.
+
+It is a client-side patience bound only: it isn't sealed into the token and nothing verifies against it, so lowering it never rejects a submission that would otherwise have passed — it only decides when a slow device stops trying.
 
 #### `queue:recoveryStallWarningMs`
 

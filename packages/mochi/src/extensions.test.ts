@@ -4,6 +4,7 @@ import { applyFilter, initExtensions, runHook, type MochiFilterContext } from '.
 import { reachedStartupMilestones, resetStartupMilestones } from './lifecycle';
 import type { IslandPropsEntry } from './islands/islandPropsRegistry';
 import type { ResolvedEmailMessage } from './email/types';
+import { DEFAULT_CAPTCHA_BITS } from './captcha/config';
 
 const fakeOptions = {} as MochiServeOptions;
 
@@ -204,6 +205,20 @@ describe('new extension points', () => {
     expect(applyFilter('payload:compressMinBytes', 80, { options: fakeOptions, payload: Uint8Array.of(0x01, 1, 2) })).toBe(80);
   });
 
+  test('captcha:bits returns the default unchanged when no filter registered', () => {
+    expect(applyFilter('captcha:bits', DEFAULT_CAPTCHA_BITS, { options: {}, configured: false })).toBe(DEFAULT_CAPTCHA_BITS);
+  });
+
+  test('captcha:bits can raise the difficulty only where the app did not choose one', () => {
+    initExtensions({
+      filters: {
+        'captcha:bits': (def, { configured }) => (configured ? def : 22),
+      },
+    });
+    expect(applyFilter('captcha:bits', DEFAULT_CAPTCHA_BITS, { options: {}, configured: false })).toBe(22);
+    expect(applyFilter('captcha:bits', 12, { options: { bits: 12 }, configured: true })).toBe(12);
+  });
+
   test('captcha:minAgeMs returns the default unchanged when no filter registered', () => {
     expect(applyFilter('captcha:minAgeMs', 2000, { bits: 16, ageMs: 5000, limitMs: 930_000 })).toBe(2000);
   });
@@ -230,6 +245,20 @@ describe('new extension points', () => {
       },
     });
     expect(applyFilter('captcha:driftAllowanceMs', 30_000, { options: {}, maxAgeMs: 900_000 })).toBe(45_000);
+  });
+
+  test('captcha:solveBudgetMs returns the default unchanged when no filter registered', () => {
+    expect(applyFilter('captcha:solveBudgetMs', 60_000, { options: {}, bits: 19 })).toBe(60_000);
+  });
+
+  test('captcha:solveBudgetMs can scale off the resolved difficulty', () => {
+    initExtensions({
+      filters: {
+        'captcha:solveBudgetMs': (def, { bits }) => (bits > 20 ? def * 2 : def),
+      },
+    });
+    expect(applyFilter('captcha:solveBudgetMs', 60_000, { options: {}, bits: 24 })).toBe(120_000);
+    expect(applyFilter('captcha:solveBudgetMs', 60_000, { options: {}, bits: 19 })).toBe(60_000);
   });
 
   test('queue:recoveryStallWarningMs returns the default unchanged when no filter registered', () => {

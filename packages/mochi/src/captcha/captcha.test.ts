@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 import { mintCaptcha, verifyCaptcha, consumeCaptcha, solveCaptcha } from './captcha';
-import { CAPTCHA_STEPS, chainInput, powInput, leadingZeroBits } from './pow';
-import { encryptPayload } from '../islands/payloadCrypto';
+import { CAPTCHA_STEPS, chainInput, powInput, leadingZeroBits, sha256Hex, solvePowSlice } from './pow';
+import { DEFAULT_CAPTCHA_BITS } from './config';
+import { DEFAULT_CAPTCHA_SOLVE_BUDGET_MS } from './pow';
+import { encryptPayload, decryptPayload } from '../islands/payloadCrypto';
 import { initExtensions } from '../extensions';
 import { mochiEvents } from '../events';
 import type { MochiCaptchaVerifyEvent } from '../events';
@@ -64,9 +66,90 @@ describe('mintCaptcha + verifyCaptcha', () => {
     expect(result.ok).toBe(true);
   });
 
+  // solveCaptcha() takes the server's node:crypto path, so on its own it can't
+  // catch the widget's JS digest drifting out of agreement with the verifier.
+  // This walks the client's exact code path instead — the chain link by link,
+  // then the resumable brute force — and checks the server still accepts it.
+  test('accepts a challenge solved the way the widget solves it', async () => {
+    installConfig();
+    const minted = mintCaptcha();
+    let chain = minted.token;
+    for (let step = 1; step <= CAPTCHA_STEPS; step++) {
+      chain = sha256Hex(chainInput(chain, step));
+    }
+    let next = 0;
+    let captcha_pow: string | null = null;
+    // Bounded so a solvePowSlice that stopped advancing fails the test instead
+    // of hanging the suite. At 8 bits a solution lands within a few hundred.
+    for (let i = 0; i < 10_000 && captcha_pow === null; i++) {
+      const slice = solvePowSlice(chain, minted.bits, next, 0);
+      if ('nonce' in slice) {
+        captcha_pow = slice.nonce;
+      } else {
+        next = slice.next;
+      }
+    }
+    if (captcha_pow === null) {
+      throw new Error('solvePowSlice stopped advancing — no nonce after 10,000 slices');
+    }
+    expect((await verifyCaptcha(fields({ captcha_token: minted.token, captcha_pow }))).ok).toBe(true);
+  });
+
   test('mints with the configured difficulty by default', () => {
     installConfig({ bits: 12, minAgeMs: 0 });
     expect(mintCaptcha().bits).toBe(12);
+  });
+
+  test('falls back to the framework default difficulty', () => {
+    installConfig({ minAgeMs: 0 });
+    expect(mintCaptcha().bits).toBe(DEFAULT_CAPTCHA_BITS);
+  });
+
+  // The behavioural half of the extensions.test.ts unit cases: the filtered
+  // value has to reach the sealed token, not just the resolver's return.
+  test('captcha:bits filter changes the difficulty a token is minted at', () => {
+    initExtensions({ filters: { 'captcha:bits': () => 10 } });
+    installConfig({ minAgeMs: 0 });
+    expect(mintCaptcha().bits).toBe(10);
+  });
+
+  test('captcha:bits filter is still bounds-checked', () => {
+    initExtensions({ filters: { 'captcha:bits': () => 99 } });
+    installConfig({ minAgeMs: 0 });
+    expect(() => mintCaptcha()).toThrow('bits must be an integer between 1 and 32, got 99');
+  });
+
+  test('carries the default solve budget alongside the token', () => {
+    installConfig({ minAgeMs: 0 });
+    expect(mintCaptcha().solveBudgetMs).toBe(DEFAULT_CAPTCHA_SOLVE_BUDGET_MS);
+  });
+
+  test('captcha:solveBudgetMs filter changes the budget the widget is handed', () => {
+    initExtensions({ filters: { 'captcha:solveBudgetMs': () => 5000 } });
+    installConfig({ minAgeMs: 0 });
+    expect(mintCaptcha().solveBudgetMs).toBe(5000);
+  });
+
+  // The budget is a client-side patience bound, so unlike `bits` it must not
+  // reach the sealed payload — a token minted under one budget stays verifiable
+  // after the filter changes.
+  test('the solve budget is not sealed into the token', () => {
+    initExtensions({ filters: { 'captcha:solveBudgetMs': () => 5000 } });
+    installConfig({ bits: 8, minAgeMs: 0 });
+    const minted = mintCaptcha();
+    initExtensions({ filters: { 'captcha:solveBudgetMs': () => 90_000 } });
+    expect(JSON.parse(decryptPayload(minted.token, { aad: 'mochi-captcha' })!)).not.toHaveProperty('solveBudgetMs');
+  });
+
+  test('a per-mint solve budget overrides the resolved one', () => {
+    initExtensions({ filters: { 'captcha:solveBudgetMs': () => 5000 } });
+    installConfig({ minAgeMs: 0 });
+    expect(mintCaptcha({ solveBudgetMs: 12_000 }).solveBudgetMs).toBe(12_000);
+  });
+
+  test('rejects a non-positive per-mint solve budget', () => {
+    installConfig({ minAgeMs: 0 });
+    expect(() => mintCaptcha({ solveBudgetMs: 0 })).toThrow('solveBudgetMs must be a positive finite number, got 0');
   });
 
   test('rejects a tampered token', async () => {
@@ -398,5 +481,11 @@ describe('resolveCaptchaOptions', () => {
   test('rejects an age floor that exceeds the expiry', () => {
     installConfig({ minAgeMs: 5000, maxAgeMs: 1000 });
     expect(() => mintCaptcha()).toThrow(/must be less than maxAgeMs/);
+  });
+
+  test('rejects a solve budget a filter returned as non-positive', () => {
+    initExtensions({ filters: { 'captcha:solveBudgetMs': () => -1 } });
+    installConfig({ minAgeMs: 0 });
+    expect(() => mintCaptcha()).toThrow(/solveBudgetMs must be a positive finite number/);
   });
 });
