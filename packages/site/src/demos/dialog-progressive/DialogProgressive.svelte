@@ -13,13 +13,13 @@
   {sources}
 >
   <p>
-    This combines the other two dialog demos into a single component. The server-rendered baseline is <code>&lt;dialog popover&gt;</code> plus <code>popovertarget</code> buttons — no
-    JavaScript, no navigation. Because attachments never run during SSR, <code>{'{@attach upgrade}'}</code> is the precise moment JavaScript takes over: it removes the
+    This combines the other two dialog demos into a single component. The server-rendered baseline is <code>&lt;dialog popover&gt;</code> plus <code>popovertarget</code> buttons —
+    no JavaScript, no navigation. Because attachments never run during SSR, <code>{'{@attach upgrade}'}</code> is the precise moment JavaScript takes over: it removes the
     <code>popover</code> attribute and switches the trigger to <code>showModal()</code>.
   </p>
   <p>
-    <strong>Accept</strong> is a real form action either way. Without JavaScript it POSTs to <code>?/accept</code> and the page re-renders, so the component reads the returned value
-    out of <code>getRequestContext().form</code>; that read is wrapped in <code>hydratable()</code> so the value survives hydration instead of flipping back to empty. With
+    <strong>Accept</strong> is a real form action either way. Without JavaScript it POSTs to <code>?/accept</code> and the page re-renders, so the component reads the returned
+    value out of <code>getRequestContext().form</code>; that read is wrapped in <code>hydratable()</code> so the value survives hydration instead of flipping back to empty. With
     JavaScript, <code>{'{@attach enhance(...)}'}</code> intercepts the same submit, so the result arrives as JSON and the modal just closes.
   </p>
   <p>

@@ -18,8 +18,8 @@
     light-dismiss on an outside click, and Escape to close.
   </p>
   <p>
-    The tradeoff versus <a href="/demos/dialog-hydrated/">showModal()</a>: a popover is <em>not</em> modal. It does not make the rest of the page <code>inert</code>, and it does not
-    give you <code>returnValue</code>. Reach for it when a dialog only needs to open and close.
+    The tradeoff versus <a href="/demos/dialog-hydrated/">showModal()</a>: a popover is <em>not</em> modal. It does not make the rest of the page <code>inert</code>, and it does
+    not give you <code>returnValue</code>. Reach for it when a dialog only needs to open and close.
   </p>
 
   <PopoverDialog />

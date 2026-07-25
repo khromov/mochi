@@ -11,6 +11,9 @@
   // Without JS the Accept button POSTs for real, so the result comes back in the
   // re-rendered page's form snapshot. hydratable() carries that server value across
   // hydration — a plain server read would flip back to empty once the island boots.
+  // The cache key is deliberately captured once — a hydratable key must be stable
+  // across the server render and the client read.
+  // svelte-ignore state_referenced_locally
   const accepted = await hydratable(`mochi-demo:dialog-accept-${name}`, () => {
     const form = isServer ? getRequestContext().form : null;
     return form?.ok && form.action === 'accept' && form.data.from === name ? String(form.data.value ?? '') : '';
