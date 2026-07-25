@@ -70,7 +70,7 @@ Every event carries a `kind` discriminator describing what the framework is abou
 
 `kind` is set once at construction and isn't mutated; an error thrown _during_ a `Mochi.page` render is still `kind: 'page'`.
 
-`handle` is the outer authorization boundary for every route kind above. Framework guards such as CSRF, trailing-slash redirects, WebSocket Origin validation, and route rate limits run when middleware calls `resolve(event)`. A middleware may therefore reject a request before those guards or the route handler run.
+`handle` is the authorization boundary for every route kind above. CSRF, trailing-slash redirects, and WebSocket Origin validation run when middleware calls `resolve(event)`, so middleware may reject a request before those guards or the route handler run. After request validation, page/API route limiting retains its established pre-middleware ordering: its `skip`/key callbacks and limit decision run before `handle`, and a blocked request does not enter middleware.
 
 Use it to opt out of per-request work for framework assets:
 

@@ -905,28 +905,28 @@ export class Mochi {
 
           return requestContext.run(ctx, async () => {
             runHook('route:matched', { pattern, request: req, url, params, kind: 'page' });
-            let gateHeaders: Record<string, string> | undefined;
+            const gate = guardResponse ? {} : await checkRouteLimit(routeLimiters.get(pattern) ?? null, ctx, req);
+            let blockedResponse: Response | undefined;
+            if (gate.blockedMessage) {
+              // Enhanced form POSTs expect JSON (mirrors csrfErrorTransform above);
+              // everything else gets the configured error page at 429.
+              blockedResponse = isEnhanceRequest(req)
+                ? jsonError(429, gate.blockedMessage)
+                : await routeErrorResponse(req, event, undefined, new MochiHttpError(429, gate.blockedMessage));
+            }
+
             const innerResolve = async (resolvedEvent: MochiEvent, resolveOpts?: MochiResolveOptions): Promise<Response> => {
               if (guardResponse) {
                 return guardResponse;
               }
-              const gate = await checkRouteLimit(routeLimiters.get(pattern) ?? null, ctx, resolvedEvent.request);
-              gateHeaders = gate.headers;
-              if (gate.blockedMessage) {
-                // Enhanced form POSTs expect JSON (mirrors csrfErrorTransform above);
-                // everything else gets the configured error page at 429.
-                return isEnhanceRequest(resolvedEvent.request)
-                  ? jsonError(429, gate.blockedMessage)
-                  : routeErrorResponse(resolvedEvent.request, resolvedEvent, resolveOpts, new MochiHttpError(429, gate.blockedMessage));
-              }
               return inner(ctx, resolvedEvent, resolveOpts);
             };
 
-            const response = middleware ? await middleware({ event, resolve: innerResolve }) : await innerResolve(event);
+            const response = blockedResponse ?? (middleware ? await middleware({ event, resolve: innerResolve }) : await innerResolve(event));
 
             let final = finalizeCookieHeaders(response, ctx.cookies);
-            if (gateHeaders) {
-              final = applyRateLimitHeaders(final, gateHeaders);
+            if (gate.headers) {
+              final = applyRateLimitHeaders(final, gate.headers);
             }
             const shipped = await appendDebugTail(final, ctx, development);
             mochiEvents.emit('request', {
@@ -1143,15 +1143,15 @@ export class Mochi {
             runHook('route:matched', { pattern, request: req, url, params, kind: 'api' });
             const event: MochiEvent = { request: req, url, server, locals: ctx.locals, kind: 'api', isWarmup: ctx.isWarmup };
 
-            let gateHeaders: Record<string, string> | undefined;
+            const gate = guardResponse ? {} : await checkRouteLimit(routeLimiters.get(pattern) ?? null, ctx, req);
+            let blockedResponse: Response | undefined;
+            if (gate.blockedBody) {
+              blockedResponse = Response.json(gate.blockedBody, { status: 429 });
+            }
+
             const innerResolve = async (event: MochiEvent, resolveOpts?: MochiResolveOptions): Promise<Response> => {
               if (guardResponse) {
                 return guardResponse;
-              }
-              const gate = await checkRouteLimit(routeLimiters.get(pattern) ?? null, ctx, event.request);
-              gateHeaders = gate.headers;
-              if (gate.blockedBody) {
-                return Response.json(gate.blockedBody, { status: 429 });
               }
               const apiEvent = {
                 ...event,
@@ -1175,11 +1175,11 @@ export class Mochi {
               }
             };
 
-            const response = middleware ? await middleware({ event, resolve: innerResolve }) : await innerResolve(event);
+            const response = blockedResponse ?? (middleware ? await middleware({ event, resolve: innerResolve }) : await innerResolve(event));
 
             let final = finalizeCookieHeaders(response, ctx.cookies);
-            if (gateHeaders) {
-              final = applyRateLimitHeaders(final, gateHeaders);
+            if (gate.headers) {
+              final = applyRateLimitHeaders(final, gate.headers);
             }
             mochiEvents.emit('request', {
               requestId,
