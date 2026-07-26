@@ -5,8 +5,7 @@ import { Mochi } from './Mochi';
 import { clearTasks } from './tasks/tasks';
 import { resetStartupMilestones } from './lifecycle';
 
-// The failed serve() below still claims the `__mochi_config__` singleton before it
-// reaches task validation, so no second boot is possible here — hence its own file.
+// The failed serve() below still claims the `__mochi_config__` singleton before reaching task validation, so no second boot is possible here.
 const outDir = mkdtempSync(path.join(import.meta.dir, '..', '.mochi-serve-tasks-invalid-'));
 
 afterAll(() => {
@@ -23,8 +22,7 @@ test('rejects a tasks value that is not a Mochi.task() descriptor, before bindin
       logger: { enabled: false },
       outDir,
       routes: {},
-      // A bare object rather than a Mochi.task() descriptor — the shape a user
-      // reaches for first, and silently never running is the worst outcome.
+      // The shape a user reaches for first, where silently never running is the worst outcome.
       tasks: { bad: { cron: '* * * * *', run: () => {} } as never },
     }),
   ).rejects.toThrow(/"bad" is not a Mochi\.task\(\.\.\.\) descriptor/);

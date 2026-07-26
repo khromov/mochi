@@ -3,8 +3,7 @@
 
   let { initial }: { initial: TaskStatus } = $props();
 
-  // Seeded from the serverProps snapshot; the SSE stream then owns them. These are
-  // the server's counters, so every connected browser shows the same ticks.
+  // Seeded from the serverProps snapshot; the SSE stream then owns them.
   // svelte-ignore state_referenced_locally
   let ticks = $state<TaskTick[]>(initial.ticks);
   // svelte-ignore state_referenced_locally

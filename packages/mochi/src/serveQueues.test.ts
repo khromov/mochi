@@ -82,10 +82,7 @@ describe('Mochi.serve({ queues })', () => {
   });
 
   test('a queue with no recover() never builds the recovery lease', () => {
-    // The lease exists to single-flight `recover()` across replicas. With none
-    // declared there is nothing to single-flight, and building the store anyway
-    // would create a SQLite file this app never reads — a crash, not just waste,
-    // on a read-only filesystem.
+    // Nothing to single-flight, so building the store would create a SQLite file this app never reads.
     for (const suffix of ['', '-wal', '-shm']) {
       expect(existsSync(path.join(outDir, `tasks.sqlite${suffix}`))).toBe(false);
     }
@@ -99,9 +96,7 @@ describe('Mochi.serve({ queues })', () => {
   });
 
   test('serve records the startup milestones it passed', () => {
-    // `mochi:tasksMounted` fires even with no tasks declared — the milestone marks
-    // that the mounting step ran, which is what `getTask()` reads to tell "too
-    // early" apart from "you declared none".
+    // `mochi:tasksMounted` fires even with none declared, which is how `getTask()` tells "too early" from "you declared none".
     expect(reachedStartupMilestones()).toEqual(['mochi:init', 'mochi:listening', 'mochi:queuesMounted', 'mochi:tasksMounted', 'mochi:ready']);
   });
 });

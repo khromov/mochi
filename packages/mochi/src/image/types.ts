@@ -153,10 +153,9 @@ export interface MochiImageOptions {
   /** Deflate-compress the encrypted URL payload when it shrinks it. Default: `true`. */
   compressPayload?: boolean;
   /**
-   * Cron pattern for the background janitor that deletes evicted/orphaned cache
-   * entries. Runs as a `node`-scoped `Mochi.task()` named `mochi:image-sweep`,
-   * plus once at startup. `false` (or an empty string) disables it.
-   * Default: `'0 * * * *'` (top of every hour).
+   * Cron pattern for the janitor that deletes evicted/orphaned cache entries. Runs as a `node`-scoped
+   * `Mochi.task()` named `mochi:image-sweep`, plus once at startup. `false` (or an empty string)
+   * disables it. Default: `'0 * * * *'` (top of every hour).
    */
   sweepCron?: string | false;
 }

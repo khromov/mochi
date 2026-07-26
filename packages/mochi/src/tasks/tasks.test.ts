@@ -7,7 +7,6 @@ afterEach(() => {
   clearTasks();
 });
 
-/** Collect events of one type for the duration of `fn`. */
 async function capture<K extends 'task:run' | 'task:error' | 'task:skipped'>(name: K, fn: () => Promise<void> | void): Promise<unknown[]> {
   const seen: unknown[] = [];
   const handler = (payload: unknown) => void seen.push(payload);
@@ -20,7 +19,6 @@ async function capture<K extends 'task:run' | 'task:error' | 'task:skipped'>(nam
   return seen;
 }
 
-/** A promise plus its resolver — lets a test await a callback instead of sleeping. */
 function deferred<T = void>(): { promise: Promise<T>; resolve: (value: T) => void } {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((r) => {

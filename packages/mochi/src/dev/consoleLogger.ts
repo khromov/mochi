@@ -294,10 +294,7 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
     duration,
     slow,
     verySlow,
-    // The framework's own tasks already print a richer line of their own — the
-    // image janitor's `CACHE image:sweep` carries the per-kind counts this one
-    // can't. Saying it twice is noise, so demote the generic line for those.
-    // Failures and skips stay at `warn` below whoever owns the task.
+    // Framework tasks already print a richer line carrying per-kind counts, so demote the generic one rather than saying it twice.
     level: task.startsWith('mochi:') ? 'debug' : 'warn',
   }));
   subscribe('task:error', ({ task, error }) => ({
@@ -312,8 +309,7 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
     note: styleText('yellow', `skipped (${reason})`),
     level: 'warn',
   }));
-  // Leadership changes are rare and operationally important — which node owns the
-  // schedule is the first thing you want to know when a cron didn't fire.
+  // Which node owns the schedule is the first thing you want to know when a cron didn't fire.
   subscribe('task:leader', ({ acquired, holder }) => ({
     label: 'TASK',
     path: 'scheduler',

@@ -8,8 +8,7 @@ import { clearTasks } from './tasks/tasks';
 import { reachedStartupMilestones, resetStartupMilestones } from './lifecycle';
 
 // One Mochi.serve() per file: the `__mochi_config__` singleton is never cleared by
-// server.stop(), so a second boot in this process throws. Election, invalid-descriptor
-// and failure cases each get their own `serveTasks*.test.ts` for the same reason.
+// server.stop(), so a second boot in this process throws.
 let server: Server<undefined> | undefined;
 let outDir: string | undefined;
 

@@ -36,8 +36,7 @@ test('elects itself through a real lease store, runs the task, and releases on s
       leader: true,
       // No jitter: a single node should elect itself immediately.
       startupJitter: 0,
-      // Long enough that only an explicit release can clear it — that's the point
-      // of the assertion below.
+      // Long enough that only an explicit release can clear it — the point of the assertion below.
       leaseTtl: 60_000,
       lease: { url: leaseUrl },
     },

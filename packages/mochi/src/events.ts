@@ -245,11 +245,7 @@ export interface MochiTaskErrorEvent {
 
 export interface MochiTaskSkippedEvent {
   task: string;
-  /**
-   * `overlap` — the previous run was still going and `overlap` is off.
-   * `lease-expired` — this node's scheduler lease lapsed between ticks, so the
-   * work belongs to whichever node holds it now.
-   */
+  /** `overlap` — the previous run was still going. `lease-expired` — this node's lease lapsed between ticks, so the work belongs to whoever holds it now. */
   reason: 'overlap' | 'lease-expired';
 }
 

@@ -3,7 +3,6 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { MemoryLeaseStore, SqlLeaseStore, type TaskLeaseStore } from './lease';
 
-// Temp dirs live inside the package, matching the rest of the suite.
 const tmp = mkdtempSync(path.join(import.meta.dir, '..', '..', '.mochi-lease-test-'));
 const stores: TaskLeaseStore[] = [];
 
@@ -17,8 +16,7 @@ function track<T extends TaskLeaseStore>(store: T): T {
   return store;
 }
 
-// Every backend must agree on the election rules — the whole point of the
-// interface is that swapping stores can't change who wins.
+// Every backend must agree on the election rules — the point of the interface is that swapping stores can't change who wins.
 const backends: [string, (name: string) => TaskLeaseStore][] = [
   ['MemoryLeaseStore', (name) => track(new MemoryLeaseStore(name))],
   ['SqlLeaseStore(sqlite)', (name) => track(new SqlLeaseStore({ url: `sqlite://${path.join(tmp, 'lease.db')}`, name }))],
@@ -49,8 +47,7 @@ for (const [label, make] of backends) {
       await store.tryAcquire(claim('A', 1_000));
 
       expect(await store.renew('A', 1_400)).toBe(true);
-      // Renewal moved the heartbeat forward, so what would have been past the TTL
-      // relative to the original acquisition is still comfortably inside it.
+      // Renewal moved the heartbeat forward, so what would be past the TTL relative to the original acquisition is still inside it.
       expect((await store.tryAcquire(claim('B', 1_900))).acquired).toBe(false);
       expect((await store.read())?.owner).toBe('A');
     });
@@ -60,8 +57,7 @@ for (const [label, make] of backends) {
       await store.tryAcquire(claim('A', 1_000));
 
       expect((await store.tryAcquire(claim('B', 1_000 + TTL + 1))).acquired).toBe(true);
-      // The convergence guarantee: A discovers it is no longer the leader the next
-      // time it beats, rather than continuing to run the cluster's tasks.
+      // The convergence guarantee: A learns it is no longer leader the next time it beats, rather than continuing to run the cluster's tasks.
       expect(await store.renew('A', 1_000 + TTL + 2)).toBe(false);
       expect((await store.read())?.owner).toBe('B');
     });

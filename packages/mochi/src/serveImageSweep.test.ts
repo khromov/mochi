@@ -32,18 +32,15 @@ describe('the image janitor as a scheduled task', () => {
 
     server = await Mochi.serve({
       port: 0,
-      // Production mode, so `scheduler.leader` defaults to true — the exact
-      // configuration in which an unnecessary election would bite.
+      // Production mode, so `scheduler.leader` defaults to true — where an unnecessary election would bite.
       development: false,
       logger: { enabled: false },
       outDir,
       routes: {},
-      // A pattern that won't fire during the test: any sweep we observe came from
-      // `runOnStart`, not the schedule.
+      // A pattern that won't fire during the test, so any sweep we observe came from `runOnStart`.
       image: { sweepCron: '0 0 1 1 *' },
-      // No jitter, so an election — if one were started at all — would resolve
-      // within this test rather than up to 30s later. Without that the assertions
-      // below would pass whether or not the gate works.
+      // No jitter, so an election would resolve inside this test rather than up to
+      // 30s later — without it the assertions pass whether or not the gate works.
       scheduler: { startupJitter: 0 },
     });
 
@@ -57,16 +54,12 @@ describe('the image janitor as a scheduled task', () => {
     }
     expect(sweeps[0]!.durationMs).toBeGreaterThanOrEqual(0);
 
-    // The janitor is node-scoped, so there is nothing to elect a leader for.
-    // Without the hasClusterTasks() gate every image-enabled app would contend
-    // for a lease, heartbeat forever, and warn that its replicas will each elect
-    // themselves — all to coordinate work that is per-process by definition.
+    // The janitor is node-scoped, so without the hasClusterTasks() gate every
+    // image-enabled app would contend for a lease to coordinate per-process work.
     await Bun.sleep(150); // ample for a zero-jitter election to have landed
     expect(elections).toHaveLength(0);
 
-    // Nothing here needs a lease: no cluster task to elect for, and no queue to
-    // recover. An app in this shape must not touch the filesystem for one —
-    // a read-only rootfs would turn "nothing to coordinate" into a boot crash.
+    // And with nothing to coordinate, it must not touch the filesystem for a lease at all.
     for (const suffix of ['', '-wal', '-shm']) {
       expect(existsSync(path.join(outDir, `tasks.sqlite${suffix}`))).toBe(false);
     }

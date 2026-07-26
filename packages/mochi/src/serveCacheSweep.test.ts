@@ -33,8 +33,7 @@ describe('the cache janitor as a scheduled task', () => {
     const sweeps: MochiCacheSweepEvent[] = [];
     mochiEvents.on('cache:sweep', (e) => sweeps.push(e));
 
-    // Two storages, built before serve() and sharing the registry — the whole
-    // point of the shared janitor is that this costs one timer, not two.
+    // Two storages sharing the registry — the point of the shared janitor is that this costs one timer, not two.
     for (const name of ['a', 'b']) {
       const storage = new FileStorage({ directory: path.join(outDir, `cache-${name}`), maxAge: 1 });
       storages.push(storage);
@@ -47,8 +46,7 @@ describe('the cache janitor as a scheduled task', () => {
       logger: { enabled: false },
       outDir,
       routes: {},
-      // A pattern that won't fire during the test: any sweep we observe came from
-      // `runOnStart`, not the schedule.
+      // A pattern that won't fire during the test, so any sweep we observe came from `runOnStart`.
       cache: { sweepCron: '0 0 1 1 *' },
       scheduler: { startupJitter: 0 },
     });

@@ -1,7 +1,6 @@
 /**
- * One node of a simulated multi-process deployment, spawned by
- * `serveTasksFailover.test.ts`. Prints a line per lifecycle event so the parent can
- * see, from the outside, which process is actually doing the scheduled work.
+ * One node of a simulated multi-process deployment, spawned by `serveTasksFailover.test.ts`. Prints a
+ * line per lifecycle event so the parent can see which process is actually doing the scheduled work.
  *
  * argv: <label> <outDir> <leaseUrl> <leaseTtlMs>
  */

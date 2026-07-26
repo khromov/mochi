@@ -1,22 +1,11 @@
 /**
- * Cross-process leader election: exactly one node in a deployment holds the lease
- * at a time, and leadership always converges without operator action.
+ * Cross-process leader election. A single atomic statement rather than a write-then-read-back check:
+ * `INSERT … ON CONFLICT DO UPDATE … WHERE … RETURNING` picks the winner inside the database, leaving
+ * no window between "I wrote it" and "I confirmed it" for a peer to slip through.
  *
- * The mechanism is a single atomic statement, not a write-then-read-back check.
- * `INSERT … ON CONFLICT DO UPDATE … WHERE … RETURNING` decides the winner inside
- * the database, so there is no window between "I wrote it" and "I confirmed it"
- * for a peer to slip through. Measured on Bun 1.3.14 with 16 processes × 8 rounds
- * against one SQLite file: exactly one winner per round, every round.
- *
- * Three ways to win, all expressed in that one WHERE clause:
- *   1. We already hold it — renewal, and the reason a restart-in-place is cheap.
- *   2. The holder's heartbeat is older than the TTL — it died or was partitioned.
- *   3. We are a strictly newer build — a rolling deploy hands over immediately
- *      rather than making the new node idle for a whole TTL. Unknown build times
- *      on either side skip this rule, falling back to (2).
- *
- * Losing is not final and never needs a retry loop here: the scheduler polls, and
- * a leader whose `renew()` returns false stands itself down. See `scheduler.ts`.
+ * The WHERE clause encodes the three ways to win: we already hold it (renewal), the holder's heartbeat
+ * is older than the TTL, or we are a strictly newer build (so a rolling deploy hands over immediately
+ * instead of idling a whole TTL — unknown build times on either side fall back to TTL expiry).
  */
 import { createSqlDriver, timestampColumn, toNumber, type SqlDriver } from '../sql/driver';
 
@@ -132,8 +121,7 @@ export class SqlLeaseStore implements TaskLeaseStore {
 
   async renew(owner: string, now: number): Promise<boolean> {
     await this.init();
-    // Scoped to `owner`, so a node that was preempted while it slept learns about
-    // it here (zero rows) instead of quietly overwriting the new leader's row.
+    // Scoped to `owner`, so a node preempted while it slept learns about it here (zero rows) instead of overwriting the new leader's row.
     const rows = await this.driver.query<{ owner: string }>(`UPDATE ${this.table} SET heartbeat_at = $now WHERE name = $name AND owner = $owner RETURNING owner`, {
       now,
       name: this.name,
@@ -178,11 +166,7 @@ export class SqlLeaseStore implements TaskLeaseStore {
   }
 }
 
-/**
- * Process-local lease. Coordinates nothing across processes — it exists so the
- * single-process path (dev, tests, an app that never scales out) runs the same
- * election code as production instead of a second untested branch.
- */
+/** Coordinates nothing across processes — it exists so the single-process path runs the same election code as production, not a second untested branch. */
 export class MemoryLeaseStore implements TaskLeaseStore {
   private record: LeaseRecord | null = null;
   private readonly name: string;

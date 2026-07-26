@@ -17,8 +17,7 @@ function isBinary(value: unknown): value is Uint8Array {
   return value instanceof Uint8Array;
 }
 
-// Deep-clone `value`, inlining binaries as base64. `SqlStorage` has no equivalent of
-// FileStorage's blob offloading — a row is a row — so this is the only encoding.
+// `SqlStorage` has no equivalent of FileStorage's blob offloading, so this is the only encoding.
 function encodeBinaries(value: unknown): unknown {
   if (isBinary(value)) {
     return { __mochiBinary: Buffer.from(value).toString('base64') } satisfies InlineBinary;
@@ -71,18 +70,12 @@ export interface SqlStorageOptions {
 const IDENTIFIER = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
 
 /**
- * Persists each cache entry as one row, so several processes can share a cache
- * over SQLite on a common volume or over Postgres across hosts. The entry's own
- * `createdAt` still drives stale-while-revalidate — this backend only stores and
- * returns values, exactly like `MemoryStorage` and `FileStorage`.
+ * Persists each cache entry as one row, so several processes can share a cache over SQLite on a common
+ * volume or over Postgres across hosts.
  *
- * Values round-trip through JSON, with `Uint8Array`/`Buffer` fields inlined as
- * base64 (the same `__mochiBinary` sentinel `FileStorage` writes) and decoded back
- * to `Uint8Array` on read. There is no blob-offload equivalent: a large binary
- * lands in the row itself, so prefer `FileStorage` for image-sized payloads.
- *
- * Schema setup is lazy and idempotent (`CREATE TABLE IF NOT EXISTS`), run once on
- * the first operation, so constructing the adapter never blocks.
+ * Values round-trip through JSON, with binaries inlined as base64 (the same `__mochiBinary` sentinel
+ * `FileStorage` writes). There is no blob-offload equivalent — a large binary lands in the row itself,
+ * so prefer `FileStorage` for image-sized payloads. Schema setup is lazy, so constructing never blocks.
  */
 export class SqlStorage implements Storage, SweepableStorage {
   private driver: SqlDriver;
@@ -114,8 +107,7 @@ export class SqlStorage implements Storage, SweepableStorage {
     try {
       return decodeBinaries(JSON.parse(row.value));
     } catch {
-      // A row we can't parse is treated as a miss and overwritten by the next
-      // recompute, matching FileStorage's handling of a corrupt file.
+      // Treated as a miss and overwritten by the next recompute, matching FileStorage's handling of a corrupt file.
       return null;
     }
   }
@@ -151,7 +143,6 @@ export class SqlStorage implements Storage, SweepableStorage {
     return rows.map((row) => row.key);
   }
 
-  /** Delete rows older than `maxAge`. `reportKeys` also returns the keys removed. */
   async sweep(now: number = Date.now(), options: SweepOptions = {}): Promise<SweepResult> {
     await this.init();
     const rows = await this.driver.query<{ key: string }>(`DELETE FROM ${this.table} WHERE written_at < $cutoff RETURNING key`, { cutoff: now - this.maxAge });
@@ -165,7 +156,6 @@ export class SqlStorage implements Storage, SweepableStorage {
     await this.driver.close();
   }
 
-  // Memoized so concurrent first-callers share one CREATE TABLE rather than racing it.
   private init(): Promise<void> {
     this.ready ??= (async () => {
       const ts = timestampColumn(this.driver.dialect);

@@ -286,10 +286,9 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     await Bun.write(serverIslandScriptPath, serverIslandJs);
     registry.setServerIslandScript(serverIslandScriptPath, serverIslandJs);
 
-    // Stamp the build so a rolling deploy can hand the task-scheduler lease over
-    // immediately rather than waiting out its TTL. `MOCHI_BUILD_ID` lets a CI
-    // pipeline substitute something meaningful (a git sha, a release tag); the
-    // timestamp is what actually orders two builds.
+    // Stamped so a rolling deploy hands the scheduler lease over rather than
+    // waiting out its TTL. The timestamp is what orders two builds; the id is
+    // only for logs, so CI can substitute a git sha via `MOCHI_BUILD_ID`.
     registry.buildId = process.env.MOCHI_BUILD_ID?.trim() || crypto.randomUUID();
     registry.buildTime = Date.now();
 

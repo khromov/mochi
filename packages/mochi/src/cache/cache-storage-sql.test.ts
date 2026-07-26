@@ -15,7 +15,6 @@ afterAll(async () => {
 
 let dbCount = 0;
 function makeStore(options: { maxAge?: number } = {}): SqlStorage {
-  // A file per store keeps tests independent without a shared-schema dance.
   const store = new SqlStorage({ url: `sqlite://${path.join(tmp, `s${dbCount++}.db`)}`, purge: false, ...options });
   stores.push(store);
   return store;
@@ -123,7 +122,6 @@ describe('SqlStorage', () => {
     };
 
     expect(await cache.fetch('k', fn)).toEqual({ n: 1 });
-    // Fresh: served from storage, no recompute.
     expect(await cache.fetch('k', fn)).toEqual({ n: 1 });
     expect(calls).toBe(1);
 

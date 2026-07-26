@@ -246,17 +246,11 @@ export class Mochi {
   /**
    * Declare a scheduled task — recurring (`cron`) or one-off (`at`).
    *
-   * Two forms, both landing in the same registry:
+   * - `Mochi.task(config)` returns an inert descriptor, like `Mochi.queue()`. Mount it by name in `Mochi.serve({ tasks })`.
+   * - `Mochi.task(name, config)` registers immediately and returns a live handle (`nextRun()`, `trigger()`, `pause()`).
    *
-   * - `Mochi.task(config)` returns an *inert descriptor*, like `Mochi.queue()`.
-   *   Mount it by name in `Mochi.serve({ tasks })`.
-   * - `Mochi.task(name, config)` registers immediately and returns a live handle
-   *   (`nextRun()`, `trigger()`, `pause()`). Use it at module scope in a file that
-   *   is imported before `Mochi.serve()` runs — a route module, typically.
-   *
-   * Neither form starts a timer on its own. A `'cluster'`-scoped task (the
-   * default) runs on exactly one node, whichever wins the scheduler lease, so an
-   * N-replica deployment still fires it once.
+   * Neither form starts a timer. A `'cluster'`-scoped task (the default) runs on exactly one node,
+   * whichever wins the scheduler lease, so an N-replica deployment still fires it once.
    */
   static task(config: MochiTaskOptions): MochiTaskConfig;
   static task(name: string, config: MochiTaskOptions): MochiTaskHandle;
@@ -268,11 +262,7 @@ export class Mochi {
     return { __mochiTask: true, run, options, on };
   }
 
-  /**
-   * Resolve the handle for a task declared in `Mochi.serve({ tasks })` — to read
-   * its next run, trigger it by hand, or pause it. Throws if the name was never
-   * declared, or if reached before `Mochi.serve()` mounted its tasks.
-   */
+  /** Resolve the handle for a task declared in `Mochi.serve({ tasks })`. Throws if the name was never declared, or if reached before `Mochi.serve()` mounted its tasks. */
   static getTask(name: string): MochiTaskHandle {
     return getTask(name);
   }
@@ -1557,9 +1547,7 @@ export class Mochi {
         });
         return response;
       });
-      // The framework's own scheduled task. Registration is inert, so declaring it
-      // here — well before the scheduler starts further down — is deliberate.
-      // `node` scope: each process owns its own cache directory's cruft, and the
+      // `node` scope: each process owns its own cache directory's cruft, so the
       // sweep must never wait on a lease it doesn't need.
       if (imageRuntime.options.sweepCron !== false) {
         createInternalTask(IMAGE_SWEEP_TASK, {
@@ -1571,9 +1559,8 @@ export class Mochi {
       }
     }
 
-    // The cache janitor is one task over a live registry rather than a timer per
-    // storage, so a storage constructed after boot still gets swept. `node` scope
-    // for the same reason as the image sweep: this is per-process cruft.
+    // One task over a live registry rather than a timer per storage, so a storage
+    // constructed after boot still gets swept.
     const cacheSweepCron = options.cache?.sweepCron ?? '* * * * *';
     if (cacheSweepCron !== false) {
       createInternalTask(CACHE_SWEEP_TASK, {
@@ -1825,17 +1812,15 @@ export class Mochi {
       if (!isMochiTask(config)) {
         throw new Error(`Mochi.serve({ tasks }): "${name}" is not a Mochi.task(...) descriptor. Each value must be created with Mochi.task().`);
       }
-      // `createTask` rejects this too, but that runs after the socket is bound.
-      // The framework registers its own tasks under this prefix, and the mount
-      // loop replaces by name — so without the guard an app could silently delete
-      // one (e.g. `mochi:image-sweep`) just by picking the same name.
+      // `createTask` rejects this too, but only after the socket is bound. The
+      // mount loop replaces by name, so without the guard an app could silently
+      // delete a framework task (e.g. `mochi:image-sweep`) by reusing its name.
       if (name.startsWith('mochi:')) {
         throw new Error(`Mochi.serve({ tasks }): "${name}" uses the reserved "mochi:" prefix, which belongs to the framework's own tasks. Pick another name.`);
       }
     }
 
-    // Assigned after the queues mount, below; declared here so the wrapped
-    // `server.stop` closes over it and can drain in-flight runs on any stop path.
+    // Declared here so the wrapped `server.stop` below closes over it and can drain in-flight runs on any stop path.
     let scheduler: SchedulerRuntime | undefined;
 
     const server = Bun.serve({
@@ -1866,8 +1851,6 @@ export class Mochi {
         // listener open and hang shutdown. Best-effort, then always stop.
         try {
           stopEmailBadgeBroadcast?.();
-          // Stops future firings, waits out in-flight runs (bounded), and releases
-          // the lease so a peer picks the work up now instead of after a full TTL.
           await scheduler?.stop();
           await closeEmailTransport();
           for (const store of rateLimitStores) {
@@ -1920,23 +1903,14 @@ export class Mochi {
     // After the whole map is mounted, so a recover() callback may reach a
     // sibling queue. Awaited, so recovered jobs are enqueued before
     // `mochi:ready` fires and before serve() resolves.
-    // Recovery re-enqueues stranded work, so N booting processes would re-enqueue
-    // it N times. It rides the same lease configuration as the task scheduler —
-    // one place to say "here is how this app coordinates across processes" — and
-    // is skipped entirely when election is off, where there is only one process by
-    // definition. `mochi:queue-recovery` is a separate row from the scheduler's,
-    // so holding one never blocks the other.
-    // POSIX-ified because this string is both a URL and something we print in the
-    // unconfigured-lease warning; a native Windows path renders with backslashes
-    // in both roles.
+    // Recovery rides the same lease configuration as the task scheduler, so an app
+    // says once how it coordinates across processes. `mochi:queue-recovery` is a
+    // separate row from the scheduler's, so holding one never blocks the other.
+    // POSIX-ified because this string is both a URL and printed in a warning.
     const defaultLeaseUrl = `sqlite://${toPosixPath(path.join(outDir, 'tasks.sqlite'))}`;
     const queueEntries = Object.entries(options.queues ?? {});
-    // Also gated on there being something to recover. `runQueueRecovery` returns
-    // early for a map with no `recover()`, but the store has to be *constructed*
-    // to be passed in — and `SqlLeaseStore` opens its database in its constructor.
-    // Without this an app with no recoverable queues still creates `tasks.sqlite`
-    // at boot and never reads it, which on a read-only filesystem is not waste but
-    // a crash.
+    // Gated on `hasRecoverableQueues` because the store must be constructed to be
+    // passed in at all — see that function for why building one for nothing hurts.
     const recoveryLease =
       resolveClusterCoordination(options.scheduler ?? {}, development) && hasRecoverableQueues(queueEntries)
         ? new SqlLeaseStore({
@@ -1953,21 +1927,15 @@ export class Mochi {
       });
     }
 
-    // Register declared tasks, then start the scheduler. Registration is
-    // synchronous and local; the scheduler's election runs on detached timers, so
-    // an unreachable lease store delays the tasks and never `serve()` itself.
+    // The scheduler's election runs on detached timers, so an unreachable lease store delays the tasks and never `serve()` itself.
     for (const [name, config] of Object.entries(options.tasks ?? {})) {
       createTask(name, { ...config.options, run: config.run, on: config.on });
     }
     await runHook('mochi:tasksMounted', { options, server, tasks: Object.keys(options.tasks ?? {}) });
-    // Near-always true, since the image janitor above registers itself. That costs
-    // nothing extra: `startScheduler` skips the election — and the lease store with
-    // it — unless something cluster-scoped is actually registered.
+    // Near-always true, since the image janitor registers itself — but free, because
+    // `startScheduler` skips the election unless something cluster-scoped exists.
     if (listTasks().length > 0) {
       setBuildIdentity({ buildId: registry.buildId, buildTime: registry.buildTime });
-      // Default the lease next to the build output. Correct for one node; a
-      // multi-replica deployment must point `scheduler.lease.url` (or
-      // MOCHI_SCHEDULER_URL) at storage every replica shares — see the tasks docs.
       scheduler = startScheduler(options.scheduler ?? {}, development, defaultLeaseUrl);
     }
 
@@ -2060,9 +2028,8 @@ export class Mochi {
         logger.error(`mochi:shutdown hook failed: ${err instanceof Error ? err.message : err}`);
       }
       await closeAllQueueResources();
-      // Mirrors closeAllQueueResources: the signal path resets process-global
-      // state so a fresh serve() in the same process starts clean. `server.stop()`
-      // below already ran the scheduler's own drain-and-release.
+      // Mirrors closeAllQueueResources: reset process-global state so a fresh
+      // serve() starts clean. `server.stop()` already drained and released.
       clearTasks();
       resetStartupMilestones();
       const stopEvent: MochiServerStopEvent = { reason: 'signal' };

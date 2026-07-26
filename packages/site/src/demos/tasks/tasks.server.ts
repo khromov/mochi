@@ -4,8 +4,7 @@ import type { TaskStatus, TaskTick } from './types';
 
 export const TASK_NAME = 'demo-heartbeat';
 
-// One server-owned history shared by every connected client, so two browsers
-// watching the demo see the same ticks rather than diverging per-session logs.
+// One server-owned history shared by every client, so two browsers see the same ticks rather than diverging per-session logs.
 const ticks: TaskTick[] = [];
 let total = 0;
 
@@ -22,8 +21,7 @@ export const heartbeatTask: MochiTaskConfig = Mochi.task({
 });
 
 export function taskStatus(): TaskStatus {
-  // `nextRun()` is null before the scheduler arms the task, and on any node that
-  // isn't the leader — both are ordinary states, not errors.
+  // `nextRun()` is null before the scheduler arms the task and on any non-leader node — both ordinary states, not errors.
   let nextRun: number | null = null;
   try {
     nextRun = Mochi.getTask(TASK_NAME).nextRun()?.getTime() ?? null;

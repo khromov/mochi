@@ -53,8 +53,7 @@ describe('sweep registry', () => {
     );
     registerSweepable(track({ sweepAndReport: () => void swept.push('good') }));
 
-    // Still swept, but the failure is re-thrown so the task runner reports it
-    // rather than the janitor degrading into a silent no-op.
+    // Still swept, but the failure is re-thrown so the task runner reports it instead of the janitor going silent.
     await expect(sweepAllRegistered()).rejects.toThrow('backend down');
     expect(swept).toEqual(['good']);
   });

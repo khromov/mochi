@@ -347,11 +347,7 @@ export function isMochiQueue(value: unknown): value is MochiQueueConfig {
   return typeof value === 'object' && value !== null && (value as MochiQueueConfig).__mochiQueue === true;
 }
 
-/**
- * Inert descriptor returned by `Mochi.task()` — mirrors `MochiQueueConfig`.
- * Declaring a task arms nothing; `Mochi.serve({ tasks })` registers it, and the
- * scheduler decides whether this node is the one that runs it.
- */
+/** Inert descriptor returned by `Mochi.task()`. Declaring a task arms nothing; `Mochi.serve({ tasks })` registers it, and the scheduler decides whether this node runs it. */
 export interface MochiTaskConfig {
   readonly __mochiTask: true;
   readonly run: MochiTaskRunner;
@@ -388,15 +384,9 @@ export interface MochiManifestComponent {
 export interface MochiManifest {
   version: 1;
   /**
-   * Identifier for the build that produced this manifest, and when it was
-   * produced (epoch ms). Optional — a manifest written before these existed, or a
-   * dev-mode boot that compiles on demand and writes no manifest at all, simply
-   * has no build identity.
-   *
-   * Their one consumer is the task scheduler: a strictly newer `buildTime` lets a
-   * rolling deploy take the scheduler lease from the outgoing node immediately
-   * instead of idling for a full TTL. Unknown on either side just falls back to
-   * TTL expiry, so absence is always safe.
+   * Identifier for the build that produced this manifest, and when (epoch ms). Their one consumer is
+   * the task scheduler: a strictly newer `buildTime` lets a rolling deploy take the lease from the
+   * outgoing node immediately. Optional, since unknown on either side falls back to TTL expiry.
    */
   buildId?: string;
   buildTime?: number;
@@ -503,11 +493,7 @@ export interface MochiWarmupOptions {
   enabledInDev: boolean;
 }
 
-/**
- * Schedule for the shared cache janitor. One task sweeps every storage in the
- * process, so the cadence is set here rather than per storage — a storage only
- * chooses whether to take part, with `purge: false`.
- */
+/** One task sweeps every storage in the process, so the cadence is set here rather than per storage — a storage only chooses whether to take part, with `purge: false`. */
 export interface MochiCacheServeOptions {
   /**
    * Cron pattern for `mochi:cache-sweep`. Default `'* * * * *'` (every minute).
@@ -556,18 +542,16 @@ export interface MochiServeOptions {
    */
   queues?: Record<string, MochiQueueConfig>;
   /**
-   * Scheduled tasks to register with the server, keyed by task name. Each value is
-   * a `Mochi.task({ cron | at, run })` descriptor.
+   * Scheduled tasks to register with the server, keyed by task name. Each value is a
+   * `Mochi.task({ cron | at, run })` descriptor.
    *
-   * Registering is not running: a `'cluster'`-scoped task (the default) runs on
-   * exactly one node, chosen by a lease every node contends for, so scaling to N
-   * replicas still fires it once. Configure that election via `scheduler`.
+   * Registering is not running: a `'cluster'`-scoped task (the default) runs on exactly one node,
+   * chosen by a lease every node contends for, so scaling to N replicas still fires it once.
    */
   tasks?: Record<string, MochiTaskConfig>;
   /**
-   * How scheduled tasks coordinate across processes — lease location, TTL,
-   * heartbeat, startup jitter. Ignored when no tasks are declared. Leader election
-   * defaults on in production and off in development.
+   * How scheduled tasks coordinate across processes — lease location, TTL, heartbeat, startup jitter.
+   * Ignored when no tasks are declared. Leader election defaults on in production, off in development.
    */
   scheduler?: MochiSchedulerOptions;
   fetch?: (req: Request, server: Server<undefined>) => Response | Promise<Response>;
@@ -738,9 +722,8 @@ export interface MochiServeOptions {
    */
   image?: MochiImageOptions;
   /**
-   * Schedule for `mochi:cache-sweep`, the janitor that evicts aged-out entries
-   * from every `MemoryStorage` / `FileStorage` / `SqlStorage` in the process.
-   * Opt an individual storage out with `purge: false`. See `MochiCacheServeOptions`.
+   * Schedule for `mochi:cache-sweep`, the janitor that evicts aged-out entries from every
+   * `MemoryStorage` / `FileStorage` / `SqlStorage` in the process. Opt one out with `purge: false`.
    */
   cache?: MochiCacheServeOptions;
   /**

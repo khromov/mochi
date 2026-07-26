@@ -167,19 +167,13 @@ export class ImageCache {
     this.minTimeToStale = options.minTimeToStale;
     this.maxTimeToLive = options.maxTimeToLive;
     this.sizes = options.sizes;
-    // Eviction stays the backend's; only the schedule and the per-kind accounting
-    // live here. So the storage sits out the shared `mochi:cache-sweep` janitor
-    // (`purge: false`) and the image sweep task (`sweeper.ts`) calls `sweep()` instead —
-    // one janitor, on a schedule the image config owns, reporting variants/originals
-    // separately. `maxAge >= maxTimeToLive`, so it never drops a servable entry. A
-    // caller-supplied `storage` keeps its own eviction policy (e.g. `MemoryStorage`'s
-    // `maxAge`); driving it from here is what puts every backend on that one schedule.
-    // offloadBinary: image bytes are exactly the large-binary case blob offloading
-    // exists for — metadata reads must never load the encoded bytes.
+    // Eviction stays the backend's; only the schedule and per-kind accounting live
+    // here. So the storage sits out the shared `mochi:cache-sweep` janitor and
+    // `sweeper.ts` drives `sweep()` on a schedule the image config owns, reporting
+    // variants/originals separately. `maxAge >= maxTimeToLive` never drops a
+    // servable entry; offloadBinary keeps metadata reads off the encoded bytes.
     this.storage = options.storage ?? new FileStorage({ directory: options.cacheDir, maxAge: options.maxTimeToLive, purge: false, offloadBinary: true });
-    // A caller-supplied storage registered itself on construction, before it knew
-    // it was destined for an ImageCache. Take it back off, or it would be swept
-    // twice on two unrelated schedules.
+    // A caller-supplied storage registered itself on construction, before it knew it was destined for an ImageCache — leaving it on sweeps it twice on two schedules.
     unregisterSweepable(this.storage);
     // 60s in-flight timeout: an image regen (fetch upstream → decode → resize)
     // should never hold the per-key coalescing lock for long, so a hung upstream

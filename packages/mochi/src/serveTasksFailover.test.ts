@@ -1,11 +1,9 @@
 /**
- * The acceptance test for multi-node scheduling, and the one thing a single-process
- * unit test cannot establish: with two real OS processes sharing one lease, exactly
- * one of them runs the task, and killing that one hands the work to the other.
+ * The one thing a single-process unit test cannot establish: with two real OS processes sharing one
+ * lease, exactly one runs the task, and killing that one hands the work to the other.
  *
- * `SIGKILL` specifically — no shutdown hook runs, so nothing releases the lease.
- * Recovery has to come from the TTL expiring and the survivor re-contesting, which
- * is the failure mode a crashed container actually produces.
+ * `SIGKILL` specifically — no shutdown hook runs, so nothing releases the lease and recovery must come
+ * from the TTL expiring, which is the failure mode a crashed container actually produces.
  */
 import { afterAll, expect, test } from 'bun:test';
 import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
@@ -28,7 +26,6 @@ afterAll(() => {
 
 interface Node {
   proc: Subprocess;
-  /** Number of scheduled runs observed so far. */
   runs: () => number;
   sawLeadership: () => boolean;
 }
@@ -61,7 +58,6 @@ function spawnNode(label: string): Node {
   return { proc, runs: () => runs, sawLeadership: () => leader };
 }
 
-/** Poll until `predicate` holds, or fail loudly with what was actually observed. */
 async function waitFor(label: string, timeoutMs: number, predicate: () => boolean): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {

@@ -457,10 +457,7 @@ export class ComponentRegistry {
   readonly development: boolean;
   /** Set by `fromManifest()`; distinguishes a prebuilt-manifest boot from a live, compile-on-demand one. */
   loadedFromManifest = false;
-  /**
-   * Build identity carried over from the manifest, when there was one. Stays null
-   * on a compile-on-demand boot — see `MochiManifest.buildId`.
-   */
+  /** Carried over from the manifest. Stays null on a compile-on-demand boot — see `MochiManifest.buildId`. */
   buildId: string | null = null;
   buildTime: number | null = null;
   readonly debugBarEnabled: boolean;

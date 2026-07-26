@@ -97,8 +97,7 @@ describe('MemoryStorage', () => {
   test('joins the shared sweep only with a maxAge, and leaves it on dispose', () => {
     const before = sweepableCount();
 
-    // No maxAge means `sweep()` can never remove anything, so joining would only
-    // cost the janitor a pass over a store that is definitionally a no-op.
+    // No maxAge means `sweep()` can never remove anything, so joining would cost the janitor a pass over a definitional no-op.
     makeStorage();
     expect(sweepableCount()).toBe(before);
 

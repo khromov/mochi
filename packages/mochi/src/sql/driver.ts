@@ -1,17 +1,10 @@
 /**
- * The single isolation boundary around the SQL backends: nothing else in the
- * framework imports `bun:sqlite` or `Bun.SQL`, so both the cache's `SqlStorage`
- * and the scheduler's `SqlLeaseStore` speak one dialect-agnostic interface.
+ * The single isolation boundary around the SQL backends, so `SqlStorage` and `SqlLeaseStore` share one
+ * dialect-agnostic interface.
  *
- * SQLite deliberately goes through `bun:sqlite` rather than `Bun.SQL`. `Bun.SQL`'s
- * SQLite adapter hands out pooled connections, and a `PRAGMA busy_timeout` only
- * ever applies to the connection it ran on — so a fresh pooled connection opens
- * with the default timeout of zero and throws `SQLITE_BUSY` the moment a peer
- * process holds a write lock. Measured on Bun 1.3.14: 12 processes contending for
- * one lease row, half of them died on connect. Owning the single `Database`
- * handle ourselves makes the pragmas deterministic, and it's what CLAUDE.md
- * prescribes for SQLite anyway. Postgres keeps `Bun.SQL`, where pooling is the
- * right model and lock waits are handled server-side.
+ * SQLite goes through `bun:sqlite`, not `Bun.SQL`: the latter pools connections and a `PRAGMA
+ * busy_timeout` applies only to the connection that ran it, so a fresh pooled connection throws
+ * `SQLITE_BUSY` the moment a peer holds a write lock. Postgres keeps `Bun.SQL`, where pooling is right.
  */
 import { Database } from 'bun:sqlite';
 import { SQL } from 'bun';
@@ -25,12 +18,7 @@ export interface SqlDriver {
   close(): Promise<void>;
 }
 
-/**
- * Which backend a connection string names. Mirrors Bun's own detection, minus
- * MySQL: the upsert this codebase relies on (`ON CONFLICT … DO UPDATE … WHERE …
- * RETURNING`) has no MySQL equivalent, so it's rejected up front rather than
- * failing later with a syntax error nobody can act on.
- */
+/** MySQL is rejected up front because the upsert this codebase relies on has no MySQL equivalent, and failing later gives a syntax error nobody can act on. */
 export function resolveDialect(url: string): SqlDialect {
   if (url === ':memory:' || url.startsWith('sqlite:') || url.startsWith('file:') || url.endsWith('.db') || url.endsWith('.sqlite') || url.endsWith('.sqlite3')) {
     return 'sqlite';
@@ -44,7 +32,6 @@ export function resolveDialect(url: string): SqlDialect {
   throw new Error(`Mochi SQL: could not tell which database "${url}" refers to. Use a sqlite:// (or a path ending in .db/.sqlite) or postgres:// URL.`);
 }
 
-/** Strip the scheme off a sqlite URL, leaving a filesystem path `bun:sqlite` understands. */
 function sqlitePath(url: string): string {
   if (url === ':memory:') {
     return ':memory:';
@@ -55,13 +42,7 @@ function sqlitePath(url: string): string {
 
 const NAMED_PARAM = /\$([a-zA-Z_][a-zA-Z0-9_]*)/g;
 
-/**
- * Rewrite `$name` placeholders to Postgres's positional `$1`, `$2`, … and collect
- * the matching values. Every query in the framework is written once in the
- * `$name` form; only this function knows Postgres numbers its parameters.
- * A name repeated in the statement reuses its original position rather than
- * binding the same value twice.
- */
+/** Every query is written once in the `$name` form; only this function knows Postgres numbers its parameters. A repeated name reuses its original position. */
 export function toPositional(sql: string, params: Record<string, unknown>): { text: string; values: unknown[] } {
   const values: unknown[] = [];
   const positions = new Map<string, number>();
@@ -89,11 +70,9 @@ class SqliteDriver implements SqlDriver {
     // Order matters: enabling WAL takes an exclusive lock, so the busy timeout has
     // to already be in place for the pragma below to wait rather than throw.
     this.db.exec('PRAGMA busy_timeout = 5000');
-    // WAL is a persistent property of the file, so only pay for the switch once —
-    // and SQLite does not invoke the busy handler for a journal_mode change, so a
-    // peer flipping it at the same instant returns SQLITE_BUSY. That's harmless:
-    // the peer is setting the very same value, and the file ends up in WAL either
-    // way. Without this guard roughly 1 in 60 concurrent boots died here.
+    // SQLite skips the busy handler for a journal_mode change, so a peer flipping
+    // it at the same instant returns SQLITE_BUSY — harmless, since it is setting
+    // the same value. Read-first avoided ~1 in 60 concurrent boots dying here.
     try {
       const mode = (this.db.query('PRAGMA journal_mode').get() as { journal_mode?: string } | null)?.journal_mode;
       if (mode !== 'wal') {
@@ -105,9 +84,8 @@ class SqliteDriver implements SqlDriver {
   }
 
   async query<T = Record<string, unknown>>(sql: string, params: Record<string, unknown> = {}): Promise<T[]> {
-    // bun:sqlite binds named parameters only when the object's keys carry the `$`
-    // prefix — a bare key is silently bound as NULL rather than rejected, which
-    // surfaces much later as a confusing NOT NULL constraint failure.
+    // bun:sqlite needs the `$` prefix on keys — a bare key binds as NULL rather
+    // than throwing, surfacing later as a confusing NOT NULL constraint failure.
     const bound: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(params)) {
       bound[`$${key}`] = value;
@@ -144,11 +122,7 @@ export function createSqlDriver(url: string): SqlDriver {
   return dialect === 'sqlite' ? new SqliteDriver(sqlitePath(url)) : new PostgresDriver(url);
 }
 
-/**
- * The column type for a millisecond epoch timestamp. SQLite's `INTEGER` is
- * already 64-bit; Postgres needs `BIGINT` explicitly, and hands those back as
- * strings — which is why every read goes through {@link toNumber}.
- */
+/** Postgres needs `BIGINT` explicitly for a ms epoch and hands those back as strings, which is why every read goes through {@link toNumber}. */
 export function timestampColumn(dialect: SqlDialect): string {
   return dialect === 'sqlite' ? 'INTEGER' : 'BIGINT';
 }

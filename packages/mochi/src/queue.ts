@@ -334,48 +334,29 @@ export const DEFAULT_RECOVERY_STALL_WARNING_MS = 30_000;
  * It is reported instead, because everything downstream (warmup, `mochi:ready`,
  * `serve()` resolving) waits behind it and would otherwise hang silently.
  *
- * Recovery is single-flight across processes when a lease store is supplied.
- * Without one it runs in every process that boots, so an N-instance deploy (or a
- * rolling restart where old and new overlap) re-enqueues the same stranded work N
- * times. One lease covers the whole pass rather than one per queue: recovery is a
- * single startup event, the loop below is sequential anyway, and one process
- * doing all of it is exactly the property we want.
+ * Recovery is single-flight across processes when a lease store is supplied. Without one it runs in
+ * every process that boots, so an N-instance deploy re-enqueues the same stranded work N times. One
+ * lease covers the whole pass rather than one per queue, since recovery is a single startup event.
  *
- * The lease is taken but deliberately never released. Its TTL *is* the
- * "recovery already happened" window: a peer booting inside it skips, and a
- * genuine restart later finds it expired and recovers again. Releasing on
- * completion would instead invite the next process to redo the work we just did,
- * which is the duplication this exists to prevent. A process that dies
- * mid-recovery is covered by the same expiry rather than locking recovery out
- * forever.
- *
- * The original sketch for this called for a random jitter before touching the
- * store. That was written against a racy lock; `tryAcquire` decides the winner in
- * one atomic statement, so jitter would buy no correctness and only delay
- * `serve()` resolving. Omitted on purpose.
+ * The lease is taken but deliberately never released: its TTL *is* the "recovery already happened"
+ * window, so a peer booting inside it skips while a genuine restart later finds it expired. Releasing
+ * on completion would invite the next process to redo the work we just did.
  */
 export const DEFAULT_RECOVERY_WINDOW_MS = 5 * 60_000;
 
 export interface QueueRecoveryOptions {
   /** Cross-process lease. Omit to run recovery unconditionally in this process. */
   store?: TaskLeaseStore;
-  /**
-   * How long winning recovery suppresses it in peers, ms. Should comfortably
-   * exceed a rolling deploy's overlap and stay well under the gap between real
-   * restarts. Default 5 minutes.
-   */
+  /** How long winning recovery suppresses it in peers, ms. Should exceed a rolling deploy's overlap and stay well under the gap between real restarts. Default 5 minutes. */
   window?: number;
 }
 
 type QueueRecoveryEntries = Array<[string, { recover?: (queue: MochiQueue<never>) => void | Promise<void> }]>;
 
 /**
- * Whether any of these queues declares a `recover()` — the only reason recovery,
- * and the cross-process lease that single-flights it, exists at all.
- *
- * Exported so the caller can decide whether to *build* that lease before calling
- * in. `SqlLeaseStore` opens its database in its constructor, so constructing one
- * for a map with nothing to recover creates a SQLite file the app never reads.
+ * Exported so the caller can decide whether to *build* the lease before calling in. `SqlLeaseStore`
+ * opens its database in its constructor, so building one for a map with nothing to recover creates a
+ * SQLite file the app never reads — on a read-only filesystem, a boot crash rather than mere waste.
  * Both sides asking the same function keeps the two conditions from drifting.
  */
 export function hasRecoverableQueues(entries: QueueRecoveryEntries): boolean {
@@ -389,17 +370,12 @@ export async function runQueueRecovery(entries: QueueRecoveryEntries, recovery: 
   const recoverable = entries.flatMap(([name, config]) => (config.recover ? [[name, config.recover] as const] : []));
 
   if (recovery.store) {
-    // A store error must not skip recovery: losing the lease means a peer is
-    // handling it, but failing to *ask* means we don't know, and re-running
-    // recovery is the recoverable outcome where skipping it is not.
+    // A store error must not skip recovery: re-running it is the recoverable outcome, skipping it is not.
     let won = true;
     try {
       // A fresh owner per attempt, deliberately NOT `getInstanceId()`. The lease's
-      // "we already hold it" clause exists for the scheduler, where re-acquiring
-      // your own lease is renewal. Recovery is not a renewable lease — it is a
-      // marker for "this work has already been done recently", and who did it is
-      // irrelevant. Claiming under the instance id would let the same process
-      // re-acquire and redo the work, which is the duplication being prevented.
+      // "we already hold it" clause is renewal for the scheduler; here it would let
+      // the same process re-acquire and redo the very work being deduplicated.
       const claim = await recovery.store.tryAcquire({ owner: crypto.randomUUID(), ...getBuildIdentity(), now: Date.now(), ttl: recovery.window ?? DEFAULT_RECOVERY_WINDOW_MS });
       won = claim.acquired;
     } catch (err) {

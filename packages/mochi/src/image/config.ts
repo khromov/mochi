@@ -75,11 +75,9 @@ function resolveSize(
 export function resolveImageOptions(opts: MochiImageOptions | undefined): ResolvedImageOptions {
   const o = opts ?? {};
 
-  // Throw rather than ignore: TypeScript's excess-property check only fires on
-  // object literals, so a widened or spread-in config would silently fall back to
-  // the default schedule — and the symptom of a janitor that isn't running the
-  // interval you asked for is unbounded disk growth found weeks later.
-  // TODO: Remove after a few versions as we dont expect old consumers
+  // Throw rather than ignore: excess-property checks only fire on object literals,
+  // so a spread-in config would silently fall back to the default schedule.
+  // TODO: Remove after a few versions — we don't expect old consumers.
   if ((o as { sweepIntervalMs?: unknown }).sweepIntervalMs !== undefined) {
     throw new Error(
       "Mochi.serve({ image }): `sweepIntervalMs` was replaced by `sweepCron`, a cron pattern. Use sweepCron: '0 * * * *' for the old hourly default, or sweepCron: false to disable the janitor.",

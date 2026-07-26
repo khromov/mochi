@@ -19,8 +19,7 @@ function makeDir(): string {
 }
 
 function makeStorage(options: Partial<ConstructorParameters<typeof FileStorage>[0]> = {}): FileStorage {
-  // Keep storages out of the shared janitor's registry by default so tests can't
-  // sweep each other; the sweep tests call `sweep()`/`sweepAndReport()` directly.
+  // Out of the shared registry by default so tests can't sweep each other; the sweep tests call `sweep()` directly.
   const storage = new FileStorage({ directory: makeDir(), purge: false, ...options });
   created.push(storage);
   return storage;
@@ -149,8 +148,7 @@ describe('FileStorage', () => {
     const storage = makeStorage({ maxAge: 5 });
     storage.sweep = () => Promise.reject(new Error('disk gone'));
 
-    // The janitor task sweeps every storage in one pass, so a backend that fails
-    // must not deny the rest their turn.
+    // One pass covers every storage, so a backend that fails must not deny the rest their turn.
     expect(storage.sweepAndReport()).resolves.toBeUndefined();
   });
 

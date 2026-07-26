@@ -1,8 +1,7 @@
 /**
- * Queue recovery re-enqueues stranded work, so an N-instance deploy running it in
- * every process re-enqueues that work N times. These cover the lease that makes
- * it single-flight — including that a store outage degrades toward recovering
- * rather than skipping.
+ * Recovery re-enqueues stranded work, so running it in every process of an N-instance deploy
+ * re-enqueues it N times. These cover the lease that single-flights it, including that a store outage
+ * degrades toward recovering rather than skipping.
  */
 import { afterAll, afterEach, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -36,7 +35,6 @@ afterAll(async () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-/** Register a queue whose `recover` just counts, and return the entries shape serve() passes. */
 function queueWithRecover(name: string, onRecover: () => void) {
   createQueue(name, async () => undefined);
   markStartupMilestone('mochi:queuesMounted');
@@ -72,8 +70,7 @@ test('the lease is not released on completion, so a peer booting right after sti
   const store = track(new SqlLeaseStore({ url: leaseUrl, name: 'recovery:held' }));
 
   await runQueueRecovery(entries, { store });
-  // The row must survive the run — releasing it would invite the next process to
-  // redo the work we just did.
+  // The row must survive the run — releasing it invites the next process to redo the work we just did.
   expect(await store.read()).not.toBeNull();
 
   await runQueueRecovery(entries, { store: track(new SqlLeaseStore({ url: leaseUrl, name: 'recovery:held' })) });
@@ -106,8 +103,7 @@ test('an unreachable lease store recovers anyway rather than silently skipping',
 
   await runQueueRecovery(entries, { store: broken });
 
-  // Not knowing whether a peer has it is not a reason to drop stranded jobs:
-  // re-running recovery is recoverable, skipping it is not.
+  // Not knowing whether a peer has it is no reason to drop stranded jobs — re-running is recoverable, skipping is not.
   expect(recovered).toBe(1);
 });
 
