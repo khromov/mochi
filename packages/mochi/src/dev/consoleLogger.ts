@@ -294,7 +294,11 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
     duration,
     slow,
     verySlow,
-    level: 'warn',
+    // The framework's own tasks already print a richer line of their own — the
+    // image janitor's `CACHE image:sweep` carries the per-kind counts this one
+    // can't. Saying it twice is noise, so demote the generic line for those.
+    // Failures and skips stay at `warn` below whoever owns the task.
+    level: task.startsWith('mochi:') ? 'debug' : 'warn',
   }));
   subscribe('task:error', ({ task, error }) => ({
     label: 'TASK',

@@ -63,7 +63,7 @@ import type { MochiRequestContext } from './runtime/requestContext';
 import { createQueue, getQueue, closeAllQueueResources, runQueueRecovery } from './queue';
 import { resetStartupMilestones } from './lifecycle';
 import type { MochiQueue, MochiQueueOptions, MochiQueueListeners, MochiProcessor } from './queue';
-import { createTask, getTask, clearTasks, listTasks } from './tasks/tasks';
+import { createTask, createInternalTask, getTask, clearTasks, listTasks } from './tasks/tasks';
 import type { MochiTaskHandle, MochiTaskOptions } from './tasks/tasks';
 import { startScheduler, resolveClusterCoordination } from './tasks/scheduler';
 import type { SchedulerRuntime } from './tasks/scheduler';
@@ -77,7 +77,7 @@ import { decryptProps } from './islands/serverIslandCrypto';
 import { createImageHandler } from './image/imageEndpoint';
 import { createLocalAssetHandler } from './image/localAssetRegistry';
 import { getImageRuntime } from './image/config';
-import { startImageCacheSweeper } from './image/sweeper';
+import { IMAGE_SWEEP_TASK, runImageCacheSweep } from './image/sweeper';
 import { getEmailRuntime, closeEmailTransport } from './email/config';
 import { onDevEmailRecorded } from './email/devOutbox';
 import { sendEmail } from './email/mailer';
@@ -1536,10 +1536,9 @@ export class Mochi {
     getEmailRuntime().registry = registry;
 
     // Register the signed image endpoint (enabled unless explicitly off) and
-    // start the background cache janitor. The resolved options are the single
+    // the background cache janitor. The resolved options are the single
     // source of truth for `enabled` — `getImageUrl` consults the same flag to
     // fall back to raw source URLs when the endpoint is off.
-    let stopImageSweeper: (() => void) | undefined;
     const imageRuntime = getImageRuntime();
     if (imageRuntime.options.enabled) {
       const imageHandler = createImageHandler();
@@ -1557,7 +1556,18 @@ export class Mochi {
         });
         return response;
       });
-      stopImageSweeper = startImageCacheSweeper(imageRuntime.cache, imageRuntime.options.sweepIntervalMs);
+      // The framework's own scheduled task. Registration is inert, so declaring it
+      // here — well before the scheduler starts further down — is deliberate.
+      // `node` scope: each process owns its own cache directory's cruft, and the
+      // sweep must never wait on a lease it doesn't need.
+      if (imageRuntime.options.sweepCron !== false) {
+        createInternalTask(IMAGE_SWEEP_TASK, {
+          cron: imageRuntime.options.sweepCron,
+          scope: 'node',
+          runOnStart: true,
+          run: () => runImageCacheSweep(imageRuntime.cache),
+        });
+      }
     }
 
     // Serve locally-imported image assets (`import x from './x.png'`) from disk.
@@ -1801,6 +1811,13 @@ export class Mochi {
       if (!isMochiTask(config)) {
         throw new Error(`Mochi.serve({ tasks }): "${name}" is not a Mochi.task(...) descriptor. Each value must be created with Mochi.task().`);
       }
+      // `createTask` rejects this too, but that runs after the socket is bound.
+      // The framework registers its own tasks under this prefix, and the mount
+      // loop replaces by name — so without the guard an app could silently delete
+      // one (e.g. `mochi:image-sweep`) just by picking the same name.
+      if (name.startsWith('mochi:')) {
+        throw new Error(`Mochi.serve({ tasks }): "${name}" uses the reserved "mochi:" prefix, which belongs to the framework's own tasks. Pick another name.`);
+      }
     }
 
     // Assigned after the queues mount, below; declared here so the wrapped
@@ -1815,11 +1832,11 @@ export class Mochi {
     } as Parameters<typeof Bun.serve>[0]);
 
     // Tie subsystem cleanup to the server's lifetime: any stop path (tests
-    // calling server.stop(), or the signal handler below) clears the image-cache
-    // sweep timers and closes a pooled SMTP connection instead of leaking them.
-    // Wrapping stop covers both, since the signal handler calls server.stop().
+    // calling server.stop(), or the signal handler below) stops the scheduler —
+    // which covers the image-cache sweep task — and closes a pooled SMTP
+    // connection instead of leaking them. Wrapping stop covers both, since the
+    // signal handler calls server.stop().
     {
-      const sweeperStop = stopImageSweeper;
       const stopServer = server.stop.bind(server);
       // The shutdown path calls stop() twice (graceful, then forced once the
       // grace period lapses); tearing subsystems down a second time would
@@ -1834,7 +1851,6 @@ export class Mochi {
         // close() throws (e.g. a nodemailer pool) would otherwise leave the
         // listener open and hang shutdown. Best-effort, then always stop.
         try {
-          sweeperStop?.();
           stopEmailBadgeBroadcast?.();
           // Stops future firings, waits out in-flight runs (bounded), and releases
           // the lease so a peer picks the work up now instead of after a full TTL.
@@ -1922,6 +1938,9 @@ export class Mochi {
       createTask(name, { ...config.options, run: config.run, on: config.on });
     }
     await runHook('mochi:tasksMounted', { options, server, tasks: Object.keys(options.tasks ?? {}) });
+    // Near-always true, since the image janitor above registers itself. That costs
+    // nothing extra: `startScheduler` skips the election — and the lease store with
+    // it — unless something cluster-scoped is actually registered.
     if (listTasks().length > 0) {
       setBuildIdentity({ buildId: registry.buildId, buildTime: registry.buildTime });
       // Default the lease next to the build output. Correct for one node; a

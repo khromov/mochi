@@ -25,7 +25,7 @@ import { mochiEvents } from '../events';
 import { logger } from '../utils/log';
 import { getBuildIdentity, getInstanceId } from './identity';
 import { MemoryLeaseStore, SqlLeaseStore, type TaskLeaseStore } from './lease';
-import { drainTasks, setTaskGate, startTasks, stopAllTasks, stopClusterTasks } from './tasks';
+import { drainTasks, hasClusterTasks, setTaskGate, startTasks, stopAllTasks, stopClusterTasks } from './tasks';
 
 export interface MochiSchedulerLeaseOptions {
   /**
@@ -65,7 +65,7 @@ export interface MochiSchedulerOptions {
 }
 
 export interface SchedulerRuntime {
-  /** Whether this node currently holds the lease. */
+  /** Whether this node runs cluster-scoped tasks — by holding the lease, or because there is no election. */
   isLeader(): boolean;
   stop(): Promise<void>;
 }
@@ -106,10 +106,22 @@ export function resolveClusterCoordination(options: MochiSchedulerOptions, devel
 }
 
 export function startScheduler(options: MochiSchedulerOptions, development: boolean, defaultLeaseUrl: string): SchedulerRuntime {
-  const leaderEnabled = resolveClusterCoordination(options, development);
+  // Election exists to pick one node for `cluster` tasks. With none registered
+  // there is nothing to elect, and the cost of pretending otherwise is not zero:
+  // `SqlLeaseStore` opens its SQLite file in its constructor, so a read-only
+  // filesystem would turn "no tasks to coordinate" into a boot crash. Mochi
+  // registers its own `node`-scoped image-cache sweep, which makes an app with
+  // tasks but no cluster-scoped ones the common case rather than a curiosity.
+  // Deliberately not folded into `resolveClusterCoordination` — queue recovery
+  // shares that answer and must not change with the task registry's contents.
+  const coordinate = resolveClusterCoordination(options, development);
+  const leaderEnabled = coordinate && hasClusterTasks();
   const drainTimeout = options.drainTimeout ?? DEFAULT_DRAIN_TIMEOUT;
 
   if (!leaderEnabled) {
+    if (coordinate) {
+      logger.debug('[task] no cluster-scoped tasks registered — running every task on this node, no lease store opened.');
+    }
     // Single-node mode: every task runs here, and the gate is a constant. Uses the
     // same start path as the elected case so there's no second untested branch.
     setTaskGate(() => true);
@@ -156,6 +168,11 @@ export function startScheduler(options: MochiSchedulerOptions, development: bool
   // Node-scoped tasks are unconditional — they never touch the lease.
   startTasks(false);
 
+  // Safe to unref here, unlike the cron timers in `tasks.ts`. The scheduler only
+  // ever runs alongside a listening `Bun.serve()`, which keeps the loop alive, so
+  // these always fire; unref'ing just means a stalled election can never be the
+  // thing pinning a shutting-down process open. A cron timer has no such
+  // guarantee — see the comment on `new Cron` for what unref'ing one costs.
   const schedule = (delay: number, fn: () => void) => {
     timer = setTimeout(fn, delay);
     timer.unref?.();

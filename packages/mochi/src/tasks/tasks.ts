@@ -47,6 +47,15 @@ export interface MochiTaskRuntimeOptions {
   scope?: MochiTaskScope;
   /** Register without scheduling. Start it later with the handle's `resume()`. */
   paused?: boolean;
+  /**
+   * Also run once as soon as this node arms the task, on top of the schedule.
+   * Requires `cron` — an `at` task already runs exactly once.
+   *
+   * Fires at most once per registration: a `cluster` task that loses the lease
+   * and later regains it does not run again, or a leader flapping on its TTL
+   * would re-run work that is rarely safe to repeat. Skipped while `paused`.
+   */
+  runOnStart?: boolean;
 }
 
 export interface MochiTaskOptions extends MochiTaskRuntimeOptions {
@@ -78,6 +87,10 @@ interface TaskEntry {
   onError?: (error: Error, context: MochiTaskContext) => void;
   /** Non-null only while this node has the task scheduled. */
   job: Cron | null;
+  /** Pending `runOnStart` fire, cancelled by {@link disarm} if the task stops before it lands. */
+  startTimer: ReturnType<typeof setTimeout> | null;
+  /** Latches the `runOnStart` fire so regaining a lost lease doesn't repeat it. */
+  ranOnStart: boolean;
   paused: boolean;
   busy: boolean;
   lastRun: Date | null;
@@ -114,6 +127,9 @@ function validate(name: string, options: MochiTaskRuntimeOptions): void {
   const hasAt = options.at !== undefined;
   if (hasCron === hasAt) {
     throw new Error(`Mochi.task("${name}"): specify exactly one of \`cron\` (recurring) or \`at\` (one-off), not ${hasCron ? 'both' : 'neither'}.`);
+  }
+  if (options.runOnStart === true && hasAt) {
+    throw new Error(`Mochi.task("${name}"): \`runOnStart\` needs \`cron\` — an \`at\` task already runs exactly once, and adding a startup run would make it twice.`);
   }
 }
 
@@ -164,8 +180,9 @@ function execute(entry: TaskEntry, scheduledAt: Date): Promise<void> {
   return promise;
 }
 
-/** Register a task without scheduling it. Idempotent per name — re-registering replaces the entry. */
-export function createTask(name: string, options: MochiTaskOptions): MochiTaskHandle {
+const RESERVED_PREFIX = 'mochi:';
+
+function registerTask(name: string, options: MochiTaskOptions): MochiTaskHandle {
   validate(name, options);
   const { run, on, ...runtime } = options;
 
@@ -173,7 +190,7 @@ export function createTask(name: string, options: MochiTaskOptions): MochiTaskHa
   if (existing) {
     // A dev-watcher reload re-imports the module that declared the task. Replace
     // the definition rather than stacking a second copy on the same name.
-    existing.job?.stop();
+    disarm(existing);
     registry.byName.delete(name);
   }
 
@@ -183,6 +200,8 @@ export function createTask(name: string, options: MochiTaskOptions): MochiTaskHa
     run,
     onError: on?.error,
     job: null,
+    startTimer: null,
+    ranOnStart: false,
     paused: runtime.paused ?? false,
     busy: false,
     lastRun: null,
@@ -211,44 +230,98 @@ export function createTask(name: string, options: MochiTaskOptions): MochiTaskHa
   return entry.handle;
 }
 
+/** Register a task without scheduling it. Idempotent per name — re-registering replaces the entry. */
+export function createTask(name: string, options: MochiTaskOptions): MochiTaskHandle {
+  if (name.startsWith(RESERVED_PREFIX)) {
+    throw new Error(`Mochi.task("${name}"): names starting with "${RESERVED_PREFIX}" are reserved for the framework's own tasks. Pick another name.`);
+  }
+  return registerTask(name, options);
+}
+
+/**
+ * Register one of the framework's own tasks, bypassing the reserved-prefix guard.
+ * Internal only — never re-exported from `index.ts`. The guard exists so an app
+ * can't shadow (and thereby silently delete) a task Mochi depends on.
+ */
+export function createInternalTask(name: string, options: MochiTaskOptions): MochiTaskHandle {
+  return registerTask(name, options);
+}
+
+/** Stop a task's timers. Safe to call on an already-disarmed entry. */
+function disarm(entry: TaskEntry): void {
+  entry.job?.stop();
+  entry.job = null;
+  if (entry.startTimer !== null) {
+    clearTimeout(entry.startTimer);
+    entry.startTimer = null;
+  }
+}
+
+/**
+ * The one path into a run that isn't an explicit `trigger()`. Both the cron tick
+ * and the `runOnStart` timer go through it, so the two guards below can't be
+ * bypassed by adding a third caller.
+ */
+function fire(entry: TaskEntry, scope: MochiTaskScope): void {
+  // The lease can expire between ticks — a stop-the-world pause or a lost
+  // network is enough. Checking here rather than only at start/stop keeps a
+  // node that no longer holds the lease from doing the leader's work.
+  if (scope === 'cluster' && !registry.gate()) {
+    mochiEvents.emit('task:skipped', { task: entry.name, reason: 'lease-expired' });
+    return;
+  }
+  // Overlap protection lives here rather than in croner's `protect` option, which
+  // cannot see our runs: the callback below hands `execute` off as a detached
+  // promise and returns synchronously, so croner's blocking flag clears a
+  // microtask later and every tick looks idle to it. `runOnStart` fires outside
+  // croner entirely, so it was never covered either way.
+  if (entry.options.overlap !== true && entry.busy) {
+    mochiEvents.emit('task:skipped', { task: entry.name, reason: 'overlap' });
+    return;
+  }
+  void execute(entry, new Date());
+}
+
 /** Arm this node's croner timer for `entry`, if it isn't already armed. */
 function startEntry(entry: TaskEntry): void {
   if (entry.job !== null) {
     return;
   }
   const scope = entry.options.scope ?? 'cluster';
-  entry.job = new Cron(
-    toPattern(entry.name, entry.options),
-    {
-      name: entry.name,
-      timezone: entry.options.timezone,
-      paused: entry.paused,
-      // NOT unref'd. An unref'd timer doesn't hold the event loop open, and if
-      // nothing else does, it may simply never fire — so the task silently stops
-      // running. That is the opposite of what a scheduled task is for, and it is
-      // exactly how this wedged on Windows CI: with the loop otherwise idle,
-      // waiting on a cron tick waited forever. Shutdown doesn't need the help
-      // either — `stopAllTasks()` stops every job explicitly on the stop path,
-      // which is deterministic where unref is merely a hint.
-      // A function form of `protect` still lets us report the skip. With `true`
-      // croner would silently drop the tick.
-      protect: entry.options.overlap
-        ? undefined
-        : () => {
-            mochiEvents.emit('task:skipped', { task: entry.name, reason: 'overlap' });
-          },
-    },
-    () => {
-      // The lease can expire between ticks — a stop-the-world pause or a lost
-      // network is enough. Checking here rather than only at start/stop keeps a
-      // node that no longer holds the lease from doing the leader's work.
-      if (scope === 'cluster' && !registry.gate()) {
-        mochiEvents.emit('task:skipped', { task: entry.name, reason: 'lease-expired' });
-        return;
-      }
-      void execute(entry, new Date());
-    },
-  );
+  const pattern = toPattern(entry.name, entry.options);
+  try {
+    entry.job = new Cron(
+      pattern,
+      {
+        name: entry.name,
+        timezone: entry.options.timezone,
+        paused: entry.paused,
+        // NOT unref'd. An unref'd timer doesn't hold the event loop open, and if
+        // nothing else does, it may simply never fire — so the task silently stops
+        // running. That is the opposite of what a scheduled task is for, and it is
+        // exactly how this wedged on Windows CI: with the loop otherwise idle,
+        // waiting on a cron tick waited forever. Shutdown doesn't need the help
+        // either — `stopAllTasks()` stops every job explicitly on the stop path,
+        // which is deterministic where unref is merely a hint.
+      },
+      () => fire(entry, scope),
+    );
+  } catch (err) {
+    // croner names the pattern but not the task, which is useless once the
+    // registry holds tasks the app never declared.
+    throw new Error(`Mochi.task("${entry.name}"): invalid schedule "${String(pattern)}" — ${err instanceof Error ? err.message : String(err)}`, { cause: err });
+  }
+
+  if (entry.options.runOnStart === true && !entry.ranOnStart && !entry.paused) {
+    entry.ranOnStart = true;
+    // Deferred a macrotask so arming a task never runs its body inside
+    // `Mochi.serve()` — `startTasks()` is called synchronously from there.
+    // Not unref'd, for the same reason the cron job above isn't.
+    entry.startTimer = setTimeout(() => {
+      entry.startTimer = null;
+      fire(entry, scope);
+    }, 0);
+  }
 }
 
 /** Arm every task this node should run. `cluster` tasks are skipped unless `includeCluster`. */
@@ -265,9 +338,8 @@ export function startTasks(includeCluster: boolean): void {
 /** Disarm cluster-scoped timers — used when this node loses the lease. In-flight runs are left to settle. */
 export function stopClusterTasks(): void {
   for (const entry of registry.byName.values()) {
-    if ((entry.options.scope ?? 'cluster') === 'cluster' && entry.job !== null) {
-      entry.job.stop();
-      entry.job = null;
+    if ((entry.options.scope ?? 'cluster') === 'cluster') {
+      disarm(entry);
     }
   }
 }
@@ -275,9 +347,22 @@ export function stopClusterTasks(): void {
 /** Disarm every timer. Does not wait for in-flight runs — see {@link drainTasks}. */
 export function stopAllTasks(): void {
   for (const entry of registry.byName.values()) {
-    entry.job?.stop();
-    entry.job = null;
+    disarm(entry);
   }
+}
+
+/**
+ * Whether any registered task needs leader election. `node`-scoped tasks never
+ * touch the lease, so a registry holding only those has nothing to elect —
+ * see `startScheduler`, which skips opening a lease store entirely in that case.
+ */
+export function hasClusterTasks(): boolean {
+  for (const entry of registry.byName.values()) {
+    if ((entry.options.scope ?? 'cluster') === 'cluster') {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**

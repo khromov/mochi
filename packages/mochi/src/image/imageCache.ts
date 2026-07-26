@@ -168,7 +168,7 @@ export class ImageCache {
     this.sizes = options.sizes;
     // Eviction stays the backend's; only the schedule and the per-kind accounting
     // live here. So FileStorage's own timer is off (`purgeInterval: 0`) and the image
-    // sweeper (`sweeper.ts`) calls `sweep()` instead — one janitor, on an interval the
+    // sweep task (`sweeper.ts`) calls `sweep()` instead — one janitor, on a schedule the
     // image config owns, reporting variants/originals separately. `maxAge >=
     // maxTimeToLive`, so it never drops a servable entry. A caller-supplied `storage`
     // keeps its own eviction policy (e.g. `MemoryStorage`'s `maxAge`); driving it from
@@ -206,8 +206,8 @@ export class ImageCache {
    *
    * Not called on server stop: `getImageRuntime()` is a global singleton that
    * outlives a `Mochi.serve()` cycle, so disposing it there would leave the next
-   * server with a live cache whose cascade no longer fires. `Mochi.serve` stops the
-   * sweeper's timers instead.
+   * server with a live cache whose cascade no longer fires. The scheduler stops the
+   * `mochi:image-sweep` task on shutdown instead.
    */
   dispose(): void {
     mochiEvents.removeHandler(this.cascadeHandlerName);

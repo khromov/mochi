@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { mochiEvents } from '../events';
 import { markStartupMilestone, resetStartupMilestones } from '../lifecycle';
-import { clearTasks, createTask, drainTasks, getTask, listTasks, setTaskGate, startTasks, stopClusterTasks } from './tasks';
+import { clearTasks, createInternalTask, createTask, drainTasks, getTask, hasClusterTasks, listTasks, setTaskGate, startTasks, stopAllTasks, stopClusterTasks } from './tasks';
 
 afterEach(() => {
   clearTasks();
@@ -50,6 +50,39 @@ describe('task declaration', () => {
     const handle = createTask('scoped', { cron: '* * * * *', run: () => {} });
     expect(handle.scope).toBe('cluster');
     expect(createTask('local', { cron: '* * * * *', scope: 'node', run: () => {} }).scope).toBe('node');
+  });
+
+  test('rejects runOnStart on a one-off', () => {
+    expect(() => createTask('once-more', { at: new Date(Date.now() + 60_000), runOnStart: true, run: () => {} })).toThrow(/runOnStart/);
+  });
+
+  test('the "mochi:" prefix is reserved for the framework', () => {
+    expect(() => createTask('mochi:image-sweep', { cron: '* * * * *', run: () => {} })).toThrow(/reserved/);
+    // The framework's own registration path bypasses the guard.
+    expect(createInternalTask('mochi:image-sweep', { cron: '* * * * *', run: () => {} }).name).toBe('mochi:image-sweep');
+  });
+
+  test('an invalid cron pattern names the task it came from', () => {
+    createTask('garbled', { cron: 'not a cron', run: () => {} });
+    expect(() => startTasks(true)).toThrow(/Mochi\.task\("garbled"\): invalid schedule/);
+  });
+});
+
+describe('hasClusterTasks', () => {
+  test('false when nothing is registered', () => {
+    expect(hasClusterTasks()).toBe(false);
+  });
+
+  test('false when every task is node-scoped — nothing to elect a leader for', () => {
+    createTask('local-a', { cron: '* * * * *', scope: 'node', run: () => {} });
+    createTask('local-b', { cron: '* * * * *', scope: 'node', run: () => {} });
+    expect(hasClusterTasks()).toBe(false);
+  });
+
+  test('true once a default-scope task exists', () => {
+    createTask('local', { cron: '* * * * *', scope: 'node', run: () => {} });
+    createTask('shared', { cron: '* * * * *', run: () => {} });
+    expect(hasClusterTasks()).toBe(true);
   });
 });
 
@@ -235,4 +268,135 @@ describe('scheduling', () => {
     startTasks(true);
     expect(handle.nextRun()?.getTime()).toBe(at.getTime());
   });
+
+  test('an overlapping tick is skipped rather than piling up copies', async () => {
+    const stuck = deferred();
+    const handle = createTask('slowpoke', { cron: '* * * * * *', run: () => stuck.promise });
+
+    const skipped = await capture('task:skipped', async () => {
+      startTasks(true);
+      await Bun.sleep(2_200);
+    });
+
+    // The first tick is still in flight, so every later one must be dropped.
+    expect(handle.isBusy()).toBe(true);
+    expect(skipped.length).toBeGreaterThanOrEqual(1);
+    expect(skipped[0]).toMatchObject({ task: 'slowpoke', reason: 'overlap' });
+    stuck.resolve();
+  }, 6_000);
+
+  test('overlap: true lets ticks run concurrently', async () => {
+    const stuck = deferred();
+    let started = 0;
+    createTask('parallel', {
+      cron: '* * * * * *',
+      overlap: true,
+      run: () => {
+        started++;
+        return stuck.promise;
+      },
+    });
+
+    const skipped = await capture('task:skipped', async () => {
+      startTasks(true);
+      await Bun.sleep(2_200);
+    });
+
+    expect(started).toBeGreaterThanOrEqual(2);
+    expect(skipped).toHaveLength(0);
+    stuck.resolve();
+  }, 6_000);
+});
+
+describe('runOnStart', () => {
+  test('runs once as soon as the task is armed', async () => {
+    const ran = deferred();
+    const handle = createTask('kickoff', { cron: '0 0 1 1 *', runOnStart: true, run: () => ran.resolve() });
+
+    startTasks(true);
+    await ran.promise;
+    // croner never fired, so this exercises the lastRun fallback in previousRun().
+    expect(handle.previousRun()).toBeInstanceOf(Date);
+  }, 5_000);
+
+  test('does not run for a task declared paused', async () => {
+    let ran = 0;
+    createTask('kickoff-paused', {
+      cron: '0 0 1 1 *',
+      runOnStart: true,
+      paused: true,
+      run: () => {
+        ran++;
+      },
+    });
+
+    startTasks(true);
+    await Bun.sleep(50);
+    expect(ran).toBe(0);
+  });
+
+  test('stopping before the run lands cancels it', async () => {
+    let ran = 0;
+    createTask('kickoff-cancelled', {
+      cron: '0 0 1 1 *',
+      runOnStart: true,
+      run: () => {
+        ran++;
+      },
+    });
+
+    startTasks(true);
+    stopAllTasks(); // synchronously, before the deferred fire
+    await Bun.sleep(50);
+    expect(ran).toBe(0);
+  });
+
+  test('regaining a lost lease does not repeat it', async () => {
+    let ran = 0;
+    createTask('kickoff-once', {
+      cron: '0 0 1 1 *',
+      runOnStart: true,
+      run: () => {
+        ran++;
+      },
+    });
+
+    startTasks(true);
+    await Bun.sleep(50);
+    expect(ran).toBe(1);
+
+    stopClusterTasks();
+    startTasks(true);
+    await Bun.sleep(50);
+    expect(ran).toBe(1);
+  });
+
+  test('a closed lease gate skips it, same as a cron tick', async () => {
+    let ran = 0;
+    createTask('kickoff-gated', {
+      cron: '0 0 1 1 *',
+      runOnStart: true,
+      run: () => {
+        ran++;
+      },
+    });
+    setTaskGate(() => false);
+
+    const skipped = await capture('task:skipped', async () => {
+      startTasks(true);
+      await Bun.sleep(50);
+    });
+
+    expect(ran).toBe(0);
+    expect(skipped[0]).toMatchObject({ task: 'kickoff-gated', reason: 'lease-expired' });
+  });
+
+  test('a node-scoped task ignores the gate entirely', async () => {
+    const ran = deferred();
+    createTask('kickoff-node', { cron: '0 0 1 1 *', scope: 'node', runOnStart: true, run: () => ran.resolve() });
+    setTaskGate(() => false);
+
+    startTasks(false);
+    await ran.promise;
+  }, 5_000);
 });
