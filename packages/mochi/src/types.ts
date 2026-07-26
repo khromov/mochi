@@ -372,7 +372,7 @@ export interface MochiManifestComponent {
 export interface MochiManifest {
   /**
    * Schema version of the on-disk build output. The runtime loads only the exact
-   * version it writes (currently 3) and throws on anything else — build and serve
+   * version it writes (currently 2) and throws on anything else — build and serve
    * with the same `mochi-framework` version. Typed as `number` rather than a
    * literal because it is parsed from JSON any version may have written; the
    * check is what narrows it.
@@ -395,7 +395,7 @@ export interface MochiManifest {
    *
    * Static files are deliberately not a family here: the build never copies
    * `publicDir`, so the runtime scans it at startup in every mode and a manifest
-   * never names one.
+   * never names one — only counts them, see `publicFileCount`.
    */
   version: number;
   /** URL prefix under which framework client assets and the server island endpoint are served. */
@@ -433,6 +433,14 @@ export interface MochiManifest {
    * at startup.
    */
   serverIslandScript?: string;
+  /**
+   * How many files `publicDir` held at build time. A count, not a path family —
+   * nothing resolves it, and it stays machine-independent. It exists because the
+   * build copies no static files: nothing in the out-dir would otherwise reveal a
+   * deploy that shipped the build output and left `publicDir` behind, so
+   * `Mochi.serve()` compares this against its own startup scan.
+   */
+  publicFileCount?: number;
 }
 
 /**

@@ -52,7 +52,12 @@ node_modules
 .env*
 ```
 
-Don't add `public` to that list. Unlike `.mochi`, it isn't regenerated inside the image — the runtime reads it from disk on every boot.
+Don't add `public` to that list. Unlike `.mochi`, it isn't regenerated inside the image — the runtime reads it from disk on every boot. If it doesn't make it in, the server says so at startup instead of quietly 404ing:
+
+```
+[mochi] publicDir "public" is missing or empty, but the build found 12 file(s) there —
+every static file will 404.
+```
 
 ### `--production` and devDeps
 
