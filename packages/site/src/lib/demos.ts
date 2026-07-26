@@ -7,6 +7,7 @@ import { files as cookieVaryTest } from '../demos/cookie-vary-test/files.ts';
 import { files as captcha } from '../demos/captcha/files.ts';
 import { files as captchaStyling } from '../demos/captcha-styling/files.ts';
 import { files as cookies } from '../demos/cookies/files.ts';
+import { files as customTransitions } from '../demos/custom-transitions/files.ts';
 import { files as dataLoading } from '../demos/data-loading/files.ts';
 import { files as email } from '../demos/email/files.ts';
 import { files as entityProps } from '../demos/entity-props/files.ts';
@@ -47,6 +48,7 @@ import { files as serverProps } from '../demos/server-props/files.ts';
 import { files as sharedState } from '../demos/shared-state/files.ts';
 import { files as streams } from '../demos/streams/files.ts';
 import { files as url } from '../demos/url/files.ts';
+import { files as viewTransitions } from '../demos/view-transitions/files.ts';
 
 export type DemoCategory = 'hydration' | 'data' | 'endpoints' | 'forms' | 'errors' | 'sites';
 
@@ -139,12 +141,16 @@ export const demos: Demo[] = [
   },
   {
     href: '/demos/view-transitions/',
+    slug: 'view-transitions',
+    files: viewTransitions,
     title: 'View Transitions',
     hook: 'How view transitions work — drop <ViewTransitions /> into a layout to animate full-page navigations with zero JavaScript.',
     category: 'hydration',
   },
   {
     href: '/demos/custom-transitions/',
+    slug: 'custom-transitions',
+    files: customTransitions,
     title: 'Custom Transitions',
     hook: 'How custom view transitions work — supply your own @keyframes to <ViewTransitions /> via custom={{ in, out }}.',
     category: 'hydration',
