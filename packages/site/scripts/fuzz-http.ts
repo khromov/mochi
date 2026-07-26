@@ -39,8 +39,7 @@ const PROD = process.argv.includes('--prod');
 // SecLists is not packaged for macOS (no `seclists` or `dirb` formula) and ffuf
 // ships no wordlists, so the general discovery list is fetched once and cached.
 // Override with FUZZ_DISCOVERY=<path|url|off>; `off` runs curated-only.
-const DISCOVERY_SOURCE =
-  process.env.FUZZ_DISCOVERY ?? 'https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/Web-Content/raft-large-words.txt';
+const DISCOVERY_SOURCE = process.env.FUZZ_DISCOVERY ?? 'https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/Web-Content/raft-large-words.txt';
 
 // Kept in sync by hand with the deny-list in httpFuzz.fuzz.test.ts. The
 // duplication is deliberate: a shared module under packages/mochi/src would be
@@ -286,7 +285,12 @@ const BORING = new Set([301, 308, 404]);
 const MAX_REFETCH = 200;
 const WIRE_REJECT = new Set([501, 505]);
 
-async function triage(pass: Pass, list: Wordlist, results: FfufResult[], bodyDir: string | null): Promise<{ findings: Finding[]; baseline: Map<number, number>; wireRejected: number }> {
+async function triage(
+  pass: Pass,
+  list: Wordlist,
+  results: FfufResult[],
+  bodyDir: string | null,
+): Promise<{ findings: Finding[]; baseline: Map<number, number>; wireRejected: number }> {
   const findings: Finding[] = [];
   const baseline = new Map<number, number>();
   let wireRejected = 0;
@@ -460,7 +464,7 @@ async function main(): Promise<void> {
         : status === 429
           ? '  (rate limited)'
           : WIRE_REJECT.has(status)
-            ? '  (rejected by Bun\'s HTTP parser — payload never reached the app)'
+            ? "  (rejected by Bun's HTTP parser — payload never reached the app)"
             : '';
     console.log(`  ${status}: ${n}${note}`);
   }
