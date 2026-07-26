@@ -490,7 +490,12 @@ export class ComponentRegistry {
   constructor(opts: ComponentRegistryOptions = {}) {
     this.development = opts.development ?? true;
     this.debugBarEnabled = this.development && (opts.debugBar ?? true);
-    this.outDir = opts.outDir ?? './.mochi';
+    // Resolved once, here: a relative outDir means "relative to the cwd of
+    // whoever asks", and compile and toManifest() ask at different moments. A
+    // process.chdir() in between (an async user hook, an embedder building
+    // several projects) would silently make every artifact look like it escaped
+    // the out-dir, baking absolute paths into an otherwise relocatable build.
+    this.outDir = path.resolve(opts.outDir ?? './.mochi');
     this.assetPrefix = normalizeAssetPrefix(opts.assetPrefix);
     this.svelteConfig = opts.svelteConfig ?? {};
     this.svelteCompiler = opts.svelteCompiler;

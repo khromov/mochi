@@ -172,3 +172,26 @@ describe('manifest relocation (build → move → boot)', () => {
     await expect(ComponentRegistry.fromManifest(otherPath, false)).rejects.toThrow(`is version ${version}, but this mochi-framework runtime reads version 2`);
   });
 });
+
+// A relative outDir resolves against the cwd of whoever asks, and compile and
+// toManifest() ask at different moments. Pinning it at construction is what
+// keeps a chdir in between from making every artifact look like it escaped.
+describe('outDir is resolved once, at construction', () => {
+  test('a chdir between setup and toManifest() does not escape the out-dir', async () => {
+    const { ComponentRegistry } = await import('./ComponentRegistry');
+    const root = mkdtempSync(path.join(import.meta.dir, '..', '..', '.mochi-reloc-cwd-'));
+    const cwd = process.cwd();
+    try {
+      mkdirSync(path.join(root, 'sub'), { recursive: true });
+      process.chdir(root);
+      const registry = new ComponentRegistry({ development: false, outDir: './.mochi', assetPrefix: '/_mochi' });
+      registry.setPublicFiles({ '/logo.png': path.resolve('./.mochi/public/logo.png') });
+
+      process.chdir(path.join(root, 'sub'));
+      expect(registry.toManifest().publicFiles).toEqual({ '/logo.png': 'public/logo.png' });
+    } finally {
+      process.chdir(cwd);
+      rmSync(root, RM_OPTS);
+    }
+  });
+});
