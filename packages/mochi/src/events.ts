@@ -228,6 +228,40 @@ export interface MochiQueueErrorEvent {
   error: string;
 }
 
+export interface MochiTaskRunEvent {
+  /** The task's registered name. */
+  task: string;
+  scope: 'cluster' | 'node';
+  /** Run time in ms. */
+  duration: number;
+}
+
+export interface MochiTaskErrorEvent {
+  task: string;
+  /** Message of the error the task threw. The run is contained — the server keeps serving. */
+  error: string;
+  duration: number;
+}
+
+export interface MochiTaskSkippedEvent {
+  task: string;
+  /**
+   * `overlap` — the previous run was still going and `overlap` is off.
+   * `lease-expired` — this node's scheduler lease lapsed between ticks, so the
+   * work belongs to whichever node holds it now.
+   */
+  reason: 'overlap' | 'lease-expired';
+}
+
+export interface MochiTaskLeaderEvent {
+  /** Whether this node now holds the scheduler lease. */
+  acquired: boolean;
+  /** This node's instance id. */
+  owner: string;
+  /** Who holds the lease, when known — `owner` on acquisition, the incumbent when we lost, `null` if unreadable. */
+  holder: string | null;
+}
+
 export interface MochiEmailSentEvent {
   /** Recipient addresses. */
   to: string[];
@@ -423,6 +457,10 @@ export type MochiEventMap = {
   'queue:completed': MochiQueueCompletedEvent;
   'queue:failed': MochiQueueFailedEvent;
   'queue:error': MochiQueueErrorEvent;
+  'task:run': MochiTaskRunEvent;
+  'task:error': MochiTaskErrorEvent;
+  'task:skipped': MochiTaskSkippedEvent;
+  'task:leader': MochiTaskLeaderEvent;
   'email:sent': MochiEmailSentEvent;
   'email:error': MochiEmailErrorEvent;
   'server:start': MochiServerStartEvent;

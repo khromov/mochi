@@ -54,6 +54,8 @@ IMPROVEMENTS.md
 flamegraphs
 REPORT.md
 GEMINI.md
-tasks*
+# Anchored to the repo root: an unanchored `tasks*` matches at any depth and would
+# silently swallow source directories like packages/mochi/src/tasks/.
+/tasks*
 snapshots*
 .memtest-out

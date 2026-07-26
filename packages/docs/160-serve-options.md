@@ -53,6 +53,8 @@ The forced fallback is not optional: a plain `server.stop()` never resolves whil
 - `shutdownTimeout`: Grace period in ms for in-flight requests to finish on `SIGTERM`/`SIGINT` before connections are force-closed and the process exits. Default: `5000` in production, `0` in development. `0` force-closes immediately. Note that an open WebSocket never drains, so shutdown pins to this full value whenever one is connected — set it no larger than your orchestrator's kill grace period.
 - `routes`: `Record<string, MochiRouteValue>` of route paths to `Mochi.page` / `Mochi.api` / `Mochi.ws` / `Mochi.sse` registrations.
 - `fetch`: `(req, server) => Response` fallback handler invoked when no route matches. Default: built-in 404.
+- `tasks`: `Record<string, MochiTaskConfig>` of scheduled tasks, each a `Mochi.task({ cron | at, run })` descriptor. Registered at startup and stopped on shutdown. See `Scheduled tasks`.
+- `scheduler`: How scheduled tasks coordinate across processes — `leader`, `lease`, `leaseTtl`, `heartbeatInterval`, `startupJitter`, `drainTimeout`. Ignored when no tasks are declared. Leader election defaults on in production, off in development. See `Scheduled tasks`.
 - `manifest`: Path to a prebuilt manifest JSON. Default: `<outDir>/manifest.json`.
 - `htmlShell`: Path to an `.html` template or an inline template string. Default: built-in shell. See `Custom HTML shell`.
 - `handle`: A `Handle` (or `sequence(...)` of them) that wraps every request. See `Middleware (hooks)`.

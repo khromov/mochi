@@ -89,6 +89,9 @@ describe('Mochi.serve({ queues })', () => {
   });
 
   test('serve records the startup milestones it passed', () => {
-    expect(reachedStartupMilestones()).toEqual(['mochi:init', 'mochi:listening', 'mochi:queuesMounted', 'mochi:ready']);
+    // `mochi:tasksMounted` fires even with no tasks declared — the milestone marks
+    // that the mounting step ran, which is what `getTask()` reads to tell "too
+    // early" apart from "you declared none".
+    expect(reachedStartupMilestones()).toEqual(['mochi:init', 'mochi:listening', 'mochi:queuesMounted', 'mochi:tasksMounted', 'mochi:ready']);
   });
 });

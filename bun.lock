@@ -106,6 +106,7 @@
         "@noble/hashes": "2.2.0",
         "bunqueue": "^2.8.44",
         "chokidar": "^5.0.0",
+        "croner": "^10.0.1",
         "deepmerge": "^4.3.1",
         "devalue": "^5.8.2",
         "html-entities": "^2.6.0",

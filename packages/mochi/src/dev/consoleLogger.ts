@@ -287,6 +287,36 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
     level: 'warn',
   }));
 
+  subscribe('task:run', ({ task, duration }) => ({
+    label: 'TASK',
+    path: task,
+    note: styleText('green', 'done'),
+    duration,
+    slow,
+    verySlow,
+    level: 'warn',
+  }));
+  subscribe('task:error', ({ task, error }) => ({
+    label: 'TASK',
+    path: task,
+    note: `${styleText('red', 'failed')} ${styleText('dim', error)}`,
+    level: 'warn',
+  }));
+  subscribe('task:skipped', ({ task, reason }) => ({
+    label: 'TASK',
+    path: task,
+    note: styleText('yellow', `skipped (${reason})`),
+    level: 'warn',
+  }));
+  // Leadership changes are rare and operationally important — which node owns the
+  // schedule is the first thing you want to know when a cron didn't fire.
+  subscribe('task:leader', ({ acquired, holder }) => ({
+    label: 'TASK',
+    path: 'scheduler',
+    note: acquired ? styleText('green', 'acquired lease') : `${styleText('dim', 'standby')} ${styleText('dim', holder ? `leader ${holder}` : 'no leader')}`,
+    level: 'warn',
+  }));
+
   subscribe('email:sent', ({ to, subject, transport, duration }) => {
     // Four delivery classes:
     //  - log:        did not send — warn (visible in production) and colour yellow

@@ -1,5 +1,6 @@
 import type { Component } from 'svelte';
 import Sprout from '@lucide/svelte/icons/sprout';
+import AlarmClock from '@lucide/svelte/icons/alarm-clock';
 import PackageOpen from '@lucide/svelte/icons/package-open';
 import Layers from '@lucide/svelte/icons/layers';
 import Globe from '@lucide/svelte/icons/globe';
@@ -76,6 +77,7 @@ export const demoIconFor: Record<string, DemoIconMeta> = {
   'Shared State': { icon: Share2, label: 'Shared $state across islands' },
   'Real-time Streams': { icon: AudioWaveform, label: 'WebSocket + SSE streams' },
   'Background jobs with queues': { icon: Inbox, label: 'Embedded job queue + worker' },
+  'Scheduled tasks': { icon: AlarmClock, label: 'Cron schedule + single-runner lease' },
   'Server Islands': { icon: ComponentIcon, label: 'Deferred server island' },
   'Client-only Islands': { icon: MonitorSmartphone, label: 'No SSR — mounts in the browser' },
   'Lazy Islands': { icon: Telescope, label: 'Hydrate when visible' },

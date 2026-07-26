@@ -8,7 +8,18 @@ import { loadSvelteConfig } from './compiler/svelteConfig';
 import { buildInlineWebComponent } from './compiler/buildInlineWebComponent';
 import { buildClientStatsRoutes, CLIENT_STATS_COMPONENT } from './dev/clientStatsRoutes';
 import { buildEmailViewerRoutes, EMAIL_VIEWER_COMPONENT } from './dev/emailViewerRoutes';
-import { isMochiPage, isMochiApi, isMochiWs, isMochiSse, isMochiFile, isMochiQueue, isServerPropsResolver, isAlsoHydrateMode, ALSO_HYDRATE_ENVELOPE_KEY } from './types';
+import {
+  isMochiPage,
+  isMochiApi,
+  isMochiWs,
+  isMochiSse,
+  isMochiFile,
+  isMochiQueue,
+  isMochiTask,
+  isServerPropsResolver,
+  isAlsoHydrateMode,
+  ALSO_HYDRATE_ENVELOPE_KEY,
+} from './types';
 import { HYDRATABLE_CONTEXT_KEY } from './islands/isHydratable';
 import type {
   BunRouteValue,
@@ -25,6 +36,7 @@ import type {
   MochiServerPropsResolver,
   MochiServeOptions,
   MochiQueueConfig,
+  MochiTaskConfig,
   RouteRegistrationResult,
   MochiSseConfig,
   MochiSseHandler,
@@ -51,6 +63,11 @@ import type { MochiRequestContext } from './runtime/requestContext';
 import { createQueue, getQueue, closeAllQueueResources, runQueueRecovery } from './queue';
 import { resetStartupMilestones } from './lifecycle';
 import type { MochiQueue, MochiQueueOptions, MochiQueueListeners, MochiProcessor } from './queue';
+import { createTask, getTask, clearTasks, listTasks } from './tasks/tasks';
+import type { MochiTaskHandle, MochiTaskOptions } from './tasks/tasks';
+import { startScheduler } from './tasks/scheduler';
+import type { SchedulerRuntime } from './tasks/scheduler';
+import { setBuildIdentity } from './tasks/identity';
 import { finalizeCookieHeaders } from './runtime/cookies';
 import { makeRequestContextBuilder } from './runtime/requestSetup';
 import { createRouteLimiter, applyRateLimitHeaders } from './runtime/rateLimit';
@@ -222,6 +239,40 @@ export class Mochi {
    */
   static getQueue<T = unknown>(name: string): MochiQueue<T> {
     return getQueue<T>(name);
+  }
+
+  /**
+   * Declare a scheduled task — recurring (`cron`) or one-off (`at`).
+   *
+   * Two forms, both landing in the same registry:
+   *
+   * - `Mochi.task(config)` returns an *inert descriptor*, like `Mochi.queue()`.
+   *   Mount it by name in `Mochi.serve({ tasks })`.
+   * - `Mochi.task(name, config)` registers immediately and returns a live handle
+   *   (`nextRun()`, `trigger()`, `pause()`). Use it at module scope in a file that
+   *   is imported before `Mochi.serve()` runs — a route module, typically.
+   *
+   * Neither form starts a timer on its own. A `'cluster'`-scoped task (the
+   * default) runs on exactly one node, whichever wins the scheduler lease, so an
+   * N-replica deployment still fires it once.
+   */
+  static task(config: MochiTaskOptions): MochiTaskConfig;
+  static task(name: string, config: MochiTaskOptions): MochiTaskHandle;
+  static task(nameOrConfig: string | MochiTaskOptions, maybeConfig?: MochiTaskOptions): MochiTaskConfig | MochiTaskHandle {
+    if (typeof nameOrConfig === 'string') {
+      return createTask(nameOrConfig, maybeConfig as MochiTaskOptions);
+    }
+    const { run, on, ...options } = nameOrConfig;
+    return { __mochiTask: true, run, options, on };
+  }
+
+  /**
+   * Resolve the handle for a task declared in `Mochi.serve({ tasks })` — to read
+   * its next run, trigger it by hand, or pause it. Throws if the name was never
+   * declared, or if reached before `Mochi.serve()` mounted its tasks.
+   */
+  static getTask(name: string): MochiTaskHandle {
+    return getTask(name);
   }
 
   /**
@@ -1745,6 +1796,15 @@ export class Mochi {
         throw new Error(`Mochi.serve({ queues }): "${name}" is not a Mochi.queue(...) descriptor. Each value must be created with Mochi.queue().`);
       }
     }
+    for (const [name, config] of Object.entries(options.tasks ?? {})) {
+      if (!isMochiTask(config)) {
+        throw new Error(`Mochi.serve({ tasks }): "${name}" is not a Mochi.task(...) descriptor. Each value must be created with Mochi.task().`);
+      }
+    }
+
+    // Assigned after the queues mount, below; declared here so the wrapped
+    // `server.stop` closes over it and can drain in-flight runs on any stop path.
+    let scheduler: SchedulerRuntime | undefined;
 
     const server = Bun.serve({
       ...bunOptions,
@@ -1775,6 +1835,9 @@ export class Mochi {
         try {
           sweeperStop?.();
           stopEmailBadgeBroadcast?.();
+          // Stops future firings, waits out in-flight runs (bounded), and releases
+          // the lease so a peer picks the work up now instead of after a full TTL.
+          await scheduler?.stop();
           await closeEmailTransport();
           for (const store of rateLimitStores) {
             // Per-store guard: one failing shutdown must not skip the rest.
@@ -1827,6 +1890,21 @@ export class Mochi {
     // sibling queue. Awaited, so recovered jobs are enqueued before
     // `mochi:ready` fires and before serve() resolves.
     await runQueueRecovery(Object.entries(options.queues ?? {}));
+
+    // Register declared tasks, then start the scheduler. Registration is
+    // synchronous and local; the scheduler's election runs on detached timers, so
+    // an unreachable lease store delays the tasks and never `serve()` itself.
+    for (const [name, config] of Object.entries(options.tasks ?? {})) {
+      createTask(name, { ...config.options, run: config.run, on: config.on });
+    }
+    await runHook('mochi:tasksMounted', { options, server, tasks: Object.keys(options.tasks ?? {}) });
+    if (listTasks().length > 0) {
+      setBuildIdentity({ buildId: registry.buildId, buildTime: registry.buildTime });
+      // Default the lease next to the build output. Correct for one node; a
+      // multi-replica deployment must point `scheduler.lease.url` (or
+      // MOCHI_SCHEDULER_URL) at storage every replica shares — see the tasks docs.
+      scheduler = startScheduler(options.scheduler ?? {}, development, `sqlite://${path.join(outDir, 'tasks.sqlite')}`);
+    }
 
     if (warmupHandlers.length > 0) {
       mochiEvents.emit('warmup:start', { routeCount: warmupHandlers.length });
@@ -1917,6 +1995,10 @@ export class Mochi {
         logger.error(`mochi:shutdown hook failed: ${err instanceof Error ? err.message : err}`);
       }
       await closeAllQueueResources();
+      // Mirrors closeAllQueueResources: the signal path resets process-global
+      // state so a fresh serve() in the same process starts clean. `server.stop()`
+      // below already ran the scheduler's own drain-and-release.
+      clearTasks();
       resetStartupMilestones();
       const stopEvent: MochiServerStopEvent = { reason: 'signal' };
       if (signal === 'SIGTERM' || signal === 'SIGINT') {

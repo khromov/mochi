@@ -72,7 +72,9 @@ Source is grouped by subsystem; only the entry points and public API surface (`M
 - **`compiler/`** — the `.svelte` → JS pipeline: `ComponentRegistry.ts`, `svelteAstPreprocess.ts`, `svelteConfig.ts`, `svelteShaker.ts`, `compileCache.ts`, `preprocessCache.ts`, `serverOnlyScan.ts`, `buildInlineWebComponent.ts`, `freshImport.ts`, `tailwind.ts`.
 - **`runtime/`** — the per-request pipeline: `requestSetup.ts`, `requestContext.ts`, `cookies.ts`, `csrf.ts`, `proxy.ts`, `trailingSlash.ts`, `errors.ts`, `hooks.ts`, `rateLimit.ts`, `warmup.ts`, `publicDir.ts`, and forms (`forms.ts`, `formsJson.ts`, `enhance.*`).
 - **`islands/`** — `islandPropsRegistry.ts`, `serverIslandCrypto.ts`, `payloadCrypto.ts`.
-- **`cache/`** — `cache.ts`, `cache-storage.ts`.
+- **`cache/`** — `cache.ts`, `cache-storage.ts`, `cache-storage-sql.ts`.
+- **`sql/`** — `driver.ts`: the only module that imports `bun:sqlite` / `Bun.SQL`. SQLite goes through `bun:sqlite` on purpose — `Bun.SQL`'s SQLite adapter pools connections and a `PRAGMA busy_timeout` only applies to the connection that ran it, so concurrent processes hit `SQLITE_BUSY` on connect. Shared by `SqlStorage` and the task lease.
+- **`tasks/`** — `tasks.ts` (croner isolation boundary + registry), `scheduler.ts` (leader election loop), `lease.ts` (the atomic cross-process lease), `identity.ts` (instance + build identity).
 - **`cli/`** — `cli.ts` (+ the `cli.js` bin shim), `build.ts`, `updateSkill.ts`, `generateKey.ts`, `checkEnvironment.ts`, `extractServeOptions.ts`, `testing.ts`.
 - **`dev/`** — `devWatcher.ts`, `consoleLogger.ts`, and the built-in admin/dev routes.
 - **`utils/`** — `index.ts` (the HTTP/asset helpers: `json`, `error`, `MochiHttpError`, …), `log.ts`, `htmlEscape.ts`, `globalState.ts`.

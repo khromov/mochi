@@ -13,7 +13,7 @@ import { highlightCode } from './lib/highlight.server';
 import { handle as cookieVaryTestHandle } from './demos/cookie-vary-test/routes';
 import { handle as shotHandle } from './shot/routes';
 import { encodeDebugBarGlobals } from './lib/debugBarEncode';
-import { routes, queues } from './routes';
+import { routes, queues, tasks } from './routes';
 
 const DEVELOPMENT = process.env.MODE === 'development';
 const IS_DOCKER = process.env.MOCHI_DOCKER === 'true';
@@ -188,6 +188,7 @@ await Mochi.serve({
   },
   routes,
   queues,
+  tasks,
 });
 
 logger.info('Server running at ' + origin);

@@ -13,7 +13,7 @@ import { pinGlobal } from './utils/globalState';
  * is no second way to mark one, so the record can't drift from the hooks users
  * actually receive.
  */
-export type MochiStartupMilestone = 'mochi:init' | 'mochi:listening' | 'mochi:queuesMounted' | 'mochi:ready';
+export type MochiStartupMilestone = 'mochi:init' | 'mochi:listening' | 'mochi:queuesMounted' | 'mochi:tasksMounted' | 'mochi:ready';
 
 // Pinned like the queue registry and the event bus: duplicate bundled copies of
 // the framework must agree on how far startup got.

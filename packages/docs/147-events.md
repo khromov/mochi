@@ -21,6 +21,7 @@ Event names use a `namespace:action` convention. Every key is in the typed `Moch
 - [`ws:open`](#wsopen), [`ws:message`](#wsmessage), [`ws:close`](#wsclose) — WebSocket lifecycle
 - [`sse:open`](#sseopen), [`sse:message`](#ssemessage), [`sse:close`](#sseclose) — Server-Sent Events lifecycle
 - [`queue:added`](#queueadded), [`queue:active`](#queueactive), [`queue:completed`](#queuecompleted), [`queue:failed`](#queuefailed), [`queue:error`](#queueerror) — [background job](/docs/queues/) lifecycle
+- [`task:run`](#taskrun), [`task:error`](#taskerror), [`task:skipped`](#taskskipped), [`task:leader`](#taskleader) — [scheduled task](/docs/tasks/) lifecycle and leadership
 - [`email:sent`](#emailsent), [`email:error`](#emailerror) — [transactional email](/docs/email/) delivery
 - [`server:start`](#serverstart), [`server:stop`](#serverstop) — server lifecycle
 - [`warmup:start`](#warmupstart), [`warmup:complete`](#warmupcomplete) — route warmup batch lifecycle (only with `warmup: true`)
@@ -240,6 +241,45 @@ Fires for a worker-level error not tied to a specific job (e.g. a poll failure).
 | ------- | -------- | ------------- |
 | `queue` | `string` | queue name    |
 | `error` | `string` | error message |
+
+#### `task:run`
+
+Fires after a [scheduled task](/docs/tasks/) run finishes successfully.
+
+| Field      | Type                  | Notes                              |
+| ---------- | --------------------- | ---------------------------------- |
+| `task`     | `string`              | task name                          |
+| `scope`    | `'cluster' \| 'node'` | whether one node runs it or all do |
+| `duration` | `number`              | run time in ms                     |
+
+#### `task:error`
+
+Fires when a scheduled task throws. The run is contained — the server keeps serving.
+
+| Field      | Type     | Notes          |
+| ---------- | -------- | -------------- |
+| `task`     | `string` | task name      |
+| `error`    | `string` | error message  |
+| `duration` | `number` | run time in ms |
+
+#### `task:skipped`
+
+Fires when a tick was dropped rather than run.
+
+| Field    | Type                           | Notes                                                                         |
+| -------- | ------------------------------ | ----------------------------------------------------------------------------- |
+| `task`   | `string`                       | task name                                                                     |
+| `reason` | `'overlap' \| 'lease-expired'` | previous run still going, or this node's scheduler lease lapsed between ticks |
+
+#### `task:leader`
+
+Fires when this node gains or loses the scheduler lease. See [Multiple processes](/docs/tasks/#multiple-processes).
+
+| Field      | Type             | Notes                                                            |
+| ---------- | ---------------- | ---------------------------------------------------------------- |
+| `acquired` | `boolean`        | whether this node now holds the lease                            |
+| `owner`    | `string`         | this node's instance id                                          |
+| `holder`   | `string \| null` | who holds it, when known — `null` if the lease could not be read |
 
 #### `email:sent`
 

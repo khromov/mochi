@@ -128,6 +128,40 @@ Binary fields (`Uint8Array` / `Buffer`) anywhere in a value round-trip transpare
 
 If a `storage` call throws, the cache degrades instead of failing the request: a read error recomputes via `fn` (reported as a `miss`), a write error returns the freshly computed value uncached, and a `delete` error is re-thrown to the caller. Every case also emits a `cache:error` event.
 
+### SQL storage
+
+`SqlStorage` keeps each entry in a database row, so several processes can share one cache — SQLite over a common volume, or Postgres across hosts. Like `FileStorage`, it needs no `serialize` / `deserialize`.
+
+```ts
+import { MochiCache, SqlStorage } from 'mochi-framework';
+
+export const pokemonCache = new MochiCache({
+  minTimeToStale: 10_000,
+  maxTimeToLive: 300_000,
+  storage: new SqlStorage({
+    url: process.env.CACHE_URL ?? 'sqlite://./.cache/cache.db',
+    maxAge: 300_000, // must be >= maxTimeToLive
+  }),
+});
+```
+
+The adapter is chosen from the URL: `sqlite://…` (or a path ending in `.db` / `.sqlite`) uses `bun:sqlite`, `postgres://…` uses `Bun.SQL`. MySQL is rejected up front. The table is created on first use and the schema is left alone afterwards.
+
+| Option          | Default           |                                                         |
+| --------------- | ----------------- | ------------------------------------------------------- |
+| `url`           | _(required)_      | `sqlite://…` or `postgres://…` connection string.       |
+| `table`         | `mochi_cache`     | Table name; must be a plain SQL identifier.             |
+| `maxAge`        | `600_000` (10min) | Rows older than this are deleted by the sweep.          |
+| `purgeInterval` | `60_000` (1min)   | Background sweep interval. `<= 0` disables the sweeper. |
+
+Binary fields round-trip as base64 inside the row and come back as `Uint8Array`. There is no blob-offload equivalent, so reach for `FileStorage` when values carry image-sized payloads. Call `dispose()` to stop the sweep and close the connection.
+
+<Callout type="warning">
+
+**In-flight de-duplication is still per-process**, exactly as with `FileStorage` — a shared backend keeps results consistent but does not collapse concurrent fetches across instances. Set `crossProcessInflight: true` on the cache to have peers defer to each other's in-flight recompute.
+
+</Callout>
+
 ### Subscribing to cache events
 
 `MochiCache` emits these events on `mochiEvents`:

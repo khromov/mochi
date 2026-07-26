@@ -457,6 +457,12 @@ export class ComponentRegistry {
   readonly development: boolean;
   /** Set by `fromManifest()`; distinguishes a prebuilt-manifest boot from a live, compile-on-demand one. */
   loadedFromManifest = false;
+  /**
+   * Build identity carried over from the manifest, when there was one. Stays null
+   * on a compile-on-demand boot — see `MochiManifest.buildId`.
+   */
+  buildId: string | null = null;
+  buildTime: number | null = null;
   readonly debugBarEnabled: boolean;
   readonly outDir: string;
   readonly assetPrefix: string;
@@ -2161,6 +2167,12 @@ export class ComponentRegistry {
     if (this.serverIslandScriptFile) {
       manifest.serverIslandScript = this.serverIslandScriptFile;
     }
+    if (this.buildId !== null) {
+      manifest.buildId = this.buildId;
+    }
+    if (this.buildTime !== null) {
+      manifest.buildTime = this.buildTime;
+    }
     return manifest;
   }
 
@@ -2175,6 +2187,8 @@ export class ComponentRegistry {
       assetPrefix: manifest.assetPrefix,
     });
     registry.loadedFromManifest = true;
+    registry.buildId = manifest.buildId ?? null;
+    registry.buildTime = manifest.buildTime ?? null;
 
     registry.islandBootstrapUrl = manifest.bootstrapUrl;
     registry.clientStats = manifest.stats;

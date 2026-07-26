@@ -8,6 +8,8 @@ import type { LocalImageAsset, MochiImageOptions } from './image/types';
 import type { MochiEmailOptions } from './email/types';
 import type { MochiCaptchaOptions } from './captcha/types';
 import type { MochiProcessor, MochiQueue, MochiQueueListeners, MochiQueueRuntimeOptions } from './queue';
+import type { MochiTaskContext, MochiTaskRunner, MochiTaskRuntimeOptions } from './tasks/tasks';
+import type { MochiSchedulerOptions } from './tasks/scheduler';
 import type { MochiRateLimitOptions } from './runtime/rateLimit';
 import type { MochiSvelteCompiler } from './compiler/svelteCompilerBackend';
 
@@ -345,6 +347,22 @@ export function isMochiQueue(value: unknown): value is MochiQueueConfig {
   return typeof value === 'object' && value !== null && (value as MochiQueueConfig).__mochiQueue === true;
 }
 
+/**
+ * Inert descriptor returned by `Mochi.task()` — mirrors `MochiQueueConfig`.
+ * Declaring a task arms nothing; `Mochi.serve({ tasks })` registers it, and the
+ * scheduler decides whether this node is the one that runs it.
+ */
+export interface MochiTaskConfig {
+  readonly __mochiTask: true;
+  readonly run: MochiTaskRunner;
+  readonly options: MochiTaskRuntimeOptions;
+  readonly on?: { error?: (error: Error, context: MochiTaskContext) => void };
+}
+
+export function isMochiTask(value: unknown): value is MochiTaskConfig {
+  return typeof value === 'object' && value !== null && (value as MochiTaskConfig).__mochiTask === true;
+}
+
 export type MochiRouteValue = MochiPageConfig | MochiApiConfig | MochiWsConfig | MochiSseConfig | MochiFileConfig | BunRouteValue;
 
 /** `stack` is only populated when the server runs with `development: true`. */
@@ -369,6 +387,19 @@ export interface MochiManifestComponent {
 
 export interface MochiManifest {
   version: 1;
+  /**
+   * Identifier for the build that produced this manifest, and when it was
+   * produced (epoch ms). Optional — a manifest written before these existed, or a
+   * dev-mode boot that compiles on demand and writes no manifest at all, simply
+   * has no build identity.
+   *
+   * Their one consumer is the task scheduler: a strictly newer `buildTime` lets a
+   * rolling deploy take the scheduler lease from the outgoing node immediately
+   * instead of idling for a full TTL. Unknown on either side just falls back to
+   * TTL expiry, so absence is always safe.
+   */
+  buildId?: string;
+  buildTime?: number;
   /** URL prefix under which framework client assets and the server island endpoint are served. */
   assetPrefix: string;
   bootstrapUrl: string | null;
@@ -511,6 +542,21 @@ export interface MochiServeOptions {
    * shutdown. A queue-only process is `Mochi.serve({ queues })` with no `routes`.
    */
   queues?: Record<string, MochiQueueConfig>;
+  /**
+   * Scheduled tasks to register with the server, keyed by task name. Each value is
+   * a `Mochi.task({ cron | at, run })` descriptor.
+   *
+   * Registering is not running: a `'cluster'`-scoped task (the default) runs on
+   * exactly one node, chosen by a lease every node contends for, so scaling to N
+   * replicas still fires it once. Configure that election via `scheduler`.
+   */
+  tasks?: Record<string, MochiTaskConfig>;
+  /**
+   * How scheduled tasks coordinate across processes — lease location, TTL,
+   * heartbeat, startup jitter. Ignored when no tasks are declared. Leader election
+   * defaults on in production and off in development.
+   */
+  scheduler?: MochiSchedulerOptions;
   fetch?: (req: Request, server: Server<undefined>) => Response | Promise<Response>;
   htmlShell?: string;
   /**
