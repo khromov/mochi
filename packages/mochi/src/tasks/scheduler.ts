@@ -74,17 +74,39 @@ const DEFAULT_LEASE_TTL = 60_000;
 const DEFAULT_STARTUP_JITTER = 30_000;
 const DEFAULT_DRAIN_TIMEOUT = 5_000;
 
-function resolveStore(options: MochiSchedulerOptions, defaultUrl: string): TaskLeaseStore {
-  const url = options.lease?.url ?? process.env.MOCHI_SCHEDULER_URL ?? defaultUrl;
-  return new SqlLeaseStore({ url, table: options.lease?.table, name: options.lease?.name });
+/**
+ * Resolve where the lease lives, and say whether that was an actual decision or
+ * just the fallback.
+ *
+ * The distinction matters because the fallback is the one configuration that can
+ * be wrong *silently*. A SQLite file under `outDir` is container-local, so three
+ * replicas each elect themselves, each runs the schedule, and nothing looks
+ * broken — the nightly job simply runs three times. Every other misconfiguration
+ * announces itself; this one doesn't, so the caller warns about it.
+ */
+function resolveStore(options: MochiSchedulerOptions, defaultUrl: string): { store: TaskLeaseStore; configured: boolean } {
+  const chosen = options.lease?.url ?? process.env.MOCHI_SCHEDULER_URL;
+  return {
+    store: new SqlLeaseStore({ url: chosen ?? defaultUrl, table: options.lease?.table, name: options.lease?.name }),
+    configured: chosen !== undefined,
+  };
 }
 
 /**
  * Start the scheduler. `defaultLeaseUrl` is the app-derived fallback location for
  * the SQLite lease file, used only when nothing more specific was configured.
  */
+/**
+ * Whether this app coordinates across processes at all. Shared with queue
+ * recovery so both answer the question the same way — one switch, one mental
+ * model, no app that elects a task leader but still recovers queues N times.
+ */
+export function resolveClusterCoordination(options: MochiSchedulerOptions, development: boolean): boolean {
+  return options.leader ?? !development;
+}
+
 export function startScheduler(options: MochiSchedulerOptions, development: boolean, defaultLeaseUrl: string): SchedulerRuntime {
-  const leaderEnabled = options.leader ?? !development;
+  const leaderEnabled = resolveClusterCoordination(options, development);
   const drainTimeout = options.drainTimeout ?? DEFAULT_DRAIN_TIMEOUT;
 
   if (!leaderEnabled) {
@@ -105,8 +127,20 @@ export function startScheduler(options: MochiSchedulerOptions, development: bool
   const heartbeatInterval = options.heartbeatInterval ?? Math.max(1_000, Math.floor(leaseTtl / 3));
   const startupJitter = options.startupJitter ?? DEFAULT_STARTUP_JITTER;
   const owner = getInstanceId();
-  const store = options.store ?? resolveStore(options, defaultLeaseUrl);
+  const resolved = options.store === undefined ? resolveStore(options, defaultLeaseUrl) : { store: options.store, configured: true };
+  const store = resolved.store;
   const ownsStore = options.store === undefined;
+
+  if (!resolved.configured) {
+    // Fires once at boot, and only when election is on and nobody chose where the
+    // lease lives. Single-instance apps see one line they can silence with
+    // `leader: false`; a fleet running on the default sees the one warning that
+    // tells them their nightly job is quietly running N times.
+    logger.warn(
+      `[task] no scheduler lease location configured — falling back to ${defaultLeaseUrl}. That file is local to this container, so every replica will elect itself and run cluster tasks. ` +
+        `Set MOCHI_SCHEDULER_URL (or scheduler.lease.url) to storage every replica shares, or set scheduler.leader: false if this app only ever runs one instance.`,
+    );
+  }
 
   let leader = false;
   let lastGoodHeartbeat = 0;

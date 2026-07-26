@@ -223,9 +223,13 @@ function startEntry(entry: TaskEntry): void {
       name: entry.name,
       timezone: entry.options.timezone,
       paused: entry.paused,
-      // Never hold a dying process open on a scheduled task; Bun.serve already
-      // keeps the event loop alive for as long as the server is listening.
-      unref: true,
+      // NOT unref'd. An unref'd timer doesn't hold the event loop open, and if
+      // nothing else does, it may simply never fire — so the task silently stops
+      // running. That is the opposite of what a scheduled task is for, and it is
+      // exactly how this wedged on Windows CI: with the loop otherwise idle,
+      // waiting on a cron tick waited forever. Shutdown doesn't need the help
+      // either — `stopAllTasks()` stops every job explicitly on the stop path,
+      // which is deterministic where unref is merely a hint.
       // A function form of `protect` still lets us report the skip. With `true`
       // croner would silently drop the tick.
       protect: entry.options.overlap

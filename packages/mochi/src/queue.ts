@@ -10,6 +10,8 @@ import { applyFilter } from './extensions';
 import { startupMilestoneReached } from './lifecycle';
 import { mochiEvents } from './events';
 import { logger } from './utils/log';
+import { getBuildIdentity } from './tasks/identity';
+import type { TaskLeaseStore } from './tasks/lease';
 
 /** Deliberately narrow — data, not bunqueue's ~40 mutation methods — so userland can't reach behind the abstraction. */
 export interface MochiJob<T> {
@@ -332,38 +334,72 @@ export const DEFAULT_RECOVERY_STALL_WARNING_MS = 30_000;
  * It is reported instead, because everything downstream (warmup, `mochi:ready`,
  * `serve()` resolving) waits behind it and would otherwise hang silently.
  *
- * TODO: single-flight recovery across processes. Recovery currently runs in
- * every process that boots, so an N-instance deploy (or a rolling restart where
- * old and new overlap) has N processes re-enqueueing the same work from the same
- * store — N copies of every stranded job. Today only single-instance apps are
- * safe, which the embedded-mode-only note in the queues docs already implies but
- * doesn't state.
+ * Recovery is single-flight across processes when a lease store is supplied.
+ * Without one it runs in every process that boots, so an N-instance deploy (or a
+ * rolling restart where old and new overlap) re-enqueues the same stranded work N
+ * times. One lease covers the whole pass rather than one per queue: recovery is a
+ * single startup event, the loop below is sequential anyway, and one process
+ * doing all of it is exactly the property we want.
  *
- * The intended shape, in order:
- *   1. Sleep a random jitter before touching the store — default 0–5000ms, with
- *      the bounds filterable per queue (`queue:recoveryJitterMinMs` /
- *      `queue:recoveryJitterMaxMs`, alongside the stall-warning filter below).
- *      Note this delays `serve()` resolving, so the default upper bound is a
- *      boot-latency tradeoff, and 0/0 must remain a clean opt-out.
- *   2. Try to acquire a lease named for the queue through a cross-process
- *      persistence layer that DOES NOT EXIST YET — it has to outlive any single
- *      process, so neither `pinGlobal` nor bunqueue's embedded store qualifies.
- *      Designing that store is the actual blocking work here.
- *   3. Run `recover()` only if the lease was won; otherwise skip it and say so
- *      at debug level. The lease needs a TTL so a process that dies mid-recovery
- *      doesn't lock the queue out of recovery forever — same reasoning as the
- *      in-flight marker lease in `cache.ts`.
+ * The lease is taken but deliberately never released. Its TTL *is* the
+ * "recovery already happened" window: a peer booting inside it skips, and a
+ * genuine restart later finds it expired and recovers again. Releasing on
+ * completion would instead invite the next process to redo the work we just did,
+ * which is the duplication this exists to prevent. A process that dies
+ * mid-recovery is covered by the same expiry rather than locking recovery out
+ * forever.
  *
- * The jitter is NOT the mechanism and must not ship on its own: it only narrows
- * the window in which two processes collide, and a narrower race is harder to
- * reproduce while being just as wrong. The lease in step 2 is what makes this
- * correct; step 1 exists only to keep N processes from stampeding it at once.
+ * The original sketch for this called for a random jitter before touching the
+ * store. That was written against a racy lock; `tryAcquire` decides the winner in
+ * one atomic statement, so jitter would buy no correctness and only delay
+ * `serve()` resolving. Omitted on purpose.
  */
-export async function runQueueRecovery(entries: Array<[string, { recover?: (queue: MochiQueue<never>) => void | Promise<void> }]>): Promise<void> {
-  for (const [name, config] of entries) {
-    if (!config.recover) {
-      continue;
+export const DEFAULT_RECOVERY_WINDOW_MS = 5 * 60_000;
+
+export interface QueueRecoveryOptions {
+  /** Cross-process lease. Omit to run recovery unconditionally in this process. */
+  store?: TaskLeaseStore;
+  /**
+   * How long winning recovery suppresses it in peers, ms. Should comfortably
+   * exceed a rolling deploy's overlap and stay well under the gap between real
+   * restarts. Default 5 minutes.
+   */
+  window?: number;
+}
+
+export async function runQueueRecovery(
+  entries: Array<[string, { recover?: (queue: MochiQueue<never>) => void | Promise<void> }]>,
+  recovery: QueueRecoveryOptions = {},
+): Promise<void> {
+  const recoverable = entries.flatMap(([name, config]) => (config.recover ? [[name, config.recover] as const] : []));
+  if (recoverable.length === 0) {
+    return;
+  }
+
+  if (recovery.store) {
+    // A store error must not skip recovery: losing the lease means a peer is
+    // handling it, but failing to *ask* means we don't know, and re-running
+    // recovery is the recoverable outcome where skipping it is not.
+    let won = true;
+    try {
+      // A fresh owner per attempt, deliberately NOT `getInstanceId()`. The lease's
+      // "we already hold it" clause exists for the scheduler, where re-acquiring
+      // your own lease is renewal. Recovery is not a renewable lease — it is a
+      // marker for "this work has already been done recently", and who did it is
+      // irrelevant. Claiming under the instance id would let the same process
+      // re-acquire and redo the work, which is the duplication being prevented.
+      const claim = await recovery.store.tryAcquire({ owner: crypto.randomUUID(), ...getBuildIdentity(), now: Date.now(), ttl: recovery.window ?? DEFAULT_RECOVERY_WINDOW_MS });
+      won = claim.acquired;
+    } catch (err) {
+      logger.warn(`[queue] could not reach the recovery lease store, recovering anyway — ${err instanceof Error ? err.message : String(err)}`);
     }
+    if (!won) {
+      logger.info(`[queue] these queues were already recovered recently — skipping recovery on this node.`);
+      return;
+    }
+  }
+
+  for (const [name, recover] of recoverable) {
     // Resolved per queue, not once for the run: a queue whose recovery reads a
     // slow store legitimately needs a longer threshold than its siblings.
     // A non-positive value opts that queue out of the warning entirely.
@@ -377,7 +413,7 @@ export async function runQueueRecovery(entries: Array<[string, { recover?: (queu
     // Never hold the process open on the warning alone.
     stallWarning?.unref?.();
     try {
-      await config.recover(getQueue(name) as MochiQueue<never>);
+      await recover(getQueue(name) as MochiQueue<never>);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       logger.error(`[queue] ${name}: recover() failed — ${message}`);

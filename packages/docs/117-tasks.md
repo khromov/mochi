@@ -109,6 +109,8 @@ The leader refreshes its lease every `heartbeatInterval`. If a refresh comes bac
 
 Set `scope: 'node'` for work that genuinely belongs on every process, like trimming a local cache. Node-scoped tasks never touch the lease.
 
+`leader` is the app's single cluster-coordination switch: it also makes [queue recovery](/docs/queues/#recovery-on-start) single-flight, so a rolling deploy doesn't re-enqueue the same stranded jobs once per replica. Leaving the lease location unset while `leader` is on logs a warning at boot, because that default is a container-local file — the one misconfiguration that otherwise fails silently.
+
 ### Deploys
 
 Build metadata lets a rolling deploy hand the schedule over immediately rather than idling for a full TTL: a node from a strictly newer build preempts an older one on sight, and an older build can never preempt a newer one. `mochi-framework build` stamps this automatically; set `MOCHI_BUILD_ID` in CI to record something meaningful, like a git sha.

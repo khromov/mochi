@@ -65,8 +65,9 @@ import { resetStartupMilestones } from './lifecycle';
 import type { MochiQueue, MochiQueueOptions, MochiQueueListeners, MochiProcessor } from './queue';
 import { createTask, getTask, clearTasks, listTasks } from './tasks/tasks';
 import type { MochiTaskHandle, MochiTaskOptions } from './tasks/tasks';
-import { startScheduler } from './tasks/scheduler';
+import { startScheduler, resolveClusterCoordination } from './tasks/scheduler';
 import type { SchedulerRuntime } from './tasks/scheduler';
+import { SqlLeaseStore } from './tasks/lease';
 import { setBuildIdentity } from './tasks/identity';
 import { finalizeCookieHeaders } from './runtime/cookies';
 import { makeRequestContextBuilder } from './runtime/requestSetup';
@@ -1889,7 +1890,30 @@ export class Mochi {
     // After the whole map is mounted, so a recover() callback may reach a
     // sibling queue. Awaited, so recovered jobs are enqueued before
     // `mochi:ready` fires and before serve() resolves.
-    await runQueueRecovery(Object.entries(options.queues ?? {}));
+    // Recovery re-enqueues stranded work, so N booting processes would re-enqueue
+    // it N times. It rides the same lease configuration as the task scheduler —
+    // one place to say "here is how this app coordinates across processes" — and
+    // is skipped entirely when election is off, where there is only one process by
+    // definition. `mochi:queue-recovery` is a separate row from the scheduler's,
+    // so holding one never blocks the other.
+    // POSIX-ified because this string is both a URL and something we print in the
+    // unconfigured-lease warning; a native Windows path renders with backslashes
+    // in both roles.
+    const defaultLeaseUrl = `sqlite://${toPosixPath(path.join(outDir, 'tasks.sqlite'))}`;
+    const recoveryLease = resolveClusterCoordination(options.scheduler ?? {}, development)
+      ? new SqlLeaseStore({
+          url: options.scheduler?.lease?.url ?? process.env.MOCHI_SCHEDULER_URL ?? defaultLeaseUrl,
+          table: options.scheduler?.lease?.table,
+          name: 'mochi:queue-recovery',
+        })
+      : undefined;
+    try {
+      await runQueueRecovery(Object.entries(options.queues ?? {}), { store: recoveryLease });
+    } finally {
+      await recoveryLease?.close().catch(() => {
+        // Boot continues regardless; the lease row is already written.
+      });
+    }
 
     // Register declared tasks, then start the scheduler. Registration is
     // synchronous and local; the scheduler's election runs on detached timers, so
@@ -1903,7 +1927,7 @@ export class Mochi {
       // Default the lease next to the build output. Correct for one node; a
       // multi-replica deployment must point `scheduler.lease.url` (or
       // MOCHI_SCHEDULER_URL) at storage every replica shares — see the tasks docs.
-      scheduler = startScheduler(options.scheduler ?? {}, development, `sqlite://${path.join(outDir, 'tasks.sqlite')}`);
+      scheduler = startScheduler(options.scheduler ?? {}, development, defaultLeaseUrl);
     }
 
     if (warmupHandlers.length > 0) {
