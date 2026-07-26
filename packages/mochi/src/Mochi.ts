@@ -1353,7 +1353,21 @@ export class Mochi {
         if (propsJson === null) {
           return new Response('Invalid props', { status: 403 });
         }
-        decodedProps = devalueParse(propsJson) as Record<string, unknown>;
+        // A token can unseal and still not carry a well-formed envelope — a
+        // deploy that changed the envelope shape leaves old tokens in flight,
+        // and the trailing base64 character has unused bits, so several distinct
+        // tokens decode to the same ciphertext. Degrade to the same 403 as a bad
+        // signature rather than throwing out of the handler as a 500.
+        let decoded: unknown;
+        try {
+          decoded = devalueParse(propsJson);
+        } catch {
+          return new Response('Invalid props', { status: 403 });
+        }
+        if (decoded === null || typeof decoded !== 'object') {
+          return new Response('Invalid props', { status: 403 });
+        }
+        decodedProps = decoded as Record<string, unknown>;
       } else {
         decodedProps = {};
       }
