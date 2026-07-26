@@ -33,11 +33,11 @@ describe('per-demo llms.txt routes', () => {
     // local image (the Image demo's `hero.jpg`). The build-time image loader
     // probes intrinsic dimensions with `new Bun.Image().metadata()` — a native
     // decode. Run *inside* a `Bun.build` pass under the `bun test` runtime, that
-    // decode trips a Bun bundler EISDIR bug in the next pass (the client bundle),
-    // the same class of bug `runIsolatedBuild` exists to dodge. Real `bun run`
-    // builds (dev + `mochi-framework build`) are unaffected, so we only need to
-    // neutralize the native decode here: stub `Bun.Image` with a metadata-only
-    // fake (this test never inspects image dimensions), restored in `afterAll`.
+    // decode can trip the Bun bundler bug worked around in bunfig.toml, in the
+    // next pass (the client bundle). Real `bun run` builds (dev +
+    // `mochi-framework build`) are unaffected, so we only need to neutralize the
+    // native decode here: stub `Bun.Image` with a metadata-only fake (this test
+    // never inspects image dimensions), restored in `afterAll`.
     // @ts-expect-error minimal metadata-only stub, not the full Bun.Image type
     Bun.Image = class {
       constructor(_bytes: unknown) {}

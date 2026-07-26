@@ -129,17 +129,22 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     mkdirSync(path.join(outDir, 'svelte-css'), { recursive: true });
 
     // Kick off the compile-independent work now so it overlaps the compile
-    // phases; both promises are awaited before the manifest. The `.catch(() => {})`
-    // guards only mark a rejection as handled in case compileAll throws first —
+    // phases; the promise is awaited before the manifest. The `.catch(() => {})`
+    // guard only marks a rejection as handled in case compileAll throws first —
     // the real error still surfaces at the trailing `await`. `timed` wraps the
-    // work itself (not the trailing await), so the phase line reports each
+    // work itself (not the trailing await), so the phase line reports the
     // phase's real duration rather than the residual wait after the overlap.
     const serverIslandScriptPromise = timed('island-script', () => buildInlineWebComponent('./web-components/ServerIsland.ts'));
     serverIslandScriptPromise.catch(() => {});
-    // Copy publicDir into <outDir>/public and build the URL→disk map. First
-    // ensure no public file collides with a user-declared route, so deploying
-    // never silently drops assets.
-    const publicPipelinePromise = timed('public', async () => {
+    // The build never copies publicDir — the runtime serves static files straight
+    // from it, in production as in development. What only the build can do is
+    // prove no public file shadows a declared route, so a deploy never silently
+    // drops an asset. The runtime's own check (registerPublicRoutes) stays a
+    // warn-and-skip on purpose: it must not refuse to boot, and it covers the
+    // case this one can't — a file dropped into publicDir after the build.
+    // Awaited inline (a glob, no copy) so a collision fails in milliseconds
+    // rather than after the whole compile.
+    const publicFileCount = await timed('public', async () => {
       const publicSrc = await scanPublicDir(publicDir);
       const conflicts: string[] = [];
       for (const urlPath of publicSrc.keys()) {
@@ -157,23 +162,8 @@ export async function build(options: MochiBuildOptions): Promise<void> {
             `\nRemove the file from ${publicDir} or rename the route.`,
         );
       }
-      const publicFiles = new Map<string, string>();
-      // Copy in bounded batches — public/ can hold tens of thousands of files,
-      // and an unbounded Promise.all over Bun.write would exhaust file descriptors.
-      const copyEntries = [...publicSrc];
-      const COPY_BATCH = 64;
-      for (let i = 0; i < copyEntries.length; i += COPY_BATCH) {
-        await Promise.all(
-          copyEntries.slice(i, i + COPY_BATCH).map(async ([urlPath, srcPath]) => {
-            const destPath = path.join(outDir, 'public', ...urlPath.split('/').filter(Boolean));
-            await Bun.write(destPath, Bun.file(srcPath));
-            publicFiles.set(urlPath, destPath);
-          }),
-        );
-      }
-      return publicFiles;
+      return publicSrc.size;
     });
-    publicPipelinePromise.catch(() => {});
 
     const svelteConfig = await loadSvelteConfig(options.svelteConfigPath);
     const registry = new ComponentRegistry({
@@ -275,9 +265,6 @@ export async function build(options: MochiBuildOptions): Promise<void> {
       rmSync(path.join(cssDir, raw));
     }
 
-    const publicFiles = await publicPipelinePromise;
-    registry.setPublicFiles(publicFiles);
-
     // Prebuilt (started before compilation) framework ServerIsland inline
     // web-component script — the production runtime loads it from disk instead
     // of running Bun.build at boot.
@@ -292,7 +279,6 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     await Bun.write(manifestPath, JSON.stringify(manifest, null, 2));
 
     const clientFileCount = Object.keys(manifest.clientFiles).length;
-    const publicFileCount = publicFiles.size;
     const phaseSummary = phases.map((p) => `${p.name} ${formatDuration(p.ms)}`).join(' · ');
     logger.info(`build: phases — ${phaseSummary} (client bundle ×${clientBundleCount}, ${formatDuration(clientBundleMs)})`);
     const elapsed = formatDuration(performance.now() - startedAt);
@@ -354,7 +340,9 @@ function printRouteTree(routes: RouteEntry[], stats: Map<string, { ssrSizeBytes:
   }
 
   const rows = routes.map(({ pattern, kind, componentPath }) => {
-    const s = componentPath ? stats.get(componentPath) : undefined;
+    // `compile:complete` reports resolved absolute paths; route registrations
+    // are whatever the user wrote (usually './src/X.svelte').
+    const s = componentPath ? stats.get(path.resolve(componentPath)) : undefined;
     return { pattern, kind, hyd: s?.hydratableCount ?? null, ssr: s ? prettyBytes(s.ssrSizeBytes) : null };
   });
 

@@ -499,7 +499,7 @@ Widening the regex only decides which files reach the loader — each is still d
 
 #### `image:localAssetFilename`
 
-Rename the content-hashed file a local image import emits under `<outDir>/assets/`. The default is `<slug>-<hash>.<ext>`; the context carries the `sourcePath`, `hash`, `ext`, `format`, and intrinsic `width`/`height`. The filter runs in **both** build passes, so it must be deterministic — a non-deterministic name would make the SSR and client bundles disagree on the URL. Keep the result a single path segment (the built-in `/asset/:filename` route serves one segment). Sync.
+Rename the content-hashed file a local image import emits under `<outDir>/assets/`. The default is `<slug>-<hash>.<ext>`; the context carries the `sourcePath`, `hash`, `ext`, `format`, and intrinsic `width`/`height`. The filter runs in **both** build passes, so it must be deterministic — a non-deterministic name would make the SSR and client bundles disagree on the URL. The result must be a bare filename: it renames the asset, it can't move it. A path separator or `..` throws a build error — use `image:localAssetUrl` to change where the asset is served from. Sync.
 
 ```ts
 await Mochi.serve({
