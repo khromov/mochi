@@ -18,12 +18,11 @@
   <p>
     The task is declared as <code>tasks: {'{'} 'demo-heartbeat': … }</code> in <code>Mochi.serve()</code> with a
     <code>'*/5 * * * * *'</code> pattern. Initial state comes from <code>serverProps</code>; a
-    <code>Mochi.sse()</code> route subscribed to the <code>task:run</code> event then pushes each tick live. The countdown
-    reads <code>Mochi.getTask('demo-heartbeat').nextRun()</code>.
+    <code>Mochi.sse()</code> route subscribed to the <code>task:run</code> event then pushes each tick live. The countdown reads
+    <code>Mochi.getTask('demo-heartbeat').nextRun()</code>.
   </p>
   <p>
-    Run this app on several nodes and the schedule still fires once: each node contends for a lease, and only the winner
-    runs <code>'cluster'</code>-scoped tasks.
+    Run this app on several nodes and the schedule still fires once: each node contends for a lease, and only the winner runs <code>'cluster'</code>-scoped tasks.
   </p>
   <TaskWidget {initial} mochi:hydrate />
 </DemoPage>

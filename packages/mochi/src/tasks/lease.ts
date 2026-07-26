@@ -149,7 +149,9 @@ export class SqlLeaseStore implements TaskLeaseStore {
 
   async read(): Promise<LeaseRecord | null> {
     await this.init();
-    const rows = await this.driver.query<LeaseRow>(`SELECT name, owner, build_id, build_time, acquired_at, heartbeat_at FROM ${this.table} WHERE name = $name`, { name: this.name });
+    const rows = await this.driver.query<LeaseRow>(`SELECT name, owner, build_id, build_time, acquired_at, heartbeat_at FROM ${this.table} WHERE name = $name`, {
+      name: this.name,
+    });
     const row = rows[0];
     return row === undefined ? null : toRecord(row);
   }

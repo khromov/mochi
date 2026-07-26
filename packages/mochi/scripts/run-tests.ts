@@ -10,6 +10,10 @@ await runTests({
     // event outright, and a dropped event is unrecoverable: the test waits out
     // its 30s timeout. Running it after the parallel batch removes the load.
     'src/liveReloadFilter.test.ts',
+    // Spawns two full `Mochi.serve()` subprocesses and reasons about lease TTLs in
+    // wall-clock time, so it is both a heavy load spike and sensitive to being
+    // starved itself. Run outside the parallel batch for the same reason as above.
+    'src/serveTasksFailover.test.ts',
   ],
   // See testing.ts `windowsSkip`. Both suites' logic is OS-agnostic and fully
   // covered on Linux/macOS.

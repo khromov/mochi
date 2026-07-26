@@ -292,8 +292,14 @@ export async function drainTasks(timeoutMs: number): Promise<void> {
   }
   let timer: ReturnType<typeof setTimeout> | undefined;
   const budget = new Promise<void>((resolve) => {
+    // Deliberately NOT unref'd, unlike every other timer in the framework. Those
+    // are periodic background timers that must never hold the process open; this
+    // one is a deadline someone is awaiting. While we wait on a genuinely stuck
+    // run, this timer is the only thing keeping the loop alive — unref it and the
+    // loop goes idle, the timeout never fires, and `drainTasks` hangs forever,
+    // which is the exact failure the budget exists to prevent. It is cleared the
+    // moment the race settles, so it can never extend shutdown past `timeoutMs`.
     timer = setTimeout(resolve, timeoutMs);
-    timer.unref?.();
   });
   const raced = await Promise.race([pending.then(() => 'drained' as const), budget.then(() => 'timeout' as const)]);
   clearTimeout(timer);
