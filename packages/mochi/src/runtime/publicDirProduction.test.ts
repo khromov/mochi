@@ -8,6 +8,7 @@ import path from 'node:path';
 import type { Server } from 'bun';
 import { build } from '../cli/build';
 import { Mochi } from '../Mochi';
+import { logger } from '../utils/log';
 import type { MochiManifest } from '../types';
 
 const RM_OPTS = { recursive: true, force: true, maxRetries: 5, retryDelay: 100 } as const;
@@ -22,6 +23,7 @@ describe('production serves static files from publicDir', () => {
   let outDir: string;
   let manifest: MochiManifest;
   let server: Server<undefined> | undefined;
+  let warnings: string[];
 
   beforeAll(async () => {
     publicDir = tempDir('.mochi-public-prod-src-');
@@ -39,7 +41,16 @@ describe('production serves static files from publicDir', () => {
     writeFileSync(path.join(publicDir, 'late.txt'), LATE_TXT);
     writeFileSync(path.join(publicDir, 'shadowed.txt'), 'FROM_THE_FILE');
 
-    server = await Mochi.serve({ port: 0, development: false, warmup: false, logger: { enabled: false }, outDir, publicDir, routes });
+    warnings = [];
+    const originalWarn = logger.warn;
+    logger.warn = (...args: unknown[]) => {
+      warnings.push(args.map(String).join(' '));
+    };
+    try {
+      server = await Mochi.serve({ port: 0, development: false, warmup: false, logger: { enabled: false }, outDir, publicDir, routes });
+    } finally {
+      logger.warn = originalWarn;
+    }
   });
 
   afterAll(() => {
@@ -51,6 +62,14 @@ describe('production serves static files from publicDir', () => {
   test('the build copies nothing and names no static file in the manifest', () => {
     expect(existsSync(path.join(outDir, 'public'))).toBe(false);
     expect(Object.keys(manifest)).not.toContain('publicFiles');
+    // A count, not a list — enough for the missing-publicDir check at boot.
+    expect(manifest.publicFileCount).toBe(1);
+  });
+
+  test('a publicDir that did ship draws no warning', () => {
+    // The other half of publicDirMissingWarning.test.ts: the check has to stay
+    // silent on a healthy boot, or it trains people to ignore it.
+    expect(warnings.filter((w) => w.includes('every static file will 404'))).toEqual([]);
   });
 
   test('a file present at build time serves', async () => {

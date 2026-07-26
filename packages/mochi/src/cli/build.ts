@@ -276,6 +276,10 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     // Write manifest
     const manifestPath = path.join(outDir, 'manifest.json');
     const manifest = registry.toManifest();
+    // Recorded here rather than in toManifest() because the registry no longer
+    // holds public files at all — this is the build's own count, and the only
+    // evidence at boot that static files existed when the build ran.
+    manifest.publicFileCount = publicFileCount;
     await Bun.write(manifestPath, JSON.stringify(manifest, null, 2));
 
     const clientFileCount = Object.keys(manifest.clientFiles).length;
