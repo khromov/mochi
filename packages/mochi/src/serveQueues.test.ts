@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import type { Server } from 'bun';
 import { Mochi } from './Mochi';
@@ -79,6 +79,16 @@ describe('Mochi.serve({ queues })', () => {
     expect(processed).toEqual(['alice']);
     expect(done.jobName).toBe('notify');
     expect(done.result).toEqual({ sent: true });
+  });
+
+  test('a queue with no recover() never builds the recovery lease', () => {
+    // The lease exists to single-flight `recover()` across replicas. With none
+    // declared there is nothing to single-flight, and building the store anyway
+    // would create a SQLite file this app never reads — a crash, not just waste,
+    // on a read-only filesystem.
+    for (const suffix of ['', '-wal', '-shm']) {
+      expect(existsSync(path.join(outDir, `tasks.sqlite${suffix}`))).toBe(false);
+    }
   });
 
   test('getQueue() for a name never declared in serve is fatal', () => {

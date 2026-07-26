@@ -367,14 +367,26 @@ export interface QueueRecoveryOptions {
   window?: number;
 }
 
-export async function runQueueRecovery(
-  entries: Array<[string, { recover?: (queue: MochiQueue<never>) => void | Promise<void> }]>,
-  recovery: QueueRecoveryOptions = {},
-): Promise<void> {
-  const recoverable = entries.flatMap(([name, config]) => (config.recover ? [[name, config.recover] as const] : []));
-  if (recoverable.length === 0) {
+type QueueRecoveryEntries = Array<[string, { recover?: (queue: MochiQueue<never>) => void | Promise<void> }]>;
+
+/**
+ * Whether any of these queues declares a `recover()` — the only reason recovery,
+ * and the cross-process lease that single-flights it, exists at all.
+ *
+ * Exported so the caller can decide whether to *build* that lease before calling
+ * in. `SqlLeaseStore` opens its database in its constructor, so constructing one
+ * for a map with nothing to recover creates a SQLite file the app never reads.
+ * Both sides asking the same function keeps the two conditions from drifting.
+ */
+export function hasRecoverableQueues(entries: QueueRecoveryEntries): boolean {
+  return entries.some(([, config]) => config.recover !== undefined);
+}
+
+export async function runQueueRecovery(entries: QueueRecoveryEntries, recovery: QueueRecoveryOptions = {}): Promise<void> {
+  if (!hasRecoverableQueues(entries)) {
     return;
   }
+  const recoverable = entries.flatMap(([name, config]) => (config.recover ? [[name, config.recover] as const] : []));
 
   if (recovery.store) {
     // A store error must not skip recovery: losing the lease means a peer is

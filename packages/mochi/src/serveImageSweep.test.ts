@@ -1,7 +1,6 @@
 import { afterAll, describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
-import { Database } from 'bun:sqlite';
 import type { Server } from 'bun';
 import { Mochi } from './Mochi';
 import { mochiEvents } from './events';
@@ -64,15 +63,12 @@ describe('the image janitor as a scheduled task', () => {
     // themselves — all to coordinate work that is per-process by definition.
     await Bun.sleep(150); // ample for a zero-jitter election to have landed
     expect(elections).toHaveLength(0);
-    const db = new Database(path.join(outDir, 'tasks.sqlite'), { create: true, readonly: false });
-    try {
-      const table = db.query<{ name: string }, []>(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'mochi_lease'`).all();
-      if (table.length > 0) {
-        const leader = db.query<{ name: string }, []>(`SELECT name FROM mochi_lease WHERE name = 'mochi:tasks:leader'`).all();
-        expect(leader).toHaveLength(0);
-      }
-    } finally {
-      db.close();
+
+    // Nothing here needs a lease: no cluster task to elect for, and no queue to
+    // recover. An app in this shape must not touch the filesystem for one —
+    // a read-only rootfs would turn "nothing to coordinate" into a boot crash.
+    for (const suffix of ['', '-wal', '-shm']) {
+      expect(existsSync(path.join(outDir, `tasks.sqlite${suffix}`))).toBe(false);
     }
   }, 10_000);
 

@@ -60,7 +60,7 @@ import { resolveWarmupEnabled, markWarmupRequest, isWarmablePattern } from './ru
 import { createErrorResponder, DEFAULT_ERROR_PAGE_PATH } from './runtime/errors';
 import { requestContext } from './runtime/requestContext';
 import type { MochiRequestContext } from './runtime/requestContext';
-import { createQueue, getQueue, closeAllQueueResources, runQueueRecovery } from './queue';
+import { createQueue, getQueue, closeAllQueueResources, hasRecoverableQueues, runQueueRecovery } from './queue';
 import { resetStartupMilestones } from './lifecycle';
 import type { MochiQueue, MochiQueueOptions, MochiQueueListeners, MochiProcessor } from './queue';
 import { createTask, createInternalTask, getTask, clearTasks, listTasks } from './tasks/tasks';
@@ -1916,15 +1916,23 @@ export class Mochi {
     // unconfigured-lease warning; a native Windows path renders with backslashes
     // in both roles.
     const defaultLeaseUrl = `sqlite://${toPosixPath(path.join(outDir, 'tasks.sqlite'))}`;
-    const recoveryLease = resolveClusterCoordination(options.scheduler ?? {}, development)
-      ? new SqlLeaseStore({
-          url: options.scheduler?.lease?.url ?? process.env.MOCHI_SCHEDULER_URL ?? defaultLeaseUrl,
-          table: options.scheduler?.lease?.table,
-          name: 'mochi:queue-recovery',
-        })
-      : undefined;
+    const queueEntries = Object.entries(options.queues ?? {});
+    // Also gated on there being something to recover. `runQueueRecovery` returns
+    // early for a map with no `recover()`, but the store has to be *constructed*
+    // to be passed in — and `SqlLeaseStore` opens its database in its constructor.
+    // Without this an app with no recoverable queues still creates `tasks.sqlite`
+    // at boot and never reads it, which on a read-only filesystem is not waste but
+    // a crash.
+    const recoveryLease =
+      resolveClusterCoordination(options.scheduler ?? {}, development) && hasRecoverableQueues(queueEntries)
+        ? new SqlLeaseStore({
+            url: options.scheduler?.lease?.url ?? process.env.MOCHI_SCHEDULER_URL ?? defaultLeaseUrl,
+            table: options.scheduler?.lease?.table,
+            name: 'mochi:queue-recovery',
+          })
+        : undefined;
     try {
-      await runQueueRecovery(Object.entries(options.queues ?? {}), { store: recoveryLease });
+      await runQueueRecovery(queueEntries, { store: recoveryLease });
     } finally {
       await recoveryLease?.close().catch(() => {
         // Boot continues regardless; the lease row is already written.
