@@ -12,9 +12,15 @@
  * blanket-hide real findings and `-ac` would simply learn that redirects are
  * normal. We match everything and decide what counts as noise ourselves.
  *
- *   bun run fuzz:http              # dev server on :4444
- *   bun run fuzz:http -- --prod    # prebuilt server, strict leak rule
- *   FUZZ_WORDLIST=/path/to/seclists.txt bun run fuzz:http
+ * Three wordlists, each sent only to the passes it suits (see `Pass.lists`):
+ * `mochi-paths.txt` and `payloads.txt` are curated and in-repo; the general
+ * discovery list is fetched once from SecLists and cached, because macOS
+ * packages none and ffuf bundles none.
+ *
+ *   bun run fuzz:http                   # dev server on :4444, all three lists
+ *   bun run fuzz:http -- --prod         # rebuilds, then sweeps the built bundle
+ *   FUZZ_DISCOVERY=off bun run fuzz:http            # curated only, seconds not minutes
+ *   FUZZ_DISCOVERY=/path/to/list.txt bun run fuzz:http
  */
 import { mkdirSync, rmSync, readFileSync, existsSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -24,8 +30,17 @@ const SITE_DIR = path.resolve(import.meta.dir, '..');
 const PORT = Number(process.env.FUZZ_PORT ?? 4444);
 const BASE = `http://127.0.0.1:${PORT}`;
 const OUT = process.env.FUZZ_OUT ?? path.join(REPO_ROOT, '.mochi-fuzz');
-const DEFAULT_WORDLIST = path.join(import.meta.dir, 'fuzz', 'wordlists', 'mochi.txt');
+// Deliberately NOT under OUT, which is wiped at the start of every run — a
+// 1 MB download should survive between sweeps. Covered by the `.mochi-*` ignore.
+const CACHE = path.join(REPO_ROOT, '.mochi-fuzz-cache');
+const WORDLIST_DIR = path.join(import.meta.dir, 'fuzz', 'wordlists');
 const PROD = process.argv.includes('--prod');
+
+// SecLists is not packaged for macOS (no `seclists` or `dirb` formula) and ffuf
+// ships no wordlists, so the general discovery list is fetched once and cached.
+// Override with FUZZ_DISCOVERY=<path|url|off>; `off` runs curated-only.
+const DISCOVERY_SOURCE =
+  process.env.FUZZ_DISCOVERY ?? 'https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/Web-Content/raft-large-words.txt';
 
 // Kept in sync by hand with the deny-list in httpFuzz.fuzz.test.ts. The
 // duplication is deliberate: a shared module under packages/mochi/src would be
@@ -45,6 +60,7 @@ interface FfufResult {
   status: number;
   length: number;
   duration: number;
+  url?: string;
   resultfile?: string;
 }
 
@@ -56,11 +72,18 @@ interface Finding {
   detail?: string;
 }
 
+type Wordlist = 'mochi-paths' | 'payloads' | 'discovery';
+
 interface Pass {
   name: string;
   /** Only a path pass can meaningfully expose a file, so the sensitive-path
    * rule is scoped to those -- `?.env=1` returning 200 is just the homepage. */
   isPath: boolean;
+  /** Which lists this pass is run against, once each. Path passes get the
+   * curated internals plus the general discovery list; value passes get the
+   * injection payloads. Sending a discovery list to a header pass, or an
+   * injection payload to a path pass, is mostly wasted requests. */
+  lists: Wordlist[];
   args: string[];
 }
 
@@ -73,19 +96,22 @@ interface Pass {
 // Following redirects with `-r` would be the other fix, but it would let the
 // fuzzer chase an off-site Location (e.g. /discord -> discord.com) and issue
 // requests to third parties, which a local sweep has no business doing.
+const PATH_LISTS: Wordlist[] = ['mochi-paths', 'payloads', 'discovery'];
+
 const PASSES: readonly Pass[] = [
-  { name: 'path-root', isPath: true, args: ['-u', `${BASE}/FUZZ`] },
-  { name: 'path-root-slash', isPath: true, args: ['-u', `${BASE}/FUZZ/`] },
-  { name: 'path-mochi', isPath: true, args: ['-u', `${BASE}/_mochi/FUZZ`] },
-  { name: 'path-mochi-slash', isPath: true, args: ['-u', `${BASE}/_mochi/FUZZ/`] },
-  { name: 'query-island-props', isPath: false, args: ['-u', `${BASE}/_mochi/island/Echo?props=FUZZ`] },
-  { name: 'query-image-payload', isPath: false, args: ['-u', `${BASE}/_mochi/image/fuzz.png?p=FUZZ`] },
-  { name: 'query-param-name', isPath: false, args: ['-u', `${BASE}/?FUZZ=1`] },
-  { name: 'header-cookie', isPath: false, args: ['-u', `${BASE}/`, '-H', 'Cookie: FUZZ'] },
-  { name: 'header-forwarded-host', isPath: false, args: ['-u', `${BASE}/`, '-H', 'X-Forwarded-Host: FUZZ'] },
+  { name: 'path-root', isPath: true, lists: PATH_LISTS, args: ['-u', `${BASE}/FUZZ`] },
+  { name: 'path-root-slash', isPath: true, lists: PATH_LISTS, args: ['-u', `${BASE}/FUZZ/`] },
+  { name: 'path-mochi', isPath: true, lists: PATH_LISTS, args: ['-u', `${BASE}/_mochi/FUZZ`] },
+  { name: 'path-mochi-slash', isPath: true, lists: PATH_LISTS, args: ['-u', `${BASE}/_mochi/FUZZ/`] },
+  { name: 'query-island-props', isPath: false, lists: ['payloads'], args: ['-u', `${BASE}/_mochi/island/Echo?props=FUZZ`] },
+  { name: 'query-image-payload', isPath: false, lists: ['payloads'], args: ['-u', `${BASE}/_mochi/image/fuzz.png?p=FUZZ`] },
+  { name: 'query-param-name', isPath: false, lists: ['payloads'], args: ['-u', `${BASE}/?FUZZ=1`] },
+  { name: 'header-cookie', isPath: false, lists: ['payloads'], args: ['-u', `${BASE}/`, '-H', 'Cookie: FUZZ'] },
+  { name: 'header-forwarded-host', isPath: false, lists: ['payloads'], args: ['-u', `${BASE}/`, '-H', 'X-Forwarded-Host: FUZZ'] },
   {
     name: 'header-origin',
     isPath: false,
+    lists: ['payloads'],
     args: ['-u', `${BASE}/demos/login/`, '-X', 'POST', '-d', 'username=a&password=b', '-H', 'Content-Type: application/x-www-form-urlencoded', '-H', 'Origin: FUZZ'],
   },
 ];
@@ -100,33 +126,68 @@ const SENSITIVE =
 // is what actually proves the gate holds.
 const DEV_GATED = /^_(?:heapsnapshot|profiler)/i;
 
-function preflight(): string {
+function preflight(): void {
   if (!Bun.which('ffuf')) {
     console.error('ffuf not found on PATH. Install it with:\n\n  brew install ffuf\n\nThen re-run. (Tested against ffuf 2.1.0.)');
     process.exit(1);
   }
-  const wordlist = process.env.FUZZ_WORDLIST ?? DEFAULT_WORDLIST;
-  if (!existsSync(wordlist)) {
-    console.error(`wordlist not found: ${wordlist}`);
-    process.exit(1);
-  }
-  if (PROD && !existsSync(path.join(SITE_DIR, '.mochi'))) {
-    console.error('--prod needs a prebuilt site. Run `bun run build` first.');
-    process.exit(1);
-  }
-  return wordlist;
 }
 
-// ffuf has no comment syntax, so strip ours into a temp copy it can read.
-function materializeWordlist(src: string): string {
+// Always rebuild for --prod rather than checking that `.mochi` merely exists:
+// that check passes for an arbitrarily stale bundle, so the sweep would report
+// on code that is no longer in the tree while looking perfectly healthy. The
+// build is a few seconds and makes "what got swept" unambiguous.
+function buildForProd(): void {
+  console.log('\nBuilding the site (--prod sweeps the built bundle, so it is rebuilt every run)...');
+  const started = Date.now();
+  const proc = Bun.spawnSync(['bun', 'run', 'build'], { cwd: SITE_DIR, stdout: 'inherit', stderr: 'inherit' });
+  if (proc.exitCode !== 0) {
+    console.error(`\nbuild failed (exit ${proc.exitCode}) — not sweeping a stale bundle.`);
+    process.exit(1);
+  }
+  console.log(`  built in ${((Date.now() - started) / 1000).toFixed(1)}s`);
+}
+
+// ffuf has no comment syntax, so strip ours into a copy it can read.
+function materialize(src: string, name: string): { path: string; count: number } {
   const words = readFileSync(src, 'utf8')
     .split('\n')
     .map((l) => l.trim())
     .filter((l) => l.length > 0 && !l.startsWith('#'));
-  const dest = path.join(OUT, 'wordlist.txt');
+  const dest = path.join(OUT, `wordlist-${name}.txt`);
   writeFileSync(dest, words.join('\n') + '\n');
-  console.log(`  wordlist: ${words.length} entries from ${path.relative(REPO_ROOT, src)}`);
-  return dest;
+  return { path: dest, count: words.length };
+}
+
+async function resolveDiscovery(): Promise<string | null> {
+  if (DISCOVERY_SOURCE === 'off') {
+    return null;
+  }
+  if (!DISCOVERY_SOURCE.startsWith('http')) {
+    if (!existsSync(DISCOVERY_SOURCE)) {
+      console.error(`FUZZ_DISCOVERY path not found: ${DISCOVERY_SOURCE}`);
+      process.exit(1);
+    }
+    return DISCOVERY_SOURCE;
+  }
+  mkdirSync(CACHE, { recursive: true });
+  const cached = path.join(CACHE, path.basename(new URL(DISCOVERY_SOURCE).pathname));
+  if (existsSync(cached)) {
+    return cached;
+  }
+  console.log(`  fetching discovery wordlist (once, then cached in ${path.relative(REPO_ROOT, CACHE)}/)\n    ${DISCOVERY_SOURCE}`);
+  try {
+    const res = await fetch(DISCOVERY_SOURCE, { signal: AbortSignal.timeout(60_000) });
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+    writeFileSync(cached, await res.text());
+    return cached;
+  } catch (err) {
+    // Offline is not a reason to abandon the sweep — the curated lists still run.
+    console.warn(`  ! could not fetch the discovery wordlist (${String(err)}); continuing with the curated lists only`);
+    return null;
+  }
 }
 
 let serverProc: Bun.Subprocess | undefined;
@@ -165,10 +226,19 @@ async function waitForReady(timeoutMs: number): Promise<void> {
   throw new Error(`server did not become ready on ${BASE} within ${timeoutMs}ms`);
 }
 
-function runPass(pass: Pass, wordlist: string): void {
-  const jsonOut = path.join(OUT, `${pass.name}.json`);
-  const bodyDir = path.join(OUT, `${pass.name}-bodies`);
-  mkdirSync(bodyDir, { recursive: true });
+// Dumping every response body is fine for a 100-entry curated list and ruinous
+// for a 120k-entry discovery list (gigabytes, one file per request). Above this
+// size we skip -od and re-fetch only the interesting handful during triage.
+const DUMP_MAX_WORDS = 2_000;
+
+function runPass(pass: Pass, list: Wordlist, wordlist: string, count: number): { jsonOut: string; bodyDir: string | null } {
+  const label = `${pass.name}--${list}`;
+  const jsonOut = path.join(OUT, `${label}.json`);
+  const dump = count <= DUMP_MAX_WORDS;
+  const bodyDir = dump ? path.join(OUT, `${label}-bodies`) : null;
+  if (bodyDir) {
+    mkdirSync(bodyDir, { recursive: true });
+  }
   const args = [
     'ffuf',
     '-w',
@@ -184,15 +254,15 @@ function runPass(pass: Pass, wordlist: string): void {
     'json',
     '-o',
     jsonOut,
-    '-od',
-    bodyDir,
+    ...(bodyDir ? ['-od', bodyDir] : []),
     '-s',
     ...pass.args,
   ];
   const proc = Bun.spawnSync(args, { stdout: 'pipe', stderr: 'pipe' });
   if (proc.exitCode !== 0) {
-    console.error(`  ! ffuf pass ${pass.name} exited ${proc.exitCode}: ${proc.stderr.toString().slice(0, 400)}`);
+    console.error(`  ! ffuf ${label} exited ${proc.exitCode}: ${proc.stderr.toString().slice(0, 400)}`);
   }
+  return { jsonOut, bodyDir };
 }
 
 function bodyFor(r: FfufResult, bodyDir: string): string {
@@ -209,12 +279,39 @@ function bodyFor(r: FfufResult, bodyDir: string): string {
   }
 }
 
-function triage(pass: Pass, results: FfufResult[], bodyDir: string): { findings: Finding[]; baseline: Map<number, number> } {
+// Statuses a path sweep produces in bulk and that carry no body worth scanning.
+// Anything else is "interesting" enough to be worth a re-fetch when the pass ran
+// too large to dump bodies wholesale.
+const BORING = new Set([301, 308, 404]);
+const MAX_REFETCH = 200;
+const WIRE_REJECT = new Set([501, 505]);
+
+async function triage(pass: Pass, list: Wordlist, results: FfufResult[], bodyDir: string | null): Promise<{ findings: Finding[]; baseline: Map<number, number>; wireRejected: number }> {
   const findings: Finding[] = [];
   const baseline = new Map<number, number>();
+  let wireRejected = 0;
   const durations = results.map((r) => r.duration).sort((a, b) => a - b);
   const p99 = durations.length > 0 ? durations[Math.floor(durations.length * 0.99)]! : 0;
-  const name = pass.name;
+  const name = `${pass.name}--${list}`;
+
+  // Without a body dump, fetch the bodies that matter. Bounded so a pathological
+  // run can't turn triage into a second sweep; truncation is reported, never silent.
+  const refetched = new Map<string, string>();
+  if (!bodyDir) {
+    const interesting = results.filter((r) => !BORING.has(r.status) && r.url);
+    for (const r of interesting.slice(0, MAX_REFETCH)) {
+      try {
+        const res = await fetch(r.url!, { redirect: 'manual', signal: AbortSignal.timeout(10_000) });
+        refetched.set(r.url!, [...res.headers].map(([k, v]) => `${k}: ${v}`).join('\n') + '\n\n' + (await res.text()));
+      } catch {
+        // A body we cannot re-read simply goes unscanned for leaks; the status
+        // rules above already ran on it.
+      }
+    }
+    if (interesting.length > MAX_REFETCH) {
+      console.log(`    note: ${name} had ${interesting.length} interesting responses; leak-scanned the first ${MAX_REFETCH}`);
+    }
+  }
 
   for (const r of results) {
     baseline.set(r.status, (baseline.get(r.status) ?? 0) + 1);
@@ -222,6 +319,16 @@ function triage(pass: Pass, results: FfufResult[], bodyDir: string): { findings:
     // name -- taking the first value yields the hash and breaks the reflection
     // check below, turning every echoed wordlist entry into a false positive.
     const word = r.input.FUZZ ?? '';
+
+    // 501/505 come from Bun's HTTP parser rejecting a malformed *request line*
+    // before routing — ffuf splices the payload in raw, so any value containing a
+    // space turns `GET /?' OR '1'='1 HTTP/1.1` into an unparseable version token.
+    // That is upstream behaviour, not a Mochi fault. Counted and reported below
+    // rather than dropped silently, since it means those payloads never landed.
+    if (WIRE_REJECT.has(r.status)) {
+      wireRejected++;
+      continue;
+    }
 
     if (r.status >= 500) {
       findings.push({ pass: name, word, status: r.status, reason: 'server error' });
@@ -233,7 +340,7 @@ function triage(pass: Pass, results: FfufResult[], bodyDir: string): { findings:
       continue;
     }
 
-    const raw = bodyFor(r, bodyDir);
+    const raw = bodyDir ? bodyFor(r, bodyDir) : (refetched.get(r.url ?? '') ?? '');
     if (raw) {
       for (const [leakName, re] of LEAKS) {
         const m = re.exec(raw);
@@ -255,15 +362,33 @@ function triage(pass: Pass, results: FfufResult[], bodyDir: string): { findings:
       findings.push({ pass: name, word, status: r.status, reason: `slow: ${Math.round(r.duration / 1e6)}ms vs p99 ${Math.round(p99 / 1e6)}ms` });
     }
   }
-  return { findings, baseline };
+  return { findings, baseline, wireRejected };
 }
 
 async function main(): Promise<void> {
-  const srcWordlist = preflight();
+  preflight();
+  if (PROD) {
+    buildForProd();
+  }
 
   rmSync(OUT, { recursive: true, force: true });
   mkdirSync(OUT, { recursive: true });
-  const wordlist = materializeWordlist(srcWordlist);
+
+  const discoverySrc = await resolveDiscovery();
+  const lists = new Map<Wordlist, { path: string; count: number }>();
+  lists.set('mochi-paths', materialize(path.join(WORDLIST_DIR, 'mochi-paths.txt'), 'mochi-paths'));
+  lists.set('payloads', materialize(path.join(WORDLIST_DIR, 'payloads.txt'), 'payloads'));
+  if (discoverySrc) {
+    lists.set('discovery', materialize(discoverySrc, 'discovery'));
+  }
+  for (const [name, l] of lists) {
+    console.log(`  wordlist ${name.padEnd(12)} ${l.count} entries`);
+  }
+  if (!discoverySrc) {
+    console.log('  (no discovery wordlist — set FUZZ_DISCOVERY=<path|url> or unset it to fetch the default)');
+  }
+  const planned = PASSES.reduce((n, p) => n + p.lists.reduce((m, l) => m + (lists.get(l)?.count ?? 0), 0), 0);
+  console.log(`  ~${planned.toLocaleString()} requests planned`);
 
   console.log(`\nStarting ${PROD ? 'production' : 'dev'} site on :${PORT} ...`);
   serverProc = Bun.spawn(['bun', 'run', PROD ? 'start' : 'dev:site'], {
@@ -287,30 +412,41 @@ async function main(): Promise<void> {
 
   const allFindings: Finding[] = [];
   const totals = new Map<number, number>();
+  let totalWireRejected = 0;
   try {
     // A cold Svelte compile plus `warmup: true` is genuinely slow here.
     await waitForReady(90_000);
     console.log('Server ready. Running passes...\n');
 
     for (const pass of PASSES) {
-      runPass(pass, wordlist);
-      const jsonOut = path.join(OUT, `${pass.name}.json`);
-      if (!existsSync(jsonOut)) {
-        console.log(`  ${pass.name}: no output`);
-        continue;
+      for (const list of pass.lists) {
+        const wl = lists.get(list);
+        if (!wl) {
+          continue;
+        }
+        const started = Date.now();
+        const { jsonOut, bodyDir } = runPass(pass, list, wl.path, wl.count);
+        if (!existsSync(jsonOut)) {
+          console.log(`  ${pass.name}--${list}: no output`);
+          continue;
+        }
+        const parsed = JSON.parse(readFileSync(jsonOut, 'utf8')) as { results?: FfufResult[] };
+        const results = parsed.results ?? [];
+        const { findings, baseline, wireRejected } = await triage(pass, list, results, bodyDir);
+        totalWireRejected += wireRejected;
+        allFindings.push(...findings);
+        for (const [status, n] of baseline) {
+          totals.set(status, (totals.get(status) ?? 0) + n);
+        }
+        const summary = [...baseline.entries()]
+          .sort((a, b) => b[1] - a[1])
+          .map(([s, n]) => `${s}x${n}`)
+          .join(' ');
+        const secs = ((Date.now() - started) / 1000).toFixed(0);
+        console.log(
+          `  ${`${pass.name}--${list}`.padEnd(34)} ${String(results.length).padStart(7)} req ${secs.padStart(4)}s   ${summary}${findings.length ? `   <- ${findings.length} finding(s)` : ''}`,
+        );
       }
-      const parsed = JSON.parse(readFileSync(jsonOut, 'utf8')) as { results?: FfufResult[] };
-      const results = parsed.results ?? [];
-      const { findings, baseline } = triage(pass, results, path.join(OUT, `${pass.name}-bodies`));
-      allFindings.push(...findings);
-      for (const [status, n] of baseline) {
-        totals.set(status, (totals.get(status) ?? 0) + n);
-      }
-      const summary = [...baseline.entries()]
-        .sort((a, b) => b[1] - a[1])
-        .map(([s, n]) => `${s}x${n}`)
-        .join(' ');
-      console.log(`  ${pass.name.padEnd(22)} ${String(results.length).padStart(4)} req   ${summary}${findings.length ? `   <- ${findings.length} finding(s)` : ''}`);
     }
   } finally {
     await teardown();
@@ -318,8 +454,19 @@ async function main(): Promise<void> {
 
   console.log('\n--- baseline ---');
   for (const [status, n] of [...totals.entries()].sort((a, b) => b[1] - a[1])) {
-    const note = status === 301 || status === 308 ? '  (trailingSlash canonicalisation)' : status === 429 ? '  (rate limited)' : '';
+    const note =
+      status === 301 || status === 308
+        ? '  (trailingSlash canonicalisation)'
+        : status === 429
+          ? '  (rate limited)'
+          : WIRE_REJECT.has(status)
+            ? '  (rejected by Bun\'s HTTP parser — payload never reached the app)'
+            : '';
     console.log(`  ${status}: ${n}${note}`);
+  }
+  if (totalWireRejected > 0) {
+    console.log(`\n  ${totalWireRejected} payload(s) contained a space and were rejected at the request line, so they never`);
+    console.log('  exercised the app. They still land correctly on the header passes, where spaces are legal.');
   }
 
   if (allFindings.length === 0) {

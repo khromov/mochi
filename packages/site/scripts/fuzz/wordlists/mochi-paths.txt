@@ -76,19 +76,6 @@ node_modules/.bin
 /etc/passwd
 etc/passwd
 proc/self/environ
-# --- injection-ish values, for the header and query passes ---
-'
-"
-<script>alert(1)</script>
-%3Cscript%3E
-{{7*7}}
-${7*7}
-../../../../../../etc/passwd
-|id
-;id
-`id`
-$(id)
-%0d%0aSet-Cookie:%20x=y
 # --- common app paths, to catch an unintended catch-all ---
 api
 api/health

