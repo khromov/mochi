@@ -8,9 +8,8 @@ import { loadPosts, getPost } from './blog';
 import { CHANGELOG_SLUG, CHANGELOG_TITLE, CHANGELOG_DESCRIPTION, getChangelogTxt } from './changelog';
 import { demos, type Demo } from './demos';
 import { isDemoIndex, stripImageConfig, type SourceSpec } from '../components/utils.ts';
+import { collectHeadings, type HastNode, type MdsvexRehypePlugin } from './markdown';
 import type { TocEntry } from './toc';
-
-type MdsvexRehypePlugin = NonNullable<NonNullable<Parameters<typeof mdsvexCompile>[1]>['rehypePlugins']>[number];
 
 export const DOCS_DIR = path.resolve(SITE_ROOT, '../docs');
 // Internal demos are keyed by their folder name (`slug`) and carry their own `files`
@@ -293,6 +292,7 @@ export async function buildSitemapXml(): Promise<string> {
   const urls: string[] = [
     `  <url><loc>${SITE_BASE}/</loc></url>`,
     ...docs.map((d) => `  <url><loc>${SITE_BASE}/docs/${d.slug}/</loc></url>`),
+    `  <url><loc>${SITE_BASE}/docs/${CHANGELOG_SLUG}/</loc></url>`,
     `  <url><loc>${SITE_BASE}/blog/</loc></url>`,
     ...posts.map((p) => `  <url><loc>${SITE_BASE}/blog/${p.slug}/</loc></url>`),
     // Demo hrefs already carry a trailing slash; trailingSlashIt normalizes to
@@ -433,44 +433,13 @@ export async function buildLlmsIndexTxt(origin: string): Promise<string> {
   return lines.join('\n');
 }
 
-type HastNode = {
-  type: string;
-  tagName?: string;
-  value?: string;
-  properties?: Record<string, unknown>;
-  children?: HastNode[];
-};
-
-function hastText(node: HastNode): string {
-  if (node.type === 'text') {
-    return node.value ?? '';
-  }
-  if (!node.children) {
-    return '';
-  }
-  return node.children.map(hastText).join('');
-}
-
 async function parseDoc(markdown: string): Promise<{
   metadata: Partial<DocMetadata>;
   toc: TocEntry[];
 }> {
-  const toc: TocEntry[] = [];
+  let toc: TocEntry[] = [];
   const capture = () => (tree: HastNode) => {
-    for (const node of tree.children ?? []) {
-      if (node.type !== 'element' || !node.tagName) {
-        continue;
-      }
-      const match = /^h([1-6])$/.exec(node.tagName);
-      if (!match) {
-        continue;
-      }
-      toc.push({
-        level: Number(match[1]),
-        text: hastText(node),
-        slug: String(node.properties?.id ?? ''),
-      });
-    }
+    toc = collectHeadings(tree);
   };
   const result = await mdsvexCompile(markdown, {
     extensions: ['.md', '.svx'],

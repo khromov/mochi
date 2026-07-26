@@ -1,4 +1,5 @@
 import { MochiCache, logger } from 'mochi-framework';
+import { renderMarkdown } from './markdown';
 
 export const CHANGELOG_URL = 'https://raw.githubusercontent.com/khromov/mochi/refs/heads/main/packages/mochi/CHANGELOG.md';
 export const CHANGELOG_SLUG = 'changelog';
@@ -27,4 +28,22 @@ export async function getChangelogTxt(): Promise<string | null> {
     logger.warn('[changelog] fetch failed:', err);
     return null;
   }
+}
+
+// Re-rendering ~24k of markdown on every request is pure waste when the upstream text
+// only moves on the cache's 4h refresh, so memoize against the exact source it came from.
+let rendered: { source: string; html: string } | null = null;
+
+/** The changelog as HTML for its page, or null when the upstream fetch failed. */
+export async function getChangelogHtml(): Promise<string | null> {
+  const source = await getChangelogTxt();
+  if (source === null) {
+    return null;
+  }
+  if (rendered?.source === source) {
+    return rendered.html;
+  }
+  const html = await renderMarkdown(source);
+  rendered = { source, html };
+  return html;
 }

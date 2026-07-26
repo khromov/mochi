@@ -17,7 +17,9 @@ describe('per-demo llms.txt routes', () => {
 
   const realBunImage = Bun.Image;
   const realFetch = globalThis.fetch;
-  const CHANGELOG_BODY = '# Changelog\n\n## [0.8.0] mochi-framework\n\n### Features\n\n- something\n';
+  // Shaped like real release-please output — the linked version heading is what the
+  // page's external-link handling is asserted against.
+  const CHANGELOG_BODY = '# Changelog\n\n## [0.8.0](https://github.com/khromov/mochi/releases/tag/v0.8.0) (2026-07-21)\n\n### Features\n\n- something\n';
 
   beforeAll(async () => {
     // /llms-full.txt and /docs/changelog/llms.txt fetch the changelog from GitHub.
@@ -211,6 +213,26 @@ describe('per-demo llms.txt routes', () => {
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toContain('text/plain');
     expect(await res.text()).toContain('# Changelog');
+  });
+
+  // Slashless: this harness doesn't set the site's `trailingSlash: 'always'` (that lives
+  // in index.ts), so the canonical path here is the bare one.
+  test('/docs/changelog renders the changelog as a page', async () => {
+    const res = await fetch(`${base}/docs/changelog`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('text/html');
+    const html = await res.text();
+    // Rendered markup, not the raw markdown the llms.txt route serves.
+    expect(html).toContain('<h3 id="features">Features</h3>');
+    expect(html).not.toContain('### Features');
+    // Reachable from the nav, and carrying the same llms.txt affordance as a real doc.
+    expect(html).toContain('href="/docs/changelog/"');
+    expect(html).toContain('href="/docs/changelog/llms.txt"');
+  });
+
+  test('/docs/changelog opens outbound links in a new tab', async () => {
+    const html = await fetch(`${base}/docs/changelog`).then((r) => r.text());
+    expect(html).toContain('<a href="https://github.com/khromov/mochi/releases/tag/v0.8.0" rel="noopener noreferrer nofollow" target="_blank">');
   });
 
   test('/llms-recommended.txt serves the concatenated docs', async () => {
