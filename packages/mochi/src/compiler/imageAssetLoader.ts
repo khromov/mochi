@@ -61,6 +61,16 @@ export function createImageAssetLoader(opts: { outDir: string; assetPrefix: stri
       width: meta.width,
       height: meta.height,
     });
+    // The filter renames the asset; it must not move it. A separator or `..`
+    // would push the emitted file outside `<outDir>/assets/` and bake an
+    // absolute path into the manifest, silently making the build non-relocatable.
+    if (filename === '' || filename === '.' || filename === '..' || /[\\/]/.test(filename)) {
+      throw new Error(
+        `The \`image:localAssetFilename\` filter returned ${JSON.stringify(filename)} for "${args.path}", which is not a bare filename. ` +
+          `It may only rename the emitted file inside <outDir>/assets/ — path separators and \`..\` are not allowed. ` +
+          `To change where the asset is served from, use the \`image:localAssetUrl\` filter instead.`,
+      );
+    }
     const diskPath = path.resolve(opts.outDir, 'assets', filename);
     const url = applyFilter('image:localAssetUrl', `${opts.assetPrefix}/asset/${filename}`, {
       sourcePath: args.path,

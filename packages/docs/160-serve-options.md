@@ -28,7 +28,7 @@ Response compression is opt-in via the [`compress()` middleware](/docs/middlewar
 
 ### Asset caching
 
-In production (`development: false`), prebuilt JS/CSS bundles served from `assetPrefix` (default `/_mochi`) get `Cache-Control: public, max-age=31536000, immutable` automatically. Filenames are content-hashed, so any change yields a new URL — there's nothing to invalidate. In development the header is omitted so live-reload edits aren't pinned in the browser cache. Public-dir files (`./public/...`) keep Bun's default static-route headers; their URLs are stable, so don't mark them immutable. To override, mutate `response.headers` in a `handle` middleware.
+In production (`development: false`), prebuilt JS/CSS bundles served from `assetPrefix` (default `/_mochi`) get `Cache-Control: public, max-age=31536000, immutable` automatically. Filenames are content-hashed, so any change yields a new URL — there's nothing to invalidate. In development the header is omitted so live-reload edits aren't pinned in the browser cache. Public-dir files (`./public/...`) are read from `publicDir` on disk in both modes — scanned once at startup, and re-scanned live in development. They keep Bun's default static-route headers; their URLs are stable, so don't mark them immutable. To override, mutate `response.headers` in a `handle` middleware.
 
 <Callout type="warning">
 
@@ -60,7 +60,7 @@ The forced fallback is not optional: a plain `server.stop()` never resolves whil
 - `handleError`: `HandleError` hook invoked before the error page renders; may override status/message or return a `Response`. See `Error handling`.
 - `compressServerIslandProps`: Deflate-compress server-island props when it reduces size. Default: `true`.
 - `logger`: Built-in request logger. Default: `{ enabled: true }`. Pass `{ enabled: false }` to disable, or override `slowThreshold` / `verySlowThreshold`.
-- `publicDir`: Directory served as static assets (cwd-relative). Default: `./public`.
+- `publicDir`: Directory served as static assets (cwd-relative). Default: `./public`. Scanned from disk at startup in every mode, so it must ship with a production deploy — the build never copies it. `mochi-framework build` picks this value up from your `Mochi.serve()` call unless `--public-dir` overrides it.
 - `outDir`: Base directory for build artifacts and dev cache (cwd-relative). Default: `./.mochi`. Production writes here directly; development nests under `<outDir>/dev` so a dev run can't collide with a production build (and is wiped clean on every dev startup).
 - `assetPrefix`: URL prefix for framework client assets and the server-island endpoint. Must start with `/`, must not be `/`, must not end with `/`, must not contain whitespace or `..`. Default: `/_mochi`.
 - `additionalWatchPaths`: Extra dev-mode watcher paths added to the defaults `src` and `public`. Default: `[]`.
