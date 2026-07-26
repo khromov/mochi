@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { ComponentRegistry } from './ComponentRegistry';
+import { encodeSourcePath } from './manifestPaths';
 
 const FIXTURE_DIR = path.join(import.meta.dir, '..', '__fixtures__', 'css-imports');
 const FIXTURE_PAGE = path.join(FIXTURE_DIR, 'Page.svelte');
@@ -26,17 +27,17 @@ describe('CSS imports — happy path', () => {
   test('strips the CSS import from the SSR JS bundle', () => {
     // SSR outputs are hashed, so resolve the on-disk path via the manifest
     // rather than reconstructing it from the source basename.
-    const ssrModulePath = registry.toManifest().components[FIXTURE_PAGE]!.ssrModule;
-    const ssrSource = readFileSync(ssrModulePath, 'utf8');
+    const ssrModulePath = registry.toManifest().components[encodeSourcePath(FIXTURE_PAGE)]!.ssrModule;
+    const ssrSource = readFileSync(path.resolve(outDir, ssrModulePath), 'utf8');
     expect(ssrSource).not.toContain('color: red');
     expect(ssrSource).not.toContain('styles.css');
   });
 
   test('records the CSS path in entryImportedCss for the page', () => {
     const manifest = registry.toManifest();
-    const entryCss = manifest.entryImportedCss?.[FIXTURE_PAGE];
+    const entryCss = manifest.entryImportedCss?.[encodeSourcePath(FIXTURE_PAGE)];
     expect(entryCss).toBeDefined();
-    expect(entryCss).toContain(FIXTURE_CSS);
+    expect(entryCss).toContain(encodeSourcePath(FIXTURE_CSS));
   });
 
   test('getClientStats() includes the bundled CSS as an output', () => {
@@ -66,12 +67,14 @@ describe('CSS imports — happy path', () => {
     expect(importCssUrl).toBeDefined();
   });
 
+  // Also the idempotence check for the source-path codec: a manifest that
+  // survives encode → decode → encode unchanged proves the two halves agree.
   test('manifest round-trip preserves importedCssUrls and entryImportedCss', async () => {
     const manifest = registry.toManifest();
     const json = JSON.parse(JSON.stringify(manifest));
     const manifestPath = path.join(outDir, 'manifest.json');
     await Bun.write(manifestPath, JSON.stringify(json));
-    const restored = await ComponentRegistry.fromManifest(manifestPath, false, outDir);
+    const restored = await ComponentRegistry.fromManifest(manifestPath, false);
     const restoredManifest = restored.toManifest();
     expect(restoredManifest.importedCssUrls).toEqual(manifest.importedCssUrls);
     expect(restoredManifest.entryImportedCss).toEqual(manifest.entryImportedCss);

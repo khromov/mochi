@@ -5,6 +5,7 @@ import path from 'node:path';
 import { walk } from 'zimmerframe';
 import { ALSO_HYDRATE_ENVELOPE_KEY, type AlsoHydrateMode } from '../types';
 import { FRAMEWORK_COMPONENTS_SPECIFIER, resolveFrameworkComponent } from './frameworkComponents';
+import { encodeSourcePath } from './manifestPaths';
 
 /** Svelte's AST nodes all have start/end, but estree types don't declare them. */
 interface Positioned {
@@ -489,15 +490,17 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
  * component file. The result stays a valid `\w+` token so it flows through the
  * `__MOCHI_*__<id>__` placeholder regexes and `encodeURIComponent` unchanged.
  *
- * The hash derives only from the resolved path (base36 of a 64-bit hash), so it
- * is stable for a given file within a build and never leaks the absolute path
- * into client HTML. Named exports mix the export name into the hash so two
- * exports of one module (or two local aliases of different exports) stay
- * distinct; the default export hashes the bare path, keeping every existing
- * island identity (and prebuilt manifest) unchanged.
+ * The hash derives only from the source path (base36 of a 64-bit hash), so it is
+ * stable for a given file and never leaks the path into client HTML. It hashes
+ * the *encoded* path — the same project-root-relative form the manifest stores —
+ * so two machines building the same commit produce identical island names, and
+ * with them identical client bundle filenames and SSR'd HTML. Named exports mix
+ * the export name into the hash so two exports of one module (or two local
+ * aliases of different exports) stay distinct.
  */
 function islandIdentity(name: string, resolvedPath: string, exportName: string): string {
-  const identity = exportName === 'default' ? resolvedPath : `${resolvedPath}#${exportName}`;
+  const encoded = encodeSourcePath(resolvedPath);
+  const identity = exportName === 'default' ? encoded : `${encoded}#${exportName}`;
   return `${name}_${Bun.hash(identity).toString(36)}`;
 }
 

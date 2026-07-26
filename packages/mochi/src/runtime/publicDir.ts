@@ -68,13 +68,13 @@ export async function scanPublicDir(dir: string): Promise<Map<string, string>> {
 
 /**
  * Resolve the public files to serve, identically for the startup and
- * dev-watcher-reload paths so they can't drift. Dev mode scans the public dir
- * live; production reads the prebuilt manifest map (copied so the
- * `publicDir:scan` filter can't mutate the registry's own copy). Both run the
- * filter so user-registered virtual entries appear the same way every time.
+ * dev-watcher-reload paths so they can't drift. Every mode scans the directory
+ * live: the build copies nothing into the out-dir, so `publicDir` is the only
+ * place these bytes ever live. `development` survives purely as filter context —
+ * extensions branch on it — and dev additionally re-scans on watcher events.
  */
-export async function resolvePublicFiles(opts: { publicDir: string; development: boolean; prebuilt?: Map<string, string> }): Promise<Map<string, string>> {
-  const source = opts.development ? await scanPublicDir(opts.publicDir) : new Map(opts.prebuilt ?? []);
+export async function resolvePublicFiles(opts: { publicDir: string; development: boolean }): Promise<Map<string, string>> {
+  const source = await scanPublicDir(opts.publicDir);
   return applyFilter('publicDir:scan', source, { publicDir: opts.publicDir, development: opts.development });
 }
 

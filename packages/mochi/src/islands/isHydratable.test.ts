@@ -40,8 +40,8 @@ describe('isHydratable() context', () => {
     outDir = mkdtempSync(path.join(import.meta.dir, '..', '..', '.mochi-island-context-'));
     registry = new ComponentRegistry({ development: true, outDir });
     warnSpy = spyOn(logger, 'warn');
-    // One compileAll for all entrypoints: a second Bun.build over the same
-    // transitive deps in one process risks the bundler EISDIR bug.
+    // One compileAll for all entrypoints — avoids a double in-process
+    // Bun.build() (see bunfig.toml).
     await registry.compileAll([FIXTURE_PAGE, FIXTURE_PROBE, FIXTURE_SPREAD, FIXTURE_LEGACY, FIXTURE_AMBIGUOUS_PAGE]);
   });
 

@@ -384,7 +384,11 @@ export class Mochi {
     let registry: ComponentRegistry;
     if (!development && existsSync(manifestPath)) {
       logger.info(`Loading prebuilt manifest from ${manifestPath}`);
-      registry = await ComponentRegistry.fromManifest(manifestPath, development, outDir);
+      // The registry takes its outDir from the manifest's own directory, so an
+      // explicit `manifest` pointing elsewhere relocates on-demand island
+      // compiles with it rather than writing them into a `.mochi` that holds
+      // none of the build. For the default manifest path that's `outDir` again.
+      registry = await ComponentRegistry.fromManifest(manifestPath, development);
       if (options.assetPrefix !== undefined && options.assetPrefix !== registry.assetPrefix) {
         logger.warn(
           `assetPrefix in Mochi.serve() (${JSON.stringify(options.assetPrefix)}) differs from the manifest (${JSON.stringify(registry.assetPrefix)}). Using the manifest value — URLs are baked in at build time.`,
@@ -1381,16 +1385,9 @@ export class Mochi {
 
       return requestContext.run(ctx, async () => {
         // A miss here means the build's eager discovery (see build.ts) didn't
-        // find this island — expected to be unreachable in practice, so treat
-        // it as a framework bug rather than silently eating the request-path
-        // compile it's supposed to prevent.
-        if (!registry.development && registry.loadedFromManifest && !registry.isCompiled(componentPath)) {
-          logger.warn(
-            `[mochi] Server island "${componentName}" was missing from the prebuilt manifest and is compiling on the request path. ` +
-              `This likely indicates a Mochi bug in server-island discovery during \`mochi-framework build\` — please report it with a reproduction if possible.`,
-          );
-        }
-        // Compile the server island component directly
+        // find this island; `compileAll` warns about any manifest miss, so the
+        // request-path compile this endpoint is supposed to prevent is never
+        // silent.
         await registry.compile(componentPath);
         let result: RenderResult;
         try {
@@ -1573,11 +1570,11 @@ export class Mochi {
     // rebuild cleanly when files are added/removed/renamed.
     const baseBunRoutes: Record<string, BunRouteValue> = { ...bunRoutes };
 
-    // Register static public files. Dev scans the public dir live, production
-    // reads the prebuilt manifest map; either way user-defined routes win, so a
-    // public route is only added when no user route claims the path. The
-    // dev-watcher reload rebuilds these the same way via the same helpers.
-    const initialPublicFiles = await resolvePublicFiles({ publicDir, development, prebuilt: registry.getPublicFiles() });
+    // Register static public files. Every mode scans `publicDir` from disk — the
+    // build copies nothing — and user-defined routes always win, so a public
+    // route is only added when no user route claims the path. The dev-watcher
+    // reload rebuilds these the same way via the same helpers.
+    const initialPublicFiles = await resolvePublicFiles({ publicDir, development });
     registerPublicRoutes(bunRoutes, initialPublicFiles);
 
     const userFetch = options.fetch;
