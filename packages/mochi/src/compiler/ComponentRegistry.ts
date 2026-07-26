@@ -2115,10 +2115,12 @@ export class ComponentRegistry {
     const outDirAbs = path.resolve(this.outDir);
     // Every artifact the runtime reads from disk lives under outDir, so storing
     // paths outDir-relative makes the build output relocatable ("build here,
-    // deploy there"). Anything that somehow escapes outDir stays absolute —
-    // fromManifest() passes absolute paths through untouched. On Windows a
-    // different-drive target makes path.relative() return an absolute path,
-    // which escapes without a leading `..` — hence the isAbsolute check too.
+    // deploy there"). Nothing in a build escapes today — this only fires if an
+    // artifact kind added here stops being derived from outDir; such a path is
+    // baked in absolute and read back verbatim at boot, pinning the build to
+    // this one machine. On Windows a different-drive target makes path.relative() return an
+    // absolute path, which escapes without a leading `..` — hence the
+    // isAbsolute check too.
     const relToOutDir = (p: string): string => {
       const abs = path.resolve(p);
       const rel = path.relative(outDirAbs, abs);
