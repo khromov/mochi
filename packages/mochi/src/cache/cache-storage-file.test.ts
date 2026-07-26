@@ -19,9 +19,9 @@ function makeDir(): string {
 }
 
 function makeStorage(options: Partial<ConstructorParameters<typeof FileStorage>[0]> = {}): FileStorage {
-  // Disable the background sweeper by default so tests don't leak timers; the
-  // sweep tests call `sweep()` directly.
-  const storage = new FileStorage({ directory: makeDir(), purgeInterval: 0, ...options });
+  // Keep storages out of the shared janitor's registry by default so tests can't
+  // sweep each other; the sweep tests call `sweep()`/`sweepAndReport()` directly.
+  const storage = new FileStorage({ directory: makeDir(), purge: false, ...options });
   created.push(storage);
   return storage;
 }
@@ -71,7 +71,7 @@ describe('FileStorage', () => {
 
   test('a corrupt file surfaces as a read error (cache degrades to a miss)', async () => {
     const dir = makeDir();
-    const storage = new FileStorage({ directory: dir, purgeInterval: 0 });
+    const storage = new FileStorage({ directory: dir, purge: false });
     created.push(storage);
 
     await storage.setItem('k', { value: 1, createdAt: 0 });
@@ -90,23 +90,23 @@ describe('FileStorage', () => {
 
   test('persists across FileStorage instances on the same directory', async () => {
     const dir = makeDir();
-    const first = new FileStorage({ directory: dir, purgeInterval: 0 });
+    const first = new FileStorage({ directory: dir, purge: false });
     created.push(first);
     await first.setItem('k', { value: 'persisted', createdAt: 42 });
 
-    const second = new FileStorage({ directory: dir, purgeInterval: 0 });
+    const second = new FileStorage({ directory: dir, purge: false });
     created.push(second);
     expect(await second.getItem('k')).toEqual({ value: 'persisted', createdAt: 42 });
   });
 
   test('purgeOnInit clears the directory on construction', async () => {
     const dir = makeDir();
-    const first = new FileStorage({ directory: dir, purgeInterval: 0 });
+    const first = new FileStorage({ directory: dir, purge: false });
     created.push(first);
     await first.setItem('k', { value: 1, createdAt: 0 });
     expect(readdirSync(dir).length).toBeGreaterThan(0);
 
-    const fresh = new FileStorage({ directory: dir, purgeInterval: 0, purgeOnInit: true });
+    const fresh = new FileStorage({ directory: dir, purge: false, purgeOnInit: true });
     created.push(fresh);
     expect(readdirSync(dir).filter((n) => n.endsWith('.json'))).toEqual([]);
     expect(await fresh.getItem('k')).toBeNull();
@@ -131,26 +131,27 @@ describe('FileStorage', () => {
     expect(await storage.getItem('k')).toBeNull();
   });
 
-  test('background sweeper emits cache:sweep', async () => {
+  test('sweepAndReport reclaims aged entries and emits cache:sweep', async () => {
     const events: number[] = [];
     mochiEvents.on('cache:sweep', ({ removed }) => events.push(removed));
 
-    const storage = makeStorage({ maxAge: 5, purgeInterval: 20 });
+    const storage = makeStorage({ maxAge: 5 });
     await storage.setItem('k', { value: 1, createdAt: 0 });
+    await wait(20);
 
-    // Poll for the actual removal rather than a fixed wait or an event count: the
-    // 20ms interval timer can be starved under parallel CI load, and the sweeper's
-    // initial pass can fire before the entry ages past maxAge (so `events.length`
-    // reaching 1 doesn't yet mean `k` was reclaimed). Waiting for the observable
-    // effect is robust on both counts.
-    for (let i = 0; i < 200 && ((await storage.getItem('k')) !== null || events.length === 0); i++) {
-      await wait(10);
-    }
+    await storage.sweepAndReport();
+
     expect(await storage.getItem('k')).toBeNull();
-    // Polled for above, not just asserted: this has been observed failing on
-    // Windows CI with the entry gone but no event yet recorded. Waiting on both
-    // observable effects removes the ordering assumption between them.
-    expect(events.length).toBeGreaterThanOrEqual(1);
+    expect(events).toEqual([1]);
+  });
+
+  test('sweepAndReport contains a failing sweep instead of throwing', async () => {
+    const storage = makeStorage({ maxAge: 5 });
+    storage.sweep = () => Promise.reject(new Error('disk gone'));
+
+    // The janitor task sweeps every storage in one pass, so a backend that fails
+    // must not deny the rest their turn.
+    expect(storage.sweepAndReport()).resolves.toBeUndefined();
   });
 
   test('sweep reports the plaintext keys it removed when asked', async () => {
@@ -265,7 +266,7 @@ describe('MochiCache with FileStorage (stale-while-revalidate)', () => {
 
   test('background revalidation writes the refreshed value through to disk', async () => {
     const dir = makeDir();
-    const storage = new FileStorage({ directory: dir, purgeInterval: 0 });
+    const storage = new FileStorage({ directory: dir, purge: false });
     created.push(storage);
     const cache = new MochiCache({ storage, minTimeToStale: 10, maxTimeToLive: 5_000 });
     let calls = 0;
@@ -282,7 +283,7 @@ describe('MochiCache with FileStorage (stale-while-revalidate)', () => {
     // background write is fire-and-forget, so poll for it rather than assuming a
     // fixed sleep is long enough (Windows CI timers/disk I/O are coarser and
     // occasionally miss a short fixed wait).
-    const reopened = new FileStorage({ directory: dir, purgeInterval: 0 });
+    const reopened = new FileStorage({ directory: dir, purge: false });
     created.push(reopened);
     let entry: { value: number } | null = null;
     for (let i = 0; i < 250; i++) {
@@ -303,7 +304,7 @@ describe('FileStorage binary offload (offloadBinary: true)', () => {
 
   // Offloading is opt-in; this suite covers the opted-in behavior.
   function makeOffloadStorage(dir: string, options: Partial<ConstructorParameters<typeof FileStorage>[0]> = {}): FileStorage {
-    const storage = new FileStorage({ directory: dir, purgeInterval: 0, offloadBinary: true, ...options });
+    const storage = new FileStorage({ directory: dir, purge: false, offloadBinary: true, ...options });
     created.push(storage);
     return storage;
   }
@@ -473,7 +474,7 @@ describe('FileStorage binary offload (offloadBinary: true)', () => {
 describe('FileStorage binary inline (offloadBinary off, the default)', () => {
   test('a binary field round-trips as Uint8Array with no blob folder', async () => {
     const dir = makeDir();
-    const storage = new FileStorage({ directory: dir, purgeInterval: 0 });
+    const storage = new FileStorage({ directory: dir, purge: false });
     created.push(storage);
 
     const bytes = new Uint8Array([1, 2, 3, 4, 5]);
@@ -493,13 +494,13 @@ describe('FileStorage binary inline (offloadBinary off, the default)', () => {
 
   test('entries written with offloadBinary on still read as BlobRefs after the flag is dropped', async () => {
     const dir = makeDir();
-    const writer = new FileStorage({ directory: dir, purgeInterval: 0, offloadBinary: true });
+    const writer = new FileStorage({ directory: dir, purge: false, offloadBinary: true });
     created.push(writer);
     await writer.setItem('img', { value: { bytes: new Uint8Array([8, 9]) }, createdAt: 0 });
 
     // Pointers on disk are self-describing, so a default (flag-off) storage over
     // the same directory still resolves them.
-    const reader = new FileStorage({ directory: dir, purgeInterval: 0 });
+    const reader = new FileStorage({ directory: dir, purge: false });
     created.push(reader);
     const raw = (await reader.getItem('img')) as { value: { bytes: BlobRef } };
     expect(isBlobRef(raw.value.bytes)).toBe(true);
@@ -546,8 +547,8 @@ describe('MochiCache cross-process in-flight marker (shared FileStorage)', () =>
 
   function twoProcesses(opts: { minTimeToStale: number; maxTimeToLive: number; inflightTimeout: number }) {
     const dir = makeDir();
-    const storageA = new FileStorage({ directory: dir, purgeInterval: 0 });
-    const storageB = new FileStorage({ directory: dir, purgeInterval: 0 });
+    const storageA = new FileStorage({ directory: dir, purge: false });
+    const storageB = new FileStorage({ directory: dir, purge: false });
     created.push(storageA, storageB);
     const common = { ...opts, crossProcessInflight: true } as const;
     return {

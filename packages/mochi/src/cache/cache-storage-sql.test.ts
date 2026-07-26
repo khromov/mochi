@@ -16,7 +16,7 @@ afterAll(async () => {
 let dbCount = 0;
 function makeStore(options: { maxAge?: number } = {}): SqlStorage {
   // A file per store keeps tests independent without a shared-schema dance.
-  const store = new SqlStorage({ url: `sqlite://${path.join(tmp, `s${dbCount++}.db`)}`, purgeInterval: 0, ...options });
+  const store = new SqlStorage({ url: `sqlite://${path.join(tmp, `s${dbCount++}.db`)}`, purge: false, ...options });
   stores.push(store);
   return store;
 }
@@ -135,8 +135,8 @@ describe('SqlStorage', () => {
 
   test('two connections to one file share entries', async () => {
     const url = `sqlite://${path.join(tmp, 'shared-cache.db')}`;
-    const writer = new SqlStorage({ url, purgeInterval: 0 });
-    const reader = new SqlStorage({ url, purgeInterval: 0 });
+    const writer = new SqlStorage({ url, purge: false });
+    const reader = new SqlStorage({ url, purge: false });
     stores.push(writer, reader);
 
     await writer.setItem('cross', { seen: true });

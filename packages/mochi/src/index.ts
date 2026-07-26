@@ -189,6 +189,7 @@ export type {
   HttpMethod,
   MochiServeOptions,
   MochiWarmupOptions,
+  MochiCacheServeOptions,
   MochiRouteValue,
   MochiWsConfig,
   MochiWsHandlers,

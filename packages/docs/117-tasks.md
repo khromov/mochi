@@ -139,7 +139,7 @@ Missed ticks are not replayed. During a failover gap, or the startup jitter wind
 
 ### Mochi's own tasks
 
-The framework schedules some of its own upkeep the same way, so it shows up in `Mochi.getTask()` and in the events above rather than running invisibly. Today that is `mochi:image-sweep`, the [image-cache janitor](/docs/images/#caching--ttl), registered with `scope: 'node'` whenever the image cache is on.
+The framework schedules some of its own upkeep the same way, so it shows up in `Mochi.getTask()` and in the events above rather than running invisibly. Today that is `mochi:image-sweep`, the [image-cache janitor](/docs/images/#caching--ttl), registered with `scope: 'node'` whenever the image cache is on, and `mochi:cache-sweep`, which [reclaims expired entries](/docs/cache/#expiring-old-entries) from every `MochiCache` storage in the process.
 
 Names beginning with `mochi:` are reserved — declaring one throws at startup, since the task map replaces by name and an app that picked the same name would silently delete the framework's.
 

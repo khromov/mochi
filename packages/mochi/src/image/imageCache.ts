@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import type { CacheStatus, Storage } from '../cache/cache';
 import { MochiCache } from '../cache/cache';
 import { FileStorage, isBlobRef, readBlobRef, type BlobRef } from '../cache/cache-storage';
+import { unregisterSweepable } from '../cache/sweepRegistry';
 import { mochiEvents, type MochiImageDeleteReason } from '../events';
 import type { ImageFormat, ResolvedImageSize } from './types';
 
@@ -167,15 +168,19 @@ export class ImageCache {
     this.maxTimeToLive = options.maxTimeToLive;
     this.sizes = options.sizes;
     // Eviction stays the backend's; only the schedule and the per-kind accounting
-    // live here. So FileStorage's own timer is off (`purgeInterval: 0`) and the image
-    // sweep task (`sweeper.ts`) calls `sweep()` instead — one janitor, on a schedule the
-    // image config owns, reporting variants/originals separately. `maxAge >=
-    // maxTimeToLive`, so it never drops a servable entry. A caller-supplied `storage`
-    // keeps its own eviction policy (e.g. `MemoryStorage`'s `maxAge`); driving it from
-    // here is what puts every backend on that one schedule.
+    // live here. So the storage sits out the shared `mochi:cache-sweep` janitor
+    // (`purge: false`) and the image sweep task (`sweeper.ts`) calls `sweep()` instead —
+    // one janitor, on a schedule the image config owns, reporting variants/originals
+    // separately. `maxAge >= maxTimeToLive`, so it never drops a servable entry. A
+    // caller-supplied `storage` keeps its own eviction policy (e.g. `MemoryStorage`'s
+    // `maxAge`); driving it from here is what puts every backend on that one schedule.
     // offloadBinary: image bytes are exactly the large-binary case blob offloading
     // exists for — metadata reads must never load the encoded bytes.
-    this.storage = options.storage ?? new FileStorage({ directory: options.cacheDir, maxAge: options.maxTimeToLive, purgeInterval: 0, offloadBinary: true });
+    this.storage = options.storage ?? new FileStorage({ directory: options.cacheDir, maxAge: options.maxTimeToLive, purge: false, offloadBinary: true });
+    // A caller-supplied storage registered itself on construction, before it knew
+    // it was destined for an ImageCache. Take it back off, or it would be swept
+    // twice on two unrelated schedules.
+    unregisterSweepable(this.storage);
     // 60s in-flight timeout: an image regen (fetch upstream → decode → resize)
     // should never hold the per-key coalescing lock for long, so a hung upstream
     // fails fast instead of parking every waiter until the far larger default.

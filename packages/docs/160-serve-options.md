@@ -55,6 +55,7 @@ The forced fallback is not optional: a plain `server.stop()` never resolves whil
 - `fetch`: `(req, server) => Response` fallback handler invoked when no route matches. Default: built-in 404.
 - `tasks`: `Record<string, MochiTaskConfig>` of scheduled tasks, each a `Mochi.task({ cron | at, run })` descriptor. Registered at startup and stopped on shutdown. See `Scheduled tasks`.
 - `scheduler`: How scheduled tasks coordinate across processes — `leader`, `lease`, `leaseTtl`, `heartbeatInterval`, `startupJitter`, `drainTimeout`. Ignored when no tasks are declared. Leader election defaults on in production, off in development. See `Scheduled tasks`.
+- `cache`: Schedule for `mochi:cache-sweep`, the janitor that reclaims expired entries from every `MochiCache` storage in the process — `{ sweepCron }`, default `'* * * * *'`, `false` to disable. See `Caching`.
 - `manifest`: Path to a prebuilt manifest JSON. Default: `<outDir>/manifest.json`.
 - `htmlShell`: Path to an `.html` template or an inline template string. Default: built-in shell. See `Custom HTML shell`.
 - `handle`: A `Handle` (or `sequence(...)` of them) that wraps every request. See `Middleware (hooks)`.

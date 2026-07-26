@@ -78,6 +78,7 @@ import { createImageHandler } from './image/imageEndpoint';
 import { createLocalAssetHandler } from './image/localAssetRegistry';
 import { getImageRuntime } from './image/config';
 import { IMAGE_SWEEP_TASK, runImageCacheSweep } from './image/sweeper';
+import { CACHE_SWEEP_TASK, sweepAllRegistered } from './cache/sweepRegistry';
 import { getEmailRuntime, closeEmailTransport } from './email/config';
 import { onDevEmailRecorded } from './email/devOutbox';
 import { sendEmail } from './email/mailer';
@@ -1568,6 +1569,19 @@ export class Mochi {
           run: () => runImageCacheSweep(imageRuntime.cache),
         });
       }
+    }
+
+    // The cache janitor is one task over a live registry rather than a timer per
+    // storage, so a storage constructed after boot still gets swept. `node` scope
+    // for the same reason as the image sweep: this is per-process cruft.
+    const cacheSweepCron = options.cache?.sweepCron ?? '* * * * *';
+    if (cacheSweepCron !== false) {
+      createInternalTask(CACHE_SWEEP_TASK, {
+        cron: cacheSweepCron,
+        scope: 'node',
+        runOnStart: true,
+        run: sweepAllRegistered,
+      });
     }
 
     // Serve locally-imported image assets (`import x from './x.png'`) from disk.

@@ -1,5 +1,6 @@
 import type { Storage, SweepOptions, SweepResult } from './cache';
 import { createSqlDriver, timestampColumn, toNumber, type SqlDriver } from '../sql/driver';
+import { assertNoPurgeInterval, registerSweepable, unregisterSweepable, type SweepableStorage } from './sweepRegistry';
 import { mochiEvents } from '../events';
 
 /** On-disk sentinel for a binary field: the bytes inlined as base64. Shared wire format with `FileStorage`. */
@@ -63,8 +64,8 @@ export interface SqlStorageOptions {
   table?: string;
   /** Rows older than this (ms) are deleted by `sweep()`. Should be `>=` the cache's `maxTimeToLive`. Default `600_000`. */
   maxAge?: number;
-  /** Background sweep interval (ms). Default `60_000`. `<= 0` disables the sweeper. */
-  purgeInterval?: number;
+  /** Let the `mochi:cache-sweep` task delete expired rows. Default `true`. Set `false` to drive `sweep()` yourself. */
+  purge?: boolean;
 }
 
 const IDENTIFIER = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
@@ -83,15 +84,14 @@ const IDENTIFIER = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
  * Schema setup is lazy and idempotent (`CREATE TABLE IF NOT EXISTS`), run once on
  * the first operation, so constructing the adapter never blocks.
  */
-export class SqlStorage implements Storage {
+export class SqlStorage implements Storage, SweepableStorage {
   private driver: SqlDriver;
   private table: string;
   private maxAge: number;
   private ready?: Promise<void>;
-  private initialTimer?: ReturnType<typeof setTimeout>;
-  private intervalTimer?: ReturnType<typeof setInterval>;
 
   constructor(options: SqlStorageOptions) {
+    assertNoPurgeInterval(options, 'SqlStorage');
     this.table = options.table ?? 'mochi_cache';
     if (!IDENTIFIER.test(this.table)) {
       throw new Error(`SqlStorage: table name "${this.table}" is not a plain SQL identifier.`);
@@ -99,9 +99,8 @@ export class SqlStorage implements Storage {
     this.maxAge = options.maxAge ?? 600_000;
     this.driver = createSqlDriver(options.url);
 
-    const purgeInterval = options.purgeInterval ?? 60_000;
-    if (purgeInterval > 0) {
-      this.startSweeper(purgeInterval);
+    if (options.purge !== false) {
+      registerSweepable(this);
     }
   }
 
@@ -159,16 +158,10 @@ export class SqlStorage implements Storage {
     return options.reportKeys ? { removed: rows.length, removedKeys: rows.map((r) => r.key) } : { removed: rows.length };
   }
 
-  /** Stop the background sweep and release the connection. Call when the store is no longer needed (e.g. in tests). */
+  /** Detach from the shared sweep and release the connection. Call when the store is no longer needed (e.g. in tests). */
   async dispose(): Promise<void> {
-    if (this.initialTimer) {
-      clearTimeout(this.initialTimer);
-    }
-    if (this.intervalTimer) {
-      clearInterval(this.intervalTimer);
-    }
-    this.initialTimer = undefined;
-    this.intervalTimer = undefined;
+    // Unregister first: the janitor must not reach a driver this is about to close.
+    unregisterSweepable(this);
     await this.driver.close();
   }
 
@@ -182,19 +175,13 @@ export class SqlStorage implements Storage {
     return this.ready;
   }
 
-  private startSweeper(intervalMs: number): void {
-    const run = async () => {
-      const start = Date.now();
-      try {
-        const { removed } = await this.sweep(start);
-        mochiEvents.emit('cache:sweep', { removed, durationMs: Date.now() - start });
-      } catch (error) {
-        mochiEvents.emit('cache:error', { key: '(sweep)', operation: 'remove', error });
-      }
-    };
-    this.initialTimer = setTimeout(run, 1_000);
-    this.intervalTimer = setInterval(run, intervalMs);
-    this.initialTimer.unref?.();
-    this.intervalTimer.unref?.();
+  async sweepAndReport(): Promise<void> {
+    const start = Date.now();
+    try {
+      const { removed } = await this.sweep(start);
+      mochiEvents.emit('cache:sweep', { removed, durationMs: Date.now() - start });
+    } catch (error) {
+      mochiEvents.emit('cache:error', { key: '(sweep)', operation: 'remove', error });
+    }
   }
 }

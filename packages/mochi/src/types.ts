@@ -503,6 +503,19 @@ export interface MochiWarmupOptions {
   enabledInDev: boolean;
 }
 
+/**
+ * Schedule for the shared cache janitor. One task sweeps every storage in the
+ * process, so the cadence is set here rather than per storage — a storage only
+ * chooses whether to take part, with `purge: false`.
+ */
+export interface MochiCacheServeOptions {
+  /**
+   * Cron pattern for `mochi:cache-sweep`. Default `'* * * * *'` (every minute).
+   * `false` disables the janitor entirely, leaving `sweep()` to the caller.
+   */
+  sweepCron?: string | false;
+}
+
 export interface MochiServeOptions {
   port?: number;
   hostname?: string;
@@ -724,6 +737,12 @@ export interface MochiServeOptions {
    * defaults; pass `{ enabled: false }` to turn it off. See `MochiImageOptions`.
    */
   image?: MochiImageOptions;
+  /**
+   * Schedule for `mochi:cache-sweep`, the janitor that evicts aged-out entries
+   * from every `MemoryStorage` / `FileStorage` / `SqlStorage` in the process.
+   * Opt an individual storage out with `purge: false`. See `MochiCacheServeOptions`.
+   */
+  cache?: MochiCacheServeOptions;
   /**
    * Transactional email. Configures `Mochi.email(...)` with a default `from`
    * and a pluggable `transport` (SMTP, a custom-send function for HTTP email
