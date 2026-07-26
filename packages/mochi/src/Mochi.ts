@@ -1385,16 +1385,9 @@ export class Mochi {
 
       return requestContext.run(ctx, async () => {
         // A miss here means the build's eager discovery (see build.ts) didn't
-        // find this island — expected to be unreachable in practice, so treat
-        // it as a framework bug rather than silently eating the request-path
-        // compile it's supposed to prevent.
-        if (!registry.development && registry.loadedFromManifest && !registry.isCompiled(componentPath)) {
-          logger.warn(
-            `[mochi] Server island "${componentName}" was missing from the prebuilt manifest and is compiling on the request path. ` +
-              `This likely indicates a Mochi bug in server-island discovery during \`mochi-framework build\` — please report it with a reproduction if possible.`,
-          );
-        }
-        // Compile the server island component directly
+        // find this island; `compileAll` warns about any manifest miss, so the
+        // request-path compile this endpoint is supposed to prevent is never
+        // silent.
         await registry.compile(componentPath);
         let result: RenderResult;
         try {

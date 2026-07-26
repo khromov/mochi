@@ -1,8 +1,10 @@
-// Manifest v2 stores every disk path relative to the build outDir so a prebuilt
-// app survives "build here, deploy there". Prove it end-to-end: build into one
-// directory, move it, and boot from the new location — pages SSR, the emitted
-// image asset and the copied public file both serve from disk, and the
-// local-asset registry repopulates with relocated paths.
+// A manifest holds no absolute paths at all: artifacts are out-dir-relative and
+// sources are project-root-relative. So a prebuilt app survives "build here,
+// deploy there", and a manifest carries nothing specific to the machine that
+// produced it. Prove it end-to-end: build into one directory, move it, and
+// boot from the new location — pages SSR, the emitted image asset and the copied
+// public file both serve from disk, and the local-asset registry repopulates
+// with relocated paths.
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -10,6 +12,8 @@ import type { Server } from 'bun';
 import { build } from '../cli/build';
 import { Mochi } from '../Mochi';
 import { getLocalImageAsset } from '../image/localAssetRegistry';
+import { FRAMEWORK_PREFIX } from './manifestPaths';
+import { toPosixPath } from '../utils';
 import type { MochiManifest } from '../types';
 
 const GLOBAL_LOCAL_ASSETS_KEY = '__mochi_local_image_assets__';
@@ -17,13 +21,49 @@ const GLOBAL_LOCAL_ASSETS_KEY = '__mochi_local_image_assets__';
 // Windows can hold a just-built tree briefly after the handles into it are dropped.
 const RM_OPTS = { recursive: true, force: true, maxRetries: 5, retryDelay: 100 } as const;
 
+// Every source-path family has to be populated or the sweep below passes
+// vacuously: an image import, a side-effect CSS import, a hydratable island and
+// a server island, each of the last two carrying scoped CSS of its own.
 const PAGE_SRC = `<script>
   import hero from './hero.png';
+  import './fonts.css';
+  import Widget from './Widget.svelte';
+  import Panel from './Panel.svelte';
 </script>
 <img src={hero.src} width={hero.width} height={hero.height} alt="" />
+<Widget mochi:hydrate />
+<Panel mochi:defer />
 `;
 
+const WIDGET_SRC = `<p class="widget">widget</p>
+<style>
+  .widget { color: rebeccapurple; }
+</style>
+`;
+
+const PANEL_SRC = `<p class="panel">panel</p>
+<style>
+  .panel { color: teal; }
+</style>
+`;
+
+const FONTS_CSS = `:root { --reloc: 1; }\n`;
+
 const ROBOTS_TXT = 'User-agent: *\nDisallow:\n';
+
+const PACKAGE_ROOT = path.resolve(import.meta.dir, '..', '..');
+
+/** Every path in the manifest that names a *source* file rather than an artifact. */
+function sourcePaths(m: MochiManifest): string[] {
+  return [
+    ...Object.keys(m.components),
+    ...Object.values(m.components).flatMap((c) => [...c.cssComponents, ...c.hydratables.map((h) => h.resolvedPath)]),
+    ...Object.keys(m.cssFileUrls),
+    ...Object.values(m.serverIslandPaths ?? {}),
+    ...Object.keys(m.importedCssUrls ?? {}),
+    ...Object.entries(m.entryImportedCss ?? {}).flatMap(([entry, css]) => [entry, ...css]),
+  ];
+}
 
 describe('manifest relocation (build → move → boot)', () => {
   let fixtureDir: string;
@@ -41,6 +81,9 @@ describe('manifest relocation (build → move → boot)', () => {
     writeFileSync(path.join(fixtureDir, 'hero.png'), png);
     pagePath = path.join(fixtureDir, 'Page.svelte');
     writeFileSync(pagePath, PAGE_SRC);
+    writeFileSync(path.join(fixtureDir, 'Widget.svelte'), WIDGET_SRC);
+    writeFileSync(path.join(fixtureDir, 'Panel.svelte'), PANEL_SRC);
+    writeFileSync(path.join(fixtureDir, 'fonts.css'), FONTS_CSS);
     // `build()` copies publicDir into <outDir>/public, so public files relocate
     // with the rest of the artifacts — the one category whose source also lives
     // outside outDir, and therefore the one most able to leak an absolute path.
@@ -88,10 +131,6 @@ describe('manifest relocation (build → move → boot)', () => {
     rmSync(buildDir, RM_OPTS);
   });
 
-  // Artifact paths only. Source paths (the `components` keys, `resolvedPath`,
-  // `serverIslandPaths`) deliberately still carry whatever the route was
-  // registered with — here that's absolute, since the fixture page lives in a
-  // temp dir. They're lookup keys, not disk reads.
   test('manifest is v2 and contains no absolute artifact paths', () => {
     expect(manifest.version).toBe(2);
     // Guard the categories that would otherwise pass this test vacuously — an
@@ -113,6 +152,33 @@ describe('manifest relocation (build → move → boot)', () => {
       expect(path.isAbsolute(p), `expected outDir-relative path, got "${p}"`).toBe(false);
       expect(p, `expected a POSIX path, got "${p}"`).not.toContain('\\');
     }
+  });
+
+  test('every source path is project-root-relative or framework-owned', () => {
+    // Same vacuity guard as above, one per family this sweep covers.
+    expect(Object.keys(manifest.cssFileUrls).length).toBeGreaterThan(0);
+    expect(Object.keys(manifest.serverIslandPaths ?? {}).length).toBeGreaterThan(0);
+    expect(Object.keys(manifest.importedCssUrls ?? {}).length).toBeGreaterThan(0);
+    expect(Object.keys(manifest.entryImportedCss ?? {}).length).toBeGreaterThan(0);
+    expect(Object.values(manifest.components).some((c) => c.cssComponents.length > 0 && c.hydratables.length > 0)).toBe(true);
+
+    for (const p of sourcePaths(manifest)) {
+      if (p.startsWith(FRAMEWORK_PREFIX)) {
+        continue;
+      }
+      expect(path.isAbsolute(p), `expected a project-root-relative path, got "${p}"`).toBe(false);
+      expect(p, `expected a POSIX path, got "${p}"`).not.toContain('\\');
+    }
+  });
+
+  test('the serialized manifest names no directory outside the build', async () => {
+    // The end the other two tests exist for: nothing in a shipped manifest can
+    // identify the machine that built it. This fixture builds entirely inside
+    // the package, so a single prefix covers the sources, the out-dir, and the
+    // framework's own files.
+    const raw = await Bun.file(path.join(outDir, 'manifest.json')).text();
+    expect(raw).not.toContain(PACKAGE_ROOT);
+    expect(raw).not.toContain(toPosixPath(PACKAGE_ROOT));
   });
 
   test('page SSRs from the relocated build with the imported image', async () => {

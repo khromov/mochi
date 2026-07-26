@@ -354,7 +354,9 @@ function printRouteTree(routes: RouteEntry[], stats: Map<string, { ssrSizeBytes:
   }
 
   const rows = routes.map(({ pattern, kind, componentPath }) => {
-    const s = componentPath ? stats.get(componentPath) : undefined;
+    // `compile:complete` reports resolved absolute paths; route registrations
+    // are whatever the user wrote (usually './src/X.svelte').
+    const s = componentPath ? stats.get(path.resolve(componentPath)) : undefined;
     return { pattern, kind, hyd: s?.hydratableCount ?? null, ssr: s ? prettyBytes(s.ssrSizeBytes) : null };
   });
 

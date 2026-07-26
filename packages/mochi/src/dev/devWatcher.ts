@@ -165,9 +165,8 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
         summary = await registry.recompileChanged(filename);
         if (summary.pages.size === 0) {
           const resolved = path.resolve(filename);
-          const componentPath = routeComponentPaths.get(resolved);
-          if (componentPath) {
-            await registry.compile(componentPath, { force: true });
+          if (routeComponentPaths.has(resolved)) {
+            await registry.compile(resolved, { force: true });
             summary = { pages: new Set([resolved]), clientBundleCount: 0 };
           }
         }
@@ -289,10 +288,10 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
     }
     const freshRoutes = serveOptions.routes as Record<string, unknown>;
 
-    const newComponentPaths = new Map<string, string>();
+    const newComponentPaths = new Set<string>();
     for (const handler of Object.values(freshRoutes)) {
       if (isMochiPage(handler)) {
-        newComponentPaths.set(path.resolve(handler.componentPath), handler.componentPath);
+        newComponentPaths.add(path.resolve(handler.componentPath));
       }
     }
     routeComponentPaths = newComponentPaths;
@@ -301,7 +300,7 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
   }
 
   let knownEntryPatterns = new Set<string>();
-  let routeComponentPaths: Map<string, string> = new Map();
+  let routeComponentPaths: Set<string> = new Set();
 
   function routeType(handler: unknown): 'api' | 'ws' | 'sse' | 'page' | 'file' | null {
     if (isMochiApi(handler)) {

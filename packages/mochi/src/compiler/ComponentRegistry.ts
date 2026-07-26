@@ -17,6 +17,7 @@ import { CompileCache, compileFingerprint, createCompileCacheStats, type Compile
 import { mergeCompilerOptions, type MochiSvelteConfig } from './svelteConfig';
 import { backendId, resolveSvelteCompiler, type MochiSvelteCompiler, type SvelteCompilerBackend } from './svelteCompilerBackend';
 import { applyFilter } from '../extensions';
+import { decodeSourcePath, encodeSourcePath } from './manifestPaths';
 import { buildServerOnlyStubModule, scanServerOnlyExports } from './serverOnlyScan';
 import { CLIENT_BUILD_DEFINE, serverOnlyModuleGuard } from './serverOnlyModuleGuard';
 import { renderMochiEnvServer, renderMochiEnvClient } from './virtualModuleTemplate';
@@ -90,7 +91,11 @@ const builtinTsPreprocessor: PreprocessorGroup = {
  */
 const SRC_DIR = path.join(path.dirname(Bun.fileURLToPath(import.meta.url)), '..');
 
-/** Manifest schema version this runtime writes. v2 made every artifact path out-dir-relative. */
+/**
+ * Manifest schema version this runtime writes. v2 holds no absolute paths at
+ * all: artifact paths are out-dir-relative, source paths project-root-relative
+ * with framework-owned sources under a `<mochi>/` sentinel.
+ */
 const MANIFEST_VERSION = 2;
 
 // TODO
@@ -609,7 +614,7 @@ export class ComponentRegistry {
 
   /** Asset URL of a component's compiled scoped CSS, by resolved path (none if it has no styles). */
   getComponentCssUrl(componentPath: string): string | undefined {
-    return this.cssFileUrls.get(componentPath);
+    return this.cssFileUrls.get(path.resolve(componentPath));
   }
 
   setPublicFiles(map: Map<string, string> | Record<string, string>): void {
@@ -644,17 +649,15 @@ export class ComponentRegistry {
     await this.compileAll([filename], opts);
   }
 
-  evict(absolutePath: string): void {
-    const key = this.compiledComponents.has(absolutePath) ? absolutePath : [...this.compiledComponents.keys()].find((k) => path.resolve(k) === absolutePath);
-    if (key) {
-      this.compiledComponents.delete(key);
-      this.entryDeps.delete(key);
-      this.entryImportedCss.delete(key);
-    }
+  evict(componentPath: string): void {
+    const key = path.resolve(componentPath);
+    this.compiledComponents.delete(key);
+    this.entryDeps.delete(key);
+    this.entryImportedCss.delete(key);
   }
 
-  isCompiled(absolutePath: string): boolean {
-    return this.compiledComponents.has(absolutePath) || [...this.compiledComponents.keys()].some((k) => path.resolve(k) === absolutePath);
+  isCompiled(componentPath: string): boolean {
+    return this.compiledComponents.has(path.resolve(componentPath));
   }
 
   /**
@@ -665,9 +668,26 @@ export class ComponentRegistry {
    * across the entire cohort.
    */
   async compileAll(filenames: string[], opts: { force?: boolean; deferClientBundle?: boolean } = {}): Promise<void> {
-    const todo = opts.force ? [...new Set(filenames)] : [...new Set(filenames)].filter((f) => !this.compiledComponents.has(f));
+    // Every source-keyed map is keyed by resolved absolute path, so callers can
+    // register a component however they like ('./src/X.svelte', an absolute path)
+    // and still hit the same entry — including entries restored from a manifest
+    // built elsewhere.
+    const resolved = [...new Set(filenames.map((f) => path.resolve(f)))];
+    const todo = opts.force ? resolved : resolved.filter((f) => !this.compiledComponents.has(f));
     if (todo.length === 0) {
       return;
+    }
+
+    // A prebuilt manifest is meant to cover every component the app renders, so
+    // a miss is always a deployment fault
+    if (this.loadedFromManifest && !this.development && !opts.force) {
+      logger.warn(
+        `${todo.length} component(s) are missing from the prebuilt manifest and will be compiled now:\n` +
+          todo.map((f) => `  - ${relForDisplay(f)}`).join('\n') +
+          `\nThis should not happen. \`mochi-framework build\` and the server must run from the same working directory (the project root), ` +
+          `and both must use the same mochi-framework version. Until it's fixed, this build needs its Svelte sources and the compiler at runtime. ` +
+          `If the working directory and the version already match, this is a Mochi bug — please report it with a reproduction.`,
+      );
     }
 
     for (const f of todo) {
@@ -819,7 +839,7 @@ export class ComponentRegistry {
 
     const compileOutDir = path.resolve(`${this.outDir}/svelte-compile`);
     const result = await Bun.build({
-      entrypoints: todo.map((f) => path.resolve(f)),
+      entrypoints: todo,
       plugins: [sveltePlugin],
       target: 'bun',
       conditions: ['svelte'],
@@ -941,8 +961,7 @@ export class ComponentRegistry {
 
     const compileDuration = performance.now() - compileStart;
     for (const filename of todo) {
-      const resolvedFilename = path.resolve(filename);
-      const outKey = entryToOutKey.get(resolvedFilename);
+      const outKey = entryToOutKey.get(filename);
       if (!outKey) {
         throw new Error(`Svelte SSR build produced no output for ${filename}`);
       }
@@ -1422,7 +1441,8 @@ export class ComponentRegistry {
    */
   async renderStatic(filename: string, props?: Record<string, unknown>): Promise<StaticRenderResult> {
     await this.compile(filename);
-    const entry = this.compiledComponents.get(filename);
+    const key = path.resolve(filename);
+    const entry = this.compiledComponents.get(key);
     if (!entry) {
       throw new Error(`renderStatic: failed to compile ${filename}`);
     }
@@ -1475,7 +1495,7 @@ export class ComponentRegistry {
       }
     }
     // Side-effect CSS imports reachable from this entry (e.g. @fontsource fonts).
-    const imported = this.entryImportedCss.get(filename);
+    const imported = this.entryImportedCss.get(key);
     if (imported) {
       for (const cssPath of imported) {
         const url = this.importedCssUrls.get(cssPath);
@@ -1498,7 +1518,8 @@ export class ComponentRegistry {
     opts?: { stripMarkers?: boolean; idPrefix?: string; exportName?: string; context?: Map<unknown, unknown> },
   ): Promise<RenderResult> {
     await this.compile(filename);
-    const { module: mod, cssComponents, hydratables, hydratablesByName, hydratablesByPath, islandPaths } = this.compiledComponents.get(filename)!;
+    const entryKey = path.resolve(filename);
+    const { module: mod, cssComponents, hydratables, hydratablesByName, hydratablesByPath, islandPaths } = this.compiledComponents.get(entryKey)!;
 
     const development = this.development;
     const componentBaseName = path.basename(filename, path.extname(filename));
@@ -1745,7 +1766,7 @@ export class ComponentRegistry {
 
     // Append URLs for side-effect CSS imports reachable from this entry
     // (e.g. @fontsource fonts imported in a page's <script>).
-    const imported = this.entryImportedCss.get(filename);
+    const imported = this.entryImportedCss.get(entryKey);
     if (imported) {
       for (const cssPath of imported) {
         const url = this.importedCssUrls.get(cssPath);
@@ -2048,10 +2069,6 @@ export class ComponentRegistry {
    */
   async recompileChanged(changedPath: string): Promise<{ pages: Set<string>; clientBundleCount: number }> {
     const changed = path.resolve(changedPath);
-    // Keep `affected` keyed as-stored in `compiledComponents` / `entryDeps`
-    // (real callers register with relative paths, e.g. `./src/Site.svelte`),
-    // so `compileAll()` looks up the correct key. Only the public return
-    // value resolves to absolute, to match `__mochi_page_entry`.
     const affected = new Set<string>();
     if (this.compiledComponents.has(changed)) {
       affected.add(changed);
@@ -2078,8 +2095,7 @@ export class ComponentRegistry {
     if (this.hydratableComponents.length > 0 && this.clientBundleCallCount === 0) {
       await this.buildClientBundle();
     }
-    const pages = new Set([...affected].map((p) => path.resolve(p)));
-    return { pages, clientBundleCount: this.clientBundleCallCount };
+    return { pages: new Set(affected), clientBundleCount: this.clientBundleCallCount };
   }
 
   /**
@@ -2107,7 +2123,7 @@ export class ComponentRegistry {
     if (this.hydratableComponents.length > 0 && this.clientBundleCallCount === 0) {
       await this.buildClientBundle();
     }
-    return { pages: new Set(pageFiles.map((f) => path.resolve(f))), clientBundleCount: this.clientBundleCallCount };
+    return { pages: new Set(pageFiles), clientBundleCount: this.clientBundleCallCount };
   }
 
   /** Serialize registry state into a manifest for the prebuild step. */
@@ -2135,17 +2151,20 @@ export class ComponentRegistry {
       return toPosixPath(rel);
     };
 
+    // Source paths are lookup keys, never read from disk, but they still get
+    // project-root-relative treatment so a manifest carries nothing specific to
+    // the machine that built it. See `manifestPaths.ts`.
     const components: MochiManifest['components'] = {};
     for (const [filename, entry] of this.compiledComponents) {
-      components[filename] = {
+      components[encodeSourcePath(filename)] = {
         ssrModule: relToOutDir(entry.ssrPath),
         hydratables: entry.hydratables.map((h) => ({
           name: h.name,
           displayName: h.displayName,
-          resolvedPath: h.resolvedPath,
+          resolvedPath: encodeSourcePath(h.resolvedPath),
           exportName: h.exportName,
         })),
-        cssComponents: [...entry.cssComponents],
+        cssComponents: [...entry.cssComponents].map((p) => encodeSourcePath(p)),
       };
     }
 
@@ -2168,11 +2187,11 @@ export class ComponentRegistry {
       assetPrefix: this.assetPrefix,
       bootstrapUrl: this.islandBootstrapUrl,
       componentEntryUrls: Object.fromEntries(this.componentEntryUrls),
-      cssFileUrls: Object.fromEntries(this.cssFileUrls),
+      cssFileUrls: Object.fromEntries([...this.cssFileUrls].map(([componentPath, url]) => [encodeSourcePath(componentPath), url])),
       clientFiles,
       components,
       stats: this.getClientStats(),
-      serverIslandPaths: Object.fromEntries(this.serverIslandPaths),
+      serverIslandPaths: Object.fromEntries([...this.serverIslandPaths].map(([name, resolvedPath]) => [name, encodeSourcePath(resolvedPath)])),
     };
     if (this.serverIslandExports.size > 0) {
       manifest.serverIslandExports = Object.fromEntries(this.serverIslandExports);
@@ -2184,10 +2203,10 @@ export class ComponentRegistry {
       manifest.localImageAssets = Object.fromEntries([...this.localImageAssets].map(([url, asset]) => [url, { ...asset, diskPath: relToOutDir(asset.diskPath) }]));
     }
     if (this.importedCssUrls.size > 0) {
-      manifest.importedCssUrls = Object.fromEntries(this.importedCssUrls);
+      manifest.importedCssUrls = Object.fromEntries([...this.importedCssUrls].map(([cssPath, url]) => [encodeSourcePath(cssPath), url]));
     }
     if (this.entryImportedCss.size > 0) {
-      manifest.entryImportedCss = Object.fromEntries([...this.entryImportedCss].map(([k, v]) => [k, [...v]]));
+      manifest.entryImportedCss = Object.fromEntries([...this.entryImportedCss].map(([k, v]) => [encodeSourcePath(k), [...v].map((p) => encodeSourcePath(p))]));
     }
     if (this.serverIslandScriptFile) {
       manifest.serverIslandScript = relToOutDir(this.serverIslandScriptFile);
@@ -2233,8 +2252,11 @@ export class ComponentRegistry {
       registry.componentEntryUrls.set(name, url);
     }
 
+    // Source keys go back to absolute. An on-demand compile (a manifest miss, or
+    // a dev rebuild) always writes absolute keys, so decoding here is what lets
+    // manifest-restored and freshly-compiled entries share one set of maps.
     for (const [componentPath, cssUrl] of Object.entries(manifest.cssFileUrls)) {
-      registry.cssFileUrls.set(componentPath, cssUrl);
+      registry.cssFileUrls.set(decodeSourcePath(componentPath), cssUrl);
     }
 
     // Load all client files (JS + CSS) from disk into memory
@@ -2246,12 +2268,12 @@ export class ComponentRegistry {
     // Restore side-effect CSS import mappings
     if (manifest.importedCssUrls) {
       for (const [cssPath, url] of Object.entries(manifest.importedCssUrls)) {
-        registry.importedCssUrls.set(cssPath, url);
+        registry.importedCssUrls.set(decodeSourcePath(cssPath), url);
       }
     }
     if (manifest.entryImportedCss) {
       for (const [entryPath, cssPaths] of Object.entries(manifest.entryImportedCss)) {
-        registry.entryImportedCss.set(entryPath, new Set(cssPaths));
+        registry.entryImportedCss.set(decodeSourcePath(entryPath), new Set(cssPaths.map((p) => decodeSourcePath(p))));
       }
     }
 
@@ -2261,10 +2283,10 @@ export class ComponentRegistry {
       const mod = await import(Bun.pathToFileURL(modulePath).href);
       // Manifests written before exportName existed omit it — those islands are
       // all default imports, so normalize before anything indexes on it.
-      const hydratables = entry.hydratables.map((h) => ({ ...h, exportName: h.exportName ?? 'default' }));
-      registry.compiledComponents.set(filename, {
+      const hydratables = entry.hydratables.map((h) => ({ ...h, exportName: h.exportName ?? 'default', resolvedPath: decodeSourcePath(h.resolvedPath) }));
+      registry.compiledComponents.set(decodeSourcePath(filename), {
         module: mod,
-        cssComponents: new Set(entry.cssComponents),
+        cssComponents: new Set(entry.cssComponents.map((p) => decodeSourcePath(p))),
         hydratables,
         ...indexHydratables(hydratables),
         ssrPath: modulePath,
@@ -2275,7 +2297,7 @@ export class ComponentRegistry {
     // Load server island paths from manifest
     if (manifest.serverIslandPaths) {
       for (const [name, resolvedPath] of Object.entries(manifest.serverIslandPaths)) {
-        registry.serverIslandPaths.set(name, resolvedPath);
+        registry.serverIslandPaths.set(name, decodeSourcePath(resolvedPath));
       }
     }
     if (manifest.serverIslandExports) {

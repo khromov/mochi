@@ -1,18 +1,21 @@
 import { describe, expect, test } from 'bun:test';
 import path from 'node:path';
 import { preprocessHydratable } from './svelteAstPreprocess';
+import { encodeSourcePath } from './manifestPaths';
 
 const SCRIPT = (imports: string) => `<script>\n${imports}\n</script>\n`;
 
 // Mirror of the internal `islandIdentity()`: an island's `component-name`, its
 // registry keys, and its `__MOCHI_*__<id>__` placeholders are keyed by
-// `<localName>_<hash of resolved path>`, not the bare import name — so two
-// same-named components in different files can't collide to one registry entry.
+// `<localName>_<hash of the encoded source path>`, not the bare import name — so
+// two same-named components in different files can't collide to one registry
+// entry, and two machines building the same commit agree on every island name.
 // Tests use fixture files under `/test`, matching the `filePath` passed below.
-const idFor = (name: string, importPath: string) => `${name}_${Bun.hash(path.resolve('/test', importPath)).toString(36)}`;
-// Named-export islands mix the export name into the identity hash (default-export
-// identities stay path-only, so `idFor` remains the legacy/manifest-stable form).
-const idForNamed = (name: string, importPath: string, exportName: string) => `${name}_${Bun.hash(`${path.resolve('/test', importPath)}#${exportName}`).toString(36)}`;
+const idFor = (name: string, importPath: string) => `${name}_${Bun.hash(encodeSourcePath(path.resolve('/test', importPath))).toString(36)}`;
+// Named-export islands mix the export name into the identity hash; default-export
+// identities stay path-only.
+const idForNamed = (name: string, importPath: string, exportName: string) =>
+  `${name}_${Bun.hash(`${encodeSourcePath(path.resolve('/test', importPath))}#${exportName}`).toString(36)}`;
 
 describe('preprocessHydratable', () => {
   test('basic mochi:hydrate self-closing', () => {

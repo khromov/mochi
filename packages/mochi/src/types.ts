@@ -363,34 +363,46 @@ export interface MochiErrorProps {
 export interface MochiManifestComponent {
   /** Compiled SSR module path, relative to the build outDir. */
   ssrModule: string;
-  /** `exportName` is optional for manifests written before named-export islands existed; absent means `default`. */
+  /** `resolvedPath` is an encoded source path (see `version`). `exportName` is optional for manifests written before named-export islands existed; absent means `default`. */
   hydratables: { name: string; displayName: string; resolvedPath: string; exportName?: string }[];
+  /** Encoded source paths (see `version`) of every component contributing scoped CSS to this entry. */
   cssComponents: string[];
 }
 
 export interface MochiManifest {
   /**
    * Schema version of the on-disk build output. The runtime loads only the exact
-   * version it writes (currently 2, which made all *artifact* disk paths
-   * outDir-relative and so relocatable) and throws on anything else — build and
-   * serve with the same `mochi-framework` version. Typed as `number` rather than
-   * a literal because it is parsed from JSON any version may have written; the
+   * version it writes (currently 2) and throws on anything else — build and serve
+   * with the same `mochi-framework` version. Typed as `number` rather than a
+   * literal because it is parsed from JSON any version may have written; the
    * check is what narrows it.
    *
-   * Source paths (the `components` keys, `hydratables[].resolvedPath`,
-   * `cssFileUrls` keys, `serverIslandPaths`, `importedCssUrls` keys,
-   * `entryImportedCss` keys) are *not* rewritten — they mirror the paths the
-   * routes were registered with and are used as lookup keys, so relocation
-   * requires booting the app the same way it was built.
+   * No path in a manifest is absolute, so a build carries nothing specific to the
+   * machine that produced it. Three families, each with its own base:
+   * - **Artifacts** the runtime opens (`ssrModule`, `clientFiles`, `publicFiles`,
+   *   `localImageAssets[].diskPath`, `serverIslandScript`) — relative to the
+   *   out-dir, resolved against the manifest's own directory.
+   * - **Sources** used as lookup keys (`components` keys,
+   *   `hydratables[].resolvedPath`, `cssComponents`, `cssFileUrls` keys,
+   *   `serverIslandPaths`, `importedCssUrls` keys, `entryImportedCss` keys and
+   *   values) — POSIX and relative to the project root, with framework-owned
+   *   sources under a `<mochi>/` sentinel. Both ends take the project root
+   *   from `process.cwd()`, so `mochi-framework build` and the server must run
+   *   from the same working directory; how a route registered its component
+   *   (relative or absolute) does not have to match.
+   * - **`stats.outputs[].inputs[].path`** — build-cwd-relative, as Bun's
+   *   metafile emits it. Diagnostic only; nothing resolves it.
    */
   version: number;
   /** URL prefix under which framework client assets and the server island endpoint are served. */
   assetPrefix: string;
   bootstrapUrl: string | null;
   componentEntryUrls: Record<string, string>;
+  /** Maps encoded source path (see `version`) → the URL of that component's scoped CSS. */
   cssFileUrls: Record<string, string>;
   /** Maps URL path → disk path relative to the build outDir. */
   clientFiles: Record<string, string>;
+  /** Keyed by encoded source path (see `version`). */
   components: Record<string, MochiManifestComponent>;
   stats: {
     outputs: {
@@ -400,7 +412,7 @@ export interface MochiManifest {
       imports: string[];
     }[];
   } | null;
-  /** Maps server island component name → resolved file path */
+  /** Maps server island component name → its encoded source path (see `version`). */
   serverIslandPaths?: Record<string, string>;
   /** Maps server island component name → the named export it renders (default-export islands are omitted). */
   serverIslandExports?: Record<string, string>;
@@ -408,9 +420,9 @@ export interface MochiManifest {
   publicFiles?: Record<string, string>;
   /** Maps served asset URL → emitted asset details for locally-imported images (`import x from './x.png'`). `diskPath` is outDir-relative. */
   localImageAssets?: Record<string, LocalImageAsset>;
-  /** Maps resolved CSS-import path → served URL (e.g. /import-css/inter-<hash>.css) */
+  /** Maps encoded CSS-import source path (see `version`) → served URL (e.g. /import-css/inter-<hash>.css) */
   importedCssUrls?: Record<string, string>;
-  /** Maps page entry .svelte path → list of CSS-import paths reachable from it */
+  /** Maps encoded page entry path (see `version`) → the CSS-import paths reachable from it, likewise encoded. */
   entryImportedCss?: Record<string, string[]>;
   /**
    * Disk path (relative to the build outDir) to the prebuilt, minified

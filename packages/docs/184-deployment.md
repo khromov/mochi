@@ -20,7 +20,7 @@ None of the links below are affiliate links, nor should any of the links be seen
 
 ## Relocatable builds
 
-`mochi-framework build` writes every artifact path relative to the out-dir, so you can build in one place and run in another — build in a CI stage, copy `.mochi/` into the final image, move or rename the directory. Point the runtime at wherever the output landed:
+A manifest holds no absolute paths at all — artifacts are written relative to the out-dir, sources relative to the project root — so you can build in one place and run in another: build in a CI stage, copy `.mochi/` into the final image, move or rename the directory. A build also carries nothing specific to the machine that produced it, so the same commit built anywhere produces the same output. Point the runtime at wherever it landed:
 
 ```ts
 Mochi.serve({ outDir: './.mochi' }); // default — or wherever you copied it
@@ -36,7 +36,7 @@ Mochi.serve({ manifest: '/srv/app/build/manifest.json' });
 
 Three things still anchor a prebuilt app to its project:
 
-- **Run it the way you built it.** Route component paths (`Mochi.page('./src/Site.svelte')`) double as manifest lookup keys, so the working directory must resolve them to the same strings — use project-relative paths and boot from the project root.
+- **Build and serve from the same working directory.** Components are keyed relative to the project root, which both `mochi-framework build` and `Mochi.serve()` take to be the current working directory — so run both from the project root. How a route spells its component (`'./src/Site.svelte'` or an absolute path) doesn't have to match. A component the manifest doesn't cover is compiled from source instead, and says so loudly at startup.
 - **Keep the out-dir in the project tree.** The compiled SSR modules resolve `node_modules` from the out-dir's location.
 - **On-demand server islands need sources.** Islands missing from the manifest are compiled at request time from source paths recorded at build. Prebuilt islands — the normal case — don't, and relocate fine.
 
