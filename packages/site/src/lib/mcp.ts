@@ -5,7 +5,7 @@ import { logger } from 'mochi-framework';
 import { McpServer } from 'tmcp';
 import { tool } from 'tmcp/utils';
 import * as v from 'valibot';
-import { buildSectionIndex, getDemoLlmsTxt, getDocLlmsTxt } from './docs';
+import { buildSectionIndex, getDemoLlmsTxt, getDocLlmsTxt, getPostLlmsTxt } from './docs';
 
 const adapter = new ValibotJsonSchemaAdapter();
 
@@ -31,7 +31,7 @@ mcpServer.tool(
   {
     name: 'get_documentation_sections',
     description:
-      'List every Mochi documentation section and demo. Returns a JSON array of { type, slug, title, description }. Call this first, then pass a { type, slug } to get_section to read one.',
+      'List every Mochi documentation section, demo, and blog post — including the changelog (a doc with slug "changelog", the record of what changed in each version). Returns a JSON array of { type, slug, title, description }. Call this first, then pass a { type, slug } to get_section to read one.',
     annotations: readOnlyHints,
   },
   async () => {
@@ -45,16 +45,16 @@ mcpServer.tool(
   {
     name: 'get_section',
     description:
-      'Fetch the full text of one or more documentation sections (doc pages or demos). Pass an array of { type, slug } objects as returned by get_documentation_sections. Sections are returned in the requested order, each preceded by an ==== type:slug ==== marker.',
+      'Fetch the full text of one or more documentation sections (doc pages, demos, or blog posts). The changelog is available as { type: "doc", slug: "changelog" }. Pass an array of { type, slug } objects as returned by get_documentation_sections. Sections are returned in the requested order, each preceded by an ==== type:slug ==== marker.',
     annotations: readOnlyHints,
     schema: v.object({
-      sections: v.array(v.object({ type: v.picklist(['doc', 'demo']), slug: v.string() })),
+      sections: v.array(v.object({ type: v.picklist(['doc', 'demo', 'post']), slug: v.string() })),
     }),
   },
   async ({ sections }) => {
     const results = await Promise.all(
       sections.map(async ({ type, slug }) => {
-        const content = type === 'doc' ? await getDocLlmsTxt(slug) : await getDemoLlmsTxt(slug);
+        const content = type === 'doc' ? await getDocLlmsTxt(slug) : type === 'post' ? await getPostLlmsTxt(slug) : await getDemoLlmsTxt(slug);
         return { type, slug, content };
       }),
     );

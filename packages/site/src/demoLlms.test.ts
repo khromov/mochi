@@ -4,6 +4,7 @@ import path from 'node:path';
 import type { Server } from 'bun';
 import { Mochi } from 'mochi-framework';
 import { internalDemoLlmsRoutes } from './lib/docs';
+import { CHANGELOG_URL } from './lib/changelog';
 import { routes, queues } from './routes';
 
 // Boots the real site routes so the per-demo llms.txt routes are exercised against
@@ -15,8 +16,19 @@ describe('per-demo llms.txt routes', () => {
   let base: string;
 
   const realBunImage = Bun.Image;
+  const realFetch = globalThis.fetch;
+  const CHANGELOG_BODY = '# Changelog\n\n## [0.8.0] mochi-framework\n\n### Features\n\n- something\n';
 
   beforeAll(async () => {
+    // /llms-full.txt and /docs/changelog/llms.txt fetch the changelog from GitHub.
+    // Intercept only that URL — the tests themselves fetch the local server, so
+    // every other request must pass through to the real fetch.
+    globalThis.fetch = (async (input: unknown, init?: unknown) => {
+      if (String(input) === CHANGELOG_URL) {
+        return new Response(CHANGELOG_BODY);
+      }
+      return realFetch(input as never, init as never);
+    }) as typeof fetch;
     // This test boots the whole site with an in-process compile, which imports a
     // local image (the Image demo's `hero.jpg`). The build-time image loader
     // probes intrinsic dimensions with `new Bun.Image().metadata()` — a native
@@ -48,6 +60,7 @@ describe('per-demo llms.txt routes', () => {
 
   afterAll(() => {
     Bun.Image = realBunImage;
+    globalThis.fetch = realFetch;
     server.stop(true);
     rmSync(outDir, { recursive: true, force: true });
   });
@@ -157,6 +170,47 @@ describe('per-demo llms.txt routes', () => {
     expect(text).toContain('/llms-full.txt');
     // The index is just links — not the raw docs with their fenced code blocks.
     expect(text).not.toContain('```');
+  });
+
+  test('/llms.txt has a ## Blog section', async () => {
+    const text = await fetch(`${base}/llms.txt`).then((r) => r.text());
+    expect(text).toContain('## Blog');
+  });
+
+  test('/blog/:slug/llms.txt serves the post markdown as text/plain', async () => {
+    const res = await fetch(`${base}/blog/mochi-0-8-0/llms.txt`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('text/plain');
+    const text = await res.text();
+    expect(text).toContain('slug: mochi-0-8-0');
+    expect(text).not.toContain('<!doctype html>');
+  });
+
+  test('an unknown post llms.txt 404s', async () => {
+    const res = await fetch(`${base}/blog/does-not-exist/llms.txt`);
+    expect(res.status).toBe(404);
+  });
+
+  test('/llms.json has a posts array whose urls are all /blog/…/llms.txt', async () => {
+    const body = (await fetch(`${base}/llms.json`).then((r) => r.json())) as { posts: { url: string }[] };
+    expect(Array.isArray(body.posts)).toBe(true);
+    expect(body.posts.length).toBeGreaterThan(0);
+    for (const post of body.posts) {
+      expect(new URL(post.url).pathname).toMatch(/^\/blog\/[^/]+\/llms\.txt$/);
+    }
+  });
+
+  test('/llms-full.txt carries both the blog posts and the changelog', async () => {
+    const text = await fetch(`${base}/llms-full.txt`).then((r) => r.text());
+    expect(text).toContain('# Blog Posts');
+    expect(text).toContain('# Changelog');
+  });
+
+  test('/docs/changelog/llms.txt serves the changelog', async () => {
+    const res = await fetch(`${base}/docs/changelog/llms.txt`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('text/plain');
+    expect(await res.text()).toContain('# Changelog');
   });
 
   test('/llms-recommended.txt serves the concatenated docs', async () => {
