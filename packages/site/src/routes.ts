@@ -11,10 +11,12 @@ import {
   getDoc,
   getDocLlmsTxt,
   getDocNeighbors,
+  getPostLlmsTxt,
   internalDemoLlmsRoutes,
   loadDocs,
 } from './lib/docs';
 import { loadPosts, getPost } from './lib/blog';
+import { getChangelogTxt } from './lib/changelog';
 import { respondMcp } from './lib/mcp';
 import { profilerEnabled, startProfiler, stopProfiler } from './lib/profiler';
 import { routes as apiRoutes } from './demos/api/routes';
@@ -221,12 +223,36 @@ export const routes: Record<string, MochiRouteValue> = {
       headers: { 'Content-Type': 'text/plain; charset=utf-8' },
     });
   }),
+  // Static, so it outranks the /docs/:slug/llms.txt param route below (same
+  // specificity rule the demoLlmsRoutes block relies on). The changelog is a
+  // synthetic doc fetched from GitHub — a null means the fetch failed, so 503
+  // (not 404): the entry is always listed, only the upstream can be unavailable.
+  '/docs/changelog/llms.txt': Mochi.api(async () => {
+    const text = await getChangelogTxt();
+    if (text === null) {
+      error(503, 'Changelog is temporarily unavailable');
+    }
+    return new Response(text, {
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+    });
+  }),
   '/docs/:slug/llms.txt': Mochi.api(async () => {
     const { params } = getRequestContext();
     const slug = params.slug ?? '';
     const text = await getDocLlmsTxt(slug);
     if (text === null) {
       error(404, `No doc '${slug}'`);
+    }
+    return new Response(text, {
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+    });
+  }),
+  '/blog/:slug/llms.txt': Mochi.api(async () => {
+    const { params } = getRequestContext();
+    const slug = params.slug ?? '';
+    const text = await getPostLlmsTxt(slug);
+    if (text === null) {
+      error(404, `No post '${slug}'`);
     }
     return new Response(text, {
       headers: { 'Content-Type': 'text/plain; charset=utf-8' },
