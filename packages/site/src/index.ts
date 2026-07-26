@@ -138,7 +138,7 @@ await Mochi.serve({
   handleError,
   idleTimeout: 60,
   compressServerIslandProps: true,
-  optimize: { enabled: true, exclude: [] },
+  // optimize: { enabled: true, exclude: [] },
   warmup: { enabledInProd: true, enabledInDev: true },
   additionalWatchPaths: ['../docs'],
   logger: { level: 'log' },
