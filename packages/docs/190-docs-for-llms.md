@@ -165,7 +165,7 @@ Each individual doc is reachable as plain text at `/docs/<slug>/llms.txt`:
 
 The "Copy as llms.txt" button on each doc page emits just that page — use it to give the model focused context without the rest of the framework.
 
-The changelog is served the same way at [`/docs/changelog/llms.txt`](/docs/changelog/llms.txt) — the record of what changed in each `mochi-framework` version. It's fetched from GitHub, so it returns `503` (not `404`) if that fetch is ever unavailable.
+The changelog is served the same way at [`/docs/changelog/llms.txt`](/docs/changelog/llms.txt) — the record of what changed in each `mochi-framework` version, also readable as a page at [`/docs/changelog/`](/docs/changelog/). It's fetched from GitHub, so both return `503` (not `404`) if that fetch is ever unavailable.
 
 #### Per-post text
 

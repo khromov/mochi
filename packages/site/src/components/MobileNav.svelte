@@ -98,6 +98,9 @@
         <li class="toc-item level-2">
           <a href="/support/" onclick={close}>Support</a>
         </li>
+        <li class="toc-item level-2">
+          <a href="/docs/changelog/" onclick={close}>Changelog</a>
+        </li>
       </ul>
 
       {#if filteredDocs.length > 0}

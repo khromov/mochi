@@ -16,7 +16,7 @@ import {
   loadDocs,
 } from './lib/docs';
 import { loadPosts, getPost } from './lib/blog';
-import { getChangelogTxt } from './lib/changelog';
+import { CHANGELOG_SLUG, CHANGELOG_TITLE, CHANGELOG_DESCRIPTION, getChangelogHtml, getChangelogTxt } from './lib/changelog';
 import { respondMcp } from './lib/mcp';
 import { profilerEnabled, startProfiler, stopProfiler } from './lib/profiler';
 import { routes as apiRoutes } from './demos/api/routes';
@@ -131,6 +131,29 @@ export const routes: Record<string, MochiRouteValue> = {
       return {
         docsNav: await buildDocsNav(),
         firstDocSlug: docs[0]?.slug ?? 'intro',
+      };
+    },
+  }),
+  // Static, so it outranks /docs/:slug below. The changelog is a synthetic doc rendered
+  // from markdown fetched at runtime — it can't ride the build-time docComponents barrel,
+  // so it hands Docs.svelte pre-rendered HTML instead of a component.
+  '/docs/changelog': Mochi.page('./src/Docs.svelte', {
+    serverProps: async () => {
+      const html = await getChangelogHtml();
+      if (html === null) {
+        error(503, 'Changelog is temporarily unavailable');
+      }
+      return {
+        slug: CHANGELOG_SLUG,
+        title: CHANGELOG_TITLE,
+        description: CHANGELOG_DESCRIPTION,
+        docsNav: await buildDocsNav(),
+        // No on-page TOC: it would just be a second copy of the version list the page
+        // already is. No pager either — the changelog sits outside the docs sequence.
+        toc: [],
+        html,
+        prev: null,
+        next: null,
       };
     },
   }),
