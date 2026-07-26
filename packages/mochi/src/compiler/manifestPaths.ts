@@ -9,13 +9,14 @@ import { logger } from '../utils/log';
 const SRC_DIR = path.resolve(path.dirname(Bun.fileURLToPath(import.meta.url)), '..');
 
 /**
- * Marks a manifest path as framework-owned. `SRC_DIR` sits somewhere different
- * in a workspace checkout, a plain `node_modules/` install, and Bun's versioned
- * store, so encoding the framework's own components relative to the *project*
- * would bake the package-manager layout and the framework version into the
- * manifest — and break the moment either changes.
+ * Marks a manifest path as framework-owned, in the spirit of SvelteKit's `$lib`.
+ * `SRC_DIR` sits somewhere different in a workspace checkout, a plain
+ * `node_modules/` install, and Bun's versioned store, so encoding the
+ * framework's own components relative to the *project* would bake the
+ * package-manager layout and the framework version into the manifest — and
+ * break the moment either changes.
  */
-export const FRAMEWORK_PREFIX = '<mochi>/';
+export const FRAMEWORK_PREFIX = '$mochi/';
 
 /**
  * Encode a build-time source path for the manifest.

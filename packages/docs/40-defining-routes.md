@@ -226,7 +226,7 @@ Every `Mochi.page` and `Mochi.api` route answers `HEAD` automatically by running
 
 ### Static files
 
-Files under `./public` are served automatically; no route entry is needed. A user-defined route always wins over a same-path public file. See `Serve options` for `publicDir`.
+Files under `./public` are served automatically; no route entry is needed. They're read straight from that directory in both development and production — nothing is copied into `.mochi/`, so the directory has to ship with your deploy. A user-defined route always wins over a same-path public file. See `Serve options` for `publicDir`.
 
 <SeeItInAction
 demos={[

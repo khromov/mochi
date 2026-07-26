@@ -34,9 +34,10 @@ Mochi.serve({ manifest: '/srv/app/build/manifest.json' });
 
 <Callout type="warning">
 
-Three things still anchor a prebuilt app to its project:
+Four things still anchor a prebuilt app to its project:
 
 - **Build and serve from the same working directory.** Components are keyed relative to the project root, which both `mochi-framework build` and `Mochi.serve()` take to be the current working directory — so run both from the project root. How a route spells its component (`'./src/Site.svelte'` or an absolute path) doesn't have to match. A component the manifest doesn't cover is compiled from source instead, and says so loudly at startup.
+- **Ship your `public/` directory.** Static files are never copied into the build — the runtime scans `publicDir` (default `./public`) at startup, in production exactly as in development. A deploy that ships only `.mochi/` and `src/` 404s every static file. In exchange, swapping a `robots.txt` needs a restart, not a rebuild.
 - **Keep the out-dir in the project tree.** The compiled SSR modules resolve `node_modules` from the out-dir's location.
 - **On-demand server islands need sources.** Islands missing from the manifest are compiled at request time from source paths recorded at build. Prebuilt islands — the normal case — don't, and relocate fine.
 

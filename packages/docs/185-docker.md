@@ -34,7 +34,7 @@ docker run --rm -p 3333:3333 my-app
 
 <Callout type="info">
 
-`bun run build` and `bun run start` must share a working directory — the template's single `WORKDIR /app` covers it. The one to watch is a multi-stage build that copies `.mochi/` into a differently-shaped final image: keep the app at the same path in both stages. The framework's own components are exempt, so `mochi-framework` moving between a workspace checkout and `node_modules/` across stages is fine.
+`bun run build` and `bun run start` must share a working directory — the template's single `WORKDIR /app` covers it. The one to watch is a multi-stage build that copies `.mochi/` into a differently-shaped final image: keep the app at the same path in both stages, and copy `public/` across too — static files are read from that directory at runtime, never from `.mochi/`. The framework's own components are exempt, so `mochi-framework` moving between a workspace checkout and `node_modules/` across stages is fine.
 
 </Callout>
 
@@ -51,6 +51,8 @@ node_modules
 .git
 .env*
 ```
+
+Don't add `public` to that list. Unlike `.mochi`, it isn't regenerated inside the image — the runtime reads it from disk on every boot.
 
 ### `--production` and devDeps
 

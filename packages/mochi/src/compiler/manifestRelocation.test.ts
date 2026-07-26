@@ -2,11 +2,12 @@
 // sources are project-root-relative. So a prebuilt app survives "build here,
 // deploy there", and a manifest carries nothing specific to the machine that
 // produced it. Prove it end-to-end: build into one directory, move it, and
-// boot from the new location — pages SSR, the emitted image asset and the copied
-// public file both serve from disk, and the local-asset registry repopulates
-// with relocated paths.
+// boot from the new location — pages SSR, the emitted image asset serves from
+// the relocated directory, and the local-asset registry repopulates with
+// relocated paths. Static files are the deliberate exception: the build copies
+// nothing, so they keep serving from the unmoved `publicDir`.
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type { Server } from 'bun';
 import { build } from '../cli/build';
@@ -84,9 +85,10 @@ describe('manifest relocation (build → move → boot)', () => {
     writeFileSync(path.join(fixtureDir, 'Widget.svelte'), WIDGET_SRC);
     writeFileSync(path.join(fixtureDir, 'Panel.svelte'), PANEL_SRC);
     writeFileSync(path.join(fixtureDir, 'fonts.css'), FONTS_CSS);
-    // `build()` copies publicDir into <outDir>/public, so public files relocate
-    // with the rest of the artifacts — the one category whose source also lives
-    // outside outDir, and therefore the one most able to leak an absolute path.
+    // Static files are the one category whose source lives outside outDir, and
+    // therefore the one most able to leak an absolute path. `build()` copies
+    // none of them, so the proof here is the inverse of the other families: the
+    // manifest must not name this file at all, and it must still serve.
     publicDir = path.join(fixtureDir, 'public');
     mkdirSync(publicDir, { recursive: true });
     writeFileSync(path.join(publicDir, 'robots.txt'), ROBOTS_TXT);
@@ -117,9 +119,9 @@ describe('manifest relocation (build → move → boot)', () => {
       logger: { enabled: false },
       outDir,
       routes: { '/': Mochi.page(pagePath) },
-      // `publicDir` deliberately left at its default: production serves public
-      // files from the manifest, never a re-scan, so the relocated copies are
-      // the only thing that can answer /robots.txt here.
+      // The fixture dir was never moved: production scans `publicDir` like dev
+      // does, so this — not the relocated build — is what answers /robots.txt.
+      publicDir,
     });
   });
 
@@ -137,14 +139,14 @@ describe('manifest relocation (build → move → boot)', () => {
     // empty map has no absolute paths in it either.
     expect(Object.keys(manifest.components).length).toBeGreaterThan(0);
     expect(Object.keys(manifest.clientFiles).length).toBeGreaterThan(0);
-    expect(Object.keys(manifest.publicFiles ?? {})).toEqual(['/robots.txt']);
+    // Static files are not an artifact family — the key must be gone, not empty.
+    expect(Object.keys(manifest)).not.toContain('publicFiles');
     expect(Object.keys(manifest.localImageAssets ?? {}).length).toBeGreaterThan(0);
     expect(manifest.serverIslandScript).toBeString();
 
     const diskPaths = [
       ...Object.values(manifest.components).map((c) => c.ssrModule),
       ...Object.values(manifest.clientFiles),
-      ...Object.values(manifest.publicFiles ?? {}),
       ...Object.values(manifest.localImageAssets ?? {}).map((a) => a.diskPath),
       manifest.serverIslandScript!,
     ];
@@ -196,7 +198,8 @@ describe('manifest relocation (build → move → boot)', () => {
     expect((await res.bytes()).length).toBeGreaterThan(0);
   });
 
-  test('a copied public file serves from the relocated directory', async () => {
+  test('a public file serves from the source publicDir, and the build copied nothing', async () => {
+    expect(existsSync(path.join(outDir, 'public'))).toBe(false);
     const res = await fetch(`http://localhost:${server!.port}/robots.txt`);
     expect(res.status).toBe(200);
     expect(await res.text()).toBe(ROBOTS_TXT);
@@ -251,10 +254,10 @@ describe('outDir is resolved once, at construction', () => {
       mkdirSync(path.join(root, 'sub'), { recursive: true });
       process.chdir(root);
       const registry = new ComponentRegistry({ development: false, outDir: './.mochi', assetPrefix: '/_mochi' });
-      registry.setPublicFiles({ '/logo.png': path.resolve('./.mochi/public/logo.png') });
+      registry.setServerIslandScript(path.resolve('./.mochi/server-island.js'), '');
 
       process.chdir(path.join(root, 'sub'));
-      expect(registry.toManifest().publicFiles).toEqual({ '/logo.png': 'public/logo.png' });
+      expect(registry.toManifest().serverIslandScript).toBe('server-island.js');
     } finally {
       process.chdir(cwd);
       rmSync(root, RM_OPTS);

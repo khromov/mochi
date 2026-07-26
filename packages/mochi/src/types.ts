@@ -372,26 +372,30 @@ export interface MochiManifestComponent {
 export interface MochiManifest {
   /**
    * Schema version of the on-disk build output. The runtime loads only the exact
-   * version it writes (currently 2) and throws on anything else — build and serve
+   * version it writes (currently 3) and throws on anything else — build and serve
    * with the same `mochi-framework` version. Typed as `number` rather than a
    * literal because it is parsed from JSON any version may have written; the
    * check is what narrows it.
    *
    * No path in a manifest is absolute, so a build carries nothing specific to the
    * machine that produced it. Three families, each with its own base:
-   * - **Artifacts** the runtime opens (`ssrModule`, `clientFiles`, `publicFiles`,
+   * - **Artifacts** the runtime opens (`ssrModule`, `clientFiles`,
    *   `localImageAssets[].diskPath`, `serverIslandScript`) — relative to the
    *   out-dir, resolved against the manifest's own directory.
    * - **Sources** used as lookup keys (`components` keys,
    *   `hydratables[].resolvedPath`, `cssComponents`, `cssFileUrls` keys,
    *   `serverIslandPaths`, `importedCssUrls` keys, `entryImportedCss` keys and
    *   values) — POSIX and relative to the project root, with framework-owned
-   *   sources under a `<mochi>/` sentinel. Both ends take the project root
+   *   sources under a `$mochi/` sentinel. Both ends take the project root
    *   from `process.cwd()`, so `mochi-framework build` and the server must run
    *   from the same working directory; how a route registered its component
    *   (relative or absolute) does not have to match.
    * - **`stats.outputs[].inputs[].path`** — build-cwd-relative, as Bun's
    *   metafile emits it. Diagnostic only; nothing resolves it.
+   *
+   * Static files are deliberately not a family here: the build never copies
+   * `publicDir`, so the runtime scans it at startup in every mode and a manifest
+   * never names one.
    */
   version: number;
   /** URL prefix under which framework client assets and the server island endpoint are served. */
@@ -416,8 +420,6 @@ export interface MochiManifest {
   serverIslandPaths?: Record<string, string>;
   /** Maps server island component name → the named export it renders (default-export islands are omitted). */
   serverIslandExports?: Record<string, string>;
-  /** Maps public URL path → disk path (relative to the build outDir) for static files copied from `public/`. */
-  publicFiles?: Record<string, string>;
   /** Maps served asset URL → emitted asset details for locally-imported images (`import x from './x.png'`). `diskPath` is outDir-relative. */
   localImageAssets?: Record<string, LocalImageAsset>;
   /** Maps encoded CSS-import source path (see `version`) → served URL (e.g. /import-css/inter-<hash>.css) */

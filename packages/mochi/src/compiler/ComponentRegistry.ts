@@ -94,7 +94,7 @@ const SRC_DIR = path.join(path.dirname(Bun.fileURLToPath(import.meta.url)), '..'
 /**
  * Manifest schema version this runtime writes. v2 holds no absolute paths at
  * all: artifact paths are out-dir-relative, source paths project-root-relative
- * with framework-owned sources under a `<mochi>/` sentinel.
+ * with framework-owned sources under a `$mochi/` sentinel.
  */
 const MANIFEST_VERSION = 2;
 
@@ -458,8 +458,6 @@ export class ComponentRegistry {
   private serverIslandPaths: Map<string, string> = new Map();
   /** Maps server island component name → the export it renders, when not `default` (named exports only). */
   private serverIslandExports: Map<string, string> = new Map();
-  /** Maps public URL path → disk path (relative to cwd) for static files from `public/`. */
-  private publicFiles: Map<string, string> = new Map();
   /** Maps served asset URL → emitted asset for locally-imported images (`import x from './x.png'`). */
   private localImageAssets: Map<string, LocalImageAsset> = new Map();
   readonly development: boolean;
@@ -615,14 +613,6 @@ export class ComponentRegistry {
   /** Asset URL of a component's compiled scoped CSS, by resolved path (none if it has no styles). */
   getComponentCssUrl(componentPath: string): string | undefined {
     return this.cssFileUrls.get(path.resolve(componentPath));
-  }
-
-  setPublicFiles(map: Map<string, string> | Record<string, string>): void {
-    this.publicFiles = map instanceof Map ? new Map(map) : new Map(Object.entries(map));
-  }
-
-  getPublicFiles(): Map<string, string> {
-    return this.publicFiles;
   }
 
   /** Emitted assets for locally-imported images, keyed by served URL. */
@@ -2196,9 +2186,6 @@ export class ComponentRegistry {
     if (this.serverIslandExports.size > 0) {
       manifest.serverIslandExports = Object.fromEntries(this.serverIslandExports);
     }
-    if (this.publicFiles.size > 0) {
-      manifest.publicFiles = Object.fromEntries([...this.publicFiles].map(([urlPath, diskPath]) => [urlPath, relToOutDir(diskPath)]));
-    }
     if (this.localImageAssets.size > 0) {
       manifest.localImageAssets = Object.fromEntries([...this.localImageAssets].map(([url, asset]) => [url, { ...asset, diskPath: relToOutDir(asset.diskPath) }]));
     }
@@ -2303,14 +2290,6 @@ export class ComponentRegistry {
     if (manifest.serverIslandExports) {
       for (const [name, exportName] of Object.entries(manifest.serverIslandExports)) {
         registry.serverIslandExports.set(name, exportName);
-      }
-    }
-
-    // Load public file mappings from manifest. Store resolved absolute paths so
-    // the runtime's Bun.file() reads are independent of the deployed layout.
-    if (manifest.publicFiles) {
-      for (const [urlPath, diskPath] of Object.entries(manifest.publicFiles)) {
-        registry.publicFiles.set(urlPath, resolveManifestPath(diskPath));
       }
     }
 

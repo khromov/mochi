@@ -1570,11 +1570,11 @@ export class Mochi {
     // rebuild cleanly when files are added/removed/renamed.
     const baseBunRoutes: Record<string, BunRouteValue> = { ...bunRoutes };
 
-    // Register static public files. Dev scans the public dir live, production
-    // reads the prebuilt manifest map; either way user-defined routes win, so a
-    // public route is only added when no user route claims the path. The
-    // dev-watcher reload rebuilds these the same way via the same helpers.
-    const initialPublicFiles = await resolvePublicFiles({ publicDir, development, prebuilt: registry.getPublicFiles() });
+    // Register static public files. Every mode scans `publicDir` from disk — the
+    // build copies nothing — and user-defined routes always win, so a public
+    // route is only added when no user route claims the path. The dev-watcher
+    // reload rebuilds these the same way via the same helpers.
+    const initialPublicFiles = await resolvePublicFiles({ publicDir, development });
     registerPublicRoutes(bunRoutes, initialPublicFiles);
 
     const userFetch = options.fetch;
