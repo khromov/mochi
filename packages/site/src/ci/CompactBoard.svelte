@@ -81,14 +81,13 @@
   }
 
   .tile {
-    /* Each tile carries its own tint, so the strip is drawn from currentColor rather
-       than the global tone tokens — a green success bar would vanish on a green tile.
-       Failures read as the solid marks; passes recede. */
-    --dot-success: color-mix(in srgb, currentColor 30%, transparent);
-    --dot-failure: currentColor;
-    --dot-running: color-mix(in srgb, currentColor 60%, transparent);
-    --dot-neutral: color-mix(in srgb, currentColor 15%, transparent);
-    --dot-ring: transparent;
+    /* Same semantic colours as the full board — a failed run is red wherever it shows
+       up. The tile itself stays neutral so those squares are the loudest thing on it. */
+    --dot-success: var(--badge-success-text);
+    --dot-failure: var(--badge-danger-text);
+    --dot-running: var(--badge-info-text);
+    --dot-neutral: var(--text-subtle);
+    --tone: var(--text-muted);
     --strip-gap: clamp(2px, 0.6vmin, 5px);
     --bar-size: clamp(9px, 3.1vmin, 24px);
     --bar-radius: clamp(3px, 0.9vmin, 6px);
@@ -101,8 +100,8 @@
     border-radius: var(--radius-lg);
     text-decoration: none;
     overflow: hidden;
-    background: var(--badge-default-bg);
-    color: var(--badge-default-text);
+    background: var(--surface);
+    color: var(--text);
   }
 
   .tile :global(.strip) {
@@ -116,23 +115,23 @@
   }
 
   .tile.tone-success {
-    background: var(--badge-success-bg);
-    color: var(--badge-success-text);
-  }
-
-  .tile.tone-failure {
-    background: var(--badge-danger-bg);
-    color: var(--badge-danger-text);
+    --tone: var(--badge-success-text);
   }
 
   .tile.tone-running {
-    background: var(--badge-info-bg);
-    color: var(--badge-info-text);
+    --tone: var(--badge-info-text);
+  }
+
+  /* A break is the one thing worth spotting from across the room, so the failing tile
+     gets an outline as well as red type — the status word alone is easy to miss. */
+  .tile.tone-failure {
+    --tone: var(--badge-danger-text);
+    box-shadow: inset 0 0 0 2px var(--badge-danger-text);
   }
 
   .name {
     font-family: var(--font-serif);
-    font-size: clamp(1rem, 3.4vmin, 2.1rem);
+    font-size: clamp(1.2rem, 4.4vmin, 3rem);
     font-weight: 500;
     line-height: 1.15;
     overflow: hidden;
@@ -141,22 +140,23 @@
   }
 
   .status {
-    font-size: clamp(0.7rem, 2.1vmin, 1.15rem);
-    font-weight: 600;
+    font-size: clamp(0.85rem, 2.8vmin, 1.6rem);
+    font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.06em;
+    color: var(--tone);
   }
 
   .sub {
-    font-size: clamp(0.62rem, 1.6vmin, 0.95rem);
-    opacity: 0.75;
+    font-size: clamp(0.75rem, 2.1vmin, 1.25rem);
+    color: var(--text-subtle);
   }
 
   .foot {
     margin: 0;
     flex-shrink: 0;
     text-align: center;
-    font-size: clamp(0.6rem, 1.5vmin, 0.85rem);
+    font-size: clamp(0.7rem, 1.9vmin, 1.05rem);
     color: var(--text-subtle);
   }
 
