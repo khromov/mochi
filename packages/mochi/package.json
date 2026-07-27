@@ -78,8 +78,7 @@
   "scripts": {
     "test": "bun scripts/run-tests.ts",
     "typecheck": "svelte-check --tsconfig ./tsconfig.json --compiler-warnings 'attribute_illegal_colon:ignore' && tsc -p tsconfig.json --noEmit",
-    "deps:report": "bun scripts/dep-report.ts",
-    "bench:msgpack": "bun scripts/msgpack-bench/bench.ts"
+    "deps:report": "bun scripts/dep-report.ts"
   },
   "peerDependencies": {
     "@mochi-framework/rsvelte": ">=0.1.0",

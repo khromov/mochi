@@ -3,8 +3,8 @@
  *
  * Server-island props are server↔server: the server packs and seals them, the client sends the opaque token back, and
  * the server unpacks. msgpackr rather than devalue here because it roughly halves the token, which rides in the
- * `/_mochi/island/…?props=` URL and so is length-limited (`bun run bench:msgpack` reproduces the size table).
- * Hydratable-island props keep using devalue — those ship as an inline JSON block, not a URL.
+ * `/_mochi/island/…?props=` URL and so is length-limited. Hydratable-island props keep using devalue — those ship as an
+ * inline JSON block, not a URL.
  *
  * `structuredClone: true` reaches devalue parity for Date/Map/Set/undefined/Infinity/NaN/RegExp/BigInt/typed arrays and
  * cyclic & repeated references. The only types it drops are `URL` and `URLSearchParams`, restored below via custom
