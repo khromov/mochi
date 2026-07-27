@@ -195,15 +195,15 @@ export async function build(options: MochiBuildOptions): Promise<void> {
       );
     }
 
-    // Server islands only warn: renderStatic()'s guard for them is post-render, greps the output for the placeholder,
-    // and so misses a `mochi:defer` behind a branch that never renders. Erroring here on the import graph would reject
-    // templates that send fine today, so report what the build can see and leave the verdict to the send.
+    // Stricter than renderStatic()'s own server-island guard, which is post-render and greps the output for the
+    // placeholder, so it lets through a `mochi:defer` behind a branch that never renders. The import graph catches that
+    // one too — an email template has no business referencing a server island at all.
     const emailWithServerIslands = emailTemplates.filter((f) => (compileStats.get(path.resolve(f))?.serverIslandCount ?? 0) > 0);
     if (emailWithServerIslands.length > 0) {
-      logger.warn(
-        `[mochi:build] server islands (mochi:defer*) found in email template(s):\n` +
+      throw new Error(
+        `[mochi:build] Email templates can't contain server islands:\n` +
           emailWithServerIslands.map((f) => `  - ${f}`).join('\n') +
-          `\nThey load over a follow-up request an email can't make, so Mochi.email() rejects the template if one renders. Render the content inline instead.`,
+          `\nmochi:defer* loads over a follow-up request an email can't make — render the content inline instead.`,
       );
     }
 

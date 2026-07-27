@@ -39,6 +39,19 @@ const ISLAND_EMAIL_SRC = `<script>
 <Counter mochi:hydrate />
 `;
 
+const FOOTER_SRC = `<p>footer</p>\n`;
+
+// Behind a branch that never renders, so it emits no placeholder: the send-time guard is post-render and would let
+// this through, but the build reads the import graph and must not.
+const DEFER_EMAIL_SRC = `<script>
+  import Footer from './Footer.svelte';
+</script>
+<h1>Hello</h1>
+{#if false}
+  <Footer mochi:defer />
+{/if}
+`;
+
 function scaffold(prefix: string): string {
   // Inside the package: compiled SSR modules resolve node_modules from the
   // out-dir, so a root outside the project tree has no chain back to the framework.
@@ -57,6 +70,7 @@ describe('email templates under src/emails are precompiled into the manifest', (
   const sends: ResolvedEmailMessage[] = [];
   let noEmailsBuildError: unknown;
   let islandBuildError: unknown;
+  let deferBuildError: unknown;
 
   beforeAll(async () => {
     const root = scaffold('.mochi-email-build-');
@@ -90,6 +104,18 @@ describe('email templates under src/emails are precompiled into the manifest', (
       await build({ routes: { '/': Mochi.page('src/Page.svelte') }, development: false, outDir: 'out' });
     } catch (err) {
       islandBuildError = err;
+    }
+
+    const defer = scaffold('.mochi-email-build-defer-');
+    roots.push(defer);
+    mkdirSync(path.join(defer, 'src', 'emails'), { recursive: true });
+    writeFileSync(path.join(defer, 'src', 'emails', 'Footer.svelte'), FOOTER_SRC);
+    writeFileSync(path.join(defer, 'src', 'emails', 'Deferred.svelte'), DEFER_EMAIL_SRC);
+    process.chdir(defer);
+    try {
+      await build({ routes: { '/': Mochi.page('src/Page.svelte') }, development: false, outDir: 'out' });
+    } catch (err) {
+      deferBuildError = err;
     }
 
     process.chdir(root);
@@ -167,6 +193,12 @@ describe('email templates under src/emails are precompiled into the manifest', (
     expect(islandBuildError).toBeInstanceOf(Error);
     expect((islandBuildError as Error).message).toContain("Email templates can't contain islands");
     expect((islandBuildError as Error).message).toContain('src/emails/Bad.svelte');
+  });
+
+  test('an email template referencing a server island fails the build even behind a dead branch', () => {
+    expect(deferBuildError).toBeInstanceOf(Error);
+    expect((deferBuildError as Error).message).toContain("Email templates can't contain server islands");
+    expect((deferBuildError as Error).message).toContain('src/emails/Deferred.svelte');
   });
 
   test('it sends with the Svelte sources deleted', async () => {
