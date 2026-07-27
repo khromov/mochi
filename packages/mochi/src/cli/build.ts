@@ -9,6 +9,7 @@ import type { MochiSvelteCompiler } from '../compiler/svelteCompilerBackend';
 import { rmSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { scanPublicDir, publicRouteKey } from '../runtime/publicDir';
+import { EMAIL_TEMPLATE_DIR, scanEmailTemplates } from '../email/templates';
 import { loadSvelteConfig } from '../compiler/svelteConfig';
 import { logger, setLogLevel } from '../utils/log';
 import { consoleLogger } from '../dev/consoleLogger';
@@ -146,9 +147,9 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     const ssrEntrypoints: string[] = [options.errorPage ?? DEFAULT_ERROR_PAGE_PATH, CLIENT_STATS_COMPONENT];
     const allRoutes: RouteEntry[] = [];
 
-    const compileStats = new Map<string, { ssrSizeBytes: number; hydratableCount: number }>();
-    mochiEvents.on('compile:complete', ({ path: p, ssrSizeBytes, hydratableCount }) => {
-      compileStats.set(p, { ssrSizeBytes, hydratableCount });
+    const compileStats = new Map<string, { ssrSizeBytes: number; hydratableCount: number; serverIslandCount: number }>();
+    mochiEvents.on('compile:complete', ({ path: p, ssrSizeBytes, hydratableCount, serverIslandCount }) => {
+      compileStats.set(p, { ssrSizeBytes, hydratableCount, serverIslandCount });
     });
 
     for (const [pattern, handler] of Object.entries(options.routes)) {
@@ -165,6 +166,14 @@ export async function build(options: MochiBuildOptions): Promise<void> {
       }
     }
 
+    // Email templates are reachable only through `Mochi.email({ component })` at runtime, so no import graph leads here
+    // from a route. Walking the conventional directory is what keeps them out of a cold compile on the first send.
+    const emailTemplates = scanEmailTemplates();
+    if (emailTemplates.length > 0) {
+      logger.info(`[mochi:build] precompiling ${emailTemplates.length} email template(s) from ${EMAIL_TEMPLATE_DIR}/: ${emailTemplates.map((p) => path.basename(p)).join(', ')}`);
+      ssrEntrypoints.push(...emailTemplates);
+    }
+
     if (ssrEntrypoints.length > 0) {
       await timed('pages', () => registry.compileAll(ssrEntrypoints, { deferClientBundle: true }));
     }
@@ -172,6 +181,30 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     let compileErrors = registry.getErrors();
     if (compileErrors.length > 0) {
       throw new Error(`[mochi:build] ${formatCompileErrors(compileErrors)}`);
+    }
+
+    // Until the build compiled these, an island in an email template surfaced only as a render-time throw on the first
+    // send. Now that they're in the bundle it would also emit client JS no email client can run, so fail here instead.
+    // Mirrors renderStatic()'s hydratable guard, which is import-graph based and fires regardless of props.
+    const emailWithIslands = emailTemplates.filter((f) => (compileStats.get(path.resolve(f))?.hydratableCount ?? 0) > 0);
+    if (emailWithIslands.length > 0) {
+      throw new Error(
+        `[mochi:build] Email templates can't contain islands:\n` +
+          emailWithIslands.map((f) => `  - ${f}`).join('\n') +
+          `\nmochi:hydrate* / mochi:clientOnly need client JS, which an email can't run — render the content inline instead.`,
+      );
+    }
+
+    // Server islands only warn: renderStatic()'s guard for them is post-render, greps the output for the placeholder,
+    // and so misses a `mochi:defer` behind a branch that never renders. Erroring here on the import graph would reject
+    // templates that send fine today, so report what the build can see and leave the verdict to the send.
+    const emailWithServerIslands = emailTemplates.filter((f) => (compileStats.get(path.resolve(f))?.serverIslandCount ?? 0) > 0);
+    if (emailWithServerIslands.length > 0) {
+      logger.warn(
+        `[mochi:build] server islands (mochi:defer*) found in email template(s):\n` +
+          emailWithServerIslands.map((f) => `  - ${f}`).join('\n') +
+          `\nThey load over a follow-up request an email can't make, so Mochi.email() rejects the template if one renders. Render the content inline instead.`,
+      );
     }
 
     // Precompiling `mochi:defer` islands as standalone SSR modules keeps the production runtime off the compile path,
@@ -232,8 +265,9 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     const phaseSummary = phases.map((p) => `${p.name} ${formatDuration(p.ms)}`).join(' · ');
     logger.info(`build: phases — ${phaseSummary} (client bundle ×${clientBundleCount}, ${formatDuration(clientBundleMs)})`);
     const elapsed = formatDuration(performance.now() - startedAt);
+    const emailSummary = emailTemplates.length > 0 ? `, ${emailTemplates.length} email template(s)` : '';
     logger.info(
-      `build: done in ${elapsed}. ${compiledPages.length} page(s), ${clientFileCount} client file(s), ${publicFileCount} public file(s), ${imageAssets.size} image asset(s). Manifest written to ${manifestPath}`,
+      `build: done in ${elapsed}. ${compiledPages.length} page(s), ${clientFileCount} client file(s), ${publicFileCount} public file(s), ${imageAssets.size} image asset(s)${emailSummary}. Manifest written to ${manifestPath}`,
     );
   } finally {
     mochiEvents.off('client-bundle:complete', onClientBundle);

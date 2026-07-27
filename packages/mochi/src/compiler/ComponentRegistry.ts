@@ -22,6 +22,7 @@ import { buildServerOnlyStubModule, scanServerOnlyExports } from './serverOnlySc
 import { CLIENT_BUILD_DEFINE, serverOnlyModuleGuard } from './serverOnlyModuleGuard';
 import { renderMochiEnvServer, renderMochiEnvClient } from './virtualModuleTemplate';
 import { createImageAssetLoader, IMAGE_FILE_FILTER } from './imageAssetLoader';
+import { EMAIL_TEMPLATE_DIR } from '../email/templates';
 import { registerLocalImageAsset } from '../image/localAssetRegistry';
 import type { LocalImageAsset } from '../image/types';
 import { freshImport } from './freshImport';
@@ -589,15 +590,17 @@ export class ComponentRegistry {
       return;
     }
 
-    // A prebuilt manifest is meant to cover every component the app renders, so
-    // a miss is always a deployment fault
+    // A prebuilt manifest is meant to cover every component the app renders, so a miss costs a cold compile on the
+    // request that hit it — and means this deploy needs its Svelte sources and the compiler at runtime.
     if (this.loadedFromManifest && !this.development && !opts.force) {
       logger.warn(
         `${todo.length} component(s) are missing from the prebuilt manifest and will be compiled now:\n` +
           todo.map((f) => `  - ${relForDisplay(f)}`).join('\n') +
-          `\nThis should not happen. \`mochi-framework build\` and the server must run from the same working directory (the project root), ` +
-          `and both must use the same mochi-framework version. Until it's fixed, this build needs its Svelte sources and the compiler at runtime. ` +
-          `If the working directory and the version already match, this is a Mochi bug — please report it with a reproduction.`,
+          `\nCommon causes: an email template outside \`${EMAIL_TEMPLATE_DIR}/\` (the build walks that directory, since nothing imports a template from a route — move it there), ` +
+          `or another component rendered outside a route, which the build cannot discover. ` +
+          `Otherwise, \`mochi-framework build\` and the server must run from the same working directory (the project root), and both must use the same mochi-framework version. ` +
+          `Until it's fixed, this build needs its Svelte sources and the compiler at runtime. ` +
+          `If none of the above apply, this is a Mochi bug — please report it with a reproduction.`,
       );
     }
 
