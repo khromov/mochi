@@ -1,6 +1,6 @@
 /// <reference lib="dom" />
 
-import { pinGlobal } from '../globalState';
+import { pinGlobal } from '../utils/globalState';
 
 // Pool is process-wide so the inline ServerIsland bundle and the hydration
 // HydratableIsland bundle share observers at runtime.

@@ -2,14 +2,14 @@
   import { Image } from 'mochi-framework/image';
   import Heart from '@lucide/svelte/icons/heart';
 
-  // `isHydratable` is auto-injected on the island invocation; forwarding it
-  // tells <Image> to serialize its server-minted URL for reuse during hydration.
-  let { src, isHydratable }: { src: string; isHydratable?: boolean } = $props();
+  // <Image> detects the hydrating island by itself via isHydratable(), so its
+  // server-minted URL is serialized for hydration without any prop forwarding.
+  let { src }: { src: string } = $props();
   let likes = $state(42);
 </script>
 
 <div class="card">
-  <Image {src} width={400} height={267} placeholder {isHydratable} alt="A photo rendered inside a hydrated island" />
+  <Image {src} size="card" placeholder alt="A photo rendered inside a hydrated island" />
   <button class="card__btn" onclick={() => likes++}>
     <Heart size={16} aria-hidden="true" />
     {likes}

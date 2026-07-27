@@ -4,9 +4,20 @@ slug: debug-bar
 description: 'A floating dev toolbar showing hydration metrics, request data, island breakdown, and bundle stats.'
 ---
 
+<script>
+  import { Image } from 'mochi-framework/image';
+  import debugBar from './images/debug-bar.png';
+  import debugBarIslands from './images/debug-bar-islands.png';
+</script>
+
 ## Debug bar
 
 A floating toolbar pinned to the bottom-right of every page in development. It surfaces hydration cost, request metadata, runtime warnings, and a link to the bundle stats page. `Mochi.serve()` mounts it automatically whenever `development: true` — there is nothing to wire up.
+
+<figure>
+  <Image src={debugBar} size="doc" width={debugBar.width} height={debugBar.height} alt="The Mochi debug bar: a status dot, the mochi wordmark, and buttons for Request, Islands, JS, Info and Cache, plus the email outbox and cogwheel icons" />
+  <figcaption>The bar as it sits on a page in development. The toolbar has its own dark styling and does not follow the site's theme.</figcaption>
+</figure>
 
 ```ts
 await Mochi.serve({
@@ -27,6 +38,7 @@ In production (`development: false`) the toolbar mount point, its entry script, 
 | `Islands`        | Per-island breakdown with mode tag, props size, and a locate-on-page button.       |
 | `Warnings`       | Anything pushed through `window.__mochi_warn(msg)`. Hidden when the queue empty.   |
 | `Bundle Stats ↗` | Opens the bundle stats page (`/_mochi/client/stats`) in a new tab.                 |
+| `Cache`          | Empty the on-disk [image cache](/docs/images/) in one click (see below).           |
 | `⚙`              | Configure which panel buttons appear in the bar (see below).                       |
 
 ### Configuring panels
@@ -36,6 +48,11 @@ The cogwheel at the right edge of the bar opens a checklist of the panels. Unche
 ### Islands panel
 
 Lists every `<mochi-hydratable-island>` and `<mochi-server-island>` on the page, grouped by type. Each row shows the component name, its hydration mode (`mochi:hydrate`, `mochi:hydrate:visible`, `mochi:defer`, …), and props size. Click a row to expand the inline props as syntax-highlighted JSON; click the crosshair icon to scroll to the island and flash a cyan outline around it for ~1.5s.
+
+<figure>
+  <Image src={debugBarIslands} size="doc" width={debugBarIslands.width} height={debugBarIslands.height} alt="The Islands panel listing hydrated islands with their mochi:hydrate tags, props sizes, shared badges and crosshair buttons, above a summary reading 12 islands, 39.3 kB total props, 8 hydrated, 4 server" />
+  <figcaption>The Islands panel. The summary row counts hydrated and server islands separately, and rows sharing a props payload carry a <code>shared</code> badge.</figcaption>
+</figure>
 
 The `Islands` button in the bar shows a running total props size and changes color past two thresholds — yellow above **10 KB**, red above **100 KB**. Props payload is the dominant tax on hydration, so this is the number to watch when a page feels heavy. See [passing props to islands](/docs/island-props/) for how to keep payloads small.
 
@@ -47,7 +64,11 @@ Server-island rows display a lock icon next to the mode tag. Their props are enc
 
 ### Images panel
 
-Lists every image produced during the request. Signed URLs from [`<Image>` / `getResizedImage`](/docs/images/) show a lock icon (their request params are AES-256 encrypted on the wire; the decoded JSON is a dev-only view) and the binary wire format. Programmatic [`cachedImage`](/docs/images/#custom-pipelines-with-cachedimage) pipelines show a `cachedImage` tag and the recorded op chain (`resize(240, 240).webp()`) instead — their preview is the resolved output inlined as a `data:` URL (omitted for outputs over 1 MB). Click a row to expand the preview, params, and pipeline.
+Lists every image produced during the request. Deferred URLs from [`<Image>` / `getImageUrl`](/docs/images/) show a lock icon (their `src` + size name are AES-256 encrypted on the wire; the decoded params are a dev-only view) and the size-name tag. Inline [`getImage`](/docs/images/#getimage-inline-bytes-metadata) results show an `inline` tag instead — their preview is the resolved output inlined as a `data:` URL (omitted for outputs over 1 MB). Click a row to expand the preview and params.
+
+### Cache panel
+
+A single **Empty image cache** button that clears the on-disk [image cache](/docs/images/) — every original, resized variant, and blur placeholder — by `POST`ing to the dev-only `/_mochi/image-cache/` endpoint. Useful after tweaking resize settings or replacing a source image, so the next request regenerates from scratch instead of serving a stale variant. The endpoint (and the tab) exist only while the debug bar is enabled, so nothing is exposed in production.
 
 ### Warnings
 

@@ -1,6 +1,6 @@
 {
   "name": "create-mochi",
-  "version": "0.2.5",
+  "version": "0.3.0",
   "type": "module",
   "license": "MIT",
   "description": "Scaffold a new Mochi project. Run with `npm create mochi@latest`.",
@@ -54,7 +54,7 @@
   },
   "dependencies": {
     "@bluwy/giget-core": "^0.1.7",
-    "@clack/prompts": "^1.5.1",
+    "@clack/prompts": "^1.7.0",
     "commander": "^15.0.0"
   },
   "devDependencies": {

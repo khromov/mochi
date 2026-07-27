@@ -5,13 +5,20 @@ description: 'Configure a custom error page and control how uncaught errors are 
 ---
 
 <script>
+  import { Image } from 'mochi-framework/image';
   import Callout from './_components/Callout.svelte';
   import SeeItInAction from './_components/SeeItInAction.svelte';
+  import errorPage from './images/error-page.png';
 </script>
 
 ## Error handling
 
 Mochi renders an HTML error page for any uncaught error escaping a page render — top-level SSR throws, `error(status, ...)` from `serverProps` or actions, malformed form bodies, unknown form actions, and unmatched routes. API routes are not affected; they return a JSON envelope. Island-level boundaries are scoped to hydratable islands — see `Error boundaries`.
+
+<figure>
+  <Image src={errorPage} size="doc" width={errorPage.width} height={errorPage.height} alt="The built-in error page: a large 500 above the message Internal Server Error, a Go home link, and a Stack trace section showing the thrown error" />
+  <figcaption>The built-in error page — what you get when <code>errorPage</code> is omitted. The stack trace section only renders under <code>development: true</code>.</figcaption>
+</figure>
 
 Configure the page via `errorPage` on `Mochi.serve()`. Omit it to use the built-in minimal component.
 
@@ -139,5 +146,5 @@ Uncaught throws inside a `Mochi.api` handler are coerced to `500 Internal Server
 If the user's `errorPage` itself throws during render, Mochi returns a plain-text response that mentions both the original error and the secondary render failure — the error page cannot crash the server.
 
 <SeeItInAction
-demos={[{ href: "/demos/error/", title: "Error Handling", hook: "Catch render errors and unmatched routes via Mochi.serve()'s errorPage option and the handleError hook." }]}
+demos={[{ href: "/demos/error/", title: "Error Handling", hook: "How error handling works — catch render errors and unmatched routes via Mochi.serve()'s errorPage option and the handleError hook." }]}
 />

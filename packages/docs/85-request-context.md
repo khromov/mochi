@@ -119,7 +119,7 @@ serverProps: async () => {
 
 <SeeItInAction
 demos={[
-{ href: "/demos/request-id/", title: "Request ID", hook: "Every request gets a UUID v7 — read it server-side via getRequestContext().requestId; the same id rides every lifecycle event for correlation." },
-{ href: "/demos/cookies/", title: "Cookies", hook: "Read and write cookies on the server and the client through one MochiCookieJar API." },
+{ href: "/demos/request-id/", title: "Request ID", hook: "How request IDs work — every request gets a UUID v7 on getRequestContext().requestId that rides every lifecycle event for correlation." },
+{ href: "/demos/cookies/", title: "Cookies", hook: "How cookies work — read and write on the server and the client through one MochiCookieJar API (cookies.get/set/delete)." },
 ]}
 />

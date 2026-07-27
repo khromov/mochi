@@ -66,6 +66,17 @@ import { redirect } from 'mochi-framework';
 return redirect(303, '/dashboard');
 ```
 
+### Sealed tokens
+
+`encryptPayload(plaintext, { aad?, compress? })` / `decryptPayload(token, { aad? })`: seal a string into an opaque, tamper-proof base64url token (AES-256-SIV keyed from `MOCHI_KEY`) and open it again. `decryptPayload` returns `null` on any tamper or `aad` mismatch. This is the same primitive Mochi uses for server-island props — use it for short-lived signed values like form challenges or magic links.
+
+```ts
+import { encryptPayload, decryptPayload } from 'mochi-framework';
+
+const token = encryptPayload(JSON.stringify({ iat: Date.now() }), { aad: 'my-form' });
+const opened = decryptPayload(token, { aad: 'my-form' }); // string | null
+```
+
 <SeeItInAction
-demos={[{ href: "/demos/url/", title: "Isomorphic URL", hook: "One import for the current URL — reads from the request on the server, window.location on the client." }]}
+demos={[{ href: "/demos/url/", title: "Isomorphic URL", hook: "How the isomorphic URL helper works — one import that reads the request URL on the server and window.location on the client." }]}
 />

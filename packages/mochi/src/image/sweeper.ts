@@ -1,5 +1,5 @@
 import { mochiEvents } from '../events';
-import { logger } from '../log';
+import { logger } from '../utils/log';
 import type { ImageCache } from './imageCache';
 
 /**
@@ -17,8 +17,8 @@ export function startImageCacheSweeper(cache: ImageCache, intervalMs: number): (
   const runSweep = async (): Promise<void> => {
     const start = Date.now();
     try {
-      const { removedVariants, removedOriginals, freedBytes } = await cache.sweep(start);
-      mochiEvents.emit('image:cache-sweep', { removedVariants, removedOriginals, freedBytes, durationMs: Date.now() - start });
+      const { removedVariants, removedOriginals, removedOther } = await cache.sweep(start);
+      mochiEvents.emit('image:cache-sweep', { removedVariants, removedOriginals, removedOther, durationMs: Date.now() - start });
     } catch (err) {
       logger.warn(`Image cache sweep failed: ${err instanceof Error ? err.message : String(err)}`);
     }

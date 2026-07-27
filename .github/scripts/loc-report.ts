@@ -20,6 +20,7 @@ type Package = {
   name: string;
   root: string;
   categories: string[];
+  scanGlob?: string;
   docsGlob?: string;
 };
 
@@ -87,9 +88,35 @@ const PACKAGES: Package[] = [
     categories: [],
   },
   {
+    name: 'packages/minimal-rsvelte',
+    root: join(REPO_ROOT, 'packages', 'minimal-rsvelte'),
+    categories: [],
+  },
+  {
+    name: 'packages/support',
+    root: join(REPO_ROOT, 'packages', 'support'),
+    categories: ['src/**/*.test.ts', 'src/admin/**', 'src/components/**', 'src/*.server.ts', 'src/{index,routes}.ts'],
+  },
+  {
+    name: 'packages/shared',
+    root: join(REPO_ROOT, 'packages', 'shared'),
+    categories: [],
+  },
+  {
     name: 'packages/cli',
     root: join(REPO_ROOT, 'packages', 'cli'),
     categories: ['src/**/*.test.ts', 'src/cli*', 'src/{create,templates,utils}.ts'],
+  },
+  {
+    name: 'packages/video-animations',
+    root: join(REPO_ROOT, 'packages', 'video-animations'),
+    categories: ['src/{frame,anim,theme}.ts', 'src/{render,render-worker,generate}.ts'],
+  },
+  {
+    name: 'packages/msgpackr-extract-stub',
+    root: join(REPO_ROOT, 'packages', 'msgpackr-extract-stub'),
+    categories: ['*.test.ts'],
+    scanGlob: '*.{ts,js,cjs}',
   },
 ];
 
@@ -161,7 +188,7 @@ async function scanPackage(pkg: Package): Promise<Report> {
 
   const totals: Counts = { files: 0, lines: 0 };
   const nonTestTotals: Counts = { files: 0, lines: 0 };
-  const glob = new Glob(SCAN_GLOB);
+  const glob = new Glob(pkg.scanGlob ?? SCAN_GLOB);
   for await (const file of glob.scan({ cwd: pkg.root, onlyFiles: true })) {
     if (EXCLUDE.some((p) => new Glob(p).match(file))) {
       continue;
