@@ -36,7 +36,7 @@
       {#each board.workflows as wf (wf.id)}
         {@const latest = wf.runs[0]}
         {@const rate = successRate(wf.runs)}
-        <a class="tile tone-{wf.error ? 'failure' : latest ? runTone(latest) : 'neutral'}" href={wf.runsUrl} target="_blank" rel="noreferrer">
+        <a class="tile tone-{wf.error ? 'error' : latest ? runTone(latest) : 'neutral'}" href={wf.runsUrl} target="_blank" rel="noreferrer">
           <span class="name">{wf.name}</span>
           <span class="status">{wf.error ? 'unavailable' : latest ? runLabel(latest) : 'no runs'}</span>
           {#if latest && !wf.error}
@@ -88,6 +88,8 @@
     --dot-running: var(--badge-info-text);
     --dot-neutral: var(--text-subtle);
     --tone: var(--text-muted);
+    --tile-bg: var(--surface);
+    --dot-ring: var(--tile-bg);
     --strip-gap: clamp(2px, 0.6vmin, 5px);
     --bar-size: clamp(9px, 3.1vmin, 24px);
     --bar-radius: clamp(3px, 0.9vmin, 6px);
@@ -100,7 +102,7 @@
     border-radius: var(--radius-lg);
     text-decoration: none;
     overflow: hidden;
-    background: var(--surface);
+    background: var(--tile-bg);
     color: var(--text);
   }
 
@@ -122,11 +124,19 @@
     --tone: var(--badge-info-text);
   }
 
-  /* A break is the one thing worth spotting from across the room, so the failing tile
-     gets an outline as well as red type — the status word alone is easy to miss. */
+  /* A currently-broken workflow turns the whole tile red — the point of a wall display
+     is spotting that from across the room. The tint alone is muted by design, so the
+     bright ring carries the rest of the alarm. */
   .tile.tone-failure {
     --tone: var(--badge-danger-text);
+    --tile-bg: var(--badge-danger-bg);
     box-shadow: inset 0 0 0 2px var(--badge-danger-text);
+  }
+
+  /* "We couldn't ask GitHub" is not "the build is broken" — amber, not red. */
+  .tile.tone-error {
+    --tone: var(--badge-warning-text);
+    --tile-bg: var(--badge-warning-bg);
   }
 
   .name {
