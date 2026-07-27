@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import type { Server } from 'bun';
 import { Mochi } from './Mochi';
@@ -81,6 +81,13 @@ describe('Mochi.serve({ queues })', () => {
     expect(done.result).toEqual({ sent: true });
   });
 
+  test('a queue with no recover() never builds the recovery lease', () => {
+    // Nothing to single-flight, so building the store would create a SQLite file this app never reads.
+    for (const suffix of ['', '-wal', '-shm']) {
+      expect(existsSync(path.join(outDir, `tasks.sqlite${suffix}`))).toBe(false);
+    }
+  });
+
   test('getQueue() for a name never declared in serve is fatal', () => {
     // serve() reached the mount milestone, so this is reported as a wrong name
     // rather than as "too early", and the error lists what is actually mounted.
@@ -89,6 +96,7 @@ describe('Mochi.serve({ queues })', () => {
   });
 
   test('serve records the startup milestones it passed', () => {
-    expect(reachedStartupMilestones()).toEqual(['mochi:init', 'mochi:listening', 'mochi:queuesMounted', 'mochi:ready']);
+    // `mochi:tasksMounted` fires even with none declared, which is how `getTask()` tells "too early" from "you declared none".
+    expect(reachedStartupMilestones()).toEqual(['mochi:init', 'mochi:listening', 'mochi:queuesMounted', 'mochi:tasksMounted', 'mochi:ready']);
   });
 });

@@ -24,6 +24,8 @@ export { requestCache, requestMemo, getRequestCache } from './runtime/requestCac
 export type { MochiRequestCache, RequestMemoOptions } from './runtime/requestCache';
 export { MemoryStorage, FileStorage, isBlobRef, readBlobRef } from './cache/cache-storage';
 export type { FileStorageOptions, MemoryStorageOptions, BlobRef } from './cache/cache-storage';
+export { SqlStorage } from './cache/cache-storage-sql';
+export type { SqlStorageOptions } from './cache/cache-storage-sql';
 export { getImageUrl, getImageAttrs, getImage, getImagePlaceholder, imagePlaceholder, warmImagePlaceholder, invalidateImage } from './image/imageApi';
 export type { ResolvedImage, ImageAttrs } from './image/imageApi';
 export type { MochiImageOptions, ImageSize, InvalidateImageOptions, ImageFormat, ImageFit, ImportedImage, ImportedImageFormat } from './image/types';
@@ -83,6 +85,10 @@ export type {
   MochiQueueCompletedEvent,
   MochiQueueFailedEvent,
   MochiQueueErrorEvent,
+  MochiTaskRunEvent,
+  MochiTaskErrorEvent,
+  MochiTaskSkippedEvent,
+  MochiTaskLeaderEvent,
   MochiEmailSentEvent,
   MochiEmailErrorEvent,
   MochiServerStartEvent,
@@ -108,6 +114,10 @@ export type {
 } from './events';
 export type { MochiQueue, MochiJob, MochiJobRef, MochiJobOptions, MochiQueueOptions, MochiQueueRuntimeOptions, MochiQueueListeners, MochiProcessor } from './queue';
 export { DEFAULT_RECOVERY_STALL_WARNING_MS, DEFAULT_LOCK_DURATION_MS } from './queue';
+export type { MochiTaskHandle, MochiTaskOptions, MochiTaskRuntimeOptions, MochiTaskContext, MochiTaskRunner, MochiTaskScope } from './tasks/tasks';
+export type { MochiSchedulerOptions, MochiSchedulerLeaseOptions, TaskLeaseStore } from './tasks/scheduler';
+export { MemoryLeaseStore, SqlLeaseStore } from './tasks/lease';
+export type { LeaseRecord, LeaseClaim, LeaseResult, SqlLeaseStoreOptions } from './tasks/lease';
 export { json, error, apiError } from './utils';
 export { trailingSlashIt } from './runtime/trailingSlash';
 export { fail, redirect, success } from './runtime/forms';
@@ -179,6 +189,7 @@ export type {
   HttpMethod,
   MochiServeOptions,
   MochiWarmupOptions,
+  MochiCacheServeOptions,
   MochiRouteValue,
   MochiWsConfig,
   MochiWsHandlers,
@@ -189,6 +200,7 @@ export type {
   MochiFileConfig,
   MochiFileResolver,
   MochiQueueConfig,
+  MochiTaskConfig,
   BunRouteValue,
   MochiSvelteShakerOptions,
   MochiBarrelWarningOptions,

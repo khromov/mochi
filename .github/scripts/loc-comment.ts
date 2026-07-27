@@ -12,6 +12,8 @@ type Report = { name: string; totals: Counts; byCategory: Record<string, Counts>
 type Doc = { packages: Report[] };
 
 const MARKER = '<!-- mochi-review-bot -->';
+// Must match loc-report.ts's catch-all bucket.
+const MISCELLANEOUS = 'Other';
 
 function delta(n: number): string {
   if (n === 0) {
@@ -20,9 +22,9 @@ function delta(n: number): string {
   return n > 0 ? `+${n}` : `${n}`;
 }
 
-function renderRow(name: string, mainLines: number, prLines: number, bold = false): string {
+function renderRow(name: string, mainLines: number, prLines: number, bold = false, deltaText?: string): string {
   const wrap = (s: string | number) => (bold ? `**${s}**` : `${s}`);
-  return `| ${wrap(name)} | ${wrap(mainLines)} | ${wrap(prLines)} | ${wrap(delta(prLines - mainLines))} |`;
+  return `| ${wrap(name)} | ${wrap(mainLines)} | ${wrap(prLines)} | ${wrap(deltaText ?? delta(prLines - mainLines))} |`;
 }
 
 function renderPackageSection(name: string, mainReport: Report | undefined, prReport: Report | undefined, openByDefault: boolean): string[] {
@@ -30,7 +32,7 @@ function renderPackageSection(name: string, mainReport: Report | undefined, prRe
   const pr = prReport?.byCategory ?? {};
   const allCategories = new Set([...Object.keys(main), ...Object.keys(pr)]);
 
-  const changedRows: string[] = [];
+  const changed: { name: string; mainLines: number; prLines: number; oneSided: boolean }[] = [];
   const unchanged: { name: string; lines: number }[] = [];
   for (const category of allCategories) {
     const mainLines = main[category]?.lines ?? 0;
@@ -38,15 +40,37 @@ function renderPackageSection(name: string, mainReport: Report | undefined, prRe
     if (mainLines === 0 && prLines === 0) {
       continue;
     }
-    if (prLines - mainLines === 0) {
+    // main.json comes from main's own copy of loc-report.ts, which seeds every
+    // one of its patterns to zero. A key on only one side therefore means the
+    // pattern list changed, not the code — the lines moved in or out of
+    // "Other" rather than being written or deleted, so a ±N here would lie.
+    const oneSided = !(category in main) || !(category in pr);
+    if (!oneSided && prLines === mainLines) {
       unchanged.push({ name: category, lines: prLines });
       continue;
     }
-    changedRows.push(renderRow(`\`${category}\``, mainLines, prLines));
+    changed.push({ name: category, mainLines, prLines, oneSided });
   }
+
+  // Every reclassified line came out of (or fell into) Other, so its delta is
+  // an artifact of the same pattern-list change rather than real churn.
+  const reclassified = changed.some((c) => c.oneSided);
+  const changedRows = changed.map((c) =>
+    renderRow(
+      `\`${c.name}\``,
+      c.mainLines,
+      c.prLines,
+      false,
+      c.oneSided ? (c.name in main ? 'dropped †' : 'new †') : reclassified && c.name === MISCELLANEOUS ? `${delta(c.prLines - c.mainLines)} †` : undefined,
+    ),
+  );
   changedRows.push(renderRow('Total', mainReport?.totals.lines ?? 0, prReport?.totals.lines ?? 0, true));
 
   const table = ['| Category | main | PR | Δ |', '|---|---:|---:|---:|', ...changedRows];
+  if (reclassified) {
+    table.push('');
+    table.push('_† This PR changed the loc-report category list, so these lines were reclassified from/into `Other` rather than written or deleted. Compare the **Total** row._');
+  }
   if (unchanged.length > 0) {
     table.push('');
     table.push(`_Unchanged: ${unchanged.map((c) => `\`${c.name}\` (${c.lines})`).join(', ')}._`);

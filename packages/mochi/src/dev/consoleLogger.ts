@@ -273,6 +273,36 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
     level: 'warn',
   }));
 
+  subscribe('task:run', ({ task, duration }) => ({
+    label: 'TASK',
+    path: task,
+    note: styleText('green', 'done'),
+    duration,
+    slow,
+    verySlow,
+    // Framework tasks already print a richer line carrying per-kind counts, so demote the generic one rather than saying it twice.
+    level: task.startsWith('mochi:') ? 'debug' : 'warn',
+  }));
+  subscribe('task:error', ({ task, error }) => ({
+    label: 'TASK',
+    path: task,
+    note: `${styleText('red', 'failed')} ${styleText('dim', error)}`,
+    level: 'warn',
+  }));
+  subscribe('task:skipped', ({ task, reason }) => ({
+    label: 'TASK',
+    path: task,
+    note: styleText('yellow', `skipped (${reason})`),
+    level: 'warn',
+  }));
+  // Which node owns the schedule is the first thing you want to know when a cron didn't fire.
+  subscribe('task:leader', ({ acquired, holder }) => ({
+    label: 'TASK',
+    path: 'scheduler',
+    note: acquired ? styleText('green', 'acquired lease') : `${styleText('dim', 'standby')} ${styleText('dim', holder ? `leader ${holder}` : 'no leader')}`,
+    level: 'warn',
+  }));
+
   subscribe('email:sent', ({ to, subject, transport, duration }) => {
     // Four delivery classes, coloured so a non-delivery never reads as a success line: `log` didn't send (yellow, warn,
     // visible in production), `dev` was captured into the outbox (info, pointed at the viewer), `suppressed` was vetoed

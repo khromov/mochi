@@ -39,6 +39,7 @@ import { files as nestedIslands } from '../demos/nested-islands/files.ts';
 import { files as propDedup } from '../demos/prop-dedup/files.ts';
 import { files as propsId } from '../demos/props-id/files.ts';
 import { files as queue } from '../demos/queue/files.ts';
+import { files as tasks } from '../demos/tasks/files.ts';
 import { files as rateLimit } from '../demos/rate-limit/files.ts';
 import { files as reloadFormData } from '../demos/reload-form-data/files.ts';
 import { files as requestCache } from '../demos/request-cache/files.ts';
@@ -273,6 +274,14 @@ export const demos: Demo[] = [
     files: queue,
     title: 'Background jobs with queues',
     hook: 'How background job queues work — offload work to a Mochi.queue() with an embedded worker, no Redis.',
+    category: 'endpoints',
+  },
+  {
+    href: '/demos/tasks/',
+    slug: 'tasks',
+    files: tasks,
+    title: 'Scheduled tasks',
+    hook: 'How cron scheduling works — a Mochi.task() ticks on a pattern, and across multiple nodes a lease keeps exactly one of them running it.',
     category: 'endpoints',
   },
   {

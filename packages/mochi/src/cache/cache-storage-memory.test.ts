@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { MemoryStorage } from './cache-storage';
+import { sweepableCount } from './sweepRegistry';
 import { mochiEvents } from '../events';
 
 const wait = Bun.sleep;
@@ -79,32 +80,34 @@ describe('MemoryStorage', () => {
     expect(storage.sweep(Date.now() + 1_000).removedKeys).toBeUndefined();
   });
 
-  test('background sweeper emits cache:sweep', async () => {
+  test('sweepAndReport reclaims aged entries and emits cache:sweep', async () => {
     const events: number[] = [];
     mochiEvents.on('cache:sweep', ({ removed }) => events.push(removed));
 
-    const storage = makeStorage({ maxAge: 5, purgeInterval: 20 });
+    const storage = makeStorage({ maxAge: 5 });
     await storage.setItem('k', { value: 1 });
-    // Poll for the sweeper's tick rather than waiting a fixed multiple of the
-    // interval: a loaded runner (Windows CI) can delay the timer past any fixed
-    // budget, and the wait is only ever as long as the sweep actually takes.
-    const deadline = Date.now() + 2_000;
-    while (events.length === 0 && Date.now() < deadline) {
-      await wait(5);
-    }
+    await wait(20);
 
-    expect(events.length).toBeGreaterThanOrEqual(1);
+    storage.sweepAndReport();
+
+    expect(events).toEqual([1]);
     expect(await storage.getItem('k')).toBeNull();
   });
 
-  test('dispose stops the background sweeper', async () => {
-    const events: number[] = [];
-    mochiEvents.on('cache:sweep', ({ removed }) => events.push(removed));
+  test('joins the shared sweep only with a maxAge, and leaves it on dispose', () => {
+    const before = sweepableCount();
 
-    const storage = makeStorage({ maxAge: 5, purgeInterval: 20 });
-    storage.dispose();
-    await wait(60);
+    // No maxAge means `sweep()` can never remove anything, so joining would cost the janitor a pass over a definitional no-op.
+    makeStorage();
+    expect(sweepableCount()).toBe(before);
 
-    expect(events.length).toBe(0);
+    const swept = makeStorage({ maxAge: 5 });
+    expect(sweepableCount()).toBe(before + 1);
+
+    makeStorage({ maxAge: 5, purge: false });
+    expect(sweepableCount()).toBe(before + 1);
+
+    swept.dispose();
+    expect(sweepableCount()).toBe(before);
   });
 });

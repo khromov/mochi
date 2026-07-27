@@ -21,7 +21,7 @@ import { assertServerOnly } from './utils/serverOnly';
 import { markStartupMilestone } from './lifecycle';
 import type { MochiStartupMilestone } from './lifecycle';
 
-const STARTUP_MILESTONE_HOOKS = new Set<string>(['mochi:init', 'mochi:listening', 'mochi:queuesMounted', 'mochi:ready']);
+const STARTUP_MILESTONE_HOOKS = new Set<string>(['mochi:init', 'mochi:listening', 'mochi:queuesMounted', 'mochi:tasksMounted', 'mochi:ready']);
 
 /**
  * Every `mochiEvents` payload that `consoleLogger()` formats into a line. Narrow on `name` for typed per-event fields —
@@ -57,6 +57,12 @@ export interface MochiHookContext {
     /** Names of the queues just mounted, in declaration order. */
     queues: string[];
   };
+  'mochi:tasksMounted': {
+    options: MochiServeOptions;
+    server: Server<undefined>;
+    /** Names of the tasks just mounted, in declaration order. Mounting is registration — whether they run here depends on the lease. */
+    tasks: string[];
+  };
   'mochi:ready': { options: MochiServeOptions; server: Server<undefined> };
   'mochi:shutdown': {
     options: MochiServeOptions;
@@ -87,6 +93,7 @@ export interface MochiHookKindMap {
   'mochi:init': 'async';
   'mochi:listening': 'async';
   'mochi:queuesMounted': 'async';
+  'mochi:tasksMounted': 'async';
   'mochi:ready': 'async';
   'mochi:shutdown': 'async';
   'route:matched': 'sync';
@@ -248,6 +255,7 @@ const HOOK_KINDS: { [K in keyof MochiHookContext]: MochiKind } = {
   'mochi:init': 'async',
   'mochi:listening': 'async',
   'mochi:queuesMounted': 'async',
+  'mochi:tasksMounted': 'async',
   'mochi:ready': 'async',
   'mochi:shutdown': 'async',
   'route:matched': 'sync',

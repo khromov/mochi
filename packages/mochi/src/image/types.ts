@@ -138,8 +138,12 @@ export interface MochiImageOptions {
   timeToEvict?: number;
   /** Deflate-compress the encrypted URL payload when it shrinks it. Default: `true`. */
   compressPayload?: boolean;
-  /** Interval (ms) for the background janitor that deletes evicted/orphaned cache entries. `0` disables it. Default: `3_600_000` (1h). */
-  sweepIntervalMs?: number;
+  /**
+   * Cron pattern for the janitor that deletes evicted/orphaned cache entries. Runs as a `node`-scoped
+   * `Mochi.task()` named `mochi:image-sweep`, plus once at startup. `false` (or an empty string)
+   * disables it. Default: `'0 * * * *'` (top of every hour).
+   */
+  sweepCron?: string | false;
 }
 
 /** Fully-resolved options with every field present. */
@@ -161,7 +165,8 @@ export interface ResolvedImageOptions {
   timeToStale: number;
   timeToEvict: number;
   compressPayload: boolean;
-  sweepIntervalMs: number;
+  /** Normalised: an empty pattern collapses to `false`, so callers only test for `false`. */
+  sweepCron: string | false;
 }
 
 /** Error carrying the HTTP status the endpoint should return. */

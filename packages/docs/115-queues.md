@@ -187,6 +187,8 @@ Recovery is awaited before `Mochi.serve()` resolves, so recovered jobs are enque
 
 A `recover` that never settles is never cut short — abandoning it would drop the jobs it was about to add. Since warmup, `mochi:ready` and `serve()` resolving all wait behind it, Mochi logs a warning naming the queue if one is still running after 30 seconds.
 
+Across multiple processes, recovery runs on one node only. Every booting process contends for a lease, and the winner recovers while the rest skip and say so in the log — otherwise an N-replica deploy would re-enqueue the same stranded work N times. The lease is held for five minutes rather than released, so peers booting during a rolling deploy skip too; a genuine restart later finds it expired and recovers again. It uses the same configuration as [scheduled tasks](/docs/tasks/#multiple-processes) — set `MOCHI_SCHEDULER_URL` (or `scheduler.lease.url`) to storage every replica shares. With `scheduler.leader: false`, or in development, there is assumed to be one process and recovery runs unconditionally.
+
 <Callout type="info">
 
 **Queues mount late.** They are created after the `mochi:init` hook and after the server binds, so `Mochi.getQueue()` throws if you call it from `mochi:init` — the error says as much. Anywhere from the [`mochi:queuesMounted`](/docs/extensions/#mochiqueuesmounted) hook onwards can add jobs: a queue's own `recover` callback, the `mochi:ready` hook, or any request handler.

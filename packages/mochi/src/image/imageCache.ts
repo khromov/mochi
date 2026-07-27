@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import type { CacheStatus, Storage } from '../cache/cache';
 import { MochiCache } from '../cache/cache';
 import { FileStorage, isBlobRef, readBlobRef, type BlobRef } from '../cache/cache-storage';
+import { unregisterSweepable } from '../cache/sweepRegistry';
 import { mochiEvents, type MochiImageDeleteReason } from '../events';
 import type { ImageFormat, ResolvedImageSize } from './types';
 
@@ -158,12 +159,13 @@ export class ImageCache {
     this.minTimeToStale = options.minTimeToStale;
     this.maxTimeToLive = options.maxTimeToLive;
     this.sizes = options.sizes;
-    // Eviction stays the backend's; only the schedule and per-kind accounting live here. FileStorage's own timer is off
-    // (`purgeInterval: 0`) and `sweeper.ts` drives `sweep()` instead — one janitor, on an interval the image config
-    // owns, reporting variants and originals separately, with `maxAge >= maxTimeToLive` so a servable entry survives.
-    // A caller-supplied `storage` keeps its own eviction policy, and driving it from here puts every backend on that one
-    // schedule. `offloadBinary` is on because image bytes are the large-binary case blob offloading exists for.
-    this.storage = options.storage ?? new FileStorage({ directory: options.cacheDir, maxAge: options.maxTimeToLive, purgeInterval: 0, offloadBinary: true });
+    // Eviction stays the backend's; only the schedule and per-kind accounting live here. The storage sits out the shared
+    // `mochi:cache-sweep` janitor (`purge: false`) and `sweeper.ts` drives `sweep()` instead — one janitor, on a schedule
+    // the image config owns, reporting variants and originals separately, with `maxAge >= maxTimeToLive` so a servable
+    // entry survives. `offloadBinary` is on because image bytes are the large-binary case blob offloading exists for.
+    this.storage = options.storage ?? new FileStorage({ directory: options.cacheDir, maxAge: options.maxTimeToLive, purge: false, offloadBinary: true });
+    // A caller-supplied storage registered itself on construction, before it knew it was destined for an ImageCache — leaving it on sweeps it twice on two schedules.
+    unregisterSweepable(this.storage);
     // A regen (fetch upstream → decode → resize) holds the per-key coalescing lock only briefly, so a 60s timeout makes
     // a hung upstream fail fast instead of parking every waiter until the far larger default. The cache dir is shared
     // across load-balanced processes, so `crossProcessInflight` lets an advisory marker — leased to that same 60s — save
@@ -189,8 +191,9 @@ export class ImageCache {
 
   /**
    * Release this cache's bus subscription and stop its storage's timers, for teardown in tests or an explicitly owned
-   * instance. Server stop uses the sweeper's timers instead, since `getImageRuntime()` is a global singleton outliving a
-   * `Mochi.serve()` cycle and disposing it there would leave the next server a live cache whose cascade no longer fires.
+   * instance. Not called on server stop, since `getImageRuntime()` is a global singleton outliving a `Mochi.serve()`
+   * cycle and disposing it there would leave the next server a live cache whose cascade no longer fires — the scheduler
+   * stops the `mochi:image-sweep` task instead.
    */
   dispose(): void {
     mochiEvents.removeHandler(this.cascadeHandlerName);

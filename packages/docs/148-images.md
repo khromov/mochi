@@ -226,7 +226,18 @@ await Mochi.serve({
 
 A variant has no window of its own — its freshness mirrors the shared original at request time: while the original is fresh the variant serves from disk; once the original goes stale the variant is served stale and regenerated in the background; once it expires the variant is regenerated synchronously.
 
-Eviction is lazy — entries past the cache window linger on disk until reclaimed. A background janitor reclaims them by age: every `sweepIntervalMs` (default 1 h, plus once shortly after boot) it deletes entries past `timeToEvict`, logging one `CACHE image:sweep` line per run. A hard `invalidateImage()` additionally drops a source's variants and placeholder right away. Set `sweepIntervalMs: 0` to disable the janitor.
+Eviction is lazy — entries past the cache window linger on disk until reclaimed. A background janitor reclaims them by age: on the `sweepCron` schedule (default `'0 * * * *'`, the top of every hour, plus once at startup) it deletes entries past `timeToEvict`, logging one `CACHE image:sweep` line per run. A hard `invalidateImage()` additionally drops a source's variants and placeholder right away. Set `sweepCron: false` to disable the janitor.
+
+The janitor is a [scheduled task](/docs/tasks/) named `mochi:image-sweep`, registered for you, so you can reach it like any other:
+
+```ts
+const sweep = Mochi.getTask('mochi:image-sweep');
+sweep.nextRun(); // Date | null
+sweep.trigger(); // reclaim now
+sweep.pause();
+```
+
+Its scope is `'node'` — every process trims its own cache directory, so it never contends for the scheduler lease. Give it an offset minute (`'17 * * * *'`) if several replicas share one cache volume and you'd rather they didn't all sweep at `:00`.
 
 Served images carry both an `ETag` (tied to the cache generation and the size config hash) and a `Cache-Control` derived from the cache window — `public, max-age=<timeToStale>, stale-while-revalidate=<timeToEvict − timeToStale>`. Within `max-age` the browser serves from its own cache with no round-trip; after it, the `stale-while-revalidate` window lets it paint the cached copy instantly while revalidating in the background. The URL is stable per `(src, size)`, so once `max-age` lapses, correctness across a source refresh or a size redefinition rides on the `ETag`.
 
@@ -250,7 +261,7 @@ await Mochi.serve({
 });
 ```
 
-`cacheDir` is ignored once `storage` is set. `maxAge` drives the same background janitor (`sweepIntervalMs`) that would otherwise sweep `FileStorage` — omit it and entries are never reclaimed.
+`cacheDir` is ignored once `storage` is set. `maxAge` drives the same background janitor (`sweepCron`) that would otherwise sweep `FileStorage` — omit it and entries are never reclaimed.
 
 <Callout type="warning">
 
@@ -291,8 +302,14 @@ Configure under `Mochi.serve({ image: { … } })`. Every option is optional — 
 | `maxPixels`            | `50_000_000`            | Decompression-bomb guard                                                       |
 | `timeToStale`          | `14_400_000`            | Cache time-to-stale (ms); variants follow it                                   |
 | `timeToEvict`          | `86_400_000`            | Cache time-to-evict (ms); variants follow it                                   |
-| `sweepIntervalMs`      | `3_600_000`             | Background cache-janitor interval; `0` disables                                |
+| `sweepCron`            | `'0 * * * *'`           | Cron pattern for the background cache janitor; `false` disables                |
 | `compressPayload`      | `true`                  | Deflate the encrypted URL payload                                              |
+
+<Callout type="warning">
+
+**`sweepIntervalMs` was replaced by `sweepCron`.** Passing it now throws at startup rather than being silently ignored. Translate the interval into a pattern: `3_600_000` → `sweepCron: '0 * * * *'`, `300_000` → `sweepCron: '*/5 * * * *'`, and `0` → `sweepCron: false`.
+
+</Callout>
 
 <Callout type="warning">
 

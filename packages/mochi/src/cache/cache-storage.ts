@@ -2,6 +2,7 @@ import { mkdirSync, rmSync, type Dirent } from 'node:fs';
 import { mkdir, open, readdir, rename, rm, stat, unlink, type FileHandle } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import type { Storage, SweepOptions, SweepResult } from './cache';
+import { assertNoPurgeInterval, registerSweepable, unregisterSweepable, type SweepableStorage } from './sweepRegistry';
 import { mochiEvents } from '../events';
 import { logger } from '../utils/log';
 
@@ -68,23 +69,25 @@ function isKeyedEnvelope(value: unknown): value is KeyedEnvelope {
 export interface MemoryStorageOptions {
   /** Entries older than this (ms) are eligible for removal by `sweep()`. Default: unset — `sweep()` never removes anything, matching plain `new MemoryStorage()`'s prior behavior. */
   maxAge?: number;
-  /** Background sweep interval (ms) that evicts aged-out entries. Requires `maxAge`. Default: unset (no timer) — call `sweep()` manually, or rely on an external caller-driven janitor (e.g. `ImageCache`'s). */
-  purgeInterval?: number;
+  /** Let the `mochi:cache-sweep` task evict aged-out entries. Requires `maxAge` — without it there is nothing to evict. Default `true`. Set `false` to drive `sweep()` yourself. */
+  purge?: boolean;
 }
 
 /**
  * In-memory `Storage` backed by a `Map`, which without options holds everything forever. Pass `maxAge` so `sweep()`
  * reclaims aged-out entries — the only way to bound the footprint of a long-lived backend like `ImageCache`'s `storage` override.
  */
-export class MemoryStorage implements Storage {
+export class MemoryStorage implements Storage, SweepableStorage {
   private store = new Map<string, { value: unknown; writtenAt: number }>();
   private readonly maxAge?: number;
-  private intervalTimer?: ReturnType<typeof setInterval>;
 
   constructor(options: MemoryStorageOptions = {}) {
+    assertNoPurgeInterval(options, 'MemoryStorage');
     this.maxAge = options.maxAge;
-    if (options.purgeInterval && options.purgeInterval > 0) {
-      this.startSweeper(options.purgeInterval);
+    // No `maxAge` means `sweep()` is a no-op, so registering would only cost the
+    // janitor a pass over an entry that can never evict anything.
+    if (options.purge !== false && this.maxAge !== undefined) {
+      registerSweepable(this);
     }
   }
 
@@ -131,21 +134,15 @@ export class MemoryStorage implements Storage {
     return options.reportKeys ? { removed, removedKeys } : { removed };
   }
 
-  /** Stop the background sweep. Call when the store is no longer needed (e.g. in tests). */
-  dispose(): void {
-    if (this.intervalTimer) {
-      clearInterval(this.intervalTimer);
-    }
-    this.intervalTimer = undefined;
+  sweepAndReport(): void {
+    const start = Date.now();
+    const { removed } = this.sweep(start);
+    mochiEvents.emit('cache:sweep', { removed, durationMs: Date.now() - start });
   }
 
-  private startSweeper(intervalMs: number): void {
-    this.intervalTimer = setInterval(() => {
-      const start = Date.now();
-      const { removed } = this.sweep(start);
-      mochiEvents.emit('cache:sweep', { removed, durationMs: Date.now() - start });
-    }, intervalMs);
-    this.intervalTimer.unref?.();
+  /** Detach from the shared sweep. Call when the store is no longer needed (e.g. in tests). */
+  dispose(): void {
+    unregisterSweepable(this);
   }
 }
 
@@ -154,8 +151,8 @@ export interface FileStorageOptions {
   directory: string;
   /** Delete the directory's existing contents when the adapter is constructed. Default `false`. */
   purgeOnInit?: boolean;
-  /** Background sweep interval (ms) that deletes expired files. Default `60_000`. `<= 0` disables the sweeper. */
-  purgeInterval?: number;
+  /** Let the `mochi:cache-sweep` task delete expired files. Default `true`. Set `false` to drive `sweep()` yourself. */
+  purge?: boolean;
   /** Files older than this (ms) are deleted by the sweep. Should be `>=` the cache's `maxTimeToLive`. Default `600_000`. */
   maxAge?: number;
   /** Offload binary fields (`Uint8Array`/`Buffer`) to per-key blob files and return lazy {@link BlobRef}s on read. Default `false` — binaries are inlined as base64 in the JSON and round-trip as `Uint8Array`. */
@@ -238,14 +235,13 @@ const ORPHAN_BLOB_GRACE_MS = 10_000;
  * those fields as lazy {@link BlobRef}s, keeping metadata reads cheap. Deleting a key removes its blob folder with it,
  * and pointers already on disk always decode, so flipping the flag leaves existing entries intact.
  */
-export class FileStorage implements Storage {
+export class FileStorage implements Storage, SweepableStorage {
   private directory: string;
   private maxAge: number;
   private offloadBinary: boolean;
-  private initialTimer?: ReturnType<typeof setTimeout>;
-  private intervalTimer?: ReturnType<typeof setInterval>;
 
   constructor(options: FileStorageOptions) {
+    assertNoPurgeInterval(options, 'FileStorage');
     this.directory = options.directory;
     this.maxAge = options.maxAge ?? 600_000;
     this.offloadBinary = options.offloadBinary ?? false;
@@ -255,9 +251,8 @@ export class FileStorage implements Storage {
     }
     mkdirSync(this.directory, { recursive: true });
 
-    const purgeInterval = options.purgeInterval ?? 60_000;
-    if (purgeInterval > 0) {
-      this.startSweeper(purgeInterval);
+    if (options.purge !== false) {
+      registerSweepable(this);
     }
   }
 
@@ -451,16 +446,9 @@ export class FileStorage implements Storage {
     return options.reportKeys ? { removed, removedKeys } : { removed };
   }
 
-  /** Stop the background sweep. Call when the cache is no longer needed (e.g. in tests). */
+  /** Detach from the shared sweep. Call when the cache is no longer needed (e.g. in tests). */
   dispose(): void {
-    if (this.initialTimer) {
-      clearTimeout(this.initialTimer);
-    }
-    if (this.intervalTimer) {
-      clearInterval(this.intervalTimer);
-    }
-    this.initialTimer = undefined;
-    this.intervalTimer = undefined;
+    unregisterSweepable(this);
   }
 
   // The plaintext key stored in a file's envelope, or null if it can't be recovered
@@ -542,22 +530,13 @@ export class FileStorage implements Storage {
     return value;
   }
 
-  private startSweeper(intervalMs: number): void {
-    const run = async (): Promise<void> => {
-      const start = Date.now();
-      try {
-        const { removed } = await this.sweep(start);
-        mochiEvents.emit('cache:sweep', { removed, durationMs: Date.now() - start });
-      } catch (err) {
-        logger.warn(`Cache sweep failed: ${err instanceof Error ? err.message : String(err)}`);
-      }
-    };
-    // An initial pass shortly after boot reclaims accrued cruft and makes the
-    // sweeper visible right away; both timers are unref'd so they never keep the
-    // process alive.
-    this.initialTimer = setTimeout(run, 1_000);
-    this.intervalTimer = setInterval(run, intervalMs);
-    this.initialTimer.unref?.();
-    this.intervalTimer.unref?.();
+  async sweepAndReport(): Promise<void> {
+    const start = Date.now();
+    try {
+      const { removed } = await this.sweep(start);
+      mochiEvents.emit('cache:sweep', { removed, durationMs: Date.now() - start });
+    } catch (err) {
+      logger.warn(`Cache sweep failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 }

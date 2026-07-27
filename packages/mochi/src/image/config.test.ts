@@ -84,3 +84,28 @@ describe('getSize', () => {
     expect(getSize('toString', plain)).toBeUndefined();
   });
 });
+
+describe('sweepCron', () => {
+  test('defaults to the top of every hour', () => {
+    expect(resolveImageOptions(undefined).sweepCron).toBe('0 * * * *');
+  });
+
+  test('passes a custom pattern through', () => {
+    expect(resolveImageOptions({ sweepCron: '*/15 * * * *' }).sweepCron).toBe('*/15 * * * *');
+  });
+
+  test.each([
+    ['false', false],
+    ['an empty string', ''],
+    ['whitespace', '   '],
+  ])('%s disables the janitor', (_label, value) => {
+    // Normalised here so nothing downstream has to test for an empty pattern.
+    expect(resolveImageOptions({ sweepCron: value as never }).sweepCron).toBe(false);
+  });
+
+  test('the removed sweepIntervalMs throws with the migration', () => {
+    expect(() => resolveImageOptions({ sweepIntervalMs: 3_600_000 } as never)).toThrow(/sweepCron/);
+    // Even the old "disabled" value must not be silently ignored.
+    expect(() => resolveImageOptions({ sweepIntervalMs: 0 } as never)).toThrow(/sweepCron/);
+  });
+});

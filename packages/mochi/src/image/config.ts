@@ -71,6 +71,16 @@ function resolveSize(
 
 export function resolveImageOptions(opts: MochiImageOptions | undefined): ResolvedImageOptions {
   const o = opts ?? {};
+
+  // Throw rather than ignore: excess-property checks only fire on object literals,
+  // so a spread-in config would silently fall back to the default schedule.
+  // TODO: Remove after a few versions — we don't expect old consumers.
+  if ((o as { sweepIntervalMs?: unknown }).sweepIntervalMs !== undefined) {
+    throw new Error(
+      "Mochi.serve({ image }): `sweepIntervalMs` was replaced by `sweepCron`, a cron pattern. Use sweepCron: '0 * * * *' for the old hourly default, or sweepCron: false to disable the janitor.",
+    );
+  }
+
   const defaultFormat = o.defaultFormat ?? 'webp';
   const defaultQuality = o.defaultQuality ?? 80;
   const outputFormats = o.outputFormats ?? ALL_FORMATS;
@@ -102,7 +112,8 @@ export function resolveImageOptions(opts: MochiImageOptions | undefined): Resolv
     timeToStale: o.timeToStale ?? 14_400_000,
     timeToEvict: o.timeToEvict ?? 86_400_000,
     compressPayload: o.compressPayload ?? true,
-    sweepIntervalMs: o.sweepIntervalMs ?? 3_600_000,
+    // Normalised once here so nothing downstream has to re-test for an empty pattern.
+    sweepCron: o.sweepCron === false || (typeof o.sweepCron === 'string' && o.sweepCron.trim() === '') ? false : (o.sweepCron ?? '0 * * * *'),
   };
 }
 

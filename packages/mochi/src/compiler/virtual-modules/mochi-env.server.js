@@ -57,6 +57,7 @@ export { requestCache, requestMemo, getRequestCache } from "__MOCHI_REQUEST_CACH
 // isBlobRef/readBlobRef resolve the lazy blob references a
 // FileStorage-backed cache returns for binary fields.
 export { MemoryStorage, FileStorage, isBlobRef, readBlobRef } from "__MOCHI_CACHE_STORAGE__";
+export { SqlStorage } from "__MOCHI_CACHE_STORAGE_SQL__";
 // Image helpers. Server-only (signing needs the secret key); re-exported
 // so .svelte files can `import { getImageUrl } from 'mochi-framework'`.
 export { getImageUrl, getImageAttrs, getImage, getImagePlaceholder, imagePlaceholder, warmImagePlaceholder, invalidateImage } from "__MOCHI_IMAGE_API__";

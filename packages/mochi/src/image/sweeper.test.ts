@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { mochiEvents } from '../events';
 import type { MochiImageCacheSweepEvent } from '../events';
-import { startImageCacheSweeper } from './sweeper';
+import { runImageCacheSweep } from './sweeper';
 import type { ImageCache } from './imageCache';
 
 function fakeCache(onSweep: () => void, result: Awaited<ReturnType<ImageCache['sweep']>> = { removedVariants: 0, removedOriginals: 0, removedOther: 0 }): ImageCache {
@@ -17,51 +17,38 @@ afterEach(() => {
   mochiEvents.all.clear();
 });
 
-describe('startImageCacheSweeper', () => {
-  test('a non-positive interval is a disabled no-op', () => {
-    let swept = 0;
-    startImageCacheSweeper(
-      fakeCache(() => swept++),
-      0,
-    )();
-    expect(swept).toBe(0);
-  });
-
-  test('runs a sweep shortly after start', async () => {
-    let swept = 0;
-    const stop = startImageCacheSweeper(
-      fakeCache(() => swept++),
-      3_600_000,
-    );
-    await new Promise((r) => setTimeout(r, 1200));
-    stop();
-    expect(swept).toBeGreaterThanOrEqual(1);
-  });
-
-  test('stop() clears the timers so no sweep runs afterwards', async () => {
-    let swept = 0;
-    const stop = startImageCacheSweeper(
-      fakeCache(() => swept++),
-      3_600_000,
-    );
-    stop(); // before the ~1s post-boot sweep fires
-    await new Promise((r) => setTimeout(r, 1200));
-    expect(swept).toBe(0);
-  });
-
-  test('emits image:cache-sweep carrying the cache’s counts', async () => {
+describe('runImageCacheSweep', () => {
+  test('sweeps the cache and emits image:cache-sweep carrying its counts', async () => {
     const events: MochiImageCacheSweepEvent[] = [];
     mochiEvents.on('image:cache-sweep', (e) => events.push(e));
 
-    const stop = startImageCacheSweeper(
-      fakeCache(() => {}, { removedVariants: 3, removedOriginals: 2, removedOther: 1 }),
-      3_600_000,
-    );
-    await new Promise((r) => setTimeout(r, 1200));
-    stop();
+    let swept = 0;
+    await runImageCacheSweep(fakeCache(() => swept++, { removedVariants: 3, removedOriginals: 2, removedOther: 1 }));
 
-    expect(events.length).toBeGreaterThanOrEqual(1);
+    expect(swept).toBe(1);
+    expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({ removedVariants: 3, removedOriginals: 2, removedOther: 1 });
     expect(events[0]!.durationMs).toBeGreaterThanOrEqual(0);
+  });
+
+  test('propagates a failing sweep instead of swallowing it', async () => {
+    const cache = {
+      sweep: async () => {
+        throw new Error('disk on fire');
+      },
+    } as unknown as ImageCache;
+
+    // The task runner owns error reporting (logs + `task:error`), so this must
+    // reject rather than warn-and-continue the way the old timer did.
+    await expect(runImageCacheSweep(cache)).rejects.toThrow('disk on fire');
+  });
+
+  test('emits nothing when the sweep fails', async () => {
+    const events: MochiImageCacheSweepEvent[] = [];
+    mochiEvents.on('image:cache-sweep', (e) => events.push(e));
+
+    const cache = { sweep: async () => Promise.reject(new Error('nope')) } as unknown as ImageCache;
+    await expect(runImageCacheSweep(cache)).rejects.toThrow('nope');
+    expect(events).toHaveLength(0);
   });
 });
