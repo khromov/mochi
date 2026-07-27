@@ -5,7 +5,9 @@ description: 'On-the-fly image transforms on Bun.Image via named sizes, with enc
 ---
 
 <script>
+  import { Image } from 'mochi-framework/image';
   import Callout from './_components/Callout.svelte';
+  import placeholderShot from './images/image-placeholder.jpg';
 </script>
 
 ## Images
@@ -64,7 +66,7 @@ Add `placeholder` to render a [ThumbHash](https://evanw.github.io/thumbhash/) bl
 ```
 
 <figure>
-  <img src="/docs/image-placeholder.jpg" alt="Side by side: a soft colour-blurred rectangle on the left, and on the right the photo it resolves to — a mochi on a wooden board beside a pink lily" />
+  <Image src={placeholderShot} size="doc" width={placeholderShot.width} height={placeholderShot.height} alt="Side by side: a soft colour-blurred rectangle on the left, and on the right the photo it resolves to — a mochi on a wooden board beside a pink lily" />
   <figcaption>The ThumbHash blur (left) and the image it resolves to (right). The hash is a handful of bytes, so the blur carries the photo's colour and composition without a second request.</figcaption>
 </figure>
 
@@ -79,18 +81,18 @@ Add `placeholder` to render a [ThumbHash](https://evanw.github.io/thumbhash/) bl
 
 A bare `<Image src>` with no `size` serves the full-size original — that's the normal way to serve an un-resized image, not an error. An **unknown** size name also degrades to the original, but logs a one-time server warning.
 
-`<Image>` also works inside `mochi:hydrate*` islands — forward the island's auto-injected `isHydratable` prop. Minting needs the server secret, so with the prop set the minted URL is serialized into the page via Svelte's `hydratable` and reused during hydration — the browser never mints:
+`<Image>` also works inside `mochi:hydrate*` islands, at any nesting depth, with nothing to forward — it detects the hydrating subtree itself via [`isHydratable()`](/docs/selective-hydration/#ishydratable). Minting needs the server secret, so inside an island the minted URL is serialized into the page via Svelte's `hydratable` and reused during hydration — the browser never mints:
 
 ```svelte
 <script lang="ts">
   import { Image } from 'mochi-framework/image';
-  let { src, isHydratable }: { src: string; isHydratable?: boolean } = $props();
+  let { src }: { src: string } = $props();
 </script>
 
-<Image {src} size="thumbnail" {isHydratable} />
+<Image {src} size="thumbnail" />
 ```
 
-If the forward is missing, or a client-side re-render changes the image props, there's no snapshot to reuse and the `<img>` degrades to the raw `src` URL.
+If a client-side re-render changes the image props, there's no snapshot to reuse and the `<img>` degrades to the raw `src` URL.
 
 <Callout type="warning">
 Hydrated-island props ship in plain text in the page HTML — so a <code>src</code> you pass into a <code>mochi:hydrate</code> island (and any URL literal in the island's client JS) is visible to the client, even though the minted image URL itself stays encrypted. If your origin must stay secret, keep <code>&lt;Image&gt;</code> in server-rendered markup or a server island (<code>mochi:defer</code>), whose props are encrypted.
@@ -116,7 +118,7 @@ Import a local image Vite-style and get back an object with its served URL and i
 
 Supported formats: **png, jpg, jpeg, webp, avif, gif**. SVG is not supported (it can't be decoded for metadata/transforms) — put SVGs in your `public/` directory and reference them with a plain `<img src>`.
 
-The imported file is copied to a **content-hashed URL** (`/_mochi/asset/<slug>-<hash>.<ext>`) and served from disk with a long-lived immutable cache in production. Transforms read the file **from disk** — no network fetch — so `<Image src={hero} size="…">` and `placeholder` work without an origin round-trip. A bare `<Image src={hero}>` with no `size` renders the original at its intrinsic dimensions straight from that static URL (no endpoint hop).
+The imported file is copied to a **content-hashed URL** (`/_mochi/asset/<slug>-<hash>.<ext>`) and served from disk with a long-lived immutable cache in production. Transforms read the file **from disk** — no network fetch — so `<Image src={hero} size="…">` and `placeholder` work without an origin round-trip. A bare `<Image src={hero}>` with no `size` renders the original at its intrinsic dimensions straight from that static URL (no endpoint hop). Emitted copies live under `<outDir>/assets/` and [relocate with the build](/docs/deployment-options/#relocatable-builds).
 
 The `{ src, width, height, format }` shape is available as the exported `ImportedImage` type. Ambient module types for the image extensions come free via `mochi-framework/ambient` (already referenced by generated projects), so `import hero from './hero.png'` type-checks with no extra `global.d.ts`.
 

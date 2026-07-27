@@ -1,14 +1,8 @@
 /**
- * Authenticated encryption for server island props.
- *
- * Props are **encrypted** (confidentiality + integrity) via the shared
- * `payloadCrypto` module — the token on the wire is opaque ciphertext, not
- * readable JSON. The secret key and compression setting come from the shared
- * Mochi config (initialized by `Mochi.serve()`).
- *
- * The component name is bound as **AAD** — the only request-identifying part
- * of the island URL (`/_mochi/island/<componentName>?props=…`). This prevents
- * replaying a props token sealed for one component against a different one.
+ * Authenticated encryption for server island props through the shared `payloadCrypto` module, so the token on the wire
+ * is opaque ciphertext; the secret key and compression setting come from the Mochi config `Mochi.serve()` initializes.
+ * The component name binds as AAD — the one request-identifying part of `/_mochi/island/<componentName>?props=…` —
+ * which stops a props token sealed for one component being replayed against another.
  */
 import { parse as devalParse } from 'devalue';
 import { getMochiConfig } from '../mochiConfig';
@@ -36,10 +30,8 @@ export function encryptProps(propsJson: string, componentName: string): string {
   const { options } = getMochiConfig();
   const token = encryptPayload(propsJson, { aad: componentName, compress: options.compressServerIslandProps ?? true });
 
-  // Encrypted props are opaque on the wire, so the client can't decode them for
-  // the debug bar. Record the decoded snapshot keyed by the token the client
-  // will see in the island's `signed-props` attribute. Best-effort — ignore
-  // failures (e.g. invalid devalue JSON) so encryption never depends on it.
+  // Encrypted props are opaque on the wire, so the debug bar reads this decoded snapshot instead, keyed by the token
+  // the client sees in `signed-props`. Best-effort: failures are ignored so encryption never depends on it.
   try {
     const ctx = requestContext.getStore();
     if (ctx?.debugBarData?.serverProps) {

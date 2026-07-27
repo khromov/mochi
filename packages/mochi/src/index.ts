@@ -13,12 +13,15 @@ export type { MochiBuildOptions } from './cli/build';
 export { runTests } from './cli/testing';
 export type { RunTestsOptions } from './cli/testing';
 export type { MochiSvelteConfig } from './compiler/svelteConfig';
+export type { MochiSvelteCompiler, SvelteCompilerBackend, SvelteCompileOutput } from './compiler/svelteCompilerBackend';
 export { getRequestContext } from './runtime/requestContext';
 export type { MochiRequestContext } from './runtime/requestContext';
 export { getMochiConfig } from './mochiConfig';
 export type { CookieSerializeOptions, Cookie } from './runtime/cookies';
 export { MochiCache } from './cache/cache';
 export type { MochiCacheOptions, CacheResult, CacheStatus, Storage, SweepOptions, SweepResult } from './cache/cache';
+export { requestCache, requestMemo, getRequestCache } from './runtime/requestCache';
+export type { MochiRequestCache, RequestMemoOptions } from './runtime/requestCache';
 export { MemoryStorage, FileStorage, isBlobRef, readBlobRef } from './cache/cache-storage';
 export type { FileStorageOptions, MemoryStorageOptions, BlobRef } from './cache/cache-storage';
 export { getImageUrl, getImageAttrs, getImage, getImagePlaceholder, imagePlaceholder, warmImagePlaceholder, invalidateImage } from './image/imageApi';
@@ -104,14 +107,15 @@ export type {
   MochiCaptchaReason,
 } from './events';
 export type { MochiQueue, MochiJob, MochiJobRef, MochiJobOptions, MochiQueueOptions, MochiQueueRuntimeOptions, MochiQueueListeners, MochiProcessor } from './queue';
-export { DEFAULT_RECOVERY_STALL_WARNING_MS } from './queue';
+export { DEFAULT_RECOVERY_STALL_WARNING_MS, DEFAULT_LOCK_DURATION_MS } from './queue';
 export { json, error, apiError } from './utils';
 export { trailingSlashIt } from './runtime/trailingSlash';
 export { fail, redirect, success } from './runtime/forms';
+export { isHydratable } from './islands/isHydratable';
 
 export { mintCaptcha, verifyCaptcha, consumeCaptcha, solveCaptcha } from './captcha/captcha';
 export { MemoryNonceStore, SqliteNonceStore } from './captcha/nonceStore';
-export { DEFAULT_CAPTCHA_MIN_AGE_MS, DEFAULT_CAPTCHA_DRIFT_ALLOWANCE_MS } from './captcha/config';
+export { DEFAULT_CAPTCHA_BITS, DEFAULT_CAPTCHA_MIN_AGE_MS, DEFAULT_CAPTCHA_DRIFT_ALLOWANCE_MS } from './captcha/config';
 export type { MintedCaptcha } from './captcha/captcha';
 export type { MochiCaptchaOptions, CaptchaResult, CaptchaFailureReason, NonceStore } from './captcha/types';
 export { enhance, deserialize } from './runtime/enhance.ssr';
@@ -187,15 +191,15 @@ export type {
   MochiQueueConfig,
   BunRouteValue,
   MochiSvelteShakerOptions,
+  MochiBarrelWarningOptions,
+  MochiBuildReportOptions,
 } from './types';
 
 import type { Snippet } from 'svelte';
 
 /**
- * Props helper for a `mochi:clientOnly` component. Adds an optional `children`
- * snippet so the SSR fallback passed as children type-checks against the
- * component. The fallback is SSR-only placeholder markup — it is NOT passed to
- * the component at runtime, so don't render `children` inside a client-only
- * component.
+ * Props helper for a `mochi:clientOnly` component, adding an optional `children` snippet so the SSR fallback passed as
+ * children type-checks. That fallback is SSR-only placeholder markup and never reaches the component at runtime, so
+ * leave `children` unrendered inside a client-only component.
  */
 export type ClientOnlyProps<T> = Omit<T, 'children'> & { children?: Snippet };

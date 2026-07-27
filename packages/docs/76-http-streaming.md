@@ -33,5 +33,5 @@ Reach for these to layer realtime UI on top of a rendered base page.
 - **Shared HTTP cache** (Cloudflare, CloudFront, Fastly, Varnish, nginx) in front of the origin makes render time irrelevant for the cacheable common case. Server islands can stay uncached behind a cached shell — see `Cache`.
 
 <SeeItInAction
-demos={[{ href: "/demos/streams/", title: "Real-time Streams", hook: "WebSocket and SSE clocks, lazily hydrated via mochi:hydrate:visible." }]}
+demos={[{ href: "/demos/streams/", title: "Real-time Streams", hook: "How server-sent events and WebSocket streaming work — live SSE and WebSocket clocks, lazily hydrated via mochi:hydrate:visible." }]}
 />

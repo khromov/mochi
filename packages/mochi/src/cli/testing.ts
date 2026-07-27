@@ -6,20 +6,15 @@ export interface RunTestsOptions {
   /** Test files (paths relative to `dir`) that must run sequentially, after the parallel batch. */
   sequential?: Iterable<string>;
   /**
-   * Test files (paths relative to `dir`) to skip on Windows only. For suites that
-   * pass every test but then wedge in Bun's native post-test shutdown on Windows —
-   * a runtime bug with no JS-level recovery (bun stops running the loop before it
-   * hangs) and no reproduction off-Windows to fix from. Skipped files are logged so
-   * the gap is never silent; their logic still runs on Linux/macOS.
+   * Test files (paths relative to `dir`) to skip on Windows only, for suites that pass every test but then wedge in
+   * Bun's native post-test shutdown there — a runtime bug with no JS-level recovery, since bun stops running the loop
+   * before it hangs. Skipped files are logged, and their logic still runs on Linux and macOS.
    */
   windowsSkip?: Iterable<string>;
   /**
-   * Hard per-file deadline (ms). A `bun test` child that hasn't exited by then is
-   * killed and the file is recorded as failed with a "TIMED OUT" message, so one
-   * wedged process can't hang the whole run. Backstops Bun's per-*test* `--timeout`,
-   * which fails a test but never forces the process to exit. Default 60_000 — well
-   * above any healthy file (the slowest here is a few seconds) and well under CI's
-   * job cap, so a genuinely wedged file fails fast and named.
+   * Hard per-file deadline (ms). A `bun test` child still running past it is killed and recorded as failed with
+   * "TIMED OUT", so one wedged process can't hang the run — a backstop for Bun's per-*test* `--timeout`, which fails a
+   * test while leaving the process alive. Default 60_000: far above any healthy file and well under CI's job cap.
    */
   fileTimeoutMs?: number;
 }
@@ -33,23 +28,100 @@ interface FileResult {
   stderr: string;
 }
 
+/** One failing test (or one unattached error block, `name: null`) plus the error text `bun test` printed for it. */
+interface Failure {
+  name: string | null;
+  detail: string[];
+}
+
+export interface FailureExcerpt {
+  failures: Failure[];
+  /** Last lines of raw output, used when nothing parsed (a killed process, a crash before the reporter ran). */
+  fallback?: string[];
+}
+
+const MARKER_RE = /^\((?:pass|fail|skip|todo)\)/;
+const FAIL_RE = /^\(fail\)\s*(.*?)(?:\s*\[[\d.]+\s*m?s\])?$/;
+const FOOTER_RE = /^\s*(?:\d+ (?:pass|fail|error|expect)|Ran \d+ tests?)/;
+const ERROR_RE = /^\s*(?:error:|# Unhandled error)/;
+const MAX_DETAIL_LINES = 25;
+const MAX_FILE_LINES = 60;
+
 /**
- * Runs each `src/**\/*.test.ts` file in its own `bun test` process, up to
- * `navigator.hardwareConcurrency` in parallel.
+ * Pulls failing test names and their error text out of a `bun test` run. Bun prints a failure's source snippet and
+ * `error:` block *before* the `(fail) <name>` line naming it, so lines buffer and attach to the marker that follows.
+ * Blocks with no following marker — an unhandled error between tests, an import that threw — stay unattached.
+ */
+export function extractFailures(result: Pick<FileResult, 'stdout' | 'stderr'>): FailureExcerpt {
+  // The reporter writes to stderr; stdout only carries the version banner and the
+  // test's own console output, so it is a fallback source only.
+  const lines = result.stderr.split('\n');
+  const failures: Failure[] = [];
+  let pending: string[] = [];
+
+  const flushUnattached = (): void => {
+    if (pending.some((l) => ERROR_RE.test(l))) {
+      failures.push({ name: null, detail: trimDetail(pending) });
+    }
+    pending = [];
+  };
+
+  for (const line of lines) {
+    if (MARKER_RE.test(line)) {
+      const failed = FAIL_RE.exec(line);
+      if (failed) {
+        failures.push({ name: failed[1]!.trim() || '(unnamed test)', detail: trimDetail(pending) });
+      }
+      pending = [];
+    } else if (FOOTER_RE.test(line)) {
+      flushUnattached();
+    } else {
+      pending.push(line);
+    }
+  }
+  flushUnattached();
+
+  if (failures.length > 0) {
+    return { failures };
+  }
+
+  const raw = (result.stderr.trim() ? result.stderr : result.stdout).split('\n').filter((l) => l.trim() && !/^bun test v/.test(l));
+  return { failures: [], fallback: raw.slice(-20) };
+}
+
+/** Reduce a buffered block to its error text: from the first `error:`/unhandled-error line onward, capped. */
+function trimDetail(block: string[]): string[] {
+  const start = block.findIndex((l) => ERROR_RE.test(l));
+  const kept = (start === -1 ? block : block.slice(start)).filter((l) => !/^-{3,}$/.test(l.trim()));
+  const trimmed = dropEdgeBlanks(kept);
+  if (trimmed.length <= MAX_DETAIL_LINES) {
+    return trimmed;
+  }
+  return [...trimmed.slice(0, MAX_DETAIL_LINES), `… (truncated, ${trimmed.length - MAX_DETAIL_LINES} more lines)`];
+}
+
+function dropEdgeBlanks(block: string[]): string[] {
+  let start = 0;
+  let end = block.length;
+  while (start < end && !block[start]!.trim()) {
+    start++;
+  }
+  while (end > start && !block[end - 1]!.trim()) {
+    end--;
+  }
+  return block.slice(start, end);
+}
+
+/**
+ * Runs each `src/**\/*.test.ts` file in its own `bun test` process, up to `navigator.hardwareConcurrency` in parallel,
+ * exiting with code 1 if any file fails.
  *
- * Per-file isolation is required because `Mochi.serve()` enforces a single
- * instance per process (the `globalThis.__mochi_config__` singleton, plus its
- * siblings `__mochi_image_runtime__`/captcha/image/email config, none of which
- * `server.stop()` clears) — booting two servers in one process throws
- * "Mochi.serve() has already been called." Separate processes also sidestep
- * `GlobalRegistrator`/happy-dom pollution and test-global pollution from
- * compiling the same Svelte entry twice.
- *
- * Orthogonal to the Bun EISDIR bundler bug — that one is fixed separately by the
- * hoisted linker in the root `bunfig.toml`, not by this runner, so the linker
- * fix does not make per-file isolation optional.
- *
- * Exits the process with code 1 if any file fails.
+ * Per-file isolation is required because `Mochi.serve()` enforces one instance per process — the
+ * `globalThis.__mochi_config__` singleton plus its `__mochi_image_runtime__`/captcha/image/email siblings, none of which
+ * `server.stop()` clears — so booting two servers in one process throws "Mochi.serve() has already been called."
+ * Separate processes also sidestep `GlobalRegistrator`/happy-dom pollution and test-global pollution from compiling the
+ * same Svelte entry twice. This is orthogonal to the Bun EISDIR bundler bug, which the root `bunfig.toml`'s hoisted
+ * linker fixes, so that fix leaves per-file isolation just as necessary.
  */
 export async function runTests(options: RunTestsOptions = {}): Promise<void> {
   const dir = options.dir ?? '.';
@@ -69,22 +141,16 @@ export async function runTests(options: RunTestsOptions = {}): Promise<void> {
     console.log(`Skipping ${all.length - included.length} file(s) on Windows: ${[...windowsSkip].join(', ')}`);
   }
 
-  // Run one file at a time on Windows. Some suites pass every test but then wedge
-  // in Bun's native post-test shutdown there (no JS-level recovery is possible —
-  // bun stops running the loop before it hangs); this tests the theory that the
-  // wedge is triggered by many processes tearing down under parallel load. Costs
-  // wall-clock but keeps the run honest without skipping or faking a pass.
+  // Windows runs one file at a time, testing the theory that its post-test shutdown wedge is triggered by many
+  // processes tearing down under parallel load. It costs wall-clock but keeps the run honest.
   const concurrency = process.platform === 'win32' ? 1 : navigator.hardwareConcurrency;
   console.log(`Running ${included.length} test files (${parallel.length} parallel × ${concurrency} workers, ${sequential.size} sequential)`);
 
   const results: FileResult[] = [];
 
-  // Run one file in its own `bun test` process under a hard deadline. Bun's
-  // `--timeout` only fails an individual test; a process wedged after its tests
-  // (a leaked handle, or a Bun-on-Windows shutdown quirk that wedges after every
-  // test passes) would otherwise block the worker on `proc.exited` forever and
-  // hang the whole run until CI's job cap. Killing it turns that into a fast,
-  // named failure.
+  // Bun's `--timeout` fails an individual test but leaves the process alive, so one wedged after its tests — a leaked
+  // handle, or the Bun-on-Windows shutdown quirk — would block the worker on `proc.exited` until CI's job cap. The hard
+  // deadline turns that into a fast, named failure.
   async function runFile(file: string): Promise<FileResult> {
     const proc = Bun.spawn(['bun', 'test', '--timeout', '30000', file], {
       cwd: dir,
@@ -112,10 +178,9 @@ export async function runTests(options: RunTestsOptions = {}): Promise<void> {
     if (outcome === 'timeout') {
       timedOut = true;
       proc.kill();
-      // On POSIX that was SIGTERM, which a process wedged in native code — the
-      // very case this deadline exists for — can ignore; awaiting proc.exited
-      // would then hang the run anyway. Give it a moment to die cleanly, then
-      // SIGKILL. (On Windows kill() already hard-terminates.)
+      // On POSIX that was SIGTERM, which a process wedged in native code — the very case this deadline exists for — can
+      // ignore, so awaiting `proc.exited` would hang the run anyway; a moment to die cleanly, then SIGKILL. Windows
+      // `kill()` already hard-terminates.
       const died = await Promise.race([proc.exited.then(() => true), Bun.sleep(2_000).then(() => false)]);
       if (!died) {
         proc.kill('SIGKILL');
@@ -160,11 +225,24 @@ export async function runTests(options: RunTestsOptions = {}): Promise<void> {
 
   const failed = results.filter((r) => !r.ok);
   console.log(`\n${'='.repeat(60)}`);
-  console.log(`${results.length - failed.length}/${results.length} tests passed (concurrency: ${concurrency})`);
+  console.log(`${results.length - failed.length}/${results.length} test files passed (concurrency: ${concurrency})`);
   if (failed.length > 0) {
+    // Re-print each failure at the very end: with files streaming out of order
+    // across workers, the error text that matters is buried thousands of lines up.
     console.log('Failed:');
     for (const r of failed) {
-      console.log(`  ✗ ${r.file}${r.timedOut ? ' (timed out)' : ''}`);
+      console.log(`\n  ✗ ${r.file}${r.timedOut ? ' (timed out)' : ''}`);
+      const { failures, fallback } = extractFailures(r);
+      const body = failures.flatMap((f) => (f.name ? [`(fail) ${f.name}`, ...f.detail] : f.detail)).concat(fallback ?? []);
+      if (body.length === 0) {
+        console.log('    (no output captured before the process was killed)');
+      }
+      for (const line of body.slice(0, MAX_FILE_LINES)) {
+        console.log(line.trim() ? `    ${line}` : '');
+      }
+      if (body.length > MAX_FILE_LINES) {
+        console.log(`    … (truncated, ${body.length - MAX_FILE_LINES} more lines — see this file's output above)`);
+      }
     }
     process.exit(1);
   }

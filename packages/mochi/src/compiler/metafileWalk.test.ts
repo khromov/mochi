@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { ComponentRegistry } from './ComponentRegistry';
+import { encodeSourcePath } from './manifestPaths';
 import { requestContext } from '../runtime/requestContext';
 import { MochiCookieJar } from '../runtime/cookies';
 
@@ -32,9 +33,9 @@ describe('metafile walk — transitive attribution at depth 2', () => {
 
   test('attributes a side-effect .css import reached two imports deep', () => {
     const manifest = registry.toManifest();
-    const entryCss = manifest.entryImportedCss?.[FIXTURE_PAGE];
+    const entryCss = manifest.entryImportedCss?.[encodeSourcePath(FIXTURE_PAGE)];
     expect(entryCss).toBeDefined();
-    expect(entryCss).toContain(FIXTURE_DEEP_CSS);
+    expect(entryCss).toContain(encodeSourcePath(FIXTURE_DEEP_CSS));
   });
 
   test('attributes component CSS for a Svelte file reached two imports deep', async () => {

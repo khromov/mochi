@@ -24,11 +24,9 @@ export function buildTransport(config: MochiEmailTransportConfig): EmailTranspor
 }
 
 /**
- * Default transport: sends nothing. Delivery is reported only through the
- * `email:sent` event (`transport: 'log'`), which `consoleLogger` surfaces as a
- * warn-level `MAIL … (not sent)` line — visible in production too, so an
- * unconfigured mailer is obvious instead of silently dropping mail. Logging
- * lives in the event subscriber, not here, so a send produces one line.
+ * Default transport: reports delivery through the `email:sent` event alone (`transport: 'log'`), which `consoleLogger`
+ * surfaces as a warn-level `MAIL … (not sent)` line, visible in production so an unconfigured mailer is obvious.
+ * Logging lives in the event subscriber, keeping a send to one line.
  */
 class LogTransport implements EmailTransport {
   readonly name = 'log' as const;
@@ -37,11 +35,7 @@ class LogTransport implements EmailTransport {
   }
 }
 
-/**
- * Development transport: sends nothing, but captures each message into an
- * in-memory outbox (see `devOutbox.ts`) that the dev-only viewer at
- * `/_mochi/email` renders. Default transport in development.
- */
+/** Development default: captures each message into the in-memory outbox (`devOutbox.ts`) that the dev-only viewer at `/_mochi/email` renders. */
 class DevTransport implements EmailTransport {
   readonly name = 'dev' as const;
   async send(message: ResolvedEmailMessage): Promise<MochiEmailResult> {
@@ -65,6 +59,10 @@ type NodemailerTransporter = {
   close(): void;
 };
 
+// Typing against a local interface rather than `typeof import('nodemailer')` spares consumers from resolving
+// nodemailer's types, which it ships none of, since mochi publishes source they type-check.
+type NodemailerModule = { createTransport(opts: unknown): NodemailerTransporter };
+
 /** Delivers over SMTP. nodemailer is imported lazily on first send. */
 class SmtpTransport implements EmailTransport {
   readonly name = 'smtp' as const;
@@ -74,13 +72,10 @@ class SmtpTransport implements EmailTransport {
 
   constructor(private readonly config: Extract<MochiEmailTransportConfig, { type: 'smtp' }>) {}
 
-  // Memoize the in-flight build (synchronous `??=`) so concurrent first sends
-  // share one transporter instead of each racing past an `await` and creating —
-  // then leaking — its own pool. A failed build is not cached, so a later send
-  // retries the lazy import. Once `closed` (set synchronously by close(), before
-  // its own await), refuse to build a new pool — otherwise a send racing close()
-  // could spin up a transporter after close() has already captured the one it's
-  // about to await-then-close, and that new pool would never be closed.
+  // The synchronous `??=` memoizes the in-flight build so concurrent first sends share one transporter instead of each
+  // racing past an `await` and leaking its own pool; a failed build stays uncached, so a later send retries the lazy
+  // import. `closed` is set synchronously by `close()` before its own await, since a send racing it could otherwise
+  // spin up a transporter after `close()` captured the one it's about to close, leaving the new pool open forever.
   private getTransporter(): Promise<NodemailerTransporter> {
     if (this.closed) {
       return Promise.reject(new EmailError('SMTP transport is closed.'));
@@ -92,9 +87,13 @@ class SmtpTransport implements EmailTransport {
   }
 
   private async buildTransporter(): Promise<NodemailerTransporter> {
-    let nodemailer: typeof import('nodemailer');
+    let nodemailer: NodemailerModule;
     try {
-      nodemailer = await import('nodemailer');
+      // Consumers type-check this file, since mochi publishes source, and a *literal* `import('nodemailer')` would make
+      // their tsc/svelte-check demand nodemailer's absent types (TS7016). An indirect specifier keeps the runtime
+      // import intact while opting this line out of static module-type resolution.
+      const nodemailerSpecifier = 'nodemailer';
+      nodemailer = (await import(nodemailerSpecifier)) as unknown as NodemailerModule;
     } catch (err) {
       throw new EmailError(
         "Failed to load 'nodemailer' for the SMTP transport. It ships as a dependency of mochi-framework, so this usually means dependencies weren't installed correctly — try reinstalling (`bun install`).",
@@ -110,7 +109,7 @@ class SmtpTransport implements EmailTransport {
       ...(auth ? { auth } : {}),
       ...(pool ? { pool: true } : {}),
       ...(tls ? { tls } : {}),
-    }) as unknown as NodemailerTransporter;
+    });
   }
 
   send(message: ResolvedEmailMessage): Promise<MochiEmailResult> {

@@ -68,5 +68,5 @@ Values are serialized with [`devalue`](https://www.npmjs.com/package/devalue), s
 </Callout>
 
 <SeeItInAction
-demos={[{ href: "/demos/hydratable/", title: "Hydratable", hook: "Compute a value once on the server with hydratable(); the hydrated island reads it from <head> instead of re-running the async work." }]}
+demos={[{ href: "/demos/hydratable/", title: "Hydratable", hook: "How hydratable() works — compute a value once on the server and reuse it on the client instead of re-running async work during hydration." }]}
 />
