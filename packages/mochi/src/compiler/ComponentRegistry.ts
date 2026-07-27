@@ -401,6 +401,8 @@ export class ComponentRegistry {
   readonly development: boolean;
   /** Set by `fromManifest()`; distinguishes a prebuilt-manifest boot from a live, compile-on-demand one. */
   loadedFromManifest = false;
+  /** Files `publicDir` held when this manifest was built; see `MochiManifest.publicFileCount`. 0 when not loaded from one. */
+  publicFileCountAtBuild = 0;
   readonly debugBarEnabled: boolean;
   readonly outDir: string;
   readonly assetPrefix: string;
@@ -2068,6 +2070,7 @@ export class ComponentRegistry {
       assetPrefix: manifest.assetPrefix,
     });
     registry.loadedFromManifest = true;
+    registry.publicFileCountAtBuild = manifest.publicFileCount ?? 0;
 
     registry.islandBootstrapUrl = manifest.bootstrapUrl;
     registry.clientStats = manifest.stats;

@@ -40,7 +40,7 @@ import { applyFilter, initExtensions, runHook } from './extensions';
 import { escapeHtmlAttr } from './utils/htmlEscape';
 import { buildPublicUrl } from './runtime/proxy';
 import { realpath } from 'node:fs/promises';
-import { apiError, collectHeaderPairs, cssLinkTag, headResponse, isHtmlResponse, MochiHttpError, toPosixPath, withHead } from './utils';
+import { apiError, collectHeaderPairs, cssLinkTag, headResponse, isHtmlResponse, MochiHttpError, relForDisplay, toPosixPath, withHead } from './utils';
 import type { MochiEvent, MochiEventKind, MochiResolveOptions } from './runtime/hooks';
 import { applyResolveOptions } from './runtime/hooks';
 import { alternateSlashPattern, trailingSlashRedirect } from './runtime/trailingSlash';
@@ -1495,6 +1495,17 @@ export class Mochi {
     // Every mode scans `publicDir` from disk, and user-defined routes win, so a public route is added only where no user
     // route claims the path. The dev-watcher reload rebuilds them through these same helpers.
     const initialPublicFiles = await resolvePublicFiles({ publicDir, development });
+    // The build copies nothing, so on disk a deploy that ships the build output and forgets publicDir is
+    // indistinguishable from an app that never had static files, leaving the build-time count the only witness. It
+    // warns rather than throws, since dropping the directory on purpose is legitimate.
+    if (!development && registry.loadedFromManifest && registry.publicFileCountAtBuild > 0 && initialPublicFiles.size === 0) {
+      logger.warn(
+        `publicDir "${relForDisplay(publicDir)}" is missing or empty, but the build found ${registry.publicFileCountAtBuild} file(s) there — every static file will 404. ` +
+          `The build never copies publicDir; the runtime reads it on every boot, so that directory has to ship with your deploy ` +
+          `(in Docker, a COPY for it in the final stage — and check .dockerignore). ` +
+          `If it moved, point \`publicDir\` at the new location; if the files are gone on purpose, re-run \`mochi-framework build\` to clear this.`,
+      );
+    }
     registerPublicRoutes(bunRoutes, initialPublicFiles);
 
     const userFetch = options.fetch;

@@ -289,7 +289,7 @@ export interface MochiManifestComponent {
 
 export interface MochiManifest {
   /**
-   * Schema version of the on-disk build output; the runtime loads only the exact version it writes (currently 3)
+   * Schema version of the on-disk build output; the runtime loads only the exact version it writes (currently 2)
    * and throws on anything else, so build and serve must use the same `mochi-framework` version.
    *
    * Every manifest path is relative, in one of three families:
@@ -302,6 +302,9 @@ export interface MochiManifest {
    *   sources under a `$mochi/` sentinel. Both ends take the root from `process.cwd()`, so
    *   `mochi-framework build` and the server must run from the same working directory.
    * - **`stats.outputs[].inputs[].path`** — build-cwd relative, as Bun's metafile emits it, and diagnostic only.
+   *
+   * Static files form no family: the runtime rescans `publicDir` at startup in every mode, and a manifest carries only
+   * the count — see `publicFileCount`.
    */
   version: number;
   /** URL prefix under which framework client assets and the server island endpoint are served. */
@@ -334,6 +337,12 @@ export interface MochiManifest {
   entryImportedCss?: Record<string, string[]>;
   /** Prebuilt, minified ServerIsland inline web-component script, emitted by `build()` so production loads it from disk in place of a startup `Bun.build`. */
   serverIslandScript?: string;
+  /**
+   * How many files `publicDir` held at build time — a count rather than a path family, so it stays machine-independent.
+   * The build copies no static files, so nothing else in the out-dir would reveal a deploy that shipped the build output
+   * and left `publicDir` behind; `Mochi.serve()` compares this against its own startup scan.
+   */
+  publicFileCount?: number;
 }
 
 /**
