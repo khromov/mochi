@@ -95,6 +95,15 @@ const demoLlmsRoutes: Record<string, MochiRouteValue> = Object.fromEntries(
   ]),
 );
 
+// Vanity redirects. These are `Mochi.api()` routes, so the site's `trailingSlash: 'always'`
+// never mirrors them onto the alt-slash form — but links to both forms are already published,
+// so each form is registered by hand. Slashless is the canonical one we link internally.
+const DISCORD_INVITE = 'https://discord.com/invite/QCGfks4gg8';
+// The support form lives at support.mochi.fast (packages/support) — it needs an
+// SMTP config this site deliberately doesn't carry.
+const SUPPORT_ORIGIN = 'https://support.mochi.fast/';
+const vanityRedirect = (to: string): MochiRouteValue => Mochi.api(() => Response.redirect(to, 302));
+
 export const routes: Record<string, MochiRouteValue> = {
   ...(DEVELOPMENT
     ? {
@@ -125,7 +134,8 @@ export const routes: Record<string, MochiRouteValue> = {
       },
     });
   }),
-  '/discord': Mochi.api(() => Response.redirect('https://discord.com/invite/QCGfks4gg8', 302)),
+  '/discord': vanityRedirect(DISCORD_INVITE),
+  '/discord/': vanityRedirect(DISCORD_INVITE),
   '/': Mochi.page('./src/Site.svelte', {
     serverProps: async () => {
       const docs = await loadDocs();
@@ -206,9 +216,8 @@ export const routes: Record<string, MochiRouteValue> = {
       };
     },
   }),
-  // The support form lives at support.mochi.fast (packages/support) — it needs an
-  // SMTP config this site deliberately doesn't carry.
-  '/support': Mochi.api(() => Response.redirect('https://support.mochi.fast/', 302)),
+  '/support': vanityRedirect(SUPPORT_ORIGIN),
+  '/support/': vanityRedirect(SUPPORT_ORIGIN),
   '/og': Mochi.page('./src/og/OgPage.svelte'),
   // Backs the live captcha embedded in the 0.8.0 blog post. Minting and verifying
   // happen here rather than in `/blog/:slug` so that route stays post-agnostic.
