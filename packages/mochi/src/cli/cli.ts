@@ -176,7 +176,9 @@ async function main() {
     resources: serveOptions?.build?.resources,
     development: values.dev,
     outDir: values['out-dir'],
-    publicDir: values['public-dir'],
+    // Fall back to the entry's own `publicDir` so the build validates the same
+    // directory the server will scan — an explicit flag still overrides it.
+    publicDir: values['public-dir'] ?? serveOptions?.publicDir,
     assetPrefix: values['asset-prefix'],
   });
 

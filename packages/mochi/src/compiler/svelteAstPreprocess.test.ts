@@ -1,18 +1,19 @@
 import { describe, expect, test } from 'bun:test';
 import path from 'node:path';
 import { preprocessHydratable } from './svelteAstPreprocess';
+import { encodeSourcePath } from './manifestPaths';
 
 const SCRIPT = (imports: string) => `<script>\n${imports}\n</script>\n`;
 
-// Mirror of the internal `islandIdentity()`: an island's `component-name`, its
-// registry keys, and its `__MOCHI_*__<id>__` placeholders are keyed by
-// `<localName>_<hash of resolved path>`, not the bare import name — so two
-// same-named components in different files can't collide to one registry entry.
-// Tests use fixture files under `/test`, matching the `filePath` passed below.
-const idFor = (name: string, importPath: string) => `${name}_${Bun.hash(path.resolve('/test', importPath)).toString(36)}`;
-// Named-export islands mix the export name into the identity hash (default-export
-// identities stay path-only, so `idFor` remains the legacy/manifest-stable form).
-const idForNamed = (name: string, importPath: string, exportName: string) => `${name}_${Bun.hash(`${path.resolve('/test', importPath)}#${exportName}`).toString(36)}`;
+// Mirror of the internal `islandIdentity()`: an island's `component-name`, registry keys, and `__MOCHI_*__<id>__`
+// placeholders key on `<localName>_<hash of the encoded source path>`, so same-named components in different files stay
+// distinct and two machines building one commit agree on every island name. Fixtures live under `/test`, matching the
+// `filePath` passed below.
+const idFor = (name: string, importPath: string) => `${name}_${Bun.hash(encodeSourcePath(path.resolve('/test', importPath))).toString(36)}`;
+// Named-export islands mix the export name into the identity hash; default-export
+// identities stay path-only.
+const idForNamed = (name: string, importPath: string, exportName: string) =>
+  `${name}_${Bun.hash(`${encodeSourcePath(path.resolve('/test', importPath))}#${exportName}`).toString(36)}`;
 
 describe('preprocessHydratable', () => {
   test('basic mochi:hydrate self-closing', () => {
@@ -639,11 +640,9 @@ describe('preprocessHydratable', () => {
     expect(transformed).toContain('<mochi-island-failure');
     expect(transformed).toContain('data-component="Foo"');
 
-    // The OUTER boundary opens BEFORE <mochi-hydratable-island ...> and closes
-    // AFTER it. An INNER boundary (no `failed` snippet) is also nested inside
-    // the wrapper to force Svelte to emit a `<!--[-->` HYDRATION_START anchor
-    // at depth ≥ 1 — without it, Svelte's `hydrate()` can't find a marker
-    // inside the wrapper and silently falls back to `mount()`.
+    // The OUTER boundary opens before `<mochi-hydratable-island ...>` and closes after it, while an INNER boundary with
+    // no `failed` snippet nests inside the wrapper to force a `<!--[-->` HYDRATION_START anchor at depth ≥ 1 — without
+    // it Svelte's `hydrate()` finds no marker inside the wrapper and silently falls back to `mount()`.
     const islandOpen = transformed.indexOf('<mochi-hydratable-island');
     const islandClose = transformed.indexOf('</mochi-hydratable-island>');
     const outerBoundaryOpen = transformed.indexOf('<svelte:boundary>');

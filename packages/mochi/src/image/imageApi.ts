@@ -40,12 +40,10 @@ function mintFor(src: string, size: string | undefined, options: ResolvedImageOp
 }
 
 /**
- * Build a signed, cacheable URL for `src` transformed through a named size.
- * Server-side only (it reads the signing secret). Synchronous and near-instant —
- * no fetch, decode, or encode happens here; the endpoint applies the size lazily
- * on the browser's request. Omitting the size serves the full-size original; an
- * unknown size name does too, with a one-time server-log warning. Path:
- * `/_mochi/image/my-image-thumbnail.webp?p=<token>`.
+ * Build a signed, cacheable URL for `src` transformed through a named size, e.g.
+ * `/_mochi/image/my-image-thumbnail.webp?p=<token>`. Server-side only, since it reads the signing secret, and
+ * synchronous: the endpoint applies the size lazily on the browser's request. Omitting the size serves the full-size
+ * original, as does an unknown size name, with a one-time server-log warning.
  */
 export function getImageUrl(src: string, size?: string): string {
   return mintFor(src, size, getImageRuntime().options).url;
@@ -59,10 +57,7 @@ export interface ImageAttrs {
   height?: number;
 }
 
-/**
- * The signed URL plus the size's declared dimensions — used by `<Image>` to
- * set the `<img>` `src`/`width`/`height` in one server-side pass. Server-only.
- */
+/** The signed URL plus the size's declared dimensions, letting `<Image>` set `src`/`width`/`height` in one server-side pass. Server-only. */
 export function getImageAttrs(src: string, size?: string): ImageAttrs {
   const { url, resolved } = mintFor(src, size, getImageRuntime().options);
   return { url, width: resolved?.width, height: resolved?.height };
@@ -70,9 +65,8 @@ export function getImageAttrs(src: string, size?: string): ImageAttrs {
 
 let warnedDisabled = false;
 
-// Mint the signed URL and let the `image:url` filter rewrite it (e.g. prepend a
-// CDN origin) before it's recorded/returned — so the debug bar logs what the
-// caller actually gets.
+// The `image:url` filter rewrites the minted URL (e.g. prepending a CDN origin) before it's recorded and returned, so
+// the debug bar logs what the caller actually gets.
 function mintImageUrl(req: ImageRequest, filename: string, size: ResolvedImageSize | undefined, options: ResolvedImageOptions): string {
   // The endpoint isn't registered when the feature is off, so a minted URL
   // would silently 404. Degrade to the raw source URL instead.
@@ -99,12 +93,10 @@ export interface ResolvedImage {
 }
 
 /**
- * Run a named size inline and return the transformed bytes + metadata for
- * server-side use (OG images, inlining, dimension probes). Shares the same disk
- * cache as `getImageUrl`/`<Image>`, so a warm variant skips the fetch/decode/encode.
- * Prefer `getImageUrl` for anything that ends up in an `<img src>` — it defers all
- * work to the endpoint. An unknown/omitted size returns the original bytes.
- * Server-side only.
+ * Run a named size inline and return the transformed bytes plus metadata, for server-side use — OG images, inlining,
+ * dimension probes. It shares the disk cache with `getImageUrl`/`<Image>`, so a warm variant skips fetch/decode/encode.
+ * Prefer `getImageUrl` for anything landing in an `<img src>`, since that defers all work to the endpoint. An unknown or
+ * omitted size returns the original bytes. Server-side only.
  */
 export async function getImage(src: string, size?: string): Promise<ResolvedImage> {
   const { options, cache } = getImageRuntime();
@@ -139,17 +131,13 @@ export async function getImage(src: string, size?: string): Promise<ResolvedImag
 }
 
 /**
- * Fetch-or-serve the cached full-size original for `src`. Backs both the size
- * path (so every variant reuses one origin download) and the original path of
- * `getImageUrl`/`getImage`.
+ * Fetch-or-serve the cached full-size original for `src`, backing both the size path — so every variant reuses one
+ * origin download — and the original path of `getImageUrl`/`getImage`.
  *
- * Request-cached: a warm original still costs a sidecar parse plus a full binary
- * read of the image off disk on every call, and `MochiCache` only coalesces on
- * the miss path — so N variants (or N `getImage()` calls) over one source would
- * otherwise re-read the same bytes N times. Keyed on `src` alone: `resolved` and
- * `cache` both come from the `getImageRuntime()` process singleton, so they
- * cannot differ between two calls. `quiet` because the image endpoint runs
- * outside a request context, where this legitimately falls through uncached.
+ * It's request-cached because a warm original still costs a sidecar parse plus a full binary read off disk per call,
+ * and `MochiCache` coalesces only on the miss path, so N variants over one source would re-read the same bytes N times.
+ * Keying on `src` alone is safe since `resolved` and `cache` both come from the `getImageRuntime()` process singleton.
+ * `quiet` covers the image endpoint, which runs outside a request context and legitimately falls through uncached.
  */
 export const getCachedOriginal: (
   src: string,

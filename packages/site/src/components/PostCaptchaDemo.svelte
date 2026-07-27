@@ -6,6 +6,7 @@
   // generic /blog/:slug route stays free of post-specific plumbing.
   let token = $state('');
   let bits = $state(16);
+  let solveBudgetMs = $state<number | undefined>();
   let verified = $state(false);
   let checking = $state(false);
   let result = $state<{ ok: boolean; message: string } | null>(null);
@@ -15,9 +16,10 @@
     verified = false;
     // Trailing slashes: this site is `trailingSlash: 'always'`, so the bare paths 301/308.
     const res = await fetch('/api/captcha-demo/mint/', { cache: 'no-store' });
-    const minted = (await res.json()) as { token: string; bits: number };
+    const minted = (await res.json()) as { token: string; bits: number; solveBudgetMs: number };
     token = minted.token;
     bits = minted.bits;
+    solveBudgetMs = minted.solveBudgetMs;
   }
 
   onMount(mint);
@@ -45,7 +47,7 @@
 
 <form class="captcha-demo" bind:this={form} onsubmit={check}>
   {#key token}
-    <MochiCaptcha {token} {bits} bind:verified />
+    <MochiCaptcha {token} {bits} {solveBudgetMs} bind:verified />
   {/key}
   <div class="row">
     <button type="submit" disabled={checking}>{checking ? 'Verifying…' : 'Verify on the server'}</button>

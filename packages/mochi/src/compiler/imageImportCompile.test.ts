@@ -63,7 +63,7 @@ describe('local image import through the compiler', () => {
     delete (globalThis as unknown as Record<string, unknown>)[GLOBAL_LOCAL_ASSETS_KEY];
     expect(getLocalImageAsset(url!)).toBeUndefined();
 
-    const restored = await ComponentRegistry.fromManifest(manifestPath, false, outDir);
+    const restored = await ComponentRegistry.fromManifest(manifestPath, false);
     expect(restored.getLocalImageAssets().has(url!)).toBe(true);
     const info = getLocalImageAsset(url!);
     expect(info).toBeDefined();

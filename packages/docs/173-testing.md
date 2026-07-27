@@ -103,7 +103,7 @@ Each file's output streams as it finishes, but with many files running in parall
 
 <Callout type="warning">
 
-In Bun **workspaces**, `bun install` defaults to the isolated linker (a symlinked `node_modules/.bun` store). Combined with `bun test`, this trips a Bun bug: a second `Bun.build()` in the test process — e.g. `Mochi.serve()` compiling after your test file imported `mochi-framework` — fails with `EISDIR reading file` (or `Unexpected reading file`) on a dependency inside `node_modules/.bun`. See the [minimal reproduction](https://github.com/khromov/bun-second-build-eisdir-repro).
+In Bun **workspaces**, `bun install` defaults to the isolated linker (a symlinked `node_modules/.bun` store). Combined with `bun test`, this trips a Bun bug: a second `Bun.build()` in the test process — e.g. `Mochi.serve()` compiling after your test file imported `mochi-framework` — fails with `EISDIR reading file` (or `Unexpected reading file`) on a dependency inside `node_modules/.bun`. This repo's root `bunfig.toml` works around it by pinning `[install] linker = "hoisted"`.
 
 </Callout>
 
