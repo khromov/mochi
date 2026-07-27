@@ -15,13 +15,10 @@ function toArray(value: string | string[] | undefined): string[] | undefined {
 }
 
 /**
- * HTML → plain-text fallback so HTML mails stay multipart. Drops every tag,
- * suppresses the *contents* of <script>/<style> (css-inline emits a <style>
- * block into the rendered email HTML), inserts spaces around block-level tags so
- * adjacent blocks don't collide, surfaces each link's destination as
- * `text <href>`, and decodes entities in a single pass via html-entities.
- * Bun's `text` chunks don't decode entities, so the decode runs last — which
- * also preserves escapes like `&amp;lt;` → `&lt;` (not `<`).
+ * HTML → plain-text fallback keeping HTML mails multipart. It drops every tag, suppresses the *contents* of
+ * `<script>`/`<style>` (css-inline emits a `<style>` block into the rendered email), spaces out block-level tags so
+ * adjacent blocks don't collide, surfaces each link's destination as `text <href>`, and decodes entities last through
+ * html-entities — Bun's `text` chunks arrive undecoded, and the ordering also preserves escapes like `&amp;lt;` → `&lt;`.
  */
 export function htmlToText(html: string): string {
   let out = '';
@@ -70,11 +67,7 @@ export function htmlToText(html: string): string {
   return decodeHtmlEntities(out).replace(/\s+/g, ' ').trim();
 }
 
-/**
- * Send one transactional message through the configured transport. With no
- * transport configured, the default `log` transport logs it and does not send.
- * Callable from any server-side code (route actions, API handlers, queue jobs).
- */
+/** Send one transactional message through the configured transport, falling back to the `log` transport. Callable from route actions, API handlers, and queue jobs alike. */
 export async function sendEmail(message: MochiEmailMessage): Promise<MochiEmailResult> {
   const runtime = getEmailRuntime();
   const { options } = runtime;
@@ -102,10 +95,9 @@ export async function sendEmail(message: MochiEmailMessage): Promise<MochiEmailR
     throw new EmailError('An email needs a body: pass `html`, `text`, or `component`.');
   }
 
-  // Pass author-supplied fields (subject, replyTo, attachments, headers) through
-  // untouched; strip the template inputs (`component`/`props`, already rendered
-  // into `html`) and override the normalized fields so the raw `string`/array
-  // union and an unfilled `from` never reach a transport.
+  // Author-supplied fields (subject, replyTo, attachments, headers) pass through untouched, while the template inputs
+  // `component`/`props` are stripped — already rendered into `html` — and the normalized fields are overridden, keeping
+  // the raw `string`/array union and an unfilled `from` away from any transport.
   const { component: _component, props: _props, ...passthrough } = message;
   const resolved: ResolvedEmailMessage = {
     ...passthrough,
@@ -117,10 +109,9 @@ export async function sendEmail(message: MochiEmailMessage): Promise<MochiEmailR
     text,
   };
 
-  // Give application code a seam to rewrite the outgoing message (audit BCC,
-  // List-Unsubscribe headers, staging catch-all) or veto it entirely by
-  // returning null. Runs before the transport so the dev outbox and SMTP both
-  // deliver the filtered message, and a veto never touches a transport.
+  // The seam for application code to rewrite an outgoing message — audit BCC, List-Unsubscribe headers, a staging
+  // catch-all — or veto it by returning null. It runs before the transport, so the dev outbox and SMTP both deliver the
+  // filtered message and a veto reaches no transport at all.
   const start = performance.now();
   const filtered = await applyFilter('email:message', resolved, { transport: options.transport.type });
   if (filtered === null) {

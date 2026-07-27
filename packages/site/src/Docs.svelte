@@ -14,6 +14,7 @@
     description,
     docsNav,
     toc,
+    html,
     prev,
     next,
   }: {
@@ -22,6 +23,8 @@
     description?: string;
     docsNav: TocEntry[];
     toc: TocEntry[];
+    /** Pre-rendered markup for synthetic docs (the changelog) that have no barrel component. */
+    html?: string;
     prev: DocNeighbor | null;
     next: DocNeighbor | null;
   } = $props();
@@ -55,6 +58,9 @@
       <DocsToc {toc} />
       {#if DocComponent}
         <DocComponent />
+      {:else if html}
+        <!-- eslint-disable-next-line svelte/no-at-html-tags -- first-party markdown (our own CHANGELOG.md), rendered server-side -->
+        {@html html}
       {:else}
         <p>Doc not found.</p>
       {/if}

@@ -18,6 +18,37 @@ You can host Bun and Mochi at hundreds of different hosts. We list some of the m
 None of the links below are affiliate links, nor should any of the links be seen as endorsements.
 </Callout>
 
+## Relocatable builds
+
+A manifest holds no absolute paths at all — artifacts are written relative to the out-dir, sources relative to the project root — so you can build in one place and run in another: build in a CI stage, copy `.mochi/` into the final image, move or rename the directory. A build also carries nothing specific to the machine that produced it, so the same commit built anywhere produces the same output. Point the runtime at wherever it landed:
+
+```ts
+Mochi.serve({ outDir: './.mochi' }); // default — or wherever you copied it
+```
+
+Paths resolve against the manifest's own directory, so pointing `manifest` at a relocated build works on its own:
+
+```ts
+Mochi.serve({ manifest: '/srv/app/build/manifest.json' });
+```
+
+<Callout type="warning">
+
+Four things still anchor a prebuilt app to its project:
+
+- **Build and serve from the same working directory.** Components are keyed relative to the project root, which both `mochi-framework build` and `Mochi.serve()` take to be the current working directory — so run both from the project root. How a route spells its component (`'./src/Site.svelte'` or an absolute path) doesn't have to match. A component the manifest doesn't cover is compiled from source instead, and says so loudly at startup.
+- **Ship your `public/` directory.** Static files are never copied into the build — the runtime scans `publicDir` (default `./public`) at startup, in production exactly as in development. A deploy that ships only `.mochi/` and `src/` 404s every static file; the build records how many files it saw, so a server that boots with none of them warns rather than failing silently. In exchange, swapping a `robots.txt` needs a restart, not a rebuild.
+- **Keep the out-dir in the project tree.** The compiled SSR modules resolve `node_modules` from the out-dir's location.
+- **On-demand server islands need sources.** Islands missing from the manifest are compiled at request time from source paths recorded at build. Prebuilt islands — the normal case — don't, and relocate fine.
+
+</Callout>
+
+<Callout type="danger">
+
+The manifest records a schema version, and the runtime loads only the exact version it writes. Booting a build made by a different `mochi-framework` version throws at startup rather than half-loading — always run `mochi-framework build` with the same version you serve with.
+
+</Callout>
+
 ## PaaS
 
 Deploy code or containers — the platform manages infrastructure, scaling, and networking.

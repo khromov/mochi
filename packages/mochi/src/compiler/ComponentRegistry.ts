@@ -17,6 +17,7 @@ import { CompileCache, compileFingerprint, createCompileCacheStats, type Compile
 import { mergeCompilerOptions, type MochiSvelteConfig } from './svelteConfig';
 import { backendId, resolveSvelteCompiler, type MochiSvelteCompiler, type SvelteCompilerBackend } from './svelteCompilerBackend';
 import { applyFilter } from '../extensions';
+import { decodeSourcePath, encodeSourcePath } from './manifestPaths';
 import { buildServerOnlyStubModule, scanServerOnlyExports } from './serverOnlyScan';
 import { CLIENT_BUILD_DEFINE, serverOnlyModuleGuard } from './serverOnlyModuleGuard';
 import { renderMochiEnvServer, renderMochiEnvClient } from './virtualModuleTemplate';
@@ -27,31 +28,19 @@ import { freshImport } from './freshImport';
 import { shakeApp } from './svelteShaker';
 import prettyBytes from '../vendor/pretty-bytes';
 
-/**
- * Run user-supplied Svelte preprocessors via the `compile:preprocessors`
- * filter. Returns the (possibly transformed) source. The filter is sync — only
- * the application of those preprocessors is async (Svelte's `preprocess()`).
- */
+// The `compile:preprocessors` filter is sync; only applying its preprocessors through Svelte's `preprocess()` is async.
 async function applyUserPreprocessors(source: string, filename: string, target: 'server' | 'client', development: boolean): Promise<string> {
   const userPreprocessors: PreprocessorGroup[] = applyFilter('compile:preprocessors', [], {
     filename,
     target,
     development,
   });
-  // `builtinTsPreprocessor` runs last so it also strips TS that user
-  // preprocessors emit. svelte's `preprocess()` parses the component and hands
-  // each hook properly-parsed `attributes` — so it, not a source scan, decides
-  // whether a script block is TS.
+  // `builtinTsPreprocessor` runs last so it also strips TS that user preprocessors emit, and it decides TS-ness from the
+  // parsed `attributes` Svelte hands each hook.
   //
-  // Fast-path: with no user preprocessors, the only work `preprocess()` can do
-  // is the builtin TS pass, which fires solely on `attributes.lang === 'ts'`.
-  // A `lang="ts"` attribute — in any quoting/spacing — always contains the
-  // literal substring `lang`, so a source lacking it provably has no TS script
-  // to transpile. This gate can only false-*positive* (harmlessly re-parse a
-  // "lang"-containing plain-JS file), never false-negative, so it skips the
-  // full-component parse for the common plain-JS case without the brittleness
-  // of a tag-matching regex. Any user preprocessor may inject TS, so the gate
-  // holds only when none are registered.
+  // With no user preprocessors, that builtin pass is the only work left and it fires solely on `attributes.lang === 'ts'`.
+  // A `lang="ts"` attribute always contains the literal substring `lang` whatever the quoting, so the gate below can only
+  // false-positive — harmlessly re-parsing a "lang"-containing plain-JS file — and skips the full parse for plain JS.
   if (userPreprocessors.length === 0 && !source.includes('lang')) {
     return source;
   }
@@ -59,11 +48,9 @@ async function applyUserPreprocessors(source: string, filename: string, target: 
   return result.code;
 }
 
-// Svelte 5's native TS stripping is incomplete (e.g. it throws on constructor
-// parameter properties). Run Bun's transpiler over <script lang="ts"> before
-// svelte/compiler — the same treatment the .svelte.[jt]s rune-module loaders
-// already apply. transformSync does NOT tree-shake, so value imports referenced
-// only in the template survive.
+// Svelte 5's native TS stripping is incomplete — it throws on constructor parameter properties — so Bun's transpiler runs
+// over `<script lang="ts">` first, the same treatment the `.svelte.[jt]s` rune-module loaders apply. `transformSync` leaves
+// tree-shaking alone, so value imports referenced only in the template survive.
 const tsScriptTranspiler = new Bun.Transpiler({ loader: 'ts' });
 const builtinTsPreprocessor: PreprocessorGroup = {
   name: 'mochi-ts',
@@ -71,24 +58,19 @@ const builtinTsPreprocessor: PreprocessorGroup = {
     if (attributes.lang !== 'ts') {
       return;
     }
-    // `lang="ts"` must STAY on the tag: it also puts the template in TS mode
-    // (snippet parameter types, `as` casts in markup), which Bun never sees —
-    // dropping it makes svelte parse those as plain JS and fail. Re-running
-    // svelte's native TS pass over the already-transpiled script is a no-op.
-    // transformSync can't emit a source map, so positions after a transpiled
-    // script drift by its reprinted line-count delta — a limitation shared
-    // with the .svelte.[jt]s rune-module loaders.
+    // `lang="ts"` must STAY on the tag: it also puts the template in TS mode (snippet parameter types, `as` casts in
+    // markup), which Bun never sees, so dropping it makes svelte parse those as plain JS and fail. `transformSync` emits
+    // no source map, so positions after a transpiled script drift by its reprinted line-count delta.
     return { code: tsScriptTranspiler.transformSync(content) };
   },
 };
 
-/**
- * Directory containing the framework's own .ts/.svelte source files. This file
- * lives in `src/compiler/`, so climb one level: every path built from SRC_DIR
- * below is expressed relative to `src/`, matching the layout on disk and in the
- * published package.
- */
+// Climbs one level out of `src/compiler/`, so every path built from SRC_DIR below reads relative to `src/`, matching the
+// layout on disk and in the published package.
 const SRC_DIR = path.join(path.dirname(Bun.fileURLToPath(import.meta.url)), '..');
+
+/** Manifest schema version this runtime writes; see `MochiManifest.version` for the path families it implies. */
+const MANIFEST_VERSION = 2;
 
 // TODO
 // Bun's CSS bundler unquotes `format('woff2-variations')` to `format(woff2-variations)`,
@@ -101,11 +83,9 @@ function restoreVariationsFormat(css: string): string {
 }
 
 /**
- * Format a `Bun.build()` failure's `logs` array as a multi-line string with
- * `file:line:column — message` per entry. Bun 1.2+ throws a generic
- * `AggregateError("Bundle failed")` with `stack === undefined` on its own,
- * which loses the per-message position info — we always pass `throw: false`
- * to recover the structured logs and run them through this helper instead.
+ * Format a `Bun.build()` failure's `logs` array as `file:line:column — message` per entry. Bun 1.2+ throws a generic
+ * `AggregateError("Bundle failed")` with `stack === undefined`, losing the positions, so every call passes
+ * `throw: false` to recover the structured logs for this helper.
  */
 export function formatBuildMessages(
   logs: ReadonlyArray<{
@@ -165,12 +145,10 @@ function createMarkdownLoader(opts: {
   const fingerprint = compileFingerprint(opts.userCompilerOptions, opts.development, backendId(opts.backend));
   return async (args: { path: string }) => {
     const raw = await Bun.file(args.path).text();
-    // Cache hit: replay the side effects (hydration metadata, scoped CSS) the
-    // miss path would have produced and skip mdsvex + svelte compile entirely.
-    // Keyed on raw source, so this assumes mdsvex + the user preprocessors are
-    // pure in (source, filename): a plugin that reads an *external* file (e.g. a
-    // sibling .json) won't re-run until this file's own bytes change or the
-    // config reloads — the standard Vite/SvelteKit preprocessor contract.
+    // A hit replays the side effects the miss path would have produced (hydration metadata, scoped CSS) and skips mdsvex
+    // and the svelte compile. Keying on raw source assumes mdsvex and the user preprocessors are pure in
+    // (source, filename), the standard Vite/SvelteKit contract: a plugin reading a sibling `.json` won't re-run until
+    // this file's own bytes change.
     const cached = opts.compileCache.get(opts.target, args.path, raw, fingerprint, opts.compileCacheStats);
     if (cached) {
       if (opts.hydration) {
@@ -197,11 +175,8 @@ function createMarkdownLoader(opts: {
     if (!compiled || typeof compiled.code !== 'string') {
       throw new Error(`markdown.compile returned no output for ${args.path}`);
     }
-    // mdsvex passes <script lang="ts"> through untouched, so its output needs
-    // the same built-in TS pass as regular .svelte files. User preprocessors
-    // still don't apply here — mdsvex owns markdown transforms. Same safe
-    // `lang` fast-path as applyUserPreprocessors: no `lang` substring → no TS
-    // script → skip the parse (can't false-negative).
+    // mdsvex passes `<script lang="ts">` through untouched, so its output needs the same built-in TS pass as a regular
+    // `.svelte` file, behind the same safe `lang` fast-path as `applyUserPreprocessors`.
     let svelteSource = compiled.code.includes('lang') ? (await sveltePreprocess(compiled.code, [builtinTsPreprocessor], { filename: args.path })).code : compiled.code;
     let hydratables: HydratableComponent[] = [];
     let serverIslands: ServerIslandComponent[] = [];
@@ -292,19 +267,11 @@ export interface RenderResult {
   cssUrls: string[];
   bootstrapUrl: string | null;
   hasServerIslands: boolean;
-  /**
-   * Dev-only snapshot of `ctx.debugBarData` taken at the end of render
-   * (before the per-request bag is cleared). Surfaced to the toolbar as
-   * `window.__mochi_debug`. `undefined` in production.
-   */
+  /** Dev-only snapshot of `ctx.debugBarData`, taken at end of render before the per-request bag is cleared and surfaced to the toolbar as `window.__mochi_debug`. */
   debugBarData?: DebugBarData;
 }
 
-/**
- * Result of {@link ComponentRegistry.renderStatic} — the stateless render path
- * used for email. No islands, no shell, no request state, so there's no
- * bootstrap URL, no server-island flag, and no debug-bar snapshot.
- */
+/** Result of {@link ComponentRegistry.renderStatic}, the stateless render path used for email: plain HTML and CSS, with no islands, shell, or request state. */
 export interface StaticRenderResult {
   body: string;
   head: string;
@@ -327,32 +294,18 @@ export interface ComponentRegistryOptions {
   markdown?: MarkdownConfig;
   /** Run the whole-program svelte-shaker pass before compiling. Production only — `prepareShake()` is a no-op in dev. */
   optimize?: boolean | MochiSvelteShakerOptions;
-  /**
-   * Warning when a dependency drags a large module into the build graph
-   * that's almost entirely tree-shaken away — the "barrel import" smell (e.g.
-   * `import { Sun } from '@lucide/svelte'` instead of `@lucide/svelte/icons/sun`),
-   * which slows every rebuild because the big re-export file is re-parsed each time.
-   * On a live server it fires once per package as it's seen; a `mochi-framework build`
-   * collapses the offenders into a single grouped summary line. Default: enabled. `false` silences
-   * it entirely; `{ ignore: ['pkg-name'] }` suppresses specific packages you can't fix;
-   * `minBytes` overrides the parsed-size threshold (default 50 KB).
-   */
+  /** See `MochiServeOptions.barrelWarnings`. */
   barrelWarnings?: boolean | MochiBarrelWarningOptions;
   /**
-   * Buffer barrel offenders instead of logging each as it's seen, so a one-shot
-   * `mochi-framework build` can emit them as one grouped summary via
-   * `flushBarrelWarnings()`. A live server (dev or prod-without-manifest) must
-   * leave this off — it compiles lazily and has no end-of-build flush point, so
-   * buffered warnings would never surface. Default: `false`.
+   * Buffers barrel offenders so a one-shot `mochi-framework build` can emit them as one grouped summary via
+   * `flushBarrelWarnings()`. A live server compiles lazily with no end-of-build flush point, so buffered warnings
+   * would never surface there. Default: `false`.
    */
   bufferBarrelWarnings?: boolean;
 }
 
-/**
- * Precompute the per-component island lookups a render needs. Called once when a
- * compiled-component entry is created (compileAll / fromManifest) so renderComponent
- * reads them instead of rebuilding three collections on every render.
- */
+// Runs once per compiled-component entry (compileAll / fromManifest) so renderComponent reads these lookups instead of
+// rebuilding three collections on every render.
 function indexHydratables(hydratables: HydratableComponent[]): {
   hydratablesByName: Map<string, HydratableComponent>;
   hydratablesByPath: Map<string, HydratableComponent[]>;
@@ -398,10 +351,8 @@ export class ComponentRegistry {
   > = new Map();
   private hydratableComponents: HydratableComponent[] = [];
   /**
-   * Prebuilt, minified ServerIsland inline web-component script. Set by `build()`
-   * (via `setServerIslandScript`) and restored by `fromManifest`, so the runtime
-   * skips the startup `Bun.build`. Undefined in dev / prod-without-manifest, where
-   * `Mochi.serve()` builds it on demand (memoized).
+   * Prebuilt, minified ServerIsland inline web-component script, set by `build()` and restored by `fromManifest` so the
+   * runtime skips the startup `Bun.build`. Left undefined where `Mochi.serve()` builds it on demand instead.
    */
   serverIslandClientJs?: string;
   /** Disk path recorded for the manifest; see `serverIslandClientJs`. */
@@ -413,11 +364,8 @@ export class ComponentRegistry {
   /** Maps component file path → CSS URL */
   private cssFileUrls: Map<string, string> = new Map();
   /**
-   * Snapshot of the last-extracted raw CSS for each component path. The
-   * write-CSS-files loop in `compileAll` uses content equality (not just
-   * presence in `cssFileUrls`) to decide whether to re-emit; without this
-   * snapshot, an HMR recompile of a child component would short-circuit
-   * and leave the stale hashed URL in place.
+   * Last-extracted raw CSS per component path, letting `compileAll`'s write-CSS-files loop decide on content equality
+   * rather than mere presence in `cssFileUrls` — otherwise an HMR recompile of a child short-circuits and leaves the stale hashed URL.
    */
   private cssRawByPath: Map<string, string> = new Map();
   /** Maps resolved CSS-import path → served URL (e.g. /import-css/inter-<hash>.css) */
@@ -425,10 +373,8 @@ export class ComponentRegistry {
   /** Maps page entry .svelte path → set of resolved CSS-import paths reachable from it */
   private entryImportedCss: Map<string, Set<string>> = new Map();
   /**
-   * Maps page entry path → set of every absolute file path that contributed to
-   * the SSR bundle (transitive imports from Bun's metafile). Used by the dev
-   * watcher's `recompileChanged()` to invalidate only the pages whose dep
-   * graph contains the changed file.
+   * Maps page entry path → every absolute file that contributed to its SSR bundle, taken from Bun's metafile, so the dev
+   * watcher's `recompileChanged()` invalidates only the pages whose dep graph contains the changed file.
    */
   private entryDeps: Map<string, Set<string>> = new Map();
   private clientStats: {
@@ -450,8 +396,6 @@ export class ComponentRegistry {
   private serverIslandPaths: Map<string, string> = new Map();
   /** Maps server island component name → the export it renders, when not `default` (named exports only). */
   private serverIslandExports: Map<string, string> = new Map();
-  /** Maps public URL path → disk path (relative to cwd) for static files from `public/`. */
-  private publicFiles: Map<string, string> = new Map();
   /** Maps served asset URL → emitted asset for locally-imported images (`import x from './x.png'`). */
   private localImageAssets: Map<string, LocalImageAsset> = new Map();
   readonly development: boolean;
@@ -460,6 +404,8 @@ export class ComponentRegistry {
   /** Carried over from the manifest. Stays null on a compile-on-demand boot — see `MochiManifest.buildId`. */
   buildId: string | null = null;
   buildTime: number | null = null;
+  /** Files `publicDir` held when this manifest was built; see `MochiManifest.publicFileCount`. 0 when not loaded from one. */
+  publicFileCountAtBuild = 0;
   readonly debugBarEnabled: boolean;
   readonly outDir: string;
   readonly assetPrefix: string;
@@ -480,17 +426,16 @@ export class ComponentRegistry {
   private errors: MochiCompileError[] = [];
   /** Bumped each time `buildClientBundle()` runs; read+reset by `recompileAll()`. */
   private clientBundleCallCount = 0;
-  /**
-   * Per-registry compiled-output cache. Instance-scoped (not a module global) so
-   * two registries with different markdown/preprocessor config can't serve each
-   * other stale output for the same path — see {@link CompileCache}.
-   */
+  /** Instance-scoped so two registries with different markdown/preprocessor config can't serve each other stale output for the same path — see {@link CompileCache}. */
   readonly compileCache = new CompileCache();
 
   constructor(opts: ComponentRegistryOptions = {}) {
     this.development = opts.development ?? true;
     this.debugBarEnabled = this.development && (opts.debugBar ?? true);
-    this.outDir = opts.outDir ?? './.mochi';
+    // A relative outDir resolves against whoever's cwd asks, and compile and `toManifest()` ask at different moments, so
+    // a `process.chdir()` in between would make every artifact look like it escaped the out-dir and bake absolute paths
+    // into an otherwise relocatable build.
+    this.outDir = path.resolve(opts.outDir ?? './.mochi');
     this.assetPrefix = normalizeAssetPrefix(opts.assetPrefix);
     this.svelteConfig = opts.svelteConfig ?? {};
     this.svelteCompiler = opts.svelteCompiler;
@@ -504,11 +449,9 @@ export class ComponentRegistry {
   }
 
   /**
-   * Run the whole-program svelte-shaker pass over the app and cache the slimmed
-   * source so the compile `onLoad` handlers feed it to the Svelte compiler
-   * instead of the raw file. No-op in dev (shaking is whole-program, so per-file
-   * HMR can't safely reuse a one-time shake) or when the option is off. On any
-   * failure we fall back to unshaken disk reads rather than break the build.
+   * Runs the whole-program svelte-shaker pass and caches the slimmed source for the compile `onLoad` handlers. A no-op
+   * in dev, where per-file HMR can't safely reuse a one-time whole-program shake, and any failure falls back to
+   * unshaken disk reads rather than breaking the build.
    */
   async prepareShake(appRoot = path.resolve('src')): Promise<void> {
     const opt = this.optimize;
@@ -544,10 +487,8 @@ export class ComponentRegistry {
       }
       this.shakenSources = shaken;
 
-      // The shake map holds *every* in-scope component — untouched ones are
-      // returned verbatim — so its size is the scan count, not the number
-      // changed. Diff against the originals the engine already read (no second
-      // disk pass) to find what the shaker actually slimmed.
+      // The shake map holds every in-scope component, returning untouched ones verbatim, so its size is the scan count.
+      // Diffing against the originals the engine already read finds what was actually slimmed without a second disk pass.
       const changed: { name: string; before: number; after: number }[] = [];
       for (const [id, out] of shaken) {
         const original = originals.get(id) ?? out;
@@ -604,15 +545,7 @@ export class ComponentRegistry {
 
   /** Asset URL of a component's compiled scoped CSS, by resolved path (none if it has no styles). */
   getComponentCssUrl(componentPath: string): string | undefined {
-    return this.cssFileUrls.get(componentPath);
-  }
-
-  setPublicFiles(map: Map<string, string> | Record<string, string>): void {
-    this.publicFiles = map instanceof Map ? new Map(map) : new Map(Object.entries(map));
-  }
-
-  getPublicFiles(): Map<string, string> {
-    return this.publicFiles;
+    return this.cssFileUrls.get(path.resolve(componentPath));
   }
 
   /** Emitted assets for locally-imported images, keyed by served URL. */
@@ -627,42 +560,48 @@ export class ComponentRegistry {
   }
 
   /**
-   * Compile a single page entrypoint. Thin delegate to `compileAll` so a
-   * lazy/on-demand caller (e.g. `renderComponent`, server-island fetch) can
-   * still trigger one compile in isolation.
-   *
-   * Boot-time and dev-watcher paths should call `compileAll` directly with
-   * the full set of entrypoints — that produces a single shared SSR bundle
-   * (deduplicates `devalue`/etc. via Bun's `splitting: true`).
+   * Compile a single page entrypoint, delegating to `compileAll` so a lazy caller (`renderComponent`, a server-island
+   * fetch) can trigger one compile in isolation. Boot-time and dev-watcher paths should call `compileAll` with the full
+   * entrypoint set instead, which yields one shared SSR bundle via Bun's `splitting: true`.
    */
   async compile(filename: string, opts: { force?: boolean } = {}): Promise<void> {
     await this.compileAll([filename], opts);
   }
 
-  evict(absolutePath: string): void {
-    const key = this.compiledComponents.has(absolutePath) ? absolutePath : [...this.compiledComponents.keys()].find((k) => path.resolve(k) === absolutePath);
-    if (key) {
-      this.compiledComponents.delete(key);
-      this.entryDeps.delete(key);
-      this.entryImportedCss.delete(key);
-    }
+  evict(componentPath: string): void {
+    const key = path.resolve(componentPath);
+    this.compiledComponents.delete(key);
+    this.entryDeps.delete(key);
+    this.entryImportedCss.delete(key);
   }
 
-  isCompiled(absolutePath: string): boolean {
-    return this.compiledComponents.has(absolutePath) || [...this.compiledComponents.keys()].some((k) => path.resolve(k) === absolutePath);
+  isCompiled(componentPath: string): boolean {
+    return this.compiledComponents.has(path.resolve(componentPath));
   }
 
   /**
-   * Compile a cohort of page entrypoints in one `Bun.build` invocation with
-   * `splitting: true`. Shared transitive deps (npm packages and the
-   * `mochi-framework` virtual module's internals) land in shared chunk files
-   * alongside each `<basename>.server.js`, so they're emitted exactly once
-   * across the entire cohort.
+   * Compile a cohort of page entrypoints in one `Bun.build` with `splitting: true`, so shared transitive deps land in
+   * chunk files alongside each `<basename>.server.js` and are emitted exactly once across the cohort.
    */
   async compileAll(filenames: string[], opts: { force?: boolean; deferClientBundle?: boolean } = {}): Promise<void> {
-    const todo = opts.force ? [...new Set(filenames)] : [...new Set(filenames)].filter((f) => !this.compiledComponents.has(f));
+    // Every source-keyed map uses the resolved absolute path, so a component registered as `./src/X.svelte` or as an
+    // absolute path hits the same entry, including entries restored from a manifest built elsewhere.
+    const resolved = [...new Set(filenames.map((f) => path.resolve(f)))];
+    const todo = opts.force ? resolved : resolved.filter((f) => !this.compiledComponents.has(f));
     if (todo.length === 0) {
       return;
+    }
+
+    // A prebuilt manifest is meant to cover every component the app renders, so
+    // a miss is always a deployment fault
+    if (this.loadedFromManifest && !this.development && !opts.force) {
+      logger.warn(
+        `${todo.length} component(s) are missing from the prebuilt manifest and will be compiled now:\n` +
+          todo.map((f) => `  - ${relForDisplay(f)}`).join('\n') +
+          `\nThis should not happen. \`mochi-framework build\` and the server must run from the same working directory (the project root), ` +
+          `and both must use the same mochi-framework version. Until it's fixed, this build needs its Svelte sources and the compiler at runtime. ` +
+          `If the working directory and the version already match, this is a Mochi bug — please report it with a reproduction.`,
+      );
     }
 
     for (const f of todo) {
@@ -697,11 +636,9 @@ export class ComponentRegistry {
       name: 'svelte-ssr',
       setup(build) {
         build.onLoad({ filter: applyFilter('image:fileFilter', IMAGE_FILE_FILTER, { target: 'server' }) }, imageAssetLoader);
-        // Side-effect CSS imports (e.g. `import '@fontsource-variable/inter'`).
-        // Bun resolves bare specifiers via package.json#main to the real .css file,
-        // so filtering on the resolved path catches both direct and package imports.
-        // We record the path and strip the import from the SSR JS bundle — the CSS
-        // is bundled out-of-band below and served as /import-css/*.
+        // Bun resolves bare specifiers like `@fontsource-variable/inter` through package.json#main to the real `.css`,
+        // so filtering on the resolved path catches direct and package imports alike. The path is recorded and the import
+        // stripped from the SSR JS bundle; the CSS is bundled out-of-band below and served as `/import-css/*`.
         build.onLoad({ filter: /\.css$/ }, (args) => {
           importedCssPaths.add(args.path);
           return { contents: '', loader: 'js' };
@@ -722,12 +659,9 @@ export class ComponentRegistry {
           contents: [`import { encryptProps } from "${toPosixPath(path.join(SRC_DIR, 'islands/serverIslandCrypto.ts'))}";`, `export { encryptProps };`].join('\n'),
           loader: 'js',
         }));
-        // The preprocessor's island wrapper (`<MochiHydratableBoundary_>`) —
-        // resolved to the framework's own component in the default namespace so
-        // it flows through the normal `.svelte` loader below. The specifier is
-        // a subpath of a package we own, but deliberately NOT in the exports
-        // map: outside this plugin it must fail to resolve, not fetch a
-        // squattable third-party name.
+        // The preprocessor's island wrapper resolves to the framework's own component in the default namespace, so it
+        // flows through the normal `.svelte` loader below. The specifier is a subpath of a package we own but is kept out
+        // of the exports map, so outside this plugin it fails to resolve instead of fetching a squattable third-party name.
         build.onResolve({ filter: /^mochi-framework\/hydratable-boundary$/ }, () => ({
           path: path.join(SRC_DIR, 'islands/HydratableBoundary.svelte'),
         }));
@@ -814,15 +748,12 @@ export class ComponentRegistry {
 
     const compileOutDir = path.resolve(`${this.outDir}/svelte-compile`);
     const result = await Bun.build({
-      entrypoints: todo.map((f) => path.resolve(f)),
+      entrypoints: todo,
       plugins: [sveltePlugin],
       target: 'bun',
       conditions: ['svelte'],
-      // Svelte stays external because it's a peer dep the consumer already
-      // provides. Everything else (devalue, cookie, etc.) gets bundled
-      // — but with `splitting: true` Bun emits shared transitive
-      // deps into separate chunk files alongside each entry's `.server.js`,
-      // so they're written exactly once across the cohort.
+      // Svelte stays external as a peer dep the consumer already provides; everything else bundles, and `splitting: true`
+      // emits shared transitive deps into chunk files written once across the cohort.
       external: ['svelte', 'svelte/*'],
       splitting: true,
       outdir: compileOutDir,
@@ -838,17 +769,14 @@ export class ComponentRegistry {
       throw: false,
     });
 
-    // Detection recomputes nested-hydration and unresolved-island errors for
-    // every file in this batch, so drop any prior ones for the recompiled files
-    // first. Without this, a fixed mistake keeps 500-ing every page until a
-    // restart, and an unfixed one is re-pushed (duplicated) on every save.
+    // Detection recomputes nested-hydration and unresolved-island errors for every file in this batch, so prior ones for
+    // the recompiled files are dropped first — otherwise a fixed mistake keeps 500-ing every page until a restart and an
+    // unfixed one is duplicated on every save.
     //
-    // This runs BEFORE the `result.success` throw on purpose. The hydration maps
-    // are populated by the svelte `onLoad`, which fires for every entry before
-    // Bun resolves transitive JS deps — so a later bundler failure must not
-    // swallow a structural error we already detected. It also keeps these errors
-    // reported under the `bun test`-only Bun-bundler EISDIR bug, where an SSR
-    // build can fail after preprocessing already succeeded.
+    // This runs BEFORE the `result.success` throw on purpose: the hydration maps come from the svelte `onLoad`, which
+    // fires for every entry before Bun resolves transitive JS deps, so a later bundler failure must not swallow a
+    // structural error already detected — including under the `bun test`-only EISDIR bug, where the SSR build fails
+    // after preprocessing succeeded.
     this.errors = this.errors.filter(
       (e) => !(e.kind === 'nested-hydration' && fileHydratables.has(e.parentPath)) && !(e.kind === 'unresolved-island' && filePreprocessErrors.has(e.filePath)),
     );
@@ -894,14 +822,10 @@ export class ComponentRegistry {
       throw new Error(message);
     }
 
-    // Walk Bun's output graph (not the source-import graph) to attribute
-    // transitive inputs to each entry. `outputs[outKey].inputs` is a flat
-    // record of every source file that contributed to that chunk — keys
-    // are in the same shape as `inputs[]` so they're stable to compare
-    // against `cssMap` / `importedCssPaths`. The source-import walk via
-    // `inputs[].imports[].path` is unusable here: Bun stores those paths
-    // importer-relative, so `path.resolve` against cwd fabricates wrong
-    // absolutes that miss `inputs[]` lookups, and the BFS dies one hop in.
+    // Attribution walks Bun's output graph: `outputs[outKey].inputs` is a flat record of every source file that fed that
+    // chunk, keyed in the same shape as `inputs[]` and so stable to compare against `cssMap` / `importedCssPaths`. The
+    // source-import walk via `inputs[].imports[].path` is unusable, since Bun stores those importer-relative and
+    // `path.resolve` against cwd fabricates absolutes that miss `inputs[]`, killing the BFS one hop in.
     const outputsMeta = result.metafile?.outputs ?? {};
     const entryToOutKey = new Map<string, string>();
     for (const [outKey, outMeta] of Object.entries(outputsMeta)) {
@@ -936,22 +860,18 @@ export class ComponentRegistry {
 
     const compileDuration = performance.now() - compileStart;
     for (const filename of todo) {
-      const resolvedFilename = path.resolve(filename);
-      const outKey = entryToOutKey.get(resolvedFilename);
+      const outKey = entryToOutKey.get(filename);
       if (!outKey) {
         throw new Error(`Svelte SSR build produced no output for ${filename}`);
       }
 
-      // Entry names are hashed, so the on-disk filename isn't derivable from the
-      // source basename. Read the actual output filename from the metafile key
-      // (Bun emits it relative to cwd, but only its basename matters here) and
-      // join it to the compile dir — same approach as the client build.
+      // Entry names are hashed, so the on-disk filename can't be derived from the source basename; the metafile key
+      // carries the real one, and only its basename matters here.
       const outPath = path.join(compileOutDir, path.basename(outKey));
 
-      // Dev rebuilds re-import the same on-disk entry, so we can't rely on Bun's
-      // query-string cache-busting (unreliable on Windows — returns the stale module).
-      // `freshImport` copies the entry to a unique path so the re-import is a guaranteed
-      // cache miss. Production compiles each entry once, so a direct import is fine.
+      // Dev rebuilds re-import the same on-disk entry, and Bun's query-string cache-busting returns the stale module on
+      // Windows, so `freshImport` copies the entry to a unique path for a guaranteed cache miss. Production compiles each
+      // entry once, so a direct import suffices.
       const mod = this.development ? await freshImport(outPath) : await import(Bun.pathToFileURL(outPath).href);
 
       const entryInputs = transitiveInputs(outKey);
@@ -1091,9 +1011,8 @@ export class ComponentRegistry {
   }
 
   /**
-   * Trailing client bundle for callers that batch multiple `compileAll` passes
-   * with `deferClientBundle` (the CLI build compiles pages, then server
-   * islands — without deferral each pass rebuilds the same monolithic bundle).
+   * Trailing client bundle for callers batching several `compileAll` passes with `deferClientBundle` — the CLI build
+   * compiles pages, then server islands, and without deferral each pass rebuilds the same monolithic bundle.
    */
   async finalizeClientBundle(): Promise<void> {
     if (this.hydratableComponents.length > 0) {
@@ -1121,20 +1040,17 @@ export class ComponentRegistry {
       unique.set(c.name, c);
     }
 
-    // Build into local maps first and swap them into the instance fields only
-    // after the build succeeds — a failed `Bun.build` must not leave the registry
-    // stripped (island JS would 404 until the next successful build). CSS entries
-    // in `clientFiles` are per-component and stable, so they survive the swap.
+    // Local maps swap into the instance fields only once the build succeeds, so a failed `Bun.build` leaves the registry
+    // intact rather than 404-ing island JS until the next good build. CSS entries in `clientFiles` are per-component and
+    // stable, so they survive the swap.
     const newClientFiles = new Map<string, string>();
     const newComponentEntryUrls = new Map<string, string>();
     let newIslandBootstrapUrl: string | null = null;
     let newDebugBarUrl: string | null = null;
 
     const srcDir = SRC_DIR;
-    // POSIX-ify every path that becomes a Bun.build entrypoint, a `filesMap`
-    // key, or an embedded import specifier: forward slashes survive intact in
-    // generated source (backslashes get eaten as JS escapes on Windows) and
-    // keep a file's module identity consistent across all three uses.
+    // Forward slashes survive intact in generated source, where Windows backslashes get eaten as JS escapes, and keep a
+    // file's module identity consistent across its three uses: `Bun.build` entrypoint, `filesMap` key, import specifier.
     const hydratableIslandPath = toPosixPath(path.join(srcDir, 'web-components', 'HydratableIsland.ts'));
     const debugBarDir = path.join(srcDir, 'debug-bar') + path.sep;
     const debugBarEntryPath = toPosixPath(path.join(debugBarDir, 'debugbar-entry.ts'));
@@ -1173,20 +1089,14 @@ export class ComponentRegistry {
       name: 'svelte-client',
       setup(build) {
         build.onLoad({ filter: applyFilter('image:fileFilter', IMAGE_FILE_FILTER, { target: 'client' }) }, imageAssetLoader);
-        // Mirror the SSR side-effect-CSS strip. The bundle is already linked
-        // from the SSR-rendered <head> via entryImportedCss → importedCssUrls,
-        // so the browser has it. Without this, Bun's default CSS handling
-        // would either inline as JS-injected styles or fail the build for any
-        // hydratable component that imports a stylesheet.
+        // Mirrors the SSR side-effect-CSS strip, since the SSR-rendered `<head>` already links the bundle via
+        // entryImportedCss → importedCssUrls. Bun's default CSS handling would otherwise inline JS-injected styles or
+        // fail the build for any hydratable component importing a stylesheet.
         build.onLoad({ filter: /\.css$/ }, () => ({ contents: '', loader: 'js' }));
-        // `.server.ts` / `.server.js` files are stripped from the client graph.
-        // Resolve them into a virtual `mochi-server-only` namespace whose
-        // onLoad emits a throwing-Proxy stub per discovered export. The real
-        // file (with its bun:* / node:* deps) is only compiled for SSR.
-        // Matches both extensioned (`./x.server.ts`) and extensionless
-        // (`./x.server`) imports; the extensionless form falls back to disk
-        // probing for the real .ts/.js sibling so the stub still names a
-        // canonical path.
+        // `.server.ts` / `.server.js` files are stripped from the client graph into a virtual `mochi-server-only`
+        // namespace whose onLoad emits a throwing-Proxy stub per discovered export, leaving the real file and its
+        // `bun:*` / `node:*` deps to SSR alone. The extensionless form falls back to disk probing for the real sibling,
+        // so the stub still names a canonical path.
         build.onResolve({ filter: /\.server(?:\.[jt]s)?$/ }, (args) => {
           const base = args.resolveDir ? path.resolve(args.resolveDir, args.path) : path.resolve(args.path);
           let resolved = base;
@@ -1225,10 +1135,9 @@ export class ComponentRegistry {
         build.onResolve({ filter: /^mochi-framework\/hydratable-boundary$/ }, () => ({
           path: path.join(SRC_DIR, 'islands/HydratableBoundary.svelte'),
         }));
-        // Strip esm-env imports so DEV/BROWSER/NODE become free variables,
-        // then Bun's `define` option replaces them with literal booleans.
-        // This enables dead code elimination of if(DEV) blocks. Needed because
-        // Bun can't propagate constants through esm-env's conditional exports.
+        // Bun can't propagate constants through esm-env's conditional exports, so stripping the imports turns
+        // DEV/BROWSER/NODE into free variables that Bun's `define` replaces with literal booleans, letting `if (DEV)`
+        // blocks be eliminated.
         build.onLoad({ filter: /node_modules\/svelte\/src\/.*\.js$/ }, async (args) => {
           let source = await Bun.file(args.path).text();
           source = source.replace(/import\s*\{[^}]*\}\s*from\s*['"]esm-env['"]\s*;?/g, '');
@@ -1320,13 +1229,9 @@ export class ComponentRegistry {
     // Map entry-point outputs back to components using metafile.entryPoint
     // This avoids fragile filename matching.
     if (result.metafile) {
-      // Build reverse lookup: entryPath -> component name (null = bootstrap)
-      // Keys and the lookup below are canonicalized through the same
-      // toPosixPath(path.resolve(...)) transform. The entrypoints are a mix of
-      // POSIX (toPosixPath) and native (path.join) paths, while Bun's metafile
-      // entryPoint is native — on Windows the formats diverge and the bootstrap
-      // lookup silently misses, dropping the hydration <script>. Canonicalizing
-      // both sides keeps them comparable on every platform.
+      // entryPath → component name, with `null` for the bootstrap. Both sides go through the same
+      // `toPosixPath(path.resolve(...))` because the entrypoints mix POSIX and native paths while Bun's metafile
+      // entryPoint is native; on Windows the formats diverge, the bootstrap lookup misses, and the hydration `<script>` disappears.
       const entryToComponent = new Map<string, string | null>();
       entryToComponent.set(toPosixPath(path.resolve(hydratableIslandPath)), null);
       if (debugBarEnabled) {
@@ -1408,16 +1313,14 @@ export class ComponentRegistry {
   }
 
   /**
-   * Stateless SSR for email templates: no islands, no shell, no request state.
-   * Unlike `renderComponent`, this never touches `ctx.islandProps` and always
-   * runs outside any ambient request context (`getRequestContext()` throws
-   * inside the template regardless of call site), so it can't interleave with a
-   * page render. Islands and server islands are a hard error — email clients run
-   * no JS and can't make the follow-up request a deferred island needs.
+   * Stateless SSR for email templates. It leaves `ctx.islandProps` alone and runs outside any ambient request context, so
+   * `getRequestContext()` throws inside the template whatever the call site and no page render can interleave. Islands are
+   * a hard error, since email clients run no JS and can't make the follow-up request a deferred island needs.
    */
   async renderStatic(filename: string, props?: Record<string, unknown>): Promise<StaticRenderResult> {
     await this.compile(filename);
-    const entry = this.compiledComponents.get(filename);
+    const key = path.resolve(filename);
+    const entry = this.compiledComponents.get(key);
     if (!entry) {
       throw new Error(`renderStatic: failed to compile ${filename}`);
     }
@@ -1443,10 +1346,8 @@ export class ComponentRegistry {
       return development ? e : new Error('Email render error');
     };
 
-    // Render fully detached from any ambient request context (see renderDetached).
-    // Read body/head inside the callback so materialization happens in the cleared
-    // scope — returning plain strings, never the live render object. Isolation is
-    // why `getRequestContext()` throws in an email template regardless of call site.
+    // Detached from any ambient request context (see `renderDetached`). body/head are read inside the callback so
+    // materialization also happens in the cleared scope, returning plain strings rather than the live render object.
     const { body, head } = await renderDetached(async () => {
       const rendered = await render(mod.default, { ...(props ? { props } : {}), transformError });
       return { body: rendered.body, head: rendered.head };
@@ -1470,7 +1371,7 @@ export class ComponentRegistry {
       }
     }
     // Side-effect CSS imports reachable from this entry (e.g. @fontsource fonts).
-    const imported = this.entryImportedCss.get(filename);
+    const imported = this.entryImportedCss.get(key);
     if (imported) {
       for (const cssPath of imported) {
         const url = this.importedCssUrls.get(cssPath);
@@ -1493,16 +1394,15 @@ export class ComponentRegistry {
     opts?: { stripMarkers?: boolean; idPrefix?: string; exportName?: string; context?: Map<unknown, unknown> },
   ): Promise<RenderResult> {
     await this.compile(filename);
-    const { module: mod, cssComponents, hydratables, hydratablesByName, hydratablesByPath, islandPaths } = this.compiledComponents.get(filename)!;
+    const entryKey = path.resolve(filename);
+    const { module: mod, cssComponents, hydratables, hydratablesByName, hydratablesByPath, islandPaths } = this.compiledComponents.get(entryKey)!;
 
     const development = this.development;
     const componentBaseName = path.basename(filename, path.extname(filename));
-    // `transformError` makes <svelte:boundary> functional during SSR (Svelte 5.51+).
-    // Without it, boundaries are no-ops on the server and a single throw in any
-    // island takes down the whole page render. We return an Error instance so
-    // user-written `failed` snippets can use `error instanceof Error`, with
-    // `message` made enumerable so it survives `JSON.stringify` in Svelte's
-    // hydration-marker comment (stack stays non-enumerable, so it doesn't leak).
+    // `transformError` is what makes `<svelte:boundary>` functional during SSR (Svelte 5.51+); without it boundaries are
+    // server-side no-ops and one island throw takes down the page render. Returning an Error lets user `failed` snippets
+    // use `error instanceof Error`, and `message` is made enumerable so it survives the `JSON.stringify` below while
+    // `stack` stays non-enumerable and unleaked.
     const transformError = (err: unknown): Error => {
       const e = err instanceof Error ? err : new Error(String(err));
       logger.error(`Island SSR error in ${componentBaseName}: ${e.message}`);
@@ -1514,18 +1414,13 @@ export class ComponentRegistry {
         stack: development ? e.stack : undefined,
       });
       const out = development ? e : new Error('Island error');
-      // Svelte writes a sentinel comment at every boundary so client hydration
-      // knows which branch was rendered:
+      // Svelte writes a sentinel comment at every boundary so client hydration knows which branch was rendered:
       //   <!--[-->          children rendered normally
       //   <!--[!-->         pending snippet (HYDRATION_START_ELSE)
-      //   <!--[?<json>-->   failed snippet (HYDRATION_START_FAILED) — the
-      //                     thrown error is JSON-stringified into <json>
-      // The client parses <json> back out and re-runs the `failed` snippet
-      // with it during hydration (svelte/src/internal/client/dom/blocks/
-      // boundary.js:168-179). Error's `message` is non-enumerable by default,
-      // so without this defineProperty `JSON.stringify(err)` is `{}` — the
-      // injected `<mochi-island-failure data-message={error.message}>` would
-      // hydrate with `data-message=""` and the visible message would vanish.
+      //   <!--[?<json>-->   failed snippet (HYDRATION_START_FAILED), thrown error JSON-stringified into <json>
+      // The client parses `<json>` back out and re-runs the `failed` snippet with it during hydration. `message` is
+      // non-enumerable by default, so without this `defineProperty` the stringify yields `{}` and the injected
+      // `<mochi-island-failure data-message={error.message}>` hydrates with an empty message.
       Object.defineProperty(out, 'message', {
         value: out.message,
         enumerable: true,
@@ -1553,12 +1448,9 @@ export class ComponentRegistry {
       renderOptions.context = opts.context;
     }
 
-    // Each render owns the whole `islandProps` map: `emitIslandProps` fills it
-    // during this `render()`, the HTMLRewriter pass below drains it. Clearing up
-    // front makes sequential same-ctx renders self-contained — the error page
-    // after a failed page render, an action's POST re-render. Nested renders no
-    // longer exist (email uses `renderStatic`; the island endpoint runs in its
-    // own request context), so nothing else holds pending entries here.
+    // Each render owns the whole `islandProps` map: `emitIslandProps` fills it during this `render()` and the
+    // HTMLRewriter pass below drains it, so clearing up front keeps sequential same-ctx renders self-contained — an
+    // error page after a failed render, an action's POST re-render.
     const ctx = requestContext.getStore();
     ctx?.islandProps.clear();
 
@@ -1597,12 +1489,9 @@ export class ComponentRegistry {
     const shouldStrip = opts?.stripMarkers !== false && hydratables.length === 0;
     const hasIslandsOrServerIslands = hydratables.length > 0 || hasServerCssPlaceholders;
 
-    // Index the per-render island props registry by ref id so the rewriter
-    // pass below can emit each payload as a <script type="application/json">
-    // block immediately before the first island that references it. HTMLRewriter
-    // visits elements in document order, so the first callback for a given
-    // `props-ref` is that payload's first island; islands sharing a byte-identical
-    // payload reuse one block, and blocks reused by >=2 islands get `data-shared`.
+    // Indexed by ref id so the rewriter below emits each payload as a `<script type="application/json">` block just
+    // before the first island referencing it — HTMLRewriter visits elements in document order, so the first callback for
+    // a given `props-ref` is that payload's first island. Byte-identical payloads share one block, tagged `data-shared`.
     const propsById = new Map<string, { json: string; emitCount: number }>();
     if (ctx) {
       for (const [json, entry] of ctx.islandProps) {
@@ -1617,13 +1506,10 @@ export class ComponentRegistry {
     const renderedIslandNames = new Set<string>();
     let hasServerIslands = false;
     if (hasIslandsOrServerIslands || shouldStrip) {
-      // NOTE(bun<1.4.0): don't use `el.onEndTag()` to track island nesting
-      // depth — registering it inside a request's AsyncLocalStorage context
-      // leaks the context frame (and the whole request) for the life of the
-      // process on Bun 1.3.x. We instead flag island-internal comments via
-      // element-scoped `comments` handlers, which lol-html invokes immediately
-      // before the document handler for the same comment. Revert to an onEndTag
-      // depth counter once the minimum supported Bun is >= 1.4.0.
+      // NOTE(bun<1.4.0): registering `el.onEndTag()` inside a request's AsyncLocalStorage context leaks the context
+      // frame — and the whole request — for the life of the process on Bun 1.3.x. Island-internal comments are flagged
+      // through element-scoped `comments` handlers instead, which lol-html invokes immediately before the document
+      // handler for the same comment. Revert to an onEndTag depth counter once the minimum supported Bun is >= 1.4.0.
       let insideIsland = false;
       const rewriter = new HTMLRewriter();
       if (hasIslandsOrServerIslands) {
@@ -1740,7 +1626,7 @@ export class ComponentRegistry {
 
     // Append URLs for side-effect CSS imports reachable from this entry
     // (e.g. @fontsource fonts imported in a page's <script>).
-    const imported = this.entryImportedCss.get(filename);
+    const imported = this.entryImportedCss.get(entryKey);
     if (imported) {
       for (const cssPath of imported) {
         const url = this.importedCssUrls.get(cssPath);
@@ -1770,9 +1656,8 @@ export class ComponentRegistry {
   }
 
   /**
-   * Once-per-package heavy-barrel detection over a finished build's metafile. On a live server each
-   * offender is warned immediately; under `bufferBarrelWarnings` (the one-shot build) they're buffered
-   * and emitted as one grouped summary by `flushBarrelWarnings()`.
+   * Once-per-package heavy-barrel detection over a finished build's metafile. A live server warns per offender as it's
+   * seen; under `bufferBarrelWarnings` they accumulate into one grouped summary from `flushBarrelWarnings()`.
    */
   private warnOnBarrelImports(metafile: BarrelMetafile | undefined): void {
     if (!this.barrelWarningsEnabled || !metafile) {
@@ -1904,18 +1789,16 @@ export class ComponentRegistry {
     this.errors = [];
     this.serverIslandPaths.clear();
     this.serverIslandExports.clear();
-    // Only this per-registry map is cleared; the globalThis registry
-    // (localAssetRegistry) deliberately stays append-only so already-rendered
-    // dev HTML can still resolve a replaced image's old hashed URL. The
-    // manifest is built from this map, so stale globals never reach prod.
+    // Only the per-registry map is cleared; `localAssetRegistry` on globalThis stays append-only so already-rendered dev
+    // HTML can still resolve a replaced image's old hashed URL, and the manifest builds from this map, keeping stale
+    // globals out of prod.
     this.localImageAssets.clear();
   }
 
   /**
-   * Bundle a set of side-effect CSS import paths in parallel. On failure,
-   * pushes a `css-bundle-failed` entry into `this.errors` so the dev overlay
-   * surfaces it. Hashed naming prevents collisions between entrypoints that
-   * share a filename (e.g. both fontsource packages ship `index.css`).
+   * Bundle a set of side-effect CSS import paths in parallel, pushing a `css-bundle-failed` entry into `this.errors` on
+   * failure so the dev overlay surfaces it. Hashed naming keeps entrypoints sharing a filename — every fontsource package
+   * ships `index.css` — from colliding.
    */
   private async bundleImportedCss(cssPaths: Iterable<string>): Promise<void> {
     const importCssOutDir = path.resolve(`${this.outDir}/import-css`);
@@ -1965,11 +1848,7 @@ export class ComponentRegistry {
     );
   }
 
-  /**
-   * Re-bundle every previously seen side-effect CSS import. Used by the dev
-   * watcher's CSS-only fast-path so a `.css` edit doesn't need a full SSR
-   * recompile — page modules and entry tracking are left alone.
-   */
+  /** Re-bundles every previously seen side-effect CSS import for the dev watcher's CSS-only fast-path, leaving page modules and entry tracking alone. */
   async rebundleImportedCss(): Promise<void> {
     const cssPaths = new Set<string>();
     for (const set of this.entryImportedCss.values()) {
@@ -2021,32 +1900,19 @@ export class ComponentRegistry {
   }
 
   /**
-   * Targeted rebuild driven by a single file change. Walks `entryDeps` to find
-   * every page whose dep graph contains `changedPath`, force-recompiles them
-   * with the client-bundle deferral flag set, then runs one trailing
-   * `buildClientBundle()`.
+   * Targeted rebuild driven by a single file change: walks `entryDeps` for every page whose dep graph contains
+   * `changedPath`, force-recompiles them with client-bundle deferral, then runs one trailing `buildClientBundle()`.
    *
-   * The old `compiledComponents` entry stays in place until `compile()` swaps
-   * it via the trailing `set()` — concurrent `renderComponent` calls keep
-   * serving the previous module, never see a missing entry, and never trigger
-   * a parallel Bun.build that would race on the SSR output file.
+   * The old `compiledComponents` entry stays until `compile()` swaps it via the trailing `set()`, so concurrent
+   * `renderComponent` calls keep serving the previous module and never trigger a parallel `Bun.build` racing on the SSR
+   * output file.
    *
-   * Returns an empty `pages` set when the path isn't in any dep graph and
-   * isn't itself a registered entry — the caller can use that to skip the
-   * client reload for edits to files outside the page graph (server-entry,
-   * package.json, etc.), where a full rebuild wouldn't take effect anyway
-   * without a process restart.
-   *
-   * Paths in `pages` are absolute so they match the `window.__mochi_page_entry`
-   * value injected into SSR'd HTML (used by the dev WS to reload only tabs on
-   * affected pages).
+   * An empty `pages` set means the path is in no dep graph and is no registered entry, letting the caller skip the client
+   * reload for edits outside the page graph (server entry, package.json), which need a process restart anyway. Paths in
+   * `pages` are absolute, matching the `window.__mochi_page_entry` value injected into SSR'd HTML.
    */
   async recompileChanged(changedPath: string): Promise<{ pages: Set<string>; clientBundleCount: number }> {
     const changed = path.resolve(changedPath);
-    // Keep `affected` keyed as-stored in `compiledComponents` / `entryDeps`
-    // (real callers register with relative paths, e.g. `./src/Site.svelte`),
-    // so `compileAll()` looks up the correct key. Only the public return
-    // value resolves to absolute, to match `__mochi_page_entry`.
     const affected = new Set<string>();
     if (this.compiledComponents.has(changed)) {
       affected.add(changed);
@@ -2065,31 +1931,22 @@ export class ComponentRegistry {
     // dedupe across them.
     await this.safeBatchCompile([...affected], 'Targeted rebuild failed');
     this.rebuildHydratables();
-    // `compileAll` already calls `buildClientBundle` once when the cohort
-    // contributes any hydratables. Only force a trailing call when this
-    // recompile *removed* the cohort's hydratables but the registry still
-    // has hydratables from other cached pages — the client bundle then
-    // needs to drop the stale entries.
+    // `compileAll` already calls `buildClientBundle` once when the cohort contributes hydratables, so a trailing call is
+    // forced only where this recompile removed the cohort's hydratables while other cached pages still have some, leaving
+    // stale entries for the bundle to drop.
     if (this.hydratableComponents.length > 0 && this.clientBundleCallCount === 0) {
       await this.buildClientBundle();
     }
-    const pages = new Set([...affected].map((p) => path.resolve(p)));
-    return { pages, clientBundleCount: this.clientBundleCallCount };
+    return { pages: new Set(affected), clientBundleCount: this.clientBundleCallCount };
   }
 
   /**
-   * Clear the cache and eagerly re-compile every page that was previously
-   * compiled. Used by the dev watcher so the live-reload signal only fires
-   * after client JS chunks are rebuilt — otherwise browsers race the build
-   * and 404 on chunk requests.
+   * Clear the cache and eagerly re-compile every previously compiled page, so the dev watcher's live-reload signal fires
+   * only once client JS chunks exist and browsers stop racing the build into 404s on chunk requests.
    *
-   * The client bundle is deferred to a single trailing call: without the flag,
-   * each page's tail `buildClientBundle()` would rebuild the same monolithic
-   * bundle once per page (O(N²) work for a single save).
-   *
-   * Returns a small summary so the dev watcher can include the affected
-   * `pages` set / `clientBundleCount` in its `recompile:complete` event.
-   * Paths in `pages` are absolute (matches the `recompileChanged` contract).
+   * The client bundle defers to a single trailing call; without the flag each page's tail `buildClientBundle()` rebuilds
+   * the same monolithic bundle, O(N²) work for one save. The returned summary feeds the `recompile:complete` event, with
+   * absolute paths in `pages` matching the `recompileChanged` contract.
    */
   async recompileAll(): Promise<{ pages: Set<string>; clientBundleCount: number }> {
     const pageFiles = [...this.compiledComponents.keys()];
@@ -2102,22 +1959,44 @@ export class ComponentRegistry {
     if (this.hydratableComponents.length > 0 && this.clientBundleCallCount === 0) {
       await this.buildClientBundle();
     }
-    return { pages: new Set(pageFiles.map((f) => path.resolve(f))), clientBundleCount: this.clientBundleCallCount };
+    return { pages: new Set(pageFiles), clientBundleCount: this.clientBundleCallCount };
   }
 
   /** Serialize registry state into a manifest for the prebuild step. */
   toManifest(): MochiManifest {
+    const outDirAbs = path.resolve(this.outDir);
+    // Every artifact the runtime reads lives under outDir, so outDir-relative paths keep the build output relocatable.
+    // This guard fires only if some artifact kind added later stops deriving from outDir, which would bake an absolute
+    // path read back verbatim at boot and pin the build to one machine. The `isAbsolute` check covers Windows, where a
+    // different-drive target makes `path.relative()` return an absolute path with no leading `..`.
+    const relToOutDir = (p: string): string => {
+      const abs = path.resolve(p);
+      const rel = path.relative(outDirAbs, abs);
+      const escapes = rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel);
+      if (escapes) {
+        logger.warn(
+          `Build artifact ${relForDisplay(abs)} lives outside the out-dir — baking an absolute path. ` +
+            `This build will not relocate: it only boots from this exact filesystem path.`,
+        );
+        return toPosixPath(abs);
+      }
+      return toPosixPath(rel);
+    };
+
+    // Source paths are lookup keys, never read from disk, but they still get
+    // project-root-relative treatment so a manifest carries nothing specific to
+    // the machine that built it. See `manifestPaths.ts`.
     const components: MochiManifest['components'] = {};
     for (const [filename, entry] of this.compiledComponents) {
-      components[filename] = {
-        ssrModule: entry.ssrPath,
+      components[encodeSourcePath(filename)] = {
+        ssrModule: relToOutDir(entry.ssrPath),
         hydratables: entry.hydratables.map((h) => ({
           name: h.name,
           displayName: h.displayName,
-          resolvedPath: h.resolvedPath,
+          resolvedPath: encodeSourcePath(h.resolvedPath),
           exportName: h.exportName,
         })),
-        cssComponents: [...entry.cssComponents],
+        cssComponents: [...entry.cssComponents].map((p) => encodeSourcePath(p)),
       };
     }
 
@@ -2127,42 +2006,39 @@ export class ComponentRegistry {
     const importCssPrefix = `${this.assetPrefix}/import-css/`;
     for (const [urlPath] of this.clientFiles) {
       if (urlPath.startsWith(clientPrefix)) {
-        clientFiles[urlPath] = path.join(this.outDir, 'svelte-client', path.basename(urlPath));
+        clientFiles[urlPath] = path.posix.join('svelte-client', path.basename(urlPath));
       } else if (urlPath.startsWith(cssPrefix)) {
-        clientFiles[urlPath] = path.join(this.outDir, 'svelte-css', path.basename(urlPath));
+        clientFiles[urlPath] = path.posix.join('svelte-css', path.basename(urlPath));
       } else if (urlPath.startsWith(importCssPrefix)) {
-        clientFiles[urlPath] = path.join(this.outDir, 'import-css', path.basename(urlPath));
+        clientFiles[urlPath] = path.posix.join('import-css', path.basename(urlPath));
       }
     }
 
     const manifest: MochiManifest = {
-      version: 1,
+      version: MANIFEST_VERSION,
       assetPrefix: this.assetPrefix,
       bootstrapUrl: this.islandBootstrapUrl,
       componentEntryUrls: Object.fromEntries(this.componentEntryUrls),
-      cssFileUrls: Object.fromEntries(this.cssFileUrls),
+      cssFileUrls: Object.fromEntries([...this.cssFileUrls].map(([componentPath, url]) => [encodeSourcePath(componentPath), url])),
       clientFiles,
       components,
       stats: this.getClientStats(),
-      serverIslandPaths: Object.fromEntries(this.serverIslandPaths),
+      serverIslandPaths: Object.fromEntries([...this.serverIslandPaths].map(([name, resolvedPath]) => [name, encodeSourcePath(resolvedPath)])),
     };
     if (this.serverIslandExports.size > 0) {
       manifest.serverIslandExports = Object.fromEntries(this.serverIslandExports);
     }
-    if (this.publicFiles.size > 0) {
-      manifest.publicFiles = Object.fromEntries(this.publicFiles);
-    }
     if (this.localImageAssets.size > 0) {
-      manifest.localImageAssets = Object.fromEntries(this.localImageAssets);
+      manifest.localImageAssets = Object.fromEntries([...this.localImageAssets].map(([url, asset]) => [url, { ...asset, diskPath: relToOutDir(asset.diskPath) }]));
     }
     if (this.importedCssUrls.size > 0) {
-      manifest.importedCssUrls = Object.fromEntries(this.importedCssUrls);
+      manifest.importedCssUrls = Object.fromEntries([...this.importedCssUrls].map(([cssPath, url]) => [encodeSourcePath(cssPath), url]));
     }
     if (this.entryImportedCss.size > 0) {
-      manifest.entryImportedCss = Object.fromEntries([...this.entryImportedCss].map(([k, v]) => [k, [...v]]));
+      manifest.entryImportedCss = Object.fromEntries([...this.entryImportedCss].map(([k, v]) => [encodeSourcePath(k), [...v].map((p) => encodeSourcePath(p))]));
     }
     if (this.serverIslandScriptFile) {
-      manifest.serverIslandScript = this.serverIslandScriptFile;
+      manifest.serverIslandScript = relToOutDir(this.serverIslandScriptFile);
     }
     if (this.buildId !== null) {
       manifest.buildId = this.buildId;
@@ -2174,18 +2050,38 @@ export class ComponentRegistry {
   }
 
   /** Load a registry from a prebuilt manifest (production mode). */
-  static async fromManifest(manifestPath: string, development: boolean = false, outDir?: string): Promise<ComponentRegistry> {
+  static async fromManifest(manifestPath: string, development: boolean = false): Promise<ComponentRegistry> {
     const raw = await Bun.file(manifestPath).text();
     const manifest: MochiManifest = JSON.parse(raw);
 
+    // The manifest layout is not forwards- or backwards-compatible: a mismatch
+    // means the artifacts on disk are laid out for different loader rules, which
+    // fails as a confusing "file not found" deep in the boot instead of here.
+    if (manifest.version !== MANIFEST_VERSION) {
+      throw new Error(
+        `[mochi] Manifest at ${relForDisplay(manifestPath)} is version ${manifest.version}, but this mochi-framework runtime reads version ${MANIFEST_VERSION}. ` +
+          `Build and serve with the same mochi-framework version, then re-run \`mochi-framework build\`.`,
+      );
+    }
+
+    // build() always writes manifest.json at the out-dir root, so the manifest's
+    // own directory *is* the build out-dir. Deriving the artifact root from the
+    // manifest's own location makes the pairing intrinsic — there's no caller-
+    // supplied out-dir that could desync from where the artifacts actually live.
+    const artifactRoot = path.dirname(path.resolve(manifestPath));
+    // Absolute entries are the escape hatch for artifacts that landed outside
+    // the out-dir (toManifest() warns when it bakes one) — pass them through.
+    const resolveManifestPath = (p: string): string => (path.isAbsolute(p) ? p : path.resolve(artifactRoot, p));
+
     const registry = new ComponentRegistry({
       development,
-      outDir: outDir ?? path.dirname(manifestPath),
+      outDir: artifactRoot,
       assetPrefix: manifest.assetPrefix,
     });
     registry.loadedFromManifest = true;
     registry.buildId = manifest.buildId ?? null;
     registry.buildTime = manifest.buildTime ?? null;
+    registry.publicFileCountAtBuild = manifest.publicFileCount ?? 0;
 
     registry.islandBootstrapUrl = manifest.bootstrapUrl;
     registry.clientStats = manifest.stats;
@@ -2194,38 +2090,41 @@ export class ComponentRegistry {
       registry.componentEntryUrls.set(name, url);
     }
 
+    // Source keys go back to absolute. An on-demand compile (a manifest miss, or
+    // a dev rebuild) always writes absolute keys, so decoding here is what lets
+    // manifest-restored and freshly-compiled entries share one set of maps.
     for (const [componentPath, cssUrl] of Object.entries(manifest.cssFileUrls)) {
-      registry.cssFileUrls.set(componentPath, cssUrl);
+      registry.cssFileUrls.set(decodeSourcePath(componentPath), cssUrl);
     }
 
     // Load all client files (JS + CSS) from disk into memory
     for (const [urlPath, diskPath] of Object.entries(manifest.clientFiles)) {
-      const content = await Bun.file(diskPath).text();
+      const content = await Bun.file(resolveManifestPath(diskPath)).text();
       registry.clientFiles.set(urlPath, content);
     }
 
     // Restore side-effect CSS import mappings
     if (manifest.importedCssUrls) {
       for (const [cssPath, url] of Object.entries(manifest.importedCssUrls)) {
-        registry.importedCssUrls.set(cssPath, url);
+        registry.importedCssUrls.set(decodeSourcePath(cssPath), url);
       }
     }
     if (manifest.entryImportedCss) {
       for (const [entryPath, cssPaths] of Object.entries(manifest.entryImportedCss)) {
-        registry.entryImportedCss.set(entryPath, new Set(cssPaths));
+        registry.entryImportedCss.set(decodeSourcePath(entryPath), new Set(cssPaths.map((p) => decodeSourcePath(p))));
       }
     }
 
     // Load SSR modules and populate compiledComponents
     for (const [filename, entry] of Object.entries(manifest.components)) {
-      const modulePath = path.resolve(entry.ssrModule);
+      const modulePath = resolveManifestPath(entry.ssrModule);
       const mod = await import(Bun.pathToFileURL(modulePath).href);
       // Manifests written before exportName existed omit it — those islands are
       // all default imports, so normalize before anything indexes on it.
-      const hydratables = entry.hydratables.map((h) => ({ ...h, exportName: h.exportName ?? 'default' }));
-      registry.compiledComponents.set(filename, {
+      const hydratables = entry.hydratables.map((h) => ({ ...h, exportName: h.exportName ?? 'default', resolvedPath: decodeSourcePath(h.resolvedPath) }));
+      registry.compiledComponents.set(decodeSourcePath(filename), {
         module: mod,
-        cssComponents: new Set(entry.cssComponents),
+        cssComponents: new Set(entry.cssComponents.map((p) => decodeSourcePath(p))),
         hydratables,
         ...indexHydratables(hydratables),
         ssrPath: modulePath,
@@ -2236,7 +2135,7 @@ export class ComponentRegistry {
     // Load server island paths from manifest
     if (manifest.serverIslandPaths) {
       for (const [name, resolvedPath] of Object.entries(manifest.serverIslandPaths)) {
-        registry.serverIslandPaths.set(name, resolvedPath);
+        registry.serverIslandPaths.set(name, decodeSourcePath(resolvedPath));
       }
     }
     if (manifest.serverIslandExports) {
@@ -2245,18 +2144,11 @@ export class ComponentRegistry {
       }
     }
 
-    // Load public file mappings from manifest
-    if (manifest.publicFiles) {
-      for (const [urlPath, diskPath] of Object.entries(manifest.publicFiles)) {
-        registry.publicFiles.set(urlPath, diskPath);
-      }
-    }
-
     // Restore locally-imported image assets and repopulate the global request-time
     // registry so the serving process can stream/transform them from disk.
     if (manifest.localImageAssets) {
       for (const [url, asset] of Object.entries(manifest.localImageAssets)) {
-        const diskPath = path.resolve(asset.diskPath);
+        const diskPath = resolveManifestPath(asset.diskPath);
         registry.localImageAssets.set(url, { ...asset, diskPath });
         registerLocalImageAsset(url, { diskPath, contentType: asset.contentType });
       }
@@ -2264,7 +2156,7 @@ export class ComponentRegistry {
 
     // Restore the prebuilt ServerIsland inline script so the runtime skips Bun.build.
     if (manifest.serverIslandScript) {
-      registry.serverIslandClientJs = await Bun.file(path.resolve(manifest.serverIslandScript)).text();
+      registry.serverIslandClientJs = await Bun.file(resolveManifestPath(manifest.serverIslandScript)).text();
     }
 
     return registry;

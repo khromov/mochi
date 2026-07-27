@@ -47,14 +47,10 @@
   // hydrated, with the cause left in the console by `failWith`.
   const suppressed = $derived(error !== null && !errorRetryable && !isDev);
 
-  // The widget is inert without JavaScript — the slider, the hash chain and the
-  // proof-of-work all run client-side. Until it mounts in the browser only a
-  // blank spacer the size of the track is rendered, so a captcha that was never
-  // hydrated (no `mochi:hydrate` on itself and no hydrated ancestor subtree)
-  // degrades to empty space instead of a dead, non-interactive slider, while the
-  // widget taking its place costs no layout shift. onMount runs only client-side,
-  // so the first (SSR + initial hydration) render is the spacer for both and the
-  // swap is a post-hydration update — no hydration mismatch.
+  // The slider, hash chain, and proof-of-work all run client-side, so until mount the render is a blank spacer the size
+  // of the track: an unhydrated captcha degrades to empty space rather than a dead slider, and the widget replacing it
+  // costs no layout shift. `onMount` is client-only, so SSR and initial hydration both produce the spacer and the swap
+  // lands as a post-hydration update.
   let mounted = $state(false);
   onMount(() => {
     mounted = true;
@@ -66,11 +62,9 @@
     return cancelSolve;
   });
 
-  // The PoW challenge is a hash chain advanced one link per slider step: each
-  // step crossed emits chain = sha256(`${chain}:step${i}`). The final link is
-  // the PoW input, so the answer is only derivable by actually running the
-  // slide progression — it never appears in the page or the island props.
-  // The token is minted once at SSR and never changes for the island's lifetime.
+  // The PoW challenge is a hash chain advanced one link per slider step, each crossing emitting
+  // chain = sha256(`${chain}:step${i}`). The final link is the PoW input, so the answer is derivable only by running the
+  // slide progression, and the token is minted once at SSR for the island's lifetime.
   // svelte-ignore state_referenced_locally
   let chain = token;
   let claimedSteps = 0;
@@ -96,12 +90,8 @@
     }
   }
 
-  /**
-   * The one way this widget is allowed to stop working. Every path that could
-   * strand it lands here, so a failure is never a permanent "Verifying…" with
-   * nothing in the console. `retryable` is false only for a misconfiguration,
-   * which re-running would reproduce exactly.
-   */
+  // The one way this widget is allowed to stop working: every path that could strand it lands here, so a failure is
+  // never a permanent "Verifying…" with nothing in the console. `retryable` is false only for a misconfiguration.
   function failWith(detail: string, retryable = true) {
     cancelSolve();
     error = detail;

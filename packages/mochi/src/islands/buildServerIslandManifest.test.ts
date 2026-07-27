@@ -43,7 +43,7 @@ describe('build precompiles server islands into the manifest', () => {
     for (const islandPath of islandPaths) {
       const entry = manifest.components[islandPath];
       expect(entry, `expected manifest.components["${islandPath}"]`).toBeDefined();
-      expect(await Bun.file(entry!.ssrModule).exists()).toBe(true);
+      expect(await Bun.file(path.resolve(outDir, entry!.ssrModule)).exists()).toBe(true);
     }
   });
 
