@@ -1,4 +1,4 @@
-import { Mochi, error, getRequestContext } from 'mochi-framework';
+import { Mochi, error, getRequestContext, mintCaptcha, verifyCaptcha } from 'mochi-framework';
 import type { MochiRouteValue, MochiQueueConfig } from 'mochi-framework';
 import {
   buildDocsNav,
@@ -11,9 +11,12 @@ import {
   getDoc,
   getDocLlmsTxt,
   getDocNeighbors,
+  getPostLlmsTxt,
   internalDemoLlmsRoutes,
   loadDocs,
 } from './lib/docs';
+import { loadPosts, getPost } from './lib/blog';
+import { CHANGELOG_SLUG, CHANGELOG_TITLE, CHANGELOG_DESCRIPTION, getChangelogHtml, getChangelogTxt } from './lib/changelog';
 import { respondMcp } from './lib/mcp';
 import { routes as apiCatalogRoutes } from './lib/wellKnown/apiCatalog';
 import { routes as mcpCardRoutes } from './lib/wellKnown/mcpCard';
@@ -22,10 +25,16 @@ import { routes as agentSkillsRoutes } from './lib/wellKnown/agentSkills';
 import { profilerEnabled, startProfiler, stopProfiler } from './lib/profiler';
 import { routes as apiRoutes } from './demos/api/routes';
 import { routes as cacheEventsRoutes } from './demos/cache-events/routes';
+import { routes as captchaRoutes } from './demos/captcha/routes';
+import { routes as captchaStylingRoutes } from './demos/captcha-styling/routes';
 import { routes as chatRoutes } from './demos/chat/routes';
+import { routes as ciRoutes } from './ci/routes';
+import { routes as clientOnlyRoutes } from './demos/client-only/routes';
 import { routes as cookieVaryTestRoutes } from './demos/cookie-vary-test/routes';
 import { routes as cookiesRoutes } from './demos/cookies/routes';
 import { routes as dataLoadingRoutes } from './demos/data-loading/routes';
+import { routes as emailRoutes } from './demos/email/routes';
+import { routes as entityPropsRoutes } from './demos/entity-props/routes';
 import { routes as errorRoutes } from './demos/error/routes';
 import { routes as errorBoundariesRoutes } from './demos/error-boundaries/routes';
 import { routes as fileRoutes } from './demos/file/routes';
@@ -37,11 +46,17 @@ import { routes as formRedirectsRoutes } from './demos/form-redirects/routes';
 import { routes as formReturnDataRoutes } from './demos/form-return-data/routes';
 import { routes as helloWorldRoutes } from './demos/hello-world/routes';
 import { routes as hydratableRoutes } from './demos/hydratable/routes';
+import { routes as isHydratableRoutes } from './demos/is-hydratable/routes';
+import { routes as imageRoutes } from './demos/image/routes';
+import { routes as imageInvalidationRoutes } from './demos/image-invalidation/routes';
+import { routes as imageEventsRoutes } from './demos/image-events/routes';
+import { routes as imagePipelineRoutes } from './demos/image-pipeline/routes';
 import { routes as hydrationRoutes } from './demos/hydration/routes';
 import { routes as islandPropsRoutes } from './demos/island-props/routes';
 import { routes as lazyRoutes } from './demos/lazy/routes';
 import { routes as lazyServerIslandRoutes } from './demos/lazy-server-island/routes';
 import { routes as leakTestRoutes } from './leak-test/routes';
+import { routes as islandDepthRoutes } from './demos/island-depth/routes';
 import { routes as loginRoutes } from './demos/login/routes';
 import { routes as mdsvexRoutes } from './demos/mdsvex/routes';
 import { routes as nestedComponentsRoutes } from './demos/nested-components/routes';
@@ -49,9 +64,12 @@ import { routes as nestedIslandsRoutes } from './demos/nested-islands/routes';
 import { routes as propDedupRoutes } from './demos/prop-dedup/routes';
 import { routes as propsIdRoutes } from './demos/props-id/routes';
 import { routes as queueRoutes, queues as queueQueues } from './demos/queue/routes';
+import { routes as rateLimitRoutes } from './demos/rate-limit/routes';
 import { routes as reloadFormDataRoutes } from './demos/reload-form-data/routes';
+import { routes as requestCacheRoutes } from './demos/request-cache/routes';
 import { routes as requestIdRoutes } from './demos/request-id/routes';
 import { routes as serverIslandRoutes } from './demos/server-island/routes';
+import { routes as shotRoutes } from './shot/routes';
 import { routes as serverPropsRoutes } from './demos/server-props/routes';
 import { routes as sharedStateRoutes } from './demos/shared-state/routes';
 import { routes as streamsRoutes } from './demos/streams/routes';
@@ -100,6 +118,17 @@ export const routes: Record<string, MochiRouteValue> = {
         }),
       }
     : {}),
+  // TEMP: on-demand V8 heap snapshot for memory-leak debugging. Remove when done.
+  '/_heapsnapshot': Mochi.api(() => {
+    const snapshot = Bun.generateHeapSnapshot('v8');
+    const filename = `mochi-${Date.now()}.heapsnapshot`;
+    return new Response(snapshot, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Disposition': `attachment; filename="${filename}"`,
+      },
+    });
+  }),
   '/discord': Mochi.api(() => Response.redirect('https://discord.com/invite/QCGfks4gg8', 302)),
   '/': Mochi.page('./src/Site.svelte', {
     serverProps: async () => {
@@ -107,6 +136,29 @@ export const routes: Record<string, MochiRouteValue> = {
       return {
         docsNav: await buildDocsNav(),
         firstDocSlug: docs[0]?.slug ?? 'intro',
+      };
+    },
+  }),
+  // Static, so it outranks /docs/:slug below. The changelog is a synthetic doc rendered
+  // from markdown fetched at runtime — it can't ride the build-time docComponents barrel,
+  // so it hands Docs.svelte pre-rendered HTML instead of a component.
+  '/docs/changelog': Mochi.page('./src/Docs.svelte', {
+    serverProps: async () => {
+      const html = await getChangelogHtml();
+      if (html === null) {
+        error(503, 'Changelog is temporarily unavailable');
+      }
+      return {
+        slug: CHANGELOG_SLUG,
+        title: CHANGELOG_TITLE,
+        description: CHANGELOG_DESCRIPTION,
+        docsNav: await buildDocsNav(),
+        // No on-page TOC: it would just be a second copy of the version list the page
+        // already is. No pager either — the changelog sits outside the docs sequence.
+        toc: [],
+        html,
+        prev: null,
+        next: null,
       };
     },
   }),
@@ -130,7 +182,54 @@ export const routes: Record<string, MochiRouteValue> = {
       };
     },
   }),
+  '/blog': Mochi.page('./src/Blog.svelte', {
+    serverProps: async () => {
+      const posts = await loadPosts({ includeDrafts: DEVELOPMENT });
+      return {
+        docsNav: await buildDocsNav(),
+        posts: posts.map(({ slug, title, description, date, draft }) => ({ slug, title, description, date, draft })),
+      };
+    },
+  }),
+  '/blog/:slug': Mochi.page('./src/BlogPost.svelte', {
+    serverProps: async () => {
+      const { params } = getRequestContext();
+      const slug = params.slug ?? '';
+      const post = await getPost(slug, { includeDrafts: DEVELOPMENT });
+      if (!post) {
+        error(404, `No post '${slug}'`);
+      }
+      return {
+        slug: post.slug,
+        title: post.title,
+        description: post.description,
+        date: post.date,
+        draft: post.draft,
+        author: post.author,
+        docsNav: await buildDocsNav(),
+      };
+    },
+  }),
+  // The support form lives at support.mochi.fast (packages/support) — it needs an
+  // SMTP config this site deliberately doesn't carry.
+  '/support': Mochi.api(() => Response.redirect('https://support.mochi.fast/', 302)),
   '/og': Mochi.page('./src/og/OgPage.svelte'),
+  // Backs the live captcha embedded in the 0.8.0 blog post. Minting and verifying
+  // happen here rather than in `/blog/:slug` so that route stays post-agnostic.
+  '/api/captcha-demo/mint': Mochi.api(() => Response.json(mintCaptcha()), { rateLimit: { limit: 60, window: '1m' } }),
+  '/api/captcha-demo/verify': Mochi.api(
+    async ({ method, request }) => {
+      if (method !== 'POST') {
+        error(405, 'Method Not Allowed');
+      }
+      const { token, pow } = (await request.json()) as { token?: string; pow?: string };
+      const formData = new FormData();
+      formData.set('captcha_token', String(token ?? ''));
+      formData.set('captcha_pow', String(pow ?? ''));
+      return Response.json(await verifyCaptcha(formData));
+    },
+    { rateLimit: { limit: 30, window: '1m' } },
+  ),
   '/sitemap.xml': Mochi.api(async () => {
     return new Response(await buildSitemapXml(), {
       headers: { 'Content-Type': 'application/xml; charset=utf-8' },
@@ -152,12 +251,36 @@ export const routes: Record<string, MochiRouteValue> = {
       headers: { 'Content-Type': 'text/plain; charset=utf-8' },
     });
   }),
+  // Static, so it outranks the /docs/:slug/llms.txt param route below (same
+  // specificity rule the demoLlmsRoutes block relies on). The changelog is a
+  // synthetic doc fetched from GitHub — a null means the fetch failed, so 503
+  // (not 404): the entry is always listed, only the upstream can be unavailable.
+  '/docs/changelog/llms.txt': Mochi.api(async () => {
+    const text = await getChangelogTxt();
+    if (text === null) {
+      error(503, 'Changelog is temporarily unavailable');
+    }
+    return new Response(text, {
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+    });
+  }),
   '/docs/:slug/llms.txt': Mochi.api(async () => {
     const { params } = getRequestContext();
     const slug = params.slug ?? '';
     const text = await getDocLlmsTxt(slug);
     if (text === null) {
       error(404, `No doc '${slug}'`);
+    }
+    return new Response(text, {
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+    });
+  }),
+  '/blog/:slug/llms.txt': Mochi.api(async () => {
+    const { params } = getRequestContext();
+    const slug = params.slug ?? '';
+    const text = await getPostLlmsTxt(slug);
+    if (text === null) {
+      error(404, `No post '${slug}'`);
     }
     return new Response(text, {
       headers: { 'Content-Type': 'text/plain; charset=utf-8' },
@@ -176,10 +299,16 @@ export const routes: Record<string, MochiRouteValue> = {
   ...demoLlmsRoutes,
   ...apiRoutes,
   ...cacheEventsRoutes,
+  ...captchaRoutes,
+  ...captchaStylingRoutes,
   ...chatRoutes,
+  ...ciRoutes,
+  ...clientOnlyRoutes,
   ...cookieVaryTestRoutes,
   ...cookiesRoutes,
   ...dataLoadingRoutes,
+  ...emailRoutes,
+  ...entityPropsRoutes,
   ...errorRoutes,
   ...errorBoundariesRoutes,
   ...fileRoutes,
@@ -191,11 +320,17 @@ export const routes: Record<string, MochiRouteValue> = {
   ...formReturnDataRoutes,
   ...helloWorldRoutes,
   ...hydratableRoutes,
+  ...isHydratableRoutes,
+  ...imageRoutes,
+  ...imageInvalidationRoutes,
+  ...imageEventsRoutes,
+  ...imagePipelineRoutes,
   ...hydrationRoutes,
   ...islandPropsRoutes,
   ...lazyRoutes,
   ...lazyServerIslandRoutes,
   ...(DEVELOPMENT ? leakTestRoutes : {}),
+  ...islandDepthRoutes,
   ...loginRoutes,
   ...mdsvexRoutes,
   ...nestedComponentsRoutes,
@@ -203,10 +338,13 @@ export const routes: Record<string, MochiRouteValue> = {
   ...propDedupRoutes,
   ...propsIdRoutes,
   ...queueRoutes,
+  ...rateLimitRoutes,
   ...reloadFormDataRoutes,
+  ...requestCacheRoutes,
   ...requestIdRoutes,
   ...serverIslandRoutes,
   ...serverPropsRoutes,
+  ...shotRoutes,
   ...sharedStateRoutes,
   ...streamsRoutes,
   ...urlRoutes,

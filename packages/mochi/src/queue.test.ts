@@ -1,9 +1,12 @@
 import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
-import { createQueue, getQueue, closeAllQueueResources } from './queue';
+import { createQueue, getQueue, closeAllQueueResources, runQueueRecovery, DEFAULT_LOCK_DURATION_MS } from './queue';
 import type { MochiJob } from './queue';
 import { mochiEvents } from './events';
+import { initExtensions } from './extensions';
+import { setLogLevel } from './utils/log';
+import { markStartupMilestone, resetStartupMilestones } from './lifecycle';
 
 // bunqueue locks its embedded store to the first dataPath used in the process,
 // so the whole file shares one temp dir and each test uses a unique queue name.
@@ -23,6 +26,7 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
 
 afterEach(async () => {
   mochiEvents.all.clear();
+  resetStartupMilestones();
   await closeAllQueueResources();
 });
 
@@ -175,6 +179,69 @@ describe('Mochi queue', () => {
     expect(error.message).toBe('boom');
   });
 
+  // bunqueue's embedded heartbeat refreshes stall detection but never renews the
+  // job's lock, so a job outliving `lockDuration` is requeued while it is still
+  // running and the success it eventually reports is rejected as someone else's
+  // work. Mochi's default TTL is 30 minutes, so this drives the failure with a
+  // deliberately tiny one; the lock reaper only ticks every 5s, hence the sleep.
+  // `attempts: 2` and `concurrency: 2` are both load-bearing — the requeued copy
+  // has to be retryable and pullable while the original is still running, and with
+  // `attempts: 1` the job completes cleanly instead.
+  //
+  // Only the rejected success is asserted, because what follows it is a bunqueue
+  // implementation detail that has already moved once: on 2.8.32 the job was
+  // retried (double-firing its side effects), on 2.8.44 it is abandoned instead.
+  // Both are the same defect from Mochi's side and both are fixed by not letting
+  // the lock expire. Before `lockDuration` was threaded through to the worker, a
+  // top-level value was silently dropped, the job kept the 30s default lock, and
+  // no failure fired at all — which is how this test catches a regression.
+  test('a job outliving lockDuration has its success rejected', async () => {
+    const name = uniqueName();
+    const failed = deferred<string>();
+    let runs = 0;
+
+    mochiEvents.on('queue:failed', (e) => failed.resolve(e.error));
+
+    const queue = createQueue<{ z: number }>(
+      name,
+      async () => {
+        runs++;
+        await Bun.sleep(7000);
+        return { ok: true };
+      },
+      { dataPath, concurrency: 2, lockDuration: 50 },
+    );
+
+    await queue.add('slow', { z: 1 }, { attempts: 2, bunqueue: { backoff: 10 } });
+
+    expect(await failed.promise).toMatch(/lock token/i);
+    expect(runs).toBe(1);
+  }, 30_000);
+
+  test('queue:lockDurationMs is resolved once per queue, after the per-queue option', () => {
+    const seen: Array<{ value: number; queue: string; explicit: boolean }> = [];
+    initExtensions({ filters: { 'queue:lockDurationMs': (value, ctx) => (seen.push({ value, ...ctx }), value) } });
+
+    const defaulted = uniqueName();
+    const chosen = uniqueName();
+    const passthrough = uniqueName();
+    try {
+      createQueue(defaulted, async () => null, { dataPath });
+      createQueue(chosen, async () => null, { dataPath, lockDuration: 50 });
+      createQueue(passthrough, async () => null, { dataPath, bunqueue: { lockDuration: 70 } });
+    } finally {
+      initExtensions({});
+    }
+
+    expect(seen).toEqual([
+      { value: DEFAULT_LOCK_DURATION_MS, queue: defaulted, explicit: false },
+      { value: 50, queue: chosen, explicit: true },
+      // The raw escape hatch feeds the filter rather than bypassing it, so the
+      // filtered value stays the last word on the lock.
+      { value: 70, queue: passthrough, explicit: true },
+    ]);
+  });
+
   test('does not leak bunqueue job methods into the processor', async () => {
     const name = uniqueName();
     const seen = deferred<MochiJob<unknown>>();
@@ -202,8 +269,90 @@ describe('Mochi queue', () => {
     expect(getQueue(name)).toBe(created);
   });
 
-  test('getQueue throws for a queue that was never declared', () => {
-    expect(() => getQueue('never-declared')).toThrow(/no such queue/);
+  // The mount milestone is what separates "too early" from "wrong name" — see
+  // getQueue in ./queue.ts. These tests never run Mochi.serve(), so the
+  // milestone is unset and every lookup is legitimately "too early".
+  test('getQueue blames the lifecycle, not a typo, before queues are mounted', () => {
+    expect(() => getQueue('never-declared')).toThrow(/queues are not mounted yet/);
+    expect(() => getQueue('never-declared')).toThrow(/mochi:init/);
+  });
+
+  test('getQueue names the mounted queues once mounting finished', () => {
+    const name = uniqueName();
+    createQueue(name, async () => null, { dataPath });
+    markStartupMilestone('mochi:queuesMounted');
+    expect(() => getQueue('typoed')).toThrow(/no such queue/);
+    expect(() => getQueue('typoed')).toThrow(new RegExp(`Mounted queues: ${name}`));
+  });
+
+  test('getQueue says so when serve mounted no queues at all', () => {
+    markStartupMilestone('mochi:queuesMounted');
+    expect(() => getQueue('emails')).toThrow(/no queues were declared/);
+  });
+
+  test('runQueueRecovery hands each callback its own producer handle', async () => {
+    const name = uniqueName();
+    const created = createQueue(name, async () => null, { dataPath });
+    let received: unknown;
+    await runQueueRecovery([[name, { recover: (queue) => void (received = queue) }]]);
+    expect(received).toBe(created);
+  });
+
+  test('a throwing recover is contained and reported on the event bus', async () => {
+    const name = uniqueName();
+    createQueue(name, async () => null, { dataPath });
+    const errors: Array<{ queue: string; error: string }> = [];
+    mochiEvents.on('queue:error', (e) => errors.push(e));
+
+    await runQueueRecovery([
+      [
+        name,
+        {
+          recover: () => {
+            throw new Error('store unavailable');
+          },
+        },
+      ],
+    ]);
+
+    expect(errors).toEqual([{ queue: name, error: 'store unavailable' }]);
+  });
+
+  // Behavioural coverage for the `queue:recoveryStallWarningMs` filter: the
+  // real threshold is 30s, so these drive it down far enough to observe.
+  async function recoveryWarnings(stallMs: number | null): Promise<string[]> {
+    const name = uniqueName();
+    createQueue(name, async () => null, { dataPath });
+    initExtensions(stallMs === null ? {} : { filters: { 'queue:recoveryStallWarningMs': () => stallMs } });
+
+    const warnings: string[] = [];
+    const realWarn = console.warn;
+    console.warn = (...args: unknown[]) => void warnings.push(args.join(' '));
+    setLogLevel('warn');
+    try {
+      await runQueueRecovery([[name, { recover: () => Bun.sleep(60) }]]);
+    } finally {
+      console.warn = realWarn;
+      initExtensions({});
+    }
+    return warnings;
+  }
+
+  test('a recover() slower than the filtered threshold warns that serve() is blocked', async () => {
+    const warnings = await recoveryWarnings(10);
+    expect(warnings.some((line) => line.includes('recover() is still running'))).toBe(true);
+  });
+
+  test('a filtered threshold of 0 silences the stall warning', async () => {
+    // The recover() is the same 60ms one that warns above, so a quiet run can
+    // only be the opt-out taking effect.
+    const warnings = await recoveryWarnings(0);
+    expect(warnings.some((line) => line.includes('recover() is still running'))).toBe(false);
+  });
+
+  test('the default threshold does not warn about a fast recover()', async () => {
+    const warnings = await recoveryWarnings(null);
+    expect(warnings).toEqual([]);
   });
 
   test('closeAllQueueResources closes resources and is idempotent', async () => {
@@ -212,7 +361,7 @@ describe('Mochi queue', () => {
 
     await closeAllQueueResources();
     // After draining, the handle is gone from the registry.
-    expect(() => getQueue(name)).toThrow(/no such queue/);
+    expect(() => getQueue(name)).toThrow(/queues are not mounted yet/);
     // A second call must not throw even though the registry is already empty.
     await closeAllQueueResources();
     expect(true).toBe(true);

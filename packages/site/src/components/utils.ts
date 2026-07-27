@@ -5,7 +5,7 @@ export function delay(minMs: number, maxMs: number = minMs): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export type SourceSpec = { label: string; path: string; lang?: string };
+export type SourceSpec = { label: string; path: string; lang?: string; showImageConfig?: boolean };
 type Source = { label: string; lang: string; html: string; styleHtml?: string };
 
 const cache = new Map<string, string>();
@@ -22,8 +22,11 @@ async function read(path: string): Promise<string> {
 
 export async function loadSources(specs: SourceSpec[]): Promise<Source[]> {
   return Promise.all(
-    specs.map(async ({ label, path, lang }) => {
-      const code = stripDemoWrapper(await read(path));
+    specs.map(async ({ label, path, lang, showImageConfig }) => {
+      let code = stripDemoWrapper(await read(path));
+      if (isDemoIndex(path) && !showImageConfig) {
+        code = stripImageConfig(code);
+      }
       const resolvedLang = inferLang(label, lang);
       if (resolvedLang === 'svelte') {
         const { body, style } = splitSvelteStyle(code);
@@ -41,6 +44,39 @@ export async function loadSources(specs: SourceSpec[]): Promise<Source[]> {
       };
     }),
   );
+}
+
+export function isDemoIndex(path: string): boolean {
+  return path.endsWith('demoIndex.ts');
+}
+
+// The shared demoIndex example carries the site's full named-image-sizes config, which is
+// noise in every demo except the image ones. Drop the `image: {…}` block (and its leading
+// comment) so non-image demos show a clean minimal Mochi.serve() call.
+export function stripImageConfig(code: string): string {
+  const lines = code.split('\n');
+  const out: string[] = [];
+  let depth = 0;
+  let skipping = false;
+  for (const line of lines) {
+    if (skipping) {
+      depth += (line.match(/\{/g)?.length ?? 0) - (line.match(/\}/g)?.length ?? 0);
+      if (depth <= 0) {
+        skipping = false;
+      }
+      continue;
+    }
+    if (/^\s*image:\s*\{/.test(line)) {
+      while (out.length && /^\s*\/\//.test(out[out.length - 1]!)) {
+        out.pop();
+      }
+      depth = (line.match(/\{/g)?.length ?? 0) - (line.match(/\}/g)?.length ?? 0);
+      skipping = depth > 0;
+      continue;
+    }
+    out.push(line);
+  }
+  return out.join('\n');
 }
 
 const STYLE_RE = /\n<style(?:\s[^>]*)?>[\s\S]*?<\/style>\s*$/;

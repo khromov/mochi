@@ -1,2 +1,4 @@
 **/CHANGELOG.md
+REPORT.md
 **/*.patch
+**/virtual-modules/

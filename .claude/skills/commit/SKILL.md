@@ -17,6 +17,7 @@ Stage everything in the working tree (modified + untracked) and create one commi
 - **Title must follow release-please semantics:** `feat:`, `fix:`, `perf:`, `chore:`, `docs:`, `refactor:`, `test:`, `ci:`, `build:`. Use `feat!:` only if the user explicitly says it's a breaking change.
 - **Keep the title short** — aim for under 60 characters, present tense, lowercase after the colon, no trailing period.
 - **Skip whatever the user names** in the skill args (filenames or paths). Also skip anything that looks like a secret (`.env*`, `credentials*`, key files).
+- **Never commit `.devcontainer/devcontainer.json`** — leave its changes uncommitted in the working tree.
 
 ## Steps
 

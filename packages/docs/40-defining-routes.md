@@ -226,12 +226,12 @@ Every `Mochi.page` and `Mochi.api` route answers `HEAD` automatically by running
 
 ### Static files
 
-Files under `./public` are served automatically; no route entry is needed. A user-defined route always wins over a same-path public file. See `Serve options` for `publicDir`.
+Files under `./public` are served automatically; no route entry is needed. They're read straight from that directory in both development and production — nothing is copied into `.mochi/`, so the directory has to ship with your deploy. A user-defined route always wins over a same-path public file. See `Serve options` for `publicDir`.
 
 <SeeItInAction
 demos={[
-{ href: "/demos/hello-world/", title: "Hello World", hook: "The simplest possible Mochi page — pure server-rendered Svelte." },
-{ href: "/demos/api/", title: "API Endpoints", hook: "JSON routes defined with Mochi.api(), tested live against the running server." },
-{ href: "/demos/file/", title: "File Routes", hook: "Serve a file from disk with Mochi.file() — static path or a per-request resolver." },
+{ href: "/demos/hello-world/", title: "Hello World", hook: "How server-side rendering works — a Mochi.page() renders Svelte on the server and ships zero JavaScript." },
+{ href: "/demos/api/", title: "API Endpoints", hook: "How API routes work — define JSON endpoints with Mochi.api(), tested live against the running server." },
+{ href: "/demos/file/", title: "File Routes", hook: "How file routes work — serve a file from disk with Mochi.file(), as a static path or a per-request resolver." },
 ]}
 />

@@ -9,3 +9,4 @@ User-Agent: *
 Content-Signal: ai-train=yes, search=yes, ai-input=yes
 Allow: /
 Disallow: /og
+Disallow: /ci/data/

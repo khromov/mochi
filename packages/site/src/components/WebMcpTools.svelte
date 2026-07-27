@@ -19,19 +19,19 @@
   };
 
   type LlmsEntry = { title: string; description: string; url: string };
-  type LlmsIndex = { docs: LlmsEntry[]; demos: LlmsEntry[] };
+  type LlmsIndex = { docs: LlmsEntry[]; posts: LlmsEntry[]; demos: LlmsEntry[] };
 
   const tools: ToolDescriptor[] = [
     {
       name: 'search_docs',
-      description: 'Search the Mochi documentation and demos by keyword. Returns matching pages with their titles, descriptions, and URLs.',
+      description: 'Search the Mochi documentation, demos, and blog posts by keyword. Returns matching pages with their titles, descriptions, and URLs.',
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: 'object',
         properties: {
           query: {
             type: 'string',
-            description: 'Keywords to search for across docs and demo titles/descriptions.',
+            description: 'Keywords to search for across doc, demo, and blog post titles/descriptions.',
             minLength: 1,
             maxLength: 100,
           },
@@ -48,7 +48,7 @@
         const matches = (entries: LlmsEntry[]) =>
           query.length === 0 ? [] : entries.filter((e) => e.title.toLowerCase().includes(query) || e.description.toLowerCase().includes(query));
 
-        const all = [...matches(index.docs ?? []), ...matches(index.demos ?? [])];
+        const all = [...matches(index.docs ?? []), ...matches(index.demos ?? []), ...matches(index.posts ?? [])];
 
         const text = all.length === 0 ? `No matches found for "${query}".` : all.map((e) => `- ${e.title} — ${e.description} (${e.url})`).join('\n');
 

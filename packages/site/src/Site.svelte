@@ -1,8 +1,10 @@
 <script lang="ts">
   import PageShell from './components/PageShell.svelte';
+  import Hero from './components/Hero.svelte';
   import Footer from './components/Footer.svelte';
   import QuickStart from './components/QuickStart.svelte';
   import WebMcpTools from './components/WebMcpTools.svelte';
+  import PostBanner from './components/PostBanner.svelte';
   import { demos, categoryLabels, categoryOrder, type DemoCategory, type Demo } from './lib/demos';
   import { demoIconFor } from './lib/demoIcons';
   import { isExternal } from './lib/isExternal';
@@ -31,25 +33,27 @@
     canonical: 'https://mochi.fast/',
   }}
 >
-  <header class="hero">
-    <div class="hero-inner">
-      <h1 class="logo">🍡 mochi</h1>
-      <p class="lede">
-        An experimental SSR framework for <span class="nowrap">Svelte 5</span> and
-        <span class="nowrap">Bun</span>.
-      </p>
-      <p class="dek">Render everything on the server; ship JavaScript only where it earns its place.</p>
-    </div>
-  </header>
+  <Hero />
 
   <main class="body">
+    <PostBanner />
+
+    <section class="docs-cta">
+      <h2 class="docs-cta-title">What is Mochi?</h2>
+      <p class="lead">
+        Mochi is a lightweight, server-first framework for Svelte 5 on Bun. Mochi websites render server-side on every request and ship as plain HTML. Components only ship
+        JavaScript when you explicitly mark them as
+        <a href="/docs/intro/#server-rendered-with-island-interactivity">islands</a>.
+      </p>
+    </section>
+
     <QuickStart mochi:hydrate />
     <WebMcpTools mochi:hydrate />
 
     <section class="docs-cta">
       <h2 class="docs-cta-title">Documentation</h2>
       <p class="docs-cta-blurb">Setup, hydration modes, routes, hooks, forms, cookies — everything in one place.</p>
-      <a class="docs-cta-link" href="/docs/{firstDocSlug}">Start reading →</a>
+      <a class="docs-cta-link" href="/docs/{firstDocSlug}/">Start reading →</a>
     </section>
 
     <h2 class="demos-heading">Demos</h2>
@@ -69,7 +73,7 @@
                   <span class="demo-title">{demo.title}</span>
                   {#if meta}
                     {@const Icon = meta.icon}
-                    <span class="demo-icon" title={meta.label} aria-label={meta.label}>
+                    <span class="demo-icon" title={meta.label} aria-hidden="true">
                       <Icon size={16} strokeWidth={1.6} />
                     </span>
                   {/if}
@@ -87,65 +91,29 @@
 </PageShell>
 
 <style>
-  .hero {
-    padding: 3.5rem 1.5rem 3rem;
-  }
-
-  .hero-inner {
-    position: relative;
-    max-width: 640px;
-    margin: 0 auto;
-  }
-
-  .logo {
-    font-family: var(--font-serif);
-    font-size: 3.25rem;
-    font-weight: 400;
-    font-variation-settings:
-      'opsz' 144,
-      'SOFT' 50,
-      'WONK' 1;
-    color: #fff;
-    letter-spacing: -0.015em;
-    margin-bottom: 0.9rem;
-    line-height: 1.05;
-  }
-
-  .lede {
-    font-family: var(--font-serif);
-    font-weight: 400;
-    color: #f4f1e8;
-    font-size: 1.35rem;
-    line-height: 1.35;
-    letter-spacing: -0.003em;
-    margin: 0 auto 0.45rem;
-    max-width: 28ch;
-    text-wrap: balance;
-  }
-
-  .dek {
-    font-family: var(--font-serif);
-    font-style: italic;
-    font-weight: 300;
-    color: #c8d4cb;
-    font-size: 0.98rem;
-    line-height: 1.5;
-    letter-spacing: 0.003em;
-    margin: 0 auto;
-    max-width: 38ch;
-    text-wrap: balance;
-  }
-
-  .nowrap {
-    white-space: nowrap;
-  }
-
   .body {
     max-width: 720px;
     width: 100%;
     margin: 0 auto;
     padding: 2rem 1.5rem;
     flex: 1;
+  }
+
+  .lead {
+    color: var(--text-muted);
+    font-size: 1.05rem;
+    line-height: 1.6;
+    margin: 0;
+  }
+
+  .lead a {
+    color: var(--accent);
+    text-decoration: none;
+    font-weight: 600;
+  }
+
+  .lead a:hover {
+    text-decoration: underline;
   }
 
   .demos-heading {
@@ -219,8 +187,8 @@
 
   .docs-cta-blurb {
     color: var(--text-muted);
-    font-size: 0.95rem;
-    line-height: 1.5;
+    font-size: 1.05rem;
+    line-height: 1.6;
     margin-bottom: 1rem;
   }
 
@@ -293,24 +261,6 @@
   @media (max-width: 640px) {
     .demo-grid {
       grid-template-columns: 1fr;
-    }
-  }
-
-  @media (max-width: 768px) {
-    .hero {
-      padding: 2rem 1.25rem 1.75rem;
-    }
-
-    .logo {
-      font-size: 2.4rem;
-    }
-
-    .lede {
-      font-size: 1.15rem;
-    }
-
-    .dek {
-      font-size: 0.92rem;
     }
   }
 </style>

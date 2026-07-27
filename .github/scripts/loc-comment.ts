@@ -56,6 +56,13 @@ function renderPackageSection(name: string, mainReport: Report | undefined, prRe
   return [detailsTag, `<summary><strong>${name}</strong></summary>`, '', ...table, '', '</details>'];
 }
 
+// packages/minimal is the create-mochi template source and packages/demos ships
+// standalone demos — both run against the *published* framework, so a reviewer
+// must confirm no unreleased features slipped in.
+function templatePackagesTouched(paths: string[]): boolean {
+  return paths.some((p) => p.startsWith('packages/minimal/') || p.startsWith('packages/demos/'));
+}
+
 function renderDepReportSection(content: string): string[] {
   return ['### Dependency report', '', '<details>', '<summary>Expand report</summary>', '', '```', content.trimEnd(), '```', '', '</details>'];
 }
@@ -88,6 +95,8 @@ function main() {
   const runId = runIdIdx !== -1 ? args[runIdIdx + 1] : undefined;
   const depIdx = args.indexOf('--dep-report');
   const depReportPath = depIdx !== -1 ? args[depIdx + 1] : undefined;
+  const changedIdx = args.indexOf('--changed-paths');
+  const changedPathsPath = changedIdx !== -1 ? args[changedIdx + 1] : undefined;
 
   if (!mainPath || !prPath) {
     console.error('Usage: bun loc-comment.ts <main.json> <pr.json> [--repo <owner/repo> --run-id <id>]');
@@ -100,6 +109,20 @@ function main() {
   const allPackages = new Set([...mainDoc.packages.map((p) => p.name), ...prDoc.packages.map((p) => p.name)]);
 
   const lines: string[] = [MARKER, '## Mochi review report', ''];
+
+  if (changedPathsPath) {
+    try {
+      const changed = readFileSync(changedPathsPath, 'utf8')
+        .split('\n')
+        .map((l) => l.trim())
+        .filter(Boolean);
+      if (templatePackagesTouched(changed)) {
+        lines.push('> ⚠️ This PR modified the starter templates. Make sure no unreleased features are used in the template.', '');
+      }
+    } catch {
+      // changed-paths is optional — skip if the file is missing or unreadable
+    }
+  }
 
   if (repo && runId) {
     lines.push(...renderInstallSection(repo, runId));

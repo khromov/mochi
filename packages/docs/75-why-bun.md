@@ -21,7 +21,7 @@ Mochi is backed by just ~10 runtime dependencies. We don't minimize dependencies
 - `HTMLRewriter` — Mochi uses it for islands discovery and HTML rewriting. Replaces `htmlparser2`, `cheerio`, and similar libraries.
 - `Bun.serve()` — backs the HTTP and WebSocket server in `Mochi.serve()`. Replaces `express`, `fastify`, or `hono`.
 - `Bun.Glob` — discovers routes, docs, and raw CSS files. Replaces `fast-glob` or `globby`.
-- `Bun.deflateSync` / `Bun.inflateSync` — pack signed server-island prop payloads into URLs. Replaces `node:zlib`.
+- `Bun.deflateSync` / `Bun.inflateSync` — pack encrypted server-island prop payloads into URLs. Replaces `node:zlib`.
 - `bun:sqlite` and `bun:sql` — zero-dep SQLite and PostgreSQL for app data. Replaces `better-sqlite3` and `pg`.
 - `bun:test` — runs Mochi's own test suite, with per-file process isolation. Replaces Vitest or Jest.
 - Native `.ts` execution and auto-loaded `.env` — TypeScript runs directly under `bun run`. Replaces `ts-node` and `dotenv`.

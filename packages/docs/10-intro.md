@@ -13,11 +13,11 @@ description: 'A lightweight, server-first Svelte 5 framework running on Bun that
 
 # mochi
 
-Mochi is a lightweight, server-first framework for [Svelte 5](https://svelte.dev/) on [Bun](https://bun.sh/). Mochi websites render server-side on every request and ship as plain HTML. Components only ship JavaScript when you explicitly mark them as islands.
+Mochi is a lightweight, server-first framework for [Svelte 5](https://svelte.dev/) on [Bun](https://bun.sh/) — it renders everything as plain HTML and ships JavaScript only for the components you mark as islands.
 
 ## Server-rendered, with island interactivity
 
-The websites we visit on the web are mostly static — text, images and links. Only a handful of elements on any given page actually need to be interactive: a search box, a logged-in badge, a comments widget. Mochi reflects this at the core of its design. Mochi sites renders server-side as plain HTML; the interactive pieces are marked with the `mochi:hydrate` directive and ship JS as interactive islands embedded in that HTML.
+The websites we visit on the web are mostly static — text, images and links. Only a handful of elements on any given page actually need to be interactive: a search box, a logged-in badge, a comments widget. Mochi reflects this at the core of its design. Mochi sites renders server-side as plain HTML; the interactive pieces are marked with a `mochi:*` directive — each one an _island_ — and ship JS embedded in that HTML.
 
 Go ahead, try hydrating the page below and see which components will load JavaScript.
 

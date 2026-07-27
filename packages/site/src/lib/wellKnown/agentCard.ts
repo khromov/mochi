@@ -15,7 +15,7 @@ export const routes: Record<string, MochiRouteValue> = {
       protocolVersion: '0.3',
       name: 'Mochi Docs Agent',
       description:
-        'Official documentation and demos for the Mochi framework (SSR-first Svelte 5 on Bun with islands-based hydration). Lists and serves the full text of every Mochi doc section and demo.',
+        'Official documentation and demos for the Mochi framework (SSR-first Svelte 5 on Bun with islands-based hydration). Lists and serves the full text of every Mochi doc section, demo, and blog post.',
       version: mochiPkg.version,
       provider: {
         organization: 'Mochi',
@@ -40,14 +40,14 @@ export const routes: Record<string, MochiRouteValue> = {
         {
           id: 'get_documentation_sections',
           name: 'List documentation sections',
-          description: 'List every Mochi documentation section and demo. Returns a JSON array of { type, slug, title, description }.',
+          description: 'List every Mochi documentation section, demo, and blog post. Returns a JSON array of { type, slug, title, description }.',
           tags: ['documentation', 'mochi', 'discovery'],
           examples: ['What documentation sections does Mochi have?', 'List all Mochi demos.'],
         },
         {
           id: 'get_section',
           name: 'Fetch documentation section',
-          description: 'Fetch the full text of one or more documentation sections (doc pages or demos) by { type, slug }.',
+          description: 'Fetch the full text of one or more documentation sections (doc pages, demos, or blog posts) by { type, slug }.',
           tags: ['documentation', 'mochi', 'retrieval'],
           examples: ['Show me the Mochi forms documentation.', 'Read the cache demo source.'],
         },

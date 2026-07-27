@@ -145,7 +145,7 @@ Refer to your client's documentation for adding a remote MCP server and use `htt
 
 ### llms.txt
 
-[`/llms.txt`](/llms.txt) is the index: a title, a one-line summary, and a linked list of every doc (`## Docs`) and demo (`## Examples`), each pointing at its own plain-text file. The concatenated bundles below are linked under `## Optional`. Start here.
+[`/llms.txt`](/llms.txt) is the index: a title, a one-line summary, and a linked list of every doc (`## Docs`), demo (`## Examples`), and blog post (`## Blog`), each pointing at its own plain-text file. The `## Docs` list ends with the changelog. The concatenated bundles below are linked under `## Optional`. Start here.
 
 #### All docs concatenated
 
@@ -153,7 +153,7 @@ The full set of docs, concatenated in reading order, is served at [`/llms-recomm
 
 #### Docs + demo source
 
-[`/llms-full.txt`](/llms-full.txt) includes everything in `/llms-recommended.txt` plus the source of every demo (`.svelte` and `.ts` files), grouped by demo name. Use this when the model needs both the API and real working examples.
+[`/llms-full.txt`](/llms-full.txt) includes everything in `/llms-recommended.txt` plus the source of every demo (`.svelte` and `.ts` files) grouped by demo name, every blog post, and the changelog. Use this when the model needs both the API and real working examples.
 
 #### Per-document text
 
@@ -165,6 +165,14 @@ Each individual doc is reachable as plain text at `/docs/<slug>/llms.txt`:
 
 The "Copy as llms.txt" button on each doc page emits just that page — use it to give the model focused context without the rest of the framework.
 
+The changelog is served the same way at [`/docs/changelog/llms.txt`](/docs/changelog/llms.txt) — the record of what changed in each `mochi-framework` version, also readable as a page at [`/docs/changelog/`](/docs/changelog/). It's fetched from GitHub, so both return `503` (not `404`) if that fetch is ever unavailable.
+
+#### Per-post text
+
+Each published blog post is reachable as raw markdown at `/blog/<slug>/llms.txt`:
+
+- [`/blog/mochi-0-8-0/llms.txt`](/blog/mochi-0-8-0/llms.txt)
+
 #### Per-demo source
 
 Each demo's source is reachable as plain text alongside its demo page — usually `/demos/<slug>/llms.txt`. It's the exact source `/llms-full.txt` bundles for that demo, scoped to one demo:
@@ -174,11 +182,12 @@ Each demo's source is reachable as plain text alongside its demo page — usuall
 
 #### Machine-readable index
 
-[`/llms.json`](/llms.json) returns a JSON index of every doc and demo — each with its `title`, `description`, and an absolute `url` to its `llms.txt`. Use it to discover what's available and fetch each piece on demand:
+[`/llms.json`](/llms.json) returns a JSON index of every doc, blog post, and demo — each with its `title`, `description`, and an absolute `url` to its `llms.txt`. The changelog is the last entry in `docs`. Use it to discover what's available and fetch each piece on demand:
 
 ```json
 {
   "docs": [{ "title": "Welcome", "description": "…", "url": "https://mochi.fast/docs/intro/llms.txt" }],
+  "posts": [{ "title": "Mochi 0.8.0", "description": "2026-07-21 — …", "url": "https://mochi.fast/blog/mochi-0-8-0/llms.txt" }],
   "demos": [{ "title": "Hello World", "description": "…", "url": "https://mochi.fast/demos/hello-world/llms.txt" }]
 }
 ```

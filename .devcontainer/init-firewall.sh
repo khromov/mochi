@@ -126,6 +126,18 @@ echo "Host network detected as: $HOST_NETWORK"
 iptables -A INPUT -s "$HOST_NETWORK" -j ACCEPT
 iptables -A OUTPUT -d "$HOST_NETWORK" -j ACCEPT
 
+# Allow the devcontainers-manager attention bridge. host.docker.internal is injected
+# via --add-host=host.docker.internal:host-gateway; on Colima it resolves to the Lima
+# gateway (e.g. 192.168.5.2), which sits outside HOST_NETWORK above, so allow it
+# explicitly. getent reads the /etc/hosts entry, so this adapts to any backend.
+HOST_DOCKER_INTERNAL=$(getent hosts host.docker.internal | awk '{ print $1 }' | head -n1)
+if [ -n "${HOST_DOCKER_INTERNAL:-}" ]; then
+    echo "Allowing devcontainers-manager bridge host: $HOST_DOCKER_INTERNAL"
+    iptables -A OUTPUT -d "$HOST_DOCKER_INTERNAL" -j ACCEPT
+else
+    echo "WARNING: host.docker.internal did not resolve — manager bridge will be blocked"
+fi
+
 # Set default policies to DROP first
 iptables -P INPUT DROP
 iptables -P FORWARD DROP
