@@ -29,21 +29,12 @@ const DEFAULT_VERY_SLOW = 2000;
 const state = pinGlobal<{ registered: boolean }>('__mochi_console_logger__', () => ({ registered: false }));
 
 /**
- * Pre-built consumer of `mochiEvents` that prints one formatted line per HTTP
- * request, WebSocket frame, SSE message, server start/stop, and (optionally)
- * cache event. Lines are routed through `logger.info` / `logger.warn`, so they
- * inherit the active log level.
+ * The request/lifecycle formatter: a pre-built consumer of `mochiEvents` that turns the bus into the BOOT/GET/ERR/WS
+ * lines seen during development, one per HTTP request, WebSocket frame, SSE message, server start/stop, and optionally
+ * cache event. Lines route through `logger.info` / `logger.warn`, inheriting the active log level.
  *
- * This is **not** the logger primitive — that's `logger` (in `./log`). This
- * function is the *request/lifecycle formatter* that turns events on the bus
- * into the BOOT/GET/ERR/WS lines you see during development. Subscribe your
- * own observability pipeline (Sentry, OpenTelemetry, JSON stdout) directly to
- * `mochiEvents` and pass `logger: { enabled: false }` to `Mochi.serve()` if
- * you don't want the formatter on top.
- *
- * Normally called automatically by `Mochi.serve()` (enabled by default). Pass
- * `logger: { enabled: false }` to disable, or `logger: { slowThreshold }` to
- * customise. Safe to call manually — duplicate calls are a no-op.
+ * `Mochi.serve()` calls it automatically; pass `logger: { enabled: false }` to disable or `logger: { slowThreshold }` to
+ * customise, and subscribe your own observability pipeline straight to `mochiEvents`. Duplicate calls are a no-op.
  */
 export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
   if (state.registered) {
@@ -75,11 +66,9 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
     error: 'log',
   };
 
-  // `source` is auto-built from the event name + payload — call sites only
-  // describe the formatted line, never repeat the event name or rebuild source.
-  // The cast widens `{name: K; payload: M[K]}` to the distributed
-  // `ConsoleLoggerSource` union, which TypeScript can't infer through a
-  // generic closure.
+  // `source` is auto-built from the event name and payload, so call sites describe only the formatted line. The cast
+  // widens `{name: K; payload: M[K]}` to the distributed `ConsoleLoggerSource` union, which TypeScript can't infer
+  // through a generic closure.
   function subscribe<K extends keyof MochiEventMap>(name: K, format: (payload: MochiEventMap[K]) => Omit<EmitInput, 'source'>): void {
     mochiEvents.on(name, (payload) => {
       emit({ ...format(payload), source: { name, payload } as ConsoleLoggerSource });
@@ -251,13 +240,10 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
     level: 'warn',
   }));
 
-  // Queue lifecycle is operational signal, so `added` and `completed` are
-  // pinned at `warn` to survive the production default level ('warn') — an
-  // `info` default would hide `added` entirely and leave `completed` visible
-  // only when the job trips the slow-escalation. Per-attempt `active` repeats
-  // on every retry and adds nothing over added + completed/failed, so it stays
-  // on `logger.debug`. `failed`/`error` always warn. Apps that find the
-  // lifecycle chatty can demote it with the `consoleLogger:level` filter.
+  // Queue lifecycle is operational signal, so `added` and `completed` pin at `warn` to survive the production default;
+  // at `info` they'd vanish, leaving `completed` visible only when a job trips the slow-escalation. Per-attempt `active`
+  // repeats on every retry and adds nothing, so it stays on `logger.debug`. The `consoleLogger:level` filter demotes any
+  // of it for apps that find the lifecycle chatty.
   subscribe('queue:added', ({ queue, jobName, jobId }) => ({
     label: 'QUEUE',
     path: `${queue}/${jobName}`,
@@ -293,14 +279,9 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
   }));
 
   subscribe('email:sent', ({ to, subject, transport, duration }) => {
-    // Four delivery classes:
-    //  - log:        did not send — warn (visible in production) and colour yellow
-    //                so it never reads as a delivered-mail success line.
-    //  - dev:        captured into the outbox — expected in development, so
-    //                info-level and pointed at the viewer, not a warning.
-    //  - suppressed: the `email:message` filter vetoed the send — magenta so it's
-    //                distinct from a real delivery.
-    //  - else:       actually delivered (smtp/custom) — green.
+    // Four delivery classes, coloured so a non-delivery never reads as a success line: `log` didn't send (yellow, warn,
+    // visible in production), `dev` was captured into the outbox (info, pointed at the viewer), `suppressed` was vetoed
+    // by the `email:message` filter (magenta), and anything else was actually delivered over smtp/custom (green).
     const note =
       transport === 'log'
         ? styleText('yellow', 'logged (not sent)')
@@ -409,10 +390,9 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
 }
 
 /**
- * Built-in `consoleLogger:line` filter that silences framework-internal noise:
- * Chrome's `/.well-known/appspecific/com.chrome.devtools.json` probe,
- * framework admin routes (`/__mochi/admin/*`), framework asset/client routes
- * (`/_mochi/*`), and the dev WebSocket live-reload endpoint (`/__mochi_live_reload`).
+ * Built-in `consoleLogger:line` filter silencing framework-internal noise: Chrome's
+ * `/.well-known/appspecific/com.chrome.devtools.json` probe, admin routes (`/__mochi/admin/*`), asset and client routes
+ * (`/_mochi/*`), and the dev live-reload endpoint (`/__mochi_live_reload`).
  */
 export const silenceInternalRoutes = (line: string, { path }: MochiFilterContext['consoleLogger:line']): MochiFilterReturn['consoleLogger:line'] => {
   if (path === '/.well-known/appspecific/com.chrome.devtools.json') {
@@ -436,10 +416,9 @@ function errorMessage(error: unknown): string {
 
 const REDACTED = '<redacted>';
 
-// Recipients and subject are PII, and `email:error` lines log at `warn` (so they
-// reach production logs). `email.filterPii: true` swaps them for a placeholder in
-// the MAIL line. `scrub` also strips any recipient that leaked into a transport
-// error string (e.g. an SMTP "550 no such user <addr>").
+// Recipients and subject are PII and `email:error` logs at `warn`, so it reaches production logs; `email.filterPii: true`
+// swaps them for a placeholder, and `scrub` also strips any recipient leaked into a transport error string such as an
+// SMTP "550 no such user <addr>".
 function redactMailPii(to: string[], subject: string, cc: string[] = [], bcc: string[] = []): { recipients: string; subject: string; scrub: (s: string) => string } {
   if (!getEmailRuntime().options.filterPii) {
     return { recipients: to.join(', '), subject: JSON.stringify(subject), scrub: (s) => s };
@@ -491,11 +470,9 @@ interface EmitInput {
   slow?: number;
   verySlow?: number;
   /**
-   * Default log level for the line. `'debug'` keeps high-volume request lines
-   * (asset/fallback) hidden unless the user opts into the most verbose level;
-   * `'log'` is for moderately verbose lines. `'warn'` is for degradations that
-   * always warrant attention. Always escalated to `warn` for 5xx or slow
-   * responses regardless of this value.
+   * Default log level for the line: `'debug'` keeps high-volume asset/fallback request lines hidden until the user opts
+   * into the most verbose level, `'log'` suits moderately verbose lines, and `'warn'` marks degradations that always
+   * warrant attention. 5xx and slow responses escalate to `warn` whatever this says.
    */
   level?: ConsoleLoggerLevel;
 }

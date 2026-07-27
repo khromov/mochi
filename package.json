@@ -38,6 +38,7 @@
     "cli-test": "bun .github/scripts/cli-regression-test.ts",
     "flamegraph": "bun scripts/flamegraph.ts",
     "check-links": "bun scripts/check-links.ts",
+    "check-llms": "bun scripts/check-llms.ts",
     "check-site": "bun scripts/site-health.ts",
     "check-vendored-versions": "bun scripts/check-vendored-versions.ts",
     "update": "bun update --interactive --recursive",

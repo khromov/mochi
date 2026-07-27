@@ -19,10 +19,8 @@ class ServerIsland extends HTMLElement {
     const options = optionsRaw ? JSON.parse(optionsRaw) : {};
 
     if (this.getAttribute('defer-on') === 'visible') {
-      // Observe firstElementChild because display:contents gives this element
-      // no layout box. When no fallback children are provided, the global
-      // `:empty { min-height: 1px }` rule on visible-deferred islands keeps
-      // the wrapper itself observable.
+      // `display:contents` leaves this element without a layout box, so the firstElementChild is observed instead; with
+      // no fallback children, the global `:empty { min-height: 1px }` rule keeps the wrapper itself observable.
       const target = this.firstElementChild || this;
       new IntersectionObserver(
         (entries, obs) => {
@@ -102,10 +100,8 @@ class ServerIsland extends HTMLElement {
       } catch (err) {
         lastErr = err;
         if (err instanceof Error && 'abort' in err) {
-          // A 4xx is deterministic — retrying won't help. Stop the loop and fall
-          // through to the failure reporting below rather than rethrowing out of
-          // this (unawaited) async method, which would surface as an unhandled
-          // rejection and leave the island silently stuck on its fallback.
+          // A 4xx is deterministic, so the loop stops and falls through to the failure reporting below; rethrowing out
+          // of this unawaited async method would surface as an unhandled rejection with the island stuck on its fallback.
           break;
         }
         if (ll !== 'silent' && ll !== 'error') {

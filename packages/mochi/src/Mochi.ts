@@ -41,7 +41,7 @@ import { applyFilter, initExtensions, runHook } from './extensions';
 import { escapeHtmlAttr } from './utils/htmlEscape';
 import { normalizeHttpOrigin, validateProxyOptions } from './runtime/proxy';
 import { realpath } from 'node:fs/promises';
-import { apiError, collectHeaderPairs, cssLinkTag, headResponse, isHtmlResponse, MochiHttpError, toPosixPath, withHead } from './utils';
+import { apiError, collectHeaderPairs, cssLinkTag, headResponse, isHtmlResponse, MochiHttpError, relForDisplay, toPosixPath, withHead } from './utils';
 import type { MochiEvent, MochiResolveOptions } from './runtime/hooks';
 import { applyResolveOptions } from './runtime/hooks';
 import { alternateSlashPattern, trailingSlashRedirect } from './runtime/trailingSlash';
@@ -92,10 +92,9 @@ function readMochiVersion(): Promise<string | null> {
 type ShellSlot = 'head' | 'css' | 'body' | 'script';
 type ShellPart = { text: string } | { slot: ShellSlot };
 
-// Parse an HTML shell into ordered literal/placeholder parts ONCE (per template),
-// so filling it per request is a walk over these parts instead of a global-regex
-// scan. Splitting the template (not the assembled output) also guarantees an
-// injected body containing literal `{{mochi.script}}` is never re-expanded.
+// Parsing once per template turns per-request filling into a walk over these parts instead of a global-regex scan.
+// Splitting the template rather than the assembled output also keeps an injected body containing a literal
+// `{{mochi.script}}` from being re-expanded.
 function parseShellTemplate(template: string): ShellPart[] {
   const parts: ShellPart[] = [];
   const re = /\{\{mochi\.(head|css|body|script)\}\}/g;
@@ -114,25 +113,12 @@ function parseShellTemplate(template: string): ShellPart[] {
   return parts;
 }
 
-/**
- * Dev-only: append a trailing `<script>` after the response body that mixes
- * the current request's response headers and inbound cookies into
- * `window.__mochi_debug`. The static fields (route, params, …)
- * are baked into the body in `createShellRenderer` and cached with it; the
- * dynamic fields written here always reflect *this* request, so cache hits
- * still see the correct headers and cookies.
- *
- * The trailing script runs synchronously during HTML parse, before the
- * deferred debug-bar `<script type="module">` executes — `onMount` reads a
- * fully-populated payload, no polling needed.
- *
- * Skipped when the body is already compressed (a user opted into gzip in
- * dev) since we can't safely insert text into encoded bytes.
- */
+// Escaping `<` keeps a `</script>` inside the payload from closing the tag early.
 function jsonForHtml(value: unknown): string {
   return JSON.stringify(value).replace(/</g, '\\u003c');
 }
 
+// The debug bar reaches client JavaScript, so a `Set-Cookie` value is reduced to its name plus attributes.
 function redactDebugHeader([name, value]: [string, string]): [string, string] {
   if (name.toLowerCase() !== 'set-cookie') {
     return [name, value];
@@ -145,6 +131,10 @@ function redactDebugHeader([name, value]: [string, string]): [string, string] {
   return [name, `${cookieName}=<redacted>${attributes}`];
 }
 
+/**
+ * `createShellRenderer` bakes the static `window.__mochi_debug` fields into the cached body, so per-request headers and cookies have to be appended
+ * afterwards for cache hits to stay accurate. The trailing script is synchronous so it lands before the deferred debug-bar module runs `onMount`.
+ */
 async function appendDebugTail(response: Response, ctx: MochiRequestContext, development: boolean): Promise<Response> {
   if (!development) {
     return response;
@@ -207,18 +197,12 @@ export class Mochi {
   }
 
   /**
-   * Declare a background job queue. Like `page`/`api`/`ws`/`sse`/`file`, this
-   * returns an *inert config* — the live queue (producer + consumer) is created
-   * only when the descriptor is mounted in `Mochi.serve({ queues })`, keyed by
-   * queue name. The config bundles the `process` consumer (receives a read-only
-   * `MochiJob`, returns the job result) with its options (`concurrency`,
-   * `dataPath`, …) and optional `on` lifecycle listeners. Add jobs from
-   * anywhere via `Mochi.getQueue(name).add(...)`. Queues drain gracefully on
-   * `Mochi.serve()` shutdown.
+   * Declare a background job queue. Like `page`/`api`/`ws`/`sse`/`file` this returns an inert config; the live producer
+   * and consumer are created only once `Mochi.serve({ queues })` mounts the descriptor under its queue name. Add jobs from
+   * anywhere via `Mochi.getQueue(name).add(...)`, and the queue drains gracefully on shutdown.
    */
   static queue<T = unknown, R = unknown>(config: MochiQueueOptions<T, R>): MochiQueueConfig {
-    // `recover` is destructured out for the same reason as `process`/`on`:
-    // whatever is left in `options` is forwarded verbatim to bunqueue.
+    // Whatever survives the destructure is forwarded verbatim to bunqueue.
     const { process, on, recover, ...options } = config;
     return {
       __mochiQueue: true,
@@ -230,33 +214,25 @@ export class Mochi {
   }
 
   /**
-   * Resolve the handle for a queue declared in
-   * `Mochi.serve({ queues })` and `.add()` jobs to it. Pass the payload type
-   * explicitly (`Mochi.getQueue<JobData>(name)`). Throws if the queue name was
-   * never declared, or if reached before `Mochi.serve()` has mounted its queues.
+   * Resolve the handle for a queue declared in `Mochi.serve({ queues })` so jobs can be `.add()`ed to it, passing the
+   * payload type explicitly (`Mochi.getQueue<JobData>(name)`). Throws for an undeclared name, or before `Mochi.serve()` mounts its queues.
    */
   static getQueue<T = unknown>(name: string): MochiQueue<T> {
     return getQueue<T>(name);
   }
 
   /**
-   * Send a transactional email. Configured under `Mochi.serve({ email })` with
-   * a default `from` and a pluggable `transport` (SMTP, a custom-send function,
-   * or the default `log` transport that logs instead of sending). Pass a
-   * message body as `html`, `text`, or a Svelte `component` (rendered to HTML
-   * with its scoped CSS inlined). Callable from any server-side code — route
-   * actions, API handlers, or queue jobs.
+   * Send a transactional email, configured under `Mochi.serve({ email })`. The body is `html`, `text`, or a Svelte
+   * `component` rendered to HTML with its scoped CSS inlined. Callable from any server-side code — route actions,
+   * API handlers, or queue jobs.
    */
   static email(message: MochiEmailMessage): Promise<MochiEmailResult> {
     return sendEmail(message);
   }
 
   /**
-   * Build a shell renderer once at startup. Request-invariant fragments (the log
-   * shim, warn shim, island `<style>` prefix, server-island runtime wrapper,
-   * live-reload tail, asset prefix) are computed here, so filling the shell per
-   * request only concatenates the genuinely dynamic parts into the pre-parsed
-   * template segments — no per-request regex scan or constant-string rebuilds.
+   * Computes every request-invariant shell fragment (log shim, warn shim, island `<style>` prefix, server-island runtime
+   * wrapper, live-reload tail, asset prefix) once at startup, leaving each request to concatenate only the dynamic parts.
    */
   private static createShellRenderer(
     registry: ComponentRegistry,
@@ -330,10 +306,8 @@ export class Mochi {
     await runHook('mochi:init', { options });
     await initMochiConfig(options);
 
-    // Resolve filterable defaults once at startup; the resolved Sets are
-    // captured in the per-request closures below. A fresh copy of each
-    // default Set is passed to the user so accidental in-place mutation
-    // can't poison the framework default for the next call.
+    // Resolved once at startup and captured by the per-request closures below. Each default Set is copied before it
+    // reaches the user, so an in-place mutation can't poison the framework default for the next call.
     const formContentTypes: ReadonlySet<string> = applyFilter('csrf:formContentTypes', new Set(DEFAULT_FORM_CONTENT_TYPES), { options });
     const protectedMethods: ReadonlySet<string> = applyFilter('csrf:protectedMethods', new Set(DEFAULT_PROTECTED_METHODS), { options });
     const filteredTrustedOrigins: ReadonlySet<string> = applyFilter('csrf:trustedOrigins', new Set(options.csrf?.trustedOrigins ?? []), { options });
@@ -346,9 +320,8 @@ export class Mochi {
     const liveReloadEnabled = options.liveReload ?? development;
     const middleware = options.handle;
     const baseOutDir = options.outDir ?? './.mochi';
-    // Keep dev artifacts out of the production .mochi so the two modes never
-    // collide (stale manifest/public from a prod build, or dev chunks served by
-    // a later `start`). Prod stays at the root so Docker/deploys are unaffected.
+    // Nesting dev artifacts keeps a stale prod manifest and dev chunks apart across a later `start`, while prod stays at
+    // the root so Docker and deploys are unaffected.
     const outDir = development ? path.join(baseOutDir, 'dev') : baseOutDir;
     const publicDir = options.publicDir ?? './public';
     // Only a file-based shell can be watched/re-read; an inline-string shell
@@ -412,7 +385,9 @@ export class Mochi {
     let registry: ComponentRegistry;
     if (!development && existsSync(manifestPath)) {
       logger.info(`Loading prebuilt manifest from ${manifestPath}`);
-      registry = await ComponentRegistry.fromManifest(manifestPath, development, outDir);
+      // The registry takes its outDir from the manifest's own directory, so an explicit `manifest` pointing elsewhere
+      // relocates on-demand island compiles along with it.
+      registry = await ComponentRegistry.fromManifest(manifestPath, development);
       if (options.assetPrefix !== undefined && options.assetPrefix !== registry.assetPrefix) {
         logger.warn(
           `assetPrefix in Mochi.serve() (${JSON.stringify(options.assetPrefix)}) differs from the manifest (${JSON.stringify(registry.assetPrefix)}). Using the manifest value — URLs are baked in at build time.`,
@@ -442,10 +417,8 @@ export class Mochi {
           mkdirSync(path.join(outDir, sub), { recursive: true });
         }
       } else {
-        // Production without a prebuilt manifest is valid but silently much
-        // slower — components compile at boot and server islands compile on the
-        // request path. Warn loudly (error level) so a forgotten build doesn't
-        // masquerade as a healthy deploy.
+        // Production without a prebuilt manifest is valid but much slower, compiling components at boot and server islands
+        // on the request path; the error level keeps a forgotten build from masquerading as a healthy deploy.
         logger.error(
           `Running in production without a prebuilt manifest (${manifestPath} not found). ` +
             `This is an unsupported configuration and is not recommended: components compile at startup ` +
@@ -456,10 +429,8 @@ export class Mochi {
     }
 
     const emailTransportType = getEmailRuntime().options.transport.type;
-    // The dev outbox captures mail purely off the resolved transport, independent
-    // of the debug bar — so the viewer route (and its compile) must key off the
-    // same condition, or `debugBar: false` silently captures mail with no way to
-    // ever read it back (only production is documented to disable the route).
+    // The dev outbox captures mail off the resolved transport alone, so the viewer route must key off the same condition;
+    // keying it off the debug bar would let `debugBar: false` capture mail with no way to read it back.
     const emailViewerEnabled = development && emailTransportType === 'dev';
 
     const serverDebugInfo: Partial<DebugBarData> = {
@@ -494,9 +465,7 @@ export class Mochi {
     }
     shellTemplate = applyFilter('html:shell', shellTemplate, { options, development });
 
-    // Re-read the shell on change so dev edits to styling/head/scripts take
-    // effect. Both render closures below capture `shellTemplate` by reference,
-    // so reassigning it is picked up on the next request.
+    // Both render closures below capture `shellTemplate` by reference, so reassigning it lands on the next request.
     const reloadShell = shellPath
       ? async () => {
           shellTemplate = applyFilter('html:shell', await Bun.file(shellPath).text(), { options, development });
@@ -505,10 +474,8 @@ export class Mochi {
 
     const errorPagePath = options.errorPage ?? DEFAULT_ERROR_PAGE_PATH;
 
-    // Collect every page entrypoint (error page + every Mochi.page route) so
-    // we can compile them in one Bun.build below. Splitting deduplicates
-    // shared transitive deps (devalue, mochi-framework internals, etc.) into
-    // chunk files instead of inlining them per page.
+    // Compiling every page entrypoint in one `Bun.build` below lets splitting pull shared transitive deps (devalue,
+    // mochi-framework internals) into chunk files instead of inlining them per page.
     const ssrEntrypoints: string[] = [errorPagePath, CLIENT_STATS_COMPONENT];
     if (debugBarEnabled) {
       ssrEntrypoints.push(PAGE_CACHE_ADMIN_COMPONENT);
@@ -551,9 +518,7 @@ export class Mochi {
       renderShell: (result) => renderShell(result),
     });
 
-    // Run the user's handleError hook (if configured), sanitize the error for
-    // the enhanced JSON path, and return a jsonError envelope. Mirrors the
-    // handleError logic in renderErrorResponse but skips the HTML render.
+    // Mirrors the handleError logic in renderErrorResponse, skipping the HTML render for the enhanced JSON path.
     const handleEnhancedError = async (err: unknown, event: MochiEvent): Promise<Response> => {
       let status = err instanceof MochiHttpError ? err.status : 500;
       let message = err instanceof MochiHttpError ? err.message : development && err instanceof Error ? err.message : 'Internal Server Error';
@@ -722,9 +687,8 @@ export class Mochi {
     };
 
     const internalRoutes: Record<string, MochiPageConfig | MochiApiConfig> = {
-      // Gate the client-stats page behind the debug bar (like the page-cache admin
-      // routes) — in production it would otherwise disclose every bundle's input
-      // file paths and sizes (project structure, dependency names).
+      // Gated behind the debug bar, like the page-cache admin routes, since the stats page discloses every bundle's input
+      // file paths and sizes — project structure and dependency names.
       ...(debugBarEnabled ? buildClientStatsRoutes(registry) : {}),
       ...(debugBarEnabled ? buildPageCacheAdminRoutes() : {}),
       ...(emailViewerEnabled ? buildEmailViewerRoutes(registry) : {}),
@@ -732,10 +696,9 @@ export class Mochi {
     const allRoutes = Object.keys(internalRoutes).length > 0 ? { ...internalRoutes, ...(options.routes ?? {}) } : options.routes;
 
     const rateLimitStores = new Set<MochiRateLimitStore>();
-    // Route closures look their limiter up here per request (never capture it) so
-    // the dev watcher can swap a route's limiter in place when its `rateLimit`
-    // config changes — a captured const would pin the boot-time config until
-    // restart. A null entry marks a limitable route with no limiter.
+    // Route closures look their limiter up per request so the dev watcher can swap one in place when a route's
+    // `rateLimit` config changes; capturing it in a const would pin the boot-time config until restart. A null entry
+    // marks a limitable route with no limiter.
     const routeLimiters = new Map<string, RouteLimiter | null>();
     let sharedGlobalLimiter: RouteLimiter | null = null;
     function buildLimiter(routeCfg: MochiRateLimitOptions | false | undefined, pattern: string): RouteLimiter | null {
@@ -743,9 +706,8 @@ export class Mochi {
         return null;
       }
       if (routeCfg) {
-        // A route's own config is auto-namespaced by its pattern so two routes
-        // sharing a persisted store don't drain one bucket. The shared global
-        // limiter (below) passes no pattern — its routes keep sharing a bucket.
+        // A route's own config is auto-namespaced by its pattern, keeping two routes on a shared persisted store off one
+        // bucket. The shared global limiter below passes no pattern, so its routes stay on a common bucket.
         const limiter = createRouteLimiter(routeCfg, pattern);
         if (limiter.ownsStore) {
           rateLimitStores.add(limiter.store);
@@ -778,9 +740,8 @@ export class Mochi {
       // use it, and its counters intentionally survive dev reloads.
       if (limiter && limiter !== sharedGlobalLimiter && limiter.ownsStore) {
         rateLimitStores.delete(limiter.store);
-        // async wrapper: sqliteStore's shutdown can throw synchronously (its
-        // finalize-verification guard) — a bare Promise.resolve() would let that
-        // escape into the dev watcher.
+        // sqliteStore's shutdown can throw synchronously from its finalize-verification guard, which a bare
+        // `Promise.resolve()` would let escape into the dev watcher.
         (async () => limiter.store.shutdown?.())().catch((err: unknown) => {
           logger.warn(`Rate limit store shutdown failed: ${err instanceof Error ? err.message : err}`);
         });
@@ -1120,10 +1081,8 @@ export class Mochi {
             type: 'page',
           };
         }
-        // Register as a method-keyed object (not a bare function) so Bun 405s a
-        // POST/PUT/etc. to an action-less page. A bare function is invoked for
-        // every method and would render 200 on POST in production, diverging from
-        // dev (where `pageConfigMap` forces the method-keyed path below).
+        // A method-keyed object makes Bun 405 a POST/PUT to an action-less page; a bare function runs for every method
+        // and would render 200 on POST in production, diverging from dev, where `pageConfigMap` forces this path anyway.
         return { bunRouteValue: withHead({ GET: getHandler } as unknown as BunRouteValue), type: 'page' };
       } else if (isMochiApi(handler)) {
         if (apiHandlerMap) {
@@ -1464,11 +1423,9 @@ export class Mochi {
             const innerResolve = async (resolvedEvent: MochiEvent): Promise<Response> => {
               try {
                 const filePath = typeof source === 'function' ? await source(resolvedEvent.request, ctx.params) : source;
-                // Route params are URL-decoded and may contain `../`, so confine the
-                // resolved path to the app root. `realpath` resolves symlinks first —
-                // so a symlink inside the root pointing outside can't escape — and
-                // also proves the file exists (ENOENT → 404). Containment is checked
-                // via `path.relative` (handles separators and canonical casing).
+                // Route params are URL-decoded and may contain `../`, so the resolved path is confined to the app root.
+                // `realpath` resolves symlinks first, closing the in-root-symlink-points-out escape, and proves the file
+                // exists (ENOENT → 404); containment goes through `path.relative`, which handles separators and canonical casing.
                 const resolvedPath = path.resolve(filePath);
                 let realPath: string;
                 try {
@@ -1483,18 +1440,14 @@ export class Mochi {
                   emitError('file', requestId, resolvedEvent.request, resolvedEvent.url, 404, new Error(`Path escapes the app root: ${filePath}`));
                   return new Response('Not Found', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
                 }
-                // Reject dotfiles / dot-directories (`.env`, `.mochi/…`, `.git/…`, source
-                // files, etc.) that live *inside* the root — the containment check above
-                // only stops escaping it. `.well-known` stays allowed, matching the
-                // public-dir policy.
+                // The containment check above only stops escapes, so dotfiles and dot-directories inside the root
+                // (`.env`, `.mochi/…`, `.git/…`) are rejected here. `.well-known` stays allowed, matching the public-dir policy.
                 if (isExcludedDotPath(toPosixPath(rel))) {
                   emitError('file', requestId, resolvedEvent.request, resolvedEvent.url, 404, new Error(`Refusing to serve dotfile path: ${filePath}`));
                   return new Response('Not Found', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
                 }
                 const file = Bun.file(realPath);
-                // `realpath` proves the path exists, but it resolves directories too;
-                // `Bun.file(dir).exists()` is false, so this also turns a directory
-                // target into a 404 instead of streaming it (EISDIR → 500).
+                // `realpath` resolves directories too, so this turns a directory target into a 404 rather than an EISDIR 500.
                 if (!(await file.exists())) {
                   emitError('file', requestId, resolvedEvent.request, resolvedEvent.url, 404, new Error(`File not found: ${filePath}`));
                   return new Response('Not Found', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
@@ -1557,9 +1510,8 @@ export class Mochi {
       }
     }
 
-    // Register the alt-slash variant of every user route so Bun's literal
-    // pattern matcher matches both `/foo` and `/foo/`. The per-handler
-    // redirect checks above turn the non-canonical form into a 301/308.
+    // Registering the alt-slash variant lets Bun's literal pattern matcher match both `/foo` and `/foo/`; the per-handler
+    // redirect checks above then turn the non-canonical form into a 301/308.
     if (trailingSlashPolicy) {
       for (const [pattern, value] of Object.entries(bunRoutes)) {
         const alt = alternateSlashPattern(pattern);
@@ -1609,17 +1561,9 @@ export class Mochi {
             decodedProps = {};
           }
 
-          // `islandId` and `__mochi_ah` (the authored also-hydrate mode) ride inside
-          // the signed envelope as transport only — islandId identifies the wrapper for
-          // debug/error reporting, `__mochi_ah` says whether the island opted into
-          // hydration. Neither must reach the component as a prop (components use
-          // `$props.id()` for ids). Split them off into a fresh object rather than
-          // deleting in place.
-          //
-          // The hydrate mode is read from the *decrypted* payload, never from a query
-          // param: trusting `?hydrate=` would let anyone append it to a sealed token and
-          // have the endpoint echo the decrypted props back in plaintext (a decryption
-          // oracle against pure `mochi:defer` islands).
+          // `islandId` and `__mochi_ah` ride inside the signed envelope as transport only, and are split into a fresh object
+          // so neither reaches the component as a prop. The hydrate mode comes from the decrypted payload: trusting a
+          // `?hydrate=` query param would let anyone append it to a sealed token and get the props echoed back in plaintext.
           const { [ALSO_HYDRATE_ENVELOPE_KEY]: rawHydrateMode, islandId: rawIslandId, ...props } = decodedProps;
           const islandId = typeof rawIslandId === 'string' ? rawIslandId : undefined;
           const hydrateMode = isAlsoHydrateMode(rawHydrateMode) ? rawHydrateMode : null;
@@ -1631,16 +1575,9 @@ export class Mochi {
           }
 
           // A miss here means the build's eager discovery (see build.ts) didn't
-          // find this island — expected to be unreachable in practice, so treat
-          // it as a framework bug rather than silently eating the request-path
-          // compile it's supposed to prevent.
-          if (!registry.development && registry.loadedFromManifest && !registry.isCompiled(componentPath)) {
-            logger.warn(
-              `[mochi] Server island "${componentName}" was missing from the prebuilt manifest and is compiling on the request path. ` +
-                `This likely indicates a Mochi bug in server-island discovery during \`mochi-framework build\` — please report it with a reproduction if possible.`,
-            );
-          }
-          // Compile the server island component directly
+          // find this island; `compileAll` warns about any manifest miss, so the
+          // request-path compile this endpoint is supposed to prevent is never
+          // silent.
           await registry.compile(componentPath);
           let result: RenderResult;
           try {
@@ -1688,7 +1625,6 @@ export class Mochi {
 
           let body = result.body;
 
-          // If also-hydrate is requested, wrap in hydratable island
           if (isAlsoHydrateMode(hydrateMode)) {
             const componentUrl = registry.getComponentEntryUrl(componentName);
             const serializedProps = devalueStringify(props);
@@ -1704,19 +1640,14 @@ export class Mochi {
 
             body = `<mochi-hydratable-island ${hydrateAttrs}>${body}</mochi-hydratable-island>`;
 
-            // Include bootstrap script so the hydratable island can hydrate
             if (bootstrapUrl) {
               body += `<script type="module" src="${bootstrapUrl}"></script>`;
             }
           }
 
-          // Prepend <link> tags for CSS the host page never linked: hydratable
-          // islands rendered only inside this deferred content (their CSS is gated
-          // out of the page <head> because they aren't rendered at page time), plus
-          // any side-effect CSS imports. Browsers load <link> assigned via the
-          // client's `innerHTML`, so these apply as soon as the island appears. The
-          // island's own scoped CSS already loads via the wrapper's `css-url`
-          // attribute, so exclude it to avoid a duplicate tag.
+          // CSS for islands rendered only inside this deferred content is gated out of the page `<head>`, so its `<link>`
+          // tags are prepended here along with side-effect CSS imports; browsers honour a `<link>` assigned via `innerHTML`.
+          // The island's own scoped CSS is excluded, since the wrapper's `css-url` attribute already loads it.
           const ownCss = registry.getComponentCssUrl(componentPath);
           const extraCss = result.cssUrls.filter((url) => url !== ownCss);
           if (extraCss.length > 0) {
@@ -1748,14 +1679,11 @@ export class Mochi {
       });
     });
 
-    // Give the mailer a handle to the live compile cache so Mochi.email() can
-    // render Svelte email templates through the same registry as page routes.
+    // Gives `Mochi.email()` the live compile cache, so Svelte email templates render through the same registry as page routes.
     getEmailRuntime().registry = registry;
 
-    // Register the signed image endpoint (enabled unless explicitly off) and
-    // start the background cache janitor. The resolved options are the single
-    // source of truth for `enabled` — `getImageUrl` consults the same flag to
-    // fall back to raw source URLs when the endpoint is off.
+    // The resolved options are the single source of truth for `enabled`; `getImageUrl` reads the same flag to fall back
+    // to raw source URLs when the endpoint is off.
     let stopImageSweeper: (() => void) | undefined;
     const imageRuntime = getImageRuntime();
     if (imageRuntime.options.enabled) {
@@ -1767,18 +1695,14 @@ export class Mochi {
       stopImageSweeper = startImageCacheSweeper(imageRuntime.cache, imageRuntime.options.sweepIntervalMs);
     }
 
-    // Serve locally-imported image assets (`import x from './x.png'`) from disk.
-    // Registered unconditionally — this is plain static serving, independent of
-    // whether the transform endpoint (`image.enabled`) is on. The handler reads
-    // the global registry the build populated (in-process in dev, from the
-    // manifest in prod), so new images in dev need no route reload.
+    // Plain static serving of locally-imported image assets (`import x from './x.png'`), so it registers independently
+    // of `image.enabled`. The handler reads the global registry the build populated, letting new dev images appear
+    // without a route reload.
     const localAssetPattern = `${registry.assetPrefix}/asset/:filename`;
     bunRoutes[localAssetPattern] = withHead(wrapRawRouteValue(localAssetPattern, createLocalAssetHandler(development), 'asset'));
 
-    // Dev-only: the debug bar's Cache tab reads the entry count (GET) and empties
-    // the image cache (POST). Registered whenever the debug bar is on (independent
-    // of the image endpoint), since the tab always shows; counting/clearing an
-    // unpopulated cache is a harmless no-op.
+    // The debug bar's Cache tab reads the entry count (GET) and empties the image cache (POST). It registers with the
+    // debug bar rather than the image endpoint, since the tab always shows and acting on an empty cache is a no-op.
     if (debugBarEnabled) {
       const imageCacheHandler = async (req: Request): Promise<Response> => {
         if (req.method === 'POST') {
@@ -1786,8 +1710,7 @@ export class Mochi {
           return Response.json({ ok: true, count: 0, keys: [] });
         }
         if (req.method === 'GET') {
-          // `keys` already excludes transient in-flight markers; count matches the
-          // visible list so the debug bar badge equals the number of listed keys.
+          // `keys` already excludes transient in-flight markers, so the debug bar badge matches the number of listed keys.
           const keys = await imageRuntime.cache.keys();
           return Response.json({ count: keys.length, keys });
         }
@@ -1804,10 +1727,8 @@ export class Mochi {
         }
         const value = await imageRuntime.cache.inspect(key);
         if (value == null) {
-          // 410, not 404: the handler ran and the key simply isn't stored — the
-          // listing it came from is a snapshot, and entries are evicted between
-          // listing and expanding. A 404 here would be indistinguishable from the
-          // route being unregistered or the key arriving mangled.
+          // 410 marks a key evicted between listing and expanding, which a 404 would leave indistinguishable from an
+          // unregistered route or a mangled key.
           return new Response('Gone', { status: 410 });
         }
         return Response.json({ key, value });
@@ -1832,15 +1753,23 @@ export class Mochi {
       bunRoutes['/__mochi/health/memory'] = wrapRawRouteValue('/__mochi/health/memory', memoryProbe, 'dev');
     }
 
-    // Snapshot the non-public route set so the dev-mode public watcher can
-    // rebuild cleanly when files are added/removed/renamed.
+    // Snapshotted so the dev-mode public watcher can rebuild cleanly when files are added, removed, or renamed.
     const baseBunRoutes: Record<string, BunRouteValue> = { ...bunRoutes };
 
-    // Register static public files. Dev scans the public dir live, production
-    // reads the prebuilt manifest map; either way user-defined routes win, so a
-    // public route is only added when no user route claims the path. The
-    // dev-watcher reload rebuilds these the same way via the same helpers.
-    const initialPublicFiles = await resolvePublicFiles({ publicDir, development, prebuilt: registry.getPublicFiles() });
+    // Every mode scans `publicDir` from disk, and user-defined routes win, so a public route is added only where no user
+    // route claims the path. The dev-watcher reload rebuilds them through these same helpers.
+    const initialPublicFiles = await resolvePublicFiles({ publicDir, development });
+    // The build copies nothing, so on disk a deploy that ships the build output and forgets publicDir is
+    // indistinguishable from an app that never had static files, leaving the build-time count the only witness. It
+    // warns rather than throws, since dropping the directory on purpose is legitimate.
+    if (!development && registry.loadedFromManifest && registry.publicFileCountAtBuild > 0 && initialPublicFiles.size === 0) {
+      logger.warn(
+        `publicDir "${relForDisplay(publicDir)}" is missing or empty, but the build found ${registry.publicFileCountAtBuild} file(s) there — every static file will 404. ` +
+          `The build never copies publicDir; the runtime reads it on every boot, so that directory has to ship with your deploy ` +
+          `(in Docker, a COPY for it in the final stage — and check .dockerignore). ` +
+          `If it moved, point \`publicDir\` at the new location; if the files are gone on purpose, re-run \`mochi-framework build\` to clear this.`,
+      );
+    }
     registerPublicRoutes(bunRoutes, initialPublicFiles, (route, value) => wrapRawRouteValue(route, value, 'asset'));
 
     const userFetch = options.fetch;
@@ -1852,13 +1781,12 @@ export class Mochi {
 
       const response = await runSimpleRequest(req, server, kind, '/*', async (event, resolveOpts) => {
         if (assetContent !== undefined) {
-          // getClientFile() only returns registered .js or .css; determine type
-          // by extension so this branch doesn't depend on the asset prefix.
+          // `getClientFile()` returns only registered `.js` or `.css`, so extension alone decides and this branch stays
+          // independent of the asset prefix.
           const contentType = event.url.pathname.endsWith('.css') ? 'text/css' : 'application/javascript';
           const headers: Record<string, string> = { 'Content-Type': contentType };
-          // Filenames are content-hashed (Bun.hash), so URLs change whenever
-          // bytes change — safe to mark immutable in prod. Skipped in dev so
-          // live-reload edits aren't pinned in the browser cache.
+          // Content-hashed filenames change URL whenever bytes change, so prod can mark them immutable; dev skips it to
+          // keep live-reload edits out of the browser cache.
           if (!development) {
             headers['Cache-Control'] = 'public, max-age=31536000, immutable';
           }
@@ -1893,10 +1821,8 @@ export class Mochi {
       ...bunOptions
     } = options as Record<string, unknown>;
 
-    // Internal HMR live-reload socket. Registered before the dispatcher is
-    // built so it shares the same Bun WebSocket option as user `Mochi.ws()`
-    // routes, and so `wsHandlersMap.size > 0` is true even when the user has
-    // no WebSocket routes of their own.
+    // Registered before the dispatcher is built, so the internal live-reload socket shares the same Bun WebSocket option
+    // as user `Mochi.ws()` routes and keeps `wsHandlersMap.size > 0` true even with no user WebSocket routes.
     const liveReloadClients = new Set<ServerWebSocket<MochiWsData>>();
     let stopEmailBadgeBroadcast: (() => void) | undefined;
     if (liveReloadEnabled) {
@@ -1910,9 +1836,8 @@ export class Mochi {
             liveReloadClients.delete(client);
           }
         },
-        // The client heartbeat needs an application-level reply: proxies and
-        // sleeping network stacks can swallow protocol pings, leaving a socket
-        // that reads OPEN but is dead.
+        // Proxies and sleeping network stacks swallow protocol pings, leaving a socket that reads OPEN but is dead, so
+        // the client heartbeat needs an application-level reply.
         message(ws, message) {
           if (typeof message === 'string' && message === 'ping') {
             ws.send('pong');
@@ -1923,10 +1848,8 @@ export class Mochi {
         },
       });
 
-      // Fan dev-outbox arrivals out over the same live-reload socket so open tabs
-      // can surface a "new email" badge (and the outbox page itself can live-reload)
-      // without a second WebSocket. The captured id rides along so the toolbar can
-      // track which messages are still unread.
+      // Reusing the live-reload socket for dev-outbox arrivals lets open tabs surface a "new email" badge without a
+      // second WebSocket, and the captured id lets the toolbar track which messages are still unread.
       stopEmailBadgeBroadcast = onDevEmailRecorded((email) => {
         for (const client of liveReloadClients) {
           try {
@@ -1968,8 +1891,7 @@ export class Mochi {
           }
         : userWebSocketOptions;
 
-    // Validate queues BEFORE binding so a misconfiguration fails fast without
-    // leaving a half-started server listening.
+    // Validating before binding makes a misconfiguration fail fast, leaving no half-started server listening.
     for (const [name, config] of Object.entries(options.queues ?? {})) {
       if (!isMochiQueue(config)) {
         throw new Error(`Mochi.serve({ queues }): "${name}" is not a Mochi.queue(...) descriptor. Each value must be created with Mochi.queue().`);
@@ -1990,9 +1912,8 @@ export class Mochi {
     {
       const sweeperStop = stopImageSweeper;
       const stopServer = server.stop.bind(server);
-      // The shutdown path calls stop() twice (graceful, then forced once the
-      // grace period lapses); tearing subsystems down a second time would
-      // double-close an already-closed transport, so run them only once.
+      // The shutdown path calls `stop()` twice — graceful, then forced once the grace period lapses — and a second
+      // teardown would double-close an already-closed transport.
       let cleanedUp = false;
       server.stop = (async (closeActiveConnections?: boolean) => {
         if (cleanedUp) {
@@ -2037,9 +1958,8 @@ export class Mochi {
       mochiEvents.emit('server:start', startEvent);
     }
 
-    // Validated above; mount the live queues now (after bind, so they drain on
-    // the same shutdown path as the server). If a queue throws mid-mount, tear
-    // the just-bound server down rather than leaving it listening half-started.
+    // Mounted after bind so the queues drain on the same shutdown path as the server; a throw mid-mount tears the
+    // just-bound server down rather than leaving it listening half-started.
     try {
       for (const [name, config] of Object.entries(options.queues ?? {})) {
         createQueue(name, config.process, config.options, config.on);
@@ -2049,35 +1969,27 @@ export class Mochi {
       await server.stop(true);
       throw err;
     }
-    // Fired before recovery runs: by this point every queue in the map is
-    // registered, so a recover() callback (or a user hook) reaching for a
-    // sibling gets its handle rather than a "not mounted yet" error.
+    // Fires once every queue in the map is registered, so a `recover()` callback or user hook reaching for a sibling
+    // gets its handle instead of a "not mounted yet" error.
     await runHook('mochi:queuesMounted', { options, server, queues: Object.keys(options.queues ?? {}) });
-    // After the whole map is mounted, so a recover() callback may reach a
-    // sibling queue. Awaited, so recovered jobs are enqueued before
-    // `mochi:ready` fires and before serve() resolves.
+    // Awaited so recovered jobs are enqueued before `mochi:ready` fires and before `serve()` resolves.
     await runQueueRecovery(Object.entries(options.queues ?? {}));
 
     if (warmupHandlers.length > 0) {
       mochiEvents.emit('warmup:start', { routeCount: warmupHandlers.length });
       const t0 = performance.now();
-      // Warm sequentially: SSR is CPU-bound and serializes on the single
-      // thread, so firing in parallel wouldn't render any faster — it would
-      // only smear every route's `request` duration into the batch total and
-      // thrash startup. One at a time keeps per-route timings honest.
+      // SSR is CPU-bound and serializes on the single thread, so parallel warming would render no faster while smearing
+      // every route's `request` duration into the batch total; one at a time keeps per-route timings honest.
       void (async () => {
         let errorCount = 0;
         for (const { pattern, handler } of warmupHandlers) {
-          // Request the canonical path so the trailing-slash policy doesn't
-          // redirect early instead of running the render we're warming.
+          // The canonical path keeps the trailing-slash policy from redirecting early instead of running the render being warmed.
           const url = new URL(`http://localhost${pattern}`);
           const redirect = trailingSlashPolicy ? trailingSlashRedirect('GET', url, trailingSlashPolicy) : null;
           const href = redirect ? new URL(redirect.headers.get('Location') ?? pattern, url).href : url.href;
           try {
-            // The handler swallows render errors internally and returns a 5xx
-            // error page, so a throw is rare — count 5xx as "didn't warm
-            // cleanly" too. 4xx (e.g. an auth-gated route seeing the anonymous
-            // warmup visitor) is expected, not a failure.
+            // The handler swallows render errors and returns a 5xx error page, so 5xx counts as "didn't warm cleanly"
+            // alongside a throw. 4xx is expected — an auth-gated route seeing the anonymous warmup visitor.
             const response = await handler(markWarmupRequest(new Request(href)), server);
             if (response.status >= 500) {
               errorCount += 1;
@@ -2130,10 +2042,8 @@ export class Mochi {
   }
 
   /**
-   * Install one-shot SIGTERM/SIGINT listeners that fire the `mochi:shutdown`
-   * hook and stop the server. A second signal force-exits — same convention as
-   * most CLIs. Listeners are added per `serve()` call, but `initMochiConfig`
-   * already forbids more than one server per process.
+   * Install one-shot SIGTERM/SIGINT listeners that fire the `mochi:shutdown` hook and stop the server, with a second
+   * signal force-exiting as most CLIs do.
    */
   private static installShutdownHandlers(options: MochiServeOptions, server: Server<undefined>, development: boolean): void {
     let shuttingDown = false;
@@ -2156,22 +2066,19 @@ export class Mochi {
       }
       mochiEvents.emit('server:stop', stopEvent);
 
-      // A non-forced stop() waits for every connection to drain, and Bun never
-      // resolves it while a WebSocket is open — in dev, any browser tab holding
-      // the live-reload socket wedges the process forever. So the graceful stop
-      // only ever gets the grace period, then connections are cut regardless.
+      // A non-forced `stop()` waits for every connection to drain and Bun never resolves it while a WebSocket is open,
+      // so in dev a single tab holding the live-reload socket wedges the process; the graceful stop gets the grace
+      // period alone, then connections are cut regardless.
       const timeout = options.shutdownTimeout ?? (development ? 0 : 5_000);
       if (timeout > 0) {
-        // Caught inline: once the grace period wins the race, a late rejection
-        // from the graceful stop has no one left to await it.
+        // Once the grace period wins the race, a late rejection from the graceful stop has no one left to await it.
         const graceful = server.stop().catch((err: unknown) => {
           logger.warn(`Graceful stop failed: ${err instanceof Error ? err.message : err}`);
         });
         await Promise.race([graceful, Bun.sleep(timeout)]);
       }
       await server.stop(true);
-      // Exit explicitly: chokidar's dev watchers and any timer user code left
-      // running would otherwise keep the event loop alive past the last socket.
+      // chokidar's dev watchers and any user timer still running would otherwise keep the event loop alive past the last socket.
       process.exit(0);
     };
     process.on('SIGTERM', handle);

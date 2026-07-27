@@ -1,11 +1,7 @@
-// A bare Mochi server with one WebSocket route, spawned by
-// `shutdownSignal.test.ts` to exercise the SIGTERM/SIGINT path.
-//
-// Signal handling can't be tested in-process — the handler ends in
-// `process.exit()`, which would take the test runner down with it. The child
-// can't live in the test file either: importing `bun:test` outside `bun test`
-// throws. So it sits under `utils/` (not a `*.test.ts` file) where the runner
-// never picks it up.
+// A bare Mochi server with one WebSocket route, spawned by `shutdownSignal.test.ts` to exercise the SIGTERM/SIGINT path.
+// Signal handling can't be tested in-process, since the handler ends in `process.exit()` and would take the runner down,
+// and the child can't be a test file either, since importing `bun:test` outside `bun test` throws — hence its home under
+// `utils/`, where the runner never picks it up.
 import { Mochi } from '../Mochi';
 
 if (import.meta.main) {

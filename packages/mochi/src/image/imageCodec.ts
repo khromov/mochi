@@ -1,15 +1,11 @@
 /**
- * Compact binary encoding for the image-request payload that travels (encrypted)
- * in the `?p=` query param. The payload carries only the source URL and the name
- * of a server-declared size — never the transform config, which lives in
- * `Mochi.serve({ image: { sizes } })`. Keeping the name (not the config) on
- * the wire makes tokens tiny and lets a size redefinition re-render existing
- * URLs (the endpoint re-resolves the name against the current config).
+ * Compact binary encoding for the image-request payload that travels encrypted in the `?p=` query param, carrying the
+ * source URL and a server-declared size's *name* while the transform config stays in `Mochi.serve({ image: { sizes } })`.
+ * Keeping the name on the wire makes tokens tiny and lets a size redefinition re-render existing URLs, since the
+ * endpoint re-resolves the name against the current config.
  *
- * A leading `https://` or `http://` (the only two protocols `assertPublicUrl`
- * ever lets through) is elided to a single control bit rather than carried as
- * literal bytes — those cover the overwhelming majority of sources, and 7-8
- * bytes per image URL adds up.
+ * A leading `https://` or `http://` — the only protocols `assertPublicUrl` lets through — collapses to a single control
+ * bit rather than literal bytes, which covers nearly every source and saves 7-8 bytes per image URL.
  *
  * Layout (before encryption):
  *   byte 0  original(0) | hasSize(1) | httpsPrefix(2) | httpPrefix(3) | reserved(4-7)

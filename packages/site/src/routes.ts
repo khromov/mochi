@@ -11,10 +11,12 @@ import {
   getDoc,
   getDocLlmsTxt,
   getDocNeighbors,
+  getPostLlmsTxt,
   internalDemoLlmsRoutes,
   loadDocs,
 } from './lib/docs';
 import { loadPosts, getPost } from './lib/blog';
+import { CHANGELOG_SLUG, CHANGELOG_TITLE, CHANGELOG_DESCRIPTION, getChangelogHtml, getChangelogTxt } from './lib/changelog';
 import { respondMcp } from './lib/mcp';
 import { profilerEnabled, startProfiler, stopProfiler } from './lib/profiler';
 import { routes as apiRoutes } from './demos/api/routes';
@@ -22,6 +24,7 @@ import { routes as cacheEventsRoutes } from './demos/cache-events/routes';
 import { routes as captchaRoutes } from './demos/captcha/routes';
 import { routes as captchaStylingRoutes } from './demos/captcha-styling/routes';
 import { routes as chatRoutes } from './demos/chat/routes';
+import { routes as ciRoutes } from './ci/routes';
 import { routes as clientOnlyRoutes } from './demos/client-only/routes';
 import { routes as cookieVaryTestRoutes } from './demos/cookie-vary-test/routes';
 import { routes as cookiesRoutes } from './demos/cookies/routes';
@@ -132,6 +135,29 @@ export const routes: Record<string, MochiRouteValue> = {
       };
     },
   }),
+  // Static, so it outranks /docs/:slug below. The changelog is a synthetic doc rendered
+  // from markdown fetched at runtime — it can't ride the build-time docComponents barrel,
+  // so it hands Docs.svelte pre-rendered HTML instead of a component.
+  '/docs/changelog': Mochi.page('./src/Docs.svelte', {
+    serverProps: async () => {
+      const html = await getChangelogHtml();
+      if (html === null) {
+        error(503, 'Changelog is temporarily unavailable');
+      }
+      return {
+        slug: CHANGELOG_SLUG,
+        title: CHANGELOG_TITLE,
+        description: CHANGELOG_DESCRIPTION,
+        docsNav: await buildDocsNav(),
+        // No on-page TOC: it would just be a second copy of the version list the page
+        // already is. No pager either — the changelog sits outside the docs sequence.
+        toc: [],
+        html,
+        prev: null,
+        next: null,
+      };
+    },
+  }),
   '/docs/:slug': Mochi.page('./src/Docs.svelte', {
     serverProps: async () => {
       const { params } = getRequestContext();
@@ -221,12 +247,36 @@ export const routes: Record<string, MochiRouteValue> = {
       headers: { 'Content-Type': 'text/plain; charset=utf-8' },
     });
   }),
+  // Static, so it outranks the /docs/:slug/llms.txt param route below (same
+  // specificity rule the demoLlmsRoutes block relies on). The changelog is a
+  // synthetic doc fetched from GitHub — a null means the fetch failed, so 503
+  // (not 404): the entry is always listed, only the upstream can be unavailable.
+  '/docs/changelog/llms.txt': Mochi.api(async () => {
+    const text = await getChangelogTxt();
+    if (text === null) {
+      error(503, 'Changelog is temporarily unavailable');
+    }
+    return new Response(text, {
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+    });
+  }),
   '/docs/:slug/llms.txt': Mochi.api(async () => {
     const { params } = getRequestContext();
     const slug = params.slug ?? '';
     const text = await getDocLlmsTxt(slug);
     if (text === null) {
       error(404, `No doc '${slug}'`);
+    }
+    return new Response(text, {
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+    });
+  }),
+  '/blog/:slug/llms.txt': Mochi.api(async () => {
+    const { params } = getRequestContext();
+    const slug = params.slug ?? '';
+    const text = await getPostLlmsTxt(slug);
+    if (text === null) {
+      error(404, `No post '${slug}'`);
     }
     return new Response(text, {
       headers: { 'Content-Type': 'text/plain; charset=utf-8' },
@@ -244,6 +294,7 @@ export const routes: Record<string, MochiRouteValue> = {
   ...captchaRoutes,
   ...captchaStylingRoutes,
   ...chatRoutes,
+  ...ciRoutes,
   ...clientOnlyRoutes,
   ...cookieVaryTestRoutes,
   ...cookiesRoutes,

@@ -1,44 +1,28 @@
 /**
- * Origin-header CSRF protection for non-preflighted POSTs (and other
- * state-mutating verbs). Modeled on SvelteKit's built-in check: a cross-origin
- * request reaches the server without a CORS preflight only when its
- * Content-Type is `application/x-www-form-urlencoded`, `multipart/form-data`,
- * `text/plain`, OR is missing entirely — those are the cases worth gating.
- * Browsers always send `Origin` on non-GET cross-origin requests, so comparing
- * it to the expected origin blocks the attack.
+ * Origin-header CSRF protection for non-preflighted POSTs and other state-mutating verbs. A cross-origin request reaches
+ * the server without a CORS preflight only when its Content-Type is `application/x-www-form-urlencoded`,
+ * `multipart/form-data`, `text/plain`, or missing, so those are the cases gated here; browsers always send `Origin` on a
+ * non-GET cross-origin request, making the comparison sufficient.
  *
- * Safe by default: in production, the check refuses every protected form
- * submission until `proxy.origin` (or `proxy.hostHeader`) is configured, so
- * the framework knows what origin to trust. In development the same
- * misconfiguration is allowed through with a `logger.warn` line so local work
- * isn't blocked.
- *
- * Callers must pass `development` explicitly so prod-vs-dev intent is never
- * implicit. In development the check never blocks: a failure logs a
- * `logger.warn` line noting the request would be rejected in production.
+ * Production refuses every protected form submission until `proxy.origin` or `proxy.hostHeader` tells the framework what
+ * origin to trust. Development logs a `logger.warn` line instead and lets the request through, so callers pass
+ * `development` explicitly rather than leaving prod-vs-dev intent implicit.
  *
  * Limitations:
- * - Some legacy clients / privacy proxies strip `Origin`. They will be
- *   rejected; allow-list them via `trustedOrigins` if needed.
- * - JSON/octet-stream endpoints (`Mochi.api(...)`) are not checked because the
- *   browser already requires a CORS preflight to send those cross-origin.
+ * - Some legacy clients and privacy proxies strip `Origin` and will be rejected;
+ *   allow-list them via `trustedOrigins`.
+ * - JSON/octet-stream endpoints (`Mochi.api(...)`) go unchecked, since the browser
+ *   already requires a CORS preflight to send those cross-origin.
  */
 
 import { applyFilter } from '../extensions';
 import { logger } from '../utils/log';
 import { normalizeHttpOrigin, resolveExpectedOrigin, type MochiProxyOptions } from './proxy';
 
-/**
- * Default content types that gate the CSRF check. These are the three types a
- * cross-origin `<form>` can submit without a CORS preflight (per WHATWG).
- * Override with the `csrf:formContentTypes` filter on `Mochi.serve()`.
- */
+/** The three types a cross-origin `<form>` can submit without a CORS preflight, per WHATWG. Override with the `csrf:formContentTypes` filter. */
 export const DEFAULT_FORM_CONTENT_TYPES: ReadonlySet<string> = new Set(['application/x-www-form-urlencoded', 'multipart/form-data', 'text/plain']);
 
-/**
- * Default HTTP methods the CSRF check applies to (everything that can mutate
- * server state from a `<form>`). Override with `csrf:protectedMethods`.
- */
+/** Everything that can mutate server state from a `<form>`. Override with `csrf:protectedMethods`. */
 export const DEFAULT_PROTECTED_METHODS: ReadonlySet<string> = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
 export interface MochiCsrfOptions {
@@ -48,13 +32,9 @@ export interface MochiCsrfOptions {
   trustedOrigins?: string[];
 }
 
-/**
- * Strip default ports (`:443` for https, `:80` for http) from an origin string.
- * Browsers omit them in the `Origin` header, but a reverse proxy's
- * `x-forwarded-host` may include them — without this, `https://foo.com:443`
- * (configured) wouldn't match `https://foo.com` (sent). Anything else passes
- * through unchanged so we don't accidentally rewrite hostnames or other parts.
- */
+// Browsers omit default ports in `Origin` while a reverse proxy's `x-forwarded-host` may include them, so a configured
+// `https://foo.com:443` would otherwise fail to match a sent `https://foo.com`. A value that isn't a valid HTTP(S)
+// origin yields `null`, which never compares equal — a malformed header can't be coerced into a match.
 function normalizeOrigin(value: string): string | null {
   try {
     return normalizeHttpOrigin(value, 'Origin header');
@@ -63,11 +43,8 @@ function normalizeOrigin(value: string): string | null {
   }
 }
 
-/**
- * Build the canonical 403 response for a blocked CSRF submission, content-
- * negotiated against `Accept`. Pass `reason` to attach an extra explanation
- * (used when the misconfiguration is the framework's own, not the request's).
- */
+// Content-negotiated against `Accept`. `reason` attaches an extra explanation, used where the misconfiguration is the
+// framework's own rather than the request's.
 function csrfForbidden(req: Request, message: string, reason?: string): Response {
   const wantsJson = req.headers.get('accept') === 'application/json';
   const body = wantsJson ? JSON.stringify(reason ? { message, reason } : { message }) : reason ? `${message}\n${reason}` : message;
@@ -90,11 +67,9 @@ export function isFormContentType(contentType: string | null, formContentTypes: 
 }
 
 /**
- * Resolve the framework's default CSRF decision and run it through the
- * `csrf:check` filter, giving extensions a single override point. The filter
- * receives the default decision (`null` to pass, `Response` to block); return
- * the input unchanged to delegate to the framework, `null` to bypass, or a
- * fresh `Response` to substitute a custom block.
+ * Resolve the framework's default CSRF decision and run it through the `csrf:check` filter, the single override point
+ * for extensions. The filter receives that decision — `null` to pass, `Response` to block — and returns the input
+ * unchanged to delegate, `null` to bypass, or a fresh `Response` to substitute a custom block.
  */
 export function csrfCheck(
   request: Request,

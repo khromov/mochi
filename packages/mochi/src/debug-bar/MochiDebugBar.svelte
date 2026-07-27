@@ -29,10 +29,9 @@
   // toolbar link on the config snapshot rather than always showing it.
   let emailHref = $state<string | null>(null);
 
-  // Ids of dev emails captured but not yet read in the outbox. Persisted in
-  // localStorage so the badge survives reloads and stays in sync across tabs:
-  // LiveReload's `mochi:email-new` adds ids, the outbox's `mochi:outbox-sync`
-  // removes read/cleared ones, and `storage` events mirror other tabs.
+  // Ids of dev emails captured but not yet read, persisted in localStorage so the badge survives reloads and stays in
+  // sync across tabs: LiveReload's `mochi:email-new` adds ids, the outbox's `mochi:outbox-sync` removes read ones, and
+  // `storage` events mirror other tabs.
   let unreadIds = $state<string[]>([]);
 
   function persistUnread() {
