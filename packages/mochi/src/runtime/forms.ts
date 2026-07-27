@@ -1,8 +1,7 @@
 import type { MochiFormFail, MochiFormRedirect, MochiFormSuccess } from '../types';
 
 /**
- * Re-render the entry component with `form = { ok: false, ... }` and the
- * given HTTP status. Intended for validation errors from a form action.
+ * Re-render the entry component with `form = { ok: false, ... }` and the given HTTP status, for a form action's validation errors.
  *
  * ```ts
  * if (!username) return fail(400, { error: 'Username required', username });
@@ -13,8 +12,7 @@ export function fail<T extends Record<string, unknown>>(status: number, data: T)
 }
 
 /**
- * Produce an HTTP redirect response after an action runs. Use 303 for the
- * standard POST/Redirect/GET pattern after a successful mutation.
+ * Produce an HTTP redirect response after an action runs. Use 303 for the standard POST/Redirect/GET pattern after a successful mutation.
  *
  * ```ts
  * return redirect(303, '/dashboard');
@@ -25,9 +23,8 @@ export function redirect(status: 301 | 302 | 303 | 307 | 308, location: string):
 }
 
 /**
- * Re-render the entry component with `form = { ok: true, ... }` and HTTP 200.
- * Use this when the action completes but you want to stay on the page
- * (e.g. a search form that shows results inline).
+ * Re-render the entry component with `form = { ok: true, ... }` and HTTP 200, for an action that completes while staying
+ * on the page — a search form showing results inline.
  *
  * ```ts
  * return success({ message: 'Saved.' });

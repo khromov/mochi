@@ -2,34 +2,24 @@ import path from 'node:path';
 import { toPosixPath } from '../utils';
 import { logger } from '../utils/log';
 
-/**
- * Framework source root (`src/`). This file lives in `src/compiler/`, so climb
- * one level — same convention as `SRC_DIR` in `ComponentRegistry.ts`.
- */
+// Climbs one level out of `src/compiler/`, the same convention as `SRC_DIR` in `ComponentRegistry.ts`.
 const SRC_DIR = path.resolve(path.dirname(Bun.fileURLToPath(import.meta.url)), '..');
 
 /**
- * Marks a manifest path as framework-owned, in the spirit of SvelteKit's `$lib`.
- * `SRC_DIR` sits somewhere different in a workspace checkout, a plain
- * `node_modules/` install, and Bun's versioned store, so encoding the
- * framework's own components relative to the *project* would bake the
- * package-manager layout and the framework version into the manifest — and
- * break the moment either changes.
+ * Marks a manifest path as framework-owned, in the spirit of SvelteKit's `$lib`. `SRC_DIR` lands somewhere different in
+ * a workspace checkout, a plain `node_modules/` install, and Bun's versioned store, so encoding framework components
+ * relative to the project would bake the package-manager layout and framework version into the manifest.
  */
 export const FRAMEWORK_PREFIX = '$mochi/';
 
 /**
- * Encode a build-time source path for the manifest.
+ * Encode a build-time source path for the manifest. These paths are lookup keys, never opened at runtime, but must
+ * survive the build output being copied to another machine: absolute ones leak the builder's filesystem layout and make
+ * two machines building the same commit emit different manifests.
  *
- * Source paths in a manifest are lookup keys, never opened at runtime, but they
- * must still survive the build output being copied to another machine: keeping
- * them absolute leaks the builder's filesystem layout and makes two machines
- * building the same commit emit different manifests.
- *
- * Unlike artifact paths (see `relToOutDir` in `ComponentRegistry.toManifest`), a
- * `..` result is normal and fine here — sources legitimately live outside the
- * project root (a monorepo sibling, a hoisted `node_modules`) and the relative
- * structure between them is what a deploy preserves.
+ * A `..` result is fine here, unlike for artifact paths (`relToOutDir` in `ComponentRegistry.toManifest`) — sources
+ * legitimately live outside the project root, in a monorepo sibling or a hoisted `node_modules`, and a deploy preserves
+ * the relative structure between them.
  */
 export function encodeSourcePath(p: string, projectRoot: string = process.cwd(), srcDir: string = SRC_DIR): string {
   const abs = path.resolve(p);

@@ -1,9 +1,7 @@
-// The build copies no static files, so on disk a deploy that shipped `public/`
-// and one that forgot it are indistinguishable — the shape a Docker final stage
-// hits when it copies `.mochi/` and `src/` selectively. The manifest's
-// build-time count is the only witness the files ever existed; this is the boot
-// check that reads it. Its own Mochi.serve() file because only one is allowed
-// per process (see publicDirProduction.test.ts for the healthy-boot side).
+// The build copies no static files, so on disk a deploy that shipped `public/` and one that forgot it are
+// indistinguishable — the shape a Docker final stage hits copying `.mochi/` and `src/` selectively — leaving the
+// manifest's build-time count the only witness. This exercises the boot check that reads it, in its own file because
+// one `Mochi.serve()` is allowed per process (publicDirProduction.test.ts covers the healthy-boot side).
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -34,9 +32,8 @@ describe('a deploy that left publicDir behind warns at boot', () => {
     await build({ routes, development: false, outDir, publicDir });
     manifest = JSON.parse(await Bun.file(path.join(outDir, 'manifest.json')).text());
 
-    // The deploy: the build output travels, the static files don't. Removing the
-    // directory outright rather than emptying it is the truer reproduction — a
-    // Dockerfile that never COPYs it leaves nothing behind, not an empty dir.
+    // The deploy the check exists for: the build output travels, the static files don't. Removing the directory
+    // outright is the truer reproduction, since a Dockerfile that never COPYs it leaves nothing rather than an empty dir.
     rmSync(publicDir, RM_OPTS);
 
     warnings = [];

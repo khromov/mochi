@@ -4,12 +4,9 @@ import { logger } from '../utils/log';
 import { pinGlobal } from '../utils/globalState';
 
 /**
- * Request-scoped memo store. Entries live and die with the HTTP request, so N
- * callers within one render collapse to one execution while an invalidation
- * between requests is always seen.
- *
- * Deliberately below `MochiCache`: no TTLs, no storage backends, no
- * serialization, no eviction — the request boundary is the TTL.
+ * Request-scoped memo store whose entries live and die with the HTTP request, so N callers within one render collapse to
+ * one execution while an invalidation between requests is always seen. It sits below `MochiCache`: the request boundary
+ * is the TTL, so there are no storage backends, serialization, or eviction.
  */
 export interface MochiRequestCache {
   get<T = unknown>(key: string): T | undefined;
@@ -124,8 +121,8 @@ function wrap(state: RequestCacheState): MochiRequestCache {
 }
 
 /**
- * The current request's cache. Outside a request this returns a throwaway store
- * (plus a one-time development warning) so calling code never has to branch.
+ * The current request's cache. Outside a request it returns a throwaway store plus a one-time development warning, so
+ * calling code never has to branch.
  *
  * ```ts
  * const cache = getRequestCache();
@@ -142,11 +139,9 @@ export function getRequestCache(): MochiRequestCache {
 }
 
 /**
- * Return the value cached under `key` for this request, or run `fn`, cache, and
- * return its result. Async-transparent: the in-flight promise is stored on the
- * first call, so concurrent callers share one execution; a rejected promise
- * evicts its entry, so failures are never cached. Outside a request `fn` runs
- * uncached.
+ * Return the value cached under `key` for this request, or run `fn`, cache, and return its result. It's
+ * async-transparent: the in-flight promise is stored on the first call so concurrent callers share one execution, and a
+ * rejected promise evicts its entry so failures stay uncached. Outside a request `fn` runs uncached.
  *
  * ```ts
  * const user = await requestCache(`user:${id}`, () => db.user(id));
@@ -174,25 +169,17 @@ export interface RequestMemoOptions<A extends unknown[]> {
   key?: (...args: A) => string;
   /** Key prefix isolating this wrapper from every other one. Defaults to a per-wrapper unique id. */
   namespace?: string;
-  /**
-   * Suppress the out-of-request development warning. For framework-internal
-   * helpers that are legitimately called outside a request (background warms,
-   * detached renders) and would otherwise warn on every boot.
-   */
+  /** Suppress the out-of-request development warning, for framework helpers legitimately called outside a request (background warms, detached renders). */
   quiet?: boolean;
 }
 
-// Pinned on globalThis, not a bare module-level `let`: duplicate bundled copies
-// of this module (server runtime + per-component SSR bundles) share one backing
-// request-cache Map via the global-pinned context, so their default namespaces
-// must come from one counter too — otherwise two copies both mint `memo:1` and
-// silently collide on it.
+// Duplicate bundled copies of this module share one backing request-cache Map through the global-pinned context, so
+// their default namespaces need one counter too; a bare module-level `let` would let two copies both mint `memo:1`.
 const memoCounter = pinGlobal('__mochi_request_memo_counter__', () => ({ n: 0 }));
 
 /**
- * Wrap a function so every call within one request is memoized by its
- * arguments. Same semantics as `requestCache` — shared in-flight promises,
- * rejections evicted, uncached outside a request.
+ * Wrap a function so every call within one request is memoized by its arguments, with `requestCache`'s semantics:
+ * shared in-flight promises, rejections evicted, uncached outside a request.
  *
  * ```ts
  * const getUser = requestMemo((id: string) => db.user(id));
@@ -206,10 +193,7 @@ export function requestMemo<A extends unknown[], R>(fn: (...args: A) => R, optio
   return (...args: A): R => cacheWith(`${namespace}:${keyOf(...args)}`, () => fn(...args), label);
 }
 
-/**
- * Type-tagged so `1` and `'1'` never collide, and so an absent argument is
- * distinct from an explicit `undefined` at a different position.
- */
+// Type-tagged so `1` and `'1'` stay distinct, as do an absent argument and an explicit `undefined` at another position.
 function defaultKey(...args: unknown[]): string {
   return args.map(keyPart).join('\0');
 }

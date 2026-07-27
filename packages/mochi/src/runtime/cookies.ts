@@ -83,11 +83,7 @@ export class MochiCookieJar {
     return [...this.parsed.entries()].map(([name, value]) => ({ name, value }));
   }
 
-  /**
-   * Returns a snapshot of incoming cookies without flipping `accessed`. Used by
-   * the debug bar to inspect cookies without forcing `Vary: Cookie` onto every
-   * response.
-   */
+  /** A snapshot of incoming cookies that leaves `accessed` alone, so the debug bar can inspect them without forcing `Vary: Cookie` onto every response. */
   peekAll(): Cookie[] {
     return [...this.parsed.entries()].map(([name, value]) => ({ name, value }));
   }
@@ -130,10 +126,8 @@ export class MochiCookieJar {
 }
 
 /**
- * Apply Set-Cookie headers and `Vary: Cookie` to the response when the jar was
- * touched. Returns the original response untouched if no cookies were read or
- * written, or a clone with the headers attached otherwise (Response headers
- * become immutable once the body has been read).
+ * Apply Set-Cookie headers and `Vary: Cookie` when the jar was touched, returning the original response if no cookie was
+ * read or written and otherwise a clone carrying the headers — Response headers turn immutable once the body is read.
  */
 export function finalizeCookieHeaders(response: Response, cookieJar: MochiCookieJar): Response {
   const setCookies = cookieJar.getSetCookieHeaders();

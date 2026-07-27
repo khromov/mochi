@@ -15,15 +15,11 @@ let pluginRegistrationDone = false;
 let captured: Partial<MochiServeOptions> | null = null;
 
 /**
- * Import a Mochi entry module (e.g. `src/index.ts`) far enough to capture the
- * options object it passes to `Mochi.serve()`, without starting the server.
- *
- * A `Bun.plugin` virtual module overrides the bare `mochi-framework` specifier:
- * it re-exports the real framework entry (imported by absolute file path so the
- * plugin doesn't intercept itself) but replaces `Mochi.serve` with a stub that
- * records its argument and throws a sentinel to halt the entry's top-level
- * `await Mochi.serve(...)`. The captured object is fully evaluated, so options
- * like `optimize` are exactly what the runtime would use.
+ * Import a Mochi entry module far enough to capture the options object it passes to `Mochi.serve()`, leaving the server
+ * unstarted. A `Bun.plugin` virtual module overrides the bare `mochi-framework` specifier, re-exporting the real
+ * framework entry by absolute file path so the plugin can't intercept itself, and replacing `Mochi.serve` with a stub
+ * that records its argument and throws a sentinel to halt the entry's top-level await. The captured object is fully
+ * evaluated, so options like `optimize` match what the runtime would use.
  *
  * Returns the captured options, or `null` if the entry never called `serve()`.
  */
@@ -45,10 +41,9 @@ export async function extractServeOptions(entryPath: string, opts?: { fresh?: bo
           // Synchronous capture + throw, before serve()'s first await, so the
           // sentinel rejects the entry's top-level await and unwinds cleanly.
           return (options: Partial<MochiServeOptions>) => {
-            // A second call within one extraction means the entry swallowed our
-            // halt sentinel (e.g. `try { await Mochi.serve(...) } catch {}`) and
-            // kept running. Throw a real error so the extractor surfaces it
-            // instead of silently capturing duplicate/stale options.
+            // A second call within one extraction means the entry swallowed the halt sentinel — say, a
+            // `try { await Mochi.serve(...) } catch {}` — and kept running, so a real error surfaces it here instead of
+            // silently capturing stale options.
             if (captured !== null) {
               throw new Error(
                 'Mochi.serve() was called more than once while extracting build options. Do not wrap the top-level Mochi.serve() call in try/catch — it must be allowed to throw during extraction.',
