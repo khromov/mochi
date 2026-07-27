@@ -530,29 +530,35 @@ describe('MochiCaptcha — a solve that cannot finish', () => {
   });
 
   test('retrying resumes the nonce search rather than replaying the attempts that just failed', async () => {
-    // The reported count is the absolute nonce reached, so two budget-equal attempts land at ~1× the same number if the
-    // search restarts and ~2× it if it resumes. A budget spanning many slices keeps them comparable enough for the 1.5×
-    // threshold below to separate the two behaviours.
+    // The reported count is the absolute nonce reached, so resuming makes it strictly increase across attempts whatever
+    // each window's throughput, while restarting redraws it from one budget's worth of work every time. Asserting the
+    // monotonicity therefore can't flake on a descheduled window, and three attempts leave the total margin below ~4×
+    // the work one restart could produce — a single budget-equal pair puts that margin at 1×, which CI loses.
     const widget = renderWidget(DevCaptcha, { token: 'token', bits: 32, solveBudgetMs: 100 });
     const attemptsFrom = (line: string) => Number(/and (\d+) attempts/.exec(line)![1]);
 
-    widget.slideToEnd();
-    await widget.waitForState('error');
-    const first = attemptsFrom(logsMatching(/gave up/)[0]!);
+    const attempt = async (index: number) => {
+      if (index > 0) {
+        widget.clickRetry();
+        expect(widget.state()).toBe('idle');
+        expect(widget.offset()).toBe(0);
+        expect(widget.hint()).toBe('Slide to verify');
+      }
+      widget.slideToEnd();
+      await widget.waitForState('error');
+      return attemptsFrom(logsMatching(/gave up/)[index]!);
+    };
 
-    widget.clickRetry();
-    expect(widget.state()).toBe('idle');
-    expect(widget.offset()).toBe(0);
-    expect(widget.hint()).toBe('Slide to verify');
+    const first = await attempt(0);
+    const second = await attempt(1);
+    const third = await attempt(2);
 
-    widget.slideToEnd();
-    await widget.waitForState('error');
-    const second = attemptsFrom(logsMatching(/gave up/)[1]!);
-
-    expect(first).toBeGreaterThan(0);
     // The token never changes, so restarting at zero would re-run exactly the
     // nonces that already failed and the budget could never resolve itself.
-    expect(second).toBeGreaterThan(first * 1.5);
+    expect(first).toBeGreaterThan(0);
+    expect(second).toBeGreaterThan(first);
+    expect(third).toBeGreaterThan(second);
+    expect(third).toBeGreaterThan(first * 1.5);
   });
 
   test('a widget that failed with the pointer still down accepts a fresh drag after retrying', async () => {
