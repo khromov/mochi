@@ -77,6 +77,8 @@
   },
   "scripts": {
     "test": "bun scripts/run-tests.ts",
+    "fuzz": "bun test src/httpFuzz.fuzz.test.ts",
+    "fuzz:soak": "MOCHI_FUZZ_RUNS=20000 bun test --timeout 900000 src/httpFuzz.fuzz.test.ts",
     "typecheck": "svelte-check --tsconfig ./tsconfig.json --compiler-warnings 'attribute_illegal_colon:ignore' && tsc -p tsconfig.json --noEmit",
     "deps:report": "bun scripts/dep-report.ts"
   },

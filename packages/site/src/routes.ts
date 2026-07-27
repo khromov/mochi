@@ -112,19 +112,22 @@ export const routes: Record<string, MochiRouteValue> = {
           const profile = await stopProfiler();
           return Response.json(profile);
         }),
+        // TEMP: on-demand V8 heap snapshot for memory-leak debugging. Remove when done.
+        // Development-gated: a heap snapshot contains live string values, which
+        // for this process includes MOCHI_KEY and any in-flight session cookie,
+        // and generating one blocks the loop for as long as it takes.
+        '/_heapsnapshot': Mochi.api(() => {
+          const snapshot = Bun.generateHeapSnapshot('v8');
+          const filename = `mochi-${Date.now()}.heapsnapshot`;
+          return new Response(snapshot, {
+            headers: {
+              'Content-Type': 'application/json',
+              'Content-Disposition': `attachment; filename="${filename}"`,
+            },
+          });
+        }),
       }
     : {}),
-  // TEMP: on-demand V8 heap snapshot for memory-leak debugging. Remove when done.
-  '/_heapsnapshot': Mochi.api(() => {
-    const snapshot = Bun.generateHeapSnapshot('v8');
-    const filename = `mochi-${Date.now()}.heapsnapshot`;
-    return new Response(snapshot, {
-      headers: {
-        'Content-Type': 'application/json',
-        'Content-Disposition': `attachment; filename="${filename}"`,
-      },
-    });
-  }),
   '/discord': Mochi.api(() => Response.redirect('https://discord.com/invite/QCGfks4gg8', 302)),
   '/': Mochi.page('./src/Site.svelte', {
     serverProps: async () => {

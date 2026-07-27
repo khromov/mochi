@@ -50,7 +50,15 @@ export function buildPublicUrl(request: Request, options: MochiProxyOptions | un
   if (origin === url.origin) {
     return url;
   }
-  return new URL(url.pathname + url.search + url.hash, origin);
+  // Assigned component-wise rather than concatenated into `new URL(path, origin)`:
+  // a request for `/..//` normalizes to a pathname of `//`, which that form parses
+  // as a protocol-relative URL with an empty host and throws ERR_INVALID_URL —
+  // a 500 on any request, since this runs for every one once an origin is set.
+  const publicUrl = new URL(origin);
+  publicUrl.pathname = url.pathname;
+  publicUrl.search = url.search;
+  publicUrl.hash = url.hash;
+  return publicUrl;
 }
 
 // TODO: Let's review this an extra time for security before finalizing the API.
