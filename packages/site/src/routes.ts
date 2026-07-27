@@ -24,6 +24,7 @@ import { routes as cacheEventsRoutes } from './demos/cache-events/routes';
 import { routes as captchaRoutes } from './demos/captcha/routes';
 import { routes as captchaStylingRoutes } from './demos/captcha-styling/routes';
 import { routes as chatRoutes } from './demos/chat/routes';
+import { routes as ciRoutes } from './ci/routes';
 import { routes as clientOnlyRoutes } from './demos/client-only/routes';
 import { routes as cookieVaryTestRoutes } from './demos/cookie-vary-test/routes';
 import { routes as cookiesRoutes } from './demos/cookies/routes';
@@ -296,6 +297,7 @@ export const routes: Record<string, MochiRouteValue> = {
   ...captchaRoutes,
   ...captchaStylingRoutes,
   ...chatRoutes,
+  ...ciRoutes,
   ...clientOnlyRoutes,
   ...cookieVaryTestRoutes,
   ...cookiesRoutes,

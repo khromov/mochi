@@ -1,31 +1,20 @@
 import { stringify } from 'devalue';
 import { getRequestContext } from '../runtime/requestContext';
 
-/**
- * One entry in the per-render island props dedup registry
- * (`ctx.islandProps`): the ref id assigned to a unique serialized payload and
- * the number of islands that emitted that exact payload.
- */
+/** One entry in the per-render dedup registry (`ctx.islandProps`): a unique serialized payload's ref id and how many islands emitted it. */
 export interface IslandPropsEntry {
   id: string;
   emitCount: number;
 }
 
 /**
- * Serialize a hydratable island's props via devalue and register them in the
- * per-render dedup registry. Returns a stable ref id (e.g. "mochi-props-3")
- * that the preprocessor emits as the `props-ref` attribute. After SSR,
- * `ComponentRegistry`'s HTMLRewriter pass emits each payload as a
- * `<script type="application/json" id="mochi-props-N">` block placed just
- * before the first island that references it.
+ * Serialize a hydratable island's props via devalue and register them in the per-render dedup registry, returning the
+ * stable ref id the preprocessor emits as `props-ref`. After SSR, `ComponentRegistry`'s HTMLRewriter pass writes each
+ * payload as a `<script type="application/json" id="mochi-props-N">` block just before the first island referencing it.
  *
- * Two islands whose serialized JSON is byte-identical share the same ref id;
- * that's the entire dedup mechanism. The per-id emit count lets the render pass
- * flag blocks that more than one island actually shares.
- *
- * Server islands intentionally do NOT use this path. Their `signed-props`
- * payloads are encrypted and travel through URL query strings, so
- * they keep using `stringify` directly via the preprocessor's server-island branch.
+ * Two islands with byte-identical serialized JSON share one ref id — the whole dedup mechanism — and the per-id emit
+ * count lets the render pass flag genuinely shared blocks. Server islands take the preprocessor's own branch instead,
+ * since their `signed-props` payloads are encrypted and travel through URL query strings.
  */
 export function emitIslandProps(value: unknown): string {
   const json = stringify(value);
@@ -40,17 +29,13 @@ export function emitIslandProps(value: unknown): string {
 }
 
 /**
- * Render the `<script type="application/json" id="mochi-props-N">` block that
- * carries one island's deduplicated props. `ComponentRegistry`'s HTMLRewriter
- * pass calls this once per unique payload and inserts the result immediately
- * before the first `<mochi-hydratable-island>` that references it. Blocks
- * reused by two or more islands carry a `data-shared` marker so the dev toolbar
- * can flag genuinely deduplicated props without re-counting refs across the
- * DOM — a lone island's block stays unmarked.
+ * Render the `<script type="application/json" id="mochi-props-N">` block carrying one island's deduplicated props.
+ * `ComponentRegistry`'s HTMLRewriter pass calls this once per unique payload, inserting the result immediately before
+ * the first `<mochi-hydratable-island>` referencing it, and marks blocks reused by two or more islands `data-shared` so
+ * the dev toolbar can flag real deduplication without re-counting refs across the DOM.
  *
- * Every `<` inside the JSON is escaped to its `<` JSON unicode escape so
- * the HTML script-data tokenizer (which ignores `type="application/json"`)
- * cannot see a `</script` sequence and terminate the block early.
+ * Every `<` inside the JSON is escaped to `<`, so the HTML script-data tokenizer — which ignores
+ * `type="application/json"` — cannot see a `</script` sequence and terminate the block early.
  */
 export function renderIslandPropsScript(id: string, json: string, emitCount: number): string {
   const safe = json.replace(/</g, '\\u003C');
@@ -59,14 +44,10 @@ export function renderIslandPropsScript(id: string, json: string, emitCount: num
 }
 
 /**
- * Insert one island's props block immediately before `el` — the first
- * `<mochi-hydratable-island>` that references it. `ComponentRegistry`'s
- * HTMLRewriter pass calls this for every island in document order: `propsById`
- * maps a ref id to its payload + emit count, and `emitted` records ids already
- * written so islands sharing a byte-identical payload reuse the single block
- * emitted before the first of them. Islands with no `props-ref` — or a ref
- * absent from the registry, e.g. the server-island also-hydrate path that
- * inlines `props=` — are left untouched.
+ * Insert one island's props block immediately before `el`, the first `<mochi-hydratable-island>` referencing it.
+ * `ComponentRegistry`'s HTMLRewriter pass calls this for every island in document order: `propsById` maps a ref id to
+ * its payload and emit count, while `emitted` records ids already written so islands sharing a byte-identical payload
+ * reuse the one block. An island with no `props-ref`, or a ref absent from the registry, is left untouched.
  */
 export function injectIslandPropsBlock(el: HTMLRewriterTypes.Element, propsById: Map<string, { json: string; emitCount: number }>, emitted: Set<string>): void {
   const ref = el.getAttribute('props-ref');

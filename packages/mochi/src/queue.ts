@@ -1,8 +1,5 @@
-/**
- * The single isolation boundary around bunqueue: the only module that imports
- * `bunqueue/client`, with no bunqueue type leaking into the public surface, so
- * swapping the backend means rewriting just this file.
- */
+// The isolation boundary around bunqueue: the only module importing `bunqueue/client`, and the only one whose rewrite a
+// backend swap would need.
 import { Queue, Worker, shutdownManager } from 'bunqueue/client';
 import type { Job, JobOptions } from 'bunqueue/client';
 import { pinGlobal } from './utils/globalState';
@@ -52,12 +49,7 @@ export interface MochiQueueRuntimeOptions {
   concurrency?: number;
   /** Omit for in-memory. bunqueue locks the path to the first queue in the process — see `rememberDataPath`. */
   dataPath?: string;
-  /**
-   * How long a job may run before the queue reclaims it, in ms. Must exceed the
-   * worst-case runtime of `process` — see `DEFAULT_LOCK_DURATION_MS` for what
-   * happens when it doesn't, and why raising this past the 30-minute default
-   * buys nothing.
-   */
+  /** How long a job may run before the queue reclaims it, in ms. Must exceed `process`'s worst-case runtime — see `DEFAULT_LOCK_DURATION_MS`. */
   lockDuration?: number;
   defaultJobOptions?: MochiJobOptions;
   /** Forwarded verbatim to bunqueue's `Queue` and `Worker` constructors. */
@@ -69,12 +61,9 @@ export interface MochiQueueOptions<T, R = unknown> extends MochiQueueRuntimeOpti
   process: MochiProcessor<T, R>;
   on?: Partial<MochiQueueListeners<T, R>>;
   /**
-   * Runs once at startup, after every queue in `Mochi.serve({ queues })` is
-   * mounted, with this queue's handle. The place to add back work
-   * your own store still considers unfinished — an in-memory queue loses its
-   * jobs on restart, and even a persisted one can't know about rows written
-   * before the job was accepted. A throw is logged and emitted as `queue:error`
-   * without stopping the server.
+   * Runs once at startup with this queue's handle, after every queue in `Mochi.serve({ queues })` is mounted — the place
+   * to add back work your own store still considers unfinished, since an in-memory queue loses its jobs on restart and
+   * even a persisted one misses rows written before the job was accepted. A throw is logged and emitted as `queue:error`.
    */
   recover?: (queue: MochiQueue<T>) => void | Promise<void>;
 }
@@ -101,10 +90,8 @@ interface QueueRegistry {
   dataPath: string | null | undefined;
 }
 
-// Pinned so the registry is shared across any duplicate bundled copy of this
-// module (mirrors `mochiEvents` / `requestContext`). The shutdown path
-// (`closeAllQueueResources`) must see every resource to drain it, wherever — and
-// by whichever bundled copy — it was created.
+// Pinned so every duplicate bundled copy of this module shares one registry, since `closeAllQueueResources` must see
+// every resource to drain it whichever copy created it.
 const registry = pinGlobal<QueueRegistry>('__mochi_queue_registry__', () => ({
   byName: new Map(),
   closeables: new Set(),
@@ -143,30 +130,22 @@ function toBunJobOptions(opts: MochiJobOptions | undefined): JobOptions | undefi
 }
 
 /**
- * bunqueue defaults a job's lock to 30s and renews it from the worker heartbeat
- * — but only over TCP: the embedded heartbeat Mochi runs on calls
- * `jobHeartbeat(id)` with no token, which refreshes stall detection and never
- * the lock. So the lock always expires on schedule, and any job outliving it is
- * requeued mid-flight while still running; its eventual success is then rejected
- * ("Invalid or expired lock token"), reported as a failure, and retried —
- * double-firing whatever the job already did. 30s is well within normal for the
- * I/O queues exist for (a single SMTP send has taken 58s in production), so the
- * ceiling is raised to bunqueue's own 30-minute cap on a processing job.
+ * bunqueue defaults a job's lock to 30s and renews it from the worker heartbeat over TCP only; Mochi's embedded
+ * heartbeat calls `jobHeartbeat(id)` without a token, refreshing stall detection but never the lock. The lock therefore
+ * always expires on schedule, and a job outliving it is requeued mid-flight, its eventual success rejected with
+ * "Invalid or expired lock token", reported as a failure, and retried — double-firing whatever it already did. A single
+ * SMTP send has taken 58s in production, so the ceiling is raised to bunqueue's own 30-minute cap.
  *
- * That cap is why this is also the highest useful value: bunqueue's periodic
- * cleanup drops any entry that has been processing for over 30 minutes
- * (`cleanOrphanedProcessingEntries`), whatever the lock says. Lowering it is
- * still meaningful, but it isn't how a crashed worker's jobs come back — stall
- * detection does that off the heartbeat, independently of the lock.
+ * That cap is also why this is the highest useful value: bunqueue's `cleanOrphanedProcessingEntries` drops any entry
+ * processing for over 30 minutes whatever the lock says. Lowering it still matters, though a crashed worker's jobs come
+ * back through stall detection off the heartbeat, independently of the lock.
  */
 export const DEFAULT_LOCK_DURATION_MS = 30 * 60_000;
 
 /**
- * Build a queue: a bunqueue `Queue` (producer) and `Worker` (consumer) from one
- * config. Registers the producer handle under `name` (resolved by `getQueue`)
- * and both resources for shutdown draining. Invoked only by `Mochi.serve`, where
- * a queue is declared once with its processor co-located — there is no separate
- * worker concept and no dynamic insertion.
+ * Build a bunqueue `Queue` (producer) and `Worker` (consumer) from one config, registering the producer under `name` for
+ * `getQueue` and both resources for shutdown draining. Called only by `Mochi.serve`, where a queue is declared once with
+ * its processor co-located.
  */
 export function createQueue<T = unknown, R = unknown>(
   name: string,
@@ -217,11 +196,9 @@ export function createQueue<T = unknown, R = unknown>(
     }
   }
 
-  // Filtered per queue, after whatever the queue declared for itself — through the
-  // first-class option or the raw `bunqueue` passthrough, which is why the result
-  // is applied last rather than spread over. A deployment can then move the lock
-  // for every queue at once without editing each declaration, and still see (via
-  // `explicit`) which ones already chose a value for themselves.
+  // Filtered per queue after whatever the queue declared for itself, through the first-class option or the raw
+  // `bunqueue` passthrough, so the result is applied last rather than spread over. A deployment can then move the lock
+  // for every queue at once and still see via `explicit` which ones chose a value themselves.
   const declaredLock = options?.lockDuration ?? (typeof options?.bunqueue?.lockDuration === 'number' ? options.bunqueue.lockDuration : undefined);
   const lockDuration = applyFilter('queue:lockDurationMs', declaredLock ?? DEFAULT_LOCK_DURATION_MS, {
     queue: name,
@@ -236,10 +213,8 @@ export function createQueue<T = unknown, R = unknown>(
     lockDuration,
   });
 
-  // bunqueue's `finishedOn`/`processedOn` are unreliable on the public job at
-  // event time, so measure duration ourselves from the `active` event. Entries are
-  // cleared on completed/failed; a job that goes active but never resolves would
-  // leak one, but the map is bounded by in-flight jobs so this is a non-issue.
+  // bunqueue's `finishedOn`/`processedOn` are unreliable on the public job at event time, so duration is measured here
+  // from the `active` event. Entries clear on completed/failed, and the map stays bounded by in-flight jobs.
   const startedAt = new Map<string, number>();
   const durationFor = (jobId: string): number => {
     const start = startedAt.get(jobId);
@@ -288,19 +263,14 @@ export function createQueue<T = unknown, R = unknown>(
 }
 
 /**
- * Resolve the handle for a queue declared in `Mochi.serve({ queues })`, to add jobs to it.
- * Throws if the name was never declared (a typo, or `getQueue` reached before
- * `Mochi.serve()` mounted its queues) — producing to an unknown queue would
- * otherwise silently drop every job.
+ * Resolve the handle for a queue declared in `Mochi.serve({ queues })`, to add jobs to it. Throws for an undeclared name
+ * — a typo, or a call before `Mochi.serve()` mounted its queues — since producing to an unknown queue would silently drop every job.
  */
 export function getQueue<T = unknown>(name: string): MochiQueue<T> {
   const handle = registry.byName.get(name);
   if (!handle) {
-    // Three different mistakes, three different answers. Which one it is comes
-    // from the recorded startup milestone, not from guessing at registry size:
-    // an empty registry means "too early" for one app and "declared nothing"
-    // for another, and sending someone hunting for a typo they didn't make is
-    // the whole failure this error exists to prevent.
+    // Three different mistakes, three different answers, told apart by the recorded startup milestone: registry size
+    // can't distinguish them, since an empty registry means "too early" for one app and "declared nothing" for another.
     if (!startupMilestoneReached('mochi:queuesMounted')) {
       throw new Error(
         `Mochi.getQueue("${name}"): queues are not mounted yet. Mochi.serve({ queues }) mounts them after the "mochi:init" hook and after the server binds, so call getQueue() somewhere that runs later: a queue's recover() callback, the "mochi:ready" hook, or any request handler.`,
@@ -319,18 +289,14 @@ export function getQueue<T = unknown>(name: string): MochiQueue<T> {
 export const DEFAULT_RECOVERY_STALL_WARNING_MS = 30_000;
 
 /**
- * Run every mounted queue's `recover` callback, once, at startup. Called by
- * `Mochi.serve()` after the whole `queues` map is mounted (not from
- * `createQueue`), so a callback may reach a sibling queue via `getQueue`.
+ * Run every mounted queue's `recover` callback once at startup. `Mochi.serve()` calls it after the whole `queues` map is
+ * mounted, so a callback may reach a sibling queue via `getQueue`.
  *
- * A failure is contained: the server is already bound and serving by this
- * point, so a transient store error during recovery must not take the site
- * down with it. It surfaces on the `queue:error` bus and in the log instead.
+ * Failures are contained to the `queue:error` bus and the log: the server is already bound and serving, so a transient
+ * store error during recovery must not take the site down.
  *
- * A recover() that never settles is not cut off — abandoning it would drop the
- * jobs it was about to add, which is the failure recovery exists to prevent.
- * It is reported instead, because everything downstream (warmup, `mochi:ready`,
- * `serve()` resolving) waits behind it and would otherwise hang silently.
+ * A `recover()` that never settles is reported rather than cut off, since abandoning it would drop the jobs it was about
+ * to add — the very failure recovery exists to prevent — while warmup, `mochi:ready`, and `serve()` all wait behind it.
  *
  * TODO: single-flight recovery across processes. Recovery currently runs in
  * every process that boots, so an N-instance deploy (or a rolling restart where

@@ -2,10 +2,9 @@ import { getEmailRuntime } from './config';
 import type { MochiEmailAttachment, ResolvedEmailMessage } from './types';
 
 /**
- * Attachment metadata plus its raw bytes, kept so the dev viewer can open the
- * file. `content` is server-only — the viewer route strips it out of the
- * `selected` projection so the bytes are never serialized into the page; the
- * download route reads it back via `getDevAttachment`.
+ * Attachment metadata plus its raw bytes, so the dev viewer can open the file. `content` is server-only: the viewer
+ * route strips it from the `selected` projection, keeping the bytes out of the page, and the download route reads it
+ * back via `getDevAttachment`.
  */
 export interface StoredAttachment {
   filename: string;
@@ -14,11 +13,7 @@ export interface StoredAttachment {
   content?: string | Uint8Array;
 }
 
-/**
- * A message captured by the `dev` transport. This is the fully-resolved message
- * (body rendered, addresses arrayified) plus an id and capture time, so the
- * email viewer can show exactly what would have been delivered.
- */
+/** A message captured by the `dev` transport: the fully-resolved message plus an id and capture time, so the viewer shows exactly what would have been delivered. */
 export interface StoredEmail {
   id: string;
   sentAt: number;
@@ -42,9 +37,8 @@ let counter = 0;
 export type DevEmailListener = (email: StoredEmail) => void;
 
 /**
- * Subscribe to dev-outbox captures. Used by `Mochi.serve()` to push a "new email"
- * signal (carrying the captured id) over the live-reload socket. Listeners live on
- * the shared runtime so a duplicated module copy still reaches the same set.
+ * Subscribe to dev-outbox captures — `Mochi.serve()` uses it to push a "new email" signal carrying the captured id over
+ * the live-reload socket. Listeners live on the shared runtime, so a duplicated module copy reaches the same set.
  */
 export function onDevEmailRecorded(listener: DevEmailListener): () => void {
   const set = (getEmailRuntime().recordListeners ??= new Set());
