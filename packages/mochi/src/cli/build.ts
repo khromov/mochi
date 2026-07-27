@@ -10,6 +10,7 @@ import { rmSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { scanPublicDir, publicRouteKey } from '../runtime/publicDir';
 import { scanEmailTemplates } from '../email/templates';
+import { encodeSourcePath } from '../compiler/manifestPaths';
 import { loadSvelteConfig } from '../compiler/svelteConfig';
 import { logger, setLogLevel } from '../utils/log';
 import { consoleLogger } from '../dev/consoleLogger';
@@ -150,7 +151,8 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     const compiledPages: string[] = [];
     // Seeding the framework components `Mochi.serve()` would otherwise compile at startup — the error page and the
     // client-stats admin page — makes the boot-time compileAll a no-op in production.
-    const ssrEntrypoints: string[] = [options.errorPage ?? DEFAULT_ERROR_PAGE_PATH, CLIENT_STATS_COMPONENT];
+    const errorPagePath = options.errorPage ?? DEFAULT_ERROR_PAGE_PATH;
+    const ssrEntrypoints: string[] = [errorPagePath, CLIENT_STATS_COMPONENT];
     const allRoutes: RouteEntry[] = [];
 
     for (const [pattern, handler] of Object.entries(options.routes)) {
@@ -170,10 +172,7 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     // Email templates are reachable only through `Mochi.email({ component })` at runtime, so no import graph leads here
     // from a route. Walking the conventional directory is what keeps them out of a cold compile on the first send.
     const emailTemplates = scanEmailTemplates();
-    if (emailTemplates.length > 0) {
-      logger.info(`[mochi:build] precompiling ${emailTemplates.length} email template(s): ${emailTemplates.join(', ')}`);
-      ssrEntrypoints.push(...emailTemplates);
-    }
+    ssrEntrypoints.push(...emailTemplates);
 
     if (ssrEntrypoints.length > 0) {
       await timed('pages', () => registry.compileAll(ssrEntrypoints, { deferClientBundle: true }));
@@ -242,7 +241,7 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     registry.flushBarrelWarnings();
 
     allRoutes.sort((a, b) => a.pattern.localeCompare(b.pattern, undefined, { numeric: true }));
-    printRouteTree(allRoutes, compileStats);
+    printBuildTree({ routes: allRoutes, errorPage: errorPagePath, emails: emailStats, stats: compileStats });
 
     // After finalizeClientBundle() above, so assets the client pass emitted are
     // in the map too (both passes share it, keyed by served URL).
@@ -330,52 +329,107 @@ function kindSymbol(kind: Exclude<RouteKind, 'page'>): string {
   }
 }
 
-function printRouteTree(routes: RouteEntry[], stats: Map<string, { ssrSizeBytes: number; hydratableCount: number }>): void {
-  if (routes.length === 0) {
+interface TreeRow {
+  symbol: string;
+  /** Rendered with `:param` segments highlighted, so it must stay plain text until print time. */
+  label: string;
+  hyd: number | null;
+  ssr: string | null;
+}
+
+interface TreeGroup {
+  heading: string;
+  rows: TreeRow[];
+}
+
+function statRow(symbol: string, label: string, stats: BuildTreeInput['stats'], componentPath: string | undefined): TreeRow {
+  // `compile:complete` reports resolved absolute paths; route registrations and
+  // `errorPage` are whatever the user wrote (usually './src/X.svelte').
+  const s = componentPath ? stats.get(path.resolve(componentPath)) : undefined;
+  return { symbol, label, hyd: s?.hydratableCount ?? null, ssr: s ? prettyBytes(s.ssrSizeBytes) : null };
+}
+
+interface BuildTreeInput {
+  routes: RouteEntry[];
+  /** As passed to `Mochi.serve({ errorPage })`, or Mochi's built-in when unset — either way it lands in the manifest. */
+  errorPage: string;
+  emails: { file: string; ssrSizeBytes: number }[];
+  stats: Map<string, { ssrSizeBytes: number; hydratableCount: number }>;
+}
+
+/**
+ * Every SSR entrypoint the build produced, as one connected list: routes, then the error page, then email templates.
+ * The latter two are grouped separately because neither is reachable by URL — one renders on a throw, the other on a
+ * send — but they share the column widths and the legend so the whole thing reads as a single report.
+ */
+function printBuildTree({ routes, errorPage, emails, stats }: BuildTreeInput): void {
+  const routeRows = routes.map(({ pattern, kind, componentPath }) => {
+    const row = statRow('', pattern, stats, componentPath);
+    // A page's symbol depends on its hydratable count, so it can only be picked once the stats lookup has resolved.
+    return { ...row, symbol: kind === 'page' ? pageSymbol(row.hyd) : kindSymbol(kind), kind };
+  });
+
+  const groups: TreeGroup[] = [{ heading: 'Route', rows: routeRows }];
+  groups.push({ heading: 'Error page', rows: [statRow(styleText('yellow', '⚠'), encodeSourcePath(errorPage), stats, errorPage)] });
+  if (emails.length > 0) {
+    groups.push({
+      heading: 'Email template',
+      // `hyd: null` renders as `-` rather than `0`: an island in a template fails the build, so the column can't apply.
+      rows: emails.map((e) => ({ symbol: styleText('cyan', '✉'), label: e.file, hyd: null, ssr: prettyBytes(e.ssrSizeBytes) })),
+    });
+  }
+
+  const allRows = groups.flatMap((g) => g.rows);
+  if (allRows.length === 0) {
     return;
   }
 
-  const rows = routes.map(({ pattern, kind, componentPath }) => {
-    // `compile:complete` reports resolved absolute paths; route registrations
-    // are whatever the user wrote (usually './src/X.svelte').
-    const s = componentPath ? stats.get(path.resolve(componentPath)) : undefined;
-    return { pattern, kind, hyd: s?.hydratableCount ?? null, ssr: s ? prettyBytes(s.ssrSizeBytes) : null };
-  });
-
-  const patternWidth = Math.max('Route'.length, ...rows.map((r) => r.pattern.length));
+  const labelWidth = Math.max(...groups.map((g) => g.heading.length), ...allRows.map((r) => r.label.length));
   const islandsWidth = 'islands'.length;
-  const bundleWidth = Math.max('bundle'.length, ...rows.map((r) => r.ssr?.length ?? 0));
+  const bundleWidth = Math.max('bundle'.length, ...allRows.map((r) => r.ssr?.length ?? 0));
 
-  // "  ┌ ● " = 6 chars — header indent matches
-  console.log(styleText('dim', `      ${'Route'.padEnd(patternWidth + 2)}  ${'islands'.padStart(islandsWidth)}  ${'bundle'.padStart(bundleWidth)}`));
+  const n = allRows.length;
+  let i = 0;
+  for (const [groupIndex, group] of groups.entries()) {
+    if (groupIndex === 0) {
+      // "  ┌ ● " = 6 chars — header indent matches
+      console.log(styleText('dim', `      ${group.heading.padEnd(labelWidth + 2)}  ${'islands'.padStart(islandsWidth)}  ${'bundle'.padStart(bundleWidth)}`));
+    } else {
+      // The `│` keeps the run unbroken across the gap, so the groups read as sections of one list rather than as
+      // separate tables that happen to share a column layout.
+      console.log(styleText('dim', '  │'));
+      console.log(styleText('dim', `  │   ${group.heading}`));
+    }
 
-  const n = routes.length;
-  for (let i = 0; i < n; i++) {
-    const { pattern, kind, hyd, ssr } = rows[i]!;
-    const char = styleText('dim', n === 1 ? '─' : i === 0 ? '┌' : i === n - 1 ? '└' : '├');
-    const symbol = kind === 'page' ? pageSymbol(hyd) : kindSymbol(kind);
-    const coloredPattern = pattern.padEnd(patternWidth + 2).replace(/:[^/\s]+/g, (s: string) => styleText('cyan', s));
-    const isPage = kind === 'page';
-    const hydStr = isPage && hyd != null ? styleText('green', String(hyd).padStart(islandsWidth)) : styleText('dim', '-'.padStart(islandsWidth));
-    const ssrStr = isPage && ssr != null ? styleText('dim', ssr.padStart(bundleWidth)) : styleText('dim', '-'.padStart(bundleWidth));
-    console.log(`  ${char} ${symbol} ${coloredPattern}  ${hydStr}  ${ssrStr}`);
+    for (const { symbol, label, hyd, ssr } of group.rows) {
+      const char = styleText('dim', n === 1 ? '─' : i === 0 ? '┌' : i === n - 1 ? '└' : '├');
+      const coloredLabel = label.padEnd(labelWidth + 2).replace(/:[^/\s]+/g, (s: string) => styleText('cyan', s));
+      const hydStr = hyd != null ? styleText('green', String(hyd).padStart(islandsWidth)) : styleText('dim', '-'.padStart(islandsWidth));
+      const ssrStr = styleText('dim', (ssr ?? '-').padStart(bundleWidth));
+      console.log(`  ${char} ${symbol} ${coloredLabel}  ${hydStr}  ${ssrStr}`);
+      i++;
+    }
   }
 
   const legendEntries: string[] = [];
-  if (rows.some((r) => r.kind === 'page' && r.hyd != null && r.hyd > 0)) {
+  if (routeRows.some((r) => r.kind === 'page' && r.hyd != null && r.hyd > 0)) {
     legendEntries.push(`${styleText('green', '●')} page with islands`);
   }
-  if (rows.some((r) => r.kind === 'page' && (r.hyd === null || r.hyd === 0))) {
+  if (routeRows.some((r) => r.kind === 'page' && (r.hyd === null || r.hyd === 0))) {
     legendEntries.push(`${styleText('cyan', '○')} ssr-only page`);
   }
-  if (rows.some((r) => r.kind === 'api')) {
+  if (routeRows.some((r) => r.kind === 'api')) {
     legendEntries.push(`${styleText('magenta', 'λ')} api`);
   }
-  if (rows.some((r) => r.kind === 'ws')) {
+  if (routeRows.some((r) => r.kind === 'ws')) {
     legendEntries.push(`${styleText('blue', '⇄')} websocket`);
   }
-  if (rows.some((r) => r.kind === 'sse')) {
+  if (routeRows.some((r) => r.kind === 'sse')) {
     legendEntries.push(`${styleText('green', '→')} sse`);
+  }
+  legendEntries.push(`${styleText('yellow', '⚠')} error page`);
+  if (emails.length > 0) {
+    legendEntries.push(`${styleText('cyan', '✉')} email template`);
   }
   console.log(`\n  ${legendEntries.join(styleText('dim', '  ·  '))}`);
 }

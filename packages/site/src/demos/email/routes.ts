@@ -16,7 +16,7 @@ export const routes: Record<string, MochiRouteValue> = {
           from: 'Mochi Demo <noreply@mochi.demo>',
           to: DEMO_TO,
           subject: preset.subject,
-          component: './src/demos/email/PresetEmail.svelte',
+          component: './src/emails/PresetEmail.svelte',
           props: { preset: preset.id, name: 'Ada' },
         });
         return success({ preset: preset.id, subject: preset.subject });
@@ -30,7 +30,7 @@ export const routes: Record<string, MochiRouteValue> = {
           from: 'Mochi Demo <noreply@mochi.demo>',
           to: DEMO_TO,
           subject: ATTACHMENT.subject,
-          component: './src/demos/email/AttachmentEmail.svelte',
+          component: './src/emails/AttachmentEmail.svelte',
           props: { name: 'Ada', filename: ATTACHMENT.filename },
           attachments: [{ filename: ATTACHMENT.filename, content, contentType: ATTACHMENT.contentType }],
         });
