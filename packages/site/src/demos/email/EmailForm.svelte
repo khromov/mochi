@@ -1,14 +1,12 @@
 <script lang="ts">
-  import { enhance, isServer, getRequestContext } from 'mochi-framework';
+  import { enhance, isServer, getRequestContext, isHydratable } from 'mochi-framework';
   import type { MochiEnhanceOptions, MochiSubmitFunction } from 'mochi-framework';
   import { EMAIL_PRESETS, DEMO_TO } from './presets.ts';
 
-  let { isHydratable }: { isHydratable?: boolean } = $props();
-
+  const hydratable = isHydratable();
   // For SSR-only (plain HTML) renders, read the form action result so the
   // confirmation / error survives the page re-render after a POST.
-  // svelte-ignore state_referenced_locally
-  const _form = !isHydratable && isServer ? getRequestContext().form : null;
+  const _form = !hydratable && isServer ? getRequestContext().form : null;
   const _sentSubject = _form?.ok && typeof _form.data?.subject === 'string' ? _form.data.subject : null;
   const _failError = _form && !_form.ok && typeof _form.data?.error === 'string' ? _form.data.error : null;
 
@@ -48,11 +46,11 @@
 
 {#if sentSubject}
   <div class="sent">
-    <p>✅ Sent <strong>“{sentSubject}”</strong> to {DEMO_TO}.{isHydratable ? ' No page reload happened.' : ''}</p>
+    <p>✅ Sent <strong>“{sentSubject}”</strong> to {DEMO_TO}.{hydratable ? ' No page reload happened.' : ''}</p>
     <p>
       <a class="outbox-link" href="/_mochi/email" target="_blank" rel="noopener">View it in the dev outbox →</a>
     </p>
-    {#if isHydratable}
+    {#if hydratable}
       <button type="button" class="send-another" onclick={reset}>Send another</button>
     {:else}
       <!-- No JS in the plain version: a normal link back to the page drops the

@@ -32,6 +32,20 @@ Names use a `namespace:camelCase` convention. Each name is registered in a typed
 - **Hooks** run a user function at a specific framework moment. No return value — observation or side effects only.
 - **Filters** replace a framework default value. The callback receives the existing value and returns the new one.
 
+### Server-only
+
+The registry lives in the server process and nowhere else. It is never shipped to the browser, so there is no client-side hook or filter — a filter that ran there would find an empty registry and hand back the framework default, silently undoing whatever you configured.
+
+Mochi refuses to let that happen quietly. Pulling the modules behind the registry into a client bundle fails the build, naming the import:
+
+```
+[mochi] src/extensions.ts is server-only (hooks and filters) but was pulled into the
+client bundle by src/lib/Widget.svelte. Move the client-facing part into its own
+module, or import it with `import type`.
+```
+
+The same applies to the `Mochi.serve()` config singleton and the [request context](/docs/request-context/). To use a filtered value inside a hydratable island, resolve it during SSR and pass it down as a prop.
+
 ### Hooks
 
 #### `mochi:init`
@@ -325,6 +339,8 @@ await Mochi.serve({
 
 Default is `[]`. Preprocessors do not currently apply to `.md` / `.svx` files (mdsvex handles those itself).
 
+`<script lang="ts">` blocks are transpiled to JavaScript by Bun automatically (before compilation, and after any preprocessors you register here run), so you don't need a TypeScript preprocessor — register one only for other transforms (PostCSS, Sass, etc.). This built-in TS pass also covers `.md` / `.svx` files, even though user preprocessors don't apply there.
+
 #### `publicDir:scan`
 
 Modify the `Map<urlPath, diskPath>` of files served from the public directory. The filter receives a fresh copy after each scan (initial startup + every dev-mode `public/` change), so in-place mutation is safe. Use it to add virtual files, shadow built-in routes, or rename URLs. Async.
@@ -401,6 +417,34 @@ Context fields:
 }
 ```
 
+#### `barrel:warn`
+
+Mutate or drop a [barrel-import warning](/docs/development-mode) before it's logged. The first argument is the rendered warning string; the second is a structured context describing the offending dependency. Return the string to log it, a rewritten string to substitute, or `null` to suppress it. Sync.
+
+This is the programmatic escape hatch for silencing logic richer than the static `barrelWarnings: { ignore }` list — e.g. suppress only below a size, or only outside CI.
+
+```ts
+await Mochi.serve({
+  filters: {
+    // Drop the warning for one package, rewrite the rest:
+    'barrel:warn': (line, { pkg, bytes }) => {
+      if (pkg === '@lucide/svelte') return null;
+      return `${line} (${Math.round(bytes / 1024)} KB parsed)`;
+    },
+  },
+  routes,
+});
+```
+
+Context fields:
+
+- `pkg` — the offending package, e.g. `'@lucide/svelte'`.
+- `file` — the large re-export file pulled into the graph, relative to its package.
+- `bytes` — parsed size of `file`.
+- `usedRatio` — fraction of `bytes` that survived tree-shaking into the bundle (≈ 0 for a barrel).
+
+The filter runs once per package, in both dev and production builds. In a build the per-package line isn't logged directly — it's collapsed into one grouped summary — but the filter still runs per package, so returning `null` excludes that package from the grouped count. See [Development mode](/docs/development-mode) for the `barrelWarnings` config knobs.
+
 #### `image:maxRedirects`
 
 Override how many upstream redirects the image fetcher will follow when resolving a source. Each hop is re-validated against `allowedHosts` / `blockPrivateNetworks` (an allowed host can't redirect into a private network), so this caps how long that chain may be. The default is `5`; return a smaller number to tighten it, `0` to reject any redirect, or a larger number for sources behind several hops. The `src` being fetched is in the context, so you can decide per-host. Sync.
@@ -455,7 +499,7 @@ Widening the regex only decides which files reach the loader — each is still d
 
 #### `image:localAssetFilename`
 
-Rename the content-hashed file a local image import emits under `<outDir>/assets/`. The default is `<slug>-<hash>.<ext>`; the context carries the `sourcePath`, `hash`, `ext`, `format`, and intrinsic `width`/`height`. The filter runs in **both** build passes, so it must be deterministic — a non-deterministic name would make the SSR and client bundles disagree on the URL. Keep the result a single path segment (the built-in `/asset/:filename` route serves one segment). Sync.
+Rename the content-hashed file a local image import emits under `<outDir>/assets/`. The default is `<slug>-<hash>.<ext>`; the context carries the `sourcePath`, `hash`, `ext`, `format`, and intrinsic `width`/`height`. The filter runs in **both** build passes, so it must be deterministic — a non-deterministic name would make the SSR and client bundles disagree on the URL. The result must be a bare filename: it renames the asset, it can't move it. A path separator or `..` throws a build error — use `image:localAssetUrl` to change where the asset is served from. Sync.
 
 ```ts
 await Mochi.serve({
@@ -515,6 +559,22 @@ Return `null` to veto — the message never reaches a transport (nothing is deli
 
 A suppressed send still emits an `email:sent` event with `transport: 'suppressed'` (and `consoleLogger()` prints it as a `MAIL … suppressed (filtered)` line), so blocked mail stays observable. `Mochi.email()` resolves to `{ transport: 'suppressed' }` in that case.
 
+#### `captcha:bits`
+
+Proof-of-work difficulty in leading zero bits, resolved once at startup alongside the rest of the captcha options. The context carries the raw `captcha` options and `configured` — false when the incoming value is the framework default (`DEFAULT_CAPTCHA_BITS`, 19) rather than the app's own `bits`. The result is bounds-checked exactly like the option, so a filter returning something outside 1–32 throws at boot rather than minting tokens no widget can solve. Sync.
+
+Each extra bit doubles the expected work, so this is a cost dial rather than a latency one — see [`captcha:minAgeMs`](#captchaminagems) for why it can't enforce that a submission took human time.
+
+```ts
+await Mochi.serve({
+  filters: {
+    // Lean on the environment instead of hardcoding a test-only difficulty.
+    'captcha:bits': (def) => (process.env.NODE_ENV === 'test' ? 8 : def),
+  },
+  routes,
+});
+```
+
 #### `captcha:minAgeMs`
 
 The captcha timing floor — a token younger than this is refused. Applied per token, so the floor can vary by form. The context carries the `bits` sealed into the token, its measured `ageMs`, and `limitMs` (the expiry bound the returned floor must stay under). Returning a value at or above `limitMs`, or a negative one, throws — it would reject every token. Sync.
@@ -549,6 +609,24 @@ await Mochi.serve({
 
 The allowance only ever widens the **expiry** side, and is deliberately not applied to `minAgeMs`. Padding a floor means subtracting from it, so an allowance wider than the floor would silently delete the too-fast check rather than soften it — leaving a config that still reads like it enforces a 2s floor while accepting instant submissions. Use `captcha:minAgeMs` to move the floor, so the change is explicit.
 
+#### `captcha:solveBudgetMs`
+
+How long the widget spends _actively_ solving a proof-of-work before it gives up and offers a retry. Resolved once alongside the rest of the captcha options — how patient the app is doesn't vary per request — and handed to the widget through `mintCaptcha()`, so `{...captcha}` carries it. `bits` is the resolved difficulty, filter included, since the budget has to cover the work it implies. Sync. Defaults to `60_000`.
+
+```ts
+await Mochi.serve({
+  filters: {
+    // A three-field form isn't worth a minute of someone's phone: fail fast and let them retry.
+    'captcha:solveBudgetMs': () => 20_000,
+  },
+  routes,
+});
+```
+
+The value must be a positive finite number — anything else throws at startup rather than leaving every widget to give up instantly. One form that wants its own bound sets the [`solveBudgetMs`](/docs/captcha/#props) prop instead, which wins over whatever this returns.
+
+It is a client-side patience bound only: it isn't sealed into the token and nothing verifies against it, so lowering it never rejects a submission that would otherwise have passed — it only decides when a slow device stops trying.
+
 #### `queue:recoveryStallWarningMs`
 
 How long a queue's [`recover`](/docs/queues/#recovery-on-start) callback may run before Mochi logs a warning naming it. Resolved once per queue that declares one, as its recovery starts, so a queue reading a slow store can be given more room than its siblings. Sync.
@@ -567,3 +645,22 @@ await Mochi.serve({
 ```
 
 Return `0` to silence the warning for a queue entirely — no timer is scheduled at all.
+
+#### `queue:lockDurationMs`
+
+How long a job may run before its queue reclaims it. Resolved once per queue as it is created, after the per-queue [`lockDuration`](/docs/queues/#long-running-jobs) option — `explicit` says whether the incoming value came from that option rather than the framework default, so a blanket filter can leave queues that chose for themselves alone. Sync. Defaults to `1_800_000` (30 minutes), which is also the ceiling: returning more does not let a job run longer.
+
+```ts
+await Mochi.serve({
+  filters: {
+    // Nothing here should ever hold a job for half an hour; queues that set their own value keep it.
+    'queue:lockDurationMs': (value, { explicit }) => (explicit ? value : 5 * 60_000),
+  },
+  queues,
+  routes,
+});
+```
+
+The returned value must exceed the **worst case** runtime of `process`. Set it too low and a job is re-queued while still running, its eventual success rejected as `Invalid or expired lock token` — the work is reported failed despite having succeeded, and is then either retried or dropped.
+
+This filter is the last word on the lock: unlike every other queue setting, a `lockDuration` passed through the raw [`bunqueue`](/docs/queues/#advanced-options) escape hatch doesn't override it — that value arrives as the incoming `value` with `explicit: true`, exactly like the first-class option.

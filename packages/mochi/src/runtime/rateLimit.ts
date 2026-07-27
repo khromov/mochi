@@ -8,12 +8,10 @@ import { getRequestContext } from './requestContext';
 import type { MochiRequestContext } from './requestContext';
 
 /**
- * Mochi's request context, passed as the second argument to a rate-limit
- * `key` / `tier` / `skip` / `group` callback — the same object `getRequestContext()`
- * returns. Populated at limiter time: `getClientAddress()` (proxy-aware IP),
- * `cookies`, `params`, `url`, `request`. Note `locals` reflects only what ran
- * *before* the limiter — `handle` middleware runs after it, so derive identity
- * from the request (a session cookie / header) rather than a middleware-set local.
+ * The second argument to a rate-limit `key` / `tier` / `skip` / `group` callback — the same object `getRequestContext()`
+ * returns, with `getClientAddress()`, `cookies`, `params`, `url`, and `request` populated at limiter time. `locals`
+ * reflects only what ran before the limiter, since `handle` middleware runs after it, so derive identity from the
+ * request itself — a session cookie or header.
  */
 export type MochiRateLimitContext = MochiRequestContext;
 
@@ -22,10 +20,8 @@ export type MochiRateLimitTier = (req: Request, ctx: MochiRateLimitContext) => s
 export type MochiRateLimitSkip = (req: Request, ctx: MochiRateLimitContext) => boolean | Promise<boolean>;
 export type MochiRateLimitGroup = (req: Request, ctx: MochiRateLimitContext) => string | Promise<string>;
 
-// The types below mirror @joint-ops/hitlimit-bun's shapes but are owned by Mochi:
-// the public API never references hitlimit types directly, so the backing library
-// can be swapped without breaking consumers. Structural typing keeps them
-// interchangeable at the shim boundary.
+// These mirror @joint-ops/hitlimit-bun's shapes but are owned by Mochi, so the backing library can be swapped without
+// breaking consumers; structural typing keeps them interchangeable at the shim boundary.
 
 /** Limiter state for one request: quota, usage, and reset timing. */
 export interface MochiRateLimitInfo {
@@ -90,10 +86,9 @@ export type MochiRateLimitStoreErrorHandler = (error: Error, req: Request) => 'a
 export type MochiRateLimitResponseFormatter = (info: MochiRateLimitInfo) => Record<string, unknown>;
 
 /**
- * Per-route / global rate-limit options — a mirror of hitlimit's `HitLimitOptions`
- * minus `logger` (Mochi has its own logging) and the deprecated `sqlitePath`. The
- * `key` / `tier` / `skip` / `group` callbacks additionally receive Mochi's request
- * context as a second argument (see `MochiRateLimitContext`).
+ * Per-route and global rate-limit options, mirroring hitlimit's `HitLimitOptions` apart from `logger` and the deprecated
+ * `sqlitePath`. The `key` / `tier` / `skip` / `group` callbacks also receive Mochi's request context as a second
+ * argument — see `MochiRateLimitContext`.
  */
 export interface MochiRateLimitOptions {
   limit?: number;
@@ -185,10 +180,9 @@ export interface RouteLimiter {
   ownsStore: boolean;
 }
 
-// Replica of hitlimit-bun's unexported parseWindow/resolveConfig (dist/index.js,
-// v1.5.0 — the dep is pinned; re-verify on bumps). checkLimit() requires a fully
-// resolved config, and only the low-level checkLimit exposes info/headers for
-// allowed requests (needed for success headers + ctx.rateLimit).
+// Replica of hitlimit-bun's unexported parseWindow/resolveConfig (dist/index.js, v1.5.0 — the dep is pinned, re-verify
+// on bumps). `checkLimit()` needs a fully resolved config, and it alone exposes info/headers for allowed requests, which
+// success headers and `ctx.rateLimit` both need.
 const WINDOW_UNITS: Record<string, number> = { s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 };
 
 function parseWindow(window: string | number): number {
@@ -203,12 +197,10 @@ function parseWindow(window: string | number): number {
 }
 
 /**
- * `autoGroup` namespaces this limiter's stored keys behind a `group:<autoGroup>:`
- * prefix (see hitlimit's `resolveKey`) so counters can't collide with another
- * route sharing the same persisted store. Mochi passes the route pattern for a
- * route's *own* `rateLimit` config; the shared global limiter passes nothing, so
- * routes inheriting it keep sharing one bucket. An explicit `group` always wins —
- * set it to opt back into cross-route sharing.
+ * `autoGroup` namespaces this limiter's stored keys behind a `group:<autoGroup>:` prefix (hitlimit's `resolveKey`), so
+ * counters stay separate from another route on the same persisted store. Mochi passes the route pattern for a route's
+ * own `rateLimit` config, while the shared global limiter passes nothing and its routes share one bucket. An explicit
+ * `group` wins, and is how you opt back into cross-route sharing.
  */
 export function createRouteLimiter(options: MochiRateLimitOptions, autoGroup?: string): RouteLimiter {
   const store = options.store ?? memoryStore();
@@ -218,12 +210,10 @@ export function createRouteLimiter(options: MochiRateLimitOptions, autoGroup?: s
   const userGroup = options.group;
   // The group that namespaces stored keys, when it's knowable without a request.
   const staticGroup = typeof userGroup === 'function' ? null : (userGroup ?? autoGroup ?? null);
-  // hitlimit's KeyGenerator only receives the Request, but Mochi's callbacks take a
-  // second argument — the request context. The limiter always runs inside
-  // `requestContext.run()` (see checkRouteLimit in Mochi.ts), so the wrappers read
-  // the ambient context with getRequestContext() and forward it. The default key
-  // instead needs Mochi's proxy-aware client address, which the caller resolves with
-  // the server in hand; check() stashes it per-Request and the generator reads it back.
+  // hitlimit's KeyGenerator receives only the Request while Mochi's callbacks take the request context too, so the
+  // wrappers read it via `getRequestContext()` — safe because the limiter always runs inside `requestContext.run()`.
+  // The default key needs Mochi's proxy-aware client address, which the caller resolves with the server in hand, so
+  // `check()` stashes it per-Request for the generator to read back.
   const addressKeys = new WeakMap<Request, string>();
   const resolved: ResolvedConfig<Request> = {
     limit: options.limit ?? DEFAULT_LIMIT,
@@ -246,15 +236,12 @@ export function createRouteLimiter(options: MochiRateLimitOptions, autoGroup?: s
   return {
     store,
     ownsStore: !options.store,
-    // Stored keys are namespaced `group:<id>:<key>` when a group applies (see
-    // hitlimit's resolveKey), so reset must target the qualified key. With a
-    // dynamic `group` callback the namespace is per-request and unknowable here —
-    // callers must pass the fully qualified stored key themselves.
+    // Stored keys are namespaced `group:<id>:<key>` when a group applies, so reset must target the qualified key. Under
+    // a dynamic `group` callback the namespace is per-request and unknowable here, so callers pass the full stored key.
     reset: (key) => store.reset(staticGroup === null ? key : `group:${staticGroup}:${key}`),
     async check(req, getClientAddress) {
-      // checkLimit() doesn't apply skip/onStoreError — those live in hitlimit's
-      // wrappers, so the shim replicates their semantics (skip → bypass; store
-      // error → 'allow' bypasses, 'deny' blocks without limit info).
+      // skip/onStoreError live in hitlimit's wrappers rather than `checkLimit()`, so the shim replicates their
+      // semantics: skip bypasses, and a store error either bypasses ('allow') or blocks without limit info ('deny').
       if (resolved.skip && (await resolved.skip(req))) {
         return { kind: 'skip' };
       }

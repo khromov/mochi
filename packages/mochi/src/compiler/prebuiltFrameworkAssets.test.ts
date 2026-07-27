@@ -13,8 +13,6 @@ import type { Server } from 'bun';
 import { build } from '../cli/build';
 import { Mochi } from '../Mochi';
 import { mochiEvents } from '../events';
-import { DEFAULT_ERROR_PAGE_PATH } from '../runtime/errors';
-import { CLIENT_STATS_COMPONENT } from '../dev/clientStatsRoutes';
 import { buildInlineWebComponent } from './buildInlineWebComponent';
 import type { MochiManifest } from '../types';
 
@@ -36,16 +34,21 @@ describe('build bakes framework assets into the manifest', () => {
 
   test('B1: manifest references a prebuilt ServerIsland script that exists and matches the live build', async () => {
     expect(manifest.serverIslandScript).toBeString();
-    const diskPath = path.resolve(manifest.serverIslandScript!);
+    const diskPath = path.resolve(outDir, manifest.serverIslandScript!);
     expect(await Bun.file(diskPath).exists()).toBe(true);
     const baked = await Bun.file(diskPath).text();
     expect(baked.length).toBeGreaterThan(0);
     expect(baked).toBe(await buildInlineWebComponent('./web-components/ServerIsland.ts'));
   });
 
+  // Keyed by the literal `$mochi/` sentinel rather than by `encodeSourcePath()`
+  // — computing the expectation with the function under test would assert
+  // nothing. The framework's own components must key off the *framework* root,
+  // since `src/` sits somewhere different in a workspace checkout, a plain
+  // node_modules install, and Bun's versioned store.
   test('B2: the framework error page + client-stats page are in manifest.components', () => {
-    expect(manifest.components[DEFAULT_ERROR_PAGE_PATH]).toBeDefined();
-    expect(manifest.components[CLIENT_STATS_COMPONENT]).toBeDefined();
+    expect(manifest.components['$mochi/templates/DefaultError.svelte']).toBeDefined();
+    expect(manifest.components['$mochi/templates/ClientStats/ClientStats.svelte']).toBeDefined();
   });
 
   test('booting from the manifest compiles nothing and inlines the prebuilt server-island script', async () => {

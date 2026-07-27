@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { ComponentRegistry, formatCompileErrors, type MochiCompileError } from './ComponentRegistry';
+import { encodeSourcePath } from './manifestPaths';
 import { requestContext } from '../runtime/requestContext';
 import type { MochiRequestContext } from '../runtime/requestContext';
 import { MochiCookieJar } from '../runtime/cookies';
@@ -93,7 +94,7 @@ describe('formatCompileErrors for unresolved islands', () => {
 describe('named-export islands', () => {
   const PAGE = path.join(import.meta.dir, '..', '__fixtures__', 'named-island', 'Page.svelte');
   const BARREL = path.join(import.meta.dir, '..', '__fixtures__', 'named-island', 'Barrel.svelte');
-  const islandKey = `Inner_${Bun.hash(`${BARREL}#Inner`).toString(36)}`;
+  const islandKey = `Inner_${Bun.hash(`${encodeSourcePath(BARREL)}#Inner`).toString(36)}`;
   let outDir: string;
   let registry: ComponentRegistry;
 

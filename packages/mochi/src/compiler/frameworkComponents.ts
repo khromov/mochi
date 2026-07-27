@@ -3,16 +3,12 @@ import path from 'node:path';
 import { parse } from 'svelte/compiler';
 
 /**
- * Resolves the framework's own public components (`mochi-framework/components`)
- * to the on-disk `.svelte` files they re-export, so a `mochi:*` directive can
- * sit directly on a package import (`<MochiCaptcha mochi:hydrate />`) with no
- * local wrapper — the island preprocessor only knows how to resolve relative
- * paths, and this bridges the barrel's named exports to those paths.
+ * Resolves the framework's own public components (`mochi-framework/components`) to the on-disk `.svelte` files they
+ * re-export, bridging the barrel's named exports to the relative paths the island preprocessor understands — so a
+ * `mochi:*` directive can sit straight on a package import (`<MochiCaptcha mochi:hydrate />`).
  *
- * The mapping is read from the *actual* barrel next to this file rather than a
- * hardcoded list, so it can never drift from what a given `mochi-framework`
- * version ships — whether resolved in-repo (workspace symlink) or from
- * `node_modules` in a published consumer.
+ * The mapping is read from the actual barrel next to this file rather than a hardcoded list, so it can't drift from what
+ * a given `mochi-framework` version ships, in-repo through a workspace symlink or from a consumer's `node_modules`.
  */
 
 /** The specifier a directive may target to reach a framework component. */
@@ -46,12 +42,9 @@ function parseBarrel(): Map<string, FrameworkComponent> {
     return map;
   }
   const barrelDir = path.dirname(BARREL_PATH);
-  // Reuse Svelte's own (acorn-typescript) parser for a real AST instead of
-  // pattern-matching the source: wrap the barrel in a module script so its
-  // `export { … } from '…'` re-exports parse as `ExportNamedDeclaration` nodes.
-  // For each specifier, `local` is the export name in the source file
-  // (`default` for `export { default as X }`) and `exported` is the name the
-  // barrel — and therefore a `mochi-framework/components` import — exposes.
+  // Svelte's own acorn-typescript parser yields a real AST where pattern-matching the source would guess: wrapping the
+  // barrel in a module script makes its `export { … } from '…'` re-exports parse as `ExportNamedDeclaration` nodes. Per
+  // specifier, `local` is the export name in the source file and `exported` the name the barrel exposes.
   const ast = parse(`<script module lang="ts">\n${source}\n</script>`, { modern: true });
   for (const node of ast.module?.content.body ?? []) {
     if (node.type !== 'ExportNamedDeclaration' || !node.source || typeof node.source.value !== 'string') {
@@ -71,11 +64,7 @@ function parseBarrel(): Map<string, FrameworkComponent> {
   return map;
 }
 
-/**
- * Resolve a `mochi-framework/components` named export to its underlying file, or
- * `null` if the barrel exports no such component (a typo or a non-component
- * export — left to fall through to the normal unresolved-island compile error).
- */
+/** Resolve a `mochi-framework/components` named export to its underlying file, or `null` for a typo or non-component export, which falls through to the usual unresolved-island compile error. */
 export function resolveFrameworkComponent(exportName: string): FrameworkComponent | null {
   cache ??= parseBarrel();
   return cache.get(exportName) ?? null;
