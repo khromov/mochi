@@ -159,6 +159,7 @@ function mergeResolveOptions(parent: MochiResolveOptions, child?: MochiResolveOp
   return merged;
 }
 
+/** Apply merged `MochiResolveOptions` to a Response: `transformPage` rewrites an HTML body, `filterResponseHeaders` drops the headers it rejects. */
 export async function applyResolveOptions(response: Response, opts: MochiResolveOptions | undefined): Promise<Response> {
   if (!opts) {
     return response;

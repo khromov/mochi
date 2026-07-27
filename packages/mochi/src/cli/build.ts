@@ -24,21 +24,21 @@ export interface MochiBuildOptions {
   outDir?: string;
   /** Static assets directory (cwd-relative). Default: `./public`. */
   publicDir?: string;
-  /** Baked into the prebuilt manifest so the runtime server uses the same value. See `MochiServeOptions['assetPrefix']`. */
+  /** Baked into the prebuilt manifest so the runtime server uses the same value. Default: `/_mochi`. See `MochiServeOptions['assetPrefix']`. */
   assetPrefix?: string;
-  /** See `MochiServeOptions['svelteConfigPath']`. */
+  /** Path to a Svelte config file (cwd-relative or absolute). Default: `./svelte.config.js`. See `MochiServeOptions['svelteConfigPath']`. */
   svelteConfigPath?: string;
-  /** Mirror the value passed to `Mochi.serve({ svelteCompiler })`. See `MochiServeOptions['svelteCompiler']`. */
+  /** Mirror the value passed to `Mochi.serve({ svelteCompiler })`. Default: `'svelte'`. See `MochiServeOptions['svelteCompiler']`. */
   svelteCompiler?: MochiSvelteCompiler;
-  /** Mirror the value passed to `Mochi.serve({ markdown })` so the prebuild and the runtime share one pipeline. See `MochiServeOptions['markdown']`. */
+  /** Mirror the value passed to `Mochi.serve({ markdown })` so the prebuild and the runtime share one pipeline. Omit to leave markdown unhandled. See `MochiServeOptions['markdown']`. */
   markdown?: MarkdownConfig;
-  /** Mirror the value passed to `Mochi.serve({ optimize })` so the prebuilt manifest and the runtime agree. See `MochiServeOptions['optimize']`. */
+  /** Mirror the value passed to `Mochi.serve({ optimize })` so the prebuilt manifest and the runtime agree. Default: `false`. See `MochiServeOptions['optimize']`. */
   optimize?: boolean | MochiSvelteShakerOptions;
-  /** Mirror the value passed to `Mochi.serve({ barrelWarnings })`; a build collapses offenders into one grouped summary line. See `MochiServeOptions['barrelWarnings']`. */
+  /** Mirror the value passed to `Mochi.serve({ barrelWarnings })`; a build collapses offenders into one grouped summary line. Default: enabled. See `MochiServeOptions['barrelWarnings']`. */
   barrelWarnings?: boolean | MochiBarrelWarningOptions;
-  /** Mirror the value passed to `Mochi.serve({ errorPage })` so it lands in the manifest and the runtime skips compiling it at startup. */
+  /** Mirror the value passed to `Mochi.serve({ errorPage })` so it lands in the manifest and the runtime skips compiling it at startup. Default: Mochi's built-in error page. */
   errorPage?: string;
-  /** Mirror the value passed to `Mochi.serve({ build: { resources } })`. See `MochiBuildReportOptions['resources']`. */
+  /** Mirror the value passed to `Mochi.serve({ build: { resources } })`. Default: enabled. See `MochiBuildReportOptions['resources']`. */
   resources?: boolean;
 }
 

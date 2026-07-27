@@ -71,6 +71,7 @@ export interface ImageDebugEntry {
   params: Record<string, unknown>;
   /** Defaults to `'url'`. */
   kind?: 'url' | 'inline';
+  /** The named size applied, if any — absent for the full-size original. */
   size?: string;
   local?: boolean;
   /** Project-relative path of a local import, so the bar can show `src/…/hero.jpg` in place of the content-hashed served filename. */
@@ -92,7 +93,9 @@ export interface DebugBarData {
   liveReloadEnabled?: boolean;
   /** Compile check + Svelte render + HTML processing, in milliseconds. */
   ssrDurationMs?: number;
+  /** Framework JS bundles injected for this page: bootstrap, island entries, shared chunks. */
   bundles?: BundleInfo[];
+  /** Images produced via `getImageUrl()` / `<Image>` / `getImage()` during this request, with decoded params. */
   images?: ImageDebugEntry[];
   requestCache?: RequestCacheStats;
   /** Decoded server-island props keyed by the encrypted `signed-props` token, since the client sees only the opaque token. */

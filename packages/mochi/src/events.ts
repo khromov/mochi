@@ -202,6 +202,7 @@ export interface MochiQueueFailedEvent {
   jobName: string;
   attempt: number;
   duration: number;
+  /** Message of the error the processor threw. */
   error: string;
 }
 
@@ -228,6 +229,7 @@ export interface MochiEmailErrorEvent {
   bcc?: string[];
   subject: string;
   transport: MochiEmailResult['transport'];
+  /** Message of the error the transport threw. */
   error: string;
 }
 
