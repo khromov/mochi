@@ -19,7 +19,7 @@
   <h3>With <code>{'{@attach enhance(...)}'}</code></h3>
   <RandomRoll label="The enhance attachment fills the input via fetch + JSON, no reload" mochi:hydrate />
   <h3>Plain HTML</h3>
-  <RandomRoll label="Full HTML POST, page re-renders, RandomRoll reads the value from the request's form snapshot via !isHydratable && isServer" />
+  <RandomRoll label="Full HTML POST, page re-renders, RandomRoll reads the value from the request's form snapshot via !isHydratable() && isServer" />
 </DemoPage>
 
 <style>

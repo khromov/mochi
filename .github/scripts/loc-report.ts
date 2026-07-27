@@ -88,6 +88,11 @@ const PACKAGES: Package[] = [
     categories: [],
   },
   {
+    name: 'packages/minimal-rsvelte',
+    root: join(REPO_ROOT, 'packages', 'minimal-rsvelte'),
+    categories: [],
+  },
+  {
     name: 'packages/support',
     root: join(REPO_ROOT, 'packages', 'support'),
     categories: ['src/**/*.test.ts', 'src/admin/**', 'src/components/**', 'src/*.server.ts', 'src/{index,routes}.ts'],

@@ -67,6 +67,39 @@ export const mochiEvents = {
     );
   },
 };
+// The request cache is server-only, but an island's top-level code runs again
+// during hydration — so these degrade to uncached pass-through rather than
+// throwing and breaking the hydration pass. A one-time dev warning flags the
+// mismatch, since on the client they run uncached and see none of the server's
+// cached values (usually not what a hydrated component wants).
+let __warnedRequestCache = false;
+function __warnRequestCache(name) {
+  if (!DEV || __warnedRequestCache) return;
+  __warnedRequestCache = true;
+  devWarn(
+    name + " ran in the browser. The request cache is server-only; on the client it runs " +
+    "uncached and does not replay the server's values. Use it in server-only code or " +
+    "non-hydrated islands, or Svelte's hydratable() to reuse a server value after hydration."
+  );
+}
+export function requestCache(_key, fn) { __warnRequestCache("requestCache()"); return fn(); }
+export function requestMemo(fn) {
+  return (...args) => { __warnRequestCache("requestMemo()"); return fn(...args); };
+}
+export function getRequestCache() {
+  __warnRequestCache("getRequestCache()");
+  const m = new Map();
+  return {
+    get: (k) => m.get(k),
+    set: (k, v) => { m.set(k, v); },
+    has: (k) => m.has(k),
+    delete: (k) => m.delete(k),
+    clear: () => { m.clear(); },
+    getOrSet: (k, fn) => (m.has(k) ? m.get(k) : (m.set(k, fn()), m.get(k))),
+    get size() { return m.size; },
+    stats: () => ({ hits: 0, misses: 0 }),
+  };
+}
 // MochiCache + storage adapters are server-only; ship stubs that throw so
 // accidental client imports surface clearly instead of failing the bundle.
 export class MochiCache { constructor() { __serverOnly("MochiCache"); } }
@@ -91,3 +124,7 @@ export function memoryStore() { __serverOnly("memoryStore()"); }
 export function sqliteStore() { __serverOnly("sqliteStore()"); }
 export function postgresStore() { __serverOnly("postgresStore()"); }
 export { enhance, deserialize } from "__MOCHI_ENHANCE_CLIENT__";
+// Constant by construction: client bundles are built only for islands, so
+// every component that executes in the browser is part of a hydrating (or
+// client-only mounting) subtree. No context lookup needed.
+export function isHydratable() { return true; }

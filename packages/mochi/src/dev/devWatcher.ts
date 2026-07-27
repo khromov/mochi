@@ -76,11 +76,9 @@ export interface DevWatcherDeps {
 }
 
 /**
- * Wire up the dev-mode file watcher: chokidar over the source tree, public
- * dir, and `svelte.config.js`. Saves are debounced (100 ms) and serialized
- * through a Promise chain so the live-reload signal only fires after client
- * chunks are ready. CSS edits take a fast-path that re-bundles imported CSS
- * without an SSR recompile; public-dir edits rescan and reload the route map.
+ * Wire up the dev-mode file watcher — chokidar over the source tree, public dir, and `svelte.config.js`. Saves debounce
+ * at 100ms and serialize through a Promise chain so the live-reload signal fires only once client chunks are ready. CSS
+ * edits take a fast path that re-bundles imported CSS without an SSR recompile; public-dir edits reload the route map.
  */
 export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
   const {
@@ -152,10 +150,8 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
     }
   };
 
-  // Serialize rebuilds through a Promise chain so the WebSocket reload only
-  // fires after client JS chunks are ready. If multiple saves arrive
-  // mid-rebuild, each is appended to the chain — the browser reloads once,
-  // into fresh chunks.
+  // Serializing rebuilds through a Promise chain holds the WebSocket reload until client JS chunks are ready; saves
+  // arriving mid-rebuild append to the chain, so the browser reloads once, into fresh chunks.
   let reloadChain: Promise<void> = Promise.resolve();
   const triggerReload = debounce((filename: string) => {
     reloadChain = reloadChain.then(async () => {
@@ -170,9 +166,8 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
         summary = await registry.recompileChanged(filename);
         if (summary.pages.size === 0) {
           const resolved = path.resolve(filename);
-          const componentPath = routeComponentPaths.get(resolved);
-          if (componentPath) {
-            await registry.compile(componentPath, { force: true });
+          if (routeComponentPaths.has(resolved)) {
+            await registry.compile(resolved, { force: true });
             summary = { pages: new Set([resolved]), clientBundleCount: 0 };
           }
         }
@@ -189,10 +184,8 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
         durationMs: performance.now() - start,
       });
       if (failed) {
-        // Rebuild threw before the affected set could be returned — we
-        // can't scope the reload, so broadcast so every tab refreshes
-        // and the error overlay (rendered into the next response from
-        // accumulated registry errors) surfaces.
+        // The rebuild threw before returning an affected set, leaving the reload unscopable, so every tab refreshes and
+        // the error overlay surfaces from the accumulated registry errors in the next response.
         notifyClients();
       } else if (summary.pages.size > 0) {
         notifyClients(summary.pages);
@@ -227,10 +220,9 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
     });
   }, 100);
 
-  // The HTML shell is read once at startup and isn't part of any page's Svelte
-  // dependency graph, so a generic recompile would report 0 affected pages and
-  // skip the reload. Re-read it and broadcast — every page may depend on the
-  // shell's styling/head/scripts, so all tabs reload.
+  // The HTML shell is read once at startup and sits outside every page's Svelte dependency graph, so a generic
+  // recompile would report 0 affected pages and skip the reload. Any page may depend on its styling, head, or scripts,
+  // so re-reading it reloads all tabs.
   const triggerShellReload = reloadShell
     ? debounce((filename: string) => {
         reloadChain = reloadChain.then(async () => {
@@ -254,11 +246,8 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
       }, 250)
     : undefined;
 
-  // --- Entry-based route HMR ---
-  // Build the entry module to discover its transitive deps. When a dep changes,
-  // rebuild and re-extract routes via extractServeOptions, then hot-swap
-  // handlers in place so the running server picks up route changes without a
-  // restart.
+  // Building the entry module discovers its transitive deps, so a dep change can rebuild, re-extract routes via
+  // `extractServeOptions`, and hot-swap handlers in place for the running server.
   let entryDeps: Set<string> = new Set();
   const entryBuildOutDir = path.resolve(`${outDir}/entry-hmr`);
 
@@ -294,10 +283,10 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
     }
     const freshRoutes = serveOptions.routes as Record<string, unknown>;
 
-    const newComponentPaths = new Map<string, string>();
+    const newComponentPaths = new Set<string>();
     for (const handler of Object.values(freshRoutes)) {
       if (isMochiPage(handler)) {
-        newComponentPaths.set(path.resolve(handler.componentPath), handler.componentPath);
+        newComponentPaths.add(path.resolve(handler.componentPath));
       }
     }
     routeComponentPaths = newComponentPaths;
@@ -306,7 +295,7 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
   }
 
   let knownEntryPatterns = new Set<string>();
-  let routeComponentPaths: Map<string, string> = new Map();
+  let routeComponentPaths: Set<string> = new Set();
 
   type DevRouteType = 'api' | 'ws' | 'sse' | 'page' | 'file' | null;
 
@@ -607,10 +596,8 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
         });
 
   const publicDirRel = path.relative(process.cwd(), path.resolve(publicDir));
-  // Rebuild from the same helpers the startup path uses, so the encoding and
-  // conflict rules can't diverge between the two. The reload always rescans the
-  // whole dir, so it doesn't need the changed path — logging happens per-event
-  // in the watcher handler below (a rename surfaces as remove-old + add-new).
+  // Rebuilding from the startup path's own helpers keeps the encoding and conflict rules from diverging. The reload
+  // rescans the whole dir, so the changed path is irrelevant here; the watcher handler below logs per event.
   let reloadPublic: (() => void) | undefined;
   if (existsSync(publicDir)) {
     reloadPublic = debounce(async () => {
@@ -666,10 +653,8 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
       let summary: { pages: Set<string>; clientBundleCount: number } = { pages: new Set(), clientBundleCount: 0 };
       try {
         registry.svelteConfig = await loadSvelteConfig(undefined, { reload: true, tempDir: outDir });
-        // A config reload can change the compiler options, markdown/mdsvex config,
-        // or user preprocessors. Only the compiler options are in the cache
-        // fingerprint, so the markdown/preprocessor cases need an explicit reset —
-        // without it those entries would serve output built under the old config.
+        // A config reload can change compiler options, markdown/mdsvex config, or user preprocessors, but only the
+        // first is in the cache fingerprint — so an explicit reset keeps the rest from serving old-config output.
         registry.compileCache.reset();
         summary = await registry.recompileAll();
       } catch (e) {

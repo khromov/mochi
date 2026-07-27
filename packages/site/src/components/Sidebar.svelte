@@ -133,7 +133,13 @@
         <a href="/blog/">Blog</a>
       </li>
       <li class="toc-item level-2">
-        <a href="/support/">Support</a>
+        <a href="/support">Support</a>
+      </li>
+      <li class="toc-item level-2">
+        <a href="/docs/changelog/">Changelog</a>
+      </li>
+      <li class="toc-item level-2">
+        <a href="/ci/">CI Status</a>
       </li>
     </ul>
 

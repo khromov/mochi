@@ -166,6 +166,17 @@ describe('image extension points', () => {
     expect(existsSync(asset!.diskPath)).toBe(true);
   });
 
+  test('image:localAssetFilename rejects anything that is not a bare filename', async () => {
+    const dir = mkdir();
+    const outDir = mkdir();
+    const fixture = writeFixture(dir, 'hero.png', PNG_40x30);
+    for (const bad of ['../../shared-cdn/hero.png', 'nested/hero.png', 'win\\hero.png', '..', '.', '']) {
+      initExtensions({ filters: { 'image:localAssetFilename': () => bad } });
+      const loader = createImageAssetLoader({ outDir, assetPrefix: '/_mochi', assets: new Map<string, LocalImageAsset>() });
+      await expect(loader({ path: fixture })).rejects.toThrow(/not a bare filename/);
+    }
+  });
+
   test('image:localAssetUrl rewrites the served src and the registry key', async () => {
     const dir = mkdir();
     const outDir = mkdir();

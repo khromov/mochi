@@ -1,18 +1,19 @@
 import { describe, expect, test } from 'bun:test';
 import path from 'node:path';
 import { preprocessHydratable } from './svelteAstPreprocess';
+import { encodeSourcePath } from './manifestPaths';
 
 const SCRIPT = (imports: string) => `<script>\n${imports}\n</script>\n`;
 
-// Mirror of the internal `islandIdentity()`: an island's `component-name`, its
-// registry keys, and its `__MOCHI_*__<id>__` placeholders are keyed by
-// `<localName>_<hash of resolved path>`, not the bare import name — so two
-// same-named components in different files can't collide to one registry entry.
-// Tests use fixture files under `/test`, matching the `filePath` passed below.
-const idFor = (name: string, importPath: string) => `${name}_${Bun.hash(path.resolve('/test', importPath)).toString(36)}`;
-// Named-export islands mix the export name into the identity hash (default-export
-// identities stay path-only, so `idFor` remains the legacy/manifest-stable form).
-const idForNamed = (name: string, importPath: string, exportName: string) => `${name}_${Bun.hash(`${path.resolve('/test', importPath)}#${exportName}`).toString(36)}`;
+// Mirror of the internal `islandIdentity()`: an island's `component-name`, registry keys, and `__MOCHI_*__<id>__`
+// placeholders key on `<localName>_<hash of the encoded source path>`, so same-named components in different files stay
+// distinct and two machines building one commit agree on every island name. Fixtures live under `/test`, matching the
+// `filePath` passed below.
+const idFor = (name: string, importPath: string) => `${name}_${Bun.hash(encodeSourcePath(path.resolve('/test', importPath))).toString(36)}`;
+// Named-export islands mix the export name into the identity hash; default-export
+// identities stay path-only.
+const idForNamed = (name: string, importPath: string, exportName: string) =>
+  `${name}_${Bun.hash(`${encodeSourcePath(path.resolve('/test', importPath))}#${exportName}`).toString(36)}`;
 
 describe('preprocessHydratable', () => {
   test('basic mochi:hydrate self-closing', () => {
@@ -24,10 +25,14 @@ describe('preprocessHydratable', () => {
     expect(transformed).toContain('<mochi-hydratable-island');
     expect(transformed).toContain(`component-name="${idFor('Foo', './Foo.svelte')}"`);
     expect(transformed).toContain(`__MOCHI_COMPONENT_URL__${idFor('Foo', './Foo.svelte')}__`);
-    expect(transformed).toContain('<Foo isHydratable={true} />');
-    expect(transformed).not.toContain('MochiIslandCtx');
+    expect(transformed).toContain('<Foo />');
     expect(transformed).not.toContain('mochi:hydrate');
     expect(transformed).toContain('__mochi_emit_props__');
+    // The context boundary wraps outside the island wrapper element and its
+    // import is injected into the host's script.
+    expect(transformed).toContain('<MochiHydratableBoundary_><mochi-hydratable-island');
+    expect(transformed).toContain('</mochi-hydratable-island></MochiHydratableBoundary_>');
+    expect(transformed).toContain('import MochiHydratableBoundary_ from "mochi-framework/hydratable-boundary";');
   });
 
   test('mochi:hydrate:visible with options', () => {
@@ -116,7 +121,7 @@ describe('preprocessHydratable', () => {
 
     expect(hydratables).toHaveLength(1);
     expect(transformed).toContain('<mochi-hydratable-island');
-    expect(transformed).toContain('<Wrapper isHydratable={true}><span>child content</span></Wrapper>');
+    expect(transformed).toContain('<Wrapper><span>child content</span></Wrapper>');
   });
 
   test('duplicate component instances', () => {
@@ -474,11 +479,11 @@ describe('preprocessHydratable', () => {
     const source = `${SCRIPT('import Foo from "./Foo.svelte";')}<Foo mochi:hydrate count={1} />`;
     const { transformed } = preprocessHydratable(source, '/test/File.svelte');
 
-    // Hydratable islands carry no id at all — the inner component only gets
-    // isHydratable, and components needing an id use Svelte's native
+    // Hydratable islands carry no id at all — the inner component gets no
+    // framework props, and components needing an id use Svelte's native
     // $props.id() (recovered from its own comment markers on hydration).
     expect(transformed).not.toContain('island-id');
-    expect(transformed).toContain('<Foo count={1} isHydratable={true} />');
+    expect(transformed).toContain('<Foo count={1} />');
     expect(transformed).not.toContain('islandId={__mochi_iid}');
 
     // No MochiIslandContext wrapper
@@ -635,11 +640,9 @@ describe('preprocessHydratable', () => {
     expect(transformed).toContain('<mochi-island-failure');
     expect(transformed).toContain('data-component="Foo"');
 
-    // The OUTER boundary opens BEFORE <mochi-hydratable-island ...> and closes
-    // AFTER it. An INNER boundary (no `failed` snippet) is also nested inside
-    // the wrapper to force Svelte to emit a `<!--[-->` HYDRATION_START anchor
-    // at depth ≥ 1 — without it, Svelte's `hydrate()` can't find a marker
-    // inside the wrapper and silently falls back to `mount()`.
+    // The OUTER boundary opens before `<mochi-hydratable-island ...>` and closes after it, while an INNER boundary with
+    // no `failed` snippet nests inside the wrapper to force a `<!--[-->` HYDRATION_START anchor at depth ≥ 1 — without
+    // it Svelte's `hydrate()` finds no marker inside the wrapper and silently falls back to `mount()`.
     const islandOpen = transformed.indexOf('<mochi-hydratable-island');
     const islandClose = transformed.indexOf('</mochi-hydratable-island>');
     const outerBoundaryOpen = transformed.indexOf('<svelte:boundary>');
@@ -689,7 +692,7 @@ describe('preprocessHydratable', () => {
     const { transformed } = preprocessHydratable(source, '/test/File.svelte');
 
     // The inner tag is unchanged — boundary just wraps it
-    expect(transformed).toContain('<Foo name="test" count={42} isHydratable={true} />');
+    expect(transformed).toContain('<Foo name="test" count={42} />');
     expect(transformed).toContain('<svelte:boundary>');
   });
 });

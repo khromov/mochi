@@ -30,7 +30,7 @@
       <h1>Support</h1>
       <h2>Community support</h2>
       <p>
-        The fastest way to get help from the community is the <a href="https://mochi.fast/discord/">Mochi Discord</a> — ask questions, share what you're building, and get answers from
+        The fastest way to get help from the community is the <a href="https://mochi.fast/discord">Mochi Discord</a> — ask questions, share what you're building, and get answers from
         other Mochi users and the team.
       </p>
       <h2>Commercial support</h2>
@@ -189,6 +189,12 @@
   @media (max-width: 768px) {
     .hero-minimal {
       padding: 1rem 1.25rem;
+    }
+
+    .back {
+      position: static;
+      display: inline-flex;
+      margin-bottom: 0.75rem;
     }
 
     .logo {

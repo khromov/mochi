@@ -63,10 +63,8 @@ class HydratableIsland extends HTMLElement {
     if (!name) {
       return;
     }
-    // Page islands carry a `props-ref` pointing at a
-    // <script type="application/json" id="<propsRef>"> block emitted just before
-    // them. The server-island also-hydrate path instead inlines `props=...`
-    // directly, so fall back to that attribute when no ref is present.
+    // Page islands carry a `props-ref` pointing at a `<script type="application/json">` block emitted just before them,
+    // while the server-island also-hydrate path inlines `props=...` — hence the fallback when no ref is present.
     const propsRef = this.getAttribute('props-ref');
     let propsRaw: string | null;
     if (propsRef) {
@@ -125,12 +123,9 @@ class HydratableIsland extends HTMLElement {
       }
       throw err;
     }
-    props.isHydratable = true;
-    // `transformError` makes <svelte:boundary> work for client-side errors
-    // (e.g. throws inside $effect / $derived after hydration). Returns an
-    // Error instance — same shape as the SSR transformError — so user-written
-    // `failed` snippets can rely on `error instanceof Error`. `message` is
-    // made enumerable to match SSR (see ComponentRegistry transformError).
+    // `transformError` makes `<svelte:boundary>` work for client-side errors, like a throw inside `$effect` after
+    // hydration. It returns an Error in the same shape as the SSR transformError, `message` enumerable to match, so
+    // user-written `failed` snippets can rely on `error instanceof Error`.
     const transformError = (err: unknown): Error => {
       const e = err instanceof Error ? err : new Error(String(err));
       logger.error(`Island "${name}" runtime error:`, e);

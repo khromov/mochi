@@ -62,35 +62,22 @@ export function trace(msg: string) {
 }
 ```
 
-## Auto-injected island props
+## Detecting hydration with `isHydratable()`
 
-The preprocessor injects one extra prop on every component invoked with `mochi:hydrate`, `mochi:hydrate:visible`, or `mochi:defer mochi:hydrate`:
-
-- `isHydratable` (`true | undefined`): `true` for hydratable invocations, absent on plain SSR-only invocations.
-
-Accept it with `$props`:
-
-```svelte
-<!-- file: src/lib/Counter.svelte -->
-<script lang="ts">
-  let { isHydratable }: { isHydratable?: boolean } = $props();
-</script>
-```
+`isHydratable()` returns `true` when the calling component — at any nesting depth — is part of a subtree that will hydrate on this page load. See [Selective hydration](/docs/selective-hydration/#ishydratable) for the full semantics.
 
 For a unique per-instance id (e.g. `<label for>`), use Svelte's native `$props.id()` — see [Selective hydration](/docs/selective-hydration/).
 
-### Branching SSR-only behavior with `isHydratable`
+### Branching SSR-only behavior with `isHydratable()`
 
-Use `isHydratable` to peek request-scoped state only when the client won't take over rendering — e.g. read the post-submit form snapshot so the SSR HTML reflects the last action result, but skip it when an `enhance` attachment will populate state client-side.
+Use `isHydratable()` to peek request-scoped state only when the client won't take over rendering — e.g. read the post-submit form snapshot so the SSR HTML reflects the last action result, but skip it when an `enhance` attachment will populate state client-side.
 
 ```svelte
 <!-- file: src/lib/RandomRoll.svelte -->
 <script lang="ts">
-  import { isServer, getRequestContext } from 'mochi-framework';
+  import { isServer, getRequestContext, isHydratable } from 'mochi-framework';
 
-  let { isHydratable }: { isHydratable?: boolean } = $props();
-
-  const initial = isHydratable || !isServer ? null : peekForm();
+  const initial = isHydratable() || !isServer ? null : peekForm();
 
   function peekForm() {
     const f = getRequestContext().form;
@@ -102,5 +89,5 @@ Use `isHydratable` to peek request-scoped state only when the client won't take 
 See the [Forms demo](/demos/login/) for a side-by-side comparison of hydrated and SSR-only render paths.
 
 <SeeItInAction
-demos={[{ href: "/demos/url/", title: "Isomorphic URL", hook: "One import for the current URL — reads from the request on the server, window.location on the client." }]}
+demos={[{ href: "/demos/url/", title: "Isomorphic URL", hook: "How the isomorphic URL helper works — one import that reads the request URL on the server and window.location on the client." }]}
 />

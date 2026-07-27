@@ -78,5 +78,5 @@ stream.onClose(() => sub.unsubscribe());
 `Mochi.sse` emits `sse:open`, `sse:message`, and `sse:close` on `mochiEvents`. `logger()` prints them by default.
 
 <SeeItInAction
-demos={[{ href: "/demos/streams/", title: "Real-time Streams", hook: "WebSocket and SSE clocks, lazily hydrated via mochi:hydrate:visible." }]}
+demos={[{ href: "/demos/streams/", title: "Real-time Streams", hook: "How server-sent events and WebSocket streaming work — live SSE and WebSocket clocks, lazily hydrated via mochi:hydrate:visible." }]}
 />

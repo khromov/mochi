@@ -15,19 +15,17 @@ export const IMAGE_FILE_FILTER = /\.(png|jpe?g|webp|avif|gif)$/i;
 const RASTER_FORMATS: ReadonlySet<string> = new Set(IMPORTED_IMAGE_FORMATS);
 
 /**
- * Bun `onLoad` handler for local image imports (`import hero from './hero.png'`).
- * Registered in BOTH the SSR and client build passes so the same component
- * compiles identically on both sides. It:
+ * Bun `onLoad` handler for local image imports (`import hero from './hero.png'`), registered in BOTH build passes so a
+ * component compiles identically on each side. It:
  *
  *   1. probes the image's intrinsic dimensions/format via `Bun.Image`,
  *   2. content-hashes the bytes and writes a copy to `<outDir>/assets/`,
- *   3. records the served URL → disk path in the shared build map (for the
- *      manifest) and the global request-time registry (for dev, in-process),
+ *   3. records the served URL → disk path in the shared build map and the global
+ *      request-time registry,
  *   4. returns a JS module exporting `{ src, width, height, format }`.
  *
- * Returning JS is deliberate: it stops Bun's default binary `file` loader from
- * emitting an asset output, which the client pass would otherwise sweep into its
- * text-only `clientFiles` map and corrupt.
+ * Returning JS keeps Bun's default binary `file` loader from emitting an asset output, which the client pass would
+ * sweep into its text-only `clientFiles` map and corrupt.
  */
 export function createImageAssetLoader(opts: { outDir: string; assetPrefix: string; assets: Map<string, LocalImageAsset>; rejectUnknown?: boolean }) {
   return async (args: { path: string }): Promise<{ contents: string; loader: 'js' }> => {
@@ -50,9 +48,8 @@ export function createImageAssetLoader(opts: { outDir: string; assetPrefix: stri
 
     const hash = Bun.hash(bytes).toString(36);
     const ext = path.extname(args.path).slice(1).toLowerCase();
-    // Both build passes run this loader over the same file, so the filters must be
-    // deterministic — a non-deterministic filename/URL would make SSR and client
-    // JS embed divergent `src`s and break the content-addressed disk dedupe.
+    // Both build passes run this loader over the same file, so the filters must be deterministic: a varying
+    // filename or URL would make SSR and client JS embed divergent `src`s and break the content-addressed disk dedupe.
     const filename = applyFilter('image:localAssetFilename', `${slugForImport(args.path)}-${hash}.${ext}`, {
       sourcePath: args.path,
       hash,
@@ -61,6 +58,15 @@ export function createImageAssetLoader(opts: { outDir: string; assetPrefix: stri
       width: meta.width,
       height: meta.height,
     });
+    // The filter renames the asset and stops there: a separator or `..` would push the emitted file outside
+    // `<outDir>/assets/` and bake an absolute path into the manifest, making the build non-relocatable.
+    if (filename === '' || filename === '.' || filename === '..' || /[\\/]/.test(filename)) {
+      throw new Error(
+        `The \`image:localAssetFilename\` filter returned ${JSON.stringify(filename)} for "${args.path}", which is not a bare filename. ` +
+          `It may only rename the emitted file inside <outDir>/assets/ — path separators and \`..\` are not allowed. ` +
+          `To change where the asset is served from, use the \`image:localAssetUrl\` filter instead.`,
+      );
+    }
     const diskPath = path.resolve(opts.outDir, 'assets', filename);
     const url = applyFilter('image:localAssetUrl', `${opts.assetPrefix}/asset/${filename}`, {
       sourcePath: args.path,
@@ -68,13 +74,10 @@ export function createImageAssetLoader(opts: { outDir: string; assetPrefix: stri
       assetPrefix: opts.assetPrefix,
       format,
     });
-    // In a prebuilt-manifest production server, imports are meant to be fully
-    // resolved at build time. If a component compiles on-demand at request time
-    // (a manifest miss) and imports an image absent from the manifest, that's a
-    // stale/broken build — reject it loudly instead of silently hashing and
-    // serving a source the build never vetted. The membership check keeps
-    // legitimately-built re-imports (SSR + client passes, on-demand island
-    // recompiles) idempotent, since `assets` is repopulated from the manifest.
+    // A prebuilt-manifest production server resolves imports at build time, so a component compiling on-demand and
+    // importing an image absent from the manifest means a stale build — rejected loudly rather than hashing and serving
+    // a source the build never vetted. The membership check keeps legitimately-built re-imports idempotent, since
+    // `assets` is repopulated from the manifest.
     if (opts.rejectUnknown && !opts.assets.has(url)) {
       throw new Error(
         `Cannot import "${args.path}" at runtime in production: local image imports are resolved at build time, ` +
@@ -88,10 +91,9 @@ export function createImageAssetLoader(opts: { outDir: string; assetPrefix: stri
     opts.assets.set(url, asset);
     registerLocalImageAsset(url, { diskPath, contentType, sourcePath: args.path });
 
-    // Content-addressed: identical bytes always produce this same path, so the
-    // write is safe to skip and safe to race between the two build passes. The
-    // emitted hook fires alongside the write, so it runs once per emitted asset
-    // (uploads should stay idempotent — concurrent passes could double-fire).
+    // Content-addressing makes identical bytes produce this same path, so the write is safe to skip and safe to race
+    // between the two build passes. The emitted hook fires alongside the write, once per emitted asset, though
+    // concurrent passes can double-fire it — keep uploads idempotent.
     if (!existsSync(diskPath)) {
       await Bun.write(diskPath, bytes);
       await runHook('image:localAssetEmitted', { sourcePath: args.path, diskPath, url, width: meta.width, height: meta.height, format, contentType });

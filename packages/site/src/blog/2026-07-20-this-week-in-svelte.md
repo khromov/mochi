@@ -28,4 +28,4 @@ The rest of the segment was live coding:
 
 We also talked about what isn't there yet. File-based routing came up from Paolo and from the chat, and it's on my list to revisit before 1.0 — likely through an extensions API rather than baked into the core. I'm also not happy with hot module reloading — it works, but SvelteKit's is nicer.
 
-Mochi is early and in alpha. The [docs](/docs/intro/) and [demos](/) are the fastest way in, and I'd genuinely like to hear what breaks — [Discord](/discord/) or a [GitHub issue](https://github.com/khromov/mochi/issues), either works.
+Mochi is early and in alpha. The [docs](/docs/intro/) and [demos](/) are the fastest way in, and I'd genuinely like to hear what breaks — [Discord](/discord) or a [GitHub issue](https://github.com/khromov/mochi/issues), either works.
