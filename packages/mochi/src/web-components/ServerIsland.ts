@@ -19,10 +19,8 @@ class ServerIsland extends HTMLElement {
     const options = optionsRaw ? JSON.parse(optionsRaw) : {};
 
     if (this.getAttribute('defer-on') === 'visible') {
-      // Observe firstElementChild because display:contents gives this element
-      // no layout box. When no fallback children are provided, the global
-      // `:empty { min-height: 1px }` rule on visible-deferred islands keeps
-      // the wrapper itself observable.
+      // `display:contents` leaves this element without a layout box, so the firstElementChild is observed instead; with
+      // no fallback children, the global `:empty { min-height: 1px }` rule keeps the wrapper itself observable.
       const target = this.firstElementChild || this;
       new IntersectionObserver(
         (entries, obs) => {
@@ -58,9 +56,6 @@ class ServerIsland extends HTMLElement {
     const params = new URLSearchParams();
     if (signedProps) {
       params.set('props', signedProps);
-    }
-    if (alsoHydrate) {
-      params.set('hydrate', alsoHydrate);
     }
     const qs = params.toString();
     if (qs) {
@@ -98,15 +93,17 @@ class ServerIsland extends HTMLElement {
           document.head.appendChild(link);
         }
 
-        // SAFETY: HTML comes from our own same-origin server-island endpoint with HMAC-signed props.
+        // SAFETY: HTML comes from our own same-origin server-island endpoint with encrypted props.
         // If the island endpoint ever returns user-controlled content, this must be sanitized.
         this.innerHTML = html;
         return;
       } catch (err) {
-        if (err instanceof Error && 'abort' in err) {
-          throw err;
-        }
         lastErr = err;
+        if (err instanceof Error && 'abort' in err) {
+          // A 4xx is deterministic, so the loop stops and falls through to the failure reporting below; rethrowing out
+          // of this unawaited async method would surface as an unhandled rejection with the island stuck on its fallback.
+          break;
+        }
         if (ll !== 'silent' && ll !== 'error') {
           console.warn(`${tag} failed (attempt ${attempt}/${maxRetries + 1}): ${err}`);
         }

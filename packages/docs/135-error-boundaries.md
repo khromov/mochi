@@ -64,21 +64,21 @@ mochiEvents.on('island:error', ({ componentName, kind, message, stack }) => {
 });
 ```
 
-| Field           | Description                                                                                                           |
-| --------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `componentName` | Island component name.                                                                                                |
-| `islandId`      | Per-island id, carried inside the signed props envelope; set for `'server'` failures, `undefined` for `'hydratable'`. |
-| `kind`          | `'hydratable'` (SSR throw inside a hydratable island) or `'server'` (server-island endpoint render).                  |
-| `message`       | Error message — safe to forward.                                                                                      |
-| `stack`         | Stack trace; populated only when `development: true`.                                                                 |
+| Field           | Description                                                                                                              |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `componentName` | Island component name.                                                                                                   |
+| `islandId`      | Per-island id, carried inside the encrypted props envelope; set for `'server'` failures, `undefined` for `'hydratable'`. |
+| `kind`          | `'hydratable'` (SSR throw inside a hydratable island) or `'server'` (server-island endpoint render).                     |
+| `message`       | Error message — safe to forward.                                                                                         |
+| `stack`         | Stack trace; populated only when `development: true`.                                                                    |
 
 The `MochiIslandErrorKind` type also reserves `'client-hydrate'`, but client-side errors are not currently emitted to the event bus.
 
 ### See also
 
-- [Error handling](error-handling/) — top-level page errors and the configured `errorPage`.
-- [Selective hydration](selective-hydration/), [Lazy hydration](lazy-hydration/), [Server islands](server-islands/) — the directives boundaries wrap.
+- [Error handling](/docs/error-handling/) — top-level page errors and the configured `errorPage`.
+- [Selective hydration](/docs/selective-hydration/), [Lazy hydration](/docs/lazy-hydration/), [Server islands](/docs/server-islands/) — the directives boundaries wrap.
 
 <SeeItInAction
-demos={[{ href: "/demos/error-boundaries/", title: "Error Boundaries", hook: "Contain island failures with <svelte:boundary> so one broken component does not crash the page." }]}
+demos={[{ href: "/demos/error-boundaries/", title: "Error Boundaries", hook: "How error boundaries work — contain island failures with <svelte:boundary> so one broken component doesn't crash the page." }]}
 />

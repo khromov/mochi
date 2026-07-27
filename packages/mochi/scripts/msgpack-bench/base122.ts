@@ -54,7 +54,7 @@ export function encodeBase122(bytes: Uint8Array): string {
   }
 
   let out = '';
-  for (let i = 0; i < chunks.length; ) {
+  for (let i = 0; i < chunks.length;) {
     const v = chunks[i]!;
     const idx = ILLEGALS.indexOf(v);
     if (idx === -1) {

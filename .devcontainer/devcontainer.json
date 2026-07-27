@@ -10,7 +10,26 @@
       "BUN_VERSION": "1.3.14"
     }
   },
-  "runArgs": ["--cap-add=NET_ADMIN", "--cap-add=NET_RAW"],
+  "runArgs": ["--cap-add=NET_ADMIN", "--cap-add=NET_RAW", "--add-host=host.docker.internal:host-gateway"],
+  "forwardPorts": [3333, 3334, 3335, 3336],
+  "portsAttributes": {
+    "3333": {
+      "label": "site",
+      "onAutoForward": "notify"
+    },
+    "3334": {
+      "label": "demos",
+      "onAutoForward": "notify"
+    },
+    "3335": {
+      "label": "minimal",
+      "onAutoForward": "notify"
+    },
+    "3336": {
+      "label": "support",
+      "onAutoForward": "notify"
+    }
+  },
   "customizations": {
     "vscode": {
       "extensions": ["anthropic.claude-code", "dbaeumer.vscode-eslint", "esbenp.prettier-vscode", "eamodio.gitlens"],
@@ -46,6 +65,15 @@
   "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=delegated",
   "workspaceFolder": "/workspace",
   "postCreateCommand": "mkdir -p /home/node/.claude && [ -s /home/node/.claude/settings.json ] || echo '{}' > /home/node/.claude/settings.json && tmp=$(jq -s '.[0] * .[1] * {statusLine: {type: \"command\", command: \"bash /home/node/statusline.sh\"}}' /home/node/claude-settings.json /home/node/.claude/settings.json) && printf '%s\\n' \"$tmp\" > /home/node/.claude/settings.json",
-  "postStartCommand": "sudo /usr/local/bin/init-firewall.sh",
-  "waitFor": "postStartCommand"
+  "postStartCommand": "sudo /usr/local/bin/init-firewall.sh && bash -c \"bun install; mkdir -p ~/.local/share/code-server/User && cp -f \\\"$PWD/.devcontainer/code-server-settings.json\\\" ~/.local/share/code-server/User/settings.json 2>/dev/null; export SHELL=\\\"${SHELL:-/bin/bash}\\\"; pgrep -f 'code-server.*8080' >/dev/null 2>&1 || nohup code-server --bind-addr 0.0.0.0:8080 --auth none --disable-workspace-trust \\\"$PWD\\\" >/tmp/code-server.log 2>&1 &\"",
+  "waitFor": "postStartCommand",
+  "features": {
+    "ghcr.io/coder/devcontainer-features/code-server:1": {
+      "host": "0.0.0.0",
+      "port": 8080,
+      "auth": "none"
+    },
+    "./codebay-tmux": {}
+  },
+  "appPort": ["127.0.0.1:8005:8080", "127.0.0.1:8007:3333", "127.0.0.1:8008:3334", "127.0.0.1:8009:3335", "127.0.0.1:8010:3336"]
 }

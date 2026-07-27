@@ -28,7 +28,7 @@ Response compression is opt-in via the [`compress()` middleware](/docs/middlewar
 
 ### Asset caching
 
-In production (`development: false`), prebuilt JS/CSS bundles served from `assetPrefix` (default `/_mochi`) get `Cache-Control: public, max-age=31536000, immutable` automatically. Filenames are content-hashed, so any change yields a new URL — there's nothing to invalidate. In development the header is omitted so live-reload edits aren't pinned in the browser cache. Public-dir files (`./public/...`) keep Bun's default static-route headers; their URLs are stable, so don't mark them immutable. To override, mutate `response.headers` in a `handle` middleware.
+In production (`development: false`), prebuilt JS/CSS bundles served from `assetPrefix` (default `/_mochi`) get `Cache-Control: public, max-age=31536000, immutable` automatically. Filenames are content-hashed, so any change yields a new URL — there's nothing to invalidate. In development the header is omitted so live-reload edits aren't pinned in the browser cache. Public-dir files (`./public/...`) are read from `publicDir` on disk in both modes — scanned once at startup, and re-scanned live in development. They keep Bun's default static-route headers; their URLs are stable, so don't mark them immutable. To override, mutate `response.headers` in a `handle` middleware.
 
 <Callout type="warning">
 
@@ -38,7 +38,9 @@ In production (`development: false`), prebuilt JS/CSS bundles served from `asset
 
 <Callout type="info">
 
-**Shutdown signals.** `Mochi.serve()` installs `SIGTERM` and `SIGINT` listeners that fire the [`mochi:shutdown`](/docs/extensions/#mochishutdown) hook and call `server.stop()`. A second signal force-exits with code 1. Existing user listeners on those signals are not displaced — Node.js dispatches signals to every registered listener.
+**Shutdown signals.** `Mochi.serve()` installs `SIGTERM` and `SIGINT` listeners that fire the [`mochi:shutdown`](/docs/extensions/#mochishutdown) hook, drain queues, then stop the server and exit with code 0. In-flight requests get `shutdownTimeout` ms to finish; anything still connected after that is force-closed. A second signal exits immediately with code 1. Existing user listeners on those signals are not displaced — Node.js dispatches signals to every registered listener.
+
+The forced fallback is not optional: a plain `server.stop()` never resolves while a WebSocket is open, so in development a single browser tab holding the live-reload socket would otherwise wedge the process until it is `SIGKILL`ed. The same applies in production to any live `Mochi.ws` connection — while one is open the graceful drain never completes, so shutdown always waits the full `shutdownTimeout` before force-closing. Keep the timeout tight enough for your orchestrator's grace period.
 
 </Callout>
 
@@ -48,6 +50,7 @@ In production (`development: false`), prebuilt JS/CSS bundles served from `asset
 - `hostname`: Interface to bind. Defaults to Bun's default (`0.0.0.0`).
 - `development`: Enables live reload, debug bar, and the dev error overlay. Default: `true`.
 - `liveReload`: Enable the dev-mode live-reload WebSocket (`/__mochi_live_reload` + the `mochi-live-reload` web component). Default: matches `development`. Set to `false` to keep the debug bar but skip the WS — useful behind a proxy where the socket is flaky.
+- `shutdownTimeout`: Grace period in ms for in-flight requests to finish on `SIGTERM`/`SIGINT` before connections are force-closed and the process exits. Default: `5000` in production, `0` in development. `0` force-closes immediately. Note that an open WebSocket never drains, so shutdown pins to this full value whenever one is connected — set it no larger than your orchestrator's kill grace period.
 - `routes`: `Record<string, MochiRouteValue>` of route paths to `Mochi.page` / `Mochi.api` / `Mochi.ws` / `Mochi.sse` registrations.
 - `fetch`: `(req, server) => Response` fallback handler invoked when no route matches. Default: built-in 404.
 - `manifest`: Path to a prebuilt manifest JSON. Default: `<outDir>/manifest.json`.
@@ -57,11 +60,14 @@ In production (`development: false`), prebuilt JS/CSS bundles served from `asset
 - `handleError`: `HandleError` hook invoked before the error page renders; may override status/message or return a `Response`. See `Error handling`.
 - `compressServerIslandProps`: Deflate-compress server-island props when it reduces size. Default: `true`.
 - `logger`: Built-in request logger. Default: `{ enabled: true }`. Pass `{ enabled: false }` to disable, or override `slowThreshold` / `verySlowThreshold`.
-- `publicDir`: Directory served as static assets (cwd-relative). Default: `./public`.
-- `outDir`: Directory for build artifacts and dev cache (cwd-relative). Default: `./.mochi`.
+- `publicDir`: Directory served as static assets (cwd-relative). Default: `./public`. Scanned from disk at startup in every mode, so it must ship with a production deploy — the build never copies it. `mochi-framework build` picks this value up from your `Mochi.serve()` call unless `--public-dir` overrides it.
+- `outDir`: Base directory for build artifacts and dev cache (cwd-relative). Default: `./.mochi`. Production writes here directly; development nests under `<outDir>/dev` so a dev run can't collide with a production build (and is wiped clean on every dev startup).
 - `assetPrefix`: URL prefix for framework client assets and the server-island endpoint. Must start with `/`, must not be `/`, must not end with `/`, must not contain whitespace or `..`. Default: `/_mochi`.
 - `additionalWatchPaths`: Extra dev-mode watcher paths added to the defaults `src` and `public`. Default: `[]`.
+- `barrelWarnings`: Warning when a dependency drags a large, almost-entirely-tree-shaken module into the build graph (a "barrel import" that slows rebuilds). Fires once per package in dev, and as one grouped summary line in a production build. Default: enabled. `false` silences it; `{ ignore: ['pkg'] }` suppresses specific packages; `{ minBytes }` overrides the 50 KB size threshold. See `Development mode`.
+- `build`: Output controls for `mochi-framework build`; ignored by the runtime. `{ resources: false }` hides the emitted-resources list (the summary line keeps its asset count). See `CLI`.
 - `svelteConfigPath`: Path to a Svelte config file. Default: `./svelte.config.js`. See `Svelte config`.
+- `svelteCompiler`: Which compiler emits component JS. Default: `'svelte'`. `'rsvelte'` uses the Rust compiler and needs the optional `@mochi-framework/rsvelte` package; overridable with `MOCHI_SVELTE_COMPILER`. See `rsvelte compiler`.
 - `csrf`: `MochiCsrfOptions` controlling the origin-header check. See `CSRF` below.
 - `proxy`: `MochiProxyOptions` describing trusted reverse-proxy headers. See `Proxy` below.
 - `hooks`: `MochiHooks` map of named lifecycle hooks. See `Extensions (hooks & filters)`.

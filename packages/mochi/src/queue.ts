@@ -1,13 +1,12 @@
-/**
- * The single isolation boundary around bunqueue: the only module that imports
- * `bunqueue/client`, with no bunqueue type leaking into the public surface, so
- * swapping the backend means rewriting just this file.
- */
+// The isolation boundary around bunqueue: the only module importing `bunqueue/client`, and the only one whose rewrite a
+// backend swap would need.
 import { Queue, Worker, shutdownManager } from 'bunqueue/client';
 import type { Job, JobOptions } from 'bunqueue/client';
-import { pinGlobal } from './globalState';
+import { pinGlobal } from './utils/globalState';
+import { applyFilter } from './extensions';
+import { startupMilestoneReached } from './lifecycle';
 import { mochiEvents } from './events';
-import { logger } from './log';
+import { logger } from './utils/log';
 
 /** Deliberately narrow — data, not bunqueue's ~40 mutation methods — so userland can't reach behind the abstraction. */
 export interface MochiJob<T> {
@@ -50,6 +49,8 @@ export interface MochiQueueRuntimeOptions {
   concurrency?: number;
   /** Omit for in-memory. bunqueue locks the path to the first queue in the process — see `rememberDataPath`. */
   dataPath?: string;
+  /** How long a job may run before the queue reclaims it, in ms. Must exceed `process`'s worst-case runtime — see `DEFAULT_LOCK_DURATION_MS`. */
+  lockDuration?: number;
   defaultJobOptions?: MochiJobOptions;
   /** Forwarded verbatim to bunqueue's `Queue` and `Worker` constructors. */
   bunqueue?: Record<string, unknown>;
@@ -59,9 +60,15 @@ export interface MochiQueueRuntimeOptions {
 export interface MochiQueueOptions<T, R = unknown> extends MochiQueueRuntimeOptions {
   process: MochiProcessor<T, R>;
   on?: Partial<MochiQueueListeners<T, R>>;
+  /**
+   * Runs once at startup with this queue's handle, after every queue in `Mochi.serve({ queues })` is mounted — the place
+   * to add back work your own store still considers unfinished, since an in-memory queue loses its jobs on restart and
+   * even a persisted one misses rows written before the job was accepted. A throw is logged and emitted as `queue:error`.
+   */
+  recover?: (queue: MochiQueue<T>) => void | Promise<void>;
 }
 
-/** Producer handle returned by `Mochi.getQueue(name)`. */
+/** Handle returned by `Mochi.getQueue(name)` — what you add jobs through. */
 export interface MochiQueue<T> {
   readonly name: string;
   add(name: string, data: T, opts?: MochiJobOptions): Promise<MochiJobRef>;
@@ -83,10 +90,8 @@ interface QueueRegistry {
   dataPath: string | null | undefined;
 }
 
-// Pinned so the registry is shared across any duplicate bundled copy of this
-// module (mirrors `mochiEvents` / `requestContext`). The shutdown path
-// (`closeAllQueueResources`) must see every resource to drain it, wherever — and
-// by whichever bundled copy — it was created.
+// Pinned so every duplicate bundled copy of this module shares one registry, since `closeAllQueueResources` must see
+// every resource to drain it whichever copy created it.
 const registry = pinGlobal<QueueRegistry>('__mochi_queue_registry__', () => ({
   byName: new Map(),
   closeables: new Set(),
@@ -125,11 +130,22 @@ function toBunJobOptions(opts: MochiJobOptions | undefined): JobOptions | undefi
 }
 
 /**
- * Build a queue: a bunqueue `Queue` (producer) and `Worker` (consumer) from one
- * config. Registers the producer handle under `name` (resolved by `getQueue`)
- * and both resources for shutdown draining. Invoked only by `Mochi.serve`, where
- * a queue is declared once with its processor co-located — there is no separate
- * worker concept and no dynamic insertion.
+ * bunqueue defaults a job's lock to 30s and renews it from the worker heartbeat over TCP only; Mochi's embedded
+ * heartbeat calls `jobHeartbeat(id)` without a token, refreshing stall detection but never the lock. The lock therefore
+ * always expires on schedule, and a job outliving it is requeued mid-flight, its eventual success rejected with
+ * "Invalid or expired lock token", reported as a failure, and retried — double-firing whatever it already did. A single
+ * SMTP send has taken 58s in production, so the ceiling is raised to bunqueue's own 30-minute cap.
+ *
+ * That cap is also why this is the highest useful value: bunqueue's `cleanOrphanedProcessingEntries` drops any entry
+ * processing for over 30 minutes whatever the lock says. Lowering it still matters, though a crashed worker's jobs come
+ * back through stall detection off the heartbeat, independently of the lock.
+ */
+export const DEFAULT_LOCK_DURATION_MS = 30 * 60_000;
+
+/**
+ * Build a bunqueue `Queue` (producer) and `Worker` (consumer) from one config, registering the producer under `name` for
+ * `getQueue` and both resources for shutdown draining. Called only by `Mochi.serve`, where a queue is declared once with
+ * its processor co-located.
  */
 export function createQueue<T = unknown, R = unknown>(
   name: string,
@@ -180,17 +196,25 @@ export function createQueue<T = unknown, R = unknown>(
     }
   }
 
+  // Filtered per queue after whatever the queue declared for itself, through the first-class option or the raw
+  // `bunqueue` passthrough, so the result is applied last rather than spread over. A deployment can then move the lock
+  // for every queue at once and still see via `explicit` which ones chose a value themselves.
+  const declaredLock = options?.lockDuration ?? (typeof options?.bunqueue?.lockDuration === 'number' ? options.bunqueue.lockDuration : undefined);
+  const lockDuration = applyFilter('queue:lockDurationMs', declaredLock ?? DEFAULT_LOCK_DURATION_MS, {
+    queue: name,
+    explicit: declaredLock !== undefined,
+  });
+
   const worker = new Worker<T, R>(name, (job) => process(toMochiJob(job as Job<T>, name)), {
     embedded: true,
     dataPath: options?.dataPath,
     concurrency: options?.concurrency,
     ...options?.bunqueue,
+    lockDuration,
   });
 
-  // bunqueue's `finishedOn`/`processedOn` are unreliable on the public job at
-  // event time, so measure duration ourselves from the `active` event. Entries are
-  // cleared on completed/failed; a job that goes active but never resolves would
-  // leak one, but the map is bounded by in-flight jobs so this is a non-issue.
+  // bunqueue's `finishedOn`/`processedOn` are unreliable on the public job at event time, so duration is measured here
+  // from the `active` event. Entries clear on completed/failed, and the map stays bounded by in-flight jobs.
   const startedAt = new Map<string, number>();
   const durationFor = (jobId: string): number => {
     const start = startedAt.get(jobId);
@@ -239,17 +263,95 @@ export function createQueue<T = unknown, R = unknown>(
 }
 
 /**
- * Resolve the producer handle for a queue declared in `Mochi.serve({ queues })`.
- * Throws if the name was never declared (a typo, or `getQueue` reached before
- * `Mochi.serve()` mounted its queues) — producing to an unknown queue would
- * otherwise silently drop every job.
+ * Resolve the handle for a queue declared in `Mochi.serve({ queues })`, to add jobs to it. Throws for an undeclared name
+ * — a typo, or a call before `Mochi.serve()` mounted its queues — since producing to an unknown queue would silently drop every job.
  */
 export function getQueue<T = unknown>(name: string): MochiQueue<T> {
   const handle = registry.byName.get(name);
   if (!handle) {
-    throw new Error(`Mochi.getQueue("${name}"): no such queue. Declare it via Mochi.serve({ queues: { "${name}": Mochi.queue(...) } }) before producing to it.`);
+    // Three different mistakes, three different answers, told apart by the recorded startup milestone: registry size
+    // can't distinguish them, since an empty registry means "too early" for one app and "declared nothing" for another.
+    if (!startupMilestoneReached('mochi:queuesMounted')) {
+      throw new Error(
+        `Mochi.getQueue("${name}"): queues are not mounted yet. Mochi.serve({ queues }) mounts them after the "mochi:init" hook and after the server binds, so call getQueue() somewhere that runs later: a queue's recover() callback, the "mochi:ready" hook, or any request handler.`,
+      );
+    }
+    if (registry.byName.size === 0) {
+      throw new Error(`Mochi.getQueue("${name}"): no queues were declared. Add it to Mochi.serve({ queues: { "${name}": Mochi.queue(...) } }) before adding jobs to it.`);
+    }
+    throw new Error(
+      `Mochi.getQueue("${name}"): no such queue. Declare it via Mochi.serve({ queues: { "${name}": Mochi.queue(...) } }) before adding jobs to it. Mounted queues: ${[...registry.byName.keys()].join(', ')}.`,
+    );
   }
   return handle as MochiQueue<T>;
+}
+
+export const DEFAULT_RECOVERY_STALL_WARNING_MS = 30_000;
+
+/**
+ * Run every mounted queue's `recover` callback once at startup. `Mochi.serve()` calls it after the whole `queues` map is
+ * mounted, so a callback may reach a sibling queue via `getQueue`.
+ *
+ * Failures are contained to the `queue:error` bus and the log: the server is already bound and serving, so a transient
+ * store error during recovery must not take the site down.
+ *
+ * A `recover()` that never settles is reported rather than cut off, since abandoning it would drop the jobs it was about
+ * to add — the very failure recovery exists to prevent — while warmup, `mochi:ready`, and `serve()` all wait behind it.
+ *
+ * TODO: single-flight recovery across processes. Recovery currently runs in
+ * every process that boots, so an N-instance deploy (or a rolling restart where
+ * old and new overlap) has N processes re-enqueueing the same work from the same
+ * store — N copies of every stranded job. Today only single-instance apps are
+ * safe, which the embedded-mode-only note in the queues docs already implies but
+ * doesn't state.
+ *
+ * The intended shape, in order:
+ *   1. Sleep a random jitter before touching the store — default 0–5000ms, with
+ *      the bounds filterable per queue (`queue:recoveryJitterMinMs` /
+ *      `queue:recoveryJitterMaxMs`, alongside the stall-warning filter below).
+ *      Note this delays `serve()` resolving, so the default upper bound is a
+ *      boot-latency tradeoff, and 0/0 must remain a clean opt-out.
+ *   2. Try to acquire a lease named for the queue through a cross-process
+ *      persistence layer that DOES NOT EXIST YET — it has to outlive any single
+ *      process, so neither `pinGlobal` nor bunqueue's embedded store qualifies.
+ *      Designing that store is the actual blocking work here.
+ *   3. Run `recover()` only if the lease was won; otherwise skip it and say so
+ *      at debug level. The lease needs a TTL so a process that dies mid-recovery
+ *      doesn't lock the queue out of recovery forever — same reasoning as the
+ *      in-flight marker lease in `cache.ts`.
+ *
+ * The jitter is NOT the mechanism and must not ship on its own: it only narrows
+ * the window in which two processes collide, and a narrower race is harder to
+ * reproduce while being just as wrong. The lease in step 2 is what makes this
+ * correct; step 1 exists only to keep N processes from stampeding it at once.
+ */
+export async function runQueueRecovery(entries: Array<[string, { recover?: (queue: MochiQueue<never>) => void | Promise<void> }]>): Promise<void> {
+  for (const [name, config] of entries) {
+    if (!config.recover) {
+      continue;
+    }
+    // Resolved per queue, not once for the run: a queue whose recovery reads a
+    // slow store legitimately needs a longer threshold than its siblings.
+    // A non-positive value opts that queue out of the warning entirely.
+    const stallMs = applyFilter('queue:recoveryStallWarningMs', DEFAULT_RECOVERY_STALL_WARNING_MS, { queue: name });
+    const stallWarning =
+      stallMs > 0
+        ? setTimeout(() => {
+            logger.warn(`[queue] ${name}: recover() is still running after ${stallMs / 1000}s — Mochi.serve() cannot resolve until it settles.`);
+          }, stallMs)
+        : undefined;
+    // Never hold the process open on the warning alone.
+    stallWarning?.unref?.();
+    try {
+      await config.recover(getQueue(name) as MochiQueue<never>);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error(`[queue] ${name}: recover() failed — ${message}`);
+      mochiEvents.emit('queue:error', { queue: name, error: message });
+    } finally {
+      clearTimeout(stallWarning);
+    }
+  }
 }
 
 /**

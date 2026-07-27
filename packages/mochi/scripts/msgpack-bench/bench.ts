@@ -19,7 +19,8 @@ import { stringify as devalueStringify, parse as devalueParse } from 'devalue';
 import { Packr, Unpackr } from 'msgpackr';
 import { encodeBase122, decodeBase122 } from './base122';
 import { ALL, REPRESENTATIVE, SPECIAL, type Payload } from './payloads';
-import { packServerIslandProps } from '../../src/serverIslandSerialize';
+import { packServerIslandProps } from '../../src/islands/serverIslandSerialize';
+import { encryptPayloadBytes } from '../../src/islands/payloadCrypto';
 
 const packr = new Packr({ structuredClone: true });
 const unpackr = new Unpackr({ structuredClone: true });
@@ -270,18 +271,11 @@ function baseGzip(rows: Row[]): number | null {
   return rows.find((r) => r.label === 'devalue (text)')?.gzipped ?? null;
 }
 
-// Model the server-island signed-token length exactly as `serverIslandCrypto.ts`:
-// deflate-if-smaller (≥64B, `~` prefix), base64url, plus a 23-char `.`+128-bit sig.
-const SIG_CHARS = 23;
+// Mint the token through the real sealing path (`payloadCrypto`: flags byte + deflate-if-smaller, AES-256-SIV, base64url)
+// so the lengths below are the ones an app actually puts in the URL. Needs a config; `Mochi.serve()` isn't running here.
+(globalThis as unknown as Record<string, unknown>).__mochi_config__ ??= { options: {}, secretKey: Buffer.alloc(32, 7) };
 function serverIslandTokenLen(bytes: Uint8Array<ArrayBuffer>): number {
-  const uncompressed = Buffer.from(bytes).toString('base64url');
-  if (bytes.length >= 64) {
-    const compressed = '~' + Buffer.from(Bun.deflateSync(bytes)).toString('base64url');
-    if (compressed.length < uncompressed.length) {
-      return compressed.length + SIG_CHARS;
-    }
-  }
-  return uncompressed.length + SIG_CHARS;
+  return encryptPayloadBytes(bytes, { aad: 'Bench' }).length;
 }
 
 function serverIslandTokenMarkdown(): string {
@@ -355,7 +349,7 @@ const PROSE_INTRO = `# msgpackr vs devalue for island props
 
 Mochi serializes component props with **devalue** and embeds them in the HTML as
 \`<script type="application/json">\` blocks for hydratable islands, and as
-HMAC-signed base64url tokens for server islands. This report asks whether
+encrypted base64url tokens for server islands. This report asks whether
 switching props serialization to **msgpackr** yields a meaningful size win.
 
 ## Why the inline-HTML answer is not "binary is smaller"
@@ -387,10 +381,10 @@ const PROSE_PATHS = `## Two transport paths, two verdicts
 - **Hydratable islands** (inline \`<script>\`): text-bound. msgpack must pay the
   encoding tax above, then compete against \`gzip(devalue-text)\`. See the per-payload
   tables — on these payloads the inline path typically **ties or loses** after gzip.
-- **Server islands** (signed token in the fetch URL): the props are packed,
-  HMAC-signed, deflate-if-smaller, and base64url'd into a query parameter. msgpack's
-  compactness roughly **halves the token** (table below), which directly relieves the
-  ~1800-char URL-length limit. **This path has been adopted** — see below.
+- **Server islands** (opaque token in the fetch URL): the props are packed,
+  deflate-if-smaller, sealed with AES-256-SIV, and base64url'd into a query parameter.
+  msgpack's compactness roughly **halves the token** (table below), which directly relieves
+  the ~1800-char URL-length limit. **This path has been adopted** — see below.
 
 ## Correctness caveats
 
@@ -406,25 +400,24 @@ types — it is included only for scale.
 1. **Do not switch the inline hydration path to msgpack** unless the per-payload
    gzip deltas below are consistently negative for your real props — base122 closes
    most of base64's gap but rarely beats gzipped devalue text, and it costs a client
-   bundle (msgpackr) that devalue-text does not. The inline path stays on devalue
-   (an experimental \`Mochi.serve({ islandPropsCodec: 'msgpack' })\` flag exists for A/B).
+   bundle (msgpackr) that devalue-text does not. The inline path stays on devalue.
 2. **Adopt msgpack for server-island props** — done; see below.`;
 
 const PROSE_ADOPTED = `## Adopted: server-island props
 
 Server-island props (\`mochi:defer\`) now serialize with **msgpackr** instead of
-devalue (\`serverIslandSerialize.ts\` + \`serverIslandCrypto.ts\`). This path is
-server↔server — the client only round-trips the opaque signed token — so in
-production it adds **zero client-bundle weight** (only the dev debug-bar decoder
-loads msgpackr) and carries no client correctness risk. The token rides in the
-fetch URL, so the smaller payload directly relieves the ~1800-char URL-length limit.
+devalue (\`islands/serverIslandSerialize.ts\` + \`islands/serverIslandCrypto.ts\`). This
+path is server↔server — the client only round-trips the opaque token — so msgpackr
+never enters a browser bundle: **zero client-bundle weight** and no client correctness
+risk. The token rides in the fetch URL, so the smaller payload directly relieves the
+~1800-char URL-length limit.
 
 \`Packr({ structuredClone: true })\` plus custom \`URL\`/\`URLSearchParams\` extensions
 reaches full devalue type parity (Date, Map, Set, undefined, Infinity/NaN, RegExp,
 BigInt, typed arrays, cyclic & repeated refs, URL, URLSearchParams). The one known
 divergence is \`-0\` → \`+0\`. Hydratable-island props are unchanged (still devalue).
 
-Signed-token length (deflate-if-smaller + base64url + 23-char sig), Δ vs devalue:`;
+Token length (deflate-if-smaller + AES-256-SIV seal + base64url), Δ vs devalue:`;
 
 // ---- main --------------------------------------------------------------------
 
