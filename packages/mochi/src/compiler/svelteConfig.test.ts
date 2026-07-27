@@ -2,8 +2,10 @@ import { describe, expect, test } from 'bun:test';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
+import deepmerge from 'deepmerge';
 import type { CompileOptions } from 'svelte/compiler';
-import { FRAMEWORK_COMPILER_DEFAULTS, loadSvelteConfig, mergeCompilerOptions } from './svelteConfig';
+import { FRAMEWORK_COMPILER_DEFAULTS, FRAMEWORK_FORCED_COMPILER_OPTIONS, loadSvelteConfig, mergeCompilerOptions } from './svelteConfig';
+import shippedSvelteConfig from '../../svelte.config.js';
 
 /** Stand-in for the framework-owned overrides a real call site would pass. */
 const forced = (extra: CompileOptions = {}): CompileOptions => ({
@@ -21,8 +23,8 @@ describe('mergeCompilerOptions', () => {
   });
 
   test('user can override a framework default', () => {
-    const out = mergeCompilerOptions({ experimental: { async: false } }, forced());
-    expect(out.experimental?.async).toBe(false);
+    const out = mergeCompilerOptions({ discloseVersion: true }, forced());
+    expect(out.discloseVersion).toBe(true);
   });
 
   test('forced fields always win over user', () => {
@@ -32,8 +34,18 @@ describe('mergeCompilerOptions', () => {
   });
 
   test('forced fields win over defaults', () => {
+    const out = mergeCompilerOptions(undefined, forced({ discloseVersion: true }));
+    expect(out.discloseVersion).toBe(true);
+  });
+
+  test('experimental.async cannot be turned off by the user', () => {
+    const out = mergeCompilerOptions({ experimental: { async: false } }, forced());
+    expect(out.experimental?.async).toBe(true);
+  });
+
+  test('experimental.async cannot be turned off by a call site either', () => {
     const out = mergeCompilerOptions(undefined, forced({ experimental: { async: false } }));
-    expect(out.experimental?.async).toBe(false);
+    expect(out.experimental?.async).toBe(true);
   });
 
   test('user adds sibling keys without losing framework defaults', () => {
@@ -80,18 +92,24 @@ describe('mergeCompilerOptions', () => {
   test('does not mutate the inputs', () => {
     const user = { experimental: { async: false } };
     const forcedArg = forced();
-    const before = JSON.stringify({
-      user,
-      forced: forcedArg,
-      defaults: FRAMEWORK_COMPILER_DEFAULTS,
-    });
+    const snapshot = () =>
+      JSON.stringify({
+        user,
+        forced: forcedArg,
+        defaults: FRAMEWORK_COMPILER_DEFAULTS,
+        frameworkForced: FRAMEWORK_FORCED_COMPILER_OPTIONS,
+      });
+    const before = snapshot();
     mergeCompilerOptions(user, forcedArg);
-    const after = JSON.stringify({
-      user,
-      forced: forcedArg,
-      defaults: FRAMEWORK_COMPILER_DEFAULTS,
-    });
-    expect(after).toBe(before);
+    expect(snapshot()).toBe(before);
+  });
+});
+
+describe('shipped svelte.config.js', () => {
+  // The published config is a dependency-free literal (svelte-check loads it under Node,
+  // so it cannot import from `src/`). This guards the two copies against drifting apart.
+  test('mirrors the framework compiler options', () => {
+    expect(shippedSvelteConfig.compilerOptions as CompileOptions).toEqual(deepmerge(FRAMEWORK_COMPILER_DEFAULTS, FRAMEWORK_FORCED_COMPILER_OPTIONS));
   });
 });
 
