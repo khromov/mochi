@@ -1357,6 +1357,11 @@ export class ComponentRegistry {
 
     // Server-island guard (post-render): no per-entry metadata to check up
     // front, so detect the emitted placeholder in the rendered output.
+    //
+    // TODO: make this pre-render like the hydratable guard above. Post-render means a `mochi:defer` behind a branch
+    // that never renders slips through here, so the "even behind a branch that never renders" promise in the email
+    // docs holds only via the build's import-graph check — which a dev-mode app never runs. Needs `entryServerIslands`
+    // stored on `compiledComponents` plus a manifest field so the prebuilt path carries it too, i.e. a schema change.
     if (output.includes('<mochi-server-island')) {
       throw new Error(`Email templates can't contain server islands (mochi:defer*) — they load over a follow-up request an email can't make. Render the content inline instead.`);
     }
