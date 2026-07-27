@@ -29,7 +29,7 @@ describe('resolveMochiVersionRange', () => {
   });
 
   test('falls back to the pinned floor when version is null', () => {
-    expect(resolveMochiVersionRange(null)).toBe('^0.1.1');
+    expect(resolveMochiVersionRange(null)).toBe('^0.9.0');
   });
 });
 

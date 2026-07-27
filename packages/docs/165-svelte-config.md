@@ -21,6 +21,29 @@ The file is optional — Mochi compiles correctly without it. If it is missing, 
 
 Both ESM (`export default`) and CJS (`module.exports`) are supported. In dev, the file is watched — edits trigger a reload of `compilerOptions` without restarting the server.
 
+### Editor and svelte-check support
+
+`svelte-check` and the Svelte VS Code extension read `svelte.config.js` themselves and know nothing about Mochi's defaults, so without the file they reject `await` in components even though Mochi compiles them fine. Ship the file for their benefit, re-exporting Mochi's own:
+
+```js
+// file: svelte.config.js
+export { default } from 'mochi-framework/svelte.config.js';
+```
+
+Add your own `compilerOptions` by spreading it instead:
+
+```js
+// file: svelte.config.js
+import mochi from 'mochi-framework/svelte.config.js';
+
+export default {
+  compilerOptions: {
+    ...mochi.compilerOptions,
+    runes: true,
+  },
+};
+```
+
 ### Framework defaults
 
 One field is seeded before your config is merged in:
