@@ -69,8 +69,9 @@
   }
 
   /* An inset notch so a failure is distinguishable from a pass without relying on hue.
-     The compact board sets --dot-ring transparent: there, solid-vs-faded already
-     separates the two and a ring at that size would just muddy the bar. */
+     It has to match whatever the bar sits on, so the host overrides --dot-ring: the
+     compact board's failed tiles are tinted, where the --surface default would read as
+     a stray light square. */
   .bar.tone-failure {
     background: var(--dot-failure);
     box-shadow: inset 0 0 0 2px var(--dot-ring, var(--surface));

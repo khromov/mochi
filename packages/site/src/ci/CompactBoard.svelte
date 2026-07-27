@@ -32,7 +32,7 @@
       <span class="status">Couldn't reach the GitHub API</span>
     </div>
   {:else}
-    <div class="grid" style="--count: {board.workflows.length}">
+    <div class="grid">
       {#each board.workflows as wf (wf.id)}
         {@const latest = wf.runs[0]}
         {@const rate = successRate(wf.runs)}

@@ -1,5 +1,4 @@
 User-Agent: *
 Allow: /
-Disallow: /og/
-Disallow: /ci/
-Disallow: /ci/dashboard/
+Disallow: /og
+Disallow: /ci/data/
