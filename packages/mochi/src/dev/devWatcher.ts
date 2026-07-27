@@ -1,0 +1,732 @@
+import type { Server, ServerWebSocket } from 'bun';
+import { existsSync } from 'fs';
+import path from 'node:path';
+import chokidar from 'chokidar';
+import debounce from '../vendor/debounce/index';
+import type { ComponentRegistry } from '../compiler/ComponentRegistry';
+import { mochiEvents } from '../events';
+import type { MochiFileChangeType } from '../events';
+import { logger } from '../utils/log';
+import { evictPreprocessCacheEntry } from '../compiler/preprocessCache';
+import type { MochiI18nWatchHook } from '../i18n/wuchale';
+import { extractServeOptions } from '../cli/extractServeOptions';
+import { buildPublicUrl } from '../runtime/proxy';
+import { resolvePublicFiles, registerPublicRoutes } from '../runtime/publicDir';
+import { loadSvelteConfig } from '../compiler/svelteConfig';
+import { recordReloadSignal } from './liveReloadGeneration';
+import type { MochiRateLimitOptions } from '../runtime/rateLimit';
+import { alternateSlashPattern } from '../runtime/trailingSlash';
+import {
+  isMochiApi,
+  isMochiFile,
+  isMochiPage,
+  isMochiSse,
+  isMochiWs,
+  type BunRouteValue,
+  type MochiApiHandler,
+  type MochiPageHandlerConfig,
+  type MochiRouteValue,
+  type MochiServeOptions,
+  type MochiSseHandler,
+  type MochiWsData,
+  type MochiWsHandlers,
+  type RouteRegistrationResult,
+} from '../types';
+
+const FILE_CHANGE_EVENTS = new Set<string>(['add', 'change', 'unlink', 'addDir', 'unlinkDir']);
+
+// Chokidar reports a rename as unlink-old + add-new, so logging the verb per
+// event surfaces both the old and new filename instead of just "changed".
+function publicChangeVerb(event: string): string {
+  if (event === 'add' || event === 'addDir') {
+    return 'added';
+  }
+  if (event === 'unlink' || event === 'unlinkDir') {
+    return 'removed';
+  }
+  return 'changed';
+}
+
+export interface DevWatcherDeps {
+  registry: ComponentRegistry;
+  server: Server<undefined>;
+  options: MochiServeOptions;
+  liveReloadClients: Set<ServerWebSocket<MochiWsData>>;
+  composedFetch: (req: Request, server: Server<undefined>) => Promise<Response>;
+  baseBunRoutes: Record<string, BunRouteValue>;
+  bunRoutes: Record<string, BunRouteValue>;
+  outDir: string;
+  publicDir: string;
+  watchPaths: string[];
+  development: boolean;
+  entryPath: string;
+  apiHandlerMap?: Map<string, MochiApiHandler>;
+  sseHandlerMap?: Map<string, MochiSseHandler>;
+  wsHandlersMap?: Map<string, MochiWsHandlers<unknown>>;
+  pageConfigMap?: Map<string, MochiPageHandlerConfig>;
+  registerRoutePattern?: (pattern: string, handler: MochiRouteValue) => Promise<RouteRegistrationResult | null>;
+  unregisterRoutePattern?: (pattern: string) => void;
+  updateRouteLimiter?: (pattern: string, rateLimit: MochiRateLimitOptions | false | undefined) => void;
+  trailingSlashPolicy?: 'never' | 'always';
+  shellPath?: string;
+  reloadShell?: () => Promise<void>;
+  i18n?: MochiI18nWatchHook;
+}
+
+/**
+ * Wire up the dev-mode file watcher — chokidar over the source tree, public dir, and `svelte.config.js`. Saves debounce
+ * at 100ms and serialize through a Promise chain so the live-reload signal fires only once client chunks are ready. CSS
+ * edits take a fast path that re-bundles imported CSS without an SSR recompile; public-dir edits reload the route map.
+ */
+export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
+  const {
+    registry,
+    server,
+    options,
+    liveReloadClients,
+    composedFetch,
+    baseBunRoutes,
+    bunRoutes,
+    outDir,
+    publicDir,
+    watchPaths,
+    development,
+    entryPath,
+    apiHandlerMap,
+    sseHandlerMap,
+    wsHandlersMap,
+    pageConfigMap,
+    registerRoutePattern,
+    unregisterRoutePattern,
+    updateRouteLimiter,
+    trailingSlashPolicy,
+    shellPath,
+    reloadShell,
+    i18n,
+  } = deps;
+
+  const liveReloadHandler = (req: Request, srv: Server<undefined>): Response => {
+    const url = buildPublicUrl(req, options.proxy);
+    const entryParam = url.searchParams.get('entry') ?? undefined;
+    const success = (
+      srv as unknown as {
+        upgrade: (req: Request, opts: Record<string, unknown>) => boolean;
+      }
+    ).upgrade(req, {
+      data: {
+        __mochiRoutePattern: '/__mochi_live_reload',
+        __mochiOpenedAt: performance.now(),
+        __mochiPath: url.pathname,
+        __mochiEntry: entryParam,
+        user: undefined,
+      } satisfies MochiWsData,
+    });
+    if (!success) {
+      return new Response('WebSocket upgrade failed', { status: 400 });
+    }
+    return undefined as unknown as Response;
+  };
+
+  // When `affected` is provided, only tabs whose entry is in that set
+  // get the reload — tabs on unaffected pages keep their state.
+  const notifyClients = (affected?: Set<string>) => {
+    // Counted before the fan-out so a tab that reconnects after missing this
+    // signal still sees the generation move in its greeting.
+    recordReloadSignal(affected);
+    for (const client of liveReloadClients) {
+      if (affected !== undefined) {
+        const entry = client.data.__mochiEntry;
+        if (entry !== undefined && !affected.has(entry)) {
+          continue;
+        }
+      }
+      try {
+        client.send('reload');
+      } catch {
+        liveReloadClients.delete(client);
+      }
+    }
+  };
+
+  // Serializing rebuilds through a Promise chain holds the WebSocket reload until client JS chunks are ready; saves
+  // arriving mid-rebuild append to the chain, so the browser reloads once, into fresh chunks.
+  let reloadChain: Promise<void> = Promise.resolve();
+  const triggerReload = debounce((filename: string) => {
+    reloadChain = reloadChain.then(async () => {
+      // pageCount on the start event is the universe size, not the
+      // affected size — the watcher doesn't know which pages depend on
+      // the changed file until recompileChanged inspects the graph.
+      mochiEvents.emit('recompile:start', { trigger: 'file', path: filename, pageCount: registry.getPageCount() });
+      const start = performance.now();
+      let summary: { pages: Set<string>; clientBundleCount: number } = { pages: new Set(), clientBundleCount: 0 };
+      let failed = false;
+      try {
+        summary = await registry.recompileChanged(filename);
+        if (summary.pages.size === 0) {
+          const resolved = path.resolve(filename);
+          if (routeComponentPaths.has(resolved)) {
+            await registry.compile(resolved, { force: true });
+            summary = { pages: new Set([resolved]), clientBundleCount: 0 };
+          }
+        }
+      } catch (e) {
+        failed = true;
+        logger.warn(`Rebuild failed: ${e instanceof Error ? e.message : e}`);
+      }
+      mochiEvents.emit('recompile:complete', {
+        trigger: 'file',
+        path: filename,
+        pageCount: summary.pages.size,
+        pages: [...summary.pages],
+        clientBundleCount: summary.clientBundleCount,
+        durationMs: performance.now() - start,
+      });
+      if (failed) {
+        // The rebuild threw before returning an affected set, leaving the reload unscopable, so every tab refreshes and
+        // the error overlay surfaces from the accumulated registry errors in the next response.
+        notifyClients();
+      } else if (summary.pages.size > 0) {
+        notifyClients(summary.pages);
+      }
+      // else: succeeded with empty `affected` (e.g. server-only edit
+      // that no entry depends on) — nothing to reload, skip silently.
+    });
+  }, 100);
+
+  // Fast-path for .css edits: re-bundle only the CSS imports (still
+  // serialized through the same chain so a CSS save mid-rebuild waits its
+  // turn). Skips the full SSR recompile.
+  const triggerCssReload = debounce((filename: string) => {
+    reloadChain = reloadChain.then(async () => {
+      mochiEvents.emit('recompile:start', { trigger: 'css', path: filename, pageCount: 0 });
+      const start = performance.now();
+      try {
+        await registry.rebundleImportedCss();
+      } catch (e) {
+        logger.warn(`CSS rebundle failed: ${e instanceof Error ? e.message : e}`);
+      }
+      mochiEvents.emit('recompile:complete', {
+        trigger: 'css',
+        path: filename,
+        pageCount: 0,
+        pages: [],
+        clientBundleCount: 0,
+        durationMs: performance.now() - start,
+      });
+      // CSS bundles aren't scoped per-page, so reload every tab.
+      notifyClients();
+    });
+  }, 100);
+
+  // i18n catalog edits (`.po`) and watched i18n components live outside the
+  // entry dependency graph, so a generic recompile reports 0 affected pages.
+  // Drive Wuchale to recompile/extract the catalogs to disk, then rebuild every
+  // bundle (catalogs are embedded in both the SSR page modules and the client
+  // islands) and reload every tab.
+  //
+  // Extracting from a component rewrites the `.po` catalogs, which echoes back
+  // as a `'catalog'` change. Wuchale's own source-write guard has a 1s window
+  // that the serialized rebuild can outlast, so we suppress catalog echoes for
+  // a short window *after* a source-driven rebuild finishes — duration
+  // independent, since the echo is processed immediately after.
+  let suppressCatalogEchoUntil = 0;
+  const triggerCatalogReload =
+    i18n &&
+    debounce((filename: string, kind: 'catalog' | 'source') => {
+      const filePath = path.resolve(filename);
+      reloadChain = reloadChain.then(async () => {
+        if (kind === 'catalog' && performance.now() < suppressCatalogEchoUntil) {
+          return; // echo of our own extraction write — already rebuilt
+        }
+        const pageCount = registry.getPageCount();
+        mochiEvents.emit('recompile:start', { trigger: 'i18n', path: filePath, pageCount });
+        const start = performance.now();
+        let summary: { pages: Set<string>; clientBundleCount: number } = { pages: new Set(), clientBundleCount: 0 };
+        let rebuilt = false;
+        try {
+          rebuilt = await i18n.handleChange(filePath);
+          if (rebuilt) {
+            // The Wuchale transform runs as a user preprocessor and reads the catalogs, neither of which is part of the
+            // compile cache's source+options key — so without a reset every page would recompile straight from cache and
+            // keep serving the previous translations.
+            registry.compileCache.reset();
+            summary = await registry.recompileAll();
+            if (kind === 'source') {
+              suppressCatalogEchoUntil = performance.now() + 1500;
+            }
+          }
+        } catch (e) {
+          logger.warn(`i18n catalog reload failed: ${e instanceof Error ? e.message : e}`);
+        }
+        mochiEvents.emit('recompile:complete', {
+          trigger: 'i18n',
+          path: filePath,
+          pageCount: summary.pages.size,
+          pages: [...summary.pages],
+          clientBundleCount: summary.clientBundleCount,
+          durationMs: performance.now() - start,
+        });
+        if (rebuilt) {
+          notifyClients();
+        }
+      });
+    }, 100);
+
+  // The HTML shell is read once at startup and sits outside every page's Svelte dependency graph, so a generic
+  // recompile would report 0 affected pages and skip the reload. Any page may depend on its styling, head, or scripts,
+  // so re-reading it reloads all tabs.
+  const triggerShellReload = reloadShell
+    ? debounce((filename: string) => {
+        reloadChain = reloadChain.then(async () => {
+          mochiEvents.emit('recompile:start', { trigger: 'html-shell', path: filename, pageCount: 0 });
+          const start = performance.now();
+          try {
+            await reloadShell();
+          } catch (e) {
+            logger.warn(`Shell reload failed: ${e instanceof Error ? e.message : e}`);
+          }
+          mochiEvents.emit('recompile:complete', {
+            trigger: 'html-shell',
+            path: filename,
+            pageCount: 0,
+            pages: [],
+            clientBundleCount: 0,
+            durationMs: performance.now() - start,
+          });
+          notifyClients();
+        });
+      }, 250)
+    : undefined;
+
+  // Building the entry module discovers its transitive deps, so a dep change can rebuild, re-extract routes via
+  // `extractServeOptions`, and hot-swap handlers in place for the running server.
+  let entryDeps: Set<string> = new Set();
+  const entryBuildOutDir = path.resolve(`${outDir}/entry-hmr`);
+
+  async function buildEntry(): Promise<Record<string, unknown> | null> {
+    const result = await Bun.build({
+      entrypoints: [path.resolve(entryPath)],
+      packages: 'external',
+      target: 'bun',
+      outdir: entryBuildOutDir,
+      naming: { entry: 'entry.js' },
+      metafile: true,
+      throw: false,
+    });
+    if (!result.success) {
+      const msgs = result.logs.map((l) => l.message || String(l)).join('\n');
+      logger.warn(`Entry rebuild failed:\n${msgs}`);
+      return null;
+    }
+    const newDeps = new Set<string>();
+    if (result.metafile) {
+      for (const output of Object.values(result.metafile.outputs)) {
+        for (const inputPath of Object.keys(output.inputs)) {
+          newDeps.add(path.resolve(inputPath));
+        }
+      }
+    }
+    entryDeps = newDeps;
+    const outFile = path.resolve(entryBuildOutDir, 'entry.js');
+    const serveOptions = await extractServeOptions(outFile, { fresh: true });
+    if (!serveOptions?.routes) {
+      logger.warn('Entry rebuild produced no routes — skipping update');
+      return null;
+    }
+    const freshRoutes = serveOptions.routes as Record<string, unknown>;
+
+    const newComponentPaths = new Set<string>();
+    for (const handler of Object.values(freshRoutes)) {
+      if (isMochiPage(handler)) {
+        newComponentPaths.add(path.resolve(handler.componentPath));
+      }
+    }
+    routeComponentPaths = newComponentPaths;
+
+    return freshRoutes;
+  }
+
+  let knownEntryPatterns = new Set<string>();
+  let routeComponentPaths: Set<string> = new Set();
+
+  function routeType(handler: unknown): 'api' | 'ws' | 'sse' | 'page' | 'file' | null {
+    if (isMochiApi(handler)) {
+      return 'api';
+    }
+    if (isMochiWs(handler)) {
+      return 'ws';
+    }
+    if (isMochiSse(handler)) {
+      return 'sse';
+    }
+    if (isMochiPage(handler)) {
+      return 'page';
+    }
+    if (isMochiFile(handler)) {
+      return 'file';
+    }
+    return null;
+  }
+
+  function currentRouteType(pattern: string): 'api' | 'ws' | 'sse' | 'page' | 'file' | null {
+    if (apiHandlerMap?.has(pattern)) {
+      return 'api';
+    }
+    if (wsHandlersMap?.has(pattern)) {
+      return 'ws';
+    }
+    if (sseHandlerMap?.has(pattern)) {
+      return 'sse';
+    }
+    if (pageConfigMap?.has(pattern)) {
+      return 'page';
+    }
+    // File routes have no per-pattern handler map (their source is captured in
+    // the registered closure), so a known pattern absent from every map must be
+    // a file route — the only remaining route type.
+    if (knownEntryPatterns.has(pattern)) {
+      return 'file';
+    }
+    return null;
+  }
+
+  function addBunRoute(pattern: string, value: BunRouteValue): void {
+    bunRoutes[pattern] = value;
+    baseBunRoutes[pattern] = value;
+    if (trailingSlashPolicy) {
+      const alt = alternateSlashPattern(pattern);
+      if (alt && !(alt in bunRoutes)) {
+        bunRoutes[alt] = value;
+        baseBunRoutes[alt] = value;
+      }
+    }
+  }
+
+  function removeBunRoute(pattern: string): void {
+    if (trailingSlashPolicy) {
+      const alt = alternateSlashPattern(pattern);
+      if (alt) {
+        delete bunRoutes[alt];
+        delete baseBunRoutes[alt];
+      }
+    }
+    delete bunRoutes[pattern];
+    delete baseBunRoutes[pattern];
+  }
+
+  async function applyRouteChanges(
+    freshRoutes: Record<string, unknown>,
+  ): Promise<{ updated: number; added: string[]; removed: string[]; api: number; ws: number; sse: number; page: number; file: number }> {
+    const counts = { updated: 0, added: [] as string[], removed: [] as string[], api: 0, ws: 0, sse: 0, page: 0, file: 0 };
+    const freshPatterns = new Set(Object.keys(freshRoutes));
+
+    for (const [pattern, handler] of Object.entries(freshRoutes)) {
+      const type = routeType(handler);
+      if (!type) {
+        continue;
+      }
+
+      if (knownEntryPatterns.has(pattern)) {
+        const currentType = currentRouteType(pattern);
+
+        if (currentType && currentType !== type && registerRoutePattern && unregisterRoutePattern) {
+          unregisterRoutePattern(pattern);
+          removeBunRoute(pattern);
+          const result = await registerRoutePattern(pattern, handler as MochiRouteValue);
+          if (result) {
+            addBunRoute(pattern, result.bunRouteValue);
+            counts.added.push(pattern);
+            counts.removed.push(pattern);
+            logger.info(`Route retyped ${currentType}→${type}: ${pattern}`);
+          }
+        } else if (type === 'file' && registerRoutePattern && unregisterRoutePattern) {
+          // File routes have no handler map to mutate in place — their source
+          // is baked into the registered closure — so swap by re-registering.
+          unregisterRoutePattern(pattern);
+          removeBunRoute(pattern);
+          const result = await registerRoutePattern(pattern, handler as MochiRouteValue);
+          if (result) {
+            addBunRoute(pattern, result.bunRouteValue);
+            counts.file++;
+            counts.updated++;
+            logger.info(`Route updated file: ${pattern}`);
+          }
+        } else {
+          if (isMochiApi(handler) && apiHandlerMap?.has(pattern)) {
+            apiHandlerMap.set(pattern, handler.handler);
+            updateRouteLimiter?.(pattern, handler.rateLimit);
+            counts.api++;
+            counts.updated++;
+          } else if (isMochiWs(handler) && wsHandlersMap?.has(pattern)) {
+            wsHandlersMap.set(pattern, handler.handlers as MochiWsHandlers<unknown>);
+            counts.ws++;
+            counts.updated++;
+          } else if (isMochiSse(handler) && sseHandlerMap?.has(pattern)) {
+            sseHandlerMap.set(pattern, handler.handler);
+            counts.sse++;
+            counts.updated++;
+          } else if (isMochiPage(handler) && pageConfigMap?.has(pattern)) {
+            pageConfigMap.set(pattern, { serverProps: handler.serverProps, actions: handler.actions });
+            updateRouteLimiter?.(pattern, handler.rateLimit);
+            counts.page++;
+            counts.updated++;
+          }
+        }
+      } else if (registerRoutePattern) {
+        try {
+          const result = await registerRoutePattern(pattern, handler as MochiRouteValue);
+          if (result) {
+            addBunRoute(pattern, result.bunRouteValue);
+            counts[result.type]++;
+            counts.added.push(pattern);
+            logger.info(`Route added ${result.type}: ${pattern}`);
+          }
+        } catch (e) {
+          logger.warn(`Failed to register route ${pattern}: ${e instanceof Error ? e.message : e}`);
+          counts.added.push(pattern);
+        }
+      }
+    }
+
+    if (unregisterRoutePattern) {
+      for (const pattern of knownEntryPatterns) {
+        if (!freshPatterns.has(pattern)) {
+          unregisterRoutePattern(pattern);
+          removeBunRoute(pattern);
+          counts.removed.push(pattern);
+          logger.info(`Route removed: ${pattern}`);
+        }
+      }
+    }
+
+    knownEntryPatterns = freshPatterns;
+    return counts;
+  }
+
+  const triggerEntryReload = debounce((filename: string) => {
+    reloadChain = reloadChain.then(async () => {
+      mochiEvents.emit('recompile:start', { trigger: 'entry', path: filename, pageCount: 0 });
+      const start = performance.now();
+      let counts: { updated: number; added: string[]; removed: string[]; api: number; ws: number; sse: number; page: number; file: number } = {
+        updated: 0,
+        added: [],
+        removed: [],
+        api: 0,
+        ws: 0,
+        sse: 0,
+        page: 0,
+        file: 0,
+      };
+      try {
+        const freshRoutes = await buildEntry();
+        if (freshRoutes) {
+          counts = await applyRouteChanges(freshRoutes);
+          const hasChanges = counts.updated > 0 || counts.added.length > 0 || counts.removed.length > 0;
+          if (hasChanges) {
+            const parts: string[] = [];
+            if (counts.api) {
+              parts.push(`${counts.api} api`);
+            }
+            if (counts.ws) {
+              parts.push(`${counts.ws} ws`);
+            }
+            if (counts.sse) {
+              parts.push(`${counts.sse} sse`);
+            }
+            if (counts.page) {
+              parts.push(`${counts.page} page`);
+            }
+            if (counts.file) {
+              parts.push(`${counts.file} file`);
+            }
+            if (counts.added.length) {
+              parts.push(`+${counts.added.length} new`);
+            }
+            if (counts.removed.length) {
+              parts.push(`-${counts.removed.length} removed`);
+            }
+            logger.info(`Entry rebuilt — ${parts.join(', ')}`);
+          }
+          if (counts.added.length > 0 || counts.removed.length > 0) {
+            server.reload({
+              routes: {
+                ...bunRoutes,
+                '/__mochi_live_reload': liveReloadHandler,
+              },
+              fetch: composedFetch,
+            } as Parameters<typeof server.reload>[0]);
+          }
+        }
+      } catch (e) {
+        logger.warn(`Entry rebuild failed: ${e instanceof Error ? e.message : e}`);
+      }
+      mochiEvents.emit('recompile:complete', {
+        trigger: 'entry',
+        path: filename,
+        pageCount: 0,
+        pages: [],
+        clientBundleCount: 0,
+        durationMs: performance.now() - start,
+      });
+      const hasChanges = counts.updated > 0 || counts.added.length > 0 || counts.removed.length > 0;
+      if (hasChanges) {
+        notifyClients();
+      }
+    });
+  }, 100);
+
+  // Build once at startup so entryDeps and knownEntryPatterns are populated
+  // before any file-change events arrive.
+  reloadChain = reloadChain.then(async () => {
+    try {
+      const freshRoutes = await buildEntry();
+      if (freshRoutes) {
+        knownEntryPatterns = new Set(Object.keys(freshRoutes));
+      }
+    } catch (e) {
+      logger.warn(`Initial entry build failed: ${e instanceof Error ? e.message : e}`);
+    }
+  });
+
+  const finalWatchPaths = watchPaths.filter((p) => existsSync(p));
+  const outDirAbs = path.resolve(outDir);
+  const isInsideOutDir = (filePath: string): boolean => {
+    const abs = path.resolve(filePath);
+    return abs === outDirAbs || abs.startsWith(outDirAbs + path.sep);
+  };
+  const watcher = chokidar.watch(finalWatchPaths, {
+    ignoreInitial: true,
+    ignored: [/(^|[/\\])node_modules([/\\]|$)/, isInsideOutDir],
+    cwd: process.cwd(),
+  });
+
+  const watcherReady =
+    finalWatchPaths.length === 0
+      ? // chokidar never emits 'ready' for an empty watch set, so don't wait on
+        // it — there's nothing being watched, hence no startup race to guard.
+        Promise.resolve()
+      : new Promise<void>((resolve) => {
+          let settled = false;
+          const done = () => {
+            if (settled) {
+              return;
+            }
+            settled = true;
+            resolve();
+          };
+          watcher.once('ready', done);
+          // Safety net so serve() can't hang indefinitely if 'ready' never
+          // arrives. unref so it can't keep the process alive. Reaching this
+          // means chokidar never signalled ready for a non-empty watch set
+          setTimeout(() => {
+            if (settled) {
+              return;
+            }
+            logger.error(
+              `File watcher never became ready within 10s for ${finalWatchPaths.length} path(s): ${finalWatchPaths.join(', ')}. ` +
+                `Live reload may not work — please report this at https://github.com/khromov/mochi/issues`,
+            );
+            done();
+          }, 10000).unref?.();
+        });
+
+  const publicDirRel = path.relative(process.cwd(), path.resolve(publicDir));
+  // Rebuilding from the startup path's own helpers keeps the encoding and conflict rules from diverging. The reload
+  // rescans the whole dir, so the changed path is irrelevant here; the watcher handler below logs per event.
+  let reloadPublic: (() => void) | undefined;
+  if (existsSync(publicDir)) {
+    reloadPublic = debounce(async () => {
+      const freshPublic = await resolvePublicFiles({ publicDir, development });
+      const nextRoutes: Record<string, BunRouteValue> = { ...baseBunRoutes };
+      registerPublicRoutes(nextRoutes, freshPublic);
+      nextRoutes['/__mochi_live_reload'] = liveReloadHandler;
+      server.reload({
+        routes: nextRoutes,
+        fetch: composedFetch,
+      } as Parameters<typeof server.reload>[0]);
+      notifyClients();
+    }, 100);
+  }
+
+  watcher
+    .on('all', (event, filePath) => {
+      if (FILE_CHANGE_EVENTS.has(event)) {
+        mochiEvents.emit('file:change', {
+          path: path.resolve(filePath),
+          type: event as MochiFileChangeType,
+        });
+      }
+      if (event === 'unlink' && filePath.endsWith('.svelte')) {
+        evictPreprocessCacheEntry(path.resolve(filePath));
+        registry.compileCache.evict(path.resolve(filePath));
+        registry.evict(path.resolve(filePath));
+      }
+      const i18nKind = i18n?.kind(path.resolve(filePath));
+      if (i18nKind && triggerCatalogReload) {
+        // Catalog files and watched i18n components recompile through Wuchale
+        // before the bundle rebuild, instead of the generic recompile path.
+        triggerCatalogReload(filePath, i18nKind);
+      } else if (triggerShellReload && shellPath && path.resolve(filePath) === shellPath) {
+        triggerShellReload(filePath);
+      } else if (reloadPublic && filePath.startsWith(publicDirRel + path.sep)) {
+        logger.info(`Public file ${publicChangeVerb(event)}: ${filePath} — reloading routes`);
+        reloadPublic();
+      } else if (filePath.endsWith('.css')) {
+        triggerCssReload(filePath);
+      } else if (!filePath.endsWith('.svelte') && entryDeps.has(path.resolve(filePath))) {
+        triggerEntryReload(filePath);
+      } else {
+        triggerReload(filePath);
+      }
+    })
+    .on('error', (err: unknown) => {
+      logger.warn(`File watcher error: ${err instanceof Error ? err.message : err}`);
+    });
+
+  // Watch svelte.config.js separately so edits during dev pick up without a restart.
+  const svelteConfigPath = path.resolve('svelte.config.js');
+  const reloadSvelteConfig = debounce(() => {
+    reloadChain = reloadChain.then(async () => {
+      const pageCount = registry.getPageCount();
+      mochiEvents.emit('recompile:start', { trigger: 'svelte-config', path: svelteConfigPath, pageCount });
+      const start = performance.now();
+      let summary: { pages: Set<string>; clientBundleCount: number } = { pages: new Set(), clientBundleCount: 0 };
+      try {
+        registry.svelteConfig = await loadSvelteConfig(undefined, { reload: true, tempDir: outDir });
+        // A config reload can change compiler options, markdown/mdsvex config, or user preprocessors, but only the
+        // first is in the cache fingerprint — so an explicit reset keeps the rest from serving old-config output.
+        registry.compileCache.reset();
+        summary = await registry.recompileAll();
+      } catch (e) {
+        logger.warn(`Svelte config reload failed: ${e instanceof Error ? e.message : e}`);
+      }
+      mochiEvents.emit('recompile:complete', {
+        trigger: 'svelte-config',
+        path: svelteConfigPath,
+        pageCount: summary.pages.size,
+        pages: [...summary.pages],
+        clientBundleCount: summary.clientBundleCount,
+        durationMs: performance.now() - start,
+      });
+      // Full registry rebuild — every tab needs to reload.
+      notifyClients();
+    });
+  }, 100);
+  const svelteConfigWatcher = chokidar.watch(svelteConfigPath, { ignoreInitial: true });
+  svelteConfigWatcher
+    .on('add', reloadSvelteConfig)
+    .on('change', reloadSvelteConfig)
+    .on('error', (err: unknown) => {
+      logger.warn(`Svelte config watcher error: ${err instanceof Error ? err.message : err}`);
+    });
+
+  server.reload({
+    routes: {
+      ...bunRoutes,
+      '/__mochi_live_reload': liveReloadHandler,
+    },
+    fetch: composedFetch,
+  } as Parameters<typeof server.reload>[0]);
+
+  return watcherReady;
+}

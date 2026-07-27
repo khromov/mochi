@@ -6,6 +6,7 @@ description: 'Animate full-page navigations with the browser cross-document View
 
 <script>
   import Callout from './_components/Callout.svelte';
+  import SeeItInAction from './_components/SeeItInAction.svelte';
 </script>
 
 ## View Transitions
@@ -130,3 +131,10 @@ If you'd rather wire it by hand — or need finer control — give the element a
   animation: none;
 }
 ```
+
+<SeeItInAction
+demos={[
+{ href: "/demos/view-transitions/", title: "View Transitions", hook: "How view transitions work — drop <ViewTransitions /> into a layout to animate full-page navigations with zero JavaScript." },
+{ href: "/demos/custom-transitions/", title: "Custom Transitions", hook: "How custom view transitions work — supply your own @keyframes to <ViewTransitions /> via custom={{ in, out }}." },
+]}
+/>

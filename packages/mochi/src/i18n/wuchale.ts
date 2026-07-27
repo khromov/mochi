@@ -1,9 +1,9 @@
 import path from 'node:path';
 import type { PreprocessorGroup } from 'svelte/compiler';
 import type { MochiI18nOptions } from '../types';
-import type { Handle } from '../hooks';
+import type { Handle } from '../runtime/hooks';
 import { getFilter, setFilter } from '../extensions';
-import { logger } from '../log';
+import { logger } from '../utils/log';
 
 /**
  * The client loader: registers a reactive ($state) runtime collection and

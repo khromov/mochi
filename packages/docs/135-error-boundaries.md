@@ -4,11 +4,13 @@ slug: error-boundaries
 description: 'Hydratable islands are automatically wrapped in svelte:boundary so a single island failure cannot crash the page.'
 ---
 
+<script>
+  import SeeItInAction from './_components/SeeItInAction.svelte';
+</script>
+
 ## Error boundaries
 
 Mochi auto-wraps every `mochi:hydrate` and `mochi:hydrate:visible` island in `<svelte:boundary>`. A throw inside one island no longer takes down the page render — the failed island is replaced by a `<mochi-island-failure>` stub and the rest of the page continues. No opt-in, no configuration.
-
-Do **NOT** assume Mochi wraps your page in a boundary; instead, author `<svelte:boundary>` yourself where you want graceful degradation.
 
 ### What's wrapped
 
@@ -49,8 +51,6 @@ Mochi passes `transformError` to `render()` and `hydrate()`, which is what makes
 </svelte:boundary>
 ```
 
-Do **NOT** rely on a bare `<svelte:boundary>` outside Mochi to catch SSR throws; instead, mount it inside a Mochi-rendered tree so `transformError` flows through.
-
 ### `island:error` event
 
 Every server-side island failure emits `island:error` on `mochiEvents`. Subscribe to forward failures to error tracking:
@@ -64,17 +64,21 @@ mochiEvents.on('island:error', ({ componentName, kind, message, stack }) => {
 });
 ```
 
-| Field           | Description                                                                                                           |
-| --------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `componentName` | Island component name.                                                                                                |
-| `islandId`      | Per-island id, carried inside the signed props envelope; set for `'server'` failures, `undefined` for `'hydratable'`. |
-| `kind`          | `'hydratable'` (SSR throw inside a hydratable island) or `'server'` (server-island endpoint render).                  |
-| `message`       | Error message — safe to forward.                                                                                      |
-| `stack`         | Stack trace; populated only when `development: true`.                                                                 |
+| Field           | Description                                                                                                              |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `componentName` | Island component name.                                                                                                   |
+| `islandId`      | Per-island id, carried inside the encrypted props envelope; set for `'server'` failures, `undefined` for `'hydratable'`. |
+| `kind`          | `'hydratable'` (SSR throw inside a hydratable island) or `'server'` (server-island endpoint render).                     |
+| `message`       | Error message — safe to forward.                                                                                         |
+| `stack`         | Stack trace; populated only when `development: true`.                                                                    |
 
 The `MochiIslandErrorKind` type also reserves `'client-hydrate'`, but client-side errors are not currently emitted to the event bus.
 
 ### See also
 
-- [Error handling](error-handling/) — top-level page errors and the configured `errorPage`.
-- [Selective hydration](selective-hydration/), [Lazy hydration](lazy-hydration/), [Server islands](server-islands/) — the directives boundaries wrap.
+- [Error handling](/docs/error-handling/) — top-level page errors and the configured `errorPage`.
+- [Selective hydration](/docs/selective-hydration/), [Lazy hydration](/docs/lazy-hydration/), [Server islands](/docs/server-islands/) — the directives boundaries wrap.
+
+<SeeItInAction
+demos={[{ href: "/demos/error-boundaries/", title: "Error Boundaries", hook: "How error boundaries work — contain island failures with <svelte:boundary> so one broken component doesn't crash the page." }]}
+/>

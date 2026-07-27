@@ -1,4 +1,4 @@
-import { Mochi, sequence, silenceInternalRoutes } from 'mochi-framework';
+import { Mochi, silenceInternalRoutes } from 'mochi-framework';
 import type { Handle } from 'mochi-framework';
 import { routes as adminRoutes } from './admin/routes';
 import { routes as hnRoutes } from './hn/routes';
@@ -16,15 +16,6 @@ const immutableAssets: Handle = async ({ event, resolve }) => {
   return response;
 };
 
-const ANALYTICS_SCRIPT = `<script defer src="https://u.khromov.se/u.js" data-website-id="8dceb8f5-6533-4c03-9cd6-1ce74accd63a"></script>`;
-const analytics: Handle = async ({ event, resolve }) => {
-  return resolve(event, {
-    transformPage({ html }) {
-      return html.replace('{{mochi.analytics}}', IS_DOCKER ? ANALYTICS_SCRIPT : '');
-    },
-  });
-};
-
 const PORT = Number(process.env.PORT) || 3334;
 
 await Mochi.serve({
@@ -36,9 +27,10 @@ await Mochi.serve({
   idleTimeout: 60,
   compressServerIslandProps: true,
   warmup: true,
-  handle: sequence(immutableAssets, analytics),
+  proxy: { origin: process.env.MOCHI_ORIGIN || `http://localhost:${PORT}` },
+  handle: immutableAssets,
   filters: {
-    'consoleLogger:line': silenceInternalRoutes,
+    'consoleLogger:line': (line, ctx) => (ctx.path.startsWith('/health') ? null : silenceInternalRoutes(line, ctx)),
   },
   i18n: {
     locales: I18N_LOCALES,
@@ -51,6 +43,7 @@ await Mochi.serve({
   },
   routes: {
     '/': Mochi.page('./src/Landing.svelte'),
+    '/health': Mochi.api(({ method }) => Response.json({ status: 'ok', method })),
     ...adminRoutes,
     ...hnRoutes,
     ...i18nRoutes,

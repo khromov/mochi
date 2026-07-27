@@ -6,6 +6,7 @@ description: 'Access the current URL, route params, cookies, and locals from any
 
 <script>
   import Callout from './_components/Callout.svelte';
+  import SeeItInAction from './_components/SeeItInAction.svelte';
 </script>
 
 ## Request context
@@ -104,7 +105,7 @@ import { getRequestContext } from 'mochi-framework';
 const { url, params, cookies, locals, request, requestId } = getRequestContext();
 ```
 
-Do **NOT** call `getRequestContext()` or access `params` / `locals` on the client; they throw. Use `isServer` to guard server-only branches. `url` and `cookies` work on both sides.
+`url` and `cookies` work on both server and client; `getRequestContext()`, `params`, and `locals` are server-only and throw in the browser, so guard those branches with `isServer`.
 
 The context also carries `isWarmup` — `true` when the request was issued by [route warmup](/docs/serve-options/#route-warmup) at startup, not a real client. Guard side effects in `serverProps` that shouldn't fire for synthetic warmup hits:
 
@@ -115,3 +116,10 @@ serverProps: async () => {
   return { posts: await loadPosts() };
 };
 ```
+
+<SeeItInAction
+demos={[
+{ href: "/demos/request-id/", title: "Request ID", hook: "How request IDs work — every request gets a UUID v7 on getRequestContext().requestId that rides every lifecycle event for correlation." },
+{ href: "/demos/cookies/", title: "Cookies", hook: "How cookies work — read and write on the server and the client through one MochiCookieJar API (cookies.get/set/delete)." },
+]}
+/>

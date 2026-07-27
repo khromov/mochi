@@ -32,6 +32,12 @@ docker build -t my-app .
 docker run --rm -p 3333:3333 my-app
 ```
 
+<Callout type="info">
+
+`bun run build` and `bun run start` must share a working directory — the template's single `WORKDIR /app` covers it. The one to watch is a multi-stage build that copies `.mochi/` into a differently-shaped final image: keep the app at the same path in both stages, and copy `public/` across too — static files are read from that directory at runtime, never from `.mochi/`. The framework's own components are exempt, so `mochi-framework` moving between a workspace checkout and `node_modules/` across stages is fine.
+
+</Callout>
+
 A one-route app lands at ~160 MB. ~87 MB of that is the Bun binary itself — the floor for any Bun-based image is around ~105 MB.
 
 ### `.dockerignore`
@@ -44,6 +50,13 @@ node_modules
 .mochi
 .git
 .env*
+```
+
+Don't add `public` to that list. Unlike `.mochi`, it isn't regenerated inside the image — the runtime reads it from disk on every boot. If it doesn't make it in, the server says so at startup instead of quietly 404ing:
+
+```
+[mochi] publicDir "public" is missing or empty, but the build found 12 file(s) there —
+every static file will 404.
 ```
 
 ### `--production` and devDeps

@@ -6,6 +6,7 @@ description: 'Register pages, APIs, WebSockets, SSE endpoints, and file routes u
 
 <script>
   import Callout from './_components/Callout.svelte';
+  import SeeItInAction from './_components/SeeItInAction.svelte';
 </script>
 
 ## Defining routes
@@ -60,8 +61,6 @@ await Mochi.serve({
 <h1>{params.slug}</h1>
 ```
 
-Do **NOT** thread `params` through props from `serverProps`; instead, call `getRequestContext()` directly in the component or any helper it imports — the context is request-scoped via `AsyncLocalStorage`.
-
 ### `Mochi.page`
 
 Register an SSR Svelte page via `Mochi.page(componentPath, { serverProps?, actions? })`. `componentPath` is resolved relative to the project root.
@@ -107,7 +106,11 @@ await Mochi.serve({
 
 `actions` is a `MochiFormActions` map handling POST submissions to the route. See `Mochi.page actions` for the action contract.
 
-Do **NOT** return a prop named `form` from `serverProps` when `actions` is declared; the name is reserved for the form action result and the route will throw at render time.
+<Callout type="warning">
+
+**Avoid `form` as a prop name.** When `actions` is declared, `form` is reserved for the action result. Return any other prop name from `serverProps` to avoid a runtime error.
+
+</Callout>
 
 ### `Mochi.api`
 
@@ -125,8 +128,6 @@ await Mochi.serve({
 ```
 
 Throw `MochiHttpError` (via `error(status, message)`) for non-2xx responses; uncaught throws become `500 Internal Server Error`. See `API routes` for the full error contract.
-
-Do **NOT** render HTML from `Mochi.api`; instead, use `Mochi.page` for HTML routes — API routes never go through the error page or `handleError`.
 
 ### `Mochi.ws`
 
@@ -170,7 +171,18 @@ await Mochi.serve({
 });
 ```
 
-Do **NOT** forget `onClose` cleanup when you allocate per-connection resources; instead, register a teardown so timers/subscriptions don't leak when the client disconnects.
+<Callout type="warning">
+
+**Tear down anything you open per connection.** Each client opens its own timers, intervals, and event-bus subscriptions — like the `setInterval` above. Without a matching `onClose` teardown they keep running after the client disconnects and leak.
+
+```ts
+Mochi.sse((stream) => {
+  const unsubscribe = chat.subscribe((msg) => stream.send(msg));
+  stream.onClose(unsubscribe); // fires on disconnect or stream.close()
+});
+```
+
+</Callout>
 
 ### `Mochi.file`
 
@@ -214,4 +226,12 @@ Every `Mochi.page` and `Mochi.api` route answers `HEAD` automatically by running
 
 ### Static files
 
-Files under `./public` are served automatically; no route entry is needed. A user-defined route always wins over a same-path public file. See `Serve options` for `publicDir`.
+Files under `./public` are served automatically; no route entry is needed. They're read straight from that directory in both development and production — nothing is copied into `.mochi/`, so the directory has to ship with your deploy. A user-defined route always wins over a same-path public file. See `Serve options` for `publicDir`.
+
+<SeeItInAction
+demos={[
+{ href: "/demos/hello-world/", title: "Hello World", hook: "How server-side rendering works — a Mochi.page() renders Svelte on the server and ships zero JavaScript." },
+{ href: "/demos/api/", title: "API Endpoints", hook: "How API routes work — define JSON endpoints with Mochi.api(), tested live against the running server." },
+{ href: "/demos/file/", title: "File Routes", hook: "How file routes work — serve a file from disk with Mochi.file(), as a static path or a per-request resolver." },
+]}
+/>

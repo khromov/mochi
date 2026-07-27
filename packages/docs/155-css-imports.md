@@ -6,6 +6,7 @@ description: 'Import CSS from Svelte, TypeScript, or JavaScript files and have i
 
 <script>
   import Callout from './_components/Callout.svelte';
+  import SeeItInAction from './_components/SeeItInAction.svelte';
 </script>
 
 ## CSS imports
@@ -37,8 +38,6 @@ A failed CSS import (missing package, malformed file) surfaces as a `css-bundle-
 
 </Callout>
 
-Do **NOT** load third-party stylesheets via runtime `<link>` tags in the shell when the asset ships with an npm package; instead, import it side-effect-style so it goes through the bundler with the rest of your CSS.
-
 ### Component-scoped `<style>` blocks
 
 `<style>` inside a `.svelte` file is handled by the Svelte compiler — Mochi extracts the compiled CSS, hashes it, and serves it from `/_mochi/css/<component>-<hash>.css`. This path is independent of side-effect CSS imports and applies to every component the page renders.
@@ -54,8 +53,6 @@ Do **NOT** load third-party stylesheets via runtime `<link>` tags in the shell w
 </style>
 ```
 
-Do **NOT** import the same stylesheet from both a `<style>` block and a side-effect `import`; instead, pick one — `<style>` for component-local rules, `import './foo.css'` for shared/global stylesheets.
-
 ### Variable fonts
 
 Bun's CSS bundler unquotes `format('woff2-variations')` to `format(woff2-variations)`, which browsers silently drop. Mochi re-quotes the four `*-variations` hints (`woff2-variations`, `woff-variations`, `truetype-variations`, `opentype-variations`) after bundling, so `@fontsource-variable/*` packages work without manual workarounds.
@@ -63,3 +60,10 @@ Bun's CSS bundler unquotes `format('woff2-variations')` to `format(woff2-variati
 ### Dev mode
 
 A `.css` edit triggers a fast rebundle and a page reload — no SSR recompile. Edits to `.svelte` or `.ts` files go through the full compile path.
+
+<SeeItInAction
+demos={[
+{ href: "https://demos.mochi.fast/todo/", title: "Tailwind Todo App", hook: "Classic todo app styled with Tailwind CSS." },
+{ href: "/demos/lazy/", title: "Lazy Islands", hook: "How lazy hydration works — islands marked mochi:hydrate:visible hydrate and load their CSS only when scrolled into view." },
+]}
+/>

@@ -12,6 +12,7 @@ export default ts.config(
       'node_modules/',
       'out/',
       '**/CHANGELOG.md',
+      '**/virtual-modules/',
       '**/locales/.wuchale/',
       '**/*.loader.svelte.js',
       '**/*.loader.server.svelte.js',
@@ -39,6 +40,11 @@ export default ts.config(
   {
     files: ['**/*.ts', '**/*.svelte'],
     rules: { 'no-undef': 'off' },
+  },
+  // .cjs files are CommonJS — expose module/require/exports globals
+  {
+    files: ['**/*.cjs'],
+    languageOptions: { sourceType: 'commonjs' },
   },
   prettier,
   ...svelte.configs['flat/prettier'],

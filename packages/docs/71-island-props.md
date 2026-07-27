@@ -6,6 +6,7 @@ description: 'How props are serialized and passed to hydratable islands, includi
 
 <script>
   import Callout from './_components/Callout.svelte';
+  import SeeItInAction from './_components/SeeItInAction.svelte';
 </script>
 
 ## Passing props to islands
@@ -22,8 +23,6 @@ Pass props to a component marked with `mochi:hydrate`, `mochi:hydrate:visible`, 
 
 <UserCard mochi:hydrate {user} {visitedAt} {tags} />
 ```
-
-Do **NOT** pass functions, class instances, or `Symbol` values as props; instead, send a plain-data representation and rebuild the value inside the island.
 
 ### Typing props
 
@@ -83,7 +82,7 @@ When a component wraps a native element and forwards the rest of its attributes,
 
 For `mochi:hydrate*` islands, props are emitted as a `<script type="application/json" id="mochi-props-N">` block placed just before the island. When several islands on a page share the exact same payload, the block is emitted once before the first of them and the rest reference it by id — so identical props ship over the wire only once.
 
-For `mochi:defer` server islands the flow differs: props are HMAC-signed and passed as a query parameter to a per-island endpoint — see [Server islands](server-islands/).
+For `mochi:defer` server islands the flow differs: props are encrypted (opaque on the wire) and passed as a query parameter to a per-island endpoint — see [Server islands](/docs/server-islands/).
 
 ### Supported types
 
@@ -100,25 +99,27 @@ For `mochi:defer` server islands the flow differs: props are HMAC-signed and pas
 - Class instances (the constructor is lost — only own enumerable properties survive)
 - `Symbol`
 
-### Auto-injected props
+### Detecting hydration
 
-The framework appends one read-only prop to every island invocation. Destructure it in `$props()` to use it:
+To branch on whether the current render will hydrate, call [`isHydratable()`](/docs/selective-hydration/#ishydratable) — it works in any component at any nesting depth, with no prop involved:
 
 ```svelte
 <!-- file: src/lib/UserCard.svelte -->
 <script lang="ts">
-  let {
-    isHydratable,
-    user,
-  }: {
-    isHydratable?: boolean;
-    user: { name: string; id: number };
-  } = $props();
+  import { isHydratable } from 'mochi-framework';
+
+  let { user }: { user: { name: string; id: number } } = $props();
+
+  const hydratable = isHydratable();
 </script>
 ```
 
-- `isHydratable` — `true` when the call site uses `mochi:hydrate`, `mochi:hydrate:visible`, or `mochi:defer mochi:hydrate`. Undefined for pure SSR-only invocations and for bare `mochi:defer`.
+`islandId` is a reserved name on every island (`mochi:hydrate` and `mochi:defer` alike) — passing it as a literal prop is a compile error, so a component can move between directives without the name silently changing meaning. On `mochi:defer` it is also the framework's transport key inside the encrypted envelope, stripped server-side before the component renders; a spread carrying it there is overridden by the framework value (last key wins). For a unique id inside the component, use `$props.id()`.
 
-Do **NOT** declare `isHydratable` as a user-controlled prop; instead, treat it as an input the framework owns. See `Selective hydration with mochi:hydrate` for the branching pattern. For a unique per-instance id, use Svelte's native `$props.id()` instead of a prop.
-
-`islandId` is a reserved name on every island (`mochi:hydrate` and `mochi:defer` alike) — passing it as a literal prop is a compile error, so a component can move between directives without the name silently changing meaning. On `mochi:defer` it is also the framework's transport key inside the signed envelope, stripped server-side before the component renders; a spread carrying it there is overridden by the framework value (last key wins). For a unique id inside the component, use `$props.id()`.
+<SeeItInAction
+demos={[
+{ href: "/demos/island-props/", title: "Crossing the server-client boundary with props", hook: "How props cross the server-client boundary — Date, Map, Set, BigInt, URL, typed arrays, and even cyclic refs survive devalue's round-trip into a hydrated island." },
+{ href: "/demos/prop-dedup/", title: "Shared Props", hook: "How island prop deduplication works — nine islands share three unique payloads, each serialized once and referenced via props-ref." },
+{ href: "/demos/props-id/", title: "Unique IDs", hook: "How stable island IDs work — Svelte's native $props.id() gives SSR-consistent, per-instance ids, namespaced inside server islands." },
+]}
+/>

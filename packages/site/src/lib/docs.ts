@@ -1,20 +1,17 @@
 import { existsSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { compile as mdsvexCompile } from 'mdsvex';
 import { logger, trailingSlashIt } from 'mochi-framework';
 import rehypeSlug from 'rehype-slug';
+import { SITE_ROOT } from './siteRoot';
+import { loadPosts, getPost } from './blog';
+import { CHANGELOG_SLUG, CHANGELOG_TITLE, CHANGELOG_DESCRIPTION, getChangelogTxt } from './changelog';
 import { demos, type Demo } from './demos';
-import type { SourceSpec } from '../components/utils.ts';
+import { isDemoIndex, stripImageConfig, type SourceSpec } from '../components/utils.ts';
+import { collectHeadings, type HastNode, type MdsvexRehypePlugin } from './markdown';
 import type { TocEntry } from './toc';
 
-type MdsvexRehypePlugin = NonNullable<NonNullable<Parameters<typeof mdsvexCompile>[1]>['rehypePlugins']>[number];
-
-export const DOCS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../docs');
-const DEMOS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../demos');
-// Demo source paths in each demo's `files` are written relative to the site package root (e.g. './src/...').
-const SITE_ROOT = path.resolve(DEMOS_DIR, '../..');
-
+export const DOCS_DIR = path.resolve(SITE_ROOT, '../docs');
 // Internal demos are keyed by their folder name (`slug`) and carry their own `files`
 // list — the single source of truth shared by the demo page, the per-demo llms.txt
 // route, and the /llms-full.txt bundle.
@@ -56,7 +53,10 @@ let cachedDocs: DocEntry[] | null = null;
 let cachedBySlug: Map<string, DocEntry> | null = null;
 let cachedNav: TocEntry[] | null = null;
 let cachedLlmsRecommendedTxt: string | null = null;
-let cachedLlmsFullTxt: string | null = null;
+// Only the docs + demos + posts portion is a forever memo. The changelog block is
+// concatenated per request (getChangelogTxt is itself cached) so its 4h TTL isn't
+// frozen into this module-level string.
+let cachedLlmsFullBaseTxt: string | null = null;
 let cachedSitemapXml: string | null = null;
 const cachedDemoLlmsTxt = new Map<string, string | null>();
 
@@ -65,7 +65,7 @@ export function clearDocsCaches(): void {
   cachedBySlug = null;
   cachedNav = null;
   cachedLlmsRecommendedTxt = null;
-  cachedLlmsFullTxt = null;
+  cachedLlmsFullBaseTxt = null;
   cachedSitemapXml = null;
   cachedDemoLlmsTxt.clear();
 }
@@ -211,7 +211,7 @@ async function buildDemoLlmsTxt(slug: string, stripStyles = false): Promise<stri
     return null;
   }
   const parts: string[] = [`## Demo: ${slug}\n`];
-  for (const { label, path: rel, lang } of specs) {
+  for (const { label, path: rel, lang, showImageConfig } of specs) {
     const abs = path.resolve(SITE_ROOT, rel);
     if (!existsSync(abs)) {
       // A declared source file that isn't on disk is almost always a typo'd path
@@ -220,6 +220,9 @@ async function buildDemoLlmsTxt(slug: string, stripStyles = false): Promise<stri
       continue;
     }
     let content = (await Bun.file(abs).text()).trimEnd();
+    if (isDemoIndex(rel) && !showImageConfig) {
+      content = stripImageConfig(content).trimEnd();
+    }
     const fence = lang ?? (label.endsWith('.svelte') ? 'svelte' : 'ts');
     // Strip <style> blocks only from Svelte-fenced sources — never from .ts, where a
     // literal "<style>" would just be code/text, not markup to elide.
@@ -251,13 +254,28 @@ function stripSvelteStyleBlocks(text: string): string {
   return text.replace(SVELTE_STYLE_BLOCK_RE, '<style>\n  /* Styles omitted */\n</style>');
 }
 
-export async function buildLlmsFullTxt(): Promise<string> {
-  if (cachedLlmsFullTxt) {
-    return cachedLlmsFullTxt;
+async function buildBlogPostsTxt(): Promise<string> {
+  // Published posts only, newest first (loadPosts() already sorts and hides drafts).
+  const posts = await loadPosts();
+  const parts: string[] = ['# Blog Posts\n'];
+  for (const post of posts) {
+    parts.push(post.raw.trimEnd());
   }
-  const [docs, demos] = await Promise.all([loadDocs(), buildDemosTxt(true)]);
-  cachedLlmsFullTxt = docs.map((d) => d.raw.trimEnd()).join('\n\n') + '\n\n' + demos;
-  return cachedLlmsFullTxt;
+  return parts.join('\n\n');
+}
+
+export async function buildLlmsFullTxt(): Promise<string> {
+  if (!cachedLlmsFullBaseTxt) {
+    const [docs, demos, posts] = await Promise.all([loadDocs(), buildDemosTxt(true), buildBlogPostsTxt()]);
+    cachedLlmsFullBaseTxt = docs.map((d) => d.raw.trimEnd()).join('\n\n') + '\n\n' + demos + '\n\n' + posts;
+  }
+  // The changelog is fetched (and cached) separately; concatenate it per request so
+  // its own 4h TTL isn't frozen into the forever memo. Omit the block on a fetch miss.
+  const changelog = await getChangelogTxt();
+  if (changelog === null) {
+    return cachedLlmsFullBaseTxt;
+  }
+  return `${cachedLlmsFullBaseTxt}\n\n# Changelog\n\n${changelog.trimEnd()}\n`;
 }
 
 const SITE_BASE = 'https://mochi.fast';
@@ -267,11 +285,16 @@ export async function buildSitemapXml(): Promise<string> {
     return cachedSitemapXml;
   }
   const docs = await loadDocs();
+  // Published posts only — loadPosts() without includeDrafts never exposes drafts.
+  const posts = await loadPosts();
   const internalDemos = demos.filter((d) => d.href.startsWith('/'));
 
   const urls: string[] = [
     `  <url><loc>${SITE_BASE}/</loc></url>`,
     ...docs.map((d) => `  <url><loc>${SITE_BASE}/docs/${d.slug}/</loc></url>`),
+    `  <url><loc>${SITE_BASE}/docs/${CHANGELOG_SLUG}/</loc></url>`,
+    `  <url><loc>${SITE_BASE}/blog/</loc></url>`,
+    ...posts.map((p) => `  <url><loc>${SITE_BASE}/blog/${p.slug}/</loc></url>`),
     // Demo hrefs already carry a trailing slash; trailingSlashIt normalizes to
     // exactly one rather than appending unconditionally (which produced `…/request-id//`).
     ...internalDemos.map((d) => `  <url><loc>${trailingSlashIt(`${SITE_BASE}${d.href}`)}</loc></url>`),
@@ -282,8 +305,19 @@ export async function buildSitemapXml(): Promise<string> {
 }
 
 export async function getDocLlmsTxt(slug: string): Promise<string | null> {
+  // The changelog is a synthetic doc — not in loadDocs() — fetched from GitHub.
+  if (slug === CHANGELOG_SLUG) {
+    return getChangelogTxt();
+  }
   const doc = await getDoc(slug);
   return doc ? doc.raw.trimEnd() + '\n' : null;
+}
+
+// Serves a published blog post's raw markdown (frontmatter and any <script>
+// component imports intact, matching getDocLlmsTxt). Drafts stay hidden.
+export async function getPostLlmsTxt(slug: string): Promise<string | null> {
+  const post = await getPost(slug);
+  return post ? post.raw.trimEnd() + '\n' : null;
 }
 
 export interface LlmsIndexEntry {
@@ -315,33 +349,54 @@ export function internalDemoLlmsRoutes(): DemoLlmsRoute[] {
 }
 
 export interface SectionIndexEntry {
-  type: 'doc' | 'demo';
+  type: 'doc' | 'demo' | 'post';
   slug: string;
   title: string;
   description: string;
 }
 
+// Prefix a post's description with its date so an agent can judge recency;
+// `description` is optional, so fall back to the date alone.
+function postSectionDescription(date: string, description?: string): string {
+  return description ? `${date} — ${description}` : date;
+}
+
 export async function buildSectionIndex(): Promise<SectionIndexEntry[]> {
-  const docList = await loadDocs();
+  const [docList, posts] = await Promise.all([loadDocs(), loadPosts()]);
   const docs: SectionIndexEntry[] = docList.map((d) => ({
     type: 'doc',
     slug: d.slug,
     title: d.title,
     description: d.description ?? '',
   }));
+  // The synthetic changelog rounds out the docs — addressed as a doc so
+  // get_section({ type: 'doc', slug: 'changelog' }) resolves it.
+  docs.push({ type: 'doc', slug: CHANGELOG_SLUG, title: CHANGELOG_TITLE, description: CHANGELOG_DESCRIPTION });
+  const postEntries: SectionIndexEntry[] = posts.map((p) => ({
+    type: 'post',
+    slug: p.slug,
+    title: p.title,
+    description: postSectionDescription(p.date, p.description),
+  }));
   const demoEntries: SectionIndexEntry[] = internalDemos().map((d) => ({ type: 'demo', slug: d.slug, title: d.title, description: d.hook }));
-  return [...docs, ...demoEntries];
+  return [...docs, ...postEntries, ...demoEntries];
 }
 
-export async function buildLlmsJson(origin: string): Promise<{ docs: LlmsIndexEntry[]; demos: LlmsIndexEntry[] }> {
-  const docList = await loadDocs();
+export async function buildLlmsJson(origin: string): Promise<{ docs: LlmsIndexEntry[]; posts: LlmsIndexEntry[]; demos: LlmsIndexEntry[] }> {
+  const [docList, posts] = await Promise.all([loadDocs(), loadPosts()]);
   const docs: LlmsIndexEntry[] = docList.map((d) => ({
     title: d.title,
     description: d.description ?? '',
     url: `${origin}/docs/${d.slug}/llms.txt`,
   }));
+  docs.push({ title: CHANGELOG_TITLE, description: CHANGELOG_DESCRIPTION, url: `${origin}/docs/${CHANGELOG_SLUG}/llms.txt` });
+  const postEntries: LlmsIndexEntry[] = posts.map((p) => ({
+    title: p.title,
+    description: postSectionDescription(p.date, p.description),
+    url: `${origin}/blog/${p.slug}/llms.txt`,
+  }));
   const demoEntries: LlmsIndexEntry[] = internalDemos().map((d) => ({ title: d.title, description: d.hook, url: `${origin}${demoLlmsPath(d.href)}` }));
-  return { docs, demos: demoEntries };
+  return { docs, posts: postEntries, demos: demoEntries };
 }
 
 const SITE_NAME = 'Mochi';
@@ -350,7 +405,7 @@ const SITE_SUMMARY = 'Mochi is an SSR-first framework for Svelte 5 on Bun with i
 // Standard llms.txt index: title + summary + linked sections, rendered from the same
 // data as /llms.json. Per-request (origin-dependent), so not cached.
 export async function buildLlmsIndexTxt(origin: string): Promise<string> {
-  const { docs, demos } = await buildLlmsJson(origin);
+  const { docs, posts, demos } = await buildLlmsJson(origin);
   const link = (e: LlmsIndexEntry) => `- [${e.title}](${e.url}): ${e.description}`;
   const lines = [
     `# ${SITE_NAME}`,
@@ -365,6 +420,10 @@ export async function buildLlmsIndexTxt(origin: string): Promise<string> {
     '',
     ...demos.map(link),
     '',
+    '## Blog',
+    '',
+    ...posts.map(link),
+    '',
     '## Optional',
     '',
     `- [All docs concatenated](${origin}/llms-recommended.txt): The full documentation in reading order.`,
@@ -374,44 +433,13 @@ export async function buildLlmsIndexTxt(origin: string): Promise<string> {
   return lines.join('\n');
 }
 
-type HastNode = {
-  type: string;
-  tagName?: string;
-  value?: string;
-  properties?: Record<string, unknown>;
-  children?: HastNode[];
-};
-
-function hastText(node: HastNode): string {
-  if (node.type === 'text') {
-    return node.value ?? '';
-  }
-  if (!node.children) {
-    return '';
-  }
-  return node.children.map(hastText).join('');
-}
-
 async function parseDoc(markdown: string): Promise<{
   metadata: Partial<DocMetadata>;
   toc: TocEntry[];
 }> {
-  const toc: TocEntry[] = [];
+  let toc: TocEntry[] = [];
   const capture = () => (tree: HastNode) => {
-    for (const node of tree.children ?? []) {
-      if (node.type !== 'element' || !node.tagName) {
-        continue;
-      }
-      const match = /^h([1-6])$/.exec(node.tagName);
-      if (!match) {
-        continue;
-      }
-      toc.push({
-        level: Number(match[1]),
-        text: hastText(node),
-        slug: String(node.properties?.id ?? ''),
-      });
-    }
+    toc = collectHeadings(tree);
   };
   const result = await mdsvexCompile(markdown, {
     extensions: ['.md', '.svx'],

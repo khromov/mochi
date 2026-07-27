@@ -1,5 +1,9 @@
-import { beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mcpServer } from './mcp';
+import { CHANGELOG_URL } from './changelog';
+
+const CHANGELOG_BODY = '# Changelog\n\n## [0.8.0] mochi-framework\n\n### Features\n\n- something\n';
+const realFetch = globalThis.fetch;
 
 type JsonRpcResult = { result?: { content?: { text: string }[]; isError?: boolean; tools?: { name: string }[]; serverInfo?: { name: string } } };
 
@@ -13,8 +17,20 @@ function toolText(res: JsonRpcResult): string {
 
 describe('mcp docs server', () => {
   beforeAll(async () => {
+    // buildSectionIndex + get_section({ doc, changelog }) fetch the changelog from
+    // GitHub — stub it so the test never hits the network (own process per file).
+    globalThis.fetch = (async (input: unknown) => {
+      if (String(input) === CHANGELOG_URL) {
+        return new Response(CHANGELOG_BODY);
+      }
+      return realFetch(input as never);
+    }) as typeof fetch;
     await call('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '1.0.0' } });
     await mcpServer.receive({ jsonrpc: '2.0', method: 'notifications/initialized' } as never);
+  });
+
+  afterAll(() => {
+    globalThis.fetch = realFetch;
   });
 
   test('initialize reports the server identity', async () => {
@@ -34,9 +50,12 @@ describe('mcp docs server', () => {
     const sections = JSON.parse(toolText(res)) as { type: string; slug: string; title: string; description: string }[];
     expect(sections.some((s) => s.type === 'doc' && s.slug === 'intro')).toBe(true);
     expect(sections.some((s) => s.type === 'demo' && s.slug === 'hello-world')).toBe(true);
+    // Blog posts and the synthetic changelog doc are listed too.
+    expect(sections.some((s) => s.type === 'post')).toBe(true);
+    expect(sections.some((s) => s.type === 'doc' && s.slug === 'changelog')).toBe(true);
     // Every entry carries the fields an agent needs to pick and fetch a section.
     for (const s of sections) {
-      expect(s.type === 'doc' || s.type === 'demo').toBe(true);
+      expect(s.type === 'doc' || s.type === 'demo' || s.type === 'post').toBe(true);
       expect(s.slug).toBeTruthy();
       expect(s.title).toBeTruthy();
     }
@@ -54,6 +73,21 @@ describe('mcp docs server', () => {
     const text = toolText(res);
     expect(text).toContain('==== demo:hello-world ====');
     expect(text).toContain('## Demo: hello-world');
+  });
+
+  test('get_section returns the raw markdown for a blog post', async () => {
+    const res = await call('tools/call', { name: 'get_section', arguments: { sections: [{ type: 'post', slug: 'mochi-0-8-0' }] } });
+    const text = toolText(res);
+    expect(text).toContain('==== post:mochi-0-8-0 ====');
+    expect(text).toContain('slug: mochi-0-8-0');
+  });
+
+  test('get_section returns the stubbed changelog for the synthetic doc', async () => {
+    const res = await call('tools/call', { name: 'get_section', arguments: { sections: [{ type: 'doc', slug: 'changelog' }] } });
+    const text = toolText(res);
+    expect(text).toContain('==== doc:changelog ====');
+    expect(text).toContain('# Changelog');
+    expect(text).toContain('0.8.0');
   });
 
   test('the type qualifier disambiguates a slug that is both a doc and a demo', async () => {

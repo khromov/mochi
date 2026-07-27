@@ -29,18 +29,8 @@ describe('live-reload only signals tabs whose entry was affected', () => {
       port: 0,
       development: true,
       logger: { enabled: false },
-      // The PageCacheAdmin SSR entry pulls `devalue` / `clsx` into the startup
-      // compile graph; with those in the bundle, the watcher's second
-      // `Bun.build` reliably trips the documented EISDIR/Unseekable bug.
-      // Skip it for this test — it only exercises the live-reload filter.
-      debugBar: false,
       outDir,
       additionalWatchPaths: [workDir],
-      // Plain error page with no hydratables so the registry never builds
-      // a client bundle — the recompile-driven `buildClientBundle()` is what
-      // trips the documented bun-test EISDIR bug, and skipping it sidesteps
-      // the limitation that prevents this test from running otherwise.
-      errorPage: path.join(FIXTURE_DIR, 'Error.svelte'),
       routes: {
         '/a': Mochi.page(pageA),
         '/b': Mochi.page(pageB),
@@ -64,8 +54,15 @@ describe('live-reload only signals tabs whose entry was affected', () => {
 
     const aMessages: string[] = [];
     const bMessages: string[] = [];
-    wsA.addEventListener('message', (e) => aMessages.push(typeof e.data === 'string' ? e.data : ''));
-    wsB.addEventListener('message', (e) => bMessages.push(typeof e.data === 'string' ? e.data : ''));
+    // The server greets every client with `boot:<id>`; only reload signals matter here.
+    const collect = (into: string[]) => (e: MessageEvent) => {
+      const data = typeof e.data === 'string' ? e.data : '';
+      if (!data.startsWith('boot:')) {
+        into.push(data);
+      }
+    };
+    wsA.addEventListener('message', collect(aMessages));
+    wsB.addEventListener('message', collect(bMessages));
 
     await Promise.all([
       new Promise<void>((resolve) => wsA.addEventListener('open', () => resolve(), { once: true })),
@@ -96,5 +93,56 @@ describe('live-reload only signals tabs whose entry was affected', () => {
 
     wsA.close();
     wsB.close();
+  });
+
+  // A tab that was disconnected when its entry recompiled never received the
+  // `reload`, and the boot id alone can't tell it — the server never
+  // restarted. The greeting's generation is what closes that hole.
+  test('the boot greeting advances its generation for an entry that was reloaded while offline', async () => {
+    const greet = async (entry: string) => {
+      const ws = new WebSocket(`ws://localhost:${port}/__mochi_live_reload?entry=${encodeURIComponent(entry)}`);
+      const message = await new Promise<string>((resolve) => {
+        ws.addEventListener('message', (e) => resolve(typeof e.data === 'string' ? e.data : ''), { once: true });
+      });
+      return { ws, message };
+    };
+
+    const first = await greet(pageA);
+    expect(first.message).toMatch(/^boot:[0-9a-f-]{36}:\d+$/);
+    const [bootId, generation] = first.message.slice('boot:'.length).split(':');
+
+    // Server replies to the client heartbeat, so a half-open socket is
+    // detectable as silence.
+    const pong = new Promise<string>((resolve) => {
+      first.ws.addEventListener('message', (e) => resolve(typeof e.data === 'string' ? e.data : ''), { once: true });
+    });
+    first.ws.send('ping');
+    expect(await pong).toBe('pong');
+
+    // Go offline, then change the page the tab was on.
+    first.ws.close();
+    const completed = new Promise<MochiRecompileCompleteEvent>((resolve) => {
+      const handler = (e: MochiRecompileCompleteEvent) => {
+        if (e.trigger === 'file') {
+          mochiEvents.off('recompile:complete', handler);
+          resolve(e);
+        }
+      };
+      mochiEvents.on('recompile:complete', handler);
+    });
+    writeFileSync(pageA, '<h1 class="lr-a">A v3</h1>\n');
+    await completed;
+    await new Promise((r) => setTimeout(r, 200));
+
+    const second = await greet(pageA);
+    const [reconnectBootId, reconnectGeneration] = second.message.slice('boot:'.length).split(':');
+    expect(reconnectBootId).toBe(bootId);
+    expect(Number(reconnectGeneration)).toBe(Number(generation) + 1);
+    second.ws.close();
+
+    // PageB was untouched, so a tab on it must not be told to reload.
+    const untouched = await greet(pageB);
+    expect(Number(untouched.message.slice('boot:'.length).split(':')[1])).toBe(0);
+    untouched.ws.close();
   });
 });
