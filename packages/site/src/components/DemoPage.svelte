@@ -21,7 +21,12 @@
   // title (e.g. queue), and some demos route to sub-paths (e.g. data-loading →
   // /pikachu). Prefix-match the trailing-slashed href so sub-routes still resolve.
   const sourceDemo = demos.find((d) => d.href.startsWith('/') && url.pathname.startsWith(d.href));
-  const sourcePath = sourceDemo?.slug ? `packages/site/src/demos/${sourceDemo.slug}` : undefined;
+  const sourcePaths = sourceDemo?.sourcePaths ?? (sourceDemo?.slug ? [`packages/site/src/demos/${sourceDemo.slug}`] : []);
+  // One folder needs no disambiguation; several do, so name each by its path under the site's src/.
+  const sourceLinks = sourcePaths.map((path) => ({
+    path,
+    label: sourcePaths.length > 1 ? `View ${path.replace('packages/site/src/', '')}/ on GitHub` : undefined,
+  }));
 
   const moreDemos = demos
     .filter((d) => d.title !== title)
@@ -74,8 +79,12 @@
         {@render children()}
       </div>
       {#if sources && sources.length > 0}
-        {#if sourcePath}
-          <ViewSourceLink path={sourcePath} />
+        {#if sourceLinks.length > 0}
+          <div class="source-links">
+            {#each sourceLinks as link (link.path)}
+              <ViewSourceLink path={link.path} label={link.label} />
+            {/each}
+          </div>
         {/if}
         <CodeViewer {sources} mochi:hydrate />
       {/if}
@@ -217,6 +226,15 @@
     .demo-card {
       padding: 1.5rem;
     }
+  }
+
+  .source-links {
+    display: flex;
+    flex-wrap: wrap;
+    align-self: flex-start;
+    gap: 0.2rem 1rem;
+    /* Pull the links closer to the code viewer below (parent flex uses gap: 1rem). */
+    margin-bottom: -1.25rem;
   }
 
   .card-header {

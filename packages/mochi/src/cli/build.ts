@@ -325,6 +325,12 @@ function pageSymbol(hyd: number | null): string {
   return hyd != null && hyd > 0 ? styleText('green', '●') : styleText('cyan', '○');
 }
 
+// Same full/empty distinction as `pageSymbol`, in the server island's own colour: a server island is a render of its
+// own, so it can carry hydratable children just like a page can.
+function serverIslandSymbol(hyd: number | null): string {
+  return styleText('magenta', hyd != null && hyd > 0 ? '◐' : '○');
+}
+
 function kindSymbol(kind: Exclude<RouteKind, 'page'>): string {
   switch (kind) {
     case 'api':
@@ -389,13 +395,14 @@ function printBuildTree({ routes, errorPage, emails, islands, assetPrefix, stats
       rows: emails.map((e) => ({ symbol: styleText('cyan', '✉'), label: e.file, hyd: null, ssr: prettyBytes(e.ssrSizeBytes) })),
     });
   }
-  if (islands.length > 0) {
-    groups.push({
-      heading: 'Server island',
-      // Labelled by endpoint rather than by file: the name is what the browser fetches, and two islands can share a
-      // source file (named exports) while each keeps its own URL.
-      rows: islands.map(([name, resolvedPath]) => statRow(styleText('magenta', '◐'), `${assetPrefix}/island/${name}`, stats, resolvedPath)),
-    });
+  // Labelled by endpoint rather than by file: the name is what the browser fetches, and two islands can share a source
+  // file (named exports) while each keeps its own URL.
+  const islandRows = islands.map(([name, resolvedPath]) => {
+    const row = statRow('', `${assetPrefix}/island/${name}`, stats, resolvedPath);
+    return { ...row, symbol: serverIslandSymbol(row.hyd) };
+  });
+  if (islandRows.length > 0) {
+    groups.push({ heading: 'Server island', rows: islandRows });
   }
 
   const allRows = groups.flatMap((g) => g.rows);
@@ -450,8 +457,11 @@ function printBuildTree({ routes, errorPage, emails, islands, assetPrefix, stats
   if (emails.length > 0) {
     legendEntries.push(`${styleText('cyan', '✉')} email template`);
   }
-  if (islands.length > 0) {
-    legendEntries.push(`${styleText('magenta', '◐')} server island`);
+  if (islandRows.some((r) => r.hyd != null && r.hyd > 0)) {
+    legendEntries.push(`${styleText('magenta', '◐')} server island with islands`);
+  }
+  if (islandRows.some((r) => r.hyd === null || r.hyd === 0)) {
+    legendEntries.push(`${styleText('magenta', '○')} server island`);
   }
   console.log(`\n  ${legendEntries.join(styleText('dim', '  ·  '))}`);
 }
