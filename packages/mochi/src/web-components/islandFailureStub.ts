@@ -1,10 +1,6 @@
 import { escapeHtmlAttr } from '../utils/htmlEscape';
 
-/**
- * Always-shipped: hides the element entirely in production. The dev rule below
- * piggy-backs on `[data-message]` attribute presence, so it harmlessly does
- * nothing in production where stubs omit the attribute.
- */
+/** Always shipped, hiding the element in production. The dev rule below keys on `[data-message]` presence, which production stubs omit. */
 export const ISLAND_FAILURE_CSS = `
 mochi-island-failure { display: none; }
 `;
@@ -31,16 +27,12 @@ mochi-island-failure[data-message]::before {
 `;
 
 /**
- * Build the `<mochi-island-failure>` stub HTML for a crashed island. Visibility is
- * controlled by `ISLAND_FAILURE_CSS` / `ISLAND_FAILURE_DEV_CSS` above.
+ * Build the `<mochi-island-failure>` stub HTML for a crashed island, with visibility controlled by the CSS above.
+ * `message` is omitted rather than passed empty, since `mochi-island-failure[data-message]` matches on attribute
+ * presence and a `data-message=""` would surface a blank failure indicator in production.
  *
- * `message` is conditional rather than passed-as-empty because the CSS selector
- * `mochi-island-failure[data-message]` matches on attribute *presence*, so an empty
- * `data-message=""` would surface a blank failure indicator in production.
- *
- * Lives in its own file (separate from `IslandFailure.ts`) so the server can import
- * it without pulling in the `class extends HTMLElement` declaration that the
- * custom-element registration needs.
+ * It lives apart from `IslandFailure.ts` so the server can import it without the `class extends HTMLElement` declaration
+ * that custom-element registration needs.
  */
 export function islandFailureStub(componentName: string, message?: string): string {
   const name = escapeHtmlAttr(componentName);

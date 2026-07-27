@@ -1,7 +1,7 @@
-// isCompiled() backs the server-island manifest-miss warning in Mochi.ts (see
-// serverIslandManifestMiss.test.ts) — it must agree with evict()'s notion of
-// "known" (exact key, or a differently-formatted path resolving to the same
-// file) so the warning doesn't fire for paths that are actually compiled.
+// isCompiled() reports whether a component came out of the prebuilt manifest,
+// so it must agree with evict() on what "known" means and must not care how the
+// caller spelled the path — a relative registration and its absolute form are
+// the same component.
 import { describe, expect, test } from 'bun:test';
 import path from 'node:path';
 import { ComponentRegistry } from './ComponentRegistry';
@@ -32,11 +32,10 @@ describe('ComponentRegistry.isCompiled', () => {
     expect(registry.isCompiled(absPath)).toBe(true);
   });
 
-  test('true when the stored key resolves to the same path even if written differently', () => {
+  test('a relative and an absolute spelling are the same component', () => {
     const registry = new ComponentRegistry({ development: true });
-    // Mirrors compileAll(), which keys compiledComponents by the caller's
-    // original filename string (possibly relative), not path.resolve()'d.
-    seed(registry, './project/src/Known.svelte');
+    seed(registry, path.resolve('./project/src/Known.svelte'));
+    expect(registry.isCompiled('./project/src/Known.svelte')).toBe(true);
     expect(registry.isCompiled(path.resolve('./project/src/Known.svelte'))).toBe(true);
   });
 

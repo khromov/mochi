@@ -1,30 +1,19 @@
 /**
- * Reusable deterministic authenticated encryption for the framework — used to
- * seal server-island props and image-request payloads so they're opaque on the
- * wire (confidentiality) and tamper-proof (integrity).
- *
- * Built on **AES-256-SIV (RFC 5297)** from the audited `@noble/ciphers` library
- * rather than a hand-rolled construction. SIV is nonce-misuse-resistant and
- * deterministic: the 16-byte synthetic IV is `S2V(K1, aad ‖ inner)` and doubles
- * as both the CTR nonce and the authentication tag, so the envelope carries one
- * 16-byte value instead of a separate IV *and* MAC tag — keeping tokens short
- * (12 bytes shorter than the previous AES-GCM envelope).
+ * Deterministic authenticated encryption sealing server-island props and image-request payloads, so both stay opaque and
+ * tamper-proof on the wire. Built on AES-256-SIV (RFC 5297) from the audited `@noble/ciphers`: SIV is nonce-misuse-
+ * resistant, and its 16-byte synthetic IV `S2V(K1, aad ‖ inner)` doubles as CTR nonce and authentication tag, so the
+ * envelope carries one 16-byte value instead of a separate IV and MAC tag.
  *
  *   envelope = base64url( siv(16) ‖ ciphertext )   // aessiv(key, aad).encrypt(inner)
  *
- * The 64-byte AES-256-SIV key (noble splits it: K1 for S2V/CMAC, K2 for CTR) is
- * derived as `HMAC-SHA512(secretKey, label)` from `getMochiConfig().secretKey`,
- * so any `MOCHI_KEY` length works and the existing secret — and its
- * `serverIsland:secretKey` filter — is reused. Because SIV is deterministic,
- * identical `(key, aad, inner)` produce identical ciphertext, which keeps image
- * URLs stable/cacheable; the trade-off is that equal plaintexts are observably
- * equal (acceptable here, and already true under the prior scheme).
+ * The 64-byte key — noble splits it into K1 for S2V/CMAC and K2 for CTR — derives as `HMAC-SHA512(secretKey, label)`
+ * from `getMochiConfig().secretKey`, so any `MOCHI_KEY` length works and the existing secret and its
+ * `serverIsland:secretKey` filter carry over. Determinism keeps image URLs stable and cacheable, at the cost of equal
+ * plaintexts being observably equal.
  *
- * The `aad` is bound as an S2V associated-data component (the filename for images,
- * the component name for server islands), so a token sealed under one `aad` fails
- * to decrypt under another. The plaintext sealed inside is `flags(1) ‖ payload`;
- * `flags` bit 0 = payload was deflate-compressed before encryption (so the flags
- * byte is authenticated alongside the payload).
+ * The `aad` binds as an S2V associated-data component — the filename for images, the component name for server islands —
+ * so a token sealed under one `aad` fails to decrypt under another. The sealed plaintext is `flags(1) ‖ payload`, with
+ * `flags` bit 0 marking a deflate-compressed payload, so the flags byte is authenticated alongside it.
  */
 import { aessiv } from '@noble/ciphers/aes.js';
 import { createHmac } from 'node:crypto';
@@ -35,22 +24,16 @@ const SIV_LEN = 16;
 const FLAG_COMPRESSED = 1;
 
 /**
- * Default minimum payload size (bytes) before `encryptPayloadBytes` attempts
- * deflate. Below this, zlib framing outweighs any saving for the two real
- * payload shapes (packed image requests, devalue island props), so the deflate
- * call is wasted — the inner "use only if smaller" check still guards larger
- * low-redundancy payloads. Empirically derived; re-derive with:
- *   bun packages/mochi/scripts/compression-threshold.ts
- *
- * Override per app via the `payload:compressMinBytes` filter.
+ * Minimum payload size (bytes) before `encryptPayloadBytes` attempts deflate. Below this, zlib framing outweighs any
+ * saving for the two real payload shapes — packed image requests and devalue island props — and the inner
+ * "use only if smaller" check still guards larger low-redundancy payloads. Empirically derived; re-derive with
+ * `bun packages/mochi/scripts/compression-threshold.ts`, and override per app via the `payload:compressMinBytes` filter.
  */
 export const DEFAULT_COMPRESS_MIN_BYTES = 80;
 
-// 64-byte AES-256-SIV key derived from the root secret. SHA-512's 64-byte output
-// maps directly to noble's expected key length (split internally into the S2V
-// and CTR halves). Memoized per secret — the derivation is a pure function of
-// the config's secretKey, and encrypt/decrypt run on every image URL mint and
-// every island-props round-trip (the key on secret handles tests reconfiguring).
+// SHA-512's 64-byte output maps directly onto noble's expected key length. Memoized per secret, since the derivation is
+// pure in the config's secretKey while encrypt/decrypt run on every image URL mint and island-props round-trip; keying
+// the memo on the secret handles tests that reconfigure.
 let cachedSivKey: { secret: Buffer; key: Buffer } | undefined;
 function sivKey(): Buffer {
   const secret = getMochiConfig().secretKey;

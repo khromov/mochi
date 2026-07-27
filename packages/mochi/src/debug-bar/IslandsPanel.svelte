@@ -48,12 +48,9 @@
     return base + (HYDRATE_SUFFIX[alsoHydrate ?? ''] ?? '');
   }
 
-  // Island `component-name`s are `<localName>_<base36 hash of resolved path>`
-  // (see `islandIdentity` in svelteAstPreprocess.ts) so two same-named components
-  // in different files can't collide. Strip the appended `_<hash>` for a friendly
-  // label — the framework always adds exactly one such segment, so removing the
-  // trailing run of lowercase/digits recovers the author's name even when it
-  // itself contains underscores.
+  // Island `component-name`s are `<localName>_<base36 hash of resolved path>` (see `islandIdentity` in
+  // svelteAstPreprocess.ts). The framework appends exactly one such segment, so dropping the trailing run of
+  // lowercase/digits recovers the author's name for a friendly label even when that name contains underscores.
   function displayNameOf(componentName: string): string {
     return componentName.replace(/_[0-9a-z]+$/, '') || componentName;
   }
@@ -65,21 +62,16 @@
 
     hydratable.forEach((element) => {
       const name = element.getAttribute('component-name') ?? 'unknown';
-      // Skip the realized child of a `mochi:defer mochi:hydrate` invocation: the
-      // server-island fetch wraps its content in a `<mochi-hydratable-island>`
-      // with the same component-name (see Mochi.ts also-hydrate path), already
-      // represented by the server-island entry (mode shows `+ mochi:hydrate`).
-      // Match by `also-hydrate` + matching name so a genuinely separate
-      // `mochi:hydrate` child nested in a plain `mochi:defer` island still lists.
+      // The server-island fetch wraps its content in a `<mochi-hydratable-island>` under the same component-name, which
+      // the server-island entry already represents, so that realized child is skipped. Matching on `also-hydrate` plus
+      // the name keeps a genuinely separate `mochi:hydrate` child nested in a plain `mochi:defer` island listed.
       const host = element.closest('mochi-server-island');
       if (host?.getAttribute('also-hydrate') && host.getAttribute('component-name') === name) {
         return;
       }
       const mode = element.getAttribute('hydrate-on') === 'visible' ? 'mochi:hydrate:visible' : 'mochi:hydrate';
-      // Props ride in a <script type="application/json" id="<propsRef>"> block
-      // emitted just before the island. The block carries `data-shared` only
-      // when >=2 islands reuse the same payload. The server-island also-hydrate
-      // path inlines `props=...` directly, so fall back to that attribute.
+      // Props ride in a `<script type="application/json">` block emitted just before the island, carrying `data-shared`
+      // only when two or more islands reuse the payload. The also-hydrate path inlines `props=...`, hence the fallback.
       const propsRef = element.getAttribute('props-ref');
       let rawProps: string | null;
       let shared = false;

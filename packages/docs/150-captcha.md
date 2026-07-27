@@ -40,7 +40,7 @@ export const routes = {
 };
 ```
 
-`mintCaptcha()` returns `{ token, bits }` — spread it straight onto the component. The widget adds its own `captcha_token` and `captcha_pow` hidden inputs to the surrounding form, so `verifyCaptcha(formData)` needs nothing else.
+`mintCaptcha()` returns `{ token, bits, solveBudgetMs }` — spread it straight onto the component. The widget adds its own `captcha_token` and `captcha_pow` hidden inputs to the surrounding form, so `verifyCaptcha(formData)` needs nothing else.
 
 ```svelte
 <script lang="ts">
@@ -59,7 +59,7 @@ export const routes = {
 
 ### Hydration
 
-The captcha runs entirely in the browser — the slider, the hash chain and the proof-of-work are all client-side — so it renders **nothing on the server** and appears only once it hydrates. Wire it up one of two ways:
+The captcha runs entirely in the browser — the slider, the hash chain and the proof-of-work are all client-side — so the server renders **only a blank spacer the size of the widget**, and the slider appears in its place once it hydrates. Nothing moves when it does. Wire it up one of two ways:
 
 - **Hydrate the captcha itself** — put `mochi:hydrate` on it, as above, and it becomes its own island.
 - **Hydrate the surrounding subtree** — if the captcha sits inside a component you hydrate, it hydrates with it, no directive on the captcha needed.
@@ -91,19 +91,28 @@ The subtree route is the common one: the moment you attach [`enhance`](/docs/pro
 
 `bind:verified` is optional — bind it to disable submit until the challenge is solved. The server rejects unsolved submissions either way.
 
-A captcha that hydrates by neither route stays empty — an empty slot rather than a dead slider that looks interactive but can never verify.
+A captcha that hydrates by neither route stays a spacer — blank space rather than a dead slider that looks interactive but can never verify.
+
+With JavaScript switched off the spacer shows a `<noscript>` message instead — _JavaScript is required to complete this captcha._ by default, overridable with `noscriptLabel`:
+
+```svelte
+<MochiCaptcha {...captcha} noscriptLabel="Enable JavaScript to send this form." />
+```
 
 #### Props
 
-| Prop             | Default                | Description                                                                                   |
-| ---------------- | ---------------------- | --------------------------------------------------------------------------------------------- |
-| `token`          | —                      | The sealed challenge from `mintCaptcha()`.                                                    |
-| `bits`           | `16`                   | Difficulty the widget solves at. Comes from `mintCaptcha()`; don't set it by hand.            |
-| `emoji`          | `🧩`                   | The character on the handle.                                                                  |
-| `label`          | `'Slide to verify'`    | The hint shown in the track. Doubles as the handle's accessible name, so keep it descriptive. |
-| `verifyingLabel` | `'Verifying…'`         | Replaces the hint while the proof-of-work runs.                                               |
-| `verifiedLabel`  | `'Verified — thanks!'` | Replaces the hint once the proof-of-work lands.                                               |
-| `verified`       | `false`                | `$bindable` — true once solved and the proof-of-work has landed.                              |
+| Prop             | Default                     | Description                                                                                                                                                                                                                    |
+| ---------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `token`          | —                           | The sealed challenge from `mintCaptcha()`.                                                                                                                                                                                     |
+| `bits`           | `19`                        | Difficulty the widget solves at. Comes from `mintCaptcha()`; don't set it by hand.                                                                                                                                             |
+| `solveBudgetMs`  | `60_000`                    | Active solve time before the widget gives up. Comes from `mintCaptcha()`; set it here to override that for one form. Also settable app-wide with the [`captcha:solveBudgetMs`](/docs/extensions/#captchasolvebudgetms) filter. |
+| `emoji`          | `🧩`                        | The character on the handle.                                                                                                                                                                                                   |
+| `label`          | `'Slide to verify'`         | The hint shown in the track. Doubles as the handle's accessible name, so keep it descriptive.                                                                                                                                  |
+| `verifyingLabel` | `'Verifying…'`              | Replaces the hint while the proof-of-work runs.                                                                                                                                                                                |
+| `verifiedLabel`  | `'Verified — thanks!'`      | Replaces the hint once the proof-of-work lands.                                                                                                                                                                                |
+| `errorLabel`     | see [below](#when-it-fails) | Shown if the widget can't complete the challenge it was given.                                                                                                                                                                 |
+| `noscriptLabel`  | see [below](#hydration)     | The `<noscript>` message, shown in the widget's place when JavaScript is off.                                                                                                                                                  |
+| `verified`       | `false`                     | `$bindable` — true once solved and the proof-of-work has landed.                                                                                                                                                               |
 
 ```svelte
 <MochiCaptcha {...captcha} emoji="🍡" label="Slide the mochi to the right" />
@@ -115,9 +124,45 @@ All three hints are yours, so the widget can stay in your app's voice from the f
 <MochiCaptcha {...captcha} emoji="▶" label="SLIDE TO PROVE HUMANITY" verifyingLabel="VERIFYING…" verifiedLabel="ACCESS GRANTED" />
 ```
 
+### When it fails
+
+The widget should never fail to solve a challenge it was handed — but if it does, it says so instead of sitting on "Verifying…". Every failure is logged through the [logger](/docs/logging/) at `error` level, so it reaches production consoles:
+
+```
+[mochi] captcha: No token — spread the result of mintCaptcha() onto <MochiCaptcha />
+```
+
+What the visitor sees depends on whether trying again could plausibly help.
+
+**A proof-of-work that ran out of budget, or a hash that threw** — the track becomes a retry button showing `errorLabel`. Tapping it resets the slide, and the nonce search _resumes where it stopped_ rather than restarting: the token never changes, so the search is deterministic and a retry from zero would replay exactly the attempts that already failed.
+
+**A missing `token` (usually `{...captcha}` not spread) or a `bits` value outside 1–32** — a configuration mistake, caught at mount rather than after a full slide, and not retryable, since re-running reproduces it exactly. In development the widget renders the cause verbatim so it can't be missed. In production it falls back to the same blank spacer as a captcha that never hydrated, and the cause stays in the console — there is nothing a visitor could do with it, and either way the widget submits no token.
+
+The diagnostic text is developer-facing and never shown to visitors in production; `errorLabel` is the only string they see.
+
+Nothing is submitted from an errored widget: the `captcha_token` and `captcha_pow` fields stay empty, so the server rejects it as an unsolved submission.
+
+Solving runs in short slices that yield to the browser between them, so it stays interruptible and never blocks the page. Once a solve passes two seconds the hint starts showing the attempt count — updated about once a second, and hidden from screen readers, which are told about the state change rather than the ticking number — so a slow device looks slow rather than stuck.
+
+<Callout type="info">
+
+The 60-second budget counts _active_ solve time, not wall clock. A backgrounded mobile tab is throttled to roughly one timer callback per second, so a solve there crawls — but it is never charged for time it wasn't scheduled, and it picks up where it left off when the tab comes forward.
+
+Move it app-wide with the [`captcha:solveBudgetMs`](/docs/extensions/#captchasolvebudgetms) filter, or for one form with the `solveBudgetMs` prop:
+
+```svelte
+<MochiCaptcha {...captcha} solveBudgetMs={20_000} />
+```
+
+Unlike `bits` it isn't sealed into the token — nothing verifies against it, so a visitor who rewrites it only changes how long their own device keeps trying.
+
+</Callout>
+
 ### How it works
 
 Sliding the handle advances a SHA-256 hash chain one link per step. The final link is the proof-of-work challenge, and the widget then brute-forces a nonce whose digest has `bits` leading zeros.
+
+Hashing is synchronous and pure JS (`@noble/hashes`), not `crypto.subtle` — so it needs no secure context and works over plain `http` as well.
 
 The challenge is never in the page — it only exists once the slide progression has actually run. A bot that reads the token out of the HTML and solves a proof-of-work against it directly fails, because the server re-derives the chain and checks the work against its final link.
 
@@ -150,7 +195,7 @@ Configure defaults on `Mochi.serve()`:
 ```ts
 await Mochi.serve({
   captcha: {
-    bits: 16,
+    bits: 19,
     minAgeMs: 2000,
     maxAgeMs: 900_000,
     store: 'memory',
@@ -159,19 +204,19 @@ await Mochi.serve({
 });
 ```
 
-| Option      | Default                        | Description                                                                     |
-| ----------- | ------------------------------ | ------------------------------------------------------------------------------- |
-| `bits`      | `16`                           | Proof-of-work difficulty in leading zero bits. Each extra bit doubles the work. |
-| `minAgeMs`  | `2000`                         | Reject tokens younger than this — the timing floor. See below.                  |
-| `maxAgeMs`  | `900_000`                      | Reject tokens older than this (15 minutes).                                     |
-| `store`     | `'memory'`                     | One-time nonce store: `'memory'`, `'sqlite'`, or your own `NonceStore`.         |
-| `storePath` | `.mochi/captcha-nonces.sqlite` | SQLite file when `store: 'sqlite'`.                                             |
+| Option      | Default                        | Description                                                                                                                                                    |
+| ----------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `bits`      | `19`                           | Proof-of-work difficulty in leading zero bits. Each extra bit doubles the work. Also settable with the [`captcha:bits`](/docs/extensions/#captchabits) filter. |
+| `minAgeMs`  | `2000`                         | Reject tokens younger than this — the timing floor. See below.                                                                                                 |
+| `maxAgeMs`  | `900_000`                      | Reject tokens older than this (15 minutes).                                                                                                                    |
+| `store`     | `'memory'`                     | One-time nonce store: `'memory'`, `'sqlite'`, or your own `NonceStore`.                                                                                        |
+| `storePath` | `.mochi/captcha-nonces.sqlite` | SQLite file when `store: 'sqlite'`.                                                                                                                            |
 
 Every token failure returns the same message, so a probing bot can't tell "too fast" from "tampered" and learn where the limits are.
 
 ### The timing floor
 
-`minAgeMs` is the only check enforcing that a submission took human time, and `2000` suits a form the visitor has to type into. It is worth setting deliberately rather than inheriting, because the proof-of-work does not back it up: `bits` bounds an attacker's **cost** — ~2^`bits` hashes per token, on average — not any individual solver's latency. Solve time is geometrically distributed with no lower bound, so a fair share of real visitors clear a 16-bit challenge in a few hundred milliseconds and some clear it in one attempt. On a form with nothing to fill in, the slide plus the proof-of-work can land under two seconds and a genuine visitor gets refused.
+`minAgeMs` is the only check enforcing that a submission took human time, and `2000` suits a form the visitor has to type into. It is worth setting deliberately rather than inheriting, because the proof-of-work does not back it up: `bits` bounds an attacker's **cost** — ~2^`bits` hashes per token, on average — not any individual solver's latency. Solve time is geometrically distributed with no lower bound, so a fair share of real visitors clear the challenge in a few hundred milliseconds and some clear it in one attempt. On a form with nothing to fill in, the slide plus the proof-of-work can land under two seconds and a genuine visitor gets refused.
 
 Tune it per form with the [`captcha:minAgeMs`](/docs/extensions/#captchaminagems) filter rather than lowering it globally.
 
@@ -261,8 +306,13 @@ Every colour is a CSS custom property whose default lives in the `var()` fallbac
   --mochi-captcha-handle-text: var(--mochi-captcha-accent);
   --mochi-captcha-hint-text: #6e756d;
   --mochi-captcha-radius: 999px;
+  --mochi-captcha-error-bg: #fdf3f2;
+  --mochi-captcha-error-border: #e9c9c4;
+  --mochi-captcha-error-text: #8a3324;
 }
 ```
+
+The three `error` properties only apply in the [failure state](#when-it-fails).
 
 `--mochi-captcha-handle-text` colours the `emoji` glyph, and follows the accent unless you set it. It only bites for glyphs with a text presentation — `▶`, `→` — since colour-font emoji like `🍡` paint themselves and ignore CSS colour entirely.
 
@@ -282,7 +332,7 @@ The widget logs each link of the chain as it's minted, then the proof-of-work so
 [mochi] captcha: solved in 512ms — nonce 64918 after 64919 attempts
 ```
 
-Raise or silence it per app with `setLogLevel()`.
+Raise or silence it per app with `setLogLevel()`. A [failure](#when-it-fails) is logged at `error` level instead, so it survives the production default.
 
 Server-side, every verification emits a [`captcha:verify`](/docs/events/#captchaverify) event carrying the **real** reason — `'malformed'`, `'expired'`, `'too-fast'`, `'bad-pow'` or `'replay'` — rather than the single generic message the client is given. `consoleLogger()` prints it, and it's the hook to graph rejections or alert on a spam spike:
 
@@ -312,18 +362,18 @@ const res = await fetch(`${base}/contact/?/send`, {
 
 ### API
 
-| Export                              | Returns                          | Description                                                                      |
-| ----------------------------------- | -------------------------------- | -------------------------------------------------------------------------------- |
-| `mintCaptcha(options?)`             | `{ token, bits }`                | Mint a single-use challenge. `options.bits` overrides the configured difficulty. |
-| `verifyCaptcha(formData, options?)` | `Promise<CaptchaResult>`         | Verify and (unless `consume: false`) burn the nonce.                             |
-| `consumeCaptcha(result)`            | `Promise<boolean>`               | Burn a deferred nonce; `false` if already spent.                                 |
-| `solveCaptcha(minted)`              | `{ captcha_token, captcha_pow }` | Solve server-side, for tests.                                                    |
+| Export                              | Returns                          | Description                                                                                           |
+| ----------------------------------- | -------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `mintCaptcha(options?)`             | `{ token, bits, solveBudgetMs }` | Mint a single-use challenge. `options.bits` / `options.solveBudgetMs` override the configured values. |
+| `verifyCaptcha(formData, options?)` | `Promise<CaptchaResult>`         | Verify and (unless `consume: false`) burn the nonce.                                                  |
+| `consumeCaptcha(result)`            | `Promise<boolean>`               | Burn a deferred nonce; `false` if already spent.                                                      |
+| `solveCaptcha(minted)`              | `{ captcha_token, captcha_pow }` | Solve server-side, for tests.                                                                         |
 
 `CaptchaResult` is `{ ok: true; nonce: string; expiresAt: number }` or `{ ok: false; reason: 'replay' | 'rejected'; error: string }` — `error` is safe to show to the visitor, and `reason` lets you [swap in your own copy](#custom-messages).
 
 <Callout type="info">
 
-Solving requires JavaScript: the widget is a hydrated island, and it renders nothing until it hydrates. Give non-JS visitors another route to you — a `<noscript>` block with a mailto link — since the form can't be completed without it.
+Solving requires JavaScript: the widget is a hydrated island, and until it hydrates there is only a spacer carrying its `noscriptLabel`. That message says what's wrong, not what to do instead — give non-JS visitors another route to you, say a `<noscript>` block with a mailto link, since the form can't be completed without it.
 
 </Callout>
 

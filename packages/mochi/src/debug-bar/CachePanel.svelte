@@ -55,10 +55,9 @@
     }
   });
 
-  // Fetch (and memoize) the stored value for a key. Shared by expand + copy.
-  // `gone` is deliberately not memoized: the key list is a snapshot, so an entry can
-  // be evicted between listing and expanding — and recomputed just as easily. Caching
-  // that verdict would keep reporting a since-repopulated entry as gone.
+  // Fetches and memoizes a key's stored value, shared by expand and copy. `gone` stays unmemoized: the key list is a
+  // snapshot, so an entry evicted between listing and expanding can be repopulated just as easily, and caching that
+  // verdict would keep reporting it as gone.
   async function loadValue(key: string): Promise<CacheValue> {
     const existing = values[key];
     if (existing && (existing.json !== undefined || existing.error !== undefined)) {

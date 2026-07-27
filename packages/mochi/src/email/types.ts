@@ -1,11 +1,8 @@
 /**
- * A single transactional message passed to `Mochi.email(...)`.
- *
- * The body has two independent parts. The HTML part comes from `component`
- * (rendered to inlined HTML) or `html` — `component` wins when both are set. The
- * text part comes from `text`; when omitted but an HTML part exists, a plain-text
- * alternative is derived from it so the message stays multipart (better
- * deliverability). Supplying `text` yourself alongside HTML is recommended.
+ * A single transactional message passed to `Mochi.email(...)`. Its body has two independent parts: the HTML part comes
+ * from `component` (rendered to inlined HTML) or `html`, with `component` winning when both are set, and the text part
+ * from `text`. Omitting `text` alongside an HTML part derives a plain-text alternative so the message stays multipart
+ * for deliverability, though supplying your own is recommended.
  */
 export interface MochiEmailMessage {
   to: string | string[];
@@ -35,11 +32,7 @@ export interface MochiEmailAttachment {
   contentType?: string;
 }
 
-/**
- * Outcome of a send. `transport` says which transport handled it, or
- * `'suppressed'` when the `email:message` filter vetoed the send (returned
- * `null`) so it never reached a transport.
- */
+/** Outcome of a send. `transport` names whichever handled it, or `'suppressed'` when the `email:message` filter returned `null` and vetoed the send. */
 export interface MochiEmailResult {
   transport: 'smtp' | 'custom' | 'log' | 'dev' | 'suppressed';
   messageId?: string;
@@ -47,11 +40,7 @@ export interface MochiEmailResult {
   rejected?: string[];
 }
 
-/**
- * A message after body-resolution and normalization: `from` filled, address
- * fields coerced to arrays, `html`/`text` finalized. This is the exact shape a
- * custom transport's `send` receives.
- */
+/** A message after body-resolution and normalization — `from` filled, address fields coerced to arrays, `html`/`text` finalized — and the exact shape a custom transport's `send` receives. */
 export interface ResolvedEmailMessage {
   from: string;
   to: string[];
@@ -80,40 +69,29 @@ export interface MochiSmtpConfig {
 }
 
 /**
- * Custom-send escape hatch: deliver the resolved message however you like (an
- * HTTP email API such as Resend/SES/Postmark, a fake for tests, …). No SMTP
- * library is loaded on this path. Return a partial result to surface a
+ * Custom-send escape hatch: deliver the resolved message however you like — an HTTP email API such as Resend, SES, or
+ * Postmark, or a fake for tests — with no SMTP library loaded on this path. Return a partial result to surface a
  * provider message id; returning nothing yields `{ transport: 'custom' }`.
  */
 export type MochiEmailSendFn = (message: ResolvedEmailMessage) => Promise<Omit<MochiEmailResult, 'transport'> | void> | Omit<MochiEmailResult, 'transport'> | void;
 
 /**
- * Pluggable transport, set under `Mochi.serve({ email: { transport } })`.
- * Omit it entirely for the default transport: `dev` in development (captured
- * into the in-memory outbox viewable at `/_mochi/email`), `log` in production
- * (logged, never sent).
+ * Pluggable transport, set under `Mochi.serve({ email: { transport } })`. Omitting it selects the default: `dev` in
+ * development, capturing into the in-memory outbox at `/_mochi/email`, and `log` in production, which logs the message.
  */
 export type MochiEmailTransportConfig = { type: 'log' } | { type: 'dev' } | ({ type: 'smtp' } & MochiSmtpConfig) | { type: 'custom'; send: MochiEmailSendFn };
 
-/**
- * Email configuration. Every field is optional; see `resolveEmailOptions` for
- * defaults. With no `transport`, development uses the `dev` transport (captured
- * to the in-memory outbox at `/_mochi/email`, never sent) and production uses
- * the safe `log` transport — messages are logged, never sent.
- */
+/** Email configuration; every field is optional, see `resolveEmailOptions` for defaults and `MochiEmailTransportConfig` for what `transport` defaults to. */
 export interface MochiEmailOptions {
   /** Default `From` address used when a message omits `from`. */
   from?: string;
   /** Transport to deliver through. Default: `{ type: 'dev' }` in development, `{ type: 'log' }` in production (neither sends). */
   transport?: MochiEmailTransportConfig;
   /**
-   * Whether `consoleLogger()` redacts recipient addresses and the subject from
-   * its `MAIL` lines. Both are PII and `email:error` lines log at `warn` (so
-   * they reach production logs). Set `true` to replace them with `<redacted>` —
-   * transport, error, and duration are still logged. Defaults to `true` in
-   * production and `false` in development. Only affects the console formatter;
-   * the `email:sent`/`email:error` events always carry the real values for your
-   * own subscribers.
+   * Whether `consoleLogger()` replaces recipient addresses and the subject with `<redacted>` in its `MAIL` lines — both
+   * are PII, and `email:error` logs at `warn`, so they reach production logs. Transport, error, and duration are logged
+   * regardless. Defaults to `true` in production and `false` in development, and affects only the console formatter:
+   * the `email:sent`/`email:error` events always carry the real values.
    */
   filterPii?: boolean;
 }

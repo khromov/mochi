@@ -57,8 +57,9 @@ function aggregateRow(label: string, diskPaths: string[]): ResourceRow | null {
  * aggregate row for the per-component Svelte styles — there is one of those per
  * component with a `<style>` block (151 on this repo's site), each a few kB.
  *
- * Takes the manifest map rather than the registry's own `clientFiles`, whose
- * values are file *contents* — only the manifest resolves each URL to a path.
+ * Takes served URL → absolute disk path, not the registry's own `clientFiles`,
+ * whose values are file *contents*. The manifest's own values are out-dir
+ * relative, so the caller resolves them first.
  */
 export function collectStyleResources(clientFiles: Record<string, string>, assetPrefix: string): ResourceRow[] {
   const importPrefix = `${assetPrefix}/import-css/`;
@@ -168,7 +169,7 @@ export function printResourceSection(header: string, rows: ResourceRow[], opts: 
 
 /**
  * Static files get a count and a total, never a listing — a `public/` directory
- * can hold thousands of files, and they're copied verbatim rather than built.
+ * can hold thousands of files, and none of them are built.
  */
 export function printStaticSummary(publicDir: string, count: number, bytes: number): void {
   if (count === 0) {

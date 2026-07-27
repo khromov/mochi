@@ -1,17 +1,12 @@
 import { pinGlobal } from './utils/globalState';
 
 /**
- * Milestones `Mochi.serve()` passes on its way up, recorded as they happen.
+ * Milestones `Mochi.serve()` passes on its way up, recorded as they happen. Code reachable at any point in the boot
+ * sequence — `getQueue()` above all — must tell "you're too early" apart from "you got the name wrong", and inferring
+ * that from whatever state is populated guesses wrong for an app that simply declared nothing.
  *
- * Code that can be reached at any point in the boot sequence — `getQueue()`
- * most of all — needs to tell "you're too early" apart from "you got the name
- * wrong". Inferring that from whatever state happens to be populated (an empty
- * registry, a null config) guesses, and guesses wrong for the app that simply
- * declared nothing. Recording the milestones makes the answer a fact.
- *
- * Every milestone is a startup hook, recorded by `runHook` as it fires — there
- * is no second way to mark one, so the record can't drift from the hooks users
- * actually receive.
+ * Every milestone is a startup hook recorded by `runHook` as it fires, the only way one gets marked, so the record can't
+ * drift from the hooks users actually receive.
  */
 export type MochiStartupMilestone = 'mochi:init' | 'mochi:listening' | 'mochi:queuesMounted' | 'mochi:ready';
 
@@ -33,10 +28,9 @@ export function reachedStartupMilestones(): MochiStartupMilestone[] {
 }
 
 /**
- * Clears the record. Wired into the SIGTERM/SIGINT shutdown path only — a bare
- * `server.stop()` leaves the milestones set, so a test that boots a second
- * server in-process has to call this itself. That's survivable because
- * `initMochiConfig` already forbids two `serve()` calls per process.
+ * Clears the record, wired into the SIGTERM/SIGINT shutdown path alone. A bare `server.stop()` leaves the milestones
+ * set, so a test booting a second server in-process calls this itself — survivable, since `initMochiConfig` already
+ * forbids two `serve()` calls per process.
  */
 export function resetStartupMilestones(): void {
   milestones.clear();

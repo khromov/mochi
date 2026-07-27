@@ -1,4 +1,4 @@
-import { Mochi, sequence, silenceInternalRoutes } from 'mochi-framework';
+import { Mochi, sequence, silenceInternalRoutes, DEFAULT_CAPTCHA_BITS } from 'mochi-framework';
 import type { MochiEmailTransportConfig } from 'mochi-framework';
 import { analytics } from 'mochi-shared';
 import { routes } from './routes';
@@ -46,7 +46,7 @@ await Mochi.serve({
     transport: smtp,
   },
   captcha: {
-    bits: Number(process.env.CAPTCHA_POW_BITS) || 16,
+    bits: Number(process.env.CAPTCHA_POW_BITS) || DEFAULT_CAPTCHA_BITS,
     minAgeMs: Number.isFinite(Number(process.env.CAPTCHA_MIN_AGE_MS)) ? Number(process.env.CAPTCHA_MIN_AGE_MS) : 2000,
     store: process.env.CAPTCHA_NONCE_STORE === 'sqlite' ? 'sqlite' : 'memory',
     ...(process.env.CAPTCHA_NONCE_DB ? { storePath: process.env.CAPTCHA_NONCE_DB } : {}),
