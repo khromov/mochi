@@ -1,17 +1,10 @@
 /**
- * Extension API for the framework.
+ * Extension API for the framework, across two surfaces: `hooks` run a user function at a specific framework moment,
+ * while `filters` receive a framework default value and return its replacement. One entry per `namespace:camelCase`
+ * name, with no priorities or chains.
  *
- * Two surfaces:
- *  - `hooks` run a user function at a specific framework moment (no return).
- *  - `filters` replace a framework default value (user receives the existing
- *    value and returns the new one).
- *
- * Only one entry per name — no priorities, no chains.
- *
- * Names use a `namespace:camelCase` string convention. New extension points are
- * added by extending the four interfaces below; the kind map declares whether
- * each entry is consumed in sync or async context. TypeScript narrows the user
- * callback accordingly and the runtime invoker matches.
+ * New extension points extend the four interfaces below, and the kind map declares whether each entry is consumed in
+ * sync or async context so TypeScript and the runtime invoker agree.
  */
 
 import type { Server } from 'bun';
@@ -28,23 +21,17 @@ import { assertServerOnly } from './utils/serverOnly';
 import { markStartupMilestone } from './lifecycle';
 import type { MochiStartupMilestone } from './lifecycle';
 
-/** Startup hooks whose firing is recorded as a lifecycle milestone. */
 const STARTUP_MILESTONE_HOOKS = new Set<string>(['mochi:init', 'mochi:listening', 'mochi:queuesMounted', 'mochi:ready']);
 
 /**
- * Discriminated union of every `mochiEvents` payload that `consoleLogger()`
- * formats into a line. Narrow on `name` to access typed per-event fields
- * (e.g. `requestId` on `'request'`, `size` on `'ws:message'`).
+ * Every `mochiEvents` payload that `consoleLogger()` formats into a line. Narrow on `name` for typed per-event fields —
+ * `requestId` on `'request'`, `size` on `'ws:message'`.
  */
 export type ConsoleLoggerSource = {
   [K in keyof MochiEventMap]: { name: K; payload: MochiEventMap[K] };
 }[keyof MochiEventMap];
 
-/**
- * The severities `consoleLogger()` writes through. A subset of `LogLevel` —
- * a formatted line is never `'error'` (reserved for thrown failures) and
- * `'silent'` is a global setting, not a per-line one.
- */
+/** The severities `consoleLogger()` writes through: a subset of `LogLevel`, since `'error'` is reserved for thrown failures and `'silent'` is a global setting. */
 export type ConsoleLoggerLevel = 'info' | 'warn' | 'log' | 'debug';
 
 /** What identifies a console-logger line — shared by the `consoleLogger:level` and `consoleLogger:line` filter contexts. */
@@ -60,10 +47,6 @@ export interface ConsoleLoggerLine {
   /** The originating `mochiEvents` event. Narrow on `source.name` for typed access to per-event fields. */
   source: ConsoleLoggerSource;
 }
-
-// ---------------------------------------------------------------------------
-// Registry: hooks
-// ---------------------------------------------------------------------------
 
 export interface MochiHookContext {
   'mochi:init': { options: MochiServeOptions };
@@ -88,9 +71,8 @@ export interface MochiHookContext {
     kind: 'page' | 'api' | 'ws' | 'sse' | 'file';
   };
   'image:localAssetEmitted': {
-    /** Absolute path of the imported source image. */
     sourcePath: string;
-    /** Absolute path the content-hashed copy was written to (under `<outDir>/assets/`). */
+    /** Where the content-hashed copy was written, under `<outDir>/assets/`. */
     diskPath: string;
     /** The same-origin URL the import resolves to (post-`image:localAssetUrl`). */
     url: string;
@@ -114,10 +96,6 @@ export interface MochiHookKindMap {
 type Hook<K extends keyof MochiHookContext> = MochiHookKindMap[K] extends 'async' ? (ctx: MochiHookContext[K]) => void | Promise<void> : (ctx: MochiHookContext[K]) => void;
 
 export type MochiHooks = { [K in keyof MochiHookContext]?: Hook<K> };
-
-// ---------------------------------------------------------------------------
-// Registry: filters
-// ---------------------------------------------------------------------------
 
 export interface MochiFilterValue {
   'csrf:formContentTypes': Set<string>;
@@ -148,10 +126,8 @@ export interface MochiFilterValue {
   'queue:lockDurationMs': number;
 }
 
-// Optional per-filter override for the *return* type when it differs from the
-// input type. Most filters are symmetric (user receives V[K] and returns V[K])
-// so this map is sparse — only listed entries diverge. Defaults to
-// `MochiFilterValue[K]` when a key is absent.
+// Overrides the return type where it differs from the input. Most filters are symmetric, so this map is sparse and an
+// absent key defaults to `MochiFilterValue[K]`.
 export interface MochiFilterReturn {
   'consoleLogger:line': string | null;
   'barrel:warn': string | null;
@@ -174,11 +150,7 @@ export interface MochiFilterContext {
     development: boolean;
   };
   'publicDir:scan': { publicDir: string; development: boolean };
-  /**
-   * Resolved after the 5xx/slow escalation and before `consoleLogger:line`, so a
-   * filter can also de-escalate an escalated line, and `consoleLogger:line` sees
-   * the remapped level in its own context.
-   */
+  /** Resolved after the 5xx/slow escalation and before `consoleLogger:line`, so a filter can de-escalate an escalated line and `consoleLogger:line` sees the remapped level. */
   'consoleLogger:level': ConsoleLoggerLine;
   'consoleLogger:line': ConsoleLoggerLine & {
     /** Resolved log level (escalated to `'warn'` for 5xx / slow requests, then passed through `consoleLogger:level`). */
@@ -268,15 +240,9 @@ type Filter<K extends keyof MochiFilterValue> = MochiFilterKindMap[K] extends 'a
 
 export type MochiFilters = { [K in keyof MochiFilterValue]?: Filter<K> };
 
-// ---------------------------------------------------------------------------
-// Runtime
-// ---------------------------------------------------------------------------
-
-// Runtime kind tables mirror the TypeScript kind maps above. Adding a new
-// extension point means an entry in BOTH (the type map for compile-time
-// narrowing and the runtime table so the invoker knows whether to await).
-// The value type is widened to `'sync' | 'async'` so the runtime comparisons
-// below stay reachable when every current entry happens to share one kind.
+// These runtime kind tables mirror the TypeScript kind maps above, so a new extension point needs an entry in both: the
+// type map for compile-time narrowing, the runtime table so the invoker knows whether to await. The value type widens to
+// `'sync' | 'async'` to keep the comparisons below reachable when every current entry happens to share one kind.
 type MochiKind = 'sync' | 'async';
 const HOOK_KINDS: { [K in keyof MochiHookContext]: MochiKind } = {
   'mochi:init': 'async',
@@ -316,15 +282,12 @@ const FILTER_KINDS: { [K in keyof MochiFilterValue]: MochiKind } = {
   'queue:lockDurationMs': 'sync',
 };
 
-// Pinned on globalThis so duplicate bundled copies of mochi-framework share one
-// registry — same reasoning as the AsyncLocalStorage in `requestContext.ts`.
-// One registry per process is fine because `initMochiConfig` already forbids
-// calling `Mochi.serve()` more than once.
+// Pinned on globalThis so duplicate bundled copies of mochi-framework share one registry, the same reasoning as the
+// AsyncLocalStorage in `requestContext.ts`. One per process suffices, since `initMochiConfig` forbids a second `Mochi.serve()`.
 const registry = pinGlobal<{ eventHooks: MochiHooks; filters: MochiFilters }>('__mochi_extensions_registry__', () => ({ eventHooks: {}, filters: {} }));
 
-// The registry is only ever populated on the server, so a client-side read
-// would hand back the framework default and quietly drop whatever the app
-// configured. Crash instead — see `utils/serverOnly.ts`.
+// The registry is populated on the server alone, so a client-side read would hand back the framework default and
+// quietly drop whatever the app configured — see `utils/serverOnly.ts`.
 const SERVER_ONLY_REASON = 'Hooks and filters are server-only — the registry only exists in the server process, so this call could never see a registered entry.';
 
 export function initExtensions(opts: Pick<MochiServeOptions, 'eventHooks' | 'filters'>): void {
@@ -333,14 +296,12 @@ export function initExtensions(opts: Pick<MochiServeOptions, 'eventHooks' | 'fil
   registry.filters = opts.filters ?? {};
 }
 
-// `runHook` returns Promise<void> for async-kind names, void for sync-kind.
-// The runtime dispatches on the runtime kind table to guarantee the actual
-// return matches the type — including when no user fn is registered.
+// Dispatching on the runtime kind table guarantees the actual return matches the declared one — `Promise<void>` for
+// async-kind names, `void` for sync-kind — including when no user fn is registered.
 export function runHook<K extends keyof MochiHookContext>(name: K, ctx: MochiHookContext[K]): MochiHookKindMap[K] extends 'async' ? Promise<void> : void {
   assertServerOnly(`runHook('${name}')`, SERVER_ONLY_REASON);
-  // Startup hooks double as lifecycle milestones. Recording here (rather than
-  // at each call site) keeps the record in step with the hooks themselves;
-  // per-request hooks like `route:matched` are deliberately not recorded.
+  // Startup hooks double as lifecycle milestones, and recording here rather than at each call site keeps the record in
+  // step with the hooks themselves. Per-request hooks like `route:matched` stay out of it.
   if (STARTUP_MILESTONE_HOOKS.has(name)) {
     markStartupMilestone(name as MochiStartupMilestone);
   }
@@ -352,9 +313,8 @@ export function runHook<K extends keyof MochiHookContext>(name: K, ctx: MochiHoo
   return undefined as never;
 }
 
-// `applyFilter` returns the filtered value (or the input unchanged when no fn
-// is registered). Async-kind filters may return a Promise; the conditional
-// return type forces the caller to await in those cases.
+// Returns the filtered value, or the input unchanged when no fn is registered. Async-kind filters may return a Promise,
+// and the conditional return type forces the caller to await those.
 export function applyFilter<K extends keyof MochiFilterValue>(
   name: K,
   value: MochiFilterValue[K],

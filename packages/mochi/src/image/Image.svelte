@@ -1,18 +1,13 @@
 <script lang="ts">
-  // Server-rendered image component: emits a single <img> pointing at a signed
-  // URL for a named size declared in Mochi.serve({ image: { sizes } }).
-  // Minting is synchronous and near-instant — the fetch/transform happens lazily
-  // in the /_mochi/image endpoint on the browser's request, so SSR is never
-  // blocked. With `placeholder`, a cached ThumbHash blur (if already computed) is
-  // set as the <img>'s own background-image and paints with zero client JS; on a
-  // cold cache the blur is warmed in the background and appears on a later render.
+  // Server-rendered image component emitting a single `<img>` at a signed URL for a named size declared in
+  // `Mochi.serve({ image: { sizes } })`. Minting is synchronous, with the fetch and transform deferred to the
+  // `/_mochi/image` endpoint on the browser's request, so SSR never blocks. With `placeholder`, an already-computed
+  // ThumbHash blur becomes the `<img>`'s own background-image and paints with zero client JS; a cold cache warms it in
+  // the background for a later render.
   //
-  // Inside a hydrating island — at any nesting depth, detected via
-  // `isHydratable()` — minting needs the server secret, so the minted values
-  // are wrapped in `hydratable` — devalue-serialized into the page and reused
-  // during hydration instead of re-minted in the browser. Outside (pure SSR)
-  // nothing is serialized. The import goes through the `mochi-framework` virtual
-  // module, whose client build ships stubs (getImageAttrs returns the raw src).
+  // Minting needs the server secret, so inside a hydrating island — at any nesting depth, per `isHydratable()` — the
+  // minted values are wrapped in `hydratable`, devalue-serialized into the page and reused during hydration. Pure SSR
+  // serializes nothing. The import goes through the `mochi-framework` virtual module, whose client build ships stubs.
   import { hydratable } from 'svelte';
   import { getImageAttrs, imagePlaceholder, isHydratable } from 'mochi-framework';
   import type { ImportedImage } from 'mochi-framework';
@@ -44,10 +39,8 @@
   } = $props();
 
   const hydratableSubtree = isHydratable();
-  // A local image import passes an object; a remote source passes a string.
-  // Normalize to a string source (never the object) before touching any image
-  // API — the client `getImageAttrs` stub returns `{ url: src }`, so it must
-  // receive the URL string, and the hydratable key must serialize deterministically.
+  // A local image import passes an object, a remote source a string, and every image API needs the normalized string:
+  // the client `getImageAttrs` stub returns `{ url: src }`, and the hydratable key must serialize deterministically.
   const resolvedSrc = $derived(typeof src === 'string' ? src : src.src);
   const intrinsic = $derived(typeof src === 'object' && src !== null ? src : undefined);
   const isBrowser = typeof window !== 'undefined';

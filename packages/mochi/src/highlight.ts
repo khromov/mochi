@@ -5,12 +5,7 @@ function escapeForSvelte(html: string): string {
 const COPY_ICON_SVG =
   '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>';
 
-/**
- * Wrap already-highlighted HTML in the standard code-block shell
- * (copy button + Svelte-brace escape). The engine is responsible
- * for the `<pre><code>…</code></pre>` structure; this adds the
- * outer `<div class="code-block">` wrapper.
- */
+/** Wrap already-highlighted HTML in the standard code-block shell — copy button and Svelte-brace escape — around the `<pre><code>` structure the engine produced. */
 export function wrapCodeBlock(highlightedHtml: string): string {
   return `<div class="code-block"><button type="button" class="code-copy" aria-label="Copy code">${COPY_ICON_SVG}</button>${escapeForSvelte(highlightedHtml)}</div>`;
 }
@@ -24,12 +19,9 @@ export interface CreateHighlighterOptions {
 }
 
 /**
- * Build a `highlightCode(code, lang)` function from any highlighting
- * engine. The consumer supplies `highlight` — a function that turns
- * source code into themed HTML (e.g. Shiki's `codeToHtml`). The
- * returned function composes it with the code-block wrapper, copy
- * button, and Svelte-brace escape. Results are memoized per `(code, lang)`, so a
- * page that highlights the same snippets on every SSR render pays for one pass.
+ * Build a `highlightCode(code, lang)` function from any highlighting engine. You supply `highlight`, turning source into
+ * themed HTML (e.g. Shiki's `codeToHtml`), and the result composes it with the code-block wrapper, copy button, and
+ * Svelte-brace escape. Results memoize per `(code, lang)`, so a page re-highlighting the same snippets pays once.
  *
  * ```ts
  * import { createHighlighter as createShiki } from 'shiki';
@@ -46,12 +38,10 @@ export function createHighlighter(
   options: CreateHighlighterOptions = {},
 ): (code: string, lang?: string | null) => string | Promise<string> {
   const max = options.cacheSize ?? DEFAULT_HIGHLIGHT_CACHE_SIZE;
-  // Highlighting is a pure function of (code, lang), but a TextMate grammar pass
-  // costs milliseconds per snippet — enough that a page re-highlighting its own
-  // code blocks on every SSR render spends more time in the highlighter than in
-  // Svelte. Memoize the wrapped HTML, storing the in-flight promise so concurrent
-  // callers for the same snippet share one pass. Insertion-ordered eviction keeps
-  // an app that highlights unbounded input (user content) from growing forever.
+  // Highlighting is pure in (code, lang) but a TextMate grammar pass costs milliseconds per snippet, enough that a page
+  // re-highlighting its own code blocks each SSR render spends longer in the highlighter than in Svelte. The in-flight
+  // promise is stored so concurrent callers share one pass, and insertion-ordered eviction bounds an app highlighting
+  // user content.
   const cache = new Map<string, string | Promise<string>>();
   return (code, lang) => {
     const language = lang ?? 'plaintext';

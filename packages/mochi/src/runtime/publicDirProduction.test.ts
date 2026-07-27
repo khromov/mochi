@@ -67,8 +67,7 @@ describe('production serves static files from publicDir', () => {
   });
 
   test('a publicDir that did ship draws no warning', () => {
-    // The other half of publicDirMissingWarning.test.ts: the check has to stay
-    // silent on a healthy boot, or it trains people to ignore it.
+    // The other half of publicDirMissingWarning.test.ts: the check must stay silent on a healthy boot, or it trains people to ignore it.
     expect(warnings.filter((w) => w.includes('every static file will 404'))).toEqual([]);
   });
 

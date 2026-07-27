@@ -5,29 +5,24 @@ import { DEFAULT_CAPTCHA_SOLVE_BUDGET_MS } from './pow';
 import type { MochiCaptchaOptions, NonceStore, ResolvedCaptchaOptions } from './types';
 
 /**
- * The timing floor: a token younger than this is refused. Not derived from
- * anything — the proof-of-work is a *cost* mechanism, not a latency one, and its
- * solve time is geometrically distributed with no lower bound, so a lucky solver
- * clears the chain in milliseconds. This number is the only thing enforcing that
- * a submission took human time, and 2s suits a form the visitor has to type
- * into. A form with nothing to fill in wants it lower — see `captcha:minAgeMs`.
+ * The timing floor: a token younger than this is refused. It's a chosen number, not a derived one — proof-of-work is a
+ * cost mechanism whose solve time is geometrically distributed with no lower bound, so a lucky solver clears the chain
+ * in milliseconds and this is the only thing enforcing that a submission took human time. 2s suits a form the visitor
+ * types into; a form with nothing to fill in wants it lower, via `captcha:minAgeMs`.
  */
 export const DEFAULT_CAPTCHA_MIN_AGE_MS = 2000;
 
 /**
- * Slack added to the expiry check to absorb clock skew between the instance that
- * minted a token and the one verifying it — `ageMs` subtracts two `Date.now()`
- * reads taken on different machines. Only ever widens the expiry side: see the
- * note in `verifyCaptcha` for why the floor cannot be padded the same way.
+ * Slack on the expiry check absorbing clock skew between the minting and verifying instances, since `ageMs` subtracts
+ * two `Date.now()` reads from different machines. It widens the expiry side alone — see `verifyCaptcha` for why the
+ * floor can't be padded the same way.
  */
 export const DEFAULT_CAPTCHA_DRIFT_ALLOWANCE_MS = 30_000;
 
 /**
- * Proof-of-work difficulty in leading zero bits. Each extra bit doubles the
- * expected work, so this is a cost dial, not a latency one: ~2^19 hashes lands
- * around a second on a desktop and a handful on a phone, which is enough to be
- * worth a spammer's while to avoid without making a real visitor wait. Raise it
- * per-app with the `bits` option or the `captcha:bits` filter.
+ * Proof-of-work difficulty in leading zero bits, where each extra bit doubles the expected work — a cost dial rather
+ * than a latency one. ~2^19 hashes lands around a second on a desktop and a handful on a phone, enough to be worth a
+ * spammer's while to avoid without making a real visitor wait. Raise it with the `bits` option or `captcha:bits` filter.
  */
 export const DEFAULT_CAPTCHA_BITS = 19;
 
@@ -49,9 +44,8 @@ export function resolveCaptchaOptions(opts: MochiCaptchaOptions | undefined): Re
   if (!Number.isFinite(driftAllowanceMs) || driftAllowanceMs < 0) {
     throw new Error(`Captcha: driftAllowanceMs must be a non-negative finite number, got ${driftAllowanceMs}`);
   }
-  // Resolved here rather than per mint for the same reason as the drift
-  // allowance: how long a visitor's device is given is a property of the app,
-  // not of a request. A single form that wants its own bound sets the prop.
+  // Resolved here rather than per mint, like the drift allowance: how long a visitor's device is given is a property of
+  // the app. A single form wanting its own bound sets the prop.
   const solveBudgetMs = applyFilter('captcha:solveBudgetMs', DEFAULT_CAPTCHA_SOLVE_BUDGET_MS, { options: o, bits });
   if (!Number.isFinite(solveBudgetMs) || solveBudgetMs <= 0) {
     throw new Error(`Captcha: solveBudgetMs must be a positive finite number, got ${solveBudgetMs}`);
@@ -72,9 +66,8 @@ interface CaptchaRuntime {
   store: NonceStore;
 }
 
-// Pinned on globalThis like __mochi_config__: compiled Svelte components get
-// their own bundled copy of this module, but every caller must share one store
-// instance or a nonce burned by one copy stays spendable through another.
+// Pinned on globalThis like `__mochi_config__`: compiled Svelte components each get their own bundled copy of this
+// module, and without one shared store a nonce burned through one copy stays spendable through another.
 const GLOBAL_KEY = '__mochi_captcha_runtime__';
 
 export function getCaptchaRuntime(): CaptchaRuntime {
