@@ -20,60 +20,25 @@ import { collectImageResources, printResourceTree } from './resourceReport';
 export interface MochiBuildOptions {
   routes: Record<string, MochiRouteValue>;
   development?: boolean;
-  /**
-   * Base directory for build output (cwd-relative). Default: `./.mochi`.
-   * A `--dev` build nests under `<outDir>/dev`; production writes to the root.
-   */
+  /** Base directory for build output (cwd-relative). Default: `./.mochi`. A `--dev` build nests under `<outDir>/dev`; production writes to the root. */
   outDir?: string;
   /** Static assets directory (cwd-relative). Default: `./public`. */
   publicDir?: string;
-  /**
-   * URL prefix under which framework client assets and the server island
-   * endpoint are served. Baked into the prebuilt manifest so the runtime
-   * server uses the same value. Default: `/_mochi`.
-   */
+  /** Baked into the prebuilt manifest so the runtime server uses the same value. See `MochiServeOptions['assetPrefix']`. */
   assetPrefix?: string;
-  /**
-   * Path to a Svelte config file (cwd-relative or absolute). Default:
-   * `./svelte.config.js`. The file's `compilerOptions` are merged into
-   * Mochi's defaults; missing file → defaults only.
-   */
+  /** See `MochiServeOptions['svelteConfigPath']`. */
   svelteConfigPath?: string;
-  /**
-   * Which compiler emits component JS. Mirror the value passed to
-   * `Mochi.serve({ svelteCompiler })`. `'rsvelte'` requires the optional
-   * `@mochi-framework/rsvelte` package. Default: `'svelte'`.
-   */
+  /** Mirror the value passed to `Mochi.serve({ svelteCompiler })`. See `MochiServeOptions['svelteCompiler']`. */
   svelteCompiler?: MochiSvelteCompiler;
-  /**
-   * Dependency-injected markdown (`.md` / `.svx`) support. Mirror the value
-   * passed to `Mochi.serve({ markdown })` so the prebuild and the runtime
-   * use the same pipeline. Omit to leave markdown unhandled.
-   */
+  /** Mirror the value passed to `Mochi.serve({ markdown })` so the prebuild and the runtime share one pipeline. See `MochiServeOptions['markdown']`. */
   markdown?: MarkdownConfig;
-  /**
-   * Run the whole-program svelte-shaker pass before compiling. Mirror the value
-   * passed to `Mochi.serve({ optimize })` so the prebuilt manifest and the
-   * runtime agree. Default: `false`.
-   */
+  /** Mirror the value passed to `Mochi.serve({ optimize })` so the prebuilt manifest and the runtime agree. See `MochiServeOptions['optimize']`. */
   optimize?: boolean | MochiSvelteShakerOptions;
-  /**
-   * Heavy barrel-import warning. Mirror the value passed to `Mochi.serve({ barrelWarnings })`
-   * so the build honors the same silencing. In a build the offenders are collapsed into one
-   * grouped summary line. Default: enabled. See `MochiServeOptions['barrelWarnings']`.
-   */
+  /** Mirror the value passed to `Mochi.serve({ barrelWarnings })`; a build collapses offenders into one grouped summary line. See `MochiServeOptions['barrelWarnings']`. */
   barrelWarnings?: boolean | MochiBarrelWarningOptions;
-  /**
-   * Path to a custom error page component. Mirror the value passed to
-   * `Mochi.serve({ errorPage })` so it lands in the manifest and the runtime
-   * skips compiling it at startup. Default: Mochi's built-in error page.
-   */
+  /** Mirror the value passed to `Mochi.serve({ errorPage })` so it lands in the manifest and the runtime skips compiling it at startup. */
   errorPage?: string;
-  /**
-   * Print the emitted-resources list (local image imports). Mirror the value
-   * passed to `Mochi.serve({ build: { resources } })`. The summary line keeps
-   * its asset count either way. Default: enabled.
-   */
+  /** Mirror the value passed to `Mochi.serve({ build: { resources } })`. See `MochiBuildReportOptions['resources']`. */
   resources?: boolean;
 }
 
@@ -128,29 +93,21 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     mkdirSync(path.join(outDir, 'svelte-client'), { recursive: true });
     mkdirSync(path.join(outDir, 'svelte-css'), { recursive: true });
 
-    // Kick off the compile-independent work now so it overlaps the compile
-    // phases; the promise is awaited before the manifest. The `.catch(() => {})`
-    // guard only marks a rejection as handled in case compileAll throws first —
-    // the real error still surfaces at the trailing `await`. `timed` wraps the
-    // work itself (not the trailing await), so the phase line reports the
-    // phase's real duration rather than the residual wait after the overlap.
+    // Started now so it overlaps the compile phases, and awaited before the manifest. The `.catch(() => {})` guard only
+    // marks a rejection handled in case compileAll throws first; the real error still surfaces at the trailing `await`.
+    // `timed` wraps the work rather than that await, so the phase line reports real duration, not residual wait.
     const serverIslandScriptPromise = timed('island-script', () => buildInlineWebComponent('./web-components/ServerIsland.ts'));
     serverIslandScriptPromise.catch(() => {});
-    // The build never copies publicDir — the runtime serves static files straight
-    // from it, in production as in development. What only the build can do is
-    // prove no public file shadows a declared route, so a deploy never silently
-    // drops an asset. The runtime's own check (registerPublicRoutes) stays a
-    // warn-and-skip on purpose: it must not refuse to boot, and it covers the
-    // case this one can't — a file dropped into publicDir after the build.
-    // Awaited inline (a glob, no copy) so a collision fails in milliseconds
-    // rather than after the whole compile.
+    // The runtime serves static files straight from publicDir in every mode, so all the build adds is proof that no
+    // public file shadows a declared route and a deploy silently drops an asset. The runtime's own
+    // `registerPublicRoutes` check stays warn-and-skip, covering the case this one can't — a file dropped into publicDir
+    // after the build. Awaited inline, since a glob with no copy fails a collision in milliseconds.
     const publicFileCount = await timed('public', async () => {
       const publicSrc = await scanPublicDir(publicDir);
       const conflicts: string[] = [];
       for (const urlPath of publicSrc.keys()) {
-        // Runtime registers public files under the percent-encoded `publicRouteKey`,
-        // so a route declared in encoded form (e.g. `/a%20b.txt`) would collide there
-        // but slip past a raw-key check. Compare both forms.
+        // The runtime registers public files under the percent-encoded `publicRouteKey`, so a route declared encoded
+        // (`/a%20b.txt`) collides there while slipping past a raw-key check — hence comparing both forms.
         if (urlPath in options.routes || publicRouteKey(urlPath) in options.routes) {
           conflicts.push(urlPath);
         }
@@ -181,13 +138,11 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     });
     await timed('shake', () => registry.prepareShake());
 
-    // Compile all Mochi.page() handlers in one Bun.build so transitive deps
-    // (devalue, mochi-framework internals) emit as shared chunks alongside the
-    // per-page `.server.js` files instead of being inlined into every page.
+    // One `Bun.build` for every `Mochi.page()` handler emits transitive deps as shared chunks alongside the per-page
+    // `.server.js` files instead of inlining them into each page.
     const compiledPages: string[] = [];
-    // Seed with the framework components that Mochi.serve() otherwise compiles at
-    // startup (the error page + the client-stats admin page). Baking them into the
-    // manifest makes the boot-time compileAll a no-op in production.
+    // Seeding the framework components `Mochi.serve()` would otherwise compile at startup — the error page and the
+    // client-stats admin page — makes the boot-time compileAll a no-op in production.
     const ssrEntrypoints: string[] = [options.errorPage ?? DEFAULT_ERROR_PAGE_PATH, CLIENT_STATS_COMPONENT];
     const allRoutes: RouteEntry[] = [];
 
@@ -219,17 +174,11 @@ export async function build(options: MochiBuildOptions): Promise<void> {
       throw new Error(`[mochi:build] ${formatCompileErrors(compileErrors)}`);
     }
 
-    // Precompile server islands (mochi:defer) as standalone SSR modules so the
-    // production runtime never compiles on a request path. Otherwise the first
-    // fetch of each deferred island triggers an on-demand compile at runtime
-    // (registry.compile in the server-island endpoint). Discovery is eager — a
-    // `mochi:defer` island's import stays in its compiled source (only the
-    // markup usage is rewritten), so compiling a page transitively resolves
-    // every island it references. If eager discovery is ever defeated (e.g. a
-    // `mochi:defer` target resolved through something other than a static
-    // import), the island simply won't be in the manifest — the server-island
-    // endpoint in Mochi.ts warns and falls back to an on-demand compile rather
-    // than throwing here.
+    // Precompiling `mochi:defer` islands as standalone SSR modules keeps the production runtime off the compile path,
+    // which the first fetch of each deferred island would otherwise trigger. Discovery is eager because a
+    // `mochi:defer` island's import survives in its compiled source — only the markup usage is rewritten — so compiling
+    // a page transitively resolves every island it references. Anything eager discovery misses just stays out of the
+    // manifest, and the server-island endpoint warns and falls back to an on-demand compile.
     const islandPaths = [...new Set(registry.getServerIslandPaths().values())];
     if (islandPaths.length > 0) {
       logger.info(`[mochi:build] precompiling ${islandPaths.length} server island(s): ${islandPaths.map((p) => path.basename(p)).join(', ')}`);
@@ -265,9 +214,7 @@ export async function build(options: MochiBuildOptions): Promise<void> {
       rmSync(path.join(cssDir, raw));
     }
 
-    // Prebuilt (started before compilation) framework ServerIsland inline
-    // web-component script — the production runtime loads it from disk instead
-    // of running Bun.build at boot.
+    // Prebuilt so the production runtime loads it from disk instead of running `Bun.build` at boot.
     const serverIslandScriptPath = path.join(outDir, 'server-island.js');
     const serverIslandJs = await serverIslandScriptPromise;
     await Bun.write(serverIslandScriptPath, serverIslandJs);

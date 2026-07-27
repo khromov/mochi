@@ -1,13 +1,8 @@
 /**
- * Detect "barrel import" smells from a finished `Bun.build` metafile.
- *
- * Bun does NOT pull a barrel's thousands of modules into the graph — it
- * tree-shakes them. What it can't avoid is parsing the single large re-export
- * index the barrel resolves to (e.g. `@lucide/svelte`'s ~108 KB
- * `dist/icons/index.js`) and then dropping ~all of it. That re-parse happens on
- * every rebuild, so the cost shows up as slow dev rebuilds. The fingerprint is a
- * large `node_modules` input whose `bytesInOutput` is ≈ 0 — high parse cost, ~no
- * payload — not a module count.
+ * Detect "barrel import" smells from a finished `Bun.build` metafile. Bun tree-shakes a barrel's thousands of modules
+ * out of the graph, but still parses the single large re-export index it resolves to — `@lucide/svelte`'s ~108 KB
+ * `dist/icons/index.js` — before dropping nearly all of it, on every rebuild. The fingerprint is therefore a large
+ * `node_modules` input whose `bytesInOutput` is ≈ 0: high parse cost, no payload.
  */
 
 export interface BarrelMetafile {

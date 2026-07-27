@@ -1,11 +1,8 @@
-// End-to-end state machine for the <MochiCaptcha /> widget, driven through a
-// real DOM. The widget is pure client behaviour — a pointer drag advancing a
-// hash chain, then an interruptible proof-of-work — so none of it is reachable
-// from the server-side tests in captcha.test.ts. Here the component is compiled
-// the way the client bundle compiles it, mounted into happy-dom, and driven with
-// synthetic pointer/keyboard events; the fields it produces are handed to the
-// real `verifyCaptcha()` at the end, so the client and server halves are checked
-// against each other rather than against a mock.
+// End-to-end state machine for the <MochiCaptcha /> widget through a real DOM. Its behaviour is entirely client-side — a
+// pointer drag advancing a hash chain, then an interruptible proof-of-work — and so out of reach of the server-side
+// tests in captcha.test.ts. The component compiles the way the client bundle compiles it, mounts into happy-dom, and is
+// driven with synthetic pointer/keyboard events; the fields it produces go to the real `verifyCaptcha()` at the end, so
+// the two halves are checked against each other rather than a mock.
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 
 GlobalRegistrator.register({ url: 'http://localhost/' });
@@ -28,11 +25,9 @@ const CAPTCHA_DIR = import.meta.dir;
 // `@noble/hashes` through the project's own node_modules chain.
 const tmpDir = mkdtempSync(path.join(CAPTCHA_DIR, '..', '..', '.mochi-captcha-client-'));
 
-// Bun resolves the bare `svelte` specifier through the `bun`/`default`
-// condition, which is Svelte's *server* entry — its `onMount` is a no-op and
-// `mount()` throws. The compiled component and this test both have to reach the
-// browser entry the real client bundle gets, and both have to reach the *same*
-// copy of it, so the path is resolved once and substituted into every import.
+// Bun resolves the bare `svelte` specifier through the `bun`/`default` condition, Svelte's *server* entry, where
+// `onMount` is a no-op and `mount()` throws. Both the compiled component and this test need the browser entry the real
+// client bundle gets, and need the same copy of it, so the path resolves once and substitutes into every import.
 const sveltePkgPath = Bun.resolveSync('svelte/package.json', CAPTCHA_DIR);
 const sveltePkg = (await Bun.file(sveltePkgPath).json()) as { exports: { '.': { browser: string } } };
 const SVELTE_CLIENT = path.join(path.dirname(sveltePkgPath), sveltePkg.exports['.'].browser);
@@ -53,14 +48,10 @@ async function compileCaptcha(generate: 'client' | 'server'): Promise<string> {
   return compile(preprocessed.code, { filename: 'MochiCaptcha.svelte', generate, dev: false, css: 'injected', discloseVersion: false }).js.code;
 }
 
-/**
- * Stands in for the `mochi-env:mochi-framework` virtual module the real build
- * substitutes. `isDev` is a build-time constant there (`__MOCHI_DEV__`), so the
- * two builds below are how production and development actually differ — not a
- * flag flipped at runtime. `logger` records instead of printing: every failure
- * path in the widget is required to leave a console record, which is otherwise
- * unobservable.
- */
+// Stands in for the `mochi-env:mochi-framework` virtual module the real build substitutes. `isDev` is a build-time
+// constant there (`__MOCHI_DEV__`), so the two builds below are how production and development genuinely differ rather
+// than a runtime flag. `logger` records instead of printing, since every failure path is required to leave a console
+// record that would otherwise be unobservable.
 function writeEnvModule(name: string, isDev: boolean): string {
   const file = path.join(tmpDir, name);
   writeFileSync(
@@ -227,12 +218,7 @@ class Widget {
     flushSync();
   }
 
-  /**
-   * Cross the whole track — ArrowRight advances a tenth at a time, so ten
-   * presses is exactly one traverse. Used wherever the test is about what
-   * happens *after* the slide; the pointer tests below are the ones about
-   * dragging itself.
-   */
+  /** Cross the whole track: ArrowRight advances a tenth at a time, so ten presses is one traverse. For tests about what happens *after* the slide. */
   slideToEnd(): void {
     this.key('ArrowRight', 10);
   }
@@ -544,10 +530,9 @@ describe('MochiCaptcha — a solve that cannot finish', () => {
   });
 
   test('retrying resumes the nonce search rather than replaying the attempts that just failed', async () => {
-    // The reported count is the absolute nonce reached, so two budget-equal
-    // attempts land at ~1× the same number if the search restarts and ~2× it if
-    // it resumes. A budget spanning many slices keeps the two comparable enough
-    // for the 1.5× threshold below to separate the two behaviours cleanly.
+    // The reported count is the absolute nonce reached, so two budget-equal attempts land at ~1× the same number if the
+    // search restarts and ~2× it if it resumes. A budget spanning many slices keeps them comparable enough for the 1.5×
+    // threshold below to separate the two behaviours.
     const widget = renderWidget(DevCaptcha, { token: 'token', bits: 32, solveBudgetMs: 100 });
     const attemptsFrom = (line: string) => Number(/and (\d+) attempts/.exec(line)![1]);
 

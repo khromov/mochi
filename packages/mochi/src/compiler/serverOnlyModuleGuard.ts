@@ -1,13 +1,9 @@
 /**
- * Fails a browser `Bun.build` the moment a server-only framework module is
- * resolved into the client graph.
- *
- * These modules back process-global state that only ever exists on the server
- * (the hook/filter registry, the `Mochi.serve()` singleton, the request-context
- * `AsyncLocalStorage`). Bundled into the browser they don't error — they read an
- * empty registry and hand back framework defaults, so a configured filter simply
- * stops applying with nothing in the console. Catching it at resolve time turns
- * that silent divergence into a build failure naming the importer.
+ * Fails a browser `Bun.build` the moment a server-only framework module resolves into the client graph. These modules
+ * back process-global state that exists only on the server — the hook/filter registry, the `Mochi.serve()` singleton,
+ * the request-context `AsyncLocalStorage` — and bundled into the browser they read an empty registry and hand back
+ * framework defaults, so a configured filter stops applying with nothing in the console. Catching it at resolve time
+ * turns that silent divergence into a build failure naming the importer.
  */
 import path from 'node:path';
 import type { BunPlugin } from 'bun';
