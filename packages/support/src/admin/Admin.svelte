@@ -163,4 +163,12 @@
   .client code {
     font-size: 0.8rem;
   }
+
+  @media (max-width: 768px) {
+    .back {
+      position: static;
+      display: inline-block;
+      margin-bottom: 0.75rem;
+    }
+  }
 </style>

@@ -18,11 +18,6 @@ export function trailingSlashRedirect(method: string, url: URL, policy: Trailing
   return null;
 }
 
-/**
- * Removes trailing forward slashes if they exist.
- *
- * If the string doesn't end with a slash, we simply return it.
- */
 function unTrailingSlashIt(str: string): string {
   if (str.endsWith('/') || str.endsWith('\\')) {
     return unTrailingSlashIt(str.slice(0, -1));
@@ -32,11 +27,8 @@ function unTrailingSlashIt(str: string): string {
 }
 
 /**
- * Appends a trailing slash to the path portion of a string.
- *
- * Strips any slash the path already ends with first, so the result is never
- * double-slashed. A query string or `#fragment` is split off, left untouched,
- * and re-attached after the path so the slash always lands on the path itself.
+ * Appends a trailing slash to the path portion of a string, stripping any slash already there so the result never
+ * doubles up. A query string or `#fragment` is split off, left untouched, and re-attached, so the slash lands on the path.
  */
 export function trailingSlashIt(str: string): string {
   const boundary = str.search(/[?#]/);

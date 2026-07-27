@@ -1,4 +1,4 @@
-import { Mochi, error, getRequestContext } from 'mochi-framework';
+import { Mochi, error, getRequestContext, mintCaptcha, verifyCaptcha } from 'mochi-framework';
 import type { MochiRouteValue, MochiQueueConfig } from 'mochi-framework';
 import {
   buildDocsNav,
@@ -11,10 +11,12 @@ import {
   getDoc,
   getDocLlmsTxt,
   getDocNeighbors,
+  getPostLlmsTxt,
   internalDemoLlmsRoutes,
   loadDocs,
 } from './lib/docs';
 import { loadPosts, getPost } from './lib/blog';
+import { CHANGELOG_SLUG, CHANGELOG_TITLE, CHANGELOG_DESCRIPTION, getChangelogHtml, getChangelogTxt } from './lib/changelog';
 import { respondMcp } from './lib/mcp';
 import { profilerEnabled, startProfiler, stopProfiler } from './lib/profiler';
 import { routes as apiRoutes } from './demos/api/routes';
@@ -22,6 +24,7 @@ import { routes as cacheEventsRoutes } from './demos/cache-events/routes';
 import { routes as captchaRoutes } from './demos/captcha/routes';
 import { routes as captchaStylingRoutes } from './demos/captcha-styling/routes';
 import { routes as chatRoutes } from './demos/chat/routes';
+import { routes as ciRoutes } from './ci/routes';
 import { routes as clientOnlyRoutes } from './demos/client-only/routes';
 import { routes as cookieVaryTestRoutes } from './demos/cookie-vary-test/routes';
 import { routes as cookiesRoutes } from './demos/cookies/routes';
@@ -40,6 +43,7 @@ import { routes as formRedirectsRoutes } from './demos/form-redirects/routes';
 import { routes as formReturnDataRoutes } from './demos/form-return-data/routes';
 import { routes as helloWorldRoutes } from './demos/hello-world/routes';
 import { routes as hydratableRoutes } from './demos/hydratable/routes';
+import { routes as isHydratableRoutes } from './demos/is-hydratable/routes';
 import { routes as imageRoutes } from './demos/image/routes';
 import { routes as imageInvalidationRoutes } from './demos/image-invalidation/routes';
 import { routes as imageEventsRoutes } from './demos/image-events/routes';
@@ -59,6 +63,7 @@ import { routes as propsIdRoutes } from './demos/props-id/routes';
 import { routes as queueRoutes, queues as queueQueues } from './demos/queue/routes';
 import { routes as rateLimitRoutes } from './demos/rate-limit/routes';
 import { routes as reloadFormDataRoutes } from './demos/reload-form-data/routes';
+import { routes as requestCacheRoutes } from './demos/request-cache/routes';
 import { routes as requestIdRoutes } from './demos/request-id/routes';
 import { routes as serverIslandRoutes } from './demos/server-island/routes';
 import { routes as shotRoutes } from './shot/routes';
@@ -131,6 +136,29 @@ export const routes: Record<string, MochiRouteValue> = {
       };
     },
   }),
+  // Static, so it outranks /docs/:slug below. The changelog is a synthetic doc rendered
+  // from markdown fetched at runtime — it can't ride the build-time docComponents barrel,
+  // so it hands Docs.svelte pre-rendered HTML instead of a component.
+  '/docs/changelog': Mochi.page('./src/Docs.svelte', {
+    serverProps: async () => {
+      const html = await getChangelogHtml();
+      if (html === null) {
+        error(503, 'Changelog is temporarily unavailable');
+      }
+      return {
+        slug: CHANGELOG_SLUG,
+        title: CHANGELOG_TITLE,
+        description: CHANGELOG_DESCRIPTION,
+        docsNav: await buildDocsNav(),
+        // No on-page TOC: it would just be a second copy of the version list the page
+        // already is. No pager either — the changelog sits outside the docs sequence.
+        toc: [],
+        html,
+        prev: null,
+        next: null,
+      };
+    },
+  }),
   '/docs/:slug': Mochi.page('./src/Docs.svelte', {
     serverProps: async () => {
       const { params } = getRequestContext();
@@ -183,6 +211,22 @@ export const routes: Record<string, MochiRouteValue> = {
   // SMTP config this site deliberately doesn't carry.
   '/support': Mochi.api(() => Response.redirect('https://support.mochi.fast/', 302)),
   '/og': Mochi.page('./src/og/OgPage.svelte'),
+  // Backs the live captcha embedded in the 0.8.0 blog post. Minting and verifying
+  // happen here rather than in `/blog/:slug` so that route stays post-agnostic.
+  '/api/captcha-demo/mint': Mochi.api(() => Response.json(mintCaptcha()), { rateLimit: { limit: 60, window: '1m' } }),
+  '/api/captcha-demo/verify': Mochi.api(
+    async ({ method, request }) => {
+      if (method !== 'POST') {
+        error(405, 'Method Not Allowed');
+      }
+      const { token, pow } = (await request.json()) as { token?: string; pow?: string };
+      const formData = new FormData();
+      formData.set('captcha_token', String(token ?? ''));
+      formData.set('captcha_pow', String(pow ?? ''));
+      return Response.json(await verifyCaptcha(formData));
+    },
+    { rateLimit: { limit: 30, window: '1m' } },
+  ),
   '/sitemap.xml': Mochi.api(async () => {
     return new Response(await buildSitemapXml(), {
       headers: { 'Content-Type': 'application/xml; charset=utf-8' },
@@ -204,12 +248,36 @@ export const routes: Record<string, MochiRouteValue> = {
       headers: { 'Content-Type': 'text/plain; charset=utf-8' },
     });
   }),
+  // Static, so it outranks the /docs/:slug/llms.txt param route below (same
+  // specificity rule the demoLlmsRoutes block relies on). The changelog is a
+  // synthetic doc fetched from GitHub — a null means the fetch failed, so 503
+  // (not 404): the entry is always listed, only the upstream can be unavailable.
+  '/docs/changelog/llms.txt': Mochi.api(async () => {
+    const text = await getChangelogTxt();
+    if (text === null) {
+      error(503, 'Changelog is temporarily unavailable');
+    }
+    return new Response(text, {
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+    });
+  }),
   '/docs/:slug/llms.txt': Mochi.api(async () => {
     const { params } = getRequestContext();
     const slug = params.slug ?? '';
     const text = await getDocLlmsTxt(slug);
     if (text === null) {
       error(404, `No doc '${slug}'`);
+    }
+    return new Response(text, {
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+    });
+  }),
+  '/blog/:slug/llms.txt': Mochi.api(async () => {
+    const { params } = getRequestContext();
+    const slug = params.slug ?? '';
+    const text = await getPostLlmsTxt(slug);
+    if (text === null) {
+      error(404, `No post '${slug}'`);
     }
     return new Response(text, {
       headers: { 'Content-Type': 'text/plain; charset=utf-8' },
@@ -227,6 +295,7 @@ export const routes: Record<string, MochiRouteValue> = {
   ...captchaRoutes,
   ...captchaStylingRoutes,
   ...chatRoutes,
+  ...ciRoutes,
   ...clientOnlyRoutes,
   ...cookieVaryTestRoutes,
   ...cookiesRoutes,
@@ -245,6 +314,7 @@ export const routes: Record<string, MochiRouteValue> = {
   ...formReturnDataRoutes,
   ...helloWorldRoutes,
   ...hydratableRoutes,
+  ...isHydratableRoutes,
   ...imageRoutes,
   ...imageInvalidationRoutes,
   ...imageEventsRoutes,
@@ -264,6 +334,7 @@ export const routes: Record<string, MochiRouteValue> = {
   ...queueRoutes,
   ...rateLimitRoutes,
   ...reloadFormDataRoutes,
+  ...requestCacheRoutes,
   ...requestIdRoutes,
   ...serverIslandRoutes,
   ...serverPropsRoutes,

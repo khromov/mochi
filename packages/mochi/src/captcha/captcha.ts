@@ -4,8 +4,13 @@ import { applyFilter } from '../extensions';
 import { mochiEvents } from '../events';
 import type { MochiCaptchaReason } from '../events';
 import { getCaptchaRuntime } from './config';
-import { CAPTCHA_AAD, CAPTCHA_STEPS, chainInput, powInput, leadingZeroBits } from './pow';
+import { CAPTCHA_AAD, deriveChain, powInput, leadingZeroBits } from './pow';
 import type { CaptchaResult } from './types';
+
+// The chain and proof-of-work are re-derived here with node:crypto while the widget uses the sync JS implementation in
+// pow.ts. Keeping the two independent lets pow.test.ts assert they agree, checking the JS digest against a known-good
+// one on every run rather than against itself.
+const nodeHashHex = (input: string) => createHash('sha256').update(input).digest('hex');
 
 // One message for every token failure, so a probing bot can't distinguish
 // "too fast" from "tampered" and binary-search the timing floor. The real
@@ -24,6 +29,8 @@ function reject(reason: MochiCaptchaReason, details?: { bits?: number; ageMs?: n
 export interface MintedCaptcha {
   token: string;
   bits: number;
+  /** Active solve time the widget spends before giving up. It rides alongside the token rather than sealed inside, since nothing verifies against it and rewriting it only changes how long that visitor's own device tries. */
+  solveBudgetMs: number;
 }
 
 /**
@@ -33,21 +40,22 @@ export interface MintedCaptcha {
  * checks the difficulty this token was actually minted at — reconfiguring the
  * server can never silently weaken or break tokens already in flight.
  */
-export function mintCaptcha(options?: { bits?: number }): MintedCaptcha {
-  const bits = options?.bits ?? getCaptchaRuntime().options.bits;
+export function mintCaptcha(options?: { bits?: number; solveBudgetMs?: number }): MintedCaptcha {
+  const resolved = getCaptchaRuntime().options;
+  const bits = options?.bits ?? resolved.bits;
+  const solveBudgetMs = options?.solveBudgetMs ?? resolved.solveBudgetMs;
+  if (!Number.isFinite(solveBudgetMs) || solveBudgetMs <= 0) {
+    throw new Error(`Captcha: solveBudgetMs must be a positive finite number, got ${solveBudgetMs}`);
+  }
   const token = encryptPayload(JSON.stringify({ iat: Date.now(), nonce: randomUUID(), bits }), { aad: CAPTCHA_AAD });
-  return { token, bits };
+  return { token, bits, solveBudgetMs };
 }
 
 /**
- * Verify the `captcha_token` / `captcha_pow` fields a `<MochiCaptcha />` adds to
- * the form. Consumes the one-time nonce on success unless `consume: false`, in
- * which case call {@link consumeCaptcha} yourself once the submission is
- * committed.
- *
- * A failure carries a ready-to-render `error` plus a `reason` to override it
- * with your own copy — see {@link CaptchaFailureReason} for why `reason` is
- * deliberately coarse.
+ * Verify the `captcha_token` / `captcha_pow` fields `<MochiCaptcha />` adds to the form, consuming the one-time nonce on
+ * success unless `consume: false`, where you call {@link consumeCaptcha} once the submission is committed. A failure
+ * carries a ready-to-render `error` plus a `reason` for your own copy — see {@link CaptchaFailureReason} for why
+ * `reason` is deliberately coarse.
  */
 export async function verifyCaptcha(formData: FormData, options?: { consume?: boolean }): Promise<CaptchaResult> {
   const token = String(formData.get('captcha_token') ?? '');
@@ -73,12 +81,9 @@ export async function verifyCaptcha(formData: FormData, options?: { consume?: bo
   const { options: resolved, store } = getCaptchaRuntime();
   const ageMs = Date.now() - iat;
 
-  // Skew between the minting and the verifying instance lands directly in ageMs
-  // — the two Date.now() reads come off different machines — so the allowance
-  // widens the expiry bound. It deliberately does NOT pad the floor: padding a
-  // floor means subtracting from it, and any allowance wider than minAgeMs would
-  // silently delete the too-fast check rather than soften it. A fleet skewed far
-  // enough to need that has no usable elapsed-time signal left to floor.
+  // Skew between the minting and verifying instance lands directly in `ageMs`, since the two `Date.now()` reads come off
+  // different machines, so the allowance widens the expiry bound alone. Padding the floor would mean subtracting from
+  // it, and any allowance wider than `minAgeMs` would delete the too-fast check rather than soften it.
   const limitMs = resolved.maxAgeMs + resolved.driftAllowanceMs;
   const minAgeMs = applyFilter('captcha:minAgeMs', resolved.minAgeMs, { bits, ageMs, limitMs });
   if (!Number.isFinite(minAgeMs) || minAgeMs < 0 || minAgeMs >= limitMs) {
@@ -95,18 +100,13 @@ export async function verifyCaptcha(formData: FormData, options?: { consume?: bo
   // Re-derive the slide-step chain from the raw token: the widget only reaches
   // the final link by actually running the progression, so a PoW over the token
   // itself (skipping the chain) fails here.
-  let challenge = token;
-  for (let step = 1; step <= CAPTCHA_STEPS; step++) {
-    challenge = createHash('sha256').update(chainInput(challenge, step)).digest('hex');
-  }
+  const challenge = deriveChain(token, nodeHashHex);
   if (leadingZeroBits(createHash('sha256').update(powInput(challenge, pow)).digest()) < bits) {
     return reject('bad-pow', { bits, ageMs });
   }
 
-  // Tracks the acceptance bound, not maxAgeMs: a token accepted inside the drift
-  // pad would otherwise carry an already-past expiry, and both stores prune on
-  // `expiresAt < now` — the nonce would be swept straight back out and the token
-  // would replay.
+  // Tracks the acceptance bound rather than `maxAgeMs`: a token accepted inside the drift pad would otherwise carry an
+  // already-past expiry, and both stores prune on `expiresAt < now`, sweeping the nonce back out so the token replays.
   const expiresAt = iat + limitMs;
   if (options?.consume !== false && !(await store.consume(nonce, expiresAt))) {
     return reject('replay', { bits, ageMs });
@@ -116,16 +116,12 @@ export async function verifyCaptcha(formData: FormData, options?: { consume?: bo
 }
 
 /**
- * Solve a minted challenge server-side, returning the exact form fields
- * `<MochiCaptcha />` would submit. For testing captcha-protected forms without a
- * browser — lower `bits` in your test server's `captcha` options, since solving
- * at the production default takes real work.
+ * Solve a minted challenge server-side, returning the exact form fields `<MochiCaptcha />` would submit, for testing
+ * captcha-protected forms without a browser. Lower `bits` in your test server's `captcha` options, since solving at the
+ * production default takes real work.
  */
 export function solveCaptcha(minted: MintedCaptcha): { captcha_token: string; captcha_pow: string } {
-  let challenge = minted.token;
-  for (let step = 1; step <= CAPTCHA_STEPS; step++) {
-    challenge = createHash('sha256').update(chainInput(challenge, step)).digest('hex');
-  }
+  const challenge = deriveChain(minted.token, nodeHashHex);
   for (let n = 0; ; n++) {
     if (
       leadingZeroBits(
@@ -140,10 +136,9 @@ export function solveCaptcha(minted: MintedCaptcha): { captcha_token: string; ca
 }
 
 /**
- * Burn a verified captcha's nonce, returning false if it was already spent.
- * Only needed alongside `verifyCaptcha(formData, { consume: false })` — use that
- * pairing when other validation could still reject the submission, so a fixable
- * mistake doesn't cost the visitor their solved captcha.
+ * Burn a verified captcha's nonce, returning false if it was already spent. Needed only alongside
+ * `verifyCaptcha(formData, { consume: false })`, the pairing to reach for when other validation could still reject the
+ * submission, so a fixable mistake doesn't cost the visitor their solved captcha.
  */
 export async function consumeCaptcha(result: { nonce: string; expiresAt: number }): Promise<boolean> {
   return await getCaptchaRuntime().store.consume(result.nonce, result.expiresAt);

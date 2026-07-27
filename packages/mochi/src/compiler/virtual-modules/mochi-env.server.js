@@ -39,6 +39,9 @@ export { trailingSlashIt } from "__MOCHI_TRAILING_SLASH__";
 // Per-request hydratable-island props dedup helper. Used by the
 // preprocessor's injected `__mochi_emit_props__` import.
 export { emitIslandProps } from "__MOCHI_ISLAND_PROPS__";
+// Context-backed: true anywhere inside an island subtree that will hydrate
+// (seeded by the preprocessor's injected prologue on the island root).
+export { isHydratable } from "__MOCHI_IS_HYDRATABLE__";
 // Expose the event bus. Pinned on globalThis under the same key as
 // `events.ts` so the bundled copy and the real server runtime share
 // one emitter instance.
@@ -48,6 +51,8 @@ export const mochiEvents = globalThis.__mochi_events__;
 // Server-side cache class. Re-exported through the virtual module so .svelte
 // files can `import { MochiCache } from 'mochi-framework'` directly.
 export { MochiCache } from "__MOCHI_CACHE__";
+// Request-scoped cache. Server-only (it hangs off the request context).
+export { requestCache, requestMemo, getRequestCache } from "__MOCHI_REQUEST_CACHE__";
 // Cache storage adapters — server-only (FileStorage touches the fs).
 // isBlobRef/readBlobRef resolve the lazy blob references a
 // FileStorage-backed cache returns for binary fields.

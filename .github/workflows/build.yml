@@ -13,6 +13,19 @@ permissions:
   contents: read
   packages: write
 
+# max-parallel below only orders legs *within* one run, so two merges landing
+# back-to-back would otherwise deploy on top of each other. This queues whole
+# runs per branch instead: run 2 stays pending until run 1 is completely done.
+# It also keeps the :main tag honest — nothing can overwrite the image between
+# run 1's push and run 1's deploy, because run 2 hasn't started building yet.
+#
+# cancel-in-progress: false is the entire point; don't flip it. Note that only
+# one run can sit pending per group, so a third merge arriving while run 2 is
+# still queued cancels run 2 — the newest commit supersedes it.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -31,7 +44,7 @@ jobs:
             port: 3333
             image: ghcr.io/khromov/mochi
             caprover_app: mochi
-            caprover_token_secret: APP_TOKEN
+            caprover_token_secret: APP_TOKEN_S1
             # Temporary: try the site on the Bun canary line (Bun 1.4.0)
             # while demos stays on the stable default pinned in the Dockerfile.
             # Pinned by digest so the moving canary tag can't drift the deploy
@@ -47,7 +60,7 @@ jobs:
             port: 3334
             image: ghcr.io/khromov/mochi-demos
             caprover_app: mochi-demos
-            caprover_token_secret: APP_TOKEN_DEMOS
+            caprover_token_secret: APP_TOKEN_DEMOS_S1
             bun_image: oven/bun:1.3.14-alpine
           # Support form (support.mochi.fast). The only leg on the prebuilt
           # Dockerfile.production rather than the dev-mode Dockerfile — a contact
@@ -62,7 +75,7 @@ jobs:
             port: 3336
             image: ghcr.io/khromov/mochi-support
             caprover_app: mochi-support
-            caprover_token_secret: APP_TOKEN_SUPPORT
+            caprover_token_secret: APP_TOKEN_SUPPORT_S1
             bun_image: oven/bun:1.3.14-alpine
             # Dockerfile.production refuses to boot without ADMIN_PASSWORD +
             # SMTP_HOST + MOCHI_ORIGIN; the transport only connects on send and
@@ -186,10 +199,41 @@ jobs:
         run: |
           printf '%s\n' "${{ steps.meta.outputs.tags }}" | xargs -n1 docker push
 
+  # Deploys are serialized (max-parallel: 1) because the CapRover server
+  # reconciles one app at a time — concurrent deploys contend for it. Builds
+  # above stay fully parallel; only this job is one-at-a-time. fail-fast stays
+  # off so a hiccup on one app still lets the others deploy: their images are
+  # already built, smoke-tested and pushed by the time we get here.
+  #
+  # The matrix here only carries the deploy targets. Keep the three entries in
+  # sync with the build matrix above when adding/renaming an app.
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+
+    strategy:
+      max-parallel: 1
+      fail-fast: false
+      matrix:
+        include:
+          - name: site
+            image: ghcr.io/khromov/mochi
+            caprover_app: mochi
+            caprover_token_secret: APP_TOKEN_S1
+          - name: demos
+            image: ghcr.io/khromov/mochi-demos
+            caprover_app: mochi-demos
+            caprover_token_secret: APP_TOKEN_DEMOS_S1
+          - name: support
+            image: ghcr.io/khromov/mochi-support
+            caprover_app: mochi-support
+            caprover_token_secret: APP_TOKEN_SUPPORT_S1
+
+    steps:
       - name: Deploy on CapRover
-        uses: caprover/deploy-from-github@v1.1.2
+        uses: caprover/deploy-from-github@v1.2.0
         with:
-          server: '${{ secrets.APP_SERVER }}'
+          server: '${{ secrets.APP_SERVER_S1 }}'
           app: ${{ matrix.caprover_app }}
           token: '${{ secrets[matrix.caprover_token_secret] }}'
           image: '${{ matrix.image }}:main'

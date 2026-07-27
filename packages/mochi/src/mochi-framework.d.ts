@@ -1,9 +1,6 @@
-// Module-augmentation declarations for the in-Svelte virtual module.
-// Inside compiled .svelte / .svelte.[jt]s files Mochi rewrites
-// `import ... from 'mochi-framework'` to a build-time virtual module
-// exposing these symbols. The `import` line below makes this an
-// augmenting declaration so it adds to (rather than replaces) the real
-// package's exports.
+// Inside compiled .svelte / .svelte.[jt]s files Mochi rewrites `import ... from 'mochi-framework'` to a build-time
+// virtual module exposing these symbols. The `import` line below makes this an augmenting declaration, so it adds to
+// the real package's exports rather than replacing them.
 // TODO: Verify if there is a better way of avoiding issues here
 import 'mochi-framework';
 
@@ -41,10 +38,9 @@ declare module 'mochi-framework' {
   export function getRequestContext(): import('./runtime/requestContext').MochiRequestContext;
 
   /**
-   * Cookie jar for the current request. On the server, reads from the request's
-   * Cookie header and tracks Set-Cookie headers for the response. On the client,
-   * wraps `document.cookie`. Destructuring on the server captures the current
-   * request's jar — don't cache methods across awaits.
+   * Cookie jar for the current request: on the server it reads the request's Cookie header and tracks Set-Cookie for
+   * the response, on the client it wraps `document.cookie`. Server-side destructuring captures the current request's
+   * jar, so keep methods out of anything that outlives an await.
    */
   export const cookies: CookieJar;
 
@@ -52,38 +48,27 @@ declare module 'mochi-framework' {
   export const params: Readonly<Record<string, string>>;
 
   /**
-   * URL of the current page.
-   *
-   * - **Server:** proxies `getRequestContext().url` (the parsed request URL).
-   * - **Client:** proxies `new URL(window.location.href)`, constructed fresh on
-   *   each property access so it always reflects the current browser URL.
+   * URL of the current page: on the server it proxies `getRequestContext().url`, on the client
+   * `new URL(window.location.href)`, rebuilt on each property access so it tracks the live browser URL.
    */
   export const url: URL;
 
   /** Per-request data set by middleware. Server-only; accessing on the client throws. */
   export const locals: Record<string, unknown>;
 
-  /**
-   * Re-exported from `devalue` so `.svelte` files can serialize / deserialize
-   * rich-typed values (Date, Map, Set, BigInt, cyclic refs, …) without a
-   * separate install. Available in both SSR and client builds.
-   */
+  /** Re-exported from `devalue` so `.svelte` files can round-trip rich-typed values (Date, Map, Set, BigInt, cyclic refs) with no separate install, in both SSR and client builds. */
   export { stringify, parse } from 'devalue';
 
   /**
-   * Internal: registers a hydratable island's props in the per-request dedup
-   * registry and returns a stable ref id. The preprocessor injects calls to
-   * this helper for `mochi:hydrate` islands; application code should not call
-   * it directly. Server-only — the client virtual module exposes a stub that
-   * throws.
+   * Internal: registers a hydratable island's props in the per-request dedup registry and returns a stable ref id. The
+   * preprocessor injects the calls for `mochi:hydrate` islands, and the client virtual module stubs it with a throw.
    */
   export function emitIslandProps(value: unknown): string;
 
   /**
-   * Svelte attachment that progressively enhances a `<form method="POST">`.
-   * The server's action handler runs as usual, but the response is a JSON
-   * envelope (`MochiEnhanceResult`) instead of a re-rendered HTML page.
-   * Browser-only: importing on the server is safe, but invoking throws.
+   * Svelte attachment that progressively enhances a `<form method="POST">`. The server's action handler runs as usual
+   * while the response becomes a JSON envelope (`MochiEnhanceResult`) in place of a re-rendered HTML page.
+   * Browser-only: importing on the server is safe, invoking throws.
    *
    * ```svelte
    * <form method="POST" {@attach enhance()}>
@@ -96,11 +81,7 @@ declare module 'mochi-framework' {
     options?: import('./types').MochiSubmitFunction<Success, Failure> | import('./types').MochiEnhanceOptions<Success, Failure>,
   ): import('svelte/attachments').Attachment<HTMLFormElement>;
 
-  /**
-   * Decode a raw `ActionResult` JSON envelope from a Mochi enhanced POST
-   * response. Useful when rolling your own `onsubmit` instead of using
-   * `{@attach enhance(...)}`. Browser-only.
-   */
+  /** Decode a raw `ActionResult` JSON envelope from a Mochi enhanced POST response, for rolling your own `onsubmit` instead of `{@attach enhance(...)}`. Browser-only. */
   export function deserialize<
     Success extends import('./types').MochiFormShape = import('./types').MochiFormShape,
     Failure extends import('./types').MochiFormShape = import('./types').MochiFormShape,

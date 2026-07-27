@@ -1,7 +1,7 @@
 import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
-import { createQueue, getQueue, closeAllQueueResources, runQueueRecovery } from './queue';
+import { createQueue, getQueue, closeAllQueueResources, runQueueRecovery, DEFAULT_LOCK_DURATION_MS } from './queue';
 import type { MochiJob } from './queue';
 import { mochiEvents } from './events';
 import { initExtensions } from './extensions';
@@ -177,6 +177,69 @@ describe('Mochi queue', () => {
     const error = await failedListener.promise;
     expect(error).toBeInstanceOf(Error);
     expect(error.message).toBe('boom');
+  });
+
+  // bunqueue's embedded heartbeat refreshes stall detection but never renews the
+  // job's lock, so a job outliving `lockDuration` is requeued while it is still
+  // running and the success it eventually reports is rejected as someone else's
+  // work. Mochi's default TTL is 30 minutes, so this drives the failure with a
+  // deliberately tiny one; the lock reaper only ticks every 5s, hence the sleep.
+  // `attempts: 2` and `concurrency: 2` are both load-bearing — the requeued copy
+  // has to be retryable and pullable while the original is still running, and with
+  // `attempts: 1` the job completes cleanly instead.
+  //
+  // Only the rejected success is asserted, because what follows it is a bunqueue
+  // implementation detail that has already moved once: on 2.8.32 the job was
+  // retried (double-firing its side effects), on 2.8.44 it is abandoned instead.
+  // Both are the same defect from Mochi's side and both are fixed by not letting
+  // the lock expire. Before `lockDuration` was threaded through to the worker, a
+  // top-level value was silently dropped, the job kept the 30s default lock, and
+  // no failure fired at all — which is how this test catches a regression.
+  test('a job outliving lockDuration has its success rejected', async () => {
+    const name = uniqueName();
+    const failed = deferred<string>();
+    let runs = 0;
+
+    mochiEvents.on('queue:failed', (e) => failed.resolve(e.error));
+
+    const queue = createQueue<{ z: number }>(
+      name,
+      async () => {
+        runs++;
+        await Bun.sleep(7000);
+        return { ok: true };
+      },
+      { dataPath, concurrency: 2, lockDuration: 50 },
+    );
+
+    await queue.add('slow', { z: 1 }, { attempts: 2, bunqueue: { backoff: 10 } });
+
+    expect(await failed.promise).toMatch(/lock token/i);
+    expect(runs).toBe(1);
+  }, 30_000);
+
+  test('queue:lockDurationMs is resolved once per queue, after the per-queue option', () => {
+    const seen: Array<{ value: number; queue: string; explicit: boolean }> = [];
+    initExtensions({ filters: { 'queue:lockDurationMs': (value, ctx) => (seen.push({ value, ...ctx }), value) } });
+
+    const defaulted = uniqueName();
+    const chosen = uniqueName();
+    const passthrough = uniqueName();
+    try {
+      createQueue(defaulted, async () => null, { dataPath });
+      createQueue(chosen, async () => null, { dataPath, lockDuration: 50 });
+      createQueue(passthrough, async () => null, { dataPath, bunqueue: { lockDuration: 70 } });
+    } finally {
+      initExtensions({});
+    }
+
+    expect(seen).toEqual([
+      { value: DEFAULT_LOCK_DURATION_MS, queue: defaulted, explicit: false },
+      { value: 50, queue: chosen, explicit: true },
+      // The raw escape hatch feeds the filter rather than bypassing it, so the
+      // filtered value stays the last word on the lock.
+      { value: 70, queue: passthrough, explicit: true },
+    ]);
   });
 
   test('does not leak bunqueue job methods into the processor', async () => {
