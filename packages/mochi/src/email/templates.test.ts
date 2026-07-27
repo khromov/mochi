@@ -26,6 +26,15 @@ describe('scanEmailTemplates', () => {
     }
   });
 
+  test('returns nothing when a plain file occupies the path, rather than aborting the build', () => {
+    const root = scaffold([EMAIL_TEMPLATE_DIR]);
+    try {
+      expect(scanEmailTemplates(root)).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   test('finds nested templates and ignores non-Svelte siblings', () => {
     const root = scaffold([
       `${EMAIL_TEMPLATE_DIR}/Welcome.svelte`,

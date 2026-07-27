@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { statSync } from 'node:fs';
 import path from 'node:path';
 import { toPosixPath } from '../utils';
 
@@ -15,7 +15,9 @@ export const EMAIL_TEMPLATE_DIR = 'src/emails';
  */
 export function scanEmailTemplates(cwd: string = process.cwd()): string[] {
   const dir = path.join(cwd, EMAIL_TEMPLATE_DIR);
-  if (!existsSync(dir)) {
+  // isDirectory() rather than a bare existence check: `scanSync` throws on a plain file of that name, which would abort
+  // the build over something that isn't an email template at all.
+  if (!statSync(dir, { throwIfNoEntry: false })?.isDirectory()) {
     return [];
   }
   const glob = new Bun.Glob('**/*.svelte');

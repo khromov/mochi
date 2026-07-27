@@ -9,11 +9,12 @@ import type { MochiSvelteCompiler } from '../compiler/svelteCompilerBackend';
 import { rmSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { scanPublicDir, publicRouteKey } from '../runtime/publicDir';
-import { EMAIL_TEMPLATE_DIR, scanEmailTemplates } from '../email/templates';
+import { scanEmailTemplates } from '../email/templates';
 import { loadSvelteConfig } from '../compiler/svelteConfig';
 import { logger, setLogLevel } from '../utils/log';
 import { consoleLogger } from '../dev/consoleLogger';
 import { mochiEvents } from '../events';
+import type { MochiCompileCompleteEvent } from '../events';
 import { styleText } from 'node:util';
 import prettyBytes from '../vendor/pretty-bytes';
 import { collectImageResources, printResourceTree } from './resourceReport';
@@ -77,9 +78,14 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     clientBundleCount += 1;
     clientBundleMs += durationMs;
   };
+  const compileStats = new Map<string, { ssrSizeBytes: number; hydratableCount: number; serverIslandCount: number }>();
+  const onCompileComplete = ({ path: p, ssrSizeBytes, hydratableCount, serverIslandCount }: MochiCompileCompleteEvent) => {
+    compileStats.set(p, { ssrSizeBytes, hydratableCount, serverIslandCount });
+  };
   // Removed in the trailing finally — build() runs in-process from tests, so a
   // leaked listener would survive into subsequent builds in the same process.
   mochiEvents.on('client-bundle:complete', onClientBundle);
+  mochiEvents.on('compile:complete', onCompileComplete);
   try {
     const development = options.development ?? false;
     const baseOutDir = options.outDir ?? './.mochi';
@@ -147,11 +153,6 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     const ssrEntrypoints: string[] = [options.errorPage ?? DEFAULT_ERROR_PAGE_PATH, CLIENT_STATS_COMPONENT];
     const allRoutes: RouteEntry[] = [];
 
-    const compileStats = new Map<string, { ssrSizeBytes: number; hydratableCount: number; serverIslandCount: number }>();
-    mochiEvents.on('compile:complete', ({ path: p, ssrSizeBytes, hydratableCount, serverIslandCount }) => {
-      compileStats.set(p, { ssrSizeBytes, hydratableCount, serverIslandCount });
-    });
-
     for (const [pattern, handler] of Object.entries(options.routes)) {
       if (isMochiPage(handler)) {
         allRoutes.push({ pattern, kind: 'page', componentPath: handler.componentPath });
@@ -170,7 +171,7 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     // from a route. Walking the conventional directory is what keeps them out of a cold compile on the first send.
     const emailTemplates = scanEmailTemplates();
     if (emailTemplates.length > 0) {
-      logger.info(`[mochi:build] precompiling ${emailTemplates.length} email template(s) from ${EMAIL_TEMPLATE_DIR}/: ${emailTemplates.map((p) => path.basename(p)).join(', ')}`);
+      logger.info(`[mochi:build] precompiling ${emailTemplates.length} email template(s): ${emailTemplates.join(', ')}`);
       ssrEntrypoints.push(...emailTemplates);
     }
 
@@ -183,10 +184,20 @@ export async function build(options: MochiBuildOptions): Promise<void> {
       throw new Error(`[mochi:build] ${formatCompileErrors(compileErrors)}`);
     }
 
+    // The pass above compiled every one of these, so a missing stat is a framework regression rather than anything the
+    // user did — throwing keeps it loud instead of silently disarming both island guards below.
+    const emailStats = emailTemplates.map((file) => {
+      const stats = compileStats.get(path.resolve(file));
+      if (!stats) {
+        throw new Error(`[mochi:build] no compile stats for email template ${file} — its island guards can't run.`);
+      }
+      return { file, ...stats };
+    });
+
     // Until the build compiled these, an island in an email template surfaced only as a render-time throw on the first
     // send. Now that they're in the bundle it would also emit client JS no email client can run, so fail here instead.
     // Mirrors renderStatic()'s hydratable guard, which is import-graph based and fires regardless of props.
-    const emailWithIslands = emailTemplates.filter((f) => (compileStats.get(path.resolve(f))?.hydratableCount ?? 0) > 0);
+    const emailWithIslands = emailStats.filter((s) => s.hydratableCount > 0).map((s) => s.file);
     if (emailWithIslands.length > 0) {
       throw new Error(
         `[mochi:build] Email templates can't contain islands:\n` +
@@ -198,7 +209,7 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     // Stricter than renderStatic()'s own server-island guard, which is post-render and greps the output for the
     // placeholder, so it lets through a `mochi:defer` behind a branch that never renders. The import graph catches that
     // one too — an email template has no business referencing a server island at all.
-    const emailWithServerIslands = emailTemplates.filter((f) => (compileStats.get(path.resolve(f))?.serverIslandCount ?? 0) > 0);
+    const emailWithServerIslands = emailStats.filter((s) => s.serverIslandCount > 0).map((s) => s.file);
     if (emailWithServerIslands.length > 0) {
       throw new Error(
         `[mochi:build] Email templates can't contain server islands:\n` +
@@ -271,6 +282,7 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     );
   } finally {
     mochiEvents.off('client-bundle:complete', onClientBundle);
+    mochiEvents.off('compile:complete', onCompileComplete);
   }
 }
 
