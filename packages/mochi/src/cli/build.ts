@@ -224,7 +224,6 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     // manifest, and the server-island endpoint warns and falls back to an on-demand compile.
     const islandPaths = [...new Set(registry.getServerIslandPaths().values())];
     if (islandPaths.length > 0) {
-      logger.info(`[mochi:build] precompiling ${islandPaths.length} server island(s): ${islandPaths.map((p) => path.basename(p)).join(', ')}`);
       await timed('islands', () => registry.compileAll(islandPaths, { deferClientBundle: true }));
       compileErrors = registry.getErrors();
       if (compileErrors.length > 0) {
@@ -241,7 +240,15 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     registry.flushBarrelWarnings();
 
     allRoutes.sort((a, b) => a.pattern.localeCompare(b.pattern, undefined, { numeric: true }));
-    printBuildTree({ routes: allRoutes, errorPage: errorPagePath, emails: emailStats, stats: compileStats });
+    printBuildTree({
+      routes: allRoutes,
+      errorPage: errorPagePath,
+      emails: emailStats,
+      // Sorted by name, not by the map's compile order, so a rebuild of unchanged sources prints an identical tree.
+      islands: [...registry.getServerIslandPaths()].sort(([a], [b]) => a.localeCompare(b)),
+      assetPrefix: registry.assetPrefix,
+      stats: compileStats,
+    });
 
     // After finalizeClientBundle() above, so assets the client pass emitted are
     // in the map too (both passes share it, keyed by served URL).
@@ -354,15 +361,19 @@ interface BuildTreeInput {
   /** As passed to `Mochi.serve({ errorPage })`, or Mochi's built-in when unset — either way it lands in the manifest. */
   errorPage: string;
   emails: { file: string; ssrSizeBytes: number }[];
+  /** `[islandName, resolvedPath]`, as `ComponentRegistry.getServerIslandPaths()` records them. */
+  islands: [string, string][];
+  assetPrefix: string;
   stats: Map<string, { ssrSizeBytes: number; hydratableCount: number }>;
 }
 
 /**
- * Every SSR entrypoint the build produced, as one connected list: routes, then the error page, then email templates.
- * The latter two are grouped separately because neither is reachable by URL — one renders on a throw, the other on a
- * send — but they share the column widths and the legend so the whole thing reads as a single report.
+ * Every SSR entrypoint the build produced, as one connected list: routes, then the error page, email templates, and
+ * server islands. The trailing groups are separated because no route reaches them — they render on a throw, on a send,
+ * and on a fetch of their own endpoint — but they share the column widths and the legend so the whole thing reads as a
+ * single report.
  */
-function printBuildTree({ routes, errorPage, emails, stats }: BuildTreeInput): void {
+function printBuildTree({ routes, errorPage, emails, islands, assetPrefix, stats }: BuildTreeInput): void {
   const routeRows = routes.map(({ pattern, kind, componentPath }) => {
     const row = statRow('', pattern, stats, componentPath);
     // A page's symbol depends on its hydratable count, so it can only be picked once the stats lookup has resolved.
@@ -376,6 +387,14 @@ function printBuildTree({ routes, errorPage, emails, stats }: BuildTreeInput): v
       heading: 'Email template',
       // `hyd: null` renders as `-` rather than `0`: an island in a template fails the build, so the column can't apply.
       rows: emails.map((e) => ({ symbol: styleText('cyan', '✉'), label: e.file, hyd: null, ssr: prettyBytes(e.ssrSizeBytes) })),
+    });
+  }
+  if (islands.length > 0) {
+    groups.push({
+      heading: 'Server island',
+      // Labelled by endpoint rather than by file: the name is what the browser fetches, and two islands can share a
+      // source file (named exports) while each keeps its own URL.
+      rows: islands.map(([name, resolvedPath]) => statRow(styleText('magenta', '◐'), `${assetPrefix}/island/${name}`, stats, resolvedPath)),
     });
   }
 
@@ -430,6 +449,9 @@ function printBuildTree({ routes, errorPage, emails, stats }: BuildTreeInput): v
   legendEntries.push(`${styleText('yellow', '⚠')} error page`);
   if (emails.length > 0) {
     legendEntries.push(`${styleText('cyan', '✉')} email template`);
+  }
+  if (islands.length > 0) {
+    legendEntries.push(`${styleText('magenta', '◐')} server island`);
   }
   console.log(`\n  ${legendEntries.join(styleText('dim', '  ·  '))}`);
 }

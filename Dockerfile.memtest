@@ -53,6 +53,8 @@ ENV MODE=development
 ENV MOCHI_LIVE_RELOAD=false
 ENV MOCHI_DOCKER=true
 ENV MOCHI_MEMORY_PROBE=1
+# Registers the site's /_heapsnapshot route — the whole point of this image.
+ENV HEAP_SNAPSHOTS_ENABLED=true
 ENV SNAPSHOT_DIR=/snapshots
 USER bun
 EXPOSE ${PORT}/tcp
