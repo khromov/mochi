@@ -46,9 +46,16 @@
 </script>
 
 <form class="captcha-demo" bind:this={form} onsubmit={check}>
-  {#key token}
-    <MochiCaptcha {token} {bits} {solveBudgetMs} bind:verified />
-  {/key}
+  <!-- The mint is a round trip, so the first render has no challenge yet. Mounting
+       the widget tokenless trips its own misconfiguration check, so hold the track's
+       height until one lands. -->
+  {#if token}
+    {#key token}
+      <MochiCaptcha {token} {bits} {solveBudgetMs} bind:verified />
+    {/key}
+  {:else}
+    <div class="captcha-pending"></div>
+  {/if}
   <div class="row">
     <button type="submit" disabled={checking}>{checking ? 'Verifying…' : 'Verify on the server'}</button>
     {#if result}
@@ -79,6 +86,10 @@
     border-radius: var(--radius-lg);
     padding: 1rem;
     margin: 1.25rem 0;
+  }
+
+  .captcha-pending {
+    min-height: 44px;
   }
 
   .row {
