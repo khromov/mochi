@@ -173,6 +173,7 @@ async function main() {
     svelteCompiler: serveOptions?.svelteCompiler,
     optimize: serveOptions && 'optimize' in serveOptions ? serveOptions.optimize : undefined,
     barrelWarnings: serveOptions?.barrelWarnings,
+    errorPage: serveOptions?.errorPage,
     resources: serveOptions?.build?.resources,
     development: values.dev,
     outDir: values['out-dir'],

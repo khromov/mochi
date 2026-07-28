@@ -6,7 +6,7 @@
 // Reuses the site's existing HTTP endpoints — no site source changes:
 //   /health/                  readiness probe
 //   /sitemap.xml              URL inventory (every doc + internal demo)
-//   /_heapsnapshot            Bun.generateHeapSnapshot('v8') download
+//   /_heapsnapshot            Bun.generateHeapSnapshot('v8') download (needs HEAP_SNAPSHOTS_ENABLED=true)
 //   /__mochi/health/memory    post-GC process.memoryUsage() (needs MOCHI_MEMORY_PROBE=1)
 //
 // The site runs as a child process so its heap stays isolated: the snapshot we
@@ -151,7 +151,10 @@ async function captureSnapshot(): Promise<void> {
   const code = await proc.exited;
   if (code !== 0) {
     const stderr = (await new Response(proc.stderr).text()).trim();
-    log(`snapshot capture failed (curl exit ${code})${stderr ? `: ${stderr}` : ''}`);
+    // curl exits 22 on an HTTP >=400 — overwhelmingly a 404 because the site
+    // only registers /_heapsnapshot when HEAP_SNAPSHOTS_ENABLED=true.
+    const hint = code === 22 ? ' — is HEAP_SNAPSHOTS_ENABLED=true set for the site?' : '';
+    log(`snapshot capture failed (curl exit ${code})${stderr ? `: ${stderr}` : ''}${hint}`);
     await unlink(file).catch(() => {}); // curl may leave a partial/empty file
     return;
   }

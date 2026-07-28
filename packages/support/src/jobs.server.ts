@@ -52,7 +52,7 @@ export const supportEmailQueue: MochiQueueConfig = Mochi.queue<SupportEmailJob>(
         to: SUPPORT_TO,
         replyTo: email,
         subject: `Support request from ${name || email}`,
-        component: './src/SupportEmail.svelte',
+        component: './src/emails/SupportEmail.svelte',
         props: { name, email, message },
         text: [`From: ${name || '(no name)'} <${email}>`, '', message].join('\n'),
       });

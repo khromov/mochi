@@ -124,24 +124,30 @@ that only grow.
 
 ## Environment variables
 
-| Var                    | Default      | Meaning                                                                     |
-| ---------------------- | ------------ | --------------------------------------------------------------------------- |
-| `PORT`                 | `3333`       | Site port (driver targets `127.0.0.1:$PORT`).                               |
-| `PUBLISH`              | _(unset)_    | `run.sh` only: host address to publish `PORT` on.                           |
-| `SNAPSHOT_DIR`         | `/snapshots` | Where snapshots are written (the mounted volume).                           |
-| `SNAPSHOT_INTERVAL_MS` | `3600000`    | Snapshot cadence (1h).                                                      |
-| `SNAPSHOT_KEEP`        | `168`        | Retain the newest N snapshots; older are pruned (7 days at hourly cadence). |
-| `CONCURRENCY`          | `8`          | Parallel in-flight requests in the load loop.                               |
-| `LOOP_DELAY_MS`        | `0`          | Pause between full sitemap passes.                                          |
-| `MEM_LOG_INTERVAL_MS`  | `300000`     | Post-GC memory log cadence (5m).                                            |
-| `READY_TIMEOUT_MS`     | `120000`     | Max wait for `/health/` on startup.                                         |
-| `SPAWN_SITE`           | `true`       | Set `false` to drive an externally started site.                            |
+| Var                      | Default          | Meaning                                                                     |
+| ------------------------ | ---------------- | --------------------------------------------------------------------------- |
+| `PORT`                   | `3333`           | Site port (driver targets `127.0.0.1:$PORT`).                               |
+| `HEAP_SNAPSHOTS_ENABLED` | `true` _(image)_ | Set on the **site** process; registers `/_heapsnapshot`. Unset elsewhere.   |
+| `PUBLISH`                | _(unset)_        | `run.sh` only: host address to publish `PORT` on.                           |
+| `SNAPSHOT_DIR`           | `/snapshots`     | Where snapshots are written (the mounted volume).                           |
+| `SNAPSHOT_INTERVAL_MS`   | `3600000`        | Snapshot cadence (1h).                                                      |
+| `SNAPSHOT_KEEP`          | `168`            | Retain the newest N snapshots; older are pruned (7 days at hourly cadence). |
+| `CONCURRENCY`            | `8`              | Parallel in-flight requests in the load loop.                               |
+| `LOOP_DELAY_MS`          | `0`              | Pause between full sitemap passes.                                          |
+| `MEM_LOG_INTERVAL_MS`    | `300000`         | Post-GC memory log cadence (5m).                                            |
+| `READY_TIMEOUT_MS`       | `120000`         | Max wait for `/health/` on startup.                                         |
+| `SPAWN_SITE`             | `true`           | Set `false` to drive an externally started site.                            |
 
 ## Local dry run (no Docker)
 
 ```sh
-PORT=4444 bun run dev:site &                     # start the site
+HEAP_SNAPSHOTS_ENABLED=true PORT=4444 bun run dev:site &   # start the site
 SPAWN_SITE=false PORT=4444 SNAPSHOT_DIR=./.memtest-out \
   SNAPSHOT_INTERVAL_MS=60000 MEM_LOG_INTERVAL_MS=15000 \
-  MOCHI_MEMORY_PROBE=1 bun memtest/driver.ts      # drive it
+  MOCHI_MEMORY_PROBE=1 bun memtest/driver.ts               # drive it
 ```
+
+`HEAP_SNAPSHOTS_ENABLED=true` goes on the **site** process, not the driver — the
+driver spawns the site with its own env in the container case, so
+`Dockerfile.memtest` already sets it there. Without it the site never registers
+`/_heapsnapshot` and every capture fails with a 404.
