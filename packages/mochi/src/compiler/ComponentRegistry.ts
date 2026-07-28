@@ -1563,6 +1563,23 @@ export class ComponentRegistry {
         const pageHasIslands = hydratables.length > 0;
         const bundles: NonNullable<typeof debugBarData.bundles> = [];
         const outputByName = new Map(this.clientStats.outputs.map((o) => [o.name, o]));
+
+        // Code splitting hoists anything two entries share into a `chunk-*.js`, but a chunk only
+        // reaches the browser if one of *this page's* entries imports it. Walk the import graph
+        // from the bootstrap plus the islands actually rendered here, so the panel reports (and
+        // totals) the bytes the page really ships rather than every chunk in the build.
+        const clientPrefix = `${this.assetPrefix}/client/`;
+        const entryRoots: string[] = [];
+        if (pageHasIslands && this.islandBootstrapUrl) {
+          entryRoots.push(this.islandBootstrapUrl.slice(clientPrefix.length));
+        }
+        for (const name of renderedIslandNames) {
+          const entryUrl = this.componentEntryUrls.get(name);
+          if (entryUrl) {
+            entryRoots.push(entryUrl.slice(clientPrefix.length));
+          }
+        }
+        const reachable = ComponentRegistry.reachableOutputNames(entryRoots, outputByName);
         for (const output of this.clientStats.outputs) {
           const url = `${this.assetPrefix}/client/${output.name}`;
           if (url === this.debugBarUrl) {
@@ -1592,7 +1609,7 @@ export class ComponentRegistry {
               }
               bundles.push({ url, label: displayByKey.get(compName) ?? compName, sizeBytes: output.size - wcDeduct, kind: 'island', inputs: nonWc });
             } else {
-              if (!pageHasIslands) {
+              if (!reachable.has(output.name)) {
                 continue;
               }
               bundles.push({ url, label: output.name, sizeBytes: output.size - wcDeduct, kind: 'chunk', inputs: nonWc });
@@ -1706,6 +1723,24 @@ export class ComponentRegistry {
     return inputs.map((i) => ({ path: ComponentRegistry.cleanInputPath(i.path), size: i.size }));
   }
 
+  /** Output names reachable from `roots` by following static imports, roots included. */
+  private static reachableOutputNames(roots: string[], outputByName: Map<string, { imports: string[] }>): Set<string> {
+    const visited = new Set<string>();
+    const queue = [...roots];
+    while (queue.length > 0) {
+      const name = queue.pop()!;
+      if (visited.has(name)) {
+        continue;
+      }
+      visited.add(name);
+      const dep = outputByName.get(name);
+      if (dep) {
+        queue.push(...dep.imports);
+      }
+    }
+    return visited;
+  }
+
   private collectWebComponentInputs(
     entry: { inputs: { path: string; size: number }[]; imports: string[] },
     outputByName: Map<string, { inputs: { path: string; size: number }[]; imports: string[] }>,
@@ -1719,18 +1754,10 @@ export class ComponentRegistry {
       }
     };
     addInputs(entry.inputs);
-    const visited = new Set<string>();
-    const queue = [...entry.imports];
-    while (queue.length > 0) {
-      const name = queue.pop()!;
-      if (visited.has(name)) {
-        continue;
-      }
-      visited.add(name);
+    for (const name of ComponentRegistry.reachableOutputNames(entry.imports, outputByName)) {
       const dep = outputByName.get(name);
       if (dep) {
         addInputs(dep.inputs);
-        queue.push(...dep.imports);
       }
     }
     return [...merged.entries()].map(([p, s]) => ({ path: p, size: s })).sort((a, b) => b.size - a.size);
