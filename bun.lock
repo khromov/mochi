@@ -95,7 +95,7 @@
     },
     "packages/mochi": {
       "name": "mochi-framework",
-      "version": "0.8.2",
+      "version": "0.9.0",
       "bin": {
         "mochi-framework": "src/cli/cli.js",
       },
@@ -143,7 +143,7 @@
     },
     "packages/mochi-rsvelte": {
       "name": "@mochi-framework/rsvelte",
-      "version": "0.0.1",
+      "version": "0.1.0",
       "dependencies": {
         "@rsvelte/vite-plugin-svelte-native": ">=0.2.8 <1.0.0",
       },
