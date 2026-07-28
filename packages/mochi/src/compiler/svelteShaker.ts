@@ -2,12 +2,13 @@
  * Drives the build-tool-agnostic svelte-shaker engine from Bun. svelte-shaker ships only Vite/Rollup plugins, but those
  * are thin Shells over an env-free engine (`svelteShaker(entries, resolve, readFile)`), so Mochi supplies the Node Shell
  * glue (`svelte-shaker/node`) itself. That subpath is internal and non-plugin on a pre-1.0 package, so it can move
- * between releases — the dependency is pinned to an exact version and every bump treated as potentially breaking.
+ * between releases, so every bump is treated as potentially breaking.
  *
- * Pinned at 0.13.0: 0.14.0 through 0.15.0 throw `JSON.stringify cannot serialize BigInt` from `transform.js` on the
- * mochi-site component graph, which the fallback below swallows — the build succeeds while every component silently
- * stops being slimmed. Verify a bump with a real `bun run build:site` and check the "slimmed N of M" line; the shake
- * unit tests don't reproduce it. The engine is dynamically imported so only production builds load it.
+ * Floor of 0.18.1: earlier releases strip unknown-namespace attributes, so every `mochi:*` directive vanished from the
+ * shaken source — islands silently degraded to plain components (covered by a test in svelteShaker.test.ts). Other
+ * regressions still surface only as a shake abort, which the fallback in ComponentRegistry swallows: the build succeeds
+ * while every component quietly stops being slimmed. Verify a bump with a real `bun run build:site` and check the
+ * "slimmed N of M" line. The engine is dynamically imported so only production builds load it.
  */
 export interface ShakeAppResult {
   /** absPath → slimmed `.svelte` source for every in-scope component. */

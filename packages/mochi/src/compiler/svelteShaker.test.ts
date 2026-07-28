@@ -43,6 +43,32 @@ describe('shakeApp', () => {
     expect(slimmed).toContain('label'); // genuinely varying prop kept
   });
 
+  // A stripped directive is invisible downstream: the shaken source feeds the mochi preprocessor, which
+  // early-returns when no `mochi:` directive remains, so the island silently degrades to a plain component.
+  // svelte-shaker < 0.18.1 dropped them; this fails loudly if that ever regresses.
+  test('preserves mochi: directives on call sites', async () => {
+    dir = mkdtempSync(path.join(tmpdir(), 'shake-app-directives-'));
+    writeFileSync(
+      path.join(dir, 'Child.svelte'),
+      `<script>let { label } = $props();</script>
+<strong>{label}</strong>`,
+    );
+    const parent = path.join(dir, 'Parent.svelte');
+    writeFileSync(
+      parent,
+      `<script>import Child from './Child.svelte';</script>
+<Child mochi:hydrate label="hello" />
+<Child mochi:defer:visible label="world" />`,
+    );
+
+    const { shaken } = await shakeApp(dir);
+
+    const slimmed = shaken.get(parent);
+    expect(slimmed).toBeDefined();
+    expect(slimmed).toContain('mochi:hydrate');
+    expect(slimmed).toContain('mochi:defer:visible');
+  });
+
   test('returns an empty map for a directory with no .svelte files', async () => {
     dir = mkdtempSync(path.join(tmpdir(), 'shake-app-empty-'));
     const { shaken } = await shakeApp(dir);

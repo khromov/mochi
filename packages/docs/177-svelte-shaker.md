@@ -49,6 +49,10 @@ await Mochi.serve({
 The svelte-shaker package only supports Svelte 5 Runes-based syntax, not Svelte 4 legacy syntax.
 </Callout>
 
+### Islands
+
+Shaking runs before Mochi's preprocessor, and `mochi:hydrate` / `mochi:defer` directives survive it untouched — enabling `optimize` on an app that uses islands is safe, and hydrated components are slimmed like any other.
+
 ### Disabling temporarily
 
 Pass `enabled: false` inside the options object to skip shaking while keeping the rest of your config visible:
