@@ -61,6 +61,12 @@ export interface Demo {
   slug?: string;
   /** Source files rendered on the demo page and bundled into its llms.txt. Keyed alongside `slug`. */
   files?: SourceSpec[];
+  /**
+   * Repo paths for the "view source" links, overriding the `packages/site/src/demos/<slug>` default. Needed when a
+   * framework convention forces part of a demo out of its own folder — email templates have to live in `src/emails/`
+   * to be prebuilt — which would otherwise leave the GitHub link pointing where those files aren't.
+   */
+  sourcePaths?: string[];
 }
 
 export const categoryLabels: Record<DemoCategory, string> = {
@@ -383,6 +389,7 @@ export const demos: Demo[] = [
     href: '/demos/email/',
     slug: 'email',
     files: email,
+    sourcePaths: ['packages/site/src/demos/email', 'packages/site/src/emails'],
     title: 'Send Email',
     hook: 'How sending email works — dispatch through Mochi.email() and read it back in the /_mochi/email dev outbox.',
     category: 'forms',

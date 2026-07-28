@@ -172,6 +172,14 @@ Leaving `transport` unset gives you exactly this split automatically (`dev` in d
 
 Author an email body as a Svelte component instead of an HTML string. Pass its path as `component` (like `Mochi.page()`) plus `props`. Mochi SSR-renders it through the same pipeline as your pages and **inlines its scoped CSS** into `style=""` attributes (via [css-inline](https://github.com/Stranger6667/css-inline)) for email-client compatibility.
 
+Keep templates in **`src/emails/`**. Nothing imports a template from a route, so there is no import graph for the build to walk — `mochi-framework build` walks that directory instead and compiles every `.svelte` under it (recursively) into the prebuilt manifest, so production sends need neither the compiler nor your Svelte sources.
+
+<Callout type="info">
+
+A template outside `src/emails/` still renders, but it can't be prebuilt: the first send in each process pays a full compile — seconds, not milliseconds — and logs a manifest-miss warning. Move it into `src/emails/` and rebuild.
+
+</Callout>
+
 <Callout type="warning">
 
 `<script>` tags are **not allowed** in an email body and are stripped during rendering — email clients block scripts outright, so any script only bloats the message and trips spam filters. The component's own `<script>` block (props, logic) is compile-time and never reaches the output; this applies to scripts you emit into the markup (e.g. via `<svelte:head>` or `{@html}`).

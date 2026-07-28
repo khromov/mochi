@@ -75,6 +75,7 @@ import { routes as customTransitionsRoutes } from './demos/custom-transitions/ro
 import { routes as yourFirstMochiAppRoutes } from './demos/your-first-mochi-app/routes';
 
 const DEVELOPMENT = process.env.MODE === 'development';
+const HEAP_SNAPSHOTS_ENABLED = process.env.HEAP_SNAPSHOTS_ENABLED === 'true';
 
 // Static per-demo source routes, sitting alongside each demo page (e.g.
 // /demos/chat/llms.txt, /cookie-vary-test/llms.txt). Static (not a param) so they
@@ -114,17 +115,23 @@ export const routes: Record<string, MochiRouteValue> = {
         }),
       }
     : {}),
-  // TEMP: on-demand V8 heap snapshot for memory-leak debugging. Remove when done.
-  '/_heapsnapshot': Mochi.api(() => {
-    const snapshot = Bun.generateHeapSnapshot('v8');
-    const filename = `mochi-${Date.now()}.heapsnapshot`;
-    return new Response(snapshot, {
-      headers: {
-        'Content-Type': 'application/json',
-        'Content-Disposition': `attachment; filename="${filename}"`,
-      },
-    });
-  }),
+  // On-demand V8 heap snapshot for memory-leak debugging. A full heap dump can
+  // contain anything the process has touched, so it stays unregistered unless
+  // explicitly opted into via HEAP_SNAPSHOTS_ENABLED=true (see memtest/).
+  ...(HEAP_SNAPSHOTS_ENABLED
+    ? {
+        '/_heapsnapshot': Mochi.api(() => {
+          const snapshot = Bun.generateHeapSnapshot('v8');
+          const filename = `mochi-${Date.now()}.heapsnapshot`;
+          return new Response(snapshot, {
+            headers: {
+              'Content-Type': 'application/json',
+              'Content-Disposition': `attachment; filename="${filename}"`,
+            },
+          });
+        }),
+      }
+    : {}),
   '/discord': Mochi.api(() => Response.redirect('https://discord.com/invite/QCGfks4gg8', 302)),
   '/': Mochi.page('./src/Site.svelte', {
     serverProps: async () => {
