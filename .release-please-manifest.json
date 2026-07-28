@@ -1,5 +1,5 @@
 {
-  "packages/mochi": "0.8.2",
+  "packages/mochi": "0.9.0",
   "packages/cli": "0.3.0",
-  "packages/mochi-rsvelte": "0.0.1"
+  "packages/mochi-rsvelte": "0.1.0"
 }
