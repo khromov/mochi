@@ -48,9 +48,11 @@ describe('shakeApp', () => {
   // svelte-shaker < 0.18.1 dropped them; this fails loudly if that ever regresses.
   test('preserves mochi: directives on call sites', async () => {
     dir = mkdtempSync(path.join(tmpdir(), 'shake-app-directives-'));
+    const child = path.join(dir, 'Child.svelte');
     writeFileSync(
-      path.join(dir, 'Child.svelte'),
-      `<script>let { label } = $props();</script>
+      child,
+      `<script>let { showBadge = false, label } = $props();</script>
+{#if showBadge}<span class="badge">★</span>{/if}
 <strong>{label}</strong>`,
     );
     const parent = path.join(dir, 'Parent.svelte');
@@ -62,6 +64,13 @@ describe('shakeApp', () => {
     );
 
     const { shaken } = await shakeApp(dir);
+
+    // Folding through the island call sites proves the shake really ran — without it an engine that
+    // returned every source verbatim would satisfy the directive assertions below.
+    const slimmedChild = shaken.get(child);
+    expect(slimmedChild).toBeDefined();
+    expect(slimmedChild).not.toContain('showBadge');
+    expect(slimmedChild).not.toContain('{#if');
 
     const slimmed = shaken.get(parent);
     expect(slimmed).toBeDefined();
