@@ -114,7 +114,7 @@
         "mitt": "^3.0.1",
         "negotiator": "^1.0.0",
         "nodemailer": "^9.0.3",
-        "svelte-shaker": "0.13.0",
+        "svelte-shaker": ">=0.18.1",
         "zimmerframe": "^1.1.4",
       },
       "devDependencies": {
@@ -371,7 +371,7 @@
 
     "@resvg/resvg-js-win32-x64-msvc": ["@resvg/resvg-js-win32-x64-msvc@2.6.2", "", { "os": "win32", "cpu": "x64" }, "sha512-ZXtYhtUr5SSaBrUDq7DiyjOFJqBVL/dOBN7N/qmi/pO0IgiWW/f/ue3nbvu9joWE5aAKDoIzy/CxsY0suwGosQ=="],
 
-    "@rsvelte/compiler": ["@rsvelte/compiler@0.6.1", "", {}, "sha512-pQWa3Z4d9AeS/Jdi0UIpDIwyXXs+feSDzFvLdx71pOMuFY81xxdNNNAgk4yMb4CNyhSOB7udTCzEinx544lzpQ=="],
+    "@rsvelte/compiler": ["@rsvelte/compiler@0.9.4", "", {}, "sha512-oOlRM5zHR7LCWmveE68s3aB3QMJAAlqVFHW3PZTmSrolvQhzVtyXy4gi8G4ind4lXInHMWvZF4DI2YcJoJf2Rg=="],
 
     "@rsvelte/vite-plugin-svelte-native": ["@rsvelte/vite-plugin-svelte-native@0.2.8", "", { "optionalDependencies": { "@rsvelte/vite-plugin-svelte-native-darwin-arm64": "^0.2.8", "@rsvelte/vite-plugin-svelte-native-darwin-x64": "^0.2.8", "@rsvelte/vite-plugin-svelte-native-linux-arm64-gnu": "^0.2.8", "@rsvelte/vite-plugin-svelte-native-linux-x64-gnu": "^0.2.8", "@rsvelte/vite-plugin-svelte-native-win32-x64-msvc": "^0.2.8" } }, "sha512-OfIzMkZq7HNVeNjUjI5PRt0NFFQ6bYpz/VvKAz6I1PRE/ypLetfpj7mf6DvWURDW19bXNMBR+/VKWuF7fKB8CQ=="],
 
@@ -1239,7 +1239,9 @@
 
     "svelte-meta-tags": ["svelte-meta-tags@5.0.2", "", { "dependencies": { "schema-dts": "^2.0.0" }, "peerDependencies": { "svelte": "^5.0.0" } }, "sha512-OkAcO7JKBzNGsRY8RE1mlVZYzuL9tS9S1zsV2PDp5cRhVJ4EN+Bu+bpNFHcMP3mBQAnpIRpsEteuBzlfiYjq1w=="],
 
-    "svelte-shaker": ["svelte-shaker@0.13.0", "", { "dependencies": { "@rsvelte/compiler": "0.6.1", "magic-string": "1.0.0", "zimmerframe": "1.1.4" }, "peerDependencies": { "svelte": "^5.56.6" } }, "sha512-MmEtiRMGiXAkqeZScsV8/4Juzu4YlpQJztG/D8Ot5+WuRm6+ZV/KcQ8Xv/moA6JovAgP3sAlrsSZerRzhxRtiA=="],
+    "svelte-shaker": ["svelte-shaker@0.18.1", "", { "dependencies": { "@rsvelte/compiler": "0.9.4", "magic-string": "1.0.0", "picomatch": "4.0.5", "zimmerframe": "1.1.4" }, "optionalDependencies": { "svelte-shaker-engine-scan-native": "~0.3.0" }, "peerDependencies": { "svelte": "^5.56.6" } }, "sha512-zZzDsG7OumLYk8gAH5FJv4AP4E00AWT8/emPNUsinCq3v5VOJO+coR4B2fhPmZW/v1T2lnvJRbYZ8/ANs99KWQ=="],
+
+    "svelte-shaker-engine-scan-native": ["svelte-shaker-engine-scan-native@0.3.0", "", {}, "sha512-6r6UNE4Hxw92SZXqJCjuHJxeo5UhrlnH7MLe5gdsiNDGaJsEVI2wevBx2RkpM+penmoFhszFouf7nrCa1xxiBQ=="],
 
     "svelte-writable-derived": ["svelte-writable-derived@3.1.1", "", { "peerDependencies": { "svelte": "^3.2.1 || ^4.0.0-next.1 || ^5.0.0-next.94" } }, "sha512-w4LR6/bYZEuCs7SGr+M54oipk/UQKtiMadyOhW0PTwAtJ/Ai12QS77sLngEcfBx2q4H8ZBQucc9ktSA5sUGZWw=="],
 
