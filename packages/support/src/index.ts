@@ -39,7 +39,7 @@ await Mochi.serve({
   // rightmost entry (xffDepth 1) can't be spoofed by the client.
   proxy: { origin: ORIGIN, addressHeader: 'x-forwarded-for', xffDepth: 1 },
   // Auth first, so an unauthorised /admin hit is never counted as a pageview.
-  handle: sequence(adminAuth, analytics),
+  handle: sequence(adminAuth, analytics()),
   queues: { [SUPPORT_EMAIL_QUEUE]: supportEmailQueue },
   email: {
     from: process.env.SMTP_FROM || 'Mochi Support Form <support@mochi.fast>',

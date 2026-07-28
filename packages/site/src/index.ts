@@ -134,7 +134,8 @@ await Mochi.serve({
   liveReload: process.env.MOCHI_LIVE_RELOAD === 'false' ? false : undefined,
   htmlShell: './src/shell.html',
   trailingSlash: 'always',
-  handle: sequence(compress(), immutableAssets, helloWorld, asciiDog, analytics, encodeDebugBarPaths, noCache, cookieVaryTestHandle, shotHandle),
+  // /ci/dashboard is a chrome-free always-on display — it would otherwise report a pageview every refresh.
+  handle: sequence(compress(), immutableAssets, helloWorld, asciiDog, analytics({ exclude: ['/ci/dashboard'] }), encodeDebugBarPaths, noCache, cookieVaryTestHandle, shotHandle),
   handleError,
   idleTimeout: 60,
   compressServerIslandProps: true,
