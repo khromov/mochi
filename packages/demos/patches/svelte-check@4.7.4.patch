@@ -1,5 +1,5 @@
 diff --git a/dist/src/index.js b/dist/src/index.js
-index a2e8d95a456f37fda1adf30d6e5db18abfb8f76a..f958710d8131b9d3e4d6c6dc231b7aa374261daf 100644
+index 1efd1f365acd4e61e506459041caa9a7321cafcc..5741eb48aec77aeb2ff362674cde201787b8167d 100644
 --- a/dist/src/index.js
 +++ b/dist/src/index.js
 @@ -91170,6 +91170,13 @@ function handleAttribute(str, attr, parent, preserveCase, svelte5Plus, element)
