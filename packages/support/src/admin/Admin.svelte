@@ -2,17 +2,22 @@
   import '@fontsource/public-sans';
   import '@fontsource-variable/fraunces/full.css';
   import SubmissionCard from './SubmissionCard.svelte';
-  import type { EmailLogEntry, Submission } from '../db.server';
+  import NewsletterPanel from './NewsletterPanel.svelte';
+  import type { EmailLogEntry, NewsletterLogEntry, Submission, Subscriber } from '../db.server';
 
   let {
     inbox,
     handled,
     logs,
+    subscribers,
+    newsletterLogs,
     client,
   }: {
     inbox: Submission[];
     handled: Submission[];
     logs: Record<number, EmailLogEntry[]>;
+    subscribers: Subscriber[];
+    newsletterLogs: Record<number, NewsletterLogEntry[]>;
     client: { address: string | null; forwardedFor: string | null };
   } = $props();
 </script>
@@ -57,6 +62,8 @@
         </div>
       {/if}
     </section>
+
+    <NewsletterPanel {subscribers} logs={newsletterLogs} />
 
     <footer class="client">
       Your IP: <code>{client.address ?? 'unknown'}</code>

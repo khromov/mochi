@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { Database } from 'bun:sqlite';
@@ -21,14 +22,42 @@ export interface Submission {
   email_sent_at: number | null;
 }
 
-/** One line of the delivery history shown in the admin panel's email-log popup. */
-export interface EmailLogEntry {
+/** The fields the admin panel's email-log popup renders, shared by both log tables. */
+export interface DeliveryLogEntry {
   id: number;
-  submission_id: number;
   at: number;
   attempt: number;
   event: EmailLogEvent;
   detail: string | null;
+}
+
+/** One line of the delivery history shown in the admin panel's email-log popup. */
+export interface EmailLogEntry extends DeliveryLogEntry {
+  submission_id: number;
+}
+
+export type NewsletterStatus = 'pending' | 'confirmed' | 'unsubscribed';
+
+export interface Subscriber {
+  id: number;
+  email: string;
+  email_key: string;
+  status: NewsletterStatus;
+  source: string;
+  confirm_token: string;
+  confirm_expires_at: number;
+  unsubscribe_token: string;
+  created_at: number;
+  requested_at: number;
+  confirmed_at: number | null;
+  unsubscribed_at: number | null;
+  email_status: EmailStatus;
+  email_error: string | null;
+  email_sent_at: number | null;
+}
+
+export interface NewsletterLogEntry extends DeliveryLogEntry {
+  subscriber_id: number;
 }
 
 // Relative to the package root — the app always runs as `bun --cwd=packages/support`.
@@ -63,6 +92,38 @@ db.exec(`
     detail TEXT
   );
   CREATE INDEX IF NOT EXISTS email_log_by_submission ON email_log (submission_id, at);
+
+  CREATE TABLE IF NOT EXISTS newsletter_subscribers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT NOT NULL,
+    email_key TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    source TEXT NOT NULL DEFAULT '',
+    confirm_token TEXT NOT NULL,
+    confirm_expires_at INTEGER NOT NULL,
+    unsubscribe_token TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    requested_at INTEGER NOT NULL,
+    confirmed_at INTEGER,
+    unsubscribed_at INTEGER,
+    email_status TEXT NOT NULL DEFAULT 'pending',
+    email_error TEXT,
+    email_sent_at INTEGER
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS newsletter_by_email ON newsletter_subscribers (email_key);
+  CREATE UNIQUE INDEX IF NOT EXISTS newsletter_by_confirm_token ON newsletter_subscribers (confirm_token);
+  CREATE UNIQUE INDEX IF NOT EXISTS newsletter_by_unsub_token ON newsletter_subscribers (unsubscribe_token);
+  CREATE INDEX IF NOT EXISTS newsletter_by_state ON newsletter_subscribers (status, created_at DESC);
+
+  CREATE TABLE IF NOT EXISTS newsletter_email_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    subscriber_id INTEGER NOT NULL,
+    at INTEGER NOT NULL,
+    attempt INTEGER NOT NULL,
+    event TEXT NOT NULL,
+    detail TEXT
+  );
+  CREATE INDEX IF NOT EXISTS newsletter_email_log_by_subscriber ON newsletter_email_log (subscriber_id, at);
 `);
 
 const insertStmt = db.query<{ id: number }, [string, string, string, number]>('INSERT INTO submissions (name, email, message, created_at) VALUES (?, ?, ?, ?) RETURNING id');
@@ -157,4 +218,167 @@ export function undeliveredSubmissionIds(): number[] {
 /** Clears a `failed` row back to `pending` as `recover` puts it back on the queue. */
 export function markEmailRequeued(id: number): void {
   requeuedStmt.run(id);
+}
+
+const subInsertStmt = db.query<{ id: number }, [string, string, string, string, number, string, number, number]>(
+  'INSERT INTO newsletter_subscribers (email, email_key, source, confirm_token, confirm_expires_at, unsubscribe_token, created_at, requested_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id',
+);
+const subByKeyStmt = db.query<Subscriber, [string]>('SELECT * FROM newsletter_subscribers WHERE email_key = ?');
+const subByIdStmt = db.query<Subscriber, [number]>('SELECT * FROM newsletter_subscribers WHERE id = ?');
+const subByConfirmStmt = db.query<Subscriber, [string]>('SELECT * FROM newsletter_subscribers WHERE confirm_token = ?');
+const subByUnsubStmt = db.query<Subscriber, [string]>('SELECT * FROM newsletter_subscribers WHERE unsubscribe_token = ?');
+const subListStmt = db.query<Subscriber, []>('SELECT * FROM newsletter_subscribers ORDER BY created_at DESC');
+const subConfirmStmt = db.query<never, [number, number]>("UPDATE newsletter_subscribers SET status = 'confirmed', confirmed_at = ?, unsubscribed_at = NULL WHERE id = ?");
+const subUnsubscribeStmt = db.query<never, [number, number]>("UPDATE newsletter_subscribers SET status = 'unsubscribed', unsubscribed_at = ? WHERE id = ?");
+const subDeleteStmt = db.query<never, [number]>('DELETE FROM newsletter_subscribers WHERE id = ?');
+const subLogDeleteStmt = db.query<never, [number]>('DELETE FROM newsletter_email_log WHERE subscriber_id = ?');
+// Re-arming a row for a fresh confirmation: new token, new expiry, delivery state
+// wound back so the queue treats it as never-sent.
+const subReArmStmt = db.query<never, [string, string, number, number, string, number]>(
+  "UPDATE newsletter_subscribers SET email = ?, source = ?, status = 'pending', confirmed_at = NULL, unsubscribed_at = NULL, requested_at = ?, confirm_expires_at = ?, confirm_token = ?, email_status = 'pending', email_error = NULL, email_sent_at = NULL WHERE id = ?",
+);
+const subTokenStmt = db.query<never, [string, number, number, number]>(
+  'UPDATE newsletter_subscribers SET confirm_token = ?, confirm_expires_at = ?, requested_at = ? WHERE id = ?',
+);
+const subSentStmt = db.query<never, [number, number]>("UPDATE newsletter_subscribers SET email_status = 'sent', email_error = NULL, email_sent_at = ? WHERE id = ?");
+const subFailedStmt = db.query<never, [string, number]>("UPDATE newsletter_subscribers SET email_status = 'failed', email_error = ? WHERE id = ?");
+const subAttemptErrorStmt = db.query<never, [string, number]>('UPDATE newsletter_subscribers SET email_error = ? WHERE id = ?');
+const subRequeuedStmt = db.query<never, [number]>("UPDATE newsletter_subscribers SET email_status = 'pending' WHERE id = ?");
+const subPendingStmt = db.query<{ id: number }, [number]>(
+  "SELECT id FROM newsletter_subscribers WHERE status = 'pending' AND email_status != 'sent' AND confirm_expires_at > ? ORDER BY created_at",
+);
+const subLogInsertStmt = db.query<never, [number, number, number, string, string | null]>(
+  'INSERT INTO newsletter_email_log (subscriber_id, at, attempt, event, detail) VALUES (?, ?, ?, ?, ?)',
+);
+const subLogAllStmt = db.query<NewsletterLogEntry, []>('SELECT * FROM newsletter_email_log ORDER BY at, id');
+
+/**
+ * 256 bits of randomness, base64url so it survives a mail client's URL detection
+ * intact. Stored raw rather than hashed: `recover` and the admin panel's resend
+ * both have to reproduce a link that was already mailed out.
+ */
+function newToken(): string {
+  return randomBytes(32).toString('base64url');
+}
+
+export type SubscribeOutcome =
+  | { kind: 'created'; id: number }
+  /** Pending row, cooldown elapsed — fresh token, needs a new confirmation email. */
+  | { kind: 'resent'; id: number }
+  /** Pending row inside the cooldown — the last email still stands, send nothing. */
+  | { kind: 'throttled'; id: number }
+  | { kind: 'resubscribed'; id: number }
+  | { kind: 'already'; id: number };
+
+/**
+ * Idempotent on the address: one row per `email_key` forever, its state moved
+ * around instead. Callers must render every outcome identically — the widget is
+ * public, so telling them apart would turn it into a subscriber oracle.
+ */
+export function requestSubscription(fields: { email: string; source: string }, opts: { cooldownMs: number; ttlMs: number }): SubscribeOutcome {
+  const email = fields.email.trim();
+  const key = email.toLowerCase();
+  const now = Date.now();
+  return db.transaction((): SubscribeOutcome => {
+    const existing = subByKeyStmt.get(key);
+    if (!existing) {
+      const row = subInsertStmt.get(email, key, fields.source, newToken(), now + opts.ttlMs, newToken(), now, now);
+      if (!row) {
+        throw new Error('newsletter: INSERT returned no id');
+      }
+      return { kind: 'created', id: row.id };
+    }
+    if (existing.status === 'confirmed') {
+      return { kind: 'already', id: existing.id };
+    }
+    if (existing.status === 'unsubscribed') {
+      subReArmStmt.run(email, fields.source, now, now + opts.ttlMs, newToken(), existing.id);
+      return { kind: 'resubscribed', id: existing.id };
+    }
+    if (now - existing.requested_at < opts.cooldownMs) {
+      return { kind: 'throttled', id: existing.id };
+    }
+    subReArmStmt.run(email, fields.source, now, now + opts.ttlMs, newToken(), existing.id);
+    return { kind: 'resent', id: existing.id };
+  })();
+}
+
+export function getSubscriber(id: number): Subscriber | null {
+  return subByIdStmt.get(id);
+}
+
+export function subscriberByConfirmToken(token: string): Subscriber | null {
+  return token ? subByConfirmStmt.get(token) : null;
+}
+
+export function subscriberByUnsubscribeToken(token: string): Subscriber | null {
+  return token ? subByUnsubStmt.get(token) : null;
+}
+
+export function listSubscribers(): Subscriber[] {
+  return subListStmt.all();
+}
+
+export function confirmSubscriber(id: number): void {
+  subConfirmStmt.run(Date.now(), id);
+}
+
+export function unsubscribeSubscriber(id: number): void {
+  subUnsubscribeStmt.run(Date.now(), id);
+}
+
+export function deleteSubscriber(id: number): void {
+  db.transaction(() => {
+    subLogDeleteStmt.run(id);
+    subDeleteStmt.run(id);
+  })();
+}
+
+/** Admin "resend": a new token, so the link in the older email stops working. */
+export function refreshConfirmToken(id: number, ttlMs: number): string {
+  const token = newToken();
+  const now = Date.now();
+  subTokenStmt.run(token, now + ttlMs, now, id);
+  subRequeuedStmt.run(id);
+  return token;
+}
+
+export function markNewsletterEmailSent(id: number): void {
+  subSentStmt.run(Date.now(), id);
+}
+
+export function markNewsletterEmailFailed(id: number, error: string): void {
+  subFailedStmt.run(error.slice(0, 1000), id);
+}
+
+export function noteNewsletterAttemptError(id: number, error: string): void {
+  subAttemptErrorStmt.run(error.slice(0, 1000), id);
+}
+
+export function markNewsletterEmailRequeued(id: number): void {
+  subRequeuedStmt.run(id);
+}
+
+/**
+ * Rows still owed a confirmation email, for the queue's boot-time `recover`.
+ *
+ * Unlike `undeliveredSubmissionIds` above, expired rows are excluded: a support
+ * ticket re-sent late is still useful, but a confirmation link the recipient can
+ * no longer click is only spam. They stay in the table so the address can't be
+ * re-subscribed behind the visitor's back — a new signup re-arms the row.
+ */
+export function pendingConfirmationIds(): number[] {
+  return subPendingStmt.all(Date.now()).map((row) => row.id);
+}
+
+export function appendNewsletterLog(subscriberId: number, entry: { attempt: number; event: EmailLogEvent; detail?: string }): void {
+  subLogInsertStmt.run(subscriberId, Date.now(), entry.attempt, entry.event, entry.detail?.slice(0, 1000) ?? null);
+}
+
+export function newsletterLogsBySubscriber(): Record<number, NewsletterLogEntry[]> {
+  const grouped: Record<number, NewsletterLogEntry[]> = {};
+  for (const entry of subLogAllStmt.all()) {
+    (grouped[entry.subscriber_id] ??= []).push(entry);
+  }
+  return grouped;
 }

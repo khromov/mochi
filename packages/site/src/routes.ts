@@ -77,6 +77,13 @@ import { routes as yourFirstMochiAppRoutes } from './demos/your-first-mochi-app/
 const DEVELOPMENT = process.env.MODE === 'development';
 const HEAP_SNAPSHOTS_ENABLED = process.env.HEAP_SNAPSHOTS_ENABLED === 'true';
 
+// The newsletter widget iframed at the bottom of the blog. It is served by
+// packages/support, which owns the database and the SMTP transport; override with
+// NEWSLETTER_EMBED_URL when running the two sites on non-default ports. The
+// trailing slash is required — support is `trailingSlash: 'always'`, so a
+// slashless src costs a 308 inside the frame on every blog page view.
+const NEWSLETTER_EMBED_URL = process.env.NEWSLETTER_EMBED_URL || (DEVELOPMENT ? 'http://localhost:3336/newsletter/embed/' : 'https://support.mochi.fast/newsletter/embed/');
+
 // Static per-demo source routes, sitting alongside each demo page (e.g.
 // /demos/chat/llms.txt, /cookie-vary-test/llms.txt). Static (not a param) so they
 // outrank demo param routes such as /demos/data-loading/:id, which would otherwise
@@ -191,6 +198,7 @@ export const routes: Record<string, MochiRouteValue> = {
       return {
         docsNav: await buildDocsNav(),
         posts: posts.map(({ slug, title, description, date, draft }) => ({ slug, title, description, date, draft })),
+        newsletterEmbedUrl: NEWSLETTER_EMBED_URL,
       };
     },
   }),
@@ -210,6 +218,8 @@ export const routes: Record<string, MochiRouteValue> = {
         draft: post.draft,
         author: post.author,
         docsNav: await buildDocsNav(),
+        // ?src=<slug> so the admin panel can see which post drove a signup.
+        newsletterEmbedUrl: `${NEWSLETTER_EMBED_URL}?src=${encodeURIComponent(post.slug)}`,
       };
     },
   }),

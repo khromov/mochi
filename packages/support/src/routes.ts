@@ -1,11 +1,28 @@
 import { Mochi, fail, redirect, success, logger, mintCaptcha, verifyCaptcha, consumeCaptcha, getRequestContext } from 'mochi-framework';
 import type { MochiRouteValue } from 'mochi-framework';
 import { authFailureDelay, credentialsMatch } from './adminAuth';
-import { appendEmailLog, emailLogsBySubmission, insertSubmission, listSubmissions, setHandled } from './db.server';
+import {
+  appendEmailLog,
+  appendNewsletterLog,
+  deleteSubscriber,
+  emailLogsBySubmission,
+  insertSubmission,
+  listSubmissions,
+  listSubscribers,
+  newsletterLogsBySubscriber,
+  refreshConfirmToken,
+  setHandled,
+  unsubscribeSubscriber,
+} from './db.server';
 import { SUPPORT_EMAIL_QUEUE, SUPPORT_TO } from './jobs.server';
 import type { SupportEmailJob } from './jobs.server';
+import { CONFIRM_TTL_MS } from './newsletter/config';
+import { NEWSLETTER_EMAIL_QUEUE } from './newsletter/jobs.server';
+import type { NewsletterEmailJob } from './newsletter/jobs.server';
+import { newsletterRoutes } from './newsletter/routes';
 
 export const routes: Record<string, MochiRouteValue> = {
+  ...newsletterRoutes,
   '/': Mochi.page('./src/Support.svelte', {
     serverProps: () => ({ captcha: mintCaptcha() }),
     actions: {
@@ -98,6 +115,8 @@ export const routes: Record<string, MochiRouteValue> = {
         inbox: listSubmissions(false),
         handled: listSubmissions(true),
         logs: emailLogsBySubmission(),
+        subscribers: listSubscribers(),
+        newsletterLogs: newsletterLogsBySubscriber(),
         // Shown in the footer so the proxy's client-IP resolution — what the
         // rate limiter keys on — can be verified in production.
         client: { address: ctx.getClientAddress(), forwardedFor: ctx.request.headers.get('x-forwarded-for') },
@@ -111,6 +130,27 @@ export const routes: Record<string, MochiRouteValue> = {
       },
       unhandle: ({ formData }) => {
         setHandled(Number(formData.get('id')), false);
+        return redirect(303, '/admin/');
+      },
+      // Mints a fresh token, so the link in the previous email stops working —
+      // there is only ever one live confirmation link per address.
+      resendConfirmation: async ({ formData }) => {
+        const id = Number(formData.get('id'));
+        refreshConfirmToken(id, CONFIRM_TTL_MS);
+        appendNewsletterLog(id, { attempt: 0, event: 'queued', detail: 'Re-sent from the admin panel' });
+        try {
+          await Mochi.getQueue<NewsletterEmailJob>(NEWSLETTER_EMAIL_QUEUE).add('confirm', { id });
+        } catch (err) {
+          logger.error('newsletter: could not enqueue confirmation resend', err);
+        }
+        return redirect(303, '/admin/');
+      },
+      unsubscribeSignup: ({ formData }) => {
+        unsubscribeSubscriber(Number(formData.get('id')));
+        return redirect(303, '/admin/');
+      },
+      deleteSignup: ({ formData }) => {
+        deleteSubscriber(Number(formData.get('id')));
         return redirect(303, '/admin/');
       },
     },
