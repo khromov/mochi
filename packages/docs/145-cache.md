@@ -114,6 +114,8 @@ Binary fields (`Uint8Array` / `Buffer`) anywhere in a value round-trip transpare
 | `maxAge`        | `600_000` (10min) | Files older than this are deleted by the sweep.                            |
 | `offloadBinary` | `false`           | Offload binary fields to per-key blob files, read back as lazy `BlobRef`s. |
 
+Only one background sweeper runs per cache directory per process. Constructing another `FileStorage` on the same directory transfers the sweep to the newest instance (and with it that instance's `maxAge`), so a dev-server reload that re-runs your module never stacks up duplicate sweepers. Ownership never moves back: `dispose()` on the newest instance ends the sweep for that directory even if an older instance is still in use.
+
 <Callout type="warning">
 
 **Keep `maxAge` at or above `maxTimeToLive`.** The sweep deletes files past `maxAge` — set it lower and the sweeper would remove entries the cache still wants to serve stale, turning a fast stale read into a blocking recompute. Values must be JSON-serializable (no `Date`, `Map`, `BigInt`, or `undefined` round-trip).
