@@ -6,15 +6,13 @@ import { mochiEvents } from '../events';
 import { pinGlobal } from '../utils/globalState';
 import { logger } from '../utils/log';
 
-/** A store that can be told to drop its sweep timers when another takes its directory over. */
 interface SweeperOwner {
   stopSweepTimers(): void;
 }
 
-// Dev HMR re-executes a site's module graph in a fresh copy on every reload, so a module-scope FileStorage is rebuilt
-// each time while the previous copy becomes unreachable — nobody is left to dispose() it and its unref'd interval keeps
-// sweeping forever. Keyed on the resolved directory because a sweep deletes files by mtime, making it a property of the
-// directory rather than of any one instance. Pinned so duplicate bundled framework copies share one registry.
+// Dev HMR rebuilds a module-scope FileStorage on every reload while the previous copy becomes unreachable, so nobody
+// is left to dispose() it and its unref'd interval sweeps forever. Keyed by directory since a sweep deletes files by
+// mtime; pinned so duplicate bundled framework copies share one registry.
 const sweeperOwners = pinGlobal('__mochi_cache_sweeper_owners__', () => new Map<string, SweeperOwner>());
 
 /**
@@ -464,10 +462,8 @@ export class FileStorage implements Storage {
     return options.reportKeys ? { removed, removedKeys } : { removed };
   }
 
-  /**
-   * @internal Drop the sweep timers without releasing directory ownership. Public only so `FileStorage` structurally
-   * satisfies the registry's `SweeperOwner`, which may hold an instance from a different bundled copy of this class.
-   */
+  // @internal Public only so `FileStorage` structurally satisfies `SweeperOwner` — the registry may hold an instance
+  // from a different bundled copy of this class.
   stopSweepTimers(): void {
     if (this.initialTimer) {
       clearTimeout(this.initialTimer);
@@ -482,8 +478,7 @@ export class FileStorage implements Storage {
   /** Stop the background sweep. Call when the cache is no longer needed (e.g. in tests). */
   dispose(): void {
     this.stopSweepTimers();
-    // Only relinquish ownership while it is still ours — a newer instance may have taken the directory over and must
-    // keep sweeping it.
+    // A newer instance may have taken the directory over and must keep sweeping it.
     if (this.sweepKey !== undefined && sweeperOwners.get(this.sweepKey) === this) {
       sweeperOwners.delete(this.sweepKey);
     }
@@ -579,8 +574,8 @@ export class FileStorage implements Storage {
         logger.warn(`Cache sweep failed: ${err instanceof Error ? err.message : String(err)}`);
       }
     };
-    // Newest instance wins the directory: an older one is usually a dead HMR module copy, and if it is instead a live
-    // store that later gets disposed, first-wins would leave the directory unswept.
+    // Newest wins: an older instance is usually a dead HMR copy, and first-wins would pin the sweep to one that
+    // `dispose()` can never reach.
     const key = resolve(this.directory);
     sweeperOwners.get(key)?.stopSweepTimers();
     this.sweepKey = key;

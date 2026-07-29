@@ -164,8 +164,8 @@ describe('FileStorage', () => {
     }
     expect(ticks).toBeGreaterThanOrEqual(1);
 
-    // Disposing the owner must silence the directory outright: a surviving sweeper on `first` would keep ticking. This
-    // is asserted instead of counting events over a window, which flakes when CI load starves the 20ms interval.
+    // Asserts silence after disposing the owner rather than counting events over a window, which flakes when CI load
+    // starves the 20ms interval.
     second.dispose();
     const settled = ticks;
     await wait(200);
