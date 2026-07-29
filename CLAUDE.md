@@ -200,9 +200,13 @@ For non-Svelte contexts (e.g. HTML strings in `highlight.ts`), inline the icon's
 
 ## Comments
 
-Use code comments sparingly, this is important. Comments should explain WHY something is done, not what is being done. Do not add comment signatures for new functions unless you need to explain WHY the function is needed.
+Use code comments sparingly, this is important.
 
-Never reference plan files (`~/.claude/plans/*.md`) from code comments, docstrings, or commit messages — they live outside the repo and are a dead link for any future reader. If context is genuinely needed, restate the rationale inline so the comment stands on its own.
+- Comment the **why**, never the **what** — the code already says what it does, and a comment that restates it just rots. Prefer no comment to an obvious one.
+- **One sentence.** Allow a second only when the why is genuinely incomprehensible without it (a non-obvious constraint, a bug being worked around, an ordering dependency between two calls); never a third. A comment that keeps growing usually means the code needs a better name or a smaller function, not more prose.
+- Do not add comment signatures for new functions unless you need to explain WHY the function is needed.
+- Never reference plan files (`~/.claude/plans/*.md`) from code comments, docstrings, or commit messages — they live outside the repo and are a dead link for any future reader. If context is genuinely needed, restate the rationale inline so the comment stands on its own.
+- Never write a literal `</script>` inside a `.svelte` `<script>` block — including in a comment; it closes the tag at the HTML-parsing layer and yields a misleading `js_parse_error` at line `:0`. Break it up (`script` + `>` separately).
 
 ## After every change
 
