@@ -149,6 +149,45 @@ describe('FileStorage', () => {
     expect(events.length).toBeGreaterThanOrEqual(1);
   });
 
+  test('a second store on the same directory takes the sweeper over instead of adding one', async () => {
+    let ticks = 0;
+    mochiEvents.on('cache:sweep', () => ticks++);
+
+    const dir = makeDir();
+    const first = new FileStorage({ directory: dir, maxAge: 5, purgeInterval: 20 });
+    created.push(first);
+    const second = new FileStorage({ directory: dir, maxAge: 5, purgeInterval: 20 });
+    created.push(second);
+
+    for (let i = 0; i < 200 && ticks === 0; i++) {
+      await wait(10);
+    }
+    expect(ticks).toBeGreaterThanOrEqual(1);
+
+    // Disposing the owner must silence the directory outright: a surviving sweeper on `first` would keep ticking. This
+    // is asserted instead of counting events over a window, which flakes when CI load starves the 20ms interval.
+    second.dispose();
+    const settled = ticks;
+    await wait(200);
+    expect(ticks).toBe(settled);
+  });
+
+  test('disposing a superseded store leaves the newest one sweeping', async () => {
+    let ticks = 0;
+    mochiEvents.on('cache:sweep', () => ticks++);
+
+    const dir = makeDir();
+    const first = new FileStorage({ directory: dir, maxAge: 5, purgeInterval: 20 });
+    created.push(first);
+    created.push(new FileStorage({ directory: dir, maxAge: 5, purgeInterval: 20 }));
+
+    first.dispose();
+    for (let i = 0; i < 200 && ticks === 0; i++) {
+      await wait(10);
+    }
+    expect(ticks).toBeGreaterThanOrEqual(1);
+  });
+
   test('sweep reports the plaintext keys it removed when asked', async () => {
     const storage = makeStorage({ maxAge: 50 });
     await storage.setItem('alpha', { value: 1, createdAt: 0 });
