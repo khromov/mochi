@@ -8,11 +8,9 @@
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <script>
-      // The newsletter embed is iframed by mochi.fast, whose theme is a choice
-      // stored in *its* localStorage — unreadable across origins. The host puts
-      // that choice in the iframe URL instead, and applying it before paint is
-      // what keeps a dark blog from flashing a white widget. Later toggles arrive
-      // as postMessage; see src/newsletter/SidechainGuest.svelte.
+      // The embedding page's theme lives in its own localStorage, unreadable
+      // across origins, so it arrives in the URL instead. Applied before paint so
+      // a dark blog doesn't flash a white widget.
       (function () {
         var theme = new URLSearchParams(location.search).get('theme');
         if (theme === 'light' || theme === 'dark') {
@@ -45,10 +43,8 @@
         --font-serif: 'Fraunces Variable', Georgia, 'Times New Roman', serif;
       }
 
-      /* Same token values as packages/site's shell, so an embedded widget is
-         indistinguishable from the host page around it. Applied for a dark system
-         preference unless light was explicitly asked for, and for an explicit dark
-         choice regardless of the system. */
+      /* Same values as packages/site's shell, so the embedded widget matches the
+         page around it. */
       @media (prefers-color-scheme: dark) {
         :root:not([data-theme='light']) {
           --bg: #171914;

@@ -1,7 +1,6 @@
 <script lang="ts">
-  // Rendered by Mochi.email({ component, props }) — server-side with no request
-  // context, so no getRequestContext()/cookies/url. The scoped style block below
-  // is inlined into the HTML by the mailer (css-inline).
+  // Rendered by Mochi.email() with no request context: no getRequestContext(),
+  // cookies or url. The scoped styles are inlined by the mailer.
   let { confirmUrl, unsubscribeUrl }: { confirmUrl: string; unsubscribeUrl: string } = $props();
 </script>
 

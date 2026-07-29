@@ -6,15 +6,13 @@
 
   let host = $state<Sidechain | null>(null);
 
-  /** `null` means auto — the guest is left to follow the visitor's system preference. */
+  // `null` means auto — the guest falls back to the system preference.
   function currentTheme(): 'light' | 'dark' | null {
     const value = document.documentElement.getAttribute('data-theme');
     return value === 'light' || value === 'dark' ? value : null;
   }
 
-  // The guest is cross-origin, so it can't read this site's theme choice out of
-  // localStorage. Baking it into the URL is what lets the guest apply it before
-  // its first paint; the postMessage below only covers later toggles.
+  // In the URL rather than a message, so the guest can apply it before first paint.
   const initialSrc = (() => {
     const theme = currentTheme();
     if (!theme) {
@@ -25,26 +23,22 @@
     return url.toString();
   })();
 
-  // Dynamic import, not a top-level one: `mochi:clientOnly` skips the render, but
-  // the page's import of this module still executes during SSR — and sidechain
-  // does `class Sidechain extends HTMLElement` at module scope, which throws there.
+  // Dynamic import: `mochi:clientOnly` skips the render, but the page's import of
+  // this module still runs during SSR, where sidechain's module-scope
+  // `extends HTMLElement` throws.
   $effect(() => {
     void import('@nprapps/sidechain').then(async () => {
       await customElements.whenDefined('side-chain');
-      // <side-chain> only forwards src/id/allow to its inner iframe, so the
-      // accessible name has to be set on the iframe itself.
+      // <side-chain> forwards only src/id/allow, so the name goes on the iframe.
       if (host?.iframe) {
         host.iframe.title = title;
       }
     });
   });
 
-  // Watching the attribute rather than hooking ThemeToggle keeps the two
-  // independent: anything that changes the theme is picked up here.
   $effect(() => {
     const observer = new MutationObserver(() => {
-      // Optional call: the element only gains its methods once the dynamic import
-      // above has upgraded it.
+      // Optional call: the element gains its methods only once upgraded.
       host?.sendMessage?.({ sentinel: 'mochi', type: 'theme', theme: currentTheme() });
     });
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });

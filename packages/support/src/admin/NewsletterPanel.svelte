@@ -28,13 +28,12 @@
 </section>
 
 <style>
-  /* Repeated from Admin.svelte rather than inherited — Svelte scopes styles to the
-     component that declares the markup. */
+  /* Repeated from Admin.svelte: Svelte scopes styles to the declaring component. */
   h2 {
     font-family: var(--font-serif);
     font-size: 1.5rem;
     font-weight: 500;
-    margin: 2rem 0 1rem;
+    margin: 0 0 1rem;
   }
 
   .count {

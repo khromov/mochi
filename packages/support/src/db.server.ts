@@ -232,8 +232,6 @@ const subConfirmStmt = db.query<never, [number, number]>("UPDATE newsletter_subs
 const subUnsubscribeStmt = db.query<never, [number, number]>("UPDATE newsletter_subscribers SET status = 'unsubscribed', unsubscribed_at = ? WHERE id = ?");
 const subDeleteStmt = db.query<never, [number]>('DELETE FROM newsletter_subscribers WHERE id = ?');
 const subLogDeleteStmt = db.query<never, [number]>('DELETE FROM newsletter_email_log WHERE subscriber_id = ?');
-// Re-arming a row for a fresh confirmation: new token, new expiry, delivery state
-// wound back so the queue treats it as never-sent.
 const subReArmStmt = db.query<never, [string, string, number, number, string, number]>(
   "UPDATE newsletter_subscribers SET email = ?, source = ?, status = 'pending', confirmed_at = NULL, unsubscribed_at = NULL, requested_at = ?, confirm_expires_at = ?, confirm_token = ?, email_status = 'pending', email_error = NULL, email_sent_at = NULL WHERE id = ?",
 );
@@ -252,29 +250,16 @@ const subLogInsertStmt = db.query<never, [number, number, number, string, string
 );
 const subLogAllStmt = db.query<NewsletterLogEntry, []>('SELECT * FROM newsletter_email_log ORDER BY at, id');
 
-/**
- * 256 bits of randomness, base64url so it survives a mail client's URL detection
- * intact. Stored raw rather than hashed: `recover` and the admin panel's resend
- * both have to reproduce a link that was already mailed out.
- */
+// Stored raw, not hashed: `recover` and the admin resend both have to reproduce a
+// link that was already mailed out.
 function newToken(): string {
   return randomBytes(32).toString('base64url');
 }
 
-export type SubscribeOutcome =
-  | { kind: 'created'; id: number }
-  /** Pending row, cooldown elapsed — fresh token, needs a new confirmation email. */
-  | { kind: 'resent'; id: number }
-  /** Pending row inside the cooldown — the last email still stands, send nothing. */
-  | { kind: 'throttled'; id: number }
-  | { kind: 'resubscribed'; id: number }
-  | { kind: 'already'; id: number };
+export type SubscribeOutcome = { kind: 'created' | 'resent' | 'throttled' | 'resubscribed' | 'already'; id: number };
 
-/**
- * Idempotent on the address: one row per `email_key` forever, its state moved
- * around instead. Callers must render every outcome identically — the widget is
- * public, so telling them apart would turn it into a subscriber oracle.
- */
+// One row per address forever, its state moved around. Callers must render every
+// outcome identically, or the public widget becomes a subscriber oracle.
 export function requestSubscription(fields: { email: string; source: string }, opts: { cooldownMs: number; ttlMs: number }): SubscribeOutcome {
   const email = fields.email.trim();
   const key = email.toLowerCase();
@@ -334,7 +319,6 @@ export function deleteSubscriber(id: number): void {
   })();
 }
 
-/** Admin "resend": a new token, so the link in the older email stops working. */
 export function refreshConfirmToken(id: number, ttlMs: number): string {
   const token = newToken();
   const now = Date.now();
@@ -359,14 +343,8 @@ export function markNewsletterEmailRequeued(id: number): void {
   subRequeuedStmt.run(id);
 }
 
-/**
- * Rows still owed a confirmation email, for the queue's boot-time `recover`.
- *
- * Unlike `undeliveredSubmissionIds` above, expired rows are excluded: a support
- * ticket re-sent late is still useful, but a confirmation link the recipient can
- * no longer click is only spam. They stay in the table so the address can't be
- * re-subscribed behind the visitor's back — a new signup re-arms the row.
- */
+// Expired rows are excluded, unlike `undeliveredSubmissionIds` above: a
+// confirmation link the recipient can no longer click is only spam.
 export function pendingConfirmationIds(): number[] {
   return subPendingStmt.all(Date.now()).map((row) => row.id);
 }

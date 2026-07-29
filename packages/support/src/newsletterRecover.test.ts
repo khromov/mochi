@@ -33,10 +33,9 @@ let server: Server<undefined>;
 let stranded: { pending: number; expired: number; confirmed: number; delivered: number };
 
 beforeAll(async () => {
-  // The four states a restart can leave a signup in.
   stranded = {
     pending: seed('waiting@example.com'),
-    // A negative TTL back-dates the expiry — the row is stale before it is read.
+    // A negative TTL back-dates the expiry.
     expired: seed('stale@example.com', -1000),
     confirmed: seed('done@example.com'),
     delivered: seed('mailed@example.com'),
@@ -87,8 +86,6 @@ test('a signup whose confirmation was never sent is re-enqueued on boot', async 
 });
 
 test('an expired signup is left alone', () => {
-  // Unlike a support ticket, a confirmation link the recipient can no longer use
-  // is only spam — expiry takes it out of the recovery set for good.
   expect(pendingConfirmationIds()).not.toContain(stranded.expired);
   expect(recipients()).not.toContain('stale@example.com');
 });

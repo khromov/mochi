@@ -5,8 +5,8 @@ import type { Server } from 'bun';
 import { Mochi, mintCaptcha, solveCaptcha, sequence } from 'mochi-framework';
 import type { ResolvedEmailMessage } from 'mochi-framework';
 
-// Same header shape as support.test.ts: the db path and admin credentials must be
-// in place before `./routes` and its transitive `./db.server` are evaluated.
+// The db path and admin credentials must be set before `./routes` and its
+// transitive `./db.server` are evaluated.
 const outDir = mkdtempSync(path.join(import.meta.dir, '..', '.mochi-newsletter-test-'));
 process.env.SUPPORT_DB = path.join(outDir, 'support.sqlite');
 process.env.ADMIN_USER = 'admin';
@@ -46,7 +46,6 @@ const validFields = (email = 'ada@example.com'): Record<string, string> => ({
 
 const rowFor = (email: string) => listSubscribers().find((s) => s.email_key === email.toLowerCase());
 
-/** Pulls the confirm token out of the link the confirmation email carries. */
 const tokenFrom = (message: ResolvedEmailMessage | undefined, page: 'confirm' | 'unsubscribe'): string => {
   const match = new RegExp(`/newsletter/${page}/\\?token=([A-Za-z0-9_-]+)`).exec(message?.text ?? '');
   return match?.[1] ?? '';
@@ -64,8 +63,7 @@ describe('newsletter signup', () => {
       outDir,
       htmlShell: './src/shell.html',
       trailingSlash: 'always',
-      // The port is only known after serve() returns, so the real origin check
-      // can't be satisfied ahead of time.
+      // The port is only known after serve() returns.
       csrf: { checkOrigin: false },
       captcha: { bits: 8, minAgeMs: 0 },
       email: {
@@ -101,8 +99,7 @@ describe('newsletter signup', () => {
     const res = await fetch(`${base}/newsletter/embed/`);
     expect(res.status).toBe(200);
     expect(res.headers.get('Content-Security-Policy')).toBe("frame-ancestors 'self' https://mochi.test");
-    // X-Frame-Options can't express an allow-list, so it must not be sent — it
-    // would override the CSP in older browsers and block the embed outright.
+    // Would override the CSP in older browsers and block the embed outright.
     expect(res.headers.get('X-Frame-Options')).toBeNull();
     expect(res.headers.get('X-Robots-Tag')).toBe('noindex');
   });
@@ -127,7 +124,6 @@ describe('newsletter signup', () => {
 
     expect(sent[0]?.to).toEqual(['ada@example.com']);
     expect(sent[0]?.text).toContain('https://support.test/newsletter/confirm/?token=');
-    // Rendered from the Svelte template rather than passed through as a path.
     expect(sent[0]?.html).toContain('Confirm subscription');
     expect(sent[0]?.headers?.['List-Unsubscribe']).toContain('/newsletter/unsubscribe/?token=');
   });
@@ -157,7 +153,6 @@ describe('newsletter signup', () => {
     expect((await subscribe(base, { ...fields, email: 'not-an-email' })).status).toBe(400);
     await Bun.sleep(50);
     expect(sent).toHaveLength(0);
-    // The same token still works once the typo is fixed.
     expect((await subscribe(base, fields)).status).toBe(200);
     await waitForSent(1);
     expect(sent).toHaveLength(1);
@@ -170,7 +165,6 @@ describe('newsletter signup', () => {
     expect(res.status).toBe(200);
     await Bun.sleep(50);
     expect(sent).toHaveLength(0);
-    // One row per address, always — the second request re-used the first.
     expect(listSubscribers()).toHaveLength(before);
   });
 
@@ -216,7 +210,6 @@ describe('newsletter signup', () => {
     const row = rowFor('rich@example.com');
     expect(row?.status).toBe('pending');
     expect(row?.confirm_token).not.toBe(oldConfirm);
-    // The old link is dead, so an unsubscribe can't be undone by a stale email.
     const stale = await fetch(`${base}/newsletter/confirm/?token=${oldConfirm}`);
     expect(await stale.text()).toContain("doesn't work");
   });
@@ -229,15 +222,16 @@ describe('newsletter signup', () => {
     expect(entries.at(-1)?.detail).toContain('transport: custom');
   });
 
-  test('/admin/ lists subscribers once authenticated', async () => {
-    const anonymous = await fetch(`${base}/admin/`);
+  test('/admin/ lists subscribers on the newsletter tab once authenticated', async () => {
+    const anonymous = await fetch(`${base}/admin/?tab=newsletter`);
     expect(anonymous.status).toBe(401);
 
-    const res = await fetch(`${base}/admin/`, { headers: AUTH });
+    const res = await fetch(`${base}/admin/?tab=newsletter`, { headers: AUTH });
     expect(res.status).toBe(200);
-    const html = await res.text();
-    expect(html).toContain('ada@example.com');
-    expect(html).toContain('Newsletter');
+    expect(await res.text()).toContain('ada@example.com');
+
+    const support = await fetch(`${base}/admin/`, { headers: AUTH });
+    expect(await support.text()).not.toContain('ada@example.com');
   });
 
   test('the admin resend mints a new token and mails it', async () => {

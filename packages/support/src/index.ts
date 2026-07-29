@@ -41,8 +41,7 @@ await Mochi.serve({
   // rightmost entry (xffDepth 1) can't be spoofed by the client.
   proxy: { origin: ORIGIN, addressHeader: 'x-forwarded-for', xffDepth: 1 },
   // Auth first, so an unauthorised /admin hit is never counted as a pageview.
-  // The newsletter embed is excluded from analytics: it renders inside an iframe on
-  // every blog page, so counting it would double every one of the site's pageviews.
+  // The embed is excluded from analytics — it would double every blog pageview.
   handle: sequence(adminAuth, embedHeaders, analytics({ exclude: [NEWSLETTER_EMBED_PATH] })),
   queues: { [SUPPORT_EMAIL_QUEUE]: supportEmailQueue, [NEWSLETTER_EMAIL_QUEUE]: newsletterEmailQueue },
   email: {

@@ -21,6 +21,8 @@ import { NEWSLETTER_EMAIL_QUEUE } from './newsletter/jobs.server';
 import type { NewsletterEmailJob } from './newsletter/jobs.server';
 import { newsletterRoutes } from './newsletter/routes';
 
+const NEWSLETTER_TAB = '/admin/?tab=newsletter';
+
 export const routes: Record<string, MochiRouteValue> = {
   ...newsletterRoutes,
   '/': Mochi.page('./src/Support.svelte', {
@@ -117,6 +119,7 @@ export const routes: Record<string, MochiRouteValue> = {
         logs: emailLogsBySubmission(),
         subscribers: listSubscribers(),
         newsletterLogs: newsletterLogsBySubscriber(),
+        tab: ctx.url.searchParams.get('tab') === 'newsletter' ? 'newsletter' : 'support',
         // Shown in the footer so the proxy's client-IP resolution — what the
         // rate limiter keys on — can be verified in production.
         client: { address: ctx.getClientAddress(), forwardedFor: ctx.request.headers.get('x-forwarded-for') },
@@ -143,15 +146,15 @@ export const routes: Record<string, MochiRouteValue> = {
         } catch (err) {
           logger.error('newsletter: could not enqueue confirmation resend', err);
         }
-        return redirect(303, '/admin/');
+        return redirect(303, NEWSLETTER_TAB);
       },
       unsubscribeSignup: ({ formData }) => {
         unsubscribeSubscriber(Number(formData.get('id')));
-        return redirect(303, '/admin/');
+        return redirect(303, NEWSLETTER_TAB);
       },
       deleteSignup: ({ formData }) => {
         deleteSubscriber(Number(formData.get('id')));
-        return redirect(303, '/admin/');
+        return redirect(303, NEWSLETTER_TAB);
       },
     },
   }),

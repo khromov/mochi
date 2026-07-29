@@ -19,11 +19,8 @@ export interface NewsletterEmailJob {
   id: number;
 }
 
-// Same shape and the same reasoning as the support-email queue next door: jobs
-// live in memory, the SQLite row is the source of truth, and `recover` re-adds
-// everything still owed an email on boot. Deliberately no `dataPath` — bunqueue
-// locks its embedded store to the first one in the process, so a second queue
-// asking for one would silently share the first queue's.
+// No `dataPath` — bunqueue locks its embedded store to the first one in the
+// process, so this queue would silently share the support queue's.
 export const newsletterEmailQueue: MochiQueueConfig = Mochi.queue<NewsletterEmailJob>({
   concurrency: 2,
   defaultJobOptions: { attempts: MAX_ATTEMPTS },
@@ -45,8 +42,6 @@ export const newsletterEmailQueue: MochiQueueConfig = Mochi.queue<NewsletterEmai
       logger.warn(`newsletter: subscriber ${job.data.id} vanished before its confirmation was sent`);
       return { sent: false };
     }
-    // Confirmed or unsubscribed between enqueue and delivery — mailing a
-    // confirmation link now would be noise at best.
     if (subscriber.status !== 'pending') {
       appendNewsletterLog(subscriber.id, { attempt: job.attempt, event: 'sent', detail: `Skipped — already ${subscriber.status}` });
       return { sent: false };

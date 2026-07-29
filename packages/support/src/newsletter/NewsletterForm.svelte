@@ -6,8 +6,7 @@
   let { captcha, source }: { captcha: MintedCaptcha; source: string } = $props();
 
   const hydratable = isHydratable();
-  // SSR-only (plain HTML) renders read the action result so the confirmation or
-  // error survives the page re-render after a POST.
+  // SSR-only renders read the action result so the outcome survives the POST.
   const _form = !hydratable && isServer ? getRequestContext().form : null;
   const _failError = _form && !_form.ok && typeof _form.data?.error === 'string' ? _form.data.error : null;
 
@@ -48,8 +47,7 @@
 {:else}
   <form method="POST" action="?/subscribe" class="newsletter-form" {@attach enhance(subscribeOpts)}>
     <input type="hidden" name="source" value={source} />
-    <!-- Honeypot. Positioned off-screen rather than display:none (which some bots
-         detect), never required, and never focusable by a real visitor. -->
+    <!-- Honeypot: off-screen rather than display:none, which bots detect. -->
     <div class="hp" aria-hidden="true">
       <label for="website">Leave this field empty</label>
       <input id="website" type="text" name="website" tabindex="-1" autocomplete="off" />
@@ -69,8 +67,8 @@
     <div class="submit-row">
       <button type="submit" disabled={pending || !verified}>{pending ? 'Subscribing…' : 'Subscribe'}</button>
     </div>
-    <!-- Reserved rather than animated: the height is polled by sidechain every
-         300ms, and a transition would have the iframe chase a moving target. -->
+    <!-- Space reserved, not animated: sidechain polls the height every 300ms and
+         a transition would have the iframe chase a moving target. -->
     <p class="message" role="alert">{errorMessage ?? ''}</p>
   </form>
 {/if}

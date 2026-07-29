@@ -22,11 +22,9 @@
 <SidechainGuest mochi:clientOnly />
 
 <style>
-  /* This page is only ever rendered inside an iframe, and sidechain's guest
-     reports document.documentElement.offsetHeight. The shell's `min-height: 100vh`
-     would peg that to whatever height the frame already has, so the widget could
-     grow but never shrink back. Page CSS is emitted per render tree, so this
-     override ships on this route alone. */
+  /* Sidechain reports documentElement.offsetHeight, which the shell's
+     `min-height: 100vh` would peg to the iframe's current height — the widget
+     could then grow but never shrink back. */
   :global(html) {
     height: auto;
   }

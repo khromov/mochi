@@ -3,8 +3,7 @@
 declare module '@fontsource/*';
 declare module '@fontsource-variable/*';
 
-// @nprapps/sidechain ships no types. Only the guest half matters here — this
-// package is the iframe, never the host page.
+// @nprapps/sidechain ships no types. Guest half only — this package is the iframe.
 declare module '@nprapps/sidechain' {
   export interface SidechainGuestOptions {
     id?: string;

@@ -3,8 +3,7 @@
 declare module '@fontsource/*';
 declare module '@fontsource-variable/*';
 
-// @nprapps/sidechain ships no types. Only the host half matters here — this
-// package embeds the newsletter widget, it never is one.
+// @nprapps/sidechain ships no types. Host half only — this package embeds.
 declare module '@nprapps/sidechain' {
   export class Sidechain extends HTMLElement {
     iframe: HTMLIFrameElement;

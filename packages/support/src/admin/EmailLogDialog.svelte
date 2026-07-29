@@ -1,9 +1,6 @@
 <script lang="ts">
   import type { DeliveryLogEntry, EmailStatus } from '../db.server';
 
-  // DeliveryLogEntry, not EmailLogEntry: the same popup renders support-submission
-  // and newsletter-confirmation delivery histories, which differ only in their
-  // foreign key.
   let { status, entries }: { status: EmailStatus; entries: DeliveryLogEntry[] } = $props();
 
   let dialog = $state<HTMLDialogElement | null>(null);
