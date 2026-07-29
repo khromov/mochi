@@ -6,8 +6,10 @@ import { mochiEvents } from '../events';
 import { pinGlobal } from '../utils/globalState';
 import { logger } from '../utils/log';
 
+// A closure rather than the instance, so taking a sweeper over needs no public method on `FileStorage` — the registry
+// may hold an entry from a different bundled copy of this class.
 interface SweeperOwner {
-  stopSweepTimers(): void;
+  stop(): void;
 }
 
 // Dev HMR rebuilds a module-scope FileStorage on every reload while the previous copy becomes unreachable, so nobody
@@ -255,6 +257,7 @@ export class FileStorage implements Storage {
   private initialTimer?: ReturnType<typeof setTimeout>;
   private intervalTimer?: ReturnType<typeof setInterval>;
   private sweepKey?: string;
+  private sweepOwner?: SweeperOwner;
 
   constructor(options: FileStorageOptions) {
     this.directory = options.directory;
@@ -462,9 +465,7 @@ export class FileStorage implements Storage {
     return options.reportKeys ? { removed, removedKeys } : { removed };
   }
 
-  // @internal Public only so `FileStorage` structurally satisfies `SweeperOwner` — the registry may hold an instance
-  // from a different bundled copy of this class.
-  stopSweepTimers(): void {
+  private stopSweepTimers(): void {
     if (this.initialTimer) {
       clearTimeout(this.initialTimer);
     }
@@ -479,10 +480,11 @@ export class FileStorage implements Storage {
   dispose(): void {
     this.stopSweepTimers();
     // A newer instance may have taken the directory over and must keep sweeping it.
-    if (this.sweepKey !== undefined && sweeperOwners.get(this.sweepKey) === this) {
+    if (this.sweepKey !== undefined && sweeperOwners.get(this.sweepKey) === this.sweepOwner) {
       sweeperOwners.delete(this.sweepKey);
     }
     this.sweepKey = undefined;
+    this.sweepOwner = undefined;
   }
 
   // The plaintext key stored in a file's envelope, or null if it can't be recovered
@@ -577,8 +579,9 @@ export class FileStorage implements Storage {
     // Newest wins: an older instance is usually a dead HMR copy, and first-wins would pin the sweep to one that
     // `dispose()` can never reach.
     const key = resolve(this.directory);
-    sweeperOwners.get(key)?.stopSweepTimers();
+    sweeperOwners.get(key)?.stop();
     this.sweepKey = key;
+    this.sweepOwner = { stop: () => this.stopSweepTimers() };
 
     // An initial pass shortly after boot reclaims accrued cruft and makes the
     // sweeper visible right away; both timers are unref'd so they never keep the
@@ -587,6 +590,6 @@ export class FileStorage implements Storage {
     this.intervalTimer = setInterval(run, intervalMs);
     this.initialTimer.unref?.();
     this.intervalTimer.unref?.();
-    sweeperOwners.set(key, this);
+    sweeperOwners.set(key, this.sweepOwner);
   }
 }
