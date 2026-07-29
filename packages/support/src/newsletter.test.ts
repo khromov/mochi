@@ -19,16 +19,16 @@ const { routes } = await import('./routes');
 const { NEWSLETTER_EMAIL_QUEUE, newsletterEmailQueue } = await import('./newsletter/jobs.server');
 const { closeDb, listSubscribers, newsletterLogsBySubscriber } = await import('./db.server');
 const { adminAuth } = await import('./adminAuth');
-const { embedHeaders } = await import('./embedHeaders');
+const { embedHeaders, embedAncestors } = await import('./embedHeaders');
 
 const sent: ResolvedEmailMessage[] = [];
 
 const AUTH = { Authorization: `Basic ${Buffer.from('admin:letmein').toString('base64')}` };
 
-const subscribe = (base: string, fields: Record<string, string>): Promise<Response> =>
+const subscribe = (base: string, fields: Record<string, string>, headers: Record<string, string> = {}): Promise<Response> =>
   fetch(`${base}/newsletter/embed/?/subscribe`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...headers },
     body: new URLSearchParams(fields).toString(),
   });
 
@@ -110,6 +110,14 @@ describe('newsletter signup', () => {
     expect(res.headers.get('Content-Security-Policy')).toBeNull();
   });
 
+  // The widget loads on the blog index and every post, so page views must not
+  // spend the signup quota — an ordinary reader would otherwise earn the ban.
+  test('reading past the rate limit never blocks the embed, only the POST counts', async () => {
+    for (let i = 0; i < 25; i++) {
+      expect((await fetch(`${base}/newsletter/embed/`)).status).toBe(200);
+    }
+  });
+
   test('a valid signup stores a pending row and mails one confirmation link', async () => {
     sent.length = 0;
     const res = await subscribe(base, validFields());
@@ -186,6 +194,27 @@ describe('newsletter signup', () => {
     expect(rowFor('linus@example.com')?.status).toBe('confirmed');
   });
 
+  // The anti-enumeration property: a confirmed address must be indistinguishable
+  // from a brand-new one, or the public widget tells anyone who is on the list.
+  // Compared over the JSON action response, which is what the widget's `enhance`
+  // submission actually receives.
+  test('subscribing an already-confirmed address answers exactly like a new signup', async () => {
+    sent.length = 0;
+    expect(rowFor('linus@example.com')?.status).toBe('confirmed');
+
+    const fresh = await subscribe(base, validFields('grace-hopper@example.com'), { 'x-mochi-action': 'true' });
+    const confirmed = await subscribe(base, validFields('linus@example.com'), { 'x-mochi-action': 'true' });
+
+    expect(confirmed.status).toBe(fresh.status);
+    expect(await confirmed.text()).toBe(await fresh.text());
+
+    await waitForSent(1);
+    await Bun.sleep(50);
+    // Only the genuinely new address was mailed.
+    expect(sent.flatMap((m) => m.to)).toEqual(['grace-hopper@example.com']);
+    expect(rowFor('linus@example.com')?.status).toBe('confirmed');
+  });
+
   test('a bogus token renders the invalid state rather than failing', async () => {
     const res = await fetch(`${base}/newsletter/confirm/?token=not-a-real-token`);
     expect(res.status).toBe(200);
@@ -249,5 +278,55 @@ describe('newsletter signup', () => {
     await waitForSent(1);
     expect(sent).toHaveLength(1);
     expect(tokenFrom(sent[0], 'confirm')).not.toBe(row?.confirm_token);
+  });
+
+  // A stale admin tab, or a row deleted in another window, must not 500.
+  test('an admin action against an unknown id is a no-op redirect', async () => {
+    sent.length = 0;
+    const before = listSubscribers().length;
+
+    for (const action of ['resendConfirmation', 'unsubscribeSignup', 'deleteSignup']) {
+      for (const id of ['', '999999', 'not-a-number']) {
+        const res = await fetch(`${base}/admin/?/${action}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...AUTH },
+          body: new URLSearchParams({ id }).toString(),
+          redirect: 'manual',
+        });
+        expect(res.status).toBe(303);
+      }
+    }
+
+    await Bun.sleep(50);
+    expect(sent).toHaveLength(0);
+    expect(listSubscribers()).toHaveLength(before);
+  });
+});
+
+describe('embed ancestors', () => {
+  const original = process.env.NEWSLETTER_EMBED_ANCESTORS;
+  const originalMode = process.env.MODE;
+
+  afterAll(() => {
+    process.env.NEWSLETTER_EMBED_ANCESTORS = original;
+    process.env.MODE = originalMode;
+  });
+
+  test('an explicit allow-list wins', () => {
+    process.env.NEWSLETTER_EMBED_ANCESTORS = 'https://a.test  https://b.test';
+    expect(embedAncestors()).toEqual(['https://a.test', 'https://b.test']);
+  });
+
+  test('production falls back to the mochi.fast origins alone', () => {
+    delete process.env.NEWSLETTER_EMBED_ANCESTORS;
+    process.env.MODE = 'production';
+    expect(embedAncestors()).toEqual(['https://mochi.fast', 'https://www.mochi.fast']);
+  });
+
+  test('development also allows the local site and smoke-test ports', () => {
+    delete process.env.NEWSLETTER_EMBED_ANCESTORS;
+    process.env.MODE = 'development';
+    expect(embedAncestors()).toContain('http://localhost:3333');
+    expect(embedAncestors()).toContain('https://mochi.fast');
   });
 });

@@ -27,13 +27,33 @@
   // this module still runs during SSR, where sidechain's module-scope
   // `extends HTMLElement` throws.
   $effect(() => {
-    void import('@nprapps/sidechain').then(async () => {
-      await customElements.whenDefined('side-chain');
-      // <side-chain> forwards only src/id/allow, so the name goes on the iframe.
-      if (host?.iframe) {
+    // <side-chain> forwards only src/id/allow, so the name goes on the iframe —
+    // which the element creates in connectedCallback, some time after
+    // whenDefined() resolves. Watch for it rather than racing it, or the frame
+    // ships to screen readers untitled.
+    const titleFrame = () => {
+      if (host?.iframe && host.iframe.title !== title) {
         host.iframe.title = title;
       }
+      return Boolean(host?.iframe);
+    };
+    // The iframe is created inside the element's shadow root, which a
+    // MutationObserver on the host cannot see into — observe the root itself.
+    const observer = new MutationObserver(() => {
+      if (titleFrame()) {
+        observer.disconnect();
+      }
     });
+
+    void import('@nprapps/sidechain').then(async () => {
+      await customElements.whenDefined('side-chain');
+      const root = host?.shadowRoot ?? host;
+      if (!titleFrame() && root) {
+        observer.observe(root, { childList: true, subtree: true });
+      }
+    });
+
+    return () => observer.disconnect();
   });
 
   $effect(() => {

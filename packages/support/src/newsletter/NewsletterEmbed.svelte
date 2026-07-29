@@ -4,7 +4,7 @@
   import SidechainGuest from './SidechainGuest.svelte';
   import type { MintedCaptcha } from 'mochi-framework';
 
-  let { captcha, source }: { captcha: MintedCaptcha; source: string } = $props();
+  let { captcha, source, origins }: { captcha: MintedCaptcha; source: string; origins: string[] } = $props();
 </script>
 
 <svelte:head>
@@ -19,7 +19,7 @@
   <NewsletterForm mochi:hydrate {captcha} {source} />
 </section>
 
-<SidechainGuest mochi:clientOnly />
+<SidechainGuest mochi:clientOnly {origins} />
 
 <style>
   /* Sidechain reports documentElement.offsetHeight, which the shell's

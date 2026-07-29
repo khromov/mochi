@@ -39,10 +39,16 @@
         <button type="submit" class="secondary">Unsubscribe</button>
       </form>
     {/if}
-    <form method="post" action="?/deleteSignup">
-      <input type="hidden" name="id" value={subscriber.id} />
-      <button type="submit" class="secondary">Delete</button>
-    </form>
+    <!-- Two-step rather than a JS confirm(): this row is plain SSR markup, not an
+         island, so no handler of ours would be wired up client-side. -->
+    <details class="danger">
+      <summary>Delete</summary>
+      <form method="post" action="?/deleteSignup">
+        <input type="hidden" name="id" value={subscriber.id} />
+        <span>Permanently remove {subscriber.email}?</span>
+        <button type="submit" class="secondary">Confirm delete</button>
+      </form>
+    </details>
   </div>
 </article>
 
@@ -146,5 +152,36 @@
   button.secondary:hover {
     background: var(--surface-muted);
     color: var(--text);
+  }
+
+  .danger summary {
+    display: inline-block;
+    padding: 0.3rem 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--text-muted);
+    cursor: pointer;
+    list-style: none;
+  }
+
+  .danger summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .danger summary:hover {
+    background: var(--surface-muted);
+    color: var(--text);
+  }
+
+  .danger form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+    font-size: 0.85rem;
+    color: var(--text-muted);
   }
 </style>

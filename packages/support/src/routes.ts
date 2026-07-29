@@ -1,11 +1,13 @@
 import { Mochi, fail, redirect, success, logger, mintCaptcha, verifyCaptcha, consumeCaptcha, getRequestContext } from 'mochi-framework';
 import type { MochiRouteValue } from 'mochi-framework';
+import type { Subscriber } from './db.server';
 import { authFailureDelay, credentialsMatch } from './adminAuth';
 import {
   appendEmailLog,
   appendNewsletterLog,
   deleteSubscriber,
   emailLogsBySubmission,
+  getSubscriber,
   insertSubmission,
   listSubmissions,
   listSubscribers,
@@ -22,6 +24,13 @@ import type { NewsletterEmailJob } from './newsletter/jobs.server';
 import { newsletterRoutes } from './newsletter/routes';
 
 const NEWSLETTER_TAB = '/admin/?tab=newsletter';
+
+// A missing or junk `id` yields NaN, which binds as NULL and turns a stale admin
+// tab into a NOT NULL violation on the log insert. Resolve the row first instead.
+function subscriberFromForm(formData: FormData): Subscriber | null {
+  const id = Number(formData.get('id'));
+  return Number.isInteger(id) ? getSubscriber(id) : null;
+}
 
 export const routes: Record<string, MochiRouteValue> = {
   ...newsletterRoutes,
@@ -138,22 +147,33 @@ export const routes: Record<string, MochiRouteValue> = {
       // Mints a fresh token, so the link in the previous email stops working —
       // there is only ever one live confirmation link per address.
       resendConfirmation: async ({ formData }) => {
-        const id = Number(formData.get('id'));
-        refreshConfirmToken(id, CONFIRM_TTL_MS);
-        appendNewsletterLog(id, { attempt: 0, event: 'queued', detail: 'Re-sent from the admin panel' });
+        const subscriber = subscriberFromForm(formData);
+        // Only a pending row has anything to confirm; on any other status the
+        // job would skip and leave a misleading `sent` line in the delivery log.
+        if (subscriber?.status !== 'pending') {
+          return redirect(303, NEWSLETTER_TAB);
+        }
+        refreshConfirmToken(subscriber.id, CONFIRM_TTL_MS);
+        appendNewsletterLog(subscriber.id, { attempt: 0, event: 'queued', detail: 'Re-sent from the admin panel' });
         try {
-          await Mochi.getQueue<NewsletterEmailJob>(NEWSLETTER_EMAIL_QUEUE).add('confirm', { id });
+          await Mochi.getQueue<NewsletterEmailJob>(NEWSLETTER_EMAIL_QUEUE).add('confirm', { id: subscriber.id });
         } catch (err) {
           logger.error('newsletter: could not enqueue confirmation resend', err);
         }
         return redirect(303, NEWSLETTER_TAB);
       },
       unsubscribeSignup: ({ formData }) => {
-        unsubscribeSubscriber(Number(formData.get('id')));
+        const subscriber = subscriberFromForm(formData);
+        if (subscriber) {
+          unsubscribeSubscriber(subscriber.id);
+        }
         return redirect(303, NEWSLETTER_TAB);
       },
       deleteSignup: ({ formData }) => {
-        deleteSubscriber(Number(formData.get('id')));
+        const subscriber = subscriberFromForm(formData);
+        if (subscriber) {
+          deleteSubscriber(subscriber.id);
+        }
         return redirect(303, NEWSLETTER_TAB);
       },
     },

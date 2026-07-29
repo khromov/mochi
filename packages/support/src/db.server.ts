@@ -344,7 +344,10 @@ export function markNewsletterEmailRequeued(id: number): void {
 }
 
 // Expired rows are excluded, unlike `undeliveredSubmissionIds` above: a
-// confirmation link the recipient can no longer click is only spam.
+// confirmation link the recipient can no longer click is only spam. Rows that
+// exhausted their attempts (`email_status = 'failed'`) are deliberately still in
+// scope — a boot is usually what fixed whatever broke SMTP — so they retry once
+// per restart until the TTL lapses and this query drops them for good.
 export function pendingConfirmationIds(): number[] {
   return subPendingStmt.all(Date.now()).map((row) => row.id);
 }

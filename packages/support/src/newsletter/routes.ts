@@ -1,6 +1,7 @@
 import { Mochi, fail, success, logger, mintCaptcha, verifyCaptcha, consumeCaptcha, getRequestContext } from 'mochi-framework';
 import type { MochiRouteValue } from 'mochi-framework';
 import { appendNewsletterLog, confirmSubscriber, requestSubscription, subscriberByConfirmToken, subscriberByUnsubscribeToken, unsubscribeSubscriber } from '../db.server';
+import { embedAncestors } from '../embedHeaders';
 import { CONFIRM_TTL_MS, RESEND_COOLDOWN_MS } from './config';
 import { NEWSLETTER_EMAIL_QUEUE } from './jobs.server';
 import type { NewsletterEmailJob } from './jobs.server';
@@ -9,12 +10,21 @@ export type TokenPageState = 'confirmed' | 'already' | 'expired' | 'unknown' | '
 
 export const newsletterRoutes: Record<string, MochiRouteValue> = {
   '/newsletter/embed': Mochi.page('./src/newsletter/NewsletterEmbed.svelte', {
-    rateLimit: { limit: 20, window: '10m', ban: { threshold: 3, duration: '1h' } },
+    // GETs are excluded: the widget loads on the blog index and every post, so
+    // counting page views bans an ordinary reader — and a whole NAT with them.
+    // Only the signup POST spends quota, mirroring /admin's `skip` below.
+    rateLimit: {
+      limit: 20,
+      window: '10m',
+      ban: { threshold: 3, duration: '1h' },
+      skip: (req) => req.method !== 'POST',
+    },
     serverProps: () => {
       const { url } = getRequestContext();
       return {
         captcha: mintCaptcha(),
         source: url.searchParams.get('src')?.slice(0, 200) ?? '',
+        origins: embedAncestors(),
       };
     },
     actions: {
