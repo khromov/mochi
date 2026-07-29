@@ -106,6 +106,7 @@ export function transformPackageJson(contents: string, opts: PackageJsonTransfor
     'svelte-check@4.6.0': 'patches/svelte-check@4.6.0.patch',
     'svelte-check@4.7.1': 'patches/svelte-check@4.7.1.patch',
     'svelte-check@4.7.3': 'patches/svelte-check@4.7.3.patch',
+    'svelte-check@4.7.4': 'patches/svelte-check@4.7.4.patch',
   };
 
   return JSON.stringify(pkg, null, 2) + '\n';
