@@ -143,6 +143,36 @@ sequence(auth, compress({ methods: ['gzip'] }));
 
 `compress()` is a no-op in development so the debug bar can render the uncompressed HTML response. In production it always adds `Vary: Accept-Encoding`, and compresses when the response carries a compressible `Content-Type` (`text/*`, `application/json`, `application/javascript`, `application/xml`, `application/manifest+json`, `application/ld+json`, `image/svg+xml`). Responses that already declare a `Content-Encoding` pass through untouched. Static framework assets (JS/CSS bundles) and the framework error page also flow through `handle`, so the same `compress()` covers them — that's why other body-touching middleware (auth, etc.) should branch on `event.kind === 'asset'` if they need to skip framework bundles.
 
+### `htmlMinify`
+
+Built-in middleware factory that minifies page HTML with [`minify-html`](https://github.com/wilsonzlin/minify-html) (via the binary-free `@minify-html/wasm`). It collapses whitespace, drops optional tags, and tightens attributes on the page body, while leaving hydration-island subtrees (`mochi:hydrate*`, server islands) **byte-for-byte intact** — those are masked out before minifying and restored after, since only their internals are re-walked during hydration.
+
+```ts
+// file: src/index.ts
+import { Mochi, sequence, htmlMinify, compress } from 'mochi-framework';
+
+await Mochi.serve({
+  handle: sequence(htmlMinify(), analytics(), compress()),
+  routes,
+});
+```
+
+Ordering matters. Because merged `transformPage`s stack in **reverse** (see `resolve`), a handle placed _earlier_ in `sequence(...)` transforms the HTML _later_ — so put `htmlMinify()` **before** any handle that injects markup via `transformPage` and keep `compress()` last, so minification runs on the fully-injected HTML and compression runs on the minified result.
+
+Options (all default off):
+
+- `minifyCss` — minify inline `<style>` blocks and `style` attributes (lightningcss). Default `false`.
+- `minifyJs` — minify inline `<script>` blocks (oxc). Default `false` — risky around the framework's inline hydration scripts.
+- `dev` — also run in development. Default `false`.
+
+<Callout type="warning">
+
+Comments are always kept (Svelte's hydration markers are comments), so author comments survive too. Whitespace inside island subtrees is preserved — the minifier cannot skip subtrees on its own, so islands are masked and restored around it.
+
+</Callout>
+
+Like `compress()`, `htmlMinify()` is a no-op in development so the debug bar and view-source stay readable. Because the framework already gzip/brotli-compresses responses, the on-the-wire savings are modest — the main effect is a smaller uncompressed payload.
+
 ### `noCache`
 
 Built-in middleware that defaults `Cache-Control: no-cache` on `page` and `api` responses. Routes that set their own `Cache-Control` are left untouched, so opt-in caching still works per route.

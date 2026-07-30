@@ -100,6 +100,7 @@
   "dependencies": {
     "@css-inline/css-inline-wasm": "^0.21.0",
     "@joint-ops/hitlimit-bun": "1.5.0",
+    "@minify-html/wasm": "0.18.1",
     "@noble/ciphers": "2.2.0",
     "@noble/hashes": "2.2.0",
     "bunqueue": "^2.8.44",

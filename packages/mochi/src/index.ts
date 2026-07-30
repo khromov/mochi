@@ -44,6 +44,8 @@ export { compress } from './middleware/compress';
 export type { CompressOptions } from './middleware/compress';
 export type { CompressionMethod } from './utils';
 export { noCache } from './middleware/noCache';
+export { htmlMinify } from './middleware/htmlMinify';
+export type { HtmlMinifyOptions } from './middleware/htmlMinify';
 export { consoleLogger, silenceInternalRoutes } from './dev/consoleLogger';
 export type { ConsoleLoggerOptions } from './dev/consoleLogger';
 export { logger, setLogLevel, getLogLevel } from './utils/log';
