@@ -19,11 +19,11 @@ Components render on the server and ship zero JavaScript. Add `mochi:hydrate` to
 <StaticHeader />
 ```
 
-Mochi serializes props with `devalue` into a `<script type="application/json">` block just before the island, so the same values are available during hydration. See [Passing props to islands](/docs/island-props/) for the supported types.
+Mochi serializes props with `devalue` so the same values are available during hydration. See [Passing props to islands](/docs/island-props/) for the supported types.
 
 ### What is an island?
 
-An island is any component you mark with a `mochi:*` directive: `mochi:hydrate`, `mochi:hydrate:visible`, `mochi:clientOnly`, `mochi:clientOnly:visible`, `mochi:defer`, or `mochi:defer:visible`. Everything else is server-rendered HTML that ships no JavaScript. Mochi compiles and ships each island in isolation. The directive decides when and where the island runs.
+An island is any component you mark with a `mochi:*` directive: `mochi:hydrate`, `mochi:hydrate:visible`, `mochi:clientOnly`, `mochi:clientOnly:visible`, `mochi:defer`, or `mochi:defer:visible`. Everything else is server-rendered HTML that ships no JavaScript. The directive decides when and where the island runs.
 
 ### Supported import forms
 
@@ -115,7 +115,7 @@ For an SSR-stable id inside an island, use Svelte's native [`$props.id()`](<http
 <input id="{uid}-email" type="email" />
 ```
 
-Each instance gets its own id, so repeating the same island never produces duplicate DOM ids. It also works inside server islands: their standalone renders are namespaced with the island id from the encrypted props envelope, so ids from a deferred fragment cannot collide with ids already on the page.
+Each instance gets its own id, so repeating the same island never produces duplicate DOM ids. It also works inside server islands: their ids are namespaced so a deferred fragment cannot collide with ids already on the page.
 
 ### `mochi:hydrate:visible`
 
@@ -164,8 +164,8 @@ Add `:visible` to defer the fetch until the placeholder scrolls into view.
 
 <SeeItInAction
 demos={[
-{ href: "/demos/hydration/", title: "Hydration Modes", hook: "mochi:hydrate, mochi:hydrate:visible, and mochi:defer side by side." },
-{ href: "/demos/lazy/", title: "Lazy Islands", hook: "mochi:hydrate:visible islands hydrate only when scrolled into view." },
-{ href: "/demos/server-island/", title: "Server Islands", hook: "mochi:defer components render on demand after the page ships." },
+{ href: "/demos/hydration/", title: "Hydration Modes", hook: "How the hydration modes work — mochi:hydrate, mochi:hydrate:visible, rootMargin tuning, and mochi:defer server islands side by side." },
+{ href: "/demos/lazy/", title: "Lazy Islands", hook: "How lazy hydration works — islands marked mochi:hydrate:visible hydrate and load their CSS only when scrolled into view." },
+{ href: "/demos/server-island/", title: "Server Islands", hook: "How server islands work — components marked mochi:defer render server-side on demand after the initial page is delivered." },
 ]}
 />

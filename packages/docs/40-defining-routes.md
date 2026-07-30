@@ -191,12 +191,12 @@ Every `Mochi.page` and `Mochi.api` route answers `HEAD` automatically. Mochi run
 
 ### Static files
 
-Mochi serves files under `./public` automatically. It reads them straight from that directory in development and production, so the directory must ship with your deploy. A user-defined route wins over a same-path public file. See [Serve options](/docs/serve-options/) for `publicDir`.
+Mochi serves files under `./public` automatically, in development and production, so the directory must ship with your deploy. A user-defined route wins over a same-path public file. See [Serve options](/docs/serve-options/) for `publicDir`.
 
 <SeeItInAction
 demos={[
-{ href: "/demos/hello-world/", title: "Hello World", hook: "A Mochi.page() renders Svelte on the server and ships zero JavaScript." },
-{ href: "/demos/api/", title: "API Endpoints", hook: "Define JSON endpoints with Mochi.api()." },
-{ href: "/demos/file/", title: "File Routes", hook: "Serve a file from disk with Mochi.file()." },
+{ href: "/demos/hello-world/", title: "Hello World", hook: "How server-side rendering works — a Mochi.page() renders Svelte on the server and ships zero JavaScript." },
+{ href: "/demos/api/", title: "API Endpoints", hook: "How API routes work — define JSON endpoints with Mochi.api(), tested live against the running server." },
+{ href: "/demos/file/", title: "File Routes", hook: "How file routes work — serve a file from disk with Mochi.file(), as a static path or a per-request resolver." },
 ]}
 />

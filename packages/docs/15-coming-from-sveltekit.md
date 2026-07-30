@@ -434,7 +434,7 @@ if ('serviceWorker' in navigator) {
 
 ### Image optimization
 
-Import local images Vite-style. The import returns `{ src, width, height, format }` and copies the file to a content-hashed URL. Declare transforms once as [named sizes](/docs/images/) on `Mochi.serve()`. Transforms run on demand in `Bun.Image` behind an encrypted URL, cached to disk with stale-while-revalidate. `<Image>` also works for remote sources. `placeholder` adds a ThumbHash blur-up with no client JavaScript.
+Import local images Vite-style. The import returns `{ src, width, height, format }` and copies the file to a content-hashed URL. Declare transforms once as [named sizes](/docs/images/) on `Mochi.serve()`. Transforms run on demand behind an encrypted URL, cached to disk with stale-while-revalidate. `<Image>` also works for remote sources. `placeholder` adds a ThumbHash blur-up with no client JavaScript.
 
 ```svelte
 <!-- file (Mochi): src/Home.svelte -->
@@ -488,7 +488,7 @@ Write your app links as absolute paths (`/about`). The `assetPrefix` option on `
 
 ### Server-only modules
 
-The `.server.ts` suffix carries over. Apply it per file anywhere in your source tree. Every export of a `*.server.ts` file becomes a throwing `Proxy` on the client, so the real module compiles for SSR only.
+The `.server.ts` suffix carries over. Apply it per file anywhere in your source tree. Every export of a `*.server.ts` file is unavailable on the client, so the real module compiles for SSR only.
 
 ```ts
 // file (Mochi): src/lib/db.server.ts
@@ -573,8 +573,8 @@ export default {
 
 <SeeItInAction
 demos={[
-{ href: "/demos/server-props/", title: "Server Props", hook: "Pass fresh per-request data into a page with serverProps." },
-{ href: "/demos/login/", title: "Form Actions", hook: "One form as a plain POST and as an enhance() submission." },
-{ href: "/demos/api/", title: "API Endpoints", hook: "Define JSON endpoints with Mochi.api()." },
+{ href: "/demos/server-props/", title: "Server Props", hook: "How server props work — pass fresh per-request data into a page via serverProps on Mochi.page()." },
+{ href: "/demos/login/", title: "Form Actions", hook: "How form actions work — a form rendered twice, as a plain HTML POST and intercepted with {@attach enhance(...)}." },
+{ href: "/demos/api/", title: "API Endpoints", hook: "How API routes work — define JSON endpoints with Mochi.api(), tested live against the running server." },
 ]}
 />

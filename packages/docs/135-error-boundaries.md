@@ -23,8 +23,8 @@ Mochi auto-wraps every `mochi:hydrate` and `mochi:hydrate:visible` island in `<s
 
 - Synchronous SSR throws inside the island.
 - Async SSR throws (`await Promise.reject(...)` in a top-level `<script>`).
-- Client-side throws after hydration (`$effect`, `$derived`, synchronous script throws), caught through `transformError` on `hydrate()`.
-- Synchronous failures in the island's bundle import or in `hydrate()` itself, caught by a defensive try/catch and rendered as the same stub.
+- Client-side throws after hydration (`$effect`, `$derived`, synchronous script throws).
+- A failure in the island's bundle import or in hydration itself.
 
 A client-side throw logs to the browser console but does **not** emit `island:error`. The event bus is server-side only.
 
@@ -34,11 +34,11 @@ In development, Mochi replaces the failed island with a dashed-red `<mochi-islan
 
 ### Server islands (`mochi:defer`)
 
-The `/island/:name` endpoint try/catches the SSR render and returns `200` plus a `<mochi-island-failure>` stub. The `200` is intentional — a `5xx` would trigger the client's retry loop against a deterministic failure. Your fallback children stay visible until the response arrives.
+A failed server island returns a `<mochi-island-failure>` stub with status `200`. The `200` is intentional — a `5xx` would trigger the client's retry loop against a deterministic failure. Your fallback children stay visible until the response arrives.
 
 ### Author your own boundary
 
-Mochi passes `transformError` to `render()` and `hydrate()`, which makes `<svelte:boundary>` functional during SSR. Use `<svelte:boundary>` anywhere for bespoke degradation:
+Mochi makes `<svelte:boundary>` work during SSR, so you can use it anywhere for bespoke degradation:
 
 ```svelte
 <!-- file: src/SomePage.svelte -->
@@ -67,7 +67,7 @@ mochiEvents.on('island:error', ({ componentName, kind, message, stack }) => {
 | Field           | Description                                                                               |
 | --------------- | ----------------------------------------------------------------------------------------- |
 | `componentName` | Island component name.                                                                    |
-| `islandId`      | Per-island id from the encrypted props envelope; set for `'server'`, else `undefined`.    |
+| `islandId`      | Per-island id; set for `'server'` failures, else `undefined`.                             |
 | `kind`          | `'hydratable'` (SSR throw in a hydratable island) or `'server'` (server-island render).   |
 | `message`       | Error message, safe to forward.                                                           |
 | `stack`         | Stack trace, populated only when `development: true`.                                     |
@@ -80,5 +80,5 @@ mochiEvents.on('island:error', ({ componentName, kind, message, stack }) => {
 - [Selective hydration](/docs/selective-hydration/), [Lazy hydration](/docs/lazy-hydration/), [Server islands](/docs/server-islands/) — the directives boundaries wrap.
 
 <SeeItInAction
-demos={[{ href: "/demos/error-boundaries/", title: "Error Boundaries", hook: "Contain island failures so one broken component does not crash the page." }]}
+demos={[{ href: "/demos/error-boundaries/", title: "Error Boundaries", hook: "How error boundaries work — contain island failures with <svelte:boundary> so one broken component doesn't crash the page." }]}
 />

@@ -138,10 +138,10 @@ try {
 
 ### Uncaught errors
 
-Anything else thrown inside a `Mochi.api` handler — a database failure, a typo, a rejected promise — returns `500 Internal Server Error` with a generic message. Mochi logs the original error and stack through `logger.error` with the method and path. The client never sees them.
+Anything else thrown inside a `Mochi.api` handler — a database failure, a typo, a rejected promise — returns `500 Internal Server Error` with a generic message. Mochi logs the original error and stack. The client never sees them.
 
 API routes never render the HTML error page, and `handleError` is **not** called for them. The JSON envelope is the only contract.
 
 <SeeItInAction
-demos={[{ href: "/demos/api/", title: "API Endpoints", hook: "Define JSON endpoints with Mochi.api(), tested against the running server." }]}
+demos={[{ href: "/demos/api/", title: "API Endpoints", hook: "How API routes work — define JSON endpoints with Mochi.api(), tested live against the running server." }]}
 />

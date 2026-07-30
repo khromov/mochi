@@ -130,7 +130,7 @@ await Mochi.serve({
 
 Options:
 
-- `methods` — the encodings the server is willing to use. Defaults to `['brotli', 'gzip']`. The client's `Accept-Encoding` picks the winner among them. The array order is only a tiebreak when the client expresses no preference.
+- `methods` — the encodings the server is willing to use. Defaults to `['brotli', 'gzip']`. The client's `Accept-Encoding` picks the winner. The array order is only a tiebreak when the client expresses no preference.
 - `brotliQuality` — brotli quality level `0..11`. Defaults to `4`. Raise it only when the response is cached — higher levels are too slow for per-request SSR.
 
 ```ts
@@ -138,7 +138,7 @@ sequence(auth, compress({ brotliQuality: 6 }));
 sequence(auth, compress({ methods: ['gzip'] }));
 ```
 
-`compress()` is a no-op in development so the debug bar can render the uncompressed HTML. In production it adds `Vary: Accept-Encoding` and compresses compressible content types (`text/*`, `application/json`, `application/javascript`, `application/xml`, and others). A response that already declares `Content-Encoding` passes through untouched. Static framework assets also flow through `handle`, so `compress()` covers them. Other body-touching middleware should branch on `event.kind === 'asset'` when it needs to skip framework bundles.
+`compress()` is a no-op in development so the debug bar can render the uncompressed HTML. In production it adds `Vary: Accept-Encoding` and compresses compressible content types (`text/*`, `application/json`, `application/javascript`, `application/xml`, and others). A response that already declares `Content-Encoding` passes through untouched. Static framework assets also flow through `handle`, so `compress()` covers them; other body-touching middleware should branch on `event.kind === 'asset'` when it needs to skip framework bundles.
 
 ### `noCache`
 
@@ -157,5 +157,5 @@ await Mochi.serve({
 `asset`, `fallback`, and `error` events pass through unchanged. WebSocket upgrades and SSE streams never reach the middleware.
 
 <SeeItInAction
-demos={[{ href: "/demos/request-id/", title: "Request ID", hook: "Every request gets a UUID v7 that rides every lifecycle event." }]}
+demos={[{ href: "/demos/request-id/", title: "Request ID", hook: "How request IDs work — every request gets a UUID v7 on getRequestContext().requestId that rides every lifecycle event for correlation." }]}
 />

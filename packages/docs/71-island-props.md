@@ -78,11 +78,9 @@ When a component wraps a native element and forwards its attributes, type the sp
 <button {...rest}>{@render children?.()}</button>
 ```
 
-### Wire format
+### How props travel
 
-For `mochi:hydrate*` islands, Mochi emits props as a `<script type="application/json" id="mochi-props-N">` block just before the island. When several islands share the same payload, Mochi emits the block once and the rest reference it by id, so identical props ship over the wire once.
-
-For `mochi:defer` server islands, Mochi encrypts the props (opaque on the wire) and passes them as a query parameter to a per-island endpoint. See [Server islands](/docs/server-islands/).
+For `mochi:hydrate*` islands, props ship inline in the page HTML. When several islands share the same payload, it ships over the wire once and the rest reference it, which keeps the page small. For `mochi:defer` server islands, props are encrypted (opaque on the wire) and passed to a per-island endpoint. See [Server islands](/docs/server-islands/).
 
 ### Supported types
 
@@ -114,12 +112,12 @@ To branch on whether the current render will hydrate, call [`isHydratable()`](/d
 </script>
 ```
 
-`islandId` is a reserved name on every island. Passing it as a literal prop is a compile error, so a component can move between directives without the name changing meaning. On `mochi:defer` it is the framework's transport key inside the encrypted envelope, stripped server-side before the component renders. For a unique id inside the component, use `$props.id()`.
+`islandId` is a reserved name on every island. Passing it as a literal prop is a compile error, so a component can move between directives without the name changing meaning. For a unique id inside the component, use `$props.id()`.
 
 <SeeItInAction
 demos={[
-{ href: "/demos/island-props/", title: "Crossing the boundary", hook: "Date, Map, Set, BigInt, URL, typed arrays, and cyclic refs survive the round-trip." },
-{ href: "/demos/prop-dedup/", title: "Shared Props", hook: "Nine islands share three payloads, each serialized once." },
-{ href: "/demos/props-id/", title: "Unique IDs", hook: "$props.id() gives SSR-stable, per-instance ids." },
+{ href: "/demos/island-props/", title: "Crossing the server-client boundary with props", hook: "How props cross the server-client boundary — Date, Map, Set, BigInt, URL, typed arrays, and even cyclic refs survive devalue's round-trip into a hydrated island." },
+{ href: "/demos/prop-dedup/", title: "Shared Props", hook: "How island prop deduplication works — nine islands share three unique payloads, each serialized once and referenced via props-ref." },
+{ href: "/demos/props-id/", title: "Unique IDs", hook: "How stable island IDs work — Svelte's native $props.id() gives SSR-consistent, per-instance ids, namespaced inside server islands." },
 ]}
 />

@@ -11,7 +11,7 @@ description: 'Keep server-only modules like bun:sqlite out of client bundles wit
 
 ## Server-only imports
 
-Any module reachable from a hydratable island gets bundled into the client. To use a server-only library (`bun:sqlite`, `node:fs`, anything that touches the filesystem) from inside an island, put the library plus a thin wrapper in a `*.server.ts` file. Mochi replaces these files with throwing-Proxy stubs on the client. The real module compiles for SSR only.
+Any module reachable from a hydratable island gets bundled into the client. To use a server-only library (`bun:sqlite`, `node:fs`, anything that touches the filesystem) from inside an island, put the library plus a thin wrapper in a `*.server.ts` file. On the client, Mochi replaces these files with stubs that throw if used. The real module compiles for SSR only.
 
 ```ts
 // db.server.ts
@@ -69,7 +69,7 @@ Mochi stubs only value imports. Use `import type` (or `import { type Row }`) so 
 
 ### What gets stubbed
 
-Mochi replaces every export of a `.server.ts` file with a `Proxy` that throws on function calls and property access. The error names the export and its origin file:
+On the client, every export of a `.server.ts` file throws on any use. The error names the export and its origin file:
 
 ```
 getVersion from /…/db.server.ts was called on the client; this is a server-only export.
@@ -81,5 +81,5 @@ getVersion from /…/db.server.ts was called on the client; this is a server-onl
 - `.server.svelte` — no component-level convention. Put server-only code in plain TS and call it from a component.
 
 <SeeItInAction
-demos={[{ href: "/demos/data-loading/", title: "Data Loading", hook: "Fetch on the server, cache with MochiCache, and render at request time." }]}
+demos={[{ href: "/demos/data-loading/", title: "Data Loading", hook: "How server-side data loading works — fetch on the server, cache with MochiCache, and render at request time." }]}
 />

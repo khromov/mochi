@@ -11,7 +11,7 @@ description: 'Per-route and global request rate limiting with memory, SQLite, an
 
 ## Rate limiting
 
-Add a `rateLimit` config to any `Mochi.page()` or `Mochi.api()` route. It is a thin shim around [`@joint-ops/hitlimit-bun`](https://www.npmjs.com/package/@joint-ops/hitlimit-bun). The options pass straight through.
+Add a `rateLimit` config to any `Mochi.page()` or `Mochi.api()` route. It is driven by [`@joint-ops/hitlimit-bun`](https://www.npmjs.com/package/@joint-ops/hitlimit-bun), and the options pass straight through.
 
 ```ts
 '/api/data': Mochi.api(handler, {
@@ -82,7 +82,7 @@ Mochi buckets counters by **key within a store**. A route with its own `rateLimi
 
 </Callout>
 
-Each store instance owns its backend — a DB connection, prepared statements, and a cleanup timer. Create the store **once** and share the instance. Calling `sqliteStore({ path })` inline in every route config opens one connection per route to the same file, each with its own cleanup sweep, all fighting over SQLite's single write lock.
+Each store instance owns its backend — a DB connection, prepared statements, and a cleanup timer. Create the store **once** and share the instance. Calling `sqliteStore({ path })` inline in every route config opens one connection per route to the same file, all fighting over SQLite's single write lock.
 
 ```ts
 const store = sqliteStore({ path: './ratelimit.db' }); // one connection…
@@ -92,7 +92,7 @@ const store = sqliteStore({ path: './ratelimit.db' }); // one connection…
 
 <Callout type="info">
 
-**Dev reloads.** Creating a store inline in a route config builds a fresh store on every save while the old one — being user-supplied — is never closed, leaking a handle per reload. Counters still persist. If the churn bothers you, keep dev on the default memory store and attach the persisted store in production only.
+**Dev reloads.** Creating a store inline in a route config builds a fresh store on every save while the old one is never closed, leaking a handle per reload. Counters still persist. If the churn bothers you, keep dev on the default memory store and attach the persisted store in production only.
 
 </Callout>
 
@@ -164,6 +164,6 @@ const rateLimit = getRequestContext().rateLimit;
 
 <SeeItInAction
 demos={[
-{ href: "/demos/rate-limit/", title: "Rate Limiting", hook: "A rateLimit config caps requests per IP per minute and serves the 429 error page past the limit." },
+{ href: "/demos/rate-limit/", title: "Rate Limiting", hook: "How rate limiting works — a rateLimit config on the route caps requests per IP per minute and serves the 429 error page past the limit." },
 ]}
 />

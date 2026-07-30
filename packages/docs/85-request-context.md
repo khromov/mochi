@@ -17,7 +17,7 @@ Inside components and server-side helpers, import context values directly from `
 import { url, params, cookies, locals } from 'mochi-framework';
 ```
 
-Each export is a proxy that reads from the current request's `AsyncLocalStorage` context on every property access, so you never thread values through props.
+Each export reads from the current request's context on every property access, so you never thread values through props.
 
 ### `url`
 
@@ -34,10 +34,10 @@ The current page URL as a standard [`URL`](https://developer.mozilla.org/en-US/d
 <p>Current path: {url.pathname}</p>
 ```
 
-`url` is **isomorphic**. On the server it proxies `getRequestContext().url`. On the client it proxies `new URL(window.location.href)`, constructed fresh on each access, so it always reflects the current browser URL, including after `pushState` / `replaceState`.
+`url` is **isomorphic**. On the server it reads the parsed request URL. On the client it reflects the current browser URL, including after `pushState` / `replaceState`.
 
 <Callout type="info">
-The proxy constructs a fresh URL on every access, so a destructured value like <code>const {'{'} pathname {'}'} = url</code> is a snapshot. Access <code>url.pathname</code> directly when you need the live value.
+`url` reflects the live browser URL on each access, so a destructured value like <code>const {'{'} pathname {'}'} = url</code> is a snapshot. Access <code>url.pathname</code> directly when you need the live value.
 </Callout>
 
 <Callout type="warning">
@@ -116,7 +116,7 @@ serverProps: async () => {
 
 <SeeItInAction
 demos={[
-{ href: "/demos/request-id/", title: "Request ID", hook: "Every request gets a UUID v7 on getRequestContext().requestId." },
-{ href: "/demos/cookies/", title: "Cookies", hook: "Read and write on server and client through one MochiCookieJar API." },
+{ href: "/demos/request-id/", title: "Request ID", hook: "How request IDs work — every request gets a UUID v7 on getRequestContext().requestId that rides every lifecycle event for correlation." },
+{ href: "/demos/cookies/", title: "Cookies", hook: "How cookies work — read and write on the server and the client through one MochiCookieJar API (cookies.get/set/delete)." },
 ]}
 />

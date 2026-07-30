@@ -124,5 +124,5 @@ If the hook itself throws, Mochi logs the secondary error and renders the error 
 If your `errorPage` throws during render, Mochi returns a plain-text response mentioning both the original error and the secondary render failure. The error page cannot crash the server.
 
 <SeeItInAction
-demos={[{ href: "/demos/error/", title: "Error Handling", hook: "Catch render errors and unmatched routes via errorPage and the handleError hook." }]}
+demos={[{ href: "/demos/error/", title: "Error Handling", hook: "How error handling works — catch render errors and unmatched routes via Mochi.serve()'s errorPage option and the handleError hook." }]}
 />

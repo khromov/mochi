@@ -18,13 +18,13 @@ Defer hydration until a component scrolls into the viewport. The component still
 <HeavyChart mochi:hydrate:visible />
 ```
 
-Pass an options object to start loading before the element enters the viewport. Mochi forwards `rootMargin` straight to `IntersectionObserver`.
+Pass an options object to start loading before the element enters the viewport. Mochi forwards `rootMargin` to `IntersectionObserver`.
 
 ```svelte
 <HeavyChart mochi:hydrate:visible={{ rootMargin: '200px' }} />
 ```
 
-The default `rootMargin` is `'0px'` — hydration fires the moment the island's first child crosses the viewport edge. On intersection the observer disconnects, the bundle imports, the deferred CSS link appends to `<head>`, and Svelte hydrates the SSR markup.
+The default `rootMargin` is `'0px'` — hydration fires the moment the island's first child crosses the viewport edge.
 
 <Callout type="info">
 
@@ -44,7 +44,7 @@ See [Selective hydration](/docs/selective-hydration/) for `mochi:hydrate` and [S
 
 <SeeItInAction
 demos={[
-{ href: "/demos/lazy/", title: "Lazy Islands", hook: "mochi:hydrate:visible islands hydrate and load CSS only when scrolled into view." },
-{ href: "/demos/lazy-server-island/", title: "Lazy Server Islands", hook: "mochi:defer:visible islands fetch only when the wrapper scrolls into view." },
+{ href: "/demos/lazy/", title: "Lazy Islands", hook: "How lazy hydration works — islands marked mochi:hydrate:visible hydrate and load their CSS only when scrolled into view." },
+{ href: "/demos/lazy-server-island/", title: "Lazy Server Islands", hook: "How lazy server islands work — server islands marked mochi:defer:visible only fetch when the wrapper scrolls into view." },
 ]}
 />

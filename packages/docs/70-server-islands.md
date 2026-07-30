@@ -41,19 +41,13 @@ A server island is a normal Svelte component with full access to the request con
 <p>Welcome back, {userName}!</p>
 ```
 
-### Fetch flow
+### How it renders
 
-1. SSR emits a `<mochi-server-island>` custom element holding the fallback content. The component does not render yet.
-2. Mochi serializes props with `devalue`, encrypts them, and stamps them onto the element as `signed-props`.
-3. On `connectedCallback`, the element fetches `/_mochi/island/{ComponentName}?props={token}` (the `/_mochi` prefix follows `assetPrefix`).
-4. The server decrypts the props, renders the component, and returns the HTML.
-5. The HTML replaces the fallback inside the custom element.
-
-Mochi retries a failed fetch with exponential backoff (default 5 retries, 1s–10s). Pass `mochi:defer={{ retries: 10 }}` to override.
+The page ships with the fallback in place of the island, plus an encrypted token carrying the island's props. The browser then fetches the rendered HTML from a per-island endpoint under `assetPrefix` (default `/_mochi/island/...`), and Mochi swaps it in over the fallback. A failed fetch retries with exponential backoff (default 5 retries, 1s–10s). Pass `mochi:defer={{ retries: 10 }}` to override.
 
 <Callout type="info">
 
-`mochi-framework build` precompiles every server island into the manifest as a standalone SSR module, so production renders them from the prebuilt bundle.
+`mochi-framework build` precompiles every server island, so production renders them from the prebuilt bundle instead of compiling on first fetch.
 
 </Callout>
 
@@ -67,7 +61,7 @@ Apply `mochi:hydrate` alongside `mochi:defer` to fetch the island on demand and 
 
 <Callout type="warning">
 
-**Adding `mochi:hydrate` makes the props client-visible.** A pure `mochi:defer` island keeps its props on the server — the token on the wire is opaque ciphertext and the endpoint returns only HTML. Hydration needs the raw props on the client, so `mochi:defer mochi:hydrate` echoes the decrypted props back as plaintext. Do not pass server-only secrets to an island you also hydrate.
+**Adding `mochi:hydrate` makes the props client-visible.** A pure `mochi:defer` island keeps its props on the server — the token on the wire is opaque and the endpoint returns only HTML. Hydration needs the raw props on the client, so `mochi:defer mochi:hydrate` echoes the decrypted props back as plaintext. Do not pass server-only secrets to an island you also hydrate.
 
 </Callout>
 
@@ -113,7 +107,7 @@ Mochi serializes props with `devalue` — see [Passing props to islands](/docs/i
 
 ### Encryption key
 
-Mochi encrypts props with a key derived (HMAC-SHA512) from `process.env.MOCHI_KEY` (base64url-encoded, any length). Without `MOCHI_KEY`, Mochi generates a random key and logs a warning — fine for local dev, broken across restarts and multi-instance deploys.
+Mochi encrypts props with a key derived from `process.env.MOCHI_KEY` (base64url-encoded, any length). Without `MOCHI_KEY`, Mochi generates a random key and logs a warning — fine for local dev, broken across restarts and multi-instance deploys.
 
 Generate a key and write it to `.env`:
 
@@ -135,8 +129,8 @@ bunx mochi-framework generate-key
 
 <SeeItInAction
 demos={[
-{ href: "/demos/server-island/", title: "Server Islands", hook: "mochi:defer components render on demand after the page ships." },
-{ href: "/demos/nested-islands/", title: "Nested Islands", hook: "A mochi:defer island wrapping mochi:hydrate components and more server islands." },
-{ href: "/demos/lazy-server-island/", title: "Lazy Server Islands", hook: "mochi:defer:visible islands fetch only when scrolled into view." },
+{ href: "/demos/server-island/", title: "Server Islands", hook: "How server islands work — components marked mochi:defer render server-side on demand after the initial page is delivered." },
+{ href: "/demos/nested-islands/", title: "Nested Islands", hook: "How nested islands work — a mochi:defer server island wrapping mochi:hydrate components, and server islands nesting more server islands." },
+{ href: "/demos/lazy-server-island/", title: "Lazy Server Islands", hook: "How lazy server islands work — server islands marked mochi:defer:visible only fetch when the wrapper scrolls into view." },
 ]}
 />

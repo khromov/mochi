@@ -11,7 +11,7 @@ description: 'Run background jobs in-process with Mochi.queue(), backed by bunqu
 
 ## Queues
 
-Offload work that should not block a response — sending email, encoding media, calling slow APIs — to a background **queue**. A queue bundles a job channel with the `process` function that consumes it. Both run in your process, backed by [bunqueue](https://bunqueue.dev/) embedded mode.
+Offload work that should not block a response — sending email, encoding media, calling slow APIs — to a background **queue**. A queue bundles a job channel with the `process` function that consumes it. Both run in your process, backed by [bunqueue](https://bunqueue.dev/) in embedded mode.
 
 `Mochi.queue()` returns an inert config. Mount it in `Mochi.serve({ queues })`, keyed by name, so every background queue the server runs is declared in one place. Add jobs from anywhere with `Mochi.getQueue(name).add(...)`.
 
@@ -126,7 +126,7 @@ Mochi.queue({ process, dataPath: '.mochi/queue.sqlite' });
 
 <Callout type="warning">
 
-bunqueue locks the embedded store to the **first** `dataPath` used in the process. Use one `dataPath` across all your queues. Mochi logs a warning and ignores a conflicting path.
+bunqueue locks the persisted store to the **first** `dataPath` used in the process. Use one `dataPath` across all your queues. Mochi logs a warning and ignores a conflicting path.
 
 </Callout>
 
@@ -174,7 +174,7 @@ Recovery is awaited before `Mochi.serve()` resolves. A throw is contained: Mochi
 
 ### Advanced options
 
-Mochi wraps a small, stable core. For bunqueue features Mochi does not surface first-class — retry backoff, rate limiting, cron/repeat, dead-letter queue, deduplication — pass a `bunqueue` object forwarded verbatim to the underlying queue and worker:
+Mochi surfaces a small, stable set of first-class options. For bunqueue features Mochi does not surface — retry backoff, rate limiting, cron/repeat, dead-letter queue, deduplication — pass a `bunqueue` object forwarded verbatim to the underlying queue and worker:
 
 ```ts
 const apiCalls = Mochi.queue({
@@ -211,7 +211,7 @@ mochiEvents.on('queue:completed', ({ queue, jobName, duration }) => {
 
 ### Dev mode & hot reload
 
-`Mochi.serve({ queues })` instantiates a queue once, so the dev route hot-reload watcher cannot spawn a duplicate consumer. The trade-off: **changes to a queue's `process` function or options do not hot-reload**. Restart the dev server to apply them. Because the queue module imports once, module-scope state (a results buffer, a counter) survives a dev module re-run.
+`Mochi.serve({ queues })` instantiates a queue once, so the dev route hot-reload watcher cannot spawn a duplicate consumer. The trade-off: **changes to a queue's `process` function or options do not hot-reload**. Restart the dev server to apply them.
 
 ### Shutdown
 
@@ -240,8 +240,8 @@ await Mochi.serve({
 
 ### Dependencies
 
-Mochi uses bunqueue for queues. bunqueue pulls in `msgpackr`. Mochi swaps out `msgpackr`'s optional native accelerator through a `package.json` `overrides` entry pointing at [`@mochi-framework/msgpackr-extract-stub`](https://www.npmjs.com/package/@mochi-framework/msgpackr-extract-stub), so no platform-specific native binaries are installed. New `create-mochi` projects ship this override. To use the native bindings, delete the `overrides` entry from your `package.json`.
+New `create-mochi` projects ship a `package.json` `overrides` entry that keeps bunqueue's install free of platform-specific native binaries. To use the native bindings instead, delete that `overrides` entry.
 
 <SeeItInAction
-demos={[{ href: "/demos/queue/", title: "Background jobs with queues", hook: "Offload work to a Mochi.queue() with an embedded worker, no Redis." }]}
+demos={[{ href: "/demos/queue/", title: "Background jobs with queues", hook: "How background job queues work — offload work to a Mochi.queue() with an embedded worker, no Redis." }]}
 />

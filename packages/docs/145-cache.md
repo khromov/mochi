@@ -41,7 +41,7 @@ Use it from a page or API route:
 
 <Callout type="warning">
 
-**Caches are shared in-process.** Every request reads from the same `Map`, so a key like `cart:current` leaks one user's data to another. Prefix per-user keys with the user id, for example `` `cart:${userId}` ``, and do the same for any other request-scoped dimension (tenant, locale, role).
+**A cache is shared across requests in one process.** So a key like `cart:current` leaks one user's data to another. Prefix per-user keys with the user id, for example `` `cart:${userId}` ``, and do the same for any other request-scoped dimension (tenant, locale, role).
 
 </Callout>
 
@@ -73,7 +73,7 @@ Use it from a page or API route:
 | ---------------- | ----------------- |
 | `minTimeToStale` | `5_000` (5s)      |
 | `maxTimeToLive`  | `600_000` (10min) |
-| `storage`        | in-memory `Map`   |
+| `storage`        | in-memory         |
 | `serialize`      | identity          |
 | `deserialize`    | identity          |
 
@@ -83,7 +83,7 @@ The default `MemoryStorage` accepts `{ maxAge, purgeInterval }` for age-based ev
 
 ### File-based storage
 
-`FileStorage` persists each entry as a JSON file on disk, so the cache survives restarts. It needs no `serialize` / `deserialize`:
+`FileStorage` persists the cache to disk, so it survives restarts. It needs no `serialize` / `deserialize`:
 
 ```ts
 import { MochiCache, FileStorage } from 'mochi-framework';
@@ -98,7 +98,7 @@ export const pokemonCache = new MochiCache({
 });
 ```
 
-A background sweep deletes expired files on an interval. `purgeOnInit` empties the directory on startup. Binary fields round-trip transparently (inlined as base64 by default; set `offloadBinary: true` to write large binaries to their own files). The built-in [image cache](/docs/images/) enables offloading internally.
+A background sweep deletes expired files on an interval. `purgeOnInit` empties the directory on startup. Set `offloadBinary: true` when values carry large binaries. The built-in [image cache](/docs/images/) enables offloading internally.
 
 | Option          | Default           |                                                                            |
 | --------------- | ----------------- | -------------------------------------------------------------------------- |
@@ -116,7 +116,7 @@ A background sweep deletes expired files on an interval. `purgeOnInit` empties t
 
 <Callout type="warning">
 
-**In-flight de-duplication is per-server.** Concurrent calls for the same key on one instance share a single `fn` invocation. That coordination lives in process memory. With multiple instances behind a shared backend, each instance de-duplicates only its own requests, so on a cold key every instance may run `fn` once and race to write the same entry. The shared store keeps results consistent.
+**In-flight de-duplication is per-server.** Concurrent calls for the same key on one instance share a single `fn` invocation. With multiple instances behind a shared backend, each instance de-duplicates only its own requests, so on a cold key every instance may run `fn` once and race to write the same entry. The shared store keeps results consistent.
 
 </Callout>
 
@@ -157,8 +157,8 @@ mochiEvents.setHandler('metrics:cache-read', 'cache:read', ({ key, status }) => 
 
 <SeeItInAction
 demos={[
-{ href: "/demos/data-loading/", title: "Data Loading", hook: "Fetch on the server, cache with MochiCache, and render at request time." },
-{ href: "/demos/cache-events/", title: "Cache Events", hook: "Subscribe to MochiCache lifecycle events through mochiEvents." },
-{ href: "/cookie-vary-test/", title: "Cookie Vary Test", hook: "A page that sets Vary: Cookie so responses key on cookies." },
+{ href: "/demos/data-loading/", title: "Data Loading", hook: "How server-side data loading works — fetch on the server, cache with MochiCache, and render at request time." },
+{ href: "/demos/cache-events/", title: "Cache Events", hook: "How cache events work — subscribe to MochiCache lifecycle events (hit, miss, set, evict) through mochiEvents for observability." },
+{ href: "/cookie-vary-test/", title: "Cookie Vary Test", hook: "How cookie-partitioned caching works — a page that sets Vary: Cookie so responses key on cookies." },
 ]}
 />

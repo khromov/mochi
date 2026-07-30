@@ -17,7 +17,7 @@ Import build-time constants from the `mochi-framework` virtual module to branch 
 import { isServer, isBrowser, isDev } from 'mochi-framework';
 ```
 
-`mochi-framework` resolves to one of two virtual modules at compile time. Server builds export `isServer = true`. Client bundles export `isBrowser = true`. The values are literal booleans, so an `if (isBrowser) { … }` block is dead-code-eliminated from the opposite bundle.
+`mochi-framework` resolves to one of two virtual modules at compile time. Server builds export `isServer = true`. Client bundles export `isBrowser = true`. The values are literal booleans, so an `if (isBrowser) { … }` block is dropped from the opposite bundle.
 
 ### `isServer`
 
@@ -70,22 +70,26 @@ For a unique per-instance id (for example, `<label for>`), use Svelte's native `
 
 ### Branching SSR-only behavior
 
-Use `isHydratable()` to peek request-scoped state only when the client will not take over rendering. For example, read the post-submit form snapshot so the SSR HTML reflects the last action result, but skip it when an `enhance` attachment will populate state client-side.
+Use `isHydratable()` to do work only when the client won't take over rendering. A component that renders both as a hydrated island and as a plain SSR-only child can prepare a server-rendered fallback in the SSR-only case and skip it when the island will hydrate:
 
 ```svelte
-<!-- file: src/lib/RandomRoll.svelte -->
+<!-- file: src/lib/LiveCount.svelte -->
 <script lang="ts">
-  import { isServer, getRequestContext, isHydratable } from 'mochi-framework';
+  import { isHydratable } from 'mochi-framework';
 
-  const initial = isHydratable() || !isServer ? null : peekForm();
+  let { count }: { count: number } = $props();
 
-  function peekForm() {
-    const f = getRequestContext().form;
-    return f && f.ok && typeof f.data.value === 'number' ? f.data.value : null;
-  }
+  // The hydrated island renders a live control; plain SSR gets a static snapshot.
+  const interactive = isHydratable();
 </script>
+
+{#if interactive}
+  <button>{count}</button>
+{:else}
+  <span>{count}</span>
+{/if}
 ```
 
 <SeeItInAction
-demos={[{ href: "/demos/url/", title: "Isomorphic URL", hook: "One import reads the request URL on the server and window.location on the client." }]}
+demos={[{ href: "/demos/url/", title: "Isomorphic URL", hook: "How the isomorphic URL helper works — one import that reads the request URL on the server and window.location on the client." }]}
 />

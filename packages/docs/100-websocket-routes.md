@@ -139,7 +139,7 @@ Every WebSocket emits `ws:open`, `ws:message`, and `ws:close` on `mochiEvents`. 
 
 <SeeItInAction
 demos={[
-{ href: "/demos/chat/", title: "Real-time Chat", hook: "A hydrated island over Mochi.ws() with pub/sub broadcast." },
-{ href: "/demos/streams/", title: "Real-time Streams", hook: "Live SSE and WebSocket clocks, lazily hydrated." },
+{ href: "/demos/chat/", title: "Real-time Chat", hook: "How WebSocket routes work — a hydrated island over Mochi.ws() with pub/sub broadcast and in-memory history." },
+{ href: "/demos/streams/", title: "Real-time Streams", hook: "How server-sent events and WebSocket streaming work — live SSE and WebSocket clocks, lazily hydrated via mochi:hydrate:visible." },
 ]}
 />

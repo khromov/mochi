@@ -107,29 +107,18 @@ Pass an options object with `onPending` instead of tracking a `pending` flag ins
 <!-- file: src/Login.svelte -->
 <script>
   import { enhance } from 'mochi-framework';
-  import type { MochiEnhanceOptions, MochiSubmitFunction } from 'mochi-framework';
+  import type { MochiEnhanceOptions } from 'mochi-framework';
 
-  let errorMessage = $state<string | null>(null);
   let pending = $state(false);
 
-  const handleLogin: MochiSubmitFunction<{ username: string }, { error: string }> = () => {
-    errorMessage = null;
-    return ({ result }) => {
-      if (result.type === 'failure') {
-        errorMessage = result.data?.error ?? 'Sign-in failed';
-      }
-    };
-  };
-
-  const opts: MochiEnhanceOptions<{ username: string }, { error: string }> = {
-    submit: handleLogin,
+  const opts: MochiEnhanceOptions = {
     onPending: (v) => {
       pending = v;
     },
   };
 </script>
 
-<form method="POST" {@attach enhance(opts)}>
+<form method="POST" action="?/login" {@attach enhance(opts)}>
   <!-- inputs -->
   <button type="submit" disabled={pending}>{pending ? 'Signing in…' : 'Log in'}</button>
 </form>
@@ -204,8 +193,8 @@ Use `enhance` when the action's outcome should update the UI without a navigatio
 
 <SeeItInAction
 demos={[
-{ href: "/demos/login/", title: "Form Actions", hook: "One form as a plain POST and as an enhance() submission." },
-{ href: "/demos/form-errors/", title: "Form Errors", hook: "A thrown action error shows inline via enhance() or on the error page." },
-{ href: "/demos/form-return-data/", title: "Form return data", hook: "success({...}) updates the UI in place; plain HTML re-renders." },
+{ href: "/demos/login/", title: "Form Actions", hook: "How form actions work — a form rendered twice, as a plain HTML POST and intercepted with {@attach enhance(...)}." },
+{ href: "/demos/form-errors/", title: "Form Errors", hook: "How form action errors work — a thrown action error shows inline via {@attach enhance(...)}, or as the Mochi error page on a plain submit." },
+{ href: "/demos/form-return-data/", title: "Using form return data", hook: "How form action return data works — an action returns success({...}); {@attach enhance(...)} updates the UI in place, plain HTML re-renders." },
 ]}
 />

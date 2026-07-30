@@ -11,7 +11,7 @@ description: 'Mochi renders each page as one complete document. Use SSE, WebSock
 
 ## HTTP streaming
 
-Mochi renders each page as one complete document. Svelte's `render` from `svelte/server` runs to completion, then the HTML ships as a single `text/html` response.
+Mochi renders each page as one complete document, then ships the HTML as a single `text/html` response.
 
 <Callout type="info">
 
@@ -33,5 +33,5 @@ Use these to layer real-time UI on top of a rendered base page.
 - **Shared HTTP cache** (Cloudflare, CloudFront, Fastly, Varnish, nginx) in front of the origin makes render time irrelevant for the cacheable case. A server island can stay uncached behind a cached shell — see [Cache](/docs/cache/).
 
 <SeeItInAction
-demos={[{ href: "/demos/streams/", title: "Real-time Streams", hook: "Live SSE and WebSocket clocks, lazily hydrated." }]}
+demos={[{ href: "/demos/streams/", title: "Real-time Streams", hook: "How server-sent events and WebSocket streaming work — live SSE and WebSocket clocks, lazily hydrated via mochi:hydrate:visible." }]}
 />
