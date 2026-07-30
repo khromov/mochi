@@ -8,13 +8,14 @@ user-invocable: true
 
 Build one demo folder that exercises the interesting parts of a library across one or more `mochi:hydrate` islands, then wire it into the four registration points. Most such libraries are browser-driven, so this is a hydration showcase: the page renders on the server with default values, then the library comes alive on the client.
 
-## Intro text — always three things
+## Intro text — always four things
 
 The demo's intro (a `<p>`/`<div>` at the top of the `DemoPage` **body**, not the `description` prop — that prop is escaped plain text and also feeds SEO meta) must state:
 
-1. **Setup.** If the library needs nothing special, say so plainly (e.g. "needs no special setup — it's a plain Svelte 5 runes library, so you install it and import from `<lib>`; in Mochi it bundles straight into whichever island imports it"). If it _does_ need config/a plugin/a provider, describe that instead — don't claim zero-setup unless it's true.
-2. **A basic install/usage code example.** At minimum an install line in a `<pre><code>bun add <lib></code></pre>` block; a tiny usage snippet is even better.
-3. **A link to the library's website**, `target="_blank" rel="noopener noreferrer"` (matches the site's outbound-link convention).
+1. **Setup — whether anything special is required.** If the library needs nothing special, say so plainly (e.g. "needs no special setup — it's a plain Svelte 5 runes library, so you install it and import from `<lib>`; in Mochi it bundles straight into whichever island imports it"). If it _does_ need config/a plugin/a provider, describe that instead — don't claim zero-setup unless it's true.
+2. **Basic install info** — an install line in a `<pre><code>bun add <lib></code></pre>` block.
+3. **A very basic code sample of using the library** — a minimal real snippet (an import plus the simplest call), not just the install command.
+4. **A link to the library's website**, `target="_blank" rel="noopener noreferrer"` (matches the site's outbound-link convention).
 
 ## Steps
 
