@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.1](https://github.com/khromov/mochi/compare/mochi-framework-v0.9.0...mochi-framework-v0.9.1) (2026-07-30)
+
+
+### Bug Fixes
+
+* **cache:** run one FileStorage sweeper per directory ([#227](https://github.com/khromov/mochi/issues/227)) ([45f2c7b](https://github.com/khromov/mochi/commit/45f2c7b6ab3153a41d2a5db14b33b0f97e6561b6))
+
 ## [0.9.0](https://github.com/khromov/mochi/compare/mochi-framework-v0.8.2...mochi-framework-v0.9.0) (2026-07-28)
 
 
