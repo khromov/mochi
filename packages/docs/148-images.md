@@ -224,24 +224,24 @@ await invalidateImage(src, { hard: true }); // mark expired: next request blocks
 
 Configure under `Mochi.serve({ image: { … } })`. Every option is optional.
 
-| Option                 | Default                 | Notes                                                                          |
-| ---------------------- | ----------------------- | ------------------------------------------------------------------------------ |
-| `sizes`                | `{}`                    | Named transform recipes                                                        |
-| `enabled`              | `true`                  | `false` unmounts the endpoint; URL helpers then return the raw source URL      |
-| `cacheDir`             | `./.mochi/image-cache`  | Must not be under `publicDir`; ignored when `storage` is set                   |
-| `storage`              | `FileStorage(cacheDir)` | Override the cache backend                                                      |
-| `defaultFormat`        | `webp`                  | Used when a size omits `format`                                                |
-| `defaultQuality`       | `80`                    | Used when a size omits `quality`                                               |
-| `outputFormats`        | all four                | Allowed output formats                                                         |
-| `allowedHosts`         | any public host         | Exact host or `*.example.com`                                                  |
-| `blockPrivateNetworks` | `true`                  | Reject private/loopback/link-local addresses                                   |
-| `fetchTimeoutMs`       | `10_000`                | Upstream fetch timeout                                                         |
-| `maxResponseBytes`     | `20 MB`                 | Hard source-size cap                                                           |
-| `maxPixels`            | `50_000_000`            | Decompression-bomb guard                                                       |
-| `timeToStale`          | `14_400_000`            | Cache time-to-stale (ms); variants follow it                                   |
-| `timeToEvict`          | `86_400_000`            | Cache time-to-evict (ms); variants follow it                                   |
-| `sweepIntervalMs`      | `3_600_000`             | Background cache-janitor interval; `0` disables                                |
-| `compressPayload`      | `true`                  | Deflate the encrypted URL payload                                              |
+| Option                 | Default                 | Notes                                                                     |
+| ---------------------- | ----------------------- | ------------------------------------------------------------------------- |
+| `sizes`                | `{}`                    | Named transform recipes                                                   |
+| `enabled`              | `true`                  | `false` unmounts the endpoint; URL helpers then return the raw source URL |
+| `cacheDir`             | `./.mochi/image-cache`  | Must not be under `publicDir`; ignored when `storage` is set              |
+| `storage`              | `FileStorage(cacheDir)` | Override the cache backend                                                |
+| `defaultFormat`        | `webp`                  | Used when a size omits `format`                                           |
+| `defaultQuality`       | `80`                    | Used when a size omits `quality`                                          |
+| `outputFormats`        | all four                | Allowed output formats                                                    |
+| `allowedHosts`         | any public host         | Exact host or `*.example.com`                                             |
+| `blockPrivateNetworks` | `true`                  | Reject private/loopback/link-local addresses                              |
+| `fetchTimeoutMs`       | `10_000`                | Upstream fetch timeout                                                    |
+| `maxResponseBytes`     | `20 MB`                 | Hard source-size cap                                                      |
+| `maxPixels`            | `50_000_000`            | Decompression-bomb guard                                                  |
+| `timeToStale`          | `14_400_000`            | Cache time-to-stale (ms); variants follow it                              |
+| `timeToEvict`          | `86_400_000`            | Cache time-to-evict (ms); variants follow it                              |
+| `sweepIntervalMs`      | `3_600_000`             | Background cache-janitor interval; `0` disables                           |
+| `compressPayload`      | `true`                  | Deflate the encrypted URL payload                                         |
 
 <Callout type="danger">
 

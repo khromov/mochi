@@ -50,10 +50,10 @@ await Mochi.serve({
 
 Mochi forces three `compilerOptions` at every compile call site:
 
-| Field      | Forced to                                                                                           |
-| ---------- | --------------------------------------------------------------------------------------------------- |
-| `generate` | `'server'` for SSR builds, `'client'` for hydration bundles.                                        |
-| `filename` | The actual file path being compiled.                                                                |
+| Field      | Forced to                                                                                            |
+| ---------- | ---------------------------------------------------------------------------------------------------- |
+| `generate` | `'server'` for SSR builds, `'client'` for hydration bundles.                                         |
+| `filename` | The actual file path being compiled.                                                                 |
 | `dev`      | The `Mochi.serve()` `development` flag — **client target only**. Server compiles do not force `dev`. |
 
 Every other field — `runes`, `css`, `accessors`, `cssHash`, `discloseVersion`, `experimental.*` — is yours to set.

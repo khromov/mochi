@@ -23,16 +23,16 @@ In production (`development: false`) the toolbar mount point, its entry script, 
 
 ### Buttons
 
-| Button           | Opens                                                                              |
-| ---------------- | ---------------------------------------------------------------------------------- |
-| Status dot       | Live-reload connection state — green pulse when connected, red when dropped.       |
-| `Request`        | Matched route pattern, pathname, params, response size, `Set-Cookie`s, headers.    |
-| `Info`           | Mochi / Svelte / Bun versions and a snapshot of the active `Mochi.serve()` config. |
-| `Islands`        | Per-island breakdown with mode tag, props size, and a locate-on-page button.       |
+| Button           | Opens                                                                               |
+| ---------------- | ----------------------------------------------------------------------------------- |
+| Status dot       | Live-reload connection state — green pulse when connected, red when dropped.        |
+| `Request`        | Matched route pattern, pathname, params, response size, `Set-Cookie`s, headers.     |
+| `Info`           | Mochi / Svelte / Bun versions and a snapshot of the active `Mochi.serve()` config.  |
+| `Islands`        | Per-island breakdown with mode tag, props size, and a locate-on-page button.        |
 | `Warnings`       | Anything pushed through `window.__mochi_warn(msg)`. Hidden when the queue is empty. |
 | `Bundle Stats ↗` | Opens the bundle stats page (`/_mochi/client/stats`) in a new tab.                  |
-| `Cache`          | Empty the on-disk [image cache](/docs/images/) in one click.                       |
-| `⚙`              | Configure which panel buttons appear in the bar.                                   |
+| `Cache`          | Empty the on-disk [image cache](/docs/images/) in one click.                        |
+| `⚙`              | Configure which panel buttons appear in the bar.                                    |
 
 ### Configuring panels
 

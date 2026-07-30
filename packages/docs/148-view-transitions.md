@@ -33,14 +33,14 @@ Render exactly **one** `<ViewTransitions />` per page. Two instances would emit 
 
 ### Props
 
-| Prop                   | Type                                               | Default  | Description                                                             |
-| ---------------------- | -------------------------------------------------- | -------- | ----------------------------------------------------------------------- |
-| `type`                 | `'fade' \| 'slide' \| 'scale' \| 'blur' \| 'flip'` | `'fade'` | The transition preset.                                                  |
-| `custom`               | `{ out?: string; in?: string }`                    | —        | Custom keyframe bodies. Overrides `type`.                               |
-| `duration`             | `number` (ms)                                      | `250`    | Animation duration.                                                     |
-| `easing`               | `string`                                           | `'ease'` | The animation timing function.                                          |
-| `regions`              | `string \| string[]`                               | —        | Confine the animation to elements with these `view-transition-name`s.   |
-| `keepElementSelectors` | `string \| string[]`                               | —        | CSS selectors for persistent chrome to hold still across navigations.   |
+| Prop                   | Type                                               | Default  | Description                                                           |
+| ---------------------- | -------------------------------------------------- | -------- | --------------------------------------------------------------------- |
+| `type`                 | `'fade' \| 'slide' \| 'scale' \| 'blur' \| 'flip'` | `'fade'` | The transition preset.                                                |
+| `custom`               | `{ out?: string; in?: string }`                    | —        | Custom keyframe bodies. Overrides `type`.                             |
+| `duration`             | `number` (ms)                                      | `250`    | Animation duration.                                                   |
+| `easing`               | `string`                                           | `'ease'` | The animation timing function.                                        |
+| `regions`              | `string \| string[]`                               | —        | Confine the animation to elements with these `view-transition-name`s. |
+| `keepElementSelectors` | `string \| string[]`                               | —        | CSS selectors for persistent chrome to hold still across navigations. |
 
 ```svelte
 <ViewTransitions type="slide" duration={400} easing="cubic-bezier(0.22, 1, 0.36, 1)" />

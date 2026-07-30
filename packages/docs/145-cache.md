@@ -104,7 +104,7 @@ A background sweep deletes expired files on an interval. `purgeOnInit` empties t
 | --------------- | ----------------- | -------------------------------------------------------------------------- |
 | `directory`     | _(required)_      | Where cache files are written; created if missing.                         |
 | `purgeOnInit`   | `false`           | Delete the directory's contents when the adapter is constructed.           |
-| `purgeInterval` | `60_000` (1min)   | Background sweep interval in ms. `<= 0` disables the sweeper.               |
+| `purgeInterval` | `60_000` (1min)   | Background sweep interval in ms. `<= 0` disables the sweeper.              |
 | `maxAge`        | `600_000` (10min) | Files older than this are deleted by the sweep.                            |
 | `offloadBinary` | `false`           | Offload binary fields to per-key blob files, read back as lazy `BlobRef`s. |
 

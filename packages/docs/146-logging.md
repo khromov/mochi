@@ -39,14 +39,14 @@ await Mochi.serve({
 
 `level` accepts `'silent' | 'error' | 'warn' | 'info' | 'log' | 'debug'`. A method runs when its severity is at or above the active level. So `'warn'` lets `error` and `warn` through and suppresses `info`, `log`, and `debug`.
 
-| Level      | What you see                                                                          | When to use                                     |
-| ---------- | ------------------------------------------------------------------------------------- | ----------------------------------------------- |
-| `'silent'` | Nothing — no boot line, no requests, no errors                                        | Tests; CLI scripts that want no noise           |
-| `'debug'`  | Everything `'log'` shows, plus per-asset request lines and fallbacks                  | Investigating asset fetches or unmatched routes |
-| `'log'`    | Adds chatty client-side hydration traces and other verbose detail                     | Debugging hydration / island lifecycle          |
-| `'info'`   | Boot line, page/api/file requests, file-change notifications, plus warnings/errors    | Default in development                          |
-| `'warn'`   | Slow requests, 5xx responses, queue lifecycle, deprecations, recoverable problems     | Default in production                           |
-| `'error'`  | Only handler failures and unhandled exceptions                                        | Production with a separate alerting pipeline    |
+| Level      | What you see                                                                       | When to use                                     |
+| ---------- | ---------------------------------------------------------------------------------- | ----------------------------------------------- |
+| `'silent'` | Nothing — no boot line, no requests, no errors                                     | Tests; CLI scripts that want no noise           |
+| `'debug'`  | Everything `'log'` shows, plus per-asset request lines and fallbacks               | Investigating asset fetches or unmatched routes |
+| `'log'`    | Adds chatty client-side hydration traces and other verbose detail                  | Debugging hydration / island lifecycle          |
+| `'info'`   | Boot line, page/api/file requests, file-change notifications, plus warnings/errors | Default in development                          |
+| `'warn'`   | Slow requests, 5xx responses, queue lifecycle, deprecations, recoverable problems  | Default in production                           |
+| `'error'`  | Only handler failures and unhandled exceptions                                     | Production with a separate alerting pipeline    |
 
 Which severity each event lands on is a framework default. Remap them per app with the [`consoleLogger:level` filter](/docs/extensions/).
 

@@ -74,12 +74,12 @@ The bundler strips the import from the JS bundle and serves the CSS at `/_mochi/
 
 ### `setupTailwind` options
 
-| Option   | Default              | Meaning                                                        |
-| -------- | -------------------- | -------------------------------------------------------------- |
-| `input`  | —                    | Path to the input CSS (`@import`s and `@source` rules).        |
-| `output` | —                    | Path where the generated CSS is written, stable for `import`.  |
-| `base`   | directory of `input` | Anchors `@source` patterns.                                    |
-| `minify` | `false`              | Minify the optimised output. Set from `process.env.MODE`.      |
+| Option   | Default              | Meaning                                                       |
+| -------- | -------------------- | ------------------------------------------------------------- |
+| `input`  | —                    | Path to the input CSS (`@import`s and `@source` rules).       |
+| `output` | —                    | Path where the generated CSS is written, stable for `import`. |
+| `base`   | directory of `input` | Anchors `@source` patterns.                                   |
+| `minify` | `false`              | Minify the optimised output. Set from `process.env.MODE`.     |
 
 <Callout type="info">
 

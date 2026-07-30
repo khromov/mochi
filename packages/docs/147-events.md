@@ -95,15 +95,15 @@ Each event ships a typed payload matching `MochiEventMap` in `events.ts`.
 
 Fires once per HTTP response, including CSRF rejects. Covers `Mochi.page` and `Mochi.api` routes.
 
-| Field       | Type                   | Notes                                                       |
-| ----------- | ---------------------- | ----------------------------------------------------------- |
-| `requestId` | `string`               | correlation id                                              |
-| `kind`      | `'page' \| 'api'`      | which route type handled it                                 |
-| `method`    | `string`               | HTTP method                                                 |
-| `path`      | `string`               | URL pathname                                                |
-| `status`    | `number`               | response status code                                        |
-| `duration`  | `number`               | wall-clock ms, end to end                                   |
-| `warmup`    | `boolean \| undefined` | `true` when issued by [route warmup](/docs/serve-options/)  |
+| Field       | Type                   | Notes                                                      |
+| ----------- | ---------------------- | ---------------------------------------------------------- |
+| `requestId` | `string`               | correlation id                                             |
+| `kind`      | `'page' \| 'api'`      | which route type handled it                                |
+| `method`    | `string`               | HTTP method                                                |
+| `path`      | `string`               | URL pathname                                               |
+| `status`    | `number`               | response status code                                       |
+| `duration`  | `number`               | wall-clock ms, end to end                                  |
+| `warmup`    | `boolean \| undefined` | `true` when issued by [route warmup](/docs/serve-options/) |
 
 #### WebSocket events
 
@@ -133,16 +133,16 @@ Fires once per HTTP response, including CSRF rejects. Covers `Mochi.page` and `M
 
 Fires when a page, API, or form action handler throws and the framework returns an error response.
 
-| Field        | Type                          | Notes                                   |
-| ------------ | ----------------------------- | --------------------------------------- |
-| `requestId`  | `string`                      | correlates with the matching `request`  |
-| `kind`       | `'page' \| 'api' \| 'action'` | which handler threw                     |
-| `path`       | `string`                      | URL pathname + search                   |
-| `method`     | `string`                      | HTTP method                             |
-| `status`     | `number`                      | final response status                   |
-| `message`    | `string`                      | error message                           |
-| `stack`      | `string \| undefined`         | stack trace, dev only                   |
-| `actionName` | `string \| undefined`         | present only when `kind=action`         |
+| Field        | Type                          | Notes                                  |
+| ------------ | ----------------------------- | -------------------------------------- |
+| `requestId`  | `string`                      | correlates with the matching `request` |
+| `kind`       | `'page' \| 'api' \| 'action'` | which handler threw                    |
+| `path`       | `string`                      | URL pathname + search                  |
+| `method`     | `string`                      | HTTP method                            |
+| `status`     | `number`                      | final response status                  |
+| `message`    | `string`                      | error message                          |
+| `stack`      | `string \| undefined`         | stack trace, dev only                  |
+| `actionName` | `string \| undefined`         | present only when `kind=action`        |
 
 ```ts
 mochiEvents.on('error', ({ kind, path, status, message, stack }) => {

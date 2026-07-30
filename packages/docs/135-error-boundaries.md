@@ -64,13 +64,13 @@ mochiEvents.on('island:error', ({ componentName, kind, message, stack }) => {
 });
 ```
 
-| Field           | Description                                                                               |
-| --------------- | ----------------------------------------------------------------------------------------- |
-| `componentName` | Island component name.                                                                    |
-| `islandId`      | Per-island id; set for `'server'` failures, else `undefined`.                             |
-| `kind`          | `'hydratable'` (SSR throw in a hydratable island) or `'server'` (server-island render).   |
-| `message`       | Error message, safe to forward.                                                           |
-| `stack`         | Stack trace, populated only when `development: true`.                                     |
+| Field           | Description                                                                             |
+| --------------- | --------------------------------------------------------------------------------------- |
+| `componentName` | Island component name.                                                                  |
+| `islandId`      | Per-island id; set for `'server'` failures, else `undefined`.                           |
+| `kind`          | `'hydratable'` (SSR throw in a hydratable island) or `'server'` (server-island render). |
+| `message`       | Error message, safe to forward.                                                         |
+| `stack`         | Stack trace, populated only when `development: true`.                                   |
 
 `MochiIslandErrorKind` also reserves `'client-hydrate'`, but client-side errors are not currently emitted to the event bus.
 

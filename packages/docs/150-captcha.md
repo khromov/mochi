@@ -88,18 +88,18 @@ The subtree route is the common one. The moment you attach [`enhance`](/docs/pro
 
 #### Props
 
-| Prop             | Default                     | Description                                                                          |
-| ---------------- | --------------------------- | ------------------------------------------------------------------------------------ |
-| `token`          | —                           | The sealed challenge from `mintCaptcha()`.                                            |
-| `bits`           | `19`                        | Difficulty the widget solves at. Comes from `mintCaptcha()`.                          |
-| `solveBudgetMs`  | `60_000`                    | Active solve time before the widget gives up. Comes from `mintCaptcha()`.             |
-| `emoji`          | `🧩`                        | The character on the handle.                                                          |
-| `label`          | `'Slide to verify'`         | The hint shown in the track, also the handle's accessible name.                       |
-| `verifyingLabel` | `'Verifying…'`              | Replaces the hint while the proof-of-work runs.                                        |
-| `verifiedLabel`  | `'Verified — thanks!'`      | Replaces the hint once the proof-of-work lands.                                        |
-| `errorLabel`     | see below                   | Shown if the widget cannot complete the challenge.                                     |
-| `noscriptLabel`  | see above                   | The `<noscript>` message.                                                              |
-| `verified`       | `false`                     | `$bindable` — true once solved.                                                        |
+| Prop             | Default                | Description                                                               |
+| ---------------- | ---------------------- | ------------------------------------------------------------------------- |
+| `token`          | —                      | The sealed challenge from `mintCaptcha()`.                                |
+| `bits`           | `19`                   | Difficulty the widget solves at. Comes from `mintCaptcha()`.              |
+| `solveBudgetMs`  | `60_000`               | Active solve time before the widget gives up. Comes from `mintCaptcha()`. |
+| `emoji`          | `🧩`                   | The character on the handle.                                              |
+| `label`          | `'Slide to verify'`    | The hint shown in the track, also the handle's accessible name.           |
+| `verifyingLabel` | `'Verifying…'`         | Replaces the hint while the proof-of-work runs.                           |
+| `verifiedLabel`  | `'Verified — thanks!'` | Replaces the hint once the proof-of-work lands.                           |
+| `errorLabel`     | see below              | Shown if the widget cannot complete the challenge.                        |
+| `noscriptLabel`  | see above              | The `<noscript>` message.                                                 |
+| `verified`       | `false`                | `$bindable` — true once solved.                                           |
 
 ```svelte
 <MochiCaptcha {...captcha} emoji="🍡" label="Slide the mochi to the right" />
@@ -154,13 +154,13 @@ await Mochi.serve({
 });
 ```
 
-| Option      | Default                        | Description                                                                  |
-| ----------- | ------------------------------ | ---------------------------------------------------------------------------- |
-| `bits`      | `19`                           | Proof-of-work difficulty in leading zero bits. Each extra bit doubles work.  |
-| `minAgeMs`  | `2000`                         | Reject tokens younger than this — the timing floor.                          |
-| `maxAgeMs`  | `900_000`                      | Reject tokens older than this (15 minutes).                                  |
-| `store`     | `'memory'`                     | One-time nonce store: `'memory'`, `'sqlite'`, or your own `NonceStore`.      |
-| `storePath` | `.mochi/captcha-nonces.sqlite` | SQLite file when `store: 'sqlite'`.                                          |
+| Option      | Default                        | Description                                                                 |
+| ----------- | ------------------------------ | --------------------------------------------------------------------------- |
+| `bits`      | `19`                           | Proof-of-work difficulty in leading zero bits. Each extra bit doubles work. |
+| `minAgeMs`  | `2000`                         | Reject tokens younger than this — the timing floor.                         |
+| `maxAgeMs`  | `900_000`                      | Reject tokens older than this (15 minutes).                                 |
+| `store`     | `'memory'`                     | One-time nonce store: `'memory'`, `'sqlite'`, or your own `NonceStore`.     |
+| `storePath` | `.mochi/captcha-nonces.sqlite` | SQLite file when `store: 'sqlite'`.                                         |
 
 Every token failure returns the same message, so a probing bot cannot tell "too fast" from "tampered".
 
@@ -241,12 +241,12 @@ const res = await fetch(`${base}/contact/?/send`, {
 
 ### API
 
-| Export                              | Returns                          | Description                                                              |
-| ----------------------------------- | -------------------------------- | ------------------------------------------------------------------------ |
-| `mintCaptcha(options?)`             | `{ token, bits, solveBudgetMs }` | Mint a single-use challenge.                                             |
-| `verifyCaptcha(formData, options?)` | `Promise<CaptchaResult>`         | Verify and (unless `consume: false`) burn the nonce.                    |
-| `consumeCaptcha(result)`            | `Promise<boolean>`               | Burn a deferred nonce; `false` if already spent.                        |
-| `solveCaptcha(minted)`              | `{ captcha_token, captcha_pow }` | Solve server-side, for tests.                                           |
+| Export                              | Returns                          | Description                                          |
+| ----------------------------------- | -------------------------------- | ---------------------------------------------------- |
+| `mintCaptcha(options?)`             | `{ token, bits, solveBudgetMs }` | Mint a single-use challenge.                         |
+| `verifyCaptcha(formData, options?)` | `Promise<CaptchaResult>`         | Verify and (unless `consume: false`) burn the nonce. |
+| `consumeCaptcha(result)`            | `Promise<boolean>`               | Burn a deferred nonce; `false` if already spent.     |
+| `solveCaptcha(minted)`              | `{ captcha_token, captcha_pow }` | Solve server-side, for tests.                        |
 
 `CaptchaResult` is `{ ok: true; nonce: string; expiresAt: number }` or `{ ok: false; reason: 'replay' | 'rejected'; error: string }`.
 
