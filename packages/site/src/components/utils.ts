@@ -50,9 +50,8 @@ export function isDemoIndex(path: string): boolean {
   return path.endsWith('demoIndex.ts');
 }
 
-// The shared demoIndex example carries the site's full named-image-sizes config, which is
-// noise in every demo except the image ones. Drop the `image: {…}` block (and its leading
-// comment) so non-image demos show a clean minimal Mochi.serve() call.
+// Drop the `image: {…}` block (and its leading comment) — it's noise in every demo
+// except the image ones, which opt back in via `showImageConfig`.
 export function stripImageConfig(code: string): string {
   const lines = code.split('\n');
   const out: string[] = [];

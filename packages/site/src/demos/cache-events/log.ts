@@ -6,10 +6,8 @@ export const slowClock = new MochiCache({
   maxTimeToLive: 10_000,
 });
 
-// Custom integration: every cache event is printed via mochi-framework's `logger`
-// with an in-message tag so it's easy to grep alongside the framework's own
-// lines. setHandler (rather than .on) means dev re-imports don't pile up
-// duplicate subscribers.
+// Tags each line so it's easy to grep alongside the framework's own logger output.
+// setHandler (rather than .on) means dev re-imports don't pile up duplicate subscribers.
 mochiEvents.setHandler('demo:cache-events:read', 'cache:read', ({ key, status }) => {
   logger.info(`[demo:cache-events] read       ${key} → ${status}`);
 });

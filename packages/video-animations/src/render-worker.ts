@@ -1,6 +1,4 @@
-// Worker: renders a stride-partitioned slice of frames to PNG.
-// Worker `id` of `workers` renders frames id, id+workers, id+2*workers, … so the
-// heavier scenes (e.g. the island grid) spread evenly across threads.
+// Stride partitioning (id, id+workers, id+2*workers, …) spreads heavier scenes evenly across threads.
 import { loadFonts, renderFramePng } from './render';
 import { FPS } from './theme';
 

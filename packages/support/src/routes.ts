@@ -10,17 +10,12 @@ export const routes: Record<string, MochiRouteValue> = {
     serverProps: () => ({ captcha: mintCaptcha() }),
     actions: {
       send: async ({ formData }) => {
-        // The token is minted at SSR; the client must re-derive the slide-step
-        // hash chain and solve a SHA-256 proof-of-work over its final link, so
-        // a passing POST proves the page was fetched, the captcha logic ran,
-        // and real hashing work was spent. Burning the nonce is deferred to
-        // consumeCaptcha() below so field validation can still reject first.
+        // The client re-derives the hash chain and solves a SHA-256 proof-of-work so a passing POST proves real work was spent; nonce burn is deferred to `consumeCaptcha()` below so validation can still reject first.
         const captcha = await verifyCaptcha(formData, { consume: false });
         if (!captcha.ok) {
           return fail(400, { error: captcha.error });
         }
-        // Collapse whitespace so visitor input can't smuggle CR/LF into the
-        // subject or Reply-To headers.
+        // Collapse whitespace so visitor input can't smuggle CR/LF into the subject or Reply-To headers.
         const name = String(formData.get('name') ?? '')
           .replace(/\s+/g, ' ')
           .trim()
@@ -35,17 +30,11 @@ export const routes: Record<string, MochiRouteValue> = {
         if (!message) {
           return fail(400, { error: 'Tell us what you need help with.' });
         }
-        // Consume the one-time nonce only after field validation (a fixable
-        // email typo shouldn't burn it) but before storing (a retried submit
-        // must not duplicate the row).
+        // Consume the one-time nonce after validation (a fixable typo shouldn't burn it) but before storing (a retried submit must not duplicate the row).
         if (!(await consumeCaptcha(captcha))) {
           return fail(400, { error: 'This form was already submitted. Reload the page to send another message.' });
         }
-        // Store first, deliver later: once the row is committed the message
-        // can't be lost to an SMTP outage, so the visitor is told it landed
-        // and delivery failures surface in /admin/ instead of on the form.
-        // Committing the row is therefore the only step that can fail the
-        // submission.
+        // Store first, deliver later: once committed the message can't be lost to an SMTP outage, so the visitor is told it landed and failures surface in /admin/ instead.
         let id: number;
         try {
           id = insertSubmission({ name, email, message });
@@ -53,14 +42,12 @@ export const routes: Record<string, MochiRouteValue> = {
           logger.error('support: could not store submission', err);
           return fail(500, { error: 'We could not receive your message right now. Please email support@mochi.fast directly.' });
         }
-        // Logged before enqueuing so the entry can't be ordered after the
-        // worker's own `sending` line.
+        // Logged before enqueuing so the entry can't be ordered after the worker's own `sending` line.
         appendEmailLog(id, { attempt: 0, event: 'queued', detail: `Queued for delivery to ${SUPPORT_TO}` });
         try {
           await Mochi.getQueue<SupportEmailJob>(SUPPORT_EMAIL_QUEUE).add('send', { id });
         } catch (err) {
-          // The row is committed and still `pending`, so recover() picks it up
-          // on the next boot. Telling the visitor it failed would be wrong.
+          // The row stays `pending`, so recover() picks it up on the next boot — telling the visitor it failed would be wrong.
           logger.error('support: could not enqueue delivery', err);
         }
         return success();
@@ -68,23 +55,15 @@ export const routes: Record<string, MochiRouteValue> = {
     },
   }),
   '/admin': Mochi.page('./src/admin/Admin.svelte', {
-    // The limiter runs before the adminAuth middleware, so it can't see the auth
-    // result — re-check the credentials here and skip (spending no quota) unless
-    // this is a wrong guess. Only guesses count, which is the brute-force we want
-    // to stop, and knowing the password always gets you in even mid-ban.
+    // The limiter runs before adminAuth so it can't see the auth result — re-check credentials here and skip quota unless this is a genuine wrong guess.
     rateLimit: {
       limit: 10,
       window: '15m',
       ban: { threshold: 3, duration: '1h' },
-      // Wrong credentials also pay a fixed delay here — the limiter's skip runs
-      // ahead of everything else on this route, so it's the one place that
-      // slows the 401 (and the 429 once the quota is gone) without touching a
-      // successful admin request.
+      // The limiter's skip runs ahead of everything else on this route, so it's the one place that can slow a wrong guess without touching a successful admin request.
       skip: async (req) => {
         const header = req.headers.get('Authorization');
-        // A request with no credentials is just a browser fetching the 401
-        // challenge on its way to the login prompt — it guesses nothing, so it
-        // neither waits nor spends quota. Only an actual wrong guess does both.
+        // A request with no credentials is just the browser fetching the 401 challenge, not a guess — only an actual wrong guess waits or spends quota.
         if (!header || credentialsMatch(header)) {
           return true;
         }
@@ -98,8 +77,7 @@ export const routes: Record<string, MochiRouteValue> = {
         inbox: listSubmissions(false),
         handled: listSubmissions(true),
         logs: emailLogsBySubmission(),
-        // Shown in the footer so the proxy's client-IP resolution — what the
-        // rate limiter keys on — can be verified in production.
+        // Shown in the footer so the proxy's client-IP resolution — what the rate limiter keys on — can be verified in production.
         client: { address: ctx.getClientAddress(), forwardedFor: ctx.request.headers.get('x-forwarded-for') },
       };
     },

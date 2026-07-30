@@ -45,11 +45,10 @@ export async function generateDocsBarrel(): Promise<void> {
   try {
     await Bun.write(OUT_PATH, content);
   } catch (err) {
-    // The barrel is a generated dev convenience. On a read-only or
-    // foreign-owned filesystem (e.g. a deployed container where it was baked at
-    // build time as root) the write fails — but if a usable file is already
-    // present, that's recoverable: warn and keep running instead of taking the
-    // server down. Only a genuinely missing barrel is fatal.
+    // The barrel is a generated dev convenience; if the write fails (e.g. a read-only or
+    // foreign-owned filesystem in a deployed container) but a usable file already exists,
+    // warn and keep running instead of taking the server down — only a genuinely missing
+    // barrel is fatal.
     if (existing === null) {
       throw err;
     }

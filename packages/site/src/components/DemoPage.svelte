@@ -12,17 +12,15 @@
 
   const docsNav = await buildDocsNav();
 
-  // Internal demos expose their source next to the demo page at `${href}llms.txt`,
-  // matching the /llms.json index derivation.
+  // Internal demos expose their source next to the demo page at `${href}llms.txt`.
   const current = demos.find((d) => d.title === title);
   const demoHref = current?.href.startsWith('/') ? current.href : undefined;
 
-  // Match by URL, not title — a demo page's heading can differ from its registry
-  // title (e.g. queue), and some demos route to sub-paths (e.g. data-loading →
-  // /pikachu). Prefix-match the trailing-slashed href so sub-routes still resolve.
+  // Match by URL, not title — a demo's heading can differ from its registry title,
+  // and some demos route to sub-paths, so prefix-match the trailing-slashed href.
   const sourceDemo = demos.find((d) => d.href.startsWith('/') && url.pathname.startsWith(d.href));
   const sourcePaths = sourceDemo?.sourcePaths ?? (sourceDemo?.slug ? [`packages/site/src/demos/${sourceDemo.slug}`] : []);
-  // One folder needs no disambiguation; several do, so name each by its path under the site's src/.
+  // Several source folders need disambiguation by path; one alone doesn't.
   const sourceLinks = sourcePaths.map((path) => ({
     path,
     label: sourcePaths.length > 1 ? `View ${path.replace('packages/site/src/', '')}/ on GitHub` : undefined,

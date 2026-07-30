@@ -69,7 +69,6 @@ const BASE_TSCONFIG_COMPILER_OPTIONS = {
 } as const;
 
 export interface PackageJsonTransform {
-  /** Replace the `name` field. */
   name: string;
   /** Version range to swap in for any `workspace:*` dep on `mochi-framework`. */
   mochiVersion: string;
@@ -91,16 +90,10 @@ export function transformPackageJson(contents: string, opts: PackageJsonTransfor
     }
   }
 
-  // The svelte-check patch can't live in the committed template `package.json`:
-  // inside the monorepo, bun resolves every workspace's `patchedDependencies`
-  // path against the repo root, which breaks for a workspace-relative path.
-  // Templates ship the patch *file* under `patches/`; we wire it up here so the
-  // scaffolded standalone project picks it up on first `bun install`.
-  //
-  // We reference every shipped svelte-check patch version so the generated
-  // project survives drift between a published CLI and the live-served template
-  // (they bump independently). Bun applies only the entry whose version actually
-  // resolves and ignores the rest, as long as their patch files exist.
+  // Can't live in the committed template `package.json` because bun resolves a workspace's
+  // `patchedDependencies` path against the monorepo root, so we wire it up here instead.
+  // Every shipped version is listed since the CLI and the live-served template bump independently;
+  // bun applies only the entry whose version resolves and ignores the rest.
   pkg.patchedDependencies = {
     'svelte-check@4.4.7': 'patches/svelte-check@4.4.7.patch',
     'svelte-check@4.6.0': 'patches/svelte-check@4.6.0.patch',

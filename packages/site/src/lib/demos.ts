@@ -61,11 +61,7 @@ export interface Demo {
   slug?: string;
   /** Source files rendered on the demo page and bundled into its llms.txt. Keyed alongside `slug`. */
   files?: SourceSpec[];
-  /**
-   * Repo paths for the "view source" links, overriding the `packages/site/src/demos/<slug>` default. Needed when a
-   * framework convention forces part of a demo out of its own folder — email templates have to live in `src/emails/`
-   * to be prebuilt — which would otherwise leave the GitHub link pointing where those files aren't.
-   */
+  /** Repo paths for the "view source" links, overriding the `packages/site/src/demos/<slug>` default — needed when a framework convention (e.g. prebuilt email templates living in `src/emails/`) forces part of a demo out of its own folder. */
   sourcePaths?: string[];
 }
 
