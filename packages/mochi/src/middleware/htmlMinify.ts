@@ -58,7 +58,9 @@ export function minifyHtml(html: string, cfg: MinifyConfig): string {
           return;
         }
         if (cfg.collapseWhitespace) {
-          chunk.replace(chunk.text.replace(/\s+/g, ' '));
+          // `{ html: true }`: `chunk.text` is already-escaped source, so re-inserting as text would double-escape
+          // entities (`&amp;` → `&amp;amp;`). `\u00a0` is excluded so literal non-breaking spaces survive collapse.
+          chunk.replace(chunk.text.replace(/[^\S\u00a0]+/g, ' '), { html: true });
         }
       },
       comments(comment) {

@@ -170,7 +170,9 @@ Options (all default on except `dev`):
 sequence(htmlMinify({ removeComments: false }), compress());
 ```
 
-Like `compress()`, `htmlMinify()` is a no-op in development so the debug bar and view-source stay readable. Whitespace collapse is conservative (never fully trims), preserving significant spacing between inline elements. Because the framework already gzip/brotli-compresses responses, minification's on-the-wire savings are modest — its main effect is a smaller uncompressed payload.
+Like `compress()`, `htmlMinify()` is a no-op in development so the debug bar and view-source stay readable. Whitespace collapse is conservative (never fully trims), preserving significant spacing between inline elements, HTML entities, and literal non-breaking spaces. Because the framework already gzip/brotli-compresses responses, minification's on-the-wire savings are modest — its main effect is a smaller uncompressed payload.
+
+Whitespace collapse is tag-based (`<pre>`/`<textarea>` are preserved), so it can't honor CSS `white-space: pre`/`pre-wrap`/`break-spaces` applied to other elements — if you rely on that, wrap the content in a preserved tag or leave `collapseWhitespace` off for those pages.
 
 ### `noCache`
 

@@ -59,4 +59,19 @@ describe('minifyHtml()', () => {
     const out = minifyHtml(html, { collapseWhitespace: false, removeComments: true });
     expect(out).toBe(html);
   });
+
+  test('does not double-escape entities in collapsible text', () => {
+    expect(minifyHtml('<p>Tom &amp; Jerry &mdash; hi</p>', ALL)).toBe('<p>Tom &amp; Jerry &mdash; hi</p>');
+    expect(minifyHtml('<p>price &lt; 5 &gt; 2</p>', ALL)).toBe('<p>price &lt; 5 &gt; 2</p>');
+    expect(minifyHtml('<p>&copy; 2026</p>', ALL)).toBe('<p>&copy; 2026</p>');
+  });
+
+  test('collapses whitespace around entities without corrupting them', () => {
+    expect(minifyHtml('<p>a &amp;   b</p>', ALL)).toBe('<p>a &amp; b</p>');
+  });
+
+  test('preserves literal non-breaking spaces (U+00A0) in text', () => {
+    const html = '<p>a\u00a0\u00a0b</p>';
+    expect(minifyHtml(html, ALL)).toBe(html);
+  });
 });
