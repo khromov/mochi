@@ -11,7 +11,7 @@ description: 'An isomorphic, level-gated logger that works in server, SSR, and c
 
 ## Logging
 
-Mochi exposes a single isomorphic `logger` with five standard methods. The same import works on the server, in SSR, in hydrated Svelte components, and in vanilla web components — and it's gated by a configurable level set on `Mochi.serve()`.
+Mochi exposes one isomorphic `logger` with five methods. The same import works on the server, in SSR, in hydrated Svelte components, and in vanilla web components. A configurable level set on `Mochi.serve()` gates it.
 
 ```ts
 import { logger } from 'mochi-framework';
@@ -23,7 +23,7 @@ logger.log('verbose detail');
 logger.debug('asset request');
 ```
 
-Methods map to `console.error` / `console.warn` / `console.info` / `console.log` / `console.debug`. Each line is prefixed with a coloured `[mochi]`. Calls below the configured level are no-ops with negligible overhead.
+Methods map to `console.error` / `console.warn` / `console.info` / `console.log` / `console.debug`. Each line is prefixed with a coloured `[mochi]`. A call below the configured level is a no-op with negligible overhead.
 
 ### Log level
 
@@ -37,27 +37,22 @@ await Mochi.serve({
 });
 ```
 
-`level` accepts `'silent' | 'error' | 'warn' | 'info' | 'log' | 'debug'`. A method runs when its severity is at or above the active level, so `'warn'` lets `error` and `warn` through while suppressing `info`, `log`, and `debug`.
+`level` accepts `'silent' | 'error' | 'warn' | 'info' | 'log' | 'debug'`. A method runs when its severity is at or above the active level. So `'warn'` lets `error` and `warn` through and suppresses `info`, `log`, and `debug`.
 
-| Level      | What you see                                                                                   | When to reach for it                            |
-| ---------- | ---------------------------------------------------------------------------------------------- | ----------------------------------------------- |
-| `'silent'` | Nothing — no boot line, no requests, no errors                                                 | Tests; CLI scripts that don't want any noise    |
-| `'debug'`  | Everything `'log'` shows plus per-asset request lines (CSS, JS, images) and fallbacks          | Investigating asset fetches or unmatched routes |
-| `'log'`    | Adds chatty client-side hydration traces and other verbose detail                              | Debugging hydration / island lifecycle issues   |
-| `'info'`   | Boot line, page/api/file requests, file-change notifications, plus warnings and errors         | Default in development                          |
-| `'warn'`   | Slow requests, 5xx responses, queue lifecycle, deprecations, recoverable problems, plus errors | Default in production                           |
-| `'error'`  | Only handler failures — `logger.error` calls and unhandled exceptions                          | Production with a separate alerting pipeline    |
+| Level      | What you see                                                                          | When to use                                     |
+| ---------- | ------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| `'silent'` | Nothing — no boot line, no requests, no errors                                        | Tests; CLI scripts that want no noise           |
+| `'debug'`  | Everything `'log'` shows, plus per-asset request lines and fallbacks                  | Investigating asset fetches or unmatched routes |
+| `'log'`    | Adds chatty client-side hydration traces and other verbose detail                     | Debugging hydration / island lifecycle          |
+| `'info'`   | Boot line, page/api/file requests, file-change notifications, plus warnings/errors    | Default in development                          |
+| `'warn'`   | Slow requests, 5xx responses, queue lifecycle, deprecations, recoverable problems     | Default in production                           |
+| `'error'`  | Only handler failures and unhandled exceptions                                        | Production with a separate alerting pipeline    |
 
-Which severity each event lands on is a framework default — request lines are `info`, asset and image lines are `debug`, and so on. Remap them per app with the [`consoleLogger:level` filter](/docs/extensions/): promote the events you care about, demote the ones you don't, without moving the global level.
+Which severity each event lands on is a framework default. Remap them per app with the [`consoleLogger:level` filter](/docs/extensions/).
 
-If `level` is omitted, the default is picked from the `development` flag you pass to `Mochi.serve()`:
+If `level` is omitted, Mochi picks the default from the `development` flag: `'info'` when `development: true`, `'warn'` otherwise.
 
-| `Mochi.serve({ development })` | Default level |
-| ------------------------------ | ------------- |
-| `true`                         | `'info'`      |
-| `false` (or omitted)           | `'warn'`      |
-
-A common pattern is to drive `development` from an env var so the same `index.ts` handles both:
+A common pattern drives `development` from an env var so one `index.ts` handles both:
 
 ```ts
 await Mochi.serve({
@@ -66,21 +61,13 @@ await Mochi.serve({
 });
 ```
 
-The level applies on both sides: the server captures it once at startup, and the same value is shipped to the browser via a tiny inline script so client-side `logger` calls (e.g. inside hydrated islands) honour it too. Reload the page after changing the config to pick up a new level on the client.
+The level applies on both sides. The server captures it once at startup and ships the same value to the browser through a tiny inline script, so client-side `logger` calls honour it too. Reload the page after changing the config to pick up a new level on the client.
 
 <Callout type="warning">
 
-`level: 'silent'` really means silent — including the `BOOT` and `STOP` lines printed by the built-in formatter. If you want lifecycle events delivered to your own subscribers but no console output, set `logger: { enabled: false }` instead. That keeps the event bus alive while disabling the formatter.
+`level: 'silent'` really means silent, including the `BOOT` and `STOP` lines. To deliver lifecycle events to your own subscribers with no console output, set `logger: { enabled: false }` instead. That keeps the event bus alive and disables the formatter.
 
 </Callout>
-
-### Method semantics
-
-- `logger.error` (red) — failures the operator should see.
-- `logger.warn` (yellow) — slow requests, 5xx responses, queue lifecycle (`added`/`completed`/`failed`), deprecations, recoverable problems.
-- `logger.info` (green) — boot, page/api request lines, file-change notifications.
-- `logger.log` (dim) — verbose / trace output, e.g. hydration lifecycle. Off unless `level: 'log'` or `'debug'`.
-- `logger.debug` (dim) — high-volume, low-signal lines like asset requests and fallback routes. Off unless `level: 'debug'`.
 
 ### Setting the level at runtime
 
@@ -91,18 +78,18 @@ setLogLevel('error');
 getLogLevel(); // 'error'
 ```
 
-`setLogLevel` is exported for niche cases — toggling verbosity from a feature flag, lifting silence inside a debugging route. The serve-time config is the right place for normal use.
+`setLogLevel` is for niche cases such as toggling verbosity from a feature flag. The serve-time config is the right place for normal use.
 
 <Callout type="warning">
 
-`setLogLevel` only updates the bundle it's called from. The server, the main client bundle, and each island bundle each carry their own copy of the level — they're seeded consistently at startup, so this rarely matters. But a runtime call from inside one island won't change gating in other islands or on the server. For a global change, update `Mochi.serve({ logger: { level } })` and reload.
+`setLogLevel` updates only the bundle it is called from. The server, the main client bundle, and each island bundle carry their own copy of the level. They are seeded consistently at startup. For a global change, update `Mochi.serve({ logger: { level } })` and reload.
 
 </Callout>
 
 ### Relationship to `mochiEvents`
 
-The event bus (`mochiEvents`) is a separate concern: it carries structured payloads to any subscriber you wire up, regardless of console output. The built-in `consoleLogger()` — the thing that prints request lines like `GET /foo 200 12ms` — is just one consumer subscribing to those events and calling `logger.info` / `logger.warn` per event. Plug Sentry, OpenTelemetry, or your own pipeline directly into `mochiEvents`; use `logger` for ad-hoc messages.
+The event bus (`mochiEvents`) carries structured payloads to any subscriber you wire up, regardless of console output. The built-in `consoleLogger()` — the thing that prints request lines like `GET /foo 200 12ms` — is one consumer that subscribes to those events and calls `logger.info` / `logger.warn` per event. Plug Sentry, OpenTelemetry, or your own pipeline directly into `mochiEvents`. Use `logger` for ad-hoc messages.
 
 <SeeItInAction
-demos={[{ href: "/demos/cache-events/", title: "Cache Events", hook: "How cache events work — subscribe to MochiCache lifecycle events (hit, miss, set, evict) through mochiEvents for observability." }]}
+demos={[{ href: "/demos/cache-events/", title: "Cache Events", hook: "Subscribe to MochiCache lifecycle events through mochiEvents." }]}
 />

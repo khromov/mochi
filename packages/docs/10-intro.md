@@ -1,7 +1,7 @@
 ---
 title: 'Welcome'
 slug: intro
-description: 'A lightweight, server-first Svelte 5 framework running on Bun that ships client-side JavaScript only for interactive islands.'
+description: 'A server-first Svelte 5 framework on Bun. It renders plain HTML and ships client JavaScript only for interactive islands.'
 ---
 
 <script>
@@ -13,36 +13,38 @@ description: 'A lightweight, server-first Svelte 5 framework running on Bun that
 
 # mochi
 
-Mochi is a lightweight, server-first framework for [Svelte 5](https://svelte.dev/) on [Bun](https://bun.sh/) — it renders everything as plain HTML and ships JavaScript only for the components you mark as islands.
+Mochi is a server-first framework for [Svelte 5](https://svelte.dev/) on [Bun](https://bun.sh/). It renders each page as plain HTML. It ships JavaScript only for the components you mark as islands.
 
 ## Server-rendered, with island interactivity
 
-The websites we visit on the web are mostly static — text, images and links. Only a handful of elements on any given page actually need to be interactive: a search box, a logged-in badge, a comments widget. Mochi reflects this at the core of its design. Mochi sites renders server-side as plain HTML; the interactive pieces are marked with a `mochi:*` directive — each one an _island_ — and ship JS embedded in that HTML.
+Most web pages are mostly static: text, images, and links. Only a few elements need to be interactive, such as a search box, a logged-in badge, or a comments widget. Mochi builds on this fact.
 
-Go ahead, try hydrating the page below and see which components will load JavaScript.
+Mochi renders each page on the server as plain HTML. You mark each interactive piece with a `mochi:*` directive. Each marked piece is an _island_. An island ships its JavaScript inside the page HTML.
+
+Hydrate the page below to see which components load JavaScript.
 
 <IslandsDemo mochi:hydrate />
 
-The header text, the main column, and the footer ship as HTML and stay that way. The badge and the sidebar nav are wrapped as islands — same SSR HTML on first paint, with JS attached on top. Everything else is zero-JS forever.
+The header, the main column, and the footer ship as HTML and stay HTML. The badge and the sidebar are islands. They render the same HTML on first paint, then attach JavaScript on top. Everything else ships zero JavaScript.
 
-## Why would I consider Mochi over SvelteKit?
+## Why choose Mochi?
 
-- **Faster sites.** Mochi ships zero client JavaScript by default. SvelteKit code-splits per route but still hydrates the entire page — even purely static content. Mochi only hydrates the components you explicitly mark as islands, which means less JS on first load, better bfcache behavior, and a natural fit for any site.
-- **Performant hydration.** Avoid hydrating islands until the users scrolls into them with `mochi:hydrate:visible`. Or avoid hydrating at all if the user never scrolls down to that component. Your users will thank you for the faster experience.
-- **Uses the platform.** Mochi ships with first-class support for View Transitions. No client side router, no state to keep track of between requests.
-- **No heavy bundler (no Vite).** Uses the lighting-fast Bun bundler, which builds sites with hundreds of routes in seconds.
-- **Real-time built in.** WebSockets and Server Sent Events are first-class route types — no extra packages or services required.
+- **Faster sites.** Mochi ships zero client JavaScript by default. It hydrates only the components you mark as islands. Less JavaScript on first load means faster pages and better bfcache behavior.
+- **Fast hydration.** Use `mochi:hydrate:visible` to hydrate an island only when the user scrolls to it. An island the user never reaches never hydrates.
+- **Built on the platform.** Mochi supports View Transitions out of the box. Every navigation is a full page load, so there is no client state to track between requests.
+- **Fast builds.** Mochi uses the Bun bundler. It builds sites with hundreds of routes in seconds.
+- **Real-time built in.** WebSockets and Server-Sent Events are first-class route types. You need no extra packages or services.
 
-Want to know more? <ExpandComparison mochi:hydrate /> to see a full feature comparison.
+Want the full picture? <ExpandComparison mochi:hydrate /> for a complete feature comparison.
 
 <ComparisonTable mochi:hydrate collapsed />
 
 <Callout type="info">
 
-**Mochi is in early development.** Only use in production if you are brave.
+**Mochi is in early development.** Use it in production only if you are brave.
 
 </Callout>
 
 ## Community
 
-Questions, bug reports, ideas, or just want to see what others are building? Join the [Mochi Discord](/discord/).
+Questions, bug reports, or ideas? Join the [Mochi Discord](/discord/).

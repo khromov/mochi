@@ -1,7 +1,7 @@
 ---
 title: 'Environment constants'
 slug: environment-constants
-description: 'Build-time constants for branching on render target (isServer, isBrowser) and development mode (isDev).'
+description: 'Build-time constants for branching on render target (isServer, isBrowser) and dev mode (isDev).'
 ---
 
 <script>
@@ -17,7 +17,7 @@ Import build-time constants from the `mochi-framework` virtual module to branch 
 import { isServer, isBrowser, isDev } from 'mochi-framework';
 ```
 
-`mochi-framework` resolves to one of two virtual modules at compile time — server builds export `isServer = true`, client bundles export `isBrowser = true`. The values are literal booleans, so `if (isBrowser) { … }` blocks dead-code-eliminate out of the opposite bundle.
+`mochi-framework` resolves to one of two virtual modules at compile time. Server builds export `isServer = true`. Client bundles export `isBrowser = true`. The values are literal booleans, so an `if (isBrowser) { … }` block is dead-code-eliminated from the opposite bundle.
 
 ### `isServer`
 
@@ -29,7 +29,7 @@ import { isServer, isBrowser, isDev } from 'mochi-framework';
   import { isServer } from 'mochi-framework';
 
   if (isServer) {
-    // safe to reach into request-scoped APIs here
+    // reach into request-scoped APIs here
   }
 </script>
 ```
@@ -51,7 +51,7 @@ import { isServer, isBrowser, isDev } from 'mochi-framework';
 
 ### `isDev`
 
-`true` when `Mochi.serve()` was started with `development: true`. Identical on server and client builds.
+`true` when `Mochi.serve()` started with `development: true`. Identical on server and client builds.
 
 ```ts
 // file: src/lib/log.ts
@@ -64,13 +64,13 @@ export function trace(msg: string) {
 
 ## Detecting hydration with `isHydratable()`
 
-`isHydratable()` returns `true` when the calling component — at any nesting depth — is part of a subtree that will hydrate on this page load. See [Selective hydration](/docs/selective-hydration/#ishydratable) for the full semantics.
+`isHydratable()` returns `true` when the calling component — at any nesting depth — belongs to a subtree that will hydrate on this page load. See [Selective hydration](/docs/selective-hydration/#ishydratable) for the full semantics.
 
-For a unique per-instance id (e.g. `<label for>`), use Svelte's native `$props.id()` — see [Selective hydration](/docs/selective-hydration/).
+For a unique per-instance id (for example, `<label for>`), use Svelte's native `$props.id()`.
 
-### Branching SSR-only behavior with `isHydratable()`
+### Branching SSR-only behavior
 
-Use `isHydratable()` to peek request-scoped state only when the client won't take over rendering — e.g. read the post-submit form snapshot so the SSR HTML reflects the last action result, but skip it when an `enhance` attachment will populate state client-side.
+Use `isHydratable()` to peek request-scoped state only when the client will not take over rendering. For example, read the post-submit form snapshot so the SSR HTML reflects the last action result, but skip it when an `enhance` attachment will populate state client-side.
 
 ```svelte
 <!-- file: src/lib/RandomRoll.svelte -->
@@ -86,8 +86,6 @@ Use `isHydratable()` to peek request-scoped state only when the client won't tak
 </script>
 ```
 
-See the [Forms demo](/demos/login/) for a side-by-side comparison of hydrated and SSR-only render paths.
-
 <SeeItInAction
-demos={[{ href: "/demos/url/", title: "Isomorphic URL", hook: "How the isomorphic URL helper works — one import that reads the request URL on the server and window.location on the client." }]}
+demos={[{ href: "/demos/url/", title: "Isomorphic URL", hook: "One import reads the request URL on the server and window.location on the client." }]}
 />

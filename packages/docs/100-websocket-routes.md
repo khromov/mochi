@@ -35,11 +35,11 @@ await Mochi.serve({
 });
 ```
 
-Only `message` is required; the rest are optional.
+Only `message` is required.
 
 ### `upgrade`
 
-Runs once per HTTP upgrade request. Return a value to attach to `ws.data.user`, or return `false` to reject the connection. The route's URL params are passed as the second argument.
+Runs once per HTTP upgrade request. Return a value to attach to `ws.data.user`, or return `false` to reject the connection. The route's URL params are the second argument.
 
 ```ts
 // file: src/index.ts
@@ -63,7 +63,7 @@ await Mochi.serve({
 
 <Callout type="warning">
 
-**Reject unauthenticated sockets in `upgrade`, not `message`.** Authenticating inside `message` and dropping frames still lets the connection establish. Return `false` from `upgrade` so the client never connects.
+**Reject unauthenticated sockets in `upgrade`, not `message`.** Authenticating inside `message` still lets the connection establish. Return `false` from `upgrade` so the client never connects.
 
 </Callout>
 
@@ -105,17 +105,11 @@ close(ws, code, reason) {
 
 ### `drain`
 
-Fires when the socket's send buffer has drained after a backpressured `ws.send`. Resume queued writes here.
-
-```ts
-drain(ws) {
-  // resume buffered sends
-}
-```
+Fires when the socket's send buffer drains after a backpressured `ws.send`. Resume queued writes here.
 
 ### `ws.data`
 
-Each socket carries a typed `data` object. Mochi reserves the internal fields `__mochiRoutePattern`, `__mochiOpenedAt`, and `__mochiPath`; your `upgrade` return value is exposed as `ws.data.user`.
+Each socket carries a typed `data` object. Mochi reserves the internal fields `__mochiRoutePattern`, `__mochiOpenedAt`, and `__mochiPath`. Your `upgrade` return value is exposed as `ws.data.user`.
 
 ```ts
 Mochi.ws<{ userId: string }>({
@@ -131,16 +125,7 @@ Mochi.ws<{ userId: string }>({
 
 ### Pub/sub
 
-Every socket exposes Bun's pub/sub primitives: `ws.subscribe(topic)`, `ws.publish(topic, data)`, `ws.unsubscribe(topic)`. To broadcast from outside a handler, capture the `server` returned by `Mochi.serve()` and call `server.publish(topic, data)`.
-
-```ts
-open(ws) {
-  ws.subscribe('chat');
-},
-message(ws, msg) {
-  ws.publish('chat', String(msg)); // fan out to every other subscriber
-},
-```
+Every socket exposes `ws.subscribe(topic)`, `ws.publish(topic, data)`, and `ws.unsubscribe(topic)`. To broadcast from outside a handler, capture the `server` returned by `Mochi.serve()` and call `server.publish(topic, data)`.
 
 <Callout type="info">
 
@@ -150,11 +135,11 @@ message(ws, msg) {
 
 ### Lifecycle events
 
-Every WebSocket emits `ws:open`, `ws:message`, and `ws:close` on `mochiEvents`. `logger()` already prints them. See `Events` for the full payload shape and how to add custom subscribers.
+Every WebSocket emits `ws:open`, `ws:message`, and `ws:close` on `mochiEvents`. `logger()` prints them. See [Events](/docs/events/) for the payload shape.
 
 <SeeItInAction
 demos={[
-{ href: "/demos/chat/", title: "Real-time Chat", hook: "How WebSocket routes work — a hydrated island over Mochi.ws() with pub/sub broadcast and in-memory history." },
-{ href: "/demos/streams/", title: "Real-time Streams", hook: "How server-sent events and WebSocket streaming work — live SSE and WebSocket clocks, lazily hydrated via mochi:hydrate:visible." },
+{ href: "/demos/chat/", title: "Real-time Chat", hook: "A hydrated island over Mochi.ws() with pub/sub broadcast." },
+{ href: "/demos/streams/", title: "Real-time Streams", hook: "Live SSE and WebSocket clocks, lazily hydrated." },
 ]}
 />

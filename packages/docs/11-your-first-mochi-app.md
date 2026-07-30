@@ -1,7 +1,7 @@
 ---
 title: 'Your first Mochi app'
 slug: your-first-mochi-app
-description: 'Build your first page with serverProps, selective hydration, and server islands in four steps.'
+description: 'Build a page with serverProps, selective hydration, and a server island in four steps.'
 ---
 
 <script>
@@ -11,13 +11,13 @@ description: 'Build your first page with serverProps, selective hydration, and s
 
 ## Your first Mochi app
 
-Let's build a small app that exercises every server/client boundary you'll touch in real code. We'll put together a single `/hello` page in four steps, picking up one pillar at a time: [`serverProps`](/docs/defining-routes/) for loading data on every request, and [passing props to islands](/docs/island-props/) so a server-rendered parent can hand values to a hydrated child. Then we'll add [`mochi:hydrate`](/docs/selective-hydration/) for one interactive island while the rest stays zero-JS, and [`mochi:defer`](/docs/server-islands/) for a server island that renders separately from the main request.
+Build a small app that crosses every server/client boundary you meet in real code. You build one `/hello` page in four steps. Each step adds one concept: [`serverProps`](/docs/defining-routes/) to load data per request, [island props](/docs/island-props/) to pass values from a server-rendered parent to a hydrated child, [`mochi:hydrate`](/docs/selective-hydration/) for one interactive island, and [`mochi:defer`](/docs/server-islands/) for a server island that renders separately from the main request.
 
-By the end we'll have a greeting card with a live like button and a personalized welcome that loads in after the page renders.
+The result is a greeting card with a live like button and a personalized welcome that loads in after the page renders.
 
 ### Set up
 
-You'll need [Bun installed](https://bun.com/docs/installation) (>=1.3.14). Scaffold a new project with the official CLI and pick the **minimal** template when prompted:
+Install [Bun](https://bun.com/docs/installation) (>=1.3.14). Scaffold a project with the official CLI and pick the **minimal** template:
 
 ```sh
 bun create mochi@latest my-app
@@ -27,7 +27,7 @@ bun install
 bun run dev
 ```
 
-The scaffold gives you a working app on `http://localhost:3333`. Its entry point is `src/index.ts`, which boots the server and declares your routes inline in the `Mochi.serve()` call:
+The app runs on `http://localhost:3333`. The entry point is `src/index.ts`. It boots the server and declares routes inline in the `Mochi.serve()` call:
 
 ```ts
 // file: src/index.ts (scaffolded)
@@ -44,11 +44,11 @@ await Mochi.serve({
 });
 ```
 
-`src/index.ts` is the single bootstrap file — you'll edit its `routes` object next, then build the Svelte components it points at.
+`src/index.ts` is the single bootstrap file. Edit its `routes` object, then build the components it points at.
 
 ### Step 1 — Register the route
 
-Now let's point `/hello` at a Svelte page and give it some data to render. Open `src/index.ts` and replace the scaffolded route inside `routes` with this one. `serverProps` is either a plain object or a `(req, params) => props` resolver — whatever it returns becomes the page component's `$props`.
+Point `/hello` at a Svelte page and give it data. Open `src/index.ts` and replace the scaffolded route with this one. `serverProps` is a plain object or a `(req, params) => props` resolver. Its return value becomes the page's `$props`.
 
 ```ts
 // file: src/index.ts
@@ -68,11 +68,11 @@ await Mochi.serve({
 });
 ```
 
-The resolver runs on every request, so each reload produces a fresh `renderedAt`. See [Defining routes](/docs/defining-routes/) for the full `serverProps` contract and the other `Mochi.*` route helpers. (The scaffolded `src/HelloWorld.svelte` is now unused — feel free to delete it.)
+The resolver runs on every request, so each reload produces a fresh `renderedAt`. See [Defining routes](/docs/defining-routes/) for the full `serverProps` contract. You can delete the now-unused `src/HelloWorld.svelte`.
 
 ### Step 2 — The page component
 
-Next, let's write the page itself. `Hello.svelte` stays server-only (all `Mochi.page()` entry components are server-only) — it consumes the `serverProps`, renders a static layout, and mounts the two child islands we'll build next. Notice that even though it imports two components that ship JavaScript, this file itself ships zero: the `mochi:` directives where we render the components decide what hydrates.
+Write `Hello.svelte`. Every `Mochi.page()` entry component is server-only. It reads `serverProps`, renders a static layout, and mounts two child islands. This file ships zero JavaScript even though it imports two components that ship JavaScript. The `mochi:` directive at each render site decides what hydrates.
 
 ```svelte
 <!-- file: src/Hello.svelte -->
@@ -93,17 +93,17 @@ Next, let's write the page itself. `Hello.svelte` stays server-only (all `Mochi.
 </Visitor>
 ```
 
-The `initialLikes={42}` value crosses the server→client boundary. Mochi serializes island props with [`devalue`](/docs/island-props/), so `Date`, `Map`, `Set`, `BigInt`, and cyclic references all survive the trip — not just JSON-safe values.
+The `initialLikes={42}` value crosses the server→client boundary. Mochi serializes island props with [`devalue`](/docs/island-props/), so `Date`, `Map`, `Set`, `BigInt`, and cyclic references survive the trip.
 
 <Callout type="warning">
 
-Island props end up serialized into the HTML payload, so they're **visible to the client**. Never pass secrets, API keys, or session tokens this way.
+Island props are serialized into the HTML payload, so the client can read them. Never pass secrets, API keys, or session tokens as island props.
 
 </Callout>
 
 ### Step 3 — A hydrated island
 
-Now let's give the user something to click! `LikeButton.svelte` is a normal Svelte 5 component — we accept `initialLikes` as a prop, keep a `$state` counter, and bump it on click.
+Give the user something to click. `LikeButton.svelte` is a normal Svelte 5 component. It reads `initialLikes`, keeps a `$state` counter, and increments on click.
 
 ```svelte
 <!-- file: src/LikeButton.svelte -->
@@ -117,23 +117,23 @@ Now let's give the user something to click! `LikeButton.svelte` is a normal Svel
 
 <Callout type="tip">
 
-The `mochi:hydrate` directive lives **where we render the component** in `Hello.svelte`, not inside the island itself. The same component can be mounted statically elsewhere.
+The `mochi:hydrate` directive lives **at the render site** in `Hello.svelte`, not inside the island. The same component can render statically elsewhere.
 
 </Callout>
 
-Reload the page in dev mode and you'll see Mochi's [debug bar](/docs/debug-bar/) pinned to the bottom-right of the page. Open the **Islands** panel — `LikeButton` shows up tagged `mochi:hydrate` with the byte size of its serialized props (the `initialLikes` value), and the crosshair icon next to each row scrolls to and outlines the island on the page.
+Reload the page in dev mode. The [debug bar](/docs/debug-bar/) pins to the bottom-right. Open the **Islands** panel. `LikeButton` appears tagged `mochi:hydrate` with the byte size of its serialized props. Click the crosshair icon to scroll to and outline the island.
 
 ### Step 4 — A server island
 
-Finally, let's add a personalized greeting that doesn't block the rest of the page. We marked `Visitor.svelte` with `mochi:defer` back in Step 2, so it skips the initial SSR pass — the page ships with our `<p>Loading…</p>` fallback in its place. The browser then fetches the component _in a separate request_, the server renders it, and the result swaps in.
+Add a personalized greeting that does not block the rest of the page. `Visitor.svelte` carries `mochi:defer` from Step 2, so it skips the initial SSR pass. The page ships with the `<p>Loading…</p>` fallback in its place. The browser then fetches the component in a separate request, the server renders it, and the result swaps in.
 
 <Callout type="tip">
 
-The deferred island fetch is its own request, so `getRequestContext()` inside the island sees the island URL — not the page URL. Read page-specific state in the parent and forward it as a prop.
+The deferred fetch is its own request. Inside the island, `getRequestContext()` sees the island URL, not the page URL. Read page-specific state in the parent and forward it as a prop.
 
 </Callout>
 
-Update `Hello.svelte` to read `?name=` and pass it through to `Visitor`:
+Update `Hello.svelte` to read `?name=` and pass it to `Visitor`:
 
 ```svelte
 <!-- file: src/Hello.svelte (updated) -->
@@ -169,31 +169,31 @@ Update `Hello.svelte` to read `?name=` and pass it through to `Visitor`:
 <p>Welcome back, {name}!</p>
 ```
 
-`mochi:defer` lets the call site pass fallback children (our `<p>Loading…</p>`) that render in place of the island until the deferred fetch resolves. The framework handles the swap — `Visitor` itself never renders `children`, but we declare it in the prop type so TypeScript accepts the fallback at the call site.
+`mochi:defer` lets the call site pass fallback children. The `<p>Loading…</p>` renders until the deferred fetch resolves. The framework handles the swap. `Visitor` never renders `children`, but you declare the type so TypeScript accepts the fallback at the call site.
 
-The `name` prop rides through the same `devalue` round-trip as `initialLikes`. Try [`/docs/your-first-mochi-app/hello/?name=Alice`](/docs/your-first-mochi-app/hello/?name=Alice) — the main page is identical for every visitor, but the deferred fragment swaps in a personalized greeting.
+The `name` prop rides the same `devalue` round-trip as `initialLikes`. Open [`/docs/your-first-mochi-app/hello/?name=Alice`](/docs/your-first-mochi-app/hello/?name=Alice). The main page is identical for every visitor. The deferred fragment swaps in a personalized greeting.
 
 <Callout type="tip">
 
-Cookies are an exception worth knowing: the browser sends them along with the island fetch automatically, so `getRequestContext().cookies` inside a server island reads the visitor's cookies without needing the parent to forward them.
+Cookies are an exception. The browser sends them with the island fetch, so `getRequestContext().cookies` inside a server island reads the visitor's cookies without the parent forwarding them.
 
 </Callout>
 
 ### See it live
 
-The finished app is running on this site at [**/docs/your-first-mochi-app/hello/**](/docs/your-first-mochi-app/hello/). Click the heart, then try [`/docs/your-first-mochi-app/hello/?name=Alice`](/docs/your-first-mochi-app/hello/?name=Alice) to watch the deferred fragment swap in a personalized greeting. The [debug bar](/docs/debug-bar/)'s **Islands** panel groups the two islands separately: `LikeButton` under hydrated islands as `mochi:hydrate`, and `Visitor` under server islands as `mochi:defer` with a lock icon (server-island props are encrypted before being sent to the client).
+The finished app runs at [**/docs/your-first-mochi-app/hello/**](/docs/your-first-mochi-app/hello/). Click the heart, then open [`?name=Alice`](/docs/your-first-mochi-app/hello/?name=Alice) to watch the deferred fragment swap in. The [debug bar](/docs/debug-bar/) **Islands** panel groups the two islands: `LikeButton` under hydrated islands, `Visitor` under server islands with a lock icon (server-island props are encrypted before they reach the client).
 
 ### What's next
 
-- [Defining routes](/docs/defining-routes/) — `Mochi.page`, `Mochi.api`, `Mochi.ws`, `Mochi.sse`, and the full `serverProps` contract
-- [Selective hydration](/docs/selective-hydration/) — `mochi:hydrate`, `isHydratable()`, `$props.id()`
-- [Lazy hydration](/docs/lazy-hydration/) — `mochi:hydrate:visible` for below-the-fold islands
-- [Server islands](/docs/server-islands/) — `mochi:defer`, encrypted props, and `MOCHI_KEY`
-- [Passing props to islands](/docs/island-props/) — every type `devalue` can round-trip
+- [Defining routes](/docs/defining-routes/) — `Mochi.page`, `Mochi.api`, `Mochi.ws`, `Mochi.sse`, and `serverProps`.
+- [Selective hydration](/docs/selective-hydration/) — `mochi:hydrate`, `isHydratable()`, `$props.id()`.
+- [Lazy hydration](/docs/lazy-hydration/) — `mochi:hydrate:visible` for below-the-fold islands.
+- [Server islands](/docs/server-islands/) — `mochi:defer`, encrypted props, and `MOCHI_KEY`.
+- [Passing props to islands](/docs/island-props/) — every type `devalue` supports.
 
 <SeeItInAction
 demos={[
-{ href: "/demos/hello-world/", title: "Hello World", hook: "How server-side rendering works — a Mochi.page() renders Svelte on the server and ships zero JavaScript." },
-{ href: "/demos/server-props/", title: "Server Props", hook: "How server props work — pass fresh per-request data into a page via serverProps on Mochi.page()." },
+{ href: "/demos/hello-world/", title: "Hello World", hook: "A Mochi.page() renders Svelte on the server and ships zero JavaScript." },
+{ href: "/demos/server-props/", title: "Server Props", hook: "Pass fresh per-request data into a page with serverProps." },
 ]}
 />
