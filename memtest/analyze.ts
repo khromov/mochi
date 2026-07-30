@@ -33,7 +33,14 @@ const TOP = Number(process.env.TOP) || 10;
 // the SHA of the newest snapshot. Empty = no filter (diff the whole flat series).
 const SHA_ARG = ((): string => {
   const i = process.argv.indexOf('--sha');
-  return (i >= 0 ? process.argv[i + 1] : process.env.SHA) || '';
+  if (i >= 0) {
+    const v = process.argv[i + 1];
+    if (!v || v.startsWith('--')) {
+      throw new Error('--sha requires a short-SHA argument, e.g. --sha 1a2b3c4');
+    }
+    return v;
+  }
+  return process.env.SHA || '';
 })();
 const LATEST_VERSION = process.argv.includes('--latest-version') || process.env.LATEST_VERSION === '1';
 

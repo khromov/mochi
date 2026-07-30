@@ -33,14 +33,9 @@ log() { echo "[$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)] $*"; }
 # rebuild). Infinite-loop-safe: after exec, HEAD is already at origin/$BRANCH, so
 # fetch/merge are no-ops and the diff is empty, and it falls through to the run.
 pull_and_maybe_reexec() {
-  git config --global --add safe.directory "$PWD" 2>/dev/null || true
-
-  if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
-    log "working tree dirty — skipping pull (set MEMTEST_LOOP_RESET=1 to hard-reset)"
-    if [ "${MEMTEST_LOOP_RESET:-0}" = "1" ]; then
-      git reset --hard "origin/$BRANCH" || log "reset failed"
-    fi
-  fi
+  # --add appends unconditionally, so guard against accreting a duplicate line every cycle.
+  git config --global --get-all safe.directory 2>/dev/null | grep -qxF "$PWD" \
+    || git config --global --add safe.directory "$PWD" 2>/dev/null || true
 
   local before after
   before="$(git rev-parse HEAD)"
@@ -48,8 +43,19 @@ pull_and_maybe_reexec() {
     log "git fetch failed — running current checkout, will retry next cycle"
     return 0
   fi
-  if ! git merge --ff-only --quiet "origin/$BRANCH"; then
-    log "ff-only merge failed (non-ff or dirty) — running current checkout, will retry next cycle"
+
+  if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+    if [ "${MEMTEST_LOOP_RESET:-0}" != "1" ]; then
+      log "working tree dirty — skipping pull (set MEMTEST_LOOP_RESET=1 to hard-reset)"
+      return 0
+    fi
+    log "working tree dirty — MEMTEST_LOOP_RESET=1, hard-resetting to origin/$BRANCH"
+    if ! git reset --hard "origin/$BRANCH"; then
+      log "reset failed — running current checkout, will retry next cycle"
+      return 0
+    fi
+  elif ! git merge --ff-only --quiet "origin/$BRANCH"; then
+    log "ff-only merge failed (non-ff) — running current checkout, will retry next cycle"
     return 0
   fi
   after="$(git rev-parse HEAD)"
