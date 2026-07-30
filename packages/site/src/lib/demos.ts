@@ -43,6 +43,7 @@ import { files as rateLimit } from '../demos/rate-limit/files.ts';
 import { files as reloadFormData } from '../demos/reload-form-data/files.ts';
 import { files as requestCache } from '../demos/request-cache/files.ts';
 import { files as requestId } from '../demos/request-id/files.ts';
+import { files as runed } from '../demos/runed/files.ts';
 import { files as serverIsland } from '../demos/server-island/files.ts';
 import { files as serverProps } from '../demos/server-props/files.ts';
 import { files as sharedState } from '../demos/shared-state/files.ts';
@@ -498,6 +499,14 @@ export const demos: Demo[] = [
     files: entityProps,
     title: 'HTML Entities in Props',
     hook: 'How HTML entities in island props work — an entity in a static prop (label="Tom &amp; Jerry") decodes identically on the server and after hydration.',
+    category: 'hydration',
+  },
+  {
+    href: '/demos/runed/',
+    slug: 'runed',
+    files: runed,
+    title: 'Runed Utilities',
+    hook: "How third-party Svelte 5 libraries run in islands — Runed's reactive utilities (Debounced, StateHistory, PersistedState, PressedKeys, AnimationFrames, FiniteStateMachine, resource…) hydrated inside Mochi.",
     category: 'hydration',
   },
 ];
