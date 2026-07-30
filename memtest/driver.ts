@@ -34,6 +34,9 @@ const FETCH_TIMEOUT_MS = Number(process.env.FETCH_TIMEOUT_MS) || 30_000;
 // but never unbounded, so a stuck capture can't wedge the snapshot loop forever.
 const SNAPSHOT_TIMEOUT_S = Math.ceil((Number(process.env.SNAPSHOT_TIMEOUT_MS) || 120_000) / 1000);
 const SPAWN_SITE = process.env.SPAWN_SITE !== 'false';
+// Set by loop.sh (via run.sh) to the git short-SHA the image was built from, so
+// snapshots from a self-updating daily run can be diffed within one code version.
+const GIT_SHA = process.env.MEMTEST_GIT_SHA || '';
 
 function log(msg: string): void {
   console.log(`[${new Date().toISOString()}] ${msg}`);
@@ -139,7 +142,8 @@ async function pruneSnapshots(): Promise<void> {
 
 async function captureSnapshot(): Promise<void> {
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const file = path.join(SNAPSHOT_DIR, `heap-${stamp}.heapsnapshot`);
+  // SHA goes AFTER the timestamp so pruneSnapshots' lexicographic sort stays chronological.
+  const file = path.join(SNAPSHOT_DIR, `heap-${stamp}${GIT_SHA ? `-${GIT_SHA}` : ''}.heapsnapshot`);
   // Download via curl in a separate process: it streams the large body straight
   // to disk with constant memory and no event-loop contention with the load loop
   // (draining a big response inside this process deadlocks on TCP backpressure).

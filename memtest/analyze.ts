@@ -14,6 +14,9 @@
 //             run ShapeUnboundGrowthAnalysis across the WHOLE series in ./snapshots
 //             (sync it first with `bun run memtest:pull`) plus a constructor
 //             count/size delta table from oldest -> newest.
+//   --sha <s> / --latest-version  restrict to snapshots stamped with one git
+//             short-SHA (self-updating loop writes heap-<ISO>-<sha>.heapsnapshot),
+//             so a multi-version retained window is diffed WITHIN one code version.
 
 import path from 'node:path';
 import { readdir, stat, mkdir } from 'node:fs/promises';
@@ -26,6 +29,17 @@ const WORK_DIR = process.env.MEMLAB_WORK_DIR || path.join(ROOT, '.memtest-out', 
 const FULL = process.argv.includes('--full') || process.env.FULL === '1';
 const GROWTH = process.argv.includes('--growth') || process.env.GROWTH === '1';
 const TOP = Number(process.env.TOP) || 10;
+// Version filter: an explicit --sha <shortsha>, or --latest-version to auto-pick
+// the SHA of the newest snapshot. Empty = no filter (diff the whole flat series).
+const SHA_ARG = ((): string => {
+  const i = process.argv.indexOf('--sha');
+  return (i >= 0 ? process.argv[i + 1] : process.env.SHA) || '';
+})();
+const LATEST_VERSION = process.argv.includes('--latest-version') || process.env.LATEST_VERSION === '1';
+
+// The git short-SHA in a heap-<ISO>-<sha>.heapsnapshot name (the ISO stamp always
+// ends in 'Z', so the SHA is the hex segment after it). '' for old unstamped names.
+const shaOf = (base: string): string => base.match(/Z-([0-9a-fA-F]{4,40})\.heapsnapshot$/)?.[1] ?? '';
 
 // Mirror the framework's toPosixPath() convention (packages/mochi/src/utils)
 // without importing the framework into this standalone ops script: any path in
@@ -33,9 +47,10 @@ const TOP = Number(process.env.TOP) || 10;
 const toPosix = (p: string): string => p.replace(/\\/g, '/');
 const rel = (p: string): string => toPosix(path.relative(process.cwd(), p));
 
-type Snap = { file: string; base: string; mtimeMs: number };
+type Snap = { file: string; base: string; mtimeMs: number; sha: string };
 
-// All .heapsnapshot files in SNAPSHOT_DIR, oldest -> newest by mtime.
+// All .heapsnapshot files in SNAPSHOT_DIR, oldest -> newest by mtime, optionally
+// restricted to one git version via --sha / --latest-version.
 async function listSnapshots(): Promise<Snap[]> {
   let names: string[];
   try {
@@ -49,9 +64,16 @@ async function listSnapshots(): Promise<Snap[]> {
       continue;
     }
     const file = path.join(SNAPSHOT_DIR, name);
-    snaps.push({ file, base: name, mtimeMs: (await stat(file)).mtimeMs });
+    snaps.push({ file, base: name, mtimeMs: (await stat(file)).mtimeMs, sha: shaOf(name) });
   }
   snaps.sort((a, b) => a.mtimeMs - b.mtimeMs);
+
+  const wantSha = SHA_ARG || (LATEST_VERSION ? (snaps[snaps.length - 1]?.sha ?? '') : '');
+  if (wantSha) {
+    const filtered = snaps.filter((s) => s.sha === wantSha);
+    console.log(`Filtering to version ${wantSha}: ${filtered.length}/${snaps.length} snapshots.`);
+    return filtered;
+  }
   return snaps;
 }
 
