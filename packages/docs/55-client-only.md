@@ -10,14 +10,14 @@ description: 'Skip SSR and mount a component in the browser with mochi:clientOnl
 
 ## Client-only components with `mochi:clientOnly`
 
-Add `mochi:clientOnly` to a component that must never render on the server. SSR emits an empty island wrapper. In the browser Mochi mounts the component with Svelte's `mount()`. Use it for components built on browser-only APIs: `window`, canvas, `localStorage`, `requestAnimationFrame`, third-party browser SDKs.
+Add `mochi:clientOnly` to a component that must never render on the server. SSR emits an empty island wrapper. In the browser Mochi mounts the component. Use it for components built on browser-only APIs: `window`, canvas, `localStorage`, `requestAnimationFrame`, third-party browser SDKs.
 
 ```svelte
 <!-- file: src/Page.svelte -->
 <AudioVisualizer mochi:clientOnly />
 ```
 
-Props work like `mochi:hydrate` — serialized with `devalue` and embedded into the HTML. See [Passing props to islands](/docs/island-props/). [`isHydratable()`](/docs/selective-hydration/#ishydratable) always returns `true` here, since the component only ever runs at client mount. For a unique id, use Svelte's `$props.id()`, which `mount()` mints fresh in the browser.
+Props work like `mochi:hydrate` — serialized with `devalue` and embedded into the HTML. See [Passing props to islands](/docs/island-props/). [`isHydratable()`](/docs/selective-hydration/#ishydratable) always returns `true` here, since the component only ever runs at client mount. For a unique id, use Svelte's `$props.id()`, which is minted fresh in the browser.
 
 ```svelte
 <MapWidget mochi:clientOnly zoom={12} center={coords} />

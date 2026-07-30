@@ -23,7 +23,7 @@ await Mochi.serve({
 When `development` is true, Mochi enables:
 
 - **Live reload** — a `mochi-live-reload` web component connects to `/__mochi_live_reload` and refreshes the page on file changes.
-- **File watcher** — `chokidar` watches `src/` and `public/`. An edit invalidates the SSR compile cache and emits `file:change` on `mochiEvents`.
+- **File watcher** — watches `src/` and `public/`. An edit invalidates the SSR compile cache and emits `file:change` on `mochiEvents`.
 - **Debug bar** — `<div id="mochi-dev-toolbar">` is injected into every page.
 - **Error overlay** — build and runtime errors render on top of the page.
 - **Bundle stats** — a JSON report is served at `${assetPrefix}/client/stats`.

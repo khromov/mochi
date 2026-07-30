@@ -24,11 +24,11 @@ await Mochi.serve({
 });
 ```
 
-The default shell lives at `packages/mochi/src/templates/default-shell.html`. Copy it as a starting point.
+Start from the minimal shell shown below and add your own markup around the placeholders.
 
 ### Placeholders
 
-A custom shell must contain four placeholders. Mochi replaces each one per request in `Mochi.resolveHtmlShell()`:
+A custom shell must contain four placeholders. Mochi replaces each one per request:
 
 | Placeholder        | Replaced with                                                                                          |
 | ------------------ | ------------------------------------------------------------------------------------------------------ |

@@ -35,13 +35,13 @@ The header, the main column, and the footer ship as HTML and stay HTML. The badg
 - **Fast builds.** Mochi uses the Bun bundler. It builds sites with hundreds of routes in seconds.
 - **Real-time built in.** WebSockets and Server-Sent Events are first-class route types. You need no extra packages or services.
 
-Want the full picture? <ExpandComparison mochi:hydrate /> for a complete feature comparison.
+For a complete feature comparison, <ExpandComparison mochi:hydrate label="expand the table below" />.
 
 <ComparisonTable mochi:hydrate collapsed />
 
 <Callout type="info">
 
-**Mochi is in early development.** Use it in production only if you are brave.
+**Mochi is in early development.** Expect breaking changes, and evaluate it carefully before relying on it in production.
 
 </Callout>
 

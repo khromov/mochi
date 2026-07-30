@@ -64,7 +64,7 @@ This benchmark shows the gains on a small application (the `demos` preset from t
 
 ### What runs on rsvelte
 
-Only `compile()` and `compileModule()`. Mochi's island preprocessor walks a real Svelte AST with `zimmerframe`, and rsvelte's `parse()` returns a JSON string rather than an upstream-shaped AST, so **parsing and preprocessing always stay on the official compiler**. Islands, `mochi:hydrate*`, `mochi:defer`, and user preprocessors behave identically either way.
+Only `compile()` and `compileModule()` run on rsvelte. **Parsing and preprocessing always stay on the official compiler**, so islands, `mochi:hydrate*`, `mochi:defer`, and user preprocessors behave identically either way.
 
 ### If it cannot load
 

@@ -11,13 +11,13 @@ description: 'Build-time constants for branching on render target (isServer, isB
 
 ## Environment constants
 
-Import build-time constants from the `mochi-framework` virtual module to branch on render target or dev mode:
+Import build-time constants from `mochi-framework` to branch on render target or dev mode:
 
 ```ts
 import { isServer, isBrowser, isDev } from 'mochi-framework';
 ```
 
-`mochi-framework` resolves to one of two virtual modules at compile time. Server builds export `isServer = true`. Client bundles export `isBrowser = true`. The values are literal booleans, so an `if (isBrowser) { … }` block is dropped from the opposite bundle.
+At build time these constants become literal booleans. In the server build `isServer` is `true` and `isBrowser` is `false`; in the client bundle the values are reversed. Because they are literals, an `if (isBrowser) { … }` block is dropped from the opposite bundle, so a server-only branch never reaches the browser.
 
 ### `isServer`
 

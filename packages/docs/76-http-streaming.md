@@ -21,7 +21,7 @@ A page holds its response until everything it awaits resolves. A 2-second upstre
 
 ### Streaming primitives
 
-- `Mochi.sse(handler)` — Server-Sent Events. The response body is a `ReadableStream`. `stream.send(...)` pushes events as they happen.
+- `Mochi.sse(handler)` — Server-Sent Events. `stream.send(...)` pushes events as they happen.
 - `Mochi.ws(handlers)` — WebSockets over the `Bun.serve` upgrade. Bidirectional, message by message.
 
 Use these to layer real-time UI on top of a rendered base page.

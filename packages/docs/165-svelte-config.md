@@ -19,7 +19,7 @@ export default {
 };
 ```
 
-The file is optional. If it is missing, Mochi logs `[mochi] No Svelte config found at … — using framework defaults.` and continues with `FRAMEWORK_COMPILER_DEFAULTS`.
+The file is optional. If it is missing, Mochi logs `[mochi] No Svelte config found at … — using framework defaults.` and continues with the framework defaults.
 
 Both ESM (`export default`) and CJS (`module.exports`) are supported. In dev, Mochi watches the file — an edit reloads `compilerOptions` without restarting the server.
 

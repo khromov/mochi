@@ -32,10 +32,11 @@ A server island is a normal Svelte component with full access to the request con
 
 ```svelte
 <!-- file: src/UserAvatar.svelte -->
-<script>
+<script lang="ts">
   import { getRequestContext } from 'mochi-framework';
+
   const { cookies } = getRequestContext();
-  const session = cookies.get('session');
+  const userName = cookies.get('user') ?? 'friend';
 </script>
 
 <p>Welcome back, {userName}!</p>

@@ -63,7 +63,7 @@ Read and write cookies on the server and the client through one API. See the [Co
 
 ```svelte
 <script>
-  import { cookies, isBrowser } from 'mochi-framework';
+  import { cookies } from 'mochi-framework';
 
   const theme = cookies.get('theme') ?? 'light';
 </script>

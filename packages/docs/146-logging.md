@@ -61,7 +61,7 @@ await Mochi.serve({
 });
 ```
 
-The level applies on both sides. The server captures it once at startup and ships the same value to the browser through a tiny inline script, so client-side `logger` calls honour it too. Reload the page after changing the config to pick up a new level on the client.
+The level applies on both server and client. The server sends its configured level to the browser, so client-side `logger` calls honour it too. Reload the page after changing the config to pick up a new level on the client.
 
 <Callout type="warning">
 

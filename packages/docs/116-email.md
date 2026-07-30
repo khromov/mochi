@@ -148,7 +148,7 @@ The outbox is in-memory and dev-only. It holds the most recent 100 messages, is 
 
 </Callout>
 
-Leaving `transport` unset gives you the dev/log split automatically. To pick the transport by hand, branch on `NODE_ENV` (the `isDev` virtual is only available inside compiled code, not a server entry):
+Leaving `transport` unset gives you the dev/log split automatically. To pick the transport by hand, branch on `NODE_ENV` (the `isDev` constant is only available inside compiled code, not a server entry):
 
 ```ts
 await Mochi.serve({
@@ -162,7 +162,7 @@ await Mochi.serve({
 
 ### Svelte templates
 
-Author a body as a Svelte component. Pass its path as `component` (like `Mochi.page()`) plus `props`. Mochi renders it through the page pipeline and **inlines its scoped CSS** into `style=""` attributes (via [css-inline](https://github.com/Stranger6667/css-inline)) for email-client compatibility.
+Author a body as a Svelte component. Pass its path as `component` (like `Mochi.page()`) plus `props`. Mochi renders it and **inlines its scoped CSS** into `style=""` attributes (via [css-inline](https://github.com/Stranger6667/css-inline)) for email-client compatibility.
 
 Keep templates in **`src/emails/`**. `mochi-framework build` walks that directory and compiles every `.svelte` under it into the manifest, so production sends need neither the compiler nor your Svelte sources.
 

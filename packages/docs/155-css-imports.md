@@ -50,7 +50,7 @@ The Svelte compiler handles `<style>` inside a `.svelte` file. Mochi extracts th
 
 ### Variable fonts
 
-Bun's CSS bundler unquotes `format('woff2-variations')` to `format(woff2-variations)`, which browsers drop. Mochi re-quotes the four `*-variations` hints after bundling, so `@fontsource-variable/*` packages work without manual workarounds.
+`@fontsource-variable/*` packages work without manual workarounds. Mochi takes care of the `*-variations` format hints these packages rely on, so variable fonts render correctly with no extra configuration.
 
 ### Dev mode
 

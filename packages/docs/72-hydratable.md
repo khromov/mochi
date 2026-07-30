@@ -11,7 +11,7 @@ description: 'Serialize computed server values into the page so the client reuse
 
 ## Hydratable values (experimental)
 
-> `hydratable` support is experimental. Please open an issue if you find problems. 🙇
+> `hydratable` support is experimental. Please open an issue if you find problems.
 
 Svelte 5's [`hydratable(key, fn)`](https://svelte.dev/docs/svelte/svelte#hydratable) computes a value on the server, serializes it into the page, and reads it back during client hydration. Use it to avoid running the same async work twice when a hydrated component fetches data at the top level.
 
