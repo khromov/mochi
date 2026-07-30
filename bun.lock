@@ -24,7 +24,7 @@
     },
     "packages/cli": {
       "name": "create-mochi",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "bin": {
         "create-mochi": "src/cli.js",
       },
@@ -95,7 +95,7 @@
     },
     "packages/mochi": {
       "name": "mochi-framework",
-      "version": "0.9.0",
+      "version": "0.9.1",
       "bin": {
         "mochi-framework": "src/cli/cli.js",
       },
