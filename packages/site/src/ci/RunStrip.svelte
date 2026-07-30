@@ -30,7 +30,7 @@
 <style>
   /* Squares at a fixed size rather than blobs that stretch to fill: a workflow with
      seven runs would otherwise draw visibly fatter squares than one with ten, which
-     reads as meaning something it doesn't. Now a short history is just a short strip. */
+     reads as meaning something it doesn't. */
   .strip {
     display: flex;
     align-items: center;
@@ -40,9 +40,7 @@
 
   .bar {
     /* Shrinkable rather than fixed: in a tall, narrow column the full-size strip would
-       overrun its tile and `overflow: hidden` would quietly eat the newest runs. Losing
-       a few pixels per square is honest; losing squares is not. aspect-ratio keeps them
-       square at whatever width they settle on. */
+       overrun its tile and `overflow: hidden` would quietly eat the newest runs. */
     flex: 0 1 auto;
     width: var(--bar-size, 22px);
     min-width: 3px;

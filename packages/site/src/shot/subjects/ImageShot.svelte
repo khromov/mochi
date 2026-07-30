@@ -5,9 +5,8 @@
 
   let { src }: { src: string } = $props();
 
-  // The blur is only readable server-side, and the loaded <Image> paints over its
-  // own placeholder — so the two states can't be photographed from one live render.
-  // Resolving the hash here lets the frame show them side by side instead.
+  // The blur is only readable server-side and the loaded <Image> paints over its own
+  // placeholder, so the two states can't be photographed from one live render — resolving the hash here shows them side by side instead.
   // svelte-ignore state_referenced_locally
   const blur = await getImagePlaceholder(src);
 </script>

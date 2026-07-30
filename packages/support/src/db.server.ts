@@ -6,9 +6,7 @@ export type EmailStatus = 'pending' | 'sent' | 'failed';
 
 export type EmailLogEvent = 'queued' | 'requeued' | 'sending' | 'sent' | 'failed';
 
-// These types live here, next to the queries that produce them: a type-only
-// import is erased before the client build, so even a hydrated island can
-// `import type` from this module without pulling bun:sqlite along.
+// Types live here so a type-only import is erased before the client build, letting hydrated islands `import type` this without pulling in `bun:sqlite`.
 export interface Submission {
   id: number;
   name: string;
@@ -21,7 +19,7 @@ export interface Submission {
   email_sent_at: number | null;
 }
 
-/** One line of the delivery history shown in the admin panel's email-log popup. */
+// One line of the delivery history shown in the admin panel's email-log popup.
 export interface EmailLogEntry {
   id: number;
   submission_id: number;
@@ -98,17 +96,12 @@ export function markEmailSent(id: number): void {
   sentStmt.run(Date.now(), id);
 }
 
-/** Terminal: bunqueue has exhausted its attempts and won't retry on its own. */
+// Terminal: bunqueue has exhausted its attempts and won't retry on its own.
 export function markEmailFailed(id: number, error: string): void {
   failedStmt.run(error.slice(0, 1000), id);
 }
 
-/**
- * A failed attempt that bunqueue will still retry. Records why for the admin
- * panel but leaves the status `pending` — flipping it to `failed` here would
- * both misreport a delivery still in flight and, because a restart mid-backoff
- * loses the in-memory job, put the row in a state `recover` used to skip.
- */
+// Leaves status `pending` — marking `failed` here would misreport an in-flight delivery and, after a restart mid-backoff, land the row where `recover` skips it.
 export function noteEmailAttemptError(id: number, error: string): void {
   attemptErrorStmt.run(error.slice(0, 1000), id);
 }
@@ -121,7 +114,7 @@ export function appendEmailLog(submissionId: number, entry: { attempt: number; e
   logInsertStmt.run(submissionId, Date.now(), entry.attempt, entry.event, entry.detail?.slice(0, 1000) ?? null);
 }
 
-/** Grouped by submission id, oldest first — what the admin panel's log popup renders. */
+// Grouped by submission id, oldest first — what the admin panel's log popup renders.
 export function emailLogsBySubmission(): Record<number, EmailLogEntry[]> {
   const grouped: Record<number, EmailLogEntry[]> = {};
   for (const entry of logAllStmt.all()) {
@@ -130,31 +123,17 @@ export function emailLogsBySubmission(): Record<number, EmailLogEntry[]> {
   return grouped;
 }
 
-/**
- * Release the SQLite handle. Only the test suite needs this: Windows keeps the
- * database file locked while a handle is open, so the temp directory holding it
- * can't be removed until this runs.
- */
+// Only the test suite needs this: Windows keeps the db file locked until the handle closes, blocking temp-dir cleanup.
 export function closeDb(): void {
   db.close();
 }
 
-/**
- * Every row whose email hasn't landed — `pending` (never attempted, or mid-retry)
- * and `failed` (attempts exhausted) alike. Jobs live only in memory, so a restart
- * strands all of them; the queue's `recover` re-adds them on boot.
- *
- * `failed` is deliberately included. A row reaches it only after bunqueue gave up,
- * which for this form means an SMTP outage that outlasted the backoff — exactly the
- * case where "the row is the source of truth" has to mean something. Re-trying a
- * genuinely undeliverable row on every boot is the accepted cost; at this volume a
- * duplicate email beats a silently dropped one.
- */
+// Includes `failed` rows on purpose: jobs live only in memory so a restart strands them, and re-trying an undeliverable row on boot beats silently dropping it.
 export function undeliveredSubmissionIds(): number[] {
   return undeliveredStmt.all().map((row) => row.id);
 }
 
-/** Clears a `failed` row back to `pending` as `recover` puts it back on the queue. */
+// Clears a `failed` row back to `pending` as `recover` puts it back on the queue.
 export function markEmailRequeued(id: number): void {
   requeuedStmt.run(id);
 }

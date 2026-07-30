@@ -4,9 +4,7 @@ import type { NotificationJob, ProcessedEntry, QueueStatus } from './types';
 
 export const QUEUE_NAME = 'demo-notifications';
 
-// One server-owned snapshot, shared by every connected client. `inFlight` is
-// tracked off the event bus (not per request) so it counts enqueues and
-// completions from all browsers — everyone sees the same numbers.
+// `inFlight` is tracked off the event bus, not per request, so every connected browser sees the same numbers.
 const processed: ProcessedEntry[] = [];
 let processedTotal = 0;
 let inFlight = 0;
@@ -24,13 +22,11 @@ const settle = (e: { queue: string }) => {
 mochiEvents.on('queue:completed', settle);
 mochiEvents.on('queue:failed', settle);
 
-// In-memory so the demo writes no SQLite file into the site working dir; pass
-// `dataPath` to persist. Mounted under QUEUE_NAME in Mochi.serve({ queues }).
+// In-memory so the demo writes no SQLite file into the site working dir; pass `dataPath` to persist.
 export const notificationQueue: MochiQueueConfig = Mochi.queue<NotificationJob>({
   concurrency: 2,
   process: async (job) => {
-    // Simulate delivery latency so the UI shows the queued → processing → done
-    // transition rather than completing instantly.
+    // Simulate delivery latency so the UI shows the queued → processing → done transition.
     const start = Date.now();
     await Bun.sleep(500 + Math.random() * 1500);
     processed.push({ user: job.data.user, at: Date.now(), ms: Date.now() - start });

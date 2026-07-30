@@ -1,6 +1,3 @@
-// Builds the satori markup for a single frame at time `t` (seconds).
-// Each scene is an absolutely-positioned full-canvas layer whose opacity is driven
-// by windowOpacity(), so scenes cross-fade on one continuous timeline.
 import { COLORS, RADIUS, FONT, CANVAS } from './theme';
 import { clamp, lerp, norm, easeOutCubic, easeOutBack, windowOpacity } from './anim';
 
@@ -23,42 +20,25 @@ const rand = (seed: number) => {
   return x - Math.floor(x);
 };
 
-// ---- Ambient background: soft white leaves that bloom in and out for continuous gentle motion ----
 const LEAF_COUNT = 18;
 
-// One leaf: every property is a continuous function of `t`, so motion is smooth frame to
-// frame. A steady downward drift is the dominant motion; a small flutter sway and slow
-// rotation ride on top. Opacity is tied to vertical position so leaves fade in at the top
-// edge and out at the bottom — never pulsing mid-screen. Per-leaf seeds and phases keep the
-// field varied and several leaves visible at any moment.
 function leaf(i: number, t: number): Node {
   const seed = i + 1;
   const size = lerp(30, 84, rand(seed));
 
-  // Steady descent that wraps through a span taller than the canvas, so the jump back to
-  // the top always lands off-screen and never reads as a flicker. Fast enough that the fall
-  // is clearly the leading motion within the clip (1200–2400px over 30s).
   const span = CANVAS.height + size * 2;
   const fall = lerp(50, 90, rand(seed + 1.1));
   const yRaw = (rand(seed + 2.2) * span + t * fall) % span;
   const y = yRaw - size;
 
-  // Gentle lateral drift, slow and small so the steady fall stays clearly the dominant motion.
   const x = rand(seed + 3.3) * CANVAS.width + Math.sin(t * lerp(0.15, 0.3, rand(seed + 4.4)) + seed) * lerp(10, 22, rand(seed + 5.5));
-  // Each leaf holds a fixed orientation: a spinning asymmetric petal reads as wobble, so rotation
-  // is barely-there and the downward fall carries the motion.
   const rot = lerp(0, 360, rand(seed + 6.6)) + t * lerp(-2, 2, rand(seed + 7.7));
 
-  // Hold a constant soft peak across the screen, fading only within a band of each off-screen
-  // edge so leaves enter and leave without any in-place opacity pulse.
   const peak = lerp(0.06, 0.12, rand(seed + 8.8));
   const fadeBand = size * 2;
   const op = peak * Math.min(clamp(yRaw / fadeBand), clamp((span - yRaw) / fadeBand));
 
-  // Classic leaf/petal: two opposite corners fully rounded, the other two sharp.
-  // Position via transform, not left/top: satori rounds layout positions to the integer pixel
-  // grid, which turns the sub-pixel-per-frame drift into a visible stair-step/back-and-forth
-  // jitter. A transform matrix is applied after layout at full float precision, so motion stays smooth.
+  // Satori/yoga rounds left/top to the integer pixel grid, turning sub-pixel drift into visible stair-stepping — so motion is driven via transform (full float precision) with the element pinned at left:0/top:0.
   return h({
     position: 'absolute',
     left: 0,
@@ -83,12 +63,11 @@ function backgroundLeaves(t: number): Node {
   return h({ position: 'absolute', top: 0, left: 0, width: CANVAS.width, height: CANVAS.height, overflow: 'hidden' }, leaves);
 }
 
-// ---- Mochi dango mascot (three soft balls on a skewer) ----
 function dango(ball: number): Node {
   const stickW = ball * 0.16;
   const gap = ball * 0.06;
   const totalH = ball * 3 + gap * 2;
-  const ballColors = ['#f3b9c7', '#fff6ea', COLORS.accentSoft]; // sakura / shiro / matcha
+  const ballColors = ['#f3b9c7', '#fff6ea', COLORS.accentSoft];
   const balls = ballColors.map((c, i) =>
     h({
       position: 'absolute',
@@ -102,7 +81,6 @@ function dango(ball: number): Node {
     }),
   );
   return h({ position: 'relative', width: ball, height: totalH, alignItems: 'center', justifyContent: 'center' }, [
-    // wooden skewer poking out the bottom (you hold it by the stick)
     h({
       position: 'absolute',
       left: ball / 2 - stickW / 2,
@@ -116,7 +94,6 @@ function dango(ball: number): Node {
   ]);
 }
 
-// ---- Scene 1: logo reveal ----
 function sceneLogo(t: number): Node {
   const op = windowOpacity(t, 0, 6.0, 0.7);
   if (op <= 0) {
@@ -148,7 +125,6 @@ function sceneLogo(t: number): Node {
   ]);
 }
 
-// ---- Scene 2: tagline ----
 function sceneTagline(t: number): Node {
   const op = windowOpacity(t, 5.6, 11.6, 0.7);
   if (op <= 0) {
@@ -186,7 +162,6 @@ function sceneTagline(t: number): Node {
   ]);
 }
 
-// ---- Scene 3: islands / selective hydration ----
 function sceneIslands(t: number): Node {
   const op = windowOpacity(t, 11.2, 19.4, 0.7);
   if (op <= 0) {
@@ -195,7 +170,6 @@ function sceneIslands(t: number): Node {
   const cols = 6;
   const rows = 3;
   const count = cols * rows;
-  // Pseudo-random but fixed order in which cards "hydrate".
   const order = [7, 2, 13, 9, 4, 16, 11];
   const p = clamp(norm(t, 12.2, 17.6));
   const hydratedN = Math.floor(p * order.length + 0.001);
@@ -220,7 +194,6 @@ function sceneIslands(t: number): Node {
           padding: 12,
         },
         [
-          // little "lines of content" bars
           h({ width: '70%', height: 8, borderRadius: 4, background: on ? 'rgba(231,241,232,0.85)' : 'rgba(231,241,232,0.22)' }),
           on
             ? h({
@@ -261,7 +234,6 @@ function sceneIslands(t: number): Node {
   ]);
 }
 
-// ---- Scene 4: capabilities ----
 function sceneCaps(t: number): Node {
   const op = windowOpacity(t, 19.0, 25.0, 0.7);
   if (op <= 0) {
@@ -301,7 +273,6 @@ function sceneCaps(t: number): Node {
   ]);
 }
 
-// ---- Scene 5: close ----
 function sceneClose(t: number): Node {
   const op = windowOpacity(t, 24.6, 30.0, 0.8);
   if (op <= 0) {
@@ -337,7 +308,6 @@ function sceneClose(t: number): Node {
   ]);
 }
 
-// Absolutely-positioned centered full-canvas layer.
 function layer(opacity: number, children: Node[]): Node {
   return h(
     {
@@ -355,7 +325,6 @@ function layer(opacity: number, children: Node[]): Node {
   );
 }
 
-// Thin bottom progress bar in accent — a small nod that this is a timed piece.
 function progressBar(t: number): Node {
   const frac = clamp(t / 30);
   return h({
