@@ -9,6 +9,14 @@
   import { files } from './files.ts';
 
   const sources = await loadSources(files);
+
+  // Kept as a string (not literal markup) so the braces and generics render as
+  // text instead of being parsed as Svelte expressions.
+  const usage = `import { Debounced } from 'runed';
+
+let query = $state('');
+const search = new Debounced(() => query, 400);
+// search.current — query, 400ms after it stops changing`;
 </script>
 
 <DemoPage
@@ -22,6 +30,8 @@
       <code>runed</code>. In Mochi it bundles straight into whichever island imports it.
     </p>
     <pre class="install"><code>bun add runed</code></pre>
+    <p>Then import a utility and use it like any rune — e.g. the <code>Debounced</code> value driving the first card:</p>
+    <pre class="usage"><code>{usage}</code></pre>
     <p>Explore the full toolkit at <a href="https://runed.dev" target="_blank" rel="noopener noreferrer">runed.dev</a>.</p>
   </div>
 
@@ -82,7 +92,8 @@
     text-decoration: underline;
   }
 
-  .intro .install {
+  .intro .install,
+  .intro .usage {
     margin: 0 0 0.75rem;
     padding: 0.6rem 0.85rem;
     background: var(--code-bg);
@@ -91,7 +102,12 @@
     overflow-x: auto;
   }
 
-  .intro .install code {
+  .intro .usage {
+    line-height: 1.5;
+  }
+
+  .intro .install code,
+  .intro .usage code {
     font-family: var(--font-mono);
     font-size: 0.9rem;
     color: var(--code-accent);
