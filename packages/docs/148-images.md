@@ -84,7 +84,9 @@ A bare `<Image src>` with no `size` serves the full-size original. An unknown si
 `<Image>` works inside `mochi:hydrate*` islands at any depth — it detects the hydrating subtree with [`isHydratable()`](/docs/selective-hydration/#ishydratable). Minting needs the server secret, so inside an island the minted URL is serialized into the page via Svelte's `hydratable` and reused during hydration.
 
 <Callout type="warning">
-Hydrated-island props ship in plain text in the page HTML, so a <code>src</code> you pass into a <code>mochi:hydrate</code> island is visible to the client, even though the minted image URL stays encrypted. If your origin must stay secret, keep <code>&lt;Image&gt;</code> in server-rendered markup or a server island (<code>mochi:defer</code>), whose props are encrypted.
+
+Hydrated-island props ship in plain text in the page HTML, so a `src` you pass into a `mochi:hydrate` island is visible to the client, even though the minted image URL stays encrypted. If your origin must stay secret, keep `<Image>` in server-rendered markup or a server island (`mochi:defer`), whose props are encrypted.
+
 </Callout>
 
 ### Local image imports
@@ -245,7 +247,7 @@ Configure under `Mochi.serve({ image: { … } })`. Every option is optional.
 
 <Callout type="danger">
 
-**Encryption is the security boundary.** The payload is encrypted with a key derived from your `MOCHI_KEY`, so only your server can mint URLs and the source URL stays hidden. If you pass a **user-controlled** `src` into `getImageUrl()`/`getImage()`, keep `blockPrivateNetworks` on (the default) and prefer an `allowedHosts` allowlist so a user cannot proxy requests to internal services. Upstream redirects are followed, but every hop is re-validated against those same checks; cap the hop count with the [`image:maxRedirects`](/docs/extensions/#imagemaxredirects) filter. A full-size original that is SVG (or any non-raster type) is served as a download rather than inline.
+**Encryption is the security boundary.** The payload is encrypted with a key derived from your `MOCHI_KEY`, so only your server can mint URLs and the source URL stays hidden. If you pass a **user-controlled** `src` into `getImageUrl()`/`getImage()`, keep `blockPrivateNetworks` on (the default) and prefer an `allowedHosts` allowlist so a user cannot proxy requests to internal services. Upstream redirects are followed, but every hop is re-validated against those same checks. Cap the hop count with the [`image:maxRedirects`](/docs/extensions/#imagemaxredirects) filter. A full-size original that is SVG (or any non-raster type) is served as a download rather than inline.
 
 </Callout>
 

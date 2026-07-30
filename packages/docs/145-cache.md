@@ -77,7 +77,7 @@ Use it from a page or API route:
 | `serialize`      | identity          |
 | `deserialize`    | identity          |
 
-For multi-process or persistent caching, pass a custom `storage` that implements `getItem` / `setItem` / `removeItem` / `clear` (Redis, SQLite via `bun:sqlite`). Those methods may be synchronous or `async`; the cache awaits every call. When a backend needs a string or buffer, supply `serialize` / `deserialize` — for example `serialize: JSON.stringify, deserialize: JSON.parse`.
+For multi-process or persistent caching, pass a custom `storage` that implements `getItem` / `setItem` / `removeItem` / `clear` (Redis, SQLite via `bun:sqlite`). Those methods may be synchronous or `async`. The cache awaits every call. When a backend needs a string or buffer, supply `serialize` / `deserialize` — for example `serialize: JSON.stringify, deserialize: JSON.parse`.
 
 The default `MemoryStorage` accepts `{ maxAge, purgeInterval }` for age-based eviction. With no options it never evicts.
 

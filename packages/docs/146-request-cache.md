@@ -42,7 +42,7 @@ export const getUser = requestMemo((id: string) => db.user(id));
 
 The wrapper is the shared identity. Two separate `requestMemo()` calls over the same function get separate entries. Export the wrapped function so every importer shares it, or pass `{ namespace }` to share entries between wrappers.
 
-Arguments are keyed by a type-tagged serialization (`1` and `'1'` never collide; objects go through `JSON.stringify`). For arguments that cannot serialize, pass your own `key`:
+Arguments are keyed by a type-tagged serialization (`1` and `'1'` never collide, and objects go through `JSON.stringify`). For arguments that cannot serialize, pass your own `key`:
 
 ```ts
 const getProfile = requestMemo((user: User) => db.profile(user.id), { key: (user) => user.id });

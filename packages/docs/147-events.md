@@ -18,21 +18,21 @@ Event names use a `namespace:action` convention. Every key is in the typed `Moch
 ### Event index
 
 - [`request`](#request) — every HTTP request (page or API)
-- `ws:open`, `ws:message`, `ws:close` — WebSocket lifecycle
-- `sse:open`, `sse:message`, `sse:close` — Server-Sent Events lifecycle
-- `queue:added`, `queue:active`, `queue:completed`, `queue:failed`, `queue:error` — [background job](/docs/queues/) lifecycle
-- `email:sent`, `email:error` — [transactional email](/docs/email/) delivery
-- `server:start`, `server:stop` — server lifecycle
-- `warmup:start`, `warmup:complete` — route warmup batch (only with `warmup: true`)
+- [`ws:open`](#wsopen), [`ws:message`](#wsmessage), [`ws:close`](#wsclose) — WebSocket lifecycle
+- [`sse:open`](#sseopen), [`sse:message`](#ssemessage), [`sse:close`](#sseclose) — Server-Sent Events lifecycle
+- [`queue:added`](#queueadded), [`queue:active`](#queueactive), [`queue:completed`](#queuecompleted), [`queue:failed`](#queuefailed), [`queue:error`](#queueerror) — [background job](/docs/queues/) lifecycle
+- [`email:sent`](#emailsent), [`email:error`](#emailerror) — [transactional email](/docs/email/) delivery
+- [`server:start`](#serverstart), [`server:stop`](#serverstop) — server lifecycle
+- [`warmup:start`](#warmupstart), [`warmup:complete`](#warmupcomplete) — route warmup batch (only with `warmup: true`)
 - [`error`](#error) — a page/api/action handler threw
-- `action:invoke`, `action:complete` — form action lifecycle
-- `compile:start`, `compile:complete`, `compile:error` — Svelte SSR build
-- `recompile:start`, `recompile:complete` — dev rebuild cycle
-- `client-bundle:complete` — hydratable client bundle finished
-- [`island:error`](/docs/error-boundaries/#islanderror-event) — an island errored
-- `captcha:verify` — a `<MochiCaptcha>` submission was verified or rejected
-- `file:change` — dev-only file watcher
-- `image:store`, `image:delete`, `image:cache-sweep` — [`<Image>`](/docs/images/) cache activity
+- [`action:invoke`](#actioninvoke), [`action:complete`](#actioncomplete) — form action lifecycle
+- [`compile:start`](#compilestart), [`compile:complete`](#compilecomplete), [`compile:error`](#compileerror) — Svelte SSR build
+- [`recompile:start`](#recompilestart), [`recompile:complete`](#recompilecomplete) — dev rebuild cycle
+- [`client-bundle:complete`](#client-bundlecomplete) — hydratable client bundle finished
+- [`island:error`](#islanderror) — an island errored
+- [`captcha:verify`](#captchaverify) — a `<MochiCaptcha>` submission was verified or rejected
+- [`file:change`](#filechange) — dev-only file watcher
+- [`image:store`](#imagestore), [`image:delete`](#imagedelete) — [`<Image>`](/docs/images/) cache activity
 - `cache:read`, `cache:revalidate` — see [Cache events](/docs/cache/#subscribing-to-cache-events)
 
 ### Subscribing
@@ -105,29 +105,180 @@ Fires once per HTTP response, including CSRF rejects. Covers `Mochi.page` and `M
 | `duration`  | `number`               | wall-clock ms, end to end                                  |
 | `warmup`    | `boolean \| undefined` | `true` when issued by [route warmup](/docs/serve-options/) |
 
-#### WebSocket events
+#### `ws:open`
 
-`ws:open` (`path`, `duration`), `ws:message` (`path`, `size`, `type`), `ws:close` (`path`, `duration`, `code`, `reason`).
+Fires after a successful WebSocket upgrade.
 
-#### SSE events
+| Field      | Type     | Notes                               |
+| ---------- | -------- | ----------------------------------- |
+| `path`     | `string` | URL pathname of the upgrade request |
+| `duration` | `number` | ms spent in the upgrade handler     |
 
-`sse:open` (`path`), `sse:message` (`path`, `size`, `event?`), `sse:close` (`path`, `duration`).
+#### `ws:message`
 
-#### Queue events
+Fires for every inbound WebSocket frame, after the user `message` handler returns.
 
-`queue:added` (`queue`, `jobId`, `jobName`), `queue:active` (`+ attempt`), `queue:completed` (`+ attempt, duration`), `queue:failed` (`+ attempt, duration, error`), `queue:error` (`queue`, `error`). See [Queues](/docs/queues/).
+| Field  | Type                 | Notes                         |
+| ------ | -------------------- | ----------------------------- |
+| `path` | `string`             | URL pathname                  |
+| `size` | `number`             | bytes (text length or buffer) |
+| `type` | `'text' \| 'binary'` | frame kind                    |
 
-#### Email events
+#### `ws:close`
 
-`email:sent` (`to`, `subject`, `transport`, `messageId?`, `duration`), `email:error` (`to`, `cc?`, `bcc?`, `subject`, `transport`, `error`). `transport` may be `'smtp' | 'custom' | 'log' | 'dev' | 'suppressed'`. See [Email](/docs/email/).
+Fires when a WebSocket connection closes.
 
-#### `server:start` / `server:stop`
+| Field      | Type     | Notes                       |
+| ---------- | -------- | --------------------------- |
+| `path`     | `string` | URL pathname                |
+| `duration` | `number` | ms the socket was open      |
+| `code`     | `number` | WebSocket close code        |
+| `reason`   | `string` | close reason (may be empty) |
 
-`server:start` (`port?`, `hostname?`, `development`, `routes: { page, api, ws, sse }`). `server:stop` (`reason: 'signal'`, `signal?`).
+#### `sse:open`
 
-#### Warmup events
+Fires when an SSE stream starts.
 
-`warmup:start` (`routeCount`), `warmup:complete` (`routeCount`, `errorCount`, `durationMs`). Only with `warmup: true`.
+| Field  | Type     | Notes        |
+| ------ | -------- | ------------ |
+| `path` | `string` | URL pathname |
+
+#### `sse:message`
+
+Fires per `stream.send()` inside an SSE handler.
+
+| Field   | Type                  | Notes                                   |
+| ------- | --------------------- | --------------------------------------- |
+| `path`  | `string`              | URL pathname                            |
+| `size`  | `number`              | bytes written for the data line         |
+| `event` | `string \| undefined` | optional named event passed to `send()` |
+
+#### `sse:close`
+
+Fires when the SSE stream closes. A client disconnect or an explicit close both count.
+
+| Field      | Type     | Notes                  |
+| ---------- | -------- | ---------------------- |
+| `path`     | `string` | URL pathname           |
+| `duration` | `number` | ms the stream was open |
+
+#### `queue:added`
+
+Fires after `queue.add()` / `queue.addBulk()` enqueues a job. See [Queues](/docs/queues/).
+
+| Field     | Type     | Notes                  |
+| --------- | -------- | ---------------------- |
+| `queue`   | `string` | queue name             |
+| `jobId`   | `string` | generated job id       |
+| `jobName` | `string` | job name passed to add |
+
+#### `queue:active`
+
+Fires when a worker starts a job.
+
+| Field     | Type     | Notes                                   |
+| --------- | -------- | --------------------------------------- |
+| `queue`   | `string` | queue name                              |
+| `jobId`   | `string` | job id                                  |
+| `jobName` | `string` | job name                                |
+| `attempt` | `number` | 1-based attempt number (1 on first run) |
+
+#### `queue:completed`
+
+Fires when a job's processor returns successfully.
+
+| Field      | Type     | Notes                                 |
+| ---------- | -------- | ------------------------------------- |
+| `queue`    | `string` | queue name                            |
+| `jobId`    | `string` | job id                                |
+| `jobName`  | `string` | job name                              |
+| `attempt`  | `number` | attempt that succeeded                |
+| `duration` | `number` | processing ms, measured from `active` |
+
+#### `queue:failed`
+
+Fires when a job's processor throws. One emission per failed attempt.
+
+| Field      | Type     | Notes                          |
+| ---------- | -------- | ------------------------------ |
+| `queue`    | `string` | queue name                     |
+| `jobId`    | `string` | job id                         |
+| `jobName`  | `string` | job name                       |
+| `attempt`  | `number` | attempt that failed            |
+| `duration` | `number` | processing ms before the throw |
+| `error`    | `string` | thrown error message           |
+
+#### `queue:error`
+
+Fires for a worker-level error not tied to one job, for example a poll failure.
+
+| Field   | Type     | Notes         |
+| ------- | -------- | ------------- |
+| `queue` | `string` | queue name    |
+| `error` | `string` | error message |
+
+#### `email:sent`
+
+Fires after `Mochi.email()` hands a message to its transport. The [`email:message` filter](/docs/extensions/#emailmessage) can veto it first. See [Email](/docs/email/).
+
+| Field       | Type                                                   | Notes                                                               |
+| ----------- | ------------------------------------------------------ | ------------------------------------------------------------------- |
+| `to`        | `string[]`                                             | recipient addresses, as actually sent                               |
+| `subject`   | `string`                                               | message subject                                                     |
+| `transport` | `'smtp' \| 'custom' \| 'log' \| 'dev' \| 'suppressed'` | which transport delivered it; `'suppressed'` when the filter vetoed |
+| `messageId` | `string \| undefined`                                  | provider/SMTP id, when the transport returns one                    |
+| `duration`  | `number`                                               | send wall-clock in ms                                               |
+
+#### `email:error`
+
+Fires when a transport throws while sending. `Mochi.email()` re-throws after emitting.
+
+| Field       | Type                                   | Notes                                    |
+| ----------- | -------------------------------------- | ---------------------------------------- |
+| `to`        | `string[]`                             | recipient addresses                      |
+| `cc`        | `string[] \| undefined`                | cc recipients, when the message had any  |
+| `bcc`       | `string[] \| undefined`                | bcc recipients, when the message had any |
+| `subject`   | `string`                               | message subject                          |
+| `transport` | `'smtp' \| 'custom' \| 'log' \| 'dev'` | transport that failed                    |
+| `error`     | `string`                               | error message                            |
+
+#### `server:start`
+
+Fires once after `Bun.serve()` binds the listening socket.
+
+| Field         | Type                                                     | Notes                             |
+| ------------- | -------------------------------------------------------- | --------------------------------- |
+| `port`        | `number \| undefined`                                    | bound TCP port (absent over Unix) |
+| `hostname`    | `string \| undefined`                                    | bound hostname if any             |
+| `development` | `boolean`                                                | dev or prod mode                  |
+| `routes`      | `{ page: number; api: number; ws: number; sse: number }` | route counts by kind              |
+
+#### `server:stop`
+
+Fires when the server shuts down on `SIGTERM` / `SIGINT`, after the `mochi:shutdown` hook runs.
+
+| Field    | Type                                 | Notes                       |
+| -------- | ------------------------------------ | --------------------------- |
+| `reason` | `'signal'`                           | what initiated the shutdown |
+| `signal` | `'SIGTERM' \| 'SIGINT' \| undefined` | the signal received         |
+
+#### `warmup:start`
+
+Fires once when the [route warmup](/docs/serve-options/#route-warmup) batch begins. Only emitted with `warmup: true`.
+
+| Field        | Type     | Notes                                 |
+| ------------ | -------- | ------------------------------------- |
+| `routeCount` | `number` | static page routes about to be warmed |
+
+#### `warmup:complete`
+
+Fires once after the [route warmup](/docs/serve-options/#route-warmup) batch finishes. Only emitted with `warmup: true`.
+
+| Field        | Type     | Notes                                    |
+| ------------ | -------- | ---------------------------------------- |
+| `routeCount` | `number` | static page routes warmed                |
+| `errorCount` | `number` | warmup invocations that threw or 5xx'd   |
+| `durationMs` | `number` | wall-clock ms for the whole warmup batch |
 
 #### `error`
 
@@ -150,21 +301,91 @@ mochiEvents.on('error', ({ kind, path, status, message, stack }) => {
 });
 ```
 
-#### Action events
+#### `action:invoke`
 
-`action:invoke` (`requestId`, `path`, `actionName`), `action:complete` (`+ result: 'success' | 'fail' | 'redirect' | 'error'`, `status?`).
+Fires immediately before a form action handler runs. Pairs with `action:complete` through `requestId`.
 
-#### Compile events
+| Field        | Type     | Notes                                |
+| ------------ | -------- | ------------------------------------ |
+| `requestId`  | `string` | correlates with `action:complete`    |
+| `path`       | `string` | URL pathname + search                |
+| `actionName` | `string` | action name (`'default'` if unnamed) |
 
-`compile:start` (`path`), `compile:complete` (`path`, `ssrSizeBytes`, `hydratableCount`, `serverIslandCount`, `durationMs`), `compile:error` (`path`, `message`, `logs`).
+#### `action:complete`
 
-#### Dev rebuild events
+Fires after a form action returns or throws. One emission per invocation, whatever the outcome.
 
-`recompile:start` (`trigger: 'file' | 'css' | 'svelte-config'`, `path`, `pageCount`), `recompile:complete` (`+ clientBundleCount`, `durationMs`). Production builds never emit. A healthy `clientBundleCount` for a non-CSS save is `1`; a higher number means a regression to per-page bundling.
+| Field        | Type                                           | Notes                           |
+| ------------ | ---------------------------------------------- | ------------------------------- |
+| `requestId`  | `string`                                       | correlates with `action:invoke` |
+| `path`       | `string`                                       | URL pathname + search           |
+| `actionName` | `string`                                       | action name                     |
+| `result`     | `'success' \| 'fail' \| 'redirect' \| 'error'` | outcome category                |
+| `status`     | `number \| undefined`                          | set for `fail` and `redirect`   |
+
+#### `compile:start`
+
+Fires before each Svelte SSR compile. A cache hit skips it.
+
+| Field  | Type     | Notes                       |
+| ------ | -------- | --------------------------- |
+| `path` | `string` | absolute path of the source |
+
+#### `compile:complete`
+
+Fires after a successful compile.
+
+| Field               | Type     | Notes                                    |
+| ------------------- | -------- | ---------------------------------------- |
+| `path`              | `string` | absolute path of the source              |
+| `ssrSizeBytes`      | `number` | size of the SSR bundle                   |
+| `hydratableCount`   | `number` | hydratable islands found                 |
+| `serverIslandCount` | `number` | server islands found                     |
+| `durationMs`        | `number` | wall-clock time spent inside `compile()` |
+
+#### `compile:error`
+
+Fires when `Bun.build` rejects a Svelte source. The framework still throws after emitting. The event exists for tooling that wants the structured logs.
+
+| Field     | Type                                                                        | Notes                            |
+| --------- | --------------------------------------------------------------------------- | -------------------------------- |
+| `path`    | `string`                                                                    | source that failed               |
+| `message` | `string`                                                                    | top-line error message           |
+| `logs`    | `Array<{ file?: string; line?: number; column?: number; message: string }>` | per-message diagnostics from Bun |
+
+#### `recompile:start`
+
+Fires from the dev watcher before a rebuild cycle begins. Production builds never emit. It wraps either a full SSR rebuild (`trigger: 'file' | 'svelte-config'`) or the CSS-only fast path (`trigger: 'css'`).
+
+| Field       | Type                                 | Notes                                            |
+| ----------- | ------------------------------------ | ------------------------------------------------ |
+| `trigger`   | `'file' \| 'css' \| 'svelte-config'` | which watcher path fired                         |
+| `path`      | `string`                             | file whose change triggered the rebuild          |
+| `pageCount` | `number`                             | pages about to be rebuilt (`0` for the CSS path) |
+
+#### `recompile:complete`
+
+Fires after the matching `recompile:start`, once the rebuild finishes and clients are told to reload.
+
+`clientBundleCount` counts `buildClientBundle()` calls inside the cycle. For a typical `'file'` trigger it must be `1`, or `0` when no hydratables are registered. A value above `1` means the registry's bundle deferral stopped working and you regressed to per-page bundling.
+
+| Field               | Type                                 | Notes                                          |
+| ------------------- | ------------------------------------ | ---------------------------------------------- |
+| `trigger`           | `'file' \| 'css' \| 'svelte-config'` | matches `recompile:start`                      |
+| `path`              | `string`                             | matches `recompile:start`                      |
+| `pageCount`         | `number`                             | pages that were rebuilt                        |
+| `clientBundleCount` | `number`                             | `buildClientBundle()` invocations during cycle |
+| `durationMs`        | `number`                             | wall-clock ms for the whole cycle              |
 
 #### `client-bundle:complete`
 
-`entryCount`, `outputBytes`, `durationMs`. Fires whenever the registry rebuilds the hydratable client bundle.
+Fires whenever the registry rebuilds the hydratable client bundle. Production builds emit once at startup. Dev mode emits during `recompileAll()` and on lazy first-hit compiles for server islands.
+
+| Field         | Type     | Notes                                                    |
+| ------------- | -------- | -------------------------------------------------------- |
+| `entryCount`  | `number` | entrypoints fed to Bun.build (bootstrap + per-component) |
+| `outputBytes` | `number` | sum of all output sizes (JS + CSS) from the bundle       |
+| `durationMs`  | `number` | wall-clock ms inside `buildClientBundle()`               |
 
 #### `captcha:verify`
 
@@ -179,15 +400,40 @@ Fires when [`verifyCaptcha()`](/docs/captcha/) finishes. The client gets one gen
 
 #### `island:error`
 
-`componentName`, `islandId?`, `kind: 'hydratable' | 'server' | 'client-hydrate'`, `message`, `stack?`. See [Error boundaries](/docs/error-boundaries/#islanderror-event).
+Fires when an island fails: a server-island render, a hydratable SSR render, or client-side hydration. The framework still ships an error placeholder. See [Error boundaries](/docs/error-boundaries/#islanderror-event).
+
+| Field           | Type                                           | Notes                                             |
+| --------------- | ---------------------------------------------- | ------------------------------------------------- |
+| `componentName` | `string`                                       | island component identifier                       |
+| `islandId`      | `string \| undefined`                          | envelope id; set for `'server'`, else `undefined` |
+| `kind`          | `'hydratable' \| 'server' \| 'client-hydrate'` | which lifecycle stage failed                      |
+| `message`       | `string`                                       | error message                                     |
+| `stack`         | `string \| undefined`                          | stack trace, dev only                             |
 
 #### `file:change`
 
-`path` (absolute), `type: 'add' | 'change' | 'unlink' | 'addDir' | 'unlinkDir'`. Dev-only.
+Fires from the dev file watcher (chokidar). Production builds do not run the watcher, so this event never emits there.
 
-#### Image events
+| Field  | Type                  | Notes                                                      |
+| ------ | --------------------- | ---------------------------------------------------------- |
+| `path` | `string`              | absolute path of the changed file                          |
+| `type` | `MochiFileChangeType` | `'add' \| 'change' \| 'unlink' \| 'addDir' \| 'unlinkDir'` |
 
-`image:store` and `image:delete` fire when the [`<Image>`](/docs/images/) cache writes or removes a file. Pair them to keep an S3 mirror in sync.
+#### `image:store`
+
+Fires when the [`<Image>`](/docs/images/) cache commits a file to disk: a downloaded full-size `original`, a resized `variant`, or a ThumbHash blur `placeholder`. Emitted once per regeneration, because concurrent misses coalesce. Use it to mirror cache writes to durable storage such as S3.
+
+| Field         | Type                                       | Notes                                                   |
+| ------------- | ------------------------------------------ | ------------------------------------------------------- |
+| `kind`        | `'original' \| 'variant' \| 'placeholder'` | which entry type was written                            |
+| `src`         | `string`                                   | the image source (URL/key) this entry derives from      |
+| `path`        | `string`                                   | absolute path of the file just committed on disk        |
+| `id`          | `string`                                   | `variantId` for `variant`; `originalId(src)` otherwise  |
+| `size`        | `number`                                   | bytes written                                           |
+| `contentType` | `string`                                   | authoritative content type; `''` for `placeholder`      |
+| `width`       | `number`                                   | pixel width; `0` for `original` and `placeholder`       |
+| `height`      | `number`                                   | pixel height; `0` for `original` and `placeholder`      |
+| `format`      | `string`                                   | encoded format such as `'webp'`; `''` for the two above |
 
 ```ts
 import { readFileSync } from 'node:fs';
@@ -199,13 +445,30 @@ mochiEvents.on('image:store', ({ kind, src, path, contentType }) => {
 });
 ```
 
-`image:store` fields: `kind: 'original' | 'variant' | 'placeholder'`, `src`, `path`, `id`, `size`, `contentType`, `width`, `height`, `format`. `image:delete` adds `reason: 'evicted' | 'superseded' | 'invalidated'`.
-
 <Callout type="warning">
 
 Read the file **synchronously at the top of the handler** — it provably exists at emit time — then offload the upload to a fire-and-forget task. A lazy `await readFile(path)` inside a slow handler could race the janitor sweep and miss the file.
 
 </Callout>
+
+#### `image:delete`
+
+Fires when the `<Image>` cache removes a file from disk. The janitor sweep evicts it, a newer generation supersedes it, or you invalidate it explicitly. Pair it with `image:store` to keep an S3 mirror in sync. A bulk `invalidateSrc()` only emits per-file deletes while a subscriber is registered.
+
+| Field    | Type                                         | Notes                                                                                                          |
+| -------- | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `kind`   | `'original' \| 'variant' \| 'placeholder'`   | which entry type was removed                                                                                   |
+| `src`    | `string`                                     | the image source this entry derived from                                                                       |
+| `path`   | `string`                                     | absolute path of the removed file                                                                              |
+| `id`     | `string`                                     | same id scheme as `image:store`                                                                                |
+| `size`   | `number`                                     | bytes reclaimed (`0` if the file was already gone)                                                             |
+| `reason` | `'evicted' \| 'superseded' \| 'invalidated'` | `evicted` = past its window (sweep); `superseded` = newer generation; `invalidated` = explicit invalidate call |
+
+```ts
+mochiEvents.on('image:delete', ({ kind, src, path }) => {
+  void s3.deleteObject({ Bucket, Key: `img/${kind}/${src}` });
+});
+```
 
 ### Custom events
 

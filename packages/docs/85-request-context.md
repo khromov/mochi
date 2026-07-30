@@ -37,11 +37,15 @@ The current page URL as a standard [`URL`](https://developer.mozilla.org/en-US/d
 `url` is **isomorphic**. On the server it reads the parsed request URL. On the client it reflects the current browser URL, including after `pushState` / `replaceState`.
 
 <Callout type="info">
-`url` reflects the live browser URL on each access, so a destructured value like <code>const {'{'} pathname {'}'} = url</code> is a snapshot. Access <code>url.pathname</code> directly when you need the live value.
+
+`url` reflects the live browser URL on each access, so a destructured value like `const { pathname } = url` is a snapshot. Access `url.pathname` directly when you need the live value.
+
 </Callout>
 
 <Callout type="warning">
+
 `url.hash` is always empty during SSR — browsers never send the fragment to the server. On the client the hash is available as expected.
+
 </Callout>
 
 ### `params`

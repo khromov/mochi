@@ -158,7 +158,7 @@ const rateLimit = getRequestContext().rateLimit;
 
 <Callout type="info">
 
-**Not counted:** [warmup](/docs/serve-options/) requests, trailing-slash redirects, and CSRF rejections never consume quota. In dev, `rateLimit` edits apply on save — a route with its own config gets fresh in-memory counters; routes on the global limiter keep their shared bucket.
+**Not counted:** [warmup](/docs/serve-options/) requests, trailing-slash redirects, and CSRF rejections never consume quota. In dev, `rateLimit` edits apply on save — a route with its own config gets fresh in-memory counters, and routes on the global limiter keep their shared bucket.
 
 </Callout>
 

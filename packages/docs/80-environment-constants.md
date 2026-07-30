@@ -17,7 +17,7 @@ Import build-time constants from `mochi-framework` to branch on render target or
 import { isServer, isBrowser, isDev } from 'mochi-framework';
 ```
 
-At build time these constants become literal booleans. In the server build `isServer` is `true` and `isBrowser` is `false`; in the client bundle the values are reversed. Because they are literals, an `if (isBrowser) { … }` block is dropped from the opposite bundle, so a server-only branch never reaches the browser.
+At build time these constants become literal booleans. In the server build `isServer` is `true` and `isBrowser` is `false`. In the client bundle the values are reversed. Because they are literals, an `if (isBrowser) { … }` block is dropped from the opposite bundle, so a server-only branch never reaches the browser.
 
 ### `isServer`
 

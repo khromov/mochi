@@ -27,7 +27,7 @@ Navigate between pages and they crossfade. That is the whole setup.
 
 <Callout type="warning">
 
-Render exactly **one** `<ViewTransitions />` per page. Two instances would emit the same global `@keyframes` names and competing rules. If a second one renders, it logs a warning and emits nothing; the first instance wins.
+Render exactly **one** `<ViewTransitions />` per page. Two instances would emit the same global `@keyframes` names and competing rules. If a second one renders, it logs a warning and emits nothing. The first instance wins.
 
 </Callout>
 

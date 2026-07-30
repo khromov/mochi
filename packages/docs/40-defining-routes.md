@@ -153,7 +153,7 @@ Mochi.sse((stream) => {
 
 ### `Mochi.file`
 
-Serve one file from disk with `Mochi.file(source)`. `source` is a string path or a `(req, params) => string` resolver (sync or async). Mochi infers `Content-Type` from the file extension and answers `HEAD` automatically. Paths resolve relative to the working directory. Every resolved path must stay inside the app root; a path outside returns `404`.
+Serve one file from disk with `Mochi.file(source)`. `source` is a string path or a `(req, params) => string` resolver (sync or async). Mochi infers `Content-Type` from the file extension and answers `HEAD` automatically. Paths resolve relative to the working directory. Every resolved path must stay inside the app root. A path outside returns `404`.
 
 ```ts
 // file: src/index.ts
@@ -186,7 +186,9 @@ Route params are URL-decoded before they reach your resolver, so `params.name` c
 Every `Mochi.page` and `Mochi.api` route answers `HEAD` automatically. Mochi runs the `GET` logic and strips the body. Status and headers match the `GET`, and `Content-Length` is set to the `GET` body length. This also covers static assets and the `404` fallback.
 
 <Callout type="info">
+
 `Mochi.sse` is GET-only: a `HEAD` returns `405 Method Not Allowed` (`Allow: GET`) without opening a stream. `Mochi.ws` routes are upgrade-only and do not handle `HEAD`.
+
 </Callout>
 
 ### Static files

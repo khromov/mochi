@@ -36,7 +36,7 @@ Override either by setting it in your own `compilerOptions`.
 
 ### svelteConfigPath
 
-Pass `svelteConfigPath` to `Mochi.serve()` or `build()` to load the config from somewhere else. Relative paths resolve against `process.cwd()`; absolute paths are used as-is.
+Pass `svelteConfigPath` to `Mochi.serve()` or `build()` to load the config from somewhere else. Relative paths resolve against `process.cwd()`. Absolute paths are used as-is.
 
 ```ts
 // file: src/index.ts

@@ -27,10 +27,12 @@ When `development` is true, Mochi enables:
 - **Debug bar** — `<div id="mochi-dev-toolbar">` is injected into every page.
 - **Error overlay** — build and runtime errors render on top of the page.
 - **Bundle stats** — a JSON report is served at `${assetPrefix}/client/stats`.
-- **Stack traces on `error` events** — `error` payloads include `stack`; in production `stack` is `undefined`.
+- **Stack traces on `error` events** — `error` payloads include `stack`. In production `stack` is `undefined`.
 
 <Callout type="warning">
+
 Never run `development: true` in production. Stack traces leak through the `error` event and the error overlay, the file watcher holds open file descriptors, and SSR bundles recompile on every change instead of loading from the prebuilt manifest.
+
 </Callout>
 
 ### `MODE=development` convention
@@ -77,10 +79,12 @@ await Mochi.serve({
 
 ### Route handler HMR
 
-**Route handler code** — `Mochi.api` handlers, `serverProps` resolvers, form `actions`, `Mochi.ws` handlers, `Mochi.sse` handlers — is hot-swapped without a restart. The watcher builds your entry (`src/index.ts`) to discover its transitive dependencies. When any change, it rebuilds the entry, re-reads the `routes` from its `Mochi.serve()` call, and updates the running server in place. Adding, removing, and editing route patterns all work without a restart. WebSocket connections stay open; the browser reloads to pick up updated `serverProps`.
+**Route handler code** — `Mochi.api` handlers, `serverProps` resolvers, form `actions`, `Mochi.ws` handlers, `Mochi.sse` handlers — is hot-swapped without a restart. The watcher builds your entry (`src/index.ts`) to discover its transitive dependencies. When any change, it rebuilds the entry, re-reads the `routes` from its `Mochi.serve()` call, and updates the running server in place. Adding, removing, and editing route patterns all work without a restart. WebSocket connections stay open. The browser reloads to pick up updated `serverProps`.
 
 <Callout type="warning">
-Do <strong>NOT</strong> rely on module-scoped mutable state surviving a route HMR cycle. Each reload re-evaluates the entire entry dependency graph, resetting any <code>let</code> / <code>const</code> at module scope. Move shared state into a module the entry imports (an in-memory store or database), and keep top-level side effects idempotent.
+
+Do **NOT** rely on module-scoped mutable state surviving a route HMR cycle. Each reload re-evaluates the entire entry dependency graph, resetting any `let` / `const` at module scope. Move shared state into a module the entry imports (an in-memory store or database), and keep top-level side effects idempotent.
+
 </Callout>
 
 ### `file:change` event

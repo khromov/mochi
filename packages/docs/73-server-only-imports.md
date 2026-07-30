@@ -34,7 +34,7 @@ export const getVersion = (): string => (db.query('SELECT sqlite_version() as v'
 <p>SQLite {version}</p>
 ```
 
-The `.server.ts` (or `.server.js`) suffix is the whole convention — no runtime API, no config. Import with the extension (`./db.server.ts`); extensionless `./db.server` also works.
+The `.server.ts` (or `.server.js`) suffix is the whole convention — no runtime API, no config. Import with the extension (`./db.server.ts`). Extensionless `./db.server` also works.
 
 ### Types are free
 

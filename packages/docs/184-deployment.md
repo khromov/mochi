@@ -15,7 +15,9 @@ Mochi is a **serverful** application, so it does not run on every serverless hos
 You can host Bun and Mochi at hundreds of hosts. Some popular options are below.
 
 <Callout type="info">
+
 None of the links below are affiliate links or endorsements.
+
 </Callout>
 
 ## Relocatable builds
@@ -98,6 +100,6 @@ Install these on a VPS from one of the providers above.
 
 Connect to your existing infrastructure at different cloud providers.
 
-- [Northflank](https://northflank.com) — containers, jobs, APIs; bring-your-own-cloud
+- [Northflank](https://northflank.com) — containers, jobs, and APIs, with bring-your-own-cloud
 - [Kuberns](https://kuberns.com) — Git-push deploy on AWS infra, no Dockerfile
 - [Convox](https://www.convox.com/)

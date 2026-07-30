@@ -26,12 +26,14 @@ await Mochi.serve({
 ```
 
 <Callout type="info">
-Shaking runs in <strong>production only</strong>. It is a whole-program pass — folding in one component can change when an unrelated component's call site changes — so it cannot be reused per file across hot reloads. In development the flag is ignored and components compile from their original source.
+
+Shaking runs in **production only**. It is a whole-program pass — folding in one component can change when an unrelated component's call site changes — so it cannot be reused per file across hot reloads. In development the flag is ignored and components compile from their original source.
+
 </Callout>
 
 ### Excluding components
 
-If the shaker mis-transforms a component or you hit build-time errors, pass `{ exclude }` with cwd-relative globs to compile those files from their original source. Excluding is safe — the whole-app scan still covers an excluded file as a call site of the components that import it; only its own output is left unshaken.
+If the shaker mis-transforms a component or you hit build-time errors, pass `{ exclude }` with cwd-relative globs to compile those files from their original source. Excluding is safe — the whole-app scan still covers an excluded file as a call site of the components that import it. Only its own output is left unshaken.
 
 ```ts
 await Mochi.serve({
@@ -46,7 +48,9 @@ await Mochi.serve({
 ```
 
 <Callout type="warning">
+
 The svelte-shaker package supports Svelte 5 Runes syntax only, not Svelte 4 legacy syntax.
+
 </Callout>
 
 ### Disabling temporarily

@@ -125,10 +125,16 @@ Override the `Set<string>` of cross-origin sources allowed past the CSRF check. 
 Override the CSRF decision for the current request. The filter receives the default decision — `null` to pass, a `Response` (usually 403) to block. Return the input to delegate, `null` to bypass, or a fresh `Response` to substitute. Sync.
 
 ```ts
-'csrf:check': (decision, { request, url }) => {
-  if (url.pathname.startsWith('/webhooks/')) return null; // bypass CSRF
-  return decision;
-},
+await Mochi.serve({
+  filters: {
+    'csrf:check': (decision, { url }) => {
+      // Webhook endpoint with its own auth — bypass CSRF entirely.
+      if (url.pathname.startsWith('/webhooks/')) return null;
+      return decision;
+    },
+  },
+  routes,
+});
 ```
 
 #### `trailingSlash:redirect`
@@ -136,7 +142,13 @@ Override the CSRF decision for the current request. The filter receives the defa
 Override the `trailingSlash` policy for the current request. The filter receives the computed redirect (a 301/308 `Response` or `null`). Return the input to delegate, or `null` to skip the redirect. Sync.
 
 ```ts
-'trailingSlash:redirect': (redirect, { url }) => (url.pathname === '/mcp' ? null : redirect),
+await Mochi.serve({
+  trailingSlash: 'always',
+  filters: {
+    'trailingSlash:redirect': (redirect, { url }) => (url.pathname === '/mcp' ? null : redirect),
+  },
+  routes,
+});
 ```
 
 #### `cookie:defaults`
@@ -144,7 +156,12 @@ Override the `trailingSlash` policy for the current request. The filter receives
 Default `CookieSerializeOptions` merged into every `cookies.set()` call. Per-call options win per field. Resolved once at startup. Sync.
 
 ```ts
-'cookie:defaults': () => ({ secure: true, httpOnly: true, sameSite: 'Lax', path: '/' }),
+await Mochi.serve({
+  filters: {
+    'cookie:defaults': () => ({ secure: true, httpOnly: true, sameSite: 'Lax', path: '/' }),
+  },
+  routes,
+});
 ```
 
 #### `html:shell`
@@ -162,24 +179,35 @@ Modify the HTML shell template once at startup. The value is the resolved templa
 Override the secret key used to encrypt server-island props and image payloads. Default: the `MOCHI_KEY` env var (or a fresh random key if unset). Use it to source the key from KMS / Vault. Async. The `envKeyPresent` field says whether `MOCHI_KEY` was set.
 
 ```ts
-'serverIsland:secretKey': async () => {
-  const raw = await kms.getSecret('mochi-island-key');
-  return Buffer.from(raw, 'base64url');
-},
+await Mochi.serve({
+  filters: {
+    'serverIsland:secretKey': async () => {
+      const raw = await kms.getSecret('mochi-island-key');
+      return Buffer.from(raw, 'base64url');
+    },
+  },
+  routes,
+});
 ```
 
 #### `payload:compressMinBytes`
 
-The minimum size (bytes) a server-island-prop or image payload must reach before Mochi deflates it ahead of encryption. Evaluated per payload; the filter receives the pre-encryption `payload` bytes. Sync. Default `DEFAULT_COMPRESS_MIN_BYTES` (80). Return `Infinity` to disable compression for a payload.
+The minimum size (bytes) a server-island-prop or image payload must reach before Mochi deflates it ahead of encryption. Evaluated per payload. The filter receives the pre-encryption `payload` bytes. Sync. Default `DEFAULT_COMPRESS_MIN_BYTES` (80). Return `Infinity` to disable compression for a payload.
 
 #### `compile:preprocessors`
 
-A list of Svelte `PreprocessorGroup` to run on every `.svelte` source before compilation. Applies to server and client targets; branch on `target` in context. Sync. Default `[]`.
+A list of Svelte `PreprocessorGroup` to run on every `.svelte` source before compilation. Applies to server and client targets. Branch on `target` in context. Sync. Default `[]`.
 
 ```ts
+import autoprefixer from 'autoprefixer';
 import postcss from 'svelte-preprocess';
 
-'compile:preprocessors': () => [postcss({ postcss: { plugins: [autoprefixer] } })],
+await Mochi.serve({
+  filters: {
+    'compile:preprocessors': () => [postcss({ postcss: { plugins: [autoprefixer] } })],
+  },
+  routes,
+});
 ```
 
 Bun transpiles `<script lang="ts">` automatically, so you need no TypeScript preprocessor. Preprocessors do not apply to `.md` / `.svx` (mdsvex handles those).
@@ -189,10 +217,15 @@ Bun transpiles `<script lang="ts">` automatically, so you need no TypeScript pre
 Modify the `Map<urlPath, diskPath>` of files served from the public directory. The filter receives a fresh copy after each scan. Use it to add virtual files, shadow built-in routes, or rename URLs. Async. A `Mochi.page` / `Mochi.api` route on the same URL still wins.
 
 ```ts
-'publicDir:scan': async (files) => {
-  files.set('/robots.txt', '/etc/mochi/robots.generated.txt');
-  return files;
-},
+await Mochi.serve({
+  filters: {
+    'publicDir:scan': async (files) => {
+      files.set('/robots.txt', '/etc/mochi/robots.generated.txt');
+      return files;
+    },
+  },
+  routes,
+});
 ```
 
 #### `consoleLogger:level`
@@ -200,10 +233,16 @@ Modify the `Map<urlPath, diskPath>` of files served from the public directory. T
 Change the severity a log line is written at. Return `'info' | 'warn' | 'log' | 'debug'`. Runs after the automatic 5xx/slow-request escalation and before `consoleLogger:line`. The level still gates against the active [log level](/docs/logging/). Sync.
 
 ```ts
-'consoleLogger:level': (level, { path, source }) => {
-  if (source.name === 'queue:added') return 'debug';
-  return path.startsWith('/health') ? 'warn' : level;
-},
+await Mochi.serve({
+  filters: {
+    // Job enqueues are noise in this app. Health checks matter more than usual.
+    'consoleLogger:level': (level, { path, source }) => {
+      if (source.name === 'queue:added') return 'debug';
+      return path.startsWith('/health') ? 'warn' : level;
+    },
+  },
+  routes,
+});
 ```
 
 Context fields: `label`, `path`, `status`, `kind`, `source`.
@@ -228,10 +267,16 @@ Context fields: `level`, `label`, `path`, `status`, `kind`, `source` (`{ name, p
 Mutate or drop a [barrel-import warning](/docs/development-mode) before it is logged. First argument is the rendered string. Second is `{ pkg, file, bytes, usedRatio }`. Return the string, a rewrite, or `null` to suppress. Sync.
 
 ```ts
-'barrel:warn': (line, { pkg, bytes }) => {
-  if (pkg === '@lucide/svelte') return null;
-  return `${line} (${Math.round(bytes / 1024)} KB parsed)`;
-},
+await Mochi.serve({
+  filters: {
+    // Drop the warning for one package, rewrite the rest.
+    'barrel:warn': (line, { pkg, bytes }) => {
+      if (pkg === '@lucide/svelte') return null;
+      return `${line} (${Math.round(bytes / 1024)} KB parsed)`;
+    },
+  },
+  routes,
+});
 ```
 
 #### `image:maxRedirects`
@@ -243,16 +288,23 @@ Override how many upstream redirects the image fetcher follows. Each hop is re-v
 Rewrite the encrypted URL from `getImageUrl()` (and `<Image>`), typically to prepend a CDN origin. The context carries `src`, `filename`, and `original`. Return the URL unchanged to opt out per call. Sync.
 
 ```ts
-'image:url': (url, { original }) => `https://cdn.example.com${url}`,
+await Mochi.serve({
+  filters: {
+    'image:url': (url) => `https://cdn.example.com${url}`,
+  },
+  routes,
+});
 ```
 
 <Callout type="danger">
+
 Only rewrite the origin/prefix. Never rewrite the last path segment (the `filename`). That segment is authenticated (bound as AAD to the token), so the image endpoint re-derives it and rejects (403) any request whose filename changed.
+
 </Callout>
 
 #### `image:fileFilter`
 
-Controls which local imports become `ImportedImage` objects. Default `IMAGE_FILE_FILTER` matches png, jpg/jpeg, webp, avif, gif. Return a narrower or wider regex. The `target` is in context. Sync. Widening only decides which files reach the loader; each is still decoded by `Bun.Image`.
+Controls which local imports become `ImportedImage` objects. Default `IMAGE_FILE_FILTER` matches png, jpg/jpeg, webp, avif, gif. Return a narrower or wider regex. The `target` is in context. Sync. Widening only decides which files reach the loader. Each one is still decoded by `Bun.Image`.
 
 #### `image:localAssetFilename`
 
@@ -273,12 +325,17 @@ Returning an absolute (CDN) URL bypasses the built-in `/asset/` route and the lo
 Intercept every message sent through `Mochi.email()` right before the transport. Return a modified message, or `null` to **suppress** the send. The context carries the configured `transport` type. Async. See [Email](/docs/email/#intercepting-messages).
 
 ```ts
-'email:message': (message, { transport }) => {
-  if (transport === 'smtp' && process.env.STAGING) {
-    return { ...message, to: ['qa@app.dev'], cc: undefined, bcc: undefined };
-  }
-  return { ...message, headers: { ...message.headers, 'List-Unsubscribe': '<mailto:unsub@app.dev>' } };
-},
+await Mochi.serve({
+  filters: {
+    'email:message': (message, { transport }) => {
+      if (transport === 'smtp' && process.env.STAGING) {
+        return { ...message, to: ['qa@app.dev'], cc: undefined, bcc: undefined };
+      }
+      return { ...message, headers: { ...message.headers, 'List-Unsubscribe': '<mailto:unsub@app.dev>' } };
+    },
+  },
+  routes,
+});
 ```
 
 A suppressed send still emits `email:sent` with `transport: 'suppressed'`.
@@ -288,7 +345,12 @@ A suppressed send still emits `email:sent` with `transport: 'suppressed'`.
 Proof-of-work difficulty in leading zero bits. Resolved once at startup. Bounds-checked to 1–32. The context carries the raw `captcha` options and `configured`. Sync.
 
 ```ts
-'captcha:bits': (def) => (process.env.NODE_ENV === 'test' ? 8 : def),
+await Mochi.serve({
+  filters: {
+    'captcha:bits': (def) => (process.env.NODE_ENV === 'test' ? 8 : def),
+  },
+  routes,
+});
 ```
 
 #### `captcha:minAgeMs`
@@ -312,7 +374,12 @@ How long a queue's [`recover`](/docs/queues/#recovery-on-start) callback may run
 How long a job may run before its queue reclaims it. Resolved once per queue, after the per-queue [`lockDuration`](/docs/queues/#long-running-jobs) option. `explicit` says whether the value came from that option. Sync. Default and ceiling `1_800_000` (30 minutes).
 
 ```ts
-'queue:lockDurationMs': (value, { explicit }) => (explicit ? value : 5 * 60_000),
+await Mochi.serve({
+  filters: {
+    'queue:lockDurationMs': (value, { explicit }) => (explicit ? value : 5 * 60_000),
+  },
+  routes,
+});
 ```
 
 The returned value must exceed the worst-case runtime of `process`. This filter is the last word on the lock, even over a `lockDuration` passed through the raw `bunqueue` escape hatch.

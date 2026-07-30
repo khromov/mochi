@@ -44,6 +44,6 @@ To inline content you already have as a string, pass `string`. Provide exactly o
 
 <Callout type="warning">
 
-`<RawScript />` is **SSR-only** — it reads from disk, which the browser cannot do. Do not put it inside a hydrated island; it throws if hydrated. It does no escaping, so point it only at files you author.
+`<RawScript />` is **SSR-only** — it reads from disk, which the browser cannot do. Do not put it inside a hydrated island. It throws if hydrated. It does no escaping, so point it only at files you author.
 
 </Callout>

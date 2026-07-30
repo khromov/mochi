@@ -234,7 +234,7 @@ await Mochi.serve({
 
 <Callout type="info">
 
-**Embedded mode only.** The code that adds jobs and the worker that runs them share one process. bunqueue also supports a TCP server mode for distributed workers; Mochi does not expose that yet.
+**Embedded mode only.** The code that adds jobs and the worker that runs them share one process. bunqueue also supports a TCP server mode for distributed workers, but Mochi does not expose that yet.
 
 </Callout>
 

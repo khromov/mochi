@@ -38,13 +38,13 @@ In production (`development: false`), prebuilt JS/CSS bundles served from `asset
 
 <Callout type="info">
 
-**Shutdown signals.** `Mochi.serve()` installs `SIGTERM` and `SIGINT` listeners that fire the [`mochi:shutdown`](/docs/extensions/#mochishutdown) hook, drain queues, then stop the server and exit with code 0. In-flight requests get `shutdownTimeout` ms to finish; anything still connected is force-closed. A second signal exits immediately with code 1. An open WebSocket never drains, so shutdown waits the full `shutdownTimeout` before force-closing. Keep the timeout tight enough for your orchestrator's grace period.
+**Shutdown signals.** `Mochi.serve()` installs `SIGTERM` and `SIGINT` listeners that fire the [`mochi:shutdown`](/docs/extensions/#mochishutdown) hook, drain queues, then stop the server and exit with code 0. In-flight requests get `shutdownTimeout` ms to finish. Anything still connected is force-closed. A second signal exits immediately with code 1. An open WebSocket never drains, so shutdown waits the full `shutdownTimeout` before force-closing. Keep the timeout tight enough for your orchestrator's grace period.
 
 </Callout>
 
 ### Options reference
 
-- `port` — TCP port. No default; set it explicitly.
+- `port` — TCP port. No default, so set it explicitly.
 - `hostname` — interface to bind. Defaults to Bun's default (`0.0.0.0`).
 - `development` — enables live reload, debug bar, and dev error overlay. Default: `true`.
 - `liveReload` — enable the dev-mode live-reload WebSocket. Default: matches `development`. Set `false` to keep the debug bar but skip the socket.
@@ -63,7 +63,7 @@ In production (`development: false`), prebuilt JS/CSS bundles served from `asset
 - `assetPrefix` — URL prefix for framework client assets and the server-island endpoint. Must start with `/`, must not be `/` or end with `/`. Default: `/_mochi`.
 - `additionalWatchPaths` — extra dev-mode watcher paths added to `src` and `public`. Default: `[]`.
 - `barrelWarnings` — warn when a dependency drags a large, tree-shaken module into the build graph. Default: enabled. See [Development mode](/docs/development-mode/).
-- `build` — output controls for `mochi-framework build`; ignored by the runtime. See [CLI](/docs/cli/).
+- `build` — output controls for `mochi-framework build`. The runtime ignores it. See [CLI](/docs/cli/).
 - `svelteConfigPath` — path to a Svelte config file. Default: `./svelte.config.js`. See [Svelte config](/docs/svelte-config/).
 - `svelteCompiler` — which compiler emits component JS. Default: `'svelte'`. `'rsvelte'` needs `@mochi-framework/rsvelte`. See [rsvelte](/docs/rsvelte/).
 - `csrf` — `MochiCsrfOptions` for the origin-header check. See below.
@@ -156,7 +156,7 @@ await Mochi.serve({
 
 #### `xffDepth` and spoofing
 
-`X-Forwarded-For` is comma-separated; each proxy appends the address it saw. The framework reads from the **right**, skipping `xffDepth - 1` trusted proxies, so `xffDepth: 3` returns the real client:
+`X-Forwarded-For` is comma-separated. Each proxy appends the address it saw. The framework reads from the **right**, skipping `xffDepth - 1` trusted proxies, so `xffDepth: 3` returns the real client:
 
 ```
 spoofed, client, proxy1, proxy2   # xffDepth: 3 → "client" (spoofed entry ignored)

@@ -74,6 +74,6 @@ Prebuilt binaries cover macOS arm64/x64, Linux x64/arm64 (glibc), and Windows x6
 
 Production output should generally be byte-identical to `svelte/compiler`. Three differences remain:
 
-- **`cssHash` and `warningFilter`** in `svelte.config.js` are functions and cannot cross the native boundary. They are stripped with a one-time warning; use rsvelte's `cssHashOverride: '<hash>'` to force a fixed CSS hash.
-- **Dev-only instrumentation** is not always reproduced. Development builds only; production output matches.
+- **`cssHash` and `warningFilter`** in `svelte.config.js` are functions and cannot cross the native boundary. They are stripped with a one-time warning. Use rsvelte's `cssHashOverride: '<hash>'` to force a fixed CSS hash.
+- **Dev-only instrumentation** is not always reproduced. This affects development builds only. Production output matches.
 - **`compileModule()`** emits a `vVERSION` placeholder in its header comment and different printer whitespace. Semantically identical.

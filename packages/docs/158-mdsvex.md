@@ -115,7 +115,9 @@ markdown: {
 ```
 
 <Callout type="info">
+
 Omitting the `markdown` config disables `.md`/`.svx` handling, so importing one surfaces a "no loader" error from Bun's bundler. Your `svelte.config.js` `compilerOptions` still apply to compiled markdown. See [Svelte config](/docs/svelte-config/).
+
 </Callout>
 
 <SeeItInAction
