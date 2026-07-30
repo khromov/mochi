@@ -1,10 +1,11 @@
 #!/usr/bin/env bun
 /**
- * Regression test for `bun create mochi@latest`. Scaffolds the `minimal`
- * template into ./cli-tests/mochi-test-<id>/, runs `bun install`, `bun run
- * test`, and `bun run typecheck`, and writes a Markdown report next to the
- * scaffold dir. Scaffold dir is always kept for inspection. Exits non-zero
- * if any step fails.
+ * Regression test for `bun create mochi@latest`. For each published template
+ * (`minimal`, `demos`) it scaffolds into
+ * ./cli-tests/mochi-test-<id>-<template>/, runs `bun install`, `bun run test`,
+ * and `bun run typecheck`, then writes a single combined Markdown report with
+ * one section per template. Scaffold dirs are always kept for inspection.
+ * Exits non-zero if any template fails any step.
  */
 
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -13,6 +14,11 @@ import os from 'node:os';
 
 const REPO_ROOT = join(import.meta.dir, '..', '..');
 const TESTS_DIR = join(REPO_ROOT, 'cli-tests');
+
+// Kept in sync with packages/cli/src/templates.ts (not imported — this script
+// stays dependency-free of the workspace packages).
+const TEMPLATES = ['minimal', 'demos'] as const;
+type TemplateId = (typeof TEMPLATES)[number];
 
 type StepName = 'scaffold' | 'install' | 'test' | 'typecheck';
 type Status = 'pass' | 'fail' | 'skipped';
@@ -127,18 +133,57 @@ function extractInstalledMochiVersion(scaffoldDir: string): string {
   }
 }
 
+interface TemplateResult {
+  template: TemplateId;
+  scaffoldDirRel: string;
+  mochiVersion: string;
+  mochiInstalledVersion: string;
+  steps: StepResult[];
+  overall: Status;
+}
+
+function renderTemplateSection(r: TemplateResult, cliVersion: string): string[] {
+  const overallLabel = r.overall === 'pass' ? '✅ pass' : '❌ fail';
+  const lines: string[] = [];
+  lines.push(`## Template: ${r.template} — ${overallLabel}`);
+  lines.push('');
+  lines.push(`- **Scaffold dir:** \`${r.scaffoldDirRel}\``);
+  lines.push(`- create-mochi (CLI): ${cliVersion}`);
+  lines.push(`- mochi-framework (pinned by scaffold): ${r.mochiVersion}`);
+  lines.push(`- mochi-framework (installed): ${r.mochiInstalledVersion}`);
+  lines.push('');
+  lines.push('| Step       | Status     | Duration | Exit |');
+  lines.push('|------------|------------|----------|------|');
+  for (const s of r.steps) {
+    const exit = s.exitCode === null ? '—' : String(s.exitCode);
+    lines.push(`| ${s.name.padEnd(10)} | ${statusCell(s.status).padEnd(10)} | ${fmtDuration(s.durationMs).padStart(8)} | ${exit.padStart(4)} |`);
+  }
+
+  const failures = r.steps.filter((s) => s.status === 'fail');
+  if (failures.length > 0) {
+    lines.push('');
+    lines.push('### Failures');
+    for (const s of failures) {
+      lines.push('');
+      lines.push(`#### ${s.name}`);
+      lines.push('');
+      lines.push('```');
+      lines.push(s.output || '(no output captured)');
+      lines.push('```');
+    }
+  }
+  return lines;
+}
+
 function renderReport(args: {
   id: string;
   when: string;
   overall: Status;
-  scaffoldDir: string;
   cliVersion: string;
-  mochiVersion: string;
-  mochiInstalledVersion: string;
   bunVersion: string;
   nodeVersion: string;
   platform: string;
-  steps: StepResult[];
+  results: TemplateResult[];
 }): string {
   const overallLabel = args.overall === 'pass' ? '✅ pass' : '❌ fail';
   const lines: string[] = [];
@@ -146,59 +191,28 @@ function renderReport(args: {
   lines.push('');
   lines.push(`- **When:** ${args.when}`);
   lines.push(`- **Result:** ${overallLabel}`);
-  lines.push(`- **Scaffold dir:** \`${args.scaffoldDir}\``);
+  lines.push(`- **Templates:** ${args.results.map((r) => r.template).join(', ')}`);
   lines.push('');
-  lines.push('## Versions');
+  lines.push('## Environment');
   lines.push(`- create-mochi (CLI): ${args.cliVersion}`);
-  lines.push(`- mochi-framework (pinned by scaffold): ${args.mochiVersion}`);
-  lines.push(`- mochi-framework (installed): ${args.mochiInstalledVersion}`);
   lines.push(`- Bun: ${args.bunVersion}`);
   lines.push(`- Node API: ${args.nodeVersion}`);
   lines.push(`- Platform: ${args.platform}`);
   lines.push('');
-  lines.push('## Steps');
-  lines.push('');
-  lines.push('| Step       | Status     | Duration | Exit |');
-  lines.push('|------------|------------|----------|------|');
-  for (const s of args.steps) {
-    const exit = s.exitCode === null ? '—' : String(s.exitCode);
-    lines.push(`| ${s.name.padEnd(10)} | ${statusCell(s.status).padEnd(10)} | ${fmtDuration(s.durationMs).padStart(8)} | ${exit.padStart(4)} |`);
-  }
-
-  const failures = args.steps.filter((s) => s.status === 'fail');
-  if (failures.length > 0) {
+  for (const r of args.results) {
+    lines.push(...renderTemplateSection(r, args.cliVersion));
     lines.push('');
-    lines.push('## Failures');
-    for (const s of failures) {
-      lines.push('');
-      lines.push(`### ${s.name}`);
-      lines.push('');
-      lines.push('```');
-      lines.push(s.output || '(no output captured)');
-      lines.push('```');
-    }
   }
-  lines.push('');
   return lines.join('\n');
 }
 
-async function main() {
-  const id = String(Math.floor(Date.now() / 1000));
-  const name = `mochi-test-${id}`;
+async function runTemplate(template: TemplateId, id: string): Promise<TemplateResult> {
+  const name = `mochi-test-${id}-${template}`;
   const scaffoldDir = join(TESTS_DIR, name);
   const scaffoldDirRel = `./cli-tests/${name}`;
-  const reportPath = join(TESTS_DIR, `${name}-report.md`);
-  const when = new Date().toISOString();
 
-  mkdirSync(TESTS_DIR, { recursive: true });
-
-  console.log(`▶ ${name}`);
-  console.log(`  scaffold dir: ${scaffoldDirRel}`);
-  console.log(`  report:       ./cli-tests/${name}-report.md`);
   console.log('');
-
-  const cliVersion = await probeCliVersion();
-  console.log(`  create-mochi: ${cliVersion}`);
+  console.log(`▶ ${template} (${scaffoldDirRel})`);
 
   const steps: Record<StepName, StepResult> = {
     scaffold: skipped('scaffold'),
@@ -207,10 +221,10 @@ async function main() {
     typecheck: skipped('typecheck'),
   };
 
-  console.log('• scaffold…');
-  const scaffold = await runCmd(['bun', 'create', 'mochi@latest', scaffoldDirRel, '--template', 'minimal', '--force'], REPO_ROOT);
+  console.log(`  [${template}] • scaffold…`);
+  const scaffold = await runCmd(['bun', 'create', 'mochi@latest', scaffoldDirRel, '--template', template, '--force'], REPO_ROOT);
   steps.scaffold = toStep('scaffold', scaffold);
-  console.log(`  ${statusCell(steps.scaffold.status)} (${fmtDuration(steps.scaffold.durationMs)})`);
+  console.log(`  [${template}]   ${statusCell(steps.scaffold.status)} (${fmtDuration(steps.scaffold.durationMs)})`);
 
   let mochiVersion = 'unknown';
   let mochiInstalledVersion = 'unknown';
@@ -218,28 +232,52 @@ async function main() {
   if (steps.scaffold.status === 'pass') {
     mochiVersion = extractMochiVersion(scaffold.stdout, scaffoldDir);
 
-    console.log('• install…');
+    console.log(`  [${template}] • install…`);
     const install = await runCmd(['bun', 'install'], scaffoldDir);
     steps.install = toStep('install', install);
-    console.log(`  ${statusCell(steps.install.status)} (${fmtDuration(steps.install.durationMs)})`);
+    console.log(`  [${template}]   ${statusCell(steps.install.status)} (${fmtDuration(steps.install.durationMs)})`);
 
     if (steps.install.status === 'pass') {
       mochiInstalledVersion = extractInstalledMochiVersion(scaffoldDir);
 
-      console.log('• test…');
+      console.log(`  [${template}] • test…`);
       const test = await runCmd(['bun', 'run', 'test'], scaffoldDir);
       steps.test = toStep('test', test);
-      console.log(`  ${statusCell(steps.test.status)} (${fmtDuration(steps.test.durationMs)})`);
+      console.log(`  [${template}]   ${statusCell(steps.test.status)} (${fmtDuration(steps.test.durationMs)})`);
 
-      console.log('• typecheck…');
+      console.log(`  [${template}] • typecheck…`);
       const tc = await runCmd(['bun', 'run', 'typecheck'], scaffoldDir);
       steps.typecheck = toStep('typecheck', tc);
-      console.log(`  ${statusCell(steps.typecheck.status)} (${fmtDuration(steps.typecheck.durationMs)})`);
+      console.log(`  [${template}]   ${statusCell(steps.typecheck.status)} (${fmtDuration(steps.typecheck.durationMs)})`);
     }
   }
 
   const ordered: StepResult[] = [steps.scaffold, steps.install, steps.test, steps.typecheck];
   const overall: Status = ordered.every((s) => s.status === 'pass') ? 'pass' : 'fail';
+
+  return { template, scaffoldDirRel, mochiVersion, mochiInstalledVersion, steps: ordered, overall };
+}
+
+async function main() {
+  const id = String(Math.floor(Date.now() / 1000));
+  const reportPath = join(TESTS_DIR, `mochi-test-${id}-report.md`);
+  const when = new Date().toISOString();
+
+  mkdirSync(TESTS_DIR, { recursive: true });
+
+  console.log(`▶ mochi-test-${id}`);
+  console.log(`  templates: ${TEMPLATES.join(', ')}`);
+  console.log(`  report:    ./cli-tests/mochi-test-${id}-report.md`);
+
+  const cliVersion = await probeCliVersion();
+  console.log(`  create-mochi: ${cliVersion}`);
+
+  const results: TemplateResult[] = [];
+  for (const template of TEMPLATES) {
+    results.push(await runTemplate(template, id));
+  }
+
+  const overall: Status = results.every((r) => r.overall === 'pass') ? 'pass' : 'fail';
 
   const bunVersion = typeof Bun !== 'undefined' ? Bun.version : 'unknown';
   const nodeVersion = process.versions.node ? `v${process.versions.node}` : 'unknown';
@@ -249,19 +287,19 @@ async function main() {
     id,
     when,
     overall,
-    scaffoldDir: scaffoldDirRel,
     cliVersion,
-    mochiVersion,
-    mochiInstalledVersion,
     bunVersion,
     nodeVersion,
     platform,
-    steps: ordered,
+    results,
   });
 
   writeFileSync(reportPath, report);
 
   console.log('');
+  for (const r of results) {
+    console.log(`  ${r.template}: ${r.overall === 'pass' ? '✅ pass' : '❌ fail'}`);
+  }
   console.log(`overall: ${overall === 'pass' ? '✅ pass' : '❌ fail'}`);
   console.log(`report:  ${resolve(reportPath)}`);
 
