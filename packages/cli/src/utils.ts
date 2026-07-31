@@ -69,7 +69,6 @@ const BASE_TSCONFIG_COMPILER_OPTIONS = {
 } as const;
 
 export interface PackageJsonTransform {
-  /** Replace the `name` field. */
   name: string;
   /** Version range to swap in for any `workspace:*` dep on `mochi-framework`. */
   mochiVersion: string;
@@ -93,13 +92,10 @@ export function transformPackageJson(contents: string, opts: PackageJsonTransfor
     }
   }
 
-  // The patch can't live in the committed template `package.json`: inside the
-  // monorepo bun resolves every workspace's `patchedDependencies` path against
-  // the repo root, which breaks for a workspace-relative path. Templates ship the
-  // patch *files* under `patches/`; we wire them up here so the scaffolded
-  // standalone project picks them up on first `bun install`. Deriving the map
-  // from whatever files the downloaded template carries — rather than a hardcoded
-  // list — means a published CLI never drifts behind a template's dep bumps.
+  // Can't live in the committed template `package.json` because bun resolves a workspace's
+  // `patchedDependencies` path against the monorepo root, so we wire it up here instead.
+  // Deriving the map from the template's own `patches/` files (rather than a hardcoded list)
+  // means a published CLI never drifts behind a template's dep bumps.
   const patched = derivePatchedDependencies(path.join(opts.dir, 'patches'));
   if (Object.keys(patched).length > 0) {
     pkg.patchedDependencies = patched;

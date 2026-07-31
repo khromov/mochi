@@ -38,9 +38,8 @@
   }
   let { demos = [] }: { demos: DemoLink[] } = $props();
 
-  // Keyed by href so the markdown only needs to pass { href, title, hook }.
-  // Mirrors the icon choices in packages/site/src/lib/demoIcons.ts; duplicated
-  // here to keep docs free of any dependency on the site package.
+  // Keyed by href so markdown only needs to pass { href, title, hook }; mirrors
+  // packages/site/src/lib/demoIcons.ts, duplicated here to keep docs free of any dependency on the site package.
   const iconFor: Record<string, Component> = {
     '/demos/hello-world/': Sprout,
     '/demos/server-props/': PackageOpen,

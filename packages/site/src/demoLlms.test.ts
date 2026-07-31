@@ -31,15 +31,9 @@ describe('per-demo llms.txt routes', () => {
       }
       return realFetch(input as never, init as never);
     }) as typeof fetch;
-    // This test boots the whole site with an in-process compile, which imports a
-    // local image (the Image demo's `hero.jpg`). The build-time image loader
-    // probes intrinsic dimensions with `new Bun.Image().metadata()` — a native
-    // decode. Run *inside* a `Bun.build` pass under the `bun test` runtime, that
-    // decode can trip the Bun bundler bug worked around in bunfig.toml, in the
-    // next pass (the client bundle). Real `bun run` builds (dev +
-    // `mochi-framework build`) are unaffected, so we only need to neutralize the
-    // native decode here: stub `Bun.Image` with a metadata-only fake (this test
-    // never inspects image dimensions), restored in `afterAll`.
+    // The build-time image loader's native `Bun.Image().metadata()` decode can trip the
+    // Bun bundler bug worked around in bunfig.toml when this test's in-process compile
+    // runs a nested `Bun.build` pass; stub it with a metadata-only fake, restored in `afterAll`.
     // @ts-expect-error minimal metadata-only stub, not the full Bun.Image type
     Bun.Image = class {
       constructor(_bytes: unknown) {}

@@ -9,7 +9,6 @@ export const SCAFFOLDED_PORT = 3333;
 export interface CreateOptions {
   /** Destination directory (absolute or cwd-relative). */
   dir: string;
-  /** Template id. */
   template: TemplateId;
   /** Value to write into the generated `package.json` `name` field. */
   name: string;
@@ -41,11 +40,8 @@ export async function create(opts: CreateOptions): Promise<CreateResult> {
   const dir = path.resolve(opts.dir);
   await fs.mkdir(dir, { recursive: true });
 
-  // Template files come from the default branch of `khromov/mochi`, while
-  // `mochiVersion` below is the latest *published* npm release. When main is
-  // ahead of the most recent release, the scaffolded project may reference
-  // framework features that aren't on npm yet. See `Template.source` for how
-  // to pin a tag instead.
+  // Template files come from `khromov/mochi`'s default branch, which can be ahead of the published
+  // npm version `mochiVersion` resolves to — see `Template.source` to pin a tag instead.
   await downloadTemplate(template.source, {
     dir,
     force: opts.force ?? false,

@@ -21,9 +21,7 @@ export const routes: Record<string, MochiRouteValue> = {
         });
         return success({ preset: preset.id, subject: preset.subject });
       },
-      // Read the (pre-resized) image off disk and hand it to Mochi.email() as a
-      // real file attachment. The recipient, subject, and file are all fixed
-      // server-side — nothing about the attachment comes from the request.
+      // The recipient, subject, and file are all fixed server-side — nothing about the attachment comes from the request.
       sendPhoto: async () => {
         const content = await Bun.file(ATTACHMENT.path).bytes();
         await Mochi.email({

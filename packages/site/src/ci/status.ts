@@ -52,8 +52,8 @@ const MINUTE = 60_000;
 const HOUR = 3_600_000;
 const DAY = 86_400_000;
 
-/** Coarse relative time. Clock skew between our `now` and GitHub's timestamps can put
- * an event slightly in the future, which must read as "just now", never "-3m ago". */
+/** Clock skew between our `now` and GitHub's timestamps can put an event slightly in the
+ * future, which must read as "just now", never "-3m ago". */
 export function formatRelative(iso: string | number, now: number): string {
   const then = typeof iso === 'number' ? iso : Date.parse(iso);
   if (!Number.isFinite(then)) {
@@ -88,7 +88,6 @@ export function formatUntil(iso: string | number, now: number): string {
   return `in ${Math.floor(delta / HOUR)}h`;
 }
 
-/** Passing share of the completed runs, or null when none have completed. */
 export function successRate(runs: RunLike[]): { passed: number; total: number } | null {
   const completed = runs.filter((r) => r.status === 'completed');
   if (completed.length === 0) {

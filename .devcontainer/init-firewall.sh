@@ -14,6 +14,15 @@ iptables -t mangle -F
 iptables -t mangle -X
 ipset destroy allowed-domains 2>/dev/null || true
 
+# Reset policies to ACCEPT before doing anything network-dependent below
+# (fetching GitHub's IP ranges, resolving allowed domains). A previous run
+# may have left these at DROP; iptables -F only clears rules, not policies,
+# so without this a re-run on an already-locked-down container can never
+# reach the network to rebuild its own allowlist.
+iptables -P INPUT ACCEPT
+iptables -P OUTPUT ACCEPT
+iptables -P FORWARD ACCEPT
+
 # 2. Selectively restore ONLY internal Docker DNS resolution
 if [ -n "$DOCKER_DNS_RULES" ]; then
     echo "Restoring Docker DNS rules..."
@@ -125,6 +134,13 @@ echo "Host network detected as: $HOST_NETWORK"
 # Set up remaining iptables rules
 iptables -A INPUT -s "$HOST_NETWORK" -j ACCEPT
 iptables -A OUTPUT -d "$HOST_NETWORK" -j ACCEPT
+
+# Allow inbound connections to the dev server port range (site 3333, demos
+# 3334, minimal 3335, support 3336, plus headroom for future ports) so
+# they're reachable via the published Docker ports from other machines on
+# the LAN, not just from HOST_NETWORK above (which is only the docker
+# bridge subnet, not the real LAN).
+iptables -A INPUT -p tcp --dport 3333:3400 -j ACCEPT
 
 # Allow the devcontainers-manager attention bridge. host.docker.internal is injected
 # via --add-host=host.docker.internal:host-gateway; on Colima it resolves to the Lima
