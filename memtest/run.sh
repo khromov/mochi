@@ -42,6 +42,7 @@ docker run -d \
   --name "$CONTAINER" \
   --restart unless-stopped \
   -e PORT="$PORT" \
+  -e MEMTEST_GIT_SHA="${MEMTEST_GIT_SHA:-}" \
   -v "${SNAPSHOT_DIR}:/snapshots" \
   ${publish_args[@]+"${publish_args[@]}"} \
   "$IMAGE"
