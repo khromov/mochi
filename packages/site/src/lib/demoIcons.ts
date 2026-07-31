@@ -52,6 +52,7 @@ import Ampersand from '@lucide/svelte/icons/ampersand';
 import Mail from '@lucide/svelte/icons/mail';
 import Gauge from '@lucide/svelte/icons/gauge';
 import Recycle from '@lucide/svelte/icons/recycle';
+import ChartSpline from '@lucide/svelte/icons/chart-spline';
 
 export interface DemoIconMeta {
   icon: Component;
@@ -112,4 +113,5 @@ export const demoIconFor: Record<string, DemoIconMeta> = {
   'View Transitions': { icon: Blend, label: 'Animated cross-document navigations' },
   'Custom Transitions': { icon: Tornado, label: 'Custom @keyframes spin via custom={{ in, out }}' },
   'File Routes': { icon: FileDown, label: 'Serve a file from disk with Mochi.file()' },
+  'Charts with LayerChart': { icon: ChartSpline, label: 'A third-party Svelte chart library, SSR + islands' },
 };

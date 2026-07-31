@@ -1,6 +1,7 @@
 import type { SourceSpec } from '../components/utils.ts';
 import { files as api } from '../demos/api/files.ts';
 import { files as cacheEvents } from '../demos/cache-events/files.ts';
+import { files as charts } from '../demos/charts/files.ts';
 import { files as chat } from '../demos/chat/files.ts';
 import { files as clientOnly } from '../demos/client-only/files.ts';
 import { files as cookieVaryTest } from '../demos/cookie-vary-test/files.ts';
@@ -99,6 +100,14 @@ export const demos: Demo[] = [
     files: hydration,
     title: 'Hydration Modes',
     hook: 'How the hydration modes work — mochi:hydrate, mochi:hydrate:visible, rootMargin tuning, and mochi:defer server islands side by side.',
+    category: 'hydration',
+  },
+  {
+    href: '/demos/charts/',
+    slug: 'charts',
+    files: charts,
+    title: 'Charts with LayerChart',
+    hook: 'How a third-party Svelte component library works in Mochi — LayerChart server-rendered to plain SVG with zero JavaScript, then the same library as mochi:hydrate and mochi:clientOnly islands.',
     category: 'hydration',
   },
   {
