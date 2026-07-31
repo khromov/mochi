@@ -14,13 +14,8 @@ export interface SupportEmailJob {
   id: number;
 }
 
-// In-memory: jobs don't survive a restart. The submission itself is already
-// committed to SQLite, so `recover` puts every row that hasn't been delivered
-// back on the queue at boot — the rows, not the queue, are the source of truth.
-//
-// This assumes a single instance, which is what support.mochi.fast runs. Scaling
-// it out would have every process recover the same rows and send duplicate
-// emails; the framework-side fix is the single-flight TODO in mochi's queue.ts.
+// In-memory: jobs don't survive a restart, so `recover` puts every undelivered row (the source of truth, since it's committed to SQLite) back on the queue at boot.
+// TODO: this assumes a single instance — scaling out would double-send until mochi's queue.ts gets single-flight support.
 export const supportEmailQueue: MochiQueueConfig = Mochi.queue<SupportEmailJob>({
   concurrency: 2,
   defaultJobOptions: { attempts: MAX_ATTEMPTS },
@@ -57,10 +52,7 @@ export const supportEmailQueue: MochiQueueConfig = Mochi.queue<SupportEmailJob>(
         text: [`From: ${name || '(no name)'} <${email}>`, '', message].join('\n'),
       });
     } catch (err) {
-      // Recorded before rethrowing so the admin panel shows why, even while
-      // bunqueue is still retrying. Only the last attempt is terminal: until
-      // then the row stays `pending`, so a restart mid-backoff leaves it in the
-      // set `recover` re-enqueues rather than stranding it as `failed`.
+      // Recorded before rethrowing so the admin panel shows why while bunqueue retries — only the last attempt is terminal, so a restart mid-backoff leaves the row for `recover` instead of stranding it as `failed`.
       const reason = err instanceof Error ? err.message : String(err);
       if (job.attempt >= MAX_ATTEMPTS) {
         markEmailFailed(submission.id, reason);

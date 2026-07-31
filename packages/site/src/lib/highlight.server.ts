@@ -3,13 +3,11 @@ import { createHighlighter } from 'mochi-framework/highlight';
 import { logger } from 'mochi-framework';
 import { mochiTheme } from './shiki-theme';
 
-// Use Shiki's JS RegExp engine instead of the default oniguruma WASM engine:
-// each compiled SSR bundle that imports this module would otherwise instantiate
-// its own oniguruma WebAssembly.Memory (~100–150MB each, never reclaimed). This
-// matters only in the deployed Linux container. On Windows the JS engine's
-// Oniguruma→RegExp translation hangs (a translated pattern backtracks
-// pathologically under Bun on Windows, timing out CI), so fall back to the
-// oniguruma WASM engine there — the memory win is irrelevant off the prod host.
+// Use Shiki's JS RegExp engine instead of oniguruma WASM: each SSR bundle importing this
+// module would otherwise instantiate its own ~100-150MB oniguruma WebAssembly.Memory that's
+// never reclaimed, which matters only on the deployed Linux container. On Windows the JS
+// engine's translated patterns backtrack pathologically under Bun (hanging CI), so fall
+// back to oniguruma WASM there instead.
 logger.warn(`[highlight] shiki engine for platform '${process.platform}': ${process.platform === 'win32' ? 'oniguruma WASM' : 'JS RegExp'}`);
 const engine = process.platform === 'win32' ? undefined : createJavaScriptRegexEngine({ forgiving: true });
 const shiki = await createShiki({

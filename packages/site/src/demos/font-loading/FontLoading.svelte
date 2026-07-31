@@ -2,10 +2,20 @@
   import '@fontsource/jetbrains-mono';
   import './lobster.css';
   import DemoPage from '../../components/DemoPage.svelte';
+  import CodeSnippet from '../../components/CodeSnippet.svelte';
   import { loadSources } from '../../components/utils.ts';
+  import { highlightCode } from '../../lib/highlight.server';
   import { files } from './files.ts';
 
   const sources = await loadSources(files);
+
+  const codeFontFace = await highlightCode(
+    `@font-face {
+  font-family: 'Lobster';
+  src: url('./lobster.woff2') format('woff2');
+}`,
+    'css',
+  );
 </script>
 
 <DemoPage
@@ -27,12 +37,7 @@
       Drop a <code>.woff2</code> next to your component and reference it from a tiny
       <code>@font-face</code> CSS file:
     </p>
-    <pre><code
-        >{`@font-face {
-  font-family: 'Lobster';
-  src: url('./lobster.woff2') format('woff2');
-}`}</code
-      ></pre>
+    <CodeSnippet html={codeFontFace} />
     <p>
       Import the CSS (<code>import './lobster.css'</code>). Bun's CSS bundler inlines the <code>.woff2</code> as a base64 data URI in the bundled CSS.
     </p>
@@ -62,8 +67,5 @@
   .sample-display {
     font-family: 'Lobster', cursive;
     font-size: 2rem;
-  }
-  pre {
-    margin: 0.75rem 0;
   }
 </style>

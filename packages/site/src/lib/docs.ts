@@ -26,7 +26,7 @@ function filesForDemo(slug: string): SourceSpec[] | undefined {
   return internalDemos().find((d) => d.slug === slug)?.files;
 }
 
-/** Parses the leading numeric prefix of a filename (e.g. `"01-intro.md"` → `1`). */
+// Parses the leading numeric prefix of a filename (e.g. `"01-intro.md"` → `1`).
 function leadingFileNumber(filename: string, fallback = Number.NaN): number {
   const digits = /^(\d+)-/.exec(filename)?.[1];
   return digits === undefined ? fallback : Number.parseInt(digits, 10);
@@ -84,11 +84,9 @@ export async function loadDocs(): Promise<DocEntry[]> {
   filenames.sort((a, b) => {
     const na = leadingFileNumber(a);
     const nb = leadingFileNumber(b);
-    // Only let the numeric prefix decide when the two numbers differ. Two docs
-    // sharing a prefix must fall back to a total order, else stable-sort
-    // preserves Bun.Glob.scan's filesystem order, which differs between the
-    // image-build and runtime container filesystems and makes the generated
-    // docs barrel non-reproducible.
+    // Numeric prefix decides order only when it differs; ties need a total order too, since
+    // Bun.Glob.scan's filesystem order differs between the image-build and runtime containers,
+    // which would make the generated docs barrel non-reproducible.
     if (Number.isFinite(na) && Number.isFinite(nb) && na !== nb) {
       return na - nb;
     }
@@ -269,8 +267,8 @@ export async function buildLlmsFullTxt(): Promise<string> {
     const [docs, demos, posts] = await Promise.all([loadDocs(), buildDemosTxt(true), buildBlogPostsTxt()]);
     cachedLlmsFullBaseTxt = docs.map((d) => d.raw.trimEnd()).join('\n\n') + '\n\n' + demos + '\n\n' + posts;
   }
-  // The changelog is fetched (and cached) separately; concatenate it per request so
-  // its own 4h TTL isn't frozen into the forever memo. Omit the block on a fetch miss.
+  // The changelog is fetched (and cached) separately; concatenate it per request so its own
+  // 4h TTL isn't frozen into the forever memo, and omit the block on a fetch miss.
   const changelog = await getChangelogTxt();
   if (changelog === null) {
     return cachedLlmsFullBaseTxt;
@@ -326,24 +324,17 @@ export interface LlmsIndexEntry {
   url: string;
 }
 
-/** The plain-text source URL for a demo, derived from its page href (which ends in '/'). */
+// The plain-text source URL for a demo, derived from its page href (which ends in '/').
 function demoLlmsPath(href: string): string {
   return href.endsWith('/') ? `${href}llms.txt` : `${href}/llms.txt`;
 }
 
 export interface DemoLlmsRoute {
-  /** Route path, sitting alongside the demo page (e.g. /demos/chat/llms.txt, /cookie-vary-test/llms.txt). */
   path: string;
-  /** Demo folder name (the demo's `slug`) used to look up its source. */
   slug: string;
 }
 
-/**
- * Demos with local source, each as the static llms.txt route to register and the
- * `slug` (folder name) behind it. The route is static (not a param) so it outranks
- * demo param routes like /demos/data-loading/:id, and its path tracks the demo's own
- * page href so source and page share a prefix.
- */
+/** Static llms.txt routes for demos with local source, one per `slug` — static (not a param) so it outranks demo param routes like `/demos/data-loading/:id`, and its path tracks the demo's own page href. */
 export function internalDemoLlmsRoutes(): DemoLlmsRoute[] {
   return internalDemos().map((d) => ({ path: demoLlmsPath(d.href), slug: d.slug }));
 }
@@ -402,8 +393,8 @@ export async function buildLlmsJson(origin: string): Promise<{ docs: LlmsIndexEn
 const SITE_NAME = 'Mochi';
 const SITE_SUMMARY = 'Mochi is an SSR-first framework for Svelte 5 on Bun with islands-based selective hydration.';
 
-// Standard llms.txt index: title + summary + linked sections, rendered from the same
-// data as /llms.json. Per-request (origin-dependent), so not cached.
+// Standard llms.txt index (title + summary + linked sections) rendered from the same data
+// as /llms.json; per-request since it's origin-dependent, so not cached.
 export async function buildLlmsIndexTxt(origin: string): Promise<string> {
   const { docs, posts, demos } = await buildLlmsJson(origin);
   const link = (e: LlmsIndexEntry) => `- [${e.title}](${e.url}): ${e.description}`;

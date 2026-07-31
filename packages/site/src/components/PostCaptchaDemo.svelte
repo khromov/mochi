@@ -46,9 +46,8 @@
 </script>
 
 <form class="captcha-demo" bind:this={form} onsubmit={check}>
-  <!-- The mint is a round trip, so the first render has no challenge yet. Mounting
-       the widget tokenless trips its own misconfiguration check, so hold the track's
-       height until one lands. -->
+  <!-- The mint is a round trip, so hold the track's height until a token lands —
+       mounting the widget tokenless trips its own misconfiguration check. -->
   {#if token}
     {#key token}
       <MochiCaptcha {token} {bits} {solveBudgetMs} bind:verified />

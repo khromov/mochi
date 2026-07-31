@@ -56,7 +56,6 @@ const handleError: HandleError = ({ error, event, status, message }) => {
   if (error && status >= 500) {
     logger.error('app:', event.url.pathname, error);
   }
-  // Short-circuit: redirect this specific demo path instead of rendering the error page
   if (event.url.pathname === '/demos/error/redirect/') {
     return Response.redirect(new URL('/demos/error', event.url), 302);
   }

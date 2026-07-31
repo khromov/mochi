@@ -1,8 +1,7 @@
 <script lang="ts">
-  // Rendered by Mochi.email({ component, props }) — server-side, no request
-  // context. The scoped styles below are inlined into the HTML by the mailer.
-  // The photo rides along as a real file attachment (see routes.ts), so this
-  // body only needs to mention it.
+  // Rendered by Mochi.email({ component, props }) server-side, no request context; the
+  // scoped styles below are inlined into the HTML by the mailer. The photo itself rides
+  // along as a real file attachment (see routes.ts), so the body only needs to mention it.
   let { name, filename }: { name: string; filename: string } = $props();
 </script>
 
