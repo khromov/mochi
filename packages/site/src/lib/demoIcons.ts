@@ -52,6 +52,7 @@ import Ampersand from '@lucide/svelte/icons/ampersand';
 import Mail from '@lucide/svelte/icons/mail';
 import Gauge from '@lucide/svelte/icons/gauge';
 import Recycle from '@lucide/svelte/icons/recycle';
+import Atom from '@lucide/svelte/icons/atom';
 import TextQuote from '@lucide/svelte/icons/text-quote';
 
 export interface DemoIconMeta {
@@ -84,6 +85,7 @@ export const demoIconFor: Record<string, DemoIconMeta> = {
   'Font loading': { icon: Type, label: 'Bundle fontsource + standalone fonts' },
   'Crossing the server-client boundary with props': { icon: Package2, label: 'Props serialized into the island — every devalue type' },
   'HTML Entities in Props': { icon: Ampersand, label: 'HTML entities in static island props decode across SSR + hydration' },
+  'Runed Utilities': { icon: Atom, label: 'Runed reactive utilities hydrated in islands' },
   'Nested Components': { icon: ListTree, label: 'Five-level deep tree under one island' },
   'Nested Islands': { icon: SquareStack, label: 'Islands nested inside server islands' },
   'Nested Island Max Depth': { icon: Layers2, label: 'Server islands nested several levels deep' },
