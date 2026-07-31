@@ -15,7 +15,9 @@
   <aside class="pt-callout">
     <Info size={15} aria-hidden="true" />
     <span>{value.text}</span>
-    <span class="tone">{value.tone}</span>
+    {#if value.tone}
+      <span class="tone">{value.tone}</span>
+    {/if}
   </aside>
 {/if}
 
