@@ -36,6 +36,7 @@ import { files as login } from '../demos/login/files.ts';
 import { files as mdsvex } from '../demos/mdsvex/files.ts';
 import { files as nestedComponents } from '../demos/nested-components/files.ts';
 import { files as nestedIslands } from '../demos/nested-islands/files.ts';
+import { files as portableText } from '../demos/portable-text/files.ts';
 import { files as propDedup } from '../demos/prop-dedup/files.ts';
 import { files as propsId } from '../demos/props-id/files.ts';
 import { files as queue } from '../demos/queue/files.ts';
@@ -332,6 +333,14 @@ export const demos: Demo[] = [
     title: 'MdSvex',
     hook: 'How mdsvex works — a .md file compiled through mdsvex and rendered as a Svelte component, embedded <script> and all.',
     category: 'hydration',
+  },
+  {
+    href: '/demos/portable-text/',
+    slug: 'portable-text',
+    files: portableText,
+    title: 'Portable Text',
+    hook: 'How Portable Text rendering works — @portabletext/svelte maps a JSON block array onto your own Svelte components for types, marks, block styles and lists.',
+    category: 'data',
   },
   {
     href: '/demos/nested-components/',
