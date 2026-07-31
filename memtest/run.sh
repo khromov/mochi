@@ -16,6 +16,9 @@ PORT="${PORT:-3333}"
 # (a full heap dump) and /__mochi/health/memory to the network. Set PUBLISH to
 # a host address to map it anyway — PUBLISH=127.0.0.1 for local-only access.
 PUBLISH="${PUBLISH:-}"
+# Relative CPU weight (default 1024). Kept low so the harness yields to other work
+# under contention but still runs full-speed on an otherwise-idle box.
+CPU_SHARES="${CPU_SHARES:-256}"
 
 echo "Building ${IMAGE} (Dockerfile.memtest)..."
 docker build -f Dockerfile.memtest -t "$IMAGE" .
@@ -41,6 +44,7 @@ docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
 docker run -d \
   --name "$CONTAINER" \
   --restart unless-stopped \
+  --cpu-shares "$CPU_SHARES" \
   -e PORT="$PORT" \
   -e MEMTEST_GIT_SHA="${MEMTEST_GIT_SHA:-}" \
   -v "${SNAPSHOT_DIR}:/snapshots" \
