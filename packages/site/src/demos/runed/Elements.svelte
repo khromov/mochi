@@ -128,7 +128,7 @@
   }
 
   .spacer {
-    height: 100px;
+    height: 180px;
     display: grid;
     place-items: center;
     color: var(--text-subtle);

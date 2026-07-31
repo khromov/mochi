@@ -18,7 +18,9 @@
       return;
     }
     queueMicrotask(() => {
-      if (auto) light.debounce(ms, 'next');
+      if (auto) {
+        light.debounce(ms, 'next');
+      }
     });
   }
 
@@ -30,7 +32,9 @@
 
   function toggleAuto() {
     auto = !auto;
-    if (auto) scheduleNext(DURATIONS[light.current]);
+    if (auto) {
+      scheduleNext(DURATIONS[light.current]);
+    }
   }
 
   const fruits = ['apple', 'apricot', 'banana', 'blueberry', 'cherry', 'grape', 'lemon', 'mango', 'orange', 'peach', 'pear', 'plum'];

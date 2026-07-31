@@ -16,8 +16,7 @@ The demo's intro (a `<p>`/`<div>` at the top of the `DemoPage` **body**, not the
 2. **Basic install info** — an install line (`bun add <lib>`).
 3. **A very basic code sample of using the library** — a minimal real snippet (an import plus the simplest call), not just the install command.
 
-Render both through `CodeSnippet` (`import CodeSnippet from '../../components/CodeSnippet.svelte'`) fed by `highlightCode(code, 'bash' | 'typescript')` from `../../lib/highlight.server` — Shiki-highlighted and consistent with the other demos, and it sidesteps the `.svelte` brace/generic-parsing trap of putting a literal code sample in markup.
-4. **A link to the library's website**, `target="_blank" rel="noopener noreferrer"` (matches the site's outbound-link convention).
+Render both through `CodeSnippet` (`import CodeSnippet from '../../components/CodeSnippet.svelte'`) fed by `highlightCode(code, 'bash' | 'typescript')` from `../../lib/highlight.server` — Shiki-highlighted and consistent with the other demos, and it sidesteps the `.svelte` brace/generic-parsing trap of putting a literal code sample in markup. 4. **A link to the library's website**, `target="_blank" rel="noopener noreferrer"` (matches the site's outbound-link convention).
 
 ## Steps
 
