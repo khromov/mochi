@@ -5,6 +5,11 @@
   type Light = 'red' | 'yellow' | 'green';
   type LightEvent = 'next';
 
+  // Time spent in each state before auto-advancing.
+  const DURATIONS: Record<Light, number> = { red: 3000, green: 3000, yellow: 1200 };
+
+  let auto = $state(true);
+
   // The FSM fires the initial state's _enter synchronously inside its constructor —
   // before `light` is assigned — so defer the self-referencing debounce to a microtask
   // (and only drive the cycle on the client, never during SSR).
@@ -12,14 +17,21 @@
     if (!isBrowser) {
       return;
     }
-    queueMicrotask(() => light.debounce(ms, 'next'));
+    queueMicrotask(() => {
+      if (auto) light.debounce(ms, 'next');
+    });
   }
 
   const light = new FiniteStateMachine<Light, LightEvent>('red', {
-    red: { next: 'green', _enter: () => scheduleNext(3000) },
-    green: { next: 'yellow', _enter: () => scheduleNext(3000) },
-    yellow: { next: 'red', _enter: () => scheduleNext(1200) },
+    red: { next: 'green', _enter: () => scheduleNext(DURATIONS.red) },
+    green: { next: 'yellow', _enter: () => scheduleNext(DURATIONS.green) },
+    yellow: { next: 'red', _enter: () => scheduleNext(DURATIONS.yellow) },
   });
+
+  function toggleAuto() {
+    auto = !auto;
+    if (auto) scheduleNext(DURATIONS[light.current]);
+  }
 
   const fruits = ['apple', 'apricot', 'banana', 'blueberry', 'cherry', 'grape', 'lemon', 'mango', 'orange', 'peach', 'pear', 'plum'];
 
@@ -48,6 +60,7 @@
     <div class="light-actions">
       <code>{light.current}</code>
       <button onclick={() => light.send('next')}>Next →</button>
+      <button onclick={toggleAuto}>{auto ? 'Pause' : 'Resume'}</button>
     </div>
   </div>
 

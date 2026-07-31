@@ -6,11 +6,12 @@
   const throttled = new Throttled(() => text, 400);
   const previous = new Previous(() => text);
 
-  let log = $state<string[]>([]);
+  let seq = 0;
+  let log = $state<{ id: number; text: string }[]>([]);
   watch(
     () => debounced.current,
     (value, prev) => {
-      log = [`"${prev ?? ''}" → "${value}"`, ...log].slice(0, 5);
+      log = [{ id: seq++, text: `"${prev ?? ''}" → "${value}"` }, ...log].slice(0, 5);
     },
     { lazy: true },
   );
@@ -35,8 +36,8 @@
       <p class="empty">Waiting for the debounced value to settle…</p>
     {:else}
       <ul>
-        {#each log as entry (entry + log.length)}
-          <li><code>{entry}</code></li>
+        {#each log as entry (entry.id)}
+          <li><code>{entry.text}</code></li>
         {/each}
       </ul>
     {/if}

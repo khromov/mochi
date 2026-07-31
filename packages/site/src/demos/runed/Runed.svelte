@@ -1,22 +1,26 @@
 <script>
   import DemoPage from '../../components/DemoPage.svelte';
+  import CodeSnippet from '../../components/CodeSnippet.svelte';
   import Reactivity from './Reactivity.svelte';
   import StateCard from './StateCard.svelte';
   import Elements from './Elements.svelte';
   import Sensors from './Sensors.svelte';
   import AsyncFsm from './AsyncFsm.svelte';
   import { loadSources } from '../../components/utils.ts';
+  import { highlightCode } from '../../lib/highlight.server';
   import { files } from './files.ts';
 
   const sources = await loadSources(files);
 
-  // Kept as a string (not literal markup) so the braces and generics render as
-  // text instead of being parsed as Svelte expressions.
-  const usage = `import { Debounced } from 'runed';
+  const codeInstall = await highlightCode('bun add runed', 'bash');
+  const codeUsage = await highlightCode(
+    `import { Debounced } from 'runed';
 
 let query = $state('');
 const search = new Debounced(() => query, 400);
-// search.current — query, 400ms after it stops changing`;
+// search.current — query, 400ms after it stops changing`,
+    'typescript',
+  );
 </script>
 
 <DemoPage
@@ -29,9 +33,9 @@ const search = new Debounced(() => query, 400);
       Runed needs no special setup — it's a plain Svelte 5 runes library, so you install it and import from
       <code>runed</code>. In Mochi it bundles straight into whichever island imports it.
     </p>
-    <pre class="install"><code>bun add runed</code></pre>
+    <CodeSnippet html={codeInstall} />
     <p>Then import a utility and use it like any rune — e.g. the <code>Debounced</code> value driving the first card:</p>
-    <pre class="usage"><code>{usage}</code></pre>
+    <CodeSnippet html={codeUsage} />
     <p>Explore the full toolkit at <a href="https://runed.dev" target="_blank" rel="noopener noreferrer">runed.dev</a>.</p>
   </div>
 
@@ -90,27 +94,6 @@ const search = new Debounced(() => query, 400);
   .intro a {
     color: var(--accent);
     text-decoration: underline;
-  }
-
-  .intro .install,
-  .intro .usage {
-    margin: 0 0 0.75rem;
-    padding: 0.6rem 0.85rem;
-    background: var(--code-bg);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    overflow-x: auto;
-  }
-
-  .intro .usage {
-    line-height: 1.5;
-  }
-
-  .intro .install code,
-  .intro .usage code {
-    font-family: var(--font-mono);
-    font-size: 0.9rem;
-    color: var(--code-accent);
   }
 
   .intro > p:last-child {

@@ -13,8 +13,10 @@ Build one demo folder that exercises the interesting parts of a library across o
 The demo's intro (a `<p>`/`<div>` at the top of the `DemoPage` **body**, not the `description` prop — that prop is escaped plain text and also feeds SEO meta) must state:
 
 1. **Setup — whether anything special is required.** If the library needs nothing special, say so plainly (e.g. "needs no special setup — it's a plain Svelte 5 runes library, so you install it and import from `<lib>`; in Mochi it bundles straight into whichever island imports it"). If it _does_ need config/a plugin/a provider, describe that instead — don't claim zero-setup unless it's true.
-2. **Basic install info** — an install line in a `<pre><code>bun add <lib></code></pre>` block.
+2. **Basic install info** — an install line (`bun add <lib>`).
 3. **A very basic code sample of using the library** — a minimal real snippet (an import plus the simplest call), not just the install command.
+
+Render both through `CodeSnippet` (`import CodeSnippet from '../../components/CodeSnippet.svelte'`) fed by `highlightCode(code, 'bash' | 'typescript')` from `../../lib/highlight.server` — Shiki-highlighted and consistent with the other demos, and it sidesteps the `.svelte` brace/generic-parsing trap of putting a literal code sample in markup.
 4. **A link to the library's website**, `target="_blank" rel="noopener noreferrer"` (matches the site's outbound-link convention).
 
 ## Steps
