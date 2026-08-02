@@ -20,13 +20,12 @@
   {sources}
 >
   <p>
-    LayerChart needs no special setup. It's a plain Svelte 5 runes library — its only peer dependency is <code>svelte ^5</code>, it brings its own styles, and it doesn't require
-    Tailwind. Install it and import from <code>layerchart</code>; Mochi compiles it out of <code>node_modules</code> like any other Svelte component and bundles it into whichever island
-    imports it.
+    LayerChart needs no special setup. Install it, import from <code>layerchart</code>, and Mochi bundles it into whichever island imports it.
   </p>
   <CodeSnippet html={install} />
   <p>
-    The charts here import from the <code>layerchart/svg</code> subpath, which drops the canvas and HTML renderers from the bundle. Colours come from the
+    LayerChart can render to SVG, canvas, or HTML. The charts here import from the <code>layerchart/svg</code> subpath, so only the SVG renderer ships — the canvas and HTML ones are
+    left out of the bundle. Colours come from the
     <code>--color-primary</code> and <code>--color-surface-*</code> custom properties LayerChart reads off its own <code>.lc-root-container</code>, remapped onto this site's theme
     tokens — the docs' Tailwind class names wouldn't do anything here. Full component reference at
     <a href="https://www.layerchart.com" target="_blank" rel="noopener noreferrer">layerchart.com</a>.

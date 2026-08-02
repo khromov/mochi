@@ -10,7 +10,7 @@
   // `ssr` and both dimensions are mandatory here rather than optimisations: LayerChart skips
   // rendering on the server unless asked, and its chart state starts at 100x100 and only
   // corrects itself from a `bind:clientWidth` that never fires without hydration.
-  const WIDTH = 620;
+  const WIDTH = 600;
   const HEIGHT = 220;
 </script>
 
