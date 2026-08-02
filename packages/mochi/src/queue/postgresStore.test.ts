@@ -9,6 +9,8 @@ import { startTestPostgres, type TestPostgres } from '../__fixtures__/postgres/s
 
 // Runs unconditionally against an in-process PGlite Postgres speaking the real wire protocol
 // (same fixture as rateLimit.postgres.integration.test.ts) — no external service, no Docker.
+// Known gap: PGlite is single-session, so `takeFirstN`'s FOR UPDATE SKIP LOCKED is executed but never actually
+// contended — two processes claiming from one table concurrently needs a real multi-connection server to test.
 // Booted with top-level await: PGlite's WASM instantiation can exceed bun's 5s hook timeout, and module load has none.
 const pg: TestPostgres = await startTestPostgres();
 // One shared prepare-less pool for every store here: pglite-socket multiplexes all connections onto a single
