@@ -3,6 +3,7 @@
   import CodeSnippet from '../../components/CodeSnippet.svelte';
   import StaticTrafficChart from './StaticTrafficChart.svelte';
   import TrafficChart from './TrafficChart.svelte';
+  import HtmlBars from './HtmlBars.svelte';
   import BundleBars from './BundleBars.svelte';
   import RuntimeDonut from './RuntimeDonut.svelte';
   import { loadSources } from '../../components/utils.ts';
@@ -16,54 +17,55 @@
 
 <DemoPage
   title="Charts with LayerChart"
-  description="LayerChart is a Svelte 5 charting library that renders to plain SVG, so it server-renders like any other component. The first chart below ships no JavaScript at all; the rest are islands — two mochi:hydrate, one mochi:clientOnly — sharing a single client chunk."
+  description="LayerChart renders to plain HTML or SVG, so it server-renders like any other Svelte component. The first chart ships no JavaScript; the rest are islands."
   {sources}
 >
   <p>
-    LayerChart needs no special setup. Install it, import from <code>layerchart</code>, and Mochi bundles it into whichever island imports it.
-  </p>
-  <CodeSnippet html={install} />
-  <p>
-    LayerChart can render to SVG, canvas, or HTML. The charts here import from the <code>layerchart/svg</code> subpath, so only the SVG renderer ships — the canvas and HTML ones are
-    left out of the bundle. Colours come from the
-    <code>--color-primary</code> and <code>--color-surface-*</code> custom properties LayerChart reads off its own <code>.lc-root-container</code>, remapped onto this site's theme
-    tokens — the docs' Tailwind class names wouldn't do anything here. Full component reference at
+    No special setup: install it, import from <code>layerchart</code>, and Mochi bundles it into whichever island imports it. Full component reference at
     <a href="https://www.layerchart.com" target="_blank" rel="noopener noreferrer">layerchart.com</a>.
   </p>
+  <CodeSnippet html={install} />
 
-  <h2>No directive — pure SSR</h2>
+  <h2>Pure SSR — no JavaScript</h2>
   <p>
-    No hydration directive, so no LayerChart code reaches the browser: the SVG below is generated on the server and is inert. Two things are required to make that work. LayerChart
-    skips server rendering by default, so the chart opts in with <code>ssr</code>; and since nothing measures the container on the client, both <code>width</code> and
-    <code>height</code> have to be passed explicitly — the chart state starts at 100&times;100 and otherwise only corrects itself from a <code>bind:clientWidth</code> that never fires
-    here. A fixed width is the trade: this one can't be responsive, so it scrolls on narrow screens.
+    With no hydration directive, no LayerChart code reaches the browser. That needs two opt-ins: <code>ssr</code> (LayerChart skips server rendering otherwise) and explicit
+    <code>width</code>/<code>height</code>, since nothing measures the container without hydration. It stays responsive anyway: the <code>&lt;Svg&gt;</code> gets a matching
+    <code>viewBox</code>, so that baked 600&times;220 geometry scales to the column in pure CSS. Colours are <code>--chart-*</code> custom properties that inherit into the SVG, so
+    charts follow the theme toggle with no JS.
+  </p>
+  <p>
+    It's composed from <code>&lt;Chart&gt;</code> primitives rather than the <code>&lt;BarChart&gt;</code> shortcut: that shortcut's <code>marks</code> snippet shadows its own
+    <code>marks</code> prop, which the Svelte server compiler turns into unbounded recursion once <code>ssr</code> forces a server render.
   </p>
   <StaticTrafficChart />
 
   <h2>Interactive — <code>mochi:hydrate</code></h2>
   <p>
-    Same library, two series, hydrated. Hover the plot for the crosshair and tooltip. This one leaves <code>ssr</code> off, so the frame arrives empty and the chart draws once the
-    island boots — that's what buys the responsive width, since passing <code>width</code> would override the measured container width. The frame reserves its height up front so nothing
-    shifts when the chart appears.
+    The same library imported from <code>layerchart/svg</code>, hydrated — hover the plot for the crosshair and tooltip. Leaving <code>ssr</code> off ships an empty frame; omitting
+    <code>width</code> (which would override the measured container) is what makes it responsive. The tooltip sets <code>portal: false</code> because LayerChart otherwise portals
+    it to <code>&lt;body&gt;</code>, escaping the themed frame and rendering unstyled.
   </p>
   <TrafficChart mochi:hydrate />
 
+  <h2>HTML renderer, hydrated</h2>
+  <p>
+    Imported from <code>layerchart/html</code>, so the bars are real DOM boxes instead of SVG. This one uses the <code>&lt;BarChart&gt;</code> shortcut — fine here because
+    <code>ssr</code> is off, so the marks never render on the server. Hydration measures the container, so it reflows fluidly with no <code>viewBox</code> trick needed.
+  </p>
+  <HtmlBars mochi:hydrate />
+
   <h2>Bars with a layout toggle</h2>
   <p>
-    <code>seriesLayout</code> is driven by a <code>$state</code> rune, so switching between stacked and grouped is a reactive prop change. Before the island hydrates the buttons are
-    server-rendered but inert.
+    <code>seriesLayout</code> is driven by a <code>$state</code> rune, so switching between stacked and grouped is a reactive prop change. The buttons are server-rendered but inert until
+    the island hydrates.
   </p>
   <BundleBars mochi:hydrate />
 
   <h2>Donut — <code>mochi:clientOnly</code></h2>
   <p>
-    A <code>PieChart</code> with a negative <code>innerRadius</code> (an inset from the outer radius), coloured through <code>cRange</code>. Click a legend swatch to toggle a
-    slice.
-  </p>
-  <p>
-    This one uses <code>mochi:clientOnly</code> rather than <code>mochi:hydrate</code>, which is usually the better fit for a chart. Since LayerChart draws nothing on the server
-    unless you ask for it, hydrating means server-rendering an empty container and then reconciling it — whereas a client-only island skips the server pass entirely, mounts in the
-    browser, and lets you ship real fallback markup in the meantime. The skeleton below is passed as children and is wiped the moment the component mounts.
+    A <code>PieChart</code> with a negative <code>innerRadius</code> and <code>cRange</code> colours; click a legend swatch to toggle a slice. Client-only is usually the better fit for
+    a chart: since LayerChart draws nothing server-side anyway, hydrating would server-render an empty container and reconcile it, whereas a client-only island skips the server pass
+    entirely and lets you ship real fallback markup — the skeleton below, wiped the moment the component mounts.
   </p>
   <RuntimeDonut mochi:clientOnly>
     <div class="skeleton">Loading chart…</div>
