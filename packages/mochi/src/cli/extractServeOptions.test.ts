@@ -37,21 +37,25 @@ throw new Error('serve should have halted execution before this line');`,
     expect(options?.optimize).toEqual({ enabled: true, exclude: ['x.svelte'] });
   });
 
-  test('captures the queues map without starting a queue thread', async () => {
-    // Mochi.queue() is inert config, so importing the entry for extraction must
-    // not spawn a live bunqueue thread (which would hang the build). The test
+  test('captures the jobs descriptor without booting a worker', async () => {
+    // Mochi.jobs() is inert config, so importing the entry for extraction must
+    // not create a queuert client/worker (which would hang the build). The test
     // simply completing proves nothing kept the event loop alive.
     const entry = writeEntry(
-      `import { Mochi } from 'mochi-framework';
-await Mochi.serve({ routes: {}, queues: { emails: Mochi.queue({ process: async () => ({ sent: true }), concurrency: 2 }) } });
+      `import { Mochi, defineJobTypes } from 'mochi-framework';
+const jobs = Mochi.jobs({
+  types: defineJobTypes(),
+  processors: { send: { attemptHandler: async ({ complete }) => complete(async () => ({ sent: true })) } },
+  concurrency: 2,
+});
+await Mochi.serve({ routes: {}, jobs });
 throw new Error('serve should have halted execution before this line');`,
     );
 
     const options = await extractServeOptions(entry);
 
-    expect(options?.queues).toBeDefined();
-    expect(options?.queues?.emails?.__mochiQueue).toBe(true);
-    expect(options?.queues?.emails?.options).toEqual({ concurrency: 2 });
+    expect(options?.jobs).toBeDefined();
+    expect(options?.jobs?.__mochiJobs).toBe(true);
   });
 
   test('returns null when the entry never calls serve()', async () => {

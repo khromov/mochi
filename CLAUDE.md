@@ -15,7 +15,6 @@ Bun workspaces monorepo (`packages/*`):
 - `packages/support` — the support form at `support.mochi.fast`. Port 3336. Deployed separately via `Dockerfile.production`. It lives apart from `packages/site` because it is the only site configured with a real SMTP transport (`Mochi.serve({ email })`, driven by `SMTP_*` env vars — see its `.env.example`); every other site rides the framework default, which never sends. Refuses to boot in production without `ADMIN_PASSWORD` + `SMTP_HOST` + `MOCHI_ORIGIN`.
 - `packages/docs` — `mochi-docs`: markdown content only (no server/scripts of its own); consumed and rendered by `packages/site`.
 - `packages/cli` — published as `create-mochi`: the `mochi-framework build` and project-scaffolding CLI (`@clack/prompts` + `commander`).
-- `packages/msgpackr-extract-stub` — published as `@mochi-framework/msgpackr-extract-stub`; a pure-JS stub wired in via the root `overrides` so the native `msgpackr-extract` is never built.
 - `packages/video-animations` — Satori-based frame generation for promo videos (`bun run mochi:animate`). Satori (yoga) rounds element `left`/`top` to the integer pixel grid, so animate position via `transform: translate(${x}px, ${y}px)` with the element pinned at `left:0/top:0` — driving per-frame motion through `left`/`top` stair-steps and jitters ~1–2px. See `leaf()` in `src/frame.ts`.
 - `packages/remotion` — rendered video output assets.
 
@@ -67,7 +66,7 @@ Mochi is an experimental SSR framework for Svelte 5 + Bun with islands-based sel
 
 ### Framework entry points (`packages/mochi/src/`)
 
-Source is grouped by subsystem; only the entry points and public API surface (`Mochi.ts`, `index.ts`, `types.ts`, `events.ts`, `extensions.ts`, `mochiConfig.ts`, `highlight.ts`, `queue.ts`, the `.d.ts` files) sit at the top level, alongside the `Mochi.serve()`-level end-to-end tests.
+Source is grouped by subsystem; only the entry points and public API surface (`Mochi.ts`, `index.ts`, `types.ts`, `events.ts`, `extensions.ts`, `mochiConfig.ts`, `highlight.ts`, `jobs.ts`, the `.d.ts` files) sit at the top level, alongside the `Mochi.serve()`-level end-to-end tests. `jobs.ts` (+ the provider bridges in `jobs/`) is the isolation boundary around queuert — the only modules importing it.
 
 - **`compiler/`** — the `.svelte` → JS pipeline: `ComponentRegistry.ts`, `svelteAstPreprocess.ts`, `svelteConfig.ts`, `svelteShaker.ts`, `compileCache.ts`, `preprocessCache.ts`, `serverOnlyScan.ts`, `buildInlineWebComponent.ts`, `freshImport.ts`, `tailwind.ts`.
 - **`runtime/`** — the per-request pipeline: `requestSetup.ts`, `requestContext.ts`, `cookies.ts`, `csrf.ts`, `proxy.ts`, `trailingSlash.ts`, `errors.ts`, `hooks.ts`, `rateLimit.ts`, `warmup.ts`, `publicDir.ts`, and forms (`forms.ts`, `formsJson.ts`, `enhance.*`).

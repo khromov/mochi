@@ -7,7 +7,7 @@ import type { MochiProxyOptions } from './runtime/proxy';
 import type { LocalImageAsset, MochiImageOptions } from './image/types';
 import type { MochiEmailOptions } from './email/types';
 import type { MochiCaptchaOptions } from './captcha/types';
-import type { MochiProcessor, MochiQueue, MochiQueueListeners, MochiQueueRuntimeOptions } from './queue';
+import type { MochiJobsConfig } from './jobs';
 import type { MochiRateLimitOptions } from './runtime/rateLimit';
 import type { MochiSvelteCompiler } from './compiler/svelteCompilerBackend';
 
@@ -251,22 +251,6 @@ export function isMochiSse(value: unknown): value is MochiSseConfig {
   return typeof value === 'object' && value !== null && (value as MochiSseConfig).__mochiSse === true;
 }
 
-/**
- * Inert descriptor returned by `Mochi.queue()`. Non-generic so a heterogeneous `queues` map type-checks;
- * the live producer/consumer pair is created only when `Mochi.serve({ queues })` mounts it.
- */
-export interface MochiQueueConfig {
-  readonly __mochiQueue: true;
-  readonly process: MochiProcessor<unknown, unknown>;
-  readonly options?: MochiQueueRuntimeOptions;
-  readonly on?: Partial<MochiQueueListeners<unknown, unknown>>;
-  readonly recover?: (queue: MochiQueue<never>) => void | Promise<void>;
-}
-
-export function isMochiQueue(value: unknown): value is MochiQueueConfig {
-  return typeof value === 'object' && value !== null && (value as MochiQueueConfig).__mochiQueue === true;
-}
-
 export type MochiRouteValue = MochiPageConfig | MochiApiConfig | MochiWsConfig | MochiSseConfig | MochiFileConfig | BunRouteValue;
 
 /** `stack` is only populated when the server runs with `development: true`. */
@@ -415,10 +399,10 @@ export interface MochiServeOptions {
   manifest?: string;
   routes?: Record<string, MochiRouteValue>;
   /**
-   * Background job queues to start with the server, keyed by name; each value is a `Mochi.queue({ process, … })` descriptor.
-   * Add jobs from route code via `Mochi.getQueue(name).add(...)`. Queues drain gracefully on shutdown.
+   * The app's background jobs — a `Mochi.jobs({ types, processors, backend, … })` descriptor. Mounted after the server
+   * binds; start work from route code via the descriptor's `startChain(...)`. The worker drains gracefully on shutdown.
    */
-  queues?: Record<string, MochiQueueConfig>;
+  jobs?: MochiJobsConfig;
   fetch?: (req: Request, server: Server<undefined>) => Response | Promise<Response>;
   htmlShell?: string;
   /**

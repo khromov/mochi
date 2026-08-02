@@ -38,7 +38,7 @@ In production (`development: false`), prebuilt JS/CSS bundles served from `asset
 
 <Callout type="info">
 
-**Shutdown signals.** `Mochi.serve()` installs `SIGTERM` and `SIGINT` listeners that fire the [`mochi:shutdown`](/docs/extensions/#mochishutdown) hook, drain queues, then stop the server and exit with code 0. In-flight requests get `shutdownTimeout` ms to finish; anything still connected after that is force-closed. A second signal exits immediately with code 1. Existing user listeners on those signals are not displaced — Node.js dispatches signals to every registered listener.
+**Shutdown signals.** `Mochi.serve()` installs `SIGTERM` and `SIGINT` listeners that fire the [`mochi:shutdown`](/docs/extensions/#mochishutdown) hook, drain the jobs worker, then stop the server and exit with code 0. In-flight requests get `shutdownTimeout` ms to finish; anything still connected after that is force-closed. A second signal exits immediately with code 1. Existing user listeners on those signals are not displaced — Node.js dispatches signals to every registered listener.
 
 The forced fallback is not optional: a plain `server.stop()` never resolves while a WebSocket is open, so in development a single browser tab holding the live-reload socket would otherwise wedge the process until it is `SIGKILL`ed. The same applies in production to any live `Mochi.ws` connection — while one is open the graceful drain never completes, so shutdown always waits the full `shutdownTimeout` before force-closing. Keep the timeout tight enough for your orchestrator's grace period.
 

@@ -265,47 +265,23 @@ describe('new extension points', () => {
     expect(applyFilter('captcha:solveBudgetMs', 60_000, { options: {}, bits: 19 })).toBe(60_000);
   });
 
-  test('queue:recoveryStallWarningMs returns the default unchanged when no filter registered', () => {
-    expect(applyFilter('queue:recoveryStallWarningMs', 30_000, { queue: 'emails' })).toBe(30_000);
+  test('jobs:leaseMs returns the default unchanged when no filter registered', () => {
+    expect(applyFilter('jobs:leaseMs', 60_000, { explicit: false })).toBe(60_000);
   });
 
-  test('queue:recoveryStallWarningMs can raise the threshold for one queue only', () => {
+  test('jobs:leaseMs can move the lease while leaving an explicit app choice alone', () => {
     initExtensions({
       filters: {
-        'queue:recoveryStallWarningMs': (def, { queue }) => (queue === 'slow-store' ? 120_000 : def),
+        'jobs:leaseMs': (value, { explicit }) => (explicit ? value : 120_000),
       },
     });
-    expect(applyFilter('queue:recoveryStallWarningMs', 30_000, { queue: 'slow-store' })).toBe(120_000);
-    expect(applyFilter('queue:recoveryStallWarningMs', 30_000, { queue: 'emails' })).toBe(30_000);
+    expect(applyFilter('jobs:leaseMs', 5_000, { explicit: true })).toBe(5_000);
+    expect(applyFilter('jobs:leaseMs', 60_000, { explicit: false })).toBe(120_000);
   });
 
-  test('queue:recoveryStallWarningMs passes 0 through, which silences the warning', () => {
-    initExtensions({ filters: { 'queue:recoveryStallWarningMs': () => 0 } });
-    expect(applyFilter('queue:recoveryStallWarningMs', 30_000, { queue: 'emails' })).toBe(0);
-  });
-
-  test('queue:lockDurationMs returns the default unchanged when no filter registered', () => {
-    expect(applyFilter('queue:lockDurationMs', 1_800_000, { queue: 'emails', explicit: false })).toBe(1_800_000);
-  });
-
-  test('queue:lockDurationMs can raise the lock for one queue only', () => {
-    initExtensions({
-      filters: {
-        'queue:lockDurationMs': (def, { queue }) => (queue === 'transcode' ? 3_600_000 : def),
-      },
-    });
-    expect(applyFilter('queue:lockDurationMs', 1_800_000, { queue: 'transcode', explicit: false })).toBe(3_600_000);
-    expect(applyFilter('queue:lockDurationMs', 1_800_000, { queue: 'emails', explicit: false })).toBe(1_800_000);
-  });
-
-  test('queue:lockDurationMs can leave queues that chose their own value alone', () => {
-    initExtensions({
-      filters: {
-        'queue:lockDurationMs': (value, { explicit }) => (explicit ? value : 60_000),
-      },
-    });
-    expect(applyFilter('queue:lockDurationMs', 50, { queue: 'transcode', explicit: true })).toBe(50);
-    expect(applyFilter('queue:lockDurationMs', 1_800_000, { queue: 'emails', explicit: false })).toBe(60_000);
+  test('jobs:pollIntervalMs can slow the poll cadence for a deployment', () => {
+    initExtensions({ filters: { 'jobs:pollIntervalMs': () => 10_000 } });
+    expect(applyFilter('jobs:pollIntervalMs', 2_000, { explicit: false })).toBe(10_000);
   });
 
   test('compile:preprocessors returns the user-supplied list', () => {
@@ -479,30 +455,30 @@ describe('new extension points', () => {
     expect(saw!.server).toBe(fakeServer);
   });
 
-  test('mochi:queuesMounted names the mounted queues', async () => {
-    const captured: { queues?: string[] } = {};
+  test('mochi:jobsMounted names the mounted job types', async () => {
+    const captured: { jobTypes?: string[] } = {};
     initExtensions({
       eventHooks: {
-        'mochi:queuesMounted': async (ctx) => {
+        'mochi:jobsMounted': async (ctx) => {
           await Bun.sleep(1);
-          captured.queues = ctx.queues;
+          captured.jobTypes = ctx.jobTypes;
         },
       },
     });
     const fakeServer = { stop: () => {} } as never;
-    await runHook('mochi:queuesMounted', { options: fakeOptions, server: fakeServer, queues: ['emails', 'thumbnails'] });
-    expect(captured.queues).toEqual(['emails', 'thumbnails']);
+    await runHook('mochi:jobsMounted', { options: fakeOptions, server: fakeServer, jobTypes: ['send-email', 'sync-crm'] });
+    expect(captured.jobTypes).toEqual(['send-email', 'sync-crm']);
   });
 
   test('the startup hooks resolve with no user hook registered', async () => {
     initExtensions({});
     const fakeServer = { stop: () => {} } as never;
     await runHook('mochi:listening', { options: fakeOptions, server: fakeServer });
-    await runHook('mochi:queuesMounted', { options: fakeOptions, server: fakeServer, queues: [] });
+    await runHook('mochi:jobsMounted', { options: fakeOptions, server: fakeServer, jobTypes: [] });
     // Recorded as milestones even when nobody is listening — that record is
-    // what getQueue() reads to tell "too early" from "wrong name".
+    // what the jobs handle reads to tell "too early" from "wrong name".
     expect(reachedStartupMilestones()).toContain('mochi:listening');
-    expect(reachedStartupMilestones()).toContain('mochi:queuesMounted');
+    expect(reachedStartupMilestones()).toContain('mochi:jobsMounted');
   });
 
   test('per-request hooks are not recorded as startup milestones', () => {

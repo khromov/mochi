@@ -3,10 +3,6 @@
 // from a side-effectful server module still drags that module into the SSR
 // component bundle, instantiating its worker/state a second time.
 
-export interface NotificationJob {
-  user: string;
-}
-
 export interface ProcessedEntry {
   user: string;
   at: number;

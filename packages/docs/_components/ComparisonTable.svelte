@@ -40,9 +40,9 @@
       kit: { status: 'no', note: 'bring your own cloud database' },
     },
     {
-      feature: 'Background job queues',
+      feature: 'Background jobs',
       tags: ['backend'],
-      mochi: { status: 'yes', note: 'Mochi.queue()', href: '/docs/queues/' },
+      mochi: { status: 'yes', note: 'Mochi.jobs()', href: '/docs/jobs/' },
       kit: { status: 'no' },
     },
     {

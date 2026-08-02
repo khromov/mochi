@@ -1,75 +1,81 @@
-import { Mochi, logger } from 'mochi-framework';
-import type { MochiQueueConfig } from 'mochi-framework';
-import { appendEmailLog, getSubmission, markEmailFailed, markEmailRequeued, markEmailSent, noteEmailAttemptError, undeliveredSubmissionIds } from './db.server';
+import { Mochi, defineJobTypes, logger } from 'mochi-framework';
+import { appendEmailLog, getSubmission, markEmailFailed, markEmailSent, noteEmailAttemptError, supportDb } from './db.server';
 
 export const SUPPORT_TO = process.env.SUPPORT_TO || 'support@mochi.fast';
 
-export const SUPPORT_EMAIL_QUEUE = 'support-emails';
-
-// Shared by defaultJobOptions and the processor, which needs to know whether the
-// attempt it is failing is the last one bunqueue will make.
+// Shared by the retry backoff and the processor, which needs to know whether the attempt it is failing is the last one
+// worth making before marking the row terminally `failed`.
 const MAX_ATTEMPTS = 3;
 
-export interface SupportEmailJob {
-  id: number;
-}
+// Overridable so the test suite can drive the full three-attempt path without real backoff waits.
+const RETRY_DELAY_MS = Number(process.env.SUPPORT_RETRY_DELAY_MS) || 5_000;
 
-// In-memory: jobs don't survive a restart, so `recover` puts every undelivered row (the source of truth, since it's committed to SQLite) back on the queue at boot.
-// TODO: this assumes a single instance — scaling out would double-send until mochi's queue.ts gets single-flight support.
-export const supportEmailQueue: MochiQueueConfig = Mochi.queue<SupportEmailJob>({
+// The jobs runtime shares the submissions database, so a submission row and its delivery job commit in ONE SQLite
+// transaction (see routes.ts) and pending deliveries survive restarts inside the same file — no boot-time re-enqueue
+// pass needed. The write helpers below run either inside `complete()` (joining the job's own transaction) or wrapped in
+// `supportJobs.withTransaction` — never bare, which on a shared connection could interleave into an open job transaction.
+export const supportJobs = Mochi.jobs({
+  backend: { kind: 'sqlite', database: supportDb() },
   concurrency: 2,
-  defaultJobOptions: { attempts: MAX_ATTEMPTS },
-  bunqueue: { backoff: { type: 'exponential', delay: 5000 } },
-  recover: async (queue) => {
-    const stranded = undeliveredSubmissionIds();
-    if (stranded.length === 0) {
-      return;
-    }
-    // Status and log first: once addBulk resolves the worker may already be
-    // processing, and a row it marks `sent` must not then be reset to `pending`.
-    for (const id of stranded) {
-      markEmailRequeued(id);
-      appendEmailLog(id, { attempt: 0, event: 'requeued', detail: 'Re-queued on server start' });
-    }
-    await queue.addBulk(stranded.map((id) => ({ name: 'send', data: { id } })));
-  },
-  process: async (job) => {
-    const submission = getSubmission(job.data.id);
-    if (!submission) {
-      logger.warn(`support: submission ${job.data.id} vanished before its email was sent`);
-      return { sent: false };
-    }
-    const { name, email, message } = submission;
-    appendEmailLog(submission.id, { attempt: job.attempt, event: 'sending', detail: `Delivering to ${SUPPORT_TO}` });
-    let result;
-    try {
-      result = await Mochi.email({
-        to: SUPPORT_TO,
-        replyTo: email,
-        subject: `Support request from ${name || email}`,
-        component: './src/emails/SupportEmail.svelte',
-        props: { name, email, message },
-        text: [`From: ${name || '(no name)'} <${email}>`, '', message].join('\n'),
-      });
-    } catch (err) {
-      // Recorded before rethrowing so the admin panel shows why while bunqueue retries — only the last attempt is terminal, so a restart mid-backoff leaves the row for `recover` instead of stranding it as `failed`.
-      const reason = err instanceof Error ? err.message : String(err);
-      if (job.attempt >= MAX_ATTEMPTS) {
-        markEmailFailed(submission.id, reason);
-      } else {
-        noteEmailAttemptError(submission.id, reason);
-      }
-      appendEmailLog(submission.id, { attempt: job.attempt, event: 'failed', detail: reason });
-      throw err;
-    }
-    markEmailSent(submission.id);
-    appendEmailLog(submission.id, {
-      attempt: job.attempt,
-      event: 'sent',
-      detail: [`transport: ${result.transport}`, result.messageId ? `id: ${result.messageId}` : null, result.accepted?.length ? `accepted: ${result.accepted.join(', ')}` : null]
-        .filter(Boolean)
-        .join(' · '),
-    });
-    return { sent: true };
+  retry: { initialDelayMs: RETRY_DELAY_MS, maxDelayMs: 300_000, multiplier: 2 },
+  types: defineJobTypes<{
+    'send-support-email': { entry: true; input: { id: number }; output: { sent: boolean } };
+  }>(),
+  processors: {
+    'send-support-email': {
+      attemptHandler: async ({ job, complete }) => {
+        const submission = getSubmission(job.input.id);
+        if (!submission) {
+          logger.warn(`support: submission ${job.input.id} vanished before its email was sent`);
+          return complete(async () => ({ sent: false }));
+        }
+        const { id, name, email, message } = submission;
+        await supportJobs.withTransaction(async () => appendEmailLog(id, { attempt: job.attempt, event: 'sending', detail: `Delivering to ${SUPPORT_TO}` }));
+        let result;
+        try {
+          result = await Mochi.email({
+            to: SUPPORT_TO,
+            replyTo: email,
+            subject: `Support request from ${name || email}`,
+            component: './src/emails/SupportEmail.svelte',
+            props: { name, email, message },
+            text: [`From: ${name || '(no name)'} <${email}>`, '', message].join('\n'),
+          });
+        } catch (err) {
+          const reason = err instanceof Error ? err.message : String(err);
+          if (job.attempt >= MAX_ATTEMPTS) {
+            // Terminal: completing (rather than throwing) stops the retry loop, and the `failed` row + log line commit
+            // atomically with the job's completion.
+            return complete(async () => {
+              markEmailFailed(id, reason);
+              appendEmailLog(id, { attempt: job.attempt, event: 'failed', detail: reason });
+              return { sent: false };
+            });
+          }
+          // Recorded before rethrowing so the admin panel shows why while the retry backs off; the row stays `pending`
+          // because the durable job will try again.
+          await supportJobs.withTransaction(async () => {
+            noteEmailAttemptError(id, reason);
+            appendEmailLog(id, { attempt: job.attempt, event: 'failed', detail: reason });
+          });
+          throw err;
+        }
+        return complete(async () => {
+          markEmailSent(id);
+          appendEmailLog(id, {
+            attempt: job.attempt,
+            event: 'sent',
+            detail: [
+              `transport: ${result.transport}`,
+              result.messageId ? `id: ${result.messageId}` : null,
+              result.accepted?.length ? `accepted: ${result.accepted.join(', ')}` : null,
+            ]
+              .filter(Boolean)
+              .join(' · '),
+          });
+          return { sent: true };
+        });
+      },
+    },
   },
 });

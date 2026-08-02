@@ -8,7 +8,7 @@ import { loadSvelteConfig } from './compiler/svelteConfig';
 import { buildInlineWebComponent } from './compiler/buildInlineWebComponent';
 import { buildClientStatsRoutes, CLIENT_STATS_COMPONENT } from './dev/clientStatsRoutes';
 import { buildEmailViewerRoutes, EMAIL_VIEWER_COMPONENT } from './dev/emailViewerRoutes';
-import { isMochiPage, isMochiApi, isMochiWs, isMochiSse, isMochiFile, isMochiQueue, isServerPropsResolver, isAlsoHydrateMode, ALSO_HYDRATE_ENVELOPE_KEY } from './types';
+import { isMochiPage, isMochiApi, isMochiWs, isMochiSse, isMochiFile, isServerPropsResolver, isAlsoHydrateMode, ALSO_HYDRATE_ENVELOPE_KEY } from './types';
 import { HYDRATABLE_CONTEXT_KEY } from './islands/isHydratable';
 import type {
   BunRouteValue,
@@ -24,7 +24,6 @@ import type {
   MochiRouteValue,
   MochiServerPropsResolver,
   MochiServeOptions,
-  MochiQueueConfig,
   RouteRegistrationResult,
   MochiSseConfig,
   MochiSseHandler,
@@ -48,9 +47,10 @@ import { resolveWarmupEnabled, markWarmupRequest, isWarmablePattern } from './ru
 import { createErrorResponder, DEFAULT_ERROR_PAGE_PATH } from './runtime/errors';
 import { requestContext } from './runtime/requestContext';
 import type { MochiRequestContext } from './runtime/requestContext';
-import { createQueue, getQueue, closeAllQueueResources, runQueueRecovery } from './queue';
+import { createJobsDescriptor, getJobs, mountJobs, closeAllJobResources, isMochiJobs } from './jobs';
 import { resetStartupMilestones } from './lifecycle';
-import type { MochiQueue, MochiQueueOptions, MochiQueueListeners, MochiProcessor } from './queue';
+import type { MochiJobs, MochiJobsConfig, MochiJobsOptions } from './jobs';
+import type { BaseJobTypeDefinitions, JobTypes, JobTypesDefinitions } from 'queuert';
 import { finalizeCookieHeaders } from './runtime/cookies';
 import { makeRequestContextBuilder } from './runtime/requestSetup';
 import { createRouteLimiter, applyRateLimitHeaders } from './runtime/rateLimit';
@@ -181,28 +181,21 @@ export class Mochi {
   }
 
   /**
-   * Declare a background job queue. Like `page`/`api`/`ws`/`sse`/`file` this returns an inert config; the live producer
-   * and consumer are created only once `Mochi.serve({ queues })` mounts the descriptor under its queue name. Add jobs from
-   * anywhere via `Mochi.getQueue(name).add(...)`, and the queue drains gracefully on shutdown.
+   * Declare the app's background jobs: a typed job-type registry (`defineJobTypes`), one processor per type, and a
+   * backend (`memory` | `sqlite` | `postgres`). Like `page`/`api`/`ws`/`sse`/`file` this returns an inert descriptor;
+   * the live queuert client and worker are created only once `Mochi.serve({ jobs })` mounts it. The descriptor doubles
+   * as the typed handle — export it and call `startChain(...)` on it from any server-side code.
    */
-  static queue<T = unknown, R = unknown>(config: MochiQueueOptions<T, R>): MochiQueueConfig {
-    // Whatever survives the destructure is forwarded verbatim to bunqueue.
-    const { process, on, recover, ...options } = config;
-    return {
-      __mochiQueue: true,
-      process: process as MochiProcessor<unknown, unknown>,
-      options,
-      on: on as Partial<MochiQueueListeners<unknown, unknown>> | undefined,
-      recover: recover as ((queue: MochiQueue<never>) => void | Promise<void>) | undefined,
-    };
+  static jobs<const TTypes extends JobTypes<BaseJobTypeDefinitions>>(config: MochiJobsOptions<TTypes>): MochiJobs<JobTypesDefinitions<TTypes>> & MochiJobsConfig {
+    return createJobsDescriptor(config);
   }
 
   /**
-   * Resolve the handle for a queue declared in `Mochi.serve({ queues })` so jobs can be `.add()`ed to it, passing the
-   * payload type explicitly (`Mochi.getQueue<JobData>(name)`). Throws for an undeclared name, or before `Mochi.serve()` mounts its queues.
+   * Resolve the mounted jobs handle without the descriptor in scope — untyped; prefer importing the descriptor. Throws
+   * on use before `Mochi.serve({ jobs })` mounts it.
    */
-  static getQueue<T = unknown>(name: string): MochiQueue<T> {
-    return getQueue<T>(name);
+  static getJobs<TDefs extends BaseJobTypeDefinitions = BaseJobTypeDefinitions>(): MochiJobs<TDefs> {
+    return getJobs<TDefs>();
   }
 
   /**
@@ -1657,10 +1650,8 @@ export class Mochi {
         : userWebSocketOptions;
 
     // Validating before binding makes a misconfiguration fail fast, leaving no half-started server listening.
-    for (const [name, config] of Object.entries(options.queues ?? {})) {
-      if (!isMochiQueue(config)) {
-        throw new Error(`Mochi.serve({ queues }): "${name}" is not a Mochi.queue(...) descriptor. Each value must be created with Mochi.queue().`);
-      }
+    if (options.jobs !== undefined && !isMochiJobs(options.jobs)) {
+      throw new Error('Mochi.serve({ jobs }): the value is not a Mochi.jobs(...) descriptor. Create it with Mochi.jobs({ types, processors, … }).');
     }
 
     const server = Bun.serve({
@@ -1691,6 +1682,7 @@ export class Mochi {
         try {
           sweeperStop?.();
           stopEmailBadgeBroadcast?.();
+          await closeAllJobResources();
           await closeEmailTransport();
           for (const store of rateLimitStores) {
             // Per-store guard: one failing shutdown must not skip the rest.
@@ -1723,22 +1715,21 @@ export class Mochi {
       mochiEvents.emit('server:start', startEvent);
     }
 
-    // Mounted after bind so the queues drain on the same shutdown path as the server; a throw mid-mount tears the
-    // just-bound server down rather than leaving it listening half-started.
-    try {
-      for (const [name, config] of Object.entries(options.queues ?? {})) {
-        createQueue(name, config.process, config.options, config.on);
+    // Mounted after bind so the worker drains on the same shutdown path as the server; a throw mid-mount (bad backend
+    // config, failed migration) tears the just-bound server down rather than leaving it listening half-started.
+    let jobTypeNames: string[] = [];
+    if (options.jobs) {
+      try {
+        jobTypeNames = await mountJobs(options.jobs);
+      } catch (err) {
+        await closeAllJobResources();
+        await server.stop(true);
+        throw err;
       }
-    } catch (err) {
-      await closeAllQueueResources();
-      await server.stop(true);
-      throw err;
     }
-    // Fires once every queue in the map is registered, so a `recover()` callback or user hook reaching for a sibling
-    // gets its handle instead of a "not mounted yet" error.
-    await runHook('mochi:queuesMounted', { options, server, queues: Object.keys(options.queues ?? {}) });
-    // Awaited so recovered jobs are enqueued before `mochi:ready` fires and before `serve()` resolves.
-    await runQueueRecovery(Object.entries(options.queues ?? {}));
+    // Fires once the runtime is live, so a user hook reaching for the jobs handle gets it instead of a "not mounted
+    // yet" error.
+    await runHook('mochi:jobsMounted', { options, server, jobTypes: jobTypeNames });
 
     if (warmupHandlers.length > 0) {
       mochiEvents.emit('warmup:start', { routeCount: warmupHandlers.length });
@@ -1821,7 +1812,7 @@ export class Mochi {
       } catch (err) {
         logger.error(`mochi:shutdown hook failed: ${err instanceof Error ? err.message : err}`);
       }
-      await closeAllQueueResources();
+      await closeAllJobResources();
       resetStartupMilestones();
       const stopEvent: MochiServerStopEvent = { reason: 'signal' };
       if (signal === 'SIGTERM' || signal === 'SIGINT') {

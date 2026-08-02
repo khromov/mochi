@@ -5,7 +5,7 @@ import type { Server } from 'bun';
 import { Mochi } from 'mochi-framework';
 import { internalDemoLlmsRoutes } from './lib/docs';
 import { CHANGELOG_URL } from './lib/changelog';
-import { routes, queues } from './routes';
+import { routes, jobs } from './routes';
 
 // Boots the real site routes so the per-demo llms.txt routes are exercised against
 // the actual router — this is what catches collisions like /demos/data-loading/:id
@@ -48,8 +48,8 @@ describe('per-demo llms.txt routes', () => {
       logger: { enabled: false },
       outDir,
       routes,
-      // Mount the demo queues too, since the routes produce to them.
-      queues,
+      // Mount the demo jobs too, since the routes produce to them.
+      jobs,
     });
     base = `http://localhost:${server.port}`;
   });

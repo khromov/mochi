@@ -11,14 +11,13 @@
 </script>
 
 <DemoPage
-  title="Background jobs with queues"
-  description="A Mochi.queue() bundles a job channel with its process() consumer, declared once in the Mochi.serve() queues option. The form enqueues a job, the queue processes it ~700ms later, and the result streams back live."
+  title="Background jobs with chains"
+  description="Mochi.jobs() declares a typed job-type registry with one processor per type, mounted via the Mochi.serve() jobs option. The form starts a two-step chain — send-notification continues into record-receipt — and the result streams back live."
   {sources}
 >
   <p>
-    The page action calls <code>Mochi.getQueue('demo-notifications').add('notify', {'{ user }'})</code>. The queue's <code>process</code> function — with
-    <code>concurrency: 2</code>, declared as <code>queues: {'{'} 'demo-notifications': … }</code> in
-    <code>Mochi.serve()</code> — picks the job up and records it. Initial state comes from
+    The page action calls <code>jobs.startChain({'{'} typeName: 'send-notification', input: {'{ user }'} })</code>. The worker — with
+    <code>concurrency: 2</code> — runs the handler, which <code>continueWith</code>s into <code>record-receipt</code> to record the delivery. Initial state comes from
     <code>serverProps</code>; a <code>Mochi.sse()</code> route then pushes each completion in realtime — no polling.
   </p>
   <QueueWidget {initial} {suggestedUser} mochi:hydrate />

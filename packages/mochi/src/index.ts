@@ -106,8 +106,46 @@ export type {
   MochiCaptchaVerifyEvent,
   MochiCaptchaReason,
 } from './events';
-export type { MochiQueue, MochiJob, MochiJobRef, MochiJobOptions, MochiQueueOptions, MochiQueueRuntimeOptions, MochiQueueListeners, MochiProcessor } from './queue';
-export { DEFAULT_RECOVERY_STALL_WARNING_MS, DEFAULT_LOCK_DURATION_MS } from './queue';
+export type {
+  MochiJobs,
+  MochiJobsConfig,
+  MochiJobsOptions,
+  MochiJobsBackend,
+  MochiJobsQueuertEscapes,
+  MochiJobProcessors,
+  MochiStartChainOptions,
+  MochiJobsTransactionContext,
+} from './jobs';
+export { DEFAULT_JOBS_POLL_INTERVAL_MS, DEFAULT_JOBS_LEASE_MS } from './jobs';
+export { createBunSqliteStateProvider } from './jobs/sqliteProvider';
+export { createBunSqlStateProvider } from './jobs/postgresProvider';
+// The queuert surface apps author against: the registry builder, in-handler reschedule, and the types that appear in
+// job definitions, handlers, and `jobs.client()` calls.
+export { defineJobTypes, rescheduleJob, withTransactionHooks } from 'queuert';
+export type {
+  BaseJobTypeDefinitions,
+  JobTypeDefs,
+  JobTypes,
+  JobTypesDefinitions,
+  Chain,
+  ChainStatus,
+  CompletedChain,
+  ResolvedChain,
+  Job,
+  JobStatus,
+  ResolvedJob,
+  AttemptHandler,
+  BackoffConfig,
+  LeaseConfig,
+  RetryConfig,
+  DeduplicationOptions,
+  ScheduleOptions,
+  TransactionHooks,
+  NotifyAdapter,
+  ObservabilityAdapter,
+  StateAdapter,
+  Client as MochiJobsClient,
+} from 'queuert';
 export { json, error, apiError } from './utils';
 export { trailingSlashIt } from './runtime/trailingSlash';
 export { fail, redirect, success } from './runtime/forms';
@@ -188,7 +226,6 @@ export type {
   MochiSseStream,
   MochiFileConfig,
   MochiFileResolver,
-  MochiQueueConfig,
   BunRouteValue,
   MochiSvelteShakerOptions,
   MochiBarrelWarningOptions,

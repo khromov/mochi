@@ -3,7 +3,7 @@ import type { MochiEmailTransportConfig } from 'mochi-framework';
 import { analytics } from 'mochi-shared';
 import { routes } from './routes';
 import { adminAuth } from './adminAuth';
-import { SUPPORT_EMAIL_QUEUE, supportEmailQueue } from './jobs.server';
+import { supportJobs } from './jobs.server';
 
 const PORT = Number(process.env.PORT) || 3336;
 const DEVELOPMENT = process.env.MODE === 'development';
@@ -35,7 +35,7 @@ await Mochi.serve({
   proxy: { origin: ORIGIN, addressHeader: 'x-forwarded-for', xffDepth: 1 },
   // Auth first, so an unauthorised /admin hit is never counted as a pageview.
   handle: sequence(adminAuth, analytics()),
-  queues: { [SUPPORT_EMAIL_QUEUE]: supportEmailQueue },
+  jobs: supportJobs,
   email: {
     from: process.env.SMTP_FROM || 'Mochi Support Form <support@mochi.fast>',
     transport: smtp,

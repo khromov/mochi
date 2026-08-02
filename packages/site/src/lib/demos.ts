@@ -275,8 +275,8 @@ export const demos: Demo[] = [
     href: '/demos/queue/',
     slug: 'queue',
     files: queue,
-    title: 'Background jobs with queues',
-    hook: 'How background job queues work — offload work to a Mochi.queue() with an embedded worker, no Redis.',
+    title: 'Background jobs with chains',
+    hook: 'Durable, typed job chains — offload work to Mochi.jobs() with memory, SQLite, or Postgres state, no Redis.',
     category: 'endpoints',
   },
   {

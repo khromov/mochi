@@ -21,7 +21,7 @@ import { assertServerOnly } from './utils/serverOnly';
 import { markStartupMilestone } from './lifecycle';
 import type { MochiStartupMilestone } from './lifecycle';
 
-const STARTUP_MILESTONE_HOOKS = new Set<string>(['mochi:init', 'mochi:listening', 'mochi:queuesMounted', 'mochi:ready']);
+const STARTUP_MILESTONE_HOOKS = new Set<string>(['mochi:init', 'mochi:listening', 'mochi:jobsMounted', 'mochi:ready']);
 
 /**
  * Every `mochiEvents` payload that `consoleLogger()` formats into a line. Narrow on `name` for typed per-event fields —
@@ -51,11 +51,11 @@ export interface ConsoleLoggerLine {
 export interface MochiHookContext {
   'mochi:init': { options: MochiServeOptions };
   'mochi:listening': { options: MochiServeOptions; server: Server<undefined> };
-  'mochi:queuesMounted': {
+  'mochi:jobsMounted': {
     options: MochiServeOptions;
     server: Server<undefined>;
-    /** Names of the queues just mounted, in declaration order. */
-    queues: string[];
+    /** Names of the job types just mounted, in declaration order; empty when `serve()` ran without `jobs`. */
+    jobTypes: string[];
   };
   'mochi:ready': { options: MochiServeOptions; server: Server<undefined> };
   'mochi:shutdown': {
@@ -86,7 +86,7 @@ export interface MochiHookContext {
 export interface MochiHookKindMap {
   'mochi:init': 'async';
   'mochi:listening': 'async';
-  'mochi:queuesMounted': 'async';
+  'mochi:jobsMounted': 'async';
   'mochi:ready': 'async';
   'mochi:shutdown': 'async';
   'route:matched': 'sync';
@@ -122,8 +122,8 @@ export interface MochiFilterValue {
   'captcha:minAgeMs': number;
   'captcha:driftAllowanceMs': number;
   'captcha:solveBudgetMs': number;
-  'queue:recoveryStallWarningMs': number;
-  'queue:lockDurationMs': number;
+  'jobs:leaseMs': number;
+  'jobs:pollIntervalMs': number;
 }
 
 // Overrides the return type where it differs from the input. Most filters are symmetric, so this map is sparse and an
@@ -193,12 +193,14 @@ export interface MochiFilterContext {
     /** Resolved difficulty, filter included — the budget has to cover the work this implies. */
     bits: number;
   };
-  /** Resolved once per queue that declares a `recover` callback, as recovery starts. */
-  'queue:recoveryStallWarningMs': { queue: string };
-  /** Resolved once per queue, as it is created. */
-  'queue:lockDurationMs': {
-    queue: string;
-    /** Whether this queue set `lockDuration` itself — through the option or the raw `bunqueue` passthrough — so the incoming value is its choice, not the framework default. */
+  /** Resolved once as the jobs runtime mounts. */
+  'jobs:leaseMs': {
+    /** Whether the app set `leaseMs` itself, so the incoming value is its choice rather than the framework default. */
+    explicit: boolean;
+  };
+  /** Resolved once as the jobs runtime mounts. */
+  'jobs:pollIntervalMs': {
+    /** Whether the app set `pollIntervalMs` itself, so the incoming value is its choice rather than the framework default. */
     explicit: boolean;
   };
 }
@@ -228,8 +230,8 @@ export interface MochiFilterKindMap {
   'captcha:minAgeMs': 'sync';
   'captcha:driftAllowanceMs': 'sync';
   'captcha:solveBudgetMs': 'sync';
-  'queue:recoveryStallWarningMs': 'sync';
-  'queue:lockDurationMs': 'sync';
+  'jobs:leaseMs': 'sync';
+  'jobs:pollIntervalMs': 'sync';
 }
 
 type FilterReturn<K extends keyof MochiFilterValue> = K extends keyof MochiFilterReturn ? MochiFilterReturn[K] : MochiFilterValue[K];
@@ -247,7 +249,7 @@ type MochiKind = 'sync' | 'async';
 const HOOK_KINDS: { [K in keyof MochiHookContext]: MochiKind } = {
   'mochi:init': 'async',
   'mochi:listening': 'async',
-  'mochi:queuesMounted': 'async',
+  'mochi:jobsMounted': 'async',
   'mochi:ready': 'async',
   'mochi:shutdown': 'async',
   'route:matched': 'sync',
@@ -278,8 +280,8 @@ const FILTER_KINDS: { [K in keyof MochiFilterValue]: MochiKind } = {
   'captcha:minAgeMs': 'sync',
   'captcha:driftAllowanceMs': 'sync',
   'captcha:solveBudgetMs': 'sync',
-  'queue:recoveryStallWarningMs': 'sync',
-  'queue:lockDurationMs': 'sync',
+  'jobs:leaseMs': 'sync',
+  'jobs:pollIntervalMs': 'sync',
 };
 
 // Pinned on globalThis so duplicate bundled copies of mochi-framework share one registry, the same reasoning as the
