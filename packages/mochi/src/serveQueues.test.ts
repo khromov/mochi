@@ -18,20 +18,20 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
 describe('Mochi.queue descriptor', () => {
   test('returns an inert config and does not start a queue', () => {
     const process = async (): Promise<{ ok: true }> => ({ ok: true });
-    const config = Mochi.queue({ process, concurrency: 3 });
+    const config = Mochi.queue({ process, concurrent: 3 });
     expect(isMochiQueue(config)).toBe(true);
     expect(config.process).toBe(process);
-    expect(config.options).toEqual({ concurrency: 3 });
+    expect(config.options).toEqual({ concurrent: 3 });
     expect(config.on).toBeUndefined();
   });
 
   test('splits `process`, `on` and `recover` out of the runtime options', () => {
     const completed = (): void => {};
     const recover = (): void => {};
-    const config = Mochi.queue({ process: async () => null, concurrency: 1, on: { completed }, recover });
-    // Anything left in `options` is forwarded verbatim to bunqueue, so these
+    const config = Mochi.queue({ process: async () => null, concurrent: 1, on: { completed }, recover });
+    // Anything left in `options` is forwarded to better-queue, so these
     // three must not leak through.
-    expect(config.options).toEqual({ concurrency: 1 });
+    expect(config.options).toEqual({ concurrent: 1 });
     expect(config.on?.completed).toBe(completed);
     expect(config.recover).toBe(recover);
   });
@@ -52,7 +52,7 @@ describe('Mochi.serve({ queues })', () => {
     outDir = mkdtempSync(path.join(import.meta.dir, '..', '.mochi-serve-queues-'));
     const name = 'serve-queue-jobs';
     const processed: string[] = [];
-    const completed = deferred<{ jobName: string; result: unknown }>();
+    const completed = deferred<{ jobId: string; result: unknown }>();
 
     server = await Mochi.serve({
       port: 0,
@@ -67,17 +67,17 @@ describe('Mochi.serve({ queues })', () => {
             return { sent: true };
           },
           on: {
-            completed: (job, result) => completed.resolve({ jobName: job.name, result }),
+            completed: (job, result) => completed.resolve({ jobId: job.id, result }),
           },
         }),
       },
     });
 
-    await Mochi.getQueue<{ to: string }>(name).add('notify', { to: 'alice' });
+    const ref = await Mochi.getQueue<{ to: string }>(name).push({ to: 'alice' });
 
     const done = await completed.promise;
     expect(processed).toEqual(['alice']);
-    expect(done.jobName).toBe('notify');
+    expect(done.jobId).toBe(ref.id);
     expect(done.result).toEqual({ sent: true });
   });
 

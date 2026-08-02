@@ -50,7 +50,7 @@ import { requestContext } from './runtime/requestContext';
 import type { MochiRequestContext } from './runtime/requestContext';
 import { createQueue, getQueue, closeAllQueueResources, runQueueRecovery } from './queue';
 import { resetStartupMilestones } from './lifecycle';
-import type { MochiQueue, MochiQueueOptions, MochiQueueListeners, MochiProcessor } from './queue';
+import type { MochiQueue, MochiQueueOptions, MochiQueueRuntimeOptions, MochiQueueListeners, MochiProcessor } from './queue';
 import { finalizeCookieHeaders } from './runtime/cookies';
 import { makeRequestContextBuilder } from './runtime/requestSetup';
 import { createRouteLimiter, applyRateLimitHeaders } from './runtime/rateLimit';
@@ -181,24 +181,24 @@ export class Mochi {
   }
 
   /**
-   * Declare a background job queue. Like `page`/`api`/`ws`/`sse`/`file` this returns an inert config; the live producer
-   * and consumer are created only once `Mochi.serve({ queues })` mounts the descriptor under its queue name. Add jobs from
-   * anywhere via `Mochi.getQueue(name).add(...)`, and the queue drains gracefully on shutdown.
+   * Declare a background job queue. Like `page`/`api`/`ws`/`sse`/`file` this returns an inert config; the live queue is
+   * created only once `Mochi.serve({ queues })` mounts the descriptor under its queue name. Push jobs from anywhere via
+   * `Mochi.getQueue(name).push(...)`, and the queue drains gracefully on shutdown.
    */
   static queue<T = unknown, R = unknown>(config: MochiQueueOptions<T, R>): MochiQueueConfig {
-    // Whatever survives the destructure is forwarded verbatim to bunqueue.
+    // Whatever survives the destructure is forwarded to better-queue when the queue mounts.
     const { process, on, recover, ...options } = config;
     return {
       __mochiQueue: true,
       process: process as MochiProcessor<unknown, unknown>,
-      options,
+      options: options as MochiQueueRuntimeOptions,
       on: on as Partial<MochiQueueListeners<unknown, unknown>> | undefined,
       recover: recover as ((queue: MochiQueue<never>) => void | Promise<void>) | undefined,
     };
   }
 
   /**
-   * Resolve the handle for a queue declared in `Mochi.serve({ queues })` so jobs can be `.add()`ed to it, passing the
+   * Resolve the handle for a queue declared in `Mochi.serve({ queues })` so jobs can be `.push()`ed to it, passing the
    * payload type explicitly (`Mochi.getQueue<JobData>(name)`). Throws for an undeclared name, or before `Mochi.serve()` mounts its queues.
    */
   static getQueue<T = unknown>(name: string): MochiQueue<T> {

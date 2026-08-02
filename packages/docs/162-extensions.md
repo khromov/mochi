@@ -646,21 +646,21 @@ await Mochi.serve({
 
 Return `0` to silence the warning for a queue entirely — no timer is scheduled at all.
 
-#### `queue:lockDurationMs`
+#### `queue:maxTimeoutMs`
 
-How long a job may run before its queue reclaims it. Resolved once per queue as it is created, after the per-queue [`lockDuration`](/docs/queues/#long-running-jobs) option — `explicit` says whether the incoming value came from that option rather than the framework default, so a blanket filter can leave queues that chose for themselves alone. Sync. Defaults to `1_800_000` (30 minutes), which is also the ceiling: returning more does not let a job run longer.
+How long a job may run before it is failed with `task_timeout`. Resolved once per queue as it is created, after the per-queue [`maxTimeout`](/docs/queues/#retries--timeouts) option — `explicit` says whether the incoming value came from that option rather than the framework default, so a blanket filter can leave queues that chose for themselves alone. Sync. Defaults to `Infinity` (no timeout).
 
 ```ts
 await Mochi.serve({
   filters: {
-    // Nothing here should ever hold a job for half an hour; queues that set their own value keep it.
-    'queue:lockDurationMs': (value, { explicit }) => (explicit ? value : 5 * 60_000),
+    // Nothing here should ever hold a slot for more than five minutes; queues that set their own value keep it.
+    'queue:maxTimeoutMs': (value, { explicit }) => (explicit ? value : 5 * 60_000),
   },
   queues,
   routes,
 });
 ```
 
-The returned value must exceed the **worst case** runtime of `process`. Set it too low and a job is re-queued while still running, its eventual success rejected as `Invalid or expired lock token` — the work is reported failed despite having succeeded, and is then either retried or dropped.
+The returned value must exceed the **worst case** runtime of `process`, not the typical one — a timed-out job counts as a failed attempt even if its work eventually succeeds.
 
-This filter is the last word on the lock: unlike every other queue setting, a `lockDuration` passed through the raw [`bunqueue`](/docs/queues/#advanced-options) escape hatch doesn't override it — that value arrives as the incoming `value` with `explicit: true`, exactly like the first-class option.
+This filter is the last word on the timeout: unlike every other queue setting, a `maxTimeout` passed through the raw [`betterQueue`](/docs/queues/#advanced-options) escape hatch doesn't override it — that value arrives as the incoming `value` with `explicit: true`, exactly like the first-class option.

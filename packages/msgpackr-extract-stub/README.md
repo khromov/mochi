@@ -8,7 +8,7 @@ It's an empty stub meant to be substituted for it via a `package.json`
 "overrides": { "msgpackr-extract": "npm:@mochi-framework/msgpackr-extract-stub@^0.0.1" }
 ```
 
-`msgpackr` (pulled in transitively by `bunqueue`) lists `msgpackr-extract` as an
+`msgpackr` (wherever it appears in a dependency tree) lists `msgpackr-extract` as an
 **optional** dependency — a native C++ accelerator that also drags in
 platform-specific `@msgpackr-extract/*` prebuilt binaries. We don't want those
 binaries in the install, so we replace the package with this stub.

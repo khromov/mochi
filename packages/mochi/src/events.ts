@@ -176,13 +176,11 @@ export interface MochiCacheErrorEvent {
 export interface MochiQueueAddedEvent {
   queue: string;
   jobId: string;
-  jobName: string;
 }
 
 export interface MochiQueueActiveEvent {
   queue: string;
   jobId: string;
-  jobName: string;
   /** 1-based attempt number (1 on the first run). */
   attempt: number;
 }
@@ -190,16 +188,15 @@ export interface MochiQueueActiveEvent {
 export interface MochiQueueCompletedEvent {
   queue: string;
   jobId: string;
-  jobName: string;
   attempt: number;
   /** Milliseconds, measured from the `active` event. */
   duration: number;
 }
 
+/** Fires once per job, after every retry granted by `maxRetries` is exhausted. */
 export interface MochiQueueFailedEvent {
   queue: string;
   jobId: string;
-  jobName: string;
   attempt: number;
   duration: number;
   /** Message of the error the processor threw. */

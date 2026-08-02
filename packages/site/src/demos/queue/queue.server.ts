@@ -22,9 +22,9 @@ const settle = (e: { queue: string }) => {
 mochiEvents.on('queue:completed', settle);
 mochiEvents.on('queue:failed', settle);
 
-// In-memory so the demo writes no SQLite file into the site working dir; pass `dataPath` to persist.
+// In-memory so the demo writes no SQLite file into the site working dir; pass `store: { type: 'sqlite', path }` (or `type: 'postgres'`) to persist.
 export const notificationQueue: MochiQueueConfig = Mochi.queue<NotificationJob>({
-  concurrency: 2,
+  concurrent: 2,
   process: async (job) => {
     // Simulate delivery latency so the UI shows the queued → processing → done transition.
     const start = Date.now();

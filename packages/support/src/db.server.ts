@@ -96,7 +96,7 @@ export function markEmailSent(id: number): void {
   sentStmt.run(Date.now(), id);
 }
 
-// Terminal: bunqueue has exhausted its attempts and won't retry on its own.
+// Terminal: the queue has exhausted its attempts and won't retry on its own.
 export function markEmailFailed(id: number, error: string): void {
   failedStmt.run(error.slice(0, 1000), id);
 }

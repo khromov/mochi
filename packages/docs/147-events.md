@@ -188,23 +188,21 @@ Fires when the SSE stream closes (client disconnect or explicit close).
 
 #### `queue:added`
 
-Fires after a job is enqueued via `queue.add()` / `queue.addBulk()`. See [Queues](/docs/queues/).
+Fires after a job is enqueued via `queue.push()`. See [Queues](/docs/queues/).
 
-| Field     | Type     | Notes                  |
-| --------- | -------- | ---------------------- |
-| `queue`   | `string` | queue name             |
-| `jobId`   | `string` | generated job id       |
-| `jobName` | `string` | job name passed to add |
+| Field   | Type     | Notes      |
+| ------- | -------- | ---------- |
+| `queue` | `string` | queue name |
+| `jobId` | `string` | job id     |
 
 #### `queue:active`
 
-Fires when a worker starts processing a job.
+Fires when the queue starts processing a job (again on each retry).
 
 | Field     | Type     | Notes                                   |
 | --------- | -------- | --------------------------------------- |
 | `queue`   | `string` | queue name                              |
 | `jobId`   | `string` | job id                                  |
-| `jobName` | `string` | job name                                |
 | `attempt` | `number` | 1-based attempt number (1 on first run) |
 
 #### `queue:completed`
@@ -215,19 +213,17 @@ Fires when a job's processor returns successfully.
 | ---------- | -------- | ------------------------------------- |
 | `queue`    | `string` | queue name                            |
 | `jobId`    | `string` | job id                                |
-| `jobName`  | `string` | job name                              |
 | `attempt`  | `number` | attempt that succeeded                |
 | `duration` | `number` | processing ms, measured from `active` |
 
 #### `queue:failed`
 
-Fires when a job's processor throws (once per failed attempt).
+Fires once per job, terminally — after the last attempt granted by `maxRetries` fails. Intermediate failures retry silently.
 
 | Field      | Type     | Notes                          |
 | ---------- | -------- | ------------------------------ |
 | `queue`    | `string` | queue name                     |
 | `jobId`    | `string` | job id                         |
-| `jobName`  | `string` | job name                       |
 | `attempt`  | `number` | attempt that failed            |
 | `duration` | `number` | processing ms before the throw |
 | `error`    | `string` | thrown error message           |

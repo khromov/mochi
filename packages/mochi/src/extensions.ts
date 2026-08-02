@@ -123,7 +123,7 @@ export interface MochiFilterValue {
   'captcha:driftAllowanceMs': number;
   'captcha:solveBudgetMs': number;
   'queue:recoveryStallWarningMs': number;
-  'queue:lockDurationMs': number;
+  'queue:maxTimeoutMs': number;
 }
 
 // Overrides the return type where it differs from the input. Most filters are symmetric, so this map is sparse and an
@@ -196,9 +196,9 @@ export interface MochiFilterContext {
   /** Resolved once per queue that declares a `recover` callback, as recovery starts. */
   'queue:recoveryStallWarningMs': { queue: string };
   /** Resolved once per queue, as it is created. */
-  'queue:lockDurationMs': {
+  'queue:maxTimeoutMs': {
     queue: string;
-    /** Whether this queue set `lockDuration` itself — through the option or the raw `bunqueue` passthrough — so the incoming value is its choice, not the framework default. */
+    /** Whether this queue set `maxTimeout` itself — through the option or the raw `betterQueue` passthrough — so the incoming value is its choice, not the framework default (`Infinity`). */
     explicit: boolean;
   };
 }
@@ -229,7 +229,7 @@ export interface MochiFilterKindMap {
   'captcha:driftAllowanceMs': 'sync';
   'captcha:solveBudgetMs': 'sync';
   'queue:recoveryStallWarningMs': 'sync';
-  'queue:lockDurationMs': 'sync';
+  'queue:maxTimeoutMs': 'sync';
 }
 
 type FilterReturn<K extends keyof MochiFilterValue> = K extends keyof MochiFilterReturn ? MochiFilterReturn[K] : MochiFilterValue[K];
@@ -279,7 +279,7 @@ const FILTER_KINDS: { [K in keyof MochiFilterValue]: MochiKind } = {
   'captcha:driftAllowanceMs': 'sync',
   'captcha:solveBudgetMs': 'sync',
   'queue:recoveryStallWarningMs': 'sync',
-  'queue:lockDurationMs': 'sync',
+  'queue:maxTimeoutMs': 'sync',
 };
 
 // Pinned on globalThis so duplicate bundled copies of mochi-framework share one registry, the same reasoning as the

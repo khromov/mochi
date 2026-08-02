@@ -1,7 +1,7 @@
 ---
 title: 'Queues'
 slug: queues
-description: 'Run background jobs in-process with Mochi.queue(), backed by bunqueue embedded mode.'
+description: 'Run background jobs in-process with Mochi.queue(), backed by better-queue with memory, SQLite, or Postgres storage.'
 ---
 
 <script>
@@ -11,9 +11,9 @@ description: 'Run background jobs in-process with Mochi.queue(), backed by bunqu
 
 ## Queues
 
-Offload work that shouldn't block a response — sending email, encoding media, calling slow third-party APIs — to a background **queue**. A queue bundles a job channel with the `process` function that consumes it; both run in your process, backed by [bunqueue](https://bunqueue.dev/)'s embedded mode.
+Offload work that shouldn't block a response — sending email, encoding media, calling slow third-party APIs — to a background **queue**. A queue bundles a job channel with the `process` function that consumes it; both run in your process, backed by [better-queue](https://github.com/diamondio/better-queue) with a Mochi-provided storage layer: in-memory (default), SQLite, or Postgres.
 
-`Mochi.queue()` — like `Mochi.page` / `api` / `ws` / `sse` — returns an **inert config** that you mount in `Mochi.serve({ queues })`, keyed by name, so every background queue the server runs is declared in one place. Add jobs from anywhere with `Mochi.getQueue(name).add(...)`.
+`Mochi.queue()` — like `Mochi.page` / `api` / `ws` / `sse` — returns an **inert config** that you mount in `Mochi.serve({ queues })`, keyed by name, so every background queue the server runs is declared in one place. Push jobs from anywhere with `Mochi.getQueue(name).push(...)`.
 
 ```ts
 import { Mochi } from 'mochi-framework';
@@ -23,7 +23,7 @@ await Mochi.serve({
   queues: {
     // the map key is the queue name
     emails: Mochi.queue<{ to: string }>({
-      concurrency: 10,
+      concurrent: 10,
       process: async (job) => {
         await sendEmail(job.data.to);
         return { sent: true };
@@ -33,7 +33,7 @@ await Mochi.serve({
 });
 
 // from a page action, an API route, anywhere:
-await Mochi.getQueue<{ to: string }>('emails').add('send', { to: 'alice@example.com' });
+await Mochi.getQueue<{ to: string }>('emails').push({ to: 'alice@example.com' });
 ```
 
 ### `Mochi.queue()`
@@ -46,23 +46,34 @@ const queueConfig = Mochi.queue<JobData, Result>({ process, ...options });
 
 | Field        | Type     | Notes                                   |
 | ------------ | -------- | --------------------------------------- |
-| `id`         | `string` | job id                                  |
-| `name`       | `string` | job name passed to `add()`              |
+| `id`         | `string` | job id (set at `push()`)                |
 | `data`       | `T`      | the enqueued payload                    |
 | `queue`      | `string` | queue name                              |
 | `attempt`    | `number` | 1-based attempt number (1 on first run) |
 | `enqueuedAt` | `number` | epoch ms when enqueued                  |
 
-Options: `concurrency` (jobs processed at once), `dataPath` (see below), `lockDuration` (see [Long-running jobs](#long-running-jobs)), `recover` (a startup callback for re-enqueuing unfinished work — see [Recovery on start](#recovery-on-start)), and `on` for lifecycle listeners:
+Options use better-queue's own names — `concurrent` (jobs processed at once), `maxRetries` / `retryDelay` (see [Retries & timeouts](#retries--timeouts)), `store` (see [Storage](#storage)), `filo`, `batchSize`, `precondition`, `cancelIfRunning`, `autoResume`, and more — plus `recover` (a startup callback for re-enqueuing unfinished work, see [Recovery on start](#recovery-on-start)) and `on` for lifecycle listeners:
 
 ```ts
 Mochi.queue({
-  concurrency: 10,
+  concurrent: 10,
   process,
   on: {
-    completed: (job, result) => log.info(`${job.name} done`),
-    failed: (job, error) => log.warn(`${job.name} failed: ${error.message}`),
+    completed: (job, result) => log.info(`${job.id} done`),
+    failed: (job, error) => log.warn(`${job.id} failed: ${error.message}`),
   },
+});
+```
+
+The `filter`, `merge`, `priority`, and `id` callbacks operate directly on your payload:
+
+```ts
+Mochi.queue<{ userId: string; count: number }>({
+  process,
+  // Dedupe key: pushes for the same user merge instead of piling up.
+  id: (data) => data.userId,
+  merge: (oldData, newData, cb) => cb(null, { ...newData, count: oldData.count + newData.count }),
+  priority: (data, cb) => cb(null, data.count),
 });
 ```
 
@@ -70,27 +81,28 @@ Or subscribe globally on the [`mochiEvents` bus](#observability) (filter by `que
 
 ### `Mochi.getQueue()`
 
-`Mochi.getQueue<JobData>(name)` resolves a mounted queue's handle — call `.add()` on it to add jobs. Pass the payload type explicitly. It throws if the name was never declared in `Mochi.serve({ queues })`, or if reached before `Mochi.serve()` mounted its queues — the message tells you which, so a mistimed call is never reported as a misspelled name.
+`Mochi.getQueue<JobData>(name)` resolves a mounted queue's handle — call `.push()` on it to add jobs. Pass the payload type explicitly. It throws if the name was never declared in `Mochi.serve({ queues })`, or if reached before `Mochi.serve()` mounted its queues — the message tells you which, so a mistimed call is never reported as a misspelled name.
 
-| Method                   | Returns                  | Notes                    |
-| ------------------------ | ------------------------ | ------------------------ |
-| `add(name, data, opts?)` | `Promise<MochiJobRef>`   | enqueue one job          |
-| `addBulk(jobs)`          | `Promise<MochiJobRef[]>` | enqueue many in one call |
+| Method              | Returns                | Notes                                      |
+| ------------------- | ---------------------- | ------------------------------------------ |
+| `push(data, opts?)` | `Promise<MochiJobRef>` | enqueue one job; resolves once it's queued |
+| `pause()`           | `void`                 | stop processing (jobs still accumulate)    |
+| `resume()`          | `void`                 | resume processing                          |
+| `getStats()`        | stats object           | `{ total, average, successRate, peak }`    |
 
-`MochiJobRef` is `{ id, name }`. Per-job options: `priority`, `delay` (ms), `attempts`, `jobId`.
+`MochiJobRef` is `{ id }`. The only per-push option is `id` — pushing an id that is already queued **merges** with the queued job (see the `merge` option) instead of enqueueing a duplicate:
 
 ```ts
 const emails = Mochi.getQueue<{ to: string }>('emails');
-await emails.add('send', { to: 'bob@example.com' }, { priority: 10, delay: 5000 });
-await emails.addBulk([
-  { name: 'send', data: { to: 'a@x.com' } },
-  { name: 'send', data: { to: 'b@x.com' }, opts: { priority: 10 } },
-]);
+await emails.push({ to: 'bob@example.com' });
+await emails.push({ to: 'carol@example.com' }, { id: `signup-${userId}` });
+// bulk is just Promise.all:
+await Promise.all(addresses.map((to) => emails.push({ to })));
 ```
 
 ### A shared queue module
 
-The common pattern is a shared module that exports the queue config (so your entry can mount it) while route code adds jobs by name.
+The common pattern is a shared module that exports the queue config (so your entry can mount it) while route code pushes jobs by name.
 
 ```ts
 // jobs.server.ts
@@ -113,7 +125,7 @@ export const routes = {
     actions: {
       register: async ({ request }) => {
         const data = await request.formData();
-        await Mochi.getQueue<{ to: string }>('emails').add('send', { to: String(data.get('email')) });
+        await Mochi.getQueue<{ to: string }>('emails').push({ to: String(data.get('email')) });
         return success({ ok: true });
       },
     },
@@ -133,41 +145,43 @@ await Mochi.serve({
 });
 ```
 
-### Persistence
+### Storage
 
-By default the queue is **in-memory** — jobs do not survive a restart. Pass `dataPath` to persist to SQLite:
-
-```ts
-Mochi.queue({ process, dataPath: '.mochi/queue.sqlite' });
-```
-
-<Callout type="warning">
-
-bunqueue locks the embedded store to the **first** `dataPath` used in the process. Use one `dataPath` across all your queues; conflicting paths are ignored (Mochi logs a warning).
-
-</Callout>
-
-### Long-running jobs
-
-A job holds a lock while it runs. If the job outlives the lock, the queue assumes the worker died and hands the job to someone else — while the original is still running. Mochi allows **30 minutes** by default, which is also the longest a job may run at all; lower it with `lockDuration` (ms) if you want a stuck job reclaimed sooner:
+By default the queue is **in-memory** — jobs do not survive a restart. Pass `store` to persist to SQLite (via `bun:sqlite`) or Postgres (via `Bun.sql`):
 
 ```ts
-Mochi.queue({ process: resizeImage, lockDuration: 60_000 });
+Mochi.queue({ process, store: { type: 'sqlite', path: '.mochi/queue.sqlite' } });
+
+Mochi.queue({ process, store: { type: 'postgres', url: process.env.DATABASE_URL } });
+// or omit `url` to let Bun.SQL read DATABASE_URL/POSTGRES_URL itself,
+// or hand over an existing pool: { type: 'postgres', sql: mySql }
 ```
 
-<Callout type="warning">
+All queues can share one file or database — rows carry the queue name, in one table (`mochi_queue_tasks`; override per queue with `tableName`). Payloads are stored as JSON, so they must be JSON-serializable.
 
-`lockDuration` must exceed the **worst case** runtime of `process`, not the typical one. A job that overruns it is re-queued mid-flight, and its eventual success is rejected as `Invalid or expired lock token` and reported as a failure — even though the work succeeded. Depending on the queue version it is then either retried, firing its side effects a second time, or abandoned where it stands.
+With a persistent store, jobs a previous process left queued — or died holding mid-run — are picked up automatically on the next boot (`autoResume`, on by default).
 
-</Callout>
+For anything else, `store` also accepts a custom instance implementing better-queue's store interface (`MochiBetterQueueStore`).
 
-<Callout type="danger">
+### Retries & timeouts
 
-**30 minutes is a ceiling, not just a default.** The underlying queue drops any job that has been processing for longer, whatever `lockDuration` says — so raising it past 30 minutes buys nothing, and the job still fails. Work that can run longer belongs outside the queue, or split into jobs that each finish well inside the limit.
+Retries are configured per queue: `maxRetries` is the **total attempt budget** for a job, and `retryDelay` the fixed pause (ms) before each retry. The processor's `job.attempt` tells you which attempt is running:
 
-</Callout>
+```ts
+Mochi.queue({
+  process,
+  maxRetries: 3, // a job runs at most 3 times
+  retryDelay: 5000, // 5s between attempts
+});
+```
 
-Lowering `lockDuration` does not make a crashed worker's jobs recover faster — that's handled separately by heartbeat-based stall detection, which is independent of the lock.
+`queue:failed` (and the `on.failed` listener) fire **once per job, terminally** — after the last attempt fails. Intermediate failures retry silently.
+
+`maxTimeout` (ms) fails a job that runs too long — there is no timeout by default. Deployments can cap it for every queue at once with the [`queue:maxTimeoutMs`](/docs/extensions/) filter.
+
+```ts
+Mochi.queue({ process: resizeImage, maxTimeout: 60_000 });
+```
 
 ### Recovery on start
 
@@ -178,7 +192,7 @@ Mochi.queue<{ id: number }>({
   process: sendEmail,
   recover: async (queue) => {
     // Rows your app marked unsent are the source of truth, not the queue.
-    await queue.addBulk(pendingEmailIds().map((id) => ({ name: 'send', data: { id } })));
+    await Promise.all(pendingEmailIds().map((id) => queue.push({ id })));
   },
 });
 ```
@@ -189,32 +203,33 @@ A `recover` that never settles is never cut short — abandoning it would drop t
 
 <Callout type="info">
 
+**`recover` and `autoResume` are complementary.** A persistent store's `autoResume` re-runs jobs the queue itself still holds, at mount time — before `recover` runs. `recover` is for work only _your_ database knows about. Pushing an id that `autoResume` already re-queued merges rather than duplicating, if your ids are stable.
+
+</Callout>
+
+<Callout type="info">
+
 **Queues mount late.** They are created after the `mochi:init` hook and after the server binds, so `Mochi.getQueue()` throws if you call it from `mochi:init` — the error says as much. Anywhere from the [`mochi:queuesMounted`](/docs/extensions/#mochiqueuesmounted) hook onwards can add jobs: a queue's own `recover` callback, the `mochi:ready` hook, or any request handler.
 
 </Callout>
 
 ### Advanced options
 
-Mochi wraps a small, stable core. For bunqueue features Mochi doesn't surface first-class — retry backoff, rate limiting, cron/repeat, dead-letter queue, deduplication — pass a `bunqueue` object that is forwarded verbatim to the underlying queue and worker:
+Mochi surfaces better-queue's options first-class, typed. For anything else — or to override what Mochi computes — pass a `betterQueue` object that is forwarded verbatim to the better-queue constructor:
 
 ```ts
 const apiCalls = Mochi.queue({
   process,
-  defaultJobOptions: { attempts: 5 },
-  bunqueue: { limiter: { max: 100, duration: 1000 } },
-});
-
-await Mochi.getQueue('api-calls').add('call', data, {
-  attempts: 5,
-  bunqueue: { backoff: { type: 'jitter', delay: 1000 } },
+  maxRetries: 5,
+  betterQueue: { afterProcessDelay: 250 },
 });
 ```
 
-See the [bunqueue docs](https://bunqueue.dev/guide/simple-mode/) for the full option set.
+See the [better-queue readme](https://github.com/diamondio/better-queue#full-documentation) for the full option set.
 
-<Callout type="info">
+<Callout type="warning">
 
-`bunqueue` is applied last, so anything it repeats wins over the first-class option next to it. Prefer the first-class option where one exists. The one exception is `lockDuration`, which either spelling can set but the [`queue:lockDurationMs`](/docs/extensions/) filter always gets the final say on.
+`betterQueue` is applied last, so anything it repeats wins over the first-class option next to it — prefer the first-class option where one exists. Two caveats: `maxTimeout` set either way still goes through the [`queue:maxTimeoutMs`](/docs/extensions/) filter, which has the final say; and overriding `id` or `store` through `betterQueue` bypasses the task envelope Mochi wraps around your payload — expert-only.
 
 </Callout>
 
@@ -225,8 +240,8 @@ Queues emit [events](/docs/events/) on the `mochiEvents` bus — `queue:added`, 
 ```ts
 import { mochiEvents } from 'mochi-framework';
 
-mochiEvents.on('queue:completed', ({ queue, jobName, duration }) => {
-  metrics.timing('queue.job', duration, { queue, job: jobName });
+mochiEvents.on('queue:completed', ({ queue, jobId, duration }) => {
+  metrics.timing('queue.job', duration, { queue });
 });
 ```
 
@@ -244,7 +259,7 @@ A long-running resource the `process` function _opens_ (a DB pool, a client conn
 
 ### Shutdown
 
-Queues close gracefully when `Mochi.serve()` receives `SIGTERM`/`SIGINT` — in-flight jobs drain before the process exits. A **queue-only process** (no page/API routes) is just `Mochi.serve({ queues })` with no `routes`:
+Queues close gracefully when `Mochi.serve()` receives `SIGTERM`/`SIGINT` — processing stops and each store closes; with a persistent store, whatever was still queued is picked back up on the next boot. A **queue-only process** (no page/API routes) is just `Mochi.serve({ queues })` with no `routes`:
 
 ```ts
 // worker.ts — run with `bun worker.ts`
@@ -263,14 +278,10 @@ await Mochi.serve({
 
 <Callout type="info">
 
-**Embedded mode only.** The code that adds jobs and the worker that runs them share one process. bunqueue also supports a TCP server mode for distributed workers; Mochi doesn't expose that yet.
+**One process.** The code that pushes jobs and the `process` function that runs them share the process. The Postgres store gives multiple processes a shared backlog (claims use `FOR UPDATE SKIP LOCKED`), but `recover` still assumes a single instance — see [Recovery on start](#recovery-on-start).
 
 </Callout>
 
-### Dependencies
-
-Mochi uses bunqueue as the underlying implementation for queues. bunqueue pulls in `msgpackr`, whose optional native accelerator (`msgpackr-extract`) would otherwise drag platform-specific prebuilt binaries into your install — so Mochi swaps it out via a `package.json` `overrides` entry pointing at [`@mochi-framework/msgpackr-extract-stub`](https://www.npmjs.com/package/@mochi-framework/msgpackr-extract-stub), an empty stub that keeps `msgpackr` on its pure-JS codec so no native binaries are installed. New projects scaffolded with `create-mochi` ship this override by default — to opt out and use the native bindings, just delete the `overrides` entry from your `package.json`.
-
 <SeeItInAction
-demos={[{ href: "/demos/queue/", title: "Background jobs with queues", hook: "How background job queues work — offload work to a Mochi.queue() with an embedded worker, no Redis." }]}
+demos={[{ href: "/demos/queue/", title: "Background jobs with queues", hook: "How background job queues work — offload work to a Mochi.queue() with an in-process consumer, no Redis." }]}
 />

@@ -105,7 +105,7 @@ test('recovery logs a `requeued` entry for each row it puts back', () => {
   expect(events[0]).toBe('requeued');
 });
 
-test('a failing attempt that bunqueue will retry leaves the row recoverable', async () => {
+test('a failing attempt that the queue will retry leaves the row recoverable', async () => {
   // Mid-backoff the row must stay `pending`: marking it `failed` here is what
   // used to drop it out of the set recover() re-enqueues.
   await waitFor(() => (emailLogsBySubmission()[stranded.poisoned] ?? []).some((e) => e.event === 'failed'));

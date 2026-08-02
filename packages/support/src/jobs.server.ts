@@ -6,8 +6,8 @@ export const SUPPORT_TO = process.env.SUPPORT_TO || 'support@mochi.fast';
 
 export const SUPPORT_EMAIL_QUEUE = 'support-emails';
 
-// Shared by defaultJobOptions and the processor, which needs to know whether the
-// attempt it is failing is the last one bunqueue will make.
+// Shared by maxRetries (better-queue's total attempt budget) and the processor,
+// which needs to know whether the attempt it is failing is the last one.
 const MAX_ATTEMPTS = 3;
 
 export interface SupportEmailJob {
@@ -17,21 +17,21 @@ export interface SupportEmailJob {
 // In-memory: jobs don't survive a restart, so `recover` puts every undelivered row (the source of truth, since it's committed to SQLite) back on the queue at boot.
 // TODO: this assumes a single instance — scaling out would double-send until mochi's queue.ts gets single-flight support.
 export const supportEmailQueue: MochiQueueConfig = Mochi.queue<SupportEmailJob>({
-  concurrency: 2,
-  defaultJobOptions: { attempts: MAX_ATTEMPTS },
-  bunqueue: { backoff: { type: 'exponential', delay: 5000 } },
+  concurrent: 2,
+  maxRetries: MAX_ATTEMPTS,
+  retryDelay: 5000,
   recover: async (queue) => {
     const stranded = undeliveredSubmissionIds();
     if (stranded.length === 0) {
       return;
     }
-    // Status and log first: once addBulk resolves the worker may already be
+    // Status and log first: once the pushes resolve the queue may already be
     // processing, and a row it marks `sent` must not then be reset to `pending`.
     for (const id of stranded) {
       markEmailRequeued(id);
       appendEmailLog(id, { attempt: 0, event: 'requeued', detail: 'Re-queued on server start' });
     }
-    await queue.addBulk(stranded.map((id) => ({ name: 'send', data: { id } })));
+    await Promise.all(stranded.map((id) => queue.push({ id })));
   },
   process: async (job) => {
     const submission = getSubmission(job.data.id);
@@ -52,7 +52,7 @@ export const supportEmailQueue: MochiQueueConfig = Mochi.queue<SupportEmailJob>(
         text: [`From: ${name || '(no name)'} <${email}>`, '', message].join('\n'),
       });
     } catch (err) {
-      // Recorded before rethrowing so the admin panel shows why while bunqueue retries — only the last attempt is terminal, so a restart mid-backoff leaves the row for `recover` instead of stranding it as `failed`.
+      // Recorded before rethrowing so the admin panel shows why while the queue retries — only the last attempt is terminal, so a restart mid-retry leaves the row for `recover` instead of stranding it as `failed`.
       const reason = err instanceof Error ? err.message : String(err);
       if (job.attempt >= MAX_ATTEMPTS) {
         markEmailFailed(submission.id, reason);

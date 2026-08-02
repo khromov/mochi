@@ -240,8 +240,9 @@ Delivery is slow and can fail — an SMTP handshake or a third-party API call sh
 import { Mochi } from 'mochi-framework';
 
 export const emailQueue = Mochi.queue<{ to: string; name: string }>({
-  concurrency: 5,
-  defaultJobOptions: { attempts: 3 }, // retry a failed send
+  concurrent: 5,
+  maxRetries: 3, // a failed send is retried, 3 attempts total
+  retryDelay: 5000,
   process: async (job) => {
     await Mochi.email({
       to: job.data.to,
@@ -257,7 +258,7 @@ export const emailQueue = Mochi.queue<{ to: string; name: string }>({
 // routes.ts — enqueue instead of awaiting the send
 register: async ({ request }) => {
   const data = await request.formData();
-  await Mochi.getQueue<{ to: string; name: string }>('emails').add('welcome', {
+  await Mochi.getQueue<{ to: string; name: string }>('emails').push({
     to: String(data.get('email')),
     name: String(data.get('name')),
   });

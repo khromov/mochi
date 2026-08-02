@@ -45,7 +45,7 @@ export const routes: Record<string, MochiRouteValue> = {
         // Logged before enqueuing so the entry can't be ordered after the worker's own `sending` line.
         appendEmailLog(id, { attempt: 0, event: 'queued', detail: `Queued for delivery to ${SUPPORT_TO}` });
         try {
-          await Mochi.getQueue<SupportEmailJob>(SUPPORT_EMAIL_QUEUE).add('send', { id });
+          await Mochi.getQueue<SupportEmailJob>(SUPPORT_EMAIL_QUEUE).push({ id });
         } catch (err) {
           // The row stays `pending`, so recover() picks it up on the next boot — telling the visitor it failed would be wrong.
           logger.error('support: could not enqueue delivery', err);

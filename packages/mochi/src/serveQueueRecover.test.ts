@@ -37,7 +37,7 @@ test('recover() runs after every queue mounts and can enqueue through its handle
           // A sibling declared later in the map is already mounted, because
           // recovery runs after the whole map is created.
           sawSibling = Mochi.getQueue('recover-sibling').name === 'recover-sibling';
-          await queue.addBulk([{ name: 'send', data: { id: 'stranded-1' } }]);
+          await queue.push({ id: 'stranded-1' });
         },
       }),
       'recover-sibling': Mochi.queue({ process: async () => null }),

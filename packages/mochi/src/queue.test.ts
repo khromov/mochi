@@ -1,20 +1,24 @@
 import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
-import { createQueue, getQueue, closeAllQueueResources, runQueueRecovery, DEFAULT_LOCK_DURATION_MS } from './queue';
-import type { MochiJob } from './queue';
+import { createQueue, getQueue, closeAllQueueResources, runQueueRecovery } from './queue';
+import type { MochiJob, MochiQueueRuntimeOptions } from './queue';
 import { mochiEvents } from './events';
 import { initExtensions } from './extensions';
 import { setLogLevel } from './utils/log';
 import { markStartupMilestone, resetStartupMilestones } from './lifecycle';
 
-// bunqueue locks its embedded store to the first dataPath used in the process,
-// so the whole file shares one temp dir and each test uses a unique queue name.
 const dataDir = mkdtempSync(path.join(import.meta.dir, '..', '.mochi-queue-test-'));
-const dataPath = path.join(dataDir, 'queue.sqlite');
 
 let counter = 0;
 const uniqueName = (): string => `q-${counter++}`;
+
+// The behavioural core runs once per backend: the default in-memory store and the bun:sqlite store, which must be
+// indistinguishable to a processor.
+const backends: Array<{ label: string; options: () => MochiQueueRuntimeOptions<never> }> = [
+  { label: 'memory', options: () => ({}) },
+  { label: 'sqlite', options: () => ({ store: { type: 'sqlite', path: path.join(dataDir, `store-${counter++}.sqlite`) } }) },
+];
 
 function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
   let resolve!: (value: T) => void;
@@ -31,12 +35,9 @@ afterEach(async () => {
 });
 
 afterAll(async () => {
-  // The last afterEach closes bunqueue's embedded store (shutdownManager ->
-  // storage.close()), but Windows releases the underlying SQLite file lock
-  // asynchronously, so an immediate rm throws EBUSY. (Bun ignores rmSync's
-  // maxRetries option, so retry by hand.) This is best-effort cleanup of an
-  // ephemeral temp dir — never fail the suite over it, so give up quietly once
-  // the budget is exhausted; the OS reclaims it on process exit regardless.
+  // Windows releases SQLite file locks asynchronously, so an immediate rm can throw EBUSY. (Bun ignores rmSync's
+  // maxRetries option, so retry by hand.) This is best-effort cleanup of an ephemeral temp dir — never fail the suite
+  // over it, so give up quietly once the budget is exhausted; the OS reclaims it on process exit regardless.
   for (let attempt = 0; attempt < 25; attempt++) {
     try {
       rmSync(dataDir, { recursive: true, force: true });
@@ -47,225 +48,282 @@ afterAll(async () => {
   }
 });
 
-describe('Mochi queue', () => {
-  test('roundtrips a job from producer to consumer', async () => {
-    const name = uniqueName();
-    const seen = deferred<MochiJob<{ to: string }>>();
+for (const backend of backends) {
+  describe(`Mochi queue (${backend.label})`, () => {
+    const options = <T>(extra?: MochiQueueRuntimeOptions<T>): MochiQueueRuntimeOptions<T> => ({ ...(backend.options() as MochiQueueRuntimeOptions<T>), ...extra });
 
-    const queue = createQueue<{ to: string }>(
-      name,
-      async (job) => {
-        seen.resolve(job);
-        return { sent: true };
-      },
-      { dataPath },
-    );
+    test('roundtrips a job from producer to processor', async () => {
+      const name = uniqueName();
+      const seen = deferred<MochiJob<{ to: string }>>();
 
-    const ref = await queue.add('send', { to: 'alice@example.com' });
-    expect(ref.id).toBeString();
-    expect(ref.name).toBe('send');
+      const queue = createQueue<{ to: string }>(
+        name,
+        async (job) => {
+          seen.resolve(job);
+          return { sent: true };
+        },
+        options(),
+      );
 
-    const job = await seen.promise;
-    expect(job.data).toEqual({ to: 'alice@example.com' });
-    expect(job.name).toBe('send');
-    expect(job.queue).toBe(name);
-    expect(job.attempt).toBe(1);
-    expect(job.id).toBe(ref.id);
-  });
+      const before = Date.now();
+      const ref = await queue.push({ to: 'alice@example.com' });
+      expect(ref.id).toBeString();
 
-  test('addBulk enqueues every job', async () => {
-    const name = uniqueName();
-    let processed = 0;
-    const done = deferred<void>();
+      const job = await seen.promise;
+      expect(job.data).toEqual({ to: 'alice@example.com' });
+      expect(job.queue).toBe(name);
+      expect(job.attempt).toBe(1);
+      expect(job.id).toBe(ref.id);
+      expect(job.enqueuedAt).toBeGreaterThanOrEqual(before);
+    });
 
-    const queue = createQueue<{ n: number }>(
-      name,
-      async () => {
-        if (++processed === 3) {
+    test('an explicit push id becomes the job id', async () => {
+      const name = uniqueName();
+      const seen = deferred<MochiJob<{ n: number }>>();
+      const queue = createQueue<{ n: number }>(name, async (job) => void seen.resolve(job), options());
+
+      const ref = await queue.push({ n: 1 }, { id: 'submission-42' });
+      expect(ref.id).toBe('submission-42');
+      expect((await seen.promise).id).toBe('submission-42');
+    });
+
+    test('respects concurrent', async () => {
+      const name = uniqueName();
+      let active = 0;
+      let maxActive = 0;
+      let completed = 0;
+      const allDone = deferred<void>();
+
+      const queue = createQueue<{ i: number }>(
+        name,
+        async () => {
+          active++;
+          maxActive = Math.max(maxActive, active);
+          await Bun.sleep(80);
+          active--;
+          if (++completed === 4) {
+            allDone.resolve();
+          }
+        },
+        options({ concurrent: 2 }),
+      );
+
+      await Promise.all([0, 1, 2, 3].map((i) => queue.push({ i })));
+
+      await allDone.promise;
+      // Concurrency caps in-flight jobs at 2; assert the ceiling held and that more
+      // than one ran at once, without depending on the exact timing of when all four
+      // jobs were enqueued vs. drained.
+      expect(maxActive).toBeLessThanOrEqual(2);
+      expect(maxActive).toBeGreaterThan(1);
+    });
+
+    test('emits queue:* lifecycle events on the mochi bus', async () => {
+      const name = uniqueName();
+      const added: unknown[] = [];
+      const active: unknown[] = [];
+      const completed = deferred<{ queue: string; jobId: string; attempt: number; duration: number }>();
+
+      mochiEvents.on('queue:added', (e) => added.push(e));
+      mochiEvents.on('queue:active', (e) => active.push(e));
+      mochiEvents.on('queue:completed', (e) => completed.resolve(e));
+
+      const queue = createQueue<{ x: number }>(name, async () => ({ ok: true }), options());
+      const ref = await queue.push({ x: 1 });
+
+      const done = await completed.promise;
+      expect(added).toHaveLength(1);
+      expect(active).toHaveLength(1);
+      expect(done.queue).toBe(name);
+      expect(done.jobId).toBe(ref.id);
+      expect(done.attempt).toBe(1);
+      expect(done.duration).toBeGreaterThanOrEqual(0);
+    });
+
+    test('retries up to maxRetries without a terminal queue:failed', async () => {
+      const name = uniqueName();
+      const attempts: number[] = [];
+      const succeeded = deferred<MochiJob<{ v: number }>>();
+      let failedEvents = 0;
+      mochiEvents.on('queue:failed', () => failedEvents++);
+
+      const queue = createQueue<{ v: number }>(
+        name,
+        async (job) => {
+          attempts.push(job.attempt);
+          if (job.attempt === 1) {
+            throw new Error('flaky');
+          }
+          succeeded.resolve(job);
+          return null;
+        },
+        options({ maxRetries: 2, retryDelay: 10 }),
+      );
+
+      await queue.push({ v: 1 });
+      const job = await succeeded.promise;
+      expect(job.attempt).toBe(2);
+      expect(attempts).toEqual([1, 2]);
+      // The first failure was a silent retry, not a terminal failure.
+      expect(failedEvents).toBe(0);
+    });
+
+    test('reports terminal failures via queue:failed and the on.failed listener', async () => {
+      const name = uniqueName();
+      const failedEvent = deferred<{ error: string; attempt: number }>();
+      const failedListener = deferred<Error>();
+      let runs = 0;
+
+      mochiEvents.on('queue:failed', (e) => failedEvent.resolve(e));
+
+      const queue = createQueue<{ y: number }>(
+        name,
+        async () => {
+          runs++;
+          throw new Error('boom');
+        },
+        options({ maxRetries: 2, retryDelay: 5 }),
+        { failed: (_job, error) => failedListener.resolve(error) },
+      );
+
+      await queue.push({ y: 1 });
+
+      const event = await failedEvent.promise;
+      // maxRetries is the total attempt budget, so the terminal failure carries the last attempt number.
+      expect(event.error).toBe('boom');
+      expect(event.attempt).toBe(2);
+      expect(runs).toBe(2);
+
+      const error = await failedListener.promise;
+      expect(error).toBeInstanceOf(Error);
+      expect(error.message).toBe('boom');
+    });
+
+    test('pause/resume gate processing and getStats counts completions', async () => {
+      const name = uniqueName();
+      let processed = 0;
+      const done = deferred<void>();
+      // Settled off the bus, not the processor: stats update after the process callback returns.
+      let completions = 0;
+      mochiEvents.on('queue:completed', () => {
+        if (++completions === 2) {
           done.resolve();
         }
-      },
-      { dataPath },
-    );
+      });
 
-    const refs = await queue.addBulk([
-      { name: 'job', data: { n: 1 } },
-      { name: 'job', data: { n: 2 } },
-      { name: 'job', data: { n: 3 } },
-    ]);
+      const queue = createQueue<{ n: number }>(
+        name,
+        async () => {
+          processed++;
+        },
+        options(),
+      );
 
-    expect(refs).toHaveLength(3);
-    await done.promise;
-    expect(processed).toBe(3);
+      queue.pause();
+      await queue.push({ n: 1 });
+      await queue.push({ n: 2 });
+      await Bun.sleep(50);
+      expect(processed).toBe(0);
+
+      queue.resume();
+      await done.promise;
+      expect(processed).toBe(2);
+      expect(queue.getStats().total).toBe(2);
+    });
+
+    test('pushes with the same id merge instead of duplicating', async () => {
+      const name = uniqueName();
+      const seen: Array<{ v: number }> = [];
+      const done = deferred<void>();
+
+      const queue = createQueue<{ v: number }>(
+        name,
+        async (job) => {
+          seen.push(job.data);
+          done.resolve();
+        },
+        options({
+          merge: (oldData, newData, cb) => cb(null, { v: oldData.v + newData.v }),
+        }),
+      );
+
+      queue.pause();
+      await queue.push({ v: 1 }, { id: 'same' });
+      await queue.push({ v: 2 }, { id: 'same' });
+      queue.resume();
+
+      await done.promise;
+      await Bun.sleep(30);
+      expect(seen).toEqual([{ v: 3 }]);
+    });
+
+    test('does not leak queue internals into the processor', async () => {
+      const name = uniqueName();
+      const seen = deferred<MochiJob<unknown>>();
+
+      const queue = createQueue(
+        name,
+        async (job) => {
+          seen.resolve(job);
+          return null;
+        },
+        options(),
+      );
+
+      await queue.push({ hello: 'world' });
+
+      const job = await seen.promise;
+      expect(Object.keys(job).sort()).toEqual(['attempt', 'data', 'enqueuedAt', 'id', 'queue']);
+    });
   });
+}
 
-  test('respects concurrency', async () => {
-    const name = uniqueName();
-    let active = 0;
-    let maxActive = 0;
-    let completed = 0;
-    const allDone = deferred<void>();
-
-    const queue = createQueue<{ i: number }>(
-      name,
-      async () => {
-        active++;
-        maxActive = Math.max(maxActive, active);
-        await Bun.sleep(80);
-        active--;
-        if (++completed === 4) {
-          allDone.resolve();
-        }
-      },
-      { dataPath, concurrency: 2 },
-    );
-
-    await queue.addBulk([0, 1, 2, 3].map((i) => ({ name: 'job', data: { i } })));
-
-    await allDone.promise;
-    // Concurrency caps in-flight jobs at 2; assert the ceiling held and that more
-    // than one ran at once, without depending on the exact timing of when all four
-    // jobs were enqueued vs. drained.
-    expect(maxActive).toBeLessThanOrEqual(2);
-    expect(maxActive).toBeGreaterThan(1);
-  });
-
-  test('emits queue:* lifecycle events on the mochi bus', async () => {
-    const name = uniqueName();
-    const added: unknown[] = [];
-    const active: unknown[] = [];
-    const completed = deferred<{ queue: string; jobName: string; attempt: number; duration: number }>();
-
-    mochiEvents.on('queue:added', (e) => added.push(e));
-    mochiEvents.on('queue:active', (e) => active.push(e));
-    mochiEvents.on('queue:completed', (e) => completed.resolve(e));
-
-    const queue = createQueue<{ x: number }>(name, async () => ({ ok: true }), { dataPath });
-    await queue.add('compute', { x: 1 });
-
-    const done = await completed.promise;
-    expect(added).toHaveLength(1);
-    expect(active).toHaveLength(1);
-    expect(done.queue).toBe(name);
-    expect(done.jobName).toBe('compute');
-    expect(done.attempt).toBe(1);
-    expect(done.duration).toBeGreaterThanOrEqual(0);
-  });
-
-  test('reports failures via queue:failed and the on.failed listener', async () => {
-    const name = uniqueName();
-    const failedEvent = deferred<{ error: string; attempt: number }>();
-    const failedListener = deferred<Error>();
-
-    mochiEvents.on('queue:failed', (e) => failedEvent.resolve(e));
-
-    const queue = createQueue<{ y: number }>(
-      name,
-      async () => {
-        throw new Error('boom');
-      },
-      { dataPath },
-      { failed: (_job, error) => failedListener.resolve(error) },
-    );
-
-    await queue.add('explode', { y: 1 }, { attempts: 1 });
-
-    const event = await failedEvent.promise;
-    expect(event.error).toBe('boom');
-    expect(event.attempt).toBe(1);
-
-    const error = await failedListener.promise;
-    expect(error).toBeInstanceOf(Error);
-    expect(error.message).toBe('boom');
-  });
-
-  // bunqueue's embedded heartbeat refreshes stall detection but never renews the
-  // job's lock, so a job outliving `lockDuration` is requeued while it is still
-  // running and the success it eventually reports is rejected as someone else's
-  // work. Mochi's default TTL is 30 minutes, so this drives the failure with a
-  // deliberately tiny one; the lock reaper only ticks every 5s, hence the sleep.
-  // `attempts: 2` and `concurrency: 2` are both load-bearing — the requeued copy
-  // has to be retryable and pullable while the original is still running, and with
-  // `attempts: 1` the job completes cleanly instead.
-  //
-  // Only the rejected success is asserted, because what follows it is a bunqueue
-  // implementation detail that has already moved once: on 2.8.32 the job was
-  // retried (double-firing its side effects), on 2.8.44 it is abandoned instead.
-  // Both are the same defect from Mochi's side and both are fixed by not letting
-  // the lock expire. Before `lockDuration` was threaded through to the worker, a
-  // top-level value was silently dropped, the job kept the 30s default lock, and
-  // no failure fired at all — which is how this test catches a regression.
-  test('a job outliving lockDuration has its success rejected', async () => {
+describe('Mochi queue', () => {
+  test('a job outliving maxTimeout fails with task_timeout', async () => {
     const name = uniqueName();
     const failed = deferred<string>();
-    let runs = 0;
-
     mochiEvents.on('queue:failed', (e) => failed.resolve(e.error));
 
     const queue = createQueue<{ z: number }>(
       name,
       async () => {
-        runs++;
-        await Bun.sleep(7000);
+        await Bun.sleep(500);
         return { ok: true };
       },
-      { dataPath, concurrency: 2, lockDuration: 50 },
+      { maxTimeout: 50 },
     );
 
-    await queue.add('slow', { z: 1 }, { attempts: 2, bunqueue: { backoff: 10 } });
+    await queue.push({ z: 1 });
+    expect(await failed.promise).toBe('task_timeout');
+  });
 
-    expect(await failed.promise).toMatch(/lock token/i);
-    expect(runs).toBe(1);
-  }, 30_000);
-
-  test('queue:lockDurationMs is resolved once per queue, after the per-queue option', () => {
+  test('queue:maxTimeoutMs is resolved once per queue, after the per-queue option', () => {
     const seen: Array<{ value: number; queue: string; explicit: boolean }> = [];
-    initExtensions({ filters: { 'queue:lockDurationMs': (value, ctx) => (seen.push({ value, ...ctx }), value) } });
+    initExtensions({ filters: { 'queue:maxTimeoutMs': (value, ctx) => (seen.push({ value, ...ctx }), value) } });
 
     const defaulted = uniqueName();
     const chosen = uniqueName();
     const passthrough = uniqueName();
     try {
-      createQueue(defaulted, async () => null, { dataPath });
-      createQueue(chosen, async () => null, { dataPath, lockDuration: 50 });
-      createQueue(passthrough, async () => null, { dataPath, bunqueue: { lockDuration: 70 } });
+      createQueue(defaulted, async () => null);
+      createQueue(chosen, async () => null, { maxTimeout: 5000 });
+      createQueue(passthrough, async () => null, { betterQueue: { maxTimeout: 7000 } });
     } finally {
       initExtensions({});
     }
 
     expect(seen).toEqual([
-      { value: DEFAULT_LOCK_DURATION_MS, queue: defaulted, explicit: false },
-      { value: 50, queue: chosen, explicit: true },
+      { value: Infinity, queue: defaulted, explicit: false },
+      { value: 5000, queue: chosen, explicit: true },
       // The raw escape hatch feeds the filter rather than bypassing it, so the
-      // filtered value stays the last word on the lock.
-      { value: 70, queue: passthrough, explicit: true },
+      // filtered value stays the last word on the timeout.
+      { value: 7000, queue: passthrough, explicit: true },
     ]);
-  });
-
-  test('does not leak bunqueue job methods into the processor', async () => {
-    const name = uniqueName();
-    const seen = deferred<MochiJob<unknown>>();
-
-    const queue = createQueue(
-      name,
-      async (job) => {
-        seen.resolve(job);
-        return null;
-      },
-      { dataPath },
-    );
-
-    await queue.add('probe', { hello: 'world' });
-
-    const job = await seen.promise;
-    expect((job as unknown as Record<string, unknown>).moveToCompleted).toBeUndefined();
-    expect((job as unknown as Record<string, unknown>).updateProgress).toBeUndefined();
-    expect(Object.keys(job).sort()).toEqual(['attempt', 'data', 'enqueuedAt', 'id', 'name', 'queue']);
   });
 
   test('getQueue resolves the producer handle created for a name', () => {
     const name = uniqueName();
-    const created = createQueue(name, async () => null, { dataPath });
+    const created = createQueue(name, async () => null);
     expect(getQueue(name)).toBe(created);
   });
 
@@ -279,7 +337,7 @@ describe('Mochi queue', () => {
 
   test('getQueue names the mounted queues once mounting finished', () => {
     const name = uniqueName();
-    createQueue(name, async () => null, { dataPath });
+    createQueue(name, async () => null);
     markStartupMilestone('mochi:queuesMounted');
     expect(() => getQueue('typoed')).toThrow(/no such queue/);
     expect(() => getQueue('typoed')).toThrow(new RegExp(`Mounted queues: ${name}`));
@@ -292,7 +350,7 @@ describe('Mochi queue', () => {
 
   test('runQueueRecovery hands each callback its own producer handle', async () => {
     const name = uniqueName();
-    const created = createQueue(name, async () => null, { dataPath });
+    const created = createQueue(name, async () => null);
     let received: unknown;
     await runQueueRecovery([[name, { recover: (queue) => void (received = queue) }]]);
     expect(received).toBe(created);
@@ -300,7 +358,7 @@ describe('Mochi queue', () => {
 
   test('a throwing recover is contained and reported on the event bus', async () => {
     const name = uniqueName();
-    createQueue(name, async () => null, { dataPath });
+    createQueue(name, async () => null);
     const errors: Array<{ queue: string; error: string }> = [];
     mochiEvents.on('queue:error', (e) => errors.push(e));
 
@@ -322,7 +380,7 @@ describe('Mochi queue', () => {
   // real threshold is 30s, so these drive it down far enough to observe.
   async function recoveryWarnings(stallMs: number | null): Promise<string[]> {
     const name = uniqueName();
-    createQueue(name, async () => null, { dataPath });
+    createQueue(name, async () => null);
     initExtensions(stallMs === null ? {} : { filters: { 'queue:recoveryStallWarningMs': () => stallMs } });
 
     const warnings: string[] = [];
@@ -357,7 +415,7 @@ describe('Mochi queue', () => {
 
   test('closeAllQueueResources closes resources and is idempotent', async () => {
     const name = uniqueName();
-    createQueue(name, async () => null, { dataPath });
+    createQueue(name, async () => null);
 
     await closeAllQueueResources();
     // After draining, the handle is gone from the registry.
