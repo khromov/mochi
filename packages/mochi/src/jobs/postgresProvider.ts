@@ -6,22 +6,69 @@ import type { PgStateProvider, RuntimeType } from '@queuert/postgres';
 
 export type BunSqlJobsContext = { sql: SQL };
 
+// Postgres array-literal syntax ({"a","b"}), since `sql.array()` only works in tagged templates — through `unsafe()`
+// params the elements arrive JSON-quoted and fail the `$n::uuid[]` cast.
+function toPgArrayLiteral(items: readonly unknown[]): string {
+  const parts = items.map((el) => (el === null || el === undefined ? 'NULL' : `"${String(el).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`));
+  return `{${parts.join(',')}}`;
+}
+
 /** A `PgStateProvider` over a `Bun.SQL` pool. Transactions reserve a dedicated connection via `sql.begin`. */
 export function createBunSqlStateProvider({ sql }: { sql: SQL }): PgStateProvider<BunSqlJobsContext> {
-  // Bun.SQL sends JS strings as text and objects via its own serialization; jsonb/array parameters need explicit
-  // shaping so Postgres sees the type the adapter's SQL expects.
   const serializeParam = (value: unknown, type: RuntimeType | undefined): unknown => {
     if (value === undefined || value === null) {
       return null;
     }
-    if (type === 'array' || type === 'jsonArray') {
-      const items = type === 'jsonArray' ? (value as unknown[]).map((el) => JSON.stringify(el)) : (value as unknown[]);
-      return sql.array(items as never);
+    if (type === 'array') {
+      return toPgArrayLiteral(value as unknown[]);
+    }
+    if (type === 'jsonArray') {
+      return toPgArrayLiteral((value as unknown[]).map((el) => JSON.stringify(el)));
     }
     if (type === 'json' || type === 'json?') {
-      return JSON.stringify(value);
+      // Bun JSON-encodes objects/strings bound to a jsonb placeholder itself; pre-stringifying would double-encode.
+      // Top-level numbers/booleans are the exception — Bun types them as int/bool, which jsonb rejects.
+      return typeof value === 'number' || typeof value === 'boolean' ? JSON.stringify(value) : value;
     }
     return value;
+  };
+
+  // Column coercion the interface asks of providers whose driver doesn't parse everything natively: over the wire
+  // (PGlite included) jsonb, int8, and timestamps can surface as strings. Values the driver already parsed pass through.
+  const parseColumn = (value: unknown, type: RuntimeType): unknown => {
+    if (value === null || value === undefined) {
+      return value;
+    }
+    switch (type) {
+      case 'json':
+      case 'json?':
+        return typeof value === 'string' ? JSON.parse(value) : value;
+      case 'number':
+      case 'number?':
+        return typeof value === 'number' ? value : Number(value);
+      case 'boolean':
+      case 'boolean?':
+        return typeof value === 'boolean' ? value : value === 't' || value === 'true';
+      case 'date?':
+        return value instanceof Date ? value : new Date(value as string);
+      default:
+        return value;
+    }
+  };
+
+  const parseRows = (rows: unknown[], columnTypes: Record<string, RuntimeType>): unknown[] => {
+    const entries = Object.entries(columnTypes);
+    if (entries.length === 0) {
+      return rows;
+    }
+    for (const row of rows as Record<string, unknown>[]) {
+      for (const [column, type] of entries) {
+        if (column in row) {
+          row[column] = parseColumn(row[column], type);
+        }
+      }
+    }
+    return rows;
   };
 
   return {
@@ -31,13 +78,13 @@ export function createBunSqlStateProvider({ sql }: { sql: SQL }): PgStateProvide
     // driver's own savepoint API is required here.
     withSavepoint: async (txCtx, fn) =>
       (await (txCtx.sql as unknown as { savepoint: <T>(cb: (sp: SQL) => Promise<T>) => Promise<T> }).savepoint(async (spSql) => fn({ sql: spSql }))) as never,
-    executeSql: async ({ txCtx, sql: query, params, paramTypes }) => {
+    executeSql: async ({ txCtx, sql: query, params, paramTypes, columnTypes }) => {
       const client = txCtx?.sql ?? sql;
       if (!params || params.length === 0) {
-        return (await client.unsafe(query)) as unknown[];
+        return parseRows((await client.unsafe(query)) as unknown[], columnTypes);
       }
       const serialized = params.map((value, i) => serializeParam(value, paramTypes[i]));
-      return (await client.unsafe(query, serialized as never)) as unknown[];
+      return parseRows((await client.unsafe(query, serialized as never)) as unknown[], columnTypes);
     },
   };
 }
