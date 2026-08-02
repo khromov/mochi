@@ -8,16 +8,20 @@ import type { MochiJobs, MochiJobsConfig, MochiJobsOptions } from './jobs';
 import { startTestPostgres, type TestPostgres } from './__fixtures__/postgres/startTestPostgres';
 import { resetStartupMilestones } from './lifecycle';
 
-// Exercises the postgres jobs backend over the real wire protocol against an in-process PGlite Postgres. The pool is
-// capped at ONE connection on purpose: PGlite is a single-session database and pglite-socket multiplexes extra clients
-// at statement granularity, which would let concurrent statements interleave into an open transaction. With max: 1,
-// Bun's pool does the serializing and every transaction genuinely owns the session. That same limit is why queuert's
-// full conformance suite (whose read-isolation cases require two simultaneous connections) stays gated on TEST_PG_URL
-// against a real server — see jobs/postgresProvider.test.ts.
+// Tests the postgres jobs backend against PGlite: a real Postgres (compiled to WASM) running inside this process,
+// reached over a local socket — so these tests speak the same wire protocol as production, with no server to install.
 //
-// One runtime carries every job type and only the restart test remounts, keeping the file cheap (migrations apply DDL
-// once). Per-test and awaitChain timeouts are sized so even a wedged wire call fails its own test and the file still
-// finishes under run-tests' 60s per-file kill, reporting the real failure instead of "TIMED OUT (killed)".
+// `max: 1` limits Bun to a single database connection, because PGlite can only truly serve one. Ask it for more and
+// pglite-socket fakes them by weaving everyone's queries onto the one real connection — and a query woven into the
+// middle of someone else's open transaction is a recipe for corruption. With one connection, queries just wait their
+// turn. The one thing this can't do is run two transactions at the same time, which is why queuert's full conformance
+// suite (it tests exactly that) only runs against a real server — see jobs/postgresProvider.test.ts.
+//
+// Two things keep this file fast enough for the test runner's 60-second-per-file limit:
+// - All tests share one mounted runtime instead of starting their own (only the restart test remounts, and by then the
+//   tables already exist, so the extra mounts skip the table-creation work).
+// - Every wait has a short deadline. If a query ever hangs, the affected test fails with a real error message instead
+//   of the whole file dying as "TIMED OUT (killed)".
 const pg: TestPostgres = await startTestPostgres();
 const sql = new SQL({ url: pg.url, max: 1 });
 
