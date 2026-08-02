@@ -37,8 +37,17 @@ afterEach(async () => {
   await closeAllJobResources();
 });
 
-afterAll(() => {
-  rmSync(dataDir, { recursive: true, force: true });
+afterAll(async () => {
+  // Windows releases the SQLite file lock asynchronously, so an immediate rm throws EBUSY — retry, best-effort;
+  // never fail the suite over an ephemeral temp dir the OS reclaims anyway.
+  for (let attempt = 0; attempt < 25; attempt++) {
+    try {
+      rmSync(dataDir, { recursive: true, force: true });
+      return;
+    } catch {
+      await Bun.sleep(100);
+    }
+  }
 });
 
 describe('sqlite jobs backend', () => {
