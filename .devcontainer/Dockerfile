@@ -11,7 +11,7 @@ ARG CLAUDE_CODE_VERSION=latest
 # lines (and the oh-my-zsh fzf plugin) resolve instead of erroring.
 RUN echo 'path-include /usr/share/doc/fzf/*' > /etc/dpkg/dpkg.cfg.d/keep-fzf-docs
 
-# Install basic development tools and iptables/ipset
+# Install basic development tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
   less \
   git \
@@ -26,11 +26,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   unzip \
   gnupg2 \
   gh \
-  iptables \
-  ipset \
   iproute2 \
   dnsutils \
-  aggregate \
   jq \
   nano \
   vim \
@@ -112,8 +109,7 @@ RUN sh -c "$(wget -O- https://github.com/deluan/zsh-in-docker/releases/download/
 # Install Claude
 RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
 
-# Install Bun (pinned to the repo's .bun-version). Baked into the image at build
-# time so it survives the runtime firewall, which blocks bun.com/bun.sh.
+# Install Bun (pinned to the repo's .bun-version), baked into the image at build time.
 ARG BUN_VERSION=1.3.14
 RUN curl -fsSL https://bun.com/install | bash -s "bun-v${BUN_VERSION}"
 ENV BUN_INSTALL=/home/node/.bun
@@ -139,12 +135,4 @@ COPY claude-settings.json /home/node/claude-settings.json
 USER root
 RUN chmod +x /home/node/statusline.sh && \
   chown node:node /home/node/statusline.sh /home/node/claude-settings.json
-USER node
-
-# Copy and set up firewall script
-COPY init-firewall.sh /usr/local/bin/
-USER root
-RUN chmod +x /usr/local/bin/init-firewall.sh && \
-  echo "node ALL=(root) NOPASSWD: /usr/local/bin/init-firewall.sh" > /etc/sudoers.d/node-firewall && \
-  chmod 0440 /etc/sudoers.d/node-firewall
 USER node
