@@ -1,9 +1,3 @@
-// Sample data for the charts. Every value is a literal because island top-level code runs
-// once during SSR and again during hydration — a generated dataset would produce two
-// different charts and trip a hydration mismatch. The x-values are strings for the same
-// reason: a time scale formats its ticks in local time, so a UTC server and a UTC+2
-// browser would disagree on every label.
-
 export type TrafficPoint = { month: string; requests: number; cached: number };
 
 export const traffic: TrafficPoint[] = [
