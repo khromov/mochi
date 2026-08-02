@@ -57,25 +57,53 @@ describe('createBunSqlStateProvider', () => {
     const provider = createBunSqlStateProvider({ sql: fakeSql(calls) });
 
     await provider.executeSql({
-      sql: 'SELECT $1, $2, $3, $4, $5',
-      params: [{ nested: true }, ['a', 'b'], [{ x: 1 }], null, 'plain'],
-      paramTypes: { 0: 'json', 1: 'array', 2: 'jsonArray', 3: 'string?', 4: 'string' },
+      sql: 'SELECT $1, $2, $3, $4, $5, $6',
+      params: [{ nested: true }, ['a', 'b'], [{ x: 1 }], null, 'plain', 42],
+      paramTypes: { 0: 'json', 1: 'array', 2: 'jsonArray', 3: 'string?', 4: 'string', 5: 'json' },
       columnTypes: { any: 'string' },
       readOnly: true,
     });
 
     expect(calls).toHaveLength(1);
-    const [jsonParam, arrayParam, jsonArrayParam, nullParam, plainParam] = calls[0]!.params!;
-    expect(jsonParam).toBe('{"nested":true}');
-    expect(arrayParam).toEqual({ __pgArray: ['a', 'b'] });
-    expect(jsonArrayParam).toEqual({ __pgArray: ['{"x":1}'] });
+    const [jsonParam, arrayParam, jsonArrayParam, nullParam, plainParam, numericJsonParam] = calls[0]!.params!;
+    // Objects pass through raw — Bun JSON-encodes values bound to jsonb placeholders itself.
+    expect(jsonParam).toEqual({ nested: true });
+    // Arrays become Postgres array literals; sql.array() only works in tagged templates, not unsafe() params.
+    expect(arrayParam).toBe('{"a","b"}');
+    expect(jsonArrayParam).toBe('{"{\\"x\\":1}"}');
     expect(nullParam).toBeNull();
     expect(plainParam).toBe('plain');
+    // Top-level numbers/booleans are the exception: Bun would type them as int/bool, which jsonb rejects.
+    expect(numericJsonParam).toBe('42');
+  });
+
+  test('parses json/number/date columns the driver returns as strings', async () => {
+    const rows = [{ payload: '{"a":1}', n: '7', when: '2026-08-03T00:00:00Z', already: { b: 2 } }];
+    const provider = createBunSqlStateProvider({
+      sql: { unsafe: async () => rows } as unknown as Parameters<typeof createBunSqlStateProvider>[0]['sql'],
+    });
+
+    const [row] = (await provider.executeSql({
+      sql: 'SELECT …',
+      params: [],
+      paramTypes: {},
+      columnTypes: { payload: 'json', n: 'number', when: 'date?', already: 'json?' },
+      readOnly: true,
+    })) as Array<Record<string, unknown>>;
+
+    expect(row!.payload).toEqual({ a: 1 });
+    expect(row!.n).toBe(7);
+    expect(row!.when).toEqual(new Date('2026-08-03T00:00:00Z'));
+    // Values the driver already parsed pass through untouched.
+    expect(row!.already).toEqual({ b: 2 });
   });
 });
 
-// Real-Postgres validation: run with e.g. TEST_PG_URL=postgres://user:pass@localhost:5432/queuert_test bun test
-// src/jobs/postgresProvider.test.ts — skipped when the env var is absent (CI has no Postgres service).
+// Full conformance needs a REAL multi-connection server: its read-isolation cases hold a transaction open on one
+// connection while reading from another, which the in-process PGlite fixture cannot honor (single session; extra
+// clients are multiplexed at statement granularity, and with a max:1 pool those cases deadlock). Wire-level behavior is
+// covered continuously by jobs.postgres.test.ts against PGlite; run this with e.g.
+// TEST_PG_URL=postgres://user:pass@localhost:5432/queuert_test bun test src/jobs/postgresProvider.test.ts.
 describe.if(!!process.env.TEST_PG_URL)('bun.sql provider against real Postgres', () => {
   test('passes queuert’s state adapter conformance suite', async () => {
     const { SQL } = await import('bun');
