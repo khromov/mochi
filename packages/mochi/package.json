@@ -118,6 +118,8 @@
     "zimmerframe": "^1.1.4"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.5.4",
+    "@electric-sql/pglite-socket": "0.2.7",
     "@happy-dom/global-registrator": "^20.11.0",
     "@tailwindcss/node": "^4.3.3",
     "@tailwindcss/oxide": "^4.3.3",
