@@ -2,8 +2,7 @@ import { Mochi, fail, redirect, success, logger, mintCaptcha, verifyCaptcha, con
 import type { MochiRouteValue } from 'mochi-framework';
 import { authFailureDelay, credentialsMatch } from './adminAuth';
 import { appendEmailLog, emailLogsBySubmission, insertSubmission, listSubmissions, setHandled } from './db.server';
-import { SUPPORT_EMAIL_QUEUE, SUPPORT_TO } from './jobs.server';
-import type { SupportEmailJob } from './jobs.server';
+import { SUPPORT_TO, supportJobs } from './jobs.server';
 
 export const routes: Record<string, MochiRouteValue> = {
   '/': Mochi.page('./src/Support.svelte', {
@@ -34,21 +33,17 @@ export const routes: Record<string, MochiRouteValue> = {
         if (!(await consumeCaptcha(captcha))) {
           return fail(400, { error: 'This form was already submitted. Reload the page to send another message.' });
         }
-        // Store first, deliver later: once committed the message can't be lost to an SMTP outage, so the visitor is told it landed and failures surface in /admin/ instead.
-        let id: number;
+        // Store and enqueue in ONE transaction on the shared SQLite file: the durable delivery job commits with the
+        // row, so an SMTP outage can't lose the message and a crash can't leave a stored row with no job.
         try {
-          id = insertSubmission({ name, email, message });
+          await supportJobs.withTransaction(async ({ tx, transactionHooks }) => {
+            const id = insertSubmission({ name, email, message });
+            appendEmailLog(id, { attempt: 0, event: 'queued', detail: `Queued for delivery to ${SUPPORT_TO}` });
+            await supportJobs.startChain({ typeName: 'send-support-email', input: { id }, tx, transactionHooks });
+          });
         } catch (err) {
           logger.error('support: could not store submission', err);
           return fail(500, { error: 'We could not receive your message right now. Please email support@mochi.fast directly.' });
-        }
-        // Logged before enqueuing so the entry can't be ordered after the worker's own `sending` line.
-        appendEmailLog(id, { attempt: 0, event: 'queued', detail: `Queued for delivery to ${SUPPORT_TO}` });
-        try {
-          await Mochi.getQueue<SupportEmailJob>(SUPPORT_EMAIL_QUEUE).add('send', { id });
-        } catch (err) {
-          // The row stays `pending`, so recover() picks it up on the next boot — telling the visitor it failed would be wrong.
-          logger.error('support: could not enqueue delivery', err);
         }
         return success();
       },
@@ -83,12 +78,14 @@ export const routes: Record<string, MochiRouteValue> = {
     },
     // Post/Redirect/Get so a refresh after triaging doesn't re-submit.
     actions: {
-      handle: ({ formData }) => {
-        setHandled(Number(formData.get('id')), true);
+      // Wrapped because the db handle is shared with the jobs runtime: a bare write could interleave into an open job
+      // transaction on the same connection and roll back with it.
+      handle: async ({ formData }) => {
+        await supportJobs.withTransaction(async () => setHandled(Number(formData.get('id')), true));
         return redirect(303, '/admin/');
       },
-      unhandle: ({ formData }) => {
-        setHandled(Number(formData.get('id')), false);
+      unhandle: async ({ formData }) => {
+        await supportJobs.withTransaction(async () => setHandled(Number(formData.get('id')), false));
         return redirect(303, '/admin/');
       },
     },

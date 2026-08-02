@@ -4,7 +4,7 @@ import { Database } from 'bun:sqlite';
 
 export type EmailStatus = 'pending' | 'sent' | 'failed';
 
-export type EmailLogEvent = 'queued' | 'requeued' | 'sending' | 'sent' | 'failed';
+export type EmailLogEvent = 'queued' | 'sending' | 'sent' | 'failed';
 
 // Types live here so a type-only import is erased before the client build, letting hydrated islands `import type` this without pulling in `bun:sqlite`.
 export interface Submission {
@@ -71,8 +71,6 @@ const sentStmt = db.query<never, [number, number]>("UPDATE submissions SET email
 const failedStmt = db.query<never, [string, number]>("UPDATE submissions SET email_status = 'failed', email_error = ? WHERE id = ?");
 const attemptErrorStmt = db.query<never, [string, number]>('UPDATE submissions SET email_error = ? WHERE id = ?');
 const handledStmt = db.query<never, [number | null, number]>('UPDATE submissions SET handled_at = ? WHERE id = ?');
-const undeliveredStmt = db.query<{ id: number }, []>("SELECT id FROM submissions WHERE email_status != 'sent' ORDER BY created_at");
-const requeuedStmt = db.query<never, [number]>("UPDATE submissions SET email_status = 'pending' WHERE id = ?");
 const logInsertStmt = db.query<never, [number, number, number, string, string | null]>('INSERT INTO email_log (submission_id, at, attempt, event, detail) VALUES (?, ?, ?, ?, ?)');
 const logAllStmt = db.query<EmailLogEntry, []>('SELECT * FROM email_log ORDER BY at, id');
 
@@ -96,12 +94,12 @@ export function markEmailSent(id: number): void {
   sentStmt.run(Date.now(), id);
 }
 
-// Terminal: bunqueue has exhausted its attempts and won't retry on its own.
+// Terminal: the delivery job has exhausted its attempts and completed without sending.
 export function markEmailFailed(id: number, error: string): void {
   failedStmt.run(error.slice(0, 1000), id);
 }
 
-// Leaves status `pending` — marking `failed` here would misreport an in-flight delivery and, after a restart mid-backoff, land the row where `recover` skips it.
+// Leaves status `pending` — the durable job will retry, so marking `failed` here would misreport an in-flight delivery.
 export function noteEmailAttemptError(id: number, error: string): void {
   attemptErrorStmt.run(error.slice(0, 1000), id);
 }
@@ -128,12 +126,7 @@ export function closeDb(): void {
   db.close();
 }
 
-// Includes `failed` rows on purpose: jobs live only in memory so a restart strands them, and re-trying an undeliverable row on boot beats silently dropping it.
-export function undeliveredSubmissionIds(): number[] {
-  return undeliveredStmt.all().map((row) => row.id);
-}
-
-// Clears a `failed` row back to `pending` as `recover` puts it back on the queue.
-export function markEmailRequeued(id: number): void {
-  requeuedStmt.run(id);
+// The jobs runtime shares this handle so a submission row and its delivery job commit in one transaction.
+export function supportDb(): Database {
+  return db;
 }

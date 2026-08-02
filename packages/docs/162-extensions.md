@@ -52,7 +52,7 @@ The same applies to the `Mochi.serve()` config singleton and the [request contex
 
 Fires as the very first thing inside `Mochi.serve()`, before any framework state is set up. Async.
 
-Nothing the framework mounts exists yet — in particular [queues](/docs/queues/) are created after the server binds, so `Mochi.getQueue()` throws here. Add jobs from `mochi:ready` or from a queue's `recover` callback instead.
+Nothing the framework mounts exists yet — in particular the [jobs](/docs/jobs/) runtime is created after the server binds, so the jobs handle rejects here. Start chains from `mochi:ready` or any request handler instead.
 
 ```ts
 await Mochi.serve({
@@ -67,7 +67,7 @@ await Mochi.serve({
 
 #### `mochi:listening`
 
-Fires immediately after `Bun.serve()` returns the bound server, before queues are mounted and before warmup runs. Use it when you need the port as early as possible — announcing the address, opening a tunnel, signalling a supervisor. Async.
+Fires immediately after `Bun.serve()` returns the bound server, before the jobs runtime mounts and before warmup runs. Use it when you need the port as early as possible — announcing the address, opening a tunnel, signalling a supervisor. Async.
 
 ```ts
 await Mochi.serve({
@@ -80,27 +80,21 @@ await Mochi.serve({
 });
 ```
 
-#### `mochi:queuesMounted`
+#### `mochi:jobsMounted`
 
-Fires once every queue in `Mochi.serve({ queues })` is live, before each queue's `recover` callback runs. `ctx.queues` lists the mounted names. This is the earliest point at which [`Mochi.getQueue()`](/docs/queues/#mochigetqueue) resolves. Async.
+Fires once the [jobs](/docs/jobs/) runtime is live (or immediately after bind when `Mochi.serve()` ran without `jobs`). `ctx.jobTypes` lists the mounted job type names. This is the earliest point at which the jobs handle resolves. Async.
 
 ```ts
 await Mochi.serve({
   eventHooks: {
-    'mochi:queuesMounted': async ({ queues }) => {
-      log.info(`queues live: ${queues.join(', ')}`);
+    'mochi:jobsMounted': async ({ jobTypes }) => {
+      log.info(`jobs live: ${jobTypes.join(', ')}`);
     },
   },
-  queues,
+  jobs,
   routes,
 });
 ```
-
-<Callout type="info">
-
-For re-enqueuing a single queue's unfinished work, prefer that queue's own [`recover`](/docs/queues/#recovery-on-start) callback — it receives the handle directly and keeps the logic next to the queue it belongs to. Reach for `mochi:queuesMounted` when the work spans queues or isn't queue-specific.
-
-</Callout>
 
 #### `mochi:ready`
 
@@ -627,40 +621,34 @@ The value must be a positive finite number — anything else throws at startup r
 
 It is a client-side patience bound only: it isn't sealed into the token and nothing verifies against it, so lowering it never rejects a submission that would otherwise have passed — it only decides when a slow device stops trying.
 
-#### `queue:recoveryStallWarningMs`
+#### `jobs:leaseMs`
 
-How long a queue's [`recover`](/docs/queues/#recovery-on-start) callback may run before Mochi logs a warning naming it. Resolved once per queue that declares one, as its recovery starts, so a queue reading a slow store can be given more room than its siblings. Sync.
-
-Recovery is never cut short — abandoning it would drop the jobs it was about to add. The warning exists because everything downstream (warmup, `mochi:ready`, `Mochi.serve()` resolving) waits behind it, so a stuck callback would otherwise hang silently. Defaults to `30_000`.
+How long a [job](/docs/jobs/) attempt may go unrenewed before another worker may reclaim it. Resolved once as the jobs runtime mounts, after the app's own `leaseMs` option — `explicit` says whether the incoming value came from that option rather than the framework default (`60_000`), so a blanket filter can leave an app that chose for itself alone. Sync.
 
 ```ts
 await Mochi.serve({
   filters: {
-    // This one rebuilds its backlog from a cold object store; 30s is normal for it.
-    'queue:recoveryStallWarningMs': (def, { queue }) => (queue === 'thumbnails' ? 120_000 : def),
+    // Flaky spot instances here — reclaim a crashed worker's jobs faster.
+    'jobs:leaseMs': (value, { explicit }) => (explicit ? value : 15_000),
   },
-  queues,
+  jobs,
   routes,
 });
 ```
 
-Return `0` to silence the warning for a queue entirely — no timer is scheduled at all.
+Leases auto-renew while an attempt runs, so this does not cap how long a job may run — it only sets how quickly a **crashed** worker's job comes back.
 
-#### `queue:lockDurationMs`
+#### `jobs:pollIntervalMs`
 
-How long a job may run before its queue reclaims it. Resolved once per queue as it is created, after the per-queue [`lockDuration`](/docs/queues/#long-running-jobs) option — `explicit` says whether the incoming value came from that option rather than the framework default, so a blanket filter can leave queues that chose for themselves alone. Sync. Defaults to `1_800_000` (30 minutes), which is also the ceiling: returning more does not let a job run longer.
+How often the worker polls for jobs that same-process notifications didn't announce — on Postgres, that's every enqueue from **another** instance. Resolved once as the jobs runtime mounts, with the same `explicit` semantics as `jobs:leaseMs`. Sync. Defaults to `2_000`.
 
 ```ts
 await Mochi.serve({
   filters: {
-    // Nothing here should ever hold a job for half an hour; queues that set their own value keep it.
-    'queue:lockDurationMs': (value, { explicit }) => (explicit ? value : 5 * 60_000),
+    // Single-instance deployment: in-process notify covers everything, poll rarely.
+    'jobs:pollIntervalMs': (value, { explicit }) => (explicit ? value : 30_000),
   },
-  queues,
+  jobs,
   routes,
 });
 ```
-
-The returned value must exceed the **worst case** runtime of `process`. Set it too low and a job is re-queued while still running, its eventual success rejected as `Invalid or expired lock token` — the work is reported failed despite having succeeded, and is then either retried or dropped.
-
-This filter is the last word on the lock: unlike every other queue setting, a `lockDuration` passed through the raw [`bunqueue`](/docs/queues/#advanced-options) escape hatch doesn't override it — that value arrives as the incoming `value` with `explicit: true`, exactly like the first-class option.

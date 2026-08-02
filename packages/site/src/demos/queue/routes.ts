@@ -1,13 +1,10 @@
 import { Mochi, success, mochiEvents } from 'mochi-framework';
-import type { MochiRouteValue, MochiQueueConfig } from 'mochi-framework';
-import { notificationQueue, queueStatus, QUEUE_NAME } from './queue.server';
-import type { NotificationJob } from './types';
+import type { MochiRouteValue } from 'mochi-framework';
+import { notificationJobs, queueStatus, CHAIN_TYPE } from './queue.server';
 import { randomUsername } from './usernames';
 
-// Mounted in the site's Mochi.serve({ queues }) call — see src/routes.ts.
-export const queues: Record<string, MochiQueueConfig> = {
-  [QUEUE_NAME]: notificationQueue,
-};
+// Mounted in the site's Mochi.serve({ jobs }) call — see src/routes.ts.
+export const jobs = notificationJobs;
 
 export const routes: Record<string, MochiRouteValue> = {
   '/demos/queue': Mochi.page('./src/demos/queue/Queue.svelte', {
@@ -20,7 +17,7 @@ export const routes: Record<string, MochiRouteValue> = {
         const user = String(formData.get('username') ?? '')
           .trim()
           .slice(0, 64);
-        await Mochi.getQueue<NotificationJob>(QUEUE_NAME).add('notify', { user: user || 'anonymous' });
+        await notificationJobs.startChain({ typeName: 'send-notification', input: { user: user || 'anonymous' } });
         return success({ queued: user || 'anonymous' });
       },
     },
@@ -29,7 +26,7 @@ export const routes: Record<string, MochiRouteValue> = {
     // Broadcast the shared snapshot on enqueue and on settle, so every client's
     // in-flight/processed counts move together — no per-client reconciliation.
     const push = (event: { queue: string }) => {
-      if (event.queue === QUEUE_NAME) {
+      if (event.queue === CHAIN_TYPE) {
         stream.send(JSON.stringify(queueStatus()));
       }
     };

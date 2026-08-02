@@ -233,33 +233,40 @@ CSS inlining is best-effort, and email clients support only a limited, inconsist
 
 ### Sending in the background
 
-Delivery is slow and can fail — an SMTP handshake or a third-party API call shouldn't block the response to your user. Offload the send to a [`Mochi.queue()`](/docs/queues/): the action returns immediately, and a background worker runs `Mochi.email()` with automatic retries.
+Delivery is slow and can fail — an SMTP handshake or a third-party API call shouldn't block the response to your user. Offload the send to a [background job](/docs/jobs/): the action returns immediately, and the worker runs `Mochi.email()` with automatic retries.
 
 ```ts
 // jobs.server.ts
-import { Mochi } from 'mochi-framework';
+import { Mochi, defineJobTypes } from 'mochi-framework';
 
-export const emailQueue = Mochi.queue<{ to: string; name: string }>({
+export const jobs = Mochi.jobs({
   concurrency: 5,
-  defaultJobOptions: { attempts: 3 }, // retry a failed send
-  process: async (job) => {
-    await Mochi.email({
-      to: job.data.to,
-      subject: 'Welcome to Acme',
-      component: './src/emails/Welcome.svelte',
-      props: { name: job.data.name },
-    });
+  types: defineJobTypes<{
+    'welcome-email': { entry: true; input: { to: string; name: string }; output: { sent: boolean } };
+  }>(),
+  processors: {
+    'welcome-email': {
+      attemptHandler: async ({ job, complete }) => {
+        await Mochi.email({
+          to: job.input.to,
+          subject: 'Welcome to Acme',
+          component: './src/emails/Welcome.svelte',
+          props: { name: job.input.name },
+        });
+        return complete(async () => ({ sent: true }));
+      },
+    },
   },
 });
 ```
 
 ```ts
-// routes.ts — enqueue instead of awaiting the send
+// routes.ts — start a chain instead of awaiting the send
 register: async ({ request }) => {
   const data = await request.formData();
-  await Mochi.getQueue<{ to: string; name: string }>('emails').add('welcome', {
-    to: String(data.get('email')),
-    name: String(data.get('name')),
+  await jobs.startChain({
+    typeName: 'welcome-email',
+    input: { to: String(data.get('email')), name: String(data.get('name')) },
   });
   return success({ ok: true });
 },
@@ -267,7 +274,7 @@ register: async ({ request }) => {
 
 ```ts
 // index.ts
-await Mochi.serve({ routes, queues: { emails: emailQueue } });
+await Mochi.serve({ routes, jobs });
 ```
 
 <Callout type="info">

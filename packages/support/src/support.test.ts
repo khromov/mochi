@@ -14,7 +14,7 @@ process.env.ADMIN_PASSWORD = 'letmein';
 process.env.ADMIN_AUTH_DELAY_MS = '80';
 
 const { routes } = await import('./routes');
-const { SUPPORT_EMAIL_QUEUE, supportEmailQueue } = await import('./jobs.server');
+const { supportJobs } = await import('./jobs.server');
 const { closeDb, emailLogsBySubmission, listSubmissions } = await import('./db.server');
 const { adminAuth } = await import('./adminAuth');
 
@@ -83,7 +83,7 @@ describe('support form action', () => {
         },
       },
       handle: adminAuth,
-      queues: { [SUPPORT_EMAIL_QUEUE]: supportEmailQueue },
+      jobs: supportJobs,
       routes,
     });
     base = `http://localhost:${server.port}`;

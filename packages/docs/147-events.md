@@ -20,7 +20,7 @@ Event names use a `namespace:action` convention. Every key is in the typed `Moch
 - [`request`](#request) — every HTTP request (page or API)
 - [`ws:open`](#wsopen), [`ws:message`](#wsmessage), [`ws:close`](#wsclose) — WebSocket lifecycle
 - [`sse:open`](#sseopen), [`sse:message`](#ssemessage), [`sse:close`](#sseclose) — Server-Sent Events lifecycle
-- [`queue:added`](#queueadded), [`queue:active`](#queueactive), [`queue:completed`](#queuecompleted), [`queue:failed`](#queuefailed), [`queue:error`](#queueerror) — [background job](/docs/queues/) lifecycle
+- [`queue:added`](#queueadded), [`queue:active`](#queueactive), [`queue:completed`](#queuecompleted), [`queue:failed`](#queuefailed), [`queue:error`](#queueerror) — [background job](/docs/jobs/) lifecycle
 - [`email:sent`](#emailsent), [`email:error`](#emailerror) — [transactional email](/docs/email/) delivery
 - [`server:start`](#serverstart), [`server:stop`](#serverstop) — server lifecycle
 - [`warmup:start`](#warmupstart), [`warmup:complete`](#warmupcomplete) — route warmup batch lifecycle (only with `warmup: true`)
@@ -188,58 +188,58 @@ Fires when the SSE stream closes (client disconnect or explicit close).
 
 #### `queue:added`
 
-Fires after a job is enqueued via `queue.add()` / `queue.addBulk()`. See [Queues](/docs/queues/).
+Fires after a job is committed — the chain's entry job on `startChain`, and each continuation a `continueWith` creates. A rolled-back transaction emits nothing. See [Background jobs](/docs/jobs/).
 
-| Field     | Type     | Notes                  |
-| --------- | -------- | ---------------------- |
-| `queue`   | `string` | queue name             |
-| `jobId`   | `string` | generated job id       |
-| `jobName` | `string` | job name passed to add |
+| Field     | Type     | Notes                   |
+| --------- | -------- | ----------------------- |
+| `queue`   | `string` | chain (entry) type name |
+| `jobId`   | `string` | job id                  |
+| `jobName` | `string` | job type name           |
 
 #### `queue:active`
 
-Fires when a worker starts processing a job.
+Fires when the worker starts a job attempt.
 
 | Field     | Type     | Notes                                   |
 | --------- | -------- | --------------------------------------- |
-| `queue`   | `string` | queue name                              |
+| `queue`   | `string` | chain (entry) type name                 |
 | `jobId`   | `string` | job id                                  |
-| `jobName` | `string` | job name                                |
+| `jobName` | `string` | job type name                           |
 | `attempt` | `number` | 1-based attempt number (1 on first run) |
 
 #### `queue:completed`
 
-Fires when a job's processor returns successfully.
+Fires when a job attempt completes successfully.
 
 | Field      | Type     | Notes                                 |
 | ---------- | -------- | ------------------------------------- |
-| `queue`    | `string` | queue name                            |
+| `queue`    | `string` | chain (entry) type name               |
 | `jobId`    | `string` | job id                                |
-| `jobName`  | `string` | job name                              |
+| `jobName`  | `string` | job type name                         |
 | `attempt`  | `number` | attempt that succeeded                |
 | `duration` | `number` | processing ms, measured from `active` |
 
 #### `queue:failed`
 
-Fires when a job's processor throws (once per failed attempt).
+Fires when a job's handler throws (once per failed attempt; the job retries with backoff).
 
 | Field      | Type     | Notes                          |
 | ---------- | -------- | ------------------------------ |
-| `queue`    | `string` | queue name                     |
+| `queue`    | `string` | chain (entry) type name        |
 | `jobId`    | `string` | job id                         |
-| `jobName`  | `string` | job name                       |
+| `jobName`  | `string` | job type name                  |
 | `attempt`  | `number` | attempt that failed            |
 | `duration` | `number` | processing ms before the throw |
 | `error`    | `string` | thrown error message           |
 
 #### `queue:error`
 
-Fires for a worker-level error not tied to a specific job (e.g. a poll failure).
+Fires for a runtime-level error not tied to a specific attempt (a worker loop, state-adapter, or notify-adapter failure).
 
-| Field   | Type     | Notes         |
-| ------- | -------- | ------------- |
-| `queue` | `string` | queue name    |
-| `error` | `string` | error message |
+| Field   | Type     | Notes                                     |
+| ------- | -------- | ----------------------------------------- |
+| `queue` | `string` | chain type name, or `jobs` when unrelated |
+| `error` | `string` | error message                             |
 
 #### `email:sent`
 

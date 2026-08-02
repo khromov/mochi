@@ -59,7 +59,7 @@ bun update
 **Workspace deps — one `bun update` per workspace.** As of Bun 1.3.14, neither `bun update --recursive` nor `bun update --filter='*'` actually updates workspace dependencies; they report "no changes" while `bun outdated` still lists everything. You must run `bun update` from inside each workspace directory:
 
 ```sh
-for p in cli demos docs minimal mochi msgpackr-extract-stub shared site support video-animations; do
+for p in cli demos docs minimal mochi shared site support video-animations; do
   echo "=== $p ==="
   (cd packages/$p && bun update 2>&1 | grep -E '^\^|packages installed')
 done
@@ -102,7 +102,7 @@ Green tests are necessary but nowhere near sufficient. Work down this list; the 
    PORT=4444 bun run dev:site
    ```
 
-   Load `/`, a docs page (`/docs/queues/` — `/docs/` itself is not a route), and at least two island-heavy demos. On each: `list_console_messages` for hydration mismatches and uncaught errors, `list_network_requests` for failed `/_mochi/island/*` or asset fetches. Request routes with a trailing slash. Tear down with `pkill -f dev:site` and confirm via `pgrep -x bun`.
+   Load `/`, a docs page (`/docs/jobs/` — `/docs/` itself is not a route), and at least two island-heavy demos. On each: `list_console_messages` for hydration mismatches and uncaught errors, `list_network_requests` for failed `/_mochi/island/*` or asset fetches. Request routes with a trailing slash. Tear down with `pkill -f dev:site` and confirm via `pgrep -x bun`.
 
 5. **`bun run cli-test`** if template packages (`minimal`, `demos`) moved versions.
 

@@ -77,7 +77,7 @@ export const demoIconFor: Record<string, DemoIconMeta> = {
   'Rate Limiting': { icon: Gauge, label: 'Per-route request throttling by IP' },
   'Shared State': { icon: Share2, label: 'Shared $state across islands' },
   'Real-time Streams': { icon: AudioWaveform, label: 'WebSocket + SSE streams' },
-  'Background jobs with queues': { icon: Inbox, label: 'Embedded job queue + worker' },
+  'Background jobs with chains': { icon: Inbox, label: 'Typed job chains + worker' },
   'Server Islands': { icon: ComponentIcon, label: 'Deferred server island' },
   'Client-only Islands': { icon: MonitorSmartphone, label: 'No SSR — mounts in the browser' },
   'Lazy Islands': { icon: Telescope, label: 'Hydrate when visible' },
