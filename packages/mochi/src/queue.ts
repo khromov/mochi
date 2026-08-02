@@ -129,6 +129,29 @@ function toError(value: unknown): Error {
   return value instanceof Error ? value : new Error(String(value));
 }
 
+function makeGate(limit: number): { acquire(): Promise<void>; release(): void } {
+  let active = 0;
+  const waiters: Array<() => void> = [];
+  return {
+    acquire() {
+      if (active < limit) {
+        active++;
+        return Promise.resolve();
+      }
+      return new Promise((resolve) =>
+        waiters.push(() => {
+          active++;
+          resolve();
+        }),
+      );
+    },
+    release() {
+      active--;
+      waiters.shift()?.();
+    },
+  };
+}
+
 function toMochiJob<T>(envelope: Envelope<T>, queueName: string, attempt: number): MochiJob<T> {
   return {
     id: envelope.id,
@@ -171,23 +194,41 @@ export function createQueue<T = unknown, R = unknown>(
   const attempts = new Map<string, number>();
   const inflight = new Map<string, { envelope: Envelope<T>; startedAt: number }>();
 
-  const runJob = (envelope: Envelope<T>): Promise<R> => {
-    const attempt = (attempts.get(envelope.id) ?? 0) + 1;
-    attempts.set(envelope.id, attempt);
-    inflight.set(envelope.id, { envelope, startedAt: performance.now() });
-    mochiEvents.emit('queue:active', { queue: name, jobId: envelope.id, attempt });
-    const job = toMochiJob(envelope, name, attempt);
-    for (const l of sinks.active) {
-      l(job);
+  // better-queue's saturation check is `running + fetching`, but with an async store (postgres) there is a window
+  // between a take resolving (fetching--) and the batch starting (running++) in which a claimed batch is invisible to
+  // the check, letting an extra fetch through and overshooting `concurrent`. Single-task mode gates job starts here to
+  // hold the ceiling; batch mode keeps better-queue's own semantics (`concurrent` counts batches there).
+  const effectiveBatchSize = typeof options?.betterQueue?.batchSize === 'number' ? options.betterQueue.batchSize : (options?.batchSize ?? 1);
+  const effectiveConcurrent = typeof options?.betterQueue?.concurrent === 'number' ? options.betterQueue.concurrent : (options?.concurrent ?? 1);
+  const gate = effectiveBatchSize === 1 && effectiveConcurrent >= 1 ? makeGate(effectiveConcurrent) : undefined;
+
+  const runJob = async (envelope: Envelope<T>, worker?: { active: boolean }): Promise<R> => {
+    await gate?.acquire();
+    try {
+      // The batch can time out while waiting for a slot; its dead worker swallows this rejection, and skipping the run
+      // means a job already reported failed doesn't fire its side effects anyway.
+      if (worker && !worker.active) {
+        throw new Error('task_timeout');
+      }
+      const attempt = (attempts.get(envelope.id) ?? 0) + 1;
+      attempts.set(envelope.id, attempt);
+      inflight.set(envelope.id, { envelope, startedAt: performance.now() });
+      mochiEvents.emit('queue:active', { queue: name, jobId: envelope.id, attempt });
+      const job = toMochiJob(envelope, name, attempt);
+      for (const l of sinks.active) {
+        l(job);
+      }
+      return await process(job);
+    } finally {
+      gate?.release();
     }
-    return Promise.resolve(process(job));
   };
 
   // better-queue invokes this with `this` bound to its batch worker; in batch mode each envelope settles its own task
   // individually so one failure doesn't fail its batch-mates, with the final `cb` only closing out the batch.
   const processAdapter = function (this: unknown, taskOrBatch: Envelope<T> | Envelope<T>[], cb: (err?: unknown, result?: unknown) => void): void {
     if (!Array.isArray(taskOrBatch)) {
-      runJob(taskOrBatch).then(
+      runJob(taskOrBatch, this as { active: boolean }).then(
         (result) => cb(null, result),
         (err) => cb(err),
       );

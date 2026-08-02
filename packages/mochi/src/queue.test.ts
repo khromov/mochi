@@ -1,4 +1,4 @@
-import { afterAll, afterEach, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { createQueue, getQueue, closeAllQueueResources, runQueueRecovery } from './queue';
@@ -7,17 +7,26 @@ import { mochiEvents } from './events';
 import { initExtensions } from './extensions';
 import { setLogLevel } from './utils/log';
 import { markStartupMilestone, resetStartupMilestones } from './lifecycle';
+import { SQL } from 'bun';
+import { startTestPostgres, type TestPostgres } from './__fixtures__/postgres/startTestPostgres';
 
 const dataDir = mkdtempSync(path.join(import.meta.dir, '..', '.mochi-queue-test-'));
 
 let counter = 0;
 const uniqueName = (): string => `q-${counter++}`;
 
-// The behavioural core runs once per backend: the default in-memory store and the bun:sqlite store, which must be
+// The behavioural core runs once per backend: the default in-memory store, the bun:sqlite store, and the Bun.sql
+// Postgres store (against an in-process PGlite server speaking the real wire protocol) — all three must be
 // indistinguishable to a processor.
+// Booted with top-level await: PGlite's WASM instantiation can exceed bun's 5s hook timeout, and module load has none.
+const pg: TestPostgres = await startTestPostgres();
+// One shared prepare-less pool for every postgres store: pglite-socket multiplexes all connections onto a single
+// immortal PGlite session, where the named prepared statements of successive pools collide (42P05).
+const pgSql = new SQL({ url: pg.url, prepare: false });
 const backends: Array<{ label: string; options: () => MochiQueueRuntimeOptions<never> }> = [
   { label: 'memory', options: () => ({}) },
   { label: 'sqlite', options: () => ({ store: { type: 'sqlite', path: path.join(dataDir, `store-${counter++}.sqlite`) } }) },
+  { label: 'postgres', options: () => ({ store: { type: 'postgres', sql: pgSql } }) },
 ];
 
 function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
@@ -35,6 +44,8 @@ afterEach(async () => {
 });
 
 afterAll(async () => {
+  await pgSql.close();
+  await pg.close();
   // Windows releases SQLite file locks asynchronously, so an immediate rm can throw EBUSY. (Bun ignores rmSync's
   // maxRetries option, so retry by hand.) This is best-effort cleanup of an ephemeral temp dir — never fail the suite
   // over it, so give up quietly once the budget is exhausted; the OS reclaims it on process exit regardless.

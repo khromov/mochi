@@ -10,15 +10,16 @@ import { startTestPostgres, type TestPostgres } from '../__fixtures__/postgres/s
 // Exercises the real `postgresStore()` backend (bun:sql over the wire) against an in-process
 // PGlite Postgres. The memory/sqlite stores have coverage; this closes the Postgres gap and
 // proves counters actually round-trip to a Postgres server, not a local map.
+// Booted with top-level await: PGlite's WASM instantiation can exceed bun's 5s hook timeout, and module load has none.
+const pg: TestPostgres = await startTestPostgres();
+
 describe('rateLimit postgresStore backend', () => {
-  let pg: TestPostgres;
   let store: ReturnType<typeof postgresStore>;
   let server: Server<undefined>;
   let outDir: string;
   let base: string;
 
   beforeAll(async () => {
-    pg = await startTestPostgres();
     store = postgresStore({ url: pg.url });
     outDir = mkdtempSync(path.join(import.meta.dir, '..', '..', '.mochi-pg-ratelimit-'));
     server = await Mochi.serve({

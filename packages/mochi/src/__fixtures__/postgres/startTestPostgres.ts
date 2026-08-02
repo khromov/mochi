@@ -17,7 +17,9 @@ export interface TestPostgres {
 
 export async function startTestPostgres(opts?: { initSql?: string }): Promise<TestPostgres> {
   const db = await PGlite.create();
-  const server = new PGLiteSocketServer({ db, port: 0, host: '127.0.0.1' });
+  // maxConnections defaults to 1, which refuses the second pooled connection bun:sql opens under concurrent load
+  // (e.g. a queue processing with concurrent > 1); the server multiplexes queries over the single PGlite safely.
+  const server = new PGLiteSocketServer({ db, port: 0, host: '127.0.0.1', maxConnections: 10 });
 
   // `PGLiteSocketServer.port` is private; the only way to learn the OS-assigned port from
   // `port: 0` is the `listening` event it fires from inside start().
