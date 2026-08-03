@@ -37,6 +37,11 @@
     It's composed from <code>&lt;Chart&gt;</code> primitives rather than the <code>&lt;BarChart&gt;</code> shortcut: that shortcut's <code>marks</code> snippet shadows its own
     <code>marks</code> prop, which the Svelte server compiler turns into unbounded recursion once <code>ssr</code> forces a server render.
   </p>
+  <p class="warn">
+    ⚠️ Heads up: none of LayerChart's all-in-one chart components (<code>&lt;BarChart&gt;</code>, <code>&lt;AreaChart&gt;</code>, <code>&lt;LineChart&gt;</code>,
+    <code>&lt;PieChart&gt;</code>, <code>&lt;ScatterChart&gt;</code>, <code>&lt;ArcChart&gt;</code>) can be server-rendered — turning on <code>ssr</code> crashes the whole page — so
+    for a no-JavaScript chart you have to build it from the smaller pieces like this one does.
+  </p>
   <StaticTrafficChart />
 
   <h2>Interactive — <code>mochi:hydrate</code></h2>
@@ -83,6 +88,15 @@
   p a {
     color: var(--accent);
     font-weight: 600;
+  }
+
+  p.warn {
+    padding: 0.7rem 0.9rem;
+    border: 1px solid var(--border-strong);
+    border-left: 3px solid #b07d4a;
+    border-radius: var(--radius-md);
+    background: var(--surface-muted);
+    color: var(--text);
   }
 
   .skeleton {

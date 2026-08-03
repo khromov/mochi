@@ -10,7 +10,7 @@
   //
   // Composed from <Chart> primitives rather than the <BarChart> shortcut: that shortcut's `marks`
   // snippet shadows its own `marks` prop, which the Svelte server compiler turns into unbounded
-  // recursion once `ssr` forces a server render.
+  // recursion once `ssr` forces a server render. See layerchart-repro/ for a standalone repro.
   const WIDTH = 600;
   const HEIGHT = 220;
 </script>
@@ -60,10 +60,5 @@
   .ssr-chart :global(svg.lc-layout-svg) {
     width: 100% !important;
     height: 100% !important;
-  }
-
-  /* Fully rendered at SSR — no hydration to reserve space for, so drop the height floor. */
-  .ssr-chart :global(.chart-frame) {
-    min-height: 0;
   }
 </style>
