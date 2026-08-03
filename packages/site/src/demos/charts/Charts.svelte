@@ -13,6 +13,22 @@
 
   const install = await highlightCode('bun add layerchart', 'bash');
 
+  const staticExample = await highlightCode(
+    `<script lang="ts">
+  import { Chart, Svg, Axis, Bars } from 'layerchart/svg';
+  import { traffic } from './data.ts';
+${'<'}/script>
+
+<Chart ssr data={traffic} x="month" y="requests" c="requests" cRange={['var(--chart-1)']} width={600} height={220}>
+  <Svg viewBox="0 0 600 220">
+    <Axis placement="left" grid rule ticks={4} />
+    <Axis placement="bottom" rule />
+    <Bars fill="var(--chart-1)" />
+  </Svg>
+</Chart>`,
+    'svelte',
+  );
+
   const sources = await loadSources(files);
 </script>
 
@@ -27,22 +43,28 @@
   </p>
   <CodeSnippet html={install} />
 
-  <h2>Pure SSR — no JavaScript</h2>
+  <h2>Pure SSR — SVG</h2>
   <p>
     LayerChart can render to pure SVG or HTML by omitting Mochi's hydrate directives. That needs two opt-ins: <code>ssr</code> (LayerChart skips server rendering otherwise) and
     explicit
-    <code>width</code>/<code>height</code> to set the dimensions, since nothing measures the container. That makes the SVG renderer the natural fit for SSR-only charts: the
-    <code>&lt;Svg&gt;</code> gets a matching <code>viewBox</code>, so the fixed 600&times;220 geometry rescales to any column width with CSS alone.
+    <code>width</code>/<code>height</code> to set the dimensions, since nothing resizes the container client side.
+  </p>
+  <p>
+    SVG is recommended for pure SSR graphs: the <code>&lt;Svg&gt;</code> gets a matching <code>viewBox</code>, so the fixed 600&times;220 geometry rescales to any column width with
+    CSS alone.
   </p>
   <p>
     It's composed from <code>&lt;Chart&gt;</code> primitives rather than the <code>&lt;BarChart&gt;</code> shortcut: that shortcut's <code>marks</code> snippet shadows its own
     <code>marks</code> prop, which the Svelte server compiler turns into unbounded recursion once <code>ssr</code> forces a server render.
   </p>
   <Callout type="warning">
-    <strong>LayerChart's SSR pitfall.</strong> LayerChart doesn't officially support SSR for its SVG and HTML renderers, and its all-in-one chart components (<code>&lt;BarChart&gt;</code>,
-    <code>&lt;AreaChart&gt;</code>, <code>&lt;LineChart&gt;</code>, <code>&lt;PieChart&gt;</code>, <code>&lt;ScatterChart&gt;</code>, <code>&lt;ArcChart&gt;</code>) can't be server-rendered —
-    turning on <code>ssr</code> crashes the whole page. For a no-JavaScript chart, build it from the smaller pieces like this one does.
+    <strong>LayerChart's SSR pitfall.</strong> LayerChart doesn't officially support SSR for its SVG and HTML renderers, and its all-in-one chart components (<code
+      >&lt;BarChart&gt;</code
+    >,
+    <code>&lt;AreaChart&gt;</code>, <code>&lt;LineChart&gt;</code>, <code>&lt;PieChart&gt;</code>, <code>&lt;ScatterChart&gt;</code>, <code>&lt;ArcChart&gt;</code>) can't be
+    server-rendered — turning on <code>ssr</code> crashes the whole page. For a no-JavaScript chart, build it from the smaller pieces like this one does.
   </Callout>
+  <CodeSnippet html={staticExample} />
   <StaticTrafficChart />
 
   <h2>Interactive — <code>mochi:hydrate</code></h2>
