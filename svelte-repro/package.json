@@ -1,0 +1,12 @@
+{
+  "name": "svelte-ssr-snippet-shadowing-repro",
+  "private": true,
+  "type": "module",
+  "description": "Svelte only: the server compiler shadows a `marks` prop with a same-named `{#snippet marks}`, producing unbounded recursion on SSR (the client compiler binds to the prop and works).",
+  "scripts": {
+    "repro": "bun reproduce.mjs"
+  },
+  "dependencies": {
+    "svelte": "5.56.8"
+  }
+}
