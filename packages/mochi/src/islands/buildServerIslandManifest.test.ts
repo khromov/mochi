@@ -6,7 +6,6 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import type { Server } from 'bun';
-import { stringify as devalueStringify } from 'devalue';
 import { build } from '../cli/build';
 import { Mochi } from '../Mochi';
 import { mochiEvents } from '../events';
@@ -62,7 +61,7 @@ describe('build precompiles server islands into the manifest', () => {
         routes: { '/': Mochi.page(FIXTURE_PAGE) },
       });
       const base = `http://localhost:${server.port}`;
-      const props = encryptProps(devalueStringify({ name: 'World' }), echoKey);
+      const props = encryptProps({ name: 'World' }, echoKey);
       const res = await fetch(`${base}/_mochi/island/${echoKey}?props=${encodeURIComponent(props)}`);
       expect(res.status).toBe(200);
       expect(await res.text()).toContain('>World<');

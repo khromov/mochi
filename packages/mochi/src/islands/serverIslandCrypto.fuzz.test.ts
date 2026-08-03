@@ -21,10 +21,10 @@ afterAll(() => {
 describe('serverIslandCrypto — property-based fuzzing', () => {
   test('props round-trip through encrypt/decrypt for any component name', () => {
     fc.assert(
-      fc.property(fc.string(), fc.string(), (propsJson, componentName) => {
+      fc.property(fc.string(), fc.string(), (props, componentName) => {
         installConfig(DEFAULT_SECRET);
-        const token = encryptProps(propsJson, componentName);
-        expect(decryptProps(token, componentName)).toBe(propsJson);
+        const token = encryptProps(props, componentName);
+        expect(decryptProps(token, componentName)).toBe(props);
       }),
       RUNS,
     );
@@ -32,13 +32,13 @@ describe('serverIslandCrypto — property-based fuzzing', () => {
 
   test('AAD binding: a token sealed for one component never opens under another', () => {
     fc.assert(
-      fc.property(fc.string(), fc.string(), fc.string(), (propsJson, nameA, nameB) => {
+      fc.property(fc.string(), fc.string(), fc.string(), (props, nameA, nameB) => {
         // Compare the utf-8 *bytes*, not the JS strings: distinct strings holding
         // lone surrogates both encode to U+FFFD, yielding identical AAD — that's a
         // genuine collision, not a violation, so it must be excluded.
         fc.pre(!Buffer.from(nameA).equals(Buffer.from(nameB)));
         installConfig(DEFAULT_SECRET);
-        const token = encryptProps(propsJson, nameA);
+        const token = encryptProps(props, nameA);
         expect(decryptProps(token, nameB)).toBeNull();
       }),
       RUNS,
@@ -47,10 +47,10 @@ describe('serverIslandCrypto — property-based fuzzing', () => {
 
   test('HMAC key derivation: a token minted under one secret never opens under a different secret', () => {
     fc.assert(
-      fc.property(fc.string({ minLength: 1 }), fc.string({ minLength: 1 }), fc.string(), fc.string(), (secretA, secretB, propsJson, name) => {
+      fc.property(fc.string({ minLength: 1 }), fc.string({ minLength: 1 }), fc.string(), fc.string(), (secretA, secretB, props, name) => {
         fc.pre(!Buffer.from(secretA).equals(Buffer.from(secretB)));
         installConfig(secretA);
-        const token = encryptProps(propsJson, name);
+        const token = encryptProps(props, name);
         installConfig(secretB);
         expect(decryptProps(token, name)).toBeNull();
       }),

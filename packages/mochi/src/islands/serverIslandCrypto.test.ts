@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { stringify as devalueStringify } from 'devalue';
 import { encryptProps, decryptProps } from './serverIslandCrypto';
 import { requestContext, type MochiRequestContext } from '../runtime/requestContext';
 import { MochiCookieJar } from '../runtime/cookies';
@@ -44,17 +43,26 @@ afterEach(() => {
 });
 
 describe('encryptProps + decryptProps', () => {
-  test('round-trips: decrypt returns what encrypt sealed', () => {
+  test('round-trips: decrypt returns the value encrypt sealed', () => {
     installConfig();
-    const json = devalueStringify({ islandId: 'mochi-abc-0', name: 'World' });
-    const token = encryptProps(json, COMP);
-    expect(decryptProps(token, COMP)).toBe(json);
+    const props = { islandId: 'mochi-abc-0', name: 'World' };
+    const token = encryptProps(props, COMP);
+    expect(decryptProps(token, COMP)).toEqual(props);
+  });
+
+  test('round-trips rich types the msgpack codec carries', () => {
+    installConfig();
+    const props = { when: new Date('2026-06-21T12:00:00.000Z'), big: 42n, set: new Set([1, 2]), url: new URL('https://example.com/a') };
+    const out = decryptProps(encryptProps(props, COMP), COMP) as typeof props;
+    expect(out.when).toBeInstanceOf(Date);
+    expect(out.big).toBe(42n);
+    expect(out.set).toBeInstanceOf(Set);
+    expect(out.url.href).toBe('https://example.com/a');
   });
 
   test('token is opaque ciphertext, not readable JSON', () => {
     installConfig();
-    const json = devalueStringify({ islandId: 'mochi-abc-0', secret: 'do-not-leak' });
-    const token = encryptProps(json, COMP);
+    const token = encryptProps({ islandId: 'mochi-abc-0', secret: 'do-not-leak' }, COMP);
     const decoded = Buffer.from(token, 'base64url').toString('utf-8');
     expect(decoded).not.toContain('do-not-leak');
     expect(decoded).not.toContain('islandId');
@@ -62,8 +70,7 @@ describe('encryptProps + decryptProps', () => {
 
   test('rejects a tampered token', () => {
     installConfig();
-    const json = devalueStringify({ islandId: 'mochi-abc-0' });
-    const token = encryptProps(json, COMP);
+    const token = encryptProps({ islandId: 'mochi-abc-0' }, COMP);
     const mid = Math.floor(token.length / 2);
     const tampered = token.slice(0, mid) + (token[mid] === 'A' ? 'B' : 'A') + token.slice(mid + 1);
     expect(decryptProps(tampered, COMP)).toBeNull();
@@ -71,8 +78,7 @@ describe('encryptProps + decryptProps', () => {
 
   test('rejects a token replayed against a different component (AAD mismatch)', () => {
     installConfig();
-    const json = devalueStringify({ islandId: 'mochi-abc-0', name: 'World' });
-    const token = encryptProps(json, COMP);
+    const token = encryptProps({ islandId: 'mochi-abc-0', name: 'World' }, COMP);
     expect(decryptProps(token, 'OtherIsland')).toBeNull();
   });
 
@@ -88,9 +94,7 @@ describe('encryptProps debug bar recording', () => {
     installConfig();
     withCtx(
       (ctx) => {
-        const props = { islandId: 'mochi-test-0', greeting: 'Hello', count: 42 };
-        const json = devalueStringify(props);
-        const token = encryptProps(json, COMP);
+        const token = encryptProps({ islandId: 'mochi-test-0', greeting: 'Hello', count: 42 }, COMP);
 
         const recorded = ctx.debugBarData!.serverProps![token];
         expect(recorded).toBeDefined();
@@ -104,13 +108,11 @@ describe('encryptProps debug bar recording', () => {
     );
   });
 
-  test('records rich devalue types (BigInt/Map/Set) instead of throwing/dropping', () => {
+  test('records rich types (BigInt/Map/Set) instead of throwing/dropping', () => {
     installConfig();
     withCtx(
       (ctx) => {
-        const props = { islandId: 'mochi-test-0', big: 42n, map: new Map([['a', 1]]), set: new Set([7, 8]) };
-        const json = devalueStringify(props);
-        const token = encryptProps(json, COMP);
+        const token = encryptProps({ islandId: 'mochi-test-0', big: 42n, map: new Map([['a', 1]]), set: new Set([7, 8]) }, COMP);
 
         const recorded = ctx.debugBarData!.serverProps![token];
         expect(recorded).toBeDefined(); // a BigInt would throw plain JSON.stringify → nothing recorded
@@ -126,31 +128,32 @@ describe('encryptProps debug bar recording', () => {
   test('does not record when debugBarData is undefined (prod)', () => {
     installConfig();
     withCtx((ctx) => {
-      const json = devalueStringify({ islandId: 'mochi-test-0', x: 1 });
-      const token = encryptProps(json, COMP);
+      const props = { islandId: 'mochi-test-0', x: 1 };
+      const token = encryptProps(props, COMP);
       expect(ctx.debugBarData).toBeUndefined();
-      expect(decryptProps(token, COMP)).toBe(json);
+      expect(decryptProps(token, COMP)).toEqual(props);
     });
   });
 
   test('does not record when called outside request context', () => {
     installConfig();
-    const json = devalueStringify({ islandId: 'mochi-test-0' });
+    const props = { islandId: 'mochi-test-0' };
     let token: string | undefined;
     expect(() => {
-      token = encryptProps(json, COMP);
+      token = encryptProps(props, COMP);
     }).not.toThrow();
     expect(token).toBeDefined();
-    expect(decryptProps(token!, COMP)).toBe(json);
+    expect(decryptProps(token!, COMP)).toEqual(props);
   });
 
   test('encryption still works even if debug recording fails', () => {
     installConfig();
     withCtx(
       (ctx) => {
-        // Pass invalid devalue JSON — debug recording should fail silently
-        const badJson = '{not valid devalue}';
-        const token = encryptProps(badJson, COMP);
+        // msgpack packs cyclic props fine, but `JSON.stringify` on them throws — the snapshot must fail silently.
+        const cyclic: Record<string, unknown> = { islandId: 'mochi-test-0' };
+        cyclic.self = cyclic;
+        const token = encryptProps(cyclic, COMP);
         expect(token).toBeDefined();
         expect(Object.keys(ctx.debugBarData!.serverProps!)).toHaveLength(0);
       },

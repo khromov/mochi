@@ -70,7 +70,7 @@ import { mochiEvents } from './events';
 import type { MochiActionResult, MochiErrorEvent, MochiErrorKind, MochiServerStartEvent, MochiServerStopEvent } from './events';
 import type { DebugBarData, DebugBarRuntimeData } from './runtime/requestContext';
 import { consoleLogger } from './dev/consoleLogger';
-import { parse as devalueParse, stringify as devalueStringify } from 'devalue';
+import { stringify as devalueStringify } from 'devalue';
 import { ISLAND_FAILURE_CSS, ISLAND_FAILURE_DEV_CSS, islandFailureStub } from './web-components/islandFailureStub';
 import { resolvePublicFiles, registerPublicRoutes, isExcludedDotPath } from './runtime/publicDir';
 import { startDevWatcher } from './dev/devWatcher';
@@ -1300,11 +1300,11 @@ export class Mochi {
       // Decrypt props (empty means no props)
       let decodedProps: Record<string, unknown>;
       if (signedProps) {
-        const propsJson = decryptProps(signedProps, componentName);
-        if (propsJson === null) {
+        const decoded = decryptProps(signedProps, componentName);
+        if (decoded === null) {
           return new Response('Invalid props', { status: 403 });
         }
-        decodedProps = devalueParse(propsJson) as Record<string, unknown>;
+        decodedProps = decoded as Record<string, unknown>;
       } else {
         decodedProps = {};
       }

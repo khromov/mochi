@@ -239,7 +239,7 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
         // Server islands always emit signed-props, since islandId is always injected and every prop must be encrypted
         // against reads and tampering via query parameters. The component name is bound as AAD, so a token sealed for
         // one component can't be replayed against another.
-        let attrs = `component-name="${islandKey}" signed-props={__mochi_encrypt_props__(__mochi_stringify__(${propsExpr}), ${JSON.stringify(islandKey)})} css-url="__MOCHI_SERVER_CSS_URL__${islandKey}__" data-asset-prefix="__MOCHI_ASSET_PREFIX__"`;
+        let attrs = `component-name="${islandKey}" signed-props={__mochi_encrypt_props__(${propsExpr}, ${JSON.stringify(islandKey)})} css-url="__MOCHI_SERVER_CSS_URL__${islandKey}__" data-asset-prefix="__MOCHI_ASSET_PREFIX__"`;
 
         // `mochi:defer:visible` defers the fetch until the wrapper enters the
         // viewport. `rootMargin` rides inside the existing `server-options`
@@ -368,13 +368,14 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
 
   // Inject imports into the component's <script> tag
   const needsEmitProps = hydratables.length > 0;
-  const needsStringify = serverIslands.length > 0;
+  // No devalue `stringify` import for server islands: `encryptProps` takes the live prop object and packs it with
+  // msgpackr itself.
   const needsSignProps = serverIslands.length > 0;
   // Only server islands need the `__mochi_iid` transport id, riding inside their signed envelope as `idPrefix` for the
   // standalone render; the other kinds let Svelte recover `$props.id()` from its own `<!--$...-->` markers.
   const needsUid = serverIslands.length > 0;
 
-  if ((needsEmitProps || needsStringify || needsSignProps || needsBoundary) && ast.instance) {
+  if ((needsEmitProps || needsSignProps || needsBoundary) && ast.instance) {
     const contentStart = (ast.instance.content as unknown as Positioned).start;
     let imports = '';
     if (needsEmitProps) {
@@ -382,9 +383,6 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
     }
     if (needsBoundary) {
       imports += '\nimport MochiHydratableBoundary_ from "mochi-framework/hydratable-boundary";';
-    }
-    if (needsStringify) {
-      imports += '\nimport { stringify as __mochi_stringify__ } from "mochi-framework";';
     }
     if (needsUid) {
       imports += '\nlet __mochi_uid__ = 0;';

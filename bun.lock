@@ -112,6 +112,7 @@
         "ipaddr.js": "2.4.0",
         "magic-string": "^1.0.0",
         "mitt": "^3.0.1",
+        "msgpackr": "^1.12.1",
         "negotiator": "^1.0.0",
         "nodemailer": "^9.0.3",
         "svelte-shaker": ">=0.18.1",

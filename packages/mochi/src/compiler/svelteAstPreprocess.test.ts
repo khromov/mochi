@@ -337,7 +337,8 @@ describe('preprocessHydratable', () => {
     expect(transformed).toContain('<mochi-server-island');
     expect(transformed).toContain(`component-name="${idFor('Greeting', './Greeting.svelte')}"`);
     expect(transformed).toContain('__mochi_encrypt_props__');
-    expect(transformed).toContain('__mochi_stringify__');
+    // Server islands no longer wrap props in devalue `stringify` — `encryptProps` packs the value with msgpackr.
+    expect(transformed).not.toContain('__mochi_stringify__');
     expect(transformed).toContain('name: "World"');
     expect(transformed).toContain(`__MOCHI_SERVER_CSS_URL__${idFor('Greeting', './Greeting.svelte')}__`);
     expect(transformed).not.toContain('mochi:defer');
@@ -397,7 +398,8 @@ describe('preprocessHydratable', () => {
     const { transformed } = preprocessHydratable(source, '/test/File.svelte');
 
     expect(transformed).toContain('import { encryptProps as __mochi_encrypt_props__ } from "mochi-server-island-runtime"');
-    expect(transformed).toContain('import { stringify as __mochi_stringify__ } from "mochi-framework"');
+    // No devalue `stringify` import — `encryptProps` packs the props itself.
+    expect(transformed).not.toContain('import { stringify as __mochi_stringify__ } from "mochi-framework"');
   });
 
   test('duplicate server island instances', () => {
@@ -538,7 +540,7 @@ describe('preprocessHydratable', () => {
     // not as a redundant wrapper attribute.
     expect(transformed).not.toContain('island-id');
     expect(transformed).toContain('islandId: __mochi_iid');
-    expect(transformed).toContain('__mochi_stringify__');
+    expect(transformed).toContain('__mochi_encrypt_props__');
   });
 
   test('literal islandId prop on a server island is rejected', () => {
@@ -578,9 +580,10 @@ describe('preprocessHydratable', () => {
     const source = `${SCRIPT('import Srv from "./Srv.svelte";')}<Srv mochi:defer name="hello" />`;
     const { transformed } = preprocessHydratable(source, '/test/File.svelte');
 
-    const stringifyMatch = transformed.match(/__mochi_stringify__\((\{[^)]+\})\)/);
-    expect(stringifyMatch).not.toBeNull();
-    expect(stringifyMatch![1]).toContain('islandId');
+    // Props are now the first argument to `encryptProps` (the component name is the second), not a `stringify` call.
+    const propsMatch = transformed.match(/__mochi_encrypt_props__\((\{[^}]+\}),/);
+    expect(propsMatch).not.toBeNull();
+    expect(propsMatch![1]).toContain('islandId');
   });
 
   test('serverIslands not returned for hydrate-only components', () => {
