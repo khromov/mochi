@@ -12,6 +12,30 @@
 
   const install = await highlightCode('bun add layerchart', 'bash');
 
+  const themingCss = await highlightCode(
+    `/* shell.html — supply the definitions Bun's light-dark() downlevel expects */
+:root {
+  color-scheme: light dark;
+  --buncss-light: initial;
+  --buncss-dark: ;
+}
+
+/* System preference, unless the user explicitly picked light */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --buncss-light: ;
+    --buncss-dark: initial;
+  }
+}
+
+/* Explicit dark choice, regardless of system preference */
+:root[data-theme='dark'] {
+  --buncss-light: ;
+  --buncss-dark: initial;
+}`,
+    'css',
+  );
+
   const staticExample = await highlightCode(
     `<script lang="ts">
   import { Chart, Svg, Axis, Bars } from 'layerchart/svg';
@@ -97,7 +121,7 @@ ${'<'}/script>
   {sources}
 >
   <p>
-    No special setup: install it, import from <code>layerchart</code>, and Mochi bundles it into whichever island imports it. Full component reference at
+    Minimal setup: install it, import from <code>layerchart</code>, and Mochi bundles it into whichever island imports it. Full component reference at
     <a href="https://www.layerchart.com" target="_blank" rel="noopener noreferrer">layerchart.com</a>.
   </p>
   <CodeSnippet html={install} />
@@ -125,6 +149,15 @@ ${'<'}/script>
   </Callout>
   <CodeSnippet html={staticExample} />
   <StaticTrafficChart />
+
+  <h2>Theming — light/dark</h2>
+  <p>
+    LayerChart ships its tooltip, axis, and other default styles pre-coloured with CSS <code>light-dark()</code> so they read correctly in both modes out of the box — you lean on
+    that any time you use a LayerChart component without hand-styling its colours, the tooltip most of all. Bun downlevels <code>light-dark()</code> to a
+    <code>--buncss-light</code>/<code>--buncss-dark</code> toggle but only defines the pair beside a <code>color-scheme</code> rule in the same stylesheet, which LayerChart doesn't
+    ship — so define it once on <code>:root</code> in your shell:
+  </p>
+  <CodeSnippet html={themingCss} />
 
   <h2>Interactive — SVG</h2>
   <p>
