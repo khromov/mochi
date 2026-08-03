@@ -106,7 +106,9 @@ describe('CSS imports — variable-font format() preservation', () => {
     const cssUrl = `/_mochi/import-css/${cssOutput!.name}`;
     const cssText = registry.getClientFile(cssUrl);
     expect(cssText).toBeDefined();
-    expect(cssText).toContain("format('woff2-variations')");
+    // Bun <1.4.0 stripped the quotes (framework re-quotes to single); Bun >=1.4.0 keeps
+    // them (double). Either quote style is valid CSS — the bare unquoted form is the real bug.
+    expect(cssText).toMatch(/\bformat\((['"])woff2-variations\1\)/);
     expect(cssText).not.toMatch(/\bformat\(woff2-variations\)/);
   });
 });

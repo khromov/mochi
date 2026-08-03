@@ -30,8 +30,8 @@
   <p>
     With no hydration directive, no LayerChart code reaches the browser. That needs two opt-ins: <code>ssr</code> (LayerChart skips server rendering otherwise) and explicit
     <code>width</code>/<code>height</code>, since nothing measures the container without hydration. It stays responsive anyway: the <code>&lt;Svg&gt;</code> gets a matching
-    <code>viewBox</code>, so that baked 600&times;220 geometry scales to the column in pure CSS. Colours are <code>--chart-*</code> custom properties that inherit into the SVG, so
-    charts follow the theme toggle with no JS.
+    <code>viewBox</code>, so that baked 600&times;220 geometry scales to the column in pure CSS. Colours are <code>--chart-*</code> custom properties that inherit into the SVG, so charts
+    follow the theme toggle with no JS.
   </p>
   <p>
     It's composed from <code>&lt;Chart&gt;</code> primitives rather than the <code>&lt;BarChart&gt;</code> shortcut: that shortcut's <code>marks</code> snippet shadows its own

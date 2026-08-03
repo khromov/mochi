@@ -53,6 +53,8 @@ import Mail from '@lucide/svelte/icons/mail';
 import Gauge from '@lucide/svelte/icons/gauge';
 import Recycle from '@lucide/svelte/icons/recycle';
 import ChartSpline from '@lucide/svelte/icons/chart-spline';
+import Atom from '@lucide/svelte/icons/atom';
+import TextQuote from '@lucide/svelte/icons/text-quote';
 
 export interface DemoIconMeta {
   icon: Component;
@@ -84,6 +86,7 @@ export const demoIconFor: Record<string, DemoIconMeta> = {
   'Font loading': { icon: Type, label: 'Bundle fontsource + standalone fonts' },
   'Crossing the server-client boundary with props': { icon: Package2, label: 'Props serialized into the island — every devalue type' },
   'HTML Entities in Props': { icon: Ampersand, label: 'HTML entities in static island props decode across SSR + hydration' },
+  'Runed Utilities': { icon: Atom, label: 'Runed reactive utilities hydrated in islands' },
   'Nested Components': { icon: ListTree, label: 'Five-level deep tree under one island' },
   'Nested Islands': { icon: SquareStack, label: 'Islands nested inside server islands' },
   'Nested Island Max Depth': { icon: Layers2, label: 'Server islands nested several levels deep' },
@@ -114,4 +117,5 @@ export const demoIconFor: Record<string, DemoIconMeta> = {
   'Custom Transitions': { icon: Tornado, label: 'Custom @keyframes spin via custom={{ in, out }}' },
   'File Routes': { icon: FileDown, label: 'Serve a file from disk with Mochi.file()' },
   'Charts with LayerChart': { icon: ChartSpline, label: 'A third-party Svelte chart library, SSR + islands' },
+  'Portable Text': { icon: TextQuote, label: 'Render Portable Text JSON with your own Svelte components' },
 };

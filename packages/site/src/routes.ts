@@ -58,6 +58,7 @@ import { routes as loginRoutes } from './demos/login/routes';
 import { routes as mdsvexRoutes } from './demos/mdsvex/routes';
 import { routes as nestedComponentsRoutes } from './demos/nested-components/routes';
 import { routes as nestedIslandsRoutes } from './demos/nested-islands/routes';
+import { routes as portableTextRoutes } from './demos/portable-text/routes';
 import { routes as propDedupRoutes } from './demos/prop-dedup/routes';
 import { routes as propsIdRoutes } from './demos/props-id/routes';
 import { routes as queueRoutes, queues as queueQueues } from './demos/queue/routes';
@@ -65,6 +66,7 @@ import { routes as rateLimitRoutes } from './demos/rate-limit/routes';
 import { routes as reloadFormDataRoutes } from './demos/reload-form-data/routes';
 import { routes as requestCacheRoutes } from './demos/request-cache/routes';
 import { routes as requestIdRoutes } from './demos/request-id/routes';
+import { routes as runedRoutes } from './demos/runed/routes';
 import { routes as serverIslandRoutes } from './demos/server-island/routes';
 import { routes as shotRoutes } from './shot/routes';
 import { routes as serverPropsRoutes } from './demos/server-props/routes';
@@ -336,6 +338,7 @@ export const routes: Record<string, MochiRouteValue> = {
   ...mdsvexRoutes,
   ...nestedComponentsRoutes,
   ...nestedIslandsRoutes,
+  ...portableTextRoutes,
   ...propDedupRoutes,
   ...propsIdRoutes,
   ...queueRoutes,
@@ -343,6 +346,7 @@ export const routes: Record<string, MochiRouteValue> = {
   ...reloadFormDataRoutes,
   ...requestCacheRoutes,
   ...requestIdRoutes,
+  ...runedRoutes,
   ...serverIslandRoutes,
   ...serverPropsRoutes,
   ...shotRoutes,

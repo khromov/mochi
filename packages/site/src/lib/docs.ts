@@ -7,7 +7,7 @@ import { SITE_ROOT } from './siteRoot';
 import { loadPosts, getPost } from './blog';
 import { CHANGELOG_SLUG, CHANGELOG_TITLE, CHANGELOG_DESCRIPTION, getChangelogTxt } from './changelog';
 import { demos, type Demo } from './demos';
-import { isDemoIndex, stripImageConfig, type SourceSpec } from '../components/utils.ts';
+import { isDemoIndex, stripImageConfig, type SourceSpec } from '../components/sourceUtils';
 import { collectHeadings, type HastNode, type MdsvexRehypePlugin } from './markdown';
 import type { TocEntry } from './toc';
 
