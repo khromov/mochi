@@ -1,0 +1,14 @@
+{
+  "name": "layerchart-ssr-recursion-repro",
+  "private": true,
+  "type": "module",
+  "description": "Minimal repro: Svelte's server compiler turns a prop/snippet name collision into unbounded recursion (surfaced by LayerChart's chart shortcuts under ssr).",
+  "scripts": {
+    "repro:svelte": "bun reproduce-svelte.ts",
+    "repro:layerchart": "bun reproduce-layerchart.ts"
+  },
+  "dependencies": {
+    "layerchart": "2.0.3",
+    "svelte": "5.56.8"
+  }
+}

@@ -4,7 +4,7 @@ import svelte from 'eslint-plugin-svelte';
 import prettier from 'eslint-config-prettier';
 
 export default ts.config(
-  { ignores: ['**/.mochi/', '**/.mochi-*/', '.claude/', 'node_modules/', 'out/', '**/CHANGELOG.md', '**/virtual-modules/'] },
+  { ignores: ['**/.mochi/', '**/.mochi-*/', '.claude/', 'node_modules/', 'out/', 'layerchart-repro/', 'svelte-repro/', 'vite-repro/', 'sveltekit-repro/', '**/CHANGELOG.md', '**/virtual-modules/'] },
   js.configs.recommended,
   ...ts.configs.recommended,
   ...svelte.configs['flat/recommended'],

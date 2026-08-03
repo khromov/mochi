@@ -1,0 +1,14 @@
+{
+  "name": "vite-svelte-ssr-snippet-shadowing-repro",
+  "private": true,
+  "type": "module",
+  "description": "Reproduces the Svelte SSR snippet/prop name-collision recursion through a real Vite + @sveltejs/vite-plugin-svelte pipeline.",
+  "scripts": {
+    "repro": "node reproduce.mjs"
+  },
+  "dependencies": {
+    "@sveltejs/vite-plugin-svelte": "7.2.0",
+    "svelte": "5.56.8",
+    "vite": "8.2.0"
+  }
+}
