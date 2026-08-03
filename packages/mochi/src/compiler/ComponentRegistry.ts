@@ -73,11 +73,11 @@ const SRC_DIR = path.join(path.dirname(Bun.fileURLToPath(import.meta.url)), '..'
 /** Manifest schema version this runtime writes; see `MochiManifest.version` for the path families it implies. */
 const MANIFEST_VERSION = 2;
 
-// TODO
-// Bun's CSS bundler unquotes `format('woff2-variations')` to `format(woff2-variations)`,
+// Bun <1.4.0's CSS bundler unquotes `format('woff2-variations')` to `format(woff2-variations)`,
 // which is invalid CSS — only the seven plain keywords (woff2, woff, truetype, opentype,
 // embedded-opentype, svg, collection) work bare. Browsers silently drop the src and the
 // font never loads. Re-quote the four compound `*-variations` hints back to strings.
+// Bun 1.4.0 keeps them quoted, so this is a no-op there — delete once 1.3.14 support is dropped.
 const VARIATION_FORMAT_RE = /\bformat\((woff2-variations|woff-variations|truetype-variations|opentype-variations)\)/g;
 function restoreVariationsFormat(css: string): string {
   return css.replace(VARIATION_FORMAT_RE, "format('$1')");
