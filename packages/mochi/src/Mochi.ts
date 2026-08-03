@@ -283,6 +283,15 @@ export class Mochi {
   }
 
   static async serve(options: MochiServeOptions): Promise<Server<undefined>> {
+    // Reject before initMochiConfig pins the process singleton, so a bad `bun` passthrough fails fast without wedging it.
+    if (options.bun && typeof options.bun === 'object') {
+      for (const key of ['fetch', 'websocket', 'routes', 'error'] as const) {
+        if (key in options.bun) {
+          throw new Error(`Mochi.serve({ bun }): "${key}" is owned by the framework and cannot be overridden. Use the top-level Mochi.serve() option instead.`);
+        }
+      }
+    }
+
     const { svelteVersion } = await checkEnvironment();
     const mochiVersion = await readMochiVersion();
     initExtensions(options);
@@ -1583,6 +1592,7 @@ export class Mochi {
       handle: _handle,
       markdown: _markdown,
       websocket: userWebSocketOptions,
+      bun: bunPassthrough,
       ...bunOptions
     } = options as Record<string, unknown>;
 
@@ -1665,6 +1675,7 @@ export class Mochi {
 
     const server = Bun.serve({
       ...bunOptions,
+      ...(bunPassthrough as Record<string, unknown> | undefined),
       routes: bunRoutes,
       fetch: composedFetch,
       ...(websocketOption ? { websocket: websocketOption } : {}),

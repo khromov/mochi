@@ -394,9 +394,21 @@ export interface MochiWarmupOptions {
   enabledInDev: boolean;
 }
 
+/**
+ * Options spread directly into the underlying `Bun.serve()`. The framework owns
+ * `fetch`, `websocket`, `routes`, and `error`; setting any of them here throws.
+ */
+export type BunServeOverrides = Omit<NonNullable<Parameters<typeof Bun.serve>[0]>, 'fetch' | 'websocket' | 'routes' | 'error'>;
+
 export interface MochiServeOptions {
   port?: number;
   hostname?: string;
+  /**
+   * Escape hatch for raw `Bun.serve()` options Mochi doesn't surface — e.g.
+   * `idleTimeout` (seconds; HTTP default 10, max 255, 0 disables), `maxRequestBodySize`,
+   * `reusePort`, `tls`. Spread into `Bun.serve()`; framework-owned keys are rejected.
+   */
+  bun?: BunServeOverrides;
   development?: boolean;
   /** Mount the dev-only debug toolbar. Default: `true`, and ignored entirely when `development` is `false`. */
   debugBar?: boolean;

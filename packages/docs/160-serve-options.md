@@ -73,10 +73,34 @@ The forced fallback is not optional: a plain `server.stop()` never resolves whil
 - `hooks`: `MochiHooks` map of named lifecycle hooks. See `Extensions (hooks & filters)`.
 - `filters`: `MochiFilters` map of named value-replacement filters. See `Extensions (hooks & filters)`.
 - `warmup`: Warm the SSR pipeline at startup by invoking every static page route once. `boolean | { enabledInProd: boolean; enabledInDev: boolean }`. `true` warms in **production only**; pass the object form for per-mode control. Default: `false`. See `Route warmup` below.
+- `bun`: Escape hatch for raw `Bun.serve()` options Mochi doesn't surface — e.g. `idleTimeout`, `maxRequestBodySize`, `reusePort`, `tls`. Spread into `Bun.serve()`; `fetch` / `websocket` / `routes` / `error` are framework-owned and throw if set. See `Raw Bun.serve options` below.
 
 <Callout type="info">
 
 **Sync `assetPrefix` between build time and runtime.** When using a prebuilt manifest, pass `assetPrefix` to the `build()` call (or `--asset-prefix`) so the baked-in URLs match. The manifest's precomputed URLs take precedence at runtime if the two disagree, causing silent breakage.
+
+</Callout>
+
+### Raw Bun.serve options
+
+`bun` is spread straight into the underlying `Bun.serve()`, so any option Mochi doesn't expose is reachable through it:
+
+```ts
+Mochi.serve({
+  port: 3333,
+  routes,
+  bun: {
+    idleTimeout: 30, // seconds; HTTP default is 10, max 255, 0 disables
+    maxRequestBodySize: 1024 * 1024 * 256,
+  },
+});
+```
+
+Bun times a connection out after `idleTimeout` seconds of inactivity, so a response that stays quiet for longer than the default 10 seconds dies with `request timed out after 10 seconds`. Raise it for slow uploads or long-lived streams (SSE, chunked responses).
+
+<Callout type="info">
+
+`fetch`, `websocket`, `routes`, and `error` are owned by the framework — setting them under `bun` throws at startup. Use the top-level `Mochi.serve()` options instead. To keep a single long stream alive without raising the global timeout, call `server.timeout(request, seconds)` from inside that handler.
 
 </Callout>
 
