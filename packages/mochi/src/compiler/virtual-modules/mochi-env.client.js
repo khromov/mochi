@@ -44,6 +44,9 @@ export { setLogLevel, getLogLevel };
 export const logger = __mochi_logger;
 if (typeof window !== "undefined" && window.__mochi_log_level) setLogLevel(window.__mochi_log_level);
 export function devWarn(msg) { if (typeof window !== "undefined" && window.__mochi_warn) window.__mochi_warn(msg); else __mochi_logger.warn(msg); }
+// Isomorphic: pins a value on globalThis (per realm in the browser). Real re-export,
+// not a server-only stub, so island code can dedupe singletons on the client too.
+export { pinGlobal } from "__MOCHI_GLOBAL_STATE__";
 export { stringify, parse } from "__MOCHI_DEVALUE__";
 export { trailingSlashIt } from "__MOCHI_TRAILING_SLASH__";
 // Server-only; the preprocessor never injects __mochi_emit_props__
