@@ -60,6 +60,33 @@ ${'<'}/script>
     'svelte',
   );
 
+  const serverComponentExample = await highlightCode(
+    `<script lang="ts">
+  import { ServerChart } from 'layerchart/server';
+  import { Axis, Grid, Spline } from 'layerchart';
+  let { data, width, height, capture, onCapture } = $props();
+${'<'}/script>
+
+<ServerChart {capture} {onCapture} {width} {height} {data} x="month" y="requests" yDomain={[0, null]}>
+  <Grid y />
+  <Axis placement="left" rule ticks={4} format={(v) => v / 1000 + 'k'} />
+  <Axis placement="bottom" rule />
+  <Spline stroke="rgb(59,130,246)" strokeWidth={2} />
+</ServerChart>`,
+    'svelte',
+  );
+
+  const serverRouteExample = await highlightCode(
+    `// routes.ts — renders the chart to an image buffer on request
+'/demos/charts/traffic.png': Mochi.api(async ({ url }) => {
+  const { renderTrafficChart } = await import('./serverChart');
+  const format = url.searchParams.get('format') === 'jpeg' ? 'jpeg' : 'png';
+  const image = await renderTrafficChart({ width: 640, height: 240, format });
+  return new Response(image, { headers: { 'Content-Type': 'image/' + format } });
+}),`,
+    'typescript',
+  );
+
   const sources = await loadSources(files);
 </script>
 
@@ -130,6 +157,15 @@ ${'<'}/script>
   <RuntimeDonut mochi:clientOnly>
     <div class="skeleton">Loading chart…</div>
   </RuntimeDonut>
+
+  <h2>Server-rendered image chart</h2>
+  <p>
+    LayerChart's <code>layerchart/server</code> module paints a chart onto a node canvas (<code>@napi-rs/canvas</code>) and hands back a PNG or JPEG buffer. A <code>Mochi.api</code> route
+    renders it on demand, so the image below is just <code>src="/demos/charts/traffic.png"</code> (add <code>?format=jpeg</code> for JPEG).
+  </p>
+  <CodeSnippet html={serverComponentExample} />
+  <CodeSnippet html={serverRouteExample} />
+  <img class="server-png" src="/demos/charts/traffic.png" alt="Server-rendered traffic chart, January through December" width="640" height="240" />
 </DemoPage>
 
 <style>
@@ -155,6 +191,16 @@ ${'<'}/script>
     background: var(--surface-muted);
     color: var(--text-subtle);
     font-size: 0.9rem;
+  }
+
+  .server-png {
+    display: block;
+    width: 100%;
+    max-width: 640px;
+    height: auto;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-md);
+    background: #fff;
   }
 
   code {
