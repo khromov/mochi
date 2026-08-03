@@ -31,6 +31,9 @@ import { logger as __mochi_logger, setLogLevel, getLogLevel } from "__MOCHI_LOG_
 export { setLogLevel, getLogLevel };
 export const logger = __mochi_logger;
 export function devWarn(msg) { __mochi_logger.warn(msg); }
+// Isomorphic: pins a value on globalThis so duplicate bundled copies share one
+// instance per process. Re-exported so .svelte-graph modules can dedupe singletons.
+export { pinGlobal } from "__MOCHI_GLOBAL_STATE__";
 // Re-export devalue so .svelte files (and the preprocessor's
 // injected hydration-prop import) can use stringify/parse without
 // a separate install. Resolved from the framework's own deps.
