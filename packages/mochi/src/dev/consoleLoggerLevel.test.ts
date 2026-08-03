@@ -66,6 +66,16 @@ describe('consoleLogger:level changes where a line is written', () => {
     expect(request('/boom', 500)?.method).toBe('info');
   });
 
+  test('a no-op cache sweep is written at the most verbose level', () => {
+    mochiEvents.emit('cache:sweep', { removed: 0, durationMs: 1 });
+    expect(calls.find((c) => c.text.includes('nothing expired'))?.method).toBe('debug');
+  });
+
+  test('a cache sweep that removed entries is written at info', () => {
+    mochiEvents.emit('cache:sweep', { removed: 3, durationMs: 1 });
+    expect(calls.find((c) => c.text.includes('expired removed'))?.method).toBe('info');
+  });
+
   test('consoleLogger:line sees the remapped level, not the default', () => {
     let seen: string | undefined;
     initExtensions({
