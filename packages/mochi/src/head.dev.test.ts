@@ -50,6 +50,9 @@ describe('HEAD requests (development)', () => {
     expect(get.status).toBe(200);
     expect(await get.text()).toBe(ROBOTS_BODY);
 
+    // Pin the concrete type so a header dropped from both responses can't pass tautologically.
+    expect(get.headers.get('Content-Type')).toContain('text/plain');
+
     const head = await fetch(`${base}/robots.txt`, { method: 'HEAD' });
     expect(head.status).toBe(200);
     expect(head.headers.get('Content-Type')).toBe(get.headers.get('Content-Type'));

@@ -52,9 +52,11 @@ describe('Mochi.api event surface', () => {
       headers: { cookie: 'session=tok' },
     });
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { session: string | null };
+    const body = (await res.json()) as { method: string; session: string | null };
+    expect(body.method).toBe('GET');
     expect(body.session).toBe('tok');
     const setCookie = res.headers.get('set-cookie') ?? '';
-    expect(setCookie).toContain('seen=42');
+    expect(setCookie).toMatch(/^seen=42; /);
+    expect(setCookie).toContain('Path=/');
   });
 });

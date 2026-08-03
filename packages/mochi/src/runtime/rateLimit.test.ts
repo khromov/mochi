@@ -36,7 +36,8 @@ describe('createRouteLimiter', () => {
     }
     expect(third.retryAfterSeconds).toBeGreaterThan(0);
     expect(third.retryAfterSeconds).toBeLessThanOrEqual(60);
-    expect(third.headers['Retry-After']).toBeDefined();
+    expect(Number(third.headers['Retry-After'])).toBeGreaterThan(0);
+    expect(Number(third.headers['Retry-After'])).toBeLessThanOrEqual(60);
     expect(third.headers['RateLimit-Remaining']).toBe('0');
     expect(third.body.hitlimit).toBe(true);
     expect(third.body.remaining).toBe(0);

@@ -40,16 +40,15 @@ describe('rateLimit postgresStore backend', () => {
     rmSync(outDir, { recursive: true, force: true });
   });
 
-  test('blocks with 429 once the limit is exhausted', async () => {
+  test('blocks with 429 once the limit is exhausted and persists the counter to Postgres over the wire', async () => {
     expect((await fetch(`${base}/api/limited`)).status).toBe(200);
     expect((await fetch(`${base}/api/limited`)).status).toBe(200);
     expect((await fetch(`${base}/api/limited`)).status).toBe(429);
-  });
 
-  test('persists the counter to Postgres over the wire', async () => {
     const { rows } = await pg.query<{ key: string; count: number }>('SELECT key, count FROM hitlimit_hits');
     expect(rows).toHaveLength(1);
     const [row] = rows;
-    expect(Number(row?.count)).toBeGreaterThanOrEqual(2);
+    // hitlimit's hit() increments unconditionally, so the blocked third request still bumps the counter.
+    expect(Number(row?.count)).toBe(3);
   });
 });

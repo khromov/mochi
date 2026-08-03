@@ -76,10 +76,14 @@ describe('shakeApp', () => {
     expect(slimmed).toBeDefined();
     expect(slimmed).toContain('mochi:hydrate');
     expect(slimmed).toContain('mochi:defer:visible');
+    // Regular attributes survive too — distinguishes a directive-only drop from an all-attribute drop.
+    expect(slimmed).toContain('label="hello"');
+    expect(slimmed).toContain('label="world"');
   });
 
   test('returns an empty map for a directory with no .svelte files', async () => {
     dir = mkdtempSync(path.join(tmpdir(), 'shake-app-empty-'));
+    writeFileSync(path.join(dir, 'notes.ts'), 'export const x = 1;');
     const { shaken } = await shakeApp(dir);
     expect(shaken.size).toBe(0);
   });

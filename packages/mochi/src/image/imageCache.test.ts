@@ -132,8 +132,11 @@ describe('ImageCache.getOriginal', () => {
     const a = cache.getOriginal(SRC, fetchFn);
     const b = cache.getOriginal(SRC, fetchFn);
     release();
-    await Promise.all([a, b]);
+    const [ra, rb] = await Promise.all([a, b]);
     expect(calls).toBe(1);
+    expect(ra.status).toBe('miss');
+    expect(Array.from(ra.entry.bytes)).toEqual([7]);
+    expect(Array.from(rb.entry.bytes)).toEqual([7]);
   });
 
   test('bytes persist through storage across a fresh cache instance', async () => {
@@ -326,7 +329,7 @@ describe('ImageCache.keys / inspect (dev debug bar)', () => {
 
     const keys = await cache.keys();
     const origKey = keys.find((k) => k.includes(SRC));
-    expect(origKey).toBeDefined();
+    expect(origKey).toBe(`MochiImage:Original:${SRC}`);
 
     const entry = (await cache.inspect(origKey!)) as { value: unknown; createdAt: number };
     expect(entry).not.toBeNull();

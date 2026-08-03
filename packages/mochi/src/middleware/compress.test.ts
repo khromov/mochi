@@ -4,6 +4,17 @@ import { brotliDecompressSync } from 'node:zlib';
 import type { MochiEvent } from '../runtime/hooks';
 import { compress } from './compress';
 
+// compress() reads dev mode from the Mochi.serve() config singleton; fake it via its global key.
+async function withMochiConfig<T>(development: boolean, fn: () => Promise<T>): Promise<T> {
+  const g = globalThis as unknown as Record<string, unknown>;
+  g['__mochi_config__'] = { options: { development }, secretKey: Buffer.alloc(32) };
+  try {
+    return await fn();
+  } finally {
+    delete g['__mochi_config__'];
+  }
+}
+
 function makeEvent(req: Request): MochiEvent {
   return {
     request: req,
@@ -105,6 +116,8 @@ describe('compress()', () => {
 
     expect(response.headers.get('Content-Encoding')).toBe('gzip');
     expect(response.headers.get('Content-Length')).toBeNull();
+    const restored = new TextDecoder().decode(Bun.gunzipSync(new Uint8Array(await response.arrayBuffer())));
+    expect(restored).toBe(body);
   });
 
   test('compresses JSON responses', async () => {
@@ -217,6 +230,21 @@ describe('compress()', () => {
     expect(response.headers.get('Content-Encoding')).toBe('br');
   });
 
+  test('Accept-Encoding: * picks the first configured method (gzip-first order)', async () => {
+    const handle = compress({ methods: ['gzip', 'brotli'] });
+    const body = 'x'.repeat(1024);
+    const req = new Request('http://localhost/', {
+      headers: { 'Accept-Encoding': '*' },
+    });
+
+    const response = await handle({
+      event: makeEvent(req),
+      resolve: async () => new Response(body, { headers: { 'Content-Type': 'text/plain' } }),
+    });
+
+    expect(response.headers.get('Content-Encoding')).toBe('gzip');
+  });
+
   test('skips compression when methods exclude what the client offers', async () => {
     const handle = compress({ methods: ['gzip'] });
     const body = '<p>hello</p>';
@@ -265,5 +293,44 @@ describe('compress()', () => {
     expect(response.headers.get('Content-Encoding')).toBe('br');
     const restored = new TextDecoder().decode(brotliDecompressSync(new Uint8Array(await response.arrayBuffer())));
     expect(restored).toBe(body);
+  });
+
+  test('skips compression entirely in dev mode', async () => {
+    await withMochiConfig(true, async () => {
+      const handle = compress();
+      const body = '<!doctype html>' + 'hello '.repeat(500);
+      const req = new Request('http://localhost/', {
+        headers: { 'Accept-Encoding': 'gzip, br' },
+      });
+      const upstream = new Response(body, { headers: { 'Content-Type': 'text/html' } });
+
+      const response = await handle({
+        event: makeEvent(req),
+        resolve: async () => upstream,
+      });
+
+      expect(response).toBe(upstream);
+      expect(response.headers.get('Content-Encoding')).toBeNull();
+      expect(await response.text()).toBe(body);
+    });
+  });
+
+  test('compresses when config is initialized with development: false', async () => {
+    await withMochiConfig(false, async () => {
+      const handle = compress();
+      const body = '<!doctype html>' + 'hello '.repeat(500);
+      const req = new Request('http://localhost/', {
+        headers: { 'Accept-Encoding': 'gzip' },
+      });
+
+      const response = await handle({
+        event: makeEvent(req),
+        resolve: async () => new Response(body, { headers: { 'Content-Type': 'text/html' } }),
+      });
+
+      expect(response.headers.get('Content-Encoding')).toBe('gzip');
+      const restored = new TextDecoder().decode(Bun.gunzipSync(new Uint8Array(await response.arrayBuffer())));
+      expect(restored).toBe(body);
+    });
   });
 });
