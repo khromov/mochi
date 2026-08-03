@@ -181,8 +181,8 @@ describe('email templates under src/emails are precompiled into the manifest', (
   test('the rendered email carries the props and its inlined CSS', () => {
     expect(sends[0]?.html).toContain('Hello Ada');
     // Proves the scoped CSS survived the manifest round-trip and reached
-    // css-inline — not merely that the SSR module loaded.
-    expect(sends[0]?.html).toMatch(/style="[^"]*#639/);
+    // css-inline — inlined onto the greeting element itself, not just anywhere.
+    expect(sends[0]?.html).toMatch(/<h1[^>]*style="[^"]*#639[^"]*"[^>]*>Hello Ada</);
   });
 
   test('an app with no src/emails directory still builds', () => {
@@ -203,9 +203,10 @@ describe('email templates under src/emails are precompiled into the manifest', (
 
   test('it sends with the Svelte sources deleted', async () => {
     // Nothing short of this rules out a compile-from-source fallback.
+    const before = sends.length;
     rmSync(path.join(roots[0]!, 'src', 'emails'), RM_OPTS);
     await Mochi.email({ to: 'ada@example.com', subject: 'Hi', component: './src/emails/Welcome.svelte', props: { name: 'Grace' } });
-    expect(sends).toHaveLength(2);
-    expect(sends[1]?.html).toContain('Hello Grace');
+    expect(sends).toHaveLength(before + 1);
+    expect(sends.at(-1)?.html).toContain('Hello Grace');
   });
 });

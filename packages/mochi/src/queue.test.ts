@@ -363,7 +363,6 @@ describe('Mochi queue', () => {
     // After draining, the handle is gone from the registry.
     expect(() => getQueue(name)).toThrow(/queues are not mounted yet/);
     // A second call must not throw even though the registry is already empty.
-    await closeAllQueueResources();
-    expect(true).toBe(true);
+    await expect(closeAllQueueResources()).resolves.toBeUndefined();
   });
 });

@@ -79,7 +79,7 @@ describe('FileStorage', () => {
     const file = readdirSync(dir).find((n) => n.endsWith('.json'));
     expect(file).toBeDefined();
     await Bun.write(join(dir, file!), '{ not json');
-    await expect(storage.getItem('k')).rejects.toBeDefined();
+    await expect(storage.getItem('k')).rejects.toThrow(SyntaxError);
 
     // Wired through MochiCache, a read error degrades to a `miss` + recompute.
     const cache = new MochiCache({ storage });

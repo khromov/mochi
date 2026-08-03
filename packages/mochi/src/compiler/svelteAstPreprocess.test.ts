@@ -312,7 +312,7 @@ describe('preprocessHydratable', () => {
     const { transformed } = preprocessHydratable(source, '/test/File.svelte');
 
     expect(transformed).toContain('disabled: true');
-    expect(transformed).toContain('disabled');
+    expect(transformed).toContain('<Comp disabled />');
   });
 
   test('mixed prop types in single component', () => {
