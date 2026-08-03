@@ -15,15 +15,6 @@ export const traffic: TrafficPoint[] = [
   { month: 'Dec', requests: 3410, cached: 2870 },
 ];
 
-export type BundleRow = { route: string; html: number; islands: number; css: number };
-
-export const bundles: BundleRow[] = [
-  { route: '/', html: 14, islands: 22, css: 9 },
-  { route: '/docs', html: 19, islands: 12, css: 11 },
-  { route: '/demos', html: 11, islands: 34, css: 8 },
-  { route: '/blog', html: 16, islands: 7, css: 10 },
-];
-
 export type RuntimeSlice = { stage: string; ms: number };
 
 export const runtimes: RuntimeSlice[] = [

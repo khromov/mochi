@@ -4,7 +4,6 @@
   import StaticTrafficChart from './StaticTrafficChart.svelte';
   import TrafficChart from './TrafficChart.svelte';
   import HtmlBars from './HtmlBars.svelte';
-  import BundleBars from './BundleBars.svelte';
   import RuntimeDonut from './RuntimeDonut.svelte';
   import Callout from '../../../../docs/_components/Callout.svelte';
   import { loadSources } from '../../components/utils.ts';
@@ -26,6 +25,38 @@ ${'<'}/script>
     <Bars fill="var(--chart-1)" />
   </Svg>
 </Chart>`,
+    'svelte',
+  );
+
+  const interactiveExample = await highlightCode(
+    `<script lang="ts">
+  import { AreaChart } from 'layerchart/svg';
+  import { traffic, seriesColors } from './data.ts';
+
+  const series = [
+    { key: 'requests', label: 'Requests', color: seriesColors[0] },
+    { key: 'cached', label: 'Cache hits', color: seriesColors[2] },
+  ];
+${'<'}/script>
+
+<!-- No ssr, no width: hydration measures the container. -->
+<AreaChart data={traffic} x="month" {series} height={260} props={{ tooltip: { root: { portal: false } } }} />`,
+    'svelte',
+  );
+
+  const htmlExample = await highlightCode(
+    `<script lang="ts">
+  import { BarChart } from 'layerchart/html';
+  import { traffic, seriesColors } from './data.ts';
+
+  const series = [
+    { key: 'requests', label: 'Requests', color: seriesColors[0] },
+    { key: 'cached', label: 'Cache hits', color: seriesColors[2] },
+  ];
+${'<'}/script>
+
+<!-- HTML renderer: real DOM boxes; the BarChart shortcut is fine since ssr is off. -->
+<BarChart data={traffic} x="month" {series} seriesLayout="group" legend height={260} />`,
     'svelte',
   );
 
@@ -67,29 +98,30 @@ ${'<'}/script>
   <CodeSnippet html={staticExample} />
   <StaticTrafficChart />
 
-  <h2>Interactive — <code>mochi:hydrate</code></h2>
+  <h2>Interactive — SVG</h2>
   <p>
-    The same library imported from <code>layerchart/svg</code>, hydrated — hover the plot for the crosshair and tooltip. Leaving <code>ssr</code> off ships an empty frame; omitting
+    The same library imported from <code>layerchart/svg</code>, hydrated via <code>mochi:hydrate</code> — hover the plot for the crosshair and tooltip. Leaving <code>ssr</code> off
+    ships an empty frame; omitting
     <code>width</code> (which would override the measured container) is what makes it responsive. The tooltip sets <code>portal: false</code> because LayerChart otherwise portals
     it to <code>&lt;body&gt;</code>, escaping the themed frame and rendering unstyled.
   </p>
+  <Callout type="info">
+    <strong>Helpers are fine when hydrating.</strong> With <code>ssr</code> off, the marks never render on the server, so the all-in-one components like
+    <code>&lt;AreaChart&gt;</code>
+    work here — no need to compose from primitives the way the pure-SSR chart does.
+  </Callout>
+  <CodeSnippet html={interactiveExample} />
   <TrafficChart mochi:hydrate />
 
-  <h2>HTML renderer, hydrated</h2>
+  <h2>Interactive — HTML</h2>
   <p>
     Imported from <code>layerchart/html</code>, so the bars are real DOM boxes instead of SVG. This one uses the <code>&lt;BarChart&gt;</code> shortcut — fine here because
     <code>ssr</code> is off, so the marks never render on the server. Hydration measures the container, so it reflows fluidly with no <code>viewBox</code> trick needed.
   </p>
+  <CodeSnippet html={htmlExample} />
   <HtmlBars mochi:hydrate />
 
-  <h2>Bars with a layout toggle</h2>
-  <p>
-    <code>seriesLayout</code> is driven by a <code>$state</code> rune, so switching between stacked and grouped is a reactive prop change. The buttons are server-rendered but inert until
-    the island hydrates.
-  </p>
-  <BundleBars mochi:hydrate />
-
-  <h2>Donut — <code>mochi:clientOnly</code></h2>
+  <h2>Donut — SVG</h2>
   <p>
     A <code>PieChart</code> with a negative <code>innerRadius</code> and <code>cRange</code> colours; click a legend swatch to toggle a slice. Client-only is usually the better fit for
     a chart: since LayerChart draws nothing server-side anyway, hydrating would server-render an empty container and reconcile it, whereas a client-only island skips the server pass
