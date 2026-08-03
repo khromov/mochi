@@ -79,6 +79,7 @@ ${'<'}/script>
   const serverRouteExample = await highlightCode(
     `// routes.ts — renders the chart to an image buffer on request
 '/demos/charts/traffic.png': Mochi.api(async ({ url }) => {
+  // See implementation of serverChart in the tabs below
   const { renderTrafficChart } = await import('./serverChart');
   const format = url.searchParams.get('format') === 'jpeg' ? 'jpeg' : 'png';
   const image = await renderTrafficChart({ width: 640, height: 240, format });
@@ -160,8 +161,9 @@ ${'<'}/script>
 
   <h2>Server-rendered image chart</h2>
   <p>
-    LayerChart's <code>layerchart/server</code> module paints a chart onto a node canvas (<code>@napi-rs/canvas</code>) and hands back a PNG or JPEG buffer. A <code>Mochi.api</code> route
-    renders it on demand, so the image below is just <code>src="/demos/charts/traffic.png"</code> (add <code>?format=jpeg</code> for JPEG).
+    You can server-render charts as an image (JPEG/PNG) using <code>layerchart/server</code>. This is possible today in Mochi but requires a bit of glue code code, see
+    <code>serverChart.ts</code> in the tab view at the bottom of the demo for an example. The general recommendation if you want to go SSR-only is to use the SVG approach in the first
+    example.
   </p>
   <CodeSnippet html={serverComponentExample} />
   <CodeSnippet html={serverRouteExample} />

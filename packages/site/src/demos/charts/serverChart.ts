@@ -1,74 +1,63 @@
 import path from 'node:path';
-import type { Component } from 'svelte';
-import { compile, compileModule, preprocess, type PreprocessorGroup } from 'svelte/compiler';
+import { compile, compileModule } from 'svelte/compiler';
 import { createCanvas, Path2D } from '@napi-rs/canvas';
 import { traffic } from './data.ts';
 
+// renderChart draws the marks with Path2D and expects it on globalThis.
 if (typeof globalThis.Path2D === 'undefined') {
   (globalThis as { Path2D?: unknown }).Path2D = Path2D;
 }
 
-const tsTranspiler = new Bun.Transpiler({ loader: 'ts' });
-const tsPreprocessor: PreprocessorGroup = {
-  name: 'demo-ts',
-  script: ({ content, attributes }) => (attributes.lang === 'ts' ? { code: tsTranspiler.transformSync(content) } : undefined),
+export type ChartFormat = 'png' | 'jpeg';
+
+type ChartBundle = {
+  renderChart: (
+    component: unknown,
+    options: { width: number; height: number; format: ChartFormat; background: string; props: object; createCanvas: (w: number, h: number) => unknown },
+  ) => Uint8Array;
+  ServerTrafficChart: unknown;
 };
 
+// Mochi can't import `.svelte` in server code, so compile the ServerChart tree to a JS bundle here.
+// `.svelte.js` rune modules (layerchart's chart state) need compileModule, not compile.
 const svelteServerPlugin: import('bun').BunPlugin = {
   name: 'svelte-server',
   setup(build) {
-    build.onLoad({ filter: /\.svelte$/ }, async ({ path: file }) => {
-      const raw = await Bun.file(file).text();
-      const src = raw.includes('lang') ? (await preprocess(raw, [tsPreprocessor], { filename: file })).code : raw;
-      return { contents: compile(src, { generate: 'server', filename: file }).js.code, loader: 'js' };
-    });
-    build.onLoad({ filter: /\.svelte\.[jt]s$/ }, async ({ path: file }) => {
-      const raw = await Bun.file(file).text();
-      const src = file.endsWith('.ts') ? tsTranspiler.transformSync(raw) : raw;
-      return { contents: compileModule(src, { generate: 'server', filename: file }).js.code, loader: 'js' };
-    });
+    build.onLoad({ filter: /\.svelte$/ }, async ({ path: f }) => ({
+      contents: compile(await Bun.file(f).text(), { generate: 'server', filename: f }).js.code,
+      loader: 'js',
+    }));
+    build.onLoad({ filter: /\.svelte\.[jt]s$/ }, async ({ path: f }) => ({
+      contents: compileModule(await Bun.file(f).text(), { generate: 'server', filename: f }).js.code,
+      loader: 'js',
+    }));
   },
 };
 
-export type ChartFormat = 'png' | 'jpeg';
-
-type RenderOptions = { width: number; height: number; format: ChartFormat; background: string; props: Record<string, unknown>; createCanvas: (w: number, h: number) => unknown };
-type ChartBundle = {
-  renderChart: (component: Component, options: RenderOptions) => Uint8Array;
-  ServerTrafficChart: Component;
-};
-
-let bundlePromise: Promise<ChartBundle> | undefined;
-async function loadChartBundle(): Promise<ChartBundle> {
-  const entry = path.join(import.meta.dir, 'serverChartBundle.ts');
-  const outdir = path.join(import.meta.dir, '..', '..', '..', '.mochi', 'serverchart');
+let bundle: Promise<ChartBundle> | undefined;
+async function loadBundle(): Promise<ChartBundle> {
   const result = await Bun.build({
-    entrypoints: [entry],
+    entrypoints: [path.join(import.meta.dir, 'serverChartBundle.ts')],
     plugins: [svelteServerPlugin],
     target: 'bun',
     conditions: ['svelte'],
     external: ['svelte', 'svelte/*'],
-    outdir,
+    outdir: path.join(import.meta.dir, '..', '..', '..', '.mochi', 'serverchart'),
     throw: true,
   });
-  const out = result.outputs.find((o) => o.kind === 'entry-point');
-  if (!out) {
-    throw new Error('ServerTrafficChart compile produced no entry output');
-  }
-  return (await import(out.path)) as ChartBundle;
+  return import(result.outputs[0]!.path) as Promise<ChartBundle>;
 }
 
 export async function renderTrafficChart(opts: { width: number; height: number; format: ChartFormat }): Promise<Uint8Array<ArrayBuffer>> {
-  bundlePromise ??= loadChartBundle();
-  const { renderChart, ServerTrafficChart } = await bundlePromise;
+  const { renderChart, ServerTrafficChart } = await (bundle ??= loadBundle());
   const bytes = renderChart(ServerTrafficChart, {
     width: opts.width,
     height: opts.height,
     format: opts.format,
     background: 'white',
     props: { data: traffic },
-    createCanvas: (w, h) => createCanvas(w, h),
+    createCanvas,
   });
-  // Copy into an ArrayBuffer-backed view so it satisfies Response's BodyInit (a SharedArrayBuffer-backed one doesn't).
+  // Copy into an ArrayBuffer-backed view so it satisfies Response's BodyInit.
   return new Uint8Array(bytes);
 }
