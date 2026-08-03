@@ -31,14 +31,15 @@ describe('rateLimit postgresStore backend', () => {
       },
     });
     base = `http://localhost:${server.port}`;
-  });
+    // PGlite's WASM boot can take ~10s on slow machines — well past the default hook budget.
+  }, 60_000);
 
   afterAll(async () => {
-    server.stop(true);
-    await store.shutdown?.();
-    await pg.close();
+    server?.stop(true);
+    await store?.shutdown?.();
+    await pg?.close();
     rmSync(outDir, { recursive: true, force: true });
-  });
+  }, 20_000);
 
   test('blocks with 429 once the limit is exhausted', async () => {
     expect((await fetch(`${base}/api/limited`)).status).toBe(200);

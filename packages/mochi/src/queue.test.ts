@@ -1,20 +1,26 @@
 import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
-import { createQueue, getQueue, closeAllQueueResources, runQueueRecovery, DEFAULT_LOCK_DURATION_MS } from './queue';
-import type { MochiJob } from './queue';
+import { createQueue, getQueue, closeAllQueueResources, runQueueRecovery } from './queue';
+import type { MochiJob, MochiQueueBackend } from './queue';
+import type { MochiQueueFailedEvent } from './events';
 import { mochiEvents } from './events';
 import { initExtensions } from './extensions';
 import { setLogLevel } from './utils/log';
 import { markStartupMilestone, resetStartupMilestones } from './lifecycle';
 
-// bunqueue locks its embedded store to the first dataPath used in the process,
-// so the whole file shares one temp dir and each test uses a unique queue name.
 const dataDir = mkdtempSync(path.join(import.meta.dir, '..', '.mochi-queue-test-'));
-const dataPath = path.join(dataDir, 'queue.sqlite');
+const sqlitePath = path.join(dataDir, 'queue.sqlite');
 
+// Underscores so queue names survive table-name sanitization unchanged; unique per test so tables never collide.
 let counter = 0;
-const uniqueName = (): string => `q-${counter++}`;
+const uniqueName = (): string => `q_${counter++}`;
+
+// One shared db file (a backend maps each queue to its own table); factories so each test resolves the backend fresh.
+const BACKENDS: Array<{ label: string; backend: () => MochiQueueBackend }> = [
+  { label: 'memory', backend: () => 'memory' },
+  { label: 'sqlite', backend: () => ({ sqlite: sqlitePath, fedify: { pollInterval: { milliseconds: 50 } } }) },
+];
 
 function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
   let resolve!: (value: T) => void;
@@ -31,12 +37,12 @@ afterEach(async () => {
 });
 
 afterAll(async () => {
-  // The last afterEach closes bunqueue's embedded store (shutdownManager ->
-  // storage.close()), but Windows releases the underlying SQLite file lock
-  // asynchronously, so an immediate rm throws EBUSY. (Bun ignores rmSync's
-  // maxRetries option, so retry by hand.) This is best-effort cleanup of an
-  // ephemeral temp dir — never fail the suite over it, so give up quietly once
-  // the budget is exhausted; the OS reclaims it on process exit regardless.
+  // The last afterEach closes the shared sqlite handle, but Windows releases the
+  // underlying SQLite file lock asynchronously, so an immediate rm throws EBUSY.
+  // (Bun ignores rmSync's maxRetries option, so retry by hand.) This is
+  // best-effort cleanup of an ephemeral temp dir — never fail the suite over it,
+  // so give up quietly once the budget is exhausted; the OS reclaims it on
+  // process exit regardless.
   for (let attempt = 0; attempt < 25; attempt++) {
     try {
       rmSync(dataDir, { recursive: true, force: true });
@@ -47,18 +53,18 @@ afterAll(async () => {
   }
 });
 
-describe('Mochi queue', () => {
+describe.each(BACKENDS)('Mochi queue ($label)', ({ backend }) => {
   test('roundtrips a job from producer to consumer', async () => {
     const name = uniqueName();
     const seen = deferred<MochiJob<{ to: string }>>();
 
-    const queue = createQueue<{ to: string }>(
+    const queue = await createQueue<{ to: string }>(
       name,
       async (job) => {
         seen.resolve(job);
         return { sent: true };
       },
-      { dataPath },
+      { backend: backend() },
     );
 
     const ref = await queue.add('send', { to: 'alice@example.com' });
@@ -78,14 +84,14 @@ describe('Mochi queue', () => {
     let processed = 0;
     const done = deferred<void>();
 
-    const queue = createQueue<{ n: number }>(
+    const queue = await createQueue<{ n: number }>(
       name,
       async () => {
         if (++processed === 3) {
           done.resolve();
         }
       },
-      { dataPath },
+      { backend: backend() },
     );
 
     const refs = await queue.addBulk([
@@ -106,7 +112,7 @@ describe('Mochi queue', () => {
     let completed = 0;
     const allDone = deferred<void>();
 
-    const queue = createQueue<{ i: number }>(
+    const queue = await createQueue<{ i: number }>(
       name,
       async () => {
         active++;
@@ -117,7 +123,7 @@ describe('Mochi queue', () => {
           allDone.resolve();
         }
       },
-      { dataPath, concurrency: 2 },
+      { backend: backend(), concurrency: 2 },
     );
 
     await queue.addBulk([0, 1, 2, 3].map((i) => ({ name: 'job', data: { i } })));
@@ -140,7 +146,7 @@ describe('Mochi queue', () => {
     mochiEvents.on('queue:active', (e) => active.push(e));
     mochiEvents.on('queue:completed', (e) => completed.resolve(e));
 
-    const queue = createQueue<{ x: number }>(name, async () => ({ ok: true }), { dataPath });
+    const queue = await createQueue<{ x: number }>(name, async () => ({ ok: true }), { backend: backend() });
     await queue.add('compute', { x: 1 });
 
     const done = await completed.promise;
@@ -154,17 +160,17 @@ describe('Mochi queue', () => {
 
   test('reports failures via queue:failed and the on.failed listener', async () => {
     const name = uniqueName();
-    const failedEvent = deferred<{ error: string; attempt: number }>();
+    const failedEvent = deferred<MochiQueueFailedEvent>();
     const failedListener = deferred<Error>();
 
     mochiEvents.on('queue:failed', (e) => failedEvent.resolve(e));
 
-    const queue = createQueue<{ y: number }>(
+    const queue = await createQueue<{ y: number }>(
       name,
       async () => {
         throw new Error('boom');
       },
-      { dataPath },
+      { backend: backend() },
       { failed: (_job, error) => failedListener.resolve(error) },
     );
 
@@ -173,99 +179,268 @@ describe('Mochi queue', () => {
     const event = await failedEvent.promise;
     expect(event.error).toBe('boom');
     expect(event.attempt).toBe(1);
+    expect(event.willRetry).toBe(false);
 
     const error = await failedListener.promise;
     expect(error).toBeInstanceOf(Error);
     expect(error.message).toBe('boom');
   });
 
-  // bunqueue's embedded heartbeat refreshes stall detection but never renews the
-  // job's lock, so a job outliving `lockDuration` is requeued while it is still
-  // running and the success it eventually reports is rejected as someone else's
-  // work. Mochi's default TTL is 30 minutes, so this drives the failure with a
-  // deliberately tiny one; the lock reaper only ticks every 5s, hence the sleep.
-  // `attempts: 2` and `concurrency: 2` are both load-bearing — the requeued copy
-  // has to be retryable and pullable while the original is still running, and with
-  // `attempts: 1` the job completes cleanly instead.
-  //
-  // Only the rejected success is asserted, because what follows it is a bunqueue
-  // implementation detail that has already moved once: on 2.8.32 the job was
-  // retried (double-firing its side effects), on 2.8.44 it is abandoned instead.
-  // Both are the same defect from Mochi's side and both are fixed by not letting
-  // the lock expire. Before `lockDuration` was threaded through to the worker, a
-  // top-level value was silently dropped, the job kept the 30s default lock, and
-  // no failure fired at all — which is how this test catches a regression.
-  test('a job outliving lockDuration has its success rejected', async () => {
+  test('retries a failing job up to attempts with backoff, flagging willRetry', async () => {
     const name = uniqueName();
-    const failed = deferred<string>();
-    let runs = 0;
+    const failures: MochiQueueFailedEvent[] = [];
+    const exhausted = deferred<void>();
+    const attemptsSeen: number[] = [];
 
-    mochiEvents.on('queue:failed', (e) => failed.resolve(e.error));
+    mochiEvents.on('queue:failed', (e) => {
+      failures.push(e);
+      if (!e.willRetry) {
+        exhausted.resolve();
+      }
+    });
 
-    const queue = createQueue<{ z: number }>(
+    const queue = await createQueue<{ n: number }>(
       name,
-      async () => {
-        runs++;
-        await Bun.sleep(7000);
-        return { ok: true };
+      async (job) => {
+        attemptsSeen.push(job.attempt);
+        throw new Error(`fail #${job.attempt}`);
       },
-      { dataPath, concurrency: 2, lockDuration: 50 },
+      { backend: backend(), backoff: { type: 'fixed', delay: 10 } },
     );
 
-    await queue.add('slow', { z: 1 }, { attempts: 2, bunqueue: { backoff: 10 } });
+    await queue.add('retry-me', { n: 1 }, { attempts: 3 });
 
-    expect(await failed.promise).toMatch(/lock token/i);
-    expect(runs).toBe(1);
-  }, 30_000);
-
-  test('queue:lockDurationMs is resolved once per queue, after the per-queue option', () => {
-    const seen: Array<{ value: number; queue: string; explicit: boolean }> = [];
-    initExtensions({ filters: { 'queue:lockDurationMs': (value, ctx) => (seen.push({ value, ...ctx }), value) } });
-
-    const defaulted = uniqueName();
-    const chosen = uniqueName();
-    const passthrough = uniqueName();
-    try {
-      createQueue(defaulted, async () => null, { dataPath });
-      createQueue(chosen, async () => null, { dataPath, lockDuration: 50 });
-      createQueue(passthrough, async () => null, { dataPath, bunqueue: { lockDuration: 70 } });
-    } finally {
-      initExtensions({});
-    }
-
-    expect(seen).toEqual([
-      { value: DEFAULT_LOCK_DURATION_MS, queue: defaulted, explicit: false },
-      { value: 50, queue: chosen, explicit: true },
-      // The raw escape hatch feeds the filter rather than bypassing it, so the
-      // filtered value stays the last word on the lock.
-      { value: 70, queue: passthrough, explicit: true },
-    ]);
+    await exhausted.promise;
+    expect(attemptsSeen).toEqual([1, 2, 3]);
+    expect(failures.map((f) => f.attempt)).toEqual([1, 2, 3]);
+    expect(failures.map((f) => f.willRetry)).toEqual([true, true, false]);
   });
 
-  test('does not leak bunqueue job methods into the processor', async () => {
+  test('a delayed job does not run before its delay elapses', async () => {
+    const name = uniqueName();
+    const ran = deferred<number>();
+
+    const queue = await createQueue<{ v: number }>(
+      name,
+      async () => {
+        ran.resolve(performance.now());
+      },
+      { backend: backend() },
+    );
+
+    const enqueuedAt = performance.now();
+    await queue.add('later', { v: 1 }, { delay: 150 });
+
+    const startedAt = await ran.promise;
+    expect(startedAt - enqueuedAt).toBeGreaterThanOrEqual(140);
+  });
+
+  test('jobs sharing an orderingKey run sequentially in enqueue order at concurrency 1', async () => {
+    const name = uniqueName();
+    const order: number[] = [];
+    const done = deferred<void>();
+
+    const queue = await createQueue<{ seq: number }>(
+      name,
+      async (job) => {
+        order.push(job.data.seq);
+        if (order.length === 3) {
+          done.resolve();
+        }
+      },
+      { backend: backend(), concurrency: 1 },
+    );
+
+    await queue.add('step', { seq: 1 }, { orderingKey: 'chain' });
+    await queue.add('step', { seq: 2 }, { orderingKey: 'chain' });
+    await queue.add('step', { seq: 3 }, { orderingKey: 'chain' });
+
+    await done.promise;
+    expect(order).toEqual([1, 2, 3]);
+  });
+
+  test('depth() reports what is waiting in the store', async () => {
+    const name = uniqueName();
+    const queue = await createQueue(name, async () => null, { backend: backend() });
+
+    // A far-future delayed job stays in the store, so the count is deterministic
+    // even though the listen loop is already draining ready messages.
+    await queue.add('someday', { v: 1 }, { delay: 60_000 });
+
+    const depth = await queue.depth();
+    expect(depth).toBeDefined();
+    expect(depth!.queued).toBe(1);
+    expect(depth!.delayed).toBe(1);
+    expect(depth!.ready).toBe(0);
+  });
+
+  test('does not leak backend message internals into the processor', async () => {
     const name = uniqueName();
     const seen = deferred<MochiJob<unknown>>();
 
-    const queue = createQueue(
+    const queue = await createQueue(
       name,
       async (job) => {
         seen.resolve(job);
         return null;
       },
-      { dataPath },
+      { backend: backend() },
     );
 
     await queue.add('probe', { hello: 'world' });
 
     const job = await seen.promise;
-    expect((job as unknown as Record<string, unknown>).moveToCompleted).toBeUndefined();
-    expect((job as unknown as Record<string, unknown>).updateProgress).toBeUndefined();
+    expect((job as unknown as Record<string, unknown>).__mochi).toBeUndefined();
+    expect((job as unknown as Record<string, unknown>).attempts).toBeUndefined();
     expect(Object.keys(job).sort()).toEqual(['attempt', 'data', 'enqueuedAt', 'id', 'name', 'queue']);
   });
 
-  test('getQueue resolves the producer handle created for a name', () => {
+  test('closeAllQueueResources drains an in-flight job before closing the store', async () => {
     const name = uniqueName();
-    const created = createQueue(name, async () => null, { dataPath });
+    const started = deferred<void>();
+    let finished = false;
+
+    const queue = await createQueue(
+      name,
+      async () => {
+        started.resolve();
+        await Bun.sleep(120);
+        finished = true;
+      },
+      { backend: backend() },
+    );
+
+    await queue.add('slow', { v: 1 });
+    await started.promise;
+    await closeAllQueueResources();
+    expect(finished).toBe(true);
+  });
+});
+
+// Backend-independent behavior (registry, recovery, lifecycle errors) runs once on the memory backend.
+describe('Mochi queue', () => {
+  test('a raw MessageQueue instance works as a backend, and depth() is undefined without getDepth', async () => {
+    const name = uniqueName();
+    const seen = deferred<MochiJob<{ v: number }>>();
+
+    // Minimal fedify-shaped transport: no delay support, no getDepth.
+    const messages: unknown[] = [];
+    let notify: (() => void) | null = null;
+    const rawQueue = {
+      async enqueue(message: unknown) {
+        messages.push(message);
+        notify?.();
+      },
+      async listen(handler: (message: unknown) => Promise<void> | void, options: { signal?: AbortSignal } = {}) {
+        while (!options.signal?.aborted) {
+          if (messages.length > 0) {
+            await handler(messages.shift());
+            continue;
+          }
+          await new Promise<void>((resolve) => {
+            notify = resolve;
+            options.signal?.addEventListener('abort', () => resolve(), { once: true });
+          });
+          notify = null;
+        }
+      },
+    };
+
+    const queue = await createQueue<{ v: number }>(
+      name,
+      async (job) => {
+        seen.resolve(job);
+      },
+      { backend: rawQueue },
+    );
+
+    await queue.add('custom', { v: 42 });
+    const job = await seen.promise;
+    expect(job.data).toEqual({ v: 42 });
+    expect(await queue.depth()).toBeUndefined();
+
+    // The same instance cannot back a second queue — its single listen loop would steal messages.
+    expect(createQueue(uniqueName(), async () => null, { backend: rawQueue })).rejects.toThrow(/already backs another queue/);
+  });
+
+  test('a non-Mochi message on the store is dropped with a queue:error', async () => {
+    const name = uniqueName();
+    const errors: Array<{ queue: string; error: string }> = [];
+    let processed = 0;
+    mochiEvents.on('queue:error', (e) => errors.push(e));
+
+    let notify: (() => void) | null = null;
+    const messages: unknown[] = [];
+    const rawQueue = {
+      async enqueue(message: unknown) {
+        messages.push(message);
+        notify?.();
+      },
+      async listen(handler: (message: unknown) => Promise<void> | void, options: { signal?: AbortSignal } = {}) {
+        while (!options.signal?.aborted) {
+          if (messages.length > 0) {
+            await handler(messages.shift());
+            continue;
+          }
+          await new Promise<void>((resolve) => {
+            notify = resolve;
+            options.signal?.addEventListener('abort', () => resolve(), { once: true });
+          });
+          notify = null;
+        }
+      },
+    };
+
+    await createQueue(
+      name,
+      async () => {
+        processed++;
+      },
+      { backend: rawQueue },
+    );
+
+    // A foreign producer writing to the same store bypasses Mochi's envelope.
+    await rawQueue.enqueue({ some: 'foreign payload' });
+    await Bun.sleep(20);
+
+    expect(processed).toBe(0);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]!.queue).toBe(name);
+    expect(errors[0]!.error).toMatch(/non-Mochi message/);
+  });
+
+  test('two queue names that sanitize to the same table are rejected', async () => {
+    const first = await createQueue('collide me', async () => null, { backend: { sqlite: sqlitePath } });
+    expect(first.name).toBe('collide me');
+    expect(createQueue('collide_me', async () => null, { backend: { sqlite: sqlitePath } })).rejects.toThrow(/both map to backend table/);
+  });
+
+  test('a job persisted by the sqlite backend survives a close and remount', async () => {
+    const name = uniqueName();
+    const backend: MochiQueueBackend = { sqlite: sqlitePath, fedify: { pollInterval: { milliseconds: 50 } } };
+
+    const before = await createQueue(name, async () => null, { backend });
+    // Far enough out that the first mount cannot deliver it before we close.
+    await before.add('survivor', { v: 1 }, { delay: 300 });
+    await closeAllQueueResources();
+
+    const seen = deferred<MochiJob<unknown>>();
+    await createQueue(
+      name,
+      async (job) => {
+        seen.resolve(job);
+      },
+      { backend },
+    );
+
+    const job = await seen.promise;
+    expect(job.name).toBe('survivor');
+    expect(job.data).toEqual({ v: 1 });
+  });
+
+  test('getQueue resolves the producer handle created for a name', async () => {
+    const name = uniqueName();
+    const created = await createQueue(name, async () => null, {});
     expect(getQueue(name)).toBe(created);
   });
 
@@ -277,9 +452,9 @@ describe('Mochi queue', () => {
     expect(() => getQueue('never-declared')).toThrow(/mochi:init/);
   });
 
-  test('getQueue names the mounted queues once mounting finished', () => {
+  test('getQueue names the mounted queues once mounting finished', async () => {
     const name = uniqueName();
-    createQueue(name, async () => null, { dataPath });
+    await createQueue(name, async () => null, {});
     markStartupMilestone('mochi:queuesMounted');
     expect(() => getQueue('typoed')).toThrow(/no such queue/);
     expect(() => getQueue('typoed')).toThrow(new RegExp(`Mounted queues: ${name}`));
@@ -292,7 +467,7 @@ describe('Mochi queue', () => {
 
   test('runQueueRecovery hands each callback its own producer handle', async () => {
     const name = uniqueName();
-    const created = createQueue(name, async () => null, { dataPath });
+    const created = await createQueue(name, async () => null, {});
     let received: unknown;
     await runQueueRecovery([[name, { recover: (queue) => void (received = queue) }]]);
     expect(received).toBe(created);
@@ -300,7 +475,7 @@ describe('Mochi queue', () => {
 
   test('a throwing recover is contained and reported on the event bus', async () => {
     const name = uniqueName();
-    createQueue(name, async () => null, { dataPath });
+    await createQueue(name, async () => null, {});
     const errors: Array<{ queue: string; error: string }> = [];
     mochiEvents.on('queue:error', (e) => errors.push(e));
 
@@ -322,7 +497,7 @@ describe('Mochi queue', () => {
   // real threshold is 30s, so these drive it down far enough to observe.
   async function recoveryWarnings(stallMs: number | null): Promise<string[]> {
     const name = uniqueName();
-    createQueue(name, async () => null, { dataPath });
+    await createQueue(name, async () => null, {});
     initExtensions(stallMs === null ? {} : { filters: { 'queue:recoveryStallWarningMs': () => stallMs } });
 
     const warnings: string[] = [];
@@ -357,7 +532,7 @@ describe('Mochi queue', () => {
 
   test('closeAllQueueResources closes resources and is idempotent', async () => {
     const name = uniqueName();
-    createQueue(name, async () => null, { dataPath });
+    await createQueue(name, async () => null, {});
 
     await closeAllQueueResources();
     // After draining, the handle is gone from the registry.

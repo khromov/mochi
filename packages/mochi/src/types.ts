@@ -7,7 +7,7 @@ import type { MochiProxyOptions } from './runtime/proxy';
 import type { LocalImageAsset, MochiImageOptions } from './image/types';
 import type { MochiEmailOptions } from './email/types';
 import type { MochiCaptchaOptions } from './captcha/types';
-import type { MochiProcessor, MochiQueue, MochiQueueListeners, MochiQueueRuntimeOptions } from './queue';
+import type { MochiProcessor, MochiQueue, MochiQueueBackend, MochiQueueListeners, MochiQueueRuntimeOptions } from './queue';
 import type { MochiRateLimitOptions } from './runtime/rateLimit';
 import type { MochiSvelteCompiler } from './compiler/svelteCompilerBackend';
 
@@ -419,6 +419,11 @@ export interface MochiServeOptions {
    * Add jobs from route code via `Mochi.getQueue(name).add(...)`. Queues drain gracefully on shutdown.
    */
   queues?: Record<string, MochiQueueConfig>;
+  /**
+   * Default backend for every queue in `queues` — `'memory'` (default), `{ sqlite: path }`, `{ postgres: url }`, or a
+   * fedify `MessageQueue` instance. A queue's own `backend` option overrides it.
+   */
+  queueBackend?: MochiQueueBackend;
   fetch?: (req: Request, server: Server<undefined>) => Response | Promise<Response>;
   htmlShell?: string;
   /**

@@ -37,9 +37,9 @@ throw new Error('serve should have halted execution before this line');`,
     expect(options?.optimize).toEqual({ enabled: true, exclude: ['x.svelte'] });
   });
 
-  test('captures the queues map without starting a queue thread', async () => {
+  test('captures the queues map without starting a queue listener', async () => {
     // Mochi.queue() is inert config, so importing the entry for extraction must
-    // not spawn a live bunqueue thread (which would hang the build). The test
+    // not start a live listen loop (which would hang the build). The test
     // simply completing proves nothing kept the event loop alive.
     const entry = writeEntry(
       `import { Mochi } from 'mochi-framework';

@@ -99,10 +99,13 @@
   },
   "dependencies": {
     "@css-inline/css-inline-wasm": "^0.21.0",
+    "@fedify/fedify": "^2.3.4",
+    "@fedify/postgres": "^2.3.4",
+    "@fedify/sqlite": "^2.3.4",
     "@joint-ops/hitlimit-bun": "1.5.0",
+    "@js-temporal/polyfill": "^0.5.1",
     "@noble/ciphers": "2.2.0",
     "@noble/hashes": "2.2.0",
-    "bunqueue": "^2.8.44",
     "chokidar": "^5.0.0",
     "deepmerge": "^4.3.1",
     "devalue": "^5.8.2",
@@ -112,6 +115,7 @@
     "mitt": "^3.0.1",
     "negotiator": "^1.0.0",
     "nodemailer": "^9.0.3",
+    "postgres": "^3.4.9",
     "svelte-shaker": ">=0.18.1",
     "zimmerframe": "^1.1.4"
   },

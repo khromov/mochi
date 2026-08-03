@@ -186,7 +186,7 @@ export class Mochi {
    * anywhere via `Mochi.getQueue(name).add(...)`, and the queue drains gracefully on shutdown.
    */
   static queue<T = unknown, R = unknown>(config: MochiQueueOptions<T, R>): MochiQueueConfig {
-    // Whatever survives the destructure is forwarded verbatim to bunqueue.
+    // Whatever survives the destructure is the runtime options (backend, concurrency, backoff, …), kept inert until mount.
     const { process, on, recover, ...options } = config;
     return {
       __mochiQueue: true,
@@ -1727,7 +1727,7 @@ export class Mochi {
     // just-bound server down rather than leaving it listening half-started.
     try {
       for (const [name, config] of Object.entries(options.queues ?? {})) {
-        createQueue(name, config.process, config.options, config.on);
+        await createQueue(name, config.process, { ...config.options, backend: config.options?.backend ?? options.queueBackend }, config.on);
       }
     } catch (err) {
       await closeAllQueueResources();

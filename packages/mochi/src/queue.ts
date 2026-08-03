@@ -1,39 +1,52 @@
-// The isolation boundary around bunqueue: the only module importing `bunqueue/client`, and the only one whose rewrite a
-// backend swap would need.
-import { Queue, Worker, shutdownManager } from 'bunqueue/client';
-import type { Job, JobOptions } from 'bunqueue/client';
+// The isolation boundary around the queue transport: messages travel through fedify `MessageQueue` drivers
+// (see queue/backends.ts), while retry, backoff, concurrency, and the `queue:*` events live here in Mochi's worker
+// layer — the drivers are pure transports and never see a failure.
+import type { MessageQueueEnqueueOptions } from '@fedify/fedify';
+import { Temporal } from '@js-temporal/polyfill';
 import { pinGlobal } from './utils/globalState';
 import { applyFilter } from './extensions';
 import { startupMilestoneReached } from './lifecycle';
 import { mochiEvents } from './events';
 import { logger } from './utils/log';
+import { resolveBackend, closeBackendResources } from './queue/backends';
+import type { MochiQueueBackend } from './queue/backends';
+import { WorkerPool } from './queue/workerPool';
 
-/** Deliberately narrow — data, not bunqueue's ~40 mutation methods — so userland can't reach behind the abstraction. */
+export type { MochiQueueBackend } from './queue/backends';
+
+/** Deliberately narrow — data, not the transport message — so userland can't reach behind the abstraction. */
 export interface MochiJob<T> {
   readonly id: string;
   readonly name: string;
   readonly data: T;
   readonly queue: string;
-  /** 1-based (bunqueue's `attemptsMade` is 0-based on the first run). */
+  /** 1-based; increments on each retry re-enqueue. */
   readonly attempt: number;
   readonly enqueuedAt: number;
 }
 
 export type MochiProcessor<T, R> = (job: MochiJob<T>) => R | Promise<R>;
 
-/** Lightweight handle returned by `add()` / `addBulk()` — never bunqueue's `Job`. */
+/** Lightweight handle returned by `add()` / `addBulk()`. */
 export interface MochiJobRef {
   id: string;
   name: string;
 }
 
+/** Failure backoff between retry attempts; `exponential` doubles per attempt: `delay * 2^(attempt-1)`. */
+export interface MochiBackoffOptions {
+  type: 'fixed' | 'exponential';
+  /** Base delay in ms. */
+  delay: number;
+  maxDelay?: number;
+}
+
 export interface MochiJobOptions {
-  priority?: number;
+  /** Delay before the job becomes runnable, in ms. */
   delay?: number;
   attempts?: number;
-  jobId?: string;
-  /** Forwarded verbatim to bunqueue's `JobOptions`; spread last, so it overrides the fields above. */
-  bunqueue?: Record<string, unknown>;
+  /** Jobs sharing an ordering key are delivered sequentially (guarantee strength is backend-dependent; combine with `concurrency: 1` for strict ordering). */
+  orderingKey?: string;
 }
 
 /** Lifecycle listeners; the same map is used for the per-queue `on` option and the `MochiQueueListeners` config. */
@@ -47,13 +60,11 @@ export interface MochiQueueListeners<T, R> {
 /** The non-processor settings of a queue — what survives on the inert `MochiQueueConfig.options`. */
 export interface MochiQueueRuntimeOptions {
   concurrency?: number;
-  /** Omit for in-memory. bunqueue locks the path to the first queue in the process — see `rememberDataPath`. */
-  dataPath?: string;
-  /** How long a job may run before the queue reclaims it, in ms. Must exceed `process`'s worst-case runtime — see `DEFAULT_LOCK_DURATION_MS`. */
-  lockDuration?: number;
+  /** Where messages live — defaults to the serve-level `queueBackend`, then `'memory'`. */
+  backend?: MochiQueueBackend;
+  /** Applied between retry attempts when a job fails with attempts remaining. */
+  backoff?: MochiBackoffOptions;
   defaultJobOptions?: MochiJobOptions;
-  /** Forwarded verbatim to bunqueue's `Queue` and `Worker` constructors. */
-  bunqueue?: Record<string, unknown>;
 }
 
 /** The full config object passed to `Mochi.queue({ process, … })`. */
@@ -68,113 +79,162 @@ export interface MochiQueueOptions<T, R = unknown> extends MochiQueueRuntimeOpti
   recover?: (queue: MochiQueue<T>) => void | Promise<void>;
 }
 
+/** What's waiting in the backend store, excluding jobs already handed to the processor. */
+export interface MochiQueueDepth {
+  queued: number;
+  ready?: number;
+  delayed?: number;
+}
+
 /** Handle returned by `Mochi.getQueue(name)` — what you add jobs through. */
 export interface MochiQueue<T> {
   readonly name: string;
   add(name: string, data: T, opts?: MochiJobOptions): Promise<MochiJobRef>;
   addBulk(jobs: Array<{ name: string; data: T; opts?: MochiJobOptions }>): Promise<MochiJobRef[]>;
+  /** `undefined` when the backend driver doesn't report depth. */
+  depth(): Promise<MochiQueueDepth | undefined>;
 }
 
-interface Closeable {
-  /** Drain order on shutdown: workers stop pulling jobs before queues close. */
-  kind: 'worker' | 'queue';
-  close(): Promise<void>;
+/** The wire format every Mochi job travels as, whatever the backend. */
+interface MochiQueueEnvelope<T> {
+  /** Marker + version; a message without it (e.g. a foreign producer on a shared store) is dropped with a `queue:error`. */
+  __mochi: 1;
+  id: string;
+  name: string;
+  data: T;
+  /** 1-based; incremented on each retry re-enqueue. */
+  attempt: number;
+  /** Total attempts allowed, resolved at first enqueue. */
+  attempts: number;
+  /** Epoch ms of the FIRST enqueue, preserved across retries. */
+  enqueuedAt: number;
+  orderingKey?: string;
+}
+
+interface MountedQueue {
+  name: string;
+  controller: AbortController;
+  listening: Promise<void>;
+  pool: WorkerPool;
 }
 
 interface QueueRegistry {
   /** Producer handles, keyed by name; what `getQueue()` resolves. */
   byName: Map<string, MochiQueue<unknown>>;
-  /** Every producer/consumer resource, for `closeAllQueueResources` to drain on shutdown. */
-  closeables: Set<Closeable>;
-  /** First `dataPath` seen; bunqueue ignores later differing paths in the same process. */
-  dataPath: string | null | undefined;
+  /** Live listen loops + pools, for `closeAllQueueResources` to drain on shutdown. */
+  mounted: Set<MountedQueue>;
 }
 
 // Pinned so every duplicate bundled copy of this module shares one registry, since `closeAllQueueResources` must see
 // every resource to drain it whichever copy created it.
 const registry = pinGlobal<QueueRegistry>('__mochi_queue_registry__', () => ({
   byName: new Map(),
-  closeables: new Set(),
-  dataPath: undefined,
+  mounted: new Set(),
 }));
 
-function rememberDataPath(dataPath: string | undefined): void {
-  if (registry.dataPath === undefined) {
-    registry.dataPath = dataPath ?? null;
-    return;
+function backoffDelayMs(backoff: MochiBackoffOptions | undefined, failedAttempt: number): number {
+  if (!backoff) {
+    return 0;
   }
-  const prior = registry.dataPath ?? '(in-memory)';
-  const next = dataPath ?? '(in-memory)';
-  if (prior !== next) {
-    logger.warn(`[queue] dataPath "${next}" ignored — bunqueue locks the embedded store to the first path used this process ("${prior}"). Use one dataPath per process.`);
-  }
+  const delay = backoff.type === 'exponential' ? backoff.delay * 2 ** (failedAttempt - 1) : backoff.delay;
+  return backoff.maxDelay !== undefined ? Math.min(delay, backoff.maxDelay) : delay;
 }
 
-function toMochiJob<T>(job: Job<T>, queueName: string): MochiJob<T> {
+// The fedify enqueue contract wants a real Temporal.Duration; the polyfill's is duck-type-compatible (the drivers call
+// `.total()` rather than instanceof-checking) but not type-identical to the `esnext.temporal` lib type, hence the cast.
+function enqueueOptions<T>(env: MochiQueueEnvelope<T>, delayMs: number): MessageQueueEnqueueOptions {
   return {
-    id: job.id,
-    name: job.name,
-    data: job.data,
-    queue: queueName,
-    attempt: job.attemptsMade + 1,
-    enqueuedAt: job.timestamp,
+    delay: delayMs > 0 ? (Temporal.Duration.from({ milliseconds: Math.round(delayMs) }) as unknown as MessageQueueEnqueueOptions['delay']) : undefined,
+    orderingKey: env.orderingKey,
   };
 }
 
-function toBunJobOptions(opts: MochiJobOptions | undefined): JobOptions | undefined {
-  if (!opts) {
-    return undefined;
-  }
-  const { priority, delay, attempts, jobId, bunqueue } = opts;
-  return { priority, delay, attempts, jobId, ...bunqueue };
+function toMochiJob<T>(env: MochiQueueEnvelope<T>, queueName: string): MochiJob<T> {
+  return {
+    id: env.id,
+    name: env.name,
+    data: env.data,
+    queue: queueName,
+    attempt: env.attempt,
+    enqueuedAt: env.enqueuedAt,
+  };
 }
 
 /**
- * bunqueue defaults a job's lock to 30s and renews it from the worker heartbeat over TCP only; Mochi's embedded
- * heartbeat calls `jobHeartbeat(id)` without a token, refreshing stall detection but never the lock. The lock therefore
- * always expires on schedule, and a job outliving it is requeued mid-flight, its eventual success rejected with
- * "Invalid or expired lock token", reported as a failure, and retried — double-firing whatever it already did. A single
- * SMTP send has taken 58s in production, so the ceiling is raised to bunqueue's own 30-minute cap.
- *
- * That cap is also why this is the highest useful value: bunqueue's `cleanOrphanedProcessingEntries` drops any entry
- * processing for over 30 minutes whatever the lock says. Lowering it still matters, though a crashed worker's jobs come
- * back through stall detection off the heartbeat, independently of the lock.
- */
-export const DEFAULT_LOCK_DURATION_MS = 30 * 60_000;
-
-/**
- * Build a bunqueue `Queue` (producer) and `Worker` (consumer) from one config, registering the producer under `name` for
- * `getQueue` and both resources for shutdown draining. Called only by `Mochi.serve`, where a queue is declared once with
+ * Resolve the backend, register the producer under `name` for `getQueue`, and start the consumer listen loop feeding
+ * `process` through a concurrency-capped worker pool. Called only by `Mochi.serve`, where a queue is declared once with
  * its processor co-located.
  */
-export function createQueue<T = unknown, R = unknown>(
+export async function createQueue<T = unknown, R = unknown>(
   name: string,
   process: MochiProcessor<T, R>,
   options?: MochiQueueRuntimeOptions,
   listeners?: Partial<MochiQueueListeners<T, R>>,
-): MochiQueue<T> {
-  rememberDataPath(options?.dataPath);
+): Promise<MochiQueue<T>> {
+  const { queue: transport } = await resolveBackend(name, options?.backend);
+  const defaults = options?.defaultJobOptions;
+  const backoff = options?.backoff;
 
-  const queue = new Queue<T>(name, {
-    embedded: true,
-    dataPath: options?.dataPath,
-    defaultJobOptions: toBunJobOptions(options?.defaultJobOptions),
-    ...options?.bunqueue,
+  const toEnvelope = (jobName: string, data: T, opts?: MochiJobOptions): MochiQueueEnvelope<T> => ({
+    __mochi: 1,
+    id: crypto.randomUUID(),
+    name: jobName,
+    data,
+    attempt: 1,
+    attempts: Math.max(1, opts?.attempts ?? defaults?.attempts ?? 1),
+    enqueuedAt: Date.now(),
+    orderingKey: opts?.orderingKey ?? defaults?.orderingKey,
   });
 
   const producer: MochiQueue<T> = {
     name,
     async add(jobName, data, jobOpts) {
-      const job = await queue.add(jobName, data, toBunJobOptions(jobOpts));
-      mochiEvents.emit('queue:added', { queue: name, jobId: job.id, jobName: job.name });
-      return { id: job.id, name: job.name };
+      const env = toEnvelope(jobName, data, jobOpts);
+      await transport.enqueue(env, enqueueOptions(env, jobOpts?.delay ?? defaults?.delay ?? 0));
+      mochiEvents.emit('queue:added', { queue: name, jobId: env.id, jobName: env.name });
+      return { id: env.id, name: env.name };
     },
     async addBulk(jobs) {
-      const created = await queue.addBulk(jobs.map((j) => ({ name: j.name, data: j.data, opts: toBunJobOptions(j.opts) })));
-      for (const job of created) {
-        mochiEvents.emit('queue:added', { queue: name, jobId: job.id, jobName: job.name });
+      // `enqueueMany` takes one options object for the whole batch, so jobs are grouped by effective (delay, orderingKey).
+      const groups = new Map<string, { delayMs: number; envelopes: MochiQueueEnvelope<T>[] }>();
+      for (const job of jobs) {
+        const env = toEnvelope(job.name, job.data, job.opts);
+        const delayMs = job.opts?.delay ?? defaults?.delay ?? 0;
+        const key = delayMs + '\u0000' + (env.orderingKey ?? '');
+        const group = groups.get(key);
+        if (group) {
+          group.envelopes.push(env);
+        } else {
+          groups.set(key, { delayMs, envelopes: [env] });
+        }
       }
-      return created.map((job) => ({ id: job.id, name: job.name }));
+      const refs: MochiJobRef[] = [];
+      for (const { delayMs, envelopes } of groups.values()) {
+        const [first] = envelopes;
+        if (!first) {
+          continue;
+        }
+        const opts = enqueueOptions(first, delayMs);
+        if (typeof transport.enqueueMany === 'function') {
+          await transport.enqueueMany(envelopes, opts);
+        } else {
+          for (const env of envelopes) {
+            await transport.enqueue(env, opts);
+          }
+        }
+        for (const env of envelopes) {
+          mochiEvents.emit('queue:added', { queue: name, jobId: env.id, jobName: env.name });
+          refs.push({ id: env.id, name: env.name });
+        }
+      }
+      return refs;
+    },
+    async depth() {
+      if (typeof transport.getDepth !== 'function') {
+        return undefined;
+      }
+      const depth = await transport.getDepth();
+      return { queued: depth.queued, ready: depth.ready, delayed: depth.delayed };
     },
   };
 
@@ -184,9 +244,6 @@ export function createQueue<T = unknown, R = unknown>(
     failed: new Set(),
     error: new Set(),
   };
-  // Seed caller listeners (from `Mochi.queue({ on })`) BEFORE constructing the
-  // worker, which starts draining immediately. Wiring them after would let a job
-  // already queued complete in the gap and miss the `completed`/`active` handler.
   if (listeners) {
     for (const key of Object.keys(listeners) as (keyof MochiQueueListeners<T, R>)[]) {
       const listener = listeners[key];
@@ -196,69 +253,80 @@ export function createQueue<T = unknown, R = unknown>(
     }
   }
 
-  // Filtered per queue after whatever the queue declared for itself, through the first-class option or the raw
-  // `bunqueue` passthrough, so the result is applied last rather than spread over. A deployment can then move the lock
-  // for every queue at once and still see via `explicit` which ones chose a value themselves.
-  const declaredLock = options?.lockDuration ?? (typeof options?.bunqueue?.lockDuration === 'number' ? options.bunqueue.lockDuration : undefined);
-  const lockDuration = applyFilter('queue:lockDurationMs', declaredLock ?? DEFAULT_LOCK_DURATION_MS, {
-    queue: name,
-    explicit: declaredLock !== undefined,
-  });
+  const pool = new WorkerPool(Math.max(1, options?.concurrency ?? 1));
 
-  const worker = new Worker<T, R>(name, (job) => process(toMochiJob(job as Job<T>, name)), {
-    embedded: true,
-    dataPath: options?.dataPath,
-    concurrency: options?.concurrency,
-    ...options?.bunqueue,
-    lockDuration,
-  });
-
-  // bunqueue's `finishedOn`/`processedOn` are unreliable on the public job at event time, so duration is measured here
-  // from the `active` event. Entries clear on completed/failed, and the map stays bounded by in-flight jobs.
-  const startedAt = new Map<string, number>();
-  const durationFor = (jobId: string): number => {
-    const start = startedAt.get(jobId);
-    startedAt.delete(jobId);
-    return start === undefined ? 0 : performance.now() - start;
+  const runJob = async (env: MochiQueueEnvelope<T>): Promise<void> => {
+    const job = toMochiJob(env, name);
+    mochiEvents.emit('queue:active', { queue: name, jobId: env.id, jobName: env.name, attempt: env.attempt });
+    for (const l of sinks.active) {
+      l(job);
+    }
+    const startedAt = performance.now();
+    try {
+      const result = await process(job);
+      mochiEvents.emit('queue:completed', { queue: name, jobId: env.id, jobName: env.name, attempt: env.attempt, duration: performance.now() - startedAt });
+      for (const l of sinks.completed) {
+        l(job, result);
+      }
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      const willRetry = env.attempt < env.attempts;
+      mochiEvents.emit('queue:failed', {
+        queue: name,
+        jobId: env.id,
+        jobName: env.name,
+        attempt: env.attempt,
+        duration: performance.now() - startedAt,
+        error: error.message,
+        willRetry,
+      });
+      for (const l of sinks.failed) {
+        l(job, error);
+      }
+      if (willRetry) {
+        try {
+          const retryEnv: MochiQueueEnvelope<T> = { ...env, attempt: env.attempt + 1 };
+          await transport.enqueue(retryEnv, enqueueOptions(retryEnv, backoffDelayMs(backoff, env.attempt)));
+        } catch (requeueErr) {
+          const message = requeueErr instanceof Error ? requeueErr.message : String(requeueErr);
+          logger.error(`[queue] ${name}: failed to re-enqueue job ${env.id} for retry — ${message}`);
+          mochiEvents.emit('queue:error', { queue: name, error: message });
+          for (const l of sinks.error) {
+            l(requeueErr instanceof Error ? requeueErr : new Error(message));
+          }
+        }
+      }
+    }
   };
 
-  worker.on('active', (job) => {
-    startedAt.set(job.id, performance.now());
-    mochiEvents.emit('queue:active', { queue: name, jobId: job.id, jobName: job.name, attempt: job.attemptsMade + 1 });
-    const mj = toMochiJob(job as Job<T>, name);
-    for (const l of sinks.active) {
-      l(mj);
-    }
-  });
-
-  worker.on('completed', (job, result) => {
-    mochiEvents.emit('queue:completed', { queue: name, jobId: job.id, jobName: job.name, attempt: job.attemptsMade + 1, duration: durationFor(job.id) });
-    const mj = toMochiJob(job as Job<T>, name);
-    for (const l of sinks.completed) {
-      l(mj, result);
-    }
-  });
-
-  worker.on('failed', (job, error) => {
-    mochiEvents.emit('queue:failed', { queue: name, jobId: job.id, jobName: job.name, attempt: job.attemptsMade + 1, duration: durationFor(job.id), error: error.message });
-    const mj = toMochiJob(job as Job<T>, name);
-    for (const l of sinks.failed) {
-      l(mj, error);
-    }
-  });
-
-  worker.on('error', (error) => {
-    mochiEvents.emit('queue:error', { queue: name, error: error.message });
-    for (const l of sinks.error) {
-      l(error);
-    }
-  });
+  const controller = new AbortController();
+  // The handler resolves once a pool slot is free and the job has STARTED, so the transport's listen loop can hand over
+  // the next message while up to `concurrency` jobs run; it also never throws, so driver-native retry never engages and
+  // Mochi's retry semantics stay uniform across backends.
+  const listening = transport
+    .listen(
+      (message: unknown) => {
+        const env = message as MochiQueueEnvelope<T>;
+        if (typeof env !== 'object' || env === null || env.__mochi !== 1) {
+          mochiEvents.emit('queue:error', { queue: name, error: `Dropped a non-Mochi message from the backend store: ${JSON.stringify(message)?.slice(0, 200)}` });
+          return;
+        }
+        return pool.run(() => runJob(env));
+      },
+      { signal: controller.signal },
+    )
+    .catch((err: unknown) => {
+      // A dead listen loop means the consumer is gone while producers keep enqueueing — surface loudly.
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error(`[queue] ${name}: listener stopped unexpectedly — ${message}`);
+      mochiEvents.emit('queue:error', { queue: name, error: message });
+      for (const l of sinks.error) {
+        l(err instanceof Error ? err : new Error(message));
+      }
+    });
 
   registry.byName.set(name, producer as MochiQueue<unknown>);
-  // bunqueue's Queue.close() is synchronous (returns void) — only Worker.close()
-  // is async — so the queue's closeable just wraps the sync call.
-  registry.closeables.add({ kind: 'queue', close: async () => void queue.close() });
-  registry.closeables.add({ kind: 'worker', close: () => worker.close() });
+  registry.mounted.add({ name, controller, listening, pool });
   return producer;
 }
 
@@ -302,8 +370,7 @@ export const DEFAULT_RECOVERY_STALL_WARNING_MS = 30_000;
  * every process that boots, so an N-instance deploy (or a rolling restart where
  * old and new overlap) has N processes re-enqueueing the same work from the same
  * store — N copies of every stranded job. Today only single-instance apps are
- * safe, which the embedded-mode-only note in the queues docs already implies but
- * doesn't state.
+ * safe, which the queues docs already imply but don't state.
  *
  * The intended shape, in order:
  *   1. Sleep a random jitter before touching the store — default 0–5000ms, with
@@ -313,8 +380,9 @@ export const DEFAULT_RECOVERY_STALL_WARNING_MS = 30_000;
  *      boot-latency tradeoff, and 0/0 must remain a clean opt-out.
  *   2. Try to acquire a lease named for the queue through a cross-process
  *      persistence layer that DOES NOT EXIST YET — it has to outlive any single
- *      process, so neither `pinGlobal` nor bunqueue's embedded store qualifies.
- *      Designing that store is the actual blocking work here.
+ *      process, so `pinGlobal` doesn't qualify (a shared postgres backend could
+ *      carry one, but memory/sqlite deployments need an answer too). Designing
+ *      that store is the actual blocking work here.
  *   3. Run `recover()` only if the lease was won; otherwise skip it and say so
  *      at debug level. The lease needs a TTL so a process that dies mid-recovery
  *      doesn't lock the queue out of recovery forever — same reasoning as the
@@ -355,27 +423,20 @@ export async function runQueueRecovery(entries: Array<[string, { recover?: (queu
 }
 
 /**
- * Drain every queue resource — workers first (stop pulling new jobs), then
- * queues. Idempotent and never throws, so it's safe on both the serve shutdown
- * path and the build drain path.
+ * Drain every queue resource: stop the listen loops, wait for in-flight jobs to
+ * settle, then close the backing stores. Idempotent and never throws, so it's
+ * safe on both the serve shutdown path and the build drain path.
  */
 export async function closeAllQueueResources(): Promise<void> {
-  const closeables = [...registry.closeables];
-  // Workers first so they stop pulling new jobs (and drain in-flight ones)
-  // before the queues backing them close out from under them.
-  await Promise.allSettled(closeables.filter((c) => c.kind === 'worker').map((c) => c.close()));
-  await Promise.allSettled(closeables.filter((c) => c.kind === 'queue').map((c) => c.close()));
-  // Embedded mode keeps a process-global manager (open SQLite handle + several
-  // un-unref'd background intervals). Closing individual handles doesn't touch
-  // it, so without this the SQLite file stays locked (Windows rm -> EBUSY) and
-  // the intervals keep the event loop alive (the process never exits). Sync and
-  // idempotent, so it's safe on the double-call path.
-  shutdownManager();
-  // The manager is gone, so the embedded store's first-path lock is released too;
-  // reset the remembered path so a fresh queue created afterwards starts clean
-  // rather than warning against a stale path. Clear the resources too so a fresh
-  // serve in this process (e.g. a test that restarts) can re-mount its queues.
+  const mounted = [...registry.mounted];
+  // Listen loops first so no new message is handed over, then the pools so running jobs settle — a retry re-enqueued
+  // mid-drain still finds its store open, since the stores close only after.
+  for (const m of mounted) {
+    m.controller.abort();
+  }
+  await Promise.allSettled(mounted.map((m) => m.listening));
+  await Promise.allSettled(mounted.map((m) => m.pool.drain()));
+  await closeBackendResources();
   registry.byName.clear();
-  registry.closeables.clear();
-  registry.dataPath = undefined;
+  registry.mounted.clear();
 }

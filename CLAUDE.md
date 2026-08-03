@@ -15,7 +15,7 @@ Bun workspaces monorepo (`packages/*`):
 - `packages/support` — the support form at `support.mochi.fast`. Port 3336. Deployed separately via `Dockerfile.production`. It lives apart from `packages/site` because it is the only site configured with a real SMTP transport (`Mochi.serve({ email })`, driven by `SMTP_*` env vars — see its `.env.example`); every other site rides the framework default, which never sends. Refuses to boot in production without `ADMIN_PASSWORD` + `SMTP_HOST` + `MOCHI_ORIGIN`.
 - `packages/docs` — `mochi-docs`: markdown content only (no server/scripts of its own); consumed and rendered by `packages/site`.
 - `packages/cli` — published as `create-mochi`: the `mochi-framework build` and project-scaffolding CLI (`@clack/prompts` + `commander`).
-- `packages/msgpackr-extract-stub` — published as `@mochi-framework/msgpackr-extract-stub`; a pure-JS stub wired in via the root `overrides` so the native `msgpackr-extract` is never built.
+- `packages/msgpackr-extract-stub` — published as `@mochi-framework/msgpackr-extract-stub`; a historical pure-JS stub for the native `msgpackr-extract` accelerator. No longer wired into any workspace (the bunqueue dependency that pulled in msgpackr is gone); kept published for projects scaffolded by older `create-mochi` versions.
 - `packages/video-animations` — Satori-based frame generation for promo videos (`bun run mochi:animate`). Satori (yoga) rounds element `left`/`top` to the integer pixel grid, so animate position via `transform: translate(${x}px, ${y}px)` with the element pinned at `left:0/top:0` — driving per-frame motion through `left`/`top` stair-steps and jitters ~1–2px. See `leaf()` in `src/frame.ts`.
 - `packages/remotion` — rendered video output assets.
 
@@ -72,6 +72,7 @@ Source is grouped by subsystem; only the entry points and public API surface (`M
 - **`compiler/`** — the `.svelte` → JS pipeline: `ComponentRegistry.ts`, `svelteAstPreprocess.ts`, `svelteConfig.ts`, `svelteShaker.ts`, `compileCache.ts`, `preprocessCache.ts`, `serverOnlyScan.ts`, `buildInlineWebComponent.ts`, `freshImport.ts`, `tailwind.ts`.
 - **`runtime/`** — the per-request pipeline: `requestSetup.ts`, `requestContext.ts`, `cookies.ts`, `csrf.ts`, `proxy.ts`, `trailingSlash.ts`, `errors.ts`, `hooks.ts`, `rateLimit.ts`, `warmup.ts`, `publicDir.ts`, and forms (`forms.ts`, `formsJson.ts`, `enhance.*`).
 - **`islands/`** — `islandPropsRegistry.ts`, `serverIslandCrypto.ts`, `payloadCrypto.ts`.
+- **`queue/`** — the queue transport internals behind the top-level `queue.ts`: `backends.ts` (resolves `'memory'` / `{ sqlite }` / `{ postgres }` / raw fedify `MessageQueue` instances; lazy driver imports), `memoryQueue.ts` (the in-house fedify-compatible default backend — never runtime-import `@fedify/fedify`, its types are the only sanctioned import), `workerPool.ts` (per-queue concurrency gate). Retry/backoff/events live in `queue.ts`; the drivers are pure transports.
 - **`cache/`** — `cache.ts`, `cache-storage.ts`.
 - **`cli/`** — `cli.ts` (+ the `cli.js` bin shim), `build.ts`, `updateSkill.ts`, `generateKey.ts`, `checkEnvironment.ts`, `extractServeOptions.ts`, `testing.ts`.
 - **`dev/`** — `devWatcher.ts`, `consoleLogger.ts`, and the built-in admin/dev routes.

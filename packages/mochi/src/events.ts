@@ -204,6 +204,8 @@ export interface MochiQueueFailedEvent {
   duration: number;
   /** Message of the error the processor threw. */
   error: string;
+  /** Whether the job will be re-enqueued for another attempt (`attempt < attempts`). */
+  willRetry: boolean;
 }
 
 export interface MochiQueueErrorEvent {

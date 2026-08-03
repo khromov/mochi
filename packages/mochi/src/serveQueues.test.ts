@@ -29,8 +29,8 @@ describe('Mochi.queue descriptor', () => {
     const completed = (): void => {};
     const recover = (): void => {};
     const config = Mochi.queue({ process: async () => null, concurrency: 1, on: { completed }, recover });
-    // Anything left in `options` is forwarded verbatim to bunqueue, so these
-    // three must not leak through.
+    // Anything left in `options` is the runtime options handed to createQueue at
+    // mount, so these three must not leak through.
     expect(config.options).toEqual({ concurrency: 1 });
     expect(config.on?.completed).toBe(completed);
     expect(config.recover).toBe(recover);

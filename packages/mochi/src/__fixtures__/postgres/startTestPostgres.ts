@@ -17,7 +17,10 @@ export interface TestPostgres {
 
 export async function startTestPostgres(opts?: { initSql?: string }): Promise<TestPostgres> {
   const db = await PGlite.create();
-  const server = new PGLiteSocketServer({ db, port: 0, host: '127.0.0.1' });
+  // maxConnections defaults to 1, which hangs any client needing concurrent sockets — postgres.js keeps a pooled
+  // query connection open while LISTEN holds its own dedicated one. Queries are serialized by the server's shared
+  // query queue regardless, so a higher cap only lifts the socket limit.
+  const server = new PGLiteSocketServer({ db, port: 0, host: '127.0.0.1', maxConnections: 16 });
 
   // `PGLiteSocketServer.port` is private; the only way to learn the OS-assigned port from
   // `port: 0` is the `listening` event it fires from inside start().
