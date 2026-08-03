@@ -96,11 +96,11 @@ Mochi.serve({
 });
 ```
 
-Bun times a connection out after `idleTimeout` seconds of inactivity, so a response that stays quiet for longer than the default 10 seconds dies with `request timed out after 10 seconds`. Raise it for slow uploads or long-lived streams (SSE, chunked responses).
+Bun times a connection out after `idleTimeout` seconds of inactivity, so a response that stays quiet for longer than the default 10 seconds dies with `request timed out after 10 seconds`. Mochi already disables the idle timer for page renders and SSE streams (`Mochi.sse`), so raising it mainly matters for quiet or long-lived `Mochi.api` responses (chunked streams) and slow request bodies.
 
 <Callout type="info">
 
-`fetch`, `websocket`, `routes`, and `error` are owned by the framework — setting them under `bun` throws at startup. Use the top-level `Mochi.serve()` options instead. To keep a single long stream alive without raising the global timeout, call `server.timeout(request, seconds)` from inside that handler.
+`fetch`, `websocket`, `routes`, and `error` are owned by the framework — setting them under `bun` throws at startup. Use the top-level `Mochi.serve()` options instead. To lift the timeout for one route without raising the global value, call `server.timeout(request, seconds)` (seconds, or `0` to disable) inside the handler — the `server` and `request` are on the API event.
 
 </Callout>
 

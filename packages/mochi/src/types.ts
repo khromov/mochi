@@ -394,11 +394,14 @@ export interface MochiWarmupOptions {
   enabledInDev: boolean;
 }
 
+/** Keys the framework sets on `Bun.serve()` itself; rejected under `bun` and stripped from `BunServeOverrides`. */
+export const FRAMEWORK_OWNED_BUN_KEYS = ['fetch', 'websocket', 'routes', 'error'] as const;
+
 /**
  * Options spread directly into the underlying `Bun.serve()`. The framework owns
- * `fetch`, `websocket`, `routes`, and `error`; setting any of them here throws.
+ * the keys in {@link FRAMEWORK_OWNED_BUN_KEYS}; setting any of them here throws.
  */
-export type BunServeOverrides = Omit<NonNullable<Parameters<typeof Bun.serve>[0]>, 'fetch' | 'websocket' | 'routes' | 'error'>;
+export type BunServeOverrides = Omit<NonNullable<Parameters<typeof Bun.serve>[0]>, (typeof FRAMEWORK_OWNED_BUN_KEYS)[number]>;
 
 export interface MochiServeOptions {
   port?: number;

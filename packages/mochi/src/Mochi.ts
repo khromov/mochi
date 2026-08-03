@@ -8,7 +8,18 @@ import { loadSvelteConfig } from './compiler/svelteConfig';
 import { buildInlineWebComponent } from './compiler/buildInlineWebComponent';
 import { buildClientStatsRoutes, CLIENT_STATS_COMPONENT } from './dev/clientStatsRoutes';
 import { buildEmailViewerRoutes, EMAIL_VIEWER_COMPONENT } from './dev/emailViewerRoutes';
-import { isMochiPage, isMochiApi, isMochiWs, isMochiSse, isMochiFile, isMochiQueue, isServerPropsResolver, isAlsoHydrateMode, ALSO_HYDRATE_ENVELOPE_KEY } from './types';
+import {
+  isMochiPage,
+  isMochiApi,
+  isMochiWs,
+  isMochiSse,
+  isMochiFile,
+  isMochiQueue,
+  isServerPropsResolver,
+  isAlsoHydrateMode,
+  ALSO_HYDRATE_ENVELOPE_KEY,
+  FRAMEWORK_OWNED_BUN_KEYS,
+} from './types';
 import { HYDRATABLE_CONTEXT_KEY } from './islands/isHydratable';
 import type {
   BunRouteValue,
@@ -285,7 +296,7 @@ export class Mochi {
   static async serve(options: MochiServeOptions): Promise<Server<undefined>> {
     // Reject before initMochiConfig pins the process singleton, so a bad `bun` passthrough fails fast without wedging it.
     if (options.bun && typeof options.bun === 'object') {
-      for (const key of ['fetch', 'websocket', 'routes', 'error'] as const) {
+      for (const key of FRAMEWORK_OWNED_BUN_KEYS) {
         if (key in options.bun) {
           throw new Error(`Mochi.serve({ bun }): "${key}" is owned by the framework and cannot be overridden. Use the top-level Mochi.serve() option instead.`);
         }
