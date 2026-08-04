@@ -575,6 +575,9 @@ export interface MochiServeOptions {
    * `./src`. `mochi-framework build` reads this straight from your entry's `Mochi.serve()` call, keeping the manifest in sync.
    *
    * Pass `true` to shake everything, or an object with `enabled: true` plus `exclude`. Default: `false`.
+   *
+   * Requires the optional `@mochi-framework/svelte-shaker` package (`bun add -d @mochi-framework/svelte-shaker`); without
+   * it Mochi warns once at boot and compiles from the original sources.
    */
   optimize?: boolean | MochiSvelteShakerOptions;
   /**

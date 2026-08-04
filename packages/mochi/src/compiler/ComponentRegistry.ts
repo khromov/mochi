@@ -26,7 +26,7 @@ import { EMAIL_TEMPLATE_DIR } from '../email/templates';
 import { registerLocalImageAsset } from '../image/localAssetRegistry';
 import type { LocalImageAsset } from '../image/types';
 import { freshImport } from './freshImport';
-import { shakeApp } from './svelteShaker';
+import { resolveSvelteShaker } from './svelteShaker';
 import prettyBytes from '../vendor/pretty-bytes';
 
 // The `compile:preprocessors` filter is sync; only applying its preprocessors through Svelte's `preprocess()` is async.
@@ -461,8 +461,14 @@ export class ComponentRegistry {
       logger.warn(`svelte-shaker: no source directory at ${appRoot}; nothing to shake`);
       return;
     }
+    // Outside the try because a missing add-on is a config problem, not an engine bug: the loader already warned once
+    // with install instructions, and `shakenSources` is already the empty map every onLoad falls back through.
+    const backend = await resolveSvelteShaker();
+    if (!backend) {
+      return;
+    }
     try {
-      const { shaken, originals } = await shakeApp(appRoot);
+      const { shaken, originals } = await backend.shakeApp(appRoot);
       if (shaken.size === 0) {
         logger.warn(`svelte-shaker: no .svelte components found under ${appRoot}; nothing to shake`);
       }
@@ -500,7 +506,10 @@ export class ComponentRegistry {
       // Empty cache -> every onLoad reads the original source, so a failed shake
       // never breaks the build (`shakenSources.get(path) ?? Bun.file(path)`).
       logger.warn('svelte-shaker: optimization skipped; building from original sources (output is unaffected).');
-      logger.warn('svelte-shaker: this looks like a svelte-shaker bug — please report it with the error below at https://github.com/baseballyama/svelte-shaker/issues');
+      // Naming the engine version matters because it is declared as a `>=` floor: a regressed release can reach users.
+      logger.warn(
+        `svelte-shaker: this looks like a ${backend.name}@${backend.version} bug — please report it with the error below at https://github.com/baseballyama/svelte-shaker/issues`,
+      );
       logger.error(e);
       this.shakenSources = new Map();
     }
