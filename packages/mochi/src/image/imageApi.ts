@@ -110,7 +110,7 @@ export async function getImage(src: string, size?: string): Promise<ResolvedImag
     return result;
   }
 
-  const { entry } = await regenerateVariant(src, resolved, options, cache);
+  const { entry } = await getOrRegenerateVariant(src, resolved, options, cache);
   const result = { bytes: entry.bytes, contentType: entry.meta.contentType, width: entry.meta.width, height: entry.meta.height, format: entry.meta.format };
   recordInlineForDebugBar(src, resolved, result);
   return result;
@@ -121,7 +121,7 @@ export async function getImage(src: string, size?: string): Promise<ResolvedImag
  * (one request-cached origin download → `runPipeline`) can't drift between them. Errors propagate; the endpoint maps
  * `ImageError` to a response itself. `id` is returned for the endpoint's generation-aware ETag.
  */
-export function regenerateVariant(
+export function getOrRegenerateVariant(
   src: string,
   size: ResolvedImageSize,
   options: ResolvedImageOptions,

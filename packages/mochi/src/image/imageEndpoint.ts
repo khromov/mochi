@@ -1,5 +1,5 @@
 import { getImageRuntime, resolveSizeOrWarn } from './config';
-import { getCachedOriginal, regenerateVariant } from './imageApi';
+import { getCachedOriginal, getOrRegenerateVariant } from './imageApi';
 import { decryptImageRequest } from './imageCrypto';
 import { originalId, type ImageCacheStatus } from './imageCache';
 import { getMochiConfig } from '../mochiConfig';
@@ -108,11 +108,10 @@ export function createImageHandler(): (req: Request) => Promise<Response> {
       return textResponse(403, 'Invalid payload');
     }
 
-    const size: ResolvedImageSize | undefined = request.original
-      ? undefined
-      : request.size !== undefined
-        ? resolveSizeOrWarn(request.size, options, `Image request referenced unknown size "${request.size}" (redefined/removed since minting); serving the full-size original.`)
-        : undefined;
+    let size: ResolvedImageSize | undefined;
+    if (!request.original && request.size !== undefined) {
+      size = resolveSizeOrWarn(request.size, options, `Image request referenced unknown size "${request.size}" (redefined/removed since minting); serving the full-size original.`);
+    }
 
     const cacheControl = resolveImageCacheControl(options.timeToStale, options.timeToEvict, development);
     try {
@@ -131,7 +130,7 @@ export function createImageHandler(): (req: Request) => Promise<Response> {
         });
       }
 
-      const { entry, status, id } = await regenerateVariant(request.src, size, options, cache);
+      const { entry, status, id } = await getOrRegenerateVariant(request.src, size, options, cache);
       // The ETag carries the variant id, which folds in the size config hash, plus the original generation the bytes
       // came from, so a redefinition and a source refresh both revalidate while a re-encode from the same generation
       // keeps its ETag and avoids a spurious re-download.
