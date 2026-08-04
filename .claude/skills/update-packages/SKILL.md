@@ -38,9 +38,9 @@ These are pinned with no caret on purpose. A plain `bun update` will not move th
 | `satori`, `@resvg/resvg-js`, `subset-font` (`packages/video-animations`)    | Satori's output is pixel-sensitive; a bump can silently shift frame rendering.                                                                                                                                                                                    |
 | `tmcp`, `@tmcp/*`, `valibot`, `svelte-french-toast` (`packages/site`)       | Pinned to known-good versions.                                                                                                                                                                                                                                    |
 
-### `svelte-shaker` (`packages/mochi`) — a floor, not a pin
+### `svelte-shaker` (`packages/mochi-svelte-shaker`) — a floor, not a pin
 
-Declared as `>=0.18.1` rather than an exact version. We drive its internal `svelte-shaker/node` subpath on a pre-1.0 package, and the floor is a correctness boundary: below 0.18.1 the shaker strips `mochi:*` directives, silently turning islands into plain components. Because it is a floor in a published package, a future regressed release _can_ reach consumers — so treat every observed bump as potentially breaking. Verify with a real `bun run build:site` (the `slimmed N of M` line must be non-zero and the "optimization skipped" warning absent — shake failures are swallowed by the fallback) plus `bun test packages/mochi/src/compiler/svelteShaker.test.ts`. See the comment in `packages/mochi/src/compiler/svelteShaker.ts`.
+Declared as `>=0.18.1` rather than an exact version. We drive its internal `svelte-shaker/node` subpath on a pre-1.0 package, and the floor is a correctness boundary: below 0.18.1 the shaker strips `mochi:*` directives, silently turning islands into plain components. Because it is a floor in a published package, a future regressed release _can_ reach consumers — so treat every observed bump as potentially breaking. Verify with a real `bun run build:site` (the `slimmed N of M` line must be non-zero and the "optimization skipped" warning absent — shake failures are swallowed by the fallback) plus `bun --cwd=packages/mochi-svelte-shaker run test`. See the comment in `packages/mochi-svelte-shaker/src/index.ts`.
 
 ### `@rsvelte/vite-plugin-svelte-native` (`packages/mochi-rsvelte`) — a floor, not a pin
 
@@ -72,7 +72,7 @@ bun update
 **Workspace deps — one `bun update` per workspace.** As of Bun 1.3.14, neither `bun update --recursive` nor `bun update --filter='*'` actually updates workspace dependencies; they report "no changes" while `bun outdated` still lists everything. You must run `bun update` from inside each workspace directory:
 
 ```sh
-for p in cli demos docs minimal mochi mochi-rsvelte minimal-rsvelte msgpackr-extract-stub shared site support video-animations; do
+for p in cli demos docs minimal mochi mochi-rsvelte mochi-svelte-shaker minimal-rsvelte msgpackr-extract-stub shared site support video-animations; do
   [ -d "packages/$p" ] || continue
   echo "=== $p ==="
   (cd packages/$p && bun update 2>&1 | grep -E '^\^|packages installed')

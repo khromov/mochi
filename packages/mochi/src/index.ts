@@ -14,6 +14,7 @@ export { runTests } from './cli/testing';
 export type { RunTestsOptions } from './cli/testing';
 export type { MochiSvelteConfig } from './compiler/svelteConfig';
 export type { MochiSvelteCompiler, SvelteCompilerBackend, SvelteCompileOutput } from './compiler/svelteCompilerBackend';
+export type { ShakeAppResult, SvelteShakerBackend } from './compiler/svelteShaker';
 export { getRequestContext } from './runtime/requestContext';
 export type { MochiRequestContext } from './runtime/requestContext';
 export { getMochiConfig } from './mochiConfig';

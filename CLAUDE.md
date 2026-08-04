@@ -7,6 +7,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Bun workspaces monorepo (`packages/*`):
 
 - `packages/mochi` — the `mochi-framework` library (published to npm). All framework source lives here.
+- `packages/mochi-rsvelte` — published as `@mochi-framework/rsvelte`: the opt-in Rust compiler backend behind `Mochi.serve({ svelteCompiler: 'rsvelte' })`. Owns the `@rsvelte/*` dependency tree; `mochi-framework` holds only an optional peer and falls back to `svelte/compiler` without it. Raw TS, no build step.
+- `packages/mochi-svelte-shaker` — published as `@mochi-framework/svelte-shaker`: the opt-in whole-program `.svelte` source optimizer behind `Mochi.serve({ optimize })`. Owns the `svelte-shaker` dependency and its `>=0.18.1` correctness floor; `mochi-framework` holds only an optional peer and warns once at boot when `optimize` is on without it. Raw TS, no build step.
 - `packages/site` — main site that consumes `mochi-framework` via `workspace:*`; serves the marketing pages, the docs (rendered from `packages/docs` markdown), and the inline demos. Port 3333.
 - `packages/demos` — standalone demos site (HN clone, todo, admin). Deployed separately from `packages/site`. Port 3334.
 - `packages/minimal` — smallest possible Mochi app; doubles as the smoke-test target and the `create-mochi` template source. Port 3335.

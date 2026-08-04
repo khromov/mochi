@@ -19,6 +19,7 @@
     "@fontsource/lobster-two": "^5.3.0",
     "@fontsource/public-sans": "^5.3.0",
     "@lucide/svelte": "^1.28.0",
+    "@mochi-framework/svelte-shaker": "workspace:*",
     "@napi-rs/canvas": "^1.0.3",
     "@portabletext/svelte": "^3.0.1",
     "@tmcp/adapter-valibot": "0.1.6",
