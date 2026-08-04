@@ -35,12 +35,6 @@ await Mochi.serve({
 Shaking runs in <strong>production only</strong>. It is a whole-program pass — folding in one component can change when an unrelated component's call site changes — so it can't be reused per-file across hot reloads. In development the flag is ignored and components compile from their original source.
 </Callout>
 
-<Callout type="warning">
-
-With `optimize` enabled but the package missing, Mochi logs one warning at boot and compiles from the original sources. Builds never fail over it, so watch for the size report below to confirm shaking actually ran.
-
-</Callout>
-
 ### Excluding components
 
 If the shaker mis-transforms a component or you get build-time errors, pass `{ exclude }` with cwd-relative globs to compile those files from their original source. Excluding is always safe — the whole-app scan still covers an excluded file as a _call site_ of the components that import it; only its own output is left unshaken.

@@ -35,18 +35,5 @@ await Mochi.serve({
 });
 ```
 
-If this package isn't installed, Mochi logs one warning and compiles from the original sources.
-Builds never fail over it. See the [Svelte Shaker docs](https://mochi.fast/docs/svelte-shaker/)
-for the size report and the full option reference.
-
-## Caveats
-
-- **Production only.** Shaking is a whole-program pass — folding in one component can change when
-  an unrelated component's call site changes — so it can't be reused per-file across hot reloads.
-  In development the flag is ignored.
-- **Runes only.** svelte-shaker supports Svelte 5 runes syntax, not Svelte 4 legacy syntax.
-- **Scope is `./src`.** Prop folding is sound only when every call site of a component is in scope,
-  so components imported from outside `./src` are left untouched.
-- **Pre-1.0.** Mochi drives svelte-shaker's internal `svelte-shaker/node` subpath, which can move
-  between releases — hence the `>=0.18.1` floor rather than a caret range. Below 0.18.1 the shaker
-  strips `mochi:*` directives, silently turning islands into plain components.
+See the [Svelte Shaker docs](https://mochi.fast/docs/svelte-shaker/) for the caveats, the size
+report and the full option reference.
