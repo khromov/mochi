@@ -1,6 +1,6 @@
-import nodePath from 'node:path';
 import { styleText } from 'node:util';
 import prettyBytes from '../vendor/pretty-bytes';
+import { relForDisplay } from '../utils';
 import { pinGlobal } from '../utils/globalState';
 import { mochiEvents } from '../events';
 import type { MochiEventMap, MochiRequestKind } from '../events';
@@ -316,13 +316,13 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
 
   subscribe('preprocess-cache:hit', ({ filePath }) => ({
     label: 'PCACHE',
-    path: relPath(filePath),
+    path: relForDisplay(filePath),
     note: styleText('green', 'hit'),
     level: 'debug',
   }));
   subscribe('preprocess-cache:miss', ({ filePath }) => ({
     label: 'PCACHE',
-    path: relPath(filePath),
+    path: relForDisplay(filePath),
     note: styleText('yellow', 'miss'),
     level: 'debug',
   }));
@@ -348,7 +348,7 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
   if (options.compile ?? true) {
     subscribe('compile:complete', ({ path, ssrSizeBytes, hydratableCount, serverIslandCount }) => ({
       label: 'BUILD',
-      path: relPath(path),
+      path: relForDisplay(path),
       note: styleText('dim', `hyd=${hydratableCount} srv=${serverIslandCount} ssr=${prettyBytes(ssrSizeBytes)}`),
     }));
     subscribe('compile:batch-complete', ({ count, durationMs }) => ({
@@ -379,7 +379,7 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
       } else {
         action = `rebuilt ${pages}, ${bundles}`;
       }
-      return { label: 'HMR ', path: relPath(path), note: styleText('dim', action), duration: durationMs, slow, verySlow };
+      return { label: 'HMR ', path: relForDisplay(path), note: styleText('dim', action), duration: durationMs, slow, verySlow };
     });
   }
 }
@@ -424,14 +424,6 @@ function redactMailPii(to: string[], subject: string, cc: string[] = [], bcc: st
     subject: REDACTED,
     scrub: (s) => recipients.reduce((out, addr) => out.replaceAll(addr, REDACTED), s),
   };
-}
-
-function relPath(p: string): string {
-  if (!p) {
-    return p;
-  }
-  const rel = nodePath.relative(process.cwd(), p);
-  return rel && !rel.startsWith('..') && !nodePath.isAbsolute(rel) ? rel : p;
 }
 
 function colorCacheStatus(status: 'fresh' | 'stale' | 'expired' | 'miss'): string {

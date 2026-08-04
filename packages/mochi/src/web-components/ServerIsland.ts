@@ -2,9 +2,8 @@
 /// <reference lib="dom.iterable" />
 
 import '../debug-bar/types';
-
-// Key must match sharedCssTracker.ts for cross-bundle dedup with HydratableIsland.
-const _css: Set<string> = ((globalThis as unknown as Record<string, unknown>).__mochi_loaded_css__ ??= new Set()) as Set<string>;
+import { isLoadedCss, markLoadedCss } from './sharedCssTracker';
+import { observeVisible } from './sharedVisibilityObserver';
 
 class ServerIsland extends HTMLElement {
   _loaded = false;
@@ -22,18 +21,7 @@ class ServerIsland extends HTMLElement {
       // `display:contents` leaves this element without a layout box, so the firstElementChild is observed instead; with
       // no fallback children, the global `:empty { min-height: 1px }` rule keeps the wrapper itself observable.
       const target = this.firstElementChild || this;
-      new IntersectionObserver(
-        (entries, obs) => {
-          for (const e of entries) {
-            if (e.isIntersecting) {
-              obs.disconnect();
-              this._fetchContent(options);
-              return;
-            }
-          }
-        },
-        { rootMargin: options.rootMargin || '0px' },
-      ).observe(target);
+      observeVisible(target, options.rootMargin || '0px', () => this._fetchContent(options));
       return;
     }
 
@@ -85,8 +73,8 @@ class ServerIsland extends HTMLElement {
         }
 
         const cssUrl = g('css-url');
-        if (cssUrl && !_css.has(cssUrl)) {
-          _css.add(cssUrl);
+        if (cssUrl && !isLoadedCss(cssUrl)) {
+          markLoadedCss(cssUrl);
           const link = document.createElement('link');
           link.rel = 'stylesheet';
           link.href = cssUrl;

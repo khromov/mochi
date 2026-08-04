@@ -1,4 +1,5 @@
 import { checkEnvironment } from './checkEnvironment';
+import { readMochiVersion } from '../utils/version';
 import { ComponentRegistry, formatCompileErrors } from '../compiler/ComponentRegistry';
 import { buildInlineWebComponent } from '../compiler/buildInlineWebComponent';
 import { DEFAULT_ERROR_PAGE_PATH } from '../runtime/errors';
@@ -58,7 +59,7 @@ export async function build(options: MochiBuildOptions): Promise<void> {
   setLogLevel('info');
   consoleLogger({ compile: false });
   printHeader();
-  const version = await readMochiVersion();
+  const version = (await readMochiVersion()) ?? 'unknown';
   console.log(styleText('dim', `Mochi v${version}`));
   console.log('Starting build...\n');
   const startedAt = performance.now();
@@ -297,12 +298,6 @@ function formatDuration(ms: number): string {
     return `${Math.round(ms)}ms`;
   }
   return `${(ms / 1000).toFixed(2)}s`;
-}
-
-async function readMochiVersion(): Promise<string> {
-  const pkgPath = path.join(import.meta.dir, '..', '..', 'package.json');
-  const pkg = (await Bun.file(pkgPath).json()) as { version: string };
-  return pkg.version;
 }
 
 function printHeader(): void {

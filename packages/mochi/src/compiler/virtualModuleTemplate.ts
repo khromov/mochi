@@ -1,11 +1,9 @@
 import path from 'node:path';
 import { toPosixPath } from '../utils';
+import { SRC_DIR } from './paths';
 
 /** Directory containing this file (`src/compiler/`). */
 const FRAMEWORK_DIR = path.dirname(Bun.fileURLToPath(import.meta.url));
-// The framework `src/` root — one level up from `src/compiler/`. Subsystem
-// files are addressed relative to it (`utils/log.ts`, `runtime/rateLimit.ts`, …).
-const SRC_DIR = path.join(FRAMEWORK_DIR, '..');
 
 // The virtual `mochi-framework` module bodies are authored as plain .js
 // template files (real syntax highlighting, no per-line backticks). Their

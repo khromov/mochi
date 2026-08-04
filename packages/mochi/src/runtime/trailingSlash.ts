@@ -38,6 +38,14 @@ export function trailingSlashIt(str: string): string {
   return unTrailingSlashIt(str.slice(0, boundary)) + '/' + str.slice(boundary);
 }
 
+/**
+ * Registers a route under both slash forms unconditionally — unlike `alternateSlashPattern`, no root/extension
+ * guards — so dev/admin routes work under either trailing-slash policy.
+ */
+export function bothSlashForms<T>(path: string, value: T): Record<string, T> {
+  return { [path]: value, [`${path}/`]: value };
+}
+
 export function alternateSlashPattern(pattern: string): string | null {
   if (pattern === '/') {
     return null;

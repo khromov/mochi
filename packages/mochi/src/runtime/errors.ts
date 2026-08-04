@@ -25,6 +25,40 @@ export type RenderErrorResponse = (input: {
 
 export type RouteErrorResponse = (req: Request, event: MochiEvent, resolveOpts: MochiResolveOptions | undefined, err: unknown) => Promise<Response>;
 
+/**
+ * Runs the user's `handleError` hook and normalizes its Response-vs-info-vs-void protocol, shared by the HTML error
+ * renderer and the enhanced JSON path so validation and invalid-override logging can't diverge. A short-circuit
+ * Response is returned verbatim — callers apply their own post-processing (resolve options, JSON envelope).
+ */
+export async function resolveErrorOverride(
+  handleError: HandleError | undefined,
+  err: unknown,
+  event: MochiEvent,
+  status: number,
+  message: string,
+): Promise<Response | { status: number; message: string }> {
+  if (!handleError) {
+    return { status, message };
+  }
+  let override: Response | MochiErrorInfo | void;
+  try {
+    override = await handleError({ error: err, event, status, message });
+  } catch (hookErr) {
+    logger.error('handleError hook threw:', hookErr);
+    override = undefined;
+  }
+  if (override instanceof Response) {
+    return override;
+  }
+  if (override && typeof override === 'object') {
+    if (typeof override.status === 'number' && typeof override.message === 'string') {
+      return { status: override.status, message: override.message };
+    }
+    logger.error('handleError returned invalid override; expected { status: number, message: string } or a Response, got:', override);
+  }
+  return { status, message };
+}
+
 export function createErrorResponder(deps: ErrorResponderDeps): {
   renderErrorResponse: RenderErrorResponse;
   routeErrorResponse: RouteErrorResponse;
@@ -35,26 +69,11 @@ export function createErrorResponder(deps: ErrorResponderDeps): {
     const { req, event, resolveOpts, thrown } = input;
     let { status, message } = input;
 
-    if (handleError) {
-      let override: Response | MochiErrorInfo | void;
-      try {
-        override = await handleError({ error: thrown, event, status, message });
-      } catch (hookErr) {
-        logger.error('handleError hook threw:', hookErr);
-        override = undefined;
-      }
-      if (override instanceof Response) {
-        return applyResolveOptions(override, resolveOpts);
-      }
-      if (override && typeof override === 'object') {
-        if (typeof override.status === 'number' && typeof override.message === 'string') {
-          status = override.status;
-          message = override.message;
-        } else {
-          logger.error('handleError returned invalid override; expected { status: number, message: string } or a Response, got:', override);
-        }
-      }
+    const resolved = await resolveErrorOverride(handleError, thrown, event, status, message);
+    if (resolved instanceof Response) {
+      return applyResolveOptions(resolved, resolveOpts);
     }
+    ({ status, message } = resolved);
 
     // Log after the hook runs so a handleError that short-circuits with a
     // Response or downgrades the status doesn't produce a misleading 500.

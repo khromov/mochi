@@ -1,9 +1,7 @@
 import path from 'node:path';
 import { toPosixPath } from '../utils';
 import { logger } from '../utils/log';
-
-// Climbs one level out of `src/compiler/`, the same convention as `SRC_DIR` in `ComponentRegistry.ts`.
-const SRC_DIR = path.resolve(path.dirname(Bun.fileURLToPath(import.meta.url)), '..');
+import { SRC_DIR } from './paths';
 
 /**
  * Marks a manifest path as framework-owned, in the spirit of SvelteKit's `$lib`. `SRC_DIR` lands somewhere different in

@@ -1,6 +1,7 @@
 import type { ComponentRegistry } from '../compiler/ComponentRegistry';
 import { clearDevOutbox, getDevAttachment, getDevEmail, getDevEmails, type StoredEmail } from '../email/devOutbox';
 import { redirect } from '../runtime/forms';
+import { bothSlashForms } from '../runtime/trailingSlash';
 import { baseContentType, INLINE_SAFE_IMAGE_TYPES } from '../utils/inlineContentTypeSafety';
 import type { MochiApiConfig, MochiPageConfig } from '../types';
 
@@ -99,9 +100,7 @@ export function buildEmailViewerRoutes(registry: ComponentRegistry): Record<stri
     },
   };
   return {
-    [path]: config,
-    [`${path}/`]: config,
-    [`${path}/attachment`]: attachment,
-    [`${path}/attachment/`]: attachment,
+    ...bothSlashForms(path, config),
+    ...bothSlashForms(`${path}/attachment`, attachment),
   };
 }

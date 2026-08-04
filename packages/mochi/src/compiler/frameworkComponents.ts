@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { parse } from 'svelte/compiler';
+import { SRC_DIR } from './paths';
 
 /**
  * Resolves the framework's own public components (`mochi-framework/components`) to the on-disk `.svelte` files they
@@ -14,8 +15,7 @@ import { parse } from 'svelte/compiler';
 /** The specifier a directive may target to reach a framework component. */
 export const FRAMEWORK_COMPONENTS_SPECIFIER = 'mochi-framework/components';
 
-// This file lives in `src/compiler/`; the barrel is `src/components/index.ts`.
-const BARREL_PATH = path.join(path.dirname(Bun.fileURLToPath(import.meta.url)), '..', 'components', 'index.ts');
+const BARREL_PATH = path.join(SRC_DIR, 'components', 'index.ts');
 
 export interface FrameworkComponent {
   /** Absolute path to the underlying `.svelte`/`.md`/`.svx` file. */

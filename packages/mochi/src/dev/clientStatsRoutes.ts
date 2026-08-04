@@ -1,4 +1,5 @@
 import type { ComponentRegistry } from '../compiler/ComponentRegistry';
+import { bothSlashForms } from '../runtime/trailingSlash';
 import type { MochiPageConfig } from '../types';
 
 export const CLIENT_STATS_COMPONENT = Bun.fileURLToPath(new URL('../templates/ClientStats/ClientStats.svelte', import.meta.url));
@@ -15,8 +16,5 @@ export function buildClientStatsRoutes(registry: ComponentRegistry): Record<stri
       stats: registry.getClientStats() ?? { outputs: [] },
     }),
   };
-  return {
-    [path]: config,
-    [`${path}/`]: config,
-  };
+  return bothSlashForms(path, config);
 }

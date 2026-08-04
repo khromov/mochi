@@ -338,13 +338,18 @@ export class FileStorage implements Storage {
     await rm(join(this.directory, hash), { recursive: true, force: true });
   }
 
-  async clear(): Promise<void> {
-    const entries = await readdir(this.directory, { withFileTypes: true }).catch((err) => {
+  // A directory that was never written to (or already purged) reads as empty rather than an error.
+  private listEntries(): Promise<Dirent[]> {
+    return readdir(this.directory, { withFileTypes: true }).catch((err) => {
       if (isENOENT(err)) {
         return [] as Dirent[];
       }
       throw err;
     });
+  }
+
+  async clear(): Promise<void> {
+    const entries = await this.listEntries();
     await Promise.all(
       entries.map((entry) => {
         const p = join(this.directory, entry.name);
@@ -362,12 +367,7 @@ export class FileStorage implements Storage {
 
   /** Number of persisted entries — one `<hash>.json` per key. Excludes in-flight `.tmp` writes and blob folders. */
   async count(): Promise<number> {
-    const entries = await readdir(this.directory, { withFileTypes: true }).catch((err) => {
-      if (isENOENT(err)) {
-        return [] as Dirent[];
-      }
-      throw err;
-    });
+    const entries = await this.listEntries();
     return entries.filter((entry) => !entry.isDirectory() && entry.name.endsWith('.json')).length;
   }
 
@@ -377,12 +377,7 @@ export class FileStorage implements Storage {
    * without a stored key are skipped.
    */
   async keys(): Promise<string[]> {
-    const entries = await readdir(this.directory, { withFileTypes: true }).catch((err) => {
-      if (isENOENT(err)) {
-        return [] as Dirent[];
-      }
-      throw err;
-    });
+    const entries = await this.listEntries();
     const files = entries.filter((entry) => !entry.isDirectory() && entry.name.endsWith('.json'));
     // Unreadable/corrupt/legacy files read back as null — omit them from the listing.
     const keys = await Promise.all(files.map((entry) => this.readKey(join(this.directory, entry.name))));
@@ -399,12 +394,7 @@ export class FileStorage implements Storage {
    * corrupt or legacy files carry no recoverable key, so they count toward `removed` alone.
    */
   async sweep(now: number = Date.now(), options: SweepOptions = {}): Promise<SweepResult> {
-    const entries = await readdir(this.directory, { withFileTypes: true }).catch((err) => {
-      if (isENOENT(err)) {
-        return [] as Dirent[];
-      }
-      throw err;
-    });
+    const entries = await this.listEntries();
     let removed = 0;
     const removedKeys: string[] = [];
 

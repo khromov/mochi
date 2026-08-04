@@ -473,6 +473,21 @@ describe('FileStorage binary offload (offloadBinary: true)', () => {
     expect(await storage.count()).toBe(0);
   });
 
+  test('directory deleted out from under the storage reads as empty, not an error', async () => {
+    const dir = makeDir();
+    const storage = new FileStorage({ directory: dir, purgeInterval: 0 });
+    created.push(storage);
+    await storage.setItem('a', { value: 1, createdAt: 0 });
+
+    // An external cleaner (tmp reaper, `bun run clean`) can remove the whole cache dir at any time.
+    rmSync(dir, { recursive: true, force: true });
+
+    expect(await storage.count()).toBe(0);
+    expect(await storage.keys()).toEqual([]);
+    expect((await storage.sweep()).removed).toBe(0);
+    await storage.clear();
+  });
+
   test('keys lists the plaintext keys of persisted entries', async () => {
     const storage = makeStorage({ offloadBinary: true });
     expect(await storage.keys()).toEqual([]);
