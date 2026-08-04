@@ -68,6 +68,7 @@ The forced fallback is not optional: a plain `server.stop()` never resolves whil
 - `build`: Output controls for `mochi-framework build`; ignored by the runtime. `{ resources: false }` hides the emitted-resources list (the summary line keeps its asset count). See `CLI`.
 - `svelteConfigPath`: Path to a Svelte config file. Default: `./svelte.config.js`. See `Svelte config`.
 - `svelteCompiler`: Which compiler emits component JS. Default: `'svelte'`. `'rsvelte'` uses the Rust compiler and needs the optional `@mochi-framework/rsvelte` package; overridable with `MOCHI_SVELTE_COMPILER`. See `rsvelte compiler`.
+- `optimize`: Run the whole-program svelte-shaker pass over `.svelte` source before compiling, so the Svelte compiler emits less code. **Production only**, and needs the optional `@mochi-framework/svelte-shaker` package. `true` shakes everything; `{ enabled, exclude }` gives finer control. Default: `false`. See `Svelte Shaker optimization`.
 - `csrf`: `MochiCsrfOptions` controlling the origin-header check. See `CSRF` below.
 - `proxy`: `MochiProxyOptions` describing trusted reverse-proxy headers. See `Proxy` below.
 - `hooks`: `MochiHooks` map of named lifecycle hooks. See `Extensions (hooks & filters)`.

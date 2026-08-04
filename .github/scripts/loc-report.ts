@@ -103,6 +103,16 @@ const PACKAGES: Package[] = [
     categories: [],
   },
   {
+    name: 'packages/mochi-rsvelte',
+    root: join(REPO_ROOT, 'packages', 'mochi-rsvelte'),
+    categories: [],
+  },
+  {
+    name: 'packages/mochi-svelte-shaker',
+    root: join(REPO_ROOT, 'packages', 'mochi-svelte-shaker'),
+    categories: [],
+  },
+  {
     name: 'packages/cli',
     root: join(REPO_ROOT, 'packages', 'cli'),
     categories: ['src/**/*.test.ts', 'src/cli*', 'src/{create,templates,utils}.ts'],

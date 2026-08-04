@@ -82,12 +82,16 @@
   },
   "peerDependencies": {
     "@mochi-framework/rsvelte": ">=0.0.1",
+    "@mochi-framework/svelte-shaker": ">=0.0.1",
     "@tailwindcss/node": "^4.3.0",
     "@tailwindcss/oxide": "^4.3.0",
     "svelte": "^5.56.6"
   },
   "peerDependenciesMeta": {
     "@mochi-framework/rsvelte": {
+      "optional": true
+    },
+    "@mochi-framework/svelte-shaker": {
       "optional": true
     },
     "@tailwindcss/node": {
@@ -112,7 +116,6 @@
     "mitt": "^3.0.1",
     "negotiator": "^1.0.0",
     "nodemailer": "^9.0.3",
-    "svelte-shaker": ">=0.18.1",
     "zimmerframe": "^1.1.4"
   },
   "devDependencies": {
