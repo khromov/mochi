@@ -53,7 +53,7 @@ These are ordinary caret ranges (`^6.x`, `^1.x`), so `bun update` holds them at 
 | Held at        | Latest | Where                                     | Why held / re-evaluation trigger                                                                                                                                                                                                                                                                                                      |
 | -------------- | ------ | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `typescript@6` | 7.x    | all workspaces                            | TS 7 is the Go-native compiler rewrite; its programmatic compiler API — relied on by `svelte-check` (patched + pinned here), `typescript-eslint`, and Svelte's own type tooling — is not guaranteed stable until **7.1**. Hold on `^6` until 7.1 ships a stable API and `svelte-check` / `typescript-eslint` support the Go compiler. |
-| `msgpackr@1`   | 2.x    | `packages/msgpackr-extract-stub` (devDep) | Only used by the stub's own roundtrip test. The framework runtime runs msgpackr **1.x** because `bunqueue` pins `^1.11.8`; the stub's test dep must track that major so the test stays representative. Bump only once the runtime (via `bunqueue`) actually moves to msgpackr 2.                                                      |
+| `msgpackr@1`   | 2.x    | `packages/msgpackr-extract-stub` (devDep) | Only used by the stub's own roundtrip test. The framework no longer depends on msgpackr (bunqueue was replaced by `@mochi-framework/queue`, 2026-08); the stub package is kept published for older scaffolds, whose runtimes ride msgpackr **1.x**. Bump only if the stub's consumers move to msgpackr 2.                             |
 
 ## 3. Update
 
@@ -72,7 +72,7 @@ bun update
 **Workspace deps — one `bun update` per workspace.** As of Bun 1.3.14, neither `bun update --recursive` nor `bun update --filter='*'` actually updates workspace dependencies; they report "no changes" while `bun outdated` still lists everything. You must run `bun update` from inside each workspace directory:
 
 ```sh
-for p in cli demos docs minimal mochi mochi-rsvelte minimal-rsvelte msgpackr-extract-stub shared site support video-animations; do
+for p in cli demos docs minimal mochi mochi-rsvelte minimal-rsvelte msgpackr-extract-stub queue shared site support video-animations; do
   [ -d "packages/$p" ] || continue
   echo "=== $p ==="
   (cd packages/$p && bun update 2>&1 | grep -E '^\^|packages installed')

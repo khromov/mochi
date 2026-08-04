@@ -197,7 +197,7 @@ export class Mochi {
    * anywhere via `Mochi.getQueue(name).add(...)`, and the queue drains gracefully on shutdown.
    */
   static queue<T = unknown, R = unknown>(config: MochiQueueOptions<T, R>): MochiQueueConfig {
-    // Whatever survives the destructure is forwarded verbatim to bunqueue.
+    // Whatever survives the destructure is forwarded to the queue engine as runtime options.
     const { process, on, recover, ...options } = config;
     return {
       __mochiQueue: true,

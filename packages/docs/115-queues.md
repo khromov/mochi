@@ -1,7 +1,7 @@
 ---
 title: 'Queues'
 slug: queues
-description: 'Run background jobs in-process with Mochi.queue(), backed by bunqueue embedded mode.'
+description: 'Run background jobs with Mochi.queue() — in-memory, SQLite, or Postgres via @mochi-framework/queue.'
 ---
 
 <script>
@@ -11,7 +11,7 @@ description: 'Run background jobs in-process with Mochi.queue(), backed by bunqu
 
 ## Queues
 
-Offload work that shouldn't block a response — sending email, encoding media, calling slow third-party APIs — to a background **queue**. A queue bundles a job channel with the `process` function that consumes it; both run in your process, backed by [bunqueue](https://bunqueue.dev/)'s embedded mode.
+Offload work that shouldn't block a response — sending email, encoding media, calling slow third-party APIs — to a background **queue**. A queue bundles a job channel with the `process` function that consumes it, backed by [`@mochi-framework/queue`](https://www.npmjs.com/package/@mochi-framework/queue): a minimal SQL-backed engine that stores jobs in-memory, in a SQLite file, or in Postgres through `Bun.SQL`.
 
 `Mochi.queue()` — like `Mochi.page` / `api` / `ws` / `sse` — returns an **inert config** that you mount in `Mochi.serve({ queues })`, keyed by name, so every background queue the server runs is declared in one place. Add jobs from anywhere with `Mochi.getQueue(name).add(...)`.
 
@@ -53,7 +53,7 @@ const queueConfig = Mochi.queue<JobData, Result>({ process, ...options });
 | `attempt`    | `number` | 1-based attempt number (1 on first run) |
 | `enqueuedAt` | `number` | epoch ms when enqueued                  |
 
-Options: `concurrency` (jobs processed at once), `dataPath` (see below), `lockDuration` (see [Long-running jobs](#long-running-jobs)), `recover` (a startup callback for re-enqueuing unfinished work — see [Recovery on start](#recovery-on-start)), and `on` for lifecycle listeners:
+Options: `concurrency` (jobs processed at once), `database` (see [Choosing a database](#choosing-a-database)), `lockDuration` (see [Long-running jobs](#long-running-jobs)), `defaultJobOptions` (per-job options applied to every `add`), `recover` (a startup callback for re-enqueuing unfinished work — see [Recovery on start](#recovery-on-start)), and `on` for lifecycle listeners:
 
 ```ts
 Mochi.queue({
@@ -77,7 +77,7 @@ Or subscribe globally on the [`mochiEvents` bus](#observability) (filter by `que
 | `add(name, data, opts?)` | `Promise<MochiJobRef>`   | enqueue one job          |
 | `addBulk(jobs)`          | `Promise<MochiJobRef[]>` | enqueue many in one call |
 
-`MochiJobRef` is `{ id, name }`. Per-job options: `priority`, `delay` (ms), `attempts`, `jobId`.
+`MochiJobRef` is `{ id, name }`. Per-job options: `priority` (lower runs first), `delay` (ms), `attempts`, `backoff`, `jobId`.
 
 ```ts
 const emails = Mochi.getQueue<{ to: string }>('emails');
@@ -87,6 +87,25 @@ await emails.addBulk([
   { name: 'send', data: { to: 'b@x.com' }, opts: { priority: 10 } },
 ]);
 ```
+
+<Callout type="info">
+
+Job payloads are stored as JSON — `data` must be JSON-serializable. Adding a `jobId` that is still **outstanding** in the queue is a no-op returning the same ref (deduplication); once the job completes or fails terminally its row is deleted, and the id is reusable.
+
+</Callout>
+
+### Retries
+
+`attempts` sets how many times a job may run; `backoff` spaces the retries out:
+
+```ts
+Mochi.queue({
+  process: sendEmail,
+  defaultJobOptions: { attempts: 3, backoff: { type: 'exponential', delay: 5000 } },
+});
+```
+
+`backoff.type` is `'fixed'` (every retry waits `delay` ms) or `'exponential'` (`delay`, `2×delay`, `4×delay`, …). Without `backoff`, retries run immediately. The `failed` listener fires on every failed attempt with the error; a job that exhausts its attempts is dropped from the store — your own database is the durable record of what still needs doing (see [Recovery on start](#recovery-on-start)).
 
 ### A shared queue module
 
@@ -133,41 +152,37 @@ await Mochi.serve({
 });
 ```
 
-### Persistence
+### Choosing a database
 
-By default the queue is **in-memory** — jobs do not survive a restart. Pass `dataPath` to persist to SQLite:
+By default the queue is **in-memory** (a private SQLite store) — jobs do not survive a restart. Pass `database` to persist, or to share the queue between processes:
 
 ```ts
-Mochi.queue({ process, dataPath: '.mochi/queue.sqlite' });
+Mochi.queue({ process, database: 'sqlite://.mochi/queue.sqlite' });
+Mochi.queue({ process, database: 'postgres://user:pw@host:5432/app' });
+Mochi.queue({ process, database: myBunSqlInstance }); // share your app's Bun.SQL handle
 ```
 
-<Callout type="warning">
+Queues on the same `database` share one `mochi_jobs` table (a `queue` column keeps them apart), and all default in-memory queues share one store per process. A `SQL` instance you pass in is yours — the framework never closes it; string databases are opened and closed by the framework.
 
-bunqueue locks the embedded store to the **first** `dataPath` used in the process. Use one `dataPath` across all your queues; conflicting paths are ignored (Mochi logs a warning).
+### Multiple instances
 
-</Callout>
+Any number of processes can work the same queue against a shared `database` (a SQLite file on one machine, Postgres across machines). Claims are atomic — `FOR UPDATE SKIP LOCKED` on Postgres, a single atomic `UPDATE` on SQLite — so **every job runs exactly once**, whichever instance gets it.
+
+A claimed job holds a **lease** that the owning instance renews on a heartbeat while the job runs. If the instance crashes, the lease expires and a surviving instance reclaims the job; the crashed claim counts as a spent attempt, so `job.attempt` tells the retry it isn't the first try.
 
 ### Long-running jobs
 
-A job holds a lock while it runs. If the job outlives the lock, the queue assumes the worker died and hands the job to someone else — while the original is still running. Mochi allows **30 minutes** by default, which is also the longest a job may run at all; lower it with `lockDuration` (ms) if you want a stuck job reclaimed sooner:
+`lockDuration` (default **60 s**) is the lease TTL, not a runtime limit: the heartbeat keeps renewing it, so a two-hour job stays owned as long as its process is alive. It only expires — handing the job to another instance — when the instance dies or its event loop is blocked solid past the TTL.
 
 ```ts
-Mochi.queue({ process: resizeImage, lockDuration: 60_000 });
+Mochi.queue({ process: resizeImage, lockDuration: 10_000 }); // reclaim crashed instances' jobs faster
 ```
 
 <Callout type="warning">
 
-`lockDuration` must exceed the **worst case** runtime of `process`, not the typical one. A job that overruns it is re-queued mid-flight, and its eventual success is rejected as `Invalid or expired lock token` and reported as a failure — even though the work succeeded. Depending on the queue version it is then either retried, firing its side effects a second time, or abandoned where it stands.
+A fully **blocked event loop** starves the heartbeat like any visibility-timeout system: if `process` spends longer than `lockDuration` in synchronous work, the lease lapses and the job can be reclaimed while still running. The late result is then discarded (the settle is fenced by a per-claim token — no double completion), but the other instance will have run the job again. Keep `lockDuration` above your worst synchronous stretch; ordinary `await`-ing work of any length is fine.
 
 </Callout>
-
-<Callout type="danger">
-
-**30 minutes is a ceiling, not just a default.** The underlying queue drops any job that has been processing for longer, whatever `lockDuration` says — so raising it past 30 minutes buys nothing, and the job still fails. Work that can run longer belongs outside the queue, or split into jobs that each finish well inside the limit.
-
-</Callout>
-
-Lowering `lockDuration` does not make a crashed worker's jobs recover faster — that's handled separately by heartbeat-based stall detection, which is independent of the lock.
 
 ### Recovery on start
 
@@ -185,36 +200,13 @@ Mochi.queue<{ id: number }>({
 
 Recovery is awaited before `Mochi.serve()` resolves, so recovered jobs are enqueued before the `mochi:ready` hook fires. Because the server is already bound and serving by then, a throw is contained: Mochi logs it and emits `queue:error`, and the server keeps running.
 
+**Single-flight across instances.** With a shared `database`, a recovery lease in the store lets exactly one booting instance run `recover` per TTL window (default 60 s, tune with `recoveryLeaseMs`) — a rolling restart's second instance skips the recovery the first just ran instead of re-enqueueing every stranded job again. A `recover` that **throws** releases the lease so the next boot retries immediately. With the in-memory default each process has a private store, so each runs its own recovery — same as before.
+
 A `recover` that never settles is never cut short — abandoning it would drop the jobs it was about to add. Since warmup, `mochi:ready` and `serve()` resolving all wait behind it, Mochi logs a warning naming the queue if one is still running after 30 seconds.
 
 <Callout type="info">
 
 **Queues mount late.** They are created after the `mochi:init` hook and after the server binds, so `Mochi.getQueue()` throws if you call it from `mochi:init` — the error says as much. Anywhere from the [`mochi:queuesMounted`](/docs/extensions/#mochiqueuesmounted) hook onwards can add jobs: a queue's own `recover` callback, the `mochi:ready` hook, or any request handler.
-
-</Callout>
-
-### Advanced options
-
-Mochi wraps a small, stable core. For bunqueue features Mochi doesn't surface first-class — retry backoff, rate limiting, cron/repeat, dead-letter queue, deduplication — pass a `bunqueue` object that is forwarded verbatim to the underlying queue and worker:
-
-```ts
-const apiCalls = Mochi.queue({
-  process,
-  defaultJobOptions: { attempts: 5 },
-  bunqueue: { limiter: { max: 100, duration: 1000 } },
-});
-
-await Mochi.getQueue('api-calls').add('call', data, {
-  attempts: 5,
-  bunqueue: { backoff: { type: 'jitter', delay: 1000 } },
-});
-```
-
-See the [bunqueue docs](https://bunqueue.dev/guide/simple-mode/) for the full option set.
-
-<Callout type="info">
-
-`bunqueue` is applied last, so anything it repeats wins over the first-class option next to it. Prefer the first-class option where one exists. The one exception is `lockDuration`, which either spelling can set but the [`queue:lockDurationMs`](/docs/extensions/) filter always gets the final say on.
 
 </Callout>
 
@@ -244,7 +236,7 @@ A long-running resource the `process` function _opens_ (a DB pool, a client conn
 
 ### Shutdown
 
-Queues close gracefully when `Mochi.serve()` receives `SIGTERM`/`SIGINT` — in-flight jobs drain before the process exits. A **queue-only process** (no page/API routes) is just `Mochi.serve({ queues })` with no `routes`:
+Queues close gracefully when `Mochi.serve()` receives `SIGTERM`/`SIGINT` — in-flight jobs drain before the process exits, and anything still pending stays in the store for the next boot (or a sibling instance) to pick up. A **queue-only process** (no page/API routes) is just `Mochi.serve({ queues })` with no `routes`:
 
 ```ts
 // worker.ts — run with `bun worker.ts`
@@ -253,6 +245,7 @@ import { Mochi } from 'mochi-framework';
 await Mochi.serve({
   queues: {
     emails: Mochi.queue({
+      database: 'postgres://user:pw@host:5432/app',
       process: async (job) => {
         await sendEmail(job.data.to);
       },
@@ -261,16 +254,12 @@ await Mochi.serve({
 });
 ```
 
-<Callout type="info">
+Point it at the same `database` as your web process and it becomes a dedicated worker — the web process adds jobs, the worker runs them.
 
-**Embedded mode only.** The code that adds jobs and the worker that runs them share one process. bunqueue also supports a TCP server mode for distributed workers; Mochi doesn't expose that yet.
+### Standalone use
 
-</Callout>
-
-### Dependencies
-
-Mochi uses bunqueue as the underlying implementation for queues. bunqueue pulls in `msgpackr`, whose optional native accelerator (`msgpackr-extract`) would otherwise drag platform-specific prebuilt binaries into your install — so Mochi swaps it out via a `package.json` `overrides` entry pointing at [`@mochi-framework/msgpackr-extract-stub`](https://www.npmjs.com/package/@mochi-framework/msgpackr-extract-stub), an empty stub that keeps `msgpackr` on its pure-JS codec so no native binaries are installed. New projects scaffolded with `create-mochi` ship this override by default — to opt out and use the native bindings, just delete the `overrides` entry from your `package.json`.
+The engine has no dependency on the framework — `@mochi-framework/queue` exports `createQueue()` directly for scripts and non-Mochi apps. What `Mochi.serve({ queues })` adds on top is the declaration map, `Mochi.getQueue`, lifecycle events on the bus, recovery orchestration, and shutdown draining.
 
 <SeeItInAction
-demos={[{ href: "/demos/queue/", title: "Background jobs with queues", hook: "How background job queues work — offload work to a Mochi.queue() with an embedded worker, no Redis." }]}
+demos={[{ href: "/demos/queue/", title: "Background jobs with queues", hook: "How background job queues work — offload work to a Mochi.queue() backed by SQLite or Postgres, no Redis." }]}
 />

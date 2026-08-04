@@ -29,6 +29,10 @@
     "packages/mochi-rsvelte": {
       "package-name": "@mochi-framework/rsvelte",
       "changelog-path": "CHANGELOG.md"
+    },
+    "packages/queue": {
+      "package-name": "@mochi-framework/queue",
+      "changelog-path": "CHANGELOG.md"
     }
   }
 }

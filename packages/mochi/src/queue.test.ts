@@ -1,6 +1,7 @@
 import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
+import { SQL } from 'bun';
 import { createQueue, getQueue, closeAllQueueResources, runQueueRecovery, DEFAULT_LOCK_DURATION_MS } from './queue';
 import type { MochiJob } from './queue';
 import { mochiEvents } from './events';
@@ -8,10 +9,9 @@ import { initExtensions } from './extensions';
 import { setLogLevel } from './utils/log';
 import { markStartupMilestone, resetStartupMilestones } from './lifecycle';
 
-// bunqueue locks its embedded store to the first dataPath used in the process,
-// so the whole file shares one temp dir and each test uses a unique queue name.
+// For tests that need a database surviving closeAllQueueResources (persistence, recovery leases).
 const dataDir = mkdtempSync(path.join(import.meta.dir, '..', '.mochi-queue-test-'));
-const dataPath = path.join(dataDir, 'queue.sqlite');
+const fileDatabase = (label: string): string => `sqlite://${path.join(dataDir, `${label}.sqlite`)}`;
 
 let counter = 0;
 const uniqueName = (): string => `q-${counter++}`;
@@ -31,12 +31,9 @@ afterEach(async () => {
 });
 
 afterAll(async () => {
-  // The last afterEach closes bunqueue's embedded store (shutdownManager ->
-  // storage.close()), but Windows releases the underlying SQLite file lock
-  // asynchronously, so an immediate rm throws EBUSY. (Bun ignores rmSync's
-  // maxRetries option, so retry by hand.) This is best-effort cleanup of an
-  // ephemeral temp dir — never fail the suite over it, so give up quietly once
-  // the budget is exhausted; the OS reclaims it on process exit regardless.
+  // Windows releases SQLite file locks asynchronously, so an immediate rm can throw EBUSY
+  // (and Bun ignores rmSync's maxRetries) — retry by hand, then give up quietly: this is
+  // best-effort cleanup of an ephemeral temp dir the OS reclaims on process exit anyway.
   for (let attempt = 0; attempt < 25; attempt++) {
     try {
       rmSync(dataDir, { recursive: true, force: true });
@@ -52,14 +49,10 @@ describe('Mochi queue', () => {
     const name = uniqueName();
     const seen = deferred<MochiJob<{ to: string }>>();
 
-    const queue = createQueue<{ to: string }>(
-      name,
-      async (job) => {
-        seen.resolve(job);
-        return { sent: true };
-      },
-      { dataPath },
-    );
+    const queue = createQueue<{ to: string }>(name, async (job) => {
+      seen.resolve(job);
+      return { sent: true };
+    });
 
     const ref = await queue.add('send', { to: 'alice@example.com' });
     expect(ref.id).toBeString();
@@ -78,15 +71,11 @@ describe('Mochi queue', () => {
     let processed = 0;
     const done = deferred<void>();
 
-    const queue = createQueue<{ n: number }>(
-      name,
-      async () => {
-        if (++processed === 3) {
-          done.resolve();
-        }
-      },
-      { dataPath },
-    );
+    const queue = createQueue<{ n: number }>(name, async () => {
+      if (++processed === 3) {
+        done.resolve();
+      }
+    });
 
     const refs = await queue.addBulk([
       { name: 'job', data: { n: 1 } },
@@ -117,7 +106,7 @@ describe('Mochi queue', () => {
           allDone.resolve();
         }
       },
-      { dataPath, concurrency: 2 },
+      { concurrency: 2 },
     );
 
     await queue.addBulk([0, 1, 2, 3].map((i) => ({ name: 'job', data: { i } })));
@@ -140,7 +129,7 @@ describe('Mochi queue', () => {
     mochiEvents.on('queue:active', (e) => active.push(e));
     mochiEvents.on('queue:completed', (e) => completed.resolve(e));
 
-    const queue = createQueue<{ x: number }>(name, async () => ({ ok: true }), { dataPath });
+    const queue = createQueue<{ x: number }>(name, async () => ({ ok: true }));
     await queue.add('compute', { x: 1 });
 
     const done = await completed.promise;
@@ -164,7 +153,7 @@ describe('Mochi queue', () => {
       async () => {
         throw new Error('boom');
       },
-      { dataPath },
+      undefined,
       { failed: (_job, error) => failedListener.resolve(error) },
     );
 
@@ -179,44 +168,25 @@ describe('Mochi queue', () => {
     expect(error.message).toBe('boom');
   });
 
-  // bunqueue's embedded heartbeat refreshes stall detection but never renews the
-  // job's lock, so a job outliving `lockDuration` is requeued while it is still
-  // running and the success it eventually reports is rejected as someone else's
-  // work. Mochi's default TTL is 30 minutes, so this drives the failure with a
-  // deliberately tiny one; the lock reaper only ticks every 5s, hence the sleep.
-  // `attempts: 2` and `concurrency: 2` are both load-bearing — the requeued copy
-  // has to be retryable and pullable while the original is still running, and with
-  // `attempts: 1` the job completes cleanly instead.
-  //
-  // Only the rejected success is asserted, because what follows it is a bunqueue
-  // implementation detail that has already moved once: on 2.8.32 the job was
-  // retried (double-firing its side effects), on 2.8.44 it is abandoned instead.
-  // Both are the same defect from Mochi's side and both are fixed by not letting
-  // the lock expire. Before `lockDuration` was threaded through to the worker, a
-  // top-level value was silently dropped, the job kept the 30s default lock, and
-  // no failure fired at all — which is how this test catches a regression.
-  test('a job outliving lockDuration has its success rejected', async () => {
+  test('retries with backoff before failing terminally', async () => {
     const name = uniqueName();
-    const failed = deferred<string>();
-    let runs = 0;
+    const attempts: number[] = [];
+    const terminal = deferred<void>();
+    mochiEvents.on('queue:failed', (e) => {
+      if (e.attempt === 2) {
+        terminal.resolve();
+      }
+    });
 
-    mochiEvents.on('queue:failed', (e) => failed.resolve(e.error));
+    const queue = createQueue<null>(name, async (job) => {
+      attempts.push(job.attempt);
+      throw new Error('always');
+    });
 
-    const queue = createQueue<{ z: number }>(
-      name,
-      async () => {
-        runs++;
-        await Bun.sleep(7000);
-        return { ok: true };
-      },
-      { dataPath, concurrency: 2, lockDuration: 50 },
-    );
-
-    await queue.add('slow', { z: 1 }, { attempts: 2, bunqueue: { backoff: 10 } });
-
-    expect(await failed.promise).toMatch(/lock token/i);
-    expect(runs).toBe(1);
-  }, 30_000);
+    await queue.add('flaky', null, { attempts: 2, backoff: { type: 'fixed', delay: 30 } });
+    await terminal.promise;
+    expect(attempts).toEqual([1, 2]);
+  });
 
   test('queue:lockDurationMs is resolved once per queue, after the per-queue option', () => {
     const seen: Array<{ value: number; queue: string; explicit: boolean }> = [];
@@ -224,48 +194,69 @@ describe('Mochi queue', () => {
 
     const defaulted = uniqueName();
     const chosen = uniqueName();
-    const passthrough = uniqueName();
     try {
-      createQueue(defaulted, async () => null, { dataPath });
-      createQueue(chosen, async () => null, { dataPath, lockDuration: 50 });
-      createQueue(passthrough, async () => null, { dataPath, bunqueue: { lockDuration: 70 } });
+      createQueue(defaulted, async () => null);
+      createQueue(chosen, async () => null, { lockDuration: 5000 });
     } finally {
       initExtensions({});
     }
 
     expect(seen).toEqual([
       { value: DEFAULT_LOCK_DURATION_MS, queue: defaulted, explicit: false },
-      { value: 50, queue: chosen, explicit: true },
-      // The raw escape hatch feeds the filter rather than bypassing it, so the
-      // filtered value stays the last word on the lock.
-      { value: 70, queue: passthrough, explicit: true },
+      { value: 5000, queue: chosen, explicit: true },
     ]);
   });
 
-  test('does not leak bunqueue job methods into the processor', async () => {
+  test('the processor receives a plain data job, not an engine handle', async () => {
     const name = uniqueName();
     const seen = deferred<MochiJob<unknown>>();
 
-    const queue = createQueue(
-      name,
-      async (job) => {
-        seen.resolve(job);
-        return null;
-      },
-      { dataPath },
-    );
+    const queue = createQueue(name, async (job) => {
+      seen.resolve(job);
+      return null;
+    });
 
     await queue.add('probe', { hello: 'world' });
 
     const job = await seen.promise;
-    expect((job as unknown as Record<string, unknown>).moveToCompleted).toBeUndefined();
-    expect((job as unknown as Record<string, unknown>).updateProgress).toBeUndefined();
     expect(Object.keys(job).sort()).toEqual(['attempt', 'data', 'enqueuedAt', 'id', 'name', 'queue']);
+  });
+
+  test('a database string is shared per path and survives a full teardown', async () => {
+    const name = uniqueName();
+    const database = fileDatabase('persist');
+    const queue = createQueue<{ v: number }>(name, async () => null, { database });
+    // Far-future delay: the row must still be pending when we inspect the file.
+    await queue.add('later', { v: 1 }, { delay: 60_000 });
+    await closeAllQueueResources();
+
+    const sql = new SQL(database);
+    const rows: Array<{ queue: string; status: string }> = await sql`SELECT queue, status FROM mochi_jobs`;
+    expect(rows).toEqual([{ queue: name, status: 'pending' }]);
+    await sql.close();
+  });
+
+  test('a user-provided SQL instance is used directly and never closed by the queue layer', async () => {
+    const sql = new SQL('sqlite://:memory:');
+    const a = uniqueName();
+    const b = uniqueName();
+    const done = deferred<void>();
+    createQueue<null>(a, async () => done.resolve(), { database: sql });
+    const queueB = createQueue<null>(b, async () => null, { database: sql });
+    await getQueue(a).add('job', null);
+    await queueB.add('later', null, { delay: 60_000 });
+    await done.promise;
+
+    await closeAllQueueResources();
+    // Both queues shared one table in the caller's database, and it is still open.
+    const rows: Array<{ queue: string }> = await sql`SELECT queue FROM mochi_jobs`;
+    expect(rows).toEqual([{ queue: b }]);
+    await sql.close();
   });
 
   test('getQueue resolves the producer handle created for a name', () => {
     const name = uniqueName();
-    const created = createQueue(name, async () => null, { dataPath });
+    const created = createQueue(name, async () => null);
     expect(getQueue(name)).toBe(created);
   });
 
@@ -279,7 +270,7 @@ describe('Mochi queue', () => {
 
   test('getQueue names the mounted queues once mounting finished', () => {
     const name = uniqueName();
-    createQueue(name, async () => null, { dataPath });
+    createQueue(name, async () => null);
     markStartupMilestone('mochi:queuesMounted');
     expect(() => getQueue('typoed')).toThrow(/no such queue/);
     expect(() => getQueue('typoed')).toThrow(new RegExp(`Mounted queues: ${name}`));
@@ -292,28 +283,78 @@ describe('Mochi queue', () => {
 
   test('runQueueRecovery hands each callback its own producer handle', async () => {
     const name = uniqueName();
-    const created = createQueue(name, async () => null, { dataPath });
+    const created = createQueue(name, async () => null);
     let received: unknown;
     await runQueueRecovery([[name, { recover: (queue) => void (received = queue) }]]);
     expect(received).toBe(created);
   });
 
+  test('recovery is single-flight across boots sharing a database, until the lease TTL', async () => {
+    const name = uniqueName();
+    const database = fileDatabase('recovery-lease');
+    const boot = async (options?: { recoveryLeaseMs?: number }): Promise<boolean> => {
+      let ran = false;
+      createQueue(name, async () => null, { database, ...options });
+      await runQueueRecovery([[name, { options: { database, ...options }, recover: () => void (ran = true) }]]);
+      await closeAllQueueResources();
+      return ran;
+    };
+
+    expect(await boot({ recoveryLeaseMs: 200 })).toBe(true);
+    // A second boot inside the TTL window skips recovery — the first boot's work stands.
+    expect(await boot({ recoveryLeaseMs: 200 })).toBe(false);
+    await Bun.sleep(250);
+    expect(await boot({ recoveryLeaseMs: 200 })).toBe(true);
+  });
+
+  test('a failed recovery releases its lease so the next boot retries immediately', async () => {
+    const name = uniqueName();
+    const database = fileDatabase('recovery-release');
+    setLogLevel('silent');
+    try {
+      createQueue(name, async () => null, { database });
+      await runQueueRecovery([
+        [
+          name,
+          {
+            options: { database },
+            recover: () => {
+              throw new Error('store unavailable');
+            },
+          },
+        ],
+      ]);
+      await closeAllQueueResources();
+
+      let ran = false;
+      createQueue(name, async () => null, { database });
+      await runQueueRecovery([[name, { options: { database }, recover: () => void (ran = true) }]]);
+      expect(ran).toBe(true);
+    } finally {
+      setLogLevel('warn');
+    }
+  });
+
   test('a throwing recover is contained and reported on the event bus', async () => {
     const name = uniqueName();
-    createQueue(name, async () => null, { dataPath });
+    createQueue(name, async () => null);
     const errors: Array<{ queue: string; error: string }> = [];
     mochiEvents.on('queue:error', (e) => errors.push(e));
-
-    await runQueueRecovery([
-      [
-        name,
-        {
-          recover: () => {
-            throw new Error('store unavailable');
+    setLogLevel('silent');
+    try {
+      await runQueueRecovery([
+        [
+          name,
+          {
+            recover: () => {
+              throw new Error('store unavailable');
+            },
           },
-        },
-      ],
-    ]);
+        ],
+      ]);
+    } finally {
+      setLogLevel('warn');
+    }
 
     expect(errors).toEqual([{ queue: name, error: 'store unavailable' }]);
   });
@@ -322,7 +363,7 @@ describe('Mochi queue', () => {
   // real threshold is 30s, so these drive it down far enough to observe.
   async function recoveryWarnings(stallMs: number | null): Promise<string[]> {
     const name = uniqueName();
-    createQueue(name, async () => null, { dataPath });
+    createQueue(name, async () => null);
     initExtensions(stallMs === null ? {} : { filters: { 'queue:recoveryStallWarningMs': () => stallMs } });
 
     const warnings: string[] = [];
@@ -357,7 +398,7 @@ describe('Mochi queue', () => {
 
   test('closeAllQueueResources closes resources and is idempotent', async () => {
     const name = uniqueName();
-    createQueue(name, async () => null, { dataPath });
+    createQueue(name, async () => null);
 
     await closeAllQueueResources();
     // After draining, the handle is gone from the registry.

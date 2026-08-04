@@ -198,7 +198,7 @@ export interface MochiFilterContext {
   /** Resolved once per queue, as it is created. */
   'queue:lockDurationMs': {
     queue: string;
-    /** Whether this queue set `lockDuration` itself — through the option or the raw `bunqueue` passthrough — so the incoming value is its choice, not the framework default. */
+    /** Whether this queue set `lockDuration` itself, so the incoming value is its choice, not the framework default. */
     explicit: boolean;
   };
 }

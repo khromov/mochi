@@ -100,9 +100,9 @@
   "dependencies": {
     "@css-inline/css-inline-wasm": "^0.21.0",
     "@joint-ops/hitlimit-bun": "1.5.0",
+    "@mochi-framework/queue": ">=0.0.1",
     "@noble/ciphers": "2.2.0",
     "@noble/hashes": "2.2.0",
-    "bunqueue": "^2.8.54",
     "chokidar": "^5.0.0",
     "deepmerge": "^4.3.1",
     "devalue": "^5.9.0",

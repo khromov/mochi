@@ -113,6 +113,11 @@ const PACKAGES: Package[] = [
     categories: ['src/{frame,anim,theme}.ts', 'src/{render,render-worker,generate}.ts'],
   },
   {
+    name: 'packages/queue',
+    root: join(REPO_ROOT, 'packages', 'queue'),
+    categories: ['src/**/*.test.ts'],
+  },
+  {
     name: 'packages/msgpackr-extract-stub',
     root: join(REPO_ROOT, 'packages', 'msgpackr-extract-stub'),
     categories: ['*.test.ts'],
