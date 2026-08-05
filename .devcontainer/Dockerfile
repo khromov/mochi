@@ -55,6 +55,23 @@ ENV LANG=en_US.UTF-8
 ENV LANGUAGE=en_US.UTF-8
 ENV LC_ALL=en_US.UTF-8
 
+# PostgreSQL 15 (bookworm), installed AFTER locale-gen so the auto-created
+# 'main' cluster is en_US.UTF-8, not C. Credentials + host access baked here;
+# the cluster is started on each container boot by start-postgres.sh.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+  postgresql postgresql-contrib \
+  && apt-get clean && rm -rf /var/lib/apt/lists/* \
+  && PG_VER="$(pg_lsclusters -h | awk '{print $1; exit}')" \
+  && install -d -o postgres -g postgres -m 2775 /var/run/postgresql \
+  && sed -i "s/^#\?listen_addresses.*/listen_addresses = '*'/" \
+    "/etc/postgresql/$PG_VER/main/postgresql.conf" \
+  && echo "host all all all scram-sha-256" \
+    >> "/etc/postgresql/$PG_VER/main/pg_hba.conf" \
+  && pg_ctlcluster --skip-systemctl-redirect "$PG_VER" main start \
+  && runuser -u postgres -- psql -v ON_ERROR_STOP=1 \
+    -c "ALTER USER postgres PASSWORD 'postgres';" \
+  && pg_ctlcluster --skip-systemctl-redirect "$PG_VER" main stop
+
 # Ensure default node user has access to /usr/local/share
 RUN mkdir -p /usr/local/share/npm-global && \
   chown -R node:node /usr/local/share
