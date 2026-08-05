@@ -1347,7 +1347,7 @@ export class Mochi {
       // Arm nested-island inlining for this render. Also-hydrate renders are excluded: their subtree re-renders on the
       // client, and a nested defer site there is a compile error anyway (`defer-in-hydratable`).
       if (hydrateMode === null && inlineNestedIslands) {
-        ctx.islandInline = { budget: DEFAULT_INLINE_BUDGET };
+        ctx.islandInline = { budget: applyFilter('serverIsland:inlineBudget', DEFAULT_INLINE_BUDGET, { componentName, request: req }) };
       }
 
       return requestContext.run(ctx, async () => {

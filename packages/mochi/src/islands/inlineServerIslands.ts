@@ -12,9 +12,11 @@ export function shouldInlineIsland(options?: unknown): boolean {
     return false;
   }
   const st = requestContext.getStore()?.islandInline;
-  if (!st || st.budget <= 0) {
+  // `!(> 0)` so a NaN budget from a misbehaving `serverIsland:inlineBudget` filter fails closed to the placeholder path.
+  if (!st || !(st.budget > 0)) {
     return false;
   }
+  // A throwing child's unit stays spent — by the time its boundary fails, the child's own nested spends can't be unwound.
   st.budget--;
   return true;
 }

@@ -9,6 +9,7 @@ import { reachedStartupMilestones, resetStartupMilestones } from './lifecycle';
 import type { IslandPropsEntry } from './islands/islandPropsRegistry';
 import type { ResolvedEmailMessage } from './email/types';
 import { DEFAULT_CAPTCHA_BITS } from './captcha/config';
+import { DEFAULT_INLINE_BUDGET } from './islands/inlineServerIslands';
 
 const fakeOptions = {} as MochiServeOptions;
 
@@ -191,6 +192,22 @@ describe('new extension points', () => {
       envKeyPresent: true,
     });
     expect(result).toBe(input);
+  });
+
+  test('serverIsland:inlineBudget returns the default unchanged when no filter registered', () => {
+    const request = new Request('http://localhost/_mochi/island/Widget_ab12cd34');
+    expect(applyFilter('serverIsland:inlineBudget', DEFAULT_INLINE_BUDGET, { componentName: 'Widget_ab12cd34', request })).toBe(DEFAULT_INLINE_BUDGET);
+  });
+
+  test('serverIsland:inlineBudget can decide per island fetch from the context', () => {
+    initExtensions({
+      filters: {
+        'serverIsland:inlineBudget': (def, { componentName }) => (componentName.startsWith('Wide_') ? 128 : def),
+      },
+    });
+    const request = new Request('http://localhost/_mochi/island/Wide_ab12cd34');
+    expect(applyFilter('serverIsland:inlineBudget', DEFAULT_INLINE_BUDGET, { componentName: 'Wide_ab12cd34', request })).toBe(128);
+    expect(applyFilter('serverIsland:inlineBudget', DEFAULT_INLINE_BUDGET, { componentName: 'Other_ab12cd34', request })).toBe(DEFAULT_INLINE_BUDGET);
   });
 
   test('payload:compressMinBytes returns the default unchanged when no filter registered', () => {

@@ -6,9 +6,9 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import type { Server } from 'bun';
-import { Mochi } from '../Mochi';
+import { Mochi } from './Mochi';
 
-const FIXTURE_PAGE = path.join(import.meta.dir, '..', '__fixtures__', 'defer-in-hydratable', 'BadHydratePage.svelte');
+const FIXTURE_PAGE = path.join(import.meta.dir, '__fixtures__', 'defer-in-hydratable', 'BadHydratePage.svelte');
 
 describe('defer-in-hydratable compile error', () => {
   let server: Server<undefined>;
@@ -17,7 +17,7 @@ describe('defer-in-hydratable compile error', () => {
   let status: number;
 
   beforeAll(async () => {
-    outDir = mkdtempSync(path.join(import.meta.dir, '..', '..', '.mochi-defer-in-hyd-'));
+    outDir = mkdtempSync(path.join(import.meta.dir, '..', '.mochi-defer-in-hyd-'));
     server = await Mochi.serve({
       port: 0,
       development: false,

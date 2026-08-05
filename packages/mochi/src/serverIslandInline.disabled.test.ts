@@ -4,9 +4,9 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import type { Server } from 'bun';
-import { Mochi } from '../Mochi';
+import { Mochi } from './Mochi';
 
-const FIXTURE_PAGE = path.join(import.meta.dir, '..', '__fixtures__', 'inline-islands', 'Page.svelte');
+const FIXTURE_PAGE = path.join(import.meta.dir, '__fixtures__', 'inline-islands', 'Page.svelte');
 
 describe('inlineNestedIslands: false', () => {
   let server: Server<undefined>;
@@ -14,7 +14,7 @@ describe('inlineNestedIslands: false', () => {
   let base: string;
 
   beforeAll(async () => {
-    outDir = mkdtempSync(path.join(import.meta.dir, '..', '..', '.mochi-inline-off-'));
+    outDir = mkdtempSync(path.join(import.meta.dir, '..', '.mochi-inline-off-'));
     server = await Mochi.serve({
       port: 0,
       development: false,

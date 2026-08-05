@@ -1696,7 +1696,9 @@ export class ComponentRegistry {
       body: normalized,
       head: shouldStrip ? stripHydrationMarkers(headStr) : headStr,
       cssUrls,
-      bootstrapUrl: hydratables.length > 0 ? this.islandBootstrapUrl : null,
+      // Gated on wrappers actually present in the output — the entry's compile-time hydratables may all sit in branches
+      // this render never took.
+      bootstrapUrl: renderedIslandNames.size > 0 ? this.islandBootstrapUrl : null,
       hasServerIslands,
       debugBarData,
     };

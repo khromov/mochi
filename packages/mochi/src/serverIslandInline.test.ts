@@ -7,11 +7,11 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import type { Server } from 'bun';
 import { parse as devalueParse } from 'devalue';
-import { Mochi } from '../Mochi';
-import { decryptProps } from './serverIslandCrypto';
-import { DEFAULT_INLINE_BUDGET } from './inlineServerIslands';
+import { Mochi } from './Mochi';
+import { decryptProps } from './islands/serverIslandCrypto';
+import { DEFAULT_INLINE_BUDGET } from './islands/inlineServerIslands';
 
-const FIXTURE_PAGE = path.join(import.meta.dir, '..', '__fixtures__', 'inline-islands', 'Page.svelte');
+const FIXTURE_PAGE = path.join(import.meta.dir, '__fixtures__', 'inline-islands', 'Page.svelte');
 
 interface Wrapper {
   tag: string;
@@ -48,12 +48,20 @@ describe('nested server island inlining', () => {
   };
 
   beforeAll(async () => {
-    outDir = mkdtempSync(path.join(import.meta.dir, '..', '..', '.mochi-inline-'));
+    outDir = mkdtempSync(path.join(import.meta.dir, '..', '.mochi-inline-'));
     server = await Mochi.serve({
       port: 0,
       development: false,
       logger: { enabled: false },
       outDir,
+      filters: {
+        // Behavioral coverage for `serverIsland:inlineBudget`: the header opts a single fetch into a custom budget,
+        // so the default-budget assertions elsewhere in this file stay meaningful.
+        'serverIsland:inlineBudget': (budget, { componentName, request }) => {
+          const override = request.headers.get('x-test-inline-budget');
+          return override !== null && componentName.startsWith('Recursive_') ? Number(override) : budget;
+        },
+      },
       routes: {
         '/': Mochi.page(FIXTURE_PAGE),
       },
@@ -159,6 +167,19 @@ describe('nested server island inlining', () => {
     const leftover = harvestWrappers(body);
     expect(leftover).toHaveLength(1);
     expect(leftover[0]!.key.startsWith('Recursive_')).toBe(true);
+  });
+
+  test('the serverIsland:inlineBudget filter resizes the budget for one fetch', async () => {
+    const w = wrapperFor('Recursive');
+    const res = await fetch(`${base}/_mochi/island/${w.key}?props=${encodeURIComponent(w.token)}`, {
+      headers: { 'x-test-inline-budget': '3' },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.text();
+
+    const depths = [...body.matchAll(/data-depth="(\d+)"/g)].map((m) => Number(m[1]));
+    expect(Math.max(...depths)).toBe(3);
+    expect(harvestWrappers(body)).toHaveLength(1);
   });
 
   test('an also-hydrate island render never inlines nested defer sites', async () => {
