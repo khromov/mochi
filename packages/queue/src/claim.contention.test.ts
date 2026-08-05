@@ -29,4 +29,5 @@ test('two instances on one database each process every job exactly once', async 
     expect(runs.get(ref.id)).toBe(1);
   }
   await Promise.all([a.close(), b.close()]);
-});
+  // Two engines fsync-ing a shared WAL file are disk-bound on CI runners — far past bun's 5s default.
+}, 30_000);

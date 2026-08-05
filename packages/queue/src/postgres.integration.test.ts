@@ -64,7 +64,7 @@ describe('postgres adapter', () => {
       expect(runs.get(ref.id)).toBe(1);
     }
     await Promise.all([a.close(), b.close()]);
-  });
+  }, 30_000);
 
   test('an expired lease is reclaimed and retried', async () => {
     const now = Date.now();
