@@ -3,12 +3,14 @@
   import { delay } from '../../components/utils.ts';
   import DepthLevel2 from './DepthLevel2.svelte';
 
+  let { inline = true } = $props();
+
   await (isServer ? delay(300, 600) : Promise.resolve());
 </script>
 
 <div class="level level-1">
   <p><strong>Level 1</strong> — server island (<code>mochi:defer</code>). It nests one more:</p>
-  <DepthLevel2 mochi:defer>
+  <DepthLevel2 mochi:defer={{ inline }} {inline}>
     <div class="island-loading">Loading level 2<span class="dots"></span></div>
   </DepthLevel2>
 </div>

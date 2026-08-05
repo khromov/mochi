@@ -67,6 +67,7 @@ import { makeRequestContextBuilder } from './runtime/requestSetup';
 import { createRouteLimiter, applyRateLimitHeaders } from './runtime/rateLimit';
 import type { MochiRateLimitOptions, MochiRateLimitStore, RouteLimiter } from './runtime/rateLimit';
 import { decryptProps } from './islands/serverIslandCrypto';
+import { DEFAULT_INLINE_BUDGET } from './islands/inlineServerIslands';
 import { createImageHandler } from './image/imageEndpoint';
 import { createLocalAssetHandler } from './image/localAssetRegistry';
 import { getImageRuntime } from './image/config';
@@ -317,6 +318,7 @@ export class Mochi {
     const cookieDefaults = applyFilter('cookie:defaults', {}, { options });
 
     const development = options.development ?? true;
+    const inlineNestedIslands = options.inlineNestedIslands !== false;
     const warmupEnabled = resolveWarmupEnabled(options.warmup, development);
     const debugBarEnabled = development && (options.debugBar ?? true);
     const liveReloadEnabled = options.liveReload ?? development;
@@ -1342,6 +1344,12 @@ export class Mochi {
         return new Response('Unknown server island component', { status: 404 });
       }
 
+      // Arm nested-island inlining for this render. Also-hydrate renders are excluded: their subtree re-renders on the
+      // client, and a nested defer site there is a compile error anyway (`defer-in-hydratable`).
+      if (hydrateMode === null && inlineNestedIslands) {
+        ctx.islandInline = { budget: DEFAULT_INLINE_BUDGET };
+      }
+
       return requestContext.run(ctx, async () => {
         // A miss here means the build's eager discovery (see build.ts) didn't
         // find this island; `compileAll` warns about any manifest miss, so the
@@ -1394,7 +1402,6 @@ export class Mochi {
         if (isAlsoHydrateMode(hydrateMode)) {
           const componentUrl = registry.getComponentEntryUrl(componentName);
           const serializedProps = devalueStringify(props);
-          const bootstrapUrl = registry.getIslandBootstrapUrl();
 
           let hydrateAttrs = `component-name="${componentName}"`;
           if (Object.keys(props as Record<string, unknown>).length > 0) {
@@ -1405,10 +1412,14 @@ export class Mochi {
           }
 
           body = `<mochi-hydratable-island ${hydrateAttrs}>${body}</mochi-hydratable-island>`;
+        }
 
-          if (bootstrapUrl) {
-            body += `<script type="module" src="${bootstrapUrl}"></script>`;
-          }
+        // Appended whenever the rendered subtree carries hydratables — the also-hydrate island itself, plain
+        // mochi:hydrate children, or inlined also-hydrate islands — so the fragment self-hydrates even on a page that
+        // shipped no bootstrap of its own; duplicate module scripts are no-ops by src.
+        const bootstrapUrl = result.bootstrapUrl ?? (isAlsoHydrateMode(hydrateMode) ? registry.getIslandBootstrapUrl() : null);
+        if (bootstrapUrl) {
+          body += `<script type="module" src="${bootstrapUrl}"></script>`;
         }
 
         // CSS for islands rendered only inside this deferred content is gated out of the page `<head>`, so its `<link>`

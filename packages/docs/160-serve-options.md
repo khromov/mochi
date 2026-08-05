@@ -59,6 +59,7 @@ The forced fallback is not optional: a plain `server.stop()` never resolves whil
 - `errorPage`: Path to a Svelte component rendered for uncaught page errors and unmatched routes. Default: built-in minimal error page. See `Error handling`.
 - `handleError`: `HandleError` hook invoked before the error page renders; may override status/message or return a `Response`. See `Error handling`.
 - `compressServerIslandProps`: Deflate-compress server-island props when it reduces size. Default: `true`.
+- `inlineNestedIslands`: Render nested `mochi:defer` islands in-process during an island fetch instead of emitting further client fetches; `mochi:defer:visible` children always keep their own fetch, and a single call site opts out with `mochi:defer={{ inline: false }}`. Default: `true`. See `Server islands`.
 - `logger`: Built-in request logger. Default: `{ enabled: true }`. Pass `{ enabled: false }` to disable, or override `slowThreshold` / `verySlowThreshold`.
 - `publicDir`: Directory served as static assets (cwd-relative). Default: `./public`. Scanned from disk at startup in every mode, so it must ship with a production deploy — the build never copies it. `mochi-framework build` picks this value up from your `Mochi.serve()` call unless `--public-dir` overrides it.
 - `outDir`: Base directory for build artifacts and dev cache (cwd-relative). Default: `./.mochi`. Production writes here directly; development nests under `<outDir>/dev` so a dev run can't collide with a production build (and is wiped clean on every dev startup).
