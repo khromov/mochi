@@ -456,6 +456,12 @@ export interface MochiServeOptions {
   /** Deflate-compress server island props when it reduces size. Default: true. */
   compressServerIslandProps?: boolean;
   /**
+   * Render nested `mochi:defer` islands in-process during an island fetch instead of emitting further client fetches,
+   * collapsing an N-level chain into one request. `mochi:defer:visible` children always keep their own lazy fetch, and a
+   * single call site opts out with `mochi:defer={{ inline: false }}`. Default: true.
+   */
+  inlineNestedIslands?: boolean;
+  /**
    * Built-in request logger, enabled by default. `{ enabled: false }` disables the formatter while events keep flowing
    * on the bus; `level` gates `log.*` output globally; `slowThreshold` / `verySlowThreshold` override the timing bands.
    */

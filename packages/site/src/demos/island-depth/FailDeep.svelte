@@ -1,34 +1,31 @@
 <script>
-  import { isServer } from 'mochi-framework';
-  import { delay } from '../../components/utils.ts';
-  import DepthLevel2 from './DepthLevel2.svelte';
-
-  let { inline = true } = $props();
-
-  await (isServer ? delay(inline ? 300 : 600, inline ? 600 : 1200) : Promise.resolve());
+  import AlwaysThrows from './AlwaysThrows.svelte';
+  import ThrowsWhenInlined from './ThrowsWhenInlined.svelte';
 </script>
 
-<div class="level level-1">
-  <p><strong>Level 1</strong> — server island (<code>mochi:defer</code>). It nests one more:</p>
-  <DepthLevel2 mochi:defer={{ inline }} {inline}>
-    <div class="island-loading">Loading level 2<span class="dots"></span></div>
-  </DepthLevel2>
+<div class="level">
+  <p><strong>FailDeep</strong> — this parent island's content stays intact while both children fail their inline attempt:</p>
+  <AlwaysThrows mochi:defer>
+    <div class="island-loading">Waiting for AlwaysThrows<span class="dots"></span></div>
+  </AlwaysThrows>
+  <ThrowsWhenInlined mochi:defer>
+    <div class="island-loading">Waiting for ThrowsWhenInlined<span class="dots"></span></div>
+  </ThrowsWhenInlined>
 </div>
 
 <style>
   .level {
+    display: grid;
+    gap: 0.6rem;
     padding: 0.85rem 1rem;
     border: 2px dashed var(--border-strong);
     border-radius: var(--radius-md);
+    background: var(--surface-muted);
     color: var(--text);
   }
 
   .level > p {
-    margin: 0 0 0.6rem;
-  }
-
-  .level-1 {
-    background: var(--surface-muted);
+    margin: 0;
   }
 
   .island-loading {
@@ -47,10 +44,6 @@
     width: 1.5em;
     text-align: left;
     animation: dots 1.2s steps(4, end) infinite;
-  }
-
-  code {
-    font-family: var(--font-mono);
   }
 
   @keyframes dots {

@@ -382,7 +382,10 @@ describe('preprocessHydratable', () => {
 
     expect(serverIslands).toHaveLength(1);
     expect(transformed).toContain('<mochi-server-island');
-    expect(transformed).toContain('server-options={JSON.stringify({retries: 10})}');
+    // The options expression binds once and feeds both the inline decision and the placeholder attribute.
+    expect(transformed).toContain('{@const __mochi_sopts__ = ({retries: 10})}');
+    expect(transformed).toContain('server-options={JSON.stringify(__mochi_sopts__)}');
+    expect(transformed).toContain('__mochi_inline_island__(__mochi_sopts__)');
   });
 
   test('mochi:defer without options omits server-options attribute', () => {
@@ -396,7 +399,7 @@ describe('preprocessHydratable', () => {
     const source = `<script lang="ts">\nimport Srv from "./Srv.svelte";\n</script>\n<Srv mochi:defer />`;
     const { transformed } = preprocessHydratable(source, '/test/File.svelte');
 
-    expect(transformed).toContain('import { encryptProps as __mochi_encrypt_props__ } from "mochi-server-island-runtime"');
+    expect(transformed).toContain('import { encryptProps as __mochi_encrypt_props__, shouldInlineIsland as __mochi_inline_island__ } from "mochi-server-island-runtime"');
     expect(transformed).toContain('import { stringify as __mochi_stringify__ } from "mochi-framework"');
   });
 
@@ -405,8 +408,10 @@ describe('preprocessHydratable', () => {
     const { transformed, serverIslands } = preprocessHydratable(source, '/test/File.svelte');
 
     expect(serverIslands).toHaveLength(1);
+    // Each call site emits the placeholder twice — once in the boundary's failed snippet, once in the non-inline branch.
     const matches = transformed.match(/<mochi-server-island/g);
-    expect(matches).toHaveLength(2);
+    expect(matches).toHaveLength(4);
+    expect(transformed.match(/__mochi_inline_island__\(/g)).toHaveLength(2);
   });
 
   // --- mochi:defer:visible tests ---
@@ -552,7 +557,8 @@ describe('preprocessHydratable', () => {
 
     // Framework entries come last in the object literal, so the spread cannot
     // override the transport id (last key wins).
-    expect(transformed).toContain('{...rest, islandId: __mochi_iid}');
+    expect(transformed).toContain('{@const __mochi_props__ = ({...rest})}');
+    expect(transformed).toContain('{ ...__mochi_props__, islandId: __mochi_iid }');
   });
 
   test('literal islandId prop on a plain hydrate island is rejected too', () => {
@@ -666,25 +672,42 @@ describe('preprocessHydratable', () => {
     expect(transformed).toContain('data-component="Lazy"');
   });
 
-  test('mochi:defer alone does NOT add a boundary', () => {
+  test('mochi:defer branches between inline render and placeholder', () => {
     const source = `${SCRIPT('import Srv from "./Srv.svelte";')}<Srv mochi:defer />`;
     const { transformed } = preprocessHydratable(source, '/test/File.svelte');
 
-    // Server islands are rendered standalone at the /island/:name endpoint —
-    // boundary handling there is via transformError + endpoint try/catch.
-    expect(transformed).not.toContain('<svelte:boundary>');
+    // The inline branch renders the child in-process inside a boundary whose `failed` snippet is the placeholder, so a
+    // throwing child degrades to the classic fetch; the placeholder path stays boundary-free (endpoint transformError
+    // handles standalone renders). No failure stub is emitted — that stays an endpoint concern.
+    expect(transformed).toContain('{#if __mochi_inline_island__()}<svelte:boundary><Srv {...__mochi_props__} />{#snippet failed()}<mochi-server-island');
+    expect(transformed).toContain('{:else}<mochi-server-island');
     expect(transformed).not.toContain('mochi-island-failure');
   });
 
-  test('mochi:defer + mochi:hydrate combo does NOT add a boundary in the parent', () => {
+  test('mochi:defer:visible keeps the fetch-only emission with no inline branch', () => {
+    const source = `${SCRIPT('import Srv from "./Srv.svelte";')}<Srv mochi:defer:visible />`;
+    const { transformed } = preprocessHydratable(source, '/test/File.svelte');
+
+    // Laziness is the point of :visible — it is exempt from inlining and keeps the single-placeholder emission.
+    expect(transformed).not.toContain('__mochi_inline_island__(');
+    expect(transformed).not.toContain('<svelte:boundary>');
+    expect(transformed.match(/<mochi-server-island/g)).toHaveLength(1);
+  });
+
+  test('mochi:defer + mochi:hydrate combo inlines as a hydratable wrapper mirroring the endpoint', () => {
     const source = `${SCRIPT('import Widget from "./Widget.svelte";')}<Widget mochi:defer mochi:hydrate count={5} />`;
     const { transformed } = preprocessHydratable(source, '/test/File.svelte');
 
-    // The combo path renders <mochi-server-island> in the parent — no boundary
-    // here. The eventual hydratable wrap happens at the endpoint with the
-    // already-rendered island body, where the boundary would lose its
-    // semantic value (the throw already happened or didn't).
-    expect(transformed).not.toContain('<svelte:boundary>');
+    // The inline branch mirrors the endpoint's also-hydrate wrapper (`props` attribute, no hydrate-on) inside the
+    // hydrate branch's boundary/context nesting; the placeholder path keeps the plain server-island wrapper.
+    expect(transformed).toContain(
+      '<MochiHydratableBoundary_><mochi-hydratable-island component-name="' +
+        idFor('Widget', './Widget.svelte') +
+        '" props={__mochi_stringify__(__mochi_props__)} component-url="__MOCHI_COMPONENT_URL__' +
+        idFor('Widget', './Widget.svelte') +
+        '__"><svelte:boundary><Widget {...__mochi_props__} /></svelte:boundary></mochi-hydratable-island></MochiHydratableBoundary_>',
+    );
+    expect(transformed).toContain('import MochiHydratableBoundary_ from "mochi-framework/hydratable-boundary"');
   });
 
   test('boundary preserves inner tag and props', () => {

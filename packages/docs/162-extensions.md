@@ -303,6 +303,24 @@ await Mochi.serve({
 
 The `envKeyPresent` field on the filter context tells you whether `MOCHI_KEY` was set, in case you want to fall back to the env-derived default.
 
+#### `serverIsland:inlineBudget`
+
+How many nested `mochi:defer` call sites one island fetch may expand in-process before the rest fall back to fetch placeholders (see `Server islands`). The budget counts total expansions per fetch — deep or wide, a recursive chain and a long `{#each}` list draw from the same pool. Resolved per island fetch with the fetched island's identity key and the request in context; never fires when `inlineNestedIslands` is off or when the fetched island also hydrates. Sync.
+
+```ts
+import { DEFAULT_INLINE_BUDGET } from 'mochi-framework';
+
+await Mochi.serve({
+  filters: {
+    // The dashboard island expands a wide row list; everything else keeps the default.
+    'serverIsland:inlineBudget': (def, { componentName }) => (componentName.startsWith('Dashboard_') ? 128 : def),
+  },
+  routes,
+});
+```
+
+Default is `DEFAULT_INLINE_BUDGET` (32). Returning `0` sends every nested island of that fetch down the placeholder path — equivalent to `inlineNestedIslands: false` for just that fetch.
+
 #### `payload:compressMinBytes`
 
 The minimum size (bytes) a server-island-prop or image payload must reach before the framework attempts to deflate it ahead of encryption. Below the threshold, zlib framing outweighs any saving, so the deflate call is skipped. Evaluated per payload — the filter receives the (pre-encryption) `payload` bytes in its context, so the threshold can be decided per payload. Sync.

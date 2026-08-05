@@ -219,6 +219,13 @@ export type MochiCompileError =
       childPath: string;
     }
   | {
+      kind: 'defer-in-hydratable';
+      parent: string;
+      child: string;
+      parentPath: string;
+      childPath: string;
+    }
+  | {
       kind: 'css-bundle-failed';
       cssPath: string;
       message: string;
@@ -252,6 +259,8 @@ export function formatCompileErrors(errors: MochiCompileError[]): string {
     switch (e.kind) {
       case 'nested-hydration':
         return `Nested mochi:hydrate: <${e.child}> inside <${e.parent}> — remove mochi:hydrate from ${e.child}`;
+      case 'defer-in-hydratable':
+        return `mochi:defer inside a hydratable: <${e.child}> is a server island inside <${e.parent}>, whose subtree re-renders on the client where a server island cannot exist — remove mochi:defer from ${e.child} or the hydrate/clientOnly directive from ${e.parent}`;
       case 'css-bundle-failed':
         return `CSS bundle failed: ${e.cssPath} — ${e.message}`;
       case 'unresolved-island':
@@ -665,7 +674,11 @@ export class ComponentRegistry {
           namespace: 'mochi-server-island',
         }));
         build.onLoad({ filter: /.*/, namespace: 'mochi-server-island' }, () => ({
-          contents: [`import { encryptProps } from "${toPosixPath(path.join(SRC_DIR, 'islands/serverIslandCrypto.ts'))}";`, `export { encryptProps };`].join('\n'),
+          contents: [
+            `import { encryptProps } from "${toPosixPath(path.join(SRC_DIR, 'islands/serverIslandCrypto.ts'))}";`,
+            `import { shouldInlineIsland } from "${toPosixPath(path.join(SRC_DIR, 'islands/inlineServerIslands.ts'))}";`,
+            `export { encryptProps, shouldInlineIsland };`,
+          ].join('\n'),
           loader: 'js',
         }));
         // The preprocessor's island wrapper resolves to the framework's own component in the default namespace, so it
@@ -787,7 +800,10 @@ export class ComponentRegistry {
     // structural error already detected — including under the `bun test`-only EISDIR bug, where the SSR build fails
     // after preprocessing succeeded.
     this.errors = this.errors.filter(
-      (e) => !(e.kind === 'nested-hydration' && fileHydratables.has(e.parentPath)) && !(e.kind === 'unresolved-island' && filePreprocessErrors.has(e.filePath)),
+      (e) =>
+        !(e.kind === 'nested-hydration' && fileHydratables.has(e.parentPath)) &&
+        !(e.kind === 'defer-in-hydratable' && fileServerIslands.has(e.parentPath)) &&
+        !(e.kind === 'unresolved-island' && filePreprocessErrors.has(e.filePath)),
     );
 
     for (const errors of filePreprocessErrors.values()) {
@@ -814,6 +830,27 @@ export class ComponentRegistry {
           });
           logger.error(
             `\nNested hydration directives are not allowed.\n  <${child.displayName}> with mochi:hydrate, mochi:hydrate:visible, or mochi:clientOnly is inside <${parent.displayName}> which is also hydratable.\n  Remove the directive from ${child.displayName} — it hydrates automatically as part of ${parent.displayName}.\n`,
+          );
+        }
+      }
+    }
+
+    // A server island inside a hydratable subtree can never work: client bundles skip the island preprocessor, so on
+    // hydration the client renders the raw child where SSR emitted a placeholder (observed: HYDRATION_ERROR + client
+    // remount wiping the island). Same one-file-deep limitation as the nested-hydration guard above.
+    for (const [filePath, children] of fileServerIslands) {
+      if (hydratablePaths.has(filePath) && children.length > 0) {
+        const parent = allHydratables.find((h) => h.resolvedPath === filePath)!;
+        for (const child of children) {
+          this.errors.push({
+            kind: 'defer-in-hydratable',
+            parent: parent.displayName,
+            child: child.displayName,
+            parentPath: filePath,
+            childPath: child.resolvedPath,
+          });
+          logger.error(
+            `\nA server island cannot sit inside a hydratable subtree.\n  <${child.displayName}> with mochi:defer or mochi:defer:visible is inside <${parent.displayName}>, which hydrates on the client — where a server island cannot render.\n  Remove mochi:defer from ${child.displayName}, or the hydrate/clientOnly directive from ${parent.displayName}.\n`,
           );
         }
       }
@@ -1659,7 +1696,9 @@ export class ComponentRegistry {
       body: normalized,
       head: shouldStrip ? stripHydrationMarkers(headStr) : headStr,
       cssUrls,
-      bootstrapUrl: hydratables.length > 0 ? this.islandBootstrapUrl : null,
+      // Gated on wrappers actually present in the output — the entry's compile-time hydratables may all sit in branches
+      // this render never took.
+      bootstrapUrl: renderedIslandNames.size > 0 ? this.islandBootstrapUrl : null,
       hasServerIslands,
       debugBarData,
     };
