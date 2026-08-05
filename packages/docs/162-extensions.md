@@ -190,6 +190,24 @@ await Mochi.serve({
 });
 ```
 
+#### `serverIsland:inlineBudget`
+
+How many nested `mochi:defer` call sites one island fetch expands in-process before the rest fall back to fetch placeholders (see `Server islands`). The budget counts total expansions per fetch — a recursive chain and a long `{#each}` list draw from the same pool. Resolved per island fetch, with the fetched island's identity key and the request in context. Never fires when `inlineNestedIslands` is off, or when the fetched island also hydrates. Sync.
+
+```ts
+import { DEFAULT_INLINE_BUDGET } from 'mochi-framework';
+
+await Mochi.serve({
+  filters: {
+    // The dashboard island expands a wide row list; everything else keeps the default.
+    'serverIsland:inlineBudget': (def, { componentName }) => (componentName.startsWith('Dashboard_') ? 128 : def),
+  },
+  routes,
+});
+```
+
+Default is `DEFAULT_INLINE_BUDGET` (32). Return `0` to send every nested island of that fetch down the placeholder path — the same as `inlineNestedIslands: false` for that fetch.
+
 #### `payload:compressMinBytes`
 
 The minimum size (bytes) a server-island-prop or image payload must reach before Mochi deflates it ahead of encryption. Evaluated per payload. The filter receives the pre-encryption `payload` bytes. Sync. Default `DEFAULT_COMPRESS_MIN_BYTES` (80). Return `Infinity` to disable compression for a payload.

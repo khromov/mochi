@@ -14,6 +14,7 @@ export { runTests } from './cli/testing';
 export type { RunTestsOptions } from './cli/testing';
 export type { MochiSvelteConfig } from './compiler/svelteConfig';
 export type { MochiSvelteCompiler, SvelteCompilerBackend, SvelteCompileOutput } from './compiler/svelteCompilerBackend';
+export type { ShakeAppResult, SvelteShakerBackend } from './compiler/svelteShaker';
 export { getRequestContext } from './runtime/requestContext';
 export type { MochiRequestContext } from './runtime/requestContext';
 export { getMochiConfig } from './mochiConfig';
@@ -48,6 +49,7 @@ export { consoleLogger, silenceInternalRoutes } from './dev/consoleLogger';
 export type { ConsoleLoggerOptions } from './dev/consoleLogger';
 export { logger, setLogLevel, getLogLevel } from './utils/log';
 export type { LogLevel } from './utils/log';
+export { pinGlobal } from './utils/globalState';
 export { mochiEvents, hasSubscribers } from './events';
 export type { MochiCompileError } from './compiler/ComponentRegistry';
 export type {
@@ -121,6 +123,7 @@ export type { MochiCaptchaOptions, CaptchaResult, CaptchaFailureReason, NonceSto
 export { enhance, deserialize } from './runtime/enhance.ssr';
 export { isFormContentType, DEFAULT_FORM_CONTENT_TYPES, DEFAULT_PROTECTED_METHODS } from './runtime/csrf';
 export { DEFAULT_COMPRESS_MIN_BYTES, encryptPayload, decryptPayload } from './islands/payloadCrypto';
+export { DEFAULT_INLINE_BUDGET } from './islands/inlineServerIslands';
 export type { EncryptOptions } from './islands/payloadCrypto';
 export type { MochiCsrfOptions } from './runtime/csrf';
 export type {

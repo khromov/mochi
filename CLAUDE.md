@@ -7,6 +7,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Bun workspaces monorepo (`packages/*`):
 
 - `packages/mochi` — the `mochi-framework` library (published to npm). All framework source lives here.
+- `packages/mochi-rsvelte` — published as `@mochi-framework/rsvelte`: the opt-in Rust compiler backend behind `Mochi.serve({ svelteCompiler: 'rsvelte' })`. Owns the `@rsvelte/*` dependency tree; `mochi-framework` holds only an optional peer and falls back to `svelte/compiler` without it. Raw TS, no build step.
+- `packages/mochi-svelte-shaker` — published as `@mochi-framework/svelte-shaker`: the opt-in whole-program `.svelte` source optimizer behind `Mochi.serve({ optimize })`. Owns the `svelte-shaker` dependency and its `>=0.18.1` correctness floor; `mochi-framework` holds only an optional peer and warns once at boot when `optimize` is on without it. Raw TS, no build step.
 - `packages/site` — main site that consumes `mochi-framework` via `workspace:*`; serves the marketing pages, the docs (rendered from `packages/docs` markdown), and the inline demos. Port 3333.
 - `packages/demos` — standalone demos site (HN clone, todo, admin). Deployed separately from `packages/site`. Port 3334.
 - `packages/minimal` — smallest possible Mochi app; doubles as the smoke-test target and the `create-mochi` template source. Port 3335.
@@ -205,7 +207,8 @@ Use code comments sparingly, this is important.
 - Comment the **why**, never the **what** — the code already says what it does, and a comment that restates it just rots. Prefer no comment to an obvious one.
 - **One sentence.** Allow a second only when the why is genuinely incomprehensible without it (a non-obvious constraint, a bug being worked around, an ordering dependency between two calls); never a third. A comment that keeps growing usually means the code needs a better name or a smaller function, not more prose.
 - Do not add comment signatures for new functions unless you need to explain WHY the function is needed.
-- Never reference plan files (`~/.claude/plans/*.md`) from code comments, docstrings, or commit messages — they live outside the repo and are a dead link for any future reader. If context is genuinely needed, restate the rationale inline so the comment stands on its own.
+- Do not add comments for CSS - ever!
+- Do not add comments to simple functions.
 - Never write a literal `</script>` inside a `.svelte` `<script>` block — including in a comment; it closes the tag at the HTML-parsing layer and yields a misleading `js_parse_error` at line `:0`. Break it up (`script` + `>` separately).
 
 ## After every change

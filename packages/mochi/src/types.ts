@@ -394,9 +394,24 @@ export interface MochiWarmupOptions {
   enabledInDev: boolean;
 }
 
+/** Keys the framework sets on `Bun.serve()` itself; rejected under `bun` and stripped from `BunServeOverrides`. */
+export const FRAMEWORK_OWNED_BUN_KEYS = ['fetch', 'websocket', 'routes', 'error'] as const;
+
+/**
+ * Options spread directly into the underlying `Bun.serve()`. The framework owns
+ * the keys in {@link FRAMEWORK_OWNED_BUN_KEYS}; setting any of them here throws.
+ */
+export type BunServeOverrides = Omit<NonNullable<Parameters<typeof Bun.serve>[0]>, (typeof FRAMEWORK_OWNED_BUN_KEYS)[number]>;
+
 export interface MochiServeOptions {
   port?: number;
   hostname?: string;
+  /**
+   * Escape hatch for raw `Bun.serve()` options Mochi doesn't surface — e.g.
+   * `idleTimeout` (seconds; HTTP default 10, max 255, 0 disables), `maxRequestBodySize`,
+   * `reusePort`, `tls`. Spread into `Bun.serve()`; framework-owned keys are rejected.
+   */
+  bun?: BunServeOverrides;
   development?: boolean;
   /** Mount the dev-only debug toolbar. Default: `true`, and ignored entirely when `development` is `false`. */
   debugBar?: boolean;
@@ -440,6 +455,12 @@ export interface MochiServeOptions {
   handleError?: HandleError;
   /** Deflate-compress server island props when it reduces size. Default: true. */
   compressServerIslandProps?: boolean;
+  /**
+   * Render nested `mochi:defer` islands in-process during an island fetch instead of emitting further client fetches,
+   * collapsing an N-level chain into one request. `mochi:defer:visible` children always keep their own lazy fetch, and a
+   * single call site opts out with `mochi:defer={{ inline: false }}`. Default: true.
+   */
+  inlineNestedIslands?: boolean;
   /**
    * Built-in request logger, enabled by default. `{ enabled: false }` disables the formatter while events keep flowing
    * on the bus; `level` gates `log.*` output globally; `slowThreshold` / `verySlowThreshold` override the timing bands.
@@ -560,6 +581,9 @@ export interface MochiServeOptions {
    * `./src`. `mochi-framework build` reads this straight from your entry's `Mochi.serve()` call, keeping the manifest in sync.
    *
    * Pass `true` to shake everything, or an object with `enabled: true` plus `exclude`. Default: `false`.
+   *
+   * Requires the optional `@mochi-framework/svelte-shaker` package (`bun add -d @mochi-framework/svelte-shaker`); without
+   * it Mochi warns once at boot and compiles from the original sources.
    */
   optimize?: boolean | MochiSvelteShakerOptions;
   /**

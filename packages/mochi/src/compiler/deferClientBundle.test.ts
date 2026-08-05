@@ -44,8 +44,8 @@ describe('compileAll({ deferClientBundle }) + finalizeClientBundle', () => {
     expect(registry.getIslandBootstrapUrl()).not.toBeNull();
     const stats = registry.getClientStats();
     const entryNames = (stats?.outputs ?? []).map((o) => o.name);
-    expect(entryNames.some((n) => n.includes('WidgetA'))).toBe(true);
-    expect(entryNames.some((n) => n.includes('WidgetB'))).toBe(true);
+    expect(entryNames.filter((n) => n.includes('WidgetA'))).toHaveLength(1);
+    expect(entryNames.filter((n) => n.includes('WidgetB'))).toHaveLength(1);
   });
 
   test('finalize with no hydratables is a no-op', async () => {

@@ -12,7 +12,13 @@ description: 'Optimize and slim .svelte sources before compilation with the whol
 
 [svelte-shaker](https://github.com/baseballyama/svelte-shaker) is a whole-program optimizer that slims `.svelte` **source** before the Svelte compiler runs. It folds props that never vary, removes the dead branches that folding opens up, and narrows unused CSS. The result is less generated code per component and smaller bundles.
 
-Enable it with `optimize: true` on `Mochi.serve()`:
+It is opt-in and ships as a separate package, so apps that do not use it never install the engine. Add it:
+
+```sh
+bun add -d @mochi-framework/svelte-shaker
+```
+
+Then enable it with `optimize: true` on `Mochi.serve()`:
 
 ```ts
 // src/index.ts
@@ -87,4 +93,4 @@ svelte-shaker: source size before → after
 
 ### Scope
 
-Only components under `./src` are scanned. Prop folding is sound only when every call site of a component is in scope, so components imported from outside `./src` (a shared package) are left untouched. If shaking fails, Mochi logs a warning and falls back to the original source.
+Only components under `./src` are scanned. Prop folding is sound only when every call site of a component is in scope, so components imported from outside `./src` (a shared package) are left untouched. If the add-on is not installed, or shaking fails, Mochi logs a warning and falls back to the original source.

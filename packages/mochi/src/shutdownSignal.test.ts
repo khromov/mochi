@@ -94,6 +94,8 @@ test('SIGTERM still exits once the grace period lapses', async () => {
   const elapsed = performance.now() - t0;
 
   expect(exitCode).toBe(0);
-  // Waited for the grace period rather than cutting the socket immediately.
+  // Waited for the grace period rather than cutting the socket immediately,
+  // but still exited shortly after it lapsed instead of lingering.
   expect(elapsed).toBeGreaterThanOrEqual(400);
+  expect(elapsed).toBeLessThan(4_000);
 }, 15_000);

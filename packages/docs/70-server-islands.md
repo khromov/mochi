@@ -68,7 +68,7 @@ Apply `mochi:hydrate` alongside `mochi:defer` to fetch the island on demand and 
 
 ### Nesting islands inside a server island
 
-A server island's content is a full render, so it can contain `mochi:hydrate` islands and further `mochi:defer` server islands. Hydratable children hydrate once the deferred HTML lands. Nested server islands fetch themselves.
+A server island's content is a full render, so it can contain `mochi:hydrate` islands and further `mochi:defer` server islands. Hydratable children hydrate once the deferred HTML lands.
 
 ```svelte
 <!-- file: src/Dashboard.svelte (rendered via mochi:defer) -->
@@ -76,7 +76,31 @@ A server island's content is a full render, so it can contain `mochi:hydrate` is
 <Notifications mochi:defer />
 ```
 
-Mochi delivers CSS for nested hydratable islands with the fetched HTML, so styles apply as soon as the island appears.
+Mochi **inlines** nested `mochi:defer` islands into the parent's fetch. When the island endpoint renders `Dashboard`, it renders `Notifications` in-process too, so one request returns the whole chain no matter how deep it nests. The decision happens at render time. A nested island inside `{#if}` or `{#each}` inlines when its branch renders, with the same props the placeholder would seal, so Mochi never renders an unreachable island. If an inlined child throws, it degrades to a fetch placeholder and fetches on its own. The parent's content stays intact.
+
+Inlining is capped at 32 expansions per island fetch. A recursive chain and a long `{#each}` list draw from the same budget. Past the cap, children fall back to fetching. Tune the cap per fetch with the `serverIsland:inlineBudget` filter (see [Extensions](/docs/extensions/)).
+
+Opt out per call site to keep a child on its own fetch. This helps when a slow child must not delay the parent's content:
+
+```svelte
+<Notifications mochi:defer={{ inline: false }} />
+```
+
+Opt out globally with `inlineNestedIslands`:
+
+```ts
+Mochi.serve({ inlineNestedIslands: false });
+```
+
+`mochi:defer:visible` children are always exempt. Laziness is their point, so they keep their own viewport-triggered fetch.
+
+Mochi delivers CSS for nested islands with the fetched HTML. The host page cannot link it ahead of time, because the island content does not render until the island resolves. Styles apply as soon as the island appears.
+
+<Callout type="warning">
+
+**`mochi:defer` inside a hydratable subtree is a compile error.** A component marked `mochi:hydrate*` or `mochi:clientOnly` re-renders on the client, where a server island cannot exist. Remove `mochi:defer` from the child — it already renders as part of the parent's island fetch — or remove the hydrate directive from the parent.
+
+</Callout>
 
 ### Lazy server islands with `mochi:defer:visible`
 

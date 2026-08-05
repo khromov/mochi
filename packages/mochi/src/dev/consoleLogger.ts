@@ -195,7 +195,7 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
     duration: durationMs,
     slow,
     verySlow,
-    level: 'info',
+    level: removed === 0 ? 'debug' : 'info',
   }));
   subscribe('image:cache-sweep', ({ removedVariants, removedOriginals, removedOther, durationMs }) => {
     const removed = removedVariants + removedOriginals + removedOther;

@@ -32,6 +32,8 @@ describe('scanServerOnlyExports', () => {
     const src = `export { foo, bar as baz } from './other';`;
     const r = scanServerOnlyExports(src);
     expect(r.named.sort()).toEqual(['baz', 'foo']);
+    expect(r.hasDefault).toBe(false);
+    expect(r.warnings).toEqual([]);
   });
 
   test('detects default export', () => {
@@ -117,9 +119,9 @@ describe('buildServerOnlyStubModule', () => {
     expect(stub).toContain('export default __default');
     const mod = (await import(`data:text/javascript;base64,${Buffer.from(stub).toString('base64')}`)) as { default: unknown };
     const d = mod.default as ((...a: unknown[]) => unknown) & (new () => unknown) & { foo?: unknown };
-    expect(() => d()).toThrow(/server-only/);
-    expect(() => d.foo).toThrow(/server-only/);
-    expect(() => new d()).toThrow(/server-only/);
+    expect(() => d()).toThrow(/was called on the client/);
+    expect(() => d.foo).toThrow(/wrap usage in hydratable/);
+    expect(() => new d()).toThrow(/was called on the client/);
   });
 
   test('stub throws when invoked', async () => {
@@ -129,7 +131,7 @@ describe('buildServerOnlyStubModule', () => {
       warnings: [],
     });
     const mod = (await import(`data:text/javascript;base64,${Buffer.from(stub).toString('base64')}`)) as { parseText: unknown };
-    expect(() => (mod.parseText as () => unknown)()).toThrow(/server-only/);
+    expect(() => (mod.parseText as () => unknown)()).toThrow(/was called on the client/);
   });
 
   test('stub throws on property access', async () => {
@@ -139,7 +141,7 @@ describe('buildServerOnlyStubModule', () => {
       warnings: [],
     });
     const mod = (await import(`data:text/javascript;base64,${Buffer.from(stub).toString('base64')}`)) as { db: { query: unknown } };
-    expect(() => mod.db.query).toThrow(/server-only/);
+    expect(() => mod.db.query).toThrow(/wrap usage in hydratable/);
   });
 
   test('stub throws when used with `new`', async () => {
@@ -149,7 +151,7 @@ describe('buildServerOnlyStubModule', () => {
       warnings: [],
     });
     const mod = (await import(`data:text/javascript;base64,${Buffer.from(stub).toString('base64')}`)) as { Klass: new () => unknown };
-    expect(() => new mod.Klass()).toThrow(/server-only/);
+    expect(() => new mod.Klass()).toThrow(/was called on the client/);
   });
 });
 

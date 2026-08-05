@@ -4,9 +4,13 @@ import { logger } from '../utils/log';
 // Force the engine wrapper to throw so we exercise prepareShake's catch branch.
 // Per-file process isolation keeps this module mock from leaking into other tests.
 mock.module('./svelteShaker', () => ({
-  shakeApp: () => {
-    throw new Error('boom');
-  },
+  resolveSvelteShaker: async () => ({
+    name: 'svelte-shaker',
+    version: '0.0.0-test',
+    shakeApp: () => {
+      throw new Error('boom');
+    },
+  }),
 }));
 
 const { ComponentRegistry } = await import('./ComponentRegistry');
@@ -32,6 +36,8 @@ describe('ComponentRegistry.prepareShake (failure fallback)', () => {
     // The user is pointed at svelte-shaker's tracker so the bug can be reported,
     // and the underlying error itself is dumped so that report can be actionable.
     expect(warn.mock.calls.some((c) => String(c[0]).includes('github.com/baseballyama/svelte-shaker/issues'))).toBe(true);
+    // The engine is a `>=` floor, so a regressed release can reach users — the report has to name the version.
+    expect(warn.mock.calls.some((c) => String(c[0]).includes('svelte-shaker@0.0.0-test'))).toBe(true);
     expect(error.mock.calls.some((c) => c[0] instanceof Error && c[0].message === 'boom')).toBe(true);
 
     warn.mockRestore();

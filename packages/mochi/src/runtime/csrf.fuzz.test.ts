@@ -47,6 +47,7 @@ describe('csrfCheck — property-based fuzzing', () => {
   const proxy = { origin: 'http://localhost:3333' };
 
   test('never throws; always returns null or a Response for arbitrary requests', () => {
+    let checked = 0;
     fc.assert(
       fc.property(fc.constantFrom('POST', 'GET', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'), fc.string(), fc.string(), (method, origin, contentType) => {
         let request: Request;
@@ -57,7 +58,32 @@ describe('csrfCheck — property-based fuzzing', () => {
         }
         const out = csrfCheck(request, url, undefined, proxy, false);
         expect(out === null || out instanceof Response).toBe(true);
+        checked++;
       }),
+      RUNS,
+    );
+    // Guard against the Request-constructor escape hatch swallowing every run.
+    expect(checked).toBeGreaterThan(0);
+  });
+
+  test('403s mismatched-origin protected form submissions and passes matching origins', () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom('POST', 'PUT', 'PATCH', 'DELETE'),
+        fc.constantFrom(...DEFAULT_FORM_CONTENT_TYPES),
+        fc
+          .webUrl()
+          .map((u) => new URL(u).origin)
+          .filter((o) => o !== proxy.origin),
+        (method, contentType, crossOrigin) => {
+          const blocked = csrfCheck(new Request(url, { method, headers: { origin: crossOrigin, 'content-type': contentType } }), url, undefined, proxy, false);
+          expect(blocked).toBeInstanceOf(Response);
+          expect((blocked as Response).status).toBe(403);
+
+          const allowed = csrfCheck(new Request(url, { method, headers: { origin: proxy.origin, 'content-type': contentType } }), url, undefined, proxy, false);
+          expect(allowed).toBeNull();
+        },
+      ),
       RUNS,
     );
   });

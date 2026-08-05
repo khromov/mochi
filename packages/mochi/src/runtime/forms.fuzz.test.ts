@@ -47,19 +47,21 @@ describe('form action results — property-based fuzzing', () => {
 });
 
 describe('isEnhanceRequest — property-based fuzzing', () => {
+  // Header-legal values only, so every run reaches isEnhanceRequest instead of being skipped by a Request constructor throw.
+  const acceptValue = fc.oneof(fc.stringMatching(/^[\x20-\x7e]*$/), fc.constantFrom('application/json', 'text/html', '*/*', 'text/html,application/json;q=0.9'));
+
   test('returns a boolean and never throws for arbitrary method / headers', () => {
     fc.assert(
-      fc.property(fc.constantFrom('POST', 'GET', 'PUT', 'HEAD'), fc.string(), fc.constantFrom('true', 'false', ''), (method, accept, actionHeader) => {
-        let request: Request;
-        try {
-          request = new Request('http://localhost:3333/submit', {
-            method,
-            headers: { accept, 'x-mochi-action': actionHeader },
-          });
-        } catch {
-          return; // unparseable header value — not isEnhanceRequest's concern
-        }
-        expect(typeof isEnhanceRequest(request)).toBe('boolean');
+      fc.property(fc.constantFrom('POST', 'GET', 'PUT', 'HEAD'), acceptValue, fc.constantFrom('true', 'false', ''), (method, accept, actionHeader) => {
+        const request = new Request('http://localhost:3333/submit', {
+          method,
+          headers: { accept, 'x-mochi-action': actionHeader },
+        });
+        let result: unknown;
+        expect(() => {
+          result = isEnhanceRequest(request);
+        }).not.toThrow();
+        expect(typeof result).toBe('boolean');
       }),
       RUNS,
     );

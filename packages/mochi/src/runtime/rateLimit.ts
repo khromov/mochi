@@ -137,10 +137,11 @@ export function postgresStore(options: MochiPostgresStoreOptions): MochiRateLimi
  * actually releases the handles.
  *
  * The finalize sweep and the `db` access depend on hitlimit's private field
- * layout (the dep is pinned). `db.close(true)` is the guard: it throws
- * "database is locked" if any statement is still outstanding — so a hitlimit bump
- * that moves statements off own-enumerable fields fails loudly on every platform
- * (covered by rateLimit.test.ts), not as a silent Windows-only unlink failure.
+ * layout (the dep is pinned). Bun <1.4.0's `db.close(true)` doubled as a tripwire —
+ * it threw if any statement was still outstanding — but 1.4.0 made it tolerant, so
+ * that layout guard now lives in rateLimit.test.ts (the same own-enumerable-field
+ * find() asserted to locate a statement), catching a hitlimit bump that moves
+ * statements off own-enumerable fields before it becomes a silent Windows unlink leak.
  */
 export function sqliteStore(options?: MochiSqliteStoreOptions): MochiRateLimitStore {
   const store = hitlimitSqliteStore(options);

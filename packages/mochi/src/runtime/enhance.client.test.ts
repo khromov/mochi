@@ -103,12 +103,12 @@ describe('enhance attachment', () => {
   test('controller.abort() during in-flight fetch — result handler skipped, AbortError swallowed, onPending(false) still fires', async () => {
     const form = makeForm();
 
-    let signalAbortedAtReject = false;
+    let fetchSignal: AbortSignal | undefined;
     setFetch((_url, init) => {
       const signal = init?.signal as AbortSignal;
+      fetchSignal = signal;
       return new Promise((_resolve, reject) => {
         signal.addEventListener('abort', () => {
-          signalAbortedAtReject = signal.aborted;
           const err = new Error('aborted');
           (err as { name: string }).name = 'AbortError';
           reject(err);
@@ -118,10 +118,12 @@ describe('enhance attachment', () => {
 
     const pendingValues: boolean[] = [];
     let callbackInvoked = false;
+    let submitController: AbortController | undefined;
     const settled = deferred();
 
     const cleanup = attach(form, {
       submit: ({ controller }) => {
+        submitController = controller;
         // Abort once the fetch is in-flight (next macrotask).
         setTimeout(() => controller.abort(), 5);
         return () => {
@@ -140,7 +142,8 @@ describe('enhance attachment', () => {
     await settled.promise;
 
     expect(callbackInvoked).toBe(false);
-    expect(signalAbortedAtReject).toBe(true);
+    // The signal handed to fetch must be the very controller exposed to submit
+    expect(fetchSignal).toBe(submitController!.signal);
     expect(pendingValues).toEqual([true, false]);
     cleanup();
   });
