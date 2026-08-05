@@ -25,7 +25,7 @@ await emails.close();
 
 - **Multi-instance safe.** Claims are atomic (`FOR UPDATE SKIP LOCKED` on Postgres, a single atomic `UPDATE` on SQLite), so any number of processes can work one queue; every job runs exactly once.
 - **Leases, not locks.** A claimed job holds a lease (`lockDuration`, default 60 s) renewed by a heartbeat while it runs. If the instance dies, the lease expires and another instance reclaims the job — the consumed claim counts as a spent attempt.
-- **Outstanding work only.** Completed and terminally-failed jobs are deleted; the table never grows. `jobId` deduplicates while a job is outstanding.
+- **Outstanding work only.** Completed and terminally-failed jobs are deleted; the table never grows. `jobId` deduplicates while a job is outstanding — a colliding `add` is a no-op whose ref has `deduplicated: true`.
 - **Retries with backoff.** `attempts` + `backoff: { type: 'fixed' | 'exponential', delay }` per job or via `defaultJobOptions`.
 - **Single-flight recovery.** `tryRecoveryLease()` grants exactly one instance per TTL window the right to run startup recovery against a shared database.
 - Job data is `JSON.stringify`'d — payloads must be JSON-serializable.

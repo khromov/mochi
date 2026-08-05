@@ -1,4 +1,7 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from 'bun:test';
+
+// PGlite's first WASM compile can outrun bun's 5s default hook timeout on a cold container.
+setDefaultTimeout(30_000);
 import { SQL } from 'bun';
 import { createQueue, type Job } from './index';
 import { startTestPostgres, type TestPostgres } from './__fixtures__/startTestPostgres';

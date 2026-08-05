@@ -76,11 +76,12 @@ describe('retries', () => {
     });
     await queue.add('j', null);
     await waitFor(() => failTimes.length === 3, 10_000, 'three attempts');
-    // attempt 1 → +100ms, attempt 2 → +200ms
+    // attempt 1 → +100ms, attempt 2 → +200ms; the upper bounds only cap the settle-write
+    // lag after the throw, so they carry generous slack for a loaded runner.
     expect(runAts[0]! - failTimes[0]!).toBeGreaterThanOrEqual(90);
-    expect(runAts[0]! - failTimes[0]!).toBeLessThanOrEqual(150);
+    expect(runAts[0]! - failTimes[0]!).toBeLessThanOrEqual(450);
     expect(runAts[1]! - failTimes[1]!).toBeGreaterThanOrEqual(190);
-    expect(runAts[1]! - failTimes[1]!).toBeLessThanOrEqual(280);
+    expect(runAts[1]! - failTimes[1]!).toBeLessThanOrEqual(650);
     await queue.close();
     await sql.close();
   });

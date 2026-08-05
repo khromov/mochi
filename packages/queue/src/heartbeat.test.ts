@@ -9,13 +9,15 @@ test('a job outliving lockDuration keeps its lease through heartbeats and comple
   const errors: Error[] = [];
   let bRuns = 0;
 
+  // The lease is generous enough that an ordinary CI scheduling stall can't lapse it —
+  // the test's point is that heartbeats renew it, not that the runner is never busy.
   const a = createQueue<null>('long-job', {
     database: sql,
-    lockDuration: 150,
+    lockDuration: 400,
     pollInterval: 10_000,
     defaultJobOptions: { attempts: 3 },
     process: async (job) => {
-      await Bun.sleep(600);
+      await Bun.sleep(1000);
       completed.push(job.attempt);
     },
     on: { error: (err) => errors.push(err) },
@@ -23,7 +25,7 @@ test('a job outliving lockDuration keeps its lease through heartbeats and comple
   // A hungry second instance that would reclaim the job if the lease ever lapsed.
   const b = createQueue<null>('long-job', {
     database: sql,
-    lockDuration: 150,
+    lockDuration: 400,
     pollInterval: 20,
     defaultJobOptions: { attempts: 3 },
     process: () => {

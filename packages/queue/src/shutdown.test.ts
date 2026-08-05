@@ -53,6 +53,56 @@ test('close is idempotent and returns the same settled promise', async () => {
   await queue.close();
 });
 
+test('close waits for a claim already in flight and unclaims it before resolving', async () => {
+  const real = new SQL('sqlite://:memory:');
+  let releaseClaim: (() => void) | undefined;
+  const claimGate = new Promise<void>((resolve) => (releaseClaim = resolve));
+  let claimReached: (() => void) | undefined;
+  const reachedClaim = new Promise<void>((resolve) => (claimReached = resolve));
+  // Holds the claim statement mid-flight so close() runs while the pump is inside it.
+  const sql = new Proxy(real, {
+    apply(target, _thisArg, args: unknown[]) {
+      const [first] = args;
+      if (Array.isArray(first) && 'raw' in first && first.join('').includes("SET status = 'active'")) {
+        return (async () => {
+          claimReached!();
+          await claimGate;
+          return await Reflect.apply(target, target, args);
+        })();
+      }
+      return Reflect.apply(target, target, args);
+    },
+    get(target, prop) {
+      const value = Reflect.get(target, prop);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+
+  const events: string[] = [];
+  const queue = createQueue<null>('close-mid-claim', {
+    database: sql,
+    pollInterval: 10_000,
+    process: () => {
+      events.push('ran');
+    },
+    on: { error: (err) => events.push(`error:${err.message}`) },
+  });
+  await queue.add('j', null);
+  await reachedClaim;
+
+  const closing = queue.close();
+  releaseClaim!();
+  await closing;
+
+  // The claim was released without spending an attempt, the job never ran, and nothing errored after close.
+  const rows: Array<{ status: string; attempts_made: number }> = await real`SELECT status, attempts_made FROM mochi_jobs`;
+  expect(rows).toHaveLength(1);
+  expect(rows[0]!.status).toBe('pending');
+  expect(Number(rows[0]!.attempts_made)).toBe(0);
+  expect(events).toEqual([]);
+  await real.close();
+});
+
 test('close honors its timeout and leaves the abandoned job leased for later reclaim', async () => {
   const sql = new SQL('sqlite://:memory:');
   let started = false;

@@ -93,6 +93,9 @@ export function ensureSchema(sql: SQL, dialect: Dialect): Promise<void> {
         await sql.unsafe(statement);
       }
     })();
+    // Drop a failed bootstrap from the memo so the next call retries — caching the rejection
+    // would brick every queue on this handle over one transient boot-time connection error.
+    ready.catch(() => bootstrapped.delete(sql));
     bootstrapped.set(sql, ready);
   }
   return ready;
@@ -138,11 +141,22 @@ export async function claimJobs(sql: SQL, dialect: Dialect, queue: string, limit
     RETURNING *`;
 }
 
-export async function insertJobs(sql: SQL, rows: NewJobRow[]): Promise<void> {
+/** Insert rows, skipping ids still outstanding; returns the ids actually inserted. */
+export async function insertJobs(sql: SQL, rows: NewJobRow[]): Promise<Set<string>> {
   if (rows.length === 0) {
-    return;
+    return new Set();
   }
-  await sql`INSERT INTO mochi_jobs ${sql(rows)} ON CONFLICT (queue, id) DO NOTHING`;
+  const inserted: Array<{ id: string }> = await sql`INSERT INTO mochi_jobs ${sql(rows)} ON CONFLICT (queue, id) DO NOTHING RETURNING id`;
+  return new Set(inserted.map((row) => row.id));
+}
+
+/** Stored names of outstanding jobs, so a deduplicated add can return the real ref. */
+export async function jobNames(sql: SQL, queue: string, ids: string[]): Promise<Map<string, string>> {
+  if (ids.length === 0) {
+    return new Map();
+  }
+  const rows: Array<{ id: string; name: string }> = await sql`SELECT id, name FROM mochi_jobs WHERE queue = ${queue} AND id IN ${sql(ids)}`;
+  return new Map(rows.map((row) => [row.id, row.name]));
 }
 
 /** True if the row was still ours (token matched) and is now gone. */

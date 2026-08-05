@@ -136,13 +136,18 @@ export function createQueue<T = unknown, R = unknown>(
     name,
     async add(jobName, data, jobOpts) {
       const ref = await engine.add(jobName, data, jobOpts);
-      mochiEvents.emit('queue:added', { queue: name, jobId: ref.id, jobName: ref.name });
+      // A deduplicated add put nothing on the queue, so observability must not count it.
+      if (!ref.deduplicated) {
+        mochiEvents.emit('queue:added', { queue: name, jobId: ref.id, jobName: ref.name });
+      }
       return ref;
     },
     async addBulk(jobs) {
       const refs = await engine.addBulk(jobs);
       for (const ref of refs) {
-        mochiEvents.emit('queue:added', { queue: name, jobId: ref.id, jobName: ref.name });
+        if (!ref.deduplicated) {
+          mochiEvents.emit('queue:added', { queue: name, jobId: ref.id, jobName: ref.name });
+        }
       }
       return refs;
     },

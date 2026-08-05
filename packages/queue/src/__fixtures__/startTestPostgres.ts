@@ -15,9 +15,9 @@ export interface TestPostgres {
   close(): Promise<void>;
 }
 
-export async function startTestPostgres(opts?: { initSql?: string }): Promise<TestPostgres> {
+export async function startTestPostgres(opts?: { initSql?: string; port?: number }): Promise<TestPostgres> {
   const db = await PGlite.create();
-  const server = new PGLiteSocketServer({ db, port: 0, host: '127.0.0.1' });
+  const server = new PGLiteSocketServer({ db, port: opts?.port ?? 0, host: '127.0.0.1' });
 
   // `PGLiteSocketServer.port` is private; the only way to learn the OS-assigned port from
   // `port: 0` is the `listening` event it fires from inside start().

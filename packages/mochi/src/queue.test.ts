@@ -207,6 +207,28 @@ describe('Mochi queue', () => {
     ]);
   });
 
+  test('a deduplicated add emits no queue:added and returns the stored ref', async () => {
+    const name = uniqueName();
+    const added: string[] = [];
+    mochiEvents.on('queue:added', (e) => {
+      if (e.queue === name) {
+        added.push(e.jobId);
+      }
+    });
+    const release = deferred<void>();
+    const queue = createQueue(name, async () => {
+      await release.promise;
+      return null;
+    });
+
+    const first = await queue.add('job', { n: 1 }, { jobId: 'only-once' });
+    const dup = await queue.add('job', { n: 2 }, { jobId: 'only-once' });
+    expect(first.deduplicated).toBe(false);
+    expect(dup).toEqual({ id: first.id, name: 'job', deduplicated: true });
+    expect(added).toEqual([first.id]);
+    release.resolve();
+  });
+
   test('the processor receives a plain data job, not an engine handle', async () => {
     const name = uniqueName();
     const seen = deferred<MochiJob<unknown>>();
@@ -300,11 +322,12 @@ describe('Mochi queue', () => {
       return ran;
     };
 
-    expect(await boot({ recoveryLeaseMs: 200 })).toBe(true);
+    // TTL far above a boot() cycle's runtime, so a slow CI runner can't drift the second boot past it.
+    expect(await boot({ recoveryLeaseMs: 1000 })).toBe(true);
     // A second boot inside the TTL window skips recovery — the first boot's work stands.
-    expect(await boot({ recoveryLeaseMs: 200 })).toBe(false);
-    await Bun.sleep(250);
-    expect(await boot({ recoveryLeaseMs: 200 })).toBe(true);
+    expect(await boot({ recoveryLeaseMs: 1000 })).toBe(false);
+    await Bun.sleep(1100);
+    expect(await boot({ recoveryLeaseMs: 1000 })).toBe(true);
   });
 
   test('a failed recovery releases its lease so the next boot retries immediately', async () => {

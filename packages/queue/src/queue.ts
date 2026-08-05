@@ -6,6 +6,7 @@ import {
   dialectOf,
   ensureSchema,
   insertJobs,
+  jobNames,
   nextWakeAt,
   releaseRecoveryLease,
   renewLease,
@@ -32,6 +33,8 @@ export type Processor<T, R> = (job: Job<T>) => R | Promise<R>;
 export interface JobRef {
   id: string;
   name: string;
+  /** True when a `jobId` collided with a job still outstanding — nothing was added; `name` is the stored job's. */
+  deduplicated: boolean;
 }
 
 export interface JobOptions {
@@ -108,9 +111,12 @@ export function createQueue<T = unknown, R = unknown>(name: string, options: Que
   const listeners = options.on ?? {};
   const process = options.process;
 
-  const ready = ensureSchema(sql, dialect);
-  // Handled here so a connection failure before the first pump doesn't surface as an unhandled rejection.
-  ready.catch(() => {});
+  // Re-invoked on every await so a bootstrap that failed (ensureSchema drops it from its memo)
+  // is retried by the next add/pump instead of poisoning the queue for the process lifetime.
+  let schemaAttempt: Promise<void> | undefined;
+  const ready = (): Promise<void> => (schemaAttempt = ensureSchema(sql, dialect));
+  // Kicked off eagerly; swallowed here so a pre-pump connection failure isn't an unhandled rejection.
+  ready().catch(() => {});
 
   let closed = false;
   let closePromise: Promise<void> | undefined;
@@ -146,6 +152,7 @@ export function createQueue<T = unknown, R = unknown>(name: string, options: Que
 
   let pumpScheduled = false;
   let pumpRunning = false;
+  let pumpPromise: Promise<void> | undefined;
   let rewake = false;
   let emptyTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -159,7 +166,9 @@ export function createQueue<T = unknown, R = unknown>(name: string, options: Que
     }
     if (!pumpScheduled) {
       pumpScheduled = true;
-      queueMicrotask(() => void pump());
+      queueMicrotask(() => {
+        pumpPromise = pump();
+      });
     }
   };
 
@@ -231,9 +240,12 @@ export function createQueue<T = unknown, R = unknown>(name: string, options: Que
 
   const pump = async (): Promise<void> => {
     pumpScheduled = false;
+    if (closed) {
+      return;
+    }
     pumpRunning = true;
     try {
-      await ready;
+      await ready();
       while (!closed) {
         const capacity = concurrency - running.size;
         if (capacity <= 0) {
@@ -269,6 +281,7 @@ export function createQueue<T = unknown, R = unknown>(name: string, options: Que
   const pollTimer = pollInterval > 0 ? setInterval(wake, pollInterval) : undefined;
 
   let heartbeatBusy = false;
+  let heartbeatPromise: Promise<unknown> | undefined;
   const heartbeatTimer =
     heartbeatInterval > 0
       ? setInterval(() => {
@@ -277,7 +290,7 @@ export function createQueue<T = unknown, R = unknown>(name: string, options: Que
           }
           heartbeatBusy = true;
           const leaseUntil = Date.now() + lockDuration;
-          Promise.all([...running].map(([id, { token }]) => renewLease(sql, name, id, token, leaseUntil)))
+          heartbeatPromise = Promise.all([...running].map(([id, { token }]) => renewLease(sql, name, id, token, leaseUntil)))
             .catch((err) => emitError(toError(err)))
             .finally(() => {
               heartbeatBusy = false;
@@ -315,29 +328,42 @@ export function createQueue<T = unknown, R = unknown>(name: string, options: Que
     name,
     async add(jobName, data, opts) {
       assertOpen();
-      await ready;
+      await ready();
       const row = toRow(jobName, data, opts, Date.now());
-      await insertJobs(sql, [row]);
+      const inserted = await insertJobs(sql, [row]);
+      if (inserted.size === 0) {
+        const names = await jobNames(sql, name, [row.id]);
+        return { id: row.id, name: names.get(row.id) ?? row.name, deduplicated: true };
+      }
       wake();
-      return { id: row.id, name: row.name };
+      return { id: row.id, name: row.name, deduplicated: false };
     },
     async addBulk(jobs) {
       assertOpen();
-      await ready;
+      await ready();
       const now = Date.now();
       const rows = jobs.map((j) => toRow(j.name, j.data, j.opts, now));
-      await insertJobs(sql, rows);
-      wake();
-      return rows.map((row) => ({ id: row.id, name: row.name }));
+      const inserted = await insertJobs(sql, rows);
+      if (inserted.size > 0) {
+        wake();
+      }
+      const names = await jobNames(
+        sql,
+        name,
+        rows.filter((row) => !inserted.has(row.id)).map((row) => row.id),
+      );
+      return rows.map((row) =>
+        inserted.has(row.id) ? { id: row.id, name: row.name, deduplicated: false } : { id: row.id, name: names.get(row.id) ?? row.name, deduplicated: true },
+      );
     },
     async tryRecoveryLease(ttlMs) {
       assertOpen();
-      await ready;
+      await ready();
       return tryRecoveryLease(sql, name, Date.now(), ttlMs ?? DEFAULT_RECOVERY_LEASE_MS);
     },
     async releaseRecoveryLease() {
       assertOpen();
-      await ready;
+      await ready();
       await releaseRecoveryLease(sql, name);
     },
     close(opts) {
@@ -346,10 +372,13 @@ export function createQueue<T = unknown, R = unknown>(name: string, options: Que
         clearInterval(pollTimer);
         clearInterval(heartbeatTimer);
         clearTimeout(emptyTimer);
-        await ready.catch(() => {});
+        await schemaAttempt?.catch(() => {});
+        // A pump mid-claim must resume and unclaim its rows before the database can close under it.
+        await pumpPromise;
         if (inFlight.size > 0) {
           await Promise.race([Promise.all(inFlight), Bun.sleep(opts?.timeout ?? DEFAULT_CLOSE_TIMEOUT_MS)]);
         }
+        await heartbeatPromise;
         if (owned) {
           await sql.close();
         }

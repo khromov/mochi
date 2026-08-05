@@ -77,7 +77,7 @@ Or subscribe globally on the [`mochiEvents` bus](#observability) (filter by `que
 | `add(name, data, opts?)` | `Promise<MochiJobRef>`   | enqueue one job          |
 | `addBulk(jobs)`          | `Promise<MochiJobRef[]>` | enqueue many in one call |
 
-`MochiJobRef` is `{ id, name }`. Per-job options: `priority` (lower runs first), `delay` (ms), `attempts`, `backoff`, `jobId`.
+`MochiJobRef` is `{ id, name, deduplicated }`. Per-job options: `priority` (lower runs first), `delay` (ms), `attempts`, `backoff`, `jobId`.
 
 ```ts
 const emails = Mochi.getQueue<{ to: string }>('emails');
@@ -90,7 +90,7 @@ await emails.addBulk([
 
 <Callout type="info">
 
-Job payloads are stored as JSON — `data` must be JSON-serializable. Adding a `jobId` that is still **outstanding** in the queue is a no-op returning the same ref (deduplication); once the job completes or fails terminally its row is deleted, and the id is reusable.
+Job payloads are stored as JSON — `data` must be JSON-serializable. Adding a `jobId` that is still **outstanding** in the queue is a no-op: nothing is enqueued, no `queue:added` fires, and the returned ref carries the stored job's `name` with `deduplicated: true`. Once the job completes or fails terminally its row is deleted, and the id is reusable.
 
 </Callout>
 

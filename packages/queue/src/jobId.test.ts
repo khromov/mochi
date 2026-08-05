@@ -18,9 +18,13 @@ test('an outstanding jobId deduplicates; after completion the id is reusable', a
     on: { completed: () => completions++ },
   });
   const first = await queue.add('j', null, { jobId: 'once' });
+  expect(first.deduplicated).toBe(false);
   await waitFor(() => runs === 1);
   const dup = await queue.add('j', null, { jobId: 'once' });
-  expect(dup).toEqual(first);
+  expect(dup).toEqual({ id: first.id, name: 'j', deduplicated: true });
+  // The stored job's name wins over the colliding add's, so the ref never lies about what will run.
+  const renamed = await queue.add('other-name', null, { jobId: 'once' });
+  expect(renamed).toEqual({ id: first.id, name: 'j', deduplicated: true });
   release!();
   await waitFor(() => completions === 1);
   await Bun.sleep(100);

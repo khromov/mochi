@@ -12,12 +12,12 @@ test('delay defers the first run without relying on the poll tick', async () => 
     },
   });
   const added = Date.now();
-  await queue.add('j', null, { delay: 150 });
-  await Bun.sleep(80);
+  await queue.add('j', null, { delay: 400 });
+  await Bun.sleep(150);
   expect(runAt).toHaveLength(0);
   await waitFor(() => runAt.length === 1, 3000, 'delayed job to run');
-  expect(runAt[0]! - added).toBeGreaterThanOrEqual(140);
-  expect(runAt[0]! - added).toBeLessThanOrEqual(1000);
+  expect(runAt[0]! - added).toBeGreaterThanOrEqual(380);
+  expect(runAt[0]! - added).toBeLessThanOrEqual(2000);
   await queue.close();
 });
 

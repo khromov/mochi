@@ -59,6 +59,51 @@ jobs:
       - name: Run tests
         run: bun run test
 
+  # Real Postgres for @mochi-framework/queue: the normal suite's PGlite accepts a single
+  # connection, so FOR UPDATE SKIP LOCKED across concurrent sessions is only exercised here.
+  test-queue-postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: mochi_queue_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v6
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+
+      - name: Cache Bun dependencies
+        uses: actions/cache@v6
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Run queue tests against real Postgres
+        run: bun --cwd=packages/queue test
+        env:
+          QUEUE_POSTGRES_URL: postgres://postgres:postgres@127.0.0.1:5432/mochi_queue_test
+
   # TEMPORARY living check: install the pinned Bun, then upgrade to the latest canary
   # and run the full suite on all three OSes. Fetches the moving canary every run by
   # design (early warning for Bun 1.4.0). Non-blocking — kept out of the `test` gate's
@@ -114,9 +159,9 @@ jobs:
 
   test:
     if: always()
-    needs: test-matrix
+    needs: [test-matrix, test-queue-postgres]
     runs-on: ubuntu-latest
     steps:
       - name: Verify all matrix jobs passed
-        if: needs.test-matrix.result != 'success'
+        if: needs.test-matrix.result != 'success' || needs.test-queue-postgres.result != 'success'
         run: exit 1
