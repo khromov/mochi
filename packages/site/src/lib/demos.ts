@@ -45,6 +45,7 @@ import { files as rateLimit } from '../demos/rate-limit/files.ts';
 import { files as reloadFormData } from '../demos/reload-form-data/files.ts';
 import { files as requestCache } from '../demos/request-cache/files.ts';
 import { files as requestId } from '../demos/request-id/files.ts';
+import { files as modeWatcher } from '../demos/mode-watcher/files.ts';
 import { files as runed } from '../demos/runed/files.ts';
 import { files as serverIsland } from '../demos/server-island/files.ts';
 import { files as serverProps } from '../demos/server-props/files.ts';
@@ -514,6 +515,14 @@ export const demos: Demo[] = [
     files: entityProps,
     title: 'HTML Entities in Props',
     hook: 'How HTML entities in island props work — an entity in a static prop (label="Tom &amp; Jerry") decodes identically on the server and after hydration.',
+    category: 'hydration',
+  },
+  {
+    href: '/demos/mode-watcher/',
+    slug: 'mode-watcher',
+    files: modeWatcher,
+    title: 'Mode Watcher',
+    hook: "Light/dark mode in an island — mode-watcher's <ModeWatcher />, toggleMode/setMode, and the mode / userPrefersMode / systemPrefersMode runes driving the global <html> theme.",
     category: 'hydration',
   },
   {

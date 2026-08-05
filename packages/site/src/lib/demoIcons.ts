@@ -56,6 +56,7 @@ import ChartSpline from '@lucide/svelte/icons/chart-spline';
 import Atom from '@lucide/svelte/icons/atom';
 import TextQuote from '@lucide/svelte/icons/text-quote';
 import Table from '@lucide/svelte/icons/table';
+import SunMoon from '@lucide/svelte/icons/sun-moon';
 
 export interface DemoIconMeta {
   icon: Component;
@@ -87,6 +88,7 @@ export const demoIconFor: Record<string, DemoIconMeta> = {
   'Font loading': { icon: Type, label: 'Bundle fontsource + standalone fonts' },
   'Crossing the server-client boundary with props': { icon: Package2, label: 'Props serialized into the island — every devalue type' },
   'HTML Entities in Props': { icon: Ampersand, label: 'HTML entities in static island props decode across SSR + hydration' },
+  'Mode Watcher': { icon: SunMoon, label: 'Light/dark mode watching in an island' },
   'Runed Utilities': { icon: Atom, label: 'Runed reactive utilities hydrated in islands' },
   'Nested Components': { icon: ListTree, label: 'Five-level deep tree under one island' },
   'Nested Islands': { icon: SquareStack, label: 'Islands nested inside server islands' },
