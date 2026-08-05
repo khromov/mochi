@@ -55,6 +55,7 @@ import Recycle from '@lucide/svelte/icons/recycle';
 import ChartSpline from '@lucide/svelte/icons/chart-spline';
 import Atom from '@lucide/svelte/icons/atom';
 import TextQuote from '@lucide/svelte/icons/text-quote';
+import Table from '@lucide/svelte/icons/table';
 
 export interface DemoIconMeta {
   icon: Component;
@@ -118,4 +119,5 @@ export const demoIconFor: Record<string, DemoIconMeta> = {
   'File Routes': { icon: FileDown, label: 'Serve a file from disk with Mochi.file()' },
   'Charts with LayerChart': { icon: ChartSpline, label: 'A third-party Svelte chart library, SSR + islands' },
   'Portable Text': { icon: TextQuote, label: 'Render Portable Text JSON with your own Svelte components' },
+  'Tables with TanStack Table': { icon: Table, label: 'A headless table library, SSR + a hydrated sortable island' },
 };

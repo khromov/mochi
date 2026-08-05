@@ -72,6 +72,7 @@ import { routes as shotRoutes } from './shot/routes';
 import { routes as serverPropsRoutes } from './demos/server-props/routes';
 import { routes as sharedStateRoutes } from './demos/shared-state/routes';
 import { routes as streamsRoutes } from './demos/streams/routes';
+import { routes as tanstackTableRoutes } from './demos/tanstack-table/routes';
 import { routes as urlRoutes } from './demos/url/routes';
 import { routes as viewTransitionsRoutes } from './demos/view-transitions/routes';
 import { routes as customTransitionsRoutes } from './demos/custom-transitions/routes';
@@ -352,6 +353,7 @@ export const routes: Record<string, MochiRouteValue> = {
   ...shotRoutes,
   ...sharedStateRoutes,
   ...streamsRoutes,
+  ...tanstackTableRoutes,
   ...urlRoutes,
   ...viewTransitionsRoutes,
   ...customTransitionsRoutes,
