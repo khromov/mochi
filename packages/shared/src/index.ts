@@ -1,7 +1,10 @@
 import type { Handle } from 'mochi-framework';
 
-/** Umami property covering every mochi.fast surface — the docs site, the demos site, and the support form all report into the same dashboard. */
-const ANALYTICS_SCRIPT = `<script defer src="https://u.khromov.se/u.js" data-performance="true" data-website-id="8dceb8f5-6533-4c03-9cd6-1ce74accd63a"></script>`;
+/**
+ * Umami property covering every mochi.fast surface — the docs site, the demos site, and the support form all report into the same dashboard.
+ * The tracker is appended only once the page is actually visible, so a speculation-rules prerender the user never navigates to doesn't log a phantom pageview.
+ */
+const ANALYTICS_SCRIPT = `<script>(function(){function load(){var s=document.createElement('script');s.defer=true;s.src='https://u.khromov.se/u.js';s.setAttribute('data-website-id','8dceb8f5-6533-4c03-9cd6-1ce74accd63a');s.setAttribute('data-performance','true');document.head.appendChild(s);}if(document.prerendering){document.addEventListener('prerenderingchange',load,{once:true});}else{load();}})();</script>`;
 
 export interface AnalyticsOptions {
   /** Pathnames that must never report, matched ignoring a trailing slash. */

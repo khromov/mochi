@@ -285,5 +285,43 @@
   </head>
   <body>
     {{mochi.body}} {{mochi.script}} {{mochi.analytics}} {{mochi.dog}}
+    <script type="speculationrules">
+      {
+        "prefetch": [
+          {
+            "where": {
+              "and": [
+                { "href_matches": "/*" },
+                { "not": { "href_matches": "/discord" } },
+                { "not": { "href_matches": "/support/*" } },
+                { "not": { "href_matches": "/demos/login/*" } },
+                { "not": { "href_matches": "/cookie-vary-test/*" } },
+                { "not": { "href_matches": "/api/*" } },
+                { "not": { "href_matches": "/mcp" } },
+                { "not": { "href_matches": "/_*" } },
+                { "not": { "selector_matches": "[target=_blank]" } },
+                { "not": { "selector_matches": "[rel~=nofollow]" } }
+              ]
+            },
+            "eagerness": "moderate"
+          }
+        ],
+        "prerender": [
+          {
+            "where": {
+              "and": [
+                {
+                  "or": [{ "href_matches": "/" }, { "href_matches": "/docs/*" }, { "href_matches": "/blog/*" }, { "href_matches": "/ci/*" }]
+                },
+                { "not": { "href_matches": "/ci/data" } },
+                { "not": { "selector_matches": "[target=_blank]" } },
+                { "not": { "selector_matches": "[rel~=nofollow]" } }
+              ]
+            },
+            "eagerness": "conservative"
+          }
+        ]
+      }
+    </script>
   </body>
 </html>
