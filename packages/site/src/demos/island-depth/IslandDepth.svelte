@@ -9,7 +9,7 @@
 
 <DemoPage
   title="Nested Island Max Depth"
-  description={"Server islands can nest to any depth, and by default Mochi inlines nested mochi:defer islands into their parent's fetch: one request returns the whole four-level chain, rendered in a single server pass. Opt out per call site with mochi:defer={{ inline: false }} to get the classic waterfall back — each level's HTML then arrives with a placeholder that fetches the next level in turn, useful when a slow child shouldn't delay the parent's content. The flag is threaded down every level here, since an opt-out only applies to the call site it's written on. Either way the prebuild precompiles every level into the manifest in a single pass, so no level compiles on a request path in production."}
+  description={"Server islands can nest to any depth, and by default Mochi inlines nested mochi:defer islands into their parent's fetch: one request returns the whole four-level chain, rendered in a single server pass. Opt out per call site with mochi:defer={{ inline: false }} to keep each level on its own fetch — its HTML then arrives with a placeholder that fetches the next level in turn, useful when a slow child shouldn't delay the parent's content. The flag is threaded down every level here, since an opt-out only applies to the call site it's written on. Either way the prebuild precompiles every level into the manifest in a single pass, so no level compiles on a request path in production."}
   {sources}
 >
   <p class="delay-note">

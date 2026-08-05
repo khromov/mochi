@@ -81,9 +81,9 @@ A server island's content is itself a full render, so it may contain `mochi:hydr
 <Notifications mochi:defer />
 ```
 
-Nested `mochi:defer` islands are **inlined into the parent's fetch**: when the island endpoint renders `Dashboard`, it renders `Notifications` in-process too, so one request returns the whole chain no matter how deep it nests. The decision happens at render time — a nested island inside `{#if}`/`{#each}` inlines exactly when its branch renders, with the same props the placeholder would have sealed, so nothing unreachable is ever rendered. If an inlined child throws, it degrades to the classic placeholder and fetches (and fails) on its own, leaving the parent's content intact. Recursion is capped at 32 inline expansions per request; past the cap, children fall back to fetching.
+Nested `mochi:defer` islands are **inlined into the parent's fetch**: when the island endpoint renders `Dashboard`, it renders `Notifications` in-process too, so one request returns the whole chain no matter how deep it nests. The decision happens at render time — a nested island inside `{#if}`/`{#each}` inlines exactly when its branch renders, with the same props the placeholder would have sealed, so nothing unreachable is ever rendered. If an inlined child throws, it degrades to a fetch placeholder and fetches (and fails) on its own, leaving the parent's content intact. Recursion is capped at 32 inline expansions per request; past the cap, children fall back to fetching.
 
-Opt out per call site to get the old fetch-per-level waterfall back (useful when a slow child shouldn't delay the parent's content), or globally:
+Opt out per call site to keep a child on its own fetch (useful when a slow child shouldn't delay the parent's content), or globally:
 
 ```svelte
 <Notifications mochi:defer={{ inline: false }} />
@@ -99,7 +99,7 @@ CSS for nested islands is delivered with the fetched HTML (the host page can't l
 
 <Callout type="warning">
 
-**`mochi:defer` inside a hydratable subtree is a compile error.** A component marked `mochi:hydrate*` or `mochi:clientOnly` re-renders on the client, where a server island cannot exist — previously this silently broke hydration. Remove `mochi:defer` from the child (it already renders as part of the parent's island fetch), or the hydrate directive from the parent.
+**`mochi:defer` inside a hydratable subtree is a compile error.** A component marked `mochi:hydrate*` or `mochi:clientOnly` re-renders on the client, where a server island cannot exist. Remove `mochi:defer` from the child (it already renders as part of the parent's island fetch), or the hydrate directive from the parent.
 
 </Callout>
 
