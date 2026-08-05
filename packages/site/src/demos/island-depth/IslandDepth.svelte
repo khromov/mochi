@@ -13,20 +13,21 @@
   {sources}
 >
   <p class="delay-note">
-    Each level is delayed on purpose. The inlined chain makes one fetch that takes roughly the sum of the delays; the opted-out chain fetches level by level.
+    Each level is delayed on purpose — and twice as long in the opted-out chain, so the loading pattern is easy to follow. The opted-out chain fetches level by level; the inlined
+    chain makes one fetch that takes roughly the sum of its delays.
   </p>
 
   <div class="chains">
     <section>
-      <h3>Inlined — one fetch <code>{'{{ inline: true }}'}</code></h3>
-      <DepthLevel1 mochi:defer={{ inline: true }} inline={true}>
-        <div class="island-loading">Loading levels 1–4<span class="dots"></span></div>
-      </DepthLevel1>
-    </section>
-    <section>
       <h3>Opted out — waterfall <code>{'{{ inline: false }}'}</code></h3>
       <DepthLevel1 mochi:defer={{ inline: false }} inline={false}>
         <div class="island-loading">Loading level 1<span class="dots"></span></div>
+      </DepthLevel1>
+    </section>
+    <section>
+      <h3>Inlined — one fetch <code>{'{{ inline: true }}'}</code></h3>
+      <DepthLevel1 mochi:defer={{ inline: true }} inline={true}>
+        <div class="island-loading">Loading levels 1–4<span class="dots"></span></div>
       </DepthLevel1>
     </section>
   </div>

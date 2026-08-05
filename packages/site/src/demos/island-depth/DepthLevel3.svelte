@@ -5,12 +5,12 @@
 
   let { inline = true } = $props();
 
-  await (isServer ? delay(300, 600) : Promise.resolve());
+  await (isServer ? delay(inline ? 300 : 600, inline ? 600 : 1200) : Promise.resolve());
 </script>
 
 <div class="level level-3">
   <p><strong>Level 3</strong> — server island (<code>mochi:defer</code>). It nests one more:</p>
-  <DepthLevel4 mochi:defer={{ inline }}>
+  <DepthLevel4 mochi:defer={{ inline }} {inline}>
     <div class="island-loading">Loading level 4<span class="dots"></span></div>
   </DepthLevel4>
 </div>
