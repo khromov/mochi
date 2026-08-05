@@ -1,6 +1,7 @@
 <script>
   import DemoPage from '../../components/DemoPage.svelte';
   import DepthLevel1 from './DepthLevel1.svelte';
+  import FailDeep from './FailDeep.svelte';
   import { loadSources } from '../../components/utils.ts';
   import { files } from './files.ts';
 
@@ -31,6 +32,17 @@
       </DepthLevel1>
     </section>
   </div>
+
+  <section class="failures">
+    <h3>Failure modes</h3>
+    <p class="delay-note">
+      A child that throws during its inline attempt degrades to a placeholder and fetches on its own — the parent's content is never lost. AlwaysThrows fails its fetch too and
+      renders the failure stub; ThrowsWhenInlined only throws while being inlined, so its own fetch succeeds and the content still arrives.
+    </p>
+    <FailDeep mochi:defer>
+      <div class="island-loading">Loading FailDeep<span class="dots"></span></div>
+    </FailDeep>
+  </section>
 </DemoPage>
 
 <style>
@@ -47,7 +59,12 @@
     align-items: start;
   }
 
-  .chains h3 {
+  .failures {
+    margin-top: 1.25rem;
+  }
+
+  .chains h3,
+  .failures h3 {
     margin: 0 0 0.6rem;
     font-size: 1rem;
   }
