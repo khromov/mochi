@@ -74,8 +74,8 @@ Use it from a page or API route:
 | `minTimeToStale` | `5_000` (5s)      |
 | `maxTimeToLive`  | `600_000` (10min) |
 | `storage`        | in-memory         |
-| `serialize`      | identity          |
-| `deserialize`    | identity          |
+| `serialize`      | none (`v => v`)   |
+| `deserialize`    | none (`v => v`)   |
 
 For multi-process or persistent caching, pass a custom `storage` that implements `getItem` / `setItem` / `removeItem` / `clear` (Redis, SQLite via `bun:sqlite`). Those methods may be synchronous or `async`. The cache awaits every call. When a backend needs a string or buffer, supply `serialize` / `deserialize` — for example `serialize: JSON.stringify, deserialize: JSON.parse`.
 
