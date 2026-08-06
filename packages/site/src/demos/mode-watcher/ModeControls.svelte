@@ -10,6 +10,10 @@
 
   const defaultMode = $derived(initialMode === 'light' || initialMode === 'dark' ? initialMode : 'system');
 
+  // mode.current is undefined during SSR and until mode-watcher resolves on the client. Fall back to
+  // the cookie value the server used so the switch renders its final state right away — no flash.
+  const shownMode = $derived(mode.current ?? (initialMode === 'dark' ? 'dark' : 'light'));
+
   // Mirror the resolved mode into a cookie so the server can render the right theme next time —
   // mode-watcher itself only persists to localStorage, which the server can't read.
   $effect(() => {
@@ -30,7 +34,7 @@
   <div class="ssr-controls">
     <code>server sent: {initialMode ?? '(no cookie yet)'}</code>
     <button class="switch" onclick={toggleMode}>
-      {#if mode.current === 'dark'}
+      {#if shownMode === 'dark'}
         <Sun size={15} /> Light
       {:else}
         <Moon size={15} /> Dark
