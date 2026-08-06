@@ -35,9 +35,15 @@ const port = ENV.DEMO_API_PORT; // typed + coerced: a number, not a string`,
       once at boot, then read live values through the typed <code>ENV</code> proxy during SSR.
     </p>
     <CodeSnippet html={codeInstall} />
-    <p>Point <code>package.json</code>'s <code>varlock.loadPath</code> at your schema, then:</p>
+    <p>
+      Point <code>package.json</code>'s <code>varlock.loadPath</code> at your schema, then do this once at the top of your server entry — <code>index.ts</code>, before
+      <code>Mochi.serve()</code> — so config is validated before the server boots and every request can read it:
+    </p>
     <CodeSnippet html={codeUsage} />
-    <p>See the full decorator DSL at <a href="https://varlock.dev" target="_blank" rel="noopener noreferrer">varlock.dev</a>.</p>
+    <p>
+      The <code>index.ts</code> tab below shows the full wiring, including <code>patchGlobalConsole()</code> to keep secrets out of your logs. See the decorator DSL at
+      <a href="https://varlock.dev" target="_blank" rel="noopener noreferrer">varlock.dev</a>.
+    </p>
   </div>
 
   <section class="card">
