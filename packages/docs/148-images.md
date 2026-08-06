@@ -114,7 +114,7 @@ A bare `<Image src={hero}>` with no `size` renders the original at its intrinsic
 
 <Callout type="warning">
 
-Two edge cases. With `image.enabled: false` the `/_mochi/asset/…` route still serves the file, because that is plain static serving, but a `size` becomes a no-op and `<Image>` falls back to the raw static URL. And the [`image:url`](/docs/extensions/#imageurl) CDN-rewrite filter runs on minted transform URLs only, so the no-size static URL (`hero.src`) bypasses it. Use a `size` if you need local assets routed through the filter.
+Two edge cases. With `image.enabled: false` the `/_mochi/asset/…` route still serves the file, because that route is plain static serving and registers independently of the flag. The transform does not run: `<Image>` falls back to the raw static URL, while the `<img>` keeps the size's declared `width`/`height`, so the browser scales the full-size original into that box. And the [`image:url`](/docs/extensions/#imageurl) CDN-rewrite filter runs on minted transform URLs only, so the no-size static URL (`hero.src`) bypasses it. Use a `size` if you need local assets routed through the filter.
 
 </Callout>
 
