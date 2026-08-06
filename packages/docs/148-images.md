@@ -110,7 +110,7 @@ Mochi copies the file to a content-hashed URL (`/_mochi/asset/<slug>-<hash>.<ext
 
 The `{ src, width, height, format }` shape is available as the exported `ImportedImage` type. Ambient module types come free through `mochi-framework/ambient`.
 
-A bare `<Image src={hero}>` with no `size` renders the original at its intrinsic dimensions straight from that static URL, with no endpoint hop.
+A bare `<Image src={hero}>` with no `size` renders the original at its intrinsic dimensions straight from that static URL. It never calls the image endpoint.
 
 <Callout type="warning">
 
