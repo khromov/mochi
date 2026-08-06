@@ -140,7 +140,7 @@ Mochi.queue({ process: resizeImage, lockDuration: 60_000 });
 
 <Callout type="warning">
 
-`lockDuration` must exceed the **worst-case** runtime of `process`, not the typical one. A job that overruns is re-queued mid-flight. Its eventual success is rejected as `Invalid or expired lock token` and reported as a failure, even though the work succeeded.
+`lockDuration` must exceed the **worst-case** runtime of `process`, not the typical one. A job that overruns is re-queued mid-flight. Its eventual success is rejected as `Invalid or expired lock token` and reported as a failure, even though the work succeeded. The queue then either retries the job, which fires its side effects a second time, or abandons it where it stands.
 
 </Callout>
 
@@ -149,6 +149,8 @@ Mochi.queue({ process: resizeImage, lockDuration: 60_000 });
 **30 minutes is a ceiling, not just a default.** The queue drops any job that runs longer, whatever `lockDuration` says. Work that can run longer belongs outside the queue, or split into jobs that each finish well inside the limit.
 
 </Callout>
+
+Lowering `lockDuration` does not make a crashed worker's jobs recover faster. Heartbeat-based stall detection handles that, independently of the lock.
 
 ### Recovery on start
 

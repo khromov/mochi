@@ -159,6 +159,19 @@ The full set of docs, concatenated in reading order, is served at [`/llms-recomm
 
 Each doc is reachable as plain text at `/docs/<slug>/llms.txt`, for example [`/docs/intro/llms.txt`](/docs/intro/llms.txt). The "Copy as llms.txt" button on each doc page emits just that page.
 
+The changelog is served the same way at [`/docs/changelog/llms.txt`](/docs/changelog/llms.txt), and reads as a page at [`/docs/changelog/`](/docs/changelog/). Mochi fetches it from GitHub, so both return `503` (not `404`) when that fetch is unavailable.
+
+#### Per-post text
+
+Each published blog post is reachable as raw markdown at `/blog/<slug>/llms.txt`, for example [`/blog/mochi-0-8-0/llms.txt`](/blog/mochi-0-8-0/llms.txt).
+
+#### Per-demo source
+
+Each demo's source is reachable as plain text alongside its demo page, usually `/demos/<slug>/llms.txt`. It is the exact source `/llms-full.txt` bundles for that demo, scoped to one demo:
+
+- [`/demos/hello-world/llms.txt`](/demos/hello-world/llms.txt)
+- [`/demos/chat/llms.txt`](/demos/chat/llms.txt)
+
 #### Machine-readable index
 
 [`/llms.json`](/llms.json) returns a JSON index of every doc, blog post, and demo, each with its `title`, `description`, and an absolute `url` to its `llms.txt`.

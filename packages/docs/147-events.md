@@ -33,6 +33,7 @@ Event names use a `namespace:action` convention. Every key is in the typed `Moch
 - [`captcha:verify`](#captchaverify) — a `<MochiCaptcha>` submission was verified or rejected
 - [`file:change`](#filechange) — dev-only file watcher
 - [`image:store`](#imagestore), [`image:delete`](#imagedelete) — [`<Image>`](/docs/images/) cache activity
+- `image:cache-sweep` — aggregate counts per janitor sweep (see [Images](/docs/images/))
 - `cache:read`, `cache:revalidate` — see [Cache events](/docs/cache/#subscribing-to-cache-events)
 
 ### Subscribing

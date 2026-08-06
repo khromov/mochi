@@ -81,7 +81,7 @@ Add `placeholder` to render a [ThumbHash](https://evanw.github.io/thumbhash/) bl
 
 A bare `<Image src>` with no `size` serves the full-size original. An unknown size name degrades to the original and logs a one-time server warning.
 
-`<Image>` works inside `mochi:hydrate*` islands at any depth — it detects the hydrating subtree with [`isHydratable()`](/docs/selective-hydration/#ishydratable). Minting needs the server secret, so inside an island the minted URL is serialized into the page via Svelte's `hydratable` and reused during hydration.
+`<Image>` works inside `mochi:hydrate*` islands at any depth — it detects the hydrating subtree with [`isHydratable()`](/docs/selective-hydration/#ishydratable). Minting needs the server secret, so inside an island the minted URL is serialized into the page via Svelte's `hydratable` and reused during hydration. If a client-side re-render changes the image props, there is no snapshot to reuse and the `<img>` degrades to the raw `src` URL.
 
 <Callout type="warning">
 
@@ -109,6 +109,14 @@ Supported formats: png, jpg, jpeg, webp, avif, gif. Put SVGs in your `public/` d
 Mochi copies the file to a content-hashed URL (`/_mochi/asset/<slug>-<hash>.<ext>`) and serves it from disk with a long-lived immutable cache in production. Transforms read the file from disk, so `<Image src={hero} size="…">` and `placeholder` work without an origin round-trip. Emitted copies live under `<outDir>/assets/` and [relocate with the build](/docs/deployment-options/#relocatable-builds).
 
 The `{ src, width, height, format }` shape is available as the exported `ImportedImage` type. Ambient module types come free through `mochi-framework/ambient`.
+
+A bare `<Image src={hero}>` with no `size` renders the original at its intrinsic dimensions straight from that static URL. It never calls the image endpoint.
+
+<Callout type="warning">
+
+Two edge cases. With `image.enabled: false` the `/_mochi/asset/…` route still serves the file, because that route is plain static serving and registers independently of the flag. The transform does not run: `<Image>` falls back to the raw static URL, while the `<img>` keeps the size's declared `width`/`height`, so the browser scales the full-size original into that box. And the [`image:url`](/docs/extensions/#imageurl) CDN-rewrite filter runs on minted transform URLs only, so the no-size static URL (`hero.src`) bypasses it. Use a `size` if you need local assets routed through the filter.
+
+</Callout>
 
 ### `getImageUrl` — deferred URLs
 

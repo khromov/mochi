@@ -63,7 +63,7 @@ Use it from a page or API route:
 | `delete(key)`              | `Promise<void>`                      |
 | `clearItems()`             | `Promise<void>`                      |
 
-`peek(key)` reports a key's `status` and value **without** running `fn`, revalidating, or emitting `cache:read` — a pure probe that returns `null` on a miss. `markStale(key)` backdates an entry so its next read serves stale-while-revalidate. `set(key, value)` writes a value directly, stamped fresh. Prefer `set` over `delete(key)` then `fetch`: that sequence leaves the key absent, so concurrent readers each start their own recompute.
+`peek(key)` reports a key's `status` and value **without** running `fn`, revalidating, or emitting `cache:read` — a pure probe that returns `null` on a miss. `markStale(key)` backdates an entry so its next read serves stale-while-revalidate. It is a no-op on a missing or already-stale key, and it never freshens or un-expires one. Both run through the `storage` interface, so they apply to any backend. `set(key, value)` writes a value directly, stamped fresh. Prefer `set` over `delete(key)` then `fetch`: that sequence leaves the key absent, so concurrent readers each start their own recompute.
 
 `status` is `'fresh' | 'stale' | 'expired' | 'miss'`.
 
@@ -98,7 +98,9 @@ export const pokemonCache = new MochiCache({
 });
 ```
 
-A background sweep deletes expired files on an interval. `purgeOnInit` empties the directory on startup. Set `offloadBinary: true` when values carry large binaries. The built-in [image cache](/docs/images/) enables offloading internally.
+A background sweep deletes expired files on an interval. `purgeOnInit` empties the directory on startup.
+
+Binary fields (`Uint8Array` / `Buffer`) anywhere in a value round-trip transparently. By default Mochi inlines them as base64 in the JSON and returns them as `Uint8Array`. When values carry large binaries, set `offloadBinary: true`: Mochi writes each binary to its own file in a `<key-hash>/` folder and puts a pointer in the JSON instead of base64. An offloaded field reads back as a lazy blob reference, so a metadata read never loads the bytes. Resolve one with `readBlobRef(ref)`, and narrow a value with `isBlobRef(value)`. Deleting a key also removes its blob folder. Pointers already on disk always decode, so the flag never orphans existing entries. The built-in [image cache](/docs/images/) enables offloading internally.
 
 | Option          | Default           |                                                                            |
 | --------------- | ----------------- | -------------------------------------------------------------------------- |
@@ -107,6 +109,8 @@ A background sweep deletes expired files on an interval. `purgeOnInit` empties t
 | `purgeInterval` | `60_000` (1min)   | Background sweep interval in ms. `<= 0` disables the sweeper.              |
 | `maxAge`        | `600_000` (10min) | Files older than this are deleted by the sweep.                            |
 | `offloadBinary` | `false`           | Offload binary fields to per-key blob files, read back as lazy `BlobRef`s. |
+
+Only one background sweeper runs per cache directory per process. A new `FileStorage` on the same directory transfers the sweep to the newest instance, and with it that instance's `maxAge`, so a dev-server reload that re-runs your module never stacks up duplicate sweepers. Ownership never moves back: `dispose()` on the newest instance ends the sweep for that directory, even if an older instance is still in use.
 
 <Callout type="warning">
 

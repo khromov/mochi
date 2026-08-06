@@ -213,7 +213,7 @@ Email templates always render outside the request context, even when sent from a
 
 <Callout type="warning">
 
-`<script>` tags in an email body are stripped during rendering. Email clients block scripts, so a script only bloats the message and trips spam filters. This applies to scripts you emit into the markup, for example through `<svelte:head>` or `{@html}`.
+`<script>` tags in an email body are stripped during rendering. Email clients block scripts, so a script only bloats the message and trips spam filters. The component's own `<script>` block (props, logic) is compile-time and never reaches the output, so it is unaffected. The strip applies to scripts you emit into the markup, for example through `<svelte:head>` or `{@html}`.
 
 </Callout>
 
