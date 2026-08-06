@@ -11,6 +11,7 @@ import { clearDocsCaches, DOCS_DIR } from './lib/docs';
 import { clearBlogCaches, BLOG_DIR } from './lib/blog';
 import { highlightCode } from './lib/highlight.server';
 import { handle as cookieVaryTestHandle } from './demos/cookie-vary-test/routes';
+import { handle as modeWatcherHandle } from './demos/mode-watcher/routes';
 import { handle as shotHandle } from './shot/routes';
 import { encodeDebugBarGlobals } from './lib/debugBarEncode';
 import { routes, queues } from './routes';
@@ -134,7 +135,18 @@ await Mochi.serve({
   htmlShell: './src/shell.html',
   trailingSlash: 'always',
   // /ci/dashboard is a chrome-free always-on display — it would otherwise report a pageview every refresh.
-  handle: sequence(compress(), immutableAssets, helloWorld, asciiDog, analytics({ exclude: ['/ci/dashboard'] }), encodeDebugBarPaths, noCache, cookieVaryTestHandle, shotHandle),
+  handle: sequence(
+    compress(),
+    immutableAssets,
+    helloWorld,
+    asciiDog,
+    analytics({ exclude: ['/ci/dashboard'] }),
+    encodeDebugBarPaths,
+    noCache,
+    cookieVaryTestHandle,
+    modeWatcherHandle,
+    shotHandle,
+  ),
   handleError,
   idleTimeout: 60,
   compressServerIslandProps: true,
