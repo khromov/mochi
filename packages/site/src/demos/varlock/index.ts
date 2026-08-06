@@ -11,7 +11,7 @@ await load();
 patchGlobalConsole();
 
 await Mochi.serve({
-  port: ENV.API_PORT,
-  development: ENV.APP_ENV === 'development',
+  port: ENV.DEMO_API_PORT,
+  development: ENV.DEMO_APP_ENV === 'development',
   routes,
 });

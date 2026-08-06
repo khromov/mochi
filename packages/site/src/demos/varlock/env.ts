@@ -4,10 +4,10 @@ import { ENV } from 'varlock/env';
 // varlock's CLI generates this augmentation from the schema; we inline it so `ENV.KEY` stays fully typed.
 declare module 'varlock/env' {
   interface TypedEnvSchema {
-    APP_ENV: 'development' | 'preview' | 'production';
-    API_PORT: number;
-    API_URL: string;
-    OPENAI_API_KEY: string;
+    DEMO_APP_ENV: 'development' | 'preview' | 'production';
+    DEMO_API_PORT: number;
+    DEMO_API_URL: string;
+    DEMO_SECRET_KEY: string;
   }
 }
 
@@ -44,6 +44,6 @@ export async function loadVarlockConfig(): Promise<VarlockConfig> {
     value: item.isSensitive ? null : String(item.value),
   }));
 
-  cached = { items, apiUrl: ENV.API_URL, apiPort: ENV.API_PORT };
+  cached = { items, apiUrl: ENV.DEMO_API_URL, apiPort: ENV.DEMO_API_PORT };
   return cached;
 }

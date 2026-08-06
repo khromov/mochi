@@ -17,7 +17,7 @@
 import { ENV } from 'varlock/env';
 
 await load(); // parse + validate .env.schema once at boot
-const port = ENV.API_PORT; // typed + coerced: a number, not a string`,
+const port = ENV.DEMO_API_PORT; // typed + coerced: a number, not a string`,
     'typescript',
   );
 </script>
@@ -69,8 +69,8 @@ const port = ENV.API_PORT; // typed + coerced: a number, not a string`,
       </tbody>
     </table>
     <p class="note">
-      <code>API_PORT</code> arrives as a JavaScript <code>number</code> ({config.apiPort}), and
-      <code>API_URL</code> already has its <code>{'${API_PORT}'}</code> reference expanded to
+      <code>DEMO_API_PORT</code> arrives as a JavaScript <code>number</code> ({config.apiPort}), and
+      <code>DEMO_API_URL</code> already has its <code>{'${DEMO_API_PORT}'}</code> reference expanded to
       <code>{config.apiUrl}</code>. The <code>@sensitive</code> key never leaves the server — it's masked before it reaches the props, and <code>patchGlobalConsole()</code> keeps it
       out of your logs.
     </p>
