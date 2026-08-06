@@ -24,6 +24,7 @@
     "@lucide/svelte": "^1.28.0",
     "@napi-rs/canvas": "^1.0.3",
     "@portabletext/svelte": "^3.0.1",
+    "@tanstack/svelte-table": "^9.0.0",
     "@tmcp/adapter-valibot": "0.1.6",
     "@tmcp/transport-http": "0.8.6",
     "hast-util-to-html": "^9.0.5",

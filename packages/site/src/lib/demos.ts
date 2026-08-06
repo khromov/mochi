@@ -50,6 +50,7 @@ import { files as serverIsland } from '../demos/server-island/files.ts';
 import { files as serverProps } from '../demos/server-props/files.ts';
 import { files as sharedState } from '../demos/shared-state/files.ts';
 import { files as streams } from '../demos/streams/files.ts';
+import { files as tanstackTable } from '../demos/tanstack-table/files.ts';
 import { files as url } from '../demos/url/files.ts';
 import { files as varlock } from '../demos/varlock/files.ts';
 import { files as viewTransitions } from '../demos/view-transitions/files.ts';
@@ -530,6 +531,14 @@ export const demos: Demo[] = [
     files: runed,
     title: 'Runed Utilities',
     hook: "How third-party Svelte 5 libraries run in islands — Runed's reactive utilities (Debounced, StateHistory, PersistedState, PressedKeys, AnimationFrames, FiniteStateMachine, resource…) hydrated inside Mochi.",
+    category: 'hydration',
+  },
+  {
+    href: '/demos/tanstack-table/',
+    slug: 'tanstack-table',
+    files: tanstackTable,
+    title: 'Tables with TanStack Table',
+    hook: 'How a headless table library works in Mochi — TanStack Table server-rendered to a read-only table with zero JavaScript, then a mochi:hydrate island for interactive sorting.',
     category: 'hydration',
   },
 ];
