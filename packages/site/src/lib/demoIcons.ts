@@ -55,6 +55,7 @@ import Recycle from '@lucide/svelte/icons/recycle';
 import ChartSpline from '@lucide/svelte/icons/chart-spline';
 import Atom from '@lucide/svelte/icons/atom';
 import TextQuote from '@lucide/svelte/icons/text-quote';
+import FileKey from '@lucide/svelte/icons/file-key';
 import Table from '@lucide/svelte/icons/table';
 import SunMoon from '@lucide/svelte/icons/sun-moon';
 
@@ -65,6 +66,7 @@ export interface DemoIconMeta {
 
 export const demoIconFor: Record<string, DemoIconMeta> = {
   'Hello World': { icon: Sprout, label: 'Pure SSR' },
+  'Varlock env schemas': { icon: FileKey, label: 'Schema-validated .env read on SSR' },
   MdSvex: { icon: FileText, label: 'Markdown route via mdsvex' },
   'Server Props': { icon: PackageOpen, label: 'Server-resolved props' },
   'Hydration Modes': { icon: Layers, label: 'All hydration modes' },

@@ -53,6 +53,7 @@ import { files as sharedState } from '../demos/shared-state/files.ts';
 import { files as streams } from '../demos/streams/files.ts';
 import { files as tanstackTable } from '../demos/tanstack-table/files.ts';
 import { files as url } from '../demos/url/files.ts';
+import { files as varlock } from '../demos/varlock/files.ts';
 import { files as viewTransitions } from '../demos/view-transitions/files.ts';
 
 export type DemoCategory = 'hydration' | 'data' | 'endpoints' | 'forms' | 'errors' | 'sites';
@@ -152,6 +153,14 @@ export const demos: Demo[] = [
     files: url,
     title: 'Isomorphic URL',
     hook: 'How the isomorphic URL helper works — one import that reads the request URL on the server and window.location on the client.',
+    category: 'data',
+  },
+  {
+    href: '/demos/varlock/',
+    slug: 'varlock',
+    files: varlock,
+    title: 'Varlock env schemas',
+    hook: 'How schema-validated env works — load a typed .env.schema with Varlock and read coerced, expanded, redacted config through the ENV proxy on every SSR render.',
     category: 'data',
   },
   {
