@@ -172,7 +172,7 @@ Every token failure returns the same message, so a probing bot cannot tell "too 
 
 A token's age is `Date.now()` at verify minus the mint time sealed into the token. On one instance that is one clock, and the subtraction is exact. Across a multi-instance deploy the two reads come off different machines, so the difference also carries that pair's clock skew. A verifier that runs behind the minter understates the age and can refuse a real submission as too fast.
 
-Mochi pads `maxAgeMs` with a 30s allowance to absorb this, adjustable with the [`captcha:driftAllowanceMs`](/docs/extensions/#captchadriftallowancems) filter. The floor is not padded.
+To absorb this, Mochi adds a 30s allowance to `maxAgeMs`, adjustable with the [`captcha:driftAllowanceMs`](/docs/extensions/#captchadriftallowancems) filter. It does not add one to `minAgeMs`.
 
 <Callout type="info">
 
