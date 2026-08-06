@@ -172,7 +172,7 @@ Every token failure returns the same message, so a probing bot cannot tell "too 
 
 A token's age is `Date.now()` at verify minus the mint time sealed into the token. On one instance that is one clock, and the subtraction is exact. Across a multi-instance deploy the two reads come off different machines, so the difference also carries that pair's clock skew. A verifier that runs behind the minter understates the age and can refuse a real submission as too fast.
 
-Mochi pads `maxAgeMs` with a 30s allowance to absorb this. Adjust it with the [`captcha:driftAllowanceMs`](/docs/extensions/#captchadriftallowancems) filter. The floor is **not** padded: padding a floor means subtracting from it, so any allowance wider than `minAgeMs` would delete the too-fast check rather than soften it. Keep instances NTP-synced. A fleet skewed by seconds has no usable elapsed-time signal to floor, and it must share `MOCHI_KEY` and the nonce store anyway.
+Mochi pads `maxAgeMs` with a 30s allowance to absorb this, adjustable with the [`captcha:driftAllowanceMs`](/docs/extensions/#captchadriftallowancems) filter. The floor is not padded.
 
 <Callout type="info">
 
