@@ -31,6 +31,8 @@ Render exactly **one** `<ViewTransitions />` per page. Two instances would emit 
 
 </Callout>
 
+Do not hydrate it. The component emits static CSS and no markup, so `mochi:hydrate` and `mochi:defer` have nothing to do. It throws if invoked as an island.
+
 ### Props
 
 | Prop                   | Type                                               | Default  | Description                                                           |

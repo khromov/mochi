@@ -23,7 +23,7 @@ A side-effect `import` of a `.css` file from any `.svelte`, `.ts`, or `.js` modu
 
 Bare specifiers resolve through `package.json#main`, so `@fontsource/*`, CSS-only libraries, and any package that points its main entry at a stylesheet work the same way. Relative paths (`import './styles.css'`) resolve from the importing file.
 
-Mochi serves the bundle as `/_mochi/import-css/<n>-<hash>.css` (with `assetPrefix` configurable on `Mochi.serve`). It tracks the imports reachable from each page entry and injects a `<link rel="stylesheet">` only on pages that use them.
+Mochi serves the bundle as `/_mochi/import-css/<name>-<hash>.css` (with `assetPrefix` configurable on `Mochi.serve`). It tracks the imports reachable from each page entry and injects a `<link rel="stylesheet">` only on pages that use them.
 
 The import can live anywhere in the dependency graph — a leaf `.ts` module, a hydratable island, or the page component. Mochi follows the bundle, not the call site.
 
@@ -50,7 +50,7 @@ The Svelte compiler handles `<style>` inside a `.svelte` file. Mochi extracts th
 
 ### Variable fonts
 
-`@fontsource-variable/*` packages work without manual workarounds. Mochi takes care of the `*-variations` format hints these packages rely on, so variable fonts render correctly with no extra configuration.
+Bun's CSS bundler unquotes `format('woff2-variations')` to `format(woff2-variations)`. Browsers silently drop the unquoted form. After bundling, Mochi re-quotes the four `*-variations` hints (`woff2-variations`, `woff-variations`, `truetype-variations`, `opentype-variations`), so `@fontsource-variable/*` packages work with no manual workaround.
 
 ### Dev mode
 

@@ -135,7 +135,7 @@ Every socket exposes `ws.subscribe(topic)`, `ws.publish(topic, data)`, and `ws.u
 
 ### Lifecycle events
 
-Every WebSocket emits `ws:open`, `ws:message`, and `ws:close` on `mochiEvents`. `logger()` prints them. See [Events](/docs/events/) for the payload shape.
+Every WebSocket emits `ws:open`, `ws:message`, and `ws:close` on `mochiEvents`. `consoleLogger()` prints them. See [Events](/docs/events/) for the payload shape.
 
 <SeeItInAction
 demos={[

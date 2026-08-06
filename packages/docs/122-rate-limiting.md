@@ -141,6 +141,8 @@ tier: (req, ctx) => (ctx.locals.plan as string) ?? 'free',
 ```ts
 skip: async (req) => {
   const header = req.headers.get('Authorization');
+  // No credentials at all is a browser fetching the 401 challenge, not a guess:
+  // do not stall it, and do not charge it quota.
   if (!header || credentialsMatch(header)) return true;
   await Bun.sleep(5000);
   return false;

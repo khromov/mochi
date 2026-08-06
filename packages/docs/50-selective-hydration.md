@@ -51,7 +51,7 @@ Framework components from `mochi-framework/components` are the one package excep
 <MochiCaptcha mochi:hydrate />
 ```
 
-Two forms are a **compile error**, surfaced on the dev error page and in `mochi-framework build`:
+Any other import form is a **compile error**, surfaced on the dev error page and in `mochi-framework build`. The two you are most likely to hit:
 
 - **Third-party package imports** (`import { Widget } from 'some-ui-lib'`). Wrap the component in a local `.svelte` file and put the directive on the wrapper.
 - **Components received through props, variables, or namespaces** (`<Item.Row mochi:hydrate />`). An island needs a statically known source file. Use the same wrapper fix.

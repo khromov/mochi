@@ -168,6 +168,18 @@ Every token failure returns the same message, so a probing bot cannot tell "too 
 
 `minAgeMs` is the only check that a submission took human time. The proof-of-work bounds an attacker's **cost** (~2^`bits` hashes per token), not any single solver's latency. A form with fields to type into runs past the 2s default. A form with nothing to fill in may not, so tune it per form with the [`captcha:minAgeMs`](/docs/extensions/#captchaminagems) filter.
 
+### Clock skew
+
+A token's age is `Date.now()` at verify minus the mint time sealed into the token. On one instance that is one clock, and the subtraction is exact. Across a multi-instance deploy the two reads come off different machines, so the difference also carries that pair's clock skew. A verifier that runs behind the minter understates the age and can refuse a real submission as too fast.
+
+Mochi pads `maxAgeMs` with a 30s allowance to absorb this. Adjust it with the [`captcha:driftAllowanceMs`](/docs/extensions/#captchadriftallowancems) filter. The floor is **not** padded: padding a floor means subtracting from it, so any allowance wider than `minAgeMs` would delete the too-fast check rather than soften it. Keep instances NTP-synced. A fleet skewed by seconds has no usable elapsed-time signal to floor, and it must share `MOCHI_KEY` and the nonce store anyway.
+
+<Callout type="info">
+
+A **negative** `ageMs` on the [`captcha:verify` event](/docs/events/#captchaverify) means a token was verified before it was minted, which is impossible on a single clock. It is an unambiguous skew alarm, and it fires in the direction that quietly weakens the floor rather than the one visitors complain about.
+
+</Callout>
+
 ### Replay protection
 
 A solved token is single-use. `verifyCaptcha()` burns its nonce on success. A second submission of the same token is rejected.
@@ -221,7 +233,30 @@ if (!captcha.ok) {
 
 ### Theming
 
-Every colour is a CSS custom property whose default lives in the `var()` fallback, so the widget looks finished with no CSS. Set any of them on an ancestor and they inherit down (`--mochi-captcha-accent`, `--mochi-captcha-track-bg`, `--mochi-captcha-handle-bg`, and more). The defaults are light-mode only. In a dark app, point these at your own tokens. The track height (44px) and handle width (44px) drive the drag maths and are not themeable.
+Every colour is a CSS custom property whose default lives in the `var()` fallback, so the widget looks finished with no CSS. Set any of them on an ancestor and they inherit down:
+
+```css
+.my-form {
+  --mochi-captcha-accent: #4a7c59;
+  --mochi-captcha-accent-soft: #e0ebe1;
+  --mochi-captcha-accent-soft-text: #2f5b3f;
+  --mochi-captcha-border: #e8e4d8;
+  --mochi-captcha-track-bg: #faf8f1;
+  --mochi-captcha-handle-bg: #fffdf8;
+  --mochi-captcha-handle-text: var(--mochi-captcha-accent);
+  --mochi-captcha-hint-text: #6e756d;
+  --mochi-captcha-radius: 999px;
+  --mochi-captcha-error-bg: #fdf3f2;
+  --mochi-captcha-error-border: #e9c9c4;
+  --mochi-captcha-error-text: #8a3324;
+}
+```
+
+The three `error` properties apply only in the [failure state](#when-it-fails).
+
+`--mochi-captcha-handle-text` colours the `emoji` glyph and follows the accent unless you set it. It applies only to glyphs with a text presentation, such as `▶` or `→`. Colour-font emoji like `🍡` paint themselves and ignore CSS colour.
+
+The defaults are light-mode only. In a dark or themed app, point these at your own tokens — `--mochi-captcha-track-bg: var(--surface-muted)` and so on — so the widget follows your theme. The track height (44px) and handle width (44px) drive the drag maths and are not themeable.
 
 ### Testing
 
