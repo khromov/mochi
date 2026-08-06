@@ -1,18 +1,43 @@
 <script lang="ts">
-  import { ModeWatcher, toggleMode, setMode, resetMode, mode, userPrefersMode, systemPrefersMode, modeStorageKey } from 'mode-watcher';
-  import { onMount } from 'svelte';
+  import { ModeWatcher, toggleMode, setMode, resetMode, mode, userPrefersMode, systemPrefersMode } from 'mode-watcher';
+  import { cookies, isBrowser } from 'mochi-framework';
+  import Sun from '@lucide/svelte/icons/sun';
+  import Moon from '@lucide/svelte/icons/moon';
   import Badge from '../../components/Badge.svelte';
+  import { THEME_COOKIE } from './constants';
 
-  // resetMode() persists async, which won't flush before a hard navigation unloads the page, so
-  // clear mode-watcher's stored key synchronously on leave — the demo hands <html> back to system.
-  onMount(() => {
-    const reset = () => localStorage.removeItem(modeStorageKey.current);
-    window.addEventListener('pagehide', reset);
-    return () => window.removeEventListener('pagehide', reset);
+  let { initialMode = null }: { initialMode?: string | null } = $props();
+
+  const defaultMode = $derived(initialMode === 'light' || initialMode === 'dark' ? initialMode : 'system');
+
+  // Mirror the resolved mode into a cookie so the server can render the right theme next time —
+  // mode-watcher itself only persists to localStorage, which the server can't read.
+  $effect(() => {
+    const m = mode.current;
+    if (isBrowser && (m === 'light' || m === 'dark')) {
+      cookies.set(THEME_COOKIE, m, { expires: 365, path: '/demos/mode-watcher/', sameSite: 'Lax' });
+    }
   });
 </script>
 
-<ModeWatcher />
+<ModeWatcher {defaultMode} />
+
+<header class="ssr-header">
+  <div class="ssr-copy">
+    <strong>SSR theme</strong>
+    <span>server-rendered from a cookie — no flash on reload</span>
+  </div>
+  <div class="ssr-controls">
+    <code>server sent: {initialMode ?? '(no cookie yet)'}</code>
+    <button class="switch" onclick={toggleMode}>
+      {#if mode.current === 'dark'}
+        <Sun size={15} /> Light
+      {:else}
+        <Moon size={15} /> Dark
+      {/if}
+    </button>
+  </div>
+</header>
 
 <div class="grid">
   <div class="card">
@@ -59,6 +84,69 @@
 </div>
 
 <style>
+  .ssr-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.9rem 1.1rem;
+    margin-bottom: 1.25rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: #ffffff;
+    color: #1a1a1a;
+    transition:
+      background 0.2s ease,
+      color 0.2s ease;
+  }
+
+  :global(html.dark) .ssr-header {
+    background: #10131a;
+    color: #f4f5f7;
+  }
+
+  .ssr-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+
+  .ssr-copy strong {
+    font-size: 0.95rem;
+  }
+
+  .ssr-copy span {
+    font-size: 0.75rem;
+    opacity: 0.7;
+  }
+
+  .ssr-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .ssr-controls code {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    opacity: 0.75;
+  }
+
+  .switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.4rem 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--accent);
+    color: var(--accent-text, #fff);
+    font: inherit;
+    font-size: 0.85rem;
+    cursor: pointer;
+  }
+
   .grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
