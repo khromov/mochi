@@ -5,13 +5,8 @@ export interface Template {
   label: string;
   hint: string;
   /**
-   * giget-core URI: `<owner>/<repo>/<subdir>`.
-   *
-   * Resolves to the default branch (main), so the template files reflect
-   * bleeding-edge mochi-framework — even though the generated `package.json`
-   * pins the latest *published* `mochi-framework` from npm. Brief drift is
-   * possible when main is ahead of the most recent release. Pin to a tag
-   * (e.g. `khromov/mochi/packages/minimal#v0.2.0`) if you need lockstep.
+   * giget-core URI (`<owner>/<repo>/<subdir>`); resolves to the default branch, which can drift
+   * ahead of the published `mochi-framework` version — append `#<tag>` for lockstep.
    */
   source: string;
 }

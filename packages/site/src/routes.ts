@@ -23,6 +23,7 @@ import { routes as apiRoutes } from './demos/api/routes';
 import { routes as cacheEventsRoutes } from './demos/cache-events/routes';
 import { routes as captchaRoutes } from './demos/captcha/routes';
 import { routes as captchaStylingRoutes } from './demos/captcha-styling/routes';
+import { routes as chartsRoutes } from './demos/charts/routes';
 import { routes as chatRoutes } from './demos/chat/routes';
 import { routes as ciRoutes } from './ci/routes';
 import { routes as clientOnlyRoutes } from './demos/client-only/routes';
@@ -57,6 +58,7 @@ import { routes as loginRoutes } from './demos/login/routes';
 import { routes as mdsvexRoutes } from './demos/mdsvex/routes';
 import { routes as nestedComponentsRoutes } from './demos/nested-components/routes';
 import { routes as nestedIslandsRoutes } from './demos/nested-islands/routes';
+import { routes as portableTextRoutes } from './demos/portable-text/routes';
 import { routes as propDedupRoutes } from './demos/prop-dedup/routes';
 import { routes as propsIdRoutes } from './demos/props-id/routes';
 import { routes as queueRoutes, queues as queueQueues } from './demos/queue/routes';
@@ -64,17 +66,21 @@ import { routes as rateLimitRoutes } from './demos/rate-limit/routes';
 import { routes as reloadFormDataRoutes } from './demos/reload-form-data/routes';
 import { routes as requestCacheRoutes } from './demos/request-cache/routes';
 import { routes as requestIdRoutes } from './demos/request-id/routes';
+import { routes as modeWatcherRoutes } from './demos/mode-watcher/routes';
+import { routes as runedRoutes } from './demos/runed/routes';
 import { routes as serverIslandRoutes } from './demos/server-island/routes';
 import { routes as shotRoutes } from './shot/routes';
 import { routes as serverPropsRoutes } from './demos/server-props/routes';
 import { routes as sharedStateRoutes } from './demos/shared-state/routes';
 import { routes as streamsRoutes } from './demos/streams/routes';
+import { routes as tanstackTableRoutes } from './demos/tanstack-table/routes';
 import { routes as urlRoutes } from './demos/url/routes';
 import { routes as viewTransitionsRoutes } from './demos/view-transitions/routes';
 import { routes as customTransitionsRoutes } from './demos/custom-transitions/routes';
 import { routes as yourFirstMochiAppRoutes } from './demos/your-first-mochi-app/routes';
 
 const DEVELOPMENT = process.env.MODE === 'development';
+const HEAP_SNAPSHOTS_ENABLED = process.env.HEAP_SNAPSHOTS_ENABLED === 'true';
 
 // Static per-demo source routes, sitting alongside each demo page (e.g.
 // /demos/chat/llms.txt, /cookie-vary-test/llms.txt). Static (not a param) so they
@@ -114,17 +120,23 @@ export const routes: Record<string, MochiRouteValue> = {
         }),
       }
     : {}),
-  // TEMP: on-demand V8 heap snapshot for memory-leak debugging. Remove when done.
-  '/_heapsnapshot': Mochi.api(() => {
-    const snapshot = Bun.generateHeapSnapshot('v8');
-    const filename = `mochi-${Date.now()}.heapsnapshot`;
-    return new Response(snapshot, {
-      headers: {
-        'Content-Type': 'application/json',
-        'Content-Disposition': `attachment; filename="${filename}"`,
-      },
-    });
-  }),
+  // On-demand V8 heap snapshot for memory-leak debugging. A full heap dump can
+  // contain anything the process has touched, so it stays unregistered unless
+  // explicitly opted into via HEAP_SNAPSHOTS_ENABLED=true (see memtest/).
+  ...(HEAP_SNAPSHOTS_ENABLED
+    ? {
+        '/_heapsnapshot': Mochi.api(() => {
+          const snapshot = Bun.generateHeapSnapshot('v8');
+          const filename = `mochi-${Date.now()}.heapsnapshot`;
+          return new Response(snapshot, {
+            headers: {
+              'Content-Type': 'application/json',
+              'Content-Disposition': `attachment; filename="${filename}"`,
+            },
+          });
+        }),
+      }
+    : {}),
   '/discord': Mochi.api(() => Response.redirect('https://discord.com/invite/QCGfks4gg8', 302)),
   '/': Mochi.page('./src/Site.svelte', {
     serverProps: async () => {
@@ -293,6 +305,7 @@ export const routes: Record<string, MochiRouteValue> = {
   ...cacheEventsRoutes,
   ...captchaRoutes,
   ...captchaStylingRoutes,
+  ...chartsRoutes,
   ...chatRoutes,
   ...ciRoutes,
   ...clientOnlyRoutes,
@@ -327,6 +340,7 @@ export const routes: Record<string, MochiRouteValue> = {
   ...mdsvexRoutes,
   ...nestedComponentsRoutes,
   ...nestedIslandsRoutes,
+  ...portableTextRoutes,
   ...propDedupRoutes,
   ...propsIdRoutes,
   ...queueRoutes,
@@ -334,11 +348,14 @@ export const routes: Record<string, MochiRouteValue> = {
   ...reloadFormDataRoutes,
   ...requestCacheRoutes,
   ...requestIdRoutes,
+  ...modeWatcherRoutes,
+  ...runedRoutes,
   ...serverIslandRoutes,
   ...serverPropsRoutes,
   ...shotRoutes,
   ...sharedStateRoutes,
   ...streamsRoutes,
+  ...tanstackTableRoutes,
   ...urlRoutes,
   ...viewTransitionsRoutes,
   ...customTransitionsRoutes,

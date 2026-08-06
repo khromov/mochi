@@ -44,8 +44,8 @@
 
 <style>
   .card {
-    /* Map tones once here. The --badge-*-bg fills are too pale to read as a bar on
-       --surface, but the matching *-text tokens carry contrast in both themes. */
+    /* The --badge-*-bg fills are too pale to read as a bar on --surface, but the
+       matching *-text tokens carry contrast in both themes. */
     --dot-success: var(--badge-success-text);
     --dot-failure: var(--badge-danger-text);
     --dot-running: var(--badge-info-text);

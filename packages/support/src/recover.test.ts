@@ -82,10 +82,7 @@ afterAll(async () => {
 });
 
 test('a row stranded as `failed` is re-enqueued on boot and delivered', async () => {
-  // The regression this file exists for: recover() used to select only
-  // `pending`, so a row whose retries were exhausted before a restart was
-  // never looked at again — the exact loss the store-then-queue design is
-  // meant to rule out.
+  // The regression this file exists for: recover() used to select only `pending`, leaving an exhausted-retry row stranded forever.
   await waitFor(() => getSubmission(stranded.failed)?.email_status === 'sent');
   expect(getSubmission(stranded.failed)?.email_status).toBe('sent');
   expect(sent.map((m) => m.replyTo)).toContain('gave-up@example.com');

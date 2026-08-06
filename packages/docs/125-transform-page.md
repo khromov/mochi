@@ -1,7 +1,7 @@
 ---
 title: 'Transforming HTML with transformPage'
 slug: transform-page
-description: 'Rewrite rendered HTML before it is sent to the client using the transformPage callback.'
+description: 'Rewrite rendered HTML before it is sent to the client with the transformPage callback.'
 ---
 
 <script>
@@ -35,18 +35,7 @@ const greeting: Handle = async ({ event, resolve }) => {
 
 The callback receives `{ html, done }` and returns `string | undefined | Promise<string | undefined>`. Returning `undefined` replaces the body with an empty string.
 
-```ts
-const banner: Handle = async ({ event, resolve }) => {
-  return resolve(event, {
-    async transformPage({ html }) {
-      const message = await fetchBannerMessage();
-      return html.replace('{{app.banner}}', message);
-    },
-  });
-};
-```
-
-Use it for per-request mutations the shell template can't express on its own — request-aware `<html lang>`, nonce injection, A/B placeholder swaps:
+Use it for per-request mutations the shell template cannot express: a request-aware `<html lang>`, nonce injection, or A/B placeholder swaps.
 
 ```ts
 const lang: Handle = async ({ event, resolve }) => {
@@ -59,12 +48,12 @@ const lang: Handle = async ({ event, resolve }) => {
 };
 ```
 
-The callback is invoked **once with the full HTML**, not streamed chunk-by-chunk; `done` is always `true`. Treat it as a whole-document transform.
+Mochi invokes the callback once with the full HTML, not chunk by chunk. `done` is always `true`. Treat it as a whole-document transform.
 
-When `sequence()` chains multiple handlers, transforms run inner-most first and outer-most last — the handler closest to the route sees the original HTML, the outermost wraps the final result.
+When `sequence()` chains handlers, transforms run inner-most first and outer-most last. The handler closest to the route sees the original HTML. The outermost wraps the final result.
 
 <Callout type="info">
 
-**Reserve `transformPage` for request-dependent values.** Static markup belongs in `src/shell.html` (or the default shell) so it ships without per-request work; use transforms only for values that genuinely depend on the request.
+**Use `transformPage` for request-dependent values only.** Static markup belongs in `src/shell.html` (or the default shell) so it ships without per-request work.
 
 </Callout>

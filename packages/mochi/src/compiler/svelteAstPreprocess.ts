@@ -234,21 +234,7 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
         // render) and the endpoint reads it from the decrypted payload: were it trusted from a `?hydrate=` query param, an
         // attacker could append `hydrate=eager` to any sealed token and have the endpoint echo the props back in plaintext.
         const alsoHydrateMode: AlsoHydrateMode | null = directives.hydrate ? (directives.hydrate.name === 'mochi:hydrate:visible' ? 'visible' : 'eager') : null;
-        const autoEntries = directives.hydrate ? [`islandId: __mochi_iid`, `${ALSO_HYDRATE_ENVELOPE_KEY}: ${JSON.stringify(alsoHydrateMode)}`] : [`islandId: __mochi_iid`];
-        const propsExpr = buildPropsFromAst(source, comp.attributes, autoEntries);
-        // Server islands always emit signed-props, since islandId is always injected and every prop must be encrypted
-        // against reads and tampering via query parameters. The component name is bound as AAD, so a token sealed for
-        // one component can't be replayed against another.
-        let attrs = `component-name="${islandKey}" signed-props={__mochi_encrypt_props__(__mochi_stringify__(${propsExpr}), ${JSON.stringify(islandKey)})} css-url="__MOCHI_SERVER_CSS_URL__${islandKey}__" data-asset-prefix="__MOCHI_ASSET_PREFIX__"`;
-
-        // `mochi:defer:visible` defers the fetch until the wrapper enters the
-        // viewport. `rootMargin` rides inside the existing `server-options`
-        // JSON so the client reads one attribute for both fetch and visibility
-        // configuration.
         const isServerVisible = directives.server.name === 'mochi:defer:visible';
-        if (isServerVisible) {
-          attrs += ` defer-on="visible"`;
-        }
 
         // Extract directive options (e.g. mochi:defer={{retries: 10}} or
         // mochi:defer:visible={{rootMargin: '200px', retries: 5}})
@@ -258,29 +244,70 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
           const expr = exprTag.expression as unknown as Positioned;
           serverOptionsExpr = source.slice(expr.start, expr.end);
         }
-        if (serverOptionsExpr) {
-          attrs += ` server-options={JSON.stringify(${serverOptionsExpr})}`;
-        }
 
-        // Combined: mochi:defer + mochi:hydrate/mochi:hydrate:visible
-        if (directives.hydrate) {
-          const isVisible = directives.hydrate.name === 'mochi:hydrate:visible';
-          attrs += isVisible ? ` also-hydrate="visible"` : ` also-hydrate="eager"`;
-          attrs += ` component-url="__MOCHI_COMPONENT_URL__${islandKey}__"`;
-          if (!seen.has(dedupKey)) {
-            seen.add(dedupKey);
-            hydratables.push({ name: islandKey, displayName: comp.name, resolvedPath: resolved, exportName });
-          }
+        if (directives.hydrate && !seen.has(dedupKey)) {
+          seen.add(dedupKey);
+          hydratables.push({ name: islandKey, displayName: comp.name, resolvedPath: resolved, exportName });
         }
 
         // Children become fallback content
-        const constDecl = `{#if true}{@const __mochi_iid = \`\${${pid}}-\${__mochi_uid__++}\`}`;
+        const childrenSource = comp.fragment.nodes.map((n) => source.slice(n.start, n.end)).join('');
+        const alsoHydrateAttrs = directives.hydrate ? ` also-hydrate="${alsoHydrateMode}" component-url="__MOCHI_COMPONENT_URL__${islandKey}__"` : '';
+
         let replacement: string;
-        if (comp.fragment.nodes.length > 0) {
-          const childrenSource = comp.fragment.nodes.map((n) => source.slice(n.start, n.end)).join('');
-          replacement = `${constDecl}<mochi-server-island ${attrs}>${childrenSource}</mochi-server-island>{/if}`;
+        if (isServerVisible) {
+          // `mochi:defer:visible` defers the fetch until the wrapper enters the viewport (`rootMargin` rides inside the
+          // existing `server-options` JSON) — laziness is the point, so it is exempt from nested-island inlining.
+          const autoEntries = directives.hydrate ? [`islandId: __mochi_iid`, `${ALSO_HYDRATE_ENVELOPE_KEY}: ${JSON.stringify(alsoHydrateMode)}`] : [`islandId: __mochi_iid`];
+          const propsExpr = buildPropsFromAst(source, comp.attributes, autoEntries);
+          // Server islands always emit signed-props, since islandId is always injected and every prop must be encrypted
+          // against reads and tampering via query parameters. The component name is bound as AAD, so a token sealed for
+          // one component can't be replayed against another.
+          let attrs = `component-name="${islandKey}" signed-props={__mochi_encrypt_props__(__mochi_stringify__(${propsExpr}), ${JSON.stringify(islandKey)})} css-url="__MOCHI_SERVER_CSS_URL__${islandKey}__" data-asset-prefix="__MOCHI_ASSET_PREFIX__" defer-on="visible"`;
+          if (serverOptionsExpr) {
+            attrs += ` server-options={JSON.stringify(${serverOptionsExpr})}`;
+          }
+          attrs += alsoHydrateAttrs;
+          replacement = `{#if true}{@const __mochi_iid = \`\${${pid}}-\${__mochi_uid__++}\`}<mochi-server-island ${attrs}>${childrenSource}</mochi-server-island>{/if}`;
         } else {
-          replacement = `${constDecl}<mochi-server-island ${attrs}></mochi-server-island>{/if}`;
+          // Non-visible defer sites branch at render time: inside an island-endpoint render (`shouldInlineIsland`), the
+          // child renders in-process instead of emitting another fetch placeholder — the props are the same values the
+          // placeholder would have sealed, so the inlined HTML is what the follow-up fetch would have returned. The
+          // `{@const}` bindings keep user props/options expressions evaluated exactly once whichever branch is taken.
+          const userPropsExpr = buildPropsFromAst(source, comp.attributes);
+          const optsRef = serverOptionsExpr ? '__mochi_sopts__' : null;
+          const envelope = `{ ...__mochi_props__, islandId: __mochi_iid${directives.hydrate ? `, ${ALSO_HYDRATE_ENVELOPE_KEY}: ${JSON.stringify(alsoHydrateMode)}` : ''} }`;
+          // Server islands always emit signed-props, since islandId is always injected and every prop must be encrypted
+          // against reads and tampering via query parameters. The component name is bound as AAD, so a token sealed for
+          // one component can't be replayed against another. Spreading `__mochi_props__` first keeps the envelope's key
+          // order — and with it the deterministic encrypted token — byte-identical to the pre-inlining emission.
+          let attrs = `component-name="${islandKey}" signed-props={__mochi_encrypt_props__(__mochi_stringify__(${envelope}), ${JSON.stringify(islandKey)})} css-url="__MOCHI_SERVER_CSS_URL__${islandKey}__" data-asset-prefix="__MOCHI_ASSET_PREFIX__"`;
+          if (optsRef) {
+            attrs += ` server-options={JSON.stringify(${optsRef})}`;
+          }
+          attrs += alsoHydrateAttrs;
+          const placeholder = `<mochi-server-island ${attrs}>${childrenSource}</mochi-server-island>`;
+
+          let inlineBody: string;
+          if (directives.hydrate) {
+            // Mirrors the island endpoint's also-hydrate wrapper (`props` attribute, no `hydrate-on`) so the inlined
+            // fragment behaves like the fetched one, and the in-page hydrate branch's boundary nesting so hydration
+            // markers land where client `hydrate()` expects them. The endpoint appends the bootstrap script for the
+            // whole response via `result.bootstrapUrl`.
+            needsBoundary = true;
+            const propsAttr = userPropsExpr !== '{}' ? ` props={__mochi_stringify__(__mochi_props__)}` : '';
+            inlineBody = `<MochiHydratableBoundary_><mochi-hydratable-island component-name="${islandKey}"${propsAttr} component-url="__MOCHI_COMPONENT_URL__${islandKey}__"><svelte:boundary><${comp.name} {...__mochi_props__} /></svelte:boundary></mochi-hydratable-island></MochiHydratableBoundary_>`;
+          } else {
+            inlineBody = `<${comp.name} {...__mochi_props__} />`;
+          }
+
+          // A throwing inlined child degrades to the placeholder (`failed` snippet), i.e. exactly the pre-inlining
+          // behavior: the client fetches the island and a still-failing render returns the endpoint's failure stub.
+          const consts =
+            `{@const __mochi_iid = \`\${${pid}}-\${__mochi_uid__++}\`}` +
+            (serverOptionsExpr ? `{@const __mochi_sopts__ = (${serverOptionsExpr})}` : '') +
+            `{@const __mochi_props__ = (${userPropsExpr})}`;
+          replacement = `{#if true}${consts}{#if __mochi_inline_island__(${optsRef ?? ''})}<svelte:boundary>${inlineBody}{#snippet failed()}${placeholder}{/snippet}</svelte:boundary>{:else}${placeholder}{/if}{/if}`;
         }
 
         s.overwrite(comp.start, comp.end, replacement);
@@ -395,7 +422,7 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
       }
     }
     if (needsSignProps) {
-      imports += '\nimport { encryptProps as __mochi_encrypt_props__ } from "mochi-server-island-runtime";';
+      imports += '\nimport { encryptProps as __mochi_encrypt_props__, shouldInlineIsland as __mochi_inline_island__ } from "mochi-server-island-runtime";';
     }
     s.appendRight(contentStart, imports);
   }

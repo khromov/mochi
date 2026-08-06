@@ -7,6 +7,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Bun workspaces monorepo (`packages/*`):
 
 - `packages/mochi` — the `mochi-framework` library (published to npm). All framework source lives here.
+- `packages/mochi-rsvelte` — published as `@mochi-framework/rsvelte`: the opt-in Rust compiler backend behind `Mochi.serve({ svelteCompiler: 'rsvelte' })`. Owns the `@rsvelte/*` dependency tree; `mochi-framework` holds only an optional peer and falls back to `svelte/compiler` without it. Raw TS, no build step.
+- `packages/mochi-svelte-shaker` — published as `@mochi-framework/svelte-shaker`: the opt-in whole-program `.svelte` source optimizer behind `Mochi.serve({ optimize })`. Owns the `svelte-shaker` dependency and its `>=0.18.1` correctness floor; `mochi-framework` holds only an optional peer and warns once at boot when `optimize` is on without it. Raw TS, no build step.
 - `packages/site` — main site that consumes `mochi-framework` via `workspace:*`; serves the marketing pages, the docs (rendered from `packages/docs` markdown), and the inline demos. Port 3333.
 - `packages/demos` — standalone demos site (HN clone, todo, admin). Deployed separately from `packages/site`. Port 3334.
 - `packages/minimal` — smallest possible Mochi app; doubles as the smoke-test target and the `create-mochi` template source. Port 3335.
@@ -147,6 +149,16 @@ Default to Bun instead of Node.js:
 - `Bun.file` over `node:fs` readFile/writeFile.
 - Bun auto-loads `.env` — don't add `dotenv`.
 
+## PostgreSQL (dev container)
+
+A PostgreSQL 15 server runs by default inside the dev container for building Postgres-based features — started on each boot by `.devcontainer/start-postgres.sh` (Debian cluster tooling: `sudo pg_lsclusters`, `sudo pg_ctlcluster 15 main {start,stop,status}`).
+
+- **In-container**: connect at `postgres://postgres:postgres@localhost:5432/postgres`. That URL is already exported as `DATABASE_URL` (plus `PGHOST`/`PGPORT`/`PGUSER`/`PGPASSWORD`/`PGDATABASE`), so bare `psql` connects with no args and apps read `process.env.DATABASE_URL` — Bun's `bun:sql` picks it up automatically (`import { sql } from 'bun'`).
+- **Credentials**: user `postgres`, password `postgres`, database `postgres`, port `5432`.
+- **Host GUI** (TablePlus/DBeaver, from your machine): `127.0.0.1:8045`, same `postgres`/`postgres` credentials.
+- **Ephemeral**: data survives container restarts but is reset on a full rebuild — recreate schema via migrations.
+- **Tests don't use this server.** The suite runs against in-process PGlite (`packages/mochi/src/__fixtures__/postgres/startTestPostgres.ts`); never point a test at `localhost:5432`.
+
 ## Dependencies
 
 - **Avoid the SSR build's `external` list.** When a dep won't bundle in `ComponentRegistry.ts`'s `Bun.build`, swap it for a cleanly-packaged (ideally CJS) alternative rather than externalizing — `external` deps must resolve at runtime from the consumer's compiled-chunk location, which is fragile across `workspace:*` packages. Concrete precedent: `@msgpack/msgpack` (unbundleable) → `@ably/msgpack-js` (bundles clean, same byte output). Externalizing "fixed" the build but broke `mochi-minimal` at runtime.
@@ -200,9 +212,14 @@ For non-Svelte contexts (e.g. HTML strings in `highlight.ts`), inline the icon's
 
 ## Comments
 
-Use code comments sparingly, this is important. Comments should explain WHY something is done, not what is being done. Do not add comment signatures for new functions unless you need to explain WHY the function is needed.
+Use code comments sparingly, this is important.
 
-Never reference plan files (`~/.claude/plans/*.md`) from code comments, docstrings, or commit messages — they live outside the repo and are a dead link for any future reader. If context is genuinely needed, restate the rationale inline so the comment stands on its own.
+- Comment the **why**, never the **what** — the code already says what it does, and a comment that restates it just rots. Prefer no comment to an obvious one.
+- **One sentence.** Allow a second only when the why is genuinely incomprehensible without it (a non-obvious constraint, a bug being worked around, an ordering dependency between two calls); never a third. A comment that keeps growing usually means the code needs a better name or a smaller function, not more prose.
+- Do not add comment signatures for new functions unless you need to explain WHY the function is needed.
+- Do not add comments for CSS - ever!
+- Do not add comments to simple functions.
+- Never write a literal `</script>` inside a `.svelte` `<script>` block — including in a comment; it closes the tag at the HTML-parsing layer and yields a misleading `js_parse_error` at line `:0`. Break it up (`script` + `>` separately).
 
 ## After every change
 

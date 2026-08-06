@@ -22,10 +22,11 @@ import { buildServerOnlyStubModule, scanServerOnlyExports } from './serverOnlySc
 import { CLIENT_BUILD_DEFINE, serverOnlyModuleGuard } from './serverOnlyModuleGuard';
 import { renderMochiEnvServer, renderMochiEnvClient } from './virtualModuleTemplate';
 import { createImageAssetLoader, IMAGE_FILE_FILTER } from './imageAssetLoader';
+import { EMAIL_TEMPLATE_DIR } from '../email/templates';
 import { registerLocalImageAsset } from '../image/localAssetRegistry';
 import type { LocalImageAsset } from '../image/types';
 import { freshImport } from './freshImport';
-import { shakeApp } from './svelteShaker';
+import { resolveSvelteShaker } from './svelteShaker';
 import prettyBytes from '../vendor/pretty-bytes';
 
 // The `compile:preprocessors` filter is sync; only applying its preprocessors through Svelte's `preprocess()` is async.
@@ -72,11 +73,11 @@ const SRC_DIR = path.join(path.dirname(Bun.fileURLToPath(import.meta.url)), '..'
 /** Manifest schema version this runtime writes; see `MochiManifest.version` for the path families it implies. */
 const MANIFEST_VERSION = 2;
 
-// TODO
-// Bun's CSS bundler unquotes `format('woff2-variations')` to `format(woff2-variations)`,
+// Bun <1.4.0's CSS bundler unquotes `format('woff2-variations')` to `format(woff2-variations)`,
 // which is invalid CSS — only the seven plain keywords (woff2, woff, truetype, opentype,
 // embedded-opentype, svg, collection) work bare. Browsers silently drop the src and the
 // font never loads. Re-quote the four compound `*-variations` hints back to strings.
+// Bun 1.4.0 keeps them quoted, so this is a no-op there — delete once 1.3.14 support is dropped.
 const VARIATION_FORMAT_RE = /\bformat\((woff2-variations|woff-variations|truetype-variations|opentype-variations)\)/g;
 function restoreVariationsFormat(css: string): string {
   return css.replace(VARIATION_FORMAT_RE, "format('$1')");
@@ -218,6 +219,13 @@ export type MochiCompileError =
       childPath: string;
     }
   | {
+      kind: 'defer-in-hydratable';
+      parent: string;
+      child: string;
+      parentPath: string;
+      childPath: string;
+    }
+  | {
       kind: 'css-bundle-failed';
       cssPath: string;
       message: string;
@@ -251,6 +259,8 @@ export function formatCompileErrors(errors: MochiCompileError[]): string {
     switch (e.kind) {
       case 'nested-hydration':
         return `Nested mochi:hydrate: <${e.child}> inside <${e.parent}> — remove mochi:hydrate from ${e.child}`;
+      case 'defer-in-hydratable':
+        return `mochi:defer inside a hydratable: <${e.child}> is a server island inside <${e.parent}>, whose subtree re-renders on the client where a server island cannot exist — remove mochi:defer from ${e.child} or the hydrate/clientOnly directive from ${e.parent}`;
       case 'css-bundle-failed':
         return `CSS bundle failed: ${e.cssPath} — ${e.message}`;
       case 'unresolved-island':
@@ -460,8 +470,14 @@ export class ComponentRegistry {
       logger.warn(`svelte-shaker: no source directory at ${appRoot}; nothing to shake`);
       return;
     }
+    // Outside the try because a missing add-on is a config problem, not an engine bug: the loader already warned once
+    // with install instructions, and `shakenSources` is already the empty map every onLoad falls back through.
+    const backend = await resolveSvelteShaker();
+    if (!backend) {
+      return;
+    }
     try {
-      const { shaken, originals } = await shakeApp(appRoot);
+      const { shaken, originals } = await backend.shakeApp(appRoot);
       if (shaken.size === 0) {
         logger.warn(`svelte-shaker: no .svelte components found under ${appRoot}; nothing to shake`);
       }
@@ -499,7 +515,10 @@ export class ComponentRegistry {
       // Empty cache -> every onLoad reads the original source, so a failed shake
       // never breaks the build (`shakenSources.get(path) ?? Bun.file(path)`).
       logger.warn('svelte-shaker: optimization skipped; building from original sources (output is unaffected).');
-      logger.warn('svelte-shaker: this looks like a svelte-shaker bug — please report it with the error below at https://github.com/baseballyama/svelte-shaker/issues');
+      // Naming the engine version matters because it is declared as a `>=` floor: a regressed release can reach users.
+      logger.warn(
+        `svelte-shaker: this looks like a ${backend.name}@${backend.version} bug — please report it with the error below at https://github.com/baseballyama/svelte-shaker/issues`,
+      );
       logger.error(e);
       this.shakenSources = new Map();
     }
@@ -589,15 +608,17 @@ export class ComponentRegistry {
       return;
     }
 
-    // A prebuilt manifest is meant to cover every component the app renders, so
-    // a miss is always a deployment fault
+    // A prebuilt manifest is meant to cover every component the app renders, so a miss costs a cold compile on the
+    // request that hit it — and means this deploy needs its Svelte sources and the compiler at runtime.
     if (this.loadedFromManifest && !this.development && !opts.force) {
       logger.warn(
         `${todo.length} component(s) are missing from the prebuilt manifest and will be compiled now:\n` +
           todo.map((f) => `  - ${relForDisplay(f)}`).join('\n') +
-          `\nThis should not happen. \`mochi-framework build\` and the server must run from the same working directory (the project root), ` +
-          `and both must use the same mochi-framework version. Until it's fixed, this build needs its Svelte sources and the compiler at runtime. ` +
-          `If the working directory and the version already match, this is a Mochi bug — please report it with a reproduction.`,
+          `\nCommon causes: an email template outside \`${EMAIL_TEMPLATE_DIR}/\` (the build walks that directory, since nothing imports a template from a route — move it there), ` +
+          `or another component rendered outside a route, which the build cannot discover. ` +
+          `Otherwise, \`mochi-framework build\` and the server must run from the same working directory (the project root), and both must use the same mochi-framework version. ` +
+          `Until it's fixed, this build needs its Svelte sources and the compiler at runtime. ` +
+          `If none of the above apply, this is a Mochi bug — please report it with a reproduction.`,
       );
     }
 
@@ -653,7 +674,11 @@ export class ComponentRegistry {
           namespace: 'mochi-server-island',
         }));
         build.onLoad({ filter: /.*/, namespace: 'mochi-server-island' }, () => ({
-          contents: [`import { encryptProps } from "${toPosixPath(path.join(SRC_DIR, 'islands/serverIslandCrypto.ts'))}";`, `export { encryptProps };`].join('\n'),
+          contents: [
+            `import { encryptProps } from "${toPosixPath(path.join(SRC_DIR, 'islands/serverIslandCrypto.ts'))}";`,
+            `import { shouldInlineIsland } from "${toPosixPath(path.join(SRC_DIR, 'islands/inlineServerIslands.ts'))}";`,
+            `export { encryptProps, shouldInlineIsland };`,
+          ].join('\n'),
           loader: 'js',
         }));
         // The preprocessor's island wrapper resolves to the framework's own component in the default namespace, so it
@@ -775,7 +800,10 @@ export class ComponentRegistry {
     // structural error already detected — including under the `bun test`-only EISDIR bug, where the SSR build fails
     // after preprocessing succeeded.
     this.errors = this.errors.filter(
-      (e) => !(e.kind === 'nested-hydration' && fileHydratables.has(e.parentPath)) && !(e.kind === 'unresolved-island' && filePreprocessErrors.has(e.filePath)),
+      (e) =>
+        !(e.kind === 'nested-hydration' && fileHydratables.has(e.parentPath)) &&
+        !(e.kind === 'defer-in-hydratable' && fileServerIslands.has(e.parentPath)) &&
+        !(e.kind === 'unresolved-island' && filePreprocessErrors.has(e.filePath)),
     );
 
     for (const errors of filePreprocessErrors.values()) {
@@ -802,6 +830,27 @@ export class ComponentRegistry {
           });
           logger.error(
             `\nNested hydration directives are not allowed.\n  <${child.displayName}> with mochi:hydrate, mochi:hydrate:visible, or mochi:clientOnly is inside <${parent.displayName}> which is also hydratable.\n  Remove the directive from ${child.displayName} — it hydrates automatically as part of ${parent.displayName}.\n`,
+          );
+        }
+      }
+    }
+
+    // A server island inside a hydratable subtree can never work: client bundles skip the island preprocessor, so on
+    // hydration the client renders the raw child where SSR emitted a placeholder (observed: HYDRATION_ERROR + client
+    // remount wiping the island). Same one-file-deep limitation as the nested-hydration guard above.
+    for (const [filePath, children] of fileServerIslands) {
+      if (hydratablePaths.has(filePath) && children.length > 0) {
+        const parent = allHydratables.find((h) => h.resolvedPath === filePath)!;
+        for (const child of children) {
+          this.errors.push({
+            kind: 'defer-in-hydratable',
+            parent: parent.displayName,
+            child: child.displayName,
+            parentPath: filePath,
+            childPath: child.resolvedPath,
+          });
+          logger.error(
+            `\nA server island cannot sit inside a hydratable subtree.\n  <${child.displayName}> with mochi:defer or mochi:defer:visible is inside <${parent.displayName}>, which hydrates on the client — where a server island cannot render.\n  Remove mochi:defer from ${child.displayName}, or the hydrate/clientOnly directive from ${parent.displayName}.\n`,
           );
         }
       }
@@ -1354,6 +1403,11 @@ export class ComponentRegistry {
 
     // Server-island guard (post-render): no per-entry metadata to check up
     // front, so detect the emitted placeholder in the rendered output.
+    //
+    // TODO: make this pre-render like the hydratable guard above. Post-render means a `mochi:defer` behind a branch
+    // that never renders slips through here, so the "even behind a branch that never renders" promise in the email
+    // docs holds only via the build's import-graph check — which a dev-mode app never runs. Needs `entryServerIslands`
+    // stored on `compiledComponents` plus a manifest field so the prebuilt path carries it too, i.e. a schema change.
     if (output.includes('<mochi-server-island')) {
       throw new Error(`Email templates can't contain server islands (mochi:defer*) — they load over a follow-up request an email can't make. Render the content inline instead.`);
     }
@@ -1659,7 +1713,9 @@ export class ComponentRegistry {
       body: normalized,
       head: shouldStrip ? stripHydrationMarkers(headStr) : headStr,
       cssUrls,
-      bootstrapUrl: hydratables.length > 0 ? this.islandBootstrapUrl : null,
+      // Gated on wrappers actually present in the output — the entry's compile-time hydratables may all sit in branches
+      // this render never took.
+      bootstrapUrl: renderedIslandNames.size > 0 ? this.islandBootstrapUrl : null,
       hasServerIslands,
       debugBarData,
     };

@@ -11,7 +11,7 @@ description: 'Import CSS from Svelte, TypeScript, or JavaScript files and have i
 
 ## CSS imports
 
-Side-effect `import` of a `.css` file from any `.svelte`, `.ts`, or `.js` module bundles the stylesheet out-of-band and links it from the page `<head>`. The import is stripped from both the SSR and client JS bundles, so the `.css` content never ships through JavaScript.
+A side-effect `import` of a `.css` file from any `.svelte`, `.ts`, or `.js` module bundles the stylesheet out-of-band and links it from the page `<head>`. Mochi strips the import from both the SSR and client JavaScript bundles, so the CSS content never ships through JavaScript.
 
 ```svelte
 <!-- file: src/Page.svelte -->
@@ -21,26 +21,21 @@ Side-effect `import` of a `.css` file from any `.svelte`, `.ts`, or `.js` module
 </script>
 ```
 
-Bare specifiers resolve through `package.json#main`, so `@fontsource/*`, CSS-only libraries, and any package that points its main entry at a stylesheet all work the same way. Relative paths (`import './styles.css'`) resolve from the importing file.
+Bare specifiers resolve through `package.json#main`, so `@fontsource/*`, CSS-only libraries, and any package that points its main entry at a stylesheet work the same way. Relative paths (`import './styles.css'`) resolve from the importing file.
 
-The bundle is served as `/_mochi/import-css/<name>-<hash>.css` (with `assetPrefix` configurable on `Mochi.serve`). Mochi tracks the imports reachable from each page entry and injects a `<link rel="stylesheet">` only on pages that actually use them.
+Mochi serves the bundle as `/_mochi/import-css/<name>-<hash>.css` (with `assetPrefix` configurable on `Mochi.serve`). It tracks the imports reachable from each page entry and injects a `<link rel="stylesheet">` only on pages that use them.
 
-```ts
-// file: src/lib/icons.ts
-import 'tippy.js/dist/tippy.css';
-```
-
-The import can live anywhere in the dependency graph — a leaf `.ts` module, a hydratable island, or the page component itself. Mochi follows the bundle, not the call site.
+The import can live anywhere in the dependency graph — a leaf `.ts` module, a hydratable island, or the page component. Mochi follows the bundle, not the call site.
 
 <Callout type="warning">
 
-A failed CSS import (missing package, malformed file) surfaces as a `css-bundle-failed` entry in the dev error overlay and as an inline `console.error` in the browser. Fix the path; the side-effect strip only fires on `.css` files Bun could resolve.
+A failed CSS import (missing package, malformed file) surfaces as a `css-bundle-failed` entry in the dev error overlay and as an inline `console.error` in the browser. Fix the path. The side-effect strip fires only on `.css` files Bun can resolve.
 
 </Callout>
 
 ### Component-scoped `<style>` blocks
 
-`<style>` inside a `.svelte` file is handled by the Svelte compiler — Mochi extracts the compiled CSS, hashes it, and serves it from `/_mochi/css/<component>-<hash>.css`. This path is independent of side-effect CSS imports and applies to every component the page renders.
+The Svelte compiler handles `<style>` inside a `.svelte` file. Mochi extracts the compiled CSS, hashes it, and serves it from `/_mochi/css/<component>-<hash>.css`. This path is independent of side-effect CSS imports and applies to every component the page renders.
 
 ```svelte
 <!-- file: src/Card.svelte -->
@@ -55,15 +50,15 @@ A failed CSS import (missing package, malformed file) surfaces as a `css-bundle-
 
 ### Variable fonts
 
-Bun's CSS bundler unquotes `format('woff2-variations')` to `format(woff2-variations)`, which browsers silently drop. Mochi re-quotes the four `*-variations` hints (`woff2-variations`, `woff-variations`, `truetype-variations`, `opentype-variations`) after bundling, so `@fontsource-variable/*` packages work without manual workarounds.
+Bun's CSS bundler unquotes `format('woff2-variations')` to `format(woff2-variations)`. Browsers silently drop the unquoted form. After bundling, Mochi re-quotes the four `*-variations` hints (`woff2-variations`, `woff-variations`, `truetype-variations`, `opentype-variations`), so `@fontsource-variable/*` packages work with no manual workaround.
 
 ### Dev mode
 
-A `.css` edit triggers a fast rebundle and a page reload — no SSR recompile. Edits to `.svelte` or `.ts` files go through the full compile path.
+A `.css` edit triggers a fast rebundle and a page reload, with no SSR recompile. Edits to `.svelte` or `.ts` files go through the full compile path.
 
 <SeeItInAction
 demos={[
 { href: "https://demos.mochi.fast/todo/", title: "Tailwind Todo App", hook: "Classic todo app styled with Tailwind CSS." },
-{ href: "/demos/lazy/", title: "Lazy Islands", hook: "How lazy hydration works — islands marked mochi:hydrate:visible hydrate and load their CSS only when scrolled into view." },
+{ href: "/demos/lazy/", title: "Lazy Islands", hook: "Islands hydrate and load their CSS only when scrolled into view." },
 ]}
 />

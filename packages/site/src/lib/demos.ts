@@ -1,6 +1,7 @@
 import type { SourceSpec } from '../components/utils.ts';
 import { files as api } from '../demos/api/files.ts';
 import { files as cacheEvents } from '../demos/cache-events/files.ts';
+import { files as charts } from '../demos/charts/files.ts';
 import { files as chat } from '../demos/chat/files.ts';
 import { files as clientOnly } from '../demos/client-only/files.ts';
 import { files as cookieVaryTest } from '../demos/cookie-vary-test/files.ts';
@@ -36,6 +37,7 @@ import { files as login } from '../demos/login/files.ts';
 import { files as mdsvex } from '../demos/mdsvex/files.ts';
 import { files as nestedComponents } from '../demos/nested-components/files.ts';
 import { files as nestedIslands } from '../demos/nested-islands/files.ts';
+import { files as portableText } from '../demos/portable-text/files.ts';
 import { files as propDedup } from '../demos/prop-dedup/files.ts';
 import { files as propsId } from '../demos/props-id/files.ts';
 import { files as queue } from '../demos/queue/files.ts';
@@ -43,10 +45,13 @@ import { files as rateLimit } from '../demos/rate-limit/files.ts';
 import { files as reloadFormData } from '../demos/reload-form-data/files.ts';
 import { files as requestCache } from '../demos/request-cache/files.ts';
 import { files as requestId } from '../demos/request-id/files.ts';
+import { files as modeWatcher } from '../demos/mode-watcher/files.ts';
+import { files as runed } from '../demos/runed/files.ts';
 import { files as serverIsland } from '../demos/server-island/files.ts';
 import { files as serverProps } from '../demos/server-props/files.ts';
 import { files as sharedState } from '../demos/shared-state/files.ts';
 import { files as streams } from '../demos/streams/files.ts';
+import { files as tanstackTable } from '../demos/tanstack-table/files.ts';
 import { files as url } from '../demos/url/files.ts';
 import { files as viewTransitions } from '../demos/view-transitions/files.ts';
 
@@ -61,6 +66,8 @@ export interface Demo {
   slug?: string;
   /** Source files rendered on the demo page and bundled into its llms.txt. Keyed alongside `slug`. */
   files?: SourceSpec[];
+  /** Repo paths for the "view source" links, overriding the `packages/site/src/demos/<slug>` default — needed when a framework convention (e.g. prebuilt email templates living in `src/emails/`) forces part of a demo out of its own folder. */
+  sourcePaths?: string[];
 }
 
 export const categoryLabels: Record<DemoCategory, string> = {
@@ -97,6 +104,14 @@ export const demos: Demo[] = [
     files: hydration,
     title: 'Hydration Modes',
     hook: 'How the hydration modes work — mochi:hydrate, mochi:hydrate:visible, rootMargin tuning, and mochi:defer server islands side by side.',
+    category: 'hydration',
+  },
+  {
+    href: '/demos/charts/',
+    slug: 'charts',
+    files: charts,
+    title: 'Charts with LayerChart',
+    hook: 'How a third-party Svelte component library works in Mochi — LayerChart server-rendered to plain SVG with zero JavaScript, then the same library as mochi:hydrate and mochi:clientOnly islands.',
     category: 'hydration',
   },
   {
@@ -332,6 +347,14 @@ export const demos: Demo[] = [
     category: 'hydration',
   },
   {
+    href: '/demos/portable-text/',
+    slug: 'portable-text',
+    files: portableText,
+    title: 'Portable Text',
+    hook: 'How Portable Text rendering works — @portabletext/svelte maps a JSON block array onto your own Svelte components for types, marks, block styles and lists.',
+    category: 'data',
+  },
+  {
     href: '/demos/nested-components/',
     slug: 'nested-components',
     files: nestedComponents,
@@ -383,6 +406,7 @@ export const demos: Demo[] = [
     href: '/demos/email/',
     slug: 'email',
     files: email,
+    sourcePaths: ['packages/site/src/demos/email', 'packages/site/src/emails'],
     title: 'Send Email',
     hook: 'How sending email works — dispatch through Mochi.email() and read it back in the /_mochi/email dev outbox.',
     category: 'forms',
@@ -491,6 +515,30 @@ export const demos: Demo[] = [
     files: entityProps,
     title: 'HTML Entities in Props',
     hook: 'How HTML entities in island props work — an entity in a static prop (label="Tom &amp; Jerry") decodes identically on the server and after hydration.',
+    category: 'hydration',
+  },
+  {
+    href: '/demos/mode-watcher/',
+    slug: 'mode-watcher',
+    files: modeWatcher,
+    title: 'Mode Watcher',
+    hook: "Light/dark mode in an island — mode-watcher's <ModeWatcher />, toggleMode/setMode, and the mode / userPrefersMode / systemPrefersMode runes driving the global <html> theme.",
+    category: 'hydration',
+  },
+  {
+    href: '/demos/runed/',
+    slug: 'runed',
+    files: runed,
+    title: 'Runed Utilities',
+    hook: "How third-party Svelte 5 libraries run in islands — Runed's reactive utilities (Debounced, StateHistory, PersistedState, PressedKeys, AnimationFrames, FiniteStateMachine, resource…) hydrated inside Mochi.",
+    category: 'hydration',
+  },
+  {
+    href: '/demos/tanstack-table/',
+    slug: 'tanstack-table',
+    files: tanstackTable,
+    title: 'Tables with TanStack Table',
+    hook: 'How a headless table library works in Mochi — TanStack Table server-rendered to a read-only table with zero JavaScript, then a mochi:hydrate island for interactive sorting.',
     category: 'hydration',
   },
 ];

@@ -106,6 +106,7 @@ export interface MochiFilterValue {
   'cookie:defaults': CookieSerializeOptions;
   'html:shell': string;
   'serverIsland:secretKey': Buffer;
+  'serverIsland:inlineBudget': number;
   'payload:compressMinBytes': number;
   'compile:preprocessors': PreprocessorGroup[];
   'publicDir:scan': Map<string, string>;
@@ -143,6 +144,12 @@ export interface MochiFilterContext {
   'cookie:defaults': { options: MochiServeOptions };
   'html:shell': { options: MochiServeOptions; development: boolean };
   'serverIsland:secretKey': { options: MochiServeOptions; envKeyPresent: boolean };
+  /** Resolved per island fetch as the endpoint arms nested-island inlining; never fires when `inlineNestedIslands` is off or the fetched island also hydrates. */
+  'serverIsland:inlineBudget': {
+    /** Identity key of the island being fetched, e.g. `Dashboard_ab12cd34`. */
+    componentName: string;
+    request: Request;
+  };
   'payload:compressMinBytes': { options: MochiServeOptions; payload: Uint8Array };
   'compile:preprocessors': {
     filename: string;
@@ -212,6 +219,7 @@ export interface MochiFilterKindMap {
   'cookie:defaults': 'sync';
   'html:shell': 'sync';
   'serverIsland:secretKey': 'async';
+  'serverIsland:inlineBudget': 'sync';
   'payload:compressMinBytes': 'sync';
   'compile:preprocessors': 'sync';
   'publicDir:scan': 'async';
@@ -262,6 +270,7 @@ const FILTER_KINDS: { [K in keyof MochiFilterValue]: MochiKind } = {
   'cookie:defaults': 'sync',
   'html:shell': 'sync',
   'serverIsland:secretKey': 'async',
+  'serverIsland:inlineBudget': 'sync',
   'payload:compressMinBytes': 'sync',
   'compile:preprocessors': 'sync',
   'publicDir:scan': 'async',

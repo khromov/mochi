@@ -9,11 +9,7 @@
 
   const snippet = (code) => highlightCode(code, 'typescript');
 
-  // Every URL + snippet below is request-independent, so compute the whole page
-  // once and cache the result. getImageUrl() is synchronous and near-instant — it
-  // only mints a signed URL; the endpoint runs the size lazily on request.
-  // getImage() is the inline escape hatch: it runs the size now and returns
-  // the transformed bytes + metadata (used here for dimensions and byte sizes).
+  // Every URL + snippet below is request-independent, so compute the whole page once and cache the result.
   async function computePage() {
     const codeSetup = await snippet(
       [
@@ -51,9 +47,7 @@
     const modSaturate = getImageUrl(srcUrl(7), 'saturate');
     const codeModulate = await snippet("// { modulate: { saturation: 0 } }\ngetImageUrl(src, 'grayscale');");
 
-    // Byte-size comparison across formats — getImage runs each inline so we can
-    // report the encoded size, while getImageUrl gives the <img src>. Same source
-    // + size for a fair comparison.
+    // getImage runs each inline so we can report the encoded byte size; same source + size for a fair comparison.
     const FMT_SRC = 9;
     const fmtDefs = [
       { label: 'fmt-jpeg (q85)', name: 'fmt-jpeg' },

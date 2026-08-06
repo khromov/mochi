@@ -22,6 +22,8 @@
     "dev:demos": "bun --cwd=packages/demos run dev",
     "test": "bun --filter='*' run test",
     "test:leak": "bun packages/mochi/scripts/leak/runLeakTest.ts",
+    "memtest:loop": "bash memtest/loop.sh",
+    "memtest:rerun": "bash memtest/rerun.sh",
     "memtest:pull": "bash memtest/pull.sh",
     "memtest:analyze": "bun memtest/analyze.ts",
     "typecheck": "bun --filter='*' run typecheck",
@@ -55,7 +57,7 @@
     "@types/chrome-remote-interface": "0.34.0",
     "chrome-launcher": "1.2.1",
     "chrome-remote-interface": "0.34.0",
-    "eslint": "^10.7.0",
+    "eslint": "^10.8.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-svelte": "^3.22.0",
     "prettier": "^3.9.6",
@@ -66,7 +68,7 @@
     "typescript-eslint": "^8.65.0"
   },
   "patchedDependencies": {
-    "svelte-check@4.7.3": "packages/mochi/patches/svelte-check@4.7.3.patch"
+    "svelte-check@4.7.4": "packages/mochi/patches/svelte-check@4.7.4.patch"
   },
   "overrides": {
     "msgpackr-extract": "npm:@mochi-framework/msgpackr-extract-stub@*"

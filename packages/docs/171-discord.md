@@ -10,7 +10,7 @@ description: 'Join the Mochi community on Discord.'
 
 ## Discord
 
-Questions, bug reports, ideas, or just want to see what others are building?
+Questions, bug reports, ideas, or want to see what others are building?
 Join the community: **[mochi.fast/discord](/discord/)**.
 
 ### Scan to join on your mobile
