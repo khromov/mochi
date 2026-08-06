@@ -1,7 +1,7 @@
 ---
 title: 'Environment constants'
 slug: environment-constants
-description: 'Build-time constants for branching on render target (isServer, isBrowser) and development mode (isDev).'
+description: 'Build-time constants for branching on render target (isServer, isBrowser) and dev mode (isDev).'
 ---
 
 <script>
@@ -11,13 +11,13 @@ description: 'Build-time constants for branching on render target (isServer, isB
 
 ## Environment constants
 
-Import build-time constants from the `mochi-framework` virtual module to branch on render target or dev mode:
+Import build-time constants from `mochi-framework` to branch on render target or dev mode:
 
 ```ts
 import { isServer, isBrowser, isDev } from 'mochi-framework';
 ```
 
-`mochi-framework` resolves to one of two virtual modules at compile time — server builds export `isServer = true`, client bundles export `isBrowser = true`. The values are literal booleans, so `if (isBrowser) { … }` blocks dead-code-eliminate out of the opposite bundle.
+At build time these constants become literal booleans. In the server build `isServer` is `true` and `isBrowser` is `false`. In the client bundle the values are reversed. Because they are literals, an `if (isBrowser) { … }` block is dropped from the opposite bundle, so a server-only branch never reaches the browser.
 
 ### `isServer`
 
@@ -29,7 +29,7 @@ import { isServer, isBrowser, isDev } from 'mochi-framework';
   import { isServer } from 'mochi-framework';
 
   if (isServer) {
-    // safe to reach into request-scoped APIs here
+    // reach into request-scoped APIs here
   }
 </script>
 ```
@@ -51,7 +51,7 @@ import { isServer, isBrowser, isDev } from 'mochi-framework';
 
 ### `isDev`
 
-`true` when `Mochi.serve()` was started with `development: true`. Identical on server and client builds.
+`true` when `Mochi.serve()` started with `development: true`. Identical on server and client builds.
 
 ```ts
 // file: src/lib/log.ts
@@ -64,29 +64,31 @@ export function trace(msg: string) {
 
 ## Detecting hydration with `isHydratable()`
 
-`isHydratable()` returns `true` when the calling component — at any nesting depth — is part of a subtree that will hydrate on this page load. See [Selective hydration](/docs/selective-hydration/#ishydratable) for the full semantics.
+`isHydratable()` returns `true` when the calling component — at any nesting depth — belongs to a subtree that will hydrate on this page load. See [Selective hydration](/docs/selective-hydration/#ishydratable) for the full semantics.
 
-For a unique per-instance id (e.g. `<label for>`), use Svelte's native `$props.id()` — see [Selective hydration](/docs/selective-hydration/).
+For a unique per-instance id (for example, `<label for>`), use Svelte's native `$props.id()`.
 
-### Branching SSR-only behavior with `isHydratable()`
+### Branching SSR-only behavior
 
-Use `isHydratable()` to peek request-scoped state only when the client won't take over rendering — e.g. read the post-submit form snapshot so the SSR HTML reflects the last action result, but skip it when an `enhance` attachment will populate state client-side.
+Use `isHydratable()` to do work only when the client won't take over rendering. A component that renders both as a hydrated island and as a plain SSR-only child can prepare a server-rendered fallback in the SSR-only case and skip it when the island will hydrate:
 
 ```svelte
-<!-- file: src/lib/RandomRoll.svelte -->
+<!-- file: src/lib/LiveCount.svelte -->
 <script lang="ts">
-  import { isServer, getRequestContext, isHydratable } from 'mochi-framework';
+  import { isHydratable } from 'mochi-framework';
 
-  const initial = isHydratable() || !isServer ? null : peekForm();
+  let { count }: { count: number } = $props();
 
-  function peekForm() {
-    const f = getRequestContext().form;
-    return f && f.ok && typeof f.data.value === 'number' ? f.data.value : null;
-  }
+  // The hydrated island renders a live control; plain SSR gets a static snapshot.
+  const interactive = isHydratable();
 </script>
-```
 
-See the [Forms demo](/demos/login/) for a side-by-side comparison of hydrated and SSR-only render paths.
+{#if interactive}
+  <button>{count}</button>
+{:else}
+  <span>{count}</span>
+{/if}
+```
 
 <SeeItInAction
 demos={[{ href: "/demos/url/", title: "Isomorphic URL", hook: "How the isomorphic URL helper works — one import that reads the request URL on the server and window.location on the client." }]}
