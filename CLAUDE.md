@@ -149,6 +149,16 @@ Default to Bun instead of Node.js:
 - `Bun.file` over `node:fs` readFile/writeFile.
 - Bun auto-loads `.env` — don't add `dotenv`.
 
+## PostgreSQL (dev container)
+
+A PostgreSQL 15 server runs by default inside the dev container for building Postgres-based features — started on each boot by `.devcontainer/start-postgres.sh` (Debian cluster tooling: `sudo pg_lsclusters`, `sudo pg_ctlcluster 15 main {start,stop,status}`).
+
+- **In-container**: connect at `postgres://postgres:postgres@localhost:5432/postgres`. That URL is already exported as `DATABASE_URL` (plus `PGHOST`/`PGPORT`/`PGUSER`/`PGPASSWORD`/`PGDATABASE`), so bare `psql` connects with no args and apps read `process.env.DATABASE_URL` — Bun's `bun:sql` picks it up automatically (`import { sql } from 'bun'`).
+- **Credentials**: user `postgres`, password `postgres`, database `postgres`, port `5432`.
+- **Host GUI** (TablePlus/DBeaver, from your machine): `127.0.0.1:8045`, same `postgres`/`postgres` credentials.
+- **Ephemeral**: data survives container restarts but is reset on a full rebuild — recreate schema via migrations.
+- **Tests don't use this server.** The suite runs against in-process PGlite (`packages/mochi/src/__fixtures__/postgres/startTestPostgres.ts`); never point a test at `localhost:5432`.
+
 ## Dependencies
 
 - **Avoid the SSR build's `external` list.** When a dep won't bundle in `ComponentRegistry.ts`'s `Bun.build`, swap it for a cleanly-packaged (ideally CJS) alternative rather than externalizing — `external` deps must resolve at runtime from the consumer's compiled-chunk location, which is fragile across `workspace:*` packages. Concrete precedent: `@msgpack/msgpack` (unbundleable) → `@ably/msgpack-js` (bundles clean, same byte output). Externalizing "fixed" the build but broke `mochi-minimal` at runtime.
