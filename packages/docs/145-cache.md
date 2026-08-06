@@ -41,7 +41,7 @@ Use it from a page or API route:
 
 <Callout type="warning">
 
-**A cache is shared across requests in one process.** So a key like `cart:current` leaks one user's data to another. Prefix per-user keys with the user id, for example `` `cart:${userId}` ``, and do the same for any other request-scoped dimension (tenant, locale, role).
+**A cache is shared across requests in one process.** So a key like `cart:current` leaks one user's data to another. Prefix per-user keys with the user id, for example `cart:${userId}`, and do the same for any other request-scoped dimension (tenant, locale, role).
 
 </Callout>
 
