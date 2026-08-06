@@ -21,6 +21,7 @@ import { decodeSourcePath, encodeSourcePath } from './manifestPaths';
 import { buildServerOnlyStubModule, scanServerOnlyExports } from './serverOnlyScan';
 import { CLIENT_BUILD_DEFINE, serverOnlyModuleGuard } from './serverOnlyModuleGuard';
 import { renderMochiEnvServer, renderMochiEnvClient } from './virtualModuleTemplate';
+import { buildDebugBarBundle, stripEsmEnvImports, ESM_ENV_STRIP_FILTER, type DebugBarBundle } from './buildDebugBarBundle';
 import { createImageAssetLoader, IMAGE_FILE_FILTER } from './imageAssetLoader';
 import { EMAIL_TEMPLATE_DIR } from '../email/templates';
 import { registerLocalImageAsset } from '../image/localAssetRegistry';
@@ -370,6 +371,8 @@ export class ComponentRegistry {
   private componentEntryUrls: Map<string, string> = new Map();
   private islandBootstrapUrl: string | null = null;
   private debugBarUrl: string | null = null;
+  private debugBarBundle: DebugBarBundle | null = null;
+  private debugBarBuildPromise: Promise<DebugBarBundle> | null = null;
   private clientFiles: Map<string, string> = new Map();
   /** Maps component file path → CSS URL */
   private cssFileUrls: Map<string, string> = new Map();
@@ -1092,20 +1095,20 @@ export class ComponentRegistry {
     const newClientFiles = new Map<string, string>();
     const newComponentEntryUrls = new Map<string, string>();
     let newIslandBootstrapUrl: string | null = null;
-    let newDebugBarUrl: string | null = null;
+
+    // The debug bar builds standalone (production-mode Svelte, own runtime) and only once per process — framework
+    // sources don't change under a running user app, so watcher rebuilds skip it entirely.
+    if (debugBarEnabled && !this.debugBarBundle) {
+      this.debugBarBuildPromise ??= buildDebugBarBundle({ development, backend });
+    }
 
     const srcDir = SRC_DIR;
     // Forward slashes survive intact in generated source, where Windows backslashes get eaten as JS escapes, and keep a
     // file's module identity consistent across its three uses: `Bun.build` entrypoint, `filesMap` key, import specifier.
     const hydratableIslandPath = toPosixPath(path.join(srcDir, 'web-components', 'HydratableIsland.ts'));
-    const debugBarDir = path.join(srcDir, 'debug-bar') + path.sep;
-    const debugBarEntryPath = toPosixPath(path.join(debugBarDir, 'debugbar-entry.ts'));
 
     // Generate per-component virtual entry points
     const entrypoints: string[] = [hydratableIslandPath];
-    if (debugBarEnabled) {
-      entrypoints.push(debugBarEntryPath);
-    }
     const filesMap: Record<string, string> = {};
 
     for (const [, comp] of unique) {
@@ -1181,14 +1184,10 @@ export class ComponentRegistry {
         build.onResolve({ filter: /^mochi-framework\/hydratable-boundary$/ }, () => ({
           path: path.join(SRC_DIR, 'islands/HydratableBoundary.svelte'),
         }));
-        // Bun can't propagate constants through esm-env's conditional exports, so stripping the imports turns
-        // DEV/BROWSER/NODE into free variables that Bun's `define` replaces with literal booleans, letting `if (DEV)`
-        // blocks be eliminated.
-        build.onLoad({ filter: /node_modules\/svelte\/src\/.*\.js$/ }, async (args) => {
-          let source = await Bun.file(args.path).text();
-          source = source.replace(/import\s*\{[^}]*\}\s*from\s*['"]esm-env['"]\s*;?/g, '');
-          return { contents: source, loader: 'js' };
-        });
+        build.onLoad({ filter: ESM_ENV_STRIP_FILTER }, async (args) => ({
+          contents: stripEsmEnvImports(await Bun.file(args.path).text()),
+          loader: 'js',
+        }));
         build.onLoad({ filter: /\.svelte\.[jt]s$/ }, async (args) => {
           let source = await Bun.file(args.path).text();
           if (args.path.endsWith('.ts')) {
@@ -1217,8 +1216,6 @@ export class ComponentRegistry {
             mergeCompilerOptions(userCompilerOptions, {
               generate: 'client',
               filename: args.path,
-              // TODO: Verify that this still works after node_modules migration
-              css: args.path.startsWith(debugBarDir) ? 'injected' : undefined,
               dev: development,
             }),
           );
@@ -1280,9 +1277,6 @@ export class ComponentRegistry {
       // entryPoint is native; on Windows the formats diverge, the bootstrap lookup misses, and the hydration `<script>` disappears.
       const entryToComponent = new Map<string, string | null>();
       entryToComponent.set(toPosixPath(path.resolve(hydratableIslandPath)), null);
-      if (debugBarEnabled) {
-        entryToComponent.set(toPosixPath(path.resolve(debugBarEntryPath)), '__debugbar__');
-      }
       for (const [, comp] of unique) {
         const entryPath = toPosixPath(path.resolve(path.join(srcDir, `_hydrate-${comp.name}.js`)));
         entryToComponent.set(entryPath, comp.name);
@@ -1297,8 +1291,6 @@ export class ComponentRegistry {
         const url = `${this.assetPrefix}/client/${path.basename(outPath)}`;
         if (compName === null) {
           newIslandBootstrapUrl = url;
-        } else if (compName === '__debugbar__') {
-          newDebugBarUrl = url;
         } else if (compName !== undefined) {
           newComponentEntryUrls.set(compName, url);
         }
@@ -1339,7 +1331,24 @@ export class ComponentRegistry {
       this.componentEntryUrls.set(k, v);
     }
     this.islandBootstrapUrl = newIslandBootstrapUrl;
-    this.debugBarUrl = newDebugBarUrl;
+
+    if (this.debugBarBuildPromise && !this.debugBarBundle) {
+      try {
+        this.debugBarBundle = await this.debugBarBuildPromise;
+      } catch (err) {
+        // A rejected promise must not be memoized (the next rebuild retries), and a broken debug bar must not take
+        // down page serving.
+        this.debugBarBuildPromise = null;
+        logger.warn(`[mochi] debug bar build failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    if (this.debugBarBundle) {
+      const debugBarUrl = `${clientPrefix}${this.debugBarBundle.fileName}`;
+      this.clientFiles.set(debugBarUrl, this.debugBarBundle.contents);
+      this.debugBarUrl = debugBarUrl;
+    } else {
+      this.debugBarUrl = null;
+    }
 
     const outputBytes = this.clientStats?.outputs.reduce((sum, o) => sum + o.size, 0) ?? 0;
     mochiEvents.emit('client-bundle:complete', {
