@@ -38,7 +38,7 @@ A failed server island returns a `<mochi-island-failure>` stub with status `200`
 
 ### Author your own boundary
 
-Mochi makes `<svelte:boundary>` work during SSR, so you can use it anywhere for bespoke degradation:
+`<svelte:boundary>` works during SSR, so you can use it anywhere:
 
 ```svelte
 <!-- file: src/SomePage.svelte -->
