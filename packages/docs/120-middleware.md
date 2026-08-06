@@ -131,7 +131,7 @@ await Mochi.serve({
 Options:
 
 - `methods` — the encodings the server is willing to use. Defaults to `['brotli', 'gzip']`. The client's `Accept-Encoding` picks the winner. The array order is only a tiebreak when the client expresses no preference.
-- `brotliQuality` — brotli quality level `0..11`. Defaults to `4`. Raise it only when the response is cached — higher levels are too slow for per-request SSR.
+- `brotliQuality` — brotli quality level `0..11`. Defaults to `4`. You should raise it only when the response is cached — higher levels may be too slow for per-request SSR.
 
 ```ts
 sequence(auth, compress({ brotliQuality: 6 }));
