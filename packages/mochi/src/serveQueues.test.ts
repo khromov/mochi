@@ -89,6 +89,19 @@ describe('Mochi.serve({ queues })', () => {
     ).rejects.toThrow(/queueStorage/);
   });
 
+  test('rejects a queueStorage naming both backends before binding', async () => {
+    expect(
+      Mochi.serve({
+        port: 0,
+        development: false,
+        logger: { enabled: false },
+        routes: {},
+        queues: { q: Mochi.queue({ process: async () => null }) },
+        queueStorage: { sqlite: 'queue.sqlite', postgres: 'postgres://localhost/db' },
+      }),
+    ).rejects.toThrow(/queueStorage/);
+  });
+
   test('mounts a queue on sqlite storage that processes jobs and fires config.on listeners', async () => {
     outDir = mkdtempSync(path.join(import.meta.dir, '..', '.mochi-serve-queues-'));
     const sqliteFile = path.join(outDir, 'queue.sqlite');

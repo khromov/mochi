@@ -88,7 +88,7 @@ await emails.addBulk([{ data: { to: 'a@x.com' } }, { data: { to: 'b@x.com' }, op
 
 <Callout type="info">
 
-**`add()` can resolve `null`.** Passing an explicit `id` makes the add idempotent — a second add with the same id resolves `null` instead of duplicating the job. Throttled and debounced adds resolve `null` when the slot is already taken. A plain `add()` always resolves an id.
+**`add()` can resolve `null`.** Passing an explicit `id` makes the add idempotent — a second add with the same id resolves `null` instead of duplicating the job. Throttled and debounced adds resolve `null` when the slot is already taken. A plain `add()` always resolves an id. `addBulk` skips jobs whose explicit `id` already exists, so it can resolve fewer ids than jobs submitted.
 
 </Callout>
 
@@ -111,7 +111,9 @@ await Mochi.serve({
 | `{ sqlite: path }`  | yes               | single process, one durable file                 |
 | `{ postgres: url }` | yes               | shared — multiple processes can work one backlog |
 
-Postgres storage installs its tables into a dedicated `mochi_queue` schema on first start, away from your application's tables.
+Postgres storage installs its tables into a dedicated `mochi_queue` schema on first start, away from your application's tables. The schema name is fixed, so every app sharing one database shares one queue namespace — give each app its own database to keep their queues apart.
+
+On durable storage, queue options re-sync from your code on every boot — but only **additively**: an option you remove from `Mochi.queue()` keeps its previously stored value. Set the old value back explicitly (e.g. `retryLimit: 2`) rather than deleting the line; a removed `deadLetter` can only be repointed, not cleared.
 
 <Callout type="warning">
 
@@ -198,7 +200,7 @@ mochiEvents.on('queue:completed', ({ queue, jobId, duration }) => {
 
 ### Shutdown
 
-Queues close gracefully on `SIGTERM`/`SIGINT`. In-flight jobs drain before the process exits. A queue-only process is `Mochi.serve({ queues })` with no `routes`:
+Queues close gracefully on `SIGTERM`/`SIGINT`. In-flight jobs get up to 10 seconds to finish; a job still running after that is failed and follows its queue's retry policy from the store. A queue-only process is `Mochi.serve({ queues })` with no `routes`:
 
 ```ts
 // worker.ts — run with `bun worker.ts`

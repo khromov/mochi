@@ -337,6 +337,7 @@ export class Mochi {
       !(
         typeof queueStorage === 'object' &&
         queueStorage !== null &&
+        'sqlite' in queueStorage !== 'postgres' in queueStorage &&
         (('sqlite' in queueStorage && typeof queueStorage.sqlite === 'string' && queueStorage.sqlite.length > 0) ||
           ('postgres' in queueStorage && typeof queueStorage.postgres === 'string' && queueStorage.postgres.length > 0))
       )

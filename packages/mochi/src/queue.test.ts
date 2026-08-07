@@ -1,5 +1,5 @@
 import { afterAll, afterEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { startQueueRuntime, mountQueues, getQueue, getBoss, closeAllQueueResources, DEFAULT_EXPIRE_IN_SECONDS } from './queue';
 import type { MochiJob, MochiQueueStorage } from './queue';
@@ -131,7 +131,10 @@ describe('Mochi queue', () => {
     await getQueue<{ i: number }>(name).addBulk([0, 1, 2, 3].map((i) => ({ data: { i } })));
 
     await allDone.promise;
-    expect(maxActive).toBe(2);
+    // The ceiling must hold and be reached, but a loaded CI runner may stall past the 700ms overlap window, so the
+    // exact interleaving beyond that is not asserted.
+    expect(maxActive).toBeLessThanOrEqual(2);
+    expect(maxActive).toBeGreaterThan(1);
   }, 15_000);
 
   test('emits queue:* lifecycle events on the mochi bus', async () => {
@@ -186,6 +189,34 @@ describe('Mochi queue', () => {
     expect(listenerAttempts).toEqual([1, 2]);
   }, 15_000);
 
+  test('a throwing completed listener does not fail or retry the job', async () => {
+    const name = uniqueName();
+    let runs = 0;
+    const failedEvents: unknown[] = [];
+    mochiEvents.on('queue:failed', (e) => failedEvents.push(e));
+
+    await startWith({
+      [name]: {
+        process: async () => {
+          runs++;
+          return { ok: true };
+        },
+        on: {
+          completed: () => {
+            throw new Error('listener boom');
+          },
+        },
+      },
+    });
+
+    const spy = getBoss().getSpy(name);
+    const jobId = await getQueue(name).add({ n: 1 } as never);
+    // Only `process` decides the outcome: the store must record `completed` even though the listener threw.
+    await spy.waitForJobWithId(jobId!, 'completed');
+    expect(runs).toBe(1);
+    expect(failedEvents).toEqual([]);
+  });
+
   test('a terminally failed job moves to its deadLetter queue, whatever the declaration order', async () => {
     const work = uniqueName();
     const dlq = uniqueName();
@@ -234,7 +265,7 @@ describe('Mochi queue', () => {
     await startWith({ [name]: {} });
     const queue = getQueue<{ n: number }>(name);
 
-    const first = await queue.add({ n: 1 }, { id: crypto.randomUUID() ?? undefined });
+    const first = await queue.add({ n: 1 }, { id: crypto.randomUUID() });
     expect(first).toBeString();
     const dupe = await queue.add({ n: 2 }, { id: first! });
     expect(dupe).toBeNull();
@@ -324,6 +355,18 @@ describe('Mochi queue', () => {
   });
 
   test('getBoss throws before the runtime starts and resolves the instance after', async () => {
+    expect(() => getBoss()).toThrow(/queue runtime is not running/);
+    await startWith({});
+    expect(typeof getBoss().send).toBe('function');
+  });
+
+  test('a failed start tears the partial runtime down and leaves it restartable', async () => {
+    const file = path.join(dataDir, 'corrupt.sqlite');
+    writeFileSync(file, 'not a sqlite database');
+
+    await expect(startQueueRuntime({ sqlite: file })).rejects.toThrow();
+    // The failure path must stop the partially-started boss and release the SQL handle itself — the boss never
+    // reached the registry, so closeAllQueueResources() alone could not have.
     expect(() => getBoss()).toThrow(/queue runtime is not running/);
     await startWith({});
     expect(typeof getBoss().send).toBe('function');

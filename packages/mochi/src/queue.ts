@@ -194,8 +194,27 @@ export async function startQueueRuntime(storage: MochiQueueStorage, testOptions?
   boss.on('warning', (warning) => {
     logger.warn(`[queue] ${warning.message}`);
   });
-  await boss.start();
+  try {
+    await boss.start();
+  } catch (err) {
+    // bun-boss defers cleanup of a partially-started instance (maintenance intervals, the postgres pool) to stop(),
+    // and registry.boss is still null here, so closeAllQueueResources() could never reach it; the owned SQL handle
+    // is released on the same path so a failed boot leaves nothing running.
+    await boss.stop({ graceful: false }).catch(() => {});
+    await closeAllQueueResources();
+    throw err;
+  }
   registry.boss = boss;
+}
+
+// A throwing listener or bus subscriber must not decide a job's fate — only `process` may, or a successful job would
+// be recorded as failed and retried, double-firing its side effects.
+function notifySafely(queue: string, fn: () => void): void {
+  try {
+    fn();
+  } catch (err) {
+    logger.error(`[queue] ${queue}: listener threw — ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 function makeHandler<T, R>(name: string, process: MochiProcessor<T, R>, listeners?: Partial<MochiQueueListeners<T, R>>) {
@@ -213,17 +232,17 @@ function makeHandler<T, R>(name: string, process: MochiProcessor<T, R>, listener
       enqueuedAt: new Date(raw.createdOn).getTime(),
     };
     const start = performance.now();
-    mochiEvents.emit('queue:active', { queue: name, jobId: job.id, attempt: job.attempt });
-    listeners?.active?.(job);
+    notifySafely(name, () => mochiEvents.emit('queue:active', { queue: name, jobId: job.id, attempt: job.attempt }));
+    notifySafely(name, () => listeners?.active?.(job));
     try {
       const result = await process(job);
-      mochiEvents.emit('queue:completed', { queue: name, jobId: job.id, attempt: job.attempt, duration: performance.now() - start });
-      listeners?.completed?.(job, result);
+      notifySafely(name, () => mochiEvents.emit('queue:completed', { queue: name, jobId: job.id, attempt: job.attempt, duration: performance.now() - start }));
+      notifySafely(name, () => listeners?.completed?.(job, result));
       return result;
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
-      mochiEvents.emit('queue:failed', { queue: name, jobId: job.id, attempt: job.attempt, duration: performance.now() - start, error: error.message });
-      listeners?.failed?.(job, error);
+      notifySafely(name, () => mochiEvents.emit('queue:failed', { queue: name, jobId: job.id, attempt: job.attempt, duration: performance.now() - start, error: error.message }));
+      notifySafely(name, () => listeners?.failed?.(job, error));
       throw error;
     }
   };
@@ -287,8 +306,9 @@ export async function mountQueues(entries: Array<[string, MountableQueueConfig]>
   const boss = requireBoss();
   const resolved = entries.map(([name, config]) => ({ name, config, bossOptions: toBossQueueOptions(name, config.options) }));
   // createQueue validates that a deadLetter target already exists and is ON CONFLICT DO NOTHING, so pass 1 creates
-  // every queue without deadLetter and pass 2 updates with the full set — declaration order stops mattering, and a
-  // persisted store's stale config is re-synced to the code on every boot.
+  // every queue without deadLetter and pass 2 updates with the full set — declaration order stops mattering. The
+  // re-sync is additive only: updateQueue COALESCEs absent keys, so an option *removed* from code (deadLetter
+  // included — bun-boss can't yet clear it) keeps its persisted value on durable storage.
   for (const { name, bossOptions } of resolved) {
     const { deadLetter: _, ...createOptions } = bossOptions;
     await boss.createQueue(name, createOptions);
