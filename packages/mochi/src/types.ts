@@ -437,6 +437,23 @@ export interface MochiWarmupOptions {
   enabledInDev: boolean;
 }
 
+/**
+ * Object form of `MochiServeOptions['compressionDictionary']` for per-mode
+ * control and tuning. See that field for semantics.
+ */
+export interface MochiCompressionDictionaryOptions {
+  /** Serve a navigation dictionary when running in production (`development: false`). */
+  enabledInProd: boolean;
+  /** Serve a navigation dictionary when running in development (`development: true`) — useful for testing; the dictionary is built once at boot and does not track dev edits. */
+  enabledInDev: boolean;
+  /** Static page patterns to build the dictionary from. Default: every static (warmable) page route. */
+  routes?: string[];
+  /** Cap on the dictionary size in bytes — it's an extra idle-time download for first-time visitors. Default: 256 KB. */
+  maxDictionaryBytes?: number;
+  /** zstd compression level for per-response `dcz` encoding. Default: 10. */
+  zstdLevel?: number;
+}
+
 /** Keys the framework sets on `Bun.serve()` itself; rejected under `bun` and stripped from `BunServeOverrides`. */
 export const FRAMEWORK_OWNED_BUN_KEYS = ['fetch', 'websocket', 'routes', 'error'] as const;
 
@@ -669,6 +686,19 @@ export interface MochiServeOptions {
    * the server accepts traffic immediately and a `warmup:complete` event fires once the batch finishes. Default: `false`.
    */
   warmup?: boolean | MochiWarmupOptions;
+  /**
+   * Compression Dictionary Transport (RFC 9842) for page navigations. At boot, Mochi renders the site's static page
+   * routes, publishes the harvested HTML as a shared dictionary at `/_mochi/dictionary/:hash`, advertises it on every
+   * HTML page with a `Link: rel="compression-dictionary"` header, and serves `dcz`-encoded HTML to browsers that
+   * present a matching `Available-Dictionary` hash — repeat navigations then transfer only what a page doesn't share
+   * with the dictionary. Only GET page responses that are 200 `text/html` and set no cookies are ever dcz-encoded.
+   *
+   * Chromium 130+ only; every other client falls back to your regular `compress()` / plain negotiation via `Vary`.
+   *
+   * Pass `true` to enable in **production only**, or a `MochiCompressionDictionaryOptions` object for per-mode control
+   * and tuning. Default: `false`.
+   */
+  compressionDictionary?: boolean | MochiCompressionDictionaryOptions;
   /**
    * On-the-fly image transforms via named sizes, mounting a signed `/_mochi/image/*` endpoint behind `getImageUrl()` and `<Image>`.
    * Every served URL's payload is encrypted, so arbitrary sources and transforms stay unreachable. Default: enabled; pass
