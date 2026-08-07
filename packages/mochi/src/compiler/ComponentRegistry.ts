@@ -20,7 +20,10 @@ import { applyFilter } from '../extensions';
 import { decodeSourcePath, encodeSourcePath } from './manifestPaths';
 import { buildServerOnlyStubModule, scanServerOnlyExports } from './serverOnlyScan';
 import { CLIENT_BUILD_DEFINE, serverOnlyModuleGuard } from './serverOnlyModuleGuard';
-import { renderMochiEnvServer, renderMochiEnvClient } from './virtualModuleTemplate';
+import { renderMochiEnvServer } from './virtualModuleTemplate';
+import { buildDebugBarBundle, type DebugBarBundle } from './buildDebugBarBundle';
+import { formatBuildMessages } from './formatBuildMessages';
+import { registerEsmEnvStrip, registerMochiEnvClient, registerSvelteModuleLoader } from './clientBuildLoaders';
 import { createImageAssetLoader, IMAGE_FILE_FILTER } from './imageAssetLoader';
 import { EMAIL_TEMPLATE_DIR } from '../email/templates';
 import { registerLocalImageAsset } from '../image/localAssetRegistry';
@@ -81,45 +84,6 @@ const MANIFEST_VERSION = 2;
 const VARIATION_FORMAT_RE = /\bformat\((woff2-variations|woff-variations|truetype-variations|opentype-variations)\)/g;
 function restoreVariationsFormat(css: string): string {
   return css.replace(VARIATION_FORMAT_RE, "format('$1')");
-}
-
-/**
- * Format a `Bun.build()` failure's `logs` array as `file:line:column — message` per entry. Bun 1.2+ throws a generic
- * `AggregateError("Bundle failed")` with `stack === undefined`, losing the positions, so every call passes
- * `throw: false` to recover the structured logs for this helper.
- */
-export function formatBuildMessages(
-  logs: ReadonlyArray<{
-    message: string;
-    position?: { file: string; line: number; column: number } | null;
-  }>,
-): string {
-  if (logs.length === 0) {
-    return '  <no diagnostic messages>';
-  }
-  const formatted = logs
-    .map((l) => {
-      const p = l.position;
-      const where = p ? `${relForDisplay(p.file)}:${p.line}:${p.column}` : '<unknown>';
-      return `  ${where} — ${l.message}`;
-    })
-    .join('\n');
-
-  // A read failure on a file inside the isolated linker's node_modules/.bun
-  // symlink store is the signature of a known Bun bug (a second Bun.build in a
-  // `bun test` / --hot / --watch process fails reading deps the runtime loader
-  // already imported). Without this hint the error looks like a broken dep and
-  // costs hours; with it the fix is a two-line bunfig change.
-  if (/reading file/.test(formatted) && /node_modules[\\/]\.bun[\\/]/.test(formatted)) {
-    return (
-      `${formatted}\n` +
-      `  hint: this matches a known Bun bug — a second Bun.build() inside \`bun test\` (or --hot/--watch)\n` +
-      `  fails reading node_modules files resolved through the isolated linker's symlinked\n` +
-      `  node_modules/.bun store. Fix: add \`linker = "hoisted"\` under \`[install]\` in bunfig.toml,\n` +
-      `  delete node_modules, and reinstall. See https://github.com/khromov/bun-second-build-eisdir-repro`
-    );
-  }
-  return formatted;
 }
 
 const MARKDOWN_EXTENSIONS = ['.md', '.svx'];
@@ -370,6 +334,8 @@ export class ComponentRegistry {
   private componentEntryUrls: Map<string, string> = new Map();
   private islandBootstrapUrl: string | null = null;
   private debugBarUrl: string | null = null;
+  private debugBarBundle: DebugBarBundle | null = null;
+  private debugBarBuildPromise: Promise<DebugBarBundle> | null = null;
   private clientFiles: Map<string, string> = new Map();
   /** Maps component file path → CSS URL */
   private cssFileUrls: Map<string, string> = new Map();
@@ -1092,20 +1058,22 @@ export class ComponentRegistry {
     const newClientFiles = new Map<string, string>();
     const newComponentEntryUrls = new Map<string, string>();
     let newIslandBootstrapUrl: string | null = null;
-    let newDebugBarUrl: string | null = null;
+
+    // The debug bar builds standalone (production-mode Svelte, own runtime) and only once per process — framework
+    // sources don't change under a running user app, so watcher rebuilds skip it entirely.
+    if (debugBarEnabled && !this.debugBarBundle) {
+      this.debugBarBuildPromise ??= buildDebugBarBundle({ development, backend });
+      // If the main build below throws before the swap-time await, a rejection here would otherwise go unhandled.
+      this.debugBarBuildPromise.catch(() => {});
+    }
 
     const srcDir = SRC_DIR;
     // Forward slashes survive intact in generated source, where Windows backslashes get eaten as JS escapes, and keep a
     // file's module identity consistent across its three uses: `Bun.build` entrypoint, `filesMap` key, import specifier.
     const hydratableIslandPath = toPosixPath(path.join(srcDir, 'web-components', 'HydratableIsland.ts'));
-    const debugBarDir = path.join(srcDir, 'debug-bar') + path.sep;
-    const debugBarEntryPath = toPosixPath(path.join(debugBarDir, 'debugbar-entry.ts'));
 
     // Generate per-component virtual entry points
     const entrypoints: string[] = [hydratableIslandPath];
-    if (debugBarEnabled) {
-      entrypoints.push(debugBarEntryPath);
-    }
     const filesMap: Record<string, string> = {};
 
     for (const [, comp] of unique) {
@@ -1122,8 +1090,6 @@ export class ComponentRegistry {
       filesMap[entryPath] = entrySource;
     }
 
-    const cookiesClientPath = toPosixPath(path.join(srcDir, 'runtime/cookies.client.ts'));
-    const enhanceClientPath = toPosixPath(path.join(srcDir, 'runtime/enhance.client.ts'));
     const imageAssetLoader = createImageAssetLoader({
       outDir: this.outDir,
       assetPrefix: this.assetPrefix,
@@ -1167,44 +1133,15 @@ export class ComponentRegistry {
           }
           return { contents: buildServerOnlyStubModule(args.path, scan), loader: 'js' };
         });
-        build.onResolve({ filter: /^mochi-framework$/ }, () => ({
-          path: 'mochi-framework',
-          namespace: 'mochi-env',
-        }));
-        build.onLoad({ filter: /.*/, namespace: 'mochi-env' }, () => ({
-          contents: renderMochiEnvClient(development, cookiesClientPath, enhanceClientPath),
-          loader: 'js',
-        }));
+        registerMochiEnvClient(build, development);
         // Client builds never run the island preprocessor, so the injected
         // boundary import shouldn't appear in a client graph — this alias is
         // cheap insurance against a stray specifier failing the whole build.
         build.onResolve({ filter: /^mochi-framework\/hydratable-boundary$/ }, () => ({
           path: path.join(SRC_DIR, 'islands/HydratableBoundary.svelte'),
         }));
-        // Bun can't propagate constants through esm-env's conditional exports, so stripping the imports turns
-        // DEV/BROWSER/NODE into free variables that Bun's `define` replaces with literal booleans, letting `if (DEV)`
-        // blocks be eliminated.
-        build.onLoad({ filter: /node_modules\/svelte\/src\/.*\.js$/ }, async (args) => {
-          let source = await Bun.file(args.path).text();
-          source = source.replace(/import\s*\{[^}]*\}\s*from\s*['"]esm-env['"]\s*;?/g, '');
-          return { contents: source, loader: 'js' };
-        });
-        build.onLoad({ filter: /\.svelte\.[jt]s$/ }, async (args) => {
-          let source = await Bun.file(args.path).text();
-          if (args.path.endsWith('.ts')) {
-            const transpiler = new Bun.Transpiler({ loader: 'ts' });
-            source = transpiler.transformSync(source);
-          }
-          const { js } = backend.compileModule(
-            source,
-            mergeCompilerOptions(userCompilerOptions, {
-              generate: 'client',
-              filename: args.path,
-              dev: development,
-            }),
-          );
-          return { contents: js.code, loader: 'js' };
-        });
+        registerEsmEnvStrip(build);
+        registerSvelteModuleLoader(build, backend, mergeCompilerOptions(userCompilerOptions, { generate: 'client', dev: development }));
         build.onLoad({ filter: /\.svelte$/ }, async (args) => {
           const source = shakenSources.get(args.path) ?? (await Bun.file(args.path).text());
           const cached = compileCache.get('client', args.path, source, clientFingerprint, compileCacheStats);
@@ -1217,8 +1154,6 @@ export class ComponentRegistry {
             mergeCompilerOptions(userCompilerOptions, {
               generate: 'client',
               filename: args.path,
-              // TODO: Verify that this still works after node_modules migration
-              css: args.path.startsWith(debugBarDir) ? 'injected' : undefined,
               dev: development,
             }),
           );
@@ -1280,9 +1215,6 @@ export class ComponentRegistry {
       // entryPoint is native; on Windows the formats diverge, the bootstrap lookup misses, and the hydration `<script>` disappears.
       const entryToComponent = new Map<string, string | null>();
       entryToComponent.set(toPosixPath(path.resolve(hydratableIslandPath)), null);
-      if (debugBarEnabled) {
-        entryToComponent.set(toPosixPath(path.resolve(debugBarEntryPath)), '__debugbar__');
-      }
       for (const [, comp] of unique) {
         const entryPath = toPosixPath(path.resolve(path.join(srcDir, `_hydrate-${comp.name}.js`)));
         entryToComponent.set(entryPath, comp.name);
@@ -1297,8 +1229,6 @@ export class ComponentRegistry {
         const url = `${this.assetPrefix}/client/${path.basename(outPath)}`;
         if (compName === null) {
           newIslandBootstrapUrl = url;
-        } else if (compName === '__debugbar__') {
-          newDebugBarUrl = url;
         } else if (compName !== undefined) {
           newComponentEntryUrls.set(compName, url);
         }
@@ -1339,7 +1269,24 @@ export class ComponentRegistry {
       this.componentEntryUrls.set(k, v);
     }
     this.islandBootstrapUrl = newIslandBootstrapUrl;
-    this.debugBarUrl = newDebugBarUrl;
+
+    if (this.debugBarBuildPromise && !this.debugBarBundle) {
+      try {
+        this.debugBarBundle = await this.debugBarBuildPromise;
+      } catch (err) {
+        // A rejected promise must not be memoized (the next rebuild retries), and a broken debug bar must not take
+        // down page serving.
+        this.debugBarBuildPromise = null;
+        logger.warn(`[mochi] debug bar build failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    if (this.debugBarBundle) {
+      const debugBarUrl = `${clientPrefix}${this.debugBarBundle.fileName}`;
+      this.clientFiles.set(debugBarUrl, this.debugBarBundle.contents);
+      this.debugBarUrl = debugBarUrl;
+    } else {
+      this.debugBarUrl = null;
+    }
 
     const outputBytes = this.clientStats?.outputs.reduce((sum, o) => sum + o.size, 0) ?? 0;
     mochiEvents.emit('client-bundle:complete', {
@@ -1636,9 +1583,6 @@ export class ComponentRegistry {
         const reachable = ComponentRegistry.reachableOutputNames(entryRoots, outputByName);
         for (const output of this.clientStats.outputs) {
           const url = `${this.assetPrefix}/client/${output.name}`;
-          if (url === this.debugBarUrl) {
-            continue;
-          }
           if (url === this.islandBootstrapUrl) {
             if (!pageHasIslands) {
               continue;
