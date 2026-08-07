@@ -7,6 +7,7 @@
 import path from 'node:path';
 import type { BunPlugin } from 'bun';
 import { CLIENT_BUILD_DEFINE, serverOnlyModuleGuard } from './serverOnlyModuleGuard';
+import { registerServerOnlyComponentStubs } from './serverOnlyComponents';
 import { registerEsmEnvStrip, registerMochiEnvClient, registerSvelteModuleLoader } from './clientBuildLoaders';
 import { mergeCompilerOptions } from './svelteConfig';
 import { formatBuildMessages } from './formatBuildMessages';
@@ -26,6 +27,9 @@ export async function buildDebugBarBundle(opts: { development: boolean; backend:
     name: 'mochi-debug-bar',
     setup(build) {
       registerEsmEnvStrip(build);
+      // Same server-only contract as the island client build: a `.server.svelte` reached from a future debug-bar
+      // entry must stub, not compile its server body into the inline script.
+      registerServerOnlyComponentStubs(build);
       // Svelte compiles production-mode here, but mochi-level env stays truthful: if the bar ever imports
       // `mochi-framework`'s `isDev`, it must still read `true` under a dev server.
       registerMochiEnvClient(build, development);
