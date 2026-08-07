@@ -3,7 +3,16 @@ import { render } from 'svelte/server';
 import path from 'node:path';
 import fs from 'node:fs';
 import type { BunPlugin } from 'bun';
-import { isSvelteMarker, normalizeAssetPrefix, normalizeIslandHydrationMarkers, relForDisplay, stripHydrationMarkers, toCompileErrorLogs, toPosixPath } from '../utils';
+import {
+  isSvelteMarker,
+  normalizeAssetPrefix,
+  normalizeIslandHydrationMarkers,
+  relForDisplay,
+  resolveArgsPath,
+  stripHydrationMarkers,
+  toCompileErrorLogs,
+  toPosixPath,
+} from '../utils';
 import { injectIslandPropsBlock } from '../islands/islandPropsRegistry';
 import { requestContext, renderDetached } from '../runtime/requestContext';
 import type { DebugBarData } from '../runtime/requestContext';
@@ -20,6 +29,7 @@ import { applyFilter } from '../extensions';
 import { decodeSourcePath, encodeSourcePath } from './manifestPaths';
 import { buildServerOnlyStubModule, scanServerOnlyExports } from './serverOnlyScan';
 import { CLIENT_BUILD_DEFINE, serverOnlyModuleGuard } from './serverOnlyModuleGuard';
+import { registerServerOnlyComponentStubs, SSR_ONLY_COMPONENT_NAMESPACE } from './serverOnlyComponents';
 import { renderMochiEnvServer } from './virtualModuleTemplate';
 import { buildDebugBarBundle, type DebugBarBundle } from './buildDebugBarBundle';
 import { formatBuildMessages } from './formatBuildMessages';
@@ -200,6 +210,13 @@ export type MochiCompileError =
       directive: string;
       filePath: string;
       importSource: string | null;
+    }
+  | {
+      kind: 'server-only-island';
+      component: string;
+      directive: string;
+      filePath: string;
+      resolvedPath: string;
     };
 
 function formatUnresolvedIsland(e: Extract<MochiCompileError, { kind: 'unresolved-island' }>): string {
@@ -218,21 +235,28 @@ function formatUnresolvedIsland(e: Extract<MochiCompileError, { kind: 'unresolve
   return `${head} — ${why}. Wrap the component in a local .svelte file (e.g. a component that renders <${e.component} … />) and put the directive on that instead.`;
 }
 
+function formatCompileError(e: MochiCompileError): string {
+  switch (e.kind) {
+    case 'nested-hydration':
+      return `Nested mochi:hydrate: <${e.child}> inside <${e.parent}> — remove mochi:hydrate from ${e.child}`;
+    case 'defer-in-hydratable':
+      return `mochi:defer inside a hydratable: <${e.child}> is a server island inside <${e.parent}>, whose subtree re-renders on the client where a server island cannot exist — remove mochi:defer from ${e.child} or the hydrate/clientOnly directive from ${e.parent}`;
+    case 'css-bundle-failed':
+      return `CSS bundle failed: ${e.cssPath} — ${e.message}`;
+    case 'unresolved-island':
+      return formatUnresolvedIsland(e);
+    case 'server-only-island':
+      return (
+        `Server-only island: <${e.component} ${e.directive}> in ${relForDisplay(e.filePath)} — ${relForDisplay(e.resolvedPath)} is a \`.server.svelte\`, ` +
+        `which the client build replaces with a throwing stub, so it cannot hydrate. Remove the ${e.directive} directive (it already renders server-side), ` +
+        `use mochi:defer, or drop the .server suffix if it must ship to the client.`
+      );
+  }
+}
+
 export function formatCompileErrors(errors: MochiCompileError[]): string {
-  const lines = errors.map((e) => {
-    switch (e.kind) {
-      case 'nested-hydration':
-        return `Nested mochi:hydrate: <${e.child}> inside <${e.parent}> — remove mochi:hydrate from ${e.child}`;
-      case 'defer-in-hydratable':
-        return `mochi:defer inside a hydratable: <${e.child}> is a server island inside <${e.parent}>, whose subtree re-renders on the client where a server island cannot exist — remove mochi:defer from ${e.child} or the hydrate/clientOnly directive from ${e.parent}`;
-      case 'css-bundle-failed':
-        return `CSS bundle failed: ${e.cssPath} — ${e.message}`;
-      case 'unresolved-island':
-        return formatUnresolvedIsland(e);
-    }
-  });
   const header = `${errors.length} compile error${errors.length === 1 ? '' : 's'}:`;
-  return `${header}\n${lines.map((l) => `• ${l}`).join('\n')}`;
+  return `${header}\n${errors.map((e) => `• ${formatCompileError(e)}`).join('\n')}`;
 }
 
 export interface RenderResult {
@@ -392,6 +416,7 @@ export class ComponentRegistry {
   private readonly barrelBuffering: boolean;
   /** Packages already warned about this process, so the warning fires once, not on every rebuild. */
   private readonly warnedBarrels = new Set<string>();
+  private readonly warnedRetainedStubs = new Set<string>();
   /** Buffer used when `bufferBarrelWarnings` is on: barrels collected across the build, flushed as one grouped summary by `flushBarrelWarnings()`. */
   private pendingBarrels: HeavyBarrel[] = [];
   /** absPath → slimmed `.svelte` source from the last `prepareShake()`; empty when shaking is off. */
@@ -769,13 +794,17 @@ export class ComponentRegistry {
       (e) =>
         !(e.kind === 'nested-hydration' && fileHydratables.has(e.parentPath)) &&
         !(e.kind === 'defer-in-hydratable' && fileServerIslands.has(e.parentPath)) &&
-        !(e.kind === 'unresolved-island' && filePreprocessErrors.has(e.filePath)),
+        !((e.kind === 'unresolved-island' || e.kind === 'server-only-island') && filePreprocessErrors.has(e.filePath)),
     );
 
     for (const errors of filePreprocessErrors.values()) {
       for (const err of errors) {
-        this.errors.push({ kind: 'unresolved-island', ...err });
-        logger.error(`\n${formatUnresolvedIsland({ kind: 'unresolved-island', ...err })}\n`);
+        const compileError: MochiCompileError =
+          err.reason === 'server-only'
+            ? { kind: 'server-only-island', component: err.component, directive: err.directive, filePath: err.filePath, resolvedPath: err.resolvedPath }
+            : { kind: 'unresolved-island', component: err.component, directive: err.directive, filePath: err.filePath, importSource: err.importSource };
+        this.errors.push(compileError);
+        logger.error(`\n${formatCompileError(compileError)}\n`);
       }
     }
 
@@ -1110,7 +1139,7 @@ export class ComponentRegistry {
         // `bun:*` / `node:*` deps to SSR alone. The extensionless form falls back to disk probing for the real sibling,
         // so the stub still names a canonical path.
         build.onResolve({ filter: /\.server(?:\.[jt]s)?$/ }, (args) => {
-          const base = args.resolveDir ? path.resolve(args.resolveDir, args.path) : path.resolve(args.path);
+          const base = resolveArgsPath(args);
           let resolved = base;
           if (!/\.[jt]s$/.test(base)) {
             const tsPath = `${base}.ts`;
@@ -1131,8 +1160,9 @@ export class ComponentRegistry {
           for (const w of scan.warnings) {
             logger.warn(`[mochi] ${relForDisplay(args.path)}: ${w}`);
           }
-          return { contents: buildServerOnlyStubModule(args.path, scan), loader: 'js' };
+          return { contents: buildServerOnlyStubModule(relForDisplay(args.path), scan), loader: 'js' };
         });
+        registerServerOnlyComponentStubs(build);
         registerMochiEnvClient(build, development);
         // Client builds never run the island preprocessor, so the injected
         // boundary import shouldn't appear in a client graph — this alias is
@@ -1249,6 +1279,7 @@ export class ComponentRegistry {
       });
       outputStats.sort((a, b) => b.size - a.size);
       this.clientStats = { outputs: outputStats };
+      this.warnOnRetainedComponentStubs(result.metafile);
       this.warnOnBarrelImports(result.metafile);
     }
 
@@ -1666,7 +1697,39 @@ export class ComponentRegistry {
   }
 
   private static cleanInputPath(p: string): string {
+    const stub = p.match(/^(?:mochi-ssr-only-component|mochi-server-only):(.*)$/);
+    if (stub) {
+      return `${stub[1]} (server-only stub)`;
+    }
     return p.replace(/^(?:\.\.\/)*node_modules\/(?:\.bun\/[^/]+\/node_modules\/)?/, '');
+  }
+
+  /**
+   * A `.server.svelte` stub retained with nonzero bytes means an island's live client code actually references the
+   * component — it will throw the moment hydration reaches it, so say so at build time instead of leaving the first
+   * signal to the user's browser console. The direct-directive case is a compile error upstream; this catches the
+   * component nested anywhere deeper in an island's subtree.
+   */
+  private warnOnRetainedComponentStubs(metafile: BarrelMetafile | undefined): void {
+    if (!metafile) {
+      return;
+    }
+    for (const outMeta of Object.values(metafile.outputs)) {
+      for (const [inputPath, inputMeta] of Object.entries(outMeta.inputs ?? {})) {
+        if (!inputPath.startsWith(`${SSR_ONLY_COMPONENT_NAMESPACE}:`) || inputMeta.bytesInOutput === 0) {
+          continue;
+        }
+        const componentPath = inputPath.slice(SSR_ONLY_COMPONENT_NAMESPACE.length + 1);
+        if (this.warnedRetainedStubs.has(componentPath)) {
+          continue;
+        }
+        this.warnedRetainedStubs.add(componentPath);
+        logger.warn(
+          `[mochi] ${relForDisplay(componentPath)} is rendered inside a hydrated island's client bundle; its client stub will throw at hydration. ` +
+            `Render it outside the island, use mochi:defer, or drop the .server suffix if it must ship to the client.`,
+        );
+      }
+    }
   }
 
   /**
@@ -1720,7 +1783,12 @@ export class ComponentRegistry {
   }
 
   private static cleanInputs(inputs: { path: string; size: number }[]): { path: string; size: number }[] {
-    return inputs.map((i) => ({ path: ComponentRegistry.cleanInputPath(i.path), size: i.size }));
+    // A fully tree-shaken `.server.svelte` stub ships nothing, so its row would only confuse the panel — but a stub
+    // with retained bytes means an island actually renders the component (it will throw at hydration), which is
+    // exactly what the panel should surface, so those rows stay.
+    return inputs
+      .filter((i) => i.size > 0 || !i.path.startsWith(`${SSR_ONLY_COMPONENT_NAMESPACE}:`))
+      .map((i) => ({ path: ComponentRegistry.cleanInputPath(i.path), size: i.size }));
   }
 
   /** Output names reachable from `roots` by following static imports, roots included. */

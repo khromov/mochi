@@ -25,6 +25,11 @@ export function relForDisplay(p: string): string {
   return toPosixPath(path.relative(process.cwd(), p));
 }
 
+/** Absolutize a Bun plugin `onResolve` specifier against its importer's directory. */
+export function resolveArgsPath(args: { path: string; resolveDir?: string }): string {
+  return args.resolveDir ? path.resolve(args.resolveDir, args.path) : path.resolve(args.path);
+}
+
 export type CompressionMethod = 'gzip' | 'brotli';
 
 export const COMPRESSION_TOKEN: Record<CompressionMethod, 'gzip' | 'br'> = { gzip: 'gzip', brotli: 'br' };
