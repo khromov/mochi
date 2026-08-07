@@ -75,10 +75,34 @@ On the client, every export of a `.server.ts` file throws on any use. The error 
 getVersion from /…/db.server.ts was called on the client; this is a server-only export.
 ```
 
+### Server-only components
+
+Name a component `*.server.svelte` to keep it SSR-only. It renders on the server like any component, but the client build replaces it with a stub, so it never ships to the browser — even when an island pulls it in through a barrel re-export.
+
+```svelte
+<!-- Changelog.server.svelte — rendered on the server, stripped from client bundles -->
+<script lang="ts">
+  import { readFileSync } from 'node:fs';
+
+  const entries = readFileSync('CHANGELOG.md', 'utf8');
+</script>
+
+<pre>{entries}</pre>
+```
+
+Import it with the extension (`./Changelog.server.svelte`). The framework's own `ViewTransitions` and `RawScript` use this convention.
+
+<Callout type="warning">
+
+**Don't hydrate a `.server.svelte`.** The client stub throws on use, so a `mochi:hydrate*` directive on one fails at runtime. These components are for server-rendered output only.
+
+</Callout>
+
+Only the default (component) export is stubbed. For server-only _values_, use a `.server.ts` file.
+
 ### Unsupported
 
 - `export * from './x'` — Mochi warns at build time. Declare named exports in the `.server.ts` file directly.
-- `.server.svelte` — no component-level convention. Put server-only code in plain TS and call it from a component.
 
 <SeeItInAction
 demos={[{ href: "/demos/data-loading/", title: "Data Loading", hook: "How server-side data loading works — fetch on the server, cache with MochiCache, and render at request time." }]}

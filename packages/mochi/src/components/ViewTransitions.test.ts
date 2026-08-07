@@ -5,7 +5,7 @@ import { ComponentRegistry } from '../compiler/ComponentRegistry';
 import { requestContext, type MochiRequestContext } from '../runtime/requestContext';
 import { HYDRATABLE_CONTEXT_KEY } from '../islands/isHydratable';
 
-const COMPONENT_PATH = path.join(import.meta.dir, 'ViewTransitions.svelte');
+const COMPONENT_PATH = path.join(import.meta.dir, 'ViewTransitions.server.svelte');
 
 describe('ViewTransitions', () => {
   let outDir: string;

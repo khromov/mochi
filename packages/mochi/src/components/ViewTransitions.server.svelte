@@ -1,6 +1,6 @@
 <script lang="ts">
   import { getRequestContext, devWarn, isHydratable } from 'mochi-framework';
-  import RawScript from './RawScript.svelte';
+  import RawScript from './RawScript.server.svelte';
   import slugify from '../vendor/slugify/index.ts';
 
   let {

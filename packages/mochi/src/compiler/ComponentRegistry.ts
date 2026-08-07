@@ -20,6 +20,7 @@ import { applyFilter } from '../extensions';
 import { decodeSourcePath, encodeSourcePath } from './manifestPaths';
 import { buildServerOnlyStubModule, scanServerOnlyExports } from './serverOnlyScan';
 import { CLIENT_BUILD_DEFINE, serverOnlyModuleGuard } from './serverOnlyModuleGuard';
+import { registerServerOnlyComponentStubs, SSR_ONLY_COMPONENT_NAMESPACE } from './serverOnlyComponents';
 import { renderMochiEnvServer } from './virtualModuleTemplate';
 import { buildDebugBarBundle, type DebugBarBundle } from './buildDebugBarBundle';
 import { formatBuildMessages } from './formatBuildMessages';
@@ -1133,6 +1134,7 @@ export class ComponentRegistry {
           }
           return { contents: buildServerOnlyStubModule(args.path, scan), loader: 'js' };
         });
+        registerServerOnlyComponentStubs(build);
         registerMochiEnvClient(build, development);
         // Client builds never run the island preprocessor, so the injected
         // boundary import shouldn't appear in a client graph — this alias is
@@ -1720,7 +1722,9 @@ export class ComponentRegistry {
   }
 
   private static cleanInputs(inputs: { path: string; size: number }[]): { path: string; size: number }[] {
-    return inputs.map((i) => ({ path: ComponentRegistry.cleanInputPath(i.path), size: i.size }));
+    // Stubbed `.server.svelte` imports resolve to a zero-byte throwing stub in a synthetic namespace; they ship nothing,
+    // so listing them (under an internal `mochi-ssr-only-component:` path) would only confuse the panel.
+    return inputs.filter((i) => !i.path.startsWith(`${SSR_ONLY_COMPONENT_NAMESPACE}:`)).map((i) => ({ path: ComponentRegistry.cleanInputPath(i.path), size: i.size }));
   }
 
   /** Output names reachable from `roots` by following static imports, roots included. */

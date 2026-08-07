@@ -42,7 +42,7 @@ export function buildServerOnlyStubModule(originalPath: string, scan: ScanResult
     const errCall = `${JSON.stringify(name)} + ' from ' + ${escapedPath} + ' was called on the client; this is a server-only export.'`;
     const errAccess = `${JSON.stringify(name)} + ' from ' + ${escapedPath} + ' is a server-only export; wrap usage in hydratable() or guard with isServer.'`;
     const safeName = IDENT_RE.test(name) && name !== 'default' ? name : '_serverOnly';
-    return `new Proxy(function ${safeName}() {}, { get(_, p) { if (typeof p === 'symbol') return undefined; throw new Error(${errAccess}); }, apply() { throw new Error(${errCall}); }, construct() { throw new Error(${errCall}); } })`;
+    return `/*@__PURE__*/ new Proxy(function ${safeName}() {}, { get(_, p) { if (typeof p === 'symbol') return undefined; throw new Error(${errAccess}); }, apply() { throw new Error(${errCall}); }, construct() { throw new Error(${errCall}); } })`;
   };
 
   const lines: string[] = [];
