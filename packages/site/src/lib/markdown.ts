@@ -1,5 +1,6 @@
 import { compile as mdsvexCompile } from 'mdsvex';
 import { toHtml } from 'hast-util-to-html';
+import { decodeHTML } from 'entities';
 import rehypeSlug from 'rehype-slug';
 import rehypeExternalLinks from './rehypeExternalLinks';
 import type { TocEntry } from './toc';
@@ -16,7 +17,9 @@ export type HastNode = {
 
 export function hastText(node: HastNode): string {
   if (node.type === 'text') {
-    return node.value ?? '';
+    // mdsvex entity-encodes text inside code spans (`<` → `&lt;`, `{` → `&#123;`) so
+    // the compiled Svelte stays valid; decode it back for use as a plain-text title.
+    return decodeHTML(node.value ?? '');
   }
   if (!node.children) {
     return '';
