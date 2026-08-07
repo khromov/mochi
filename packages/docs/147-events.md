@@ -24,6 +24,7 @@ Event names use a `namespace:action` convention. Every key is in the typed `Moch
 - [`email:sent`](#emailsent), [`email:error`](#emailerror) — [transactional email](/docs/email/) delivery
 - [`server:start`](#serverstart), [`server:stop`](#serverstop) — server lifecycle
 - [`warmup:start`](#warmupstart), [`warmup:complete`](#warmupcomplete) — route warmup batch (only with `warmup: true`)
+- [`dictionary:ready`](#dictionaryready) — the boot-time compression dictionary was installed (only with `dictionary` enabled)
 - [`error`](#error) — a page/api/action handler threw
 - [`action:invoke`](#actioninvoke), [`action:complete`](#actioncomplete) — form action lifecycle
 - [`compile:start`](#compilestart), [`compile:complete`](#compilecomplete), [`compile:error`](#compileerror) — Svelte SSR build
@@ -280,6 +281,17 @@ Fires once after the [route warmup](/docs/serve-options/#route-warmup) batch fin
 | `routeCount` | `number` | static page routes warmed                |
 | `errorCount` | `number` | warmup invocations that threw or 5xx'd   |
 | `durationMs` | `number` | wall-clock ms for the whole warmup batch |
+
+#### `dictionary:ready`
+
+Fires once after the boot-time render installs the [compression dictionary](/docs/compression-dictionaries/). Only emitted with `dictionary` enabled, in production.
+
+| Field        | Type     | Notes                                                        |
+| ------------ | -------- | ------------------------------------------------------------ |
+| `routeCount` | `number` | configured routes that rendered into the dictionary          |
+| `bytes`      | `number` | raw dictionary size                                          |
+| `hashB64`    | `string` | base64 SHA-256, as clients echo it in `Available-Dictionary` |
+| `durationMs` | `number` | wall-clock ms for the render + install                       |
 
 #### `error`
 

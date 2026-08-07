@@ -151,6 +151,7 @@ await Mochi.serve({
   idleTimeout: 60,
   compressServerIslandProps: true,
   warmup: { enabledInProd: true, enabledInDev: true },
+  dictionary: true,
   additionalWatchPaths: ['../docs'],
   logger: { level: 'log' },
   proxy: { origin }, // TODO: This is a bit of an awkward way to set the allowed csrf domain...

@@ -394,6 +394,31 @@ export interface MochiWarmupOptions {
   enabledInDev: boolean;
 }
 
+/**
+ * RFC 9842 compression dictionary transport (production only). The framework renders `routes` at boot into a raw
+ * dictionary, serves it at `${assetPrefix}/dictionary` with `Use-As-Dictionary`, advertises it on every HTML page via
+ * a `Link: rel="compression-dictionary"` header, and answers requests carrying the matching `Available-Dictionary`
+ * hash with a delta-compressed `dcz` (dictionary-compressed Zstandard) response.
+ */
+export interface MochiDictionaryOptions {
+  /** Master switch for the object form. Default: `true`. */
+  enabled?: boolean;
+  /** Static page routes rendered at boot and concatenated into the dictionary. Default: `['/']`. */
+  routes?: string[];
+  /** `match` URLPattern sent in `Use-As-Dictionary`. Default: `'/*'`. */
+  match?: string;
+  /** `match-dest` request destinations; `[]` omits the field (matches all destinations). Default: `['document']`. */
+  matchDest?: string[];
+  /** Optional `Use-As-Dictionary` server id, echoed back by clients as `Dictionary-ID`. Default: unset. */
+  id?: string;
+  /** `Cache-Control` max-age (seconds) of the dictionary response; also how long a stale post-deploy dictionary can linger client-side. Default: `86400`. */
+  maxAge?: number;
+  /** Zstandard level for dcz responses. Default: `10`. */
+  level?: number;
+  /** Dictionary size cap in bytes; routes that would exceed it are skipped with a warning. Default: 1 MiB. */
+  maxBytes?: number;
+}
+
 /** Keys the framework sets on `Bun.serve()` itself; rejected under `bun` and stripped from `BunServeOverrides`. */
 export const FRAMEWORK_OWNED_BUN_KEYS = ['fetch', 'websocket', 'routes', 'error'] as const;
 
@@ -556,6 +581,12 @@ export interface MochiServeOptions {
    * the server accepts traffic immediately and a `warmup:complete` event fires once the batch finishes. Default: `false`.
    */
   warmup?: boolean | MochiWarmupOptions;
+  /**
+   * RFC 9842 compression dictionary transport for HTML pages: returning visitors download tiny `dcz` deltas of each
+   * page against a dictionary built from the site's shared markup. `true` enables it in production with defaults;
+   * pass a `MochiDictionaryOptions` object to tune it. Always off in development. Default: `false`.
+   */
+  dictionary?: boolean | MochiDictionaryOptions;
   /**
    * On-the-fly image transforms via named sizes, mounting a signed `/_mochi/image/*` endpoint behind `getImageUrl()` and `<Image>`.
    * Every served URL's payload is encrypted, so arbitrary sources and transforms stay unreachable. Default: enabled; pass

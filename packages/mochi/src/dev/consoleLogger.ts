@@ -156,6 +156,15 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
     };
   });
 
+  subscribe('dictionary:ready', ({ routeCount, bytes, hashB64, durationMs }) => ({
+    label: 'DICT',
+    path: `${routeCount} ${routeCount === 1 ? 'route' : 'routes'}`,
+    note: styleText('dim', `${(bytes / 1024).toFixed(1)}kB ${hashB64.slice(0, 8)}…`),
+    duration: durationMs,
+    slow,
+    verySlow,
+  }));
+
   subscribe('error', ({ kind, method, path, status, message }) => ({
     label: 'ERR ',
     path,

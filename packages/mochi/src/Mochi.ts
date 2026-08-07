@@ -51,11 +51,13 @@ import { applyFilter, initExtensions, runHook } from './extensions';
 import { escapeHtmlAttr } from './utils/htmlEscape';
 import { buildPublicUrl } from './runtime/proxy';
 import { realpath } from 'node:fs/promises';
-import { apiError, collectHeaderPairs, cssLinkTag, headResponse, isHtmlResponse, MochiHttpError, relForDisplay, toPosixPath, withHead } from './utils';
+import { apiError, collectHeaderPairs, cssLinkTag, headResponse, isHtmlResponse, MochiHttpError, normalizeAssetPrefix, relForDisplay, toPosixPath, withHead } from './utils';
 import type { MochiEvent, MochiEventKind, MochiResolveOptions } from './runtime/hooks';
-import { applyResolveOptions } from './runtime/hooks';
+import { applyResolveOptions, sequence } from './runtime/hooks';
 import { alternateSlashPattern, trailingSlashRedirect } from './runtime/trailingSlash';
 import { resolveWarmupEnabled, markWarmupRequest, isWarmablePattern } from './runtime/warmup';
+import { resolveDictionaryOptions, bootstrapDictionary, getDictionaryState } from './runtime/dictionary';
+import { createDictionaryHandle } from './middleware/dictionaryCompress';
 import { createErrorResponder, DEFAULT_ERROR_PAGE_PATH } from './runtime/errors';
 import { requestContext } from './runtime/requestContext';
 import type { MochiRequestContext } from './runtime/requestContext';
@@ -320,9 +322,11 @@ export class Mochi {
     const development = options.development ?? true;
     const inlineNestedIslands = options.inlineNestedIslands !== false;
     const warmupEnabled = resolveWarmupEnabled(options.warmup, development);
+    const dictionaryOptions = resolveDictionaryOptions(options.dictionary, development, normalizeAssetPrefix(options.assetPrefix));
     const debugBarEnabled = development && (options.debugBar ?? true);
     const liveReloadEnabled = options.liveReload ?? development;
-    const middleware = options.handle;
+    // The dictionary handle runs innermost so a user `compress()` sees its `Content-Encoding: dcz` and passes it through.
+    const middleware = dictionaryOptions ? sequence(...(options.handle ? [options.handle] : []), createDictionaryHandle(dictionaryOptions)) : options.handle;
     const baseOutDir = options.outDir ?? './.mochi';
     // Nesting dev artifacts keeps a stale prod manifest and dev chunks apart across a later `start`, while prod stays at
     // the root so Docker and deploys are unaffected.
@@ -535,6 +539,7 @@ export class Mochi {
     // Pre-compile Mochi.page() handlers so SSR is ready at startup
     const mochiPageMap = new Map<string, MochiPageConfig>();
     const warmupHandlers: { pattern: string; handler: (req: Request, server: Server<undefined>) => Promise<Response> }[] = [];
+    const dictionaryHandlers: { pattern: string; handler: (req: Request, server: Server<undefined>) => Promise<Response> }[] = [];
     const wsHandlersMap = new Map<string, MochiWsHandlers<unknown>>();
     const apiHandlerMap = development ? new Map<string, MochiApiHandler>() : undefined;
     const sseHandlerMap = development ? new Map<string, MochiSseHandler>() : undefined;
@@ -780,6 +785,13 @@ export class Mochi {
 
         if (warmupEnabled && isWarmablePattern(pattern)) {
           warmupHandlers.push({ pattern, handler: getHandler });
+        }
+        if (dictionaryOptions?.routes.includes(pattern)) {
+          if (isWarmablePattern(pattern)) {
+            dictionaryHandlers.push({ pattern, handler: getHandler });
+          } else {
+            logger.warn(`[mochi] dictionary: route "${pattern}" has :param or * segments and cannot be rendered at boot — skipped`);
+          }
         }
 
         if (actions || pageConfigMap) {
@@ -1471,6 +1483,25 @@ export class Mochi {
     // without a route reload.
     bunRoutes[`${registry.assetPrefix}/asset/:filename`] = withHead(createLocalAssetHandler(development));
 
+    if (dictionaryOptions) {
+      // 404 until the boot-time render installs the dictionary; the page `Link` header only appears once it has, so
+      // clients never fetch the 404 — it covers only direct hits during the bootstrap window.
+      bunRoutes[dictionaryOptions.dictionaryPath] = withHead((): Response => {
+        const state = getDictionaryState();
+        if (!state) {
+          return new Response('Not Found', { status: 404 });
+        }
+        return new Response(state.bytes as unknown as BodyInit, {
+          headers: {
+            'Content-Type': 'application/octet-stream',
+            'Use-As-Dictionary': state.useAsDictionaryHeader,
+            // Not immutable: RFC 9842 §2.2.1 requires freshness, and expiry is what rotates stale post-deploy dictionaries.
+            'Cache-Control': `public, max-age=${dictionaryOptions.maxAge}`,
+          },
+        });
+      });
+    }
+
     // The debug bar's Cache tab reads the entry count (GET) and empties the image cache (POST). It registers with the
     // debug bar rather than the image endpoint, since the tab always shows and acting on an empty cache is a no-op.
     if (debugBarEnabled) {
@@ -1773,12 +1804,13 @@ export class Mochi {
     // Awaited so recovered jobs are enqueued before `mochi:ready` fires and before `serve()` resolves.
     await runQueueRecovery(Object.entries(options.queues ?? {}));
 
+    let warmupPromise: Promise<void> = Promise.resolve();
     if (warmupHandlers.length > 0) {
       mochiEvents.emit('warmup:start', { routeCount: warmupHandlers.length });
       const t0 = performance.now();
       // SSR is CPU-bound and serializes on the single thread, so parallel warming would render no faster while smearing
       // every route's `request` duration into the batch total; one at a time keeps per-route timings honest.
-      void (async () => {
+      warmupPromise = (async () => {
         let errorCount = 0;
         for (const { pattern, handler } of warmupHandlers) {
           // The canonical path keeps the trailing-slash policy from redirecting early instead of running the render being warmed.
@@ -1802,6 +1834,26 @@ export class Mochi {
           durationMs: performance.now() - t0,
         });
       })();
+    }
+
+    if (dictionaryOptions) {
+      const missing = dictionaryOptions.routes.filter((route) => !dictionaryHandlers.some((h) => h.pattern === route));
+      if (missing.length > 0) {
+        logger.warn(`[mochi] dictionary: configured route(s) ${missing.map((r) => `"${r}"`).join(', ')} match no page route — skipped`);
+      }
+      if (dictionaryHandlers.length > 0) {
+        // Chained after warmup: SSR serializes on the single thread, so racing the two would only smear both timings.
+        void warmupPromise
+          .then(() => bootstrapDictionary({ opts: dictionaryOptions, handlers: dictionaryHandlers, trailingSlashPolicy, server }))
+          .then((result) => {
+            if (result) {
+              mochiEvents.emit('dictionary:ready', result);
+            }
+          })
+          .catch((err: unknown) => {
+            logger.warn(`[mochi] dictionary: bootstrap failed: ${err instanceof Error ? err.message : String(err)}`);
+          });
+      }
     }
 
     if (development) {

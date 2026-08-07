@@ -259,6 +259,16 @@ export interface MochiWarmupCompleteEvent {
   durationMs: number;
 }
 
+export interface MochiDictionaryReadyEvent {
+  /** Configured routes that rendered successfully into the dictionary. */
+  routeCount: number;
+  /** Size of the raw dictionary in bytes. */
+  bytes: number;
+  /** Base64 SHA-256 of the dictionary, as clients echo it in `Available-Dictionary`. */
+  hashB64: string;
+  durationMs: number;
+}
+
 export type MochiErrorKind = 'page' | 'api' | 'action' | 'file';
 
 export interface MochiErrorEvent {
@@ -409,6 +419,7 @@ export type MochiEventMap = {
   'server:stop': MochiServerStopEvent;
   'warmup:start': MochiWarmupStartEvent;
   'warmup:complete': MochiWarmupCompleteEvent;
+  'dictionary:ready': MochiDictionaryReadyEvent;
   error: MochiErrorEvent;
   'action:invoke': MochiActionInvokeEvent;
   'action:complete': MochiActionCompleteEvent;
