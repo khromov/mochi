@@ -184,7 +184,7 @@ describe('preprocessHydratable', () => {
 
     expect(hydratables).toHaveLength(0);
     expect(transformed).toBe(source);
-    expect(errors).toEqual([{ component: 'Unknown', directive: 'mochi:hydrate', filePath: '/test/File.svelte', importSource: null }]);
+    expect(errors).toEqual([{ reason: 'unresolved', component: 'Unknown', directive: 'mochi:hydrate', filePath: '/test/File.svelte', importSource: null }]);
   });
 
   test('directive on a bare third-party package import errors with the specifier', () => {
@@ -192,7 +192,65 @@ describe('preprocessHydratable', () => {
     const { hydratables, errors } = preprocessHydratable(source, '/test/File.svelte');
 
     expect(hydratables).toHaveLength(0);
-    expect(errors).toEqual([{ component: 'Widget', directive: 'mochi:hydrate', filePath: '/test/File.svelte', importSource: 'some-ui-lib' }]);
+    expect(errors).toEqual([{ reason: 'unresolved', component: 'Widget', directive: 'mochi:hydrate', filePath: '/test/File.svelte', importSource: 'some-ui-lib' }]);
+  });
+
+  test('mochi:hydrate on a .server.svelte reports a server-only error', () => {
+    const source = `${SCRIPT("import Changelog from './Changelog.server.svelte';")}<Changelog mochi:hydrate />`;
+    const { transformed, hydratables, errors } = preprocessHydratable(source, '/test/File.svelte');
+
+    expect(hydratables).toHaveLength(0);
+    expect(transformed).toBe(source);
+    expect(errors).toEqual([
+      {
+        reason: 'server-only',
+        component: 'Changelog',
+        directive: 'mochi:hydrate',
+        filePath: '/test/File.svelte',
+        resolvedPath: path.resolve('/test', './Changelog.server.svelte'),
+      },
+    ]);
+  });
+
+  test('mochi:clientOnly on a .server.svelte reports a server-only error', () => {
+    const source = `${SCRIPT("import Changelog from './Changelog.server.svelte';")}<Changelog mochi:clientOnly />`;
+    const { hydratables, errors } = preprocessHydratable(source, '/test/File.svelte');
+
+    expect(hydratables).toHaveLength(0);
+    expect(errors).toEqual([
+      {
+        reason: 'server-only',
+        component: 'Changelog',
+        directive: 'mochi:clientOnly',
+        filePath: '/test/File.svelte',
+        resolvedPath: path.resolve('/test', './Changelog.server.svelte'),
+      },
+    ]);
+  });
+
+  test('mochi:defer alone on a .server.svelte stays legal', () => {
+    const source = `${SCRIPT("import Changelog from './Changelog.server.svelte';")}<Changelog mochi:defer />`;
+    const { transformed, serverIslands, errors } = preprocessHydratable(source, '/test/File.svelte');
+
+    expect(errors).toHaveLength(0);
+    expect(serverIslands).toHaveLength(1);
+    expect(transformed).toContain('<mochi-server-island');
+  });
+
+  test('combined mochi:defer + mochi:hydrate on a .server.svelte reports a server-only error', () => {
+    const source = `${SCRIPT("import Changelog from './Changelog.server.svelte';")}<Changelog mochi:defer mochi:hydrate />`;
+    const { serverIslands, errors } = preprocessHydratable(source, '/test/File.svelte');
+
+    expect(serverIslands).toHaveLength(0);
+    expect(errors).toEqual([
+      {
+        reason: 'server-only',
+        component: 'Changelog',
+        directive: 'mochi:hydrate',
+        filePath: '/test/File.svelte',
+        resolvedPath: path.resolve('/test', './Changelog.server.svelte'),
+      },
+    ]);
   });
 
   test('a mochi-framework/components named import resolves to its on-disk .svelte island', () => {
@@ -222,7 +280,9 @@ describe('preprocessHydratable', () => {
     const { hydratables, errors } = preprocessHydratable(source, '/test/File.svelte');
 
     expect(hydratables).toHaveLength(0);
-    expect(errors).toEqual([{ component: 'NotAComponent', directive: 'mochi:hydrate', filePath: '/test/File.svelte', importSource: 'mochi-framework/components' }]);
+    expect(errors).toEqual([
+      { reason: 'unresolved', component: 'NotAComponent', directive: 'mochi:hydrate', filePath: '/test/File.svelte', importSource: 'mochi-framework/components' },
+    ]);
   });
 
   test('directive on a relative non-svelte import errors with the specifier', () => {
@@ -230,7 +290,7 @@ describe('preprocessHydratable', () => {
     const { serverIslands, errors } = preprocessHydratable(source, '/test/File.svelte');
 
     expect(serverIslands).toHaveLength(0);
-    expect(errors).toEqual([{ component: 'Widget', directive: 'mochi:defer', filePath: '/test/File.svelte', importSource: './Widget.js' }]);
+    expect(errors).toEqual([{ reason: 'unresolved', component: 'Widget', directive: 'mochi:defer', filePath: '/test/File.svelte', importSource: './Widget.js' }]);
   });
 
   test('mochi:clientOnly shares the unresolved-island gate', () => {
@@ -238,7 +298,7 @@ describe('preprocessHydratable', () => {
     const { hydratables, errors } = preprocessHydratable(source, '/test/File.svelte');
 
     expect(hydratables).toHaveLength(0);
-    expect(errors[0]).toEqual({ component: 'Thing', directive: 'mochi:clientOnly', filePath: '/test/File.svelte', importSource: 'some-pkg' });
+    expect(errors[0]).toEqual({ reason: 'unresolved', component: 'Thing', directive: 'mochi:clientOnly', filePath: '/test/File.svelte', importSource: 'some-pkg' });
   });
 
   test('named import from a relative .svelte path is an island', () => {
