@@ -39,7 +39,8 @@ export interface ServerIslandComponent {
  * the dev error page can render it and the dev watcher can clear it on fix —
  * silently skipping would leave an inert component with no signal to the author.
  */
-export interface PreprocessIslandError {
+export interface UnresolvedIslandError {
+  reason: 'unresolved';
   /** Bare component name as written in the template. */
   component: string;
   /** The directive that required resolution, e.g. `mochi:hydrate:visible`. */
@@ -49,6 +50,18 @@ export interface PreprocessIslandError {
   /** Import specifier when one exists but is unsupported (bare package, namespace, non-svelte source); null when no import matched at all. */
   importSource: string | null;
 }
+
+/** A `mochi:hydrate*` / `mochi:clientOnly*` directive on a `*.server.svelte`, whose client stub can only throw. */
+export interface ServerOnlyIslandError {
+  reason: 'server-only';
+  component: string;
+  directive: string;
+  filePath: string;
+  /** Absolute path of the `.server.svelte` the directive resolved to. */
+  resolvedPath: string;
+}
+
+export type PreprocessIslandError = UnresolvedIslandError | ServerOnlyIslandError;
 
 export interface PreprocessResult {
   transformed: string;
@@ -161,6 +174,7 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
         // For dotted names (`<NS.Widget>`), the base identifier's import is the one worth naming in the compile error.
         const base = comp.name.split('.')[0]!;
         errors.push({
+          reason: 'unresolved',
           component: comp.name,
           directive: islandDirective.name,
           filePath,
@@ -171,6 +185,14 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
       }
 
       const resolved = path.resolve(path.dirname(filePath), entry.source);
+
+      // `mochi:defer` alone stays legal — a deferred `.server.svelte` never ships client code.
+      const clientDirective = directives.hydrate ?? directives.clientOnly;
+      if (clientDirective && resolved.endsWith('.server.svelte')) {
+        errors.push({ reason: 'server-only', component: comp.name, directive: clientDirective.name, filePath, resolvedPath: resolved });
+        next();
+        return;
+      }
       const exportName = entry.exportName;
       const dedupKey = `${resolved}\0${exportName}`;
 

@@ -94,7 +94,7 @@ Import it with the extension (`./Changelog.server.svelte`). The framework's own 
 
 <Callout type="warning">
 
-**Don't hydrate a `.server.svelte`.** The client stub throws on use, so a `mochi:hydrate*` directive on one fails at runtime. These components are for server-rendered output only.
+**Don't hydrate a `.server.svelte`.** A `mochi:hydrate*` or `mochi:clientOnly` directive on one is a compile error, and rendering one anywhere deeper inside a hydrated island's subtree logs a build warning — the client stub would throw at hydration. `mochi:defer` (without also-hydrate) stays fine: a deferred island renders on the server only.
 
 </Callout>
 

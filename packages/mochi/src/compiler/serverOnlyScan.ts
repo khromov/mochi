@@ -36,12 +36,16 @@ export function scanServerOnlyExports(source: string): ScanResult {
   return { named, hasDefault, warnings };
 }
 
-export function buildServerOnlyStubModule(originalPath: string, scan: ScanResult): string {
+export function buildServerOnlyStubModule(originalPath: string, scan: ScanResult, opts?: { component?: boolean }): string {
   const escapedPath = JSON.stringify(originalPath);
-  const makeStub = (name: string) => {
-    const errCall = `${JSON.stringify(name)} + ' from ' + ${escapedPath} + ' was called on the client; this is a server-only export.'`;
-    const errAccess = `${JSON.stringify(name)} + ' from ' + ${escapedPath} + ' is a server-only export; wrap usage in hydratable() or guard with isServer.'`;
+  const makeStub = (name: string, component = false) => {
+    const componentMsg = `${JSON.stringify(name)} + ' from ' + ${escapedPath} + ' is a server-only component (*.server.svelte) and cannot render on the client; render it outside the hydrated island, use mochi:defer, or drop the .server suffix.'`;
+    const errCall = component ? componentMsg : `${JSON.stringify(name)} + ' from ' + ${escapedPath} + ' was called on the client; this is a server-only export.'`;
+    const errAccess = component
+      ? componentMsg
+      : `${JSON.stringify(name)} + ' from ' + ${escapedPath} + ' is a server-only export; wrap usage in hydratable() or guard with isServer.'`;
     const safeName = IDENT_RE.test(name) && name !== 'default' ? name : '_serverOnly';
+    // PURE lets Bun tree-shake an unreferenced stub even though a bare `new Proxy` counts as a side effect.
     return `/*@__PURE__*/ new Proxy(function ${safeName}() {}, { get(_, p) { if (typeof p === 'symbol') return undefined; throw new Error(${errAccess}); }, apply() { throw new Error(${errCall}); }, construct() { throw new Error(${errCall}); } })`;
   };
 
@@ -50,7 +54,7 @@ export function buildServerOnlyStubModule(originalPath: string, scan: ScanResult
     lines.push(`export const ${name} = ${makeStub(name)};`);
   }
   if (scan.hasDefault) {
-    lines.push(`const __default = ${makeStub('default')};`);
+    lines.push(`const __default = ${makeStub('default', opts?.component === true)};`);
     lines.push(`export default __default;`);
   }
   if (lines.length === 0) {
