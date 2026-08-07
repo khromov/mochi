@@ -7,20 +7,12 @@
 import path from 'node:path';
 import type { BunPlugin } from 'bun';
 import { CLIENT_BUILD_DEFINE, serverOnlyModuleGuard } from './serverOnlyModuleGuard';
-import { renderMochiEnvClient } from './virtualModuleTemplate';
+import { registerEsmEnvStrip, registerMochiEnvClient, registerSvelteModuleLoader } from './clientBuildLoaders';
+import { mergeCompilerOptions } from './svelteConfig';
 import { formatBuildMessages } from './ComponentRegistry';
 import type { SvelteCompilerBackend } from './svelteCompilerBackend';
-import { toPosixPath } from '../utils';
 
 const SRC_DIR = path.resolve(import.meta.dir, '..');
-
-export const ESM_ENV_STRIP_FILTER = /node_modules\/svelte\/src\/.*\.js$/;
-
-// Bun can't propagate constants through esm-env's conditional exports, so stripping the imports turns DEV/BROWSER/NODE
-// into free variables that Bun's `define` replaces with literal booleans, letting `if (DEV)` blocks be eliminated.
-export function stripEsmEnvImports(source: string): string {
-  return source.replace(/import\s*\{[^}]*\}\s*from\s*['"]esm-env['"]\s*;?/g, '');
-}
 
 export interface DebugBarBundle {
   fileName: string;
@@ -29,38 +21,19 @@ export interface DebugBarBundle {
 
 export async function buildDebugBarBundle(opts: { development: boolean; backend: SvelteCompilerBackend }): Promise<DebugBarBundle> {
   const { development, backend } = opts;
-  const cookiesClientPath = toPosixPath(path.join(SRC_DIR, 'runtime/cookies.client.ts'));
-  const enhanceClientPath = toPosixPath(path.join(SRC_DIR, 'runtime/enhance.client.ts'));
 
   const debugBarPlugin: BunPlugin = {
     name: 'mochi-debug-bar',
     setup(build) {
-      build.onLoad({ filter: ESM_ENV_STRIP_FILTER }, async (args) => ({
-        contents: stripEsmEnvImports(await Bun.file(args.path).text()),
-        loader: 'js',
-      }));
+      registerEsmEnvStrip(build);
       // Svelte compiles production-mode here, but mochi-level env stays truthful: if the bar ever imports
       // `mochi-framework`'s `isDev`, it must still read `true` under a dev server.
-      build.onResolve({ filter: /^mochi-framework$/ }, () => ({
-        path: 'mochi-framework',
-        namespace: 'mochi-env',
-      }));
-      build.onLoad({ filter: /.*/, namespace: 'mochi-env' }, () => ({
-        contents: renderMochiEnvClient(development, cookiesClientPath, enhanceClientPath),
-        loader: 'js',
-      }));
-      build.onLoad({ filter: /\.svelte\.[jt]s$/ }, async (args) => {
-        let source = await Bun.file(args.path).text();
-        if (args.path.endsWith('.ts')) {
-          const transpiler = new Bun.Transpiler({ loader: 'ts' });
-          source = transpiler.transformSync(source);
-        }
-        const { js } = backend.compileModule(source, { generate: 'client', filename: args.path, dev: false });
-        return { contents: js.code, loader: 'js' };
-      });
+      registerMochiEnvClient(build, development);
+      // `mergeCompilerOptions` with no user options: framework defaults apply, user svelte config doesn't.
+      registerSvelteModuleLoader(build, backend, mergeCompilerOptions(undefined, { generate: 'client', dev: false }));
       build.onLoad({ filter: /\.svelte$/ }, async (args) => {
         const source = await Bun.file(args.path).text();
-        const { js } = backend.compile(source, { generate: 'client', filename: args.path, css: 'injected', dev: false });
+        const { js } = backend.compile(source, mergeCompilerOptions(undefined, { generate: 'client', filename: args.path, css: 'injected', dev: false }));
         return { contents: js.code, loader: 'js' };
       });
     },

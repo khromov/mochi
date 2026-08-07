@@ -20,8 +20,9 @@ import { applyFilter } from '../extensions';
 import { decodeSourcePath, encodeSourcePath } from './manifestPaths';
 import { buildServerOnlyStubModule, scanServerOnlyExports } from './serverOnlyScan';
 import { CLIENT_BUILD_DEFINE, serverOnlyModuleGuard } from './serverOnlyModuleGuard';
-import { renderMochiEnvServer, renderMochiEnvClient } from './virtualModuleTemplate';
-import { buildDebugBarBundle, stripEsmEnvImports, ESM_ENV_STRIP_FILTER, type DebugBarBundle } from './buildDebugBarBundle';
+import { renderMochiEnvServer } from './virtualModuleTemplate';
+import { buildDebugBarBundle, type DebugBarBundle } from './buildDebugBarBundle';
+import { registerEsmEnvStrip, registerMochiEnvClient, registerSvelteModuleLoader } from './clientBuildLoaders';
 import { createImageAssetLoader, IMAGE_FILE_FILTER } from './imageAssetLoader';
 import { EMAIL_TEMPLATE_DIR } from '../email/templates';
 import { registerLocalImageAsset } from '../image/localAssetRegistry';
@@ -1125,8 +1126,6 @@ export class ComponentRegistry {
       filesMap[entryPath] = entrySource;
     }
 
-    const cookiesClientPath = toPosixPath(path.join(srcDir, 'runtime/cookies.client.ts'));
-    const enhanceClientPath = toPosixPath(path.join(srcDir, 'runtime/enhance.client.ts'));
     const imageAssetLoader = createImageAssetLoader({
       outDir: this.outDir,
       assetPrefix: this.assetPrefix,
@@ -1170,40 +1169,15 @@ export class ComponentRegistry {
           }
           return { contents: buildServerOnlyStubModule(args.path, scan), loader: 'js' };
         });
-        build.onResolve({ filter: /^mochi-framework$/ }, () => ({
-          path: 'mochi-framework',
-          namespace: 'mochi-env',
-        }));
-        build.onLoad({ filter: /.*/, namespace: 'mochi-env' }, () => ({
-          contents: renderMochiEnvClient(development, cookiesClientPath, enhanceClientPath),
-          loader: 'js',
-        }));
+        registerMochiEnvClient(build, development);
         // Client builds never run the island preprocessor, so the injected
         // boundary import shouldn't appear in a client graph — this alias is
         // cheap insurance against a stray specifier failing the whole build.
         build.onResolve({ filter: /^mochi-framework\/hydratable-boundary$/ }, () => ({
           path: path.join(SRC_DIR, 'islands/HydratableBoundary.svelte'),
         }));
-        build.onLoad({ filter: ESM_ENV_STRIP_FILTER }, async (args) => ({
-          contents: stripEsmEnvImports(await Bun.file(args.path).text()),
-          loader: 'js',
-        }));
-        build.onLoad({ filter: /\.svelte\.[jt]s$/ }, async (args) => {
-          let source = await Bun.file(args.path).text();
-          if (args.path.endsWith('.ts')) {
-            const transpiler = new Bun.Transpiler({ loader: 'ts' });
-            source = transpiler.transformSync(source);
-          }
-          const { js } = backend.compileModule(
-            source,
-            mergeCompilerOptions(userCompilerOptions, {
-              generate: 'client',
-              filename: args.path,
-              dev: development,
-            }),
-          );
-          return { contents: js.code, loader: 'js' };
-        });
+        registerEsmEnvStrip(build);
+        registerSvelteModuleLoader(build, backend, mergeCompilerOptions(userCompilerOptions, { generate: 'client', dev: development }));
         build.onLoad({ filter: /\.svelte$/ }, async (args) => {
           const source = shakenSources.get(args.path) ?? (await Bun.file(args.path).text());
           const cached = compileCache.get('client', args.path, source, clientFingerprint, compileCacheStats);
