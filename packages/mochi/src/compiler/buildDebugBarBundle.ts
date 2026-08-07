@@ -9,7 +9,7 @@ import type { BunPlugin } from 'bun';
 import { CLIENT_BUILD_DEFINE, serverOnlyModuleGuard } from './serverOnlyModuleGuard';
 import { registerEsmEnvStrip, registerMochiEnvClient, registerSvelteModuleLoader } from './clientBuildLoaders';
 import { mergeCompilerOptions } from './svelteConfig';
-import { formatBuildMessages } from './ComponentRegistry';
+import { formatBuildMessages } from './formatBuildMessages';
 import type { SvelteCompilerBackend } from './svelteCompilerBackend';
 
 const SRC_DIR = path.resolve(import.meta.dir, '..');
@@ -59,6 +59,11 @@ export async function buildDebugBarBundle(opts: { development: boolean; backend:
   if (!result.success) {
     throw new Error(`Debug bar client build failed:\n${formatBuildMessages(result.logs)}`);
   }
-  const output = result.outputs[0]!;
-  return { fileName: path.basename(output.path), contents: await output.text() };
+  // No `.css`-strip or image-asset loader is registered here — a debug-bar component gaining such an import would add
+  // outputs, so pick the entry by kind rather than trusting index 0.
+  const entry = result.outputs.find((o) => o.kind === 'entry-point');
+  if (!entry) {
+    throw new Error('Debug bar client build produced no entry-point output');
+  }
+  return { fileName: path.basename(entry.path), contents: await entry.text() };
 }

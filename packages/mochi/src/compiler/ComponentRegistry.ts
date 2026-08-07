@@ -22,6 +22,7 @@ import { buildServerOnlyStubModule, scanServerOnlyExports } from './serverOnlySc
 import { CLIENT_BUILD_DEFINE, serverOnlyModuleGuard } from './serverOnlyModuleGuard';
 import { renderMochiEnvServer } from './virtualModuleTemplate';
 import { buildDebugBarBundle, type DebugBarBundle } from './buildDebugBarBundle';
+import { formatBuildMessages } from './formatBuildMessages';
 import { registerEsmEnvStrip, registerMochiEnvClient, registerSvelteModuleLoader } from './clientBuildLoaders';
 import { createImageAssetLoader, IMAGE_FILE_FILTER } from './imageAssetLoader';
 import { EMAIL_TEMPLATE_DIR } from '../email/templates';
@@ -83,45 +84,6 @@ const MANIFEST_VERSION = 2;
 const VARIATION_FORMAT_RE = /\bformat\((woff2-variations|woff-variations|truetype-variations|opentype-variations)\)/g;
 function restoreVariationsFormat(css: string): string {
   return css.replace(VARIATION_FORMAT_RE, "format('$1')");
-}
-
-/**
- * Format a `Bun.build()` failure's `logs` array as `file:line:column — message` per entry. Bun 1.2+ throws a generic
- * `AggregateError("Bundle failed")` with `stack === undefined`, losing the positions, so every call passes
- * `throw: false` to recover the structured logs for this helper.
- */
-export function formatBuildMessages(
-  logs: ReadonlyArray<{
-    message: string;
-    position?: { file: string; line: number; column: number } | null;
-  }>,
-): string {
-  if (logs.length === 0) {
-    return '  <no diagnostic messages>';
-  }
-  const formatted = logs
-    .map((l) => {
-      const p = l.position;
-      const where = p ? `${relForDisplay(p.file)}:${p.line}:${p.column}` : '<unknown>';
-      return `  ${where} — ${l.message}`;
-    })
-    .join('\n');
-
-  // A read failure on a file inside the isolated linker's node_modules/.bun
-  // symlink store is the signature of a known Bun bug (a second Bun.build in a
-  // `bun test` / --hot / --watch process fails reading deps the runtime loader
-  // already imported). Without this hint the error looks like a broken dep and
-  // costs hours; with it the fix is a two-line bunfig change.
-  if (/reading file/.test(formatted) && /node_modules[\\/]\.bun[\\/]/.test(formatted)) {
-    return (
-      `${formatted}\n` +
-      `  hint: this matches a known Bun bug — a second Bun.build() inside \`bun test\` (or --hot/--watch)\n` +
-      `  fails reading node_modules files resolved through the isolated linker's symlinked\n` +
-      `  node_modules/.bun store. Fix: add \`linker = "hoisted"\` under \`[install]\` in bunfig.toml,\n` +
-      `  delete node_modules, and reinstall. See https://github.com/khromov/bun-second-build-eisdir-repro`
-    );
-  }
-  return formatted;
 }
 
 const MARKDOWN_EXTENSIONS = ['.md', '.svx'];
@@ -1101,6 +1063,8 @@ export class ComponentRegistry {
     // sources don't change under a running user app, so watcher rebuilds skip it entirely.
     if (debugBarEnabled && !this.debugBarBundle) {
       this.debugBarBuildPromise ??= buildDebugBarBundle({ development, backend });
+      // If the main build below throws before the swap-time await, a rejection here would otherwise go unhandled.
+      this.debugBarBuildPromise.catch(() => {});
     }
 
     const srcDir = SRC_DIR;
@@ -1619,9 +1583,6 @@ export class ComponentRegistry {
         const reachable = ComponentRegistry.reachableOutputNames(entryRoots, outputByName);
         for (const output of this.clientStats.outputs) {
           const url = `${this.assetPrefix}/client/${output.name}`;
-          if (url === this.debugBarUrl) {
-            continue;
-          }
           if (url === this.islandBootstrapUrl) {
             if (!pageHasIslands) {
               continue;
