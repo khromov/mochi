@@ -58,6 +58,13 @@
         "typescript": "^6.0.3",
       },
     },
+    "packages/docker": {
+      "name": "mochi-docker",
+      "devDependencies": {
+        "@types/bun": "1.3.14",
+        "typescript": "^6.0.3",
+      },
+    },
     "packages/docs": {
       "name": "mochi-docs",
       "version": "0.2.0",
@@ -1179,6 +1186,8 @@
     "mitt": ["mitt@3.0.1", "", {}, "sha512-vKivATfr97l2/QBCYAkXYDbrIWPM2IIKEl7YPhjCvKlG3kE2gm+uBo6nEXK3M5/Ffh/FLpKExzOQ3JJoJGFKBw=="],
 
     "mochi-demos": ["mochi-demos@workspace:packages/demos"],
+
+    "mochi-docker": ["mochi-docker@workspace:packages/docker"],
 
     "mochi-docs": ["mochi-docs@workspace:packages/docs"],
 
