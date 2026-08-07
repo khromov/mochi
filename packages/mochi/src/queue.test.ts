@@ -66,8 +66,6 @@ describe('Mochi queue', () => {
       },
     });
 
-    // Attached before the add: the spy only records transitions that happen after it exists.
-    const spy = getBoss().getSpy(name);
     const jobId = await getQueue<{ to: string }>(name).add({ to: 'alice@example.com' });
     expect(jobId).toBeString();
 
@@ -78,7 +76,8 @@ describe('Mochi queue', () => {
     expect(job.id).toBe(jobId!);
     expect(job.enqueuedAt).toBeGreaterThan(Date.now() - 60_000);
 
-    await spy.waitForJobWithId(jobId!, 'completed');
+    // Fetched after the run on purpose: since bun-boss 0.2.1 the spy replays transitions recorded before getSpy().
+    await getBoss().getSpy(name).waitForJobWithId(jobId!, 'completed');
   });
 
   test('addBulk enqueues every job and returns their ids', async () => {
@@ -249,11 +248,10 @@ describe('Mochi queue', () => {
     const name = uniqueName();
     await startWith({ [name]: {} });
 
-    // The spy only records transitions for queues it was attached to before they happened.
-    const spy = getBoss().getSpy(name);
     const jobId = await getQueue(name).add({ held: true } as never);
     expect(jobId).toBeString();
-    const held = await spy.waitForJobWithId(jobId!, 'created');
+    // Fetched after the add: the spy replays the `created` transition recorded before it was fetched.
+    const held = await getBoss().getSpy(name).waitForJobWithId(jobId!, 'created');
     expect(held.state).toBe('created');
   });
 
