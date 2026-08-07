@@ -41,6 +41,7 @@ import { files as portableText } from '../demos/portable-text/files.ts';
 import { files as propDedup } from '../demos/prop-dedup/files.ts';
 import { files as propsId } from '../demos/props-id/files.ts';
 import { files as queue } from '../demos/queue/files.ts';
+import { files as queueAdvanced } from '../demos/queue-advanced/files.ts';
 import { files as rateLimit } from '../demos/rate-limit/files.ts';
 import { files as reloadFormData } from '../demos/reload-form-data/files.ts';
 import { files as requestCache } from '../demos/request-cache/files.ts';
@@ -297,6 +298,14 @@ export const demos: Demo[] = [
     files: queue,
     title: 'Background jobs with queues',
     hook: 'How background job queues work — offload work to a Mochi.queue() with an embedded worker, no Redis.',
+    category: 'endpoints',
+  },
+  {
+    href: '/demos/queue-advanced/',
+    slug: 'queue-advanced',
+    files: queueAdvanced,
+    title: 'Advanced queue patterns',
+    hook: 'How retries with backoff, dead-letter queues, redrive, throttle/debounce, and durable queue storage work — every internal transition streamed to a live log.',
     category: 'endpoints',
   },
   {

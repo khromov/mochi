@@ -14,6 +14,7 @@ import { handle as cookieVaryTestHandle } from './demos/cookie-vary-test/routes'
 import { handle as modeWatcherHandle } from './demos/mode-watcher/routes';
 import { handle as shotHandle } from './shot/routes';
 import { encodeDebugBarGlobals } from './lib/debugBarEncode';
+import { queueStorage, queueStorageLabel } from './demos/queue-advanced/queueAdvanced.server';
 import { routes, queues } from './routes';
 
 const DEVELOPMENT = process.env.MODE === 'development';
@@ -199,6 +200,8 @@ await Mochi.serve({
   },
   routes,
   queues,
+  // QUEUE_STORAGE=memory|sqlite|postgres — resolved by the advanced-queues demo module, shown on its page.
+  queueStorage,
 });
 
-logger.info('Server running at ' + origin);
+logger.info(`Server running at ${origin} — queue storage: ${queueStorageLabel}`);

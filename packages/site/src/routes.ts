@@ -62,6 +62,7 @@ import { routes as portableTextRoutes } from './demos/portable-text/routes';
 import { routes as propDedupRoutes } from './demos/prop-dedup/routes';
 import { routes as propsIdRoutes } from './demos/props-id/routes';
 import { routes as queueRoutes, queues as queueQueues } from './demos/queue/routes';
+import { routes as queueAdvancedRoutes, queues as queueAdvancedQueues } from './demos/queue-advanced/routes';
 import { routes as rateLimitRoutes } from './demos/rate-limit/routes';
 import { routes as reloadFormDataRoutes } from './demos/reload-form-data/routes';
 import { routes as requestCacheRoutes } from './demos/request-cache/routes';
@@ -345,6 +346,7 @@ export const routes: Record<string, MochiRouteValue> = {
   ...propDedupRoutes,
   ...propsIdRoutes,
   ...queueRoutes,
+  ...queueAdvancedRoutes,
   ...rateLimitRoutes,
   ...reloadFormDataRoutes,
   ...requestCacheRoutes,
@@ -367,4 +369,5 @@ export const routes: Record<string, MochiRouteValue> = {
 // Background job queues, mounted in Mochi.serve({ queues }) (see src/index.ts).
 export const queues: Record<string, MochiQueueConfig> = {
   ...queueQueues,
+  ...queueAdvancedQueues,
 };
