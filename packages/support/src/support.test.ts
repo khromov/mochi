@@ -84,6 +84,8 @@ describe('support form action', () => {
       },
       handle: adminAuth,
       queues: { [SUPPORT_EMAIL_QUEUE]: supportEmailQueue },
+      // Mirrors src/index.ts's durable storage; the file joins the temp dir the afterAll retry-loop already cleans up.
+      queueStorage: { sqlite: path.join(outDir, 'queue.sqlite') },
       routes,
     });
     base = `http://localhost:${server.port}`;

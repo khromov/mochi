@@ -123,8 +123,7 @@ export interface MochiFilterValue {
   'captcha:minAgeMs': number;
   'captcha:driftAllowanceMs': number;
   'captcha:solveBudgetMs': number;
-  'queue:recoveryStallWarningMs': number;
-  'queue:lockDurationMs': number;
+  'queue:expireInSeconds': number;
 }
 
 // Overrides the return type where it differs from the input. Most filters are symmetric, so this map is sparse and an
@@ -200,12 +199,10 @@ export interface MochiFilterContext {
     /** Resolved difficulty, filter included — the budget has to cover the work this implies. */
     bits: number;
   };
-  /** Resolved once per queue that declares a `recover` callback, as recovery starts. */
-  'queue:recoveryStallWarningMs': { queue: string };
-  /** Resolved once per queue, as it is created. */
-  'queue:lockDurationMs': {
+  /** Resolved once per queue, as it is mounted. */
+  'queue:expireInSeconds': {
     queue: string;
-    /** Whether this queue set `lockDuration` itself — through the option or the raw `bunqueue` passthrough — so the incoming value is its choice, not the framework default. */
+    /** Whether this queue set `expireInSeconds` itself, so the incoming value is its choice, not the framework default. */
     explicit: boolean;
   };
 }
@@ -236,8 +233,7 @@ export interface MochiFilterKindMap {
   'captcha:minAgeMs': 'sync';
   'captcha:driftAllowanceMs': 'sync';
   'captcha:solveBudgetMs': 'sync';
-  'queue:recoveryStallWarningMs': 'sync';
-  'queue:lockDurationMs': 'sync';
+  'queue:expireInSeconds': 'sync';
 }
 
 type FilterReturn<K extends keyof MochiFilterValue> = K extends keyof MochiFilterReturn ? MochiFilterReturn[K] : MochiFilterValue[K];
@@ -287,8 +283,7 @@ const FILTER_KINDS: { [K in keyof MochiFilterValue]: MochiKind } = {
   'captcha:minAgeMs': 'sync',
   'captcha:driftAllowanceMs': 'sync',
   'captcha:solveBudgetMs': 'sync',
-  'queue:recoveryStallWarningMs': 'sync',
-  'queue:lockDurationMs': 'sync',
+  'queue:expireInSeconds': 'sync',
 };
 
 // Pinned on globalThis so duplicate bundled copies of mochi-framework share one registry, the same reasoning as the

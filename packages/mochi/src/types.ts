@@ -7,7 +7,7 @@ import type { MochiProxyOptions } from './runtime/proxy';
 import type { LocalImageAsset, MochiImageOptions } from './image/types';
 import type { MochiEmailOptions } from './email/types';
 import type { MochiCaptchaOptions } from './captcha/types';
-import type { MochiProcessor, MochiQueue, MochiQueueListeners, MochiQueueRuntimeOptions } from './queue';
+import type { MochiProcessor, MochiQueueListeners, MochiQueueRuntimeOptions, MochiQueueStorage } from './queue';
 import type { MochiRateLimitOptions } from './runtime/rateLimit';
 import type { MochiSvelteCompiler } from './compiler/svelteCompilerBackend';
 
@@ -257,10 +257,9 @@ export function isMochiSse(value: unknown): value is MochiSseConfig {
  */
 export interface MochiQueueConfig {
   readonly __mochiQueue: true;
-  readonly process: MochiProcessor<unknown, unknown>;
+  readonly process?: MochiProcessor<unknown, unknown>;
   readonly options?: MochiQueueRuntimeOptions;
   readonly on?: Partial<MochiQueueListeners<unknown, unknown>>;
-  readonly recover?: (queue: MochiQueue<never>) => void | Promise<void>;
 }
 
 export function isMochiQueue(value: unknown): value is MochiQueueConfig {
@@ -434,6 +433,11 @@ export interface MochiServeOptions {
    * Add jobs from route code via `Mochi.getQueue(name).add(...)`. Queues drain gracefully on shutdown.
    */
   queues?: Record<string, MochiQueueConfig>;
+  /**
+   * Where queue jobs live: `'memory'` (default — lost on restart), `{ sqlite: 'path/to.db' }` for a durable
+   * single-process store, or `{ postgres: url }` for a shared multi-process store (installed into a `mochi_queue` schema).
+   */
+  queueStorage?: MochiQueueStorage;
   fetch?: (req: Request, server: Server<undefined>) => Response | Promise<Response>;
   htmlShell?: string;
   /**

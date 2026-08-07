@@ -1,7 +1,7 @@
 ---
 title: 'Queues'
 slug: queues
-description: 'Run background jobs in-process with Mochi.queue(), backed by bunqueue embedded mode.'
+description: 'Run background jobs with Mochi.queue(), backed by bun-boss on memory, SQLite, or Postgres storage.'
 ---
 
 <script>
@@ -11,7 +11,7 @@ description: 'Run background jobs in-process with Mochi.queue(), backed by bunqu
 
 ## Queues
 
-Offload work that should not block a response — sending email, encoding media, calling slow APIs — to a background **queue**. A queue bundles a job channel with the `process` function that consumes it. Both run in your process, backed by [bunqueue](https://bunqueue.dev/) in embedded mode.
+Offload work that should not block a response — sending email, encoding media, calling slow APIs — to a background **queue**. A queue bundles a job channel with the `process` function that consumes it. Both run in your process, backed by [bun-boss](https://github.com/khromov/bun-boss).
 
 `Mochi.queue()` returns an inert config. Mount it in `Mochi.serve({ queues })`, keyed by name, so every background queue the server runs is declared in one place. Add jobs from anywhere with `Mochi.getQueue(name).add(...)`.
 
@@ -33,7 +33,7 @@ await Mochi.serve({
 });
 
 // from a page action, an API route, anywhere:
-await Mochi.getQueue<{ to: string }>('emails').add('send', { to: 'alice@example.com' });
+await Mochi.getQueue<{ to: string }>('emails').add({ to: 'alice@example.com' });
 ```
 
 ### `Mochi.queue()`
@@ -42,26 +42,25 @@ await Mochi.getQueue<{ to: string }>('emails').add('send', { to: 'alice@example.
 const queueConfig = Mochi.queue<JobData, Result>({ process, ...options });
 ```
 
-The required `process` function receives a read-only `MochiJob<T>` and returns the job result:
+`process` receives a read-only `MochiJob<T>` and returns the job result. Omit it for a queue that only receives jobs — e.g. a [dead-letter](#dead-letter-queues) holding pen.
 
 | Field        | Type     | Notes                                   |
 | ------------ | -------- | --------------------------------------- |
 | `id`         | `string` | job id                                  |
-| `name`       | `string` | job name passed to `add()`              |
 | `data`       | `T`      | the enqueued payload                    |
 | `queue`      | `string` | queue name                              |
 | `attempt`    | `number` | 1-based attempt number (1 on first run) |
 | `enqueuedAt` | `number` | epoch ms when enqueued                  |
 
-Options: `concurrency`, `dataPath`, `lockDuration`, `recover`, and `on` for lifecycle listeners:
+Queue-level options are inherited by every job: `concurrency`, `pollingIntervalSeconds`, [retries](#retries) (`retryLimit`, `retryDelay`, `retryBackoff`, `retryDelayMax`), `expireInSeconds`, `retentionSeconds`, `deleteAfterSeconds`, `deadLetter`. Every duration is in **seconds**. `on` registers lifecycle listeners:
 
 ```ts
 Mochi.queue({
   concurrency: 10,
   process,
   on: {
-    completed: (job, result) => log.info(`${job.name} done`),
-    failed: (job, error) => log.warn(`${job.name} failed: ${error.message}`),
+    completed: (job, result) => log.info(`${job.id} done`),
+    failed: (job, error) => log.warn(`${job.id} failed: ${error.message}`),
   },
 });
 ```
@@ -72,130 +71,110 @@ Or subscribe on the [`mochiEvents` bus](#observability) (filter by `queue` name)
 
 `Mochi.getQueue<JobData>(name)` resolves a mounted queue's handle. Call `.add()` on it to add jobs. Pass the payload type explicitly. It throws if the name was never declared in `Mochi.serve({ queues })`, or if reached before `Mochi.serve()` mounted its queues.
 
-| Method                   | Returns                  | Notes                    |
-| ------------------------ | ------------------------ | ------------------------ |
-| `add(name, data, opts?)` | `Promise<MochiJobRef>`   | enqueue one job          |
-| `addBulk(jobs)`          | `Promise<MochiJobRef[]>` | enqueue many in one call |
+| Method                                     | Returns                   | Notes                                       |
+| ------------------------------------------ | ------------------------- | ------------------------------------------- |
+| `add(data, opts?)`                         | `Promise<string \| null>` | enqueue one job, resolves its id            |
+| `addBulk(jobs)`                            | `Promise<string[]>`       | enqueue many in one call                    |
+| `addThrottled(data, seconds, key?, opts?)` | `Promise<string \| null>` | at most one job per `seconds` slot per key  |
+| `addDebounced(data, seconds, key?, opts?)` | `Promise<string \| null>` | like throttled, but books the next slot too |
 
-`MochiJobRef` is `{ id, name }`. Per-job options: `priority`, `delay` (ms), `attempts`, `jobId`.
+Per-job options override their queue-level counterparts: `priority`, `startAfter` (seconds, or a `Date`), `id`, `retryLimit`, `retryDelay`, `retryBackoff`, `retryDelayMax`, `expireInSeconds`.
 
 ```ts
 const emails = Mochi.getQueue<{ to: string }>('emails');
-await emails.add('send', { to: 'bob@example.com' }, { priority: 10, delay: 5000 });
-await emails.addBulk([
-  { name: 'send', data: { to: 'a@x.com' } },
-  { name: 'send', data: { to: 'b@x.com' }, opts: { priority: 10 } },
-]);
+await emails.add({ to: 'bob@example.com' }, { priority: 10, startAfter: 5 });
+await emails.addBulk([{ data: { to: 'a@x.com' } }, { data: { to: 'b@x.com' }, opts: { priority: 10 } }]);
 ```
 
-### A shared queue module
+<Callout type="info">
 
-Export the queue config from a shared module so your entry can mount it, while route code adds jobs by name.
+**`add()` can resolve `null`.** Passing an explicit `id` makes the add idempotent — a second add with the same id resolves `null` instead of duplicating the job. Throttled and debounced adds resolve `null` when the slot is already taken. A plain `add()` always resolves an id.
+
+</Callout>
+
+### Storage
+
+One store serves every queue in the map, selected by the serve-level `queueStorage` option:
 
 ```ts
-// jobs.server.ts
-import { Mochi } from 'mochi-framework';
+await Mochi.serve({
+  queues: {/* … */},
+  queueStorage: 'memory', // the default
+  // queueStorage: { sqlite: '.db/queue.sqlite' },
+  // queueStorage: { postgres: process.env.DATABASE_URL },
+});
+```
 
-export const emailQueue = Mochi.queue<{ to: string }>({
-  process: async (job) => {
-    await sendEmail(job.data.to);
-    return { sent: true };
+| Storage             | Survives restarts | Scope                                            |
+| ------------------- | ----------------- | ------------------------------------------------ |
+| `'memory'`          | no                | single process                                   |
+| `{ sqlite: path }`  | yes               | single process, one durable file                 |
+| `{ postgres: url }` | yes               | shared — multiple processes can work one backlog |
+
+Postgres storage installs its tables into a dedicated `mochi_queue` schema on first start, away from your application's tables.
+
+<Callout type="warning">
+
+SQLite storage is **fresh-install only** for now: upgrading to a bun-boss release with a newer schema against an existing file throws at startup until SQLite migrations ship upstream. Delete the file (losing queued jobs) or drain it first.
+
+</Callout>
+
+### Retries
+
+Failed jobs retry **by default**: `retryLimit` is 2, so a job runs up to 3 times before it fails terminally. Set `retryLimit: 0` for exactly-once execution, and `retryDelay`/`retryBackoff` to space attempts out:
+
+```ts
+Mochi.queue({
+  process: deliverWebhook,
+  retryLimit: 5,
+  retryDelay: 5, // seconds; with retryBackoff it doubles per attempt, with jitter
+  retryBackoff: true,
+  retryDelayMax: 300,
+});
+```
+
+`job.attempt` in `process` is 1-based, so `job.attempt > retryLimit` is true exactly on the final attempt.
+
+### Dead-letter queues
+
+Point `deadLetter` at another queue in the same map and terminally failed jobs move there — same payload — instead of parking in the failed state:
+
+```ts
+await Mochi.serve({
+  queues: {
+    webhooks: Mochi.queue({ process: deliverWebhook, retryLimit: 3, deadLetter: 'webhooks-dlq' }),
+    // No `process`: jobs wait here for inspection. Give it one to handle failures automatically.
+    'webhooks-dlq': Mochi.queue({}),
   },
 });
 ```
 
-```ts
-// index.ts
-import { Mochi } from 'mochi-framework';
-import { routes } from './routes';
-import { emailQueue } from './jobs.server';
-
-await Mochi.serve({
-  routes,
-  queues: { emails: emailQueue },
-});
-```
-
-### Persistence
-
-The queue is **in-memory** by default, so jobs do not survive a restart. Pass `dataPath` to persist to SQLite:
-
-```ts
-Mochi.queue({ process, dataPath: '.mochi/queue.sqlite' });
-```
-
-<Callout type="warning">
-
-bunqueue locks the persisted store to the **first** `dataPath` used in the process. Use one `dataPath` across all your queues. Mochi logs a warning and ignores a conflicting path.
-
-</Callout>
+Drain or replay a dead-letter queue through the [escape hatch](#mochiboss): `Mochi.boss().redrive('webhooks-dlq')` moves its jobs back to their source queue.
 
 ### Long-running jobs
 
-A job holds a lock while it runs. If the job outlives the lock, the queue assumes the worker died and hands the job to another worker while the original still runs. The default lock is **30 minutes**, which is also the longest a job may run. Lower it with `lockDuration` (ms) to reclaim a stuck job sooner:
+A job may stay active for `expireInSeconds` (default **900**) before the store assumes the worker died and retries or fails it. Raise it above the **worst-case** runtime of `process`, not the typical one — a job that outlives it is handed out again while the original still runs, firing its side effects twice:
 
 ```ts
-Mochi.queue({ process: resizeImage, lockDuration: 60_000 });
+Mochi.queue({ process: transcodeVideo, expireInSeconds: 3600 });
 ```
 
-<Callout type="warning">
+A deployment can override every queue at once with the [`queue:expireInSeconds`](/docs/extensions/) filter.
 
-`lockDuration` must exceed the **worst-case** runtime of `process`, not the typical one. A job that overruns is re-queued mid-flight. Its eventual success is rejected as `Invalid or expired lock token` and reported as a failure, even though the work succeeded. The queue then either retries the job, which fires its side effects a second time, or abandons it where it stands.
+### `Mochi.boss()`
 
-</Callout>
-
-<Callout type="danger">
-
-**30 minutes is a ceiling, not just a default.** The queue drops any job that runs longer, whatever `lockDuration` says. Work that can run longer belongs outside the queue, or split into jobs that each finish well inside the limit.
-
-</Callout>
-
-Lowering `lockDuration` does not make a crashed worker's jobs recover faster. Heartbeat-based stall detection handles that, independently of the lock.
-
-### Recovery on start
-
-An in-memory queue loses its jobs on restart. Even a persisted one cannot know about work your own database recorded before the job was accepted. `recover` runs once at startup, after every queue mounts, with this queue's handle. Use it to add back whatever your store still considers unfinished:
+Everything Mochi does not wrap — fetching and cancelling jobs, `findJobs`, `redrive`, queue stats — is reachable on the shared [bun-boss](https://github.com/khromov/bun-boss) instance:
 
 ```ts
-Mochi.queue<{ id: number }>({
-  process: sendEmail,
-  recover: async (queue) => {
-    // Rows your app marked unsent are the source of truth, not the queue.
-    await queue.addBulk(pendingEmailIds().map((id) => ({ name: 'send', data: { id } })));
-  },
-});
+const stats = await Mochi.boss().getQueueStats('emails');
+await Mochi.boss().cancel('emails', jobId);
 ```
 
-Recovery is awaited before `Mochi.serve()` resolves. A throw is contained: Mochi logs it, emits `queue:error`, and the server keeps running. Mochi logs a warning if a `recover` callback is still running after 30 seconds.
+It is available from the [`mochi:queuesMounted`](/docs/extensions/#mochiqueuesmounted) hook onwards and throws before that, or when no queues are declared.
 
 <Callout type="info">
 
-**Queues mount late.** They are created after the `mochi:init` hook and after the server binds, so `Mochi.getQueue()` throws if you call it from `mochi:init`. Add jobs from the [`mochi:queuesMounted`](/docs/extensions/#mochiqueuesmounted) hook onwards: a queue's own `recover`, the `mochi:ready` hook, or any request handler.
-
-</Callout>
-
-### Advanced options
-
-Mochi surfaces a small, stable set of first-class options. For bunqueue features Mochi does not surface — retry backoff, rate limiting, cron/repeat, dead-letter queue, deduplication — pass a `bunqueue` object forwarded verbatim to the underlying queue and worker:
-
-```ts
-const apiCalls = Mochi.queue({
-  process,
-  defaultJobOptions: { attempts: 5 },
-  bunqueue: { limiter: { max: 100, duration: 1000 } },
-});
-
-await Mochi.getQueue('api-calls').add('call', data, {
-  attempts: 5,
-  bunqueue: { backoff: { type: 'jitter', delay: 1000 } },
-});
-```
-
-See the [bunqueue docs](https://bunqueue.dev/guide/simple-mode/) for the full option set.
-
-<Callout type="info">
-
-`bunqueue` is applied last, so anything it repeats wins over the first-class option next to it. Prefer the first-class option where one exists. The exception is `lockDuration`, which the [`queue:lockDurationMs`](/docs/extensions/) filter always has the final say on.
+**Queues mount late.** They are created after the `mochi:init` hook and after the server binds, so `Mochi.getQueue()` and `Mochi.boss()` throw if called from `mochi:init`. Add jobs from the `mochi:queuesMounted` hook onwards: the `mochi:ready` hook, or any request handler.
 
 </Callout>
 
@@ -206,14 +185,16 @@ Queues emit [events](/docs/events/) on `mochiEvents`: `queue:added`, `queue:acti
 ```ts
 import { mochiEvents } from 'mochi-framework';
 
-mochiEvents.on('queue:completed', ({ queue, jobName, duration }) => {
-  metrics.timing('queue.job', duration, { queue, job: jobName });
+mochiEvents.on('queue:completed', ({ queue, jobId, duration }) => {
+  metrics.timing('queue.job', duration, { queue });
 });
 ```
 
+`queue:completed` and `queue:failed` fire per attempt, as the processor settles — an immediate `Mochi.boss().findJobs()` from a listener may still see the job `active` for a beat.
+
 ### Dev mode & hot reload
 
-`Mochi.serve({ queues })` instantiates a queue once, so the dev route hot-reload watcher cannot spawn a duplicate consumer. The trade-off: **changes to a queue's `process` function or options do not hot-reload**. Restart the dev server to apply them.
+`Mochi.serve({ queues })` starts the queue runtime once, so the dev route hot-reload watcher cannot spawn a duplicate consumer. The trade-off: **changes to a queue's `process` function or options do not hot-reload**. Restart the dev server to apply them.
 
 ### Shutdown
 
@@ -224,6 +205,7 @@ Queues close gracefully on `SIGTERM`/`SIGINT`. In-flight jobs drain before the p
 import { Mochi } from 'mochi-framework';
 
 await Mochi.serve({
+  queueStorage: { postgres: process.env.DATABASE_URL },
   queues: {
     emails: Mochi.queue({
       process: async (job) => {
@@ -236,13 +218,9 @@ await Mochi.serve({
 
 <Callout type="info">
 
-**Embedded mode only.** The code that adds jobs and the worker that runs them share one process. bunqueue also supports a TCP server mode for distributed workers, but Mochi does not expose that yet.
+**Dispatch is instant in-process, polled across processes.** An `add()` from the serving process wakes its worker immediately. Other processes sharing Postgres storage — and deferred or retried jobs everywhere — are picked up on the worker's poll, every `pollingIntervalSeconds` (default 2, minimum 0.5).
 
 </Callout>
-
-### Dependencies
-
-New `create-mochi` projects ship a `package.json` `overrides` entry that keeps bunqueue's install free of platform-specific native binaries. To use the native bindings instead, delete that `overrides` entry.
 
 <SeeItInAction
 demos={[{ href: "/demos/queue/", title: "Background jobs with queues", hook: "How background job queues work — offload work to a Mochi.queue() with an embedded worker, no Redis." }]}

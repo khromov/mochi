@@ -37,13 +37,13 @@ throw new Error('serve should have halted execution before this line');`,
     expect(options?.optimize).toEqual({ enabled: true, exclude: ['x.svelte'] });
   });
 
-  test('captures the queues map without starting a queue thread', async () => {
+  test('captures the queues map without starting the queue runtime', async () => {
     // Mochi.queue() is inert config, so importing the entry for extraction must
-    // not spawn a live bunqueue thread (which would hang the build). The test
-    // simply completing proves nothing kept the event loop alive.
+    // not start a BunBoss instance (whose maintenance timers would hang the
+    // build). The test simply completing proves nothing kept the event loop alive.
     const entry = writeEntry(
       `import { Mochi } from 'mochi-framework';
-await Mochi.serve({ routes: {}, queues: { emails: Mochi.queue({ process: async () => ({ sent: true }), concurrency: 2 }) } });
+await Mochi.serve({ routes: {}, queueStorage: 'memory', queues: { emails: Mochi.queue({ process: async () => ({ sent: true }), concurrency: 2 }) } });
 throw new Error('serve should have halted execution before this line');`,
     );
 
@@ -52,6 +52,7 @@ throw new Error('serve should have halted execution before this line');`,
     expect(options?.queues).toBeDefined();
     expect(options?.queues?.emails?.__mochiQueue).toBe(true);
     expect(options?.queues?.emails?.options).toEqual({ concurrency: 2 });
+    expect(options?.queueStorage).toBe('memory');
   });
 
   test('returns null when the entry never calls serve()', async () => {

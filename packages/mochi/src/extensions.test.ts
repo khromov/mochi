@@ -282,47 +282,28 @@ describe('new extension points', () => {
     expect(applyFilter('captcha:solveBudgetMs', 60_000, { options: {}, bits: 19 })).toBe(60_000);
   });
 
-  test('queue:recoveryStallWarningMs returns the default unchanged when no filter registered', () => {
-    expect(applyFilter('queue:recoveryStallWarningMs', 30_000, { queue: 'emails' })).toBe(30_000);
+  test('queue:expireInSeconds returns the default unchanged when no filter registered', () => {
+    expect(applyFilter('queue:expireInSeconds', 900, { queue: 'emails', explicit: false })).toBe(900);
   });
 
-  test('queue:recoveryStallWarningMs can raise the threshold for one queue only', () => {
+  test('queue:expireInSeconds can raise the expiry for one queue only', () => {
     initExtensions({
       filters: {
-        'queue:recoveryStallWarningMs': (def, { queue }) => (queue === 'slow-store' ? 120_000 : def),
+        'queue:expireInSeconds': (def, { queue }) => (queue === 'transcode' ? 3_600 : def),
       },
     });
-    expect(applyFilter('queue:recoveryStallWarningMs', 30_000, { queue: 'slow-store' })).toBe(120_000);
-    expect(applyFilter('queue:recoveryStallWarningMs', 30_000, { queue: 'emails' })).toBe(30_000);
+    expect(applyFilter('queue:expireInSeconds', 900, { queue: 'transcode', explicit: false })).toBe(3_600);
+    expect(applyFilter('queue:expireInSeconds', 900, { queue: 'emails', explicit: false })).toBe(900);
   });
 
-  test('queue:recoveryStallWarningMs passes 0 through, which silences the warning', () => {
-    initExtensions({ filters: { 'queue:recoveryStallWarningMs': () => 0 } });
-    expect(applyFilter('queue:recoveryStallWarningMs', 30_000, { queue: 'emails' })).toBe(0);
-  });
-
-  test('queue:lockDurationMs returns the default unchanged when no filter registered', () => {
-    expect(applyFilter('queue:lockDurationMs', 1_800_000, { queue: 'emails', explicit: false })).toBe(1_800_000);
-  });
-
-  test('queue:lockDurationMs can raise the lock for one queue only', () => {
+  test('queue:expireInSeconds can leave queues that chose their own value alone', () => {
     initExtensions({
       filters: {
-        'queue:lockDurationMs': (def, { queue }) => (queue === 'transcode' ? 3_600_000 : def),
+        'queue:expireInSeconds': (value, { explicit }) => (explicit ? value : 60),
       },
     });
-    expect(applyFilter('queue:lockDurationMs', 1_800_000, { queue: 'transcode', explicit: false })).toBe(3_600_000);
-    expect(applyFilter('queue:lockDurationMs', 1_800_000, { queue: 'emails', explicit: false })).toBe(1_800_000);
-  });
-
-  test('queue:lockDurationMs can leave queues that chose their own value alone', () => {
-    initExtensions({
-      filters: {
-        'queue:lockDurationMs': (value, { explicit }) => (explicit ? value : 60_000),
-      },
-    });
-    expect(applyFilter('queue:lockDurationMs', 50, { queue: 'transcode', explicit: true })).toBe(50);
-    expect(applyFilter('queue:lockDurationMs', 1_800_000, { queue: 'emails', explicit: false })).toBe(60_000);
+    expect(applyFilter('queue:expireInSeconds', 50, { queue: 'transcode', explicit: true })).toBe(50);
+    expect(applyFilter('queue:expireInSeconds', 900, { queue: 'emails', explicit: false })).toBe(60);
   });
 
   test('compile:preprocessors returns the user-supplied list', () => {
@@ -457,7 +438,7 @@ describe('new extension points', () => {
         label: 'QUEUE',
         kind: undefined,
         status: undefined,
-        source: { name: 'queue:added', payload: { queue: 'emails', jobId: 'j1', jobName: 'send' } },
+        source: { name: 'queue:added', payload: { queue: 'emails', jobId: 'j1' } },
       }),
     );
     expect(remapped).toBe('debug');

@@ -239,36 +239,36 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
   // at `info` they'd vanish, leaving `completed` visible only when a job trips the slow-escalation. Per-attempt `active`
   // repeats on every retry and adds nothing, so it stays on `logger.debug`. The `consoleLogger:level` filter demotes any
   // of it for apps that find the lifecycle chatty.
-  subscribe('queue:added', ({ queue, jobName, jobId }) => ({
+  subscribe('queue:added', ({ queue, jobId }) => ({
     label: 'QUEUE',
-    path: `${queue}/${jobName}`,
+    path: queue,
     note: styleText('dim', `+ ${jobId}`),
     level: 'warn',
   }));
-  subscribe('queue:active', ({ queue, jobName }) => ({
+  subscribe('queue:active', ({ queue }) => ({
     label: 'QUEUE',
-    path: `${queue}/${jobName}`,
+    path: queue,
     note: styleText('cyan', 'active'),
     level: 'debug',
   }));
-  subscribe('queue:completed', ({ queue, jobName, duration }) => ({
+  subscribe('queue:completed', ({ queue, duration }) => ({
     label: 'QUEUE',
-    path: `${queue}/${jobName}`,
+    path: queue,
     note: styleText('green', 'done'),
     duration,
     slow,
     verySlow,
     level: 'warn',
   }));
-  subscribe('queue:failed', ({ queue, jobName, attempt, error }) => ({
+  subscribe('queue:failed', ({ queue, attempt, error }) => ({
     label: 'QUEUE',
-    path: `${queue}/${jobName}`,
+    path: queue,
     note: `${styleText('red', `failed (attempt ${attempt})`)} ${styleText('dim', error)}`,
     level: 'warn',
   }));
   subscribe('queue:error', ({ queue, error }) => ({
     label: 'QUEUE',
-    path: queue,
+    path: queue ?? 'queue',
     note: `${styleText('red', 'queue error')} ${styleText('dim', error)}`,
     level: 'warn',
   }));
