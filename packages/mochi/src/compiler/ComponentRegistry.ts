@@ -12,6 +12,7 @@ import { mochiEvents } from '../events';
 import { detectHeavyBarrels, formatBarrelLine, formatBarrelSummary, type BarrelMetafile, type HeavyBarrel } from './barrelDetect';
 import type { MarkdownConfig, MochiBarrelWarningOptions, MochiManifest, MochiSvelteShakerOptions } from '../types';
 import { type HydratableComponent, type PreprocessIslandError, type ServerIslandComponent } from './svelteAstPreprocess';
+import { FRAMEWORK_COMPONENTS_SPECIFIER, rewriteFrameworkComponentImports } from './frameworkComponents';
 import { cachedPreprocessHydratable, createPreprocessCacheStats } from './preprocessCache';
 import { CompileCache, compileFingerprint, createCompileCacheStats, type CompileCacheStats } from './compileCache';
 import { mergeCompilerOptions, type MochiSvelteConfig } from './svelteConfig';
@@ -156,6 +157,9 @@ function createMarkdownLoader(opts: {
       opts.hydration.allServerIslands.push(...serverIslands);
       opts.hydration.filePreprocessErrors.set(args.path, preprocessErrors);
       svelteSource = preprocessed.transformed;
+    }
+    if (opts.target === 'client') {
+      svelteSource = rewriteFrameworkComponentImports(svelteSource, args.path);
     }
     const { js, css } = opts.backend.compile(
       svelteSource,
@@ -1140,6 +1144,14 @@ export class ComponentRegistry {
         build.onResolve({ filter: /^mochi-framework\/hydratable-boundary$/ }, () => ({
           path: path.join(SRC_DIR, 'islands/HydratableBoundary.svelte'),
         }));
+        // Static `.svelte`/`.md` imports of the barrel are split into per-component imports before compile, so anything
+        // reaching this resolver arrived through a shape the rewrite can't see — fail loudly instead of silently
+        // bundling every barrel component (including SSR-only ones) into client chunks.
+        build.onResolve({ filter: /^mochi-framework\/components$/ }, (args) => {
+          throw new Error(
+            `[mochi] "${FRAMEWORK_COMPONENTS_SPECIFIER}" reached the client bundle from ${relForDisplay(args.importer)} through a path the framework can't split (a dynamic import, a re-export, or a .ts/.js module). Import the component's file directly.`,
+          );
+        });
         registerEsmEnvStrip(build);
         registerSvelteModuleLoader(build, backend, mergeCompilerOptions(userCompilerOptions, { generate: 'client', dev: development }));
         build.onLoad({ filter: /\.svelte$/ }, async (args) => {
@@ -1149,8 +1161,9 @@ export class ComponentRegistry {
             return { contents: cached.js, loader: 'js' };
           }
           const preprocessed = await applyUserPreprocessors(source, args.path, 'client', development);
+          const rewritten = rewriteFrameworkComponentImports(preprocessed, args.path);
           const { js } = backend.compile(
-            preprocessed,
+            rewritten,
             mergeCompilerOptions(userCompilerOptions, {
               generate: 'client',
               filename: args.path,

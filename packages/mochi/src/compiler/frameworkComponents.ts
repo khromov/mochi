@@ -1,6 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { parse } from 'svelte/compiler';
+import MagicString from 'magic-string';
+import { relForDisplay, toPosixPath } from '../utils';
 
 /**
  * Resolves the framework's own public components (`mochi-framework/components`) to the on-disk `.svelte` files they
@@ -68,4 +70,62 @@ function parseBarrel(): Map<string, FrameworkComponent> {
 export function resolveFrameworkComponent(exportName: string): FrameworkComponent | null {
   cache ??= parseBarrel();
   return cache.get(exportName) ?? null;
+}
+
+/** Svelte's AST nodes all have start/end, but estree types don't declare them. */
+interface Positioned {
+  start: number;
+  end: number;
+}
+
+/**
+ * Replaces `mochi-framework/components` imports with direct imports of the underlying component files, so a client
+ * bundle only carries the components actually imported — the barrel co-locates SSR-only components (`ViewTransitions`,
+ * `RawScript`) with hydratable ones (`MochiCaptcha`), and without this split the unused ones ride into client chunks
+ * as dead code (nothing declares `sideEffects`, so the bundler keeps every re-export live). Client build only; the
+ * barrel is correct server-side. Throws on shapes it can't split (namespace/default imports, re-exports, unknown
+ * names) — the client build surfaces the message as a build error rather than silently re-bloating.
+ */
+export function rewriteFrameworkComponentImports(source: string, filePath: string): string {
+  if (!source.includes(FRAMEWORK_COMPONENTS_SPECIFIER)) {
+    return source;
+  }
+  const ast = parse(source, { modern: true });
+  const s = new MagicString(source);
+  let changed = false;
+  for (const script of [ast.instance, ast.module]) {
+    for (const node of script?.content.body ?? []) {
+      if ((node.type === 'ExportNamedDeclaration' || node.type === 'ExportAllDeclaration') && node.source?.value === FRAMEWORK_COMPONENTS_SPECIFIER) {
+        throw new Error(
+          `[mochi] ${relForDisplay(filePath)}: re-exporting from "${FRAMEWORK_COMPONENTS_SPECIFIER}" can't be split for the client bundle — import the components and re-export them individually.`,
+        );
+      }
+      if (node.type !== 'ImportDeclaration' || node.source.value !== FRAMEWORK_COMPONENTS_SPECIFIER) {
+        continue;
+      }
+      const lines: string[] = [];
+      for (const spec of node.specifiers ?? []) {
+        if (spec.type !== 'ImportSpecifier') {
+          throw new Error(
+            `[mochi] ${relForDisplay(filePath)}: only named imports of "${FRAMEWORK_COMPONENTS_SPECIFIER}" can be split for the client bundle — rewrite this ${spec.type === 'ImportNamespaceSpecifier' ? 'namespace' : 'default'} import as named imports.`,
+          );
+        }
+        const name = specifierName(spec.imported);
+        const framework = resolveFrameworkComponent(name);
+        if (!framework) {
+          throw new Error(`[mochi] ${relForDisplay(filePath)}: "${name}" is not a component exported by "${FRAMEWORK_COMPONENTS_SPECIFIER}".`);
+        }
+        const target = toPosixPath(framework.resolvedPath);
+        lines.push(
+          framework.exportName === 'default'
+            ? `import ${spec.local.name} from "${target}";`
+            : `import { ${JSON.stringify(framework.exportName)} as ${spec.local.name} } from "${target}";`,
+        );
+      }
+      const pos = node as unknown as Positioned;
+      s.overwrite(pos.start, pos.end, lines.join('\n'));
+      changed = true;
+    }
+  }
+  return changed ? s.toString() : source;
 }
