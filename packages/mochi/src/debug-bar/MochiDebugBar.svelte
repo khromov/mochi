@@ -160,14 +160,20 @@
 </script>
 
 <div class="mochi-debug-bar-root" bind:this={rootEl}>
-  <WarningsPanel open={activePanel === 'warnings'} onclose={() => (activePanel = null)} />
-  <IslandsPanel open={activePanel === 'islands'} onclose={() => (activePanel = null)} />
-  <ImagesPanel open={activePanel === 'images'} onclose={() => (activePanel = null)} />
-  <BundlesPanel open={activePanel === 'bundles'} onclose={() => (activePanel = null)} />
-  <RequestPanel open={activePanel === 'request'} onclose={() => (activePanel = null)} />
-  <InfoPanel open={activePanel === 'info'} onclose={() => (activePanel = null)} />
-  <CachePanel open={activePanel === 'cache'} onclose={() => (activePanel = null)} />
-  <SettingsPanel open={activePanel === 'settings'} onclose={() => (activePanel = null)} {hiddenPanels} ontoggle={togglePanelVisibility} />
+  <!-- A panel renders from uncontrolled runtime state (live DOM scans, request headers, cache keys); a fault there — a
+       keyed-each duplicate from that state, say — must degrade the non-essential debug UI, never throw an uncaught error
+       onto the host page. The toolbar below stays outside so it keeps working when a panel fails. -->
+  <svelte:boundary>
+    <WarningsPanel open={activePanel === 'warnings'} onclose={() => (activePanel = null)} />
+    <IslandsPanel open={activePanel === 'islands'} onclose={() => (activePanel = null)} />
+    <ImagesPanel open={activePanel === 'images'} onclose={() => (activePanel = null)} />
+    <BundlesPanel open={activePanel === 'bundles'} onclose={() => (activePanel = null)} />
+    <RequestPanel open={activePanel === 'request'} onclose={() => (activePanel = null)} />
+    <InfoPanel open={activePanel === 'info'} onclose={() => (activePanel = null)} />
+    <CachePanel open={activePanel === 'cache'} onclose={() => (activePanel = null)} />
+    <SettingsPanel open={activePanel === 'settings'} onclose={() => (activePanel = null)} {hiddenPanels} ontoggle={togglePanelVisibility} />
+    {#snippet failed()}{/snippet}
+  </svelte:boundary>
 
   <div class="bar" class:is-collapsed={collapsed}>
     <button
