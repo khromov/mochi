@@ -270,6 +270,66 @@ describe('Mochi queue', () => {
     expect(added).toHaveLength(1);
   });
 
+  test('addBulk skips jobs whose explicit id already exists and resolves only the inserted ids', async () => {
+    const name = uniqueName();
+    const added: Array<{ queue: string; jobId: string }> = [];
+    mochiEvents.on('queue:added', (e) => added.push(e));
+
+    await startWith({ [name]: {} });
+    const queue = getQueue<{ n: number }>(name);
+
+    const taken = await queue.add({ n: 1 }, { id: crypto.randomUUID() });
+    const fresh = crypto.randomUUID();
+    const ids = await queue.addBulk([
+      { data: { n: 2 }, opts: { id: taken! } },
+      { data: { n: 3 }, opts: { id: fresh } },
+    ]);
+    expect(ids).toEqual([fresh]);
+    // One from the original add, one for the single job addBulk actually inserted — none for the skipped duplicate.
+    expect(added).toEqual([
+      { queue: name, jobId: taken! },
+      { queue: name, jobId: fresh },
+    ]);
+  });
+
+  test('startAfter defers a job past immediate pickup', async () => {
+    const name = uniqueName();
+    const processed: string[] = [];
+    const firstRun = deferred<void>();
+
+    await startWith({
+      [name]: {
+        process: async (job: MochiJob<never>) => {
+          processed.push(job.id);
+          firstRun.resolve();
+        },
+        options: { pollingIntervalSeconds: 0.5 },
+      },
+    });
+    const queue = getQueue<{ n: number }>(name);
+
+    const heldId = await queue.add({ n: 1 }, { startAfter: 120 });
+    const immediateId = await queue.add({ n: 2 });
+
+    await firstRun.promise;
+    // Two more polls pass; the deferred job must still be waiting, not merely losing a race to the immediate one.
+    await Bun.sleep(1200);
+    expect(processed).toEqual([immediateId!]);
+    const held = await getBoss().getJobById(name, heldId!);
+    expect(held?.state).toBe('created');
+  }, 15_000);
+
+  test('a throwing queue:added subscriber does not reject the add', async () => {
+    const name = uniqueName();
+    mochiEvents.on('queue:added', () => {
+      throw new Error('subscriber boom');
+    });
+
+    await startWith({ [name]: {} });
+    const jobId = await getQueue(name).add({ n: 1 } as never);
+    expect(jobId).toBeString();
+  });
+
   test('addThrottled suppresses adds within the slot; addDebounced books the next slot first', async () => {
     const name = uniqueName();
     await startWith({ [name]: {} });

@@ -207,8 +207,8 @@ export async function startQueueRuntime(storage: MochiQueueStorage, testOptions?
   registry.boss = boss;
 }
 
-// A throwing listener or bus subscriber must not decide a job's fate — only `process` may, or a successful job would
-// be recorded as failed and retried, double-firing its side effects.
+// A throwing listener or bus subscriber must not decide a job's fate — only `process` may — nor reject an add()
+// whose job is already persisted, which a caller could mistake for "not enqueued" and retry into a duplicate.
 function notifySafely(queue: string, fn: () => void): void {
   try {
     fn();
@@ -259,7 +259,7 @@ function buildProducer<T>(name: string): MochiQueue<T> {
   };
   const emitAdded = (jobId: string | null) => {
     if (jobId !== null) {
-      mochiEvents.emit('queue:added', { queue: name, jobId });
+      notifySafely(name, () => mochiEvents.emit('queue:added', { queue: name, jobId }));
       notify();
     }
   };
@@ -278,7 +278,7 @@ function buildProducer<T>(name: string): MochiQueue<T> {
           { returnId: true },
         )) ?? [];
       for (const jobId of ids) {
-        mochiEvents.emit('queue:added', { queue: name, jobId });
+        notifySafely(name, () => mochiEvents.emit('queue:added', { queue: name, jobId }));
       }
       if (ids.length > 0) {
         notify();
