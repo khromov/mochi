@@ -14,7 +14,7 @@ Pass `transformPage` to `resolve(event, { transformPage })` inside a `Handle` to
 
 ```ts
 // file: src/hooks.ts
-import type { Handle } from 'mochi-framework/hooks';
+import type { Handle } from 'mochi-framework';
 
 const greeting: Handle = async ({ event, resolve }) => {
   return resolve(event, {

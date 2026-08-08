@@ -6,6 +6,7 @@ description: 'Observe or transform framework behavior at lifecycle moments with 
 
 <script>
   import Callout from './_components/Callout.svelte';
+  import VersionNote from './_components/VersionNote.svelte';
 </script>
 
 ## Extensions (hooks & filters)
@@ -185,6 +186,8 @@ await Mochi.serve({
 ```
 
 #### `serverIsland:inlineBudget`
+
+<VersionNote since="0.10.0" message="Nested mochi:defer inlining (and the serverIsland:inlineBudget filter with DEFAULT_INLINE_BUDGET) ships in the next Mochi release (0.10.0). This section describes the upcoming API." />
 
 How many nested `mochi:defer` call sites one island fetch expands in-process before the rest fall back to fetch placeholders (see `Server islands`). The budget counts total expansions per fetch — a recursive chain and a long `{#each}` list draw from the same pool. Resolved per island fetch, with the fetched island's identity key and the request in context. Never fires when `inlineNestedIslands` is off, or when the fetched island also hydrates. Sync.
 

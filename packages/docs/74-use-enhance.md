@@ -91,7 +91,7 @@ Pass a function. It runs once per submit and may return a result handler that re
   };
 </script>
 
-<form method="POST" {@attach enhance(handleLogin)}>
+<form method="POST" action="?/login" {@attach enhance(handleLogin)}>
   <!-- inputs -->
   <button type="submit" disabled={pending}>{pending ? 'Signing in…' : 'Log in'}</button>
 </form>
@@ -145,7 +145,7 @@ await Mochi.serve({
   routes: {
     '/login': Mochi.page('./src/Login.svelte', {
       actions: {
-        default: ({ formData }) => {
+        login: ({ formData }) => {
           const username = String(formData.get('username') ?? '');
           if (!username) return fail(400, { error: 'Username required' });
           return success({ username });

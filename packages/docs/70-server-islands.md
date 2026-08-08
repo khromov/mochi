@@ -44,7 +44,7 @@ A server island is a normal Svelte component with full access to the request con
 
 ### How it renders
 
-The page ships with the fallback in place of the island, plus an encrypted token carrying the island's props. The browser then fetches the rendered HTML from a per-island endpoint under `assetPrefix` (default `/_mochi/island/...`), and Mochi swaps it in over the fallback. A failed fetch retries with exponential backoff (default 5 retries, 1s–10s). Pass `mochi:defer={{ retries: 10 }}` to override.
+The page ships with the fallback in place of the island, plus an encrypted token carrying the island's props. The browser then fetches the rendered HTML from a per-island endpoint under `assetPrefix` (default `/_mochi/island/...`), and Mochi swaps it in over the fallback. A failed fetch retries with exponential backoff (default 9 retries, 1s–5s). Pass `mochi:defer={{ retries: 10 }}` to override.
 
 <Callout type="info">
 
