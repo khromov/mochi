@@ -97,7 +97,7 @@ function stripAnsi(s: string): string {
 }
 
 async function probeCliVersion(): Promise<string> {
-  const r = await runCmd(['bunx', '--bun', 'create-mochi@latest', '--version'], REPO_ROOT);
+  const r = await runCmd(['bun', 'info', 'create-mochi', 'version'], REPO_ROOT);
   if (r.exitCode !== 0) {
     return 'unknown';
   }
@@ -139,12 +139,20 @@ function majorOf(version: string): string {
 /** Boots the built app in production mode, polls a route until it renders, and asserts the marker. */
 async function smokeTest(scaffoldDir: string): Promise<RunResult> {
   const start = performance.now();
-  const proc = Bun.spawn(['bun', 'run', 'start'], {
+  // Spawn the server entry directly, not `bun run start` — the wrapper forks
+  // `bun src/index.ts` and proc.kill() would only reach the wrapper, orphaning
+  // the real server holding the port.
+  const proc = Bun.spawn(['bun', 'src/index.ts'], {
     cwd: scaffoldDir,
     stdout: 'pipe',
     stderr: 'pipe',
     env: { ...process.env, PORT: String(SMOKE_PORT), MODE: 'production' },
   });
+
+  // Drain the pipes concurrently so a chatty server can't fill the OS buffer,
+  // block on write mid-response, and stall the poll; both resolve after kill.
+  const stdoutP = new Response(proc.stdout).text();
+  const stderrP = new Response(proc.stderr).text();
 
   const url = `http://localhost:${SMOKE_PORT}/`;
   const deadline = performance.now() + SMOKE_TIMEOUT_MS;
@@ -159,7 +167,7 @@ async function smokeTest(scaffoldDir: string): Promise<RunResult> {
         break;
       }
       try {
-        const res = await fetch(url);
+        const res = await fetch(url, { signal: AbortSignal.timeout(5_000) });
         status = res.status;
         body = await res.text();
         if (status === 200) {
@@ -177,7 +185,7 @@ async function smokeTest(scaffoldDir: string): Promise<RunResult> {
   }
 
   const ok = status === 200 && body.includes(SMOKE_MARKER);
-  const serverLog = `${await new Response(proc.stdout).text()}\n${await new Response(proc.stderr).text()}`;
+  const serverLog = `${await stdoutP}\n${await stderrP}`;
   const summary = ok
     ? `smoke OK — GET ${url} → 200, body contains ${JSON.stringify(SMOKE_MARKER)}`
     : `smoke FAILED — GET ${url} → status=${status}, marker=${body.includes(SMOKE_MARKER)}, lastError=${lastErr}\n\n--- server log ---\n${tail(serverLog)}`;
@@ -335,4 +343,7 @@ async function main() {
   process.exit(overall === 'pass' ? 0 : 1);
 }
 
-main();
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
