@@ -1,7 +1,7 @@
 ---
 title: 'Environment constants'
 slug: environment-constants
-description: 'Build-time constants for branching on render target (isServer, isBrowser) and dev mode (isDev).'
+description: 'Build-time constants for branching on render target (isServer, isBrowser), dev mode (isDev), and the build itself (isBuilding).'
 ---
 
 <script>
@@ -61,6 +61,21 @@ export function trace(msg: string) {
   if (isDev) console.log('[trace]', msg);
 }
 ```
+
+### `isBuilding`
+
+`true` only while `mochi-framework build` runs your `index.ts`, `false` when serving (dev or prod). `mochi-framework build` executes your entry to capture its `Mochi.serve()` options, so top-level side effects in `index.ts` run at build time too. Gate the ones you don't want then — connecting a database, spawning workers, running migrations:
+
+```ts
+// file: src/index.ts
+import { Mochi, isBuilding } from 'mochi-framework';
+
+if (!isBuilding) await db.connect();
+
+await Mochi.serve({ routes });
+```
+
+Unlike the other constants it is a real runtime value, not a baked literal. Inside `.svelte` components it is always `false` — components are compiled but never executed during a build.
 
 ## Detecting hydration with `isHydratable()`
 

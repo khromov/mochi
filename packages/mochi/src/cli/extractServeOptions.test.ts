@@ -15,6 +15,7 @@ describe('extractServeOptions', () => {
       rmSync(dir, { recursive: true, force: true });
       dir = undefined;
     }
+    delete (globalThis as Record<string, unknown>).__test_isBuilding;
   });
 
   function writeEntry(body: string): string {
@@ -53,6 +54,19 @@ throw new Error('serve should have halted execution before this line');`,
     expect(options?.queues?.emails?.__mochiQueue).toBe(true);
     expect(options?.queues?.emails?.options).toEqual({ concurrency: 2 });
     expect(options?.queueStorage).toBe('memory');
+  });
+
+  test('marks isBuilding true while executing the entry', async () => {
+    const entry = writeEntry(
+      `import { Mochi, isBuilding } from 'mochi-framework';
+globalThis.__test_isBuilding = isBuilding;
+await Mochi.serve({ routes: {} });
+throw new Error('serve should have halted execution before this line');`,
+    );
+
+    await extractServeOptions(entry);
+
+    expect((globalThis as Record<string, unknown>).__test_isBuilding).toBe(true);
   });
 
   test('returns null when the entry never calls serve()', async () => {

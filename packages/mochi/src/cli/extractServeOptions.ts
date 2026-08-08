@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { freshImport } from '../compiler/freshImport';
+import { markBuilding } from '../utils/buildFlag';
 import type { MochiServeOptions } from '../types';
 
 // Thrown by the capturing serve() stub to unwind the entry module's top-level
@@ -24,6 +25,11 @@ let captured: Partial<MochiServeOptions> | null = null;
  * Returns the captured options, or `null` if the entry never called `serve()`.
  */
 export async function extractServeOptions(entryPath: string, opts?: { fresh?: boolean }): Promise<Partial<MochiServeOptions> | null> {
+  // Flip `isBuilding` before importing the framework: the plugin below snapshots
+  // realMod's namespace into its `object`-loader exports, so the flag must
+  // already be true when that spread runs for the entry to observe it.
+  markBuilding();
+
   // The real framework entry, by absolute path — NOT the bare specifier, so the
   // plugin below does not intercept this import (no recursion). This file lives
   // in `src/cli/`, so climb one level to reach it.
