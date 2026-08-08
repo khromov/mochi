@@ -117,7 +117,7 @@ bun run format
 bun run lint
 ```
 
-If you wired `consoleLogger.ts`, smoke-test the log line: `PORT=4444 bun run dev:site`, trigger the action, confirm the line renders with the chosen label, then stop the server.
+If you wired `consoleLogger.ts`, smoke-test the log line: `bun run dev:site` (port 3333), trigger the action, confirm the line renders with the chosen label, then stop the server.
 
 ## Guardrails
 

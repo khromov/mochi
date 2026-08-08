@@ -7,9 +7,12 @@ description: 'Run background jobs with Mochi.queue(), backed by bun-boss on memo
 <script>
   import Callout from './_components/Callout.svelte';
   import SeeItInAction from './_components/SeeItInAction.svelte';
+  import VersionNote from './_components/VersionNote.svelte';
 </script>
 
 ## Queues
+
+<VersionNote since="0.10.0" message="Mochi.queue API will be refactored in the next Mochi release (0.10.0), this page represents the new upcoming API." />
 
 Offload work that should not block a response — sending email, encoding media, calling slow APIs — to a background **queue**. A queue bundles a job channel with the `process` function that consumes it. Both run in your process, backed by [bun-boss](https://github.com/khromov/bun-boss).
 
@@ -114,12 +117,6 @@ await Mochi.serve({
 Postgres storage installs its tables into a dedicated `mochi_queue` schema on first start, away from your application's tables. The schema name is fixed, so every app sharing one database shares one queue namespace — give each app its own database to keep their queues apart.
 
 On durable storage, queue options re-sync from your code on every boot — but only **additively**: an option you remove from `Mochi.queue()` keeps its previously stored value. Set the old value back explicitly (e.g. `retryLimit: 2`) rather than deleting the line; a removed `deadLetter` can only be repointed, not cleared.
-
-<Callout type="warning">
-
-SQLite storage is **fresh-install only** for now: upgrading to a bun-boss release with a newer schema against an existing file throws at startup until SQLite migrations ship upstream. Delete the file (losing queued jobs) or drain it first.
-
-</Callout>
 
 ### Retries
 

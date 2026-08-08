@@ -42,7 +42,7 @@ Render both through `CodeSnippet` (`import CodeSnippet from '../../components/Co
 
 ## Verify
 
-- Start one site on a free port: `PORT=4444 bun run dev:site`. `curl` the page (trailing slash) for a 200 + the intro's install line/link.
-- **Drive a real browser** (chrome-devtools MCP) against `/demos/<slug>/` — curl only exercises SSR. Confirm every island hydrates with **zero console errors/warnings** (this is the load-bearing check for a first-time island dependency), any backing `fetch` succeeds, and interactions work. Screenshot for a visual check.
+- Start the site: `bun run dev:site` (port 3333). `curl` the page (trailing slash) for a 200 + the intro's install line/link.
+- **Drive a real browser** (chrome-devtools MCP) against `http://localhost:3333/demos/<slug>/` — curl only exercises SSR. Confirm every island hydrates with **zero console errors/warnings** (this is the load-bearing check for a first-time island dependency), any backing `fetch` succeeds, and interactions work. Screenshot for a visual check.
 - Tear down with `pkill -f dev:site` (verify `pgrep -x bun`).
 - Delegate `bun run checks` + `bun run format` to a sub-agent (keep the output out of the main context). **Never commit** unless asked.
