@@ -27,8 +27,29 @@ const proc = spawn({
   stdin: 'ignore',
 });
 
+let shuttingDown = false;
+let composeRunning = true;
 for (const sig of ['SIGINT', 'SIGTERM'] as const) {
-  process.on(sig, () => proc.kill(sig));
+  process.on(sig, () => {
+    // While compose runs, forward the signal and let its exit drive ours; once
+    // we're idling after a failure, nothing else will exit us, so do it here.
+    if (composeRunning) {
+      shuttingDown = true;
+      proc.kill(sig);
+    } else {
+      process.exit(0);
+    }
+  });
 }
 
-process.exit(await proc.exited);
+const code = await proc.exited;
+composeRunning = false;
+if (shuttingDown) {
+  process.exit(code);
+}
+
+// Compose exited on its own (failed start, crashed container, daemon died) rather
+// than from our shutdown signal: idle instead of exiting so the root dev.ts's
+// first-exit-wins teardown can't take the other dev servers down with it.
+console.warn(`docker compose exited (code ${code}) — idling so the other dev servers keep running.`);
+await new Promise(() => {});
