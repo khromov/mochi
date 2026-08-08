@@ -71,8 +71,6 @@ const sentStmt = db.query<never, [number, number]>("UPDATE submissions SET email
 const failedStmt = db.query<never, [string, number]>("UPDATE submissions SET email_status = 'failed', email_error = ? WHERE id = ?");
 const attemptErrorStmt = db.query<never, [string, number]>('UPDATE submissions SET email_error = ? WHERE id = ?');
 const handledStmt = db.query<never, [number | null, number]>('UPDATE submissions SET handled_at = ? WHERE id = ?');
-const undeliveredStmt = db.query<{ id: number }, []>("SELECT id FROM submissions WHERE email_status != 'sent' ORDER BY created_at");
-const requeuedStmt = db.query<never, [number]>("UPDATE submissions SET email_status = 'pending' WHERE id = ?");
 const logInsertStmt = db.query<never, [number, number, number, string, string | null]>('INSERT INTO email_log (submission_id, at, attempt, event, detail) VALUES (?, ?, ?, ?, ?)');
 const logAllStmt = db.query<EmailLogEntry, []>('SELECT * FROM email_log ORDER BY at, id');
 
@@ -96,12 +94,12 @@ export function markEmailSent(id: number): void {
   sentStmt.run(Date.now(), id);
 }
 
-// Terminal: bunqueue has exhausted its attempts and won't retry on its own.
+// Terminal: the queue has exhausted its retries and won't run the job again.
 export function markEmailFailed(id: number, error: string): void {
   failedStmt.run(error.slice(0, 1000), id);
 }
 
-// Leaves status `pending` — marking `failed` here would misreport an in-flight delivery and, after a restart mid-backoff, land the row where `recover` skips it.
+// Leaves status `pending` — marking `failed` here would misreport an in-flight delivery, since the queue's durable store still owns a retry.
 export function noteEmailAttemptError(id: number, error: string): void {
   attemptErrorStmt.run(error.slice(0, 1000), id);
 }
@@ -126,14 +124,4 @@ export function emailLogsBySubmission(): Record<number, EmailLogEntry[]> {
 // Only the test suite needs this: Windows keeps the db file locked until the handle closes, blocking temp-dir cleanup.
 export function closeDb(): void {
   db.close();
-}
-
-// Includes `failed` rows on purpose: jobs live only in memory so a restart strands them, and re-trying an undeliverable row on boot beats silently dropping it.
-export function undeliveredSubmissionIds(): number[] {
-  return undeliveredStmt.all().map((row) => row.id);
-}
-
-// Clears a `failed` row back to `pending` as `recover` puts it back on the queue.
-export function markEmailRequeued(id: number): void {
-  requeuedStmt.run(id);
 }

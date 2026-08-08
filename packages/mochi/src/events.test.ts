@@ -46,12 +46,11 @@ describe('mochiEvents', () => {
       received = e;
     };
     mochiEvents.on('queue:completed', handler);
-    mochiEvents.emit('queue:completed', { queue: 'emails', jobId: 'j1', jobName: 'send', attempt: 1, duration: 12 });
+    mochiEvents.emit('queue:completed', { queue: 'emails', jobId: 'j1', attempt: 1, duration: 12 });
     mochiEvents.off('queue:completed', handler);
     expect(received).toEqual({
       queue: 'emails',
       jobId: 'j1',
-      jobName: 'send',
       attempt: 1,
       duration: 12,
     });

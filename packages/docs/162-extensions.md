@@ -48,13 +48,7 @@ Fires right after `Bun.serve()` returns the bound server, before queues mount an
 
 #### `mochi:queuesMounted`
 
-Fires once every queue is live, before each queue's `recover` callback. `ctx.queues` lists the mounted names. Earliest point at which [`Mochi.getQueue()`](/docs/queues/#mochigetqueue) resolves. Async.
-
-<Callout type="info">
-
-For re-enqueuing one queue's unfinished work, prefer that queue's own [`recover`](/docs/queues/#recovery-on-start) callback. Reach for `mochi:queuesMounted` when the work spans queues.
-
-</Callout>
+Fires once every queue is live. `ctx.queues` lists the mounted names. Earliest point at which [`Mochi.getQueue()`](/docs/queues/#mochigetqueue) and [`Mochi.boss()`](/docs/queues/#mochiboss) resolve. Async.
 
 #### `mochi:ready`
 
@@ -383,21 +377,17 @@ Slack added to `maxAgeMs` before a token is refused as expired, to absorb clock 
 
 How long the widget spends actively solving before it offers a retry. Resolved once and handed to the widget through `mintCaptcha()`. Must be positive and finite. Sync. Default `60_000`. A form can override it with the `solveBudgetMs` prop.
 
-#### `queue:recoveryStallWarningMs`
+#### `queue:expireInSeconds`
 
-How long a queue's [`recover`](/docs/queues/#recovery-on-start) callback may run before Mochi logs a warning naming it. Resolved once per queue that declares one. Sync. Default `30_000`. Return `0` to silence the warning.
-
-#### `queue:lockDurationMs`
-
-How long a job may run before its queue reclaims it. Resolved once per queue, after the per-queue [`lockDuration`](/docs/queues/#long-running-jobs) option. `explicit` says whether the value came from that option. Sync. Default and ceiling `1_800_000` (30 minutes).
+How many seconds a job may stay active before the store retries or fails it. Resolved once per queue at mount, after the per-queue [`expireInSeconds`](/docs/queues/#long-running-jobs) option. `explicit` says whether the value came from that option. Sync. Default `900` (15 minutes).
 
 ```ts
 await Mochi.serve({
   filters: {
-    'queue:lockDurationMs': (value, { explicit }) => (explicit ? value : 5 * 60_000),
+    'queue:expireInSeconds': (value, { explicit }) => (explicit ? value : 300),
   },
   routes,
 });
 ```
 
-The returned value must exceed the worst-case runtime of `process`. This filter is the last word on the lock, even over a `lockDuration` passed through the raw `bunqueue` escape hatch.
+The returned value must exceed the worst-case runtime of `process` — a job that outlives it is handed out again while the original still runs.

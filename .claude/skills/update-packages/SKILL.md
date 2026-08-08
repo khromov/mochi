@@ -116,13 +116,13 @@ Green tests are necessary but nowhere near sufficient. Work down this list; the 
 
    A build that succeeds is not a build that is correct. Optimizations in this repo are guarded by fallbacks that log and continue, so a broken dependency shows up as a _bigger bundle and a log line_, never as a failure. If a count moved, explain why before proceeding.
 
-4. **Browser smoke test** — `curl` only exercises SSR HTML and will not catch hydration breakage (the duplicate-copy failure in step 4 is invisible to a 200-status check on some routes). Start a server on a non-colliding port and drive it with the `chrome-devtools` MCP:
+4. **Browser smoke test** — `curl` only exercises SSR HTML and will not catch hydration breakage (the duplicate-copy failure in step 4 is invisible to a 200-status check on some routes). Start a server and drive it with the `chrome-devtools` MCP:
 
    ```sh
-   PORT=4444 bun run dev:site
+   bun run dev:site
    ```
 
-   Load `/`, a docs page (`/docs/queues/` — `/docs/` itself is not a route), and at least two island-heavy demos. On each: `list_console_messages` for hydration mismatches and uncaught errors, `list_network_requests` for failed `/_mochi/island/*` or asset fetches. Request routes with a trailing slash. Tear down with `pkill -f dev:site` and confirm via `pgrep -x bun`.
+   Load `http://localhost:3333/`, a docs page (`/docs/queues/` — `/docs/` itself is not a route), and at least two island-heavy demos. On each: `list_console_messages` for hydration mismatches and uncaught errors, `list_network_requests` for failed `/_mochi/island/*` or asset fetches. Request routes with a trailing slash. Tear down with `pkill -f dev:site` and confirm via `pgrep -x bun`.
 
 5. **`bun run cli-test`** if template packages (`minimal`, `demos`) moved versions.
 

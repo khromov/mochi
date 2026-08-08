@@ -1,38 +1,25 @@
 import { Mochi, logger } from 'mochi-framework';
 import type { MochiQueueConfig } from 'mochi-framework';
-import { appendEmailLog, getSubmission, markEmailFailed, markEmailRequeued, markEmailSent, noteEmailAttemptError, undeliveredSubmissionIds } from './db.server';
+import { appendEmailLog, getSubmission, markEmailFailed, markEmailSent, noteEmailAttemptError } from './db.server';
 
 export const SUPPORT_TO = process.env.SUPPORT_TO || 'support@mochi.fast';
 
 export const SUPPORT_EMAIL_QUEUE = 'support-emails';
 
-// Shared by defaultJobOptions and the processor, which needs to know whether the
-// attempt it is failing is the last one bunqueue will make.
+// Shared by retryLimit and the processor, which needs to know whether the attempt it is failing is the last one.
 const MAX_ATTEMPTS = 3;
 
 export interface SupportEmailJob {
   id: number;
 }
 
-// In-memory: jobs don't survive a restart, so `recover` puts every undelivered row (the source of truth, since it's committed to SQLite) back on the queue at boot.
-// TODO: this assumes a single instance — scaling out would double-send until mochi's queue.ts gets single-flight support.
+// Jobs live in the durable queue store (`queueStorage: { sqlite }` in index.ts), so an email queued before a crash or
+// restart is retried from there — the submissions table only tracks delivery status for the admin panel.
 export const supportEmailQueue: MochiQueueConfig = Mochi.queue<SupportEmailJob>({
   concurrency: 2,
-  defaultJobOptions: { attempts: MAX_ATTEMPTS },
-  bunqueue: { backoff: { type: 'exponential', delay: 5000 } },
-  recover: async (queue) => {
-    const stranded = undeliveredSubmissionIds();
-    if (stranded.length === 0) {
-      return;
-    }
-    // Status and log first: once addBulk resolves the worker may already be
-    // processing, and a row it marks `sent` must not then be reset to `pending`.
-    for (const id of stranded) {
-      markEmailRequeued(id);
-      appendEmailLog(id, { attempt: 0, event: 'requeued', detail: 'Re-queued on server start' });
-    }
-    await queue.addBulk(stranded.map((id) => ({ name: 'send', data: { id } })));
-  },
+  retryLimit: MAX_ATTEMPTS - 1,
+  retryDelay: 5,
+  retryBackoff: true,
   process: async (job) => {
     const submission = getSubmission(job.data.id);
     if (!submission) {
@@ -52,7 +39,7 @@ export const supportEmailQueue: MochiQueueConfig = Mochi.queue<SupportEmailJob>(
         text: [`From: ${name || '(no name)'} <${email}>`, '', message].join('\n'),
       });
     } catch (err) {
-      // Recorded before rethrowing so the admin panel shows why while bunqueue retries — only the last attempt is terminal, so a restart mid-backoff leaves the row for `recover` instead of stranding it as `failed`.
+      // Recorded before rethrowing so the admin panel shows why while the queue retries — only the last attempt marks the row `failed`; a restart mid-backoff keeps the retry in the durable queue store.
       const reason = err instanceof Error ? err.message : String(err);
       if (job.attempt >= MAX_ATTEMPTS) {
         markEmailFailed(submission.id, reason);

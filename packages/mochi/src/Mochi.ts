@@ -59,9 +59,10 @@ import { resolveWarmupEnabled, markWarmupRequest, isWarmablePattern } from './ru
 import { createErrorResponder, DEFAULT_ERROR_PAGE_PATH } from './runtime/errors';
 import { requestContext } from './runtime/requestContext';
 import type { MochiRequestContext } from './runtime/requestContext';
-import { createQueue, getQueue, closeAllQueueResources, runQueueRecovery } from './queue';
+import { startQueueRuntime, mountQueues, getQueue, getBoss, closeAllQueueResources } from './queue';
 import { resetStartupMilestones } from './lifecycle';
 import type { MochiQueue, MochiQueueOptions, MochiQueueListeners, MochiProcessor } from './queue';
+import type { BunBoss } from 'bun-boss';
 import { finalizeCookieHeaders } from './runtime/cookies';
 import { makeRequestContextBuilder } from './runtime/requestSetup';
 import { createRouteLimiter, applyRateLimitHeaders } from './runtime/rateLimit';
@@ -198,14 +199,12 @@ export class Mochi {
    * anywhere via `Mochi.getQueue(name).add(...)`, and the queue drains gracefully on shutdown.
    */
   static queue<T = unknown, R = unknown>(config: MochiQueueOptions<T, R>): MochiQueueConfig {
-    // Whatever survives the destructure is forwarded verbatim to bunqueue.
-    const { process, on, recover, ...options } = config;
+    const { process, on, ...options } = config;
     return {
       __mochiQueue: true,
-      process: process as MochiProcessor<unknown, unknown>,
+      process: process as MochiProcessor<unknown, unknown> | undefined,
       options,
       on: on as Partial<MochiQueueListeners<unknown, unknown>> | undefined,
-      recover: recover as ((queue: MochiQueue<never>) => void | Promise<void>) | undefined,
     };
   }
 
@@ -215,6 +214,15 @@ export class Mochi {
    */
   static getQueue<T = unknown>(name: string): MochiQueue<T> {
     return getQueue<T>(name);
+  }
+
+  /**
+   * The shared bun-boss instance behind `Mochi.serve({ queues })` — the escape hatch for everything Mochi doesn't wrap:
+   * `fetch`, `cancel`, `retry`, `redrive`, `findJobs`, `getQueueStats`, …. Available from the `mochi:queuesMounted` hook
+   * onwards; throws before that, or when no queues are declared.
+   */
+  static boss(): BunBoss {
+    return getBoss();
   }
 
   /**
@@ -302,6 +310,42 @@ export class Mochi {
           throw new Error(`Mochi.serve({ bun }): "${key}" is owned by the framework and cannot be overridden. Use the top-level Mochi.serve() option instead.`);
         }
       }
+    }
+
+    // Same fail-fast rule for the queue declarations: a bad name, deadLetter, or storage shape rejects here.
+    const declaredQueues = Object.entries(options.queues ?? {});
+    for (const [name, config] of declaredQueues) {
+      if (!isMochiQueue(config)) {
+        throw new Error(`Mochi.serve({ queues }): "${name}" is not a Mochi.queue(...) descriptor. Each value must be created with Mochi.queue().`);
+      }
+      if (!/^[\w.\-/]+$/.test(name)) {
+        throw new Error(`Mochi.serve({ queues }): "${name}" is not a valid queue name. Names may only contain letters, digits, underscores, dots, dashes, and slashes.`);
+      }
+      const deadLetter = config.options?.deadLetter;
+      if (deadLetter !== undefined) {
+        if (deadLetter === name) {
+          throw new Error(`Mochi.serve({ queues }): "${name}" names itself as its deadLetter queue.`);
+        }
+        if (!(options.queues && deadLetter in options.queues)) {
+          throw new Error(`Mochi.serve({ queues }): "${name}" names "${deadLetter}" as its deadLetter queue, but no queue with that name is declared in the same queues map.`);
+        }
+      }
+    }
+    const queueStorage = options.queueStorage ?? 'memory';
+    if (
+      queueStorage !== 'memory' &&
+      !(
+        typeof queueStorage === 'object' &&
+        queueStorage !== null &&
+        'sqlite' in queueStorage !== 'postgres' in queueStorage &&
+        (('sqlite' in queueStorage && typeof queueStorage.sqlite === 'string' && queueStorage.sqlite.length > 0) ||
+          ('postgres' in queueStorage && typeof queueStorage.postgres === 'string' && queueStorage.postgres.length > 0))
+      )
+    ) {
+      throw new Error(`Mochi.serve({ queueStorage }): expected 'memory', { sqlite: 'path/to.db' }, or { postgres: url }.`);
+    }
+    if (options.queueStorage !== undefined && declaredQueues.length === 0) {
+      logger.warn(`Mochi.serve({ queueStorage }) has no effect without a non-empty queues map — the queue runtime only starts when queues are declared.`);
     }
 
     const { svelteVersion } = await checkEnvironment();
@@ -1688,13 +1732,6 @@ export class Mochi {
           }
         : userWebSocketOptions;
 
-    // Validating before binding makes a misconfiguration fail fast, leaving no half-started server listening.
-    for (const [name, config] of Object.entries(options.queues ?? {})) {
-      if (!isMochiQueue(config)) {
-        throw new Error(`Mochi.serve({ queues }): "${name}" is not a Mochi.queue(...) descriptor. Each value must be created with Mochi.queue().`);
-      }
-    }
-
     const server = Bun.serve({
       ...bunOptions,
       ...(bunPassthrough as Record<string, unknown> | undefined),
@@ -1759,19 +1796,18 @@ export class Mochi {
     // Mounted after bind so the queues drain on the same shutdown path as the server; a throw mid-mount tears the
     // just-bound server down rather than leaving it listening half-started.
     try {
-      for (const [name, config] of Object.entries(options.queues ?? {})) {
-        createQueue(name, config.process, config.options, config.on);
+      if (declaredQueues.length > 0) {
+        await startQueueRuntime(queueStorage);
+        await mountQueues(declaredQueues);
       }
     } catch (err) {
       await closeAllQueueResources();
       await server.stop(true);
       throw err;
     }
-    // Fires once every queue in the map is registered, so a `recover()` callback or user hook reaching for a sibling
-    // gets its handle instead of a "not mounted yet" error.
-    await runHook('mochi:queuesMounted', { options, server, queues: Object.keys(options.queues ?? {}) });
-    // Awaited so recovered jobs are enqueued before `mochi:ready` fires and before `serve()` resolves.
-    await runQueueRecovery(Object.entries(options.queues ?? {}));
+    // Fires once every queue in the map is registered, so a user hook reaching for a handle (or `Mochi.boss()`)
+    // gets it instead of a "not mounted yet" error.
+    await runHook('mochi:queuesMounted', { options, server, queues: declaredQueues.map(([name]) => name) });
 
     if (warmupHandlers.length > 0) {
       mochiEvents.emit('warmup:start', { routeCount: warmupHandlers.length });

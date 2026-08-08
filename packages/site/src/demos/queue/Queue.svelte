@@ -16,7 +16,7 @@
   {sources}
 >
   <p>
-    The page action calls <code>Mochi.getQueue('demo-notifications').add('notify', {'{ user }'})</code>. The queue's <code>process</code> function — with
+    The page action calls <code>Mochi.getQueue('demo-notifications').add({'{ user }'})</code>. The queue's <code>process</code> function — with
     <code>concurrency: 2</code>, declared as <code>queues: {'{'} 'demo-notifications': … }</code> in
     <code>Mochi.serve()</code> — picks the job up and records it. Initial state comes from
     <code>serverProps</code>; a <code>Mochi.sse()</code> route then pushes each completion in realtime — no polling.

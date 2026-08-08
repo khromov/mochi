@@ -183,9 +183,8 @@ async function main() {
     assetPrefix: values['asset-prefix'],
   });
 
-  // Extracting serve options imports the user's entry for real, so a top-level
-  // Mochi.queue() producer opens an embedded store whose background intervals
-  // keep the event loop alive and hang this one-shot build. Drain and exit.
+  // Extracting serve options imports the user's entry for real; if anything started the queue runtime, its
+  // maintenance timers keep the event loop alive and hang this one-shot build. Drain and exit.
   await closeAllQueueResources();
   process.exit(0);
 }

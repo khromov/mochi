@@ -176,13 +176,11 @@ export interface MochiCacheErrorEvent {
 export interface MochiQueueAddedEvent {
   queue: string;
   jobId: string;
-  jobName: string;
 }
 
 export interface MochiQueueActiveEvent {
   queue: string;
   jobId: string;
-  jobName: string;
   /** 1-based attempt number (1 on the first run). */
   attempt: number;
 }
@@ -190,16 +188,14 @@ export interface MochiQueueActiveEvent {
 export interface MochiQueueCompletedEvent {
   queue: string;
   jobId: string;
-  jobName: string;
   attempt: number;
-  /** Milliseconds, measured from the `active` event. */
+  /** Milliseconds the processor ran for this attempt. */
   duration: number;
 }
 
 export interface MochiQueueFailedEvent {
   queue: string;
   jobId: string;
-  jobName: string;
   attempt: number;
   duration: number;
   /** Message of the error the processor threw. */
@@ -207,8 +203,8 @@ export interface MochiQueueFailedEvent {
 }
 
 export interface MochiQueueErrorEvent {
-  queue: string;
-  /** Worker-level error, e.g. a poll failure, with no owning job. */
+  /** Absent for instance-level bun-boss errors, which carry no queue attribution. */
+  queue?: string;
   error: string;
 }
 

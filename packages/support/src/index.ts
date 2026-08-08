@@ -36,6 +36,9 @@ await Mochi.serve({
   // Auth first, so an unauthorised /admin hit is never counted as a pageview.
   handle: sequence(adminAuth, analytics()),
   queues: { [SUPPORT_EMAIL_QUEUE]: supportEmailQueue },
+  // A separate file from SUPPORT_DB on purpose: the app holds its own bun:sqlite handle on support.sqlite, and sharing
+  // one file across two drivers invites writer contention for no benefit.
+  queueStorage: { sqlite: process.env.SUPPORT_QUEUE_DB || '.db/queue.sqlite' },
   email: {
     from: process.env.SMTP_FROM || 'Mochi Support Form <support@mochi.fast>',
     transport: smtp,

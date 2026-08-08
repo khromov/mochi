@@ -167,11 +167,10 @@ Fires when the SSE stream closes. A client disconnect or an explicit close both 
 
 Fires after `queue.add()` / `queue.addBulk()` enqueues a job. See [Queues](/docs/queues/).
 
-| Field     | Type     | Notes                  |
-| --------- | -------- | ---------------------- |
-| `queue`   | `string` | queue name             |
-| `jobId`   | `string` | generated job id       |
-| `jobName` | `string` | job name passed to add |
+| Field   | Type     | Notes            |
+| ------- | -------- | ---------------- |
+| `queue` | `string` | queue name       |
+| `jobId` | `string` | generated job id |
 
 #### `queue:active`
 
@@ -181,20 +180,18 @@ Fires when a worker starts a job.
 | --------- | -------- | --------------------------------------- |
 | `queue`   | `string` | queue name                              |
 | `jobId`   | `string` | job id                                  |
-| `jobName` | `string` | job name                                |
 | `attempt` | `number` | 1-based attempt number (1 on first run) |
 
 #### `queue:completed`
 
 Fires when a job's processor returns successfully.
 
-| Field      | Type     | Notes                                 |
-| ---------- | -------- | ------------------------------------- |
-| `queue`    | `string` | queue name                            |
-| `jobId`    | `string` | job id                                |
-| `jobName`  | `string` | job name                              |
-| `attempt`  | `number` | attempt that succeeded                |
-| `duration` | `number` | processing ms, measured from `active` |
+| Field      | Type     | Notes                            |
+| ---------- | -------- | -------------------------------- |
+| `queue`    | `string` | queue name                       |
+| `jobId`    | `string` | job id                           |
+| `attempt`  | `number` | attempt that succeeded           |
+| `duration` | `number` | ms the processor ran the attempt |
 
 #### `queue:failed`
 
@@ -204,19 +201,18 @@ Fires when a job's processor throws. One emission per failed attempt.
 | ---------- | -------- | ------------------------------ |
 | `queue`    | `string` | queue name                     |
 | `jobId`    | `string` | job id                         |
-| `jobName`  | `string` | job name                       |
 | `attempt`  | `number` | attempt that failed            |
 | `duration` | `number` | processing ms before the throw |
 | `error`    | `string` | thrown error message           |
 
 #### `queue:error`
 
-Fires for a worker-level error not tied to one job, for example a poll failure.
+Fires for a queue-runtime error not tied to one job, for example a poll failure.
 
-| Field   | Type     | Notes         |
-| ------- | -------- | ------------- |
-| `queue` | `string` | queue name    |
-| `error` | `string` | error message |
+| Field   | Type      | Notes                                          |
+| ------- | --------- | ---------------------------------------------- |
+| `queue` | `string?` | absent for instance-level errors with no queue |
+| `error` | `string`  | error message                                  |
 
 #### `email:sent`
 

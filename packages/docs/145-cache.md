@@ -7,9 +7,12 @@ description: 'Cache server-side data with stale-while-revalidate semantics using
 <script>
   import Callout from './_components/Callout.svelte';
   import SeeItInAction from './_components/SeeItInAction.svelte';
+  import VersionNote from './_components/VersionNote.svelte';
 </script>
 
 ## Cache
+
+<VersionNote since="0.8.0" href="/blog/mochi-0-8-0/" />
 
 `MochiCache` caches server-side data — typically slow upstream API calls — with stale-while-revalidate semantics. Construct it once at module scope and share the instance across requests.
 

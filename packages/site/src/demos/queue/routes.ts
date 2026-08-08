@@ -20,7 +20,7 @@ export const routes: Record<string, MochiRouteValue> = {
         const user = String(formData.get('username') ?? '')
           .trim()
           .slice(0, 64);
-        await Mochi.getQueue<NotificationJob>(QUEUE_NAME).add('notify', { user: user || 'anonymous' });
+        await Mochi.getQueue<NotificationJob>(QUEUE_NAME).add({ user: user || 'anonymous' });
         return success({ queued: user || 'anonymous' });
       },
     },
