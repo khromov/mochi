@@ -38,6 +38,7 @@
     "syncpack:fix": "syncpack fix",
     "loc": "bun .github/scripts/loc-report.ts",
     "cli-test": "bun .github/scripts/cli-regression-test.ts",
+    "svelte-latest-test": "bun .github/scripts/svelte-latest-test.ts",
     "flamegraph": "bun scripts/flamegraph.ts",
     "check-links": "bun scripts/check-links.ts",
     "check-llms": "bun scripts/check-llms.ts",
