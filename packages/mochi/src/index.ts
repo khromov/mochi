@@ -109,7 +109,17 @@ export type {
   MochiCaptchaVerifyEvent,
   MochiCaptchaReason,
 } from './events';
-export type { MochiQueue, MochiJob, MochiJobOptions, MochiQueueOptions, MochiQueueRuntimeOptions, MochiQueueListeners, MochiProcessor, MochiQueueStorage } from './queue';
+export type {
+  MochiQueue,
+  MochiJob,
+  MochiJobOptions,
+  MochiQueueOptions,
+  MochiQueueRuntimeOptions,
+  MochiQueueListeners,
+  MochiProcessor,
+  MochiQueueStorage,
+  PGliteLike,
+} from './queue';
 export { DEFAULT_EXPIRE_IN_SECONDS } from './queue';
 export { json, error, apiError, MochiHttpError } from './utils';
 export { trailingSlashIt } from './runtime/trailingSlash';

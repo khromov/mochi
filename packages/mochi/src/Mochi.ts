@@ -59,7 +59,7 @@ import { resolveWarmupEnabled, markWarmupRequest, isWarmablePattern } from './ru
 import { createErrorResponder, DEFAULT_ERROR_PAGE_PATH } from './runtime/errors';
 import { requestContext } from './runtime/requestContext';
 import type { MochiRequestContext } from './runtime/requestContext';
-import { startQueueRuntime, mountQueues, getQueue, getBoss, closeAllQueueResources } from './queue';
+import { startQueueRuntime, mountQueues, getQueue, getBoss, closeAllQueueResources, isValidQueueStorage } from './queue';
 import { resetStartupMilestones } from './lifecycle';
 import type { MochiQueue, MochiQueueOptions, MochiQueueListeners, MochiProcessor } from './queue';
 import type { BunBoss } from 'bun-boss';
@@ -332,17 +332,8 @@ export class Mochi {
       }
     }
     const queueStorage = options.queueStorage ?? 'memory';
-    if (
-      queueStorage !== 'memory' &&
-      !(
-        typeof queueStorage === 'object' &&
-        queueStorage !== null &&
-        'sqlite' in queueStorage !== 'postgres' in queueStorage &&
-        (('sqlite' in queueStorage && typeof queueStorage.sqlite === 'string' && queueStorage.sqlite.length > 0) ||
-          ('postgres' in queueStorage && typeof queueStorage.postgres === 'string' && queueStorage.postgres.length > 0))
-      )
-    ) {
-      throw new Error(`Mochi.serve({ queueStorage }): expected 'memory', { sqlite: 'path/to.db' }, or { postgres: url }.`);
+    if (!isValidQueueStorage(queueStorage)) {
+      throw new Error(`Mochi.serve({ queueStorage }): expected 'memory', { sqlite: 'path/to.db' }, { postgres: url }, or { pglite: instance }.`);
     }
     if (options.queueStorage !== undefined && declaredQueues.length === 0) {
       logger.warn(`Mochi.serve({ queueStorage }) has no effect without a non-empty queues map — the queue runtime only starts when queues are declared.`);

@@ -435,7 +435,8 @@ export interface MochiServeOptions {
   queues?: Record<string, MochiQueueConfig>;
   /**
    * Where queue jobs live: `'memory'` (default — lost on restart), `{ sqlite: 'path/to.db' }` for a durable
-   * single-process store, or `{ postgres: url }` for a shared multi-process store (installed into a `mochi_queue` schema).
+   * single-process store, `{ postgres: url }` for a shared multi-process store (installed into a `mochi_queue` schema),
+   * or `{ pglite: instance }` for an embedded in-process Postgres you construct and own (Mochi never closes it).
    */
   queueStorage?: MochiQueueStorage;
   fetch?: (req: Request, server: Server<undefined>) => Response | Promise<Response>;

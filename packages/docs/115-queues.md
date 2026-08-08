@@ -1,7 +1,7 @@
 ---
 title: 'Queues'
 slug: queues
-description: 'Run background jobs with Mochi.queue(), backed by bun-boss on memory, SQLite, or Postgres storage.'
+description: 'Run background jobs with Mochi.queue(), backed by bun-boss on memory, SQLite, Postgres, or embedded PGlite storage.'
 ---
 
 <script>
@@ -105,18 +105,37 @@ await Mochi.serve({
   queueStorage: 'memory', // the default
   // queueStorage: { sqlite: '.db/queue.sqlite' },
   // queueStorage: { postgres: process.env.DATABASE_URL },
+  // queueStorage: { pglite: await PGlite.create('.db/queue-pglite') },
 });
 ```
 
-| Storage             | Survives restarts | Scope                                            |
-| ------------------- | ----------------- | ------------------------------------------------ |
-| `'memory'`          | no                | single process                                   |
-| `{ sqlite: path }`  | yes               | single process, one durable file                 |
-| `{ postgres: url }` | yes               | shared — multiple processes can work one backlog |
+| Storage                | Survives restarts | Scope                                            |
+| ---------------------- | ----------------- | ------------------------------------------------ |
+| `'memory'`             | no                | single process                                   |
+| `{ sqlite: path }`     | yes               | single process, one durable file                 |
+| `{ postgres: url }`    | yes               | shared — multiple processes can work one backlog |
+| `{ pglite: instance }` | yes (on-disk)     | single process, embedded in-process Postgres     |
 
 Postgres storage installs its tables into a dedicated `mochi_queue` schema on first start, away from your application's tables. The schema name is fixed, so every app sharing one database shares one queue namespace — give each app its own database to keep their queues apart.
 
 On durable storage, queue options re-sync from your code on every boot — but only **additively**: an option you remove from `Mochi.queue()` keeps its previously stored value. Set the old value back explicitly (e.g. `retryLimit: 2`) rather than deleting the line; a removed `deadLetter` can only be repointed, not cleared.
+
+### PGlite
+
+`{ pglite: instance }` is the one storage that takes a live instance instead of a config string. Mochi recommends `{ postgres: url }` for production; PGlite — full Postgres compiled to WASM, running in your process with no server — covers dev and test environments while exercising the same Postgres storage path, including the `mochi_queue` schema, so jobs behave the way they will in production:
+
+```ts
+import { PGlite } from '@electric-sql/pglite';
+
+const db = await PGlite.create('.db/queue-pglite'); // or PGlite.create() for a throwaway in-memory store
+
+await Mochi.serve({
+  queues: {/* … */},
+  queueStorage: { pglite: db },
+});
+```
+
+Passing the instance keeps `@electric-sql/pglite` out of Mochi's dependencies and lets your app share one instance between queue jobs and its own tables. You own the instance, so make sure to close it at shutdown.
 
 ### Retries
 

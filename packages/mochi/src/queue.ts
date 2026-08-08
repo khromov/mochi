@@ -1,7 +1,7 @@
 // The isolation boundary around bun-boss: the only module importing `bun-boss`, and the only one whose rewrite a
 // backend swap would need.
-import { BunBoss, fromBunSqlite } from 'bun-boss';
-import type { JobInsert, JobWithMetadata, SendOptions, UpdateQueueOptions } from 'bun-boss';
+import { BunBoss, fromBunSqlite, fromPglite } from 'bun-boss';
+import type { JobInsert, JobWithMetadata, PGliteLike, SendOptions, UpdateQueueOptions } from 'bun-boss';
 import { SQL } from 'bun';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
@@ -11,8 +11,37 @@ import { startupMilestoneReached } from './lifecycle';
 import { mochiEvents } from './events';
 import { logger } from './utils/log';
 
-/** Where queue jobs live: `'memory'` (SQLite `:memory:`, lost on restart), a SQLite file, or a Postgres database. */
-export type MochiQueueStorage = 'memory' | { sqlite: string } | { postgres: string };
+/**
+ * Where queue jobs live: `'memory'` (SQLite `:memory:`, lost on restart), a SQLite file, a Postgres database, or a
+ * caller-owned embedded PGlite instance (Mochi never closes it).
+ */
+export type MochiQueueStorage = 'memory' | { sqlite: string } | { postgres: string } | { pglite: PGliteLike };
+export type { PGliteLike };
+
+const storageChecks: Record<string, (value: unknown) => boolean> = {
+  sqlite: (value) => typeof value === 'string' && value.length > 0,
+  postgres: (value) => typeof value === 'string' && value.length > 0,
+  pglite: (value) => {
+    const instance = value as Partial<PGliteLike> | null;
+    return typeof instance === 'object' && instance !== null && typeof instance.query === 'function' && typeof instance.exec === 'function';
+  },
+};
+
+/** Runtime-validates what the types already promise, because `queueStorage` often arrives from untyped config. */
+export function isValidQueueStorage(storage: MochiQueueStorage): boolean {
+  if (storage === 'memory') {
+    return true;
+  }
+  if (typeof storage !== 'object' || storage === null) {
+    return false;
+  }
+  const [entry, ...extra] = Object.entries(storageChecks).filter(([key]) => key in storage);
+  if (!entry || extra.length > 0) {
+    return false;
+  }
+  const [key, check] = entry;
+  return check((storage as unknown as Record<string, unknown>)[key]);
+}
 
 /** Deliberately narrow — data, not bun-boss's job row — so userland can't reach behind the abstraction. */
 export interface MochiJob<T> {
@@ -183,6 +212,9 @@ export async function startQueueRuntime(storage: MochiQueueStorage, testOptions?
     // Registered before start() so the failure path in Mochi.serve (closeAllQueueResources) closes it too.
     registry.ownedSql = sql;
     boss = new BunBoss({ backend: 'sqlite', db: fromBunSqlite(sql), schedule: false, ...spies });
+  } else if ('pglite' in storage) {
+    // The caller constructs and owns the PGlite instance (bun-boss's adapter contract), so nothing is registered for closing.
+    boss = new BunBoss({ backend: 'pglite', db: fromPglite(storage.pglite), schema: 'mochi_queue', schedule: false, ...spies });
   } else {
     boss = new BunBoss({ url: storage.postgres, backend: 'postgres', schema: 'mochi_queue', schedule: false, ...spies });
   }
