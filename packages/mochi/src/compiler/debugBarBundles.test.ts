@@ -59,4 +59,16 @@ describe('debug bar bundle list — chunk reachability', () => {
     const heavyChunk = bundles.find((b) => b.kind === 'chunk' && (b.inputs ?? []).some((i) => i.path.includes('heavyOnlyOnB')));
     expect(heavyChunk).toBeDefined();
   });
+
+  // BundlesPanel renders one row per input, so a repeated path is a duplicate key in a keyed `{#each}`.
+  test('reports unique input paths within every bundle', async () => {
+    const result = await renderWithDebugBar(PAGE_B);
+    const bundles = result.debugBarData?.bundles ?? [];
+
+    expect(bundles.length).toBeGreaterThan(0);
+    for (const bundle of bundles) {
+      const paths = (bundle.inputs ?? []).map((i) => i.path);
+      expect(new Set(paths).size).toBe(paths.length);
+    }
+  });
 });
