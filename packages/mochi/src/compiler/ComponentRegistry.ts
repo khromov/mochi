@@ -30,6 +30,7 @@ import { decodeSourcePath, encodeSourcePath } from './manifestPaths';
 import { buildServerOnlyStubModule, scanServerOnlyExports } from './serverOnlyScan';
 import { CLIENT_BUILD_DEFINE, serverOnlyModuleGuard } from './serverOnlyModuleGuard';
 import { registerServerOnlyComponentStubs, SSR_ONLY_COMPONENT_NAMESPACE } from './serverOnlyComponents';
+import { cleanInputs, SERVER_ONLY_MODULE_NAMESPACE } from './bundleInputPaths';
 import { renderMochiEnvServer } from './virtualModuleTemplate';
 import { buildDebugBarBundle, type DebugBarBundle } from './buildDebugBarBundle';
 import { formatBuildMessages } from './formatBuildMessages';
@@ -1152,9 +1153,9 @@ export class ComponentRegistry {
               resolved = tsPath;
             }
           }
-          return { path: resolved, namespace: 'mochi-server-only' };
+          return { path: resolved, namespace: SERVER_ONLY_MODULE_NAMESPACE };
         });
-        build.onLoad({ filter: /.*/, namespace: 'mochi-server-only' }, async (args) => {
+        build.onLoad({ filter: /.*/, namespace: SERVER_ONLY_MODULE_NAMESPACE }, async (args) => {
           const source = await Bun.file(args.path).text();
           const scan = scanServerOnlyExports(source);
           for (const w of scan.warnings) {
@@ -1625,11 +1626,11 @@ export class ComponentRegistry {
               label: 'Island runtime',
               sizeBytes: wcSize,
               kind: 'bootstrap',
-              inputs: ComponentRegistry.cleanInputs(wcInputs),
+              inputs: cleanInputs(wcInputs),
             });
           } else {
             const compName = urlToComponent.get(url);
-            const cleaned = ComponentRegistry.cleanInputs(output.inputs);
+            const cleaned = cleanInputs(output.inputs);
             const nonWc = cleaned.filter((i) => !i.path.includes('web-components/'));
             const wcDeduct = cleaned.reduce((s, i) => s + (i.path.includes('web-components/') ? i.size : 0), 0);
             if (compName) {
@@ -1694,14 +1695,6 @@ export class ComponentRegistry {
       hasServerIslands,
       debugBarData,
     };
-  }
-
-  private static cleanInputPath(p: string): string {
-    const stub = p.match(/^(?:mochi-ssr-only-component|mochi-server-only):(.*)$/);
-    if (stub) {
-      return `${stub[1]} (server-only stub)`;
-    }
-    return p.replace(/^(?:\.\.\/)*node_modules\/(?:\.bun\/[^/]+\/node_modules\/)?/, '');
   }
 
   /**
@@ -1780,15 +1773,6 @@ export class ComponentRegistry {
     } finally {
       this.pendingBarrels = [];
     }
-  }
-
-  private static cleanInputs(inputs: { path: string; size: number }[]): { path: string; size: number }[] {
-    // A fully tree-shaken `.server.svelte` stub ships nothing, so its row would only confuse the panel — but a stub
-    // with retained bytes means an island actually renders the component (it will throw at hydration), which is
-    // exactly what the panel should surface, so those rows stay.
-    return inputs
-      .filter((i) => i.size > 0 || !i.path.startsWith(`${SSR_ONLY_COMPONENT_NAMESPACE}:`))
-      .map((i) => ({ path: ComponentRegistry.cleanInputPath(i.path), size: i.size }));
   }
 
   /** Output names reachable from `roots` by following static imports, roots included. */
