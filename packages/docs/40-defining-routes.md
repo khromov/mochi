@@ -164,10 +164,11 @@ await Mochi.serve({
     '/report': Mochi.file('./files/report.pdf'),
 
     '/files/:name': Mochi.file((req, params) => {
-      if (!/^[a-z0-9-]+$/.test(params.name)) {
+      const name = params.name;
+      if (!name || !/^[a-z0-9-]+$/.test(name)) {
         error(404, 'Not found');
       }
-      return `./files/${params.name}.pdf`;
+      return `./files/${name}.pdf`;
     }),
   },
 });

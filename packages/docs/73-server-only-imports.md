@@ -7,6 +7,7 @@ description: 'Keep server-only modules like bun:sqlite out of client bundles wit
 <script>
   import Callout from './_components/Callout.svelte';
   import SeeItInAction from './_components/SeeItInAction.svelte';
+  import VersionNote from './_components/VersionNote.svelte';
 </script>
 
 ## Server-only imports
@@ -76,6 +77,8 @@ getVersion from /…/db.server.ts was called on the client; this is a server-onl
 ```
 
 ### Server-only components
+
+<VersionNote since="0.10.0" message="Server-only components (*.server.svelte) ship in the next Mochi release (0.10.0). This section describes the upcoming API." />
 
 Name a component `*.server.svelte` to keep it SSR-only. It renders on the server like any component, but the client build replaces it with a stub, so it never ships to the browser — even when an island pulls it in through a barrel re-export.
 
