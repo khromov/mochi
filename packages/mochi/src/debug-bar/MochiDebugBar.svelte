@@ -157,13 +157,20 @@
   onDestroy(() => {
     cleanupHighlight();
   });
+
+  // The boundary swallows the fault to spare the host page, so log it here or it vanishes silently; build the bar with
+  // MOCHI_DEBUGBAR_DIAGNOSTIC=1 to get the offending key + an un-minified stack in that log.
+  function reportPanelError(error: unknown) {
+    const err = error as { message?: string; stack?: string } | undefined;
+    console.error('[mochi] debug-bar panel render fault:', err?.message ?? error, err?.stack ?? '');
+  }
 </script>
 
 <div class="mochi-debug-bar-root" bind:this={rootEl}>
   <!-- A panel renders from uncontrolled runtime state (live DOM scans, request headers, cache keys); a fault there — a
        keyed-each duplicate from that state, say — must degrade the non-essential debug UI, never throw an uncaught error
        onto the host page. The toolbar below stays outside so it keeps working when a panel fails. -->
-  <svelte:boundary>
+  <svelte:boundary onerror={reportPanelError}>
     <WarningsPanel open={activePanel === 'warnings'} onclose={() => (activePanel = null)} />
     <IslandsPanel open={activePanel === 'islands'} onclose={() => (activePanel = null)} />
     <ImagesPanel open={activePanel === 'images'} onclose={() => (activePanel = null)} />

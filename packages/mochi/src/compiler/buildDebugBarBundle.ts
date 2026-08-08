@@ -22,6 +22,11 @@ export interface DebugBarBundle {
 export async function buildDebugBarBundle(opts: { development: boolean; backend: SvelteCompilerBackend }): Promise<DebugBarBundle> {
   const { development, backend } = opts;
 
+  // Diagnostic escape hatch: prod-Svelte's `each_key_duplicate` throws with no key and a minified stack, so a panel
+  // fault is unidentifiable. Set MOCHI_DEBUGBAR_DIAGNOSTIC=1 to build the bar dev-Svelte + un-minified — the runtime
+  // then names the offending key and the stack names the component. Larger output; for temporary debugging only.
+  const diagnostic = process.env.MOCHI_DEBUGBAR_DIAGNOSTIC === '1';
+
   const debugBarPlugin: BunPlugin = {
     name: 'mochi-debug-bar',
     setup(build) {
@@ -30,10 +35,10 @@ export async function buildDebugBarBundle(opts: { development: boolean; backend:
       // `mochi-framework`'s `isDev`, it must still read `true` under a dev server.
       registerMochiEnvClient(build, development);
       // `mergeCompilerOptions` with no user options: framework defaults apply, user svelte config doesn't.
-      registerSvelteModuleLoader(build, backend, mergeCompilerOptions(undefined, { generate: 'client', dev: false }));
+      registerSvelteModuleLoader(build, backend, mergeCompilerOptions(undefined, { generate: 'client', dev: diagnostic }));
       build.onLoad({ filter: /\.svelte$/ }, async (args) => {
         const source = await Bun.file(args.path).text();
-        const { js } = backend.compile(source, mergeCompilerOptions(undefined, { generate: 'client', filename: args.path, css: 'injected', dev: false }));
+        const { js } = backend.compile(source, mergeCompilerOptions(undefined, { generate: 'client', filename: args.path, css: 'injected', dev: diagnostic }));
         return { contents: js.code, loader: 'js' };
       });
     },
@@ -44,14 +49,15 @@ export async function buildDebugBarBundle(opts: { development: boolean; backend:
     // The guard goes first so its `onResolve` sees a server-only specifier before the debug-bar plugin's own handlers.
     plugins: [serverOnlyModuleGuard, debugBarPlugin],
     target: 'browser',
-    conditions: ['svelte', 'production'],
+    // The `development` esm-env condition flips Svelte's runtime `DEV` on so `each_key_duplicate` reports the key.
+    conditions: ['svelte', diagnostic ? 'development' : 'production'],
     define: {
-      DEV: 'false',
+      DEV: diagnostic ? 'true' : 'false',
       BROWSER: 'true',
       NODE: 'false',
       ...CLIENT_BUILD_DEFINE,
     },
-    minify: true,
+    minify: !diagnostic,
     naming: '[name]-[hash].[ext]',
     throw: false,
   });
