@@ -70,3 +70,9 @@ Any code can queue a warning into the toolbar by calling `window.__mochi_warn('m
 ### Info panel
 
 Shows the running Mochi, Svelte, and Bun versions, plus a snapshot of the resolved `Mochi.serve()` config — mode, port, trailing-slash policy, log level, route count, and whether warmup, live-reload, CSRF, proxy, and middleware are active. Captured once at startup.
+
+### Panel errors
+
+Each panel renders from live runtime state, so the panels are wrapped in an error boundary: a render fault in one degrades that panel instead of throwing onto the host page, and the toolbar stays usable. The fault is still logged to the console as `[mochi] debug-bar panel render fault: …`.
+
+The bar ships as a production-Svelte bundle, so that log carries no detail. To debug a panel fault, restart with `MOCHI_DEBUGBAR_DIAGNOSTIC=1` — the bar then compiles dev-Svelte and un-minified, so the logged error names the exact cause (and, for a keyed-`{#each}` collision, the duplicate key) with a readable stack. For temporary debugging only; it makes the bundle larger.

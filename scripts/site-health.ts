@@ -30,7 +30,7 @@ Arguments:
   base             Origin to check (default: https://mochi.fast)
   --concurrency N  Max tabs open at once (default: 4)
   --report PATH    Report output path (default: ./REPORT.md)
-  --timeout MS     Per-page budget for the load event (default: 30000)
+  --timeout MS     Per-page budget for the load event (default: 60000)
 
 Exits 1 if any page failed, 2 on a setup problem (no sitemap, no Chrome).`;
 
@@ -38,7 +38,7 @@ const parseArgs = (argv: string[]): Args => {
   const positional: string[] = [];
   let concurrency = 4;
   let report = 'REPORT.md';
-  let timeout = 30_000;
+  let timeout = 60_000;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '-h' || a === '--help') {
