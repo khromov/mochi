@@ -6,8 +6,10 @@ Internal docker-compose stack for local development: **PostgreSQL 15** + **[Admi
 
 `bun run dev` (repo root) auto-discovers this package and runs `docker compose up`. If Docker is not available (e.g. inside the dev container, which runs Postgres natively), the dev script prints a warning and idles so the other dev servers keep running.
 
-- **Postgres**: `postgres://postgres:postgres@localhost:5432/postgres` (user `postgres`, password `postgres`, database `postgres` — same URL as the dev container's native Postgres).
-- **Adminer**: http://localhost:8080 — login with system `PostgreSQL`, server `postgres`, user `postgres`, password `postgres`, database `postgres`.
+- **Postgres**: `postgres://postgres:postgres@localhost:5433/postgres` (user `postgres`, password `postgres`, database `postgres`).
+- **Adminer**: http://localhost:8081 — login with system `PostgreSQL`, server `postgres`, user `postgres`, password `postgres`, database `postgres`.
+
+The host ports are `5433` (Postgres) and `8081` (Adminer), not `5432`/`8080`, so the stack coexists with the dev container's own native Postgres (5432) and code-server (8080). The container-internal ports are unchanged — from another compose service, reach Postgres at `postgres:5432`.
 
 ## Data
 
