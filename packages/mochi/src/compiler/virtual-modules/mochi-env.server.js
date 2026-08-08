@@ -1,4 +1,6 @@
 export const isServer = true; export const isBrowser = false; export const DEV = __MOCHI_DEV__; export const isDev = __MOCHI_DEV__;
+// Always false in components: they are compiled but never executed during a build, so a compiled component only ever runs while serving.
+export const isBuilding = false;
 export function getRequestContext() {
   const ctx = globalThis.__mochi_request_context__?.getStore();
   if (!ctx) throw new Error("getRequestContext() called outside of a request.");
