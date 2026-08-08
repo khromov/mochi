@@ -75,7 +75,7 @@ if (!isBuilding) await db.connect();
 await Mochi.serve({ routes });
 ```
 
-Unlike the other constants it is a real runtime value, not a baked literal. Inside `.svelte` components it is always `false` — components are compiled but never executed during a build.
+Inside `.svelte` components it is always `false` — components are compiled but never executed during a build.
 
 ## Detecting hydration with `isHydratable()`
 
