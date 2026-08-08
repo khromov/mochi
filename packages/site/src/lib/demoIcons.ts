@@ -52,7 +52,6 @@ import Ampersand from '@lucide/svelte/icons/ampersand';
 import Mail from '@lucide/svelte/icons/mail';
 import Gauge from '@lucide/svelte/icons/gauge';
 import Recycle from '@lucide/svelte/icons/recycle';
-import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
 import ChartSpline from '@lucide/svelte/icons/chart-spline';
 import Atom from '@lucide/svelte/icons/atom';
 import TextQuote from '@lucide/svelte/icons/text-quote';
@@ -84,7 +83,6 @@ export const demoIconFor: Record<string, DemoIconMeta> = {
   'Shared State': { icon: Share2, label: 'Shared $state across islands' },
   'Real-time Streams': { icon: AudioWaveform, label: 'WebSocket + SSE streams' },
   'Background jobs with queues': { icon: Inbox, label: 'Embedded job queue + worker' },
-  'Advanced queue patterns': { icon: RotateCcw, label: 'Retries, backoff, DLQ & durable storage' },
   'Server Islands': { icon: ComponentIcon, label: 'Deferred server island' },
   'Client-only Islands': { icon: MonitorSmartphone, label: 'No SSR — mounts in the browser' },
   'Lazy Islands': { icon: Telescope, label: 'Hydrate when visible' },
