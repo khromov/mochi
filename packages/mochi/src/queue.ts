@@ -170,6 +170,12 @@ export interface MochiQueueDescriptor<T = unknown, R = unknown> extends MochiQue
   readonly options?: MochiQueueRuntimeOptions;
   readonly on?: Partial<MochiQueueListeners<T, R>>;
   readonly storage?: MochiQueueStorage;
+  /**
+   * Stop this queue in this process: deregister its worker (waiting for in-flight jobs) and release its claim on the
+   * shared runtime — the runtime closes when the last active queue stops. Standalone only; under `Mochi.serve()`
+   * queues stop with the server.
+   */
+  stop(): Promise<void>;
 }
 
 /**
@@ -505,6 +511,27 @@ async function ensureUsable(descriptor: MountableQueue): Promise<void> {
   }
 }
 
+async function stopQueue(name: string): Promise<void> {
+  const boss = registry.boss;
+  if (!boss) {
+    return;
+  }
+  if (registry.kind === 'serve') {
+    throw new Error(`Mochi.queue("${name}").stop(): this process is serving — queues stop with the server (SIGTERM/SIGINT or Mochi.stop()).`);
+  }
+  const workId = registry.workIds.get(name);
+  if (workId) {
+    await boss.offWork(name, { id: workId, wait: true }).catch(() => {});
+    registry.workIds.delete(name);
+  }
+  registry.byName.delete(name);
+  registry.ensured.delete(name);
+  // The runtime is shared, so it closes only when the last active queue lets go.
+  if (registry.byName.size === 0) {
+    await closeAllQueueResources();
+  }
+}
+
 // Ensure-only creation (createQueue is ON CONFLICT DO NOTHING) and never updateQueue: the standalone paths must not
 // rewrite options a Mochi.serve() deployment owns. deadLetter is dropped because its target queue may not exist here.
 async function ensureQueueExists(name: string, options: MochiQueueRuntimeOptions | undefined): Promise<void> {
@@ -557,6 +584,9 @@ export function createQueueDescriptor<T = unknown, R = unknown>(name: string, co
     async addDebounced(data, seconds, key, opts) {
       await ensureUsable(descriptor);
       return base.addDebounced(data, seconds, key, opts);
+    },
+    async stop() {
+      await stopQueue(name);
     },
   };
   return descriptor;

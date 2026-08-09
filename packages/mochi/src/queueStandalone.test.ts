@@ -97,6 +97,34 @@ describe('standalone queue producers', () => {
     expect(stored?.retryLimit).toBe(7);
   }, 15_000);
 
+  test('queue.stop() releases the queue and closes the runtime when it was the last one', async () => {
+    const file = path.join(dataDir, 'per-queue-stop.sqlite');
+    const first = Mochi.queue<{ n: number }>(uniqueName(), { storage: { sqlite: file } });
+    const second = Mochi.queue<{ n: number }>(uniqueName(), { storage: { sqlite: file } });
+    await first.add({ n: 1 });
+    await second.add({ n: 1 });
+
+    // Two queues share the runtime: stopping one leaves it up for the other.
+    await first.stop();
+    expect(typeof getBoss().send).toBe('function');
+    expect(() => getQueue(first.name)).toThrow();
+    expect(await second.add({ n: 2 })).toBeString();
+
+    await second.stop();
+    expect(() => getBoss()).toThrow(/queue runtime is not running/);
+
+    // Idempotent, and a later add lazily reconnects.
+    await expect(second.stop()).resolves.toBeUndefined();
+    expect(await first.add({ n: 3 })).toBeString();
+    await first.stop();
+  }, 15_000);
+
+  test('queue.stop() refuses in a serving process', async () => {
+    await startQueueRuntime('memory');
+    const q = Mochi.queue<{ n: number }>(uniqueName(), { storage: 'memory' });
+    expect(q.stop()).rejects.toThrow(/this process is serving/);
+  });
+
   test('Mochi.stop() tears down a standalone runtime without a server and is idempotent', async () => {
     const name = uniqueName();
     const q = Mochi.queue<{ n: number }>(name, { storage: { sqlite: path.join(dataDir, 'stop.sqlite') } });

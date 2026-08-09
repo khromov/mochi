@@ -65,6 +65,10 @@ describe('Mochi.worker()', () => {
     await Bun.sleep(1200);
     expect(processed).toHaveLength(2);
     expect((await getBoss().getJobById('worker-jobs', heldId!))?.state).toBe('created');
+
+    // Per-queue stop from a worker process: releases the last active queue, so the runtime closes with it.
+    await queue.stop();
+    expect(() => getBoss()).toThrow(/queue runtime is not running/);
   }, 20_000);
 
   test('resolves storage from the worker option and rejects contradictions', async () => {

@@ -106,10 +106,11 @@ const emails = Mochi.queue<{ to: string }>('emails', {
 });
 
 await emails.addBulk(jobs);
-await Mochi.stop();
+await emails.stop();
 ```
 
 - A producer creates the queue if missing and leaves stored options untouched — [option re-sync](#storage) stays with `Mochi.serve()`. To consume without a server, see [standalone workers](#standalone-workers).
+- `queue.stop()` stops that queue in this process — its worker deregisters after in-flight jobs finish, and the shared runtime closes once the last active queue stops. [`Mochi.stop()`](#mochistop) remains the whole-app teardown; under `Mochi.serve()` queues stop with the server.
 - Your app has **one queue storage**. Declare it on the descriptor (`storage`), app-wide via the serve-level [`queueStorage`](#storage) option, or both when they agree — conflicting declarations are a boot error. Standalone, a descriptor without `storage` throws on `add()`.
 - `Mochi.serve()` inherits the descriptors' storage when `queueStorage` is unset, and a serve on the same storage adopts an already-connected standalone runtime — on a different storage it refuses to start.
 - `mochi:queuesMounted` fires only under `Mochi.serve()`. For a standalone producer, readiness is the first `add()` resolving.
