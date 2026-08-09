@@ -420,6 +420,8 @@ function batchDeadline(batch: JobWithMetadata<unknown>[]): number {
   return performance.now() + budgetMs - Math.min(1_000, Math.max(250, budgetMs * 0.1));
 }
 
+class BatchDeadlineExceeded extends Error {}
+
 async function withDeadline<R>(work: R | Promise<R>, deadlineAt: number, onTimeout: () => Error): Promise<R> {
   if (deadlineAt === Infinity) {
     return work;
@@ -441,6 +443,9 @@ function makeHandler<T, R>(name: string, process: MochiProcessor<T, R>, listener
   return async (batch: JobWithMetadata<T>[]): Promise<JobResult[]> => {
     const results: JobResult[] = [];
     const deadlineAt = batchDeadline(batch);
+    // Latched on the first deadline rejection rather than re-read from the clock: the timer can fire a fraction of a
+    // millisecond before `deadlineAt`, and a clock comparison would let the next job sneak in past an expired budget.
+    let expired = false;
     for (const raw of batch) {
       const job: MochiJob<T> = {
         id: raw.id,
@@ -451,7 +456,8 @@ function makeHandler<T, R>(name: string, process: MochiProcessor<T, R>, listener
         enqueuedAt: new Date(raw.createdOn).getTime(),
       };
       const start = performance.now();
-      if (start >= deadlineAt) {
+      if (expired || start >= deadlineAt) {
+        expired = true;
         const error = new Error(`the batch's shared expireInSeconds budget ran out before this job started; it is failed for retry`);
         notifySafely(name, () => mochiEvents.emit('queue:failed', { queue: name, jobId: job.id, attempt: job.attempt, duration: 0, error: error.message }));
         notifySafely(name, () => listeners?.failed?.(job, error));
@@ -464,13 +470,16 @@ function makeHandler<T, R>(name: string, process: MochiProcessor<T, R>, listener
         const result = await withDeadline(
           process(job),
           deadlineAt,
-          () => new Error(`the batch's shared expireInSeconds budget ran out mid-job; it is failed for retry (its processor may still be running)`),
+          () => new BatchDeadlineExceeded(`the batch's shared expireInSeconds budget ran out mid-job; it is failed for retry (its processor may still be running)`),
         );
         notifySafely(name, () => mochiEvents.emit('queue:completed', { queue: name, jobId: job.id, attempt: job.attempt, duration: performance.now() - start }));
         notifySafely(name, () => listeners?.completed?.(job, result));
         results.push({ id: raw.id, status: 'completed', output: result });
       } catch (err) {
         const error = err instanceof Error ? err : new Error(String(err));
+        if (error instanceof BatchDeadlineExceeded) {
+          expired = true;
+        }
         notifySafely(name, () => mochiEvents.emit('queue:failed', { queue: name, jobId: job.id, attempt: job.attempt, duration: performance.now() - start, error: error.message }));
         notifySafely(name, () => listeners?.failed?.(job, error));
         // The raw Error, not a plucked message: bun-boss serializes an Error output with name/stack/cause intact, so
