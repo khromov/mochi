@@ -71,3 +71,5 @@ export { getImageUrl, getImageAttrs, getImage, getImagePlaceholder, imagePlaceho
 export { enhance, deserialize } from "__MOCHI_ENHANCE_SSR__";
 // Rate-limit stores — server-only (bun:sqlite / Bun SQL).
 export { memoryStore, sqliteStore, postgresStore } from "__MOCHI_RATE_LIMIT__";
+// Persistent key/value options store — server-only (it talks to the configured optionsStorage database).
+export { MochiOptions } from "__MOCHI_OPTIONS__";

@@ -121,6 +121,8 @@ export type {
   PGliteLike,
 } from './queue';
 export { DEFAULT_EXPIRE_IN_SECONDS } from './queue';
+export { MochiOptions } from './options';
+export type { MochiOptionsApi, MochiOptionsStorage } from './options';
 export { json, error, apiError, MochiHttpError } from './utils';
 export { trailingSlashIt } from './runtime/trailingSlash';
 export { fail, redirect, success } from './runtime/forms';

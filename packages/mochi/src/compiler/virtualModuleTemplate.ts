@@ -43,6 +43,7 @@ export function renderMochiEnvServer(development: boolean): string {
     __MOCHI_IMAGE_API__: frameworkFile('image/imageApi.ts'),
     __MOCHI_ENHANCE_SSR__: frameworkFile('runtime/enhance.ssr.ts'),
     __MOCHI_RATE_LIMIT__: frameworkFile('runtime/rateLimit.ts'),
+    __MOCHI_OPTIONS__: frameworkFile('options.ts'),
   });
 }
 

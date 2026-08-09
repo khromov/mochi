@@ -8,6 +8,7 @@ import type { LocalImageAsset, MochiImageOptions } from './image/types';
 import type { MochiEmailOptions } from './email/types';
 import type { MochiCaptchaOptions } from './captcha/types';
 import type { MochiProcessor, MochiQueueListeners, MochiQueueRuntimeOptions, MochiQueueStorage } from './queue';
+import type { MochiOptionsStorage } from './options';
 import type { MochiRateLimitOptions } from './runtime/rateLimit';
 import type { MochiSvelteCompiler } from './compiler/svelteCompilerBackend';
 
@@ -439,6 +440,14 @@ export interface MochiServeOptions {
    * or `{ pglite: instance }` for an embedded in-process Postgres you construct and own (Mochi never closes it).
    */
   queueStorage?: MochiQueueStorage;
+  /**
+   * Persistent backend for the `MochiOptions` key/value store — small app data (settings, flags) without a full
+   * database. `{ sqlite: 'path/to.db' }` for a single-process store, `{ postgres: url }` for a shared multi-process
+   * store (installed into a `mochi_options` schema), or `{ pglite: instance }` for an embedded Postgres you construct
+   * and own (Mochi never closes it). Always persistent — there is no memory backend. The shape is validated at boot;
+   * the connection and schema are created lazily on the first MochiOptions call.
+   */
+  optionsStorage?: MochiOptionsStorage;
   fetch?: (req: Request, server: Server<undefined>) => Response | Promise<Response>;
   htmlShell?: string;
   /**

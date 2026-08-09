@@ -128,6 +128,14 @@ export function invalidateImage() { __serverOnly("invalidateImage()"); }
 export function memoryStore() { __serverOnly("memoryStore()"); }
 export function sqliteStore() { __serverOnly("sqliteStore()"); }
 export function postgresStore() { __serverOnly("postgresStore()"); }
+// MochiOptions talks to the server-side options database; every method throws in the browser.
+export const MochiOptions = {
+  get() { __serverOnly("MochiOptions.get()"); },
+  set() { __serverOnly("MochiOptions.set()"); },
+  update() { __serverOnly("MochiOptions.update()"); },
+  modify() { __serverOnly("MochiOptions.modify()"); },
+  delete() { __serverOnly("MochiOptions.delete()"); },
+};
 export { enhance, deserialize } from "__MOCHI_ENHANCE_CLIENT__";
 // Constant by construction: client bundles are built only for islands, so
 // every component that executes in the browser is part of a hydrating (or

@@ -60,6 +60,7 @@ import { createErrorResponder, DEFAULT_ERROR_PAGE_PATH } from './runtime/errors'
 import { requestContext } from './runtime/requestContext';
 import type { MochiRequestContext } from './runtime/requestContext';
 import { startQueueRuntime, mountQueues, getQueue, getBoss, closeAllQueueResources, isValidQueueStorage } from './queue';
+import { isValidOptionsStorage, closeOptionsStorage } from './options';
 import { resetStartupMilestones } from './lifecycle';
 import type { MochiQueue, MochiQueueOptions, MochiQueueListeners, MochiProcessor } from './queue';
 import type { BunBoss } from 'bun-boss';
@@ -337,6 +338,16 @@ export class Mochi {
     }
     if (options.queueStorage !== undefined && declaredQueues.length === 0) {
       logger.warn(`Mochi.serve({ queueStorage }) has no effect without a non-empty queues map — the queue runtime only starts when queues are declared.`);
+    }
+    if (options.optionsStorage !== undefined) {
+      if ((options.optionsStorage as unknown) === 'memory') {
+        throw new Error(
+          `Mochi.serve({ optionsStorage: 'memory' }): options have no memory backend — the options store exists to persist across restarts. Use { sqlite: 'path/to.db' }, { postgres: url }, or { pglite: instance }.`,
+        );
+      }
+      if (!isValidOptionsStorage(options.optionsStorage)) {
+        throw new Error(`Mochi.serve({ optionsStorage }): expected { sqlite: 'path/to.db' }, { postgres: url }, or { pglite: instance }.`);
+      }
     }
 
     const { svelteVersion } = await checkEnvironment();
@@ -1753,6 +1764,7 @@ export class Mochi {
           sweeperStop?.();
           stopEmailBadgeBroadcast?.();
           await closeEmailTransport();
+          await closeOptionsStorage();
           for (const store of rateLimitStores) {
             // Per-store guard: one failing shutdown must not skip the rest.
             try {
