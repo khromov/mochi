@@ -365,6 +365,4 @@ export const routes: Record<string, MochiRouteValue> = {
 };
 
 // Background job queues, mounted in Mochi.serve({ queues }) (see src/index.ts).
-export const queues: Record<string, MochiQueueConfig> = {
-  ...queueQueues,
-};
+export const queues: MochiQueueConfig[] = [...queueQueues];

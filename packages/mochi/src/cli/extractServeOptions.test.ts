@@ -38,21 +38,22 @@ throw new Error('serve should have halted execution before this line');`,
     expect(options?.optimize).toEqual({ enabled: true, exclude: ['x.svelte'] });
   });
 
-  test('captures the queues map without starting the queue runtime', async () => {
+  test('captures the queues array without starting the queue runtime', async () => {
     // Mochi.queue() is inert config, so importing the entry for extraction must
     // not start a BunBoss instance (whose maintenance timers would hang the
     // build). The test simply completing proves nothing kept the event loop alive.
     const entry = writeEntry(
       `import { Mochi } from 'mochi-framework';
-await Mochi.serve({ routes: {}, queueStorage: 'memory', queues: { emails: Mochi.queue({ process: async () => ({ sent: true }), concurrency: 2 }) } });
+await Mochi.serve({ routes: {}, queueStorage: 'memory', queues: [Mochi.queue('emails', { process: async () => ({ sent: true }), concurrency: 2 })] });
 throw new Error('serve should have halted execution before this line');`,
     );
 
     const options = await extractServeOptions(entry);
 
     expect(options?.queues).toBeDefined();
-    expect(options?.queues?.emails?.__mochiQueue).toBe(true);
-    expect(options?.queues?.emails?.options).toEqual({ concurrency: 2 });
+    expect(options?.queues?.[0]?.__mochiQueue).toBe(true);
+    expect(options?.queues?.[0]?.name).toBe('emails');
+    expect(options?.queues?.[0]?.options).toEqual({ concurrency: 2 });
     expect(options?.queueStorage).toBe('memory');
   });
 

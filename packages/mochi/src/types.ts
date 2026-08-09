@@ -252,14 +252,16 @@ export function isMochiSse(value: unknown): value is MochiSseConfig {
 }
 
 /**
- * Inert descriptor returned by `Mochi.queue()`. Non-generic so a heterogeneous `queues` map type-checks;
- * the live producer/consumer pair is created only when `Mochi.serve({ queues })` mounts it.
+ * Descriptor returned by `Mochi.queue(name, …)`. Non-generic so a heterogeneous `queues` array type-checks; the
+ * `never` parameter slots keep a caller's typed processor/listeners assignable (contravariance) without casts.
  */
 export interface MochiQueueConfig {
   readonly __mochiQueue: true;
-  readonly process?: MochiProcessor<unknown, unknown>;
+  readonly name: string;
+  readonly process?: MochiProcessor<never, unknown>;
   readonly options?: MochiQueueRuntimeOptions;
-  readonly on?: Partial<MochiQueueListeners<unknown, unknown>>;
+  readonly on?: Partial<MochiQueueListeners<never, never>>;
+  readonly storage?: MochiQueueStorage;
 }
 
 export function isMochiQueue(value: unknown): value is MochiQueueConfig {
@@ -429,10 +431,10 @@ export interface MochiServeOptions {
   manifest?: string;
   routes?: Record<string, MochiRouteValue>;
   /**
-   * Background job queues to start with the server, keyed by name; each value is a `Mochi.queue({ process, … })` descriptor.
-   * Add jobs from route code via `Mochi.getQueue(name).add(...)`. Queues drain gracefully on shutdown.
+   * Background job queues to start with the server: an array of `Mochi.queue(name, { process, … })` descriptors.
+   * Add jobs via the descriptor itself or `Mochi.getQueue(name)`. Queues drain gracefully on shutdown.
    */
-  queues?: Record<string, MochiQueueConfig>;
+  queues?: MochiQueueConfig[];
   /**
    * Where queue jobs live: `'memory'` (default — lost on restart), `{ sqlite: 'path/to.db' }` for a durable
    * single-process store, `{ postgres: url }` for a shared multi-process store (installed into a `mochi_queue` schema),

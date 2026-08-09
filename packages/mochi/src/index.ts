@@ -82,6 +82,7 @@ export type {
   MochiCacheRevalidateFailedEvent,
   MochiCacheErrorEvent,
   MochiQueueAddedEvent,
+  MochiQueueAddedBulkEvent,
   MochiQueueActiveEvent,
   MochiQueueCompletedEvent,
   MochiQueueFailedEvent,
@@ -111,10 +112,12 @@ export type {
 } from './events';
 export type {
   MochiQueue,
+  MochiQueueDescriptor,
   MochiJob,
   MochiJobOptions,
   MochiQueueOptions,
   MochiQueueRuntimeOptions,
+  MochiWorkerTuning,
   MochiQueueListeners,
   MochiProcessor,
   MochiQueueStorage,

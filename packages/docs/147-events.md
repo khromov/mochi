@@ -167,10 +167,21 @@ Fires when the SSE stream closes. A client disconnect or an explicit close both 
 
 Fires after `queue.add()` / `queue.addBulk()` enqueues a job. See [Queues](/docs/queues/).
 
-| Field   | Type     | Notes            |
-| ------- | -------- | ---------------- |
-| `queue` | `string` | queue name       |
-| `jobId` | `string` | generated job id |
+| Field   | Type                   | Notes                                   |
+| ------- | ---------------------- | --------------------------------------- |
+| `queue` | `string`               | queue name                              |
+| `jobId` | `string`               | generated job id                        |
+| `bulk`  | `boolean \| undefined` | `true` when the add came from `addBulk` |
+
+#### `queue:addedBulk`
+
+Fires once per `addBulk()` call that inserted at least one job, alongside the per-job `queue:added` events. The [console logger](/docs/logging/) prints this summary instead of the per-job lines.
+
+| Field    | Type       | Notes                                              |
+| -------- | ---------- | -------------------------------------------------- |
+| `queue`  | `string`   | queue name                                         |
+| `count`  | `number`   | jobs actually inserted (duplicate ids are skipped) |
+| `jobIds` | `string[]` | ids of the inserted jobs                           |
 
 #### `queue:active`
 
@@ -252,12 +263,12 @@ Fires once after `Bun.serve()` binds the listening socket.
 
 #### `server:stop`
 
-Fires when the server shuts down on `SIGTERM` / `SIGINT`, after the `mochi:shutdown` hook runs.
+Fires when the server shuts down — on `SIGTERM` / `SIGINT`, or a programmatic [`Mochi.stop()`](/docs/queues/#mochistop) — after the `mochi:shutdown` hook runs.
 
-| Field    | Type                                 | Notes                       |
-| -------- | ------------------------------------ | --------------------------- |
-| `reason` | `'signal'`                           | what initiated the shutdown |
-| `signal` | `'SIGTERM' \| 'SIGINT' \| undefined` | the signal received         |
+| Field    | Type                                 | Notes                                          |
+| -------- | ------------------------------------ | ---------------------------------------------- |
+| `reason` | `'signal' \| 'stop'`                 | signal, or programmatic `Mochi.stop()`         |
+| `signal` | `'SIGTERM' \| 'SIGINT' \| undefined` | the signal received; absent for `Mochi.stop()` |
 
 #### `warmup:start`
 

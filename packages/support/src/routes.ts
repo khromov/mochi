@@ -2,8 +2,7 @@ import { Mochi, fail, redirect, success, logger, mintCaptcha, verifyCaptcha, con
 import type { MochiRouteValue } from 'mochi-framework';
 import { authFailureDelay, credentialsMatch } from './adminAuth';
 import { appendEmailLog, emailLogsBySubmission, insertSubmission, listSubmissions, setHandled } from './db.server';
-import { SUPPORT_EMAIL_QUEUE, SUPPORT_TO } from './jobs.server';
-import type { SupportEmailJob } from './jobs.server';
+import { SUPPORT_TO, supportEmailQueue } from './jobs.server';
 
 export const routes: Record<string, MochiRouteValue> = {
   '/': Mochi.page('./src/Support.svelte', {
@@ -45,7 +44,7 @@ export const routes: Record<string, MochiRouteValue> = {
         // Logged before enqueuing so the entry can't be ordered after the worker's own `sending` line.
         appendEmailLog(id, { attempt: 0, event: 'queued', detail: `Queued for delivery to ${SUPPORT_TO}` });
         try {
-          await Mochi.getQueue<SupportEmailJob>(SUPPORT_EMAIL_QUEUE).add({ id });
+          await supportEmailQueue.add({ id });
         } catch (err) {
           // The row stays `pending` and visible in the admin panel for manual follow-up — telling the visitor it failed would be wrong.
           logger.error('support: could not enqueue delivery', err);

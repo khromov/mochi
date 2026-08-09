@@ -1,10 +1,11 @@
-import { afterAll, afterEach, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, describe, expect, spyOn, test } from 'bun:test';
 import { mkdtempSync, rmSync, existsSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { startQueueRuntime, mountQueues, getQueue, getBoss, closeAllQueueResources, DEFAULT_EXPIRE_IN_SECONDS } from './queue';
 import type { MochiJob, MochiQueueStorage } from './queue';
 import { mochiEvents } from './events';
 import { initExtensions } from './extensions';
+import { logger } from './utils/log';
 import { markStartupMilestone, resetStartupMilestones } from './lifecycle';
 
 const dataDir = mkdtempSync(path.join(import.meta.dir, '..', '.mochi-queue-test-'));
@@ -26,10 +27,10 @@ interface TestQueueConfig {
   on?: Record<string, unknown>;
 }
 
-// Mirrors what Mochi.serve does for a non-empty queues map, with spies on for deterministic waits.
+// Mirrors what Mochi.serve does for a non-empty queues array, with spies on for deterministic waits.
 async function startWith(queues: Record<string, TestQueueConfig>, storage: MochiQueueStorage = 'memory'): Promise<void> {
   await startQueueRuntime(storage, { enableSpies: true });
-  await mountQueues(Object.entries(queues) as Parameters<typeof mountQueues>[0]);
+  await mountQueues(Object.entries(queues).map(([name, config]) => ({ name, ...config })) as Parameters<typeof mountQueues>[0]);
 }
 
 afterEach(async () => {
@@ -162,8 +163,14 @@ describe('Mochi queue', () => {
     const name = uniqueName();
     const eventAttempts: number[] = [];
     const listenerAttempts: number[] = [];
+    const lastAttempt = deferred<void>();
 
-    mochiEvents.on('queue:failed', (e) => eventAttempts.push(e.attempt));
+    mochiEvents.on('queue:failed', (e) => {
+      eventAttempts.push(e.attempt);
+      if (e.attempt === 2) {
+        lastAttempt.resolve();
+      }
+    });
 
     await startWith({
       [name]: {
@@ -179,13 +186,20 @@ describe('Mochi queue', () => {
       },
     });
 
-    const spy = getBoss().getSpy(name);
     const jobId = await getQueue(name).add({ y: 1 } as never);
-    // The spy's `failed` state fires only on the terminal failure, so intermediate attempts are observed off the bus.
-    await spy.waitForJobWithId(jobId!, 'failed');
+    await lastAttempt.promise;
 
     expect(eventAttempts).toEqual([1, 2]);
     expect(listenerAttempts).toEqual([1, 2]);
+    // The per-job settlement lands the terminal state just after the event, so poll briefly for it.
+    let state: string | undefined;
+    for (let i = 0; i < 50 && state !== 'failed'; i++) {
+      state = (await getBoss().getJobById(name, jobId!))?.state;
+      if (state !== 'failed') {
+        await Bun.sleep(100);
+      }
+    }
+    expect(state).toBe('failed');
   }, 15_000);
 
   test('a throwing completed listener does not fail or retry the job', async () => {
@@ -272,7 +286,7 @@ describe('Mochi queue', () => {
 
   test('addBulk skips jobs whose explicit id already exists and resolves only the inserted ids', async () => {
     const name = uniqueName();
-    const added: Array<{ queue: string; jobId: string }> = [];
+    const added: Array<{ queue: string; jobId: string; bulk?: boolean }> = [];
     mochiEvents.on('queue:added', (e) => added.push(e));
 
     await startWith({ [name]: {} });
@@ -288,7 +302,7 @@ describe('Mochi queue', () => {
     // One from the original add, one for the single job addBulk actually inserted — none for the skipped duplicate.
     expect(added).toEqual([
       { queue: name, jobId: taken! },
-      { queue: name, jobId: fresh },
+      { queue: name, jobId: fresh, bulk: true },
     ]);
   });
 
@@ -464,5 +478,127 @@ describe('Mochi queue', () => {
     expect(() => getQueue(name)).toThrow(/queues are not mounted yet/);
     // A second call must not throw even though the registry is already empty.
     await expect(closeAllQueueResources()).resolves.toBeUndefined();
+  });
+
+  test('batchSize > 1 settles each job on its own: one failure retries alone', async () => {
+    const name = uniqueName();
+    const completions: Array<{ n: number; attempt: number }> = [];
+    const failedEvents: Array<{ jobId: string; attempt: number }> = [];
+    const done = deferred<void>();
+    mochiEvents.on('queue:failed', (e) => failedEvents.push({ jobId: e.jobId, attempt: e.attempt }));
+
+    await startWith({
+      [name]: {
+        process: async (job: MochiJob<{ n: number }>) => {
+          if (job.data.n === 2 && job.attempt === 1) {
+            throw new Error('flaky');
+          }
+          completions.push({ n: job.data.n, attempt: job.attempt });
+          if (completions.length === 3) {
+            done.resolve();
+          }
+        },
+        options: { batchSize: 3, retryLimit: 1, retryDelay: 0, pollingIntervalSeconds: 0.5 },
+      },
+    });
+
+    // One insert() call, then one notify — the worker's next fetch sees all three jobs as a single batch.
+    const ids = await getQueue<{ n: number }>(name).addBulk([{ data: { n: 1 } }, { data: { n: 2 } }, { data: { n: 3 } }]);
+    await done.promise;
+
+    // The whole-batch alternative would have retried jobs 1 and 3 alongside the thrown job 2.
+    expect(completions.filter((c) => c.n !== 2).every((c) => c.attempt === 1)).toBe(true);
+    expect(completions.find((c) => c.n === 2)?.attempt).toBe(2);
+    expect(failedEvents).toEqual([{ jobId: ids[1]!, attempt: 1 }]);
+    await getBoss().getSpy(name).waitForJobWithId(ids[1]!, 'completed');
+  }, 15_000);
+
+  test('worker tuning reaches boss.work, with Mochi-owned keys winning over the escape hatch', async () => {
+    const name = uniqueName();
+    await startWith({
+      [name]: {
+        process: async () => null,
+        options: {
+          concurrency: 2,
+          batchSize: 4,
+          burst: true,
+          // The sneaked-in batchSize/includeMetadata must lose to the Mochi-owned keys.
+          worker: { orderByCreatedOn: false, minPriority: 5, batchSize: 99, includeMetadata: false } as never,
+        },
+      },
+    });
+
+    const worker = getBoss()
+      .getWipData()
+      .find((w) => w.name === name);
+    expect(worker).toBeDefined();
+    expect(worker!.options).toMatchObject({
+      batchSize: 4,
+      includeMetadata: true,
+      perJobResults: true,
+      burstWhenBatchFull: true,
+      localConcurrency: 2,
+      orderByCreatedOn: false,
+      minPriority: 5,
+    });
+  });
+
+  test('burst without a real batch size warns at mount', async () => {
+    const warn = spyOn(logger, 'warn').mockImplementation(() => {});
+    try {
+      const name = uniqueName();
+      await startWith({ [name]: { process: async () => null, options: { burst: true } } });
+      expect(warn.mock.calls.flat().some((m) => String(m).includes('burst has no effect with batchSize 1'))).toBe(true);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  test('an undeclared expiry is no longer re-sent: a bare remount keeps stored options', async () => {
+    const name = uniqueName();
+    const file = path.join(dataDir, 'expiry.sqlite');
+    await startWith({ [name]: { options: { expireInSeconds: 42, retryLimit: 7 } } }, { sqlite: file });
+    expect((await getBoss().getQueue(name))?.expireInSeconds).toBe(42);
+    await closeAllQueueResources();
+
+    // A second process mounting the same queue with a bare Mochi.queue(name) must keep 42, not reset it to the default.
+    await startWith({ [name]: {} }, { sqlite: file });
+    const queue = await getBoss().getQueue(name);
+    expect(queue?.expireInSeconds).toBe(42);
+    expect(queue?.retryLimit).toBe(7);
+  }, 15_000);
+
+  test('a fresh queue with no declared expiry lands on the default via bun-boss, not an explicit send', async () => {
+    const name = uniqueName();
+    await startWith({ [name]: {} });
+    expect((await getBoss().getQueue(name))?.expireInSeconds).toBe(DEFAULT_EXPIRE_IN_SECONDS);
+  });
+
+  test('a filter-overridden default expiry is still sent', async () => {
+    initExtensions({ filters: { 'queue:expireInSeconds': (value, ctx) => (ctx.explicit ? value : 300) } });
+    const name = uniqueName();
+    await startWith({ [name]: {} });
+    expect((await getBoss().getQueue(name))?.expireInSeconds).toBe(300);
+  });
+
+  test('addBulk emits per-job bulk-flagged adds plus one queue:addedBulk summary', async () => {
+    const name = uniqueName();
+    const added: unknown[] = [];
+    const bulks: unknown[] = [];
+    mochiEvents.on('queue:added', (e) => added.push(e));
+    mochiEvents.on('queue:addedBulk', (e) => bulks.push(e));
+
+    await startWith({ [name]: {} });
+    const queue = getQueue<{ n: number }>(name);
+    const ids = await queue.addBulk([{ data: { n: 1 } }, { data: { n: 2 } }, { data: { n: 3 } }]);
+    const solo = await queue.add({ n: 4 });
+
+    expect(added).toEqual([
+      { queue: name, jobId: ids[0]!, bulk: true },
+      { queue: name, jobId: ids[1]!, bulk: true },
+      { queue: name, jobId: ids[2]!, bulk: true },
+      { queue: name, jobId: solo! },
+    ]);
+    expect(bulks).toEqual([{ queue: name, count: 3, jobIds: ids }]);
   });
 });

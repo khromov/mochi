@@ -3,7 +3,7 @@ import type { MochiEmailTransportConfig } from 'mochi-framework';
 import { analytics } from 'mochi-shared';
 import { routes } from './routes';
 import { adminAuth } from './adminAuth';
-import { SUPPORT_EMAIL_QUEUE, supportEmailQueue } from './jobs.server';
+import { supportEmailQueue } from './jobs.server';
 
 const PORT = Number(process.env.PORT) || 3336;
 const DEVELOPMENT = process.env.MODE === 'development';
@@ -35,7 +35,7 @@ await Mochi.serve({
   proxy: { origin: ORIGIN, addressHeader: 'x-forwarded-for', xffDepth: 1 },
   // Auth first, so an unauthorised /admin hit is never counted as a pageview.
   handle: sequence(adminAuth, analytics()),
-  queues: { [SUPPORT_EMAIL_QUEUE]: supportEmailQueue },
+  queues: [supportEmailQueue],
   // A separate file from SUPPORT_DB on purpose: the app holds its own bun:sqlite handle on support.sqlite, and sharing
   // one file across two drivers invites writer contention for no benefit.
   queueStorage: { sqlite: process.env.SUPPORT_QUEUE_DB || '.db/queue.sqlite' },
