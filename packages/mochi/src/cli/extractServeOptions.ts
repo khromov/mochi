@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { freshImport } from '../compiler/freshImport';
-import { markBuilding } from '../utils/buildFlag';
+import { runInEntryImportScope } from '../utils/buildFlag';
 import type { MochiServeOptions } from '../types';
 
 // Thrown by the capturing serve() stub to unwind the entry module's top-level
@@ -25,11 +25,6 @@ let captured: Partial<MochiServeOptions> | null = null;
  * Returns the captured options, or `null` if the entry never called `serve()`.
  */
 export async function extractServeOptions(entryPath: string, opts?: { fresh?: boolean }): Promise<Partial<MochiServeOptions> | null> {
-  // Flip `isBuilding` before importing the framework: the plugin below snapshots
-  // realMod's namespace into its `object`-loader exports, so the flag must
-  // already be true when that spread runs for the entry to observe it.
-  markBuilding();
-
   // The real framework entry, by absolute path — NOT the bare specifier, so the
   // plugin below does not intercept this import (no recursion). This file lives
   // in `src/cli/`, so climb one level to reach it.
@@ -72,6 +67,9 @@ export async function extractServeOptions(entryPath: string, opts?: { fresh?: bo
             ...realMod,
             default: (realMod as { default?: unknown }).default ?? realMod,
             Mochi: mochiProxy,
+            // Overridden rather than read from `realMod`, whose namespace is snapshotted here: only the module graph
+            // imported for extraction is "building", so a dev-watcher re-import must not flip the flag process-wide.
+            isBuilding: true,
           },
         }));
       },
@@ -81,11 +79,15 @@ export async function extractServeOptions(entryPath: string, opts?: { fresh?: bo
 
   captured = null;
   try {
-    if (opts?.fresh) {
-      await freshImport(entryPath);
-    } else {
-      await import(Bun.pathToFileURL(entryPath).href);
-    }
+    // Scoped, not a process-wide flag: the dev watcher calls this inside a live server, where the entry's side effects
+    // must be suppressed only for the duration of the import.
+    await runInEntryImportScope(async () => {
+      if (opts?.fresh) {
+        await freshImport(entryPath);
+      } else {
+        await import(Bun.pathToFileURL(entryPath).href);
+      }
+    });
   } catch (err) {
     if (!isHalt(err)) {
       throw err;

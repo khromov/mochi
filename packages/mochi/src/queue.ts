@@ -6,7 +6,7 @@ import { SQL } from 'bun';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { toPosixPath } from './utils';
-import { isBuilding } from './utils/buildFlag';
+import { isBuildingEntry } from './utils/buildFlag';
 import { pinGlobal } from './utils/globalState';
 import { applyFilter } from './extensions';
 import { startupMilestoneReached } from './lifecycle';
@@ -663,35 +663,35 @@ export function createQueueDescriptor<T = unknown, R = unknown>(name: string, co
     async add(data, opts) {
       // A `mochi-framework build` imports the app entry for real; adds are suppressed there so a build never connects
       // to (or writes into) the app's production storage.
-      if (isBuilding) {
+      if (isBuildingEntry()) {
         return null;
       }
       await ensureUsable(descriptor);
       return base.add(data, opts);
     },
     async addBulk(jobs) {
-      if (isBuilding) {
+      if (isBuildingEntry()) {
         return [];
       }
       await ensureUsable(descriptor);
       return base.addBulk(jobs);
     },
     async addThrottled(data, seconds, key, opts) {
-      if (isBuilding) {
+      if (isBuildingEntry()) {
         return null;
       }
       await ensureUsable(descriptor);
       return base.addThrottled(data, seconds, key, opts);
     },
     async addDebounced(data, seconds, key, opts) {
-      if (isBuilding) {
+      if (isBuildingEntry()) {
         return null;
       }
       await ensureUsable(descriptor);
       return base.addDebounced(data, seconds, key, opts);
     },
     async stop() {
-      if (isBuilding) {
+      if (isBuildingEntry()) {
         return;
       }
       await stopQueue(name);
@@ -794,7 +794,7 @@ export function createWorker(queues: MountableQueue[], storage?: MochiQueueStora
       if (started) {
         throw new Error('Mochi.worker(): this worker was already started.');
       }
-      if (isBuilding) {
+      if (isBuildingEntry()) {
         return;
       }
       if (!workerStorage) {

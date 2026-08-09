@@ -3,6 +3,9 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { extractServeOptions } from './extractServeOptions';
+import { isBuilding } from '../utils/buildFlag';
+import { Mochi } from '../Mochi';
+import { startQueueRuntime, mountQueues, closeAllQueueResources } from '../queue';
 
 // The extractor registers a process-global Bun.plugin that overrides the
 // `mochi-framework` specifier. Keep these tests in their own file so the
@@ -68,6 +71,25 @@ throw new Error('serve should have halted execution before this line');`,
     await extractServeOptions(entry);
 
     expect((globalThis as Record<string, unknown>).__test_isBuilding).toBe(true);
+  });
+
+  test('leaves the process unmarked, so queue adds still work afterwards', async () => {
+    // The dev watcher extracts inside the running server on every entry rebuild; a process-wide `isBuilding` would
+    // silently swallow every subsequent `queue.add()` for the rest of the dev session.
+    const entry = writeEntry(`import { Mochi } from 'mochi-framework';
+await Mochi.serve({ routes: {} });`);
+
+    await extractServeOptions(entry);
+
+    expect(isBuilding).toBe(false);
+    const queue = Mochi.queue<{ n: number }>('after-extract');
+    await startQueueRuntime('memory');
+    await mountQueues([queue]);
+    try {
+      expect(await queue.add({ n: 1 })).toBeString();
+    } finally {
+      await closeAllQueueResources();
+    }
   });
 
   test('returns null when the entry never calls serve()', async () => {
