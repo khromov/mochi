@@ -2,39 +2,60 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { MochiOptions, closeOptionsStorage, __testSetOptionsStorage } from './options';
 import { startTestPostgres, type TestPostgres } from './__fixtures__/postgres/startTestPostgres';
 
+// TEMPORARY DIAGNOSTIC INSTRUMENTATION — remove once the Windows hang is understood.
+const t0 = Date.now();
+function step(label: string): void {
+  console.log(`[diag +${Date.now() - t0}ms] ${label}`);
+}
+
 // Exercises the `{ postgres: url }` storage path over the wire protocol; the embedded path is covered by
 // optionsPglite.test.ts and shared behavior by options.test.ts.
 describe('MochiOptions on postgres storage', () => {
   let pg: TestPostgres;
 
   afterAll(async () => {
+    step('afterAll: closing options storage');
     await closeOptionsStorage();
     __testSetOptionsStorage(null);
+    step('afterAll: closing test postgres');
     await pg?.close();
+    step('afterAll: done');
   });
 
   test('installs its schema and roundtrips get/set/update/delete', async () => {
-    pg = await startTestPostgres();
+    step('starting test postgres');
+    pg = await startTestPostgres({ debug: true });
+    step(`test postgres up on ${pg.url}`);
     __testSetOptionsStorage({ postgres: pg.url });
 
+    step('get(missing) — this creates the driver and installs the schema');
     expect(await MochiOptions.get('missing')).toBeUndefined();
+    step('set(site_name)');
     await MochiOptions.set('site_name', 'Mochi');
+    step('get(site_name)');
     expect(await MochiOptions.get('site_name')).toBe('Mochi');
+    step('set(site_name) again — expected to reject');
     await expect(MochiOptions.set('site_name', 'other')).rejects.toThrow('the key already exists');
 
+    step('update(site_name)');
     await MochiOptions.update('site_name', { renamed: new Date('2026-01-01T00:00:00Z') });
+    step('get(site_name) after update');
     expect(await MochiOptions.get('site_name')).toEqual({ renamed: new Date('2026-01-01T00:00:00Z') });
 
+    step('delete(site_name)');
     expect(await MochiOptions.delete('site_name')).toBe(true);
+    step('delete(site_name) again');
     expect(await MochiOptions.delete('site_name')).toBe(false);
 
-    // Kept sequential on purpose: the fixture serves one connection, so a concurrent query lands on one of
-    // bun:sql's other pool sockets and wedges. Concurrent CAS is covered by optionsPglite.test.ts.
+    step('modify(hits) #1');
     expect(await MochiOptions.modify<number>('hits', (current) => (current ?? 0) + 1)).toBe(1);
+    step('modify(hits) #2');
     expect(await MochiOptions.modify<number>('hits', (current) => (current ?? 0) + 1)).toBe(2);
 
     // The options table must live in the namespaced schema, not the user's public schema.
+    step('information_schema query');
     const { rows } = await pg.query<{ table_schema: string }>("SELECT DISTINCT table_schema FROM information_schema.tables WHERE table_name = 'options'");
     expect(rows.map((r) => r.table_schema)).toEqual(['mochi_options']);
-  }, 30_000);
+    step('test body complete');
+  }, 45_000);
 });
