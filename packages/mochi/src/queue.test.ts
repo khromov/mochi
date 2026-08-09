@@ -524,12 +524,13 @@ describe('Mochi queue', () => {
         process: async (job: MochiJob<{ n: number }>) => {
           runs.push(job.data.n);
           if (job.data.n === 2) {
-            await Bun.sleep(1_500);
+            await Bun.sleep(4_500);
           }
           return { n: job.data.n };
         },
-        // bun-boss times the whole batch out at max(expireInSeconds)=1s; job 2 alone outlives it.
-        options: { batchSize: 3, retryLimit: 0, expireInSeconds: 1, pollingIntervalSeconds: 0.5 },
+        // bun-boss times the whole batch out at max(expireInSeconds)=4s; job 2 alone outlives it. The budget is
+        // seconds-scale (not 1s) so the early settle beats bun-boss's wholesale timeout even on slow CI runners.
+        options: { batchSize: 3, retryLimit: 0, expireInSeconds: 4, pollingIntervalSeconds: 0.5 },
       },
     });
 
