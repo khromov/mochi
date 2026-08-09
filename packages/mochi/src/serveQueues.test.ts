@@ -1,11 +1,10 @@
-import { afterAll, describe, expect, spyOn, test } from 'bun:test';
+import { afterAll, describe, expect, test } from 'bun:test';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import type { Server } from 'bun';
 import { Mochi } from './Mochi';
 import { isMochiQueue } from './types';
 import { closeAllQueueResources } from './queue';
-import { logger } from './utils/log';
 import { reachedStartupMilestones, resetStartupMilestones } from './lifecycle';
 
 function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
@@ -128,7 +127,29 @@ describe('Mochi.serve({ queues })', () => {
     ).rejects.toThrow(/queueStorage/);
   });
 
-  test('mounts queues on sqlite storage, processes via the descriptor handle, and warns when a descriptor storage loses to serve', async () => {
+  test('rejects conflicting storage declarations before binding — an app has one queue storage', async () => {
+    expect(
+      Mochi.serve({
+        port: 0,
+        development: false,
+        logger: { enabled: false },
+        routes: {},
+        queues: [Mochi.queue('a', { storage: 'memory' }), Mochi.queue('b', { storage: { sqlite: 'other.sqlite' } })],
+      }),
+    ).rejects.toThrow(/"b" and "a" declare different storages/);
+    expect(
+      Mochi.serve({
+        port: 0,
+        development: false,
+        logger: { enabled: false },
+        routes: {},
+        queues: [Mochi.queue('a', { storage: 'memory' })],
+        queueStorage: { sqlite: 'other.sqlite' },
+      }),
+    ).rejects.toThrow(/"a" declares a different storage/);
+  });
+
+  test('mounts queues on the storage inherited from the descriptor and processes via its handle', async () => {
     outDir = mkdtempSync(path.join(import.meta.dir, '..', '.mochi-serve-queues-'));
     const sqliteFile = path.join(outDir, 'queue.sqlite');
     const processed: string[] = [];
@@ -136,8 +157,7 @@ describe('Mochi.serve({ queues })', () => {
 
     const jobs = Mochi.queue<{ to: string }>('serve-queue-jobs', {
       pollingIntervalSeconds: 0.5,
-      // Loses to the serve-level queueStorage below, which must produce a warning.
-      storage: 'memory',
+      storage: { sqlite: sqliteFile },
       process: async (job) => {
         processed.push(job.data.to);
         return { sent: true };
@@ -147,21 +167,15 @@ describe('Mochi.serve({ queues })', () => {
       },
     });
 
-    const warn = spyOn(logger, 'warn').mockImplementation(() => {});
-    try {
-      server = await Mochi.serve({
-        port: 0,
-        development: false,
-        logger: { enabled: false },
-        outDir,
-        routes: {},
-        queueStorage: { sqlite: sqliteFile },
-        queues: [jobs],
-      });
-      expect(warn.mock.calls.flat().some((m) => String(m).includes('the serve-level queueStorage wins'))).toBe(true);
-    } finally {
-      warn.mockRestore();
-    }
+    // No queueStorage: serve inherits the descriptor's sqlite storage.
+    server = await Mochi.serve({
+      port: 0,
+      development: false,
+      logger: { enabled: false },
+      outDir,
+      routes: {},
+      queues: [jobs],
+    });
 
     const jobId = await jobs.add({ to: 'alice' });
     expect(jobId).toBeString();

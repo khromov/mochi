@@ -268,6 +268,13 @@ export function isMochiQueue(value: unknown): value is MochiQueueConfig {
   return typeof value === 'object' && value !== null && (value as MochiQueueConfig).__mochiQueue === true;
 }
 
+/** Options for `Mochi.worker()` — consume queues in a process that never calls `Mochi.serve()`. */
+export interface MochiWorkerOptions {
+  queues: MochiQueueConfig[];
+  /** The app's queue storage; may instead come from a `storage` declared on the descriptors. */
+  storage?: MochiQueueStorage;
+}
+
 export type MochiRouteValue = MochiPageConfig | MochiApiConfig | MochiWsConfig | MochiSseConfig | MochiFileConfig | BunRouteValue;
 
 /** `stack` is only populated when the server runs with `development: true`. */
@@ -439,6 +446,8 @@ export interface MochiServeOptions {
    * Where queue jobs live: `'memory'` (default — lost on restart), `{ sqlite: 'path/to.db' }` for a durable
    * single-process store, `{ postgres: url }` for a shared multi-process store (installed into a `mochi_queue` schema),
    * or `{ pglite: instance }` for an embedded in-process Postgres you construct and own (Mochi never closes it).
+   * Unset, it inherits a `storage` declared on the queue descriptors; an app has one queue storage, so conflicting
+   * declarations are a boot error.
    */
   queueStorage?: MochiQueueStorage;
   fetch?: (req: Request, server: Server<undefined>) => Response | Promise<Response>;

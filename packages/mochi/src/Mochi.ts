@@ -35,6 +35,7 @@ import type {
   MochiRouteValue,
   MochiServerPropsResolver,
   MochiServeOptions,
+  MochiWorkerOptions,
   RouteRegistrationResult,
   MochiSseConfig,
   MochiSseHandler,
@@ -66,12 +67,13 @@ import {
   closeAllQueueResources,
   isValidQueueStorage,
   createQueueDescriptor,
+  createWorker,
   storageEquals,
   assertNoConflictingStandaloneRuntime,
 } from './queue';
 import { pinGlobal } from './utils/globalState';
 import { resetStartupMilestones } from './lifecycle';
-import type { MochiQueue, MochiQueueOptions, MochiQueueDescriptor } from './queue';
+import type { MochiQueue, MochiQueueOptions, MochiQueueDescriptor, MochiQueueStorage, MochiWorker } from './queue';
 import type { BunBoss } from 'bun-boss';
 import { finalizeCookieHeaders } from './runtime/cookies';
 import { makeRequestContextBuilder } from './runtime/requestSetup';
@@ -222,6 +224,16 @@ export class Mochi {
   }
 
   /**
+   * Declare a standalone worker: consume queues in a process that never calls `Mochi.serve()`. `start()` connects to
+   * the app's queue storage (from the descriptors or the `storage` option) and begins polling. Ensure-only, like
+   * standalone producers — stored queue options are not re-synced, no hooks or milestones fire, and signal handling is
+   * yours to wire (`Mochi.stop()` drains and closes the runtime).
+   */
+  static worker(options: MochiWorkerOptions): MochiWorker {
+    return createWorker(options.queues, options.storage);
+  }
+
+  /**
    * The shared bun-boss instance behind `Mochi.serve({ queues })` — the escape hatch for everything Mochi doesn't wrap:
    * `fetch`, `cancel`, `retry`, `redrive`, `findJobs`, `getQueueStats`, …. Available from the `mochi:queuesMounted` hook
    * onwards; throws before that, or when no queues are declared.
@@ -343,19 +355,28 @@ export class Mochi {
         }
       }
     }
-    const queueStorage = options.queueStorage ?? 'memory';
+    // An app has one queue storage: declared on the descriptors, app-wide via queueStorage, or both when they agree.
+    let declaredStorage: { name: string; storage: MochiQueueStorage } | undefined;
+    for (const config of declaredQueues) {
+      if (config.storage === undefined) {
+        continue;
+      }
+      if (declaredStorage && !storageEquals(declaredStorage.storage, config.storage)) {
+        throw new Error(`Mochi.serve({ queues }): "${config.name}" and "${declaredStorage.name}" declare different storages — an app has one queue storage.`);
+      }
+      declaredStorage ??= { name: config.name, storage: config.storage };
+    }
+    if (options.queueStorage !== undefined && declaredStorage && !storageEquals(declaredStorage.storage, options.queueStorage)) {
+      throw new Error(
+        `Mochi.serve({ queueStorage }): "${declaredStorage.name}" declares a different storage — an app has one queue storage. Align the two declarations, or drop one.`,
+      );
+    }
+    const queueStorage = options.queueStorage ?? declaredStorage?.storage ?? 'memory';
     if (!isValidQueueStorage(queueStorage)) {
       throw new Error(`Mochi.serve({ queueStorage }): expected 'memory', { sqlite: 'path/to.db' }, { postgres: url }, or { pglite: instance }.`);
     }
     if (options.queueStorage !== undefined && declaredQueues.length === 0) {
       logger.warn(`Mochi.serve({ queueStorage }) has no effect without a non-empty queues array — the queue runtime only starts when queues are declared.`);
-    }
-    for (const config of declaredQueues) {
-      if (config.storage !== undefined && !storageEquals(config.storage, queueStorage)) {
-        logger.warn(
-          `Mochi.serve({ queues }): "${config.name}" declares its own storage, but under serve the serve-level queueStorage wins — the descriptor's storage is only used standalone.`,
-        );
-      }
     }
     if (declaredQueues.length > 0) {
       // Fail before the config singleton pins and the server binds — rejecting this deep in the boot would wedge the process.

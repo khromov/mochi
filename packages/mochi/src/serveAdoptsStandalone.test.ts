@@ -40,6 +40,7 @@ describe('Mochi.serve() over a standalone queue runtime', () => {
     // Standalone connect first (producer-only: nothing processes the job yet).
     await jobs.add({ n: 41 });
 
+    // The descriptor-vs-queueStorage contradiction rejects during validation, before the config singleton pins.
     await expect(
       Mochi.serve({
         port: 0,
@@ -50,7 +51,7 @@ describe('Mochi.serve() over a standalone queue runtime', () => {
         queueStorage: { sqlite: path.join(outDir, 'other.sqlite') },
         queues: [jobs],
       }),
-    ).rejects.toThrow(/standalone queue runtime is already connected/);
+    ).rejects.toThrow(/declares a different storage — an app has one queue storage/);
 
     // Same storage: serve adopts the running boss, mounts the worker, and the pre-added job drains.
     server = await Mochi.serve({

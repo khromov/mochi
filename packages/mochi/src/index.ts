@@ -113,6 +113,7 @@ export type {
 export type {
   MochiQueue,
   MochiQueueDescriptor,
+  MochiWorker,
   MochiJob,
   MochiJobOptions,
   MochiQueueOptions,
@@ -195,6 +196,7 @@ export type {
   MochiSubmitCallback,
   HttpMethod,
   MochiServeOptions,
+  MochiWorkerOptions,
   MochiWarmupOptions,
   MochiRouteValue,
   MochiWsConfig,

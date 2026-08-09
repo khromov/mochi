@@ -141,8 +141,9 @@ export interface MochiQueueOptions<T, R = unknown> extends MochiQueueRuntimeOpti
   process?: MochiProcessor<T, R>;
   on?: Partial<MochiQueueListeners<T, R>>;
   /**
-   * Where to connect when this queue is produced to standalone (no `Mochi.serve()`): the first `add*()` lazily starts a
-   * producer-only runtime against it. Under `Mochi.serve()`, the serve-level `queueStorage` wins.
+   * The app's queue storage, declared on the descriptor: a standalone producer's first `add*()` lazily connects a
+   * producer-only runtime to it, and `Mochi.serve()` inherits it when `queueStorage` is unset. An app has one queue
+   * storage — a conflicting declaration anywhere is a boot error.
    */
   storage?: MochiQueueStorage;
 }
@@ -498,11 +499,18 @@ async function ensureUsable(descriptor: MountableQueue): Promise<void> {
       );
     }
   }
-  // Ensure-only creation (createQueue is ON CONFLICT DO NOTHING) and never updateQueue: a producer must not rewrite
-  // options the consuming deployment owns. deadLetter is dropped because its target queue may not exist here.
+  await ensureQueueExists(name, descriptor.options);
+  if (!registry.byName.has(name)) {
+    registry.byName.set(name, producerMethods(name));
+  }
+}
+
+// Ensure-only creation (createQueue is ON CONFLICT DO NOTHING) and never updateQueue: the standalone paths must not
+// rewrite options a Mochi.serve() deployment owns. deadLetter is dropped because its target queue may not exist here.
+async function ensureQueueExists(name: string, options: MochiQueueRuntimeOptions | undefined): Promise<void> {
   let ensured = registry.ensured.get(name);
   if (!ensured) {
-    const { deadLetter: _, ...createOptions } = toBossQueueOptions(name, descriptor.options);
+    const { deadLetter: _, ...createOptions } = toBossQueueOptions(name, options);
     ensured = requireBoss()
       .createQueue(name, createOptions)
       .catch((err: unknown) => {
@@ -512,9 +520,6 @@ async function ensureUsable(descriptor: MountableQueue): Promise<void> {
     registry.ensured.set(name, ensured);
   }
   await ensured;
-  if (!registry.byName.has(name)) {
-    registry.byName.set(name, producerMethods(name));
-  }
 }
 
 /** Implements `Mochi.queue(name, config)` — see its JSDoc there. */
@@ -581,25 +586,126 @@ export async function mountQueues(queues: MountableQueue[]): Promise<void> {
   for (const { name, config } of resolved) {
     registry.byName.set(name, producerMethods(name));
     if (config.process) {
-      const o = config.options;
-      const batchSize = o?.batchSize ?? 1;
-      if (o?.burst && batchSize === 1) {
-        logger.warn(`[queue] ${name}: burst has no effect with batchSize 1 — raise batchSize so there are full fetches to burst on.`);
-      }
-      const workOptions = omitUndefined({
-        // Escape hatch first; Mochi-owned keys below win where they overlap.
-        ...omitUndefined({ ...(o?.worker ?? {}) }),
-        batchSize,
-        includeMetadata: true,
-        perJobResults: true,
-        localConcurrency: o?.concurrency,
-        pollingIntervalSeconds: o?.pollingIntervalSeconds,
-        burstWhenBatchFull: o?.burst,
-      }) as WorkOptions & { includeMetadata: true; perJobResults: true };
-      const workId = await boss.work(name, workOptions, makeHandler(name, config.process, config.on as Partial<MochiQueueListeners<never, unknown>> | undefined));
-      registry.workIds.set(name, workId);
+      await registerQueueWorker(boss, config);
     }
   }
+}
+
+async function registerQueueWorker(boss: BunBoss, config: MountableQueue): Promise<void> {
+  if (!config.process) {
+    return;
+  }
+  const o = config.options;
+  const batchSize = o?.batchSize ?? 1;
+  if (o?.burst && batchSize === 1) {
+    logger.warn(`[queue] ${config.name}: burst has no effect with batchSize 1 — raise batchSize so there are full fetches to burst on.`);
+  }
+  const workOptions = omitUndefined({
+    // Escape hatch first; Mochi-owned keys below win where they overlap.
+    ...omitUndefined({ ...(o?.worker ?? {}) }),
+    batchSize,
+    includeMetadata: true,
+    perJobResults: true,
+    localConcurrency: o?.concurrency,
+    pollingIntervalSeconds: o?.pollingIntervalSeconds,
+    burstWhenBatchFull: o?.burst,
+  }) as WorkOptions & { includeMetadata: true; perJobResults: true };
+  const workId = await boss.work(config.name, workOptions, makeHandler(config.name, config.process, config.on as Partial<MochiQueueListeners<never, unknown>> | undefined));
+  registry.workIds.set(config.name, workId);
+}
+
+/** The handle returned by `Mochi.worker()` — start/stop consuming declared queues in a serverless process. */
+export interface MochiWorker {
+  /** Connect to storage (reusing a standalone runtime on the same storage), ensure the queues exist, and start polling. */
+  start(): Promise<void>;
+  /** Deregister this worker's queues, waiting for in-flight jobs. The runtime stays up for producers; `Mochi.stop()` tears it down. */
+  stop(): Promise<void>;
+}
+
+/** Implements `Mochi.worker(options)` — see its JSDoc there. */
+export function createWorker(queues: MountableQueue[], storage?: MochiQueueStorage): MochiWorker {
+  if (queues.length === 0) {
+    throw new Error('Mochi.worker(): declare at least one queue.');
+  }
+  const names = new Set<string>();
+  let declared: { name: string; storage: MochiQueueStorage } | undefined;
+  for (const q of queues) {
+    if (names.has(q.name)) {
+      throw new Error(`Mochi.worker(): two queues are named "${q.name}". Queue names must be unique.`);
+    }
+    names.add(q.name);
+    if (q.storage !== undefined) {
+      if (declared && !storageEquals(declared.storage, q.storage)) {
+        throw new Error(`Mochi.worker(): "${q.name}" and "${declared.name}" declare different storages — an app has one queue storage.`);
+      }
+      declared ??= { name: q.name, storage: q.storage };
+    }
+  }
+  if (storage !== undefined) {
+    if (!isValidQueueStorage(storage)) {
+      throw new Error(`Mochi.worker({ storage }): expected 'memory', { sqlite: 'path/to.db' }, { postgres: url }, or { pglite: instance }.`);
+    }
+    if (declared && !storageEquals(declared.storage, storage)) {
+      throw new Error(`Mochi.worker({ storage }): "${declared.name}" declares a different storage — an app has one queue storage.`);
+    }
+  }
+  const workerStorage = storage ?? declared?.storage;
+  let started = false;
+  return {
+    async start() {
+      if (started) {
+        throw new Error('Mochi.worker(): this worker was already started.');
+      }
+      if (registry.kind === 'serve') {
+        throw new Error('Mochi.worker(): this process is serving — declare the queues in Mochi.serve({ queues }) instead.');
+      }
+      if (!workerStorage) {
+        throw new Error('Mochi.worker(): no storage declared. Give a queue descriptor (or the worker) a storage to connect to.');
+      }
+      started = true;
+      try {
+        if (registry.starting) {
+          await registry.starting;
+        }
+        if (registry.boss) {
+          if (!storageEquals(registry.storage, workerStorage)) {
+            throw new Error(
+              `Mochi.worker(): the queue runtime is already connected to ${describeStorage(registry.storage)}, which is not this worker's storage ${describeStorage(workerStorage)}. An app has one queue storage.`,
+            );
+          }
+        } else {
+          registry.starting = startQueueRuntime(workerStorage, { kind: 'standalone' }).finally(() => {
+            registry.starting = null;
+          });
+          await registry.starting;
+        }
+        const boss = requireBoss();
+        for (const q of queues) {
+          await ensureQueueExists(q.name, q.options);
+          if (!registry.byName.has(q.name)) {
+            registry.byName.set(q.name, producerMethods(q.name));
+          }
+          await registerQueueWorker(boss, q);
+        }
+      } catch (err) {
+        started = false;
+        throw err;
+      }
+    },
+    async stop() {
+      const boss = registry.boss;
+      if (!boss) {
+        return;
+      }
+      for (const q of queues) {
+        const workId = registry.workIds.get(q.name);
+        if (workId) {
+          await boss.offWork(q.name, { id: workId, wait: true }).catch(() => {});
+          registry.workIds.delete(q.name);
+        }
+      }
+    },
+  };
 }
 
 /**

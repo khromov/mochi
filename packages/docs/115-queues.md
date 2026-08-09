@@ -95,10 +95,10 @@ await emails.addBulk([{ data: { to: 'a@x.com' } }, { data: { to: 'b@x.com' }, op
 
 ### Standalone producers
 
-A script whose only job is _enqueueing_ — a cron job, a CLI backfill, a migration — does not need a server. Give the descriptor `storage` and its first `add()` lazily connects a **producer-only** runtime: no port, no workers, and no touching of queue options owned by the consuming deployment. Tear down with [`Mochi.stop()`](#mochistop):
+A script whose only job is _enqueueing_ — a cron job, a CLI backfill, a migration — can write straight to queue storage. Give the descriptor `storage` and its first `add()` lazily connects a **producer-only** runtime; tear down with [`Mochi.stop()`](#mochistop):
 
 ```ts
-// enqueue.ts — run with `bun enqueue.ts`, no Mochi.serve() anywhere
+// enqueue.ts — a standalone producer script
 import { Mochi } from 'mochi-framework';
 
 const emails = Mochi.queue<{ to: string }>('emails', {
@@ -109,14 +109,46 @@ await emails.addBulk(jobs);
 await Mochi.stop();
 ```
 
-- The queue is created if missing, but existing queue options are **never re-synced** from a producer — only `Mochi.serve()` mounting the queue rewrites them.
-- One queue runtime per process: every standalone descriptor must use the same storage, and a descriptor without `storage` throws on `add()`.
-- Under `Mochi.serve()`, the serve-level `queueStorage` wins (a differing descriptor `storage` logs a warning). A serve on the **same** storage adopts an already-connected standalone runtime; on a different storage it refuses to start.
-- `mochi:queuesMounted` is a serve milestone — it does not fire for standalone producers. Readiness is simply the first `add()` resolving.
+- A producer creates the queue if missing and leaves stored options untouched — [option re-sync](#storage) stays with `Mochi.serve()`. To consume without a server, see [standalone workers](#standalone-workers).
+- Your app has **one queue storage**. Declare it on the descriptor (`storage`), app-wide via the serve-level [`queueStorage`](#storage) option, or both when they agree — conflicting declarations are a boot error. Standalone, a descriptor without `storage` throws on `add()`.
+- `Mochi.serve()` inherits the descriptors' storage when `queueStorage` is unset, and a serve on the same storage adopts an already-connected standalone runtime — on a different storage it refuses to start.
+- `mochi:queuesMounted` fires only under `Mochi.serve()`. For a standalone producer, readiness is the first `add()` resolving.
+
+### Standalone workers
+
+`Mochi.worker()` is the consuming counterpart: a process that polls and runs `process` without serving HTTP. `start()` connects to the app's queue storage — from the descriptors, or the worker's own `storage` option — ensures the queues exist, and begins polling:
+
+```ts
+// worker.ts — a standalone worker script
+import { Mochi, consoleLogger } from 'mochi-framework';
+import { emails } from './queues';
+
+consoleLogger();
+
+const worker = Mochi.worker({ queues: [emails] });
+await worker.start();
+
+process.on('SIGINT', async () => {
+  await Mochi.stop();
+  process.exit(0);
+});
+process.on('SIGTERM', async () => {
+  await Mochi.stop();
+  process.exit(0);
+});
+```
+
+Like standalone producers, workers are ensure-only: stored queue options are trusted as-is, with no re-sync — declare the options you rely on wherever the queue is actually mounted by `Mochi.serve()`, or on a fresh queue's first creator. `worker.stop()` deregisters the worker's queues (waiting for in-flight jobs) while the runtime stays up for producing; `Mochi.stop()` tears the runtime down.
+
+<Callout type="info">
+
+**Standalone means standalone.** `Mochi.worker()` installs no signal handlers (wire them yourself, as above), fires no hooks or startup milestones, and subscribes no logger — call `consoleLogger()` for the `QUEUE` lines. A process that calls `Mochi.serve()` declares its queues there instead; `start()` refuses to run alongside it.
+
+</Callout>
 
 ### Batch processing
 
-By default a worker fetches one job per poll. `batchSize` fetches up to N at once — `process` still runs once per job, and each job settles on its own, so one throw fails (and retries) only that job while its batch siblings complete. `burst: true` keeps fetching with no poll delay while fetches come back full, which is what drains a large cross-process backlog fast:
+By default a worker fetches one job per poll. `batchSize` fetches up to N at once — `process` still runs once per job, and each job settles on its own, so one throw fails (and retries) only that job while its batch siblings complete. `burst: true` keeps fetching with zero poll delay while batches come back full — the fastest way to drain a cross-process backlog:
 
 ```ts
 Mochi.queue<PluginJob>('plugin-info', {
@@ -140,11 +172,11 @@ Mochi.queue('plugin-info', {
 });
 ```
 
-Mochi-owned settings (`batchSize`, `concurrency`, `pollingIntervalSeconds`, and the per-job settlement contract) always win where they overlap, and nothing in `worker` is persisted on the queue — these only shape how this worker fetches.
+Mochi-owned settings (`batchSize`, `concurrency`, `pollingIntervalSeconds`, and the per-job settlement contract) win where they overlap. `worker` options apply at fetch time only; stored queue options stay as declared.
 
 ### Storage
 
-One store serves every queue, selected by the serve-level `queueStorage` option:
+One store serves every queue — declared app-wide via the serve-level `queueStorage` option, or inherited from a [`storage`](#standalone-producers) declared on the descriptors:
 
 ```ts
 await Mochi.serve({
@@ -165,7 +197,7 @@ await Mochi.serve({
 
 Postgres storage installs its tables into a dedicated `mochi_queue` schema on first start, away from your application's tables. The schema name is fixed, so every app sharing one database shares one queue namespace — give each app its own database to keep their queues apart.
 
-On durable storage, queue options re-sync from your code on every `Mochi.serve()` boot — but only **additively**: an option you leave undeclared (including `expireInSeconds`) keeps its previously stored value. Set the old value back explicitly (e.g. `retryLimit: 2`) rather than deleting the line; a removed `deadLetter` can only be repointed, not cleared. [Standalone producers](#standalone-producers) never re-sync anything.
+On durable storage, queue options re-sync from your code on every `Mochi.serve()` boot — but only **additively**: an option you leave undeclared (including `expireInSeconds`) keeps its previously stored value. Set the old value back explicitly (e.g. `retryLimit: 2`) rather than deleting the line; a removed `deadLetter` can only be repointed, not cleared. [Standalone producers](#standalone-producers) leave stored options untouched.
 
 ### PGlite
 
@@ -263,7 +295,7 @@ mochiEvents.on('queue:completed', ({ queue, jobId, duration }) => {
 
 ### Shutdown
 
-Queues close gracefully on `SIGTERM`/`SIGINT`. In-flight jobs get up to 10 seconds to finish; a job still running after that is failed and follows its queue's retry policy from the store. A queue-only worker process is `Mochi.serve({ queues })` with no `routes`:
+Queues close gracefully on `SIGTERM`/`SIGINT`. In-flight jobs get up to 10 seconds to finish; a job still running after that is failed and follows its queue's retry policy from the store. For a worker process with an HTTP port (health checks, metrics), use `Mochi.serve({ queues })` with no `routes` — [`Mochi.worker()`](#standalone-workers) is the serverless alternative:
 
 ```ts
 // worker.ts — run with `bun worker.ts`
@@ -289,7 +321,7 @@ await Mochi.serve({
 
 ### `Mochi.stop()`
 
-`Mochi.stop()` runs the same graceful teardown as `SIGTERM`/`SIGINT` — the `mochi:shutdown` hook, queue drain, server stop — without exiting the process, so a finite-lifetime script or test ends naturally instead of signalling itself. In a process that never served, it just closes the standalone queue runtime. It is idempotent, and a stopped process cannot `Mochi.serve()` again.
+`Mochi.stop()` runs the same graceful teardown as `SIGTERM`/`SIGINT` — the `mochi:shutdown` hook, queue drain, server stop — without exiting the process, so a finite-lifetime script or test ends naturally. In a [standalone producer](#standalone-producers) process it closes the queue runtime. It is idempotent, and a stopped process cannot `Mochi.serve()` again.
 
 ```ts
 await Mochi.serve({ routes, queues });
