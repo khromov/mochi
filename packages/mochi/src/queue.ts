@@ -415,7 +415,9 @@ function batchDeadline(batch: JobWithMetadata<unknown>[]): number {
   if (budgetMs <= 0) {
     return Infinity;
   }
-  return performance.now() + budgetMs - Math.min(1_000, budgetMs * 0.1);
+  // The reserve is floored at 250ms: for second-scale budgets a pure 10% leaves the settle racing bun-boss's own
+  // timeout within OS timer jitter, and losing that race fails completed siblings wholesale.
+  return performance.now() + budgetMs - Math.min(1_000, Math.max(250, budgetMs * 0.1));
 }
 
 async function withDeadline<R>(work: R | Promise<R>, deadlineAt: number, onTimeout: () => Error): Promise<R> {
