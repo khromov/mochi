@@ -1990,7 +1990,10 @@ async function runShutdown(signal?: NodeJS.Signals): Promise<void> {
     });
     await Promise.race([graceful, Bun.sleep(timeout)]);
   }
-  await server.stop(true);
+  // Caught so a rejection can't escape the signal handler before its process.exit(0) or skip the clearing below.
+  await server.stop(true).catch((err: unknown) => {
+    logger.warn(`Forced stop failed: ${err instanceof Error ? err.message : err}`);
+  });
   // Cleared so a later stop() takes the no-server path instead of re-firing the hook against a dead server.
   shutdownState.server = null;
   shutdownState.options = null;

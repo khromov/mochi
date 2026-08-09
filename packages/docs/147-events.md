@@ -7,6 +7,7 @@ description: 'Subscribe to framework lifecycle events like requests, WebSocket a
 <script>
   import Callout from './_components/Callout.svelte';
   import SeeItInAction from './_components/SeeItInAction.svelte';
+  import VersionNote from './_components/VersionNote.svelte';
 </script>
 
 ## Events
@@ -165,6 +166,8 @@ Fires when the SSE stream closes. A client disconnect or an explicit close both 
 
 #### `queue:added`
 
+<VersionNote since="0.10.0" message="The bulk field is new in 0.10.0." />
+
 Fires after `queue.add()` / `queue.addBulk()` enqueues a job. See [Queues](/docs/queues/).
 
 | Field   | Type                   | Notes                                   |
@@ -174,6 +177,8 @@ Fires after `queue.add()` / `queue.addBulk()` enqueues a job. See [Queues](/docs
 | `bulk`  | `boolean \| undefined` | `true` when the add came from `addBulk` |
 
 #### `queue:addedBulk`
+
+<VersionNote since="0.10.0" message="queue:addedBulk is new in 0.10.0." />
 
 Fires once per `addBulk()` call that inserted at least one job, alongside the per-job `queue:added` events. The [console logger](/docs/logging/) prints this summary instead of the per-job lines.
 
@@ -262,6 +267,8 @@ Fires once after `Bun.serve()` binds the listening socket.
 | `routes`      | `{ page: number; api: number; ws: number; sse: number }` | route counts by kind              |
 
 #### `server:stop`
+
+<VersionNote since="0.10.0" message="The 'stop' reason is new in 0.10.0 — earlier versions emit this event only on signals." />
 
 Fires when the server shuts down — on `SIGTERM` / `SIGINT`, or a programmatic [`Mochi.stop()`](/docs/queues/#mochistop) — after the `mochi:shutdown` hook runs.
 

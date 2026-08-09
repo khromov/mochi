@@ -80,6 +80,41 @@ describe('standalone queue producers', () => {
     expect(await sibling.add({ n: 2 })).toBeString();
   });
 
+  test('a same-name descriptor with different storage is rejected even after the name is connected', async () => {
+    const name = uniqueName();
+    const q1 = Mochi.queue<{ n: number }>(name, { storage: { sqlite: path.join(dataDir, 'fast.sqlite') } });
+    await q1.add({ n: 1 });
+
+    // The fast path for an already-registered name must still catch the mismatch — the silent alternative writes
+    // this descriptor's jobs into q1's store.
+    const q2 = Mochi.queue<{ n: number }>(name, { storage: { sqlite: path.join(dataDir, 'fast-other.sqlite') } });
+    await expect(q2.add({ n: 2 })).rejects.toThrow(/already connected to .* One queue runtime per process/);
+    await expect(q2.addBulk([{ data: { n: 3 } }])).rejects.toThrow(/already connected to/);
+  });
+
+  test('Mochi.stop() racing an in-flight lazy connect tears the runtime down, not past it', async () => {
+    const q = Mochi.queue<{ n: number }>(uniqueName(), { storage: { sqlite: path.join(dataDir, 'stop-race.sqlite') } });
+    const addP = q.add({ n: 1 });
+    await Mochi.stop();
+    await addP.catch(() => {});
+    // Without waiting for the connect, the boot would register a live runtime (timers, open handles) after stop resolved.
+    expect(() => getBoss()).toThrow(/queue runtime is not running/);
+  });
+
+  test('a serve boot racing an in-flight lazy connect adopts the runtime instead of double-booting', async () => {
+    const name = uniqueName();
+    const file = path.join(dataDir, 'adopt-race.sqlite');
+    const q = Mochi.queue<{ n: number }>(name, { storage: { sqlite: file } });
+    const addP = q.add({ n: 1 });
+    await startQueueRuntime({ sqlite: file }, { kind: 'serve' });
+    await addP.catch(() => {});
+
+    // Adopted: one serve-owned runtime, so an unmounted queue cannot produce until mountQueues declares it.
+    await expect(q.add({ n: 2 })).rejects.toThrow(/still booting|not in this process/);
+    await mountQueues([{ name }]);
+    expect(await q.add({ n: 3 })).toBeString();
+  });
+
   test('a standalone producer never re-syncs consumer-owned queue options', async () => {
     const name = uniqueName();
     const file = path.join(dataDir, 'noresync.sqlite');

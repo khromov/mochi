@@ -513,6 +513,63 @@ describe('Mochi queue', () => {
     await getBoss().getSpy(name).waitForJobWithId(ids[1]!, 'completed');
   }, 15_000);
 
+  test('a batch outliving the shared expiry budget settles early: completed siblings keep their results', async () => {
+    const name = uniqueName();
+    const runs: number[] = [];
+    const failedMessages = new Map<string, string>();
+    mochiEvents.on('queue:failed', (e) => failedMessages.set(e.jobId, e.error));
+
+    await startWith({
+      [name]: {
+        process: async (job: MochiJob<{ n: number }>) => {
+          runs.push(job.data.n);
+          if (job.data.n === 2) {
+            await Bun.sleep(1_500);
+          }
+          return { n: job.data.n };
+        },
+        // bun-boss times the whole batch out at max(expireInSeconds)=1s; job 2 alone outlives it.
+        options: { batchSize: 3, retryLimit: 0, expireInSeconds: 1, pollingIntervalSeconds: 0.5 },
+      },
+    });
+
+    // Priorities pin the in-batch order to 1, 2, 3 — fetch order is otherwise backend-dependent.
+    const ids = await getQueue<{ n: number }>(name).addBulk([
+      { data: { n: 1 }, opts: { priority: 3 } },
+      { data: { n: 2 }, opts: { priority: 2 } },
+      { data: { n: 3 }, opts: { priority: 1 } },
+    ]);
+    const spy = getBoss().getSpy(name);
+    await spy.waitForJobWithId(ids[0]!, 'completed');
+    await spy.waitForJobWithId(ids[1]!, 'failed');
+    await spy.waitForJobWithId(ids[2]!, 'failed');
+
+    // The wholesale alternative fails all three, re-running the completed job 1 on retry; job 3 must never start.
+    expect(runs).toEqual([1, 2]);
+    expect((await getBoss().getJobById(name, ids[0]!))?.state).toBe('completed');
+    expect(failedMessages.get(ids[1]!)).toMatch(/ran out mid-job/);
+    expect(failedMessages.get(ids[2]!)).toMatch(/before this job started/);
+  }, 15_000);
+
+  test('a failed job stores the full error, stack included', async () => {
+    const name = uniqueName();
+    await startWith({
+      [name]: {
+        process: async () => {
+          throw new Error('kablam');
+        },
+        options: { retryLimit: 0 },
+      },
+    });
+
+    const jobId = await getQueue(name).add({ n: 1 } as never);
+    await getBoss().getSpy(name).waitForJobWithId(jobId!, 'failed');
+    const output = (await getBoss().getJobById(name, jobId!))?.output as Record<string, unknown>;
+    expect(output.message).toBe('kablam');
+    expect(output.name).toBe('Error');
+    expect(String(output.stack)).toContain('queue.test');
+  }, 15_000);
+
   test('worker tuning reaches boss.work, with Mochi-owned keys winning over the escape hatch', async () => {
     const name = uniqueName();
     await startWith({

@@ -161,6 +161,8 @@ Mochi.queue<PluginJob>('plugin-info', {
 
 Within a batch, jobs run sequentially — parallelism stays owned by `concurrency`, so `concurrency: 1` still means strictly serial processing whatever the batch size. `batchSize` is a fetch-efficiency knob, not a concurrency one.
 
+The [`expireInSeconds`](#long-running-jobs) budget covers the whole fetched batch, not each job — size it for a full batch (≈ `batchSize` × the per-job worst case). When the budget runs out mid-batch, the remaining jobs fail for retry while completed siblings keep their results.
+
 ### Worker tuning
 
 The rarely-needed bun-boss fetch options ride along in `worker`, forwarded to the worker verbatim: `orderByCreatedOn`, `priority`, `minPriority`, `maxPriority`, `ignoreStartAfter`, `notifyPollingIntervalSeconds`, `burstWhenReadyExceeds`, `heartbeatRefreshSeconds`.
@@ -257,7 +259,7 @@ A job may stay active for `expireInSeconds` (default **900**) before the store a
 Mochi.queue('transcode', { process: transcodeVideo, expireInSeconds: 3600 });
 ```
 
-A deployment can override every queue at once with the [`queue:expireInSeconds`](/docs/extensions/) filter.
+A deployment can override every queue at once with the [`queue:expireInSeconds`](/docs/extensions/) filter. With [`batchSize`](#batch-processing) > 1 the budget covers the whole fetched batch.
 
 ### `Mochi.boss()`
 

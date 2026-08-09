@@ -6,6 +6,7 @@ import { SQL } from 'bun';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { toPosixPath } from './utils';
+import { isBuilding } from './utils/buildFlag';
 import { pinGlobal } from './utils/globalState';
 import { applyFilter } from './extensions';
 import { startupMilestoneReached } from './lifecycle';
@@ -317,17 +318,36 @@ export function assertNoConflictingStandaloneRuntime(storage: MochiQueueStorage)
 
 export async function startQueueRuntime(storage: MochiQueueStorage, opts?: { kind?: 'serve' | 'standalone'; enableSpies?: boolean }): Promise<void> {
   const kind = opts?.kind ?? 'serve';
+  // Whoever booted first wins: waiting on the shared in-flight promise (each iteration a distinct one) is what keeps a
+  // lazy standalone connect racing a serve boot from creating two BunBoss instances and leaking the loser.
+  while (registry.starting) {
+    await registry.starting.catch(() => {});
+  }
   if (registry.boss) {
     if (kind === 'serve' && registry.kind === 'standalone') {
       assertNoConflictingStandaloneRuntime(storage);
       // Serve adopts a standalone producer runtime on the same storage; mountQueues then layers workers and the
-      // option re-sync on top of it.
+      // option re-sync on top of it. Producer handles reset so only queues the serve declares stay producible —
+      // otherwise whether an undeclared queue can produce would depend on whether it raced the boot.
       registry.kind = 'serve';
+      registry.byName.clear();
+      registry.ensured.clear();
+      return;
+    }
+    if (kind === 'standalone') {
+      // A concurrent caller booted while we waited; callers re-validate storage/name against the registry.
       return;
     }
     throw new Error('The Mochi queue runtime is already running — Mochi.serve() starts it once per process.');
   }
-  const spies = opts?.enableSpies ? { __test__enableSpies: true } : {};
+  registry.starting = bootQueueRuntime(storage, kind, opts?.enableSpies ?? false).finally(() => {
+    registry.starting = null;
+  });
+  await registry.starting;
+}
+
+async function bootQueueRuntime(storage: MochiQueueStorage, kind: 'serve' | 'standalone', enableSpies: boolean): Promise<void> {
+  const spies = enableSpies ? { __test__enableSpies: true } : {};
   let boss: BunBoss;
   if (storage === 'memory' || 'sqlite' in storage) {
     const file = storage === 'memory' ? ':memory:' : storage.sqlite;
@@ -356,10 +376,14 @@ export async function startQueueRuntime(storage: MochiQueueStorage, opts?: { kin
     await boss.start();
   } catch (err) {
     // bun-boss defers cleanup of a partially-started instance (maintenance intervals, the postgres pool) to stop(),
-    // and registry.boss is still null here, so closeAllQueueResources() could never reach it; the owned SQL handle
-    // is released on the same path so a failed boot leaves nothing running.
+    // and registry.boss is still null here, so it must be stopped inline; the owned SQL handle likewise — calling
+    // closeAllQueueResources() here would deadlock, since it awaits this very boot promise.
     await boss.stop({ graceful: false }).catch(() => {});
-    await closeAllQueueResources();
+    const sql = registry.ownedSql;
+    registry.ownedSql = null;
+    if (sql) {
+      await sql.close().catch(() => {});
+    }
     throw err;
   }
   registry.boss = boss;
@@ -377,11 +401,44 @@ function notifySafely(queue: string, fn: () => void): void {
   }
 }
 
+/**
+ * bun-boss times the whole handler invocation out at the batch's max `expireInSeconds` — not the sum — and that
+ * timeout fails every job in the batch wholesale, completed ones included. Multi-job batches therefore get an
+ * in-handler deadline just under bun-boss's, so the handler settles early and completed siblings keep their results;
+ * a single-job batch has no siblings to protect and keeps bun-boss's own expiry semantics.
+ */
+function batchDeadline(batch: JobWithMetadata<unknown>[]): number {
+  if (batch.length < 2) {
+    return Infinity;
+  }
+  const budgetMs = batch.reduce((acc, job) => Math.max(acc, job.expireInSeconds), 0) * 1000;
+  if (budgetMs <= 0) {
+    return Infinity;
+  }
+  return performance.now() + budgetMs - Math.min(1_000, budgetMs * 0.1);
+}
+
+async function withDeadline<R>(work: R | Promise<R>, deadlineAt: number, onTimeout: () => Error): Promise<R> {
+  if (deadlineAt === Infinity) {
+    return work;
+  }
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expiry = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(onTimeout()), Math.max(0, deadlineAt - performance.now()));
+  });
+  try {
+    return await Promise.race([work, expiry]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function makeHandler<T, R>(name: string, process: MochiProcessor<T, R>, listeners?: Partial<MochiQueueListeners<T, R>>) {
   // Sequential on purpose: parallelism is owned by `concurrency` (workers), so a batch never multiplies it — and jobs
   // settle per-job via `perJobResults`, so one throw fails only its own job while siblings complete.
   return async (batch: JobWithMetadata<T>[]): Promise<JobResult[]> => {
     const results: JobResult[] = [];
+    const deadlineAt = batchDeadline(batch);
     for (const raw of batch) {
       const job: MochiJob<T> = {
         id: raw.id,
@@ -392,10 +449,21 @@ function makeHandler<T, R>(name: string, process: MochiProcessor<T, R>, listener
         enqueuedAt: new Date(raw.createdOn).getTime(),
       };
       const start = performance.now();
+      if (start >= deadlineAt) {
+        const error = new Error(`the batch's shared expireInSeconds budget ran out before this job started; it is failed for retry`);
+        notifySafely(name, () => mochiEvents.emit('queue:failed', { queue: name, jobId: job.id, attempt: job.attempt, duration: 0, error: error.message }));
+        notifySafely(name, () => listeners?.failed?.(job, error));
+        results.push({ id: raw.id, status: 'failed', output: error });
+        continue;
+      }
       notifySafely(name, () => mochiEvents.emit('queue:active', { queue: name, jobId: job.id, attempt: job.attempt }));
       notifySafely(name, () => listeners?.active?.(job));
       try {
-        const result = await process(job);
+        const result = await withDeadline(
+          process(job),
+          deadlineAt,
+          () => new Error(`the batch's shared expireInSeconds budget ran out mid-job; it is failed for retry (its processor may still be running)`),
+        );
         notifySafely(name, () => mochiEvents.emit('queue:completed', { queue: name, jobId: job.id, attempt: job.attempt, duration: performance.now() - start }));
         notifySafely(name, () => listeners?.completed?.(job, result));
         results.push({ id: raw.id, status: 'completed', output: result });
@@ -403,7 +471,9 @@ function makeHandler<T, R>(name: string, process: MochiProcessor<T, R>, listener
         const error = err instanceof Error ? err : new Error(String(err));
         notifySafely(name, () => mochiEvents.emit('queue:failed', { queue: name, jobId: job.id, attempt: job.attempt, duration: performance.now() - start, error: error.message }));
         notifySafely(name, () => listeners?.failed?.(job, error));
-        results.push({ id: raw.id, status: 'failed', output: { message: error.message } });
+        // The raw Error, not a plucked message: bun-boss serializes an Error output with name/stack/cause intact, so
+        // the durable store keeps the full failure detail.
+        results.push({ id: raw.id, status: 'failed', output: error });
       }
     }
     return results;
@@ -470,6 +540,12 @@ function noStorageError(name: string): Error {
   );
 }
 
+function storageMismatchError(name: string, storage: MochiQueueStorage): Error {
+  return new Error(
+    `Mochi.queue("${name}"): the queue runtime is already connected to ${describeStorage(registry.storage)}, but this descriptor declares storage ${describeStorage(storage)}. One queue runtime per process — give every declaration of a queue the same storage.`,
+  );
+}
+
 /**
  * Make a descriptor's producer methods callable: a no-op when the queue is already mounted/ensured, otherwise the lazy
  * standalone path — boot a producer-only runtime against the descriptor's storage and ensure the queue exists.
@@ -477,38 +553,53 @@ function noStorageError(name: string): Error {
 async function ensureUsable(descriptor: MountableQueue): Promise<void> {
   const { name, storage } = descriptor;
   if (registry.boss && registry.byName.has(name)) {
+    // The hot-path early return still checks storage identity: a same-name descriptor declaring a different storage
+    // would otherwise silently write its jobs into whichever store connected first.
+    if (storage !== undefined && !storageEquals(registry.storage, storage)) {
+      throw storageMismatchError(name, storage);
+    }
     return;
   }
-  if (registry.starting) {
-    await registry.starting;
+  while (!registry.boss) {
+    if (registry.starting) {
+      await registry.starting.catch(() => {});
+      continue;
+    }
+    if (!storage) {
+      throw noStorageError(name);
+    }
+    await startQueueRuntime(storage, { kind: 'standalone' });
   }
-  if (!registry.boss) {
-    if (!storage) {
-      throw noStorageError(name);
-    }
-    registry.starting = startQueueRuntime(storage, { kind: 'standalone' }).finally(() => {
-      registry.starting = null;
-    });
-    await registry.starting;
-  } else if (!registry.byName.has(name)) {
-    if (registry.kind === 'serve') {
-      throw new Error(
-        `Mochi.queue("${name}"): this queue is not in this process's Mochi.serve({ queues }) array (mounted: ${[...registry.byName.keys()].join(', ') || 'none'}). One queue runtime per process — declare it there to produce to it here.`,
-      );
-    }
-    if (!storage) {
-      throw noStorageError(name);
-    }
+  assertProducibleUnderServe(name);
+  if (storage !== undefined) {
     if (!storageEquals(registry.storage, storage)) {
-      throw new Error(
-        `Mochi.queue("${name}"): a standalone queue runtime is already connected to ${describeStorage(registry.storage)}, but this queue declares storage ${describeStorage(storage)}. One queue runtime per process — give every standalone queue the same storage.`,
-      );
+      throw storageMismatchError(name, storage);
     }
+  } else if (!registry.byName.has(name)) {
+    throw noStorageError(name);
   }
   await ensureQueueExists(name, descriptor.options);
+  // Re-checked after the await: a serve boot may have adopted the runtime mid-ensure, and registering an undeclared
+  // producer past the adoption would make producibility depend on who won that race.
+  assertProducibleUnderServe(name);
   if (!registry.byName.has(name)) {
     registry.byName.set(name, producerMethods(name));
   }
+}
+
+function assertProducibleUnderServe(name: string): void {
+  if (registry.kind !== 'serve' || registry.byName.has(name)) {
+    return;
+  }
+  // Told apart by the startup milestone: during the boot window "not mounted" is transient, not a declaration error.
+  if (!startupMilestoneReached('mochi:queuesMounted')) {
+    throw new Error(
+      `Mochi.queue("${name}"): Mochi.serve() is still booting — queues mount right after the server binds. Add jobs from the "mochi:queuesMounted" hook (or "mochi:ready", or any request handler) onwards.`,
+    );
+  }
+  throw new Error(
+    `Mochi.queue("${name}"): this queue is not in this process's Mochi.serve({ queues }) array (mounted: ${[...registry.byName.keys()].join(', ') || 'none'}). One queue runtime per process — declare it there to produce to it here.`,
+  );
 }
 
 async function stopQueue(name: string): Promise<void> {
@@ -570,22 +661,39 @@ export function createQueueDescriptor<T = unknown, R = unknown>(name: string, co
     storage,
     options,
     async add(data, opts) {
+      // A `mochi-framework build` imports the app entry for real; adds are suppressed there so a build never connects
+      // to (or writes into) the app's production storage.
+      if (isBuilding) {
+        return null;
+      }
       await ensureUsable(descriptor);
       return base.add(data, opts);
     },
     async addBulk(jobs) {
+      if (isBuilding) {
+        return [];
+      }
       await ensureUsable(descriptor);
       return base.addBulk(jobs);
     },
     async addThrottled(data, seconds, key, opts) {
+      if (isBuilding) {
+        return null;
+      }
       await ensureUsable(descriptor);
       return base.addThrottled(data, seconds, key, opts);
     },
     async addDebounced(data, seconds, key, opts) {
+      if (isBuilding) {
+        return null;
+      }
       await ensureUsable(descriptor);
       return base.addDebounced(data, seconds, key, opts);
     },
     async stop() {
+      if (isBuilding) {
+        return;
+      }
       await stopQueue(name);
     },
   };
@@ -686,28 +794,29 @@ export function createWorker(queues: MountableQueue[], storage?: MochiQueueStora
       if (started) {
         throw new Error('Mochi.worker(): this worker was already started.');
       }
-      if (registry.kind === 'serve') {
-        throw new Error('Mochi.worker(): this process is serving — declare the queues in Mochi.serve({ queues }) instead.');
+      if (isBuilding) {
+        return;
       }
       if (!workerStorage) {
         throw new Error('Mochi.worker(): no storage declared. Give a queue descriptor (or the worker) a storage to connect to.');
       }
       started = true;
       try {
-        if (registry.starting) {
-          await registry.starting;
-        }
-        if (registry.boss) {
-          if (!storageEquals(registry.storage, workerStorage)) {
-            throw new Error(
-              `Mochi.worker(): the queue runtime is already connected to ${describeStorage(registry.storage)}, which is not this worker's storage ${describeStorage(workerStorage)}. An app has one queue storage.`,
-            );
+        while (!registry.boss) {
+          if (registry.starting) {
+            await registry.starting.catch(() => {});
+            continue;
           }
-        } else {
-          registry.starting = startQueueRuntime(workerStorage, { kind: 'standalone' }).finally(() => {
-            registry.starting = null;
-          });
-          await registry.starting;
+          await startQueueRuntime(workerStorage, { kind: 'standalone' });
+        }
+        // Checked after the boot loop on purpose: it also catches a racing Mochi.serve() that won an in-flight boot.
+        if (registry.kind === 'serve') {
+          throw new Error('Mochi.worker(): this process is serving — declare the queues in Mochi.serve({ queues }) instead.');
+        }
+        if (!storageEquals(registry.storage, workerStorage)) {
+          throw new Error(
+            `Mochi.worker(): the queue runtime is already connected to ${describeStorage(registry.storage)}, which is not this worker's storage ${describeStorage(workerStorage)}. An app has one queue storage.`,
+          );
         }
         const boss = requireBoss();
         for (const q of queues) {
@@ -772,6 +881,11 @@ export function getBoss(): BunBoss {
  * safe on both the serve shutdown path and the build drain path.
  */
 export async function closeAllQueueResources(): Promise<void> {
+  // A stop racing an in-flight lazy connect must wait for it, so the resulting runtime is torn down here rather than
+  // registering itself — live timers, open pool — after the stop reported done.
+  while (registry.starting) {
+    await registry.starting.catch(() => {});
+  }
   const { boss, ownedSql } = registry;
   // Cleared first so a fresh serve in this process (e.g. a test that restarts) can re-mount its queues even if a
   // close below fails.
