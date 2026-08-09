@@ -3,6 +3,9 @@
 // exactly as it would to a real server — no external service, no Docker, cross-platform.
 // The backend is deliberately hidden behind this handle so it can be swapped without
 // touching call sites. Mirrors the port-0 + readback shape of email/fakeSmtpServer.ts.
+// Keep every query against it sequential: PGlite is a single session, so the socket server serves one
+// connection and refuses the other nine bun:sql eagerly opens — a concurrent query lands on one of those
+// and blocks for Bun's 30s connection timeout (a hard hang on Windows/Bun 1.3.x).
 import { PGlite } from '@electric-sql/pglite';
 import { PGLiteSocketServer } from '@electric-sql/pglite-socket';
 

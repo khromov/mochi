@@ -28,8 +28,10 @@ describe('MochiOptions on postgres storage', () => {
     expect(await MochiOptions.delete('site_name')).toBe(true);
     expect(await MochiOptions.delete('site_name')).toBe(false);
 
-    await Promise.all(Array.from({ length: 5 }, () => MochiOptions.modify<number>('hits', (current) => (current ?? 0) + 1)));
-    expect(await MochiOptions.get('hits')).toBe(5);
+    // Kept sequential on purpose: the fixture serves one connection, so a concurrent query lands on one of
+    // bun:sql's other pool sockets and wedges. Concurrent CAS is covered by optionsPglite.test.ts.
+    expect(await MochiOptions.modify<number>('hits', (current) => (current ?? 0) + 1)).toBe(1);
+    expect(await MochiOptions.modify<number>('hits', (current) => (current ?? 0) + 1)).toBe(2);
 
     // The options table must live in the namespaced schema, not the user's public schema.
     const { rows } = await pg.query<{ table_schema: string }>("SELECT DISTINCT table_schema FROM information_schema.tables WHERE table_name = 'options'");

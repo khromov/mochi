@@ -26,6 +26,11 @@ describe('MochiOptions on pglite storage', () => {
     expect(await MochiOptions.modify<number>('hits', (current) => (current ?? 0) + 1)).toBe(1);
     expect(await MochiOptions.modify<number>('hits', (current) => (current ?? 0) + 1)).toBe(2);
 
+    // The embedded path is where concurrent CAS can be exercised against the Postgres dialect — the wire
+    // fixture in optionsPostgres.test.ts serves a single connection.
+    await Promise.all(Array.from({ length: 5 }, () => MochiOptions.modify<number>('clicks', (current) => (current ?? 0) + 1)));
+    expect(await MochiOptions.get('clicks')).toBe(5);
+
     const { rows } = await db.query<{ table_schema: string }>("SELECT DISTINCT table_schema FROM information_schema.tables WHERE table_name = 'options'");
     expect(rows.map((r) => r.table_schema)).toEqual(['mochi_options']);
 
