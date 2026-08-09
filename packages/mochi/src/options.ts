@@ -9,8 +9,8 @@ import { logger } from './utils/log';
 import type { PGliteLike } from './queue';
 
 /**
- * Where options live: a SQLite file, a Postgres database (installed into a `mochi_options` schema), or a caller-owned
- * embedded PGlite instance (Mochi never closes it). Always persistent — there is deliberately no memory backend.
+ * Where options live: a SQLite file, a Postgres database (a `mochi_options` schema), or a caller-owned embedded
+ * PGlite instance (Mochi never closes it) — always persistent, deliberately no memory backend.
  */
 export type MochiOptionsStorage = { sqlite: string } | { postgres: string } | { pglite: PGliteLike };
 
@@ -39,13 +39,12 @@ export function isValidOptionsStorage(storage: MochiOptionsStorage): boolean {
 // Drivers deal in already-serialized strings; devalue stays in the public layer.
 interface OptionsDriver {
   get(key: string): Promise<string | undefined>;
-  /** Read for modify(): the value plus its version token for the conditional write. */
   getVersioned(key: string): Promise<{ serialized: string; version: number } | undefined>;
-  /** Insert-only; resolves `false` when the key already existed (nothing written). Race-safe via ON CONFLICT. */
+  /** Race-safe insert-only via ON CONFLICT; `false` = the key already existed, nothing written. */
   insert(key: string, serialized: string, now: number): Promise<boolean>;
-  /** Upsert; preserves `created_at`, bumps `updated_at`. */
+  /** Upsert; preserves `created_at`, bumps `updated_at` and `version`. */
   upsert(key: string, serialized: string, now: number): Promise<void>;
-  /** Compare-and-swap: writes only if the row's version still matches; resolves `false` when another writer landed first. */
+  /** Writes only if the row's version still matches; `false` = another writer landed first. */
   updateVersioned(key: string, serialized: string, expectedVersion: number, now: number): Promise<boolean>;
   delete(key: string): Promise<boolean>;
   close(): Promise<void>;
@@ -294,22 +293,15 @@ function assertValue(method: string, key: string, value: unknown): void {
 }
 
 /**
- * A persistent key/value store for small application data — settings, flags, counters — without a full database.
- *
- * Requires `Mochi.serve({ optionsStorage })`; the connection and schema are created lazily on the first call. Values
- * are serialized with devalue, so `Date`, `Map`, `Set`, `BigInt`, `RegExp`, and cyclic references survive. Every
- * method is a single atomic SQL statement: concurrent `set()`s of one key let exactly one win, `update()` is
- * last-writer-wins, and a `get()`-then-`update()` sequence is not a compare-and-swap — use `modify()` for an
- * atomic read-modify-write. Reads are never cached — every `get()` hits the database.
+ * A persistent key/value store for small app data, backed by `Mochi.serve({ optionsStorage })` and connected lazily
+ * on the first call. Values are devalue-serialized (rich types like `Date`, `Map`, `BigInt` survive); reads are
+ * never cached.
  */
 export interface MochiOptionsApi {
   /** Resolves the stored value, or `undefined` when the key is missing. A stored `null` is a hit. */
   get(key: string): Promise<unknown>;
-  /**
-   * Resolves the stored value as `T`, or `undefined` when the key is missing. The non-generic overload above exists
-   * so a bare `get(key)` stays `unknown` — an unresolved `T` nested in another generic call (e.g. `expect()`)
-   * otherwise collapses to `undefined` during inference.
-   */
+  // The untyped overload above keeps a bare `get(key)` at `unknown` — an unresolved `T` nested in another generic
+  // call (e.g. `expect()`) collapses to `undefined` during inference.
   get<T>(key: string): Promise<T | undefined>;
   /** Resolves the stored value, or `fallback` on a miss. The fallback is returned, never written. */
   get<T>(key: string, fallback: T): Promise<T>;
@@ -318,9 +310,9 @@ export interface MochiOptionsApi {
   /** Upsert: insert or overwrite. */
   update(key: string, value: unknown): Promise<void>;
   /**
-   * Atomic read-modify-write: reads the current value (`undefined` when missing), passes it to `fn`, and writes the
-   * result — but only if no other writer landed in between; otherwise it re-reads and re-runs `fn`. Because `fn` can
-   * run more than once under contention, it must be pure. Resolves the value that was actually written.
+   * Atomic read-modify-write: runs `fn` on the current value (`undefined` when missing) and writes the result,
+   * re-reading and re-running `fn` when another writer lands in between — so `fn` must be pure. Resolves the
+   * written value.
    */
   modify<T = unknown>(key: string, fn: (current: T | undefined) => T | Promise<T>): Promise<T>;
   /** Resolves `true` when the key existed and was removed, `false` when there was nothing to remove. */

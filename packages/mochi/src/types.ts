@@ -441,11 +441,9 @@ export interface MochiServeOptions {
    */
   queueStorage?: MochiQueueStorage;
   /**
-   * Persistent backend for the `MochiOptions` key/value store — small app data (settings, flags) without a full
-   * database. `{ sqlite: 'path/to.db' }` for a single-process store, `{ postgres: url }` for a shared multi-process
-   * store (installed into a `mochi_options` schema), or `{ pglite: instance }` for an embedded Postgres you construct
-   * and own (Mochi never closes it). Always persistent — there is no memory backend. The shape is validated at boot;
-   * the connection and schema are created lazily on the first MochiOptions call.
+   * Persistent backend for the `MochiOptions` key/value store: `{ sqlite: 'path/to.db' }` for a single-process store,
+   * `{ postgres: url }` for a shared one (a `mochi_options` schema), or `{ pglite: instance }` for an embedded
+   * Postgres you own. No memory backend; validated at boot, connected lazily on the first MochiOptions call.
    */
   optionsStorage?: MochiOptionsStorage;
   fetch?: (req: Request, server: Server<undefined>) => Response | Promise<Response>;

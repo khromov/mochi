@@ -1,7 +1,6 @@
-// Boots a real Mochi.serve({ optionsStorage }) end-to-end. Only one Mochi.serve() is allowed per process, so the
-// boot-rejection cases run first (they throw before initMochiConfig pins the singleton) and a single server covers
-// the rest. The page route's .svelte import of MochiOptions is the only coverage of the mochi-env virtual-module
-// re-export — typecheck and unit tests can't catch a missing entry there.
+// One Mochi.serve() per process: the boot-rejection cases run first (they throw before the config singleton pins),
+// then a single server covers the rest — including the page route's .svelte import of MochiOptions, the only
+// coverage of the mochi-env virtual-module re-export.
 import { afterAll, describe, expect, test } from 'bun:test';
 import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -17,8 +16,7 @@ describe('Mochi.serve({ optionsStorage })', () => {
   afterAll(async () => {
     await server?.stop(true);
     await closeOptionsStorage();
-    // Windows releases SQLite file locks asynchronously, so an immediate rm can throw EBUSY. (Bun ignores rmSync's
-    // maxRetries option, so retry by hand.) Best-effort cleanup of an ephemeral temp dir — never fail the suite over it.
+    // Windows releases SQLite file locks asynchronously — retry the rm by hand (see options.test.ts).
     for (let attempt = 0; attempt < 25; attempt++) {
       try {
         rmSync(tmpDir, { recursive: true, force: true });
