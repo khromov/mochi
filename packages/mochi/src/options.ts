@@ -103,10 +103,7 @@ const POSTGRES_DDL = [
 ];
 
 async function createPostgresDriver(url: string): Promise<OptionsDriver> {
-  // Bun 1.3.x on Windows never settles a re-execution of a cached prepared statement that returns zero rows —
-  // which is every `set()` onto an existing key, every `delete()` of a missing one, and every lost `modify()`
-  // race. Re-parsing each query costs one extra message in the same write and dodges it (fixed in Bun 1.4).
-  const sql = new SQL(url, { prepare: false });
+  const sql = new SQL(url);
   try {
     for (const statement of POSTGRES_DDL) {
       await sql.unsafe(statement);
