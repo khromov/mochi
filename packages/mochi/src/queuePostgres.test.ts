@@ -28,17 +28,15 @@ describe('Mochi queue on postgres storage', () => {
 
     await startQueueRuntime({ postgres: pg.url });
     await mountQueues([
-      [
-        'pg-jobs',
-        {
-          process: async (job: MochiJob<{ n: number }>) => {
-            seen.push(job);
-            resolveDone();
-            return { ok: true };
-          },
-          options: { pollingIntervalSeconds: 0.5 },
+      {
+        name: 'pg-jobs',
+        process: async (job: MochiJob<{ n: number }>) => {
+          seen.push(job);
+          resolveDone();
+          return { ok: true };
         },
-      ],
+        options: { pollingIntervalSeconds: 0.5 },
+      },
     ]);
 
     const jobId = await getQueue<{ n: number }>('pg-jobs').add({ n: 41 });

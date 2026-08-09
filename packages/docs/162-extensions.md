@@ -49,7 +49,7 @@ Fires right after `Bun.serve()` returns the bound server, before queues mount an
 
 #### `mochi:queuesMounted`
 
-Fires once every queue is live. `ctx.queues` lists the mounted names. Earliest point at which [`Mochi.getQueue()`](/docs/queues/#mochigetqueue) and [`Mochi.boss()`](/docs/queues/#mochiboss) resolve. Async.
+Fires once every queue in the `Mochi.serve({ queues })` array is live. `ctx.queues` lists the mounted names. Earliest point at which [`Mochi.getQueue()`](/docs/queues/#adding-jobs) and [`Mochi.boss()`](/docs/queues/#mochiboss) resolve. A [standalone producer](/docs/queues/#standalone-producers) process never fires it — there, readiness is the first `add()` resolving. Async.
 
 #### `mochi:ready`
 
@@ -68,7 +68,7 @@ await Mochi.serve({
 
 #### `mochi:shutdown`
 
-Fires on `SIGTERM` or `SIGINT`. The framework awaits the hook, then calls `server.stop()`. A second signal force-exits with code 1. Async.
+Fires on `SIGTERM` or `SIGINT`, and on a programmatic [`Mochi.stop()`](/docs/queues/#mochistop) — `ctx.signal` is `undefined` in that case. The framework awaits the hook, then calls `server.stop()`. A second signal force-exits with code 1. Async.
 
 ```ts
 await Mochi.serve({
@@ -382,7 +382,7 @@ How long the widget spends actively solving before it offers a retry. Resolved o
 
 #### `queue:expireInSeconds`
 
-How many seconds a job may stay active before the store retries or fails it. Resolved once per queue at mount, after the per-queue [`expireInSeconds`](/docs/queues/#long-running-jobs) option. `explicit` says whether the value came from that option. Sync. Default `900` (15 minutes).
+How many seconds a job may stay active before the store retries or fails it. Resolved once per queue at mount, after the per-queue [`expireInSeconds`](/docs/queues/#long-running-jobs) option. `explicit` says whether the value came from that option. When the queue declared nothing and the filter leaves the default unchanged, nothing is sent to the store — an existing queue keeps its stored expiry. Sync. Default `900` (15 minutes).
 
 ```ts
 await Mochi.serve({

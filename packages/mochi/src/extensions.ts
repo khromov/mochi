@@ -61,7 +61,8 @@ export interface MochiHookContext {
   'mochi:shutdown': {
     options: MochiServeOptions;
     server: Server<undefined>;
-    signal: NodeJS.Signals;
+    /** Absent when the shutdown came from a programmatic `Mochi.stop()` rather than SIGTERM/SIGINT. */
+    signal?: NodeJS.Signals;
   };
   'route:matched': {
     pattern: string;

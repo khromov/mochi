@@ -231,9 +231,9 @@ Delivery is slow and can fail. Offload the send to a [`Mochi.queue()`](/docs/que
 // jobs.server.ts
 import { Mochi } from 'mochi-framework';
 
-export const emailQueue = Mochi.queue<{ to: string; name: string }>({
+export const emailQueue = Mochi.queue<{ to: string; name: string }>('emails', {
   concurrency: 5,
-  defaultJobOptions: { attempts: 3 },
+  retryLimit: 2,
   process: async (job) => {
     await Mochi.email({
       to: job.data.to,

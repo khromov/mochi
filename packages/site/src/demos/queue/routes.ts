@@ -1,13 +1,10 @@
 import { Mochi, success, mochiEvents } from 'mochi-framework';
 import type { MochiRouteValue, MochiQueueConfig } from 'mochi-framework';
 import { notificationQueue, queueStatus, QUEUE_NAME } from './queue.server';
-import type { NotificationJob } from './types';
 import { randomUsername } from './usernames';
 
 // Mounted in the site's Mochi.serve({ queues }) call — see src/routes.ts.
-export const queues: Record<string, MochiQueueConfig> = {
-  [QUEUE_NAME]: notificationQueue,
-};
+export const queues: MochiQueueConfig[] = [notificationQueue];
 
 export const routes: Record<string, MochiRouteValue> = {
   '/demos/queue': Mochi.page('./src/demos/queue/Queue.svelte', {
@@ -20,7 +17,7 @@ export const routes: Record<string, MochiRouteValue> = {
         const user = String(formData.get('username') ?? '')
           .trim()
           .slice(0, 64);
-        await Mochi.getQueue<NotificationJob>(QUEUE_NAME).add({ user: user || 'anonymous' });
+        await notificationQueue.add({ user: user || 'anonymous' });
         return success({ queued: user || 'anonymous' });
       },
     },
