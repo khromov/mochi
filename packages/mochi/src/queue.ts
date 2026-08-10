@@ -112,10 +112,6 @@ export interface MochiQueueRuntimeOptions {
   concurrency?: number;
   /** Seconds between idle fetches; must be >= 0.5. Adds from this process wake the worker immediately regardless. */
   pollingIntervalSeconds?: number;
-  /** Jobs fetched per poll (default 1). `process` still runs once per job, each settled and retried on its own. */
-  batchSize?: number;
-  /** Keep fetching with no poll delay while fetches return full batches — drains cross-process backlogs fast. Needs `batchSize` > 1. */
-  burst?: boolean;
   /** Advanced fetch-time worker tuning; see `MochiWorkerTuning`. */
   worker?: MochiWorkerTuning;
   /** Times a failed job is retried before it fails terminally. bun-boss default: 2. */
@@ -401,51 +397,11 @@ function notifySafely(queue: string, fn: () => void): void {
   }
 }
 
-/**
- * bun-boss times the whole handler invocation out at the batch's max `expireInSeconds` — not the sum — and that
- * timeout fails every job in the batch wholesale, completed ones included. Multi-job batches therefore get an
- * in-handler deadline just under bun-boss's, so the handler settles early and completed siblings keep their results;
- * a single-job batch has no siblings to protect and keeps bun-boss's own expiry semantics.
- */
-function batchDeadline(batch: JobWithMetadata<unknown>[]): number {
-  if (batch.length < 2) {
-    return Infinity;
-  }
-  const budgetMs = batch.reduce((acc, job) => Math.max(acc, job.expireInSeconds), 0) * 1000;
-  if (budgetMs <= 0) {
-    return Infinity;
-  }
-  // The reserve is floored at 250ms: for second-scale budgets a pure 10% leaves the settle racing bun-boss's own
-  // timeout within OS timer jitter, and losing that race fails completed siblings wholesale.
-  return performance.now() + budgetMs - Math.min(1_000, Math.max(250, budgetMs * 0.1));
-}
-
-class BatchDeadlineExceeded extends Error {}
-
-async function withDeadline<R>(work: R | Promise<R>, deadlineAt: number, onTimeout: () => Error): Promise<R> {
-  if (deadlineAt === Infinity) {
-    return work;
-  }
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const expiry = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(onTimeout()), Math.max(0, deadlineAt - performance.now()));
-  });
-  try {
-    return await Promise.race([work, expiry]);
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
 function makeHandler<T, R>(name: string, process: MochiProcessor<T, R>, listeners?: Partial<MochiQueueListeners<T, R>>) {
-  // Sequential on purpose: parallelism is owned by `concurrency` (workers), so a batch never multiplies it — and jobs
-  // settle per-job via `perJobResults`, so one throw fails only its own job while siblings complete.
+  // The worker is pinned to batchSize 1, so the array bun-boss hands over holds one job; jobs settle via
+  // `perJobResults`, which keeps raw Error outputs (name/stack/cause) intact in the durable store.
   return async (batch: JobWithMetadata<T>[]): Promise<JobResult[]> => {
     const results: JobResult[] = [];
-    const deadlineAt = batchDeadline(batch);
-    // Latched on the first deadline rejection rather than re-read from the clock: the timer can fire a fraction of a
-    // millisecond before `deadlineAt`, and a clock comparison would let the next job sneak in past an expired budget.
-    let expired = false;
     for (const raw of batch) {
       const job: MochiJob<T> = {
         id: raw.id,
@@ -456,30 +412,15 @@ function makeHandler<T, R>(name: string, process: MochiProcessor<T, R>, listener
         enqueuedAt: new Date(raw.createdOn).getTime(),
       };
       const start = performance.now();
-      if (expired || start >= deadlineAt) {
-        expired = true;
-        const error = new Error(`the batch's shared expireInSeconds budget ran out before this job started; it is failed for retry`);
-        notifySafely(name, () => mochiEvents.emit('queue:failed', { queue: name, jobId: job.id, attempt: job.attempt, duration: 0, error: error.message }));
-        notifySafely(name, () => listeners?.failed?.(job, error));
-        results.push({ id: raw.id, status: 'failed', output: error });
-        continue;
-      }
       notifySafely(name, () => mochiEvents.emit('queue:active', { queue: name, jobId: job.id, attempt: job.attempt }));
       notifySafely(name, () => listeners?.active?.(job));
       try {
-        const result = await withDeadline(
-          process(job),
-          deadlineAt,
-          () => new BatchDeadlineExceeded(`the batch's shared expireInSeconds budget ran out mid-job; it is failed for retry (its processor may still be running)`),
-        );
+        const result = await process(job);
         notifySafely(name, () => mochiEvents.emit('queue:completed', { queue: name, jobId: job.id, attempt: job.attempt, duration: performance.now() - start }));
         notifySafely(name, () => listeners?.completed?.(job, result));
         results.push({ id: raw.id, status: 'completed', output: result });
       } catch (err) {
         const error = err instanceof Error ? err : new Error(String(err));
-        if (error instanceof BatchDeadlineExceeded) {
-          expired = true;
-        }
         notifySafely(name, () => mochiEvents.emit('queue:failed', { queue: name, jobId: job.id, attempt: job.attempt, duration: performance.now() - start, error: error.message }));
         notifySafely(name, () => listeners?.failed?.(job, error));
         // The raw Error, not a plucked message: bun-boss serializes an Error output with name/stack/cause intact, so
@@ -660,9 +601,6 @@ export function createQueueDescriptor<T = unknown, R = unknown>(name: string, co
   if (storage !== undefined && !isValidQueueStorage(storage)) {
     throw new Error(`Mochi.queue("${name}", { storage }): expected 'memory', { sqlite: 'path/to.db' }, { postgres: url }, or { pglite: instance }.`);
   }
-  if (options.batchSize !== undefined && (!Number.isInteger(options.batchSize) || options.batchSize < 1)) {
-    throw new Error(`Mochi.queue("${name}", { batchSize }): expected an integer >= 1.`);
-  }
   const base = producerMethods<T>(name);
   const descriptor: MochiQueueDescriptor<T, R> = {
     __mochiQueue: true,
@@ -745,19 +683,14 @@ async function registerQueueWorker(boss: BunBoss, config: MountableQueue): Promi
     return;
   }
   const o = config.options;
-  const batchSize = o?.batchSize ?? 1;
-  if (o?.burst && batchSize === 1) {
-    logger.warn(`[queue] ${config.name}: burst has no effect with batchSize 1 — raise batchSize so there are full fetches to burst on.`);
-  }
   const workOptions = omitUndefined({
     // Escape hatch first; Mochi-owned keys below win where they overlap.
     ...omitUndefined({ ...(o?.worker ?? {}) }),
-    batchSize,
+    batchSize: 1,
     includeMetadata: true,
     perJobResults: true,
     localConcurrency: o?.concurrency,
     pollingIntervalSeconds: o?.pollingIntervalSeconds,
-    burstWhenBatchFull: o?.burst,
   }) as WorkOptions & { includeMetadata: true; perJobResults: true };
   const workId = await boss.work(config.name, workOptions, makeHandler(config.name, config.process, config.on as Partial<MochiQueueListeners<never, unknown>> | undefined));
   registry.workIds.set(config.name, workId);
