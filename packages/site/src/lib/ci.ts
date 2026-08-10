@@ -48,6 +48,8 @@ export interface CiDashboardData {
   fetchedAt: string;
   workflows: CiWorkflow[];
   rateLimit: CiRateLimit | null;
+  // `null` when the repo's star count couldn't be fetched — the rest of the board is unaffected.
+  stars: number | null;
   // At least one workflow failed to load but the rest of the board is usable.
   partial: boolean;
 }
@@ -124,6 +126,10 @@ interface RawWorkflow {
   state: string;
 }
 
+interface RawRepo {
+  stargazers_count: number;
+}
+
 interface RawRun {
   id: number;
   run_number: number;
@@ -165,6 +171,11 @@ async function fetchWorkflowList(): Promise<RawWorkflow[]> {
   return (body.workflows ?? []).filter((w) => w.state === 'active');
 }
 
+async function fetchRepoStars(): Promise<number> {
+  const body = (await ghFetch(`/repos/${CI_REPO}`)) as RawRepo;
+  return body.stargazers_count;
+}
+
 async function fetchRuns(workflowId: number): Promise<CiRun[]> {
   const body = (await ghFetch(`/repos/${CI_REPO}/actions/workflows/${workflowId}/runs?per_page=${RUNS_PER_WORKFLOW}&branch=${CI_BRANCH}`)) as {
     workflow_runs?: RawRun[];
@@ -172,7 +183,7 @@ async function fetchRuns(workflowId: number): Promise<CiRun[]> {
   return (body.workflow_runs ?? []).map(normalizeRun);
 }
 
-function buildDashboard(list: RawWorkflow[], settled: PromiseSettledResult<CiRun[]>[]): CiDashboardData {
+function buildDashboard(list: RawWorkflow[], settled: PromiseSettledResult<CiRun[]>[], stars: number | null): CiDashboardData {
   const workflows: CiWorkflow[] = list
     .map((raw, i): CiWorkflow => {
       const result = settled[i];
@@ -194,6 +205,7 @@ function buildDashboard(list: RawWorkflow[], settled: PromiseSettledResult<CiRun
     fetchedAt: new Date().toISOString(),
     workflows,
     rateLimit: lastRateLimit,
+    stars,
     partial: workflows.some((w) => w.error !== undefined),
   };
 }
@@ -206,14 +218,16 @@ export async function getCiDashboard(): Promise<CiDashboardData | null> {
     return await ciCache.fetch(CACHE_KEY, async () => {
       // The workflow list is the spine — without it there is nothing to render.
       const list = await fetchWorkflowList();
-      const settled = await Promise.allSettled(list.map((w) => fetchRuns(w.id)));
+      // Stars ride alongside the runs; an isolated rejection just hides the tile.
+      const [starsResult, ...settled] = await Promise.allSettled([fetchRepoStars(), ...list.map((w) => fetchRuns(w.id))]);
+      const stars = starsResult.status === 'fulfilled' ? starsResult.value : null;
 
       // A rejection is a failure; an empty array is not. Caching an all-rejected board
       // would show a convincing "nothing has ever run" for the next hour.
       if (settled.length > 0 && settled.every((r) => r.status === 'rejected')) {
         throw new Error('every workflow runs fetch failed');
       }
-      return buildDashboard(list, settled);
+      return buildDashboard(list, settled, stars);
     });
   } catch (err) {
     // GitHub being unreachable must never break the page — the route renders the

@@ -4,3 +4,4 @@
 export const CI_REPO = 'khromov/mochi';
 export const CI_BRANCH = 'main';
 export const CI_ACTIONS_URL = `https://github.com/${CI_REPO}/actions`;
+export const CI_STARGAZERS_URL = `https://github.com/${CI_REPO}/stargazers`;
