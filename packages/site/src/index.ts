@@ -157,6 +157,9 @@ await Mochi.serve({
   // Named image sizes used by the /demos/image* pages (kept in sync with the
   // example shown in ./src/demoIndex.ts).
   image: {
+    // Persist transformed bytes to a mountable volume in containers; unset locally
+    // falls back to the framework default (./.mochi/image-cache).
+    cacheDir: process.env.MOCHI_IMAGE_CACHE_DIR,
     // The image-invalidation demo sources from our own loopback endpoint, which the
     // SSRF guard would otherwise reject as a private address. Safe here: every image
     // src on this site is hardcoded and server-minted (encrypted URLs), never taken

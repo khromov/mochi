@@ -70,6 +70,13 @@ ENV WORKSPACE=${WORKSPACE}
 ENV PORT=${PORT}
 ENV MOCHI_LIVE_RELOAD=false
 ENV MOCHI_DOCKER=true
+
+# Dedicated, mountable image-transform cache — kept out of .mochi (whose dev
+# build cache is wiped on every boot). Pre-created + chowned so a mounted volume
+# inherits bun:bun; the site reads MOCHI_IMAGE_CACHE_DIR for image.cacheDir.
+ENV MOCHI_IMAGE_CACHE_DIR=/data/image-cache
+RUN mkdir -p /data/image-cache && chown -R bun:bun /data
+
 USER bun
 EXPOSE ${PORT}/tcp
 
