@@ -52,6 +52,37 @@ The manifest records a schema version, and the runtime loads only the exact vers
 
 </Callout>
 
+## Persistent image cache
+
+Mochi's [image cache](/docs/images/) is written to disk under `cacheDir` (default `./.mochi/image-cache`). In a container that directory is recreated on every restart, so each redeploy starts with a cold cache and re-fetches and re-transforms every image. To keep the transformed bytes across restarts, point `cacheDir` at a dedicated path and mount a volume there:
+
+```ts
+Mochi.serve({
+  image: { cacheDir: process.env.MOCHI_IMAGE_CACHE_DIR /* , sizes: … */ },
+});
+```
+
+```yaml
+services:
+  site:
+    image: your-app
+    environment:
+      MOCHI_IMAGE_CACHE_DIR: /data/image-cache
+    volumes:
+      - image-cache:/data/image-cache
+
+volumes:
+  image-cache:
+```
+
+A plain `docker run -v image-cache:/data/image-cache your-app` mounts the same volume. Keep the mount off `./.mochi` — its build cache is rebuilt on every boot and must not persist. If the container runs as a non-root user, pre-create the directory owned by that user in your `Dockerfile` so the mounted volume is writable.
+
+<Callout type="info">
+
+Keep `MOCHI_KEY` stable across restarts. Image URLs are signed with a key derived from it, so a changed key invalidates already-minted links even though the cached bytes are still on disk.
+
+</Callout>
+
 ## PaaS
 
 Deploy code or containers. The platform manages infrastructure, scaling, and networking.
