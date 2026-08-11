@@ -7,6 +7,7 @@ description: 'Register pages, APIs, WebSockets, SSE endpoints, and file routes w
 <script>
   import Callout from './_components/Callout.svelte';
   import SeeItInAction from './_components/SeeItInAction.svelte';
+  import VersionNote from './_components/VersionNote.svelte';
 </script>
 
 ## Defining routes
@@ -50,6 +51,19 @@ Use `:name` for a single segment and `*` for a wildcard tail. Read matched value
 <h1>{params.slug}</h1>
 ```
 
+<Callout type="info">
+
+Patterns go to Bun's router as-is. A literal prefix inside a segment is not expressible: in `/profile/@:user` Bun treats `@:user` as literal text, so `/profile/@bob` never matches. Match `/profile/:user` instead — the param captures the whole segment, sigil included (`params.user === '@bob'`), and also matches `/profile/bob`. Guard and strip inline when you need the prefixed form only:
+
+```ts
+serverProps: (_req, params) => {
+  if (!params.user.startsWith('@')) error(404);
+  return { username: params.user.slice(1) };
+};
+```
+
+</Callout>
+
 ### `Mochi.page`
 
 Register an SSR Svelte page with `Mochi.page(componentPath, { serverProps?, actions? })`. `componentPath` resolves relative to the project root.
@@ -78,6 +92,31 @@ await Mochi.serve({
 **Do not use `form` as a prop name.** When `actions` is declared, `form` is reserved for the action result. Return any other prop name from `serverProps` to avoid a runtime error.
 
 </Callout>
+
+#### Redirecting from serverProps
+
+<VersionNote since="0.10.0" message="Returning redirect() from serverProps requires mochi-framework 0.10.0." />
+
+A `serverProps` resolver may return `redirect(status, location)` instead of props — the page render is skipped and the response carries the redirect. Use it for auth gates:
+
+```ts
+// file: src/index.ts
+import { Mochi, redirect } from 'mochi-framework';
+
+await Mochi.serve({
+  routes: {
+    '/settings': Mochi.page('./src/Settings.svelte', {
+      serverProps: (req) => {
+        const user = currentUser(req);
+        if (!user) return redirect(303, '/login');
+        return { user };
+      },
+    }),
+  },
+});
+```
+
+The return type is `MochiRedirect`. Returning `fail()` or `success()` from `serverProps` is a runtime error — those are form-action results.
 
 ### `Mochi.api`
 

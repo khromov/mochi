@@ -61,7 +61,7 @@ import { Mochi, error } from 'mochi-framework';
 await Mochi.serve({
   routes: {
     '/fruits/:name': Mochi.page('./src/Fruit.svelte', {
-      serverProps: ({ params }) => {
+      serverProps: (_req, params) => {
         if (params.name !== 'apple' && params.name !== 'orange') error(404, 'Unknown fruit');
         return { name: params.name };
       },
@@ -69,6 +69,18 @@ await Mochi.serve({
     '/files/*': Mochi.page('./src/Files.svelte'),
   },
 });
+```
+
+`:param` is also greedier than SvelteKit's segment syntax, and a literal prefix inside a segment is not expressible. SvelteKit's `profile/@[user]` has no direct equivalent: Bun treats `@:user` as literal text, so `/profile/@:user` never matches. Match `/profile/:user` instead — the param captures the whole segment, sigil included (`params.user === '@bob'`) — and note it _also_ matches `/profile/bob`, silently serving the page at two URLs unless you guard:
+
+```ts
+// file (Mochi): the SvelteKit route profile/@[user]
+'/profile/:user': Mochi.page('./src/Profile.svelte', {
+  serverProps: (_req, params) => {
+    if (!params.user.startsWith('@')) error(404); // /profile/bob must not alias /profile/@bob
+    return { username: params.user.slice(1) };
+  },
+}),
 ```
 
 <Callout type="tip">
@@ -119,6 +131,12 @@ In SvelteKit, `+layout.svelte` wraps `+page.svelte` automatically. In Mochi, the
   {/each}
 </Layout>
 ```
+
+<Callout type="warning">
+
+The layout wrapper renders `{@render children()}`, so it can never be a `mochi:hydrate*` island — children cannot cross the server→client boundary, and the directive is a [compile error](/docs/selective-hydration/#no-children-on-hydrate-islands). Keep the layout server-rendered and mark the interactive components inside it.
+
+</Callout>
 
 Share the data that SvelteKit's `+layout.server.ts` would have loaded through a common helper, then spread the result into each route's `serverProps`:
 
@@ -193,6 +211,15 @@ The `Mochi.page()` entry component renders on the server, so you can also call d
 
 You can read `getRequestContext().params` anywhere on the server instead of threading `params` through `serverProps`.
 
+A guard redirect inside `load` ports directly: return `redirect(status, location)` from `serverProps` and the page render is skipped (see [Redirecting from serverProps](/docs/defining-routes/#redirecting-from-serverprops); requires mochi-framework 0.10.0).
+
+```ts
+serverProps: (req) => {
+  if (!currentUser(req)) return redirect(303, '/login');
+  return { settings: loadSettings() };
+},
+```
+
 ### Form actions
 
 SvelteKit's `actions` export becomes the `actions` field on `Mochi.page`. The helpers `fail`, `redirect`, and `success` import from `mochi-framework`. A POST matches an `?/<name>` query (or `default` when absent). The action's return value populates a `form` prop on re-render. The action callback receives `{ request, url, server, locals, kind, method, formData, actionName, cookies, params }`.
@@ -239,8 +266,14 @@ await Mochi.serve({
   let { form } = $props();
 </script>
 
-{#if form?.error}<p>{form.error}</p>{/if}
+{#if form?.data?.error}<p>{form.data.error}</p>{/if}
 ```
+
+<Callout type="warning">
+
+**`form.data`, not `form`.** SvelteKit spreads the `fail()` payload onto the `form` prop itself; Mochi nests it — `form = { ok, action, status?, data }`. Every `form?.error` read in ported code must become `form?.data?.error`, or the value is silently `undefined`.
+
+</Callout>
 
 <Callout type="tip">
 
@@ -320,7 +353,7 @@ Use `Mochi.page` for normal HTML routes. `Mochi.api` never goes through the erro
 
 ### `error()`, `redirect()`, `fail()`
 
-Same names, imported from `mochi-framework`. `error(status, message)` throws `MochiHttpError`. `redirect(status, location)` returns from an action. `fail(status, data)` and `success(data?)` round-trip through the `form` prop or the `enhance` envelope.
+Same names, imported from `mochi-framework`. `error(status, message?)` throws `MochiHttpError`, defaulting the message to the canonical status text when omitted. `redirect(status, location)` returns from an action or a `serverProps` resolver. `fail(status, data)` and `success(data?)` round-trip through the `form` prop (under `form.data`) or the `enhance` envelope.
 
 ```ts
 // SvelteKit
