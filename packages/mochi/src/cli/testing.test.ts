@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { bunReportedCleanPass, extractFailures, toleratedWindowsWedge } from './testing';
+import { extractFailures, parseJunitSummary, toleratedWindowsWedge } from './testing';
 
 // Verbatim `bun test` reporter output (v1.3): the source snippet and `error:` block
 // are printed *before* the `(fail)` line they belong to.
@@ -88,55 +88,70 @@ describe('extractFailures', () => {
   });
 });
 
-const CLEAN_PASS_OUTPUT = `
-queuePglite.test.ts:
-(pass) Mochi queue on pglite storage > installs its schema and roundtrips a job in-process [3596.30ms]
-
- 1 pass
- 0 fail
- 6 expect() calls
-Ran 1 test across 1 file. [3.74s]
+// Verbatim `bun test --reporter=junit` reports (v1.3), written only at the end of a completed run.
+const PASS_XML = `<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="bun test" tests="1" assertions="6" failures="0" skipped="0" time="3.741">
+  <testsuite name="queuePglite.test.ts" file="queuePglite.test.ts" tests="1" assertions="6" failures="0" skipped="0" time="3.6" hostname="ci">
+    <testcase name="Mochi queue on pglite storage &gt; installs its schema and roundtrips a job in-process" classname="" time="3.596" file="queuePglite.test.ts" line="12" assertions="6" />
+  </testsuite>
+</testsuites>
 `;
 
-describe('bunReportedCleanPass', () => {
-  test('true for a completed all-pass run', () => {
-    expect(bunReportedCleanPass({ stderr: CLEAN_PASS_OUTPUT, stdout: '' })).toBe(true);
+const FAIL_XML = `<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="bun test" tests="1" assertions="1" failures="1" skipped="0" time="0.020">
+  <testsuite name="fail.test.ts" file="fail.test.ts" tests="1" assertions="1" failures="1" skipped="0" time="0" hostname="ci">
+    <testcase name="adds" classname="" time="0.000519" file="fail.test.ts" line="2" assertions="1">
+      <failure type="AssertionError" />
+    </testcase>
+  </testsuite>
+</testsuites>
+`;
+
+describe('parseJunitSummary', () => {
+  test('reads the run totals from a passing report', () => {
+    expect(parseJunitSummary(PASS_XML)).toEqual({ tests: 1, failures: 0 });
   });
 
-  test('reads the footer from stdout when stderr is blank', () => {
-    expect(bunReportedCleanPass({ stderr: '  \n', stdout: CLEAN_PASS_OUTPUT })).toBe(true);
+  test('reads the failure count from a failing report', () => {
+    expect(parseJunitSummary(FAIL_XML)).toEqual({ tests: 1, failures: 1 });
   });
 
-  test('false when a test failed', () => {
-    expect(bunReportedCleanPass({ stderr: ASSERTION_OUTPUT, stdout: '' })).toBe(false);
+  test('counts a per-test timeout as a failure', () => {
+    expect(parseJunitSummary(FAIL_XML.replace('AssertionError', 'TimeoutError'))).toEqual({ tests: 1, failures: 1 });
   });
 
-  test('false for an unattached import error', () => {
-    expect(bunReportedCleanPass({ stderr: IMPORT_ERROR_OUTPUT, stdout: '' })).toBe(false);
+  test('null for a missing or empty report', () => {
+    expect(parseJunitSummary(null)).toBeNull();
+    expect(parseJunitSummary('')).toBeNull();
   });
 
-  test('false when the process was killed before the footer printed', () => {
-    const stderr = Array.from({ length: 30 }, (_, i) => `line ${i}`).join('\n');
-    expect(bunReportedCleanPass({ stderr, stdout: '' })).toBe(false);
+  test('null for a report truncated mid-write', () => {
+    expect(parseJunitSummary(PASS_XML.slice(0, PASS_XML.indexOf('failures=') + 11))).toBeNull();
+  });
+
+  test('null for console output that is not a report at all', () => {
+    expect(parseJunitSummary('bun test v1.3.14\n\n 1 pass\n 0 fail\nRan 1 test across 1 file. [3.74s]')).toBeNull();
   });
 });
 
 describe('toleratedWindowsWedge', () => {
-  const clean = { stderr: CLEAN_PASS_OUTPUT, stdout: '' };
-
-  test('true only for a timed-out clean pass on win32', () => {
-    expect(toleratedWindowsWedge(true, clean, 'win32')).toBe(true);
+  test('true only for a timed-out green report on win32', () => {
+    expect(toleratedWindowsWedge(true, PASS_XML, 'win32')).toBe(true);
   });
 
-  test('false on non-Windows even after a clean pass', () => {
-    expect(toleratedWindowsWedge(true, clean, 'linux')).toBe(false);
+  test('false on non-Windows even after a green report', () => {
+    expect(toleratedWindowsWedge(true, PASS_XML, 'linux')).toBe(false);
   });
 
   test('false when the file did not time out', () => {
-    expect(toleratedWindowsWedge(false, clean, 'win32')).toBe(false);
+    expect(toleratedWindowsWedge(false, PASS_XML, 'win32')).toBe(false);
   });
 
-  test('false for a win32 timeout that never reached a clean pass', () => {
-    expect(toleratedWindowsWedge(true, { stderr: ASSERTION_OUTPUT, stdout: '' }, 'win32')).toBe(false);
+  test('false for a win32 timeout whose report records a failure', () => {
+    expect(toleratedWindowsWedge(true, FAIL_XML, 'win32')).toBe(false);
+  });
+
+  test('false for a win32 timeout that never wrote a report', () => {
+    expect(toleratedWindowsWedge(true, null, 'win32')).toBe(false);
   });
 });
