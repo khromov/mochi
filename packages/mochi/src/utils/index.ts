@@ -158,6 +158,14 @@ export function cssLinkTag(url: string): string {
   return `<link rel="stylesheet" href="${url}">`;
 }
 
+/** Guards against a many-subset font package turning the preload hint into unconditional downloads of every subset. */
+export const FONT_PRELOAD_MAX = 8;
+
+// `crossorigin` is mandatory: font requests are CORS-mode even same-origin, and a mode mismatch double-fetches.
+export function fontPreloadTag(url: string): string {
+  return `<link rel="preload" as="font" type="font/woff2" href="${url}" crossorigin>`;
+}
+
 /**
  * Test whether an HTML comment's text is a Svelte SSR hydration marker. `text` must be the comment's inner bytes, with
  * the surrounding `<!--` `-->` already stripped by the caller, since the patterns below assume it.

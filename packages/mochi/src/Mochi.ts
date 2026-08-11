@@ -51,7 +51,19 @@ import { applyFilter, initExtensions, runHook } from './extensions';
 import { escapeHtmlAttr } from './utils/htmlEscape';
 import { buildPublicUrl } from './runtime/proxy';
 import { realpath } from 'node:fs/promises';
-import { apiError, collectHeaderPairs, cssLinkTag, headResponse, isHtmlResponse, MochiHttpError, relForDisplay, toPosixPath, withHead } from './utils';
+import {
+  apiError,
+  collectHeaderPairs,
+  cssLinkTag,
+  FONT_PRELOAD_MAX,
+  fontPreloadTag,
+  headResponse,
+  isHtmlResponse,
+  MochiHttpError,
+  relForDisplay,
+  toPosixPath,
+  withHead,
+} from './utils';
 import type { MochiEvent, MochiEventKind, MochiResolveOptions } from './runtime/hooks';
 import { applyResolveOptions } from './runtime/hooks';
 import { alternateSlashPattern, trailingSlashRedirect } from './runtime/trailingSlash';
@@ -263,9 +275,11 @@ export class Mochi {
       logLevel: LogLevel;
       /** Reads the current shell template (reassigned on dev shell edits). */
       getTemplate: () => string;
+      /** Emit `<link rel="preload" as="font">` for the page's extracted woff2 fonts. */
+      fontPreload: boolean;
     },
   ): (result: RenderResult, opts?: { debugInfo?: DebugBarData; pageEntry?: string }) => string {
-    const { serverIslandClientJs, liveReloadClientJs, logLevel, getTemplate } = config;
+    const { serverIslandClientJs, liveReloadClientJs, logLevel, getTemplate, fontPreload } = config;
 
     const logLevelScript = logLevel === DEFAULT_LOG_LEVEL ? '' : `<script>window.__mochi_log_level=${JSON.stringify(logLevel)}</script>`;
     // Feeds the debug bar's Warnings panel. When the debug bar is off the
@@ -293,7 +307,9 @@ export class Mochi {
       }
 
       const bootstrapUrl = result.bootstrapUrl;
-      const cssLinks = result.cssUrls.map(cssLinkTag).join('\n');
+      // Preloads go ahead of the stylesheet links: the fonts are otherwise discovered only after the CSS arrives.
+      const fontPreloads = fontPreload ? result.fontPreloadUrls.slice(0, FONT_PRELOAD_MAX).map(fontPreloadTag).join('\n') : '';
+      const cssLinks = (fontPreloads ? `${fontPreloads}\n` : '') + result.cssUrls.map(cssLinkTag).join('\n');
       const debugBarUrl = registry.getDebugBarUrl();
       const debugInfoScript = registry.debugBarEnabled && opts?.debugInfo ? `<script>window.__mochi_debug=${jsonForHtml(opts.debugInfo)}</script>` : '';
       const pageEntryScript = liveReloadClientJs && opts?.pageEntry ? `<script>window.__mochi_page_entry=${jsonForHtml(opts.pageEntry)}</script>` : '';
@@ -477,6 +493,7 @@ export class Mochi {
         markdown: options.markdown,
         optimize: options.optimize,
         barrelWarnings: options.barrelWarnings,
+        fonts: options.fonts,
       });
       // No-op in dev or when the option is off; production-without-manifest
       // compiles at startup, so the shake must run before the first compile.
@@ -580,6 +597,7 @@ export class Mochi {
       liveReloadClientJs,
       logLevel: resolvedLogLevel,
       getTemplate: () => shellTemplate,
+      fontPreload: options.fonts?.preload !== false,
     });
 
     const { renderErrorResponse, routeErrorResponse } = createErrorResponder({
@@ -1636,7 +1654,8 @@ export class Mochi {
       // Non-route requests run middleware too, so static-asset paths (`/_mochi/client/...` bundles) share the chain and a
       // user `gzip()` compresses them like any other response. Kind is precomputed so middleware can branch on it.
       const assetContent = registry.getClientFile(url.pathname);
-      const kind: MochiEventKind = assetContent !== undefined ? 'asset' : userFetch ? 'fallback' : 'error';
+      const fontAsset = assetContent === undefined ? registry.getFontAsset(url.pathname) : undefined;
+      const kind: MochiEventKind = assetContent !== undefined || fontAsset !== undefined ? 'asset' : userFetch ? 'fallback' : 'error';
 
       const event: MochiEvent = { request: req, url, server, locals: {}, kind, isWarmup: false };
 
@@ -1654,6 +1673,13 @@ export class Mochi {
             headers['Cache-Control'] = 'public, max-age=31536000, immutable';
           }
           return applyResolveOptions(new Response(assetContent, { headers }), resolveOpts);
+        }
+        if (fontAsset !== undefined) {
+          const headers: Record<string, string> = { 'Content-Type': fontAsset.contentType };
+          if (!development) {
+            headers['Cache-Control'] = 'public, max-age=31536000, immutable';
+          }
+          return applyResolveOptions(new Response(Bun.file(fontAsset.diskPath), { headers }), resolveOpts);
         }
         if (userFetch) {
           const response = await userFetch(req, server);

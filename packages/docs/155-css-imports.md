@@ -7,6 +7,7 @@ description: 'Import CSS from Svelte, TypeScript, or JavaScript files and have i
 <script>
   import Callout from './_components/Callout.svelte';
   import SeeItInAction from './_components/SeeItInAction.svelte';
+  import VersionNote from './_components/VersionNote.svelte';
 </script>
 
 ## CSS imports
@@ -47,6 +48,36 @@ The Svelte compiler handles `<style>` inside a `.svelte` file. Mochi extracts th
   }
 </style>
 ```
+
+### Fonts
+
+<VersionNote since="0.10.0" message="Earlier versions inline every font into the bundled CSS as a base64 data: URI." />
+
+Bun's CSS bundler inlines every `url()` reference as a base64 `data:` URI, which would turn a font package into one large render-blocking stylesheet. Mochi extracts fonts larger than 4 kB back out into content-hashed files served from `/_mochi/fonts/*`:
+
+```css
+/* @fontsource/source-sans-pro ships */
+src: url(./files/source-sans-pro-latin-400-normal.woff2) format('woff2');
+
+/* Mochi serves */
+src: url(/_mochi/fonts/source-sans-pro-latin-400-normal-1bfe8b9c.woff2) format(woff2);
+```
+
+The binaries load without blocking first paint, cache immutably and independently of your CSS, and `unicode-range` subsetting works again — the browser fetches only the subsets a page actually renders. Three related defaults, all tunable via `Mochi.serve({ fonts })`:
+
+```ts
+await Mochi.serve({
+  fonts: {
+    inlineThreshold: 4096, // fonts at or below this stay inlined; Infinity restores full inlining
+    dropLegacyWoff: true, // drop format('woff') sources when the face also offers woff2
+    preload: true, // <link rel="preload" as="font"> for the page's latin-visible woff2 fonts
+  },
+  routes,
+});
+```
+
+- **`dropLegacyWoff`** — `woff2` is supported by every browser Mochi targets, so shipping the `woff` fallback doubles a face's payload for nothing.
+- **`preload`** — separately-fetched fonts are only discovered after the CSS arrives; preloading from the `<head>` closes that gap. Faces whose `unicode-range` excludes latin are skipped, and at most 8 fonts are preloaded per page.
 
 ### Variable fonts
 

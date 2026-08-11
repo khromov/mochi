@@ -19,7 +19,8 @@ import type { DebugBarData } from '../runtime/requestContext';
 import { logger } from '../utils/log';
 import { mochiEvents } from '../events';
 import { detectHeavyBarrels, formatBarrelLine, formatBarrelSummary, type BarrelMetafile, type HeavyBarrel } from './barrelDetect';
-import type { MarkdownConfig, MochiBarrelWarningOptions, MochiManifest, MochiSvelteShakerOptions } from '../types';
+import type { MarkdownConfig, MochiBarrelWarningOptions, MochiFontOptions, MochiManifest, MochiSvelteShakerOptions } from '../types';
+import { extractFontAssets, scanFontSourceNames } from './cssFontAssets';
 import { type HydratableComponent, type PreprocessIslandError, type ServerIslandComponent } from './svelteAstPreprocess';
 import { cachedPreprocessHydratable, createPreprocessCacheStats } from './preprocessCache';
 import { CompileCache, compileFingerprint, createCompileCacheStats, type CompileCacheStats } from './compileCache';
@@ -85,7 +86,7 @@ const builtinTsPreprocessor: PreprocessorGroup = {
 const SRC_DIR = path.join(path.dirname(Bun.fileURLToPath(import.meta.url)), '..');
 
 /** Manifest schema version this runtime writes; see `MochiManifest.version` for the path families it implies. */
-const MANIFEST_VERSION = 2;
+const MANIFEST_VERSION = 3;
 
 // Bun <1.4.0's CSS bundler unquotes `format('woff2-variations')` to `format(woff2-variations)`,
 // which is invalid CSS — only the seven plain keywords (woff2, woff, truetype, opentype,
@@ -264,6 +265,8 @@ export interface RenderResult {
   body: string;
   head: string;
   cssUrls: string[];
+  /** Served URLs of preload-worthy fonts extracted from this entry's CSS imports; the shell may emit `<link rel="preload">` for them. */
+  fontPreloadUrls: string[];
   bootstrapUrl: string | null;
   hasServerIslands: boolean;
   /** Dev-only snapshot of `ctx.debugBarData`, taken at end of render before the per-request bag is cleared and surfaced to the toolbar as `window.__mochi_debug`. */
@@ -295,6 +298,8 @@ export interface ComponentRegistryOptions {
   optimize?: boolean | MochiSvelteShakerOptions;
   /** See `MochiServeOptions.barrelWarnings`. */
   barrelWarnings?: boolean | MochiBarrelWarningOptions;
+  /** See `MochiServeOptions.fonts`. */
+  fonts?: MochiFontOptions;
   /**
    * Buffers barrel offenders so a one-shot `mochi-framework build` can emit them as one grouped summary via
    * `flushBarrelWarnings()`. A live server compiles lazily with no end-of-build flush point, so buffered warnings
@@ -399,6 +404,10 @@ export class ComponentRegistry {
   private serverIslandExports: Map<string, string> = new Map();
   /** Maps served asset URL → emitted asset for locally-imported images (`import x from './x.png'`). */
   private localImageAssets: Map<string, LocalImageAsset> = new Map();
+  /** Maps served font URL → binary font extracted from a bundled CSS import's `data:` URIs. */
+  private fontAssets: Map<string, { diskPath: string; contentType: string }> = new Map();
+  /** Maps resolved CSS-import path → served URLs of its preload-worthy extracted fonts (woff2, latin-visible). */
+  private importedCssFontPreloads: Map<string, string[]> = new Map();
   readonly development: boolean;
   /** Set by `fromManifest()`; distinguishes a prebuilt-manifest boot from a live, compile-on-demand one. */
   loadedFromManifest = false;
@@ -411,6 +420,8 @@ export class ComponentRegistry {
   private readonly svelteCompiler: MochiSvelteCompiler | undefined;
   readonly markdown: MarkdownConfig | undefined;
   readonly optimize: boolean | MochiSvelteShakerOptions;
+  private readonly fontInlineThreshold: number;
+  private readonly fontDropLegacyWoff: boolean;
   private readonly barrelWarningsEnabled: boolean;
   private readonly barrelIgnore: Set<string>;
   private readonly barrelMinBytes: number;
@@ -440,6 +451,8 @@ export class ComponentRegistry {
     this.svelteCompiler = opts.svelteCompiler;
     this.markdown = opts.markdown;
     this.optimize = opts.optimize ?? false;
+    this.fontInlineThreshold = opts.fonts?.inlineThreshold ?? 4096;
+    this.fontDropLegacyWoff = opts.fonts?.dropLegacyWoff ?? true;
     const bw = opts.barrelWarnings;
     this.barrelWarningsEnabled = bw !== false;
     this.barrelIgnore = new Set(typeof bw === 'object' ? (bw.ignore ?? []) : []);
@@ -1670,12 +1683,17 @@ export class ComponentRegistry {
 
     // Append URLs for side-effect CSS imports reachable from this entry
     // (e.g. @fontsource fonts imported in a page's <script>).
+    const fontPreloadUrls: string[] = [];
     const imported = this.entryImportedCss.get(entryKey);
     if (imported) {
       for (const cssPath of imported) {
         const url = this.importedCssUrls.get(cssPath);
         if (url) {
           cssUrls.push(url);
+        }
+        const preloads = this.importedCssFontPreloads.get(cssPath);
+        if (preloads) {
+          fontPreloadUrls.push(...preloads);
         }
       }
     }
@@ -1689,6 +1707,7 @@ export class ComponentRegistry {
       body: normalized,
       head: shouldStrip ? stripHydrationMarkers(headStr) : headStr,
       cssUrls,
+      fontPreloadUrls,
       // Gated on wrappers actually present in the output — the entry's compile-time hydratables may all sit in branches
       // this render never took.
       bootstrapUrl: renderedIslandNames.size > 0 ? this.islandBootstrapUrl : null,
@@ -1828,6 +1847,10 @@ export class ComponentRegistry {
     return this.clientFiles.get(urlPath);
   }
 
+  getFontAsset(urlPath: string): { diskPath: string; contentType: string } | undefined {
+    return this.fontAssets.get(urlPath);
+  }
+
   getClientFiles(): Map<string, string> {
     return this.clientFiles;
   }
@@ -1869,6 +1892,8 @@ export class ComponentRegistry {
     // HTML can still resolve a replaced image's old hashed URL, and the manifest builds from this map, keeping stale
     // globals out of prod.
     this.localImageAssets.clear();
+    this.fontAssets.clear();
+    this.importedCssFontPreloads.clear();
   }
 
   /**
@@ -1908,9 +1933,38 @@ export class ComponentRegistry {
         // Read from disk: when Bun.build writes via `outdir`, the output's
         // .text() may return empty — the file on disk is the source of truth.
         const rawCss = await Bun.file(out.path).text();
-        const cssText = restoreVariationsFormat(rawCss);
+        let cssText = restoreVariationsFormat(rawCss);
+        // Bun's CSS bundler base64-inlines every url() unconditionally, turning font packages into render-blocking
+        // stylesheets; decode large fonts back out into separately-served, immutable-cacheable binaries.
+        const fontNames = scanFontSourceNames(cssPath);
+        const fontPass = extractFontAssets(cssText, {
+          inlineThreshold: this.fontInlineThreshold,
+          dropLegacyWoff: this.fontDropLegacyWoff,
+          urlFor: (fileName) => `${this.assetPrefix}/fonts/${fileName}`,
+          nameForHash: (hash) => fontNames.get(hash),
+        });
+        cssText = fontPass.css;
         if (cssText !== rawCss) {
           await Bun.write(out.path, cssText);
+        }
+        const preloadUrls: string[] = [];
+        for (const asset of fontPass.assets) {
+          const diskPath = path.join(this.outDir, 'fonts', asset.fileName);
+          await Bun.write(diskPath, asset.bytes);
+          const fontUrl = `${this.assetPrefix}/fonts/${asset.fileName}`;
+          this.fontAssets.set(fontUrl, { diskPath, contentType: asset.contentType });
+          if (asset.preload) {
+            preloadUrls.push(fontUrl);
+          }
+          this.importedCssStats.push({
+            name: path.posix.join('fonts', asset.fileName),
+            size: asset.bytes.length,
+            inputs: [{ path: relForDisplay(cssPath), size: asset.bytes.length }],
+            imports: [],
+          });
+        }
+        if (preloadUrls.length > 0) {
+          this.importedCssFontPreloads.set(cssPath, preloadUrls);
         }
         this.clientFiles.set(urlPath, cssText);
         this.importedCssUrls.set(cssPath, urlPath);
@@ -1945,6 +1999,8 @@ export class ComponentRegistry {
     }
     this.importedCssUrls.clear();
     this.importedCssStats = [];
+    this.fontAssets.clear();
+    this.importedCssFontPreloads.clear();
     await this.bundleImportedCss(cssPaths);
   }
 
@@ -2110,6 +2166,12 @@ export class ComponentRegistry {
     if (this.importedCssUrls.size > 0) {
       manifest.importedCssUrls = Object.fromEntries([...this.importedCssUrls].map(([cssPath, url]) => [encodeSourcePath(cssPath), url]));
     }
+    if (this.fontAssets.size > 0) {
+      manifest.fontAssets = Object.fromEntries([...this.fontAssets].map(([url, asset]) => [url, { ...asset, diskPath: relToOutDir(asset.diskPath) }]));
+    }
+    if (this.importedCssFontPreloads.size > 0) {
+      manifest.importedCssFontPreloads = Object.fromEntries([...this.importedCssFontPreloads].map(([cssPath, urls]) => [encodeSourcePath(cssPath), urls]));
+    }
     if (this.entryImportedCss.size > 0) {
       manifest.entryImportedCss = Object.fromEntries([...this.entryImportedCss].map(([k, v]) => [encodeSourcePath(k), [...v].map((p) => encodeSourcePath(p))]));
     }
@@ -2175,6 +2237,16 @@ export class ComponentRegistry {
     if (manifest.importedCssUrls) {
       for (const [cssPath, url] of Object.entries(manifest.importedCssUrls)) {
         registry.importedCssUrls.set(decodeSourcePath(cssPath), url);
+      }
+    }
+    if (manifest.fontAssets) {
+      for (const [url, asset] of Object.entries(manifest.fontAssets)) {
+        registry.fontAssets.set(url, { ...asset, diskPath: resolveManifestPath(asset.diskPath) });
+      }
+    }
+    if (manifest.importedCssFontPreloads) {
+      for (const [cssPath, urls] of Object.entries(manifest.importedCssFontPreloads)) {
+        registry.importedCssFontPreloads.set(decodeSourcePath(cssPath), urls);
       }
     }
     if (manifest.entryImportedCss) {
