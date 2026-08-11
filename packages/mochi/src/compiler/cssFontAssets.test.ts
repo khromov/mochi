@@ -1,143 +1,137 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
-import path from 'node:path';
-import { extractFontAssets, fontContentHash, scanFontSourceNames } from './cssFontAssets';
+import { classifyFontAssets, fontAssetFileName, fontContentHash, type FontRef } from './cssFontAssets';
 
-function dataUri(mime: string, bytes: Uint8Array): string {
-  return `data:${mime};base64,${Buffer.from(bytes).toString('base64')}`;
+let refCounter = 0;
+function makeRef(path: string, size = 10_000): FontRef {
+  return { path, size, markerB64: Buffer.from(`__MOCHI_FONT_${refCounter++}__`).toString('base64') };
 }
 
-function fakeFont(size: number, seed: number): Uint8Array {
-  const bytes = new Uint8Array(size);
-  for (let i = 0; i < size; i++) {
-    bytes[i] = (i * 31 + seed) % 256;
-  }
-  return bytes;
+function markerUri(ref: FontRef, mime: string): string {
+  return `data:${mime};base64,${ref.markerB64}`;
 }
 
-const OPTS = {
-  inlineThreshold: 4096,
-  dropLegacyWoff: true,
-  urlFor: (fileName: string) => `/_mochi/fonts/${fileName}`,
-};
+const DROP = { dropLegacyWoff: true };
 
-describe('extractFontAssets', () => {
-  test('extracts a large inlined woff2 into a hashed asset and rewrites the url', () => {
-    const font = fakeFont(10_000, 1);
-    const css = `@font-face {\n  font-family: Demo;\n  src: url("${dataUri('font/woff2', font)}") format("woff2");\n}`;
-    const { css: out, assets } = extractFontAssets(css, OPTS);
+describe('classifyFontAssets', () => {
+  test('surfaces a marked woff2 with its bundler-stamped content type and marker URI', () => {
+    const ref = makeRef('/pkg/files/inter-latin-400-normal.woff2');
+    const css = `@font-face {\n  font-family: Demo;\n  src: url("${markerUri(ref, 'font/woff2')}") format("woff2");\n}`;
+    const { css: out, fonts } = classifyFontAssets(css, [ref], DROP);
 
-    expect(assets).toHaveLength(1);
-    const asset = assets[0]!;
-    expect(asset.contentType).toBe('font/woff2');
-    expect(asset.fileName).toBe(`font-${fontContentHash(font)}.woff2`);
-    expect(asset.bytes).toEqual(font);
-    expect(asset.preload).toBe(true);
-    expect(out).toContain(`url(/_mochi/fonts/${asset.fileName}) format("woff2")`);
-    expect(out).not.toContain('base64');
-  });
-
-  test('leaves fonts at or below the threshold inlined', () => {
-    const css = `@font-face { font-family: Icons; src: url("${dataUri('font/woff2', fakeFont(2048, 2))}") format("woff2"); }`;
-    const { css: out, assets } = extractFontAssets(css, OPTS);
-    expect(assets).toHaveLength(0);
-    expect(out).toBe(css);
-  });
-
-  test('Infinity threshold restores full inlining', () => {
-    const css = `@font-face { font-family: Demo; src: url("${dataUri('font/woff2', fakeFont(50_000, 3))}") format("woff2"); }`;
-    const { css: out, assets } = extractFontAssets(css, { ...OPTS, inlineThreshold: Infinity });
-    expect(assets).toHaveLength(0);
-    expect(out).toBe(css);
+    expect(fonts).toHaveLength(1);
+    expect(fonts[0]!.ref).toBe(ref);
+    expect(fonts[0]!.contentType).toBe('font/woff2');
+    expect(fonts[0]!.markerUri).toBe(markerUri(ref, 'font/woff2'));
+    expect(fonts[0]!.preload).toBe(true);
+    expect(out).toContain(`url("${markerUri(ref, 'font/woff2')}")`);
   });
 
   test('drops legacy woff sources when the face also offers woff2', () => {
-    const woff2 = fakeFont(9000, 4);
-    const woff = fakeFont(11_000, 5);
-    const css = `@font-face {\n  font-family: Demo;\n  src: url("${dataUri('font/woff2', woff2)}") format("woff2"), url("${dataUri('font/woff', woff)}") format("woff");\n}`;
-    const { css: out, assets } = extractFontAssets(css, OPTS);
+    const woff2 = makeRef('/pkg/files/demo.woff2');
+    const woff = makeRef('/pkg/files/demo.woff');
+    const css = `@font-face {\n  font-family: Demo;\n  src: url("${markerUri(woff2, 'font/woff2')}") format("woff2"), url("${markerUri(woff, 'font/woff')}") format("woff");\n}`;
+    const { css: out, fonts } = classifyFontAssets(css, [woff2, woff], DROP);
 
-    expect(assets).toHaveLength(1);
-    expect(assets[0]!.fileName).toEndWith('.woff2');
+    expect(fonts.map((f) => f.ref)).toEqual([woff2]);
+    expect(out).not.toContain(woff.markerB64);
     expect(out).not.toContain('format("woff")');
   });
 
-  test('keeps woff when it is the only format and dropLegacyWoff stays off for woff-only faces', () => {
-    const woff = fakeFont(9000, 6);
-    const css = `@font-face { font-family: Old; src: url("${dataUri('font/woff', woff)}") format("woff"); }`;
-    const { assets } = extractFontAssets(css, OPTS);
-    expect(assets).toHaveLength(1);
-    expect(assets[0]!.fileName).toEndWith('.woff');
+  test('classifies formats from the resolved path when format() hints are absent', () => {
+    const woff2 = makeRef('/pkg/files/demo.woff2');
+    const woff = makeRef('/pkg/files/demo.woff');
+    const css = `@font-face { font-family: Demo; src: url("${markerUri(woff2, 'font/woff2')}"), url("${markerUri(woff, 'font/woff')}"); }`;
+    const { fonts } = classifyFontAssets(css, [woff2, woff], DROP);
+    expect(fonts.map((f) => f.ref)).toEqual([woff2]);
   });
 
-  test('dropLegacyWoff: false keeps both formats as separate assets', () => {
-    const woff2 = fakeFont(9000, 7);
-    const woff = fakeFont(11_000, 8);
-    const css = `@font-face { font-family: Demo; src: url("${dataUri('font/woff2', woff2)}") format("woff2"), url("${dataUri('font/woff', woff)}") format("woff"); }`;
-    const { css: out, assets } = extractFontAssets(css, { ...OPTS, dropLegacyWoff: false });
-    expect(assets).toHaveLength(2);
-    expect(out).toContain('format("woff")');
+  test('keeps woff when it is the only offered format', () => {
+    const woff = makeRef('/pkg/files/old.woff');
+    const css = `@font-face { font-family: Old; src: url("${markerUri(woff, 'font/woff')}") format("woff"); }`;
+    const { fonts } = classifyFontAssets(css, [woff], DROP);
+    expect(fonts).toHaveLength(1);
+    expect(fonts[0]!.preload).toBe(false);
   });
 
-  test('non-latin unicode-range faces are extracted but not preloaded', () => {
-    const font = fakeFont(9000, 9);
-    const css = `@font-face {\n  font-family: Demo;\n  src: url("${dataUri('font/woff2', font)}") format("woff2");\n  unicode-range: U+0400-045F, U+0490-0491;\n}`;
-    const { assets } = extractFontAssets(css, OPTS);
-    expect(assets).toHaveLength(1);
-    expect(assets[0]!.preload).toBe(false);
+  test('dropLegacyWoff: false keeps both formats', () => {
+    const woff2 = makeRef('/pkg/files/demo.woff2');
+    const woff = makeRef('/pkg/files/demo.woff');
+    const css = `@font-face { font-family: Demo; src: url("${markerUri(woff2, 'font/woff2')}") format("woff2"), url("${markerUri(woff, 'font/woff')}") format("woff"); }`;
+    const { fonts } = classifyFontAssets(css, [woff2, woff], { dropLegacyWoff: false });
+    expect(fonts.map((f) => f.ref)).toEqual([woff2, woff]);
   });
 
-  test('latin unicode-range and wildcard ranges mark preload', () => {
-    const font = fakeFont(9000, 10);
-    const css = `@font-face { font-family: Demo; src: url("${dataUri('font/woff2', font)}") format("woff2"); unicode-range: U+00??, U+0131; }`;
-    const { assets } = extractFontAssets(css, OPTS);
-    expect(assets[0]!.preload).toBe(true);
+  test('drops a small inlined legacy woff alongside a marked woff2', () => {
+    const woff2 = makeRef('/pkg/files/demo.woff2');
+    const inlineWoffB64 = Buffer.from('tiny legacy woff bytes').toString('base64');
+    const css = `@font-face { font-family: Demo; src: url("${markerUri(woff2, 'font/woff2')}") format("woff2"), url("data:font/woff;base64,${inlineWoffB64}") format("woff"); }`;
+    const { css: out, fonts } = classifyFontAssets(css, [woff2], DROP);
+    expect(fonts.map((f) => f.ref)).toEqual([woff2]);
+    expect(out).not.toContain(inlineWoffB64);
   });
 
-  test('recovers original file names via nameForHash', () => {
-    const font = fakeFont(9000, 11);
-    const css = `@font-face { font-family: Demo; src: url("${dataUri('font/woff2', font)}") format("woff2"); }`;
-    const { assets } = extractFontAssets(css, {
-      ...OPTS,
-      nameForHash: (hash) => (hash === fontContentHash(font) ? 'inter-latin-400-normal' : undefined),
-    });
-    expect(assets[0]!.fileName).toBe(`inter-latin-400-normal-${fontContentHash(font)}.woff2`);
+  test('variable fonts (format woff2-variations) still preload', () => {
+    const ref = makeRef('/pkg/files/fraunces-latin-full-normal.woff2');
+    const css = `@font-face { font-family: Fraunces; src: url("${markerUri(ref, 'font/woff2')}") format("woff2-variations"); unicode-range: U+0000-00FF; }`;
+    const { fonts } = classifyFontAssets(css, [ref], DROP);
+    expect(fonts[0]!.preload).toBe(true);
   });
 
-  test('identical bytes across faces dedupe into one asset', () => {
-    const font = fakeFont(9000, 12);
-    const face = `@font-face { font-family: Demo; src: url("${dataUri('font/woff2', font)}") format("woff2"); }`;
-    const { assets } = extractFontAssets(`${face}\n${face}`, OPTS);
-    expect(assets).toHaveLength(1);
+  test('non-latin unicode-range faces survive but are not preloaded', () => {
+    const ref = makeRef('/pkg/files/cyrillic.woff2');
+    const css = `@font-face {\n  font-family: Demo;\n  src: url("${markerUri(ref, 'font/woff2')}") format("woff2");\n  unicode-range: U+0400-045F, U+0490-0491;\n}`;
+    const { fonts } = classifyFontAssets(css, [ref], DROP);
+    expect(fonts).toHaveLength(1);
+    expect(fonts[0]!.preload).toBe(false);
   });
 
-  test('leaves local() sources, external urls, and non-font data URIs untouched', () => {
-    const css = [
-      `@font-face { font-family: A; src: local("Arial"), url(https://example.com/a.woff2) format("woff2"); }`,
-      `.bg { background: url("${dataUri('image/png', fakeFont(9000, 13))}"); }`,
-    ].join('\n');
-    const { css: out, assets } = extractFontAssets(css, OPTS);
-    expect(assets).toHaveLength(0);
-    expect(out).toContain('local("Arial")');
-    expect(out).toContain('https://example.com/a.woff2');
-    expect(out).toContain('data:image/png');
+  test('latin wildcard unicode-range marks preload', () => {
+    const ref = makeRef('/pkg/files/latin.woff2');
+    const css = `@font-face { font-family: Demo; src: url("${markerUri(ref, 'font/woff2')}") format("woff2"); unicode-range: U+00??, U+0131; }`;
+    const { fonts } = classifyFontAssets(css, [ref], DROP);
+    expect(fonts[0]!.preload).toBe(true);
+  });
+
+  test('a ref used by two faces is reported once, preloaded if any face qualifies', () => {
+    const ref = makeRef('/pkg/files/shared.woff2');
+    const face = (range: string) => `@font-face { font-family: Demo; src: url("${markerUri(ref, 'font/woff2')}") format("woff2"); unicode-range: ${range}; }`;
+    const { fonts } = classifyFontAssets(`${face('U+0400-045F')}\n${face('U+0000-00FF')}`, [ref], DROP);
+    expect(fonts).toHaveLength(1);
+    expect(fonts[0]!.preload).toBe(true);
+  });
+
+  test('a ref referenced outside any @font-face block still survives, without preload', () => {
+    const ref = makeRef('/pkg/files/decorative.woff2');
+    const css = `.weird { cursor: url("${markerUri(ref, 'font/woff2')}"), auto; }`;
+    const { fonts } = classifyFontAssets(css, [ref], DROP);
+    expect(fonts).toHaveLength(1);
+    expect(fonts[0]!.preload).toBe(false);
+  });
+
+  test('leaves small inlined fonts, local() sources, and external urls untouched', () => {
+    const realB64 = Buffer.from('actual small font bytes').toString('base64');
+    const css = `@font-face { font-family: A; src: local("Arial"), url("data:font/woff2;base64,${realB64}") format("woff2"), url(https://example.com/a.woff2) format("woff2"); }`;
+    const { css: out, fonts } = classifyFontAssets(css, [makeRef('/unrelated.woff2')], DROP);
+    expect(fonts).toHaveLength(0);
+    expect(out).toBe(css);
+  });
+
+  test('no refs is a no-op', () => {
+    const css = `@font-face { font-family: A; src: url(x.woff) format("woff"); }`;
+    expect(classifyFontAssets(css, [], DROP)).toEqual({ css, fonts: [] });
   });
 });
 
-describe('scanFontSourceNames', () => {
-  test('maps content hashes to basenames across relative @import chains', () => {
-    const dir = mkdtempSync(path.join(import.meta.dir, '..', '..', '.mochi-font-scan-test-'));
-    try {
-      mkdirSync(path.join(dir, 'files'));
-      const font = fakeFont(9000, 14);
-      writeFileSync(path.join(dir, 'files', 'demo-latin-400-normal.woff2'), font);
-      writeFileSync(path.join(dir, 'inner.css'), `@font-face { src: url(./files/demo-latin-400-normal.woff2) format('woff2'); }`);
-      writeFileSync(path.join(dir, 'index.css'), `@import './inner.css';`);
+describe('fontAssetFileName', () => {
+  test('derives basename-hash.ext from the resolved path and bytes', () => {
+    const bytes = new Uint8Array([1, 2, 3]);
+    const ref = makeRef('/pkg/files/inter-latin-400-normal.woff2');
+    expect(fontAssetFileName(ref, bytes)).toBe(`inter-latin-400-normal-${fontContentHash(bytes)}.woff2`);
+  });
 
-      const names = scanFontSourceNames(path.join(dir, 'index.css'));
-      expect(names.get(fontContentHash(font))).toBe('demo-latin-400-normal');
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
+  test('sanitizes unusual basename characters', () => {
+    const bytes = new Uint8Array([4, 5, 6]);
+    const ref = makeRef('/pkg/files/we ird@font.woff');
+    expect(fontAssetFileName(ref, bytes)).toBe(`we-ird-font-${fontContentHash(bytes)}.woff`);
   });
 });

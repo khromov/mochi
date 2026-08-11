@@ -20,7 +20,7 @@ import { logger } from '../utils/log';
 import { mochiEvents } from '../events';
 import { detectHeavyBarrels, formatBarrelLine, formatBarrelSummary, type BarrelMetafile, type HeavyBarrel } from './barrelDetect';
 import type { MarkdownConfig, MochiBarrelWarningOptions, MochiFontOptions, MochiManifest, MochiSvelteShakerOptions } from '../types';
-import { extractFontAssets, scanFontSourceNames } from './cssFontAssets';
+import { classifyFontAssets, createFontMarkerPlugin, fontAssetFileName } from './cssFontAssets';
 import { type HydratableComponent, type PreprocessIslandError, type ServerIslandComponent } from './svelteAstPreprocess';
 import { cachedPreprocessHydratable, createPreprocessCacheStats } from './preprocessCache';
 import { CompileCache, compileFingerprint, createCompileCacheStats, type CompileCacheStats } from './compileCache';
@@ -1910,10 +1910,14 @@ export class ComponentRegistry {
 
     await Promise.all(
       todo.map(async (cssPath) => {
+        // Bun's CSS bundler resolves every url() itself and runs plugin hooks for them, so font discovery rides the
+        // bundler: large fonts become tiny marker data: URIs (see createFontMarkerPlugin) substituted below.
+        const { plugin: fontPlugin, refs: fontRefs } = createFontMarkerPlugin(this.fontInlineThreshold);
         const cssResult = await Bun.build({
           entrypoints: [cssPath],
           outdir: importCssOutDir,
           naming: { entry: '[name]-[hash].[ext]' },
+          plugins: Number.isFinite(this.fontInlineThreshold) ? [fontPlugin] : [],
           throw: false,
         });
         if (!cssResult.success) {
@@ -1934,34 +1938,29 @@ export class ComponentRegistry {
         // .text() may return empty — the file on disk is the source of truth.
         const rawCss = await Bun.file(out.path).text();
         let cssText = restoreVariationsFormat(rawCss);
-        // Bun's CSS bundler base64-inlines every url() unconditionally, turning font packages into render-blocking
-        // stylesheets; decode large fonts back out into separately-served, immutable-cacheable binaries.
-        const fontNames = scanFontSourceNames(cssPath);
-        const fontPass = extractFontAssets(cssText, {
-          inlineThreshold: this.fontInlineThreshold,
-          dropLegacyWoff: this.fontDropLegacyWoff,
-          urlFor: (fileName) => `${this.assetPrefix}/fonts/${fileName}`,
-          nameForHash: (hash) => fontNames.get(hash),
-        });
+        const fontPass = classifyFontAssets(cssText, fontRefs, { dropLegacyWoff: this.fontDropLegacyWoff });
         cssText = fontPass.css;
-        if (cssText !== rawCss) {
-          await Bun.write(out.path, cssText);
-        }
         const preloadUrls: string[] = [];
-        for (const asset of fontPass.assets) {
-          const diskPath = path.join(this.outDir, 'fonts', asset.fileName);
-          await Bun.write(diskPath, asset.bytes);
-          const fontUrl = `${this.assetPrefix}/fonts/${asset.fileName}`;
-          this.fontAssets.set(fontUrl, { diskPath, contentType: asset.contentType });
-          if (asset.preload) {
+        for (const font of fontPass.fonts) {
+          const bytes = await Bun.file(font.ref.path).bytes();
+          const fileName = fontAssetFileName(font.ref, bytes);
+          const diskPath = path.join(this.outDir, 'fonts', fileName);
+          await Bun.write(diskPath, bytes);
+          const fontUrl = `${this.assetPrefix}/fonts/${fileName}`;
+          cssText = cssText.replaceAll(`url("${font.markerUri}")`, `url(${fontUrl})`);
+          this.fontAssets.set(fontUrl, { diskPath, contentType: font.contentType });
+          if (font.preload) {
             preloadUrls.push(fontUrl);
           }
           this.importedCssStats.push({
-            name: path.posix.join('fonts', asset.fileName),
-            size: asset.bytes.length,
-            inputs: [{ path: relForDisplay(cssPath), size: asset.bytes.length }],
+            name: path.posix.join('fonts', fileName),
+            size: bytes.length,
+            inputs: [{ path: relForDisplay(font.ref.path), size: bytes.length }],
             imports: [],
           });
+        }
+        if (cssText !== rawCss) {
+          await Bun.write(out.path, cssText);
         }
         if (preloadUrls.length > 0) {
           this.importedCssFontPreloads.set(cssPath, preloadUrls);

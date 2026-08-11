@@ -1,46 +1,32 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import type { BunPlugin } from 'bun';
 
-/** A font binary decoded back out of a bundled stylesheet's `data:` URI. */
-export interface ExtractedFontAsset {
-  bytes: Uint8Array;
+/**
+ * A font file Bun's bundler resolved behind a `url()` in a CSS build, replaced with marker bytes by
+ * {@link createFontMarkerPlugin} so the bundled output carries a tiny, exactly-predictable `data:` URI instead of the
+ * base64-encoded font.
+ */
+export interface FontRef {
+  /** Absolute path Bun resolved for the reference. */
+  path: string;
+  size: number;
+  /** base64 of the marker bytes, i.e. the payload of the marker's `data:` URI in the bundled CSS. */
+  markerB64: string;
+}
+
+/** A font that survived classification and should be emitted as a separate served asset. */
+export interface SurvivingFont {
+  ref: FontRef;
+  /** MIME Bun stamped on the marker `data:` URI; reused as the served Content-Type. */
   contentType: string;
-  /** Content-hashed basename, e.g. `inter-latin-400-normal-ab12cd34.woff2`. */
-  fileName: string;
-  /** Whether this asset is worth a `<link rel="preload">`: a woff2 whose face is unranged or latin-visible. */
+  /** The exact `data:` URI occupying the ref's url() tokens, the substitution target for the final URL. */
+  markerUri: string;
+  /** Worth a `<link rel="preload">`: a woff2 whose face is unranged or latin-visible. */
   preload: boolean;
 }
 
-export interface FontExtractionOptions {
-  /** Fonts at or below this byte size stay inlined. `Infinity` disables extraction. */
-  inlineThreshold: number;
-  /** Drop `format('woff')` sources from `src:` lists that also offer woff2. */
-  dropLegacyWoff: boolean;
-  /** Served URL for an extracted file name. */
-  urlFor: (fileName: string) => string;
-  /** Best-effort original basename (sans extension) for a decoded font, keyed by `fontContentHash`. */
-  nameForHash?: (hash: string) => string | undefined;
-}
-
-export interface FontExtractionResult {
-  css: string;
-  assets: ExtractedFontAsset[];
-}
-
-const FONT_MIME_TO_EXT: Record<string, string> = {
-  'font/woff2': 'woff2',
-  'font/woff': 'woff',
-  'application/font-woff': 'woff',
-  'application/font-woff2': 'woff2',
-  'font/ttf': 'ttf',
-  'application/x-font-ttf': 'ttf',
-  'font/otf': 'otf',
-  'application/x-font-opentype': 'otf',
-  'font/sfnt': 'ttf',
-  'application/vnd.ms-fontobject': 'eot',
-};
-
-export const FONT_FILE_EXTENSIONS = new Set(['.woff2', '.woff', '.ttf', '.otf', '.eot']);
+export const FONT_URL_FILTER = /\.(woff2?|ttf|otf|eot)$/;
 
 export function fontContentHash(bytes: Uint8Array): string {
   const hasher = new Bun.CryptoHasher('sha256');
@@ -48,8 +34,34 @@ export function fontContentHash(bytes: Uint8Array): string {
   return hasher.digest('hex').slice(0, 8);
 }
 
+/**
+ * Bun's CSS bundler base64-inlines every `url()` unconditionally and ignores `loader: 'file'`, but it does run plugin
+ * hooks for the references it resolves. Fonts above the threshold get their bytes swapped for a unique marker at
+ * `onLoad`, so the bundler still owns discovery and resolution while the bundled CSS stays tiny; fonts at or below it
+ * fall through and inline for real.
+ */
+export function createFontMarkerPlugin(inlineThreshold: number): { plugin: BunPlugin; refs: FontRef[] } {
+  const refs: FontRef[] = [];
+  const plugin: BunPlugin = {
+    name: 'mochi-font-markers',
+    setup(build) {
+      build.onLoad({ filter: FONT_URL_FILTER }, (args) => {
+        const size = fs.statSync(args.path).size;
+        if (size <= inlineThreshold) {
+          return undefined;
+        }
+        const marker = `__MOCHI_FONT_${refs.length}__`;
+        refs.push({ path: args.path, size, markerB64: Buffer.from(marker).toString('base64') });
+        return { contents: marker, loader: 'file' };
+      });
+    },
+  };
+  return { plugin, refs };
+}
+
 const URL_TOKEN_RE = /url\(\s*("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^'")][^)]*)\s*\)/g;
 const FONT_FACE_RE = /@font-face\s*\{[^{}]*\}/g;
+const DATA_URI_RE = /^data:([^;,]+);base64,(.*)$/s;
 
 function unquote(value: string): string {
   const v = value.trim();
@@ -82,24 +94,40 @@ interface ParsedSource {
   format: string | null;
 }
 
-function classifyFormat(source: ParsedSource, urlValue: string | undefined): string | null {
+function classifyFormat(source: ParsedSource, urlValue: string | undefined, refForUrl: FontRef | undefined): string | null {
   if (source.format) {
     return source.format.toLowerCase();
   }
-  if (!urlValue) {
+  const pathLike = refForUrl?.path ?? urlValue;
+  if (!pathLike) {
     return null;
   }
-  const dataMime = urlValue.match(/^data:([^;,]+)/)?.[1];
-  const ext = dataMime ? FONT_MIME_TO_EXT[dataMime.toLowerCase()] : urlValue.split('?')[0]!.split('.').pop()?.toLowerCase();
-  return ext ?? null;
+  const dataMime = pathLike.match(/^data:([^;,]+)/)?.[1];
+  if (dataMime) {
+    return dataMime.toLowerCase().split('/').pop() ?? null;
+  }
+  return pathLike.split('?')[0]!.split('.').pop()?.toLowerCase() ?? null;
 }
 
 /**
- * Rewrite bundled CSS so large fonts Bun inlined as `data:` URIs become separately-served binary assets, optionally
- * pruning legacy woff sources. Pure with respect to the filesystem — callers write the returned assets.
+ * Classify the marker `data:` URIs a {@link createFontMarkerPlugin} build left in the bundled CSS: prune legacy woff
+ * sources, decide preload-worthiness per `@font-face` block, and report every ref still referenced so the caller can
+ * emit those files and substitute their `markerUri` with the final served URL. Pure with respect to the filesystem.
  */
-export function extractFontAssets(css: string, opts: FontExtractionOptions): FontExtractionResult {
-  const assetsByHash = new Map<string, ExtractedFontAsset>();
+export function classifyFontAssets(css: string, refs: FontRef[], opts: { dropLegacyWoff: boolean }): { css: string; fonts: SurvivingFont[] } {
+  if (refs.length === 0) {
+    return { css, fonts: [] };
+  }
+  const refByMarker = new Map(refs.map((ref) => [ref.markerB64, ref]));
+  // The bundler decides the marker URI's exact text (MIME from the file extension), so capture it from the CSS rather
+  // than re-deriving it.
+  const found = new Map<FontRef, { contentType: string; markerUri: string; preload: boolean }>();
+  for (const m of css.matchAll(/data:([^;,]+);base64,([A-Za-z0-9+/=]+)/g)) {
+    const ref = refByMarker.get(m[2]!);
+    if (ref && !found.has(ref)) {
+      found.set(ref, { contentType: m[1]!.toLowerCase(), markerUri: m[0], preload: false });
+    }
+  }
 
   const outCss = css.replace(FONT_FACE_RE, (block) => {
     // Tokenize url() payloads first: data URIs contain `;` and `,`, so no declaration-level parsing is safe before this.
@@ -112,6 +140,11 @@ export function extractFontAssets(css: string, opts: FontExtractionOptions): Fon
     const rangeValue = safeBlock.match(/unicode-range\s*:\s*([^;}]+)/i)?.[1];
     const latinVisible = rangeValue === undefined || unicodeRangeTouchesLatin(rangeValue);
 
+    const refForUrl = (value: string | undefined): FontRef | undefined => {
+      const payload = value?.match(DATA_URI_RE)?.[2];
+      return payload !== undefined ? refByMarker.get(payload) : undefined;
+    };
+
     const rewritten = safeBlock.replace(/(src\s*:\s*)([^;}]+)/gi, (_m, prefix: string, value: string) => {
       const sources: ParsedSource[] = value.split(',').map((text) => {
         const urlIndex = text.match(/url\(@@(\d+)@@\)/)?.[1];
@@ -122,37 +155,27 @@ export function extractFontAssets(css: string, opts: FontExtractionOptions): Fon
         };
       });
 
-      const formats = sources.map((s) => classifyFormat(s, s.urlIndex !== null ? urls[s.urlIndex] : undefined));
+      const formats = sources.map((s) => {
+        const urlValue = s.urlIndex !== null ? urls[s.urlIndex] : undefined;
+        return classifyFormat(s, urlValue, refForUrl(urlValue));
+      });
       const hasWoff2 = formats.some((f) => f === 'woff2' || f === 'woff2-variations');
 
       const kept: string[] = [];
       sources.forEach((source, i) => {
+        // Legacy woff goes whether inlined or marked — a data: URI copy is payload all the same.
         if (opts.dropLegacyWoff && hasWoff2 && formats[i] === 'woff' && source.urlIndex !== null) {
           return;
         }
-        const urlValue = source.urlIndex !== null ? urls[source.urlIndex]! : undefined;
-        const dataMatch = urlValue?.match(/^data:([^;,]+);base64,(.*)$/s);
-        const ext = dataMatch ? FONT_MIME_TO_EXT[dataMatch[1]!.toLowerCase()] : undefined;
-        if (!dataMatch || !ext) {
-          kept.push(source.text);
-          return;
+        const ref = refForUrl(source.urlIndex !== null ? urls[source.urlIndex] : undefined);
+        // Keyed off the file extension, not the format() hint, so `woff2-variations` variable fonts preload too.
+        if (ref && ref.path.endsWith('.woff2') && latinVisible) {
+          const entry = found.get(ref);
+          if (entry) {
+            entry.preload = true;
+          }
         }
-        const bytes = new Uint8Array(Buffer.from(dataMatch[2]!, 'base64'));
-        if (bytes.length <= opts.inlineThreshold) {
-          kept.push(source.text);
-          return;
-        }
-        const hash = fontContentHash(bytes);
-        let asset = assetsByHash.get(hash);
-        if (!asset) {
-          const name = (opts.nameForHash?.(hash) ?? 'font').replace(/[^\w-]/g, '-');
-          asset = { bytes, contentType: dataMatch[1]!.toLowerCase(), fileName: `${name}-${hash}.${ext}`, preload: false };
-          assetsByHash.set(hash, asset);
-        }
-        if (ext === 'woff2' && latinVisible) {
-          asset.preload = true;
-        }
-        kept.push(source.text.replace(`url(@@${source.urlIndex}@@)`, `url(${opts.urlFor(asset.fileName)})`));
+        kept.push(source.text);
       });
 
       return prefix + kept.join(', ');
@@ -164,54 +187,19 @@ export function extractFontAssets(css: string, opts: FontExtractionOptions): Fon
     });
   });
 
-  return { css: outCss, assets: [...assetsByHash.values()] };
+  // A ref whose sources were all pruned no longer occurs; a ref referenced outside any @font-face block still does.
+  const fonts: SurvivingFont[] = [];
+  for (const [ref, entry] of found) {
+    if (outCss.includes(entry.markerUri)) {
+      fonts.push({ ref, ...entry });
+    }
+  }
+  return { css: outCss, fonts };
 }
 
-/**
- * Best-effort map of font content hash → original basename (sans extension), built by walking a source stylesheet's
- * relative `url()` and `@import` references before bundling erases the file names into data URIs.
- */
-export function scanFontSourceNames(entryCssPath: string, maxDepth = 8): Map<string, string> {
-  const names = new Map<string, string>();
-  const visited = new Set<string>();
-
-  const walk = (cssPath: string, depth: number): void => {
-    const resolved = path.resolve(cssPath);
-    if (depth > maxDepth || visited.has(resolved) || !fs.existsSync(resolved)) {
-      return;
-    }
-    visited.add(resolved);
-    let css: string;
-    try {
-      css = fs.readFileSync(resolved, 'utf8');
-    } catch {
-      return;
-    }
-    const dir = path.dirname(resolved);
-    for (const m of css.matchAll(URL_TOKEN_RE)) {
-      const ref = unquote(m[1]!);
-      if (ref.startsWith('data:') || /^[a-z][\w+.-]*:/i.test(ref) || ref.startsWith('#') || ref.startsWith('/')) {
-        continue;
-      }
-      const refPath = path.resolve(dir, ref.split('?')[0]!.split('#')[0]!);
-      if (!FONT_FILE_EXTENSIONS.has(path.extname(refPath).toLowerCase()) || !fs.existsSync(refPath)) {
-        continue;
-      }
-      try {
-        const bytes = new Uint8Array(fs.readFileSync(refPath));
-        names.set(fontContentHash(bytes), path.basename(refPath, path.extname(refPath)));
-      } catch {
-        // Unreadable font file: bundling will surface it; the name map is cosmetic.
-      }
-    }
-    for (const m of css.matchAll(/@import\s+(?:url\(\s*)?["']?([^"'()\s;]+)["']?\s*\)?[^;]*;/g)) {
-      const ref = m[1]!;
-      if (ref.startsWith('.')) {
-        walk(path.resolve(dir, ref), depth + 1);
-      }
-    }
-  };
-
-  walk(entryCssPath, 0);
-  return names;
+/** Content-hashed served basename for a surviving font, from the path the bundler resolved. */
+export function fontAssetFileName(ref: FontRef, bytes: Uint8Array): string {
+  const ext = path.extname(ref.path);
+  const base = path.basename(ref.path, ext).replace(/[^\w-]/g, '-');
+  return `${base}-${fontContentHash(bytes)}${ext}`;
 }
