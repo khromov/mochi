@@ -1,7 +1,9 @@
 <script lang="ts">
+  import Star from '@lucide/svelte/icons/star';
   import type { CiDashboardData, CiRateLimit } from '../lib/ci';
   import { createCiBoard } from './board.svelte';
   import RunStrip from './RunStrip.svelte';
+  import { CI_STARGAZERS_URL } from './repo';
   import { formatRelative, runLabel, runTone, successRate } from './status';
 
   let {
@@ -33,6 +35,12 @@
     </div>
   {:else}
     <div class="grid">
+      {#if board.stars != null}
+        <a class="tile tone-neutral stars" href={CI_STARGAZERS_URL} target="_blank" rel="noreferrer">
+          <span class="name">{board.stars.toLocaleString()}</span>
+          <span class="status"><Star size="1em" aria-hidden="true" /> stars</span>
+        </a>
+      {/if}
       {#each board.workflows as wf (wf.id)}
         {@const latest = wf.runs[0]}
         {@const rate = successRate(wf.runs)}
@@ -155,6 +163,23 @@
     text-transform: uppercase;
     letter-spacing: 0.06em;
     color: var(--tone);
+  }
+
+  .tile.stars {
+    --tone: var(--badge-warning-text);
+    align-items: center;
+    text-align: center;
+  }
+
+  .tile.stars .name {
+    font-size: clamp(2.5rem, 11vmin, 8rem);
+  }
+
+  .tile.stars .status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4em;
+    font-size: clamp(1rem, 3.4vmin, 2rem);
   }
 
   .sub {
