@@ -159,31 +159,36 @@ describe('toleratedWindowsWedge', () => {
   });
 });
 
+/** Runs `source` as a test file in a real `bun test` child, returning its captured output and junit report (if written). */
+async function runProbeFile(source: string, { killAfterMs }: { killAfterMs?: number } = {}): Promise<{ stdout: string; stderr: string; junitXml: string | null }> {
+  const dir = mkdtempSync(join(tmpdir(), 'mochi-junit-probe-'));
+  try {
+    writeFileSync(join(dir, 'probe.test.ts'), source);
+    const reportPath = join(dir, 'report.xml');
+    const proc = Bun.spawn(['bun', 'test', '--reporter=junit', `--reporter-outfile=${reportPath}`, 'probe.test.ts'], {
+      cwd: dir,
+      stdin: 'ignore',
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+    const stdoutP = new Response(proc.stdout).text();
+    const stderrP = new Response(proc.stderr).text();
+    if (killAfterMs !== undefined) {
+      await Bun.sleep(killAfterMs);
+      proc.kill('SIGKILL');
+    }
+    const [stdout, stderr] = await Promise.all([stdoutP, stderrP, proc.exited]);
+    const report = Bun.file(reportPath);
+    return { stdout, stderr, junitXml: (await report.exists()) ? await report.text() : null };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 // Spawns real `bun test` children to pin the Bun behavior the wedge tolerance relies on: the junit report is written
 // only at the end of a completed run, so it can never green-light a process that was killed or that recorded a failure.
 describe('junit report as a completion sentinel', () => {
-  async function junitAfterRun(source: string, { killAfterMs }: { killAfterMs?: number } = {}): Promise<string | null> {
-    const dir = mkdtempSync(join(tmpdir(), 'mochi-junit-probe-'));
-    try {
-      writeFileSync(join(dir, 'probe.test.ts'), source);
-      const reportPath = join(dir, 'report.xml');
-      const proc = Bun.spawn(['bun', 'test', '--reporter=junit', `--reporter-outfile=${reportPath}`, 'probe.test.ts'], {
-        cwd: dir,
-        stdin: 'ignore',
-        stdout: 'ignore',
-        stderr: 'ignore',
-      });
-      if (killAfterMs !== undefined) {
-        await Bun.sleep(killAfterMs);
-        proc.kill('SIGKILL');
-      }
-      await proc.exited;
-      const report = Bun.file(reportPath);
-      return (await report.exists()) ? await report.text() : null;
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  }
+  const junitAfterRun = async (source: string, opts?: { killAfterMs?: number }): Promise<string | null> => (await runProbeFile(source, opts)).junitXml;
 
   test('a green run writes a report the wedge tolerance accepts', async () => {
     const xml = await junitAfterRun(`import { test, expect } from 'bun:test';\ntest('adds', () => { expect(1 + 1).toBe(2); });\n`);
@@ -210,5 +215,36 @@ describe('junit report as a completion sentinel', () => {
     const xml = await junitAfterRun(`throw new Error('boom at import time');\n`);
 
     expect(toleratedWindowsWedge(true, xml, 'win32')).toBe(false);
+  });
+});
+
+// Guards the verbatim fixtures at the top of this file against reporter drift: a Bun upgrade that reshapes the console
+// output should fail here, not silently degrade the end-of-run failure excerpts to the raw-tail fallback.
+describe('extractFailures against live bun output', () => {
+  test('parses failure names and error text from a real failing run', async () => {
+    const { stderr } = await runProbeFile(`import { describe, expect, test } from 'bun:test';
+describe('outer group', () => {
+  test('passes', () => { expect(1).toBe(1); });
+  test('fails an assertion', () => { expect(400).toBe(200); });
+  test('throws', () => { throw new Error('boom from thrown test'); });
+});
+`);
+
+    const { failures, fallback } = extractFailures({ stdout: '', stderr });
+
+    expect(fallback).toBeUndefined();
+    expect(failures.map((f) => f.name)).toEqual(['outer group > fails an assertion', 'outer group > throws']);
+    expect(failures[0]!.detail.join('\n')).toContain('Expected: 200');
+    expect(failures[1]!.detail.join('\n')).toContain('boom from thrown test');
+  });
+
+  test('parses a real import error as an unattached failure', async () => {
+    const { stderr } = await runProbeFile(`import './does-not-exist';\n`);
+
+    const { failures } = extractFailures({ stdout: '', stderr });
+
+    expect(failures).toHaveLength(1);
+    expect(failures[0]!.name).toBeNull();
+    expect(failures[0]!.detail.join('\n')).toContain("Cannot find module './does-not-exist'");
   });
 });
