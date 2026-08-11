@@ -1,4 +1,7 @@
 import { describe, expect, test } from 'bun:test';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { extractFailures, parseJunitSummary, toleratedWindowsWedge } from './testing';
 
 // Verbatim `bun test` reporter output (v1.3): the source snippet and `error:` block
@@ -153,5 +156,59 @@ describe('toleratedWindowsWedge', () => {
 
   test('false for a win32 timeout that never wrote a report', () => {
     expect(toleratedWindowsWedge(true, null, 'win32')).toBe(false);
+  });
+});
+
+// Spawns real `bun test` children to pin the Bun behavior the wedge tolerance relies on: the junit report is written
+// only at the end of a completed run, so it can never green-light a process that was killed or that recorded a failure.
+describe('junit report as a completion sentinel', () => {
+  async function junitAfterRun(source: string, { killAfterMs }: { killAfterMs?: number } = {}): Promise<string | null> {
+    const dir = mkdtempSync(join(tmpdir(), 'mochi-junit-probe-'));
+    try {
+      writeFileSync(join(dir, 'probe.test.ts'), source);
+      const reportPath = join(dir, 'report.xml');
+      const proc = Bun.spawn(['bun', 'test', '--reporter=junit', `--reporter-outfile=${reportPath}`, 'probe.test.ts'], {
+        cwd: dir,
+        stdin: 'ignore',
+        stdout: 'ignore',
+        stderr: 'ignore',
+      });
+      if (killAfterMs !== undefined) {
+        await Bun.sleep(killAfterMs);
+        proc.kill('SIGKILL');
+      }
+      await proc.exited;
+      const report = Bun.file(reportPath);
+      return (await report.exists()) ? await report.text() : null;
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  test('a green run writes a report the wedge tolerance accepts', async () => {
+    const xml = await junitAfterRun(`import { test, expect } from 'bun:test';\ntest('adds', () => { expect(1 + 1).toBe(2); });\n`);
+
+    expect(parseJunitSummary(xml)).toEqual({ tests: 1, failures: 0 });
+    expect(toleratedWindowsWedge(true, xml, 'win32')).toBe(true);
+  });
+
+  test('a failing run writes a report that records the failure', async () => {
+    const xml = await junitAfterRun(`import { test, expect } from 'bun:test';\ntest('adds', () => { expect(1 + 1).toBe(3); });\n`);
+
+    expect(parseJunitSummary(xml)?.failures).toBe(1);
+    expect(toleratedWindowsWedge(true, xml, 'win32')).toBe(false);
+  });
+
+  test('a run killed before finishing writes no report at all', async () => {
+    const xml = await junitAfterRun(`import { test } from 'bun:test';\ntest('hangs', async () => { await new Promise(() => {}); });\n`, { killAfterMs: 500 });
+
+    expect(xml).toBeNull();
+    expect(toleratedWindowsWedge(true, xml, 'win32')).toBe(false);
+  });
+
+  test('a module that throws at import time never yields a tolerable report', async () => {
+    const xml = await junitAfterRun(`throw new Error('boom at import time');\n`);
+
+    expect(toleratedWindowsWedge(true, xml, 'win32')).toBe(false);
   });
 });
