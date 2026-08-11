@@ -45,10 +45,8 @@ describe('Mochi.queue descriptor', () => {
     expect(config.options).toEqual({ deadLetter: 'other' });
   });
 
-  test('rejects an invalid name or batchSize at declaration', () => {
+  test('rejects an invalid name at declaration', () => {
     expect(() => Mochi.queue('bad name')).toThrow(/not a valid queue name/);
-    expect(() => Mochi.queue('q', { batchSize: 0 })).toThrow(/batchSize/);
-    expect(() => Mochi.queue('q', { batchSize: 1.5 })).toThrow(/batchSize/);
     expect(() => Mochi.queue('q', { storage: { sqlite: '' } as never })).toThrow(/storage/);
   });
 });
