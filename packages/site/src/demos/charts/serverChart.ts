@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { compile, compileModule } from 'svelte/compiler';
 import { createCanvas, Path2D, GlobalFonts } from '@napi-rs/canvas';
+import { fontFile } from '../../lib/fontFile.ts';
 import { traffic } from './data.ts';
 
 // renderChart draws the marks with Path2D and expects it on globalThis.
@@ -11,9 +12,6 @@ if (typeof globalThis.Path2D === 'undefined') {
 // layerchart's canvas renderer falls back to the `sans-serif` family, which Alpine (the
 // production base image) can't resolve because it ships no fonts — so axis labels rasterize
 // blank. Register the site's UI font under that family name so text renders everywhere.
-function fontFile(pkg: string, file: string): string {
-  return path.resolve(path.dirname(Bun.resolveSync(`${pkg}/package.json`, import.meta.dir)), 'files', file);
-}
 GlobalFonts.registerFromPath(fontFile('@fontsource/public-sans', 'public-sans-latin-400-normal.woff2'), 'sans-serif');
 
 export type ChartFormat = 'png' | 'jpeg';

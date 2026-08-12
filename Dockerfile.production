@@ -102,7 +102,9 @@ RUN mkdir -p packages/${WORKSPACE}/.db && chown bun:bun packages/${WORKSPACE}/.d
 # Dedicated, mountable image-transform cache — pre-created + chowned so a mounted
 # volume inherits bun:bun; an app reads MOCHI_IMAGE_CACHE_DIR for image.cacheDir.
 ENV MOCHI_IMAGE_CACHE_DIR=/data/image-cache
-RUN mkdir -p /data/image-cache && chown -R bun:bun /data
+# Rendered OG cards live beside it rather than inside it — that tree has its own sweeper.
+ENV MOCHI_OG_CACHE_DIR=/data/og-cache
+RUN mkdir -p /data/image-cache /data/og-cache && chown -R bun:bun /data
 
 USER bun
 EXPOSE ${PORT}/tcp
