@@ -53,7 +53,7 @@ The Svelte compiler handles `<style>` inside a `.svelte` file. Mochi extracts th
 
 <VersionNote since="0.10.0" message="Earlier versions inline every font into the bundled CSS as a base64 data: URI." />
 
-Bun's CSS bundler inlines every `url()` reference as a base64 `data:` URI, which would turn a font package into one large render-blocking stylesheet. Mochi extracts fonts larger than 4 kB back out into content-hashed files served from `/_mochi/fonts/*`:
+Fonts larger than 4 kB are served as content-hashed files from `/_mochi/fonts/*` instead of being inlined into the stylesheet:
 
 ```css
 /* @fontsource/source-sans-pro ships */
@@ -63,7 +63,7 @@ src: url(./files/source-sans-pro-latin-400-normal.woff2) format('woff2');
 src: url(/_mochi/fonts/source-sans-pro-latin-400-normal-1bfe8b9c.woff2) format(woff2);
 ```
 
-The binaries load without blocking first paint, cache immutably and independently of your CSS, and `unicode-range` subsetting works again — the browser fetches only the subsets a page actually renders. Three related defaults, all tunable via `Mochi.serve({ fonts })`:
+Tunable via `Mochi.serve({ fonts })`:
 
 ```ts
 await Mochi.serve({
