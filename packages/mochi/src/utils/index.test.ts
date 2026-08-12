@@ -3,7 +3,10 @@ import type { Server } from 'bun';
 import type { BunRouteValue } from '../types';
 import {
   DEFAULT_ASSET_PREFIX,
+  error,
   headResponse,
+  httpStatusText,
+  MochiHttpError,
   negotiate,
   normalizeAssetPrefix,
   normalizeIslandHydrationMarkers,
@@ -13,6 +16,33 @@ import {
   withHead,
 } from './index';
 import path from 'node:path';
+
+describe('error / MochiHttpError', () => {
+  test('message defaults to the canonical status text', () => {
+    expect(new MochiHttpError(404).message).toBe('Not Found');
+    expect(new MochiHttpError(429).message).toBe('Too Many Requests');
+  });
+
+  test('unknown statuses fall back to Error <status>', () => {
+    expect(new MochiHttpError(418).message).toBe('Error 418');
+    expect(httpStatusText(299)).toBe('Error 299');
+  });
+
+  test('an explicit message wins over the default', () => {
+    expect(new MochiHttpError(404, 'No such fruit').message).toBe('No such fruit');
+  });
+
+  test('error(status) throws a MochiHttpError with the defaulted message', () => {
+    try {
+      error(404);
+      throw new Error('unreachable');
+    } catch (err) {
+      expect(err).toBeInstanceOf(MochiHttpError);
+      expect((err as MochiHttpError).status).toBe(404);
+      expect((err as MochiHttpError).message).toBe('Not Found');
+    }
+  });
+});
 
 describe('negotiate', () => {
   const types = ['application/json', 'text/html'];

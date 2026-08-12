@@ -4,7 +4,7 @@
 </script>
 
 <section>
-  <Probe mochi:hydrate><CtxProbe /></Probe>
+  <Probe mochi:hydrate />
   <Probe />
   <CtxProbe />
 </section>

@@ -54,7 +54,7 @@ Annotate the `let { … }` declaration. Avoid the `$props<{ … }>()` type-argum
 
 </Callout>
 
-Type snippet props (including `children`) with the `Snippet` interface from `svelte`:
+Type snippet props (including `children`) with the `Snippet` interface from `svelte`. Snippets can only be passed between components on the same side of the server→client boundary — inside an island's subtree, or between server-rendered components — never _into_ a hydrate island from the page (see below):
 
 ```svelte
 <script lang="ts">
@@ -96,6 +96,7 @@ For `mochi:hydrate*` islands, props ship inline in the page HTML. When several i
 - Functions
 - Class instances (only own enumerable properties survive)
 - `Symbol`
+- Snippets / `children` — a snippet is a function, so it cannot cross the boundary. Children at a `mochi:hydrate*` call site are a [compile error](/docs/selective-hydration/#no-children-on-hydrate-islands); on `mochi:defer*` and `mochi:clientOnly*` they are the loading fallback instead.
 
 ### Detecting hydration
 

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import fc from 'fast-check';
-import { fail, isFormFail, isFormRedirect, isFormSuccess, redirect, success } from './forms';
+import { fail, isFormFail, isRedirect, isFormSuccess, redirect, success } from './forms';
 import { isEnhanceRequest } from './formsJson';
 
 const RUNS = { numRuns: 2000 };
@@ -14,21 +14,21 @@ describe('form action results — property-based fuzzing', () => {
     fc.assert(
       fc.property(fc.integer({ min: 400, max: 599 }), record, (status, data) => {
         const f = fail(status, data);
-        expect([isFormFail(f), isFormRedirect(f), isFormSuccess(f)]).toEqual([true, false, false]);
+        expect([isFormFail(f), isRedirect(f), isFormSuccess(f)]).toEqual([true, false, false]);
       }),
       RUNS,
     );
     fc.assert(
       fc.property(record, (data) => {
         const s = success(data);
-        expect([isFormFail(s), isFormRedirect(s), isFormSuccess(s)]).toEqual([false, false, true]);
+        expect([isFormFail(s), isRedirect(s), isFormSuccess(s)]).toEqual([false, false, true]);
       }),
       RUNS,
     );
     fc.assert(
       fc.property(redirectStatus, fc.string(), (status, location) => {
         const r = redirect(status, location);
-        expect([isFormFail(r), isFormRedirect(r), isFormSuccess(r)]).toEqual([false, true, false]);
+        expect([isFormFail(r), isRedirect(r), isFormSuccess(r)]).toEqual([false, true, false]);
       }),
       RUNS,
     );
@@ -38,7 +38,7 @@ describe('form action results — property-based fuzzing', () => {
     fc.assert(
       fc.property(fc.anything(), (v) => {
         expect(typeof isFormFail(v)).toBe('boolean');
-        expect(typeof isFormRedirect(v)).toBe('boolean');
+        expect(typeof isRedirect(v)).toBe('boolean');
         expect(typeof isFormSuccess(v)).toBe('boolean');
       }),
       RUNS,

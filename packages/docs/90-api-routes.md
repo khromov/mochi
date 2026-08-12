@@ -84,7 +84,7 @@ Mochi.api(() => json({ ok: true }, { status: 201 }));
 
 ### `error` (typed throw)
 
-Use `error(status, message)` to throw a `MochiHttpError` from anywhere inside the handler, including helper functions. The framework catches it and returns the canonical envelope `{ error: { message, status } }`.
+Use `error(status, message?)` to throw a `MochiHttpError` from anywhere inside the handler, including helper functions. The framework catches it and returns the canonical envelope `{ error: { message, status } }`. Omitting `message` fills in the canonical status text (`error(404)` → `Not Found`).
 
 ```ts
 import { error } from 'mochi-framework';

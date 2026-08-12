@@ -218,6 +218,12 @@ export type MochiCompileError =
       directive: string;
       filePath: string;
       resolvedPath: string;
+    }
+  | {
+      kind: 'hydrate-island-children';
+      component: string;
+      directive: string;
+      filePath: string;
     };
 
 function formatUnresolvedIsland(e: Extract<MochiCompileError, { kind: 'unresolved-island' }>): string {
@@ -251,6 +257,12 @@ function formatCompileError(e: MochiCompileError): string {
         `Server-only island: <${e.component} ${e.directive}> in ${relForDisplay(e.filePath)} — ${relForDisplay(e.resolvedPath)} is a \`.server.svelte\`, ` +
         `which the client build replaces with a throwing stub, so it cannot hydrate. Remove the ${e.directive} directive (it already renders server-side), ` +
         `use mochi:defer, or drop the .server suffix if it must ship to the client.`
+      );
+    case 'hydrate-island-children':
+      return (
+        `Island children: <${e.component} ${e.directive}> in ${relForDisplay(e.filePath)} has children, which cannot cross the server→client boundary — ` +
+        `the island hydrates from its serialized props alone, so server-rendered children would vanish on hydration. ` +
+        `Move the markup inside ${e.component} or pass it as serializable props; with mochi:defer or mochi:clientOnly, children are the loading fallback instead.`
       );
   }
 }
@@ -795,15 +807,23 @@ export class ComponentRegistry {
       (e) =>
         !(e.kind === 'nested-hydration' && fileHydratables.has(e.parentPath)) &&
         !(e.kind === 'defer-in-hydratable' && fileServerIslands.has(e.parentPath)) &&
-        !((e.kind === 'unresolved-island' || e.kind === 'server-only-island') && filePreprocessErrors.has(e.filePath)),
+        !((e.kind === 'unresolved-island' || e.kind === 'server-only-island' || e.kind === 'hydrate-island-children') && filePreprocessErrors.has(e.filePath)),
     );
 
     for (const errors of filePreprocessErrors.values()) {
       for (const err of errors) {
-        const compileError: MochiCompileError =
-          err.reason === 'server-only'
-            ? { kind: 'server-only-island', component: err.component, directive: err.directive, filePath: err.filePath, resolvedPath: err.resolvedPath }
-            : { kind: 'unresolved-island', component: err.component, directive: err.directive, filePath: err.filePath, importSource: err.importSource };
+        let compileError: MochiCompileError;
+        switch (err.reason) {
+          case 'server-only':
+            compileError = { kind: 'server-only-island', component: err.component, directive: err.directive, filePath: err.filePath, resolvedPath: err.resolvedPath };
+            break;
+          case 'hydrate-children':
+            compileError = { kind: 'hydrate-island-children', component: err.component, directive: err.directive, filePath: err.filePath };
+            break;
+          case 'unresolved':
+            compileError = { kind: 'unresolved-island', component: err.component, directive: err.directive, filePath: err.filePath, importSource: err.importSource };
+            break;
+        }
         this.errors.push(compileError);
         logger.error(`\n${formatCompileError(compileError)}\n`);
       }
