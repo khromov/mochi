@@ -3,7 +3,7 @@ import { loadImage, type Image, type SKRSContext2D } from '@napi-rs/canvas';
 import { SITE_ROOT } from '../lib/siteRoot.ts';
 import { CARD_WIDTH, INK, INK_FAINT, INK_MUTED, SITE_HOST, WORDMARK_SIZE, WORDMARK_WORD } from './brand.ts';
 import { applyFont, DEK, LEDE, URL, WORDMARK, type FontSpec } from './fonts.ts';
-import { fitText } from './layout.ts';
+import { fitText, type FitOptions } from './layout.ts';
 
 const DANGO = path.join(SITE_ROOT, 'src', 'og', 'assets', 'dango.png');
 
@@ -70,20 +70,30 @@ export async function drawRootCard(ctx: SKRSContext2D): Promise<void> {
 
 const PAD = 72;
 const CONTENT = CARD_WIDTH - PAD * 2;
-const PAGE_WORDMARK = 44;
-const TITLE_TOP = 168;
-const TITLE_BOTTOM = 470;
+const PAGE_WORDMARK = 52;
+const TITLE_TOP = 172;
+const TITLE_BOTTOM = 468;
 const RULE_Y = 506;
-const FOOTER_BASELINE = 558;
-/** Set larger than the root card's equivalents — this row is the only context a page card gives,
- * and it has to survive being read as a thumbnail in a feed. */
-const FOOTER_KICKER_SIZE = 32;
-const FOOTER_URL_SIZE = 27;
+const FOOTER_BASELINE = 562;
+/** Set well above the root card's equivalents — the root card has four lines of type carrying the
+ * message, where this row is all the context a page card gets, at thumbnail size in a feed. */
+const FOOTER_KICKER_SIZE = 44;
+const FOOTER_URL_SIZE = 38;
 
 export interface PageCard {
   title: string;
   kicker: string;
 }
+
+/** Exported so the layout tests assert against the sizes the card actually ships with. */
+export const PAGE_TITLE_SPEC: FontSpec = { ...LEDE, size: 76 };
+export const PAGE_TITLE_FIT: FitOptions = {
+  maxWidth: CONTENT,
+  maxLines: 3,
+  minSize: 42,
+  leading: 1.14,
+  maxHeight: TITLE_BOTTOM - TITLE_TOP,
+};
 
 /** Every other page: a small wordmark, the page's title set large and left-aligned, a footer rule. */
 export async function drawPageCard(ctx: SKRSContext2D, { title, kicker }: PageCard): Promise<void> {
@@ -91,7 +101,7 @@ export async function drawPageCard(ctx: SKRSContext2D, { title, kicker }: PageCa
   const markWidth = PAGE_WORDMARK * (DANGO_INK_EM + DANGO_GAP_EM) + inkWidth(ctx, WORDMARK_WORD);
   await drawWordmark(ctx, PAGE_WORDMARK, PAD + markWidth / 2, PAD + PAGE_WORDMARK * DANGO_RISE_EM - 6);
 
-  const fitted = fitText(ctx, title, { ...LEDE, size: 76 }, { maxWidth: CONTENT, maxLines: 3, minSize: 42, leading: 1.14 });
+  const fitted = fitText(ctx, title, PAGE_TITLE_SPEC, PAGE_TITLE_FIT);
   applyFont(ctx, fitted.spec);
   ctx.textAlign = 'left';
   ctx.textBaseline = 'alphabetic';

@@ -6,6 +6,8 @@ import { resolveOgSubject } from './resolve.ts';
 /** Extension is required: it's what keeps `trailingSlash: 'always'` from redirecting a crawler. */
 const EXTENSION = '.jpg';
 
+const DEVELOPMENT = process.env.MODE === 'development';
+
 export const routes: Record<string, MochiRouteValue> = {
   '/og': Mochi.page('./src/og/OgPage.svelte', {
     serverProps: () => ({
@@ -34,14 +36,13 @@ export const routes: Record<string, MochiRouteValue> = {
       }
 
       // The tag is a hash of the subject and the renderer version, so a revalidation can be answered
-      // without touching the cache or the canvas at all.
+      // without touching the cache or the canvas at all. Neither it nor the max-age survives into
+      // development, where the drawing code changes under a stable subject on every edit.
       const etag = `"${ogCacheKey(subject)}"`;
-      const headers = {
-        'Content-Type': 'image/jpeg',
-        'Cache-Control': 'public, max-age=86400, stale-while-revalidate=604800',
-        ETag: etag,
-      };
-      if (request.headers.get('if-none-match') === etag) {
+      const headers = DEVELOPMENT
+        ? { 'Content-Type': 'image/jpeg', 'Cache-Control': 'no-store' }
+        : { 'Content-Type': 'image/jpeg', 'Cache-Control': 'public, max-age=86400, stale-while-revalidate=604800', ETag: etag };
+      if (!DEVELOPMENT && request.headers.get('if-none-match') === etag) {
         return new Response(null, { status: 304, headers });
       }
 

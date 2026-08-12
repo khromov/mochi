@@ -11,6 +11,8 @@ const CACHE_DIR =
   process.env.MOCHI_OG_CACHE_DIR ??
   (process.env.MOCHI_IMAGE_CACHE_DIR ? path.join(path.dirname(process.env.MOCHI_IMAGE_CACHE_DIR), 'og-cache') : path.join(SITE_ROOT, '.mochi', 'og-cache'));
 
+const DEVELOPMENT = process.env.MODE === 'development';
+
 const MAX_TIME_TO_LIVE = 2_592_000_000;
 
 const cache = new MochiCache({
@@ -32,6 +34,12 @@ export function ogCacheKey({ kind, title }: OgSubject): string {
 
 export async function getOgCard(subject: OgSubject): Promise<Uint8Array<ArrayBuffer>> {
   const key = ogCacheKey(subject);
+
+  // The key covers the subject and RENDERER_VERSION but not the drawing code, so while iterating on
+  // the design every edit would otherwise serve the pre-edit card until someone bumped the version.
+  if (DEVELOPMENT) {
+    return renderOgCard(subject);
+  }
 
   const cached = hot.get(key);
   if (cached) {

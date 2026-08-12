@@ -85,6 +85,18 @@ export interface FitOptions {
   minSize: number;
   /** Line height as a multiple of the font size. */
   leading: number;
+  /** Ink height the block must fit in, ascender to descender. */
+  maxHeight: number;
+}
+
+/** Ink height of a wrapped block: the first line's ascender to the last line's descender. */
+function blockHeight(ctx: SKRSContext2D, lines: string[], leading: number): number {
+  if (lines.length === 0) {
+    return 0;
+  }
+  const first = ctx.measureText(lines[0]!);
+  const last = ctx.measureText(lines.at(-1)!);
+  return first.actualBoundingBoxAscent + (lines.length - 1) * leading + last.actualBoundingBoxDescent;
 }
 
 export interface FittedText {
@@ -103,8 +115,11 @@ export function fitText(ctx: SKRSContext2D, text: string, base: FontSpec, opts: 
     const spec = { ...base, size, opsz: size };
     applyFont(ctx, spec);
     const lines = wrapBalanced(ctx, text, opts.maxWidth);
-    if (lines.length <= opts.maxLines && lines.every((line) => measure(ctx, line) <= opts.maxWidth)) {
-      return { lines, spec, leading: size * opts.leading };
+    const leading = size * opts.leading;
+    const fits =
+      lines.length <= opts.maxLines && lines.every((line) => measure(ctx, line) <= opts.maxWidth) && blockHeight(ctx, lines, leading) <= opts.maxHeight;
+    if (fits) {
+      return { lines, spec, leading };
     }
   }
 

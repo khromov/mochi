@@ -3,7 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import { createCanvas } from '@napi-rs/canvas';
 import { CARD_HEIGHT, CARD_WIDTH } from './brand.ts';
 import { paintBackground } from './background.ts';
-import { drawPageCard, drawRootCard } from './cards.ts';
+import { drawPageCard, drawRootCard, PAGE_TITLE_FIT, PAGE_TITLE_SPEC } from './cards.ts';
 import { fitText, wrapBalanced } from './layout.ts';
 import { applyFont, LEDE } from './fonts.ts';
 import { compareBand, grainDeviation, imageData, lowPassError, pixels } from './diff.ts';
@@ -129,7 +129,7 @@ describe('renderOgCard', () => {
 
 describe('layout', () => {
   const ctx = createCanvas(CARD_WIDTH, CARD_HEIGHT).getContext('2d');
-  const CONTENT = 1056;
+
 
   test('balances a two-line title instead of leaving a runt', () => {
     applyFont(ctx, LEDE);
@@ -143,18 +143,18 @@ describe('layout', () => {
     ['Routing', 1],
     ['Server-only imports and the .server.svelte convention', 2],
   ])('%s fits on %i line(s) at full size', (title, expected) => {
-    const fitted = fitText(ctx, title, { ...LEDE, size: 76 }, { maxWidth: CONTENT, maxLines: 3, minSize: 42, leading: 1.14 });
+    const fitted = fitText(ctx, title, PAGE_TITLE_SPEC, PAGE_TITLE_FIT);
     expect(fitted.lines).toHaveLength(expected);
-    expect(fitted.spec.size).toBe(76);
+    expect(fitted.spec.size).toBe(PAGE_TITLE_SPEC.size);
   });
 
   test('shrinks rather than overflowing, and never past the floor', () => {
-    const fitted = fitText(ctx, 'A '.repeat(60).trim(), { ...LEDE, size: 76 }, { maxWidth: CONTENT, maxLines: 3, minSize: 42, leading: 1.14 });
-    expect(fitted.spec.size).toBeGreaterThanOrEqual(42);
-    expect(fitted.lines.length).toBeLessThanOrEqual(3);
+    const fitted = fitText(ctx, 'A '.repeat(60).trim(), PAGE_TITLE_SPEC, PAGE_TITLE_FIT);
+    expect(fitted.spec.size).toBeGreaterThanOrEqual(PAGE_TITLE_FIT.minSize);
+    expect(fitted.lines.length).toBeLessThanOrEqual(PAGE_TITLE_FIT.maxLines);
     applyFont(ctx, fitted.spec);
     for (const line of fitted.lines) {
-      expect(ctx.measureText(line).width).toBeLessThanOrEqual(CONTENT);
+      expect(ctx.measureText(line).width).toBeLessThanOrEqual(PAGE_TITLE_FIT.maxWidth);
     }
   });
 
@@ -162,17 +162,12 @@ describe('layout', () => {
     const fitted = fitText(
       ctx,
       'Supercalifragilisticexpialidociousantidisestablishmentarianism'.repeat(3),
-      { ...LEDE, size: 76 },
-      {
-        maxWidth: CONTENT,
-        maxLines: 3,
-        minSize: 42,
-        leading: 1.14,
-      },
+      PAGE_TITLE_SPEC,
+      PAGE_TITLE_FIT,
     );
     applyFont(ctx, fitted.spec);
     for (const line of fitted.lines) {
-      expect(ctx.measureText(line).width).toBeLessThanOrEqual(CONTENT);
+      expect(ctx.measureText(line).width).toBeLessThanOrEqual(PAGE_TITLE_FIT.maxWidth);
     }
     // U+2010 has no glyph in Fraunces' latin subset and would rasterise as tofu.
     expect(fitted.lines.join('')).not.toContain('‐');
