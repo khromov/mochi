@@ -134,7 +134,7 @@ There is nothing special about the layout — it is a plain component. SvelteKit
 
 <Callout type="warning">
 
-The layout wrapper renders `{@render children()}`, so it can never be a `mochi:hydrate*` island — children cannot cross the server→client boundary, and the directive is a [compile error](/docs/selective-hydration/#no-children-on-hydrate-islands). Keep the layout server-rendered and mark the interactive components inside it.
+Hydrated islands cannot take `children` — it is a [compile error](/docs/selective-hydration/#no-children-on-hydrate-islands). So never put `mochi:hydrate*` on a layout wrapper; hydrate the interactive components inside it instead.
 
 </Callout>
 
