@@ -18,7 +18,7 @@ import { mochiEvents } from '../events';
 import type { MochiCompileCompleteEvent } from '../events';
 import { styleText } from 'node:util';
 import prettyBytes from '../vendor/pretty-bytes';
-import { collectImageResources, printResourceTree } from './resourceReport';
+import { collectFontResources, collectImageResources, mergeResourceRows, printResourceTree } from './resourceReport';
 
 export interface MochiBuildOptions {
   routes: Record<string, MochiRouteValue>;
@@ -256,8 +256,9 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     // After finalizeClientBundle() above, so assets the client pass emitted are
     // in the map too (both passes share it, keyed by served URL).
     const imageAssets = registry.getLocalImageAssets();
+    const fontAssets = registry.getFontAssets();
     if (options.resources !== false) {
-      printResourceTree(collectImageResources(imageAssets.values()));
+      printResourceTree(mergeResourceRows(collectImageResources(imageAssets.values()), collectFontResources(fontAssets.values())));
     }
 
     // Clean up intermediate .raw.css files
@@ -286,8 +287,9 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     logger.info(`build: phases — ${phaseSummary} (client bundle ×${clientBundleCount}, ${formatDuration(clientBundleMs)})`);
     const elapsed = formatDuration(performance.now() - startedAt);
     const emailSummary = emailTemplates.length > 0 ? `, ${emailTemplates.length} email template(s)` : '';
+    const fontSummary = fontAssets.size > 0 ? `, ${fontAssets.size} font(s)` : '';
     logger.info(
-      `build: done in ${elapsed}. ${compiledPages.length} page(s), ${clientFileCount} client file(s), ${publicFileCount} public file(s), ${imageAssets.size} image asset(s)${emailSummary}. Manifest written to ${manifestPath}`,
+      `build: done in ${elapsed}. ${compiledPages.length} page(s), ${clientFileCount} client file(s), ${publicFileCount} public file(s), ${imageAssets.size} image asset(s)${fontSummary}${emailSummary}. Manifest written to ${manifestPath}`,
     );
   } finally {
     mochiEvents.off('client-bundle:complete', onClientBundle);

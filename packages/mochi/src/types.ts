@@ -651,7 +651,7 @@ export interface MochiFontOptions {
 
 /** Object form of `MochiServeOptions['build']`. See that field for semantics. */
 export interface MochiBuildReportOptions {
-  /** Print the emitted-resources list, one row per local image import with dimensions and size on disk. The summary line keeps its asset count either way. Default: enabled. */
+  /** Print the emitted-resources list, one row per local image import (with dimensions) and per font extracted from imported CSS, with size on disk. The summary line keeps its counts either way. Default: enabled. */
   resources?: boolean;
 }
 

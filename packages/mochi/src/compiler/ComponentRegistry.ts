@@ -1871,6 +1871,10 @@ export class ComponentRegistry {
     return this.fontAssets.get(urlPath);
   }
 
+  getFontAssets(): Map<string, { diskPath: string; contentType: string }> {
+    return this.fontAssets;
+  }
+
   getClientFiles(): Map<string, string> {
     return this.clientFiles;
   }
