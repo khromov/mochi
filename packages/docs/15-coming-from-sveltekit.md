@@ -71,7 +71,7 @@ await Mochi.serve({
 });
 ```
 
-`:param` is also greedier than SvelteKit's segment syntax, and a literal prefix inside a segment is not expressible. SvelteKit's `profile/@[user]` has no direct equivalent: Bun treats `@:user` as literal text, so `/profile/@:user` never matches. Match `/profile/:user` instead — the param captures the whole segment, sigil included (`params.user === '@bob'`) — and note it _also_ matches `/profile/bob`, silently serving the page at two URLs unless you guard:
+A `:param` always captures the whole segment — you can't put literal text beside it. SvelteKit's `profile/@[user]` has no direct equivalent: Bun treats `@:user` as literal text, so `/profile/@:user` never matches. Match `/profile/:user` instead — the param captures the whole segment, sigil included (`params.user === '@bob'`) — and note it _also_ matches `/profile/bob`, silently serving the page at two URLs unless you guard:
 
 ```ts
 // file (Mochi): the SvelteKit route profile/@[user]
