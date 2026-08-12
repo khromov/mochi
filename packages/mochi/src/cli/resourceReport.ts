@@ -59,3 +59,48 @@ export function printResourceTree(rows: ResourceRow[]): void {
   const total = rows.reduce((sum, r) => sum + r.bytes, 0);
   console.log(styleText('dim', `\n  ${n} asset${n === 1 ? '' : 's'} · ${prettyBytes(total)}`));
 }
+
+export interface ChunkRow {
+  /** User-assigned name from `clientBundle.chunks`. */
+  chunkName: string;
+  /** Emitted filename, which Bun always hashes as `chunk-<hash>.js`. */
+  file: string;
+  modules: number;
+  bytes: number;
+}
+
+/**
+ * The build console is the only place a manual chunk is ever visible: chunking is production-only, while the debug bar
+ * and the client-stats page are both gated on `development`.
+ */
+export function printChunkTree(rows: ChunkRow[], skipped: { id: string; reason: string }[]): void {
+  if (rows.length === 0 && skipped.length === 0) {
+    return;
+  }
+
+  const sorted = [...rows].sort((a, b) => b.bytes - a.bytes || a.chunkName.localeCompare(b.chunkName));
+  const sizes = sorted.map((r) => prettyBytes(r.bytes));
+  const nameWidth = Math.max('Chunk'.length, ...sorted.map((r) => r.chunkName.length));
+  const modWidth = Math.max('modules'.length, ...sorted.map((r) => String(r.modules).length));
+  const sizeWidth = Math.max('size'.length, ...sizes.map((s) => s.length), 4);
+
+  console.log('');
+  console.log(styleText('dim', `      ${'Chunk'.padEnd(nameWidth + 2)}  ${'modules'.padStart(modWidth)}  ${'size'.padStart(sizeWidth)}`));
+
+  const n = sorted.length;
+  for (let i = 0; i < n; i++) {
+    const { chunkName, modules } = sorted[i]!;
+    const char = styleText('dim', n === 1 ? '─' : i === 0 ? '┌' : i === n - 1 ? '└' : '├');
+    console.log(
+      `  ${char} ${styleText('cyan', '▤')} ${chunkName.padEnd(nameWidth + 2)}  ${styleText('dim', String(modules).padStart(modWidth))}  ${styleText('dim', sizes[i]!.padStart(sizeWidth))}`,
+    );
+  }
+
+  if (n > 0) {
+    const total = sorted.reduce((sum, r) => sum + r.bytes, 0);
+    console.log(styleText('dim', `\n  ${n} chunk${n === 1 ? '' : 's'} · ${prettyBytes(total)}`));
+  }
+  for (const s of skipped) {
+    console.log(styleText('yellow', `  left in place: ${s.id} — ${s.reason}.`));
+  }
+}

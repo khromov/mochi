@@ -177,6 +177,7 @@ async function main() {
     markdown: serveOptions?.markdown,
     svelteCompiler: serveOptions?.svelteCompiler,
     optimize: serveOptions && 'optimize' in serveOptions ? serveOptions.optimize : undefined,
+    clientBundle: serveOptions?.clientBundle,
     barrelWarnings: serveOptions?.barrelWarnings,
     errorPage: serveOptions?.errorPage,
     resources: serveOptions?.build?.resources,

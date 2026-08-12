@@ -19,7 +19,18 @@ import type { DebugBarData } from '../runtime/requestContext';
 import { logger } from '../utils/log';
 import { mochiEvents } from '../events';
 import { detectHeavyBarrels, formatBarrelLine, formatBarrelSummary, type BarrelMetafile, type HeavyBarrel } from './barrelDetect';
-import type { MarkdownConfig, MochiBarrelWarningOptions, MochiManifest, MochiSvelteShakerOptions } from '../types';
+import type { MarkdownConfig, MochiBarrelWarningOptions, MochiClientBundleOptions, MochiManifest, MochiSvelteShakerOptions } from '../types';
+import {
+  CHUNK_NAMESPACE,
+  classifyModules,
+  chunkResolveFilter,
+  isChunkModuleId,
+  planChunks,
+  resolveChunkMember,
+  validateClientBundleOptions,
+  viewId,
+  type ChunkPlan,
+} from './clientBundleChunks';
 import { type HydratableComponent, type PreprocessIslandError, type ServerIslandComponent } from './svelteAstPreprocess';
 import { cachedPreprocessHydratable, createPreprocessCacheStats } from './preprocessCache';
 import { CompileCache, compileFingerprint, createCompileCacheStats, type CompileCacheStats } from './compileCache';
@@ -293,6 +304,8 @@ export interface ComponentRegistryOptions {
   markdown?: MarkdownConfig;
   /** Run the whole-program svelte-shaker pass before compiling. Production only — `prepareShake()` is a no-op in dev. */
   optimize?: boolean | MochiSvelteShakerOptions;
+  /** See `MochiServeOptions.clientBundle`. Production only — ignored when `development` is true. */
+  clientBundle?: MochiClientBundleOptions;
   /** See `MochiServeOptions.barrelWarnings`. */
   barrelWarnings?: boolean | MochiBarrelWarningOptions;
   /**
@@ -384,6 +397,8 @@ export class ComponentRegistry {
       size: number;
       inputs: { path: string; size: number }[];
       imports: string[];
+      /** User-assigned name from `clientBundle.chunks`, when this output is a manual chunk. */
+      chunkName?: string;
     }[];
   } | null = null;
   /** Stats for side-effect CSS bundles, merged into clientStats at read time. */
@@ -392,6 +407,7 @@ export class ComponentRegistry {
     size: number;
     inputs: { path: string; size: number }[];
     imports: string[];
+    chunkName?: string;
   }[] = [];
   /** Maps server island component name → resolved file path */
   private serverIslandPaths: Map<string, string> = new Map();
@@ -411,6 +427,9 @@ export class ComponentRegistry {
   private readonly svelteCompiler: MochiSvelteCompiler | undefined;
   readonly markdown: MarkdownConfig | undefined;
   readonly optimize: boolean | MochiSvelteShakerOptions;
+  private readonly clientBundle: MochiClientBundleOptions | undefined;
+  /** Modules the chunk classifier picked but which were skipped, surfaced by the build's chunk report. */
+  private skippedChunkModules: { id: string; reason: string }[] = [];
   private readonly barrelWarningsEnabled: boolean;
   private readonly barrelIgnore: Set<string>;
   private readonly barrelMinBytes: number;
@@ -440,6 +459,12 @@ export class ComponentRegistry {
     this.svelteCompiler = opts.svelteCompiler;
     this.markdown = opts.markdown;
     this.optimize = opts.optimize ?? false;
+    // Validate at construction so a malformed option fails at `Mochi.serve()` / the top of `build()`, naming the
+    // offending key, rather than surfacing deep inside a bundle.
+    this.clientBundle = validateClientBundleOptions(opts.clientBundle);
+    if (this.development && this.clientBundle) {
+      logger.info('[mochi] clientBundle is ignored in development — manual chunking runs in production builds only. Run `mochi-framework build` to see the chunked output.');
+    }
     const bw = opts.barrelWarnings;
     this.barrelWarningsEnabled = bw !== false;
     this.barrelIgnore = new Set(typeof bw === 'object' ? (bw.ignore ?? []) : []);
@@ -1088,6 +1113,8 @@ export class ComponentRegistry {
     const newClientFiles = new Map<string, string>();
     const newComponentEntryUrls = new Map<string, string>();
     let newIslandBootstrapUrl: string | null = null;
+    /** Set by the discovery pass when the user's classifier assigned at least one module. */
+    let chunkPlan: ChunkPlan | null = null;
 
     // The debug bar builds standalone (production-mode Svelte, own runtime) and only once per process — framework
     // sources don't change under a running user app, so watcher rebuilds skip it entirely.
@@ -1127,9 +1154,49 @@ export class ComponentRegistry {
       rejectUnknown: this.loadedFromManifest && !this.development,
     });
 
-    const clientPlugin: BunPlugin = {
+    // Built once per pass: pass 1 discovers the graph with no plan, pass 2 rebuilds it with one.
+    const makeClientPlugin = (plan: ChunkPlan | null): BunPlugin => ({
       name: 'svelte-client',
       setup(build) {
+        if (plan) {
+          // Assigned modules resolve to a generated view, which re-exports the real module and links it into its
+          // group's ring. Specifiers are resolved here rather than matched against pass 1's metafile edges, because
+          // Bun reports `imports[].original` only on an edge's first occurrence and leaves `path` unresolved on the rest.
+          //
+          // One handler covers both directions. A namespace-scoped registration does not fire for the generated
+          // modules' own imports, and a catch-all filter stops Bun resolving the `files:` entrypoints altogether.
+          build.onResolve(
+            {
+              filter: chunkResolveFilter(
+                plan.chunkOf,
+                Object.keys(filesMap).map((f) => path.basename(f)),
+              ),
+            },
+            (args) => {
+              if (plan.sources.has(args.path)) {
+                return { path: args.path, namespace: CHUNK_NAMESPACE };
+              }
+              // A view imports its real module and the next view in the ring; redirecting those would loop them back.
+              if (isChunkModuleId(args.importer)) {
+                return { path: args.path, namespace: 'file' };
+              }
+              // An empty importer means Bun is resolving an entrypoint; an entrypoint is never a chunk member.
+              if (!args.importer) {
+                return undefined;
+              }
+              const abs = resolveChunkMember(args);
+              if (!abs) {
+                return undefined;
+              }
+              const target = plan.chunkOf.get(abs);
+              // Only edges crossing into the group are redirected. Rewriting one member's import of another would route
+              // it through that member's view and around the group's ring, putting the real modules in a cycle and
+              // reordering their initialization — which breaks packages with circular internals.
+              return target && plan.chunkOf.get(toPosixPath(args.importer)) !== target ? { path: viewId(abs), namespace: CHUNK_NAMESPACE } : undefined;
+            },
+          );
+          build.onLoad({ filter: /.*/, namespace: CHUNK_NAMESPACE }, (args) => ({ contents: plan.sources.get(args.path)!, loader: 'js' }));
+        }
         build.onLoad({ filter: applyFilter('image:fileFilter', IMAGE_FILE_FILTER, { target: 'client' }) }, imageAssetLoader);
         // Mirrors the SSR side-effect-CSS strip, since the SSR-rendered `<head>` already links the bundle via
         // entryImportedCss → importedCssUrls. Bun's default CSS handling would otherwise inline JS-injected styles or
@@ -1204,33 +1271,55 @@ export class ComponentRegistry {
           );
         }
       },
-    };
-
-    const result = await Bun.build({
-      entrypoints,
-      files: filesMap,
-      // The guard goes first so its `onResolve` sees a server-only specifier
-      // before any of the client plugin's own handlers can claim it.
-      plugins: [serverOnlyModuleGuard, clientPlugin],
-      target: 'browser',
-      conditions: ['svelte', ...(development ? ['development'] : ['production'])],
-      define: {
-        DEV: String(development),
-        BROWSER: 'true',
-        NODE: 'false',
-        ...CLIENT_BUILD_DEFINE,
-      },
-      minify: true,
-      splitting: true,
-      naming: '[name]-[hash].[ext]',
-      publicPath: `${this.assetPrefix}/client/`,
-      outdir: path.resolve(`${this.outDir}/svelte-client`),
-      metafile: true,
-      throw: false,
     });
 
+    const runBuild = (plan: ChunkPlan | null) =>
+      Bun.build({
+        entrypoints,
+        files: filesMap,
+        // The guard goes first so its `onResolve` sees a server-only specifier
+        // before any of the client plugin's own handlers can claim it.
+        plugins: [serverOnlyModuleGuard, makeClientPlugin(plan)],
+        target: 'browser',
+        conditions: ['svelte', ...(development ? ['development'] : ['production'])],
+        define: {
+          DEV: String(development),
+          BROWSER: 'true',
+          NODE: 'false',
+          ...CLIENT_BUILD_DEFINE,
+        },
+        minify: true,
+        splitting: this.clientBundle?.splitting ?? true,
+        naming: '[name]-[hash].[ext]',
+        publicPath: `${this.assetPrefix}/client/`,
+        outdir: path.resolve(`${this.outDir}/svelte-client`),
+        metafile: true,
+        throw: false,
+      });
+
+    let result = await runBuild(null);
     if (!result.success) {
       throw new Error(`Svelte client build failed:\n${formatBuildMessages(result.logs)}`);
+    }
+
+    // A classifier over module ids needs the module graph, and Bun resolves entrypoints before anything else — so a
+    // group's members can't be computed lazily during the first build. Hence the discovery pass. Production only:
+    // per-file HMR can't reuse a whole-graph chunk layout, same reasoning as `optimize`.
+    const chunkClassifier = this.development ? undefined : this.clientBundle?.chunks;
+    this.skippedChunkModules = [];
+    if (chunkClassifier && result.metafile) {
+      const { chunkOf, skipped, defaultOf } = classifyModules(result.metafile, chunkClassifier, {
+        entrypoints: new Set(entrypoints.map((e) => toPosixPath(path.resolve(e)))),
+      });
+      this.skippedChunkModules = skipped;
+      if (chunkOf.size > 0) {
+        const plan = planChunks(chunkOf, (abs) => defaultOf.get(abs) ?? false);
+        result = await runBuild(plan);
+        if (!result.success) {
+          throw new Error(`Svelte client build failed (manual chunks):\n${formatBuildMessages(result.logs)}`);
+        }
+        chunkPlan = plan;
+      }
     }
 
     for (const output of result.outputs) {
@@ -1271,11 +1360,16 @@ export class ComponentRegistry {
         }));
         inputs.sort((a, b) => b.size - a.size);
         const imports = (outMeta.imports ?? []).filter((i) => i.kind === 'import-statement').map((i) => path.basename(i.path));
+        // Bun names every split chunk `chunk-<hash>.js` and its `[name]` template resolves to a reaching *entry's*
+        // name, so recording the user's name here is the only way it survives into the build's chunk report.
+        const outInputs = new Set(Object.keys(outMeta.inputs).map((i) => toPosixPath(path.resolve(i))));
+        const chunkName = chunkPlan ? [...chunkPlan.members].find(([, members]) => members.every((m) => outInputs.has(m)))?.[0] : undefined;
         return {
           name: path.basename(outPath),
           size: outMeta.bytes,
           inputs,
           imports,
+          ...(chunkName ? { chunkName } : {}),
         };
       });
       outputStats.sort((a, b) => b.size - a.size);
@@ -1837,6 +1931,11 @@ export class ComponentRegistry {
       return this.importedCssStats.length > 0 ? { outputs: [...this.importedCssStats] } : null;
     }
     return { outputs: [...this.clientStats.outputs, ...this.importedCssStats] };
+  }
+
+  /** Modules `clientBundle.chunks` selected but that were left where Bun put them, with the reason. */
+  getSkippedChunkModules(): { id: string; reason: string }[] {
+    return [...this.skippedChunkModules];
   }
 
   getDebugBarUrl(): string | null {

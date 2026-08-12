@@ -4,7 +4,7 @@ import { buildInlineWebComponent } from '../compiler/buildInlineWebComponent';
 import { DEFAULT_ERROR_PAGE_PATH } from '../runtime/errors';
 import { CLIENT_STATS_COMPONENT } from '../dev/clientStatsRoutes';
 import { isMochiPage, isMochiApi, isMochiWs, isMochiSse } from '../types';
-import type { MarkdownConfig, MochiBarrelWarningOptions, MochiRouteValue, MochiSvelteShakerOptions } from '../types';
+import type { MarkdownConfig, MochiBarrelWarningOptions, MochiClientBundleOptions, MochiRouteValue, MochiSvelteShakerOptions } from '../types';
 import type { MochiSvelteCompiler } from '../compiler/svelteCompilerBackend';
 import { rmSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
@@ -18,7 +18,7 @@ import { mochiEvents } from '../events';
 import type { MochiCompileCompleteEvent } from '../events';
 import { styleText } from 'node:util';
 import prettyBytes from '../vendor/pretty-bytes';
-import { collectImageResources, printResourceTree } from './resourceReport';
+import { collectImageResources, printChunkTree, printResourceTree } from './resourceReport';
 
 export interface MochiBuildOptions {
   routes: Record<string, MochiRouteValue>;
@@ -37,6 +37,8 @@ export interface MochiBuildOptions {
   markdown?: MarkdownConfig;
   /** Mirror the value passed to `Mochi.serve({ optimize })` so the prebuilt manifest and the runtime agree. Default: `false`. See `MochiServeOptions['optimize']`. */
   optimize?: boolean | MochiSvelteShakerOptions;
+  /** Mirror the value passed to `Mochi.serve({ clientBundle })`. Manual chunking runs in production builds only. See `MochiServeOptions['clientBundle']`. */
+  clientBundle?: MochiClientBundleOptions;
   /** Mirror the value passed to `Mochi.serve({ barrelWarnings })`; a build collapses offenders into one grouped summary line. Default: enabled. See `MochiServeOptions['barrelWarnings']`. */
   barrelWarnings?: boolean | MochiBarrelWarningOptions;
   /** Mirror the value passed to `Mochi.serve({ errorPage })` so it lands in the manifest and the runtime skips compiling it at startup. Default: Mochi's built-in error page. */
@@ -139,6 +141,7 @@ export async function build(options: MochiBuildOptions): Promise<void> {
       svelteCompiler: options.svelteCompiler,
       markdown: options.markdown,
       optimize: options.optimize,
+      clientBundle: options.clientBundle,
       barrelWarnings: options.barrelWarnings,
       // Group offenders into one summary for the one-shot production build; a
       // `--dev` build keeps the dev server's immediate per-package lines.
@@ -256,6 +259,11 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     if (options.resources !== false) {
       printResourceTree(collectImageResources(imageAssets.values()));
     }
+
+    const chunkRows = (registry.getClientStats()?.outputs ?? [])
+      .filter((o): o is typeof o & { chunkName: string } => typeof o.chunkName === 'string')
+      .map((o) => ({ chunkName: o.chunkName, file: o.name, modules: o.inputs.length, bytes: o.size }));
+    printChunkTree(chunkRows, registry.getSkippedChunkModules());
 
     // Clean up intermediate .raw.css files
     const cssDir = path.join(outDir, 'svelte-css');

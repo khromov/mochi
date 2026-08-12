@@ -212,6 +212,9 @@ export type {
   MochiSvelteShakerOptions,
   MochiBarrelWarningOptions,
   MochiBuildReportOptions,
+  MochiClientBundleOptions,
+  MochiChunkClassifier,
+  MochiChunkContext,
 } from './types';
 
 import type { Snippet } from 'svelte';

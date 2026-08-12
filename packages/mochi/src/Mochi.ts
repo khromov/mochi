@@ -476,6 +476,7 @@ export class Mochi {
         svelteCompiler: options.svelteCompiler,
         markdown: options.markdown,
         optimize: options.optimize,
+        clientBundle: options.clientBundle,
         barrelWarnings: options.barrelWarnings,
       });
       // No-op in dev or when the option is off; production-without-manifest

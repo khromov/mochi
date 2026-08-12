@@ -331,6 +331,8 @@ export interface MochiManifest {
       size: number;
       inputs: { path: string; size: number }[];
       imports: string[];
+      /** Name assigned by `clientBundle.chunks`, when this output is a manual chunk. Diagnostic only. */
+      chunkName?: string;
     }[];
   } | null;
   /** Maps server island component name → its encoded source path (see `version`). */
@@ -614,6 +616,15 @@ export interface MochiServeOptions {
    */
   barrelWarnings?: boolean | MochiBarrelWarningOptions;
   /**
+   * Manual control over how the island client bundle splits: map module paths to named shared chunks with `chunks`
+   * (Vite/Rollup `manualChunks(id)` semantics), and toggle Bun's splitting with `splitting`.
+   *
+   * **Production only**, like `optimize`: assigning modules to chunks is a whole-graph decision needing a discovery
+   * build pass, which per-file HMR can't safely reuse. In development the option is ignored and the bundle splits
+   * exactly as it does today. `mochi-framework build` reads this straight from your entry's `Mochi.serve()` call.
+   */
+  clientBundle?: MochiClientBundleOptions;
+  /**
    * Output controls for `mochi-framework build`, read from your entry alongside `optimize` and `barrelWarnings`.
    * The runtime itself ignores this field.
    */
@@ -625,6 +636,41 @@ export interface MochiServeOptions {
 export interface MochiBuildReportOptions {
   /** Print the emitted-resources list, one row per local image import with dimensions and size on disk. The summary line keeps its asset count either way. Default: enabled. */
   resources?: boolean;
+}
+
+/**
+ * `id` is an absolute POSIX path (forward slashes on every platform), so `id.includes('node_modules/chart.js/')`
+ * behaves the same on Windows. Return a chunk name, or `null`/`undefined` to leave placement to Bun.
+ */
+export type MochiChunkClassifier = (id: string, ctx: MochiChunkContext) => string | null | undefined;
+
+/** Second argument to `MochiChunkClassifier`, so the common cases need no string surgery on `id`. */
+export interface MochiChunkContext {
+  /** `true` when the module resolves under a `node_modules/` directory. */
+  isNodeModules: boolean;
+  /** Package name for a `node_modules` module (`chart.js`, `@lucide/svelte`), otherwise `null`. */
+  packageName: string | null;
+  /** POSIX path relative to the build cwd, matching what `stats.outputs[].inputs[].path` reports. */
+  relativeId: string;
+  /** Parsed size in bytes, from Bun's metafile. */
+  bytes: number;
+}
+
+/** Object form of `MochiServeOptions['clientBundle']`. See that field for semantics. */
+export interface MochiClientBundleOptions {
+  /**
+   * Rollup/Vite `manualChunks(id)` semantics for the island client bundle: map module paths to named shared chunks.
+   * Called once per module in the built client graph; modules given the same name land in one output file.
+   *
+   * CommonJS modules are skipped — their exports cannot be enumerated ahead of bundling, so moving one breaks any
+   * named import of it. The build report lists what was skipped.
+   */
+  chunks?: MochiChunkClassifier;
+  /**
+   * Bun's code splitting. `false` makes every island entry self-contained, duplicating shared dependencies across
+   * them instead of emitting shared chunks. Default: `true`.
+   */
+  splitting?: boolean;
 }
 
 /** Object form of `MochiServeOptions['barrelWarnings']`. See that field for semantics. */
