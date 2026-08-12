@@ -115,7 +115,7 @@
         "@joint-ops/hitlimit-bun": "1.5.0",
         "@noble/ciphers": "2.2.0",
         "@noble/hashes": "2.2.0",
-        "bun-boss": "^0.2.4",
+        "bun-boss": "^0.3.0",
         "chokidar": "^5.0.0",
         "deepmerge": "^4.3.1",
         "devalue": "^5.9.0",
@@ -683,7 +683,7 @@
 
     "buffer-image-size": ["buffer-image-size@0.6.4", "", { "dependencies": { "@types/node": "*" } }, "sha512-nEh+kZOPY1w+gcCMobZ6ETUp9WfibndnosbpwB1iJk/8Gt5ZF2bhS6+B6bPYz424KtwsR6Rflc3tCz1/ghX2dQ=="],
 
-    "bun-boss": ["bun-boss@0.2.4", "", { "dependencies": { "croner": "^10.0.1" }, "peerDependencies": { "@types/bun": ">=1.3.14" }, "optionalPeers": ["@types/bun"] }, "sha512-JZpAyGc4Wds9w7MBXRnPch4bWJlFZuX6nat4lDZfGHS2tvB0+JBzcLWzn27UGuyOrO8OeLJO62dXKGym/xzoNw=="],
+    "bun-boss": ["bun-boss@0.3.0", "", { "dependencies": { "croner": "^10.0.1" }, "peerDependencies": { "@types/bun": ">=1.3.14" }, "optionalPeers": ["@types/bun"] }, "sha512-IDKEIHUH4ahIAG16ZRE48WkncFcK9bpZgYwXYNX6iocgzrIE3PQbvVL/wECNKHjmRH6ZZKbmapZNHPPp92p5ng=="],
 
     "bun-types": ["bun-types@1.3.14", "", { "dependencies": { "@types/node": "*" } }, "sha512-4N0ig0fEomHt5R0KCFWjovxow98rIoRwKolrYdCcknNwMekCXRnWEUvgu5soYV8QXtVsrUD8B95MBOZGPvr6KQ=="],
 

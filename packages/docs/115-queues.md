@@ -54,7 +54,7 @@ const queue = Mochi.queue<JobData, Result>(name, { process, ...options });
 | `attempt`    | `number` | 1-based attempt number (1 on first run) |
 | `enqueuedAt` | `number` | epoch ms when enqueued                  |
 
-Queue-level options are inherited by every job: `concurrency`, `pollingIntervalSeconds`, [`batchSize` and `burst`](#batch-processing), [retries](#retries) (`retryLimit`, `retryDelay`, `retryBackoff`, `retryDelayMax`), `expireInSeconds`, `retentionSeconds`, `deleteAfterSeconds`, `deadLetter`, [`worker`](#worker-tuning), [`storage`](#standalone-producers). Every duration is in **seconds**. `on` registers lifecycle listeners:
+Queue-level options are inherited by every job: `concurrency`, `pollingIntervalSeconds`, [retries](#retries) (`retryLimit`, `retryDelay`, `retryBackoff`, `retryDelayMax`), `expireInSeconds`, `retentionSeconds`, `deleteAfterSeconds`, `deadLetter`, [`worker`](#worker-tuning), [`storage`](#standalone-producers). Every duration is in **seconds**. `on` registers lifecycle listeners:
 
 ```ts
 Mochi.queue('emails', {
@@ -147,22 +147,6 @@ Like standalone producers, workers are ensure-only: stored queue options are tru
 
 </Callout>
 
-### Batch processing
-
-By default a worker fetches one job per poll. `batchSize` fetches up to N at once — `process` still runs once per job, and each job settles on its own, so one throw fails (and retries) only that job while its batch siblings complete. `burst: true` keeps fetching with zero poll delay while batches come back full — the fastest way to drain a cross-process backlog:
-
-```ts
-Mochi.queue<PluginJob>('plugin-info', {
-  process: fetchPluginInfo,
-  batchSize: 5,
-  burst: true,
-});
-```
-
-Within a batch, jobs run sequentially — parallelism stays owned by `concurrency`, so `concurrency: 1` still means strictly serial processing whatever the batch size. `batchSize` is a fetch-efficiency knob, not a concurrency one.
-
-The [`expireInSeconds`](#long-running-jobs) budget covers the whole fetched batch, not each job — size it for a full batch (≈ `batchSize` × the per-job worst case). When the budget runs out mid-batch, the remaining jobs fail for retry while completed siblings keep their results.
-
 ### Worker tuning
 
 The rarely-needed bun-boss fetch options ride along in `worker`, forwarded to the worker verbatim: `orderByCreatedOn`, `priority`, `minPriority`, `maxPriority`, `ignoreStartAfter`, `notifyPollingIntervalSeconds`, `burstWhenReadyExceeds`, `heartbeatRefreshSeconds`.
@@ -170,12 +154,11 @@ The rarely-needed bun-boss fetch options ride along in `worker`, forwarded to th
 ```ts
 Mochi.queue('plugin-info', {
   process: fetchPluginInfo,
-  batchSize: 5,
   worker: { orderByCreatedOn: false, minPriority: 10 },
 });
 ```
 
-Mochi-owned settings (`batchSize`, `concurrency`, `pollingIntervalSeconds`, and the per-job settlement contract) win where they overlap. `worker` options apply at fetch time only; stored queue options stay as declared.
+Mochi-owned settings (`concurrency`, `pollingIntervalSeconds`, and the per-job settlement contract) win where they overlap. `worker` options apply at fetch time only; stored queue options stay as declared.
 
 ### Storage
 
@@ -259,7 +242,7 @@ A job may stay active for `expireInSeconds` (default **900**) before the store a
 Mochi.queue('transcode', { process: transcodeVideo, expireInSeconds: 3600 });
 ```
 
-A deployment can override every queue at once with the [`queue:expireInSeconds`](/docs/extensions/) filter. With [`batchSize`](#batch-processing) > 1 the budget covers the whole fetched batch.
+A deployment can override every queue at once with the [`queue:expireInSeconds`](/docs/extensions/) filter.
 
 ### `Mochi.boss()`
 
@@ -318,7 +301,7 @@ await Mochi.serve({
 
 <Callout type="info">
 
-**Dispatch is instant in-process, polled across processes.** An `add()` from the serving process wakes its worker immediately. Other processes sharing Postgres storage — and deferred or retried jobs everywhere — are picked up on the worker's poll, every `pollingIntervalSeconds` (default 2, minimum 0.5). To drain a backlog enqueued by another process quickly, give the worker [`batchSize` + `burst`](#batch-processing).
+**Dispatch is instant in-process, polled across processes.** An `add()` from the serving process wakes its worker immediately. Other processes sharing Postgres storage — and deferred or retried jobs everywhere — are picked up on the worker's poll, every `pollingIntervalSeconds` (default 2, minimum 0.5).
 
 </Callout>
 

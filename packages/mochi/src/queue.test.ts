@@ -1,11 +1,10 @@
-import { afterAll, afterEach, describe, expect, spyOn, test } from 'bun:test';
+import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, existsSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { startQueueRuntime, mountQueues, getQueue, getBoss, closeAllQueueResources, DEFAULT_EXPIRE_IN_SECONDS } from './queue';
 import type { MochiJob, MochiQueueStorage } from './queue';
 import { mochiEvents } from './events';
 import { initExtensions } from './extensions';
-import { logger } from './utils/log';
 import { markStartupMilestone, resetStartupMilestones } from './lifecycle';
 
 const dataDir = mkdtempSync(path.join(import.meta.dir, '..', '.mochi-queue-test-'));
@@ -480,78 +479,6 @@ describe('Mochi queue', () => {
     await expect(closeAllQueueResources()).resolves.toBeUndefined();
   });
 
-  test('batchSize > 1 settles each job on its own: one failure retries alone', async () => {
-    const name = uniqueName();
-    const completions: Array<{ n: number; attempt: number }> = [];
-    const failedEvents: Array<{ jobId: string; attempt: number }> = [];
-    const done = deferred<void>();
-    mochiEvents.on('queue:failed', (e) => failedEvents.push({ jobId: e.jobId, attempt: e.attempt }));
-
-    await startWith({
-      [name]: {
-        process: async (job: MochiJob<{ n: number }>) => {
-          if (job.data.n === 2 && job.attempt === 1) {
-            throw new Error('flaky');
-          }
-          completions.push({ n: job.data.n, attempt: job.attempt });
-          if (completions.length === 3) {
-            done.resolve();
-          }
-        },
-        options: { batchSize: 3, retryLimit: 1, retryDelay: 0, pollingIntervalSeconds: 0.5 },
-      },
-    });
-
-    // One insert() call, then one notify — the worker's next fetch sees all three jobs as a single batch.
-    const ids = await getQueue<{ n: number }>(name).addBulk([{ data: { n: 1 } }, { data: { n: 2 } }, { data: { n: 3 } }]);
-    await done.promise;
-
-    // The whole-batch alternative would have retried jobs 1 and 3 alongside the thrown job 2.
-    expect(completions.filter((c) => c.n !== 2).every((c) => c.attempt === 1)).toBe(true);
-    expect(completions.find((c) => c.n === 2)?.attempt).toBe(2);
-    expect(failedEvents).toEqual([{ jobId: ids[1]!, attempt: 1 }]);
-    await getBoss().getSpy(name).waitForJobWithId(ids[1]!, 'completed');
-  }, 15_000);
-
-  test('a batch outliving the shared expiry budget settles early: completed siblings keep their results', async () => {
-    const name = uniqueName();
-    const runs: number[] = [];
-    const failedMessages = new Map<string, string>();
-    mochiEvents.on('queue:failed', (e) => failedMessages.set(e.jobId, e.error));
-
-    await startWith({
-      [name]: {
-        process: async (job: MochiJob<{ n: number }>) => {
-          runs.push(job.data.n);
-          if (job.data.n === 2) {
-            await Bun.sleep(4_500);
-          }
-          return { n: job.data.n };
-        },
-        // bun-boss times the whole batch out at max(expireInSeconds)=4s; job 2 alone outlives it. The budget is
-        // seconds-scale (not 1s) so the early settle beats bun-boss's wholesale timeout even on slow CI runners.
-        options: { batchSize: 3, retryLimit: 0, expireInSeconds: 4, pollingIntervalSeconds: 0.5 },
-      },
-    });
-
-    // Priorities pin the in-batch order to 1, 2, 3 — fetch order is otherwise backend-dependent.
-    const ids = await getQueue<{ n: number }>(name).addBulk([
-      { data: { n: 1 }, opts: { priority: 3 } },
-      { data: { n: 2 }, opts: { priority: 2 } },
-      { data: { n: 3 }, opts: { priority: 1 } },
-    ]);
-    const spy = getBoss().getSpy(name);
-    await spy.waitForJobWithId(ids[0]!, 'completed');
-    await spy.waitForJobWithId(ids[1]!, 'failed');
-    await spy.waitForJobWithId(ids[2]!, 'failed');
-
-    // The wholesale alternative fails all three, re-running the completed job 1 on retry; job 3 must never start.
-    expect(runs).toEqual([1, 2]);
-    expect((await getBoss().getJobById(name, ids[0]!))?.state).toBe('completed');
-    expect(failedMessages.get(ids[1]!)).toMatch(/ran out mid-job/);
-    expect(failedMessages.get(ids[2]!)).toMatch(/before this job started/);
-  }, 15_000);
-
   test('a failed job stores the full error, stack included', async () => {
     const name = uniqueName();
     await startWith({
@@ -578,8 +505,6 @@ describe('Mochi queue', () => {
         process: async () => null,
         options: {
           concurrency: 2,
-          batchSize: 4,
-          burst: true,
           // The sneaked-in batchSize/includeMetadata must lose to the Mochi-owned keys.
           worker: { orderByCreatedOn: false, minPriority: 5, batchSize: 99, includeMetadata: false } as never,
         },
@@ -591,25 +516,14 @@ describe('Mochi queue', () => {
       .find((w) => w.name === name);
     expect(worker).toBeDefined();
     expect(worker!.options).toMatchObject({
-      batchSize: 4,
+      batchSize: 1,
       includeMetadata: true,
       perJobResults: true,
-      burstWhenBatchFull: true,
       localConcurrency: 2,
       orderByCreatedOn: false,
       minPriority: 5,
     });
-  });
-
-  test('burst without a real batch size warns at mount', async () => {
-    const warn = spyOn(logger, 'warn').mockImplementation(() => {});
-    try {
-      const name = uniqueName();
-      await startWith({ [name]: { process: async () => null, options: { burst: true } } });
-      expect(warn.mock.calls.flat().some((m) => String(m).includes('burst has no effect with batchSize 1'))).toBe(true);
-    } finally {
-      warn.mockRestore();
-    }
+    expect(worker!.options).not.toHaveProperty('burstWhenBatchFull');
   });
 
   test('an undeclared expiry is no longer re-sent: a bare remount keeps stored options', async () => {

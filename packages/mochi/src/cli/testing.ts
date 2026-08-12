@@ -1,4 +1,7 @@
 import { Glob } from 'bun';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 export interface RunTestsOptions {
   /** Package root to glob `src/**\/*.test.ts` from and run each file in. Defaults to the cwd. */
@@ -6,14 +9,16 @@ export interface RunTestsOptions {
   /** Test files (paths relative to `dir`) that must run sequentially, after the parallel batch. */
   sequential?: Iterable<string>;
   /**
-   * Test files (paths relative to `dir`) to skip on Windows only, for suites that pass every test but then wedge in
-   * Bun's native post-test shutdown there — a runtime bug with no JS-level recovery, since bun stops running the loop
-   * before it hangs. Skipped files are logged, and their logic still runs on Linux and macOS.
+   * Test files (paths relative to `dir`) to skip on Windows only. A file that wedges in Bun's native post-test shutdown
+   * *after* a clean pass is already tolerated automatically (see `toleratedWindowsWedge`), so this list is reserved for
+   * files that wedge *before* printing a clean pass, or that genuinely cannot run on Windows (e.g. POSIX-signal tests).
+   * Skipped files are logged, and their logic still runs on Linux and macOS.
    */
   windowsSkip?: Iterable<string>;
   /**
-   * Hard per-file deadline (ms). A `bun test` child still running past it is killed and recorded as failed with
-   * "TIMED OUT", so one wedged process can't hang the run — a backstop for Bun's per-*test* `--timeout`, which fails a
+   * Hard per-file deadline (ms). A `bun test` child still running past it is killed; if its junit report shows a
+   * finished green run (a Windows shutdown wedge) the file still counts as passed, otherwise it is recorded as failed
+   * with "TIMED OUT". Either way one wedged process can't hang the run — a backstop for Bun's per-*test* `--timeout`, which fails a
    * test while leaving the process alive. Default 60_000: far above any healthy file and well under CI's job cap.
    */
   fileTimeoutMs?: number;
@@ -23,6 +28,8 @@ interface FileResult {
   file: string;
   ok: boolean;
   timedOut: boolean;
+  /** The file blew the deadline but its junit report shows a finished green run — a Bun-on-Windows shutdown wedge, tolerated. */
+  wedgedTolerated: boolean;
   exitCode: number | null;
   stdout: string;
   stderr: string;
@@ -112,6 +119,52 @@ function dropEdgeBlanks(block: string[]): string[] {
   return block.slice(start, end);
 }
 
+export interface JunitSummary {
+  tests: number;
+  failures: number;
+}
+
+/**
+ * Pulls the run totals out of a `bun test --reporter=junit` report's root `<testsuites>` element, or null when the
+ * input is missing, truncated, or not a report. Bun writes the report only at the end of a completed run, so a missing
+ * or partial file is proof the process was killed mid-run rather than after finishing.
+ */
+export function parseJunitSummary(xml: string | null): JunitSummary | null {
+  if (!xml) {
+    return null;
+  }
+  let summary: JunitSummary | null = null;
+  new HTMLRewriter()
+    .on('testsuites', {
+      element(el) {
+        if (summary) {
+          return;
+        }
+        const tests = Number(el.getAttribute('tests'));
+        const failures = Number(el.getAttribute('failures'));
+        if (Number.isInteger(tests) && Number.isInteger(failures)) {
+          summary = { tests, failures };
+        }
+      },
+    })
+    .transform(xml);
+  return summary;
+}
+
+/**
+ * A file that blew the per-file deadline is tolerated only on Windows and only if its junit report proves the run had
+ * already finished green — Bun's native post-test shutdown wedges there with some in-process resources (e.g. PGlite's
+ * WASM instance) still loaded, a runtime bug with no JS-level recovery. `platform` is a parameter so tests can exercise
+ * both branches.
+ */
+export function toleratedWindowsWedge(timedOut: boolean, junitXml: string | null, platform: NodeJS.Platform = process.platform): boolean {
+  if (!timedOut || platform !== 'win32') {
+    return false;
+  }
+  const summary = parseJunitSummary(junitXml);
+  return summary !== null && summary.failures === 0;
+}
+
 /**
  * Runs each `src/**\/*.test.ts` file in its own `bun test` process, up to `navigator.hardwareConcurrency` in parallel,
  * exiting with code 1 if any file fails.
@@ -127,6 +180,9 @@ export async function runTests(options: RunTestsOptions = {}): Promise<void> {
   const dir = options.dir ?? '.';
   const sequential = new Set(options.sequential ?? []);
   const fileTimeoutMs = options.fileTimeoutMs ?? 60_000;
+
+  // Each child writes a junit report here; it doubles as the completion sentinel for the Windows wedge tolerance.
+  const junitDir = mkdtempSync(join(tmpdir(), 'mochi-junit-'));
 
   const windowsSkip = new Set(process.platform === 'win32' ? (options.windowsSkip ?? []) : []);
 
@@ -150,9 +206,10 @@ export async function runTests(options: RunTestsOptions = {}): Promise<void> {
 
   // Bun's `--timeout` fails an individual test but leaves the process alive, so one wedged after its tests — a leaked
   // handle, or the Bun-on-Windows shutdown quirk — would block the worker on `proc.exited` until CI's job cap. The hard
-  // deadline turns that into a fast, named failure.
+  // deadline turns that into a fast outcome: a named failure, or (Windows-only, after a clean pass) a tolerated wedge.
   async function runFile(file: string): Promise<FileResult> {
-    const proc = Bun.spawn(['bun', 'test', '--timeout', '30000', file], {
+    const junitPath = join(junitDir, `${file.replaceAll('/', '_')}.xml`);
+    const proc = Bun.spawn(['bun', 'test', '--timeout', '30000', '--reporter=junit', `--reporter-outfile=${junitPath}`, file], {
       cwd: dir,
       stdin: 'ignore',
       stdout: 'pipe',
@@ -188,11 +245,16 @@ export async function runTests(options: RunTestsOptions = {}): Promise<void> {
     }
 
     const [exitCode, stdout, stderr] = await Promise.all([proc.exited, stdoutP, stderrP]);
-    return { file, ok: !timedOut && exitCode === 0, timedOut, exitCode, stdout, stderr };
+    const junitFile = Bun.file(junitPath);
+    const junitXml = timedOut && (await junitFile.exists()) ? await junitFile.text() : null;
+    const wedgedTolerated = toleratedWindowsWedge(timedOut, junitXml);
+    return { file, ok: (!timedOut && exitCode === 0) || wedgedTolerated, timedOut, wedgedTolerated, exitCode, stdout, stderr };
   }
 
   function report(result: FileResult, prefix = ''): void {
-    if (result.timedOut) {
+    if (result.wedgedTolerated) {
+      console.log(`\n${prefix}⚠ ${result.file} — passed, but Bun wedged in post-test shutdown on Windows (tolerated after ${Math.round(fileTimeoutMs / 1000)}s)`);
+    } else if (result.timedOut) {
       console.log(`\n${prefix}✗ ${result.file} — TIMED OUT after ${Math.round(fileTimeoutMs / 1000)}s (killed)`);
     } else {
       console.log(`\n${prefix}${result.ok ? '✓' : '✗'} ${result.file}`);
@@ -222,6 +284,8 @@ export async function runTests(options: RunTestsOptions = {}): Promise<void> {
     results.push(result);
     report(result, '→ ');
   }
+
+  rmSync(junitDir, { recursive: true, force: true });
 
   const failed = results.filter((r) => !r.ok);
   console.log(`\n${'='.repeat(60)}`);
