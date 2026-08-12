@@ -115,7 +115,7 @@ Instead, create a wrapper component that accepts `children`, then import it from
 {@render children()}
 ```
 
-In SvelteKit, `+layout.svelte` wraps `+page.svelte` automatically. In Mochi, the page imports and wraps itself:
+There is nothing special about the layout — it is a plain component. SvelteKit applies it for you; in Mochi you import it into the page and wrap the markup yourself:
 
 ```svelte
 <!-- file (Mochi): src/Home.svelte -->
