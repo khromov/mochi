@@ -7,6 +7,7 @@ description: 'Mark components with mochi:hydrate to ship client JavaScript only 
 <script>
   import Callout from './_components/Callout.svelte';
   import SeeItInAction from './_components/SeeItInAction.svelte';
+  import VersionNote from './_components/VersionNote.svelte';
 </script>
 
 ## Selective hydration with `mochi:hydrate`
@@ -73,6 +74,20 @@ These rules apply to every directive family: `mochi:hydrate*`, `mochi:defer*`, a
 **Hydration is all-or-nothing per island.** A `mochi:hydrate` directive hydrates the whole subtree, so nesting one hydratable island inside another is a compile error. Mark the outermost component and let it cover everything below.
 
 </Callout>
+
+### No children on hydrate islands
+
+<VersionNote since="0.10.0" message="Children on mochi:hydrate* became a compile error in 0.10.0; they previously rendered server-side and silently vanished on hydration." />
+
+A `mochi:hydrate` / `mochi:hydrate:visible` island cannot take children at the call site — the client hydrates from the serialized props alone, and a snippet cannot cross the server→client boundary:
+
+```svelte
+<Wrapper mochi:hydrate>
+  <p>This is a compile error.</p>
+</Wrapper>
+```
+
+Move the markup inside the component, or pass what it needs as serializable props. A layout-style wrapper that renders `{@render children()}` therefore cannot be a hydrate island — mark the interactive components _inside_ it instead. With `mochi:defer*` and `mochi:clientOnly*`, children are legal and mean something different: the loading fallback. See [Server islands](/docs/server-islands/) and [`mochi:clientOnly`](/docs/client-only/).
 
 ### `isHydratable()`
 

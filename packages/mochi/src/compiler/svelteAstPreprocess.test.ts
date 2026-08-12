@@ -115,13 +115,53 @@ describe('preprocessHydratable', () => {
     expect(transformed).toContain('callback: () => { doSomething(); }');
   });
 
-  test('non-self-closing component (fixed over regex)', () => {
+  test('children on mochi:hydrate are a compile error, not silently forwarded', () => {
     const source = `${SCRIPT('import Wrapper from "./Wrapper.svelte";')}<Wrapper mochi:hydrate><span>child content</span></Wrapper>`;
-    const { transformed, hydratables } = preprocessHydratable(source, '/test/File.svelte');
+    const { transformed, hydratables, errors } = preprocessHydratable(source, '/test/File.svelte');
 
+    expect(errors).toEqual([{ reason: 'hydrate-children', component: 'Wrapper', directive: 'mochi:hydrate', filePath: '/test/File.svelte' }]);
+    expect(hydratables).toHaveLength(0);
+    expect(transformed).toContain('<Wrapper mochi:hydrate>');
+  });
+
+  test('a {#snippet} child on mochi:hydrate is a compile error too', () => {
+    const source = `${SCRIPT('import Wrapper from "./Wrapper.svelte";')}<Wrapper mochi:hydrate>{#snippet header()}<b>hi</b>{/snippet}</Wrapper>`;
+    const { hydratables, errors } = preprocessHydratable(source, '/test/File.svelte');
+
+    expect(errors).toEqual([{ reason: 'hydrate-children', component: 'Wrapper', directive: 'mochi:hydrate', filePath: '/test/File.svelte' }]);
+    expect(hydratables).toHaveLength(0);
+  });
+
+  test('mochi:hydrate:visible with children names its own directive in the error', () => {
+    const source = `${SCRIPT('import Wrapper from "./Wrapper.svelte";')}<Wrapper mochi:hydrate:visible><p>gone</p></Wrapper>`;
+    const { errors } = preprocessHydratable(source, '/test/File.svelte');
+
+    expect(errors).toEqual([{ reason: 'hydrate-children', component: 'Wrapper', directive: 'mochi:hydrate:visible', filePath: '/test/File.svelte' }]);
+  });
+
+  test('whitespace-only children on mochi:hydrate are tolerated', () => {
+    const source = `${SCRIPT('import Wrapper from "./Wrapper.svelte";')}<Wrapper mochi:hydrate>\n  </Wrapper>`;
+    const { transformed, hydratables, errors } = preprocessHydratable(source, '/test/File.svelte');
+
+    expect(errors).toHaveLength(0);
     expect(hydratables).toHaveLength(1);
     expect(transformed).toContain('<mochi-hydratable-island');
-    expect(transformed).toContain('<Wrapper><span>child content</span></Wrapper>');
+  });
+
+  test('comment-only children on mochi:hydrate are tolerated', () => {
+    const source = `${SCRIPT('import Wrapper from "./Wrapper.svelte";')}<Wrapper mochi:hydrate><!-- note --></Wrapper>`;
+    const { hydratables, errors } = preprocessHydratable(source, '/test/File.svelte');
+
+    expect(errors).toHaveLength(0);
+    expect(hydratables).toHaveLength(1);
+  });
+
+  test('mochi:defer mochi:hydrate keeps children as fallback with no error', () => {
+    const source = `${SCRIPT('import Widget from "./Widget.svelte";')}<Widget mochi:defer mochi:hydrate><div class="skeleton">Loading...</div></Widget>`;
+    const { transformed, errors } = preprocessHydratable(source, '/test/File.svelte');
+
+    expect(errors).toHaveLength(0);
+    expect(transformed).toContain('<div class="skeleton">Loading...</div>');
   });
 
   test('duplicate component instances', () => {

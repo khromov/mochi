@@ -11,7 +11,7 @@ import type { MochiProcessor, MochiQueueListeners, MochiQueueRuntimeOptions, Moc
 import type { MochiRateLimitOptions } from './runtime/rateLimit';
 import type { MochiSvelteCompiler } from './compiler/svelteCompilerBackend';
 
-export type MochiServerPropsResolver = (req: Request, params: Record<string, string>) => Record<string, unknown> | Promise<Record<string, unknown>>;
+export type MochiServerPropsResolver = (req: Request, params: Record<string, string>) => Record<string, unknown> | MochiRedirect | Promise<Record<string, unknown> | MochiRedirect>;
 
 export function isServerPropsResolver(serverProps: Record<string, unknown> | MochiServerPropsResolver | undefined): serverProps is MochiServerPropsResolver {
   return typeof serverProps === 'function';
@@ -114,9 +114,9 @@ export interface MochiFormFail<T extends Record<string, unknown> = Record<string
   readonly data: T;
 }
 
-/** Returned by `redirect()`; produces an HTTP redirect after the action runs. Use 303 for POST/Redirect/GET after a successful mutation. */
-export interface MochiFormRedirect {
-  readonly __mochiFormRedirect: true;
+/** Returned by `redirect()`; produces an HTTP redirect from a form action or a `serverProps` resolver. Use 303 for POST/Redirect/GET after a successful mutation. */
+export interface MochiRedirect {
+  readonly __mochiRedirect: true;
   readonly status: 301 | 302 | 303 | 307 | 308;
   readonly location: string;
 }
@@ -128,7 +128,7 @@ export interface MochiFormSuccess<T extends Record<string, unknown> = Record<str
 }
 
 /** Any return value allowed from a form action handler; a plain `Response` is the escape hatch. */
-export type MochiFormActionResult = MochiFormFail | MochiFormRedirect | MochiFormSuccess | Response | void | undefined;
+export type MochiFormActionResult = MochiFormFail | MochiRedirect | MochiFormSuccess | Response | void | undefined;
 
 /**
  * The event object passed to form action handlers, with the body already parsed into `formData`.

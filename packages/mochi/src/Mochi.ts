@@ -44,7 +44,7 @@ import type {
   MochiWsHandlers,
   MochiWsData,
 } from './types';
-import { isFormFail, isFormRedirect, isFormSuccess } from './runtime/forms';
+import { isFormFail, isFormSuccess, isRedirect } from './runtime/forms';
 import { isEnhanceRequest, jsonError, jsonFailure, jsonRedirect, jsonSuccess } from './runtime/formsJson';
 import { csrfCheck, DEFAULT_FORM_CONTENT_TYPES, DEFAULT_PROTECTED_METHODS } from './runtime/csrf';
 import { applyFilter, initExtensions, runHook } from './extensions';
@@ -606,6 +606,8 @@ export class Mochi {
       registry,
       errorPagePath,
       renderShell: (result) => renderShell(result),
+      cookieDefaults,
+      newRequestId,
     });
 
     // Mirrors the handleError logic in renderErrorResponse, skipping the HTML render for the enhanced JSON path.
@@ -770,7 +772,21 @@ export class Mochi {
             throw new MochiHttpError(500, formatCompileErrors(compileErrors));
           }
           const liveServerProps = pageConfigMap ? pageConfigMap.get(pattern)?.serverProps : serverProps;
-          const baseProps = isServerPropsResolver(liveServerProps) ? ((await liveServerProps(req, ctx.params)) ?? {}) : (liveServerProps ?? {});
+          const resolved = isServerPropsResolver(liveServerProps) ? ((await liveServerProps(req, ctx.params)) ?? {}) : (liveServerProps ?? {});
+          if (isRedirect(resolved)) {
+            const redirectResponse = new Response(null, {
+              status: resolved.status,
+              headers: { Location: resolved.location },
+            });
+            return applyResolveOptions(redirectResponse, resolveOpts);
+          }
+          if (isFormFail(resolved) || isFormSuccess(resolved)) {
+            throw new Error(
+              `[mochi] Route "${pattern}" serverProps returned ${isFormFail(resolved) ? 'fail()' : 'success()'} — those are form-action results. ` +
+                `serverProps may return props or redirect(status, location).`,
+            );
+          }
+          const baseProps = resolved;
           const liveActions = pageConfigMap ? pageConfigMap.get(pattern)?.actions : actions;
           if (liveActions && 'form' in baseProps) {
             throw new Error(
@@ -985,7 +1001,7 @@ export class Mochi {
                 emitActionComplete(actionName, 'success', result.status);
                 return applyResolveOptions(result, resolveOpts);
               }
-              if (isFormRedirect(result)) {
+              if (isRedirect(result)) {
                 emitActionComplete(actionName, 'redirect', result.status);
                 if (enhanced) {
                   return jsonRedirect(result.status, result.location);

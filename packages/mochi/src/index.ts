@@ -189,6 +189,7 @@ export type {
   MochiFormActions,
   MochiFormActionHandler,
   MochiFormEvent,
+  MochiRedirect,
   MochiEnhanceOptions,
   MochiEnhanceResult,
   MochiFormShape,

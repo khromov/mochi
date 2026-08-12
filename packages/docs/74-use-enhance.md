@@ -55,6 +55,8 @@ Without a callback, `enhance` runs a minimal default per result type:
 | `redirect`    | `window.location.assign(result.location)`         |
 | `error`       | `console.error('[mochi] enhance:', result.error)` |
 
+The `error` log is not part of the replaceable fallback: it fires on every submission, before any callback runs, so a custom handler that only branches on `success`/`failure` cannot turn a transport or server error into a silent no-op.
+
 <Callout type="warning">
 
 **The default fallback is intentionally lean.** Mochi has no client-side `page.form` store, `goto`, or `invalidateAll`, so it cannot auto-update component props or re-run server data after a submission. Pass a `submit` callback to react to `failure` or to do anything beyond a redirect.
@@ -65,7 +67,7 @@ When the same component renders both as a hydrated island and as a plain SSR-onl
 
 ### Submit callback
 
-Pass a function. It runs once per submit and may return a result handler that replaces the default fallback:
+Pass a function. It runs once per submit and may return a result handler that replaces the default fallback for `success`, `failure`, and `redirect` (the `error` log above always fires):
 
 ```svelte
 <!-- file: src/Login.svelte -->
