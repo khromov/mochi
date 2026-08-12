@@ -53,7 +53,7 @@ Use `:name` for a single segment and `*` for a wildcard tail. Read matched value
 
 <Callout type="info">
 
-Patterns go to Bun's router as-is. A literal prefix inside a segment is not expressible: in `/profile/@:user` Bun treats `@:user` as literal text, so `/profile/@bob` never matches. Match `/profile/:user` instead — the param captures the whole segment, sigil included (`params.user === '@bob'`), and also matches `/profile/bob`. Guard and strip inline when you need the prefixed form only:
+A `:param` always captures the whole segment — you can't put literal text beside it. Bun reads `/profile/@:user` as literal text, so `/profile/@bob` never matches. Match `/profile/:user` instead; the sigil comes along in the param (`params.user === '@bob'`), and `/profile/bob` matches too. Guard and strip inline when you only want the prefixed form:
 
 ```ts
 serverProps: (_req, params) => {
