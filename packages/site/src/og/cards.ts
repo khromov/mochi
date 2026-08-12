@@ -74,7 +74,11 @@ const PAGE_WORDMARK = 44;
 const TITLE_TOP = 168;
 const TITLE_BOTTOM = 470;
 const RULE_Y = 506;
-const FOOTER_BASELINE = 556;
+const FOOTER_BASELINE = 558;
+/** Set larger than the root card's equivalents — this row is the only context a page card gives,
+ * and it has to survive being read as a thumbnail in a feed. */
+const FOOTER_KICKER_SIZE = 32;
+const FOOTER_URL_SIZE = 27;
 
 export interface PageCard {
   title: string;
@@ -107,13 +111,13 @@ export async function drawPageCard(ctx: SKRSContext2D, { title, kicker }: PageCa
   ctx.stroke();
 
   if (kicker) {
-    applyFont(ctx, { ...DEK, size: 26 });
+    applyFont(ctx, { ...DEK, size: FOOTER_KICKER_SIZE });
     ctx.textAlign = 'left';
     ctx.fillStyle = INK_MUTED;
     ctx.fillText(kicker, PAD, FOOTER_BASELINE);
   }
 
-  applyFont(ctx, URL);
+  applyFont(ctx, { ...URL, size: FOOTER_URL_SIZE });
   ctx.textAlign = 'right';
   ctx.fillStyle = INK_FAINT;
   ctx.fillText(SITE_HOST, CARD_WIDTH - PAD, FOOTER_BASELINE);
