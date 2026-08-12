@@ -34,7 +34,7 @@ export const routes: Record<string, MochiRouteValue> = {
       }
 
       const etag = `"${ogCacheKey(subject)}"`;
-      const headers = DEVELOPMENT
+      const headers: Record<string, string> = DEVELOPMENT
         ? { 'Content-Type': 'image/jpeg', 'Cache-Control': 'no-store' }
         : { 'Content-Type': 'image/jpeg', 'Cache-Control': 'public, max-age=86400, stale-while-revalidate=604800', ETag: etag };
       if (!DEVELOPMENT && request.headers.get('if-none-match') === etag) {
