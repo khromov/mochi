@@ -31,7 +31,8 @@ export async function resolveOgSubject(pathname: string): Promise<OgSubject | nu
   const docSlug = path.match(/^\/docs\/([^/]+)$/)?.[1];
   if (docSlug) {
     const doc = await getDoc(docSlug);
-    return doc && { kind: 'doc', title: doc.title };
+    // `ogTitle` exists for pages whose sidebar label is too terse to stand alone on a card.
+    return doc && { kind: 'doc', title: doc.ogTitle ?? doc.title };
   }
 
   const postSlug = path.match(/^\/blog\/([^/]+)$/)?.[1];

@@ -1,6 +1,7 @@
 ---
 title: 'Cache'
 slug: cache
+ogTitle: 'Caching with stale-while-revalidate'
 description: 'Cache server-side data with stale-while-revalidate semantics using MochiCache.'
 ---
 

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { ogImageFor } from '../lib/ogImageUrl.ts';
-import { loadDocs } from '../lib/docs.ts';
+import { getDoc, loadDocs } from '../lib/docs.ts';
 import { loadPosts } from '../lib/blog.ts';
 import { demos } from '../lib/demos.ts';
 import { resolveOgSubject } from './resolve.ts';
@@ -80,4 +80,19 @@ describe('every emitted card URL resolves', () => {
   test('the root card is addressed as /og/index.jpg', async () => {
     expect(await resolveOgSubject('/index')).toEqual({ kind: 'root', title: 'Mochi' });
   });
+
+  test(
+    'a doc card prefers ogTitle, leaving the sidebar label alone',
+    async () => {
+      const intro = await getDoc('intro');
+      expect(intro?.title).toBe('Welcome');
+      expect(await resolveOgSubject('/docs/intro')).toEqual({ kind: 'doc', title: 'Welcome to Mochi' });
+
+      // A doc without the override still cards under its own title.
+      const plain = (await loadDocs()).find((doc) => !doc.ogTitle);
+      expect(plain).toBeDefined();
+      expect(await resolveOgSubject(`/docs/${plain!.slug}`)).toEqual({ kind: 'doc', title: plain!.title });
+    },
+    REGISTRY_TIMEOUT,
+  );
 });

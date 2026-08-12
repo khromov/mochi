@@ -36,6 +36,8 @@ export interface DocMetadata {
   title: string;
   slug: string;
   description?: string;
+  /** Overrides `title` on the social card only, where there's no sidebar or breadcrumb for context. */
+  ogTitle?: string;
   order?: number;
 }
 
@@ -43,6 +45,7 @@ export interface DocEntry {
   slug: string;
   title: string;
   description?: string;
+  ogTitle?: string;
   order: number;
   filename: string;
   toc: TocEntry[];
@@ -112,6 +115,7 @@ export async function loadDocs(): Promise<DocEntry[]> {
       slug,
       title,
       description: metadata.description,
+      ogTitle: metadata.ogTitle,
       order,
       filename,
       toc,

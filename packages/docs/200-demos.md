@@ -1,6 +1,7 @@
 ---
 title: 'Demos'
 slug: demos
+ogTitle: 'Example apps built with Mochi'
 description: 'Production-style example apps demonstrating Mochi primitives like SSR, hydration, and real-time updates.'
 ---
 

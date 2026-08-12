@@ -1,6 +1,7 @@
 ---
 title: 'RawScript'
 slug: raw-script
+ogTitle: 'Inlining a file at SSR time with RawScript'
 description: 'Inline the raw contents of a file into the page at SSR time, addressed by a working-directory-relative path.'
 ---
 

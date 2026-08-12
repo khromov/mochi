@@ -1,6 +1,7 @@
 ---
 title: 'Images'
 slug: images
+ogTitle: 'On-the-fly image transforms'
 description: 'On-the-fly image transforms on Bun.Image via named sizes, with encrypted URLs and a stale-while-revalidate disk cache.'
 ---
 
