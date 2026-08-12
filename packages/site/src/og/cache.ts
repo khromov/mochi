@@ -1,8 +1,12 @@
+import { MochiCache } from 'mochi-framework';
 import { RENDERER_VERSION, renderOgCard, type OgSubject } from './render.ts';
 
 const DEVELOPMENT = process.env.MODE === 'development';
 
-const cards = new Map<string, Promise<Uint8Array<ArrayBuffer>>>();
+// Default in-memory storage — cards are cheap to redraw and the key space is the finite set of
+// resolvable site paths, so there is nothing worth persisting to disk. `fetch` coalesces concurrent
+// requests for a cold card into one render.
+const cache = new MochiCache({ minTimeToStale: 86_400_000, maxTimeToLive: 604_800_000 });
 
 export function ogCacheKey({ kind, title, date }: OgSubject): string {
   return new Bun.CryptoHasher('sha256').update(`og:v${RENDERER_VERSION}:${kind}:${title}:${date ?? ''}`).digest('base64url').slice(0, 22);
@@ -14,18 +18,5 @@ export function getOgCard(subject: OgSubject): Promise<Uint8Array<ArrayBuffer>> 
   if (DEVELOPMENT) {
     return renderOgCard(subject);
   }
-
-  const key = ogCacheKey(subject);
-  const hit = cards.get(key);
-  if (hit) {
-    return hit;
-  }
-
-  // Held as the promise, so concurrent requests for a cold card share one render.
-  const card = renderOgCard(subject).catch((error: unknown) => {
-    cards.delete(key);
-    throw error;
-  });
-  cards.set(key, card);
-  return card;
+  return cache.fetch(ogCacheKey(subject), () => renderOgCard(subject));
 }
