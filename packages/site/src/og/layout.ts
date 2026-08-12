@@ -105,8 +105,7 @@ export function fitText(ctx: SKRSContext2D, text: string, base: FontSpec, opts: 
     applyFont(ctx, spec);
     const lines = wrapBalanced(ctx, text, opts.maxWidth);
     const leading = size * opts.leading;
-    const fits =
-      lines.length <= opts.maxLines && lines.every((line) => measure(ctx, line) <= opts.maxWidth) && blockHeight(ctx, lines, leading) <= opts.maxHeight;
+    const fits = lines.length <= opts.maxLines && lines.every((line) => measure(ctx, line) <= opts.maxWidth) && blockHeight(ctx, lines, leading) <= opts.maxHeight;
     if (fits) {
       return { lines, spec, leading };
     }

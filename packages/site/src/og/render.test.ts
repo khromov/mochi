@@ -78,12 +78,7 @@ describe('layout', () => {
   });
 
   test('breaks a word too long for any size', () => {
-    const fitted = fitText(
-      ctx,
-      'Supercalifragilisticexpialidociousantidisestablishmentarianism'.repeat(3),
-      PAGE_TITLE_SPEC,
-      PAGE_TITLE_FIT,
-    );
+    const fitted = fitText(ctx, 'Supercalifragilisticexpialidociousantidisestablishmentarianism'.repeat(3), PAGE_TITLE_SPEC, PAGE_TITLE_FIT);
     applyFont(ctx, fitted.spec);
     for (const line of fitted.lines) {
       expect(ctx.measureText(line).width).toBeLessThanOrEqual(PAGE_TITLE_FIT.maxWidth);
