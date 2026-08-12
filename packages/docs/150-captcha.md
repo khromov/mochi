@@ -1,6 +1,7 @@
 ---
 title: 'Captcha'
 slug: captcha
+ogTitle: 'Slide-to-verify captcha, no third party'
 description: 'Slide-to-verify captcha with proof-of-work, replay protection, and no third-party service.'
 ---
 

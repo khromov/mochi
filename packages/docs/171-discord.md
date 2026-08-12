@@ -1,6 +1,7 @@
 ---
 title: 'Discord'
 slug: discord
+ogTitle: 'Join the Mochi Discord'
 description: 'Join the Mochi community on Discord.'
 ---
 

@@ -56,6 +56,7 @@ import { routes as leakTestRoutes } from './leak-test/routes';
 import { routes as islandDepthRoutes } from './demos/island-depth/routes';
 import { routes as loginRoutes } from './demos/login/routes';
 import { routes as mdsvexRoutes } from './demos/mdsvex/routes';
+import { routes as ogRoutes } from './og/routes';
 import { routes as nestedComponentsRoutes } from './demos/nested-components/routes';
 import { routes as nestedIslandsRoutes } from './demos/nested-islands/routes';
 import { routes as portableTextRoutes } from './demos/portable-text/routes';
@@ -222,7 +223,6 @@ export const routes: Record<string, MochiRouteValue> = {
   // The support form lives at support.mochi.fast (packages/support) — it needs an
   // SMTP config this site deliberately doesn't carry.
   '/support': Mochi.api(() => Response.redirect('https://support.mochi.fast/', 302)),
-  '/og': Mochi.page('./src/og/OgPage.svelte'),
   // Backs the live captcha embedded in the 0.8.0 blog post. Minting and verifying
   // happen here rather than in `/blog/:slug` so that route stays post-agnostic.
   '/api/captcha-demo/mint': Mochi.api(() => Response.json(mintCaptcha()), { rateLimit: { limit: 60, window: '1m' } }),
@@ -309,6 +309,7 @@ export const routes: Record<string, MochiRouteValue> = {
   ...chartsRoutes,
   ...chatRoutes,
   ...ciRoutes,
+  ...ogRoutes,
   ...clientOnlyRoutes,
   ...cookieVaryTestRoutes,
   ...cookiesRoutes,

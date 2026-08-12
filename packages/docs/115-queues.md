@@ -1,6 +1,7 @@
 ---
 title: 'Queues'
 slug: queues
+ogTitle: 'Background jobs with Mochi.queue()'
 description: 'Run background jobs with Mochi.queue(), backed by bun-boss on memory, SQLite, Postgres, or embedded PGlite storage.'
 ---
 
