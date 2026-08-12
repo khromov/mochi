@@ -2,9 +2,6 @@ import { RENDERER_VERSION, renderOgCard, type OgSubject } from './render.ts';
 
 const DEVELOPMENT = process.env.MODE === 'development';
 
-/** Bounded so a long-lived process can't accumulate one card per title. */
-const LIMIT = 64;
-
 const cards = new Map<string, Promise<Uint8Array<ArrayBuffer>>>();
 
 export function ogCacheKey({ kind, title, date }: OgSubject): string {
@@ -29,9 +26,6 @@ export function getOgCard(subject: OgSubject): Promise<Uint8Array<ArrayBuffer>> 
     cards.delete(key);
     throw error;
   });
-  if (cards.size >= LIMIT) {
-    cards.delete(cards.keys().next().value!);
-  }
   cards.set(key, card);
   return card;
 }
