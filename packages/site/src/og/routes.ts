@@ -19,9 +19,7 @@ export const routes: Record<string, MochiRouteValue> = {
     }),
   }),
 
-  // Mirrors the canonical path of the page it represents, so `mergeMetaTags` derives the URL without
-  // any page needing to know its own kind. A wildcard because Bun's router only binds whole
-  // segments, so `:slug.jpg` can't be expressed as a pattern.
+  // A wildcard because Bun's router only binds whole segments, so `:slug.jpg` is not expressible.
   '/og/*': Mochi.api(
     async ({ request, url }) => {
       // Bun matches the wildcard but exposes no param for it, so the tail comes off the pathname.
@@ -35,9 +33,6 @@ export const routes: Record<string, MochiRouteValue> = {
         error(404, `No page for OG card '${rest}'`);
       }
 
-      // The tag is a hash of the subject and the renderer version, so a revalidation can be answered
-      // without touching the cache or the canvas at all. Neither it nor the max-age survives into
-      // development, where the drawing code changes under a stable subject on every edit.
       const etag = `"${ogCacheKey(subject)}"`;
       const headers = DEVELOPMENT
         ? { 'Content-Type': 'image/jpeg', 'Cache-Control': 'no-store' }

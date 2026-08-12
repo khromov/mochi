@@ -3,8 +3,7 @@ import { applyFont, type FontSpec } from './fonts.ts';
 
 const measure = (ctx: SKRSContext2D, text: string) => ctx.measureText(text).width;
 
-/** Greedy wrap. Candidates are measured whole, never as a sum of word widths — every spec here has
- * non-zero tracking, and kerning across the space matters at display sizes. */
+// Candidates are measured whole: every spec has tracking, and kerning across the space matters.
 export function wrapGreedy(ctx: SKRSContext2D, text: string, maxWidth: number): string[] {
   const words = text.split(/\s+/).filter(Boolean);
   if (words.length === 0) {
@@ -25,11 +24,7 @@ export function wrapGreedy(ctx: SKRSContext2D, text: string, maxWidth: number): 
   return lines;
 }
 
-/**
- * Approximates `text-wrap: balance` the way browsers do — by narrowing the measuring width until the
- * ragged edge evens out, never by shrinking the type. Binary-searches the tightest width that still
- * wraps to the same number of lines.
- */
+/** Approximates text-wrap: balance by narrowing the measuring width, never by shrinking the type. */
 export function wrapBalanced(ctx: SKRSContext2D, text: string, maxWidth: number): string[] {
   const target = wrapGreedy(ctx, text, maxWidth);
   if (target.length < 2) {
@@ -51,8 +46,7 @@ export function wrapBalanced(ctx: SKRSContext2D, text: string, maxWidth: number)
   return best;
 }
 
-/** Splits a word too long to fit at any size. Uses a plain hyphen — Fraunces' latin subset has no
- * U+2010, so the typographic one rasterises as tofu. */
+// Plain hyphen: Fraunces' latin subset has no U+2010, which rasterises as tofu.
 export function breakLongWord(ctx: SKRSContext2D, word: string, maxWidth: number): string[] {
   const parts: string[] = [];
   let rest = word;
@@ -89,7 +83,6 @@ export interface FitOptions {
   maxHeight: number;
 }
 
-/** Ink height of a wrapped block: the first line's ascender to the last line's descender. */
 function blockHeight(ctx: SKRSContext2D, lines: string[], leading: number): number {
   if (lines.length === 0) {
     return 0;
@@ -105,11 +98,7 @@ export interface FittedText {
   leading: number;
 }
 
-/**
- * Steps the size down until the text fits `maxLines`. `opsz` has to track the size on every step —
- * that is what `font-optical-sizing: auto` does in a browser, and leaving it pinned would change the
- * letterforms as the title shrinks.
- */
+/** `opsz` tracks the size on every step — that is what font-optical-sizing: auto does in a browser. */
 export function fitText(ctx: SKRSContext2D, text: string, base: FontSpec, opts: FitOptions): FittedText {
   for (let size = base.size; size >= opts.minSize; size -= 2) {
     const spec = { ...base, size, opsz: size };

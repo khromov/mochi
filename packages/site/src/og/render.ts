@@ -23,8 +23,7 @@ const KICKERS: Record<Exclude<OgKind, 'root'>, string> = {
   page: '',
 };
 
-/** `2026-06-21` → `21.06.2026`. Reformatted as a string: the frontmatter is validated as a plain
- * date, and parsing it into a Date would shift it a day either side of UTC. */
+// Reformatted as a string; parsing into a Date would shift it a day either side of UTC.
 function formatDate(date: string): string {
   const [year, month, day] = date.split('-');
   return `${day}.${month}.${year}`;
@@ -46,8 +45,6 @@ export async function renderOgCard(subject: OgSubject): Promise<Uint8Array<Array
     await drawPageCard(ctx, { title: subject.title, kicker: kickerFor(subject) });
   }
 
-  // JPEG rather than PNG: the grain is incompressible, so the same card is ~1MB as a PNG. 84 keeps
-  // more of it than the hand-made `og-default.jpg` this replaces (measured sd 2.17 against its 1.5–2.1).
-  // Copied out of the native buffer so nothing retains the canvas.
+  // JPEG rather than PNG: the grain is incompressible, so the same card is ~1MB as a PNG.
   return new Uint8Array(await canvas.encode('jpeg', 84));
 }

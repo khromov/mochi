@@ -2,10 +2,7 @@ import { GlobalFonts, type SKRSContext2D } from '@napi-rs/canvas';
 import { fontFile } from '../lib/fontFile.ts';
 import { DISPLAY_AXES, WORDMARK_SIZE, WORDMARK_TRACKING_EM } from './brand.ts';
 
-/**
- * Registered under private family names so nothing here can accidentally resolve through the system
- * font list — Alpine, the production base image, ships none.
- */
+// Private family names so nothing resolves through the system font list — Alpine ships none.
 export const FRAUNCES = 'OG Fraunces';
 export const MONO = 'OG Mono';
 
@@ -26,10 +23,9 @@ export interface FontSpec {
 }
 
 /**
- * The only place `ctx.font` is set. Two Skia behaviours make a bare `ctx.font` wrong for Fraunces:
- * the CSS weight in the shorthand doesn't drive the `wght` axis (the face defaults to 900), and the
- * `opsz` axis stays at its 9 minimum instead of tracking the font size the way `font-optical-sizing:
- * auto` does in a browser. Both are pinned explicitly here.
+ * The only place `ctx.font` is set. A bare `ctx.font` is wrong for Fraunces twice over: the CSS
+ * weight doesn't drive the `wght` axis (it defaults to 900), and `opsz` stays at 9 instead of
+ * tracking the font size the way `font-optical-sizing: auto` does in a browser.
  */
 export function applyFont(ctx: SKRSContext2D, spec: FontSpec): void {
   ctx.font = `${spec.italic ? 'italic ' : ''}${spec.size}px "${spec.family}"`;
@@ -42,15 +38,11 @@ export function applyFont(ctx: SKRSContext2D, spec: FontSpec): void {
       : '';
 }
 
-/** `.og-logo` — 8rem Fraunces on the brand display axes. */
 export const WORDMARK: FontSpec = { family: FRAUNCES, size: WORDMARK_SIZE, tracking: WORDMARK_TRACKING_EM, ...DISPLAY_AXES };
 
-/** `.og-lede` — 3rem, the slot the dynamic title also uses. */
 export const LEDE: FontSpec = { family: FRAUNCES, size: 48, tracking: -0.003, wght: 400 };
 
-/** `.og-dek` — 1.85rem italic. */
 export const DEK: FontSpec = { family: FRAUNCES, size: 29.6, italic: true, tracking: 0.003, wght: 300 };
 
-/** `.og-url` — 1.4rem mono. The reference used the browser's `ui-monospace`; JetBrains Mono has the
- * same 0.6em advance, so the band lands within a pixel. */
+// JetBrains Mono stands in for the reference capture's ui-monospace; same 0.6em advance.
 export const URL: FontSpec = { family: MONO, size: 22.4, tracking: 0.04 };

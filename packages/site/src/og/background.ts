@@ -5,12 +5,7 @@ import { CARD_HEIGHT, CARD_WIDTH, GRADIENT_ANGLE_DEG, GRADIENT_FROM, GRADIENT_TO
 
 const NOISE_TILE = path.join(SITE_ROOT, 'src', 'og', 'assets', 'noise-240.png');
 
-/**
- * Chrome's `background-blend-mode` lands ~30% shy of the amplitude Skia's `soft-light` produces from
- * the same tile, so the capture is flattened toward its own mean to match the reference card's
- * measured grain (sd 3.03 on the green channel). Scaling around the mean leaves the tile's ~+15/255
- * lift over the gradient untouched.
- */
+// Skia's soft-light runs ~30% hotter than Chrome's; this matches the reference card's grain.
 const GRAIN_CONTRAST = 0.81;
 
 let tile: Promise<Canvas> | undefined;
@@ -35,10 +30,6 @@ async function noiseTile(): Promise<Canvas> {
   return canvas;
 }
 
-/**
- * CSS gradient-line geometry: the line runs through the box centre at `angle`, and its length is the
- * projection of the box onto it, so the stops land on the corners rather than the edges.
- */
 function gradientLine(width: number, height: number, angleDeg: number): [number, number, number, number] {
   const rad = (angleDeg * Math.PI) / 180;
   const dx = Math.sin(rad);
@@ -48,12 +39,8 @@ function gradientLine(width: number, height: number, angleDeg: number): [number,
   return [cx - (dx * length) / 2, cy - (dy * length) / 2, cx + (dx * length) / 2, cy + (dy * length) / 2];
 }
 
-/**
- * Paints `linear-gradient(135deg, …)` with the grain tiled over it at `soft-light`, matching the
- * `.og-canvas` / `.hero` background. The tile is a capture of the `feTurbulence` layer, so it already
- * carries the linearRGB→sRGB conversion SVG filters apply by default — which is where the card's
- * background gets its ~15/255 lift over the bare gradient stops.
- */
+/** The tile carries the linearRGB→sRGB conversion SVG filters apply, which is what lifts the
+ * reference background ~15/255 over the bare gradient stops. */
 export async function paintBackground(ctx: SKRSContext2D): Promise<void> {
   const gradient = ctx.createLinearGradient(...gradientLine(CARD_WIDTH, CARD_HEIGHT, GRADIENT_ANGLE_DEG));
   gradient.addColorStop(0, GRADIENT_FROM);

@@ -7,10 +7,9 @@ import { fitText, type FitOptions } from './layout.ts';
 
 const DANGO = path.join(SITE_ROOT, 'src', 'og', 'assets', 'dango.png');
 
-/** Ink box of the dango inside its artwork, so it can be placed by ink rather than by canvas. */
 const DANGO_ART = { size: 128, x: 5, y: 5, width: 120, height: 120 } as const;
 
-/** Wordmark geometry, in em of the wordmark's font size, measured off the reference card. */
+// Measured off the reference card, in em of the wordmark size.
 const DANGO_INK_EM = 0.9922;
 const DANGO_GAP_EM = 0.1641;
 const DANGO_RISE_EM = 0.875;
@@ -22,11 +21,7 @@ const inkWidth = (ctx: SKRSContext2D, text: string) => {
   return m.actualBoundingBoxLeft + m.actualBoundingBoxRight;
 };
 
-/**
- * Draws "🍡 mochi" with its ink box centred on `centreX` and the word sitting on `baseline`. The
- * emoji is a raster because it can only come from a colour-emoji font, which the production image
- * has none of.
- */
+// The emoji is a raster: it can only come from a colour-emoji font, which Alpine has none of.
 async function drawWordmark(ctx: SKRSContext2D, size: number, centreX: number, baseline: number): Promise<void> {
   applyFont(ctx, { ...WORDMARK, size });
   const word = ctx.measureText(WORDMARK_WORD);
@@ -52,11 +47,11 @@ function drawCentred(ctx: SKRSContext2D, lines: string[], spec: FontSpec, firstB
   lines.forEach((line, i) => ctx.fillText(line, CARD_WIDTH / 2, firstBaseline + i * leading));
 }
 
-/** The lede and dek of the site's own card, split exactly as `text-wrap: balance` broke them. */
+// Split exactly as text-wrap: balance broke them.
 export const ROOT_LEDE = ['A new SSR-first framework', 'for Svelte 5 and Bun.'];
 export const ROOT_DEK = ['Partial Hydration · Best-in-class performance · full', 'SSR support · Forms · Realtime WebSockets and SSE'];
 
-/** The homepage card: a port of `.og-canvas`, reproducing `public/og-default.png`. */
+/** Reproduces public/og-default.png. */
 export async function drawRootCard(ctx: SKRSContext2D): Promise<void> {
   await drawWordmark(ctx, WORDMARK_SIZE, CARD_WIDTH / 2, 226);
   drawCentred(ctx, ROOT_LEDE, LEDE, 312, 60, INK);
@@ -75,8 +70,7 @@ const TITLE_TOP = 172;
 const TITLE_BOTTOM = 468;
 const RULE_Y = 506;
 const FOOTER_BASELINE = 562;
-/** Set well above the root card's equivalents — the root card has four lines of type carrying the
- * message, where this row is all the context a page card gets, at thumbnail size in a feed. */
+// Larger than the root card: this row is all the context a page card gets, at thumbnail size.
 const FOOTER_KICKER_SIZE = 44;
 const FOOTER_URL_SIZE = 38;
 
@@ -85,7 +79,6 @@ export interface PageCard {
   kicker: string;
 }
 
-/** Exported so the layout tests assert against the sizes the card actually ships with. */
 export const PAGE_TITLE_SPEC: FontSpec = { ...LEDE, size: 76 };
 export const PAGE_TITLE_FIT: FitOptions = {
   maxWidth: CONTENT,
@@ -95,7 +88,6 @@ export const PAGE_TITLE_FIT: FitOptions = {
   maxHeight: TITLE_BOTTOM - TITLE_TOP,
 };
 
-/** Every other page: a small wordmark, the page's title set large and left-aligned, a footer rule. */
 export async function drawPageCard(ctx: SKRSContext2D, { title, kicker }: PageCard): Promise<void> {
   applyFont(ctx, { ...WORDMARK, size: PAGE_WORDMARK });
   const markWidth = PAGE_WORDMARK * (DANGO_INK_EM + DANGO_GAP_EM) + inkWidth(ctx, WORDMARK_WORD);
@@ -106,8 +98,6 @@ export async function drawPageCard(ctx: SKRSContext2D, { title, kicker }: PageCa
   ctx.textAlign = 'left';
   ctx.textBaseline = 'alphabetic';
   ctx.fillStyle = INK;
-  // Centred in the space between the wordmark and the rule, so a one-line title doesn't hang off
-  // the top while a three-line one still clears both.
   const ascent = ctx.measureText(fitted.lines[0] ?? 'H').actualBoundingBoxAscent;
   const block = ascent + (fitted.lines.length - 1) * fitted.leading;
   const first = (TITLE_TOP + TITLE_BOTTOM) / 2 - block / 2 + ascent;

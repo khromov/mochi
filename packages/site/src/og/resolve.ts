@@ -14,13 +14,8 @@ const FIXED: Record<string, OgSubject> = {
   '/ci': { kind: 'page', title: 'CI Status' },
 };
 
-/**
- * Maps a site path to the card's text. Titles come from the same registries the pages render from,
- * so a card can only ever exist for a real page — which is also what keeps the cache key space
- * finite and the endpoint un-poisonable.
- */
+/** Titles come from the registries the pages render from, so a card exists only for a real page. */
 export async function resolveOgSubject(pathname: string): Promise<OgSubject | null> {
-  // `/` has no path to mirror, so its card is addressed as `/og/index.jpg`.
   const path = pathname === '/index' ? '/' : pathname.replace(/\/+$/, '') || '/';
 
   const fixed = FIXED[path];
@@ -31,7 +26,6 @@ export async function resolveOgSubject(pathname: string): Promise<OgSubject | nu
   const docSlug = path.match(/^\/docs\/([^/]+)$/)?.[1];
   if (docSlug) {
     const doc = await getDoc(docSlug);
-    // `ogTitle` exists for pages whose sidebar label is too terse to stand alone on a card.
     return doc && { kind: 'doc', title: doc.ogTitle ?? doc.title };
   }
 
@@ -42,8 +36,6 @@ export async function resolveOgSubject(pathname: string): Promise<OgSubject | nu
   }
 
   if (path.startsWith('/demos/')) {
-    // `href` carries a trailing slash and some demos live under a nested path, so match on prefix
-    // the same way DemoPage resolves its own source entry.
     const demo = demos.find((d) => `${path}/` === d.href);
     return demo ? { kind: 'demo', title: demo.title } : null;
   }
