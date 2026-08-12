@@ -82,6 +82,16 @@ describe('every emitted card URL resolves', () => {
   });
 
   test(
+    'a post carries its date through to the card',
+    async () => {
+      const [post] = await loadPosts();
+      expect(post).toBeDefined();
+      expect(await resolveOgSubject(`/blog/${post!.slug}`)).toEqual({ kind: 'blog', title: post!.title, date: post!.date });
+    },
+    REGISTRY_TIMEOUT,
+  );
+
+  test(
     'a doc card prefers ogTitle, leaving the sidebar label alone',
     async () => {
       const intro = await getDoc('intro');

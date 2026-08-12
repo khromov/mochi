@@ -97,7 +97,7 @@ describe('renderOgCard', () => {
       for (const subject of [
         { kind: 'root', title: 'Mochi' },
         { kind: 'doc', title: 'Defining routes' },
-        { kind: 'blog', title: 'Mochi 0.8.0' },
+        { kind: 'blog', title: 'Mochi 0.8.0', date: '2026-06-21' },
         { kind: 'demo', title: 'Hello World' },
       ] as const) {
         const bytes = await renderOgCard(subject);

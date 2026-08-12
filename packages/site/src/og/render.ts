@@ -11,6 +11,8 @@ export type OgKind = 'root' | 'doc' | 'blog' | 'demo' | 'page';
 export interface OgSubject {
   kind: OgKind;
   title: string;
+  /** A post's `YYYY-MM-DD` frontmatter date, appended to the kicker. */
+  date?: string;
 }
 
 const KICKERS: Record<Exclude<OgKind, 'root'>, string> = {
@@ -21,6 +23,18 @@ const KICKERS: Record<Exclude<OgKind, 'root'>, string> = {
   page: '',
 };
 
+/** `2026-06-21` → `21.06.2026`. Reformatted as a string: the frontmatter is validated as a plain
+ * date, and parsing it into a Date would shift it a day either side of UTC. */
+function formatDate(date: string): string {
+  const [year, month, day] = date.split('-');
+  return `${day}.${month}.${year}`;
+}
+
+function kickerFor({ kind, date }: OgSubject): string {
+  const label = KICKERS[kind as Exclude<OgKind, 'root'>];
+  return date ? `${label} · ${formatDate(date)}` : label;
+}
+
 export async function renderOgCard(subject: OgSubject): Promise<Uint8Array<ArrayBuffer>> {
   const canvas = createCanvas(CARD_WIDTH, CARD_HEIGHT);
   const ctx = canvas.getContext('2d');
@@ -29,7 +43,7 @@ export async function renderOgCard(subject: OgSubject): Promise<Uint8Array<Array
   if (subject.kind === 'root') {
     await drawRootCard(ctx);
   } else {
-    await drawPageCard(ctx, { title: subject.title, kicker: KICKERS[subject.kind] });
+    await drawPageCard(ctx, { title: subject.title, kicker: kickerFor(subject) });
   }
 
   // JPEG rather than PNG: the grain is incompressible, so the same card is ~1MB as a PNG. 84 keeps

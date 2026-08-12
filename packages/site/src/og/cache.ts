@@ -28,8 +28,8 @@ const cache = new MochiCache({
 const HOT_LIMIT = 64;
 const hot = new Map<string, Uint8Array<ArrayBuffer>>();
 
-export function ogCacheKey({ kind, title }: OgSubject): string {
-  return new Bun.CryptoHasher('sha256').update(`og:v${RENDERER_VERSION}:${kind}:${title}`).digest('base64url').slice(0, 22);
+export function ogCacheKey({ kind, title, date }: OgSubject): string {
+  return new Bun.CryptoHasher('sha256').update(`og:v${RENDERER_VERSION}:${kind}:${title}:${date ?? ''}`).digest('base64url').slice(0, 22);
 }
 
 export async function getOgCard(subject: OgSubject): Promise<Uint8Array<ArrayBuffer>> {

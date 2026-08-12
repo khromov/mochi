@@ -38,7 +38,7 @@ export async function resolveOgSubject(pathname: string): Promise<OgSubject | nu
   const postSlug = path.match(/^\/blog\/([^/]+)$/)?.[1];
   if (postSlug) {
     const post = await getPost(postSlug, { includeDrafts: DEVELOPMENT });
-    return post && { kind: 'blog', title: post.title };
+    return post && { kind: 'blog', title: post.title, date: post.date };
   }
 
   if (path.startsWith('/demos/')) {
