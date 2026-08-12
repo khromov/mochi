@@ -1,57 +1,37 @@
-import path from 'node:path';
-import { FileStorage, MochiCache, isBlobRef, readBlobRef } from 'mochi-framework';
-import { SITE_ROOT } from '../lib/siteRoot.ts';
 import { RENDERER_VERSION, renderOgCard, type OgSubject } from './render.ts';
-
-/**
- * A sibling of the framework's image cache rather than a subdirectory of it — that tree has its own
- * sweeper, and these entries are not image variants.
- */
-const CACHE_DIR =
-  process.env.MOCHI_OG_CACHE_DIR ??
-  (process.env.MOCHI_IMAGE_CACHE_DIR ? path.join(path.dirname(process.env.MOCHI_IMAGE_CACHE_DIR), 'og-cache') : path.join(SITE_ROOT, '.mochi', 'og-cache'));
 
 const DEVELOPMENT = process.env.MODE === 'development';
 
-const MAX_TIME_TO_LIVE = 2_592_000_000;
+/** Bounded so a long-lived process can't accumulate one card per title. */
+const LIMIT = 64;
 
-const cache = new MochiCache({
-  minTimeToStale: 86_400_000,
-  maxTimeToLive: MAX_TIME_TO_LIVE,
-  storage: new FileStorage({ directory: CACHE_DIR, offloadBinary: true, maxAge: MAX_TIME_TO_LIVE }),
-  // The site runs more than one process; without this a cold deploy has each of them rendering the
-  // same card at the same moment.
-  crossProcessInflight: true,
-});
-
-/** Bounded so a long-lived process can't accumulate one card per title in memory. */
-const HOT_LIMIT = 64;
-const hot = new Map<string, Uint8Array<ArrayBuffer>>();
+const cards = new Map<string, Promise<Uint8Array<ArrayBuffer>>>();
 
 export function ogCacheKey({ kind, title, date }: OgSubject): string {
   return new Bun.CryptoHasher('sha256').update(`og:v${RENDERER_VERSION}:${kind}:${title}:${date ?? ''}`).digest('base64url').slice(0, 22);
 }
 
-export async function getOgCard(subject: OgSubject): Promise<Uint8Array<ArrayBuffer>> {
-  const key = ogCacheKey(subject);
-
-  // The key covers the subject and RENDERER_VERSION but not the drawing code, so while iterating on
-  // the design every edit would otherwise serve the pre-edit card until someone bumped the version.
+export function getOgCard(subject: OgSubject): Promise<Uint8Array<ArrayBuffer>> {
+  // The key covers the subject, not the drawing code, so a design edit would otherwise serve the
+  // pre-edit card until someone bumped RENDERER_VERSION.
   if (DEVELOPMENT) {
     return renderOgCard(subject);
   }
 
-  const cached = hot.get(key);
-  if (cached) {
-    return cached;
+  const key = ogCacheKey(subject);
+  const hit = cards.get(key);
+  if (hit) {
+    return hit;
   }
 
-  const stored = await cache.fetch(key, () => renderOgCard(subject));
-  const bytes = isBlobRef(stored) ? new Uint8Array(await readBlobRef(stored)) : (stored as Uint8Array<ArrayBuffer>);
-
-  if (hot.size >= HOT_LIMIT) {
-    hot.delete(hot.keys().next().value!);
+  // Held as the promise, so concurrent requests for a cold card share one render.
+  const card = renderOgCard(subject).catch((error: unknown) => {
+    cards.delete(key);
+    throw error;
+  });
+  if (cards.size >= LIMIT) {
+    cards.delete(cards.keys().next().value!);
   }
-  hot.set(key, bytes);
-  return bytes;
+  cards.set(key, card);
+  return card;
 }

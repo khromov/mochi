@@ -75,9 +75,7 @@ ENV MOCHI_DOCKER=true
 # build cache is wiped on every boot). Pre-created + chowned so a mounted volume
 # inherits bun:bun; the site reads MOCHI_IMAGE_CACHE_DIR for image.cacheDir.
 ENV MOCHI_IMAGE_CACHE_DIR=/data/image-cache
-# Rendered OG cards live beside it rather than inside it — that tree has its own sweeper.
-ENV MOCHI_OG_CACHE_DIR=/data/og-cache
-RUN mkdir -p /data/image-cache /data/og-cache && chown -R bun:bun /data
+RUN mkdir -p /data/image-cache && chown -R bun:bun /data
 
 USER bun
 EXPOSE ${PORT}/tcp
