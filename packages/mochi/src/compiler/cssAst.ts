@@ -1,7 +1,6 @@
 // eslint-disable-next-line @typescript-eslint/triple-slash-reference
 /// <reference path="../css-tree.d.ts" />
-import type { Atrule, CssNode, FunctionNode, UnicodeRange, Value } from 'css-tree';
-import parse from 'css-tree/parser';
+import parse, { type Atrule, type CssNode, type FunctionNode, type UnicodeRange, type Value } from 'css-tree/parser';
 import walk from 'css-tree/walker';
 
 /** Half-open `[start, end)` offsets into the parsed CSS. */
