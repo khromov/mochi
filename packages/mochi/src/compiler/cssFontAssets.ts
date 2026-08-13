@@ -8,10 +8,8 @@ import type { BunPlugin } from 'bun';
  * base64-encoded font.
  */
 export interface FontRef {
-  /** Absolute path Bun resolved for the reference. */
   path: string;
   size: number;
-  /** base64 of the marker bytes, i.e. the payload of the marker's `data:` URI in the bundled CSS. */
   markerB64: string;
 }
 
@@ -35,11 +33,9 @@ export function fontContentHash(bytes: Uint8Array): string {
 }
 
 /**
- * Bun's CSS bundler base64-inlines every `url()` unconditionally and ignores `loader: 'file'`, but it does run plugin
- * hooks for the references it resolves. Fonts above the threshold get their bytes swapped for a unique marker at
- * `onLoad`, so the bundler still owns discovery and resolution while the bundled CSS stays tiny; fonts at or below it
- * fall through and inline for real. (`onResolve` + `external: true` is no way out either: it stops the inlining but
- * prints the original specifier, discarding the rewritten path — verified on Bun 1.3.14.)
+ * Bun's CSS bundler base64-inlines every `url()` unconditionally and ignores `loader: 'file'`, but does run plugin
+ * hooks for resolved references — fonts above the threshold get their bytes swapped for a unique marker at `onLoad`,
+ * keeping the bundler in charge of discovery while the bundled CSS stays tiny.
  */
 export function createFontMarkerPlugin(inlineThreshold: number): { plugin: BunPlugin; refs: FontRef[] } {
   const refs: FontRef[] = [];
@@ -134,7 +130,7 @@ function classifyFormat(source: ParsedSource, urlValue: string | undefined, refF
 /**
  * Classify the marker `data:` URIs a {@link createFontMarkerPlugin} build left in the bundled CSS: prune legacy woff
  * sources, decide preload-worthiness per `@font-face` block, and report every ref still referenced so the caller can
- * emit those files and substitute their `markerUri` with the final served URL. Pure with respect to the filesystem.
+ * emit those files and substitute their `markerUri` with the final served URL.
  */
 export function classifyFontAssets(css: string, refs: FontRef[], opts: { dropLegacyWoff: boolean }): { css: string; fonts: SurvivingFont[] } {
   // No zero-refs early return: legacy-woff pruning must still run when every font inlined for real (all under the
@@ -227,16 +223,14 @@ export function classifyFontAssets(css: string, refs: FontRef[], opts: { dropLeg
 }
 
 /**
- * Swap every `url()` holding the marker URI for the served URL. Inside `@font-face` blocks {@link classifyFontAssets}
- * re-quoted the URI itself, but outside them the quoting is whatever Bun's printer chose (unquoted under minify), so
- * this tolerates all three forms. Callers should treat a marker still present afterwards as a hard error.
+ * Swap every `url()` holding the marker URI for the served URL; outside `@font-face` blocks (which
+ * {@link classifyFontAssets} re-quotes) the quoting is whatever Bun's printer chose, so this tolerates all three forms.
  */
 export function substituteFontUrl(css: string, markerUri: string, fontUrl: string): string {
   const escaped = markerUri.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return css.replace(new RegExp(String.raw`url\(\s*(["']?)${escaped}\1\s*\)`, 'g'), `url(${fontUrl})`);
 }
 
-/** Content-hashed served basename for a surviving font, from the path the bundler resolved. */
 export function fontAssetFileName(ref: FontRef, bytes: Uint8Array): string {
   const ext = path.extname(ref.path);
   const base = path.basename(ref.path, ext).replace(/[^\w-]/g, '-');

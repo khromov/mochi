@@ -618,11 +618,10 @@ export interface MochiServeOptions {
    */
   barrelWarnings?: boolean | MochiBarrelWarningOptions;
   /**
-   * Font handling for side-effect CSS imports (`import '@fontsource/inter'`, `import './lobster.css'`). Bun's CSS bundler
-   * inlines every `url()` as a base64 `data:` URI, so Mochi extracts fonts above `inlineThreshold` back into separate
-   * content-hashed files served from `<assetPrefix>/fonts/*`, drops legacy `woff` sources when the face also offers
-   * `woff2`, and preloads latin-visible woff2 faces from the page `<head>`. See `MochiFontOptions` for the knobs;
-   * `mochi-framework build` reads this from your entry, so build and serve stay in sync.
+   * Font handling for side-effect CSS imports (`import '@fontsource/inter'`, `import './lobster.css'`): Bun's CSS bundler
+   * inlines every `url()` as a base64 `data:` URI, so Mochi extracts fonts above `inlineThreshold` into separate
+   * content-hashed files, drops legacy `woff` sources when `woff2` is offered, and preloads latin-visible woff2 faces.
+   * See `MochiFontOptions` for the knobs.
    */
   fonts?: MochiFontOptions;
   /**
@@ -637,7 +636,7 @@ export interface MochiServeOptions {
 export interface MochiFontOptions {
   /**
    * Fonts at or below this byte size stay inlined in the bundled CSS as `data:` URIs; larger ones are emitted as
-   * separate content-hashed files. Default: 4096. Pass `Infinity` to restore full inlining.
+   * separate content-hashed files. Default: 4096, or `Infinity` to restore full inlining.
    */
   inlineThreshold?: number;
   /** Drop legacy `format('woff')` sources from `@font-face` `src:` lists that also offer `woff2`. Default: `true`. */

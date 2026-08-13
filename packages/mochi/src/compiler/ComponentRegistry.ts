@@ -418,7 +418,7 @@ export class ComponentRegistry {
   private localImageAssets: Map<string, LocalImageAsset> = new Map();
   /** Maps served font URL → binary font extracted from a bundled CSS import's `data:` URIs. */
   private fontAssets: Map<string, { diskPath: string; contentType: string }> = new Map();
-  /** Superseded font URLs, append-only so dev HTML rendered before a re-bundle keeps resolving them; empty in production (see `retireFontAssets`), never serialized. */
+  /** Superseded font URLs, kept so dev HTML rendered before a re-bundle keeps resolving them. */
   private readonly devStaleFontAssets: Map<string, { diskPath: string; contentType: string }> = new Map();
   /** Maps resolved CSS-import path → served URLs of its preload-worthy extracted fonts (woff2, latin-visible). */
   private importedCssFontPreloads: Map<string, string[]> = new Map();
@@ -1926,11 +1926,7 @@ export class ComponentRegistry {
     this.importedCssFontPreloads.clear();
   }
 
-  /**
-   * Same contract as the `localImageAssets` note above, and it also covers the async gap while a re-bundle repopulates
-   * `fontAssets`: old hashed URLs keep serving from `devStaleFontAssets`, while the manifest reads only the live map.
-   * Dev-only by construction — production never re-bundles, so retiring there would only mask a real missing asset.
-   */
+  /** Dev-only: bridges the async gap during a re-bundle by keeping old hashed font URLs resolvable via `devStaleFontAssets` while the manifest reads only the live map. */
   private retireFontAssets(): void {
     if (this.development) {
       for (const [url, asset] of this.fontAssets) {

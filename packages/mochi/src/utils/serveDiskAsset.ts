@@ -1,9 +1,7 @@
 /**
- * Response builder shared by every registered disk-backed asset route (extracted fonts, locally-imported images), so
- * serving policy lives in one place. An unregistered URL or a registered one whose file is gone (wiped outDir under a
- * live server, partially copied build) is a 404, not the 500 Bun.file's lazy ENOENT would surface as. Registered names
- * are content-hashed, so production marks them immutable while dev omits caching and replacements appear on the next
- * request.
+ * Shared response builder for every disk-backed asset route (extracted fonts, locally-imported images): a miss or a
+ * file gone from disk 404s rather than surfacing Bun.file's lazy ENOENT as a 500, and content-hashed names get an
+ * immutable `Cache-Control` in production only.
  */
 export async function serveDiskAsset(info: { diskPath: string; contentType: string } | undefined, development: boolean): Promise<Response> {
   const notFound = (): Response => new Response('Not found', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });

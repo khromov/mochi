@@ -276,7 +276,6 @@ export class Mochi {
       logLevel: LogLevel;
       /** Reads the current shell template (reassigned on dev shell edits). */
       getTemplate: () => string;
-      /** Emit `<link rel="preload" as="font">` for the page's extracted woff2 fonts. */
       fontPreload: boolean;
     },
   ): (result: RenderResult, opts?: { debugInfo?: DebugBarData; pageEntry?: string }) => string {
