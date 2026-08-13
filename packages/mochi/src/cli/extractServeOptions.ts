@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { freshImport } from '../compiler/freshImport';
+import { runInEntryImportScope } from '../utils/buildFlag';
 import type { MochiServeOptions } from '../types';
 
 // Thrown by the capturing serve() stub to unwind the entry module's top-level
@@ -66,6 +67,9 @@ export async function extractServeOptions(entryPath: string, opts?: { fresh?: bo
             ...realMod,
             default: (realMod as { default?: unknown }).default ?? realMod,
             Mochi: mochiProxy,
+            // Overridden rather than read from `realMod`, whose namespace is snapshotted here: only the module graph
+            // imported for extraction is "building", so a dev-watcher re-import must not flip the flag process-wide.
+            isBuilding: true,
           },
         }));
       },
@@ -75,11 +79,15 @@ export async function extractServeOptions(entryPath: string, opts?: { fresh?: bo
 
   captured = null;
   try {
-    if (opts?.fresh) {
-      await freshImport(entryPath);
-    } else {
-      await import(Bun.pathToFileURL(entryPath).href);
-    }
+    // Scoped, not a process-wide flag: the dev watcher calls this inside a live server, where the entry's side effects
+    // must be suppressed only for the duration of the import.
+    await runInEntryImportScope(async () => {
+      if (opts?.fresh) {
+        await freshImport(entryPath);
+      } else {
+        await import(Bun.pathToFileURL(entryPath).href);
+      }
+    });
   } catch (err) {
     if (!isHalt(err)) {
       throw err;

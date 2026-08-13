@@ -3,9 +3,8 @@ import { FileStorage, MochiCache, logger } from 'mochi-framework';
 import { CI_ACTIONS_URL, CI_BRANCH, CI_REPO } from '../ci/repo';
 import { SITE_ROOT } from './siteRoot';
 
-// Reads the public GitHub Actions API unauthenticated, which is capped at 60
-// requests/hour per source IP. Set GITHUB_TOKEN (Bun auto-loads .env) to raise
-// that to 5000/hour — entirely optional, the dashboard works without it.
+// Reads the public GitHub Actions API unauthenticated (60 requests/hour per IP cap);
+// set GITHUB_TOKEN to raise that to 5000/hour — entirely optional.
 
 export const CI_API_BASE = 'https://api.github.com';
 
@@ -16,7 +15,7 @@ export interface CiRun {
   id: number;
   runNumber: number;
   status: string;
-  /** `null` while the run is still in flight — always check `status` first. */
+  // `null` while the run is still in flight — always check `status` first.
   conclusion: string | null;
   event: string;
   title: string;
@@ -31,9 +30,9 @@ export interface CiWorkflow {
   name: string;
   path: string;
   runsUrl: string;
-  /** Newest first. Empty is legitimate — a PR-only workflow never runs on main. */
+  // Newest first. Empty is legitimate — a PR-only workflow never runs on main.
   runs: CiRun[];
-  /** Set when this one workflow's runs could not be fetched. */
+  // Set when this one workflow's runs could not be fetched.
   error?: string;
 }
 
@@ -49,17 +48,18 @@ export interface CiDashboardData {
   fetchedAt: string;
   workflows: CiWorkflow[];
   rateLimit: CiRateLimit | null;
-  /** At least one workflow failed to load but the rest of the board is usable. */
+  // `null` when the repo's star count couldn't be fetched — the rest of the board is unaffected.
+  stars: number | null;
+  // At least one workflow failed to load but the rest of the board is usable.
   partial: boolean;
 }
 
 const ciCache = new MochiCache({
   minTimeToStale: 3_600_000, // 1h — after this, serve stale and refresh in the background
   maxTimeToLive: 21_600_000, // 6h — keep serving the last-good board through a GitHub outage
-  // Warmup hits every static page pattern on boot, so each dev restart spends 8 of the
-  // 60 hourly calls before anyone visits. Persisting to disk makes restarts free. Prod is
-  // long-lived so it gains nothing, and FileStorage mkdirs synchronously at construction —
-  // under `bun test` MODE is unset, which keeps tests off the filesystem entirely.
+  // Warmup burns 8 of the 60 hourly GitHub calls on every dev restart, so persist to disk
+  // to make restarts free; skipped outside dev since prod is long-lived and `bun test`
+  // leaves MODE unset, keeping tests off the filesystem.
   ...(DEVELOPMENT
     ? {
         storage: new FileStorage({
@@ -126,6 +126,10 @@ interface RawWorkflow {
   state: string;
 }
 
+interface RawRepo {
+  stargazers_count: number;
+}
+
 interface RawRun {
   id: number;
   run_number: number;
@@ -167,6 +171,11 @@ async function fetchWorkflowList(): Promise<RawWorkflow[]> {
   return (body.workflows ?? []).filter((w) => w.state === 'active');
 }
 
+async function fetchRepoStars(): Promise<number> {
+  const body = (await ghFetch(`/repos/${CI_REPO}`)) as RawRepo;
+  return body.stargazers_count;
+}
+
 async function fetchRuns(workflowId: number): Promise<CiRun[]> {
   const body = (await ghFetch(`/repos/${CI_REPO}/actions/workflows/${workflowId}/runs?per_page=${RUNS_PER_WORKFLOW}&branch=${CI_BRANCH}`)) as {
     workflow_runs?: RawRun[];
@@ -174,17 +183,17 @@ async function fetchRuns(workflowId: number): Promise<CiRun[]> {
   return (body.workflow_runs ?? []).map(normalizeRun);
 }
 
-function buildDashboard(list: RawWorkflow[], settled: PromiseSettledResult<CiRun[]>[]): CiDashboardData {
+function buildDashboard(list: RawWorkflow[], settled: PromiseSettledResult<CiRun[]>[], stars: number | null): CiDashboardData {
   const workflows: CiWorkflow[] = list
     .map((raw, i): CiWorkflow => {
       const result = settled[i];
       const base = { id: raw.id, name: raw.name, path: raw.path, runsUrl: workflowRunsUrl(raw.path) };
       return result?.status === 'fulfilled' ? { ...base, runs: result.value } : { ...base, runs: [], error: String(result?.reason ?? 'unknown error') };
     })
-    // A pull_request-only workflow never runs on this branch, so it has no status to
-    // report — drop it rather than show a permanently blank card. Keyed off the empty
-    // result, not a workflow name, so it holds for any future PR-only workflow. A
-    // fetch failure is different: that one keeps its card and says so.
+    // A pull_request-only workflow never runs on this branch, so drop it rather than show
+    // a permanently blank card — keyed off the empty result, not a workflow name, so it
+    // holds for any future PR-only workflow. A fetch failure is different: that one keeps
+    // its card and says so.
     .filter((w) => w.runs.length > 0 || w.error !== undefined);
 
   // Most-recently-active first.
@@ -196,6 +205,7 @@ function buildDashboard(list: RawWorkflow[], settled: PromiseSettledResult<CiRun
     fetchedAt: new Date().toISOString(),
     workflows,
     rateLimit: lastRateLimit,
+    stars,
     partial: workflows.some((w) => w.error !== undefined),
   };
 }
@@ -208,14 +218,16 @@ export async function getCiDashboard(): Promise<CiDashboardData | null> {
     return await ciCache.fetch(CACHE_KEY, async () => {
       // The workflow list is the spine — without it there is nothing to render.
       const list = await fetchWorkflowList();
-      const settled = await Promise.allSettled(list.map((w) => fetchRuns(w.id)));
+      // Stars ride alongside the runs; an isolated rejection just hides the tile.
+      const [starsResult, ...settled] = await Promise.allSettled([fetchRepoStars(), ...list.map((w) => fetchRuns(w.id))]);
+      const stars = starsResult.status === 'fulfilled' ? starsResult.value : null;
 
       // A rejection is a failure; an empty array is not. Caching an all-rejected board
       // would show a convincing "nothing has ever run" for the next hour.
       if (settled.length > 0 && settled.every((r) => r.status === 'rejected')) {
         throw new Error('every workflow runs fetch failed');
       }
-      return buildDashboard(list, settled);
+      return buildDashboard(list, settled, stars);
     });
   } catch (err) {
     // GitHub being unreachable must never break the page — the route renders the

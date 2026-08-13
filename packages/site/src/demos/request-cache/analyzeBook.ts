@@ -1,10 +1,6 @@
 import { requestMemo } from 'mochi-framework';
 
-// The text of Robinson Crusoe, read once at module load and trimmed to Defoe's
-// prose — the Project Gutenberg header/footer is boilerplate that would skew the
-// word counts (and hand "unenforceability" the longest-word crown). The file
-// read is one-time setup; the expensive, repeated work is analyze() below — that
-// is what gets memoized.
+// Trimmed to Defoe's prose — the Gutenberg header/footer would skew word counts (and crown "unenforceability" longest word).
 const RAW = await Bun.file('./src/demos/request-cache/robinson-crusoe.txt').text();
 const bodyStart = RAW.indexOf('***', RAW.indexOf('*** START OF') + 3) + 3;
 const BOOK = RAW.slice(bodyStart, RAW.indexOf('*** END OF'));
@@ -35,11 +31,7 @@ export interface Analysis {
   hapax: number;
 }
 
-/**
- * The heavy pass: tokenize the whole book, count every word, split sentences,
- * and derive all five facets in one sweep. ~16–25ms of pure CPU — the unit of
- * work we want to run once, not once per facet.
- */
+// ~16-25ms of pure CPU per call — this is the unit of work requestMemo() below runs once instead of once per facet.
 function analyze(text: string): Analysis {
   const words = text.toLowerCase().match(/[a-z']+/g) ?? [];
   const freq = new Map<string, number>();
@@ -86,16 +78,8 @@ function analyze(text: string): Analysis {
   };
 }
 
-/**
- * The whole-book analysis, memoized for the duration of one request. Zero args
- * means a single shared entry: however many of the facet helpers below get
- * called, and from however many components, the book is parsed exactly once per
- * request — the first call is a miss, every other call is a hit.
- */
+// Zero-arg key means one shared cache entry — however many facet helpers below call this, the book parses once per request.
 const analyzeCached = requestMemo(() => analyze(BOOK), { namespace: 'demo:crusoe' });
-
-// Five independent facets. Each is its own consumer that asks for the whole
-// analysis and keeps just its slice — five calls, one parse.
 
 export interface Overview {
   words: number;

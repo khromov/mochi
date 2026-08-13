@@ -11,11 +11,8 @@ export interface BoardSeed {
 const POLL_MS = 300_000;
 const TICK_MS = 15_000;
 
-/**
- * Live CI board state, shared by the full page and the compact dashboard.
- * `now` is seeded from the server: a bare Date.now() would run during SSR *and* again
- * on hydration, so every relative timestamp would mismatch.
- */
+/** `now` is seeded from the server: a bare `Date.now()` would run during SSR *and* again
+ * on hydration, so every relative timestamp would mismatch. */
 export function createCiBoard(seed: BoardSeed) {
   let dashboard = $state(seed.dashboard);
   let rateLimit = $state(seed.rateLimit);

@@ -14,6 +14,7 @@ export { runTests } from './cli/testing';
 export type { RunTestsOptions } from './cli/testing';
 export type { MochiSvelteConfig } from './compiler/svelteConfig';
 export type { MochiSvelteCompiler, SvelteCompilerBackend, SvelteCompileOutput } from './compiler/svelteCompilerBackend';
+export type { ShakeAppResult, SvelteShakerBackend } from './compiler/svelteShaker';
 export { getRequestContext } from './runtime/requestContext';
 export type { MochiRequestContext } from './runtime/requestContext';
 export { getMochiConfig } from './mochiConfig';
@@ -48,6 +49,8 @@ export { consoleLogger, silenceInternalRoutes } from './dev/consoleLogger';
 export type { ConsoleLoggerOptions } from './dev/consoleLogger';
 export { logger, setLogLevel, getLogLevel } from './utils/log';
 export type { LogLevel } from './utils/log';
+export { pinGlobal } from './utils/globalState';
+export { isBuilding } from './utils/buildFlag';
 export { mochiEvents, hasSubscribers } from './events';
 export type { MochiCompileError } from './compiler/ComponentRegistry';
 export type {
@@ -79,6 +82,7 @@ export type {
   MochiCacheRevalidateFailedEvent,
   MochiCacheErrorEvent,
   MochiQueueAddedEvent,
+  MochiQueueAddedBulkEvent,
   MochiQueueActiveEvent,
   MochiQueueCompletedEvent,
   MochiQueueFailedEvent,
@@ -106,9 +110,22 @@ export type {
   MochiCaptchaVerifyEvent,
   MochiCaptchaReason,
 } from './events';
-export type { MochiQueue, MochiJob, MochiJobRef, MochiJobOptions, MochiQueueOptions, MochiQueueRuntimeOptions, MochiQueueListeners, MochiProcessor } from './queue';
-export { DEFAULT_RECOVERY_STALL_WARNING_MS, DEFAULT_LOCK_DURATION_MS } from './queue';
-export { json, error, apiError } from './utils';
+export type {
+  MochiQueue,
+  MochiQueueDescriptor,
+  MochiWorker,
+  MochiJob,
+  MochiJobOptions,
+  MochiQueueOptions,
+  MochiQueueRuntimeOptions,
+  MochiWorkerTuning,
+  MochiQueueListeners,
+  MochiProcessor,
+  MochiQueueStorage,
+  PGliteLike,
+} from './queue';
+export { DEFAULT_EXPIRE_IN_SECONDS } from './queue';
+export { json, error, apiError, MochiHttpError } from './utils';
 export { trailingSlashIt } from './runtime/trailingSlash';
 export { fail, redirect, success } from './runtime/forms';
 export { isHydratable } from './islands/isHydratable';
@@ -121,6 +138,7 @@ export type { MochiCaptchaOptions, CaptchaResult, CaptchaFailureReason, NonceSto
 export { enhance, deserialize } from './runtime/enhance.ssr';
 export { isFormContentType, DEFAULT_FORM_CONTENT_TYPES, DEFAULT_PROTECTED_METHODS } from './runtime/csrf';
 export { DEFAULT_COMPRESS_MIN_BYTES, encryptPayload, decryptPayload } from './islands/payloadCrypto';
+export { DEFAULT_INLINE_BUDGET } from './islands/inlineServerIslands';
 export type { EncryptOptions } from './islands/payloadCrypto';
 export type { MochiCsrfOptions } from './runtime/csrf';
 export type {
@@ -171,6 +189,7 @@ export type {
   MochiFormActions,
   MochiFormActionHandler,
   MochiFormEvent,
+  MochiRedirect,
   MochiEnhanceOptions,
   MochiEnhanceResult,
   MochiFormShape,
@@ -178,6 +197,7 @@ export type {
   MochiSubmitCallback,
   HttpMethod,
   MochiServeOptions,
+  MochiWorkerOptions,
   MochiWarmupOptions,
   MochiRouteValue,
   MochiWsConfig,

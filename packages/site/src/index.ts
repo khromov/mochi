@@ -11,6 +11,7 @@ import { clearDocsCaches, DOCS_DIR } from './lib/docs';
 import { clearBlogCaches, BLOG_DIR } from './lib/blog';
 import { highlightCode } from './lib/highlight.server';
 import { handle as cookieVaryTestHandle } from './demos/cookie-vary-test/routes';
+import { handle as modeWatcherHandle } from './demos/mode-watcher/routes';
 import { handle as shotHandle } from './shot/routes';
 import { encodeDebugBarGlobals } from './lib/debugBarEncode';
 import { routes, queues } from './routes';
@@ -56,7 +57,6 @@ const handleError: HandleError = ({ error, event, status, message }) => {
   if (error && status >= 500) {
     logger.error('app:', event.url.pathname, error);
   }
-  // Short-circuit: redirect this specific demo path instead of rendering the error page
   if (event.url.pathname === '/demos/error/redirect/') {
     return Response.redirect(new URL('/demos/error', event.url), 302);
   }
@@ -134,11 +134,22 @@ await Mochi.serve({
   liveReload: process.env.MOCHI_LIVE_RELOAD === 'false' ? false : undefined,
   htmlShell: './src/shell.html',
   trailingSlash: 'always',
-  handle: sequence(compress(), immutableAssets, helloWorld, asciiDog, analytics, encodeDebugBarPaths, noCache, cookieVaryTestHandle, shotHandle),
+  // /ci/dashboard is a chrome-free always-on display — it would otherwise report a pageview every refresh.
+  handle: sequence(
+    compress(),
+    immutableAssets,
+    helloWorld,
+    asciiDog,
+    analytics({ exclude: ['/ci/dashboard'] }),
+    encodeDebugBarPaths,
+    noCache,
+    cookieVaryTestHandle,
+    modeWatcherHandle,
+    shotHandle,
+  ),
   handleError,
   idleTimeout: 60,
   compressServerIslandProps: true,
-  // optimize: { enabled: true, exclude: [] },
   warmup: { enabledInProd: true, enabledInDev: true },
   additionalWatchPaths: ['../docs'],
   logger: { level: 'log' },
@@ -146,6 +157,9 @@ await Mochi.serve({
   // Named image sizes used by the /demos/image* pages (kept in sync with the
   // example shown in ./src/demoIndex.ts).
   image: {
+    // Persist transformed bytes to a mountable volume in containers; unset locally
+    // falls back to the framework default (./.mochi/image-cache).
+    cacheDir: process.env.MOCHI_IMAGE_CACHE_DIR,
     // The image-invalidation demo sources from our own loopback endpoint, which the
     // SSRF guard would otherwise reject as a private address. Safe here: every image
     // src on this site is hardcoded and server-minted (encrypted URLs), never taken

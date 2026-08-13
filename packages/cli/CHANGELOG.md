@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/khromov/mochi/compare/create-mochi-v0.3.0...create-mochi-v0.3.1) (2026-07-30)
+
+
+### Bug Fixes
+
+* **cli:** derive svelte-check patch wiring from the downloaded template ([#229](https://github.com/khromov/mochi/issues/229)) ([a55bb45](https://github.com/khromov/mochi/commit/a55bb45ceaafff815fa73c5ae07bc53072ffdc8b))
+
 ## [0.3.0](https://github.com/khromov/mochi/compare/create-mochi-v0.2.5...create-mochi-v0.3.0) (2026-07-21)
 
 

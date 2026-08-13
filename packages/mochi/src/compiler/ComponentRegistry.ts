@@ -3,7 +3,16 @@ import { render } from 'svelte/server';
 import path from 'node:path';
 import fs from 'node:fs';
 import type { BunPlugin } from 'bun';
-import { isSvelteMarker, normalizeAssetPrefix, normalizeIslandHydrationMarkers, relForDisplay, stripHydrationMarkers, toCompileErrorLogs, toPosixPath } from '../utils';
+import {
+  isSvelteMarker,
+  normalizeAssetPrefix,
+  normalizeIslandHydrationMarkers,
+  relForDisplay,
+  resolveArgsPath,
+  stripHydrationMarkers,
+  toCompileErrorLogs,
+  toPosixPath,
+} from '../utils';
 import { injectIslandPropsBlock } from '../islands/islandPropsRegistry';
 import { requestContext, renderDetached } from '../runtime/requestContext';
 import type { DebugBarData } from '../runtime/requestContext';
@@ -20,12 +29,18 @@ import { applyFilter } from '../extensions';
 import { decodeSourcePath, encodeSourcePath } from './manifestPaths';
 import { buildServerOnlyStubModule, scanServerOnlyExports } from './serverOnlyScan';
 import { CLIENT_BUILD_DEFINE, serverOnlyModuleGuard } from './serverOnlyModuleGuard';
-import { renderMochiEnvServer, renderMochiEnvClient } from './virtualModuleTemplate';
+import { registerServerOnlyComponentStubs, SSR_ONLY_COMPONENT_NAMESPACE } from './serverOnlyComponents';
+import { cleanInputs, SERVER_ONLY_MODULE_NAMESPACE } from './bundleInputPaths';
+import { renderMochiEnvServer } from './virtualModuleTemplate';
+import { buildDebugBarBundle, type DebugBarBundle } from './buildDebugBarBundle';
+import { formatBuildMessages } from './formatBuildMessages';
+import { registerEsmEnvStrip, registerMochiEnvClient, registerSvelteModuleLoader } from './clientBuildLoaders';
 import { createImageAssetLoader, IMAGE_FILE_FILTER } from './imageAssetLoader';
+import { EMAIL_TEMPLATE_DIR } from '../email/templates';
 import { registerLocalImageAsset } from '../image/localAssetRegistry';
 import type { LocalImageAsset } from '../image/types';
 import { freshImport } from './freshImport';
-import { shakeApp } from './svelteShaker';
+import { resolveSvelteShaker } from './svelteShaker';
 import prettyBytes from '../vendor/pretty-bytes';
 
 // The `compile:preprocessors` filter is sync; only applying its preprocessors through Svelte's `preprocess()` is async.
@@ -72,53 +87,14 @@ const SRC_DIR = path.join(path.dirname(Bun.fileURLToPath(import.meta.url)), '..'
 /** Manifest schema version this runtime writes; see `MochiManifest.version` for the path families it implies. */
 const MANIFEST_VERSION = 2;
 
-// TODO
-// Bun's CSS bundler unquotes `format('woff2-variations')` to `format(woff2-variations)`,
+// Bun <1.4.0's CSS bundler unquotes `format('woff2-variations')` to `format(woff2-variations)`,
 // which is invalid CSS — only the seven plain keywords (woff2, woff, truetype, opentype,
 // embedded-opentype, svg, collection) work bare. Browsers silently drop the src and the
 // font never loads. Re-quote the four compound `*-variations` hints back to strings.
+// Bun 1.4.0 keeps them quoted, so this is a no-op there — delete once 1.3.14 support is dropped.
 const VARIATION_FORMAT_RE = /\bformat\((woff2-variations|woff-variations|truetype-variations|opentype-variations)\)/g;
 function restoreVariationsFormat(css: string): string {
   return css.replace(VARIATION_FORMAT_RE, "format('$1')");
-}
-
-/**
- * Format a `Bun.build()` failure's `logs` array as `file:line:column — message` per entry. Bun 1.2+ throws a generic
- * `AggregateError("Bundle failed")` with `stack === undefined`, losing the positions, so every call passes
- * `throw: false` to recover the structured logs for this helper.
- */
-export function formatBuildMessages(
-  logs: ReadonlyArray<{
-    message: string;
-    position?: { file: string; line: number; column: number } | null;
-  }>,
-): string {
-  if (logs.length === 0) {
-    return '  <no diagnostic messages>';
-  }
-  const formatted = logs
-    .map((l) => {
-      const p = l.position;
-      const where = p ? `${relForDisplay(p.file)}:${p.line}:${p.column}` : '<unknown>';
-      return `  ${where} — ${l.message}`;
-    })
-    .join('\n');
-
-  // A read failure on a file inside the isolated linker's node_modules/.bun
-  // symlink store is the signature of a known Bun bug (a second Bun.build in a
-  // `bun test` / --hot / --watch process fails reading deps the runtime loader
-  // already imported). Without this hint the error looks like a broken dep and
-  // costs hours; with it the fix is a two-line bunfig change.
-  if (/reading file/.test(formatted) && /node_modules[\\/]\.bun[\\/]/.test(formatted)) {
-    return (
-      `${formatted}\n` +
-      `  hint: this matches a known Bun bug — a second Bun.build() inside \`bun test\` (or --hot/--watch)\n` +
-      `  fails reading node_modules files resolved through the isolated linker's symlinked\n` +
-      `  node_modules/.bun store. Fix: add \`linker = "hoisted"\` under \`[install]\` in bunfig.toml,\n` +
-      `  delete node_modules, and reinstall. See https://github.com/khromov/bun-second-build-eisdir-repro`
-    );
-  }
-  return formatted;
 }
 
 const MARKDOWN_EXTENSIONS = ['.md', '.svx'];
@@ -218,6 +194,13 @@ export type MochiCompileError =
       childPath: string;
     }
   | {
+      kind: 'defer-in-hydratable';
+      parent: string;
+      child: string;
+      parentPath: string;
+      childPath: string;
+    }
+  | {
       kind: 'css-bundle-failed';
       cssPath: string;
       message: string;
@@ -228,6 +211,19 @@ export type MochiCompileError =
       directive: string;
       filePath: string;
       importSource: string | null;
+    }
+  | {
+      kind: 'server-only-island';
+      component: string;
+      directive: string;
+      filePath: string;
+      resolvedPath: string;
+    }
+  | {
+      kind: 'hydrate-island-children';
+      component: string;
+      directive: string;
+      filePath: string;
     };
 
 function formatUnresolvedIsland(e: Extract<MochiCompileError, { kind: 'unresolved-island' }>): string {
@@ -246,19 +242,34 @@ function formatUnresolvedIsland(e: Extract<MochiCompileError, { kind: 'unresolve
   return `${head} — ${why}. Wrap the component in a local .svelte file (e.g. a component that renders <${e.component} … />) and put the directive on that instead.`;
 }
 
+function formatCompileError(e: MochiCompileError): string {
+  switch (e.kind) {
+    case 'nested-hydration':
+      return `Nested mochi:hydrate: <${e.child}> inside <${e.parent}> — remove mochi:hydrate from ${e.child}`;
+    case 'defer-in-hydratable':
+      return `mochi:defer inside a hydratable: <${e.child}> is a server island inside <${e.parent}>, whose subtree re-renders on the client where a server island cannot exist — remove mochi:defer from ${e.child} or the hydrate/clientOnly directive from ${e.parent}`;
+    case 'css-bundle-failed':
+      return `CSS bundle failed: ${e.cssPath} — ${e.message}`;
+    case 'unresolved-island':
+      return formatUnresolvedIsland(e);
+    case 'server-only-island':
+      return (
+        `Server-only island: <${e.component} ${e.directive}> in ${relForDisplay(e.filePath)} — ${relForDisplay(e.resolvedPath)} is a \`.server.svelte\`, ` +
+        `which the client build replaces with a throwing stub, so it cannot hydrate. Remove the ${e.directive} directive (it already renders server-side), ` +
+        `use mochi:defer, or drop the .server suffix if it must ship to the client.`
+      );
+    case 'hydrate-island-children':
+      return (
+        `Island children: <${e.component} ${e.directive}> in ${relForDisplay(e.filePath)} has children, which cannot cross the server→client boundary — ` +
+        `the island hydrates from its serialized props alone, so server-rendered children would vanish on hydration. ` +
+        `Move the markup inside ${e.component} or pass it as serializable props; with mochi:defer or mochi:clientOnly, children are the loading fallback instead.`
+      );
+  }
+}
+
 export function formatCompileErrors(errors: MochiCompileError[]): string {
-  const lines = errors.map((e) => {
-    switch (e.kind) {
-      case 'nested-hydration':
-        return `Nested mochi:hydrate: <${e.child}> inside <${e.parent}> — remove mochi:hydrate from ${e.child}`;
-      case 'css-bundle-failed':
-        return `CSS bundle failed: ${e.cssPath} — ${e.message}`;
-      case 'unresolved-island':
-        return formatUnresolvedIsland(e);
-    }
-  });
   const header = `${errors.length} compile error${errors.length === 1 ? '' : 's'}:`;
-  return `${header}\n${lines.map((l) => `• ${l}`).join('\n')}`;
+  return `${header}\n${errors.map((e) => `• ${formatCompileError(e)}`).join('\n')}`;
 }
 
 export interface RenderResult {
@@ -360,6 +371,8 @@ export class ComponentRegistry {
   private componentEntryUrls: Map<string, string> = new Map();
   private islandBootstrapUrl: string | null = null;
   private debugBarUrl: string | null = null;
+  private debugBarBundle: DebugBarBundle | null = null;
+  private debugBarBuildPromise: Promise<DebugBarBundle> | null = null;
   private clientFiles: Map<string, string> = new Map();
   /** Maps component file path → CSS URL */
   private cssFileUrls: Map<string, string> = new Map();
@@ -416,6 +429,7 @@ export class ComponentRegistry {
   private readonly barrelBuffering: boolean;
   /** Packages already warned about this process, so the warning fires once, not on every rebuild. */
   private readonly warnedBarrels = new Set<string>();
+  private readonly warnedRetainedStubs = new Set<string>();
   /** Buffer used when `bufferBarrelWarnings` is on: barrels collected across the build, flushed as one grouped summary by `flushBarrelWarnings()`. */
   private pendingBarrels: HeavyBarrel[] = [];
   /** absPath → slimmed `.svelte` source from the last `prepareShake()`; empty when shaking is off. */
@@ -460,8 +474,14 @@ export class ComponentRegistry {
       logger.warn(`svelte-shaker: no source directory at ${appRoot}; nothing to shake`);
       return;
     }
+    // Outside the try because a missing add-on is a config problem, not an engine bug: the loader already warned once
+    // with install instructions, and `shakenSources` is already the empty map every onLoad falls back through.
+    const backend = await resolveSvelteShaker();
+    if (!backend) {
+      return;
+    }
     try {
-      const { shaken, originals } = await shakeApp(appRoot);
+      const { shaken, originals } = await backend.shakeApp(appRoot);
       if (shaken.size === 0) {
         logger.warn(`svelte-shaker: no .svelte components found under ${appRoot}; nothing to shake`);
       }
@@ -499,7 +519,10 @@ export class ComponentRegistry {
       // Empty cache -> every onLoad reads the original source, so a failed shake
       // never breaks the build (`shakenSources.get(path) ?? Bun.file(path)`).
       logger.warn('svelte-shaker: optimization skipped; building from original sources (output is unaffected).');
-      logger.warn('svelte-shaker: this looks like a svelte-shaker bug — please report it with the error below at https://github.com/baseballyama/svelte-shaker/issues');
+      // Naming the engine version matters because it is declared as a `>=` floor: a regressed release can reach users.
+      logger.warn(
+        `svelte-shaker: this looks like a ${backend.name}@${backend.version} bug — please report it with the error below at https://github.com/baseballyama/svelte-shaker/issues`,
+      );
       logger.error(e);
       this.shakenSources = new Map();
     }
@@ -589,15 +612,17 @@ export class ComponentRegistry {
       return;
     }
 
-    // A prebuilt manifest is meant to cover every component the app renders, so
-    // a miss is always a deployment fault
+    // A prebuilt manifest is meant to cover every component the app renders, so a miss costs a cold compile on the
+    // request that hit it — and means this deploy needs its Svelte sources and the compiler at runtime.
     if (this.loadedFromManifest && !this.development && !opts.force) {
       logger.warn(
         `${todo.length} component(s) are missing from the prebuilt manifest and will be compiled now:\n` +
           todo.map((f) => `  - ${relForDisplay(f)}`).join('\n') +
-          `\nThis should not happen. \`mochi-framework build\` and the server must run from the same working directory (the project root), ` +
-          `and both must use the same mochi-framework version. Until it's fixed, this build needs its Svelte sources and the compiler at runtime. ` +
-          `If the working directory and the version already match, this is a Mochi bug — please report it with a reproduction.`,
+          `\nCommon causes: an email template outside \`${EMAIL_TEMPLATE_DIR}/\` (the build walks that directory, since nothing imports a template from a route — move it there), ` +
+          `or another component rendered outside a route, which the build cannot discover. ` +
+          `Otherwise, \`mochi-framework build\` and the server must run from the same working directory (the project root), and both must use the same mochi-framework version. ` +
+          `Until it's fixed, this build needs its Svelte sources and the compiler at runtime. ` +
+          `If none of the above apply, this is a Mochi bug — please report it with a reproduction.`,
       );
     }
 
@@ -653,7 +678,11 @@ export class ComponentRegistry {
           namespace: 'mochi-server-island',
         }));
         build.onLoad({ filter: /.*/, namespace: 'mochi-server-island' }, () => ({
-          contents: [`import { encryptProps } from "${toPosixPath(path.join(SRC_DIR, 'islands/serverIslandCrypto.ts'))}";`, `export { encryptProps };`].join('\n'),
+          contents: [
+            `import { encryptProps } from "${toPosixPath(path.join(SRC_DIR, 'islands/serverIslandCrypto.ts'))}";`,
+            `import { shouldInlineIsland } from "${toPosixPath(path.join(SRC_DIR, 'islands/inlineServerIslands.ts'))}";`,
+            `export { encryptProps, shouldInlineIsland };`,
+          ].join('\n'),
           loader: 'js',
         }));
         // The preprocessor's island wrapper resolves to the framework's own component in the default namespace, so it
@@ -775,13 +804,28 @@ export class ComponentRegistry {
     // structural error already detected — including under the `bun test`-only EISDIR bug, where the SSR build fails
     // after preprocessing succeeded.
     this.errors = this.errors.filter(
-      (e) => !(e.kind === 'nested-hydration' && fileHydratables.has(e.parentPath)) && !(e.kind === 'unresolved-island' && filePreprocessErrors.has(e.filePath)),
+      (e) =>
+        !(e.kind === 'nested-hydration' && fileHydratables.has(e.parentPath)) &&
+        !(e.kind === 'defer-in-hydratable' && fileServerIslands.has(e.parentPath)) &&
+        !((e.kind === 'unresolved-island' || e.kind === 'server-only-island' || e.kind === 'hydrate-island-children') && filePreprocessErrors.has(e.filePath)),
     );
 
     for (const errors of filePreprocessErrors.values()) {
       for (const err of errors) {
-        this.errors.push({ kind: 'unresolved-island', ...err });
-        logger.error(`\n${formatUnresolvedIsland({ kind: 'unresolved-island', ...err })}\n`);
+        let compileError: MochiCompileError;
+        switch (err.reason) {
+          case 'server-only':
+            compileError = { kind: 'server-only-island', component: err.component, directive: err.directive, filePath: err.filePath, resolvedPath: err.resolvedPath };
+            break;
+          case 'hydrate-children':
+            compileError = { kind: 'hydrate-island-children', component: err.component, directive: err.directive, filePath: err.filePath };
+            break;
+          case 'unresolved':
+            compileError = { kind: 'unresolved-island', component: err.component, directive: err.directive, filePath: err.filePath, importSource: err.importSource };
+            break;
+        }
+        this.errors.push(compileError);
+        logger.error(`\n${formatCompileError(compileError)}\n`);
       }
     }
 
@@ -802,6 +846,27 @@ export class ComponentRegistry {
           });
           logger.error(
             `\nNested hydration directives are not allowed.\n  <${child.displayName}> with mochi:hydrate, mochi:hydrate:visible, or mochi:clientOnly is inside <${parent.displayName}> which is also hydratable.\n  Remove the directive from ${child.displayName} — it hydrates automatically as part of ${parent.displayName}.\n`,
+          );
+        }
+      }
+    }
+
+    // A server island inside a hydratable subtree can never work: client bundles skip the island preprocessor, so on
+    // hydration the client renders the raw child where SSR emitted a placeholder (observed: HYDRATION_ERROR + client
+    // remount wiping the island). Same one-file-deep limitation as the nested-hydration guard above.
+    for (const [filePath, children] of fileServerIslands) {
+      if (hydratablePaths.has(filePath) && children.length > 0) {
+        const parent = allHydratables.find((h) => h.resolvedPath === filePath)!;
+        for (const child of children) {
+          this.errors.push({
+            kind: 'defer-in-hydratable',
+            parent: parent.displayName,
+            child: child.displayName,
+            parentPath: filePath,
+            childPath: child.resolvedPath,
+          });
+          logger.error(
+            `\nA server island cannot sit inside a hydratable subtree.\n  <${child.displayName}> with mochi:defer or mochi:defer:visible is inside <${parent.displayName}>, which hydrates on the client — where a server island cannot render.\n  Remove mochi:defer from ${child.displayName}, or the hydrate/clientOnly directive from ${parent.displayName}.\n`,
           );
         }
       }
@@ -1043,20 +1108,22 @@ export class ComponentRegistry {
     const newClientFiles = new Map<string, string>();
     const newComponentEntryUrls = new Map<string, string>();
     let newIslandBootstrapUrl: string | null = null;
-    let newDebugBarUrl: string | null = null;
+
+    // The debug bar builds standalone (production-mode Svelte, own runtime) and only once per process — framework
+    // sources don't change under a running user app, so watcher rebuilds skip it entirely.
+    if (debugBarEnabled && !this.debugBarBundle) {
+      this.debugBarBuildPromise ??= buildDebugBarBundle({ development, backend });
+      // If the main build below throws before the swap-time await, a rejection here would otherwise go unhandled.
+      this.debugBarBuildPromise.catch(() => {});
+    }
 
     const srcDir = SRC_DIR;
     // Forward slashes survive intact in generated source, where Windows backslashes get eaten as JS escapes, and keep a
     // file's module identity consistent across its three uses: `Bun.build` entrypoint, `filesMap` key, import specifier.
     const hydratableIslandPath = toPosixPath(path.join(srcDir, 'web-components', 'HydratableIsland.ts'));
-    const debugBarDir = path.join(srcDir, 'debug-bar') + path.sep;
-    const debugBarEntryPath = toPosixPath(path.join(debugBarDir, 'debugbar-entry.ts'));
 
     // Generate per-component virtual entry points
     const entrypoints: string[] = [hydratableIslandPath];
-    if (debugBarEnabled) {
-      entrypoints.push(debugBarEntryPath);
-    }
     const filesMap: Record<string, string> = {};
 
     for (const [, comp] of unique) {
@@ -1073,8 +1140,6 @@ export class ComponentRegistry {
       filesMap[entryPath] = entrySource;
     }
 
-    const cookiesClientPath = toPosixPath(path.join(srcDir, 'runtime/cookies.client.ts'));
-    const enhanceClientPath = toPosixPath(path.join(srcDir, 'runtime/enhance.client.ts'));
     const imageAssetLoader = createImageAssetLoader({
       outDir: this.outDir,
       assetPrefix: this.assetPrefix,
@@ -1095,7 +1160,7 @@ export class ComponentRegistry {
         // `bun:*` / `node:*` deps to SSR alone. The extensionless form falls back to disk probing for the real sibling,
         // so the stub still names a canonical path.
         build.onResolve({ filter: /\.server(?:\.[jt]s)?$/ }, (args) => {
-          const base = args.resolveDir ? path.resolve(args.resolveDir, args.path) : path.resolve(args.path);
+          const base = resolveArgsPath(args);
           let resolved = base;
           if (!/\.[jt]s$/.test(base)) {
             const tsPath = `${base}.ts`;
@@ -1108,54 +1173,26 @@ export class ComponentRegistry {
               resolved = tsPath;
             }
           }
-          return { path: resolved, namespace: 'mochi-server-only' };
+          return { path: resolved, namespace: SERVER_ONLY_MODULE_NAMESPACE };
         });
-        build.onLoad({ filter: /.*/, namespace: 'mochi-server-only' }, async (args) => {
+        build.onLoad({ filter: /.*/, namespace: SERVER_ONLY_MODULE_NAMESPACE }, async (args) => {
           const source = await Bun.file(args.path).text();
           const scan = scanServerOnlyExports(source);
           for (const w of scan.warnings) {
             logger.warn(`[mochi] ${relForDisplay(args.path)}: ${w}`);
           }
-          return { contents: buildServerOnlyStubModule(args.path, scan), loader: 'js' };
+          return { contents: buildServerOnlyStubModule(relForDisplay(args.path), scan), loader: 'js' };
         });
-        build.onResolve({ filter: /^mochi-framework$/ }, () => ({
-          path: 'mochi-framework',
-          namespace: 'mochi-env',
-        }));
-        build.onLoad({ filter: /.*/, namespace: 'mochi-env' }, () => ({
-          contents: renderMochiEnvClient(development, cookiesClientPath, enhanceClientPath),
-          loader: 'js',
-        }));
+        registerServerOnlyComponentStubs(build);
+        registerMochiEnvClient(build, development);
         // Client builds never run the island preprocessor, so the injected
         // boundary import shouldn't appear in a client graph — this alias is
         // cheap insurance against a stray specifier failing the whole build.
         build.onResolve({ filter: /^mochi-framework\/hydratable-boundary$/ }, () => ({
           path: path.join(SRC_DIR, 'islands/HydratableBoundary.svelte'),
         }));
-        // Bun can't propagate constants through esm-env's conditional exports, so stripping the imports turns
-        // DEV/BROWSER/NODE into free variables that Bun's `define` replaces with literal booleans, letting `if (DEV)`
-        // blocks be eliminated.
-        build.onLoad({ filter: /node_modules\/svelte\/src\/.*\.js$/ }, async (args) => {
-          let source = await Bun.file(args.path).text();
-          source = source.replace(/import\s*\{[^}]*\}\s*from\s*['"]esm-env['"]\s*;?/g, '');
-          return { contents: source, loader: 'js' };
-        });
-        build.onLoad({ filter: /\.svelte\.[jt]s$/ }, async (args) => {
-          let source = await Bun.file(args.path).text();
-          if (args.path.endsWith('.ts')) {
-            const transpiler = new Bun.Transpiler({ loader: 'ts' });
-            source = transpiler.transformSync(source);
-          }
-          const { js } = backend.compileModule(
-            source,
-            mergeCompilerOptions(userCompilerOptions, {
-              generate: 'client',
-              filename: args.path,
-              dev: development,
-            }),
-          );
-          return { contents: js.code, loader: 'js' };
-        });
+        registerEsmEnvStrip(build);
+        registerSvelteModuleLoader(build, backend, mergeCompilerOptions(userCompilerOptions, { generate: 'client', dev: development }));
         build.onLoad({ filter: /\.svelte$/ }, async (args) => {
           const source = shakenSources.get(args.path) ?? (await Bun.file(args.path).text());
           const cached = compileCache.get('client', args.path, source, clientFingerprint, compileCacheStats);
@@ -1168,8 +1205,6 @@ export class ComponentRegistry {
             mergeCompilerOptions(userCompilerOptions, {
               generate: 'client',
               filename: args.path,
-              // TODO: Verify that this still works after node_modules migration
-              css: args.path.startsWith(debugBarDir) ? 'injected' : undefined,
               dev: development,
             }),
           );
@@ -1231,9 +1266,6 @@ export class ComponentRegistry {
       // entryPoint is native; on Windows the formats diverge, the bootstrap lookup misses, and the hydration `<script>` disappears.
       const entryToComponent = new Map<string, string | null>();
       entryToComponent.set(toPosixPath(path.resolve(hydratableIslandPath)), null);
-      if (debugBarEnabled) {
-        entryToComponent.set(toPosixPath(path.resolve(debugBarEntryPath)), '__debugbar__');
-      }
       for (const [, comp] of unique) {
         const entryPath = toPosixPath(path.resolve(path.join(srcDir, `_hydrate-${comp.name}.js`)));
         entryToComponent.set(entryPath, comp.name);
@@ -1248,8 +1280,6 @@ export class ComponentRegistry {
         const url = `${this.assetPrefix}/client/${path.basename(outPath)}`;
         if (compName === null) {
           newIslandBootstrapUrl = url;
-        } else if (compName === '__debugbar__') {
-          newDebugBarUrl = url;
         } else if (compName !== undefined) {
           newComponentEntryUrls.set(compName, url);
         }
@@ -1270,6 +1300,7 @@ export class ComponentRegistry {
       });
       outputStats.sort((a, b) => b.size - a.size);
       this.clientStats = { outputs: outputStats };
+      this.warnOnRetainedComponentStubs(result.metafile);
       this.warnOnBarrelImports(result.metafile);
     }
 
@@ -1290,7 +1321,24 @@ export class ComponentRegistry {
       this.componentEntryUrls.set(k, v);
     }
     this.islandBootstrapUrl = newIslandBootstrapUrl;
-    this.debugBarUrl = newDebugBarUrl;
+
+    if (this.debugBarBuildPromise && !this.debugBarBundle) {
+      try {
+        this.debugBarBundle = await this.debugBarBuildPromise;
+      } catch (err) {
+        // A rejected promise must not be memoized (the next rebuild retries), and a broken debug bar must not take
+        // down page serving.
+        this.debugBarBuildPromise = null;
+        logger.warn(`[mochi] debug bar build failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    if (this.debugBarBundle) {
+      const debugBarUrl = `${clientPrefix}${this.debugBarBundle.fileName}`;
+      this.clientFiles.set(debugBarUrl, this.debugBarBundle.contents);
+      this.debugBarUrl = debugBarUrl;
+    } else {
+      this.debugBarUrl = null;
+    }
 
     const outputBytes = this.clientStats?.outputs.reduce((sum, o) => sum + o.size, 0) ?? 0;
     mochiEvents.emit('client-bundle:complete', {
@@ -1354,6 +1402,11 @@ export class ComponentRegistry {
 
     // Server-island guard (post-render): no per-entry metadata to check up
     // front, so detect the emitted placeholder in the rendered output.
+    //
+    // TODO: make this pre-render like the hydratable guard above. Post-render means a `mochi:defer` behind a branch
+    // that never renders slips through here, so the "even behind a branch that never renders" promise in the email
+    // docs holds only via the build's import-graph check — which a dev-mode app never runs. Needs `entryServerIslands`
+    // stored on `compiledComponents` plus a manifest field so the prebuilt path carries it too, i.e. a schema change.
     if (output.includes('<mochi-server-island')) {
       throw new Error(`Email templates can't contain server islands (mochi:defer*) — they load over a follow-up request an email can't make. Render the content inline instead.`);
     }
@@ -1563,11 +1616,25 @@ export class ComponentRegistry {
         const pageHasIslands = hydratables.length > 0;
         const bundles: NonNullable<typeof debugBarData.bundles> = [];
         const outputByName = new Map(this.clientStats.outputs.map((o) => [o.name, o]));
+
+        // Code splitting hoists anything two entries share into a `chunk-*.js`, but a chunk only
+        // reaches the browser if one of *this page's* entries imports it. Walk the import graph
+        // from the bootstrap plus the islands actually rendered here, so the panel reports (and
+        // totals) the bytes the page really ships rather than every chunk in the build.
+        const clientPrefix = `${this.assetPrefix}/client/`;
+        const entryRoots: string[] = [];
+        if (pageHasIslands && this.islandBootstrapUrl) {
+          entryRoots.push(this.islandBootstrapUrl.slice(clientPrefix.length));
+        }
+        for (const name of renderedIslandNames) {
+          const entryUrl = this.componentEntryUrls.get(name);
+          if (entryUrl) {
+            entryRoots.push(entryUrl.slice(clientPrefix.length));
+          }
+        }
+        const reachable = ComponentRegistry.reachableOutputNames(entryRoots, outputByName);
         for (const output of this.clientStats.outputs) {
           const url = `${this.assetPrefix}/client/${output.name}`;
-          if (url === this.debugBarUrl) {
-            continue;
-          }
           if (url === this.islandBootstrapUrl) {
             if (!pageHasIslands) {
               continue;
@@ -1579,11 +1646,11 @@ export class ComponentRegistry {
               label: 'Island runtime',
               sizeBytes: wcSize,
               kind: 'bootstrap',
-              inputs: ComponentRegistry.cleanInputs(wcInputs),
+              inputs: cleanInputs(wcInputs),
             });
           } else {
             const compName = urlToComponent.get(url);
-            const cleaned = ComponentRegistry.cleanInputs(output.inputs);
+            const cleaned = cleanInputs(output.inputs);
             const nonWc = cleaned.filter((i) => !i.path.includes('web-components/'));
             const wcDeduct = cleaned.reduce((s, i) => s + (i.path.includes('web-components/') ? i.size : 0), 0);
             if (compName) {
@@ -1592,7 +1659,7 @@ export class ComponentRegistry {
               }
               bundles.push({ url, label: displayByKey.get(compName) ?? compName, sizeBytes: output.size - wcDeduct, kind: 'island', inputs: nonWc });
             } else {
-              if (!pageHasIslands) {
+              if (!reachable.has(output.name)) {
                 continue;
               }
               bundles.push({ url, label: output.name, sizeBytes: output.size - wcDeduct, kind: 'chunk', inputs: nonWc });
@@ -1642,14 +1709,40 @@ export class ComponentRegistry {
       body: normalized,
       head: shouldStrip ? stripHydrationMarkers(headStr) : headStr,
       cssUrls,
-      bootstrapUrl: hydratables.length > 0 ? this.islandBootstrapUrl : null,
+      // Gated on wrappers actually present in the output — the entry's compile-time hydratables may all sit in branches
+      // this render never took.
+      bootstrapUrl: renderedIslandNames.size > 0 ? this.islandBootstrapUrl : null,
       hasServerIslands,
       debugBarData,
     };
   }
 
-  private static cleanInputPath(p: string): string {
-    return p.replace(/^(?:\.\.\/)*node_modules\/(?:\.bun\/[^/]+\/node_modules\/)?/, '');
+  /**
+   * A `.server.svelte` stub retained with nonzero bytes means an island's live client code actually references the
+   * component — it will throw the moment hydration reaches it, so say so at build time instead of leaving the first
+   * signal to the user's browser console. The direct-directive case is a compile error upstream; this catches the
+   * component nested anywhere deeper in an island's subtree.
+   */
+  private warnOnRetainedComponentStubs(metafile: BarrelMetafile | undefined): void {
+    if (!metafile) {
+      return;
+    }
+    for (const outMeta of Object.values(metafile.outputs)) {
+      for (const [inputPath, inputMeta] of Object.entries(outMeta.inputs ?? {})) {
+        if (!inputPath.startsWith(`${SSR_ONLY_COMPONENT_NAMESPACE}:`) || inputMeta.bytesInOutput === 0) {
+          continue;
+        }
+        const componentPath = inputPath.slice(SSR_ONLY_COMPONENT_NAMESPACE.length + 1);
+        if (this.warnedRetainedStubs.has(componentPath)) {
+          continue;
+        }
+        this.warnedRetainedStubs.add(componentPath);
+        logger.warn(
+          `[mochi] ${relForDisplay(componentPath)} is rendered inside a hydrated island's client bundle; its client stub will throw at hydration. ` +
+            `Render it outside the island, use mochi:defer, or drop the .server suffix if it must ship to the client.`,
+        );
+      }
+    }
   }
 
   /**
@@ -1702,8 +1795,22 @@ export class ComponentRegistry {
     }
   }
 
-  private static cleanInputs(inputs: { path: string; size: number }[]): { path: string; size: number }[] {
-    return inputs.map((i) => ({ path: ComponentRegistry.cleanInputPath(i.path), size: i.size }));
+  /** Output names reachable from `roots` by following static imports, roots included. */
+  private static reachableOutputNames(roots: string[], outputByName: Map<string, { imports: string[] }>): Set<string> {
+    const visited = new Set<string>();
+    const queue = [...roots];
+    while (queue.length > 0) {
+      const name = queue.pop()!;
+      if (visited.has(name)) {
+        continue;
+      }
+      visited.add(name);
+      const dep = outputByName.get(name);
+      if (dep) {
+        queue.push(...dep.imports);
+      }
+    }
+    return visited;
   }
 
   private collectWebComponentInputs(
@@ -1719,18 +1826,10 @@ export class ComponentRegistry {
       }
     };
     addInputs(entry.inputs);
-    const visited = new Set<string>();
-    const queue = [...entry.imports];
-    while (queue.length > 0) {
-      const name = queue.pop()!;
-      if (visited.has(name)) {
-        continue;
-      }
-      visited.add(name);
+    for (const name of ComponentRegistry.reachableOutputNames(entry.imports, outputByName)) {
       const dep = outputByName.get(name);
       if (dep) {
         addInputs(dep.inputs);
-        queue.push(...dep.imports);
       }
     }
     return [...merged.entries()].map(([p, s]) => ({ path: p, size: s })).sort((a, b) => b.size - a.size);

@@ -7,11 +7,11 @@ import type { MochiProxyOptions } from './runtime/proxy';
 import type { LocalImageAsset, MochiImageOptions } from './image/types';
 import type { MochiEmailOptions } from './email/types';
 import type { MochiCaptchaOptions } from './captcha/types';
-import type { MochiProcessor, MochiQueue, MochiQueueListeners, MochiQueueRuntimeOptions } from './queue';
+import type { MochiProcessor, MochiQueueListeners, MochiQueueRuntimeOptions, MochiQueueStorage } from './queue';
 import type { MochiRateLimitOptions } from './runtime/rateLimit';
 import type { MochiSvelteCompiler } from './compiler/svelteCompilerBackend';
 
-export type MochiServerPropsResolver = (req: Request, params: Record<string, string>) => Record<string, unknown> | Promise<Record<string, unknown>>;
+export type MochiServerPropsResolver = (req: Request, params: Record<string, string>) => Record<string, unknown> | MochiRedirect | Promise<Record<string, unknown> | MochiRedirect>;
 
 export function isServerPropsResolver(serverProps: Record<string, unknown> | MochiServerPropsResolver | undefined): serverProps is MochiServerPropsResolver {
   return typeof serverProps === 'function';
@@ -114,9 +114,9 @@ export interface MochiFormFail<T extends Record<string, unknown> = Record<string
   readonly data: T;
 }
 
-/** Returned by `redirect()`; produces an HTTP redirect after the action runs. Use 303 for POST/Redirect/GET after a successful mutation. */
-export interface MochiFormRedirect {
-  readonly __mochiFormRedirect: true;
+/** Returned by `redirect()`; produces an HTTP redirect from a form action or a `serverProps` resolver. Use 303 for POST/Redirect/GET after a successful mutation. */
+export interface MochiRedirect {
+  readonly __mochiRedirect: true;
   readonly status: 301 | 302 | 303 | 307 | 308;
   readonly location: string;
 }
@@ -128,7 +128,7 @@ export interface MochiFormSuccess<T extends Record<string, unknown> = Record<str
 }
 
 /** Any return value allowed from a form action handler; a plain `Response` is the escape hatch. */
-export type MochiFormActionResult = MochiFormFail | MochiFormRedirect | MochiFormSuccess | Response | void | undefined;
+export type MochiFormActionResult = MochiFormFail | MochiRedirect | MochiFormSuccess | Response | void | undefined;
 
 /**
  * The event object passed to form action handlers, with the body already parsed into `formData`.
@@ -252,19 +252,27 @@ export function isMochiSse(value: unknown): value is MochiSseConfig {
 }
 
 /**
- * Inert descriptor returned by `Mochi.queue()`. Non-generic so a heterogeneous `queues` map type-checks;
- * the live producer/consumer pair is created only when `Mochi.serve({ queues })` mounts it.
+ * Descriptor returned by `Mochi.queue(name, …)`. Non-generic so a heterogeneous `queues` array type-checks; the
+ * `never` parameter slots keep a caller's typed processor/listeners assignable (contravariance) without casts.
  */
 export interface MochiQueueConfig {
   readonly __mochiQueue: true;
-  readonly process: MochiProcessor<unknown, unknown>;
+  readonly name: string;
+  readonly process?: MochiProcessor<never, unknown>;
   readonly options?: MochiQueueRuntimeOptions;
-  readonly on?: Partial<MochiQueueListeners<unknown, unknown>>;
-  readonly recover?: (queue: MochiQueue<never>) => void | Promise<void>;
+  readonly on?: Partial<MochiQueueListeners<never, never>>;
+  readonly storage?: MochiQueueStorage;
 }
 
 export function isMochiQueue(value: unknown): value is MochiQueueConfig {
   return typeof value === 'object' && value !== null && (value as MochiQueueConfig).__mochiQueue === true;
+}
+
+/** Options for `Mochi.worker()` — consume queues in a process that never calls `Mochi.serve()`. */
+export interface MochiWorkerOptions {
+  queues: MochiQueueConfig[];
+  /** The app's queue storage; may instead come from a `storage` declared on the descriptors. */
+  storage?: MochiQueueStorage;
 }
 
 export type MochiRouteValue = MochiPageConfig | MochiApiConfig | MochiWsConfig | MochiSseConfig | MochiFileConfig | BunRouteValue;
@@ -394,9 +402,24 @@ export interface MochiWarmupOptions {
   enabledInDev: boolean;
 }
 
+/** Keys the framework sets on `Bun.serve()` itself; rejected under `bun` and stripped from `BunServeOverrides`. */
+export const FRAMEWORK_OWNED_BUN_KEYS = ['fetch', 'websocket', 'routes', 'error'] as const;
+
+/**
+ * Options spread directly into the underlying `Bun.serve()`. The framework owns
+ * the keys in {@link FRAMEWORK_OWNED_BUN_KEYS}; setting any of them here throws.
+ */
+export type BunServeOverrides = Omit<NonNullable<Parameters<typeof Bun.serve>[0]>, (typeof FRAMEWORK_OWNED_BUN_KEYS)[number]>;
+
 export interface MochiServeOptions {
   port?: number;
   hostname?: string;
+  /**
+   * Escape hatch for raw `Bun.serve()` options Mochi doesn't surface — e.g.
+   * `idleTimeout` (seconds; HTTP default 10, max 255, 0 disables), `maxRequestBodySize`,
+   * `reusePort`, `tls`. Spread into `Bun.serve()`; framework-owned keys are rejected.
+   */
+  bun?: BunServeOverrides;
   development?: boolean;
   /** Mount the dev-only debug toolbar. Default: `true`, and ignored entirely when `development` is `false`. */
   debugBar?: boolean;
@@ -415,10 +438,18 @@ export interface MochiServeOptions {
   manifest?: string;
   routes?: Record<string, MochiRouteValue>;
   /**
-   * Background job queues to start with the server, keyed by name; each value is a `Mochi.queue({ process, … })` descriptor.
-   * Add jobs from route code via `Mochi.getQueue(name).add(...)`. Queues drain gracefully on shutdown.
+   * Background job queues to start with the server: an array of `Mochi.queue(name, { process, … })` descriptors.
+   * Add jobs via the descriptor itself or `Mochi.getQueue(name)`. Queues drain gracefully on shutdown.
    */
-  queues?: Record<string, MochiQueueConfig>;
+  queues?: MochiQueueConfig[];
+  /**
+   * Where queue jobs live: `'memory'` (default — lost on restart), `{ sqlite: 'path/to.db' }` for a durable
+   * single-process store, `{ postgres: url }` for a shared multi-process store (installed into a `mochi_queue` schema),
+   * or `{ pglite: instance }` for an embedded in-process Postgres you construct and own (Mochi never closes it).
+   * Unset, it inherits a `storage` declared on the queue descriptors; an app has one queue storage, so conflicting
+   * declarations are a boot error.
+   */
+  queueStorage?: MochiQueueStorage;
   fetch?: (req: Request, server: Server<undefined>) => Response | Promise<Response>;
   htmlShell?: string;
   /**
@@ -440,6 +471,12 @@ export interface MochiServeOptions {
   handleError?: HandleError;
   /** Deflate-compress server island props when it reduces size. Default: true. */
   compressServerIslandProps?: boolean;
+  /**
+   * Render nested `mochi:defer` islands in-process during an island fetch instead of emitting further client fetches,
+   * collapsing an N-level chain into one request. `mochi:defer:visible` children always keep their own lazy fetch, and a
+   * single call site opts out with `mochi:defer={{ inline: false }}`. Default: true.
+   */
+  inlineNestedIslands?: boolean;
   /**
    * Built-in request logger, enabled by default. `{ enabled: false }` disables the formatter while events keep flowing
    * on the bus; `level` gates `log.*` output globally; `slowThreshold` / `verySlowThreshold` override the timing bands.
@@ -560,6 +597,9 @@ export interface MochiServeOptions {
    * `./src`. `mochi-framework build` reads this straight from your entry's `Mochi.serve()` call, keeping the manifest in sync.
    *
    * Pass `true` to shake everything, or an object with `enabled: true` plus `exclude`. Default: `false`.
+   *
+   * Requires the optional `@mochi-framework/svelte-shaker` package (`bun add -d @mochi-framework/svelte-shaker`); without
+   * it Mochi warns once at boot and compiles from the original sources.
    */
   optimize?: boolean | MochiSvelteShakerOptions;
   /**

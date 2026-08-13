@@ -115,13 +115,53 @@ describe('preprocessHydratable', () => {
     expect(transformed).toContain('callback: () => { doSomething(); }');
   });
 
-  test('non-self-closing component (fixed over regex)', () => {
+  test('children on mochi:hydrate are a compile error, not silently forwarded', () => {
     const source = `${SCRIPT('import Wrapper from "./Wrapper.svelte";')}<Wrapper mochi:hydrate><span>child content</span></Wrapper>`;
-    const { transformed, hydratables } = preprocessHydratable(source, '/test/File.svelte');
+    const { transformed, hydratables, errors } = preprocessHydratable(source, '/test/File.svelte');
 
+    expect(errors).toEqual([{ reason: 'hydrate-children', component: 'Wrapper', directive: 'mochi:hydrate', filePath: '/test/File.svelte' }]);
+    expect(hydratables).toHaveLength(0);
+    expect(transformed).toContain('<Wrapper mochi:hydrate>');
+  });
+
+  test('a {#snippet} child on mochi:hydrate is a compile error too', () => {
+    const source = `${SCRIPT('import Wrapper from "./Wrapper.svelte";')}<Wrapper mochi:hydrate>{#snippet header()}<b>hi</b>{/snippet}</Wrapper>`;
+    const { hydratables, errors } = preprocessHydratable(source, '/test/File.svelte');
+
+    expect(errors).toEqual([{ reason: 'hydrate-children', component: 'Wrapper', directive: 'mochi:hydrate', filePath: '/test/File.svelte' }]);
+    expect(hydratables).toHaveLength(0);
+  });
+
+  test('mochi:hydrate:visible with children names its own directive in the error', () => {
+    const source = `${SCRIPT('import Wrapper from "./Wrapper.svelte";')}<Wrapper mochi:hydrate:visible><p>gone</p></Wrapper>`;
+    const { errors } = preprocessHydratable(source, '/test/File.svelte');
+
+    expect(errors).toEqual([{ reason: 'hydrate-children', component: 'Wrapper', directive: 'mochi:hydrate:visible', filePath: '/test/File.svelte' }]);
+  });
+
+  test('whitespace-only children on mochi:hydrate are tolerated', () => {
+    const source = `${SCRIPT('import Wrapper from "./Wrapper.svelte";')}<Wrapper mochi:hydrate>\n  </Wrapper>`;
+    const { transformed, hydratables, errors } = preprocessHydratable(source, '/test/File.svelte');
+
+    expect(errors).toHaveLength(0);
     expect(hydratables).toHaveLength(1);
     expect(transformed).toContain('<mochi-hydratable-island');
-    expect(transformed).toContain('<Wrapper><span>child content</span></Wrapper>');
+  });
+
+  test('comment-only children on mochi:hydrate are tolerated', () => {
+    const source = `${SCRIPT('import Wrapper from "./Wrapper.svelte";')}<Wrapper mochi:hydrate><!-- note --></Wrapper>`;
+    const { hydratables, errors } = preprocessHydratable(source, '/test/File.svelte');
+
+    expect(errors).toHaveLength(0);
+    expect(hydratables).toHaveLength(1);
+  });
+
+  test('mochi:defer mochi:hydrate keeps children as fallback with no error', () => {
+    const source = `${SCRIPT('import Widget from "./Widget.svelte";')}<Widget mochi:defer mochi:hydrate><div class="skeleton">Loading...</div></Widget>`;
+    const { transformed, errors } = preprocessHydratable(source, '/test/File.svelte');
+
+    expect(errors).toHaveLength(0);
+    expect(transformed).toContain('<div class="skeleton">Loading...</div>');
   });
 
   test('duplicate component instances', () => {
@@ -184,7 +224,7 @@ describe('preprocessHydratable', () => {
 
     expect(hydratables).toHaveLength(0);
     expect(transformed).toBe(source);
-    expect(errors).toEqual([{ component: 'Unknown', directive: 'mochi:hydrate', filePath: '/test/File.svelte', importSource: null }]);
+    expect(errors).toEqual([{ reason: 'unresolved', component: 'Unknown', directive: 'mochi:hydrate', filePath: '/test/File.svelte', importSource: null }]);
   });
 
   test('directive on a bare third-party package import errors with the specifier', () => {
@@ -192,7 +232,65 @@ describe('preprocessHydratable', () => {
     const { hydratables, errors } = preprocessHydratable(source, '/test/File.svelte');
 
     expect(hydratables).toHaveLength(0);
-    expect(errors).toEqual([{ component: 'Widget', directive: 'mochi:hydrate', filePath: '/test/File.svelte', importSource: 'some-ui-lib' }]);
+    expect(errors).toEqual([{ reason: 'unresolved', component: 'Widget', directive: 'mochi:hydrate', filePath: '/test/File.svelte', importSource: 'some-ui-lib' }]);
+  });
+
+  test('mochi:hydrate on a .server.svelte reports a server-only error', () => {
+    const source = `${SCRIPT("import Changelog from './Changelog.server.svelte';")}<Changelog mochi:hydrate />`;
+    const { transformed, hydratables, errors } = preprocessHydratable(source, '/test/File.svelte');
+
+    expect(hydratables).toHaveLength(0);
+    expect(transformed).toBe(source);
+    expect(errors).toEqual([
+      {
+        reason: 'server-only',
+        component: 'Changelog',
+        directive: 'mochi:hydrate',
+        filePath: '/test/File.svelte',
+        resolvedPath: path.resolve('/test', './Changelog.server.svelte'),
+      },
+    ]);
+  });
+
+  test('mochi:clientOnly on a .server.svelte reports a server-only error', () => {
+    const source = `${SCRIPT("import Changelog from './Changelog.server.svelte';")}<Changelog mochi:clientOnly />`;
+    const { hydratables, errors } = preprocessHydratable(source, '/test/File.svelte');
+
+    expect(hydratables).toHaveLength(0);
+    expect(errors).toEqual([
+      {
+        reason: 'server-only',
+        component: 'Changelog',
+        directive: 'mochi:clientOnly',
+        filePath: '/test/File.svelte',
+        resolvedPath: path.resolve('/test', './Changelog.server.svelte'),
+      },
+    ]);
+  });
+
+  test('mochi:defer alone on a .server.svelte stays legal', () => {
+    const source = `${SCRIPT("import Changelog from './Changelog.server.svelte';")}<Changelog mochi:defer />`;
+    const { transformed, serverIslands, errors } = preprocessHydratable(source, '/test/File.svelte');
+
+    expect(errors).toHaveLength(0);
+    expect(serverIslands).toHaveLength(1);
+    expect(transformed).toContain('<mochi-server-island');
+  });
+
+  test('combined mochi:defer + mochi:hydrate on a .server.svelte reports a server-only error', () => {
+    const source = `${SCRIPT("import Changelog from './Changelog.server.svelte';")}<Changelog mochi:defer mochi:hydrate />`;
+    const { serverIslands, errors } = preprocessHydratable(source, '/test/File.svelte');
+
+    expect(serverIslands).toHaveLength(0);
+    expect(errors).toEqual([
+      {
+        reason: 'server-only',
+        component: 'Changelog',
+        directive: 'mochi:hydrate',
+        filePath: '/test/File.svelte',
+        resolvedPath: path.resolve('/test', './Changelog.server.svelte'),
+      },
+    ]);
   });
 
   test('a mochi-framework/components named import resolves to its on-disk .svelte island', () => {
@@ -222,7 +320,9 @@ describe('preprocessHydratable', () => {
     const { hydratables, errors } = preprocessHydratable(source, '/test/File.svelte');
 
     expect(hydratables).toHaveLength(0);
-    expect(errors).toEqual([{ component: 'NotAComponent', directive: 'mochi:hydrate', filePath: '/test/File.svelte', importSource: 'mochi-framework/components' }]);
+    expect(errors).toEqual([
+      { reason: 'unresolved', component: 'NotAComponent', directive: 'mochi:hydrate', filePath: '/test/File.svelte', importSource: 'mochi-framework/components' },
+    ]);
   });
 
   test('directive on a relative non-svelte import errors with the specifier', () => {
@@ -230,7 +330,7 @@ describe('preprocessHydratable', () => {
     const { serverIslands, errors } = preprocessHydratable(source, '/test/File.svelte');
 
     expect(serverIslands).toHaveLength(0);
-    expect(errors).toEqual([{ component: 'Widget', directive: 'mochi:defer', filePath: '/test/File.svelte', importSource: './Widget.js' }]);
+    expect(errors).toEqual([{ reason: 'unresolved', component: 'Widget', directive: 'mochi:defer', filePath: '/test/File.svelte', importSource: './Widget.js' }]);
   });
 
   test('mochi:clientOnly shares the unresolved-island gate', () => {
@@ -238,7 +338,7 @@ describe('preprocessHydratable', () => {
     const { hydratables, errors } = preprocessHydratable(source, '/test/File.svelte');
 
     expect(hydratables).toHaveLength(0);
-    expect(errors[0]).toEqual({ component: 'Thing', directive: 'mochi:clientOnly', filePath: '/test/File.svelte', importSource: 'some-pkg' });
+    expect(errors[0]).toEqual({ reason: 'unresolved', component: 'Thing', directive: 'mochi:clientOnly', filePath: '/test/File.svelte', importSource: 'some-pkg' });
   });
 
   test('named import from a relative .svelte path is an island', () => {
@@ -312,7 +412,7 @@ describe('preprocessHydratable', () => {
     const { transformed } = preprocessHydratable(source, '/test/File.svelte');
 
     expect(transformed).toContain('disabled: true');
-    expect(transformed).toContain('disabled');
+    expect(transformed).toContain('<Comp disabled />');
   });
 
   test('mixed prop types in single component', () => {
@@ -382,7 +482,10 @@ describe('preprocessHydratable', () => {
 
     expect(serverIslands).toHaveLength(1);
     expect(transformed).toContain('<mochi-server-island');
-    expect(transformed).toContain('server-options={JSON.stringify({retries: 10})}');
+    // The options expression binds once and feeds both the inline decision and the placeholder attribute.
+    expect(transformed).toContain('{@const __mochi_sopts__ = ({retries: 10})}');
+    expect(transformed).toContain('server-options={JSON.stringify(__mochi_sopts__)}');
+    expect(transformed).toContain('__mochi_inline_island__(__mochi_sopts__)');
   });
 
   test('mochi:defer without options omits server-options attribute', () => {
@@ -396,7 +499,7 @@ describe('preprocessHydratable', () => {
     const source = `<script lang="ts">\nimport Srv from "./Srv.svelte";\n</script>\n<Srv mochi:defer />`;
     const { transformed } = preprocessHydratable(source, '/test/File.svelte');
 
-    expect(transformed).toContain('import { encryptProps as __mochi_encrypt_props__ } from "mochi-server-island-runtime"');
+    expect(transformed).toContain('import { encryptProps as __mochi_encrypt_props__, shouldInlineIsland as __mochi_inline_island__ } from "mochi-server-island-runtime"');
     expect(transformed).toContain('import { stringify as __mochi_stringify__ } from "mochi-framework"');
   });
 
@@ -405,8 +508,10 @@ describe('preprocessHydratable', () => {
     const { transformed, serverIslands } = preprocessHydratable(source, '/test/File.svelte');
 
     expect(serverIslands).toHaveLength(1);
+    // Each call site emits the placeholder twice — once in the boundary's failed snippet, once in the non-inline branch.
     const matches = transformed.match(/<mochi-server-island/g);
-    expect(matches).toHaveLength(2);
+    expect(matches).toHaveLength(4);
+    expect(transformed.match(/__mochi_inline_island__\(/g)).toHaveLength(2);
   });
 
   // --- mochi:defer:visible tests ---
@@ -552,7 +657,8 @@ describe('preprocessHydratable', () => {
 
     // Framework entries come last in the object literal, so the spread cannot
     // override the transport id (last key wins).
-    expect(transformed).toContain('{...rest, islandId: __mochi_iid}');
+    expect(transformed).toContain('{@const __mochi_props__ = ({...rest})}');
+    expect(transformed).toContain('{ ...__mochi_props__, islandId: __mochi_iid }');
   });
 
   test('literal islandId prop on a plain hydrate island is rejected too', () => {
@@ -666,25 +772,42 @@ describe('preprocessHydratable', () => {
     expect(transformed).toContain('data-component="Lazy"');
   });
 
-  test('mochi:defer alone does NOT add a boundary', () => {
+  test('mochi:defer branches between inline render and placeholder', () => {
     const source = `${SCRIPT('import Srv from "./Srv.svelte";')}<Srv mochi:defer />`;
     const { transformed } = preprocessHydratable(source, '/test/File.svelte');
 
-    // Server islands are rendered standalone at the /island/:name endpoint —
-    // boundary handling there is via transformError + endpoint try/catch.
-    expect(transformed).not.toContain('<svelte:boundary>');
+    // The inline branch renders the child in-process inside a boundary whose `failed` snippet is the placeholder, so a
+    // throwing child degrades to the classic fetch; the placeholder path stays boundary-free (endpoint transformError
+    // handles standalone renders). No failure stub is emitted — that stays an endpoint concern.
+    expect(transformed).toContain('{#if __mochi_inline_island__()}<svelte:boundary><Srv {...__mochi_props__} />{#snippet failed()}<mochi-server-island');
+    expect(transformed).toContain('{:else}<mochi-server-island');
     expect(transformed).not.toContain('mochi-island-failure');
   });
 
-  test('mochi:defer + mochi:hydrate combo does NOT add a boundary in the parent', () => {
+  test('mochi:defer:visible keeps the fetch-only emission with no inline branch', () => {
+    const source = `${SCRIPT('import Srv from "./Srv.svelte";')}<Srv mochi:defer:visible />`;
+    const { transformed } = preprocessHydratable(source, '/test/File.svelte');
+
+    // Laziness is the point of :visible — it is exempt from inlining and keeps the single-placeholder emission.
+    expect(transformed).not.toContain('__mochi_inline_island__(');
+    expect(transformed).not.toContain('<svelte:boundary>');
+    expect(transformed.match(/<mochi-server-island/g)).toHaveLength(1);
+  });
+
+  test('mochi:defer + mochi:hydrate combo inlines as a hydratable wrapper mirroring the endpoint', () => {
     const source = `${SCRIPT('import Widget from "./Widget.svelte";')}<Widget mochi:defer mochi:hydrate count={5} />`;
     const { transformed } = preprocessHydratable(source, '/test/File.svelte');
 
-    // The combo path renders <mochi-server-island> in the parent — no boundary
-    // here. The eventual hydratable wrap happens at the endpoint with the
-    // already-rendered island body, where the boundary would lose its
-    // semantic value (the throw already happened or didn't).
-    expect(transformed).not.toContain('<svelte:boundary>');
+    // The inline branch mirrors the endpoint's also-hydrate wrapper (`props` attribute, no hydrate-on) inside the
+    // hydrate branch's boundary/context nesting; the placeholder path keeps the plain server-island wrapper.
+    expect(transformed).toContain(
+      '<MochiHydratableBoundary_><mochi-hydratable-island component-name="' +
+        idFor('Widget', './Widget.svelte') +
+        '" props={__mochi_stringify__(__mochi_props__)} component-url="__MOCHI_COMPONENT_URL__' +
+        idFor('Widget', './Widget.svelte') +
+        '__"><svelte:boundary><Widget {...__mochi_props__} /></svelte:boundary></mochi-hydratable-island></MochiHydratableBoundary_>',
+    );
+    expect(transformed).toContain('import MochiHydratableBoundary_ from "mochi-framework/hydratable-boundary"');
   });
 
   test('boundary preserves inner tag and props', () => {

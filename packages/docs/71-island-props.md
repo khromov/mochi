@@ -1,7 +1,7 @@
 ---
 title: 'Passing props to islands'
 slug: island-props
-description: 'How props are serialized and passed to hydratable islands, including supported types and auto-injected framework props.'
+description: 'How Mochi serializes props for hydratable islands, the supported types, and reserved names.'
 ---
 
 <script>
@@ -11,7 +11,7 @@ description: 'How props are serialized and passed to hydratable islands, includi
 
 ## Passing props to islands
 
-Pass props to a component marked with `mochi:hydrate`, `mochi:hydrate:visible`, or `mochi:defer` exactly as you would to any Svelte component — the framework serializes them with [`devalue`](https://github.com/Rich-Harris/devalue) so the same values reach the hydrating client.
+Pass props to a component marked `mochi:hydrate`, `mochi:hydrate:visible`, or `mochi:defer` as you would to any Svelte component. Mochi serializes them with [`devalue`](https://github.com/Rich-Harris/devalue) so the same values reach the hydrating client.
 
 ```svelte
 <!-- file: src/routes/Page.svelte -->
@@ -26,7 +26,7 @@ Pass props to a component marked with `mochi:hydrate`, `mochi:hydrate:visible`, 
 
 ### Typing props
 
-Put the type on the `let { … } = $props()` declaration — don't pass a type argument to `$props()` itself. For a handful of props, inline the type after the destructuring:
+Put the type on the `let { … } = $props()` declaration. For a few props, inline the type:
 
 ```svelte
 <script lang="ts">
@@ -34,7 +34,7 @@ Put the type on the `let { … } = $props()` declaration — don't pass a type a
 </script>
 ```
 
-For larger or reused shapes, pull it out into a `Props` interface:
+For larger or reused shapes, use a `Props` interface:
 
 ```svelte
 <script lang="ts">
@@ -50,11 +50,11 @@ For larger or reused shapes, pull it out into a `Props` interface:
 
 <Callout type="warning">
 
-Avoid the `$props<{ … }>()` type-argument form — always annotate the `let { … }` declaration as shown above.
+Annotate the `let { … }` declaration. Avoid the `$props<{ … }>()` type-argument form.
 
 </Callout>
 
-Snippet props (including `children`) are typed with the `Snippet` interface from `svelte`:
+Type snippet props (including `children`) with the `Snippet` interface from `svelte`. Snippets can only be passed between components on the same side of the server→client boundary — inside an island's subtree, or between server-rendered components — never _into_ a hydrate island from the page (see below):
 
 ```svelte
 <script lang="ts">
@@ -66,7 +66,7 @@ Snippet props (including `children`) are typed with the `Snippet` interface from
 {@render children()}
 ```
 
-When a component wraps a native element and forwards the rest of its attributes, type the spread with the matching interface from [`svelte/elements`](https://svelte.dev/docs/svelte/typescript#Typing-wrapper-components):
+When a component wraps a native element and forwards its attributes, type the spread with the matching interface from [`svelte/elements`](https://svelte.dev/docs/svelte/typescript#Typing-wrapper-components):
 
 ```svelte
 <script lang="ts">
@@ -78,30 +78,29 @@ When a component wraps a native element and forwards the rest of its attributes,
 <button {...rest}>{@render children?.()}</button>
 ```
 
-### Wire format
+### How props travel
 
-For `mochi:hydrate*` islands, props are emitted as a `<script type="application/json" id="mochi-props-N">` block placed just before the island. When several islands on a page share the exact same payload, the block is emitted once before the first of them and the rest reference it by id — so identical props ship over the wire only once.
-
-For `mochi:defer` server islands the flow differs: props are encrypted (opaque on the wire) and passed as a query parameter to a per-island endpoint — see [Server islands](/docs/server-islands/).
+For `mochi:hydrate*` islands, props ship inline in the page HTML. When several islands share the same payload, it ships over the wire once and the rest reference it, which keeps the page small. For `mochi:defer` server islands, props are encrypted (opaque on the wire) and passed to a per-island endpoint. See [Server islands](/docs/server-islands/).
 
 ### Supported types
 
 - Plain objects and arrays
 - Primitives: strings, numbers, booleans, `null`
 - `Date`, `RegExp`, `Map`, `Set`, `URL`, `URLSearchParams`
-- `BigInt`, typed arrays (`Uint8Array`, etc.)
+- `BigInt`, typed arrays (`Uint8Array`, and so on)
 - `undefined`, `Infinity`, `NaN`, `-0`
 - Repeated and cyclic references (identity is preserved)
 
-### Not supported
+### Unsupported types
 
 - Functions
-- Class instances (the constructor is lost — only own enumerable properties survive)
+- Class instances (only own enumerable properties survive)
 - `Symbol`
+- Snippets / `children` — a snippet is a function, so it cannot cross the boundary. Children at a `mochi:hydrate*` call site are a [compile error](/docs/selective-hydration/#no-children-on-hydrate-islands); on `mochi:defer*` and `mochi:clientOnly*` they are the loading fallback instead.
 
 ### Detecting hydration
 
-To branch on whether the current render will hydrate, call [`isHydratable()`](/docs/selective-hydration/#ishydratable) — it works in any component at any nesting depth, with no prop involved:
+To branch on whether the current render will hydrate, call [`isHydratable()`](/docs/selective-hydration/#ishydratable). It works in any component at any nesting depth, with no prop involved.
 
 ```svelte
 <!-- file: src/lib/UserCard.svelte -->
@@ -114,7 +113,7 @@ To branch on whether the current render will hydrate, call [`isHydratable()`](/d
 </script>
 ```
 
-`islandId` is a reserved name on every island (`mochi:hydrate` and `mochi:defer` alike) — passing it as a literal prop is a compile error, so a component can move between directives without the name silently changing meaning. On `mochi:defer` it is also the framework's transport key inside the encrypted envelope, stripped server-side before the component renders; a spread carrying it there is overridden by the framework value (last key wins). For a unique id inside the component, use `$props.id()`.
+`islandId` is a reserved name on every island. Passing it as a literal prop is a compile error, so a component can move between directives without the name changing meaning. For a unique id inside the component, use `$props.id()`.
 
 <SeeItInAction
 demos={[

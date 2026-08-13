@@ -9,10 +9,13 @@ import type { MochiSvelteCompiler } from '../compiler/svelteCompilerBackend';
 import { rmSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { scanPublicDir, publicRouteKey } from '../runtime/publicDir';
+import { scanEmailTemplates } from '../email/templates';
+import { encodeSourcePath } from '../compiler/manifestPaths';
 import { loadSvelteConfig } from '../compiler/svelteConfig';
 import { logger, setLogLevel } from '../utils/log';
 import { consoleLogger } from '../dev/consoleLogger';
 import { mochiEvents } from '../events';
+import type { MochiCompileCompleteEvent } from '../events';
 import { styleText } from 'node:util';
 import prettyBytes from '../vendor/pretty-bytes';
 import { collectImageResources, printResourceTree } from './resourceReport';
@@ -76,9 +79,14 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     clientBundleCount += 1;
     clientBundleMs += durationMs;
   };
+  const compileStats = new Map<string, { ssrSizeBytes: number; hydratableCount: number; serverIslandCount: number }>();
+  const onCompileComplete = ({ path: p, ssrSizeBytes, hydratableCount, serverIslandCount }: MochiCompileCompleteEvent) => {
+    compileStats.set(p, { ssrSizeBytes, hydratableCount, serverIslandCount });
+  };
   // Removed in the trailing finally — build() runs in-process from tests, so a
   // leaked listener would survive into subsequent builds in the same process.
   mochiEvents.on('client-bundle:complete', onClientBundle);
+  mochiEvents.on('compile:complete', onCompileComplete);
   try {
     const development = options.development ?? false;
     const baseOutDir = options.outDir ?? './.mochi';
@@ -143,13 +151,9 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     const compiledPages: string[] = [];
     // Seeding the framework components `Mochi.serve()` would otherwise compile at startup — the error page and the
     // client-stats admin page — makes the boot-time compileAll a no-op in production.
-    const ssrEntrypoints: string[] = [options.errorPage ?? DEFAULT_ERROR_PAGE_PATH, CLIENT_STATS_COMPONENT];
+    const errorPagePath = options.errorPage ?? DEFAULT_ERROR_PAGE_PATH;
+    const ssrEntrypoints: string[] = [errorPagePath, CLIENT_STATS_COMPONENT];
     const allRoutes: RouteEntry[] = [];
-
-    const compileStats = new Map<string, { ssrSizeBytes: number; hydratableCount: number }>();
-    mochiEvents.on('compile:complete', ({ path: p, ssrSizeBytes, hydratableCount }) => {
-      compileStats.set(p, { ssrSizeBytes, hydratableCount });
-    });
 
     for (const [pattern, handler] of Object.entries(options.routes)) {
       if (isMochiPage(handler)) {
@@ -165,6 +169,11 @@ export async function build(options: MochiBuildOptions): Promise<void> {
       }
     }
 
+    // Email templates are reachable only through `Mochi.email({ component })` at runtime, so no import graph leads here
+    // from a route. Walking the conventional directory is what keeps them out of a cold compile on the first send.
+    const emailTemplates = scanEmailTemplates();
+    ssrEntrypoints.push(...emailTemplates);
+
     if (ssrEntrypoints.length > 0) {
       await timed('pages', () => registry.compileAll(ssrEntrypoints, { deferClientBundle: true }));
     }
@@ -174,6 +183,40 @@ export async function build(options: MochiBuildOptions): Promise<void> {
       throw new Error(`[mochi:build] ${formatCompileErrors(compileErrors)}`);
     }
 
+    // The pass above compiled every one of these, so a missing stat is a framework regression rather than anything the
+    // user did — throwing keeps it loud instead of silently disarming both island guards below.
+    const emailStats = emailTemplates.map((file) => {
+      const stats = compileStats.get(path.resolve(file));
+      if (!stats) {
+        throw new Error(`[mochi:build] no compile stats for email template ${file} — its island guards can't run.`);
+      }
+      return { file, ...stats };
+    });
+
+    // Until the build compiled these, an island in an email template surfaced only as a render-time throw on the first
+    // send. Now that they're in the bundle it would also emit client JS no email client can run, so fail here instead.
+    // Mirrors renderStatic()'s hydratable guard, which is import-graph based and fires regardless of props.
+    const emailWithIslands = emailStats.filter((s) => s.hydratableCount > 0).map((s) => s.file);
+    if (emailWithIslands.length > 0) {
+      throw new Error(
+        `[mochi:build] Email templates can't contain islands:\n` +
+          emailWithIslands.map((f) => `  - ${f}`).join('\n') +
+          `\nmochi:hydrate* / mochi:clientOnly need client JS, which an email can't run — render the content inline instead.`,
+      );
+    }
+
+    // Stricter than renderStatic()'s own server-island guard, which is post-render and greps the output for the
+    // placeholder, so it lets through a `mochi:defer` behind a branch that never renders. The import graph catches that
+    // one too — an email template has no business referencing a server island at all.
+    const emailWithServerIslands = emailStats.filter((s) => s.serverIslandCount > 0).map((s) => s.file);
+    if (emailWithServerIslands.length > 0) {
+      throw new Error(
+        `[mochi:build] Email templates can't contain server islands:\n` +
+          emailWithServerIslands.map((f) => `  - ${f}`).join('\n') +
+          `\nmochi:defer* loads over a follow-up request an email can't make — render the content inline instead.`,
+      );
+    }
+
     // Precompiling `mochi:defer` islands as standalone SSR modules keeps the production runtime off the compile path,
     // which the first fetch of each deferred island would otherwise trigger. Discovery is eager because a
     // `mochi:defer` island's import survives in its compiled source — only the markup usage is rewritten — so compiling
@@ -181,7 +224,6 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     // manifest, and the server-island endpoint warns and falls back to an on-demand compile.
     const islandPaths = [...new Set(registry.getServerIslandPaths().values())];
     if (islandPaths.length > 0) {
-      logger.info(`[mochi:build] precompiling ${islandPaths.length} server island(s): ${islandPaths.map((p) => path.basename(p)).join(', ')}`);
       await timed('islands', () => registry.compileAll(islandPaths, { deferClientBundle: true }));
       compileErrors = registry.getErrors();
       if (compileErrors.length > 0) {
@@ -198,7 +240,15 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     registry.flushBarrelWarnings();
 
     allRoutes.sort((a, b) => a.pattern.localeCompare(b.pattern, undefined, { numeric: true }));
-    printRouteTree(allRoutes, compileStats);
+    printBuildTree({
+      routes: allRoutes,
+      errorPage: errorPagePath,
+      emails: emailStats,
+      // Sorted by name, not by the map's compile order, so a rebuild of unchanged sources prints an identical tree.
+      islands: [...registry.getServerIslandPaths()].sort(([a], [b]) => a.localeCompare(b)),
+      assetPrefix: registry.assetPrefix,
+      stats: compileStats,
+    });
 
     // After finalizeClientBundle() above, so assets the client pass emitted are
     // in the map too (both passes share it, keyed by served URL).
@@ -232,11 +282,13 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     const phaseSummary = phases.map((p) => `${p.name} ${formatDuration(p.ms)}`).join(' · ');
     logger.info(`build: phases — ${phaseSummary} (client bundle ×${clientBundleCount}, ${formatDuration(clientBundleMs)})`);
     const elapsed = formatDuration(performance.now() - startedAt);
+    const emailSummary = emailTemplates.length > 0 ? `, ${emailTemplates.length} email template(s)` : '';
     logger.info(
-      `build: done in ${elapsed}. ${compiledPages.length} page(s), ${clientFileCount} client file(s), ${publicFileCount} public file(s), ${imageAssets.size} image asset(s). Manifest written to ${manifestPath}`,
+      `build: done in ${elapsed}. ${compiledPages.length} page(s), ${clientFileCount} client file(s), ${publicFileCount} public file(s), ${imageAssets.size} image asset(s)${emailSummary}. Manifest written to ${manifestPath}`,
     );
   } finally {
     mochiEvents.off('client-bundle:complete', onClientBundle);
+    mochiEvents.off('compile:complete', onCompileComplete);
   }
 }
 
@@ -273,6 +325,12 @@ function pageSymbol(hyd: number | null): string {
   return hyd != null && hyd > 0 ? styleText('green', '●') : styleText('cyan', '○');
 }
 
+// Same full/empty distinction as `pageSymbol`, in the server island's own colour: a server island is a render of its
+// own, so it can carry hydratable children just like a page can.
+function serverIslandSymbol(hyd: number | null): string {
+  return styleText('magenta', hyd != null && hyd > 0 ? '◐' : '○');
+}
+
 function kindSymbol(kind: Exclude<RouteKind, 'page'>): string {
   switch (kind) {
     case 'api':
@@ -284,52 +342,126 @@ function kindSymbol(kind: Exclude<RouteKind, 'page'>): string {
   }
 }
 
-function printRouteTree(routes: RouteEntry[], stats: Map<string, { ssrSizeBytes: number; hydratableCount: number }>): void {
-  if (routes.length === 0) {
+interface TreeRow {
+  symbol: string;
+  /** Rendered with `:param` segments highlighted, so it must stay plain text until print time. */
+  label: string;
+  hyd: number | null;
+  ssr: string | null;
+}
+
+interface TreeGroup {
+  heading: string;
+  rows: TreeRow[];
+}
+
+function statRow(symbol: string, label: string, stats: BuildTreeInput['stats'], componentPath: string | undefined): TreeRow {
+  // `compile:complete` reports resolved absolute paths; route registrations and
+  // `errorPage` are whatever the user wrote (usually './src/X.svelte').
+  const s = componentPath ? stats.get(path.resolve(componentPath)) : undefined;
+  return { symbol, label, hyd: s?.hydratableCount ?? null, ssr: s ? prettyBytes(s.ssrSizeBytes) : null };
+}
+
+interface BuildTreeInput {
+  routes: RouteEntry[];
+  /** As passed to `Mochi.serve({ errorPage })`, or Mochi's built-in when unset — either way it lands in the manifest. */
+  errorPage: string;
+  emails: { file: string; ssrSizeBytes: number }[];
+  /** `[islandName, resolvedPath]`, as `ComponentRegistry.getServerIslandPaths()` records them. */
+  islands: [string, string][];
+  assetPrefix: string;
+  stats: Map<string, { ssrSizeBytes: number; hydratableCount: number }>;
+}
+
+/**
+ * Every SSR entrypoint the build produced, as one connected list: routes, then the error page, email templates, and
+ * server islands. The trailing groups are separated because no route reaches them — they render on a throw, on a send,
+ * and on a fetch of their own endpoint — but they share the column widths and the legend so the whole thing reads as a
+ * single report.
+ */
+function printBuildTree({ routes, errorPage, emails, islands, assetPrefix, stats }: BuildTreeInput): void {
+  const routeRows = routes.map(({ pattern, kind, componentPath }) => {
+    const row = statRow('', pattern, stats, componentPath);
+    // A page's symbol depends on its hydratable count, so it can only be picked once the stats lookup has resolved.
+    return { ...row, symbol: kind === 'page' ? pageSymbol(row.hyd) : kindSymbol(kind), kind };
+  });
+
+  const groups: TreeGroup[] = [{ heading: 'Route', rows: routeRows }];
+  groups.push({ heading: 'Error page', rows: [statRow(styleText('yellow', '⚠'), encodeSourcePath(errorPage), stats, errorPage)] });
+  if (emails.length > 0) {
+    groups.push({
+      heading: 'Email template',
+      // `hyd: null` renders as `-` rather than `0`: an island in a template fails the build, so the column can't apply.
+      rows: emails.map((e) => ({ symbol: styleText('cyan', '✉'), label: e.file, hyd: null, ssr: prettyBytes(e.ssrSizeBytes) })),
+    });
+  }
+  // Labelled by endpoint rather than by file: the name is what the browser fetches, and two islands can share a source
+  // file (named exports) while each keeps its own URL.
+  const islandRows = islands.map(([name, resolvedPath]) => {
+    const row = statRow('', `${assetPrefix}/island/${name}`, stats, resolvedPath);
+    return { ...row, symbol: serverIslandSymbol(row.hyd) };
+  });
+  if (islandRows.length > 0) {
+    groups.push({ heading: 'Server island', rows: islandRows });
+  }
+
+  const allRows = groups.flatMap((g) => g.rows);
+  if (allRows.length === 0) {
     return;
   }
 
-  const rows = routes.map(({ pattern, kind, componentPath }) => {
-    // `compile:complete` reports resolved absolute paths; route registrations
-    // are whatever the user wrote (usually './src/X.svelte').
-    const s = componentPath ? stats.get(path.resolve(componentPath)) : undefined;
-    return { pattern, kind, hyd: s?.hydratableCount ?? null, ssr: s ? prettyBytes(s.ssrSizeBytes) : null };
-  });
-
-  const patternWidth = Math.max('Route'.length, ...rows.map((r) => r.pattern.length));
+  const labelWidth = Math.max(...groups.map((g) => g.heading.length), ...allRows.map((r) => r.label.length));
   const islandsWidth = 'islands'.length;
-  const bundleWidth = Math.max('bundle'.length, ...rows.map((r) => r.ssr?.length ?? 0));
+  const bundleWidth = Math.max('bundle'.length, ...allRows.map((r) => r.ssr?.length ?? 0));
 
-  // "  ┌ ● " = 6 chars — header indent matches
-  console.log(styleText('dim', `      ${'Route'.padEnd(patternWidth + 2)}  ${'islands'.padStart(islandsWidth)}  ${'bundle'.padStart(bundleWidth)}`));
+  const n = allRows.length;
+  let i = 0;
+  for (const [groupIndex, group] of groups.entries()) {
+    if (groupIndex === 0) {
+      // "  ┌ ● " = 6 chars — header indent matches
+      console.log(styleText('dim', `      ${group.heading.padEnd(labelWidth + 2)}  ${'islands'.padStart(islandsWidth)}  ${'bundle'.padStart(bundleWidth)}`));
+    } else {
+      // The `│` keeps the run unbroken across the gap, so the groups read as sections of one list rather than as
+      // separate tables that happen to share a column layout.
+      console.log(styleText('dim', '  │'));
+      console.log(styleText('dim', `  │   ${group.heading}`));
+    }
 
-  const n = routes.length;
-  for (let i = 0; i < n; i++) {
-    const { pattern, kind, hyd, ssr } = rows[i]!;
-    const char = styleText('dim', n === 1 ? '─' : i === 0 ? '┌' : i === n - 1 ? '└' : '├');
-    const symbol = kind === 'page' ? pageSymbol(hyd) : kindSymbol(kind);
-    const coloredPattern = pattern.padEnd(patternWidth + 2).replace(/:[^/\s]+/g, (s: string) => styleText('cyan', s));
-    const isPage = kind === 'page';
-    const hydStr = isPage && hyd != null ? styleText('green', String(hyd).padStart(islandsWidth)) : styleText('dim', '-'.padStart(islandsWidth));
-    const ssrStr = isPage && ssr != null ? styleText('dim', ssr.padStart(bundleWidth)) : styleText('dim', '-'.padStart(bundleWidth));
-    console.log(`  ${char} ${symbol} ${coloredPattern}  ${hydStr}  ${ssrStr}`);
+    for (const { symbol, label, hyd, ssr } of group.rows) {
+      const char = styleText('dim', n === 1 ? '─' : i === 0 ? '┌' : i === n - 1 ? '└' : '├');
+      const coloredLabel = label.padEnd(labelWidth + 2).replace(/:[^/\s]+/g, (s: string) => styleText('cyan', s));
+      const hydStr = hyd != null ? styleText('green', String(hyd).padStart(islandsWidth)) : styleText('dim', '-'.padStart(islandsWidth));
+      const ssrStr = styleText('dim', (ssr ?? '-').padStart(bundleWidth));
+      console.log(`  ${char} ${symbol} ${coloredLabel}  ${hydStr}  ${ssrStr}`);
+      i++;
+    }
   }
 
   const legendEntries: string[] = [];
-  if (rows.some((r) => r.kind === 'page' && r.hyd != null && r.hyd > 0)) {
+  if (routeRows.some((r) => r.kind === 'page' && r.hyd != null && r.hyd > 0)) {
     legendEntries.push(`${styleText('green', '●')} page with islands`);
   }
-  if (rows.some((r) => r.kind === 'page' && (r.hyd === null || r.hyd === 0))) {
+  if (routeRows.some((r) => r.kind === 'page' && (r.hyd === null || r.hyd === 0))) {
     legendEntries.push(`${styleText('cyan', '○')} ssr-only page`);
   }
-  if (rows.some((r) => r.kind === 'api')) {
+  if (routeRows.some((r) => r.kind === 'api')) {
     legendEntries.push(`${styleText('magenta', 'λ')} api`);
   }
-  if (rows.some((r) => r.kind === 'ws')) {
+  if (routeRows.some((r) => r.kind === 'ws')) {
     legendEntries.push(`${styleText('blue', '⇄')} websocket`);
   }
-  if (rows.some((r) => r.kind === 'sse')) {
+  if (routeRows.some((r) => r.kind === 'sse')) {
     legendEntries.push(`${styleText('green', '→')} sse`);
+  }
+  legendEntries.push(`${styleText('yellow', '⚠')} error page`);
+  if (emails.length > 0) {
+    legendEntries.push(`${styleText('cyan', '✉')} email template`);
+  }
+  if (islandRows.some((r) => r.hyd != null && r.hyd > 0)) {
+    legendEntries.push(`${styleText('magenta', '◐')} server island with islands`);
+  }
+  if (islandRows.some((r) => r.hyd === null || r.hyd === 0)) {
+    legendEntries.push(`${styleText('magenta', '○')} server island`);
   }
   console.log(`\n  ${legendEntries.join(styleText('dim', '  ·  '))}`);
 }

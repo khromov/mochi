@@ -80,7 +80,9 @@
       <span class="bundle-size">{formatSize(displaySize)}</span>
     </div>
     <div class="bundle-inputs">
-      {#each displayInputs as input (input.path)}
+      <!-- Keyed by index, not path: `cleanInputPath` is meant to be injective, but a collision there must degrade into
+           two identical rows rather than taking the whole bar down behind the boundary. The list never reorders. -->
+      {#each displayInputs as input, i (i)}
         <button class="input-row" class:selected={selectedInput === input.path} type="button" onclick={() => selectInput(input.path)}>
           <span class="input-path">{input.path}</span>
           <span class="input-size">{formatSize(input.size)}</span>

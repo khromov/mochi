@@ -3,6 +3,8 @@ import type { HandleError, MochiErrorInfo, MochiEvent, MochiResolveOptions } fro
 import { applyResolveOptions } from './hooks';
 import { logger } from '../utils/log';
 import { MochiHttpError } from '../utils';
+import { requestContext, type MochiRequestContext } from './requestContext';
+import { finalizeCookieHeaders, MochiCookieJar, type CookieSerializeOptions } from './cookies';
 
 export const DEFAULT_ERROR_PAGE_PATH = Bun.fileURLToPath(new URL('../templates/DefaultError.svelte', import.meta.url));
 
@@ -12,6 +14,8 @@ export interface ErrorResponderDeps {
   registry: ComponentRegistry;
   errorPagePath: string;
   renderShell: (result: RenderResult) => string;
+  cookieDefaults: CookieSerializeOptions;
+  newRequestId: (req: Request) => string;
 }
 
 export type RenderErrorResponse = (input: {
@@ -29,9 +33,30 @@ export function createErrorResponder(deps: ErrorResponderDeps): {
   renderErrorResponse: RenderErrorResponse;
   routeErrorResponse: RouteErrorResponse;
 } {
-  const { handleError, development, registry, errorPagePath, renderShell } = deps;
+  const { handleError, development, registry, errorPagePath, renderShell, cookieDefaults, newRequestId } = deps;
 
+  // The unmatched-route 404 fallback renders outside any request context, which would make an
+  // error page that calls getRequestContext() (or renders <ViewTransitions />) throw — so build a
+  // minimal context here whenever none is ambient.
   const renderErrorResponse: RenderErrorResponse = async (input) => {
+    if (requestContext.getStore()) {
+      return renderErrorResponseInner(input);
+    }
+    const ctx: MochiRequestContext = {
+      requestId: newRequestId(input.req),
+      request: input.req,
+      url: input.event.url,
+      params: {},
+      locals: input.event.locals,
+      isWarmup: false,
+      cookies: new MochiCookieJar(input.req.headers.get('Cookie'), cookieDefaults),
+      islandProps: new Map(),
+      getClientAddress: () => null,
+    };
+    return requestContext.run(ctx, async () => finalizeCookieHeaders(await renderErrorResponseInner(input), ctx.cookies));
+  };
+
+  const renderErrorResponseInner: RenderErrorResponse = async (input) => {
     const { req, event, resolveOpts, thrown } = input;
     let { status, message } = input;
 

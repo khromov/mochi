@@ -25,6 +25,11 @@ export function relForDisplay(p: string): string {
   return toPosixPath(path.relative(process.cwd(), p));
 }
 
+/** Absolutize a Bun plugin `onResolve` specifier against its importer's directory. */
+export function resolveArgsPath(args: { path: string; resolveDir?: string }): string {
+  return args.resolveDir ? path.resolve(args.resolveDir, args.path) : path.resolve(args.path);
+}
+
 export type CompressionMethod = 'gzip' | 'brotli';
 
 export const COMPRESSION_TOKEN: Record<CompressionMethod, 'gzip' | 'br'> = { gzip: 'gzip', brotli: 'br' };
@@ -58,15 +63,41 @@ export function json(
   });
 }
 
-/** Throws an error the framework catches and turns into a JSON error response. */
-export function error(status: number, message: string): never {
+const HTTP_STATUS_TEXT: Record<number, string> = {
+  400: 'Bad Request',
+  401: 'Unauthorized',
+  403: 'Forbidden',
+  404: 'Not Found',
+  405: 'Method Not Allowed',
+  406: 'Not Acceptable',
+  408: 'Request Timeout',
+  409: 'Conflict',
+  410: 'Gone',
+  412: 'Precondition Failed',
+  413: 'Payload Too Large',
+  415: 'Unsupported Media Type',
+  422: 'Unprocessable Entity',
+  429: 'Too Many Requests',
+  500: 'Internal Server Error',
+  501: 'Not Implemented',
+  502: 'Bad Gateway',
+  503: 'Service Unavailable',
+  504: 'Gateway Timeout',
+};
+
+export function httpStatusText(status: number): string {
+  return HTTP_STATUS_TEXT[status] ?? `Error ${status}`;
+}
+
+/** Throws an error the framework catches and turns into a JSON error response. Omitting `message` uses the canonical status text. */
+export function error(status: number, message?: string): never {
   throw new MochiHttpError(status, message);
 }
 
 export class MochiHttpError extends Error {
   status: number;
-  constructor(status: number, message: string) {
-    super(message);
+  constructor(status: number, message?: string) {
+    super(message ?? httpStatusText(status));
     this.status = status;
   }
 }
