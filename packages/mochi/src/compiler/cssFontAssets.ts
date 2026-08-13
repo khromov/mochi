@@ -1,6 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { BunPlugin } from 'bun';
+import MagicString from 'magic-string';
+import { parseCss, parseDataUri, removalSpans, type FontSource, type UrlRef } from './cssAst';
 
 /**
  * A font file Bun's bundler resolved behind a `url()` in a CSS build, replaced with marker bytes by
@@ -88,6 +90,8 @@ export async function adoptEmittedFontAssets(css: string, emitted: { path: strin
   const otherAssets: string[] = [];
   const adopted: string[] = [];
   const refByMarker = new Map(refs.map((r) => [r.markerB64, r]));
+  const urls = parseCss(css)?.urls ?? [];
+  const edits = new MagicString(css);
   for (const artifact of emitted) {
     const ext = path.extname(artifact.path).toLowerCase();
     if (!FONT_URL_FILTER.test(artifact.path)) {
@@ -103,8 +107,8 @@ export async function adoptEmittedFontAssets(css: string, emitted: { path: strin
     const marked = bytes.length < 64 ? refByMarker.get(Buffer.from(bytes).toString('base64')) : undefined;
     const markerB64 = marked?.markerB64 ?? markerFor(refs.length).markerB64;
     const mime = FONT_MIME_BY_EXT[ext] ?? 'application/octet-stream';
-    const substituted = replaceUrlToken(css, path.basename(artifact.path), `data:${mime};base64,${markerB64}`);
-    if (substituted === css) {
+    const references = urls.filter((url) => namesEmittedFile(url.value, path.basename(artifact.path)));
+    if (references.length === 0) {
       // Bun printed a url() form this doesn't recognise, so the copy stays and serves the face unextracted — which
       // takes the real font, since a marked copy holds only marker text.
       if (marked) {
@@ -113,7 +117,9 @@ export async function adoptEmittedFontAssets(css: string, emitted: { path: strin
       otherAssets.push(artifact.path);
       continue;
     }
-    css = substituted;
+    for (const reference of references) {
+      edits.overwrite(reference.start, reference.end, `url(data:${mime};base64,${markerB64})`);
+    }
     if (!marked) {
       // Bun's copy is byte-identical to the source, so it stands in as the ref's file, minus the fixed-width asset
       // hash in its name that would otherwise double-hash the served one.
@@ -121,197 +127,138 @@ export async function adoptEmittedFontAssets(css: string, emitted: { path: strin
     }
     adopted.push(artifact.path);
   }
-  return { css, otherAssets, adopted };
+  return { css: edits.toString(), otherAssets, adopted };
 }
 
-// Bun prints the emitted asset relative to the stylesheet (`./name.woff2` or `name.woff2`), quoted or not under minify.
-function replaceUrlToken(css: string, fileName: string, replacement: string): string {
-  const escaped = fileName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return css.replace(new RegExp(String.raw`url\(\s*(["']?)(?:\.?\.?/)*${escaped}\1\s*\)`, 'g'), `url(${replacement})`);
-}
-
-const URL_TOKEN_RE = /url\(\s*("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^'")][^)]*)\s*\)/g;
-const FONT_FACE_RE = /@font-face\s*\{[^{}]*\}/g;
-const DATA_URI_RE = /^data:([^;,]+);base64,(.*)$/s;
-
-function unquote(value: string): string {
-  const v = value.trim();
-  if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
-    return v.slice(1, -1);
-  }
-  return v;
-}
-
-/** Overlap with U+0000–00FF, the glyphs first paint always needs; a face visible there is worth preloading. */
-function unicodeRangeTouchesLatin(rangeValue: string): boolean {
-  for (const token of rangeValue.split(',')) {
-    const m = token.trim().match(/^U\+([0-9a-f?]{1,6})(?:-([0-9a-f]{1,6}))?$/i);
-    if (!m) {
-      continue;
-    }
-    const lo = parseInt(m[1]!.replaceAll('?', '0'), 16);
-    const hi = m[2] !== undefined ? parseInt(m[2], 16) : parseInt(m[1]!.replaceAll('?', 'f'), 16);
-    if (lo <= 0xff && hi >= 0) {
-      return true;
-    }
-  }
-  return false;
-}
-
-// Splitting a `src:` list on every comma would sever multi-argument functions like `tech(features-aat, color-COLRv1)`,
-// leaving an orphaned tail that invalidates the whole descriptor when its source is dropped.
-function splitTopLevel(value: string): string[] {
-  const parts: string[] = [];
-  let depth = 0;
-  let start = 0;
-  for (let i = 0; i < value.length; i++) {
-    const ch = value[i];
-    if (ch === '(') {
-      depth++;
-    } else if (ch === ')') {
-      depth = Math.max(0, depth - 1);
-    } else if (ch === ',' && depth === 0) {
-      parts.push(value.slice(start, i));
-      start = i + 1;
-    }
-  }
-  parts.push(value.slice(start));
-  return parts;
-}
-
-interface ParsedSource {
-  /** Original source text with `url(...)` still tokenized as `@@n@@`. */
-  text: string;
-  urlIndex: number | null;
-  format: string | null;
-}
-
-function classifyFormat(source: ParsedSource, urlValue: string | undefined, refForUrl: FontRef | undefined): string | null {
-  if (source.format) {
-    return source.format.toLowerCase();
-  }
-  const pathLike = refForUrl?.path ?? urlValue;
-  if (!pathLike) {
-    return null;
-  }
-  const dataMime = pathLike.match(/^data:([^;,]+)/)?.[1];
-  if (dataMime) {
-    return dataMime.toLowerCase().split('/').pop() ?? null;
-  }
-  return pathLike.split('?')[0]!.split('.').pop()?.toLowerCase() ?? null;
+// Bun prints the emitted asset relative to the stylesheet: `./name.woff2`, `../name.woff2` or bare.
+function namesEmittedFile(urlValue: string, fileName: string): boolean {
+  const segments = urlValue.split('/');
+  return segments.pop() === fileName && segments.every((segment) => segment === '.' || segment === '..');
 }
 
 /**
  * Classify the marker `data:` URIs a {@link createFontMarkerPlugin} build left in the bundled CSS: prune legacy woff
  * sources, decide preload-worthiness per `@font-face` block, and report every ref still referenced so the caller can
  * emit those files and substitute their `markerUri` with the final served URL.
+ *
+ * `parseFailed` means nothing was inspected, so any marker in the CSS is still sitting where a font should be.
  */
-export function classifyFontAssets(css: string, refs: FontRef[], opts: { dropLegacyWoff: boolean }): { css: string; fonts: SurvivingFont[] } {
+export function classifyFontAssets(css: string, refs: FontRef[], opts: { dropLegacyWoff: boolean }): { css: string; fonts: SurvivingFont[]; parseFailed: boolean } {
   // No zero-refs early return: legacy-woff pruning must still run when every font inlined for real (all under the
   // threshold, or the marker plugin skipped entirely via `inlineThreshold: Infinity`).
+  const document = parseCss(css);
+  if (!document) {
+    return { css, fonts: [], parseFailed: true };
+  }
   const refByMarker = new Map(refs.map((ref) => [ref.markerB64, ref]));
+
+  const refByUrl = new Map<UrlRef, FontRef>();
+  const urlsByRef = new Map<FontRef, UrlRef[]>();
   // The bundler decides the marker URI's exact text (MIME from the file extension), so capture it from the CSS rather
   // than re-deriving it.
   const found = new Map<FontRef, { contentType: string; markerUri: string; preload: boolean }>();
-  for (const m of css.matchAll(/data:([^;,]+);base64,([A-Za-z0-9+/=]+)/g)) {
-    const ref = refByMarker.get(m[2]!);
-    if (ref && !found.has(ref)) {
-      found.set(ref, { contentType: m[1]!.toLowerCase(), markerUri: m[0], preload: false });
+  for (const url of document.urls) {
+    const data = parseDataUri(url.value);
+    const ref = data ? refByMarker.get(data.base64) : undefined;
+    if (!data || !ref) {
+      continue;
+    }
+    refByUrl.set(url, ref);
+    urlsByRef.set(ref, [...(urlsByRef.get(ref) ?? []), url]);
+    if (!found.has(ref)) {
+      found.set(ref, { contentType: data.mime.toLowerCase(), markerUri: url.value, preload: false });
     }
   }
 
-  const outCss = css.replace(FONT_FACE_RE, (block) => {
-    // Tokenize url() payloads first: data URIs contain `;` and `,`, so no declaration-level parsing is safe before this.
-    const urls: string[] = [];
-    const safeBlock = block.replace(URL_TOKEN_RE, (_m, value: string) => {
-      urls.push(unquote(value));
-      return `url(@@${urls.length - 1}@@)`;
+  const edits = new MagicString(css);
+  const dropped = new Set<UrlRef>();
+  for (const face of document.fontFaces) {
+    // Overlap with U+0000–00FF, the glyphs first paint always needs; a face visible there is worth preloading.
+    const latinVisible = face.unicodeRanges === null || face.unicodeRanges.some((range) => range.lo <= 0xff);
+    const formats = face.sources.map((source) => sourceFormat(source, source.url ? refByUrl.get(source.url) : undefined));
+    // Only a woff2 this pipeline itself emits or inlines (a `data:` URI at this stage) justifies pruning the woff
+    // fallback — an external woff2 (CDN url the bundler left alone) can be unreachable offline or blocked by CSP.
+    const hasWoff2 = face.sources.some((source, i) => (formats[i] === 'woff2' || formats[i] === 'woff2-variations') && (source.url?.value.startsWith('data:') ?? false));
+
+    const dropIndices = new Set<number>();
+    face.sources.forEach((source, i) => {
+      // Legacy woff goes whether inlined or marked — a data: URI copy is payload all the same.
+      if (opts.dropLegacyWoff && hasWoff2 && formats[i] === 'woff' && source.url) {
+        dropIndices.add(i);
+        return;
+      }
+      const ref = source.url ? refByUrl.get(source.url) : undefined;
+      // Keyed off the file extension, not the format() hint, so `woff2-variations` variable fonts preload too.
+      if (ref && ref.path.endsWith('.woff2') && latinVisible) {
+        const entry = found.get(ref);
+        if (entry) {
+          entry.preload = true;
+        }
+      }
     });
 
-    const rangeValue = safeBlock.match(/unicode-range\s*:\s*([^;}]+)/i)?.[1];
-    const latinVisible = rangeValue === undefined || unicodeRangeTouchesLatin(rangeValue);
-
-    const refForUrl = (value: string | undefined): FontRef | undefined => {
-      const payload = value?.match(DATA_URI_RE)?.[2];
-      return payload !== undefined ? refByMarker.get(payload) : undefined;
-    };
-
-    const rewritten = safeBlock.replace(/(src\s*:\s*)([^;}]+)/gi, (_m, prefix: string, value: string) => {
-      const sources: ParsedSource[] = splitTopLevel(value).map((text) => {
-        const urlIndex = text.match(/url\(@@(\d+)@@\)/)?.[1];
-        return {
-          text: text.trim(),
-          urlIndex: urlIndex !== undefined ? Number(urlIndex) : null,
-          format: text.match(/format\(\s*["']?([\w-]+)["']?\s*\)/i)?.[1] ?? null,
-        };
-      });
-
-      const formats = sources.map((s) => {
-        const urlValue = s.urlIndex !== null ? urls[s.urlIndex] : undefined;
-        return classifyFormat(s, urlValue, refForUrl(urlValue));
-      });
-      // Only a woff2 this pipeline itself emits or inlines (a `data:` URI at this stage) justifies pruning the woff
-      // fallback — an external woff2 (CDN url the bundler left alone) can be unreachable offline or blocked by CSP.
-      const hasWoff2 = sources.some((s, i) => {
-        if (formats[i] !== 'woff2' && formats[i] !== 'woff2-variations') {
-          return false;
-        }
-        const urlValue = s.urlIndex !== null ? urls[s.urlIndex] : undefined;
-        return urlValue?.startsWith('data:') ?? false;
-      });
-
-      const kept: string[] = [];
-      sources.forEach((source, i) => {
-        // Legacy woff goes whether inlined or marked — a data: URI copy is payload all the same.
-        if (opts.dropLegacyWoff && hasWoff2 && formats[i] === 'woff' && source.urlIndex !== null) {
-          return;
-        }
-        const ref = refForUrl(source.urlIndex !== null ? urls[source.urlIndex] : undefined);
-        // Keyed off the file extension, not the format() hint, so `woff2-variations` variable fonts preload too.
-        if (ref && ref.path.endsWith('.woff2') && latinVisible) {
-          const entry = found.get(ref);
-          if (entry) {
-            entry.preload = true;
-          }
-        }
-        kept.push(source.text);
-      });
-
-      return prefix + kept.join(', ');
-    });
-
-    return rewritten.replace(/url\(@@(\d+)@@\)/g, (_m, i: string) => {
-      const value = urls[Number(i)]!;
-      return /[\s'"(),]/.test(value) ? `url("${value.replaceAll('"', '\\"')}")` : `url(${value})`;
-    });
-  });
+    const spans = removalSpans(face.sources, dropIndices);
+    for (const span of spans) {
+      edits.remove(span.start, span.end);
+    }
+    // removalSpans refuses to empty a descriptor, so a drop only counts once it hands back spans.
+    if (spans.length > 0) {
+      for (const index of dropIndices) {
+        dropped.add(face.sources[index]!.url!);
+      }
+    }
+  }
 
   // A ref whose sources were all pruned no longer occurs; a ref referenced outside any @font-face block still does.
   const fonts: SurvivingFont[] = [];
   for (const [ref, entry] of found) {
-    if (outCss.includes(entry.markerUri)) {
+    if (urlsByRef.get(ref)?.some((url) => !dropped.has(url))) {
       fonts.push({ ref, ...entry });
     }
   }
-  return { css: outCss, fonts };
+  return { css: edits.toString(), fonts, parseFailed: false };
 }
 
-/**
- * Swap every `url()` holding the marker URI for the served URL; outside `@font-face` blocks (which
- * {@link classifyFontAssets} re-quotes) the quoting is whatever Bun's printer chose, so this tolerates all three forms.
- */
-export function substituteFontUrl(css: string, markerUri: string, fontUrl: string): string {
-  const escaped = markerUri.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return css.replace(new RegExp(String.raw`url\(\s*(["']?)${escaped}\1\s*\)`, 'g'), `url(${fontUrl})`);
+function sourceFormat(source: FontSource, ref: FontRef | undefined): string | null {
+  if (source.format) {
+    return source.format;
+  }
+  const pathLike = ref?.path ?? source.url?.value;
+  if (!pathLike) {
+    return null;
+  }
+  const mime = parseDataUri(pathLike)?.mime;
+  if (mime) {
+    return mime.toLowerCase().split('/').pop() ?? null;
+  }
+  return pathLike.split('?')[0]!.split('.').pop()?.toLowerCase() ?? null;
+}
+
+export function substituteFontUrls(css: string, urlByMarkerUri: Map<string, string>): string {
+  const document = parseCss(css);
+  if (!document) {
+    return css;
+  }
+  const edits = new MagicString(css);
+  for (const url of document.urls) {
+    const fontUrl = urlByMarkerUri.get(url.value);
+    if (fontUrl !== undefined) {
+      edits.overwrite(url.start, url.end, `url(${fontUrl})`);
+    }
+  }
+  return edits.toString();
 }
 
 export function stripFontFaces(css: string): { css: string; dropped: number } {
-  let dropped = 0;
-  const out = css.replace(FONT_FACE_RE, () => {
-    dropped++;
-    return '';
-  });
-  return { css: out, dropped };
+  const faces = parseCss(css)?.fontFaces ?? [];
+  if (faces.length === 0) {
+    return { css, dropped: 0 };
+  }
+  const edits = new MagicString(css);
+  for (const face of faces) {
+    edits.remove(face.start, face.end);
+  }
+  return { css: edits.toString(), dropped: faces.length };
 }
 
 export function fontAssetFileName(ref: FontRef, bytes: Uint8Array): string {

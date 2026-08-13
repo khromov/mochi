@@ -20,7 +20,7 @@ import { logger } from '../utils/log';
 import { mochiEvents } from '../events';
 import { detectHeavyBarrels, formatBarrelLine, formatBarrelSummary, type BarrelMetafile, type HeavyBarrel } from './barrelDetect';
 import type { MarkdownConfig, MochiBarrelWarningOptions, MochiFontOptions, MochiManifest, MochiSvelteShakerOptions } from '../types';
-import { adoptEmittedFontAssets, classifyFontAssets, createFontMarkerPlugin, fontAssetFileName, fontContentHash, substituteFontUrl } from './cssFontAssets';
+import { adoptEmittedFontAssets, classifyFontAssets, createFontMarkerPlugin, fontAssetFileName, fontContentHash, substituteFontUrls } from './cssFontAssets';
 import { type HydratableComponent, type PreprocessIslandError, type ServerIslandComponent } from './svelteAstPreprocess';
 import { cachedPreprocessHydratable, createPreprocessCacheStats } from './preprocessCache';
 import { CompileCache, compileFingerprint, createCompileCacheStats, type CompileCacheStats } from './compileCache';
@@ -2009,18 +2009,19 @@ export class ComponentRegistry {
         }
         const fontPass = classifyFontAssets(cssText, fontRefs, { dropLegacyWoff: this.fontDropLegacyWoff });
         cssText = fontPass.css;
+        if (fontPass.parseFailed) {
+          const message = 'the bundled stylesheet could not be parsed, so any extracted font is still a marker where its bytes should be. Please report this.';
+          logger.error(`CSS bundle for ${cssPath}: ${message}`);
+          this.errors.push({ kind: 'css-bundle-failed', cssPath, message });
+        }
         const preloadUrls: string[] = [];
+        const fontUrlByMarker = new Map<string, string>();
         for (const font of fontPass.fonts) {
           const bytes = font.ref.bytes ?? (await Bun.file(font.ref.path).bytes());
           const fileName = fontAssetFileName(font.ref, bytes);
           const diskPath = path.join(this.outDir, 'fonts', fileName);
           const fontUrl = `${this.assetPrefix}/fonts/${fileName}`;
-          cssText = substituteFontUrl(cssText, font.markerUri, fontUrl);
-          if (cssText.includes(font.ref.markerB64)) {
-            const message = `extracted font ${relForDisplay(font.ref.path)} kept its marker after URL substitution — the bundler printed a url() form the substitution missed. Please report this.`;
-            logger.error(`CSS bundle for ${cssPath}: ${message}`);
-            this.errors.push({ kind: 'css-bundle-failed', cssPath, message });
-          }
+          fontUrlByMarker.set(font.markerUri, fontUrl);
           if (font.preload) {
             preloadUrls.push(fontUrl);
           }
@@ -2039,6 +2040,14 @@ export class ComponentRegistry {
             if (!(await Bun.file(diskPath).exists())) {
               await Bun.write(diskPath, bytes);
             }
+          }
+        }
+        cssText = substituteFontUrls(cssText, fontUrlByMarker);
+        for (const font of fontPass.fonts) {
+          if (cssText.includes(font.ref.markerB64)) {
+            const message = `extracted font ${relForDisplay(font.ref.path)} kept its marker after URL substitution — the bundler printed a url() form the substitution missed. Please report this.`;
+            logger.error(`CSS bundle for ${cssPath}: ${message}`);
+            this.errors.push({ kind: 'css-bundle-failed', cssPath, message });
           }
         }
         let outPath = out.path;

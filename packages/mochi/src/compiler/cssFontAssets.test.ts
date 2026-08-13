@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { adoptEmittedFontAssets, classifyFontAssets, fontAssetFileName, fontContentHash, stripFontFaces, substituteFontUrl, type FontRef } from './cssFontAssets';
+import { adoptEmittedFontAssets, classifyFontAssets, fontAssetFileName, fontContentHash, stripFontFaces, substituteFontUrls, type FontRef } from './cssFontAssets';
 
 let refCounter = 0;
 function makeRef(path: string, size = 10_000): FontRef {
@@ -128,7 +128,7 @@ describe('classifyFontAssets', () => {
 
   test('no refs is a no-op', () => {
     const css = `@font-face { font-family: A; src: url(x.woff) format("woff"); }`;
-    expect(classifyFontAssets(css, [], DROP)).toEqual({ css, fonts: [] });
+    expect(classifyFontAssets(css, [], DROP)).toEqual({ css, fonts: [], parseFailed: false });
   });
 
   test('drops an inlined legacy woff even when no ref exceeded the threshold', () => {
@@ -139,6 +139,21 @@ describe('classifyFontAssets', () => {
     expect(fonts).toHaveLength(0);
     expect(out).toContain(woff2B64);
     expect(out).not.toContain(woffB64);
+  });
+
+  test('two adjacent woff fallbacks leave no dangling comma behind', () => {
+    const woff2 = makeRef('/pkg/files/demo.woff2');
+    const src = [
+      `url("${markerUri(makeRef('/pkg/files/a.woff'), 'font/woff')}") format("woff")`,
+      `url("${markerUri(makeRef('/pkg/files/b.woff'), 'font/woff')}") format("woff")`,
+      `url("${markerUri(woff2, 'font/woff2')}") format("woff2")`,
+    ];
+    const { css: out, fonts } = classifyFontAssets(`@font-face { font-family: Demo; src: ${src.join(', ')}; }`, [woff2], DROP);
+
+    expect(fonts.map((f) => f.ref)).toEqual([woff2]);
+    expect(out).not.toContain('format("woff")');
+    expect(out).not.toContain('src: ,');
+    expect(out).toBe(`@font-face { font-family: Demo; src:  ${src[2]}; }`);
   });
 
   test('a dropped source with multi-argument tech() takes its whole tail with it', () => {
@@ -160,19 +175,36 @@ describe('classifyFontAssets', () => {
   });
 });
 
-describe('substituteFontUrl', () => {
+describe('substituteFontUrls', () => {
   const MARKER = `data:font/woff2;base64,${Buffer.from('__MOCHI_FONT_0__').toString('base64')}`;
   const URL = '/_mochi/fonts/demo-1a2b3c4d.woff2';
+  const face = (src: string) => `@font-face { font-family: Demo; src: ${src}; }`;
 
   test('substitutes double-quoted, single-quoted, and unquoted url() forms', () => {
     for (const token of [`url("${MARKER}")`, `url('${MARKER}')`, `url(${MARKER})`]) {
-      expect(substituteFontUrl(`src: ${token} format("woff2");`, MARKER, URL)).toBe(`src: url(${URL}) format("woff2");`);
+      expect(substituteFontUrls(face(`${token} format("woff2")`), new Map([[MARKER, URL]]))).toBe(face(`url(${URL}) format("woff2")`));
     }
   });
 
-  test('leaves other urls and mismatched quoting alone', () => {
-    const css = `src: url("data:font/woff2;base64,c29tZXRoaW5nZWxzZQ==") format("woff2");`;
-    expect(substituteFontUrl(css, MARKER, URL)).toBe(css);
+  test('leaves other urls alone', () => {
+    const css = face(`url("data:font/woff2;base64,c29tZXRoaW5nZWxzZQ==") format("woff2")`);
+    expect(substituteFontUrls(css, new Map([[MARKER, URL]]))).toBe(css);
+  });
+
+  test('substitutes every marker in one pass, including repeats of the same font', () => {
+    const other = `data:font/woff;base64,${Buffer.from('__MOCHI_FONT_1__').toString('base64')}`;
+    const css = `${face(`url(${MARKER}) format("woff2")`)}\n${face(`url(${MARKER}) format("woff2"), url("${other}") format("woff")`)}`;
+    const out = substituteFontUrls(
+      css,
+      new Map([
+        [MARKER, URL],
+        [other, '/_mochi/fonts/demo-5e6f7a8b.woff'],
+      ]),
+    );
+
+    expect(out).not.toContain('base64');
+    expect(out.split(URL)).toHaveLength(3);
+    expect(out).toContain('url(/_mochi/fonts/demo-5e6f7a8b.woff)');
   });
 });
 
