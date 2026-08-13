@@ -104,7 +104,7 @@ export async function drawPageCard(ctx: SKRSContext2D, { title, kicker }: PageCa
   fitted.lines.forEach((line, i) => ctx.fillText(line, PAD, first + i * fitted.leading));
 
   ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
-  ctx.lineWidth = 1;
+  ctx.lineWidth = 3;
   ctx.beginPath();
   ctx.moveTo(PAD, RULE_Y + 0.5);
   ctx.lineTo(CARD_WIDTH - PAD, RULE_Y + 0.5);

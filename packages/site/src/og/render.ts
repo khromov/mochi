@@ -4,7 +4,7 @@ import { paintBackground } from './background.ts';
 import { drawPageCard, drawRootCard } from './cards.ts';
 
 /** Bumped whenever a change alters pixels; folded into the cache key so entries and ETags roll over. */
-export const RENDERER_VERSION = 1;
+export const RENDERER_VERSION = 2;
 
 export type OgKind = 'root' | 'doc' | 'blog' | 'demo' | 'page';
 

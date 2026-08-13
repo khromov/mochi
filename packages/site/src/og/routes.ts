@@ -6,7 +6,7 @@ import { resolveOgSubject } from './resolve.ts';
 /** Extension is required: it's what keeps `trailingSlash: 'always'` from redirecting a crawler. */
 const EXTENSION = '.jpg';
 
-const DEVELOPMENT = process.env.MODE === 'development';
+const IS_DOCKER = process.env.MOCHI_DOCKER === 'true';
 
 export const routes: Record<string, MochiRouteValue> = {
   '/og': Mochi.page('./src/og/OgPage.svelte', {
@@ -34,10 +34,10 @@ export const routes: Record<string, MochiRouteValue> = {
       }
 
       const etag = `"${ogCacheKey(subject)}"`;
-      const headers: Record<string, string> = DEVELOPMENT
-        ? { 'Content-Type': 'image/jpeg', 'Cache-Control': 'no-store' }
-        : { 'Content-Type': 'image/jpeg', 'Cache-Control': 'public, max-age=86400, stale-while-revalidate=604800', ETag: etag };
-      if (!DEVELOPMENT && request.headers.get('if-none-match') === etag) {
+      const headers: Record<string, string> = IS_DOCKER
+        ? { 'Content-Type': 'image/jpeg', 'Cache-Control': 'public, max-age=86400, stale-while-revalidate=604800', ETag: etag }
+        : { 'Content-Type': 'image/jpeg', 'Cache-Control': 'no-store' };
+      if (IS_DOCKER && request.headers.get('if-none-match') === etag) {
         return new Response(null, { status: 304, headers });
       }
 
