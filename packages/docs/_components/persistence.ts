@@ -26,7 +26,7 @@ export const persistenceRows: PersistenceRow[] = [
     memory: { status: 'yes', isDefault: true },
     file: { status: 'no' },
     sqlite: { status: 'yes' },
-    postgres: { status: 'planned' },
+    postgres: { status: 'yes' },
   },
   {
     key: 'cache',

@@ -17,7 +17,7 @@ A few Mochi features keep server-side state that outlives a single request — q
 
 ### Per feature
 
-- **[Queues](/docs/queues/)** — in-memory unless you pass `dataPath`, which persists jobs to a SQLite file via bunqueue's embedded store. The store is process-global: the first `dataPath` wins, so use one path for every queue. Postgres is planned.
+- **[Queues](/docs/queues/)** — in-memory by default. Point the serve-level `queueStorage` (or a descriptor's `storage`) at a SQLite file (`{ sqlite: path }`), a Postgres database (`{ postgres: url }`), or an embedded PGlite instance (`{ pglite }`). One store serves every queue; Postgres storage is shared, so multiple processes can work one backlog.
 - **[Cache](/docs/cache/)** — `new MochiCache({ storage })`. Defaults to `MemoryStorage`; `FileStorage` writes one JSON file per entry. Built-in SQLite and Postgres backends are planned; until then any other backend is a `Storage` implementation (`getItem` / `setItem` / `removeItem` / `clear`), with `serialize` / `deserialize` when the backend needs strings.
 - **[Image cache](/docs/images/)** — the one feature that persists by default: `FileStorage` under `cacheDir`. Pass `image: { storage }` to swap it (e.g. `new MemoryStorage()`); `cacheDir` is then ignored.
 - **[Rate limiting](/docs/rate-limiting/)** — `rateLimit: { store }`. `memoryStore()` (default), `sqliteStore({ path })` and `postgresStore({ url })` all ship with the framework; `MochiRateLimitStore` is the interface for your own. Create the store once and share the instance across routes.
