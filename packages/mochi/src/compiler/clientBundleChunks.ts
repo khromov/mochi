@@ -32,7 +32,22 @@ const PROTECTED_PACKAGES = new Set(['svelte']);
 const STORE_PATH = /^(?:\.\.\/)*node_modules\/\.bun\/[^/]+\/node_modules\/(.+)$/;
 const LEADING_NODE_MODULES = /^(?:\.\.\/)*node_modules\//;
 
-export const viewId = (absPath: string): string => `${VIEW_PREFIX}${absPath}`;
+/**
+ * An absolute path that has been resolved against a base and normalized to forward slashes — the form every map in this
+ * module is keyed by.
+ *
+ * The brand exists because the resolved form is platform-dependent at the root (`/app/x.ts` on POSIX,
+ * `C:/app/x.ts` on Windows) while looking like any other string. Writing a key as a literal type-checks, matches
+ * locally, and then misses on Windows only. Requiring `posixAbs()` to mint one makes that mistake a compile error.
+ */
+export type PosixAbsPath = string & { readonly __posixAbs: unique symbol };
+
+/** The only way to mint a {@link PosixAbsPath}. */
+export function posixAbs(p: string, cwd: string = process.cwd()): PosixAbsPath {
+  return toPosixPath(path.resolve(cwd, p)) as PosixAbsPath;
+}
+
+export const viewId = (absPath: PosixAbsPath): string => `${VIEW_PREFIX}${absPath}`;
 
 /** Minimal shape this module reads out of `Bun.build`'s metafile, so tests can build literals instead of running a build. */
 export interface ChunkMetafile {
@@ -48,11 +63,11 @@ export interface ChunkMetafile {
  * walked in sorted path order so two members that pass 1 put in different chunks still rank deterministically; their
  * relative order was never observable anyway, whereas co-located members keep exactly the order they had.
  */
-export function evaluationOrder(metafile: ChunkMetafile, cwd: string = process.cwd()): Map<string, number> {
-  const order = new Map<string, number>();
+export function evaluationOrder(metafile: ChunkMetafile, cwd: string = process.cwd()): Map<PosixAbsPath, number> {
+  const order = new Map<PosixAbsPath, number>();
   for (const outPath of Object.keys(metafile.outputs ?? {}).sort()) {
     for (const input of Object.keys(metafile.outputs![outPath]!.inputs)) {
-      const id = toPosixPath(path.resolve(cwd, input));
+      const id = posixAbs(input, cwd);
       if (!order.has(id)) {
         order.set(id, order.size);
       }
@@ -100,9 +115,9 @@ export function hasDefaultExport(absPath: string, readFile: (p: string) => strin
 
 export interface ChunkPlan {
   /** Chunk name → absolute POSIX paths of every module assigned to it. */
-  members: Map<string, string[]>;
+  members: Map<string, PosixAbsPath[]>;
   /** Absolute POSIX path → the chunk it belongs to. */
-  chunkOf: Map<string, string>;
+  chunkOf: Map<PosixAbsPath, string>;
   /** Virtual module id → generated source. */
   sources: Map<string, string>;
 }
@@ -178,17 +193,17 @@ function assertValidChunkName(name: string, relId: string): void {
 export function classifyModules(
   metafile: ChunkMetafile,
   classify: MochiChunkClassifier,
-  opts: { entrypoints?: Set<string>; cwd?: string; readFile?: (p: string) => string } = {},
-): { chunkOf: Map<string, string>; skipped: { id: string; reason: string }[]; defaultOf: Map<string, boolean> } {
+  opts: { entrypoints?: Set<PosixAbsPath>; cwd?: string; readFile?: (p: string) => string } = {},
+): { chunkOf: Map<PosixAbsPath, string>; skipped: { id: string; reason: string }[]; defaultOf: Map<PosixAbsPath, boolean> } {
   const cwd = opts.cwd ?? process.cwd();
   const readFile = opts.readFile ?? ((p: string) => fs.readFileSync(p, 'utf8'));
-  const defaultOf = new Map<string, boolean>();
-  const entrypoints = opts.entrypoints ?? new Set<string>();
-  const chunkOf = new Map<string, string>();
+  const defaultOf = new Map<PosixAbsPath, boolean>();
+  const entrypoints = opts.entrypoints ?? new Set<PosixAbsPath>();
+  const chunkOf = new Map<PosixAbsPath, string>();
   const skipped: { id: string; reason: string }[] = [];
 
   for (const [rawId, meta] of Object.entries(metafile.inputs)) {
-    const id = toPosixPath(path.resolve(cwd, rawId));
+    const id = posixAbs(rawId, cwd);
     if (entrypoints.has(id) || !fs.existsSync(id)) {
       continue;
     }
@@ -248,8 +263,8 @@ export function classifyModules(
  * `export *` carries every named export the module has, including ones it re-exports from elsewhere, so no export list
  * has to be computed ahead of the build. It never carries `default`, which is why that one name is passed in.
  */
-export function planChunks(chunkOf: Map<string, string>, hasDefault: (absPath: string) => boolean, order?: ReadonlyMap<string, number>): ChunkPlan {
-  const members = new Map<string, string[]>();
+export function planChunks(chunkOf: Map<PosixAbsPath, string>, hasDefault: (absPath: PosixAbsPath) => boolean, order?: ReadonlyMap<PosixAbsPath, number>): ChunkPlan {
+  const members = new Map<string, PosixAbsPath[]>();
   for (const [id, chunk] of chunkOf) {
     const list = members.get(chunk);
     if (list) {
@@ -260,7 +275,7 @@ export function planChunks(chunkOf: Map<string, string>, hasDefault: (absPath: s
   }
   // Evaluation order first, path as the tie-break, so one config plans identically across runs and output hashes stay
   // stable even for members pass 1 never placed together.
-  const rank = (id: string) => order?.get(id) ?? Number.MAX_SAFE_INTEGER;
+  const rank = (id: PosixAbsPath) => order?.get(id) ?? Number.MAX_SAFE_INTEGER;
   for (const list of members.values()) {
     list.sort((a, b) => rank(a) - rank(b) || (a < b ? -1 : a > b ? 1 : 0));
   }
@@ -293,7 +308,7 @@ export function planChunks(chunkOf: Map<string, string>, hasDefault: (absPath: s
  *
  * A specifier that slips past degrades gracefully: the module keeps Bun's own placement instead of being mis-assigned.
  */
-export function chunkResolveFilter(chunkOf: Map<string, string>, virtualEntryNames: Iterable<string> = []): RegExp {
+export function chunkResolveFilter(chunkOf: Map<PosixAbsPath, string>, virtualEntryNames: Iterable<string> = []): RegExp {
   // The generated view specifiers have to match too, since one handler serves both directions.
   const stems = new Set<string>([VIEW_PREFIX]);
   for (const abs of chunkOf.keys()) {
@@ -328,12 +343,12 @@ function escapeRegex(s: string): string {
  * usually extensionless (`./vendorOne`), so a bare `path.resolve` would never match `…/vendorOne.ts`. Mirrors the
  * resolve-with-fallback in `serverOnlyComponents.ts`.
  */
-export function resolveChunkMember(args: { path: string; importer?: string; resolveDir?: string }): string | null {
+export function resolveChunkMember(args: { path: string; importer?: string; resolveDir?: string }): PosixAbsPath | null {
   try {
-    return toPosixPath(Bun.resolveSync(args.path, args.resolveDir || (args.importer ? path.dirname(args.importer) : process.cwd())));
+    return toPosixPath(Bun.resolveSync(args.path, args.resolveDir || (args.importer ? path.dirname(args.importer) : process.cwd()))) as PosixAbsPath;
   } catch {
     if (args.resolveDir) {
-      return toPosixPath(path.resolve(args.resolveDir, args.path));
+      return posixAbs(args.path, args.resolveDir);
     }
     return null;
   }

@@ -27,6 +27,7 @@ import {
   evaluationOrder,
   isChunkModuleId,
   planChunks,
+  posixAbs,
   resolveChunkMember,
   validateClientBundleOptions,
   viewId,
@@ -1208,7 +1209,7 @@ export class ComponentRegistry {
               // Only edges crossing into the group are redirected. Rewriting one member's import of another would route
               // it through that member's view and around the group's ring, putting the real modules in a cycle and
               // reordering their initialization — which breaks packages with circular internals.
-              return target && plan.chunkOf.get(toPosixPath(args.importer)) !== target ? { path: viewId(abs), namespace: CHUNK_NAMESPACE } : undefined;
+              return target && plan.chunkOf.get(posixAbs(args.importer)) !== target ? { path: viewId(abs), namespace: CHUNK_NAMESPACE } : undefined;
             },
           );
           build.onLoad({ filter: /.*/, namespace: CHUNK_NAMESPACE }, (args) => ({ contents: plan.sources.get(args.path)!, loader: 'js' }));
@@ -1326,7 +1327,7 @@ export class ComponentRegistry {
     this.unformedChunks = [];
     if (chunkClassifier && result.metafile) {
       const { chunkOf, skipped, defaultOf } = classifyModules(result.metafile, chunkClassifier, {
-        entrypoints: new Set(entrypoints.map((e) => toPosixPath(path.resolve(e)))),
+        entrypoints: new Set(entrypoints.map((e) => posixAbs(e))),
       });
       this.skippedChunkModules = skipped;
       if (chunkOf.size > 0) {
@@ -1386,7 +1387,7 @@ export class ComponentRegistry {
         // name, so recording the user's name here is the only way it survives into the build's chunk report. Entry
         // outputs are excluded: one reaching island inlines its group rather than sharing it, and reporting that as a
         // chunk tells the user their config worked in the one case where it did nothing.
-        const outInputs = new Set(Object.keys(outMeta.inputs).map((i) => toPosixPath(path.resolve(i))));
+        const outInputs = new Set(Object.keys(outMeta.inputs).map((i) => posixAbs(i)));
         const chunkNames = chunkPlan && !outMeta.entryPoint ? [...chunkPlan.members].filter(([, members]) => members.every((m) => outInputs.has(m))).map(([name]) => name) : [];
         for (const name of chunkNames) {
           formedChunks.add(name);

@@ -1,11 +1,20 @@
 import { describe, expect, test } from 'bun:test';
 import path from 'node:path';
-import { classifyModules, evaluationOrder, hasDefaultExport, packageNameOf, planChunks, validateClientBundleOptions, viewId, type ChunkMetafile } from './clientBundleChunks';
-import { toPosixPath } from '../utils/index';
+import {
+  classifyModules,
+  evaluationOrder,
+  hasDefaultExport,
+  packageNameOf,
+  planChunks,
+  posixAbs,
+  validateClientBundleOptions,
+  viewId,
+  type ChunkMetafile,
+} from './clientBundleChunks';
 
-const FIXTURE_DIR = path.join(import.meta.dir, '..', '__fixtures__', 'client-bundle-chunks');
-const VENDOR_ONE = path.join(FIXTURE_DIR, 'vendorOne.ts');
-const VENDOR_TWO = path.join(FIXTURE_DIR, 'vendorTwo.ts');
+const FIXTURE_DIR = posixAbs(path.join(import.meta.dir, '..', '__fixtures__', 'client-bundle-chunks'));
+const VENDOR_ONE = posixAbs('vendorOne.ts', FIXTURE_DIR);
+const VENDOR_TWO = posixAbs('vendorTwo.ts', FIXTURE_DIR);
 
 const metafile = (inputs: Record<string, { bytes: number; format?: string }>): ChunkMetafile => ({ inputs });
 
@@ -61,7 +70,7 @@ describe('validateClientBundleOptions', () => {
 describe('evaluationOrder', () => {
   // Keys come back resolved against the given cwd, which on Windows qualifies the drive — so the expectations are built
   // the same way rather than written as literal POSIX paths.
-  const keyFor = (p: string) => toPosixPath(path.resolve('/app', p));
+  const keyFor = (p: string) => posixAbs(p, '/app');
 
   // Bun lists an output's inputs in the order it concatenated them; the input map is in parse order, which is why the
   // outputs are the ones read.
@@ -106,7 +115,7 @@ describe('classifyModules', () => {
 
   test('never moves an entrypoint', () => {
     const { chunkOf } = classifyModules(metafile({ [VENDOR_ONE]: { bytes: 10, format: 'esm' } }), () => 'vendor', {
-      entrypoints: new Set([VENDOR_ONE.replace(/\\/g, '/')]),
+      entrypoints: new Set([VENDOR_ONE]),
     });
     expect(chunkOf.size).toBe(0);
   });
@@ -226,7 +235,7 @@ describe('planChunks', () => {
 
   // The ring is what keeps this linear rather than every-view-imports-every-other.
   test('emits one sibling import per member, not one per pair', () => {
-    const members = new Map([...Array(6)].map((_, i) => [`${FIXTURE_DIR}/m${i}.ts`, 'big'] as const));
+    const members = new Map([...Array(6)].map((_, i) => [posixAbs(`m${i}.ts`, FIXTURE_DIR), 'big'] as const));
     const plan = planChunks(new Map(members), always);
     const total = [...plan.sources.values()].reduce((n, s) => n + (s.match(/^import "view:/gm) ?? []).length, 0);
     expect(total).toBe(6);
