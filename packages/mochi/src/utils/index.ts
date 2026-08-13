@@ -2,6 +2,7 @@
 /// <reference path="../negotiator.d.ts" />
 import type { Server } from 'bun';
 import Negotiator from 'negotiator';
+import { STATUS_CODES } from 'node:http';
 import path from 'node:path';
 import type { MochiCompileErrorLog } from '../events';
 import type { BunRouteValue } from '../types';
@@ -63,30 +64,8 @@ export function json(
   });
 }
 
-const HTTP_STATUS_TEXT: Record<number, string> = {
-  400: 'Bad Request',
-  401: 'Unauthorized',
-  403: 'Forbidden',
-  404: 'Not Found',
-  405: 'Method Not Allowed',
-  406: 'Not Acceptable',
-  408: 'Request Timeout',
-  409: 'Conflict',
-  410: 'Gone',
-  412: 'Precondition Failed',
-  413: 'Payload Too Large',
-  415: 'Unsupported Media Type',
-  422: 'Unprocessable Entity',
-  429: 'Too Many Requests',
-  500: 'Internal Server Error',
-  501: 'Not Implemented',
-  502: 'Bad Gateway',
-  503: 'Service Unavailable',
-  504: 'Gateway Timeout',
-};
-
 export function httpStatusText(status: number): string {
-  return HTTP_STATUS_TEXT[status] ?? `Error ${status}`;
+  return STATUS_CODES[status] ?? `Error ${status}`;
 }
 
 /** Throws an error the framework catches and turns into a JSON error response. Omitting `message` uses the canonical status text. */

@@ -64,6 +64,7 @@ import {
   toPosixPath,
   withHead,
 } from './utils';
+import { serveDiskAsset } from './utils/serveDiskAsset';
 import type { MochiEvent, MochiEventKind, MochiResolveOptions } from './runtime/hooks';
 import { applyResolveOptions } from './runtime/hooks';
 import { alternateSlashPattern, trailingSlashRedirect } from './runtime/trailingSlash';
@@ -608,6 +609,7 @@ export class Mochi {
       renderShell: (result) => renderShell(result),
       cookieDefaults,
       newRequestId,
+      proxy: options.proxy,
     });
 
     // Mirrors the handleError logic in renderErrorResponse, skipping the HTML render for the enhanced JSON path.
@@ -1691,17 +1693,7 @@ export class Mochi {
           return applyResolveOptions(new Response(assetContent, { headers }), resolveOpts);
         }
         if (fontAsset !== undefined) {
-          // A registered URL whose file is gone (wiped outDir under a live server, partially copied build) is a 404,
-          // not the 500 Bun.file's lazy ENOENT would surface as.
-          const fontFile = Bun.file(fontAsset.diskPath);
-          if (!(await fontFile.exists())) {
-            return applyResolveOptions(new Response('Not found', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } }), resolveOpts);
-          }
-          const headers: Record<string, string> = { 'Content-Type': fontAsset.contentType, 'X-Content-Type-Options': 'nosniff' };
-          if (!development) {
-            headers['Cache-Control'] = 'public, max-age=31536000, immutable';
-          }
-          return applyResolveOptions(new Response(fontFile, { headers }), resolveOpts);
+          return applyResolveOptions(await serveDiskAsset(fontAsset, development), resolveOpts);
         }
         if (userFetch) {
           const response = await userFetch(req, server);

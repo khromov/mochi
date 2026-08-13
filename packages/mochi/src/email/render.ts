@@ -1,4 +1,6 @@
 import type { ComponentRegistry } from '../compiler/ComponentRegistry';
+import { relForDisplay } from '../utils';
+import { logger } from '../utils/log';
 
 /**
  * Render a Svelte component to a standalone HTML email body through the registry's stateless `renderStatic` path,
@@ -31,6 +33,9 @@ export async function renderEmailComponent(registry: ComponentRegistry, componen
   return inline(doc, { keepStyleTags: true });
 }
 
+// Filenames are content-hashed, so a disk path always maps to the same bytes and the encoding is done once per font.
+const fontDataUriCache = new Map<string, string>();
+
 // Imported CSS refers to its extracted fonts by root-relative `/_mochi/fonts/*` URLs, which have no origin to resolve
 // against inside a standalone email document — the bytes go back in as self-contained `data:` URIs.
 async function inlineExtractedFonts(css: string, registry: ComponentRegistry): Promise<string> {
@@ -38,8 +43,18 @@ async function inlineExtractedFonts(css: string, registry: ComponentRegistry): P
     if (!css.includes(url)) {
       continue;
     }
-    const b64 = Buffer.from(await Bun.file(asset.diskPath).bytes()).toString('base64');
-    const dataUri = `url("data:${asset.contentType};base64,${b64}")`;
+    let dataUri = fontDataUriCache.get(asset.diskPath);
+    if (dataUri === undefined) {
+      const file = Bun.file(asset.diskPath);
+      // A font is decorative; a missing file (wiped outDir under a live server, partially copied build) must not turn
+      // into a failed send, so the face just keeps its un-resolvable URL — same downgrade the HTTP path applies.
+      if (!(await file.exists())) {
+        logger.warn(`Email font ${url} is missing on disk (${relForDisplay(asset.diskPath)}); sending without it.`);
+        continue;
+      }
+      dataUri = `url("data:${asset.contentType};base64,${Buffer.from(await file.bytes()).toString('base64')}")`;
+      fontDataUriCache.set(asset.diskPath, dataUri);
+    }
     css = css.replaceAll(`url(${url})`, dataUri).replaceAll(`url("${url}")`, dataUri);
   }
   return css;

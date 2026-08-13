@@ -38,7 +38,8 @@ export function fontContentHash(bytes: Uint8Array): string {
  * Bun's CSS bundler base64-inlines every `url()` unconditionally and ignores `loader: 'file'`, but it does run plugin
  * hooks for the references it resolves. Fonts above the threshold get their bytes swapped for a unique marker at
  * `onLoad`, so the bundler still owns discovery and resolution while the bundled CSS stays tiny; fonts at or below it
- * fall through and inline for real.
+ * fall through and inline for real. (`onResolve` + `external: true` is no way out either: it stops the inlining but
+ * prints the original specifier, discarding the rewritten path — verified on Bun 1.3.14.)
  */
 export function createFontMarkerPlugin(inlineThreshold: number): { plugin: BunPlugin; refs: FontRef[] } {
   const refs: FontRef[] = [];
@@ -179,7 +180,15 @@ export function classifyFontAssets(css: string, refs: FontRef[], opts: { dropLeg
         const urlValue = s.urlIndex !== null ? urls[s.urlIndex] : undefined;
         return classifyFormat(s, urlValue, refForUrl(urlValue));
       });
-      const hasWoff2 = formats.some((f) => f === 'woff2' || f === 'woff2-variations');
+      // Only a woff2 this pipeline itself emits or inlines (a `data:` URI at this stage) justifies pruning the woff
+      // fallback — an external woff2 (CDN url the bundler left alone) can be unreachable offline or blocked by CSP.
+      const hasWoff2 = sources.some((s, i) => {
+        if (formats[i] !== 'woff2' && formats[i] !== 'woff2-variations') {
+          return false;
+        }
+        const urlValue = s.urlIndex !== null ? urls[s.urlIndex] : undefined;
+        return urlValue?.startsWith('data:') ?? false;
+      });
 
       const kept: string[] = [];
       sources.forEach((source, i) => {

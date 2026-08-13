@@ -24,8 +24,13 @@ describe('error / MochiHttpError', () => {
   });
 
   test('unknown statuses fall back to Error <status>', () => {
-    expect(new MochiHttpError(418).message).toBe('Error 418');
+    expect(new MochiHttpError(299).message).toBe('Error 299');
     expect(httpStatusText(299)).toBe('Error 299');
+  });
+
+  test('statuses outside the common set still get their canonical text', () => {
+    expect(httpStatusText(402)).toBe('Payment Required');
+    expect(httpStatusText(451)).toBe('Unavailable For Legal Reasons');
   });
 
   test('an explicit message wins over the default', () => {

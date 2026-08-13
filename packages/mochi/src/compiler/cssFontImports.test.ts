@@ -102,6 +102,11 @@ describe('CSS imports — font asset extraction', () => {
     expect(readFileSync(asset!.diskPath).equals(woff2)).toBe(true);
   });
 
+  test('a font shared by two stylesheets appears once in the stats', () => {
+    const name = `fonts/demo-latin-400-normal-${fontContentHash(woff2)}.woff2`;
+    expect(registry.getClientStats()!.outputs.filter((o) => o.name === name)).toHaveLength(1);
+  });
+
   test('renderComponent surfaces the latin face as a single deduped preload URL', async () => {
     const { requestContext } = await import('../runtime/requestContext');
     const { MochiCookieJar } = await import('../runtime/cookies');

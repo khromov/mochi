@@ -13,6 +13,8 @@
  * build registered are readable: request input serves purely as a Map key, so no arbitrary file read is reachable.
  */
 
+import { serveDiskAsset } from '../utils/serveDiskAsset';
+
 export interface LocalImageAssetInfo {
   diskPath: string;
   contentType: string;
@@ -44,30 +46,9 @@ export function getLocalImageAsset(url: string): LocalImageAssetInfo | undefined
 
 /**
  * Handler for the `${assetPrefix}/asset/:filename` route: reconstruct the registry key from the request pathname and
- * serve the bytes from disk on a hit. A miss 404s, and since the filename only ever acts as a Map key, a traversal
- * attempt matches nothing and reads nothing. Hashed URLs are immutable, so production sends a long-lived immutable
- * `Cache-Control` while dev omits it and replaced images appear on the next request.
+ * serve the bytes from disk on a hit. Since the filename only ever acts as a Map key, a traversal attempt matches
+ * nothing and reads nothing; misses, missing files, and caching all follow {@link serveDiskAsset}'s shared policy.
  */
 export function createLocalAssetHandler(development: boolean): (req: Request) => Promise<Response> {
-  const notFound = (): Response => new Response('Not found', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
-  return async (req: Request): Promise<Response> => {
-    const info = getLocalImageAsset(new URL(req.url).pathname);
-    if (!info) {
-      return notFound();
-    }
-    // A registered URL whose file is gone (wiped outDir under a live server, partially copied build) is a 404, not the
-    // 500 Bun.file's lazy ENOENT would surface as.
-    const file = Bun.file(info.diskPath);
-    if (!(await file.exists())) {
-      return notFound();
-    }
-    const headers: Record<string, string> = {
-      'Content-Type': info.contentType,
-      'X-Content-Type-Options': 'nosniff',
-    };
-    if (!development) {
-      headers['Cache-Control'] = 'public, max-age=31536000, immutable';
-    }
-    return new Response(file, { headers });
-  };
+  return (req: Request): Promise<Response> => serveDiskAsset(getLocalImageAsset(new URL(req.url).pathname), development);
 }

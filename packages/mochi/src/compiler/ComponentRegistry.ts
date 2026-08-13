@@ -1988,7 +1988,6 @@ export class ComponentRegistry {
           const bytes = await Bun.file(font.ref.path).bytes();
           const fileName = fontAssetFileName(font.ref, bytes);
           const diskPath = path.join(this.outDir, 'fonts', fileName);
-          await Bun.write(diskPath, bytes);
           const fontUrl = `${this.assetPrefix}/fonts/${fileName}`;
           cssText = substituteFontUrl(cssText, font.markerUri, fontUrl);
           if (cssText.includes(font.ref.markerB64)) {
@@ -1996,16 +1995,25 @@ export class ComponentRegistry {
             logger.error(`CSS bundle for ${cssPath}: ${message}`);
             this.errors.push({ kind: 'css-bundle-failed', cssPath, message });
           }
-          this.fontAssets.set(fontUrl, { diskPath, contentType: font.contentType });
           if (font.preload) {
             preloadUrls.push(fontUrl);
           }
-          this.importedCssStats.push({
-            name: path.posix.join('fonts', fileName),
-            size: bytes.length,
-            inputs: [{ path: relForDisplay(font.ref.path), size: bytes.length }],
-            imports: [],
-          });
+          // Registering before the first await keeps the check-then-set atomic across the concurrently bundling
+          // entrypoints, so a font shared between stylesheets is written and counted in the stats exactly once.
+          if (!this.fontAssets.has(fontUrl)) {
+            this.fontAssets.set(fontUrl, { diskPath, contentType: font.contentType });
+            this.importedCssStats.push({
+              name: path.posix.join('fonts', fileName),
+              size: bytes.length,
+              inputs: [{ path: relForDisplay(font.ref.path), size: bytes.length }],
+              imports: [],
+            });
+            // The content-hashed name means an existing file already holds these exact bytes; skipping the rewrite
+            // keeps a dev-rebundle from truncating a file a concurrent request may be reading.
+            if (!(await Bun.file(diskPath).exists())) {
+              await Bun.write(diskPath, bytes);
+            }
+          }
         }
         let outPath = out.path;
         if (cssText !== rawCss) {

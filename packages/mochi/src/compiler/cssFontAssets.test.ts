@@ -45,6 +45,14 @@ describe('classifyFontAssets', () => {
     expect(fonts.map((f) => f.ref)).toEqual([woff2]);
   });
 
+  test('keeps the local woff fallback when the only woff2 is an external URL', () => {
+    const woff = makeRef('/pkg/files/demo.woff');
+    const css = `@font-face { font-family: Demo; src: url(https://cdn.example.com/demo.woff2) format("woff2"), url("${markerUri(woff, 'font/woff')}") format("woff"); }`;
+    const { css: out, fonts } = classifyFontAssets(css, [woff], DROP);
+    expect(fonts.map((f) => f.ref)).toEqual([woff]);
+    expect(out).toContain('https://cdn.example.com/demo.woff2');
+  });
+
   test('keeps woff when it is the only offered format', () => {
     const woff = makeRef('/pkg/files/old.woff');
     const css = `@font-face { font-family: Old; src: url("${markerUri(woff, 'font/woff')}") format("woff"); }`;
