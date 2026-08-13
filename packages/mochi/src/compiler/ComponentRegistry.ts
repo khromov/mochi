@@ -24,6 +24,7 @@ import {
   CHUNK_NAMESPACE,
   classifyModules,
   chunkResolveFilter,
+  evaluationOrder,
   isChunkModuleId,
   planChunks,
   resolveChunkMember,
@@ -316,6 +317,19 @@ export interface ComponentRegistryOptions {
   bufferBarrelWarnings?: boolean;
 }
 
+/** Deletes files a build left behind in its own output directory. Cleanup must never fail a build that succeeded. */
+function pruneStaleOutputs(dir: string, keep: Set<string>): void {
+  try {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (entry.isFile() && !keep.has(entry.name)) {
+        fs.rmSync(path.join(dir, entry.name), { force: true });
+      }
+    }
+  } catch {
+    // Nothing on disk to prune (an in-memory or never-written outDir), which is fine.
+  }
+}
+
 // Runs once per compiled-component entry (compileAll / fromManifest) so renderComponent reads these lookups instead of
 // rebuilding three collections on every render.
 function indexHydratables(hydratables: HydratableComponent[]): {
@@ -397,8 +411,8 @@ export class ComponentRegistry {
       size: number;
       inputs: { path: string; size: number }[];
       imports: string[];
-      /** User-assigned name from `clientBundle.chunks`, when this output is a manual chunk. */
-      chunkName?: string;
+      /** User-assigned name(s) from `clientBundle.chunks`, when this output really is a shared chunk they produced. */
+      chunkNames?: string[];
     }[];
   } | null = null;
   /** Stats for side-effect CSS bundles, merged into clientStats at read time. */
@@ -407,7 +421,7 @@ export class ComponentRegistry {
     size: number;
     inputs: { path: string; size: number }[];
     imports: string[];
-    chunkName?: string;
+    chunkNames?: string[];
   }[] = [];
   /** Maps server island component name → resolved file path */
   private serverIslandPaths: Map<string, string> = new Map();
@@ -430,6 +444,8 @@ export class ComponentRegistry {
   private readonly clientBundle: MochiClientBundleOptions | undefined;
   /** Modules the chunk classifier picked but which were skipped, surfaced by the build's chunk report. */
   private skippedChunkModules: { id: string; reason: string }[] = [];
+  /** Chunk names whose modules never landed in a shared chunk, surfaced by the build's chunk report. */
+  private unformedChunks: string[] = [];
   private readonly barrelWarningsEnabled: boolean;
   private readonly barrelIgnore: Set<string>;
   private readonly barrelMinBytes: number;
@@ -1307,13 +1323,14 @@ export class ComponentRegistry {
     // per-file HMR can't reuse a whole-graph chunk layout, same reasoning as `optimize`.
     const chunkClassifier = this.development ? undefined : this.clientBundle?.chunks;
     this.skippedChunkModules = [];
+    this.unformedChunks = [];
     if (chunkClassifier && result.metafile) {
       const { chunkOf, skipped, defaultOf } = classifyModules(result.metafile, chunkClassifier, {
         entrypoints: new Set(entrypoints.map((e) => toPosixPath(path.resolve(e)))),
       });
       this.skippedChunkModules = skipped;
       if (chunkOf.size > 0) {
-        const plan = planChunks(chunkOf, (abs) => defaultOf.get(abs) ?? false);
+        const plan = planChunks(chunkOf, (abs) => defaultOf.get(abs) ?? false, evaluationOrder(result.metafile));
         result = await runBuild(plan);
         if (!result.success) {
           throw new Error(`Svelte client build failed (manual chunks):\n${formatBuildMessages(result.logs)}`);
@@ -1326,6 +1343,10 @@ export class ComponentRegistry {
       const filename = path.basename(output.path);
       newClientFiles.set(`${this.assetPrefix}/client/${filename}`, await output.text());
     }
+    // Every pass writes a full set of hashed files to the same directory and `Bun.build` never empties it, so the
+    // discovery pass's outputs — and any earlier rebuild's — would otherwise be shipped alongside the real ones. Only
+    // client JS lives here; CSS goes to sibling directories.
+    pruneStaleOutputs(path.resolve(`${this.outDir}/svelte-client`), new Set(result.outputs.map((o) => path.basename(o.path))));
 
     // Map entry-point outputs back to components using metafile.entryPoint
     // This avoids fragile filename matching.
@@ -1353,6 +1374,7 @@ export class ComponentRegistry {
           newComponentEntryUrls.set(compName, url);
         }
       }
+      const formedChunks = new Set<string>();
       const outputStats = Object.entries(result.metafile.outputs).map(([outPath, outMeta]) => {
         const inputs = Object.entries(outMeta.inputs).map(([inputPath, inputMeta]) => ({
           path: toPosixPath(inputPath).replace(toPosixPath(path.resolve('.')) + '/', ''),
@@ -1361,18 +1383,24 @@ export class ComponentRegistry {
         inputs.sort((a, b) => b.size - a.size);
         const imports = (outMeta.imports ?? []).filter((i) => i.kind === 'import-statement').map((i) => path.basename(i.path));
         // Bun names every split chunk `chunk-<hash>.js` and its `[name]` template resolves to a reaching *entry's*
-        // name, so recording the user's name here is the only way it survives into the build's chunk report.
+        // name, so recording the user's name here is the only way it survives into the build's chunk report. Entry
+        // outputs are excluded: one reaching island inlines its group rather than sharing it, and reporting that as a
+        // chunk tells the user their config worked in the one case where it did nothing.
         const outInputs = new Set(Object.keys(outMeta.inputs).map((i) => toPosixPath(path.resolve(i))));
-        const chunkName = chunkPlan ? [...chunkPlan.members].find(([, members]) => members.every((m) => outInputs.has(m)))?.[0] : undefined;
+        const chunkNames = chunkPlan && !outMeta.entryPoint ? [...chunkPlan.members].filter(([, members]) => members.every((m) => outInputs.has(m))).map(([name]) => name) : [];
+        for (const name of chunkNames) {
+          formedChunks.add(name);
+        }
         return {
           name: path.basename(outPath),
           size: outMeta.bytes,
           inputs,
           imports,
-          ...(chunkName ? { chunkName } : {}),
+          ...(chunkNames.length > 0 ? { chunkNames } : {}),
         };
       });
       outputStats.sort((a, b) => b.size - a.size);
+      this.unformedChunks = chunkPlan ? [...chunkPlan.members.keys()].filter((name) => !formedChunks.has(name)).sort() : [];
       this.clientStats = { outputs: outputStats };
       this.warnOnRetainedComponentStubs(result.metafile);
       this.warnOnBarrelImports(result.metafile);
@@ -1936,6 +1964,11 @@ export class ComponentRegistry {
   /** Modules `clientBundle.chunks` selected but that were left where Bun put them, with the reason. */
   getSkippedChunkModules(): { id: string; reason: string }[] {
     return [...this.skippedChunkModules];
+  }
+
+  /** Chunk names `clientBundle.chunks` produced that never became a shared chunk, so the report can say so. */
+  getUnformedChunks(): string[] {
+    return [...this.unformedChunks];
   }
 
   getDebugBarUrl(): string | null {

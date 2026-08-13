@@ -2,8 +2,21 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { collectImageResources } from './resourceReport';
+import { collectImageResources, printChunkTree } from './resourceReport';
 import type { LocalImageAsset } from '../image/types';
+
+/** Runs `fn` with console.log captured, returning everything it printed. */
+function captureLog(fn: () => void): string {
+  const lines: string[] = [];
+  const original = console.log;
+  console.log = (...args: unknown[]) => void lines.push(args.join(' '));
+  try {
+    fn();
+  } finally {
+    console.log = original;
+  }
+  return lines.join('\n');
+}
 
 const dirs: string[] = [];
 
@@ -49,5 +62,33 @@ describe('collectImageResources', () => {
 
   test('no assets yields no rows', () => {
     expect(collectImageResources([])).toEqual([]);
+  });
+});
+
+describe('printChunkTree', () => {
+  const row = (chunkNames: string[], bytes = 1000, modules = 3) => ({ chunkNames, modules, bytes });
+
+  test('prints a row per chunk with its total', () => {
+    const out = captureLog(() => printChunkTree([row(['vendor'], 2048)], []));
+    expect(out).toContain('Chunk');
+    expect(out).toContain('vendor');
+    expect(out).toContain('1 chunk');
+  });
+
+  test('names both groups when two of them land in one output', () => {
+    const out = captureLog(() => printChunkTree([row(['charts', 'vendor'])], []));
+    expect(out).toContain('charts + vendor');
+  });
+
+  // A column header with nothing under it reads as a broken report.
+  test('omits the table entirely when there are no chunks to list', () => {
+    const out = captureLog(() => printChunkTree([], [{ id: 'src/a.ts', reason: 'CommonJS' }], ['vendor']));
+    expect(out).not.toContain('Chunk');
+    expect(out).toContain('left in place: src/a.ts');
+    expect(out).toContain('no shared chunk: vendor');
+  });
+
+  test('prints nothing at all when there is nothing to report', () => {
+    expect(captureLog(() => printChunkTree([], []))).toBe('');
   });
 });

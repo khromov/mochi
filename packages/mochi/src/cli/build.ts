@@ -19,6 +19,7 @@ import type { MochiCompileCompleteEvent } from '../events';
 import { styleText } from 'node:util';
 import prettyBytes from '../vendor/pretty-bytes';
 import { collectImageResources, printChunkTree, printResourceTree } from './resourceReport';
+import { isChunkModuleId } from '../compiler/clientBundleChunks';
 
 export interface MochiBuildOptions {
   routes: Record<string, MochiRouteValue>;
@@ -261,9 +262,11 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     }
 
     const chunkRows = (registry.getClientStats()?.outputs ?? [])
-      .filter((o): o is typeof o & { chunkName: string } => typeof o.chunkName === 'string')
-      .map((o) => ({ chunkName: o.chunkName, file: o.name, modules: o.inputs.length, bytes: o.size }));
-    printChunkTree(chunkRows, registry.getSkippedChunkModules());
+      .filter((o): o is typeof o & { chunkNames: string[] } => Array.isArray(o.chunkNames))
+      // The generated view modules are an implementation detail of the grouping, so counting them would report a
+      // module count no one can reconcile against their own config.
+      .map((o) => ({ chunkNames: o.chunkNames, modules: o.inputs.filter((i) => !isChunkModuleId(i.path)).length, bytes: o.size }));
+    printChunkTree(chunkRows, registry.getSkippedChunkModules(), registry.getUnformedChunks());
 
     // Clean up intermediate .raw.css files
     const cssDir = path.join(outDir, 'svelte-css');

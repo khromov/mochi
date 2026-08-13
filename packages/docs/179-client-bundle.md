@@ -92,11 +92,25 @@ Some modules are left where Bun put them. Every one is named in the build report
   nothing to gain. Moving it loses: the runtime's modules are densely circular, and relocating them reorders their
   initialization, which builds cleanly and then throws during hydration in the browser.
 
+A group whose modules are all reached from a single island is not shared with anything, so Bun keeps them in that
+island's own bundle. The report says so rather than listing a chunk that does not exist:
+
+```
+  no shared chunk: admin — its modules are reached from one island entry, which already carries them.
+```
+
+### Initialization order
+
+Members of a chunk keep the order they ran in before you grouped them. What changes is where the group as a whole runs:
+it initializes at the point the **first** of its members is reached, so a member that used to run late now runs there
+too.
+
 <Callout type="warning">
 
-Mochi cannot detect this hazard in general. A package whose modules depend on each other's initialization order may
-behave the same way: the build succeeds and the failure appears only when the page hydrates. After changing `chunks`,
-load a page that uses the affected islands in a real browser and check the console — a passing build is not enough.
+That shift is not something Mochi can check for you. If a grouped module runs code at import time that something
+outside the chunk depends on having run first, the build succeeds and the failure appears only when the page hydrates.
+After changing `chunks`, load a page that uses the affected islands in a real browser and check the console — a passing
+build is not enough.
 
 </Callout>
 
@@ -110,3 +124,6 @@ clientBundle: {
 
 Every island entry becomes self-contained: no shared chunks, no extra requests, and any dependency used by two islands
 is duplicated into both. Worth measuring before adopting — it usually costs more bytes than it saves requests.
+
+Shared chunks are exactly what splitting emits, so `splitting: false` and `chunks` cannot be combined — Mochi rejects
+the pair at startup rather than running a classifier that has nothing to place.

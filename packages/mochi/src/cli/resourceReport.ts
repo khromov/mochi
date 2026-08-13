@@ -61,10 +61,8 @@ export function printResourceTree(rows: ResourceRow[]): void {
 }
 
 export interface ChunkRow {
-  /** User-assigned name from `clientBundle.chunks`. */
-  chunkName: string;
-  /** Emitted filename, which Bun always hashes as `chunk-<hash>.js`. */
-  file: string;
+  /** User-assigned name(s) from `clientBundle.chunks`. More than one means two groups landed in the same output. */
+  chunkNames: string[];
   modules: number;
   bytes: number;
 }
@@ -72,33 +70,42 @@ export interface ChunkRow {
 /**
  * The build console is the only place a manual chunk is ever visible: chunking is production-only, while the debug bar
  * and the client-stats page are both gated on `development`.
+ *
+ * `notFormed` names groups whose modules never became a shared chunk — the one case where a user most needs telling,
+ * since the config looks like it worked.
  */
-export function printChunkTree(rows: ChunkRow[], skipped: { id: string; reason: string }[]): void {
-  if (rows.length === 0 && skipped.length === 0) {
+export function printChunkTree(rows: ChunkRow[], skipped: { id: string; reason: string }[], notFormed: string[] = []): void {
+  if (rows.length === 0 && skipped.length === 0 && notFormed.length === 0) {
     return;
   }
 
-  const sorted = [...rows].sort((a, b) => b.bytes - a.bytes || a.chunkName.localeCompare(b.chunkName));
-  const sizes = sorted.map((r) => prettyBytes(r.bytes));
-  const nameWidth = Math.max('Chunk'.length, ...sorted.map((r) => r.chunkName.length));
-  const modWidth = Math.max('modules'.length, ...sorted.map((r) => String(r.modules).length));
-  const sizeWidth = Math.max('size'.length, ...sizes.map((s) => s.length), 4);
+  const label = (r: ChunkRow) => r.chunkNames.join(' + ');
+  const sorted = [...rows].sort((a, b) => b.bytes - a.bytes || label(a).localeCompare(label(b)));
 
-  console.log('');
-  console.log(styleText('dim', `      ${'Chunk'.padEnd(nameWidth + 2)}  ${'modules'.padStart(modWidth)}  ${'size'.padStart(sizeWidth)}`));
+  if (sorted.length > 0) {
+    const sizes = sorted.map((r) => prettyBytes(r.bytes));
+    const nameWidth = Math.max('Chunk'.length, ...sorted.map((r) => label(r).length));
+    const modWidth = Math.max('modules'.length, ...sorted.map((r) => String(r.modules).length));
+    const sizeWidth = Math.max('size'.length, ...sizes.map((s) => s.length), 4);
 
-  const n = sorted.length;
-  for (let i = 0; i < n; i++) {
-    const { chunkName, modules } = sorted[i]!;
-    const char = styleText('dim', n === 1 ? '─' : i === 0 ? '┌' : i === n - 1 ? '└' : '├');
-    console.log(
-      `  ${char} ${styleText('cyan', '▤')} ${chunkName.padEnd(nameWidth + 2)}  ${styleText('dim', String(modules).padStart(modWidth))}  ${styleText('dim', sizes[i]!.padStart(sizeWidth))}`,
-    );
-  }
+    console.log('');
+    console.log(styleText('dim', `      ${'Chunk'.padEnd(nameWidth + 2)}  ${'modules'.padStart(modWidth)}  ${'size'.padStart(sizeWidth)}`));
 
-  if (n > 0) {
+    const n = sorted.length;
+    for (let i = 0; i < n; i++) {
+      const row = sorted[i]!;
+      const char = styleText('dim', n === 1 ? '─' : i === 0 ? '┌' : i === n - 1 ? '└' : '├');
+      console.log(
+        `  ${char} ${styleText('cyan', '▤')} ${label(row).padEnd(nameWidth + 2)}  ${styleText('dim', String(row.modules).padStart(modWidth))}  ${styleText('dim', sizes[i]!.padStart(sizeWidth))}`,
+      );
+    }
+
     const total = sorted.reduce((sum, r) => sum + r.bytes, 0);
     console.log(styleText('dim', `\n  ${n} chunk${n === 1 ? '' : 's'} · ${prettyBytes(total)}`));
+  }
+
+  for (const name of notFormed) {
+    console.log(styleText('yellow', `  no shared chunk: ${name} — its modules are reached from one island entry, which already carries them.`));
   }
   for (const s of skipped) {
     console.log(styleText('yellow', `  left in place: ${s.id} — ${s.reason}.`));

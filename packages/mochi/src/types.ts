@@ -331,8 +331,8 @@ export interface MochiManifest {
       size: number;
       inputs: { path: string; size: number }[];
       imports: string[];
-      /** Name assigned by `clientBundle.chunks`, when this output is a manual chunk. Diagnostic only. */
-      chunkName?: string;
+      /** Name(s) assigned by `clientBundle.chunks`, when this output really is a shared chunk they produced. Diagnostic only. */
+      chunkNames?: string[];
     }[];
   } | null;
   /** Maps server island component name → its encoded source path (see `version`). */
@@ -668,7 +668,8 @@ export interface MochiClientBundleOptions {
   chunks?: MochiChunkClassifier;
   /**
    * Bun's code splitting. `false` makes every island entry self-contained, duplicating shared dependencies across
-   * them instead of emitting shared chunks. Default: `true`.
+   * them instead of emitting shared chunks. Cannot be combined with `chunks`, which has no chunks to fill without it.
+   * Default: `true`.
    */
   splitting?: boolean;
 }

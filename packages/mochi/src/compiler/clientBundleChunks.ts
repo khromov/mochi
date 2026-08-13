@@ -37,6 +37,28 @@ export const viewId = (absPath: string): string => `${VIEW_PREFIX}${absPath}`;
 /** Minimal shape this module reads out of `Bun.build`'s metafile, so tests can build literals instead of running a build. */
 export interface ChunkMetafile {
   inputs: Record<string, { bytes: number; format?: string }>;
+  outputs?: Record<string, { inputs: Record<string, unknown> }>;
+}
+
+/**
+ * Pass 1's module evaluation order, keyed by absolute POSIX path.
+ *
+ * Bun lists an output's inputs in the order it concatenated them, which is the order the browser would have run them —
+ * the only record of the ungrouped initialization sequence, since the input map is in parse order instead. Outputs are
+ * walked in sorted path order so two members that pass 1 put in different chunks still rank deterministically; their
+ * relative order was never observable anyway, whereas co-located members keep exactly the order they had.
+ */
+export function evaluationOrder(metafile: ChunkMetafile, cwd: string = process.cwd()): Map<string, number> {
+  const order = new Map<string, number>();
+  for (const outPath of Object.keys(metafile.outputs ?? {}).sort()) {
+    for (const input of Object.keys(metafile.outputs![outPath]!.inputs)) {
+      const id = toPosixPath(path.resolve(cwd, input));
+      if (!order.has(id)) {
+        order.set(id, order.size);
+      }
+    }
+  }
+  return order;
 }
 
 const SCANNABLE_LOADERS: Record<string, 'js' | 'jsx' | 'ts' | 'tsx'> = {
@@ -119,6 +141,11 @@ export function validateClientBundleOptions(opts: unknown): MochiClientBundleOpt
   }
   if (o.splitting !== undefined && typeof o.splitting !== 'boolean') {
     throw new Error(`[mochi] clientBundle.splitting must be a boolean, received ${typeof o.splitting}.`);
+  }
+  // Shared chunks are what splitting emits, so the pair is self-contradictory: the classifier would run, cost a second
+  // full build pass, and produce nothing — while the build report named island entries as if they were chunks.
+  if (o.chunks !== undefined && o.splitting === false) {
+    throw new Error('[mochi] clientBundle.chunks needs clientBundle.splitting — with splitting disabled Bun emits no shared chunks for it to fill. Drop one of the two.');
   }
   return opts as MochiClientBundleOptions;
 }
@@ -212,10 +239,16 @@ export function classifyModules(
  * entrypoint reachability and is what collapses the group into a single chunk. A ring rather than every-imports-every
  * keeps this linear: a 250-module group emits 250 extra imports instead of ~62,000.
  *
+ * Grouping hoists the whole group to wherever its first member was reached, so the members' order relative to each
+ * other is all that can be preserved — and it is, by two things together. The re-export is emitted *before* the ring
+ * import, so a view runs its own module before walking on; a ring import first would evaluate the group backwards.
+ * And `order` (pass 1's evaluation order, via `evaluationOrder`) lays the ring out in the sequence the modules already
+ * ran in, so whichever member is reached first walks the rest in their original order.
+ *
  * `export *` carries every named export the module has, including ones it re-exports from elsewhere, so no export list
  * has to be computed ahead of the build. It never carries `default`, which is why that one name is passed in.
  */
-export function planChunks(chunkOf: Map<string, string>, hasDefault: (absPath: string) => boolean): ChunkPlan {
+export function planChunks(chunkOf: Map<string, string>, hasDefault: (absPath: string) => boolean, order?: ReadonlyMap<string, number>): ChunkPlan {
   const members = new Map<string, string[]>();
   for (const [id, chunk] of chunkOf) {
     const list = members.get(chunk);
@@ -225,23 +258,24 @@ export function planChunks(chunkOf: Map<string, string>, hasDefault: (absPath: s
       members.set(chunk, [id]);
     }
   }
-  // Sorted so one config plans identically across runs, keeping output hashes stable.
+  // Evaluation order first, path as the tie-break, so one config plans identically across runs and output hashes stay
+  // stable even for members pass 1 never placed together.
+  const rank = (id: string) => order?.get(id) ?? Number.MAX_SAFE_INTEGER;
   for (const list of members.values()) {
-    list.sort();
+    list.sort((a, b) => rank(a) - rank(b) || (a < b ? -1 : a > b ? 1 : 0));
   }
 
   const sources = new Map<string, string>();
   for (const list of members.values()) {
     list.forEach((m, i) => {
       const quoted = JSON.stringify(m);
-      const lines: string[] = [];
+      const lines: string[] = [`export * from ${quoted};`];
+      if (hasDefault(m)) {
+        lines.push(`export { default } from ${quoted};`);
+      }
       const next = list[(i + 1) % list.length]!;
       if (next !== m) {
         lines.push(`import ${JSON.stringify(viewId(next))};`);
-      }
-      lines.push(`export * from ${quoted};`);
-      if (hasDefault(m)) {
-        lines.push(`export { default } from ${quoted};`);
       }
       sources.set(viewId(m), lines.join('\n'));
     });

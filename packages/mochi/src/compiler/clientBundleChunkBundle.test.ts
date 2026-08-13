@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { ComponentRegistry } from './ComponentRegistry';
 import { mochiEvents } from '../events';
@@ -40,7 +40,7 @@ describe('clientBundle.chunks', () => {
     const registry = new ComponentRegistry({ development: false, outDir, clientBundle: { chunks: intoVendor } });
     await registry.compileAll([PAGE_A, PAGE_B]);
 
-    const named = outputs(registry).filter((o) => o.chunkName === 'vendor');
+    const named = outputs(registry).filter((o) => o.chunkNames?.includes('vendor'));
     expect(named).toHaveLength(1);
 
     const chunkInputs = realInputs(named[0]!).join('\n');
@@ -50,7 +50,7 @@ describe('clientBundle.chunks', () => {
     // The point of the feature: the real vendor modules left the per-island entries. Each entry keeps a generated
     // view module named after its source, which is a re-export shim and not the module itself.
     for (const o of outputs(registry)) {
-      if (o.chunkName === 'vendor') {
+      if (o.chunkNames?.includes('vendor')) {
         continue;
       }
       expect(realInputs(o).join('\n')).not.toContain('vendorOne.ts');
@@ -74,7 +74,7 @@ describe('clientBundle.chunks', () => {
 
     expect(registry.getIslandBootstrapUrl()).not.toBeNull();
     const urls = outputs(registry)
-      .filter((o) => o.chunkName === undefined)
+      .filter((o) => o.chunkNames === undefined)
       .map((o) => o.name);
     expect(urls.length).toBeGreaterThan(0);
   });
@@ -114,6 +114,63 @@ describe('clientBundle.chunks', () => {
   test('a malformed option is rejected at construction, before any build runs', () => {
     expect(() => new ComponentRegistry({ development: false, outDir, clientBundle: { nope: true } as never })).toThrow(/Unknown clientBundle option "nope"/);
   });
+
+  // The discovery pass writes a full set of hashed outputs to the same directory as the real one and `Bun.build` never
+  // empties it, so without a prune the build ships two copies of the client bundle.
+  test('leaves nothing on disk that the build did not emit', async () => {
+    const registry = new ComponentRegistry({ development: false, outDir, clientBundle: { chunks: intoVendor } });
+    await registry.compileAll([PAGE_A, PAGE_B]);
+
+    const onDisk = readdirSync(path.join(outDir, 'svelte-client')).sort();
+    expect(onDisk).toEqual(
+      outputs(registry)
+        .map((o) => o.name)
+        .sort(),
+    );
+  });
+
+  // A group reached from a single island is inlined into that entry rather than shared, and naming the entry as if it
+  // were a chunk reports success in exactly the case where the config did nothing.
+  test('a group that never becomes a shared chunk is reported as such, not as a chunk', async () => {
+    const registry = new ComponentRegistry({ development: false, outDir, clientBundle: { chunks: (id) => (id.includes('vendorOne') ? 'solo' : null) } });
+    await registry.compileAll([PAGE_A]);
+
+    expect(outputs(registry).some((o) => o.chunkNames !== undefined)).toBe(false);
+    expect(registry.getUnformedChunks()).toEqual(['solo']);
+  });
+
+  test('a group that does become a shared chunk is not reported as unformed', async () => {
+    const registry = new ComponentRegistry({ development: false, outDir, clientBundle: { chunks: intoVendor } });
+    await registry.compileAll([PAGE_A, PAGE_B]);
+
+    expect(registry.getUnformedChunks()).toEqual([]);
+  });
+});
+
+// Grouping hoists a group to wherever its first member was reached, so the one thing it must preserve is the members'
+// order relative to each other. Both fixtures' modules are independent — no import edge orders them — so the only
+// thing that can carry the sequence is the plan itself.
+describe('clientBundle.chunks module order', () => {
+  const ORDER_PAGE = path.join(FIXTURE_DIR, 'PageOrder.svelte');
+  const SOURCE_ORDER = ['aFirst', 'zSecond', 'bOne', 'aTwo', 'cThree'];
+  const intoOrderGroups = (id: string) => {
+    if (id.includes('/aFirst.ts') || id.includes('/zSecond.ts')) {
+      return 'alpha';
+    }
+    return ['/bOne.ts', '/aTwo.ts', '/cThree.ts'].some((m) => id.includes(m)) ? 'beta' : null;
+  };
+
+  test('members keep the order they ran in before they were grouped', async () => {
+    const registry = new ComponentRegistry({ development: false, outDir, clientBundle: { chunks: intoOrderGroups } });
+    await registry.compileAll([ORDER_PAGE]);
+
+    // Each fixture module pushes its own name, so the surviving string literals read out the initialization order.
+    const bundle = [...registry.getClientFiles().values()].find((text) => text.includes('"aFirst"'))!;
+    const emitted = SOURCE_ORDER.map((name) => [name, bundle.indexOf(`"${name}"`)] as const)
+      .sort((a, b) => a[1] - b[1])
+      .map(([name]) => name);
+    expect(emitted).toEqual(SOURCE_ORDER);
+  });
 });
 
 describe('clientBundle in development', () => {
@@ -123,7 +180,7 @@ describe('clientBundle in development', () => {
     await registry.compileAll([PAGE_A, PAGE_B]);
 
     expect(bundleEvents).toBe(1);
-    expect(outputs(registry).some((o) => o.chunkName !== undefined)).toBe(false);
+    expect(outputs(registry).some((o) => o.chunkNames !== undefined)).toBe(false);
     expect(registry.getSkippedChunkModules()).toHaveLength(0);
   });
 });

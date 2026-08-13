@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import path from 'node:path';
-import { classifyModules, hasDefaultExport, packageNameOf, planChunks, validateClientBundleOptions, type ChunkMetafile } from './clientBundleChunks';
+import { classifyModules, evaluationOrder, hasDefaultExport, packageNameOf, planChunks, validateClientBundleOptions, viewId, type ChunkMetafile } from './clientBundleChunks';
 
 const FIXTURE_DIR = path.join(import.meta.dir, '..', '__fixtures__', 'client-bundle-chunks');
 const VENDOR_ONE = path.join(FIXTURE_DIR, 'vendorOne.ts');
@@ -47,6 +47,37 @@ describe('validateClientBundleOptions', () => {
 
   test('rejects a non-boolean splitting', () => {
     expect(() => validateClientBundleOptions({ splitting: 'yes' })).toThrow(/clientBundle\.splitting must be a boolean/);
+  });
+
+  // With splitting off Bun emits no shared chunks at all, so the pair would run the classifier and a second build pass
+  // to produce nothing.
+  test('rejects chunks together with splitting: false', () => {
+    expect(() => validateClientBundleOptions({ chunks: () => null, splitting: false })).toThrow(/chunks needs clientBundle\.splitting/);
+    expect(() => validateClientBundleOptions({ chunks: () => null, splitting: true })).not.toThrow();
+  });
+});
+
+describe('evaluationOrder', () => {
+  // Bun lists an output's inputs in the order it concatenated them; the input map is in parse order, which is why the
+  // outputs are the ones read.
+  test('reads the order modules were concatenated into each output', () => {
+    const order = evaluationOrder(
+      {
+        inputs: {},
+        outputs: { 'b.js': { inputs: { 'src/second.ts': {}, 'src/third.ts': {} } }, 'a.js': { inputs: { 'src/first.ts': {} } } },
+      },
+      '/app',
+    );
+    expect([...order.keys()]).toEqual(['/app/src/first.ts', '/app/src/second.ts', '/app/src/third.ts']);
+  });
+
+  test('a module in two outputs keeps its first position', () => {
+    const order = evaluationOrder({ inputs: {}, outputs: { 'a.js': { inputs: { 'x.ts': {}, 'y.ts': {} } }, 'b.js': { inputs: { 'y.ts': {} } } } }, '/app');
+    expect(order.get('/app/y.ts')).toBe(1);
+  });
+
+  test('a metafile with no outputs yields no order', () => {
+    expect(evaluationOrder({ inputs: {} }, '/app').size).toBe(0);
   });
 });
 
@@ -148,9 +179,44 @@ describe('planChunks', () => {
       always,
     );
     const [first, second] = plan.members.get('vendor')!;
-    expect(plan.sources.get(`view:${first}`)).toContain(`import "view:${second}";`);
-    expect(plan.sources.get(`view:${second}`)).toContain(`import "view:${first}";`);
-    expect(plan.sources.get(`view:${first}`)).toContain(`export * from ${JSON.stringify(first)};`);
+    // Paths are JSON-quoted into generated source, which on Windows escapes every separator — so the expectation has
+    // to be built the same way rather than interpolated raw.
+    expect(plan.sources.get(viewId(first!))).toContain(`import ${JSON.stringify(viewId(second!))};`);
+    expect(plan.sources.get(viewId(second!))).toContain(`import ${JSON.stringify(viewId(first!))};`);
+    expect(plan.sources.get(viewId(first!))).toContain(`export * from ${JSON.stringify(first)};`);
+  });
+
+  // Grouping relocates a module's initialization; emitting the ring import first would run the group back to front, so
+  // a member's own re-export has to come before it walks on to the next view.
+  test('a view runs its own module before the rest of the ring', () => {
+    const plan = planChunks(
+      new Map([
+        [VENDOR_ONE, 'vendor'],
+        [VENDOR_TWO, 'vendor'],
+      ]),
+      always,
+    );
+    const [first] = plan.members.get('vendor')!;
+    const source = plan.sources.get(viewId(first!))!;
+    expect(source.indexOf('export * from')).toBeLessThan(source.indexOf('import "view:'));
+  });
+
+  // Ring order is evaluation order, so whichever member is reached first walks the others in the sequence they already
+  // ran in. Alphabetical order is only the tie-break for modules pass 1 never placed together.
+  test('members are laid out in the evaluation order the build reported', () => {
+    const order = new Map([
+      [VENDOR_TWO, 0],
+      [VENDOR_ONE, 1],
+    ]);
+    const plan = planChunks(
+      new Map([
+        [VENDOR_ONE, 'vendor'],
+        [VENDOR_TWO, 'vendor'],
+      ]),
+      always,
+      order,
+    );
+    expect(plan.members.get('vendor')).toEqual([VENDOR_TWO, VENDOR_ONE]);
   });
 
   // The ring is what keeps this linear rather than every-view-imports-every-other.
