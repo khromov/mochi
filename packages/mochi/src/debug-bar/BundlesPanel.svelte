@@ -5,7 +5,7 @@
   import ArrowUpRight from '../icons/arrow-up-right.svelte';
   import DebugPanel from './DebugPanel.svelte';
   import { debugBarState } from './state.svelte';
-  import { formatSize } from './utils';
+  import { formatSize, isSvelteInput } from './utils';
 
   let { open, onclose }: { open: boolean; onclose: () => void } = $props();
 
@@ -15,7 +15,7 @@
   let filterSvelte = $state(localStorage.getItem(HIDE_SVELTE_KEY) === '1');
 
   function svelteSizeOf(b: BundleInfo): number {
-    return b.inputs.filter((i) => i.path.startsWith('svelte/')).reduce((s, i) => s + i.size, 0);
+    return b.inputs.filter((i) => isSvelteInput(i.path)).reduce((s, i) => s + i.size, 0);
   }
 
   let totalSize = $derived(bundles.reduce((sum, b) => sum + b.sizeBytes, 0));
@@ -68,7 +68,7 @@
 </script>
 
 {#snippet bundleRow(bundle: BundleInfo)}
-  {@const displayInputs = filterSvelte ? bundle.inputs.filter((i) => !i.path.startsWith('svelte/')) : bundle.inputs}
+  {@const displayInputs = filterSvelte ? bundle.inputs.filter((i) => !isSvelteInput(i.path)) : bundle.inputs}
   {@const displaySize = bundle.sizeBytes - (filterSvelte ? svelteSizeOf(bundle) : 0)}
   {@const empty = displayInputs.length === 0 && bundle.kind !== 'bootstrap'}
   <div class="bundle-entry" class:open={!empty && expanded[bundle.url]} class:dimmed={empty}>
