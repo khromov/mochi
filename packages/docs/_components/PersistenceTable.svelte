@@ -19,65 +19,127 @@
   ];
 </script>
 
-<div class="persistence" class:compact>
-  <table>
-    <thead>
-      <tr>
-        <th scope="col" class="feature-col">Feature</th>
-        {#each columns as col (col.label)}
-          <th scope="col">{col.label}</th>
-        {/each}
-      </tr>
-    </thead>
-    <tbody>
-      {#each rows as row (row.key)}
+{#if compact}
+  {@const row = rows[0]}
+  {@const hasPlanned = columns.some((c) => c.pick(row).status === 'planned')}
+  <div class="persistence compact">
+    <div class="summary">
+      <span class="summary-label">Persistence</span>
+      {#each columns as col (col.label)}
+        {@const cell = col.pick(row)}
+        <span class="backend {cell.status}">
+          {#if cell.status === 'yes'}
+            <Check class="cell-icon" size={15} aria-hidden="true" />
+          {:else if cell.status === 'planned'}
+            <Clock class="cell-icon" size={15} aria-hidden="true" />
+          {:else}
+            <X class="cell-icon" size={15} aria-hidden="true" />
+          {/if}
+          <span class="backend-name">{col.label}</span>{#if cell.isDefault}<span class="star" aria-hidden="true">*</span>{/if}
+          <span class="sr-only">— {labelFor[cell.status]}{#if cell.isDefault}, default{/if}</span>
+        </span>
+      {/each}
+    </div>
+    <p class="footnote">
+      <span class="star" aria-hidden="true">*</span> default{#if hasPlanned} · clock = planned{/if} — see <a href="/docs/persistence/">Persistence</a> for the full matrix.
+    </p>
+  </div>
+{:else}
+  <div class="persistence">
+    <table>
+      <thead>
         <tr>
-          <th scope="row" class="feature-col">
-            {#if compact}
-              {row.feature}
-            {:else}
-              <a href={row.href}>{row.feature}</a>
-            {/if}
-          </th>
+          <th scope="col" class="feature-col">Feature</th>
           {#each columns as col (col.label)}
-            {@const cell = col.pick(row)}
-            <td>
-              <span class="col-label" aria-hidden="true">{col.label}</span>
-              <span class="cell {cell.status}">
-                {#if cell.status === 'yes'}
-                  <Check class="cell-icon" size={20} aria-hidden="true" />
-                {:else if cell.status === 'planned'}
-                  <Clock class="cell-icon" size={20} aria-hidden="true" />
-                {:else}
-                  <X class="cell-icon" size={20} aria-hidden="true" />
-                {/if}
-                <span class="sr-only">{labelFor[cell.status]}</span>
-                {#if cell.isDefault}<span class="star" aria-hidden="true">*</span><span class="sr-only">, default</span>{/if}
-              </span>
-            </td>
+            <th scope="col">{col.label}</th>
           {/each}
         </tr>
-      {/each}
-    </tbody>
-  </table>
+      </thead>
+      <tbody>
+        {#each rows as row (row.key)}
+          <tr>
+            <th scope="row" class="feature-col">
+              <a href={row.href}>{row.feature}</a>
+            </th>
+            {#each columns as col (col.label)}
+              {@const cell = col.pick(row)}
+              <td>
+                <span class="col-label" aria-hidden="true">{col.label}</span>
+                <span class="cell {cell.status}">
+                  {#if cell.status === 'yes'}
+                    <Check class="cell-icon" size={20} aria-hidden="true" />
+                  {:else if cell.status === 'planned'}
+                    <Clock class="cell-icon" size={20} aria-hidden="true" />
+                  {:else}
+                    <X class="cell-icon" size={20} aria-hidden="true" />
+                  {/if}
+                  <span class="sr-only">{labelFor[cell.status]}</span>
+                  {#if cell.isDefault}<span class="star" aria-hidden="true">*</span><span class="sr-only">, default</span>{/if}
+                </span>
+              </td>
+            {/each}
+          </tr>
+        {/each}
+      </tbody>
+    </table>
 
-  <p class="legend">
-    <span><span class="star" aria-hidden="true">*</span> default backend</span>
-    <span><Clock class="legend-icon planned" size={15} aria-hidden="true" /> planned, not available yet</span>
-  </p>
+    <p class="legend">
+      <span><span class="star" aria-hidden="true">*</span> default backend</span>
+      <span><Clock class="legend-icon planned" size={15} aria-hidden="true" /> planned, not available yet</span>
+    </p>
 
-  <p class="footnote">
-    {#if compact}
-      Built-in backends only — see <a href="/docs/persistence/">Persistence</a> for the full matrix.
-    {:else}
+    <p class="footnote">
       Built-in backends only — most features also accept a store you write yourself. In-memory state is per process, so it gives no shared view across a multi-instance deploy.
-    {/if}
-  </p>
-</div>
+    </p>
+  </div>
+{/if}
 
 <style>
   .persistence {
     margin: 1.5rem 0;
+  }
+
+  .summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.3rem 0.8rem;
+    padding: 0.25rem 0.7rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--surface-muted);
+    font-size: 0.9rem;
+  }
+
+  .summary-label {
+    font-weight: 600;
+    color: var(--text-muted);
+  }
+
+  .compact .footnote {
+    margin-top: 0.5rem;
+  }
+
+  .backend {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    color: var(--text);
+  }
+
+  .backend :global(.cell-icon) {
+    flex-shrink: 0;
+    color: var(--badge-danger-text);
+  }
+  .backend.yes :global(.cell-icon) {
+    color: var(--accent);
+  }
+  .backend.planned :global(.cell-icon) {
+    color: var(--badge-tip-text);
+  }
+
+  .backend.no .backend-name {
+    color: var(--text-muted);
   }
 
   .persistence :global(table) {
