@@ -1,12 +1,14 @@
 import MagicString from 'magic-string';
-import ts from 'typescript';
+import type * as TSApi from 'typescript';
 import type { SpeculationRules } from '../runtime/speculationRules';
+
+type TsModule = typeof import('typescript');
 
 /** Raised when the entry can't be safely edited; the CLI prints the rules so the user can paste them by hand. */
 export class SpeculationRulesWriteError extends Error {
   constructor(
     message: string,
-    readonly code: 'no-serve' | 'non-literal-arg',
+    readonly code: 'no-serve' | 'non-literal-arg' | 'no-typescript',
   ) {
     super(message);
     this.name = 'SpeculationRulesWriteError';
@@ -18,7 +20,21 @@ export interface WriteSpeculationRulesResult {
   multipleServeCalls: boolean;
 }
 
-function isMochiServeCall(node: ts.Node): node is ts.CallExpression {
+// `typescript` is only a devDependency, so load it lazily and fail with a paste-friendly message when a consumer
+// doesn't have it — keeping the other CLI commands free of any typescript requirement.
+async function loadTs(): Promise<TsModule> {
+  try {
+    const mod = await import('typescript');
+    return (mod.default ?? mod) as TsModule;
+  } catch {
+    throw new SpeculationRulesWriteError(
+      'The `speculation-rules` command needs the `typescript` package to edit your entry. Install it (e.g. `bun add -d typescript`) or add the `speculationRules` key by hand.',
+      'no-typescript',
+    );
+  }
+}
+
+function isMochiServeCall(ts: TsModule, node: TSApi.Node): node is TSApi.CallExpression {
   if (!ts.isCallExpression(node) || !ts.isPropertyAccessExpression(node.expression)) {
     return false;
   }
@@ -31,12 +47,13 @@ function isMochiServeCall(node: ts.Node): node is ts.CallExpression {
  * {@link SpeculationRulesWriteError} when the serve call is missing or is passed a non-literal argument.
  */
 export async function writeSpeculationRules(entryPath: string, rules: SpeculationRules): Promise<WriteSpeculationRulesResult> {
+  const ts = await loadTs();
   const source = await Bun.file(entryPath).text();
   const sf = ts.createSourceFile(entryPath, source, ts.ScriptTarget.Latest, true);
 
-  const serveCalls: ts.CallExpression[] = [];
-  const visit = (node: ts.Node): void => {
-    if (isMochiServeCall(node)) {
+  const serveCalls: TSApi.CallExpression[] = [];
+  const visit = (node: TSApi.Node): void => {
+    if (isMochiServeCall(ts, node)) {
       serveCalls.push(node);
     }
     ts.forEachChild(node, visit);
@@ -47,15 +64,15 @@ export async function writeSpeculationRules(entryPath: string, rules: Speculatio
     throw new SpeculationRulesWriteError(`No \`Mochi.serve({ ... })\` call found in ${entryPath}.`, 'no-serve');
   }
 
-  const literalCall = serveCalls.find((call) => call.arguments[0] && ts.isObjectLiteralExpression(call.arguments[0]));
-  if (!literalCall) {
+  const literalCalls = serveCalls.filter((call): call is TSApi.CallExpression => !!call.arguments[0] && ts.isObjectLiteralExpression(call.arguments[0]));
+  if (literalCalls.length === 0) {
     throw new SpeculationRulesWriteError(
       `\`Mochi.serve()\` in ${entryPath} is not called with an inline object literal, so the \`speculationRules\` key can't be inserted automatically. Add it by hand.`,
       'non-literal-arg',
     );
   }
 
-  const obj = literalCall.arguments[0] as ts.ObjectLiteralExpression;
+  const obj = literalCalls[0]!.arguments[0] as TSApi.ObjectLiteralExpression;
 
   const indent =
     obj.properties.length > 0
@@ -68,7 +85,7 @@ export async function writeSpeculationRules(entryPath: string, rules: Speculatio
     .join('\n');
 
   const magic = new MagicString(source);
-  const existing = obj.properties.find((p): p is ts.PropertyAssignment => ts.isPropertyAssignment(p) && ts.isIdentifier(p.name) && p.name.text === 'speculationRules');
+  const existing = obj.properties.find((p): p is TSApi.PropertyAssignment => ts.isPropertyAssignment(p) && ts.isIdentifier(p.name) && p.name.text === 'speculationRules');
 
   let action: WriteSpeculationRulesResult['action'];
   if (existing) {
@@ -80,5 +97,5 @@ export async function writeSpeculationRules(entryPath: string, rules: Speculatio
   }
 
   await Bun.write(entryPath, magic.toString());
-  return { action, multipleServeCalls: serveCalls.length > 1 };
+  return { action, multipleServeCalls: literalCalls.length > 1 };
 }

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'bun:test';
 import { Mochi } from '../Mochi';
 import type { MochiRouteValue } from '../types';
 import type { SpeculationDocumentRule } from '../runtime/speculationRules';
-import { patternToGlob, isStaticPattern, collapseGlobs, generateSpeculationRules } from './generateSpeculationRules';
+import { patternToGlob, isStaticPattern, collapseGlobs, applyTrailingSlash, generateSpeculationRules } from './generateSpeculationRules';
 
 const page = () => Mochi.page('X.svelte');
 
@@ -33,6 +33,15 @@ describe('collapseGlobs', () => {
 
   it('keeps globs that are not subsumed (e.g. /blog vs /blog/*)', () => {
     expect(collapseGlobs(['/blog', '/blog/*'])).toEqual(['/blog', '/blog/*']);
+  });
+});
+
+describe('applyTrailingSlash', () => {
+  it('adds, strips, or leaves the slash per policy and never touches root', () => {
+    expect(applyTrailingSlash('/about', 'always')).toBe('/about/');
+    expect(applyTrailingSlash('/about/', 'never')).toBe('/about');
+    expect(applyTrailingSlash('/', 'always')).toBe('/');
+    expect(applyTrailingSlash('/about')).toBe('/about');
   });
 });
 

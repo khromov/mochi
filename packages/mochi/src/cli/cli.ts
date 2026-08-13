@@ -8,7 +8,6 @@ import { extractServeOptions } from './extractServeOptions';
 import { updateSkill, SKILL_TARGETS, SKILL_DESTS, DEFAULT_SKILL_TARGET, type SkillTarget } from './updateSkill';
 import { generateKey } from './generateKey';
 import { generateSpeculationRules } from './generateSpeculationRules';
-import { writeSpeculationRules, SpeculationRulesWriteError } from './writeSpeculationRules';
 import { relForDisplay } from '../utils';
 import { markBuilding } from '../utils/buildFlag';
 
@@ -150,12 +149,14 @@ async function runSpeculationRules(entryArg: string | undefined, dryRun: boolean
     process.exit(0);
   }
 
+  // Loaded here rather than at module top so the other commands never pull in its `typescript` peer.
+  const { writeSpeculationRules, SpeculationRulesWriteError } = await import('./writeSpeculationRules');
   try {
     const { action, multipleServeCalls } = await writeSpeculationRules(entryPath, rules);
     const rel = relForDisplay(entryPath) || entryPath;
     process.stdout.write(`[mochi] ${action === 'inserted' ? 'Added' : 'Updated'} speculationRules in ${rel}. Run your formatter (e.g. \`bun run format\`) to tidy it.\n`);
     if (multipleServeCalls) {
-      process.stdout.write(`[mochi] Note: more than one Mochi.serve() call was found — edited the first.\n`);
+      process.stdout.write(`[mochi] Note: more than one eligible Mochi.serve() call was found — edited the first.\n`);
     }
   } catch (err) {
     if (err instanceof SpeculationRulesWriteError) {

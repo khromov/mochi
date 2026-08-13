@@ -51,6 +51,27 @@ describe('writeSpeculationRules', () => {
     expect(parses(out)).toBe(true);
   });
 
+  it('inserts into an empty object literal', async () => {
+    const file = await tempEntry(`import { Mochi } from 'mochi-framework';\nawait Mochi.serve({});\n`);
+    const result = await writeSpeculationRules(file, RULES);
+    expect(result.action).toBe('inserted');
+    const out = await Bun.file(file).text();
+    expect(out).toContain('speculationRules:');
+    expect(parses(out)).toBe(true);
+  });
+
+  it('edits the first eligible call and reports multiple when several literal serve calls exist', async () => {
+    const source = `import { Mochi } from 'mochi-framework';\nawait Mochi.serve({ port: 1 });\nawait Mochi.serve({ port: 2 });\n`;
+    const file = await tempEntry(source);
+    const result = await writeSpeculationRules(file, RULES);
+    expect(result.multipleServeCalls).toBe(true);
+    const out = await Bun.file(file).text();
+    // The key lands in the first call (before `port: 2`).
+    expect(out.indexOf('speculationRules:')).toBeLessThan(out.indexOf('port: 2'));
+    expect(out.match(/speculationRules:/g)?.length).toBe(1);
+    expect(parses(out)).toBe(true);
+  });
+
   it('throws no-serve and does not mutate when there is no Mochi.serve() call', async () => {
     const source = `console.log('no server here');\n`;
     const file = await tempEntry(source);
