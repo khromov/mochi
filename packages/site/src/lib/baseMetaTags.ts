@@ -2,7 +2,7 @@ import { deepMerge, type MetaTagsProps } from 'svelte-meta-tags';
 
 const SITE_URL = 'https://mochi.fast';
 const DEFAULT_OG_IMAGE = `${SITE_URL}/og-default.jpg`;
-const DEFAULT_DESCRIPTION = 'An experimental SSR framework for Svelte 5 + Bun with islands-based selective hydration.';
+const DEFAULT_DESCRIPTION = 'Islands framework for Svelte 5 + Bun with islands-based selective hydration.';
 
 export const baseMetaTags: MetaTagsProps = {
   titleTemplate: '%s — Mochi',

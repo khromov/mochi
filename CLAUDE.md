@@ -66,7 +66,7 @@ Root `bunfig.toml` pins `[install] linker = "hoisted"` to avoid a Bun bundler bu
 
 ## Architecture
 
-Mochi is an experimental SSR framework for Svelte 5 + Bun with islands-based selective hydration. Components render server-side on every request; only components marked with `mochi:hydrate*` or `mochi:defer` ship JavaScript to the browser.
+Mochi is an islands framework for Svelte 5 + Bun with islands-based selective hydration. Components render server-side on every request; only components marked with `mochi:hydrate*` or `mochi:defer` ship JavaScript to the browser.
 
 ### Framework entry points (`packages/mochi/src/`)
 

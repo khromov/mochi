@@ -113,7 +113,7 @@ function sceneLogo(t: number): Node {
       opacity: wordOp,
       transform: `translateY(${wordY}px)`,
     }),
-    text('an experimental SSR framework', {
+    text('islands framework', {
       fontFamily: FONT.mono,
       fontSize: 30,
       letterSpacing: '0.32em',
