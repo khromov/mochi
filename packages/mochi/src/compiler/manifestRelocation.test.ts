@@ -148,6 +148,8 @@ describe('manifest relocation (build → move → boot)', () => {
       ...Object.values(manifest.components).map((c) => c.ssrModule),
       ...Object.values(manifest.clientFiles),
       ...Object.values(manifest.localImageAssets ?? {}).map((a) => a.diskPath),
+      ...Object.values(manifest.fontAssets ?? {}).map((a) => a.diskPath),
+      ...Object.values(manifest.importCssAssets ?? {}).map((a) => a.diskPath),
       manifest.serverIslandScript!,
     ];
     for (const p of diskPaths) {

@@ -78,6 +78,7 @@ await Mochi.serve({
 
 - **`dropLegacyWoff`** — `woff2` is supported by every browser Mochi targets, so shipping the `woff` fallback doubles a face's payload for nothing.
 - **`preload`** — separately-fetched fonts are only discovered after the CSS arrives; preloading from the `<head>` closes that gap. Faces whose `unicode-range` excludes latin are skipped, and at most 8 fonts are preloaded per page.
+- **`inlineThreshold`** — Bun writes any `url()` asset of 128 kB or more to a file of its own, so fonts that large are always served separately whatever this is set to. That 128 kB cutoff is hardcoded in Bun and cannot currently be configured. Non-font assets over it (a background image, say) are served alongside the stylesheet; smaller ones stay inlined.
 
 ### Variable fonts
 

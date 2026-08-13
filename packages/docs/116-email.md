@@ -221,6 +221,8 @@ Email templates always render outside the request context, even when sent from a
 
 CSS inlining is best-effort, and email clients support only a limited, inconsistent subset of CSS. Rules that cannot inline (media queries, pseudo-classes) stay in a `<style>` block that some clients strip. Modern layout (flexbox/grid, custom properties) is unreliable. Favor simple, table- and inline-style-friendly markup, and test in the clients you care about.
 
+`@font-face` rules are dropped from the message, with a warning: most clients ignore web fonts, and the ones that don't still count the bytes against the size at which Gmail clips a message. Use a font stack the client already has.
+
 </Callout>
 
 ### Sending in the background

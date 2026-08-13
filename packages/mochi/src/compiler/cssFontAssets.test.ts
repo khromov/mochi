@@ -1,5 +1,7 @@
-import { describe, expect, test } from 'bun:test';
-import { classifyFontAssets, fontAssetFileName, fontContentHash, substituteFontUrl, type FontRef } from './cssFontAssets';
+import { afterEach, describe, expect, test } from 'bun:test';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+import { adoptEmittedFontAssets, classifyFontAssets, fontAssetFileName, fontContentHash, stripFontFaces, substituteFontUrl, type FontRef } from './cssFontAssets';
 
 let refCounter = 0;
 function makeRef(path: string, size = 10_000): FontRef {
@@ -185,5 +187,110 @@ describe('fontAssetFileName', () => {
     const bytes = new Uint8Array([4, 5, 6]);
     const ref = makeRef('/pkg/files/we ird@font.woff');
     expect(fontAssetFileName(ref, bytes)).toBe(`we-ird-font-${fontContentHash(bytes)}.woff`);
+  });
+});
+
+describe('adoptEmittedFontAssets', () => {
+  let tmp: string | undefined;
+
+  afterEach(() => {
+    if (tmp) {
+      rmSync(tmp, { recursive: true, force: true });
+      tmp = undefined;
+    }
+  });
+
+  function emit(name: string, contents: Uint8Array | string): string {
+    tmp ??= mkdtempSync(path.join(import.meta.dir, '..', '..', '.mochi-adopt-test-'));
+    const file = path.join(tmp, name);
+    writeFileSync(file, contents);
+    return file;
+  }
+
+  test('reuses the existing ref when the emitted file holds a marker', async () => {
+    const ref = makeRef('/pkg/files/demo-latin-400-normal.woff2');
+    const marker = Buffer.from(ref.markerB64, 'base64').toString();
+    const file = emit('demo-latin-400-normal-abcd1234.woff2', marker);
+    const css = `@font-face { src: url("./${path.basename(file)}") format("woff2"); }`;
+    const refs = [ref];
+
+    const { css: out, otherAssets } = await adoptEmittedFontAssets(css, [{ path: file }], refs);
+
+    expect(refs).toEqual([ref]);
+    expect(otherAssets).toEqual([]);
+    expect(out).toContain(`url(data:font/woff2;base64,${ref.markerB64})`);
+    expect(existsSync(file)).toBe(false);
+  });
+
+  test('adopts a font Bun copied itself, carrying its bytes and un-hashed name', async () => {
+    const bytes = new Uint8Array([9, 8, 7, 6]);
+    const file = emit('fraunces-latin-full-italic-7eta9vw9.woff2', bytes);
+    const css = `@font-face { src: url("./${path.basename(file)}") format("woff2"); }`;
+    const refs: FontRef[] = [];
+
+    const { css: out, otherAssets } = await adoptEmittedFontAssets(css, [{ path: file }], refs);
+
+    expect(otherAssets).toEqual([]);
+    expect(refs).toHaveLength(1);
+    expect(refs[0]!.bytes).toEqual(bytes);
+    expect(path.basename(refs[0]!.path)).toBe('fraunces-latin-full-italic.woff2');
+    expect(out).toContain(`url(data:font/woff2;base64,${refs[0]!.markerB64})`);
+    expect(fontAssetFileName(refs[0]!, bytes)).toBe(`fraunces-latin-full-italic-${fontContentHash(bytes)}.woff2`);
+    expect(existsSync(file)).toBe(false);
+  });
+
+  test('substitutes unquoted and bare-name url() forms', async () => {
+    const bytes = new Uint8Array([1, 2]);
+    const file = emit('demo-1a2b3c4d.woff', bytes);
+    const refs: FontRef[] = [];
+    const { css: out } = await adoptEmittedFontAssets(`a { src: url(${path.basename(file)}); }`, [{ path: file }], refs);
+    expect(out).toBe(`a { src: url(data:font/woff;base64,${refs[0]!.markerB64}); }`);
+  });
+
+  test('leaves a font whose url() it cannot match in place, holding the real bytes', async () => {
+    const ref = makeRef('/pkg/files/source.woff2');
+    const marker = Buffer.from(ref.markerB64, 'base64').toString();
+    const file = emit('source-abcd1234.woff2', marker);
+    const source = emit('source.woff2', new Uint8Array([5, 5, 5]));
+    ref.path = source;
+    const css = '@font-face { src: url("/somewhere/else.woff2") format("woff2"); }';
+    const refs = [ref];
+
+    const { css: out, otherAssets } = await adoptEmittedFontAssets(css, [{ path: file }], refs);
+
+    expect(out).toBe(css);
+    expect(otherAssets).toEqual([file]);
+    expect(existsSync(file)).toBe(true);
+    expect(readFileSync(file)).toEqual(readFileSync(source));
+  });
+
+  test('leaves a non-font artifact alone for the caller to serve', async () => {
+    const file = emit('hero-1a2b3c4d.png', new Uint8Array([1, 2, 3]));
+    const css = `a { background: url("./${path.basename(file)}"); }`;
+    const refs: FontRef[] = [];
+
+    const { css: out, otherAssets } = await adoptEmittedFontAssets(css, [{ path: file }], refs);
+
+    expect(otherAssets).toEqual([file]);
+    expect(refs).toEqual([]);
+    expect(out).toBe(css);
+    expect(existsSync(file)).toBe(true);
+  });
+});
+
+describe('stripFontFaces', () => {
+  test('removes every face and counts them, leaving other rules alone', () => {
+    const css = `@font-face { font-family: A; src: url(data:font/woff2;base64,AA==); }\nbody { color: red; }\n@font-face { font-family: B; src: url(/_mochi/fonts/b-1a2b3c4d.woff2); }`;
+    const { css: out, dropped } = stripFontFaces(css);
+
+    expect(dropped).toBe(2);
+    expect(out).not.toContain('@font-face');
+    expect(out).not.toContain('base64');
+    expect(out).toContain('body { color: red; }');
+  });
+
+  test('is a no-op without faces', () => {
+    const css = 'body { color: red; }';
+    expect(stripFontFaces(css)).toEqual({ css, dropped: 0 });
   });
 });

@@ -11,6 +11,8 @@ export interface FontRef {
   path: string;
   size: number;
   markerB64: string;
+  /** Set only by {@link adoptEmittedFontAssets}, whose `path` names a bundler copy it deleted rather than a readable source. */
+  bytes?: Uint8Array;
 }
 
 /** A font that survived classification and should be emitted as a separate served asset. */
@@ -25,6 +27,22 @@ export interface SurvivingFont {
 }
 
 export const FONT_URL_FILTER = /\.(woff2?|ttf|otf|eot)$/;
+
+/** Bun's hardcoded `COPY_THRESHOLD`: a CSS `url()` asset this large is written beside the stylesheet, not inlined. */
+export const BUN_CSS_COPY_THRESHOLD = 128 * 1024;
+
+const FONT_MIME_BY_EXT: Record<string, string> = {
+  '.woff2': 'font/woff2',
+  '.woff': 'font/woff',
+  '.ttf': 'font/ttf',
+  '.otf': 'font/otf',
+  '.eot': 'application/vnd.ms-fontobject',
+};
+
+function markerFor(index: number): { marker: string; markerB64: string } {
+  const marker = `__MOCHI_FONT_${index}__`;
+  return { marker, markerB64: Buffer.from(marker).toString('base64') };
+}
 
 export function fontContentHash(bytes: Uint8Array): string {
   const hasher = new Bun.CryptoHasher('sha256');
@@ -44,16 +62,72 @@ export function createFontMarkerPlugin(inlineThreshold: number): { plugin: BunPl
     setup(build) {
       build.onLoad({ filter: FONT_URL_FILTER }, (args) => {
         const size = fs.statSync(args.path).size;
-        if (size <= inlineThreshold) {
+        // Declining a font Bun would copy rather than inline segfaults its bundler (verified on 1.3.14, exactly at
+        // 128 kB), so those take the marker path whatever the threshold says — the outcome is the same either way,
+        // since Bun gives no way to inline them.
+        if (size <= inlineThreshold && size < BUN_CSS_COPY_THRESHOLD) {
           return undefined;
         }
-        const marker = `__MOCHI_FONT_${refs.length}__`;
-        refs.push({ path: args.path, size, markerB64: Buffer.from(marker).toString('base64') });
+        const { marker, markerB64 } = markerFor(refs.length);
+        refs.push({ path: args.path, size, markerB64 });
         return { contents: marker, loader: 'file' };
       });
     },
   };
   return { plugin, refs };
+}
+
+/**
+ * Fold assets Bun emitted as files back into the marker protocol, so {@link classifyFontAssets} sees one shape.
+ *
+ * Bun copies any `url()` reference at or above a hardcoded 128 kB instead of inlining it (oven-sh/bun#24599), which
+ * {@link createFontMarkerPlugin} normally prevents by shrinking fonts to marker bytes first — but not when the caller
+ * raised `inlineThreshold` past 128 kB or opted out of the plugin. A future Bun that honours `loader: 'file'` would
+ * take this path for every marked font instead. Either way the bundled CSS points at a file next to itself that
+ * nothing serves, so each font artifact is turned back into its marker `data:` URI and the stray copy deleted.
+ *
+ * Returns the paths of emitted assets that aren't fonts (a large image from an imported stylesheet); they keep the
+ * relative URL Bun printed, so the caller only has to serve them from beside the stylesheet.
+ */
+export async function adoptEmittedFontAssets(css: string, emitted: { path: string }[], refs: FontRef[]): Promise<{ css: string; otherAssets: string[] }> {
+  const otherAssets: string[] = [];
+  const refByMarker = new Map(refs.map((r) => [r.markerB64, r]));
+  for (const artifact of emitted) {
+    const ext = path.extname(artifact.path).toLowerCase();
+    if (!FONT_URL_FILTER.test(artifact.path)) {
+      otherAssets.push(artifact.path);
+      continue;
+    }
+    const bytes = await Bun.file(artifact.path).bytes();
+    // A marked font: the file holds the marker text, not the font, so the real bytes come from the ref's source path.
+    const marked = bytes.length < 64 ? refByMarker.get(Buffer.from(bytes).toString('base64')) : undefined;
+    const markerB64 = marked?.markerB64 ?? markerFor(refs.length).markerB64;
+    const mime = FONT_MIME_BY_EXT[ext] ?? 'application/octet-stream';
+    const substituted = replaceUrlToken(css, path.basename(artifact.path), `data:${mime};base64,${markerB64}`);
+    if (substituted === css) {
+      // Bun printed a url() form this doesn't recognise. Leaving the copy where it is keeps the stylesheet working,
+      // unextracted — but a marked copy holds marker text, so it needs the real font written over it first.
+      if (marked) {
+        fs.copyFileSync(marked.path, artifact.path);
+      }
+      otherAssets.push(artifact.path);
+      continue;
+    }
+    css = substituted;
+    if (!marked) {
+      // Bun's own copy is byte-identical to the source, so the artifact itself stands in as the ref's file. Its name
+      // carries Bun's fixed-width asset hash, dropped so the served name doesn't end up double-hashed.
+      refs.push({ path: path.join(path.dirname(artifact.path), path.basename(artifact.path, ext).replace(/-[a-z0-9]{8}$/, '') + ext), size: bytes.length, markerB64, bytes });
+    }
+    fs.rmSync(artifact.path, { force: true });
+  }
+  return { css, otherAssets };
+}
+
+// Bun prints the emitted asset relative to the stylesheet (`./name.woff2` or `name.woff2`), quoted or not under minify.
+function replaceUrlToken(css: string, fileName: string, replacement: string): string {
+  const escaped = fileName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return css.replace(new RegExp(String.raw`url\(\s*(["']?)(?:\.?\.?/)*${escaped}\1\s*\)`, 'g'), `url(${replacement})`);
 }
 
 const URL_TOKEN_RE = /url\(\s*("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^'")][^)]*)\s*\)/g;
@@ -229,6 +303,16 @@ export function classifyFontAssets(css: string, refs: FontRef[], opts: { dropLeg
 export function substituteFontUrl(css: string, markerUri: string, fontUrl: string): string {
   const escaped = markerUri.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return css.replace(new RegExp(String.raw`url\(\s*(["']?)${escaped}\1\s*\)`, 'g'), `url(${fontUrl})`);
+}
+
+/** Drop every `@font-face` block, reporting how many went, for documents that cannot load fonts at all (email). */
+export function stripFontFaces(css: string): { css: string; dropped: number } {
+  let dropped = 0;
+  const out = css.replace(FONT_FACE_RE, () => {
+    dropped++;
+    return '';
+  });
+  return { css: out, dropped };
 }
 
 export function fontAssetFileName(ref: FontRef, bytes: Uint8Array): string {

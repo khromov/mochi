@@ -1671,8 +1671,8 @@ export class Mochi {
       // Non-route requests run middleware too, so static-asset paths (`/_mochi/client/...` bundles) share the chain and a
       // user `gzip()` compresses them like any other response. Kind is precomputed so middleware can branch on it.
       const assetContent = registry.getClientFile(url.pathname);
-      const fontAsset = assetContent === undefined ? registry.getFontAsset(url.pathname) : undefined;
-      const kind: MochiEventKind = assetContent !== undefined || fontAsset !== undefined ? 'asset' : userFetch ? 'fallback' : 'error';
+      const diskAsset = assetContent === undefined ? (registry.getFontAsset(url.pathname) ?? registry.getImportedCssAsset(url.pathname)) : undefined;
+      const kind: MochiEventKind = assetContent !== undefined || diskAsset !== undefined ? 'asset' : userFetch ? 'fallback' : 'error';
 
       const event: MochiEvent = { request: req, url, server, locals: {}, kind, isWarmup: false };
 
@@ -1691,8 +1691,8 @@ export class Mochi {
           }
           return applyResolveOptions(new Response(assetContent, { headers }), resolveOpts);
         }
-        if (fontAsset !== undefined) {
-          return applyResolveOptions(await serveDiskAsset(fontAsset, development), resolveOpts);
+        if (diskAsset !== undefined) {
+          return applyResolveOptions(await serveDiskAsset(diskAsset, development), resolveOpts);
         }
         if (userFetch) {
           const response = await userFetch(req, server);

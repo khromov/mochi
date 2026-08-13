@@ -1,4 +1,5 @@
 import type { ComponentRegistry } from '../compiler/ComponentRegistry';
+import { stripFontFaces } from '../compiler/cssFontAssets';
 import { relForDisplay } from '../utils';
 import { logger } from '../utils/log';
 
@@ -15,16 +16,24 @@ import { logger } from '../utils/log';
  * bloat the message and trip spam heuristics, and stray `<style>` blocks would survive css-inline's `keepStyleTags` pass
  * and ship un-inlined rules many clients ignore. The strip covers the component body alone, with the collected scoped
  * CSS re-added as a head `<style>` afterward so css-inline still has it to work from.
+ *
+ * `@font-face` rules go the same way: most clients drop them, Gmail clips a message past ~102 kB, and the extracted
+ * fonts an imported stylesheet points at are root-relative URLs no standalone document can resolve.
  */
 export async function renderEmailComponent(registry: ComponentRegistry, component: string, props?: Record<string, unknown>): Promise<string> {
   const result = await registry.renderStatic(component, props);
-  const css = await inlineExtractedFonts(
+  const { css, dropped } = stripFontFaces(
     result.cssUrls
       .map((url) => registry.getClientFile(url))
       .filter((c): c is string => Boolean(c))
       .join('\n'),
-    registry,
   );
+  if (dropped > 0 && !warnedFontComponents.has(component)) {
+    warnedFontComponents.add(component);
+    logger.warn(
+      `Email component ${relForDisplay(component)} imports ${dropped} @font-face rule(s); email clients either ignore them or clip the message over their size limit, so they were dropped. Use a font stack the client already has.`,
+    );
+  }
   const head = result.head ?? '';
   const body = stripScriptsAndStyles(result.body);
   const doc = `<!doctype html><html><head><meta charset="utf-8">${head}${css ? `<style>${css}</style>` : ''}</head><body>${body}</body></html>`;
@@ -33,32 +42,7 @@ export async function renderEmailComponent(registry: ComponentRegistry, componen
   return inline(doc, { keepStyleTags: true });
 }
 
-// Filenames are content-hashed, so a disk path always maps to the same bytes and the encoding is done once per font.
-const fontDataUriCache = new Map<string, string>();
-
-// Imported CSS refers to its extracted fonts by root-relative `/_mochi/fonts/*` URLs, which have no origin to resolve
-// against inside a standalone email document — the bytes go back in as self-contained `data:` URIs.
-async function inlineExtractedFonts(css: string, registry: ComponentRegistry): Promise<string> {
-  for (const [url, asset] of registry.getFontAssets()) {
-    if (!css.includes(url)) {
-      continue;
-    }
-    let dataUri = fontDataUriCache.get(asset.diskPath);
-    if (dataUri === undefined) {
-      const file = Bun.file(asset.diskPath);
-      // A font is decorative; a missing file (wiped outDir under a live server, partially copied build) must not turn
-      // into a failed send, so the face just keeps its un-resolvable URL — same downgrade the HTTP path applies.
-      if (!(await file.exists())) {
-        logger.warn(`Email font ${url} is missing on disk (${relForDisplay(asset.diskPath)}); sending without it.`);
-        continue;
-      }
-      dataUri = `url("data:${asset.contentType};base64,${Buffer.from(await file.bytes()).toString('base64')}")`;
-      fontDataUriCache.set(asset.diskPath, dataUri);
-    }
-    css = css.replaceAll(`url(${url})`, dataUri).replaceAll(`url("${url}")`, dataUri);
-  }
-  return css;
-}
+const warnedFontComponents = new Set<string>();
 
 // The `-wasm` build stands in for the default `@css-inline/css-inline`, whose native N-API addons ship per-platform ABI
 // binaries through optionalDependencies; one portable `.wasm` keeps installs binary-free and identical everywhere,

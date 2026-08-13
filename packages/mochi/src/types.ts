@@ -302,7 +302,7 @@ export interface MochiManifest {
    *
    * Every manifest path is relative, in one of three families:
    * - **Artifacts** the runtime opens (`ssrModule`, `clientFiles`,
-   *   `localImageAssets[].diskPath`, `fontAssets[].diskPath`, `serverIslandScript`) — out-dir relative,
+   *   `localImageAssets[].diskPath`, `fontAssets[].diskPath`, `importCssAssets[].diskPath`, `serverIslandScript`) — out-dir relative,
    *   resolved against the manifest's own directory.
    * - **Sources** used as lookup keys (`components` keys, `hydratables[].resolvedPath`,
    *   `cssComponents`, `cssFileUrls` keys, `serverIslandPaths`, `importedCssUrls` keys,
@@ -343,6 +343,8 @@ export interface MochiManifest {
   importedCssUrls?: Record<string, string>;
   /** Maps served font URL → binary font extracted from imported CSS. `diskPath` is outDir-relative. */
   fontAssets?: Record<string, { diskPath: string; contentType: string }>;
+  /** Maps served URL → non-font asset the bundler emitted beside a stylesheet. `diskPath` is outDir-relative. */
+  importCssAssets?: Record<string, { diskPath: string; contentType: string }>;
   /** Maps encoded CSS-import source path (see `version`) → served URLs of its preload-worthy extracted fonts. */
   importedCssFontPreloads?: Record<string, string[]>;
   /** Maps encoded page entry path (see `version`) → the CSS-import paths reachable from it, likewise encoded. */
@@ -636,7 +638,8 @@ export interface MochiServeOptions {
 export interface MochiFontOptions {
   /**
    * Fonts at or below this byte size stay inlined in the bundled CSS as `data:` URIs; larger ones are emitted as
-   * separate content-hashed files. Default: 4096, or `Infinity` to restore full inlining.
+   * separate content-hashed files. Default: 4096, or `Infinity` to restore full inlining. Bun copies any `url()`
+   * asset of 128 KB or more to a file regardless of this value, so fonts that large are always emitted.
    */
   inlineThreshold?: number;
   /** Drop legacy `format('woff')` sources from `@font-face` `src:` lists that also offer `woff2`. Default: `true`. */

@@ -94,9 +94,9 @@ describe('renderEmailComponent', () => {
   });
 });
 
-// A standalone email document has no origin, so the root-relative `/_mochi/fonts/*` URLs that font extraction leaves
-// in imported CSS must go back to self-contained `data:` URIs.
-describe('renderEmailComponent — extracted fonts', () => {
+// Email clients either ignore @font-face or clip the message over their size limit, and the `/_mochi/fonts/*` URLs
+// font extraction leaves in imported CSS have no origin to resolve against, so the faces go entirely.
+describe('renderEmailComponent — imported fonts', () => {
   let tmp: string;
   let registry: ComponentRegistry;
   let emailPath: string;
@@ -104,12 +104,19 @@ describe('renderEmailComponent — extracted fonts', () => {
   for (let i = 0; i < fontBytes.length; i++) {
     fontBytes[i] = (i * 31 + 9) % 256;
   }
+  const smallFontBytes = new Uint8Array(512).fill(7);
 
   beforeAll(async () => {
     tmp = mkdtempSync(path.join(import.meta.dir, '..', '..', '.mochi-email-fonts-'));
     mkdirSync(path.join(tmp, 'files'));
     writeFileSync(path.join(tmp, 'files', 'brand.woff2'), fontBytes);
-    writeFileSync(path.join(tmp, 'fonts.css'), `@font-face { font-family: 'Brand'; src: url('./files/brand.woff2') format('woff2'); }`);
+    writeFileSync(path.join(tmp, 'files', 'icons.woff2'), smallFontBytes);
+    writeFileSync(
+      path.join(tmp, 'fonts.css'),
+      `@font-face { font-family: 'Brand'; src: url('./files/brand.woff2') format('woff2'); }\n` +
+        `@font-face { font-family: 'Icons'; src: url('./files/icons.woff2') format('woff2'); }\n` +
+        `h1 { font-family: 'Brand', serif; }`,
+    );
     emailPath = path.join(tmp, 'FontEmail.svelte');
     writeFileSync(emailPath, `<script>\n  import './fonts.css';\n<` + `/script>\n\n<h1>font email</h1>\n`);
     registry = new ComponentRegistry({ development: true, outDir: path.join(tmp, 'out') });
@@ -120,9 +127,12 @@ describe('renderEmailComponent — extracted fonts', () => {
     rmSync(tmp, { recursive: true, force: true });
   });
 
-  test('re-inlines extracted font URLs as data: URIs', async () => {
+  test('drops @font-face rules, extracted or inlined, and keeps the family fallback', async () => {
     const html = await renderEmailComponent(registry, emailPath);
+    expect(html).not.toContain('@font-face');
     expect(html).not.toContain('/_mochi/fonts/');
-    expect(html).toContain(`data:font/woff2;base64,${Buffer.from(fontBytes).toString('base64')}`);
+    expect(html).not.toContain('data:font');
+    expect(html).not.toContain(Buffer.from(smallFontBytes).toString('base64'));
+    expect(html).toContain('serif');
   });
 });

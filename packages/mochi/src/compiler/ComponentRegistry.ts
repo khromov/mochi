@@ -20,7 +20,7 @@ import { logger } from '../utils/log';
 import { mochiEvents } from '../events';
 import { detectHeavyBarrels, formatBarrelLine, formatBarrelSummary, type BarrelMetafile, type HeavyBarrel } from './barrelDetect';
 import type { MarkdownConfig, MochiBarrelWarningOptions, MochiFontOptions, MochiManifest, MochiSvelteShakerOptions } from '../types';
-import { classifyFontAssets, createFontMarkerPlugin, fontAssetFileName, fontContentHash, substituteFontUrl } from './cssFontAssets';
+import { adoptEmittedFontAssets, classifyFontAssets, createFontMarkerPlugin, fontAssetFileName, fontContentHash, substituteFontUrl } from './cssFontAssets';
 import { type HydratableComponent, type PreprocessIslandError, type ServerIslandComponent } from './svelteAstPreprocess';
 import { cachedPreprocessHydratable, createPreprocessCacheStats } from './preprocessCache';
 import { CompileCache, compileFingerprint, createCompileCacheStats, type CompileCacheStats } from './compileCache';
@@ -420,6 +420,8 @@ export class ComponentRegistry {
   private fontAssets: Map<string, { diskPath: string; contentType: string }> = new Map();
   /** Superseded font URLs, kept so dev HTML rendered before a re-bundle keeps resolving them. */
   private readonly devStaleFontAssets: Map<string, { diskPath: string; contentType: string }> = new Map();
+  /** Maps served URL → non-font asset Bun emitted beside a bundled stylesheet; content-hashed by the bundler, so never retired. */
+  private readonly importCssAssets: Map<string, { diskPath: string; contentType: string }> = new Map();
   /** Maps resolved CSS-import path → served URLs of its preload-worthy extracted fonts (woff2, latin-visible). */
   private importedCssFontPreloads: Map<string, string[]> = new Map();
   readonly development: boolean;
@@ -1877,6 +1879,11 @@ export class ComponentRegistry {
     return this.fontAssets.get(urlPath) ?? this.devStaleFontAssets.get(urlPath);
   }
 
+  /** A non-font asset Bun wrote beside a bundled stylesheet (any `url()` at or above its 128 kB copy threshold), served from where the CSS points at it. */
+  getImportedCssAsset(urlPath: string): { diskPath: string; contentType: string } | undefined {
+    return this.importCssAssets.get(urlPath);
+  }
+
   getFontAssets(): Map<string, { diskPath: string; contentType: string }> {
     return this.fontAssets;
   }
@@ -1977,11 +1984,25 @@ export class ComponentRegistry {
         // .text() may return empty — the file on disk is the source of truth.
         const rawCss = await Bun.file(out.path).text();
         let cssText = restoreVariationsFormat(rawCss);
+        const adopted = await adoptEmittedFontAssets(
+          cssText,
+          cssResult.outputs.filter((o) => o !== out),
+          fontRefs,
+        );
+        cssText = adopted.css;
+        // Bun printed these relative to the stylesheet, which is served from `import-css/`, so registering them under
+        // that prefix is what makes the URL it already wrote resolve.
+        for (const assetPath of adopted.otherAssets) {
+          const name = path.basename(assetPath);
+          const file = Bun.file(assetPath);
+          this.importCssAssets.set(`${this.assetPrefix}/import-css/${name}`, { diskPath: assetPath, contentType: file.type });
+          this.importedCssStats.push({ name: path.posix.join('import-css', name), size: file.size, inputs: [], imports: [] });
+        }
         const fontPass = classifyFontAssets(cssText, fontRefs, { dropLegacyWoff: this.fontDropLegacyWoff });
         cssText = fontPass.css;
         const preloadUrls: string[] = [];
         for (const font of fontPass.fonts) {
-          const bytes = await Bun.file(font.ref.path).bytes();
+          const bytes = font.ref.bytes ?? (await Bun.file(font.ref.path).bytes());
           const fileName = fontAssetFileName(font.ref, bytes);
           const diskPath = path.join(this.outDir, 'fonts', fileName);
           const fontUrl = `${this.assetPrefix}/fonts/${fileName}`;
@@ -2226,6 +2247,9 @@ export class ComponentRegistry {
     if (this.fontAssets.size > 0) {
       manifest.fontAssets = Object.fromEntries([...this.fontAssets].map(([url, asset]) => [url, { ...asset, diskPath: relToOutDir(asset.diskPath) }]));
     }
+    if (this.importCssAssets.size > 0) {
+      manifest.importCssAssets = Object.fromEntries([...this.importCssAssets].map(([url, asset]) => [url, { ...asset, diskPath: relToOutDir(asset.diskPath) }]));
+    }
     if (this.importedCssFontPreloads.size > 0) {
       manifest.importedCssFontPreloads = Object.fromEntries([...this.importedCssFontPreloads].map(([cssPath, urls]) => [encodeSourcePath(cssPath), urls]));
     }
@@ -2300,6 +2324,11 @@ export class ComponentRegistry {
     if (manifest.fontAssets) {
       for (const [url, asset] of Object.entries(manifest.fontAssets)) {
         registry.fontAssets.set(url, { ...asset, diskPath: resolveManifestPath(asset.diskPath) });
+      }
+    }
+    if (manifest.importCssAssets) {
+      for (const [url, asset] of Object.entries(manifest.importCssAssets)) {
+        registry.importCssAssets.set(url, { ...asset, diskPath: resolveManifestPath(asset.diskPath) });
       }
     }
     if (manifest.importedCssFontPreloads) {
