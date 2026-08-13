@@ -475,7 +475,7 @@ export class Mochi {
       logger.info(`Loading prebuilt manifest from ${manifestPath}`);
       // The registry takes its outDir from the manifest's own directory, so an explicit `manifest` pointing elsewhere
       // relocates on-demand island compiles along with it.
-      registry = await ComponentRegistry.fromManifest(manifestPath, development);
+      registry = await ComponentRegistry.fromManifest(manifestPath, development, { fonts: options.fonts });
       if (options.assetPrefix !== undefined && options.assetPrefix !== registry.assetPrefix) {
         logger.warn(
           `assetPrefix in Mochi.serve() (${JSON.stringify(options.assetPrefix)}) differs from the manifest (${JSON.stringify(registry.assetPrefix)}). Using the manifest value — URLs are baked in at build time.`,
@@ -1682,7 +1682,7 @@ export class Mochi {
           // `getClientFile()` returns only registered `.js` or `.css`, so extension alone decides and this branch stays
           // independent of the asset prefix.
           const contentType = url.pathname.endsWith('.css') ? 'text/css' : 'application/javascript';
-          const headers: Record<string, string> = { 'Content-Type': contentType };
+          const headers: Record<string, string> = { 'Content-Type': contentType, 'X-Content-Type-Options': 'nosniff' };
           // Content-hashed filenames change URL whenever bytes change, so prod can mark them immutable; dev skips it to
           // keep live-reload edits out of the browser cache.
           if (!development) {
@@ -1691,11 +1691,17 @@ export class Mochi {
           return applyResolveOptions(new Response(assetContent, { headers }), resolveOpts);
         }
         if (fontAsset !== undefined) {
-          const headers: Record<string, string> = { 'Content-Type': fontAsset.contentType };
+          // A registered URL whose file is gone (wiped outDir under a live server, partially copied build) is a 404,
+          // not the 500 Bun.file's lazy ENOENT would surface as.
+          const fontFile = Bun.file(fontAsset.diskPath);
+          if (!(await fontFile.exists())) {
+            return applyResolveOptions(new Response('Not found', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } }), resolveOpts);
+          }
+          const headers: Record<string, string> = { 'Content-Type': fontAsset.contentType, 'X-Content-Type-Options': 'nosniff' };
           if (!development) {
             headers['Cache-Control'] = 'public, max-age=31536000, immutable';
           }
-          return applyResolveOptions(new Response(Bun.file(fontAsset.diskPath), { headers }), resolveOpts);
+          return applyResolveOptions(new Response(fontFile, { headers }), resolveOpts);
         }
         if (userFetch) {
           const response = await userFetch(req, server);

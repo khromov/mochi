@@ -48,11 +48,18 @@ export function getLocalImageAsset(url: string): LocalImageAssetInfo | undefined
  * attempt matches nothing and reads nothing. Hashed URLs are immutable, so production sends a long-lived immutable
  * `Cache-Control` while dev omits it and replaced images appear on the next request.
  */
-export function createLocalAssetHandler(development: boolean): (req: Request) => Response {
-  return (req: Request): Response => {
+export function createLocalAssetHandler(development: boolean): (req: Request) => Promise<Response> {
+  const notFound = (): Response => new Response('Not found', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+  return async (req: Request): Promise<Response> => {
     const info = getLocalImageAsset(new URL(req.url).pathname);
     if (!info) {
-      return new Response('Not found', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+      return notFound();
+    }
+    // A registered URL whose file is gone (wiped outDir under a live server, partially copied build) is a 404, not the
+    // 500 Bun.file's lazy ENOENT would surface as.
+    const file = Bun.file(info.diskPath);
+    if (!(await file.exists())) {
+      return notFound();
     }
     const headers: Record<string, string> = {
       'Content-Type': info.contentType,
@@ -61,6 +68,6 @@ export function createLocalAssetHandler(development: boolean): (req: Request) =>
     if (!development) {
       headers['Cache-Control'] = 'public, max-age=31536000, immutable';
     }
-    return new Response(Bun.file(info.diskPath), { headers });
+    return new Response(file, { headers });
   };
 }

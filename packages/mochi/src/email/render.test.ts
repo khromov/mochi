@@ -2,7 +2,7 @@
 // Mochi.serve — email rendering never needs a server) and asserts the
 // scoped CSS is inlined into style="" attributes with no client JS or <link>.
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { ComponentRegistry } from '../compiler/ComponentRegistry';
 import { requestContext } from '../runtime/requestContext';
@@ -91,5 +91,38 @@ describe('renderEmailComponent', () => {
   // requestContext.exit, so getRequestContext() throws for the template.
   test('template calling getRequestContext() rejects even inside a request context', async () => {
     await expect(requestContext.run(makeCtx(), () => renderEmailComponent(registry, USES_REQUEST_CONTEXT))).rejects.toThrow(/getRequestContext\(\) called outside of a request/);
+  });
+});
+
+// A standalone email document has no origin, so the root-relative `/_mochi/fonts/*` URLs that font extraction leaves
+// in imported CSS must go back to self-contained `data:` URIs.
+describe('renderEmailComponent — extracted fonts', () => {
+  let tmp: string;
+  let registry: ComponentRegistry;
+  let emailPath: string;
+  const fontBytes = new Uint8Array(9_000);
+  for (let i = 0; i < fontBytes.length; i++) {
+    fontBytes[i] = (i * 31 + 9) % 256;
+  }
+
+  beforeAll(async () => {
+    tmp = mkdtempSync(path.join(import.meta.dir, '..', '..', '.mochi-email-fonts-'));
+    mkdirSync(path.join(tmp, 'files'));
+    writeFileSync(path.join(tmp, 'files', 'brand.woff2'), fontBytes);
+    writeFileSync(path.join(tmp, 'fonts.css'), `@font-face { font-family: 'Brand'; src: url('./files/brand.woff2') format('woff2'); }`);
+    emailPath = path.join(tmp, 'FontEmail.svelte');
+    writeFileSync(emailPath, `<script>\n  import './fonts.css';\n<` + `/script>\n\n<h1>font email</h1>\n`);
+    registry = new ComponentRegistry({ development: true, outDir: path.join(tmp, 'out') });
+    await registry.compile(emailPath);
+  });
+
+  afterAll(() => {
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  test('re-inlines extracted font URLs as data: URIs', async () => {
+    const html = await renderEmailComponent(registry, emailPath);
+    expect(html).not.toContain('/_mochi/fonts/');
+    expect(html).toContain(`data:font/woff2;base64,${Buffer.from(fontBytes).toString('base64')}`);
   });
 });

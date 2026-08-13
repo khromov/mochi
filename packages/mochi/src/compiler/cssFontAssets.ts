@@ -87,6 +87,27 @@ function unicodeRangeTouchesLatin(rangeValue: string): boolean {
   return false;
 }
 
+// Splitting a `src:` list on every comma would sever multi-argument functions like `tech(features-aat, color-COLRv1)`,
+// leaving an orphaned tail that invalidates the whole descriptor when its source is dropped.
+function splitTopLevel(value: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < value.length; i++) {
+    const ch = value[i];
+    if (ch === '(') {
+      depth++;
+    } else if (ch === ')') {
+      depth = Math.max(0, depth - 1);
+    } else if (ch === ',' && depth === 0) {
+      parts.push(value.slice(start, i));
+      start = i + 1;
+    }
+  }
+  parts.push(value.slice(start));
+  return parts;
+}
+
 interface ParsedSource {
   /** Original source text with `url(...)` still tokenized as `@@n@@`. */
   text: string;
@@ -115,9 +136,8 @@ function classifyFormat(source: ParsedSource, urlValue: string | undefined, refF
  * emit those files and substitute their `markerUri` with the final served URL. Pure with respect to the filesystem.
  */
 export function classifyFontAssets(css: string, refs: FontRef[], opts: { dropLegacyWoff: boolean }): { css: string; fonts: SurvivingFont[] } {
-  if (refs.length === 0) {
-    return { css, fonts: [] };
-  }
+  // No zero-refs early return: legacy-woff pruning must still run when every font inlined for real (all under the
+  // threshold, or the marker plugin skipped entirely via `inlineThreshold: Infinity`).
   const refByMarker = new Map(refs.map((ref) => [ref.markerB64, ref]));
   // The bundler decides the marker URI's exact text (MIME from the file extension), so capture it from the CSS rather
   // than re-deriving it.
@@ -146,7 +166,7 @@ export function classifyFontAssets(css: string, refs: FontRef[], opts: { dropLeg
     };
 
     const rewritten = safeBlock.replace(/(src\s*:\s*)([^;}]+)/gi, (_m, prefix: string, value: string) => {
-      const sources: ParsedSource[] = value.split(',').map((text) => {
+      const sources: ParsedSource[] = splitTopLevel(value).map((text) => {
         const urlIndex = text.match(/url\(@@(\d+)@@\)/)?.[1];
         return {
           text: text.trim(),
@@ -195,6 +215,16 @@ export function classifyFontAssets(css: string, refs: FontRef[], opts: { dropLeg
     }
   }
   return { css: outCss, fonts };
+}
+
+/**
+ * Swap every `url()` holding the marker URI for the served URL. Inside `@font-face` blocks {@link classifyFontAssets}
+ * re-quoted the URI itself, but outside them the quoting is whatever Bun's printer chose (unquoted under minify), so
+ * this tolerates all three forms. Callers should treat a marker still present afterwards as a hard error.
+ */
+export function substituteFontUrl(css: string, markerUri: string, fontUrl: string): string {
+  const escaped = markerUri.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return css.replace(new RegExp(String.raw`url\(\s*(["']?)${escaped}\1\s*\)`, 'g'), `url(${fontUrl})`);
 }
 
 /** Content-hashed served basename for a surviving font, from the path the bundler resolved. */

@@ -16,16 +16,33 @@ import type { ComponentRegistry } from '../compiler/ComponentRegistry';
  */
 export async function renderEmailComponent(registry: ComponentRegistry, component: string, props?: Record<string, unknown>): Promise<string> {
   const result = await registry.renderStatic(component, props);
-  const css = result.cssUrls
-    .map((url) => registry.getClientFile(url))
-    .filter((c): c is string => Boolean(c))
-    .join('\n');
+  const css = await inlineExtractedFonts(
+    result.cssUrls
+      .map((url) => registry.getClientFile(url))
+      .filter((c): c is string => Boolean(c))
+      .join('\n'),
+    registry,
+  );
   const head = result.head ?? '';
   const body = stripScriptsAndStyles(result.body);
   const doc = `<!doctype html><html><head><meta charset="utf-8">${head}${css ? `<style>${css}</style>` : ''}</head><body>${body}</body></html>`;
 
   const { inline } = await loadCssInline();
   return inline(doc, { keepStyleTags: true });
+}
+
+// Imported CSS refers to its extracted fonts by root-relative `/_mochi/fonts/*` URLs, which have no origin to resolve
+// against inside a standalone email document — the bytes go back in as self-contained `data:` URIs.
+async function inlineExtractedFonts(css: string, registry: ComponentRegistry): Promise<string> {
+  for (const [url, asset] of registry.getFontAssets()) {
+    if (!css.includes(url)) {
+      continue;
+    }
+    const b64 = Buffer.from(await Bun.file(asset.diskPath).bytes()).toString('base64');
+    const dataUri = `url("data:${asset.contentType};base64,${b64}")`;
+    css = css.replaceAll(`url(${url})`, dataUri).replaceAll(`url("${url}")`, dataUri);
+  }
+  return css;
 }
 
 // The `-wasm` build stands in for the default `@css-inline/css-inline`, whose native N-API addons ship per-platform ABI

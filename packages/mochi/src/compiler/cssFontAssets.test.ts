@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { classifyFontAssets, fontAssetFileName, fontContentHash, type FontRef } from './cssFontAssets';
+import { classifyFontAssets, fontAssetFileName, fontContentHash, substituteFontUrl, type FontRef } from './cssFontAssets';
 
 let refCounter = 0;
 function makeRef(path: string, size = 10_000): FontRef {
@@ -119,6 +119,50 @@ describe('classifyFontAssets', () => {
   test('no refs is a no-op', () => {
     const css = `@font-face { font-family: A; src: url(x.woff) format("woff"); }`;
     expect(classifyFontAssets(css, [], DROP)).toEqual({ css, fonts: [] });
+  });
+
+  test('drops an inlined legacy woff even when no ref exceeded the threshold', () => {
+    const woff2B64 = Buffer.from('small woff2 bytes').toString('base64');
+    const woffB64 = Buffer.from('small legacy woff bytes').toString('base64');
+    const css = `@font-face { font-family: Demo; src: url("data:font/woff2;base64,${woff2B64}") format("woff2"), url("data:font/woff;base64,${woffB64}") format("woff"); }`;
+    const { css: out, fonts } = classifyFontAssets(css, [], DROP);
+    expect(fonts).toHaveLength(0);
+    expect(out).toContain(woff2B64);
+    expect(out).not.toContain(woffB64);
+  });
+
+  test('a dropped source with multi-argument tech() takes its whole tail with it', () => {
+    const woff2 = makeRef('/pkg/files/demo.woff2');
+    const woff = makeRef('/pkg/files/demo.woff');
+    const css = `@font-face { font-family: Demo; src: url("${markerUri(woff2, 'font/woff2')}") format("woff2"), url("${markerUri(woff, 'font/woff')}") format("woff") tech(features-aat, color-COLRv1); }`;
+    const { css: out, fonts } = classifyFontAssets(css, [woff2, woff], DROP);
+    expect(fonts.map((f) => f.ref)).toEqual([woff2]);
+    expect(out).not.toContain(woff.markerB64);
+    expect(out).not.toContain('color-COLRv1');
+  });
+
+  test('multi-argument tech() on a kept source survives intact', () => {
+    const woff2 = makeRef('/pkg/files/demo.woff2');
+    const css = `@font-face { font-family: Demo; src: url("${markerUri(woff2, 'font/woff2')}") format("woff2") tech(features-aat, color-COLRv1); }`;
+    const { css: out, fonts } = classifyFontAssets(css, [woff2], DROP);
+    expect(fonts).toHaveLength(1);
+    expect(out).toContain('tech(features-aat, color-COLRv1)');
+  });
+});
+
+describe('substituteFontUrl', () => {
+  const MARKER = `data:font/woff2;base64,${Buffer.from('__MOCHI_FONT_0__').toString('base64')}`;
+  const URL = '/_mochi/fonts/demo-1a2b3c4d.woff2';
+
+  test('substitutes double-quoted, single-quoted, and unquoted url() forms', () => {
+    for (const token of [`url("${MARKER}")`, `url('${MARKER}')`, `url(${MARKER})`]) {
+      expect(substituteFontUrl(`src: ${token} format("woff2");`, MARKER, URL)).toBe(`src: url(${URL}) format("woff2");`);
+    }
+  });
+
+  test('leaves other urls and mismatched quoting alone', () => {
+    const css = `src: url("data:font/woff2;base64,c29tZXRoaW5nZWxzZQ==") format("woff2");`;
+    expect(substituteFontUrl(css, MARKER, URL)).toBe(css);
   });
 });
 

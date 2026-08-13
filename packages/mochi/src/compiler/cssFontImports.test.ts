@@ -46,8 +46,18 @@ describe('CSS imports — font asset extraction', () => {
   src: url('./files/demo-icons.woff2') format('woff2');
 }`,
     );
+    // A second stylesheet referencing the same font file: its extraction yields the same content-hashed URL, so the
+    // page's preload list must dedupe it.
+    writeFileSync(
+      path.join(tmp, 'shared.css'),
+      `@font-face {
+  font-family: 'Demo Duplicate';
+  src: url('./files/demo-latin-400-normal.woff2') format('woff2');
+  unicode-range: U+0000-00FF;
+}`,
+    );
     pagePath = path.join(tmp, 'FontExtractPage.svelte');
-    writeFileSync(pagePath, `<script>\n  import './fonts.css';\n<` + `/script>\n\n<h1>font-extract-fixture</h1>\n`);
+    writeFileSync(pagePath, `<script>\n  import './fonts.css';\n  import './shared.css';\n<` + `/script>\n\n<h1>font-extract-fixture</h1>\n`);
 
     registry = new ComponentRegistry({ development: true, outDir });
     await registry.compile(pagePath);
@@ -92,7 +102,7 @@ describe('CSS imports — font asset extraction', () => {
     expect(readFileSync(asset!.diskPath).equals(woff2)).toBe(true);
   });
 
-  test('renderComponent surfaces the latin face as a preload URL', async () => {
+  test('renderComponent surfaces the latin face as a single deduped preload URL', async () => {
     const { requestContext } = await import('../runtime/requestContext');
     const { MochiCookieJar } = await import('../runtime/cookies');
     const ctx = {
@@ -122,6 +132,53 @@ describe('CSS imports — font asset extraction', () => {
     expect(asset).toBeDefined();
     expect(readFileSync(asset!.diskPath).equals(woff2)).toBe(true);
     expect(restored.toManifest().importedCssFontPreloads).toEqual(manifest.importedCssFontPreloads);
+  });
+});
+
+describe('CSS imports — font byte changes and re-bundles', () => {
+  let tmp: string;
+  let registry: ComponentRegistry;
+  const bytesA = fakeFont(9_000, 7);
+  const bytesB = fakeFont(9_000, 8);
+
+  beforeAll(async () => {
+    tmp = mkdtempSync(path.join(import.meta.dir, '..', '..', '.mochi-font-rebundle-test-'));
+    const filesDir = path.join(tmp, 'files');
+    mkdirSync(filesDir);
+    writeFileSync(path.join(filesDir, 'brand.woff2'), bytesA);
+    writeFileSync(path.join(tmp, 'fonts.css'), `@font-face { font-family: 'Brand'; src: url('./files/brand.woff2') format('woff2'); }`);
+    const pagePath = path.join(tmp, 'RebundlePage.svelte');
+    writeFileSync(pagePath, `<script>\n  import './fonts.css';\n<` + `/script>\n\n<h1>rebundle-fixture</h1>\n`);
+    registry = new ComponentRegistry({ development: true, outDir: path.join(tmp, 'out') });
+    await registry.compile(pagePath);
+  });
+
+  afterAll(() => {
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  const importCssUrls = () => [...registry.getClientFiles().keys()].filter((u) => u.includes('/import-css/'));
+
+  test('a font-only change renames the imported-CSS URL and keeps the old font URL resolvable', async () => {
+    const [cssUrlA] = importCssUrls();
+    expect(cssUrlA).toBeDefined();
+    const fontUrlA = `/_mochi/fonts/brand-${fontContentHash(bytesA)}.woff2`;
+    expect(registry.getClientFile(cssUrlA!)).toContain(fontUrlA);
+
+    writeFileSync(path.join(tmp, 'files', 'brand.woff2'), bytesB);
+    await registry.rebundleImportedCss();
+
+    // Same source CSS, new font bytes: the immutable stylesheet URL must change with the font URL baked into it.
+    const [cssUrlB] = importCssUrls();
+    expect(cssUrlB).toBeDefined();
+    expect(cssUrlB).not.toBe(cssUrlA);
+    const fontUrlB = `/_mochi/fonts/brand-${fontContentHash(bytesB)}.woff2`;
+    expect(registry.getClientFile(cssUrlB!)).toContain(fontUrlB);
+
+    // Already-rendered dev HTML still resolves the superseded font URL; the manifest carries only the live one.
+    expect(registry.getFontAsset(fontUrlA)).toBeDefined();
+    expect(registry.getFontAsset(fontUrlB)).toBeDefined();
+    expect(Object.keys(registry.toManifest().fontAssets ?? {})).toEqual([fontUrlB]);
   });
 });
 

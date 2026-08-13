@@ -20,7 +20,7 @@ import { logger } from '../utils/log';
 import { mochiEvents } from '../events';
 import { detectHeavyBarrels, formatBarrelLine, formatBarrelSummary, type BarrelMetafile, type HeavyBarrel } from './barrelDetect';
 import type { MarkdownConfig, MochiBarrelWarningOptions, MochiFontOptions, MochiManifest, MochiSvelteShakerOptions } from '../types';
-import { classifyFontAssets, createFontMarkerPlugin, fontAssetFileName } from './cssFontAssets';
+import { classifyFontAssets, createFontMarkerPlugin, fontAssetFileName, fontContentHash, substituteFontUrl } from './cssFontAssets';
 import { type HydratableComponent, type PreprocessIslandError, type ServerIslandComponent } from './svelteAstPreprocess';
 import { cachedPreprocessHydratable, createPreprocessCacheStats } from './preprocessCache';
 import { CompileCache, compileFingerprint, createCompileCacheStats, type CompileCacheStats } from './compileCache';
@@ -418,6 +418,8 @@ export class ComponentRegistry {
   private localImageAssets: Map<string, LocalImageAsset> = new Map();
   /** Maps served font URL → binary font extracted from a bundled CSS import's `data:` URIs. */
   private fontAssets: Map<string, { diskPath: string; contentType: string }> = new Map();
+  /** Superseded font URLs, append-only so dev HTML rendered before a re-bundle keeps resolving them; empty in production (see `retireFontAssets`), never serialized. */
+  private readonly devStaleFontAssets: Map<string, { diskPath: string; contentType: string }> = new Map();
   /** Maps resolved CSS-import path → served URLs of its preload-worthy extracted fonts (woff2, latin-visible). */
   private importedCssFontPreloads: Map<string, string[]> = new Map();
   readonly development: boolean;
@@ -1703,7 +1705,9 @@ export class ComponentRegistry {
 
     // Append URLs for side-effect CSS imports reachable from this entry
     // (e.g. @fontsource fonts imported in a page's <script>).
-    const fontPreloadUrls: string[] = [];
+    // Deduped: two CSS imports sharing a font produce the same content-hashed URL, and a duplicate would burn one of
+    // the FONT_PRELOAD_MAX slots.
+    const fontPreloadUrls = new Set<string>();
     const imported = this.entryImportedCss.get(entryKey);
     if (imported) {
       for (const cssPath of imported) {
@@ -1713,7 +1717,9 @@ export class ComponentRegistry {
         }
         const preloads = this.importedCssFontPreloads.get(cssPath);
         if (preloads) {
-          fontPreloadUrls.push(...preloads);
+          for (const preloadUrl of preloads) {
+            fontPreloadUrls.add(preloadUrl);
+          }
         }
       }
     }
@@ -1727,7 +1733,7 @@ export class ComponentRegistry {
       body: normalized,
       head: shouldStrip ? stripHydrationMarkers(headStr) : headStr,
       cssUrls,
-      fontPreloadUrls,
+      fontPreloadUrls: [...fontPreloadUrls],
       // Gated on wrappers actually present in the output — the entry's compile-time hydratables may all sit in branches
       // this render never took.
       bootstrapUrl: renderedIslandNames.size > 0 ? this.islandBootstrapUrl : null,
@@ -1868,7 +1874,7 @@ export class ComponentRegistry {
   }
 
   getFontAsset(urlPath: string): { diskPath: string; contentType: string } | undefined {
-    return this.fontAssets.get(urlPath);
+    return this.fontAssets.get(urlPath) ?? this.devStaleFontAssets.get(urlPath);
   }
 
   getFontAssets(): Map<string, { diskPath: string; contentType: string }> {
@@ -1916,8 +1922,22 @@ export class ComponentRegistry {
     // HTML can still resolve a replaced image's old hashed URL, and the manifest builds from this map, keeping stale
     // globals out of prod.
     this.localImageAssets.clear();
-    this.fontAssets.clear();
+    this.retireFontAssets();
     this.importedCssFontPreloads.clear();
+  }
+
+  /**
+   * Same contract as the `localImageAssets` note above, and it also covers the async gap while a re-bundle repopulates
+   * `fontAssets`: old hashed URLs keep serving from `devStaleFontAssets`, while the manifest reads only the live map.
+   * Dev-only by construction — production never re-bundles, so retiring there would only mask a real missing asset.
+   */
+  private retireFontAssets(): void {
+    if (this.development) {
+      for (const [url, asset] of this.fontAssets) {
+        this.devStaleFontAssets.set(url, asset);
+      }
+    }
+    this.fontAssets.clear();
   }
 
   /**
@@ -1957,7 +1977,6 @@ export class ComponentRegistry {
           this.errors.push({ kind: 'css-bundle-failed', cssPath, message });
           return;
         }
-        const urlPath = `${this.assetPrefix}/import-css/${path.basename(out.path)}`;
         // Read from disk: when Bun.build writes via `outdir`, the output's
         // .text() may return empty — the file on disk is the source of truth.
         const rawCss = await Bun.file(out.path).text();
@@ -1971,7 +1990,12 @@ export class ComponentRegistry {
           const diskPath = path.join(this.outDir, 'fonts', fileName);
           await Bun.write(diskPath, bytes);
           const fontUrl = `${this.assetPrefix}/fonts/${fileName}`;
-          cssText = cssText.replaceAll(`url("${font.markerUri}")`, `url(${fontUrl})`);
+          cssText = substituteFontUrl(cssText, font.markerUri, fontUrl);
+          if (cssText.includes(font.ref.markerB64)) {
+            const message = `extracted font ${relForDisplay(font.ref.path)} kept its marker after URL substitution — the bundler printed a url() form the substitution missed. Please report this.`;
+            logger.error(`CSS bundle for ${cssPath}: ${message}`);
+            this.errors.push({ kind: 'css-bundle-failed', cssPath, message });
+          }
           this.fontAssets.set(fontUrl, { diskPath, contentType: font.contentType });
           if (font.preload) {
             preloadUrls.push(fontUrl);
@@ -1983,16 +2007,22 @@ export class ComponentRegistry {
             imports: [],
           });
         }
+        let outPath = out.path;
         if (cssText !== rawCss) {
-          await Bun.write(out.path, cssText);
+          // Bun hashed the pre-substitution text, so the served bytes (font URLs carrying font-content hashes,
+          // `dropLegacyWoff` pruning) must re-hash into the immutable filename or a redeploy reuses a stale cached copy.
+          outPath = path.join(importCssOutDir, `${path.basename(out.path, '.css')}-${fontContentHash(Buffer.from(cssText))}.css`);
+          await Bun.write(outPath, cssText);
+          fs.rmSync(out.path, { force: true });
         }
+        const urlPath = `${this.assetPrefix}/import-css/${path.basename(outPath)}`;
         if (preloadUrls.length > 0) {
           this.importedCssFontPreloads.set(cssPath, preloadUrls);
         }
         this.clientFiles.set(urlPath, cssText);
         this.importedCssUrls.set(cssPath, urlPath);
         this.importedCssStats.push({
-          name: path.basename(out.path),
+          name: path.basename(outPath),
           size: cssText.length,
           inputs: [{ path: relForDisplay(cssPath), size: cssText.length }],
           imports: [],
@@ -2022,7 +2052,7 @@ export class ComponentRegistry {
     }
     this.importedCssUrls.clear();
     this.importedCssStats = [];
-    this.fontAssets.clear();
+    this.retireFontAssets();
     this.importedCssFontPreloads.clear();
     await this.bundleImportedCss(cssPaths);
   }
@@ -2204,8 +2234,8 @@ export class ComponentRegistry {
     return manifest;
   }
 
-  /** Load a registry from a prebuilt manifest (production mode). */
-  static async fromManifest(manifestPath: string, development: boolean = false): Promise<ComponentRegistry> {
+  /** Load a registry from a prebuilt manifest (production mode). `options` carries serve-time config a manifest can't: on-demand compiles (manifest misses) must honor it or they diverge from the build output. */
+  static async fromManifest(manifestPath: string, development: boolean = false, options: Pick<ComponentRegistryOptions, 'fonts'> = {}): Promise<ComponentRegistry> {
     const raw = await Bun.file(manifestPath).text();
     const manifest: MochiManifest = JSON.parse(raw);
 
@@ -2232,6 +2262,7 @@ export class ComponentRegistry {
       development,
       outDir: artifactRoot,
       assetPrefix: manifest.assetPrefix,
+      fonts: options.fonts,
     });
     registry.loadedFromManifest = true;
     registry.publicFileCountAtBuild = manifest.publicFileCount ?? 0;
