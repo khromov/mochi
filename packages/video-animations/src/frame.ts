@@ -297,7 +297,7 @@ function sceneClose(t: number): Node {
       marginTop: 22,
       opacity: clamp(norm(t, 25.6, 26.6)),
     }),
-    text('Early prototype — use in production if you are brave.', {
+    text('Work in progress - be one of the first to try it, and give us feedback!.', {
       fontFamily: FONT.serif,
       fontStyle: 'italic',
       fontSize: 30,
