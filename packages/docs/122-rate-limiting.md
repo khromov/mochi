@@ -7,11 +7,14 @@ description: 'Per-route and global request rate limiting with memory, SQLite, an
 <script>
   import Callout from './_components/Callout.svelte';
   import SeeItInAction from './_components/SeeItInAction.svelte';
+  import PersistenceTable from './_components/PersistenceTable.svelte';
 </script>
 
 ## Rate limiting
 
 Add a `rateLimit` config to any `Mochi.page()` or `Mochi.api()` route. It is driven by [`@joint-ops/hitlimit-bun`](https://www.npmjs.com/package/@joint-ops/hitlimit-bun), and the options pass straight through.
+
+<PersistenceTable feature="rate-limiting" />
 
 ```ts
 '/api/data': Mochi.api(handler, {
@@ -65,14 +68,16 @@ Mochi accepts all of hitlimit's options except `logger` (Mochi logs `429`s throu
 
 ### Stores
 
-Memory is the default — zero config, per process. Use SQLite for persistence across restarts, or Postgres for shared state across instances. Both are re-exported from `mochi-framework`:
+`memoryStore()` is the default — zero config, per process. Use SQLite for persistence across restarts, or Postgres for shared state across instances. All three are re-exported from `mochi-framework`, and anything else is a custom `MochiRateLimitStore`:
 
 ```ts
-import { sqliteStore, postgresStore } from 'mochi-framework';
+import { memoryStore, sqliteStore, postgresStore } from 'mochi-framework';
 
 rateLimit: { limit: 100, window: '1m', store: sqliteStore({ path: './ratelimit.db' }) }
 rateLimit: { limit: 100, window: '1m', store: postgresStore({ url: process.env.DATABASE_URL }) }
 ```
+
+See [Persistence](/docs/persistence/) for how these stores compare with the other Mochi features that persist state.
 
 Mochi buckets counters by **key within a store**. A route with its own `rateLimit` config also folds its route pattern into the key, so different routes backed by the same database keep separate counters, even when the key resolves to the same value. Run the same route on two servers against one database and both write the same key, so they share a counter — that is how you rate-limit across a fleet. Routes inheriting the [global default](#global-default) share one bucket per key by design.
 
