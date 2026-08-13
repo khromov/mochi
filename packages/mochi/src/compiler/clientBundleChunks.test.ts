@@ -1,12 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 import path from 'node:path';
 import {
+  attributeChunks,
   classifyModules,
   evaluationOrder,
   hasDefaultExport,
   packageNameOf,
   planChunks,
   posixAbs,
+  reExportsAnotherModule,
   validateClientBundleOptions,
   viewId,
   type ChunkMetafile,
@@ -316,8 +318,124 @@ describe('protected packages', () => {
   });
 
   test('leaves other packages alone', () => {
-    const other = Bun.resolveSync('devalue', path.join(import.meta.dir, '..', '..'));
+    // A leaf module, not the package entry — devalue's entry is a re-export barrel, which is skipped on its own merits.
+    const other = path.join(path.dirname(Bun.resolveSync('devalue', path.join(import.meta.dir, '..', '..'))), 'src/parse.js');
     const { chunkOf } = classifyModules(metafile({ [other]: { bytes: 10, format: 'esm' } }), () => 'vendor');
     expect(chunkOf.size).toBe(1);
+  });
+
+  // The barrel skip is worth pinning against a real package: a published entry point is very often a re-export barrel,
+  // which is exactly the shape that broke island hydration on a large graph.
+  test("skips a real package's re-export entry point", () => {
+    const entry = Bun.resolveSync('devalue', path.join(import.meta.dir, '..', '..'));
+    const { chunkOf, skipped } = classifyModules(metafile({ [entry]: { bytes: 10, format: 'esm' } }), () => 'vendor');
+    expect(chunkOf.size).toBe(0);
+    expect(skipped[0]!.reason).toContain('re-exports another module');
+  });
+});
+
+describe('attributeChunks', () => {
+  const plan = (members: Record<string, string[]>) => ({
+    members: new Map(Object.entries(members).map(([k, v]) => [k, v.map((p) => posixAbs(p))])),
+    chunkOf: new Map(),
+    sources: new Map(),
+  });
+  const out = (inputs: string[], entryPoint?: string) => ({ ...(entryPoint ? { entryPoint } : {}), inputs: Object.fromEntries(inputs.map((i) => [i, {}])) });
+
+  test('credits the shared output holding the group', () => {
+    const r = attributeChunks({ 'chunk-a.js': out(['a.ts', 'b.ts']) }, plan({ vendor: ['a.ts', 'b.ts'] }));
+    expect(r.namesByOutput.get('chunk-a.js')).toEqual(['vendor']);
+    expect(r.unformed).toEqual([]);
+    expect(r.partial).toEqual([]);
+  });
+
+  // A member whose specifier the resolver could not match keeps Bun's placement, so a real group routinely collapses
+  // most — not all — of the way. Demanding every member reported a large working chunk as a total failure.
+  test('credits the output with the plurality and reports the shortfall', () => {
+    const r = attributeChunks({ 'chunk-a.js': out(['a.ts', 'b.ts', 'c.ts']), 'chunk-b.js': out(['d.ts']) }, plan({ vendor: ['a.ts', 'b.ts', 'c.ts', 'd.ts'] }));
+    expect(r.namesByOutput.get('chunk-a.js')).toEqual(['vendor']);
+    expect(r.unformed).toEqual([]);
+    expect(r.partial).toEqual([{ name: 'vendor', placed: 3, total: 4 }]);
+  });
+
+  test('an entry output is never credited', () => {
+    const r = attributeChunks({ '_hydrate-W.js': out(['a.ts', 'b.ts'], '_hydrate-W.js') }, plan({ vendor: ['a.ts', 'b.ts'] }));
+    expect(r.namesByOutput.size).toBe(0);
+    expect(r.unformed).toEqual(['vendor']);
+  });
+
+  test('a lone member scattered across outputs is not a formed chunk', () => {
+    const r = attributeChunks({ 'chunk-a.js': out(['a.ts']), 'chunk-b.js': out(['b.ts']) }, plan({ vendor: ['a.ts', 'b.ts'] }));
+    expect(r.unformed).toEqual(['vendor']);
+  });
+
+  test('a single-member group counts when it lands in a shared chunk', () => {
+    const r = attributeChunks({ 'chunk-a.js': out(['a.ts']) }, plan({ solo: ['a.ts'] }));
+    expect(r.namesByOutput.get('chunk-a.js')).toEqual(['solo']);
+    expect(r.unformed).toEqual([]);
+  });
+
+  test('two groups landing in one output are both named', () => {
+    const r = attributeChunks({ 'chunk-a.js': out(['a.ts', 'b.ts', 'c.ts', 'd.ts']) }, plan({ one: ['a.ts', 'b.ts'], two: ['c.ts', 'd.ts'] }));
+    expect(r.namesByOutput.get('chunk-a.js')).toEqual(['one', 'two']);
+  });
+
+  test('no plan means nothing to attribute', () => {
+    const r = attributeChunks({ 'chunk-a.js': out(['a.ts']) }, null);
+    expect(r.namesByOutput.size).toBe(0);
+    expect(r.unformed).toEqual([]);
+  });
+});
+
+describe('reExportsAnotherModule', () => {
+  const cases: [string, string, boolean][] = [
+    ['star re-export', "export * from './x';", true],
+    ['namespaced star re-export', "export * as ns from './x';", true],
+    ['named re-export', "export { a, b } from './x';", true],
+    ['renamed re-export', "export { a as b } from './x';", true],
+    ['indented re-export', "  export * from './x';", true],
+    ['re-export after other code', "const a = 1;\nexport * from './x';", true],
+    ['plain named export', 'export const a = 1;', false],
+    ['default export', 'export default class {}', false],
+    ['import then separate export', "import { a } from './x';\nexport const b = a;", false],
+    ['export list with no source', 'const a = 1;\nexport { a };', false],
+  ];
+  for (const [name, source, expected] of cases) {
+    test(name, () => {
+      expect(reExportsAnotherModule('/x/a.ts', () => source)).toBe(expected);
+    });
+  }
+
+  // A .svelte file cannot forward another module's bindings, and its source is not scannable here anyway.
+  test('ignores extensions it cannot scan', () => {
+    expect(reExportsAnotherModule('/x/A.svelte', () => "export * from './x';")).toBe(false);
+    expect(reExportsAnotherModule('/x/a.css', () => "export * from './x';")).toBe(false);
+  });
+
+  test('an unreadable file is not treated as a barrel', () => {
+    expect(
+      reExportsAnotherModule('/x/a.ts', () => {
+        throw new Error('gone');
+      }),
+    ).toBe(false);
+  });
+});
+
+describe('classifyModules barrel skip', () => {
+  test('refuses to group a re-export barrel and says why', () => {
+    const { chunkOf, skipped } = classifyModules(metafile({ [VENDOR_ONE]: { bytes: 10, format: 'esm' } }), () => 'vendor', {
+      readFile: () => "export * from './other';",
+    });
+    expect(chunkOf.size).toBe(0);
+    expect(skipped).toHaveLength(1);
+    expect(skipped[0]!.reason).toContain('re-exports another module');
+  });
+
+  test('still groups a module that only has its own exports', () => {
+    const { chunkOf, skipped } = classifyModules(metafile({ [VENDOR_ONE]: { bytes: 10, format: 'esm' } }), () => 'vendor', {
+      readFile: () => 'export const a = 1;',
+    });
+    expect(chunkOf.size).toBe(1);
+    expect(skipped).toHaveLength(0);
   });
 });

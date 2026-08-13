@@ -23,6 +23,7 @@ import type { MarkdownConfig, MochiBarrelWarningOptions, MochiClientBundleOption
 import {
   CHUNK_NAMESPACE,
   classifyModules,
+  attributeChunks,
   chunkResolveFilter,
   evaluationOrder,
   isChunkModuleId,
@@ -316,6 +317,32 @@ export interface ComponentRegistryOptions {
    * would never surface there. Default: `false`.
    */
   bufferBarrelWarnings?: boolean;
+}
+
+/** Names the modules a group could not take with it, so the classifier can exclude exactly those. */
+function formatPartialChunkError(
+  partial: { name: string; placed: number; total: number }[],
+  plan: ChunkPlan | null,
+  outputs: Record<string, { inputs: Record<string, unknown> }>,
+  namesByOutput: Map<string, string[]>,
+): string {
+  const LIST_LIMIT = 12;
+  const lines: string[] = [];
+  for (const { name, placed, total } of partial) {
+    const outPath = [...namesByOutput].find(([, names]) => names.includes(name))?.[0];
+    const landed = new Set(Object.keys(outputs[outPath ?? '']?.inputs ?? {}).map((i) => posixAbs(i)));
+    const strays = (plan?.members.get(name) ?? []).filter((m) => !landed.has(m)).map((m) => relForDisplay(m));
+    lines.push(`  "${name}": ${placed} of ${total} modules moved. Left behind:`);
+    lines.push(...strays.slice(0, LIST_LIMIT).map((s) => `    - ${s}`));
+    if (strays.length > LIST_LIMIT) {
+      lines.push(`    …and ${strays.length - LIST_LIMIT} more`);
+    }
+  }
+  return (
+    `[mochi] clientBundle.chunks could not move every module of ${partial.length === 1 ? 'a group' : 'some groups'}, ` +
+    `which produces a bundle that throws when an island hydrates:\n${lines.join('\n')}\n` +
+    `Return null for those modules from your \`chunks\` classifier, or drop the group.`
+  );
 }
 
 /** Deletes files a build left behind in its own output directory. Cleanup must never fail a build that succeeded. */
@@ -1375,7 +1402,7 @@ export class ComponentRegistry {
           newComponentEntryUrls.set(compName, url);
         }
       }
-      const formedChunks = new Set<string>();
+      const { namesByOutput, unformed, partial } = attributeChunks(result.metafile.outputs, chunkPlan);
       const outputStats = Object.entries(result.metafile.outputs).map(([outPath, outMeta]) => {
         const inputs = Object.entries(outMeta.inputs).map(([inputPath, inputMeta]) => ({
           path: toPosixPath(inputPath).replace(toPosixPath(path.resolve('.')) + '/', ''),
@@ -1383,26 +1410,25 @@ export class ComponentRegistry {
         }));
         inputs.sort((a, b) => b.size - a.size);
         const imports = (outMeta.imports ?? []).filter((i) => i.kind === 'import-statement').map((i) => path.basename(i.path));
-        // Bun names every split chunk `chunk-<hash>.js` and its `[name]` template resolves to a reaching *entry's*
-        // name, so recording the user's name here is the only way it survives into the build's chunk report. Entry
-        // outputs are excluded: one reaching island inlines its group rather than sharing it, and reporting that as a
-        // chunk tells the user their config worked in the one case where it did nothing.
-        const outInputs = new Set(Object.keys(outMeta.inputs).map((i) => posixAbs(i)));
-        const chunkNames = chunkPlan && !outMeta.entryPoint ? [...chunkPlan.members].filter(([, members]) => members.every((m) => outInputs.has(m))).map(([name]) => name) : [];
-        for (const name of chunkNames) {
-          formedChunks.add(name);
-        }
+        const chunkNames = namesByOutput.get(outPath);
         return {
           name: path.basename(outPath),
           size: outMeta.bytes,
           inputs,
           imports,
-          ...(chunkNames.length > 0 ? { chunkNames } : {}),
+          ...(chunkNames ? { chunkNames } : {}),
         };
       });
       outputStats.sort((a, b) => b.size - a.size);
-      this.unformedChunks = chunkPlan ? [...chunkPlan.members.keys()].filter((name) => !formedChunks.has(name)).sort() : [];
+      this.unformedChunks = unformed;
       this.clientStats = { outputs: outputStats };
+      // A group that only half-moves leaves its members reachable both through their view and directly, and Bun then
+      // emits entry code referencing bindings it never exports — the island throws `ReferenceError` on hydration while
+      // the build looks clean. Nothing here can tell a survivable split from a fatal one, so a partial move fails the
+      // build: a named error beats a bundle that breaks only in a browser.
+      if (partial.length > 0) {
+        throw new Error(formatPartialChunkError(partial, chunkPlan, result.metafile.outputs, namesByOutput));
+      }
       this.warnOnRetainedComponentStubs(result.metafile);
       this.warnOnBarrelImports(result.metafile);
     }

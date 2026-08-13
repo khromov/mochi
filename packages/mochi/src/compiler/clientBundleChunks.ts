@@ -113,6 +113,30 @@ export function hasDefaultExport(absPath: string, readFile: (p: string) => strin
   }
 }
 
+/** `export * from`, `export * as ns from`, `export { a } from` — a module that forwards another module's bindings. */
+const RE_EXPORT = /^[ \t]*export\s*(?:\*(?:\s+as\s+[A-Za-z_$][\w$]*)?|\{[^}]*\})\s*from\s*['"]/m;
+
+/**
+ * Whether a module forwards another module's bindings, which disqualifies it from being grouped.
+ *
+ * A barrel's exports are bindings that live in *other* modules, and the view wrapping it adds a second layer of the
+ * same. Moving one leaves Bun emitting a chunk that references a binding it never exports — the entry reads a name that
+ * is defined in another chunk and not imported, which throws `ReferenceError` on hydration while the build reports
+ * success. Rather than reason about when that is safe, barrels stay where Bun put them.
+ *
+ * Erring toward `true` is the safe direction: a false positive only means one module keeps its original placement.
+ */
+export function reExportsAnotherModule(absPath: string, readFile: (p: string) => string): boolean {
+  if (!SCANNABLE_LOADERS[path.extname(absPath).toLowerCase()]) {
+    return false;
+  }
+  try {
+    return RE_EXPORT.test(readFile(absPath));
+  } catch {
+    return false;
+  }
+}
+
 export interface ChunkPlan {
   /** Chunk name → absolute POSIX paths of every module assigned to it. */
   members: Map<string, PosixAbsPath[]>;
@@ -196,7 +220,17 @@ export function classifyModules(
   opts: { entrypoints?: Set<PosixAbsPath>; cwd?: string; readFile?: (p: string) => string } = {},
 ): { chunkOf: Map<PosixAbsPath, string>; skipped: { id: string; reason: string }[]; defaultOf: Map<PosixAbsPath, boolean> } {
   const cwd = opts.cwd ?? process.cwd();
-  const readFile = opts.readFile ?? ((p: string) => fs.readFileSync(p, 'utf8'));
+  const readRaw = opts.readFile ?? ((p: string) => fs.readFileSync(p, 'utf8'));
+  // Two checks below read the same source, and a large graph runs this over hundreds of files.
+  const sources = new Map<string, string>();
+  const readFile = (p: string) => {
+    let src = sources.get(p);
+    if (src === undefined) {
+      src = readRaw(p);
+      sources.set(p, src);
+    }
+    return src;
+  };
   const defaultOf = new Map<PosixAbsPath, boolean>();
   const entrypoints = opts.entrypoints ?? new Set<PosixAbsPath>();
   const chunkOf = new Map<PosixAbsPath, string>();
@@ -233,6 +267,12 @@ export function classifyModules(
     // the runtime, so Bun already emits it as a single shared chunk.
     if (packageName !== null && PROTECTED_PACKAGES.has(packageName)) {
       skipped.push({ id: relativeId, reason: `the ${packageName} runtime, already one shared chunk and unsafe to reorder` });
+      continue;
+    }
+    // A barrel's exports are bindings owned by other modules; relocating one leaves the bundler emitting a chunk that
+    // references a name it never exports, which throws on hydration while the build reports success.
+    if (reExportsAnotherModule(id, readFile)) {
+      skipped.push({ id: relativeId, reason: 're-exports another module, and the forwarded bindings do not survive the move' });
       continue;
     }
     const hasDefault = hasDefaultExport(id, readFile);
@@ -357,4 +397,67 @@ export function resolveChunkMember(args: { path: string; importer?: string; reso
 /** True for a generated view id, i.e. a module this planner authored. */
 export function isChunkModuleId(id: string | undefined): boolean {
   return !!id && (id.startsWith(VIEW_PREFIX) || id.startsWith(`${CHUNK_NAMESPACE}:`));
+}
+
+export interface ChunkAttribution {
+  /** Output path → the user chunk name(s) it carries. */
+  namesByOutput: Map<string, string[]>;
+  /** Groups that produced no shared chunk at all. */
+  unformed: string[];
+  /** Groups that collapsed into a shared chunk, but left some members behind. */
+  partial: { name: string; placed: number; total: number }[];
+}
+
+/**
+ * Decide which output each chunk group ended up in.
+ *
+ * A group is credited to the output holding the *most* of its members rather than one holding all of them: a member
+ * whose import specifier `chunkResolveFilter` could not match keeps Bun's own placement (documented graceful
+ * degradation), so on a large real graph a group routinely collapses ~90% of the way. Demanding every member reported a
+ * 323-module chunk as a total failure. Entry outputs are never credited — a group reached from one island is inlined
+ * there rather than shared, which is the case a user most needs told about.
+ */
+export function attributeChunks(outputs: Record<string, { entryPoint?: string; inputs: Record<string, unknown> }>, plan: ChunkPlan | null): ChunkAttribution {
+  const namesByOutput = new Map<string, string[]>();
+  const unformed: string[] = [];
+  const partial: { name: string; placed: number; total: number }[] = [];
+  if (!plan) {
+    return { namesByOutput, unformed, partial };
+  }
+
+  const placed = new Map<string, Map<string, number>>();
+  for (const [outPath, outMeta] of Object.entries(outputs)) {
+    if (outMeta.entryPoint) {
+      continue;
+    }
+    const outInputs = new Set(Object.keys(outMeta.inputs).map((i) => posixAbs(i)));
+    for (const [name, members] of plan.members) {
+      const n = members.filter((m) => outInputs.has(m)).length;
+      if (n > 0) {
+        const perOut = placed.get(name) ?? new Map<string, number>();
+        perOut.set(outPath, n);
+        placed.set(name, perOut);
+      }
+    }
+  }
+
+  for (const [name, members] of [...plan.members].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
+    let best: { outPath: string; n: number } | null = null;
+    for (const [outPath, n] of placed.get(name) ?? []) {
+      // Output path breaks ties so a rebuild of one config reports identically.
+      if (!best || n > best.n || (n === best.n && outPath < best.outPath)) {
+        best = { outPath, n };
+      }
+    }
+    // One member alone in a shared chunk is a real placement only when that is the whole group.
+    if (!best || best.n < Math.min(2, members.length)) {
+      unformed.push(name);
+      continue;
+    }
+    namesByOutput.set(best.outPath, [...(namesByOutput.get(best.outPath) ?? []), name]);
+    if (best.n < members.length) {
+      partial.push({ name, placed: best.n, total: members.length });
+    }
+  }
+  return { namesByOutput, unformed, partial };
 }

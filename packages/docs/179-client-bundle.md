@@ -13,6 +13,16 @@ description: 'Assign modules in the island client bundle to named shared chunks.
 
 <VersionNote since="0.10.0" message="clientBundle ships in the next Mochi release (0.10.0). This page describes the upcoming API." />
 
+<Callout type="danger">
+
+**Group only loosely-coupled packages, and check the result in a browser.** Packages whose modules import each other
+heavily — the d3 family, chart libraries with `.base` / `.svg` / `.canvas` component variants — can produce a bundle
+that builds cleanly and then throws `ReferenceError` or `Export 'x' is not defined` when an island hydrates. The build
+fails when it can detect the problem, but it cannot detect every case. Load an affected page and check the console
+before shipping a `chunks` change.
+
+</Callout>
+
 Mochi builds every hydratable island in one pass and lets Bun split shared code into chunks. `clientBundle.chunks`
 takes that decision back: map a module path to a chunk name and every module you give the same name ships as one file.
 
@@ -88,6 +98,9 @@ Some modules are left where Bun put them. Every one is named in the build report
 
 - **CommonJS.** Its export names are worked out during bundling, after the point Mochi has to declare them, so moving
   one would break any named import of it.
+- **Re-export barrels.** A module whose exports are `export * from` / `export { x } from` another module owns none of
+  those bindings. Moving one leaves the bundler emitting a chunk that references a name it never exports, which throws
+  when an island hydrates. Most package entry points are barrels, so expect to see a lot of these.
 - **Svelte itself.** Every island reaches the Svelte runtime, so Bun already emits it as one shared chunk — there is
   nothing to gain. Moving it loses: the runtime's modules are densely circular, and relocating them reorders their
   initialization, which builds cleanly and then throws during hydration in the browser.

@@ -189,6 +189,19 @@ await Mochi.serve({
     },
   },
   markdown: markdownConfig,
+  // The charting stack and the reactive-utility packages are each pulled in whole by the islands that use them, so
+  // grouping them trades a spread of tiny per-island chunks for a couple of cache entries that survive content changes.
+  clientBundle: {
+    chunks: (_id, { packageName }) => {
+      // The charting stack is deliberately not grouped: layerchart's multi-renderer `.svelte` families cannot all be
+      // moved, and the d3 packages under it break island hydration even when the group does form — they import each
+      // other heavily, which the grouping does not survive.
+      if (packageName && ['runed', 'mode-watcher', 'svelte-toolbelt', 'tailwind-merge'].includes(packageName)) {
+        return 'ui';
+      }
+      return null;
+    },
+  },
   eventHooks: {
     'mochi:init': ({ options }) => {
       logger.info(`init: starting on port ${options.port}`);

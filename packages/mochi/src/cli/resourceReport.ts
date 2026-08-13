@@ -72,7 +72,7 @@ export interface ChunkRow {
  * and the client-stats page are both gated on `development`.
  *
  * `notFormed` names groups whose modules never became a shared chunk — the one case where a user most needs telling,
- * since the config looks like it worked.
+ * since the config looks like it worked. A group that only partly moved never reaches here: that fails the build.
  */
 export function printChunkTree(rows: ChunkRow[], skipped: { id: string; reason: string }[], notFormed: string[] = []): void {
   if (rows.length === 0 && skipped.length === 0 && notFormed.length === 0) {
@@ -107,7 +107,19 @@ export function printChunkTree(rows: ChunkRow[], skipped: { id: string; reason: 
   for (const name of notFormed) {
     console.log(styleText('yellow', `  no shared chunk: ${name} — its modules are reached from one island entry, which already carries them.`));
   }
+  // One skipped-module line each buries the report when a dependency is mostly barrels — 111 of them on this site's own
+  // build — so identical reasons collapse to a count with a couple of examples.
+  const EXAMPLES = 2;
+  const byReason = new Map<string, string[]>();
   for (const s of skipped) {
-    console.log(styleText('yellow', `  left in place: ${s.id} — ${s.reason}.`));
+    byReason.set(s.reason, [...(byReason.get(s.reason) ?? []), s.id]);
+  }
+  for (const [reason, ids] of byReason) {
+    if (ids.length === 1) {
+      console.log(styleText('yellow', `  left in place: ${ids[0]} — ${reason}.`));
+      continue;
+    }
+    console.log(styleText('yellow', `  left in place: ${ids.length} modules — ${reason}.`));
+    console.log(styleText('dim', `    e.g. ${ids.slice(0, EXAMPLES).join(', ')}${ids.length > EXAMPLES ? `, …` : ''}`));
   }
 }
