@@ -638,8 +638,9 @@ export interface MochiServeOptions {
 export interface MochiFontOptions {
   /**
    * Fonts at or below this byte size stay inlined in the bundled CSS as `data:` URIs; larger ones are emitted as
-   * separate content-hashed files. Default: 4096, or `Infinity` to restore full inlining. Bun copies any `url()`
-   * asset of 128 KB or more to a file regardless of this value, so fonts that large are always emitted.
+   * separate content-hashed files. Default: 4096. Bun copies any `url()` asset of 128 KB or more to a file of its own
+   * regardless of this value, so fonts that large are always emitted — `Infinity` inlines everything below that
+   * ceiling, not everything.
    */
   inlineThreshold?: number;
   /** Drop legacy `format('woff')` sources from `@font-face` `src:` lists that also offer `woff2`. Default: `true`. */

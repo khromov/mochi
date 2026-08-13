@@ -12,8 +12,8 @@ function fakeFont(size: number, seed: number): Uint8Array {
   return bytes;
 }
 
-// End-to-end through a real Bun.build: Bun inlines the fonts as data: URIs, the framework decodes the large ones back
-// out into served binaries. Fixtures are generated (binary font payloads don't belong in git).
+// End-to-end through a real Bun.build, on generated fixtures — the suites below use real font files, where the point
+// is Bun's own behaviour on their exact byte counts.
 describe('CSS imports — font asset extraction', () => {
   let tmp: string;
   let outDir: string;
@@ -204,7 +204,7 @@ describe('CSS imports — fonts option overrides', () => {
     rmSync(tmp, { recursive: true, force: true });
   });
 
-  test('inlineThreshold: Infinity keeps every font inlined', async () => {
+  test('inlineThreshold: Infinity keeps a sub-128 kB font inlined', async () => {
     const registry = new ComponentRegistry({ development: true, outDir: path.join(tmp, 'out'), fonts: { inlineThreshold: Infinity } });
     await registry.compile(path.join(tmp, 'OptOutPage.svelte'));
     const cssOutput = registry.getClientStats()?.outputs.find((o) => o.name.startsWith('fonts-'));
@@ -214,8 +214,8 @@ describe('CSS imports — fonts option overrides', () => {
   });
 });
 
-// Real @fontsource files, because the interesting case is Bun's own 128 kB copy threshold (oven-sh/bun#24599): at or
-// above it the bundler writes the font next to the stylesheet instead of inlining it, whatever `inlineThreshold` says.
+// Real @fontsource files, because the case under test is Bun's 128 kB copy threshold (oven-sh/bun#24599): at or above
+// it the bundler writes the font beside the stylesheet whatever `inlineThreshold` says.
 describe('CSS imports — fonts across Bun’s 128 kB copy threshold', () => {
   const fixtures = path.join(import.meta.dir, '..', '__fixtures__', 'fonts');
   const largeBytes = new Uint8Array(readFileSync(path.join(fixtures, 'fraunces-latin-full-italic.woff2')));
@@ -329,8 +329,8 @@ describe('CSS imports — fonts across Bun’s 128 kB copy threshold', () => {
   });
 });
 
-// Bun's 128 kB copy threshold applies to every `url()`, not just fonts: a large image is written beside the stylesheet
-// and referenced relatively, so it has to be served from where that relative URL lands.
+// The copy threshold applies to every `url()`, not just fonts, so a large image has to be served from where the
+// stylesheet's relative reference lands.
 describe('CSS imports — non-font assets Bun emits', () => {
   const fixtures = path.join(import.meta.dir, '..', '__fixtures__', 'images');
   const largeBytes = new Uint8Array(readFileSync(path.join(fixtures, 'large.png')));
@@ -391,5 +391,81 @@ describe('CSS imports — non-font assets Bun emits', () => {
     const asset = restored.getImportedCssAsset(resolved);
     expect(asset).toBeDefined();
     expect(readFileSync(asset!.diskPath).equals(largeBytes)).toBe(true);
+  });
+});
+
+// Entrypoints bundle in parallel and Bun emits one content-hashed copy for both, so adoption has to survive the
+// collision and count each asset once.
+describe('CSS imports — an emitted asset shared by two stylesheets', () => {
+  const fonts = path.join(import.meta.dir, '..', '__fixtures__', 'fonts');
+  const images = path.join(import.meta.dir, '..', '__fixtures__', 'images');
+  const fontBytes = new Uint8Array(readFileSync(path.join(fonts, 'fraunces-latin-full-italic.woff2')));
+  const imageBytes = new Uint8Array(readFileSync(path.join(images, 'large.png')));
+  const fontUrl = `/_mochi/fonts/shared-${fontContentHash(fontBytes)}.woff2`;
+  let tmp: string;
+  let outDir: string;
+  let registry: ComponentRegistry;
+
+  beforeAll(async () => {
+    tmp = mkdtempSync(path.join(import.meta.dir, '..', '..', '.mochi-font-shared-test-'));
+    outDir = path.join(tmp, 'out');
+    const filesDir = path.join(tmp, 'files');
+    mkdirSync(filesDir);
+    cpSync(path.join(fonts, 'fraunces-latin-full-italic.woff2'), path.join(filesDir, 'shared.woff2'));
+    cpSync(path.join(images, 'large.png'), path.join(filesDir, 'shared.png'));
+    for (const name of ['one', 'two']) {
+      writeFileSync(
+        path.join(tmp, `${name}.css`),
+        `@font-face { font-family: '${name}'; src: url('./files/shared.woff2') format('woff2'); }\n.${name} { background-image: url('./files/shared.png'); }`,
+      );
+    }
+    const pagePath = path.join(tmp, 'SharedPage.svelte');
+    writeFileSync(pagePath, `<script>\n  import './one.css';\n  import './two.css';\n<` + `/script>\n\n<h1>shared-fixture</h1>\n`);
+    registry = new ComponentRegistry({ development: true, outDir, fonts: { inlineThreshold: Infinity } });
+    await registry.compile(pagePath);
+  });
+
+  afterAll(() => {
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  test('both stylesheets resolve the shared font and image, with no bundle errors', () => {
+    expect(registry.getErrors()).toEqual([]);
+    const sheets = [...registry.getClientFiles().entries()].filter(([u]) => u.includes('/import-css/') && u.endsWith('.css'));
+    expect(sheets).toHaveLength(2);
+
+    for (const [url, css] of sheets) {
+      expect(css).toContain(fontUrl);
+      const relative = css.match(/url\(["']?([^"')]*shared[^"')]*\.png)["']?\)/)?.[1];
+      expect(relative).toBeDefined();
+      expect(registry.getImportedCssAsset(new URL(relative!, `http://localhost${url}`).pathname)).toBeDefined();
+    }
+    expect(readFileSync(registry.getFontAsset(fontUrl)!.diskPath).equals(fontBytes)).toBe(true);
+  });
+
+  test('counts each shared asset once in the stats', () => {
+    const outputs = registry.getClientStats()!.outputs;
+    expect(outputs.filter((o) => o.name === `fonts/shared-${fontContentHash(fontBytes)}.woff2`)).toHaveLength(1);
+    const pngRows = outputs.filter((o) => o.name.startsWith('import-css/') && o.name.endsWith('.png'));
+    expect(pngRows).toHaveLength(1);
+    expect(pngRows[0]!.size).toBe(imageBytes.length);
+  });
+
+  test('leaves no re-homed font copy behind in import-css', () => {
+    expect(readdirSync(path.join(outDir, 'import-css')).filter((f) => f.endsWith('.woff2'))).toEqual([]);
+  });
+
+  test('keeps the asset listed and served after a dev re-bundle', async () => {
+    await registry.rebundleImportedCss();
+
+    expect(registry.getErrors()).toEqual([]);
+    const pngRows = registry.getClientStats()!.outputs.filter((o) => o.name.startsWith('import-css/') && o.name.endsWith('.png'));
+    expect(pngRows).toHaveLength(1);
+
+    const [url, css] = [...registry.getClientFiles().entries()].find(([u]) => u.includes('/import-css/') && u.endsWith('.css'))!;
+    const relative = css.match(/url\(["']?([^"')]*shared[^"')]*\.png)["']?\)/)?.[1];
+    const asset = registry.getImportedCssAsset(new URL(relative!, `http://localhost${url}`).pathname);
+    expect(asset).toBeDefined();
+    expect(readFileSync(asset!.diskPath).equals(imageBytes)).toBe(true);
   });
 });

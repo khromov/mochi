@@ -1879,7 +1879,7 @@ export class ComponentRegistry {
     return this.fontAssets.get(urlPath) ?? this.devStaleFontAssets.get(urlPath);
   }
 
-  /** A non-font asset Bun wrote beside a bundled stylesheet (any `url()` at or above its 128 kB copy threshold), served from where the CSS points at it. */
+  /** A non-font asset Bun wrote beside a bundled stylesheet, served from where that stylesheet's relative `url()` lands. */
   getImportedCssAsset(urlPath: string): { diskPath: string; contentType: string } | undefined {
     return this.importCssAssets.get(urlPath);
   }
@@ -1955,6 +1955,8 @@ export class ComponentRegistry {
       return;
     }
 
+    // Cleared only once every entrypoint has read what it needs, since parallel bundles share a content-hashed copy.
+    const deadArtifacts = new Set<string>();
     await Promise.all(
       todo.map(async (cssPath) => {
         // Bun's CSS bundler resolves every url() itself and runs plugin hooks for them, so font discovery rides the
@@ -1990,13 +1992,20 @@ export class ComponentRegistry {
           fontRefs,
         );
         cssText = adopted.css;
-        // Bun printed these relative to the stylesheet, which is served from `import-css/`, so registering them under
-        // that prefix is what makes the URL it already wrote resolve.
+        for (const assetPath of adopted.adopted) {
+          deadArtifacts.add(assetPath);
+        }
+        // Bun printed these relative to the stylesheet, so serving them under its `import-css/` prefix is what makes
+        // the URL it already wrote resolve.
         for (const assetPath of adopted.otherAssets) {
           const name = path.basename(assetPath);
           const file = Bun.file(assetPath);
           this.importCssAssets.set(`${this.assetPrefix}/import-css/${name}`, { diskPath: assetPath, contentType: file.type });
-          this.importedCssStats.push({ name: path.posix.join('import-css', name), size: file.size, inputs: [], imports: [] });
+          // Deduped against the stats rather than the map, which a dev re-bundle rebuilds while leaving entries in place.
+          const statName = path.posix.join('import-css', name);
+          if (!this.importedCssStats.some((s) => s.name === statName)) {
+            this.importedCssStats.push({ name: statName, size: file.size, inputs: [], imports: [] });
+          }
         }
         const fontPass = classifyFontAssets(cssText, fontRefs, { dropLegacyWoff: this.fontDropLegacyWoff });
         cssText = fontPass.css;
@@ -2054,6 +2063,9 @@ export class ComponentRegistry {
         });
       }),
     );
+    for (const artifact of deadArtifacts) {
+      fs.rmSync(artifact, { force: true });
+    }
   }
 
   /** Re-bundles every previously seen side-effect CSS import for the dev watcher's CSS-only fast-path, leaving page modules and entry tracking alone. */

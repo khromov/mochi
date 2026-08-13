@@ -11,7 +11,7 @@ export interface FontRef {
   path: string;
   size: number;
   markerB64: string;
-  /** Set only by {@link adoptEmittedFontAssets}, whose `path` names a bundler copy it deleted rather than a readable source. */
+  /** Set only by {@link adoptEmittedFontAssets}, whose `path` names a bundler copy awaiting deletion rather than a readable source. */
   bytes?: Uint8Array;
 }
 
@@ -63,8 +63,7 @@ export function createFontMarkerPlugin(inlineThreshold: number): { plugin: BunPl
       build.onLoad({ filter: FONT_URL_FILTER }, (args) => {
         const size = fs.statSync(args.path).size;
         // Declining a font Bun would copy rather than inline segfaults its bundler (verified on 1.3.14, exactly at
-        // 128 kB), so those take the marker path whatever the threshold says — the outcome is the same either way,
-        // since Bun gives no way to inline them.
+        // 128 kB), so those take the marker path whatever the threshold says.
         if (size <= inlineThreshold && size < BUN_CSS_COPY_THRESHOLD) {
           return undefined;
         }
@@ -78,19 +77,16 @@ export function createFontMarkerPlugin(inlineThreshold: number): { plugin: BunPl
 }
 
 /**
- * Fold assets Bun emitted as files back into the marker protocol, so {@link classifyFontAssets} sees one shape.
+ * Fold fonts Bun wrote beside the stylesheet — anything {@link createFontMarkerPlugin} let through at or above
+ * {@link BUN_CSS_COPY_THRESHOLD}, and every marked font once Bun honours `loader: 'file'` — back into marker `data:`
+ * URIs, so {@link classifyFontAssets} sees one shape and nothing points at a file no route serves.
  *
- * Bun copies any `url()` reference at or above a hardcoded 128 kB instead of inlining it (oven-sh/bun#24599), which
- * {@link createFontMarkerPlugin} normally prevents by shrinking fonts to marker bytes first — but not when the caller
- * raised `inlineThreshold` past 128 kB or opted out of the plugin. A future Bun that honours `loader: 'file'` would
- * take this path for every marked font instead. Either way the bundled CSS points at a file next to itself that
- * nothing serves, so each font artifact is turned back into its marker `data:` URI and the stray copy deleted.
- *
- * Returns the paths of emitted assets that aren't fonts (a large image from an imported stylesheet); they keep the
- * relative URL Bun printed, so the caller only has to serve them from beside the stylesheet.
+ * `adopted` copies are dead but deleted by the caller, since entrypoints sharing a font emit the same content-hashed
+ * path and removing it here would ENOENT a concurrent read; `otherAssets` keep the relative URL Bun printed.
  */
-export async function adoptEmittedFontAssets(css: string, emitted: { path: string }[], refs: FontRef[]): Promise<{ css: string; otherAssets: string[] }> {
+export async function adoptEmittedFontAssets(css: string, emitted: { path: string }[], refs: FontRef[]): Promise<{ css: string; otherAssets: string[]; adopted: string[] }> {
   const otherAssets: string[] = [];
+  const adopted: string[] = [];
   const refByMarker = new Map(refs.map((r) => [r.markerB64, r]));
   for (const artifact of emitted) {
     const ext = path.extname(artifact.path).toLowerCase();
@@ -98,15 +94,19 @@ export async function adoptEmittedFontAssets(css: string, emitted: { path: strin
       otherAssets.push(artifact.path);
       continue;
     }
-    const bytes = await Bun.file(artifact.path).bytes();
+    const file = Bun.file(artifact.path);
+    if (!(await file.exists())) {
+      continue;
+    }
+    const bytes = await file.bytes();
     // A marked font: the file holds the marker text, not the font, so the real bytes come from the ref's source path.
     const marked = bytes.length < 64 ? refByMarker.get(Buffer.from(bytes).toString('base64')) : undefined;
     const markerB64 = marked?.markerB64 ?? markerFor(refs.length).markerB64;
     const mime = FONT_MIME_BY_EXT[ext] ?? 'application/octet-stream';
     const substituted = replaceUrlToken(css, path.basename(artifact.path), `data:${mime};base64,${markerB64}`);
     if (substituted === css) {
-      // Bun printed a url() form this doesn't recognise. Leaving the copy where it is keeps the stylesheet working,
-      // unextracted — but a marked copy holds marker text, so it needs the real font written over it first.
+      // Bun printed a url() form this doesn't recognise, so the copy stays and serves the face unextracted — which
+      // takes the real font, since a marked copy holds only marker text.
       if (marked) {
         fs.copyFileSync(marked.path, artifact.path);
       }
@@ -115,13 +115,13 @@ export async function adoptEmittedFontAssets(css: string, emitted: { path: strin
     }
     css = substituted;
     if (!marked) {
-      // Bun's own copy is byte-identical to the source, so the artifact itself stands in as the ref's file. Its name
-      // carries Bun's fixed-width asset hash, dropped so the served name doesn't end up double-hashed.
+      // Bun's copy is byte-identical to the source, so it stands in as the ref's file, minus the fixed-width asset
+      // hash in its name that would otherwise double-hash the served one.
       refs.push({ path: path.join(path.dirname(artifact.path), path.basename(artifact.path, ext).replace(/-[a-z0-9]{8}$/, '') + ext), size: bytes.length, markerB64, bytes });
     }
-    fs.rmSync(artifact.path, { force: true });
+    adopted.push(artifact.path);
   }
-  return { css, otherAssets };
+  return { css, otherAssets, adopted };
 }
 
 // Bun prints the emitted asset relative to the stylesheet (`./name.woff2` or `name.woff2`), quoted or not under minify.
@@ -305,7 +305,6 @@ export function substituteFontUrl(css: string, markerUri: string, fontUrl: strin
   return css.replace(new RegExp(String.raw`url\(\s*(["']?)${escaped}\1\s*\)`, 'g'), `url(${fontUrl})`);
 }
 
-/** Drop every `@font-face` block, reporting how many went, for documents that cannot load fonts at all (email). */
 export function stripFontFaces(css: string): { css: string; dropped: number } {
   let dropped = 0;
   const out = css.replace(FONT_FACE_RE, () => {

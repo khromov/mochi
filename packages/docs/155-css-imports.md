@@ -68,7 +68,7 @@ Tunable via `Mochi.serve({ fonts })`:
 ```ts
 await Mochi.serve({
   fonts: {
-    inlineThreshold: 4096, // fonts at or below this stay inlined; Infinity restores full inlining
+    inlineThreshold: 4096, // fonts at or below this stay inlined, up to Bun's 128 kB ceiling
     dropLegacyWoff: true, // drop format('woff') sources when the face also offers woff2
     preload: true, // <link rel="preload" as="font"> for the page's latin-visible woff2 fonts
   },

@@ -214,12 +214,14 @@ describe('adoptEmittedFontAssets', () => {
     const css = `@font-face { src: url("./${path.basename(file)}") format("woff2"); }`;
     const refs = [ref];
 
-    const { css: out, otherAssets } = await adoptEmittedFontAssets(css, [{ path: file }], refs);
+    const { css: out, otherAssets, adopted } = await adoptEmittedFontAssets(css, [{ path: file }], refs);
 
     expect(refs).toEqual([ref]);
     expect(otherAssets).toEqual([]);
     expect(out).toContain(`url(data:font/woff2;base64,${ref.markerB64})`);
-    expect(existsSync(file)).toBe(false);
+    // Deleting here would ENOENT a concurrent entrypoint's read of the same content-hashed copy.
+    expect(adopted).toEqual([file]);
+    expect(existsSync(file)).toBe(true);
   });
 
   test('adopts a font Bun copied itself, carrying its bytes and un-hashed name', async () => {
@@ -228,7 +230,7 @@ describe('adoptEmittedFontAssets', () => {
     const css = `@font-face { src: url("./${path.basename(file)}") format("woff2"); }`;
     const refs: FontRef[] = [];
 
-    const { css: out, otherAssets } = await adoptEmittedFontAssets(css, [{ path: file }], refs);
+    const { css: out, otherAssets, adopted } = await adoptEmittedFontAssets(css, [{ path: file }], refs);
 
     expect(otherAssets).toEqual([]);
     expect(refs).toHaveLength(1);
@@ -236,7 +238,7 @@ describe('adoptEmittedFontAssets', () => {
     expect(path.basename(refs[0]!.path)).toBe('fraunces-latin-full-italic.woff2');
     expect(out).toContain(`url(data:font/woff2;base64,${refs[0]!.markerB64})`);
     expect(fontAssetFileName(refs[0]!, bytes)).toBe(`fraunces-latin-full-italic-${fontContentHash(bytes)}.woff2`);
-    expect(existsSync(file)).toBe(false);
+    expect(adopted).toEqual([file]);
   });
 
   test('substitutes unquoted and bare-name url() forms', async () => {
@@ -256,12 +258,26 @@ describe('adoptEmittedFontAssets', () => {
     const css = '@font-face { src: url("/somewhere/else.woff2") format("woff2"); }';
     const refs = [ref];
 
-    const { css: out, otherAssets } = await adoptEmittedFontAssets(css, [{ path: file }], refs);
+    const { css: out, otherAssets, adopted } = await adoptEmittedFontAssets(css, [{ path: file }], refs);
 
     expect(out).toBe(css);
     expect(otherAssets).toEqual([file]);
+    expect(adopted).toEqual([]);
     expect(existsSync(file)).toBe(true);
     expect(readFileSync(file)).toEqual(readFileSync(source));
+  });
+
+  test('skips an artifact another entrypoint already consumed', async () => {
+    const refs: FontRef[] = [];
+    const missing = path.join(import.meta.dir, 'does-not-exist-1a2b3c4d.woff2');
+    const css = `a { src: url("./${path.basename(missing)}"); }`;
+
+    const { css: out, otherAssets, adopted } = await adoptEmittedFontAssets(css, [{ path: missing }], refs);
+
+    expect(out).toBe(css);
+    expect(otherAssets).toEqual([]);
+    expect(adopted).toEqual([]);
+    expect(refs).toEqual([]);
   });
 
   test('leaves a non-font artifact alone for the caller to serve', async () => {
@@ -269,9 +285,10 @@ describe('adoptEmittedFontAssets', () => {
     const css = `a { background: url("./${path.basename(file)}"); }`;
     const refs: FontRef[] = [];
 
-    const { css: out, otherAssets } = await adoptEmittedFontAssets(css, [{ path: file }], refs);
+    const { css: out, otherAssets, adopted } = await adoptEmittedFontAssets(css, [{ path: file }], refs);
 
     expect(otherAssets).toEqual([file]);
+    expect(adopted).toEqual([]);
     expect(refs).toEqual([]);
     expect(out).toBe(css);
     expect(existsSync(file)).toBe(true);
