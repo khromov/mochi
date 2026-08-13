@@ -47,6 +47,8 @@ function drawCentred(ctx: SKRSContext2D, lines: string[], spec: FontSpec, firstB
   lines.forEach((line, i) => ctx.fillText(line, CARD_WIDTH / 2, firstBaseline + i * leading));
 }
 
+const ROOT_URL_SIZE = 30;
+
 // Split exactly as text-wrap: balance broke them.
 export const ROOT_LEDE = ['A new SSR-first framework', 'for Svelte 5 and Bun.'];
 export const ROOT_DEK = ['Partial Hydration · Best-in-class performance · full', 'SSR support · Forms · Realtime WebSockets and SSE'];
@@ -57,7 +59,7 @@ export async function drawRootCard(ctx: SKRSContext2D): Promise<void> {
   drawCentred(ctx, ROOT_LEDE, LEDE, 312, 60, INK);
   drawCentred(ctx, ROOT_DEK, DEK, 429, 42, INK_MUTED);
 
-  applyFont(ctx, URL);
+  applyFont(ctx, { ...URL, size: ROOT_URL_SIZE });
   ctx.textAlign = 'center';
   ctx.fillStyle = INK_FAINT;
   ctx.fillText(SITE_HOST, CARD_WIDTH / 2, 521);
