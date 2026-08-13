@@ -179,7 +179,7 @@ await Mochi.serve({
     expect(exitCode).toBe(0);
     expect(stdout).toContain('"prefetch"');
     expect(stdout).toContain('"prerender"');
-    expect(stdout).toContain('/blog/*');
+    expect(stdout).toContain('/blog/:slug');
     // /api/x is never a positive match — only the /api/* exclusion appears.
     expect(stdout).not.toContain('/api/x');
   });
@@ -192,7 +192,9 @@ await Mochi.serve({
     expect(stdout).toContain('speculationRules');
     const mutated = await Bun.file(entry).text();
     expect(mutated).toContain('speculationRules:');
-    expect(mutated).toContain('/blog/*');
+    expect(mutated).toContain('/blog/:slug');
+    // Appended last, so a spread earlier in the literal can't override it.
+    expect(mutated.indexOf('speculationRules:')).toBeGreaterThan(mutated.indexOf('routes:'));
   });
 
   it('exits non-zero when the entry is missing', async () => {

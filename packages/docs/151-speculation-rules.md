@@ -55,7 +55,9 @@ bunx mochi-framework speculation-rules --dry-run  # print without writing
 bunx mochi-framework speculation-rules --entry ./src/main.ts
 ```
 
-It emits a broad `prefetch` rule matching every page route (dynamic `:param` segments become `*` globs) and a conservative `prerender` rule limited to your static pages. It is a **starting point** — edit it before shipping, then run your formatter to tidy it.
+It emits a broad `prefetch` rule matching every page route and a conservative `prerender` rule limited to your static pages, both excluding `/api/*` and `/_*`. Route patterns are emitted verbatim — `href_matches` speaks the same [URL Pattern](https://developer.mozilla.org/en-US/docs/Web/API/URL_Pattern_API) syntax as the router, so `/blog/:slug` matches one segment and never widens to `/blog/2024/01/post`. Your `trailingSlash` policy is applied so the generated URLs are the ones the server actually serves.
+
+Re-running the command rewrites the rules in place, whether the key is inline, shorthand (`speculationRules,`), or a reference to a `const` declared in the same file. It is a **starting point** — edit it before shipping, then run your formatter to tidy it.
 
 <Callout type="warning">
 

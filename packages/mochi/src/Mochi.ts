@@ -264,10 +264,11 @@ export class Mochi {
       logLevel: LogLevel;
       /** Reads the current shell template (reassigned on dev shell edits). */
       getTemplate: () => string;
-      speculationRules?: SpeculationRules;
+      /** Reads the current speculation rules (reassigned on dev entry edits). */
+      getSpeculationRules: () => SpeculationRules | undefined;
     },
   ): (result: RenderResult, opts?: { debugInfo?: DebugBarData; pageEntry?: string }) => string {
-    const { serverIslandClientJs, liveReloadClientJs, logLevel, getTemplate, speculationRules } = config;
+    const { serverIslandClientJs, liveReloadClientJs, logLevel, getTemplate, getSpeculationRules } = config;
 
     const logLevelScript = logLevel === DEFAULT_LOG_LEVEL ? '' : `<script>window.__mochi_log_level=${JSON.stringify(logLevel)}</script>`;
     // Feeds the debug bar's Warnings panel. When the debug bar is off the
@@ -278,10 +279,6 @@ export class Mochi {
     const cssStylePrefix = `<style>mochi-hydratable-island, mochi-server-island { display: contents; } mochi-server-island[defer-on="visible"]:empty, mochi-hydratable-island[hydrate-on="visible"]:empty { display: block; min-height: 1px; }${ISLAND_FAILURE_CSS}${
       registry.development ? ISLAND_FAILURE_DEV_CSS : ''
     }</style>\n`;
-    // Request-invariant: bake the speculation-rules payload once. Injected only when at least one prefetch/prerender
-    // entry exists, so an empty `{}` (or `{ prefetch: [] }`) emits no tag.
-    const specRuleCount = (speculationRules?.prefetch?.length ?? 0) + (speculationRules?.prerender?.length ?? 0);
-    const speculationRulesScript = specRuleCount > 0 ? `<script type="speculationrules">${jsonForHtml(speculationRules)}</script>` : '';
     const serverIslandScript = `<script>(()=>{${serverIslandClientJs}})()</script>`;
     const liveReloadTail = liveReloadClientJs ? `<script>${liveReloadClientJs}</script><mochi-live-reload></mochi-live-reload>` : '';
     const toolbarDiv = registry.debugBarEnabled ? '<div id="mochi-dev-toolbar"></div>' : '';
@@ -291,11 +288,23 @@ export class Mochi {
     let parsedFrom: string | undefined;
     let parts: ShellPart[] = [];
 
+    // Same deal for the speculation-rules payload: serialize once, re-serialize only when a dev entry edit swaps the
+    // object. Injected only when at least one prefetch/prerender entry exists, so `{}` (or `{ prefetch: [] }`) emits nothing.
+    let specRulesFrom: SpeculationRules | undefined | null = null;
+    let speculationRulesScript = '';
+
     return (result, opts) => {
       const template = getTemplate();
       if (template !== parsedFrom) {
         parts = parseShellTemplate(template);
         parsedFrom = template;
+      }
+
+      const specRules = getSpeculationRules();
+      if (specRules !== specRulesFrom) {
+        specRulesFrom = specRules;
+        const count = (specRules?.prefetch?.length ?? 0) + (specRules?.prerender?.length ?? 0);
+        speculationRulesScript = count > 0 ? `<script type="speculationrules">${jsonForHtml(specRules)}</script>` : '';
       }
 
       const bootstrapUrl = result.bootstrapUrl;
@@ -550,6 +559,14 @@ export class Mochi {
         }
       : undefined;
 
+    // Read through a getter for the same reason: a dev entry edit re-extracts the option and swaps it in place.
+    let speculationRules = options.speculationRules;
+    const reloadSpeculationRules = development
+      ? (rules: SpeculationRules | undefined) => {
+          speculationRules = rules;
+        }
+      : undefined;
+
     const errorPagePath = options.errorPage ?? DEFAULT_ERROR_PAGE_PATH;
 
     // Compiling every page entrypoint in one `Bun.build` below lets splitting pull shared transitive deps (devalue,
@@ -586,7 +603,7 @@ export class Mochi {
       liveReloadClientJs,
       logLevel: resolvedLogLevel,
       getTemplate: () => shellTemplate,
-      speculationRules: options.speculationRules,
+      getSpeculationRules: () => speculationRules,
     });
 
     const { renderErrorResponse, routeErrorResponse } = createErrorResponder({
@@ -1923,6 +1940,7 @@ export class Mochi {
         trailingSlashPolicy,
         shellPath,
         reloadShell,
+        reloadSpeculationRules,
       });
     }
 

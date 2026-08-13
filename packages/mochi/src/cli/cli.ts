@@ -114,8 +114,9 @@ async function runSpeculationRules(entryArg: string | undefined, dryRun: boolean
   markBuilding();
 
   const entryPath = path.resolve(process.cwd(), entryArg ?? './src/index.ts');
+  const entryRel = relForDisplay(entryPath) || entryPath;
   if (!existsSync(entryPath)) {
-    process.stderr.write(`[mochi] Entry not found: ${entryPath}\n`);
+    process.stderr.write(`[mochi] Entry not found: ${entryRel}\n`);
     process.exit(1);
   }
 
@@ -124,14 +125,14 @@ async function runSpeculationRules(entryArg: string | undefined, dryRun: boolean
     serveOptions = await extractServeOptions(entryPath);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    process.stderr.write(`[mochi] Could not read ${entryPath}: ${msg}\n`);
+    process.stderr.write(`[mochi] Could not read ${entryRel}: ${msg}\n`);
     await closeAllQueueResources();
     process.exit(1);
   }
 
   const routes = serveOptions?.routes;
   if (!routes || typeof routes !== 'object') {
-    process.stderr.write(`[mochi] No \`routes\` found. Ensure ${entryPath} calls Mochi.serve({ routes }).\n`);
+    process.stderr.write(`[mochi] No \`routes\` found. Ensure ${entryRel} calls Mochi.serve({ routes }).\n`);
     await closeAllQueueResources();
     process.exit(1);
   }
@@ -153,8 +154,7 @@ async function runSpeculationRules(entryArg: string | undefined, dryRun: boolean
   const { writeSpeculationRules, SpeculationRulesWriteError } = await import('./writeSpeculationRules');
   try {
     const { action, multipleServeCalls } = await writeSpeculationRules(entryPath, rules);
-    const rel = relForDisplay(entryPath) || entryPath;
-    process.stdout.write(`[mochi] ${action === 'inserted' ? 'Added' : 'Updated'} speculationRules in ${rel}. Run your formatter (e.g. \`bun run format\`) to tidy it.\n`);
+    process.stdout.write(`[mochi] ${action === 'inserted' ? 'Added' : 'Updated'} speculationRules in ${entryRel}. Run your formatter (e.g. \`bun run format\`) to tidy it.\n`);
     if (multipleServeCalls) {
       process.stdout.write(`[mochi] Note: more than one eligible Mochi.serve() call was found — edited the first.\n`);
     }

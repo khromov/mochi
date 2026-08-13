@@ -2,9 +2,14 @@ export type TrailingSlashPolicy = 'always' | 'never';
 
 const HAS_EXTENSION = /\.[^./]+$/;
 
+/** Paths the trailing-slash policy never rewrites: the root, and anything ending in a file extension. */
+export function isSlashExempt(pathname: string): boolean {
+  return pathname === '/' || HAS_EXTENSION.test(pathname);
+}
+
 export function trailingSlashRedirect(method: string, url: URL, policy: TrailingSlashPolicy): Response | null {
   const { pathname } = url;
-  if (pathname === '/' || HAS_EXTENSION.test(pathname)) {
+  if (isSlashExempt(pathname)) {
     return null;
   }
 
@@ -39,10 +44,7 @@ export function trailingSlashIt(str: string): string {
 }
 
 export function alternateSlashPattern(pattern: string): string | null {
-  if (pattern === '/') {
-    return null;
-  }
-  if (HAS_EXTENSION.test(pattern)) {
+  if (isSlashExempt(pattern)) {
     return null;
   }
   return pattern.endsWith('/') ? pattern.slice(0, -1) : pattern + '/';
