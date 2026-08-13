@@ -13,9 +13,9 @@
 
   const columns: { label: string; pick: (row: (typeof persistenceRows)[number]) => Cell }[] = [
     { label: 'Memory', pick: (r) => r.memory },
-    { label: 'File', pick: (r) => r.file },
     { label: 'SQLite', pick: (r) => r.sqlite },
     { label: 'Postgres', pick: (r) => r.postgres },
+    { label: 'File', pick: (r) => r.file },
   ];
 </script>
 
@@ -36,12 +36,15 @@
             <X class="cell-icon" size={15} aria-hidden="true" />
           {/if}
           <span class="backend-name">{col.label}</span>{#if cell.isDefault}<span class="star" aria-hidden="true">*</span>{/if}
-          <span class="sr-only">— {labelFor[cell.status]}{#if cell.isDefault}, default{/if}</span>
+          <span class="sr-only"
+            >— {labelFor[cell.status]}{#if cell.isDefault}, default{/if}</span
+          >
         </span>
       {/each}
     </div>
     <p class="footnote">
-      <span class="star" aria-hidden="true">*</span> default{#if hasPlanned} · clock = planned{/if} — see <a href="/docs/persistence/">Persistence</a> for the full matrix.
+      <span class="star" aria-hidden="true">*</span> default{#if hasPlanned}
+        · clock = planned{/if} — see <a href="/docs/persistence/">Persistence</a> for all features.
     </p>
   </div>
 {:else}
@@ -97,6 +100,10 @@
 <style>
   .persistence {
     margin: 1.5rem 0;
+  }
+
+  .persistence.compact {
+    margin: 0.75rem 0;
   }
 
   .summary {
