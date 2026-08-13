@@ -10,6 +10,7 @@ import type { MochiCaptchaOptions } from './captcha/types';
 import type { MochiProcessor, MochiQueueListeners, MochiQueueRuntimeOptions, MochiQueueStorage } from './queue';
 import type { MochiRateLimitOptions } from './runtime/rateLimit';
 import type { MochiSvelteCompiler } from './compiler/svelteCompilerBackend';
+import type { SpeculationRules } from './runtime/speculationRules';
 
 export type MochiServerPropsResolver = (req: Request, params: Record<string, string>) => Record<string, unknown> | MochiRedirect | Promise<Record<string, unknown> | MochiRedirect>;
 
@@ -452,6 +453,13 @@ export interface MochiServeOptions {
   queueStorage?: MochiQueueStorage;
   fetch?: (req: Request, server: Server<undefined>) => Response | Promise<Response>;
   htmlShell?: string;
+  /**
+   * Speculation Rules injected as a `<script type="speculationrules">` tag into every rendered page's `<head>`, so
+   * the browser can prefetch/prerender same-site URLs and make navigations feel instant. An omitted option — or an
+   * object whose `prefetch` and `prerender` are both empty or absent — injects nothing. Generate a starting config
+   * from your routes with `mochi-framework speculation-rules`.
+   */
+  speculationRules?: SpeculationRules;
   /**
    * A middleware handle function (or a `sequence()` of them) wrapping every incoming request — authentication, logging, headers.
    *

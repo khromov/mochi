@@ -3,7 +3,7 @@ import { compile as mdsvexCompile } from 'mdsvex';
 import rehypeSlug from 'rehype-slug';
 import rehypeExternalLinks from './lib/rehypeExternalLinks';
 import { Mochi, mochiEvents, sequence, logger, noCache, compress, silenceInternalRoutes } from 'mochi-framework';
-import type { Handle, HandleError, MarkdownConfig } from 'mochi-framework';
+import type { Handle, HandleError, MarkdownConfig, SpeculationRules } from 'mochi-framework';
 import { analytics } from 'mochi-shared';
 import { generateDocsBarrel } from './lib/generateDocsBarrel';
 import { generateBlogBarrel } from './lib/generateBlogBarrel';
@@ -128,11 +128,47 @@ const markdownConfig: MarkdownConfig = {
   highlight: { highlighter: (code, lang) => highlightCode(code, lang) },
 };
 
+const speculationRules: SpeculationRules = {
+  prefetch: [
+    {
+      where: {
+        and: [
+          { href_matches: '/*' },
+          { not: { href_matches: ['/discord', '/discord/*'] } },
+          { not: { href_matches: '/support/*' } },
+          { not: { href_matches: '/demos/login/*' } },
+          { not: { href_matches: '/cookie-vary-test/*' } },
+          { not: { href_matches: '/api/*' } },
+          { not: { href_matches: '/mcp' } },
+          { not: { href_matches: '/_*' } },
+          { not: { selector_matches: '[target=_blank]' } },
+          { not: { selector_matches: '[rel~=nofollow]' } },
+        ],
+      },
+      eagerness: 'moderate',
+    },
+  ],
+  prerender: [
+    {
+      where: {
+        and: [
+          { or: [{ href_matches: '/' }, { href_matches: '/docs/*' }, { href_matches: '/blog/*' }, { href_matches: '/ci/*' }] },
+          { not: { href_matches: ['/ci/data', '/ci/data/*'] } },
+          { not: { selector_matches: '[target=_blank]' } },
+          { not: { selector_matches: '[rel~=nofollow]' } },
+        ],
+      },
+      eagerness: 'moderate',
+    },
+  ],
+};
+
 await Mochi.serve({
   port: PORT,
   development: DEVELOPMENT,
   liveReload: process.env.MOCHI_LIVE_RELOAD === 'false' ? false : undefined,
   htmlShell: './src/shell.html',
+  speculationRules,
   trailingSlash: 'always',
   // /ci/dashboard is a chrome-free always-on display — it would otherwise report a pageview every refresh.
   handle: sequence(

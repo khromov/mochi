@@ -214,6 +214,7 @@ export type {
   MochiBarrelWarningOptions,
   MochiBuildReportOptions,
 } from './types';
+export type { SpeculationRules, SpeculationRule, SpeculationListRule, SpeculationDocumentRule, SpeculationRuleCondition, SpeculationEagerness } from './runtime/speculationRules';
 
 import type { Snippet } from 'svelte';
 

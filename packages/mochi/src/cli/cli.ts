@@ -7,6 +7,8 @@ import { closeAllQueueResources } from '../queue';
 import { extractServeOptions } from './extractServeOptions';
 import { updateSkill, SKILL_TARGETS, SKILL_DESTS, DEFAULT_SKILL_TARGET, type SkillTarget } from './updateSkill';
 import { generateKey } from './generateKey';
+import { generateSpeculationRules } from './generateSpeculationRules';
+import { writeSpeculationRules, SpeculationRulesWriteError } from './writeSpeculationRules';
 import { relForDisplay } from '../utils';
 import { markBuilding } from '../utils/buildFlag';
 
@@ -37,6 +39,12 @@ ${SKILL_TARGETS.map((t) => {
                          before overwriting an existing key.
                          Options:
                            -f, --force  Overwrite an existing MOCHI_KEY without prompting.
+  speculation-rules      Generate a starting Speculation Rules config from your
+                         page routes and write it into the \`speculationRules\` key
+                         of your entry's Mochi.serve({ ... }) call.
+                         Options:
+                           --entry <path>  Runtime entry. Default: ./src/index.ts
+                           --dry-run       Print the rules instead of writing them.
 
 Options for "build":
   --entry <path>           Runtime entry whose \`Mochi.serve()\` call supplies
@@ -102,6 +110,67 @@ async function runGenerateKey(force: boolean) {
   }
 }
 
+async function runSpeculationRules(entryArg: string | undefined, dryRun: boolean) {
+  // The whole process reads the app entry for real, so suppress its boot side effects up front.
+  markBuilding();
+
+  const entryPath = path.resolve(process.cwd(), entryArg ?? './src/index.ts');
+  if (!existsSync(entryPath)) {
+    process.stderr.write(`[mochi] Entry not found: ${entryPath}\n`);
+    process.exit(1);
+  }
+
+  let serveOptions: Awaited<ReturnType<typeof extractServeOptions>> = null;
+  try {
+    serveOptions = await extractServeOptions(entryPath);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    process.stderr.write(`[mochi] Could not read ${entryPath}: ${msg}\n`);
+    await closeAllQueueResources();
+    process.exit(1);
+  }
+
+  const routes = serveOptions?.routes;
+  if (!routes || typeof routes !== 'object') {
+    process.stderr.write(`[mochi] No \`routes\` found. Ensure ${entryPath} calls Mochi.serve({ routes }).\n`);
+    await closeAllQueueResources();
+    process.exit(1);
+  }
+
+  const rules = generateSpeculationRules(routes, { trailingSlash: serveOptions?.trailingSlash });
+  if (!rules.prefetch && !rules.prerender) {
+    process.stderr.write(`[mochi] No page routes found. Add Mochi.page() routes, then re-run \`mochi-framework speculation-rules\`.\n`);
+    await closeAllQueueResources();
+    process.exit(1);
+  }
+
+  if (dryRun) {
+    process.stdout.write(`${JSON.stringify(rules, null, 2)}\n`);
+    await closeAllQueueResources();
+    process.exit(0);
+  }
+
+  try {
+    const { action, multipleServeCalls } = await writeSpeculationRules(entryPath, rules);
+    const rel = relForDisplay(entryPath) || entryPath;
+    process.stdout.write(`[mochi] ${action === 'inserted' ? 'Added' : 'Updated'} speculationRules in ${rel}. Run your formatter (e.g. \`bun run format\`) to tidy it.\n`);
+    if (multipleServeCalls) {
+      process.stdout.write(`[mochi] Note: more than one Mochi.serve() call was found — edited the first.\n`);
+    }
+  } catch (err) {
+    if (err instanceof SpeculationRulesWriteError) {
+      process.stderr.write(`[mochi] ${err.message}\n\nspeculationRules: ${JSON.stringify(rules, null, 2)}\n`);
+      await closeAllQueueResources();
+      process.exit(1);
+    }
+    throw err;
+  }
+
+  // Extracting serve options imports the entry for real; if it started the queue runtime, drain it so this one-shot exits.
+  await closeAllQueueResources();
+  process.exit(0);
+}
+
 async function main() {
   const { values, positionals } = parseArgs({
     args: Bun.argv.slice(2),
@@ -115,6 +184,7 @@ async function main() {
       'asset-prefix': { type: 'string' },
       dev: { type: 'boolean' },
       force: { type: 'boolean', short: 'f' },
+      'dry-run': { type: 'boolean' },
     },
   });
 
@@ -143,6 +213,11 @@ async function main() {
 
   if (cmd === 'generate-key') {
     await runGenerateKey(Boolean(values.force));
+    return;
+  }
+
+  if (cmd === 'speculation-rules') {
+    await runSpeculationRules(values.entry, Boolean(values['dry-run']));
     return;
   }
 

@@ -59,6 +59,7 @@ import { resolveWarmupEnabled, markWarmupRequest, isWarmablePattern } from './ru
 import { createErrorResponder, DEFAULT_ERROR_PAGE_PATH } from './runtime/errors';
 import { requestContext } from './runtime/requestContext';
 import type { MochiRequestContext } from './runtime/requestContext';
+import type { SpeculationRules } from './runtime/speculationRules';
 import {
   startQueueRuntime,
   mountQueues,
@@ -263,9 +264,10 @@ export class Mochi {
       logLevel: LogLevel;
       /** Reads the current shell template (reassigned on dev shell edits). */
       getTemplate: () => string;
+      speculationRules?: SpeculationRules;
     },
   ): (result: RenderResult, opts?: { debugInfo?: DebugBarData; pageEntry?: string }) => string {
-    const { serverIslandClientJs, liveReloadClientJs, logLevel, getTemplate } = config;
+    const { serverIslandClientJs, liveReloadClientJs, logLevel, getTemplate, speculationRules } = config;
 
     const logLevelScript = logLevel === DEFAULT_LOG_LEVEL ? '' : `<script>window.__mochi_log_level=${JSON.stringify(logLevel)}</script>`;
     // Feeds the debug bar's Warnings panel. When the debug bar is off the
@@ -276,6 +278,10 @@ export class Mochi {
     const cssStylePrefix = `<style>mochi-hydratable-island, mochi-server-island { display: contents; } mochi-server-island[defer-on="visible"]:empty, mochi-hydratable-island[hydrate-on="visible"]:empty { display: block; min-height: 1px; }${ISLAND_FAILURE_CSS}${
       registry.development ? ISLAND_FAILURE_DEV_CSS : ''
     }</style>\n`;
+    // Request-invariant: bake the speculation-rules payload once. Injected only when at least one prefetch/prerender
+    // entry exists, so an empty `{}` (or `{ prefetch: [] }`) emits no tag.
+    const specRuleCount = (speculationRules?.prefetch?.length ?? 0) + (speculationRules?.prerender?.length ?? 0);
+    const speculationRulesScript = specRuleCount > 0 ? `<script type="speculationrules">${jsonForHtml(speculationRules)}</script>` : '';
     const serverIslandScript = `<script>(()=>{${serverIslandClientJs}})()</script>`;
     const liveReloadTail = liveReloadClientJs ? `<script>${liveReloadClientJs}</script><mochi-live-reload></mochi-live-reload>` : '';
     const toolbarDiv = registry.debugBarEnabled ? '<div id="mochi-dev-toolbar"></div>' : '';
@@ -298,7 +304,7 @@ export class Mochi {
       const debugInfoScript = registry.debugBarEnabled && opts?.debugInfo ? `<script>window.__mochi_debug=${jsonForHtml(opts.debugInfo)}</script>` : '';
       const pageEntryScript = liveReloadClientJs && opts?.pageEntry ? `<script>window.__mochi_page_entry=${jsonForHtml(opts.pageEntry)}</script>` : '';
 
-      const head = logLevelScript + warnShim + result.head;
+      const head = logLevelScript + warnShim + speculationRulesScript + result.head;
       const css = cssStylePrefix + cssLinks;
       const body = result.body + debugInfoScript + pageEntryScript + toolbarDiv;
       const script =
@@ -580,6 +586,7 @@ export class Mochi {
       liveReloadClientJs,
       logLevel: resolvedLogLevel,
       getTemplate: () => shellTemplate,
+      speculationRules: options.speculationRules,
     });
 
     const { renderErrorResponse, routeErrorResponse } = createErrorResponder({
