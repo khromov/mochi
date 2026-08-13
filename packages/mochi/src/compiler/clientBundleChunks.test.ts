@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import path from 'node:path';
 import { classifyModules, evaluationOrder, hasDefaultExport, packageNameOf, planChunks, validateClientBundleOptions, viewId, type ChunkMetafile } from './clientBundleChunks';
+import { toPosixPath } from '../utils/index';
 
 const FIXTURE_DIR = path.join(import.meta.dir, '..', '__fixtures__', 'client-bundle-chunks');
 const VENDOR_ONE = path.join(FIXTURE_DIR, 'vendorOne.ts');
@@ -58,6 +59,10 @@ describe('validateClientBundleOptions', () => {
 });
 
 describe('evaluationOrder', () => {
+  // Keys come back resolved against the given cwd, which on Windows qualifies the drive — so the expectations are built
+  // the same way rather than written as literal POSIX paths.
+  const keyFor = (p: string) => toPosixPath(path.resolve('/app', p));
+
   // Bun lists an output's inputs in the order it concatenated them; the input map is in parse order, which is why the
   // outputs are the ones read.
   test('reads the order modules were concatenated into each output', () => {
@@ -68,12 +73,12 @@ describe('evaluationOrder', () => {
       },
       '/app',
     );
-    expect([...order.keys()]).toEqual(['/app/src/first.ts', '/app/src/second.ts', '/app/src/third.ts']);
+    expect([...order.keys()]).toEqual([keyFor('src/first.ts'), keyFor('src/second.ts'), keyFor('src/third.ts')]);
   });
 
   test('a module in two outputs keeps its first position', () => {
     const order = evaluationOrder({ inputs: {}, outputs: { 'a.js': { inputs: { 'x.ts': {}, 'y.ts': {} } }, 'b.js': { inputs: { 'y.ts': {} } } } }, '/app');
-    expect(order.get('/app/y.ts')).toBe(1);
+    expect(order.get(keyFor('y.ts'))).toBe(1);
   });
 
   test('a metafile with no outputs yields no order', () => {
