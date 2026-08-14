@@ -6,7 +6,6 @@ description: 'Prefetch and prerender same-site URLs via a typed speculationRules
 ---
 
 <script>
-  import Callout from './_components/Callout.svelte';
   import VersionNote from './_components/VersionNote.svelte';
 </script>
 
@@ -47,7 +46,7 @@ const listRules: SpeculationRules = {
 
 `href_matches` speaks the same [URL Pattern](https://developer.mozilla.org/en-US/docs/Web/API/URL_Pattern_API) syntax as the router, so a route pattern can be used verbatim: `/blog/:slug` matches one segment, while `*` crosses them. Match the URLs your server actually serves — with `trailingSlash: 'always'`, that means `/about/`, not `/about`.
 
-<Callout type="warning">
+### An important note about prerendering
 
 Prerendering fully loads a page in a hidden tab — it is far more expensive than prefetching, so keep it to a few high-likelihood destinations and prefer `eagerness: 'moderate'`. Exclude URLs with side effects (sign-out, add-to-cart, one-time-password flows), and add `not: { selector_matches: '[rel~=nofollow]' }` and `[target=_blank]` guards so flagged links are left alone.
 
@@ -62,5 +61,3 @@ if (document.prerendering) {
 ```
 
 Google Analytics already defers itself this way; most other vendors do not. For code that runs after load, `performance.getEntriesByType('navigation')[0]?.activationStart > 0` tells you the page was prerendered rather than visited directly.
-
-</Callout>
