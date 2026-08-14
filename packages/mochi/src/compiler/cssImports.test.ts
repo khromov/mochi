@@ -48,6 +48,17 @@ describe('CSS imports — happy path', () => {
     expect(cssOutput?.size).toBeGreaterThan(0);
   });
 
+  test('minifies the bundled CSS', () => {
+    const cssOutput = registry.getClientStats()?.outputs.find((o) => o.name.startsWith('styles-'));
+    expect(cssOutput).toBeDefined();
+    const cssText = registry.getClientFile(`/_mochi/import-css/${cssOutput!.name}`);
+    expect(cssText).toBeDefined();
+    // Minified output drops the source-path banner comment and all indentation.
+    expect(cssText).not.toContain('/*');
+    expect(cssText).not.toMatch(/\n\s{2,}/);
+    expect(cssText!.trim()).toContain('body{color:red}');
+  });
+
   test('renderComponent links the bundled CSS URL', async () => {
     const { requestContext } = await import('../runtime/requestContext');
     const { MochiCookieJar } = await import('../runtime/cookies');
