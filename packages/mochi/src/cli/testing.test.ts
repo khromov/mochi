@@ -128,6 +128,12 @@ describe('parseJunitSummary', () => {
     expect(parseJunitSummary('')).toBeNull();
   });
 
+  test('null for a root element that records no totals', () => {
+    expect(parseJunitSummary('<testsuites></testsuites>')).toBeNull();
+    expect(parseJunitSummary('<testsuites tests="" failures=""></testsuites>')).toBeNull();
+    expect(parseJunitSummary('<testsuites tests="1"></testsuites>')).toBeNull();
+  });
+
   test('null for a report truncated mid-write', () => {
     expect(parseJunitSummary(PASS_XML.slice(0, PASS_XML.indexOf('failures=') + 11))).toBeNull();
   });

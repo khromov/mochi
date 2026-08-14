@@ -297,12 +297,12 @@ export interface MochiManifestComponent {
 
 export interface MochiManifest {
   /**
-   * Schema version of the on-disk build output; the runtime loads only the exact version it writes (currently 2)
+   * Schema version of the on-disk build output; the runtime loads only the exact version it writes (currently 3)
    * and throws on anything else, so build and serve must use the same `mochi-framework` version.
    *
    * Every manifest path is relative, in one of three families:
    * - **Artifacts** the runtime opens (`ssrModule`, `clientFiles`,
-   *   `localImageAssets[].diskPath`, `serverIslandScript`) — out-dir relative,
+   *   `localImageAssets[].diskPath`, `fontAssets[].diskPath`, `importCssAssets[].diskPath`, `serverIslandScript`) — out-dir relative,
    *   resolved against the manifest's own directory.
    * - **Sources** used as lookup keys (`components` keys, `hydratables[].resolvedPath`,
    *   `cssComponents`, `cssFileUrls` keys, `serverIslandPaths`, `importedCssUrls` keys,
@@ -341,6 +341,12 @@ export interface MochiManifest {
   localImageAssets?: Record<string, LocalImageAsset>;
   /** Maps encoded CSS-import source path (see `version`) → served URL (e.g. /import-css/inter-<hash>.css) */
   importedCssUrls?: Record<string, string>;
+  /** Maps served font URL → binary font extracted from imported CSS. `diskPath` is outDir-relative. */
+  fontAssets?: Record<string, { diskPath: string; contentType: string }>;
+  /** Maps served URL → non-font asset the bundler emitted beside a stylesheet. `diskPath` is outDir-relative. */
+  importCssAssets?: Record<string, { diskPath: string; contentType: string }>;
+  /** Maps encoded CSS-import source path (see `version`) → served URLs of its preload-worthy extracted fonts. */
+  importedCssFontPreloads?: Record<string, string[]>;
   /** Maps encoded page entry path (see `version`) → the CSS-import paths reachable from it, likewise encoded. */
   entryImportedCss?: Record<string, string[]>;
   /** Prebuilt, minified ServerIsland inline web-component script, emitted by `build()` so production loads it from disk in place of a startup `Bun.build`. */
@@ -614,6 +620,13 @@ export interface MochiServeOptions {
    */
   barrelWarnings?: boolean | MochiBarrelWarningOptions;
   /**
+   * Font handling for side-effect CSS imports (`import '@fontsource/inter'`, `import './lobster.css'`): Bun's CSS bundler
+   * inlines every `url()` as a base64 `data:` URI, so Mochi extracts fonts above `inlineThreshold` into separate
+   * content-hashed files, drops legacy `woff` sources when `woff2` is offered, and preloads latin-visible woff2 faces.
+   * See `MochiFontOptions` for the knobs.
+   */
+  fonts?: MochiFontOptions;
+  /**
    * Output controls for `mochi-framework build`, read from your entry alongside `optimize` and `barrelWarnings`.
    * The runtime itself ignores this field.
    */
@@ -621,9 +634,27 @@ export interface MochiServeOptions {
   [key: string]: unknown;
 }
 
+/** Object form of `MochiServeOptions['fonts']`. See that field for semantics. */
+export interface MochiFontOptions {
+  /**
+   * Fonts at or below this byte size stay inlined in the bundled CSS as `data:` URIs; larger ones are emitted as
+   * separate content-hashed files. Default: 4096. Bun copies any `url()` asset of 128 KB or more to a file of its own
+   * regardless of this value, so fonts that large are always emitted — `Infinity` inlines everything below that
+   * ceiling, not everything.
+   */
+  inlineThreshold?: number;
+  /** Drop legacy `format('woff')` sources from `@font-face` `src:` lists that also offer `woff2`. Default: `true`. */
+  dropLegacyWoff?: boolean;
+  /**
+   * Inject `<link rel="preload" as="font">` for the page's extracted woff2 fonts whose `unicode-range` is absent or
+   * covers latin, capped at 8 per page. Default: `true`.
+   */
+  preload?: boolean;
+}
+
 /** Object form of `MochiServeOptions['build']`. See that field for semantics. */
 export interface MochiBuildReportOptions {
-  /** Print the emitted-resources list, one row per local image import with dimensions and size on disk. The summary line keeps its asset count either way. Default: enabled. */
+  /** Print the emitted-resources list, one row per local image import (with dimensions) and per font extracted from imported CSS, with size on disk. The summary line keeps its counts either way. Default: enabled. */
   resources?: boolean;
 }
 

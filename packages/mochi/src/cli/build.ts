@@ -4,7 +4,7 @@ import { buildInlineWebComponent } from '../compiler/buildInlineWebComponent';
 import { DEFAULT_ERROR_PAGE_PATH } from '../runtime/errors';
 import { CLIENT_STATS_COMPONENT } from '../dev/clientStatsRoutes';
 import { isMochiPage, isMochiApi, isMochiWs, isMochiSse } from '../types';
-import type { MarkdownConfig, MochiBarrelWarningOptions, MochiRouteValue, MochiSvelteShakerOptions } from '../types';
+import type { MarkdownConfig, MochiBarrelWarningOptions, MochiFontOptions, MochiRouteValue, MochiSvelteShakerOptions } from '../types';
 import type { MochiSvelteCompiler } from '../compiler/svelteCompilerBackend';
 import { rmSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
@@ -18,7 +18,7 @@ import { mochiEvents } from '../events';
 import type { MochiCompileCompleteEvent } from '../events';
 import { styleText } from 'node:util';
 import prettyBytes from '../vendor/pretty-bytes';
-import { collectImageResources, printResourceTree } from './resourceReport';
+import { collectFontResources, collectImageResources, mergeResourceRows, printResourceTree } from './resourceReport';
 
 export interface MochiBuildOptions {
   routes: Record<string, MochiRouteValue>;
@@ -39,6 +39,8 @@ export interface MochiBuildOptions {
   optimize?: boolean | MochiSvelteShakerOptions;
   /** Mirror the value passed to `Mochi.serve({ barrelWarnings })`; a build collapses offenders into one grouped summary line. Default: enabled. See `MochiServeOptions['barrelWarnings']`. */
   barrelWarnings?: boolean | MochiBarrelWarningOptions;
+  /** Mirror the value passed to `Mochi.serve({ fonts })` so the prebuilt CSS and extracted font files match the runtime. See `MochiServeOptions['fonts']`. */
+  fonts?: MochiFontOptions;
   /** Mirror the value passed to `Mochi.serve({ errorPage })` so it lands in the manifest and the runtime skips compiling it at startup. Default: Mochi's built-in error page. */
   errorPage?: string;
   /** Mirror the value passed to `Mochi.serve({ build: { resources } })`. Default: enabled. See `MochiBuildReportOptions['resources']`. */
@@ -140,6 +142,7 @@ export async function build(options: MochiBuildOptions): Promise<void> {
       markdown: options.markdown,
       optimize: options.optimize,
       barrelWarnings: options.barrelWarnings,
+      fonts: options.fonts,
       // Group offenders into one summary for the one-shot production build; a
       // `--dev` build keeps the dev server's immediate per-package lines.
       bufferBarrelWarnings: !development,
@@ -253,8 +256,9 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     // After finalizeClientBundle() above, so assets the client pass emitted are
     // in the map too (both passes share it, keyed by served URL).
     const imageAssets = registry.getLocalImageAssets();
+    const fontAssets = registry.getFontAssets();
     if (options.resources !== false) {
-      printResourceTree(collectImageResources(imageAssets.values()));
+      printResourceTree(mergeResourceRows(collectImageResources(imageAssets.values()), collectFontResources(fontAssets.values())));
     }
 
     // Clean up intermediate .raw.css files
@@ -283,8 +287,9 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     logger.info(`build: phases — ${phaseSummary} (client bundle ×${clientBundleCount}, ${formatDuration(clientBundleMs)})`);
     const elapsed = formatDuration(performance.now() - startedAt);
     const emailSummary = emailTemplates.length > 0 ? `, ${emailTemplates.length} email template(s)` : '';
+    const fontSummary = fontAssets.size > 0 ? `, ${fontAssets.size} font(s)` : '';
     logger.info(
-      `build: done in ${elapsed}. ${compiledPages.length} page(s), ${clientFileCount} client file(s), ${publicFileCount} public file(s), ${imageAssets.size} image asset(s)${emailSummary}. Manifest written to ${manifestPath}`,
+      `build: done in ${elapsed}. ${compiledPages.length} page(s), ${clientFileCount} client file(s), ${publicFileCount} public file(s), ${imageAssets.size} image asset(s)${fontSummary}${emailSummary}. Manifest written to ${manifestPath}`,
     );
   } finally {
     mochiEvents.off('client-bundle:complete', onClientBundle);

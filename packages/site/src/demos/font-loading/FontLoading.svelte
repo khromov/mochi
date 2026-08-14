@@ -39,7 +39,8 @@
     </p>
     <CodeSnippet html={codeFontFace} />
     <p>
-      Import the CSS (<code>import './lobster.css'</code>). Bun's CSS bundler inlines the <code>.woff2</code> as a base64 data URI in the bundled CSS.
+      Import the CSS (<code>import './lobster.css'</code>). Mochi serves the <code>.woff2</code> as a separate content-hashed file — small fonts (≤4&nbsp;kB) stay inlined in the bundled
+      CSS as data URIs.
     </p>
     <p class="sample sample-display">The quick brown fox jumps over the lazy dog. 1234567890</p>
   </section>
