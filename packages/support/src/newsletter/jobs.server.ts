@@ -1,5 +1,5 @@
 import { Mochi, logger } from 'mochi-framework';
-import { appendNewsletterLog, getSubscriber, markNewsletterEmailFailed, markNewsletterEmailSent, noteNewsletterAttemptError } from '../db.server';
+import { appendNewsletterLog, claimNewsletterSend, getSubscriber, markNewsletterEmailFailed, markNewsletterEmailSent, noteNewsletterAttemptError } from '../db.server';
 import { confirmUrl, unsubscribeUrl } from './config';
 
 export const NEWSLETTER_EMAIL_QUEUE = 'newsletter-emails';
@@ -28,6 +28,12 @@ export const newsletterEmailQueue = Mochi.queue<NewsletterEmailJob>(NEWSLETTER_E
       appendNewsletterLog(subscriber.id, { attempt: job.attempt, event: 'sent', detail: `Skipped — already ${subscriber.status}` });
       return { sent: false };
     }
+    // A resend racing the original (or the queue delivering the same job twice) would otherwise mail two confirmations;
+    // the claim lets exactly one job through until a failure re-arms the row or the admin resend does.
+    if (!claimNewsletterSend(subscriber.id)) {
+      appendNewsletterLog(subscriber.id, { attempt: job.attempt, event: 'sent', detail: 'Skipped — another job already handled this confirmation' });
+      return { sent: false };
+    }
     appendNewsletterLog(subscriber.id, { attempt: job.attempt, event: 'sending', detail: `Confirmation to ${subscriber.email}` });
     const confirm = confirmUrl(subscriber.confirm_token);
     const unsubscribe = unsubscribeUrl(subscriber.unsubscribe_token);
@@ -48,9 +54,12 @@ export const newsletterEmailQueue = Mochi.queue<NewsletterEmailJob>(NEWSLETTER_E
           '',
           `Unsubscribe: ${unsubscribe}`,
         ].join('\n'),
+        // Only the RFC 2369 URL form, which the unsubscribe page handles as a GET. RFC 8058 one-click needs a
+        // List-Unsubscribe-Post header, but that makes the provider POST to the bare URL — a 405 here (the page has no
+        // actions) and a CSRF reject anyway — so advertising it would fail the one-click it promises. Add it back with
+        // a real CSRF-exempt POST endpoint when broadcast ships and one-click actually matters.
         headers: {
           'List-Unsubscribe': `<${unsubscribe}>`,
-          'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
         },
       });
     } catch (err) {

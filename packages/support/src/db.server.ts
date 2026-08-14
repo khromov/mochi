@@ -3,7 +3,7 @@ import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { Database } from 'bun:sqlite';
 
-export type EmailStatus = 'pending' | 'sent' | 'failed';
+export type EmailStatus = 'pending' | 'sending' | 'sent' | 'failed';
 
 export type EmailLogEvent = 'queued' | 'requeued' | 'sending' | 'sent' | 'failed';
 
@@ -111,7 +111,6 @@ db.exec(`
   CREATE UNIQUE INDEX IF NOT EXISTS newsletter_by_email ON newsletter_subscribers (email_key);
   CREATE UNIQUE INDEX IF NOT EXISTS newsletter_by_confirm_token ON newsletter_subscribers (confirm_token);
   CREATE UNIQUE INDEX IF NOT EXISTS newsletter_by_unsub_token ON newsletter_subscribers (unsubscribe_token);
-  CREATE INDEX IF NOT EXISTS newsletter_by_state ON newsletter_subscribers (status, created_at DESC);
 
   CREATE TABLE IF NOT EXISTS newsletter_email_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -122,18 +121,64 @@ db.exec(`
     detail TEXT
   );
   CREATE INDEX IF NOT EXISTS newsletter_email_log_by_subscriber ON newsletter_email_log (subscriber_id, at);
+
+  DROP INDEX IF EXISTS newsletter_by_state;
 `);
+
+// One implementation of the email_status/email_error/email_sent_at columns + their log table, so the submission and
+// newsletter delivery paths can't drift apart the way subReArmStmt and refreshConfirmToken already had.
+function createDeliveryLog<TLog extends DeliveryLogEntry>(config: { table: string; logTable: string; fk: string }) {
+  const { table, logTable, fk } = config;
+  const sentStmt = db.query<never, [number, number]>(`UPDATE ${table} SET email_status = 'sent', email_error = NULL, email_sent_at = ? WHERE id = ?`);
+  const failedStmt = db.query<never, [string, number]>(`UPDATE ${table} SET email_status = 'failed', email_error = ? WHERE id = ?`);
+  const attemptErrorStmt = db.query<never, [string, number]>(`UPDATE ${table} SET email_status = 'pending', email_error = ? WHERE id = ?`);
+  const requeueStmt = db.query<never, [number]>(`UPDATE ${table} SET email_status = 'pending', email_error = NULL WHERE id = ?`);
+  const claimStmt = db.query<never, [number]>(`UPDATE ${table} SET email_status = 'sending' WHERE id = ? AND email_status = 'pending'`);
+  const logInsertStmt = db.query<never, [number, number, number, string, string | null]>(`INSERT INTO ${logTable} (${fk}, at, attempt, event, detail) VALUES (?, ?, ?, ?, ?)`);
+  const logAllStmt = db.query<TLog, []>(`SELECT * FROM ${logTable} ORDER BY at, id`);
+  return {
+    markSent(id: number): void {
+      sentStmt.run(Date.now(), id);
+    },
+    // Terminal: the queue has exhausted its retries and won't run the job again.
+    markFailed(id: number, error: string): void {
+      failedStmt.run(error.slice(0, 1000), id);
+    },
+    // Non-terminal: back to `pending` (not `failed`, which would misreport an in-flight delivery the queue still owns),
+    // which also releases a `claim()` so the retry can re-acquire it.
+    noteAttemptError(id: number, error: string): void {
+      attemptErrorStmt.run(error.slice(0, 1000), id);
+    },
+    requeue(id: number): void {
+      requeueStmt.run(id);
+    },
+    // Atomically move `pending` → `sending` so only one job ever mails a given confirmation; a duplicate or superseded
+    // job finds a non-`pending` row and returns false.
+    claim(id: number): boolean {
+      return claimStmt.run(id).changes === 1;
+    },
+    appendLog(entityId: number, entry: { attempt: number; event: EmailLogEvent; detail?: string }): void {
+      logInsertStmt.run(entityId, Date.now(), entry.attempt, entry.event, entry.detail?.slice(0, 1000) ?? null);
+    },
+    logsByEntity(): Record<number, TLog[]> {
+      const grouped: Record<number, TLog[]> = {};
+      for (const entry of logAllStmt.all()) {
+        const key = (entry as unknown as Record<string, unknown>)[fk] as number;
+        (grouped[key] ??= []).push(entry);
+      }
+      return grouped;
+    },
+  };
+}
+
+const submissionDelivery = createDeliveryLog<EmailLogEntry>({ table: 'submissions', logTable: 'email_log', fk: 'submission_id' });
+const newsletterDelivery = createDeliveryLog<NewsletterLogEntry>({ table: 'newsletter_subscribers', logTable: 'newsletter_email_log', fk: 'subscriber_id' });
 
 const insertStmt = db.query<{ id: number }, [string, string, string, number]>('INSERT INTO submissions (name, email, message, created_at) VALUES (?, ?, ?, ?) RETURNING id');
 const getStmt = db.query<Submission, [number]>('SELECT * FROM submissions WHERE id = ?');
 const listInboxStmt = db.query<Submission, []>('SELECT * FROM submissions WHERE handled_at IS NULL ORDER BY created_at DESC');
 const listHandledStmt = db.query<Submission, []>('SELECT * FROM submissions WHERE handled_at IS NOT NULL ORDER BY handled_at DESC');
-const sentStmt = db.query<never, [number, number]>("UPDATE submissions SET email_status = 'sent', email_error = NULL, email_sent_at = ? WHERE id = ?");
-const failedStmt = db.query<never, [string, number]>("UPDATE submissions SET email_status = 'failed', email_error = ? WHERE id = ?");
-const attemptErrorStmt = db.query<never, [string, number]>('UPDATE submissions SET email_error = ? WHERE id = ?');
 const handledStmt = db.query<never, [number | null, number]>('UPDATE submissions SET handled_at = ? WHERE id = ?');
-const logInsertStmt = db.query<never, [number, number, number, string, string | null]>('INSERT INTO email_log (submission_id, at, attempt, event, detail) VALUES (?, ?, ?, ?, ?)');
-const logAllStmt = db.query<EmailLogEntry, []>('SELECT * FROM email_log ORDER BY at, id');
 
 export function insertSubmission(fields: { name: string; email: string; message: string }): number {
   const row = insertStmt.get(fields.name, fields.email, fields.message, Date.now());
@@ -152,17 +197,15 @@ export function listSubmissions(handled: boolean): Submission[] {
 }
 
 export function markEmailSent(id: number): void {
-  sentStmt.run(Date.now(), id);
+  submissionDelivery.markSent(id);
 }
 
-// Terminal: the queue has exhausted its retries and won't run the job again.
 export function markEmailFailed(id: number, error: string): void {
-  failedStmt.run(error.slice(0, 1000), id);
+  submissionDelivery.markFailed(id, error);
 }
 
-// Leaves status `pending` — marking `failed` here would misreport an in-flight delivery, since the queue's durable store still owns a retry.
 export function noteEmailAttemptError(id: number, error: string): void {
-  attemptErrorStmt.run(error.slice(0, 1000), id);
+  submissionDelivery.noteAttemptError(id, error);
 }
 
 export function setHandled(id: number, handled: boolean): void {
@@ -170,16 +213,12 @@ export function setHandled(id: number, handled: boolean): void {
 }
 
 export function appendEmailLog(submissionId: number, entry: { attempt: number; event: EmailLogEvent; detail?: string }): void {
-  logInsertStmt.run(submissionId, Date.now(), entry.attempt, entry.event, entry.detail?.slice(0, 1000) ?? null);
+  submissionDelivery.appendLog(submissionId, entry);
 }
 
 // Grouped by submission id, oldest first — what the admin panel's log popup renders.
 export function emailLogsBySubmission(): Record<number, EmailLogEntry[]> {
-  const grouped: Record<number, EmailLogEntry[]> = {};
-  for (const entry of logAllStmt.all()) {
-    (grouped[entry.submission_id] ??= []).push(entry);
-  }
-  return grouped;
+  return submissionDelivery.logsByEntity();
 }
 
 // Only the test suite needs this: Windows keeps the db file locked until the handle closes, blocking temp-dir cleanup.
@@ -205,15 +244,7 @@ const subReArmStmt = db.query<never, [string, string, number, number, string, nu
 const subTokenStmt = db.query<never, [string, number, number, number]>(
   'UPDATE newsletter_subscribers SET confirm_token = ?, confirm_expires_at = ?, requested_at = ? WHERE id = ?',
 );
-const subSentStmt = db.query<never, [number, number]>("UPDATE newsletter_subscribers SET email_status = 'sent', email_error = NULL, email_sent_at = ? WHERE id = ?");
-const subFailedStmt = db.query<never, [string, number]>("UPDATE newsletter_subscribers SET email_status = 'failed', email_error = ? WHERE id = ?");
-const subAttemptErrorStmt = db.query<never, [string, number]>('UPDATE newsletter_subscribers SET email_error = ? WHERE id = ?');
-const subRequeuedStmt = db.query<never, [number]>("UPDATE newsletter_subscribers SET email_status = 'pending' WHERE id = ?");
 const subAttemptStmt = db.query<never, [number, number]>('UPDATE newsletter_subscribers SET requested_at = ? WHERE id = ?');
-const subLogInsertStmt = db.query<never, [number, number, number, string, string | null]>(
-  'INSERT INTO newsletter_email_log (subscriber_id, at, attempt, event, detail) VALUES (?, ?, ?, ?, ?)',
-);
-const subLogAllStmt = db.query<NewsletterLogEntry, []>('SELECT * FROM newsletter_email_log ORDER BY at, id');
 
 // Stored raw, not hashed: the admin resend has to reproduce a link that was already mailed out.
 function newToken(): string {
@@ -290,30 +321,31 @@ export function refreshConfirmToken(id: number, ttlMs: number): string {
   const token = newToken();
   const now = Date.now();
   subTokenStmt.run(token, now + ttlMs, now, id);
-  subRequeuedStmt.run(id);
+  newsletterDelivery.requeue(id);
   return token;
 }
 
+// Returns false when another job already claimed (or completed) this confirmation — see createDeliveryLog.claim.
+export function claimNewsletterSend(id: number): boolean {
+  return newsletterDelivery.claim(id);
+}
+
 export function markNewsletterEmailSent(id: number): void {
-  subSentStmt.run(Date.now(), id);
+  newsletterDelivery.markSent(id);
 }
 
 export function markNewsletterEmailFailed(id: number, error: string): void {
-  subFailedStmt.run(error.slice(0, 1000), id);
+  newsletterDelivery.markFailed(id, error);
 }
 
 export function noteNewsletterAttemptError(id: number, error: string): void {
-  subAttemptErrorStmt.run(error.slice(0, 1000), id);
+  newsletterDelivery.noteAttemptError(id, error);
 }
 
 export function appendNewsletterLog(subscriberId: number, entry: { attempt: number; event: EmailLogEvent; detail?: string }): void {
-  subLogInsertStmt.run(subscriberId, Date.now(), entry.attempt, entry.event, entry.detail?.slice(0, 1000) ?? null);
+  newsletterDelivery.appendLog(subscriberId, entry);
 }
 
 export function newsletterLogsBySubscriber(): Record<number, NewsletterLogEntry[]> {
-  const grouped: Record<number, NewsletterLogEntry[]> = {};
-  for (const entry of subLogAllStmt.all()) {
-    (grouped[entry.subscriber_id] ??= []).push(entry);
-  }
-  return grouped;
+  return newsletterDelivery.logsByEntity();
 }

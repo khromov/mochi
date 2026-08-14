@@ -18,7 +18,17 @@ process.env.NEWSLETTER_EMBED_ANCESTORS = 'https://mochi.test';
 
 const { routes } = await import('./routes');
 const { newsletterEmailQueue } = await import('./newsletter/jobs.server');
-const { closeDb, confirmSubscriber, listSubscribers, newsletterLogsBySubscriber, requestSubscription } = await import('./db.server');
+const {
+  closeDb,
+  confirmSubscriber,
+  listSubscribers,
+  newsletterLogsBySubscriber,
+  requestSubscription,
+  claimNewsletterSend,
+  refreshConfirmToken,
+  markNewsletterEmailFailed,
+  getSubscriber,
+} = await import('./db.server');
 const { adminAuth } = await import('./adminAuth');
 const { embedHeaders, embedAncestors } = await import('./embedHeaders');
 
@@ -306,6 +316,38 @@ describe('newsletter signup', () => {
     await waitForSent(1);
     expect(sent).toHaveLength(1);
     expect(tokenFrom(sent[0], 'confirm')).not.toBe(row?.confirm_token);
+  });
+
+  test('the send claim lets only one job mail a confirmation, until a resend re-arms it', async () => {
+    sent.length = 0;
+    await subscribe(base, validFields('claim@example.com'));
+    await waitForSent(1);
+    const id = rowFor('claim@example.com')!.id;
+    expect(getSubscriber(id)?.email_status).toBe('sent');
+
+    // A duplicate/superseded job finds a non-pending row and is refused.
+    expect(claimNewsletterSend(id)).toBe(false);
+
+    // A resend re-arms the row; exactly one job then wins the claim.
+    refreshConfirmToken(id, 60_000);
+    expect(claimNewsletterSend(id)).toBe(true);
+    expect(claimNewsletterSend(id)).toBe(false);
+  });
+
+  test('a resend clears a prior delivery error so no stale error lingers on the re-queued row', async () => {
+    sent.length = 0;
+    await subscribe(base, validFields('stale@example.com'));
+    await waitForSent(1);
+    const id = rowFor('stale@example.com')!.id;
+
+    markNewsletterEmailFailed(id, 'SMTP timeout');
+    expect(getSubscriber(id)?.email_status).toBe('failed');
+    expect(getSubscriber(id)?.email_error).toBe('SMTP timeout');
+
+    refreshConfirmToken(id, 60_000);
+    const row = getSubscriber(id);
+    expect(row?.email_status).toBe('pending');
+    expect(row?.email_error).toBeNull();
   });
 
   // A stale admin tab, or a row deleted in another window, must not 500.
