@@ -2020,6 +2020,11 @@ export class ComponentRegistry {
           logger.error(`CSS bundle for ${cssPath}: ${message}`);
           this.errors.push({ kind: 'css-bundle-failed', cssPath, message });
         }
+        for (const assetPath of adopted.unreadable) {
+          const message = `the bundler's copy of ${relForDisplay(assetPath)} was still empty after waiting for the write to land, so its @font-face still points at a file no route serves. Please report this.`;
+          logger.error(`CSS bundle for ${cssPath}: ${message}`);
+          this.errors.push({ kind: 'css-bundle-failed', cssPath, message });
+        }
         // Bun printed these relative to the stylesheet, so serving them under its `import-css/` prefix is what makes
         // the URL it already wrote resolve.
         for (const assetPath of adopted.otherAssets) {

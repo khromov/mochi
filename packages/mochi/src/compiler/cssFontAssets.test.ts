@@ -320,10 +320,10 @@ describe('adoptEmittedFontAssets', () => {
     const refs: FontRef[] = [];
     const writer = setTimeout(() => writeFileSync(file, bytes), 60);
 
-    const { adopted, missing } = await adoptEmittedFontAssets(css, [{ path: file }], refs);
+    const { adopted, unreadable } = await adoptEmittedFontAssets(css, [{ path: file }], refs);
     clearTimeout(writer);
 
-    expect(missing).toEqual([]);
+    expect(unreadable).toEqual([]);
     expect(adopted).toEqual([file]);
     expect(refs[0]!.bytes).toEqual(bytes);
     expect(fontAssetFileName(refs[0]!, refs[0]!.bytes!)).toBe(`fraunces-latin-full-italic-${fontContentHash(bytes)}.woff2`);
@@ -334,9 +334,12 @@ describe('adoptEmittedFontAssets', () => {
     const css = `@font-face { src: url("./${path.basename(file)}") format("woff2"); }`;
     const refs: FontRef[] = [];
 
-    const { css: out, adopted, missing } = await adoptEmittedFontAssets(css, [{ path: file }], refs);
+    const { css: out, adopted, missing, unreadable } = await adoptEmittedFontAssets(css, [{ path: file }], refs);
 
-    expect(missing).toEqual([file]);
+    // Distinct from `missing`: the copy is right there, so reporting it as vanished would send the reader hunting for a
+    // deleted file that exists.
+    expect(unreadable).toEqual([file]);
+    expect(missing).toEqual([]);
     expect(adopted).toEqual([]);
     expect(refs).toEqual([]);
     // The empty hash is what a served-anyway copy would carry, so it must not reach the stylesheet.

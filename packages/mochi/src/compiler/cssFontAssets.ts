@@ -85,17 +85,18 @@ export function createFontMarkerPlugin(inlineThreshold: number): { plugin: BunPl
  *
  * `adopted` copies are dead but deleted by the caller, since entrypoints sharing a font emit the same content-hashed
  * path and removing it here would ENOENT a concurrent read; `otherAssets` keep the relative URL Bun printed. A copy the
- * bundler wrote and something else removed lands in `missing`, where the caller can report it rather than ship a
- * stylesheet pointing at a file no route serves.
+ * bundler wrote and something else removed lands in `missing`, and one that never filled in lands in `unreadable` —
+ * both let the caller report rather than ship a stylesheet pointing at a file no route serves.
  */
 export async function adoptEmittedFontAssets(
   css: string,
   emitted: { path: string }[],
   refs: FontRef[],
-): Promise<{ css: string; otherAssets: string[]; adopted: string[]; missing: string[] }> {
+): Promise<{ css: string; otherAssets: string[]; adopted: string[]; missing: string[]; unreadable: string[] }> {
   const otherAssets: string[] = [];
   const adopted: string[] = [];
   const missing: string[] = [];
+  const unreadable: string[] = [];
   const refByMarker = new Map(refs.map((r) => [r.markerB64, r]));
   const urls = parseCss(css)?.urls ?? [];
   const edits = new MagicString(css);
@@ -114,7 +115,7 @@ export async function adoptEmittedFontAssets(
     // No font is zero bytes, so a copy still empty after the retries never becomes one: adopting it would content-hash
     // the empty string into the served filename and ship an @font-face pointing at nothing.
     if (bytes.length === 0) {
-      missing.push(artifact.path);
+      unreadable.push(artifact.path);
       continue;
     }
     // A marked font: the file holds the marker text, not the font, so the real bytes come from the ref's source path.
@@ -141,7 +142,7 @@ export async function adoptEmittedFontAssets(
     }
     adopted.push(artifact.path);
   }
-  return { css: edits.toString(), otherAssets, adopted, missing };
+  return { css: edits.toString(), otherAssets, adopted, missing, unreadable };
 }
 
 // Entrypoints bundle in parallel and a font shared between stylesheets emits the same content-hashed copy from each,
