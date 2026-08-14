@@ -9,29 +9,36 @@
   // SSR-only renders read the action result so the outcome survives the POST.
   const _form = !hydratable && isServer ? getRequestContext().form : null;
   const _failError = _form && !_form.ok && typeof _form.data?.error === 'string' ? _form.data.error : null;
+  const _sentData = _form?.ok ? (_form.data as SuccessData | undefined) : undefined;
 
+  type SuccessData = { throttled?: boolean; retryAfterMinutes?: number };
   type FailData = { error: string };
 
   let sent = $state(Boolean(_form?.ok));
+  let throttled = $state(Boolean(_sentData?.throttled));
+  let retryMinutes = $state(_sentData?.retryAfterMinutes ?? 0);
   let errorMessage = $state<string | null>(_failError);
   let pending = $state(false);
   let verified = $state(false);
 
-  const handleSubscribe: MochiSubmitFunction<Record<string, never>, FailData> = () => {
+  const handleSubscribe: MochiSubmitFunction<SuccessData, FailData> = () => {
     errorMessage = null;
     return ({ result }) => {
       if (result.type === 'success') {
         sent = true;
+        throttled = Boolean(result.data?.throttled);
+        retryMinutes = result.data?.retryAfterMinutes ?? 0;
         errorMessage = null;
       } else if (result.type === 'failure' && result.data) {
         errorMessage = result.data.error;
       } else if (result.type === 'error') {
-        errorMessage = 'Network error. Try again.';
+        // Vague on purpose: the route bans for an hour after repeated breaches, so no wording that promises a short wait.
+        errorMessage = result.status === 429 ? 'Too many signup attempts from this network. Try again later.' : 'Network error. Try again.';
       }
     };
   };
 
-  const subscribeOpts: MochiEnhanceOptions<Record<string, never>, FailData> = {
+  const subscribeOpts: MochiEnhanceOptions<SuccessData, FailData> = {
     submit: handleSubscribe,
     onPending: (v) => {
       pending = v;
@@ -41,8 +48,16 @@
 
 {#if sent}
   <div class="done">
-    <p class="done-title">📬 Almost there</p>
-    <p>Check your inbox and click the confirmation link. Nothing is sent until you do.</p>
+    {#if throttled}
+      <p class="done-title">📬 Already requested</p>
+      <p>
+        This address was submitted a moment ago, so we didn't send another link — check your inbox and spam folder. You can request a new one in {retryMinutes}
+        {retryMinutes === 1 ? 'minute' : 'minutes'}.
+      </p>
+    {:else}
+      <p class="done-title">📬 Almost there</p>
+      <p>Check your inbox and click the confirmation link. Nothing is sent until you do.</p>
+    {/if}
   </div>
 {:else}
   <form method="POST" action="?/subscribe" class="newsletter-form" {@attach enhance(subscribeOpts)}>

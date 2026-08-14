@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import type { Server } from 'bun';
+import { parse } from 'devalue';
 import { Mochi, mintCaptcha, solveCaptcha, sequence } from 'mochi-framework';
 import type { ResolvedEmailMessage } from 'mochi-framework';
 
@@ -17,7 +18,7 @@ process.env.NEWSLETTER_EMBED_ANCESTORS = 'https://mochi.test';
 
 const { routes } = await import('./routes');
 const { newsletterEmailQueue } = await import('./newsletter/jobs.server');
-const { closeDb, listSubscribers, newsletterLogsBySubscriber } = await import('./db.server');
+const { closeDb, confirmSubscriber, listSubscribers, newsletterLogsBySubscriber, requestSubscription } = await import('./db.server');
 const { adminAuth } = await import('./adminAuth');
 const { embedHeaders, embedAncestors } = await import('./embedHeaders');
 
@@ -168,14 +169,34 @@ describe('newsletter signup', () => {
     expect(sent).toHaveLength(1);
   });
 
-  test('re-subscribing inside the cooldown answers the same but sends nothing', async () => {
+  test('re-subscribing inside the cooldown says so rather than promising a second link', async () => {
     sent.length = 0;
     const before = listSubscribers().length;
-    const res = await subscribe(base, validFields());
+    const res = await subscribe(base, validFields(), { 'x-mochi-action': 'true' });
     expect(res.status).toBe(200);
+    const envelope = (await res.json()) as { type: string; data?: string };
+    expect(envelope.type).toBe('success');
+    // The envelope's `data` is devalue-encoded, which is what the widget decodes.
+    expect(parse(envelope.data ?? 'null')).toEqual({ throttled: true, retryAfterMinutes: 5 });
     await Bun.sleep(50);
     expect(sent).toHaveLength(0);
     expect(listSubscribers()).toHaveLength(before);
+  });
+
+  // An `already` answer has to arm the cooldown as well, or two quick submits tell
+  // a confirmed address (already → already) from an unknown one (created → throttled).
+  test('a confirmed address arms the cooldown exactly like a new one', () => {
+    const open = { cooldownMs: 0, ttlMs: 60_000 };
+    const closed = { cooldownMs: 60_000, ttlMs: 60_000 };
+
+    expect(requestSubscription({ email: 'fresh@cooldown.test', source: '' }, open).kind).toBe('created');
+
+    const member = requestSubscription({ email: 'member@cooldown.test', source: '' }, open);
+    confirmSubscriber(member.id);
+    expect(requestSubscription({ email: 'member@cooldown.test', source: '' }, open).kind).toBe('already');
+
+    expect(requestSubscription({ email: 'fresh@cooldown.test', source: '' }, closed).kind).toBe('throttled');
+    expect(requestSubscription({ email: 'member@cooldown.test', source: '' }, closed).kind).toBe('throttled');
   });
 
   test('confirming flips the row, and a second click is idempotent', async () => {
@@ -196,19 +217,24 @@ describe('newsletter signup', () => {
     expect(rowFor('linus@example.com')?.status).toBe('confirmed');
   });
 
-  // The anti-enumeration property: a confirmed address must be indistinguishable
-  // from a brand-new one, or the public widget tells anyone who is on the list.
+  // The anti-enumeration property: the answer may depend on when an address was
+  // last submitted, never on whether it is on the list — so a confirmed address
+  // and a pending one, both submitted moments ago, must come back identical.
   // Compared over the JSON action response, which is what the widget's `enhance`
   // submission actually receives.
-  test('subscribing an already-confirmed address answers exactly like a new signup', async () => {
+  test('subscribing an already-confirmed address answers exactly like a pending one', async () => {
     sent.length = 0;
     expect(rowFor('linus@example.com')?.status).toBe('confirmed');
+    expect(rowFor('ada@example.com')?.status).toBe('pending');
 
-    const fresh = await subscribe(base, validFields('grace-hopper@example.com'), { 'x-mochi-action': 'true' });
+    const pending = await subscribe(base, validFields('ada@example.com'), { 'x-mochi-action': 'true' });
     const confirmed = await subscribe(base, validFields('linus@example.com'), { 'x-mochi-action': 'true' });
 
-    expect(confirmed.status).toBe(fresh.status);
-    expect(await confirmed.text()).toBe(await fresh.text());
+    expect(confirmed.status).toBe(pending.status);
+    expect(await confirmed.text()).toBe(await pending.text());
+
+    const fresh = await subscribe(base, validFields('grace-hopper@example.com'), { 'x-mochi-action': 'true' });
+    expect(fresh.status).toBe(200);
 
     await waitForSent(1);
     await Bun.sleep(50);

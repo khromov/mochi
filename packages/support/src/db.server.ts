@@ -209,6 +209,7 @@ const subSentStmt = db.query<never, [number, number]>("UPDATE newsletter_subscri
 const subFailedStmt = db.query<never, [string, number]>("UPDATE newsletter_subscribers SET email_status = 'failed', email_error = ? WHERE id = ?");
 const subAttemptErrorStmt = db.query<never, [string, number]>('UPDATE newsletter_subscribers SET email_error = ? WHERE id = ?');
 const subRequeuedStmt = db.query<never, [number]>("UPDATE newsletter_subscribers SET email_status = 'pending' WHERE id = ?");
+const subAttemptStmt = db.query<never, [number, number]>('UPDATE newsletter_subscribers SET requested_at = ? WHERE id = ?');
 const subLogInsertStmt = db.query<never, [number, number, number, string, string | null]>(
   'INSERT INTO newsletter_email_log (subscriber_id, at, attempt, event, detail) VALUES (?, ?, ?, ?, ?)',
 );
@@ -219,10 +220,11 @@ function newToken(): string {
   return randomBytes(32).toString('base64url');
 }
 
-export type SubscribeOutcome = { kind: 'created' | 'resent' | 'throttled' | 'resubscribed' | 'already'; id: number };
+export type SubscribeOutcome = { kind: 'created' | 'resent' | 'resubscribed' | 'already'; id: number } | { kind: 'throttled'; id: number; retryAfterMs: number };
 
-// One row per address forever, its state moved around. Callers must render every
-// outcome identically, or the public widget becomes a subscriber oracle.
+// One row per address forever, its state moved around. Apart from `throttled`,
+// callers must render every outcome identically, or the public widget becomes a
+// subscriber oracle.
 export function requestSubscription(fields: { email: string; source: string }, opts: { cooldownMs: number; ttlMs: number }): SubscribeOutcome {
   const email = fields.email.trim();
   const key = email.toLowerCase();
@@ -236,18 +238,20 @@ export function requestSubscription(fields: { email: string; source: string }, o
       }
       return { kind: 'created', id: row.id };
     }
+    // Ahead of the confirmed branch, and armed inside it too, so that a throttled
+    // answer means only "submitted recently" — were it reachable for pending rows
+    // alone, two quick submits would out a confirmed subscriber. Unsubscribing is
+    // the one way back in, so it skips the wait; the re-armed row throttles after.
+    const elapsed = now - existing.requested_at;
+    if (existing.status !== 'unsubscribed' && elapsed < opts.cooldownMs) {
+      return { kind: 'throttled', id: existing.id, retryAfterMs: opts.cooldownMs - elapsed };
+    }
     if (existing.status === 'confirmed') {
+      subAttemptStmt.run(now, existing.id);
       return { kind: 'already', id: existing.id };
     }
-    if (existing.status === 'unsubscribed') {
-      subReArmStmt.run(email, fields.source, now, now + opts.ttlMs, newToken(), existing.id);
-      return { kind: 'resubscribed', id: existing.id };
-    }
-    if (now - existing.requested_at < opts.cooldownMs) {
-      return { kind: 'throttled', id: existing.id };
-    }
     subReArmStmt.run(email, fields.source, now, now + opts.ttlMs, newToken(), existing.id);
-    return { kind: 'resent', id: existing.id };
+    return { kind: existing.status === 'unsubscribed' ? 'resubscribed' : 'resent', id: existing.id };
   })();
 }
 

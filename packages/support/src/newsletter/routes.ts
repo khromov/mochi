@@ -57,7 +57,13 @@ export const newsletterRoutes: Record<string, MochiRouteValue> = {
           logger.error('newsletter: could not store subscription', err);
           return fail(500, { error: 'We could not sign you up right now. Please try again later.' });
         }
-        if (outcome.kind !== 'throttled' && outcome.kind !== 'already') {
+        // The one outcome that says what happened: claiming a link is on its way
+        // when the cooldown swallowed it is the worse trade, and all it admits is
+        // that this address was submitted minutes ago — see requestSubscription.
+        if (outcome.kind === 'throttled') {
+          return success({ throttled: true, retryAfterMinutes: Math.max(1, Math.ceil(outcome.retryAfterMs / 60_000)) });
+        }
+        if (outcome.kind !== 'already') {
           appendNewsletterLog(outcome.id, { attempt: 0, event: 'queued', detail: `Confirmation to ${email}` });
           try {
             await newsletterEmailQueue.add({ id: outcome.id });
@@ -66,7 +72,7 @@ export const newsletterRoutes: Record<string, MochiRouteValue> = {
             logger.error('newsletter: could not enqueue confirmation', err);
           }
         }
-        // Identical for every outcome — see requestSubscription.
+        // Identical for every remaining outcome — see requestSubscription.
         return success();
       },
     },
