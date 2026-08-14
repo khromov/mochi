@@ -2,8 +2,7 @@ export type TrailingSlashPolicy = 'always' | 'never';
 
 const HAS_EXTENSION = /\.[^./]+$/;
 
-/** Paths the trailing-slash policy never rewrites: the root, and anything ending in a file extension. */
-export function isSlashExempt(pathname: string): boolean {
+function isSlashExempt(pathname: string): boolean {
   return pathname === '/' || HAS_EXTENSION.test(pathname);
 }
 

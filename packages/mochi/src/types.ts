@@ -456,8 +456,7 @@ export interface MochiServeOptions {
   /**
    * Speculation Rules injected as a `<script type="speculationrules">` tag into every rendered page's `<head>`, so
    * the browser can prefetch/prerender same-site URLs and make navigations feel instant. An omitted option — or an
-   * object whose `prefetch` and `prerender` are both empty or absent — injects nothing. Generate a starting config
-   * from your routes with `mochi-framework speculation-rules`.
+   * object whose `prefetch` and `prerender` are both empty or absent — injects nothing.
    */
   speculationRules?: SpeculationRules;
   /**

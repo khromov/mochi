@@ -12,7 +12,7 @@ description: 'Prefetch and prerender same-site URLs via a typed speculationRules
 
 ## Speculation Rules
 
-<VersionNote since="0.10.0" message="The speculationRules option and the `mochi-framework speculation-rules` command are new in 0.10.0." />
+<VersionNote since="0.10.0" message="The speculationRules option is new in 0.10.0." />
 
 The [Speculation Rules API](https://developer.mozilla.org/en-US/docs/Web/API/Speculation_Rules_API) lets the browser prefetch or prerender same-site URLs ahead of a navigation, so the next page loads instantly. Pass a typed `speculationRules` object to `Mochi.serve()` and Mochi injects it as a `<script type="speculationrules">` tag in every page's `<head>`.
 
@@ -45,23 +45,11 @@ const listRules: SpeculationRules = {
 };
 ```
 
-## Generating a starting config
-
-`mochi-framework speculation-rules` reads your `Mochi.serve({ routes })` call and writes a starting `speculationRules` key straight into your entry:
-
-```sh
-bunx mochi-framework speculation-rules            # writes into ./src/index.ts
-bunx mochi-framework speculation-rules --dry-run  # print without writing
-bunx mochi-framework speculation-rules --entry ./src/main.ts
-```
-
-It emits a broad `prefetch` rule matching every page route and a conservative `prerender` rule limited to your static pages, both excluding `/api/*` and `/_*`. Route patterns are emitted verbatim — `href_matches` speaks the same [URL Pattern](https://developer.mozilla.org/en-US/docs/Web/API/URL_Pattern_API) syntax as the router, so `/blog/:slug` matches one segment and never widens to `/blog/2024/01/post`. Your `trailingSlash` policy is applied so the generated URLs are the ones the server actually serves.
-
-Re-running the command rewrites the rules in place, whether the key is inline, shorthand (`speculationRules,`), or a reference to a `const` declared in the same file. It is a **starting point** — edit it before shipping, then run your formatter to tidy it.
+`href_matches` speaks the same [URL Pattern](https://developer.mozilla.org/en-US/docs/Web/API/URL_Pattern_API) syntax as the router, so a route pattern can be used verbatim: `/blog/:slug` matches one segment, while `*` crosses them. Match the URLs your server actually serves — with `trailingSlash: 'always'`, that means `/about/`, not `/about`.
 
 <Callout type="warning">
 
-Prerendering fully loads a page in a hidden tab — it is far more expensive than prefetching, so keep it to a few high-likelihood destinations and prefer `eagerness: 'moderate'`. Exclude URLs with side effects (sign-out, add-to-cart, one-time-password flows). Links marked `[target=_blank]` or `[rel~=nofollow]` are excluded by the generated rules by default.
+Prerendering fully loads a page in a hidden tab — it is far more expensive than prefetching, so keep it to a few high-likelihood destinations and prefer `eagerness: 'moderate'`. Exclude URLs with side effects (sign-out, add-to-cart, one-time-password flows), and add `not: { selector_matches: '[rel~=nofollow]' }` and `[target=_blank]` guards so flagged links are left alone.
 
 That hidden tab also runs the page's scripts, so an analytics snippet reports a pageview for a visit that may never happen. Gate the initialisation on activation — wherever the snippet lives, usually your [HTML shell](/docs/custom-html-shell/):
 
