@@ -19,6 +19,10 @@ permissions:
   pull-requests: write
   id-token: write
 
+# The test worker pool caps at 6 locally to keep dev machines usable; CI has the cores to spare, so use them all.
+env:
+  MOCHI_MAX_CONCURRENCY: max
+
 jobs:
   release-please:
     if: ${{ github.event_name == 'push' }}
