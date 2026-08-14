@@ -7,7 +7,20 @@ import type { CompressionMethod } from '../utils';
 const gzipAsync = promisify(gzipCb);
 const brotliAsync = promisify(brotliCompressCb);
 
-const COMPRESSIBLE_TYPES = ['text/', 'application/json', 'application/javascript', 'application/xml', 'application/manifest+json', 'application/ld+json', 'image/svg+xml'];
+// woff/woff2 are omitted deliberately: they are already zlib/Brotli containers, so re-compressing wastes CPU for ~0%.
+// ttf/otf/eot are uncompressed SFNT/embedded formats and shrink ~50%.
+const COMPRESSIBLE_TYPES = [
+  'text/',
+  'application/json',
+  'application/javascript',
+  'application/xml',
+  'application/manifest+json',
+  'application/ld+json',
+  'image/svg+xml',
+  'font/ttf',
+  'font/otf',
+  'application/vnd.ms-fontobject',
+];
 
 export interface CompressOptions {
   methods?: CompressionMethod[];
@@ -17,6 +30,15 @@ export interface CompressOptions {
 function isCompressible(contentType: string): boolean {
   const lower = contentType.toLowerCase();
   return COMPRESSIBLE_TYPES.some((prefix) => lower.startsWith(prefix));
+}
+
+// Append the encoding token inside the quotes so `W/"abc"` becomes `W/"abc-br"`, keeping the weak/strong prefix intact.
+function suffixEtag(etag: string, token: string): string {
+  const close = etag.lastIndexOf('"');
+  if (close <= 0) {
+    return etag;
+  }
+  return `${etag.slice(0, close)}-${token}${etag.slice(close)}`;
 }
 
 function isDev(): boolean {
@@ -54,6 +76,12 @@ export function compress(opts: CompressOptions = {}): Handle {
       return response;
     }
 
+    // A range request (or a 206 partial the handler already produced) must stay uncompressed, or the byte offsets the
+    // client asked for no longer address the body it receives.
+    if (response.status === 206 || event.request.headers.get('Range') || response.headers.get('Content-Range')) {
+      return response;
+    }
+
     const contentType = response.headers.get('Content-Type') ?? '';
     if (!isCompressible(contentType)) {
       return response;
@@ -70,6 +98,12 @@ export function compress(opts: CompressOptions = {}): Handle {
     const headers = new Headers(response.headers);
     headers.set('Content-Encoding', COMPRESSION_TOKEN[chosen]);
     headers.delete('Content-Length');
+    // The compressed bytes are a distinct representation, so its validator must differ from the identity ETag or a cache
+    // keyed without honoring `Vary` could serve the wrong one.
+    const etag = headers.get('ETag');
+    if (etag) {
+      headers.set('ETag', suffixEtag(etag, COMPRESSION_TOKEN[chosen]));
+    }
 
     return new Response(compressed, {
       status: response.status,

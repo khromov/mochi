@@ -64,7 +64,7 @@ import {
   toPosixPath,
   withHead,
 } from './utils';
-import { serveDiskAsset } from './utils/serveDiskAsset';
+import { serveDiskAsset, serveStaticFile } from './utils/serveDiskAsset';
 import type { MochiEvent, MochiEventKind, MochiResolveOptions } from './runtime/hooks';
 import { applyResolveOptions } from './runtime/hooks';
 import { alternateSlashPattern, trailingSlashRedirect } from './runtime/trailingSlash';
@@ -111,7 +111,7 @@ import type { DebugBarData, DebugBarRuntimeData } from './runtime/requestContext
 import { consoleLogger } from './dev/consoleLogger';
 import { parse as devalueParse, stringify as devalueStringify } from 'devalue';
 import { ISLAND_FAILURE_CSS, ISLAND_FAILURE_DEV_CSS, islandFailureStub } from './web-components/islandFailureStub';
-import { resolvePublicFiles, registerPublicRoutes, isExcludedDotPath } from './runtime/publicDir';
+import { resolvePublicFiles, buildPublicFileMap, isExcludedDotPath } from './runtime/publicDir';
 import { startDevWatcher } from './dev/devWatcher';
 import { buildPageCacheAdminRoutes, PAGE_CACHE_ADMIN_COMPONENT } from './dev/pageCacheAdminRoutes';
 import { liveReloadGreeting } from './dev/liveReloadGeneration';
@@ -1350,53 +1350,70 @@ export class Mochi {
               });
               return final;
             };
+            const textResponse = (status: number, body: string): Response => new Response(body, { status, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
 
-            try {
-              const filePath = typeof source === 'function' ? await source(req, ctx.params) : source;
-              // Route params are URL-decoded and may contain `../`, so the resolved path is confined to the app root.
-              // `realpath` resolves symlinks first, closing the in-root-symlink-points-out escape, and proves the file
-              // exists (ENOENT → 404); containment goes through `path.relative`, which handles separators and canonical casing.
-              const resolvedPath = path.resolve(filePath);
-              let realPath: string;
+            // Resolve + security-check the target, returning a realPath on success or a terminal error Response.
+            const resolveTarget = async (): Promise<{ realPath: string } | Response> => {
               try {
-                realPath = await realpath(resolvedPath);
-              } catch {
-                emitError('file', requestId, req, url, 404, new Error(`File not found: ${filePath}`));
-                return finish(new Response('Not Found', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } }));
+                const filePath = typeof source === 'function' ? await source(req, ctx.params) : source;
+                // Route params are URL-decoded and may contain `../`, so the resolved path is confined to the app root.
+                // `realpath` resolves symlinks first, closing the in-root-symlink-points-out escape, and proves the file
+                // exists (ENOENT → 404); containment goes through `path.relative`, which handles separators and canonical casing.
+                const resolvedPath = path.resolve(filePath);
+                let realPath: string;
+                try {
+                  realPath = await realpath(resolvedPath);
+                } catch {
+                  emitError('file', requestId, req, url, 404, new Error(`File not found: ${filePath}`));
+                  return textResponse(404, 'Not Found');
+                }
+                const appRoot = process.cwd();
+                const rel = path.relative(appRoot, realPath);
+                if (rel === '' || rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) {
+                  emitError('file', requestId, req, url, 404, new Error(`Path escapes the app root: ${filePath}`));
+                  return textResponse(404, 'Not Found');
+                }
+                // The containment check above only stops escapes, so dotfiles and dot-directories inside the root
+                // (`.env`, `.mochi/…`, `.git/…`) are rejected here. `.well-known` stays allowed, matching the public-dir policy.
+                if (isExcludedDotPath(toPosixPath(rel))) {
+                  emitError('file', requestId, req, url, 404, new Error(`Refusing to serve dotfile path: ${filePath}`));
+                  return textResponse(404, 'Not Found');
+                }
+                // `realpath` resolves directories too, so this turns a directory target into a 404 rather than an EISDIR 500.
+                if (!(await Bun.file(realPath).exists())) {
+                  emitError('file', requestId, req, url, 404, new Error(`File not found: ${filePath}`));
+                  return textResponse(404, 'Not Found');
+                }
+                return { realPath };
+              } catch (err) {
+                if (err instanceof MochiHttpError) {
+                  logger.error(`${req.method} ${url.pathname} → ${err.status}: ${err.message}`);
+                  emitError('file', requestId, req, url, err.status, err);
+                  return textResponse(err.status, err.message);
+                }
+                logger.error(`${req.method} ${url.pathname} → 500:`, err);
+                emitError('file', requestId, req, url, 500, err);
+                return textResponse(500, 'Internal Server Error');
               }
-              const appRoot = process.cwd();
-              const rel = path.relative(appRoot, realPath);
-              if (rel === '' || rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) {
-                emitError('file', requestId, req, url, 404, new Error(`Path escapes the app root: ${filePath}`));
-                return finish(new Response('Not Found', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } }));
-              }
-              // The containment check above only stops escapes, so dotfiles and dot-directories inside the root
-              // (`.env`, `.mochi/…`, `.git/…`) are rejected here. `.well-known` stays allowed, matching the public-dir policy.
-              if (isExcludedDotPath(toPosixPath(rel))) {
-                emitError('file', requestId, req, url, 404, new Error(`Refusing to serve dotfile path: ${filePath}`));
-                return finish(new Response('Not Found', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } }));
-              }
-              const file = Bun.file(realPath);
-              // `realpath` resolves directories too, so this turns a directory target into a 404 rather than an EISDIR 500.
-              if (!(await file.exists())) {
-                emitError('file', requestId, req, url, 404, new Error(`File not found: ${filePath}`));
-                return finish(new Response('Not Found', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } }));
-              }
-              if (req.method === 'HEAD') {
-                return finish(new Response(null, { status: 200, headers: { 'Content-Type': file.type || 'application/octet-stream', 'Content-Length': String(file.size) } }));
-              }
-              // new Response(Bun.file) sets Content-Type and Content-Length automatically.
-              return finish(new Response(file));
-            } catch (err) {
-              if (err instanceof MochiHttpError) {
-                logger.error(`${req.method} ${url.pathname} → ${err.status}: ${err.message}`);
-                emitError('file', requestId, req, url, err.status, err);
-                return finish(new Response(err.message, { status: err.status, headers: { 'Content-Type': 'text/plain; charset=utf-8' } }));
-              }
-              logger.error(`${req.method} ${url.pathname} → 500:`, err);
-              emitError('file', requestId, req, url, 500, err);
-              return finish(new Response('Internal Server Error', { status: 500, headers: { 'Content-Type': 'text/plain; charset=utf-8' } }));
+            };
+
+            const target = await resolveTarget();
+            // Errors and HEAD bypass the middleware chain: compression would strip the HEAD's Content-Length, and error
+            // bodies aren't worth the round-trip.
+            if (target instanceof Response) {
+              return finish(target);
             }
+            const file = Bun.file(target.realPath);
+            const contentType = file.type || 'application/octet-stream';
+            if (req.method === 'HEAD') {
+              return finish(new Response(null, { status: 200, headers: { 'Content-Type': contentType, 'Content-Length': String(file.size) } }));
+            }
+
+            const event: MochiEvent = { request: req, url, server, locals: ctx.locals, kind: 'file', isWarmup: ctx.isWarmup };
+            const innerResolve = async (_event: MochiEvent, resolveOpts?: MochiResolveOptions): Promise<Response> =>
+              applyResolveOptions(await serveStaticFile({ diskPath: target.realPath, contentType }, { request: req }), resolveOpts);
+            const response = middleware ? await middleware({ event, resolve: innerResolve }) : await innerResolve(event);
+            return finish(response);
           });
         };
         return { bunRouteValue, type: 'file' };
@@ -1449,132 +1466,138 @@ export class Mochi {
         return setup.earlyResponse;
       }
       const { ctx, url, params } = setup;
-      const componentName = params.componentName;
-      if (!componentName) {
-        return new Response('Missing component name', { status: 400 });
-      }
-
-      const signedProps = url.searchParams.get('props') ?? '';
-
-      // Decrypt props (empty means no props)
-      let decodedProps: Record<string, unknown>;
-      if (signedProps) {
-        const propsJson = decryptProps(signedProps, componentName);
-        if (propsJson === null) {
-          return new Response('Invalid props', { status: 403 });
+      // Route the fragment through the middleware chain (kind 'asset') so `compress()` covers the text/html body.
+      const islandEvent: MochiEvent = { request: req, url, server, locals: ctx.locals, kind: 'asset', isWarmup: ctx.isWarmup };
+      const renderIsland = async (): Promise<Response> => {
+        const componentName = params.componentName;
+        if (!componentName) {
+          return new Response('Missing component name', { status: 400 });
         }
-        decodedProps = devalueParse(propsJson) as Record<string, unknown>;
-      } else {
-        decodedProps = {};
-      }
 
-      // `islandId` and `__mochi_ah` ride inside the signed envelope as transport only, and are split into a fresh object
-      // so neither reaches the component as a prop. The hydrate mode comes from the decrypted payload: trusting a
-      // `?hydrate=` query param would let anyone append it to a sealed token and get the props echoed back in plaintext.
-      const { [ALSO_HYDRATE_ENVELOPE_KEY]: rawHydrateMode, islandId: rawIslandId, ...props } = decodedProps;
-      const islandId = typeof rawIslandId === 'string' ? rawIslandId : undefined;
-      const hydrateMode = isAlsoHydrateMode(rawHydrateMode) ? rawHydrateMode : null;
+        const signedProps = url.searchParams.get('props') ?? '';
 
-      // Look up the component path
-      const componentPath = registry.getServerIslandPath(componentName);
-      if (!componentPath) {
-        return new Response('Unknown server island component', { status: 404 });
-      }
+        // Decrypt props (empty means no props)
+        let decodedProps: Record<string, unknown>;
+        if (signedProps) {
+          const propsJson = decryptProps(signedProps, componentName);
+          if (propsJson === null) {
+            return new Response('Invalid props', { status: 403 });
+          }
+          decodedProps = devalueParse(propsJson) as Record<string, unknown>;
+        } else {
+          decodedProps = {};
+        }
 
-      // Arm nested-island inlining for this render. Also-hydrate renders are excluded: their subtree re-renders on the
-      // client, and a nested defer site there is a compile error anyway (`defer-in-hydratable`).
-      if (hydrateMode === null && inlineNestedIslands) {
-        ctx.islandInline = { budget: applyFilter('serverIsland:inlineBudget', DEFAULT_INLINE_BUDGET, { componentName, request: req }) };
-      }
+        // `islandId` and `__mochi_ah` ride inside the signed envelope as transport only, and are split into a fresh object
+        // so neither reaches the component as a prop. The hydrate mode comes from the decrypted payload: trusting a
+        // `?hydrate=` query param would let anyone append it to a sealed token and get the props echoed back in plaintext.
+        const { [ALSO_HYDRATE_ENVELOPE_KEY]: rawHydrateMode, islandId: rawIslandId, ...props } = decodedProps;
+        const islandId = typeof rawIslandId === 'string' ? rawIslandId : undefined;
+        const hydrateMode = isAlsoHydrateMode(rawHydrateMode) ? rawHydrateMode : null;
 
-      return requestContext.run(ctx, async () => {
-        // A miss here means the build's eager discovery (see build.ts) didn't
-        // find this island; `compileAll` warns about any manifest miss, so the
-        // request-path compile this endpoint is supposed to prevent is never
-        // silent.
-        await registry.compile(componentPath);
-        let result: RenderResult;
-        try {
-          // Namespacing via `idPrefix` keeps `$props.id()` values from this
-          // standalone render from colliding with ids the host page already
-          // emitted (both renders otherwise start their uid counter at `s1`).
-          // Svelte rejects prefixes containing `--`, so guard against tokens
-          // signed by an older deploy carrying an incompatible id.
-          result = await registry.renderComponent(componentPath, props as Record<string, unknown>, {
-            stripMarkers: false,
-            ...(islandId && !islandId.includes('--') ? { idPrefix: islandId } : {}),
-            // An also-hydrate island's standalone render seeds the
-            // `isHydratable()` context for its whole subtree — the same signal
-            // the in-page boundary component provides for `mochi:hydrate*`
-            // islands. Pure `mochi:defer` never hydrates, so no context.
-            ...(hydrateMode !== null ? { context: new Map<unknown, unknown>([[HYDRATABLE_CONTEXT_KEY, true]]) } : {}),
-            // Named-export islands render that export, not the module's default.
-            ...(registry.getServerIslandExport(componentName) ? { exportName: registry.getServerIslandExport(componentName) } : {}),
-          });
-        } catch (err) {
-          const e = err instanceof Error ? err : new Error(String(err));
-          logger.error(`Server island "${componentName}" failed: ${e.message}`);
-          mochiEvents.emit('island:error', {
-            componentName,
-            islandId,
-            kind: 'server',
-            message: e.message,
-            stack: registry.development ? e.stack : undefined,
-          });
-          // 200 + a known stub so `ServerIsland.ts` doesn't burn its retry budget
-          // on a deterministic failure. Visibility is CSS-controlled: dev shows
-          // the message, prod hides the element entirely.
-          const stub = islandFailureStub(componentName, registry.development ? e.message : undefined);
-          return new Response(stub, {
-            status: 200,
+        // Look up the component path
+        const componentPath = registry.getServerIslandPath(componentName);
+        if (!componentPath) {
+          return new Response('Unknown server island component', { status: 404 });
+        }
+
+        // Arm nested-island inlining for this render. Also-hydrate renders are excluded: their subtree re-renders on the
+        // client, and a nested defer site there is a compile error anyway (`defer-in-hydratable`).
+        if (hydrateMode === null && inlineNestedIslands) {
+          ctx.islandInline = { budget: applyFilter('serverIsland:inlineBudget', DEFAULT_INLINE_BUDGET, { componentName, request: req }) };
+        }
+
+        return requestContext.run(ctx, async () => {
+          // A miss here means the build's eager discovery (see build.ts) didn't
+          // find this island; `compileAll` warns about any manifest miss, so the
+          // request-path compile this endpoint is supposed to prevent is never
+          // silent.
+          await registry.compile(componentPath);
+          let result: RenderResult;
+          try {
+            // Namespacing via `idPrefix` keeps `$props.id()` values from this
+            // standalone render from colliding with ids the host page already
+            // emitted (both renders otherwise start their uid counter at `s1`).
+            // Svelte rejects prefixes containing `--`, so guard against tokens
+            // signed by an older deploy carrying an incompatible id.
+            result = await registry.renderComponent(componentPath, props as Record<string, unknown>, {
+              stripMarkers: false,
+              ...(islandId && !islandId.includes('--') ? { idPrefix: islandId } : {}),
+              // An also-hydrate island's standalone render seeds the
+              // `isHydratable()` context for its whole subtree — the same signal
+              // the in-page boundary component provides for `mochi:hydrate*`
+              // islands. Pure `mochi:defer` never hydrates, so no context.
+              ...(hydrateMode !== null ? { context: new Map<unknown, unknown>([[HYDRATABLE_CONTEXT_KEY, true]]) } : {}),
+              // Named-export islands render that export, not the module's default.
+              ...(registry.getServerIslandExport(componentName) ? { exportName: registry.getServerIslandExport(componentName) } : {}),
+            });
+          } catch (err) {
+            const e = err instanceof Error ? err : new Error(String(err));
+            logger.error(`Server island "${componentName}" failed: ${e.message}`);
+            mochiEvents.emit('island:error', {
+              componentName,
+              islandId,
+              kind: 'server',
+              message: e.message,
+              stack: registry.development ? e.stack : undefined,
+            });
+            // 200 + a known stub so `ServerIsland.ts` doesn't burn its retry budget
+            // on a deterministic failure. Visibility is CSS-controlled: dev shows
+            // the message, prod hides the element entirely.
+            const stub = islandFailureStub(componentName, registry.development ? e.message : undefined);
+            return new Response(stub, {
+              status: 200,
+              headers: {
+                'Content-Type': 'text/html; charset=utf-8',
+                'Cache-Control': 'private, no-store',
+              },
+            });
+          }
+
+          let body = result.body;
+
+          if (isAlsoHydrateMode(hydrateMode)) {
+            const componentUrl = registry.getComponentEntryUrl(componentName);
+            const serializedProps = devalueStringify(props);
+
+            let hydrateAttrs = `component-name="${componentName}"`;
+            if (Object.keys(props as Record<string, unknown>).length > 0) {
+              hydrateAttrs += ` props="${escapeHtmlAttr(serializedProps)}"`;
+            }
+            if (componentUrl) {
+              hydrateAttrs += ` component-url="${componentUrl}"`;
+            }
+
+            body = `<mochi-hydratable-island ${hydrateAttrs}>${body}</mochi-hydratable-island>`;
+          }
+
+          // Appended whenever the rendered subtree carries hydratables — the also-hydrate island itself, plain
+          // mochi:hydrate children, or inlined also-hydrate islands — so the fragment self-hydrates even on a page that
+          // shipped no bootstrap of its own; duplicate module scripts are no-ops by src.
+          const bootstrapUrl = result.bootstrapUrl ?? (isAlsoHydrateMode(hydrateMode) ? registry.getIslandBootstrapUrl() : null);
+          if (bootstrapUrl) {
+            body += `<script type="module" src="${bootstrapUrl}"></script>`;
+          }
+
+          // CSS for islands rendered only inside this deferred content is gated out of the page `<head>`, so its `<link>`
+          // tags are prepended here along with side-effect CSS imports; browsers honour a `<link>` assigned via `innerHTML`.
+          // The island's own scoped CSS is excluded, since the wrapper's `css-url` attribute already loads it.
+          const ownCss = registry.getComponentCssUrl(componentPath);
+          const extraCss = result.cssUrls.filter((url) => url !== ownCss);
+          if (extraCss.length > 0) {
+            body = extraCss.map(cssLinkTag).join('') + body;
+          }
+
+          return new Response(body, {
             headers: {
               'Content-Type': 'text/html; charset=utf-8',
               'Cache-Control': 'private, no-store',
             },
           });
-        }
-
-        let body = result.body;
-
-        if (isAlsoHydrateMode(hydrateMode)) {
-          const componentUrl = registry.getComponentEntryUrl(componentName);
-          const serializedProps = devalueStringify(props);
-
-          let hydrateAttrs = `component-name="${componentName}"`;
-          if (Object.keys(props as Record<string, unknown>).length > 0) {
-            hydrateAttrs += ` props="${escapeHtmlAttr(serializedProps)}"`;
-          }
-          if (componentUrl) {
-            hydrateAttrs += ` component-url="${componentUrl}"`;
-          }
-
-          body = `<mochi-hydratable-island ${hydrateAttrs}>${body}</mochi-hydratable-island>`;
-        }
-
-        // Appended whenever the rendered subtree carries hydratables — the also-hydrate island itself, plain
-        // mochi:hydrate children, or inlined also-hydrate islands — so the fragment self-hydrates even on a page that
-        // shipped no bootstrap of its own; duplicate module scripts are no-ops by src.
-        const bootstrapUrl = result.bootstrapUrl ?? (isAlsoHydrateMode(hydrateMode) ? registry.getIslandBootstrapUrl() : null);
-        if (bootstrapUrl) {
-          body += `<script type="module" src="${bootstrapUrl}"></script>`;
-        }
-
-        // CSS for islands rendered only inside this deferred content is gated out of the page `<head>`, so its `<link>`
-        // tags are prepended here along with side-effect CSS imports; browsers honour a `<link>` assigned via `innerHTML`.
-        // The island's own scoped CSS is excluded, since the wrapper's `css-url` attribute already loads it.
-        const ownCss = registry.getComponentCssUrl(componentPath);
-        const extraCss = result.cssUrls.filter((url) => url !== ownCss);
-        if (extraCss.length > 0) {
-          body = extraCss.map(cssLinkTag).join('') + body;
-        }
-
-        return new Response(body, {
-          headers: {
-            'Content-Type': 'text/html; charset=utf-8',
-            'Cache-Control': 'private, no-store',
-          },
         });
-      });
+      };
+      const innerResolve = async (_event: MochiEvent, resolveOpts?: MochiResolveOptions): Promise<Response> => applyResolveOptions(await renderIsland(), resolveOpts);
+      return middleware ? middleware({ event: islandEvent, resolve: innerResolve }) : innerResolve(islandEvent);
     });
 
     // Gives `Mochi.email()` the live compile cache, so Svelte email templates render through the same registry as page routes.
@@ -1674,7 +1697,10 @@ export class Mochi {
           `If it moved, point \`publicDir\` at the new location; if the files are gone on purpose, re-run \`mochi-framework build\` to clear this.`,
       );
     }
-    registerPublicRoutes(bunRoutes, initialPublicFiles);
+    // Public files are served through `composedFetch` (not native Bun routes) so `compress()` and user middleware apply.
+    // The map is keyed by the encoded pathname Bun's URL yields; the dev watcher mutates this same reference on reload.
+    const publicFiles = new Map<string, string>();
+    buildPublicFileMap(publicFiles, initialPublicFiles, bunRoutes);
 
     const userFetch = options.fetch;
 
@@ -1695,7 +1721,8 @@ export class Mochi {
       // user `gzip()` compresses them like any other response. Kind is precomputed so middleware can branch on it.
       const assetContent = registry.getClientFile(url.pathname);
       const diskAsset = assetContent === undefined ? (registry.getFontAsset(url.pathname) ?? registry.getImportedCssAsset(url.pathname)) : undefined;
-      const kind: MochiEventKind = assetContent !== undefined || diskAsset !== undefined ? 'asset' : userFetch ? 'fallback' : 'error';
+      const publicDiskPath = assetContent === undefined && diskAsset === undefined ? publicFiles.get(url.pathname) : undefined;
+      const kind: MochiEventKind = assetContent !== undefined || diskAsset !== undefined ? 'asset' : publicDiskPath !== undefined ? 'public' : userFetch ? 'fallback' : 'error';
 
       const event: MochiEvent = { request: req, url, server, locals: {}, kind, isWarmup: false };
 
@@ -1716,6 +1743,10 @@ export class Mochi {
         }
         if (diskAsset !== undefined) {
           return applyResolveOptions(await serveDiskAsset(diskAsset, development), resolveOpts);
+        }
+        if (publicDiskPath !== undefined) {
+          const contentType = Bun.file(publicDiskPath).type || 'application/octet-stream';
+          return applyResolveOptions(await serveStaticFile({ diskPath: publicDiskPath, contentType }, { request: req }), resolveOpts);
         }
         if (userFetch) {
           const response = await userFetch(req, server);
@@ -1947,6 +1978,7 @@ export class Mochi {
         composedFetch,
         baseBunRoutes,
         bunRoutes,
+        publicFiles,
         outDir,
         publicDir,
         watchPaths,

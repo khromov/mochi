@@ -110,7 +110,7 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     serverIslandScriptPromise.catch(() => {});
     // The runtime serves static files straight from publicDir in every mode, so all the build adds is proof that no
     // public file shadows a declared route and a deploy silently drops an asset. The runtime's own
-    // `registerPublicRoutes` check stays warn-and-skip, covering the case this one can't — a file dropped into publicDir
+    // `buildPublicFileMap` check stays warn-and-skip, covering the case this one can't — a file dropped into publicDir
     // after the build. Awaited inline, since a glob with no copy fails a collision in milliseconds.
     const publicFileCount = await timed('public', async () => {
       const publicSrc = await scanPublicDir(publicDir);

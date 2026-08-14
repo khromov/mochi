@@ -7,6 +7,7 @@ description: 'Intercept and transform requests and responses with SvelteKit-styl
 <script>
   import Callout from './_components/Callout.svelte';
   import SeeItInAction from './_components/SeeItInAction.svelte';
+  import VersionNote from './_components/VersionNote.svelte';
 </script>
 
 ## Middleware (hooks)
@@ -53,13 +54,15 @@ export const attachUser: Handle = async ({ event, resolve }) => {
 
 Every event carries a `kind` that describes what the framework is about to do with the request:
 
-| Value        | When                                                                         |
-| ------------ | ---------------------------------------------------------------------------- |
-| `'page'`     | `Mochi.page` route (GET render or POST form action)                          |
-| `'api'`      | `Mochi.api` route                                                            |
-| `'asset'`    | Framework static asset (`.js` / `.css` client bundle or the dev stats route) |
-| `'fallback'` | Unmatched URL — passed to your `fetch` handler                               |
-| `'error'`    | Unmatched URL with no `fetch` configured — framework renders a 404           |
+| Value        | When                                                                                                                                      |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `'page'`     | `Mochi.page` route (GET render or POST form action)                                                                                       |
+| `'api'`      | `Mochi.api` route                                                                                                                         |
+| `'asset'`    | Framework static asset (`.js` / `.css` client bundle, extracted font / imported CSS, `/_mochi/island/*` fragment, or the dev stats route) |
+| `'public'`   | A static file served from `publicDir`                                                                                                     |
+| `'file'`     | A file served by a `Mochi.file()` route                                                                                                   |
+| `'fallback'` | Unmatched URL — passed to your `fetch` handler                                                                                            |
+| `'error'`    | Unmatched URL with no `fetch` configured — framework renders a 404                                                                        |
 
 `kind` is set once at construction. An error thrown during a `Mochi.page` render stays `kind: 'page'`.
 
@@ -118,6 +121,8 @@ When composed with `sequence`, `transformPage` runs in **reverse** order (inner 
 
 Built-in middleware factory for response compression. It negotiates gzip or brotli from the client's `Accept-Encoding`. Place it innermost in `sequence(...)` so it sees the body produced by the rest of the chain:
 
+<VersionNote since="0.10.0" message="Compression now covers publicDir files, Mochi.file() routes, and server-island fragments, plus the ttf/otf/eot font formats. Older versions only compressed pages, API responses, and framework bundles." />
+
 ```ts
 // file: src/index.ts
 import { Mochi, sequence, compress } from 'mochi-framework';
@@ -138,7 +143,9 @@ sequence(auth, compress({ brotliQuality: 6 }));
 sequence(auth, compress({ methods: ['gzip'] }));
 ```
 
-`compress()` is a no-op in development, because the debug bar must inject itself into the HTML after the response is built. In production it adds `Vary: Accept-Encoding` and compresses compressible content types (`text/*`, `application/json`, `application/javascript`, `application/xml`, and others). A response that already declares `Content-Encoding` passes through untouched. Static framework assets also flow through `handle`, so `compress()` covers them. Other body-touching middleware must branch on `event.kind === 'asset'` when it needs to skip framework bundles.
+`compress()` is a no-op in development, because the debug bar must inject itself into the HTML after the response is built. In production it adds `Vary: Accept-Encoding` and compresses compressible content types (`text/*`, `application/json`, `application/javascript`, `application/xml`, the uncompressed font formats `font/ttf`, `font/otf`, and `application/vnd.ms-fontobject`, and others). It leaves the already-compressed `font/woff`/`font/woff2` alone, and skips range requests (and `206` partials) so byte-range serving keeps working. A response that already declares `Content-Encoding` passes through untouched.
+
+Every static-serving surface flows through `handle`, so `compress()` covers all of them: framework bundles (`event.kind === 'asset'`, including `/_mochi/island/*` server-island fragments), `publicDir` files (`event.kind === 'public'`), and `Mochi.file()` routes (`event.kind === 'file'`). Files at stable URLs (`public`/`Mochi.file()`) keep their `ETag`/`Last-Modified` conditional-request and range support. Body-touching middleware that needs to skip static responses should branch on `event.kind` — e.g. skip the framework/static kinds `asset`, `public`, and `file`.
 
 ### `noCache`
 
@@ -154,7 +161,7 @@ await Mochi.serve({
 });
 ```
 
-`asset`, `fallback`, and `error` events pass through unchanged. WebSocket upgrades and SSE streams never reach the middleware.
+`asset`, `public`, `file`, `fallback`, and `error` events pass through unchanged. WebSocket upgrades and SSE streams never reach the middleware.
 
 <SeeItInAction
 demos={[{ href: "/demos/request-id/", title: "Request ID", hook: "How request IDs work — every request gets a UUID v7 on getRequestContext().requestId that rides every lifecycle event for correlation." }]}

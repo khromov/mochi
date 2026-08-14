@@ -10,7 +10,7 @@ import { logger } from '../utils/log';
 import { evictPreprocessCacheEntry } from '../compiler/preprocessCache';
 import { extractServeOptions } from '../cli/extractServeOptions';
 import { buildPublicUrl } from '../runtime/proxy';
-import { resolvePublicFiles, registerPublicRoutes } from '../runtime/publicDir';
+import { resolvePublicFiles, buildPublicFileMap } from '../runtime/publicDir';
 import { loadSvelteConfig } from '../compiler/svelteConfig';
 import { recordReloadSignal } from './liveReloadGeneration';
 import type { MochiRateLimitOptions } from '../runtime/rateLimit';
@@ -55,6 +55,7 @@ export interface DevWatcherDeps {
   composedFetch: (req: Request, server: Server<undefined>) => Promise<Response>;
   baseBunRoutes: Record<string, BunRouteValue>;
   bunRoutes: Record<string, BunRouteValue>;
+  publicFiles: Map<string, string>;
   outDir: string;
   publicDir: string;
   watchPaths: string[];
@@ -87,6 +88,7 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
     composedFetch,
     baseBunRoutes,
     bunRoutes,
+    publicFiles,
     outDir,
     publicDir,
     watchPaths,
@@ -584,13 +586,9 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
   if (existsSync(publicDir)) {
     reloadPublic = debounce(async () => {
       const freshPublic = await resolvePublicFiles({ publicDir, development });
-      const nextRoutes: Record<string, BunRouteValue> = { ...baseBunRoutes };
-      registerPublicRoutes(nextRoutes, freshPublic);
-      nextRoutes['/__mochi_live_reload'] = liveReloadHandler;
-      server.reload({
-        routes: nextRoutes,
-        fetch: composedFetch,
-      } as Parameters<typeof server.reload>[0]);
+      // Public files serve through `composedFetch`'s captured `publicFiles` map, so mutating it in place is enough —
+      // no `server.reload()` needed. `baseBunRoutes` is the conflict set (user + framework routes, sans public files).
+      buildPublicFileMap(publicFiles, freshPublic, baseBunRoutes);
       notifyClients();
     }, 100);
   }

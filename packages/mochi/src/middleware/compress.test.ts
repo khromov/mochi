@@ -333,4 +333,68 @@ describe('compress()', () => {
       expect(restored).toBe(body);
     });
   });
+
+  test.each([
+    ['font/ttf', true],
+    ['font/otf', true],
+    ['application/vnd.ms-fontobject', true],
+    ['font/woff', false],
+    ['font/woff2', false],
+  ])('compresses %s: %p (woff/woff2 stay uncompressed)', async (contentType, shouldCompress) => {
+    const handle = compress();
+    const body = new Uint8Array(4096).fill(65);
+    const req = new Request('http://localhost/font', { headers: { 'Accept-Encoding': 'gzip' } });
+
+    const response = await handle({
+      event: makeEvent(req),
+      resolve: async () => new Response(body, { headers: { 'Content-Type': contentType } }),
+    });
+
+    if (shouldCompress) {
+      expect(response.headers.get('Content-Encoding')).toBe('gzip');
+    } else {
+      expect(response.headers.get('Content-Encoding')).toBeNull();
+    }
+  });
+
+  test('skips compression for a range request', async () => {
+    const handle = compress();
+    const body = 'hello '.repeat(500);
+    const req = new Request('http://localhost/theme.css', { headers: { 'Accept-Encoding': 'gzip', Range: 'bytes=0-99' } });
+
+    const response = await handle({
+      event: makeEvent(req),
+      resolve: async () => new Response(body, { headers: { 'Content-Type': 'text/css' } }),
+    });
+
+    expect(response.headers.get('Content-Encoding')).toBeNull();
+    expect(await response.text()).toBe(body);
+  });
+
+  test('skips compression for a 206 partial response', async () => {
+    const handle = compress();
+    const req = new Request('http://localhost/theme.css', { headers: { 'Accept-Encoding': 'gzip' } });
+
+    const response = await handle({
+      event: makeEvent(req),
+      resolve: async () => new Response('partial', { status: 206, headers: { 'Content-Type': 'text/css', 'Content-Range': 'bytes 0-6/100' } }),
+    });
+
+    expect(response.headers.get('Content-Encoding')).toBeNull();
+    expect(response.status).toBe(206);
+  });
+
+  test('suffixes the ETag with the chosen encoding when compressing', async () => {
+    const handle = compress();
+    const body = 'hello '.repeat(500);
+    const req = new Request('http://localhost/theme.css', { headers: { 'Accept-Encoding': 'br' } });
+
+    const response = await handle({
+      event: makeEvent(req),
+      resolve: async () => new Response(body, { headers: { 'Content-Type': 'text/css', ETag: 'W/"abc123"' } }),
+    });
+
+    expect(response.headers.get('Content-Encoding')).toBe('br');
+    expect(response.headers.get('ETag')).toBe('W/"abc123-br"');
+  });
 });

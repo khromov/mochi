@@ -29,7 +29,7 @@ Response compression is opt-in through the [`compress()` middleware](/docs/middl
 
 ### Asset caching
 
-In production (`development: false`), prebuilt JS/CSS bundles served from `assetPrefix` (default `/_mochi`) get `Cache-Control: public, max-age=31536000, immutable`. Filenames are content-hashed, so any change yields a new URL. In development the header is omitted so live-reload edits are not pinned in the browser cache. Public-dir files (`./public/...`) are read from `publicDir` on disk in both modes and keep Bun's default static-route headers. To override, mutate `response.headers` in a `handle` middleware.
+In production (`development: false`), prebuilt JS/CSS bundles served from `assetPrefix` (default `/_mochi`) get `Cache-Control: public, max-age=31536000, immutable`. Filenames are content-hashed, so any change yields a new URL. In development the header is omitted so live-reload edits are not pinned in the browser cache. Public-dir files (`./public/...`) are read from `publicDir` on disk in both modes and served through the `handle` chain (`event.kind === 'public'`), so `compress()` and your own middleware apply to them; they carry a weak `ETag` and `Last-Modified` for conditional requests, honour byte-range requests, and set no `Cache-Control` of their own. To override, mutate `response.headers` in a `handle` middleware.
 
 <Callout type="warning">
 

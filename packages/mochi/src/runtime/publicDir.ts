@@ -68,17 +68,19 @@ export async function resolvePublicFiles(opts: { publicDir: string; development:
 }
 
 /**
- * Register public files as Bun routes under their encoded keys, skipping any URL a user route already claims. Shared by
- * the startup and dev-watcher-reload paths so the encoding and conflict rules stay in lockstep — registering under a raw
- * key here is what made spaced filenames 404 before this was centralized.
+ * Build the encoded-key → disk-path lookup used to serve public files through the middleware chain (so `compress()` and
+ * user middleware apply), skipping any URL a native route already claims. Shared by the startup and dev-watcher-reload
+ * paths so the encoding and conflict rules stay in lockstep — keying under a raw path is what made spaced filenames 404
+ * before this was centralized. Mutates `target` in place so the request handler's captured map reference sees updates.
  */
-export function registerPublicRoutes(routes: Record<string, BunRouteValue>, files: Map<string, string>): void {
+export function buildPublicFileMap(target: Map<string, string>, files: Map<string, string>, existingRoutes: Record<string, BunRouteValue>): void {
+  target.clear();
   for (const [urlPath, diskPath] of files) {
     const routeKey = publicRouteKey(urlPath);
-    if (routeKey in routes) {
+    if (routeKey in existingRoutes) {
       logger.warn(`Public file "${diskPath}" skipped: URL "${urlPath}" is already registered as a route.`);
       continue;
     }
-    routes[routeKey] = Bun.file(diskPath);
+    target.set(routeKey, diskPath);
   }
 }
