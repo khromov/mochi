@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import path from 'node:path';
-import { toPosixPath } from '../utils';
+import { toPosixPath, relForDisplay } from '../utils';
 import { logger } from '../utils/log';
 import { applyFilter } from '../extensions';
 import type { BunRouteValue } from '../types';
@@ -43,6 +43,9 @@ export async function scanPublicDir(dir: string): Promise<Map<string, string>> {
   if (!existsSync(dir)) {
     return new Map();
   }
+  // Pin the base to absolute while cwd is still valid, so `Bun.file()` can't re-resolve a relative disk path against a
+  // later-changed or deleted cwd and turn every static file into a 404.
+  const absDir = path.resolve(dir);
   const result = new Map<string, string>();
   const glob = new Bun.Glob('**/*');
   // Bun.Glob yields backslash separators on Windows, so normalizing first keeps the URL key at `/a/b` and lets
@@ -52,7 +55,7 @@ export async function scanPublicDir(dir: string): Promise<Map<string, string>> {
     if (isExcludedDotPath(rel)) {
       continue;
     }
-    result.set('/' + rel, path.join(dir, rel));
+    result.set('/' + rel, path.join(absDir, rel));
   }
   return result;
 }
@@ -76,7 +79,7 @@ export function registerPublicRoutes(routes: Record<string, BunRouteValue>, file
   for (const [urlPath, diskPath] of files) {
     const routeKey = publicRouteKey(urlPath);
     if (routeKey in routes) {
-      logger.warn(`Public file "${diskPath}" skipped: URL "${urlPath}" is already registered as a route.`);
+      logger.warn(`Public file "${relForDisplay(diskPath)}" skipped: URL "${urlPath}" is already registered as a route.`);
       continue;
     }
     routes[routeKey] = Bun.file(diskPath);
