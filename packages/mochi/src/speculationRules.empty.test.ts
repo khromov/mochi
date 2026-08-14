@@ -1,4 +1,3 @@
-// A speculationRules object with no prefetch/prerender entries must inject nothing (the `specRuleCount > 0` guard).
 // Separate file because only one Mochi.serve() is allowed per process (see speculationRules.test.ts).
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';

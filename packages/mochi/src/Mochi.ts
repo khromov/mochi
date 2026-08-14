@@ -288,8 +288,7 @@ export class Mochi {
     let parsedFrom: string | undefined;
     let parts: ShellPart[] = [];
 
-    // Same deal for the speculation-rules payload: serialize once, re-serialize only when a dev entry edit swaps the
-    // object. Injected only when at least one prefetch/prerender entry exists, so `{}` (or `{ prefetch: [] }`) emits nothing.
+    // Same deal for the speculation-rules payload: serialize once, re-serialize only when a dev entry edit swaps the object.
     let specRulesFrom: SpeculationRules | undefined | null = null;
     let speculationRulesScript = '';
 

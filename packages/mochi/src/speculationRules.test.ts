@@ -1,4 +1,3 @@
-// Boots a real Mochi.serve() with a speculationRules option and asserts the tag is injected into the page <head>.
 // Only one Mochi.serve() is allowed per process, so the empty/no-op case lives in speculationRules.empty.test.ts.
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
