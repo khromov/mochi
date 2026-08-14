@@ -21,7 +21,15 @@ import { logger } from '../utils/log';
 import { mochiEvents } from '../events';
 import { detectHeavyBarrels, formatBarrelLine, formatBarrelSummary, type BarrelMetafile, type HeavyBarrel } from './barrelDetect';
 import type { MarkdownConfig, MochiBarrelWarningOptions, MochiFontOptions, MochiManifest, MochiSvelteShakerOptions } from '../types';
-import { adoptEmittedFontAssets, classifyFontAssets, createFontMarkerPlugin, fontAssetFileName, fontContentHash, substituteFontUrls } from './cssFontAssets';
+import {
+  adoptEmittedFontAssets,
+  classifyFontAssets,
+  createFontMarkerPlugin,
+  fontAssetFileName,
+  fontChangedSinceResolved,
+  fontContentHash,
+  substituteFontUrls,
+} from './cssFontAssets';
 import { type HydratableComponent, type PreprocessIslandError, type ServerIslandComponent } from './svelteAstPreprocess';
 import { cachedPreprocessHydratable, createPreprocessCacheStats } from './preprocessCache';
 import { CompileCache, compileFingerprint, createCompileCacheStats, type CompileCacheStats } from './compileCache';
@@ -2057,11 +2065,6 @@ export class ComponentRegistry {
           logger.error(`CSS bundle for ${cssPath}: ${message}`);
           this.errors.push({ kind: 'css-bundle-failed', cssPath, message });
         }
-        for (const assetPath of adopted.unreadable) {
-          const message = `the bundler's copy of ${relForDisplay(assetPath)} was still empty after waiting for the write to land, so its @font-face still points at a file no route serves. Please report this.`;
-          logger.error(`CSS bundle for ${cssPath}: ${message}`);
-          this.errors.push({ kind: 'css-bundle-failed', cssPath, message });
-        }
         // Bun printed these relative to the stylesheet, so serving them under its `import-css/` prefix is what makes
         // the URL it already wrote resolve.
         for (const assetPath of adopted.otherAssets) {
@@ -2086,6 +2089,11 @@ export class ComponentRegistry {
         const fontUrlByMarker = new Map<string, string>();
         for (const font of fontPass.fonts) {
           const bytes = font.ref.bytes ?? (await Bun.file(font.ref.path).bytes());
+          if (fontChangedSinceResolved(font.ref, bytes)) {
+            const message = `the source font ${relForDisplay(font.ref.path)} was ${font.ref.size} bytes when the bundle resolved it but read back ${bytes.length}, so it changed mid-build. If this persists the file is corrupt.`;
+            logger.error(`CSS bundle for ${cssPath}: ${message}`);
+            this.errors.push({ kind: 'css-bundle-failed', cssPath, message });
+          }
           const fileName = fontAssetFileName(font.ref, bytes);
           const diskPath = path.join(this.outDir, 'fonts', fileName);
           const fontUrl = `${this.assetPrefix}/fonts/${fileName}`;

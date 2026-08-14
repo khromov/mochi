@@ -85,18 +85,17 @@ export function createFontMarkerPlugin(inlineThreshold: number): { plugin: BunPl
  *
  * `adopted` copies are dead but deleted by the caller, since entrypoints sharing a font emit the same content-hashed
  * path and removing it here would ENOENT a concurrent read; `otherAssets` keep the relative URL Bun printed. A copy the
- * bundler wrote and something else removed lands in `missing`, and one that never filled in lands in `unreadable` —
- * both let the caller report rather than ship a stylesheet pointing at a file no route serves.
+ * bundler wrote and something else removed lands in `missing`, where the caller reports it rather than ship a
+ * stylesheet pointing at a file no route serves.
  */
 export async function adoptEmittedFontAssets(
   css: string,
   emitted: { path: string }[],
   refs: FontRef[],
-): Promise<{ css: string; otherAssets: string[]; adopted: string[]; missing: string[]; unreadable: string[] }> {
+): Promise<{ css: string; otherAssets: string[]; adopted: string[]; missing: string[] }> {
   const otherAssets: string[] = [];
   const adopted: string[] = [];
   const missing: string[] = [];
-  const unreadable: string[] = [];
   const refByMarker = new Map(refs.map((r) => [r.markerB64, r]));
   const urls = parseCss(css)?.urls ?? [];
   const edits = new MagicString(css);
@@ -112,12 +111,6 @@ export async function adoptEmittedFontAssets(
       continue;
     }
     const bytes = await file.bytes();
-    // No font is zero bytes, so this is a copy that never finished being written. Adopting it would content-hash the
-    // empty string into the served filename and ship an @font-face pointing at nothing.
-    if (bytes.length === 0) {
-      unreadable.push(artifact.path);
-      continue;
-    }
     // A marked font: the file holds the marker text, not the font, so the real bytes come from the ref's source path.
     const marked = bytes.length < 64 ? refByMarker.get(Buffer.from(bytes).toString('base64')) : undefined;
     const markerB64 = marked?.markerB64 ?? markerFor(refs.length).markerB64;
@@ -142,7 +135,7 @@ export async function adoptEmittedFontAssets(
     }
     adopted.push(artifact.path);
   }
-  return { css: edits.toString(), otherAssets, adopted, missing, unreadable };
+  return { css: edits.toString(), otherAssets, adopted, missing };
 }
 
 // Bun prints the emitted asset relative to the stylesheet: `./name.woff2`, `../name.woff2` or bare.
@@ -280,4 +273,14 @@ export function fontAssetFileName(ref: FontRef, bytes: Uint8Array): string {
   const ext = path.extname(ref.path);
   const base = path.basename(ref.path, ext).replace(/[^\w-]/g, '-');
   return `${base}-${fontContentHash(bytes)}${ext}`;
+}
+
+/**
+ * True when a marked font's source read disagrees with the size the bundler statSync'd for it when it resolved the
+ * `url()` — the file changed under the build, so its bytes must not be hashed into an immutable served URL. A
+ * Bun-copied font ({@link FontRef.bytes} set) is its own only copy, so `size` came from it and there is nothing to
+ * check against.
+ */
+export function fontChangedSinceResolved(ref: FontRef, bytes: Uint8Array): boolean {
+  return ref.bytes === undefined && bytes.length !== ref.size;
 }

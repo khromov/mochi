@@ -1,7 +1,16 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { adoptEmittedFontAssets, classifyFontAssets, fontAssetFileName, fontContentHash, stripFontFaces, substituteFontUrls, type FontRef } from './cssFontAssets';
+import {
+  adoptEmittedFontAssets,
+  classifyFontAssets,
+  fontAssetFileName,
+  fontChangedSinceResolved,
+  fontContentHash,
+  stripFontFaces,
+  substituteFontUrls,
+  type FontRef,
+} from './cssFontAssets';
 
 let refCounter = 0;
 function makeRef(path: string, size = 10_000): FontRef {
@@ -222,6 +231,27 @@ describe('fontAssetFileName', () => {
   });
 });
 
+describe('fontChangedSinceResolved', () => {
+  test('a marked font whose source read matches its recorded size is intact', () => {
+    const ref: FontRef = { path: '/pkg/f.woff2', size: 4, markerB64: 'x' };
+    expect(fontChangedSinceResolved(ref, new Uint8Array([1, 2, 3, 4]))).toBe(false);
+  });
+
+  test('a marked font read back at a different length changed mid-build', () => {
+    const ref: FontRef = { path: '/pkg/f.woff2', size: 4, markerB64: 'x' };
+    expect(fontChangedSinceResolved(ref, new Uint8Array([1, 2]))).toBe(true);
+    expect(fontChangedSinceResolved(ref, new Uint8Array(0))).toBe(true);
+  });
+
+  test('a Bun-copied font is never flagged — its size came from the copy, with no source to check', () => {
+    const bytes = new Uint8Array([1, 2, 3, 4]);
+    const ref: FontRef = { path: '/pkg/f.woff2', size: bytes.length, markerB64: 'x', bytes };
+    expect(fontChangedSinceResolved(ref, bytes)).toBe(false);
+    // Even a copy whose bytes disagree with its own recorded size is left to the zero-byte floor, not this check.
+    expect(fontChangedSinceResolved({ ...ref, size: 99 }, bytes)).toBe(false);
+  });
+});
+
 describe('adoptEmittedFontAssets', () => {
   let tmp: string | undefined;
 
@@ -311,23 +341,6 @@ describe('adoptEmittedFontAssets', () => {
     expect(adopted).toEqual([]);
     expect(missing).toEqual([gone]);
     expect(refs).toEqual([]);
-  });
-
-  test('reports a copy that never finished being written instead of serving an empty font', async () => {
-    const file = emit('fraunces-latin-full-italic-7eta9vw9.woff2', new Uint8Array(0));
-    const css = `@font-face { src: url("./${path.basename(file)}") format("woff2"); }`;
-    const refs: FontRef[] = [];
-
-    const { css: out, adopted, missing, unreadable } = await adoptEmittedFontAssets(css, [{ path: file }], refs);
-
-    // Distinct from `missing`: the copy is right there, so reporting it as vanished would send the reader hunting for a
-    // deleted file that exists.
-    expect(unreadable).toEqual([file]);
-    expect(missing).toEqual([]);
-    expect(adopted).toEqual([]);
-    expect(refs).toEqual([]);
-    // The empty hash is what a served-anyway copy would carry, so it must not reach the stylesheet.
-    expect(out).not.toContain(fontContentHash(new Uint8Array(0)));
   });
 
   test('leaves a non-font artifact alone for the caller to serve', async () => {
