@@ -1,6 +1,7 @@
 ---
 title: 'rsvelte compiler'
 slug: rsvelte
+ogTitle: 'rsvelte, the Rust Svelte compiler'
 description: 'Swap the JavaScript Svelte compiler for rsvelte, a Rust port built on OXC, to cut compile time.'
 ---
 

@@ -1,6 +1,7 @@
 ---
 title: 'Cache'
 slug: cache
+ogTitle: 'Caching with stale-while-revalidate'
 description: 'Cache server-side data with stale-while-revalidate semantics using MochiCache.'
 ---
 
@@ -8,6 +9,7 @@ description: 'Cache server-side data with stale-while-revalidate semantics using
   import Callout from './_components/Callout.svelte';
   import SeeItInAction from './_components/SeeItInAction.svelte';
   import VersionNote from './_components/VersionNote.svelte';
+  import PersistenceTable from './_components/PersistenceTable.svelte';
 </script>
 
 ## Cache
@@ -15,6 +17,8 @@ description: 'Cache server-side data with stale-while-revalidate semantics using
 <VersionNote since="0.8.0" href="/blog/mochi-0-8-0/" />
 
 `MochiCache` caches server-side data — typically slow upstream API calls — with stale-while-revalidate semantics. Construct it once at module scope and share the instance across requests.
+
+<PersistenceTable feature="cache" />
 
 ```ts
 // src/lib/cache.ts
@@ -76,17 +80,19 @@ Use it from a page or API route:
 | ---------------- | ----------------- |
 | `minTimeToStale` | `5_000` (5s)      |
 | `maxTimeToLive`  | `600_000` (10min) |
-| `storage`        | in-memory         |
+| `storage`        | `MemoryStorage`   |
 | `serialize`      | none (`v => v`)   |
 | `deserialize`    | none (`v => v`)   |
 
-For multi-process or persistent caching, pass a custom `storage` that implements `getItem` / `setItem` / `removeItem` / `clear` (Redis, SQLite via `bun:sqlite`). Those methods may be synchronous or `async`. The cache awaits every call. When a backend needs a string or buffer, supply `serialize` / `deserialize` — for example `serialize: JSON.stringify, deserialize: JSON.parse`.
+Two storage backends ship with the framework: `MemoryStorage` (the default) and `FileStorage`. Built-in SQLite and Postgres backends are planned; until then any other backend — SQLite, Postgres, Redis — needs a `storage` you write yourself, implementing `getItem` / `setItem` / `removeItem` / `clear`. Those methods may be synchronous or `async`. The cache awaits every call. When a backend needs a string or buffer, supply `serialize` / `deserialize` — for example `serialize: JSON.stringify, deserialize: JSON.parse`.
 
 The default `MemoryStorage` accepts `{ maxAge, purgeInterval }` for age-based eviction. With no options it never evicts.
 
+See [Persistence](/docs/persistence/) for how cache storage compares to the other stateful subsystems.
+
 ### File-based storage
 
-`FileStorage` persists the cache to disk, so it survives restarts. It needs no `serialize` / `deserialize`:
+`FileStorage` persists the cache to disk, so it survives restarts — the only built-in persistent backend (see [Persistence](/docs/persistence/)). It needs no `serialize` / `deserialize`:
 
 ```ts
 import { MochiCache, FileStorage } from 'mochi-framework';

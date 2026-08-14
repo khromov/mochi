@@ -1,5 +1,10 @@
 <script>
   import '@fontsource-variable/fraunces/full.css';
+  // Without this the dek falls back to Georgia — which is what made the hand-screenshotted
+  // og-default.png disagree with the card the renderer produces.
+  import '@fontsource-variable/fraunces/full-italic.css';
+
+  let { samples = [] } = $props();
 </script>
 
 <svelte:head>
@@ -10,7 +15,7 @@
 
 <div class="og-page">
   <h1 class="page-title">OG Image Preview</h1>
-  <p class="page-desc">1200 × 630 — screenshot the card below</p>
+  <p class="page-desc">1200 × 630 — the CSS reference, then what <code>/og/*.jpg</code> renders</p>
 
   <div class="canvas-wrap">
     <div id="og-canvas" class="og-canvas">
@@ -25,6 +30,16 @@
       </div>
     </div>
   </div>
+
+  <h2 class="page-title rendered">Rendered</h2>
+  <ul class="samples">
+    {#each samples as sample (sample.src)}
+      <li>
+        <p class="page-desc">{sample.label} — <code>{sample.src}</code></p>
+        <img src={sample.src} width="1200" height="630" alt={sample.label} />
+      </li>
+    {/each}
+  </ul>
 </div>
 
 <style>
@@ -42,6 +57,10 @@
     margin-bottom: 0.25rem;
   }
 
+  .rendered {
+    margin-top: 2.5rem;
+  }
+
   .page-desc {
     font-size: 0.85rem;
     color: var(--text-muted);
@@ -51,6 +70,18 @@
   .canvas-wrap {
     display: inline-block;
     line-height: 0;
+  }
+
+  .samples {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .samples img {
+    display: block;
+    max-width: 100%;
+    height: auto;
   }
 
   .og-canvas {

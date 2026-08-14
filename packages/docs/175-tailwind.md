@@ -1,6 +1,7 @@
 ---
 title: 'Tailwind'
 slug: tailwind
+ogTitle: 'Tailwind CSS v4 in a Mochi app'
 description: 'Integrate Tailwind CSS v4 into a Mochi app with the setupTailwind helper.'
 ---
 

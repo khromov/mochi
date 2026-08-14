@@ -1,6 +1,7 @@
 ---
 title: 'Architecture'
 slug: architecture
+ogTitle: 'How a Mochi app fits together'
 description: 'The high-level model behind a Mochi app: server-first rendering, islands, programmatic routes, and the request lifecycle.'
 ---
 

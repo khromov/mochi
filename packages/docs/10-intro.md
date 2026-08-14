@@ -1,6 +1,7 @@
 ---
 title: 'Welcome'
 slug: intro
+ogTitle: 'Welcome to Mochi'
 description: 'A lightweight, server-first Svelte 5 framework running on Bun that ships client-side JavaScript only for interactive islands.'
 ---
 

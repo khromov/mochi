@@ -1,6 +1,7 @@
 ---
 title: 'Email'
 slug: email
+ogTitle: 'Sending transactional email'
 description: 'Send transactional email with Mochi.email() over SMTP, a custom send function, or Svelte templates rendered to inlined HTML.'
 ---
 

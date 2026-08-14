@@ -9,7 +9,7 @@ const routes = {
 };
 
 describe('minimal app', () => {
-  let server: Server<undefined>;
+  let server: Server<undefined> | undefined;
   let outDir: string;
   let base: string;
 
@@ -24,10 +24,13 @@ describe('minimal app', () => {
       routes,
     });
     base = `http://localhost:${server.port}`;
-  });
+    // Compiles the app inside the hook, which overruns bun's 5s default when the root `bun run test`
+    // fans every workspace out in parallel.
+  }, 60_000);
 
   afterAll(() => {
-    server.stop(true);
+    // Guarded: if `beforeAll` failed, an unconditional stop() throws and buries the real error.
+    server?.stop(true);
     rmSync(outDir, { recursive: true, force: true });
   });
 

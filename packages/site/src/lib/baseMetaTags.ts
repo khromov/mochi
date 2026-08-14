@@ -1,7 +1,7 @@
 import { deepMerge, type MetaTagsProps } from 'svelte-meta-tags';
+import { ogImageFor, SITE_URL, STATIC_OG_IMAGE } from './ogImageUrl';
 
-const SITE_URL = 'https://mochi.fast';
-const DEFAULT_OG_IMAGE = `${SITE_URL}/og-default.jpg`;
+const DEFAULT_OG_IMAGE = STATIC_OG_IMAGE;
 const DEFAULT_DESCRIPTION = 'Islands framework for Svelte 5 + Bun with islands-based selective hydration.';
 
 export const baseMetaTags: MetaTagsProps = {
@@ -30,6 +30,7 @@ export const baseMetaTags: MetaTagsProps = {
 // the site-wide brand defaults.
 export function mergeMetaTags(overrides: MetaTagsProps = {}): MetaTagsProps {
   const ogTitle = overrides.title && overrides.titleTemplate !== '%s' ? `${overrides.title} — Mochi` : overrides.title;
+  const image = ogImageFor(overrides.canonical);
 
   const propagated: MetaTagsProps = {
     ...overrides,
@@ -37,11 +38,14 @@ export function mergeMetaTags(overrides: MetaTagsProps = {}): MetaTagsProps {
       ...(ogTitle ? { title: ogTitle } : {}),
       ...(overrides.description ? { description: overrides.description } : {}),
       ...(overrides.canonical ? { url: overrides.canonical } : {}),
+      images: [{ url: image, width: 1200, height: 630, alt: ogTitle ?? 'Mochi' }],
       ...overrides.openGraph,
     },
     twitter: {
       ...(ogTitle ? { title: ogTitle } : {}),
       ...(overrides.description ? { description: overrides.description } : {}),
+      image,
+      imageAlt: ogTitle ?? 'Mochi',
       ...overrides.twitter,
     },
   };

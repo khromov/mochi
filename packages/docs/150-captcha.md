@@ -1,6 +1,7 @@
 ---
 title: 'Captcha'
 slug: captcha
+ogTitle: 'Slide-to-verify captcha, no third party'
 description: 'Slide-to-verify captcha with proof-of-work, replay protection, and no third-party service.'
 ---
 
@@ -8,6 +9,7 @@ description: 'Slide-to-verify captcha with proof-of-work, replay protection, and
   import { Image } from 'mochi-framework/image';
   import Callout from './_components/Callout.svelte';
   import SeeItInAction from './_components/SeeItInAction.svelte';
+  import PersistenceTable from './_components/PersistenceTable.svelte';
   import captchaShot from './images/captcha.png';
 </script>
 
@@ -19,6 +21,8 @@ description: 'Slide-to-verify captcha with proof-of-work, replay protection, and
 </figure>
 
 `<MochiCaptcha />` is a slide-to-verify widget that gates form submissions without a third-party service or tracker. Mint a challenge in `serverProps`, render the component, verify in the action.
+
+<PersistenceTable feature="captcha" />
 
 ```ts
 // src/routes.ts
@@ -162,6 +166,8 @@ await Mochi.serve({
 | `store`     | `'memory'`                     | One-time nonce store: `'memory'`, `'sqlite'`, or your own `NonceStore`.     |
 | `storePath` | `.mochi/captcha-nonces.sqlite` | SQLite file when `store: 'sqlite'`.                                         |
 
+`'memory'` and `'sqlite'` are the only built-in nonce backends; anything else — Redis, Postgres, your own database — is a custom `NonceStore`. See [Persistence](/docs/persistence/) for how that compares across Mochi.
+
 Every token failure returns the same message, so a probing bot cannot tell "too fast" from "tampered".
 
 ### The timing floor
@@ -186,7 +192,7 @@ A solved token is single-use. `verifyCaptcha()` burns its nonce on success. A se
 
 <Callout type="warning">
 
-**The default `'memory'` store is per-process.** It gives no replay protection across a multi-instance deploy. Use `store: 'sqlite'` with shared storage, or supply your own `NonceStore` backed by Redis or your database.
+**The default `'memory'` store is per-process.** It gives no replay protection across a multi-instance deploy. Use `store: 'sqlite'` with shared storage, or supply your own `NonceStore` backed by Redis or your database — there is no built-in Postgres store. See [Persistence](/docs/persistence/).
 
 </Callout>
 

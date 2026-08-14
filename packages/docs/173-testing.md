@@ -1,6 +1,7 @@
 ---
 title: 'Testing'
 slug: testing
+ogTitle: 'Testing a Mochi app'
 description: 'Unit-test with bun:test and run full-app tests in isolated processes with the runTests helper.'
 ---
 

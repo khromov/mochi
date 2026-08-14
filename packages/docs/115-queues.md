@@ -1,6 +1,7 @@
 ---
 title: 'Queues'
 slug: queues
+ogTitle: 'Background jobs with Mochi.queue()'
 description: 'Run background jobs with Mochi.queue(), backed by bun-boss on memory, SQLite, Postgres, or embedded PGlite storage.'
 ---
 
@@ -8,6 +9,7 @@ description: 'Run background jobs with Mochi.queue(), backed by bun-boss on memo
   import Callout from './_components/Callout.svelte';
   import SeeItInAction from './_components/SeeItInAction.svelte';
   import VersionNote from './_components/VersionNote.svelte';
+  import PersistenceTable from './_components/PersistenceTable.svelte';
 </script>
 
 ## Queues
@@ -15,6 +17,8 @@ description: 'Run background jobs with Mochi.queue(), backed by bun-boss on memo
 <VersionNote since="0.10.0" message="Mochi.queue was reworked in 0.10.0: descriptors are named and directly usable, and the serve-level queues option takes an array of them. This page documents the new API." />
 
 Offload work that should not block a response — sending email, encoding media, calling slow APIs — to a background **queue**. A queue bundles a job channel with the `process` function that consumes it. Both run in your process, backed by [bun-boss](https://github.com/khromov/bun-boss).
+
+<PersistenceTable feature="queues" />
 
 `Mochi.queue(name, …)` returns a descriptor that is both the declaration and the producer handle. Mount it in the `Mochi.serve({ queues })` array to start its worker; call `.add()` on it from anywhere:
 
@@ -180,6 +184,8 @@ await Mochi.serve({
 | `{ sqlite: path }`     | yes               | single process, one durable file                 |
 | `{ postgres: url }`    | yes               | shared — multiple processes can work one backlog |
 | `{ pglite: instance }` | yes (on-disk)     | single process, embedded in-process Postgres     |
+
+See [Persistence](/docs/persistence/) for how queue storage compares to the other stateful Mochi features.
 
 Postgres storage installs its tables into a dedicated `mochi_queue` schema on first start, away from your application's tables. The schema name is fixed, so every app sharing one database shares one queue namespace — give each app its own database to keep their queues apart.
 
