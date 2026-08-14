@@ -63,4 +63,16 @@ Re-running the command rewrites the rules in place, whether the key is inline, s
 
 Prerendering fully loads a page in a hidden tab — it is far more expensive than prefetching, so keep it to a few high-likelihood destinations and prefer `eagerness: 'moderate'`. Exclude URLs with side effects (sign-out, add-to-cart, one-time-password flows). Links marked `[target=_blank]` or `[rel~=nofollow]` are excluded by the generated rules by default.
 
+That hidden tab also runs the page's scripts, so an analytics snippet reports a pageview for a visit that may never happen. Gate the initialisation on activation — wherever the snippet lives, usually your [HTML shell](/docs/custom-html-shell/):
+
+```js
+if (document.prerendering) {
+  document.addEventListener('prerenderingchange', initAnalytics, { once: true });
+} else {
+  initAnalytics();
+}
+```
+
+Google Analytics already defers itself this way; most other vendors do not. For code that runs after load, `performance.getEntriesByType('navigation')[0]?.activationStart > 0` tells you the page was prerendered rather than visited directly.
+
 </Callout>
