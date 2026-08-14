@@ -15,7 +15,7 @@
 
 <style>
   .newsletter-embed {
-    margin: 3rem 0 0;
+    margin: 1.75rem 0 0;
   }
 
   .skeleton {
