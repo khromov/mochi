@@ -2,6 +2,7 @@ import { preprocess as sveltePreprocess, type CompileOptions, type PreprocessorG
 import { render } from 'svelte/server';
 import path from 'node:path';
 import fs from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import type { BunPlugin } from 'bun';
 import {
   isSvelteMarker,
@@ -1965,6 +1966,32 @@ export class ComponentRegistry {
     return queued;
   }
 
+  /**
+   * Drop the per-build suffix from the assets one bundle emitted, returning their canonical paths. Bun content-hashes
+   * asset names, so a copy another build already renamed holds these exact bytes and this one's is redundant — dropping
+   * it keeps the served name deterministic across builds, which a suffix left in place would not be.
+   *
+   * The canonical path only ever appears as the result of renaming a file Bun had finished writing, so a concurrent
+   * reader sees it whole or not at all.
+   */
+  private reconcileEmittedAssets(emitted: string[], token: string): string[] {
+    return emitted.map((assetPath) => {
+      const canonical = assetPath.replace(`-${token}`, '');
+      try {
+        // `renameSync` onto an existing path throws on Windows rather than replacing, which is the same answer as
+        // finding it already there: another build won, and its copy is byte-identical.
+        if (fs.existsSync(canonical)) {
+          fs.rmSync(assetPath, { force: true });
+        } else {
+          fs.renameSync(assetPath, canonical);
+        }
+      } catch {
+        fs.rmSync(assetPath, { force: true });
+      }
+      return canonical;
+    });
+  }
+
   private async bundleImportedCssBatch(cssPaths: Iterable<string>): Promise<void> {
     const importCssOutDir = path.resolve(`${this.outDir}/import-css`);
     const todo = [...cssPaths].filter((p) => !this.importedCssUrls.has(p));
@@ -1981,10 +2008,14 @@ export class ComponentRegistry {
         // Bun's CSS bundler resolves every url() itself and runs plugin hooks for them, so font discovery rides the
         // bundler: large fonts become tiny marker data: URIs (see createFontMarkerPlugin) substituted below.
         const { plugin: fontPlugin, refs: fontRefs } = createFontMarkerPlugin(this.fontInlineThreshold);
+        // Entrypoints bundle in parallel and two importing the same font emit the same content-hashed copy, so without
+        // a per-build suffix they are concurrent writers to one path and a reader can catch it half-written. Stripped
+        // again by reconcileEmittedAssets below, which puts the canonical name back.
+        const token = randomUUID().slice(0, 8);
         const cssResult = await Bun.build({
           entrypoints: [cssPath],
           outdir: importCssOutDir,
-          naming: { entry: '[name]-[hash].[ext]' },
+          naming: { entry: '[name]-[hash].[ext]', asset: `[name]-[hash]-${token}.[ext]` },
           minify: true,
           plugins: Number.isFinite(this.fontInlineThreshold) ? [fontPlugin] : [],
           throw: false,
@@ -2005,10 +2036,16 @@ export class ComponentRegistry {
         // Read from disk: when Bun.build writes via `outdir`, the output's
         // .text() may return empty — the file on disk is the source of truth.
         const rawCss = await Bun.file(out.path).text();
+        const suffixed = cssResult.outputs.filter((o) => o !== out).map((o) => o.path);
+        const emitted = this.reconcileEmittedAssets(suffixed, token);
         let cssText = restoreVariationsFormat(rawCss);
+        // Exact filenames rather than the bare suffix, which could collide with an unrelated run of the same characters.
+        suffixed.forEach((original, i) => {
+          cssText = cssText.replaceAll(path.basename(original), path.basename(emitted[i]!));
+        });
         const adopted = await adoptEmittedFontAssets(
           cssText,
-          cssResult.outputs.filter((o) => o !== out),
+          emitted.map((path) => ({ path })),
           fontRefs,
         );
         cssText = adopted.css;

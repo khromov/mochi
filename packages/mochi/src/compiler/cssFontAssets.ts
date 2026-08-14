@@ -111,9 +111,9 @@ export async function adoptEmittedFontAssets(
       missing.push(artifact.path);
       continue;
     }
-    const bytes = await readSettledBytes(artifact.path, file);
-    // No font is zero bytes, so a copy still empty after the retries never becomes one: adopting it would content-hash
-    // the empty string into the served filename and ship an @font-face pointing at nothing.
+    const bytes = await file.bytes();
+    // No font is zero bytes, so this is a copy that never finished being written. Adopting it would content-hash the
+    // empty string into the served filename and ship an @font-face pointing at nothing.
     if (bytes.length === 0) {
       unreadable.push(artifact.path);
       continue;
@@ -143,18 +143,6 @@ export async function adoptEmittedFontAssets(
     adopted.push(artifact.path);
   }
   return { css: edits.toString(), otherAssets, adopted, missing, unreadable };
-}
-
-// Entrypoints bundle in parallel and a font shared between stylesheets emits the same content-hashed copy from each,
-// so one build can read the path another is mid-rewrite of and see zero bytes — reliably on Windows, which has no
-// atomic replace. Every writer puts identical bytes there, so re-reading converges rather than racing forever.
-async function readSettledBytes(artifactPath: string, file: Bun.BunFile): Promise<Uint8Array> {
-  let bytes = await file.bytes();
-  for (let attempt = 0; bytes.length === 0 && attempt < 50; attempt++) {
-    await Bun.sleep(10);
-    bytes = await Bun.file(artifactPath).bytes();
-  }
-  return bytes;
 }
 
 // Bun prints the emitted asset relative to the stylesheet: `./name.woff2`, `../name.woff2` or bare.

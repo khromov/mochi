@@ -313,23 +313,7 @@ describe('adoptEmittedFontAssets', () => {
     expect(refs).toEqual([]);
   });
 
-  test('waits out a copy another entrypoint is still writing rather than hashing it empty', async () => {
-    const bytes = new Uint8Array([9, 8, 7, 6]);
-    const file = emit('fraunces-latin-full-italic-7eta9vw9.woff2', new Uint8Array(0));
-    const css = `@font-face { src: url("./${path.basename(file)}") format("woff2"); }`;
-    const refs: FontRef[] = [];
-    const writer = setTimeout(() => writeFileSync(file, bytes), 60);
-
-    const { adopted, unreadable } = await adoptEmittedFontAssets(css, [{ path: file }], refs);
-    clearTimeout(writer);
-
-    expect(unreadable).toEqual([]);
-    expect(adopted).toEqual([file]);
-    expect(refs[0]!.bytes).toEqual(bytes);
-    expect(fontAssetFileName(refs[0]!, refs[0]!.bytes!)).toBe(`fraunces-latin-full-italic-${fontContentHash(bytes)}.woff2`);
-  });
-
-  test('reports a copy that never fills in instead of serving an empty font', async () => {
+  test('reports a copy that never finished being written instead of serving an empty font', async () => {
     const file = emit('fraunces-latin-full-italic-7eta9vw9.woff2', new Uint8Array(0));
     const css = `@font-face { src: url("./${path.basename(file)}") format("woff2"); }`;
     const refs: FontRef[] = [];
