@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import path from 'node:path';
-import { toPosixPath } from '../utils';
+import { toPosixPath, relForDisplay } from '../utils';
 import { logger } from '../utils/log';
 import { applyFilter } from '../extensions';
 import type { BunRouteValue } from '../types';
@@ -79,7 +79,7 @@ export function registerPublicRoutes(routes: Record<string, BunRouteValue>, file
   for (const [urlPath, diskPath] of files) {
     const routeKey = publicRouteKey(urlPath);
     if (routeKey in routes) {
-      logger.warn(`Public file "${diskPath}" skipped: URL "${urlPath}" is already registered as a route.`);
+      logger.warn(`Public file "${relForDisplay(diskPath)}" skipped: URL "${urlPath}" is already registered as a route.`);
       continue;
     }
     routes[routeKey] = Bun.file(diskPath);
