@@ -13,6 +13,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
 
+# The test worker pool caps at 6 locally to keep dev machines usable; CI has the cores to spare, so use them all.
+env:
+  MOCHI_MAX_CONCURRENCY: max
+
 jobs:
   test-matrix:
     runs-on: ${{ matrix.os }}

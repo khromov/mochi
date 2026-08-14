@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { extractFailures, parseJunitSummary, toleratedWindowsWedge } from './testing';
+import { extractFailures, parseJunitSummary, resolveConcurrency, toleratedWindowsWedge } from './testing';
 
 // Verbatim `bun test` reporter output (v1.3): the source snippet and `error:` block
 // are printed *before* the `(fail)` line they belong to.
@@ -162,6 +162,50 @@ describe('toleratedWindowsWedge', () => {
 
   test('false for a win32 timeout that never wrote a report', () => {
     expect(toleratedWindowsWedge(true, null, 'win32')).toBe(false);
+  });
+});
+
+describe('resolveConcurrency', () => {
+  // Pass the env value explicitly (never `undefined`, which would trigger the parameter default and read the ambient
+  // MOCHI_MAX_CONCURRENCY — `max` under CI). `''` is the honest "no override" input.
+  test('with no override, defaults to 6 and clamps to core count', () => {
+    expect(resolveConcurrency(12, 'linux', '')).toBe(6);
+    expect(resolveConcurrency(4, 'linux', '')).toBe(4);
+  });
+
+  test('max/auto use the full core count', () => {
+    expect(resolveConcurrency(12, 'linux', 'max')).toBe(12);
+    expect(resolveConcurrency(12, 'linux', 'AUTO')).toBe(12);
+  });
+
+  test('a numeric override is honored and clamped to cores', () => {
+    expect(resolveConcurrency(12, 'linux', '3')).toBe(3);
+    expect(resolveConcurrency(12, 'linux', '100')).toBe(12);
+  });
+
+  test('invalid or non-positive values fall back to 6', () => {
+    expect(resolveConcurrency(12, 'linux', '0')).toBe(6);
+    expect(resolveConcurrency(12, 'linux', 'abc')).toBe(6);
+  });
+
+  test('Windows always runs one file at a time', () => {
+    expect(resolveConcurrency(12, 'win32', 'max')).toBe(1);
+    expect(resolveConcurrency(12, 'win32', '8')).toBe(1);
+    expect(resolveConcurrency(12, 'win32', '')).toBe(1);
+  });
+
+  test('reads MOCHI_MAX_CONCURRENCY from the environment when no value is passed', () => {
+    const prev = process.env.MOCHI_MAX_CONCURRENCY;
+    process.env.MOCHI_MAX_CONCURRENCY = 'max';
+    try {
+      expect(resolveConcurrency(9, 'linux')).toBe(9);
+    } finally {
+      if (prev === undefined) {
+        delete process.env.MOCHI_MAX_CONCURRENCY;
+      } else {
+        process.env.MOCHI_MAX_CONCURRENCY = prev;
+      }
+    }
   });
 });
 

@@ -171,9 +171,35 @@ export function toleratedWindowsWedge(timedOut: boolean, junitXml: string | null
   return summary !== null && summary.failures === 0;
 }
 
+const DEFAULT_LOCAL_CONCURRENCY = 6;
+
 /**
- * Runs each `src/**\/*.test.ts` file in its own `bun test` process, up to `navigator.hardwareConcurrency` in parallel,
- * exiting with code 1 if any file fails.
+ * Worker fan-out for the per-file test run. Local dev caps at 6 to keep the machine usable; CI sets
+ * `MOCHI_MAX_CONCURRENCY=max` (or a number ≥ core count) for full hardware concurrency. Windows stays at 1 — its
+ * post-test shutdown wedge is triggered by many processes tearing down under parallel load. `cores`/`platform`/`envValue`
+ * are parameters so tests can exercise every branch without touching globals.
+ */
+export function resolveConcurrency(
+  cores: number = navigator.hardwareConcurrency,
+  platform: NodeJS.Platform = process.platform,
+  envValue: string | undefined = process.env.MOCHI_MAX_CONCURRENCY,
+): number {
+  if (platform === 'win32') {
+    return 1;
+  }
+  const raw = envValue?.trim().toLowerCase();
+  if (raw === 'max' || raw === 'auto') {
+    return cores;
+  }
+  const parsed = raw ? Number(raw) : NaN;
+  const cap = Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_LOCAL_CONCURRENCY;
+  return Math.max(1, Math.min(cap, cores));
+}
+
+/**
+ * Runs each `src/**\/*.test.ts` file in its own `bun test` process, up to a capped worker count (6 locally, or
+ * `MOCHI_MAX_CONCURRENCY` to override — CI sets `max` for full hardware concurrency), exiting with code 1 if any file
+ * fails.
  *
  * Per-file isolation is required because `Mochi.serve()` enforces one instance per process — the
  * `globalThis.__mochi_config__` singleton plus its `__mochi_image_runtime__`/captcha/image/email siblings, none of which
@@ -203,9 +229,7 @@ export async function runTests(options: RunTestsOptions = {}): Promise<void> {
     console.log(`Skipping ${all.length - included.length} file(s) on Windows: ${[...windowsSkip].join(', ')}`);
   }
 
-  // Windows runs one file at a time, testing the theory that its post-test shutdown wedge is triggered by many
-  // processes tearing down under parallel load. It costs wall-clock but keeps the run honest.
-  const concurrency = process.platform === 'win32' ? 1 : navigator.hardwareConcurrency;
+  const concurrency = resolveConcurrency();
   console.log(`Running ${included.length} test files (${parallel.length} parallel × ${concurrency} workers, ${sequential.size} sequential)`);
 
   const results: FileResult[] = [];
