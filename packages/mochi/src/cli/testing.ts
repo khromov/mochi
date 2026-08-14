@@ -262,10 +262,15 @@ const DEFAULT_LOCAL_CONCURRENCY = 6;
 
 /**
  * Worker fan-out for the per-file test run. Local dev caps at 6 to keep the machine usable; CI sets
- * `MOCHI_MAX_CONCURRENCY=max` (or a number ≥ core count) for full hardware concurrency. Windows used to pin this to 1,
- * on the untested theory that its post-test shutdown wedge came from many processes tearing down at once; the wedge is
- * now absorbed by `toleratedWindowsWedge` instead, so every platform fans out the same way. `cores`/`envValue` are
- * parameters so tests can exercise every branch without touching globals.
+ * `MOCHI_MAX_CONCURRENCY=max` (or a number ≥ core count) for full hardware concurrency.
+ *
+ * Windows used to pin this to 1, on the untested theory that its post-test shutdown wedge came from many processes
+ * tearing down at once. Measured on windows-latest over 27 same-commit samples at 1/2/4 workers (PR #305): the framework
+ * suite passed 168/168 in every one, and the single wedge observed was at 4 workers on `queuePglite.test.ts` — a file
+ * already known to wedge run alone. Wall-clock went ~140s → ~85s → ~65s, so the pin cost more than half the runtime and
+ * bought nothing. `toleratedWindowsWedge` absorbs the wedge itself; concurrency never did.
+ *
+ * `cores`/`envValue` are parameters so tests can exercise every branch without touching globals.
  */
 export function resolveConcurrency(cores: number = navigator.hardwareConcurrency, envValue: string | undefined = process.env.MOCHI_MAX_CONCURRENCY): number {
   const raw = envValue?.trim().toLowerCase();
