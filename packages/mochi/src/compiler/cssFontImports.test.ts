@@ -469,3 +469,53 @@ describe('CSS imports — an emitted asset shared by two stylesheets', () => {
     expect(readFileSync(asset!.diskPath).equals(imageBytes)).toBe(true);
   });
 });
+
+describe('CSS imports — concurrent bundles sharing an emitted asset', () => {
+  const fonts = path.join(import.meta.dir, '..', '__fixtures__', 'fonts');
+  const fontBytes = new Uint8Array(readFileSync(path.join(fonts, 'fraunces-latin-full-italic.woff2')));
+  const fontUrl = `/_mochi/fonts/shared-${fontContentHash(fontBytes)}.woff2`;
+  const WIDE = 4;
+  let tmp: string;
+  let registry: ComponentRegistry;
+
+  beforeAll(async () => {
+    tmp = mkdtempSync(path.join(import.meta.dir, '..', '..', '.mochi-font-concurrent-test-'));
+    const filesDir = path.join(tmp, 'files');
+    mkdirSync(filesDir);
+    cpSync(path.join(fonts, 'fraunces-latin-full-italic.woff2'), path.join(filesDir, 'shared.woff2'));
+    const sheet = (name: string): string => {
+      writeFileSync(path.join(tmp, `${name}.css`), `@font-face { font-family: '${name}'; src: url('./files/shared.woff2') format('woff2'); }`);
+      return `./${name}.css`;
+    };
+    const page = (name: string, imports: string[]): string => {
+      const pagePath = path.join(tmp, `${name}.svelte`);
+      writeFileSync(pagePath, `<script>\n${imports.map((i) => `  import '${i}';`).join('\n')}\n<` + `/script>\n\n<h1>${name}</h1>\n`);
+      return pagePath;
+    };
+
+    registry = new ComponentRegistry({ development: true, outDir: path.join(tmp, 'out'), fonts: { inlineThreshold: Infinity } });
+    // Every stylesheet emits the same content-hashed bundler copy of the font, so one batch's cleanup sweep can delete
+    // what the other is still reading. The window is a few microtasks wide, so this covers the path rather than the
+    // timing — hitting it reliably needs a far slower fixture than belongs in the suite.
+    const wide = (half: string): string =>
+      page(
+        `Page${half}`,
+        Array.from({ length: WIDE }, (_, i) => sheet(`w${half}${i}`)),
+      );
+    await Promise.all([registry.compile(wide('a')), registry.compile(wide('b'))]);
+  });
+
+  afterAll(() => {
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  test('every batch extracts the shared font, with no bundle errors', () => {
+    expect(registry.getErrors()).toEqual([]);
+    const sheets = [...registry.getClientFiles().entries()].filter(([u]) => u.includes('/import-css/') && u.endsWith('.css'));
+    expect(sheets).toHaveLength(WIDE * 2);
+    for (const [, css] of sheets) {
+      expect(css).toContain(fontUrl);
+    }
+    expect(readFileSync(registry.getFontAsset(fontUrl)!.diskPath).equals(fontBytes)).toBe(true);
+  });
+});

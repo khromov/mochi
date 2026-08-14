@@ -424,6 +424,8 @@ export class ComponentRegistry {
   private readonly importCssAssets: Map<string, { diskPath: string; contentType: string }> = new Map();
   /** Maps resolved CSS-import path → served URLs of its preload-worthy extracted fonts (woff2, latin-visible). */
   private importedCssFontPreloads: Map<string, string[]> = new Map();
+  /** Tail of the serialized `bundleImportedCss` chain; see the comment there for why batches may not overlap. */
+  private importedCssBatches: Promise<unknown> = Promise.resolve();
   readonly development: boolean;
   /** Set by `fromManifest()`; distinguishes a prebuilt-manifest boot from a live, compile-on-demand one. */
   loadedFromManifest = false;
@@ -1948,7 +1950,22 @@ export class ComponentRegistry {
    * failure so the dev overlay surfaces it. Hashed naming keeps entrypoints sharing a filename — every fontsource package
    * ships `index.css` — from colliding.
    */
-  private async bundleImportedCss(cssPaths: Iterable<string>): Promise<void> {
+  private bundleImportedCss(cssPaths: Iterable<string>): Promise<void> {
+    return this.serializeCssBundling(() => this.bundleImportedCssBatch(cssPaths));
+  }
+
+  /**
+   * Queue CSS-bundling work behind whatever is already running, since two entrypoints importing the same font emit the
+   * same content-hashed bundler copy — one batch's end-of-run sweep would otherwise delete a file another batch is still
+   * reading, and a re-bundle's reset would land mid-batch.
+   */
+  private serializeCssBundling<T>(task: () => Promise<T>): Promise<T> {
+    const queued = this.importedCssBatches.catch(() => {}).then(task);
+    this.importedCssBatches = queued;
+    return queued;
+  }
+
+  private async bundleImportedCssBatch(cssPaths: Iterable<string>): Promise<void> {
     const importCssOutDir = path.resolve(`${this.outDir}/import-css`);
     const todo = [...cssPaths].filter((p) => !this.importedCssUrls.has(p));
     if (todo.length === 0) {
@@ -1957,6 +1974,8 @@ export class ComponentRegistry {
 
     // Cleared only once every entrypoint has read what it needs, since parallel bundles share a content-hashed copy.
     const deadArtifacts = new Set<string>();
+    // The same copy can be adopted by one stylesheet and left in place by another, whose url() still names it.
+    const liveArtifacts = new Set<string>();
     await Promise.all(
       todo.map(async (cssPath) => {
         // Bun's CSS bundler resolves every url() itself and runs plugin hooks for them, so font discovery rides the
@@ -1995,9 +2014,15 @@ export class ComponentRegistry {
         for (const assetPath of adopted.adopted) {
           deadArtifacts.add(assetPath);
         }
+        for (const assetPath of adopted.missing) {
+          const message = `the bundler's copy of ${relForDisplay(assetPath)} vanished before it could be read, so its @font-face still points at a file no route serves. Please report this.`;
+          logger.error(`CSS bundle for ${cssPath}: ${message}`);
+          this.errors.push({ kind: 'css-bundle-failed', cssPath, message });
+        }
         // Bun printed these relative to the stylesheet, so serving them under its `import-css/` prefix is what makes
         // the URL it already wrote resolve.
         for (const assetPath of adopted.otherAssets) {
+          liveArtifacts.add(assetPath);
           const name = path.basename(assetPath);
           const file = Bun.file(assetPath);
           this.importCssAssets.set(`${this.assetPrefix}/import-css/${name}`, { diskPath: assetPath, contentType: file.type });
@@ -2073,34 +2098,40 @@ export class ComponentRegistry {
       }),
     );
     for (const artifact of deadArtifacts) {
-      fs.rmSync(artifact, { force: true });
+      if (!liveArtifacts.has(artifact)) {
+        fs.rmSync(artifact, { force: true });
+      }
     }
   }
 
   /** Re-bundles every previously seen side-effect CSS import for the dev watcher's CSS-only fast-path, leaving page modules and entry tracking alone. */
-  async rebundleImportedCss(): Promise<void> {
-    const cssPaths = new Set<string>();
-    for (const set of this.entryImportedCss.values()) {
-      for (const p of set) {
-        cssPaths.add(p);
+  rebundleImportedCss(): Promise<void> {
+    // Reset inside the queue, or an in-flight batch repopulates what was just cleared and the re-bundle then skips those
+    // paths as already-bundled, serving pre-edit CSS.
+    return this.serializeCssBundling(async () => {
+      const cssPaths = new Set<string>();
+      for (const set of this.entryImportedCss.values()) {
+        for (const p of set) {
+          cssPaths.add(p);
+        }
       }
-    }
-    // Drop bundle-failure errors so a fixed file clears the overlay; nested-
-    // hydration errors come from the SSR pass and aren't relevant here.
-    this.errors = this.errors.filter((e) => e.kind !== 'css-bundle-failed');
-    // Drop existing import-css entries from clientFiles so stale URLs don't
-    // linger when content (and therefore hash) changes.
-    const importCssPrefix = `${this.assetPrefix}/import-css/`;
-    for (const key of [...this.clientFiles.keys()]) {
-      if (key.startsWith(importCssPrefix)) {
-        this.clientFiles.delete(key);
+      // Drop bundle-failure errors so a fixed file clears the overlay; nested-
+      // hydration errors come from the SSR pass and aren't relevant here.
+      this.errors = this.errors.filter((e) => e.kind !== 'css-bundle-failed');
+      // Drop existing import-css entries from clientFiles so stale URLs don't
+      // linger when content (and therefore hash) changes.
+      const importCssPrefix = `${this.assetPrefix}/import-css/`;
+      for (const key of [...this.clientFiles.keys()]) {
+        if (key.startsWith(importCssPrefix)) {
+          this.clientFiles.delete(key);
+        }
       }
-    }
-    this.importedCssUrls.clear();
-    this.importedCssStats = [];
-    this.retireFontAssets();
-    this.importedCssFontPreloads.clear();
-    await this.bundleImportedCss(cssPaths);
+      this.importedCssUrls.clear();
+      this.importedCssStats = [];
+      this.retireFontAssets();
+      this.importedCssFontPreloads.clear();
+      await this.bundleImportedCssBatch(cssPaths);
+    });
   }
 
   // Run a forced batch recompile, swallowing failures with a uniform log

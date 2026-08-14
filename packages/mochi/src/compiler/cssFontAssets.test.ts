@@ -299,16 +299,17 @@ describe('adoptEmittedFontAssets', () => {
     expect(readFileSync(file)).toEqual(readFileSync(source));
   });
 
-  test('skips an artifact another entrypoint already consumed', async () => {
+  test('reports an artifact that vanished before it could be read', async () => {
     const refs: FontRef[] = [];
-    const missing = path.join(import.meta.dir, 'does-not-exist-1a2b3c4d.woff2');
-    const css = `a { src: url("./${path.basename(missing)}"); }`;
+    const gone = path.join(import.meta.dir, 'does-not-exist-1a2b3c4d.woff2');
+    const css = `a { src: url("./${path.basename(gone)}"); }`;
 
-    const { css: out, otherAssets, adopted } = await adoptEmittedFontAssets(css, [{ path: missing }], refs);
+    const { css: out, otherAssets, adopted, missing } = await adoptEmittedFontAssets(css, [{ path: gone }], refs);
 
     expect(out).toBe(css);
     expect(otherAssets).toEqual([]);
     expect(adopted).toEqual([]);
+    expect(missing).toEqual([gone]);
     expect(refs).toEqual([]);
   });
 

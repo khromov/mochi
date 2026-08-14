@@ -84,11 +84,18 @@ export function createFontMarkerPlugin(inlineThreshold: number): { plugin: BunPl
  * URIs, so {@link classifyFontAssets} sees one shape and nothing points at a file no route serves.
  *
  * `adopted` copies are dead but deleted by the caller, since entrypoints sharing a font emit the same content-hashed
- * path and removing it here would ENOENT a concurrent read; `otherAssets` keep the relative URL Bun printed.
+ * path and removing it here would ENOENT a concurrent read; `otherAssets` keep the relative URL Bun printed. A copy the
+ * bundler wrote and something else removed lands in `missing`, where the caller can report it rather than ship a
+ * stylesheet pointing at a file no route serves.
  */
-export async function adoptEmittedFontAssets(css: string, emitted: { path: string }[], refs: FontRef[]): Promise<{ css: string; otherAssets: string[]; adopted: string[] }> {
+export async function adoptEmittedFontAssets(
+  css: string,
+  emitted: { path: string }[],
+  refs: FontRef[],
+): Promise<{ css: string; otherAssets: string[]; adopted: string[]; missing: string[] }> {
   const otherAssets: string[] = [];
   const adopted: string[] = [];
+  const missing: string[] = [];
   const refByMarker = new Map(refs.map((r) => [r.markerB64, r]));
   const urls = parseCss(css)?.urls ?? [];
   const edits = new MagicString(css);
@@ -100,6 +107,7 @@ export async function adoptEmittedFontAssets(css: string, emitted: { path: strin
     }
     const file = Bun.file(artifact.path);
     if (!(await file.exists())) {
+      missing.push(artifact.path);
       continue;
     }
     const bytes = await file.bytes();
@@ -127,7 +135,7 @@ export async function adoptEmittedFontAssets(css: string, emitted: { path: strin
     }
     adopted.push(artifact.path);
   }
-  return { css: edits.toString(), otherAssets, adopted };
+  return { css: edits.toString(), otherAssets, adopted, missing };
 }
 
 // Bun prints the emitted asset relative to the stylesheet: `./name.woff2`, `../name.woff2` or bare.
