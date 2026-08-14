@@ -10,8 +10,12 @@ const outDir = mkdtempSync(path.join(import.meta.dir, '..', '.mochi-support-test
 process.env.SUPPORT_DB = path.join(outDir, 'support.sqlite');
 process.env.ADMIN_USER = 'admin';
 process.env.ADMIN_PASSWORD = 'letmein';
-// The real 5s tarpit on a rejected /admin attempt would blow every timeout here.
-process.env.ADMIN_AUTH_DELAY_MS = '80';
+// The real 5s tarpit on a rejected /admin attempt would blow every timeout here. The ceiling for the paths that are
+// *not* tarpitted has to sit well below it: these are wall-clock assertions, and a loaded CI box adds tens of ms of
+// scheduler noise, so a tarpit the same size as the ceiling leaves no room for it and fails on timing alone.
+const TARPIT_MS = 400;
+const UNTARPITTED_CEILING_MS = TARPIT_MS / 2;
+process.env.ADMIN_AUTH_DELAY_MS = String(TARPIT_MS);
 
 const { routes } = await import('./routes');
 const { supportEmailQueue } = await import('./jobs.server');
@@ -214,7 +218,7 @@ describe('support form action', () => {
     expect(res.headers.get('WWW-Authenticate')).toContain('Basic');
     // Sending no credentials is how a browser gets the login prompt — it is
     // neither tarpitted nor charged quota; only a wrong guess is.
-    expect(performance.now() - started).toBeLessThan(80);
+    expect(performance.now() - started).toBeLessThan(UNTARPITTED_CEILING_MS);
     expect(res.headers.get('RateLimit-Remaining')).toBeNull();
   });
 
@@ -222,7 +226,7 @@ describe('support form action', () => {
     const started = performance.now();
     const res = await fetch(`${base}/admin/`, { headers: { Authorization: `Basic ${Buffer.from('admin:nope').toString('base64')}` } });
     expect(res.status).toBe(401);
-    expect(performance.now() - started).toBeGreaterThanOrEqual(80);
+    expect(performance.now() - started).toBeGreaterThanOrEqual(TARPIT_MS);
   });
 
   test('/admin/ lists submissions once authenticated', async () => {
@@ -236,7 +240,7 @@ describe('support form action', () => {
   test('correct credentials are never delayed', async () => {
     const started = performance.now();
     expect((await fetch(`${base}/admin/`, { headers: AUTH })).status).toBe(200);
-    expect(performance.now() - started).toBeLessThan(80);
+    expect(performance.now() - started).toBeLessThan(UNTARPITTED_CEILING_MS);
   });
 
   test('handled submissions move between the two lists', async () => {
