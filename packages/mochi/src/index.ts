@@ -213,6 +213,7 @@ export type {
   MochiSvelteShakerOptions,
   MochiBarrelWarningOptions,
   MochiBuildReportOptions,
+  MochiFontOptions,
 } from './types';
 export type { SpeculationRules, SpeculationRule, SpeculationListRule, SpeculationDocumentRule, SpeculationRuleCondition, SpeculationEagerness } from './runtime/speculationRules';
 

@@ -3,6 +3,7 @@ import type { HandleError, MochiErrorInfo, MochiEvent, MochiResolveOptions } fro
 import { applyResolveOptions } from './hooks';
 import { logger } from '../utils/log';
 import { MochiHttpError } from '../utils';
+import { getClientAddress, type MochiProxyOptions } from './proxy';
 import { requestContext, type MochiRequestContext } from './requestContext';
 import { finalizeCookieHeaders, MochiCookieJar, type CookieSerializeOptions } from './cookies';
 
@@ -16,6 +17,7 @@ export interface ErrorResponderDeps {
   renderShell: (result: RenderResult) => string;
   cookieDefaults: CookieSerializeOptions;
   newRequestId: (req: Request) => string;
+  proxy: MochiProxyOptions | undefined;
 }
 
 export type RenderErrorResponse = (input: {
@@ -33,7 +35,7 @@ export function createErrorResponder(deps: ErrorResponderDeps): {
   renderErrorResponse: RenderErrorResponse;
   routeErrorResponse: RouteErrorResponse;
 } {
-  const { handleError, development, registry, errorPagePath, renderShell, cookieDefaults, newRequestId } = deps;
+  const { handleError, development, registry, errorPagePath, renderShell, cookieDefaults, newRequestId, proxy } = deps;
 
   // The unmatched-route 404 fallback renders outside any request context, which would make an
   // error page that calls getRequestContext() (or renders <ViewTransitions />) throw — so build a
@@ -51,7 +53,8 @@ export function createErrorResponder(deps: ErrorResponderDeps): {
       isWarmup: false,
       cookies: new MochiCookieJar(input.req.headers.get('Cookie'), cookieDefaults),
       islandProps: new Map(),
-      getClientAddress: () => null,
+      // Wired like buildRequestContext's, so an error page sees the same client address on a 404 as on a 500.
+      getClientAddress: () => getClientAddress(input.req, input.event.server.requestIP(input.req)?.address ?? null, proxy),
     };
     return requestContext.run(ctx, async () => finalizeCookieHeaders(await renderErrorResponseInner(input), ctx.cookies));
   };

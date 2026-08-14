@@ -10,7 +10,7 @@
 </script>
 
 {#if isOlder}
-  <p class="version-note-warning" role="note">{warning}</p>
+  <p class="version-note-warning" role="note"><strong>Since: {since} (not released yet):</strong> {warning}</p>
 {:else if href}
   <p class="version-note-since"><a {href} class="version-note-link">Available since: {since}</a></p>
 {:else}

@@ -140,8 +140,14 @@ export function parseJunitSummary(xml: string | null): JunitSummary | null {
         if (summary) {
           return;
         }
-        const tests = Number(el.getAttribute('tests'));
-        const failures = Number(el.getAttribute('failures'));
+        // Number(null) and Number('') are both 0, which would let an attribute-less root pass as a green run.
+        const testsAttr = el.getAttribute('tests');
+        const failuresAttr = el.getAttribute('failures');
+        if (!testsAttr?.trim() || !failuresAttr?.trim()) {
+          return;
+        }
+        const tests = Number(testsAttr);
+        const failures = Number(failuresAttr);
         if (Number.isInteger(tests) && Number.isInteger(failures)) {
           summary = { tests, failures };
         }
@@ -207,8 +213,11 @@ export async function runTests(options: RunTestsOptions = {}): Promise<void> {
   // Bun's `--timeout` fails an individual test but leaves the process alive, so one wedged after its tests — a leaked
   // handle, or the Bun-on-Windows shutdown quirk — would block the worker on `proc.exited` until CI's job cap. The hard
   // deadline turns that into a fast outcome: a named failure, or (Windows-only, after a clean pass) a tolerated wedge.
+  let junitSeq = 0;
   async function runFile(file: string): Promise<FileResult> {
-    const junitPath = join(junitDir, `${file.replaceAll('/', '_')}.xml`);
+    // The counter keeps paths unique: `/`→`_` alone is not injective (src/a/b.test.ts vs src/a_b.test.ts), and a
+    // collision would let a wedged file adopt its collider's green report.
+    const junitPath = join(junitDir, `${junitSeq++}-${file.replaceAll('/', '_')}.xml`);
     const proc = Bun.spawn(['bun', 'test', '--timeout', '30000', '--reporter=junit', `--reporter-outfile=${junitPath}`, file], {
       cwd: dir,
       stdin: 'ignore',
