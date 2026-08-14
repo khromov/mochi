@@ -313,6 +313,36 @@ describe('adoptEmittedFontAssets', () => {
     expect(refs).toEqual([]);
   });
 
+  test('waits out a copy another entrypoint is still writing rather than hashing it empty', async () => {
+    const bytes = new Uint8Array([9, 8, 7, 6]);
+    const file = emit('fraunces-latin-full-italic-7eta9vw9.woff2', new Uint8Array(0));
+    const css = `@font-face { src: url("./${path.basename(file)}") format("woff2"); }`;
+    const refs: FontRef[] = [];
+    const writer = setTimeout(() => writeFileSync(file, bytes), 60);
+
+    const { adopted, missing } = await adoptEmittedFontAssets(css, [{ path: file }], refs);
+    clearTimeout(writer);
+
+    expect(missing).toEqual([]);
+    expect(adopted).toEqual([file]);
+    expect(refs[0]!.bytes).toEqual(bytes);
+    expect(fontAssetFileName(refs[0]!, refs[0]!.bytes!)).toBe(`fraunces-latin-full-italic-${fontContentHash(bytes)}.woff2`);
+  });
+
+  test('reports a copy that never fills in instead of serving an empty font', async () => {
+    const file = emit('fraunces-latin-full-italic-7eta9vw9.woff2', new Uint8Array(0));
+    const css = `@font-face { src: url("./${path.basename(file)}") format("woff2"); }`;
+    const refs: FontRef[] = [];
+
+    const { css: out, adopted, missing } = await adoptEmittedFontAssets(css, [{ path: file }], refs);
+
+    expect(missing).toEqual([file]);
+    expect(adopted).toEqual([]);
+    expect(refs).toEqual([]);
+    // The empty hash is what a served-anyway copy would carry, so it must not reach the stylesheet.
+    expect(out).not.toContain(fontContentHash(new Uint8Array(0)));
+  });
+
   test('leaves a non-font artifact alone for the caller to serve', async () => {
     const file = emit('hero-1a2b3c4d.png', new Uint8Array([1, 2, 3]));
     const css = `a { background: url("./${path.basename(file)}"); }`;
