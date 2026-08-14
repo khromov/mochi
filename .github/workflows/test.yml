@@ -18,6 +18,58 @@ env:
   MOCHI_MAX_CONCURRENCY: max
 
 jobs:
+  # TEMPORARY — delete this whole job before the PR leaves draft. It exists to answer one question with data: does
+  # running the suite in parallel on Windows actually flake? Each arm is an independent sample of the same commit, with
+  # `workers: 1` reproducing the old serialized behaviour as a control. Deliberately skips typecheck/lint/build — they
+  # cost ~2m of a Windows leg and say nothing about test-run stability. Not in the `test` gate's `needs`, so a red sample
+  # blocks nothing.
+  windows-flake-hunt:
+    name: Windows flake hunt (${{ matrix.workers }} workers, #${{ matrix.attempt }})
+    runs-on: windows-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        workers: [1, 2, 4]
+        attempt: [1, 2, 3]
+    env:
+      MOCHI_MAX_CONCURRENCY: ${{ matrix.workers }}
+      MOCHI_TEST_REPORT_DIR: ${{ github.workspace }}/flake-hunt
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v6
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+
+      - name: Cache Bun dependencies
+        uses: actions/cache@v6
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Run tests
+        run: |
+          mkdir flake-hunt
+          bun run test
+
+      # `if: always()` so a failing arm still yields its per-file records — that is the sample we most want to read.
+      - name: Upload per-file reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: flake-hunt-${{ matrix.workers }}w-${{ matrix.attempt }}
+          path: flake-hunt/
+          if-no-files-found: warn
+
   test-matrix:
     runs-on: ${{ matrix.os }}
     # Fail fast on a hung step instead of burning the 6h account default (a
