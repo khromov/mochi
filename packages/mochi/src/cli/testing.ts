@@ -1,8 +1,7 @@
 import { Glob } from 'bun';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, join, resolve } from 'node:path';
-import { toPosixPath } from '../utils/index';
+import { join } from 'node:path';
 
 export interface RunTestsOptions {
   /** Package root to glob `src/**\/*.test.ts` from and run each file in. Defaults to the cwd. */
@@ -216,46 +215,6 @@ function reportWedges(results: FileResult[]): void {
   const tolerated = wedges.filter((r) => r.wedgedTolerated).length;
   const detail = wedges.map((r) => `${r.file} (${(r.durationMs / 1000).toFixed(1)}s)`).join(', ');
   console.log(`Wedges: ${tolerated}/${wedges.length} tolerated, ${wedges.length - tolerated} fatal — ${detail}`);
-}
-
-function reportSlowest(results: FileResult[], count = 5): void {
-  const slowest = [...results].sort((a, b) => b.durationMs - a.durationMs).slice(0, count);
-  if (slowest.length === 0) {
-    return;
-  }
-  console.log(`Slowest: ${slowest.map((r) => `${r.file} ${(r.durationMs / 1000).toFixed(1)}s`).join(', ')}`);
-}
-
-/**
- * Dumps per-file records so two runs at different fan-outs can be diffed instead of eyeballed. `MOCHI_TEST_REPORT_DIR`
- * names a directory, not a file: the root `test` script fans every workspace out at once, so a single path would have
- * three concurrent runs clobbering each other.
- */
-async function writeJsonReport(results: FileResult[], concurrency: number, wallMs: number): Promise<void> {
-  const reportDir = process.env.MOCHI_TEST_REPORT_DIR?.trim();
-  if (!reportDir) {
-    return;
-  }
-  const pkg = basename(resolve(process.cwd()));
-  const target = join(reportDir, `${pkg}.json`);
-  const payload = {
-    package: pkg,
-    platform: process.platform,
-    concurrency,
-    wallMs,
-    files: results.map(({ file, ok, killed, wedged, wedgedTolerated, exitCode, durationMs, junitFailures }) => ({
-      file,
-      ok,
-      killed,
-      wedged,
-      wedgedTolerated,
-      exitCode,
-      durationMs,
-      junitFailures,
-    })),
-  };
-  await Bun.write(target, JSON.stringify(payload, null, 2));
-  console.log(`Wrote per-file report to ${toPosixPath(target)}`);
 }
 
 const DEFAULT_LOCAL_CONCURRENCY = 6;
@@ -477,8 +436,6 @@ export async function runTests(options: RunTestsOptions = {}): Promise<void> {
     `${results.length - failed.length}/${results.length} test files passed (concurrency: ${concurrency}, platform: ${process.platform}, wall ${(wallMs / 1000).toFixed(1)}s)`,
   );
   reportWedges(results);
-  reportSlowest(results);
-  await writeJsonReport(results, concurrency, wallMs);
   if (failed.length > 0) {
     // Re-print each failure at the very end: with files streaming out of order
     // across workers, the error text that matters is buried thousands of lines up.
