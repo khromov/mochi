@@ -63,10 +63,13 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
 
   // `source` is auto-built from the event name and payload, so call sites describe only the formatted line. The cast
   // widens `{name: K; payload: M[K]}` to the distributed `ConsoleLoggerSource` union, which TypeScript can't infer
-  // through a generic closure.
-  function subscribe<K extends keyof MochiEventMap>(name: K, format: (payload: MochiEventMap[K]) => Omit<EmitInput, 'source'>): void {
+  // through a generic closure. A `null` from the formatter suppresses the line (e.g. per-job adds inside a bulk add).
+  function subscribe<K extends keyof MochiEventMap>(name: K, format: (payload: MochiEventMap[K]) => Omit<EmitInput, 'source'> | null): void {
     mochiEvents.on(name, (payload) => {
-      emit({ ...format(payload), source: { name, payload } as ConsoleLoggerSource });
+      const formatted = format(payload);
+      if (formatted) {
+        emit({ ...formatted, source: { name, payload } as ConsoleLoggerSource });
+      }
     });
   }
 
@@ -239,10 +242,21 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
   // at `info` they'd vanish, leaving `completed` visible only when a job trips the slow-escalation. Per-attempt `active`
   // repeats on every retry and adds nothing, so it stays on `logger.debug`. The `consoleLogger:level` filter demotes any
   // of it for apps that find the lifecycle chatty.
-  subscribe('queue:added', ({ queue, jobId }) => ({
+  subscribe('queue:added', ({ queue, jobId, bulk }) =>
+    // Bulk adds print one `queue:addedBulk` summary instead of a line per job — a 100k addBulk must not log 100k lines.
+    bulk
+      ? null
+      : {
+          label: 'QUEUE',
+          path: queue,
+          note: styleText('dim', `+ ${jobId}`),
+          level: 'warn',
+        },
+  );
+  subscribe('queue:addedBulk', ({ queue, count }) => ({
     label: 'QUEUE',
     path: queue,
-    note: styleText('dim', `+ ${jobId}`),
+    note: styleText('dim', `+ ${count} jobs (bulk)`),
     level: 'warn',
   }));
   subscribe('queue:active', ({ queue }) => ({

@@ -3,8 +3,9 @@ import { GlobalRegistrator } from '@happy-dom/global-registrator';
 
 GlobalRegistrator.register({ url: 'http://localhost/' });
 
-import { afterAll, afterEach, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, describe, expect, spyOn, test } from 'bun:test';
 import { enhance } from './enhance.client';
+import { logger } from '../utils/log';
 
 const originalFetch = globalThis.fetch;
 
@@ -397,5 +398,82 @@ describe('enhance attachment', () => {
     document.body.appendChild(form);
 
     expect(() => enhance()(form)).toThrow(/method="POST"/);
+  });
+});
+
+describe('error results are always logged', () => {
+  test('a custom callback cannot swallow an error result — logged once, callback still runs', async () => {
+    const form = makeForm();
+    const boom = new TypeError('network down');
+    setFetch(() => Promise.reject(boom));
+    const errorSpy = spyOn(logger, 'error').mockImplementation(() => {});
+
+    let received: unknown;
+    const settled = deferred();
+    const cleanup = attach(form, {
+      submit:
+        () =>
+        ({ result }) => {
+          received = result;
+        },
+      onPending: (v) => {
+        if (!v) {
+          settled.resolve();
+        }
+      },
+    });
+
+    dispatchSubmit(form);
+    await settled.promise;
+
+    expect((received as { type: string }).type).toBe('error');
+    expect(errorSpy.mock.calls.filter(([label]) => label === 'enhance:')).toEqual([['enhance:', boom]]);
+    errorSpy.mockRestore();
+    cleanup();
+  });
+
+  test('the default fallback logs an error result exactly once', async () => {
+    const form = makeForm();
+    setFetch(() => Promise.reject(new TypeError('network down')));
+    const errorSpy = spyOn(logger, 'error').mockImplementation(() => {});
+
+    const settled = deferred();
+    const cleanup = attach(form, {
+      onPending: (v) => {
+        if (!v) {
+          settled.resolve();
+        }
+      },
+    });
+
+    dispatchSubmit(form);
+    await settled.promise;
+
+    expect(errorSpy.mock.calls.filter(([label]) => label === 'enhance:')).toHaveLength(1);
+    errorSpy.mockRestore();
+    cleanup();
+  });
+
+  test('a custom callback calling update() on an error result still logs exactly once', async () => {
+    const form = makeForm();
+    setFetch(() => Promise.reject(new TypeError('network down')));
+    const errorSpy = spyOn(logger, 'error').mockImplementation(() => {});
+
+    const settled = deferred();
+    const cleanup = attach(form, {
+      submit:
+        () =>
+        async ({ update }) => {
+          await update();
+          settled.resolve();
+        },
+    });
+
+    dispatchSubmit(form);
+    await settled.promise;
+
+    expect(errorSpy.mock.calls.filter(([label]) => label === 'enhance:')).toHaveLength(1);
+    errorSpy.mockRestore();
+    cleanup();
   });
 });

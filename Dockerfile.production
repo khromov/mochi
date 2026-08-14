@@ -99,6 +99,11 @@ RUN apk add --no-cache ncdu
 # named volume mounted here inherits bun:bun instead of root.
 RUN mkdir -p packages/${WORKSPACE}/.db && chown bun:bun packages/${WORKSPACE}/.db
 
+# Dedicated, mountable image-transform cache — pre-created + chowned so a mounted
+# volume inherits bun:bun; an app reads MOCHI_IMAGE_CACHE_DIR for image.cacheDir.
+ENV MOCHI_IMAGE_CACHE_DIR=/data/image-cache
+RUN mkdir -p /data/image-cache && chown -R bun:bun /data
+
 USER bun
 EXPOSE ${PORT}/tcp
 ENTRYPOINT [ "sh", "-c", "exec bun --cwd=packages/$WORKSPACE run start" ]

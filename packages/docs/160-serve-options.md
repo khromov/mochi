@@ -1,6 +1,7 @@
 ---
 title: 'Serve options'
 slug: serve-options
+ogTitle: 'Every Mochi.serve() option'
 description: 'Reference for every configuration option on Mochi.serve().'
 ---
 
@@ -38,7 +39,7 @@ In production (`development: false`), prebuilt JS/CSS bundles served from `asset
 
 <Callout type="info">
 
-**Shutdown signals.** `Mochi.serve()` installs `SIGTERM` and `SIGINT` listeners that fire the [`mochi:shutdown`](/docs/extensions/#mochishutdown) hook, drain queues, then stop the server and exit with code 0. In-flight requests get `shutdownTimeout` ms to finish. Anything still connected is force-closed. A second signal exits immediately with code 1. An open WebSocket never drains, so shutdown waits the full `shutdownTimeout` before force-closing. Keep the timeout tight enough for your orchestrator's grace period.
+**Shutdown signals.** `Mochi.serve()` installs `SIGTERM` and `SIGINT` listeners that fire the [`mochi:shutdown`](/docs/extensions/#mochishutdown) hook, drain queues, then stop the server and exit with code 0. In-flight requests get `shutdownTimeout` ms to finish. Anything still connected is force-closed. A second signal exits immediately with code 1. An open WebSocket never drains, so shutdown waits the full `shutdownTimeout` before force-closing. Keep the timeout tight enough for your orchestrator's grace period. A finite-lifetime embedder (script, test) can run the same teardown without exiting via [`Mochi.stop()`](/docs/queues/#mochistop).
 
 </Callout>
 

@@ -75,6 +75,8 @@ if (!isBuilding) await db.connect();
 await Mochi.serve({ routes });
 ```
 
+The dev server re-imports `index.ts` on every rebuild to pick up route changes; that import sees `true` too, so gated side effects don't re-run on each save.
+
 Inside `.svelte` components it is always `false` — components are compiled but never executed during a build.
 
 ## Detecting hydration with `isHydratable()`

@@ -2,6 +2,7 @@
 /// <reference path="../negotiator.d.ts" />
 import type { Server } from 'bun';
 import Negotiator from 'negotiator';
+import { STATUS_CODES } from 'node:http';
 import path from 'node:path';
 import type { MochiCompileErrorLog } from '../events';
 import type { BunRouteValue } from '../types';
@@ -63,15 +64,19 @@ export function json(
   });
 }
 
-/** Throws an error the framework catches and turns into a JSON error response. */
-export function error(status: number, message: string): never {
+export function httpStatusText(status: number): string {
+  return STATUS_CODES[status] ?? `Error ${status}`;
+}
+
+/** Throws an error the framework catches and turns into a JSON error response. Omitting `message` uses the canonical status text. */
+export function error(status: number, message?: string): never {
   throw new MochiHttpError(status, message);
 }
 
 export class MochiHttpError extends Error {
   status: number;
-  constructor(status: number, message: string) {
-    super(message);
+  constructor(status: number, message?: string) {
+    super(message ?? httpStatusText(status));
     this.status = status;
   }
 }
@@ -156,6 +161,14 @@ export function normalizeAssetPrefix(input: string | undefined): string {
 // path rather than user input, so it goes in unescaped.
 export function cssLinkTag(url: string): string {
   return `<link rel="stylesheet" href="${url}">`;
+}
+
+/** Guards against a many-subset font package turning the preload hint into unconditional downloads of every subset. */
+export const FONT_PRELOAD_MAX = 8;
+
+// `crossorigin` is mandatory: font requests are CORS-mode even same-origin, and a mode mismatch double-fetches.
+export function fontPreloadTag(url: string): string {
+  return `<link rel="preload" as="font" type="font/woff2" href="${url}" crossorigin>`;
 }
 
 /**

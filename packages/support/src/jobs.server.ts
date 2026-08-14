@@ -1,5 +1,4 @@
 import { Mochi, logger } from 'mochi-framework';
-import type { MochiQueueConfig } from 'mochi-framework';
 import { appendEmailLog, getSubmission, markEmailFailed, markEmailSent, noteEmailAttemptError } from './db.server';
 
 export const SUPPORT_TO = process.env.SUPPORT_TO || 'support@mochi.fast';
@@ -15,7 +14,7 @@ export interface SupportEmailJob {
 
 // Jobs live in the durable queue store (`queueStorage: { sqlite }` in index.ts), so an email queued before a crash or
 // restart is retried from there — the submissions table only tracks delivery status for the admin panel.
-export const supportEmailQueue: MochiQueueConfig = Mochi.queue<SupportEmailJob>({
+export const supportEmailQueue = Mochi.queue<SupportEmailJob>(SUPPORT_EMAIL_QUEUE, {
   concurrency: 2,
   retryLimit: MAX_ATTEMPTS - 1,
   retryDelay: 5,

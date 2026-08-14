@@ -11,7 +11,7 @@ import { routes, queues } from './routes';
 // the actual router — this is what catches collisions like /demos/data-loading/:id
 // shadowing /demos/data-loading/llms.txt.
 describe('per-demo llms.txt routes', () => {
-  let server: Server<undefined>;
+  let server: Server<undefined> | undefined;
   let outDir: string;
   let base: string;
 
@@ -52,12 +52,16 @@ describe('per-demo llms.txt routes', () => {
       queues,
     });
     base = `http://localhost:${server.port}`;
-  });
+    // No prebuilt manifest here, so this boot compiles every component in the site — ~26s and
+    // growing with the route table, against bun test's 30s default. Kept under the 240s per-file
+    // kill in scripts/run-tests.ts so a real hang still reports as a hook timeout, not a SIGKILL.
+  }, 120_000);
 
   afterAll(() => {
     Bun.Image = realBunImage;
     globalThis.fetch = realFetch;
-    server.stop(true);
+    // Guarded: if `beforeAll` failed, an unconditional stop() throws and buries the real error.
+    server?.stop(true);
     rmSync(outDir, { recursive: true, force: true });
   });
 

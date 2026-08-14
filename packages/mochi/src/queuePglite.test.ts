@@ -28,17 +28,15 @@ describe('Mochi queue on pglite storage', () => {
 
     await startQueueRuntime({ pglite: db });
     await mountQueues([
-      [
-        'pglite-jobs',
-        {
-          process: async (job: MochiJob<{ n: number }>) => {
-            seen.push(job);
-            resolveDone();
-            return { ok: true };
-          },
-          options: { pollingIntervalSeconds: 0.5 },
+      {
+        name: 'pglite-jobs',
+        process: async (job: MochiJob<{ n: number }>) => {
+          seen.push(job);
+          resolveDone();
+          return { ok: true };
         },
-      ],
+        options: { pollingIntervalSeconds: 0.5 },
+      },
     ]);
 
     const jobId = await getQueue<{ n: number }>('pglite-jobs').add({ n: 41 });

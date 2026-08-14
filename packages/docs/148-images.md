@@ -1,18 +1,22 @@
 ---
 title: 'Images'
 slug: images
+ogTitle: 'On-the-fly image transforms'
 description: 'On-the-fly image transforms on Bun.Image via named sizes, with encrypted URLs and a stale-while-revalidate disk cache.'
 ---
 
 <script>
   import { Image } from 'mochi-framework/image';
   import Callout from './_components/Callout.svelte';
+  import PersistenceTable from './_components/PersistenceTable.svelte';
   import placeholderShot from './images/image-placeholder.jpg';
 </script>
 
 ## Images
 
 Mochi transforms images on the fly with [`Bun.Image`](https://bun.com/docs/runtime/image) and serves them from an encrypted, stale-while-revalidate disk cache. Declare transforms once as **named sizes** in `Mochi.serve()`, then reference them by name. `<Image>` and `getImageUrl()` mint a signed URL only. The fetch, decode, and transform happen lazily in the `/_mochi/image` endpoint on the browser's request, so **SSR never blocks on image work**. Every URL payload is encrypted with a key derived from your `MOCHI_KEY`, so the source URL stays hidden and an attacker cannot request arbitrary sources or transforms.
+
+<PersistenceTable feature="image-cache" />
 
 ### Declare sizes
 
@@ -197,7 +201,7 @@ Served images carry an `ETag` and a `Cache-Control` derived from the cache windo
 
 ### Custom cache storage
 
-Mochi backs the image cache with `FileStorage` under `cacheDir` by default. Pass `storage` to swap in a different backend, for example `MemoryStorage`.
+Mochi backs the image cache with `FileStorage` under `cacheDir` by default. Pass `storage` to swap in a different backend, for example `MemoryStorage` — the only other built-in one; anything else (SQLite, Postgres, Redis, …) means implementing `Storage` yourself. See [Persistence](/docs/persistence/) for how this compares to other Mochi features.
 
 ```ts
 import { MemoryStorage } from 'mochi-framework';

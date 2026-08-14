@@ -82,6 +82,7 @@ export type {
   MochiCacheRevalidateFailedEvent,
   MochiCacheErrorEvent,
   MochiQueueAddedEvent,
+  MochiQueueAddedBulkEvent,
   MochiQueueActiveEvent,
   MochiQueueCompletedEvent,
   MochiQueueFailedEvent,
@@ -111,10 +112,13 @@ export type {
 } from './events';
 export type {
   MochiQueue,
+  MochiQueueDescriptor,
+  MochiWorker,
   MochiJob,
   MochiJobOptions,
   MochiQueueOptions,
   MochiQueueRuntimeOptions,
+  MochiWorkerTuning,
   MochiQueueListeners,
   MochiProcessor,
   MochiQueueStorage,
@@ -187,6 +191,7 @@ export type {
   MochiFormActions,
   MochiFormActionHandler,
   MochiFormEvent,
+  MochiRedirect,
   MochiEnhanceOptions,
   MochiEnhanceResult,
   MochiFormShape,
@@ -194,6 +199,7 @@ export type {
   MochiSubmitCallback,
   HttpMethod,
   MochiServeOptions,
+  MochiWorkerOptions,
   MochiWarmupOptions,
   MochiRouteValue,
   MochiWsConfig,
@@ -209,7 +215,9 @@ export type {
   MochiSvelteShakerOptions,
   MochiBarrelWarningOptions,
   MochiBuildReportOptions,
+  MochiFontOptions,
 } from './types';
+export type { SpeculationRules, SpeculationRule, SpeculationListRule, SpeculationDocumentRule, SpeculationRuleCondition, SpeculationEagerness } from './runtime/speculationRules';
 
 import type { Snippet } from 'svelte';
 

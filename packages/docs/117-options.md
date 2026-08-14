@@ -7,6 +7,7 @@ description: 'Persistent key/value storage for small app data with MochiOptions,
 <script>
   import Callout from './_components/Callout.svelte';
   import VersionNote from './_components/VersionNote.svelte';
+  import PersistenceTable from './_components/PersistenceTable.svelte';
 </script>
 
 ## Options
@@ -26,6 +27,8 @@ await MochiOptions.delete('dark_mode'); // true — the key existed
 ```
 
 ### Storage
+
+<PersistenceTable feature="options" />
 
 `MochiOptions` requires a persistent backend, configured once in `Mochi.serve()`:
 

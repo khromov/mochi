@@ -1,6 +1,7 @@
 ---
 title: 'Email'
 slug: email
+ogTitle: 'Sending transactional email'
 description: 'Send transactional email with Mochi.email() over SMTP, a custom send function, or Svelte templates rendered to inlined HTML.'
 ---
 
@@ -221,6 +222,8 @@ Email templates always render outside the request context, even when sent from a
 
 CSS inlining is best-effort, and email clients support only a limited, inconsistent subset of CSS. Rules that cannot inline (media queries, pseudo-classes) stay in a `<style>` block that some clients strip. Modern layout (flexbox/grid, custom properties) is unreliable. Favor simple, table- and inline-style-friendly markup, and test in the clients you care about.
 
+`@font-face` rules are dropped from the message, with a warning: most clients ignore web fonts, and the ones that don't still count the bytes against the size at which Gmail clips a message. Use a font stack the client already has.
+
 </Callout>
 
 ### Sending in the background
@@ -231,9 +234,9 @@ Delivery is slow and can fail. Offload the send to a [`Mochi.queue()`](/docs/que
 // jobs.server.ts
 import { Mochi } from 'mochi-framework';
 
-export const emailQueue = Mochi.queue<{ to: string; name: string }>({
+export const emailQueue = Mochi.queue<{ to: string; name: string }>('emails', {
   concurrency: 5,
-  defaultJobOptions: { attempts: 3 },
+  retryLimit: 2,
   process: async (job) => {
     await Mochi.email({
       to: job.data.to,

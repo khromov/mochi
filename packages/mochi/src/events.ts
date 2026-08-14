@@ -176,6 +176,16 @@ export interface MochiCacheErrorEvent {
 export interface MochiQueueAddedEvent {
   queue: string;
   jobId: string;
+  /** True when this add came from an `addBulk` call — see `queue:addedBulk` for the one-per-call summary. */
+  bulk?: boolean;
+}
+
+/** Emitted once per `addBulk` call that inserted at least one job, alongside the per-job `queue:added` events. */
+export interface MochiQueueAddedBulkEvent {
+  queue: string;
+  /** Jobs actually inserted (duplicates by explicit id are skipped). */
+  count: number;
+  jobIds: string[];
 }
 
 export interface MochiQueueActiveEvent {
@@ -238,7 +248,8 @@ export interface MochiServerStartEvent {
 }
 
 export interface MochiServerStopEvent {
-  reason: 'signal';
+  /** `'signal'` for SIGTERM/SIGINT, `'stop'` for a programmatic `Mochi.stop()`. */
+  reason: 'signal' | 'stop';
   signal?: 'SIGTERM' | 'SIGINT';
 }
 
@@ -395,6 +406,7 @@ export type MochiEventMap = {
   'cache:revalidate:failed': MochiCacheRevalidateFailedEvent;
   'cache:error': MochiCacheErrorEvent;
   'queue:added': MochiQueueAddedEvent;
+  'queue:addedBulk': MochiQueueAddedBulkEvent;
   'queue:active': MochiQueueActiveEvent;
   'queue:completed': MochiQueueCompletedEvent;
   'queue:failed': MochiQueueFailedEvent;

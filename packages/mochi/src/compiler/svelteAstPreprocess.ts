@@ -61,7 +61,19 @@ export interface ServerOnlyIslandError {
   resolvedPath: string;
 }
 
-export type PreprocessIslandError = UnresolvedIslandError | ServerOnlyIslandError;
+/**
+ * Children on a plain `mochi:hydrate*` island. The client hydrates from serialized props alone —
+ * there is no children snippet to hand to `hydrate()` — so server-rendered children silently
+ * vanish on hydration. With `mochi:defer*` / `mochi:clientOnly*`, children are the fallback instead.
+ */
+export interface HydrateIslandChildrenError {
+  reason: 'hydrate-children';
+  component: string;
+  directive: string;
+  filePath: string;
+}
+
+export type PreprocessIslandError = UnresolvedIslandError | ServerOnlyIslandError | HydrateIslandChildrenError;
 
 export interface PreprocessResult {
   transformed: string;
@@ -335,6 +347,13 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
         s.overwrite(comp.start, comp.end, replacement);
       } else {
         const mochiAttr = directives.hydrate!;
+
+        const hasRealChildren = comp.fragment.nodes.some((n) => !(n.type === 'Text' && n.data.trim() === '') && n.type !== 'Comment');
+        if (hasRealChildren) {
+          errors.push({ reason: 'hydrate-children', component: comp.name, directive: mochiAttr.name, filePath });
+          next();
+          return;
+        }
 
         if (!seen.has(dedupKey)) {
           seen.add(dedupKey);

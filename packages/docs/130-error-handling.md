@@ -8,6 +8,7 @@ description: 'Configure a custom error page and control how uncaught errors rend
   import { Image } from 'mochi-framework/image';
   import Callout from './_components/Callout.svelte';
   import SeeItInAction from './_components/SeeItInAction.svelte';
+  import VersionNote from './_components/VersionNote.svelte';
   import errorPage from './images/error-page.png';
 </script>
 
@@ -60,7 +61,24 @@ Default behavior without `errorPage`:
 
 - Unmatched routes → `404 Not Found`.
 - Uncaught throws in `serverProps`, page render, or an action handler → `500 Internal Server Error`.
-- `error(status, message)` thrown from any of these → that exact `status` and `message`.
+- `error(status, message?)` thrown from any of these → that exact `status`, with the message defaulting to the canonical status text when omitted.
+
+### Request context in the error page
+
+<VersionNote since="0.10.0" message="Before 0.10.0, unmatched-route 404s rendered the error page without a request context." />
+
+`getRequestContext()` works inside the error component — `url`, `cookies`, and `locals` behave as on any page, so a shared nav can read the current path. On unmatched-route 404s the context is minimal: `params` is empty because no route matched.
+
+```svelte
+<!-- file: src/Error.svelte -->
+<script lang="ts">
+  import { getRequestContext, type MochiErrorProps } from 'mochi-framework';
+  let { error }: MochiErrorProps = $props();
+  const { url } = getRequestContext();
+</script>
+
+<h1>{error.status}</h1><p>No page at {url.pathname}</p>
+```
 
 ### `handleError`
 
