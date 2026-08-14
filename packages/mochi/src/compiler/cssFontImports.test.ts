@@ -483,8 +483,13 @@ describe('CSS imports — concurrent bundles sharing an emitted asset', () => {
     const filesDir = path.join(tmp, 'files');
     mkdirSync(filesDir);
     cpSync(path.join(fonts, 'fraunces-latin-full-italic.woff2'), path.join(filesDir, 'shared.woff2'));
+    // Over BUN_CSS_COPY_THRESHOLD, or Bun inlines it as a data: URI and never emits the shared copy this covers.
+    writeFileSync(path.join(filesDir, 'shared.png'), Buffer.alloc(200 * 1024, 7));
     const sheet = (name: string): string => {
-      writeFileSync(path.join(tmp, `${name}.css`), `@font-face { font-family: '${name}'; src: url('./files/shared.woff2') format('woff2'); }`);
+      writeFileSync(
+        path.join(tmp, `${name}.css`),
+        `@font-face { font-family: '${name}'; src: url('./files/shared.woff2') format('woff2'); }\n.${name} { background: url('./files/shared.png'); }`,
+      );
       return `./${name}.css`;
     };
     const page = (name: string, imports: string[]): string => {
@@ -494,9 +499,9 @@ describe('CSS imports — concurrent bundles sharing an emitted asset', () => {
     };
 
     registry = new ComponentRegistry({ development: true, outDir: path.join(tmp, 'out'), fonts: { inlineThreshold: Infinity } });
-    // Every stylesheet emits the same content-hashed bundler copy of the font, so one batch's cleanup sweep can delete
-    // what the other is still reading. The window is a few microtasks wide, so this covers the path rather than the
-    // timing — hitting it reliably needs a far slower fixture than belongs in the suite.
+    // Every stylesheet emits the same content-hashed copy of the font and the image, so without the per-build suffix
+    // these are concurrent writers to two shared paths. The window is a few microtasks wide, so this covers the path
+    // rather than the timing — hitting it reliably needs a far slower fixture than belongs in the suite.
     const wide = (half: string): string =>
       page(
         `Page${half}`,
@@ -517,5 +522,18 @@ describe('CSS imports — concurrent bundles sharing an emitted asset', () => {
       expect(css).toContain(fontUrl);
     }
     expect(readFileSync(registry.getFontAsset(fontUrl)!.diskPath).equals(fontBytes)).toBe(true);
+  });
+
+  test('the shared non-font copy lands on one canonical name across every bundle', () => {
+    const sheets = [...registry.getClientFiles().entries()].filter(([u]) => u.includes('/import-css/') && u.endsWith('.css'));
+    const names = new Set(sheets.map(([, css]) => /url\(\.\/([^)"']+\.png)\)/.exec(css)?.[1]));
+
+    // One name, not one per bundle: a per-build suffix surviving into the served name would point each stylesheet at
+    // its own copy of identical bytes, and change that name on every rebuild.
+    expect(names.size).toBe(1);
+    const name = [...names][0]!;
+    expect(name).toMatch(/^shared-[a-z0-9]{8}\.png$/);
+    const asset = registry.getImportedCssAsset(`/_mochi/import-css/${name}`);
+    expect(readFileSync(asset!.diskPath).equals(Buffer.alloc(200 * 1024, 7))).toBe(true);
   });
 });
