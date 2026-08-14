@@ -43,6 +43,9 @@ export async function scanPublicDir(dir: string): Promise<Map<string, string>> {
   if (!existsSync(dir)) {
     return new Map();
   }
+  // Pin the base to absolute while cwd is still valid, so `Bun.file()` can't re-resolve a relative disk path against a
+  // later-changed or deleted cwd and turn every static file into a 404.
+  const absDir = path.resolve(dir);
   const result = new Map<string, string>();
   const glob = new Bun.Glob('**/*');
   // Bun.Glob yields backslash separators on Windows, so normalizing first keeps the URL key at `/a/b` and lets
@@ -52,7 +55,7 @@ export async function scanPublicDir(dir: string): Promise<Map<string, string>> {
     if (isExcludedDotPath(rel)) {
       continue;
     }
-    result.set('/' + rel, path.join(dir, rel));
+    result.set('/' + rel, path.join(absDir, rel));
   }
   return result;
 }
