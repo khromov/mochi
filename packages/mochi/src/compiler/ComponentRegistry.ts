@@ -1985,6 +1985,7 @@ export class ComponentRegistry {
           entrypoints: [cssPath],
           outdir: importCssOutDir,
           naming: { entry: '[name]-[hash].[ext]' },
+          minify: true,
           plugins: Number.isFinite(this.fontInlineThreshold) ? [fontPlugin] : [],
           throw: false,
         });
