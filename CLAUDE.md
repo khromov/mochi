@@ -64,6 +64,10 @@ Every test file runs in its own `bun test` process, up to `navigator.hardwareCon
 
 Root `bunfig.toml` pins `[install] linker = "hoisted"` to avoid a Bun bundler bug where a second in-process `Bun.build()` inside a `bun test` process can fail under the isolated install linker's symlinked `node_modules/.bun` store — do not remove it, and don't reintroduce subprocess-build indirection in tests: calling `build()` in-process from a test is fine under the hoisted layout (see `buildServerIslandManifest.test.ts`). Pinning the hoisted linker removes only this double-build reason for per-file isolation — it does **not** let us drop `run-tests.ts`. `Mochi.serve()` still pins a one-per-process singleton (`__mochi_config__`, plus siblings `__mochi_image_runtime__`/captcha/image/email config) that `server.stop()` never clears, so plain `bun test` works for pure unit tests but any second server-booting file throws "Mochi.serve() has already been called." — full-app tests stay one-file-per-process.
 
+### CI: the Windows leg is a little flaky
+
+A red Windows build on its own is not evidence of a regression. Re-run the job first; only treat it as real once it fails a second time, or once another platform fails too. Investigate immediately (without re-running) when the failure names a path with backslashes, or when the same leg is red on other PRs — that is the signature of a genuine Windows bug rather than flake.
+
 ## Architecture
 
 Mochi is an islands framework for Svelte 5 + Bun with islands-based selective hydration. Components render server-side on every request; only components marked with `mochi:hydrate*` or `mochi:defer` ship JavaScript to the browser.

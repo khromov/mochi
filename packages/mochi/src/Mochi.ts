@@ -72,6 +72,7 @@ import { resolveWarmupEnabled, markWarmupRequest, isWarmablePattern } from './ru
 import { createErrorResponder, DEFAULT_ERROR_PAGE_PATH } from './runtime/errors';
 import { requestContext } from './runtime/requestContext';
 import type { MochiRequestContext } from './runtime/requestContext';
+import type { SpeculationRules } from './runtime/speculationRules';
 import {
   startQueueRuntime,
   mountQueues,
@@ -276,10 +277,12 @@ export class Mochi {
       logLevel: LogLevel;
       /** Reads the current shell template (reassigned on dev shell edits). */
       getTemplate: () => string;
+      /** Reads the current speculation rules (reassigned on dev entry edits). */
+      getSpeculationRules: () => SpeculationRules | undefined;
       fontPreload: boolean;
     },
   ): (result: RenderResult, opts?: { debugInfo?: DebugBarData; pageEntry?: string }) => string {
-    const { serverIslandClientJs, liveReloadClientJs, logLevel, getTemplate, fontPreload } = config;
+    const { serverIslandClientJs, liveReloadClientJs, logLevel, getTemplate, getSpeculationRules, fontPreload } = config;
 
     const logLevelScript = logLevel === DEFAULT_LOG_LEVEL ? '' : `<script>window.__mochi_log_level=${JSON.stringify(logLevel)}</script>`;
     // Feeds the debug bar's Warnings panel. When the debug bar is off the
@@ -299,11 +302,22 @@ export class Mochi {
     let parsedFrom: string | undefined;
     let parts: ShellPart[] = [];
 
+    // Same deal for the speculation-rules payload: serialize once, re-serialize only when a dev entry edit swaps the object.
+    let specRulesFrom: SpeculationRules | undefined | null = null;
+    let speculationRulesScript = '';
+
     return (result, opts) => {
       const template = getTemplate();
       if (template !== parsedFrom) {
         parts = parseShellTemplate(template);
         parsedFrom = template;
+      }
+
+      const specRules = getSpeculationRules();
+      if (specRules !== specRulesFrom) {
+        specRulesFrom = specRules;
+        const count = (specRules?.prefetch?.length ?? 0) + (specRules?.prerender?.length ?? 0);
+        speculationRulesScript = count > 0 ? `<script type="speculationrules">${jsonForHtml(specRules)}</script>` : '';
       }
 
       const bootstrapUrl = result.bootstrapUrl;
@@ -314,7 +328,7 @@ export class Mochi {
       const debugInfoScript = registry.debugBarEnabled && opts?.debugInfo ? `<script>window.__mochi_debug=${jsonForHtml(opts.debugInfo)}</script>` : '';
       const pageEntryScript = liveReloadClientJs && opts?.pageEntry ? `<script>window.__mochi_page_entry=${jsonForHtml(opts.pageEntry)}</script>` : '';
 
-      const head = logLevelScript + warnShim + result.head;
+      const head = logLevelScript + warnShim + speculationRulesScript + result.head;
       const css = cssStylePrefix + cssLinks;
       const body = result.body + debugInfoScript + pageEntryScript + toolbarDiv;
       const script =
@@ -561,6 +575,14 @@ export class Mochi {
         }
       : undefined;
 
+    // Read through a getter for the same reason: a dev entry edit re-extracts the option and swaps it in place.
+    let speculationRules = options.speculationRules;
+    const reloadSpeculationRules = development
+      ? (rules: SpeculationRules | undefined) => {
+          speculationRules = rules;
+        }
+      : undefined;
+
     const errorPagePath = options.errorPage ?? DEFAULT_ERROR_PAGE_PATH;
 
     // Compiling every page entrypoint in one `Bun.build` below lets splitting pull shared transitive deps (devalue,
@@ -597,6 +619,7 @@ export class Mochi {
       liveReloadClientJs,
       logLevel: resolvedLogLevel,
       getTemplate: () => shellTemplate,
+      getSpeculationRules: () => speculationRules,
       fontPreload: options.fonts?.preload !== false,
     });
 
@@ -1939,6 +1962,7 @@ export class Mochi {
         trailingSlashPolicy,
         shellPath,
         reloadShell,
+        reloadSpeculationRules,
       });
     }
 
