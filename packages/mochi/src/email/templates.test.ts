@@ -53,8 +53,7 @@ describe('scanEmailTemplates', () => {
   test('is sorted, so a rebuild of unchanged sources keeps entrypoint order stable', () => {
     const root = scaffold([`${EMAIL_TEMPLATE_DIR}/Zeta.svelte`, `${EMAIL_TEMPLATE_DIR}/alpha.svelte`, `${EMAIL_TEMPLATE_DIR}/Mid.svelte`]);
     try {
-      const found = scanEmailTemplates(root);
-      expect(found).toEqual([...found].sort());
+      expect(scanEmailTemplates(root)).toEqual(['src/emails/Mid.svelte', 'src/emails/Zeta.svelte', 'src/emails/alpha.svelte']);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -63,7 +62,9 @@ describe('scanEmailTemplates', () => {
   test('yields forward-slash paths on every platform', () => {
     const root = scaffold([`${EMAIL_TEMPLATE_DIR}/receipts/Receipt.svelte`]);
     try {
-      expect(scanEmailTemplates(root).every((p) => !p.includes('\\'))).toBe(true);
+      const found = scanEmailTemplates(root);
+      expect(found).toEqual(['src/emails/receipts/Receipt.svelte']);
+      expect(found.join('')).not.toContain('\\');
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

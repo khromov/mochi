@@ -104,6 +104,7 @@ describe('mochi-framework update-skill (subprocess)', () => {
 
       expect(exitCode).toBe(1);
       expect(stderr).toContain('HTTP 404');
+      expect(stderr).toContain('The hosted skill may not be published yet.');
       expect(existsSync(path.join(cwd, '.claude', 'skills', 'mochi', 'SKILL.md'))).toBe(false);
     } finally {
       server.stop(true);
@@ -131,7 +132,11 @@ describe('mochi-framework generate-key (subprocess)', () => {
     const exitCode = await proc.exited;
 
     expect(exitCode).toBe(0);
-    expect(await Bun.file(path.join(cwd, '.env')).text()).not.toContain('MOCHI_KEY=old');
+    const env = await Bun.file(path.join(cwd, '.env')).text();
+    expect(env).not.toContain('MOCHI_KEY=old');
+    const key = env.match(/^MOCHI_KEY=(.+)$/m)?.[1];
+    expect(key).toBeDefined();
+    expect(Buffer.from(key!, 'base64url').length).toBe(32);
   });
 
   it('lists generate-key in --help', async () => {

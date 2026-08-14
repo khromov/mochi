@@ -62,6 +62,65 @@ To browse the site under load anyway, bind it to loopback only:
 PUBLISH=127.0.0.1 ./memtest/run.sh
 ```
 
+## Continuous self-updating run
+
+`run.sh` is a one-shot: it builds and runs whatever the repo is checked out at,
+and never pulls again. For an unattended box that should always be exercising the
+**latest `main`**, use `memtest/loop.sh` (`bun run memtest:loop`) — a host-side
+supervisor that, each cycle:
+
+1. **Pulls `main`** (`git fetch` + `merge --ff-only`). If `loop.sh` _itself_ changed
+   in that pull, it **re-execs** so the new supervisor logic takes effect, then
+   continues. Everything else (`driver.ts`, the site, the framework) is picked up
+   by the rebuild, so only `loop.sh` needs the re-exec.
+2. **Rebuilds + (re)starts** the container by invoking `run.sh` — the image `COPY`s
+   the repo in at build time, so new source only lands via a `docker build`.
+3. **Runs for 24h** (`CYCLE_SECONDS`, default `86400`), then `docker stop`s the
+   container and loops. `docker image prune -f` runs each cycle to reclaim the
+   layers the daily rebuild accretes.
+
+Snapshots persist on the host mount and keep rotating (`SNAPSHOT_KEEP`) across the
+daily container recreations, so the hourly series is continuous. Each is stamped
+with the git short-SHA the image was built from — `heap-<ISO>-<sha>.heapsnapshot`
+(the SHA is threaded host → `run.sh` → container via `MEMTEST_GIT_SHA`, so `driver.ts`
+never runs git). Because a 7-day window now spans up to ~7 daily code versions, use
+`bun run memtest:analyze --sha <shortsha>` (or `--latest-version`) to diff **within
+one version** — see [Retrieve snapshots](#retrieve-snapshots).
+
+Within a 24h window the container keeps `--restart unless-stopped`, so an OOM/site
+death still auto-recycles. Robustness notes: a failed pull/build leaves the previous
+good container running and the loop backs off `FAIL_BACKOFF_SECONDS` before retrying;
+a dirty working tree or non-fast-forward `main` is refused and logged (escape hatch:
+`MEMTEST_LOOP_RESET=1` hard-resets to `origin/$BRANCH`).
+
+### Install under systemd (recommended)
+
+Gives boot-survival + crash-restart. `memtest/mochi-memtest-loop.service` is a
+template assuming the checkout at `/home/k/mochi` and user `k`:
+
+```sh
+sudo usermod -aG docker k          # loop.sh runs docker without sudo (log out/in after)
+sudo cp memtest/mochi-memtest-loop.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now mochi-memtest-loop
+journalctl -u mochi-memtest-loop -f
+```
+
+`User=k` (uid 1000 == the container's `bun` uid) keeps the `snapshots` mount
+writable without a root chown and readable by `memtest:pull` over SSH. `nohup
+bash memtest/loop.sh &` or a `@reboot` cron entry are lighter alternatives, but
+neither gives the clean SIGTERM shutdown (`docker stop` via the trap) or the
+crash-restart that `Restart=always` does.
+
+### Test the cycle without waiting 24h
+
+```sh
+CYCLE_SECONDS=60 SNAPSHOT_INTERVAL_MS=15000 bash memtest/loop.sh
+```
+
+Watch it pull → build → run → capture a couple of snapshots → `docker stop` →
+rebuild the next cycle.
+
 ## Stop a run
 
 ```sh
@@ -99,6 +158,15 @@ room to show rather than hiding between two adjacent hourly captures. Add
 `--full` (`bun run memtest:analyze --full`) to skip the condensed summary and
 print memlab's verbatim VERBOSE report instead.
 
+When the snapshots come from a self-updating `loop.sh` run they carry a git SHA
+(`heap-<ISO>-<sha>.heapsnapshot`) and the retained window may span several code
+versions. Restrict the diff to one version with `--sha <shortsha>`, or
+`--latest-version` to auto-pick the newest snapshot's SHA:
+
+```sh
+bun run memtest:analyze --latest-version
+```
+
 ### Slow, diffuse growth (`--growth`)
 
 memlab's default `findLeaks` is a pattern detector — it clusters objects that
@@ -124,19 +192,30 @@ that only grow.
 
 ## Environment variables
 
-| Var                      | Default          | Meaning                                                                     |
-| ------------------------ | ---------------- | --------------------------------------------------------------------------- |
-| `PORT`                   | `3333`           | Site port (driver targets `127.0.0.1:$PORT`).                               |
-| `HEAP_SNAPSHOTS_ENABLED` | `true` _(image)_ | Set on the **site** process; registers `/_heapsnapshot`. Unset elsewhere.   |
-| `PUBLISH`                | _(unset)_        | `run.sh` only: host address to publish `PORT` on.                           |
-| `SNAPSHOT_DIR`           | `/snapshots`     | Where snapshots are written (the mounted volume).                           |
-| `SNAPSHOT_INTERVAL_MS`   | `3600000`        | Snapshot cadence (1h).                                                      |
-| `SNAPSHOT_KEEP`          | `168`            | Retain the newest N snapshots; older are pruned (7 days at hourly cadence). |
-| `CONCURRENCY`            | `8`              | Parallel in-flight requests in the load loop.                               |
-| `LOOP_DELAY_MS`          | `0`              | Pause between full sitemap passes.                                          |
-| `MEM_LOG_INTERVAL_MS`    | `300000`         | Post-GC memory log cadence (5m).                                            |
-| `READY_TIMEOUT_MS`       | `120000`         | Max wait for `/health/` on startup.                                         |
-| `SPAWN_SITE`             | `true`           | Set `false` to drive an externally started site.                            |
+| Var                      | Default          | Meaning                                                                        |
+| ------------------------ | ---------------- | ------------------------------------------------------------------------------ |
+| `PORT`                   | `3333`           | Site port (driver targets `127.0.0.1:$PORT`).                                  |
+| `HEAP_SNAPSHOTS_ENABLED` | `true` _(image)_ | Set on the **site** process; registers `/_heapsnapshot`. Unset elsewhere.      |
+| `PUBLISH`                | _(unset)_        | `run.sh` only: host address to publish `PORT` on.                              |
+| `SNAPSHOT_DIR`           | `/snapshots`     | Where snapshots are written (the mounted volume).                              |
+| `SNAPSHOT_INTERVAL_MS`   | `3600000`        | Snapshot cadence (1h).                                                         |
+| `SNAPSHOT_KEEP`          | `168`            | Retain the newest N snapshots; older are pruned (7 days at hourly cadence).    |
+| `CONCURRENCY`            | `8`              | Parallel in-flight requests in the load loop.                                  |
+| `LOOP_DELAY_MS`          | `0`              | Pause between full sitemap passes.                                             |
+| `MEM_LOG_INTERVAL_MS`    | `300000`         | Post-GC memory log cadence (5m).                                               |
+| `READY_TIMEOUT_MS`       | `120000`         | Max wait for `/health/` on startup.                                            |
+| `SPAWN_SITE`             | `true`           | Set `false` to drive an externally started site.                               |
+| `MEMTEST_GIT_SHA`        | _(unset)_        | Git short-SHA stamped into snapshot filenames; `loop.sh` sets it via `run.sh`. |
+
+### `loop.sh` only
+
+| Var                    | Default         | Meaning                                                           |
+| ---------------------- | --------------- | ----------------------------------------------------------------- |
+| `MEMTEST_BRANCH`       | `main`          | Branch the supervisor pulls and runs each cycle.                  |
+| `CYCLE_SECONDS`        | `86400`         | Run duration per cycle before restarting (24h). Lower it to test. |
+| `FAIL_BACKOFF_SECONDS` | `3600`          | Retry delay after a failed pull/build/run.                        |
+| `MEMTEST_LOOP_RESET`   | `0`             | `1` hard-resets a dirty tree to `origin/$BRANCH` before pulling.  |
+| `CONTAINER`            | `mochi-memtest` | Container name (also read by `run.sh`).                           |
 
 ## Local dry run (no Docker)
 

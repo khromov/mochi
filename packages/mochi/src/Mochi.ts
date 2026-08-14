@@ -8,7 +8,18 @@ import { loadSvelteConfig } from './compiler/svelteConfig';
 import { buildInlineWebComponent } from './compiler/buildInlineWebComponent';
 import { buildClientStatsRoutes, CLIENT_STATS_COMPONENT } from './dev/clientStatsRoutes';
 import { buildEmailViewerRoutes, EMAIL_VIEWER_COMPONENT } from './dev/emailViewerRoutes';
-import { isMochiPage, isMochiApi, isMochiWs, isMochiSse, isMochiFile, isMochiQueue, isServerPropsResolver, isAlsoHydrateMode, ALSO_HYDRATE_ENVELOPE_KEY } from './types';
+import {
+  isMochiPage,
+  isMochiApi,
+  isMochiWs,
+  isMochiSse,
+  isMochiFile,
+  isMochiQueue,
+  isServerPropsResolver,
+  isAlsoHydrateMode,
+  ALSO_HYDRATE_ENVELOPE_KEY,
+  FRAMEWORK_OWNED_BUN_KEYS,
+} from './types';
 import { HYDRATABLE_CONTEXT_KEY } from './islands/isHydratable';
 import type {
   BunRouteValue,
@@ -24,7 +35,7 @@ import type {
   MochiRouteValue,
   MochiServerPropsResolver,
   MochiServeOptions,
-  MochiQueueConfig,
+  MochiWorkerOptions,
   RouteRegistrationResult,
   MochiSseConfig,
   MochiSseHandler,
@@ -33,14 +44,27 @@ import type {
   MochiWsHandlers,
   MochiWsData,
 } from './types';
-import { isFormFail, isFormRedirect, isFormSuccess } from './runtime/forms';
+import { isFormFail, isFormSuccess, isRedirect } from './runtime/forms';
 import { isEnhanceRequest, jsonError, jsonFailure, jsonRedirect, jsonSuccess } from './runtime/formsJson';
 import { csrfCheck, DEFAULT_FORM_CONTENT_TYPES, DEFAULT_PROTECTED_METHODS } from './runtime/csrf';
 import { applyFilter, initExtensions, runHook } from './extensions';
 import { escapeHtmlAttr } from './utils/htmlEscape';
 import { buildPublicUrl } from './runtime/proxy';
 import { realpath } from 'node:fs/promises';
-import { apiError, collectHeaderPairs, cssLinkTag, headResponse, isHtmlResponse, MochiHttpError, relForDisplay, toPosixPath, withHead } from './utils';
+import {
+  apiError,
+  collectHeaderPairs,
+  cssLinkTag,
+  FONT_PRELOAD_MAX,
+  fontPreloadTag,
+  headResponse,
+  isHtmlResponse,
+  MochiHttpError,
+  relForDisplay,
+  toPosixPath,
+  withHead,
+} from './utils';
+import { serveDiskAsset } from './utils/serveDiskAsset';
 import type { MochiEvent, MochiEventKind, MochiResolveOptions } from './runtime/hooks';
 import { applyResolveOptions } from './runtime/hooks';
 import { alternateSlashPattern, trailingSlashRedirect } from './runtime/trailingSlash';
@@ -48,14 +72,29 @@ import { resolveWarmupEnabled, markWarmupRequest, isWarmablePattern } from './ru
 import { createErrorResponder, DEFAULT_ERROR_PAGE_PATH } from './runtime/errors';
 import { requestContext } from './runtime/requestContext';
 import type { MochiRequestContext } from './runtime/requestContext';
-import { createQueue, getQueue, closeAllQueueResources, runQueueRecovery } from './queue';
+import type { SpeculationRules } from './runtime/speculationRules';
+import {
+  startQueueRuntime,
+  mountQueues,
+  getQueue,
+  getBoss,
+  closeAllQueueResources,
+  isValidQueueStorage,
+  createQueueDescriptor,
+  createWorker,
+  storageEquals,
+  assertNoConflictingStandaloneRuntime,
+} from './queue';
+import { pinGlobal } from './utils/globalState';
 import { resetStartupMilestones } from './lifecycle';
-import type { MochiQueue, MochiQueueOptions, MochiQueueListeners, MochiProcessor } from './queue';
+import type { MochiQueue, MochiQueueOptions, MochiQueueDescriptor, MochiQueueStorage, MochiWorker } from './queue';
+import type { BunBoss } from 'bun-boss';
 import { finalizeCookieHeaders } from './runtime/cookies';
 import { makeRequestContextBuilder } from './runtime/requestSetup';
 import { createRouteLimiter, applyRateLimitHeaders } from './runtime/rateLimit';
 import type { MochiRateLimitOptions, MochiRateLimitStore, RouteLimiter } from './runtime/rateLimit';
 import { decryptProps } from './islands/serverIslandCrypto';
+import { DEFAULT_INLINE_BUDGET } from './islands/inlineServerIslands';
 import { createImageHandler } from './image/imageEndpoint';
 import { createLocalAssetHandler } from './image/localAssetRegistry';
 import { getImageRuntime } from './image/config';
@@ -181,20 +220,13 @@ export class Mochi {
   }
 
   /**
-   * Declare a background job queue. Like `page`/`api`/`ws`/`sse`/`file` this returns an inert config; the live producer
-   * and consumer are created only once `Mochi.serve({ queues })` mounts the descriptor under its queue name. Add jobs from
-   * anywhere via `Mochi.getQueue(name).add(...)`, and the queue drains gracefully on shutdown.
+   * Declare a background job queue. The returned descriptor is both the declaration `Mochi.serve({ queues: [q] })`
+   * mounts (workers start there, and the queue drains gracefully on shutdown) and a directly-usable producer handle:
+   * `q.add(...)` works anywhere. In a process that never serves, give it `storage` and the first add lazily connects a
+   * producer-only runtime — no server, no workers, no option re-sync; tear down with `Mochi.stop()`.
    */
-  static queue<T = unknown, R = unknown>(config: MochiQueueOptions<T, R>): MochiQueueConfig {
-    // Whatever survives the destructure is forwarded verbatim to bunqueue.
-    const { process, on, recover, ...options } = config;
-    return {
-      __mochiQueue: true,
-      process: process as MochiProcessor<unknown, unknown>,
-      options,
-      on: on as Partial<MochiQueueListeners<unknown, unknown>> | undefined,
-      recover: recover as ((queue: MochiQueue<never>) => void | Promise<void>) | undefined,
-    };
+  static queue<T = unknown, R = unknown>(name: string, config: MochiQueueOptions<T, R> = {}): MochiQueueDescriptor<T, R> {
+    return createQueueDescriptor<T, R>(name, config);
   }
 
   /**
@@ -203,6 +235,25 @@ export class Mochi {
    */
   static getQueue<T = unknown>(name: string): MochiQueue<T> {
     return getQueue<T>(name);
+  }
+
+  /**
+   * Declare a standalone worker: consume queues in a process that never calls `Mochi.serve()`. `start()` connects to
+   * the app's queue storage (from the descriptors or the `storage` option) and begins polling. Ensure-only, like
+   * standalone producers — stored queue options are not re-synced, no hooks or milestones fire, and signal handling is
+   * yours to wire (`Mochi.stop()` drains and closes the runtime).
+   */
+  static worker(options: MochiWorkerOptions): MochiWorker {
+    return createWorker(options.queues, options.storage);
+  }
+
+  /**
+   * The shared bun-boss instance behind `Mochi.serve({ queues })` — the escape hatch for everything Mochi doesn't wrap:
+   * `fetch`, `cancel`, `retry`, `redrive`, `findJobs`, `getQueueStats`, …. Available from the `mochi:queuesMounted` hook
+   * onwards; throws before that, or when no queues are declared.
+   */
+  static boss(): BunBoss {
+    return getBoss();
   }
 
   /**
@@ -226,9 +277,12 @@ export class Mochi {
       logLevel: LogLevel;
       /** Reads the current shell template (reassigned on dev shell edits). */
       getTemplate: () => string;
+      /** Reads the current speculation rules (reassigned on dev entry edits). */
+      getSpeculationRules: () => SpeculationRules | undefined;
+      fontPreload: boolean;
     },
   ): (result: RenderResult, opts?: { debugInfo?: DebugBarData; pageEntry?: string }) => string {
-    const { serverIslandClientJs, liveReloadClientJs, logLevel, getTemplate } = config;
+    const { serverIslandClientJs, liveReloadClientJs, logLevel, getTemplate, getSpeculationRules, fontPreload } = config;
 
     const logLevelScript = logLevel === DEFAULT_LOG_LEVEL ? '' : `<script>window.__mochi_log_level=${JSON.stringify(logLevel)}</script>`;
     // Feeds the debug bar's Warnings panel. When the debug bar is off the
@@ -248,6 +302,10 @@ export class Mochi {
     let parsedFrom: string | undefined;
     let parts: ShellPart[] = [];
 
+    // Same deal for the speculation-rules payload: serialize once, re-serialize only when a dev entry edit swaps the object.
+    let specRulesFrom: SpeculationRules | undefined | null = null;
+    let speculationRulesScript = '';
+
     return (result, opts) => {
       const template = getTemplate();
       if (template !== parsedFrom) {
@@ -255,13 +313,22 @@ export class Mochi {
         parsedFrom = template;
       }
 
+      const specRules = getSpeculationRules();
+      if (specRules !== specRulesFrom) {
+        specRulesFrom = specRules;
+        const count = (specRules?.prefetch?.length ?? 0) + (specRules?.prerender?.length ?? 0);
+        speculationRulesScript = count > 0 ? `<script type="speculationrules">${jsonForHtml(specRules)}</script>` : '';
+      }
+
       const bootstrapUrl = result.bootstrapUrl;
-      const cssLinks = result.cssUrls.map(cssLinkTag).join('\n');
+      // Preloads go ahead of the stylesheet links: the fonts are otherwise discovered only after the CSS arrives.
+      const fontPreloads = fontPreload ? result.fontPreloadUrls.slice(0, FONT_PRELOAD_MAX).map(fontPreloadTag).join('\n') : '';
+      const cssLinks = (fontPreloads ? `${fontPreloads}\n` : '') + result.cssUrls.map(cssLinkTag).join('\n');
       const debugBarUrl = registry.getDebugBarUrl();
       const debugInfoScript = registry.debugBarEnabled && opts?.debugInfo ? `<script>window.__mochi_debug=${jsonForHtml(opts.debugInfo)}</script>` : '';
       const pageEntryScript = liveReloadClientJs && opts?.pageEntry ? `<script>window.__mochi_page_entry=${jsonForHtml(opts.pageEntry)}</script>` : '';
 
-      const head = logLevelScript + warnShim + result.head;
+      const head = logLevelScript + warnShim + speculationRulesScript + result.head;
       const css = cssStylePrefix + cssLinks;
       const body = result.body + debugInfoScript + pageEntryScript + toolbarDiv;
       const script =
@@ -283,6 +350,69 @@ export class Mochi {
   }
 
   static async serve(options: MochiServeOptions): Promise<Server<undefined>> {
+    // Reject before initMochiConfig pins the process singleton, so a bad `bun` passthrough fails fast without wedging it.
+    if (options.bun && typeof options.bun === 'object') {
+      for (const key of FRAMEWORK_OWNED_BUN_KEYS) {
+        if (key in options.bun) {
+          throw new Error(`Mochi.serve({ bun }): "${key}" is owned by the framework and cannot be overridden. Use the top-level Mochi.serve() option instead.`);
+        }
+      }
+    }
+
+    // Same fail-fast rule for the queue declarations: a bad descriptor, duplicate name, deadLetter, or storage shape rejects here.
+    const declaredQueues = options.queues ?? [];
+    const queueNames = new Set<string>();
+    for (const config of declaredQueues) {
+      if (!isMochiQueue(config)) {
+        throw new Error(`Mochi.serve({ queues }): every element must be a descriptor created with Mochi.queue(name, …).`);
+      }
+      if (typeof config.name !== 'string' || !/^[\w.\-/]+$/.test(config.name)) {
+        throw new Error(`Mochi.serve({ queues }): "${config.name}" is not a valid queue name. Names may only contain letters, digits, underscores, dots, dashes, and slashes.`);
+      }
+      if (queueNames.has(config.name)) {
+        throw new Error(`Mochi.serve({ queues }): two queues are named "${config.name}". Queue names must be unique.`);
+      }
+      queueNames.add(config.name);
+      const deadLetter = config.options?.deadLetter;
+      if (deadLetter !== undefined) {
+        if (deadLetter === config.name) {
+          throw new Error(`Mochi.serve({ queues }): "${config.name}" names itself as its deadLetter queue.`);
+        }
+        if (!declaredQueues.some((q) => q.name === deadLetter)) {
+          throw new Error(
+            `Mochi.serve({ queues }): "${config.name}" names "${deadLetter}" as its deadLetter queue, but no queue with that name is declared in the same queues array.`,
+          );
+        }
+      }
+    }
+    // An app has one queue storage: declared on the descriptors, app-wide via queueStorage, or both when they agree.
+    let declaredStorage: { name: string; storage: MochiQueueStorage } | undefined;
+    for (const config of declaredQueues) {
+      if (config.storage === undefined) {
+        continue;
+      }
+      if (declaredStorage && !storageEquals(declaredStorage.storage, config.storage)) {
+        throw new Error(`Mochi.serve({ queues }): "${config.name}" and "${declaredStorage.name}" declare different storages — an app has one queue storage.`);
+      }
+      declaredStorage ??= { name: config.name, storage: config.storage };
+    }
+    if (options.queueStorage !== undefined && declaredStorage && !storageEquals(declaredStorage.storage, options.queueStorage)) {
+      throw new Error(
+        `Mochi.serve({ queueStorage }): "${declaredStorage.name}" declares a different storage — an app has one queue storage. Align the two declarations, or drop one.`,
+      );
+    }
+    const queueStorage = options.queueStorage ?? declaredStorage?.storage ?? 'memory';
+    if (!isValidQueueStorage(queueStorage)) {
+      throw new Error(`Mochi.serve({ queueStorage }): expected 'memory', { sqlite: 'path/to.db' }, { postgres: url }, or { pglite: instance }.`);
+    }
+    if (options.queueStorage !== undefined && declaredQueues.length === 0) {
+      logger.warn(`Mochi.serve({ queueStorage }) has no effect without a non-empty queues array — the queue runtime only starts when queues are declared.`);
+    }
+    if (declaredQueues.length > 0) {
+      // Fail before the config singleton pins and the server binds — rejecting this deep in the boot would wedge the process.
+      assertNoConflictingStandaloneRuntime(queueStorage);
+    }
+
     const { svelteVersion } = await checkEnvironment();
     const mochiVersion = await readMochiVersion();
     initExtensions(options);
@@ -297,6 +427,7 @@ export class Mochi {
     const cookieDefaults = applyFilter('cookie:defaults', {}, { options });
 
     const development = options.development ?? true;
+    const inlineNestedIslands = options.inlineNestedIslands !== false;
     const warmupEnabled = resolveWarmupEnabled(options.warmup, development);
     const debugBarEnabled = development && (options.debugBar ?? true);
     const liveReloadEnabled = options.liveReload ?? development;
@@ -358,7 +489,7 @@ export class Mochi {
       logger.info(`Loading prebuilt manifest from ${manifestPath}`);
       // The registry takes its outDir from the manifest's own directory, so an explicit `manifest` pointing elsewhere
       // relocates on-demand island compiles along with it.
-      registry = await ComponentRegistry.fromManifest(manifestPath, development);
+      registry = await ComponentRegistry.fromManifest(manifestPath, development, { fonts: options.fonts });
       if (options.assetPrefix !== undefined && options.assetPrefix !== registry.assetPrefix) {
         logger.warn(
           `assetPrefix in Mochi.serve() (${JSON.stringify(options.assetPrefix)}) differs from the manifest (${JSON.stringify(registry.assetPrefix)}). Using the manifest value — URLs are baked in at build time.`,
@@ -376,6 +507,7 @@ export class Mochi {
         markdown: options.markdown,
         optimize: options.optimize,
         barrelWarnings: options.barrelWarnings,
+        fonts: options.fonts,
       });
       // No-op in dev or when the option is off; production-without-manifest
       // compiles at startup, so the shake must run before the first compile.
@@ -443,6 +575,14 @@ export class Mochi {
         }
       : undefined;
 
+    // Read through a getter for the same reason: a dev entry edit re-extracts the option and swaps it in place.
+    let speculationRules = options.speculationRules;
+    const reloadSpeculationRules = development
+      ? (rules: SpeculationRules | undefined) => {
+          speculationRules = rules;
+        }
+      : undefined;
+
     const errorPagePath = options.errorPage ?? DEFAULT_ERROR_PAGE_PATH;
 
     // Compiling every page entrypoint in one `Bun.build` below lets splitting pull shared transitive deps (devalue,
@@ -479,6 +619,8 @@ export class Mochi {
       liveReloadClientJs,
       logLevel: resolvedLogLevel,
       getTemplate: () => shellTemplate,
+      getSpeculationRules: () => speculationRules,
+      fontPreload: options.fonts?.preload !== false,
     });
 
     const { renderErrorResponse, routeErrorResponse } = createErrorResponder({
@@ -487,6 +629,9 @@ export class Mochi {
       registry,
       errorPagePath,
       renderShell: (result) => renderShell(result),
+      cookieDefaults,
+      newRequestId,
+      proxy: options.proxy,
     });
 
     // Mirrors the handleError logic in renderErrorResponse, skipping the HTML render for the enhanced JSON path.
@@ -651,7 +796,21 @@ export class Mochi {
             throw new MochiHttpError(500, formatCompileErrors(compileErrors));
           }
           const liveServerProps = pageConfigMap ? pageConfigMap.get(pattern)?.serverProps : serverProps;
-          const baseProps = isServerPropsResolver(liveServerProps) ? ((await liveServerProps(req, ctx.params)) ?? {}) : (liveServerProps ?? {});
+          const resolved = isServerPropsResolver(liveServerProps) ? ((await liveServerProps(req, ctx.params)) ?? {}) : (liveServerProps ?? {});
+          if (isRedirect(resolved)) {
+            const redirectResponse = new Response(null, {
+              status: resolved.status,
+              headers: { Location: resolved.location },
+            });
+            return applyResolveOptions(redirectResponse, resolveOpts);
+          }
+          if (isFormFail(resolved) || isFormSuccess(resolved)) {
+            throw new Error(
+              `[mochi] Route "${pattern}" serverProps returned ${isFormFail(resolved) ? 'fail()' : 'success()'} — those are form-action results. ` +
+                `serverProps may return props or redirect(status, location).`,
+            );
+          }
+          const baseProps = resolved;
           const liveActions = pageConfigMap ? pageConfigMap.get(pattern)?.actions : actions;
           if (liveActions && 'form' in baseProps) {
             throw new Error(
@@ -866,7 +1025,7 @@ export class Mochi {
                 emitActionComplete(actionName, 'success', result.status);
                 return applyResolveOptions(result, resolveOpts);
               }
-              if (isFormRedirect(result)) {
+              if (isRedirect(result)) {
                 emitActionComplete(actionName, 'redirect', result.status);
                 if (enhanced) {
                   return jsonRedirect(result.status, result.location);
@@ -1322,6 +1481,12 @@ export class Mochi {
         return new Response('Unknown server island component', { status: 404 });
       }
 
+      // Arm nested-island inlining for this render. Also-hydrate renders are excluded: their subtree re-renders on the
+      // client, and a nested defer site there is a compile error anyway (`defer-in-hydratable`).
+      if (hydrateMode === null && inlineNestedIslands) {
+        ctx.islandInline = { budget: applyFilter('serverIsland:inlineBudget', DEFAULT_INLINE_BUDGET, { componentName, request: req }) };
+      }
+
       return requestContext.run(ctx, async () => {
         // A miss here means the build's eager discovery (see build.ts) didn't
         // find this island; `compileAll` warns about any manifest miss, so the
@@ -1374,7 +1539,6 @@ export class Mochi {
         if (isAlsoHydrateMode(hydrateMode)) {
           const componentUrl = registry.getComponentEntryUrl(componentName);
           const serializedProps = devalueStringify(props);
-          const bootstrapUrl = registry.getIslandBootstrapUrl();
 
           let hydrateAttrs = `component-name="${componentName}"`;
           if (Object.keys(props as Record<string, unknown>).length > 0) {
@@ -1385,10 +1549,14 @@ export class Mochi {
           }
 
           body = `<mochi-hydratable-island ${hydrateAttrs}>${body}</mochi-hydratable-island>`;
+        }
 
-          if (bootstrapUrl) {
-            body += `<script type="module" src="${bootstrapUrl}"></script>`;
-          }
+        // Appended whenever the rendered subtree carries hydratables — the also-hydrate island itself, plain
+        // mochi:hydrate children, or inlined also-hydrate islands — so the fragment self-hydrates even on a page that
+        // shipped no bootstrap of its own; duplicate module scripts are no-ops by src.
+        const bootstrapUrl = result.bootstrapUrl ?? (isAlsoHydrateMode(hydrateMode) ? registry.getIslandBootstrapUrl() : null);
+        if (bootstrapUrl) {
+          body += `<script type="module" src="${bootstrapUrl}"></script>`;
         }
 
         // CSS for islands rendered only inside this deferred content is gated out of the page `<head>`, so its `<link>`
@@ -1526,7 +1694,8 @@ export class Mochi {
       // Non-route requests run middleware too, so static-asset paths (`/_mochi/client/...` bundles) share the chain and a
       // user `gzip()` compresses them like any other response. Kind is precomputed so middleware can branch on it.
       const assetContent = registry.getClientFile(url.pathname);
-      const kind: MochiEventKind = assetContent !== undefined ? 'asset' : userFetch ? 'fallback' : 'error';
+      const diskAsset = assetContent === undefined ? (registry.getFontAsset(url.pathname) ?? registry.getImportedCssAsset(url.pathname)) : undefined;
+      const kind: MochiEventKind = assetContent !== undefined || diskAsset !== undefined ? 'asset' : userFetch ? 'fallback' : 'error';
 
       const event: MochiEvent = { request: req, url, server, locals: {}, kind, isWarmup: false };
 
@@ -1537,13 +1706,16 @@ export class Mochi {
           // `getClientFile()` returns only registered `.js` or `.css`, so extension alone decides and this branch stays
           // independent of the asset prefix.
           const contentType = url.pathname.endsWith('.css') ? 'text/css' : 'application/javascript';
-          const headers: Record<string, string> = { 'Content-Type': contentType };
+          const headers: Record<string, string> = { 'Content-Type': contentType, 'X-Content-Type-Options': 'nosniff' };
           // Content-hashed filenames change URL whenever bytes change, so prod can mark them immutable; dev skips it to
           // keep live-reload edits out of the browser cache.
           if (!development) {
             headers['Cache-Control'] = 'public, max-age=31536000, immutable';
           }
           return applyResolveOptions(new Response(assetContent, { headers }), resolveOpts);
+        }
+        if (diskAsset !== undefined) {
+          return applyResolveOptions(await serveDiskAsset(diskAsset, development), resolveOpts);
         }
         if (userFetch) {
           const response = await userFetch(req, server);
@@ -1583,6 +1755,7 @@ export class Mochi {
       handle: _handle,
       markdown: _markdown,
       websocket: userWebSocketOptions,
+      bun: bunPassthrough,
       ...bunOptions
     } = options as Record<string, unknown>;
 
@@ -1656,15 +1829,9 @@ export class Mochi {
           }
         : userWebSocketOptions;
 
-    // Validating before binding makes a misconfiguration fail fast, leaving no half-started server listening.
-    for (const [name, config] of Object.entries(options.queues ?? {})) {
-      if (!isMochiQueue(config)) {
-        throw new Error(`Mochi.serve({ queues }): "${name}" is not a Mochi.queue(...) descriptor. Each value must be created with Mochi.queue().`);
-      }
-    }
-
     const server = Bun.serve({
       ...bunOptions,
+      ...(bunPassthrough as Record<string, unknown> | undefined),
       routes: bunRoutes,
       fetch: composedFetch,
       ...(websocketOption ? { websocket: websocketOption } : {}),
@@ -1726,19 +1893,19 @@ export class Mochi {
     // Mounted after bind so the queues drain on the same shutdown path as the server; a throw mid-mount tears the
     // just-bound server down rather than leaving it listening half-started.
     try {
-      for (const [name, config] of Object.entries(options.queues ?? {})) {
-        createQueue(name, config.process, config.options, config.on);
+      if (declaredQueues.length > 0) {
+        // kind 'serve' adopts a standalone producer runtime already connected to the same storage.
+        await startQueueRuntime(queueStorage, { kind: 'serve' });
+        await mountQueues(declaredQueues);
       }
     } catch (err) {
       await closeAllQueueResources();
       await server.stop(true);
       throw err;
     }
-    // Fires once every queue in the map is registered, so a `recover()` callback or user hook reaching for a sibling
-    // gets its handle instead of a "not mounted yet" error.
-    await runHook('mochi:queuesMounted', { options, server, queues: Object.keys(options.queues ?? {}) });
-    // Awaited so recovered jobs are enqueued before `mochi:ready` fires and before `serve()` resolves.
-    await runQueueRecovery(Object.entries(options.queues ?? {}));
+    // Fires once every declared queue is registered, so a user hook reaching for a handle (or `Mochi.boss()`)
+    // gets it instead of a "not mounted yet" error.
+    await runHook('mochi:queuesMounted', { options, server, queues: declaredQueues.map((q) => q.name) });
 
     if (warmupHandlers.length > 0) {
       mochiEvents.emit('warmup:start', { routeCount: warmupHandlers.length });
@@ -1795,6 +1962,7 @@ export class Mochi {
         trailingSlashPolicy,
         shellPath,
         reloadShell,
+        reloadSpeculationRules,
       });
     }
 
@@ -1805,10 +1973,23 @@ export class Mochi {
   }
 
   /**
-   * Install one-shot SIGTERM/SIGINT listeners that fire the `mochi:shutdown` hook and stop the server, with a second
-   * signal force-exiting as most CLIs do.
+   * Gracefully stop everything Mochi is running — the `mochi:shutdown` hook, queue drain, and server stop — without
+   * exiting the process, so a finite-lifetime embedder (script, test) can end naturally instead of signalling itself.
+   * In a process that never served, it tears down a standalone producer queue runtime. Idempotent; the SIGTERM/SIGINT
+   * handlers run the same path. A stopped process cannot `Mochi.serve()` again.
+   */
+  static stop(): Promise<void> {
+    return performShutdown();
+  }
+
+  /**
+   * Install one-shot SIGTERM/SIGINT listeners that run the shared shutdown path, with a second signal force-exiting as
+   * most CLIs do.
    */
   private static installShutdownHandlers(options: MochiServeOptions, server: Server<undefined>, development: boolean): void {
+    shutdownState.server = server;
+    shutdownState.options = options;
+    shutdownState.development = development;
     let shuttingDown = false;
     const handle = async (signal: NodeJS.Signals): Promise<void> => {
       if (shuttingDown) {
@@ -1816,35 +1997,76 @@ export class Mochi {
       }
       shuttingDown = true;
       logger.info(`Received ${signal}, shutting down…`);
-      try {
-        await runHook('mochi:shutdown', { options, server, signal });
-      } catch (err) {
-        logger.error(`mochi:shutdown hook failed: ${err instanceof Error ? err.message : err}`);
-      }
-      await closeAllQueueResources();
-      resetStartupMilestones();
-      const stopEvent: MochiServerStopEvent = { reason: 'signal' };
-      if (signal === 'SIGTERM' || signal === 'SIGINT') {
-        stopEvent.signal = signal;
-      }
-      mochiEvents.emit('server:stop', stopEvent);
-
-      // A non-forced `stop()` waits for every connection to drain and Bun never resolves it while a WebSocket is open,
-      // so in dev a single tab holding the live-reload socket wedges the process; the graceful stop gets the grace
-      // period alone, then connections are cut regardless.
-      const timeout = options.shutdownTimeout ?? (development ? 0 : 5_000);
-      if (timeout > 0) {
-        // Once the grace period wins the race, a late rejection from the graceful stop has no one left to await it.
-        const graceful = server.stop().catch((err: unknown) => {
-          logger.warn(`Graceful stop failed: ${err instanceof Error ? err.message : err}`);
-        });
-        await Promise.race([graceful, Bun.sleep(timeout)]);
-      }
-      await server.stop(true);
+      await performShutdown(signal);
       // chokidar's dev watchers and any user timer still running would otherwise keep the event loop alive past the last socket.
       process.exit(0);
     };
     process.on('SIGTERM', handle);
     process.on('SIGINT', handle);
   }
+}
+
+interface ShutdownState {
+  server: Server<undefined> | null;
+  options: MochiServeOptions | null;
+  development: boolean;
+  stopping: Promise<void> | null;
+}
+
+// Pinned so `Mochi.stop()` reaches the serve context whichever bundled copy of this module registered it.
+const shutdownState = pinGlobal<ShutdownState>('__mochi_shutdown_state__', () => ({
+  server: null,
+  options: null,
+  development: false,
+  stopping: null,
+}));
+
+async function runShutdown(signal?: NodeJS.Signals): Promise<void> {
+  const { server, options } = shutdownState;
+  if (!server || !options) {
+    // Nothing served in this process — at most a standalone producer queue runtime is up.
+    await closeAllQueueResources();
+    resetStartupMilestones();
+    return;
+  }
+  try {
+    await runHook('mochi:shutdown', signal ? { options, server, signal } : { options, server });
+  } catch (err) {
+    logger.error(`mochi:shutdown hook failed: ${err instanceof Error ? err.message : err}`);
+  }
+  await closeAllQueueResources();
+  resetStartupMilestones();
+  const stopEvent: MochiServerStopEvent = { reason: signal ? 'signal' : 'stop' };
+  if (signal === 'SIGTERM' || signal === 'SIGINT') {
+    stopEvent.signal = signal;
+  }
+  mochiEvents.emit('server:stop', stopEvent);
+
+  // A non-forced `stop()` waits for every connection to drain and Bun never resolves it while a WebSocket is open,
+  // so in dev a single tab holding the live-reload socket wedges the process; the graceful stop gets the grace
+  // period alone, then connections are cut regardless.
+  const timeout = options.shutdownTimeout ?? (shutdownState.development ? 0 : 5_000);
+  if (timeout > 0) {
+    // Once the grace period wins the race, a late rejection from the graceful stop has no one left to await it.
+    const graceful = server.stop().catch((err: unknown) => {
+      logger.warn(`Graceful stop failed: ${err instanceof Error ? err.message : err}`);
+    });
+    await Promise.race([graceful, Bun.sleep(timeout)]);
+  }
+  // Caught so a rejection can't escape the signal handler before its process.exit(0) or skip the clearing below.
+  await server.stop(true).catch((err: unknown) => {
+    logger.warn(`Forced stop failed: ${err instanceof Error ? err.message : err}`);
+  });
+  // Cleared so a later stop() takes the no-server path instead of re-firing the hook against a dead server.
+  shutdownState.server = null;
+  shutdownState.options = null;
+}
+
+function performShutdown(signal?: NodeJS.Signals): Promise<void> {
+  // Memoized while running so a signal racing a programmatic stop() awaits the same teardown; cleared on settle so a
+  // standalone runtime reconnected afterwards (tests) can be stopped again.
+  shutdownState.stopping ??= runShutdown(signal).finally(() => {
+    shutdownState.stopping = null;
+  });
+  return shutdownState.stopping;
 }

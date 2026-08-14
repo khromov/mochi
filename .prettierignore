@@ -1,4 +1,5 @@
 **/CHANGELOG.md
 REPORT.md
+packages/docker/.db
 **/*.patch
 **/virtual-modules/

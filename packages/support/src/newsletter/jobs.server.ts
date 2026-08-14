@@ -1,41 +1,23 @@
 import { Mochi, logger } from 'mochi-framework';
-import type { MochiQueueConfig } from 'mochi-framework';
-import {
-  appendNewsletterLog,
-  getSubscriber,
-  markNewsletterEmailFailed,
-  markNewsletterEmailRequeued,
-  markNewsletterEmailSent,
-  noteNewsletterAttemptError,
-  pendingConfirmationIds,
-} from '../db.server';
+import { appendNewsletterLog, getSubscriber, markNewsletterEmailFailed, markNewsletterEmailSent, noteNewsletterAttemptError } from '../db.server';
 import { confirmUrl, unsubscribeUrl } from './config';
 
 export const NEWSLETTER_EMAIL_QUEUE = 'newsletter-emails';
 
+// Shared by retryLimit and the processor, which needs to know whether the attempt it is failing is the last one.
 const MAX_ATTEMPTS = 3;
 
 export interface NewsletterEmailJob {
   id: number;
 }
 
-// No `dataPath` — bunqueue locks its embedded store to the first one in the
-// process, so this queue would silently share the support queue's.
-export const newsletterEmailQueue: MochiQueueConfig = Mochi.queue<NewsletterEmailJob>({
+// Shares the durable queue store the support queue uses (`queueStorage: { sqlite }` in index.ts), so a confirmation
+// queued before a restart is still delivered from there — the subscriber row only tracks status for the admin panel.
+export const newsletterEmailQueue = Mochi.queue<NewsletterEmailJob>(NEWSLETTER_EMAIL_QUEUE, {
   concurrency: 2,
-  defaultJobOptions: { attempts: MAX_ATTEMPTS },
-  bunqueue: { backoff: { type: 'exponential', delay: 5000 } },
-  recover: async (queue) => {
-    const stranded = pendingConfirmationIds();
-    if (stranded.length === 0) {
-      return;
-    }
-    for (const id of stranded) {
-      markNewsletterEmailRequeued(id);
-      appendNewsletterLog(id, { attempt: 0, event: 'requeued', detail: 'Re-queued on server start' });
-    }
-    await queue.addBulk(stranded.map((id) => ({ name: 'confirm', data: { id } })));
-  },
+  retryLimit: MAX_ATTEMPTS - 1,
+  retryDelay: 5,
+  retryBackoff: true,
   process: async (job) => {
     const subscriber = getSubscriber(job.data.id);
     if (!subscriber) {

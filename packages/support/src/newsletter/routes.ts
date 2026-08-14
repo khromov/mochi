@@ -3,8 +3,7 @@ import type { MochiRouteValue } from 'mochi-framework';
 import { appendNewsletterLog, confirmSubscriber, requestSubscription, subscriberByConfirmToken, subscriberByUnsubscribeToken, unsubscribeSubscriber } from '../db.server';
 import { embedAncestors } from '../embedHeaders';
 import { CONFIRM_TTL_MS, RESEND_COOLDOWN_MS } from './config';
-import { NEWSLETTER_EMAIL_QUEUE } from './jobs.server';
-import type { NewsletterEmailJob } from './jobs.server';
+import { newsletterEmailQueue } from './jobs.server';
 
 export type TokenPageState = 'confirmed' | 'already' | 'expired' | 'unknown' | 'unsubscribed';
 
@@ -61,9 +60,9 @@ export const newsletterRoutes: Record<string, MochiRouteValue> = {
         if (outcome.kind !== 'throttled' && outcome.kind !== 'already') {
           appendNewsletterLog(outcome.id, { attempt: 0, event: 'queued', detail: `Confirmation to ${email}` });
           try {
-            await Mochi.getQueue<NewsletterEmailJob>(NEWSLETTER_EMAIL_QUEUE).add('confirm', { id: outcome.id });
+            await newsletterEmailQueue.add({ id: outcome.id });
           } catch (err) {
-            // The row is stored and still pending, so recover() picks it up.
+            // The row stays `pending` and visible on the admin panel's newsletter tab, where Resend re-enqueues it.
             logger.error('newsletter: could not enqueue confirmation', err);
           }
         }

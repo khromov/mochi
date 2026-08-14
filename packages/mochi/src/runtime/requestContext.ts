@@ -50,6 +50,11 @@ export interface MochiRequestContext {
    * `resetIn` (seconds), `resetAt`, `key`, and `tier` when tiered. Read it via `getRequestContext().rateLimit` to render usage.
    */
   rateLimit?: MochiRateLimitInfo;
+  /**
+   * Present only during an island-endpoint render eligible for nested-island inlining; `budget` caps total inline
+   * expansions per request so recursive island chains degrade to placeholders instead of looping.
+   */
+  islandInline?: { budget: number };
 }
 
 export interface BundleInfo {

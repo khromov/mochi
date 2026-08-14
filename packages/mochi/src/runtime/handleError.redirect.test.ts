@@ -36,6 +36,7 @@ describe('handleError returning Response.redirect', () => {
       handleError,
       routes: {
         '/redirect-me': Mochi.page(THROWING_PAGE),
+        '/no-override': Mochi.page(THROWING_PAGE),
       },
     });
     base = `http://localhost:${server.port}`;
@@ -50,5 +51,12 @@ describe('handleError returning Response.redirect', () => {
     const res = await fetch(`${base}/redirect-me/`, { redirect: 'manual' });
     expect(res.status).toBe(302);
     expect(res.headers.get('Location')).toBe(`${base}/landing`);
+  });
+
+  test('non-matching path falls through to the error page', async () => {
+    const res = await fetch(`${base}/no-override/`, { redirect: 'manual' });
+    expect(res.status).toBe(500);
+    expect(res.headers.get('Location')).toBeNull();
+    expect(res.headers.get('Content-Type')).toContain('text/html');
   });
 });

@@ -16,7 +16,7 @@ process.env.MOCHI_ORIGIN = 'https://support.test';
 process.env.NEWSLETTER_EMBED_ANCESTORS = 'https://mochi.test';
 
 const { routes } = await import('./routes');
-const { NEWSLETTER_EMAIL_QUEUE, newsletterEmailQueue } = await import('./newsletter/jobs.server');
+const { newsletterEmailQueue } = await import('./newsletter/jobs.server');
 const { closeDb, listSubscribers, newsletterLogsBySubscriber } = await import('./db.server');
 const { adminAuth } = await import('./adminAuth');
 const { embedHeaders, embedAncestors } = await import('./embedHeaders');
@@ -76,7 +76,9 @@ describe('newsletter signup', () => {
         },
       },
       handle: sequence(adminAuth, embedHeaders),
-      queues: { [NEWSLETTER_EMAIL_QUEUE]: newsletterEmailQueue },
+      queues: [newsletterEmailQueue],
+      // Mirrors src/index.ts's durable storage; the file joins the temp dir the afterAll retry-loop already cleans up.
+      queueStorage: { sqlite: path.join(outDir, 'queue.sqlite') },
       routes,
     });
     base = `http://localhost:${server.port}`;

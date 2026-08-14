@@ -66,8 +66,7 @@
   }
 
   dialog {
-    /* The shell's `* { margin: 0 }` reset kills the UA's `margin: auto`, which is
-       what centers a modal dialog — without this it renders in the top-left. */
+    /* The shell's `* { margin: 0 }` reset kills the UA's `margin: auto` that centers a modal dialog — without this it renders top-left. */
     margin: auto;
     max-width: 32rem;
     width: calc(100vw - 2rem);

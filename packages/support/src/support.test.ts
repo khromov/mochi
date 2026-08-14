@@ -5,9 +5,7 @@ import type { Server } from 'bun';
 import { Mochi, mintCaptcha, solveCaptcha } from 'mochi-framework';
 import type { ResolvedEmailMessage } from 'mochi-framework';
 
-// The suite's temp dir doubles as the outDir and the SQLite location. Both the
-// db path and the admin credentials must be in place before `./routes` and its
-// transitive `./db.server` are evaluated, hence the dynamic imports.
+// The db path and admin credentials must be set before `./routes` and its transitive `./db.server` are evaluated, hence the dynamic imports.
 const outDir = mkdtempSync(path.join(import.meta.dir, '..', '.mochi-support-test-'));
 process.env.SUPPORT_DB = path.join(outDir, 'support.sqlite');
 process.env.ADMIN_USER = 'admin';
@@ -16,7 +14,7 @@ process.env.ADMIN_PASSWORD = 'letmein';
 process.env.ADMIN_AUTH_DELAY_MS = '80';
 
 const { routes } = await import('./routes');
-const { SUPPORT_EMAIL_QUEUE, supportEmailQueue } = await import('./jobs.server');
+const { supportEmailQueue } = await import('./jobs.server');
 const { closeDb, emailLogsBySubmission, listSubmissions } = await import('./db.server');
 const { adminAuth } = await import('./adminAuth');
 
@@ -39,18 +37,14 @@ const adminPost = (base: string, action: string, id: number): Promise<Response> 
     redirect: 'manual',
   });
 
-/** The send is now a background job, so the assertion has to wait for the worker. */
+// The send is a background job, so the assertion has to wait for the worker.
 const waitForSent = async (count: number): Promise<void> => {
   for (let i = 0; i < 200 && sent.length < count; i++) {
     await Bun.sleep(10);
   }
 };
 
-// Minted + solved in-process against the same key and options the server
-// derived, so these verify exactly like the ones a real slide produces.
-// The captcha's own rules (expiry, age floor, PoW strength, chain derivation)
-// are covered by the framework's captcha tests; this suite is about the
-// action's ordering and field validation.
+// Minted + solved in-process against the server's own key/options; the captcha's own rules are covered by the framework's captcha tests, this suite is about action ordering and field validation.
 const validFields = (): Record<string, string> => ({
   ...solveCaptcha(mintCaptcha()),
   name: 'Ada',
@@ -89,7 +83,9 @@ describe('support form action', () => {
         },
       },
       handle: adminAuth,
-      queues: { [SUPPORT_EMAIL_QUEUE]: supportEmailQueue },
+      queues: [supportEmailQueue],
+      // Mirrors src/index.ts's durable storage; the file joins the temp dir the afterAll retry-loop already cleans up.
+      queueStorage: { sqlite: path.join(outDir, 'queue.sqlite') },
       routes,
     });
     base = `http://localhost:${server.port}`;
@@ -97,11 +93,7 @@ describe('support form action', () => {
 
   afterAll(async () => {
     server.stop(true);
-    // The SQLite file lives inside outDir, and Windows keeps it locked while a
-    // handle is open — then releases the lock asynchronously, so an immediate rm
-    // still throws EBUSY. Close the handle, then retry (Bun ignores rmSync's
-    // maxRetries). Best-effort cleanup of a temp dir: never fail the suite over
-    // it, the OS reclaims it on exit regardless.
+    // Windows keeps the SQLite file locked and releases it asynchronously, so an immediate rm still throws EBUSY — close then retry (best-effort, never fail the suite over cleanup).
     closeDb();
     for (let attempt = 0; attempt < 25; attempt++) {
       try {
