@@ -20,9 +20,10 @@ env:
 jobs:
   # TEMPORARY — delete this whole job before the PR leaves draft. It exists to answer one question with data: does
   # running the suite in parallel on Windows actually flake? Each arm is an independent sample of the same commit, with
-  # `workers: 1` reproducing the old serialized behaviour as a control. Deliberately skips typecheck/lint/build — they
-  # cost ~2m of a Windows leg and say nothing about test-run stability. Not in the `test` gate's `needs`, so a red sample
-  # blocks nothing.
+  # `workers: 1` reproducing the old serialized behaviour as a control. Skips typecheck and lint (~2m of a Windows leg,
+  # and they say nothing about test-run stability) but *not* build — `packages/site`'s build generates the gitignored
+  # `lib/*.generated.ts` that `demoLlms.test.ts` needs to boot the site. Not in the `test` gate's `needs`, so a red
+  # sample blocks nothing.
   windows-flake-hunt:
     name: Windows flake hunt (${{ matrix.workers }} workers, #${{ matrix.attempt }})
     runs-on: windows-latest
@@ -55,6 +56,9 @@ jobs:
 
       - name: Install dependencies
         run: bun install
+
+      - name: Try building server
+        run: bun run build
 
       - name: Run tests
         run: |
