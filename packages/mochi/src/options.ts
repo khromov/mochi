@@ -42,7 +42,6 @@ interface OptionsDriver {
   getVersioned(key: string): Promise<{ serialized: string; version: number } | undefined>;
   /** Race-safe insert-only via ON CONFLICT; `false` = the key already existed, nothing written. */
   insert(key: string, serialized: string, now: number): Promise<boolean>;
-  /** Upsert; preserves `created_at`, bumps `updated_at` and `version`. */
   upsert(key: string, serialized: string, now: number): Promise<void>;
   /** Writes only if the row's version still matches; `false` = another writer landed first. */
   updateVersioned(key: string, serialized: string, expectedVersion: number, now: number): Promise<boolean>;
@@ -309,11 +308,7 @@ export interface MochiOptionsApi {
   set(key: string, value: unknown): Promise<void>;
   /** Upsert: insert or overwrite. */
   update(key: string, value: unknown): Promise<void>;
-  /**
-   * Atomic read-modify-write: runs `fn` on the current value (`undefined` when missing) and writes the result,
-   * re-reading and re-running `fn` when another writer lands in between — so `fn` must be pure. Resolves the
-   * written value.
-   */
+  /** Atomic read-modify-write; re-runs `fn` (which must be pure) when another writer lands in between, and resolves the written value. */
   modify<T = unknown>(key: string, fn: (current: T | undefined) => T | Promise<T>): Promise<T>;
   /** Resolves `true` when the key existed and was removed, `false` when there was nothing to remove. */
   delete(key: string): Promise<boolean>;

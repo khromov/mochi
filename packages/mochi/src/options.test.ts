@@ -19,8 +19,7 @@ afterEach(async () => {
 });
 
 afterAll(async () => {
-  // Windows releases SQLite file locks asynchronously, so an immediate rm can throw EBUSY. (Bun ignores rmSync's
-  // maxRetries option, so retry by hand.) Best-effort cleanup of an ephemeral temp dir — never fail the suite over it.
+  // Windows releases SQLite file locks asynchronously, so an immediate rm can throw EBUSY; retry by hand since Bun ignores rmSync's maxRetries.
   for (let attempt = 0; attempt < 25; attempt++) {
     try {
       rmSync(dataDir, { recursive: true, force: true });
