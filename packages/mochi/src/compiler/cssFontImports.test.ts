@@ -78,7 +78,7 @@ describe('CSS imports — font asset extraction', () => {
   test('rewrites the large woff2 to a served font URL and drops the base64 payload', () => {
     const css = bundledCss();
     // Bun unquotes the plain `woff2` format keyword — both forms are valid CSS.
-    expect(css).toMatch(new RegExp(`url\\(/_mochi/fonts/demo-latin-400-normal-${fontContentHash(woff2)}\\.woff2\\) format\\(["']?woff2["']?\\)`));
+    expect(css).toMatch(new RegExp(`url\\(/_mochi/fonts/demo-latin-400-normal-${fontContentHash(woff2)}\\.woff2\\)\\s*format\\(["']?woff2["']?\\)`));
   });
 
   test('drops the legacy woff source entirely', () => {
