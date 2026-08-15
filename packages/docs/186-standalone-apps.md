@@ -58,6 +58,33 @@ Standalone apps use a minimal hash router: `#/todos/42` renders the route matchi
 
 `serverProps` and `actions` are rejected on standalone routes, and only `Mochi.page()` values are allowed in the routes map — API, WebSocket, and SSE routes need a server.
 
+### Sharing components between both apps: `isStandalone`
+
+A component used by both your `Mochi.serve()` web app and your standalone app can't hardcode hash links — the web app routes on real paths. Import the compile-time `isStandalone` flag from `mochi-framework` to branch. It is `true` only inside a standalone client build, and `false` during SSR and in `Mochi.serve()` island bundles:
+
+```ts
+import { isStandalone } from 'mochi-framework';
+
+// #/todos/2 in the standalone app, /todos/2 in the web app
+export function appHref(path: string): string {
+  return isStandalone ? `#${path}` : path;
+}
+```
+
+```svelte
+<a href={appHref(`/todos/${todo.id}`)}>{todo.title}</a>
+```
+
+Register the matching route in **both** entries — `clientProps` in `src/app.ts`, `serverProps` in `src/index.ts` — pointing at the same component:
+
+```ts
+// src/app.ts (standalone)
+'/todos/:id': Mochi.page('./src/TodoPage.svelte', { clientProps: async (params) => ({ todo: await fetchTodo(+params.id) }) }),
+
+// src/index.ts (web)
+'/todos/:id': Mochi.page('./src/TodoPage.svelte', { serverProps: (_req, params) => ({ todo: getTodo(+params.id) }) }),
+```
+
 ### Reusing your data layer with Mochi.apiDevalue()
 
 `Mochi.apiDevalue()` is `Mochi.api()` with [devalue](https://github.com/sveltejs/devalue) on top: the handler returns a plain value and the framework serializes it, so Dates, Maps, Sets, and BigInts survive the wire. On the consuming side, `fetchDevalue()` fetches and revives:

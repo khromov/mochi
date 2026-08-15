@@ -21,6 +21,10 @@ await Mochi.serve({
   },
   routes: {
     '/': Mochi.page('./src/Home.svelte'),
+    // Same TodoPage the standalone app hash-routes to, but SSR'd here with serverProps instead of clientProps.
+    '/todos/:id': Mochi.page('./src/TodoPage.svelte', {
+      serverProps: (_req, params) => ({ todo: getTodo(Number(params.id)) }),
+    }),
     '/api/todos/:id': Mochi.apiDevalue(({ params }) => {
       const todo = getTodo(Number(params.id));
       if (todo) {

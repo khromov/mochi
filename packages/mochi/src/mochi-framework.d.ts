@@ -12,6 +12,8 @@ declare module 'mochi-framework' {
   export const DEV: boolean;
   /** True when the server was started with `development: true`. */
   export const isDev: boolean;
+  /** True inside a `Mochi.standalone()` client build; false in SSR and in `Mochi.serve()` island bundles. Lets shared components branch (e.g. hash-router links vs real paths). */
+  export const isStandalone: boolean;
 
   type CookieSerializeOptions = import('./runtime/cookies').CookieSerializeOptions;
 

@@ -47,9 +47,10 @@ export function renderMochiEnvServer(development: boolean): string {
   });
 }
 
-export function renderMochiEnvClient(development: boolean, cookiesClientPath: string, enhanceClientPath: string): string {
+export function renderMochiEnvClient(development: boolean, cookiesClientPath: string, enhanceClientPath: string, standalone = false): string {
   return fill(CLIENT_TEMPLATE, {
     __MOCHI_DEV__: String(development),
+    __MOCHI_STANDALONE__: String(standalone),
     __MOCHI_COOKIES_CLIENT__: cookiesClientPath,
     __MOCHI_LOG__: frameworkFile('utils/log.ts'),
     __MOCHI_GLOBAL_STATE__: frameworkFile('utils/globalState.ts'),

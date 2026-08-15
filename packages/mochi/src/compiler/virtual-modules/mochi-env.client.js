@@ -1,6 +1,9 @@
 export const isServer = false; export const isBrowser = true; export const DEV = __MOCHI_DEV__; export const isDev = __MOCHI_DEV__;
 // Always false in the browser: a build never runs client-side, so nothing that executes here is ever mid-build.
 export const isBuilding = false;
+// True only inside a Mochi.standalone() client bundle — false in a Mochi.serve() island bundle — so shared components
+// can branch behavior (e.g. hash-router links vs real paths). Filled true only by the standalone build.
+export const isStandalone = __MOCHI_STANDALONE__;
 // Shared thrower for the server-only stubs below. Each stub stays a pure
 // declaration (tree-shaken when unused); this helper is pulled in only if one is.
 const __serverOnly = (n) => { throw new Error(n + " is only available on the server"); };

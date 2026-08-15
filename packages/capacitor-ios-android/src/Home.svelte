@@ -1,6 +1,7 @@
 <script lang="ts">
   import Greeting from './components/Greeting.svelte';
   import { listTodos } from './lib/todos';
+  import { appHref } from './lib/links';
 
   const todos = listTodos();
 </script>
@@ -10,7 +11,7 @@
   <Greeting mochi:hydrate name="Mochi" />
   <ul>
     {#each todos as todo (todo.id)}
-      <li><a href={`#/todos/${todo.id}`}>{todo.title}</a></li>
+      <li><a href={appHref(`/todos/${todo.id}`)}>{todo.title}</a></li>
     {/each}
   </ul>
 </main>

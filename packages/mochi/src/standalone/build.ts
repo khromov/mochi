@@ -98,7 +98,7 @@ export async function buildStandaloneClient(opts: {
         return { contents: buildServerOnlyStubModule(relForDisplay(args.path), scan), loader: 'js' };
       });
       registerServerOnlyComponentStubs(build);
-      registerMochiEnvClient(build, development);
+      registerMochiEnvClient(build, development, true);
       // Insurance against a stray boundary specifier, mirroring the island client build.
       build.onResolve({ filter: /^mochi-framework\/hydratable-boundary$/ }, () => ({
         path: path.join(SRC_DIR, 'islands/HydratableBoundary.svelte'),

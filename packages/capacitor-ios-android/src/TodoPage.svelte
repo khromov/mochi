@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Todo } from './lib/todos';
+  import { appHref } from './lib/links';
 
   let { todo }: { todo: Todo | null } = $props();
 </script>
@@ -12,7 +13,7 @@
   {:else}
     <p>Todo not found.</p>
   {/if}
-  <a href="#/">← Back</a>
+  <a href={appHref('/')}>← Back</a>
 </main>
 
 <style>
