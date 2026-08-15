@@ -1,11 +1,15 @@
 <script lang="ts">
+  import OfflineNotice from './components/OfflineNotice.svelte';
   import type { Todo } from './lib/todos';
   import { appHref } from './lib/links';
 
-  let { todo }: { todo: Todo | null } = $props();
+  let { todo, offline = false }: { todo: Todo | null; offline?: boolean } = $props();
 </script>
 
 <main>
+  {#if offline}
+    <OfflineNotice />
+  {/if}
   {#if todo}
     <h1>{todo.title}</h1>
     <p>Due {todo.due.toLocaleDateString()} — the Date survived the wire thanks to devalue.</p>

@@ -21,6 +21,12 @@ export function validateStandaloneOptions(options: MochiStandaloneOptions): void
   if (options.notFound !== undefined) {
     validatePage('`notFound`', options.notFound);
   }
+  if (options.loading !== undefined) {
+    validatePage('`loading`', options.loading);
+    if (options.loading.clientProps !== undefined) {
+      throw new Error("The standalone `loading` page cannot declare `clientProps` — it renders synchronously while another route's clientProps resolve.");
+    }
+  }
 }
 
 function validatePage(label: string, value: unknown): asserts value is MochiPageConfig {

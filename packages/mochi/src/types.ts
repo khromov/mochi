@@ -113,6 +113,8 @@ export interface MochiStandaloneOptions {
   routes: Record<string, MochiPageConfig>;
   /** Rendered when no route matches the hash. Its `clientProps` resolver receives empty params. */
   notFound?: MochiPageConfig;
+  /** Rendered while a route's async `clientProps` resolves. Must not declare `clientProps` of its own. */
+  loading?: MochiPageConfig;
   /** `true` (default) boots the dev server with live reload; `false` writes the static build to `outDir` and returns. */
   development?: boolean;
   /** Path to an `.html` shell file, or an inline template string. Same `{{mochi.head|css|body|script}}` placeholders as `htmlShell`. */

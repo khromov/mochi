@@ -36,6 +36,7 @@ export async function buildStandaloneClient(opts: {
   entryPath: string;
   routes: Record<string, MochiPageConfig>;
   notFound?: MochiPageConfig;
+  loading?: MochiPageConfig;
   development: boolean;
   /** Absolute destination directory for the JS/CSS artifacts. */
   outDir: string;
@@ -45,7 +46,7 @@ export async function buildStandaloneClient(opts: {
   const { development, backend, userCompilerOptions } = opts;
 
   const clientRegistryPath = toPosixPath(path.join(SRC_DIR, 'standalone', 'clientRegistry.ts'));
-  const pages = [...Object.values(opts.routes), ...(opts.notFound ? [opts.notFound] : [])];
+  const pages = [...Object.values(opts.routes), ...(opts.notFound ? [opts.notFound] : []), ...(opts.loading ? [opts.loading] : [])];
   const componentPaths = new Map<string, string>();
   for (const page of pages) {
     if (componentPaths.has(page.componentPath)) {

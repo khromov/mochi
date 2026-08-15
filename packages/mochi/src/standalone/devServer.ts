@@ -59,6 +59,7 @@ export async function startStandaloneDevServer(opts: {
       entryPath,
       routes: options.routes,
       notFound: options.notFound,
+      loading: options.loading,
       development: true,
       outDir: buildDir,
       backend,

@@ -1,7 +1,10 @@
 import { Mochi, silenceInternalRoutes, error } from 'mochi-framework';
-import { getTodo } from './lib/todos';
+import { getTodo, listTodos } from './lib/todos';
 
 const PORT = Number(process.env.PORT) || 3339;
+
+// Simulated backend latency so the standalone app's loading page is actually visible during development.
+const simulateLatency = () => new Promise((resolve) => setTimeout(resolve, 500 + Math.random() * 1000));
 
 await Mochi.serve({
   port: PORT,
@@ -25,7 +28,12 @@ await Mochi.serve({
     '/todos/:id': Mochi.page('./src/TodoPage.svelte', {
       serverProps: (_req, params) => ({ todo: getTodo(Number(params.id)) }),
     }),
-    '/api/todos/:id': Mochi.apiDevalue(({ params }) => {
+    '/api/todos': Mochi.apiDevalue(async () => {
+      await simulateLatency();
+      return listTodos();
+    }),
+    '/api/todos/:id': Mochi.apiDevalue(async ({ params }) => {
+      await simulateLatency();
       const todo = getTodo(Number(params.id));
       if (todo) {
         return todo;

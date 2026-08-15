@@ -55,7 +55,7 @@ export const Mochi = {
       target.id = MOUNT_TARGET_ID;
       document.body.appendChild(target);
     }
-    const router = startHashRouter({ routes: options.routes, notFound: options.notFound, target });
+    const router = startHashRouter({ routes: options.routes, notFound: options.notFound, loading: options.loading, target });
     await router.ready;
   },
 

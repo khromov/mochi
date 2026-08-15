@@ -59,7 +59,7 @@ export interface StandaloneRouterHandle {
  * means `/`. Each navigation resolves the route's `clientProps`, then `mount()`s the component into `target` —
  * never `hydrate()`, since a standalone shell ships no server-rendered HTML.
  */
-export function startHashRouter(opts: { routes: Record<string, MochiPageConfig>; notFound?: MochiPageConfig; target: Element }): StandaloneRouterHandle {
+export function startHashRouter(opts: { routes: Record<string, MochiPageConfig>; notFound?: MochiPageConfig; loading?: MochiPageConfig; target: Element }): StandaloneRouterHandle {
   // Bumped per navigation so a stale async clientProps resolution can't mount over a newer route.
   let generation = 0;
   let mounted: Record<string, unknown> | null = null;
@@ -96,6 +96,15 @@ export function startHashRouter(opts: { routes: Record<string, MochiPageConfig>;
     }
     let props: Record<string, unknown> = {};
     if (page.clientProps) {
+      // The route's data is genuinely async, so the loading page (when configured) mounts for the whole wait — the
+      // generation guard below still discards this render if the user navigates away mid-load.
+      if (opts.loading) {
+        const loadingComponent = getRouteComponent(opts.loading.componentPath);
+        if (loadingComponent) {
+          clear();
+          mounted = mount(loadingComponent, { target: opts.target, props: {} });
+        }
+      }
       try {
         props = (await page.clientProps(params)) ?? {};
       } catch (err) {

@@ -58,6 +58,36 @@ Standalone apps use a minimal hash router: `#/todos/42` renders the route matchi
 
 `serverProps` and `actions` are rejected on standalone routes, and only `Mochi.page()` values are allowed in the routes map — API, WebSocket, and SSE routes need a server.
 
+### Loading states
+
+`clientProps` is often a network round-trip, and the router won't mount the route until it resolves. Configure a `loading` page and it mounts for the whole wait (navigating away mid-load discards the stale result):
+
+```ts
+await Mochi.standalone({
+  routes: {/* … */},
+  loading: Mochi.page('./src/Loading.svelte'),
+});
+```
+
+The loading page renders with no props and may not declare `clientProps` of its own.
+
+### Degrading offline
+
+A packaged app must expect to run with no connectivity. A useful pattern: have your data functions resolve to data plus an `offline` flag instead of throwing, falling back to bundled (or cached) data, and let the page render an offline notice. Distinguish "the server answered with an error" from "the network is down" — `fetchDevalue` throws `MochiFetchError` only for the former:
+
+```ts
+export async function fetchTodo(id: number): Promise<{ todo: Todo | null; offline: boolean }> {
+  try {
+    return { todo: await fetchDevalue<Todo>(`${API_ORIGIN}/api/todos/${id}/`), offline: false };
+  } catch (err) {
+    if (err instanceof MochiFetchError) {
+      return { todo: null, offline: false }; // a 404 is a real "not found", not connectivity
+    }
+    return { todo: getTodo(id), offline: true }; // network down — show bundled data + a notice
+  }
+}
+```
+
 ### Sharing components between both apps: `isStandalone`
 
 A component used by both your `Mochi.serve()` web app and your standalone app can't hardcode hash links — the web app routes on real paths. Import the compile-time `isStandalone` flag from `mochi-framework` to branch. It is `true` only inside a standalone client build, and `false` during SSR and in `Mochi.serve()` island bundles:
@@ -126,6 +156,7 @@ handle: async ({ event, resolve }) => {
 await Mochi.standalone({
   routes, // Mochi.page() values only (required)
   notFound: Mochi.page('…'), // rendered when no route matches
+  loading: Mochi.page('…'), // rendered while a route's clientProps resolve
   development: false, // true (default): dev server; false: static build
   htmlShell: './src/app-shell.html', // shell file or inline template, same {{mochi.*}} placeholders
   outDir: './dist', // Capacitor's webDir

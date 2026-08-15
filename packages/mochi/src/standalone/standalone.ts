@@ -81,6 +81,7 @@ export async function runStandalone(options: MochiStandaloneOptions, overrides?:
     entryPath,
     routes: options.routes,
     notFound: options.notFound,
+    loading: options.loading,
     development: false,
     outDir,
     backend,

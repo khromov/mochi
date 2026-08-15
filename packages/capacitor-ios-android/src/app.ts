@@ -1,5 +1,5 @@
 import { Mochi } from 'mochi-framework';
-import { fetchTodo } from './lib/todosClient';
+import { fetchTodo, fetchTodos } from './lib/todosClient';
 
 const PORT = Number(process.env.PORT) || 3338;
 
@@ -11,10 +11,13 @@ await Mochi.standalone({
   development: process.env.MODE === 'development',
   htmlShell: './src/app-shell.html',
   routes: {
-    '/': Mochi.page('./src/Home.svelte'),
+    '/': Mochi.page('./src/Home.svelte', {
+      clientProps: async () => await fetchTodos(),
+    }),
     '/todos/:id': Mochi.page('./src/TodoPage.svelte', {
-      clientProps: async (params) => ({ todo: await fetchTodo(Number(params.id)) }),
+      clientProps: async (params) => await fetchTodo(Number(params.id)),
     }),
   },
   notFound: Mochi.page('./src/NotFound.svelte'),
+  loading: Mochi.page('./src/Loading.svelte'),
 });

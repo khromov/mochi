@@ -107,4 +107,17 @@ describe('standalone static build', () => {
   test('rejects an empty route table', async () => {
     await expect(runStandalone({ development: false, routes: {} }, { entryPath: path.join(appDir, 'src', 'app.ts') })).rejects.toThrow('at least one route');
   });
+
+  test('rejects clientProps on the loading page', async () => {
+    await expect(
+      runStandalone(
+        {
+          development: false,
+          routes: { '/': Mochi.page('./src/Home.svelte') },
+          loading: Mochi.page('./src/Widget.svelte', { clientProps: () => ({}) }),
+        },
+        { entryPath: path.join(appDir, 'src', 'app.ts') },
+      ),
+    ).rejects.toThrow('loading');
+  });
 });
