@@ -133,3 +133,9 @@ export { enhance, deserialize } from "__MOCHI_ENHANCE_CLIENT__";
 // every component that executes in the browser is part of a hydrating (or
 // client-only mounting) subtree. No context lookup needed.
 export function isHydratable() { return true; }
+// Isomorphic devalue-fetch helper for Mochi.apiDevalue() endpoints — a real
+// re-export, since standalone clientProps and hydrated islands call it in the browser.
+export { fetchDevalue, MochiFetchError } from "__MOCHI_FETCH_DEVALUE__";
+// The standalone client bootstrap: `Mochi.standalone()` boots the hash router in
+// the browser, descriptor factories return plain data, and server-only statics throw.
+export { Mochi } from "__MOCHI_STANDALONE_MOCHI__";

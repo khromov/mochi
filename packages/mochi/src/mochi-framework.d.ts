@@ -86,4 +86,7 @@ declare module 'mochi-framework' {
     Success extends import('./types').MochiFormShape = import('./types').MochiFormShape,
     Failure extends import('./types').MochiFormShape = import('./types').MochiFormShape,
   >(text: string): import('./types').MochiEnhanceResult<Success, Failure>;
+
+  // `fetchDevalue` / `MochiFetchError` are real exports of the package (see ./runtime/fetchDevalue and ./index
+  // re-exports), so they flow into Svelte files via the package's exports map; no augmentation entry needed.
 }

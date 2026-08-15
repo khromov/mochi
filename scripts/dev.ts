@@ -7,7 +7,7 @@ const packagesDir = path.resolve(import.meta.dir, '..', 'packages');
 
 // Packages that are CI build targets rather than things you'd normally iterate
 // on — started only by `bun run dev:full`, so the everyday fanout stays small.
-const FULL_ONLY = new Set(['minimal-rsvelte']);
+const FULL_ONLY = new Set(['minimal-rsvelte', 'capacitor-ios-android']);
 const full = process.argv.includes('--full');
 
 const targets: { name: string; cwd: string }[] = [];

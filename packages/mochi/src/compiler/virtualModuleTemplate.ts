@@ -43,6 +43,7 @@ export function renderMochiEnvServer(development: boolean): string {
     __MOCHI_IMAGE_API__: frameworkFile('image/imageApi.ts'),
     __MOCHI_ENHANCE_SSR__: frameworkFile('runtime/enhance.ssr.ts'),
     __MOCHI_RATE_LIMIT__: frameworkFile('runtime/rateLimit.ts'),
+    __MOCHI_FETCH_DEVALUE__: frameworkFile('runtime/fetchDevalue.ts'),
   });
 }
 
@@ -55,5 +56,7 @@ export function renderMochiEnvClient(development: boolean, cookiesClientPath: st
     __MOCHI_DEVALUE__: toPosixPath(Bun.resolveSync('devalue', FRAMEWORK_DIR)),
     __MOCHI_TRAILING_SLASH__: frameworkFile('runtime/trailingSlash.ts'),
     __MOCHI_ENHANCE_CLIENT__: enhanceClientPath,
+    __MOCHI_FETCH_DEVALUE__: frameworkFile('runtime/fetchDevalue.ts'),
+    __MOCHI_STANDALONE_MOCHI__: frameworkFile('standalone/mochiClient.ts'),
   });
 }

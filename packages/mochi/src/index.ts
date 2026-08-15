@@ -126,6 +126,7 @@ export type {
 } from './queue';
 export { DEFAULT_EXPIRE_IN_SECONDS } from './queue';
 export { json, error, apiError, MochiHttpError } from './utils';
+export { fetchDevalue, MochiFetchError } from './runtime/fetchDevalue';
 export { trailingSlashIt } from './runtime/trailingSlash';
 export { fail, redirect, success } from './runtime/forms';
 export { isHydratable } from './islands/isHydratable';
@@ -182,9 +183,13 @@ export type {
   MarkdownHighlighter,
   MochiErrorProps,
   MochiPageConfig,
+  MochiPageOptions,
   MochiApiConfig,
   MochiApiEvent,
   MochiApiHandler,
+  MochiDevalueApiHandler,
+  MochiClientPropsResolver,
+  MochiStandaloneOptions,
   MochiFormResult,
   MochiFormActions,
   MochiFormActionHandler,

@@ -71,3 +71,6 @@ export { getImageUrl, getImageAttrs, getImage, getImagePlaceholder, imagePlaceho
 export { enhance, deserialize } from "__MOCHI_ENHANCE_SSR__";
 // Rate-limit stores — server-only (bun:sqlite / Bun SQL).
 export { memoryStore, sqliteStore, postgresStore } from "__MOCHI_RATE_LIMIT__";
+// Isomorphic devalue-fetch helper for Mochi.apiDevalue() endpoints — a real
+// re-export on the server too (SSR code may fetch a sibling service).
+export { fetchDevalue, MochiFetchError } from "__MOCHI_FETCH_DEVALUE__";
