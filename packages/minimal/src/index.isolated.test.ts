@@ -6,6 +6,7 @@ import { Mochi } from 'mochi-framework';
 
 const routes = {
   '/': Mochi.page('./src/HelloWorld.svelte'),
+  '/health': Mochi.api(() => Response.json({ status: 'ok' })),
 };
 
 describe('minimal app', () => {
@@ -38,5 +39,11 @@ describe('minimal app', () => {
     const res = await fetch(base);
     expect(res.status).toBe(200);
     expect(await res.text()).toContain('Hello Mochi!');
+  });
+
+  test('GET /health reports ok', async () => {
+    const res = await fetch(`${base}/health`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ status: 'ok' });
   });
 });
