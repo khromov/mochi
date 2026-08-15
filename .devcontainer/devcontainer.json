@@ -15,31 +15,31 @@
   "portsAttributes": {
     "3333": {
       "label": "site",
-      "onAutoForward": "notify"
+      "onAutoForward": "silent"
     },
     "3334": {
       "label": "demos",
-      "onAutoForward": "notify"
+      "onAutoForward": "silent"
     },
     "3335": {
       "label": "minimal",
-      "onAutoForward": "notify"
+      "onAutoForward": "silent"
     },
     "3336": {
       "label": "support",
-      "onAutoForward": "notify"
+      "onAutoForward": "silent"
     },
     "3338": {
       "label": "capacitor-app",
-      "onAutoForward": "notify"
+      "onAutoForward": "silent"
     },
     "3339": {
       "label": "capacitor-web",
-      "onAutoForward": "notify"
+      "onAutoForward": "silent"
     },
     "5432": {
       "label": "postgres",
-      "onAutoForward": "notify"
+      "onAutoForward": "silent"
     }
   },
   "customizations": {
