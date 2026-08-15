@@ -8,6 +8,7 @@ import { extractServeOptions } from './extractServeOptions';
 import { updateSkill, SKILL_TARGETS, SKILL_DESTS, DEFAULT_SKILL_TARGET, type SkillTarget } from './updateSkill';
 import { generateKey } from './generateKey';
 import { relForDisplay } from '../utils';
+import { markBuilding } from '../utils/buildFlag';
 
 const TARGET_ALIASES: Record<string, SkillTarget> = { agy: 'antigravity' };
 
@@ -150,6 +151,10 @@ async function main() {
     process.exit(1);
   }
 
+  // Flipped before anything imports the app entry: this whole process is a build, so server-setup code must skip
+  // real-boot side effects for its entire lifetime, not just while the entry is being read.
+  markBuilding();
+
   const entryPath = path.resolve(process.cwd(), values.entry ?? './src/index.ts');
   let serveOptions: Awaited<ReturnType<typeof extractServeOptions>> = null;
   if (existsSync(entryPath)) {
@@ -173,6 +178,8 @@ async function main() {
     svelteCompiler: serveOptions?.svelteCompiler,
     optimize: serveOptions && 'optimize' in serveOptions ? serveOptions.optimize : undefined,
     barrelWarnings: serveOptions?.barrelWarnings,
+    fonts: serveOptions?.fonts,
+    errorPage: serveOptions?.errorPage,
     resources: serveOptions?.build?.resources,
     development: values.dev,
     outDir: values['out-dir'],
@@ -182,9 +189,8 @@ async function main() {
     assetPrefix: values['asset-prefix'],
   });
 
-  // Extracting serve options imports the user's entry for real, so a top-level
-  // Mochi.queue() producer opens an embedded store whose background intervals
-  // keep the event loop alive and hang this one-shot build. Drain and exit.
+  // Extracting serve options imports the user's entry for real; if anything started the queue runtime, its
+  // maintenance timers keep the event loop alive and hang this one-shot build. Drain and exit.
   await closeAllQueueResources();
   process.exit(0);
 }

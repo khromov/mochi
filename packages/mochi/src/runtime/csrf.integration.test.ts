@@ -52,12 +52,12 @@ describe('csrf wiring through Mochi.serve()', () => {
     expect(res.status).toBe(403);
   });
 
-  test('page handler: same-origin GET → not 403', async () => {
+  test('page handler: same-origin GET → 200', async () => {
     const res = await fetch(`${base}/page`, {
       method: 'GET',
       headers: { origin: base },
     });
-    expect(res.status).not.toBe(403);
+    expect(res.status).toBe(200);
   });
 
   test('api handler: cross-origin form POST → 403', async () => {
@@ -119,11 +119,11 @@ describe('csrf wiring through Mochi.serve()', () => {
     expect(res.status).toBe(403);
   });
 
-  test('cross-origin GET to unrouted path → not 403 (exempt method)', async () => {
+  test('cross-origin GET to unrouted path → 404 (exempt method)', async () => {
     const res = await fetch(`${base}/__nonexistent__`, {
       method: 'GET',
       headers: { origin: 'http://evil.example' },
     });
-    expect(res.status).not.toBe(403);
+    expect(res.status).toBe(404);
   });
 });

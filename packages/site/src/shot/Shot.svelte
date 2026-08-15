@@ -24,23 +24,18 @@
 </script>
 
 <div class="shot" style="width: {width}px; height: {height}px">
-  <!-- Sized to the subject's natural box and scaled up from there. transform (not
-       width/height) so the subject lays out at its designed size and is only
-       magnified — stretching its box would reflow it into a different design. -->
+  <!-- transform (not width/height) sizes this so the subject lays out at its designed
+       size and is only magnified — stretching would reflow it into a different design. -->
   <div class="fit" style="width: {natural.width}px; height: {natural.height}px; transform: scale({scale})">
-    <!-- To add a component: give it a branch here, plus a registry.ts entry carrying
-         its natural size and props. A branch rather than a dynamic <Subject /> because
-         the island preprocessor only reads mochi:hydrate off a static invocation of a
-         statically-known component (a relative-import .svelte or a `mochi-framework/components`
-         export). The captcha subject hydrates MochiCaptcha directly inside CaptchaShot, so
-         its branch mounts CaptchaShot as plain SSR. -->
+    <!-- A branch (not a dynamic <Subject />) because the island preprocessor only reads
+         mochi:hydrate off a static invocation of a statically-known component; captcha
+         mounts CaptchaShot as plain SSR since MochiCaptcha already hydrates inside it. -->
     {#if name === 'captcha'}
       <CaptchaShot {...props as ComponentProps<typeof CaptchaShot>} />
     {:else if name === 'like'}
       <LikeButton mochi:hydrate {...props as ComponentProps<typeof LikeButton>} />
     {:else if name === 'image-placeholder'}
-      <!-- No mochi:hydrate: <Image> renders a plain <img> and ships no client JS, so
-           there is no island here and nothing for the wrapper trap to catch. -->
+      <!-- No mochi:hydrate: <Image> renders a plain <img> and ships no client JS, so there's no island here. -->
       <ImageShot {...props as ComponentProps<typeof ImageShot>} />
     {/if}
   </div>
@@ -59,10 +54,8 @@
     overflow: hidden;
   }
 
-  /* Scaling about the centre keeps the subject centred: transform doesn't affect
-     layout, so flex still centres the unscaled box and the magnification is even.
-     Centres its own content too, so a subject that doesn't fill its declared
-     natural box is still centred rather than pinned to the top-left of it. */
+  /* transform doesn't affect layout, so flex still centres the unscaled box evenly,
+     and centres this element's own content too so an undersized subject isn't pinned top-left. */
   .fit {
     display: flex;
     align-items: center;
@@ -71,8 +64,8 @@
     flex: none;
   }
 
-  /* The dev toolbar would otherwise sit across the bottom of every shot. This page's
-     CSS only ships with this page, so a bare global rule can't leak to the site. */
+  /* Hides the dev toolbar, which would otherwise sit across the bottom of every shot;
+     :global is safe since this page's CSS ships only with this page. */
   :global(#mochi-dev-toolbar) {
     display: none;
   }

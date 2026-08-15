@@ -155,7 +155,8 @@ describe('MochiCache events', () => {
     await cache.fetch('k', async () => ++calls);
     await wait(20);
 
-    expect(seen).toContain('k');
+    // Exactly one emission for the single stale read.
+    expect(seen).toEqual(['k']);
   });
 });
 
@@ -229,8 +230,27 @@ describe('MochiCache.set', () => {
   });
 
   test('never leaves the key absent, unlike delete + fetch', async () => {
-    const cache = new MochiCache({ minTimeToStale: 1_000, maxTimeToLive: 5_000 });
-    await cache.set('k', 'v1');
+    // An async backend with a gap before each write, so a non-atomic (remove-then-write) set would expose a null window.
+    const store = new Map<string, unknown>();
+    const storage: Storage = {
+      async getItem(key) {
+        await wait(1);
+        return store.get(key) ?? null;
+      },
+      async setItem(key, value) {
+        await wait(1);
+        store.set(key, value);
+      },
+      async removeItem(key) {
+        await wait(1);
+        store.delete(key);
+      },
+      async clear() {
+        store.clear();
+      },
+    };
+    const cache = new MochiCache({ storage, minTimeToStale: 1_000, maxTimeToLive: 5_000 });
+    await cache.set('k', 'v0');
 
     let sawMiss = false;
     let stop = false;
@@ -239,16 +259,33 @@ describe('MochiCache.set', () => {
         if ((await cache.peek('k')) === null) {
           sawMiss = true;
         }
-        await Promise.resolve();
       }
     })();
-    for (let i = 0; i < 50; i++) {
+    for (let i = 1; i <= 20; i++) {
       await cache.set('k', `v${i}`);
     }
     stop = true;
     await reader;
-
     expect(sawMiss).toBe(false);
+
+    // The contrast: delete + fetch leaves the key absent long enough for a concurrent reader to observe a miss.
+    let sawMissDuringReplace = false;
+    let replaceDone = false;
+    const probe = (async () => {
+      while (!replaceDone) {
+        if ((await cache.peek('k')) === null) {
+          sawMissDuringReplace = true;
+        }
+      }
+    })();
+    await cache.delete('k');
+    await cache.fetch('k', async () => {
+      await wait(10);
+      return 'replaced';
+    });
+    replaceDone = true;
+    await probe;
+    expect(sawMissDuringReplace).toBe(true);
   });
 
   test('supersedes a registered in-flight recompute rather than being clobbered by it', async () => {

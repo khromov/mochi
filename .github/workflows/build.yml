@@ -230,10 +230,17 @@ jobs:
             caprover_token_secret: APP_TOKEN_SUPPORT_S1
 
     steps:
+      # caprover CLI pinned to 2.3.1: the caprover/deploy-from-github action
+      # installs npm `latest` unpinned, and 2.4.0 crashes on load
+      # (caprover-cli#126, duplicate `-t` short flag), so we invoke the CLI
+      # directly against a known-good version instead of via the action.
       - name: Deploy on CapRover
-        uses: caprover/deploy-from-github@v1.2.0
-        with:
-          server: '${{ secrets.APP_SERVER_S1 }}'
-          app: ${{ matrix.caprover_app }}
-          token: '${{ secrets[matrix.caprover_token_secret] }}'
-          image: '${{ matrix.image }}:main'
+        env:
+          APP_TOKEN: ${{ secrets[matrix.caprover_token_secret] }}
+        run: |
+          npm i -g caprover@2.3.1
+          caprover deploy \
+            --caproverUrl "${{ secrets.APP_SERVER_S1 }}" \
+            --appToken "$APP_TOKEN" \
+            --appName "${{ matrix.caprover_app }}" \
+            --imageName "${{ matrix.image }}:main"

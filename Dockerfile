@@ -70,13 +70,20 @@ ENV WORKSPACE=${WORKSPACE}
 ENV PORT=${PORT}
 ENV MOCHI_LIVE_RELOAD=false
 ENV MOCHI_DOCKER=true
+
+# Dedicated, mountable image-transform cache — kept out of .mochi (whose dev
+# build cache is wiped on every boot). Pre-created + chowned so a mounted volume
+# inherits bun:bun; the site reads MOCHI_IMAGE_CACHE_DIR for image.cacheDir.
+ENV MOCHI_IMAGE_CACHE_DIR=/data/image-cache
+RUN mkdir -p /data/image-cache && chown -R bun:bun /data
+
 USER bun
 EXPOSE ${PORT}/tcp
 
 # No curl/wget in the alpine base; bun is on PATH, so probe with fetch. Reads
 # PORT from the env above and hits the bare /health: it is a Mochi.api() route,
 # so trailingSlash:'always' never applies to it and /health/ is a hard 404.
-#HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-#  CMD bun --eval "fetch('http://127.0.0.1:'+process.env.PORT+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+CMD bun --eval "fetch('http://127.0.0.1:'+process.env.PORT+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 ENTRYPOINT [ "sh", "-c", "exec bun run dev:${WORKSPACE}" ]

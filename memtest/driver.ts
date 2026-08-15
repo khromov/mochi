@@ -6,7 +6,7 @@
 // Reuses the site's existing HTTP endpoints — no site source changes:
 //   /health                   readiness probe
 //   /sitemap.xml              URL inventory (every doc + internal demo)
-//   /_heapsnapshot            Bun.generateHeapSnapshot('v8') download
+//   /_heapsnapshot            Bun.generateHeapSnapshot('v8') download (needs HEAP_SNAPSHOTS_ENABLED=true)
 //   /__mochi/health/memory    post-GC process.memoryUsage() (needs MOCHI_MEMORY_PROBE=1)
 //
 // The site runs as a child process so its heap stays isolated: the snapshot we
@@ -34,6 +34,9 @@ const FETCH_TIMEOUT_MS = Number(process.env.FETCH_TIMEOUT_MS) || 30_000;
 // but never unbounded, so a stuck capture can't wedge the snapshot loop forever.
 const SNAPSHOT_TIMEOUT_S = Math.ceil((Number(process.env.SNAPSHOT_TIMEOUT_MS) || 120_000) / 1000);
 const SPAWN_SITE = process.env.SPAWN_SITE !== 'false';
+// Set by loop.sh (via run.sh) to the git short-SHA the image was built from, so
+// snapshots from a self-updating daily run can be diffed within one code version.
+const GIT_SHA = process.env.MEMTEST_GIT_SHA || '';
 
 function log(msg: string): void {
   console.log(`[${new Date().toISOString()}] ${msg}`);
@@ -139,7 +142,8 @@ async function pruneSnapshots(): Promise<void> {
 
 async function captureSnapshot(): Promise<void> {
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const file = path.join(SNAPSHOT_DIR, `heap-${stamp}.heapsnapshot`);
+  // SHA goes AFTER the timestamp so pruneSnapshots' lexicographic sort stays chronological.
+  const file = path.join(SNAPSHOT_DIR, `heap-${stamp}${GIT_SHA ? `-${GIT_SHA}` : ''}.heapsnapshot`);
   // Download via curl in a separate process: it streams the large body straight
   // to disk with constant memory and no event-loop contention with the load loop
   // (draining a big response inside this process deadlocks on TCP backpressure).
@@ -151,7 +155,10 @@ async function captureSnapshot(): Promise<void> {
   const code = await proc.exited;
   if (code !== 0) {
     const stderr = (await new Response(proc.stderr).text()).trim();
-    log(`snapshot capture failed (curl exit ${code})${stderr ? `: ${stderr}` : ''}`);
+    // curl exits 22 on an HTTP >=400 — overwhelmingly a 404 because the site
+    // only registers /_heapsnapshot when HEAP_SNAPSHOTS_ENABLED=true.
+    const hint = code === 22 ? ' — is HEAP_SNAPSHOTS_ENABLED=true set for the site?' : '';
+    log(`snapshot capture failed (curl exit ${code})${stderr ? `: ${stderr}` : ''}${hint}`);
     await unlink(file).catch(() => {}); // curl may leave a partial/empty file
     return;
   }

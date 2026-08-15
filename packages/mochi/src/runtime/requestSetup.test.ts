@@ -94,8 +94,10 @@ describe('makeRequestContextBuilder', () => {
   test('kind: "sse" calls server.timeout(req, 0)', () => {
     const build = makeRequestContextBuilder(makeConfig());
     const { server, timeout } = mockServer();
-    build(mockReq('GET', '/'), server, { kind: 'sse', pattern: '/' });
+    const req = mockReq('GET', '/');
+    build(req, server, { kind: 'sse', pattern: '/' });
     expect(timeout).toHaveBeenCalledTimes(1);
+    expect(timeout).toHaveBeenCalledWith(req, 0);
   });
 
   test('kind: "ws" does not call server.timeout', () => {

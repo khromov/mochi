@@ -7,9 +7,20 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <script>
+      // The embedding page's theme lives in its own localStorage, unreadable
+      // across origins, so it arrives in the URL instead. Applied before paint so
+      // a dark blog doesn't flash a white widget.
+      (function () {
+        var theme = new URLSearchParams(location.search).get('theme');
+        if (theme === 'light' || theme === 'dark') {
+          document.documentElement.setAttribute('data-theme', theme);
+        }
+      })();
+    </script>
     <style>
       :root {
-        color-scheme: light;
+        color-scheme: light dark;
 
         --bg: #f5f3ec;
         --surface: #fffdf8;
@@ -30,6 +41,44 @@
 
         --font-sans: 'Public Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
         --font-serif: 'Fraunces Variable', Georgia, 'Times New Roman', serif;
+      }
+
+      /* Same values as packages/site's shell, so the embedded widget matches the
+         page around it. */
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme='light']) {
+          --bg: #171914;
+          --surface: #1f221c;
+          --surface-muted: #1a1d17;
+          --border: #2e3228;
+          --text: #e8e6dd;
+          --text-muted: #a8ada0;
+          --text-subtle: #8e9488;
+          --accent: #8ab79a;
+          --accent-hover: #a2cfb1;
+          --accent-text: #1a1d17;
+          --accent-soft: #2a3a2f;
+          --accent-soft-text: #c7e0cd;
+          --badge-danger-text: #e9a89a;
+          --shadow-md: inset 0 0 0 1px rgba(255, 253, 240, 0.03), 0 1px 2px rgba(0, 0, 0, 0.3);
+        }
+      }
+
+      :root[data-theme='dark'] {
+        --bg: #171914;
+        --surface: #1f221c;
+        --surface-muted: #1a1d17;
+        --border: #2e3228;
+        --text: #e8e6dd;
+        --text-muted: #a8ada0;
+        --text-subtle: #8e9488;
+        --accent: #8ab79a;
+        --accent-hover: #a2cfb1;
+        --accent-text: #1a1d17;
+        --accent-soft: #2a3a2f;
+        --accent-soft-text: #c7e0cd;
+        --badge-danger-text: #e9a89a;
+        --shadow-md: inset 0 0 0 1px rgba(255, 253, 240, 0.03), 0 1px 2px rgba(0, 0, 0, 0.3);
       }
 
       *,

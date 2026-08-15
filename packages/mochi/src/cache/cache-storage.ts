@@ -1,9 +1,21 @@
 import { mkdirSync, rmSync, type Dirent } from 'node:fs';
 import { mkdir, open, readdir, rename, rm, stat, unlink, type FileHandle } from 'node:fs/promises';
-import { join, relative } from 'node:path';
+import { join, relative, resolve } from 'node:path';
 import type { Storage, SweepOptions, SweepResult } from './cache';
 import { mochiEvents } from '../events';
+import { pinGlobal } from '../utils/globalState';
 import { logger } from '../utils/log';
+
+// A closure rather than the instance, so taking a sweeper over needs no public method on `FileStorage` — the registry
+// may hold an entry from a different bundled copy of this class.
+interface SweeperOwner {
+  stop(): void;
+}
+
+// Dev HMR rebuilds a module-scope FileStorage on every reload while the previous copy becomes unreachable, so nobody
+// is left to dispose() it and its unref'd interval sweeps forever. Keyed by directory since a sweep deletes files by
+// mtime; pinned so duplicate bundled framework copies share one registry.
+const sweeperOwners = pinGlobal('__mochi_cache_sweeper_owners__', () => new Map<string, SweeperOwner>());
 
 /**
  * On-disk sentinel written in place of a binary field: a pointer (relative to the
@@ -244,6 +256,8 @@ export class FileStorage implements Storage {
   private offloadBinary: boolean;
   private initialTimer?: ReturnType<typeof setTimeout>;
   private intervalTimer?: ReturnType<typeof setInterval>;
+  private sweepKey?: string;
+  private sweepOwner?: SweeperOwner;
 
   constructor(options: FileStorageOptions) {
     this.directory = options.directory;
@@ -451,8 +465,7 @@ export class FileStorage implements Storage {
     return options.reportKeys ? { removed, removedKeys } : { removed };
   }
 
-  /** Stop the background sweep. Call when the cache is no longer needed (e.g. in tests). */
-  dispose(): void {
+  private stopSweepTimers(): void {
     if (this.initialTimer) {
       clearTimeout(this.initialTimer);
     }
@@ -461,6 +474,17 @@ export class FileStorage implements Storage {
     }
     this.initialTimer = undefined;
     this.intervalTimer = undefined;
+  }
+
+  /** Stop the background sweep. Call when the cache is no longer needed (e.g. in tests). */
+  dispose(): void {
+    this.stopSweepTimers();
+    // A newer instance may have taken the directory over and must keep sweeping it.
+    if (this.sweepKey !== undefined && sweeperOwners.get(this.sweepKey) === this.sweepOwner) {
+      sweeperOwners.delete(this.sweepKey);
+    }
+    this.sweepKey = undefined;
+    this.sweepOwner = undefined;
   }
 
   // The plaintext key stored in a file's envelope, or null if it can't be recovered
@@ -552,6 +576,13 @@ export class FileStorage implements Storage {
         logger.warn(`Cache sweep failed: ${err instanceof Error ? err.message : String(err)}`);
       }
     };
+    // Newest wins: an older instance is usually a dead HMR copy, and first-wins would pin the sweep to one that
+    // `dispose()` can never reach.
+    const key = resolve(this.directory);
+    sweeperOwners.get(key)?.stop();
+    this.sweepKey = key;
+    this.sweepOwner = { stop: () => this.stopSweepTimers() };
+
     // An initial pass shortly after boot reclaims accrued cruft and makes the
     // sweeper visible right away; both timers are unref'd so they never keep the
     // process alive.
@@ -559,5 +590,6 @@ export class FileStorage implements Storage {
     this.intervalTimer = setInterval(run, intervalMs);
     this.initialTimer.unref?.();
     this.intervalTimer.unref?.();
+    sweeperOwners.set(key, this.sweepOwner);
   }
 }

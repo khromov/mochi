@@ -3,7 +3,9 @@ import type { MochiEmailTransportConfig } from 'mochi-framework';
 import { analytics } from 'mochi-shared';
 import { routes } from './routes';
 import { adminAuth } from './adminAuth';
-import { SUPPORT_EMAIL_QUEUE, supportEmailQueue } from './jobs.server';
+import { supportEmailQueue } from './jobs.server';
+import { newsletterEmailQueue } from './newsletter/jobs.server';
+import { NEWSLETTER_EMBED_PATH, embedHeaders } from './embedHeaders';
 
 const PORT = Number(process.env.PORT) || 3336;
 const DEVELOPMENT = process.env.MODE === 'development';
@@ -15,9 +17,7 @@ const SMTP_SECURE = process.env.SMTP_SECURE === 'true' ? true : process.env.SMTP
 const SMTP_USER = process.env.SMTP_USER;
 const SMTP_PASSWORD = process.env.SMTP_PASSWORD;
 
-// SMTP_HOST is the switch: absent means no transport at all, so the framework
-// default applies (dev outbox in development). Never build a half-configured
-// smtp transport out of a partial env.
+// SMTP_HOST is the switch: absent means no transport, so the framework default applies (dev outbox in development) instead of a half-configured one.
 const smtp: MochiEmailTransportConfig | undefined = SMTP_HOST
   ? {
       type: 'smtp',
@@ -33,14 +33,15 @@ await Mochi.serve({
   development: DEVELOPMENT,
   htmlShell: './src/shell.html',
   trailingSlash: 'always',
-  // CapRover's nginx terminates TLS and appends the client IP to
-  // X-Forwarded-For. Without addressHeader every visitor keys to the proxy's
-  // own IP, so /admin/'s rate limit would be one shared bucket. Reading the
-  // rightmost entry (xffDepth 1) can't be spoofed by the client.
+  // Without addressHeader every visitor keys to the proxy's own IP, making /admin/'s rate limit one shared bucket; the rightmost X-Forwarded-For entry (xffDepth 1) can't be spoofed by the client.
   proxy: { origin: ORIGIN, addressHeader: 'x-forwarded-for', xffDepth: 1 },
   // Auth first, so an unauthorised /admin hit is never counted as a pageview.
-  handle: sequence(adminAuth, analytics),
-  queues: { [SUPPORT_EMAIL_QUEUE]: supportEmailQueue },
+  // The embed is excluded from analytics — it would double every blog pageview.
+  handle: sequence(adminAuth, embedHeaders, analytics({ exclude: [NEWSLETTER_EMBED_PATH] })),
+  queues: [supportEmailQueue, newsletterEmailQueue],
+  // A separate file from SUPPORT_DB on purpose: the app holds its own bun:sqlite handle on support.sqlite, and sharing
+  // one file across two drivers invites writer contention for no benefit.
+  queueStorage: { sqlite: process.env.SUPPORT_QUEUE_DB || '.db/queue.sqlite' },
   email: {
     from: process.env.SMTP_FROM || 'Mochi Support Form <support@mochi.fast>',
     transport: smtp,
@@ -52,10 +53,7 @@ await Mochi.serve({
     ...(process.env.CAPTCHA_NONCE_DB ? { storePath: process.env.CAPTCHA_NONCE_DB } : {}),
   },
   eventHooks: {
-    // Boot-only by design, not a module-level throw: `mochi-framework build`
-    // imports this entry to read the serve() options, and the build runs without
-    // SMTP env — a top-level throw would break `docker build` and `bun run build`.
-    // The build's capturing stub halts at the serve() call, before hooks run.
+    // Boot-only, not a module-level throw: `mochi-framework build` imports this entry without SMTP env, and its capturing stub halts at serve() before hooks run.
     'mochi:init': () => {
       if (DEVELOPMENT) {
         return;

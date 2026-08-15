@@ -1,12 +1,13 @@
 ---
 title: 'Trailing slash'
 slug: trailing-slash
+ogTitle: 'Trailing-slash policy and redirects'
 description: 'Enforce a consistent trailing-slash policy across all routes with automatic redirects.'
 ---
 
 ## Trailing slash
 
-The `trailingSlash` option on `Mochi.serve()` enforces a consistent trailing-slash policy across `Mochi.page()` and `Mochi.sse()` routes. The framework registers each route under both `/foo` and `/foo/`, then redirects requests to the non-canonical form. `Mochi.api()` routes are always exempt — see below.
+The `trailingSlash` option on `Mochi.serve()` enforces a consistent trailing-slash policy across `Mochi.page()` and `Mochi.sse()` routes. Mochi registers each route under both `/foo` and `/foo/`, then redirects requests to the non-canonical form. `Mochi.api()` routes are always exempt — see below.
 
 ```ts
 await Mochi.serve({
@@ -22,7 +23,7 @@ await Mochi.serve({
 | `'never'`  | No slash       | `/about/` → `/about` |
 | `'always'` | Trailing slash | `/about` → `/about/` |
 
-Default: unset — neither form is redirected and only the form you registered is matched.
+Default: unset. Neither form is redirected, and only the form you registered is matched.
 
 ### `Mochi.api()` routes are exempt
 
@@ -54,7 +55,7 @@ await Mochi.serve({
 
 ### Query strings
 
-Query parameters are preserved in the redirect target:
+Mochi preserves query parameters in the redirect target:
 
 ```
 GET /search/?q=mochi  →  301  Location: /search?q=mochi   (policy: 'never')
@@ -63,7 +64,7 @@ GET /search?q=mochi   →  301  Location: /search/?q=mochi  (policy: 'always')
 
 ### Generating canonical links
 
-`trailingSlashIt(path)` appends a trailing slash, first stripping any the string already ends with so you never double-slash. A query string or `#fragment` is preserved and the slash lands on the path, so you can pass a full URL straight in. Build hrefs with it under `trailingSlash: 'always'` so links point straight at the canonical URL and skip the redirect hop.
+`trailingSlashIt(path)` appends a trailing slash, first stripping any the string already ends with. It preserves a query string or `#fragment` and puts the slash on the path, so you can pass a full URL. Build hrefs with it under `trailingSlash: 'always'` so links point at the canonical URL and skip the redirect hop.
 
 ```ts
 import { trailingSlashIt } from 'mochi-framework';
@@ -75,4 +76,4 @@ trailingSlashIt('/search?q=mochi'); // '/search/?q=mochi'
 trailingSlashIt('/docs/intro#install'); // '/docs/intro/#install'
 ```
 
-It is isomorphic — import it in SSR pages, hydrated islands, and plain `.ts` modules alike.
+It is isomorphic — import it in SSR pages, hydrated islands, and plain `.ts` modules.

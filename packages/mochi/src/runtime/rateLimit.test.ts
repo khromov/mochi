@@ -36,7 +36,8 @@ describe('createRouteLimiter', () => {
     }
     expect(third.retryAfterSeconds).toBeGreaterThan(0);
     expect(third.retryAfterSeconds).toBeLessThanOrEqual(60);
-    expect(third.headers['Retry-After']).toBeDefined();
+    expect(Number(third.headers['Retry-After'])).toBeGreaterThan(0);
+    expect(Number(third.headers['Retry-After'])).toBeLessThanOrEqual(60);
     expect(third.headers['RateLimit-Remaining']).toBe('0');
     expect(third.body.hitlimit).toBe(true);
     expect(third.body.remaining).toBe(0);
@@ -218,34 +219,50 @@ describe('sqliteStore persistence', () => {
     await secondLimiter.store.shutdown?.();
   });
 
-  // The wrapped shutdown's finalize sweep depends on hitlimit's private field
-  // layout; its `db.close(true)` verification throws "database is locked" if any
-  // statement is still outstanding. These two tests keep that guard honest on
-  // every platform (the leak itself only bites on Windows, where an open handle
-  // blocks unlink):
-  //   1. the wrapped shutdown passes its own verification, and
-  //   2. the verification actually detects unfinalized statements — guarding
-  //      against bun:sqlite ever making close(true) tolerant, which would turn
-  //      test 1 vacuous.
+  // The wrapped shutdown's finalize sweep depends on hitlimit's private field layout so
+  // db.close() actually releases the handle (an outstanding statement only zombies the
+  // connection; the leak bites on Windows, where an open handle blocks unlink). bun:sqlite's
+  // own tripwire — close(true) throwing on an outstanding statement — was removed in 1.4.0, so
+  // these tests verify finalization the version-independent way: a finalized statement throws
+  // when reused, and the same own-enumerable-field find() the sweep relies on must locate a
+  // statement (else a hitlimit field-layout change slipped through, on every OS and Bun version).
+  type Finalizable = { finalize(): void; get(...args: unknown[]): unknown };
+  const findStatement = (store: object): Finalizable | undefined =>
+    Object.values(store as Record<string, unknown>).find((v): v is Finalizable => typeof (v as { finalize?: unknown } | null)?.finalize === 'function');
+
   test('shutdown finalizes hitlimit statements so the close fully releases the handle', async () => {
     const store = sqliteStore({ path: path.join(tempDir, 'finalize-check.db') });
     await store.hit('k', 60_000, 5);
+
+    const stmt = findStatement(store);
+    expect(stmt).toBeDefined(); // layout tripwire: sweep can't finalize statements it can't find
+    expect(() => stmt!.get()).not.toThrow();
+
     expect(() => store.shutdown!()).not.toThrow();
+
+    // The sweep finalized the statement, so the close released the handle (Windows can unlink).
+    expect(() => stmt!.get()).toThrow(/finaliz/i);
   });
 
-  test('negative control: close(true) with an outstanding statement throws', async () => {
+  test('negative control: finalizing a statement is what makes it unusable', async () => {
     const raw = hitlimitSqliteStore({ path: path.join(tempDir, 'finalize-control.db') });
     await raw.hit('k', 60_000, 5);
-    const db = (raw as unknown as { db: { close(throwOnError?: boolean): void } }).db;
-    expect(() => db.close(true)).toThrow();
 
-    // Release the handle for real — otherwise Windows can't unlink finalize-control.db
-    // in afterAll (EBUSY). Mirror the production sqliteStore() shutdown: finalize the
-    // outstanding statements, then close(true) actually releases the db/-wal/-shm files.
+    // Without the sweep the statement stays usable — proving the positive test's post-shutdown
+    // throw comes from finalization, not merely from the db being closed underneath it.
+    const stmt = findStatement(raw);
+    expect(stmt).toBeDefined();
+    expect(() => stmt!.get()).not.toThrow();
+    stmt!.finalize();
+    expect(() => stmt!.get()).toThrow(/finaliz/i);
+
+    // Release the handle for real — otherwise Windows can't unlink finalize-control.db in
+    // afterAll (EBUSY). Mirror the production sqliteStore() shutdown: finalize the remaining
+    // statements, then close(true) releases the db/-wal/-shm files.
     for (const value of Object.values(raw)) {
       (value as { finalize?: () => void } | null)?.finalize?.();
     }
-    db.close(true);
+    (raw as unknown as { db: { close(throwOnError?: boolean): void } }).db.close(true);
     await raw.shutdown?.();
   });
 });

@@ -48,6 +48,17 @@ describe('CSS imports — happy path', () => {
     expect(cssOutput?.size).toBeGreaterThan(0);
   });
 
+  test('minifies the bundled CSS', () => {
+    const cssOutput = registry.getClientStats()?.outputs.find((o) => o.name.startsWith('styles-'));
+    expect(cssOutput).toBeDefined();
+    const cssText = registry.getClientFile(`/_mochi/import-css/${cssOutput!.name}`);
+    expect(cssText).toBeDefined();
+    // Minified output drops the source-path banner comment and all indentation.
+    expect(cssText).not.toContain('/*');
+    expect(cssText).not.toMatch(/\n\s{2,}/);
+    expect(cssText!.trim()).toContain('body{color:red}');
+  });
+
   test('renderComponent links the bundled CSS URL', async () => {
     const { requestContext } = await import('../runtime/requestContext');
     const { MochiCookieJar } = await import('../runtime/cookies');
@@ -63,8 +74,10 @@ describe('CSS imports — happy path', () => {
       getClientAddress: () => null,
     };
     const result = await requestContext.run(ctx, () => registry.renderComponent(FIXTURE_PAGE));
-    const importCssUrl = result.cssUrls.find((u) => u.includes('/import-css/styles-'));
-    expect(importCssUrl).toBeDefined();
+    const cssOutput = registry.getClientStats()?.outputs.find((o) => o.name.startsWith('styles-'));
+    expect(cssOutput).toBeDefined();
+    const importCssUrls = result.cssUrls.filter((u) => u.includes('/import-css/styles-'));
+    expect(importCssUrls).toEqual([`/_mochi/import-css/${cssOutput!.name}`]);
   });
 
   // Also the idempotence check for the source-path codec: a manifest that
@@ -106,7 +119,9 @@ describe('CSS imports — variable-font format() preservation', () => {
     const cssUrl = `/_mochi/import-css/${cssOutput!.name}`;
     const cssText = registry.getClientFile(cssUrl);
     expect(cssText).toBeDefined();
-    expect(cssText).toContain("format('woff2-variations')");
+    // Bun <1.4.0 stripped the quotes (framework re-quotes to single); Bun >=1.4.0 keeps
+    // them (double). Either quote style is valid CSS — the bare unquoted form is the real bug.
+    expect(cssText).toMatch(/\bformat\((['"])woff2-variations\1\)/);
     expect(cssText).not.toMatch(/\bformat\(woff2-variations\)/);
   });
 });
@@ -125,12 +140,14 @@ describe('CSS imports — error path', () => {
   });
 
   test('a missing CSS import causes the SSR build to throw', async () => {
-    await expect(registry.compile(FIXTURE_MISSING_PAGE)).rejects.toThrow();
+    await expect(registry.compile(FIXTURE_MISSING_PAGE)).rejects.toThrow(/Could not resolve.*missing\.css/);
   });
 
   test('a bundle-failed CSS import is recorded as a css-bundle-failed error', async () => {
     await registry.compile(FIXTURE_BAD_CSS_PAGE);
     const cssErrors = registry.getErrors().filter((e) => e.kind === 'css-bundle-failed');
-    expect(cssErrors.length).toBeGreaterThan(0);
+    expect(cssErrors.length).toBe(1);
+    expect(cssErrors[0]!.cssPath).toContain('bad.css');
+    expect(cssErrors[0]!.message).toContain('nonexistent-bad-target.css');
   });
 });

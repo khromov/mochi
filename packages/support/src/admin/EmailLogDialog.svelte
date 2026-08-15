@@ -1,11 +1,11 @@
 <script lang="ts">
-  import type { EmailLogEntry, EmailStatus } from '../db.server';
+  import type { DeliveryLogEntry, EmailStatus } from '../db.server';
 
-  let { status, entries }: { status: EmailStatus; entries: EmailLogEntry[] } = $props();
+  let { status, entries }: { status: EmailStatus; entries: DeliveryLogEntry[] } = $props();
 
   let dialog = $state<HTMLDialogElement | null>(null);
 
-  const label = $derived(status === 'sent' ? 'email sent' : status === 'failed' ? 'email failed' : 'email pending');
+  const label = $derived(status === 'sent' ? 'email sent' : status === 'failed' ? 'email failed' : status === 'sending' ? 'email sending' : 'email pending');
   const stamp = (at: number) => new Date(at).toISOString().replace('T', ' ').slice(0, 19);
 </script>
 
@@ -66,8 +66,7 @@
   }
 
   dialog {
-    /* The shell's `* { margin: 0 }` reset kills the UA's `margin: auto`, which is
-       what centers a modal dialog — without this it renders in the top-left. */
+    /* The shell's `* { margin: 0 }` reset kills the UA's `margin: auto` that centers a modal dialog — without this it renders top-left. */
     margin: auto;
     max-width: 32rem;
     width: calc(100vw - 2rem);

@@ -1,0 +1,20 @@
+{
+  "name": "mochi-docker",
+  "description": "Internal docker-compose stack for local development: Postgres + Adminer. Auto-started by `bun run dev`; idles when Docker is unavailable.",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "bun": ">=1.3.14"
+  },
+  "scripts": {
+    "dev": "bun scripts/dev.ts",
+    "stop": "docker compose stop",
+    "down": "docker compose down",
+    "reset": "bun scripts/reset.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/bun": "1.3.14",
+    "typescript": "^6.0.3"
+  }
+}

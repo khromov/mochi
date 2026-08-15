@@ -23,7 +23,7 @@
     description?: string;
     docsNav: TocEntry[];
     toc: TocEntry[];
-    /** Pre-rendered markup for synthetic docs (the changelog) that have no barrel component. */
+    // Pre-rendered markup for synthetic docs (the changelog) that have no barrel component.
     html?: string;
     prev: DocNeighbor | null;
     next: DocNeighbor | null;

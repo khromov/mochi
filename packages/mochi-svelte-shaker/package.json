@@ -1,0 +1,67 @@
+{
+  "name": "@mochi-framework/svelte-shaker",
+  "version": "0.0.1",
+  "description": "Opt-in whole-program svelte-shaker optimizer for mochi-framework.",
+  "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "mochi",
+    "svelte",
+    "svelte-shaker",
+    "optimizer",
+    "tree-shaking"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/khromov/mochi.git",
+    "directory": "packages/mochi-svelte-shaker"
+  },
+  "homepage": "https://github.com/khromov/mochi/tree/main/packages/mochi-svelte-shaker#readme",
+  "bugs": {
+    "url": "https://github.com/khromov/mochi/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "engines": {
+    "bun": ">=1.3.14"
+  },
+  "files": [
+    "src",
+    "!src/**/*.test.ts",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "bun": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "svelte-shaker": ">=0.18.1"
+  },
+  "peerDependencies": {
+    "mochi-framework": ">=0.10.0",
+    "svelte": "^5.56.6"
+  },
+  "peerDependenciesMeta": {
+    "mochi-framework": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/bun": "1.3.14",
+    "mochi-framework": "workspace:*",
+    "svelte": "^5.56.8",
+    "typescript": "^6.0.3"
+  }
+}

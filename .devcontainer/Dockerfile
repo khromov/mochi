@@ -11,7 +11,7 @@ ARG CLAUDE_CODE_VERSION=latest
 # lines (and the oh-my-zsh fzf plugin) resolve instead of erroring.
 RUN echo 'path-include /usr/share/doc/fzf/*' > /etc/dpkg/dpkg.cfg.d/keep-fzf-docs
 
-# Install basic development tools and iptables/ipset
+# Install basic development tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
   less \
   git \
@@ -26,11 +26,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   unzip \
   gnupg2 \
   gh \
-  iptables \
-  ipset \
   iproute2 \
   dnsutils \
-  aggregate \
   jq \
   nano \
   vim \
@@ -57,6 +54,23 @@ RUN sed -i 's/^# *\(en_US.UTF-8 UTF-8\)/\1/' /etc/locale.gen && \
 ENV LANG=en_US.UTF-8
 ENV LANGUAGE=en_US.UTF-8
 ENV LC_ALL=en_US.UTF-8
+
+# PostgreSQL 15 (bookworm), installed AFTER locale-gen so the auto-created
+# 'main' cluster is en_US.UTF-8, not C. Credentials + host access baked here;
+# the cluster is started on each container boot by start-postgres.sh.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+  postgresql postgresql-contrib \
+  && apt-get clean && rm -rf /var/lib/apt/lists/* \
+  && PG_VER="$(pg_lsclusters -h | awk '{print $1; exit}')" \
+  && install -d -o postgres -g postgres -m 2775 /var/run/postgresql \
+  && sed -i "s/^#\?listen_addresses.*/listen_addresses = '*'/" \
+    "/etc/postgresql/$PG_VER/main/postgresql.conf" \
+  && echo "host all all all scram-sha-256" \
+    >> "/etc/postgresql/$PG_VER/main/pg_hba.conf" \
+  && pg_ctlcluster --skip-systemctl-redirect "$PG_VER" main start \
+  && runuser -u postgres -- psql -v ON_ERROR_STOP=1 \
+    -c "ALTER USER postgres PASSWORD 'postgres';" \
+  && pg_ctlcluster --skip-systemctl-redirect "$PG_VER" main stop
 
 # Ensure default node user has access to /usr/local/share
 RUN mkdir -p /usr/local/share/npm-global && \
@@ -112,8 +126,7 @@ RUN sh -c "$(wget -O- https://github.com/deluan/zsh-in-docker/releases/download/
 # Install Claude
 RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
 
-# Install Bun (pinned to the repo's .bun-version). Baked into the image at build
-# time so it survives the runtime firewall, which blocks bun.com/bun.sh.
+# Install Bun (pinned to the repo's .bun-version), baked into the image at build time.
 ARG BUN_VERSION=1.3.14
 RUN curl -fsSL https://bun.com/install | bash -s "bun-v${BUN_VERSION}"
 ENV BUN_INSTALL=/home/node/.bun
@@ -139,12 +152,4 @@ COPY claude-settings.json /home/node/claude-settings.json
 USER root
 RUN chmod +x /home/node/statusline.sh && \
   chown node:node /home/node/statusline.sh /home/node/claude-settings.json
-USER node
-
-# Copy and set up firewall script
-COPY init-firewall.sh /usr/local/bin/
-USER root
-RUN chmod +x /usr/local/bin/init-firewall.sh && \
-  echo "node ALL=(root) NOPASSWD: /usr/local/bin/init-firewall.sh" > /etc/sudoers.d/node-firewall && \
-  chmod 0440 /etc/sudoers.d/node-firewall
 USER node

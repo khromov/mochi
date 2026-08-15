@@ -15,6 +15,7 @@ import { loadSvelteConfig } from '../compiler/svelteConfig';
 import { recordReloadSignal } from './liveReloadGeneration';
 import type { MochiRateLimitOptions } from '../runtime/rateLimit';
 import { alternateSlashPattern } from '../runtime/trailingSlash';
+import type { SpeculationRules } from '../runtime/speculationRules';
 import {
   isMochiApi,
   isMochiFile,
@@ -73,6 +74,7 @@ export interface DevWatcherDeps {
   trailingSlashPolicy?: 'never' | 'always';
   shellPath?: string;
   reloadShell?: () => Promise<void>;
+  reloadSpeculationRules?: (rules: SpeculationRules | undefined) => void;
 }
 
 /**
@@ -105,6 +107,7 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
     trailingSlashPolicy,
     shellPath,
     reloadShell,
+    reloadSpeculationRules,
   } = deps;
 
   const liveReloadHandler = (req: Request, srv: Server<undefined>): Response => {
@@ -281,6 +284,7 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
       logger.warn('Entry rebuild produced no routes — skipping update');
       return null;
     }
+    reloadSpeculationRules?.(serveOptions.speculationRules);
     const freshRoutes = serveOptions.routes as Record<string, unknown>;
 
     const newComponentPaths = new Set<string>();

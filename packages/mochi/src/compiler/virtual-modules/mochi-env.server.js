@@ -1,4 +1,6 @@
 export const isServer = true; export const isBrowser = false; export const DEV = __MOCHI_DEV__; export const isDev = __MOCHI_DEV__;
+// Always false in components: they are compiled but never executed during a build, so a compiled component only ever runs while serving.
+export const isBuilding = false;
 export function getRequestContext() {
   const ctx = globalThis.__mochi_request_context__?.getStore();
   if (!ctx) throw new Error("getRequestContext() called outside of a request.");
@@ -31,6 +33,9 @@ import { logger as __mochi_logger, setLogLevel, getLogLevel } from "__MOCHI_LOG_
 export { setLogLevel, getLogLevel };
 export const logger = __mochi_logger;
 export function devWarn(msg) { __mochi_logger.warn(msg); }
+// Isomorphic: pins a value on globalThis so duplicate bundled copies share one
+// instance per process. Re-exported so .svelte-graph modules can dedupe singletons.
+export { pinGlobal } from "__MOCHI_GLOBAL_STATE__";
 // Re-export devalue so .svelte files (and the preprocessor's
 // injected hydration-prop import) can use stringify/parse without
 // a separate install. Resolved from the framework's own deps.

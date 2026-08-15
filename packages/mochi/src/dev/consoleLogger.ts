@@ -63,10 +63,13 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
 
   // `source` is auto-built from the event name and payload, so call sites describe only the formatted line. The cast
   // widens `{name: K; payload: M[K]}` to the distributed `ConsoleLoggerSource` union, which TypeScript can't infer
-  // through a generic closure.
-  function subscribe<K extends keyof MochiEventMap>(name: K, format: (payload: MochiEventMap[K]) => Omit<EmitInput, 'source'>): void {
+  // through a generic closure. A `null` from the formatter suppresses the line (e.g. per-job adds inside a bulk add).
+  function subscribe<K extends keyof MochiEventMap>(name: K, format: (payload: MochiEventMap[K]) => Omit<EmitInput, 'source'> | null): void {
     mochiEvents.on(name, (payload) => {
-      emit({ ...format(payload), source: { name, payload } as ConsoleLoggerSource });
+      const formatted = format(payload);
+      if (formatted) {
+        emit({ ...formatted, source: { name, payload } as ConsoleLoggerSource });
+      }
     });
   }
 
@@ -195,7 +198,7 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
     duration: durationMs,
     slow,
     verySlow,
-    level: 'info',
+    level: removed === 0 ? 'debug' : 'info',
   }));
   subscribe('image:cache-sweep', ({ removedVariants, removedOriginals, removedOther, durationMs }) => {
     const removed = removedVariants + removedOriginals + removedOther;
@@ -239,36 +242,47 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
   // at `info` they'd vanish, leaving `completed` visible only when a job trips the slow-escalation. Per-attempt `active`
   // repeats on every retry and adds nothing, so it stays on `logger.debug`. The `consoleLogger:level` filter demotes any
   // of it for apps that find the lifecycle chatty.
-  subscribe('queue:added', ({ queue, jobName, jobId }) => ({
+  subscribe('queue:added', ({ queue, jobId, bulk }) =>
+    // Bulk adds print one `queue:addedBulk` summary instead of a line per job — a 100k addBulk must not log 100k lines.
+    bulk
+      ? null
+      : {
+          label: 'QUEUE',
+          path: queue,
+          note: styleText('dim', `+ ${jobId}`),
+          level: 'warn',
+        },
+  );
+  subscribe('queue:addedBulk', ({ queue, count }) => ({
     label: 'QUEUE',
-    path: `${queue}/${jobName}`,
-    note: styleText('dim', `+ ${jobId}`),
+    path: queue,
+    note: styleText('dim', `+ ${count} jobs (bulk)`),
     level: 'warn',
   }));
-  subscribe('queue:active', ({ queue, jobName }) => ({
+  subscribe('queue:active', ({ queue }) => ({
     label: 'QUEUE',
-    path: `${queue}/${jobName}`,
+    path: queue,
     note: styleText('cyan', 'active'),
     level: 'debug',
   }));
-  subscribe('queue:completed', ({ queue, jobName, duration }) => ({
+  subscribe('queue:completed', ({ queue, duration }) => ({
     label: 'QUEUE',
-    path: `${queue}/${jobName}`,
+    path: queue,
     note: styleText('green', 'done'),
     duration,
     slow,
     verySlow,
     level: 'warn',
   }));
-  subscribe('queue:failed', ({ queue, jobName, attempt, error }) => ({
+  subscribe('queue:failed', ({ queue, attempt, error }) => ({
     label: 'QUEUE',
-    path: `${queue}/${jobName}`,
+    path: queue,
     note: `${styleText('red', `failed (attempt ${attempt})`)} ${styleText('dim', error)}`,
     level: 'warn',
   }));
   subscribe('queue:error', ({ queue, error }) => ({
     label: 'QUEUE',
-    path: queue,
+    path: queue ?? 'queue',
     note: `${styleText('red', 'queue error')} ${styleText('dim', error)}`,
     level: 'warn',
   }));

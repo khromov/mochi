@@ -1,6 +1,6 @@
 {
   "name": "@mochi-framework/rsvelte",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Opt-in rsvelte (Rust Svelte compiler) backend for mochi-framework.",
   "type": "module",
   "license": "MIT",
@@ -60,7 +60,7 @@
   "devDependencies": {
     "@types/bun": "1.3.14",
     "mochi-framework": "workspace:*",
-    "svelte": "^5.56.7",
+    "svelte": "^5.56.8",
     "typescript": "^6.0.3"
   }
 }
