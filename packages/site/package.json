@@ -23,6 +23,7 @@
     "@fontsource/public-sans": "^5.3.0",
     "@lucide/svelte": "^1.28.0",
     "@napi-rs/canvas": "^1.0.3",
+    "@nprapps/sidechain": "^1.1.5",
     "@portabletext/svelte": "^3.0.1",
     "@tanstack/svelte-table": "^9.0.0",
     "@tmcp/adapter-valibot": "0.1.6",
