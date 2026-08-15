@@ -11,7 +11,7 @@
     }
   },
   "runArgs": ["--add-host=host.docker.internal:host-gateway", "--privileged"],
-  "forwardPorts": [3333, 3334, 3335, 3336, 5432],
+  "forwardPorts": [3333, 3334, 3335, 3336, 3338, 3339, 5432],
   "portsAttributes": {
     "3333": {
       "label": "site",
@@ -27,6 +27,14 @@
     },
     "3336": {
       "label": "support",
+      "onAutoForward": "notify"
+    },
+    "3338": {
+      "label": "capacitor-app",
+      "onAutoForward": "notify"
+    },
+    "3339": {
+      "label": "capacitor-web",
       "onAutoForward": "notify"
     },
     "5432": {
@@ -86,5 +94,5 @@
     "ghcr.io/devcontainers/features/docker-in-docker:2": {},
     "./codebay-tmux": {}
   },
-  "appPort": ["127.0.0.1:8005:8080", "127.0.0.1:8007:3333", "127.0.0.1:8008:3334", "127.0.0.1:8009:3335", "127.0.0.1:8010:3336", "127.0.0.1:8045:5432"]
+  "appPort": ["127.0.0.1:8005:8080", "127.0.0.1:8007:3333", "127.0.0.1:8008:3334", "127.0.0.1:8009:3335", "127.0.0.1:8010:3336", "127.0.0.1:8011:3338", "127.0.0.1:8012:3339", "127.0.0.1:8045:5432"]
 }
