@@ -26,6 +26,7 @@ describe('trailingSlash: "never"', () => {
         '/about': Mochi.page(FIXTURE_PAGE),
         '/docs/:slug': Mochi.page(FIXTURE_PAGE),
         '/api/ping': Mochi.api(async () => json({ ok: true })),
+        '/api/users/:id': Mochi.api(async () => json({ ok: true })),
       },
     });
     base = `http://localhost:${server.port}`;
@@ -79,5 +80,11 @@ describe('trailingSlash: "never"', () => {
   test('api route is exempt: alt-slash form is not mirrored (404, no redirect)', async () => {
     const res = await fetch(`${base}/api/ping/`, { redirect: 'manual' });
     expect(res.status).toBe(404);
+  });
+
+  test('a parameterised api route is exempt on the same terms as a literal one', async () => {
+    expect((await fetch(`${base}/api/users/5`, { redirect: 'manual' })).status).toBe(200);
+    const alt = await fetch(`${base}/api/users/5/`, { redirect: 'manual' });
+    expect(alt.status).toBe(404);
   });
 });

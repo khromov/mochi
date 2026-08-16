@@ -48,22 +48,31 @@ export type RequestContextBuilder = (req: Request, server: Server<undefined>, op
 interface KindPolicy {
   timeout: boolean;
   trailingSlash: boolean;
+  mirrorSlash: boolean;
   csrf: boolean;
   debugBar: boolean;
 }
 
+// `trailingSlash` is whether a matched request redirects to the canonical form; `mirrorSlash` is whether the route is
+// also registered under its other slash form. Kinds with `mirrorSlash` but no `trailingSlash` serve both forms as-is.
 const KIND_POLICY: Record<RouteKind, KindPolicy> = {
-  page: { timeout: true, trailingSlash: true, csrf: true, debugBar: true },
+  page: { timeout: true, trailingSlash: true, mirrorSlash: true, csrf: true, debugBar: true },
   // Api routes never mirror or redirect on trailing slash — only the exact
   // declared pattern matches, regardless of the global policy.
-  api: { timeout: false, trailingSlash: false, csrf: true, debugBar: false },
-  sse: { timeout: true, trailingSlash: true, csrf: false, debugBar: false },
-  ws: { timeout: false, trailingSlash: false, csrf: false, debugBar: false },
-  island: { timeout: false, trailingSlash: false, csrf: false, debugBar: false },
-  // Files are leaf resources (like static assets), so they opt out of
-  // trailing-slash normalization — a file URL should never gain a trailing `/`.
-  file: { timeout: false, trailingSlash: false, csrf: false, debugBar: false },
+  api: { timeout: false, trailingSlash: false, mirrorSlash: false, csrf: true, debugBar: false },
+  sse: { timeout: true, trailingSlash: true, mirrorSlash: true, csrf: false, debugBar: false },
+  ws: { timeout: false, trailingSlash: false, mirrorSlash: true, csrf: false, debugBar: false },
+  island: { timeout: false, trailingSlash: false, mirrorSlash: false, csrf: false, debugBar: false },
+  // Files are leaf resources (like static assets), so a matched file URL is never
+  // redirected to gain a trailing `/` — though both forms still resolve to it.
+  file: { timeout: false, trailingSlash: false, mirrorSlash: true, csrf: false, debugBar: false },
 };
+
+// The single source of truth for alt-slash registration, shared by the initial
+// registration in `Mochi.ts` and by dev hot-reload in `devWatcher.ts`.
+export function mirrorsSlashForm(kind: RouteKind): boolean {
+  return KIND_POLICY[kind].mirrorSlash;
+}
 
 export function makeRequestContextBuilder(cfg: RequestSetupConfig): RequestContextBuilder {
   return function buildRequestContext(req, server, opts): SetupResult {

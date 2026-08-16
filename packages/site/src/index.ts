@@ -135,11 +135,11 @@ const speculationRules: SpeculationRules = {
         and: [
           { href_matches: '/*' },
           { not: { href_matches: ['/discord', '/discord/*'] } },
-          { not: { href_matches: '/support/*' } },
+          { not: { href_matches: ['/support', '/support/*'] } },
           { not: { href_matches: '/demos/login/*' } },
           { not: { href_matches: '/cookie-vary-test/*' } },
           { not: { href_matches: '/api/*' } },
-          { not: { href_matches: '/mcp' } },
+          { not: { href_matches: ['/mcp', '/mcp/'] } },
           { not: { href_matches: '/_*' } },
           { not: { selector_matches: '[target=_blank]' } },
           { not: { selector_matches: '[rel~=nofollow]' } },

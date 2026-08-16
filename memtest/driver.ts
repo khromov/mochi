@@ -147,7 +147,7 @@ async function captureSnapshot(): Promise<void> {
   // Download via curl in a separate process: it streams the large body straight
   // to disk with constant memory and no event-loop contention with the load loop
   // (draining a big response inside this process deadlocks on TCP backpressure).
-  // -L follows the trailingSlash:'always' redirect; --fail treats HTTP >=400 as error.
+  // --fail treats HTTP >=400 as an error; -L is belt-and-braces, /_heapsnapshot is a Mochi.api() route so nothing redirects it.
   const proc = Bun.spawn(['curl', '-sS', '--fail', '-L', '--max-time', String(SNAPSHOT_TIMEOUT_S), '-o', file, `${BASE}/_heapsnapshot`], {
     stdout: 'ignore',
     stderr: 'pipe',

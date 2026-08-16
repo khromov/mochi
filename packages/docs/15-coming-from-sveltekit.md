@@ -876,7 +876,7 @@ No virtual `$lib` alias. Add the path to `tsconfig.json` if you want the same er
 
 Not configurable per page. Mochi always renders on the server. Client-side JavaScript is opt-in per component with `mochi:hydrate`, `mochi:hydrate:visible`, `mochi:defer`, or `mochi:defer:visible`. There is no prerender / SSG mode — every request renders fresh.
 
-Trailing-slash policy is global, not per page. Set `trailingSlash: 'never' | 'always'` on `Mochi.serve()` and Mochi registers both forms, then redirects to the canonical one. See [Trailing slash](/docs/trailing-slash/).
+Trailing-slash policy is global, not per page. Set `trailingSlash: 'never' | 'always'` on `Mochi.serve()` and Mochi registers both forms of every page route, then redirects to the canonical one. `Mochi.api()` routes are exempt — only the pattern you declared matches. See [Trailing slash](/docs/trailing-slash/).
 
 ```ts
 // file (SvelteKit): src/routes/about/+page.ts

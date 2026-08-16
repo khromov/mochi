@@ -14,7 +14,7 @@
 
   async function mint() {
     verified = false;
-    // Trailing slashes: this site is `trailingSlash: 'always'`, so the bare paths 301/308.
+    // Bare paths: these are `Mochi.api()` routes, exempt from the site's `trailingSlash: 'always'`.
     const res = await fetch('/api/captcha-demo/mint', { cache: 'no-store' });
     const minted = (await res.json()) as { token: string; bits: number; solveBudgetMs: number };
     token = minted.token;

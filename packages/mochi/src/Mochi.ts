@@ -68,6 +68,7 @@ import { serveDiskAsset } from './utils/serveDiskAsset';
 import type { MochiEvent, MochiEventKind, MochiResolveOptions } from './runtime/hooks';
 import { applyResolveOptions } from './runtime/hooks';
 import { alternateSlashPattern, trailingSlashRedirect } from './runtime/trailingSlash';
+import { patternMatchesPath } from './runtime/routePattern';
 import { resolveWarmupEnabled, markWarmupRequest, isWarmablePattern } from './runtime/warmup';
 import { createErrorResponder, DEFAULT_ERROR_PAGE_PATH } from './runtime/errors';
 import { requestContext } from './runtime/requestContext';
@@ -90,7 +91,7 @@ import { resetStartupMilestones } from './lifecycle';
 import type { MochiQueue, MochiQueueOptions, MochiQueueDescriptor, MochiQueueStorage, MochiWorker } from './queue';
 import type { BunBoss } from 'bun-boss';
 import { finalizeCookieHeaders } from './runtime/cookies';
-import { makeRequestContextBuilder } from './runtime/requestSetup';
+import { makeRequestContextBuilder, mirrorsSlashForm } from './runtime/requestSetup';
 import { createRouteLimiter, applyRateLimitHeaders } from './runtime/rateLimit';
 import type { MochiRateLimitOptions, MochiRateLimitStore, RouteLimiter } from './runtime/rateLimit';
 import { decryptProps } from './islands/serverIslandCrypto';
@@ -1415,15 +1416,15 @@ export class Mochi {
       retireLimiter(pattern);
     }
 
-    const apiPatterns = new Set<string>();
+    const slashExemptPatterns = new Set<string>();
     if (allRoutes) {
       for (const [pattern, handler] of Object.entries(allRoutes)) {
         const result = await registerRoutePattern(pattern, handler);
         if (result) {
           bunRoutes[pattern] = result.bunRouteValue;
           routeCounts[result.type] += 1;
-          if (result.type === 'api') {
-            apiPatterns.add(pattern);
+          if (!mirrorsSlashForm(result.type)) {
+            slashExemptPatterns.add(pattern);
           }
         } else {
           bunRoutes[pattern] = handler as BunRouteValue;
@@ -1432,11 +1433,11 @@ export class Mochi {
     }
 
     // Registering the alt-slash variant lets Bun's literal pattern matcher match both `/foo` and `/foo/`; the per-handler
-    // redirect checks above then turn the non-canonical form into a 301/308. Api routes are excluded entirely — they
-    // never mirror or redirect on trailing slash, only the exact declared pattern matches.
+    // redirect checks above then turn the non-canonical form into a 301/308. Kinds that opt out of mirroring (api) are
+    // skipped entirely — only the exact declared pattern matches them.
     if (trailingSlashPolicy) {
       for (const [pattern, value] of Object.entries(bunRoutes)) {
-        if (apiPatterns.has(pattern)) {
+        if (slashExemptPatterns.has(pattern)) {
           continue;
         }
         const alt = alternateSlashPattern(pattern);
@@ -1686,19 +1687,26 @@ export class Mochi {
 
     const userFetch = options.fetch;
 
+    // A request for the other slash form of a non-mirrored route (api) never matched Bun's route table, so it falls
+    // through to here — recognising it keeps those routes exempt from trailingSlash when unmatched too, not just when matched.
+    const isSlashExemptAltForm = (pathname: string): boolean => {
+      const alt = alternateSlashPattern(pathname);
+      if (alt === null) {
+        return false;
+      }
+      for (const pattern of slashExemptPatterns) {
+        if (patternMatchesPath(pattern, alt)) {
+          return true;
+        }
+      }
+      return false;
+    };
+
     const composedFetch = async (req: Request, server: Server<undefined>): Promise<Response> => {
       const url = buildPublicUrl(req, options.proxy);
-      // A request for the non-canonical slash form of a real api route never
-      // matched Bun's route table (api routes aren't mirrored), so it lands
-      // here. Recognise that case and skip the generic redirect too — api
-      // routes are exempt from trailingSlash everywhere, not just when matched.
-      const isUnmatchedApiAltForm = (() => {
-        const alt = alternateSlashPattern(url.pathname);
-        return alt !== null && apiPatterns.has(alt);
-      })();
-      if (trailingSlashPolicy && !isUnmatchedApiAltForm) {
+      if (trailingSlashPolicy) {
         const redirect = applyFilter('trailingSlash:redirect', trailingSlashRedirect(req.method, url, trailingSlashPolicy), { request: req, url, policy: trailingSlashPolicy });
-        if (redirect) {
+        if (redirect && !isSlashExemptAltForm(url.pathname)) {
           return redirect;
         }
       }
@@ -1969,7 +1977,7 @@ export class Mochi {
         development,
         entryPath: Bun.main,
         apiHandlerMap,
-        apiPatterns,
+        slashExemptPatterns,
         sseHandlerMap,
         wsHandlersMap,
         pageConfigMap,

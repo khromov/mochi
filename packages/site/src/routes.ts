@@ -125,6 +125,9 @@ const DISCORD_INVITE = 'https://discord.com/invite/QCGfks4gg8';
 // SMTP config this site deliberately doesn't carry.
 const SUPPORT_ORIGIN = 'https://support.mochi.fast/';
 const vanityRedirect = (to: string): MochiRouteValue => Mochi.api(() => Response.redirect(to, 302));
+// Same reasoning for the MCP endpoint: /mcp is what we advertise, but clients that
+// normalise the configured URL to /mcp/ would otherwise hit an unregistered path.
+const mcpRoute = Mochi.api(({ request }) => respondMcp(request));
 
 export const routes: Record<string, MochiRouteValue> = {
   ...(DEVELOPMENT
@@ -325,7 +328,8 @@ export const routes: Record<string, MochiRouteValue> = {
     return Response.json(await buildLlmsJson(url.origin));
   }),
   '/SKILL.md': Mochi.file('./src/SKILL.md'),
-  '/mcp': Mochi.api(({ request }) => respondMcp(request)),
+  '/mcp': mcpRoute,
+  '/mcp/': mcpRoute,
   ...demoLlmsRoutes,
   ...apiRoutes,
   ...cacheEventsRoutes,

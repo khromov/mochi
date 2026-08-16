@@ -2,12 +2,16 @@
 title: 'Trailing slash'
 slug: trailing-slash
 ogTitle: 'Trailing-slash policy and redirects'
-description: 'Enforce a consistent trailing-slash policy across all routes with automatic redirects.'
+description: 'Enforce a consistent trailing-slash policy for your page routes with automatic redirects.'
 ---
+
+<script>
+  import VersionNote from './_components/VersionNote.svelte';
+</script>
 
 ## Trailing slash
 
-The `trailingSlash` option on `Mochi.serve()` enforces a consistent trailing-slash policy across `Mochi.page()` and `Mochi.sse()` routes. Mochi registers each route under both `/foo` and `/foo/`, then redirects requests to the non-canonical form. `Mochi.api()` routes are always exempt — see below.
+The `trailingSlash` option on `Mochi.serve()` enforces a consistent trailing-slash policy across `Mochi.page()` and `Mochi.sse()` routes. Mochi registers each route under both `/foo` and `/foo/`, then redirects requests to the non-canonical form. `Mochi.api()` routes are always exempt — see below. `Mochi.file()` and `Mochi.ws()` routes are registered under both forms but never redirect, so either form serves them.
 
 ```ts
 await Mochi.serve({
@@ -27,6 +31,8 @@ Default: unset. Neither form is redirected, and only the form you registered is 
 
 ### `Mochi.api()` routes are exempt
 
+<VersionNote since="0.10.0" message="Before 0.10.0, api routes followed the trailingSlash policy like page routes — both slash forms were registered and the non-canonical one redirected." />
+
 `trailingSlash` never applies to `Mochi.api()` routes — no mirroring, no redirect, regardless of policy. Only the exact pattern you declared matches; the other slash form 404s like any unregistered path.
 
 ```ts
@@ -36,6 +42,17 @@ await Mochi.serve({
     '/about': Mochi.page(About), // /about → 301 → /about/
     '/api/ping': Mochi.api(() => json({ ok: true })), // only /api/ping matches
   },
+});
+```
+
+To answer on both forms — an endpoint whose URL is already published, say — point both patterns at one route:
+
+```ts
+const ping = Mochi.api(() => json({ ok: true }));
+
+await Mochi.serve({
+  trailingSlash: 'always',
+  routes: { '/api/ping': ping, '/api/ping/': ping },
 });
 ```
 

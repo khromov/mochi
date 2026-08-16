@@ -193,6 +193,22 @@ jobs:
           done
           [ -n "$verified" ] || fail "HTML references an island bundle the server won't serve"
 
+          # 3) The image's own HEALTHCHECK must converge. Curling /health ourselves
+          # proves the route serves, not that the probe baked into the Dockerfile
+          # asks for the right URL — an orchestrator would restart-loop on that.
+          healthy=""
+          for _ in $(seq 1 30); do
+            status="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' smoke)"
+            [ "$status" != "none" ] || fail "image declares no HEALTHCHECK"
+            if [ "$status" = "healthy" ]; then
+              healthy=1
+              break
+            fi
+            [ "$status" != "unhealthy" ] || fail "HEALTHCHECK reports unhealthy — the probe's URL does not match what the app serves"
+            sleep 5
+          done
+          [ -n "$healthy" ] || fail "HEALTHCHECK never reached healthy after 150s"
+
           docker rm -f smoke
 
       - name: Push Docker Image
