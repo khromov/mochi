@@ -2,6 +2,9 @@
 // matched — code that has to reason about a path Bun *didn't* match needs its own.
 const PARAM_SEGMENT = /^:[^/]/;
 
+/** Whether a pattern needs `patternMatchesPath` at all — a literal one is answerable by string equality. */
+export const DYNAMIC_ROUTE_PATTERN = /[:*]/;
+
 /** Whether a concrete pathname matches a Bun route pattern (`/a/b`, `/a/:id`, `/a/*`). */
 export function patternMatchesPath(pattern: string, pathname: string): boolean {
   if (pattern === pathname) {

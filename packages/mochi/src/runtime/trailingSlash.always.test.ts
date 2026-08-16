@@ -12,6 +12,7 @@ describe('trailingSlash: "always"', () => {
   let server: Server<undefined>;
   let outDir: string;
   let base: string;
+  const filteredPaths: string[] = [];
 
   beforeAll(async () => {
     outDir = mkdtempSync(path.join(import.meta.dir, '..', '..', '.mochi-trailing-slash-always-'));
@@ -21,11 +22,20 @@ describe('trailingSlash: "always"', () => {
       logger: { enabled: false },
       outDir,
       trailingSlash: 'always',
+      filters: {
+        'trailingSlash:redirect': (redirect, { url }) => {
+          filteredPaths.push(url.pathname);
+          return redirect;
+        },
+      },
       routes: {
         '/': Mochi.page(FIXTURE_PAGE),
         '/about': Mochi.page(FIXTURE_PAGE),
         '/docs/:slug': Mochi.page(FIXTURE_PAGE),
         '/api/ping': Mochi.api(async () => json({ ok: true })),
+        // Declared *with* the slash: the alt form is the slashless one, which is what
+        // reaches the fall-through exemption check under this policy.
+        '/api/slashed/': Mochi.api(async () => json({ ok: true })),
       },
     });
     base = `http://localhost:${server.port}`;
@@ -87,5 +97,22 @@ describe('trailingSlash: "always"', () => {
   test('api route is exempt: alt-slash form is not mirrored (404, no redirect)', async () => {
     const res = await fetch(`${base}/api/ping/`, { redirect: 'manual' });
     expect(res.status).toBe(404);
+  });
+
+  test('a slash-declared api route serves its pattern and 404s the slashless form instead of redirecting', async () => {
+    expect((await fetch(`${base}/api/slashed/`, { redirect: 'manual' })).status).toBe(200);
+    const alt = await fetch(`${base}/api/slashed`, { redirect: 'manual' });
+    expect(alt.status).toBe(404);
+    expect(alt.headers.get('Location')).toBeNull();
+  });
+
+  test('the trailingSlash:redirect filter never runs for an exempt api alt-form', async () => {
+    filteredPaths.length = 0;
+    await fetch(`${base}/api/slashed`, { redirect: 'manual' });
+    await fetch(`${base}/api/ping/`, { redirect: 'manual' });
+    expect(filteredPaths).toEqual([]);
+
+    await fetch(`${base}/nope`, { redirect: 'manual' });
+    expect(filteredPaths).toEqual(['/nope']);
   });
 });

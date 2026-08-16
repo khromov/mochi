@@ -68,7 +68,7 @@ import { serveDiskAsset } from './utils/serveDiskAsset';
 import type { MochiEvent, MochiEventKind, MochiResolveOptions } from './runtime/hooks';
 import { applyResolveOptions } from './runtime/hooks';
 import { alternateSlashPattern, trailingSlashRedirect } from './runtime/trailingSlash';
-import { patternMatchesPath } from './runtime/routePattern';
+import { DYNAMIC_ROUTE_PATTERN, patternMatchesPath } from './runtime/routePattern';
 import { resolveWarmupEnabled, markWarmupRequest, isWarmablePattern } from './runtime/warmup';
 import { createErrorResponder, DEFAULT_ERROR_PAGE_PATH } from './runtime/errors';
 import { requestContext } from './runtime/requestContext';
@@ -1694,8 +1694,11 @@ export class Mochi {
       if (alt === null) {
         return false;
       }
+      if (slashExemptPatterns.has(alt)) {
+        return true;
+      }
       for (const pattern of slashExemptPatterns) {
-        if (patternMatchesPath(pattern, alt)) {
+        if (DYNAMIC_ROUTE_PATTERN.test(pattern) && patternMatchesPath(pattern, alt)) {
           return true;
         }
       }
@@ -1704,9 +1707,11 @@ export class Mochi {
 
     const composedFetch = async (req: Request, server: Server<undefined>): Promise<Response> => {
       const url = buildPublicUrl(req, options.proxy);
-      if (trailingSlashPolicy) {
+      // Checked before the filter runs, not after: an exempt route is outside the policy entirely, so its filter must
+      // not fire and have its result discarded.
+      if (trailingSlashPolicy && !isSlashExemptAltForm(url.pathname)) {
         const redirect = applyFilter('trailingSlash:redirect', trailingSlashRedirect(req.method, url, trailingSlashPolicy), { request: req, url, policy: trailingSlashPolicy });
-        if (redirect && !isSlashExemptAltForm(url.pathname)) {
+        if (redirect) {
           return redirect;
         }
       }

@@ -62,15 +62,20 @@ const KIND_POLICY: Record<RouteKind, KindPolicy> = {
   api: { timeout: false, trailingSlash: false, mirrorSlash: false, csrf: true, debugBar: false },
   sse: { timeout: true, trailingSlash: true, mirrorSlash: true, csrf: false, debugBar: false },
   ws: { timeout: false, trailingSlash: false, mirrorSlash: true, csrf: false, debugBar: false },
+  // The island endpoint is registered after the mirroring loop and never flows through
+  // `registerRoutePattern`, so its `mirrorSlash` is unreachable — see `MirrorableRouteKind`.
   island: { timeout: false, trailingSlash: false, mirrorSlash: false, csrf: false, debugBar: false },
   // Files are leaf resources (like static assets), so a matched file URL is never
   // redirected to gain a trailing `/` — though both forms still resolve to it.
   file: { timeout: false, trailingSlash: false, mirrorSlash: true, csrf: false, debugBar: false },
 };
 
+/** The kinds that reach the alt-slash mirroring decision, i.e. everything `registerRoutePattern` can return. */
+export type MirrorableRouteKind = Exclude<RouteKind, 'island'>;
+
 // The single source of truth for alt-slash registration, shared by the initial
 // registration in `Mochi.ts` and by dev hot-reload in `devWatcher.ts`.
-export function mirrorsSlashForm(kind: RouteKind): boolean {
+export function mirrorsSlashForm(kind: MirrorableRouteKind): boolean {
   return KIND_POLICY[kind].mirrorSlash;
 }
 

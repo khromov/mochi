@@ -196,7 +196,11 @@ jobs:
           # 3) The image's own HEALTHCHECK must converge. Curling /health ourselves
           # proves the route serves, not that the probe baked into the Dockerfile
           # asks for the right URL — an orchestrator would restart-loop on that.
+          # A transient `unhealthy` is not fatal — with --start-period=30s --interval=30s
+          # --retries=3 a slow dev-mode boot can latch it around t=120s while the readiness
+          # loop above still tolerates 150s, and the next passing probe clears it.
           healthy=""
+          status=""
           for _ in $(seq 1 30); do
             status="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' smoke)"
             [ "$status" != "none" ] || fail "image declares no HEALTHCHECK"
@@ -204,10 +208,9 @@ jobs:
               healthy=1
               break
             fi
-            [ "$status" != "unhealthy" ] || fail "HEALTHCHECK reports unhealthy — the probe's URL does not match what the app serves"
             sleep 5
           done
-          [ -n "$healthy" ] || fail "HEALTHCHECK never reached healthy after 150s"
+          [ -n "$healthy" ] || fail "HEALTHCHECK never reached healthy after 150s (last status: $status) — the probe's URL likely does not match what the app serves"
 
           docker rm -f smoke
 

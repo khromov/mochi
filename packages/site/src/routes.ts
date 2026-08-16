@@ -125,6 +125,8 @@ const DISCORD_INVITE = 'https://discord.com/invite/QCGfks4gg8';
 // SMTP config this site deliberately doesn't carry.
 const SUPPORT_ORIGIN = 'https://support.mochi.fast/';
 const vanityRedirect = (to: string): MochiRouteValue => Mochi.api(() => Response.redirect(to, 302));
+const discordRoute = vanityRedirect(DISCORD_INVITE);
+const supportRoute = vanityRedirect(SUPPORT_ORIGIN);
 // Same reasoning for the MCP endpoint: /mcp is what we advertise, but clients that
 // normalise the configured URL to /mcp/ would otherwise hit an unregistered path.
 const mcpRoute = Mochi.api(({ request }) => respondMcp(request));
@@ -165,8 +167,8 @@ export const routes: Record<string, MochiRouteValue> = {
         }),
       }
     : {}),
-  '/discord': vanityRedirect(DISCORD_INVITE),
-  '/discord/': vanityRedirect(DISCORD_INVITE),
+  '/discord': discordRoute,
+  '/discord/': discordRoute,
   '/': Mochi.page('./src/Site.svelte', {
     serverProps: async () => {
       const docs = await loadDocs();
@@ -249,8 +251,8 @@ export const routes: Record<string, MochiRouteValue> = {
       };
     },
   }),
-  '/support': vanityRedirect(SUPPORT_ORIGIN),
-  '/support/': vanityRedirect(SUPPORT_ORIGIN),
+  '/support': supportRoute,
+  '/support/': supportRoute,
   // Backs the live captcha embedded in the 0.8.0 blog post. Minting and verifying
   // happen here rather than in `/blog/:slug` so that route stays post-agnostic.
   '/api/captcha-demo/mint': Mochi.api(() => Response.json(mintCaptcha()), { rateLimit: { limit: 60, window: '1m' } }),

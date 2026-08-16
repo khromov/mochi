@@ -11,7 +11,7 @@ description: 'Enforce a consistent trailing-slash policy for your page routes wi
 
 ## Trailing slash
 
-The `trailingSlash` option on `Mochi.serve()` enforces a consistent trailing-slash policy across `Mochi.page()` and `Mochi.sse()` routes. Mochi registers each route under both `/foo` and `/foo/`, then redirects requests to the non-canonical form. `Mochi.api()` routes are always exempt — see below. `Mochi.file()` and `Mochi.ws()` routes are registered under both forms but never redirect, so either form serves them.
+The `trailingSlash` option on `Mochi.serve()` enforces a consistent trailing-slash policy across `Mochi.page()` and `Mochi.sse()` routes. Mochi registers each route under both `/foo` and `/foo/`, then redirects requests to the non-canonical form. `Mochi.api()` routes are always exempt — see below. `Mochi.ws()` routes, and `Mochi.file()` routes whose pattern has no file extension, are registered under both forms but never redirect, so either form serves them. A pattern ending in an extension (`/SKILL.md`) is left alone entirely, like any asset URL.
 
 ```ts
 await Mochi.serve({
@@ -82,6 +82,8 @@ GET /search?q=mochi   →  301  Location: /search/?q=mochi  (policy: 'always')
 ### Generating canonical links
 
 `trailingSlashIt(path)` appends a trailing slash, first stripping any the string already ends with. It preserves a query string or `#fragment` and puts the slash on the path, so you can pass a full URL. Build hrefs with it under `trailingSlash: 'always'` so links point at the canonical URL and skip the redirect hop.
+
+Don't apply it to `Mochi.api()` endpoints — they have no slashed form, so `trailingSlashIt('/api/ping')` yields a URL that 404s.
 
 ```ts
 import { trailingSlashIt } from 'mochi-framework';

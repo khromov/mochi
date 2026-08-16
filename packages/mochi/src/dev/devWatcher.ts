@@ -465,6 +465,22 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
       }
     }
 
+    // Deleting an explicitly-declared sibling (`/a/` alongside `/a`) leaves the survivor without the mirror a cold
+    // boot would have given it, so its canonical form would redirect into a 404 until restart.
+    if (trailingSlashPolicy) {
+      for (const pattern of freshPatterns) {
+        const value = bunRoutes[pattern];
+        if (value === undefined || !mirrorsAltSlash(currentRouteType(pattern))) {
+          continue;
+        }
+        const alt = alternateSlashPattern(pattern);
+        if (alt && !(alt in bunRoutes)) {
+          bunRoutes[alt] = value;
+          baseBunRoutes[alt] = value;
+        }
+      }
+    }
+
     knownEntryPatterns = freshPatterns;
     return counts;
   }

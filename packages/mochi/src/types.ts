@@ -559,13 +559,19 @@ export interface MochiServeOptions {
    */
   proxy?: MochiProxyOptions;
   /**
-   * Trailing-slash policy. When set, every non-asset, non-root user route is registered under both `/foo` and `/foo/`,
-   * and the non-canonical form redirects:
+   * Trailing-slash policy for `Mochi.page()` and `Mochi.sse()` routes. When set, each is registered under both `/foo`
+   * and `/foo/`, and the non-canonical form redirects:
    *
    * - `'never'` — `/foo/` → 301/308 → `/foo`
    * - `'always'` — `/foo` → 301/308 → `/foo/`
    *
-   * 301 for GET/HEAD, 308 otherwise, leaving root `/` and paths with file extensions alone. Default: unset.
+   * 301 for GET/HEAD, 308 otherwise, leaving root `/` and paths with file extensions alone.
+   *
+   * `Mochi.api()` routes are always exempt: no mirroring and no redirect, so only the exact pattern you declared
+   * matches and the other slash form 404s. Register both patterns explicitly to answer on both.
+   *
+   * Extensionless `Mochi.file()` and `Mochi.ws()` routes are registered under both forms but never redirect, so
+   * either form serves them. Default: unset.
    */
   trailingSlash?: 'never' | 'always';
   /**
