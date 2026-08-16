@@ -70,6 +70,7 @@ import { routes as requestIdRoutes } from './demos/request-id/routes';
 import { routes as modeWatcherRoutes } from './demos/mode-watcher/routes';
 import { routes as runedRoutes } from './demos/runed/routes';
 import { routes as serverIslandRoutes } from './demos/server-island/routes';
+import { routes as deferInvalidationRoutes } from './demos/defer-invalidation/routes';
 import { routes as shotRoutes } from './shot/routes';
 import { routes as serverPropsRoutes } from './demos/server-props/routes';
 import { routes as sharedStateRoutes } from './demos/shared-state/routes';
@@ -369,6 +370,7 @@ export const routes: Record<string, MochiRouteValue> = {
   ...modeWatcherRoutes,
   ...runedRoutes,
   ...serverIslandRoutes,
+  ...deferInvalidationRoutes,
   ...serverPropsRoutes,
   ...shotRoutes,
   ...sharedStateRoutes,

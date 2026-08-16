@@ -65,6 +65,10 @@ export { MemoryStorage, FileStorage, isBlobRef, readBlobRef } from "__MOCHI_CACH
 // Image helpers. Server-only (signing needs the secret key); re-exported
 // so .svelte files can `import { getImageUrl } from 'mochi-framework'`.
 export { getImageUrl, getImageAttrs, getImage, getImagePlaceholder, imagePlaceholder, warmImagePlaceholder, invalidateImage } from "__MOCHI_IMAGE_API__";
+// Deferred-island reload API. Isomorphic and server-safe: the island registry is
+// empty during SSR, so these resolve immediately on the server and only do work
+// in the browser where the `<mochi-server-island>` elements register themselves.
+export { reloadDeferredIsland, reloadDeferredIslandAll } from "__MOCHI_DEFER_API__";
 // `enhance` / `deserialize` are browser-only Svelte action helpers.
 // Svelte never invokes actions during SSR, so these stubs only fire
 // if user code calls them on the server — which is a usage error.

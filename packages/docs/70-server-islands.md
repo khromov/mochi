@@ -7,6 +7,7 @@ description: 'Render components after initial page load by fetching their HTML f
 <script>
   import Callout from './_components/Callout.svelte';
   import SeeItInAction from './_components/SeeItInAction.svelte';
+  import VersionNote from './_components/VersionNote.svelte';
 </script>
 
 ## Server islands with `mochi:defer`
@@ -63,6 +64,33 @@ Apply `mochi:hydrate` alongside `mochi:defer` to fetch the island on demand and 
 <Callout type="warning">
 
 **Adding `mochi:hydrate` makes the props client-visible.** A pure `mochi:defer` island keeps its props on the server — the token on the wire is opaque and the endpoint returns only HTML. Hydration needs the raw props on the client, so `mochi:defer mochi:hydrate` echoes the decrypted props back as plaintext. Do not pass server-only secrets to an island you also hydrate.
+
+</Callout>
+
+### Reloading an island with `reloadDeferredIsland`
+
+<VersionNote since="0.10.0" message="Named defers and reloadDeferredIsland were added in 0.10.0." />
+
+Give a defer a `name`, then re-fetch its server HTML from the browser by calling `reloadDeferredIsland(name)`. Use it to refresh server-rendered content after a mutation without a full page reload.
+
+```svelte
+<Cart mochi:defer={{ name: 'cart' }}>
+  <div class="skeleton">Loading...</div>
+</Cart>
+```
+
+```ts
+import { reloadDeferredIsland, reloadDeferredIslandAll } from 'mochi-framework';
+
+await reloadDeferredIsland('cart'); // re-fetches, resolves once swapped in
+await reloadDeferredIslandAll(); // reloads every named defer on the page
+```
+
+Both return a promise that resolves once every matching island has re-fetched and swapped in. Islands sharing a `name` reload together, and a `mochi:defer mochi:hydrate` island re-hydrates after each reload. `name` works on `mochi:defer:visible` too, where a reload fetches immediately regardless of viewport.
+
+<Callout type="info">
+
+`reloadDeferredIsland` runs in the browser — call it from a hydrated island or other client code. During SSR no islands are mounted, so it resolves immediately and does nothing.
 
 </Callout>
 
@@ -155,6 +183,7 @@ bunx mochi-framework generate-key
 <SeeItInAction
 demos={[
 { href: "/demos/server-island/", title: "Server Islands", hook: "How server islands work — components marked mochi:defer render server-side on demand after the initial page is delivered." },
+{ href: "/demos/defer-invalidation/", title: "Defer Invalidation", hook: "How to reload server islands on demand — name a mochi:defer island and call reloadDeferredIsland(name) from the browser to re-fetch its server HTML." },
 { href: "/demos/nested-islands/", title: "Nested Islands", hook: "How nested islands work — a mochi:defer server island wrapping mochi:hydrate components, and server islands nesting more server islands." },
 { href: "/demos/lazy-server-island/", title: "Lazy Server Islands", hook: "How lazy server islands work — server islands marked mochi:defer:visible only fetch when the wrapper scrolls into view." },
 ]}

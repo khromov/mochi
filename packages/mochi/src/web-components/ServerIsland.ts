@@ -2,21 +2,32 @@
 /// <reference lib="dom.iterable" />
 
 import '../debug-bar/types';
+import { registerDeferredIsland, unregisterDeferredIsland } from '../islands/deferInvalidation';
 
 // Key must match sharedCssTracker.ts for cross-bundle dedup with HydratableIsland.
 const _css: Set<string> = ((globalThis as unknown as Record<string, unknown>).__mochi_loaded_css__ ??= new Set()) as Set<string>;
 
 class ServerIsland extends HTMLElement {
   _loaded = false;
+  _options: Record<string, unknown> = {};
+  _name: string | null = null;
+  _reloading: Promise<void> | null = null;
 
   connectedCallback() {
+    const optionsRaw = this.getAttribute('server-options');
+    const options = optionsRaw ? JSON.parse(optionsRaw) : {};
+    this._options = options;
+
+    // Registered even on a re-connect so `reloadDeferredIsland` can still reach a moved element.
+    this._name = typeof options.name === 'string' ? options.name : null;
+    if (this._name) {
+      registerDeferredIsland(this._name, this);
+    }
+
     if (this._loaded) {
       return;
     }
     this._loaded = true;
-
-    const optionsRaw = this.getAttribute('server-options');
-    const options = optionsRaw ? JSON.parse(optionsRaw) : {};
 
     if (this.getAttribute('defer-on') === 'visible') {
       // `display:contents` leaves this element without a layout box, so the firstElementChild is observed instead; with
@@ -38,6 +49,24 @@ class ServerIsland extends HTMLElement {
     }
 
     this._fetchContent(options);
+  }
+
+  disconnectedCallback() {
+    if (this._name) {
+      unregisterDeferredIsland(this._name, this);
+    }
+  }
+
+  // Re-fetch the island's server HTML (bypassing `defer-on="visible"`), deduping against an
+  // in-flight reload so overlapping `reloadDeferredIsland` calls share one fetch.
+  reload(): Promise<void> {
+    if (this._reloading) {
+      return this._reloading;
+    }
+    this._reloading = this._fetchContent(this._options).finally(() => {
+      this._reloading = null;
+    });
+    return this._reloading;
   }
 
   async _fetchContent(options: Record<string, unknown> = {}) {

@@ -9,11 +9,13 @@ declare module 'svelte/elements' {
 
   interface MochiDeferOptions {
     retries?: number;
+    name?: string;
   }
 
   interface MochiDeferVisibleOptions {
     rootMargin?: string;
     retries?: number;
+    name?: string;
   }
 
   interface MochiClientOnlyVisibleOptions {
