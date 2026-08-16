@@ -23,4 +23,4 @@ A classic todo app styled with Tailwind CSS.
 
 ---
 
-Built something with Mochi? Share it in the <a href="/discord">Mochi Discord</a>. We are happy to feature it.
+Built something with Mochi? Share it in the <a href="/discord/">Mochi Discord</a>. We are happy to feature it.

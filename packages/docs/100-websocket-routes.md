@@ -39,7 +39,7 @@ Only `message` is required.
 
 <Callout type="warning">
 
-[`trailingSlash`](/docs/trailing-slash/) does not apply to WebSocket routes, so connect to exactly the pattern you declared. A mismatched slash surfaces as an opaque connection error, not a visible 404.
+[`trailingSlash`](/docs/trailing-slash/) does not apply to WebSocket routes, so connect to exactly the pattern you declared.
 
 </Callout>
 

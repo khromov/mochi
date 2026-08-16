@@ -62,9 +62,9 @@ export interface DevWatcherDeps {
   development: boolean;
   entryPath: string;
   apiHandlerMap?: Map<string, MochiApiHandler>;
-  // Patterns of kinds that don't mirror onto the alt-slash form — kept in sync here so the
-  // composedFetch fallback keeps exempting them from trailingSlash even for patterns
-  // added or removed after the initial `Mochi.serve()` call.
+  // Patterns of kinds that don't mirror onto the alt-slash form. The set is built once at
+  // Mochi.serve(); this watcher then mutates it as dev hot-reload adds/removes routes (editing
+  // routes.ts and saving), so the composedFetch fallback keeps exempting the right patterns.
   slashExemptPatterns?: Set<string>;
   sseHandlerMap?: Map<string, MochiSseHandler>;
   wsHandlersMap?: Map<string, MochiWsHandlers<unknown>>;

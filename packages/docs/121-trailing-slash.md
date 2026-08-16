@@ -6,7 +6,6 @@ description: 'Enforce a consistent trailing-slash policy for your page routes wi
 ---
 
 <script>
-  import Callout from './_components/Callout.svelte';
   import VersionNote from './_components/VersionNote.svelte';
 </script>
 
@@ -49,23 +48,6 @@ await Mochi.serve({
 ```
 
 A canonical URL is a navigation concern: it matters for links, crawlers and caches, which is what pages have and what a JSON fetch, an `EventSource` or a WebSocket does not.
-
-<Callout type="warning">
-
-Connect clients to exactly the pattern you declared. `new EventSource('/sse/time/')` against a `'/sse/time'` route 404s, and the WebSocket equivalent surfaces as an opaque connection error rather than a visible status code.
-
-</Callout>
-
-To answer on both forms — an endpoint whose URL is already published, say — point both patterns at one route:
-
-```ts
-const ping = Mochi.api(() => json({ ok: true }));
-
-await Mochi.serve({
-  trailingSlash: 'always',
-  routes: { '/api/ping': ping, '/api/ping/': ping },
-});
-```
 
 A raw Bun route value (a bare `Response` or `{ GET }` object) isn't one of these helpers, so it still answers on both forms when a policy is set.
 

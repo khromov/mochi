@@ -119,7 +119,7 @@ const demoLlmsRoutes: Record<string, MochiRouteValue> = Object.fromEntries(
 
 // Vanity redirects. These are `Mochi.api()` routes, so the site's `trailingSlash: 'always'`
 // never mirrors them onto the alt-slash form — but links to both forms are already published,
-// so each form is registered by hand. Slashless is the canonical one we link internally.
+// so each form is registered by hand.
 const DISCORD_INVITE = 'https://discord.com/invite/QCGfks4gg8';
 // The support form lives at support.mochi.fast (packages/support) — it needs an
 // SMTP config this site deliberately doesn't carry.

@@ -46,4 +46,4 @@ Want to know more? <ExpandComparison mochi:hydrate /> to see a full feature comp
 
 ## Community
 
-Questions, bug reports, ideas, or just want to see what others are building? Join the [Mochi Discord](/discord).
+Questions, bug reports, ideas, or just want to see what others are building? Join the [Mochi Discord](/discord/).
