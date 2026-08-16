@@ -7,8 +7,8 @@ await Mochi.serve({
   protection: {
     enabled: true,
     // Without protect(), EVERY route requires browser verification. Here only
-    // the protected demo page and its API are gated.
-    protect: ({ path }) => path.startsWith('/demos/protection/protected') || path.startsWith('/demos/protection/api'),
+    // this demo's page and its API are gated.
+    protect: ({ path }) => path === '/demos/protection' || path === '/demos/protection/' || path.startsWith('/demos/protection/api'),
     // Proof-of-work difficulty in leading zero bits — each extra bit doubles the work.
     bits: 19,
     // How long a passed verification lasts before the interstitial shows again.

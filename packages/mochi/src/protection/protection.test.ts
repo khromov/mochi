@@ -27,7 +27,7 @@ describe('resolveProtectionOptions', () => {
     expect(resolved.bits).toBe(19);
     expect(resolved.maxAgeMs).toBe(DEFAULT_PROTECTION_MAX_AGE_MS);
     expect(resolved.protect).toBeUndefined();
-    expect(resolved.shellPage).toBeUndefined();
+    expect(resolved.page).toBeUndefined();
   });
 
   test('own bits win over the captcha fallback', () => {
@@ -95,22 +95,26 @@ describe('clearance tokens', () => {
 });
 
 describe('protection gate', () => {
+  const renderedPaths: string[] = [];
   const fakeRegistry = {
-    renderComponent: async (_path: string, props: Record<string, unknown>) => ({
-      body: `<div data-interstitial data-bits="${props.bits}"></div>`,
-      head: '',
-      cssUrls: [],
-      fontPreloadUrls: [],
-      bootstrapUrl: null,
-      hasServerIslands: false,
-    }),
+    renderComponent: async (path: string, props: Record<string, unknown>) => {
+      renderedPaths.push(path);
+      return {
+        body: `<div data-interstitial data-bits="${props.bits}"></div>`,
+        head: '',
+        cssUrls: [],
+        fontPreloadUrls: [],
+        bootstrapUrl: null,
+        hasServerIslands: false,
+      };
+    },
   } as unknown as ComponentRegistry;
 
   function makeRuntime(overrides: Partial<ResolvedProtectionOptions> = {}, trailingSlashPolicy?: 'always' | 'never') {
     return createProtectionRuntime({
       options: { enabled: true, bits: 8, maxAgeMs: 60_000, ...overrides },
       registry: fakeRegistry,
-      renderInterstitialShell: (result) => `<html>${result.body}</html>`,
+      renderShell: (result) => `<html>${result.body}</html>`,
       assetPrefix: '/_mochi',
       newRequestId: () => 'test-request-id',
       proxy: undefined,
@@ -232,6 +236,16 @@ describe('protection gate', () => {
     });
     const blocked = await gate(input('page', '/'));
     expect(blocked!.status).toBe(403);
+  });
+
+  test('renders the built-in interstitial by default and a custom protection.page when set', async () => {
+    installConfig();
+    renderedPaths.length = 0;
+    await makeRuntime().gate(input('page', '/'));
+    expect(renderedPaths[0]).toContain('ProtectionShell.svelte');
+    renderedPaths.length = 0;
+    await makeRuntime({ page: './src/MyShell.svelte' }).gate(input('page', '/'));
+    expect(renderedPaths[0]).toBe('./src/MyShell.svelte');
   });
 
   test('verifyUrl follows the trailingSlash policy', () => {

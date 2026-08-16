@@ -10,6 +10,5 @@ export const routes: Record<string, MochiRouteValue> = {
       },
     },
   }),
-  '/demos/protection/protected': Mochi.page('./src/demos/protection/ProtectedPage.svelte'),
   '/demos/protection/api': Mochi.api(async () => Response.json({ ok: true, message: 'You are cleared — this API answered.' })),
 };

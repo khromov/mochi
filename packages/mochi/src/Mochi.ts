@@ -115,14 +115,13 @@ import { resolvePublicFiles, registerPublicRoutes, isExcludedDotPath } from './r
 import { startDevWatcher } from './dev/devWatcher';
 import { buildPageCacheAdminRoutes, PAGE_CACHE_ADMIN_COMPONENT } from './dev/pageCacheAdminRoutes';
 import { liveReloadGreeting } from './dev/liveReloadGeneration';
-import { createProtectionRuntime, PROTECTION_INTERSTITIAL_COMPONENT } from './protection/gate';
-import { resolveProtectionOptions, PROTECTION_CLEARANCE_COOKIE } from './protection/config';
+import { createProtectionRuntime } from './protection/gate';
+import { resolveProtectionOptions, PROTECTION_CLEARANCE_COOKIE, PROTECTION_SHELL_COMPONENT } from './protection/config';
 import { mintClearanceToken } from './protection/clearance';
 import { verifyCaptcha } from './captcha/captcha';
 import { getCaptchaRuntime } from './captcha/config';
 
 const DEFAULT_HTML_SHELL = await Bun.file(new URL('./templates/default-shell.html', import.meta.url)).text();
-const PROTECTION_HTML_SHELL = await Bun.file(new URL('./templates/protection-shell.html', import.meta.url)).text();
 
 let mochiVersionPromise: Promise<string | null> | undefined;
 function readMochiVersion(): Promise<string | null> {
@@ -593,14 +592,17 @@ export class Mochi {
 
     const errorPagePath = options.errorPage ?? DEFAULT_ERROR_PAGE_PATH;
 
+    // Resolved before compileAll so the interstitial page (default or custom) rides the same one-shot build.
+    const protectionOptions = protectionEnabled && options.protection ? resolveProtectionOptions(options.protection, getCaptchaRuntime().options.bits) : undefined;
+
     // Compiling every page entrypoint in one `Bun.build` below lets splitting pull shared transitive deps (devalue,
     // mochi-framework internals) into chunk files instead of inlining them per page.
     const ssrEntrypoints: string[] = [errorPagePath, CLIENT_STATS_COMPONENT];
     if (debugBarEnabled) {
       ssrEntrypoints.push(PAGE_CACHE_ADMIN_COMPONENT);
     }
-    if (protectionEnabled) {
-      ssrEntrypoints.push(PROTECTION_INTERSTITIAL_COMPONENT);
+    if (protectionOptions) {
+      ssrEntrypoints.push(protectionOptions.page ?? PROTECTION_SHELL_COMPONENT);
     }
     if (emailViewerEnabled) {
       ssrEntrypoints.push(EMAIL_VIEWER_COMPONENT);
@@ -634,34 +636,19 @@ export class Mochi {
       fontPreload: options.fonts?.preload !== false,
     });
 
-    let protectionRuntime: ReturnType<typeof createProtectionRuntime> | undefined;
-    if (protectionEnabled && options.protection) {
-      const protectionOptions = resolveProtectionOptions(options.protection, getCaptchaRuntime().options.bits);
-      const protectionShellTemplate = protectionOptions.shellPage
-        ? protectionOptions.shellPage.endsWith('.html')
-          ? await Bun.file(path.resolve(protectionOptions.shellPage)).text()
-          : protectionOptions.shellPage
-        : PROTECTION_HTML_SHELL;
-      // A second renderer over the interstitial's own shell: the app shell carries branding and
-      // speculation rules that must not leak into (or prefetch past) the verification page.
-      const renderProtectionShell = Mochi.createShellRenderer(registry, {
-        serverIslandClientJs,
-        liveReloadClientJs,
-        logLevel: resolvedLogLevel,
-        getTemplate: () => protectionShellTemplate,
-        getSpeculationRules: () => undefined,
-        fontPreload: options.fonts?.preload !== false,
-      });
-      protectionRuntime = createProtectionRuntime({
-        options: protectionOptions,
-        registry,
-        renderInterstitialShell: (result) => renderProtectionShell(result),
-        assetPrefix: registry.assetPrefix,
-        newRequestId,
-        proxy: options.proxy,
-        trailingSlashPolicy: options.trailingSlash,
-      });
-    }
+    // The interstitial renders through the app shell like error pages do, so a custom `protection.page`
+    // component inherits the site's styling for free.
+    const protectionRuntime = protectionOptions
+      ? createProtectionRuntime({
+          options: protectionOptions,
+          registry,
+          renderShell: (result) => renderShell(result),
+          assetPrefix: registry.assetPrefix,
+          newRequestId,
+          proxy: options.proxy,
+          trailingSlashPolicy: options.trailingSlash,
+        })
+      : undefined;
 
     const { renderErrorResponse, routeErrorResponse } = createErrorResponder({
       handleError: options.handleError,

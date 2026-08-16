@@ -16,23 +16,21 @@
   {sources}
 >
   <p>
-    <code>Mochi.serve(&lbrace; protection &rbrace;)</code> gates routes behind browser verification. The first visit answers 403 with an interstitial instead of the page; a hidden
+    <strong>This very page is protected</strong> — the interstitial you just passed (or breezed through on a warm clearance) came from
+    <code>Mochi.serve(&lbrace; protection &rbrace;)</code>. The first visit answers 403 with a verification page instead of the demo; a hidden
     <code>MochiCaptchaAuto</code> island runs the hash chain and proof-of-work immediately — no slider — then posts the solution and reloads. The clearance is a signed
     <code>HttpOnly</code> cookie, so every later request just passes.
   </p>
   <p>
-    <code>protect()</code> picks what's gated; without it every route is protected. This site protects only
-    <strong>this demo's</strong> protected page and API — the rest of the site never sees the interstitial.
+    <code>protect()</code> picks what's gated; without it every route is protected. This site protects only this demo page and its API — the rest of the site never sees the interstitial.
   </p>
-
-  <p><a href="/demos/protection/protected/">Visit the protected page →</a></p>
 
   <ApiProbe mochi:hydrate />
 
   <form method="POST" action="?/reset">
     <button type="submit">Reset clearance</button>
     {#if form?.ok && form.action === 'reset'}
-      <span class="cleared">Clearance cookie deleted — the next protected visit shows the interstitial again.</span>
+      <span class="cleared">Clearance cookie deleted — reload the page to meet the interstitial again.</span>
     {/if}
   </form>
 </DemoPage>
@@ -51,11 +49,6 @@
     border-radius: var(--radius-sm);
     font-family: var(--font-mono);
     font-size: 0.85rem;
-  }
-
-  a {
-    color: var(--accent);
-    font-size: 0.9rem;
   }
 
   form {

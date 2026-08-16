@@ -606,8 +606,8 @@ export interface MochiServeOptions {
   /**
    * Cloudflare-style browser verification: unverified clients get an interstitial that auto-solves the captcha
    * proof-of-work and redeems it for a signed clearance cookie before any protected route answers. `protect` selects
-   * which requests are gated (default: all); `bits`, `maxAgeMs`, and `shellPage` tune difficulty, clearance lifetime,
-   * and the interstitial shell. See `MochiProtectionOptions`. Default: disabled.
+   * which requests are gated (default: all); `bits` and `maxAgeMs` tune difficulty and clearance lifetime; `page`
+   * swaps in a custom interstitial component, like `errorPage`. See `MochiProtectionOptions`. Default: disabled.
    */
   protection?: MochiProtectionOptions;
   /**

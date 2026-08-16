@@ -21,11 +21,11 @@ export interface MochiProtectionOptions {
   /** How long a passed verification lasts before the interstitial shows again. Default: 14_400_000 (4 hours). */
   maxAgeMs?: number;
   /**
-   * Interstitial HTML shell: a path ending in `.html` or an inline HTML string, with the
-   * `{{mochi.head}}`/`{{mochi.css}}`/`{{mochi.body}}`/`{{mochi.script}}` placeholders. Default: a built-in
-   * centered-column shell.
+   * Svelte component rendered as the interstitial, like `errorPage` for error pages. It receives
+   * {@link MochiProtectionPageProps} — spread them onto `<MochiCaptchaAuto />`. Default: a built-in centered-column
+   * page with the Mochi logo.
    */
-  shellPage?: string;
+  page?: string;
 }
 
 export interface ResolvedProtectionOptions {
@@ -33,5 +33,13 @@ export interface ResolvedProtectionOptions {
   protect?: (ctx: MochiProtectionContext) => boolean;
   bits: number;
   maxAgeMs: number;
-  shellPage?: string;
+  page?: string;
+}
+
+/** Props a custom `protection.page` component receives — everything `<MochiCaptchaAuto />` needs, ready to spread. */
+export interface MochiProtectionPageProps {
+  token: string;
+  bits: number;
+  solveBudgetMs: number;
+  verifyUrl: string;
 }

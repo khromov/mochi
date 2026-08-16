@@ -133,3 +133,5 @@ export { enhance, deserialize } from "__MOCHI_ENHANCE_CLIENT__";
 // every component that executes in the browser is part of a hydrating (or
 // client-only mounting) subtree. No context lookup needed.
 export function isHydratable() { return true; }
+// Server filesystem path — meaningless in the browser.
+export const PROTECTION_SHELL_COMPONENT = undefined;

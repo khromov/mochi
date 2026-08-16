@@ -3,7 +3,7 @@ import { ComponentRegistry, formatCompileErrors } from '../compiler/ComponentReg
 import { buildInlineWebComponent } from '../compiler/buildInlineWebComponent';
 import { DEFAULT_ERROR_PAGE_PATH } from '../runtime/errors';
 import { CLIENT_STATS_COMPONENT } from '../dev/clientStatsRoutes';
-import { PROTECTION_INTERSTITIAL_COMPONENT } from '../protection/gate';
+import { PROTECTION_SHELL_COMPONENT } from '../protection/config';
 import { isMochiPage, isMochiApi, isMochiWs, isMochiSse } from '../types';
 import type { MarkdownConfig, MochiBarrelWarningOptions, MochiFontOptions, MochiRouteValue, MochiSvelteShakerOptions } from '../types';
 import type { MochiProtectionOptions } from '../protection/types';
@@ -161,7 +161,7 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     const errorPagePath = options.errorPage ?? DEFAULT_ERROR_PAGE_PATH;
     const ssrEntrypoints: string[] = [errorPagePath, CLIENT_STATS_COMPONENT];
     if (options.protection?.enabled === true) {
-      ssrEntrypoints.push(PROTECTION_INTERSTITIAL_COMPONENT);
+      ssrEntrypoints.push(options.protection.page ?? PROTECTION_SHELL_COMPONENT);
     }
     const allRoutes: RouteEntry[] = [];
 

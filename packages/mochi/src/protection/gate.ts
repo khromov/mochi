@@ -8,10 +8,8 @@ import { isWarmupRequest } from '../runtime/warmup';
 import type { TrailingSlashPolicy } from '../runtime/trailingSlash';
 import { logger } from '../utils/log';
 import { hasValidClearance } from './clearance';
-import { PROTECTION_CLEARANCE_COOKIE } from './config';
+import { PROTECTION_CLEARANCE_COOKIE, PROTECTION_SHELL_COMPONENT } from './config';
 import type { MochiProtectionContext, MochiProtectionKind, ResolvedProtectionOptions } from './types';
-
-export const PROTECTION_INTERSTITIAL_COMPONENT = Bun.fileURLToPath(new URL('../templates/ProtectionInterstitial/ProtectionInterstitial.svelte', import.meta.url));
 
 export interface ProtectionGateInput {
   request: Request;
@@ -38,13 +36,14 @@ const BLOCKED_MESSAGE = 'Browser verification required';
 export function createProtectionRuntime(deps: {
   options: ResolvedProtectionOptions;
   registry: ComponentRegistry;
-  renderInterstitialShell: (result: RenderResult) => string;
+  renderShell: (result: RenderResult) => string;
   assetPrefix: string;
   newRequestId: (req: Request) => string;
   proxy: MochiProxyOptions | undefined;
   trailingSlashPolicy: TrailingSlashPolicy | undefined;
 }): ProtectionRuntime {
-  const { options, registry, renderInterstitialShell, newRequestId, proxy } = deps;
+  const { options, registry, renderShell, newRequestId, proxy } = deps;
+  const pagePath = options.page ?? PROTECTION_SHELL_COMPONENT;
   const verifyPath = `${deps.assetPrefix}/protection/verify`;
   const verifyUrl = deps.trailingSlashPolicy === 'always' ? `${verifyPath}/` : verifyPath;
 
@@ -83,14 +82,14 @@ export function createProtectionRuntime(deps: {
     let html: string;
     try {
       const result = await requestContext.run(ctx, () =>
-        registry.renderComponent(PROTECTION_INTERSTITIAL_COMPONENT, {
+        registry.renderComponent(pagePath, {
           token: minted.token,
           bits: minted.bits,
           solveBudgetMs: minted.solveBudgetMs,
           verifyUrl,
         }),
       );
-      html = renderInterstitialShell(result);
+      html = renderShell(result);
     } catch (renderErr) {
       logger.error('protection interstitial failed to render:', renderErr);
       return new Response(`[mochi] 403: ${BLOCKED_MESSAGE}\n\nThe verification page also failed to render.\nCheck the server logs.`, {

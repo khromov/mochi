@@ -1,17 +1,8 @@
 <script lang="ts">
   import MochiCaptchaAuto from '../../captcha/MochiCaptchaAuto.svelte';
+  import type { MochiProtectionPageProps } from '../../protection/types';
 
-  let {
-    token,
-    bits,
-    solveBudgetMs,
-    verifyUrl,
-  }: {
-    token: string;
-    bits: number;
-    solveBudgetMs: number;
-    verifyUrl: string;
-  } = $props();
+  let { token, bits, solveBudgetMs, verifyUrl }: MochiProtectionPageProps = $props();
 </script>
 
 <svelte:head>

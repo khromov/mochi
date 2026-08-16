@@ -9,6 +9,7 @@ description: 'Cloudflare-style browser verification on your own infrastructure: 
   import Callout from './_components/Callout.svelte';
   import SeeItInAction from './_components/SeeItInAction.svelte';
   import VersionNote from './_components/VersionNote.svelte';
+  import ProtectionShellSource from './_components/ProtectionShellSource.svelte';
 </script>
 
 ## Protection Mode
@@ -60,13 +61,33 @@ protection: {
   protect: ({ path }) => path.startsWith('/members'),
   bits: 19,                    // PoW difficulty; default: the captcha bits (19)
   maxAgeMs: 4 * 60 * 60 * 1000, // clearance lifetime; default 4 hours
-  shellPage: './src/protection-shell.html', // custom interstitial shell
+  page: './src/ProtectionShell.svelte', // custom interstitial component
 },
 ```
 
 - **`bits`** — proof-of-work difficulty in leading zero bits; each extra bit doubles the expected work. Defaults to the resolved [captcha](/docs/captcha/) `bits`, so one setting tunes both.
 - **`maxAgeMs`** — how long a passed verification lasts. The clearance is a sealed `{ iat }` token in the `_mochi_clearance` cookie (`HttpOnly`, `SameSite=Lax`, `Path=/`, `Secure` on https); both the cookie's `Max-Age` and the server-side check use this value. It's keyed off `MOCHI_KEY`, so clearances survive restarts and work across instances.
-- **`shellPage`** — a path ending in `.html` or an inline HTML string with the `{{mochi.head}}` / `{{mochi.css}}` / `{{mochi.body}}` / `{{mochi.script}}` placeholders, replacing the built-in centered-column shell around the interstitial.
+- **`page`** — a Svelte component rendered as the interstitial, exactly like `errorPage` for error pages. See below.
+
+### Customizing the interstitial
+
+Point `page` at your own Svelte component. It renders through your app's HTML shell, receives `MochiProtectionPageProps` — `{ token, bits, solveBudgetMs, verifyUrl }` — and only has to spread them onto `<MochiCaptchaAuto />`, which does the solving and submitting:
+
+```svelte
+<script lang="ts">
+  import { MochiCaptchaAuto } from 'mochi-framework/components';
+  import type { MochiProtectionPageProps } from 'mochi-framework';
+
+  let { token, bits, solveBudgetMs, verifyUrl }: MochiProtectionPageProps = $props();
+</script>
+
+<h1>Hold on…</h1>
+<MochiCaptchaAuto mochi:hydrate {token} {bits} {solveBudgetMs} {verifyUrl} />
+```
+
+The built-in default below is the natural starting point — copy it and restyle. This is the component's live source, read from the installed `mochi-framework`:
+
+<ProtectionShellSource />
 
 ### How a verification runs
 
@@ -120,4 +141,6 @@ demos={[
 | `DEFAULT_PROTECTION_MAX_AGE_MS`                   | Default clearance lifetime (4 hours)           |
 | `MochiProtectionOptions`                          | The `Mochi.serve({ protection })` option type  |
 | `MochiProtectionContext` / `MochiProtectionKind`  | What `protect()` receives                      |
+| `MochiProtectionPageProps`                        | Props a custom `page` component receives       |
+| `PROTECTION_SHELL_COMPONENT`                      | Absolute path of the built-in interstitial     |
 | `MochiCaptchaAuto` (`mochi-framework/components`) | The auto-solving widget the interstitial uses  |
