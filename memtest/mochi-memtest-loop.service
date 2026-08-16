@@ -17,6 +17,9 @@ WorkingDirectory=/home/k/mochi
 ExecStart=/home/k/mochi/memtest/loop.sh
 Restart=always
 RestartSec=30
+# loop.sh exits 78 when it detects stale code (non-ff divergence / dirty tree); do
+# not auto-restart that — land in `failed` so a human reconciles the branch first.
+RestartPreventExitStatus=78
 # Give loop.sh's SIGTERM trap room to `docker stop` the container before the kill.
 TimeoutStopSec=30
 KillSignal=SIGTERM
