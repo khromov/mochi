@@ -68,7 +68,6 @@ import { serveDiskAsset } from './utils/serveDiskAsset';
 import type { MochiEvent, MochiEventKind, MochiResolveOptions } from './runtime/hooks';
 import { applyResolveOptions } from './runtime/hooks';
 import { alternateSlashPattern, trailingSlashRedirect } from './runtime/trailingSlash';
-import { DYNAMIC_ROUTE_PATTERN, patternMatchesPath } from './runtime/routePattern';
 import { resolveWarmupEnabled, markWarmupRequest, isWarmablePattern } from './runtime/warmup';
 import { createErrorResponder, DEFAULT_ERROR_PAGE_PATH } from './runtime/errors';
 import { requestContext } from './runtime/requestContext';
@@ -1083,8 +1082,9 @@ export class Mochi {
             type: 'page',
           };
         }
-        // A method-keyed object makes Bun 405 a POST/PUT to an action-less page; a bare function runs for every method
-        // and would render 200 on POST in production, diverging from dev, where `pageConfigMap` forces this path anyway.
+        // A method-keyed object keeps a POST/PUT to an action-less page from matching (it falls through to the fetch
+        // handler and 404s); a bare function runs for every method and would render 200 on POST in production,
+        // diverging from dev, where `pageConfigMap` forces this path anyway.
         return { bunRouteValue: withHead({ GET: getHandler } as unknown as BunRouteValue), type: 'page' };
       } else if (isMochiApi(handler)) {
         if (apiHandlerMap) {
@@ -1416,33 +1416,32 @@ export class Mochi {
       retireLimiter(pattern);
     }
 
-    const slashExemptPatterns = new Set<string>();
+    const slashMirrorPatterns: string[] = [];
     if (allRoutes) {
       for (const [pattern, handler] of Object.entries(allRoutes)) {
         const result = await registerRoutePattern(pattern, handler);
         if (result) {
           bunRoutes[pattern] = result.bunRouteValue;
           routeCounts[result.type] += 1;
-          if (!mirrorsSlashForm(result.type)) {
-            slashExemptPatterns.add(pattern);
+          if (mirrorsSlashForm(result.type)) {
+            slashMirrorPatterns.push(pattern);
           }
         } else {
+          // Raw Bun route values (static Responses, HTML imports) answer on both slash forms.
           bunRoutes[pattern] = handler as BunRouteValue;
+          slashMirrorPatterns.push(pattern);
         }
       }
     }
 
     // Registering the alt-slash variant lets Bun's literal pattern matcher match both `/foo` and `/foo/`; the per-handler
-    // redirect checks above then turn the non-canonical form into a 301/308. Only pages take part — every other kind is
-    // skipped entirely, so just the exact declared pattern matches it.
+    // redirect checks above then turn the non-canonical form into a 301/308. Only pages and raw Bun route values take
+    // part — every other kind is skipped entirely, so just the exact declared pattern matches it.
     if (trailingSlashPolicy) {
-      for (const [pattern, value] of Object.entries(bunRoutes)) {
-        if (slashExemptPatterns.has(pattern)) {
-          continue;
-        }
+      for (const pattern of slashMirrorPatterns) {
         const alt = alternateSlashPattern(pattern);
         if (alt && !(alt in bunRoutes)) {
-          bunRoutes[alt] = value;
+          bunRoutes[alt] = bunRoutes[pattern]!;
         }
       }
     }
@@ -1687,34 +1686,8 @@ export class Mochi {
 
     const userFetch = options.fetch;
 
-    // A request for the other slash form of a non-mirrored route never matched Bun's route table, so it falls through
-    // to here — recognising it keeps those routes exempt from trailingSlash when unmatched too, not just when matched.
-    const isSlashExemptAltForm = (pathname: string): boolean => {
-      const alt = alternateSlashPattern(pathname);
-      if (alt === null) {
-        return false;
-      }
-      if (slashExemptPatterns.has(alt)) {
-        return true;
-      }
-      for (const pattern of slashExemptPatterns) {
-        if (DYNAMIC_ROUTE_PATTERN.test(pattern) && patternMatchesPath(pattern, alt)) {
-          return true;
-        }
-      }
-      return false;
-    };
-
     const composedFetch = async (req: Request, server: Server<undefined>): Promise<Response> => {
       const url = buildPublicUrl(req, options.proxy);
-      // Checked before the filter runs, not after: an exempt route is outside the policy entirely, so its filter must
-      // not fire and have its result discarded.
-      if (trailingSlashPolicy && !isSlashExemptAltForm(url.pathname)) {
-        const redirect = applyFilter('trailingSlash:redirect', trailingSlashRedirect(req.method, url, trailingSlashPolicy), { request: req, url, policy: trailingSlashPolicy });
-        if (redirect) {
-          return redirect;
-        }
-      }
       const csrfResponse = csrfCheck(req, url, options.csrf, options.proxy, development, formContentTypes, protectedMethods, trustedOrigins);
       if (csrfResponse) {
         return csrfResponse;
@@ -1982,7 +1955,6 @@ export class Mochi {
         development,
         entryPath: Bun.main,
         apiHandlerMap,
-        slashExemptPatterns,
         sseHandlerMap,
         wsHandlersMap,
         pageConfigMap,

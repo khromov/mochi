@@ -565,7 +565,8 @@ export interface MochiServeOptions {
    * - `'never'` — `/foo/` → 301/308 → `/foo`
    * - `'always'` — `/foo` → 301/308 → `/foo/`
    *
-   * 301 for GET/HEAD, 308 otherwise, leaving root `/` and paths with file extensions alone.
+   * 301 for GET/HEAD, 308 for POST (the only other method a page registers, via `actions`), leaving root `/` and
+   * paths with file extensions alone.
    *
    * Every other route kind — `Mochi.api()`, `Mochi.sse()`, `Mochi.ws()`, `Mochi.file()` — is exempt: no mirroring and
    * no redirect, so only the exact pattern you declared matches and the other slash form 404s. To answer on both,
@@ -575,6 +576,9 @@ export interface MochiServeOptions {
    * const ping = Mochi.api(() => json({ ok: true }));
    * routes = { '/api/ping': ping, '/api/ping/': ping };
    * ```
+   *
+   * Paths that match no route are never redirected either — they 404 (or reach your `fetch`/middleware fallback) in
+   * whichever slash form they arrived.
    *
    * Default: unset — neither form redirects, and only the form you registered is matched.
    */

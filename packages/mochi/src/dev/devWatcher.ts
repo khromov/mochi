@@ -62,10 +62,6 @@ export interface DevWatcherDeps {
   development: boolean;
   entryPath: string;
   apiHandlerMap?: Map<string, MochiApiHandler>;
-  // Patterns of kinds that don't mirror onto the alt-slash form. The set is built once at
-  // Mochi.serve(); this watcher then mutates it as dev hot-reload adds/removes routes (editing
-  // routes.ts and saving), so the composedFetch fallback keeps exempting the right patterns.
-  slashExemptPatterns?: Set<string>;
   sseHandlerMap?: Map<string, MochiSseHandler>;
   wsHandlersMap?: Map<string, MochiWsHandlers<unknown>>;
   pageConfigMap?: Map<string, MochiPageHandlerConfig>;
@@ -98,7 +94,6 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
     development,
     entryPath,
     apiHandlerMap,
-    slashExemptPatterns,
     sseHandlerMap,
     wsHandlersMap,
     pageConfigMap,
@@ -352,11 +347,7 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
   function addBunRoute(pattern: string, value: BunRouteValue, type: DevRouteType): void {
     bunRoutes[pattern] = value;
     baseBunRoutes[pattern] = value;
-    const mirrors = mirrorsAltSlash(type);
-    if (!mirrors) {
-      slashExemptPatterns?.add(pattern);
-    }
-    if (trailingSlashPolicy && mirrors) {
+    if (trailingSlashPolicy && mirrorsAltSlash(type)) {
       const alt = alternateSlashPattern(pattern);
       if (alt && !(alt in bunRoutes)) {
         bunRoutes[alt] = value;
@@ -366,7 +357,6 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
   }
 
   function removeBunRoute(pattern: string, type: DevRouteType): void {
-    slashExemptPatterns?.delete(pattern);
     if (trailingSlashPolicy && mirrorsAltSlash(type)) {
       const alt = alternateSlashPattern(pattern);
       // A pattern the entry declares itself is a sibling route, not our mirror of this one.

@@ -143,4 +143,12 @@ describe('trailingSlash: "never"', () => {
     expect(alt.status).toBe(404);
     expect(alt.headers.get('Location')).toBeNull();
   });
+
+  test('unmatched paths are not redirected: both slash forms 404 as-is', async () => {
+    for (const p of ['/nope', '/nope/']) {
+      const res = await fetch(`${base}${p}`, { redirect: 'manual' });
+      expect(res.status).toBe(404);
+      expect(res.headers.get('Location')).toBeNull();
+    }
+  });
 });

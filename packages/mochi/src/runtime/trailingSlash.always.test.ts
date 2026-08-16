@@ -5,6 +5,7 @@ import path from 'node:path';
 import type { Server } from 'bun';
 import { Mochi } from '../Mochi';
 import { json } from '../utils';
+import { success } from './forms';
 
 const FIXTURE_PAGE = path.join(import.meta.dir, '..', '__fixtures__', 'css-imports', 'Page.svelte');
 
@@ -22,6 +23,8 @@ describe('trailingSlash: "always"', () => {
       logger: { enabled: false },
       outDir,
       trailingSlash: 'always',
+      // Origin checking would 403 the actionless-POST test's fall-through before it reaches the unmatched-404 path.
+      csrf: { checkOrigin: false },
       filters: {
         'trailingSlash:redirect': (redirect, { url }) => {
           filteredPaths.push(url.pathname);
@@ -31,10 +34,10 @@ describe('trailingSlash: "always"', () => {
       routes: {
         '/': Mochi.page(FIXTURE_PAGE),
         '/about': Mochi.page(FIXTURE_PAGE),
+        '/submit': Mochi.page(FIXTURE_PAGE, { actions: { default: () => success({}) } }),
         '/docs/:slug': Mochi.page(FIXTURE_PAGE),
         '/api/ping': Mochi.api(async () => json({ ok: true })),
-        // Declared *with* the slash: the alt form is the slashless one, which is what
-        // reaches the fall-through exemption check under this policy.
+        // Declared *with* the slash: only this exact form is registered, so the slashless one matches nothing.
         '/api/slashed/': Mochi.api(async () => json({ ok: true })),
         '/sse/ticks': Mochi.sse((stream) => {
           stream.send('tick');
@@ -80,13 +83,25 @@ describe('trailingSlash: "always"', () => {
     expect(res.headers.get('Location')).toBe('/about/?q=mochi');
   });
 
-  test('POST uses 308 (preserves method/body)', async () => {
-    const res = await fetch(`${base}/about`, {
+  test('POST to a page with actions uses 308 (preserves method/body)', async () => {
+    const res = await fetch(`${base}/submit`, {
       method: 'POST',
       redirect: 'manual',
       headers: { origin: base },
     });
     expect(res.status).toBe(308);
+    expect(res.headers.get('Location')).toBe('/submit/');
+  });
+
+  test('POST to a page without actions is unmatched: no redirect', async () => {
+    // Actionless pages register only GET/HEAD, so the POST matches no route and the policy never applies.
+    const res = await fetch(`${base}/about`, {
+      method: 'POST',
+      redirect: 'manual',
+      headers: { origin: base },
+    });
+    expect(res.status).toBe(404);
+    expect(res.headers.get('Location')).toBeNull();
   });
 
   test('root path is never redirected', async () => {
@@ -138,14 +153,22 @@ describe('trailingSlash: "always"', () => {
     expect((await fetch(`${base}/files/report/`, { redirect: 'manual' })).status).toBe(404);
   });
 
-  test('the trailingSlash:redirect filter never runs for any exempt kind', async () => {
+  test('unmatched paths are not redirected: both slash forms 404 as-is', async () => {
+    for (const p of ['/nope', '/nope/']) {
+      const res = await fetch(`${base}${p}`, { redirect: 'manual' });
+      expect(res.status).toBe(404);
+      expect(res.headers.get('Location')).toBeNull();
+    }
+  });
+
+  test('the trailingSlash:redirect filter never runs for exempt kinds or unmatched paths', async () => {
     filteredPaths.length = 0;
-    for (const p of ['/api/slashed', '/api/ping/', '/sse/ticks', '/sse/ticks/', '/ws/echo', '/ws/echo/', '/files/report', '/files/report/']) {
+    for (const p of ['/api/slashed', '/api/ping/', '/sse/ticks', '/sse/ticks/', '/ws/echo', '/ws/echo/', '/files/report', '/files/report/', '/nope']) {
       await fetch(`${base}${p}`, { redirect: 'manual' });
     }
     expect(filteredPaths).toEqual([]);
 
-    await fetch(`${base}/nope`, { redirect: 'manual' });
-    expect(filteredPaths).toEqual(['/nope']);
+    await fetch(`${base}/about`, { redirect: 'manual' });
+    expect(filteredPaths).toEqual(['/about']);
   });
 });
