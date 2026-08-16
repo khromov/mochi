@@ -10,32 +10,26 @@
 </script>
 
 <DemoPage
-  title="Defer Invalidation"
-  description="Give a mochi:defer island a name, then call reloadDeferredIsland(name) from the browser to re-fetch its server HTML — the promise resolves once every matching island has swapped in. reloadDeferredIslandAll() reloads them all. Islands sharing a name reload together, and a hydrated defer re-hydrates after each reload. The buttons live in a mochi:hydrate island and bump a Svelte $state store so the reload count stays live."
+  title="Invalidate mochi:defer islands"
+  description="Give a mochi:defer island a name, then call reloadDeferredIsland(name) from the browser to re-fetch its server HTML. Island 1 is also hydrated, so it unmounts and re-hydrates on every reload — its counter resets. Islands 2 and 3 share the name 2-and-3, so they reload together. While an island reloads it shows its fallback again and carries data-reloading; the status line and the counter below are driven entirely by the mochi:island:reload* events, not by the code that clicked the button."
   {sources}
 >
   <Controls mochi:hydrate />
 
-  <ServerClock mochi:defer={{ name: 'single' }} label="single">
-    <div class="island-loading">Loading<span class="dots"></span></div>
-  </ServerClock>
+  <LiveCounter mochi:defer={{ name: '1' }} mochi:hydrate label="1">
+    <div class="island-loading tall">Loading<span class="dots"></span></div>
+  </LiveCounter>
 
   <div class="spacer"></div>
 
   <div class="pair">
-    <ServerClock mochi:defer={{ name: 'pair' }} label="pair a">
+    <ServerClock mochi:defer={{ name: '2-and-3' }} label="2">
       <div class="island-loading">Loading<span class="dots"></span></div>
     </ServerClock>
-    <ServerClock mochi:defer={{ name: 'pair' }} label="pair b">
+    <ServerClock mochi:defer={{ name: '2-and-3' }} label="3">
       <div class="island-loading">Loading<span class="dots"></span></div>
     </ServerClock>
   </div>
-
-  <div class="spacer"></div>
-
-  <LiveCounter mochi:defer={{ name: 'live' }} mochi:hydrate>
-    <div class="island-loading tall">Loading<span class="dots"></span></div>
-  </LiveCounter>
 </DemoPage>
 
 <style>

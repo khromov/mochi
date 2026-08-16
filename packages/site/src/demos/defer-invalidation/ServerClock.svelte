@@ -7,12 +7,11 @@
   await (isServer ? delay(150, 400) : Promise.resolve());
 
   const renderedAt = new Date().toLocaleTimeString();
-  const token = Math.random().toString(16).slice(2, 8);
 </script>
 
 <div class="clock">
   <span class="label">{label}</span>
-  <span class="value">{renderedAt} · <code>{token}</code></span>
+  <span class="value">rendered {renderedAt}</span>
 </div>
 
 <style>
@@ -42,9 +41,5 @@
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
     color: var(--text);
-  }
-
-  code {
-    color: var(--badge-info-text);
   }
 </style>

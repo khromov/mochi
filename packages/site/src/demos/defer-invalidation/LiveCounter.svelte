@@ -2,16 +2,18 @@
   import { isServer } from 'mochi-framework';
   import { delay } from '../../components/utils.ts';
 
+  let { label = '' } = $props();
+
   await (isServer ? delay(150, 400) : Promise.resolve());
 
-  const mintedAt = new Date().toLocaleTimeString();
+  const renderedAt = new Date().toLocaleTimeString();
   let count = $state(0);
 </script>
 
 <div class="counter">
   <div class="meta">
-    <span class="label">Hydrated defer</span>
-    <span class="minted">minted {mintedAt}</span>
+    <span class="label">{label} <span class="tag">hydrated</span></span>
+    <span class="minted">rendered {renderedAt}</span>
   </div>
   <button onclick={() => count++}>Clicked {count} {count === 1 ? 'time' : 'times'}</button>
 </div>
@@ -42,6 +44,12 @@
     color: var(--text-muted);
     text-transform: uppercase;
     letter-spacing: 0.04em;
+  }
+
+  .tag {
+    font-weight: 500;
+    color: var(--badge-info-text);
+    letter-spacing: 0;
   }
 
   .minted {

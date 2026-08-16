@@ -312,7 +312,7 @@ export const demos: Demo[] = [
     href: '/demos/defer-invalidation/',
     slug: 'defer-invalidation',
     files: deferInvalidation,
-    title: 'Defer Invalidation',
+    title: 'Invalidate mochi:defer islands',
     hook: 'How to reload server islands on demand — name a mochi:defer island and call reloadDeferredIsland(name) from the browser to re-fetch its server HTML.',
     category: 'hydration',
   },

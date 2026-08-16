@@ -32,9 +32,8 @@
 
 <div class="controls">
   <div class="buttons">
-    <button onclick={() => run('single')}>Reload single</button>
-    <button onclick={() => run('pair')}>Reload pair (×2)</button>
-    <button onclick={() => run('live')}>Reload hydrated</button>
+    <button onclick={() => run('1')}>Reload 1</button>
+    <button onclick={() => run('2-and-3')}>Reload 2 + 3</button>
     <button onclick={() => reloadDeferredIslandAll()}>Reload all</button>
   </div>
   <p class="status" class:empty={status === ''}>{status || ' '}</p>

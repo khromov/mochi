@@ -249,7 +249,7 @@ bunx mochi-framework generate-key
 <SeeItInAction
 demos={[
 { href: "/demos/server-island/", title: "Server Islands", hook: "How server islands work — components marked mochi:defer render server-side on demand after the initial page is delivered." },
-{ href: "/demos/defer-invalidation/", title: "Defer Invalidation", hook: "How to reload server islands on demand — name a mochi:defer island and call reloadDeferredIsland(name) from the browser to re-fetch its server HTML." },
+{ href: "/demos/defer-invalidation/", title: "Invalidate mochi:defer islands", hook: "How to reload server islands on demand — name a mochi:defer island and call reloadDeferredIsland(name) from the browser to re-fetch its server HTML." },
 { href: "/demos/nested-islands/", title: "Nested Islands", hook: "How nested islands work — a mochi:defer server island wrapping mochi:hydrate components, and server islands nesting more server islands." },
 { href: "/demos/lazy-server-island/", title: "Lazy Server Islands", hook: "How lazy server islands work — server islands marked mochi:defer:visible only fetch when the wrapper scrolls into view." },
 ]}

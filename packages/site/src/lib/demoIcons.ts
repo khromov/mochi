@@ -85,7 +85,7 @@ export const demoIconFor: Record<string, DemoIconMeta> = {
   'Real-time Streams': { icon: AudioWaveform, label: 'WebSocket + SSE streams' },
   'Background jobs with queues': { icon: Inbox, label: 'Embedded job queue + worker' },
   'Server Islands': { icon: ComponentIcon, label: 'Deferred server island' },
-  'Defer Invalidation': { icon: RotateCw, label: 'Reload a server island on demand' },
+  'Invalidate mochi:defer islands': { icon: RotateCw, label: 'Reload a server island on demand' },
   'Client-only Islands': { icon: MonitorSmartphone, label: 'No SSR — mounts in the browser' },
   'Lazy Islands': { icon: Telescope, label: 'Hydrate when visible' },
   'Lazy Server Islands': { icon: Eye, label: 'Fetch server island when visible' },
