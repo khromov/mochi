@@ -69,10 +69,31 @@ Use it from a page or API route:
 | `markStale(key)`           | `Promise<void>`                      |
 | `delete(key)`              | `Promise<void>`                      |
 | `clearItems()`             | `Promise<void>`                      |
+| `whenIdle()`               | `Promise<void>`                      |
 
 `peek(key)` reports a key's `status` and value **without** running `fn`, revalidating, or emitting `cache:read` — a pure probe that returns `null` on a miss. `markStale(key)` backdates an entry so its next read serves stale-while-revalidate. It is a no-op on a missing or already-stale key, and it never freshens or un-expires one. Both run through the `storage` interface, so they apply to any backend. `set(key, value)` writes a value directly, stamped fresh. Prefer `set` over `delete(key)` then `fetch`: that sequence leaves the key absent, so concurrent readers each start their own recompute.
 
 `status` is `'fresh' | 'stale' | 'expired' | 'miss'`.
+
+#### Waiting for background revalidations
+
+<VersionNote since="0.10.0" message="whenIdle() was added in 0.10.0." />
+
+A stale read returns at once and refreshes in the background, so the new value is not readable when `fetch` resolves. `whenIdle()` waits for those background runs to finish — including the storage write, not just the upstream call — which is what you want before shutting down, or in a test that asserts on the refreshed value.
+
+```ts
+const stale = await cache.fetchWithStatus('users', loadUsers); // 'stale', old value
+await cache.whenIdle();
+const fresh = await cache.fetchWithStatus('users', loadUsers); // 'fresh', new value
+```
+
+<Callout type="warning">
+
+`whenIdle()` waits for whatever is in flight, so on a busy cache it keeps waiting as new revalidations start. Treat it as a shutdown or test primitive — don't await it on a request path.
+
+</Callout>
+
+A run that throws settles it like any other, so a failing upstream can't leave it hanging. `ImageCache` exposes the same method for its own regenerations.
 
 ### Options
 
