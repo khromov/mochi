@@ -52,6 +52,33 @@ Use it from a page or API route:
 
 </Callout>
 
+### Caching expensive serverProps
+
+A page's latency is usually dominated by its data loading, not the render — so `serverProps` resolvers are the highest-leverage place to cache. Construct a `MochiCache` at module scope and wrap the slow call in `fetch()`, keyed per route params:
+
+```ts
+// file: src/index.ts
+import { Mochi, MochiCache } from 'mochi-framework';
+import { loadPokemon } from './lib/pokemon';
+
+const pokemonCache = new MochiCache({
+  minTimeToStale: 10_000, // serve fresh for 10s
+  maxTimeToLive: 300_000, // hard expiry at 5min
+});
+
+await Mochi.serve({
+  routes: {
+    '/pokemon/:id': Mochi.page('./src/Pokemon.svelte', {
+      serverProps: async (_req, params) => ({
+        pokemon: await pokemonCache.fetch(`pokemon:${params.id}`, () => loadPokemon(params.id)),
+      }),
+    }),
+  },
+});
+```
+
+The first request per key pays the load; later requests follow the fresh / stale / expired lifecycle below. Everything that shapes the result must be in the key — route params as above, plus any cookie- or locals-derived dimension per the warning above.
+
 ### Behavior
 
 - **Fresh** (within `minTimeToStale`): cached value returned, no fetch.

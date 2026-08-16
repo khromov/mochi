@@ -1542,27 +1542,30 @@ export class ComponentRegistry {
 
     let output = body;
 
-    output = output.replace(/__MOCHI_COMPONENT_URL__(\w+)__/g, (_, name: string) => this.componentEntryUrls.get(name) ?? '');
-
     // Track which islands are lazy (have CSS_URL placeholders) during replacement
     const lazyIslandPaths = new Set<string>();
-    output = output.replace(/__MOCHI_CSS_URL__(\w+)__/g, (_, name: string) => {
-      const h = hydratablesByName.get(name);
-      if (h) {
-        lazyIslandPaths.add(h.resolvedPath);
-        return this.cssFileUrls.get(h.resolvedPath) ?? '';
-      }
-      return '';
-    });
-
     let hasServerCssPlaceholders = false;
-    output = output.replace(/__MOCHI_SERVER_CSS_URL__(\w+)__/g, (_, name: string) => {
-      hasServerCssPlaceholders = true;
-      const resolvedPath = this.serverIslandPaths.get(name);
-      return resolvedPath ? (this.cssFileUrls.get(resolvedPath) ?? '') : '';
-    });
+    // Placeholders only exist in island wrapper attributes, so one probe spares island-free pages four full-body scans.
+    if (output.includes('__MOCHI_')) {
+      output = output.replace(/__MOCHI_COMPONENT_URL__(\w+)__/g, (_, name: string) => this.componentEntryUrls.get(name) ?? '');
 
-    output = output.replaceAll('__MOCHI_ASSET_PREFIX__', this.assetPrefix);
+      output = output.replace(/__MOCHI_CSS_URL__(\w+)__/g, (_, name: string) => {
+        const h = hydratablesByName.get(name);
+        if (h) {
+          lazyIslandPaths.add(h.resolvedPath);
+          return this.cssFileUrls.get(h.resolvedPath) ?? '';
+        }
+        return '';
+      });
+
+      output = output.replace(/__MOCHI_SERVER_CSS_URL__(\w+)__/g, (_, name: string) => {
+        hasServerCssPlaceholders = true;
+        const resolvedPath = this.serverIslandPaths.get(name);
+        return resolvedPath ? (this.cssFileUrls.get(resolvedPath) ?? '') : '';
+      });
+
+      output = output.replaceAll('__MOCHI_ASSET_PREFIX__', this.assetPrefix);
+    }
 
     const shouldStrip = opts?.stripMarkers !== false && hydratables.length === 0;
     const hasIslandsOrServerIslands = hydratables.length > 0 || hasServerCssPlaceholders;
@@ -1737,10 +1740,9 @@ export class ComponentRegistry {
       }
     }
 
-    // Always collapse the doubled-marker pattern (Svelte SSR bug for
-    // `$state` arrays + `{@attach}`). Strictly matched open+close so it only
-    // fires on the actual bug; no-op otherwise.
-    const normalized = normalizeIslandHydrationMarkers(output);
+    // Collapse the doubled-marker Svelte SSR bug (`$state` arrays + `{@attach}`); only island wrappers can carry it,
+    // so island-free renders skip the scan.
+    const normalized = hydratables.length > 0 ? normalizeIslandHydrationMarkers(output) : output;
     const headStr = head ?? '';
     return {
       body: normalized,
