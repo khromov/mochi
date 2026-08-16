@@ -114,6 +114,13 @@ describe('makeRequestContextBuilder', () => {
     expect('earlyResponse' in setup).toBe(false);
   });
 
+  test('kind: "api" skips trailing-slash redirects even when the policy would trigger', () => {
+    const build = makeRequestContextBuilder(makeConfig({ trailingSlashPolicy: 'always' }));
+    const { server } = mockServer();
+    const setup = build(mockReq('GET', '/api/ping'), server, { kind: 'api', pattern: '/api/ping' });
+    expect('earlyResponse' in setup).toBe(false);
+  });
+
   test('kind: "page" with trailingSlashPolicy: "always" redirects and emits a request event', () => {
     const build = makeRequestContextBuilder(makeConfig({ trailingSlashPolicy: 'always' }));
     const { server } = mockServer();
@@ -137,17 +144,24 @@ describe('makeRequestContextBuilder', () => {
     }
   });
 
-  test('kind: "sse" early-exit on trailing-slash does NOT emit a request event', () => {
+  test('kind: "sse" skips trailing-slash redirects even when the policy would trigger', () => {
     const build = makeRequestContextBuilder(makeConfig({ trailingSlashPolicy: 'always' }));
     const { server } = mockServer();
     const cap = captureRequestEvents();
     try {
       const setup = build(mockReq('GET', '/foo'), server, { kind: 'sse', pattern: '/foo' });
-      expect('earlyResponse' in setup).toBe(true);
+      expect('earlyResponse' in setup).toBe(false);
       expect(cap.events).toHaveLength(0);
     } finally {
       cap.off();
     }
+  });
+
+  test('kind: "file" skips trailing-slash redirects even when the policy would trigger', () => {
+    const build = makeRequestContextBuilder(makeConfig({ trailingSlashPolicy: 'always' }));
+    const { server } = mockServer();
+    const setup = build(mockReq('GET', '/files/report'), server, { kind: 'file', pattern: '/files/report' });
+    expect('earlyResponse' in setup).toBe(false);
   });
 
   test('kind: "page" rejects cross-origin form POST and emits a request event', () => {
