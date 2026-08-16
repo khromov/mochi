@@ -68,7 +68,7 @@ describe('support form action', () => {
       logger: { enabled: false },
       outDir,
       htmlShell: './src/shell.html',
-      // Mirror src/index.ts, so /health/ resolves the way the deployed app serves it.
+      // Mirror src/index.ts, so routes resolve the way the deployed app serves them.
       trailingSlash: 'always',
       // The port is only known after serve() returns, so proxy.origin can't be
       // set ahead of time to satisfy the real origin check.
@@ -116,10 +116,17 @@ describe('support form action', () => {
     expect(await res.text()).toContain('Get in touch');
   });
 
-  test('/health/ reports ok', async () => {
-    const res = await fetch(`${base}/health/`);
+  test('/health reports ok', async () => {
+    const res = await fetch(`${base}/health`);
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ status: 'ok' });
+  });
+
+  // /health is a Mochi.api() route, so it is exempt from trailingSlash: 'always'
+  // — the Dockerfile healthcheck probes the bare form for this reason.
+  test('/health/ is not mirrored', async () => {
+    const res = await fetch(`${base}/health/`, { redirect: 'manual' });
+    expect(res.status).toBe(404);
   });
 
   test('a valid submission is stored and sends one email to SUPPORT_TO', async () => {

@@ -43,7 +43,7 @@
   const search = resource(
     () => query,
     async (q, _prev, { signal }) => {
-      const res = await fetch(`/api/runed/search/?q=${encodeURIComponent(q)}`, { signal });
+      const res = await fetch(`/api/runed/search?q=${encodeURIComponent(q)}`, { signal });
       return (await res.json()) as { matches: string[] };
     },
     { debounce: 300, initialValue: { matches: fruits } },
