@@ -86,11 +86,21 @@ await reloadDeferredIsland('cart'); // re-fetches, resolves once swapped in
 await reloadDeferredIslandAll(); // reloads every named defer on the page
 ```
 
-Both return a promise that resolves once every matching island has re-fetched and swapped in. Islands sharing a `name` reload together, and a `mochi:defer mochi:hydrate` island re-hydrates after each reload. `name` works on `mochi:defer:visible` too, where a reload fetches immediately regardless of viewport.
+Both return a promise that settles once every matching island has finished re-fetching. Islands sharing a `name` reload together, and a `mochi:defer mochi:hydrate` island unmounts its old component and re-hydrates on each reload. Reloads on the same island queue behind one another, so a reload issued after a mutation always observes it.
+
+`name` works on `mochi:defer:visible` too. A reload fetches immediately regardless of viewport, and replaces the element the viewport trigger was watching — after a manual reload, only further `reloadDeferredIsland` calls refresh it.
+
+Naming an island also opts it out of [nested inlining](#nesting-islands-inside-a-server-island): a reloadable island needs its own placeholder to fetch into.
 
 <Callout type="info">
 
 `reloadDeferredIsland` runs in the browser — call it from a hydrated island or other client code. During SSR no islands are mounted, so it resolves immediately and does nothing.
+
+</Callout>
+
+<Callout type="warning">
+
+**A reload resolves even if the fetch failed.** It reuses the same retry-and-backoff policy as the initial load, so a hard failure resolves only after the retry budget is spent (default 9 retries, up to ~27s) and leaves the previous content in place. Lower `retries` on islands you invalidate interactively.
 
 </Callout>
 

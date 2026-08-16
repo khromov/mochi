@@ -1,6 +1,6 @@
 /// <reference lib="dom" />
 /// <reference lib="dom.iterable" />
-import { hydrate, mount } from 'svelte';
+import { hydrate, mount, unmount } from 'svelte';
 import type { Component } from 'svelte';
 import { parse as devalueParse } from 'devalue';
 import { isDev, logger } from 'mochi-framework';
@@ -17,6 +17,7 @@ export function registerComponent(name: string, component: Component) {
 
 class HydratableIsland extends HTMLElement {
   _hydrated = false;
+  _unmount: (() => void) | undefined;
 
   connectedCallback() {
     const name = this.getAttribute('component-name');
@@ -139,14 +140,24 @@ class HydratableIsland extends HTMLElement {
       return out;
     };
     const clientOnly = this.hasAttribute('client-only');
+    let instance: Record<string, unknown>;
     if (clientOnly) {
       // mochi:clientOnly islands have no SSR HTML — the wrapper holds optional
       // fallback content. Remove it exactly when the real component mounts.
       this.innerHTML = '';
-      mount(Component, { target: this, props, transformError });
+      instance = mount(Component, { target: this, props, transformError });
     } else {
-      hydrate(Component, { target: this, props, transformError });
+      instance = hydrate(Component, { target: this, props, transformError });
     }
+    // Duck-typed teardown hook: a reloading `<mochi-server-island>` calls this before
+    // discarding the subtree, so the old component's effects and listeners stop. It
+    // lives on the element (not an import) because that element ships in a separate,
+    // Svelte-free bundle. Not wired to `disconnectedCallback` — a plain DOM move
+    // disconnects too, and unmounting there would destroy state on every reparent.
+    this._unmount = () => {
+      this._unmount = undefined;
+      void unmount(instance);
+    };
     logger.log(clientOnly ? 'Mounted' : 'Hydrated', name);
   }
 }

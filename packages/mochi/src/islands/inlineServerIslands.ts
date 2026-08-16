@@ -8,8 +8,13 @@ export const DEFAULT_INLINE_BUDGET = 32;
  * quietly take the placeholder path instead of throwing.
  */
 export function shouldInlineIsland(options?: unknown): boolean {
-  if (typeof options === 'object' && options !== null && (options as { inline?: boolean }).inline === false) {
-    return false;
+  if (typeof options === 'object' && options !== null) {
+    const opts = options as { inline?: boolean; name?: unknown };
+    // A named island is opted out: inlining emits no `<mochi-server-island>` wrapper, so there
+    // would be nothing for `reloadDeferredIsland(name)` to find and re-fetch.
+    if (opts.inline === false || typeof opts.name === 'string') {
+      return false;
+    }
   }
   const st = requestContext.getStore()?.islandInline;
   // `!(> 0)` so a NaN budget from a misbehaving `serverIsland:inlineBudget` filter fails closed to the placeholder path.

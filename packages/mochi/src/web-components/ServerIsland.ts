@@ -11,7 +11,7 @@ class ServerIsland extends HTMLElement {
   _loaded = false;
   _options: Record<string, unknown> = {};
   _name: string | null = null;
-  _reloading: Promise<void> | null = null;
+  _inflight: Promise<void> | null = null;
 
   connectedCallback() {
     const optionsRaw = this.getAttribute('server-options');
@@ -38,7 +38,7 @@ class ServerIsland extends HTMLElement {
           for (const e of entries) {
             if (e.isIntersecting) {
               obs.disconnect();
-              this._fetchContent(options);
+              this._track(this._fetchContent(options));
               return;
             }
           }
@@ -48,7 +48,7 @@ class ServerIsland extends HTMLElement {
       return;
     }
 
-    this._fetchContent(options);
+    this._track(this._fetchContent(options));
   }
 
   disconnectedCallback() {
@@ -57,16 +57,24 @@ class ServerIsland extends HTMLElement {
     }
   }
 
-  // Re-fetch the island's server HTML (bypassing `defer-on="visible"`), deduping against an
-  // in-flight reload so overlapping `reloadDeferredIsland` calls share one fetch.
+  _track(op: Promise<void>): Promise<void> {
+    const tracked = op
+      .catch(() => {})
+      .finally(() => {
+        if (this._inflight === tracked) {
+          this._inflight = null;
+        }
+      });
+    this._inflight = tracked;
+    return tracked;
+  }
+
+  // Re-fetch the island's server HTML, bypassing `defer-on="visible"`. Queued behind any
+  // fetch already running rather than sharing it: a reload issued after a mutation must
+  // observe that mutation, and an unchained fetch could also land late and clobber the
+  // newer content it raced.
   reload(): Promise<void> {
-    if (this._reloading) {
-      return this._reloading;
-    }
-    this._reloading = this._fetchContent(this._options).finally(() => {
-      this._reloading = null;
-    });
-    return this._reloading;
+    return this._track((this._inflight ?? Promise.resolve()).then(() => this._fetchContent(this._options)));
   }
 
   async _fetchContent(options: Record<string, unknown> = {}) {
@@ -120,6 +128,12 @@ class ServerIsland extends HTMLElement {
           link.rel = 'stylesheet';
           link.href = cssUrl;
           document.head.appendChild(link);
+        }
+
+        // Svelte roots are not torn down by removing their DOM, so a reload would otherwise
+        // leave every previous instance's effects, timers and listeners running forever.
+        for (const el of this.querySelectorAll('mochi-hydratable-island')) {
+          (el as { _unmount?: () => void })._unmount?.();
         }
 
         // SAFETY: HTML comes from our own same-origin server-island endpoint with encrypted props.

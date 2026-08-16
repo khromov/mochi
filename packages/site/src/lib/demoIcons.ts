@@ -27,7 +27,7 @@ import OctagonAlert from '@lucide/svelte/icons/octagon-alert';
 import Signpost from '@lucide/svelte/icons/signpost';
 import FileUp from '@lucide/svelte/icons/file-up';
 import RefreshCw from '@lucide/svelte/icons/refresh-cw';
-import RefreshCcw from '@lucide/svelte/icons/refresh-ccw';
+import RotateCw from '@lucide/svelte/icons/rotate-cw';
 import CircleX from '@lucide/svelte/icons/circle-x';
 import ListTree from '@lucide/svelte/icons/list-tree';
 import FileText from '@lucide/svelte/icons/file-text';
@@ -85,7 +85,7 @@ export const demoIconFor: Record<string, DemoIconMeta> = {
   'Real-time Streams': { icon: AudioWaveform, label: 'WebSocket + SSE streams' },
   'Background jobs with queues': { icon: Inbox, label: 'Embedded job queue + worker' },
   'Server Islands': { icon: ComponentIcon, label: 'Deferred server island' },
-  'Defer Invalidation': { icon: RefreshCcw, label: 'Reload a server island on demand' },
+  'Defer Invalidation': { icon: RotateCw, label: 'Reload a server island on demand' },
   'Client-only Islands': { icon: MonitorSmartphone, label: 'No SSR — mounts in the browser' },
   'Lazy Islands': { icon: Telescope, label: 'Hydrate when visible' },
   'Lazy Server Islands': { icon: Eye, label: 'Fetch server island when visible' },

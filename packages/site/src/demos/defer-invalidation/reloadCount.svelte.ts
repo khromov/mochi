@@ -1,3 +1,2 @@
-// Svelte universal reactivity: a rune-backed store shared across islands. Any
-// hydrated component that reads `reloads.count` re-renders when a reload lands.
+// A `.svelte.ts` module, so `$state` works outside a component.
 export const reloads = $state({ count: 0 });

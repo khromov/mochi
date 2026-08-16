@@ -10,6 +10,7 @@ declare module 'svelte/elements' {
   interface MochiDeferOptions {
     retries?: number;
     name?: string;
+    inline?: boolean;
   }
 
   interface MochiDeferVisibleOptions {

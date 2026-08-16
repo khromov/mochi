@@ -6,9 +6,12 @@
 
   async function run(name, fn) {
     pending = name;
-    await fn();
-    reloads.count++;
-    pending = '';
+    try {
+      await fn();
+      reloads.count++;
+    } finally {
+      pending = '';
+    }
   }
 </script>
 

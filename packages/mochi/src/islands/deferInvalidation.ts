@@ -1,5 +1,5 @@
 import { pinGlobal } from '../utils/globalState';
-import { logger } from '../utils/log';
+import type {} from '../debug-bar/types';
 
 // A `mochi:defer` server-island element, keyed by its `name` option, that can
 // re-fetch its server-rendered HTML on demand. Kept structural so this module
@@ -43,7 +43,11 @@ export function unregisterDeferredIsland(name: string, island: ReloadableIsland)
 export function reloadDeferredIsland(name: string): Promise<void> {
   const set = registry().get(name);
   if (!set || set.size === 0) {
-    logger.warn(`[mochi] reloadDeferredIsland("${name}"): no deferred island with that name is mounted.`);
+    // Browser-only: on the server the registry is empty by construction, so warning there
+    // would fire on every SSR render of isomorphic island code that calls this.
+    if (typeof window !== 'undefined') {
+      window.__mochi_warn?.(`[mochi] reloadDeferredIsland("${name}"): no deferred island with that name is mounted.`);
+    }
     return Promise.resolve();
   }
   return Promise.all([...set].map((island) => island.reload())).then(() => {});
@@ -51,8 +55,8 @@ export function reloadDeferredIsland(name: string): Promise<void> {
 
 export function reloadDeferredIslandAll(): Promise<void> {
   const reloads: Promise<void>[] = [];
-  for (const set of registry().values()) {
-    for (const island of set) {
+  for (const set of [...registry().values()]) {
+    for (const island of [...set]) {
       reloads.push(island.reload());
     }
   }
