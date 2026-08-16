@@ -15,6 +15,7 @@ import { loadSvelteConfig } from '../compiler/svelteConfig';
 import { recordReloadSignal } from './liveReloadGeneration';
 import type { MochiRateLimitOptions } from '../runtime/rateLimit';
 import { alternateSlashPattern } from '../runtime/trailingSlash';
+import { mirrorsSlashForm } from '../runtime/requestSetup';
 import type { SpeculationRules } from '../runtime/speculationRules';
 import {
   isMochiApi,
@@ -296,7 +297,9 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
   let knownEntryPatterns = new Set<string>();
   let routeComponentPaths: Set<string> = new Set();
 
-  function routeType(handler: unknown): 'api' | 'ws' | 'sse' | 'page' | 'file' | null {
+  type DevRouteType = 'api' | 'ws' | 'sse' | 'page' | 'file' | null;
+
+  function routeType(handler: unknown): DevRouteType {
     if (isMochiApi(handler)) {
       return 'api';
     }
@@ -315,7 +318,7 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
     return null;
   }
 
-  function currentRouteType(pattern: string): 'api' | 'ws' | 'sse' | 'page' | 'file' | null {
+  function currentRouteType(pattern: string): DevRouteType {
     if (apiHandlerMap?.has(pattern)) {
       return 'api';
     }
@@ -337,10 +340,14 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
     return null;
   }
 
-  function addBunRoute(pattern: string, value: BunRouteValue): void {
+  function mirrorsAltSlash(type: DevRouteType): boolean {
+    return type === null || mirrorsSlashForm(type);
+  }
+
+  function addBunRoute(pattern: string, value: BunRouteValue, type: DevRouteType): void {
     bunRoutes[pattern] = value;
     baseBunRoutes[pattern] = value;
-    if (trailingSlashPolicy) {
+    if (trailingSlashPolicy && mirrorsAltSlash(type)) {
       const alt = alternateSlashPattern(pattern);
       if (alt && !(alt in bunRoutes)) {
         bunRoutes[alt] = value;
@@ -349,10 +356,11 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
     }
   }
 
-  function removeBunRoute(pattern: string): void {
-    if (trailingSlashPolicy) {
+  function removeBunRoute(pattern: string, type: DevRouteType): void {
+    if (trailingSlashPolicy && mirrorsAltSlash(type)) {
       const alt = alternateSlashPattern(pattern);
-      if (alt) {
+      // A pattern the entry declares itself is a sibling route, not our mirror of this one.
+      if (alt && !knownEntryPatterns.has(alt)) {
         delete bunRoutes[alt];
         delete baseBunRoutes[alt];
       }
@@ -378,10 +386,10 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
 
         if (currentType && currentType !== type && registerRoutePattern && unregisterRoutePattern) {
           unregisterRoutePattern(pattern);
-          removeBunRoute(pattern);
+          removeBunRoute(pattern, currentType);
           const result = await registerRoutePattern(pattern, handler as MochiRouteValue);
           if (result) {
-            addBunRoute(pattern, result.bunRouteValue);
+            addBunRoute(pattern, result.bunRouteValue, result.type);
             counts.added.push(pattern);
             counts.removed.push(pattern);
             logger.info(`Route retyped ${currentType}→${type}: ${pattern}`);
@@ -390,10 +398,10 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
           // File routes have no handler map to mutate in place — their source
           // is baked into the registered closure — so swap by re-registering.
           unregisterRoutePattern(pattern);
-          removeBunRoute(pattern);
+          removeBunRoute(pattern, 'file');
           const result = await registerRoutePattern(pattern, handler as MochiRouteValue);
           if (result) {
-            addBunRoute(pattern, result.bunRouteValue);
+            addBunRoute(pattern, result.bunRouteValue, result.type);
             counts.file++;
             counts.updated++;
             logger.info(`Route updated file: ${pattern}`);
@@ -423,7 +431,7 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
         try {
           const result = await registerRoutePattern(pattern, handler as MochiRouteValue);
           if (result) {
-            addBunRoute(pattern, result.bunRouteValue);
+            addBunRoute(pattern, result.bunRouteValue, result.type);
             counts[result.type]++;
             counts.added.push(pattern);
             logger.info(`Route added ${result.type}: ${pattern}`);
@@ -438,10 +446,27 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
     if (unregisterRoutePattern) {
       for (const pattern of knownEntryPatterns) {
         if (!freshPatterns.has(pattern)) {
+          const removedType = currentRouteType(pattern);
           unregisterRoutePattern(pattern);
-          removeBunRoute(pattern);
+          removeBunRoute(pattern, removedType);
           counts.removed.push(pattern);
           logger.info(`Route removed: ${pattern}`);
+        }
+      }
+    }
+
+    // Deleting an explicitly-declared sibling (`/a/` alongside `/a`) leaves the survivor without the mirror a cold
+    // boot would have given it, so its canonical form would redirect into a 404 until restart.
+    if (trailingSlashPolicy) {
+      for (const pattern of freshPatterns) {
+        const value = bunRoutes[pattern];
+        if (value === undefined || !mirrorsAltSlash(currentRouteType(pattern))) {
+          continue;
+        }
+        const alt = alternateSlashPattern(pattern);
+        if (alt && !(alt in bunRoutes)) {
+          bunRoutes[alt] = value;
+          baseBunRoutes[alt] = value;
         }
       }
     }

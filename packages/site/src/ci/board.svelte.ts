@@ -26,7 +26,7 @@ export function createCiBoard(seed: BoardSeed) {
     }
     polling = true;
     try {
-      const res = await fetch('/ci/data/', { headers: { Accept: 'application/json' } });
+      const res = await fetch('/ci/data', { headers: { Accept: 'application/json' } });
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}`);
       }

@@ -9,7 +9,7 @@ multi-day unattended run on a dedicated server.
 
 1. **Spawns the site** (`bun run dev:site`, dev mode — matches what CI deploys) as a
    child process, so the site's heap stays isolated from the driver's.
-2. **Waits** for `/health/` to report ready.
+2. **Waits** for `/health` to report ready.
 3. **Load loop** — fetches `/sitemap.xml`, re-anchors each `<loc>` to the local
    server, and fetches every URL with bounded concurrency, forever. The sitemap
    covers `/`, every doc, and every internal demo, so almost every Mochi feature
@@ -203,7 +203,7 @@ that only grow.
 | `CONCURRENCY`            | `8`              | Parallel in-flight requests in the load loop.                                  |
 | `LOOP_DELAY_MS`          | `0`              | Pause between full sitemap passes.                                             |
 | `MEM_LOG_INTERVAL_MS`    | `300000`         | Post-GC memory log cadence (5m).                                               |
-| `READY_TIMEOUT_MS`       | `120000`         | Max wait for `/health/` on startup.                                            |
+| `READY_TIMEOUT_MS`       | `120000`         | Max wait for `/health` on startup.                                             |
 | `SPAWN_SITE`             | `true`           | Set `false` to drive an externally started site.                               |
 | `MEMTEST_GIT_SHA`        | _(unset)_        | Git short-SHA stamped into snapshot filenames; `loop.sh` sets it via `run.sh`. |
 
