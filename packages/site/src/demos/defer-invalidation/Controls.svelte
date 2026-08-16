@@ -2,15 +2,37 @@
   import { reloadDeferredIsland, reloadDeferredIslandAll, isReloadingDeferredIsland } from 'mochi-framework';
   import { reloads } from './reloadCount.svelte.ts';
 
-  let status = $state('');
+  // One entry per island currently reloading, keyed by the element the event came from —
+  // islands sharing a name each get their own, so "reload all" reports the whole batch.
+  let active = $state([]);
+  let note = $state('');
+
+  // A note answers the click that just happened (ignored, or failed), so it outranks the
+  // in-flight text; the next reload that actually starts clears it.
+  const status = $derived.by(() => {
+    if (note) {
+      return note;
+    }
+    if (active.length === 0) {
+      return '';
+    }
+    const names = [...new Set(active.map((a) => a.name))];
+    return names.length === 1 ? `reloading "${names[0]}"…` : `reloading ${active.length} islands…`;
+  });
 
   // The events bubble to the document, so every bit of this status is driven by the islands
   // themselves rather than by the code that started the reload.
   $effect(() => {
-    const onStart = (e) => (status = `reloading "${e.detail.name}"…`);
+    const onStart = (e) => {
+      note = '';
+      active = [...active, { el: e.target, name: e.detail.name }];
+    };
     const onEnd = (e) => {
       reloads.count++;
-      status = e.detail.ok ? '' : `"${e.detail.name}" failed to reload`;
+      active = active.filter((a) => a.el !== e.target);
+      if (!e.detail.ok) {
+        note = `"${e.detail.name}" failed to reload`;
+      }
     };
     document.addEventListener('mochi:island:reloadstart', onStart);
     document.addEventListener('mochi:island:reloadend', onEnd);
@@ -23,7 +45,7 @@
   function run(name) {
     // Synchronous, so the handler can bail before starting anything. Click twice quickly to see it.
     if (isReloadingDeferredIsland(name)) {
-      status = `"${name}" is already reloading — click ignored`;
+      note = `"${name}" is already reloading — click ignored`;
       return;
     }
     reloadDeferredIsland(name);
