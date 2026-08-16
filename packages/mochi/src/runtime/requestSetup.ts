@@ -8,6 +8,7 @@ import { MochiCookieJar, type CookieSerializeOptions } from './cookies';
 import { mochiEvents } from '../events';
 import { isWarmupRequest } from './warmup';
 import type { MochiRequestContext } from './requestContext';
+import type { ProtectionGate } from '../protection/gate';
 
 // RouteKind covers user-route shapes; MochiRequestKind in events.ts covers the
 // broader event taxonomy (asset, fallback, error). They overlap on page|api|file.
@@ -24,6 +25,7 @@ export interface RequestSetupConfig {
   protectedMethods: ReadonlySet<string>;
   trustedOrigins: ReadonlySet<string>;
   newRequestId: (req: Request) => string;
+  protection?: ProtectionGate;
 }
 
 export interface PerCallOptions {
@@ -31,6 +33,8 @@ export interface PerCallOptions {
   pattern: string;
   paramsOverride?: Record<string, string>;
   csrfErrorTransform?: (resp: Response) => Response;
+  /** The protection verify endpoint sets this — the one route that must answer an uncleared client. */
+  skipProtection?: boolean;
 }
 
 export type SetupResult =
@@ -43,7 +47,7 @@ export type SetupResult =
       params: Record<string, string>;
     };
 
-export type RequestContextBuilder = (req: Request, server: Server<undefined>, opts: PerCallOptions) => SetupResult;
+export type RequestContextBuilder = (req: Request, server: Server<undefined>, opts: PerCallOptions) => Promise<SetupResult>;
 
 interface KindPolicy {
   timeout: boolean;
@@ -64,7 +68,7 @@ const KIND_POLICY: Record<RouteKind, KindPolicy> = {
 };
 
 export function makeRequestContextBuilder(cfg: RequestSetupConfig): RequestContextBuilder {
-  return function buildRequestContext(req, server, opts): SetupResult {
+  return async function buildRequestContext(req, server, opts): Promise<SetupResult> {
     const policy = KIND_POLICY[opts.kind];
     const start = performance.now();
     const requestId = cfg.newRequestId(req);
@@ -111,6 +115,15 @@ export function makeRequestContextBuilder(cfg: RequestSetupConfig): RequestConte
     }
 
     const cookies = new MochiCookieJar(req.headers.get('Cookie'), cfg.cookieDefaults);
+
+    if (cfg.protection && !opts.skipProtection) {
+      const blocked = await cfg.protection({ request: req, url, kind: opts.kind, cookies, server });
+      if (blocked) {
+        reportEarlyExit(blocked.status);
+        return { earlyResponse: blocked };
+      }
+    }
+
     const ctx: MochiRequestContext = {
       requestId,
       request: req,

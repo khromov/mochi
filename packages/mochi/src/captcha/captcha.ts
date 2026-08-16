@@ -55,9 +55,10 @@ export function mintCaptcha(options?: { bits?: number; solveBudgetMs?: number })
  * Verify the `captcha_token` / `captcha_pow` fields `<MochiCaptcha />` adds to the form, consuming the one-time nonce on
  * success unless `consume: false`, where you call {@link consumeCaptcha} once the submission is committed. A failure
  * carries a ready-to-render `error` plus a `reason` for your own copy — see {@link CaptchaFailureReason} for why
- * `reason` is deliberately coarse.
+ * `reason` is deliberately coarse. `minAgeMs` overrides the configured timing floor for this call alone — for flows with
+ * nothing to fill in (protection mode's auto-solve submits the instant the proof-of-work lands).
  */
-export async function verifyCaptcha(formData: FormData, options?: { consume?: boolean }): Promise<CaptchaResult> {
+export async function verifyCaptcha(formData: FormData, options?: { consume?: boolean; minAgeMs?: number }): Promise<CaptchaResult> {
   const token = String(formData.get('captcha_token') ?? '');
   const pow = String(formData.get('captcha_pow') ?? '');
   const opened = token ? decryptPayload(token, { aad: CAPTCHA_AAD }) : null;
@@ -85,7 +86,7 @@ export async function verifyCaptcha(formData: FormData, options?: { consume?: bo
   // different machines, so the allowance widens the expiry bound alone. Padding the floor would mean subtracting from
   // it, and any allowance wider than `minAgeMs` would delete the too-fast check rather than soften it.
   const limitMs = resolved.maxAgeMs + resolved.driftAllowanceMs;
-  const minAgeMs = applyFilter('captcha:minAgeMs', resolved.minAgeMs, { bits, ageMs, limitMs });
+  const minAgeMs = applyFilter('captcha:minAgeMs', options?.minAgeMs ?? resolved.minAgeMs, { bits, ageMs, limitMs });
   if (!Number.isFinite(minAgeMs) || minAgeMs < 0 || minAgeMs >= limitMs) {
     throw new Error(`Captcha: the captcha:minAgeMs filter returned ${minAgeMs}; expected a non-negative number below ${limitMs}, or every token is rejected`);
   }

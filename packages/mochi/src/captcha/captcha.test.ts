@@ -334,6 +334,22 @@ describe('captcha:minAgeMs', () => {
     const solved = fields(solveCaptcha(mintCaptcha()));
     await expect(verifyCaptcha(solved)).rejects.toThrow(/every token is rejected/);
   });
+
+  test('the per-call minAgeMs option overrides the configured floor', async () => {
+    installConfig({ bits: 8, minAgeMs: 5000 });
+    expect((await verifyCaptcha(fields(solveCaptcha(mintCaptcha())), { minAgeMs: 0 })).ok).toBe(true);
+  });
+
+  test('without the per-call option the configured floor still rejects an instant solve', async () => {
+    installConfig({ bits: 8, minAgeMs: 5000 });
+    expect((await verifyCaptcha(fields(solveCaptcha(mintCaptcha())))).ok).toBe(false);
+  });
+
+  test('the filter still sees and can override the per-call floor', async () => {
+    initExtensions({ filters: { 'captcha:minAgeMs': () => 5000 } });
+    installConfig({ bits: 8, minAgeMs: 5000 });
+    expect((await verifyCaptcha(fields(solveCaptcha(mintCaptcha())), { minAgeMs: 0 })).ok).toBe(false);
+  });
 });
 
 describe('replay protection', () => {

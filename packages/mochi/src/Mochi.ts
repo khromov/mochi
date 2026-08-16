@@ -89,7 +89,7 @@ import { pinGlobal } from './utils/globalState';
 import { resetStartupMilestones } from './lifecycle';
 import type { MochiQueue, MochiQueueOptions, MochiQueueDescriptor, MochiQueueStorage, MochiWorker } from './queue';
 import type { BunBoss } from 'bun-boss';
-import { finalizeCookieHeaders } from './runtime/cookies';
+import { finalizeCookieHeaders, MochiCookieJar } from './runtime/cookies';
 import { makeRequestContextBuilder } from './runtime/requestSetup';
 import { createRouteLimiter, applyRateLimitHeaders } from './runtime/rateLimit';
 import type { MochiRateLimitOptions, MochiRateLimitStore, RouteLimiter } from './runtime/rateLimit';
@@ -115,8 +115,14 @@ import { resolvePublicFiles, registerPublicRoutes, isExcludedDotPath } from './r
 import { startDevWatcher } from './dev/devWatcher';
 import { buildPageCacheAdminRoutes, PAGE_CACHE_ADMIN_COMPONENT } from './dev/pageCacheAdminRoutes';
 import { liveReloadGreeting } from './dev/liveReloadGeneration';
+import { createProtectionRuntime, PROTECTION_INTERSTITIAL_COMPONENT } from './protection/gate';
+import { resolveProtectionOptions, PROTECTION_CLEARANCE_COOKIE } from './protection/config';
+import { mintClearanceToken } from './protection/clearance';
+import { verifyCaptcha } from './captcha/captcha';
+import { getCaptchaRuntime } from './captcha/config';
 
 const DEFAULT_HTML_SHELL = await Bun.file(new URL('./templates/default-shell.html', import.meta.url)).text();
+const PROTECTION_HTML_SHELL = await Bun.file(new URL('./templates/protection-shell.html', import.meta.url)).text();
 
 let mochiVersionPromise: Promise<string | null> | undefined;
 function readMochiVersion(): Promise<string | null> {
@@ -432,6 +438,7 @@ export class Mochi {
     const debugBarEnabled = development && (options.debugBar ?? true);
     const liveReloadEnabled = options.liveReload ?? development;
     const middleware = options.handle;
+    const protectionEnabled = options.protection?.enabled === true;
     const baseOutDir = options.outDir ?? './.mochi';
     // Nesting dev artifacts keeps a stale prod manifest and dev chunks apart across a later `start`, while prod stays at
     // the root so Docker and deploys are unaffected.
@@ -553,6 +560,7 @@ export class Mochi {
         logLevel: resolvedLogLevel,
         middleware: !!middleware,
         csrf: !!options.csrf,
+        protection: protectionEnabled,
         proxy: !!options.proxy,
         markdown: !!options.markdown,
         email: emailTransportType,
@@ -591,6 +599,9 @@ export class Mochi {
     if (debugBarEnabled) {
       ssrEntrypoints.push(PAGE_CACHE_ADMIN_COMPONENT);
     }
+    if (protectionEnabled) {
+      ssrEntrypoints.push(PROTECTION_INTERSTITIAL_COMPONENT);
+    }
     if (emailViewerEnabled) {
       ssrEntrypoints.push(EMAIL_VIEWER_COMPONENT);
     }
@@ -622,6 +633,35 @@ export class Mochi {
       getSpeculationRules: () => speculationRules,
       fontPreload: options.fonts?.preload !== false,
     });
+
+    let protectionRuntime: ReturnType<typeof createProtectionRuntime> | undefined;
+    if (protectionEnabled && options.protection) {
+      const protectionOptions = resolveProtectionOptions(options.protection, getCaptchaRuntime().options.bits);
+      const protectionShellTemplate = protectionOptions.shellPage
+        ? protectionOptions.shellPage.endsWith('.html')
+          ? await Bun.file(path.resolve(protectionOptions.shellPage)).text()
+          : protectionOptions.shellPage
+        : PROTECTION_HTML_SHELL;
+      // A second renderer over the interstitial's own shell: the app shell carries branding and
+      // speculation rules that must not leak into (or prefetch past) the verification page.
+      const renderProtectionShell = Mochi.createShellRenderer(registry, {
+        serverIslandClientJs,
+        liveReloadClientJs,
+        logLevel: resolvedLogLevel,
+        getTemplate: () => protectionShellTemplate,
+        getSpeculationRules: () => undefined,
+        fontPreload: options.fonts?.preload !== false,
+      });
+      protectionRuntime = createProtectionRuntime({
+        options: protectionOptions,
+        registry,
+        renderInterstitialShell: (result) => renderProtectionShell(result),
+        assetPrefix: registry.assetPrefix,
+        newRequestId,
+        proxy: options.proxy,
+        trailingSlashPolicy: options.trailingSlash,
+      });
+    }
 
     const { renderErrorResponse, routeErrorResponse } = createErrorResponder({
       handleError: options.handleError,
@@ -677,6 +717,7 @@ export class Mochi {
       protectedMethods,
       trustedOrigins,
       newRequestId,
+      protection: protectionRuntime?.gate,
     });
 
     const internalRoutes: Record<string, MochiPageConfig | MochiApiConfig> = {
@@ -859,7 +900,7 @@ export class Mochi {
           server: Server<undefined>,
           inner: (ctx: MochiRequestContext, event: MochiEvent, resolveOpts: MochiResolveOptions | undefined) => Promise<Response>,
         ): Promise<Response> => {
-          const setup = buildRequestContext(req, server, {
+          const setup = await buildRequestContext(req, server, {
             kind: 'page',
             pattern,
             csrfErrorTransform: (resp) => (isEnhanceRequest(req) ? jsonError(resp.status, 'Cross-site form submission forbidden') : resp),
@@ -1093,7 +1134,7 @@ export class Mochi {
         resolveLimiter(handler.rateLimit, pattern);
 
         const bunRouteValue: BunRouteValue = async (req: Request, server: Server<undefined>): Promise<Response> => {
-          const setup = buildRequestContext(req, server, { kind: 'api', pattern });
+          const setup = await buildRequestContext(req, server, { kind: 'api', pattern });
           if ('earlyResponse' in setup) {
             return setup.earlyResponse;
           }
@@ -1155,7 +1196,7 @@ export class Mochi {
         wsHandlersMap.set(pattern, wsHandlers);
 
         const bunRouteValue = (async (req: Request, server: Server<undefined>) => {
-          const setup = buildRequestContext(req, server, { kind: 'ws', pattern });
+          const setup = await buildRequestContext(req, server, { kind: 'ws', pattern });
           if ('earlyResponse' in setup) {
             return setup.earlyResponse;
           }
@@ -1227,7 +1268,7 @@ export class Mochi {
         const capturedSseHandler = handler.handler;
 
         const bunRouteValue: BunRouteValue = async (req: Request, server: Server<undefined>): Promise<Response> => {
-          const setup = buildRequestContext(req, server, { kind: 'sse', pattern });
+          const setup = await buildRequestContext(req, server, { kind: 'sse', pattern });
           if ('earlyResponse' in setup) {
             return setup.earlyResponse;
           }
@@ -1329,7 +1370,7 @@ export class Mochi {
         const source = handler.source;
 
         const bunRouteValue: BunRouteValue = async (req: Request, server: Server<undefined>): Promise<Response> => {
-          const setup = buildRequestContext(req, server, { kind: 'file', pattern });
+          const setup = await buildRequestContext(req, server, { kind: 'file', pattern });
           if ('earlyResponse' in setup) {
             return setup.earlyResponse;
           }
@@ -1440,7 +1481,7 @@ export class Mochi {
 
     // Register server island endpoint
     bunRoutes[`${registry.assetPrefix}/island/:componentName`] = withHead(async (req: Request, server: Server<undefined>): Promise<Response> => {
-      const setup = buildRequestContext(req, server, {
+      const setup = await buildRequestContext(req, server, {
         kind: 'island',
         pattern: `${registry.assetPrefix}/island/:componentName`,
         paramsOverride: {},
@@ -1647,6 +1688,53 @@ export class Mochi {
       bunRoutes[`${registry.assetPrefix}/image-cache/entry/`] = imageCacheEntryHandler;
     }
 
+    if (protectionRuntime) {
+      const { verifyPath, options: protectionOptions } = protectionRuntime;
+      const verifyHandler = async (req: Request, server: Server<undefined>): Promise<Response> => {
+        if (req.method !== 'POST') {
+          return new Response('Method Not Allowed', { status: 405 });
+        }
+        const setup = await buildRequestContext(req, server, { kind: 'api', pattern: verifyPath, skipProtection: true });
+        if ('earlyResponse' in setup) {
+          return setup.earlyResponse;
+        }
+        const { ctx, start, requestId, url } = setup;
+        let formData: FormData;
+        try {
+          formData = await req.formData();
+        } catch {
+          return jsonError(400, 'Expected form data');
+        }
+        const result = await verifyCaptcha(formData, { minAgeMs: 0 });
+        let response: Response;
+        if (result.ok) {
+          ctx.cookies.set(PROTECTION_CLEARANCE_COOKIE, mintClearanceToken(protectionOptions.bits), {
+            httpOnly: true,
+            sameSite: 'lax',
+            path: '/',
+            maxAge: Math.floor(protectionOptions.maxAgeMs / 1000),
+            secure: url.protocol === 'https:',
+          });
+          response = Response.json({ ok: true });
+        } else {
+          response = Response.json({ ok: false, error: result.error }, { status: 403, headers: { 'Cache-Control': 'no-store' } });
+        }
+        const final = finalizeCookieHeaders(response, ctx.cookies);
+        mochiEvents.emit('request', {
+          requestId,
+          kind: 'api',
+          method: req.method,
+          path: url.pathname + url.search,
+          status: final.status,
+          duration: performance.now() - start,
+        });
+        return final;
+      };
+      // Both slash variants, like the image-cache routes, so the endpoint answers under any trailingSlash policy.
+      bunRoutes[verifyPath] = verifyHandler;
+      bunRoutes[`${verifyPath}/`] = verifyHandler;
+    }
+
     if (process.env.MOCHI_MEMORY_PROBE === '1') {
       bunRoutes['/__mochi/health/memory'] = (): Response => {
         Bun.gc(true);
@@ -1718,6 +1806,19 @@ export class Mochi {
           return applyResolveOptions(await serveDiskAsset(diskAsset, development), resolveOpts);
         }
         if (userFetch) {
+          // Assets never reach here, so only user-fetch fallbacks are gated — the interstitial's own JS/CSS stays loadable.
+          if (protectionRuntime) {
+            const blocked = await protectionRuntime.gate({
+              request: req,
+              url,
+              kind: 'fallback',
+              cookies: new MochiCookieJar(req.headers.get('Cookie'), cookieDefaults),
+              server,
+            });
+            if (blocked) {
+              return applyResolveOptions(blocked, resolveOpts);
+            }
+          }
           const response = await userFetch(req, server);
           return applyResolveOptions(response, resolveOpts);
         }
