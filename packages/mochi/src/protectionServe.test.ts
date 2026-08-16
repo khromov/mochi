@@ -121,6 +121,26 @@ describe('Mochi.serve({ protection })', () => {
     const served = await fetch(`${base}/hello.txt`, { headers: { cookie } });
     expect(served.status).toBe(200);
     expect(await served.text()).toContain('hello from publicDir');
+    // The gate read the clearance cookie, so a shared cache must not replay this copy to unverified visitors.
+    expect(served.headers.get('Vary')).toContain('Cookie');
+  });
+
+  test('a POST to a protected page gets JSON 403, not the interstitial', async () => {
+    const form = new FormData();
+    form.set('name', 'x');
+    const res = await fetch(`${base}/members`, { method: 'POST', body: form, headers: { origin: base } });
+    expect(res.status).toBe(403);
+    expect(res.headers.get('Content-Type')).toContain('application/json');
+  });
+
+  test('a token minted at lower difficulty cannot be redeemed for clearance', async () => {
+    const weak = solveCaptcha(mintCaptcha({ bits: 4 }));
+    const form = new FormData();
+    form.set('captcha_token', weak.captcha_token);
+    form.set('captcha_pow', weak.captcha_pow);
+    const res = await fetch(`${base}/_mochi/protection/verify`, { method: 'POST', body: form, headers: { origin: base } });
+    expect(res.status).toBe(403);
+    expect(res.headers.get('Set-Cookie')).toBeNull();
   });
 
   test('an unmatched URL behind userFetch is protected too', async () => {

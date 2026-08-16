@@ -71,8 +71,12 @@ export async function resolvePublicFiles(opts: { publicDir: string; development:
   return applyFilter('publicDir:scan', source, { publicDir: opts.publicDir, development: opts.development });
 }
 
-/** Pre-route check for a public file; a returned Response short-circuits serving it (used by protection mode). */
-export type PublicRouteGuard = (req: Request, server: Server<undefined>) => Promise<Response | undefined>;
+/**
+ * Wraps serving a public file (used by protection mode): either short-circuit with a blocked Response, or call `serve`
+ * and decorate its result — a gate that read the clearance cookie must add `Vary: Cookie` to the served file too, or a
+ * shared cache would replay a cleared visitor's copy to unverified ones.
+ */
+export type PublicRouteGuard = (req: Request, server: Server<undefined>, serve: () => Promise<Response>) => Promise<Response>;
 
 /**
  * Register public files as Bun routes under their encoded keys, skipping any URL a user route already claims. Shared by
@@ -89,17 +93,14 @@ export function registerPublicRoutes(routes: Record<string, BunRouteValue>, file
     // A guarded file becomes a handler route: static BunFile values can't run the check. The file re-checks existence so
     // a deletion 404s instead of surfacing Bun.file's lazy ENOENT as a 500.
     routes[routeKey] = guard
-      ? async (req: Request, server: Server<undefined>): Promise<Response> => {
-          const blocked = await guard(req, server);
-          if (blocked) {
-            return blocked;
-          }
-          const file = Bun.file(diskPath);
-          if (!(await file.exists())) {
-            return new Response('Not found', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
-          }
-          return new Response(file);
-        }
+      ? (req: Request, server: Server<undefined>): Promise<Response> =>
+          guard(req, server, async () => {
+            const file = Bun.file(diskPath);
+            if (!(await file.exists())) {
+              return new Response('Not found', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+            }
+            return new Response(file);
+          })
       : Bun.file(diskPath);
   }
 }

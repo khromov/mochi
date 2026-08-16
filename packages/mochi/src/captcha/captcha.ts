@@ -56,9 +56,11 @@ export function mintCaptcha(options?: { bits?: number; solveBudgetMs?: number })
  * success unless `consume: false`, where you call {@link consumeCaptcha} once the submission is committed. A failure
  * carries a ready-to-render `error` plus a `reason` for your own copy — see {@link CaptchaFailureReason} for why
  * `reason` is deliberately coarse. `minAgeMs` overrides the configured timing floor for this call alone — for flows with
- * nothing to fill in (protection mode's auto-solve submits the instant the proof-of-work lands).
+ * nothing to fill in (protection mode's auto-solve submits the instant the proof-of-work lands); being explicit and
+ * per-call, it also bypasses the app-wide `captcha:minAgeMs` filter. `minBits` refuses tokens minted below a difficulty
+ * floor — without it, any endpoint minting easier tokens (a low-bits form captcha) devalues a harder one's proof.
  */
-export async function verifyCaptcha(formData: FormData, options?: { consume?: boolean; minAgeMs?: number }): Promise<CaptchaResult> {
+export async function verifyCaptcha(formData: FormData, options?: { consume?: boolean; minAgeMs?: number; minBits?: number }): Promise<CaptchaResult> {
   const token = String(formData.get('captcha_token') ?? '');
   const pow = String(formData.get('captcha_pow') ?? '');
   const opened = token ? decryptPayload(token, { aad: CAPTCHA_AAD }) : null;
@@ -79,6 +81,10 @@ export async function verifyCaptcha(formData: FormData, options?: { consume?: bo
     return reject('malformed');
   }
 
+  if (options?.minBits !== undefined && bits < options.minBits) {
+    return reject('bad-pow', { bits });
+  }
+
   const { options: resolved, store } = getCaptchaRuntime();
   const ageMs = Date.now() - iat;
 
@@ -86,7 +92,7 @@ export async function verifyCaptcha(formData: FormData, options?: { consume?: bo
   // different machines, so the allowance widens the expiry bound alone. Padding the floor would mean subtracting from
   // it, and any allowance wider than `minAgeMs` would delete the too-fast check rather than soften it.
   const limitMs = resolved.maxAgeMs + resolved.driftAllowanceMs;
-  const minAgeMs = applyFilter('captcha:minAgeMs', options?.minAgeMs ?? resolved.minAgeMs, { bits, ageMs, limitMs });
+  const minAgeMs = options?.minAgeMs ?? applyFilter('captcha:minAgeMs', resolved.minAgeMs, { bits, ageMs, limitMs });
   if (!Number.isFinite(minAgeMs) || minAgeMs < 0 || minAgeMs >= limitMs) {
     throw new Error(`Captcha: the captcha:minAgeMs filter returned ${minAgeMs}; expected a non-negative number below ${limitMs}, or every token is rejected`);
   }

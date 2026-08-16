@@ -69,44 +69,57 @@ describe('resolveProtectionOptions', () => {
 describe('clearance tokens', () => {
   test('a freshly minted clearance validates', () => {
     installConfig();
-    expect(hasValidClearance(mintClearanceToken(19), DEFAULT_PROTECTION_MAX_AGE_MS)).toBe(true);
+    expect(hasValidClearance(mintClearanceToken(19), DEFAULT_PROTECTION_MAX_AGE_MS, 19)).toBe(true);
   });
 
   test('an expired clearance is refused', () => {
     installConfig();
     const stale = encryptPayload(JSON.stringify({ iat: Date.now() - 10_000, bits: 19 }), { aad: PROTECTION_AAD });
-    expect(hasValidClearance(stale, 5_000)).toBe(false);
+    expect(hasValidClearance(stale, 5_000, 19)).toBe(false);
   });
 
-  test('a clearance from the future is refused', () => {
+  test('a clearance from beyond the drift allowance in the future is refused', () => {
     installConfig();
     const future = encryptPayload(JSON.stringify({ iat: Date.now() + 60_000, bits: 19 }), { aad: PROTECTION_AAD });
-    expect(hasValidClearance(future, DEFAULT_PROTECTION_MAX_AGE_MS)).toBe(false);
+    expect(hasValidClearance(future, DEFAULT_PROTECTION_MAX_AGE_MS, 19)).toBe(false);
+  });
+
+  test('a slightly-future clearance from a fast-clocked instance is accepted', () => {
+    installConfig();
+    const skewed = encryptPayload(JSON.stringify({ iat: Date.now() + 10_000, bits: 19 }), { aad: PROTECTION_AAD });
+    expect(hasValidClearance(skewed, DEFAULT_PROTECTION_MAX_AGE_MS, 19)).toBe(true);
+  });
+
+  test('a clearance minted below the currently required bits is refused', () => {
+    installConfig();
+    // Raising the difficulty re-challenges holders of cheaper clearances instead of honoring them until expiry.
+    expect(hasValidClearance(mintClearanceToken(10), DEFAULT_PROTECTION_MAX_AGE_MS, 19)).toBe(false);
+    expect(hasValidClearance(mintClearanceToken(20), DEFAULT_PROTECTION_MAX_AGE_MS, 19)).toBe(true);
   });
 
   test('a tampered clearance is refused', () => {
     installConfig();
     const token = mintClearanceToken(19);
     const flipped = token.slice(0, -2) + (token.endsWith('AA') ? 'BB' : 'AA');
-    expect(hasValidClearance(flipped, DEFAULT_PROTECTION_MAX_AGE_MS)).toBe(false);
+    expect(hasValidClearance(flipped, DEFAULT_PROTECTION_MAX_AGE_MS, 19)).toBe(false);
   });
 
   test('a captcha challenge token is not a clearance', () => {
     installConfig();
     const captchaToken = encryptPayload(JSON.stringify({ iat: Date.now(), nonce: crypto.randomUUID(), bits: 19 }), { aad: 'mochi-captcha' });
-    expect(hasValidClearance(captchaToken, DEFAULT_PROTECTION_MAX_AGE_MS)).toBe(false);
+    expect(hasValidClearance(captchaToken, DEFAULT_PROTECTION_MAX_AGE_MS, 19)).toBe(false);
   });
 
   test('missing, empty, and garbage cookie values are refused', () => {
     installConfig();
-    expect(hasValidClearance(undefined, DEFAULT_PROTECTION_MAX_AGE_MS)).toBe(false);
-    expect(hasValidClearance('', DEFAULT_PROTECTION_MAX_AGE_MS)).toBe(false);
-    expect(hasValidClearance('not-a-token', DEFAULT_PROTECTION_MAX_AGE_MS)).toBe(false);
+    expect(hasValidClearance(undefined, DEFAULT_PROTECTION_MAX_AGE_MS, 19)).toBe(false);
+    expect(hasValidClearance('', DEFAULT_PROTECTION_MAX_AGE_MS, 19)).toBe(false);
+    expect(hasValidClearance('not-a-token', DEFAULT_PROTECTION_MAX_AGE_MS, 19)).toBe(false);
   });
 
   test('a sealed non-object payload is refused', () => {
     installConfig();
-    expect(hasValidClearance(encryptPayload('"just a string"', { aad: PROTECTION_AAD }), DEFAULT_PROTECTION_MAX_AGE_MS)).toBe(false);
+    expect(hasValidClearance(encryptPayload('"just a string"', { aad: PROTECTION_AAD }), DEFAULT_PROTECTION_MAX_AGE_MS, 19)).toBe(false);
   });
 });
 
@@ -187,6 +200,23 @@ describe('protection gate', () => {
       expect(blocked!.status).toBe(403);
       expect(blocked!.headers.get('Content-Type') ?? '').not.toContain('text/html');
     }
+  });
+
+  test('a non-GET page request gets JSON 403 instead of the interstitial', async () => {
+    installConfig();
+    const { gate } = makeRuntime();
+    const url = new URL('http://localhost:3000/members/');
+    const blocked = await gate({
+      request: new Request(url, { method: 'POST' }),
+      url,
+      kind: 'page',
+      cookies: new MochiCookieJar(null, {}),
+      server: { requestIP: () => null } as unknown as Server<undefined>,
+    });
+    expect(blocked!.status).toBe(403);
+    expect(blocked!.headers.get('Content-Type')).toContain('application/json');
+    // Solving an interstitial served on a POST would end in a reload that re-submits the form.
+    expect(await blocked!.text()).not.toContain('data-interstitial');
   });
 
   test('a fallback request gets the interstitial', async () => {

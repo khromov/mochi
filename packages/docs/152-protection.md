@@ -48,15 +48,15 @@ protection: {
 
 `kind` is `'page' | 'api' | 'ws' | 'sse' | 'island' | 'file' | 'fallback'`. A `protect()` that throws counts as protected (fail closed).
 
-Never gated, regardless of `protect()`: framework client assets (the interstitial must load its own JS/CSS), warmup self-requests, the verify endpoint itself, and unmatched 404s with no `fetch` fallback. `publicDir` static files **are** gated (as kind `file`) — set `protectFiles: false` to leave them open.
+Never gated, regardless of `protect()`: framework client assets (the interstitial must load its own JS/CSS), the image and local-asset endpoints (their URLs are server-minted and signed), warmup self-requests, the verify endpoint itself, and unmatched 404s with no `fetch` fallback. `publicDir` static files **are** gated (as kind `file`) — set `protectFiles: false` to leave them open. A blocked POST never gets the interstitial — solving one ends in a reload, which would re-submit the form — so non-GET requests fail as JSON instead.
 
 ### What a blocked client sees
 
-| Kind                          | Response                                                   |
-| ----------------------------- | ---------------------------------------------------------- |
-| `page`, `fallback`            | The interstitial HTML — `403`, `Cache-Control: no-store`   |
-| `api`                         | `403` JSON: `{ "error": "Browser verification required" }` |
-| `ws`, `sse`, `island`, `file` | Plain `403`                                                |
+| Kind                            | Response                                                   |
+| ------------------------------- | ---------------------------------------------------------- |
+| `page`, `fallback` (GET / HEAD) | The interstitial HTML — `403`, `Cache-Control: no-store`   |
+| `api`, and any non-GET request  | `403` JSON: `{ "error": "Browser verification required" }` |
+| `ws`, `sse`, `island`, `file`   | Plain `403`                                                |
 
 A browser calling a protected API from an already-cleared page carries the cookie automatically, so in practice only direct, cookie-less clients see the API 403. The non-HTML bodies use `blockedMessage` (default shown above).
 
@@ -119,7 +119,7 @@ const res = await fetch(`${base}/_mochi/protection/verify`, { method: 'POST', bo
 const cookie = res.headers.get('Set-Cookie'); // send this on protected requests
 ```
 
-Lower `captcha: { bits: 8 }` in the test server so the solve takes milliseconds.
+Lower `captcha: { bits: 8 }` in the test server so the solve takes milliseconds. Mind that the verify endpoint refuses tokens minted below the protection difficulty — if you set `protection.bits` above the captcha default, mint with `mintCaptcha({ bits })` to match.
 
 <SeeItInAction
 demos={[

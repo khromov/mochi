@@ -345,10 +345,26 @@ describe('captcha:minAgeMs', () => {
     expect((await verifyCaptcha(fields(solveCaptcha(mintCaptcha())))).ok).toBe(false);
   });
 
-  test('the filter still sees and can override the per-call floor', async () => {
+  test('an explicit per-call floor bypasses the captcha:minAgeMs filter', async () => {
+    // The filter overrides the *configured* default; a caller passing minAgeMs knows its own flow
+    // (protection's auto-solve must not be broken by an app-wide filter raising the form floor).
     initExtensions({ filters: { 'captcha:minAgeMs': () => 5000 } });
     installConfig({ bits: 8, minAgeMs: 5000 });
-    expect((await verifyCaptcha(fields(solveCaptcha(mintCaptcha())), { minAgeMs: 0 })).ok).toBe(false);
+    expect((await verifyCaptcha(fields(solveCaptcha(mintCaptcha())), { minAgeMs: 0 })).ok).toBe(true);
+  });
+});
+
+describe('minBits', () => {
+  test('rejects a token minted below the per-call difficulty floor', async () => {
+    installConfig({ bits: 4, minAgeMs: 0 });
+    const solved = fields(solveCaptcha(mintCaptcha()));
+    expect((await verifyCaptcha(solved, { minBits: 8 })).ok).toBe(false);
+  });
+
+  test('accepts a token minted at or above the floor', async () => {
+    installConfig({ bits: 8, minAgeMs: 0 });
+    expect((await verifyCaptcha(fields(solveCaptcha(mintCaptcha())), { minBits: 8 })).ok).toBe(true);
+    expect((await verifyCaptcha(fields(solveCaptcha(mintCaptcha())), { minBits: 4 })).ok).toBe(true);
   });
 });
 

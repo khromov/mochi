@@ -123,10 +123,13 @@ export function createProtectionRuntime(deps: {
   };
 
   const blockedResponse = (input: ProtectionGateInput, ctx: MochiProtectionContext): Promise<Response> | Response => {
-    if (input.kind === 'page' || input.kind === 'fallback') {
+    // Only navigations get the interstitial: solving it ends in a reload, and reloading a POST result
+    // re-submits the form (or loses it behind a resubmission prompt) — a JSON 403 fails cleanly instead.
+    const method = input.request.method;
+    if ((input.kind === 'page' || input.kind === 'fallback') && (method === 'GET' || method === 'HEAD')) {
       return interstitialResponse(input);
     }
-    if (input.kind === 'api') {
+    if (input.kind === 'api' || input.kind === 'page' || input.kind === 'fallback') {
       return Response.json({ error: blockedMessageFor(ctx) }, { status: 403, headers: { 'Cache-Control': 'no-store' } });
     }
     return new Response(blockedMessageFor(ctx), { status: 403, headers: { 'Cache-Control': 'no-store' } });
@@ -146,7 +149,7 @@ export function createProtectionRuntime(deps: {
     }
     // Reading through the jar marks it accessed, so finalizeCookieHeaders varies
     // this and every cleared response on Cookie — shared caches stay honest.
-    if (hasValidClearance(input.cookies.get(options.cookieName), options.maxAgeMs)) {
+    if (hasValidClearance(input.cookies.get(options.cookieName), options.maxAgeMs, options.bits)) {
       return undefined;
     }
     return finalizeCookieHeaders(await blockedResponse(input, ctx), input.cookies);

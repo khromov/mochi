@@ -1692,7 +1692,8 @@ export class Mochi {
         } catch {
           return jsonError(400, 'Expected form data');
         }
-        const result = await verifyCaptcha(formData, { minAgeMs: 0 });
+        // minBits stops a token minted for an easier captcha (a low-bits form) being redeemed for clearance.
+        const result = await verifyCaptcha(formData, { minAgeMs: 0, minBits: protectionOptions.bits });
         let response: Response;
         if (result.ok) {
           ctx.cookies.set(protectionOptions.cookieName, mintClearanceToken(protectionOptions.bits), {
@@ -1749,17 +1750,21 @@ export class Mochi {
           `If it moved, point \`publicDir\` at the new location; if the files are gone on purpose, re-run \`mochi-framework build\` to clear this.`,
       );
     }
-    // publicDir files bypass buildRequestContext (they're raw Bun routes), so protection reaches them through this guard.
+    // publicDir files bypass buildRequestContext (they're raw Bun routes), so protection reaches them through this
+    // guard. Finalizing the served file through the same jar the gate read adds `Vary: Cookie` to cleared responses.
     const publicRouteGuard =
       protectionRuntime && protectionRuntime.options.protectFiles
-        ? (req: Request, server: Server<undefined>): Promise<Response | undefined> =>
-            protectionRuntime.gate({
+        ? async (req: Request, server: Server<undefined>, serve: () => Promise<Response>): Promise<Response> => {
+            const cookies = new MochiCookieJar(req.headers.get('Cookie'), cookieDefaults);
+            const blocked = await protectionRuntime.gate({
               request: req,
               url: buildPublicUrl(req, options.proxy),
               kind: 'file',
-              cookies: new MochiCookieJar(req.headers.get('Cookie'), cookieDefaults),
+              cookies,
               server,
-            })
+            });
+            return blocked ?? finalizeCookieHeaders(await serve(), cookies);
+          }
         : undefined;
     registerPublicRoutes(bunRoutes, initialPublicFiles, publicRouteGuard);
 
@@ -1807,16 +1812,13 @@ export class Mochi {
         if (userFetch) {
           // Assets never reach here, so only user-fetch fallbacks are gated — the interstitial's own JS/CSS stays loadable.
           if (protectionRuntime) {
-            const blocked = await protectionRuntime.gate({
-              request: req,
-              url,
-              kind: 'fallback',
-              cookies: new MochiCookieJar(req.headers.get('Cookie'), cookieDefaults),
-              server,
-            });
+            const cookies = new MochiCookieJar(req.headers.get('Cookie'), cookieDefaults);
+            const blocked = await protectionRuntime.gate({ request: req, url, kind: 'fallback', cookies, server });
             if (blocked) {
               return applyResolveOptions(blocked, resolveOpts);
             }
+            // The gate read the clearance cookie, so a cleared response varies on it like any page's would.
+            return applyResolveOptions(finalizeCookieHeaders(await userFetch(req, server), cookies), resolveOpts);
           }
           const response = await userFetch(req, server);
           return applyResolveOptions(response, resolveOpts);
