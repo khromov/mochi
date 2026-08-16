@@ -576,6 +576,9 @@ export interface MochiServeOptions {
    * routes = { '/api/ping': ping, '/api/ping/': ping };
    * ```
    *
+   * Paths that match no route are never redirected either — they 404 (or reach your `fetch`/middleware fallback) in
+   * whichever slash form they arrived.
+   *
    * Default: unset — neither form redirects, and only the form you registered is matched.
    */
   trailingSlash?: 'never' | 'always';

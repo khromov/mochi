@@ -31,7 +31,7 @@ Default: unset. Neither form is redirected, and only the form you registered is 
 
 ### Only page routes follow the policy
 
-<VersionNote since="0.10.0" message="Before 0.10.0, api and sse routes were mirrored and redirected like pages, and ws and extensionless file routes answered on both slash forms without redirecting." />
+<VersionNote since="0.10.0" message="Before 0.10.0, api and sse routes were mirrored and redirected like pages, ws and extensionless file routes answered on both slash forms without redirecting, and paths matching no route were redirected to the canonical form before 404ing." />
 
 `trailingSlash` never applies to `Mochi.api()`, `Mochi.sse()`, `Mochi.ws()` or `Mochi.file()` routes — no mirroring, no redirect, regardless of policy. Only the exact pattern you declared matches; the other slash form 404s like any unregistered path.
 
@@ -58,13 +58,14 @@ A raw Bun route value (a bare `Response` or `{ GET }` object) isn't one of these
 | `GET`, `HEAD`                           | 301 Moved Permanently  |
 | All others (`POST`, `PUT`, `DELETE`, …) | 308 Permanent Redirect |
 
-308 preserves the request method and body, so `<form method="POST" action="/submit">` still works after a redirect.
+308 preserves the request method and body, so `<form method="POST" action="/submit">` still works after a redirect. This needs the page to accept POST at all: a page without `actions` registers only GET/HEAD, so a POST to it matches no route and is never redirected.
 
 ### Paths that are never redirected
 
 - The root path `/` — already canonical.
 - Paths with file extensions (`.css`, `.js`, `.png`, …) — browsers and CDNs expect exact asset URLs.
 - Anything that isn't a `Mochi.page()` route.
+- Paths that match no route — they 404 (or reach your `fetch` fallback) in whichever slash form they arrived, with no canonicalization hop.
 
 ### Query strings
 
