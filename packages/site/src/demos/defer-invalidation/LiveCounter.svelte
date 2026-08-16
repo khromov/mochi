@@ -22,6 +22,7 @@
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
+    min-height: 4.8rem;
     padding: 0.9rem 1rem;
     border: 2px solid var(--badge-info-text);
     border-radius: var(--radius-md);

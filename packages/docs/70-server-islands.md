@@ -141,6 +141,15 @@ mochi-server-island[data-reloading] > * {
 
 Give the island fallback children if you want a skeleton on reload — an island with none reloads into empty space, exactly as it looked before its first load. If the fetch fails, the content from before the reload is put back rather than leaving the skeleton up.
 
+Size the fallback to match the loaded content, or the swap shifts the page. The wrapper is `display: contents`, so it holds no space of its own while the content is away — the fallback's own box is the only thing keeping the layout still. Giving both a shared `min-height` is usually enough:
+
+```css
+.card,
+.card-skeleton {
+  min-height: 3.5rem;
+}
+```
+
 Reloads also dispatch two bubbling `CustomEvent`s, so code that did not start the reload can still react:
 
 ```ts

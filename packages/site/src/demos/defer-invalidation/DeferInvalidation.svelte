@@ -34,7 +34,7 @@
   <div class="spacer"></div>
 
   <LiveCounter mochi:defer={{ name: 'live' }} mochi:hydrate>
-    <div class="island-loading">Loading<span class="dots"></span></div>
+    <div class="island-loading tall">Loading<span class="dots"></span></div>
   </LiveCounter>
 </DemoPage>
 
@@ -49,13 +49,22 @@
     height: 0.75rem;
   }
 
+  /* Matches the loaded content's box so swapping between them shifts nothing. */
   .island-loading {
+    display: flex;
+    align-items: center;
+    min-height: 3.5rem;
     padding: 0.9rem 1rem;
     border: 2px dashed var(--border-strong);
     border-radius: var(--radius-md);
     background: var(--surface-muted);
     color: var(--text-subtle);
+    font-size: 0.9rem;
     font-style: italic;
+  }
+
+  .island-loading.tall {
+    min-height: 4.8rem;
   }
 
   /* The wrapper is display:contents, so it has no box of its own to style — the child gets it. */
