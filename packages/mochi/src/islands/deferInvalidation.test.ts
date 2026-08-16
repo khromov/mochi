@@ -1,12 +1,23 @@
 import { describe, it, expect, beforeEach } from 'bun:test';
-import { registerDeferredIsland, unregisterDeferredIsland, reloadDeferredIsland, reloadDeferredIslandAll, type ReloadableIsland } from './deferInvalidation';
+import {
+  registerDeferredIsland,
+  unregisterDeferredIsland,
+  reloadDeferredIsland,
+  reloadDeferredIslandAll,
+  isReloadingDeferredIsland,
+  type ReloadableIsland,
+} from './deferInvalidation';
 
-function stub(): ReloadableIsland & { reloads: number } {
+function stub(): ReloadableIsland & { reloads: number; busy: boolean } {
   return {
     reloads: 0,
+    busy: false,
     reload() {
       this.reloads++;
       return Promise.resolve();
+    },
+    isReloading() {
+      return this.busy;
     },
   };
 }
@@ -57,9 +68,25 @@ describe('deferInvalidation', () => {
     expect(a.reloads).toBe(0);
   });
 
+  it('isReloadingDeferredIsland reports whether any island with the name is busy', () => {
+    const a = stub();
+    const b = stub();
+    registerDeferredIsland('pair', a);
+    registerDeferredIsland('pair', b);
+
+    expect(isReloadingDeferredIsland('pair')).toBe(false);
+    b.busy = true;
+    expect(isReloadingDeferredIsland('pair')).toBe(true);
+  });
+
+  it('isReloadingDeferredIsland is false for an unknown name', () => {
+    expect(isReloadingDeferredIsland('missing')).toBe(false);
+  });
+
   it('waits for slow reloads before resolving', async () => {
     let done = false;
     const slow: ReloadableIsland = {
+      isReloading: () => !done,
       reload: () =>
         new Promise((r) =>
           setTimeout(() => {

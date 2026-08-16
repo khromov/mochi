@@ -77,6 +77,10 @@ class ServerIsland extends HTMLElement {
     return this._track((this._inflight ?? Promise.resolve()).then(() => this._fetchContent(this._options)));
   }
 
+  isReloading(): boolean {
+    return this._inflight !== null;
+  }
+
   async _fetchContent(options: Record<string, unknown> = {}) {
     const g = (k: string) => this.getAttribute(k);
     const componentName = g('component-name');

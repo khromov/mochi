@@ -1,35 +1,45 @@
 <script>
-  import { reloadDeferredIsland, reloadDeferredIslandAll } from 'mochi-framework';
+  import { reloadDeferredIsland, reloadDeferredIslandAll, isReloadingDeferredIsland } from 'mochi-framework';
   import { reloads } from './reloadCount.svelte.ts';
 
-  let pending = $state('');
+  let status = $state('');
 
-  async function run(name, fn) {
-    pending = name;
+  async function run(name) {
+    // Synchronous, so the handler can bail before starting anything. Click twice quickly to see it.
+    if (isReloadingDeferredIsland(name)) {
+      status = `"${name}" is already reloading — click ignored`;
+      return;
+    }
+    status = `reloading "${name}"…`;
     try {
-      await fn();
+      await reloadDeferredIsland(name);
       reloads.count++;
-    } finally {
-      pending = '';
+      status = '';
+    } catch {
+      status = `"${name}" failed to reload`;
+    }
+  }
+
+  async function runAll() {
+    status = 'reloading all…';
+    try {
+      await reloadDeferredIslandAll();
+      reloads.count++;
+      status = '';
+    } catch {
+      status = 'reload all failed';
     }
   }
 </script>
 
 <div class="controls">
   <div class="buttons">
-    <button disabled={pending !== ''} onclick={() => run('single', () => reloadDeferredIsland('single'))}>
-      {pending === 'single' ? 'Reloading…' : 'Reload single'}
-    </button>
-    <button disabled={pending !== ''} onclick={() => run('pair', () => reloadDeferredIsland('pair'))}>
-      {pending === 'pair' ? 'Reloading…' : 'Reload pair (×2)'}
-    </button>
-    <button disabled={pending !== ''} onclick={() => run('live', () => reloadDeferredIsland('live'))}>
-      {pending === 'live' ? 'Reloading…' : 'Reload hydrated'}
-    </button>
-    <button disabled={pending !== ''} onclick={() => run('all', reloadDeferredIslandAll)}>
-      {pending === 'all' ? 'Reloading…' : 'Reload all'}
-    </button>
+    <button onclick={() => run('single')}>Reload single</button>
+    <button onclick={() => run('pair')}>Reload pair (×2)</button>
+    <button onclick={() => run('live')}>Reload hydrated</button>
+    <button onclick={runAll}>Reload all</button>
   </div>
+  <p class="status" class:empty={status === ''}>{status || ' '}</p>
   <p class="count">Reloads completed: <strong>{reloads.count}</strong></p>
 </div>
 
@@ -57,9 +67,16 @@
     cursor: pointer;
   }
 
-  button:disabled {
-    opacity: 0.55;
-    cursor: progress;
+  .status {
+    margin: 0;
+    min-height: 1.2em;
+    font-size: 0.85rem;
+    font-family: var(--font-mono);
+    color: var(--badge-info-text);
+  }
+
+  .status.empty {
+    visibility: hidden;
   }
 
   .count {

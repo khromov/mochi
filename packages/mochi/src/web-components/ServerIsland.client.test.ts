@@ -6,7 +6,7 @@ import { GlobalRegistrator } from '@happy-dom/global-registrator';
 GlobalRegistrator.register({ url: 'http://localhost/' });
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { reloadDeferredIsland, reloadDeferredIslandAll } from '../islands/deferInvalidation';
+import { reloadDeferredIsland, reloadDeferredIslandAll, isReloadingDeferredIsland } from '../islands/deferInvalidation';
 
 // Importing for the side effect of `customElements.define`, after the DOM globals exist.
 await import('./ServerIsland');
@@ -122,6 +122,32 @@ describe('<mochi-server-island> invalidation', () => {
     expect(maxInflight).toBe(1);
     expect(bodies).toHaveLength(2);
     expect(el.innerHTML).toBe('<p>render 2</p>');
+  });
+
+  test('isReloadingDeferredIsland flips synchronously and clears once settled', async () => {
+    holdNext = true;
+    mount({ name: 'clock' });
+    // True during the very first load too: fresh HTML is already inbound.
+    expect(isReloadingDeferredIsland('clock')).toBe(true);
+    release?.();
+    await settle();
+    expect(isReloadingDeferredIsland('clock')).toBe(false);
+
+    holdNext = true;
+    const reloaded = reloadDeferredIsland('clock');
+    // No await — the guard must be usable at the top of a click handler.
+    expect(isReloadingDeferredIsland('clock')).toBe(true);
+
+    await settle();
+    release?.();
+    await reloaded;
+    expect(isReloadingDeferredIsland('clock')).toBe(false);
+  });
+
+  test('isReloadingDeferredIsland is false for unknown and unnamed islands', async () => {
+    mount(null);
+    await settle();
+    expect(isReloadingDeferredIsland('nope')).toBe(false);
   });
 
   test('hydrated children are unmounted before the subtree is replaced', async () => {

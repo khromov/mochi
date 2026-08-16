@@ -6,6 +6,7 @@ import type {} from '../debug-bar/types';
 // never imports the web-component class (which lives in a separate bundle).
 export interface ReloadableIsland {
   reload(): Promise<void>;
+  isReloading(): boolean;
 }
 
 // The name→instances registry lives on `globalThis` because the inline
@@ -51,6 +52,15 @@ export function reloadDeferredIsland(name: string): Promise<void> {
     return Promise.resolve();
   }
   return Promise.all([...set].map((island) => island.reload())).then(() => {});
+}
+
+// Synchronous, so it can guard a click handler before starting work. True while any island
+// with this name has a fetch in flight — its first load as well as a reload, since either way
+// fresh HTML is already on its way and a second request would just queue behind it.
+// Not reactive: reading it in markup samples it once. Drive UI from the reload promise instead.
+export function isReloadingDeferredIsland(name: string): boolean {
+  const set = registry().get(name);
+  return set ? [...set].some((island) => island.isReloading()) : false;
 }
 
 export function reloadDeferredIslandAll(): Promise<void> {

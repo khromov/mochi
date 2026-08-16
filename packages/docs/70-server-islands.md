@@ -86,6 +86,25 @@ await reloadDeferredIsland('cart'); // re-fetches, resolves once swapped in
 await reloadDeferredIslandAll(); // reloads every named defer on the page
 ```
 
+`isReloadingDeferredIsland(name)` answers synchronously, so a handler can bail before starting work:
+
+```svelte
+<button
+  onclick={() => {
+    if (isReloadingDeferredIsland('cart')) return;
+    reloadDeferredIsland('cart');
+  }}>Refresh</button
+>
+```
+
+It reports `true` while an island with that name has a fetch in flight — its first load as well as a reload.
+
+<Callout type="info">
+
+**`isReloadingDeferredIsland` is not reactive.** Reading it in markup samples it once, at render. For a spinner or a disabled button, set your own `$state` around the reload promise instead.
+
+</Callout>
+
 Both return a promise that settles once every matching island has finished re-fetching. Islands sharing a `name` reload together, and a `mochi:defer mochi:hydrate` island unmounts its old component and re-hydrates on each reload. Reloads on the same island queue behind one another, so a reload issued after a mutation always observes it.
 
 `name` works on `mochi:defer:visible` too. A reload fetches immediately regardless of viewport, and replaces the element the viewport trigger was watching — after a manual reload, only further `reloadDeferredIsland` calls refresh it.
