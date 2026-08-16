@@ -85,6 +85,8 @@ await Mochi.serve({
 });
 ```
 
+For a resolver that hits a slow upstream, wrap the load in a shared cache — see [Caching expensive serverProps](/docs/cache/).
+
 `actions` is a `MochiFormActions` map that handles POST submissions to the route.
 
 <Callout type="warning">
