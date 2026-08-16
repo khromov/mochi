@@ -48,26 +48,20 @@ export type RequestContextBuilder = (req: Request, server: Server<undefined>, op
 interface KindPolicy {
   timeout: boolean;
   trailingSlash: boolean;
-  mirrorSlash: boolean;
   csrf: boolean;
   debugBar: boolean;
 }
 
-// `trailingSlash` is whether a matched request redirects to the canonical form; `mirrorSlash` is whether the route is
-// also registered under its other slash form. Kinds with `mirrorSlash` but no `trailingSlash` serve both forms as-is.
+// `trailingSlash` governs both halves of the policy — registering the route under its other slash form, and redirecting
+// a matched request to the canonical one. Only pages get it: a canonical URL is a navigation concern, and every other
+// kind is addressed by a client that already knows the exact pattern it wants.
 const KIND_POLICY: Record<RouteKind, KindPolicy> = {
-  page: { timeout: true, trailingSlash: true, mirrorSlash: true, csrf: true, debugBar: true },
-  // Api routes never mirror or redirect on trailing slash — only the exact
-  // declared pattern matches, regardless of the global policy.
-  api: { timeout: false, trailingSlash: false, mirrorSlash: false, csrf: true, debugBar: false },
-  sse: { timeout: true, trailingSlash: true, mirrorSlash: true, csrf: false, debugBar: false },
-  ws: { timeout: false, trailingSlash: false, mirrorSlash: true, csrf: false, debugBar: false },
-  // The island endpoint is registered after the mirroring loop and never flows through
-  // `registerRoutePattern`, so its `mirrorSlash` is unreachable — see `MirrorableRouteKind`.
-  island: { timeout: false, trailingSlash: false, mirrorSlash: false, csrf: false, debugBar: false },
-  // Files are leaf resources (like static assets), so a matched file URL is never
-  // redirected to gain a trailing `/` — though both forms still resolve to it.
-  file: { timeout: false, trailingSlash: false, mirrorSlash: true, csrf: false, debugBar: false },
+  page: { timeout: true, trailingSlash: true, csrf: true, debugBar: true },
+  api: { timeout: false, trailingSlash: false, csrf: true, debugBar: false },
+  sse: { timeout: true, trailingSlash: false, csrf: false, debugBar: false },
+  ws: { timeout: false, trailingSlash: false, csrf: false, debugBar: false },
+  island: { timeout: false, trailingSlash: false, csrf: false, debugBar: false },
+  file: { timeout: false, trailingSlash: false, csrf: false, debugBar: false },
 };
 
 /** The kinds that reach the alt-slash mirroring decision, i.e. everything `registerRoutePattern` can return. */
@@ -76,7 +70,7 @@ export type MirrorableRouteKind = Exclude<RouteKind, 'island'>;
 // The single source of truth for alt-slash registration, shared by the initial
 // registration in `Mochi.ts` and by dev hot-reload in `devWatcher.ts`.
 export function mirrorsSlashForm(kind: MirrorableRouteKind): boolean {
-  return KIND_POLICY[kind].mirrorSlash;
+  return KIND_POLICY[kind].trailingSlash;
 }
 
 export function makeRequestContextBuilder(cfg: RequestSetupConfig): RequestContextBuilder {
@@ -91,7 +85,8 @@ export function makeRequestContextBuilder(cfg: RequestSetupConfig): RequestConte
     const url = buildPublicUrl(req, cfg.proxy);
 
     const reportEarlyExit = (status: number): void => {
-      // 'request' event accepts only page|api|file kinds; see MochiRequestKind in events.ts
+      // A compile-time narrow, not a runtime filter: `MochiRequestKind` in events.ts excludes ws/sse/island, and since
+      // only page and api can early-exit at all (trailingSlash, csrf) nothing reaches this with an unemittable kind.
       if (opts.kind !== 'page' && opts.kind !== 'api' && opts.kind !== 'file') {
         return;
       }

@@ -36,7 +36,7 @@ Render both through `CodeSnippet` (`import CodeSnippet from '../../components/Co
 
 ## Gotchas
 
-- **API routes are exempt from `trailingSlash: 'always'`.** Only the pattern you declared matches, so a client must `fetch('/api/<slug>/x')` — the slashed `'/api/<slug>/x/'` is a 404, not a redirect.
+- **Only page routes follow `trailingSlash: 'always'`.** For api, sse, ws and file routes only the pattern you declared matches, so a client must `fetch('/api/<slug>/x')` or `new EventSource('/sse/<slug>')` — the slashed form is a 404, not a redirect.
 - **SSR runs the island too.** Browser-only utilities are SSR-safe but return defaults (`0`/`false`/`undefined`) during SSR, then the top-level re-runs on the client during hydration — design each card so the SSR state reads as intended, not broken.
 - **A class utility whose constructor synchronously touches the instance being assigned** (e.g. a `FiniteStateMachine` initial-state `_enter` that references the `const`) hits the temporal dead zone — defer the self-reference (`queueMicrotask`) and/or guard on `isBrowser`.
 

@@ -559,19 +559,24 @@ export interface MochiServeOptions {
    */
   proxy?: MochiProxyOptions;
   /**
-   * Trailing-slash policy for `Mochi.page()` and `Mochi.sse()` routes. When set, each is registered under both `/foo`
-   * and `/foo/`, and the non-canonical form redirects:
+   * Trailing-slash policy for `Mochi.page()` routes. When set, each page is registered under both `/foo` and `/foo/`,
+   * and the non-canonical form redirects:
    *
    * - `'never'` — `/foo/` → 301/308 → `/foo`
    * - `'always'` — `/foo` → 301/308 → `/foo/`
    *
    * 301 for GET/HEAD, 308 otherwise, leaving root `/` and paths with file extensions alone.
    *
-   * `Mochi.api()` routes are always exempt: no mirroring and no redirect, so only the exact pattern you declared
-   * matches and the other slash form 404s. Register both patterns explicitly to answer on both.
+   * Every other route kind — `Mochi.api()`, `Mochi.sse()`, `Mochi.ws()`, `Mochi.file()` — is exempt: no mirroring and
+   * no redirect, so only the exact pattern you declared matches and the other slash form 404s. To answer on both,
+   * point two patterns at one route:
    *
-   * Extensionless `Mochi.file()` and `Mochi.ws()` routes are registered under both forms but never redirect, so
-   * either form serves them. Default: unset.
+   * ```ts
+   * const ping = Mochi.api(() => json({ ok: true }));
+   * routes = { '/api/ping': ping, '/api/ping/': ping };
+   * ```
+   *
+   * Default: unset — neither form redirects, and only the form you registered is matched.
    */
   trailingSlash?: 'never' | 'always';
   /**

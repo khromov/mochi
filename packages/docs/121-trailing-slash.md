@@ -6,12 +6,13 @@ description: 'Enforce a consistent trailing-slash policy for your page routes wi
 ---
 
 <script>
+  import Callout from './_components/Callout.svelte';
   import VersionNote from './_components/VersionNote.svelte';
 </script>
 
 ## Trailing slash
 
-The `trailingSlash` option on `Mochi.serve()` enforces a consistent trailing-slash policy across `Mochi.page()` and `Mochi.sse()` routes. Mochi registers each route under both `/foo` and `/foo/`, then redirects requests to the non-canonical form. `Mochi.api()` routes are always exempt — see below. `Mochi.ws()` routes, and `Mochi.file()` routes whose pattern has no file extension, are registered under both forms but never redirect, so either form serves them. A pattern ending in an extension (`/SKILL.md`) is left alone entirely, like any asset URL.
+The `trailingSlash` option on `Mochi.serve()` enforces a consistent trailing-slash policy across your `Mochi.page()` routes. Mochi registers each page under both `/foo` and `/foo/`, then redirects requests to the non-canonical form. `Mochi.api()`, `Mochi.sse()`, `Mochi.ws()` and `Mochi.file()` routes are exempt — see below.
 
 ```ts
 await Mochi.serve({
@@ -29,11 +30,11 @@ await Mochi.serve({
 
 Default: unset. Neither form is redirected, and only the form you registered is matched.
 
-### `Mochi.api()` routes are exempt
+### Only page routes follow the policy
 
-<VersionNote since="0.10.0" message="Before 0.10.0, api routes followed the trailingSlash policy like page routes — both slash forms were registered and the non-canonical one redirected." />
+<VersionNote since="0.10.0" message="Before 0.10.0, api and sse routes were mirrored and redirected like pages, and ws and extensionless file routes answered on both slash forms without redirecting." />
 
-`trailingSlash` never applies to `Mochi.api()` routes — no mirroring, no redirect, regardless of policy. Only the exact pattern you declared matches; the other slash form 404s like any unregistered path.
+`trailingSlash` never applies to `Mochi.api()`, `Mochi.sse()`, `Mochi.ws()` or `Mochi.file()` routes — no mirroring, no redirect, regardless of policy. Only the exact pattern you declared matches; the other slash form 404s like any unregistered path.
 
 ```ts
 await Mochi.serve({
@@ -41,9 +42,19 @@ await Mochi.serve({
   routes: {
     '/about': Mochi.page(About), // /about → 301 → /about/
     '/api/ping': Mochi.api(() => json({ ok: true })), // only /api/ping matches
+    '/sse/time': Mochi.sse(clock), // only /sse/time matches
+    '/ws/chat': Mochi.ws(chat), // only /ws/chat matches
   },
 });
 ```
+
+A canonical URL is a navigation concern: it matters for links, crawlers and caches, which is what pages have and what a JSON fetch, an `EventSource` or a WebSocket does not.
+
+<Callout type="warning">
+
+Connect clients to exactly the pattern you declared. `new EventSource('/sse/time/')` against a `'/sse/time'` route 404s, and the WebSocket equivalent surfaces as an opaque connection error rather than a visible status code.
+
+</Callout>
 
 To answer on both forms — an endpoint whose URL is already published, say — point both patterns at one route:
 
@@ -55,6 +66,8 @@ await Mochi.serve({
   routes: { '/api/ping': ping, '/api/ping/': ping },
 });
 ```
+
+A raw Bun route value (a bare `Response` or `{ GET }` object) isn't one of these helpers, so it still answers on both forms when a policy is set.
 
 ### Redirect status codes
 
@@ -69,6 +82,7 @@ await Mochi.serve({
 
 - The root path `/` — already canonical.
 - Paths with file extensions (`.css`, `.js`, `.png`, …) — browsers and CDNs expect exact asset URLs.
+- Anything that isn't a `Mochi.page()` route.
 
 ### Query strings
 
@@ -83,7 +97,7 @@ GET /search?q=mochi   →  301  Location: /search/?q=mochi  (policy: 'always')
 
 `trailingSlashIt(path)` appends a trailing slash, first stripping any the string already ends with. It preserves a query string or `#fragment` and puts the slash on the path, so you can pass a full URL. Build hrefs with it under `trailingSlash: 'always'` so links point at the canonical URL and skip the redirect hop.
 
-Don't apply it to `Mochi.api()` endpoints — they have no slashed form, so `trailingSlashIt('/api/ping')` yields a URL that 404s.
+Apply it to page URLs only. Every other kind has no slashed form, so `trailingSlashIt('/api/ping')` yields a URL that 404s.
 
 ```ts
 import { trailingSlashIt } from 'mochi-framework';

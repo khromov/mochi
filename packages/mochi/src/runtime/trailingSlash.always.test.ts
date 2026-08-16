@@ -36,6 +36,12 @@ describe('trailingSlash: "always"', () => {
         // Declared *with* the slash: the alt form is the slashless one, which is what
         // reaches the fall-through exemption check under this policy.
         '/api/slashed/': Mochi.api(async () => json({ ok: true })),
+        '/sse/ticks': Mochi.sse((stream) => {
+          stream.send('tick');
+          stream.close();
+        }),
+        '/ws/echo': Mochi.ws({ message() {} }),
+        '/files/report': Mochi.file(FIXTURE_PAGE),
       },
     });
     base = `http://localhost:${server.port}`;
@@ -106,10 +112,37 @@ describe('trailingSlash: "always"', () => {
     expect(alt.headers.get('Location')).toBeNull();
   });
 
-  test('the trailingSlash:redirect filter never runs for an exempt api alt-form', async () => {
+  test('sse route is exempt: the declared slashless pattern streams instead of redirecting', async () => {
+    const res = await fetch(`${base}/sse/ticks`, { redirect: 'manual' });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Location')).toBeNull();
+    expect(await res.text()).toContain('tick');
+
+    const alt = await fetch(`${base}/sse/ticks/`, { redirect: 'manual' });
+    expect(alt.status).toBe(404);
+  });
+
+  test('ws route is exempt: the declared slashless pattern reaches the upgrade', async () => {
+    const declared = await fetch(`${base}/ws/echo`, { redirect: 'manual' });
+    expect(declared.status).not.toBe(404);
+    expect(declared.headers.get('Location')).toBeNull();
+
+    expect((await fetch(`${base}/ws/echo/`, { redirect: 'manual' })).status).toBe(404);
+  });
+
+  test('extensionless file route is exempt: the declared slashless pattern serves', async () => {
+    const declared = await fetch(`${base}/files/report`, { redirect: 'manual' });
+    expect(declared.status).toBe(200);
+    expect(declared.headers.get('Location')).toBeNull();
+
+    expect((await fetch(`${base}/files/report/`, { redirect: 'manual' })).status).toBe(404);
+  });
+
+  test('the trailingSlash:redirect filter never runs for any exempt kind', async () => {
     filteredPaths.length = 0;
-    await fetch(`${base}/api/slashed`, { redirect: 'manual' });
-    await fetch(`${base}/api/ping/`, { redirect: 'manual' });
+    for (const p of ['/api/slashed', '/api/ping/', '/sse/ticks', '/sse/ticks/', '/ws/echo', '/ws/echo/', '/files/report', '/files/report/']) {
+      await fetch(`${base}${p}`, { redirect: 'manual' });
+    }
     expect(filteredPaths).toEqual([]);
 
     await fetch(`${base}/nope`, { redirect: 'manual' });

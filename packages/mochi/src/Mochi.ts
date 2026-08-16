@@ -1433,8 +1433,8 @@ export class Mochi {
     }
 
     // Registering the alt-slash variant lets Bun's literal pattern matcher match both `/foo` and `/foo/`; the per-handler
-    // redirect checks above then turn the non-canonical form into a 301/308. Kinds that opt out of mirroring (api) are
-    // skipped entirely — only the exact declared pattern matches them.
+    // redirect checks above then turn the non-canonical form into a 301/308. Only pages take part — every other kind is
+    // skipped entirely, so just the exact declared pattern matches it.
     if (trailingSlashPolicy) {
       for (const [pattern, value] of Object.entries(bunRoutes)) {
         if (slashExemptPatterns.has(pattern)) {
@@ -1687,8 +1687,8 @@ export class Mochi {
 
     const userFetch = options.fetch;
 
-    // A request for the other slash form of a non-mirrored route (api) never matched Bun's route table, so it falls
-    // through to here — recognising it keeps those routes exempt from trailingSlash when unmatched too, not just when matched.
+    // A request for the other slash form of a non-mirrored route never matched Bun's route table, so it falls through
+    // to here — recognising it keeps those routes exempt from trailingSlash when unmatched too, not just when matched.
     const isSlashExemptAltForm = (pathname: string): boolean => {
       const alt = alternateSlashPattern(pathname);
       if (alt === null) {

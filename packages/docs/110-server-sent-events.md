@@ -30,6 +30,12 @@ await Mochi.serve({
 });
 ```
 
+<Callout type="warning">
+
+[`trailingSlash`](/docs/trailing-slash/) does not apply to SSE routes, so connect to exactly the pattern you declared — `new EventSource('/sse/time/')` against the route above 404s.
+
+</Callout>
+
 ### `stream.send(data, options?)`
 
 Push one SSE frame to the client. `data` is a string. `options` accepts `event` (named event type) and `id` (last-event-id).

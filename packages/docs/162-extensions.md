@@ -134,7 +134,7 @@ await Mochi.serve({
 
 #### `trailingSlash:redirect`
 
-Override the `trailingSlash` policy for the current request. The filter receives the computed redirect (a 301/308 `Response` or `null`). Return the input to delegate, or `null` to skip the redirect. Sync. `Mochi.api()` routes never reach this filter — they are [exempt from `trailingSlash` outright](/docs/trailing-slash/).
+Override the `trailingSlash` policy for the current request. The filter receives the computed redirect (a 301/308 `Response` or `null`). Return the input to delegate, or `null` to skip the redirect. Sync. It runs for `Mochi.page()` routes and for unmatched paths; every other route kind is [exempt from `trailingSlash` outright](/docs/trailing-slash/) and never reaches it.
 
 ```ts
 await Mochi.serve({
