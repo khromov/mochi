@@ -4,31 +4,29 @@
 
   let status = $state('');
 
-  async function run(name) {
+  // The events bubble to the document, so every bit of this status is driven by the islands
+  // themselves rather than by the code that started the reload.
+  $effect(() => {
+    const onStart = (e) => (status = `reloading "${e.detail.name}"…`);
+    const onEnd = (e) => {
+      reloads.count++;
+      status = e.detail.ok ? '' : `"${e.detail.name}" failed to reload`;
+    };
+    document.addEventListener('mochi:island:reloadstart', onStart);
+    document.addEventListener('mochi:island:reloadend', onEnd);
+    return () => {
+      document.removeEventListener('mochi:island:reloadstart', onStart);
+      document.removeEventListener('mochi:island:reloadend', onEnd);
+    };
+  });
+
+  function run(name) {
     // Synchronous, so the handler can bail before starting anything. Click twice quickly to see it.
     if (isReloadingDeferredIsland(name)) {
       status = `"${name}" is already reloading — click ignored`;
       return;
     }
-    status = `reloading "${name}"…`;
-    try {
-      await reloadDeferredIsland(name);
-      reloads.count++;
-      status = '';
-    } catch {
-      status = `"${name}" failed to reload`;
-    }
-  }
-
-  async function runAll() {
-    status = 'reloading all…';
-    try {
-      await reloadDeferredIslandAll();
-      reloads.count++;
-      status = '';
-    } catch {
-      status = 'reload all failed';
-    }
+    reloadDeferredIsland(name);
   }
 </script>
 
@@ -37,10 +35,10 @@
     <button onclick={() => run('single')}>Reload single</button>
     <button onclick={() => run('pair')}>Reload pair (×2)</button>
     <button onclick={() => run('live')}>Reload hydrated</button>
-    <button onclick={runAll}>Reload all</button>
+    <button onclick={() => reloadDeferredIslandAll()}>Reload all</button>
   </div>
   <p class="status" class:empty={status === ''}>{status || ' '}</p>
-  <p class="count">Reloads completed: <strong>{reloads.count}</strong></p>
+  <p class="count">Island reloads completed: <strong>{reloads.count}</strong> <span class="via">(counted from mochi:island:reloadend)</span></p>
 </div>
 
 <style>
@@ -77,6 +75,12 @@
 
   .status.empty {
     visibility: hidden;
+  }
+
+  .via {
+    color: var(--text-subtle);
+    font-family: var(--font-mono);
+    font-size: 0.8em;
   }
 
   .count {

@@ -12,6 +12,8 @@ class ServerIsland extends HTMLElement {
   _options: Record<string, unknown> = {};
   _name: string | null = null;
   _inflight: Promise<void> | null = null;
+  // The markup the first load showed, re-shown while reloading.
+  _fallback = '';
 
   connectedCallback() {
     const optionsRaw = this.getAttribute('server-options');
@@ -28,6 +30,7 @@ class ServerIsland extends HTMLElement {
       return;
     }
     this._loaded = true;
+    this._fallback = this.innerHTML;
 
     if (this.getAttribute('defer-on') === 'visible') {
       // `display:contents` leaves this element without a layout box, so the firstElementChild is observed instead; with
@@ -57,9 +60,24 @@ class ServerIsland extends HTMLElement {
     }
   }
 
-  _track(op: Promise<void>): Promise<void> {
+  // Svelte roots are not torn down by removing their DOM, so discarding a subtree without this
+  // leaves the old instance's effects, timers and listeners running forever.
+  _unmountChildren() {
+    for (const el of this.querySelectorAll('mochi-hydratable-island')) {
+      (el as { _unmount?: () => void })._unmount?.();
+    }
+  }
+
+  _emit(type: string, detail: Record<string, unknown>) {
+    this.dispatchEvent(new CustomEvent(type, { bubbles: true, detail }));
+  }
+
+  _track(op: Promise<unknown>): Promise<void> {
     const tracked = op
-      .catch(() => {})
+      .then(
+        () => {},
+        () => {},
+      )
       .finally(() => {
         if (this._inflight === tracked) {
           this._inflight = null;
@@ -74,18 +92,45 @@ class ServerIsland extends HTMLElement {
   // observe that mutation, and an unchained fetch could also land late and clobber the
   // newer content it raced.
   reload(): Promise<void> {
-    return this._track((this._inflight ?? Promise.resolve()).then(() => this._fetchContent(this._options)));
+    return this._track((this._inflight ?? Promise.resolve()).then(() => this._reload()));
+  }
+
+  async _reload() {
+    const detail = { name: this._name, component: this.getAttribute('component-name') };
+    // Kept so a failed reload can put back the data the island was already showing, rather
+    // than stranding it on the skeleton it swapped to.
+    const previous = this.innerHTML;
+
+    this.setAttribute('data-reloading', '');
+    this.setAttribute('aria-busy', 'true');
+    this._emit('mochi:island:reloadstart', detail);
+
+    this._unmountChildren();
+    this.innerHTML = this._fallback;
+
+    let ok = false;
+    try {
+      ok = await this._fetchContent(this._options);
+    } finally {
+      if (!ok) {
+        this._unmountChildren();
+        this.innerHTML = previous;
+      }
+      this.removeAttribute('data-reloading');
+      this.removeAttribute('aria-busy');
+      this._emit('mochi:island:reloadend', { ...detail, ok });
+    }
   }
 
   isReloading(): boolean {
     return this._inflight !== null;
   }
 
-  async _fetchContent(options: Record<string, unknown> = {}) {
+  async _fetchContent(options: Record<string, unknown> = {}): Promise<boolean> {
     const g = (k: string) => this.getAttribute(k);
     const componentName = g('component-name');
     if (!componentName) {
-      return;
+      return false;
     }
 
     const tag = `[mochi] Server island "${componentName}"`;
@@ -134,16 +179,12 @@ class ServerIsland extends HTMLElement {
           document.head.appendChild(link);
         }
 
-        // Svelte roots are not torn down by removing their DOM, so a reload would otherwise
-        // leave every previous instance's effects, timers and listeners running forever.
-        for (const el of this.querySelectorAll('mochi-hydratable-island')) {
-          (el as { _unmount?: () => void })._unmount?.();
-        }
+        this._unmountChildren();
 
         // SAFETY: HTML comes from our own same-origin server-island endpoint with encrypted props.
         // If the island endpoint ever returns user-controlled content, this must be sanitized.
         this.innerHTML = html;
-        return;
+        return true;
       } catch (err) {
         lastErr = err;
         if (err instanceof Error && 'abort' in err) {
@@ -166,6 +207,7 @@ class ServerIsland extends HTMLElement {
       console.error(msg);
     }
     window.__mochi_warn?.(msg);
+    return false;
   }
 }
 

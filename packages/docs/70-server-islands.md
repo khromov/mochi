@@ -123,6 +123,34 @@ Naming an island also opts it out of [nested inlining](#nesting-islands-inside-a
 
 </Callout>
 
+#### Loading state while reloading
+
+A reloading island shows the same fallback children it showed on first load, and carries two attributes for the duration:
+
+```html
+<mochi-server-island data-reloading aria-busy="true"></mochi-server-island>
+```
+
+Style `data-reloading` to mark the wait. Island wrappers are `display: contents`, so they generate no box of their own — put the styles on the children:
+
+```css
+mochi-server-island[data-reloading] > * {
+  opacity: 0.6;
+}
+```
+
+Give the island fallback children if you want a skeleton on reload — an island with none reloads into empty space, exactly as it looked before its first load. If the fetch fails, the content from before the reload is put back rather than leaving the skeleton up.
+
+Reloads also dispatch two bubbling `CustomEvent`s, so code that did not start the reload can still react:
+
+```ts
+document.addEventListener('mochi:island:reloadend', (e) => {
+  const { name, component, ok } = e.detail;
+});
+```
+
+`mochi:island:reloadstart` carries `{ name, component }`; `mochi:island:reloadend` adds `ok`, `false` when the fetch failed and the island rolled back.
+
 ### Nesting islands inside a server island
 
 A server island's content is a full render, so it can contain `mochi:hydrate` islands and further `mochi:defer` server islands. Hydratable children hydrate once the deferred HTML lands.

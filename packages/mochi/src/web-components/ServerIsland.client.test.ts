@@ -150,6 +150,76 @@ describe('<mochi-server-island> invalidation', () => {
     expect(isReloadingDeferredIsland('nope')).toBe(false);
   });
 
+  test('a reload shows the original fallback, then the new content', async () => {
+    const el = mount({ name: 'clock' }, '<div class="skeleton">Loading…</div>');
+    await settle();
+    expect(el.innerHTML).toBe('<p>render 1</p>');
+
+    holdNext = true;
+    const reloaded = reloadDeferredIsland('clock');
+    await settle();
+    expect(el.innerHTML).toBe('<div class="skeleton">Loading…</div>');
+    expect(el.hasAttribute('data-reloading')).toBe(true);
+    expect(el.getAttribute('aria-busy')).toBe('true');
+
+    release?.();
+    await reloaded;
+    expect(el.innerHTML).toBe('<p>render 2</p>');
+    expect(el.hasAttribute('data-reloading')).toBe(false);
+    expect(el.hasAttribute('aria-busy')).toBe(false);
+  });
+
+  test('a failed reload restores the content it was showing', async () => {
+    const el = mount({ name: 'clock', retries: 0 }, '<div class="skeleton">Loading…</div>');
+    await settle();
+    expect(el.innerHTML).toBe('<p>render 1</p>');
+
+    globalThis.fetch = (async () => new Response('nope', { status: 404 })) as unknown as typeof fetch;
+    await reloadDeferredIsland('clock');
+
+    expect(el.innerHTML).toBe('<p>render 1</p>');
+    expect(el.hasAttribute('data-reloading')).toBe(false);
+  });
+
+  test('a reload dispatches bubbling start/end events carrying the outcome', async () => {
+    const el = mount({ name: 'clock' });
+    await settle();
+
+    const seen: string[] = [];
+    let endDetail: Record<string, unknown> | null = null;
+    document.addEventListener('mochi:island:reloadstart', () => seen.push('start'));
+    document.addEventListener('mochi:island:reloadend', (e) => {
+      seen.push('end');
+      endDetail = (e as CustomEvent).detail;
+    });
+
+    await reloadDeferredIsland('clock');
+
+    expect(seen).toEqual(['start', 'end']);
+    expect(endDetail).toMatchObject({ name: 'clock', component: 'Clock_abc', ok: true });
+    expect(el.innerHTML).toBe('<p>render 2</p>');
+  });
+
+  test('hydrated children are unmounted before the fallback replaces them', async () => {
+    const el = mount({ name: 'clock' });
+    await settle();
+
+    let unmounted = 0;
+    const child = document.createElement('mochi-hydratable-island');
+    (child as { _unmount?: () => void })._unmount = () => unmounted++;
+    el.innerHTML = '';
+    el.appendChild(child);
+
+    holdNext = true;
+    const reloaded = reloadDeferredIsland('clock');
+    await settle();
+    // Torn down as soon as the skeleton goes up, not only when the new HTML lands.
+    expect(unmounted).toBe(1);
+
+    release?.();
+    await reloaded;
+  });
+
   test('hydrated children are unmounted before the subtree is replaced', async () => {
     const el = mount({ name: 'clock' });
     await settle();

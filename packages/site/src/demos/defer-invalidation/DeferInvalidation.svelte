@@ -58,6 +58,24 @@
     font-style: italic;
   }
 
+  /* The wrapper is display:contents, so it has no box of its own to style — the child gets it. */
+  :global(mochi-server-island[data-reloading] > *) {
+    animation: pulse 1s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    50% {
+      opacity: 0.45;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    :global(mochi-server-island[data-reloading] > *) {
+      animation: none;
+      opacity: 0.6;
+    }
+  }
+
   .dots::after {
     content: '';
     display: inline-block;
