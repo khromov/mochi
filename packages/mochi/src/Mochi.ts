@@ -1082,8 +1082,9 @@ export class Mochi {
             type: 'page',
           };
         }
-        // A method-keyed object makes Bun 405 a POST/PUT to an action-less page; a bare function runs for every method
-        // and would render 200 on POST in production, diverging from dev, where `pageConfigMap` forces this path anyway.
+        // A method-keyed object keeps a POST/PUT to an action-less page from matching (it falls through to the fetch
+        // handler and 404s); a bare function runs for every method and would render 200 on POST in production,
+        // diverging from dev, where `pageConfigMap` forces this path anyway.
         return { bunRouteValue: withHead({ GET: getHandler } as unknown as BunRouteValue), type: 'page' };
       } else if (isMochiApi(handler)) {
         if (apiHandlerMap) {
@@ -1434,8 +1435,8 @@ export class Mochi {
     }
 
     // Registering the alt-slash variant lets Bun's literal pattern matcher match both `/foo` and `/foo/`; the per-handler
-    // redirect checks above then turn the non-canonical form into a 301/308. Only pages take part — every other kind is
-    // skipped entirely, so just the exact declared pattern matches it.
+    // redirect checks above then turn the non-canonical form into a 301/308. Only pages and raw Bun route values take
+    // part — every other kind is skipped entirely, so just the exact declared pattern matches it.
     if (trailingSlashPolicy) {
       for (const pattern of slashMirrorPatterns) {
         const alt = alternateSlashPattern(pattern);

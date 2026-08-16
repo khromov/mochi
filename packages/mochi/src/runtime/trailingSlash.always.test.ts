@@ -23,6 +23,8 @@ describe('trailingSlash: "always"', () => {
       logger: { enabled: false },
       outDir,
       trailingSlash: 'always',
+      // Origin checking would 403 the actionless-POST test's fall-through before it reaches the unmatched-404 path.
+      csrf: { checkOrigin: false },
       filters: {
         'trailingSlash:redirect': (redirect, { url }) => {
           filteredPaths.push(url.pathname);
@@ -98,6 +100,7 @@ describe('trailingSlash: "always"', () => {
       redirect: 'manual',
       headers: { origin: base },
     });
+    expect(res.status).toBe(404);
     expect(res.headers.get('Location')).toBeNull();
   });
 

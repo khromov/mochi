@@ -53,12 +53,12 @@ A raw Bun route value (a bare `Response` or `{ GET }` object) isn't one of these
 
 ### Redirect status codes
 
-| Method                                  | Status                 |
-| --------------------------------------- | ---------------------- |
-| `GET`, `HEAD`                           | 301 Moved Permanently  |
-| All others (`POST`, `PUT`, `DELETE`, …) | 308 Permanent Redirect |
+| Method                        | Status                 |
+| ----------------------------- | ---------------------- |
+| `GET`, `HEAD`                 | 301 Moved Permanently  |
+| `POST` (pages with `actions`) | 308 Permanent Redirect |
 
-308 preserves the request method and body, so `<form method="POST" action="/submit">` still works after a redirect. This needs the page to accept POST at all: a page without `actions` registers only GET/HEAD, so a POST to it matches no route and is never redirected.
+308 preserves the request method and body, so `<form method="POST" action="/submit">` still works after a redirect. The 308 only happens for pages that declare `actions`: those are the only pages registered for POST. A page without `actions` accepts just GET/HEAD, so a POST to it matches no route — it 404s instead of redirecting.
 
 ### Paths that are never redirected
 
