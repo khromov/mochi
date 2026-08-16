@@ -190,6 +190,8 @@ await Mochi.serve({
   protection: {
     enabled: true,
     protect: ({ path }) => path === '/demos/protection' || path === '/demos/protection/' || path.startsWith('/demos/protection/api'),
+    // Above the default so visitors actually see the interstitial do its work.
+    bits: 20,
   },
   idleTimeout: 60,
   compressServerIslandProps: true,

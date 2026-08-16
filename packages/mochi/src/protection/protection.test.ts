@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { Server } from 'bun';
-import { resolveProtectionOptions, DEFAULT_PROTECTION_MAX_AGE_MS, PROTECTION_AAD, PROTECTION_CLEARANCE_COOKIE } from './config';
+import { resolveProtectionOptions, DEFAULT_PROTECTION_MAX_AGE_MS, DEFAULT_PROTECTION_MAX_ATTEMPTS, PROTECTION_AAD, PROTECTION_CLEARANCE_COOKIE } from './config';
 import { mintClearanceToken, hasValidClearance } from './clearance';
 import { createProtectionRuntime, type ProtectionGateInput } from './gate';
 import type { MochiProtectionKind, ResolvedProtectionOptions } from './types';
@@ -28,6 +28,22 @@ describe('resolveProtectionOptions', () => {
     expect(resolved.maxAgeMs).toBe(DEFAULT_PROTECTION_MAX_AGE_MS);
     expect(resolved.protect).toBeUndefined();
     expect(resolved.page).toBeUndefined();
+    expect(resolved.blockedMessage).toBeUndefined();
+    expect(resolved.protectFiles).toBe(true);
+    expect(resolved.maxAttempts).toBe(DEFAULT_PROTECTION_MAX_ATTEMPTS);
+    expect(resolved.cookieName).toBe(PROTECTION_CLEARANCE_COOKIE);
+  });
+
+  test('rejects a non-positive or fractional maxAttempts', () => {
+    expect(() => resolveProtectionOptions({ enabled: true, maxAttempts: 0 }, 19)).toThrow('maxAttempts must be a positive integer, got 0');
+    expect(() => resolveProtectionOptions({ enabled: true, maxAttempts: 2.5 }, 19)).toThrow('maxAttempts must be a positive integer');
+  });
+
+  test('rejects an invalid cookieName', () => {
+    expect(() => resolveProtectionOptions({ enabled: true, cookieName: '' }, 19)).toThrow('cookieName must be a valid cookie name');
+    expect(() => resolveProtectionOptions({ enabled: true, cookieName: 'has spaces' }, 19)).toThrow('cookieName must be a valid cookie name');
+    expect(() => resolveProtectionOptions({ enabled: true, cookieName: 'semi;colon' }, 19)).toThrow('cookieName must be a valid cookie name');
+    expect(resolveProtectionOptions({ enabled: true, cookieName: 'my-clearance' }, 19).cookieName).toBe('my-clearance');
   });
 
   test('own bits win over the captcha fallback', () => {
@@ -96,9 +112,11 @@ describe('clearance tokens', () => {
 
 describe('protection gate', () => {
   const renderedPaths: string[] = [];
+  const renderedProps: Record<string, unknown>[] = [];
   const fakeRegistry = {
     renderComponent: async (path: string, props: Record<string, unknown>) => {
       renderedPaths.push(path);
+      renderedProps.push(props);
       return {
         body: `<div data-interstitial data-bits="${props.bits}"></div>`,
         head: '',
@@ -112,7 +130,7 @@ describe('protection gate', () => {
 
   function makeRuntime(overrides: Partial<ResolvedProtectionOptions> = {}, trailingSlashPolicy?: 'always' | 'never') {
     return createProtectionRuntime({
-      options: { enabled: true, bits: 8, maxAgeMs: 60_000, ...overrides },
+      options: { enabled: true, bits: 8, maxAgeMs: 60_000, protectFiles: true, maxAttempts: 5, cookieName: PROTECTION_CLEARANCE_COOKIE, ...overrides },
       registry: fakeRegistry,
       renderShell: (result) => `<html>${result.body}</html>`,
       assetPrefix: '/_mochi',
@@ -236,6 +254,45 @@ describe('protection gate', () => {
     });
     const blocked = await gate(input('page', '/'));
     expect(blocked!.status).toBe(403);
+  });
+
+  test('the interstitial props carry maxAttempts', async () => {
+    installConfig();
+    renderedProps.length = 0;
+    await makeRuntime({ maxAttempts: 3 }).gate(input('page', '/'));
+    expect(renderedProps[0]).toMatchObject({ maxAttempts: 3, verifyUrl: '/_mochi/protection/verify' });
+  });
+
+  test('blockedMessage replaces the default 403 body for api and plain kinds', async () => {
+    installConfig();
+    const { gate } = makeRuntime({ blockedMessage: 'Members only' });
+    expect(await (await gate(input('api', '/api/x')))!.json()).toMatchObject({ error: 'Members only' });
+    expect(await (await gate(input('sse', '/events')))!.text()).toBe('Members only');
+  });
+
+  test('a blockedMessage callback receives the request context', async () => {
+    installConfig();
+    const { gate } = makeRuntime({ blockedMessage: (ctx) => `${ctx.kind}:${ctx.path}` });
+    expect(await (await gate(input('api', '/api/x')))!.json()).toMatchObject({ error: 'api:/api/x' });
+  });
+
+  test('a throwing blockedMessage callback falls back to the default', async () => {
+    installConfig();
+    const { gate } = makeRuntime({
+      blockedMessage: () => {
+        throw new Error('boom');
+      },
+    });
+    expect(await (await gate(input('api', '/api/x')))!.json()).toMatchObject({ error: 'Browser verification required' });
+  });
+
+  test('a custom cookieName is the one checked for clearance', async () => {
+    installConfig();
+    const { gate } = makeRuntime({ cookieName: 'my-clearance' });
+    const token = mintClearanceToken(8);
+    expect(await gate(input('page', '/', `my-clearance=${token}`))).toBeUndefined();
+    // The same clearance under the default name no longer counts.
+    expect(await gate(input('page', '/', `${PROTECTION_CLEARANCE_COOKIE}=${token}`))).toBeDefined();
   });
 
   test('renders the built-in interstitial by default and a custom protection.page when set', async () => {

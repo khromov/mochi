@@ -26,6 +26,14 @@ export interface MochiProtectionOptions {
    * page with the Mochi logo.
    */
   page?: string;
+  /** The 403 body for blocked non-HTML kinds (api JSON `error`, ws/sse/file plain text) — a string or a per-request callback. Default: `"Browser verification required"`. */
+  blockedMessage?: string | ((ctx: MochiProtectionContext) => string);
+  /** Gate `publicDir` static files too (subject to `protect()`). Default: `true`. */
+  protectFiles?: boolean;
+  /** Failed verification attempts the widget allows before it stops retrying and shows a terminal message. Default: `5`. */
+  maxAttempts?: number;
+  /** Name of the clearance cookie. Default: `_mochi_clearance`. */
+  cookieName?: string;
 }
 
 export interface ResolvedProtectionOptions {
@@ -34,6 +42,10 @@ export interface ResolvedProtectionOptions {
   bits: number;
   maxAgeMs: number;
   page?: string;
+  blockedMessage?: string | ((ctx: MochiProtectionContext) => string);
+  protectFiles: boolean;
+  maxAttempts: number;
+  cookieName: string;
 }
 
 /** Props a custom `protection.page` component receives — everything `<MochiCaptchaAuto />` needs, ready to spread. */
@@ -42,4 +54,5 @@ export interface MochiProtectionPageProps {
   bits: number;
   solveBudgetMs: number;
   verifyUrl: string;
+  maxAttempts: number;
 }

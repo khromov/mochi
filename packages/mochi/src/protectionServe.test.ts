@@ -25,6 +25,7 @@ describe('Mochi.serve({ protection })', () => {
       // Resolves the expected CSRF origin from the Host header, so the verify POST below passes with a matching Origin.
       proxy: { hostHeader: 'host' },
       captcha: { bits: 8 },
+      publicDir: path.join(import.meta.dir, '__fixtures__', 'protection', 'public'),
       protection: {
         enabled: true,
         protect: ({ path: p }) => !p.startsWith('/open'),
@@ -109,6 +110,17 @@ describe('Mochi.serve({ protection })', () => {
     expect(sse.status).toBe(403);
     const ws = await fetch(`${base}/ws`);
     expect(ws.status).toBe(403);
+  });
+
+  test('publicDir static files are gated by default (protectFiles) and open with clearance', async () => {
+    const blocked = await fetch(`${base}/hello.txt`);
+    expect(blocked.status).toBe(403);
+
+    const verified = await solveAndVerify();
+    const cookie = clearanceCookieFrom(verified.setCookie!);
+    const served = await fetch(`${base}/hello.txt`, { headers: { cookie } });
+    expect(served.status).toBe(200);
+    expect(await served.text()).toContain('hello from publicDir');
   });
 
   test('an unmatched URL behind userFetch is protected too', async () => {

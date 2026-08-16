@@ -11,24 +11,28 @@
     bits = 16,
     solveBudgetMs = DEFAULT_CAPTCHA_SOLVE_BUDGET_MS,
     verifyUrl = '',
+    maxAttempts = 5,
     solvingLabel = 'Verifying your browser…',
     verifiedLabel = 'Verified — loading the page…',
     errorLabel = 'Verification failed',
     retryLabel = 'Try again',
+    exhaustedLabel = "We couldn't verify your browser. Please try again later.",
     noscriptLabel = 'JavaScript is required to verify your browser.',
   }: {
     token?: string;
     bits?: number;
     solveBudgetMs?: number;
     verifyUrl?: string;
+    maxAttempts?: number;
     solvingLabel?: string;
     verifiedLabel?: string;
     errorLabel?: string;
     retryLabel?: string;
+    exhaustedLabel?: string;
     noscriptLabel?: string;
   } = $props();
 
-  let phase = $state<'solving' | 'submitting' | 'verified' | 'error'>('solving');
+  let phase = $state<'solving' | 'submitting' | 'verified' | 'error' | 'exhausted'>('solving');
   let error = $state<string | null>(null);
   // A configuration mistake can't be retried into working, so it gets no retry
   // affordance.
@@ -45,6 +49,28 @@
 
   const causeOf = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
+  // Attempts survive the reload each retry performs, so the count has to live outside the
+  // document; sessionStorage scopes it to the tab and forgets it when the tab closes.
+  const ATTEMPTS_KEY = 'mochi-protection-attempts';
+  function readAttempts(): number {
+    try {
+      return Number(sessionStorage.getItem(ATTEMPTS_KEY)) || 0;
+    } catch {
+      return 0;
+    }
+  }
+  function writeAttempts(count: number) {
+    try {
+      if (count <= 0) {
+        sessionStorage.removeItem(ATTEMPTS_KEY);
+      } else {
+        sessionStorage.setItem(ATTEMPTS_KEY, String(count));
+      }
+    } catch {
+      // Storage unavailable (privacy mode) — the visitor just keeps the retry affordance.
+    }
+  }
+
   function cancelSolve() {
     generation++;
     if (solveTimer !== null) {
@@ -60,6 +86,13 @@
     errorRetryable = retryable;
     progressAttempts = null;
     logger.error(`captcha: ${detail}`);
+    if (retryable) {
+      const attempts = readAttempts() + 1;
+      writeAttempts(attempts);
+      if (attempts >= maxAttempts) {
+        phase = 'exhausted';
+      }
+    }
   }
 
   /** Mirrors the server's own bounds in `resolveCaptchaOptions` — keep in step. */
@@ -80,12 +113,18 @@
       failWith(`Solve budget must be a positive finite number of milliseconds, got ${solveBudgetMs}`, false);
       return false;
     }
+    if (!Number.isInteger(maxAttempts) || maxAttempts < 1) {
+      failWith(`Max attempts must be a positive integer, got ${maxAttempts}`, false);
+      return false;
+    }
     return true;
   }
 
   onMount(() => {
     mounted = true;
-    if (validateProps()) {
+    if (readAttempts() >= maxAttempts) {
+      phase = 'exhausted';
+    } else if (validateProps()) {
       startSolve();
     }
     return cancelSolve;
@@ -181,13 +220,18 @@
       return;
     }
     phase = 'verified';
+    writeAttempts(0);
     location.reload();
   }
 </script>
 
 {#if mounted && !suppressed}
-  <div class="captcha-auto" class:errored={phase === 'error'}>
-    {#if phase === 'error' && errorRetryable}
+  <div class="captcha-auto" class:errored={phase === 'error' || phase === 'exhausted'}>
+    {#if phase === 'exhausted'}
+      <div class="box error-box">
+        <span class="status" role="alert">{exhaustedLabel}</span>
+      </div>
+    {:else if phase === 'error' && errorRetryable}
       <button type="button" class="box error-box" onclick={retry}>
         <span class="status" role="alert">
           {errorLabel} — {retryLabel}

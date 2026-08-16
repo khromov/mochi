@@ -8,7 +8,7 @@ import { isWarmupRequest } from '../runtime/warmup';
 import type { TrailingSlashPolicy } from '../runtime/trailingSlash';
 import { logger } from '../utils/log';
 import { hasValidClearance } from './clearance';
-import { PROTECTION_CLEARANCE_COOKIE, PROTECTION_SHELL_COMPONENT } from './config';
+import { PROTECTION_SHELL_COMPONENT } from './config';
 import type { MochiProtectionContext, MochiProtectionKind, ResolvedProtectionOptions } from './types';
 
 export interface ProtectionGateInput {
@@ -64,6 +64,24 @@ export function createProtectionRuntime(deps: {
     }
   };
 
+  let messageThrewLogged = false;
+  const blockedMessageFor = (ctx: MochiProtectionContext): string => {
+    if (typeof options.blockedMessage === 'string') {
+      return options.blockedMessage;
+    }
+    if (typeof options.blockedMessage === 'function') {
+      try {
+        return options.blockedMessage(ctx);
+      } catch (err) {
+        if (!messageThrewLogged) {
+          messageThrewLogged = true;
+          logger.error('protection.blockedMessage threw — falling back to the default message:', err);
+        }
+      }
+    }
+    return BLOCKED_MESSAGE;
+  };
+
   const interstitialResponse = async (input: ProtectionGateInput): Promise<Response> => {
     const minted = mintCaptcha({ bits: options.bits });
     // A minimal ambient context, like the error responder's: the interstitial renders outside any
@@ -87,6 +105,7 @@ export function createProtectionRuntime(deps: {
           bits: minted.bits,
           solveBudgetMs: minted.solveBudgetMs,
           verifyUrl,
+          maxAttempts: options.maxAttempts,
         }),
       );
       html = renderShell(result);
@@ -103,14 +122,14 @@ export function createProtectionRuntime(deps: {
     });
   };
 
-  const blockedResponse = (input: ProtectionGateInput): Promise<Response> | Response => {
+  const blockedResponse = (input: ProtectionGateInput, ctx: MochiProtectionContext): Promise<Response> | Response => {
     if (input.kind === 'page' || input.kind === 'fallback') {
       return interstitialResponse(input);
     }
     if (input.kind === 'api') {
-      return Response.json({ error: BLOCKED_MESSAGE }, { status: 403, headers: { 'Cache-Control': 'no-store' } });
+      return Response.json({ error: blockedMessageFor(ctx) }, { status: 403, headers: { 'Cache-Control': 'no-store' } });
     }
-    return new Response(BLOCKED_MESSAGE, { status: 403, headers: { 'Cache-Control': 'no-store' } });
+    return new Response(blockedMessageFor(ctx), { status: 403, headers: { 'Cache-Control': 'no-store' } });
   };
 
   const gate: ProtectionGate = async (input) => {
@@ -121,15 +140,16 @@ export function createProtectionRuntime(deps: {
     if (path === verifyPath || path === `${verifyPath}/`) {
       return undefined;
     }
-    if (!isProtected({ kind: input.kind, path, url: input.url, request: input.request })) {
+    const ctx: MochiProtectionContext = { kind: input.kind, path, url: input.url, request: input.request };
+    if (!isProtected(ctx)) {
       return undefined;
     }
     // Reading through the jar marks it accessed, so finalizeCookieHeaders varies
     // this and every cleared response on Cookie — shared caches stay honest.
-    if (hasValidClearance(input.cookies.get(PROTECTION_CLEARANCE_COOKIE), options.maxAgeMs)) {
+    if (hasValidClearance(input.cookies.get(options.cookieName), options.maxAgeMs)) {
       return undefined;
     }
-    return finalizeCookieHeaders(await blockedResponse(input), input.cookies);
+    return finalizeCookieHeaders(await blockedResponse(input, ctx), input.cookies);
   };
 
   return { gate, verifyPath, verifyUrl, options };

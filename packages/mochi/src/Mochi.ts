@@ -116,7 +116,7 @@ import { startDevWatcher } from './dev/devWatcher';
 import { buildPageCacheAdminRoutes, PAGE_CACHE_ADMIN_COMPONENT } from './dev/pageCacheAdminRoutes';
 import { liveReloadGreeting } from './dev/liveReloadGeneration';
 import { createProtectionRuntime } from './protection/gate';
-import { resolveProtectionOptions, PROTECTION_CLEARANCE_COOKIE, PROTECTION_SHELL_COMPONENT } from './protection/config';
+import { resolveProtectionOptions, PROTECTION_SHELL_COMPONENT } from './protection/config';
 import { mintClearanceToken } from './protection/clearance';
 import { verifyCaptcha } from './captcha/captcha';
 import { getCaptchaRuntime } from './captcha/config';
@@ -1695,7 +1695,7 @@ export class Mochi {
         const result = await verifyCaptcha(formData, { minAgeMs: 0 });
         let response: Response;
         if (result.ok) {
-          ctx.cookies.set(PROTECTION_CLEARANCE_COOKIE, mintClearanceToken(protectionOptions.bits), {
+          ctx.cookies.set(protectionOptions.cookieName, mintClearanceToken(protectionOptions.bits), {
             httpOnly: true,
             sameSite: 'lax',
             path: '/',
@@ -1749,7 +1749,19 @@ export class Mochi {
           `If it moved, point \`publicDir\` at the new location; if the files are gone on purpose, re-run \`mochi-framework build\` to clear this.`,
       );
     }
-    registerPublicRoutes(bunRoutes, initialPublicFiles);
+    // publicDir files bypass buildRequestContext (they're raw Bun routes), so protection reaches them through this guard.
+    const publicRouteGuard =
+      protectionRuntime && protectionRuntime.options.protectFiles
+        ? (req: Request, server: Server<undefined>): Promise<Response | undefined> =>
+            protectionRuntime.gate({
+              request: req,
+              url: buildPublicUrl(req, options.proxy),
+              kind: 'file',
+              cookies: new MochiCookieJar(req.headers.get('Cookie'), cookieDefaults),
+              server,
+            })
+        : undefined;
+    registerPublicRoutes(bunRoutes, initialPublicFiles, publicRouteGuard);
 
     const userFetch = options.fetch;
 
@@ -2051,6 +2063,7 @@ export class Mochi {
         shellPath,
         reloadShell,
         reloadSpeculationRules,
+        publicRouteGuard,
       });
     }
 

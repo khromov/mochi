@@ -19,7 +19,7 @@
 </script>
 
 <div class="probe">
-  <button type="button" onclick={probe} disabled={busy}>Call the protected API</button>
+  <button type="button" onclick={probe} disabled={busy}>Call protected API</button>
   {#if status !== null || body}
     <pre class:blocked={status !== 200}>{status ?? 'error'} — {body}</pre>
   {/if}

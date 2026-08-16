@@ -18,11 +18,12 @@
   <p>
     <strong>This very page is protected</strong> — the interstitial you just passed (or breezed through on a warm clearance) came from
     <code>Mochi.serve(&lbrace; protection &rbrace;)</code>. The first visit answers 403 with a verification page instead of the demo; a hidden
-    <code>MochiCaptchaAuto</code> island runs the hash chain and proof-of-work immediately — no slider — then posts the solution and reloads. The clearance is a signed
+    <code>MochiCaptchaAuto</code> island runs the hash chain and proof-of-work immediately. The clearance is a signed
     <code>HttpOnly</code> cookie, so every later request just passes.
   </p>
   <p>
-    <code>protect()</code> picks what's gated; without it every route is protected. This site protects only this demo page and its API — the rest of the site never sees the interstitial.
+    <code>protect()</code> is an optional callback that picks what's gated; without it every route is protected. This site protects only this demo page and its API — the rest of the
+    site never sees the interstitial.
   </p>
 
   <ApiProbe mochi:hydrate />

@@ -2,7 +2,7 @@
   import MochiCaptchaAuto from '../../captcha/MochiCaptchaAuto.svelte';
   import type { MochiProtectionPageProps } from '../../protection/types';
 
-  let { token, bits, solveBudgetMs, verifyUrl }: MochiProtectionPageProps = $props();
+  let { token, bits, solveBudgetMs, verifyUrl, maxAttempts }: MochiProtectionPageProps = $props();
 </script>
 
 <svelte:head>
@@ -18,7 +18,7 @@
     </span>
     <p class="message">Please wait, we're validating your browser...</p>
     <div class="widget">
-      <MochiCaptchaAuto mochi:hydrate {token} {bits} {solveBudgetMs} {verifyUrl} />
+      <MochiCaptchaAuto mochi:hydrate {token} {bits} {solveBudgetMs} {verifyUrl} {maxAttempts} />
     </div>
   </main>
 </div>
