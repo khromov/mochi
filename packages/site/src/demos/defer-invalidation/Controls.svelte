@@ -1,18 +1,14 @@
 <script>
   import { reloadDeferredIsland, reloadDeferredIslandAll, isReloadingDeferredIsland, deferReloadState } from 'mochi-framework';
 
-  // Reactive state fields on a class instance: reading them in the markup re-renders when the
-  // island starts or stops reloading. The buttons stay clickable so the guard below is reachable.
   const one = deferReloadState('1');
   const pair = deferReloadState('2-and-3');
 
-  // One entry per island currently reloading, keyed by the element the event came from —
-  // islands sharing a name each get their own, so "reload all" reports the whole batch.
+  // Keyed by element, not name, so islands sharing a name each count toward "reload all".
   let active = $state([]);
   let note = $state('');
 
-  // A note answers the click that just happened (ignored, or failed), so it outranks the
-  // in-flight text; the next reload that actually starts clears it.
+  // A note answers the click that just happened, so it outranks the in-flight text.
   const status = $derived.by(() => {
     if (note) {
       return note;
@@ -24,8 +20,7 @@
     return names.length === 1 ? `reloading "${names[0]}"…` : `reloading ${active.length} islands…`;
   });
 
-  // The events bubble to the document, so every bit of this status is driven by the islands
-  // themselves rather than by the code that started the reload.
+  // Driven by the islands themselves rather than the code that started the reload.
   $effect(() => {
     const onStart = (e) => {
       note = '';
@@ -46,7 +41,7 @@
   });
 
   function run(name) {
-    // Synchronous, so the handler can bail before starting anything. Click twice quickly to see it.
+    // Synchronous, so the handler bails before starting anything — click twice quickly to see it.
     if (isReloadingDeferredIsland(name)) {
       note = `"${name}" is already reloading — click ignored`;
       return;

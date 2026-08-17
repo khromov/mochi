@@ -26,8 +26,7 @@ function stub(): ReloadableIsland & { reloads: number; busy: boolean } {
 
 beforeEach(() => {
   const g = globalThis as unknown as Record<string, unknown>;
-  // The listener registry is pinned too, so a subscriber from a previous test would
-  // otherwise still be attached and see this test's notifications.
+  // Pinned too, so a previous test's subscriber would otherwise still hear this one.
   delete g.__mochi_deferred_islands__;
   delete g.__mochi_deferred_island_listeners__;
 });

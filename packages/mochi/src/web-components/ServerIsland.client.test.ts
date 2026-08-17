@@ -1,6 +1,5 @@
-// The <mochi-server-island> element driven through a real DOM: registration lifecycle, reload queueing, and the
-// teardown of hydrated children before a reload swaps the subtree. These paths are invisible to the pure-registry
-// tests in ../islands/deferInvalidation.test.ts, which exercise the Map/Set bookkeeping against a stub.
+// The element driven through a real DOM — paths the pure-registry tests in
+// ../islands/deferInvalidation.test.ts cannot reach with a stub.
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 
 GlobalRegistrator.register({ url: 'http://localhost/' });
@@ -14,7 +13,7 @@ await import('./ServerIsland');
 let bodies: string[] = [];
 let inflight = 0;
 let maxInflight = 0;
-// Holds the *next* fetch only, so a test can pin one request open and observe what a concurrent caller does.
+// Holds the next fetch only, so a test can pin one open and watch what a concurrent caller does.
 let holdNext = false;
 let release: (() => void) | null = null;
 
@@ -107,8 +106,7 @@ describe('<mochi-server-island> invalidation', () => {
     expect(bodies).toHaveLength(4);
   });
 
-  // Regression: reload used to race the connectedCallback fetch, so two requests were in flight at once and the
-  // slower (older) response could land last and clobber the newer content the caller had already been handed.
+  // Regression: reload used to race the initial fetch, letting the older response land last.
   test('a reload during the initial fetch queues instead of racing it', async () => {
     holdNext = true;
     const el = mount({ name: 'clock' });
@@ -200,9 +198,8 @@ describe('<mochi-server-island> invalidation', () => {
     expect(el.innerHTML).toBe('<p>render 2</p>');
   });
 
-  // `DeferReloadState` is a rune module and so cannot be imported here (plain `bun test` never
-  // compiles it). What is testable — and what its every field is derived from — is the payload
-  // it subscribes to, so that contract is pinned here instead.
+  // `DeferReloadState` is a rune module that plain `bun test` cannot import, so what is pinned
+  // here is the payload it derives every field from.
   test('the settle notification carries the reload outcome', async () => {
     mount({ name: 'clock', retries: 0 });
     await settle();
@@ -231,8 +228,7 @@ describe('<mochi-server-island> invalidation', () => {
     unsubscribe();
   });
 
-  // The accessor is only reactive because subscribers fire on both edges; without this the
-  // value would be correct on read but never prompt a re-read.
+  // Reactivity depends on both edges firing; one alone reads correctly but never prompts a re-read.
   test('subscribers fire when a reload starts and when it finishes', async () => {
     mount({ name: 'clock' });
     await settle();

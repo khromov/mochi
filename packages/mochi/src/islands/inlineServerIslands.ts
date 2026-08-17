@@ -10,8 +10,7 @@ export const DEFAULT_INLINE_BUDGET = 32;
 export function shouldInlineIsland(options?: unknown): boolean {
   if (typeof options === 'object' && options !== null) {
     const opts = options as { inline?: boolean; name?: unknown };
-    // A named island is opted out: inlining emits no `<mochi-server-island>` wrapper, so there
-    // would be nothing for `reloadDeferredIsland(name)` to find and re-fetch.
+    // A named island opts out: inlining emits no wrapper for `reloadDeferredIsland` to find.
     if (opts.inline === false || typeof opts.name === 'string') {
       return false;
     }

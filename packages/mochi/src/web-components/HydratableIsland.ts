@@ -149,10 +149,8 @@ class HydratableIsland extends HTMLElement {
     } else {
       instance = hydrate(Component, { target: this, props, transformError });
     }
-    // Duck-typed teardown hook: a reloading `<mochi-server-island>` calls this before
-    // discarding the subtree, so the old component's effects and listeners stop. It
-    // lives on the element (not an import) because that element ships in a separate,
-    // Svelte-free bundle. Not wired to `disconnectedCallback` — a plain DOM move
+    // On the element rather than an import because the reloading island that calls it ships in
+    // a separate, Svelte-free bundle. Deliberately not `disconnectedCallback`: a DOM move
     // disconnects too, and unmounting there would destroy state on every reparent.
     this._unmount = () => {
       this._unmount = undefined;

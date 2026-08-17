@@ -13,7 +13,6 @@ class ServerIsland extends HTMLElement {
   _name: string | null = null;
   _inflight: Promise<void> | null = null;
   _lastOk: boolean | undefined;
-  // The markup the first load showed, re-shown while reloading.
   _fallback = '';
 
   connectedCallback() {
@@ -61,8 +60,7 @@ class ServerIsland extends HTMLElement {
     }
   }
 
-  // Svelte roots are not torn down by removing their DOM, so discarding a subtree without this
-  // leaves the old instance's effects, timers and listeners running forever.
+  // Svelte roots outlive their DOM, so a discarded subtree keeps running without this.
   _unmountChildren() {
     for (const el of this.querySelectorAll('mochi-hydratable-island')) {
       (el as { _unmount?: () => void })._unmount?.();
@@ -79,8 +77,7 @@ class ServerIsland extends HTMLElement {
     }
   }
 
-  // Subscribers are notified from here rather than around the reload itself, so a notification
-  // can never report `_inflight` from before the mutation that prompted it.
+  // Notified from here, not around the reload, so a notification never reports a stale `_inflight`.
   _track(op: Promise<unknown>): Promise<void> {
     const tracked = op
       .then(
@@ -91,8 +88,7 @@ class ServerIsland extends HTMLElement {
         if (this._inflight === tracked) {
           this._inflight = null;
         }
-        // `_reload` parks its outcome here because the settle notification has to wait for
-        // `_inflight` to be cleared, which happens after `_reload` itself has resolved.
+        // `_reload` parks its outcome here because this notification waits on `_inflight` clearing.
         const ok = this._lastOk;
         this._lastOk = undefined;
         this._notify(ok === undefined ? {} : { ok });
@@ -102,18 +98,15 @@ class ServerIsland extends HTMLElement {
     return tracked;
   }
 
-  // Re-fetch the island's server HTML, bypassing `defer-on="visible"`. Queued behind any
-  // fetch already running rather than sharing it: a reload issued after a mutation must
-  // observe that mutation, and an unchained fetch could also land late and clobber the
-  // newer content it raced.
+  // Queued behind any fetch already running rather than sharing it, so a reload issued after a
+  // mutation observes it and a late-landing fetch cannot clobber newer content.
   reload(): Promise<void> {
     return this._track((this._inflight ?? Promise.resolve()).then(() => this._reload()));
   }
 
   async _reload() {
     const detail = { name: this._name, component: this.getAttribute('component-name') };
-    // Kept so a failed reload can put back the data the island was already showing, rather
-    // than stranding it on the skeleton it swapped to.
+    // Kept so a failed reload restores the data rather than stranding the island on the skeleton.
     const previous = this.innerHTML;
 
     this.setAttribute('data-reloading', '');

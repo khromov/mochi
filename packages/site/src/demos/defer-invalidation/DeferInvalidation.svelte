@@ -43,7 +43,6 @@
     height: 0.75rem;
   }
 
-  /* Matches the loaded content's box so swapping between them shifts nothing. */
   .island-loading {
     display: flex;
     align-items: center;
@@ -61,7 +60,6 @@
     min-height: 4.8rem;
   }
 
-  /* The wrapper is display:contents, so it has no box of its own to style — the child gets it. */
   :global(mochi-server-island[data-reloading] > *) {
     animation: pulse 1s ease-in-out infinite;
   }
