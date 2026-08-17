@@ -99,24 +99,41 @@ await reloadDeferredIslandAll(); // reloads every named defer on the page
 
 It reports `true` while an island with that name has a fetch in flight — its first load as well as a reload.
 
-For UI that follows along, `reloadingDeferredIsland(name)` returns the same value as reactive state:
+For UI that follows along, `deferReloadState(name)` returns reactive state for that island:
 
 ```svelte
 <script>
-  import { reloadingDeferredIsland } from 'mochi-framework';
+  import { deferReloadState } from 'mochi-framework';
 
-  const cart = reloadingDeferredIsland('cart');
+  const cart = deferReloadState('cart');
 </script>
 
 <button disabled={cart.current}>Refresh</button>
 {#if cart.current}<Spinner />{/if}
+{#if cart.lastOk === false}<p>Last refresh failed.</p>{/if}
+<p>
+  Refreshed {cart.count} times{#if cart.lastAt}, last at {cart.lastAt.toLocaleTimeString()}{/if}
+</p>
 ```
 
-Reading `.current` inside a component subscribes it to that island; read anywhere else it is just the current value, so it works as a plain check too.
+| Field     |                                                                                     |
+| --------- | ----------------------------------------------------------------------------------- |
+| `current` | `true` while that island has a fetch in flight — its first load as well as a reload |
+| `count`   | completed reloads, successful or not                                                |
+| `lastOk`  | outcome of the last completed reload, `null` before the first                       |
+| `lastAt`  | `Date` the last reload completed, `null` before the first                           |
+
+Islands sharing a name each count, so a name on two islands adds two per round. You get one shared instance per name, so reading it repeatedly is free.
 
 <Callout type="info">
 
-Use `isReloadingDeferredIsland` to guard a click handler and `reloadingDeferredIsland` to drive markup. The boolean is deliberately not reactive — `if (isReloadingDeferredIsland('cart'))` reads correctly in an event handler, where subscribing to anything would be pointless.
+Use `isReloadingDeferredIsland` to guard a click handler and `deferReloadState` to drive markup. The boolean is deliberately not reactive — `if (isReloadingDeferredIsland('cart'))` reads correctly in an event handler, where subscribing to anything would be pointless.
+
+</Callout>
+
+<Callout type="warning">
+
+**`deferReloadState` must be called from a `.svelte` or `.svelte.ts` file.** Its fields are runes, so Svelte has to compile the call site. Importing it from plain server code is fine, but calling it there throws `$state is not defined` — use `isReloadingDeferredIsland` outside components.
 
 </Callout>
 

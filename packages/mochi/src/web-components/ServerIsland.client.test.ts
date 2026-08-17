@@ -7,7 +7,6 @@ GlobalRegistrator.register({ url: 'http://localhost/' });
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { reloadDeferredIsland, reloadDeferredIslandAll, isReloadingDeferredIsland, subscribeDeferredIsland } from '../islands/deferInvalidation';
-import { reloadingDeferredIsland } from '../islands/deferReloadingState';
 
 // Importing for the side effect of `customElements.define`, after the DOM globals exist.
 await import('./ServerIsland');
@@ -201,23 +200,35 @@ describe('<mochi-server-island> invalidation', () => {
     expect(el.innerHTML).toBe('<p>render 2</p>');
   });
 
-  test('reloadingDeferredIsland tracks the same value as the boolean form', async () => {
-    const el = mount({ name: 'clock' });
+  // `DeferReloadState` is a rune module and so cannot be imported here (plain `bun test` never
+  // compiles it). What is testable — and what its every field is derived from — is the payload
+  // it subscribes to, so that contract is pinned here instead.
+  test('the settle notification carries the reload outcome', async () => {
+    mount({ name: 'clock', retries: 0 });
     await settle();
 
-    const state = reloadingDeferredIsland('clock');
-    expect(state.current).toBe(false);
+    const changes: Array<{ ok?: boolean; reloading: boolean }> = [];
+    const unsubscribe = subscribeDeferredIsland('clock', (change) => changes.push({ ...change, reloading: isReloadingDeferredIsland('clock') }));
 
-    holdNext = true;
-    const reloaded = reloadDeferredIsland('clock');
-    expect(state.current).toBe(true);
-    expect(state.current).toBe(isReloadingDeferredIsland('clock'));
+    await reloadDeferredIsland('clock');
+    expect(changes).toEqual([{ reloading: true }, { ok: true, reloading: false }]);
 
+    globalThis.fetch = (async () => new Response('nope', { status: 404 })) as unknown as typeof fetch;
+    await reloadDeferredIsland('clock');
+    expect(changes[3]).toEqual({ ok: false, reloading: false });
+
+    unsubscribe();
+  });
+
+  test('the initial load notifies without an outcome, so it is not counted as a reload', async () => {
+    const changes: Array<{ ok?: boolean }> = [];
+    const unsubscribe = subscribeDeferredIsland('fresh', (change) => changes.push(change));
+
+    mount({ name: 'fresh' });
     await settle();
-    release?.();
-    await reloaded;
-    expect(state.current).toBe(false);
-    expect(el.innerHTML).toBe('<p>render 2</p>');
+
+    expect(changes.every((c) => c.ok === undefined)).toBe(true);
+    unsubscribe();
   });
 
   // The accessor is only reactive because subscribers fire on both edges; without this the

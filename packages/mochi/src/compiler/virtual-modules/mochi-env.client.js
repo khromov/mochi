@@ -128,7 +128,7 @@ export function invalidateImage() { __serverOnly("invalidateImage()"); }
 // Deferred-island reload API — the real client implementation drives the mounted
 // `<mochi-server-island>` elements (registered on the client via globalThis).
 export { reloadDeferredIsland, reloadDeferredIslandAll, isReloadingDeferredIsland } from "__MOCHI_DEFER_API__";
-export { reloadingDeferredIsland } from "__MOCHI_DEFER_REACTIVE__";
+export { deferReloadState, DeferReloadState } from "__MOCHI_DEFER_REACTIVE__";
 export function memoryStore() { __serverOnly("memoryStore()"); }
 export function sqliteStore() { __serverOnly("sqliteStore()"); }
 export function postgresStore() { __serverOnly("postgresStore()"); }

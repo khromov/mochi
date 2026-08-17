@@ -89,7 +89,7 @@ describe('deferInvalidation', () => {
     expect(isReloadingDeferredIsland('missing')).toBe(false);
   });
 
-  // What `reloadingDeferredIsland` subscribes with — its reactivity is only as good as this.
+  // What `DeferReloadState` subscribes with — its reactivity is only as good as this.
   it('a per-name subscriber only hears its own name, and unsubscribes', () => {
     const seen: number[] = [];
     const unsubscribe = subscribeDeferredIsland('mine', () => seen.push(1));

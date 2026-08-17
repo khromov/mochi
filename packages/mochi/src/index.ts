@@ -28,8 +28,8 @@ export type { FileStorageOptions, MemoryStorageOptions, BlobRef } from './cache/
 export { getImageUrl, getImageAttrs, getImage, getImagePlaceholder, imagePlaceholder, warmImagePlaceholder, invalidateImage } from './image/imageApi';
 export type { ResolvedImage, ImageAttrs } from './image/imageApi';
 export { reloadDeferredIsland, reloadDeferredIslandAll, isReloadingDeferredIsland } from './islands/deferInvalidation';
-export { reloadingDeferredIsland } from './islands/deferReloadingState';
-export type { DeferredIslandReloading } from './islands/deferReloadingState';
+export { deferReloadState, DeferReloadState } from './islands/deferReloadState.svelte';
+export type { DeferredIslandChange } from './islands/deferInvalidation';
 export type { MochiImageOptions, ImageSize, InvalidateImageOptions, ImageFormat, ImageFit, ImportedImage, ImportedImageFormat } from './image/types';
 export { IMAGE_FILE_FILTER } from './compiler/imageAssetLoader';
 export { EmailError } from './email/types';

@@ -25,10 +25,16 @@ export function registerDeferredIsland(name: string, island: ReloadableIsland): 
   set.add(island);
 }
 
+// `ok` is present only on the notification for a reload that just finished, so a listener can
+// tell "started" from "finished, and here is how it went" without inspecting the DOM.
+export interface DeferredIslandChange {
+  ok?: boolean;
+}
+
 // Reload start/end listeners, pinned alongside the registry for the same cross-bundle reason:
 // `<mochi-server-island>` fires them from the inline script, while the reactive accessor that
 // consumes them lives in the hydration bundle.
-type ChangeListener = () => void;
+type ChangeListener = (change: DeferredIslandChange) => void;
 const listeners = () => pinGlobal('__mochi_deferred_island_listeners__', () => new Map<string, Set<ChangeListener>>());
 
 // Returns an unsubscribe function.
@@ -48,14 +54,14 @@ export function subscribeDeferredIsland(name: string, listener: ChangeListener):
   };
 }
 
-export function notifyDeferredIslandChange(name: string): void {
+export function notifyDeferredIslandChange(name: string, change: DeferredIslandChange = {}): void {
   const set = listeners().get(name);
   if (!set) {
     return;
   }
   // Snapshotted: a listener may unsubscribe itself while being notified.
   for (const listener of [...set]) {
-    listener();
+    listener(change);
   }
 }
 

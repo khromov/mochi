@@ -1,11 +1,10 @@
 <script>
-  import { reloadDeferredIsland, reloadDeferredIslandAll, isReloadingDeferredIsland, reloadingDeferredIsland } from 'mochi-framework';
-  import { reloads } from './reloadCount.svelte.ts';
+  import { reloadDeferredIsland, reloadDeferredIslandAll, isReloadingDeferredIsland, deferReloadState } from 'mochi-framework';
 
-  // Reactive: reading `.current` in the markup re-renders the dot when that island starts or
-  // stops reloading. The buttons stay clickable so the guard below is still reachable.
-  const one = reloadingDeferredIsland('1');
-  const pair = reloadingDeferredIsland('2-and-3');
+  // Reactive state fields on a class instance: reading them in the markup re-renders when the
+  // island starts or stops reloading. The buttons stay clickable so the guard below is reachable.
+  const one = deferReloadState('1');
+  const pair = deferReloadState('2-and-3');
 
   // One entry per island currently reloading, keyed by the element the event came from —
   // islands sharing a name each get their own, so "reload all" reports the whole batch.
@@ -33,7 +32,6 @@
       active = [...active, { el: e.target, name: e.detail.name }];
     };
     const onEnd = (e) => {
-      reloads.count++;
       active = active.filter((a) => a.el !== e.target);
       if (!e.detail.ok) {
         note = `"${e.detail.name}" failed to reload`;
@@ -70,7 +68,13 @@
     <button onclick={() => reloadDeferredIslandAll()}>Reload all</button>
   </div>
   <p class="status" class:empty={status === ''}>{status || ' '}</p>
-  <p class="count">Island reloads completed: <strong>{reloads.count}</strong> <span class="via">(counted from mochi:island:reloadend)</span></p>
+  <p class="count">
+    Island 1 — reloads <strong>{one.count}</strong>{#if one.lastAt}, last {one.lastOk ? 'ok' : 'failed'} at {one.lastAt.toLocaleTimeString()}{/if}
+  </p>
+  <p class="count">
+    Islands 2 + 3 — reloads <strong>{pair.count}</strong>{#if pair.lastAt}, last {pair.lastOk ? 'ok' : 'failed'} at {pair.lastAt.toLocaleTimeString()}{/if}
+    <span class="via">(both counted — two islands share the name)</span>
+  </p>
 </div>
 
 <style>

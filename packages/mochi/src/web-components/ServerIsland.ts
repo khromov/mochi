@@ -12,6 +12,7 @@ class ServerIsland extends HTMLElement {
   _options: Record<string, unknown> = {};
   _name: string | null = null;
   _inflight: Promise<void> | null = null;
+  _lastOk: boolean | undefined;
   // The markup the first load showed, re-shown while reloading.
   _fallback = '';
 
@@ -72,9 +73,9 @@ class ServerIsland extends HTMLElement {
     this.dispatchEvent(new CustomEvent(type, { bubbles: true, detail }));
   }
 
-  _notify() {
+  _notify(change: { ok?: boolean } = {}) {
     if (this._name) {
-      notifyDeferredIslandChange(this._name);
+      notifyDeferredIslandChange(this._name, change);
     }
   }
 
@@ -90,7 +91,11 @@ class ServerIsland extends HTMLElement {
         if (this._inflight === tracked) {
           this._inflight = null;
         }
-        this._notify();
+        // `_reload` parks its outcome here because the settle notification has to wait for
+        // `_inflight` to be cleared, which happens after `_reload` itself has resolved.
+        const ok = this._lastOk;
+        this._lastOk = undefined;
+        this._notify(ok === undefined ? {} : { ok });
       });
     this._inflight = tracked;
     this._notify();
@@ -126,6 +131,7 @@ class ServerIsland extends HTMLElement {
         this._unmountChildren();
         this.innerHTML = previous;
       }
+      this._lastOk = ok;
       this.removeAttribute('data-reloading');
       this.removeAttribute('aria-busy');
       this._emit('mochi:island:reloadend', { ...detail, ok });
