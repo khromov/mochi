@@ -1,20 +1,24 @@
 <script>
-  import { reloadDeferredIsland, reloadDeferredIslandAll, deferReloadState } from 'mochi-framework';
+  import { isServer, reloadDeferredIsland, reloadDeferredIslandAll, deferReloadState } from 'mochi-framework';
 
   const one = deferReloadState('1');
   const pair = deferReloadState('2-and-3');
 
+  // No island has registered during SSR, so `reloading` reads false there and the buttons would
+  // render enabled until the islands start fetching.
+  const busy = (s) => isServer || s.reloading;
+
   // Includes the error-mode islands below, since "reload all" reaches every named island.
-  const anyReloading = $derived([one, pair, deferReloadState('flaky'), deferReloadState('offline')].some((s) => s.reloading));
+  const anyBusy = $derived(isServer || [one, pair, deferReloadState('flaky'), deferReloadState('offline')].some((s) => s.reloading));
 
   const stamp = (s) => (s.lastReloaded ? `${s.lastReloadOk ? 'ok' : 'failed'} at ${s.lastReloaded.toLocaleTimeString()}` : 'not yet reloaded');
 </script>
 
 <div class="controls">
   <div class="buttons">
-    <button disabled={one.reloading} onclick={() => reloadDeferredIsland('1')}>Reload 1</button>
-    <button disabled={pair.reloading} onclick={() => reloadDeferredIsland('2-and-3')}>Reload 2 + 3</button>
-    <button disabled={anyReloading} onclick={() => reloadDeferredIslandAll()}>Reload all</button>
+    <button disabled={busy(one)} onclick={() => reloadDeferredIsland('1')}>Reload 1</button>
+    <button disabled={busy(pair)} onclick={() => reloadDeferredIsland('2-and-3')}>Reload 2 + 3</button>
+    <button disabled={anyBusy} onclick={() => reloadDeferredIslandAll()}>Reload all</button>
   </div>
 
   <dl class="state">
