@@ -1,30 +1,35 @@
 <script>
   import { isServer } from 'mochi-framework';
   import { delay } from '../../components/utils.ts';
+  import FlakyContent from './FlakyContent.svelte';
 
   let { label = '' } = $props();
 
   await (isServer ? delay(700, 1300) : Promise.resolve());
-
-  const renderedAt = new Date().toLocaleTimeString();
 </script>
 
-<div class="clock">
-  <span class="label">{label}</span>
-  <span class="value">rendered {renderedAt}</span>
-</div>
+<svelte:boundary>
+  <FlakyContent {label} />
+
+  {#snippet failed(error)}
+    <div class="failed">
+      <span class="label">{label}</span>
+      <span class="value">failed — {error.message}</span>
+    </div>
+  {/snippet}
+</svelte:boundary>
 
 <style>
-  .clock {
+  .failed {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
     min-height: 3.5rem;
     padding: 0.9rem 1rem;
-    border: 2px dashed var(--badge-info-text);
+    border: 2px dashed var(--badge-danger-text, #c00);
     border-radius: var(--radius-md);
-    background: var(--badge-info-bg);
+    background: var(--badge-danger-bg, #fff5f5);
     color: var(--text);
   }
 
@@ -39,7 +44,6 @@
   .value {
     font-size: 0.9rem;
     font-family: var(--font-mono);
-    font-variant-numeric: tabular-nums;
-    color: var(--text);
+    color: var(--badge-danger-text, #c00);
   }
 </style>

@@ -66,7 +66,7 @@ export { MemoryStorage, FileStorage, isBlobRef, readBlobRef } from "__MOCHI_CACH
 // so .svelte files can `import { getImageUrl } from 'mochi-framework'`.
 export { getImageUrl, getImageAttrs, getImage, getImagePlaceholder, imagePlaceholder, warmImagePlaceholder, invalidateImage } from "__MOCHI_IMAGE_API__";
 // Server-safe: the island registry is empty during SSR, so these resolve to a no-op here.
-export { reloadDeferredIsland, reloadDeferredIslandAll, isReloadingDeferredIsland } from "__MOCHI_DEFER_API__";
+export { reloadDeferredIsland, reloadDeferredIslandAll } from "__MOCHI_DEFER_API__";
 export { deferReloadState, DeferReloadState } from "__MOCHI_DEFER_REACTIVE__";
 // `enhance` / `deserialize` are browser-only Svelte action helpers.
 // Svelte never invokes actions during SSR, so these stubs only fire

@@ -1,21 +1,20 @@
 <script>
-  import { isServer } from 'mochi-framework';
-  import { delay } from '../../components/utils.ts';
-
   let { label = '' } = $props();
 
-  await (isServer ? delay(700, 1300) : Promise.resolve());
-
   const renderedAt = new Date().toLocaleTimeString();
+
+  if (Math.random() < 0.5) {
+    throw new Error('Upstream service returned 503');
+  }
 </script>
 
-<div class="clock">
+<div class="ok">
   <span class="label">{label}</span>
   <span class="value">rendered {renderedAt}</span>
 </div>
 
 <style>
-  .clock {
+  .ok {
     display: flex;
     align-items: center;
     justify-content: space-between;

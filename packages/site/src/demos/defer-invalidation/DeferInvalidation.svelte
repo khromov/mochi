@@ -3,6 +3,8 @@
   import Controls from './Controls.svelte';
   import ServerClock from './ServerClock.svelte';
   import LiveCounter from './LiveCounter.svelte';
+  import FlakyPanel from './FlakyPanel.svelte';
+  import ErrorModes from './ErrorModes.svelte';
   import { loadSources } from '../../components/utils.ts';
   import { files } from './files.ts';
 
@@ -11,7 +13,7 @@
 
 <DemoPage
   title="Invalidate mochi:defer islands"
-  description="Give a mochi:defer island a name, then call reloadDeferredIsland(name) from the browser to re-fetch its server HTML. Island 1 is also hydrated, so it unmounts and re-hydrates on every reload — its counter resets. Islands 2 and 3 share the name 2-and-3, so they reload together. While an island reloads it shows its fallback again and carries data-reloading; the status line and the counter below are driven entirely by the mochi:island:reload* events, not by the code that clicked the button."
+  description="Give a mochi:defer island a name, then call reloadDeferredIsland(name) from the browser to re-fetch its server HTML. Island 1 is also hydrated, so it unmounts and re-hydrates on every reload — its counter resets. Islands 2 and 3 share the name 2-and-3, so they reload together. Everything below the buttons — the disabled states, counts and timestamps — is read from deferReloadState(name)."
   {sources}
 >
   <Controls mochi:hydrate />
@@ -30,6 +32,24 @@
       <div class="island-loading">Loading<span class="dots"></span></div>
     </ServerClock>
   </div>
+
+  <h2>Error modes</h2>
+  <p class="lede">
+    A reload can fail in two different places, and they are not the same thing: the render can throw while the island is being built on the server, or the request for that HTML can
+    fail. Only the second counts as a failed reload.
+  </p>
+
+  <ErrorModes mochi:hydrate />
+
+  <FlakyPanel mochi:defer={{ name: 'flaky' }} label="4">
+    <div class="island-loading">Loading<span class="dots"></span></div>
+  </FlakyPanel>
+
+  <div class="spacer"></div>
+
+  <ServerClock mochi:defer={{ name: 'offline', retries: 0 }} label="5">
+    <div class="island-loading">Loading<span class="dots"></span></div>
+  </ServerClock>
 </DemoPage>
 
 <style>
@@ -37,6 +57,18 @@
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
+  }
+
+  h2 {
+    margin: 2rem 0 0.5rem;
+    font-size: 1.15rem;
+  }
+
+  .lede {
+    margin: 0 0 1rem;
+    font-size: 0.9rem;
+    line-height: 1.6;
+    color: var(--text-subtle);
   }
 
   .spacer {

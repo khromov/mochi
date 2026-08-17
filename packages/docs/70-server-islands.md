@@ -86,20 +86,7 @@ await reloadDeferredIsland('cart'); // re-fetches, resolves once swapped in
 await reloadDeferredIslandAll(); // reloads every named defer on the page
 ```
 
-`isReloadingDeferredIsland(name)` answers synchronously, so a handler can bail before starting work:
-
-```svelte
-<button
-  onclick={() => {
-    if (isReloadingDeferredIsland('cart')) return;
-    reloadDeferredIsland('cart');
-  }}>Refresh</button
->
-```
-
-It reports `true` while an island with that name has a fetch in flight — its first load as well as a reload.
-
-For UI that follows along, `deferReloadState(name)` returns reactive state for that island:
+`deferReloadState(name)` returns reactive state for that island, for UI that follows along:
 
 ```svelte
 <script>
@@ -108,32 +95,28 @@ For UI that follows along, `deferReloadState(name)` returns reactive state for t
   const cart = deferReloadState('cart');
 </script>
 
-<button disabled={cart.current}>Refresh</button>
-{#if cart.current}<Spinner />{/if}
-{#if cart.lastOk === false}<p>Last refresh failed.</p>{/if}
+<button disabled={cart.reloading} onclick={() => reloadDeferredIsland('cart')}>Refresh</button>
+{#if cart.reloading}<Spinner />{/if}
+{#if cart.lastReloadOk === false}<p>Last refresh failed.</p>{/if}
 <p>
-  Refreshed {cart.count} times{#if cart.lastAt}, last at {cart.lastAt.toLocaleTimeString()}{/if}
+  Refreshed {cart.count} times{#if cart.lastReloaded}, last at {cart.lastReloaded.toLocaleTimeString()}{/if}
 </p>
 ```
 
-| Field     |                                                                                     |
-| --------- | ----------------------------------------------------------------------------------- |
-| `current` | `true` while that island has a fetch in flight — its first load as well as a reload |
-| `count`   | completed reloads, successful or not                                                |
-| `lastOk`  | outcome of the last completed reload, `null` before the first                       |
-| `lastAt`  | `Date` the last reload completed, `null` before the first                           |
+| Field          |                                                                                     |
+| -------------- | ----------------------------------------------------------------------------------- |
+| `reloading`    | `true` while that island has a fetch in flight — its first load as well as a reload |
+| `count`        | completed reloads, successful or not                                                |
+| `lastReloadOk` | whether the last reload _fetched_ successfully, `null` before the first             |
+| `lastReloaded` | `Date` the last reload completed, `null` before the first                           |
 
-Islands sharing a name each count, so a name on two islands adds two per round. You get one shared instance per name, so reading it repeatedly is free.
+Islands sharing a name each count, so a name on two islands adds two per round. You get one shared instance per name, so reading it repeatedly is free — and reading a field outside a component just gives you its current value.
 
-<Callout type="info">
-
-Use `isReloadingDeferredIsland` to guard a click handler and `deferReloadState` to drive markup. The boolean is deliberately not reactive — `if (isReloadingDeferredIsland('cart'))` reads correctly in an event handler, where subscribing to anything would be pointless.
-
-</Callout>
+`lastReloadOk` reports the fetch, not the render: an island whose component throws still answers with a 200, so it reads `true` while the island shows its `<svelte:boundary>` fallback. Render failures are the boundary's job, not the reload's.
 
 <Callout type="warning">
 
-**`deferReloadState` must be called from a `.svelte` or `.svelte.ts` file.** Its fields are runes, so Svelte has to compile the call site. Importing it from plain server code is fine, but calling it there throws `$state is not defined` — use `isReloadingDeferredIsland` outside components.
+**`deferReloadState` must be called from a `.svelte` or `.svelte.ts` file.** Its fields are runes, so Svelte has to compile the call site; calling it from plain server code throws `$state is not defined`.
 
 </Callout>
 
@@ -151,7 +134,7 @@ Naming an island also opts it out of [nested inlining](#nesting-islands-inside-a
 
 <Callout type="warning">
 
-**A reload resolves even if the fetch failed.** It reuses the same retry-and-backoff policy as the initial load, so a hard failure resolves only after the retry budget is spent (default 9 retries, up to ~27s) and leaves the previous content in place. Lower `retries` on islands you invalidate interactively.
+**A reload resolves even if the fetch failed.** It reuses the same retry-and-backoff policy as the initial load, so a hard failure only resolves once the retry budget is spent, leaving the previous content in place. Watch `lastReloadOk`, and lower `retries` on islands you invalidate interactively.
 
 </Callout>
 
@@ -181,16 +164,6 @@ Size the fallback to match the loaded content, or the swap shifts the page. The 
   min-height: 3.5rem;
 }
 ```
-
-Reloads also dispatch two bubbling `CustomEvent`s, so code that did not start the reload can still react:
-
-```ts
-document.addEventListener('mochi:island:reloadend', (e) => {
-  const { name, component, ok } = e.detail;
-});
-```
-
-`mochi:island:reloadstart` carries `{ name, component }`; `mochi:island:reloadend` adds `ok`, `false` when the fetch failed and the island rolled back.
 
 ### Nesting islands inside a server island
 

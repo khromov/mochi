@@ -122,7 +122,7 @@ describe('<mochi-server-island> invalidation', () => {
     expect(el.innerHTML).toBe('<p>render 2</p>');
   });
 
-  test('isReloadingDeferredIsland flips synchronously and clears once settled', async () => {
+  test('the in-flight flag is set synchronously and clears once settled', async () => {
     holdNext = true;
     mount({ name: 'clock' });
     // True during the very first load too: fresh HTML is already inbound.
@@ -133,7 +133,6 @@ describe('<mochi-server-island> invalidation', () => {
 
     holdNext = true;
     const reloaded = reloadDeferredIsland('clock');
-    // No await — the guard must be usable at the top of a click handler.
     expect(isReloadingDeferredIsland('clock')).toBe(true);
 
     await settle();
@@ -142,7 +141,7 @@ describe('<mochi-server-island> invalidation', () => {
     expect(isReloadingDeferredIsland('clock')).toBe(false);
   });
 
-  test('isReloadingDeferredIsland is false for unknown and unnamed islands', async () => {
+  test('the in-flight flag is false for unknown and unnamed islands', async () => {
     mount(null);
     await settle();
     expect(isReloadingDeferredIsland('nope')).toBe(false);
@@ -177,25 +176,6 @@ describe('<mochi-server-island> invalidation', () => {
 
     expect(el.innerHTML).toBe('<p>render 1</p>');
     expect(el.hasAttribute('data-reloading')).toBe(false);
-  });
-
-  test('a reload dispatches bubbling start/end events carrying the outcome', async () => {
-    const el = mount({ name: 'clock' });
-    await settle();
-
-    const seen: string[] = [];
-    let endDetail: Record<string, unknown> | null = null;
-    document.addEventListener('mochi:island:reloadstart', () => seen.push('start'));
-    document.addEventListener('mochi:island:reloadend', (e) => {
-      seen.push('end');
-      endDetail = (e as CustomEvent).detail;
-    });
-
-    await reloadDeferredIsland('clock');
-
-    expect(seen).toEqual(['start', 'end']);
-    expect(endDetail).toMatchObject({ name: 'clock', component: 'Clock_abc', ok: true });
-    expect(el.innerHTML).toBe('<p>render 2</p>');
   });
 
   // `DeferReloadState` is a rune module that plain `bun test` cannot import, so what is pinned

@@ -67,10 +67,6 @@ class ServerIsland extends HTMLElement {
     }
   }
 
-  _emit(type: string, detail: Record<string, unknown>) {
-    this.dispatchEvent(new CustomEvent(type, { bubbles: true, detail }));
-  }
-
   _notify(change: { ok?: boolean } = {}) {
     if (this._name) {
       notifyDeferredIslandChange(this._name, change);
@@ -105,13 +101,11 @@ class ServerIsland extends HTMLElement {
   }
 
   async _reload() {
-    const detail = { name: this._name, component: this.getAttribute('component-name') };
     // Kept so a failed reload restores the data rather than stranding the island on the skeleton.
     const previous = this.innerHTML;
 
     this.setAttribute('data-reloading', '');
     this.setAttribute('aria-busy', 'true');
-    this._emit('mochi:island:reloadstart', detail);
 
     this._unmountChildren();
     this.innerHTML = this._fallback;
@@ -127,7 +121,6 @@ class ServerIsland extends HTMLElement {
       this._lastOk = ok;
       this.removeAttribute('data-reloading');
       this.removeAttribute('aria-busy');
-      this._emit('mochi:island:reloadend', { ...detail, ok });
     }
   }
 

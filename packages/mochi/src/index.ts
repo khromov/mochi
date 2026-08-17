@@ -27,7 +27,7 @@ export { MemoryStorage, FileStorage, isBlobRef, readBlobRef } from './cache/cach
 export type { FileStorageOptions, MemoryStorageOptions, BlobRef } from './cache/cache-storage';
 export { getImageUrl, getImageAttrs, getImage, getImagePlaceholder, imagePlaceholder, warmImagePlaceholder, invalidateImage } from './image/imageApi';
 export type { ResolvedImage, ImageAttrs } from './image/imageApi';
-export { reloadDeferredIsland, reloadDeferredIslandAll, isReloadingDeferredIsland } from './islands/deferInvalidation';
+export { reloadDeferredIsland, reloadDeferredIslandAll } from './islands/deferInvalidation';
 export { deferReloadState, DeferReloadState } from './islands/deferReloadState.svelte';
 export type { DeferredIslandChange } from './islands/deferInvalidation';
 export type { MochiImageOptions, ImageSize, InvalidateImageOptions, ImageFormat, ImageFit, ImportedImage, ImportedImageFormat } from './image/types';

@@ -4,7 +4,7 @@
 
   let { label = '' } = $props();
 
-  await (isServer ? delay(150, 400) : Promise.resolve());
+  await (isServer ? delay(700, 1300) : Promise.resolve());
 
   const renderedAt = new Date().toLocaleTimeString();
   let count = $state(0);

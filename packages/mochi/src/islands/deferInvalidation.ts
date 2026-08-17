@@ -81,8 +81,7 @@ export function reloadDeferredIsland(name: string): Promise<void> {
   return Promise.all([...set].map((island) => island.reload())).then(() => {});
 }
 
-// Synchronous, so a click handler can bail before starting work; `deferReloadState` is the
-// reactive counterpart.
+// Internal: the source `DeferReloadState.reloading` is derived from.
 export function isReloadingDeferredIsland(name: string): boolean {
   const set = registry().get(name);
   return set ? [...set].some((island) => island.isReloading()) : false;
