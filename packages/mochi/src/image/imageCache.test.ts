@@ -395,12 +395,19 @@ describe('ImageCache.setPlaceholder', () => {
 
     let sawMiss = false;
     let stop = false;
+    let reads = 0;
     const reader = (async () => {
       while (!stop) {
         if ((await cache.inspect(key)) == null) {
           sawMiss = true;
         }
-        await Promise.resolve();
+        reads++;
+        // A timer yield, not a microtask drain: `await Promise.resolve()` resolves within the
+        // same tick, so the loop reopens the destination without the event loop ever turning
+        // and a queued rename cannot complete. On Windows a rename fails outright while any
+        // handle is held, so the writer below starved rather than raced. This still samples
+        // ~50x per rewrite, well inside the window a non-atomic publish would leave open.
+        await Bun.sleep(0);
       }
     })();
     for (let i = 0; i < 20; i++) {
@@ -410,6 +417,9 @@ describe('ImageCache.setPlaceholder', () => {
     await reader;
 
     expect(sawMiss).toBe(false);
+    // Guards the assertion above from going vacuous: it only means anything if the reader
+    // actually sampled while the rewrites were in flight.
+    expect(reads).toBeGreaterThan(100);
   });
 });
 

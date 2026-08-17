@@ -203,6 +203,10 @@ async function renameWithRetry(from: string, to: string): Promise<void> {
   // Ramp to a 100ms poll and keep retrying for a few seconds: under heavy write
   // contention a peer's handle on the destination can linger longer than a short
   // window, and a rename that ultimately succeeds beats a spurious hard failure.
+  // The delay is jittered because a steady cadence can phase-lock with a reader that
+  // reopens the destination on its own steady cycle — every retry then lands inside the
+  // reader's open window and the writer starves until the budget runs out. Jitter keeps
+  // the mean backoff but decorrelates the two, so a retry eventually falls in the gap.
   for (let attempt = 0; ; attempt++) {
     try {
       return await rename(from, to);
@@ -211,7 +215,7 @@ async function renameWithRetry(from: string, to: string): Promise<void> {
       if (attempt >= 50 || !RENAME_RETRY_CODES.has(code)) {
         throw err;
       }
-      await Bun.sleep(Math.min(100, 10 * (attempt + 1)));
+      await Bun.sleep(Math.min(100, 10 * (attempt + 1)) * (0.5 + Math.random()));
     }
   }
 }
