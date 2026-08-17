@@ -29,6 +29,9 @@ export { getImageUrl, getImageAttrs, getImage, getImagePlaceholder, imagePlaceho
 export type { ResolvedImage, ImageAttrs } from './image/imageApi';
 export { reloadDeferredIsland, reloadDeferredIslandAll, isReloadingDeferredIsland } from './islands/deferInvalidation';
 export { reloadingDeferredIsland } from './islands/deferReloadingState';
+// `deferReloads` is deliberately absent: it is a rune module, and this barrel is plain TS that
+// Node/Bun load uncompiled, so re-exporting it would throw `$state is not defined` on any
+// `import { Mochi } from 'mochi-framework'`. It reaches components through mochi-env instead.
 export type { DeferredIslandReloading } from './islands/deferReloadingState';
 export type { MochiImageOptions, ImageSize, InvalidateImageOptions, ImageFormat, ImageFit, ImportedImage, ImportedImageFormat } from './image/types';
 export { IMAGE_FILE_FILTER } from './compiler/imageAssetLoader';

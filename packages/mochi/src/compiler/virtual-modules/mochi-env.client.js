@@ -129,6 +129,7 @@ export function invalidateImage() { __serverOnly("invalidateImage()"); }
 // `<mochi-server-island>` elements (registered on the client via globalThis).
 export { reloadDeferredIsland, reloadDeferredIslandAll, isReloadingDeferredIsland } from "__MOCHI_DEFER_API__";
 export { reloadingDeferredIsland } from "__MOCHI_DEFER_REACTIVE__";
+export { deferReloads } from "__MOCHI_DEFER_SHARED__";
 export function memoryStore() { __serverOnly("memoryStore()"); }
 export function sqliteStore() { __serverOnly("sqliteStore()"); }
 export function postgresStore() { __serverOnly("postgresStore()"); }

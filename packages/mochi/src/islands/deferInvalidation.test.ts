@@ -5,6 +5,9 @@ import {
   reloadDeferredIsland,
   reloadDeferredIslandAll,
   isReloadingDeferredIsland,
+  subscribeDeferredIsland,
+  subscribeDeferredIslandAny,
+  notifyDeferredIslandChange,
   type ReloadableIsland,
 } from './deferInvalidation';
 
@@ -23,7 +26,12 @@ function stub(): ReloadableIsland & { reloads: number; busy: boolean } {
 }
 
 beforeEach(() => {
-  delete (globalThis as unknown as Record<string, unknown>).__mochi_deferred_islands__;
+  const g = globalThis as unknown as Record<string, unknown>;
+  // The listener registries are pinned too, so a subscriber from a previous test would
+  // otherwise still be attached and see this test's notifications.
+  delete g.__mochi_deferred_islands__;
+  delete g.__mochi_deferred_island_listeners__;
+  delete g.__mochi_deferred_island_any_listeners__;
 });
 
 describe('deferInvalidation', () => {
@@ -81,6 +89,34 @@ describe('deferInvalidation', () => {
 
   it('isReloadingDeferredIsland is false for an unknown name', () => {
     expect(isReloadingDeferredIsland('missing')).toBe(false);
+  });
+
+  // What the shared rune module subscribes with: it has to learn names it was never told about.
+  it('subscribeDeferredIslandAny receives every name, and unsubscribes', () => {
+    const seen: string[] = [];
+    const unsubscribe = subscribeDeferredIslandAny((name) => seen.push(name));
+
+    notifyDeferredIslandChange('one');
+    notifyDeferredIslandChange('two');
+    expect(seen).toEqual(['one', 'two']);
+
+    unsubscribe();
+    notifyDeferredIslandChange('three');
+    expect(seen).toEqual(['one', 'two']);
+  });
+
+  it('a per-name subscriber only hears its own name', () => {
+    const seen: number[] = [];
+    const unsubscribe = subscribeDeferredIsland('mine', () => seen.push(1));
+
+    notifyDeferredIslandChange('other');
+    expect(seen).toEqual([]);
+    notifyDeferredIslandChange('mine');
+    expect(seen).toEqual([1]);
+
+    unsubscribe();
+    notifyDeferredIslandChange('mine');
+    expect(seen).toEqual([1]);
   });
 
   it('waits for slow reloads before resolving', async () => {
