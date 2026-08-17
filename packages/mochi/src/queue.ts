@@ -575,12 +575,11 @@ async function stopQueue(name: string): Promise<void> {
   }
 }
 
-// Ensure-only creation (createQueue is ON CONFLICT DO NOTHING) and never updateQueue: the standalone paths must not
-// rewrite options a Mochi.serve() deployment owns. deadLetter is dropped because its target queue may not exist here.
-async function ensureQueueExists(name: string, options: MochiQueueRuntimeOptions | undefined): Promise<void> {
+// Create the queue if it's missing, remembering the attempt so it runs once. createQueue leaves an existing queue as
+// it is and the standalone paths never update it, so options a Mochi.serve() app set are left alone.
+function ensureQueueCreated(name: string, createOptions: UpdateQueueOptions): Promise<void> {
   let ensured = registry.ensured.get(name);
   if (!ensured) {
-    const { deadLetter: _, ...createOptions } = toBossQueueOptions(name, options);
     ensured = requireBoss()
       .createQueue(name, createOptions)
       .catch((err: unknown) => {
@@ -589,7 +588,95 @@ async function ensureQueueExists(name: string, options: MochiQueueRuntimeOptions
       });
     registry.ensured.set(name, ensured);
   }
-  await ensured;
+  return ensured;
+}
+
+// The producer path (a bare `queue.add()`) only knows the queue being added to, not the deadLetter queue it points at,
+// so it can't tell whether that target exists yet — drop the link (createQueue errors on a missing target). A worker
+// knows its whole queues list, so ensureWorkerQueues keeps the link.
+async function ensureQueueExists(name: string, options: MochiQueueRuntimeOptions | undefined): Promise<void> {
+  const { deadLetter: _, ...createOptions } = toBossQueueOptions(name, options);
+  await ensureQueueCreated(name, createOptions);
+}
+
+// Create the worker's queues. When a queue names another of this worker's queues as its deadLetter, set that link as
+// the queue is created (creating the target first, since it must exist). Only a brand-new queue gets the link — an
+// existing one is left as it is; a deadLetter naming a queue this worker doesn't list is skipped with a warning, and a
+// queue naming itself throws, as Mochi.serve() does.
+async function ensureWorkerQueues(queues: MountableQueue[]): Promise<void> {
+  const declared = new Set(queues.map((q) => q.name));
+  const resolved = queues.map((q) => {
+    const bossOptions = toBossQueueOptions(q.name, q.options);
+    const deadLetter = bossOptions.deadLetter;
+    if (deadLetter === undefined) {
+      return { name: q.name, bossOptions };
+    }
+    if (deadLetter === q.name) {
+      throw new Error(`Mochi.worker(): "${q.name}" names itself as its deadLetter queue.`);
+    }
+    if (!declared.has(deadLetter)) {
+      logger.warn(
+        `[queue] "${q.name}" names "${deadLetter}" as its deadLetter queue, but no queue named "${deadLetter}" is in this worker's queues array — the link is skipped. Declare it where "${deadLetter}" is mounted.`,
+      );
+      return { name: q.name, bossOptions: withoutDeadLetter(bossOptions) };
+    }
+    return { name: q.name, bossOptions };
+  });
+  const boss = requireBoss();
+  for (const { name, bossOptions } of orderByDeadLetter(resolved)) {
+    await ensureQueueCreated(name, bossOptions);
+    // createQueue skips a queue that already exists, so one left from an earlier deploy (or a producer add in this
+    // process) keeps the deadLetter it was stored with — warn that the declared link wasn't applied rather than dropping it silently.
+    if (bossOptions.deadLetter !== undefined) {
+      const stored = (await boss.getQueue(name))?.deadLetter ?? undefined;
+      if (stored !== bossOptions.deadLetter) {
+        logger.warn(
+          `[queue] "${name}" declares "${bossOptions.deadLetter}" as its deadLetter queue, but the queue already exists ${stored ? `linked to "${stored}"` : 'without a deadLetter link'} — a worker only sets the link when it first creates the queue. Migrate with Mochi.boss().updateQueue("${name}", { deadLetter: "${bossOptions.deadLetter}" }).`,
+        );
+      }
+    }
+  }
+}
+
+function withoutDeadLetter(options: UpdateQueueOptions): UpdateQueueOptions {
+  const { deadLetter: _, ...rest } = options;
+  return rest;
+}
+
+// Order the queues so each deadLetter target comes before the queue pointing at it, since createQueue needs the target
+// to already exist. Anything left over points in a loop (A→B→A), which can't be built from scratch — create those
+// without the link and warn.
+function orderByDeadLetter(items: { name: string; bossOptions: UpdateQueueOptions }[]): { name: string; bossOptions: UpdateQueueOptions }[] {
+  const ordered: { name: string; bossOptions: UpdateQueueOptions }[] = [];
+  const emitted = new Set<string>();
+  let progressed = true;
+  while (progressed) {
+    progressed = false;
+    for (const item of items) {
+      if (emitted.has(item.name)) {
+        continue;
+      }
+      const target = item.bossOptions.deadLetter;
+      if (target === undefined || emitted.has(target)) {
+        ordered.push(item);
+        emitted.add(item.name);
+        progressed = true;
+      }
+    }
+  }
+  const cyclic = items.filter((item) => !emitted.has(item.name));
+  if (cyclic.length > 0) {
+    // One warning for the whole loop, not one per queue. A worker can't build a deadLetter loop (createQueue needs each
+    // target to exist first), while Mochi.serve() can — it creates every queue, then adds the links — so use serve for loops.
+    logger.warn(
+      `[queue] deadLetter loop among ${cyclic.map((item) => `"${item.name}"`).join(', ')} — created without their links; a worker cannot create a deadLetter loop (mount these under Mochi.serve() if you need it).`,
+    );
+    for (const item of cyclic) {
+      ordered.push({ name: item.name, bossOptions: withoutDeadLetter(item.bossOptions) });
+      emitted.add(item.name);
+    }
+  }
+  return ordered;
 }
 
 /** Implements `Mochi.queue(name, config)` — see its JSDoc there. */
@@ -763,8 +850,8 @@ export function createWorker(queues: MountableQueue[], storage?: MochiQueueStora
           );
         }
         const boss = requireBoss();
+        await ensureWorkerQueues(queues);
         for (const q of queues) {
-          await ensureQueueExists(q.name, q.options);
           if (!registry.byName.has(q.name)) {
             registry.byName.set(q.name, producerMethods(q.name));
           }
