@@ -143,7 +143,7 @@ process.on('SIGTERM', async () => {
 });
 ```
 
-Like standalone producers, workers are ensure-only: stored queue options are trusted as-is, with no re-sync — declare the options you rely on wherever the queue is actually mounted by `Mochi.serve()`, or on a fresh queue's first creator. `worker.stop()` deregisters the worker's queues (waiting for in-flight jobs) while the runtime stays up for producing; `Mochi.stop()` tears the runtime down.
+Like standalone producers, workers are ensure-only: stored queue options are trusted as-is, with no re-sync — declare the options you rely on wherever the queue is actually mounted by `Mochi.serve()`, or on a fresh queue's first creator. A worker sees its whole `queues` array, so it does apply a [`deadLetter`](#dead-letter-queues) link when it first creates the queue and the target is declared in the same array (created target-first, so the link's queue exists); a `deadLetter` naming a queue outside the worker's array is skipped with a warning — declare it where that queue is mounted. `worker.stop()` deregisters the worker's queues (waiting for in-flight jobs) while the runtime stays up for producing; `Mochi.stop()` tears the runtime down.
 
 <Callout type="info">
 
@@ -226,7 +226,7 @@ Mochi.queue('webhooks', {
 
 ### Dead-letter queues
 
-Point `deadLetter` at another queue in the same array and terminally failed jobs move there — same payload — instead of parking in the failed state:
+Point `deadLetter` at another queue in the same array and a terminally failed job is copied there — same payload — for handling or inspection, while the original stays `failed` in its source queue as an audit trail:
 
 ```ts
 await Mochi.serve({

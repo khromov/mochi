@@ -575,12 +575,11 @@ async function stopQueue(name: string): Promise<void> {
   }
 }
 
-// Ensure-only creation (createQueue is ON CONFLICT DO NOTHING) and never updateQueue: the standalone paths must not
-// rewrite options a Mochi.serve() deployment owns. deadLetter is dropped because its target queue may not exist here.
-async function ensureQueueExists(name: string, options: MochiQueueRuntimeOptions | undefined): Promise<void> {
+// Memoized ensure-only creation (createQueue is ON CONFLICT DO NOTHING): standalone paths never updateQueue, so an
+// existing queue's options — which a Mochi.serve() deployment owns — are left as they are.
+function ensureQueueCreated(name: string, createOptions: UpdateQueueOptions): Promise<void> {
   let ensured = registry.ensured.get(name);
   if (!ensured) {
-    const { deadLetter: _, ...createOptions } = toBossQueueOptions(name, options);
     ensured = requireBoss()
       .createQueue(name, createOptions)
       .catch((err: unknown) => {
@@ -589,7 +588,79 @@ async function ensureQueueExists(name: string, options: MochiQueueRuntimeOptions
       });
     registry.ensured.set(name, ensured);
   }
-  await ensured;
+  return ensured;
+}
+
+// A standalone producer sees one descriptor with no array, so it can't know its deadLetter target exists — drop it
+// (createQueue would throw on a missing target). A standalone worker keeps it via ensureWorkerQueues instead.
+async function ensureQueueExists(name: string, options: MochiQueueRuntimeOptions | undefined): Promise<void> {
+  const { deadLetter: _, ...createOptions } = toBossQueueOptions(name, options);
+  await ensureQueueCreated(name, createOptions);
+}
+
+// Create a standalone worker's queues, applying an in-array deadLetter on first creation. A worker receives its whole
+// queues subset up front, so — unlike a lone producer — it can resolve targets: an out-of-array target is dropped with
+// a warning (it may be mounted elsewhere) and a self-reference throws, matching Mochi.serve(). Ordered so each target
+// is created before the queue pointing at it (bun-boss createQueue asserts the target exists); still ensure-only, so an
+// existing queue keeps the options its owner declared.
+async function ensureWorkerQueues(queues: MountableQueue[]): Promise<void> {
+  const declared = new Set(queues.map((q) => q.name));
+  const resolved = queues.map((q) => {
+    const bossOptions = toBossQueueOptions(q.name, q.options);
+    const deadLetter = bossOptions.deadLetter;
+    if (deadLetter === undefined) {
+      return { name: q.name, bossOptions };
+    }
+    if (deadLetter === q.name) {
+      throw new Error(`Mochi.worker(): "${q.name}" names itself as its deadLetter queue.`);
+    }
+    if (!declared.has(deadLetter)) {
+      logger.warn(
+        `[queue] "${q.name}" names "${deadLetter}" as its deadLetter queue, but no queue named "${deadLetter}" is in this worker's queues array — the link is skipped. Declare it where "${deadLetter}" is mounted.`,
+      );
+      return { name: q.name, bossOptions: withoutDeadLetter(bossOptions) };
+    }
+    return { name: q.name, bossOptions };
+  });
+  for (const { name, bossOptions } of orderByDeadLetter(resolved)) {
+    await ensureQueueCreated(name, bossOptions);
+  }
+}
+
+function withoutDeadLetter(options: UpdateQueueOptions): UpdateQueueOptions {
+  const { deadLetter: _, ...rest } = options;
+  return rest;
+}
+
+// Topologically order by the single deadLetter out-edge so a target precedes its referencer. Any queue left over is in
+// a deadLetter cycle (createQueue can't satisfy the mutual FK from scratch) — create it without the link and warn.
+function orderByDeadLetter(items: { name: string; bossOptions: UpdateQueueOptions }[]): { name: string; bossOptions: UpdateQueueOptions }[] {
+  const ordered: { name: string; bossOptions: UpdateQueueOptions }[] = [];
+  const emitted = new Set<string>();
+  let progressed = true;
+  while (progressed) {
+    progressed = false;
+    for (const item of items) {
+      if (emitted.has(item.name)) {
+        continue;
+      }
+      const target = item.bossOptions.deadLetter;
+      if (target === undefined || emitted.has(target)) {
+        ordered.push(item);
+        emitted.add(item.name);
+        progressed = true;
+      }
+    }
+  }
+  for (const item of items) {
+    if (emitted.has(item.name)) {
+      continue;
+    }
+    logger.warn(`[queue] "${item.name}" is part of a deadLetter cycle — created without the link.`);
+    ordered.push({ name: item.name, bossOptions: withoutDeadLetter(item.bossOptions) });
+    emitted.add(item.name);
+  }
+  return ordered;
 }
 
 /** Implements `Mochi.queue(name, config)` — see its JSDoc there. */
@@ -763,8 +834,8 @@ export function createWorker(queues: MountableQueue[], storage?: MochiQueueStora
           );
         }
         const boss = requireBoss();
+        await ensureWorkerQueues(queues);
         for (const q of queues) {
-          await ensureQueueExists(q.name, q.options);
           if (!registry.byName.has(q.name)) {
             registry.byName.set(q.name, producerMethods(q.name));
           }

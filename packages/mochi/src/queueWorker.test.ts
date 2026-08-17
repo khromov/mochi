@@ -1,4 +1,4 @@
-import { afterAll, afterEach, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, describe, expect, spyOn, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { Mochi } from './Mochi';
@@ -7,6 +7,7 @@ import type { MochiJob } from './queue';
 import { mochiEvents } from './events';
 import { initExtensions } from './extensions';
 import { resetStartupMilestones } from './lifecycle';
+import { logger } from './utils/log';
 
 const dataDir = mkdtempSync(path.join(import.meta.dir, '..', '.mochi-queue-worker-'));
 
@@ -118,5 +119,54 @@ describe('Mochi.worker()', () => {
     await startQueueRuntime('memory');
     const worker = Mochi.worker({ queues: [Mochi.queue('served', { storage: 'memory' })] });
     expect(worker.start()).rejects.toThrow(/this process is serving/);
+  });
+
+  test('applies an in-array deadLetter on first creation, so a terminally failed job lands in the DLQ', async () => {
+    const file = path.join(dataDir, 'worker-dlq.sqlite');
+    const landed = deferred<MochiJob<{ payload: string }>>();
+    const work = Mochi.queue<{ payload: string }>('work', {
+      storage: { sqlite: file },
+      pollingIntervalSeconds: 0.5,
+      retryLimit: 0,
+      deadLetter: 'work-dlq',
+      process: async () => {
+        throw new Error('unprocessable');
+      },
+    });
+    // The dead-letter queue is declared after the queue that references it, proving order doesn't matter.
+    const dlq = Mochi.queue<{ payload: string }>('work-dlq', {
+      storage: { sqlite: file },
+      pollingIntervalSeconds: 0.5,
+      process: async (job: MochiJob<{ payload: string }>) => landed.resolve(job),
+    });
+
+    await Mochi.worker({ queues: [work, dlq] }).start();
+    expect((await getBoss().getQueue('work'))?.deadLetter).toBe('work-dlq');
+
+    await work.add({ payload: 'keep-me' });
+    const job = await landed.promise;
+    expect(job.queue).toBe('work-dlq');
+    expect(job.data).toEqual({ payload: 'keep-me' });
+  }, 20_000);
+
+  test('skips a deadLetter that names a queue outside the worker array, with a warning, and still mounts', async () => {
+    const file = path.join(dataDir, 'worker-dlq-outside.sqlite');
+    const warn = spyOn(logger, 'warn').mockImplementation(() => {});
+    try {
+      const worker = Mochi.worker({
+        queues: [Mochi.queue('lonely', { storage: { sqlite: file }, pollingIntervalSeconds: 0.5, deadLetter: 'elsewhere', process: async () => {} })],
+      });
+      await worker.start();
+      expect((await getBoss().getQueue('lonely'))?.deadLetter).toBeNull();
+      expect(warn.mock.calls.some((args) => String(args[0]).includes('names "elsewhere" as its deadLetter'))).toBe(true);
+    } finally {
+      warn.mockRestore();
+    }
+  }, 20_000);
+
+  test('rejects a queue that names itself as its deadLetter', async () => {
+    const file = path.join(dataDir, 'worker-dlq-self.sqlite');
+    const worker = Mochi.worker({ queues: [Mochi.queue('selfref', { storage: { sqlite: file }, pollingIntervalSeconds: 0.5, deadLetter: 'selfref', process: async () => {} })] });
+    expect(worker.start()).rejects.toThrow(/names itself as its deadLetter/);
   });
 });

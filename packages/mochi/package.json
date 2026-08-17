@@ -106,7 +106,7 @@
     "@joint-ops/hitlimit-bun": "1.5.0",
     "@noble/ciphers": "2.2.0",
     "@noble/hashes": "2.2.0",
-    "bun-boss": "^0.3.0",
+    "bun-boss": "^0.4.0",
     "chokidar": "^5.0.0",
     "css-tree": "^3.2.1",
     "deepmerge": "^4.3.1",
