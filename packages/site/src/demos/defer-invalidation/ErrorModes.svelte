@@ -1,12 +1,16 @@
 <script>
-  import { isServer, reloadDeferredIsland, deferReloadState } from 'mochi-framework';
+  import { onMount } from 'svelte';
+  import { reloadDeferredIsland, deferReloadState } from 'mochi-framework';
 
   const rendered = deferReloadState('flaky');
   const offline = deferReloadState('offline');
 
-  // No island has registered during SSR, so `reloading` reads false there and the buttons would
-  // render enabled until the islands start fetching.
-  const busy = (s) => isServer || s.reloading;
+  // Starts false so SSR and the first hydration render agree: no island has registered yet, so
+  // `reloading` reads false and the buttons would otherwise ship enabled.
+  let ready = $state(false);
+  onMount(() => {
+    ready = true;
+  });
 
   const stamp = (s) => (s.lastReloaded ? `${s.lastReloadOk ? 'ok' : 'failed'} at ${s.lastReloaded.toLocaleTimeString()}` : 'not yet reloaded');
 
@@ -25,7 +29,7 @@
 
 <div class="modes">
   <div class="mode">
-    <button disabled={busy(rendered)} onclick={() => reloadDeferredIsland('flaky')}>Reload 4 — make the render throw</button>
+    <button disabled={!ready || rendered.reloading} onclick={() => reloadDeferredIsland('flaky')}>Reload 4 — make the render throw</button>
     <p class="note">
       Island 4 throws about half the time. Its own <code>&lt;svelte:boundary&gt;</code> catches it, so the island degrades to its failed snippet and the rest of the page is
       untouched. The fetch itself was fine, so <code>lastReloadOk</code> stays <strong>true</strong>.
@@ -34,7 +38,7 @@
   </div>
 
   <div class="mode">
-    <button disabled={busy(offline)} onclick={reloadOffline}>Reload 5 — make the fetch fail</button>
+    <button disabled={!ready || offline.reloading} onclick={reloadOffline}>Reload 5 — make the fetch fail</button>
     <p class="note">
       This one breaks the request instead of the render. Nothing comes back to swap in, so the island keeps the content it already had and
       <code>lastReloadOk</code> flips to <strong>false</strong>. Note the timestamp on island 5 does not change.
