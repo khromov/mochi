@@ -169,4 +169,28 @@ describe('Mochi.worker()', () => {
     const worker = Mochi.worker({ queues: [Mochi.queue('selfref', { storage: { sqlite: file }, pollingIntervalSeconds: 0.5, deadLetter: 'selfref', process: async () => {} })] });
     expect(worker.start()).rejects.toThrow(/names itself as its deadLetter/);
   });
+
+  test('warns (does not silently drop) when a declared deadLetter cannot be applied because the queue already exists', async () => {
+    const file = path.join(dataDir, 'worker-dlq-preexisting.sqlite');
+    // A prior deploy created the queue without a deadLetter link.
+    await startQueueRuntime({ sqlite: file });
+    await mountQueues([{ name: 'pre' }, { name: 'pre-dlq' }]);
+    await closeAllQueueResources();
+
+    const warn = spyOn(logger, 'warn').mockImplementation(() => {});
+    try {
+      const worker = Mochi.worker({
+        queues: [
+          Mochi.queue('pre', { storage: { sqlite: file }, pollingIntervalSeconds: 0.5, deadLetter: 'pre-dlq', process: async () => {} }),
+          Mochi.queue('pre-dlq', { storage: { sqlite: file }, pollingIntervalSeconds: 0.5, process: async () => {} }),
+        ],
+      });
+      await worker.start();
+      // Ensure-only: the existing queue keeps its null link, but the drop is surfaced, not silent.
+      expect((await getBoss().getQueue('pre'))?.deadLetter).toBeNull();
+      expect(warn.mock.calls.some((args) => String(args[0]).includes('"pre"') && String(args[0]).includes('already exists') && String(args[0]).includes('updateQueue'))).toBe(true);
+    } finally {
+      warn.mockRestore();
+    }
+  }, 20_000);
 });
