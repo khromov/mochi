@@ -2,7 +2,7 @@
 /// <reference lib="dom.iterable" />
 
 import '../debug-bar/types';
-import { registerDeferredIsland, unregisterDeferredIsland } from '../islands/deferInvalidation';
+import { notifyDeferredIslandChange, registerDeferredIsland, unregisterDeferredIsland } from '../islands/deferInvalidation';
 
 // Key must match sharedCssTracker.ts for cross-bundle dedup with HydratableIsland.
 const _css: Set<string> = ((globalThis as unknown as Record<string, unknown>).__mochi_loaded_css__ ??= new Set()) as Set<string>;
@@ -72,6 +72,14 @@ class ServerIsland extends HTMLElement {
     this.dispatchEvent(new CustomEvent(type, { bubbles: true, detail }));
   }
 
+  _notify() {
+    if (this._name) {
+      notifyDeferredIslandChange(this._name);
+    }
+  }
+
+  // Subscribers are notified from here rather than around the reload itself, so a notification
+  // can never report `_inflight` from before the mutation that prompted it.
   _track(op: Promise<unknown>): Promise<void> {
     const tracked = op
       .then(
@@ -82,8 +90,10 @@ class ServerIsland extends HTMLElement {
         if (this._inflight === tracked) {
           this._inflight = null;
         }
+        this._notify();
       });
     this._inflight = tracked;
+    this._notify();
     return tracked;
   }
 

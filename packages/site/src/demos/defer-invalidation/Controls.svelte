@@ -1,6 +1,11 @@
 <script>
-  import { reloadDeferredIsland, reloadDeferredIslandAll, isReloadingDeferredIsland } from 'mochi-framework';
+  import { reloadDeferredIsland, reloadDeferredIslandAll, isReloadingDeferredIsland, reloadingDeferredIsland } from 'mochi-framework';
   import { reloads } from './reloadCount.svelte.ts';
+
+  // Reactive: reading `.current` in the markup re-renders the dot when that island starts or
+  // stops reloading. The buttons stay clickable so the guard below is still reachable.
+  const one = reloadingDeferredIsland('1');
+  const pair = reloadingDeferredIsland('2-and-3');
 
   // One entry per island currently reloading, keyed by the element the event came from —
   // islands sharing a name each get their own, so "reload all" reports the whole batch.
@@ -54,8 +59,14 @@
 
 <div class="controls">
   <div class="buttons">
-    <button onclick={() => run('1')}>Reload 1</button>
-    <button onclick={() => run('2-and-3')}>Reload 2 + 3</button>
+    <button onclick={() => run('1')}>
+      Reload 1
+      {#if one.current}<span class="dot" aria-hidden="true"></span>{/if}
+    </button>
+    <button onclick={() => run('2-and-3')}>
+      Reload 2 + 3
+      {#if pair.current}<span class="dot" aria-hidden="true"></span>{/if}
+    </button>
     <button onclick={() => reloadDeferredIslandAll()}>Reload all</button>
   </div>
   <p class="status" class:empty={status === ''}>{status || ' '}</p>
@@ -74,6 +85,28 @@
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem;
+  }
+
+  .dot {
+    display: inline-block;
+    width: 0.5em;
+    height: 0.5em;
+    margin-left: 0.4em;
+    border-radius: 50%;
+    background: var(--badge-info-text);
+    animation: blink 0.9s ease-in-out infinite;
+  }
+
+  @keyframes blink {
+    50% {
+      opacity: 0.25;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .dot {
+      animation: none;
+    }
   }
 
   button {

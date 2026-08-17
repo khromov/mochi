@@ -69,6 +69,7 @@ export { getImageUrl, getImageAttrs, getImage, getImagePlaceholder, imagePlaceho
 // empty during SSR, so these resolve immediately on the server and only do work
 // in the browser where the `<mochi-server-island>` elements register themselves.
 export { reloadDeferredIsland, reloadDeferredIslandAll, isReloadingDeferredIsland } from "__MOCHI_DEFER_API__";
+export { reloadingDeferredIsland } from "__MOCHI_DEFER_REACTIVE__";
 // `enhance` / `deserialize` are browser-only Svelte action helpers.
 // Svelte never invokes actions during SSR, so these stubs only fire
 // if user code calls them on the server — which is a usage error.

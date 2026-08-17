@@ -6,7 +6,8 @@ import { GlobalRegistrator } from '@happy-dom/global-registrator';
 GlobalRegistrator.register({ url: 'http://localhost/' });
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { reloadDeferredIsland, reloadDeferredIslandAll, isReloadingDeferredIsland } from '../islands/deferInvalidation';
+import { reloadDeferredIsland, reloadDeferredIslandAll, isReloadingDeferredIsland, subscribeDeferredIsland } from '../islands/deferInvalidation';
+import { reloadingDeferredIsland } from '../islands/deferReloadingState';
 
 // Importing for the side effect of `customElements.define`, after the DOM globals exist.
 await import('./ServerIsland');
@@ -198,6 +199,52 @@ describe('<mochi-server-island> invalidation', () => {
     expect(seen).toEqual(['start', 'end']);
     expect(endDetail).toMatchObject({ name: 'clock', component: 'Clock_abc', ok: true });
     expect(el.innerHTML).toBe('<p>render 2</p>');
+  });
+
+  test('reloadingDeferredIsland tracks the same value as the boolean form', async () => {
+    const el = mount({ name: 'clock' });
+    await settle();
+
+    const state = reloadingDeferredIsland('clock');
+    expect(state.current).toBe(false);
+
+    holdNext = true;
+    const reloaded = reloadDeferredIsland('clock');
+    expect(state.current).toBe(true);
+    expect(state.current).toBe(isReloadingDeferredIsland('clock'));
+
+    await settle();
+    release?.();
+    await reloaded;
+    expect(state.current).toBe(false);
+    expect(el.innerHTML).toBe('<p>render 2</p>');
+  });
+
+  // The accessor is only reactive because subscribers fire on both edges; without this the
+  // value would be correct on read but never prompt a re-read.
+  test('subscribers fire when a reload starts and when it finishes', async () => {
+    mount({ name: 'clock' });
+    await settle();
+
+    const seen: boolean[] = [];
+    const unsubscribe = subscribeDeferredIsland('clock', () => seen.push(isReloadingDeferredIsland('clock')));
+
+    await reloadDeferredIsland('clock');
+    expect(seen).toEqual([true, false]);
+
+    unsubscribe();
+    await reloadDeferredIsland('clock');
+    expect(seen).toEqual([true, false]);
+  });
+
+  test('an unnamed island notifies nobody', async () => {
+    mount(null);
+    await settle();
+    const seen: number[] = [];
+    const unsubscribe = subscribeDeferredIsland('clock', () => seen.push(1));
+    await reloadDeferredIslandAll();
+    expect(seen).toEqual([]);
+    unsubscribe();
   });
 
   test('hydrated children are unmounted before the fallback replaces them', async () => {

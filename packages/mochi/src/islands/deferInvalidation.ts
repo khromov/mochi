@@ -25,6 +25,40 @@ export function registerDeferredIsland(name: string, island: ReloadableIsland): 
   set.add(island);
 }
 
+// Reload start/end listeners, pinned alongside the registry for the same cross-bundle reason:
+// `<mochi-server-island>` fires them from the inline script, while the reactive accessor that
+// consumes them lives in the hydration bundle.
+type ChangeListener = () => void;
+const listeners = () => pinGlobal('__mochi_deferred_island_listeners__', () => new Map<string, Set<ChangeListener>>());
+
+// Returns an unsubscribe function.
+export function subscribeDeferredIsland(name: string, listener: ChangeListener): () => void {
+  const map = listeners();
+  let set = map.get(name);
+  if (!set) {
+    set = new Set();
+    map.set(name, set);
+  }
+  set.add(listener);
+  return () => {
+    set.delete(listener);
+    if (set.size === 0) {
+      map.delete(name);
+    }
+  };
+}
+
+export function notifyDeferredIslandChange(name: string): void {
+  const set = listeners().get(name);
+  if (!set) {
+    return;
+  }
+  // Snapshotted: a listener may unsubscribe itself while being notified.
+  for (const listener of [...set]) {
+    listener();
+  }
+}
+
 export function unregisterDeferredIsland(name: string, island: ReloadableIsland): void {
   const map = registry();
   const set = map.get(name);

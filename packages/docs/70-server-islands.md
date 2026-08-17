@@ -99,9 +99,24 @@ await reloadDeferredIslandAll(); // reloads every named defer on the page
 
 It reports `true` while an island with that name has a fetch in flight — its first load as well as a reload.
 
+For UI that follows along, `reloadingDeferredIsland(name)` returns the same value as reactive state:
+
+```svelte
+<script>
+  import { reloadingDeferredIsland } from 'mochi-framework';
+
+  const cart = reloadingDeferredIsland('cart');
+</script>
+
+<button disabled={cart.current}>Refresh</button>
+{#if cart.current}<Spinner />{/if}
+```
+
+Reading `.current` inside a component subscribes it to that island; read anywhere else it is just the current value, so it works as a plain check too.
+
 <Callout type="info">
 
-**`isReloadingDeferredIsland` is not reactive.** Reading it in markup samples it once, at render. For a spinner or a disabled button, set your own `$state` around the reload promise instead.
+Use `isReloadingDeferredIsland` to guard a click handler and `reloadingDeferredIsland` to drive markup. The boolean is deliberately not reactive — `if (isReloadingDeferredIsland('cart'))` reads correctly in an event handler, where subscribing to anything would be pointless.
 
 </Callout>
 
