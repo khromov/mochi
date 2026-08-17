@@ -71,7 +71,7 @@ Apply `mochi:hydrate` alongside `mochi:defer` to fetch the island on demand and 
 
 <VersionNote since="0.10.0" message="Named defers and reloadDeferredIsland were added in 0.10.0." />
 
-Give a defer a `name`, then re-fetch its server HTML from the browser by calling `reloadDeferredIsland(name)`. Use it to refresh server-rendered content after a mutation without a full page reload.
+Give a defer a `name`, then re-fetch its server HTML from the browser by calling `reloadDeferredIsland(name)`. Use it to refresh server-rendered content after a mutation without a full page reload. A `name` must be a non-empty string — anything else warns and leaves the island unnamed.
 
 ```svelte
 <Cart mochi:defer={{ name: 'cart' }}>
@@ -106,11 +106,11 @@ await reloadDeferredIslandAll(); // reloads every named defer on the page
 | Field          |                                                                                     |
 | -------------- | ----------------------------------------------------------------------------------- |
 | `reloading`    | `true` while that island has a fetch in flight — its first load as well as a reload |
-| `count`        | completed reloads, successful or not                                                |
-| `lastReloadOk` | whether the last reload _fetched_ successfully, `null` before the first             |
+| `count`        | completed reload rounds, successful or not                                          |
+| `lastReloadOk` | whether the last reload round _fetched_ successfully, `null` before the first       |
 | `lastReloaded` | `Date` the last reload completed, `null` before the first                           |
 
-Islands sharing a name each count, so a name on two islands adds two per round. You get one shared instance per name, so reading it repeatedly is free — and reading a field outside a component just gives you its current value.
+Islands sharing a name reload together and settle as one round: `count` adds one per round, and `lastReloadOk` is `true` only when every island in the round fetched successfully. You get one shared instance per name, so reading it repeatedly is free — and reading a field outside a component just gives you its current value.
 
 `lastReloadOk` reports the fetch, not the render: an island whose component throws still answers with a 200, so it reads `true` while the island shows its `<svelte:boundary>` fallback. Render failures are the boundary's job, not the reload's.
 
@@ -120,11 +120,11 @@ Islands sharing a name each count, so a name on two islands adds two per round. 
 
 </Callout>
 
-Both return a promise that settles once every matching island has finished re-fetching. Islands sharing a `name` reload together, and a `mochi:defer mochi:hydrate` island unmounts its old component and re-hydrates on each reload. Reloads on the same island queue behind one another, so a reload issued after a mutation always observes it.
+Both return a promise that settles once every matching island has finished re-fetching. Islands sharing a `name` reload together, and a `mochi:defer mochi:hydrate` island unmounts its old component and re-hydrates when the new HTML lands. Reloads on the same island queue behind one another, so a reload issued after a mutation always observes it.
 
-`name` works on `mochi:defer:visible` too. A reload fetches immediately regardless of viewport, and replaces the element the viewport trigger was watching — after a manual reload, only further `reloadDeferredIsland` calls refresh it.
+`name` works on `mochi:defer:visible` too. A reload fetches immediately regardless of viewport. The viewport trigger queues behind any reload already in flight and stands down once either has delivered content, so the two can never race or double-fetch.
 
-Naming an island also opts it out of [nested inlining](#nesting-islands-inside-a-server-island): a reloadable island needs its own placeholder to fetch into.
+Naming an island also opts it out of [nested inlining](#nesting-islands-inside-a-server-island): a reloadable island needs its own placeholder to fetch into. An explicit `inline: true` on a named island is ignored, with a warning.
 
 <Callout type="info">
 
@@ -140,7 +140,7 @@ Naming an island also opts it out of [nested inlining](#nesting-islands-inside-a
 
 #### Loading state while reloading
 
-A reloading island shows the same fallback children it showed on first load, and carries two attributes for the duration:
+A reloading island keeps showing its current content — the fallback children only ever show before the first load — and carries two attributes for the duration:
 
 ```html
 <mochi-server-island data-reloading aria-busy="true"></mochi-server-island>
@@ -154,7 +154,7 @@ mochi-server-island[data-reloading] > * {
 }
 ```
 
-Give the island fallback children if you want a skeleton on reload — an island with none reloads into empty space, exactly as it looked before its first load. If the fetch fails, the content from before the reload is put back rather than leaving the skeleton up.
+The old content is swapped out only when the new HTML lands, so hydrated children keep their client state for the whole wait, and a failed fetch leaves the island exactly as it was.
 
 Size the fallback to match the loaded content, or the swap shifts the page. The wrapper is `display: contents`, so it holds no space of its own while the content is away — the fallback's own box is the only thing keeping the layout still. Giving both a shared `min-height` is usually enough:
 

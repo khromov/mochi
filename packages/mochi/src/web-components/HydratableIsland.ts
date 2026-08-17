@@ -17,6 +17,9 @@ export function registerComponent(name: string, component: Component) {
 
 class HydratableIsland extends HTMLElement {
   _hydrated = false;
+  // Bumped (as a plain field, cross-bundle like `_unmount`) by an enclosing server island when it
+  // discards this subtree, so an in-flight hydration bails instead of mounting onto detached DOM.
+  _generation = 0;
   _unmount: (() => void) | undefined;
 
   connectedCallback() {
@@ -64,6 +67,7 @@ class HydratableIsland extends HTMLElement {
     if (!name) {
       return;
     }
+    const generation = this._generation;
     // Page islands carry a `props-ref` pointing at a `<script type="application/json">` block emitted just before them,
     // while the server-island also-hydrate path inlines `props=...` — hence the fallback when no ref is present.
     const propsRef = this.getAttribute('props-ref');
@@ -101,6 +105,11 @@ class HydratableIsland extends HTMLElement {
     if (!componentRegistry[name] && componentUrl) {
       logger.log('Loading component', name, componentUrl);
       await import(componentUrl);
+    }
+
+    // Everything past here is synchronous, so one check after the awaits covers the whole method.
+    if (generation !== this._generation) {
+      return;
     }
 
     const Component = componentRegistry[name];

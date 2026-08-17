@@ -2,7 +2,7 @@
 /// <reference lib="dom.iterable" />
 
 import '../debug-bar/types';
-import { notifyDeferredIslandChange, registerDeferredIsland, unregisterDeferredIsland } from '../islands/deferInvalidation';
+import { isReloadableIslandName, notifyDeferredIslandChange, registerDeferredIsland, unregisterDeferredIsland } from '../islands/deferInvalidation';
 
 // Key must match sharedCssTracker.ts for cross-bundle dedup with HydratableIsland.
 const _css: Set<string> = ((globalThis as unknown as Record<string, unknown>).__mochi_loaded_css__ ??= new Set()) as Set<string>;
@@ -11,26 +11,30 @@ class ServerIsland extends HTMLElement {
   _loaded = false;
   _options: Record<string, unknown> = {};
   _name: string | null = null;
-  _inflight: Promise<void> | null = null;
-  _lastOk: boolean | undefined;
-  _fallback = '';
+  _inflight: Promise<boolean> | null = null;
+  _everLoaded = false;
 
   connectedCallback() {
+    if (this._loaded) {
+      // Re-registered from the stored name, not the attribute, so a moved element stays
+      // reachable by `reloadDeferredIsland` even if `server-options` was mangled in transit.
+      if (this._name) {
+        registerDeferredIsland(this._name, this);
+      }
+      return;
+    }
+    this._loaded = true;
+
     const optionsRaw = this.getAttribute('server-options');
     const options = optionsRaw ? JSON.parse(optionsRaw) : {};
     this._options = options;
 
-    // Registered even on a re-connect so `reloadDeferredIsland` can still reach a moved element.
-    this._name = typeof options.name === 'string' ? options.name : null;
-    if (this._name) {
-      registerDeferredIsland(this._name, this);
+    if (isReloadableIslandName(options.name)) {
+      this._name = options.name;
+      registerDeferredIsland(options.name, this);
+    } else if (options.name !== undefined) {
+      window.__mochi_warn?.(`[mochi] mochi:defer name must be a non-empty string; got ${JSON.stringify(options.name)} — the island will not be reloadable.`);
     }
-
-    if (this._loaded) {
-      return;
-    }
-    this._loaded = true;
-    this._fallback = this.innerHTML;
 
     if (this.getAttribute('defer-on') === 'visible') {
       // `display:contents` leaves this element without a layout box, so the firstElementChild is observed instead; with
@@ -41,7 +45,9 @@ class ServerIsland extends HTMLElement {
           for (const e of entries) {
             if (e.isIntersecting) {
               obs.disconnect();
-              this._track(this._fetchContent(options));
+              // Queued behind any manual reload already running so the two can never race, and
+              // skipped when one of them has already delivered content.
+              this._track((this._inflight ?? Promise.resolve(true)).then(() => this._everLoaded || this._fetchContent(this._options)));
               return;
             }
           }
@@ -63,7 +69,11 @@ class ServerIsland extends HTMLElement {
   // Svelte roots outlive their DOM, so a discarded subtree keeps running without this.
   _unmountChildren() {
     for (const el of this.querySelectorAll('mochi-hydratable-island')) {
-      (el as { _unmount?: () => void })._unmount?.();
+      const island = el as { _unmount?: () => void; _generation?: number };
+      // Bumped so a hydration whose bundle import is still in flight bails instead of mounting
+      // a permanently-orphaned root onto the discarded subtree.
+      island._generation = (island._generation ?? 0) + 1;
+      island._unmount?.();
     }
   }
 
@@ -73,21 +83,19 @@ class ServerIsland extends HTMLElement {
     }
   }
 
-  // Notified from here, not around the reload, so a notification never reports a stale `_inflight`.
-  _track(op: Promise<unknown>): Promise<void> {
+  // Notified from here, not inside the operation, so a notification never reports a stale `_inflight`.
+  _track(op: Promise<boolean>): Promise<boolean> {
     const tracked = op
       .then(
-        () => {},
-        () => {},
+        (ok) => ok === true,
+        () => false,
       )
-      .finally(() => {
+      .then((ok) => {
         if (this._inflight === tracked) {
           this._inflight = null;
         }
-        // `_reload` parks its outcome here because this notification waits on `_inflight` clearing.
-        const ok = this._lastOk;
-        this._lastOk = undefined;
-        this._notify(ok === undefined ? {} : { ok });
+        this._notify();
+        return ok;
       });
     this._inflight = tracked;
     this._notify();
@@ -95,30 +103,20 @@ class ServerIsland extends HTMLElement {
   }
 
   // Queued behind any fetch already running rather than sharing it, so a reload issued after a
-  // mutation observes it and a late-landing fetch cannot clobber newer content.
-  reload(): Promise<void> {
-    return this._track((this._inflight ?? Promise.resolve()).then(() => this._reload()));
+  // mutation observes it and a late-landing fetch cannot clobber newer content. The outcome
+  // travels through the returned promise; `reloadDeferredIsland` aggregates it per round.
+  reload(): Promise<boolean> {
+    return this._track((this._inflight ?? Promise.resolve(true)).then(() => this._reload()));
   }
 
-  async _reload() {
-    // Kept so a failed reload restores the data rather than stranding the island on the skeleton.
-    const previous = this.innerHTML;
-
+  async _reload(): Promise<boolean> {
     this.setAttribute('data-reloading', '');
     this.setAttribute('aria-busy', 'true');
-
-    this._unmountChildren();
-    this.innerHTML = this._fallback;
-
-    let ok = false;
     try {
-      ok = await this._fetchContent(this._options);
+      // The current content stays up until the new HTML lands: swapping to the fallback would
+      // discard hydrated children's client state even when the fetch succeeds.
+      return await this._fetchContent(this._options);
     } finally {
-      if (!ok) {
-        this._unmountChildren();
-        this.innerHTML = previous;
-      }
-      this._lastOk = ok;
       this.removeAttribute('data-reloading');
       this.removeAttribute('aria-busy');
     }
@@ -186,6 +184,7 @@ class ServerIsland extends HTMLElement {
         // SAFETY: HTML comes from our own same-origin server-island endpoint with encrypted props.
         // If the island endpoint ever returns user-controlled content, this must be sanitized.
         this.innerHTML = html;
+        this._everLoaded = true;
         return true;
       } catch (err) {
         lastErr = err;

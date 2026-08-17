@@ -147,7 +147,7 @@ describe('<mochi-server-island> invalidation', () => {
     expect(isReloadingDeferredIsland('nope')).toBe(false);
   });
 
-  test('a reload shows the original fallback, then the new content', async () => {
+  test('a reload keeps the current content up until the new HTML lands', async () => {
     const el = mount({ name: 'clock' }, '<div class="skeleton">Loading…</div>');
     await settle();
     expect(el.innerHTML).toBe('<p>render 1</p>');
@@ -155,7 +155,7 @@ describe('<mochi-server-island> invalidation', () => {
     holdNext = true;
     const reloaded = reloadDeferredIsland('clock');
     await settle();
-    expect(el.innerHTML).toBe('<div class="skeleton">Loading…</div>');
+    expect(el.innerHTML).toBe('<p>render 1</p>');
     expect(el.hasAttribute('data-reloading')).toBe(true);
     expect(el.getAttribute('aria-busy')).toBe('true');
 
@@ -166,7 +166,7 @@ describe('<mochi-server-island> invalidation', () => {
     expect(el.hasAttribute('aria-busy')).toBe(false);
   });
 
-  test('a failed reload restores the content it was showing', async () => {
+  test('a failed reload leaves the content untouched', async () => {
     const el = mount({ name: 'clock', retries: 0 }, '<div class="skeleton">Loading…</div>');
     await settle();
     expect(el.innerHTML).toBe('<p>render 1</p>');
@@ -179,8 +179,9 @@ describe('<mochi-server-island> invalidation', () => {
   });
 
   // `DeferReloadState` is a rune module that plain `bun test` cannot import, so what is pinned
-  // here is the payload it derives every field from.
-  test('the settle notification carries the reload outcome', async () => {
+  // here is the payload it derives every field from: two `{}` edges per element, then one
+  // aggregated `{ ok }` per round from `reloadDeferredIsland`.
+  test('the round notification carries the reload outcome after the edges', async () => {
     mount({ name: 'clock', retries: 0 });
     await settle();
 
@@ -188,12 +189,40 @@ describe('<mochi-server-island> invalidation', () => {
     const unsubscribe = subscribeDeferredIsland('clock', (change) => changes.push({ ...change, reloading: isReloadingDeferredIsland('clock') }));
 
     await reloadDeferredIsland('clock');
-    expect(changes).toEqual([{ reloading: true }, { ok: true, reloading: false }]);
+    expect(changes).toEqual([{ reloading: true }, { reloading: false }, { ok: true, reloading: false }]);
 
     globalThis.fetch = (async () => new Response('nope', { status: 404 })) as unknown as typeof fetch;
     await reloadDeferredIsland('clock');
-    expect(changes[3]).toEqual({ ok: false, reloading: false });
+    expect(changes[5]).toEqual({ ok: false, reloading: false });
 
+    unsubscribe();
+  });
+
+  test('a partially failed round reports ok: false even when the success lands last', async () => {
+    mount({ name: 'pair', retries: 0 });
+    mount({ name: 'pair', retries: 0 });
+    await settle();
+
+    // First fetch of the round 404s immediately; the second is held open and succeeds later.
+    let failed = false;
+    const okFetch = globalThis.fetch;
+    globalThis.fetch = (async (...args: Parameters<typeof fetch>) => {
+      if (!failed) {
+        failed = true;
+        return new Response('nope', { status: 404 });
+      }
+      return okFetch(...args);
+    }) as typeof fetch;
+    holdNext = true;
+
+    const changes: Array<{ ok?: boolean }> = [];
+    const unsubscribe = subscribeDeferredIsland('pair', (change) => changes.push(change));
+    const reloaded = reloadDeferredIsland('pair');
+    await settle();
+    release?.();
+    await reloaded;
+
+    expect(changes.at(-1)).toEqual({ ok: false });
     unsubscribe();
   });
 
@@ -217,11 +246,11 @@ describe('<mochi-server-island> invalidation', () => {
     const unsubscribe = subscribeDeferredIsland('clock', () => seen.push(isReloadingDeferredIsland('clock')));
 
     await reloadDeferredIsland('clock');
-    expect(seen).toEqual([true, false]);
+    expect(seen).toEqual([true, false, false]);
 
     unsubscribe();
     await reloadDeferredIsland('clock');
-    expect(seen).toEqual([true, false]);
+    expect(seen).toEqual([true, false, false]);
   });
 
   test('an unnamed island notifies nobody', async () => {
@@ -234,7 +263,7 @@ describe('<mochi-server-island> invalidation', () => {
     unsubscribe();
   });
 
-  test('hydrated children are unmounted before the fallback replaces them', async () => {
+  test('hydrated children stay mounted until the new HTML lands', async () => {
     const el = mount({ name: 'clock' });
     await settle();
 
@@ -247,11 +276,12 @@ describe('<mochi-server-island> invalidation', () => {
     holdNext = true;
     const reloaded = reloadDeferredIsland('clock');
     await settle();
-    // Torn down as soon as the skeleton goes up, not only when the new HTML lands.
-    expect(unmounted).toBe(1);
+    // The live subtree keeps running while the fetch is in flight.
+    expect(unmounted).toBe(0);
 
     release?.();
     await reloaded;
+    expect(unmounted).toBe(1);
   });
 
   test('hydrated children are unmounted before the subtree is replaced', async () => {
@@ -266,5 +296,41 @@ describe('<mochi-server-island> invalidation', () => {
 
     await reloadDeferredIsland('clock');
     expect(unmounted).toBe(1);
+  });
+
+  // The bump is what an in-flight hydration (no `_unmount` yet) compares against before mounting.
+  test('discarding a subtree bumps the child generation', async () => {
+    const el = mount({ name: 'clock' });
+    await settle();
+
+    const child = document.createElement('mochi-hydratable-island');
+    el.innerHTML = '';
+    el.appendChild(child);
+
+    await reloadDeferredIsland('clock');
+    expect((child as { _generation?: number })._generation).toBe(1);
+  });
+
+  test('an empty or non-string name is treated as unnamed', async () => {
+    mount({ name: '' });
+    mount({ name: 5 });
+    await settle();
+    expect(bodies).toHaveLength(2);
+
+    await reloadDeferredIslandAll();
+    expect(bodies).toHaveLength(2);
+  });
+
+  test('a moved island stays reloadable even if server-options was stripped', async () => {
+    const el = mount({ name: 'clock' });
+    await settle();
+
+    el.remove();
+    el.removeAttribute('server-options');
+    document.body.appendChild(el);
+    await settle();
+
+    await reloadDeferredIsland('clock');
+    expect(bodies).toHaveLength(2);
   });
 });

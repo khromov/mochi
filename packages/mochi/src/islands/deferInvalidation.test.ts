@@ -5,18 +5,19 @@ import {
   reloadDeferredIsland,
   reloadDeferredIslandAll,
   isReloadingDeferredIsland,
+  isReloadableIslandName,
   subscribeDeferredIsland,
   notifyDeferredIslandChange,
   type ReloadableIsland,
 } from './deferInvalidation';
 
-function stub(): ReloadableIsland & { reloads: number; busy: boolean } {
+function stub(ok = true): ReloadableIsland & { reloads: number; busy: boolean } {
   return {
     reloads: 0,
     busy: false,
     reload() {
       this.reloads++;
-      return Promise.resolve();
+      return Promise.resolve(ok);
     },
     isReloading() {
       return this.busy;
@@ -111,7 +112,7 @@ describe('deferInvalidation', () => {
         new Promise((r) =>
           setTimeout(() => {
             done = true;
-            r();
+            r(true);
           }, 10),
         ),
     };
@@ -120,5 +121,45 @@ describe('deferInvalidation', () => {
     await reloadDeferredIsland('slow');
 
     expect(done).toBe(true);
+  });
+
+  it('a round is only ok when every island sharing the name succeeded', async () => {
+    registerDeferredIsland('mixed', stub(true));
+    registerDeferredIsland('mixed', stub(false));
+    registerDeferredIsland('good', stub(true));
+    const changes: Array<{ ok?: boolean }> = [];
+    const unsubMixed = subscribeDeferredIsland('mixed', (c) => changes.push(c));
+    const unsubGood = subscribeDeferredIsland('good', (c) => changes.push(c));
+
+    await reloadDeferredIsland('mixed');
+    expect(changes.at(-1)).toEqual({ ok: false });
+
+    await reloadDeferredIsland('good');
+    expect(changes.at(-1)).toEqual({ ok: true });
+
+    unsubMixed();
+    unsubGood();
+  });
+
+  // Unsubscribers get called twice in real teardown paths; a stale one must not detach anyone else.
+  it('a stale double-unsubscribe leaves a later subscriber attached', () => {
+    const first = subscribeDeferredIsland('mine', () => {});
+    first();
+
+    const seen: number[] = [];
+    const unsubscribe = subscribeDeferredIsland('mine', () => seen.push(1));
+    first();
+
+    notifyDeferredIslandChange('mine');
+    expect(seen).toEqual([1]);
+    unsubscribe();
+  });
+
+  it('isReloadableIslandName accepts only non-empty strings', () => {
+    expect(isReloadableIslandName('cart')).toBe(true);
+    expect(isReloadableIslandName('')).toBe(false);
+    expect(isReloadableIslandName(5)).toBe(false);
+    expect(isReloadableIslandName(undefined)).toBe(false);
+    expect(isReloadableIslandName(null)).toBe(false);
   });
 });
