@@ -43,7 +43,6 @@ export function renderMochiEnvServer(development: boolean): string {
     __MOCHI_IMAGE_API__: frameworkFile('image/imageApi.ts'),
     __MOCHI_DEFER_API__: frameworkFile('islands/deferInvalidation.ts'),
     __MOCHI_DEFER_REACTIVE__: frameworkFile('islands/deferReloadingState.ts'),
-    __MOCHI_DEFER_SHARED__: frameworkFile('islands/deferReloads.svelte.ts'),
     __MOCHI_ENHANCE_SSR__: frameworkFile('runtime/enhance.ssr.ts'),
     __MOCHI_RATE_LIMIT__: frameworkFile('runtime/rateLimit.ts'),
   });
@@ -59,7 +58,6 @@ export function renderMochiEnvClient(development: boolean, cookiesClientPath: st
     __MOCHI_TRAILING_SLASH__: frameworkFile('runtime/trailingSlash.ts'),
     __MOCHI_DEFER_API__: frameworkFile('islands/deferInvalidation.ts'),
     __MOCHI_DEFER_REACTIVE__: frameworkFile('islands/deferReloadingState.ts'),
-    __MOCHI_DEFER_SHARED__: frameworkFile('islands/deferReloads.svelte.ts'),
     __MOCHI_ENHANCE_CLIENT__: enhanceClientPath,
   });
 }

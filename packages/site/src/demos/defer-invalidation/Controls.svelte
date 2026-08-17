@@ -1,5 +1,5 @@
 <script>
-  import { reloadDeferredIsland, reloadDeferredIslandAll, isReloadingDeferredIsland, reloadingDeferredIsland, deferReloads } from 'mochi-framework';
+  import { reloadDeferredIsland, reloadDeferredIslandAll, isReloadingDeferredIsland, reloadingDeferredIsland } from 'mochi-framework';
   import { reloads } from './reloadCount.svelte.ts';
 
   // Reactive: reading `.current` in the markup re-renders the dot when that island starts or
@@ -71,10 +71,6 @@
   </div>
   <p class="status" class:empty={status === ''}>{status || ' '}</p>
   <p class="count">Island reloads completed: <strong>{reloads.count}</strong> <span class="via">(counted from mochi:island:reloadend)</span></p>
-  <p class="count">
-    Shared rune state: <code>deferReloads['1']</code> = <strong>{String(!!deferReloads['1'])}</strong>,
-    <code>deferReloads['2-and-3']</code> = <strong>{String(!!deferReloads['2-and-3'])}</strong>
-  </p>
 </div>
 
 <style>

@@ -120,24 +120,6 @@ Use `isReloadingDeferredIsland` to guard a click handler and `reloadingDeferredI
 
 </Callout>
 
-`deferReloads` exposes the same thing as shared rune state, keyed by name, for reading straight from markup:
-
-```svelte
-<script>
-  import { deferReloads } from 'mochi-framework';
-</script>
-
-{#if deferReloads.cart}<Spinner />{/if}
-```
-
-A key that no island has used yet reads as `undefined`, and becomes reactive once it appears.
-
-<Callout type="warning">
-
-**`deferReloads` is only importable from `.svelte` / `.svelte.ts` files.** It is a rune module, so it needs Svelte to compile it. Server code that imports `mochi-framework` directly — your `index.ts`, an API route, a plain `.ts` helper — must use `reloadingDeferredIsland` or `isReloadingDeferredIsland` instead.
-
-</Callout>
-
 Both return a promise that settles once every matching island has finished re-fetching. Islands sharing a `name` reload together, and a `mochi:defer mochi:hydrate` island unmounts its old component and re-hydrates on each reload. Reloads on the same island queue behind one another, so a reload issued after a mutation always observes it.
 
 `name` works on `mochi:defer:visible` too. A reload fetches immediately regardless of viewport, and replaces the element the viewport trigger was watching — after a manual reload, only further `reloadDeferredIsland` calls refresh it.

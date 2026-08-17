@@ -48,26 +48,12 @@ export function subscribeDeferredIsland(name: string, listener: ChangeListener):
   };
 }
 
-// Listeners for *any* island, so a single mirror can track every name without knowing them up
-// front — what the shared-state module subscribes with.
-type AnyChangeListener = (name: string) => void;
-const anyListeners = () => pinGlobal('__mochi_deferred_island_any_listeners__', () => new Set<AnyChangeListener>());
-
-export function subscribeDeferredIslandAny(listener: AnyChangeListener): () => void {
-  const set = anyListeners();
-  set.add(listener);
-  return () => set.delete(listener);
-}
-
 export function notifyDeferredIslandChange(name: string): void {
-  // Snapshotted: a listener may unsubscribe itself while being notified.
-  for (const listener of [...anyListeners()]) {
-    listener(name);
-  }
   const set = listeners().get(name);
   if (!set) {
     return;
   }
+  // Snapshotted: a listener may unsubscribe itself while being notified.
   for (const listener of [...set]) {
     listener();
   }
