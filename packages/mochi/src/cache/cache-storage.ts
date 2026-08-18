@@ -220,6 +220,7 @@ async function renameWithRetry(from: string, to: string): Promise<void> {
   }
 }
 
+// TODO: This is very hacky and we should check if 1.4.0 solves it and/or remove this asap
 // Windows reports a delete-pending file — a concurrent sweep or removeItem mid-unlink — as EPERM/EACCES
 // on open rather than ENOENT, and an antivirus/indexer handle surfaces the same codes; retrying lets the
 // delete finish into a plain ENOENT miss and a transient lock clear into a successful read. ENOENT itself
