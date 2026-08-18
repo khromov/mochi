@@ -488,6 +488,14 @@ describe('preprocessHydratable', () => {
     expect(transformed).toContain('__mochi_inline_island__(__mochi_sopts__)');
   });
 
+  test('mochi:defer with a name carries it through server-options', () => {
+    const source = `${SCRIPT('import Srv from "./Srv.svelte";')}<Srv mochi:defer={{ name: 'clock' }} />`;
+    const { transformed } = preprocessHydratable(source, '/test/File.svelte');
+
+    expect(transformed).toContain(`{@const __mochi_sopts__ = ({ name: 'clock' })}`);
+    expect(transformed).toContain('server-options={JSON.stringify(__mochi_sopts__)}');
+  });
+
   test('mochi:defer without options omits server-options attribute', () => {
     const source = `${SCRIPT('import Srv from "./Srv.svelte";')}<Srv mochi:defer name="test" />`;
     const { transformed } = preprocessHydratable(source, '/test/File.svelte');

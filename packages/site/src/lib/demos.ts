@@ -48,6 +48,7 @@ import { files as requestId } from '../demos/request-id/files.ts';
 import { files as modeWatcher } from '../demos/mode-watcher/files.ts';
 import { files as runed } from '../demos/runed/files.ts';
 import { files as serverIsland } from '../demos/server-island/files.ts';
+import { files as deferInvalidation } from '../demos/defer-invalidation/files.ts';
 import { files as serverProps } from '../demos/server-props/files.ts';
 import { files as sharedState } from '../demos/shared-state/files.ts';
 import { files as streams } from '../demos/streams/files.ts';
@@ -305,6 +306,14 @@ export const demos: Demo[] = [
     files: serverIsland,
     title: 'Server Islands',
     hook: 'How server islands work — components marked mochi:defer render server-side on demand after the initial page is delivered.',
+    category: 'hydration',
+  },
+  {
+    href: '/demos/defer-invalidation/',
+    slug: 'defer-invalidation',
+    files: deferInvalidation,
+    title: 'Invalidate mochi:defer islands',
+    hook: 'How to reload server islands on demand — name a mochi:defer island and call reloadDeferredIsland(name) from the browser to re-fetch its server HTML.',
     category: 'hydration',
   },
   {
