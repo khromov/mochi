@@ -1,10 +1,9 @@
 import { SQL } from 'bun';
-import { mkdirSync } from 'node:fs';
-import path from 'node:path';
 import { parse, stringify } from 'devalue';
 import { pinGlobal } from './utils/globalState';
 import { getMochiConfig } from './mochiConfig';
 import { logger } from './utils/log';
+import { isValidStorageObject, openSqliteFile } from './utils/storageConfig';
 // Type-only so bun-boss (queue.ts's runtime dep) never lands in a bundle that only uses options.
 import type { PGliteLike } from './queue';
 
@@ -14,26 +13,8 @@ import type { PGliteLike } from './queue';
  */
 export type MochiOptionsStorage = { sqlite: string } | { postgres: string } | { pglite: PGliteLike };
 
-const storageChecks: Record<string, (value: unknown) => boolean> = {
-  sqlite: (value) => typeof value === 'string' && value.length > 0,
-  postgres: (value) => typeof value === 'string' && value.length > 0,
-  pglite: (value) => {
-    const instance = value as Partial<PGliteLike> | null;
-    return typeof instance === 'object' && instance !== null && typeof instance.query === 'function' && typeof instance.exec === 'function';
-  },
-};
-
-/** Runtime-validates what the types already promise, because `optionsStorage` often arrives from untyped config. */
 export function isValidOptionsStorage(storage: MochiOptionsStorage): boolean {
-  if (typeof storage !== 'object' || storage === null) {
-    return false;
-  }
-  const [entry, ...extra] = Object.entries(storageChecks).filter(([key]) => key in storage);
-  if (!entry || extra.length > 0) {
-    return false;
-  }
-  const [key, check] = entry;
-  return check((storage as unknown as Record<string, unknown>)[key]);
+  return isValidStorageObject(storage);
 }
 
 // Drivers deal in already-serialized strings; devalue stays in the public layer.
@@ -49,57 +30,77 @@ interface OptionsDriver {
   close(): Promise<void>;
 }
 
-async function createSqliteDriver(file: string): Promise<OptionsDriver> {
-  mkdirSync(path.dirname(path.resolve(file)), { recursive: true });
-  const sql = new SQL(`sqlite://${file}`);
-  try {
-    await sql.unsafe(
-      'CREATE TABLE IF NOT EXISTS mochi_options (key TEXT PRIMARY KEY, value TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)',
-    );
-  } catch (err) {
-    await sql.close().catch(() => {});
-    throw err;
-  }
-  return {
-    async get(key) {
-      const rows = (await sql`SELECT value FROM mochi_options WHERE key = ${key}`) as Array<{ value: string }>;
-      return rows[0]?.value;
-    },
-    async getVersioned(key) {
-      const rows = (await sql`SELECT value, version FROM mochi_options WHERE key = ${key}`) as Array<{ value: string; version: number }>;
-      return rows[0] ? { serialized: rows[0].value, version: rows[0].version } : undefined;
-    },
-    async insert(key, serialized, now) {
-      const rows = (await sql`
-        INSERT INTO mochi_options (key, value, created_at, updated_at) VALUES (${key}, ${serialized}, ${now}, ${now})
-        ON CONFLICT (key) DO NOTHING RETURNING key`) as Array<{ key: string }>;
-      return rows.length === 1;
-    },
-    async upsert(key, serialized, now) {
-      await sql`
-        INSERT INTO mochi_options (key, value, created_at, updated_at) VALUES (${key}, ${serialized}, ${now}, ${now})
-        ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, version = version + 1`;
-    },
-    async updateVersioned(key, serialized, expectedVersion, now) {
-      const rows = (await sql`
-        UPDATE mochi_options SET value = ${serialized}, version = version + 1, updated_at = ${now}
-        WHERE key = ${key} AND version = ${expectedVersion} RETURNING key`) as Array<{ key: string }>;
-      return rows.length === 1;
-    },
-    async delete(key) {
-      const rows = (await sql`DELETE FROM mochi_options WHERE key = ${key} RETURNING key`) as Array<{ key: string }>;
-      return rows.length === 1;
-    },
-    async close() {
-      await sql.close();
-    },
-  };
-}
+type SqlExecutor = (text: string, params: unknown[]) => Promise<Array<Record<string, unknown>>>;
+
+const SQLITE_DDL =
+  'CREATE TABLE IF NOT EXISTS mochi_options (key TEXT PRIMARY KEY, value TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)';
 
 const POSTGRES_DDL = [
   'CREATE SCHEMA IF NOT EXISTS mochi_options',
   'CREATE TABLE IF NOT EXISTS mochi_options.options (key TEXT PRIMARY KEY, value TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 0, created_at BIGINT NOT NULL, updated_at BIGINT NOT NULL)',
 ];
+
+// One statement set for all three backends; the dialects differ only in table name and how the upsert's SET
+// expression must reference the existing row's version (Postgres qualifies it against the schema-local table name).
+// Placeholders must appear in ascending numeric order: Bun's sqlite adapter binds an array by appearance, not by $n.
+function createSqlDriver(executor: SqlExecutor, table: string, versionRef: string, close: () => Promise<void>): OptionsDriver {
+  return {
+    async get(key) {
+      const rows = (await executor(`SELECT value FROM ${table} WHERE key = $1`, [key])) as Array<{ value: string }>;
+      return rows[0]?.value;
+    },
+    async getVersioned(key) {
+      const rows = (await executor(`SELECT value, version FROM ${table} WHERE key = $1`, [key])) as Array<{ value: string; version: number }>;
+      return rows[0] ? { serialized: rows[0].value, version: rows[0].version } : undefined;
+    },
+    async insert(key, serialized, now) {
+      const rows = await executor(`INSERT INTO ${table} (key, value, created_at, updated_at) VALUES ($1, $2, $3, $4) ON CONFLICT (key) DO NOTHING RETURNING key`, [
+        key,
+        serialized,
+        now,
+        now,
+      ]);
+      return rows.length === 1;
+    },
+    async upsert(key, serialized, now) {
+      await executor(
+        `INSERT INTO ${table} (key, value, created_at, updated_at) VALUES ($1, $2, $3, $4) ` +
+          `ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, version = ${versionRef} + 1`,
+        [key, serialized, now, now],
+      );
+    },
+    async updateVersioned(key, serialized, expectedVersion, now) {
+      const rows = await executor(`UPDATE ${table} SET value = $1, version = version + 1, updated_at = $2 WHERE key = $3 AND version = $4 RETURNING key`, [
+        serialized,
+        now,
+        key,
+        expectedVersion,
+      ]);
+      return rows.length === 1;
+    },
+    async delete(key) {
+      const rows = await executor(`DELETE FROM ${table} WHERE key = $1 RETURNING key`, [key]);
+      return rows.length === 1;
+    },
+    close,
+  };
+}
+
+async function createSqliteDriver(file: string): Promise<OptionsDriver> {
+  const sql = openSqliteFile(file);
+  try {
+    await sql.unsafe(SQLITE_DDL);
+  } catch (err) {
+    await sql.close().catch(() => {});
+    throw err;
+  }
+  return createSqlDriver(
+    (text, params) => sql.unsafe(text, params) as Promise<Array<Record<string, unknown>>>,
+    'mochi_options',
+    'version',
+    () => sql.close(),
+  );
+}
 
 async function createPostgresDriver(url: string): Promise<OptionsDriver> {
   const sql = new SQL(url);
@@ -111,82 +112,28 @@ async function createPostgresDriver(url: string): Promise<OptionsDriver> {
     await sql.close().catch(() => {});
     throw err;
   }
-  return {
-    async get(key) {
-      const rows = (await sql`SELECT value FROM mochi_options.options WHERE key = ${key}`) as Array<{ value: string }>;
-      return rows[0]?.value;
-    },
-    async getVersioned(key) {
-      const rows = (await sql`SELECT value, version FROM mochi_options.options WHERE key = ${key}`) as Array<{ value: string; version: number }>;
-      return rows[0] ? { serialized: rows[0].value, version: rows[0].version } : undefined;
-    },
-    async insert(key, serialized, now) {
-      const rows = (await sql`
-        INSERT INTO mochi_options.options (key, value, created_at, updated_at) VALUES (${key}, ${serialized}, ${now}, ${now})
-        ON CONFLICT (key) DO NOTHING RETURNING key`) as Array<{ key: string }>;
-      return rows.length === 1;
-    },
-    async upsert(key, serialized, now) {
-      await sql`
-        INSERT INTO mochi_options.options (key, value, created_at, updated_at) VALUES (${key}, ${serialized}, ${now}, ${now})
-        ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, version = options.version + 1`;
-    },
-    async updateVersioned(key, serialized, expectedVersion, now) {
-      const rows = (await sql`
-        UPDATE mochi_options.options SET value = ${serialized}, version = version + 1, updated_at = ${now}
-        WHERE key = ${key} AND version = ${expectedVersion} RETURNING key`) as Array<{ key: string }>;
-      return rows.length === 1;
-    },
-    async delete(key) {
-      const rows = (await sql`DELETE FROM mochi_options.options WHERE key = ${key} RETURNING key`) as Array<{ key: string }>;
-      return rows.length === 1;
-    },
-    async close() {
-      await sql.close();
-    },
-  };
+  return createSqlDriver(
+    (text, params) => sql.unsafe(text, params) as Promise<Array<Record<string, unknown>>>,
+    'mochi_options.options',
+    'options.version',
+    () => sql.close(),
+  );
 }
 
 async function createPgliteDriver(instance: PGliteLike): Promise<OptionsDriver> {
-  await instance.exec(POSTGRES_DDL.join('; '));
-  return {
-    async get(key) {
-      const { rows } = await instance.query<{ value: string }>('SELECT value FROM mochi_options.options WHERE key = $1', [key]);
-      return rows[0]?.value;
-    },
-    async getVersioned(key) {
-      const { rows } = await instance.query<{ value: string; version: number }>('SELECT value, version FROM mochi_options.options WHERE key = $1', [key]);
-      return rows[0] ? { serialized: rows[0].value, version: rows[0].version } : undefined;
-    },
-    async insert(key, serialized, now) {
-      const { rows } = await instance.query(
-        'INSERT INTO mochi_options.options (key, value, created_at, updated_at) VALUES ($1, $2, $3, $4) ON CONFLICT (key) DO NOTHING RETURNING key',
-        [key, serialized, now, now],
-      );
-      return rows.length === 1;
-    },
-    async upsert(key, serialized, now) {
-      await instance.query(
-        'INSERT INTO mochi_options.options (key, value, created_at, updated_at) VALUES ($1, $2, $3, $4) ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, version = options.version + 1',
-        [key, serialized, now, now],
-      );
-    },
-    async updateVersioned(key, serialized, expectedVersion, now) {
-      const { rows } = await instance.query('UPDATE mochi_options.options SET value = $2, version = version + 1, updated_at = $4 WHERE key = $1 AND version = $3 RETURNING key', [
-        key,
-        serialized,
-        expectedVersion,
-        now,
-      ]);
-      return rows.length === 1;
-    },
-    async delete(key) {
-      const { rows } = await instance.query('DELETE FROM mochi_options.options WHERE key = $1 RETURNING key', [key]);
-      return rows.length === 1;
-    },
+  // Statements must go through bun-boss's adapter: its module-level per-instance lock is shared with a queue
+  // subsystem wrapping the same instance, so an options write can never interleave with (and be rolled back by) an
+  // open queue transaction on the single connection. Imported lazily to keep bun-boss out of options-only bundles.
+  const { fromPglite } = await import('bun-boss');
+  const db = fromPglite(instance);
+  await db.executeSql(POSTGRES_DDL.join('; '));
+  return createSqlDriver(
+    async (text, params) => (await db.executeSql(text, params)).rows as Array<Record<string, unknown>>,
+    'mochi_options.options',
+    'options.version',
     // The caller constructs and owns the PGlite instance (same contract as queue storage), so there is nothing to close.
-    async close() {},
-  };
+    async () => {},
+  );
 }
 
 function createDriver(storage: MochiOptionsStorage): Promise<OptionsDriver> {
@@ -200,46 +147,41 @@ function createDriver(storage: MochiOptionsStorage): Promise<OptionsDriver> {
 }
 
 interface OptionsRegistry {
-  driver: OptionsDriver | null;
   initPromise: Promise<OptionsDriver> | null;
-  storageOverride: MochiOptionsStorage | null;
+  storage: MochiOptionsStorage | null;
 }
 
 const registry = pinGlobal<OptionsRegistry>('__mochi_options_registry__', () => ({
-  driver: null,
   initPromise: null,
-  storageOverride: null,
+  storage: null,
 }));
 
-function resolveStorage(method: string, key: string): MochiOptionsStorage {
-  if (registry.storageOverride) {
-    return registry.storageOverride;
+/** Registers where MochiOptions connects on first use — called by Mochi.serve({ optionsStorage }) at boot, and directly by tests. Pass `null` to clear. */
+export function initOptionsStorage(storage: MochiOptionsStorage | null): void {
+  if (storage !== null && !isValidOptionsStorage(storage)) {
+    throw new Error(`initOptionsStorage(): expected { sqlite: 'path/to.db' }, { postgres: url }, or { pglite: instance }.`);
   }
-  let storage: MochiOptionsStorage | undefined;
+  registry.storage = storage;
+}
+
+function resolveStorage(method: string, key: string): MochiOptionsStorage {
+  if (registry.storage) {
+    return registry.storage;
+  }
   try {
-    storage = getMochiConfig().options.optionsStorage;
+    getMochiConfig();
   } catch {
     throw new Error(`MochiOptions.${method}("${key}"): Mochi.serve() has not been called yet. Options become available once Mochi.serve({ optionsStorage }) runs.`);
   }
-  if (storage === undefined) {
-    throw new Error(
-      `MochiOptions.${method}("${key}"): no optionsStorage is configured. Pass optionsStorage to Mochi.serve() — ` +
-        `{ sqlite: 'data/options.db' }, { postgres: url }, or { pglite: instance } — to enable the options store.`,
-    );
-  }
-  return storage;
+  throw new Error(
+    `MochiOptions.${method}("${key}"): no optionsStorage is configured. Pass optionsStorage to Mochi.serve() — ` +
+      `{ sqlite: 'data/options.db' }, { postgres: url }, or { pglite: instance } — to enable the options store.`,
+  );
 }
 
 async function requireDriver(method: string, key: string): Promise<OptionsDriver> {
-  if (registry.driver) {
-    return registry.driver;
-  }
-  const storage = resolveStorage(method, key);
   if (!registry.initPromise) {
-    const init = createDriver(storage).then((driver) => {
-      registry.driver = driver;
-      return driver;
-    });
+    const init = createDriver(resolveStorage(method, key));
     registry.initPromise = init;
     // Cleared on rejection so the next call retries the connection instead of replaying a cached dead promise.
     init.catch(() => {
@@ -255,12 +197,11 @@ async function requireDriver(method: string, key: string): Promise<OptionsDriver
 export async function closeOptionsStorage(): Promise<void> {
   const pending = registry.initPromise;
   registry.initPromise = null;
-  if (pending) {
-    // An in-flight first call may still be opening the handle; settle it so the close below reaches it.
-    await pending.catch(() => {});
+  if (!pending) {
+    return;
   }
-  const driver = registry.driver;
-  registry.driver = null;
+  // An in-flight first call may still be opening the handle; settle it so the close below reaches it.
+  const driver = await pending.catch(() => null);
   if (!driver) {
     return;
   }
@@ -269,11 +210,6 @@ export async function closeOptionsStorage(): Promise<void> {
   } catch (err) {
     logger.warn(`MochiOptions storage close failed: ${err instanceof Error ? err.message : err}`);
   }
-}
-
-/** Test-only: point MochiOptions at a storage without booting Mochi.serve(). Pass `null` to clear. */
-export function __testSetOptionsStorage(storage: MochiOptionsStorage | null): void {
-  registry.storageOverride = storage;
 }
 
 // Progress is guaranteed (every lost race means another writer won), so exhaustion signals pathological contention.
@@ -356,6 +292,8 @@ export const MochiOptions: MochiOptionsApi = {
       if (written) {
         return next;
       }
+      // Jittered backoff: a hot-key burst has exactly one winner per round, so spreading the losers keeps the attempt cap out of reach.
+      await Bun.sleep(Math.random() * Math.min(2 ** attempt, 50));
     }
     throw new Error(`MochiOptions.modify("${key}"): gave up after ${MODIFY_MAX_ATTEMPTS} attempts — concurrent writers kept changing the key.`);
   },

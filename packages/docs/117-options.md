@@ -53,7 +53,7 @@ await Mochi.serve({
 
 </Callout>
 
-The storage shape is validated at boot; the connection and schema are created lazily on the first `MochiOptions` call, so a connection problem surfaces there. Postgres storage installs a single table into a dedicated `mochi_options` schema, away from your application's tables. As with [queue storage](/docs/queues/#pglite), a PGlite instance is constructed and owned by you — Mochi never closes it.
+The storage shape is validated at boot; the connection and schema are created lazily on the first `MochiOptions` call, so a connection problem surfaces there. Postgres storage installs a single table into a dedicated `mochi_options` schema, away from your application's tables. As with [queue storage](/docs/queues/#pglite), a PGlite instance is constructed and owned by you — Mochi never closes it. Sharing one instance between `queueStorage` and `optionsStorage` is supported: statements are serialized through a shared per-instance lock, so an options write never interleaves with a queue transaction.
 
 ### `get()`
 
@@ -88,7 +88,7 @@ await MochiOptions.update('maintenance', {
 const views = await MochiOptions.modify<number>('views', (n) => (n ?? 0) + 1);
 ```
 
-Unlike a `get()` followed by an `update()`, a concurrent writer cannot be lost: each row carries a version, and the write only lands if the version is unchanged since the read. When another writer got there first, `modify()` re-reads and re-runs `fn` (giving up after 20 attempts under pathological contention).
+Unlike a `get()` followed by an `update()`, a concurrent writer cannot be lost: each row carries a version, and the write only lands if the version is unchanged since the read. When another writer got there first, `modify()` re-reads and re-runs `fn` with jittered backoff between rounds (giving up after 20 attempts under pathological contention).
 
 <Callout type="warning">
 

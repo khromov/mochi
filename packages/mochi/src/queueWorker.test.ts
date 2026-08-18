@@ -1,5 +1,6 @@
 import { afterAll, afterEach, describe, expect, spyOn, test } from 'bun:test';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync } from 'node:fs';
+import { rmWithRetry } from './__fixtures__/rmWithRetry';
 import path from 'node:path';
 import { Mochi } from './Mochi';
 import { closeAllQueueResources, getBoss, mountQueues, startQueueRuntime } from './queue';
@@ -26,16 +27,7 @@ afterEach(async () => {
   await closeAllQueueResources();
 });
 
-afterAll(async () => {
-  for (let attempt = 0; attempt < 25; attempt++) {
-    try {
-      rmSync(dataDir, { recursive: true, force: true });
-      return;
-    } catch {
-      await Bun.sleep(100);
-    }
-  }
-});
+afterAll(() => rmWithRetry(dataDir));
 
 describe('Mochi.worker()', () => {
   test('consumes a backlog enqueued by a standalone producer, then stop() halts consumption', async () => {

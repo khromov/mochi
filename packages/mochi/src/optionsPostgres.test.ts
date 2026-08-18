@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from 'bun:test';
-import { MochiOptions, closeOptionsStorage, __testSetOptionsStorage } from './options';
+import { MochiOptions, closeOptionsStorage, initOptionsStorage } from './options';
 import { startTestPostgres, type TestPostgres } from './__fixtures__/postgres/startTestPostgres';
 
 // Exercises the `{ postgres: url }` storage path over the wire protocol; the embedded path is covered by
@@ -9,13 +9,13 @@ describe('MochiOptions on postgres storage', () => {
 
   afterAll(async () => {
     await closeOptionsStorage();
-    __testSetOptionsStorage(null);
+    initOptionsStorage(null);
     await pg?.close();
   });
 
   test('installs its schema and roundtrips get/set/update/delete', async () => {
     pg = await startTestPostgres();
-    __testSetOptionsStorage({ postgres: pg.url });
+    initOptionsStorage({ postgres: pg.url });
 
     expect(await MochiOptions.get('missing')).toBeUndefined();
     await MochiOptions.set('site_name', 'Mochi');

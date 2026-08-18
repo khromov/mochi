@@ -1,34 +1,25 @@
 import { afterAll, afterEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync } from 'node:fs';
 import path from 'node:path';
 import { SQL } from 'bun';
-import { MochiOptions, closeOptionsStorage, __testSetOptionsStorage } from './options';
+import { MochiOptions, closeOptionsStorage, initOptionsStorage } from './options';
+import { rmWithRetry } from './__fixtures__/rmWithRetry';
 
 const dataDir = mkdtempSync(path.join(import.meta.dir, '..', '.mochi-options-test-'));
 
 let counter = 0;
 function useSqlite(): string {
   const file = path.join(dataDir, `options-${counter++}.db`);
-  __testSetOptionsStorage({ sqlite: file });
+  initOptionsStorage({ sqlite: file });
   return file;
 }
 
 afterEach(async () => {
   await closeOptionsStorage();
-  __testSetOptionsStorage(null);
+  initOptionsStorage(null);
 });
 
-afterAll(async () => {
-  // Windows releases SQLite file locks asynchronously, so an immediate rm can throw EBUSY; retry by hand since Bun ignores rmSync's maxRetries.
-  for (let attempt = 0; attempt < 25; attempt++) {
-    try {
-      rmSync(dataDir, { recursive: true, force: true });
-      return;
-    } catch {
-      await Bun.sleep(100);
-    }
-  }
-});
+afterAll(() => rmWithRetry(dataDir));
 
 describe('MochiOptions on sqlite storage', () => {
   test('get returns undefined for a missing key', async () => {
@@ -163,7 +154,7 @@ describe('MochiOptions on sqlite storage', () => {
     const file = useSqlite();
     await MochiOptions.set('persistent', { kept: true });
     await closeOptionsStorage();
-    __testSetOptionsStorage({ sqlite: file });
+    initOptionsStorage({ sqlite: file });
     expect(await MochiOptions.get('persistent')).toEqual({ kept: true });
   });
 

@@ -2,10 +2,9 @@
 // backend swap would need.
 import { BunBoss, fromBunSqlite, fromPglite, queueOptionDefaults } from 'bun-boss';
 import type { JobInsert, JobResult, JobWithMetadata, PGliteLike, SendOptions, UpdateQueueOptions, WorkOptions } from 'bun-boss';
-import { SQL } from 'bun';
-import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { toPosixPath } from './utils';
+import { isValidStorageObject, openSqliteFile } from './utils/storageConfig';
 import { isBuildingEntry } from './utils/buildFlag';
 import { pinGlobal } from './utils/globalState';
 import { applyFilter } from './extensions';
@@ -20,29 +19,9 @@ import { logger } from './utils/log';
 export type MochiQueueStorage = 'memory' | { sqlite: string } | { postgres: string } | { pglite: PGliteLike };
 export type { PGliteLike };
 
-const storageChecks: Record<string, (value: unknown) => boolean> = {
-  sqlite: (value) => typeof value === 'string' && value.length > 0,
-  postgres: (value) => typeof value === 'string' && value.length > 0,
-  pglite: (value) => {
-    const instance = value as Partial<PGliteLike> | null;
-    return typeof instance === 'object' && instance !== null && typeof instance.query === 'function' && typeof instance.exec === 'function';
-  },
-};
-
 /** Runtime-validates what the types already promise, because `queueStorage` often arrives from untyped config. */
 export function isValidQueueStorage(storage: MochiQueueStorage): boolean {
-  if (storage === 'memory') {
-    return true;
-  }
-  if (typeof storage !== 'object' || storage === null) {
-    return false;
-  }
-  const [entry, ...extra] = Object.entries(storageChecks).filter(([key]) => key in storage);
-  if (!entry || extra.length > 0) {
-    return false;
-  }
-  const [key, check] = entry;
-  return check((storage as unknown as Record<string, unknown>)[key]);
+  return storage === 'memory' || isValidStorageObject(storage);
 }
 
 /** Deliberately narrow — data, not bun-boss's job row — so userland can't reach behind the abstraction. */
@@ -442,11 +421,7 @@ async function bootQueueRuntime(storage: MochiQueueStorage, kind: 'serve' | 'sta
   const spies = enableSpies ? { __test__enableSpies: true } : {};
   let boss: BunBoss;
   if (storage === 'memory' || 'sqlite' in storage) {
-    const file = storage === 'memory' ? ':memory:' : storage.sqlite;
-    if (file !== ':memory:') {
-      mkdirSync(path.dirname(path.resolve(file)), { recursive: true });
-    }
-    const sql = new SQL(`sqlite://${file}`);
+    const sql = openSqliteFile(storage === 'memory' ? ':memory:' : storage.sqlite);
     // Registered before start() so the failure path in Mochi.serve (closeAllQueueResources) closes it too.
     registry.ownedSql = sql;
     boss = new BunBoss({ backend: 'sqlite', db: fromBunSqlite(sql), schedule: false, ...spies });

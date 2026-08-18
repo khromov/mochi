@@ -2,11 +2,12 @@
 // then a single server covers the rest — including the page route's .svelte import of MochiOptions, the only
 // coverage of the mochi-env virtual-module re-export.
 import { afterAll, describe, expect, test } from 'bun:test';
-import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type { Server } from 'bun';
 import { Mochi } from './Mochi';
 import { MochiOptions, closeOptionsStorage } from './options';
+import { rmWithRetry } from './__fixtures__/rmWithRetry';
 
 describe('Mochi.serve({ optionsStorage })', () => {
   let server: Server<undefined>;
@@ -16,15 +17,7 @@ describe('Mochi.serve({ optionsStorage })', () => {
   afterAll(async () => {
     await server?.stop(true);
     await closeOptionsStorage();
-    // Windows releases SQLite file locks asynchronously — retry the rm by hand (see options.test.ts).
-    for (let attempt = 0; attempt < 25; attempt++) {
-      try {
-        rmSync(tmpDir, { recursive: true, force: true });
-        return;
-      } catch {
-        await Bun.sleep(100);
-      }
-    }
+    await rmWithRetry(tmpDir);
   });
 
   test("rejects optionsStorage: 'memory' before binding", async () => {

@@ -87,7 +87,7 @@ import {
   resolveQueueConfigMode,
   collectQueueClosure,
 } from './queue';
-import { isValidOptionsStorage, closeOptionsStorage } from './options';
+import { isValidOptionsStorage, initOptionsStorage, closeOptionsStorage } from './options';
 import { pinGlobal } from './utils/globalState';
 import { resetStartupMilestones } from './lifecycle';
 import type { MochiQueue, MochiQueueOptions, MochiQueueDescriptor, MochiQueueStorage, MochiWorker } from './queue';
@@ -422,6 +422,7 @@ export class Mochi {
       if (!isValidOptionsStorage(options.optionsStorage)) {
         throw new Error(`Mochi.serve({ optionsStorage }): expected { sqlite: 'path/to.db' }, { postgres: url }, or { pglite: instance }.`);
       }
+      initOptionsStorage(options.optionsStorage);
     }
 
     const { svelteVersion } = await checkEnvironment();
@@ -1865,31 +1866,35 @@ export class Mochi {
       // The shutdown path calls `stop()` twice — graceful, then forced once the grace period lapses — and a second
       // teardown would double-close an already-closed transport.
       let cleanedUp = false;
-      server.stop = (async (closeActiveConnections?: boolean) => {
+      const cleanupSubsystems = async () => {
         if (cleanedUp) {
-          return stopServer(closeActiveConnections);
+          return;
         }
         cleanedUp = true;
-        // Subsystem cleanup must never gate the socket close: a transport whose
-        // close() throws (e.g. a nodemailer pool) would otherwise leave the
-        // listener open and hang shutdown. Best-effort, then always stop.
-        try {
-          sweeperStop?.();
-          stopEmailBadgeBroadcast?.();
-          await closeEmailTransport();
-          await closeOptionsStorage();
-          for (const store of rateLimitStores) {
-            // Per-store guard: one failing shutdown must not skip the rest.
-            try {
-              await store.shutdown?.();
-            } catch (err) {
-              logger.warn(`Rate limit store shutdown failed: ${err instanceof Error ? err.message : err}`);
-            }
+        const steps: Array<[string, () => unknown]> = [
+          ['Image sweeper', () => sweeperStop?.()],
+          ['Email badge broadcast', () => stopEmailBadgeBroadcast?.()],
+          ['Email transport', () => closeEmailTransport()],
+          ['Options storage', () => closeOptionsStorage()],
+          ...[...rateLimitStores].map((store): [string, () => unknown] => ['Rate limit store', () => store.shutdown?.()]),
+        ];
+        // Per-step guard: one failing close (e.g. a nodemailer pool) must not skip the rest.
+        for (const [name, step] of steps) {
+          try {
+            await step();
+          } catch (err) {
+            logger.warn(`${name} shutdown failed: ${err instanceof Error ? err.message : err}`);
           }
-        } catch (err) {
-          logger.warn(`Subsystem cleanup failed during shutdown: ${err instanceof Error ? err.message : err}`);
         }
-        return stopServer(closeActiveConnections);
+      };
+      server.stop = (async (closeActiveConnections?: boolean) => {
+        // Sockets close first, subsystems after: requests still draining keep their options/email backends, and
+        // cleanup can never gate (or hang) the socket close.
+        try {
+          return await stopServer(closeActiveConnections);
+        } finally {
+          await cleanupSubsystems();
+        }
       }) as typeof server.stop;
     }
 
