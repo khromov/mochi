@@ -3,27 +3,29 @@ import fs from 'node:fs';
 
 const MOCHI_FRAMEWORK_FALLBACK = '^0.1.1';
 
-// Conservative: printWidth is 180, but the array may sit after a long `"key": ` prefix.
-const MAX_INLINE_ARRAY_WIDTH = 160;
+const PRINT_WIDTH = 180;
 
 /** Like `JSON.stringify(value, null, 2)` but with short primitive arrays kept on one line, so generated JSON passes `prettier --check` out of the box. */
 export function stringifyJson(value: unknown): string {
-  return renderJson(value, '') + '\n';
+  return renderJson(value, '', 0) + '\n';
 }
 
-function renderJson(value: unknown, indent: string): string {
+function renderJson(value: unknown, indent: string, prefixWidth: number): string {
   if (Array.isArray(value)) {
-    if (value.length === 0) {
+    // JSON.stringify serializes undefined array elements as null; mirror that.
+    const items = value.map((v) => (v === undefined ? null : v));
+    if (items.length === 0) {
       return '[]';
     }
-    if (value.every((v) => v === null || typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean')) {
-      const inline = `[${value.map((v) => JSON.stringify(v)).join(', ')}]`;
-      if (indent.length + inline.length <= MAX_INLINE_ARRAY_WIDTH) {
+    if (items.every((v) => v === null || typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean')) {
+      const inline = `[${items.map((v) => JSON.stringify(v)).join(', ')}]`;
+      // The +1 reserves room for a trailing comma — prettier fits the whole `"key": […],` line into printWidth.
+      if (indent.length + prefixWidth + inline.length + 1 <= PRINT_WIDTH) {
         return inline;
       }
     }
     const inner = indent + '  ';
-    return `[\n${value.map((v) => inner + renderJson(v, inner)).join(',\n')}\n${indent}]`;
+    return `[\n${items.map((v) => inner + renderJson(v, inner, 0)).join(',\n')}\n${indent}]`;
   }
   if (value !== null && typeof value === 'object') {
     const entries = Object.entries(value as Record<string, unknown>).filter(([, v]) => v !== undefined);
@@ -31,7 +33,7 @@ function renderJson(value: unknown, indent: string): string {
       return '{}';
     }
     const inner = indent + '  ';
-    return `{\n${entries.map(([k, v]) => `${inner}${JSON.stringify(k)}: ${renderJson(v, inner)}`).join(',\n')}\n${indent}}`;
+    return `{\n${entries.map(([k, v]) => `${inner}${JSON.stringify(k)}: ${renderJson(v, inner, JSON.stringify(k).length + 2)}`).join(',\n')}\n${indent}}`;
   }
   return JSON.stringify(value);
 }

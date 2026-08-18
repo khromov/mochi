@@ -165,6 +165,20 @@ describe('stringifyJson', () => {
     expect(JSON.parse(stringifyJson(value))).toEqual(JSON.parse(JSON.stringify(value)));
   });
 
+  test('serializes undefined array elements as null, like JSON.stringify', () => {
+    const out = stringifyJson({ a: [1, undefined, 3] });
+    expect(out).not.toContain('undefined');
+    expect(JSON.parse(out)).toEqual({ a: [1, null, 3] });
+  });
+
+  // The inline-vs-expand decision must mirror prettier's, which fits the whole `"key": […],` line into printWidth 180.
+  test('counts the key prefix when deciding whether an array fits inline', () => {
+    const shortKeyLongArray = stringifyJson({ k: Array.from({ length: 12 }, () => 'x'.repeat(10)) });
+    expect(shortKeyLongArray).toContain('"k": ["xxxxxxxxxx", ');
+    const longKeySameArray = stringifyJson({ ['k'.repeat(170)]: Array.from({ length: 12 }, () => 'x'.repeat(10)) });
+    expect(longKeySameArray).toContain('": [\n');
+  });
+
   test('transformTsconfig output keeps the inlined base arrays prettier-clean', () => {
     const out = transformTsconfig(JSON.stringify({ extends: '../../tsconfig.base.json', compilerOptions: { types: ['bun'] }, include: ['src/**/*'] }));
     expect(out).toContain('"lib": ["ESNext", "DOM", "DOM.Iterable"]');
