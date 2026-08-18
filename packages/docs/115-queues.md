@@ -254,9 +254,11 @@ A descriptor-form target does not need to be in the `queues` array — it is ens
 
 Drain or replay a dead-letter queue through the [escape hatch](#mochiboss): `Mochi.boss().redrive('webhooks-dlq')` moves its jobs back to their source queue.
 
-<Callout type="warning">
+Removing the link is a config change like any other: delete the option from code and migrate — [`sync`](#storage) clears it, or run the `updateQueue(name, { deadLetter: null })` the mismatch error prints.
 
-**Removing a link needs a reset.** bun-boss's `updateQueue` cannot clear a stored `deadLetter`, so deleting the option from code is a boot error even under `queueConfig: 'sync'`. Repoint it instead, or reset the queue: `Mochi.boss().deleteQueue(name)` and reboot — this discards the queue's jobs, and a queue still referenced as another's `deadLetter` cannot be deleted until its referrers are repointed or deleted first.
+<Callout type="info">
+
+**Resetting a queue.** `Mochi.boss().deleteQueue(name)` removes a queue outright — jobs included, pending backlog and failed-job audit trail alike; the next boot recreates it from the declaration. A queue still referenced as another's `deadLetter` cannot be deleted until its referrers are repointed or deleted first.
 
 </Callout>
 

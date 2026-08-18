@@ -85,7 +85,7 @@ describe('code-authoritative queue config', () => {
     expect(resolveQueueConfigMode('sync')).toBe('sync');
   }, 15_000);
 
-  test('clearing a stored deadLetter cannot be synced: even sync mode throws, pointing at the reset recipe', async () => {
+  test('removing a declared deadLetter throws under verify with a null hint, and sync clears it', async () => {
     const file = path.join(dataDir, 'clear.sqlite');
     await startQueueRuntime({ sqlite: file });
     await mountQueues([{ name: 'clear-dlq' }, { name: 'clear-work', options: { retryLimit: 0, deadLetter: 'clear-dlq' } }]);
@@ -94,10 +94,12 @@ describe('code-authoritative queue config', () => {
 
     await startQueueRuntime({ sqlite: file });
     let error: Error | undefined;
-    await mountQueues([{ name: 'clear-dlq' }, { name: 'clear-work', options: { retryLimit: 0 } }], 'sync').catch((err: Error) => (error = err));
+    await mountQueues([{ name: 'clear-dlq' }, { name: 'clear-work', options: { retryLimit: 0 } }]).catch((err: Error) => (error = err));
     expect(error?.message).toContain('"clear-work" already exists in storage with deadLetter "clear-dlq", but this code declares deadLetter unset');
-    expect(error?.message).toContain('deadLetter cannot be cleared');
-    expect(error?.message).toContain('Mochi.boss().deleteQueue("clear-work")');
+    expect(error?.message).toContain('Mochi.boss().updateQueue("clear-work", { deadLetter: null })');
+
+    await mountQueues([{ name: 'clear-dlq' }, { name: 'clear-work', options: { retryLimit: 0 } }], 'sync');
+    expect((await getBoss().getQueue('clear-work'))?.deadLetter).toBeNull();
   }, 15_000);
 
   test('a deadLetter loop cannot be created from scratch, but an existing matching loop passes verification', async () => {

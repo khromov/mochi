@@ -1,6 +1,6 @@
 // The isolation boundary around bun-boss: the only module importing `bun-boss`, and the only one whose rewrite a
 // backend swap would need.
-import { BunBoss, fromBunSqlite, fromPglite } from 'bun-boss';
+import { BunBoss, fromBunSqlite, fromPglite, queueOptionDefaults } from 'bun-boss';
 import type { JobInsert, JobResult, JobWithMetadata, PGliteLike, SendOptions, UpdateQueueOptions, WorkOptions } from 'bun-boss';
 import { SQL } from 'bun';
 import { mkdirSync } from 'node:fs';
@@ -262,20 +262,20 @@ function describeStorage(storage: MochiQueueStorage | null): string {
   return 'pglite' in storage ? '{ pglite: … }' : '{ postgres: … }';
 }
 
-export const DEFAULT_EXPIRE_IN_SECONDS = 900;
+export const DEFAULT_EXPIRE_IN_SECONDS = queueOptionDefaults.expireInSeconds as number;
 
-// Mirrors bun-boss 0.4.0's createQueue COALESCE defaults (its plans.ts): declared code is authoritative and an
-// undeclared option means "the default", so these are what it must read back as — re-verify on every bun-boss bump.
+// The Mochi-managed subset of bun-boss's stored option defaults: declared code is authoritative and an undeclared
+// option means "the default", so these are what it must read back as.
 const QUEUE_OPTION_DEFAULTS = {
-  retryLimit: 2,
-  retryDelay: 0,
-  retryBackoff: false,
-  retryDelayMax: null,
-  expireInSeconds: DEFAULT_EXPIRE_IN_SECONDS,
-  retentionSeconds: 1_209_600,
-  deleteAfterSeconds: 604_800,
-  deadLetter: null,
-} as const;
+  retryLimit: queueOptionDefaults.retryLimit,
+  retryDelay: queueOptionDefaults.retryDelay,
+  retryBackoff: queueOptionDefaults.retryBackoff,
+  retryDelayMax: queueOptionDefaults.retryDelayMax,
+  expireInSeconds: queueOptionDefaults.expireInSeconds,
+  retentionSeconds: queueOptionDefaults.retentionSeconds,
+  deleteAfterSeconds: queueOptionDefaults.deleteAfterSeconds,
+  deadLetter: queueOptionDefaults.deadLetter,
+};
 type ManagedQueueField = keyof typeof QUEUE_OPTION_DEFAULTS;
 type ManagedQueueValue = number | boolean | string | null;
 
@@ -335,18 +335,10 @@ function formatQueueValue(value: ManagedQueueValue): string {
 function queueConfigMismatchError(context: string, name: string, diffs: QueueConfigDiff[]): Error {
   const stored = diffs.map((d) => `${d.field} ${formatQueueValue(d.stored)}`).join(', ');
   const declared = diffs.map((d) => `${d.field} ${formatQueueValue(d.declared)}`).join(', ');
-  const settable = diffs.filter((d) => d.declared !== null);
-  const unclearable = diffs.filter((d) => d.declared === null);
-  const hint = settable.map((d) => `${d.field}: ${typeof d.declared === 'string' ? `"${d.declared}"` : String(d.declared)}`).join(', ');
-  const remedy =
-    settable.length > 0
-      ? `update the declaration to match, migrate the store with Mochi.boss().updateQueue("${name}", { ${hint} }) and restart, or boot once with MOCHI_QUEUE_SYNC=1 (or queueConfig: 'sync') to apply the declared config`
-      : `update the declaration to match`;
-  let message = `${context}: "${name}" already exists in storage with ${stored}, but this code declares ${declared}. Code is authoritative for queue config — ${remedy}.`;
-  if (unclearable.length > 0) {
-    message += ` ${unclearable.map((d) => d.field).join(' and ')} cannot be cleared through bun-boss's updateQueue (absent fields keep their stored value) — keep declaring it, or reset the queue with Mochi.boss().deleteQueue("${name}") and reboot (this discards the queue's jobs).`;
-  }
-  return new Error(message);
+  const hint = diffs.map((d) => `${d.field}: ${typeof d.declared === 'string' ? `"${d.declared}"` : String(d.declared)}`).join(', ');
+  return new Error(
+    `${context}: "${name}" already exists in storage with ${stored}, but this code declares ${declared}. Code is authoritative for queue config — update the declaration to match, migrate the store with Mochi.boss().updateQueue("${name}", { ${hint} }) and restart, or boot once with MOCHI_QUEUE_SYNC=1 (or queueConfig: 'sync') to apply the declared config.`,
+  );
 }
 
 // bun-boss's attorney asserts on key presence, not value, so an explicitly-undefined option must not reach it.
@@ -737,7 +729,7 @@ function orderByDeadLetter(items: DeclaredQueueEntry[]): { ordered: DeclaredQueu
         continue;
       }
       const target = item.bossOptions.deadLetter;
-      if (target === undefined || !names.has(target) || emitted.has(target)) {
+      if (target == null || !names.has(target) || emitted.has(target)) {
         ordered.push(item);
         emitted.add(item.name);
         progressed = true;
@@ -782,7 +774,7 @@ async function verifyOrCreateQueue(boss: BunBoss, entry: DeclaredQueueEntry, con
     await boss.createQueue(name, bossOptions);
   } catch (err) {
     const target = bossOptions.deadLetter;
-    if (target !== undefined && (await boss.getQueue(target).catch(() => null)) == null) {
+    if (target != null && (await boss.getQueue(target).catch(() => null)) == null) {
       throw new Error(
         `${context}: "${name}" names "${target}" as its deadLetter queue, but "${target}" is not declared here and does not exist in storage, so "${name}" cannot be created with its link. Pass the target's descriptor — deadLetter: Mochi.queue("${target}", …) — so it is ensured first.`,
         { cause: err },
@@ -802,13 +794,12 @@ async function verifyOrCreateQueue(boss: BunBoss, entry: DeclaredQueueEntry, con
   if (diffs.length === 0) {
     return;
   }
-  // A declared-unset field can't be repaired either way: updateQueue keeps stored values for absent fields.
-  if (mode === 'verify' || diffs.some((d) => d.declared === null)) {
+  if (mode === 'verify') {
     throw queueConfigMismatchError(context, name, diffs);
   }
-  // Full-field write of concrete values so COALESCE semantics can't keep a stale one.
-  const payload = omitUndefined(Object.fromEntries(Object.entries(expected).map(([k, v]) => [k, v === null ? undefined : v]))) as UpdateQueueOptions;
-  await boss.updateQueue(name, payload);
+  // Full-field write, nulls included: concrete values defeat COALESCE staleness, and the nullable fields
+  // (deadLetter, retryDelayMax) apply by key presence, so a null clears them.
+  await boss.updateQueue(name, expected as UpdateQueueOptions);
   const reread = await boss.getQueue(name);
   const remaining = reread == null ? diffs : diffQueueConfig(expected, reread as unknown as Record<string, unknown>);
   if (remaining.length > 0) {
