@@ -1,9 +1,10 @@
 import { SQL } from 'bun';
+import path from 'node:path';
 import { parse, stringify } from 'devalue';
 import { pinGlobal } from './utils/globalState';
 import { getMochiConfig } from './mochiConfig';
 import { logger } from './utils/log';
-import { isValidStorageObject, openSqliteFile } from './utils/storageConfig';
+import { STORAGE_SHAPE_HINT, isValidStorageObject, openSqliteFile } from './utils/storageConfig';
 // Type-only so bun-boss (queue.ts's runtime dep) never lands in a bundle that only uses options.
 import type { PGliteLike } from './queue';
 
@@ -13,8 +14,15 @@ import type { PGliteLike } from './queue';
  */
 export type MochiOptionsStorage = { sqlite: string } | { postgres: string } | { pglite: PGliteLike };
 
-export function isValidOptionsStorage(storage: MochiOptionsStorage): boolean {
-  return isValidStorageObject(storage);
+export function assertValidOptionsStorage(storage: unknown, context: string): asserts storage is MochiOptionsStorage {
+  // `{ sqlite: ':memory:' }` would silently reach openSqliteFile's memory special case, so it gets the same teaching error as the literal 'memory'.
+  const memory = storage === 'memory' || (typeof storage === 'object' && storage !== null && (storage as { sqlite?: unknown }).sqlite === ':memory:');
+  if (memory) {
+    throw new Error(`${context}: options have no memory backend — the options store exists to persist across restarts. Use ${STORAGE_SHAPE_HINT}.`);
+  }
+  if (!isValidStorageObject(storage)) {
+    throw new Error(`${context}: expected ${STORAGE_SHAPE_HINT}.`);
+  }
 }
 
 // Drivers deal in already-serialized strings; devalue stays in the public layer.
@@ -40,6 +48,10 @@ const POSTGRES_DDL = [
   'CREATE TABLE IF NOT EXISTS mochi_options.options (key TEXT PRIMARY KEY, value TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 0, created_at BIGINT NOT NULL, updated_at BIGINT NOT NULL)',
 ];
 
+// Fresh rows start at a random version so a delete+recreate can never resurrect a version an in-flight modify()
+// already observed — its optimistic check would otherwise ABA-match and silently drop the recreated value.
+const newVersion = () => Math.floor(Math.random() * 2 ** 30);
+
 // One statement set for all three backends; the dialects differ only in table name and how the upsert's SET
 // expression must reference the existing row's version (Postgres qualifies it against the schema-local table name).
 // Placeholders must appear in ascending numeric order: Bun's sqlite adapter binds an array by appearance, not by $n.
@@ -54,9 +66,10 @@ function createSqlDriver(executor: SqlExecutor, table: string, versionRef: strin
       return rows[0] ? { serialized: rows[0].value, version: rows[0].version } : undefined;
     },
     async insert(key, serialized, now) {
-      const rows = await executor(`INSERT INTO ${table} (key, value, created_at, updated_at) VALUES ($1, $2, $3, $4) ON CONFLICT (key) DO NOTHING RETURNING key`, [
+      const rows = await executor(`INSERT INTO ${table} (key, value, version, created_at, updated_at) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (key) DO NOTHING RETURNING key`, [
         key,
         serialized,
+        newVersion(),
         now,
         now,
       ]);
@@ -64,9 +77,9 @@ function createSqlDriver(executor: SqlExecutor, table: string, versionRef: strin
     },
     async upsert(key, serialized, now) {
       await executor(
-        `INSERT INTO ${table} (key, value, created_at, updated_at) VALUES ($1, $2, $3, $4) ` +
+        `INSERT INTO ${table} (key, value, version, created_at, updated_at) VALUES ($1, $2, $3, $4, $5) ` +
           `ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, version = ${versionRef} + 1`,
-        [key, serialized, now, now],
+        [key, serialized, newVersion(), now, now],
       );
     },
     async updateVersioned(key, serialized, expectedVersion, now) {
@@ -121,10 +134,13 @@ async function createPostgresDriver(url: string): Promise<OptionsDriver> {
 }
 
 async function createPgliteDriver(instance: PGliteLike): Promise<OptionsDriver> {
-  // Statements must go through bun-boss's adapter: its module-level per-instance lock is shared with a queue
-  // subsystem wrapping the same instance, so an options write can never interleave with (and be rolled back by) an
-  // open queue transaction on the single connection. Imported lazily to keep bun-boss out of options-only bundles.
-  const { fromPglite } = await import('bun-boss');
+  // Statements must go through bun-boss's adapter: its per-instance lock keeps an options write from interleaving
+  // with (and being rolled back by) an open queue transaction on the single connection. That lock lives at bun-boss
+  // module scope, so prefer the queue module's globally-pinned copy — an SSR-bundled copy of this file importing
+  // 'bun-boss' itself would create a second, disjoint lock domain. The fallback (options without the queue module
+  // loaded) has no queue lock to share; the lazy import keeps bun-boss out of options-only bundles.
+  const shared = (globalThis as unknown as Record<string, unknown>).__mochi_bun_boss__ as Pick<typeof import('bun-boss'), 'fromPglite'> | undefined;
+  const { fromPglite } = shared ?? (await import('bun-boss'));
   const db = fromPglite(instance);
   await db.executeSql(POSTGRES_DDL.join('; '));
   return createSqlDriver(
@@ -156,12 +172,30 @@ const registry = pinGlobal<OptionsRegistry>('__mochi_options_registry__', () => 
   storage: null,
 }));
 
+function sameStorage(a: MochiOptionsStorage | null, b: MochiOptionsStorage | null): boolean {
+  if (a === null || b === null) {
+    return a === b;
+  }
+  if ('sqlite' in a) {
+    return 'sqlite' in b && path.resolve(a.sqlite) === path.resolve(b.sqlite);
+  }
+  if ('postgres' in a) {
+    return 'postgres' in b && a.postgres === b.postgres;
+  }
+  return 'pglite' in b && a.pglite === b.pglite;
+}
+
 /** Registers where MochiOptions connects on first use — called by Mochi.serve({ optionsStorage }) at boot, and directly by tests. Pass `null` to clear. */
 export function initOptionsStorage(storage: MochiOptionsStorage | null): void {
-  if (storage !== null && !isValidOptionsStorage(storage)) {
-    throw new Error(`initOptionsStorage(): expected { sqlite: 'path/to.db' }, { postgres: url }, or { pglite: instance }.`);
+  if (storage !== null) {
+    assertValidOptionsStorage(storage, 'initOptionsStorage()');
   }
+  const previous = registry.storage;
   registry.storage = storage;
+  // A reconfigure (or a clear) must also drop the cached driver, or reads would keep hitting the previous storage.
+  if (registry.initPromise && !sameStorage(previous, storage)) {
+    void closeOptionsStorage();
+  }
 }
 
 function resolveStorage(method: string, key: string): MochiOptionsStorage {
@@ -171,12 +205,12 @@ function resolveStorage(method: string, key: string): MochiOptionsStorage {
   try {
     getMochiConfig();
   } catch {
-    throw new Error(`MochiOptions.${method}("${key}"): Mochi.serve() has not been called yet. Options become available once Mochi.serve({ optionsStorage }) runs.`);
+    throw new Error(
+      `MochiOptions.${method}("${key}"): Mochi.serve() has not been called yet. Options become available once Mochi.serve({ optionsStorage }) runs — ` +
+        `in a standalone worker process, pass optionsStorage to Mochi.worker().`,
+    );
   }
-  throw new Error(
-    `MochiOptions.${method}("${key}"): no optionsStorage is configured. Pass optionsStorage to Mochi.serve() — ` +
-      `{ sqlite: 'data/options.db' }, { postgres: url }, or { pglite: instance } — to enable the options store.`,
-  );
+  throw new Error(`MochiOptions.${method}("${key}"): no optionsStorage is configured. Pass optionsStorage to Mochi.serve() — ${STORAGE_SHAPE_HINT} — to enable the options store.`);
 }
 
 async function requireDriver(method: string, key: string): Promise<OptionsDriver> {
@@ -191,6 +225,12 @@ async function requireDriver(method: string, key: string): Promise<OptionsDriver
     });
   }
   return registry.initPromise;
+}
+
+/** Full teardown for stop paths: forget the registration first (so a straggling call can't lazily reopen a driver nothing will close), then close. */
+export async function shutdownOptionsStorage(): Promise<void> {
+  registry.storage = null;
+  await closeOptionsStorage();
 }
 
 /** Idempotent, never throws — safe on every stop path and in test afterEach. */

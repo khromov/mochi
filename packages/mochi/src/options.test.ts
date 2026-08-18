@@ -160,8 +160,42 @@ describe('MochiOptions on sqlite storage', () => {
 
   test('throws when Mochi.serve() has not been called and no storage is set', async () => {
     await expect(MochiOptions.get('dark_mode')).rejects.toThrow(
-      'MochiOptions.get("dark_mode"): Mochi.serve() has not been called yet. Options become available once Mochi.serve({ optionsStorage }) runs.',
+      'MochiOptions.get("dark_mode"): Mochi.serve() has not been called yet. Options become available once Mochi.serve({ optionsStorage }) runs — ' +
+        'in a standalone worker process, pass optionsStorage to Mochi.worker().',
     );
+  });
+
+  test("rejects { sqlite: ':memory:' } — options have no memory backend", () => {
+    expect(() => initOptionsStorage({ sqlite: ':memory:' })).toThrow('initOptionsStorage(): options have no memory backend');
+  });
+
+  test('modify retries when the key is deleted and recreated mid-flight — the recreated value is not lost', async () => {
+    useSqlite();
+    await MochiOptions.set('slot', 'original');
+    let runs = 0;
+    const result = await MochiOptions.modify<string>('slot', async (current) => {
+      runs++;
+      if (runs === 1) {
+        // A recreated row must not resurrect the observed version (the delete+reinsert ABA case).
+        await MochiOptions.delete('slot');
+        await MochiOptions.update('slot', 'recreated');
+      }
+      return `${current}!`;
+    });
+    expect(runs).toBe(2);
+    expect(result).toBe('recreated!');
+    expect(await MochiOptions.get('slot')).toBe('recreated!');
+  });
+
+  test('initOptionsStorage(null) disconnects, and a reconfigure switches storages', async () => {
+    const fileA = useSqlite();
+    await MochiOptions.set('where', 'A');
+    initOptionsStorage(null);
+    await expect(MochiOptions.get('where')).rejects.toThrow('Mochi.serve() has not been called yet');
+    initOptionsStorage({ sqlite: path.join(dataDir, `options-${counter++}.db`) });
+    expect(await MochiOptions.get('where')).toBeUndefined();
+    initOptionsStorage({ sqlite: fileA });
+    expect(await MochiOptions.get('where')).toBe('A');
   });
 
   test('throws when Mochi.serve() ran without optionsStorage configured', async () => {

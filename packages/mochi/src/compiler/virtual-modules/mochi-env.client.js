@@ -128,14 +128,13 @@ export function invalidateImage() { __serverOnly("invalidateImage()"); }
 export function memoryStore() { __serverOnly("memoryStore()"); }
 export function sqliteStore() { __serverOnly("sqliteStore()"); }
 export function postgresStore() { __serverOnly("postgresStore()"); }
-// MochiOptions talks to the server-side options database; every method throws in the browser.
-export const MochiOptions = {
-  get() { __serverOnly("MochiOptions.get()"); },
-  set() { __serverOnly("MochiOptions.set()"); },
-  update() { __serverOnly("MochiOptions.update()"); },
-  modify() { __serverOnly("MochiOptions.modify()"); },
-  delete() { __serverOnly("MochiOptions.delete()"); },
-};
+// MochiOptions talks to the server-side options database; a proxy rather than a hand-kept method list, so every
+// method — including ones added to MochiOptionsApi later — throws when called in the browser.
+export const MochiOptions = /*@__PURE__*/ new Proxy({}, {
+  get(_, p) {
+    return () => __serverOnly("MochiOptions." + String(p) + "()");
+  },
+});
 export { enhance, deserialize } from "__MOCHI_ENHANCE_CLIENT__";
 // Constant by construction: client bundles are built only for islands, so
 // every component that executes in the browser is part of a hydrating (or

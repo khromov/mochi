@@ -4,13 +4,17 @@ import { BunBoss, fromBunSqlite, fromPglite, queueOptionDefaults } from 'bun-bos
 import type { JobInsert, JobResult, JobWithMetadata, PGliteLike, SendOptions, UpdateQueueOptions, WorkOptions } from 'bun-boss';
 import path from 'node:path';
 import { toPosixPath } from './utils';
-import { isValidStorageObject, openSqliteFile } from './utils/storageConfig';
+import { STORAGE_SHAPE_HINT, isValidStorageObject, openSqliteFile } from './utils/storageConfig';
 import { isBuildingEntry } from './utils/buildFlag';
 import { pinGlobal } from './utils/globalState';
 import { applyFilter } from './extensions';
 import { startupMilestoneReached } from './lifecycle';
 import { mochiEvents } from './events';
 import { logger } from './utils/log';
+
+// options.ts's pglite driver must use this exact bun-boss: the adapter's per-instance lock is module-level, and an
+// SSR bundle carries its own copy of options.ts whose own 'bun-boss' import would be a second, disjoint lock.
+pinGlobal('__mochi_bun_boss__', () => ({ fromPglite }));
 
 /**
  * Where queue jobs live: `'memory'` (SQLite `:memory:`, lost on restart), a SQLite file, a Postgres database, or a
@@ -792,7 +796,7 @@ export function createQueueDescriptor<T = unknown, R = unknown>(name: string, co
   }
   const { process, on, storage, ...options } = config;
   if (storage !== undefined && !isValidQueueStorage(storage)) {
-    throw new Error(`Mochi.queue("${name}", { storage }): expected 'memory', { sqlite: 'path/to.db' }, { postgres: url }, or { pglite: instance }.`);
+    throw new Error(`Mochi.queue("${name}", { storage }): expected 'memory', ${STORAGE_SHAPE_HINT}.`);
   }
   const base = producerMethods<T>(name);
   const descriptor: MochiQueueDescriptor<T, R> = {
@@ -905,7 +909,7 @@ export function createWorker(queues: MountableQueue[], storage?: MochiQueueStora
   }
   if (storage !== undefined) {
     if (!isValidQueueStorage(storage)) {
-      throw new Error(`Mochi.worker({ storage }): expected 'memory', { sqlite: 'path/to.db' }, { postgres: url }, or { pglite: instance }.`);
+      throw new Error(`Mochi.worker({ storage }): expected 'memory', ${STORAGE_SHAPE_HINT}.`);
     }
     if (declared && !storageEquals(declared.storage, storage)) {
       throw new Error(`Mochi.worker({ storage }): "${declared.name}" declares a different storage — an app has one queue storage.`);

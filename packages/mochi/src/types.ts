@@ -275,6 +275,8 @@ export interface MochiWorkerOptions {
   queues: MochiQueueConfig[];
   /** The app's queue storage; may instead come from a `storage` declared on the descriptors. */
   storage?: MochiQueueStorage;
+  /** Registers where `MochiOptions` connects in this process, since `Mochi.serve({ optionsStorage })` never runs here. */
+  optionsStorage?: MochiOptionsStorage;
   /**
    * `'verify'` (default): a stored queue whose config differs from its declaration is a start() error — code is
    * authoritative. `'sync'`: write the declared config to storage instead, logging each change. `MOCHI_QUEUE_SYNC=1`

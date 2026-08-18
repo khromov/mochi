@@ -12,6 +12,9 @@ const storageChecks: Record<string, (value: unknown) => boolean> = {
   },
 };
 
+/** The storage-shape hint quoted by every config error; queue errors prepend `'memory', `. */
+export const STORAGE_SHAPE_HINT = `{ sqlite: 'path/to.db' }, { postgres: url }, or { pglite: instance }`;
+
 /** Runtime-validates a `{ sqlite | postgres | pglite }` storage object (exactly one backend named), because storage config often arrives untyped. */
 export function isValidStorageObject(storage: unknown): boolean {
   if (typeof storage !== 'object' || storage === null) {
