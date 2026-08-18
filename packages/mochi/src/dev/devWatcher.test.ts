@@ -1,30 +1,30 @@
 import { describe, expect, test } from 'bun:test';
 import path from 'node:path';
-import { planFileReload } from './devWatcher';
+import { isServerEntryDep } from './devWatcher';
 
-describe('planFileReload', () => {
+describe('isServerEntryDep', () => {
   const shared = path.resolve('/proj/src/plugin-list.ts');
   const serverEntryDeps = new Set([shared, path.resolve('/proj/src/index.ts')]);
 
-  test('a .ts module in the server-entry graph reloads BOTH the entry and its pages', () => {
-    // The regression: a module shared by src/index.ts and a page must recompile the page's SSR
-    // bundle (page:true) as well as reloading the entry — the old exclusive dispatch dropped page.
-    expect(planFileReload(shared, serverEntryDeps)).toEqual({ entry: true, page: true });
+  test('a .ts module in the server-entry graph is an entry dep (its change rebuilds the entry)', () => {
+    // The regression this guards: such a module must go through triggerEntryReload, which rebuilds the entry AND
+    // recompiles any page whose SSR bundle inlines it. The old exclusive dispatch sent it to only one of the two.
+    expect(isServerEntryDep(shared, serverEntryDeps)).toBe(true);
   });
 
-  test('a .ts module outside the server-entry graph reloads only its pages', () => {
+  test('a .ts module outside the server-entry graph is not an entry dep', () => {
     const pageOnly = path.resolve('/proj/src/format.ts');
-    expect(planFileReload(pageOnly, serverEntryDeps)).toEqual({ entry: false, page: true });
+    expect(isServerEntryDep(pageOnly, serverEntryDeps)).toBe(false);
   });
 
-  test('a .svelte file never triggers an entry reload, even when its path is in the entry graph', () => {
+  test('a .svelte file is never an entry dep, even when its path is in the entry graph', () => {
     const component = path.resolve('/proj/src/App.svelte');
     const withComponent = new Set([...serverEntryDeps, component]);
-    expect(planFileReload(component, withComponent)).toEqual({ entry: false, page: true });
+    expect(isServerEntryDep(component, withComponent)).toBe(false);
   });
 
-  test('the entry-graph check resolves the changed path before matching', () => {
+  test('the check resolves the changed path before matching', () => {
     const abs = path.resolve('helper.ts');
-    expect(planFileReload('helper.ts', new Set([abs]))).toEqual({ entry: true, page: true });
+    expect(isServerEntryDep('helper.ts', new Set([abs]))).toBe(true);
   });
 });
