@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { resolveMochiVersionRange, setDefaultPort, transformPackageJson, transformTsconfig, validatePackageName } from './utils.ts';
+import { resolveMochiVersionRange, setDefaultPort, stringifyJson, transformPackageJson, transformTsconfig, validatePackageName } from './utils.ts';
 
 /** A scaffold dir whose `patches/` folder holds the given `name@version.patch` files (none → no `patches/` dir). */
 function scaffoldDir(patchFiles: string[] = []): string {
@@ -139,6 +139,37 @@ describe('transformTsconfig', () => {
     const input = JSON.stringify({ extends: 'some-other-config' });
     const out = JSON.parse(transformTsconfig(input));
     expect(out.extends).toBe('some-other-config');
+  });
+});
+
+describe('stringifyJson', () => {
+  test('collapses short primitive arrays onto one line, like prettier does', () => {
+    const out = stringifyJson({ lib: ['ESNext', 'DOM', 'DOM.Iterable'], strict: true });
+    expect(out).toContain('"lib": ["ESNext", "DOM", "DOM.Iterable"]');
+    expect(out.endsWith('\n')).toBe(true);
+  });
+
+  test('keeps arrays with object elements expanded', () => {
+    const out = stringifyJson({ overrides: [{ files: ['*.svelte'] }] });
+    expect(out).toContain('"overrides": [\n');
+    expect(out).toContain('"files": ["*.svelte"]');
+  });
+
+  test('keeps very long primitive arrays expanded', () => {
+    const out = stringifyJson({ items: Array.from({ length: 40 }, (_, i) => `entry-number-${i}`) });
+    expect(out).toContain('"items": [\n');
+  });
+
+  test('round-trips values and drops undefined like JSON.stringify', () => {
+    const value = { a: 1, b: 'x', c: null, d: undefined, e: [], f: {} };
+    expect(JSON.parse(stringifyJson(value))).toEqual(JSON.parse(JSON.stringify(value)));
+  });
+
+  test('transformTsconfig output keeps the inlined base arrays prettier-clean', () => {
+    const out = transformTsconfig(JSON.stringify({ extends: '../../tsconfig.base.json', compilerOptions: { types: ['bun'] }, include: ['src/**/*'] }));
+    expect(out).toContain('"lib": ["ESNext", "DOM", "DOM.Iterable"]');
+    expect(out).toContain('"types": ["bun"]');
+    expect(out).toContain('"include": ["src/**/*"]');
   });
 });
 

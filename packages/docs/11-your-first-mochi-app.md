@@ -27,7 +27,7 @@ bun install
 bun run dev
 ```
 
-The scaffold gives you a working app on `http://localhost:3333`. Its entry point is `src/index.ts`, which boots the server and declares your routes inline in the `Mochi.serve()` call:
+The scaffold gives you a working app on `http://localhost:3333`, with ESLint and Prettier preconfigured (`bun run lint`, `bun run format`) — opt out with `--no-eslint` / `--no-prettier`. Its entry point is `src/index.ts`, which boots the server and declares your routes inline in the `Mochi.serve()` call:
 
 ```ts
 // file: src/index.ts (scaffolded)
