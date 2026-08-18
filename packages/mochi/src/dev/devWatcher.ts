@@ -48,6 +48,16 @@ function publicChangeVerb(event: string): string {
   return 'changed';
 }
 
+/**
+ * Decide which reloads a non-CSS/shell/public file change needs. A module can live in both the server-entry graph and a
+ * page's SSR graph, and each needs its own rebuild, so the two are not exclusive — `recompileChanged()` no-ops when no
+ * page depends on the file, making the page reload free for server-only edits.
+ */
+export function planFileReload(filePath: string, serverEntryDeps: Set<string>): { entry: boolean; page: boolean } {
+  const entry = !filePath.endsWith('.svelte') && serverEntryDeps.has(path.resolve(filePath));
+  return { entry, page: true };
+}
+
 export interface DevWatcherDeps {
   registry: ComponentRegistry;
   server: Server<undefined>;
@@ -247,7 +257,7 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
 
   // Building the entry module discovers its transitive deps, so a dep change can rebuild, re-extract routes via
   // `extractServeOptions`, and hot-swap handlers in place for the running server.
-  let entryDeps: Set<string> = new Set();
+  let serverEntryDeps: Set<string> = new Set();
   const entryBuildOutDir = path.resolve(`${outDir}/entry-hmr`);
 
   async function buildEntry(): Promise<Record<string, unknown> | null> {
@@ -273,7 +283,7 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
         }
       }
     }
-    entryDeps = newDeps;
+    serverEntryDeps = newDeps;
     const outFile = path.resolve(entryBuildOutDir, 'entry.js');
     const serveOptions = await extractServeOptions(outFile, { fresh: true });
     if (!serveOptions?.routes) {
@@ -475,10 +485,8 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
     return counts;
   }
 
-  const triggerEntryReload = debounce((filename: string) => {
+  const triggerEntryReload = debounce((_filename: string) => {
     reloadChain = reloadChain.then(async () => {
-      mochiEvents.emit('recompile:start', { trigger: 'entry', path: filename, pageCount: 0 });
-      const start = performance.now();
       let counts: { updated: number; added: string[]; removed: string[]; api: number; ws: number; sse: number; page: number; file: number } = {
         updated: 0,
         added: [],
@@ -532,14 +540,6 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
       } catch (e) {
         logger.warn(`Entry rebuild failed: ${e instanceof Error ? e.message : e}`);
       }
-      mochiEvents.emit('recompile:complete', {
-        trigger: 'entry',
-        path: filename,
-        pageCount: 0,
-        pages: [],
-        clientBundleCount: 0,
-        durationMs: performance.now() - start,
-      });
       const hasChanges = counts.updated > 0 || counts.added.length > 0 || counts.removed.length > 0;
       if (hasChanges) {
         notifyClients();
@@ -547,7 +547,7 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
     });
   }, 100);
 
-  // Build once at startup so entryDeps and knownEntryPatterns are populated
+  // Build once at startup so serverEntryDeps and knownEntryPatterns are populated
   // before any file-change events arrive.
   reloadChain = reloadChain.then(async () => {
     try {
@@ -640,10 +640,14 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
         reloadPublic();
       } else if (filePath.endsWith('.css')) {
         triggerCssReload(filePath);
-      } else if (!filePath.endsWith('.svelte') && entryDeps.has(path.resolve(filePath))) {
-        triggerEntryReload(filePath);
       } else {
-        triggerReload(filePath);
+        const plan = planFileReload(filePath, serverEntryDeps);
+        if (plan.entry) {
+          triggerEntryReload(filePath);
+        }
+        if (plan.page) {
+          triggerReload(filePath);
+        }
       }
     })
     .on('error', (err: unknown) => {
