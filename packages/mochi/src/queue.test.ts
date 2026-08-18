@@ -526,14 +526,14 @@ describe('Mochi queue', () => {
     expect(worker!.options).not.toHaveProperty('burstWhenBatchFull');
   });
 
-  test('an undeclared expiry is no longer re-sent: a bare remount keeps stored options', async () => {
+  test('a bare declaration is an existence reference: a bare remount keeps stored options', async () => {
     const name = uniqueName();
     const file = path.join(dataDir, 'expiry.sqlite');
     await startWith({ [name]: { options: { expireInSeconds: 42, retryLimit: 7 } } }, { sqlite: file });
     expect((await getBoss().getQueue(name))?.expireInSeconds).toBe(42);
     await closeAllQueueResources();
 
-    // A second process mounting the same queue with a bare Mochi.queue(name) must keep 42, not reset it to the default.
+    // A bare Mochi.queue(name) declares no persisted options, so it asserts existence, not config — 42 must survive.
     await startWith({ [name]: {} }, { sqlite: file });
     const queue = await getBoss().getQueue(name);
     expect(queue?.expireInSeconds).toBe(42);

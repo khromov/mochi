@@ -46,7 +46,7 @@ import type {
 } from './types';
 import { isFormFail, isFormSuccess, isRedirect } from './runtime/forms';
 import { isEnhanceRequest, jsonError, jsonFailure, jsonRedirect, jsonSuccess } from './runtime/formsJson';
-import { csrfCheck, DEFAULT_FORM_CONTENT_TYPES, DEFAULT_PROTECTED_METHODS } from './runtime/csrf';
+import { csrfCheck, csrfBootWarning, DEFAULT_FORM_CONTENT_TYPES, DEFAULT_PROTECTED_METHODS } from './runtime/csrf';
 import { applyFilter, initExtensions, runHook } from './extensions';
 import { escapeHtmlAttr } from './utils/htmlEscape';
 import { buildPublicUrl } from './runtime/proxy';
@@ -84,6 +84,9 @@ import {
   createWorker,
   storageEquals,
   assertNoConflictingStandaloneRuntime,
+  deadLetterName,
+  resolveQueueConfigMode,
+  collectQueueStorageDeclarations,
 } from './queue';
 import { pinGlobal } from './utils/globalState';
 import { resetStartupMilestones } from './lifecycle';
@@ -223,7 +226,7 @@ export class Mochi {
    * Declare a background job queue. The returned descriptor is both the declaration `Mochi.serve({ queues: [q] })`
    * mounts (workers start there, and the queue drains gracefully on shutdown) and a directly-usable producer handle:
    * `q.add(...)` works anywhere. In a process that never serves, give it `storage` and the first add lazily connects a
-   * producer-only runtime — no server, no workers, no option re-sync; tear down with `Mochi.stop()`.
+   * producer-only runtime — no server, no workers; tear down with `Mochi.stop()`.
    */
   static queue<T = unknown, R = unknown>(name: string, config: MochiQueueOptions<T, R> = {}): MochiQueueDescriptor<T, R> {
     return createQueueDescriptor<T, R>(name, config);
@@ -239,12 +242,12 @@ export class Mochi {
 
   /**
    * Declare a standalone worker: consume queues in a process that never calls `Mochi.serve()`. `start()` connects to
-   * the app's queue storage (from the descriptors or the `storage` option) and begins polling. Ensure-only, like
-   * standalone producers — stored queue options are not re-synced, no hooks or milestones fire, and signal handling is
-   * yours to wire (`Mochi.stop()` drains and closes the runtime).
+   * the app's queue storage (from the descriptors or the `storage` option), creates-or-verifies the declared queue
+   * config (code is authoritative — see `queueConfig`), and begins polling. No hooks or milestones fire, and signal
+   * handling is yours to wire (`Mochi.stop()` drains and closes the runtime).
    */
   static worker(options: MochiWorkerOptions): MochiWorker {
-    return createWorker(options.queues, options.storage);
+    return createWorker(options.queues, options.storage, options.queueConfig);
   }
 
   /**
@@ -375,26 +378,25 @@ export class Mochi {
       queueNames.add(config.name);
       const deadLetter = config.options?.deadLetter;
       if (deadLetter !== undefined) {
-        if (deadLetter === config.name) {
+        if (deadLetterName(deadLetter) === config.name) {
           throw new Error(`Mochi.serve({ queues }): "${config.name}" names itself as its deadLetter queue.`);
         }
-        if (!declaredQueues.some((q) => q.name === deadLetter)) {
+        // Descriptor form is self-sufficient — the target is ensured on its own; only a bare name needs the array.
+        if (typeof deadLetter === 'string' && !declaredQueues.some((q) => q.name === deadLetter)) {
           throw new Error(
-            `Mochi.serve({ queues }): "${config.name}" names "${deadLetter}" as its deadLetter queue, but no queue with that name is declared in the same queues array.`,
+            `Mochi.serve({ queues }): "${config.name}" names "${deadLetter}" as its deadLetter queue, but no queue with that name is declared in the same queues array. Declare it there, or pass its descriptor (deadLetter: Mochi.queue("${deadLetter}", …)) so it is ensured on its own.`,
           );
         }
       }
     }
-    // An app has one queue storage: declared on the descriptors, app-wide via queueStorage, or both when they agree.
+    // An app has one queue storage: declared on the descriptors (deadLetter targets included), app-wide via
+    // queueStorage, or both when they agree.
     let declaredStorage: { name: string; storage: MochiQueueStorage } | undefined;
-    for (const config of declaredQueues) {
-      if (config.storage === undefined) {
-        continue;
+    for (const { name, storage } of collectQueueStorageDeclarations(declaredQueues)) {
+      if (declaredStorage && !storageEquals(declaredStorage.storage, storage)) {
+        throw new Error(`Mochi.serve({ queues }): "${name}" and "${declaredStorage.name}" declare different storages — an app has one queue storage.`);
       }
-      if (declaredStorage && !storageEquals(declaredStorage.storage, config.storage)) {
-        throw new Error(`Mochi.serve({ queues }): "${config.name}" and "${declaredStorage.name}" declare different storages — an app has one queue storage.`);
-      }
-      declaredStorage ??= { name: config.name, storage: config.storage };
+      declaredStorage ??= { name, storage };
     }
     if (options.queueStorage !== undefined && declaredStorage && !storageEquals(declaredStorage.storage, options.queueStorage)) {
       throw new Error(
@@ -425,6 +427,11 @@ export class Mochi {
     const protectedMethods: ReadonlySet<string> = applyFilter('csrf:protectedMethods', new Set(DEFAULT_PROTECTED_METHODS), { options });
     const trustedOrigins: ReadonlySet<string> = applyFilter('csrf:trustedOrigins', new Set(options.csrf?.trustedOrigins ?? []), { options });
     const cookieDefaults = applyFilter('cookie:defaults', {}, { options });
+
+    const bootCsrfWarning = csrfBootWarning(options);
+    if (bootCsrfWarning) {
+      logger.warn(bootCsrfWarning);
+    }
 
     const development = options.development ?? true;
     const inlineNestedIslands = options.inlineNestedIslands !== false;
@@ -1898,7 +1905,7 @@ export class Mochi {
       if (declaredQueues.length > 0) {
         // kind 'serve' adopts a standalone producer runtime already connected to the same storage.
         await startQueueRuntime(queueStorage, { kind: 'serve' });
-        await mountQueues(declaredQueues);
+        await mountQueues(declaredQueues, resolveQueueConfigMode(options.queueConfig));
       }
     } catch (err) {
       await closeAllQueueResources();

@@ -5,8 +5,8 @@ import { closeAllQueueResources, getBoss, mountQueues, startQueueRuntime } from 
 import { mochiEvents } from './events';
 import { resetStartupMilestones } from './lifecycle';
 
-// The standalone lazy-connect + no-resync contract on the embedded pglite backend, mirroring queueStandalone.test.ts's
-// sqlite coverage; the caller owns the PGlite instance, so this test closes it itself.
+// The standalone lazy-connect + code-authoritative-config contract on the embedded pglite backend, mirroring
+// queueStandalone.test.ts's sqlite coverage; the caller owns the PGlite instance, so this test closes it itself.
 describe('standalone queue producer on pglite storage', () => {
   let db: PGlite;
 
@@ -17,7 +17,7 @@ describe('standalone queue producer on pglite storage', () => {
     await db?.close();
   });
 
-  test('lazily connects producer-only and never re-syncs consumer-owned options', async () => {
+  test('lazily connects producer-only; a bare handle passes while a differing declaration is rejected', async () => {
     db = await PGlite.create();
 
     // A consumer deployment mounts the queue with its own settings first.
@@ -26,8 +26,8 @@ describe('standalone queue producer on pglite storage', () => {
     expect((await getBoss().getQueue('pglite-standalone'))?.expireInSeconds).toBe(42);
     await closeAllQueueResources();
 
-    // A bare producer's first add reconnects lazily, registers no worker, and leaves the stored options alone.
-    const producer = Mochi.queue<{ n: number }>('pglite-standalone', { storage: { pglite: db }, expireInSeconds: 900, retryLimit: 1 });
+    // A bare producer's first add reconnects lazily, registers no worker, and asserts existence, not config.
+    const producer = Mochi.queue<{ n: number }>('pglite-standalone', { storage: { pglite: db } });
     const jobId = await producer.add({ n: 1 });
     expect(jobId).toBeString();
     expect(getBoss().getWipData()).toHaveLength(0);
@@ -35,6 +35,11 @@ describe('standalone queue producer on pglite storage', () => {
     const stored = await getBoss().getQueue('pglite-standalone');
     expect(stored?.expireInSeconds).toBe(42);
     expect(stored?.retryLimit).toBe(7);
+    await Mochi.stop();
+
+    // A producer that does declare options is held to them — code is authoritative, and this code disagrees.
+    const differing = Mochi.queue<{ n: number }>('pglite-standalone', { storage: { pglite: db }, expireInSeconds: 900, retryLimit: 1 });
+    await expect(differing.add({ n: 2 })).rejects.toThrow(/already exists in storage with retryLimit 7, expireInSeconds 42/);
 
     // Mochi.stop() drains the runtime but must not close the caller-owned instance.
     await Mochi.stop();

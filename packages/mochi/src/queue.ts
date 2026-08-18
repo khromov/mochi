@@ -106,6 +106,17 @@ export interface MochiWorkerTuning {
   heartbeatRefreshSeconds?: number;
 }
 
+/**
+ * A queue reference usable as a `deadLetter` target: any descriptor returned by `Mochi.queue()`. Non-generic so a
+ * descriptor of any payload type fits.
+ */
+export interface MochiDeadLetterTarget {
+  readonly __mochiQueue: true;
+  readonly name: string;
+  readonly options?: MochiQueueRuntimeOptions;
+  readonly storage?: MochiQueueStorage;
+}
+
 /** The non-processor settings of a queue — what survives on `MochiQueueConfig.options`. */
 export interface MochiQueueRuntimeOptions {
   /** Jobs of this queue processed in parallel in this process. */
@@ -128,8 +139,11 @@ export interface MochiQueueRuntimeOptions {
   retentionSeconds?: number;
   /** Seconds a completed job is retained. bun-boss default: 7 days. */
   deleteAfterSeconds?: number;
-  /** Name of another queue in the same `queues` map; terminally failed jobs move there. */
-  deadLetter?: string;
+  /**
+   * Where terminally failed jobs move: another queue's descriptor (self-sufficient — the target is ensured before
+   * this queue, from any process), or its name, which must be declared in the same queues array or already exist in storage.
+   */
+  deadLetter?: string | MochiDeadLetterTarget;
 }
 
 /** The full config object passed to `Mochi.queue(name, { process, … })`. */
@@ -195,14 +209,14 @@ interface QueueRegistry {
   byName: Map<string, MochiQueue<unknown>>;
   /** Worker ids per queue, so adds from this process can skip the poll delay via `notifyWorker`. */
   workIds: Map<string, string>;
-  /** Who started the runtime: serve owns workers and the option re-sync; standalone is producer-only. */
+  /** Who started the runtime: serve owns workers; standalone is producer-only. */
   kind: 'serve' | 'standalone' | null;
   /** Storage the running boss was started with, for identity checks against later connect attempts. */
   storage: MochiQueueStorage | null;
   /** In-flight standalone boot, so concurrent first-adds share one `start()`. */
   starting: Promise<void> | null;
-  /** Per-queue ensure-exists memo for standalone producers. */
-  ensured: Map<string, Promise<void>>;
+  /** Per-queue create-and-verify memo, keyed by name; the value's `key` canonicalizes the verified declaration. */
+  ensured: Map<string, { key: string; promise: Promise<void> }>;
 }
 
 // Pinned so every duplicate bundled copy of this module shares one registry, since `closeAllQueueResources` must see
@@ -253,6 +267,95 @@ function describeStorage(storage: MochiQueueStorage | null): string {
 
 export const DEFAULT_EXPIRE_IN_SECONDS = 900;
 
+// Mirrors bun-boss 0.4.0's createQueue COALESCE defaults (its plans.ts): declared code is authoritative and an
+// undeclared option means "the default", so these are what it must read back as — re-verify on every bun-boss bump.
+const QUEUE_OPTION_DEFAULTS = {
+  retryLimit: 2,
+  retryDelay: 0,
+  retryBackoff: false,
+  retryDelayMax: null,
+  expireInSeconds: DEFAULT_EXPIRE_IN_SECONDS,
+  retentionSeconds: 1_209_600,
+  deleteAfterSeconds: 604_800,
+  deadLetter: null,
+} as const;
+type ManagedQueueField = keyof typeof QUEUE_OPTION_DEFAULTS;
+type ManagedQueueValue = number | boolean | string | null;
+
+export function isDeadLetterDescriptor(dl: string | MochiDeadLetterTarget | undefined): dl is MochiDeadLetterTarget {
+  return typeof dl === 'object' && dl !== null && dl.__mochiQueue === true;
+}
+
+export function deadLetterName(dl: string | MochiDeadLetterTarget | undefined): string | undefined {
+  return typeof dl === 'string' ? dl : dl?.name;
+}
+
+/** `MOCHI_QUEUE_SYNC=1` exists for one-shot migration deploys, so it is process-wide and wins over the code option. */
+export function resolveQueueConfigMode(declared?: 'verify' | 'sync'): 'verify' | 'sync' {
+  const env = process.env.MOCHI_QUEUE_SYNC;
+  return env === '1' || env === 'true' ? 'sync' : (declared ?? 'verify');
+}
+
+function expectedQueueOptions(bossOptions: UpdateQueueOptions): Record<ManagedQueueField, ManagedQueueValue> {
+  return { ...QUEUE_OPTION_DEFAULTS, ...bossOptions } as Record<ManagedQueueField, ManagedQueueValue>;
+}
+
+// The sqlite dialect can hand back 0/1 (or string) booleans and string-typed numerics; those must not read as drift.
+function normalizeStoredValue(field: ManagedQueueField, value: unknown): ManagedQueueValue {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  if (field === 'deadLetter') {
+    return String(value);
+  }
+  if (field === 'retryBackoff') {
+    return Boolean(typeof value === 'string' ? Number(value) : value);
+  }
+  return Number(value);
+}
+
+interface QueueConfigDiff {
+  field: ManagedQueueField;
+  stored: ManagedQueueValue;
+  declared: ManagedQueueValue;
+}
+
+function diffQueueConfig(expected: Record<ManagedQueueField, ManagedQueueValue>, stored: Record<string, unknown>): QueueConfigDiff[] {
+  const diffs: QueueConfigDiff[] = [];
+  for (const field of Object.keys(QUEUE_OPTION_DEFAULTS) as ManagedQueueField[]) {
+    const storedValue = normalizeStoredValue(field, stored[field]);
+    const declaredValue = expected[field] ?? null;
+    if (!Object.is(storedValue, declaredValue)) {
+      diffs.push({ field, stored: storedValue, declared: declaredValue });
+    }
+  }
+  return diffs;
+}
+
+function formatQueueValue(value: ManagedQueueValue): string {
+  if (value === null) {
+    return 'unset';
+  }
+  return typeof value === 'string' ? `"${value}"` : String(value);
+}
+
+function queueConfigMismatchError(context: string, name: string, diffs: QueueConfigDiff[]): Error {
+  const stored = diffs.map((d) => `${d.field} ${formatQueueValue(d.stored)}`).join(', ');
+  const declared = diffs.map((d) => `${d.field} ${formatQueueValue(d.declared)}`).join(', ');
+  const settable = diffs.filter((d) => d.declared !== null);
+  const unclearable = diffs.filter((d) => d.declared === null);
+  const hint = settable.map((d) => `${d.field}: ${typeof d.declared === 'string' ? `"${d.declared}"` : String(d.declared)}`).join(', ');
+  const remedy =
+    settable.length > 0
+      ? `update the declaration to match, migrate the store with Mochi.boss().updateQueue("${name}", { ${hint} }) and restart, or boot once with MOCHI_QUEUE_SYNC=1 (or queueConfig: 'sync') to apply the declared config`
+      : `update the declaration to match`;
+  let message = `${context}: "${name}" already exists in storage with ${stored}, but this code declares ${declared}. Code is authoritative for queue config — ${remedy}.`;
+  if (unclearable.length > 0) {
+    message += ` ${unclearable.map((d) => d.field).join(' and ')} cannot be cleared through bun-boss's updateQueue (absent fields keep their stored value) — keep declaring it, or reset the queue with Mochi.boss().deleteQueue("${name}") and reboot (this discards the queue's jobs).`;
+  }
+  return new Error(message);
+}
+
 // bun-boss's attorney asserts on key presence, not value, so an explicitly-undefined option must not reach it.
 function omitUndefined<T extends Record<string, unknown>>(obj: T): T {
   return Object.fromEntries(Object.entries(obj).filter(([, value]) => value !== undefined)) as T;
@@ -281,8 +384,17 @@ function toBossQueueOptions(name: string, options: MochiQueueRuntimeOptions | un
   // Sent only when declared or filter-overridden: an unchanged default stays omitted so a bare mount on shared durable
   // storage keeps (not resets) another deployment's stored expiry, matching every other option's COALESCE semantics.
   const expireInSeconds = declared !== undefined || filtered !== DEFAULT_EXPIRE_IN_SECONDS ? filtered : undefined;
-  const { retryLimit, retryDelay, retryBackoff, retryDelayMax, retentionSeconds, deleteAfterSeconds, deadLetter } = options ?? {};
-  return omitUndefined({ expireInSeconds, retryLimit, retryDelay, retryBackoff, retryDelayMax, retentionSeconds, deleteAfterSeconds, deadLetter });
+  const { retryLimit, retryDelay, retryBackoff, retryDelayMax, retentionSeconds, deleteAfterSeconds } = options ?? {};
+  return omitUndefined({
+    expireInSeconds,
+    retryLimit,
+    retryDelay,
+    retryBackoff,
+    retryDelayMax,
+    retentionSeconds,
+    deleteAfterSeconds,
+    deadLetter: deadLetterName(options?.deadLetter),
+  });
 }
 
 function requireBoss(): BunBoss {
@@ -322,8 +434,8 @@ export async function startQueueRuntime(storage: MochiQueueStorage, opts?: { kin
   if (registry.boss) {
     if (kind === 'serve' && registry.kind === 'standalone') {
       assertNoConflictingStandaloneRuntime(storage);
-      // Serve adopts a standalone producer runtime on the same storage; mountQueues then layers workers and the
-      // option re-sync on top of it. Producer handles reset so only queues the serve declares stay producible —
+      // Serve adopts a standalone producer runtime on the same storage; mountQueues then layers workers and its own
+      // config verification on top of it. Producer handles reset so only queues the serve declares stay producible —
       // otherwise whether an undeclared queue can produce would depend on whether it raced the boot.
       registry.kind = 'serve';
       registry.byName.clear();
@@ -530,7 +642,7 @@ async function ensureUsable(descriptor: MountableQueue): Promise<void> {
   } else if (!registry.byName.has(name)) {
     throw noStorageError(name);
   }
-  await ensureQueueExists(name, descriptor.options);
+  await verifyOrCreateQueues([descriptor], `Mochi.queue("${name}")`, resolveQueueConfigMode());
   // Re-checked after the await: a serve boot may have adopted the runtime mid-ensure, and registering an undeclared
   // producer past the adoption would make producibility depend on who won that race.
   assertProducibleUnderServe(name);
@@ -575,79 +687,78 @@ async function stopQueue(name: string): Promise<void> {
   }
 }
 
-// Create the queue if it's missing, remembering the attempt so it runs once. createQueue leaves an existing queue as
-// it is and the standalone paths never update it, so options a Mochi.serve() app set are left alone.
-function ensureQueueCreated(name: string, createOptions: UpdateQueueOptions): Promise<void> {
-  let ensured = registry.ensured.get(name);
-  if (!ensured) {
-    ensured = requireBoss()
-      .createQueue(name, createOptions)
-      .catch((err: unknown) => {
-        registry.ensured.delete(name);
-        throw err;
-      });
-    registry.ensured.set(name, ensured);
-  }
-  return ensured;
+interface DeclaredQueueEntry {
+  name: string;
+  bossOptions: UpdateQueueOptions;
+  /** Reached only as a descriptor-form deadLetter target: ensured and verified, never registered as producer/worker. */
+  implicit: boolean;
 }
 
-// The producer path (a bare `queue.add()`) only knows the queue being added to, not the deadLetter queue it points at,
-// so it can't tell whether that target exists yet — drop the link (createQueue errors on a missing target). A worker
-// knows its whole queues list, so ensureWorkerQueues keeps the link.
-async function ensureQueueExists(name: string, options: MochiQueueRuntimeOptions | undefined): Promise<void> {
-  const { deadLetter: _, ...createOptions } = toBossQueueOptions(name, options);
-  await ensureQueueCreated(name, createOptions);
+function declarationKey(bossOptions: UpdateQueueOptions): string {
+  return JSON.stringify(Object.fromEntries(Object.entries(bossOptions).sort(([a], [b]) => (a < b ? -1 : 1))));
 }
 
-// Create the worker's queues. When a queue names another of this worker's queues as its deadLetter, set that link as
-// the queue is created (creating the target first, since it must exist). Only a brand-new queue gets the link — an
-// existing one is left as it is; a deadLetter naming a queue this worker doesn't list is skipped with a warning, and a
-// queue naming itself throws, as Mochi.serve() does.
-async function ensureWorkerQueues(queues: MountableQueue[]): Promise<void> {
-  const declared = new Set(queues.map((q) => q.name));
-  const resolved = queues.map((q) => {
+// Resolve the declared queues plus every descriptor-form deadLetter target, recursively — the closure is what lets a
+// lone producer create its queue with the link intact (the target is known and ensured first).
+function collectQueueClosure(queues: MountableQueue[], context: string): DeclaredQueueEntry[] {
+  const entries = new Map<string, DeclaredQueueEntry>();
+  const pending: Array<{ q: MountableQueue; implicit: boolean; referrer?: string }> = queues.map((q) => ({ q, implicit: false }));
+  while (pending.length > 0) {
+    const { q, implicit, referrer } = pending.shift()!;
     const bossOptions = toBossQueueOptions(q.name, q.options);
-    const deadLetter = bossOptions.deadLetter;
-    if (deadLetter === undefined) {
-      return { name: q.name, bossOptions };
-    }
-    if (deadLetter === q.name) {
-      throw new Error(`Mochi.worker(): "${q.name}" names itself as its deadLetter queue.`);
-    }
-    if (!declared.has(deadLetter)) {
-      logger.warn(
-        `[queue] "${q.name}" names "${deadLetter}" as its deadLetter queue, but no queue named "${deadLetter}" is in this worker's queues array — the link is skipped. Declare it where "${deadLetter}" is mounted.`,
-      );
-      return { name: q.name, bossOptions: withoutDeadLetter(bossOptions) };
-    }
-    return { name: q.name, bossOptions };
-  });
-  const boss = requireBoss();
-  for (const { name, bossOptions } of orderByDeadLetter(resolved)) {
-    await ensureQueueCreated(name, bossOptions);
-    // createQueue skips a queue that already exists, so one left from an earlier deploy (or a producer add in this
-    // process) keeps the deadLetter it was stored with — warn that the declared link wasn't applied rather than dropping it silently.
-    if (bossOptions.deadLetter !== undefined) {
-      const stored = (await boss.getQueue(name))?.deadLetter ?? undefined;
-      if (stored !== bossOptions.deadLetter) {
-        logger.warn(
-          `[queue] "${name}" declares "${bossOptions.deadLetter}" as its deadLetter queue, but the queue already exists ${stored ? `linked to "${stored}"` : 'without a deadLetter link'} — a worker only sets the link when it first creates the queue. Migrate with Mochi.boss().updateQueue("${name}", { deadLetter: "${bossOptions.deadLetter}" }).`,
+    const existing = entries.get(q.name);
+    if (existing) {
+      if (declarationKey(existing.bossOptions) !== declarationKey(bossOptions)) {
+        throw new Error(
+          `${context}: "${q.name}" is declared twice with different options${referrer ? ` — once directly and once as "${referrer}"'s deadLetter descriptor` : ''}. Share one descriptor.`,
         );
       }
+      existing.implicit &&= implicit;
+      continue;
+    }
+    entries.set(q.name, { name: q.name, bossOptions, implicit });
+    const dl = q.options?.deadLetter;
+    if (deadLetterName(dl) === q.name) {
+      throw new Error(`${context}: "${q.name}" names itself as its deadLetter queue.`);
+    }
+    if (isDeadLetterDescriptor(dl)) {
+      if (dl.storage !== undefined && !storageEquals(registry.storage, dl.storage)) {
+        throw storageMismatchError(dl.name, dl.storage);
+      }
+      pending.push({ q: { name: dl.name, options: dl.options, storage: dl.storage }, implicit: true, referrer: q.name });
     }
   }
+  return [...entries.values()];
 }
 
-function withoutDeadLetter(options: UpdateQueueOptions): UpdateQueueOptions {
-  const { deadLetter: _, ...rest } = options;
-  return rest;
+/** Every `(name, storage)` declaration in the queues array and its descriptor-form deadLetter closure, for the one-storage scan. */
+export function collectQueueStorageDeclarations(queues: MountableQueue[]): Array<{ name: string; storage: MochiQueueStorage }> {
+  const out: Array<{ name: string; storage: MochiQueueStorage }> = [];
+  const seen = new Set<string>();
+  const pending = [...queues];
+  while (pending.length > 0) {
+    const q = pending.shift()!;
+    if (seen.has(q.name)) {
+      continue;
+    }
+    seen.add(q.name);
+    if (q.storage !== undefined) {
+      out.push({ name: q.name, storage: q.storage });
+    }
+    const dl = q.options?.deadLetter;
+    if (isDeadLetterDescriptor(dl)) {
+      pending.push({ name: dl.name, options: dl.options, storage: dl.storage });
+    }
+  }
+  return out;
 }
 
 // Order the queues so each deadLetter target comes before the queue pointing at it, since createQueue needs the target
-// to already exist. Anything left over points in a loop (A→B→A), which can't be built from scratch — create those
-// without the link and warn.
-function orderByDeadLetter(items: { name: string; bossOptions: UpdateQueueOptions }[]): { name: string; bossOptions: UpdateQueueOptions }[] {
-  const ordered: { name: string; bossOptions: UpdateQueueOptions }[] = [];
+// to already exist. A target outside the closure is external — its referrer orders freely and the FK decides at create
+// time. Leftovers point in a loop (A→B→A), which cannot be built from scratch; the caller verifies those against storage.
+function orderByDeadLetter(items: DeclaredQueueEntry[]): { ordered: DeclaredQueueEntry[]; cyclic: DeclaredQueueEntry[] } {
+  const names = new Set(items.map((item) => item.name));
+  const ordered: DeclaredQueueEntry[] = [];
   const emitted = new Set<string>();
   let progressed = true;
   while (progressed) {
@@ -657,26 +768,93 @@ function orderByDeadLetter(items: { name: string; bossOptions: UpdateQueueOption
         continue;
       }
       const target = item.bossOptions.deadLetter;
-      if (target === undefined || emitted.has(target)) {
+      if (target === undefined || !names.has(target) || emitted.has(target)) {
         ordered.push(item);
         emitted.add(item.name);
         progressed = true;
       }
     }
   }
-  const cyclic = items.filter((item) => !emitted.has(item.name));
+  return { ordered, cyclic: items.filter((item) => !emitted.has(item.name)) };
+}
+
+/**
+ * The one rule for every path (serve, worker, standalone producer): create each declared queue with its full config,
+ * read it back, and require storage to match the declaration — code is authoritative, storage is a cache of it.
+ * A declaration with no persisted options is a pure existence reference and skips the comparison.
+ */
+async function verifyOrCreateQueues(queues: MountableQueue[], context: string, mode: 'verify' | 'sync'): Promise<DeclaredQueueEntry[]> {
+  const boss = requireBoss();
+  const entries = collectQueueClosure(queues, context);
+  const { ordered, cyclic } = orderByDeadLetter(entries);
   if (cyclic.length > 0) {
-    // One warning for the whole loop, not one per queue. A worker can't build a deadLetter loop (createQueue needs each
-    // target to exist first), while Mochi.serve() can — it creates every queue, then adds the links — so use serve for loops.
-    logger.warn(
-      `[queue] deadLetter loop among ${cyclic.map((item) => `"${item.name}"`).join(', ')} — created without their links; a worker cannot create a deadLetter loop (mount these under Mochi.serve() if you need it).`,
-    );
-    for (const item of cyclic) {
-      ordered.push({ name: item.name, bossOptions: withoutDeadLetter(item.bossOptions) });
-      emitted.add(item.name);
+    const rows = await Promise.all(cyclic.map((item) => boss.getQueue(item.name)));
+    if (rows.some((row) => row == null)) {
+      throw new Error(
+        `${context}: deadLetter loop among ${cyclic.map((item) => `"${item.name}"`).join(', ')} — these queues do not all exist in storage yet, and a loop cannot be created from scratch (each deadLetter target must exist before its referrer). Create them once via Mochi.boss().createQueue()/updateQueue(); an existing loop that matches the declaration passes.`,
+      );
     }
+    // Every member exists, so createQueue is a no-op and only the verification below runs.
+    ordered.push(...cyclic);
   }
-  return ordered;
+  for (const entry of ordered) {
+    const key = declarationKey(entry.bossOptions);
+    const memo = registry.ensured.get(entry.name);
+    if (memo && memo.key === key) {
+      await memo.promise;
+      continue;
+    }
+    const promise = verifyOrCreateQueue(boss, entry, context, mode).catch((err: unknown) => {
+      registry.ensured.delete(entry.name);
+      throw err;
+    });
+    registry.ensured.set(entry.name, { key, promise });
+    await promise;
+  }
+  return entries;
+}
+
+async function verifyOrCreateQueue(boss: BunBoss, entry: DeclaredQueueEntry, context: string, mode: 'verify' | 'sync'): Promise<void> {
+  const { name, bossOptions } = entry;
+  try {
+    await boss.createQueue(name, bossOptions);
+  } catch (err) {
+    const target = bossOptions.deadLetter;
+    if (target !== undefined && (await boss.getQueue(target).catch(() => null)) == null) {
+      throw new Error(
+        `${context}: "${name}" names "${target}" as its deadLetter queue, but "${target}" is not declared here and does not exist in storage, so "${name}" cannot be created with its link. Pass the target's descriptor — deadLetter: Mochi.queue("${target}", …) — so it is ensured first.`,
+        { cause: err },
+      );
+    }
+    throw err;
+  }
+  if (Object.keys(bossOptions).length === 0) {
+    return;
+  }
+  const stored = await boss.getQueue(name);
+  if (!stored) {
+    throw new Error(`${context}: could not read back queue "${name}" after creating it.`);
+  }
+  const expected = expectedQueueOptions(bossOptions);
+  const diffs = diffQueueConfig(expected, stored as unknown as Record<string, unknown>);
+  if (diffs.length === 0) {
+    return;
+  }
+  // A declared-unset field can't be repaired either way: updateQueue keeps stored values for absent fields.
+  if (mode === 'verify' || diffs.some((d) => d.declared === null)) {
+    throw queueConfigMismatchError(context, name, diffs);
+  }
+  // Full-field write of concrete values so COALESCE semantics can't keep a stale one.
+  const payload = omitUndefined(Object.fromEntries(Object.entries(expected).map(([k, v]) => [k, v === null ? undefined : v]))) as UpdateQueueOptions;
+  await boss.updateQueue(name, payload);
+  const reread = await boss.getQueue(name);
+  const remaining = reread == null ? diffs : diffQueueConfig(expected, reread as unknown as Record<string, unknown>);
+  if (remaining.length > 0) {
+    throw queueConfigMismatchError(context, name, remaining);
+  }
+  logger.warn(
+    `[queue] "${name}": synced stored config to the declaration — ${diffs.map((d) => `${d.field} ${formatQueueValue(d.stored)} → ${formatQueueValue(d.declared)}`).join(', ')}.`,
+  );
 }
 
 /** Implements `Mochi.queue(name, config)` — see its JSDoc there. */
@@ -740,25 +918,12 @@ export function createQueueDescriptor<T = unknown, R = unknown>(name: string, co
  * Mount every queue declared in `Mochi.serve({ queues })` on the running boss: ensure each exists with its declared
  * config, then start a worker for each that has a processor.
  */
-export async function mountQueues(queues: MountableQueue[]): Promise<void> {
+export async function mountQueues(queues: MountableQueue[], mode: 'verify' | 'sync' = 'verify'): Promise<void> {
   const boss = requireBoss();
-  const resolved = queues.map((config) => ({ name: config.name, config, bossOptions: toBossQueueOptions(config.name, config.options) }));
-  // createQueue validates that a deadLetter target already exists and is ON CONFLICT DO NOTHING, so pass 1 creates
-  // every queue without deadLetter and pass 2 updates with the full set — declaration order stops mattering. The
-  // re-sync is additive only: updateQueue COALESCEs absent keys, so an option *removed* from code (deadLetter
-  // included — bun-boss can't yet clear it) keeps its persisted value on durable storage.
-  for (const { name, bossOptions } of resolved) {
-    const { deadLetter: _, ...createOptions } = bossOptions;
-    await boss.createQueue(name, createOptions);
-  }
-  for (const { name, bossOptions } of resolved) {
-    // A queue declaring nothing has nothing to re-sync (bun-boss asserts on an empty update).
-    if (Object.keys(bossOptions).length > 0) {
-      await boss.updateQueue(name, bossOptions);
-    }
-  }
-  for (const { name, config } of resolved) {
-    registry.byName.set(name, producerMethods(name));
+  await verifyOrCreateQueues(queues, 'Mochi.serve({ queues })', mode);
+  // Only the declared array is registered — implicit descriptor-form deadLetter targets are ensured, not mounted.
+  for (const config of queues) {
+    registry.byName.set(config.name, producerMethods(config.name));
     if (config.process) {
       await registerQueueWorker(boss, config);
     }
@@ -792,7 +957,7 @@ export interface MochiWorker {
 }
 
 /** Implements `Mochi.worker(options)` — see its JSDoc there. */
-export function createWorker(queues: MountableQueue[], storage?: MochiQueueStorage): MochiWorker {
+export function createWorker(queues: MountableQueue[], storage?: MochiQueueStorage, queueConfig?: 'verify' | 'sync'): MochiWorker {
   if (queues.length === 0) {
     throw new Error('Mochi.worker(): declare at least one queue.');
   }
@@ -850,7 +1015,7 @@ export function createWorker(queues: MountableQueue[], storage?: MochiQueueStora
           );
         }
         const boss = requireBoss();
-        await ensureWorkerQueues(queues);
+        await verifyOrCreateQueues(queues, 'Mochi.worker()', resolveQueueConfigMode(queueConfig));
         for (const q of queues) {
           if (!registry.byName.has(q.name)) {
             registry.byName.set(q.name, producerMethods(q.name));

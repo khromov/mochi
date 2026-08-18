@@ -274,6 +274,12 @@ export interface MochiWorkerOptions {
   queues: MochiQueueConfig[];
   /** The app's queue storage; may instead come from a `storage` declared on the descriptors. */
   storage?: MochiQueueStorage;
+  /**
+   * `'verify'` (default): a stored queue whose config differs from its declaration is a start() error — code is
+   * authoritative. `'sync'`: write the declared config to storage instead, logging each change. `MOCHI_QUEUE_SYNC=1`
+   * forces `'sync'` process-wide and wins over this option.
+   */
+  queueConfig?: 'verify' | 'sync';
 }
 
 export type MochiRouteValue = MochiPageConfig | MochiApiConfig | MochiWsConfig | MochiSseConfig | MochiFileConfig | BunRouteValue;
@@ -457,6 +463,12 @@ export interface MochiServeOptions {
    * declarations are a boot error.
    */
   queueStorage?: MochiQueueStorage;
+  /**
+   * `'verify'` (default): a stored queue whose config differs from its declaration is a boot error — code is
+   * authoritative. `'sync'`: write the declared config to storage instead, logging each change. `MOCHI_QUEUE_SYNC=1`
+   * forces `'sync'` process-wide and wins over this option.
+   */
+  queueConfig?: 'verify' | 'sync';
   fetch?: (req: Request, server: Server<undefined>) => Response | Promise<Response>;
   htmlShell?: string;
   /**
