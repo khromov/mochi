@@ -215,8 +215,6 @@ interface QueueRegistry {
   storage: MochiQueueStorage | null;
   /** In-flight standalone boot, so concurrent first-adds share one `start()`. */
   starting: Promise<void> | null;
-  /** Per-queue create-and-verify memo, keyed by name; the value's `key` canonicalizes the verified declaration. */
-  ensured: Map<string, { key: string; promise: Promise<void> }>;
 }
 
 // Pinned so every duplicate bundled copy of this module shares one registry, since `closeAllQueueResources` must see
@@ -229,7 +227,6 @@ const registry = pinGlobal<QueueRegistry>('__mochi_queue_registry__', () => ({
   kind: null,
   storage: null,
   starting: null,
-  ensured: new Map(),
 }));
 
 export function storageEquals(a: MochiQueueStorage | null, b: MochiQueueStorage): boolean {
@@ -282,11 +279,11 @@ const QUEUE_OPTION_DEFAULTS = {
 type ManagedQueueField = keyof typeof QUEUE_OPTION_DEFAULTS;
 type ManagedQueueValue = number | boolean | string | null;
 
-export function isDeadLetterDescriptor(dl: string | MochiDeadLetterTarget | undefined): dl is MochiDeadLetterTarget {
+function isDeadLetterDescriptor(dl: string | MochiDeadLetterTarget | undefined): dl is MochiDeadLetterTarget {
   return typeof dl === 'object' && dl !== null && dl.__mochiQueue === true;
 }
 
-export function deadLetterName(dl: string | MochiDeadLetterTarget | undefined): string | undefined {
+function deadLetterName(dl: string | MochiDeadLetterTarget | undefined): string | undefined {
   return typeof dl === 'string' ? dl : dl?.name;
 }
 
@@ -294,10 +291,6 @@ export function deadLetterName(dl: string | MochiDeadLetterTarget | undefined): 
 export function resolveQueueConfigMode(declared?: 'verify' | 'sync'): 'verify' | 'sync' {
   const env = process.env.MOCHI_QUEUE_SYNC;
   return env === '1' || env === 'true' ? 'sync' : (declared ?? 'verify');
-}
-
-function expectedQueueOptions(bossOptions: UpdateQueueOptions): Record<ManagedQueueField, ManagedQueueValue> {
-  return { ...QUEUE_OPTION_DEFAULTS, ...bossOptions } as Record<ManagedQueueField, ManagedQueueValue>;
 }
 
 // The sqlite dialect can hand back 0/1 (or string) booleans and string-typed numerics; those must not read as drift.
@@ -439,7 +432,6 @@ export async function startQueueRuntime(storage: MochiQueueStorage, opts?: { kin
       // otherwise whether an undeclared queue can produce would depend on whether it raced the boot.
       registry.kind = 'serve';
       registry.byName.clear();
-      registry.ensured.clear();
       return;
     }
     if (kind === 'standalone') {
@@ -611,7 +603,7 @@ function storageMismatchError(name: string, storage: MochiQueueStorage): Error {
 }
 
 /**
- * Make a descriptor's producer methods callable: a no-op when the queue is already mounted/ensured, otherwise the lazy
+ * Make a descriptor's producer methods callable: a no-op when the queue is already mounted, otherwise the lazy
  * standalone path — boot a producer-only runtime against the descriptor's storage and ensure the queue exists.
  */
 async function ensureUsable(descriptor: MountableQueue): Promise<void> {
@@ -680,7 +672,6 @@ async function stopQueue(name: string): Promise<void> {
     registry.workIds.delete(name);
   }
   registry.byName.delete(name);
-  registry.ensured.delete(name);
   // The runtime is shared, so it closes only when the last active queue lets go.
   if (registry.byName.size === 0) {
     await closeAllQueueResources();
@@ -690,21 +681,25 @@ async function stopQueue(name: string): Promise<void> {
 interface DeclaredQueueEntry {
   name: string;
   bossOptions: UpdateQueueOptions;
-  /** Reached only as a descriptor-form deadLetter target: ensured and verified, never registered as producer/worker. */
-  implicit: boolean;
+  storage?: MochiQueueStorage;
 }
 
 function declarationKey(bossOptions: UpdateQueueOptions): string {
   return JSON.stringify(Object.fromEntries(Object.entries(bossOptions).sort(([a], [b]) => (a < b ? -1 : 1))));
 }
 
-// Resolve the declared queues plus every descriptor-form deadLetter target, recursively — the closure is what lets a
-// lone producer create its queue with the link intact (the target is known and ensured first).
-function collectQueueClosure(queues: MountableQueue[], context: string): DeclaredQueueEntry[] {
+/**
+ * Resolve the declared queues plus every descriptor-form deadLetter target, recursively — the closure is what lets a
+ * lone producer create its queue with the link intact (the target is known and ensured first). Also validates
+ * self-references and conflicting duplicate declarations. Pure, so the serve prelude can check the same graph
+ * pre-bind (the dup check compares filter-shaped options, but both sides pass through the same filter, so its verdict
+ * is the same whether or not extensions are initialized yet).
+ */
+export function collectQueueClosure(queues: MountableQueue[], context: string): DeclaredQueueEntry[] {
   const entries = new Map<string, DeclaredQueueEntry>();
-  const pending: Array<{ q: MountableQueue; implicit: boolean; referrer?: string }> = queues.map((q) => ({ q, implicit: false }));
+  const pending: Array<{ q: MountableQueue; referrer?: string }> = queues.map((q) => ({ q }));
   while (pending.length > 0) {
-    const { q, implicit, referrer } = pending.shift()!;
+    const { q, referrer } = pending.shift()!;
     const bossOptions = toBossQueueOptions(q.name, q.options);
     const existing = entries.get(q.name);
     if (existing) {
@@ -713,44 +708,18 @@ function collectQueueClosure(queues: MountableQueue[], context: string): Declare
           `${context}: "${q.name}" is declared twice with different options${referrer ? ` — once directly and once as "${referrer}"'s deadLetter descriptor` : ''}. Share one descriptor.`,
         );
       }
-      existing.implicit &&= implicit;
       continue;
     }
-    entries.set(q.name, { name: q.name, bossOptions, implicit });
+    entries.set(q.name, { name: q.name, bossOptions, storage: q.storage });
     const dl = q.options?.deadLetter;
     if (deadLetterName(dl) === q.name) {
       throw new Error(`${context}: "${q.name}" names itself as its deadLetter queue.`);
     }
     if (isDeadLetterDescriptor(dl)) {
-      if (dl.storage !== undefined && !storageEquals(registry.storage, dl.storage)) {
-        throw storageMismatchError(dl.name, dl.storage);
-      }
-      pending.push({ q: { name: dl.name, options: dl.options, storage: dl.storage }, implicit: true, referrer: q.name });
+      pending.push({ q: { name: dl.name, options: dl.options, storage: dl.storage }, referrer: q.name });
     }
   }
   return [...entries.values()];
-}
-
-/** Every `(name, storage)` declaration in the queues array and its descriptor-form deadLetter closure, for the one-storage scan. */
-export function collectQueueStorageDeclarations(queues: MountableQueue[]): Array<{ name: string; storage: MochiQueueStorage }> {
-  const out: Array<{ name: string; storage: MochiQueueStorage }> = [];
-  const seen = new Set<string>();
-  const pending = [...queues];
-  while (pending.length > 0) {
-    const q = pending.shift()!;
-    if (seen.has(q.name)) {
-      continue;
-    }
-    seen.add(q.name);
-    if (q.storage !== undefined) {
-      out.push({ name: q.name, storage: q.storage });
-    }
-    const dl = q.options?.deadLetter;
-    if (isDeadLetterDescriptor(dl)) {
-      pending.push({ name: dl.name, options: dl.options, storage: dl.storage });
-    }
-  }
-  return out;
 }
 
 // Order the queues so each deadLetter target comes before the queue pointing at it, since createQueue needs the target
@@ -783,7 +752,7 @@ function orderByDeadLetter(items: DeclaredQueueEntry[]): { ordered: DeclaredQueu
  * read it back, and require storage to match the declaration — code is authoritative, storage is a cache of it.
  * A declaration with no persisted options is a pure existence reference and skips the comparison.
  */
-async function verifyOrCreateQueues(queues: MountableQueue[], context: string, mode: 'verify' | 'sync'): Promise<DeclaredQueueEntry[]> {
+async function verifyOrCreateQueues(queues: MountableQueue[], context: string, mode: 'verify' | 'sync'): Promise<void> {
   const boss = requireBoss();
   const entries = collectQueueClosure(queues, context);
   const { ordered, cyclic } = orderByDeadLetter(entries);
@@ -797,25 +766,18 @@ async function verifyOrCreateQueues(queues: MountableQueue[], context: string, m
     // Every member exists, so createQueue is a no-op and only the verification below runs.
     ordered.push(...cyclic);
   }
+  // Idempotent per queue (createQueue is ON CONFLICT DO NOTHING, verification is a read), so no memoization: a queue
+  // reached twice — a shared deadLetter target, a redundant boot — just re-verifies.
   for (const entry of ordered) {
-    const key = declarationKey(entry.bossOptions);
-    const memo = registry.ensured.get(entry.name);
-    if (memo && memo.key === key) {
-      await memo.promise;
-      continue;
-    }
-    const promise = verifyOrCreateQueue(boss, entry, context, mode).catch((err: unknown) => {
-      registry.ensured.delete(entry.name);
-      throw err;
-    });
-    registry.ensured.set(entry.name, { key, promise });
-    await promise;
+    await verifyOrCreateQueue(boss, entry, context, mode);
   }
-  return entries;
 }
 
 async function verifyOrCreateQueue(boss: BunBoss, entry: DeclaredQueueEntry, context: string, mode: 'verify' | 'sync'): Promise<void> {
   const { name, bossOptions } = entry;
+  if (entry.storage !== undefined && !storageEquals(registry.storage, entry.storage)) {
+    throw storageMismatchError(name, entry.storage);
+  }
   try {
     await boss.createQueue(name, bossOptions);
   } catch (err) {
@@ -835,7 +797,7 @@ async function verifyOrCreateQueue(boss: BunBoss, entry: DeclaredQueueEntry, con
   if (!stored) {
     throw new Error(`${context}: could not read back queue "${name}" after creating it.`);
   }
-  const expected = expectedQueueOptions(bossOptions);
+  const expected = { ...QUEUE_OPTION_DEFAULTS, ...bossOptions } as Record<ManagedQueueField, ManagedQueueValue>;
   const diffs = diffQueueConfig(expected, stored as unknown as Record<string, unknown>);
   if (diffs.length === 0) {
     return;
@@ -1092,7 +1054,6 @@ export async function closeAllQueueResources(): Promise<void> {
   registry.starting = null;
   registry.byName.clear();
   registry.workIds.clear();
-  registry.ensured.clear();
   if (boss) {
     try {
       await boss.stop({ graceful: true, timeout: 10_000 });

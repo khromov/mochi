@@ -5,8 +5,8 @@ import { Mochi } from './Mochi';
 import { closeAllQueueResources } from './queue';
 import { resetStartupMilestones } from './lifecycle';
 
-// The adoption path re-verifies: serve clears the standalone runtime's per-queue memo when it takes over, so its own
-// declaration is checked against storage even though the producer already ensured the queue in this process.
+// The adoption path re-verifies: serve runs its own create-and-verify over its declaration, so it is checked against
+// storage even though the producer already ensured the queue in this process.
 describe('Mochi.serve() adopting a standalone runtime re-verifies queue config', () => {
   let outDir: string;
 

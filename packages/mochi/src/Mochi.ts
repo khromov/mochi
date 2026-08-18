@@ -84,9 +84,8 @@ import {
   createWorker,
   storageEquals,
   assertNoConflictingStandaloneRuntime,
-  deadLetterName,
   resolveQueueConfigMode,
-  collectQueueStorageDeclarations,
+  collectQueueClosure,
 } from './queue';
 import { pinGlobal } from './utils/globalState';
 import { resetStartupMilestones } from './lifecycle';
@@ -376,23 +375,22 @@ export class Mochi {
         throw new Error(`Mochi.serve({ queues }): two queues are named "${config.name}". Queue names must be unique.`);
       }
       queueNames.add(config.name);
+      // Descriptor form is self-sufficient — the target is ensured on its own; only a bare name needs the array.
+      // Self-references and conflicting duplicates are caught by the closure walk below.
       const deadLetter = config.options?.deadLetter;
-      if (deadLetter !== undefined) {
-        if (deadLetterName(deadLetter) === config.name) {
-          throw new Error(`Mochi.serve({ queues }): "${config.name}" names itself as its deadLetter queue.`);
-        }
-        // Descriptor form is self-sufficient — the target is ensured on its own; only a bare name needs the array.
-        if (typeof deadLetter === 'string' && !declaredQueues.some((q) => q.name === deadLetter)) {
-          throw new Error(
-            `Mochi.serve({ queues }): "${config.name}" names "${deadLetter}" as its deadLetter queue, but no queue with that name is declared in the same queues array. Declare it there, or pass its descriptor (deadLetter: Mochi.queue("${deadLetter}", …)) so it is ensured on its own.`,
-          );
-        }
+      if (typeof deadLetter === 'string' && !declaredQueues.some((q) => q.name === deadLetter)) {
+        throw new Error(
+          `Mochi.serve({ queues }): "${config.name}" names "${deadLetter}" as its deadLetter queue, but no queue with that name is declared in the same queues array. Declare it there, or pass its descriptor (deadLetter: Mochi.queue("${deadLetter}", …)) so it is ensured on its own.`,
+        );
       }
     }
     // An app has one queue storage: declared on the descriptors (deadLetter targets included), app-wide via
     // queueStorage, or both when they agree.
     let declaredStorage: { name: string; storage: MochiQueueStorage } | undefined;
-    for (const { name, storage } of collectQueueStorageDeclarations(declaredQueues)) {
+    for (const { name, storage } of collectQueueClosure(declaredQueues, 'Mochi.serve({ queues })')) {
+      if (storage === undefined) {
+        continue;
+      }
       if (declaredStorage && !storageEquals(declaredStorage.storage, storage)) {
         throw new Error(`Mochi.serve({ queues }): "${name}" and "${declaredStorage.name}" declare different storages — an app has one queue storage.`);
       }
