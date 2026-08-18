@@ -10,6 +10,8 @@ export function stringifyJson(value: unknown): string {
   return renderJson(value, '', 0) + '\n';
 }
 
+// Hand-rolled because scaffolds run `prettier --check` on this output and `JSON.stringify(…, null, 2)` always expands arrays,
+// while prettier inlines primitive arrays whose whole line fits printWidth — the two must agree (guarded by prettierCompat.test.ts).
 function renderJson(value: unknown, indent: string, prefixWidth: number): string {
   if (Array.isArray(value)) {
     // JSON.stringify serializes undefined array elements as null; mirror that.
