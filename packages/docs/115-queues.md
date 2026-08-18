@@ -113,7 +113,7 @@ await emails.addBulk(jobs);
 await emails.stop();
 ```
 
-- A producer creates the queue if missing and leaves stored options untouched — [option re-sync](#storage) stays with `Mochi.serve()`. To consume without a server, see [standalone workers](#standalone-workers).
+- A producer declaring no options simply ensures the queue exists. Declared options are enforced like everywhere else — [config is code-authoritative](#storage) — and a descriptor-form [`deadLetter`](#dead-letter-queues) is created with its link intact even when the producer runs first on fresh storage. To consume without a server, see [standalone workers](#standalone-workers).
 - `queue.stop()` stops that queue in this process — its worker deregisters after in-flight jobs finish, and the shared runtime closes once the last active queue stops. [`Mochi.stop()`](#mochistop) remains the whole-app teardown; under `Mochi.serve()` queues stop with the server.
 - Your app has **one queue storage**. Declare it on the descriptor (`storage`), app-wide via the serve-level [`queueStorage`](#storage) option, or both when they agree — conflicting declarations are a boot error. Standalone, a descriptor without `storage` throws on `add()`.
 - `Mochi.serve()` inherits the descriptors' storage when `queueStorage` is unset, and a serve on the same storage adopts an already-connected standalone runtime — on a different storage it refuses to start.
@@ -143,7 +143,7 @@ process.on('SIGTERM', async () => {
 });
 ```
 
-Like standalone producers, workers are ensure-only: stored queue options are trusted as-is, with no re-sync — declare the options you rely on wherever the queue is actually mounted by `Mochi.serve()`, or on a fresh queue's first creator. A worker sees its whole `queues` array, so it does apply a [`deadLetter`](#dead-letter-queues) link when it first creates the queue and the target is declared in the same array (created target-first, so the link's queue exists); a `deadLetter` naming a queue outside the worker's array is skipped with a warning — declare it where that queue is mounted. `worker.stop()` deregisters the worker's queues (waiting for in-flight jobs) while the runtime stays up for producing; `Mochi.stop()` tears the runtime down.
+Queue config follows the same rule as every other path — [code is authoritative](#storage): a worker creates missing queues with their full declared config ([`deadLetter`](#dead-letter-queues) links included, targets first) and refuses to start when storage disagrees; `Mochi.worker({ queueConfig: 'sync' })` writes the declared config to storage instead. `worker.stop()` deregisters the worker's queues (waiting for in-flight jobs) while the runtime stays up for producing; `Mochi.stop()` tears the runtime down.
 
 <Callout type="info">
 
@@ -189,7 +189,21 @@ See [Persistence](/docs/persistence/) for how queue storage compares to the othe
 
 Postgres storage installs its tables into a dedicated `mochi_queue` schema on first start, away from your application's tables. The schema name is fixed, so every app sharing one database shares one queue namespace — give each app its own database to keep their queues apart.
 
-On durable storage, queue options re-sync from your code on every `Mochi.serve()` boot — but only **additively**: an option you leave undeclared (including `expireInSeconds`) keeps its previously stored value. Set the old value back explicitly (e.g. `retryLimit: 2`) rather than deleting the line; a removed `deadLetter` can only be repointed, not cleared. [Standalone producers](#standalone-producers) leave stored options untouched.
+On durable storage, **declared config is authoritative and storage is a cache of it**. At every boot — `Mochi.serve()`, `Mochi.worker()`, and standalone producers alike — each declared queue is created with its full config if missing, and verified field-by-field against storage if present. A mismatch is a boot error naming the queue, the fields, and both values; an option you leave undeclared is expected to hold its bun-boss default. A declaration with no persisted options at all (`Mochi.queue(name, { storage })`) only asserts the queue exists.
+
+To change a queue's config, change the code — then let one deploy write it through:
+
+```ts
+await Mochi.serve({ queues, queueConfig: 'sync' }); // or MOCHI_QUEUE_SYNC=1 in the environment
+```
+
+`'sync'` replaces the mismatch error with a repair: the declared config is written to storage and every changed field is logged. `MOCHI_QUEUE_SYNC=1` forces sync process-wide (standalone producers included) and wins over the option — set it on the one deploy that migrates, or leave `queueConfig: 'sync'` on permanently for code-always-wins. The mismatch error also prints a ready-to-paste `Mochi.boss().updateQueue(…)` call for migrating by hand.
+
+<Callout type="warning">
+
+**Share one descriptor across processes.** Every process that declares a queue asserts its config — a producer script declaring different options than the server is a boot error, not a silent divergence. Export the descriptor from one module and import it everywhere. The `queue:expireInSeconds` filter counts as declared config too, so processes must register the same extensions.
+
+</Callout>
 
 ### PGlite
 
@@ -226,19 +240,27 @@ Mochi.queue('webhooks', {
 
 ### Dead-letter queues
 
-Point `deadLetter` at another queue in the same array and a terminally failed job is copied there — same payload — for handling or inspection, while the original stays `failed` in its source queue as an audit trail:
+Point `deadLetter` at another queue and a terminally failed job is copied there — same payload — for handling or inspection, while the original stays `failed` in its source queue as an audit trail. Pass the target's **descriptor** and the reference is self-sufficient: whichever process boots first — server, worker, or a lone producer — creates the target before the queue that points at it, link intact:
 
 ```ts
-await Mochi.serve({
-  queues: [
-    Mochi.queue('webhooks', { process: deliverWebhook, retryLimit: 3, deadLetter: 'webhooks-dlq' }),
-    // No `process`: jobs wait here for inspection. Give it one to handle failures automatically.
-    Mochi.queue('webhooks-dlq'),
-  ],
-});
+// No `process`: jobs wait here for inspection. Give it one to handle failures automatically.
+export const webhooksDlq = Mochi.queue('webhooks-dlq');
+export const webhooks = Mochi.queue('webhooks', { process: deliverWebhook, retryLimit: 3, deadLetter: webhooksDlq });
+
+await Mochi.serve({ queues: [webhooks, webhooksDlq] });
 ```
 
+A descriptor-form target does not need to be in the `queues` array — it is ensured in storage either way, but only mounted (worker started, handle resolvable) where it is declared. The string form (`deadLetter: 'webhooks-dlq'`) still works when the target is declared in the same array or already exists in storage. A dead-letter _loop_ (A→B→A) cannot be created from scratch — each target must exist before its referrer — though an existing loop that matches the declaration passes.
+
 Drain or replay a dead-letter queue through the [escape hatch](#mochiboss): `Mochi.boss().redrive('webhooks-dlq')` moves its jobs back to their source queue.
+
+Removing the link is a config change like any other: delete the option from code and migrate — [`sync`](#storage) clears it, or run the `updateQueue(name, { deadLetter: null })` the mismatch error prints.
+
+<Callout type="info">
+
+**Resetting a queue.** `Mochi.boss().deleteQueue(name)` removes a queue outright — jobs included, pending backlog and failed-job audit trail alike; the next boot recreates it from the declaration. A queue still referenced as another's `deadLetter` cannot be deleted until its referrers are repointed or deleted first.
+
+</Callout>
 
 ### Long-running jobs
 

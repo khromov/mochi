@@ -153,9 +153,12 @@ describe('Mochi.serve({ queues })', () => {
     const processed: string[] = [];
     const completed = deferred<{ queue: string; result: unknown }>();
 
+    // A descriptor-form deadLetter target outside the queues array: ensured in storage, never mounted.
+    const dlq = Mochi.queue<{ to: string }>('serve-queue-dlq', { storage: { sqlite: sqliteFile } });
     const jobs = Mochi.queue<{ to: string }>('serve-queue-jobs', {
       pollingIntervalSeconds: 0.5,
       storage: { sqlite: sqliteFile },
+      deadLetter: dlq,
       process: async (job) => {
         processed.push(job.data.to);
         return { sent: true };
@@ -189,6 +192,12 @@ describe('Mochi.serve({ queues })', () => {
 
   test('Mochi.boss() resolves the shared bun-boss instance once queues are mounted', () => {
     expect(typeof Mochi.boss().send).toBe('function');
+  });
+
+  test('a descriptor-form deadLetter target is ensured in storage with the link, but not mounted', async () => {
+    expect((await Mochi.boss().getQueue('serve-queue-jobs'))?.deadLetter).toBe('serve-queue-dlq');
+    expect(await Mochi.boss().getQueue('serve-queue-dlq')).not.toBeNull();
+    expect(() => Mochi.getQueue('serve-queue-dlq')).toThrow(/no such queue/);
   });
 
   test('getQueue() for a name never declared in serve is fatal', () => {
