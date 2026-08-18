@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { extractFailures, parseJunitSummary, toleratedWindowsWedge } from './testing';
+import { extractFailures, junitReportIsComplete, parseJunitSummary, resolveConcurrency, toleratedWindowsWedge } from './testing';
 
 // Verbatim `bun test` reporter output (v1.3): the source snippet and `error:` block
 // are printed *before* the `(fail)` line they belong to.
@@ -141,6 +141,42 @@ describe('parseJunitSummary', () => {
   test('null for console output that is not a report at all', () => {
     expect(parseJunitSummary('bun test v1.3.14\n\n 1 pass\n 0 fail\nRan 1 test across 1 file. [3.74s]')).toBeNull();
   });
+
+  // The totals live in the root open tag, so the parser reads them off a prefix that stops anywhere after it. This is
+  // why completion is decided by junitReportIsComplete, not by a successful parse.
+  test('a prefix truncated at a tag boundary still parses — the parser is not a completion check', () => {
+    expect(parseJunitSummary(PASS_XML.slice(0, PASS_XML.indexOf('>', PASS_XML.indexOf('<testsuites')) + 1))).toEqual({ tests: 1, failures: 0 });
+  });
+});
+
+describe('junitReportIsComplete', () => {
+  const withReport = async (contents: string | null, run: (path: string) => Promise<void>): Promise<void> => {
+    const dir = mkdtempSync(join(tmpdir(), 'mochi-junit-complete-'));
+    try {
+      const path = join(dir, 'report.xml');
+      if (contents !== null) {
+        writeFileSync(path, contents);
+      }
+      await run(path);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  };
+
+  test('true only once the closing tag has landed', async () => {
+    await withReport(PASS_XML, async (path) => expect(await junitReportIsComplete(path)).toBe(true));
+  });
+
+  test('false for a prefix the parser would happily accept', async () => {
+    const prefix = PASS_XML.slice(0, PASS_XML.indexOf('>', PASS_XML.indexOf('<testsuites')) + 1);
+    expect(parseJunitSummary(prefix)).not.toBeNull();
+    await withReport(prefix, async (path) => expect(await junitReportIsComplete(path)).toBe(false));
+  });
+
+  test('false for a missing file, and for a complete document with no totals', async () => {
+    await withReport(null, async (path) => expect(await junitReportIsComplete(path)).toBe(false));
+    await withReport('<testsuites></testsuites>', async (path) => expect(await junitReportIsComplete(path)).toBe(false));
+  });
 });
 
 describe('toleratedWindowsWedge', () => {
@@ -162,6 +198,44 @@ describe('toleratedWindowsWedge', () => {
 
   test('false for a win32 timeout that never wrote a report', () => {
     expect(toleratedWindowsWedge(true, null, 'win32')).toBe(false);
+  });
+});
+
+describe('resolveConcurrency', () => {
+  // Pass the env value explicitly (never `undefined`, which would trigger the parameter default and read the ambient
+  // MOCHI_MAX_CONCURRENCY — `max` under CI). `''` is the honest "no override" input.
+  test('with no override, defaults to 6 and clamps to core count', () => {
+    expect(resolveConcurrency(12, '')).toBe(6);
+    expect(resolveConcurrency(4, '')).toBe(4);
+  });
+
+  test('max/auto use the full core count', () => {
+    expect(resolveConcurrency(12, 'max')).toBe(12);
+    expect(resolveConcurrency(12, 'AUTO')).toBe(12);
+  });
+
+  test('a numeric override is honored and clamped to cores', () => {
+    expect(resolveConcurrency(12, '3')).toBe(3);
+    expect(resolveConcurrency(12, '100')).toBe(12);
+  });
+
+  test('invalid or non-positive values fall back to 6', () => {
+    expect(resolveConcurrency(12, '0')).toBe(6);
+    expect(resolveConcurrency(12, 'abc')).toBe(6);
+  });
+
+  test('reads MOCHI_MAX_CONCURRENCY from the environment when no value is passed', () => {
+    const prev = process.env.MOCHI_MAX_CONCURRENCY;
+    process.env.MOCHI_MAX_CONCURRENCY = 'max';
+    try {
+      expect(resolveConcurrency(9)).toBe(9);
+    } finally {
+      if (prev === undefined) {
+        delete process.env.MOCHI_MAX_CONCURRENCY;
+      } else {
+        process.env.MOCHI_MAX_CONCURRENCY = prev;
+      }
+    }
   });
 });
 

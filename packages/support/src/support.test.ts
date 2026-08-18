@@ -10,8 +10,13 @@ const outDir = mkdtempSync(path.join(import.meta.dir, '..', '.mochi-support-test
 process.env.SUPPORT_DB = path.join(outDir, 'support.sqlite');
 process.env.ADMIN_USER = 'admin';
 process.env.ADMIN_PASSWORD = 'letmein';
-// The real 5s tarpit on a rejected /admin attempt would blow every timeout here.
-process.env.ADMIN_AUTH_DELAY_MS = '80';
+// A wrong /admin password is answered slowly on purpose, to make guessing expensive; the real delay is 5s, which would
+// blow every timeout here. The ceiling for the responses that are *not* slowed has to sit well below that delay: these
+// are wall-clock assertions, and a loaded CI box adds tens of ms of scheduler noise, so a delay the same size as the
+// ceiling leaves no room for it and fails on timing alone.
+const WRONG_PASSWORD_DELAY_MS = 400;
+const UNDELAYED_CEILING_MS = WRONG_PASSWORD_DELAY_MS / 2;
+process.env.ADMIN_AUTH_DELAY_MS = String(WRONG_PASSWORD_DELAY_MS);
 
 const { routes } = await import('./routes');
 const { supportEmailQueue } = await import('./jobs.server');
@@ -63,7 +68,7 @@ describe('support form action', () => {
       logger: { enabled: false },
       outDir,
       htmlShell: './src/shell.html',
-      // Mirror src/index.ts, so /health/ resolves the way the deployed app serves it.
+      // Mirror src/index.ts, so routes resolve the way the deployed app serves them.
       trailingSlash: 'always',
       // The port is only known after serve() returns, so proxy.origin can't be
       // set ahead of time to satisfy the real origin check.
@@ -111,10 +116,17 @@ describe('support form action', () => {
     expect(await res.text()).toContain('Get in touch');
   });
 
-  test('/health/ reports ok', async () => {
-    const res = await fetch(`${base}/health/`);
+  test('/health reports ok', async () => {
+    const res = await fetch(`${base}/health`);
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ status: 'ok' });
+  });
+
+  // /health is a Mochi.api() route, so it is exempt from trailingSlash: 'always'
+  // — the Dockerfile healthcheck probes the bare form for this reason.
+  test('/health/ is not mirrored', async () => {
+    const res = await fetch(`${base}/health/`, { redirect: 'manual' });
+    expect(res.status).toBe(404);
   });
 
   test('a valid submission is stored and sends one email to SUPPORT_TO', async () => {
@@ -213,16 +225,16 @@ describe('support form action', () => {
     expect(res.status).toBe(401);
     expect(res.headers.get('WWW-Authenticate')).toContain('Basic');
     // Sending no credentials is how a browser gets the login prompt — it is
-    // neither tarpitted nor charged quota; only a wrong guess is.
-    expect(performance.now() - started).toBeLessThan(80);
+    // neither slowed down nor charged quota; only a wrong guess is.
+    expect(performance.now() - started).toBeLessThan(UNDELAYED_CEILING_MS);
     expect(res.headers.get('RateLimit-Remaining')).toBeNull();
   });
 
-  test('/admin/ rejects a wrong password, after the tarpit delay', async () => {
+  test('/admin/ rejects a wrong password, after the deliberate delay', async () => {
     const started = performance.now();
     const res = await fetch(`${base}/admin/`, { headers: { Authorization: `Basic ${Buffer.from('admin:nope').toString('base64')}` } });
     expect(res.status).toBe(401);
-    expect(performance.now() - started).toBeGreaterThanOrEqual(80);
+    expect(performance.now() - started).toBeGreaterThanOrEqual(WRONG_PASSWORD_DELAY_MS);
   });
 
   test('/admin/ lists submissions once authenticated', async () => {
@@ -232,11 +244,11 @@ describe('support form action', () => {
   });
 
   // Runs after the render above, so the component is already compiled and the
-  // only thing this can be measuring is the tarpit.
+  // only thing this can be measuring is the deliberate wrong-password delay.
   test('correct credentials are never delayed', async () => {
     const started = performance.now();
     expect((await fetch(`${base}/admin/`, { headers: AUTH })).status).toBe(200);
-    expect(performance.now() - started).toBeLessThan(80);
+    expect(performance.now() - started).toBeLessThan(UNDELAYED_CEILING_MS);
   });
 
   test('handled submissions move between the two lists', async () => {

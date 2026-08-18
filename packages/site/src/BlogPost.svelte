@@ -1,6 +1,7 @@
 <script lang="ts">
   import PageShell from './components/PageShell.svelte';
   import Footer from './components/Footer.svelte';
+  import NewsletterEmbed from './components/NewsletterEmbed.svelte';
   import type { TocEntry } from './lib/toc';
   import { formatPostDate } from './lib/formatDate';
   import { blogComponents } from './lib/blogComponents.generated';
@@ -14,6 +15,7 @@
     draft,
     author,
     docsNav,
+    newsletterEmbedUrl,
   }: {
     slug: string;
     title: string;
@@ -22,6 +24,7 @@
     draft: boolean;
     author: string;
     docsNav: TocEntry[];
+    newsletterEmbedUrl: string;
   } = $props();
 
   const PostComponent = $derived(blogComponents[slug]);
@@ -60,6 +63,8 @@
       {:else}
         <p>Post not found.</p>
       {/if}
+
+      <NewsletterEmbed src={newsletterEmbedUrl} />
 
       <div class="author-box">
         <img class="author-avatar" src={postAuthor.avatar} alt={postAuthor.name} width="56" height="56" loading="lazy" />

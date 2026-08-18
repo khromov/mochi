@@ -4,7 +4,7 @@
 // growth can be diffed in Chrome DevTools over a multi-day unattended run.
 //
 // Reuses the site's existing HTTP endpoints — no site source changes:
-//   /health/                  readiness probe
+//   /health                   readiness probe
 //   /sitemap.xml              URL inventory (every doc + internal demo)
 //   /_heapsnapshot            Bun.generateHeapSnapshot('v8') download (needs HEAP_SNAPSHOTS_ENABLED=true)
 //   /__mochi/health/memory    post-GC process.memoryUsage() (needs MOCHI_MEMORY_PROBE=1)
@@ -64,7 +64,7 @@ async function waitForReady(): Promise<void> {
   const deadline = Date.now() + READY_TIMEOUT_MS;
   while (Date.now() < deadline) {
     try {
-      const res = await fetch(`${BASE}/health/`, { signal: AbortSignal.timeout(5_000) });
+      const res = await fetch(`${BASE}/health`, { signal: AbortSignal.timeout(5_000) });
       await res.arrayBuffer();
       if (res.ok) {
         log('site is ready');
@@ -147,7 +147,7 @@ async function captureSnapshot(): Promise<void> {
   // Download via curl in a separate process: it streams the large body straight
   // to disk with constant memory and no event-loop contention with the load loop
   // (draining a big response inside this process deadlocks on TCP backpressure).
-  // -L follows the trailingSlash:'always' redirect; --fail treats HTTP >=400 as error.
+  // --fail treats HTTP >=400 as an error; -L is belt-and-braces, /_heapsnapshot is a Mochi.api() route so nothing redirects it.
   const proc = Bun.spawn(['curl', '-sS', '--fail', '-L', '--max-time', String(SNAPSHOT_TIMEOUT_S), '-o', file, `${BASE}/_heapsnapshot`], {
     stdout: 'ignore',
     stderr: 'pipe',

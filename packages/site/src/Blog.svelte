@@ -1,6 +1,7 @@
 <script lang="ts">
   import PageShell from './components/PageShell.svelte';
   import Footer from './components/Footer.svelte';
+  import NewsletterEmbed from './components/NewsletterEmbed.svelte';
   import type { TocEntry } from './lib/toc';
   import { formatPostDate } from './lib/formatDate';
 
@@ -15,9 +16,11 @@
   let {
     docsNav,
     posts,
+    newsletterEmbedUrl,
   }: {
     docsNav: TocEntry[];
     posts: PostListItem[];
+    newsletterEmbedUrl: string;
   } = $props();
 </script>
 
@@ -59,6 +62,8 @@
       {:else}
         <p class="post-description">No posts yet.</p>
       {/each}
+
+      <NewsletterEmbed src={newsletterEmbedUrl} />
     </section>
   </main>
 

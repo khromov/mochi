@@ -37,6 +37,12 @@ await Mochi.serve({
 
 Only `message` is required.
 
+<Callout type="warning">
+
+[`trailingSlash`](/docs/trailing-slash/) does not apply to WebSocket routes, so connect to exactly the pattern you declared.
+
+</Callout>
+
 ### `upgrade`
 
 Runs once per HTTP upgrade request. Return a value to attach to `ws.data.user`, or return `false` to reject the connection. The route's URL params are the second argument.

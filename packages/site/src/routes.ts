@@ -84,6 +84,20 @@ import { routes as yourFirstMochiAppRoutes } from './demos/your-first-mochi-app/
 const DEVELOPMENT = process.env.MODE === 'development';
 const HEAP_SNAPSHOTS_ENABLED = process.env.HEAP_SNAPSHOTS_ENABLED === 'true';
 
+// Served by packages/support; NEWSLETTER_EMBED_URL overrides it. The trailing
+// slash is required — support is `trailingSlash: 'always'`, so a slashless src
+// costs a 308 inside the frame on every blog page view.
+const NEWSLETTER_EMBED_URL = process.env.NEWSLETTER_EMBED_URL || (DEVELOPMENT ? 'http://localhost:3336/newsletter/embed/' : 'https://support.mochi.fast/newsletter/embed/');
+
+// Built rather than concatenated so an override that already carries a query
+// string doesn't produce `?a=b?src=…`. `src` is what the admin panel attributes
+// a signup to.
+function newsletterEmbedUrl(src: string): string {
+  const url = new URL(NEWSLETTER_EMBED_URL);
+  url.searchParams.set('src', src);
+  return url.toString();
+}
+
 // Static per-demo source routes, sitting alongside each demo page (e.g.
 // /demos/chat/llms.txt, /cookie-vary-test/llms.txt). Static (not a param) so they
 // outrank demo param routes such as /demos/data-loading/:id, which would otherwise
@@ -102,6 +116,20 @@ const demoLlmsRoutes: Record<string, MochiRouteValue> = Object.fromEntries(
     }),
   ]),
 );
+
+// Vanity redirects. These are `Mochi.api()` routes, so the site's `trailingSlash: 'always'`
+// never mirrors them onto the alt-slash form — but links to both forms are already published,
+// so each form is registered by hand.
+const DISCORD_INVITE = 'https://discord.com/invite/QCGfks4gg8';
+// The support form lives at support.mochi.fast (packages/support) — it needs an
+// SMTP config this site deliberately doesn't carry.
+const SUPPORT_ORIGIN = 'https://support.mochi.fast/';
+const vanityRedirect = (to: string): MochiRouteValue => Mochi.api(() => Response.redirect(to, 302));
+const discordRoute = vanityRedirect(DISCORD_INVITE);
+const supportRoute = vanityRedirect(SUPPORT_ORIGIN);
+// Same reasoning for the MCP endpoint: /mcp is what we advertise, but clients that
+// normalise the configured URL to /mcp/ would otherwise hit an unregistered path.
+const mcpRoute = Mochi.api(({ request }) => respondMcp(request));
 
 export const routes: Record<string, MochiRouteValue> = {
   ...(DEVELOPMENT
@@ -139,7 +167,8 @@ export const routes: Record<string, MochiRouteValue> = {
         }),
       }
     : {}),
-  '/discord': Mochi.api(() => Response.redirect('https://discord.com/invite/QCGfks4gg8', 302)),
+  '/discord': discordRoute,
+  '/discord/': discordRoute,
   '/': Mochi.page('./src/Site.svelte', {
     serverProps: async () => {
       const docs = await loadDocs();
@@ -198,6 +227,7 @@ export const routes: Record<string, MochiRouteValue> = {
       return {
         docsNav: await buildDocsNav(),
         posts: posts.map(({ slug, title, description, date, draft }) => ({ slug, title, description, date, draft })),
+        newsletterEmbedUrl: newsletterEmbedUrl('blog-index'),
       };
     },
   }),
@@ -217,12 +247,12 @@ export const routes: Record<string, MochiRouteValue> = {
         draft: post.draft,
         author: post.author,
         docsNav: await buildDocsNav(),
+        newsletterEmbedUrl: newsletterEmbedUrl(post.slug),
       };
     },
   }),
-  // The support form lives at support.mochi.fast (packages/support) — it needs an
-  // SMTP config this site deliberately doesn't carry.
-  '/support': Mochi.api(() => Response.redirect('https://support.mochi.fast/', 302)),
+  '/support': supportRoute,
+  '/support/': supportRoute,
   // Backs the live captcha embedded in the 0.8.0 blog post. Minting and verifying
   // happen here rather than in `/blog/:slug` so that route stays post-agnostic.
   '/api/captcha-demo/mint': Mochi.api(() => Response.json(mintCaptcha()), { rateLimit: { limit: 60, window: '1m' } }),
@@ -300,7 +330,8 @@ export const routes: Record<string, MochiRouteValue> = {
     return Response.json(await buildLlmsJson(url.origin));
   }),
   '/SKILL.md': Mochi.file('./src/SKILL.md'),
-  '/mcp': Mochi.api(({ request }) => respondMcp(request)),
+  '/mcp': mcpRoute,
+  '/mcp/': mcpRoute,
   ...demoLlmsRoutes,
   ...apiRoutes,
   ...cacheEventsRoutes,

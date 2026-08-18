@@ -46,7 +46,7 @@ import type {
 } from './types';
 import { isFormFail, isFormSuccess, isRedirect } from './runtime/forms';
 import { isEnhanceRequest, jsonError, jsonFailure, jsonRedirect, jsonSuccess } from './runtime/formsJson';
-import { csrfCheck, DEFAULT_FORM_CONTENT_TYPES, DEFAULT_PROTECTED_METHODS } from './runtime/csrf';
+import { csrfCheck, csrfBootWarning, DEFAULT_FORM_CONTENT_TYPES, DEFAULT_PROTECTED_METHODS } from './runtime/csrf';
 import { applyFilter, initExtensions, runHook } from './extensions';
 import { escapeHtmlAttr } from './utils/htmlEscape';
 import { buildPublicUrl } from './runtime/proxy';
@@ -84,6 +84,8 @@ import {
   createWorker,
   storageEquals,
   assertNoConflictingStandaloneRuntime,
+  resolveQueueConfigMode,
+  collectQueueClosure,
 } from './queue';
 import { isValidOptionsStorage, closeOptionsStorage } from './options';
 import { pinGlobal } from './utils/globalState';
@@ -91,7 +93,7 @@ import { resetStartupMilestones } from './lifecycle';
 import type { MochiQueue, MochiQueueOptions, MochiQueueDescriptor, MochiQueueStorage, MochiWorker } from './queue';
 import type { BunBoss } from 'bun-boss';
 import { finalizeCookieHeaders } from './runtime/cookies';
-import { makeRequestContextBuilder } from './runtime/requestSetup';
+import { makeRequestContextBuilder, mirrorsSlashForm } from './runtime/requestSetup';
 import { createRouteLimiter, applyRateLimitHeaders } from './runtime/rateLimit';
 import type { MochiRateLimitOptions, MochiRateLimitStore, RouteLimiter } from './runtime/rateLimit';
 import { decryptProps } from './islands/serverIslandCrypto';
@@ -224,7 +226,7 @@ export class Mochi {
    * Declare a background job queue. The returned descriptor is both the declaration `Mochi.serve({ queues: [q] })`
    * mounts (workers start there, and the queue drains gracefully on shutdown) and a directly-usable producer handle:
    * `q.add(...)` works anywhere. In a process that never serves, give it `storage` and the first add lazily connects a
-   * producer-only runtime — no server, no workers, no option re-sync; tear down with `Mochi.stop()`.
+   * producer-only runtime — no server, no workers; tear down with `Mochi.stop()`.
    */
   static queue<T = unknown, R = unknown>(name: string, config: MochiQueueOptions<T, R> = {}): MochiQueueDescriptor<T, R> {
     return createQueueDescriptor<T, R>(name, config);
@@ -240,12 +242,12 @@ export class Mochi {
 
   /**
    * Declare a standalone worker: consume queues in a process that never calls `Mochi.serve()`. `start()` connects to
-   * the app's queue storage (from the descriptors or the `storage` option) and begins polling. Ensure-only, like
-   * standalone producers — stored queue options are not re-synced, no hooks or milestones fire, and signal handling is
-   * yours to wire (`Mochi.stop()` drains and closes the runtime).
+   * the app's queue storage (from the descriptors or the `storage` option), creates-or-verifies the declared queue
+   * config (code is authoritative — see `queueConfig`), and begins polling. No hooks or milestones fire, and signal
+   * handling is yours to wire (`Mochi.stop()` drains and closes the runtime).
    */
   static worker(options: MochiWorkerOptions): MochiWorker {
-    return createWorker(options.queues, options.storage);
+    return createWorker(options.queues, options.storage, options.queueConfig);
   }
 
   /**
@@ -374,28 +376,26 @@ export class Mochi {
         throw new Error(`Mochi.serve({ queues }): two queues are named "${config.name}". Queue names must be unique.`);
       }
       queueNames.add(config.name);
+      // Descriptor form is self-sufficient — the target is ensured on its own; only a bare name needs the array.
+      // Self-references and conflicting duplicates are caught by the closure walk below.
       const deadLetter = config.options?.deadLetter;
-      if (deadLetter !== undefined) {
-        if (deadLetter === config.name) {
-          throw new Error(`Mochi.serve({ queues }): "${config.name}" names itself as its deadLetter queue.`);
-        }
-        if (!declaredQueues.some((q) => q.name === deadLetter)) {
-          throw new Error(
-            `Mochi.serve({ queues }): "${config.name}" names "${deadLetter}" as its deadLetter queue, but no queue with that name is declared in the same queues array.`,
-          );
-        }
+      if (typeof deadLetter === 'string' && !declaredQueues.some((q) => q.name === deadLetter)) {
+        throw new Error(
+          `Mochi.serve({ queues }): "${config.name}" names "${deadLetter}" as its deadLetter queue, but no queue with that name is declared in the same queues array. Declare it there, or pass its descriptor (deadLetter: Mochi.queue("${deadLetter}", …)) so it is ensured on its own.`,
+        );
       }
     }
-    // An app has one queue storage: declared on the descriptors, app-wide via queueStorage, or both when they agree.
+    // An app has one queue storage: declared on the descriptors (deadLetter targets included), app-wide via
+    // queueStorage, or both when they agree.
     let declaredStorage: { name: string; storage: MochiQueueStorage } | undefined;
-    for (const config of declaredQueues) {
-      if (config.storage === undefined) {
+    for (const { name, storage } of collectQueueClosure(declaredQueues, 'Mochi.serve({ queues })')) {
+      if (storage === undefined) {
         continue;
       }
-      if (declaredStorage && !storageEquals(declaredStorage.storage, config.storage)) {
-        throw new Error(`Mochi.serve({ queues }): "${config.name}" and "${declaredStorage.name}" declare different storages — an app has one queue storage.`);
+      if (declaredStorage && !storageEquals(declaredStorage.storage, storage)) {
+        throw new Error(`Mochi.serve({ queues }): "${name}" and "${declaredStorage.name}" declare different storages — an app has one queue storage.`);
       }
-      declaredStorage ??= { name: config.name, storage: config.storage };
+      declaredStorage ??= { name, storage };
     }
     if (options.queueStorage !== undefined && declaredStorage && !storageEquals(declaredStorage.storage, options.queueStorage)) {
       throw new Error(
@@ -436,6 +436,11 @@ export class Mochi {
     const protectedMethods: ReadonlySet<string> = applyFilter('csrf:protectedMethods', new Set(DEFAULT_PROTECTED_METHODS), { options });
     const trustedOrigins: ReadonlySet<string> = applyFilter('csrf:trustedOrigins', new Set(options.csrf?.trustedOrigins ?? []), { options });
     const cookieDefaults = applyFilter('cookie:defaults', {}, { options });
+
+    const bootCsrfWarning = csrfBootWarning(options);
+    if (bootCsrfWarning) {
+      logger.warn(bootCsrfWarning);
+    }
 
     const development = options.development ?? true;
     const inlineNestedIslands = options.inlineNestedIslands !== false;
@@ -1093,8 +1098,9 @@ export class Mochi {
             type: 'page',
           };
         }
-        // A method-keyed object makes Bun 405 a POST/PUT to an action-less page; a bare function runs for every method
-        // and would render 200 on POST in production, diverging from dev, where `pageConfigMap` forces this path anyway.
+        // A method-keyed object keeps a POST/PUT to an action-less page from matching (it falls through to the fetch
+        // handler and 404s); a bare function runs for every method and would render 200 on POST in production,
+        // diverging from dev, where `pageConfigMap` forces this path anyway.
         return { bunRouteValue: withHead({ GET: getHandler } as unknown as BunRouteValue), type: 'page' };
       } else if (isMochiApi(handler)) {
         if (apiHandlerMap) {
@@ -1426,25 +1432,32 @@ export class Mochi {
       retireLimiter(pattern);
     }
 
+    const slashMirrorPatterns: string[] = [];
     if (allRoutes) {
       for (const [pattern, handler] of Object.entries(allRoutes)) {
         const result = await registerRoutePattern(pattern, handler);
         if (result) {
           bunRoutes[pattern] = result.bunRouteValue;
           routeCounts[result.type] += 1;
+          if (mirrorsSlashForm(result.type)) {
+            slashMirrorPatterns.push(pattern);
+          }
         } else {
+          // Raw Bun route values (static Responses, HTML imports) answer on both slash forms.
           bunRoutes[pattern] = handler as BunRouteValue;
+          slashMirrorPatterns.push(pattern);
         }
       }
     }
 
     // Registering the alt-slash variant lets Bun's literal pattern matcher match both `/foo` and `/foo/`; the per-handler
-    // redirect checks above then turn the non-canonical form into a 301/308.
+    // redirect checks above then turn the non-canonical form into a 301/308. Only pages and raw Bun route values take
+    // part — every other kind is skipped entirely, so just the exact declared pattern matches it.
     if (trailingSlashPolicy) {
-      for (const [pattern, value] of Object.entries(bunRoutes)) {
+      for (const pattern of slashMirrorPatterns) {
         const alt = alternateSlashPattern(pattern);
         if (alt && !(alt in bunRoutes)) {
-          bunRoutes[alt] = value;
+          bunRoutes[alt] = bunRoutes[pattern]!;
         }
       }
     }
@@ -1691,12 +1704,6 @@ export class Mochi {
 
     const composedFetch = async (req: Request, server: Server<undefined>): Promise<Response> => {
       const url = buildPublicUrl(req, options.proxy);
-      if (trailingSlashPolicy) {
-        const redirect = applyFilter('trailingSlash:redirect', trailingSlashRedirect(req.method, url, trailingSlashPolicy), { request: req, url, policy: trailingSlashPolicy });
-        if (redirect) {
-          return redirect;
-        }
-      }
       const csrfResponse = csrfCheck(req, url, options.csrf, options.proxy, development, formContentTypes, protectedMethods, trustedOrigins);
       if (csrfResponse) {
         return csrfResponse;
@@ -1908,7 +1915,7 @@ export class Mochi {
       if (declaredQueues.length > 0) {
         // kind 'serve' adopts a standalone producer runtime already connected to the same storage.
         await startQueueRuntime(queueStorage, { kind: 'serve' });
-        await mountQueues(declaredQueues);
+        await mountQueues(declaredQueues, resolveQueueConfigMode(options.queueConfig));
       }
     } catch (err) {
       await closeAllQueueResources();

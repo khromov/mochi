@@ -118,6 +118,7 @@ export type {
   MochiJobOptions,
   MochiQueueOptions,
   MochiQueueRuntimeOptions,
+  MochiDeadLetterTarget,
   MochiWorkerTuning,
   MochiQueueListeners,
   MochiProcessor,

@@ -275,6 +275,12 @@ export interface MochiWorkerOptions {
   queues: MochiQueueConfig[];
   /** The app's queue storage; may instead come from a `storage` declared on the descriptors. */
   storage?: MochiQueueStorage;
+  /**
+   * `'verify'` (default): a stored queue whose config differs from its declaration is a start() error — code is
+   * authoritative. `'sync'`: write the declared config to storage instead, logging each change. `MOCHI_QUEUE_SYNC=1`
+   * forces `'sync'` process-wide and wins over this option.
+   */
+  queueConfig?: 'verify' | 'sync';
 }
 
 export type MochiRouteValue = MochiPageConfig | MochiApiConfig | MochiWsConfig | MochiSseConfig | MochiFileConfig | BunRouteValue;
@@ -459,6 +465,12 @@ export interface MochiServeOptions {
    */
   queueStorage?: MochiQueueStorage;
   /**
+   * `'verify'` (default): a stored queue whose config differs from its declaration is a boot error — code is
+   * authoritative. `'sync'`: write the declared config to storage instead, logging each change. `MOCHI_QUEUE_SYNC=1`
+   * forces `'sync'` process-wide and wins over this option.
+   */
+  queueConfig?: 'verify' | 'sync';
+  /**
    * Persistent backend for the `MochiOptions` key/value store: `{ sqlite: 'path/to.db' }` for a single-process store,
    * `{ postgres: url }` for a shared one (a `mochi_options` schema), or `{ pglite: instance }` for an embedded
    * Postgres you own. No memory backend; validated at boot, connected lazily on the first MochiOptions call.
@@ -566,13 +578,28 @@ export interface MochiServeOptions {
    */
   proxy?: MochiProxyOptions;
   /**
-   * Trailing-slash policy. When set, every non-asset, non-root user route is registered under both `/foo` and `/foo/`,
+   * Trailing-slash policy for `Mochi.page()` routes. When set, each page is registered under both `/foo` and `/foo/`,
    * and the non-canonical form redirects:
    *
    * - `'never'` — `/foo/` → 301/308 → `/foo`
    * - `'always'` — `/foo` → 301/308 → `/foo/`
    *
-   * 301 for GET/HEAD, 308 otherwise, leaving root `/` and paths with file extensions alone. Default: unset.
+   * 301 for GET/HEAD, 308 for POST (the only other method a page registers, via `actions`), leaving root `/` and
+   * paths with file extensions alone.
+   *
+   * Every other route kind — `Mochi.api()`, `Mochi.sse()`, `Mochi.ws()`, `Mochi.file()` — is exempt: no mirroring and
+   * no redirect, so only the exact pattern you declared matches and the other slash form 404s. To answer on both,
+   * point two patterns at one route:
+   *
+   * ```ts
+   * const ping = Mochi.api(() => json({ ok: true }));
+   * routes = { '/api/ping': ping, '/api/ping/': ping };
+   * ```
+   *
+   * Paths that match no route are never redirected either — they 404 (or reach your `fetch`/middleware fallback) in
+   * whichever slash form they arrived.
+   *
+   * Default: unset — neither form redirects, and only the form you registered is matched.
    */
   trailingSlash?: 'never' | 'always';
   /**
