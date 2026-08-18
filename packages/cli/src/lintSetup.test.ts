@@ -2,12 +2,20 @@ import { describe, expect, test } from 'bun:test';
 import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { addLintTooling, renderEslintConfig, writeLintConfigs, type LintToolingOptions } from './lintSetup.ts';
+import { addLintTooling, LINT_TOOLING_DEV_DEPENDENCIES, renderEslintConfig, writeLintConfigs, type LintToolingOptions } from './lintSetup.ts';
+import rootPkg from '../../../package.json' with { type: 'json' };
 
 const BOTH: LintToolingOptions = { eslint: true, prettier: true };
 const ESLINT_ONLY: LintToolingOptions = { eslint: true, prettier: false };
 const PRETTIER_ONLY: LintToolingOptions = { eslint: false, prettier: true };
 const NEITHER: LintToolingOptions = { eslint: false, prettier: false };
+
+// Scaffolds should get the same lint stack the monorepo itself tests against — when the root deps get bumped, bump lintSetup.ts to match.
+test('embedded devDep ranges stay in sync with the monorepo root package.json', () => {
+  for (const [dep, range] of Object.entries(LINT_TOOLING_DEV_DEPENDENCIES)) {
+    expect(`${dep}@${(rootPkg.devDependencies as Record<string, string>)[dep]}`).toBe(`${dep}@${range}`);
+  }
+});
 
 describe('renderEslintConfig', () => {
   test('with prettier includes the bridge config entries', () => {

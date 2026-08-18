@@ -7,12 +7,12 @@ export interface LintToolingOptions {
   prettier: boolean;
 }
 
-// Caret ranges, refreshed on CLI releases via `bun info <pkg> version`.
+// Kept identical to the monorepo root package.json's lint stack (enforced by lintSetup.test.ts) — bump them together.
 const ESLINT_DEV_DEPENDENCIES: Record<string, string> = {
   '@eslint/js': '^10.0.1',
-  eslint: '^10.8.1',
-  'eslint-plugin-svelte': '^3.23.0',
-  'typescript-eslint': '^8.67.0',
+  eslint: '^10.8.0',
+  'eslint-plugin-svelte': '^3.22.0',
+  'typescript-eslint': '^8.65.0',
 };
 
 const PRETTIER_DEV_DEPENDENCIES: Record<string, string> = {
@@ -23,6 +23,12 @@ const PRETTIER_DEV_DEPENDENCIES: Record<string, string> = {
 // Bridges the two tools (turns off eslint's stylistic rules) — only wanted when both are chosen.
 const ESLINT_PRETTIER_BRIDGE_DEV_DEPENDENCIES: Record<string, string> = {
   'eslint-config-prettier': '^10.1.8',
+};
+
+export const LINT_TOOLING_DEV_DEPENDENCIES: Record<string, string> = {
+  ...ESLINT_DEV_DEPENDENCIES,
+  ...PRETTIER_DEV_DEPENDENCIES,
+  ...ESLINT_PRETTIER_BRIDGE_DEV_DEPENDENCIES,
 };
 
 export function renderEslintConfig(opts: { prettier: boolean }): string {
