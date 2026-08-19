@@ -56,6 +56,13 @@ export function isServerEntryDep(filePath: string, serverEntryDeps: Set<string>)
   return !filePath.endsWith('.svelte') && serverEntryDeps.has(path.resolve(filePath));
 }
 
+// Each entry reload re-evaluates the whole first-party module graph, so a module-scoped resource (a DB pool, a timer,
+// an SMTP pool) is re-created and the old one orphaned with its handle still open. True exactly at the threshold so the
+// `recompile:module-churn` warning surfaces once per dev session instead of silently exhausting connections.
+export function reachedModuleChurnThreshold(count: number, threshold = 10): boolean {
+  return count === threshold;
+}
+
 export interface DevWatcherDeps {
   registry: ComponentRegistry;
   server: Server<undefined>;
@@ -259,6 +266,9 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
   // `extractServeOptions`, and hot-swap handlers in place for the running server.
   let serverEntryDeps: Set<string> = new Set();
   const entryBuildOutDir = path.resolve(`${outDir}/entry-hmr`);
+
+  let entryReloadCount = 0;
+  let moduleStateWarned = false;
 
   async function buildEntry(): Promise<Record<string, unknown> | null> {
     const result = await Bun.build({
@@ -504,6 +514,10 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
       try {
         const freshRoutes = await buildEntry();
         if (freshRoutes) {
+          if (!moduleStateWarned && reachedModuleChurnThreshold(++entryReloadCount)) {
+            mochiEvents.emit('recompile:module-churn', { reloadCount: entryReloadCount });
+            moduleStateWarned = true;
+          }
           counts = await applyRouteChanges(freshRoutes);
           const hasChanges = counts.updated > 0 || counts.added.length > 0 || counts.removed.length > 0;
           if (hasChanges) {

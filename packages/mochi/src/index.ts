@@ -108,6 +108,7 @@ export type {
   MochiCompileErrorLog,
   MochiRecompileStartEvent,
   MochiRecompileCompleteEvent,
+  MochiRecompileModuleChurnEvent,
   MochiRecompileTrigger,
   MochiClientBundleEvent,
   MochiCaptchaVerifyEvent,

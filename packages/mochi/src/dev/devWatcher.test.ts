@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import path from 'node:path';
-import { isServerEntryDep } from './devWatcher';
+import { isServerEntryDep, reachedModuleChurnThreshold } from './devWatcher';
 
 describe('isServerEntryDep', () => {
   const shared = path.resolve('/proj/src/plugin-list.ts');
@@ -26,5 +26,25 @@ describe('isServerEntryDep', () => {
   test('the check resolves the changed path before matching', () => {
     const abs = path.resolve('helper.ts');
     expect(isServerEntryDep('helper.ts', new Set([abs]))).toBe(true);
+  });
+});
+
+describe('reachedModuleChurnThreshold', () => {
+  test('is false below the threshold', () => {
+    expect(reachedModuleChurnThreshold(9)).toBe(false);
+  });
+
+  test('is true exactly at the threshold', () => {
+    expect(reachedModuleChurnThreshold(10)).toBe(true);
+  });
+
+  test('is false past the threshold, so the warning fires once', () => {
+    expect(reachedModuleChurnThreshold(11)).toBe(false);
+    expect(reachedModuleChurnThreshold(50)).toBe(false);
+  });
+
+  test('honours a custom threshold', () => {
+    expect(reachedModuleChurnThreshold(3, 3)).toBe(true);
+    expect(reachedModuleChurnThreshold(2, 3)).toBe(false);
   });
 });
