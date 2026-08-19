@@ -6,6 +6,7 @@ import { files as chat } from '../demos/chat/files.ts';
 import { files as clientOnly } from '../demos/client-only/files.ts';
 import { files as cookieVaryTest } from '../demos/cookie-vary-test/files.ts';
 import { files as captcha } from '../demos/captcha/files.ts';
+import { files as protection } from '../demos/protection/files.ts';
 import { files as captchaStyling } from '../demos/captcha-styling/files.ts';
 import { files as cookies } from '../demos/cookies/files.ts';
 import { files as customTransitions } from '../demos/custom-transitions/files.ts';
@@ -475,6 +476,14 @@ export const demos: Demo[] = [
     files: captcha,
     title: 'Captcha',
     hook: 'How the captcha works — slide-to-verify backed by a hash chain and proof-of-work, with no third party and no tracking.',
+    category: 'forms',
+  },
+  {
+    href: '/demos/protection/',
+    slug: 'protection',
+    files: protection,
+    title: 'Protection Mode',
+    hook: 'How protection mode works — a Cloudflare-style browser check where an interstitial auto-solves the captcha proof-of-work and redeems it for a clearance cookie.',
     category: 'forms',
   },
   {

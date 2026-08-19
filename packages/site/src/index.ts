@@ -137,6 +137,7 @@ const speculationRules: SpeculationRules = {
           { not: { href_matches: ['/discord', '/discord/*'] } },
           { not: { href_matches: ['/support', '/support/*'] } },
           { not: { href_matches: '/demos/login/*' } },
+          { not: { href_matches: '/demos/protection*' } },
           { not: { href_matches: '/cookie-vary-test/*' } },
           { not: { href_matches: '/api/*' } },
           { not: { href_matches: ['/mcp', '/mcp/'] } },
@@ -184,6 +185,14 @@ await Mochi.serve({
     shotHandle,
   ),
   handleError,
+  // Only the protection demo's own page and API are gated — the rest of the site (including
+  // /demos/protection/llms.txt) never sees the interstitial.
+  protection: {
+    enabled: true,
+    protect: ({ path }) => path === '/demos/protection' || path === '/demos/protection/' || path.startsWith('/demos/protection/api'),
+    // Above the default so visitors actually see the interstitial do its work.
+    bits: 20,
+  },
   idleTimeout: 60,
   compressServerIslandProps: true,
   warmup: { enabledInProd: true, enabledInDev: true },

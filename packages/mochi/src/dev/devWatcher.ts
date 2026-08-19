@@ -10,7 +10,7 @@ import { logger } from '../utils/log';
 import { evictPreprocessCacheEntry } from '../compiler/preprocessCache';
 import { extractServeOptions } from '../cli/extractServeOptions';
 import { buildPublicUrl } from '../runtime/proxy';
-import { resolvePublicFiles, registerPublicRoutes } from '../runtime/publicDir';
+import { resolvePublicFiles, registerPublicRoutes, type PublicRouteGuard } from '../runtime/publicDir';
 import { loadSvelteConfig } from '../compiler/svelteConfig';
 import { recordReloadSignal } from './liveReloadGeneration';
 import type { MochiRateLimitOptions } from '../runtime/rateLimit';
@@ -80,6 +80,7 @@ export interface DevWatcherDeps {
   shellPath?: string;
   reloadShell?: () => Promise<void>;
   reloadSpeculationRules?: (rules: SpeculationRules | undefined) => void;
+  publicRouteGuard?: PublicRouteGuard;
 }
 
 /**
@@ -112,6 +113,7 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
     shellPath,
     reloadShell,
     reloadSpeculationRules,
+    publicRouteGuard,
   } = deps;
 
   const liveReloadHandler = (req: Request, srv: Server<undefined>): Response => {
@@ -627,7 +629,7 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
     reloadPublic = debounce(async () => {
       const freshPublic = await resolvePublicFiles({ publicDir, development });
       const nextRoutes: Record<string, BunRouteValue> = { ...baseBunRoutes };
-      registerPublicRoutes(nextRoutes, freshPublic);
+      registerPublicRoutes(nextRoutes, freshPublic, publicRouteGuard);
       nextRoutes['/__mochi_live_reload'] = liveReloadHandler;
       server.reload({
         routes: nextRoutes,

@@ -7,6 +7,7 @@ import type { MochiProxyOptions } from './runtime/proxy';
 import type { LocalImageAsset, MochiImageOptions } from './image/types';
 import type { MochiEmailOptions } from './email/types';
 import type { MochiCaptchaOptions } from './captcha/types';
+import type { MochiProtectionOptions } from './protection/types';
 import type { MochiProcessor, MochiQueueListeners, MochiQueueRuntimeOptions, MochiQueueStorage } from './queue';
 import type { MochiRateLimitOptions } from './runtime/rateLimit';
 import type { MochiSvelteCompiler } from './compiler/svelteCompilerBackend';
@@ -629,6 +630,13 @@ export interface MochiServeOptions {
    * Default: 16 bits, a 2s floor, a 15-minute expiry, and an in-memory nonce store.
    */
   captcha?: MochiCaptchaOptions;
+  /**
+   * Cloudflare-style browser verification: unverified clients get an interstitial that auto-solves the captcha
+   * proof-of-work and redeems it for a signed clearance cookie before any protected route answers. `protect` selects
+   * which requests are gated (default: all); `bits` and `maxAgeMs` tune difficulty and clearance lifetime; `page`
+   * swaps in a custom interstitial component, like `errorPage`. See `MochiProtectionOptions`. Default: disabled.
+   */
+  protection?: MochiProtectionOptions;
   /**
    * Run the whole-program [svelte-shaker](https://github.com/baseballyama/svelte-shaker) pass before compiling, slimming
    * `.svelte` source (prop folding, dead-branch removal, CSS narrowing) so the Svelte compiler emits less code.

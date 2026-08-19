@@ -1,3 +1,4 @@
+import type { Server } from 'bun';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { toPosixPath, relForDisplay } from '../utils';
@@ -71,17 +72,35 @@ export async function resolvePublicFiles(opts: { publicDir: string; development:
 }
 
 /**
+ * Wraps serving a public file (used by protection mode): either short-circuit with a blocked Response, or call `serve`
+ * and decorate its result — a gate that read the clearance cookie must add `Vary: Cookie` to the served file too, or a
+ * shared cache would replay a cleared visitor's copy to unverified ones.
+ */
+export type PublicRouteGuard = (req: Request, server: Server<undefined>, serve: () => Promise<Response>) => Promise<Response>;
+
+/**
  * Register public files as Bun routes under their encoded keys, skipping any URL a user route already claims. Shared by
  * the startup and dev-watcher-reload paths so the encoding and conflict rules stay in lockstep — registering under a raw
  * key here is what made spaced filenames 404 before this was centralized.
  */
-export function registerPublicRoutes(routes: Record<string, BunRouteValue>, files: Map<string, string>): void {
+export function registerPublicRoutes(routes: Record<string, BunRouteValue>, files: Map<string, string>, guard?: PublicRouteGuard): void {
   for (const [urlPath, diskPath] of files) {
     const routeKey = publicRouteKey(urlPath);
     if (routeKey in routes) {
       logger.warn(`Public file "${relForDisplay(diskPath)}" skipped: URL "${urlPath}" is already registered as a route.`);
       continue;
     }
-    routes[routeKey] = Bun.file(diskPath);
+    // A guarded file becomes a handler route: static BunFile values can't run the check. The file re-checks existence so
+    // a deletion 404s instead of surfacing Bun.file's lazy ENOENT as a 500.
+    routes[routeKey] = guard
+      ? (req: Request, server: Server<undefined>): Promise<Response> =>
+          guard(req, server, async () => {
+            const file = Bun.file(diskPath);
+            if (!(await file.exists())) {
+              return new Response('Not found', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+            }
+            return new Response(file);
+          })
+      : Bun.file(diskPath);
   }
 }
