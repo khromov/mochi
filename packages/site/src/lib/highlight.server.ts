@@ -15,7 +15,7 @@ export const highlightCode = pinGlobal('__mochi_site_highlight__', () => {
   const shiki = createShiki({
     ...(engine ? { engine } : {}),
     themes: [mochiTheme],
-    langs: ['bash', 'css', 'dockerfile', 'html', 'javascript', 'json', 'plaintext', 'svelte', 'toml', 'typescript', 'xml', 'yaml'],
+    langs: ['bash', 'css', 'dockerfile', 'html', 'javascript', 'json', 'plaintext', 'sql', 'svelte', 'toml', 'typescript', 'xml', 'yaml'],
   });
   return createHighlighter((code, lang) =>
     shiki.then((s) =>

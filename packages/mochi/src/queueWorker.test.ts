@@ -80,10 +80,12 @@ describe('Mochi.worker()', () => {
         queues: [Mochi.queue('a', { storage: 'memory' }), Mochi.queue('b', { storage: { sqlite: path.join(dataDir, 'b.sqlite') } })],
       }),
     ).toThrow(/declare different storages/);
-    expect(() => Mochi.worker({ queues: [Mochi.queue('a', { storage: 'memory' })], storage: { sqlite: path.join(dataDir, 'c.sqlite') } })).toThrow(/declares a different storage/);
+    expect(() => Mochi.worker({ queues: [Mochi.queue('a', { storage: 'memory' })], queueStorage: { sqlite: path.join(dataDir, 'c.sqlite') } })).toThrow(
+      /declares a different storage/,
+    );
 
     const worker = Mochi.worker({ queues: [Mochi.queue('storage-less')] });
-    expect(worker.start()).rejects.toThrow(/no storage declared/);
+    expect(worker.start()).rejects.toThrow(/no queue storage declared/);
   });
 
   test('rejects declared options that differ from storage, and queueConfig sync repairs them', async () => {

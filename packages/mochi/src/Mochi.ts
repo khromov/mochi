@@ -88,6 +88,8 @@ import {
   collectQueueClosure,
 } from './queue';
 import { pinGlobal } from './utils/globalState';
+import { isValidStorage } from './migrations/storage';
+import { runStartupMigrations } from './migrations/startup';
 import { resetStartupMilestones } from './lifecycle';
 import type { MochiQueue, MochiQueueOptions, MochiQueueDescriptor, MochiQueueStorage, MochiWorker } from './queue';
 import type { BunBoss } from 'bun-boss';
@@ -245,13 +247,14 @@ export class Mochi {
   }
 
   /**
-   * Declare a standalone worker: consume queues in a process that never calls `Mochi.serve()`. `start()` connects to
-   * the app's queue storage (from the descriptors or the `storage` option), creates-or-verifies the declared queue
+   * Declare a standalone worker: consume queues in a process that never calls `Mochi.serve()`. `start()` applies
+   * pending migrations when a `storage` is given (see `Mochi.serve({ storage })`), connects to the app's queue
+   * storage (from the descriptors or the `queueStorage` option), creates-or-verifies the declared queue
    * config (code is authoritative — see `queueConfig`), and begins polling. No hooks or milestones fire, and signal
    * handling is yours to wire (`Mochi.stop()` drains and closes the runtime).
    */
   static worker(options: MochiWorkerOptions): MochiWorker {
-    return createWorker(options.queues, options.storage, options.queueConfig);
+    return createWorker(options.queues, options.queueStorage, options.queueConfig, options.storage);
   }
 
   /**
@@ -417,11 +420,19 @@ export class Mochi {
       // Fail before the config singleton pins and the server binds — rejecting this deep in the boot would wedge the process.
       assertNoConflictingStandaloneRuntime(queueStorage);
     }
+    if (options.storage !== undefined && !isValidStorage(options.storage)) {
+      throw new Error(`Mochi.serve({ storage }): expected { sqlite: 'path/to.db' } or { postgres: url }.`);
+    }
 
     const { svelteVersion } = await checkEnvironment();
     const mochiVersion = await readMochiVersion();
     initExtensions(options);
     await runHook('mochi:init', { options });
+    if (options.storage) {
+      // Before the config singleton pins and anything user-reachable boots: a failed migration rejects the
+      // whole serve() while the process stays retryable.
+      await runStartupMigrations(options.storage);
+    }
     await initMochiConfig(options);
 
     // Resolved once at startup and captured by the per-request closures below. Each default Set is copied before it
