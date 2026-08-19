@@ -45,9 +45,9 @@ export async function runMigrations(opts: RunMigrationsOptions): Promise<Applied
 
   const label = opts.label ? `${opts.label} ` : '';
   const dialect = dialectFor(opts.storage);
-  const sql = dialect.open(opts.storage);
+  const sql = await dialect.open(opts.storage);
   try {
-    const unlock = await dialect.lock(sql);
+    const unlock = await dialect.lock?.(sql);
     try {
       await dialect.ensureTable(sql, table);
       const applied = (await sql.unsafe(`SELECT id, name, hash FROM "${table}" ORDER BY id`)) as AppliedRow[];
@@ -116,7 +116,7 @@ export async function runMigrations(opts: RunMigrationsOptions): Promise<Applied
       return result;
     } finally {
       // Cleanup must never mask the migration error that is already propagating.
-      await unlock().catch((err) => logger.debug(`${label}migration unlock failed:`, err));
+      await unlock?.().catch((err) => logger.debug(`${label}migration unlock failed:`, err));
     }
   } finally {
     await sql.close().catch((err) => logger.debug(`${label}migration connection close failed:`, err));

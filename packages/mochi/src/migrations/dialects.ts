@@ -7,15 +7,15 @@ import type { MochiStorage } from './storage';
 const MIGRATION_LOCK_KEY = 1836016488;
 
 export interface MigrationDialect {
-  open(storage: MochiStorage): SQL;
+  open(storage: MochiStorage): Promise<SQL>;
   /** Take a whole-run exclusive lock; returns the release function. */
-  lock(sql: SQL): Promise<() => Promise<void>>;
+  lock?(sql: SQL): Promise<() => Promise<void>>;
   ensureTable(sql: SQL, table: string): Promise<void>;
   begin<T>(sql: SQL, fn: (tx: SQL) => Promise<T>): Promise<T>;
 }
 
 const postgresDialect: MigrationDialect = {
-  open(storage) {
+  async open(storage) {
     // One pinned connection (the session advisory lock must share a session with every statement of the run) and
     // no named prepared statements (each statement runs once, and PGlite-over-socket shares one backend session).
     return new SQL({ url: (storage as { url: string }).url, max: 1, prepare: false });
@@ -43,17 +43,15 @@ const postgresDialect: MigrationDialect = {
 };
 
 const sqliteDialect: MigrationDialect = {
-  open(storage) {
+  // No `lock`: cross-process SQLite runners rely on BEGIN IMMEDIATE per migration plus the in-transaction
+  // already-applied re-check in the runner, so a losing racer skips instead of re-running.
+  async open(storage) {
     const file = (storage as { path: string }).path;
     // bun:sqlite won't create the parent directory.
     mkdirSync(path.dirname(path.resolve(file)), { recursive: true });
-    return new SQL(`sqlite://${file}`);
-  },
-  async lock(sql) {
-    // No advisory locks in SQLite: cross-process runners rely on BEGIN IMMEDIATE per migration plus the
-    // in-transaction already-applied re-check in the runner, so a losing racer skips instead of re-running.
+    const sql = new SQL(`sqlite://${file}`);
     await sql.unsafe('PRAGMA busy_timeout = 30000');
-    return async () => {};
+    return sql;
   },
   async ensureTable(sql, table) {
     await sql.unsafe(

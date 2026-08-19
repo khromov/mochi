@@ -2,6 +2,7 @@ import { describe, expect, test, beforeEach, afterAll } from 'bun:test';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { loadMigrationFiles } from './loadMigrationFiles';
+import { isValidStorage, storageKey } from './storage';
 
 const root = mkdtempSync(path.join(import.meta.dir, '..', '..', '.mochi-migrate-load-'));
 let dir: string;
@@ -78,5 +79,34 @@ describe('loadMigrationFiles', () => {
     });
     expect(message).toContain('broken.sql');
     expect(message).not.toContain('\\');
+  });
+});
+
+describe('isValidStorage', () => {
+  test('accepts both variants, with and without startOnFail', () => {
+    expect(isValidStorage({ type: 'sqlite', path: './app.db' })).toBe(true);
+    expect(isValidStorage({ type: 'postgres', url: 'postgres://localhost/db' })).toBe(true);
+    expect(isValidStorage({ type: 'sqlite', path: './app.db', startOnFail: true })).toBe(true);
+  });
+
+  test('rejects non-objects, wrong types, empty backings, and mismatched fields', () => {
+    expect(isValidStorage(undefined)).toBe(false);
+    expect(isValidStorage('sqlite')).toBe(false);
+    expect(isValidStorage({ type: 'mysql', url: 'x' })).toBe(false);
+    expect(isValidStorage({ type: 'sqlite', path: '' })).toBe(false);
+    expect(isValidStorage({ type: 'sqlite', url: 'postgres://x' })).toBe(false);
+    expect(isValidStorage({ type: 'sqlite', path: './a.db', startOnFail: 'yes' })).toBe(false);
+  });
+
+  test('rejects unknown keys instead of silently ignoring them', () => {
+    expect(isValidStorage({ type: 'sqlite', path: './a.db', posgres: 'oops' })).toBe(false);
+    expect(isValidStorage({ sqlite: './a.db' })).toBe(false);
+  });
+});
+
+describe('storageKey', () => {
+  test('derives a stable per-database identity from the variant', () => {
+    expect(storageKey({ type: 'sqlite', path: './a.db' })).toBe(`sqlite:${path.resolve('./a.db')}`);
+    expect(storageKey({ type: 'postgres', url: 'postgres://x' })).toBe('postgres:postgres://x');
   });
 });

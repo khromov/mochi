@@ -3,7 +3,7 @@ import { pinGlobal } from '../utils/globalState';
 import { logger } from '../utils/log';
 import { runMigrations } from './runner';
 import type { AppliedMigration } from './runner';
-import { storageDbType, storageKey } from './storage';
+import { storageKey } from './storage';
 import type { MochiStorage } from './storage';
 
 // Resolves to this directory both in the repo and in the published package (src/ ships verbatim).
@@ -36,7 +36,7 @@ export function runStartupMigrations(storage: MochiStorage): Promise<AppliedMigr
 async function migrateAll(storage: MochiStorage): Promise<AppliedMigration[]> {
   // Random jitter desynchronizes replicas booting simultaneously, so they don't contend for the lock at once.
   await new Promise((resolve) => setTimeout(resolve, Math.random() * 500));
-  const dbType = storageDbType(storage);
+  const dbType = storage.type;
   try {
     const framework = await runMigrations({ storage, dir: path.join(FRAMEWORK_MIGRATIONS_DIR, dbType), table: 'mochi_migrations', label: 'mochi' });
     const app = await runMigrations({ storage, dir: userMigrationsDir(dbType), table: 'migrations', label: 'app' });

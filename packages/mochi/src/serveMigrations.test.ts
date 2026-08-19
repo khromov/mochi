@@ -47,6 +47,11 @@ describe('Mochi.serve({ storage })', () => {
     expect(existsSync(path.join(projectDir, '.mochi'))).toBe(false);
   });
 
+  test('startOnFail swallows the failure instead of rejecting the boot', async () => {
+    // 1_bad.sql is still broken from the previous test.
+    expect(await runStartupMigrations({ type: 'sqlite', path: path.join(projectDir, 'failing.db'), startOnFail: true })).toEqual([]);
+  });
+
   test('applies migrations before binding, and repeat runs on the same storage are deduped', async () => {
     const db = path.join(projectDir, 'app.db');
     writeFileSync(path.join(migrationsDir, '1_bad.sql'), 'CREATE TABLE users (id integer PRIMARY KEY, name text);');

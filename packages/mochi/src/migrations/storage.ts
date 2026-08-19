@@ -1,17 +1,18 @@
 import path from 'node:path';
 
-export interface MochiSqliteStorage {
-  type: 'sqlite';
-  path: string;
+interface MochiStorageBase {
   /** Boot even when a migration fails (the error is logged). Default: `false`. */
   startOnFail?: boolean;
 }
 
-export interface MochiPostgresStorage {
+export interface MochiSqliteStorage extends MochiStorageBase {
+  type: 'sqlite';
+  path: string;
+}
+
+export interface MochiPostgresStorage extends MochiStorageBase {
   type: 'postgres';
   url: string;
-  /** Boot even when a migration fails (the error is logged). Default: `false`. */
-  startOnFail?: boolean;
 }
 
 /**
@@ -37,10 +38,6 @@ export function isValidStorage(value: unknown): value is MochiStorage {
     return false;
   }
   return Object.keys(record).every((key) => key === 'type' || key === backing || key === 'startOnFail');
-}
-
-export function storageDbType(storage: MochiStorage): 'sqlite' | 'postgres' {
-  return storage.type;
 }
 
 /** Stable per-database identity, used to dedupe startup migration runs within one process. */

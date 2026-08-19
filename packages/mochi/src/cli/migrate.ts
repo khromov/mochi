@@ -20,12 +20,8 @@ export async function runMigrateCommand(opts: MigrateCommandOptions): Promise<vo
   if (opts.validate) {
     for (const dbType of ['postgres', 'sqlite'] as const) {
       const files = await loadMigrationFiles(path.resolve(process.cwd(), 'migrations', dbType));
-      if (files.length === 0) {
-        continue;
-      }
-      process.stdout.write(`[mochi] migrations/${dbType}: ${files.length} valid file(s)\n`);
-      for (const f of files) {
-        process.stdout.write(`  ${f.id} ${f.name}${f.noTransaction ? ' [no-transaction]' : ''}\n`);
+      if (files.length > 0) {
+        process.stdout.write(`[mochi] migrations/${dbType}: ${files.length} valid file(s)\n`);
       }
     }
     return;
