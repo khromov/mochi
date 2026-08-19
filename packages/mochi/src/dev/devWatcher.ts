@@ -57,13 +57,10 @@ export function isServerEntryDep(filePath: string, serverEntryDeps: Set<string>)
 }
 
 // Each entry reload re-evaluates the whole first-party module graph, so a module-scoped resource (a DB pool, a timer,
-// an SMTP pool) is re-created and the old one orphaned with its handle still open. Fires exactly at the threshold so
-// the leak surfaces once per dev session instead of silently exhausting connections.
-export function moduleStateReloadWarning(count: number, threshold = 10): string | null {
-  if (count !== threshold) {
-    return null;
-  }
-  return `Entry has been re-imported ${count} times this session — module-scoped state is re-created on every reload, orphaning anything it holds open (DB pools, timers, SMTP pools). Hold such resources with pinGlobal() so they survive HMR — see /docs/development-mode.`;
+// an SMTP pool) is re-created and the old one orphaned with its handle still open. True exactly at the threshold so the
+// `recompile:module-churn` warning surfaces once per dev session instead of silently exhausting connections.
+export function reachedModuleChurnThreshold(count: number, threshold = 10): boolean {
+  return count === threshold;
 }
 
 export interface DevWatcherDeps {
@@ -517,12 +514,9 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
       try {
         const freshRoutes = await buildEntry();
         if (freshRoutes) {
-          if (!moduleStateWarned) {
-            const warning = moduleStateReloadWarning(++entryReloadCount);
-            if (warning) {
-              logger.warn(warning);
-              moduleStateWarned = true;
-            }
+          if (!moduleStateWarned && reachedModuleChurnThreshold(++entryReloadCount)) {
+            mochiEvents.emit('recompile:module-churn', { reloadCount: entryReloadCount });
+            moduleStateWarned = true;
           }
           counts = await applyRouteChanges(freshRoutes);
           const hasChanges = counts.updated > 0 || counts.added.length > 0 || counts.removed.length > 0;

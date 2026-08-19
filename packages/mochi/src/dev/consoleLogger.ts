@@ -396,6 +396,15 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
       return { label: 'HMR ', path: relPath(path), note: styleText('dim', action), duration: durationMs, slow, verySlow };
     });
   }
+
+  // Not gated by `compile`: this is a resource-leak warning, not routine build chatter, so silencing build lines must
+  // not hide it. Drop it with a `consoleLogger:line` filter on `source.name === 'recompile:module-churn'` instead.
+  subscribe('recompile:module-churn', ({ reloadCount }) => ({
+    label: 'HMR ',
+    path: 'module-state',
+    note: `re-imported ${reloadCount}× — module-scoped resources leak on each reload (DB pools, timers, SMTP pools); hold them with ${styleText('cyan', 'pinGlobal()')} → /docs/development-mode`,
+    level: 'warn',
+  }));
 }
 
 /**

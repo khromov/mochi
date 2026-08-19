@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import path from 'node:path';
-import { isServerEntryDep, moduleStateReloadWarning } from './devWatcher';
+import { isServerEntryDep, reachedModuleChurnThreshold } from './devWatcher';
 
 describe('isServerEntryDep', () => {
   const shared = path.resolve('/proj/src/plugin-list.ts');
@@ -29,24 +29,22 @@ describe('isServerEntryDep', () => {
   });
 });
 
-describe('moduleStateReloadWarning', () => {
-  test('stays silent below the threshold', () => {
-    expect(moduleStateReloadWarning(9)).toBeNull();
+describe('reachedModuleChurnThreshold', () => {
+  test('is false below the threshold', () => {
+    expect(reachedModuleChurnThreshold(9)).toBe(false);
   });
 
-  test('warns exactly at the threshold and names the fix', () => {
-    const warning = moduleStateReloadWarning(10);
-    expect(warning).toContain('pinGlobal');
-    expect(warning).toContain('10');
+  test('is true exactly at the threshold', () => {
+    expect(reachedModuleChurnThreshold(10)).toBe(true);
   });
 
-  test('stays silent past the threshold, so it fires once', () => {
-    expect(moduleStateReloadWarning(11)).toBeNull();
-    expect(moduleStateReloadWarning(50)).toBeNull();
+  test('is false past the threshold, so the warning fires once', () => {
+    expect(reachedModuleChurnThreshold(11)).toBe(false);
+    expect(reachedModuleChurnThreshold(50)).toBe(false);
   });
 
   test('honours a custom threshold', () => {
-    expect(moduleStateReloadWarning(3, 3)).toContain('pinGlobal');
-    expect(moduleStateReloadWarning(2, 3)).toBeNull();
+    expect(reachedModuleChurnThreshold(3, 3)).toBe(true);
+    expect(reachedModuleChurnThreshold(2, 3)).toBe(false);
   });
 });

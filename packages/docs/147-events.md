@@ -30,6 +30,7 @@ Event names use a `namespace:action` convention. Every key is in the typed `Moch
 - [`action:invoke`](#actioninvoke), [`action:complete`](#actioncomplete) — form action lifecycle
 - [`compile:start`](#compilestart), [`compile:complete`](#compilecomplete), [`compile:error`](#compileerror) — Svelte SSR build
 - [`recompile:start`](#recompilestart), [`recompile:complete`](#recompilecomplete) — dev rebuild cycle
+- [`recompile:module-churn`](#recompilemodule-churn) — entry re-imported many times in a dev session (resource-leak warning)
 - [`client-bundle:complete`](#client-bundlecomplete) — hydratable client bundle finished
 - [`island:error`](#islanderror) — an island errored
 - [`captcha:verify`](#captchaverify) — a `<MochiCaptcha>` submission was verified or rejected
@@ -392,6 +393,22 @@ Fires after the matching `recompile:start`, once the rebuild finishes and client
 | `pageCount`         | `number`                             | pages that were rebuilt                        |
 | `clientBundleCount` | `number`                             | `buildClientBundle()` invocations during cycle |
 | `durationMs`        | `number`                             | wall-clock ms for the whole cycle              |
+
+#### `recompile:module-churn`
+
+Fires once per dev session, when the entry has been re-imported `reloadCount` times (default 10). Each reload re-evaluates the whole first-party module graph, so a module-scoped resource is re-created and the old one orphaned — see [route-handler HMR](/docs/development-mode/#route-handler-hmr). `consoleLogger()` renders it as a `warn`-level `HMR` line; suppress that line with a [`consoleLogger:line`](/docs/extensions/#consoleloggerline) filter matching `source.name === 'recompile:module-churn'`.
+
+| Field         | Type     | Notes                                       |
+| ------------- | -------- | ------------------------------------------- |
+| `reloadCount` | `number` | entry re-imports so far this session (≥ 10) |
+
+```ts
+import { mochiEvents } from 'mochi-framework';
+
+mochiEvents.on('recompile:module-churn', ({ reloadCount }) => {
+  console.warn(`entry re-imported ${reloadCount}× — hold resources with pinGlobal()`);
+});
+```
 
 #### `client-bundle:complete`
 

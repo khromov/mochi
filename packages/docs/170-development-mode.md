@@ -116,6 +116,20 @@ Namespace your key with an `app:` prefix — the framework uses `__mochi_*__` fo
 
 </Callout>
 
+Mochi warns once per dev session — via the [`recompile:module-churn`](/docs/events/#recompilemodule-churn) event — after the entry has been re-imported ten times, printed by `consoleLogger()` as a `warn`-level `HMR` line. If you have deliberately accepted the churn (or your resources are all held with `pinGlobal`), silence just that line with a [`consoleLogger:line`](/docs/extensions/#consoleloggerline) filter — the same mechanism the framework uses to hide its own internal routes:
+
+```ts
+// file: src/index.ts
+await Mochi.serve({
+  filters: {
+    'consoleLogger:line': (line, { source }) => (source.name === 'recompile:module-churn' ? null : line),
+  },
+  routes,
+});
+```
+
+Returning `null` drops the line; returning it unchanged keeps it. This suppresses only the churn warning — every other log line is untouched.
+
 ### `file:change` event
 
 Every watcher event re-emits on `mochiEvents` as `file:change`. Use it to invalidate your own caches:

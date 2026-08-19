@@ -337,6 +337,11 @@ export interface MochiRecompileCompleteEvent {
   durationMs: number;
 }
 
+export interface MochiRecompileModuleChurnEvent {
+  /** How many times the entry has been re-imported this dev session. */
+  reloadCount: number;
+}
+
 export interface MochiClientBundleEvent {
   /** Entrypoints fed to `Bun.build` (HydratableIsland + per-component virtuals). */
   entryCount: number;
@@ -430,6 +435,7 @@ export type MochiEventMap = {
   'compile-cache:summary': MochiCompileCacheSummaryEvent;
   'recompile:start': MochiRecompileStartEvent;
   'recompile:complete': MochiRecompileCompleteEvent;
+  'recompile:module-churn': MochiRecompileModuleChurnEvent;
   'client-bundle:complete': MochiClientBundleEvent;
 };
 
