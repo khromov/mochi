@@ -303,6 +303,8 @@ mochiEvents.on('queue:completed', ({ queue, jobId, duration }) => {
 
 `queue:completed` and `queue:failed` fire per attempt, as the processor settles — an immediate `Mochi.boss().findJobs()` from a listener may still see the job `active` for a beat. An `addBulk` emits `queue:added` per inserted job (flagged `bulk: true`) plus one `queue:addedBulk` summary — the console logger prints only the summary, so a 100k-job bulk add logs one line.
 
+When a queue's backlog crosses the warning threshold (`warningQueueSize`, default `10000`), Mochi logs a `[queue]` warning that names the offending queue and its current depth — e.g. `[queue] Warning: large queue backlog. Your queue should be reviewed (queue "emails" has 12345 jobs queued)`.
+
 ### Dev mode & hot reload
 
 `Mochi.serve({ queues })` starts the queue runtime once, so the dev route hot-reload watcher cannot spawn a duplicate consumer. The trade-off: **changes to a queue's `process` function or options do not hot-reload**. Restart the dev server to apply them.
