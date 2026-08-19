@@ -6,7 +6,7 @@
   async function probe() {
     busy = true;
     try {
-      const res = await fetch('/demos/protection/api/');
+      const res = await fetch('/demos/protection/api');
       status = res.status;
       body = await res.text();
     } catch (e) {
