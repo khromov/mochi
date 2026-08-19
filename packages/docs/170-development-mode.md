@@ -97,6 +97,21 @@ export function getSql() {
 }
 ```
 
+Call `getSql()` wherever you need the pool — every call returns the same instance, so route handlers and `serverProps` share the one set of connections:
+
+```ts
+// file: src/routes.ts
+import { getSql } from './db/client';
+
+export const routes = {
+  '/users': Mochi.page('./src/Users.svelte', {
+    serverProps: async () => ({
+      users: await getSql()`SELECT id, name FROM users`,
+    }),
+  }),
+};
+```
+
 Namespace your key with an `app:` prefix — the framework uses `__mochi_*__` for its own pins. Setting `idleTimeout` is worth it regardless: it bounds the damage from any pool that still escapes.
 
 </Callout>

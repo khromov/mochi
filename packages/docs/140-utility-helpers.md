@@ -98,6 +98,14 @@ export function getSql() {
 }
 ```
 
+Call the accessor wherever you need the value — every call returns the same instance:
+
+```ts
+import { getSql } from './db/client';
+
+const users = await getSql()`SELECT id, name FROM users`;
+```
+
 Reach for it to hold anything that must not be duplicated: a database pool, a connection, a background timer, an in-memory cache. In development this is what keeps such resources from leaking across [route-handler HMR](/docs/development-mode/#route-handler-hmr) — a plain module-scoped `let` is re-created on every reload and its old handle orphaned, but a `pinGlobal` value survives. Namespace your key with an `app:` prefix; the framework pins its own state under `__mochi_*__`.
 
 <SeeItInAction
