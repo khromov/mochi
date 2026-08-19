@@ -69,6 +69,7 @@ In production (`development: false`), prebuilt JS/CSS bundles served from `asset
 - `svelteConfigPath` — path to a Svelte config file. Default: `./svelte.config.js`. See [Svelte config](/docs/svelte-config/).
 - `svelteCompiler` — which compiler emits component JS. Default: `'svelte'`. `'rsvelte'` needs `@mochi-framework/rsvelte`. See [rsvelte](/docs/rsvelte/).
 - `optimize` — run the whole-program svelte-shaker pass over `.svelte` source before compiling, so the compiler emits less code. **Production only**, and needs `@mochi-framework/svelte-shaker`. `true` shakes everything; `{ enabled, exclude }` gives finer control. Default: `false`. See [Svelte Shaker](/docs/svelte-shaker/).
+- `protection` — Cloudflare-style browser verification: unverified clients get an interstitial that auto-solves the captcha proof-of-work and redeems it for a signed clearance cookie. Default: disabled. See [Protection Mode](/docs/protection/).
 - `csrf` — `MochiCsrfOptions` for the origin-header check. See below.
 - `proxy` — `MochiProxyOptions` for trusted reverse-proxy headers. See below.
 - `hooks` / `filters` — named lifecycle hooks and value filters. See [Extensions](/docs/extensions/).
@@ -150,7 +151,7 @@ await Mochi.serve({
 });
 ```
 
-In production, the check refuses every form mutation until `proxy.origin` (or `proxy.hostHeader`) is set, so the deployment break is loud. In development the request is allowed through with a `[mochi]` warning.
+In production, the check refuses every form mutation until `proxy.origin` (or `proxy.hostHeader`) is set, so the deployment break is loud. In development the request is allowed through with a `[mochi]` warning. Routes declaring form `actions` without either option also warn once at boot — in both modes — so the misconfiguration is visible before deploy, not first discovered as a production 403.
 
 ### Proxy
 

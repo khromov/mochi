@@ -1,4 +1,4 @@
 User-Agent: *
 Allow: /
 Disallow: /og
-Disallow: /ci/data/
+Disallow: /ci/data

@@ -203,6 +203,10 @@ async function renameWithRetry(from: string, to: string): Promise<void> {
   // Ramp to a 100ms poll and keep retrying for a few seconds: under heavy write
   // contention a peer's handle on the destination can linger longer than a short
   // window, and a rename that ultimately succeeds beats a spurious hard failure.
+  // The delay is jittered because a steady cadence can phase-lock with a reader that
+  // reopens the destination on its own steady cycle — every retry then lands inside the
+  // reader's open window and the writer starves until the budget runs out. Jitter keeps
+  // the mean backoff but decorrelates the two, so a retry eventually falls in the gap.
   for (let attempt = 0; ; attempt++) {
     try {
       return await rename(from, to);
@@ -211,7 +215,30 @@ async function renameWithRetry(from: string, to: string): Promise<void> {
       if (attempt >= 50 || !RENAME_RETRY_CODES.has(code)) {
         throw err;
       }
-      await Bun.sleep(Math.min(100, 10 * (attempt + 1)));
+      await Bun.sleep(Math.min(100, 10 * (attempt + 1)) * (0.5 + Math.random()));
+    }
+  }
+}
+
+// TODO: This is very hacky and we should check if 1.4.0 solves it and/or remove this asap
+// Windows reports a delete-pending file — a concurrent sweep or removeItem mid-unlink — as EPERM/EACCES
+// on open rather than ENOENT, and an antivirus/indexer handle surfaces the same codes; retrying lets the
+// delete finish into a plain ENOENT miss and a transient lock clear into a successful read. ENOENT itself
+// is never retried — it is the miss signal `getItem` branches on. No-op on POSIX.
+const READ_RETRY_CODES = new Set(['EPERM', 'EACCES', 'EBUSY']);
+async function readTextWithRetry(path: string): Promise<string> {
+  if (process.platform !== 'win32') {
+    return Bun.file(path).text();
+  }
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await Bun.file(path).text();
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code ?? '';
+      if (attempt >= 20 || !READ_RETRY_CODES.has(code)) {
+        throw err;
+      }
+      await Bun.sleep(Math.min(100, 10 * (attempt + 1)) * (0.5 + Math.random()));
     }
   }
 }
@@ -278,7 +305,7 @@ export class FileStorage implements Storage {
   async getItem(key: string): Promise<unknown> {
     let text: string;
     try {
-      text = await Bun.file(this.pathFor(key)).text();
+      text = await readTextWithRetry(this.pathFor(key));
     } catch (err) {
       // A missing file is a cache miss; any other read error propagates so the
       // cache can degrade to a `miss` + `cache:error` rather than serving garbage.

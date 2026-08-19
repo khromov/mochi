@@ -134,13 +134,14 @@ await Mochi.serve({
 
 #### `trailingSlash:redirect`
 
-Override the `trailingSlash` policy for the current request. The filter receives the computed redirect (a 301/308 `Response` or `null`). Return the input to delegate, or `null` to skip the redirect. Sync.
+Override the `trailingSlash` policy for the current request. The filter receives the computed redirect (a 301/308 `Response` or `null`). Return the input to delegate, or `null` to skip the redirect. Sync. It runs only when a `Mochi.page()` route matches; every other route kind and unmatched paths are [exempt from `trailingSlash` outright](/docs/trailing-slash/) and never reach it.
 
 ```ts
 await Mochi.serve({
   trailingSlash: 'always',
   filters: {
-    'trailingSlash:redirect': (redirect, { url }) => (url.pathname === '/mcp' ? null : redirect),
+    // A page a third party embeds at the slashless URL — leave it where it is.
+    'trailingSlash:redirect': (redirect, { url }) => (url.pathname === '/embed' ? null : redirect),
   },
   routes,
 });

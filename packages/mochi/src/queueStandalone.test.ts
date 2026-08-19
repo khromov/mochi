@@ -115,21 +115,45 @@ describe('standalone queue producers', () => {
     expect(await q.add({ n: 3 })).toBeString();
   });
 
-  test('a standalone producer never re-syncs consumer-owned queue options', async () => {
+  test('a bare producer is an existence reference: stored options survive, while a differing declaration is rejected', async () => {
     const name = uniqueName();
-    const file = path.join(dataDir, 'noresync.sqlite');
+    const file = path.join(dataDir, 'authority.sqlite');
     // A consumer deployment mounts the queue with its own expiry/retry settings...
     await startQueueRuntime({ sqlite: file });
     await mountQueues([{ name, options: { expireInSeconds: 42, retryLimit: 7 } }]);
     expect((await getBoss().getQueue(name))?.expireInSeconds).toBe(42);
     await closeAllQueueResources();
 
-    // ...then a bare producer (different options in code) enqueues: the stored options must survive untouched.
-    const producer = Mochi.queue<{ n: number }>(name, { storage: { sqlite: file }, expireInSeconds: 900, retryLimit: 1 });
-    await producer.add({ n: 1 });
+    // ...then a bare producer (no persisted options declared) enqueues: it asserts existence, not config.
+    const bare = Mochi.queue<{ n: number }>(name, { storage: { sqlite: file } });
+    await bare.add({ n: 1 });
     const stored = await getBoss().getQueue(name);
     expect(stored?.expireInSeconds).toBe(42);
     expect(stored?.retryLimit).toBe(7);
+    await closeAllQueueResources();
+
+    // A producer that does declare options is held to them: code is authoritative, and this code disagrees with storage.
+    const differing = Mochi.queue<{ n: number }>(name, { storage: { sqlite: file }, expireInSeconds: 900, retryLimit: 1 });
+    await expect(differing.add({ n: 2 })).rejects.toThrow(/already exists in storage with retryLimit 7, expireInSeconds 42.*declares retryLimit 1, expireInSeconds 900/);
+  }, 15_000);
+
+  test('a producer-first enqueue creates the queue with its descriptor-form deadLetter link intact', async () => {
+    const file = path.join(dataDir, 'producer-dlq.sqlite');
+    const dlq = Mochi.queue<{ n: number }>('producer-work-dlq', { storage: { sqlite: file } });
+    const work = Mochi.queue<{ n: number }>('producer-work', { storage: { sqlite: file }, retryLimit: 0, deadLetter: dlq });
+
+    // The issue's repro: on fresh storage the producer runs first — the link must exist without any migration.
+    expect(await work.add({ n: 1 })).toBeString();
+    expect((await getBoss().getQueue('producer-work'))?.deadLetter).toBe('producer-work-dlq');
+    // The target was ensured, but only the queue actually added to is registered as a producer handle.
+    expect(await getBoss().getQueue('producer-work-dlq')).not.toBeNull();
+    expect(() => getQueue('producer-work-dlq')).toThrow();
+  }, 15_000);
+
+  test('a producer with a string deadLetter whose target does not exist is rejected with the descriptor remedy', async () => {
+    const file = path.join(dataDir, 'producer-dlq-missing.sqlite');
+    const work = Mochi.queue<{ n: number }>('orphan-work', { storage: { sqlite: file }, deadLetter: 'orphan-dlq' });
+    await expect(work.add({ n: 1 })).rejects.toThrow(/"orphan-dlq" is not declared here and does not exist in storage.*Pass the target's descriptor/);
   }, 15_000);
 
   test('queue.stop() releases the queue and closes the runtime when it was the last one', async () => {

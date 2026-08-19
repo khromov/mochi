@@ -19,7 +19,7 @@
   let lastQueued = $state<string | null>(null);
 
   $effect(() => {
-    const source = new EventSource('/demos/queue/events/');
+    const source = new EventSource('/demos/queue/events');
     source.addEventListener('message', (e) => {
       const status = JSON.parse(e.data) as QueueStatus;
       pending = status.inFlight;

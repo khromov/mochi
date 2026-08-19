@@ -2,6 +2,7 @@ import path from 'node:path';
 import fs from 'node:fs/promises';
 import { downloadTemplate } from '@bluwy/giget-core';
 import { getTemplate, type TemplateId } from './templates.ts';
+import { addLintTooling, writeLintConfigs } from './lintSetup.ts';
 import { ensureGitignore, fetchLatestMochiVersion, resolveMochiVersionRange, setDefaultPort, transformPackageJson, transformTsconfig, validatePackageName } from './utils.ts';
 
 export const SCAFFOLDED_PORT = 3333;
@@ -16,6 +17,10 @@ export interface CreateOptions {
   force?: boolean;
   /** Override the version of `mochi-framework` injected into `package.json`. Default: latest from npm. */
   mochiVersion?: string;
+  /** Write an ESLint flat config plus lint scripts/devDeps into the scaffold. Default: `true`. */
+  eslint?: boolean;
+  /** Write a Prettier config plus format scripts/devDeps into the scaffold. Default: `true`. */
+  prettier?: boolean;
 }
 
 export interface CreateResult {
@@ -52,6 +57,10 @@ export async function create(opts: CreateOptions): Promise<CreateResult> {
   await rewriteFile(path.join(dir, 'package.json'), (raw) => transformPackageJson(raw, { name: opts.name, mochiVersion, dir }));
   await rewriteFile(path.join(dir, 'tsconfig.json'), transformTsconfig);
   await rewriteFile(path.join(dir, 'src/index.ts'), (raw) => setDefaultPort(raw, SCAFFOLDED_PORT));
+
+  const lintOpts = { eslint: opts.eslint ?? true, prettier: opts.prettier ?? true };
+  await rewriteFile(path.join(dir, 'package.json'), (raw) => addLintTooling(raw, lintOpts));
+  writeLintConfigs(dir, lintOpts);
 
   ensureGitignore(dir);
 

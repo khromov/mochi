@@ -3,12 +3,15 @@
  * Regression test for `bun create mochi@latest`. For each published template
  * (`minimal`, `demos`) it scaffolds into
  * ./cli-tests/mochi-test-<id>-<template>/, runs `bun install`, `bun run test`,
- * and `bun run typecheck`, then writes a single combined Markdown report with
- * one section per template. Scaffold dirs are always kept for inspection.
+ * `bun run typecheck`, and — when the scaffold ships them — `bun run lint` and
+ * `bun run format:check`, then writes a single combined Markdown report with
+ * one section per template. CLI versions that add lint tooling (>=0.4.0) also
+ * get a `--no-eslint --no-prettier` scaffold checked for clean omission.
+ * Scaffold dirs are always kept for inspection.
  * Exits non-zero if any template fails any step.
  */
 
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import os from 'node:os';
 
@@ -20,7 +23,7 @@ const TESTS_DIR = join(REPO_ROOT, 'cli-tests');
 const TEMPLATES = ['minimal', 'demos'] as const;
 type TemplateId = (typeof TEMPLATES)[number];
 
-type StepName = 'scaffold' | 'install' | 'test' | 'typecheck';
+type StepName = 'scaffold' | 'install' | 'test' | 'typecheck' | 'lint' | 'format' | 'omissions';
 type Status = 'pass' | 'fail' | 'skipped';
 
 interface StepResult {
@@ -133,8 +136,22 @@ function extractInstalledMochiVersion(scaffoldDir: string): string {
   }
 }
 
+function readScaffoldScripts(scaffoldDir: string): Record<string, string> {
+  try {
+    const pkg = JSON.parse(readFileSync(join(scaffoldDir, 'package.json'), 'utf8')) as { scripts?: Record<string, string> };
+    return pkg.scripts ?? {};
+  } catch {
+    return {};
+  }
+}
+
+/** Pass when nothing failed and every required step ran — optional steps (lint/format on pre-0.4.0 CLIs) may stay skipped. */
+function templateOverall(all: StepResult[], required: StepResult[]): Status {
+  return all.every((s) => s.status !== 'fail') && required.every((s) => s.status === 'pass') ? 'pass' : 'fail';
+}
+
 interface TemplateResult {
-  template: TemplateId;
+  template: string;
   scaffoldDirRel: string;
   mochiVersion: string;
   mochiInstalledVersion: string;
@@ -206,25 +223,38 @@ function renderReport(args: {
   return lines.join('\n');
 }
 
-async function runTemplate(template: TemplateId, id: string): Promise<TemplateResult> {
-  const name = `mochi-test-${id}-${template}`;
+interface TemplateVariant {
+  /** Scaffold-dir suffix, e.g. '-no-lint'. */
+  suffix: string;
+  /** Extra flags passed to `bun create mochi@latest`. */
+  extraArgs: string[];
+  /** Assert the scaffold shipped no lint tooling (config files or scripts). */
+  expectNoLintTooling: boolean;
+}
+
+async function runTemplate(template: TemplateId, id: string, variant?: TemplateVariant): Promise<TemplateResult> {
+  const name = `mochi-test-${id}-${template}${variant?.suffix ?? ''}`;
   const scaffoldDir = join(TESTS_DIR, name);
   const scaffoldDirRel = `./cli-tests/${name}`;
+  const label = variant ? `${template} (${variant.extraArgs.join(' ')})` : template;
 
   console.log('');
-  console.log(`▶ ${template} (${scaffoldDirRel})`);
+  console.log(`▶ ${label} (${scaffoldDirRel})`);
 
-  const steps: Record<StepName, StepResult> = {
+  const steps = {
     scaffold: skipped('scaffold'),
     install: skipped('install'),
     test: skipped('test'),
     typecheck: skipped('typecheck'),
+    lint: skipped('lint'),
+    format: skipped('format'),
+    omissions: skipped('omissions'),
   };
 
-  console.log(`  [${template}] • scaffold…`);
-  const scaffold = await runCmd(['bun', 'create', 'mochi@latest', scaffoldDirRel, '--template', template, '--force'], REPO_ROOT);
+  console.log(`  [${label}] • scaffold…`);
+  const scaffold = await runCmd(['bun', 'create', 'mochi@latest', scaffoldDirRel, '--template', template, '--force', ...(variant?.extraArgs ?? [])], REPO_ROOT);
   steps.scaffold = toStep('scaffold', scaffold);
-  console.log(`  [${template}]   ${statusCell(steps.scaffold.status)} (${fmtDuration(steps.scaffold.durationMs)})`);
+  console.log(`  [${label}]   ${statusCell(steps.scaffold.status)} (${fmtDuration(steps.scaffold.durationMs)})`);
 
   let mochiVersion = 'unknown';
   let mochiInstalledVersion = 'unknown';
@@ -232,30 +262,61 @@ async function runTemplate(template: TemplateId, id: string): Promise<TemplateRe
   if (steps.scaffold.status === 'pass') {
     mochiVersion = extractMochiVersion(scaffold.stdout, scaffoldDir);
 
-    console.log(`  [${template}] • install…`);
+    if (variant?.expectNoLintTooling) {
+      const scripts = readScaffoldScripts(scaffoldDir);
+      const leftovers = [
+        ...['eslint.config.js', '.prettierrc', '.prettierignore'].filter((f) => existsSync(join(scaffoldDir, f))),
+        ...['lint', 'lint:fix', 'format', 'format:check'].filter((s) => scripts[s]).map((s) => `scripts.${s}`),
+      ];
+      steps.omissions = {
+        name: 'omissions',
+        status: leftovers.length === 0 ? 'pass' : 'fail',
+        durationMs: null,
+        exitCode: null,
+        output: leftovers.length === 0 ? '' : `lint tooling present despite opt-out flags: ${leftovers.join(', ')}`,
+      };
+      console.log(`  [${label}]   omissions ${statusCell(steps.omissions.status)}`);
+    }
+
+    console.log(`  [${label}] • install…`);
     const install = await runCmd(['bun', 'install'], scaffoldDir);
     steps.install = toStep('install', install);
-    console.log(`  [${template}]   ${statusCell(steps.install.status)} (${fmtDuration(steps.install.durationMs)})`);
+    console.log(`  [${label}]   ${statusCell(steps.install.status)} (${fmtDuration(steps.install.durationMs)})`);
 
     if (steps.install.status === 'pass') {
       mochiInstalledVersion = extractInstalledMochiVersion(scaffoldDir);
 
-      console.log(`  [${template}] • test…`);
+      console.log(`  [${label}] • test…`);
       const test = await runCmd(['bun', 'run', 'test'], scaffoldDir);
       steps.test = toStep('test', test);
-      console.log(`  [${template}]   ${statusCell(steps.test.status)} (${fmtDuration(steps.test.durationMs)})`);
+      console.log(`  [${label}]   ${statusCell(steps.test.status)} (${fmtDuration(steps.test.durationMs)})`);
 
-      console.log(`  [${template}] • typecheck…`);
+      console.log(`  [${label}] • typecheck…`);
       const tc = await runCmd(['bun', 'run', 'typecheck'], scaffoldDir);
       steps.typecheck = toStep('typecheck', tc);
-      console.log(`  [${template}]   ${statusCell(steps.typecheck.status)} (${fmtDuration(steps.typecheck.durationMs)})`);
+      console.log(`  [${label}]   ${statusCell(steps.typecheck.status)} (${fmtDuration(steps.typecheck.durationMs)})`);
+
+      // Lint tooling ships with create-mochi >=0.4.0 — older published CLIs scaffold without it, so these stay skipped.
+      const scripts = readScaffoldScripts(scaffoldDir);
+      if (scripts.lint) {
+        console.log(`  [${label}] • lint…`);
+        steps.lint = toStep('lint', await runCmd(['bun', 'run', 'lint'], scaffoldDir));
+        console.log(`  [${label}]   ${statusCell(steps.lint.status)} (${fmtDuration(steps.lint.durationMs)})`);
+      }
+      if (scripts['format:check']) {
+        console.log(`  [${label}] • format:check…`);
+        steps.format = toStep('format', await runCmd(['bun', 'run', 'format:check'], scaffoldDir));
+        console.log(`  [${label}]   ${statusCell(steps.format.status)} (${fmtDuration(steps.format.durationMs)})`);
+      }
     }
   }
 
-  const ordered: StepResult[] = [steps.scaffold, steps.install, steps.test, steps.typecheck];
-  const overall: Status = ordered.every((s) => s.status === 'pass') ? 'pass' : 'fail';
+  const core = [steps.scaffold, steps.install, steps.test, steps.typecheck];
+  const required = variant?.expectNoLintTooling ? [...core, steps.omissions] : core;
+  const ordered: StepResult[] = [steps.scaffold, steps.install, steps.test, steps.typecheck, steps.lint, steps.format, ...(variant?.expectNoLintTooling ? [steps.omissions] : [])];
+  const overall: Status = templateOverall(ordered, required);
 
-  return { template, scaffoldDirRel, mochiVersion, mochiInstalledVersion, steps: ordered, overall };
+  return { template: label, scaffoldDirRel, mochiVersion, mochiInstalledVersion, steps: ordered, overall };
 }
 
 async function main() {
@@ -275,6 +336,11 @@ async function main() {
   const results: TemplateResult[] = [];
   for (const template of TEMPLATES) {
     results.push(await runTemplate(template, id));
+  }
+
+  // Older published CLIs reject the opt-out flags (commander exits 1 on unknown options).
+  if (cliVersion !== 'unknown' && Bun.semver.satisfies(cliVersion, '>=0.4.0')) {
+    results.push(await runTemplate('minimal', id, { suffix: '-no-lint', extraArgs: ['--no-eslint', '--no-prettier'], expectNoLintTooling: true }));
   }
 
   const overall: Status = results.every((r) => r.overall === 'pass') ? 'pass' : 'fail';

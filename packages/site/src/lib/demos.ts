@@ -6,6 +6,7 @@ import { files as chat } from '../demos/chat/files.ts';
 import { files as clientOnly } from '../demos/client-only/files.ts';
 import { files as cookieVaryTest } from '../demos/cookie-vary-test/files.ts';
 import { files as captcha } from '../demos/captcha/files.ts';
+import { files as protection } from '../demos/protection/files.ts';
 import { files as captchaStyling } from '../demos/captcha-styling/files.ts';
 import { files as cookies } from '../demos/cookies/files.ts';
 import { files as customTransitions } from '../demos/custom-transitions/files.ts';
@@ -48,6 +49,7 @@ import { files as requestId } from '../demos/request-id/files.ts';
 import { files as modeWatcher } from '../demos/mode-watcher/files.ts';
 import { files as runed } from '../demos/runed/files.ts';
 import { files as serverIsland } from '../demos/server-island/files.ts';
+import { files as deferInvalidation } from '../demos/defer-invalidation/files.ts';
 import { files as serverProps } from '../demos/server-props/files.ts';
 import { files as sharedState } from '../demos/shared-state/files.ts';
 import { files as streams } from '../demos/streams/files.ts';
@@ -308,6 +310,14 @@ export const demos: Demo[] = [
     category: 'hydration',
   },
   {
+    href: '/demos/defer-invalidation/',
+    slug: 'defer-invalidation',
+    files: deferInvalidation,
+    title: 'Invalidate mochi:defer islands',
+    hook: 'How to reload server islands on demand — name a mochi:defer island and call reloadDeferredIsland(name) from the browser to re-fetch its server HTML.',
+    category: 'hydration',
+  },
+  {
     href: '/demos/island-props/',
     slug: 'island-props',
     files: islandProps,
@@ -466,6 +476,14 @@ export const demos: Demo[] = [
     files: captcha,
     title: 'Captcha',
     hook: 'How the captcha works — slide-to-verify backed by a hash chain and proof-of-work, with no third party and no tracking.',
+    category: 'forms',
+  },
+  {
+    href: '/demos/protection/',
+    slug: 'protection',
+    files: protection,
+    title: 'Protection Mode',
+    hook: 'How protection mode works — a Cloudflare-style browser check where an interstitial auto-solves the captcha proof-of-work and redeems it for a clearance cookie.',
     category: 'forms',
   },
   {

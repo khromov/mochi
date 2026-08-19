@@ -2,6 +2,7 @@ import { preprocess as sveltePreprocess, type CompileOptions, type PreprocessorG
 import { render } from 'svelte/server';
 import path from 'node:path';
 import fs from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import type { BunPlugin } from 'bun';
 import {
   isSvelteMarker,
@@ -20,7 +21,15 @@ import { logger } from '../utils/log';
 import { mochiEvents } from '../events';
 import { detectHeavyBarrels, formatBarrelLine, formatBarrelSummary, type BarrelMetafile, type HeavyBarrel } from './barrelDetect';
 import type { MarkdownConfig, MochiBarrelWarningOptions, MochiFontOptions, MochiManifest, MochiSvelteShakerOptions } from '../types';
-import { adoptEmittedFontAssets, classifyFontAssets, createFontMarkerPlugin, fontAssetFileName, fontContentHash, substituteFontUrls } from './cssFontAssets';
+import {
+  adoptEmittedFontAssets,
+  classifyFontAssets,
+  createFontMarkerPlugin,
+  fontAssetFileName,
+  fontChangedSinceResolved,
+  fontContentHash,
+  substituteFontUrls,
+} from './cssFontAssets';
 import { type HydratableComponent, type PreprocessIslandError, type ServerIslandComponent } from './svelteAstPreprocess';
 import { cachedPreprocessHydratable, createPreprocessCacheStats } from './preprocessCache';
 import { CompileCache, compileFingerprint, createCompileCacheStats, type CompileCacheStats } from './compileCache';
@@ -1533,27 +1542,30 @@ export class ComponentRegistry {
 
     let output = body;
 
-    output = output.replace(/__MOCHI_COMPONENT_URL__(\w+)__/g, (_, name: string) => this.componentEntryUrls.get(name) ?? '');
-
     // Track which islands are lazy (have CSS_URL placeholders) during replacement
     const lazyIslandPaths = new Set<string>();
-    output = output.replace(/__MOCHI_CSS_URL__(\w+)__/g, (_, name: string) => {
-      const h = hydratablesByName.get(name);
-      if (h) {
-        lazyIslandPaths.add(h.resolvedPath);
-        return this.cssFileUrls.get(h.resolvedPath) ?? '';
-      }
-      return '';
-    });
-
     let hasServerCssPlaceholders = false;
-    output = output.replace(/__MOCHI_SERVER_CSS_URL__(\w+)__/g, (_, name: string) => {
-      hasServerCssPlaceholders = true;
-      const resolvedPath = this.serverIslandPaths.get(name);
-      return resolvedPath ? (this.cssFileUrls.get(resolvedPath) ?? '') : '';
-    });
+    // Placeholders only exist in island wrapper attributes, so one probe spares island-free pages four full-body scans.
+    if (output.includes('__MOCHI_')) {
+      output = output.replace(/__MOCHI_COMPONENT_URL__(\w+)__/g, (_, name: string) => this.componentEntryUrls.get(name) ?? '');
 
-    output = output.replaceAll('__MOCHI_ASSET_PREFIX__', this.assetPrefix);
+      output = output.replace(/__MOCHI_CSS_URL__(\w+)__/g, (_, name: string) => {
+        const h = hydratablesByName.get(name);
+        if (h) {
+          lazyIslandPaths.add(h.resolvedPath);
+          return this.cssFileUrls.get(h.resolvedPath) ?? '';
+        }
+        return '';
+      });
+
+      output = output.replace(/__MOCHI_SERVER_CSS_URL__(\w+)__/g, (_, name: string) => {
+        hasServerCssPlaceholders = true;
+        const resolvedPath = this.serverIslandPaths.get(name);
+        return resolvedPath ? (this.cssFileUrls.get(resolvedPath) ?? '') : '';
+      });
+
+      output = output.replaceAll('__MOCHI_ASSET_PREFIX__', this.assetPrefix);
+    }
 
     const shouldStrip = opts?.stripMarkers !== false && hydratables.length === 0;
     const hasIslandsOrServerIslands = hydratables.length > 0 || hasServerCssPlaceholders;
@@ -1728,10 +1740,9 @@ export class ComponentRegistry {
       }
     }
 
-    // Always collapse the doubled-marker pattern (Svelte SSR bug for
-    // `$state` arrays + `{@attach}`). Strictly matched open+close so it only
-    // fires on the actual bug; no-op otherwise.
-    const normalized = normalizeIslandHydrationMarkers(output);
+    // Collapse the doubled-marker Svelte SSR bug (`$state` arrays + `{@attach}`); only island wrappers can carry it,
+    // so island-free renders skip the scan.
+    const normalized = hydratables.length > 0 ? normalizeIslandHydrationMarkers(output) : output;
     const headStr = head ?? '';
     return {
       body: normalized,
@@ -1965,6 +1976,32 @@ export class ComponentRegistry {
     return queued;
   }
 
+  /**
+   * Drop the per-build suffix from the assets one bundle emitted, returning their canonical paths. Bun content-hashes
+   * asset names, so a copy another build already renamed holds these exact bytes and this one's is redundant — dropping
+   * it keeps the served name deterministic across builds, which a suffix left in place would not be.
+   *
+   * The canonical path only ever appears as the result of renaming a file Bun had finished writing, so a concurrent
+   * reader sees it whole or not at all.
+   */
+  private reconcileEmittedAssets(emitted: string[], token: string): string[] {
+    return emitted.map((assetPath) => {
+      const canonical = assetPath.replace(`-${token}`, '');
+      try {
+        // `renameSync` onto an existing path throws on Windows rather than replacing, which is the same answer as
+        // finding it already there: another build won, and its copy is byte-identical.
+        if (fs.existsSync(canonical)) {
+          fs.rmSync(assetPath, { force: true });
+        } else {
+          fs.renameSync(assetPath, canonical);
+        }
+      } catch {
+        fs.rmSync(assetPath, { force: true });
+      }
+      return canonical;
+    });
+  }
+
   private async bundleImportedCssBatch(cssPaths: Iterable<string>): Promise<void> {
     const importCssOutDir = path.resolve(`${this.outDir}/import-css`);
     const todo = [...cssPaths].filter((p) => !this.importedCssUrls.has(p));
@@ -1981,10 +2018,15 @@ export class ComponentRegistry {
         // Bun's CSS bundler resolves every url() itself and runs plugin hooks for them, so font discovery rides the
         // bundler: large fonts become tiny marker data: URIs (see createFontMarkerPlugin) substituted below.
         const { plugin: fontPlugin, refs: fontRefs } = createFontMarkerPlugin(this.fontInlineThreshold);
+        // Entrypoints bundle in parallel and two importing the same font emit the same content-hashed copy, so without
+        // a per-build suffix they are concurrent writers to one path and a reader can catch it half-written. Stripped
+        // again by reconcileEmittedAssets below, which puts the canonical name back.
+        const token = randomUUID().slice(0, 8);
         const cssResult = await Bun.build({
           entrypoints: [cssPath],
           outdir: importCssOutDir,
-          naming: { entry: '[name]-[hash].[ext]' },
+          naming: { entry: '[name]-[hash].[ext]', asset: `[name]-[hash]-${token}.[ext]` },
+          minify: true,
           plugins: Number.isFinite(this.fontInlineThreshold) ? [fontPlugin] : [],
           throw: false,
         });
@@ -2004,10 +2046,16 @@ export class ComponentRegistry {
         // Read from disk: when Bun.build writes via `outdir`, the output's
         // .text() may return empty — the file on disk is the source of truth.
         const rawCss = await Bun.file(out.path).text();
+        const suffixed = cssResult.outputs.filter((o) => o !== out).map((o) => o.path);
+        const emitted = this.reconcileEmittedAssets(suffixed, token);
         let cssText = restoreVariationsFormat(rawCss);
+        // Exact filenames rather than the bare suffix, which could collide with an unrelated run of the same characters.
+        suffixed.forEach((original, i) => {
+          cssText = cssText.replaceAll(path.basename(original), path.basename(emitted[i]!));
+        });
         const adopted = await adoptEmittedFontAssets(
           cssText,
-          cssResult.outputs.filter((o) => o !== out),
+          emitted.map((path) => ({ path })),
           fontRefs,
         );
         cssText = adopted.css;
@@ -2043,6 +2091,11 @@ export class ComponentRegistry {
         const fontUrlByMarker = new Map<string, string>();
         for (const font of fontPass.fonts) {
           const bytes = font.ref.bytes ?? (await Bun.file(font.ref.path).bytes());
+          if (fontChangedSinceResolved(font.ref, bytes)) {
+            const message = `the source font ${relForDisplay(font.ref.path)} was ${font.ref.size} bytes when the bundle resolved it but read back ${bytes.length}, so it changed mid-build. If this persists the file is corrupt.`;
+            logger.error(`CSS bundle for ${cssPath}: ${message}`);
+            this.errors.push({ kind: 'css-bundle-failed', cssPath, message });
+          }
           const fileName = fontAssetFileName(font.ref, bytes);
           const diskPath = path.join(this.outDir, 'fonts', fileName);
           const fontUrl = `${this.assetPrefix}/fonts/${fileName}`;

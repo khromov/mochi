@@ -135,11 +135,12 @@ const speculationRules: SpeculationRules = {
         and: [
           { href_matches: '/*' },
           { not: { href_matches: ['/discord', '/discord/*'] } },
-          { not: { href_matches: '/support/*' } },
+          { not: { href_matches: ['/support', '/support/*'] } },
           { not: { href_matches: '/demos/login/*' } },
+          { not: { href_matches: '/demos/protection*' } },
           { not: { href_matches: '/cookie-vary-test/*' } },
           { not: { href_matches: '/api/*' } },
-          { not: { href_matches: '/mcp' } },
+          { not: { href_matches: ['/mcp', '/mcp/'] } },
           { not: { href_matches: '/_*' } },
           { not: { selector_matches: '[target=_blank]' } },
           { not: { selector_matches: '[rel~=nofollow]' } },
@@ -184,6 +185,14 @@ await Mochi.serve({
     shotHandle,
   ),
   handleError,
+  // Only the protection demo's own page and API are gated — the rest of the site (including
+  // /demos/protection/llms.txt) never sees the interstitial.
+  protection: {
+    enabled: true,
+    protect: ({ path }) => path === '/demos/protection' || path === '/demos/protection/' || path.startsWith('/demos/protection/api'),
+    // Above the default so visitors actually see the interstitial do its work.
+    bits: 20,
+  },
   idleTimeout: 60,
   compressServerIslandProps: true,
   warmup: { enabledInProd: true, enabledInDev: true },
@@ -232,9 +241,6 @@ await Mochi.serve({
   },
   filters: {
     'consoleLogger:line': (line, ctx) => (ctx.path.startsWith('/health') ? null : silenceInternalRoutes(line, ctx)),
-    // The MCP endpoint must answer at exactly /mcp; the site-wide trailingSlash: 'always'
-    // policy would otherwise 308 it to /mcp/ and some MCP clients don't follow the redirect.
-    'trailingSlash:redirect': (redirect, { url }) => (url.pathname === '/mcp' ? null : redirect),
   },
   routes,
   queues,

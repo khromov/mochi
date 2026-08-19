@@ -461,6 +461,70 @@ describe('MochiCache stale-while-revalidate', () => {
   });
 });
 
+describe('MochiCache.whenIdle', () => {
+  test('resolves immediately when nothing is in flight', async () => {
+    const cache = new MochiCache({ minTimeToStale: 10, maxTimeToLive: 5_000 });
+    await cache.fetch('k', () => 1);
+    await cache.whenIdle();
+    expect(await cache.fetch('k', () => 2)).toBe(1);
+  });
+
+  test('waits for a background revalidation to finish, write included', async () => {
+    const writes: string[] = [];
+    const store = new Map<string, unknown>();
+    const storage: Storage = {
+      getItem: (key) => store.get(key) ?? null,
+      // The write is the last thing a run does, so a whenIdle() that returned
+      // early would let the assertion below observe the pre-refresh value.
+      setItem: async (key, value) => {
+        await wait(30);
+        store.set(key, value);
+        writes.push(key);
+      },
+      removeItem: (key) => void store.delete(key),
+      clear: () => void store.clear(),
+    };
+    const cache = new MochiCache({ minTimeToStale: 10, maxTimeToLive: 5_000, storage });
+
+    let calls = 0;
+    const fn = async () => {
+      calls++;
+      await wait(20);
+      return calls;
+    };
+
+    expect(await cache.fetch('k', fn)).toBe(1);
+    await wait(30); // now stale
+
+    const stale = await cache.fetchWithStatus('k', fn);
+    expect(stale.status).toBe('stale');
+    expect(stale.value).toBe(1); // background refresh still running
+
+    await cache.whenIdle();
+    expect(writes).toContain('k');
+    expect((await cache.fetchWithStatus('k', fn)).value).toBe(2);
+  });
+
+  test('a failed background revalidation still settles it', async () => {
+    const cache = new MochiCache({ minTimeToStale: 10, maxTimeToLive: 5_000 });
+    let calls = 0;
+    const fn = async () => {
+      calls++;
+      if (calls > 1) {
+        throw new Error('upstream down');
+      }
+      return 1;
+    };
+
+    expect(await cache.fetch('k', fn)).toBe(1);
+    await wait(30);
+    expect((await cache.fetchWithStatus('k', fn)).status).toBe('stale');
+
+    await cache.whenIdle(); // must not hang or reject on the rejected run
+    expect(calls).toBe(2);
+  });
+});
+
 describe('MochiCache config validation', () => {
   test('throws when minTimeToStale is not less than maxTimeToLive', () => {
     expect(() => new MochiCache({ minTimeToStale: 5_000, maxTimeToLive: 5_000 })).toThrow(/must be less than/);

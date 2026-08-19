@@ -27,6 +27,9 @@ export { MemoryStorage, FileStorage, isBlobRef, readBlobRef } from './cache/cach
 export type { FileStorageOptions, MemoryStorageOptions, BlobRef } from './cache/cache-storage';
 export { getImageUrl, getImageAttrs, getImage, getImagePlaceholder, imagePlaceholder, warmImagePlaceholder, invalidateImage } from './image/imageApi';
 export type { ResolvedImage, ImageAttrs } from './image/imageApi';
+export { reloadDeferredIsland, reloadDeferredIslandAll } from './islands/deferInvalidation';
+export { deferReloadState, DeferReloadState } from './islands/deferReloadState.svelte';
+export type { DeferredIslandChange } from './islands/deferInvalidation';
 export type { MochiImageOptions, ImageSize, InvalidateImageOptions, ImageFormat, ImageFit, ImportedImage, ImportedImageFormat } from './image/types';
 export { IMAGE_FILE_FILTER } from './compiler/imageAssetLoader';
 export { EmailError } from './email/types';
@@ -118,6 +121,7 @@ export type {
   MochiJobOptions,
   MochiQueueOptions,
   MochiQueueRuntimeOptions,
+  MochiDeadLetterTarget,
   MochiWorkerTuning,
   MochiQueueListeners,
   MochiProcessor,
@@ -135,6 +139,8 @@ export { MemoryNonceStore, SqliteNonceStore } from './captcha/nonceStore';
 export { DEFAULT_CAPTCHA_BITS, DEFAULT_CAPTCHA_MIN_AGE_MS, DEFAULT_CAPTCHA_DRIFT_ALLOWANCE_MS } from './captcha/config';
 export type { MintedCaptcha } from './captcha/captcha';
 export type { MochiCaptchaOptions, CaptchaResult, CaptchaFailureReason, NonceStore } from './captcha/types';
+export { PROTECTION_CLEARANCE_COOKIE, DEFAULT_PROTECTION_MAX_AGE_MS, DEFAULT_PROTECTION_MAX_ATTEMPTS, PROTECTION_SHELL_COMPONENT } from './protection/config';
+export type { MochiProtectionOptions, MochiProtectionContext, MochiProtectionKind, MochiProtectionPageProps } from './protection/types';
 export { enhance, deserialize } from './runtime/enhance.ssr';
 export { isFormContentType, DEFAULT_FORM_CONTENT_TYPES, DEFAULT_PROTECTED_METHODS } from './runtime/csrf';
 export { DEFAULT_COMPRESS_MIN_BYTES, encryptPayload, decryptPayload } from './islands/payloadCrypto';

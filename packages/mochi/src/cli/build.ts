@@ -3,8 +3,10 @@ import { ComponentRegistry, formatCompileErrors } from '../compiler/ComponentReg
 import { buildInlineWebComponent } from '../compiler/buildInlineWebComponent';
 import { DEFAULT_ERROR_PAGE_PATH } from '../runtime/errors';
 import { CLIENT_STATS_COMPONENT } from '../dev/clientStatsRoutes';
+import { PROTECTION_SHELL_COMPONENT } from '../protection/config';
 import { isMochiPage, isMochiApi, isMochiWs, isMochiSse } from '../types';
 import type { MarkdownConfig, MochiBarrelWarningOptions, MochiFontOptions, MochiRouteValue, MochiSvelteShakerOptions } from '../types';
+import type { MochiProtectionOptions } from '../protection/types';
 import type { MochiSvelteCompiler } from '../compiler/svelteCompilerBackend';
 import { rmSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
@@ -45,6 +47,8 @@ export interface MochiBuildOptions {
   errorPage?: string;
   /** Mirror the value passed to `Mochi.serve({ build: { resources } })`. Default: enabled. See `MochiBuildReportOptions['resources']`. */
   resources?: boolean;
+  /** Mirror the value passed to `Mochi.serve({ protection })` so the interstitial page prebuilds into the manifest. Default: disabled. See `MochiServeOptions['protection']`. */
+  protection?: MochiProtectionOptions;
 }
 
 type RouteKind = 'page' | 'api' | 'ws' | 'sse';
@@ -156,6 +160,9 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     // client-stats admin page — makes the boot-time compileAll a no-op in production.
     const errorPagePath = options.errorPage ?? DEFAULT_ERROR_PAGE_PATH;
     const ssrEntrypoints: string[] = [errorPagePath, CLIENT_STATS_COMPONENT];
+    if (options.protection?.enabled === true) {
+      ssrEntrypoints.push(options.protection.page ?? PROTECTION_SHELL_COMPONENT);
+    }
     const allRoutes: RouteEntry[] = [];
 
     for (const [pattern, handler] of Object.entries(options.routes)) {

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test, type Mock } from 'bun:test';
-import { csrfCheck, isFormContentType } from './csrf';
+import { csrfBootWarning, csrfCheck, isFormContentType } from './csrf';
 import { initExtensions } from '../extensions';
 
 const SAME = 'http://localhost:3333';
@@ -471,5 +471,33 @@ describe('csrfCheck via csrf:check filter', () => {
     // delegating returns it unchanged.
     expect(captured.decision?.status).toBe(403);
     expect(out).toBe(captured.decision as Response);
+  });
+});
+
+describe('csrfBootWarning', () => {
+  const page = (actions?: Record<string, unknown>) => ({ __mochiPage: true, actions });
+  const routesWithActions = { '/contact': page({ default: async () => null }), '/about': page() };
+
+  test('warns when a route declares actions and no trusted origin is configured', () => {
+    const warning = csrfBootWarning({ routes: routesWithActions });
+    expect(warning).toContain('1 route(s) declare form actions (e.g. "/contact")');
+    expect(warning).toContain('blocked with 403 in production');
+    expect(warning).toContain("proxy: { origin: '...' }");
+  });
+
+  test('stays silent without action routes, and for pages with an empty actions map', () => {
+    expect(csrfBootWarning({ routes: { '/about': page(), '/empty': page({}) } })).toBeNull();
+    expect(csrfBootWarning({ routes: {} })).toBeNull();
+    expect(csrfBootWarning({})).toBeNull();
+  });
+
+  test('stays silent when a trusted origin is configured', () => {
+    expect(csrfBootWarning({ routes: routesWithActions, proxy: { origin: 'https://app.example' } })).toBeNull();
+    expect(csrfBootWarning({ routes: routesWithActions, proxy: { hostHeader: 'x-forwarded-host' } })).toBeNull();
+  });
+
+  test('stays silent when the check is disabled or overridden by a csrf:check filter', () => {
+    expect(csrfBootWarning({ routes: routesWithActions, csrf: { checkOrigin: false } })).toBeNull();
+    expect(csrfBootWarning({ routes: routesWithActions, filters: { 'csrf:check': () => null } })).toBeNull();
   });
 });

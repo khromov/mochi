@@ -125,6 +125,8 @@ export function getImage() { __serverOnly("getImage()"); }
 export function getImagePlaceholder() { return Promise.resolve(null); }
 export function imagePlaceholder() { return Promise.resolve(null); }
 export function invalidateImage() { __serverOnly("invalidateImage()"); }
+export { reloadDeferredIsland, reloadDeferredIslandAll } from "__MOCHI_DEFER_API__";
+export { deferReloadState, DeferReloadState } from "__MOCHI_DEFER_REACTIVE__";
 export function memoryStore() { __serverOnly("memoryStore()"); }
 export function sqliteStore() { __serverOnly("sqliteStore()"); }
 export function postgresStore() { __serverOnly("postgresStore()"); }
@@ -133,3 +135,5 @@ export { enhance, deserialize } from "__MOCHI_ENHANCE_CLIENT__";
 // every component that executes in the browser is part of a hydrating (or
 // client-only mounting) subtree. No context lookup needed.
 export function isHydratable() { return true; }
+// Server filesystem path — meaningless in the browser.
+export const PROTECTION_SHELL_COMPONENT = undefined;
