@@ -940,7 +940,7 @@ export function createWorker(queues: MountableQueue[], queueStorage?: MochiQueue
     }
   }
   if (appStorage !== undefined && !isValidStorage(appStorage)) {
-    throw new Error(`Mochi.worker({ storage }): expected { sqlite: 'path/to.db' } or { postgres: url }.`);
+    throw new Error(`Mochi.worker({ storage }): expected { type: 'sqlite', path: 'path/to.db' } or { type: 'postgres', url }.`);
   }
   const workerStorage = queueStorage ?? declared?.storage;
   let started = false;

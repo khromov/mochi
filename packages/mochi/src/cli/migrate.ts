@@ -41,7 +41,7 @@ export async function runMigrateCommand(opts: MigrateCommandOptions): Promise<vo
   const serveOptions = await extractServeOptions(entryPath);
   const storage = serveOptions?.storage;
   if (storage === undefined || !isValidStorage(storage)) {
-    throw new Error(`No \`storage\` found. Ensure ${entryPath} calls Mochi.serve({ storage: { sqlite: 'path/to.db' } | { postgres: url } }).`);
+    throw new Error(`No \`storage\` found. Ensure ${entryPath} calls Mochi.serve({ storage: { type: 'sqlite', path: 'path/to.db' } | { type: 'postgres', url } }).`);
   }
 
   const applied = await runStartupMigrations(storage);

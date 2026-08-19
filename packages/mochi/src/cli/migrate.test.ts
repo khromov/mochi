@@ -49,7 +49,10 @@ describe('runMigrateCommand', () => {
   test('applies pending migrations using the storage captured from the entry', async () => {
     mkdirSync(path.join(cwd, 'migrations', 'sqlite'), { recursive: true });
     writeFileSync(path.join(cwd, 'migrations', 'sqlite', '1_users.sql'), 'CREATE TABLE users (id integer PRIMARY KEY);');
-    writeFileSync(path.join(cwd, 'entry.ts'), `import { Mochi } from 'mochi-framework';\nawait Mochi.serve({ port: 0, routes: {}, storage: { sqlite: './app.db' } });\n`);
+    writeFileSync(
+      path.join(cwd, 'entry.ts'),
+      `import { Mochi } from 'mochi-framework';\nawait Mochi.serve({ port: 0, routes: {}, storage: { type: 'sqlite', path: './app.db' } });\n`,
+    );
     await runMigrateCommand({ entry: './entry.ts' });
 
     const sql = new SQL(`sqlite://${path.join(cwd, 'app.db')}`);

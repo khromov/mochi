@@ -133,7 +133,7 @@ export { runMigrations } from './migrations/runner';
 export { loadMigrationFiles } from './migrations/loadMigrationFiles';
 export type { RunMigrationsOptions, AppliedMigration } from './migrations/runner';
 export type { MochiMigrationFile } from './migrations/loadMigrationFiles';
-export type { MochiStorage } from './migrations/storage';
+export type { MochiStorage, MochiSqliteStorage, MochiPostgresStorage } from './migrations/storage';
 export { json, error, apiError, MochiHttpError } from './utils';
 export { trailingSlashIt } from './runtime/trailingSlash';
 export { fail, redirect, success } from './runtime/forms';

@@ -18,7 +18,7 @@ const postgresDialect: MigrationDialect = {
   open(storage) {
     // One pinned connection (the session advisory lock must share a session with every statement of the run) and
     // no named prepared statements (each statement runs once, and PGlite-over-socket shares one backend session).
-    return new SQL({ url: (storage as { postgres: string }).postgres, max: 1, prepare: false });
+    return new SQL({ url: (storage as { url: string }).url, max: 1, prepare: false });
   },
   async lock(sql) {
     // Session-level advisory lock held for the whole run so concurrent runners (e.g. replicas booting) serialize.
@@ -44,14 +44,14 @@ const postgresDialect: MigrationDialect = {
 
 const sqliteDialect: MigrationDialect = {
   open(storage) {
-    const file = (storage as { sqlite: string }).sqlite;
+    const file = (storage as { path: string }).path;
     // bun:sqlite won't create the parent directory.
     mkdirSync(path.dirname(path.resolve(file)), { recursive: true });
     return new SQL(`sqlite://${file}`);
   },
   async lock(sql) {
     // No advisory locks in SQLite: cross-process runners rely on BEGIN IMMEDIATE per migration plus the
-    // tracking table's PRIMARY KEY — a losing racer fails the record INSERT and rolls back.
+    // in-transaction already-applied re-check in the runner, so a losing racer skips instead of re-running.
     await sql.unsafe('PRAGMA busy_timeout = 30000');
     return async () => {};
   },
@@ -81,5 +81,5 @@ const sqliteDialect: MigrationDialect = {
 };
 
 export function dialectFor(storage: MochiStorage): MigrationDialect {
-  return 'sqlite' in storage ? sqliteDialect : postgresDialect;
+  return storage.type === 'sqlite' ? sqliteDialect : postgresDialect;
 }

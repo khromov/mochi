@@ -421,7 +421,7 @@ export class Mochi {
       assertNoConflictingStandaloneRuntime(queueStorage);
     }
     if (options.storage !== undefined && !isValidStorage(options.storage)) {
-      throw new Error(`Mochi.serve({ storage }): expected { sqlite: 'path/to.db' } or { postgres: url }.`);
+      throw new Error(`Mochi.serve({ storage }): expected { type: 'sqlite', path: 'path/to.db' } or { type: 'postgres', url }.`);
     }
 
     const { svelteVersion } = await checkEnvironment();

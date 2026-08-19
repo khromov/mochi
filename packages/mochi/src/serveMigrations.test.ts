@@ -35,7 +35,7 @@ async function tables(db: string): Promise<string[]> {
 
 describe('Mochi.serve({ storage })', () => {
   test('rejects an invalid storage before binding', async () => {
-    expect(Mochi.serve({ port: 0, development: false, logger: { enabled: false }, routes: {}, storage: { sqlite: '' } as never })).rejects.toThrow(
+    expect(Mochi.serve({ port: 0, development: false, logger: { enabled: false }, routes: {}, storage: { sqlite: './app.db' } as never })).rejects.toThrow(
       /Mochi\.serve\(\{ storage \}\): expected/,
     );
   });
@@ -43,7 +43,7 @@ describe('Mochi.serve({ storage })', () => {
   test('a failing migration rejects serve() and leaves the process retryable', async () => {
     const db = path.join(projectDir, 'failing.db');
     writeFileSync(path.join(migrationsDir, '1_bad.sql'), 'CREATE TABLE broken (;');
-    await expect(Mochi.serve({ port: 0, development: false, logger: { enabled: false }, routes: {}, storage: { sqlite: db } })).rejects.toThrow(/syntax error/);
+    await expect(Mochi.serve({ port: 0, development: false, logger: { enabled: false }, routes: {}, storage: { type: 'sqlite', path: db } })).rejects.toThrow(/syntax error/);
     expect(existsSync(path.join(projectDir, '.mochi'))).toBe(false);
   });
 
@@ -56,14 +56,14 @@ describe('Mochi.serve({ storage })', () => {
       logger: { enabled: false },
       outDir: path.join(projectDir, '.mochi'),
       routes: {},
-      storage: { sqlite: db },
+      storage: { type: 'sqlite', path: db },
     });
 
     expect(await tables(db)).toEqual(['migrations', 'users']);
 
     // Same-process re-run on the same storage (a Mochi.worker booting alongside) reuses the completed run.
-    const first = await runStartupMigrations({ sqlite: db });
-    const second = await runStartupMigrations({ sqlite: db });
+    const first = await runStartupMigrations({ type: 'sqlite', path: db });
+    const second = await runStartupMigrations({ type: 'sqlite', path: db });
     expect(second).toBe(first);
     expect(first.map((m) => m.filename)).toEqual(['1_bad.sql']);
   });

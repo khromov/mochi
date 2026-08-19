@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { pinGlobal } from '../utils/globalState';
+import { logger } from '../utils/log';
 import { runMigrations } from './runner';
 import type { AppliedMigration } from './runner';
 import { storageDbType, storageKey } from './storage';
@@ -33,8 +34,18 @@ export function runStartupMigrations(storage: MochiStorage): Promise<AppliedMigr
 }
 
 async function migrateAll(storage: MochiStorage): Promise<AppliedMigration[]> {
+  // Random jitter desynchronizes replicas booting simultaneously, so they don't contend for the lock at once.
+  await new Promise((resolve) => setTimeout(resolve, Math.random() * 500));
   const dbType = storageDbType(storage);
-  const framework = await runMigrations({ storage, dir: path.join(FRAMEWORK_MIGRATIONS_DIR, dbType), table: 'mochi_migrations', label: 'mochi' });
-  const app = await runMigrations({ storage, dir: userMigrationsDir(dbType), table: 'migrations', label: 'app' });
-  return [...framework, ...app];
+  try {
+    const framework = await runMigrations({ storage, dir: path.join(FRAMEWORK_MIGRATIONS_DIR, dbType), table: 'mochi_migrations', label: 'mochi' });
+    const app = await runMigrations({ storage, dir: userMigrationsDir(dbType), table: 'migrations', label: 'app' });
+    return [...framework, ...app];
+  } catch (err) {
+    if (storage.startOnFail) {
+      logger.error('migrations failed; continuing boot because storage.startOnFail is set:', err);
+      return [];
+    }
+    throw err;
+  }
 }

@@ -1,3 +1,4 @@
+import type { SQL } from 'bun';
 import { toPosixPath } from '../utils';
 import { logger } from '../utils/log';
 import { dialectFor } from './dialects';
@@ -75,31 +76,49 @@ export async function runMigrations(opts: RunMigrationsOptions): Promise<Applied
         return [];
       }
 
+      // The applied-list above is read before any lock on SQLite, so a racer that just lost the write lock
+      // re-checks its migration inside the transaction and skips instead of re-running the SQL.
+      const alreadyApplied = async (conn: SQL, id: number) => ((await conn.unsafe(`SELECT id FROM "${table}" WHERE id = $1`, [id])) as AppliedRow[]).length > 0;
+
       const result: AppliedMigration[] = [];
       for (const m of pending) {
+        let appliedNow = true;
         try {
           if (m.noTransaction) {
-            // Not atomic with the record INSERT: the file must be idempotent so a re-run after a crash succeeds.
+            if (await alreadyApplied(sql, m.id)) {
+              continue;
+            }
+            // Not atomic with the record INSERT: the file must be idempotent so a re-run after a crash — or a
+            // racing second SQLite process — succeeds.
             await sql.unsafe(m.contents);
             await sql.unsafe(`INSERT INTO "${table}" (id, name, hash) VALUES ($1, $2, $3)`, [m.id, m.name, m.hash]);
           } else {
-            await dialect.begin(sql, async (tx) => {
+            appliedNow = await dialect.begin(sql, async (tx) => {
+              if (await alreadyApplied(tx, m.id)) {
+                return false;
+              }
               await tx.unsafe(m.contents);
               await tx.unsafe(`INSERT INTO "${table}" (id, name, hash) VALUES ($1, $2, $3)`, [m.id, m.name, m.hash]);
+              return true;
             });
           }
         } catch (err) {
           logger.error(`${label}migration failed: ${m.filename}`);
           throw err;
         }
+        if (!appliedNow) {
+          logger.debug(`${label}migration already applied by a concurrent runner: ${m.filename}`);
+          continue;
+        }
         logger.info(`applied ${label}migration: ${m.filename}`);
         result.push({ id: m.id, filename: m.filename });
       }
       return result;
     } finally {
-      await unlock();
+      // Cleanup must never mask the migration error that is already propagating.
+      await unlock().catch((err) => logger.debug(`${label}migration unlock failed:`, err));
     }
   } finally {
-    await sql.close();
+    await sql.close().catch((err) => logger.debug(`${label}migration connection close failed:`, err));
   }
 }
