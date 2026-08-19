@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import path from 'node:path';
-import { isServerEntryDep } from './devWatcher';
+import { isServerEntryDep, moduleStateReloadWarning } from './devWatcher';
 
 describe('isServerEntryDep', () => {
   const shared = path.resolve('/proj/src/plugin-list.ts');
@@ -26,5 +26,27 @@ describe('isServerEntryDep', () => {
   test('the check resolves the changed path before matching', () => {
     const abs = path.resolve('helper.ts');
     expect(isServerEntryDep('helper.ts', new Set([abs]))).toBe(true);
+  });
+});
+
+describe('moduleStateReloadWarning', () => {
+  test('stays silent below the threshold', () => {
+    expect(moduleStateReloadWarning(9)).toBeNull();
+  });
+
+  test('warns exactly at the threshold and names the fix', () => {
+    const warning = moduleStateReloadWarning(10);
+    expect(warning).toContain('pinGlobal');
+    expect(warning).toContain('10');
+  });
+
+  test('stays silent past the threshold, so it fires once', () => {
+    expect(moduleStateReloadWarning(11)).toBeNull();
+    expect(moduleStateReloadWarning(50)).toBeNull();
+  });
+
+  test('honours a custom threshold', () => {
+    expect(moduleStateReloadWarning(3, 3)).toContain('pinGlobal');
+    expect(moduleStateReloadWarning(2, 3)).toBeNull();
   });
 });

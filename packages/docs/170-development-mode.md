@@ -83,7 +83,21 @@ await Mochi.serve({
 
 <Callout type="warning">
 
-Do **NOT** rely on module-scoped mutable state surviving a route HMR cycle. Each reload re-evaluates the entire entry dependency graph, resetting any `let` / `const` at module scope. Move shared state into a module the entry imports (an in-memory store or database), and keep top-level side effects idempotent.
+Each reload re-evaluates the **entire first-party dependency graph** — every `let` / `const` at module scope is recreated. This is not just a stale-cache annoyance: a module-scoped singleton that holds an **OS resource** (a DB pool, a `setInterval`, a file watcher, an SMTP pool) is re-created on every save while the previous instance is orphaned with its resource still open. Nothing closes it, so usage grows one leak per save until a hard failure — a Postgres pool, for example, exhausts `max_connections` after a dozen saves and takes the database down for every client.
+
+Moving the singleton "into a module the entry imports" does **not** help — that module is first-party, so it is exactly what gets re-evaluated. Hold the resource with [`pinGlobal`](/docs/utility-helpers/#process-singletons) instead, which pins one instance on `globalThis` that survives every reload:
+
+```ts
+// file: src/db/client.ts
+import { SQL } from 'bun';
+import { pinGlobal } from 'mochi-framework';
+
+export function getSql() {
+  return pinGlobal('app:sql', () => new SQL(process.env.DATABASE_URL!, { max: 8, idleTimeout: 30 }));
+}
+```
+
+Namespace your key with an `app:` prefix — the framework uses `__mochi_*__` for its own pins. Setting `idleTimeout` is worth it regardless: it bounds the damage from any pool that still escapes.
 
 </Callout>
 

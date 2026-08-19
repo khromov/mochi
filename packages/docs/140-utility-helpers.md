@@ -85,6 +85,21 @@ const token = encryptPayload(JSON.stringify({ iat: Date.now() }), { aad: 'my-for
 const opened = decryptPayload(token, { aad: 'my-form' }); // string | null
 ```
 
+### Process singletons
+
+`pinGlobal(key, factory)` returns one instance per `key` for the life of the process, pinned on `globalThis`. The `factory` runs at most once per key; every later call with the same key returns the same value.
+
+```ts
+import { SQL } from 'bun';
+import { pinGlobal } from 'mochi-framework';
+
+export function getSql() {
+  return pinGlobal('app:sql', () => new SQL(process.env.DATABASE_URL!, { max: 8 }));
+}
+```
+
+Reach for it to hold anything that must not be duplicated: a database pool, a connection, a background timer, an in-memory cache. In development this is what keeps such resources from leaking across [route-handler HMR](/docs/development-mode/#route-handler-hmr) — a plain module-scoped `let` is re-created on every reload and its old handle orphaned, but a `pinGlobal` value survives. Namespace your key with an `app:` prefix; the framework pins its own state under `__mochi_*__`.
+
 <SeeItInAction
 demos={[{ href: "/demos/url/", title: "Isomorphic URL", hook: "How the isomorphic URL helper works — one import that reads the request URL on the server and window.location on the client." }]}
 />
