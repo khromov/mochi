@@ -1,7 +1,7 @@
 // The isolation boundary around bun-boss: the only module importing `bun-boss`, and the only one whose rewrite a
 // backend swap would need.
 import { BunBoss, fromBunSqlite, fromPglite, queueOptionDefaults } from 'bun-boss';
-import type { JobInsert, JobResult, JobWithMetadata, PGliteLike, SendOptions, UpdateQueueOptions, WorkOptions } from 'bun-boss';
+import type { JobInsert, JobResult, JobWithMetadata, PGliteLike, SendOptions, UpdateQueueOptions, WorkOptions, Warning } from 'bun-boss';
 import { SQL } from 'bun';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
@@ -438,6 +438,19 @@ export async function startQueueRuntime(storage: MochiQueueStorage, opts?: { kin
   await registry.starting;
 }
 
+// bun-boss's large-backlog warning ("large queue backlog…") names the offending queue and its depth in
+// `warning.data`, but bakes neither into `warning.message`; fold the queued count in so the log line says
+// how big the backlog actually is. Other warnings (slow query, clock skew, notifier) carry no such fields
+// and pass through untouched.
+export function formatQueueWarning(warning: Warning): string {
+  const data = warning.data as { name?: unknown; queuedCount?: unknown };
+  const queuedCount = Number(data?.queuedCount);
+  if (typeof data?.name === 'string' && Number.isFinite(queuedCount)) {
+    return `${warning.message} (queue "${data.name}" has ${queuedCount} job${queuedCount === 1 ? '' : 's'} queued)`;
+  }
+  return warning.message;
+}
+
 async function bootQueueRuntime(storage: MochiQueueStorage, kind: 'serve' | 'standalone', enableSpies: boolean): Promise<void> {
   const spies = enableSpies ? { __test__enableSpies: true } : {};
   let boss: BunBoss;
@@ -462,7 +475,7 @@ async function bootQueueRuntime(storage: MochiQueueStorage, kind: 'serve' | 'sta
     mochiEvents.emit('queue:error', { error: error.message });
   });
   boss.on('warning', (warning) => {
-    logger.warn(`[queue] ${warning.message}`);
+    logger.warn(`[queue] ${formatQueueWarning(warning)}`);
   });
   try {
     await boss.start();

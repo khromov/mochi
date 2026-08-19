@@ -1,7 +1,7 @@
 import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, existsSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { startQueueRuntime, mountQueues, getQueue, getBoss, closeAllQueueResources, DEFAULT_EXPIRE_IN_SECONDS } from './queue';
+import { startQueueRuntime, mountQueues, getQueue, getBoss, closeAllQueueResources, formatQueueWarning, DEFAULT_EXPIRE_IN_SECONDS } from './queue';
 import type { MochiJob, MochiQueueStorage } from './queue';
 import { mochiEvents } from './events';
 import { initExtensions } from './extensions';
@@ -572,5 +572,37 @@ describe('Mochi queue', () => {
       { queue: name, jobId: solo! },
     ]);
     expect(bulks).toEqual([{ queue: name, count: 3, jobIds: ids }]);
+  });
+});
+
+describe('formatQueueWarning', () => {
+  test('folds the queued count and queue name into a large-backlog warning', () => {
+    const line = formatQueueWarning({
+      message: 'Warning: large queue backlog. Your queue should be reviewed',
+      data: { name: 'emails', queuedCount: 12345, warningQueueSize: 10000 },
+    });
+    expect(line).toBe('Warning: large queue backlog. Your queue should be reviewed (queue "emails" has 12345 jobs queued)');
+  });
+
+  test('coerces a string queuedCount (some drivers return integer columns as strings)', () => {
+    const line = formatQueueWarning({
+      message: 'Warning: large queue backlog. Your queue should be reviewed',
+      data: { name: 'emails', queuedCount: '42' as unknown as number },
+    });
+    expect(line).toContain('42 jobs queued');
+  });
+
+  test('singularizes a count of one', () => {
+    const line = formatQueueWarning({
+      message: 'Warning: large queue backlog. Your queue should be reviewed',
+      data: { name: 'emails', queuedCount: 1 },
+    });
+    expect(line).toContain('has 1 job queued');
+  });
+
+  test('passes warnings without queue-depth data through untouched', () => {
+    const message = 'Warning: slow query. Your queues and/or database server should be reviewed';
+    expect(formatQueueWarning({ message, data: { elapsed: 31, sql: 'select 1' } })).toBe(message);
+    expect(formatQueueWarning({ message, data: {} })).toBe(message);
   });
 });
