@@ -122,3 +122,35 @@ describe('MochiCookieJar defaults', () => {
     expect(headers[0]).toContain('Max-Age=0');
   });
 });
+
+describe('MochiCookieJar.varyOn', () => {
+  test('finalizeCookieHeaders emits the recorded headers without adding Vary: Cookie', () => {
+    const jar = new MochiCookieJar('foo=bar');
+    jar.varyOn('User-Agent');
+    jar.varyOn('accept-language');
+    expect(jar.wasAccessed()).toBe(false);
+    const final = finalizeCookieHeaders(new Response('ok'), jar);
+    const vary = final.headers.get('Vary') ?? '';
+    expect(vary).toContain('user-agent');
+    expect(vary).toContain('accept-language');
+    expect(vary).not.toContain('Cookie');
+  });
+
+  test('dedups against itself and a pre-existing Vary', () => {
+    const jar = new MochiCookieJar(null);
+    jar.varyOn('user-agent');
+    jar.varyOn('User-Agent');
+    const response = new Response('ok', { headers: { Vary: 'User-Agent' } });
+    const final = finalizeCookieHeaders(response, jar);
+    expect(final.headers.get('Vary')).toBe('User-Agent');
+  });
+
+  test('combines with Vary: Cookie when the jar was also read', () => {
+    const jar = new MochiCookieJar('foo=bar');
+    jar.get('foo');
+    jar.varyOn('user-agent');
+    const vary = finalizeCookieHeaders(new Response('ok'), jar).headers.get('Vary') ?? '';
+    expect(vary).toContain('Cookie');
+    expect(vary).toContain('user-agent');
+  });
+});

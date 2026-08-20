@@ -1,3 +1,4 @@
+import { resolveBindOptions } from '../runtime/clientBind';
 import type { MochiProtectionOptions, ResolvedProtectionOptions } from './types';
 
 /** Four hours: long enough that real visitors rarely re-solve, short enough that a leaked clearance goes stale the same afternoon. */
@@ -43,5 +44,30 @@ export function resolveProtectionOptions(opts: MochiProtectionOptions, fallbackB
     protectFiles: opts.protectFiles ?? true,
     maxAttempts,
     cookieName,
+    bind: resolveBindOptions(opts.bind, true, 'Protection'),
   };
+}
+
+/**
+ * Boot-time visibility for two production traps, mirroring `csrfBootWarning`: a per-boot random key silently
+ * re-challenges every visitor on each restart, and a missing trusted origin bricks the verify POST behind CSRF —
+ * the widget then burns through `maxAttempts` with no hint at the cause.
+ */
+export function protectionBootWarnings(options: {
+  csrf?: { checkOrigin?: boolean };
+  proxy?: { origin?: string; hostHeader?: string };
+  filters?: { 'csrf:check'?: unknown };
+}): string[] {
+  const warnings: string[] = [];
+  if (!process.env.MOCHI_KEY) {
+    warnings.push(
+      'Protection is enabled without MOCHI_KEY — the clearance key is random per boot, so every restart (and every instance in a multi-instance deploy) invalidates all clearances and re-challenges every visitor. Generate one with `mochi-framework generate-key`.',
+    );
+  }
+  if (options.csrf?.checkOrigin !== false && options.filters?.['csrf:check'] === undefined && !options.proxy?.origin && !options.proxy?.hostHeader) {
+    warnings.push(
+      "Protection is enabled but no proxy.origin or proxy.hostHeader is configured — verification POSTs will fail the CSRF origin check in production, so visitors exhaust maxAttempts and stay blocked. Set Mochi.serve({ proxy: { origin: '...' } }) before deploying.",
+    );
+  }
+  return warnings;
 }

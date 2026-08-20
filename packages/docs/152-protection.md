@@ -73,16 +73,39 @@ protection: {
   cookieName: '_mochi_clearance', // clearance cookie name; default shown
   blockedMessage: 'Members only', // non-HTML 403 body; string or (ctx) => string
   page: './src/ProtectionShell.svelte', // custom interstitial component
+  bind: { network: true, headers: ['accept-language', 'user-agent'] }, // client binding; default shown
 },
 ```
 
 - **`bits`** — proof-of-work difficulty in leading zero bits; each extra bit doubles the expected work. Default: 19.
-- **`maxAgeMs`** — how long a passed verification lasts. The clearance is a sealed `{ iat }` token in the clearance cookie (`HttpOnly`, `SameSite=Lax`, `Path=/`, `Secure` on https); both the cookie's `Max-Age` and the server-side check use this value. It's keyed off `MOCHI_KEY`, so clearances survive restarts and work across instances.
+- **`maxAgeMs`** — how long a passed verification lasts. The clearance is a sealed `{ iat }` token in the clearance cookie (`HttpOnly`, `SameSite=Lax`, `Path=/`, `Secure` on https); both the cookie's `Max-Age` and the server-side check use this value. It's keyed off `MOCHI_KEY`, so clearances survive restarts and work across instances — booting protection without one logs a warning, since a per-boot key re-challenges every visitor on each restart.
 - **`maxAttempts`** — after this many failed verification attempts the widget stops retrying and shows a terminal message instead (the `exhaustedLabel` prop on `<MochiCaptchaAuto />`). The count lives in `sessionStorage`, so closing the tab resets it. Default: 5.
 - **`protectFiles`** — also gate `publicDir` static files (they hit `protect()` as kind `file`). Default: `true`.
 - **`cookieName`** — rename the clearance cookie. Default: `_mochi_clearance`.
 - **`blockedMessage`** — the 403 body blocked non-HTML kinds receive: the `error` field of the api JSON and the plain-text body for `ws`/`sse`/`island`/`file`. A string, or a callback receiving the same context as `protect()`. Default: `"Browser verification required"`.
 - **`page`** — a Svelte component rendered as the interstitial, exactly like `errorPage` for error pages. See below.
+- **`bind`** — bind clearances to the client. See below. Default: `{ network: true, headers: ['accept-language', 'user-agent'] }`.
+
+### Client binding
+
+A clearance is sealed to the client that solved it: the network prefix (`/24` for IPv4, `/64` for IPv6) and a set of key request headers. A cookie replayed from another network or with a different `User-Agent` is silently re-challenged — the interstitial just runs again. The prefixes are wide enough to tolerate CGNAT pools, mobile carriers, and IPv6 privacy extensions; a dual-stack client that solved over IPv4 and returns over IPv6 passes once and gets a fresh clearance bound to its IPv6 prefix.
+
+```ts
+protection: {
+  enabled: true,
+  bind: false,                                  // disable binding entirely
+  // bind: { network: false },                  // headers only
+  // bind: { headers: ['user-agent'] },         // custom header set
+},
+```
+
+Changing `bind` (or raising `bits`) re-challenges holders of clearances minted under the old config.
+
+<Callout type="info">
+
+Behind a proxy, network binding needs `proxy.addressHeader` — without it every visitor binds to the proxy's own address and the network component becomes a no-op. Header binding still applies. Direct-serve deployments need nothing.
+
+</Callout>
 
 ### Customizing the interstitial
 
@@ -100,7 +123,7 @@ In production the verify POST goes through the same origin-header CSRF check as 
 
 <Callout type="info">
 
-Caching a protected route — Mochi's cache or a CDN — only works if the cache key varies on the clearance cookie (`Vary: Cookie`, honoring `_mochi_clearance` or your `cookieName`). A cache that ignores it will serve cached pages to unverified visitors, bypassing the gate entirely.
+Caching a protected route — Mochi's cache or a CDN — only works if the cache key varies on the clearance cookie **and** the bound headers. Protected responses carry `Vary: Cookie` plus each `bind.headers` entry (`user-agent`, `accept-language` by default); a cache that ignores them will serve cached pages to unverified visitors, bypassing the gate entirely. Varying on `User-Agent` effectively ends shared-cache reuse for protected routes.
 
 </Callout>
 

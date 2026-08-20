@@ -72,7 +72,7 @@ export interface MochiIslandErrorEvent {
   stack?: string;
 }
 
-export type MochiCaptchaReason = 'ok' | 'malformed' | 'expired' | 'too-fast' | 'bad-pow' | 'replay';
+export type MochiCaptchaReason = 'ok' | 'malformed' | 'expired' | 'too-fast' | 'bad-pow' | 'bind-mismatch' | 'replay';
 
 export interface MochiCaptchaVerifyEvent {
   ok: boolean;

@@ -23,7 +23,9 @@ describe('Mochi.serve({ protection })', () => {
       logger: { enabled: false },
       outDir,
       // Resolves the expected CSRF origin from the Host header, so the verify POST below passes with a matching Origin.
-      proxy: { hostHeader: 'host' },
+      // addressHeader lets the binding tests pose as arbitrary client addresses; header-less fetches fall back to the
+      // constant loopback requestIP, so every other test keeps its address (and Bun's constant fetch UA) stable.
+      proxy: { hostHeader: 'host', addressHeader: 'x-real-ip' },
       captcha: { bits: 8 },
       publicDir: path.join(import.meta.dir, '__fixtures__', 'protection', 'public'),
       protection: {
@@ -50,7 +52,7 @@ describe('Mochi.serve({ protection })', () => {
     rmSync(outDir, { recursive: true, force: true });
   });
 
-  async function solveAndVerify(): Promise<{ status: number; body: { ok?: boolean; error?: string }; setCookie: string | null }> {
+  async function solveAndVerify(extraHeaders: Record<string, string> = {}): Promise<{ status: number; body: { ok?: boolean; error?: string }; setCookie: string | null }> {
     const fields = solveCaptcha(mintCaptcha());
     const form = new FormData();
     form.set('captcha_token', fields.captcha_token);
@@ -58,7 +60,7 @@ describe('Mochi.serve({ protection })', () => {
     const res = await fetch(`${base}/_mochi/protection/verify`, {
       method: 'POST',
       body: form,
-      headers: { origin: base },
+      headers: { origin: base, ...extraHeaders },
     });
     return { status: res.status, body: (await res.json()) as { ok?: boolean; error?: string }, setCookie: res.headers.get('Set-Cookie') };
   }
@@ -207,6 +209,57 @@ describe('Mochi.serve({ protection })', () => {
 
   test('a tampered clearance is challenged again', async () => {
     const res = await fetch(`${base}/members`, { headers: { cookie: `${PROTECTION_CLEARANCE_COOKIE}=garbage` } });
+    expect(res.status).toBe(403);
+  });
+
+  test('blocked and cleared responses vary on the bound headers', async () => {
+    const blocked = await fetch(`${base}/members`);
+    const blockedVary = blocked.headers.get('Vary') ?? '';
+    expect(blockedVary).toContain('Cookie');
+    expect(blockedVary).toContain('user-agent');
+    expect(blockedVary).toContain('accept-language');
+
+    const verified = await solveAndVerify();
+    const cookie = clearanceCookieFrom(verified.setCookie!);
+    const cleared = await fetch(`${base}/members`, { headers: { cookie } });
+    expect(cleared.status).toBe(200);
+    expect(cleared.headers.get('Vary') ?? '').toContain('user-agent');
+  });
+
+  test('a clearance is bound to the key headers: a different User-Agent re-challenges', async () => {
+    const verified = await solveAndVerify({ 'user-agent': 'BoundBrowser/1.0' });
+    const cookie = clearanceCookieFrom(verified.setCookie!);
+    expect((await fetch(`${base}/members`, { headers: { cookie, 'user-agent': 'BoundBrowser/1.0' } })).status).toBe(200);
+    const other = await fetch(`${base}/members`, { headers: { cookie, 'user-agent': 'OtherAgent/2.0' } });
+    expect(other.status).toBe(403);
+    expect(await other.text()).toContain(VALIDATING_TEXT);
+  });
+
+  test('a clearance is bound to the /24: a neighbor passes, another network re-challenges', async () => {
+    const verified = await solveAndVerify({ 'x-real-ip': '203.0.113.7' });
+    const cookie = clearanceCookieFrom(verified.setCookie!);
+    expect((await fetch(`${base}/members`, { headers: { cookie, 'x-real-ip': '203.0.113.99' } })).status).toBe(200);
+    expect((await fetch(`${base}/members`, { headers: { cookie, 'x-real-ip': '198.51.100.1' } })).status).toBe(403);
+  });
+
+  test('a v4-bound clearance presented over IPv6 passes once and is re-minted bound to the v6 prefix', async () => {
+    const verified = await solveAndVerify({ 'x-real-ip': '203.0.113.7' });
+    const cookie = clearanceCookieFrom(verified.setCookie!);
+
+    const flipped = await fetch(`${base}/members`, { headers: { cookie, 'x-real-ip': '2001:db8:1:2::1' } });
+    expect(flipped.status).toBe(200);
+    const remintHeader = flipped.headers.get('Set-Cookie');
+    expect(remintHeader).toContain(PROTECTION_CLEARANCE_COOKIE);
+
+    const remint = clearanceCookieFrom(remintHeader!);
+    expect((await fetch(`${base}/members`, { headers: { cookie: remint, 'x-real-ip': '2001:db8:1:2:ffff::9' } })).status).toBe(200);
+    // The flip is one-directional and one-time: another /64 gets no second allowance.
+    expect((await fetch(`${base}/members`, { headers: { cookie: remint, 'x-real-ip': '2001:db8:9:9::1' } })).status).toBe(403);
+  });
+
+  test('an unbound clearance is re-challenged now that binding is the default', async () => {
+    const unbound = encryptPayload(JSON.stringify({ iat: Date.now(), bits: 8, n: 'x' }), { aad: PROTECTION_AAD });
+    const res = await fetch(`${base}/members`, { headers: { cookie: `${PROTECTION_CLEARANCE_COOKIE}=${unbound}` } });
     expect(res.status).toBe(403);
   });
 });

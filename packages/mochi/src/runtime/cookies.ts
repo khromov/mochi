@@ -66,6 +66,7 @@ export class MochiCookieJar {
   private parsed: Map<string, string>;
   private outgoing: string[] = [];
   private accessed = false;
+  private extraVary: string[] = [];
   private readonly defaults: CookieSerializeOptions;
 
   constructor(cookieHeader: string | null, defaults: CookieSerializeOptions = {}) {
@@ -123,6 +124,21 @@ export class MochiCookieJar {
   wasAccessed(): boolean {
     return this.accessed;
   }
+
+  /**
+   * Record a request header the response varies on, emitted by `finalizeCookieHeaders`. Deliberately does not mark the
+   * jar accessed — `Vary: Cookie` stays owned by actual cookie reads.
+   */
+  varyOn(header: string): void {
+    const name = header.toLowerCase();
+    if (!this.extraVary.includes(name)) {
+      this.extraVary.push(name);
+    }
+  }
+
+  getExtraVary(): string[] {
+    return this.extraVary;
+  }
 }
 
 /**
@@ -132,7 +148,8 @@ export class MochiCookieJar {
 export function finalizeCookieHeaders(response: Response, cookieJar: MochiCookieJar): Response {
   const setCookies = cookieJar.getSetCookieHeaders();
   const needsVary = cookieJar.wasAccessed();
-  if (setCookies.length === 0 && !needsVary) {
+  const extraVary = cookieJar.getExtraVary();
+  if (setCookies.length === 0 && !needsVary && extraVary.length === 0) {
     return response;
   }
   const newResponse = new Response(response.body, {
@@ -145,6 +162,9 @@ export function finalizeCookieHeaders(response: Response, cookieJar: MochiCookie
   }
   if (needsVary) {
     appendVary(newResponse.headers, 'Cookie');
+  }
+  for (const header of extraVary) {
+    appendVary(newResponse.headers, header);
   }
   return newResponse;
 }
