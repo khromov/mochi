@@ -1577,43 +1577,37 @@ export class ComponentRegistry {
     const renderedIslandNames = new Set<string>();
     let hasServerIslands = false;
     if (hasIslandsOrServerIslands || shouldStrip) {
-      // NOTE(bun<1.4.0): registering `el.onEndTag()` inside a request's AsyncLocalStorage context leaks the context
-      // frame — and the whole request — for the life of the process on Bun 1.3.x. Island-internal comments are flagged
-      // through element-scoped `comments` handlers instead, which lol-html invokes immediately before the document
-      // handler for the same comment. Revert to an onEndTag depth counter once the minimum supported Bun is >= 1.4.0.
-      let insideIsland = false;
+      let islandDepth = 0;
       const rewriter = new HTMLRewriter();
       if (hasIslandsOrServerIslands) {
         rewriter
           .on('mochi-hydratable-island', {
             element(el) {
+              islandDepth++;
+              el.onEndTag(() => {
+                islandDepth--;
+              });
               const raw = el.getAttribute('component-name');
               if (raw) {
                 renderedIslandNames.add(raw);
               }
               injectIslandPropsBlock(el, propsById, emittedProps);
             },
-            comments() {
-              insideIsland = true;
-            },
           })
           .on('mochi-server-island', {
-            element() {
+            element(el) {
+              islandDepth++;
+              el.onEndTag(() => {
+                islandDepth--;
+              });
               hasServerIslands = true;
-            },
-            comments() {
-              insideIsland = true;
             },
           });
       }
       if (shouldStrip) {
         rewriter.onDocument({
           comments(comment) {
-            if (insideIsland) {
-              insideIsland = false;
-              return;
-            }
-            if (isSvelteMarker(comment.text)) {
+            if (islandDepth === 0 && isSvelteMarker(comment.text)) {
               comment.remove();
             }
           },

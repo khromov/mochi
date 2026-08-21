@@ -64,8 +64,8 @@ export function createFontMarkerPlugin(inlineThreshold: number): { plugin: BunPl
     setup(build) {
       build.onLoad({ filter: FONT_URL_FILTER }, (args) => {
         const size = fs.statSync(args.path).size;
-        // Declining a font Bun would copy rather than inline segfaults its bundler (verified on 1.3.14, exactly at
-        // 128 kB), so those take the marker path whatever the threshold says.
+        // Declining a font Bun would copy rather than inline crashes its bundler (a segfault on 1.3.14, still a hard
+        // Rust panic on 1.4.0, both exactly at 128 kB), so those take the marker path whatever the threshold says.
         if (size <= inlineThreshold && size < BUN_CSS_COPY_THRESHOLD) {
           return undefined;
         }
