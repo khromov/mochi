@@ -251,7 +251,7 @@ export class Mochi {
    * handling is yours to wire (`Mochi.stop()` drains and closes the runtime).
    */
   static worker(options: MochiWorkerOptions): MochiWorker {
-    return createWorker(options.queues, options.storage, options.queueConfig);
+    return createWorker(options.queues, options.storage, options.queueConfig, options.queueShutdownTimeout);
   }
 
   /**
@@ -2005,7 +2005,7 @@ export class Mochi {
       if (declaredQueues.length > 0) {
         // kind 'serve' adopts a standalone producer runtime already connected to the same storage.
         await startQueueRuntime(queueStorage, { kind: 'serve' });
-        await mountQueues(declaredQueues, resolveQueueConfigMode(options.queueConfig));
+        await mountQueues(declaredQueues, resolveQueueConfigMode(options.queueConfig), options.queueShutdownTimeout);
       }
     } catch (err) {
       await closeAllQueueResources();
