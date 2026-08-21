@@ -13,11 +13,14 @@ type Args = {
 const usage = `Usage: bun run check-site [base] [--concurrency N] [--report PATH] [--timeout MS]
 
 Reads <base>/sitemap.xml and loads every listed URL in a real headless Chrome.
-A page fails when its main document isn't 2xx, or when it produces any console
-error/warning, uncaught exception, or browser-logged subresource failure.
-Redirect hops are reported but never fail a page. Catches the client-side
-regressions a plain fetch crawl (scripts/check-links.ts) cannot see: hydration
-errors, island fetch failures, uncaught exceptions.
+A page fails when its main document isn't 2xx (unless the path is allow-listed
+for an expected non-2xx status), or when it produces any console error/warning,
+uncaught exception, or browser-logged subresource failure. A page whose load
+event doesn't fire within the budget is retried once; only a second timeout
+fails it, and the report then names every request still in flight. Redirect hops
+are reported but never fail a page. Catches the client-side regressions a plain
+fetch crawl (scripts/check-links.ts) cannot see: hydration errors, island fetch
+failures, uncaught exceptions.
 
 The sitemap hardcodes the production origin, so each <loc> is re-pointed at
 <base> — pass a local origin to check a dev server.
@@ -99,8 +102,26 @@ const IGNORE_PATTERNS: { message: RegExp; path?: string; reason: string }[] = [
   },
 ];
 
+/**
+ * Paths whose main document is expected to answer with a specific non-2xx status.
+ * A match makes that status a pass (and mutes the matching subresource-load error
+ * Chrome logs for it). `reason` documents why the non-2xx is correct at the source.
+ */
+const EXPECTED_STATUS: { path: string; status: number; reason: string }[] = [
+  {
+    path: '/demos/protection/',
+    status: 403,
+    reason: 'The protection demo gates access behind a proof-of-work clearance cookie; an un-cleared probe correctly receives 403.',
+  },
+];
+
+const expectedStatusFor = (url: string) => EXPECTED_STATUS.find((e) => e.path === new URL(url).pathname)?.status;
+
 /** Milliseconds to keep collecting after `load` — deferred/`:visible` islands hydrate late. */
 const SETTLE_MS = 1500;
+
+/** Load attempts per page: a flaky first timeout is retried once before the page fails. */
+const LOAD_ATTEMPTS = 2;
 
 /** Run thunks with a bounded number in flight at once. */
 async function pool<T>(items: T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {
@@ -175,7 +196,7 @@ type Issue = { kind: 'error' | 'warning'; text: string };
  * reach it. Hops are informational — some demos land on a redirect on purpose —
  * so only the final status decides pass/fail.
  */
-type PageResult = { url: string; status?: number; redirects: string[]; issues: Issue[]; ok: boolean };
+type PageResult = { url: string; status?: number; redirects: string[]; issues: Issue[]; ok: boolean; retried: boolean };
 
 /** Flatten a `Runtime.consoleAPICalled` argument list into one readable line. */
 function renderArgs(args: Protocol.Runtime.RemoteObject[]): string {
@@ -208,10 +229,15 @@ async function checkPage(port: number, url: string, timeout: number): Promise<Pa
   const issues: Issue[] = [];
   const redirects: string[] = [];
   const seen = new Set<string>();
+  // In-flight requests by id, so a load timeout can name what's still pending.
+  const inflight = new Map<string, string>();
   let status: number | undefined;
   // Some demos navigate themselves after load; only the first main-frame load is
   // the page we were asked to check.
   let mainLoaderId: string | undefined;
+  let retried = false;
+
+  const expected = expectedStatusFor(url);
 
   const add = (kind: Issue['kind'], text: string) => {
     const clean = stripAnsi(text).trim();
@@ -229,6 +255,7 @@ async function checkPage(port: number, url: string, timeout: number): Promise<Pa
     const { Page, Network, Runtime, Log } = client;
 
     Network.requestWillBeSent((params) => {
+      inflight.set(params.requestId, params.request.url);
       if (!isMainDocument(params)) {
         return;
       }
@@ -241,6 +268,8 @@ async function checkPage(port: number, url: string, timeout: number): Promise<Pa
         redirects.push(`${params.redirectResponse.status} ${params.redirectResponse.url}`);
       }
     });
+    Network.loadingFinished(({ requestId }) => inflight.delete(requestId));
+    Network.loadingFailed(({ requestId }) => inflight.delete(requestId));
     Network.responseReceived((params) => {
       if (isMainDocument(params) && params.loaderId === mainLoaderId && status === undefined) {
         status = params.response.status;
@@ -257,21 +286,49 @@ async function checkPage(port: number, url: string, timeout: number): Promise<Pa
       add('error', exceptionDetails.exception?.description ?? exceptionDetails.text ?? 'Uncaught exception');
     });
     Log.entryAdded(({ entry }) => {
-      if (entry.level === 'error' || entry.level === 'warning') {
-        add(entry.level, entry.url ? `${entry.text} (${entry.url})` : entry.text);
+      if (entry.level !== 'error' && entry.level !== 'warning') {
+        return;
       }
+      // The main document at its expected non-2xx status also surfaces here as a
+      // subresource-load failure — don't double-report what the status check owns.
+      if (entry.url === url && expected !== undefined && /Failed to load resource/.test(entry.text)) {
+        return;
+      }
+      add(entry.level, entry.url ? `${entry.text} (${entry.url})` : entry.text);
     });
 
     await Promise.all([Page.enable(), Network.enable(), Runtime.enable(), Log.enable()]);
 
     const timedOut = Symbol('timeout');
-    const loaded = Page.loadEventFired();
-    const navigation = await Page.navigate({ url });
-    if (navigation.errorText) {
-      add('error', `Navigation failed: ${navigation.errorText}`);
-    }
-    if ((await Promise.race([loaded, sleep(timeout).then(() => timedOut)])) === timedOut) {
-      add('error', `Page did not finish loading within ${timeout}ms`);
+    for (let attempt = 1; attempt <= LOAD_ATTEMPTS; attempt++) {
+      // Only the winning attempt's observations should count; a flaky first
+      // attempt must leave no stale issues, redirects, or in-flight entries.
+      issues.length = 0;
+      seen.clear();
+      redirects.length = 0;
+      inflight.clear();
+      status = undefined;
+      mainLoaderId = undefined;
+
+      const loaded = Page.loadEventFired();
+      const navigation = await Page.navigate({ url });
+      if (navigation.errorText) {
+        add('error', `Navigation failed: ${navigation.errorText}`);
+      }
+      if ((await Promise.race([loaded, sleep(timeout).then(() => timedOut)])) !== timedOut) {
+        break;
+      }
+      if (attempt < LOAD_ATTEMPTS) {
+        retried = true;
+        continue;
+      }
+      const pending = [...inflight.values()];
+      add(
+        'error',
+        pending.length
+          ? `Page did not finish loading within ${timeout}ms after ${LOAD_ATTEMPTS} attempts; ${pending.length} request(s) still pending: ${pending.join(', ')}`
+          : `Page did not finish loading within ${timeout}ms after ${LOAD_ATTEMPTS} attempts (no requests pending — a script or event handler is blocking load)`,
+      );
     }
     await sleep(SETTLE_MS);
   } catch (err) {
@@ -284,11 +341,11 @@ async function checkPage(port: number, url: string, timeout: number): Promise<Pa
 
   if (status === undefined) {
     add('error', 'No response received for the main document');
-  } else if (status < 200 || status >= 300) {
+  } else if (expected !== undefined ? status !== expected : status < 200 || status >= 300) {
     add('error', `Main document responded ${status}`);
   }
 
-  return { url, status, redirects, issues, ok: issues.length === 0 };
+  return { url, status, redirects, issues, ok: issues.length === 0, retried };
 }
 
 // ---------------------------------------------------------------------------
@@ -298,6 +355,8 @@ async function checkPage(port: number, url: string, timeout: number): Promise<Pa
 const escapeCell = (s: string) => s.replace(/\|/g, '\\|').replace(/\s*\n\s*/g, ' ↵ ');
 
 const redirectNote = (result: PageResult) => (result.redirects.length === 0 ? '' : ` (via ${result.redirects.join(' → ')})`);
+
+const retriedNote = (result: PageResult) => (result.retried && result.ok ? ' _(passed on retry)_' : '');
 
 function buildReport(base: string, results: PageResult[], startedAt: Date, durationMs: number): string {
   const passed = results.filter((r) => r.ok);
@@ -327,7 +386,7 @@ function buildReport(base: string, results: PageResult[], startedAt: Date, durat
 
   lines.push(`## ✅ Passed (${passed.length})`, '', '<details><summary>Show all</summary>', '');
   for (const result of passed) {
-    lines.push(`- \`${result.status}\` ${result.url}${redirectNote(result)}`);
+    lines.push(`- \`${result.status}\` ${result.url}${redirectNote(result)}${retriedNote(result)}`);
   }
   lines.push('', '</details>', '');
   return lines.join('\n');
