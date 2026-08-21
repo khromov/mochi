@@ -10,13 +10,13 @@ description: 'A minimal production Dockerfile template for deploying Mochi apps 
 
 ## Building a Dockerfile
 
-A production Mochi app is a single Bun process. This image is a one-stage build on `oven/bun:1.3-alpine`.
+A production Mochi app is a single Bun process. This image is a one-stage build on `oven/bun:1.4-alpine`.
 
 ### Minimal Dockerfile
 
 ```dockerfile
 # file: Dockerfile
-FROM oven/bun:1.3-alpine
+FROM oven/bun:1.4-alpine
 WORKDIR /app
 COPY . .
 RUN bun install --production

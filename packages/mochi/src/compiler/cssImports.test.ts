@@ -109,9 +109,9 @@ describe('CSS imports — variable-font format() preservation', () => {
     rmSync(outDir, { recursive: true, force: true });
   });
 
-  // Bun's CSS bundler unquotes `format('woff2-variations')` to `format(woff2-variations)`,
-  // which is invalid CSS and causes the browser to silently drop the @font-face src.
-  // The framework re-quotes it after bundling.
+  // Bun >=1.4.0's CSS bundler keeps `format('woff2-variations')` quoted; the bare
+  // unquoted form `format(woff2-variations)` is invalid CSS and makes the browser
+  // silently drop the @font-face src, so guard against a regression back to it.
   test('preserves quoted format() value for woff2-variations', () => {
     const stats = registry.getClientStats();
     const cssOutput = stats?.outputs.find((o) => o.name.startsWith('font-'));
@@ -119,8 +119,7 @@ describe('CSS imports — variable-font format() preservation', () => {
     const cssUrl = `/_mochi/import-css/${cssOutput!.name}`;
     const cssText = registry.getClientFile(cssUrl);
     expect(cssText).toBeDefined();
-    // Bun <1.4.0 stripped the quotes (framework re-quotes to single); Bun >=1.4.0 keeps
-    // them (double). Either quote style is valid CSS — the bare unquoted form is the real bug.
+    // Either quote style is valid CSS — the bare unquoted form is the real bug.
     expect(cssText).toMatch(/\bformat\((['"])woff2-variations\1\)/);
     expect(cssText).not.toMatch(/\bformat\(woff2-variations\)/);
   });

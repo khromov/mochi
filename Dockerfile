@@ -9,15 +9,14 @@
 # Prebuilt production variants live at Dockerfile.production and
 # packages/demos/Dockerfile.production if we ever need to flip back.
 #
-# Base image defaults to oven/bun:1.3.14-alpine (pure musl alpine, multi-arch),
+# Base image defaults to oven/bun:1.4.0-alpine (pure musl alpine, multi-arch),
 # overridable via the BUN_IMAGE build arg so a single workspace can ride a
-# different Bun tag without moving the others — the site is temporarily pinned
-# to oven/bun:canary-alpine in .github/workflows/build.yml while demos stays on
-# the stable default. Earlier revisions used frolvlad/alpine-glibc with a copied
-# bun binary; that combo broke @tailwindcss/oxide's native binding on linux/arm64
-# because the glibc compat shim was loaded in place of musl libc.
+# different Bun tag without moving the others. Earlier revisions used
+# frolvlad/alpine-glibc with a copied bun binary; that combo broke
+# @tailwindcss/oxide's native binding on linux/arm64 because the glibc compat
+# shim was loaded in place of musl libc.
 
-ARG BUN_IMAGE=oven/bun:1.3.14-alpine
+ARG BUN_IMAGE=oven/bun:1.4.0-alpine
 FROM ${BUN_IMAGE} AS base
 WORKDIR /usr/src/app
 
