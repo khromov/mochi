@@ -59,7 +59,7 @@ describe('transformPackageJson', () => {
         svelte: '^5.55.1',
       },
       devDependencies: {
-        '@types/bun': '1.3.14',
+        '@types/bun': '1.4.0',
       },
     });
 
@@ -68,7 +68,7 @@ describe('transformPackageJson', () => {
     expect(out.private).toBe(true);
     expect(out.dependencies['mochi-framework']).toBe('^0.2.5');
     expect(out.dependencies.svelte).toBe('^5.55.1');
-    expect(out.devDependencies['@types/bun']).toBe('1.3.14');
+    expect(out.devDependencies['@types/bun']).toBe('1.4.0');
   });
 
   test('replaces workspace:* deps for non-mochi packages with "latest"', () => {

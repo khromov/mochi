@@ -201,30 +201,24 @@ export function normalizeIslandHydrationMarkers(html: string): string {
 /**
  * Strip Svelte SSR hydration markers from HTML while preserving them inside `<mochi-hydratable-island>` and
  * `<mochi-server-island>` blocks, parsing through Bun's HTMLRewriter so element nesting is tracked properly.
- *
- * NOTE(bun<1.4.0): the obvious `el.onEndTag(() => islandDepth--)` depth counter leaks the request's `AsyncLocalStorage`
- * frame — and with it the whole request — for the life of the process on Bun 1.3.x. Island-internal comments are flagged
- * through an element-scoped `comments` handler instead, which lol-html invokes immediately before the document handler
- * for the same comment. Revert to the depth counter once the minimum supported Bun is >= 1.4.0.
  */
 export function stripHydrationMarkers(html: string): string {
-  let insideIsland = false;
-  const markInside = {
-    comments() {
-      insideIsland = true;
+  let islandDepth = 0;
+  const trackIsland = {
+    element(el: HTMLRewriterTypes.Element) {
+      islandDepth++;
+      el.onEndTag(() => {
+        islandDepth--;
+      });
     },
   };
 
   return new HTMLRewriter()
-    .on('mochi-hydratable-island', markInside)
-    .on('mochi-server-island', markInside)
+    .on('mochi-hydratable-island', trackIsland)
+    .on('mochi-server-island', trackIsland)
     .onDocument({
       comments(comment) {
-        if (insideIsland) {
-          insideIsland = false;
-          return;
-        }
-        if (isSvelteMarker(comment.text)) {
+        if (islandDepth === 0 && isSvelteMarker(comment.text)) {
           comment.remove();
         }
       },

@@ -21,7 +21,7 @@ test('compareVersions handles equal, higher, lower, and prerelease suffixes', ()
   expect(compareVersions('5.55.1', '5.55.1')).toBe(true);
   expect(compareVersions('5.56.0', '5.55.1')).toBe(true);
   expect(compareVersions('5.54.9', '5.55.1')).toBe(false);
-  expect(compareVersions('1.3.14-canary.5', '1.3.14')).toBe(true);
-  expect(compareVersions('1.3.15-canary.1', '1.3.14')).toBe(true);
-  expect(compareVersions('1.3.13-canary.9', '1.3.14')).toBe(false);
+  expect(compareVersions('1.4.0-canary.5', '1.4.0')).toBe(true);
+  expect(compareVersions('1.4.1-canary.1', '1.4.0')).toBe(true);
+  expect(compareVersions('1.3.14-canary.9', '1.4.0')).toBe(false);
 });
