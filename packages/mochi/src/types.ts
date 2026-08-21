@@ -281,6 +281,12 @@ export interface MochiWorkerOptions {
    * forces `'sync'` process-wide and wins over this option.
    */
   queueConfig?: 'verify' | 'sync';
+  /**
+   * Grace period (ms) on shutdown for in-flight queue jobs to drain before the boss is stopped and the store closed.
+   * Default: `10000`. Raise it for handlers that legitimately run longer than 10s, so a job in flight at shutdown
+   * finishes and is not failed and re-run.
+   */
+  queueShutdownTimeout?: number;
 }
 
 export type MochiRouteValue = MochiPageConfig | MochiApiConfig | MochiWsConfig | MochiSseConfig | MochiFileConfig | BunRouteValue;
@@ -470,6 +476,12 @@ export interface MochiServeOptions {
    * forces `'sync'` process-wide and wins over this option.
    */
   queueConfig?: 'verify' | 'sync';
+  /**
+   * Grace period (ms) on shutdown for in-flight queue jobs to drain before the boss is stopped and the store closed.
+   * Default: `10000`. Distinct from `shutdownTimeout`, which bounds the HTTP server drain. Raise it for queues whose
+   * handlers legitimately run longer than 10s, so a job in flight at shutdown finishes and is not failed and re-run.
+   */
+  queueShutdownTimeout?: number;
   fetch?: (req: Request, server: Server<undefined>) => Response | Promise<Response>;
   htmlShell?: string;
   /**

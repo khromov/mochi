@@ -215,7 +215,11 @@ interface QueueRegistry {
   storage: MochiQueueStorage | null;
   /** In-flight standalone boot, so concurrent first-adds share one `start()`. */
   starting: Promise<void> | null;
+  /** Graceful drain budget (ms) for shutdown, from `queueShutdownTimeout`; see `closeAllQueueResources`. */
+  shutdownTimeout: number;
 }
+
+const DEFAULT_QUEUE_SHUTDOWN_TIMEOUT = 10_000;
 
 // Pinned so every duplicate bundled copy of this module shares one registry, since `closeAllQueueResources` must see
 // every resource to drain it whichever copy created it.
@@ -227,6 +231,7 @@ const registry = pinGlobal<QueueRegistry>('__mochi_queue_registry__', () => ({
   kind: null,
   storage: null,
   starting: null,
+  shutdownTimeout: DEFAULT_QUEUE_SHUTDOWN_TIMEOUT,
 }));
 
 export function storageEquals(a: MochiQueueStorage | null, b: MochiQueueStorage): boolean {
@@ -884,8 +889,9 @@ export function createQueueDescriptor<T = unknown, R = unknown>(name: string, co
  * Mount every queue declared in `Mochi.serve({ queues })` on the running boss: ensure each exists with its declared
  * config, then start a worker for each that has a processor.
  */
-export async function mountQueues(queues: MountableQueue[], mode: 'verify' | 'sync' = 'verify'): Promise<void> {
+export async function mountQueues(queues: MountableQueue[], mode: 'verify' | 'sync' = 'verify', shutdownTimeout: number = DEFAULT_QUEUE_SHUTDOWN_TIMEOUT): Promise<void> {
   const boss = requireBoss();
+  registry.shutdownTimeout = shutdownTimeout;
   await verifyOrCreateQueues(queues, 'Mochi.serve({ queues })', mode);
   // Only the declared array is registered — implicit descriptor-form deadLetter targets are ensured, not mounted.
   for (const config of queues) {
@@ -923,7 +929,12 @@ export interface MochiWorker {
 }
 
 /** Implements `Mochi.worker(options)` — see its JSDoc there. */
-export function createWorker(queues: MountableQueue[], storage?: MochiQueueStorage, queueConfig?: 'verify' | 'sync'): MochiWorker {
+export function createWorker(
+  queues: MountableQueue[],
+  storage?: MochiQueueStorage,
+  queueConfig?: 'verify' | 'sync',
+  shutdownTimeout: number = DEFAULT_QUEUE_SHUTDOWN_TIMEOUT,
+): MochiWorker {
   if (queues.length === 0) {
     throw new Error('Mochi.worker(): declare at least one queue.');
   }
@@ -981,6 +992,7 @@ export function createWorker(queues: MountableQueue[], storage?: MochiQueueStora
           );
         }
         const boss = requireBoss();
+        registry.shutdownTimeout = shutdownTimeout;
         await verifyOrCreateQueues(queues, 'Mochi.worker()', resolveQueueConfigMode(queueConfig));
         for (const q of queues) {
           if (!registry.byName.has(q.name)) {
@@ -1048,7 +1060,7 @@ export async function closeAllQueueResources(): Promise<void> {
   while (registry.starting) {
     await registry.starting.catch(() => {});
   }
-  const { boss, ownedSql } = registry;
+  const { boss, ownedSql, shutdownTimeout } = registry;
   // Cleared first so a fresh serve in this process (e.g. a test that restarts) can re-mount its queues even if a
   // close below fails.
   registry.boss = null;
@@ -1058,9 +1070,13 @@ export async function closeAllQueueResources(): Promise<void> {
   registry.starting = null;
   registry.byName.clear();
   registry.workIds.clear();
+  registry.shutdownTimeout = DEFAULT_QUEUE_SHUTDOWN_TIMEOUT;
   if (boss) {
     try {
-      await boss.stop({ graceful: true, timeout: 10_000 });
+      // bun-boss drains in-flight handlers within the graceful window and settles their cleanups before closing
+      // the store; a job still running when the window lapses is failed and follows its retry policy. Raising
+      // `queueShutdownTimeout` above the job duration lets it finish instead of being re-run.
+      await boss.stop({ graceful: true, timeout: shutdownTimeout });
     } catch (err) {
       logger.warn(`[queue] shutdown: ${err instanceof Error ? err.message : String(err)}`);
     }
