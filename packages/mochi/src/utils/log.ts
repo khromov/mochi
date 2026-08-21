@@ -1,3 +1,4 @@
+import { feature } from 'bun:bundle';
 import { pinGlobal } from './globalState';
 
 export type LogLevel = 'silent' | 'error' | 'warn' | 'info' | 'log' | 'debug';
@@ -15,10 +16,13 @@ const PREFIX = '[mochi]';
 
 // Inline ANSI escapes — log.ts is isomorphic (bundled for both server and
 // client), so it cannot import node:util whose browser polyfill lacks styleText.
-const red = (s: string) => `\x1b[31m${s}\x1b[39m`;
-const yellow = (s: string) => `\x1b[33m${s}\x1b[39m`;
-const green = (s: string) => `\x1b[32m${s}\x1b[39m`;
-const dim = (s: string) => `\x1b[2m${s}\x1b[22m`;
+// `feature('MOCHI_CLIENT')` is true only in the browser builds, where DevTools
+// consoles don't render escape codes, so each helper folds to a passthrough there
+// and keeps the escapes on the server (both bundled SSR and unbundled dev).
+const red = (s: string) => (feature('MOCHI_CLIENT') ? s : `\x1b[31m${s}\x1b[39m`);
+const yellow = (s: string) => (feature('MOCHI_CLIENT') ? s : `\x1b[33m${s}\x1b[39m`);
+const green = (s: string) => (feature('MOCHI_CLIENT') ? s : `\x1b[32m${s}\x1b[39m`);
+const dim = (s: string) => (feature('MOCHI_CLIENT') ? s : `\x1b[2m${s}\x1b[22m`);
 
 export const DEFAULT_LOG_LEVEL: LogLevel = 'warn';
 

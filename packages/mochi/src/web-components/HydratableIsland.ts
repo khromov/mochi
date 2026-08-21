@@ -1,5 +1,6 @@
 /// <reference lib="dom" />
 /// <reference lib="dom.iterable" />
+import { feature } from 'bun:bundle';
 import { hydrate, mount, unmount } from 'svelte';
 import type { Component } from 'svelte';
 import { parse as devalueParse } from 'devalue';
@@ -25,11 +26,13 @@ class HydratableIsland extends HTMLElement {
   connectedCallback() {
     const name = this.getAttribute('component-name');
     const hydrateOn = this.getAttribute('hydrate-on');
-    logger.log('connectedCallback', {
-      name,
-      hydrateOn,
-      attributes: [...this.attributes].map((a) => a.name + '=' + a.value),
-    });
+    if (feature('MOCHI_DEBUG')) {
+      logger.log('connectedCallback', {
+        name,
+        hydrateOn,
+        attributes: [...this.attributes].map((a) => a.name + '=' + a.value),
+      });
+    }
     if (this._hydrated) {
       return;
     }
@@ -80,13 +83,15 @@ class HydratableIsland extends HTMLElement {
     const componentUrl = this.getAttribute('component-url');
     const cssUrl = this.getAttribute('css-url');
 
-    logger.log('_doHydrate', {
-      name,
-      hasComponent: !!componentRegistry[name],
-      componentUrl,
-      cssUrl,
-      propsRaw,
-    });
+    if (feature('MOCHI_DEBUG')) {
+      logger.log('_doHydrate', {
+        name,
+        hasComponent: !!componentRegistry[name],
+        componentUrl,
+        cssUrl,
+        propsRaw,
+      });
+    }
 
     // Load deferred CSS if present (lazy islands) — once per URL
     if (cssUrl && !isLoadedCss(cssUrl)) {
@@ -103,7 +108,9 @@ class HydratableIsland extends HTMLElement {
 
     // Load the component's JS bundle (calls registerComponent on import)
     if (!componentRegistry[name] && componentUrl) {
-      logger.log('Loading component', name, componentUrl);
+      if (feature('MOCHI_DEBUG')) {
+        logger.log('Loading component', name, componentUrl);
+      }
       await import(componentUrl);
     }
 
@@ -165,7 +172,9 @@ class HydratableIsland extends HTMLElement {
       this._unmount = undefined;
       void unmount(instance);
     };
-    logger.log(clientOnly ? 'Mounted' : 'Hydrated', name);
+    if (feature('MOCHI_DEBUG')) {
+      logger.log(clientOnly ? 'Mounted' : 'Hydrated', name);
+    }
   }
 }
 

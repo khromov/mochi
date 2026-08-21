@@ -49,6 +49,8 @@ export interface MochiBuildOptions {
   resources?: boolean;
   /** Mirror the value passed to `Mochi.serve({ protection })` so the interstitial page prebuilds into the manifest. Default: disabled. See `MochiServeOptions['protection']`. */
   protection?: MochiProtectionOptions;
+  /** Mirror the value passed to `Mochi.serve({ clientDebug })` so the prebuilt client bundle keeps `MOCHI_DEBUG` island logging. Default: `false`. `MOCHI_CLIENT_DEBUG=1` forces it on too. See `MochiServeOptions['clientDebug']`. */
+  clientDebug?: boolean;
 }
 
 type RouteKind = 'page' | 'api' | 'ws' | 'sse';
@@ -110,7 +112,8 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     // Started now so it overlaps the compile phases, and awaited before the manifest. The `.catch(() => {})` guard only
     // marks a rejection handled in case compileAll throws first; the real error still surfaces at the trailing `await`.
     // `timed` wraps the work rather than that await, so the phase line reports real duration, not residual wait.
-    const serverIslandScriptPromise = timed('island-script', () => buildInlineWebComponent('./web-components/ServerIsland.ts'));
+    const serverIslandDebug = development || (options.clientDebug ?? false) || process.env.MOCHI_CLIENT_DEBUG === '1';
+    const serverIslandScriptPromise = timed('island-script', () => buildInlineWebComponent('./web-components/ServerIsland.ts', { debug: serverIslandDebug }));
     serverIslandScriptPromise.catch(() => {});
     // The runtime serves static files straight from publicDir in every mode, so all the build adds is proof that no
     // public file shadows a declared route and a deploy silently drops an asset. The runtime's own
@@ -139,6 +142,7 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     const svelteConfig = await loadSvelteConfig(options.svelteConfigPath);
     const registry = new ComponentRegistry({
       development,
+      clientDebug: options.clientDebug,
       outDir,
       assetPrefix: options.assetPrefix,
       svelteConfig,

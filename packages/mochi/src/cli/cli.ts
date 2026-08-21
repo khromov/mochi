@@ -182,6 +182,7 @@ async function main() {
     errorPage: serveOptions?.errorPage,
     resources: serveOptions?.build?.resources,
     protection: serveOptions?.protection,
+    clientDebug: serveOptions?.clientDebug,
     development: values.dev,
     outDir: values['out-dir'],
     // Fall back to the entry's own `publicDir` so the build validates the same

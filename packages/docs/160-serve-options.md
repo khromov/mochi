@@ -7,6 +7,7 @@ description: 'Reference for every configuration option on Mochi.serve().'
 
 <script>
   import Callout from './_components/Callout.svelte';
+  import VersionNote from './_components/VersionNote.svelte';
 </script>
 
 ## Serve options
@@ -49,6 +50,7 @@ In production (`development: false`), prebuilt JS/CSS bundles served from `asset
 - `hostname` — interface to bind. Defaults to Bun's default (`0.0.0.0`).
 - `development` — enables live reload, debug bar, and dev error overlay. Default: `true`.
 - `liveReload` — enable the dev-mode live-reload WebSocket. Default: matches `development`. Set `false` to keep the debug bar but skip the socket.
+- `clientDebug` — keep the island runtime's verbose debug logging in the client bundle even in a production build. Default: `false`. See [Client debug logging](#client-debug-logging).
 - `shutdownTimeout` — grace period (ms) for in-flight requests on `SIGTERM`/`SIGINT`. Default: `5000` in production, `0` in development.
 - `routes` — `Record<string, MochiRouteValue>` of route paths to `Mochi.page` / `Mochi.api` / `Mochi.ws` / `Mochi.sse`.
 - `fetch` — `(req, server) => Response` fallback when no route matches. Default: built-in 404.
@@ -79,6 +81,25 @@ In production (`development: false`), prebuilt JS/CSS bundles served from `asset
 <Callout type="info">
 
 **Sync `assetPrefix` between build and runtime.** When using a prebuilt manifest, pass `assetPrefix` to the `build()` call (or `--asset-prefix`) so the baked-in URLs match. The manifest's URLs take precedence at runtime if the two disagree.
+
+</Callout>
+
+### Client debug logging
+
+<VersionNote since="0.10.0" message="Before 0.10.0, island debug logging was gated only at runtime and still shipped in the client bundle." />
+
+The island runtime logs verbose diagnostics (hydration steps, component loads) at the `log`/`debug` level. In a production build these calls — and the argument objects they build — are eliminated from the client bundle at compile time via Bun's [`feature()`](https://bun.com/docs/bundler#features) flags, so they add no bytes and no per-island work. In development they stay on.
+
+To keep them in a production build while chasing a prod-only hydration bug, set `clientDebug: true`, or build with the `MOCHI_CLIENT_DEBUG=1` env var (which also reaches the ahead-of-time `mochi build`, which has no `serve()` options). Then raise the browser log level to see them:
+
+```ts
+import { setLogLevel } from 'mochi-framework';
+setLogLevel('debug'); // in the browser
+```
+
+<Callout type="info">
+
+`clientDebug` only affects which code is bundled — it does not change the log level. It is independent of `development`, so a fully production-compiled bundle can still carry the logging.
 
 </Callout>
 

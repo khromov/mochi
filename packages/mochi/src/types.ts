@@ -449,6 +449,12 @@ export interface MochiServeOptions {
    */
   liveReload?: boolean;
   /**
+   * Keep the `MOCHI_DEBUG`-gated island debug logging in the client bundle even in a production build, for diagnosing a
+   * prod-only hydration issue. Default: `false` (dev builds always keep it). The `MOCHI_CLIENT_DEBUG=1` env var forces it
+   * on too, and also reaches the ahead-of-time `mochi build` path, which has no serve options.
+   */
+  clientDebug?: boolean;
+  /**
    * Grace period (ms) on `SIGTERM`/`SIGINT` for in-flight requests to finish before connections are force-closed.
    * Default: `5000` in production, `0` in development, where `0` force-closes immediately. A non-forced `server.stop()`
    * never resolves while a WebSocket is open, so the forced fallback keeps one live-reload tab from wedging the process.

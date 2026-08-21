@@ -6,7 +6,7 @@
  */
 import path from 'node:path';
 import type { BunPlugin } from 'bun';
-import { CLIENT_BUILD_DEFINE, serverOnlyModuleGuard } from './serverOnlyModuleGuard';
+import { CLIENT_BUILD_DEFINE, clientBuildFeatures, serverOnlyModuleGuard } from './serverOnlyModuleGuard';
 import { registerServerOnlyComponentStubs } from './serverOnlyComponents';
 import { registerEsmEnvStrip, registerMochiEnvClient, registerSvelteModuleLoader } from './clientBuildLoaders';
 import { mergeCompilerOptions } from './svelteConfig';
@@ -61,6 +61,8 @@ export async function buildDebugBarBundle(opts: { development: boolean; backend:
       NODE: 'false',
       ...CLIENT_BUILD_DEFINE,
     },
+    // The bar only builds in dev, so keep its debug logging.
+    features: clientBuildFeatures(true),
     minify: !diagnostic,
     naming: '[name]-[hash].[ext]',
     throw: false,

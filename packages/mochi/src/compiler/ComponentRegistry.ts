@@ -38,7 +38,7 @@ import { backendId, resolveSvelteCompiler, type MochiSvelteCompiler, type Svelte
 import { applyFilter } from '../extensions';
 import { decodeSourcePath, encodeSourcePath } from './manifestPaths';
 import { buildServerOnlyStubModule, scanServerOnlyExports } from './serverOnlyScan';
-import { CLIENT_BUILD_DEFINE, serverOnlyModuleGuard } from './serverOnlyModuleGuard';
+import { CLIENT_BUILD_DEFINE, clientBuildFeatures, serverOnlyModuleGuard } from './serverOnlyModuleGuard';
 import { registerServerOnlyComponentStubs, SSR_ONLY_COMPONENT_NAMESPACE } from './serverOnlyComponents';
 import { cleanInputs, SERVER_ONLY_MODULE_NAMESPACE } from './bundleInputPaths';
 import { renderMochiEnvServer } from './virtualModuleTemplate';
@@ -295,6 +295,8 @@ export interface ComponentRegistryOptions {
   development?: boolean;
   /** Bundle and surface the dev-only debug-bar entry. Default: same as `development`. */
   debugBar?: boolean;
+  /** Keep `MOCHI_DEBUG`-gated island debug logging in the client bundle even in production. Default: `false`. */
+  clientDebug?: boolean;
   /** Directory for build artifacts (cwd-relative). Default: `./.mochi`. */
   outDir?: string;
   /** URL prefix for framework client assets (JS/CSS). Default: `/_mochi`. */
@@ -431,6 +433,8 @@ export class ComponentRegistry {
   /** Files `publicDir` held when this manifest was built; see `MochiManifest.publicFileCount`. 0 when not loaded from one. */
   publicFileCountAtBuild = 0;
   readonly debugBarEnabled: boolean;
+  /** Whether `MOCHI_DEBUG` is passed to the client build — on in dev, or forced in prod via the option / `MOCHI_CLIENT_DEBUG`. */
+  readonly clientDebug: boolean;
   readonly outDir: string;
   readonly assetPrefix: string;
   svelteConfig: MochiSvelteConfig;
@@ -459,6 +463,7 @@ export class ComponentRegistry {
   constructor(opts: ComponentRegistryOptions = {}) {
     this.development = opts.development ?? true;
     this.debugBarEnabled = this.development && (opts.debugBar ?? true);
+    this.clientDebug = this.development || (opts.clientDebug ?? false) || process.env.MOCHI_CLIENT_DEBUG === '1';
     // A relative outDir resolves against whoever's cwd asks, and compile and `toManifest()` ask at different moments, so
     // a `process.chdir()` in between would make every artifact look like it escaped the out-dir and bake absolute paths
     // into an otherwise relocatable build.
@@ -1258,6 +1263,7 @@ export class ComponentRegistry {
         NODE: 'false',
         ...CLIENT_BUILD_DEFINE,
       },
+      features: clientBuildFeatures(this.clientDebug),
       minify: true,
       splitting: true,
       naming: '[name]-[hash].[ext]',

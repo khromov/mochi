@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 /// <reference lib="dom.iterable" />
 
+import { feature } from 'bun:bundle';
 import '../debug-bar/types';
 import { isReloadableIslandName, notifyDeferredIslandChange, registerDeferredIsland, unregisterDeferredIsland } from '../islands/deferInvalidation';
 
@@ -166,7 +167,7 @@ class ServerIsland extends HTMLElement {
         }
         const html = await response.text();
 
-        if (ll === 'log' || ll === 'debug') {
+        if (feature('MOCHI_DEBUG') && (ll === 'log' || ll === 'debug')) {
           console.log(`${tag} loaded (attempt ${attempt}, ${(html.length / 1024).toFixed(1)}kB, alsoHydrate=${alsoHydrate || 'none'})`);
         }
 

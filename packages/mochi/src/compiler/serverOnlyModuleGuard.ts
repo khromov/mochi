@@ -22,6 +22,14 @@ const SERVER_ONLY_MODULES = new Map<string, string>([
 /** Injected by every browser build so `utils/serverOnly.ts` can tell which bundle it landed in. */
 export const CLIENT_BUILD_DEFINE = { MOCHI_CLIENT: 'true' } as const;
 
+// `bun:bundle` feature flags for the three client (`target:'browser'`) builds — passed nowhere else,
+// so `feature('MOCHI_CLIENT')` degrades to `false` on the server (bundled SSR and unbundled dev),
+// keeping server-side ANSI logging intact. `MOCHI_DEBUG` gates verbose island logging; keep it off
+// in prod unless `debug` (dev, the `clientDebug` serve option, or `MOCHI_CLIENT_DEBUG=1`) is set.
+export function clientBuildFeatures(debug: boolean): ('MOCHI_CLIENT' | 'MOCHI_DEBUG')[] {
+  return debug ? ['MOCHI_CLIENT', 'MOCHI_DEBUG'] : ['MOCHI_CLIENT'];
+}
+
 // Narrow enough that the handler runs for a handful of specifiers per build; a
 // user file that happens to share one of these basenames falls through to normal
 // resolution below.

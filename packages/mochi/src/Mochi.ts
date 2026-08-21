@@ -441,6 +441,7 @@ export class Mochi {
     const warmupEnabled = resolveWarmupEnabled(options.warmup, development);
     const debugBarEnabled = development && (options.debugBar ?? true);
     const liveReloadEnabled = options.liveReload ?? development;
+    const clientDebug = development || (options.clientDebug ?? false) || process.env.MOCHI_CLIENT_DEBUG === '1';
     const middleware = options.handle;
     const protectionEnabled = options.protection?.enabled === true;
     const baseOutDir = options.outDir ?? './.mochi';
@@ -511,6 +512,7 @@ export class Mochi {
       registry = new ComponentRegistry({
         development,
         debugBar: options.debugBar,
+        clientDebug: options.clientDebug,
         outDir,
         assetPrefix: options.assetPrefix,
         svelteConfig,
@@ -627,8 +629,8 @@ export class Mochi {
 
     // Prod-with-manifest restores this from disk (baked by `build()`); otherwise
     // build it on demand. LiveReload is dev-only, so it's never prebuilt.
-    const serverIslandClientJs = registry.serverIslandClientJs ?? (await buildInlineWebComponent('./web-components/ServerIsland.ts'));
-    const liveReloadClientJs = liveReloadEnabled ? await buildInlineWebComponent('./web-components/LiveReload.ts') : '';
+    const serverIslandClientJs = registry.serverIslandClientJs ?? (await buildInlineWebComponent('./web-components/ServerIsland.ts', { debug: clientDebug }));
+    const liveReloadClientJs = liveReloadEnabled ? await buildInlineWebComponent('./web-components/LiveReload.ts', { debug: clientDebug }) : '';
 
     // Precompute request-invariant shell fragments once; `getTemplate` reads the
     // live `shellTemplate` so dev shell edits (reloadShell) are picked up.
