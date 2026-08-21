@@ -4,7 +4,7 @@ import { feature } from 'bun:bundle';
 import { hydrate, mount, unmount } from 'svelte';
 import type { Component } from 'svelte';
 import { parse as devalueParse } from 'devalue';
-import { isDev, logger } from 'mochi-framework';
+import { logger } from 'mochi-framework';
 import './IslandFailure';
 import { islandFailureStub } from './islandFailureStub';
 import { observeVisible } from './sharedVisibilityObserver';
@@ -62,7 +62,7 @@ class HydratableIsland extends HTMLElement {
       // CSS load, or `hydrate()` itself before the boundary takes effect.
       const e = err instanceof Error ? err : new Error(String(err));
       logger.error(`Island "${name}" failed to hydrate:`, e);
-      this.innerHTML = islandFailureStub(name ?? '', isDev ? e.message : undefined);
+      this.innerHTML = islandFailureStub(name ?? '', feature('MOCHI_DEBUG') ? e.message : undefined);
     }
   }
 
@@ -146,7 +146,7 @@ class HydratableIsland extends HTMLElement {
     const transformError = (err: unknown): Error => {
       const e = err instanceof Error ? err : new Error(String(err));
       logger.error(`Island "${name}" runtime error:`, e);
-      const out = isDev ? e : new Error('Island error');
+      const out = feature('MOCHI_DEBUG') ? e : new Error('Island error');
       Object.defineProperty(out, 'message', {
         value: out.message,
         enumerable: true,
