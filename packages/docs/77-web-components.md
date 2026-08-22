@@ -1,21 +1,25 @@
 ---
 title: 'Web Components'
 slug: web-components
-description: 'Use custom elements — local or from npm — by registering them inside a hydratable island.'
+description: 'Use custom elements — local or from npm — by registering them inside a hydratable island with importWebComponent().'
 ---
 
 <script>
   import Callout from './_components/Callout.svelte';
+  import SeeItInAction from './_components/SeeItInAction.svelte';
+  import VersionNote from './_components/VersionNote.svelte';
 </script>
 
 ## Web Components
+
+<VersionNote since="0.10.0" message="importWebComponent() was added in 0.10.0." />
 
 Custom elements work in Mochi. Svelte renders unknown hyphenated tags verbatim during SSR, and Bun bundles whatever a hydratable island imports. A custom element just needs its `customElements.define()` to run on the client — so register it inside a hydratable island.
 
 A local element is plain DOM, defined in its own module:
 
 ```ts
-// click-counter.ts
+// file: src/click-counter.ts
 class ClickCounter extends HTMLElement {
   connectedCallback() {
     this.attachShadow({ mode: 'open' }).innerHTML = '<button>Click</button>';
@@ -31,6 +35,7 @@ if (!customElements.get('click-counter')) {
 Register it — and any element from npm — with `importWebComponent()` inside the island, then use the tags in markup:
 
 ```svelte
+<!-- file: src/Widgets.svelte -->
 <script>
   import { importWebComponent } from 'mochi-framework';
 
@@ -44,7 +49,10 @@ Register it — and any element from npm — with `importWebComponent()` inside 
 
 Mark the island `mochi:hydrate` from the page. After hydration the registrations run, the `define()` calls fire, and the server-rendered tags upgrade in place. Registration is global, so a custom element registered by one island upgrades matching tags anywhere on the page.
 
-See the [Web Components demo](/demos/web-components/).
+```svelte
+<!-- file: src/Page.svelte -->
+<Widgets mochi:hydrate />
+```
 
 <Callout type="info">
 
@@ -54,6 +62,12 @@ Why `importWebComponent()` and not a plain `import`? A custom-element module ref
 
 <Callout type="info">
 
-This only handles **registration** — it doesn't render shadow DOM on the server. Give custom elements meaningful light-DOM fallback content (e.g. `<relative-time …>Jan 1, 2026</relative-time>`). That's what renders during SSR, before the island hydrates and the element upgrades.
+This only handles **registration** — it does not render shadow DOM on the server. Give custom elements meaningful light-DOM fallback content (e.g. `<relative-time …>Jan 1, 2026</relative-time>`). That is what renders during SSR, before the island hydrates and the element upgrades.
 
 </Callout>
+
+To skip SSR for the element entirely — no fallback markup, nothing rendered until the browser mounts — put it in a [`mochi:clientOnly`](/docs/client-only/) component instead.
+
+<SeeItInAction
+demos={[{ href: "/demos/web-components/", title: "Web Components", hook: "Custom elements — both local and from an npm package — registered inside a hydratable island and upgraded on the client." }]}
+/>

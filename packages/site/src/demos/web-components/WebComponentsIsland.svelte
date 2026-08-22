@@ -1,10 +1,8 @@
 <script lang="ts">
   import { importWebComponent } from 'mochi-framework';
 
-  // Mochi rewrites these at build time: a no-op on the server (so the modules,
-  // which reference browser-only HTMLElement at eval time, never load during SSR)
-  // and a dynamic import on the client (so customElements.define() runs on
-  // hydration and the server-rendered tags upgrade in place).
+  // Rewritten at build time to a no-op on the server, so these browser-only
+  // modules never load during SSR, and to a dynamic import on the client.
   await importWebComponent('./click-counter.ts'); // local custom element
   await importWebComponent('@github/relative-time-element'); // external, from npm
 </script>

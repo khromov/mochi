@@ -26,26 +26,31 @@
 
   const mergedMetaTags = $derived(mergeMetaTags(metaTags));
 
-  // These demos render their own <ViewTransitions>. Match each route and its
-  // subpaths exactly so an unrelated future demo sharing the prefix (e.g.
-  // /demos/view-transitions-foo) doesn't lose the site instance.
+  // Nav islands hydrate and serialize their props into the page; drop `.files` (nav never
+  // reads it) since crawlers otherwise mine its relative paths as URLs, producing phantom 404s.
+  const navDemos = demos.map(({ files: _files, ...rest }) => rest);
+
+  // Match each route and its subpaths exactly so a future demo sharing the prefix
+  // (e.g. /demos/view-transitions-foo) doesn't steal these demos' own <ViewTransitions>.
   const ownsViewTransitions = $derived(['/demos/view-transitions', '/demos/custom-transitions'].some((base) => url.pathname === base || url.pathname.startsWith(`${base}/`)));
 </script>
 
 <MetaTags {...mergedMetaTags} />
 
 {#if !ownsViewTransitions}
-  <ViewTransitions type="scale" keepElementSelectors={['.banner', '.sidebar', '.mochi-debug-bar-root', '.hero', '.hero-minimal']} />
+  <ViewTransitions type="fade" regions="mochi-body" />
 {/if}
 
 <Banner />
-<MobileNav mochi:hydrate {docsNav} {demos} {currentSlug} />
+<MobileNav mochi:hydrate {docsNav} demos={navDemos} {currentSlug} />
 <CodeBlockCopy mochi:hydrate />
 
 <div class="page">
-  <Sidebar mochi:hydrate {docsNav} {demos} {currentSlug} />
+  <Sidebar mochi:hydrate {docsNav} demos={navDemos} {currentSlug} />
 
-  <div class="main-col">
+  <!-- Naming `.body` confines the transition to it, leaving banner/sidebar/debug bar frozen;
+       gate it off on demo pages so their own transitions own the whole subtree. -->
+  <div class="main-col" class:scope-view-transition={!ownsViewTransitions}>
     {@render children()}
   </div>
 </div>
@@ -61,6 +66,10 @@
     display: flex;
     flex-direction: column;
     min-width: 0;
+  }
+
+  .main-col.scope-view-transition :global(.body) {
+    view-transition-name: mochi-body;
   }
 
   @media (max-width: 768px) {

@@ -1,5 +1,5 @@
 <!doctype html>
-<html>
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -73,12 +73,8 @@
         --admin-font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
       }
 
-      /* Dark-mode admin tokens. Applied via:
-         (a) `prefers-color-scheme: dark` when no explicit user choice is stored
-         (b) `:root[data-theme='dark']` when the user toggles dark explicitly
-         The `:not([data-theme='light'])` exclusion lets users force light mode
-         on dark-preferring systems. HN tokens are unaffected (HN intentionally
-         stays bright). */
+      /* Dark-mode admin tokens, applied via `prefers-color-scheme` or an explicit `data-theme='dark'`; the `:not([data-theme='light'])` exclusion lets users force light mode on dark-preferring systems.
+         HN tokens are unaffected since HN intentionally stays bright. */
       @media (prefers-color-scheme: dark) {
         :root:not([data-theme='light']) {
           --admin-bg: #171914;
@@ -138,11 +134,7 @@
         --admin-badge-danger-text: #e9a89a;
       }
 
-      /* Per-app baseline styles (universal reset, body font, body background)
-         live in the app's layout component (HNLayout.svelte, AdminLayout.svelte,
-         TodoWrapper.svelte) so each page can opt in to its own normalization.
-         The shell only ships inert tokens above so a page like /todo can render
-         under Tailwind without inheriting any global resets. */
+      /* Per-app baseline styles live in each app's layout component so pages can opt into their own normalization; the shell only ships inert tokens so /todo can render under Tailwind without inheriting a global reset. */
 
       .gh-corner {
         position: fixed;
@@ -204,6 +196,6 @@
         ></path>
       </svg>
     </a>
-    {{mochi.script}} {{mochi.analytics}}
+    {{mochi.script}}
   </body>
 </html>

@@ -48,6 +48,13 @@
     return base + (HYDRATE_SUFFIX[alsoHydrate ?? ''] ?? '');
   }
 
+  // Island `component-name`s are `<localName>_<base36 hash of resolved path>` (see `islandIdentity` in
+  // svelteAstPreprocess.ts). The framework appends exactly one such segment, so dropping the trailing run of
+  // lowercase/digits recovers the author's name for a friendly label even when that name contains underscores.
+  function displayNameOf(componentName: string): string {
+    return componentName.replace(/_[0-9a-z]+$/, '') || componentName;
+  }
+
   function scanIslands() {
     const result: IslandInfo[] = [];
     const hydratable = document.querySelectorAll('mochi-hydratable-island');
@@ -55,11 +62,16 @@
 
     hydratable.forEach((element) => {
       const name = element.getAttribute('component-name') ?? 'unknown';
+      // The server-island fetch wraps its content in a `<mochi-hydratable-island>` under the same component-name, which
+      // the server-island entry already represents, so that realized child is skipped. Matching on `also-hydrate` plus
+      // the name keeps a genuinely separate `mochi:hydrate` child nested in a plain `mochi:defer` island listed.
+      const host = element.closest('mochi-server-island');
+      if (host?.getAttribute('also-hydrate') && host.getAttribute('component-name') === name) {
+        return;
+      }
       const mode = element.getAttribute('hydrate-on') === 'visible' ? 'mochi:hydrate:visible' : 'mochi:hydrate';
-      // Props ride in a <script type="application/json" id="<propsRef>"> block
-      // emitted just before the island. The block carries `data-shared` only
-      // when >=2 islands reuse the same payload. The server-island also-hydrate
-      // path inlines `props=...` directly, so fall back to that attribute.
+      // Props ride in a `<script type="application/json">` block emitted just before the island, carrying `data-shared`
+      // only when two or more islands reuse the payload. The also-hydrate path inlines `props=...`, hence the fallback.
       const propsRef = element.getAttribute('props-ref');
       let rawProps: string | null;
       let shared = false;
@@ -74,6 +86,7 @@
       result.push({
         element: element as HTMLElement,
         name,
+        displayName: displayNameOf(name),
         type: 'hydrated',
         mode,
         propsSize,
@@ -93,6 +106,7 @@
       result.push({
         element: element as HTMLElement,
         name,
+        displayName: displayNameOf(name),
         type: 'server',
         mode,
         propsSize,

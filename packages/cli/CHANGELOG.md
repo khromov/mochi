@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.3.1](https://github.com/khromov/mochi/compare/create-mochi-v0.3.0...create-mochi-v0.3.1) (2026-07-30)
+
+
+### Bug Fixes
+
+* **cli:** derive svelte-check patch wiring from the downloaded template ([#229](https://github.com/khromov/mochi/issues/229)) ([a55bb45](https://github.com/khromov/mochi/commit/a55bb45ceaafff815fa73c5ae07bc53072ffdc8b))
+
+## [0.3.0](https://github.com/khromov/mochi/compare/create-mochi-v0.2.5...create-mochi-v0.3.0) (2026-07-21)
+
+
+### Features
+
+* add signed image-resize API with stale-while-revalidate cache ([#65](https://github.com/khromov/mochi/issues/65)) ([d1fb6b6](https://github.com/khromov/mochi/commit/d1fb6b68ae185386ad266b5e437a716a2b0e02d4))
+
+
+### Bug Fixes
+
+* resolve validated bugs, security issues & dead code from framework review ([#137](https://github.com/khromov/mochi/issues/137)) ([373e31a](https://github.com/khromov/mochi/commit/373e31a596fc9e3f6f52952fadbcad298a7e6703))
+
+## [0.2.5](https://github.com/khromov/mochi/compare/create-mochi-v0.2.4...create-mochi-v0.2.5) (2026-06-16)
+
+
+### Bug Fixes
+
+* **cli:** reference both svelte-check patch versions in scaffolded projects ([#106](https://github.com/khromov/mochi/issues/106)) ([b7c8aed](https://github.com/khromov/mochi/commit/b7c8aedcd9648c0cf9cf5275da233567c3fa872c))
+
 ## [0.2.4](https://github.com/khromov/mochi/compare/create-mochi-v0.2.3...create-mochi-v0.2.4) (2026-06-07)
 
 

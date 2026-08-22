@@ -1,6 +1,7 @@
 <script>
   import { url } from 'mochi-framework';
   import CodeViewer from './CodeViewer.svelte';
+  import ViewSourceLink from './ViewSourceLink.svelte';
   import PageShell from './PageShell.svelte';
   import ReadmeCopy from './ReadmeCopy.svelte';
   import { demoIconFor } from '../lib/demoIcons';
@@ -11,10 +12,19 @@
 
   const docsNav = await buildDocsNav();
 
-  // Internal demos expose their source next to the demo page at `${href}llms.txt`,
-  // matching the /llms.json index derivation.
+  // Internal demos expose their source next to the demo page at `${href}llms.txt`.
   const current = demos.find((d) => d.title === title);
   const demoHref = current?.href.startsWith('/') ? current.href : undefined;
+
+  // Match by URL, not title — a demo's heading can differ from its registry title,
+  // and some demos route to sub-paths, so prefix-match the trailing-slashed href.
+  const sourceDemo = demos.find((d) => d.href.startsWith('/') && url.pathname.startsWith(d.href));
+  const sourcePaths = sourceDemo?.sourcePaths ?? (sourceDemo?.slug ? [`packages/site/src/demos/${sourceDemo.slug}`] : []);
+  // Several source folders need disambiguation by path; one alone doesn't.
+  const sourceLinks = sourcePaths.map((path) => ({
+    path,
+    label: sourcePaths.length > 1 ? `View ${path.replace('packages/site/src/', '')}/ on GitHub` : undefined,
+  }));
 
   const moreDemos = demos
     .filter((d) => d.title !== title)
@@ -56,7 +66,7 @@
         {#if demoIconFor[title]}
           {@const meta = demoIconFor[title]}
           {@const Icon = meta.icon}
-          <span class="demo-icon" title={meta.label} aria-label={meta.label}>
+          <span class="demo-icon" title={meta.label} aria-hidden="true">
             <Icon size={16} strokeWidth={1.6} />
           </span>
         {/if}
@@ -67,6 +77,13 @@
         {@render children()}
       </div>
       {#if sources && sources.length > 0}
+        {#if sourceLinks.length > 0}
+          <div class="source-links">
+            {#each sourceLinks as link (link.path)}
+              <ViewSourceLink path={link.path} label={link.label} />
+            {/each}
+          </div>
+        {/if}
         <CodeViewer {sources} mochi:hydrate />
       {/if}
     </div>
@@ -209,6 +226,15 @@
     }
   }
 
+  .source-links {
+    display: flex;
+    flex-wrap: wrap;
+    align-self: flex-start;
+    gap: 0.2rem 1rem;
+    /* Pull the links closer to the code viewer below (parent flex uses gap: 1rem). */
+    margin-bottom: -1.25rem;
+  }
+
   .card-header {
     display: flex;
     align-items: center;
@@ -297,14 +323,14 @@
     text-decoration: none;
     transition:
       box-shadow 0.15s ease,
+      border-color 0.15s ease,
       transform 0.15s ease;
   }
 
   .more-card:hover {
     transform: translateY(-2px);
-    box-shadow:
-      inset 3px 0 0 var(--accent),
-      var(--shadow-md);
+    border-color: var(--accent);
+    box-shadow: var(--shadow-md);
   }
 
   .mc-icon {

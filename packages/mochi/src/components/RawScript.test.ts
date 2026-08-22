@@ -1,9 +1,13 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { ComponentRegistry } from '../ComponentRegistry';
+import { ComponentRegistry } from '../compiler/ComponentRegistry';
+import { HYDRATABLE_CONTEXT_KEY } from '../islands/isHydratable';
 
-const COMPONENT_PATH = path.join(import.meta.dir, 'RawScript.svelte');
+const COMPONENT_PATH = path.join(import.meta.dir, 'RawScript.server.svelte');
+
+// Multi-line with HTML-sensitive characters so a verbatim check catches escaping, wrapping, or truncation.
+const SCRIPT_CONTENT = 'console.log("hello from raw");\nif (1 < 2 && "q") console.log(\'<b>&amp;</b>\');\n';
 
 describe('RawScript', () => {
   let outDir: string;
@@ -13,7 +17,7 @@ describe('RawScript', () => {
   beforeAll(async () => {
     outDir = mkdtempSync(path.join(import.meta.dir, '..', '..', '.mochi-rawscript-test-'));
     scriptFile = path.join(outDir, 'snippet.js');
-    writeFileSync(scriptFile, 'console.log("hello from raw");\n');
+    writeFileSync(scriptFile, SCRIPT_CONTENT);
     registry = new ComponentRegistry({ development: true, outDir });
     await registry.compile(COMPONENT_PATH);
   });
@@ -24,7 +28,7 @@ describe('RawScript', () => {
 
   test('inlines the file contents verbatim into the body (absolute src)', async () => {
     const { body } = await registry.renderComponent(COMPONENT_PATH, { src: scriptFile });
-    expect(body).toContain('console.log("hello from raw");');
+    expect(body).toBe(SCRIPT_CONTENT);
   });
 
   test('resolves a relative src against the working directory', async () => {
@@ -51,6 +55,7 @@ describe('RawScript', () => {
   });
 
   test('refuses to hydrate', async () => {
-    await expect(registry.renderComponent(COMPONENT_PATH, { src: scriptFile, isHydratable: true })).rejects.toThrow('must not be hydrated');
+    const context = new Map<unknown, unknown>([[HYDRATABLE_CONTEXT_KEY, true]]);
+    await expect(registry.renderComponent(COMPONENT_PATH, { src: scriptFile }, { context })).rejects.toThrow('must not be hydrated');
   });
 });

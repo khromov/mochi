@@ -1,5 +1,5 @@
 <script lang="ts">
-  import Icon from './Icon.svelte';
+  import Icon from '../components/Icon.svelte';
   let props = $props();
   const iconNode = [
     ['circle', { cx: '12', cy: '12', r: '10' }],
