@@ -2033,8 +2033,10 @@ export class Mochi {
       }) as typeof server.stop;
     }
 
-    // Installed once the server is up, so a boot that throws never leaves a listener behind on a dead process.
-    if (options.memoryPressure ?? true) {
+    // Installed once the server is up, so a boot that throws never leaves a listener behind on a dead process; never
+    // in development, where the compile-heavy boot hair-triggers the OS signal (Linux reports only 'critical') and the
+    // reclaim would be a spurious no-op.
+    if (!development && (options.memoryPressure ?? true)) {
       installMemoryPressureHandler();
     }
 

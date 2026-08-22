@@ -38,6 +38,20 @@ describe('respondToPressure', () => {
     expect(store.getItem('fresh')).toBe(2);
   });
 
+  // The broadcast lets non-cache subsystems react; it carries the raw level and fires regardless of any responders.
+  test("emits 'memory:pressure' with the level for other subsystems", () => {
+    const seen: Array<'warning' | 'critical'> = [];
+    const listener = (e: { level: 'warning' | 'critical' }) => seen.push(e.level);
+    mochiEvents.on('memory:pressure', listener);
+    try {
+      respondToPressure('critical');
+      respondToPressure('warning');
+    } finally {
+      mochiEvents.off('memory:pressure', listener);
+    }
+    expect(seen).toEqual(['critical', 'warning']);
+  });
+
   test("'warning' on a store with no maxAge keeps everything (sweep is a no-op there)", () => {
     const store = new MemoryStorage();
     fill(store, 3);

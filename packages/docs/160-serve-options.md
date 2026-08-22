@@ -63,9 +63,9 @@ In production (`development: false`), prebuilt JS/CSS bundles served from `asset
 - `logger` — built-in request logger. Default: `{ enabled: true }`.
 - `publicDir` — directory served as static assets. Default: `./public`. Scanned from disk at startup in every mode, so it must ship with a production deploy.
 - `staticDirs` — extra directory trees mounted under a URL prefix. See [Static directories](#static-directories).
-- `memoryPressure` — drain in-memory caches when the OS reports low memory. Default: `true`. See [Cache](/docs/cache/#memory-pressure).
+- `memoryPressure` — drain in-memory caches when the OS reports low memory. Default: `true`; always off in development. See [Cache](/docs/cache/#memory-pressure).
 - `cron` — durable scheduled jobs to start with the server, from `Mochi.cron(name, schedule, handler)`. See [Scheduled jobs](/docs/scheduled-jobs/).
-- `cronStorage` — where the cron scheduler stores schedules and jobs. Defaults to `memory`, independent of `queueStorage`. See [Scheduled jobs](/docs/scheduled-jobs/#storage).
+- `cronStorage` — where the cron scheduler stores schedules and jobs. Defaults to `memory`. See [Scheduled jobs](/docs/scheduled-jobs/#storage).
 - `outDir` — base directory for build artifacts and dev cache. Default: `./.mochi`.
 - `assetPrefix` — URL prefix for framework client assets and the server-island endpoint. Must start with `/`, must not be `/` or end with `/`. Default: `/_mochi`.
 - `additionalWatchPaths` — extra dev-mode watcher paths added to `src` and `public`. Default: `[]`.
@@ -115,12 +115,6 @@ The differences that matter:
 | New files                 | need a dev-watcher rescan       | live immediately        |
 
 Bun clamps each mount: an encoded separator (`%2F`), a traversal segment (`..`) and empty path segments are all rejected, and on Linux the file is opened with `openat2(RESOLVE_IN_ROOT)` so a symlink inside the directory cannot escape it.
-
-<Callout type="warning">
-
-The site root (`"/"`) cannot be mounted — it would register the global catch-all and answer every otherwise-unmatched request with Bun's 404, so your error page, `fetch` fallback and `/_mochi/*` assets would stop working. `Mochi.serve()` rejects it at boot. Use `publicDir` to serve files at the site root.
-
-</Callout>
 
 ### Raw Bun.serve options
 

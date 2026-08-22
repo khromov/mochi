@@ -50,6 +50,9 @@ function liveResponders(): PressureResponder[] {
  */
 export function respondToPressure(level: MemoryPressureLevel): { level: MemoryPressureLevel; removed: number; caches: number; durationMs: number } {
   const start = Date.now();
+  // Broadcast the raw signal before the cache drain, so subsystems that aren't registered caches (connection pools,
+  // worker queues, user code) can reclaim their own resources too. The drain's aggregate rides `cache:pressure` below.
+  mochiEvents.emit('memory:pressure', { level });
   const responders = liveResponders();
   let removed = 0;
   for (const responder of responders) {

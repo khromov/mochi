@@ -103,6 +103,13 @@ export interface MochiCacheDeleteEvent {
   key: string;
 }
 
+/** Emitted the moment the OS reports low memory, before Mochi drains its caches — subscribe to give other resources
+ * back (idle connections, worker pools). The cache drain's own result rides the separate `cache:pressure`. */
+export interface MochiMemoryPressureEvent {
+  /** `'critical'` means the OS is about to start killing processes; only macOS also reports `'warning'`. */
+  level: 'warning' | 'critical';
+}
+
 /** Emitted when the OS reports low memory and Mochi drains its in-memory caches in response. */
 export interface MochiCachePressureEvent {
   /** `'critical'` means the OS is about to start killing processes; only macOS also reports `'warning'`. */
@@ -430,6 +437,7 @@ export type MochiEventMap = {
   'cache:inflight:deferred': MochiCacheInflightDeferredEvent;
   'cache:delete': MochiCacheDeleteEvent;
   'cache:sweep': MochiCacheSweepEvent;
+  'memory:pressure': MochiMemoryPressureEvent;
   'cache:pressure': MochiCachePressureEvent;
   'image:cache-sweep': MochiImageCacheSweepEvent;
   'image:store': MochiImageStoreEvent;

@@ -209,6 +209,20 @@ emits one `cache:pressure` event and one `consoleLogger()` warning.
 Only `MemoryStorage` participates — it is the backend that holds bytes in RAM. `FileStorage` is disk-backed, so
 dropping it would not help. Turn the whole thing off with `Mochi.serve({ memoryPressure: false })`.
 
+Reclamation runs in production only. In development (`development: true`) it is always disabled — the compile-heavy
+boot hair-triggers the OS signal (Linux reports only `'critical'`), so the reclaim would be a spurious no-op.
+
+The raw signal is also broadcast as a `memory:pressure` event (payload `{ level }`) the moment it arrives, before the
+cache drain. Subscribe to reclaim resources Mochi doesn't own — idle connection pools, worker queues, your own maps:
+
+```ts
+import { mochiEvents } from 'mochi-framework';
+
+mochiEvents.on('memory:pressure', ({ level }) => {
+  if (level === 'critical') pool.drainIdle();
+});
+```
+
 ```ts
 // file: src/index.ts
 await Mochi.serve({ memoryPressure: false, routes });
