@@ -7,9 +7,22 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Cancel superseded runs for the same PR/branch so a new push doesn't leave the
+# old run churning (or hanging) on stale code.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+# The test worker pool caps at 6 locally to keep dev machines usable; CI has the cores to spare, so use them all.
+env:
+  MOCHI_MAX_CONCURRENCY: max
+
 jobs:
   test-matrix:
     runs-on: ${{ matrix.os }}
+    # Fail fast on a hung step instead of burning the 6h account default (a
+    # Windows Shiki-engine hang once ran for 6h before being cancelled).
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -23,6 +36,14 @@ jobs:
         uses: oven-sh/setup-bun@v2
         with:
           bun-version-file: .bun-version
+
+      - name: Cache Bun dependencies
+        uses: actions/cache@v6
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
 
       - name: Install dependencies
         run: bun install
@@ -41,6 +62,11 @@ jobs:
 
       - name: Run tests
         run: bun run test
+
+      # rm -rf in the clean scripts is a Bun Shell builtin, cross-platform only through `bun run`; the matrix never runs
+      # clean otherwise, so this is the sole Windows coverage for it.
+      - name: Verify clean scripts
+        run: bun .github/scripts/verify-clean-scripts.ts
 
   test:
     if: always()

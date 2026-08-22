@@ -1,5 +1,135 @@
 # Changelog
 
+## [0.9.1](https://github.com/khromov/mochi/compare/mochi-framework-v0.9.0...mochi-framework-v0.9.1) (2026-07-30)
+
+
+### Bug Fixes
+
+* **cache:** run one FileStorage sweeper per directory ([#227](https://github.com/khromov/mochi/issues/227)) ([45f2c7b](https://github.com/khromov/mochi/commit/45f2c7b6ab3153a41d2a5db14b33b0f97e6561b6))
+
+## [0.9.0](https://github.com/khromov/mochi/compare/mochi-framework-v0.8.2...mochi-framework-v0.9.0) (2026-07-28)
+
+
+### ⚠ BREAKING CHANGES
+
+* **build:** precompile src/emails templates into the manifest - email templates must now be in src/emails ([#220](https://github.com/khromov/mochi/issues/220))
+* relocatable build output — manifest v2, publicDir served from disk ([#170](https://github.com/khromov/mochi/issues/170))
+
+### Features
+
+* add optional rsvelte compiler backend ([#197](https://github.com/khromov/mochi/issues/197)) ([df9aede](https://github.com/khromov/mochi/commit/df9aede35eb49cc9ff74a86ef867939bb84b5ccc))
+* **build:** precompile src/emails templates into the manifest - email templates must now be in src/emails ([#220](https://github.com/khromov/mochi/issues/220)) ([000e193](https://github.com/khromov/mochi/commit/000e193233227f49484d99d5076b0ceb9a2ab13b))
+* **captcha:** fix hang, sync PoW, a11y/CLS, configurable bits/budget ([#199](https://github.com/khromov/mochi/issues/199)) ([5028c6b](https://github.com/khromov/mochi/commit/5028c6b616119c0cd647715050cb982ac0b7f6d5))
+* **extensions:** crash when server-only internals reach the client ([#206](https://github.com/khromov/mochi/issues/206)) ([ad496ee](https://github.com/khromov/mochi/commit/ad496eec94ee43127ef2b6d2c38cb44f3b313156))
+* memlab heap-snapshot analyzer + property-based fuzzing suite ([#203](https://github.com/khromov/mochi/issues/203)) ([49b3c85](https://github.com/khromov/mochi/commit/49b3c857e0e1635ca1c68a9918ae5d548e80c767))
+* relocatable build output — manifest v2, publicDir served from disk ([#170](https://github.com/khromov/mochi/issues/170)) ([b31c052](https://github.com/khromov/mochi/commit/b31c05277a10196a8ba73ea74b88268e7a891bc5))
+* request cache ([#202](https://github.com/khromov/mochi/issues/202)) ([9dd20b6](https://github.com/khromov/mochi/commit/9dd20b675b80d8f28176f3c570e7223cf3d34be8))
+* warn at boot when publicDir was non-empty at build time but empty at serve ([#214](https://github.com/khromov/mochi/issues/214)) ([f807d31](https://github.com/khromov/mochi/commit/f807d3141db80f033fc708c9c3a8763ffa55138b))
+
+
+### Bug Fixes
+
+* require svelte-shaker &gt;=0.18.1 so mochi: directives survive shaking ([#221](https://github.com/khromov/mochi/issues/221)) ([f5b4522](https://github.com/khromov/mochi/commit/f5b45224756b2b6431b402a66be3dc9790e83cf1))
+
+
+### Documentation
+
+* **mochi:** slim down over-verbose source comments ([#217](https://github.com/khromov/mochi/issues/217)) ([82b29f6](https://github.com/khromov/mochi/commit/82b29f6bf55b6f978fbe99742a2c3fff831da34d))
+
+## [0.8.2](https://github.com/khromov/mochi/compare/mochi-framework-v0.8.1...mochi-framework-v0.8.2) (2026-07-21)
+
+
+### Bug Fixes
+
+* **email:** stop nodemailer TS7016 leaking from the value-level import ([#194](https://github.com/khromov/mochi/issues/194)) ([9575619](https://github.com/khromov/mochi/commit/9575619a416bc2a21aaddbd99c9fc503f3067f34))
+
+## [0.8.1](https://github.com/khromov/mochi/compare/mochi-framework-v0.8.0...mochi-framework-v0.8.1) (2026-07-21)
+
+
+### Bug Fixes
+
+* **email:** stop leaking a nodemailer TS7016 error into consumers ([#192](https://github.com/khromov/mochi/issues/192)) ([4eb74f2](https://github.com/khromov/mochi/commit/4eb74f2c80e7c886916551680d062048bcb96730))
+
+## [0.8.0](https://github.com/khromov/mochi/compare/mochi-framework-v0.7.0...mochi-framework-v0.8.0) (2026-07-21)
+
+
+### Features
+
+* add mochi:clientOnly and mochi:clientOnly:visible directives for browser-only components ([#89](https://github.com/khromov/mochi/issues/89)) ([5f318dc](https://github.com/khromov/mochi/commit/5f318dcebc052030652947600b181fb02d2143a0))
+* add Mochi.email() transactional mailer ([#140](https://github.com/khromov/mochi/issues/140)) ([58a4850](https://github.com/khromov/mochi/commit/58a485009355e3f3f0b56e4e7e110d820383c556))
+* add signed image-resize API with stale-while-revalidate cache ([#65](https://github.com/khromov/mochi/issues/65)) ([d1fb6b6](https://github.com/khromov/mochi/commit/d1fb6b68ae185386ad266b5e437a716a2b0e02d4))
+* **cli:** add `bunx mochi-framework generate-key` command ([#114](https://github.com/khromov/mochi/issues/114)) ([f47a029](https://github.com/khromov/mochi/commit/f47a029cfc309a3bd2c24ca4fef67917b319262f))
+* **image:** support Vite-style local image imports and filesystem imports ([#169](https://github.com/khromov/mochi/issues/169)) ([33beb89](https://github.com/khromov/mochi/commit/33beb8956786e7a182fe9b9262b0d00324362029))
+* **logging:** remappable console log levels ([#179](https://github.com/khromov/mochi/issues/179)) ([b559717](https://github.com/khromov/mochi/commit/b5597172918b121f0bc383b2c27b005b9992959c))
+* named image sizes — defer all image transforms to the endpoint, captcha ([#144](https://github.com/khromov/mochi/issues/144)) ([e733500](https://github.com/khromov/mochi/commit/e733500255f3ab14d278e72fc8c2d06e2195549e))
+* per-route and global rate limiting via @joint-ops/hitlimit-bun ([#157](https://github.com/khromov/mochi/issues/157)) ([8a51dfd](https://github.com/khromov/mochi/commit/8a51dfdd14d0972a81980ccc743d3a57bab52426))
+* precompile server islands into the build manifest ([#132](https://github.com/khromov/mochi/issues/132)) ([a89cce2](https://github.com/khromov/mochi/commit/a89cce20027b8e733a4592cc6acdd010fb9fa79b))
+* Reword docs and improve trailingSlash ([#116](https://github.com/khromov/mochi/issues/116)) ([7ab4fa7](https://github.com/khromov/mochi/commit/7ab4fa7e079b05a44eead2301ed6421e951195c9))
+* separate dev build cache from production .mochi output ([#130](https://github.com/khromov/mochi/issues/130)) ([1b5f4f6](https://github.com/khromov/mochi/commit/1b5f4f61977a01709a13fe5a3aea4eec09091b31))
+* **support:** store submissions, queue email, add admin inbox ([#174](https://github.com/khromov/mochi/issues/174)) ([a47a9d0](https://github.com/khromov/mochi/commit/a47a9d00a7b5c6efe028afaa765837bfe640f74a))
+* warn on large barrel imports ([#131](https://github.com/khromov/mochi/issues/131)) ([1d1b36c](https://github.com/khromov/mochi/commit/1d1b36c81244234c8303cdf260ea13d32fe631db))
+
+
+### Bug Fixes
+
+* always reconnect the dev live-reload socket ([#178](https://github.com/khromov/mochi/issues/178)) ([ebcf467](https://github.com/khromov/mochi/commit/ebcf4677c345cf1052543e1f4d3ced86bdf977dd))
+* avoid HTMLRewriter onEndTag request-context leak ([#155](https://github.com/khromov/mochi/issues/155)) ([be5e15e](https://github.com/khromov/mochi/commit/be5e15e899451977bad6a4bf31f53538c169e12a))
+* **deps:** update dependencies across the monorepo ([#189](https://github.com/khromov/mochi/issues/189)) ([f220ec5](https://github.com/khromov/mochi/commit/f220ec51f77f2952eafa1bf04075b3fcda3fb63e))
+* force-close connections on shutdown so the process actually exits ([#176](https://github.com/khromov/mochi/issues/176)) ([16c3b2f](https://github.com/khromov/mochi/commit/16c3b2fc64a0307d87d44a6cfa008dbdc140cec0))
+* forward-slash paths in user-facing output on windows ([#163](https://github.com/khromov/mochi/issues/163)) ([98f05a8](https://github.com/khromov/mochi/commit/98f05a895ee51d8385e26cbbb4ff6dcca36c6cc5))
+* fully transpile `<script lang="ts">` in .svelte with Bun ([#128](https://github.com/khromov/mochi/issues/128)) ([d4b9ea0](https://github.com/khromov/mochi/commit/d4b9ea088ba5b9fb949447b4588ce933a3d0f3c7))
+* **logger:** make queue added/completed lines visible at the production log level ([#184](https://github.com/khromov/mochi/issues/184)) ([86ddcb4](https://github.com/khromov/mochi/commit/86ddcb497d5a3c01f81aa03dfa75d634139422c6))
+* make unresolvable island directives a compile error ([#160](https://github.com/khromov/mochi/issues/160)) ([bef2d60](https://github.com/khromov/mochi/commit/bef2d6074161958b6273a139d92d79c83fcc432f))
+* nested islands support — inject CSS for islands inside deferred content and deduplicate the debug bar ([#125](https://github.com/khromov/mochi/issues/125)) ([4044e87](https://github.com/khromov/mochi/commit/4044e87840a546bd58b62717cfabd2a7950af3a8))
+* **queue:** stop falsely failing jobs that run longer than 30 seconds ([#188](https://github.com/khromov/mochi/issues/188)) ([32b5209](https://github.com/khromov/mochi/commit/32b5209cbecb273ed26a0204e872a70d840c4a81))
+* resolve HTML validation warnings (lang, charset position, aria-label) ([#145](https://github.com/khromov/mochi/issues/145)) ([0b21eca](https://github.com/khromov/mochi/commit/0b21ecaaf7aa51e46a0e245b1003dbaceb4a3b9d))
+* resolve validated bugs, security issues & dead code from framework review ([#137](https://github.com/khromov/mochi/issues/137)) ([373e31a](https://github.com/khromov/mochi/commit/373e31a596fc9e3f6f52952fadbcad298a7e6703))
+* workaround eisdir testing bug ([#172](https://github.com/khromov/mochi/issues/172)) ([73b4db4](https://github.com/khromov/mochi/commit/73b4db483e3dff6326e04b93d1118751bf767806))
+
+
+### Performance
+
+* **build:** single client bundle, batched CSS minify, overlapped build steps ([#181](https://github.com/khromov/mochi/issues/181)) ([aac7ea2](https://github.com/khromov/mochi/commit/aac7ea226640337b64c40b301b6f1801a2d83cf0))
+* extract mochi-env virtual modules to plain .js templates, decrease bundle by ~2kb for unused client side imports from mochi-framework ([#162](https://github.com/khromov/mochi/issues/162)) ([a5fd1a7](https://github.com/khromov/mochi/commit/a5fd1a712ced7ab357e91c8f05c145a7ae8e6b22))
+* memoize per-serve() startup work in mochi framework ([#142](https://github.com/khromov/mochi/issues/142)) ([ef00dea](https://github.com/khromov/mochi/commit/ef00dea4ad2dea7d3c6eb72d4ff7cf6f7f1cf8ed))
+* **mochi:** cache compiled component output to speed up dev HMR ([#122](https://github.com/khromov/mochi/issues/122)) ([91420f2](https://github.com/khromov/mochi/commit/91420f2f62913b95b54a020a4d72db68340974a5))
+
+
+### Documentation
+
+* serve doc screenshots through local image imports ([#186](https://github.com/khromov/mochi/issues/186)) ([b54fe8e](https://github.com/khromov/mochi/commit/b54fe8e58a88a0b9f9cadaf793f758654990020e))
+
+
+### Code Refactoring
+
+* core cleanup ([#134](https://github.com/khromov/mochi/issues/134)) ([133c26a](https://github.com/khromov/mochi/commit/133c26a7fd4d58e527e1fbee7f44e53ba22b8fb6))
+* isolate email render via renderDetached primitive ([#149](https://github.com/khromov/mochi/issues/149)) ([8ac8aa6](https://github.com/khromov/mochi/commit/8ac8aa6d9d021188cb6b0739bcaaf7aae551aeaa))
+
+## [0.7.0](https://github.com/khromov/mochi/compare/mochi-framework-v0.6.0...mochi-framework-v0.7.0) (2026-06-16)
+
+
+### Features
+
+* add automatic HEAD request support for all route types ([#76](https://github.com/khromov/mochi/issues/76)) ([925ba6c](https://github.com/khromov/mochi/commit/925ba6cca27d92f8c007c251f0f2ebb0ea72953b))
+* add official mcp server ([47acc11](https://github.com/khromov/mochi/commit/47acc11e7483ca3b81e3fe6d615d50931589b45c))
+* add ViewTransitions and RawScript components (+ view-transitions & custom-transitions demos) ([#66](https://github.com/khromov/mochi/issues/66)) ([7402c28](https://github.com/khromov/mochi/commit/7402c281099feee8c659fd4a6946d0ab45e7af7e))
+* configurable debug bar panels via cogwheel setting ([#87](https://github.com/khromov/mochi/issues/87)) ([b36e224](https://github.com/khromov/mochi/commit/b36e2248b7fde216f058945cc0fb23f8a216d6e1))
+* Mochi skill ([#100](https://github.com/khromov/mochi/issues/100)) ([ae8fea5](https://github.com/khromov/mochi/commit/ae8fea510d7b900a71d26c15ebe6d5132148bd6d))
+* replace islandId auto-prop with native $props.id(), remove nanoid dependency ([#96](https://github.com/khromov/mochi/issues/96)) ([e1236a5](https://github.com/khromov/mochi/commit/e1236a5bc31c5d1edf351c6f0d27bd4ae5e8ec60))
+
+
+### Bug Fixes
+
+* drop @types/negotiator runtime dep via local ambient declaration ([#88](https://github.com/khromov/mochi/issues/88)) ([773d2d0](https://github.com/khromov/mochi/commit/773d2d05cb0532755c20a98aa7221ea13e452ff6))
+* mark shared island props blocks correctly, show actual prop content in debug bar instead of devalue format ([3cda6da](https://github.com/khromov/mochi/commit/3cda6da298b100274254795f4a0a517c82e71373))
+* surface svelte-shaker failures and point users at its tracker ([#80](https://github.com/khromov/mochi/issues/80)) ([41fb9eb](https://github.com/khromov/mochi/commit/41fb9ebf6716e3563a0cfa9ce32c7a42ecd85d02))
+
+
+### Code Refactoring
+
+* replace $props&lt;T&gt;() with annotated let destructuring ([#91](https://github.com/khromov/mochi/issues/91)) ([0304446](https://github.com/khromov/mochi/commit/0304446271e48137b8f136200959fc0be2c8bdeb))
+* replace stale-while-revalidate-cache with inline helper (remove 2 deps) ([#92](https://github.com/khromov/mochi/issues/92)) ([dd33f82](https://github.com/khromov/mochi/commit/dd33f820458556e6aecead8b48451d1ff0efbf00))
+
 ## [0.6.0](https://github.com/khromov/mochi/compare/mochi-framework-v0.5.1...mochi-framework-v0.6.0) (2026-06-07)
 
 

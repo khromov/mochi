@@ -1,5 +1,6 @@
 <script lang="ts">
   import PersistentVideo from './PersistentVideo.svelte';
+  import ViewTransitionFirefoxNote from '../../components/ViewTransitionFirefoxNote.svelte';
   import { TRANSITIONS, type TransitionType } from './shared';
 
   let { page, type }: { page: 1 | 2; type: TransitionType } = $props();
@@ -14,6 +15,8 @@
   <p>Each navigation is a full page load — the browser animates it with a <code>{type}</code> transition.</p>
   <a class="next" href={`${other}${query}`}>Go to page {page === 1 ? 2 : 1} →</a>
 </div>
+
+<ViewTransitionFirefoxNote />
 
 <div class="picker">
   <span>Transition:</span>
