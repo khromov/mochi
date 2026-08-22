@@ -13,15 +13,12 @@ const sourceUrl = () => `${getRequestContext().url.origin}/demos/image-invalidat
 let generation = 0;
 
 export const routes: Record<string, MochiRouteValue> = {
-  // Random-image source: a fresh random bundled photo on every request.
   '/demos/image-invalidation/source.jpg': Mochi.file(pickImage),
 
   '/demos/image-invalidation': Mochi.page('./src/demos/image-invalidation/ImageInvalidationDemo.svelte', {
     serverProps: () => ({ src: sourceUrl(), generation }),
     actions: {
-      // Hard delete: drop the shared original and cascade to its variants.
-      // Post/Redirect/Get so a refresh doesn't re-submit; the bumped
-      // `generation` rides through serverProps on the GET.
+      // Post/Redirect/Get so a refresh doesn't re-submit; the bumped `generation` rides through serverProps on the GET.
       default: async () => {
         await invalidateImage(sourceUrl(), { hard: true });
         generation++;

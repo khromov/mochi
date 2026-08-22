@@ -7,9 +7,12 @@ description: 'Roll features out to a subset of users with Mochi.feature() — de
 <script>
   import Callout from './_components/Callout.svelte';
   import SeeItInAction from './_components/SeeItInAction.svelte';
+  import VersionNote from './_components/VersionNote.svelte';
 </script>
 
 ## Feature Flags
+
+<VersionNote since="0.10.0" message="Feature flags ship in 0.10.0." />
 
 Declare per-user flags in `Mochi.serve({ features })` and check them anywhere in a request with `Mochi.feature(name)`. Assignment is **deterministic and sticky** — the same user always resolves to the same state — and is carried by a single encrypted, opaque cookie (`mochi_ff`).
 

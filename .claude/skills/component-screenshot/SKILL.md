@@ -8,7 +8,21 @@ user-invocable: true
 
 `/shot/:name` renders one component alone on a bare canvas — no nav, no `DemoPage` chrome, no dev toolbar — so the browser can photograph it. Defaults to 1280x720.
 
-The image comes from the **chrome-devtools MCP**, not from the server: the route returns HTML, you screenshot it. There is no headless browser dependency in this repo and adding one is not the way to do this.
+The route returns HTML, not an image — something has to photograph it. Two ways:
+
+- **`scripts/shoot.ts`** (preferred) — a committed script driving `Bun.WebView`. It boots its own dev server, sizes the viewport, measures the render and refuses to save a bad shot. Repeatable, scriptable, and usable in CI.
+- **The chrome-devtools MCP** — for interactive work, when you want to poke at the page between steps.
+
+```sh
+bun --cwd=packages/site scripts/shoot.ts captcha --out shot.png
+bun --cwd=packages/site scripts/shoot.ts like --w 1280 --h 360 --theme minimal
+```
+
+The script exits non-zero and explains itself rather than writing a wrong image: it checks the viewport matches the requested frame, that the subject is centred, that it fills ~90% of the limiting axis (a miss means `natural` in the registry is wrong), that the island hydrated, and that the console stayed clean. Flags: `--out`, `--w`, `--h`, `--scheme`, `--theme`, `--base` (shoot an already-running server), `--keep-open`.
+
+Glyph coverage still depends on the fonts installed where it runs — a container without an emoji or icon font renders tofu boxes, the same constraint `scripts/bake-og-assets.ts` documents. Check the saved image, don't just trust the exit code.
+
+The rest of this page is the MCP path, and the registry/`natural`/verification guidance that applies to both.
 
 ## The endpoint
 
@@ -154,7 +168,7 @@ Prefer a banner aspect (`?h=360`) for docs. Note a shot is pinned to one scheme,
 
 ## Guardrails
 
-- **The endpoint returns HTML, not PNG.** Don't add `puppeteer`/`playwright` to make it self-contained — nothing in the monorepo has a browser dep, and the MCP already is one.
+- **The endpoint returns HTML, not PNG.** Don't add `puppeteer`/`playwright` — `Bun.WebView` is built into the runtime and `scripts/shoot.ts` already uses it.
 - **Don't reach for a dynamic `<Subject />` component map.** It renders SSR-only and never hydrates. The `{#if}` chain is load-bearing, not clumsiness.
 - **Don't unpin the scheme.** `?scheme` defaults to `light` so a URL yields the same image on every machine; dropping it lets the screenshotting machine's OS dark mode leak into the canvas.
 - **Don't `error()` from the handle.** A throw there is a 500, not a 400 — validate in `serverProps` and keep `readScheme()` non-throwing for the handle.

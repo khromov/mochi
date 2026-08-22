@@ -40,6 +40,8 @@ describe('build precompiles server islands into the manifest', () => {
   });
 
   test('each server-island source path has a standalone components entry whose ssrModule exists', async () => {
+    // Guard against a vacuous pass: an empty manifest would skip the loop entirely.
+    expect(islandPaths.length).toBe(2);
     for (const islandPath of islandPaths) {
       const entry = manifest.components[islandPath];
       expect(entry, `expected manifest.components["${islandPath}"]`).toBeDefined();

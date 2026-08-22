@@ -123,7 +123,7 @@ describe('encryptProps debug bar recording', () => {
     );
   });
 
-  test('does not record when debugBarData is undefined (prod)', () => {
+  test('encrypt round-trips when debugBarData is undefined (prod)', () => {
     installConfig();
     withCtx((ctx) => {
       const json = devalueStringify({ islandId: 'mochi-test-0', x: 1 });
@@ -133,7 +133,19 @@ describe('encryptProps debug bar recording', () => {
     });
   });
 
-  test('does not record when called outside request context', () => {
+  test('does not create a serverProps sink when debugBarData lacks one', () => {
+    installConfig();
+    const ctx = makeCtx();
+    ctx.debugBarData = { route: '/', pathname: '/', params: {} };
+    requestContext.run(ctx, () => {
+      const json = devalueStringify({ islandId: 'mochi-test-0', x: 1 });
+      const token = encryptProps(json, COMP);
+      expect(ctx.debugBarData!.serverProps).toBeUndefined();
+      expect(decryptProps(token, COMP)).toBe(json);
+    });
+  });
+
+  test('encrypt works when called outside a request context', () => {
     installConfig();
     const json = devalueStringify({ islandId: 'mochi-test-0' });
     let token: string | undefined;

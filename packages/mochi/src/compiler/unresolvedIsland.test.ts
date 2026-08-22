@@ -134,6 +134,6 @@ describe('named-export islands', () => {
   });
 
   test('renderComponent throws a descriptive error for a missing export', async () => {
-    expect(requestContext.run(makeCtx(), () => registry.renderComponent(BARREL, {}, { exportName: 'Nope' }))).rejects.toThrow(/no export "Nope"/);
+    await expect(requestContext.run(makeCtx(), () => registry.renderComponent(BARREL, {}, { exportName: 'Nope' }))).rejects.toThrow(/no export "Nope"/);
   });
 });

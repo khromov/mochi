@@ -62,6 +62,7 @@ describe('startImageCacheSweeper', () => {
 
     expect(events.length).toBeGreaterThanOrEqual(1);
     expect(events[0]).toMatchObject({ removedVariants: 3, removedOriginals: 2, removedOther: 1 });
-    expect(events[0]!.durationMs).toBeGreaterThanOrEqual(0);
+    expect(typeof events[0]!.durationMs).toBe('number');
+    expect(Number.isFinite(events[0]!.durationMs)).toBe(true);
   });
 });

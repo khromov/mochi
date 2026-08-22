@@ -3,8 +3,9 @@ import { GlobalRegistrator } from '@happy-dom/global-registrator';
 
 GlobalRegistrator.register({ url: 'http://localhost/' });
 
-import { afterAll, afterEach, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, describe, expect, spyOn, test } from 'bun:test';
 import { enhance } from './enhance.client';
+import { logger } from '../utils/log';
 
 const originalFetch = globalThis.fetch;
 
@@ -103,12 +104,12 @@ describe('enhance attachment', () => {
   test('controller.abort() during in-flight fetch — result handler skipped, AbortError swallowed, onPending(false) still fires', async () => {
     const form = makeForm();
 
-    let signalAbortedAtReject = false;
+    let fetchSignal: AbortSignal | undefined;
     setFetch((_url, init) => {
       const signal = init?.signal as AbortSignal;
+      fetchSignal = signal;
       return new Promise((_resolve, reject) => {
         signal.addEventListener('abort', () => {
-          signalAbortedAtReject = signal.aborted;
           const err = new Error('aborted');
           (err as { name: string }).name = 'AbortError';
           reject(err);
@@ -118,10 +119,12 @@ describe('enhance attachment', () => {
 
     const pendingValues: boolean[] = [];
     let callbackInvoked = false;
+    let submitController: AbortController | undefined;
     const settled = deferred();
 
     const cleanup = attach(form, {
       submit: ({ controller }) => {
+        submitController = controller;
         // Abort once the fetch is in-flight (next macrotask).
         setTimeout(() => controller.abort(), 5);
         return () => {
@@ -140,7 +143,8 @@ describe('enhance attachment', () => {
     await settled.promise;
 
     expect(callbackInvoked).toBe(false);
-    expect(signalAbortedAtReject).toBe(true);
+    // The signal handed to fetch must be the very controller exposed to submit
+    expect(fetchSignal).toBe(submitController!.signal);
     expect(pendingValues).toEqual([true, false]);
     cleanup();
   });
@@ -394,5 +398,82 @@ describe('enhance attachment', () => {
     document.body.appendChild(form);
 
     expect(() => enhance()(form)).toThrow(/method="POST"/);
+  });
+});
+
+describe('error results are always logged', () => {
+  test('a custom callback cannot swallow an error result — logged once, callback still runs', async () => {
+    const form = makeForm();
+    const boom = new TypeError('network down');
+    setFetch(() => Promise.reject(boom));
+    const errorSpy = spyOn(logger, 'error').mockImplementation(() => {});
+
+    let received: unknown;
+    const settled = deferred();
+    const cleanup = attach(form, {
+      submit:
+        () =>
+        ({ result }) => {
+          received = result;
+        },
+      onPending: (v) => {
+        if (!v) {
+          settled.resolve();
+        }
+      },
+    });
+
+    dispatchSubmit(form);
+    await settled.promise;
+
+    expect((received as { type: string }).type).toBe('error');
+    expect(errorSpy.mock.calls.filter(([label]) => label === 'enhance:')).toEqual([['enhance:', boom]]);
+    errorSpy.mockRestore();
+    cleanup();
+  });
+
+  test('the default fallback logs an error result exactly once', async () => {
+    const form = makeForm();
+    setFetch(() => Promise.reject(new TypeError('network down')));
+    const errorSpy = spyOn(logger, 'error').mockImplementation(() => {});
+
+    const settled = deferred();
+    const cleanup = attach(form, {
+      onPending: (v) => {
+        if (!v) {
+          settled.resolve();
+        }
+      },
+    });
+
+    dispatchSubmit(form);
+    await settled.promise;
+
+    expect(errorSpy.mock.calls.filter(([label]) => label === 'enhance:')).toHaveLength(1);
+    errorSpy.mockRestore();
+    cleanup();
+  });
+
+  test('a custom callback calling update() on an error result still logs exactly once', async () => {
+    const form = makeForm();
+    setFetch(() => Promise.reject(new TypeError('network down')));
+    const errorSpy = spyOn(logger, 'error').mockImplementation(() => {});
+
+    const settled = deferred();
+    const cleanup = attach(form, {
+      submit:
+        () =>
+        async ({ update }) => {
+          await update();
+          settled.resolve();
+        },
+    });
+
+    dispatchSubmit(form);
+    await settled.promise;
+
+    expect(errorSpy.mock.calls.filter(([label]) => label === 'enhance:')).toHaveLength(1);
+    errorSpy.mockRestore();
+    cleanup();
   });
 });
