@@ -10,9 +10,14 @@ export interface ResolvedBindOptions {
 }
 
 /** Headers a browser sends identically on every request kind, unlike client hints, which are absent on subresource fetches. */
-export const DEFAULT_BIND_HEADERS = ['accept-language', 'user-agent'];
+export const DEFAULT_BIND_HEADERS: readonly string[] = Object.freeze(['accept-language', 'user-agent']);
 
 const HEADER_TOKEN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
+
+/** RFC 7230 field-name check, also applied to names read back out of a sealed token before they reach `Headers.get()`, which throws on a malformed one. */
+export function isBindHeaderName(name: string): boolean {
+  return HEADER_TOKEN.test(name);
+}
 
 export function resolveBindOptions(input: MochiClientBindOptions | undefined, defaultOn: boolean, label: string): ResolvedBindOptions {
   if (input === false || (input === undefined && !defaultOn)) {
@@ -21,18 +26,18 @@ export function resolveBindOptions(input: MochiClientBindOptions | undefined, de
   if (input === true || input === undefined) {
     return { network: true, headers: [...DEFAULT_BIND_HEADERS] };
   }
-  if (typeof input !== 'object' || Array.isArray(input)) {
+  if (input === null || typeof input !== 'object' || Array.isArray(input)) {
     throw new Error(`${label}: bind must be a boolean or an object with network/headers, got ${JSON.stringify(input)}`);
   }
   if (input.network !== undefined && typeof input.network !== 'boolean') {
     throw new Error(`${label}: bind.network must be a boolean, got ${JSON.stringify(input.network)}`);
   }
-  const rawHeaders = input.headers ?? DEFAULT_BIND_HEADERS;
+  const rawHeaders = input.headers ?? [...DEFAULT_BIND_HEADERS];
   if (!Array.isArray(rawHeaders) || rawHeaders.some((h) => typeof h !== 'string')) {
     throw new Error(`${label}: bind.headers must be an array of header names`);
   }
   for (const h of rawHeaders) {
-    if (!HEADER_TOKEN.test(h)) {
+    if (!isBindHeaderName(h)) {
       throw new Error(`${label}: bind.headers contains an invalid header name ${JSON.stringify(h)}`);
     }
   }

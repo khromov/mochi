@@ -12,9 +12,19 @@ import { PROTECTION_AAD } from './config';
 export const CLEARANCE_DRIFT_ALLOWANCE_MS = 30_000;
 
 /**
+ * How long after minting a clearance may be presented from the *other* address family. Happy Eyeballs can send the
+ * verify POST and the reload that follows it down different families, so the clearance is minted on one and first
+ * presented on the other; the gate then re-mints it against the presenting prefix. Forgiving that for the whole
+ * lifetime would reduce network binding to "any address of the other family" for anyone holding a leaked cookie, so
+ * the allowance covers only the post-verification reload, padded by the same drift the age check tolerates.
+ */
+export const CLEARANCE_FAMILY_FLIP_GRACE_MS = 60_000 + CLEARANCE_DRIFT_ALLOWANCE_MS;
+
+/**
  * Seal a clearance token. Its own AAD keeps captcha challenge tokens and clearances mutually unspendable. The random `n`
  * keeps clearances unique under deterministic AES-SIV, where equal payloads would otherwise yield byte-identical cookies.
- * `iat` is overridable so a re-mint (the family-flip path) preserves the original lifetime instead of extending it.
+ * `iat` is overridable so a re-mint (the family-flip path) preserves the original lifetime instead of extending it —
+ * and, since the flip allowance is measured from `iat`, so that re-minting can never widen the window it rides on.
  */
 export function mintClearanceToken(input: { bits: number; iat?: number; bind: ClientBindHashes | null }): string {
   const payload: Record<string, unknown> = { iat: input.iat ?? Date.now(), bits: input.bits, n: randomBytes(9).toString('base64url') };
@@ -74,9 +84,10 @@ export function checkClearance(
       return { ok: false };
     }
     if (!bindHashEqual(parsed.ph, opts.current.ph)) {
-      // Happy Eyeballs: a dual-stack client can solve over IPv4 and return over IPv6. Only
-      // that direction is forgiven — the caller re-mints bound to the v6 prefix.
-      if (!(parsed.f === 4 && opts.current.f === 6)) {
+      // Only a family change is forgiven, and only while the clearance is fresh enough to be the reload that
+      // follows verification — a same-family prefix change, or a late flip, is a different network either way.
+      const flipped = parsed.f !== 0 && opts.current.f !== 0 && parsed.f !== opts.current.f;
+      if (!flipped || ageMs > CLEARANCE_FAMILY_FLIP_GRACE_MS) {
         return { ok: false };
       }
       familyFlip = true;

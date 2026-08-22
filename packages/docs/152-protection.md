@@ -88,7 +88,9 @@ protection: {
 
 ### Client binding
 
-A clearance is sealed to the client that solved it: the network prefix (`/24` for IPv4, `/64` for IPv6) and a set of key request headers. A cookie replayed from another network or with a different `User-Agent` is silently re-challenged — the interstitial just runs again. The prefixes are wide enough to tolerate CGNAT pools, mobile carriers, and IPv6 privacy extensions; a dual-stack client that solved over IPv4 and returns over IPv6 passes once and gets a fresh clearance bound to its IPv6 prefix.
+A clearance is sealed to the client that solved it: the network prefix (`/24` for IPv4, `/64` for IPv6) and a set of key request headers. A cookie replayed from another network or with a different `User-Agent` is silently re-challenged — the interstitial just runs again. The prefixes are wide enough to tolerate CGNAT pools, mobile carriers, and IPv6 privacy extensions.
+
+A dual-stack client can verify over one address family and load the next page over the other, so for the first minute of its life a clearance is also accepted from the other family, and is then re-bound to the prefix the visitor actually browses from. After that minute the binding is strict in both directions: an address-family change is no more forgiven than any other change of network.
 
 ```ts
 protection: {
@@ -99,7 +101,7 @@ protection: {
 },
 ```
 
-Changing `bind` (or raising `bits`) re-challenges holders of clearances minted under the old config.
+Raising `bits`, enabling `bind`, or adding to it re-challenges holders of clearances minted under the old config. Loosening it does not: the checks run against the _current_ config, so a component you stop binding on simply stops being checked, and clearances already in the wild stay valid until they expire.
 
 <Callout type="info">
 

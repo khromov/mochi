@@ -52,7 +52,9 @@ describe('Mochi.serve({ protection })', () => {
     rmSync(outDir, { recursive: true, force: true });
   });
 
-  async function solveAndVerify(extraHeaders: Record<string, string> = {}): Promise<{ status: number; body: { ok?: boolean; error?: string }; setCookie: string | null }> {
+  async function solveAndVerify(
+    extraHeaders: Record<string, string> = {},
+  ): Promise<{ status: number; body: { ok?: boolean; error?: string }; setCookie: string | null; cacheControl: string | null }> {
     const fields = solveCaptcha(mintCaptcha());
     const form = new FormData();
     form.set('captcha_token', fields.captcha_token);
@@ -62,7 +64,12 @@ describe('Mochi.serve({ protection })', () => {
       body: form,
       headers: { origin: base, ...extraHeaders },
     });
-    return { status: res.status, body: (await res.json()) as { ok?: boolean; error?: string }, setCookie: res.headers.get('Set-Cookie') };
+    return {
+      status: res.status,
+      body: (await res.json()) as { ok?: boolean; error?: string },
+      setCookie: res.headers.get('Set-Cookie'),
+      cacheControl: res.headers.get('Cache-Control'),
+    };
   }
 
   function clearanceCookieFrom(setCookie: string): string {
@@ -160,6 +167,8 @@ describe('Mochi.serve({ protection })', () => {
     expect(verified.setCookie).toContain('HttpOnly');
     expect(verified.setCookie!.toLowerCase()).toContain('samesite=lax');
     expect(verified.setCookie).toContain('Max-Age=14400');
+    // The response carries a credential, so it must never be stored.
+    expect(verified.cacheControl).toBe('no-store');
 
     const cookie = clearanceCookieFrom(verified.setCookie!);
     const page = await fetch(`${base}/members`, { headers: { cookie } });

@@ -4,7 +4,7 @@ import { applyFilter } from '../extensions';
 import { mochiEvents } from '../events';
 import type { MochiCaptchaReason } from '../events';
 import { requestContext } from '../runtime/requestContext';
-import { bindActive, bindHashEqual, computeBindHashes, resolveBindOptions, type MochiClientBindOptions } from '../runtime/clientBind';
+import { bindActive, bindHashEqual, computeBindHashes, isBindHeaderName, resolveBindOptions, type MochiClientBindOptions } from '../runtime/clientBind';
 import { getCaptchaRuntime } from './config';
 import { CAPTCHA_AAD, deriveChain, powInput, leadingZeroBits } from './pow';
 import type { CaptchaResult } from './types';
@@ -35,13 +35,7 @@ export interface MintedCaptcha {
   solveBudgetMs: number;
 }
 
-/**
- * Mint a single-use captcha challenge. Spread the result onto `<MochiCaptcha />`.
- *
- * `bits` is sealed inside the encrypted token, so {@link verifyCaptcha} always
- * checks the difficulty this token was actually minted at — reconfiguring the
- * server can never silently weaken or break tokens already in flight.
- */
+/** The request a token is bound to, for minting or verifying outside a request context. */
 export interface CaptchaBindInputs {
   address: string | null;
   headers: Headers;
@@ -60,6 +54,16 @@ interface SealedBind {
   f?: number;
 }
 
+/**
+ * Mint a single-use captcha challenge. Spread the result onto `<MochiCaptcha />`.
+ *
+ * `bits` is sealed inside the encrypted token, so {@link verifyCaptcha} always
+ * checks the difficulty this token was actually minted at — reconfiguring the
+ * server can never silently weaken or break tokens already in flight.
+ *
+ * `bind` overrides the configured client binding for this token alone, and `bindInputs` supplies the request to bind
+ * to when there is no ambient request context — without either, minting a bound token outside one throws.
+ */
 export function mintCaptcha(options?: { bits?: number; solveBudgetMs?: number; bind?: MochiClientBindOptions; bindInputs?: CaptchaBindInputs }): MintedCaptcha {
   const resolved = getCaptchaRuntime().options;
   const bits = options?.bits ?? resolved.bits;
@@ -121,7 +125,9 @@ export async function verifyCaptcha(
     ({ iat, nonce, bits } = parsed as { iat: number; nonce: string; bits: number });
     if (parsed.b !== undefined) {
       const b = parsed.b as SealedBind;
-      if (typeof b !== 'object' || b === null || !Array.isArray(b.h) || b.h.some((n) => typeof n !== 'string')) {
+      // The names are re-validated, not just type-checked: they go straight to Headers.get(), which throws on a
+      // malformed name, and a token minted by another version or a key-sharing sibling app may carry anything.
+      if (typeof b !== 'object' || b === null || !Array.isArray(b.h) || b.h.some((n) => typeof n !== 'string' || !isBindHeaderName(n))) {
         return reject('malformed');
       }
       sealedBind = b;

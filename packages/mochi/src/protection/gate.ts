@@ -154,6 +154,10 @@ export function createProtectionRuntime(deps: {
     for (const header of options.bind.headers) {
       input.cookies.varyOn(header);
     }
+    // The network half reads the trusted address header, which is just as much an input to the verdict.
+    if (options.bind.network && proxy?.addressHeader) {
+      input.cookies.varyOn(proxy.addressHeader);
+    }
     const current = computeBindHashes(
       { address: getClientAddress(input.request, input.server.requestIP(input.request)?.address ?? null, proxy), headers: input.request.headers },
       options.bind,
@@ -168,8 +172,8 @@ export function createProtectionRuntime(deps: {
     });
     if (check.ok) {
       if (check.familyFlip && current) {
-        // Re-mint bound to the v6 prefix (preserving iat) so later checks are strict again. WS upgrades never
-        // finalize cookies, so there the re-mint is dropped — harmless, the flip allowance re-fires per request.
+        // Re-mint bound to the presenting prefix (preserving iat) so later checks are strict again. WS upgrades
+        // never finalize cookies, so there the re-mint is dropped — harmless, the flip allowance is time-boxed anyway.
         const remainingS = Math.max(1, Math.floor((check.iat + options.maxAgeMs - Date.now()) / 1000));
         input.cookies.set(
           options.cookieName,

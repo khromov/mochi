@@ -1769,7 +1769,8 @@ export class Mochi {
             mintClearanceToken({ bits: protectionOptions.bits, bind: bindHashes }),
             clearanceCookieOptions(Math.floor(protectionOptions.maxAgeMs / 1000), url.protocol === 'https:'),
           );
-          response = Response.json({ ok: true });
+          // Carries the clearance cookie, so it must never be stored — the same rule as the failure branch below.
+          response = Response.json({ ok: true }, { headers: { 'Cache-Control': 'no-store' } });
         } else {
           response = Response.json({ ok: false, error: result.error }, { status: 403, headers: { 'Cache-Control': 'no-store' } });
         }

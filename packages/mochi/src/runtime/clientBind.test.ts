@@ -26,6 +26,12 @@ describe('resolveBindOptions', () => {
     expect(() => resolveBindOptions({ headers: [''] }, true, 'X')).toThrow('invalid header name');
     expect(() => resolveBindOptions({ headers: 'user-agent' as unknown as string[] }, true, 'X')).toThrow('must be an array');
     expect(() => resolveBindOptions([] as unknown as boolean, true, 'X')).toThrow('bind must be a boolean or an object');
+    expect(() => resolveBindOptions(null as unknown as boolean, true, 'X')).toThrow('bind must be a boolean or an object');
+  });
+
+  test('the default header list cannot be mutated through the export', () => {
+    expect(() => (DEFAULT_BIND_HEADERS as string[]).push('x-injected')).toThrow();
+    expect(resolveBindOptions(true, true, 'X').headers).toEqual(['accept-language', 'user-agent']);
   });
 
   test('bindActive reflects whether any component is on', () => {

@@ -56,10 +56,12 @@ export function resolveProtectionOptions(opts: MochiProtectionOptions, fallbackB
 export function protectionBootWarnings(options: {
   csrf?: { checkOrigin?: boolean };
   proxy?: { origin?: string; hostHeader?: string };
-  filters?: { 'csrf:check'?: unknown };
+  filters?: { 'csrf:check'?: unknown; 'serverIsland:secretKey'?: unknown };
 }): string[] {
   const warnings: string[] = [];
-  if (!process.env.MOCHI_KEY) {
+  // A serverIsland:secretKey filter is the documented way to supply the key from a secrets manager, so it makes
+  // clearances just as stable as the env var — warning about MOCHI_KEY there would be plain wrong.
+  if (!process.env.MOCHI_KEY && options.filters?.['serverIsland:secretKey'] === undefined) {
     warnings.push(
       'Protection is enabled without MOCHI_KEY — the clearance key is random per boot, so every restart (and every instance in a multi-instance deploy) invalidates all clearances and re-challenges every visitor. Generate one with `mochi-framework generate-key`.',
     );

@@ -8,12 +8,13 @@ import {
   PROTECTION_AAD,
   PROTECTION_CLEARANCE_COOKIE,
 } from './config';
-import { mintClearanceToken, checkClearance } from './clearance';
+import { mintClearanceToken, checkClearance, CLEARANCE_FAMILY_FLIP_GRACE_MS } from './clearance';
 import { createProtectionRuntime, type ProtectionGateInput } from './gate';
 import type { MochiProtectionKind, ResolvedProtectionOptions } from './types';
 import { encryptPayload } from '../islands/payloadCrypto';
 import { MochiCookieJar } from '../runtime/cookies';
 import { computeBindHashes, resolveBindOptions, DEFAULT_BIND_HEADERS, type ResolvedBindOptions } from '../runtime/clientBind';
+import type { MochiProxyOptions } from '../runtime/proxy';
 import type { ComponentRegistry } from '../compiler/ComponentRegistry';
 
 const GLOBAL_CONFIG_KEY = '__mochi_config__';
@@ -126,6 +127,12 @@ describe('protectionBootWarnings', () => {
     expect(protectionBootWarnings({ proxy: { origin: 'https://example.com' } })).toHaveLength(0);
   });
 
+  test('a serverIsland:secretKey filter silences the key warning, since it supplies a stable key', () => {
+    delete process.env.MOCHI_KEY;
+    const warnings = protectionBootWarnings({ proxy: { origin: 'https://example.com' }, filters: { 'serverIsland:secretKey': () => Buffer.alloc(32) } });
+    expect(warnings).toHaveLength(0);
+  });
+
   test('the CSRF warning is silenced by proxy.hostHeader, checkOrigin: false, or a csrf:check filter', () => {
     process.env.MOCHI_KEY = 'x';
     expect(protectionBootWarnings({ proxy: { hostHeader: 'x-forwarded-host' } })).toHaveLength(0);
@@ -234,16 +241,35 @@ describe('client-bound clearances', () => {
     expect(check(token, bindFor('203.0.113.7', { ...UA, 'user-agent': 'OtherAgent/2.0' })).ok).toBe(false);
   });
 
-  test('a v4-bound clearance presented over IPv6 passes as a family flip', () => {
+  test('a fresh clearance presented over the other family passes as a family flip, either direction', () => {
     installConfig();
-    const token = mintClearanceToken({ bits: 19, bind: bindFor('203.0.113.7', UA) });
-    expect(check(token, bindFor('2001:db8::1', UA))).toMatchObject({ ok: true, familyFlip: true });
+    const v4 = mintClearanceToken({ bits: 19, bind: bindFor('203.0.113.7', UA) });
+    expect(check(v4, bindFor('2001:db8::1', UA))).toMatchObject({ ok: true, familyFlip: true });
+    const v6 = mintClearanceToken({ bits: 19, bind: bindFor('2001:db8::1', UA) });
+    expect(check(v6, bindFor('203.0.113.7', UA))).toMatchObject({ ok: true, familyFlip: true });
   });
 
-  test('the flip is one-directional: a v6-bound clearance presented over IPv4 is refused', () => {
+  test('the flip allowance expires with the grace window, so a leaked cookie cannot ride it', () => {
     installConfig();
-    const token = mintClearanceToken({ bits: 19, bind: bindFor('2001:db8::1', UA) });
-    expect(check(token, bindFor('203.0.113.7', UA)).ok).toBe(false);
+    const iat = Date.now() - CLEARANCE_FAMILY_FLIP_GRACE_MS - 1000;
+    const token = mintClearanceToken({ bits: 19, iat, bind: bindFor('203.0.113.7', UA) });
+    expect(check(token, bindFor('203.0.113.7', UA)).ok).toBe(true);
+    expect(check(token, bindFor('2001:db8::1', UA)).ok).toBe(false);
+    expect(check(token, bindFor('2600:1f18::5', UA)).ok).toBe(false);
+  });
+
+  test('a same-family prefix change is never forgiven, however fresh the clearance', () => {
+    installConfig();
+    const token = mintClearanceToken({ bits: 19, bind: bindFor('203.0.113.7', UA) });
+    expect(check(token, bindFor('198.51.100.9', UA)).ok).toBe(false);
+  });
+
+  test('a flip to or from an unresolvable address is refused', () => {
+    installConfig();
+    const bound = mintClearanceToken({ bits: 19, bind: bindFor('203.0.113.7', UA) });
+    expect(check(bound, bindFor(null, UA)).ok).toBe(false);
+    const unbound = mintClearanceToken({ bits: 19, bind: bindFor(null, UA) });
+    expect(check(unbound, bindFor('2001:db8::1', UA)).ok).toBe(false);
   });
 
   test('a family flip with a changed bound header is still refused', () => {
@@ -298,14 +324,14 @@ describe('protection gate', () => {
     },
   } as unknown as ComponentRegistry;
 
-  function makeRuntime(overrides: Partial<ResolvedProtectionOptions> = {}, trailingSlashPolicy?: 'always' | 'never') {
+  function makeRuntime(overrides: Partial<ResolvedProtectionOptions> = {}, trailingSlashPolicy?: 'always' | 'never', proxy?: MochiProxyOptions) {
     return createProtectionRuntime({
       options: { enabled: true, bits: 8, maxAgeMs: 60_000, protectFiles: true, maxAttempts: 5, cookieName: PROTECTION_CLEARANCE_COOKIE, bind: NO_BIND, ...overrides },
       registry: fakeRegistry,
       renderShell: (result) => `<html>${result.body}</html>`,
       assetPrefix: '/_mochi',
       newRequestId: () => 'test-request-id',
-      proxy: undefined,
+      proxy,
       trailingSlashPolicy,
     });
   }
@@ -531,6 +557,18 @@ describe('protection gate', () => {
       const req = input('page', '/members/', boundCookie('203.0.113.7'), { headers: UA, ip: '203.0.113.7' });
       expect(await gate(req)).toBeUndefined();
       expect(req.cookies.getExtraVary()).toEqual(['accept-language', 'user-agent']);
+    });
+
+    test('network binding behind a proxy also varies on the trusted address header', async () => {
+      installConfig();
+      const proxy = { addressHeader: 'x-real-ip' };
+      const client = { headers: { ...UA, 'x-real-ip': '203.0.113.7' } };
+      const { gate } = makeRuntime({ bind: FULL_BIND }, undefined, proxy);
+      expect((await gate(input('page', '/members/', undefined, client)))!.headers.get('Vary')).toContain('x-real-ip');
+
+      const headersOnly = resolveBindOptions({ network: false }, true, 'Protection');
+      const noNetwork = makeRuntime({ bind: headersOnly }, undefined, proxy);
+      expect((await noNetwork.gate(input('page', '/members/', undefined, client)))!.headers.get('Vary')).not.toContain('x-real-ip');
     });
 
     test('a family flip passes and re-mints a v6-bound clearance preserving the original lifetime', async () => {

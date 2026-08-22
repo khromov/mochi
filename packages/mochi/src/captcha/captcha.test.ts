@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 import { mintCaptcha, verifyCaptcha, consumeCaptcha, solveCaptcha } from './captcha';
-import { CAPTCHA_STEPS, chainInput, powInput, leadingZeroBits, sha256Hex, solvePowSlice } from './pow';
+import { CAPTCHA_AAD, CAPTCHA_STEPS, chainInput, powInput, leadingZeroBits, sha256Hex, solvePowSlice } from './pow';
 import { DEFAULT_CAPTCHA_BITS, DEFAULT_CAPTCHA_DRIFT_ALLOWANCE_MS } from './config';
 import { DEFAULT_CAPTCHA_SOLVE_BUDGET_MS } from './pow';
 import { encryptPayload, decryptPayload } from '../islands/payloadCrypto';
@@ -589,6 +589,18 @@ describe('client binding', () => {
     expect((await verifyCaptcha(fields(solveCaptcha(minted)), { bindInputs: inputs(null, { 'x-custom': 'abc' }) })).ok).toBe(true);
     const minted2 = mintCaptcha({ bind, bindInputs: inputs(null, { 'x-custom': 'abc' }) });
     expect((await verifyCaptcha(fields(solveCaptcha(minted2)), { bindInputs: inputs(null, { 'x-custom': 'other' }) })).ok).toBe(false);
+  });
+
+  test('a sealed header name that is not a valid field name rejects instead of throwing', async () => {
+    installConfig();
+    const minted = mintCaptcha({ bind: { network: false, headers: ['x-custom'] }, bindInputs: inputs(null, { 'x-custom': 'abc' }) });
+    const payload = JSON.parse(decryptPayload(minted.token, { aad: CAPTCHA_AAD })!) as { b: { h: string[] } };
+    // What a token minted by a different version, or by a key-sharing sibling app, could carry.
+    payload.b.h = ['bad header'];
+    const forged = { ...minted, token: encryptPayload(JSON.stringify(payload), { aad: CAPTCHA_AAD }) };
+    const result = await verifyCaptcha(fields(solveCaptcha(forged)), { bindInputs: inputs(null, { 'x-custom': 'abc' }) });
+    expect(result).toMatchObject({ ok: false, reason: 'rejected' });
+    expect(seen.at(-1)).toMatchObject({ ok: false, reason: 'malformed' });
   });
 
   test('unbound tokens keep verifying with no context, unchanged', async () => {
