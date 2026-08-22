@@ -2,13 +2,13 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 import { mintCaptcha, verifyCaptcha, consumeCaptcha, solveCaptcha } from './captcha';
 import { CAPTCHA_STEPS, chainInput, powInput, leadingZeroBits, sha256Hex, solvePowSlice } from './pow';
-import { DEFAULT_CAPTCHA_BITS } from './config';
+import { DEFAULT_CAPTCHA_BITS, DEFAULT_CAPTCHA_DRIFT_ALLOWANCE_MS } from './config';
 import { DEFAULT_CAPTCHA_SOLVE_BUDGET_MS } from './pow';
 import { encryptPayload, decryptPayload } from '../islands/payloadCrypto';
 import { initExtensions } from '../extensions';
 import { mochiEvents } from '../events';
 import type { MochiCaptchaVerifyEvent } from '../events';
-import type { MochiCaptchaOptions } from './types';
+import type { CaptchaResult, MochiCaptchaOptions } from './types';
 
 const GLOBAL_CONFIG_KEY = '__mochi_config__';
 const GLOBAL_RUNTIME_KEY = '__mochi_captcha_runtime__';
@@ -259,7 +259,7 @@ describe('clock-drift allowance', () => {
     const out = { iat: 0 };
     const first = await verifyAged(10_000, out);
     expect(first.ok).toBe(true);
-    expect(first.ok && first.expiresAt).toBe(out.iat + 1000 + 30_000);
+    expect(first.ok && first.expiresAt).toBe(out.iat + 1000 + DEFAULT_CAPTCHA_DRIFT_ALLOWANCE_MS);
     expect(first.ok && first.expiresAt > Date.now()).toBe(true);
     expect((await verifyAged(10_000, out)).ok).toBe(true); // different nonce, unaffected
 
@@ -334,6 +334,38 @@ describe('captcha:minAgeMs', () => {
     const solved = fields(solveCaptcha(mintCaptcha()));
     await expect(verifyCaptcha(solved)).rejects.toThrow(/every token is rejected/);
   });
+
+  test('the per-call minAgeMs option overrides the configured floor', async () => {
+    installConfig({ bits: 8, minAgeMs: 5000 });
+    expect((await verifyCaptcha(fields(solveCaptcha(mintCaptcha())), { minAgeMs: 0 })).ok).toBe(true);
+  });
+
+  test('without the per-call option the configured floor still rejects an instant solve', async () => {
+    installConfig({ bits: 8, minAgeMs: 5000 });
+    expect((await verifyCaptcha(fields(solveCaptcha(mintCaptcha())))).ok).toBe(false);
+  });
+
+  test('an explicit per-call floor bypasses the captcha:minAgeMs filter', async () => {
+    // The filter overrides the *configured* default; a caller passing minAgeMs knows its own flow
+    // (protection's auto-solve must not be broken by an app-wide filter raising the form floor).
+    initExtensions({ filters: { 'captcha:minAgeMs': () => 5000 } });
+    installConfig({ bits: 8, minAgeMs: 5000 });
+    expect((await verifyCaptcha(fields(solveCaptcha(mintCaptcha())), { minAgeMs: 0 })).ok).toBe(true);
+  });
+});
+
+describe('minBits', () => {
+  test('rejects a token minted below the per-call difficulty floor', async () => {
+    installConfig({ bits: 4, minAgeMs: 0 });
+    const solved = fields(solveCaptcha(mintCaptcha()));
+    expect((await verifyCaptcha(solved, { minBits: 8 })).ok).toBe(false);
+  });
+
+  test('accepts a token minted at or above the floor', async () => {
+    installConfig({ bits: 8, minAgeMs: 0 });
+    expect((await verifyCaptcha(fields(solveCaptcha(mintCaptcha())), { minBits: 8 })).ok).toBe(true);
+    expect((await verifyCaptcha(fields(solveCaptcha(mintCaptcha())), { minBits: 4 })).ok).toBe(true);
+  });
 });
 
 describe('replay protection', () => {
@@ -406,15 +438,17 @@ describe('failure reason', () => {
     const solved = solveCaptcha(mintCaptcha());
     await verifyCaptcha(fields(solved));
     const replayed = await verifyCaptcha(fields(solved));
+    const rejected = await verifyCaptcha(fields({ captcha_token: 'nope', captcha_pow: '1' }));
 
-    expect(replayed.ok).toBe(false);
-    if (replayed.ok) {
+    expect(replayed).toMatchObject({ ok: false, reason: 'replay' });
+    expect(rejected).toMatchObject({ ok: false, reason: 'rejected' });
+    if (replayed.ok || rejected.ok) {
       return;
     }
-    expect(replayed.reason).toBe('replay');
-    // The shape an app's action branches on.
-    const message = replayed.reason === 'replay' ? 'Already sent — grab a fresh form.' : replayed.error;
-    expect(message).toBe('Already sent — grab a fresh form.');
+    // The mapping an app's action branches on — both arms must be reachable.
+    const message = (r: Extract<CaptchaResult, { ok: false }>) => (r.reason === 'replay' ? 'Already sent — grab a fresh form.' : r.error);
+    expect(message(replayed)).toBe('Already sent — grab a fresh form.');
+    expect(message(rejected)).toBe('Verification failed — reload the page and try again.');
   });
 });
 

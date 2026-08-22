@@ -4,9 +4,9 @@ import { routes } from './routes';
 await Mochi.serve({
   port: 3333,
   development: process.env.MODE === 'development',
-  // Named image sizes — referenced by name from <Image size="…">,
-  // getImageUrl(src, 'name') and getImage(src, 'name'). The URL only carries the
-  // src + size name; the endpoint runs the transform lazily on request.
+  // Mount a directory tree under a URL prefix — one Bun route, files served straight from disk.
+  staticDirs: { '/gallery': './images' },
+  // Named image sizes — the URL only carries the src + size name, and the endpoint runs the transform lazily on request.
   image: {
     sizes: {
       hero: { width: 600, height: 400, fit: 'inside' },

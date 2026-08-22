@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import path from 'node:path';
 import { __resetPreprocessMemCache, cachedPreprocessHydratable, createPreprocessCacheStats, evictPreprocessCacheEntry } from './preprocessCache';
 import { mochiEvents } from '../events';
@@ -129,8 +129,15 @@ describe('preprocess-cache event emission', () => {
     // be gated on subscriber presence.
     mochiEvents.off('preprocess-cache:hit', onHit);
     mochiEvents.off('preprocess-cache:miss', onMiss);
-    cachedPreprocessHydratable(ISLAND_SOURCE, '/test/A.svelte');
-    cachedPreprocessHydratable(ISLAND_SOURCE, '/test/A.svelte');
-    expect(received).toEqual([]);
+    // Spying on emit itself proves the hasSubscribers gate short-circuits —
+    // `received` alone would stay empty even without the gate.
+    const emitSpy = spyOn(mochiEvents, 'emit');
+    try {
+      cachedPreprocessHydratable(ISLAND_SOURCE, '/test/A.svelte');
+      cachedPreprocessHydratable(ISLAND_SOURCE, '/test/A.svelte');
+      expect(emitSpy).not.toHaveBeenCalled();
+    } finally {
+      emitSpy.mockRestore();
+    }
   });
 });

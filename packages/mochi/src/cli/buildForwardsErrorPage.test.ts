@@ -47,14 +47,15 @@ describe('mochi-framework build forwards errorPage off the entry (subprocess)', 
   });
 
   test('the build succeeds', () => {
-    expect(result.exitCode).toBe(0);
+    expect(result.exitCode, result.stderr || result.stdout).toBe(0);
     // Deliberately not an empty-stderr assertion: an unrelated toolchain
     // warning there says nothing about this build.
     expect(result.stderr).not.toContain('error');
   });
 
   test('the custom error page is in the manifest, not the built-in one', () => {
-    // Reports the failed build rather than throwing on `Object.keys(undefined)`.
+    // Reports the failed build (with its stderr) rather than throwing on `Object.keys(undefined)`.
+    expect(result.exitCode, result.stderr || result.stdout).toBe(0);
     expect(manifest).toBeDefined();
     const components = Object.keys(manifest.components);
     expect(components).toContain('src/Oops.svelte');
