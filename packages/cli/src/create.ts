@@ -1,6 +1,6 @@
 import path from 'node:path';
 import fs from 'node:fs/promises';
-import { downloadTemplate } from '@bluwy/giget-core';
+import { downloadTemplate } from './download.ts';
 import { getTemplate, type TemplateId } from './templates.ts';
 import { addLintTooling, writeLintConfigs } from './lintSetup.ts';
 import { ensureGitignore, fetchLatestMochiVersion, resolveMochiVersionRange, setDefaultPort, transformPackageJson, transformTsconfig, validatePackageName } from './utils.ts';
